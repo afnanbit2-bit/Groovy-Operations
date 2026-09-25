@@ -114,6 +114,20 @@ browser" step for any UI change is therefore still NOT possible from this
 sandbox** — say so explicitly rather than skip the caveat. Real UI
 verification needs the human, a phone, or Claude in Chrome.
 
+**THE FIRESTORE EMULATOR DOES RUN HERE (verified 25 Sept 2026)**, which
+this file never said and which changes what "the rules are unverifiable"
+means. Java 21 is installed, `firebase-tools` and
+`@firebase/rules-unit-testing` install from `registry.npmjs.org`, and the
+emulator jar downloads (from `storage.googleapis.com`, reachable). So a
+rules FILE can be exercised for real, by the Firestore rules engine itself,
+instead of only being read as text. **`tests/rules-emulator.js`** does this
+for `wh_sales` (32 checks, every document built by the app's own
+`whsBuildSale`); its header has the exact commands. It is not a
+`*.test.js` — CI installs nothing, so `tests/run.js` must not pick it up —
+and it runs under a `demo-` project id, so it cannot reach
+`groovy-gatepass`. **What it cannot tell you is what the Console has
+PUBLISHED** — that is still a question only the human can answer.
+
 ## File architecture (split from the old single `index.html`)
 
 ```
@@ -6478,6 +6492,27 @@ Discount / Total, and Notes. **The decisions are tabled in
   owners clear the review flag (`_WHS_REVIEW_FIELDS`); both lists are
   asserted equal to the rules' `hasOnly`. Delete is Afnan/Ammar
   (`isAcctSuper`, via `_acctIsSuper` behind a `typeof` guard).
+- **A VOIDED BILL CAN BE RECORDED AGAIN — and that is the correction, not a
+  loophole** (added after the review round, below). The first cut refused
+  any second write to an order number, so a bill entered wrong, once
+  voided, could NEVER be recorded correctly: the id was taken forever and
+  the only way out was an admin delete. A void's detail now offers
+  **Record this bill again**, which opens the form holding everything the
+  voided entry held (bill, customer, articles, payment), and the save
+  writes over the void carrying it forward in **`priorVoids`** (plain
+  values only — Firestore refuses nested arrays), shown on the sale as
+  "Recorded before and voided". Typed in from scratch over a void, it asks
+  first. **An ACTIVE sale is still one bill, one sale.** The rules allow the
+  overwrite only when the stored sale is `void`, through the SAME
+  `whSaleValid()` a create uses (so a re-record cannot sneak past the 20%
+  cap), and only when `priorVoids` grows by exactly one.
+- **Who did it is bound to the signed-in email.** `createdByU`, `voidedBy`
+  and `reviewedBy` are usernames and every account is
+  `<username>@groovy.op`, so the rules require `+ '@groovy.op' ==
+  userEmail()` on each; the ledger reads the NAME from that username
+  (`_whsWho`, via `USER_DEFS`), never from the free-text `createdByName`
+  beside it. Before this, "Recorded by Afnan" could be written by anyone
+  who could write a sale.
 - **A failed read is an error card naming `wh_sales` and the republish,
   never an empty ledger** (the Store lesson); the loader never rejects.
 - **Rows are flex cards, not a table** — read on a phone at the warehouse.
@@ -6494,6 +6529,75 @@ Discount / Total, and Notes. **The decisions are tabled in
   columns still leave the text technically visible — so that was checked by
   rendering it at 390px in real Chromium and looking. `SMOKE_LAYOUT_ONLY=
   <text>` now measures only matching fragments (CI never sets it).
+
+**THE REVIEW ROUND (25 Sept 2026).** An adversarial review — five lenses,
+each finding checked by three skeptics told to refute it — returned 24
+findings; the **16 confirmed by at least two** are all fixed, each one
+verified by undoing it and watching `tests/warehouse-sales.test.js` fail by
+name (15 undo checks; two first crashed the suite instead and were made
+null-safe; two first passed because the OTHER guard covered them, and each
+got its own assertion). Besides the two above:
+
+- **Searching an order number matched phone numbers.** The digit fallback
+  ran on ANY query, so `SO0334` also found every customer whose phone
+  starts 0334 — which, for SO03xx, is most Pakistani mobiles; the Excel
+  export carried them too. It runs only on a query that IS a phone
+  (`_whsPhoneQuery`: digits and separators only), and now understands
+  `+92` / `0092`.
+- **The name autofill ran on every keystroke**, so a new customer "Ali
+  Raza" got a known "Ali"'s phone the moment the field read "Ali". It is
+  reversible now: a phone the handler filled is taken back the moment the
+  name stops matching, unless Umair has edited it since.
+- **Two bill uploads in flight**: the one to finish LAST won and the first
+  to finish ended "Uploading…". A pick counter (`billSeq`) means the latest
+  pick wins and only it ends the upload; removing a bill mid-upload keeps
+  it removed.
+- **A price of 0.4 passed "more than 0" and was stored as Rs 0** (and a
+  one-line bill then failed on the rules with a message blaming an
+  unpublished ruleset). Checked on the rounded rupee; the permission
+  message now says the sale may have broken a check.
+- **A mobile with a digit missing** (10 digits starting 03) was accepted.
+  A mobile is exactly 11; a landline 10 or 11.
+- Smaller: the quantity message names the 9,999 cap; a new form clears the
+  previous form's search hits and Enter needs text in the box (a scanner
+  sends a stray Enter); a read that hits the 1,000-sale cap says so on
+  screen instead of silently dropping the oldest pay-later bills.
+- **`showFulfillTab` swallowed render errors** — its `.then(f,f)` handled
+  the rejection, so a broken render looked like a tap that did nothing and
+  `js/diagnostics.js` recorded nothing. It returns the promise again, and
+  `renderFulfillmentPage` re-lights its own nav item, which also fixes the
+  highlight showing Courier Performance over the Accounts ledger after the
+  logo or a Profile round trip.
+- **The toast ran off both sides of a phone** (`white-space:nowrap`,
+  measured in Chromium at 390px: 1,024px wide from −317 to 707). It wraps
+  inside the screen now (358px, 16–374) and stays up in proportion to its
+  length — **`css/main.css` `.toast` and `js/shared.js` `showToast`, both
+  cross-track, one rule each; it changes every toast in the app, for the
+  better.**
+
+**Not fixed — the 8 the skeptics refuted, with the reasons they gave:**
+the rules do not tie `subtotal` to the lines (only a writer the rule
+already trusts — Umair or an owner, writing to Firestore directly with
+their own login — could state a subtotal its lines do not add up to, and
+the rules language has no loop to sum them); lowering an article's price
+gets past the 20% cap (by design: an edited price is flagged for review,
+not refused, because the ERP bill is what was charged); the ERP bill's
+per-line Discount column has no field (Afnan asked for ONE bill-level
+discount tab); the create rule does not bar the review fields (the review
+flag is computed by Umair's own client anyway); an owner who opened
+Accounts lands on it again from the Courier Performance card (the section
+has always persisted for the session — PostEx does the same); a
+malformed hand-written document crashes the detail view (direct writes
+only). **My own call, not theirs:** the subtotal one is worth revisiting
+when the receivable into Raees's accounts starts reading these totals.
+
+**One refuted finding is a REAL, PRE-EXISTING bug elsewhere, recorded so
+it is not lost:** `loadActivity` in `js/activity.js` puts `a.detail`
+straight into `innerHTML`, and every `logActivity` caller in the app passes
+raw user text (customer names, void reasons, recipe revision reasons …) —
+a stored-XSS sink in the owner-only Activity Log. Refuted here only
+because this change did not introduce it; Monitor escapes the same field.
+The fix belongs in `js/activity.js`, not in each caller.
 
 **Next (not built): the receivable in Raees's Store Accounts.** Open
 questions are in `ACCOUNTS_PLAN.md` §5. **Nobody has recorded a sale on a
@@ -8805,8 +8909,12 @@ an entry, Delete vendor, Reopen, Reset) but every one of their writes is
 refused with "Missing or insufficient permissions". **Then, the same day,
 `isWhSales()` and `match /wh_sales/{orderNo}` (warehouse sales) were
 added** — until they are published, Umair's Accounts section shows its
-"could not be read" card and every save is refused. One paste carries
-both.
+"could not be read" card and every save is refused. **The `wh_sales` block
+changed AGAIN the same day** (the review round: `whSaleValid()`, recording
+a bill again over a void, and the who-bindings) — so a paste of the file
+taken BEFORE that commit is missing them; the newest file is the one to
+publish. One paste carries all three. It was run in the Firestore
+emulator (`tests/rules-emulator.js`, 32/32) before it was handed over.
 
 **No republish outstanding as of 23 Sept 2026 (evening).** Afnan
 confirmed ("rules pushed") from the repo file at
