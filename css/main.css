@@ -59,6 +59,9 @@
      the wrong way for the chip. Do not "fix" this by adding a dark
      override. */
   --count-accent:#DC2626;
+  /* Spec s10 (The Board): dates and counts want tabular figures so a
+     column of them lines up. The app had no monospace token before this. */
+  --font-mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
   /* The rail's hover tiles (Sept 2026). Each tool's icon fills a coloured
      tile with a LITERAL white glyph on hover, so like --count-accent these
      must NOT invert: the ink on them is literal, so the tile is too. Every
@@ -262,6 +265,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
   body{padding-bottom:0}
   #mob-nav{display:grid !important;grid-template-columns:repeat(5,1fr)}
   #mob-nav.cols-3{grid-template-columns:repeat(3,1fr) !important}
+  #mob-nav.cols-4{grid-template-columns:repeat(4,1fr) !important}
   .job-board{grid-template-columns:1fr}
   .item-grid{grid-template-columns:1fr 1fr}
   .kpi-grid{grid-template-columns:repeat(3,1fr)}
@@ -2704,6 +2708,50 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .mkt-table .mkt-c-last{flex:1 1 100%}
 }
 
+/* ── The Board (Sept 2026) ────────────────────────────────────────────
+   Namespace .tb-* -- NOT .board-*, which js/boards.js (Mood Boards) owns
+   259 rules of. See the header of js/theboard.js for why.
+
+   Spec s10: one primary action per screen, 44px rows on desktop and 48 on
+   mobile, colour carries meaning and nothing is decorative, and the only
+   red in the product is the overdue count. Motion is 150ms ease-out and
+   only on the things that move. Labels are lowercase. */
+.tb-wrap{display:flex;align-items:flex-start;gap:18px}
+.tb-rail{display:flex;flex-direction:column;gap:2px;flex:0 0 156px;position:sticky;top:64px}
+.tb-railbtn{display:block;width:100%;text-align:left;min-height:44px;padding:0 12px;
+  background:none;border:none;border-radius:8px;cursor:pointer;
+  font-family:inherit;font-size:14px;font-weight:600;color:var(--muted);
+  transition:background .15s ease-out,color .15s ease-out}
+.tb-railbtn:hover{background:var(--hover);color:var(--text)}
+.tb-railbtn.on{background:var(--dark);color:var(--on-dark)}
+.tb-main{flex:1;min-width:0}
+
+/* The unread badge on the sidebar tab. Empty until phase 4 fills it, and
+   hidden while empty rather than rendering an empty chip. --count-accent
+   is the app's one real red and deliberately does not invert, because this
+   sits on a transparent row AND on the --dark chip of .nav-item.on, and
+   --dark swaps between themes. Same reasoning as the Boards panel counts. */
+.tb-navbadge{margin-left:7px;font-size:11px;font-weight:700;color:var(--count-accent);font-family:var(--font-mono)}
+.tb-navbadge:empty{display:none}
+
+.tb-empty{padding:40px 4px;max-width:520px}
+.tb-empty-h{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
+.tb-empty-p{font-size:14px;color:var(--muted);line-height:1.6}
+
+@media(max-width:600px){
+  /* The rail docks as a horizontal scroller, the way the Mood Boards tool
+     rail does on a phone -- #mob-nav is full for owners and managers and
+     cannot give up a slot. The designer's role gets the real four-tab bar
+     instead (_renderMobNav, js/shared.js). */
+  .tb-wrap{flex-direction:column;gap:12px}
+  .tb-rail{flex:0 0 auto;flex-direction:row;width:100%;position:static;
+    overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tb-rail::-webkit-scrollbar{display:none}
+  .tb-railbtn{width:auto;flex:0 0 auto;min-height:48px;white-space:nowrap}
+  .tb-main{width:100%}
+  .tb-empty{padding:28px 0}
+}
+@media(prefers-reduced-motion:reduce){.tb-railbtn{transition:none}}
 /* ── Store Accounts (js/store-accounts.js, Sept 2026) ──
    A ledger that reads like a ledger: one table shape everywhere, tabular
    numbers right-aligned, in/out/balance, tokens only (no literal colours). */
@@ -2809,4 +2857,324 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   .acct-line{grid-template-columns:1fr 1fr}
   .acct-kv-grid{grid-template-columns:1fr}
   .acct-table{font-size:13px}
+}
+
+/* ── The Board, phase 2 ───────────────────────────────────────────────
+   Spec s10: one primary action per screen, 44px rows on desktop and 48 on
+   mobile, colour carries meaning and nothing is decorative, RED APPEARS
+   EXACTLY ONCE (the overdue count), motion is 150ms ease-out and only on
+   the things that move, labels are lowercase. No gamification: a done item
+   just fades. */
+
+/* the header strip */
+.tb-strip{display:flex;align-items:baseline;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.tb-stripday{font-size:19px;font-weight:700;color:var(--text)}
+.tb-stripmark{font-size:13px;color:var(--muted);font-family:var(--font-mono)}
+.tb-stripcount{font-size:13px;color:var(--muted);margin-left:auto;font-family:var(--font-mono)}
+
+/* quick add */
+.tb-quick{margin-bottom:16px}
+.tb-qainput{width:100%;min-height:44px;padding:0 12px;box-sizing:border-box;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+  font-family:inherit;font-size:15px;color:var(--text);outline:none;
+  transition:border-color .15s ease-out}
+.tb-qainput:focus{border-color:var(--text)}
+.tb-qaprev{min-height:18px;padding:3px 12px 0;font-size:12px;color:var(--muted);font-family:var(--font-mono)}
+
+/* cards */
+.tb-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.tb-col{min-width:0}
+.tb-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);
+  padding:4px 4px 6px;margin-bottom:14px}
+.tb-cardh{display:flex;align-items:center;gap:8px;padding:10px 12px 8px;
+  font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:lowercase;color:var(--muted)}
+.tb-count{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--muted)}
+/* THE ONLY RED ON THE BOARD. --count-accent deliberately does not invert:
+   it sits on --surface, which does. */
+.tb-count.red{color:var(--count-accent)}
+.tb-cardempty{padding:8px 12px 12px;font-size:13px;color:var(--muted)}
+
+/* the row — the same anatomy everywhere */
+.tb-row{display:flex;align-items:center;gap:8px;min-height:44px;padding:5px 8px;border-radius:8px;
+  transition:background .15s ease-out}
+.tb-row:hover{background:var(--hover)}
+.tb-row.done .tb-rowtitle{text-decoration:line-through;opacity:.5}
+/* critical is a tick mark, nothing louder (spec s7.1) */
+.tb-row.crit{box-shadow:inset 3px 0 0 var(--text)}
+.tb-check{flex:0 0 auto;width:18px;height:18px;padding:0;border:1.5px solid var(--border);
+  border-radius:5px;background:var(--surface);cursor:pointer;transition:background .15s ease-out,border-color .15s ease-out}
+.tb-check:hover{border-color:var(--text)}
+.tb-check.on{background:var(--dark);border-color:var(--dark)}
+.tb-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%}
+.tb-rowmain{flex:1;min-width:0;display:flex;align-items:center;gap:10px;
+  background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left}
+/* `flex:1` is the load-bearing part: MEASURED, a title that cannot shrink
+   (flex:0 0 auto) overflows the row by 361px at 420px wide, and the probe
+   names both .tb-row and .tb-rowmain. `min-width:0` is belt-and-braces
+   here rather than essential -- removing it alone changes nothing once the
+   title wraps, which was checked rather than assumed. It IS essential on
+   the nowrap rows below (.tb-listname), where the Profile directory's
+   0px-name bug is a live risk.
+
+   IT WRAPS TO TWO LINES RATHER THAN ELLIPSIZING, and that is a deliberate
+   reading of spec s10's "44px rows": the real milestone titles are long
+   ("Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must
+   land by Oct 24)"), and one truncated line of that is a task you cannot
+   read. The row keeps its 44px MINIMUM and grows only when a title needs
+   it, so density is unchanged for the short ones.
+
+   It also keeps the layout probe honest: this class matches the probe's
+   [class*="-row"] selector, and an ellipsized element ALWAYS reports
+   scrollWidth > clientWidth. Renaming the class to dodge that check would
+   have hidden every real overflow in these rows along with it. */
+.tb-rowtitle{flex:1;min-width:0;font-size:14px;line-height:1.35;color:var(--text);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;overflow-wrap:anywhere}
+.tb-rowmeta{flex:0 0 auto;display:flex;align-items:center;gap:7px}
+.tb-av{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+  border-radius:50%;background:var(--soft);color:var(--text);font-size:11px;font-weight:700}
+.tb-av-more{background:transparent;color:var(--muted)}
+.tb-lock{font-size:11px;opacity:.7}
+.tb-steps,.tb-cc{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.tb-cc::before{content:"";}
+.tb-date{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.tb-date.over{color:var(--count-accent);font-weight:700}
+.tb-kind{font-size:11px;font-weight:700;letter-spacing:.05em;padding:1px 6px;border-radius:6px;
+  background:var(--soft);color:var(--muted)}
+/* a gate is the calendar, not a celebration: solid, dark, quiet */
+.tb-kind-gate{background:var(--dark);color:var(--on-dark)}
+
+/* the eight palette keys (spec s8.6) */
+.tb-c-moss{background:#23412e}.tb-c-ink{background:#16160f}.tb-c-clay{background:#b45309}
+.tb-c-amber{background:#a1580e}.tb-c-slate{background:#4a5568}.tb-c-sand{background:#b9a77a}
+.tb-c-wine{background:#6b2137}.tb-c-teal{background:#1f5f5b}
+
+/* lists */
+.tb-sec{margin-bottom:22px}
+.tb-sech{display:flex;align-items:center;gap:10px;margin-bottom:8px;
+  font-size:12px;font-weight:700;letter-spacing:.07em;color:var(--muted)}
+.tb-newlist{margin-left:auto;background:none;border:none;cursor:pointer;font-family:inherit;
+  font-size:13px;color:var(--muted);padding:6px 8px;border-radius:6px;min-height:32px}
+.tb-newlist:hover{background:var(--hover);color:var(--text)}
+.tb-listcard{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 12px;
+  margin-bottom:6px;background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  cursor:pointer;font-family:inherit;text-align:left;transition:border-color .15s ease-out}
+.tb-listcard:hover{border-color:var(--text)}
+.tb-listname{flex:1;min-width:0;font-size:14px;font-weight:600;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-listn{flex:0 0 auto;font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+.tb-listhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.tb-listtitle{font-size:19px;font-weight:700;color:var(--text);margin:0}
+.tb-badge{font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 7px;border-radius:6px;
+  background:var(--soft);color:var(--muted)}
+.tb-back{background:none;border:none;cursor:pointer;font-family:inherit;font-size:13px;
+  color:var(--muted);padding:6px 8px;border-radius:6px;min-height:32px}
+.tb-back:hover{background:var(--hover);color:var(--text)}
+
+/* the drawer — a right-hand panel on desktop, a full sheet on a phone */
+.tb-drawer{position:fixed;top:0;right:0;width:min(440px,100%);height:100dvh;height:100vh;
+  z-index:130;overflow-y:auto;padding:16px;box-sizing:border-box;
+  background:var(--surface);border-left:1px solid var(--border);
+  box-shadow:-8px 0 28px rgba(0,0,0,.12);
+  animation:tb-slide .15s ease-out}
+@supports(height:100dvh){.tb-drawer{height:100dvh}}
+@keyframes tb-slide{from{transform:translateX(12px);opacity:.6}to{transform:none;opacity:1}}
+.tb-dhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.tb-lockbtn{margin-left:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+  cursor:pointer;font-family:inherit;font-size:12px;color:var(--muted);padding:6px 10px;min-height:32px}
+.tb-lockbtn.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
+.tb-lockbtn[disabled]{cursor:not-allowed;opacity:.6}
+.tb-lockwho{font-size:12px;color:var(--muted);width:100%}
+.tb-dtitle{width:100%;box-sizing:border-box;min-height:44px;padding:0 10px;margin-bottom:12px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+  font-family:inherit;font-size:17px;font-weight:700;color:var(--text);outline:none}
+.tb-dmeta{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.tb-dmeta label{display:flex;flex-direction:column;gap:3px;font-size:11px;
+  letter-spacing:.06em;color:var(--muted)}
+.tb-dmeta input,.tb-dmeta select{min-height:36px;padding:0 8px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px;
+  color:var(--text);outline:none}
+.tb-dmeta input[disabled]{opacity:.6;cursor:not-allowed}
+.tb-was{align-self:flex-end;font-family:var(--font-mono);font-size:12px;color:var(--muted);
+  text-decoration:line-through;padding-bottom:9px}
+.tb-dsec{margin-bottom:18px}
+.tb-dsech{display:flex;align-items:center;gap:8px;margin-bottom:8px;
+  font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--muted)}
+.tb-people{display:flex;flex-wrap:wrap;gap:6px}
+.tb-person{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;
+  cursor:pointer;font-family:inherit;font-size:13px;color:var(--muted);padding:0 12px;min-height:34px;
+  transition:background .15s ease-out,color .15s ease-out}
+.tb-person.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
+.tb-step{display:flex;align-items:center;gap:8px;min-height:36px}
+.tb-steptitle{flex:1;min-width:0;font-size:14px;color:var(--text)}
+.tb-x{background:none;border:none;cursor:pointer;font-family:inherit;font-size:15px;
+  color:var(--muted);padding:4px 8px;border-radius:6px;min-height:32px}
+.tb-x:hover{background:var(--hover);color:var(--text)}
+.tb-del{margin-left:auto;font-size:13px}
+.tb-stepadd,.tb-notes{width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;
+  color:var(--text);outline:none}
+.tb-stepadd{min-height:40px;margin-top:4px}
+.tb-notes{resize:vertical;line-height:1.6}
+.tb-hint{font-size:12px;color:var(--muted);margin-bottom:6px}
+.tb-savestate{min-height:16px;padding-top:4px;font-size:11px;color:var(--muted)}
+.tb-dfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:8px;
+  border-top:1px solid var(--border)}
+.tb-ho{margin-top:14px;padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px}
+.tb-ho select,.tb-ho input[type=text],.tb-ho input:not([type=checkbox]){width:100%;box-sizing:border-box;
+  min-height:38px;padding:0 8px;margin-bottom:8px;background:var(--surface);
+  border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px;color:var(--text)}
+.tb-hokeep{display:flex;align-items:center;gap:6px;margin-bottom:10px;font-size:13px;color:var(--muted)}
+
+/* a failed read and an empty board must never look the same */
+.tb-err{padding:18px;background:var(--accent-urgent-soft);border:1px solid var(--border);
+  border-radius:var(--radius-card);color:var(--text);font-size:14px}
+.tb-errsub{margin-top:8px;font-size:12px;color:var(--muted)}
+.tb-warn{padding:10px 12px;margin-bottom:12px;background:var(--accent-warning-soft);
+  border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--text)}
+
+@media(max-width:900px){.tb-cols{grid-template-columns:1fr}}
+@media(max-width:600px){
+  .tb-row{min-height:48px}
+  .tb-check{width:20px;height:20px}
+  .tb-stripcount{margin-left:0;width:100%}
+  /* the drawer is a full-screen sheet on a phone. 100dvh, not inset:0 --
+     100vh is a lie on a phone, as the board canvas takeover documents. */
+  .tb-drawer{width:100%;border-left:none;height:100dvh}
+  .tb-dmeta label{flex:1 1 45%}
+}
+@media(prefers-reduced-motion:reduce){
+  .tb-drawer{animation:none}
+  .tb-row,.tb-check,.tb-person,.tb-qainput,.tb-listcard{transition:none}
+}
+
+/* ── The Board — the calendar (phase 3) ───────────────────────────────
+   Spec s7.2. A pill is a colour bar and a title; a gate is solid, a
+   locked one shows its padlock, a done one fades rather than celebrating.
+   The only red on the board is still the overdue count, so nothing here
+   is red. */
+.tb-calbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.tb-calnav{display:flex;align-items:center;gap:6px}
+.tb-calbtn{min-height:34px;padding:0 11px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px;color:var(--text);
+  transition:background .15s ease-out}
+.tb-calbtn:hover{background:var(--hover)}
+.tb-callabel{margin-left:6px;font-size:15px;font-weight:700;color:var(--text)}
+.tb-calseg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.tb-seg{min-height:34px;padding:0 12px;background:var(--surface);border:none;cursor:pointer;
+  font-family:inherit;font-size:13px;color:var(--muted);transition:background .15s ease-out,color .15s ease-out}
+.tb-seg:hover{background:var(--hover);color:var(--text)}
+.tb-seg.on{background:var(--dark);color:var(--on-dark)}
+.tb-calfilters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.tb-calfilters select{min-height:34px;padding:0 8px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;
+  color:var(--text);outline:none}
+.tb-calchk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.tb-calnote{padding-top:10px;font-size:12px;color:var(--muted);font-family:var(--font-mono)}
+
+.tb-dowrow,.tb-monthgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.tb-dowrow{gap:6px;margin-bottom:6px}
+.tb-dow{padding:0 6px;font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--muted)}
+.tb-monthgrid{gap:6px}
+.tb-weekgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+
+.tb-day{display:flex;flex-direction:column;gap:4px;min-height:104px;padding:6px;
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  transition:border-color .15s ease-out,background .15s ease-out}
+.tb-weekgrid .tb-day{min-height:280px}
+/* A day outside the month is still a real day you can drop on — it is
+   dimmed, never disabled, or the first of next month would be
+   unreachable from the month you are looking at. */
+.tb-day.out{background:var(--bg);opacity:.72}
+.tb-day.weekend .tb-daynum{color:var(--muted)}
+.tb-day.today{border-color:var(--text)}
+.tb-day.today .tb-daynum{background:var(--dark);color:var(--on-dark);border-radius:6px;padding:0 5px}
+/* A marker (launch, founders out) is a rule down the day, not a banner —
+   it has to be visible behind whatever is on that date. */
+.tb-day.marked{box-shadow:inset 3px 0 0 var(--accent-warning)}
+.tb-day.drop{border-color:var(--text);background:var(--hover)}
+.tb-dayhead{display:flex;align-items:center;gap:6px;min-height:22px}
+.tb-daynum{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text)}
+.tb-daymark{flex:1;min-width:0;font-size:11px;font-weight:700;letter-spacing:.04em;
+  color:var(--accent-warning);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-dayadd{margin-left:auto;width:22px;height:22px;padding:0;background:none;border:none;
+  border-radius:6px;cursor:pointer;font-family:inherit;font-size:15px;color:var(--muted);
+  opacity:0;transition:opacity .15s ease-out,background .15s ease-out}
+.tb-day:hover .tb-dayadd,.tb-dayadd:focus{opacity:1;background:var(--hover);color:var(--text)}
+.tb-daylist{display:flex;flex-direction:column;gap:3px;min-height:0}
+
+.tb-pill{display:flex;align-items:center;gap:5px;min-height:24px;padding:2px 6px;
+  border-radius:6px;background:var(--surface-2);border:1px solid var(--border);
+  cursor:pointer;overflow:hidden;transition:background .15s ease-out}
+.tb-pill:hover{background:var(--hover)}
+.tb-pill.draggable{cursor:grab}
+.tb-pill.dragging{opacity:.4}
+.tb-pill:focus-visible{outline:2px solid var(--text);outline-offset:1px}
+.tb-pillbar{flex:0 0 auto;width:3px;align-self:stretch;min-height:16px;border-radius:2px;background:var(--muted)}
+/* What the layout fragment DOES and does NOT hold, checked by breaking
+   each: painting a gate's title in its own chip colour fails at 1:1 and
+   names it, so the INK is guarded. Making this title flex:0 0 auto does
+   NOT fail — the pill clips its own content, so an overlong title is
+   ellipsized rather than overflowing anything the probe can see. The
+   min-width:0 is a guard for whatever is added to a pill next, not a rule
+   the probe is watching. */
+.tb-pilltitle{flex:1;min-width:0;font-size:12px;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The padlock inherits nothing: on a GATE the pill is var(--dark),
+   which INVERTS, so an inherited var(--text) is near-black on
+   near-black in light and near-white on near-white in dark. Measured
+   at 1.11:1 and 1.01:1 by the layout probe before this line existed.
+   The rule this app keeps relearning: anything painted on --dark
+   takes its ink from --on-dark. */
+.tb-pilllock{flex:0 0 auto;font-size:10px;color:var(--text);opacity:.85}
+/* A gate is the calendar: solid, dark, and it does not invite a click
+   that will not work. */
+.tb-pill.gate{background:var(--dark);border-color:var(--dark)}
+.tb-pill.gate .tb-pilltitle{color:var(--on-dark);font-weight:600}
+.tb-pill.gate .tb-pillbar{background:var(--on-dark);opacity:.55}
+.tb-pill.gate .tb-pilllock{color:var(--on-dark)}
+.tb-pill.event{border-style:dashed}
+.tb-pill.done{opacity:.5}
+.tb-pill.done .tb-pilltitle{text-decoration:line-through}
+
+/* The colour bar takes the item's palette key; the pill body does not, so
+   a title always reads against the surface rather than against a colour
+   that has to work in both themes. */
+.tb-c-moss .tb-pillbar{background:#23412e}.tb-c-ink .tb-pillbar{background:#16160f}
+.tb-c-clay .tb-pillbar{background:#b45309}.tb-c-amber .tb-pillbar{background:#a1580e}
+.tb-c-slate .tb-pillbar{background:#4a5568}.tb-c-sand .tb-pillbar{background:#b9a77a}
+.tb-c-wine .tb-pillbar{background:#6b2137}.tb-c-teal .tb-pillbar{background:#1f5f5b}
+
+/* The ghost follows the pointer and must never be hit-tested: the drop is
+   decided by asking what is under the pointer, so a ghost that could be
+   hit would be a drop target flying under the very pointer it follows. */
+.tb-dragghost{position:fixed;z-index:400;pointer-events:none;max-width:220px;
+  padding:4px 9px;border-radius:7px;background:var(--surface);
+  border:1px solid var(--text);box-shadow:0 6px 18px rgba(0,0,0,.18);
+  font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@media(max-width:900px){
+  .tb-calfilters{margin-left:0;width:100%}
+}
+@media(max-width:600px){
+  /* A 7-column month on a phone gives ~50px a day, which fits a number
+     and nothing else. The week view is the phone's calendar — one column,
+     a vertical agenda, which is what spec s11 asks for — and the month
+     grid keeps 7 columns but drops to counts rather than pills. */
+  .tb-weekgrid{grid-template-columns:1fr}
+  .tb-weekgrid .tb-day{min-height:0}
+  .tb-day{min-height:76px}
+  .tb-calbar{gap:8px}
+  .tb-calfilters select{flex:1 1 40%;min-width:0}
+  /* A month day is ~50px wide here, so the marker's WORD has nowhere to
+     go — measured at 1px by the layout probe. The left bar stays, so the
+     day is still visibly marked, and the week view (one full-width column
+     on a phone, per spec s11) is where the label is read. */
+  .tb-monthgrid .tb-daymark{display:none}
+  .tb-monthgrid .tb-day.marked{box-shadow:inset 4px 0 0 var(--accent-warning)}
+  .tb-dayadd{opacity:1}
+  .tb-pill{min-height:28px}
+}
+@media(prefers-reduced-motion:reduce){
+  .tb-day,.tb-pill,.tb-calbtn,.tb-seg,.tb-dayadd{transition:none}
 }

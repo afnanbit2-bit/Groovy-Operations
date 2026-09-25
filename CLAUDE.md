@@ -7036,6 +7036,142 @@ came back; the same break now names `mkt-chart-lab`.
   (st4rr.doll and shoaibkhn.t — Lowkey Heat; shadysaidthat — Live In
   Pants) migrate into `dispatches` with date and status left blank.
 
+## The Board (Sept 2026) — `js/theboard.js`
+
+One shared calendar and one set of task lists over **one object: an item**.
+An item with a date is on the calendar, an item in a list is a to-do, an item
+can be both. Top-level sidebar tab, first, audience `BOARD_USERS`. The build
+spec is Ammar's `the-board-build-prompt.md`; **`BOARD.md` at the repo root is
+the living record** — read it before touching this module.
+
+- **EVERYTHING IS PREFIXED `tb`, AND THAT IS LOAD-BEARING.** `js/boards.js`
+  (Mood Boards) owns page ids `boards`/`boards-all`/`board-canvas`, **259
+  `.board-*` CSS classes** and ~400 `boards*`/`_boards*` globals. These are
+  classic scripts in ONE lexical scope, so a top-level `const BOARD_NAME` or
+  a `.board-item` class here is a parse error that takes the whole app down,
+  not a naming nuisance. `tb` for JS, `.tb-` for CSS, `tb-` for page ids.
+  Firestore names do not share JS scope, so the collections keep `board_`.
+  A test asserts no `board-` class can reach the DOM from this file.
+- **The audience is mirrored, not shared.** `BOARD_USERS`/`BOARD_OWNERS` by
+  username in `js/auth.js`; `isBoardUser()`/`isBoardOwner()` by EMAIL in
+  `firestore.rules`. `tests/theboard.test.js` fails if they name different
+  people — the `isPaidPRApprover()` guard, again. **Board owner is not the
+  app's `owner` role**: it is who may override a lock.
+- **`designer` is a new role (Saim).** No existing role fit: `manager` hands
+  over POs, gate passes, HRM and the store; `viewer` gives a fixed 3-button
+  phone nav with no More sheet. Scoped in `showPage` to `tb-*` + the chrome
+  pages. **Daniyal's scope gained `tb-*`** — without that edit to
+  `js/shared.js` he could not reach the tab at all, since his role rewrites
+  every non-`mkt-` id.
+- **Daniyal's phone nav changed**: `#mob-nav` is a fixed 5-column grid, so
+  Inventory Intel moved behind a More sheet rather than becoming a squeezed
+  sixth button. Nothing he could reach before is unreachable.
+- **No `board_notifications` collection.** The Board writes into
+  `hrm_notifications` like Marketing does, so it inherits the bell and the
+  badge for free. **The price: `_hrmNotifCardHTML` prints `title`/`message`
+  into HTML RAW**, so every row goes through `tbNotifPayload()`, which
+  escapes both. Nothing may bypass it; a test holds it.
+- **`_tbDay`, never `toISOString().slice(0,10)`.** The latter is UTC and in
+  PKT names the PREVIOUS day between midnight and 5am. Three live call sites
+  in this repo already have that bug (listed in `BOARD.md`, deliberately not
+  fixed here).
+- **`firebase.json` + `.firebaserc` are new**, scoped to firestore rules and
+  indexes ONLY — no `hosting` key (a deploy must not touch Netlify) and no
+  `database` key (RTDB rules still go in by hand). `firebase deploy --only
+  firestore` replaces the Console paste.
+
+**Phase 2 (items, lists, Dashboard cards 1-8, the drawer, the seed).**
+
+- **Every DECISION is a pure function and the writers are thin wrappers.**
+  `tbParseQuickAdd`, `tbNewItem`, `tbItemPatch`, `tbVisibilityFor`,
+  `tbHandoverPlan`, `tbDonePlan` and the eight Dashboard selectors take
+  arguments and return values, so a rule about what an item becomes is
+  assertable with no database and exists exactly once.
+- **An item and its activity row land in ONE batch.** Counting the writes
+  does NOT prove this -- splitting the log into its own `setDoc` still
+  totals two. The assertion has to read the batch's CONTENTS, which was
+  found by breaking it and watching the first version pass.
+- **`0 || 9` is 9.** `_TB_KIND_ORDER.gate` is 0, so a `||` default sorted
+  gates LAST -- the exact opposite of "gates first". Caught by a test, not
+  by reading. Any rank table with a zero needs `!= null`, not `||`.
+- **`js/shared.js` defines its own `showToast`, which SHADOWS the harness
+  stub.** So `state.toasts` is ALWAYS EMPTY in any suite that loads
+  shared.js, and a test asserting on it passes vacuously. Capture toasts
+  explicitly after load instead (`tests/theboard.test.js`, `catchToasts`).
+  This affects every suite in the repo that loads shared.js, not just this
+  one.
+- **Row titles WRAP to two lines rather than ellipsizing.** The class
+  matches the layout probe's `[class*="-row"]` selector, and an ellipsized
+  element ALWAYS reports `scrollWidth > clientWidth` -- so it failed at
+  1280px and 420px. Renaming the class to dodge the check would have hidden
+  every real overflow in those rows too. Wrapping is also better here: the
+  seeded milestone titles are long enough that one truncated line is a task
+  you cannot read. MEASURED both ways -- a title that cannot shrink
+  overflows the row by 361px at 420px and the probe names it.
+- **`min-width:0` stopped being load-bearing once the title wrapped**, and
+  the comment claiming it was got corrected rather than left standing.
+  Checked by removing it.
+- **The seed is idempotent by DETERMINISTIC ID** (`tb_<lane>_<slug>`), not
+  by "does a row with this title exist", and a re-run never touches `date`,
+  `status`, `steps`, `notes`, `myDay`, `assigneeUids`, `locked` or
+  `dateHistory` -- so re-seeding after someone moved a date does not move it
+  back. It requires `firebase-admin` INSIDE the run, not at the top, because
+  CI installs nothing and a top-level require would make it untestable.
+
+**Phase 3 (the calendar: month + week, filters, drag).** Rows-by-person
+and the unscheduled tray are phase 5.
+
+- **The drag captures the pointer LAZILY, past a 4px threshold**, and the
+  tracking is on the DOCUMENT. This is `js/boards.js`'s hardest-won lesson
+  applied from the start rather than after the sixth report: an eager
+  `setPointerCapture` RETARGETS the following `click` to the capturing
+  element. Verified by removing the threshold -- the click stops opening
+  the drawer, which is the bug in its purest form.
+- **`tbMovePlan` is the lock model in ONE pure function** -- refused with a
+  reason, or a patch plus history plus who to tell -- so the drag, the
+  keyboard and anything added later cannot disagree about what a move is.
+  A board owner's override is written into the ACTIVITY PAYLOAD, not only
+  said in a toast.
+- **The drag is DRIVEN in the test, not grepped.** `_tbDayFromPoint` was
+  extracted precisely so it is the one part a test replaces; everything
+  else -- threshold, capture, document tracking, drop, batch, notify --
+  runs for real. Asserting the helpers would have proved only the helpers.
+- **The layout probe caught a real dark-mode bug on its first run**: the
+  padlock on a GATE pill inherited `var(--text)` while the pill is
+  `var(--dark)`, which INVERTS -- 1.11:1 in light, 1.01:1 in dark. The rule
+  this app keeps relearning: **anything painted on `--dark` takes its ink
+  from `--on-dark`**. It also caught a marker label crushed to **1px** in a
+  ~50px phone day square.
+- **What that fragment does NOT hold, checked by breaking it:** the pill
+  title's `min-width:0`. The pill clips its own content, so an overlong
+  title ellipsizes rather than overflowing anything measurable. The INK is
+  guarded (a gate title painted in its own chip colour fails at 1:1 and
+  names it); the flex geometry is not, and the CSS comment says so rather
+  than leaving the claim standing. **Phase 2's row title had the same
+  shape** -- two rounds running, `min-width:0` turned out not to be what
+  the probe was watching.
+- **The week starts Monday** (Pakistan's weekend is Sat/Sun), and **a month
+  gets the rows it needs** rather than a fixed six. A spill day from a
+  neighbouring month is dimmed but still a drop target, or the 1st of next
+  month is unreachable from the month you are on.
+- **"Me" is what you are ON, not what you own**, and "everyone" still never
+  shows someone else's PRIVATE item -- the rules would refuse it and the UI
+  has to agree.
+- A test regex of `/class="tb-day/` counted **35 for 7 cells**: `tb-dayhead`,
+  `tb-daynum`, `tb-daymark`, `tb-dayadd` and `tb-daylist` all start with it.
+  **Any class-prefix count needs a boundary.**
+
+**A layout fragment that proved nothing, and how it showed up.** The first
+`smoke-layout` fragment for the rail PASSED two deliberate breaks — covering
+the rail, and painting the active tab's ink the same colour as its chip.
+Neither is a probe limitation: **`js/auth.js` declares `session` at top
+level, so it CLOBBERS the harness's `session` option when it loads**, the
+gate failed closed and the fragment was measuring the module's "you do not
+have access" div — one element, no buttons, no contrast problem. Set
+`session` with `app.run(...)` AFTER `loadApp`, the way every logic suite
+does. With that fixed the ink break fails at 1:1 naming `tb-railbtn on`.
+**This is the "fragment measuring itself" trap in a new place — confirm a
+break actually bites before believing a fragment has teeth.**
 ## Fabric issue → Embellishment job (21 Sept 2026)
 
 Afnan: *"after issue registry the data is landed in embellishment department

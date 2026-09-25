@@ -38,6 +38,35 @@ service cloud.firestore {
     // notice — nothing else. Mirror in js/patterns.js
     // _PATTERN_CUTTING_USERS.
     function isPatternCutting() { return signedIn() && userEmail() == 'uzaib@groovy.op'; }
+    // The Board (Sept 2026). Mirrors BOARD_USERS / BOARD_OWNERS in
+    // js/auth.js BY EMAIL; tests/theboard.test.js fails if the two lists
+    // ever disagree. isBoardOwner() is NOT the app's `owner` role -- it is
+    // who may override a lock, manage access and run the seed. Same two
+    // people today, kept separate so that stays a decision.
+    function isBoardUser() {
+      return signedIn() && userEmail() in
+        ['ammar@groovy.op','afnan@groovy.op','daniyal@groovy.op','mustafa@groovy.op','saim@groovy.op'];
+    }
+    function isBoardOwner() {
+      return signedIn() && userEmail() in ['ammar@groovy.op','afnan@groovy.op'];
+    }
+    // Is the caller the admin of this list? Used by the item update rule so
+    // a list admin can edit work they did not create. Guarded on the id
+    // being a real string, because an item with listId == null must not
+    // build a get() path ending in `null`.
+    function tbListAdmin(listId) {
+      return listId is string
+        && exists(/databases/$(database)/documents/board_lists/$(listId))
+        && get(/databases/$(database)/documents/board_lists/$(listId)).data.adminUid == request.auth.uid;
+    }
+    // Can the caller read the parent item? A comment or an activity row on
+    // a private item must be no more readable than the item itself -- the
+    // same get()-the-parent rule the mood_boards sub-collections use.
+    function tbCanReadItem(itemId) {
+      return exists(/databases/$(database)/documents/board_items/$(itemId))
+        && ( get(/databases/$(database)/documents/board_items/$(itemId)).data.visibility == 'shared'
+             || get(/databases/$(database)/documents/board_items/$(itemId)).data.ownerUid == request.auth.uid );
+    }
     // Store Accounts (Sept 2026): Raees enters, owners enter and administer.
     // Mirror in js/store-accounts.js _acctCanEntry().
     function isStoreAccounts() { return isOwner() || (signedIn() && userEmail() == 'raees@groovy.op'); }
@@ -687,5 +716,103 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if isOwner();
     }
+
+    // ══ The Board (Sept 2026) ═══════════════════════════════════════════
+    // One object: an item. An item with a date is on the calendar, an item
+    // in a list is a to-do, an item can be both. See BOARD.md.
+    //
+    // NOTE FOR THE CLIENT, because rules are not a query filter: every read
+    // rule below is a TWO-CLAUSE condition, so a single broad query whose
+    // safety depends on a field outside its where() is REJECTED outright
+    // rather than silently returning less. Each clause therefore gets its
+    // own single-field query, merged client-side -- exactly what
+    // loadNotesData() and loadBoardsData() already do.
+
+    // board_config/{doc}: the launch markers the calendar draws. Read by
+    // every Board user, written by a Board owner.
+    match /board_config/{doc} {
+      allow read:  if isBoardUser();
+      allow write: if isBoardOwner();
+    }
+
+    // board_lists/{id}: a shared list has an admin and members; a private
+    // list has only its admin. Query as: kind=='shared' + memberUids
+    // array-contains uid, OR adminUid == uid.
+    match /board_lists/{id} {
+      allow read: if isBoardUser()
+        && ( (resource.data.kind == 'shared' && request.auth.uid in resource.data.memberUids)
+             || request.auth.uid == resource.data.adminUid );
+      allow create: if isBoardUser()
+        && request.resource.data.adminUid == request.auth.uid;
+      allow update, delete: if isBoardUser()
+        && (request.auth.uid == resource.data.adminUid || isBoardOwner());
+    }
+
+    // board_items/{id}: the whole product. Query as: visibility=='shared',
+    // OR ownerUid == uid.
+    match /board_items/{id} {
+      allow read: if isBoardUser()
+        && (resource.data.visibility == 'shared' || request.auth.uid == resource.data.ownerUid);
+
+      // The creator owns it and is on it. Both halves matter: an item
+      // nobody is assigned to would never appear on any calendar.
+      allow create: if isBoardUser()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.auth.uid in request.resource.data.assigneeUids;
+
+      // THE LOCK IS THE POINT OF THE WHOLE PRODUCT, and it is enforced
+      // here rather than in the UI: on a locked item only the locker (or a
+      // Board owner) may change `date` or `dueAt`. Everything else --
+      // comments, steps, notes, files, status, assignees -- stays open to
+      // the people doing the work. Locked is not frozen; it means one
+      // person moves the date.
+      //
+      // The third clause stops a member from re-pointing `lockedBy` at
+      // themselves and walking through the second.
+      allow update: if isBoardUser()
+        && ( request.auth.uid in resource.data.assigneeUids
+             || request.auth.uid == resource.data.ownerUid
+             || tbListAdmin(resource.data.get('listId', null))
+             || isBoardOwner() )
+        && ( resource.data.get('locked', false) != true
+             || request.auth.uid == resource.data.get('lockedBy', '')
+             || isBoardOwner()
+             || ( request.resource.data.get('date', null) == resource.data.get('date', null)
+                  && request.resource.data.get('dueAt', null) == resource.data.get('dueAt', null) ) )
+        && ( request.resource.data.get('lockedBy', null) == resource.data.get('lockedBy', null)
+             || request.auth.uid == request.resource.data.get('lockedBy', '')
+             || isBoardOwner() );
+
+      allow delete: if isBoardUser()
+        && (request.auth.uid == resource.data.ownerUid || isBoardOwner())
+        && ( resource.data.get('locked', false) != true
+             || request.auth.uid == resource.data.get('lockedBy', '')
+             || isBoardOwner() );
+
+      // Comments: readable exactly as far as the item is. Editing and
+      // deleting are your own only; a Board owner may delete one for
+      // moderation, matching the fabricin/loans pattern elsewhere here.
+      match /comments/{c} {
+        allow read:   if isBoardUser() && tbCanReadItem(id);
+        allow create: if isBoardUser() && request.resource.data.authorUid == request.auth.uid;
+        allow update: if isBoardUser() && resource.data.authorUid == request.auth.uid;
+        allow delete: if isBoardUser() && (resource.data.authorUid == request.auth.uid || isBoardOwner());
+      }
+
+      // Activity is APPEND-ONLY -- the same principle as fabric_movements
+      // and the mood-board activity feed. A log that can be edited is not
+      // a log, and "ammar overrode a lock" has to survive whoever it
+      // inconveniences.
+      match /activity/{a} {
+        allow read:   if isBoardUser() && tbCanReadItem(id);
+        allow create: if isBoardUser() && request.resource.data.byUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+    // NOTE: The Board writes its notifications into hrm_notifications
+    // (already `signedIn()` above) rather than a collection of its own, so
+    // it inherits the existing bell and unread badge. There is deliberately
+    // no board_notifications match block -- see _tbNotify in
+    // js/theboard.js.
   }
 }

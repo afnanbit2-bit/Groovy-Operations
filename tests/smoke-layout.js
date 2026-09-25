@@ -105,6 +105,119 @@ function _acctFixture(){
 // node harness's stub DOM records but does not put into the markup — the
 // hydration itself is covered by tests/profile.test.js.
 const FRAGMENTS={
+  // The Board's shell. The rail is NAVIGATION CHROME and the only route
+  // between the four screens, so every button has to be reachable at every
+  // width -- the lesson the Mood Boards tool rail cost. At phone width it
+  // docks as a HORIZONTAL scroller, which is why the rail check in this
+  // file is scoped to the vertical axis: a scrollable axis has moved a
+  // control, not hidden it.
+  // The Dashboard as five people will actually see it: the row is a flexing
+  // title beside fixed meta, which is the Profile-directory shape that
+  // shipped every name at exactly 0px. Long titles on purpose.
+  // The calendar is the densest grid in the app: seven columns of pills,
+  // each a flexing title beside fixed meta, at every width. A day square
+  // at 420px is ~50px wide, which is exactly where a pill title gets
+  // crushed to nothing if its min-width:0 is missing.
+  'the board — calendar':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-calendar',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+    app.run("tbConfig={markers:[{label:'launch',date:'2026-10-30'},{label:'founders out',date:'2026-11-01'}]}");
+    app.run("tbLoaded=true;_tbLoadErrors=[];_tbCalAnchor='2026-10-15';_tbCalView='month';_tbCalFilters={scope:'all',person:'',list:'',lane:'',color:'',hideDone:false}");
+    // The real seed's longest titles, a locked gate, a done one, and FIVE
+    // pills on one day — the square that has to hold the most.
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'ALL ASSETS IN — including website UI assets',date:'2026-10-25',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'b',title:'First run complete + Haris QC',date:'2026-10-25',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-must',assigneeUids:['u-must'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'c',title:'November runbook signed: restock triggers, daily report, cash authority',date:'2026-10-25',kind:'gate',status:'open',ownerUid:'u-must',assigneeUids:['u-must','u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'d',title:'Ad copy + headlines',date:'2026-10-25',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'e',title:'done already',date:'2026-10-25',status:'done',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared'})," +
+      "tbDecodeItem({id:'f',title:'LAUNCH',date:'2026-10-30',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'g',title:'Launch rehearsal: theme preview, stock count, CSR scripts, courier',date:'2026-10-29',kind:'event',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})]");
+    app.run('_tbHydrateQueue=[]');
+    const html=app.run('_tbCalendar()');
+    // Every pill title is hydrated with textContent, so a fragment that did
+    // not fill them in would measure EMPTY boxes and prove nothing — the
+    // trap the rail fragment walked into once already.
+    const q=app.run('_tbHydrateQueue');
+    let out=html;
+    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),
+      '$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    return out;
+  },
+
+  'the board — dashboard':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+    app.run("tbConfig={markers:[{label:'launch',date:'2026-10-30'},{label:'founders out',date:'2026-11-01'}]}");
+    app.run("tbLoaded=true;_tbLoadErrors=[]");
+    // The real seed's longest title, an overdue row, a locked gate, a row
+    // with every piece of meta at once, and a critical one.
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',locked:true,lockedBy:'u-afnan',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan','u-must'],date:'2026-09-20',listId:'l1',commentCount:12,steps:[{id:'1',done:true},{id:'2',done:false},{id:'3',done:false}]})," +
+      "tbDecodeItem({id:'b',title:'ALL ASSETS IN — including website UI assets',status:'open',kind:'gate',locked:true,lockedBy:'u-ammar',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'2026-09-24',listId:'l1',priority:2})," +
+      "tbDecodeItem({id:'c',title:'Walika visit → Jibran procures → dye orders placed (200 kg MOQ per shade)',status:'open',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],date:'2026-09-28',listId:'l1'})," +
+      "tbDecodeItem({id:'d',title:'Denim bulk lands → Mustafa QC',status:'open',kind:'gate',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-must'],date:null,listId:'l1'})," +
+      "tbDecodeItem({id:'e',title:'done already',status:'done',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'2026-09-24'})]");
+    app.run("_tbHydrateQueue=[]");
+    const html=app.run('_tbDashboard()');
+    // The module hydrates every title with textContent, so a fragment that
+    // did not fill them in would measure EMPTY boxes and prove nothing —
+    // the trap the rail fragment already walked into once. Fill them here,
+    // in the markup, the way the link-preview fragment does.
+    const q=app.run('_tbHydrateQueue');
+    let out=html;
+    q.forEach(x=>{ out=out.replace('id="'+x.id+'"','id="'+x.id+'"')
+      .replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    return out;
+  },
+
+  // The drawer: a fixed panel over the page, with a disabled date field
+  // (someone else holds the lock) and the "was" date beside it.
+  'the board — item drawer':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-dani',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-dani'],color:'moss'}]");
+    app.run("tbLoaded=true;_tbLoadErrors=[];tbConfig=null");
+    app.run("tbItems=[tbDecodeItem({id:'i1',title:'Shoot 2: knit + outerwear + henley + washed (Oct 15–16)',status:'open',kind:'gate',locked:true,lockedBy:'u-ammar',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani','u-ammar'],date:'2026-10-16',datePlanned:'2026-10-15',listId:'l1',lane:'shoot',notes:'CYC must be wired by the 5th.',steps:[{id:'1',title:'confirm models',done:true},{id:'2',title:'shot list to Saim',done:false}]})]");
+    app.run("_tbOpenItemId='i1';_tbHydrateQueue=[]");
+    const html=app.run('_tbDrawer()');
+    const q=app.run('_tbHydrateQueue');
+    let out=html;
+    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    return out;
+  },
+
+  'the board — shell and rail':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
+      session:{uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',
+               title:'Co-founder',email:'ammar@groovy.op'},
+      // js/auth.js reads localStorage at load time (the remembered user).
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    // js/auth.js declares `session` at top level, so it CLOBBERS the
+    // harness's session option when it loads. Set it after, the way every
+    // logic suite does -- without this the fragment renders the module's
+    // "you do not have access" message and measures a single div, which
+    // passes every check while proving nothing.
+    app.run("session={uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("tbRenderPage('tb-dash')");
+    return app.el('main-content').innerHTML;
+  },
   'profile page (owner, mixed profiles)':()=>{
     const app=loadApp({
       files:['js/boards.js','js/profile.js'],currentPage:'profile',
