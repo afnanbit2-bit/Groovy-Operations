@@ -7163,6 +7163,54 @@ and the unscheduled tray are phase 5.
   `tb-daynum`, `tb-daymark`, `tb-dayadd` and `tb-daylist` all start with it.
   **Any class-prefix count needs a boundary.**
 
+**Phase 4 (comments, mentions, files, the inbox).** No `firestore.rules`
+change and no new index — the `comments` rule and the `user_profiles`
+self-update rule shipped in phase 1, `hrm_notifications` is already
+`signedIn()`, and the inbox is one `where('forUser','==',u)` sorted in
+memory.
+
+- **THE XSS BOUNDARY HERE IS "ESCAPE FIRST, FORMAT SECOND", and it is a
+  DIFFERENT boundary from js/boards.js's.** Mood Boards stores real HTML
+  and must rebuild it against a tag allow-list; The Board stores PLAIN
+  TEXT, so once `_tbEsc` has run every tag in the output is one
+  `tbRenderBody` wrote and there is nothing left to sanitise. A DOMParser
+  pass here would be theatre — and untestable, since the harness's
+  DOMParser is a tag-soup stub. **The scheme check IS the autolink
+  regex**: only `https?://` can match, so `javascript:` never reaches an
+  href.
+- **Ammar's popover rule, not in the spec: ENTER SELECTS ONLY when
+  exactly one candidate matches or a row has been arrowed to.**
+  `tbMentionAccepts` is the whole rule. A popover that swallows Enter on
+  an ambiguous list picks somebody at random on the author's behalf.
+- **mentionStats is written `set` with `{merge:true}`, never `update`** —
+  a profile row that does not exist yet would fail an `updateDoc` and take
+  the comment down with it; carrying `uid` satisfies the create clause as
+  well as the update one.
+- **Typing does NOT repaint.** One repaint rebuilds `main-content`
+  wholesale, which would destroy the textarea the caret is in. The
+  popover repaints ONE element — Notes' block-editor reason.
+- **Files are CLOUDINARY and the thumbnail is a DELIVERY TRANSFORM**, not
+  the spec's client-side 320px JPEG: no second artefact to keep in step,
+  nothing to migrate, the original never rewritten. 25 MB is OUR cap,
+  checked before sending; Cloudinary's own refusal is passed through with
+  a line saying that number lives in the account's plan.
+- **The inbox is LIVE from a `startApp` wrap**, so the badge moves on
+  every page. **No listener is a fallback, not a hang**: with no
+  `onSnapshot` bridged it does one `getDocs`, and a refused read renders
+  an error rather than "nothing in your inbox".
+- **A live bug this phase exposed:** `tbHandoverPlan` interpolated the raw
+  UID into its comment body, so the thread would have read "handed over to
+  @u-dani". Nothing could read that thread until phase 4.
+- **`js/shared.js` declares `currentPage` at top level, so it CLOBBERS
+  the harness's `currentPage` option** — exactly as it clobbers `session`.
+  A toast assertion passed VACUOUSLY because of it; found by breaking the
+  seeding and watching the suite stay green. Set it with `app.run` after
+  load. **This affects every suite in the repo that loads shared.js.**
+- **The working tree is CRLF on Windows**, so a multi-line search string
+  written with a bare `\n` matches nothing — a break then reports a clean
+  pass, which reads exactly like "the assertion has no teeth". Normalise,
+  or break one line at a time.
+
 **A layout fragment that proved nothing, and how it showed up.** The first
 `smoke-layout` fragment for the rail PASSED two deliberate breaks — covering
 the rail, and painting the active tab's ink the same colour as its chip.

@@ -554,7 +554,12 @@ function tbItemColorKey(item,lists,userColors){
  *  leaves unless they keep themselves on it, and a note is REQUIRED —
  *  a handover with no reason is how work goes quiet. Allowed on a locked
  *  item, because it changes people, not dates. Pure. */
-function tbHandoverPlan(item,fromUid,toUid,note,keepMe,now){
+/*  `toHandle` arrived in phase 4 and fixed a live bug: this comment body
+ *  interpolated the raw UID, so the thread — which nothing could read
+ *  until phase 4 — would have said "handed over to @u-dani". It is the
+ *  stored `@[handle]` mention token now, so the recipient is a real
+ *  mention chip. Still pure; the caller resolves the handle. */
+function tbHandoverPlan(item,fromUid,toUid,note,keepMe,now,toHandle){
   const it=item||{};
   if(!toUid)return {error:'Pick someone to hand this to.'};
   if(toUid===fromUid)return {error:'That is already you.'};
@@ -566,7 +571,9 @@ function tbHandoverPlan(item,fromUid,toUid,note,keepMe,now){
   return {
     data:{assigneeUids:a,updatedAt:now,lastActivityAt:now},
     activity:{type:'handover',byUid:fromUid,at:now,payload:{toUid:toUid,note:String(note).trim()}},
-    comment:{authorUid:fromUid,body:'handed over to @'+(toUid)+' — '+String(note).trim(),mentionUids:[toUid],createdAt:now},
+    comment:{authorUid:fromUid,
+             body:'handed over to '+(toHandle?'@['+toHandle+']':'you')+' — '+String(note).trim(),
+             mentionUids:[toUid],attachments:[],createdAt:now,editedAt:null},
     notifyUid:toUid,
     note:String(note).trim()
   };
@@ -749,7 +756,11 @@ function _tbDashboard(){
   ].join('');
   const right=[
     _tbCard('assigned by me',R(tbAssignedByMe(tbItems,me))),
-    _tbCard('deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'})
+    _tbCard('deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'}),
+    // Card 9. Cards 10-12 are phase 5; this one is here because spec s13
+    // names the Dashboard inbox as one of the three surfaces a
+    // notification has to reach, which is this phase's definition of done.
+    _tbInboxCard()
   ].join('');
   const empty=(!left&&!right)
     ?'<div class="tb-empty"><div class="tb-empty-h">nothing on the board today</div>'
@@ -828,6 +839,9 @@ function _tbDrawer(){
         +'>'+(it.locked?'&#128274; locked':'&#128275; lock')+'</button>'
       +(it.locked&&!canMove?'<span class="tb-lockwho">locked by '+_tbEsc(lockedBy.name)+'</span>':'')
     +'</div>'
+    // A locked item you cannot move is not a dead end (spec s7.4): the
+    // ask goes into the thread, where the answer belongs.
+    +(it.locked&&!canMove?_tbMoveReqSection(it):'')
     +'<input class="tb-dtitle" id="tb-d-title" value="'+_tbEsc(it.title||'')+'" maxlength="140"'
       +' onchange="window.tbFieldChange(\'title\',this.value)">'
     +'<div class="tb-dmeta">'
@@ -872,6 +886,9 @@ function _tbDrawer(){
         +' oninput="window.tbNotesInput(this.value)">'+_tbEsc(it.notes||'')+'</textarea>'
       +'<div class="tb-savestate" id="tb-d-save"></div>'
     +'</div>'
+    +_tbFilesSection(it)
+    +_tbThreadSection(it)
+    +_tbActivitySection(it)
     +'<div class="tb-dfoot">'
       +'<button class="btn-outline" onclick="window.tbAddToMyDay(\''+_tbEsc(it.id)+'\')">add to my day</button>'
       +'<button class="btn-outline" onclick="window.tbOpenHandover()">hand over</button>'
@@ -881,6 +898,10 @@ function _tbDrawer(){
         ?'<button class="tb-x tb-del" onclick="window.tbDeleteItem(\''+_tbEsc(it.id)+'\')">delete</button>':'')
     +'</div>'
     +'<div id="tb-handover"></div>'
+    // ONE picker for both destinations — _tbPickFor says which — so there
+    // is no second hidden input to keep in step with the first.
+    +'<input type="file" id="tb-filepick" multiple style="display:none"'
+      +' onchange="window.tbFilesPicked(this)">'
   +'</div>';
 }
 
@@ -1139,7 +1160,8 @@ window.tbHandOver=async function(){
   const who=document.getElementById('tb-ho-who');
   const note=document.getElementById('tb-ho-note');
   const keep=document.getElementById('tb-ho-keep');
-  const plan=tbHandoverPlan(it,_tbMe(),who&&who.value,note&&note.value,!!(keep&&keep.checked),_tbNow());
+  const plan=tbHandoverPlan(it,_tbMe(),who&&who.value,note&&note.value,!!(keep&&keep.checked),_tbNow(),
+    tbUser(who&&who.value).handle);
   if(plan.error){ _tbToast(plan.error); return; }
   await _tbTry(async()=>{
     const b=writeBatch(db);
@@ -1149,6 +1171,10 @@ window.tbHandOver=async function(){
     await b.commit();
     _tbApplyLocal(it.id,plan.data);
     it.commentCount=(it.commentCount||0)+1;
+    // The thread is already on screen in phase 4, so put the note in it
+    // rather than waiting for the next read.
+    const th=_tbThreads[it.id];
+    if(th)th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
     _tbNotify({type:'handover',forUid:plan.notifyUid,fromUid:_tbMe(),itemId:it.id,listId:it.listId,
       title:'the board',message:tbUser(_tbMe()).name+' handed you “'+(it.title||'')+'” — '+plan.note});
     _tbToast('handed to '+tbUser(plan.notifyUid).name);
@@ -1193,8 +1219,16 @@ window.tbNewList=async function(kind){
 };
 window.tbOpenList=function(id){ _tbListId=id; _tbRepaint(); };
 window.tbCloseList=function(){ _tbListId=null; _tbRepaint(); };
-window.tbOpenItem=function(id){ _tbOpenItemId=id; _tbRepaint(); };
-window.tbCloseItem=function(){ _tbOpenItemId=null; _tbRepaint(); };
+window.tbOpenItem=function(id){
+  _tbOpenItemId=id;
+  _tbMoveReqOpen=false;_tbShowActivity=false;_tbCloseMentions();
+  _tbRepaint();
+  // The thread is a subcollection, so it is read when a drawer OPENS —
+  // 42 seeded items' threads is not something to pull on every page load.
+  // loadTbThread cannot reject, so this needs no .catch.
+  if(id)loadTbThread(id).then(function(){ if(_tbOpenItemId===id)_tbRepaint(); });
+};
+window.tbCloseItem=function(){ _tbOpenItemId=null; _tbCloseMentions(); _tbRepaint(); };
 
 // ── Notifications ─────────────────────────────────────────────────────
 // Everything goes through here, and here alone — see tbNotifPayload for
@@ -1719,6 +1753,1036 @@ window.tbMoveItem=async function(id,toDay){
   if(!ok)_tbApplyLocal(id,{date:before});
 };
 
+// ══ PHASE 4 — COMMENTS, MENTIONS, FILES, INBOX ════════════════════════
+// The Slack-thread half of the product. Same rule as phases 2 and 3:
+// every DECISION is a pure function and the writers are thin wrappers, so
+// "who hears about this comment" and "does Enter pick a mention" are
+// assertable with no database and no caret.
+
+// ── Markdown-lite ─────────────────────────────────────────────────────
+// THE WHOLE XSS BOUNDARY IS "ESCAPE FIRST, FORMAT SECOND", and it is a
+// DIFFERENT boundary from the one js/boards.js draws. Mood Boards stores
+// real HTML (a contenteditable's innerHTML), so it has to parse that into
+// an inert document and rebuild it against a tag allow-list. The Board
+// stores PLAIN TEXT. Once _tbEsc has run, the string holds no `<`, `>`,
+// `&` or quote the author typed — so every tag in the output is one this
+// function wrote, and there is nothing left to sanitise. A DOMParser pass
+// here would be theatre; it would also be untestable, since the node
+// harness's DOMParser is a tag-soup stub and asserting on it proves only
+// the harness.
+const _TB_BODY_MAX=4000;
+// A sentinel that cannot survive _tbEsc's input: control characters are
+// stripped first, so nothing the author typed can impersonate one.
+const _TB_MD_MARK='\u0000';
+
+/** Comment/notes body → safe HTML. `**bold**`, `*italic*`, `` `code` ``,
+ *  `@[handle]` mentions, http(s) autolinks, newlines. Pure. */
+function tbRenderBody(text){
+  const raw=String(text==null?'':text)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'')
+    .slice(0,_TB_BODY_MAX);
+  let s=_tbEsc(raw);
+  // Code spans are lifted out first: their contents must not then be read
+  // as bold, as a mention or as a link.
+  const code=[];
+  s=s.replace(/`([^`\n]+)`/g,function(m,c){code.push(c);return _TB_MD_MARK+(code.length-1)+_TB_MD_MARK;});
+  s=s.replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+  s=s.replace(/@\[([A-Za-z0-9._-]{1,30})\]/g,function(m,h){
+    const uid=tbHandleMap()[String(h).toLowerCase()];
+    const name=uid?tbUser(uid).name:h;
+    return'<span class="tb-mention" title="@'+_tbEsc(h)+'">@'+_tbEsc(name)+'</span>';
+  });
+  // THE SCHEME CHECK IS THE REGEX. Only `http://` and `https://` can
+  // match at all, so `javascript:` never reaches an href — the same
+  // decision _boardsSafeHref makes, made by construction rather than by a
+  // second function that could be forgotten at one call site.
+  s=s.replace(/https?:\/\/[^\s<]+/g,function(m){
+    const clean=m.replace(/[.,;:!?)\]]+$/,'');
+    return'<a class="tb-link" href="'+clean+'" target="_blank" rel="noopener noreferrer">'
+      +clean+'</a>'+m.slice(clean.length);
+  });
+  s=s.replace(new RegExp(_TB_MD_MARK+'(\\d+)'+_TB_MD_MARK,'g'),function(m,i){
+    return'<code class="tb-code">'+code[Number(i)]+'</code>';
+  });
+  return s.replace(/\r?\n/g,'<br>');
+}
+
+// ── Mentions (spec §9) ────────────────────────────────────────────────
+const _TB_MENTION_ROWS=6;     // spec: the popover shows at most 6
+const _TB_MENTION_IDLE=5;     // spec: typing nothing shows the top 5
+
+/** Is the caret inside an `@…` token, and what has been typed after it?
+ *  Extracted because it is the one part of the popover that needs a
+ *  caret — so a test drives the rule and the handler stays a wrapper. */
+function tbMentionQuery(text,caret){
+  const s=String(text==null?'':text);
+  const c=Math.max(0,Math.min(Number(caret||0),s.length));
+  const m=/(^|[\s(\[])@([A-Za-z0-9._-]*)$/.exec(s.slice(0,c));
+  if(!m)return null;
+  return{at:c-m[2].length-1,prefix:m[2]};
+}
+
+/** Replace the `@…` under the caret with a `@[handle] ` token. Pure. */
+function tbMentionInsert(text,caret,handle){
+  const s=String(text==null?'':text);
+  const c=Math.max(0,Math.min(Number(caret||0),s.length));
+  const q=tbMentionQuery(s,c);
+  if(!q)return{text:s,caret:c};
+  const tok='@['+String(handle||'')+'] ';
+  return{text:s.slice(0,q.at)+tok+s.slice(c),caret:q.at+tok.length};
+}
+
+const _tbFirstName=u=>String((u&&u.name)||'').trim().split(/\s+/)[0].toLowerCase();
+
+/** Who to offer, in what order (spec §9). Pure — the ranking is read off
+ *  the CALLER's own mentionStats, so it is personal to whoever is typing.
+ *
+ *  score = count × recencyWeight, + 2 if they are on this item, + 1 if
+ *  they have already spoken in this thread. Ties break alphabetically. */
+function tbMentionCandidates(prefix,ctx){
+  const c=ctx||{};
+  const me=c.me||'';
+  const p=String(prefix==null?'':prefix).toLowerCase();
+  const stats=c.stats||{};
+  const now=Number(c.now||Date.now());
+  const rows=(c.users||[]).filter(function(u){
+    if(!u||!u.uid||!u.handle)return false;
+    // Self is excluded BY DEFAULT and allowed when the handle is typed in
+    // full (spec §9) — writing a note to yourself is a real thing to do,
+    // it just should not be the first name the popover suggests.
+    if(u.uid===me&&p!==String(u.handle).toLowerCase())return false;
+    if(!p)return true;
+    return _tbFirstName(u).indexOf(p)===0||String(u.handle).toLowerCase().indexOf(p)===0;
+  }).map(function(u){
+    const st=stats[u.uid]||{};
+    const days=st.lastAt?Math.max(0,(now-Number(st.lastAt))/86400000):0;
+    let score=Number(st.count||0)*(1/(1+days/14));
+    if((c.assigneeUids||[]).indexOf(u.uid)>-1)score+=2;
+    if((c.threadUids||[]).indexOf(u.uid)>-1)score+=1;
+    return Object.assign({},u,{score:score});
+  });
+  rows.sort(function(a,b){
+    return (b.score-a.score)||_tbFirstName(a).localeCompare(_tbFirstName(b));
+  });
+  return rows.slice(0,p?_TB_MENTION_ROWS:_TB_MENTION_IDLE);
+}
+
+/** AMMAR'S RULE, added at phase 0 and not in the spec: ENTER SELECTS ONLY
+ *  when exactly one candidate matches, or a row has been arrowed to.
+ *  Otherwise Enter belongs to the textarea and types a newline — because
+ *  a popover that swallows Enter on an ambiguous list picks somebody at
+ *  random on the author's behalf, and the author does not find out until
+ *  the wrong person answers. Returns the index Enter would pick, or -1
+ *  for "leave Enter alone". Pure, and the entire rule lives here. */
+function tbMentionAccepts(list,idx){
+  const n=((list||[]).length)|0;
+  const i=Number(idx);
+  if(i>=0&&i<n)return i;
+  return n===1?0:-1;
+}
+
+/** Bare `@handle` → the stored `@[handle]` token, plus the uids it names.
+ *  AN UNKNOWN HANDLE STAYS LITERAL — @baber is a real person, just not on
+ *  the board — which is the same call tbParseQuickAdd already makes. */
+function tbResolveMentions(text,handleMap){
+  const map=handleMap||{};
+  const uids=[];
+  const body=String(text==null?'':text).replace(
+    /@\[([A-Za-z0-9._-]{1,30})\]|@([A-Za-z0-9._-]{1,30})/g,
+    function(m,tok,bare){
+      const h=String(tok||bare||'').toLowerCase();
+      const uid=map[h];
+      if(!uid)return m;
+      if(uids.indexOf(uid)<0)uids.push(uid);
+      return'@['+h+']';
+    });
+  return{body:body,mentionUids:uids};
+}
+
+/** mentionStats lives on the AUTHOR's own profile
+ *  (`user_profiles/{uid}.tbMentionStats`) because it is how THEIR popover
+ *  ranks — nobody else reads it — and user_profiles already carries a
+ *  self-update rule, so this needs no change to firestore.rules. Pure. */
+function tbMentionBump(stats,uids,now){
+  const out=Object.assign({},stats||{});
+  const at=Number(now||Date.now());
+  (uids||[]).forEach(function(u){
+    if(!u)return;
+    const cur=out[u]||{};
+    out[u]={count:Number(cur.count||0)+1,lastAt:at};
+  });
+  return out;
+}
+
+// ── Files (spec §8.3, with Ammar's phase-0 amendment) ─────────────────
+// The spec asked for Firebase Storage and a client-side 320px thumbnail
+// stored alongside the original. This ships CLOUDINARY with the thumbnail
+// as a DELIVERY TRANSFORM instead: Cloudinary is what every other upload
+// in this app already uses, and a derived thumbnail means no second
+// artefact to keep in step with the first, nothing to migrate for a file
+// uploaded before this, and the original is never rewritten.
+const TB_MAX_UPLOAD_MB=25;
+const _TB_MAX_UPLOAD=TB_MAX_UPLOAD_MB*1024*1024;
+
+function tbTooBig(file){ return !!(file&&Number(file.size)>_TB_MAX_UPLOAD); }
+function tbFileSize(n){
+  const b=Number(n||0);
+  if(b<1024)return b+' B';
+  if(b<1024*1024)return Math.round(b/1024)+' KB';
+  return (Math.round(b/1024/1024*10)/10)+' MB';
+}
+/** A Cloudinary response → the attachment record we store. Pure. */
+function tbAttachment(res,file,uid,now){
+  const d=res||{},f=file||{};
+  const at=Number(now||Date.now());
+  return{
+    id:String(d.public_id||('tbf'+at)),
+    name:String(f.name||d.original_filename||'file').slice(0,120),
+    url:String(d.secure_url||''),
+    mime:String(f.type||''),
+    size:Number(f.size||d.bytes||0),
+    width:Number(d.width||0)||null,
+    height:Number(d.height||0)||null,
+    uploadedByUid:String(uid||''),
+    at:at
+  };
+}
+/** The thumbnail, DERIVED at render. '' means "no preview" — the file
+ *  renders as a chip with its size, which is honest for a .zip. Pure. */
+function tbThumbUrl(att,w){
+  const a=att||{},u=String(a.url||'');
+  const width=Number(w||320);
+  if(!/^https:\/\/res\.cloudinary\.com\//.test(u)||u.indexOf('/upload/')===-1)return'';
+  if(/^image\//.test(String(a.mime||''))||/\.(png|jpe?g|gif|webp|avif|bmp)($|\?)/i.test(u))
+    return u.replace('/upload/','/upload/f_auto,q_auto,c_fit,w_'+width+'/');
+  // Cloudinary rasterises page 1 of a PDF. BEST EFFORT BY DESIGN: the
+  // <img> carries an onerror that falls back to the chip, so an account
+  // without PDF delivery turned on degrades rather than showing a broken
+  // picture. (js/boards.js records that this setting is off by default.)
+  if(/\.pdf($|\?)/i.test(u)||String(a.mime||'')==='application/pdf')
+    return u.replace('/upload/','/upload/pg_1,c_fit,w_'+width+'/').replace(/\.pdf($|\?)/i,'.jpg$1');
+  return'';
+}
+/** Only an anchored Cloudinary https URL ever reaches an href or an src —
+ *  `res.cloudinary.com.evil.test` must not pass. The rule _profPhotoUrl
+ *  and _boardsCoverUrl already hold, written here rather than shared
+ *  because js/profile.js loads before this file. */
+function tbFileHref(att){
+  const u=String((att&&att.url)||'');
+  return /^https:\/\/res\.cloudinary\.com\//.test(u)?u:'';
+}
+
+async function _tbUpload(file){
+  if(tbTooBig(file))
+    throw new Error(String((file&&file.name)||'That file')+' is '+tbFileSize(file&&file.size)
+      +' — the board caps uploads at '+TB_MAX_UPLOAD_MB+' MB.');
+  const fd=new FormData();
+  fd.append('file',file);
+  fd.append('upload_preset','groovy-ops');
+  const r=await fetch('https://api.cloudinary.com/v1_1/deww4lpym/auto/upload',{method:'POST',body:fd});
+  const d=await r.json();
+  if(!d||!d.secure_url){
+    let m=(d&&d.error&&d.error.message)||'Upload failed';
+    // Cloudinary's own words first, then where THAT number lives — the
+    // account's plan, which nothing in this app can raise.
+    if(/file size|too large|maximum is/i.test(m))
+      m+=" (that is Cloudinary's own cap for this account's plan, not the "
+        +TB_MAX_UPLOAD_MB+' MB one the board sets)';
+    throw new Error(m);
+  }
+  return d;
+}
+
+// ── A comment (spec §7.4, §9) ─────────────────────────────────────────
+/** What posting a comment becomes: the document, the patch to the item,
+ *  and who hears about it. Pure. */
+function tbCommentPlan(item,o){
+  const it=item||{},n=o||{};
+  const uid=String(n.uid||'');
+  const files=Array.isArray(n.attachments)?n.attachments:[];
+  const r=tbResolveMentions(n.body,n.handleMap);
+  const body=String(r.body||'').trim().slice(0,_TB_BODY_MAX);
+  if(!body&&!files.length)return{error:'Write something first.'};
+  const now=Number(n.now||Date.now());
+  const notify=[],seen={};
+  seen[uid]=1;                                  // never notify yourself
+  r.mentionUids.forEach(function(u){
+    if(u&&!seen[u]){seen[u]=1;notify.push({type:'mention',uid:u});}
+  });
+  // Everyone already in this conversation hears about a new comment —
+  // ONCE. Someone who was MENTIONED has already been told, and two bell
+  // rows for one comment is what makes a bell worth ignoring.
+  const parties=(it.assigneeUids||[])
+    .concat(it.ownerUid?[it.ownerUid]:[])
+    .concat(n.threadUids||[]);
+  parties.forEach(function(u){
+    if(u&&!seen[u]){seen[u]=1;notify.push({type:'comment',uid:u});}
+  });
+  return{
+    comment:{authorUid:uid,body:body,mentionUids:r.mentionUids,
+             attachments:files,createdAt:now,editedAt:null},
+    data:{commentCount:Number(it.commentCount||0)+1,lastActivityAt:now,updatedAt:now},
+    notify:notify,
+    mentionUids:r.mentionUids
+  };
+}
+
+/** REQUEST MOVE (spec §7.4). A locked item the caller cannot move is not
+ *  a dead end: it posts a templated comment mentioning the locker, so the
+ *  ask lands in the thread where the answer belongs rather than in a
+ *  WhatsApp message nobody can find later. Pure. */
+function tbMoveRequestPlan(item,o){
+  const it=item||{},n=o||{};
+  const uid=String(n.uid||'');
+  if(!it.locked||!it.lockedBy)return{error:'This is not locked — you can move it yourself.'};
+  if(it.lockedBy===uid)return{error:'You hold the lock — move it yourself.'};
+  const to=String(n.toDay||'');
+  if(!_tbValidDay(to))return{error:'Pick the date you want it moved to.'};
+  const reason=String(n.reason||'').trim().slice(0,200);
+  if(!reason)return{error:'Say why — a request with no reason is one more thing to chase.'};
+  const h=String(n.lockerHandle||'');
+  const now=Number(n.now||Date.now());
+  const body=(h?'@['+h+'] ':'')+'requesting move to '+to+' — reason: '+reason;
+  return{
+    comment:{authorUid:uid,body:body,mentionUids:[it.lockedBy],
+             attachments:[],createdAt:now,editedAt:null},
+    data:{commentCount:Number(it.commentCount||0)+1,lastActivityAt:now,updatedAt:now},
+    notify:[{type:'move_request',uid:it.lockedBy}],
+    toDay:to,reason:reason
+  };
+}
+
+/** One activity row → one sentence. Pure, so the log reads the same
+ *  wherever it is drawn. An unknown type says so rather than rendering a
+ *  blank line — a log with holes in it is worse than a log that admits
+ *  it does not know a verb. */
+function tbActivityLine(a,dayLabel){
+  const r=a||{},p=r.payload||{};
+  const who=tbUser(r.byUid).name;
+  const D=d=>(typeof dayLabel==='function'?dayLabel(d):(d||'no date'));
+  switch(r.type){
+    case'created':   return who+' created this';
+    case'moved':     return who+' moved it '+D(p.from)+' → '+D(p.to)
+                            +(p.override?' (overrode the lock)':'')
+                            +(p.reason?' — '+p.reason:'');
+    case'date_set':  return who+' set the date to '+D(p.to);
+    case'assigned':  return who+' set who is on it: '
+                            +((p.to||[]).map(u=>tbUser(u).name).join(', ')||'nobody');
+    case'handover':  return who+' handed it to '+tbUser(p.toUid).name
+                            +(p.note?' — '+p.note:'');
+    case'done':      return who+' marked it done';
+    case'reopened':  return who+' reopened it';
+    case'locked':    return who+' locked the date';
+    case'unlocked':  return who+' unlocked the date';
+    case'step_done': return who+' ticked “'+(p.title||'a step')+'”';
+    case'file_added':return who+' added '+(p.name||'a file');
+    case'comment':   return who+' commented';
+    default:         return who+' changed something';
+  }
+}
+
+// ── The thread ────────────────────────────────────────────────────────
+// Comments and activity are subcollections, so they are read when a
+// drawer OPENS rather than with the board — 42 seeded items' threads is
+// not something to pull on every page load.
+let _tbThreads={};            // itemId -> {comments:[], activity:[], err:false}
+let _tbThreadLoading={};
+
+/** CANNOT REJECT, for the same reason loadTbData cannot: a drawer stuck
+ *  on "loading…" with nothing on screen to say why is the failure this
+ *  codebase keeps recording. */
+async function loadTbThread(itemId,force){
+  const id=String(itemId||'');
+  if(!id)return;
+  if(_tbThreads[id]&&!force)return;
+  if(_tbThreadLoading[id])return _tbThreadLoading[id];
+  _tbThreadLoading[id]=(async function(){
+    const r=await Promise.allSettled([
+      getDocs(query(collection(db,'board_items',id,'comments'),orderBy('createdAt','asc'))),
+      getDocs(query(collection(db,'board_items',id,'activity'),orderBy('at','asc')))
+    ]);
+    const take=x=>x.status==='fulfilled'?x.value.docs.map(d=>Object.assign({_id:d.id},d.data())):null;
+    const cs=take(r[0]),as=take(r[1]);
+    if(cs===null)console.warn('[the board] comments read failed',r[0].reason);
+    if(as===null)console.warn('[the board] activity read failed',r[1].reason);
+    _tbThreads[id]={comments:cs||[],activity:as||[],err:cs===null};
+    _tbThreadLoading[id]=null;
+  })();
+  return _tbThreadLoading[id];
+}
+function _tbThread(id){ return _tbThreads[String(id||'')]||null; }
+/** Who has already spoken here — the +1 in the mention ranking, and the
+ *  people a plain 'comment' notification goes to. */
+function tbThreadUids(thread){
+  const out=[];
+  ((thread&&thread.comments)||[]).forEach(function(c){
+    if(c&&c.authorUid&&out.indexOf(c.authorUid)<0)out.push(c.authorUid);
+  });
+  return out;
+}
+
+function _tbAgo(ts){
+  const d=Date.now()-Number(ts||0);
+  if(d<60000)return'just now';
+  if(d<3600000)return Math.floor(d/60000)+'m ago';
+  if(d<86400000)return Math.floor(d/3600000)+'h ago';
+  return Math.floor(d/86400000)+'d ago';
+}
+
+// ── Composer state ────────────────────────────────────────────────────
+// Typing must NOT repaint the page. The board's one repaint rebuilds
+// main-content wholesale, which would destroy the textarea the caret is
+// in — the same reason Notes' block editor mutates in place. So the draft
+// lives here, the popover repaints ONE element, and _tbRepaint restores
+// what was typed.
+let _tbCompDraft={};          // itemId -> the text being written
+let _tbCompFiles={};          // itemId -> attachments staged for it
+let _tbCompFocus=false;
+let _tbMentionList=[];
+let _tbMentionIdx=-1;
+let _tbShowActivity=false;
+let _tbMoveReqOpen=false;
+
+function _tbMyStats(){
+  const me=_tbMe();
+  const p=_tbProfiles().filter(x=>x&&x.uid===me)[0];
+  return (p&&p.tbMentionStats)||{};
+}
+/** The candidate pool: Board users with a resolvable profile. Sami — one
+ *  letter from Saim — can never appear, because tbHandleMap only ever
+ *  returns Board usernames. */
+function _tbMentionPool(){
+  const map=tbHandleMap();
+  return Object.keys(map).map(function(h){
+    const u=tbUser(map[h]);
+    return{uid:map[h],handle:h,name:u.name,initial:u.initial};
+  });
+}
+
+function _tbMentionHTML(){
+  if(!_tbMentionList.length)return'';
+  return _tbMentionList.map(function(u,i){
+    return'<button class="tb-mrow'+(i===_tbMentionIdx?' on':'')+'" type="button"'
+      +' onmousedown="event.preventDefault()" onclick="window.tbMentionPick('+i+')">'
+      +'<span class="tb-av">'+_tbEsc(u.initial)+'</span>'
+      +'<span class="tb-mname">'+_tbEsc(u.name)+'</span>'
+      +'<span class="tb-mhandle">@'+_tbEsc(u.handle)+'</span></button>';
+  }).join('');
+}
+function _tbPaintMentions(){
+  const host=document.getElementById('tb-mentions');
+  if(!host)return;
+  host.innerHTML=_tbMentionHTML();
+  if(host.classList)host.classList[_tbMentionList.length?'add':'remove']('on');
+}
+function _tbCloseMentions(){
+  _tbMentionList=[];_tbMentionIdx=-1;_tbPaintMentions();
+}
+
+window.tbCompInput=function(el){
+  if(!el)return;
+  const id=_tbOpenItemId;
+  if(!id)return;
+  _tbCompDraft[id]=el.value;
+  const q=tbMentionQuery(el.value,el.selectionStart!=null?el.selectionStart:el.value.length);
+  if(!q){ _tbCloseMentions(); return; }
+  const it=tbItems.filter(x=>x.id===id)[0]||{};
+  _tbMentionList=tbMentionCandidates(q.prefix,{
+    me:_tbMe(),users:_tbMentionPool(),stats:_tbMyStats(),
+    assigneeUids:it.assigneeUids||[],threadUids:tbThreadUids(_tbThread(id)),now:_tbNow()
+  });
+  _tbMentionIdx=-1;              // nothing is arrowed to yet — see tbMentionAccepts
+  _tbPaintMentions();
+};
+
+window.tbMentionPick=function(i){
+  const el=document.getElementById('tb-comp');
+  const u=_tbMentionList[i];
+  if(!el||!u)return;
+  const r=tbMentionInsert(el.value,el.selectionStart!=null?el.selectionStart:el.value.length,u.handle);
+  el.value=r.text;
+  if(_tbOpenItemId)_tbCompDraft[_tbOpenItemId]=r.text;
+  if(el.setSelectionRange)try{el.setSelectionRange(r.caret,r.caret);}catch(e){}
+  if(el.focus)el.focus();
+  _tbCloseMentions();
+};
+
+window.tbCompKey=function(e,el){
+  if(!e)return;
+  if(_tbMentionList.length){
+    if(e.key==='ArrowDown'){
+      _tbMentionIdx=(_tbMentionIdx+1)%_tbMentionList.length;
+      _tbPaintMentions();e.preventDefault();return;
+    }
+    if(e.key==='ArrowUp'){
+      _tbMentionIdx=(_tbMentionIdx<=0?_tbMentionList.length:_tbMentionIdx)-1;
+      _tbPaintMentions();e.preventDefault();return;
+    }
+    if(e.key==='Escape'){ _tbCloseMentions(); e.preventDefault(); return; }
+    if(e.key==='Enter'||e.key==='Tab'){
+      const pick=tbMentionAccepts(_tbMentionList,_tbMentionIdx);
+      if(pick>=0){ e.preventDefault(); window.tbMentionPick(pick); return; }
+      // -1 means the list is ambiguous and nothing has been arrowed to,
+      // so Enter is the textarea's. Tab is still the browser's.
+    }
+  }
+  if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){ e.preventDefault(); window.tbPostComment(); }
+};
+
+window.tbCompPaste=function(e){
+  const items=(e&&e.clipboardData&&e.clipboardData.items)||null;
+  if(!items)return;
+  const files=[];
+  for(let i=0;i<items.length;i++){
+    const it=items[i];
+    if(it&&it.kind==='file'&&it.getAsFile){ const f=it.getAsFile(); if(f)files.push(f); }
+  }
+  if(!files.length)return;      // ordinary text paste belongs to the field
+  if(e.preventDefault)e.preventDefault();
+  _tbStageFiles(files);
+};
+
+// ── Files in the drawer ───────────────────────────────────────────────
+function _tbFileChip(att,opts){
+  const o=opts||{};
+  const href=tbFileHref(att);
+  const thumb=tbThumbUrl(att,320);
+  const label=_tbSlot(att.name||'file','tb-fname');
+  const meta='<span class="tb-fsize">'+_tbEsc(tbFileSize(att.size))+'</span>';
+  const body=thumb
+    ? '<img class="tb-fthumb" src="'+_tbEsc(thumb)+'" alt="" loading="lazy"'
+      +' onerror="this.style.display=\'none\'">'
+    : '';
+  const inner=body+'<span class="tb-fmeta">'+label+meta+'</span>';
+  const cell=href
+    ? '<a class="tb-file" href="'+_tbEsc(href)+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>'
+    : '<span class="tb-file">'+inner+'</span>';
+  return'<span class="tb-filewrap">'+cell
+    +(o.onRemove?'<button class="tb-x tb-frm" title="remove" onclick="'+o.onRemove+'">&times;</button>':'')
+    +'</span>';
+}
+
+/** One picker element, two destinations. `_tbPickFor` says which, so the
+ *  same input serves the item's Files section and the comment composer
+ *  without a second hidden input to keep in step. */
+let _tbPickFor='item';
+window.tbPickFiles=function(kind){
+  _tbPickFor=kind==='comment'?'comment':'item';
+  const el=document.getElementById('tb-filepick');
+  if(el&&el.click)el.click();
+};
+window.tbFilesPicked=async function(input){
+  const files=(input&&input.files)?Array.prototype.slice.call(input.files):[];
+  if(input)input.value='';
+  if(!files.length)return;
+  if(_tbPickFor==='comment')return _tbStageFiles(files);
+  return _tbAttachToItem(files);
+};
+
+/** Staged on the comment, not written yet — a file attached to a comment
+ *  nobody posted should not appear on the item. */
+async function _tbStageFiles(files){
+  const id=_tbOpenItemId;
+  if(!id)return;
+  const ups=await _tbUploadAll(files);
+  if(!ups.length)return;
+  _tbCompFiles[id]=(_tbCompFiles[id]||[]).concat(ups);
+  _tbRepaint();
+}
+async function _tbUploadAll(files){
+  const out=[];
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    if(tbTooBig(f)){
+      // Name the one that was left out rather than refusing the whole
+      // drop or swallowing it — the rule js/boards.js settled on.
+      _tbToast(String(f.name||'a file')+' is '+tbFileSize(f.size)
+        +' — over the '+TB_MAX_UPLOAD_MB+' MB cap, so it was left out.');
+      continue;
+    }
+    try{
+      _tbToast('uploading '+String(f.name||'file')+'…');
+      const res=await _tbUpload(f);
+      out.push(tbAttachment(res,f,_tbMe(),_tbNow()));
+    }catch(e){
+      console.warn('[the board] upload failed',e);
+      _tbToast(String((e&&e.message)||'Upload failed'));
+    }
+  }
+  return out;
+}
+async function _tbAttachToItem(files){
+  const id=_tbOpenItemId;
+  const it=tbItems.filter(x=>x.id===id)[0];
+  if(!it)return;
+  const ups=await _tbUploadAll(files);
+  if(!ups.length)return;
+  const list=(it.attachments||[]).concat(ups);
+  const now=_tbNow();
+  await _tbTry(async function(){
+    await _tbCommit(id,{attachments:list,updatedAt:now,lastActivityAt:now},
+      ups.map(a=>({type:'file_added',byUid:_tbMe(),at:now,payload:{name:a.name}})));
+    _tbApplyLocal(id,{attachments:list});
+    _tbThreads[id]=null;            // the log grew — read it again
+    await loadTbThread(id,true);
+    _tbRepaint();
+  },'attach that');
+}
+window.tbRemoveFile=async function(idx){
+  const id=_tbOpenItemId;
+  const it=tbItems.filter(x=>x.id===id)[0];
+  if(!it)return;
+  const list=(it.attachments||[]).slice();
+  if(idx<0||idx>=list.length)return;
+  list.splice(idx,1);
+  await _tbTry(async function(){
+    await _tbCommit(id,{attachments:list,updatedAt:_tbNow()},null);
+    _tbApplyLocal(id,{attachments:list});
+    _tbRepaint();
+  },'remove that file');
+};
+window.tbUnstageFile=function(idx){
+  const id=_tbOpenItemId;
+  if(!id)return;
+  const list=(_tbCompFiles[id]||[]).slice();
+  list.splice(idx,1);
+  _tbCompFiles[id]=list;
+  _tbRepaint();
+};
+
+// ── Posting ───────────────────────────────────────────────────────────
+window.tbPostComment=async function(){
+  const id=_tbOpenItemId;
+  const it=tbItems.filter(x=>x.id===id)[0];
+  if(!it)return;
+  const el=document.getElementById('tb-comp');
+  const text=el?el.value:(_tbCompDraft[id]||'');
+  const plan=tbCommentPlan(it,{
+    body:text,attachments:_tbCompFiles[id]||[],uid:_tbMe(),now:_tbNow(),
+    handleMap:tbHandleMap(),threadUids:tbThreadUids(_tbThread(id))
+  });
+  if(plan.error){ _tbToast(plan.error); return; }
+  await _tbTry(async function(){
+    const b=writeBatch(db);
+    b.set(doc(collection(db,'board_items',id,'comments')),plan.comment);
+    b.update(doc(db,'board_items',id),plan.data);
+    // The author's own ranking data rides along. SET-WITH-MERGE, not
+    // update: a profile row that does not exist yet would fail an
+    // updateDoc and take the comment down with it, and carrying `uid`
+    // satisfies both the create and the update clause of the
+    // user_profiles rule.
+    const me=_tbMe();
+    if(me&&plan.mentionUids.length)
+      b.set(doc(db,'user_profiles',me),
+        {uid:me,tbMentionStats:tbMentionBump(_tbMyStats(),plan.mentionUids,_tbNow())},{merge:true});
+    await b.commit();
+    _tbApplyLocal(id,plan.data);
+    const th=_tbThreads[id]||{comments:[],activity:[],err:false};
+    th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
+    _tbThreads[id]=th;
+    _tbCompDraft[id]='';_tbCompFiles[id]=[];
+    _tbCloseMentions();
+    (plan.notify||[]).forEach(function(n){
+      _tbNotify({type:n.type,forUid:n.uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
+        title:'the board',
+        message:tbUser(_tbMe()).name+(n.type==='mention'?' mentioned you on ':' commented on ')
+          +'“'+(it.title||'')+'” — '+_tbPlain(plan.comment.body)});
+    });
+    _tbCompFocus=true;
+    _tbRepaint();
+  },'post that comment');
+};
+
+/** A notification snippet is TEXT, not markup — it is capped at 120
+ *  characters by tbNotifPayload and escaped there, so the `@[handle]`
+ *  tokens have to be unwrapped first or the bell reads "@[afnan]". */
+function _tbPlain(body){
+  return String(body||'')
+    .replace(/@\[([A-Za-z0-9._-]{1,30})\]/g,function(m,h){
+      const uid=tbHandleMap()[String(h).toLowerCase()];
+      return'@'+(uid?tbUser(uid).name:h);
+    })
+    .replace(/[`*]/g,'').replace(/\s+/g,' ').trim();
+}
+
+// ── Request move ──────────────────────────────────────────────────────
+window.tbOpenMoveReq=function(){ _tbMoveReqOpen=!_tbMoveReqOpen; _tbRepaint(); };
+window.tbRequestMove=async function(){
+  const id=_tbOpenItemId;
+  const it=tbItems.filter(x=>x.id===id)[0];
+  if(!it)return;
+  const d=document.getElementById('tb-mr-date');
+  const r=document.getElementById('tb-mr-why');
+  const plan=tbMoveRequestPlan(it,{
+    uid:_tbMe(),toDay:d&&d.value,reason:r&&r.value,
+    lockerHandle:tbUser(it.lockedBy).handle,now:_tbNow()
+  });
+  if(plan.error){ _tbToast(plan.error); return; }
+  await _tbTry(async function(){
+    const b=writeBatch(db);
+    b.set(doc(collection(db,'board_items',id,'comments')),plan.comment);
+    b.update(doc(db,'board_items',id),plan.data);
+    await b.commit();
+    _tbApplyLocal(id,plan.data);
+    const th=_tbThreads[id]||{comments:[],activity:[],err:false};
+    th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
+    _tbThreads[id]=th;
+    (plan.notify||[]).forEach(function(n){
+      _tbNotify({type:n.type,forUid:n.uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
+        title:'the board',
+        message:tbUser(_tbMe()).name+' asks to move “'+(it.title||'')+'” to '+plan.toDay
+          +' — '+plan.reason});
+    });
+    _tbMoveReqOpen=false;
+    _tbToast('asked '+tbUser(it.lockedBy).name);
+    _tbRepaint();
+  },'send that request');
+};
+window.tbToggleActivity=function(){ _tbShowActivity=!_tbShowActivity; _tbRepaint(); };
+
+// ── The drawer's phase-4 half ─────────────────────────────────────────
+function _tbFilesSection(it){
+  const files=it.attachments||[];
+  return'<div class="tb-dsec"><div class="tb-dsech">files'
+    +(files.length?' <span class="tb-steps">'+files.length+'</span>':'')
+    +'<button class="tb-addfile" onclick="window.tbPickFiles(\'item\')">+ add</button></div>'
+    +(files.length
+      ?'<div class="tb-files">'+files.map(function(a,i){
+          return _tbFileChip(a,{onRemove:'window.tbRemoveFile('+i+')'});
+        }).join('')+'</div>'
+      :'<div class="tb-hint">nothing attached — up to '+TB_MAX_UPLOAD_MB+' MB a file</div>')
+  +'</div>';
+}
+
+function _tbThreadSection(it){
+  const th=_tbThread(it.id);
+  const me=_tbMe();
+  if(!th)return'<div class="tb-dsec"><div class="tb-dsech">comments</div>'
+    +'<div class="tb-hint">loading the thread…</div></div>';
+  if(th.err)return'<div class="tb-dsec"><div class="tb-dsech">comments</div>'
+    +'<div class="tb-err">Could not read the thread. '
+    +'<button class="btn-outline" onclick="window.tbReloadThread()">Retry</button></div></div>';
+  const rows=th.comments.slice().sort((a,b)=>Number(a.createdAt||0)-Number(b.createdAt||0))
+    .map(function(c){
+      const u=tbUser(c.authorUid);
+      return'<div class="tb-cmt"><span class="tb-av">'+_tbEsc(u.initial)+'</span>'
+        +'<div class="tb-cmtbody">'
+          +'<div class="tb-cmthead">'+_tbSlot(u.name,'tb-cmtwho')
+            +'<span class="tb-cmtwhen">'+_tbEsc(_tbAgo(c.createdAt))+'</span></div>'
+          // tbRenderBody escapes its input BEFORE formatting it, so every
+          // tag in here is one that function wrote. See its header.
+          +'<div class="tb-cmttext">'+tbRenderBody(c.body)+'</div>'
+          +((c.attachments||[]).length
+            ?'<div class="tb-files">'+c.attachments.map(a=>_tbFileChip(a,{})).join('')+'</div>':'')
+        +'</div></div>';
+    }).join('');
+  const staged=(_tbCompFiles[it.id]||[]);
+  return'<div class="tb-dsec tb-thread"><div class="tb-dsech">comments'
+      +(th.comments.length?' <span class="tb-steps">'+th.comments.length+'</span>':'')+'</div>'
+    +(rows||'<div class="tb-hint">no comments yet</div>')
+    +'<div class="tb-comp">'
+      +'<textarea id="tb-comp" class="tb-compin" rows="2" maxlength="'+_TB_BODY_MAX+'"'
+        +' placeholder="write a comment — @ to mention, ctrl+enter to post"'
+        +' oninput="window.tbCompInput(this)" onkeydown="window.tbCompKey(event,this)"'
+        +' onpaste="window.tbCompPaste(event)">'+_tbEsc(_tbCompDraft[it.id]||'')+'</textarea>'
+      +'<div class="tb-mentions" id="tb-mentions"></div>'
+      +(staged.length?'<div class="tb-files">'+staged.map(function(a,i){
+          return _tbFileChip(a,{onRemove:'window.tbUnstageFile('+i+')'});
+        }).join('')+'</div>':'')
+      +'<div class="tb-comprow">'
+        +'<button class="tb-addfile" onclick="window.tbPickFiles(\'comment\')">attach</button>'
+        +'<button class="btn-primary" onclick="window.tbPostComment()">post</button>'
+      +'</div>'
+    +'</div></div>';
+}
+
+function _tbActivitySection(it){
+  const th=_tbThread(it.id);
+  const rows=(th&&th.activity)||[];
+  const today=_tbToday();
+  return'<div class="tb-dsec"><div class="tb-dsech">activity'
+      +'<button class="tb-addfile" onclick="window.tbToggleActivity()">'
+      +(_tbShowActivity?'hide':'show'+(rows.length?' ('+rows.length+')':''))+'</button></div>'
+    +(_tbShowActivity
+      ?(rows.length
+        ?'<div class="tb-actl">'+rows.slice().sort((a,b)=>Number(b.at||0)-Number(a.at||0))
+            .map(function(a){
+              return'<div class="tb-act">'+_tbSlot(tbActivityLine(a,d=>tbDayLabel(d,today)),'tb-acttext')
+                +'<span class="tb-cmtwhen">'+_tbEsc(_tbAgo(a.at))+'</span></div>';
+            }).join('')+'</div>'
+        :'<div class="tb-hint">nothing logged yet</div>')
+      :'')
+  +'</div>';
+}
+
+function _tbMoveReqSection(it){
+  const locker=tbUser(it.lockedBy);
+  return'<div class="tb-mr">'
+    +'<button class="btn-outline" onclick="window.tbOpenMoveReq()">'
+    +(_tbMoveReqOpen?'cancel':'request move')+'</button>'
+    +(_tbMoveReqOpen
+      ?'<div class="tb-mrform"><div class="tb-hint">'+_tbEsc(locker.name)
+        +' holds the lock. This posts the ask in the thread and pings them.</div>'
+        +'<input type="date" id="tb-mr-date" value="'+_tbEsc(it.date||'')+'">'
+        +'<input id="tb-mr-why" maxlength="200" placeholder="why does it need to move?">'
+        +'<button class="btn-primary" onclick="window.tbRequestMove()">send</button></div>'
+      :'')
+  +'</div>';
+}
+
+window.tbReloadThread=async function(){
+  const id=_tbOpenItemId;
+  if(!id)return;
+  _tbThreads[id]=null;
+  await loadTbThread(id,true);
+  _tbRepaint();
+};
+
+// ── The inbox (spec §7.5) ─────────────────────────────────────────────
+// Rows come from hrm_notifications — the same store the bell reads — so
+// `readBy` is shared: dismissing in the bell marks it read here, and
+// marking it read here clears it from the bell. One unread count, two
+// surfaces, and no way for them to disagree.
+let tbNotifs=[];
+let _tbNotifUnsub=null;
+let _tbNotifSeeded=false;
+let _tbNotifSeen={};
+let _tbNotifErr=false;
+let _tbNotifOnce=false;
+
+function _tbHandle(){ return (typeof session!=='undefined'&&session&&session.u)||''; }
+function _tbNotifRead(n,handle){ return ((n&&n.readBy)||[]).indexOf(handle)>-1; }
+
+/** This person's Board notifications, newest first. Pure. */
+function tbInboxRows(notifs,handle){
+  return (notifs||[])
+    .filter(n=>n&&n.source===TB_NOTIF_SOURCE&&n.forUser===handle)
+    .slice().sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
+}
+function tbUnreadCount(notifs,handle){
+  return tbInboxRows(notifs,handle).filter(n=>!_tbNotifRead(n,handle)).length;
+}
+/** Consecutive rows about the same item read as one block (spec §7.5) —
+ *  five pings about one thread is one conversation, not five. Pure. */
+function tbGroupByItem(rows){
+  const out=[];
+  (rows||[]).forEach(function(r){
+    const last=out[out.length-1];
+    const key=String((r&&r.itemId)||'');
+    if(last&&last.itemId===key)last.rows.push(r);
+    else out.push({itemId:key,rows:[r]});
+  });
+  return out;
+}
+
+/** THE THIRD SURFACE. The sidebar span already exists — phase 1 shipped
+ *  `<span class="tb-navbadge" id="tb-nav-badge">` inside the nav item —
+ *  so the count is painted from here and js/shared.js, a cross-track
+ *  file, needs no further edit. */
+function _tbPaintBadges(){
+  const n=tbUnreadCount(tbNotifs,_tbHandle());
+  const nav=document.getElementById('tb-nav-badge');
+  if(nav)nav.textContent=n?String(n):'';
+  const rail=document.getElementById('tb-rail-n');
+  if(rail)rail.textContent=n?String(n):'';
+}
+
+/** Live, because the phase's definition of done is a badge that moves in
+ *  ANOTHER browser within a second. Started from a startApp wrap so the
+ *  count is live on every page, not only while the Board is open. */
+function tbWatchNotifs(){
+  if(_tbNotifUnsub)return;
+  const h=_tbHandle();
+  if(!h)return;
+  if(!(typeof isBoardUser==='function'&&isBoardUser()))return;
+  // NO LISTENER IS A FALLBACK, NOT A HANG. onSnapshot is bridged onto
+  // window in index.html; an old cached shell may not carry it, and an
+  // inbox waiting forever for a snapshot that will never come is the
+  // stuck-skeleton failure this codebase keeps recording.
+  if(typeof onSnapshot!=='function'){ loadTbNotifsOnce(); return; }
+  try{
+    _tbNotifUnsub=onSnapshot(
+      query(collection(db,'hrm_notifications'),where('forUser','==',h)),
+      function(snap){
+        tbNotifs=(snap&&snap.docs||[]).map(d=>Object.assign({_id:d.id},d.data()));
+        const rows=tbInboxRows(tbNotifs,h);
+        // The FIRST snapshot is history, not news. Seed it silently, or
+        // signing in would fire a toast for every unread row at once.
+        if(_tbNotifSeeded){
+          rows.forEach(function(r){
+            if(_tbNotifSeen[r._id]||_tbNotifRead(r,h))return;
+            _tbNotifSeen[r._id]=1;
+            // Spec §5: a toast only while the Board is open.
+            if(String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')===0)
+              _tbToast(String(r.message||'').slice(0,120));
+          });
+        }else{
+          rows.forEach(r=>{_tbNotifSeen[r._id]=1;});
+          _tbNotifSeeded=true;
+        }
+        _tbPaintBadges();
+        // Repainting while a comment is being written would destroy the
+        // textarea the caret is in, so the inbox only redraws itself when
+        // it is the open page and no drawer is over it.
+        if(_tbPage==='tb-inbox'&&!_tbOpenItemId
+          &&String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')===0)_tbRepaint();
+      },
+      function(e){
+        console.warn('[the board] inbox listener failed',e);
+        // A refused read and an empty inbox must never render the same
+        // screen -- the Store lesson.
+        _tbNotifErr=true;_tbNotifSeeded=true;
+        if(_tbPage==='tb-inbox'&&!_tbOpenItemId)_tbRepaint();
+      }
+    );
+  }catch(e){ console.warn('[the board] inbox listener failed',e); loadTbNotifsOnce(); }
+}
+
+/** The one-off read, for a session with no onSnapshot. CANNOT REJECT. */
+async function loadTbNotifsOnce(){
+  const h=_tbHandle();
+  if(!h||_tbNotifOnce)return;
+  _tbNotifOnce=true;
+  try{
+    const snap=await getDocs(query(collection(db,'hrm_notifications'),where('forUser','==',h)));
+    tbNotifs=(snap&&snap.docs||[]).map(d=>Object.assign({_id:d.id},d.data()));
+  }catch(e){
+    console.warn('[the board] inbox read failed',e);
+    _tbNotifErr=true;
+  }
+  tbInboxRows(tbNotifs,h).forEach(r=>{_tbNotifSeen[r._id]=1;});
+  _tbNotifSeeded=true;
+  _tbPaintBadges();
+  if(_tbPage==='tb-inbox'&&!_tbOpenItemId)_tbRepaint();
+}
+
+window.tbRetryInbox=function(){
+  _tbNotifErr=false;_tbNotifOnce=false;_tbNotifSeeded=false;
+  _tbRepaint();
+  if(_tbNotifUnsub){_tbNotifSeeded=true;_tbRepaint();return;}
+  loadTbNotifsOnce();
+};
+window.tbOpenNotif=function(id,itemId){
+  const h=_tbHandle();
+  const n=tbNotifs.filter(x=>x._id===id)[0];
+  if(n&&!_tbNotifRead(n,h))window.tbMarkRead(id);
+  if(itemId&&tbItems.filter(x=>x.id===itemId)[0]){ window.tbOpenItem(itemId); return; }
+  if(itemId)_tbToast('That item is not on your board any more.');
+};
+window.tbMarkRead=async function(id){
+  const h=_tbHandle();
+  const n=tbNotifs.filter(x=>x._id===id)[0];
+  if(!n||_tbNotifRead(n,h))return;
+  const readBy=((n.readBy)||[]).concat([h]);
+  n.readBy=readBy;                       // optimistic; the listener confirms
+  _tbPaintBadges();_tbRepaint();
+  try{ await updateDoc(doc(db,'hrm_notifications',id),{readBy:readBy}); }
+  catch(e){ console.warn('[the board] mark read failed',e); }
+};
+window.tbMarkAllRead=async function(){
+  const h=_tbHandle();
+  const rows=tbInboxRows(tbNotifs,h).filter(n=>!_tbNotifRead(n,h));
+  if(!rows.length)return;
+  rows.forEach(n=>{n.readBy=((n.readBy)||[]).concat([h]);});
+  _tbPaintBadges();_tbRepaint();
+  try{
+    const b=writeBatch(db);
+    rows.forEach(n=>{b.update(doc(db,'hrm_notifications',n._id),{readBy:n.readBy});});
+    await b.commit();
+  }catch(e){ console.warn('[the board] mark all read failed',e); _tbToast('Could not mark those read.'); }
+};
+
+const _TB_NOTIF_WORDS={mention:'mentioned you',comment:'commented',handover:'handed you something',
+  assigned:'put you on something',moved:'moved a date',done:'marked something done',
+  move_request:'asked you to move a date',due_today:'due today',overdue:'overdue'};
+
+function _tbInboxScreen(){
+  const h=_tbHandle();
+  const rows=tbInboxRows(tbNotifs,h);
+  const unread=rows.filter(n=>!_tbNotifRead(n,h)).length;
+  if(_tbNotifErr&&!rows.length)
+    return'<div class="tb-err">Could not read your inbox. '
+      +'<button class="btn-outline" onclick="window.tbRetryInbox()">Retry</button>'
+      +'<div class="tb-errsub">Board notifications live in hrm_notifications, '
+      +'the same bell the rest of the app uses.</div></div>';
+  if(!_tbNotifSeeded)
+    return'<div class="tb-empty"><div class="tb-empty-h">inbox</div>'
+      +'<div class="tb-empty-p">loading…</div></div>';
+  if(!rows.length)
+    return'<div class="tb-empty"><div class="tb-empty-h">nothing in your inbox</div>'
+      +'<div class="tb-empty-p">mentions, handovers and comments land here.</div></div>';
+  const groups=tbGroupByItem(rows).map(function(g){
+    const it=tbItems.filter(x=>x.id===g.itemId)[0];
+    return'<div class="tb-nfgroup">'
+      +(it?_tbSlot(it.title||'untitled','tb-nfitem'):'')
+      +g.rows.map(function(n){
+        const read=_tbNotifRead(n,h);
+        return'<button class="tb-nf'+(read?'':' unread')+'"'
+          +' onclick="window.tbOpenNotif(\''+_tbEsc(n._id)+'\',\''+_tbEsc(n.itemId||'')+'\')">'
+          +'<span class="tb-av">'+_tbEsc(tbUser(n.fromUid).initial)+'</span>'
+          +'<span class="tb-nfmain">'
+            +'<span class="tb-nftype">'+_tbEsc(_TB_NOTIF_WORDS[n.type]||String(n.type||''))+'</span>'
+            // message/title were escaped on the way IN by tbNotifPayload,
+            // because the bell renders them raw — so this one is already
+            // safe and is slotted anyway rather than trusting that twice.
+            +_tbSlot(_tbUnesc(n.message||''),'tb-nfmsg')
+          +'</span>'
+          +'<span class="tb-cmtwhen">'+_tbEsc(_tbAgo(n.createdAt))+'</span></button>';
+      }).join('')
+    +'</div>';
+  }).join('');
+  return'<div class="tb-nfhead"><span class="tb-dsech">inbox</span>'
+      +(unread?'<span class="tb-count red">'+unread+'</span>':'')
+      +(unread?'<button class="btn-outline" onclick="window.tbMarkAllRead()">mark all read</button>':'')
+    +'</div>'+groups;
+}
+
+/** tbNotifPayload ESCAPES on the way in, because js/hrm.js prints those
+ *  fields raw. This screen hydrates with textContent instead, so it has
+ *  to undo that first or a name with an apostrophe reads `&#39;`. */
+function _tbUnesc(s){
+  return String(s==null?'':s)
+    .replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+    .replace(/&amp;/g,'&');
+}
+
+/** Card 9 (spec §7.1): the five most recent, unread first. Cards 10–12
+ *  are phase 5; this one is here because §13's definition of done for
+ *  this phase names it as one of the three delivery surfaces. */
+function _tbInboxCard(){
+  const h=_tbHandle();
+  const rows=tbInboxRows(tbNotifs,h);
+  if(!rows.length)return'';
+  const unread=rows.filter(n=>!_tbNotifRead(n,h));
+  const pick=unread.concat(rows.filter(n=>_tbNotifRead(n,h))).slice(0,5);
+  return _tbCard('inbox',pick.map(function(n){
+    return'<button class="tb-nf'+(_tbNotifRead(n,h)?'':' unread')+'"'
+      +' onclick="window.tbOpenNotif(\''+_tbEsc(n._id)+'\',\''+_tbEsc(n.itemId||'')+'\')">'
+      +'<span class="tb-av">'+_tbEsc(tbUser(n.fromUid).initial)+'</span>'
+      +'<span class="tb-nfmain">'+_tbSlot(_tbUnesc(n.message||''),'tb-nfmsg')+'</span>'
+      +'<span class="tb-cmtwhen">'+_tbEsc(_tbAgo(n.createdAt))+'</span></button>';
+  }),{action:'<button class="tb-addfile" onclick="window.showPage(\'tb-inbox\')">view all</button>'});
+}
+
+// ── Starting the listener ─────────────────────────────────────────────
+// Wrapping startApp rather than editing js/auth.js is the pattern
+// js/boards.js already uses for its deep link, and for the same reason:
+// js/auth.js is a cross-track file and this module should not need a line
+// in it. theboard.js loads LAST, so window.startApp is already defined
+// (and already wrapped once by js/boards.js — wrapping chains fine).
+(function(){
+  if(typeof window==='undefined')return;
+  const prev=window.startApp;
+  if(typeof prev!=='function')return;
+  window.startApp=async function(){
+    const r=await prev.apply(this,arguments);
+    try{ tbWatchNotifs(); }catch(e){ console.warn('[the board] watch failed',e); }
+    return r;
+  };
+})();
+
 // ── Routing ───────────────────────────────────────────────────────────
 // ONE entry point for every tb-* page, so js/shared.js holds a single line
 // for this whole module no matter how many screens it grows.
@@ -1733,6 +2797,10 @@ function tbRenderPage(id){
     return;
   }
   _tbPage=TB_PAGES.indexOf(id)>-1?id:TB_HOME;
+  // Idempotent — the startApp wrap normally gets there first. This is the
+  // route for a session that reached a tb-* page some other way (a deep
+  // link, a reload) without the wrap having fired.
+  tbWatchNotifs();
   if(!tbLoaded){
     m.innerHTML=_tbShell(_tbPage,'<div class="tb-empty"><div class="tb-empty-h">loading…</div></div>');
     // The loader CANNOT reject (see loadTbData), so this needs no .catch
@@ -1756,13 +2824,32 @@ function _tbRepaint(reload){
   const body=_tbScreen(_tbPage);
   m.innerHTML=_tbShell(_tbPage,body)+_tbDrawer();
   _tbHydrate();
+  _tbPaintBadges();
+  _tbPaintMentions();
+  // The repaint rebuilds main-content wholesale, so a composer that had
+  // focus loses it — and posting a comment repaints. Put the caret back
+  // at the end of what is there, the way the search inputs in this app
+  // already do after their own rerender.
+  if(_tbCompFocus){
+    _tbCompFocus=false;
+    const c=document.getElementById('tb-comp');
+    if(c&&c.focus){
+      c.focus();
+      const n=String(c.value||'').length;
+      if(c.setSelectionRange)try{c.setSelectionRange(n,n);}catch(e){}
+    }
+  }
 }
 
 /** The rail + content frame every Board screen sits in. */
 function _tbShell(page,body){
   const tabs=_TB_RAIL.map(t=>
     '<button class="tb-railbtn'+(t.id===page?' on':'')+'" id="tb-rail-'+_tbEsc(t.id)+'"'
-    +' onclick="window.showPage(\''+_tbEsc(t.id)+'\')">'+_tbEsc(t.label)+'</button>'
+    +' onclick="window.showPage(\''+_tbEsc(t.id)+'\')">'+_tbEsc(t.label)
+    // The second of the three surfaces. Filled by _tbPaintBadges, which
+    // the live listener calls, so it moves without a repaint.
+    +(t.id==='tb-inbox'?'<span class="tb-railn" id="tb-rail-n"></span>':'')
+    +'</button>'
   ).join('');
   return'<div class="tb-wrap">'
     +'<div class="tb-rail">'+tabs+'</div>'
@@ -1773,8 +2860,7 @@ function _tbShell(page,body){
 function _tbScreen(page){
   if(page==='tb-lists')return _tbListsScreen();
   if(page==='tb-calendar')return _tbCalendar();
-  if(page==='tb-inbox')return'<div class="tb-empty"><div class="tb-empty-h">inbox</div>'
-    +'<div class="tb-empty-p">The inbox lands in phase 4. Board notifications already reach the bell.</div></div>';
+  if(page==='tb-inbox')return _tbInboxScreen();
   return _tbDashboard();
 }
 

@@ -161,6 +161,11 @@ Id shape: `tb_{type}_{itemId}_{fromUid}_{10-minute bucket}` — so several
 devices or a double click produce one row, and a dismissed notification is
 never raised again.
 
+**Reading is shared with the bell.** The inbox marks a row read by pushing
+the username into the same `readBy` array `hrmDismissNotif` writes, so
+dismissing in the bell clears it from the Board and vice versa. One unread
+count, three surfaces, and no way for them to disagree.
+
 ---
 
 ## Rules that this module holds to
@@ -203,10 +208,9 @@ And one this module adds:
   the real-Chromium script load and the rendered geometry of the shell are
   tested.
 - Phase 1 screens are honest placeholders, not loading states.
-- **Comments, @mentions and file attachments are phase 4.** The drawer
-  has no thread yet; handover still posts its note as a comment document,
-  which the thread will pick up when it lands.
-- The inbox screen is phase 4 — board notifications already reach the bell.
+- **Dashboard cards 10–12** (team today, activity, my lists) are phase 5.
+  Card 9 (inbox) shipped in phase 4 because §13 names it as one of the
+  three surfaces a notification has to reach.
 - **The calendar's month grid hides a marker's LABEL at phone width.** A
   ~50px day square crushed it to 1px (measured). The left bar stays, so
   the day is still visibly marked, and the week view carries the word.
@@ -228,8 +232,7 @@ And one this module adds:
 | 1 — foundations | **done** — audience, gating, nav, rules, indexes, routing, empty screens |
 | 2 — items, lists, dashboard, drawer | **done** — item CRUD, quick-add grammar, cards 1–8, the drawer, the seed |
 | 3 — calendar | **done** — month + week, filters, pointer drag with lock enforcement |
-| 3 — calendar | |
-| 4 — comments, mentions, files, inbox | |
+| 4 — comments, mentions, files, inbox | **done** — the thread, @ ranking, Cloudinary files, the live inbox |
 | 4b — scheduled reminder (Netlify) | |
 | 5 — responsive, polish, acceptance | |
 
@@ -333,6 +336,101 @@ phase 5**, as agreed.
 - **On a phone the calendar opens on the WEEK** (spec §11). A month grid at
   420px is seven ~50px columns, which fits a day number and nothing else.
   Only a default — a saved preference outranks it.
+
+## Phase 4 — comments, mentions, files, the inbox
+
+The Slack-thread half. No `firestore.rules` change and no new index: the
+`comments` subcollection rule and the `user_profiles` self-update rule
+shipped in phase 1, `hrm_notifications` is already `signedIn()`, and the
+inbox is a single-field `where('forUser','==',u)` query sorted in memory.
+
+- **The XSS boundary here is "escape first, format second", and it is a
+  DIFFERENT boundary from js/boards.js's.** Mood Boards stores real HTML
+  (a contenteditable's innerHTML) and has to parse it into an inert
+  document and rebuild it against a tag allow-list. The Board stores PLAIN
+  TEXT: once `_tbEsc` has run there is no `<`, `>`, `&` or quote the
+  author typed, so **every tag in the output is one `tbRenderBody` wrote**
+  and there is nothing left to sanitise. A `DOMParser` pass here would be
+  theatre — and untestable, since the harness's DOMParser is a tag-soup
+  stub. Markdown-lite is bold, italic, code spans, `@[handle]`, newlines
+  and http(s) autolinks; **the scheme check IS the regex**, so
+  `javascript:` can never match at all.
+- **`@[handle]` is the stored form and an unknown handle stays literal** —
+  the call `tbParseQuickAdd` already made, for the same reason: `@baber`
+  is a real person, just not on the board.
+- **Ammar's popover rule, which is not in the spec: ENTER SELECTS ONLY
+  when exactly one candidate matches or a row has been arrowed to.**
+  `tbMentionAccepts` is the whole rule, in four lines. A popover that
+  swallows Enter on an ambiguous list picks somebody at random on the
+  author's behalf, and the author finds out when the wrong person answers.
+- **Ranking is read off the AUTHOR's own `user_profiles/{uid}`
+  `.tbMentionStats`** — nobody else reads it, so it is their data, and the
+  self-update rule already covers it. It is written **`set` with
+  `{merge:true}`, never `update`**: a profile row that does not exist yet
+  would fail an `updateDoc` and take the comment down with it, and
+  carrying `uid` satisfies the create clause as well as the update one.
+- **Typing does NOT repaint.** The board has one repaint and it rebuilds
+  `main-content` wholesale, which would destroy the textarea the caret is
+  in and take the popover's anchor with it. `tbCompInput` mutates a draft
+  and repaints ONE element — the same reason Notes' block editor mutates
+  in place.
+- **Everyone in the conversation hears about a comment ONCE.** Someone
+  mentioned has already been told; two bell rows for one comment is what
+  makes a bell worth ignoring.
+- **FILES ARE CLOUDINARY AND THE THUMBNAIL IS A DELIVERY TRANSFORM.** The
+  spec asked for Firebase Storage plus a client-side 320px JPEG stored
+  alongside; Ammar's phase-0 decision was to let the CDN do it. So there
+  is no second artefact to keep in step, nothing to migrate for a file
+  uploaded before this, and the original is never rewritten. 25 MB cap,
+  ours, checked before sending — and Cloudinary's own refusal is passed
+  through with a line saying that number lives in the account's plan.
+  A PDF's page-1 render is **best effort by design** (the account setting
+  js/boards.js records) and falls back to a chip.
+- **Only an anchored `https://res.cloudinary.com/` URL reaches an href or
+  a src** — `res.cloudinary.com.evil.test` must not pass. The rule
+  `_profPhotoUrl` and `_boardsCoverUrl` already hold.
+- **A locked item is not a dead end.** Request move posts the templated
+  ask into the thread mentioning the locker, so the answer lands where the
+  question is rather than in a WhatsApp message nobody can find.
+- **The inbox is LIVE**, because the phase's definition of done is a badge
+  that moves in another browser within a second. The listener starts from
+  a **`startApp` wrap** — the pattern js/boards.js already uses — so the
+  count is live on every page, not only while the Board is open.
+  **No listener is a fallback, not a hang**: with no `onSnapshot` bridged
+  it does one `getDocs` instead, and a refused read renders an error card
+  rather than "nothing in your inbox".
+- **The first snapshot is history, not news** — it seeds silently, or
+  signing in would fire a toast for every unread row at once. A toast
+  after that only while the Board is open (spec §5).
+- **A live bug phase 4 exposed:** `tbHandoverPlan` interpolated the raw
+  UID into its comment body, so the thread — which nothing could read
+  until this phase — would have said "handed over to @u-dani". It is the
+  `@[handle]` token now.
+
+### Two test lessons, both already in this file and both caught again
+
+- **`js/shared.js` declares `currentPage` at top level, so it CLOBBERS
+  the harness's `currentPage` option** — exactly as it clobbers `session`
+  (the phase-1 lesson). The "a toast only while the Board is open"
+  assertion therefore passed **vacuously**: nothing toasted because the
+  page was never `tb-*` at all. Found by breaking the seeding and watching
+  the suite stay green. Set it with `app.run` after load.
+- **The working tree is CRLF here**, so a multi-line search string written
+  with a bare newline matches nothing and a break reports a clean pass —
+  which reads exactly like "the assertion has no teeth". Three breaks
+  looked like passes for that reason before the cause was found.
+  Normalise the line endings, or break one line at a time.
+
+Verified by reverting each: the escape order (3 fail), the Enter rule (2),
+notifying yourself (3), the inbox's source filter (6), the comment leaving
+the batch (1, and it reads the batch's CONTENTS — counting writes proves
+nothing), `set` to `update` on the profile (1), the first-snapshot seeding
+(6) and the no-listener fallback (5). Both new `smoke-layout` fragments
+fail all 12 of their jobs when the mention chip's or the inbox row's ink
+is broken.
+
+**Nobody has typed a comment, mentioned anyone or uploaded a file on a
+real screen** — the sandbox cannot sign in.
 
 ## Acceptance script
 
