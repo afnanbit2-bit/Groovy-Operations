@@ -769,5 +769,339 @@ module.exports=async function(){
       /--write/.test(src)&&/Dry run\. Nothing was written/.test(src));
   }
 
+  // ══ PHASE 3 — THE CALENDAR ══════════════════════════════════════════
+
+  s.section('the grid');
+  {
+    const a=loadApp({files:FILES});
+    // The week starts MONDAY: Pakistan's weekend is Sat/Sun, so a
+    // Sunday-first grid splits the working week across two rows.
+    s.eq('the week starts on Monday',a.run('TB_WEEK_START'),1);
+    s.eq('and the day labels say so',a.run('TB_DOW_LABELS[0]'),'mon');
+    // 2026-10-30 (launch) is a Friday.
+    s.eq('a Friday resolves to its Monday',a.run("tbWeekStart('2026-10-30')"),'2026-10-26');
+    s.eq('a Monday is its own week start',a.run("tbWeekStart('2026-10-26')"),'2026-10-26');
+    s.eq('a Sunday belongs to the week BEFORE it',a.run("tbWeekStart('2026-11-01')"),'2026-10-26');
+    const wk=a.run("tbWeekDays('2026-10-30')");
+    s.eq('a week is seven days',wk.length,7);
+    s.eq('Monday first',wk[0],'2026-10-26');
+    s.eq('Sunday last',wk[6],'2026-11-01');
+    s.eq('and it reads as a range',a.run("tbWeekLabel('2026-10-30')"),'26 oct – 1 nov');
+
+    const oct=a.run("tbMonthGrid('2026-10')");
+    s.eq('October 2026 needs five rows',oct.length,5);
+    s.eq('each of seven days',oct[0].length,7);
+    s.eq('it opens on the Monday before the 1st',oct[0][0].day,'2026-09-28');
+    s.ok('which is marked as spill, not October',oct[0][0].inMonth===false);
+    s.ok('the 1st is in the month',oct[0].some(c=>c.day==='2026-10-01'&&c.inMonth));
+    s.eq('and it closes past the 31st',oct[4][6].day,'2026-11-01');
+    s.ok('every day in the run is consecutive',(()=>{
+      const flat=oct.reduce((x,w)=>x.concat(w.map(c=>c.day)),[]);
+      return flat.every((d,i)=>i===0||d===a.run('_tbDayAdd('+J(flat[i-1])+',1)'));
+    })());
+    // A month that needs six rows must get six, rather than a fixed grid
+    // clipping its last days.
+    s.eq('a month that spills needs six',a.run("tbMonthGrid('2026-08').length"),6);
+    s.eq('February 2027 starts on a Monday and fits four',a.run("tbMonthGrid('2027-02').length"),4);
+    s.eq('junk in, nothing out',J(a.run("tbMonthGrid('nonsense')")),J([]));
+    s.eq('the month reads as a name',a.run("tbMonthLabel('2026-10')"),'october 2026');
+  }
+
+  s.section('what the calendar shows');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    a.run('tbLists=[{id:"l1",title:"Winter Drop 2027",kind:"shared",adminUid:"u-ammar",memberUids:["u-ammar"],color:"moss"}]');
+    a.run('userProfiles=[]');
+    const it=o=>Object.assign({id:o.id,title:o.id,status:'open',kind:o.kind||'task',
+      visibility:o.vis||'shared',ownerUid:o.own||'u-ammar',assigneeUids:o.as||['u-ammar'],
+      date:o.date,listId:o.list||null,lane:o.lane||null,steps:[],myDay:{},dateHistory:[]},{});
+    const ITEMS=[
+      it({id:'mine',date:'2026-10-05',lane:'denim',list:'l1'}),
+      it({id:'theirs',date:'2026-10-05',as:['u-must'],own:'u-must'}),
+      it({id:'gate',date:'2026-10-05',kind:'gate'}),
+      it({id:'event',date:'2026-10-05',kind:'event'}),
+      it({id:'donesToo',date:'2026-10-05',as:['u-ammar']}),
+      it({id:'priv',date:'2026-10-06',vis:'private',as:['u-must'],own:'u-must'}),
+      it({id:'undated',date:null})
+    ];
+    ITEMS[4].status='done';
+    a.run('tbItems='+J(ITEMS));
+    const f=o=>a.run('tbCalFilter(tbItems,'+J(Object.assign({uid:'u-ammar'},o))+')').map(i=>i.id);
+
+    s.eq('an undated item is not on the calendar',f({scope:'me'}).indexOf('undated'),-1);
+    // "me" is what I am ON, not what I own — something I set for someone
+    // else is not my week.
+    s.eq('me: only what I am on',J(f({scope:'me'})),J(['mine','gate','event','donesToo']));
+    s.ok('everyone: the shared ones too',f({scope:'all'}).indexOf('theirs')>-1);
+    // Everyone's calendar must still not show a private item that is not
+    // mine — the rules would refuse it anyway, but the UI must agree.
+    s.eq('but never someone else’s PRIVATE item',f({scope:'all'}).indexOf('priv'),-1);
+    s.eq('hide done takes the done one out',f({scope:'me',hideDone:true}).indexOf('donesToo'),-1);
+    s.eq('by person',J(f({scope:'all',person:'u-must'})),J(['theirs']));
+    s.eq('by list',J(f({scope:'me',list:'l1'})),J(['mine']));
+    s.eq('by lane',J(f({scope:'me',lane:'denim'})),J(['mine']));
+    s.eq('filters combine',J(f({scope:'me',lane:'denim',list:'l1'})),J(['mine']));
+    s.eq('a filter matching nothing shows nothing',f({scope:'me',lane:'leather'}).length,0);
+
+    const byDay=a.run('tbItemsByDay(tbCalFilter(tbItems,'+J({uid:'u-ammar',scope:'me'})+'))');
+    s.eq('one bucket per day',Object.keys(byDay).length,1);
+    // Gates first, then events, then tasks — the Dashboard's rule, and the
+    // same comparator, so the two can never disagree.
+    s.eq('gates lead the day',J(byDay['2026-10-05'].map(i=>i.id)),J(['gate','event','mine','donesToo']));
+
+    const marks=a.run('tbMarkersByDay({markers:[{label:"launch",date:"2026-10-30"},{label:"founders out",date:"2026-11-01"}]})');
+    s.eq('the launch marker lands on its day',J(marks['2026-10-30']),J(['launch']));
+    s.eq('two markers on one day both show',
+      J(a.run('tbMarkersByDay({markers:[{label:"a",date:"2026-10-30"},{label:"b",date:"2026-10-30"}]})')['2026-10-30']),J(['a','b']));
+    s.eq('no config, no markers',J(Object.keys(a.run('tbMarkersByDay(null)'))),J([]));
+  }
+
+  s.section('a move — the lock is the whole product');
+  {
+    const a=loadApp({files:FILES});
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"},'
+      +'{uid:"u-afnan",username:"afnan",displayName:"Afnan"},'
+      +'{uid:"u-dani",username:"daniyal",displayName:"Daniyal"}]');
+    a.run('tbLists=[]');
+    const NOW=1790000000000;
+    const GATE=J({id:'g1',title:'ALL ASSETS IN',date:'2026-10-25',datePlanned:'2026-10-25',
+      kind:'gate',locked:true,lockedBy:'u-ammar',ownerUid:'u-ammar',
+      assigneeUids:['u-ammar','u-dani'],status:'open',visibility:'shared',dateHistory:[],steps:[]});
+    const plan=(uid,owner,to)=>a.run('tbMovePlan('+GATE+','+J(to)+','+J(uid)+','+(owner?'true':'false')+','+NOW+')');
+
+    // Afnan is a board OWNER in this app, so Daniyal is the right person
+    // to prove a lock actually holds.
+    const refused=plan('u-dani',false,'2026-10-28');
+    s.ok('a member cannot move a locked gate',refused.refused===true);
+    s.ok('and is told who holds it',/locked by Ammar/.test(refused.reason));
+    s.eq('no patch is produced at all',refused.data,undefined);
+
+    const byLocker=plan('u-ammar',false,'2026-10-28');
+    s.ok('the locker can',!byLocker.refused);
+    s.eq('the new date is written',byLocker.data.date,'2026-10-28');
+    s.eq('datePlanned never moves — it is what "was Oct 25" is drawn from',byLocker.data.datePlanned,undefined);
+    s.eq('the move is in the history',byLocker.data.dateHistory.length,1);
+    s.eq('with where it came from',byLocker.data.dateHistory[0].from,'2026-10-25');
+    s.eq('and who moved it',byLocker.data.dateHistory[0].byUid,'u-ammar');
+    s.eq('logged as a move',byLocker.activity[0].type,'moved');
+    s.ok('the locker’s own move is NOT an override',!byLocker.override);
+    // Everyone else on the item hears — a date somebody else moved is the
+    // definition of something you need to know.
+    s.eq('the other assignee is told',J(byLocker.notify),J(['u-dani']));
+    s.ok('and the mover is not told about their own',byLocker.notify.indexOf('u-ammar')<0);
+
+    const override=plan('u-afnan',true,'2026-10-28');
+    s.ok('a board owner can move anyone’s locked gate',!override.refused);
+    s.ok('and it is recorded as an override',override.override===true);
+    s.ok('in the activity payload, not only in a toast',override.activity[0].payload.override===true);
+    s.eq('both assignees are told',J(override.notify.sort()),J(['u-ammar','u-dani']));
+
+    s.ok('dropping an item on its own day does nothing',plan('u-ammar',false,'2026-10-25').noop===true);
+    s.ok('and says nothing about it',plan('u-ammar',false,'2026-10-25').reason==='');
+    s.ok('a date that is not a date is refused',plan('u-ammar',true,'not-a-day').refused===true);
+
+    // An UNLOCKED item is anyone's to move, which is the normal case.
+    const open=J({id:'i2',title:'x',date:'2026-10-05',datePlanned:'2026-10-05',
+      ownerUid:'u-ammar',assigneeUids:['u-ammar'],status:'open',visibility:'shared',dateHistory:[],steps:[]});
+    s.ok('an unlocked item moves for a member',
+      !a.run('tbMovePlan('+open+',"2026-10-06","u-dani",false,'+NOW+')').refused);
+
+    s.eq('the keyboard nudges a day',a.run('tbNudgeTarget({date:"2026-10-25"},1)'),'2026-10-26');
+    s.eq('and a week',a.run('tbNudgeTarget({date:"2026-10-25"},7)'),'2026-11-01');
+    s.eq('backwards too',a.run('tbNudgeTarget({date:"2026-10-25"},-1)'),'2026-10-24');
+    s.eq('an undated item has nowhere to nudge to',a.run('tbNudgeTarget({date:null},1)'),'');
+  }
+
+  s.section('the pill');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(DANIYAL));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}]');
+    a.run('tbLists=[];_tbHydrateQueue=[]');
+    const mk=o=>a.run('_tbPill('+J(o)+',"2026-09-25")');
+    const nasty='<img src=x onerror=alert(1)>';
+    const p=mk({id:'i1',title:nasty,kind:'task',status:'open',assigneeUids:['u-dani'],ownerUid:'u-dani'});
+    s.ok('a title never reaches the markup',p.indexOf(nasty)===-1&&p.indexOf('<img')===-1);
+    s.ok('it is hydrated as text',a.run('_tbHydrateQueue.some(q=>q.text==='+J(nasty)+')'));
+
+    const g=mk({id:'g1',title:'gate',kind:'gate',status:'open',locked:true,lockedBy:'u-ammar',
+      assigneeUids:['u-dani'],ownerUid:'u-ammar'});
+    s.ok('a gate is solid',/tb-pill[^"]*\bgate\b/.test(g));
+    s.ok('a locked pill shows its padlock',/tb-pilllock/.test(g));
+    // A pill somebody cannot move offers no drag affordance AT ALL — the
+    // refusal is visible before the pointer goes down, not after.
+    s.ok('and carries no drag handler for someone who cannot move it',!/onpointerdown/.test(g));
+    s.ok('nor the draggable class',!/\bdraggable\b/.test(g));
+    s.ok('but it is still clickable, so the drawer is reachable',/tbPillClick/.test(g));
+
+    const mine=mk({id:'i2',title:'x',kind:'task',status:'open',assigneeUids:['u-dani'],ownerUid:'u-dani'});
+    s.ok('an item I can move does carry the drag handler',/onpointerdown="window.tbPillDown/.test(mine));
+    s.ok('and says so in its class',/\bdraggable\b/.test(mine));
+    s.ok('it is keyboard reachable',/tabindex="0"/.test(mine)&&/tbPillKey/.test(mine));
+    const done=mk({id:'i3',title:'x',kind:'task',status:'done',assigneeUids:['u-dani'],ownerUid:'u-dani'});
+    s.ok('a done pill just fades',/\bdone\b/.test(done));
+  }
+
+  s.section('the drag, driven');
+  {
+    // DRIVEN, not grepped: the whole gesture lives in that handler's
+    // closure, so asserting the helpers would prove only the helpers.
+    // _tbDayFromPoint is the ONE part that needs a laid-out page; it is
+    // replaced and everything else — the threshold, the lazy capture, the
+    // document tracking, the drop, the write — runs for real.
+    const mkApp=()=>{
+      const a=catchToasts(loadApp({files:FILES,currentPage:'tb-calendar'}));
+      a.run('session='+J(AMMAR));
+      a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"},'
+        +'{uid:"u-dani",username:"daniyal",displayName:"Daniyal"}]');
+      a.run('tbLists=[];tbConfig=null;tbLoaded=true;_tbLoadErrors=[]');
+      a.run('tbItems=[tbDecodeItem({id:"i1",title:"pricing tiers",date:"2026-10-17",'
+        +'datePlanned:"2026-10-17",status:"open",ownerUid:"u-ammar",'
+        +'assigneeUids:["u-ammar","u-dani"],visibility:"shared"})]');
+      a.run('globalThis.__drop="2026-10-19";_tbDayFromPoint=function(){return __drop;};'
+        +'globalThis.__captured=0;'
+        +'globalThis.__el={classList:{add(){},remove(){}},setPointerCapture(){__captured++;}};');
+      return a;
+    };
+    // The harness records document listeners as bare functions, so they
+    // can be called straight from here.
+    const fireDoc=(a,type,ev)=>{
+      const e=Object.assign({type:type,pointerId:1,clientX:0,clientY:0,
+        preventDefault(){},stopPropagation(){}},ev||{});
+      ((a.state.listeners&&a.state.listeners[type])||[]).slice().forEach(fn=>fn(e));
+      return e;
+    };
+    const press=(a,x,y)=>a.run('window.tbPillDown({button:0,pointerId:1,clientX:'+x+',clientY:'+y
+      +',currentTarget:__el,preventDefault(){},stopPropagation(){}},"i1")');
+    const settle=()=>new Promise(r=>setTimeout(r,0));
+
+    // ── a press that never moves is a CLICK, not a drag ──
+    const tap=mkApp();
+    press(tap,10,10);
+    fireDoc(tap,'pointermove',{clientX:11,clientY:11});    // inside the 4px threshold
+    fireDoc(tap,'pointerup',{clientX:11,clientY:11});
+    s.eq('a press that barely moves captures nothing',tap.run('__captured'),0);
+    s.eq('and writes nothing',tap.state.writes.length,0);
+    s.eq('the date is untouched',tap.run('tbItems[0].date'),'2026-10-17');
+    // AN EAGER setPointerCapture RETARGETS THE FOLLOWING CLICK to the
+    // capturing element — the bug js/boards.js found five times under five
+    // names. Deferring it past the threshold is what leaves the click alone.
+    tap.run('window.tbPillClick({preventDefault(){}},"i1")');
+    s.eq('so the click still opens the drawer',tap.run('_tbOpenItemId'),'i1');
+
+    // ── a real drag ──
+    const drag=mkApp();
+    press(drag,10,10);
+    fireDoc(drag,'pointermove',{clientX:60,clientY:40});   // past the threshold
+    s.eq('the pointer is captured only once the gesture is a drag',drag.run('__captured'),1);
+    fireDoc(drag,'pointermove',{clientX:120,clientY:80});
+    s.eq('and not captured again on every move',drag.run('__captured'),1);
+    fireDoc(drag,'pointerup',{clientX:120,clientY:80});
+    await settle();
+    s.eq('the item lands on the day it was dropped on',drag.run('tbItems[0].date'),'2026-10-19');
+    s.eq('one batch carries the item and its log',drag.state.batches.length,1);
+    s.eq('with both documents in it',drag.state.batches[0].length,2);
+    const moved=drag.state.writes.filter(w=>w.data&&w.data.dateHistory)[0];
+    s.ok('the move is recorded in the history',!!moved);
+    s.eq('from where it was',moved&&moved.data.dateHistory[0].from,'2026-10-17');
+    s.ok('and logged as a move',drag.state.writes.some(w=>w.data&&w.data.type==='moved'));
+    // The other assignee is told; the mover is not told about their own.
+    s.ok('the other assignee is notified',drag.state.writes.some(w=>w.data&&w.data.forUser==='daniyal'));
+    s.ok('and the mover is not',!drag.state.writes.some(w=>w.data&&w.data.forUser==='ammar'));
+    // A drag ends with a click on whatever is under the pointer. Swallow
+    // it, or every move would also open the drawer.
+    drag.run('window.tbPillClick({preventDefault(){}},"i1")');
+    s.eq('the click that ends a drag does NOT open the drawer',drag.run('_tbOpenItemId'),null);
+
+    // ── dropped on nothing ──
+    const miss=mkApp();
+    miss.run('__drop=""');
+    press(miss,10,10);
+    fireDoc(miss,'pointermove',{clientX:60,clientY:40});
+    fireDoc(miss,'pointerup',{clientX:60,clientY:40});
+    await settle();
+    s.eq('a drop outside any day changes nothing',miss.run('tbItems[0].date'),'2026-10-17');
+    s.eq('and writes nothing',miss.state.writes.length,0);
+
+    // ── a locked item, by someone who is not the locker ──
+    const lock=catchToasts(loadApp({files:FILES,currentPage:'tb-calendar'}));
+    lock.run('session='+J(DANIYAL));
+    lock.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}];tbLists=[];tbLoaded=true');
+    lock.run('tbItems=[tbDecodeItem({id:"g1",title:"ALL ASSETS IN",date:"2026-10-25",kind:"gate",'
+      +'locked:true,lockedBy:"u-ammar",ownerUid:"u-ammar",assigneeUids:["u-dani"],visibility:"shared"})]');
+    lock.run('globalThis.__captured=0;'
+      +'globalThis.__el={classList:{add(){},remove(){}},setPointerCapture(){__captured++;}};'
+      +'_tbDayFromPoint=function(){return "2026-10-28";};');
+    lock.run('window.tbPillDown({button:0,pointerId:1,clientX:10,clientY:10,currentTarget:__el,'
+      +'preventDefault(){},stopPropagation(){}},"g1")');
+    fireDoc(lock,'pointermove',{clientX:90,clientY:60});
+    fireDoc(lock,'pointerup',{clientX:90,clientY:60});
+    await settle();
+    s.eq('the drag never starts',lock.run('__captured'),0);
+    s.eq('the date is untouched',lock.run('tbItems[0].date'),'2026-10-25');
+    s.eq('nothing is written',lock.state.writes.length,0);
+    s.ok('and the refusal names who holds the lock',toastsOf(lock).some(t=>/locked by Ammar/.test(t)));
+
+    // ── the keyboard route reaches the same decision ──
+    const kb=mkApp();
+    kb.run('window.tbPillKey({key:"]",preventDefault(){}},"i1")');
+    await settle();
+    s.eq('] moves it a day',kb.run('tbItems[0].date'),'2026-10-18');
+    kb.run('window.tbPillKey({key:"ArrowRight",shiftKey:true,preventDefault(){}},"i1")');
+    await settle();
+    s.eq('shift+right moves it a week',kb.run('tbItems[0].date'),'2026-10-25');
+
+    const kbLock=catchToasts(loadApp({files:FILES,currentPage:'tb-calendar'}));
+    kbLock.run('session='+J(DANIYAL));
+    kbLock.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}];tbLists=[];tbLoaded=true');
+    kbLock.run('tbItems=[tbDecodeItem({id:"g1",title:"g",date:"2026-10-25",locked:true,'
+      +'lockedBy:"u-ammar",ownerUid:"u-ammar",assigneeUids:["u-dani"],visibility:"shared"})]');
+    kbLock.run('window.tbPillKey({key:"]",preventDefault(){}},"g1")');
+    await settle();
+    s.eq('and the keyboard cannot walk around a lock either',kbLock.run('tbItems[0].date'),'2026-10-25');
+    s.ok('saying the same thing',toastsOf(kbLock).some(t=>/locked by Ammar/.test(t)));
+  }
+
+  s.section('the calendar screen');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-calendar'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}]');
+    a.run('tbLists=[];tbLoaded=true;_tbLoadErrors=[]');
+    a.run('tbConfig={markers:[{label:"launch",date:"2026-10-30"}]}');
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"x",date:"2026-10-30",status:"open",'
+      +'ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"shared"})]');
+    a.run('_tbCalAnchor="2026-10-15";_tbCalView="month"');
+    const m=a.run('_tbCalendar()');
+    s.ok('the month grid renders',/tb-monthgrid/.test(m));
+    s.ok('with a weekday header starting Monday',/tb-dow">mon</.test(m));
+    s.ok('every day is a drop target',/data-day="2026-10-30"/.test(m));
+    s.ok('the marker is drawn on its day',/tb-daymark">launch</.test(m));
+    s.ok('and its day is flagged',/class="tb-day[^"]*marked/.test(m));
+    s.ok('a day offers a way to add on it',/tbCalAdd\('2026-10-30'\)/.test(m));
+    s.ok('the view says what it is showing',/1 item shown/.test(m));
+    a.run('_tbCalView="week"');
+    const w=a.run('_tbCalendar()');
+    s.ok('the week grid renders',/tb-weekgrid/.test(w));
+    // NOT /class="tb-day/ — tb-dayhead, tb-daynum, tb-daymark, tb-dayadd
+    // and tb-daylist all start with it, which counted 35 for 7 cells.
+    s.eq('and only seven days',(w.match(/class="tb-day[ "]/g)||[]).length,7);
+    // A refused read and an empty calendar must never look the same.
+    a.run('_tbLoadErrors=["board_items"]');
+    const err=a.run('_tbCalendar()');
+    s.ok('a failed read renders an error',/Could not read the board/.test(err));
+    s.ok('not an empty month',!/tb-monthgrid/.test(err));
+    a.run('_tbLoadErrors=[]');
+    // The view preference is per VIEWER, never on the board.
+    a.run('_tbCalView="week";_tbCalFilters.lane="denim";_tbCalSavePrefs()');
+    s.eq('preferences never reach Firestore',a.state.writes.length,0);
+    // Stepping is by the unit you are looking at.
+    a.run('_tbCalView="month";_tbCalAnchor="2026-10-15";window.tbCalStep(1)');
+    s.eq('month view steps a month',a.run('_tbCalAnchor').slice(0,7),'2026-11');
+    a.run('_tbCalView="week";_tbCalAnchor="2026-10-15";window.tbCalStep(1)');
+    s.eq('week view steps a week',a.run('_tbCalAnchor'),'2026-10-22');
+  }
+
   return s;
 };

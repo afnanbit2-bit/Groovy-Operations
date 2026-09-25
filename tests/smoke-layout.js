@@ -114,6 +114,42 @@ const FRAGMENTS={
   // The Dashboard as five people will actually see it: the row is a flexing
   // title beside fixed meta, which is the Profile-directory shape that
   // shipped every name at exactly 0px. Long titles on purpose.
+  // The calendar is the densest grid in the app: seven columns of pills,
+  // each a flexing title beside fixed meta, at every width. A day square
+  // at 420px is ~50px wide, which is exactly where a pill title gets
+  // crushed to nothing if its min-width:0 is missing.
+  'the board — calendar':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-calendar',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+    app.run("tbConfig={markers:[{label:'launch',date:'2026-10-30'},{label:'founders out',date:'2026-11-01'}]}");
+    app.run("tbLoaded=true;_tbLoadErrors=[];_tbCalAnchor='2026-10-15';_tbCalView='month';_tbCalFilters={scope:'all',person:'',list:'',lane:'',color:'',hideDone:false}");
+    // The real seed's longest titles, a locked gate, a done one, and FIVE
+    // pills on one day — the square that has to hold the most.
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'ALL ASSETS IN — including website UI assets',date:'2026-10-25',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'b',title:'First run complete + Haris QC',date:'2026-10-25',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-must',assigneeUids:['u-must'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'c',title:'November runbook signed: restock triggers, daily report, cash authority',date:'2026-10-25',kind:'gate',status:'open',ownerUid:'u-must',assigneeUids:['u-must','u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'d',title:'Ad copy + headlines',date:'2026-10-25',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'e',title:'done already',date:'2026-10-25',status:'done',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared'})," +
+      "tbDecodeItem({id:'f',title:'LAUNCH',date:'2026-10-30',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'g',title:'Launch rehearsal: theme preview, stock count, CSR scripts, courier',date:'2026-10-29',kind:'event',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})]");
+    app.run('_tbHydrateQueue=[]');
+    const html=app.run('_tbCalendar()');
+    // Every pill title is hydrated with textContent, so a fragment that did
+    // not fill them in would measure EMPTY boxes and prove nothing — the
+    // trap the rail fragment walked into once already.
+    const q=app.run('_tbHydrateQueue');
+    let out=html;
+    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),
+      '$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    return out;
+  },
+
   'the board — dashboard':()=>{
     const app=loadApp({
       files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
