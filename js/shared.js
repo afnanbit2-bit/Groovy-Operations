@@ -827,8 +827,11 @@ function buildNav(){
   if(om)printItems.push({id:'observer-tower',label:'Observer Tower'});
   if(canManageRecipes()||isQCWorker())printItems.push({id:'color-library',label:'Color Library'});
 
+  // Store: owners, managers and the store role. Workers and viewers never
+  // (25 Sept 2026 — Uzaib, a viewer, was getting the whole section on
+  // desktop because this used to test !isWorker alone).
   const storeSubItems=[];
-  if(!isWorker){
+  if(!isWorker&&!isViewer){
     storeSubItems.push({id:'store-dashboard',label:'Dashboard'});
     if(typeof _canViewCash==='function'&&_canViewCash())storeSubItems.push({id:'acct-ledger',label:'Accounts'});
     storeSubItems.push({id:'store-inventory',label:'Inventory'});

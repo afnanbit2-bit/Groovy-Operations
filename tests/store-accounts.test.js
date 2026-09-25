@@ -1226,25 +1226,31 @@ module.exports=async function(){
 
   // Afnan: "put a button in afnan view only to reset + edit + delete record
   // of things." Edit-in-place, hard delete, reopen a closed month and a
-  // full reset — for ONE username, mirrored in firestore.rules isAcctSuper().
-  s.section('admin tools — Afnan only: edit, delete, reopen, reset');
+  // full reset — for NAMED usernames (Afnan; Ammar added 25 Sept 2026),
+  // mirrored in firestore.rules isAcctSuper().
+  s.section('admin tools — Afnan and Ammar only: edit, delete, reopen, reset');
   {
     const AMMAR={uid:'u2',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'};
+    // a hypothetical third owner: proves the gate is a username list, not the role
+    const ZED={uid:'u9',u:'zed',name:'Zed',role:'owner',email:'zed@groovy.op'};
     s.eq('afnan is super',app({session:OWNER}).run('_acctIsSuper()'),true);
-    s.eq('the other owner is NOT — it is a username, not the owner role',app({session:AMMAR}).run('_acctIsSuper()'),false);
+    s.eq('ammar is super',app({session:AMMAR}).run('_acctIsSuper()'),true);
+    s.eq('another owner is NOT — it is a username, not the owner role',app({session:ZED}).run('_acctIsSuper()'),false);
     s.eq('raees is not',app({session:RAEES}).run('_acctIsSuper()'),false);
     s.eq('a manager is not',app({session:MUSTAFA}).run('_acctIsSuper()'),false);
-    s.eq('the list is exactly afnan',app().run('JSON.stringify(_ACCT_SUPER_USERS)'),'["afnan"]');
+    s.eq('the list is exactly afnan and ammar',app().run('JSON.stringify(_ACCT_SUPER_USERS)'),'["afnan","ammar"]');
 
     // the buttons exist for afnan and for nobody else
     const seedOne=a=>a.seed([E('purchase',{_id:'p1',vendorId:'A',vendorName:'A',source:'credit',amount:5000,category:'Store purchase',lines:[{itemCode:'',desc:'thread',qty:1,unit:'',rate:5000,total:5000}]})],[V('A'),V('B')]);
     const foot=(sess)=>{const a=app({session:sess});seedOne(a);a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");a.run("window.acctOpenEntry('p1')");return a.run('window.__cap.f')||'';};
     s.ok('afnan\'s entry detail offers Edit (admin) and Delete (admin)',/acctAdminEdit\('p1'\)/.test(foot(OWNER))&&/acctAdminDelete\('p1'\)/.test(foot(OWNER)));
-    s.ok('ammar\'s does not',!/acctAdmin/.test(foot(AMMAR)));
+    s.ok('ammar\'s does too',/acctAdminEdit\('p1'\)/.test(foot(AMMAR))&&/acctAdminDelete\('p1'\)/.test(foot(AMMAR)));
+    s.ok('another owner\'s does not',!/acctAdmin/.test(foot(ZED)));
     s.ok('raees\'s does not',!/acctAdmin/.test(foot(RAEES)));
     const review=sess=>{const a=app({session:sess});a.seed([],[],{closes:[{_id:LAST,month:LAST,cashBook:0,cashCounted:0,variance:0}]});a.run("currentPage='acct-review';acctRenderPage('acct-review',document.getElementById('main-content'))");return a.el('main-content').innerHTML;};
     s.ok('the review page carries the Admin tools card for afnan, with Reopen and Reset',/Admin tools/.test(review(OWNER))&&new RegExp("acctAdminReopen\\('"+LAST+"'\\)").test(review(OWNER))&&/acctAdminResetPrompt/.test(review(OWNER)));
-    s.ok('and not for ammar',!/Admin tools|acctAdmin/.test(review(AMMAR)));
+    s.ok('and for ammar',/Admin tools/.test(review(AMMAR))&&/acctAdminResetPrompt/.test(review(AMMAR)));
+    s.ok('and not for another owner',!/Admin tools|acctAdmin/.test(review(ZED)));
 
     // the patch builder is pure and writes only what changed
     const a=app({session:OWNER});seedOne(a);
@@ -1291,7 +1297,7 @@ module.exports=async function(){
     s.ok('and names the refusal',den.state.toasts.some(t=>/Delete refused/.test(t.msg||t)));
 
     // nobody else can reach any of it, whatever the DOM says
-    for(const [name,sess] of [['ammar',AMMAR],['raees',RAEES]]){
+    for(const [name,sess] of [['another owner',ZED],['raees',RAEES]]){
       const n=app({session:sess});seedOne(n);n.seed([E('purchase',{_id:'p1',amount:100})],[],{closes:[{_id:LAST,month:LAST}]});
       const bn=n.state.fetches.length;
       await n.run(`window.acctAdminDelete('p1');window.acctAdminSave('p1');window.acctAdminReopen('${LAST}');window.acctAdminReset();window.acctAdminEdit('p1');window.acctAdminResetPrompt()`);
@@ -1303,7 +1309,8 @@ module.exports=async function(){
     // vendor document goes last, meter logs go with a consumable vendor
     const vpage=sess=>{const a=app({session:sess});a.seed([],[V('A')]);a.run("_acctVendorId='A';currentPage='acct-vendor';acctRenderPage('acct-vendor',document.getElementById('main-content'))");return a.el('main-content').innerHTML;};
     s.ok('the vendor page offers Delete vendor to afnan',/acctVendorDelete\('A'\)/.test(vpage(OWNER)));
-    s.ok('and not to ammar (an owner)',!/acctVendorDelete/.test(vpage(AMMAR)));
+    s.ok('and to ammar',/acctVendorDelete\('A'\)/.test(vpage(AMMAR)));
+    s.ok('and not to another owner',!/acctVendorDelete/.test(vpage(ZED)));
     s.ok('and not to raees',!/acctVendorDelete/.test(vpage(RAEES)));
     // a fetch that answers runQuery with what we tell it, and records DELETEs
     const vmk=(o)=>{const t=app({session:(o&&o.session)||OWNER,globals:{fetch:async(url,init)=>{
@@ -1333,7 +1340,7 @@ module.exports=async function(){
     const v4=vmk({refuse:true});v4.seed([],[V('A')]);
     await v4.run("window.acctVendorDelete('A')");
     s.ok('a refused delete keeps the vendor and names the refusal',!!v4.run("_acctVendor('A')")&&v4.state.toasts.some(t=>/Delete refused/.test(t.msg||t)));
-    for(const [name,sess] of [['ammar',AMMAR],['raees',RAEES]]){
+    for(const [name,sess] of [['another owner',ZED],['raees',RAEES]]){
       const n=vmk({session:sess});n.seed([],[V('A')]);const bn=n.state.fetches.length;
       await n.run("window.acctVendorDelete('A')");
       s.ok(name+': deleting a vendor is a no-op — no read, no write, no confirm',n.state.fetches.length===bn&&!!n.run("_acctVendor('A')")&&n.state.confirms.length===0);
@@ -1375,14 +1382,14 @@ module.exports=async function(){
     // firestore.rules mirrors all of it
     const rules=read('firestore.rules');
     const src=read('js/store-accounts.js');
-    s.ok('isAcctSuper() names afnan alone',/function isAcctSuper\(\) \{ return signedIn\(\) && userEmail\(\) == 'afnan@groovy\.op'; \}/.test(rules));
+    s.ok('isAcctSuper() names afnan and ammar',/function isAcctSuper\(\) \{ return signedIn\(\) && userEmail\(\) in \['afnan@groovy\.op','ammar@groovy\.op'\]; \}/.test(rules));
     s.ok('… and never isOwner()',!/function isAcctSuper\(\)[^\n]*isOwner/.test(rules));
     const entries=/match \/acct_entries\/\{doc\} \{([\s\S]*?)\n    \}/.exec(rules);
     s.ok('acct_entries: delete is isAcctSuper() only',entries&&/allow delete: if isAcctSuper\(\);/.test(entries[1]));
     s.ok('acct_entries: the admin edit bypasses the hasOnly list, everyone else is still held to it',entries&&/allow update: if isAcctSuper\(\) \|\| \(isStoreAccounts\(\)\s*&& request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasOnly\(/.test(entries[1]));
     s.ok('acct_closes: delete is isAcctSuper(), update still never',/match \/acct_closes\/\{doc\}[^\n]*allow update: if false; allow delete: if isAcctSuper\(\);/.test(rules));
     s.ok('acct_vendors: delete is isAcctSuper()',/match \/acct_vendors\/\{doc\}[^\n]*allow delete: if isAcctSuper\(\);/.test(rules));
-    s.ok('the JS list and the rule name the same person',/const _ACCT_SUPER_USERS=\['afnan'\]/.test(src));
+    s.ok('the JS list and the rule name the same people',/const _ACCT_SUPER_USERS=\['afnan','ammar'\]/.test(src));
     s.ok('the reset removes exactly entries, meter logs and closes by default',/const _ACCT_RESET_COLS=\['acct_entries','acct_meter_logs','acct_closes'\]/.test(src));
   }
 

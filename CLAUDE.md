@@ -6141,13 +6141,15 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
 - **Afnan's correction tools (23 Sept 2026): edit, delete, reopen, reset.**
   Afnan: *"put a button in afnan view only to reset + edit + delete record
   of things."* The module's rule stays **void-never-edit, nothing deleted**
-  for everyone else; these are ONE person's repair tools.
-  `_ACCT_SUPER_USERS=['afnan']` / `_acctIsSuper()` — **by USERNAME, never
-  the owner role** (Ammar is an owner and gets none of it; asserted), the
-  Sept 2026 grant shape — mirrored in `firestore.rules` **`isAcctSuper()`**
-  (`afnan@groovy.op`), so a UI leak is not a boundary leak. Every route
-  checks the gate first and is a no-op for anyone else (asserted for Ammar
-  and Raees: no write, no modal).
+  for everyone else; these are NAMED people's repair tools.
+  `_ACCT_SUPER_USERS=['afnan','ammar']` / `_acctIsSuper()` — **by USERNAME,
+  never the owner role** (a hypothetical third owner gets none of it;
+  asserted), the Sept 2026 grant shape — mirrored in `firestore.rules`
+  **`isAcctSuper()`** (`afnan@groovy.op`, `ammar@groovy.op`), so a UI leak
+  is not a boundary leak. **Ammar was added on 25 Sept 2026** (Afnan: *"give
+  ammar the same access as i do"*); until then it was Afnan alone. Every
+  route checks the gate first and is a no-op for anyone else (asserted for
+  a third owner and for Raees: no write, no modal).
   - **Edit (admin)…** on any entry's detail: `acctAdminEdit` → a form of
     the plain fields (`_ACCT_ADMIN_FIELDS`: date, amount, vendor, person,
     account, to-account, source, category, ref, note). `_acctAdminPatch`
@@ -6379,9 +6381,13 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     rather than naming a finding** when removed (the guard IS the null
     check the credit branch relies on). The form fragment renders the
     no-vendor form and the settle form with Other selected — fails 6 jobs
-    at 1:1 with the settle hint's ink set to `--surface`. **Nobody has
-    settled with a runner or recorded a vendor-less bill on a real
-    screen** — the sandbox cannot sign in.
+    at 1:1 with the settle hint's ink set to `--surface`. **CONFIRMED
+    WORKING ON THE LIVE SITE by Afnan, 24 Sept 2026** (*"deployed fine,
+    runner settle works"*) — the deploy of `7c3f238` (v157) built, and the
+    settle path holds end to end on a real screen. Do not re-open
+    `runner_pay` or `_acctRunnerOwed` on a hunch. **The vendor-less bill
+    and its ₨1,000 photo rule have not been reported on either way** —
+    still unseen on a real screen.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
@@ -8284,10 +8290,23 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   four nav sites did not change name. Mirror: `firestore.rules`
   `isStoreAccounts()`.
 - `_acctIsSuper()` (`js/store-accounts.js`, `_ACCT_SUPER_USERS`) → **afnan
-  by username** — edit an entry in place, delete one, delete a vendor
-  with no entries, reopen the last closed month, reset the module. Ammar (same `owner` role) gets none of
-  it. Mirror: `firestore.rules` `isAcctSuper()`. See "Afnan's correction
-  tools" under Store Accounts.
+  + ammar by username** (Ammar added 25 Sept 2026) — edit an entry in place,
+  delete one, delete a vendor with no entries, reopen the last closed
+  month, reset the module. Mirror: `firestore.rules` `isAcctSuper()`. See
+  "Afnan's correction tools" under Store Accounts.
+- `_storeIsSuper()` (`js/store.js`, `_STORE_SUPER_USERS`) → **afnan + ammar
+  by username** (25 Sept 2026; was four hardcoded `session.u==='afnan'`
+  checks) — the Store Dashboard's Danger Zone: full stock overwrite and
+  reconstruct-from-log. App-layer only; `store_items` is `signedIn()`
+  writable in the rules.
+- **The Store sidebar section** (`buildNav()`, `js/shared.js`) → owners,
+  managers and the `store` role — i.e. afnan, ammar, mustafa, arfat, raees.
+  It used to test `!isWorker` alone, so Uzaib (a `viewer`) got the whole
+  section on desktop; it is `!isWorker&&!isViewer` now (25 Sept 2026, at
+  Afnan's ask). Every scoped role (packing, fulfilment, Marketing lead, CSR
+  lead) returns early from `buildNav()` and never reaches it.
+  `tests/store-access.test.js` drives the real `buildNav()` for EVERY
+  `USER_DEFS` account, so a new account is checked by default.
 - **Inventory Intel nav item** (`js/shared.js`, `buildNav()` +
   `openMoreSheet()`) → owners, **+ mustafa by username** (Sept 2026 grant,
   he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
@@ -8634,6 +8653,13 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**REPUBLISH OUTSTANDING (25 Sept 2026):** `isAcctSuper()` now lists
+`afnan@groovy.op` AND `ammar@groovy.op` (it was Afnan alone). Until the
+Console has it, Ammar sees the Store Accounts admin buttons (Edit / Delete
+an entry, Delete vendor, Reopen, Reset) but every one of their writes is
+refused with "Missing or insufficient permissions". Nothing else in the
+file moved.
 
 **No republish outstanding as of 23 Sept 2026 (evening).** Afnan
 confirmed ("rules pushed") from the repo file at
