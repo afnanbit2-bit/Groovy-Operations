@@ -45,7 +45,7 @@ let _fulfillActiveRows={d:FULFILL_DISPATCH_ROWS,r:FULFILL_RETURN_ROWS};
 // ── Module state ──
 let fulfillReports=[];          // cached docs, newest first
 let fulfillReportsLoaded=false;
-let _fulfillSection='reporting';// 'reporting' (manual daily) | 'postex' (courier API)
+let _fulfillSection='reporting';// 'reporting' (manual daily) | 'postex' (courier API) | 'accounts' (js/warehouse-sales.js)
 let _fulfillTab='analytics';    // reporting sub-tab: 'analytics' | 'entry' | 'log'
 let _fulfillRangeKey='30d';     // active range preset key (or 'custom')
 let _fulfillFrom=null;          // custom-range start (ISO) — used when key==='custom'
@@ -389,9 +389,28 @@ function _canEditFulfillment(){return _canViewFulfillment();}
 // Jump straight to a tab/section (used by mobile nav + deep links).
 window.showFulfillTab=function(tab){
   if(tab==='postex'){_fulfillSection='postex';}
+  else if(tab==='accounts'&&_fulfillCanAccounts()){_fulfillSection='accounts';}
   else{_fulfillSection='reporting';_fulfillTab=(['entry','log'].includes(tab)?tab:'analytics');}
-  window.showPage('fulfillment');
+  Promise.resolve(window.showPage('fulfillment')).then(_fulfillMarkNav,_fulfillMarkNav);
 };
+// The Accounts section (customer purchases, js/warehouse-sales.js) is Umair's
+// and the owners' — managers see Courier Performance but not this. typeof-
+// guarded: a build without that file shows the page exactly as before.
+function _fulfillCanAccounts(){return typeof whsCanView==='function'&&whsCanView();}
+// Every tab here is one page id ('fulfillment'), so showPage can only ever
+// light the first button. Light the one that matches what is on screen.
+function _fulfillMarkNav(){
+  const key=_fulfillSection==='accounts'?'fulfillment-accounts'
+    :_fulfillSection==='reporting'&&_fulfillTab==='entry'?'fulfillment-entry'
+    :_fulfillSection==='reporting'&&_fulfillTab==='log'?'fulfillment-log':'fulfillment';
+  const btn=document.querySelector(`#mob-nav [data-mob-id="${key}"]`);
+  if(btn){
+    document.querySelectorAll('#mob-nav .mob-nav-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const acc=document.getElementById('nav-fulfillment-accounts'),cp=document.getElementById('nav-fulfillment');
+  if(acc&&cp){acc.classList.toggle('on',key==='fulfillment-accounts');cp.classList.toggle('on',key!=='fulfillment-accounts');}
+}
 
 // ── Data loading ──
 async function loadFulfillmentData(){
@@ -1112,18 +1131,29 @@ function _fulfillSectionBar(){
       style="display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border:none;border-radius:9px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:700;transition:all .12s;
       background:${_fulfillSection===id?'var(--dark)':'transparent'};color:${_fulfillSection===id?'var(--on-dark)':'var(--muted)'};box-shadow:${_fulfillSection===id?'0 1px 3px rgba(0,0,0,.18)':'none'}">
       <span style="font-size:15px">${icon}</span>${label}</button>`;
-  return `<div style="display:inline-flex;gap:3px;background:var(--soft);border-radius:12px;padding:4px;margin-bottom:16px">
-      ${seg('reporting','📋','Daily Reporting')}${seg('postex','⚡','PostEx')}
+  // flex-wrap: three segments (with Accounts) are wider than a 390px phone,
+  // and an unwrapped pill pushed the last one off the screen.
+  return `<div style="display:inline-flex;flex-wrap:wrap;max-width:100%;gap:3px;background:var(--soft);border-radius:12px;padding:4px;margin-bottom:16px">
+      ${seg('reporting','📋','Daily Reporting')}${seg('postex','⚡','PostEx')}${_fulfillCanAccounts()?seg('accounts','🧾','Accounts'):''}
     </div>`;
 }
 
 function renderFulfillmentPage(){
   if(!_canViewFulfillment())
     return '<div class="empty">Courier Performance is restricted to owners and managers.</div>';
-  const head=(sub)=>`<div class="page-head">
-    <div class="page-title">Courier Performance</div>
+  const head=(sub,title)=>`<div class="page-head">
+    <div class="page-title">${title||'Courier Performance'}</div>
     <div class="page-sub">${sub}</div>
   </div>`;
+
+  // ── Accounts section (customer purchases — js/warehouse-sales.js) ──
+  if(_fulfillSection==='accounts'){
+    if(_fulfillCanAccounts()&&typeof whsSectionHTML==='function')
+      return `${head('Customer purchases — each one copied from its ERP bill, with the bill attached','Accounts')}
+        ${_fulfillSectionBar()}
+        <div id="fulfill-body">${whsSectionHTML()}</div>`;
+    _fulfillSection='reporting';
+  }
 
   // ── PostEx section (API-driven) ──
   if(_fulfillSection==='postex'){
@@ -1146,9 +1176,10 @@ function renderFulfillmentPage(){
 
 // Switch the primary section and re-render the whole page.
 window.switchFulfillSection=function(sec){
-  _fulfillSection=(sec==='postex'?'postex':'reporting');
+  _fulfillSection=(sec==='postex'?'postex':sec==='accounts'&&_fulfillCanAccounts()?'accounts':'reporting');
   const m=document.getElementById('main-content');
   if(m)m.innerHTML=renderFulfillmentPage();
+  _fulfillMarkNav();
 };
 
 // Owner/manager dashboard widget — injected at the top of #main-content on the
@@ -1189,6 +1220,7 @@ window.switchFulfillTab=function(tab){
   if(!body)return;
   body.innerHTML=_fulfillBody();
   if(tab==='entry')window._fulfillRecalc();
+  _fulfillMarkNav();
 };
 
 // ══════════════════════════════════════════════════════════════════════

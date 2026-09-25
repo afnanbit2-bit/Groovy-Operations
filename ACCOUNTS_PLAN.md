@@ -103,3 +103,40 @@ Purchase orders to vendors with partial receipt · PDF statements through the
 print engine · Noman's own login · a payables aging report on the owner
 dashboard · cheque tracking · the Permissions module's `cash.*` capabilities
 replacing `_acctCan*`.
+
+## 5. Level 2 — customer purchases at the warehouse (Umair, 25 Sept 2026)
+
+Afnan: *"Umair is the warehouse manager and customers that come in and buy
+stuff — the ERP we use makes a bill … an accounts section in Umair's tab
+where Umair can record the customer purchases. To punch an entry Umair must
+take a picture or upload the PDF … customer name + number + order # + due
+date (for customers that pay after making purchases — pay later, usually
+people we know), a tab to apply discount max 20%, article name searchable
+with quantity … this account sits with Umair; once it is set up I will
+review, then we will add logic to add the receivable to Raees's store
+account section, as cash is managed by Raees."*
+
+Built as `js/warehouse-sales.js`, collection `wh_sales`. **Everything below
+is Claude's call, made so the review has something concrete to overrule.**
+
+| Decision | Why | Overrule by |
+|---|---|---|
+| A third **section** on Umair's page (Courier Performance → Daily Reporting · PostEx · **Accounts**), plus an Accounts item on his sidebar and a 4th phone button | His role is scoped to one page in `showPage`; a section needs no change to that scope and opens no side door | — |
+| **Umair by username + the owners.** Managers see Courier Performance but not this; Raees not yet | "This account sits with Umair", Afnan reviews | edit `_WHS_USERS` and `isWhSales()` together |
+| **One document per ERP order; the id IS the order number** (`wh_sales/SO0334`) | One bill, one sale. A duplicate is refused by name, in a transaction, and by the rules | — |
+| **The bill is required** — photo (camera) or PDF, via Cloudinary `/auto/upload` | "must take a picture or upload pdf" | — |
+| **Articles come from the daily Shopify copy** (`shopify_products`), searchable by name or by the barcode the bill prints (`GP092-M`); Enter picks the top hit, so a USB barcode scanner works | It is the only in-app source with prices; the SKU is the barcode | — |
+| **A line is a snapshot**: title, variant, barcode, article code, the price charged and the catalog price of the day | The catalog is rewritten daily; a bill must not change under itself | — |
+| **Price prefilled, editable, and a changed price FLAGGED for owner review**, not refused. An article not in the catalog can be typed in, flagged the same way | The ERP bill is what was charged; "warn, never block" | make the price read-only |
+| **Discount max 20% is HARD** — refused in the form and in `firestore.rules` (`discount*100 <= subtotal*20`). Percent or rupees; whole rupees | "max 20%" | change `WHS_MAX_DISCOUNT_PCT` **and** the rule |
+| **Paid now → Cash or Bank transfer; Pay later → a due date (on or after the sale date)** | The due date is only asked for pay later | — |
+| **Collecting a pay-later bill is NOT recorded yet.** The "Pay later — to collect" and "Overdue" tiles count every active pay-later sale | Collection is the Raees step, where the cash is | next wave |
+| **Void, never edit** (Umair or an owner, with a reason). Owners clear a review flag. Afnan/Ammar may delete (`isAcctSuper`) | The Store Accounts rule | — |
+| A returning customer's phone fills the name (and the name the phone), from past sales — derived, nothing stored | "usually people we know" | — |
+
+**Next wave (not built):** the receivable in Raees's Store Accounts — a
+pay-later sale becomes money owed *to* Groovy, and collecting it is a
+`cash_in` Raees confirms; a paid-now cash sale becomes cash Raees receives
+from Umair. Open questions for that step: does Umair hand cash to Raees
+daily (a handover entry) or per sale; who marks a pay-later bill collected;
+and does a bank-transfer sale land in MCB directly.
