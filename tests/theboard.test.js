@@ -1667,5 +1667,368 @@ module.exports=async function(){
       !/u-nobody/.test(L({type:'done',byUid:'u-nobody'})));
   }
 
+
+  // ══ PHASE 5 ═══════════════════════════════════════════════════════════
+
+  s.section('search, over the loaded set');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    const IT={id:'i1',title:'pricing tiers',notes:'wholesale MARGIN is the open question',
+      lane:'denim',steps:[{title:'ask the mill',done:false}],status:'open'};
+    const M=(q,th)=>a.run('tbSearchMatch('+J(IT)+','+J(q)+','+J(th||null)+')');
+    s.eq('an empty query matches nothing',M(''),null);
+    s.eq('a title hit says where',J(M('pricing').where),J(['title']));
+    s.ok('notes are searched, case-folded',M('margin').where.indexOf('notes')>-1);
+    s.ok('so are steps',M('mill').where.indexOf('steps')>-1);
+    s.ok('and the lane',M('denim').where.indexOf('lane')>-1);
+    s.eq('a word nowhere on it does not match',M('leather'),null);
+    s.eq('one word can match in two places',J(M('tiers').where),J(['title']));
+    // THE HONEST LIMIT of "over the loaded set": a thread is read when a
+    // drawer opens, so a comment in an item nobody has opened is not in
+    // memory to search. The result row says which fields matched.
+    s.eq('a comment is not searched when the thread was never read',M('cyc'),null);
+    s.ok('and is when it was',
+      M('cyc',{comments:[{body:'the CYC has to be wired'}]}).where.indexOf('comments')>-1);
+
+    const ITEMS=[IT,{id:'i2',title:'denim bulk',notes:'',status:'open',date:'2026-10-05'},
+      {id:'i3',title:'knit samples',notes:'pricing sheet attached',status:'open',date:'2026-10-02'}];
+    const hits=a.run('tbSearchItems('+J(ITEMS)+',"pricing",{})');
+    s.eq('both are found',hits.length,2);
+    // A title hit outranks one buried in notes -- somebody searching a
+    // word is far more often looking for the thing named after it.
+    s.eq('the title hit comes first',hits[0].item.id,'i1');
+    s.eq('a query nobody matches returns nothing',a.run('tbSearchItems('+J(ITEMS)+',"zzz",{})').length,0);
+  }
+
+  s.section('the search box replaces the screen and puts itself back');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}]');
+    a.run('tbLists=[];tbConfig=null;tbLoaded=true;_tbLoadErrors=[]');
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"pricing tiers",ownerUid:"u-ammar",'
+      +'assigneeUids:["u-ammar"],visibility:"shared",date:"2026-10-17"})]');
+    s.ok('the box is in the rail, so it is on every screen',
+      /id="tb-search"/.test(a.run('_tbShell("tb-dash","")')));
+    s.ok('the dashboard renders normally with no query',
+      !/results for/.test(a.run('_tbScreen("tb-dash")')));
+    // A search is a MODE, not a fifth page: it answers "where is that
+    // item" from wherever you were, and clearing puts you back.
+    a.run('_tbQuery="pricing"');
+    const scr=a.run('_tbScreen("tb-dash")');
+    s.ok('a query takes over the screen',/1 result for/.test(scr));
+    s.ok('and says where it matched',/matched in title/.test(scr));
+    a.run('_tbQuery="zzz"');
+    const none=a.run('_tbScreen("tb-dash")');
+    s.ok('nothing matching says so in one sentence',/nothing matches/.test(none));
+    s.ok('and names the limit rather than implying comments are covered',
+      /threads you have opened/.test(none));
+    s.ok('with a way out',/tbSearchClear/.test(none));
+    a.run('window.tbSearchClear()');
+    s.eq('clearing empties the query',a.run('_tbQuery'),'');
+    s.eq('and asks for the caret back',a.run('_tbSearchFocus'),false,'consumed by the repaint');
+  }
+
+  s.section('the keyboard');
+  {
+    const a=loadApp({files:FILES});
+    const K=(e,ctx)=>a.run('tbShortcutFor('+J(e)+','+J(ctx||{})+')');
+    s.eq('n is a new item',K({key:'n'}),'new');
+    s.eq('slash is search',K({key:'/'}),'search');
+    s.eq('d is the dashboard',K({key:'d'}),'go:tb-dash');
+    s.eq('c is the calendar',K({key:'c'}),'go:tb-calendar');
+    s.eq('l is lists',K({key:'l'}),'go:tb-lists');
+    s.eq('i is the inbox',K({key:'i'}),'go:tb-inbox');
+    s.eq('? is the shortcut list',K({key:'?'}),'help');
+    s.eq('and so is shift+slash, which is how it is typed',K({key:'/',shiftKey:true}),'help');
+    // Those belong to the OS and the browser, not to us.
+    s.eq('ctrl+d is not ours',K({key:'d',ctrlKey:true}),'');
+    s.eq('cmd+i is not ours',K({key:'i',metaKey:true}),'');
+    // THE EDITABLE BAIL: a letter typed into a field is a letter.
+    s.eq('d while typing is just a d',K({key:'d'},{editable:true}),'');
+    s.eq('and so is n',K({key:'n'},{editable:true}),'');
+    // ESCAPE IS READ BEFORE THE BAIL, or it is handed to the browser and
+    // does nothing -- the rule js/boards.js had to learn twice.
+    s.eq('escape closes the drawer even from a field',
+      K({key:'Escape'},{editable:true,drawerOpen:true}),'close-drawer');
+    s.eq('the shortcut list outranks the drawer',
+      K({key:'Escape'},{helpOpen:true,drawerOpen:true}),'help-close');
+    s.eq('then the drawer outranks the search',
+      K({key:'Escape'},{drawerOpen:true,query:'x'}),'close-drawer');
+    s.eq('and with neither open it clears the search',
+      K({key:'Escape'},{query:'x'}),'clear-search');
+    s.eq('escape with nothing to close does nothing',K({key:'Escape'},{}),'');
+    s.eq('an unmapped key does nothing',K({key:'q'}),'');
+    // Every key the overlay advertises is a key that does something.
+    const listed=a.run('TB_SHORTCUTS.map(x=>x.k)');
+    s.eq('the ? overlay lists eight',listed.length,8);
+    const live=listed.filter(k=>k==='esc'
+      ? a.run('tbShortcutFor({key:"Escape"},{drawerOpen:true})')!==''
+      : a.run('tbShortcutFor('+J({key:k})+',{})')!=='');
+    s.eq('and every one of them is wired',live.length,listed.length,live.join(','));
+    s.ok('the overlay is closed until asked for',!a.run('_tbHelpOpen'));
+    a.run('window.tbToggleHelp()');
+    s.ok('and renders the keys when it is',/tb-kbd/.test(a.run('_tbHelpOverlay()')));
+  }
+
+  s.section('the keyboard is scoped to the board');
+  {
+    // `d` must not navigate away from somebody typing a PO number on
+    // another page, so the document listener bails on the page first.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('tbLists=[];tbItems=[];tbLoaded=true;_tbLoadErrors=[];currentPage="po-registry"');
+    a.run('globalThis.__went=[];showPage=function(p){__went.push(p);};window.showPage=showPage');
+    const fire=e=>a.run('(document.__k||[]).forEach(function(f){f('+J(e)+');})');
+    // The listener is registered ONCE at load, on the document.
+    a.run('document.__k=(globalThis.__docListeners||[])');
+    s.ok('a keydown listener was registered at load',
+      (a.state.listeners['keydown']||[]).length===1);
+    const call=e=>(a.state.listeners['keydown']||[]).forEach(f=>f(Object.assign({preventDefault(){}},e)));
+    call({key:'c'});
+    s.eq('off the board, c does nothing',a.run('__went').length,0);
+    a.run('currentPage="tb-dash"');
+    call({key:'c'});
+    s.eq('on the board it navigates',J(a.run('__went')),J(['tb-calendar']));
+  }
+
+  s.section('boardLastSeenAt');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}]');
+    a.run('tbLists=[];tbItems=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null');
+    s.eq('the first look is always due',a.run('tbSeenDue(0,Date.now())'),true);
+    s.eq('a minute later it is not',a.run('tbSeenDue(1000,61000)'),false);
+    s.eq('ten minutes later it is',a.run('tbSeenDue(0,600000)'),true);
+    // A RENDER FUNCTION MUST NOT WRITE. Caught by the create test going
+    // from two documents to three when this lived in _tbDashboard.
+    a.run('_tbRepaint()');
+    await new Promise(r=>setTimeout(r,0));
+    s.eq('painting the dashboard writes nothing',a.state.writes.length,0);
+    a.run('tbRenderPage("tb-dash")');
+    await new Promise(r=>setTimeout(r,0));
+    s.eq('opening it writes once',a.state.writes.length,1);
+    const w=a.state.writes[0];
+    s.ok('the last-seen stamp',!!(w&&w.data&&w.data.boardLastSeenAt));
+    s.eq('carrying uid, so the profile rule passes on create as well as update',
+      w&&w.data.uid,'u-ammar');
+    a.run('tbRenderPage("tb-dash")');
+    await new Promise(r=>setTimeout(r,0));
+    s.eq('opening it again inside ten minutes writes nothing more',a.state.writes.length,1);
+  }
+
+  s.section('Dashboard cards 10-12');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    const TODAY='2026-10-17';
+    const ITEMS=[
+      {id:'i1',title:'a',assigneeUids:['u-ammar'],status:'open',date:'2026-10-17',visibility:'shared',
+       ownerUid:'u-ammar',createdAt:100,dateHistory:[]},
+      {id:'i2',title:'b',assigneeUids:['u-ammar'],status:'open',date:'2026-10-10',visibility:'shared',
+       ownerUid:'u-ammar',createdAt:200,dateHistory:[{from:'2026-10-05',to:'2026-10-10',byUid:'u-dani',at:500}]},
+      {id:'i3',title:'c',assigneeUids:['u-dani'],status:'done',visibility:'shared',
+       ownerUid:'u-dani',createdAt:300,completedAt:900,completedByUid:'u-dani',dateHistory:[]},
+      {id:'i4',title:'p',assigneeUids:['u-ammar'],status:'open',visibility:'private',
+       ownerUid:'u-ammar',createdAt:400,dateHistory:[]}
+    ];
+    // A timestamp ON that day, not Date.now() -- the counts above are
+    // pinned to 2026-10-17 and "seen today" has to be read against the
+    // same day or the assertion is about when the suite happens to run.
+    const SEEN=new Date(2026,9,17,12,0,0).getTime();
+    const PROF=[{uid:'u-ammar',username:'ammar',displayName:'Ammar',boardLastSeenAt:SEEN},
+                {uid:'u-dani',username:'daniyal',displayName:'Daniyal',boardLastSeenAt:1}];
+    const team=a.run('tbTeamToday('+J(ITEMS)+',["u-ammar","u-dani","u-saim"],'+J(TODAY)+','+J(PROF)+')');
+    s.eq('one row per board user',team.length,3);
+    s.eq('open counts what is not done',team[0].open,3);
+    s.eq('due today',team[0].due,1);
+    s.eq('overdue',team[0].overdue,1);
+    s.eq('a done item is on nobody’s count',team[1].open,0);
+    s.eq('somebody who opened it today',team[0].seenToday,true);
+    s.eq('somebody who has not',team[1].seenToday,false);
+    // NO ROW IS AN ACCUSATION: never signed in is not "has not looked".
+    s.eq('and somebody with no profile row at all is unknown, not absent',team[2].seenToday,null);
+
+    const act=a.run('tbRecentActivity('+J(ITEMS)+',15)');
+    // DERIVED from the items already in memory -- no collection-group
+    // query, no new index, no rules change, and nothing that can go stale.
+    s.ok('a private item never reaches a shared feed',!act.some(r=>r.item.id==='i4'));
+    s.eq('newest first',act[0].at,900);
+    s.eq('and it is the completion',act[0].row.type,'done');
+    s.ok('a move is in it',act.some(r=>r.row.type==='moved'&&r.row.payload.to==='2026-10-10'));
+    s.ok('and a creation',act.some(r=>r.row.type==='created'));
+    s.eq('the limit is honoured',a.run('tbRecentActivity('+J(ITEMS)+',2)').length,2);
+    // ONE definition of how a log entry reads, shared with the drawer.
+    a.run('userProfiles='+J(PROF));
+    s.ok('it words events through tbActivityLine',
+      /Daniyal marked it done/.test(a.run('tbActivityLine('+J(act[0].row)+')')));
+
+    const LISTS=[{id:'l1',title:'Winter Drop 2027',kind:'shared',color:'moss'},
+                 {id:'l2',title:'empty one',kind:'private',color:'slate'},
+                 {id:'l3',title:'archived',archived:true}];
+    const withList=ITEMS.map(i=>Object.assign({},i,{listId:i.id==='i3'?'l2':'l1'}));
+    const ml=a.run('tbMyLists('+J(withList)+','+J(LISTS)+',"u-ammar")');
+    s.eq('an archived list is not a list',ml.length,2);
+    s.eq('busiest first',ml[0].id,'l1');
+    s.eq('counting what is open',ml[0].open,3);
+    s.eq('and how much of it is mine',ml[0].mine,3);
+    s.eq('a list whose only item is done reads zero',ml[1].open,0);
+  }
+
+  s.section('the context cards stay out of the way of an empty board');
+  {
+    // Spec s7.1: a card with nothing to SAY is hidden, not rendered empty.
+    // Five rows of "0 open" answers no question -- and it would suppress
+    // the empty state, which is spec s10's one sentence plus one action.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}]');
+    a.run('tbLists=[{id:"l1",title:"Winter Drop 2027",kind:"shared",adminUid:"u-ammar"}]');
+    a.run('tbItems=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null');
+    const bare=a.run('_tbDashboard()');
+    s.ok('an empty board still says so',/nothing on the board today/.test(bare));
+    s.ok('with one action, not none',/tb-calendar/.test(bare));
+    s.ok('no team card',!/team today/.test(bare));
+    s.ok('no list chips',!/my lists/.test(bare));
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"a",ownerUid:"u-ammar",'
+      +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l1",date:"'+a.run('_tbToday()')+'"})]');
+    const full=a.run('_tbDashboard()');
+    s.ok('with work on it the team card appears',/team today/.test(full));
+    s.ok('and the list chips',/my lists/.test(full));
+    // _tbCard's count chip reads rows.length, so the chips have to be one
+    // row each -- joined into a single string the card says "1" however
+    // many lists there are.
+    a.run('tbLists.push({id:"l2",title:"second",kind:"private",adminUid:"u-ammar"})');
+    a.run('tbItems.push(tbDecodeItem({id:"i2",title:"b",ownerUid:"u-ammar",'
+      +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l2"}))');
+    const two=a.run('_tbDashboard()');
+    s.ok('the card counts the lists, not the string it built',
+      /my lists<span class="tb-count">2</.test(two));
+  }
+
+  s.section('the unscheduled tray');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-calendar'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"},'
+      +'{uid:"u-dani",username:"daniyal",displayName:"Daniyal"}]');
+    a.run('tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null');
+    a.run('tbItems=['
+      +'tbDecodeItem({id:"d1",title:"dated",ownerUid:"u-ammar",assigneeUids:["u-ammar"],'
+        +'visibility:"shared",date:"2026-10-17",lane:"denim"}),'
+      +'tbDecodeItem({id:"u1",title:"denim bulk lands",ownerUid:"u-ammar",'
+        +'assigneeUids:["u-ammar"],visibility:"shared",lane:"denim"}),'
+      +'tbDecodeItem({id:"u2",title:"knit bulk lands",ownerUid:"u-ammar",'
+        +'assigneeUids:["u-ammar"],visibility:"shared",lane:"knit"}),'
+      +'tbDecodeItem({id:"u3",title:"someone else\'s",ownerUid:"u-dani",'
+        +'assigneeUids:["u-dani"],visibility:"shared"})]');
+    const un=f=>a.run('tbUnscheduled(tbItems,'+J(Object.assign({uid:'u-ammar',scope:'me'},f))+').map(i=>i.id)');
+    s.eq('only what has no date',J(un({})),J(['u1','u2']));
+    s.ok('a dated item is never in the tray',un({}).indexOf('d1')<0);
+    s.ok('and neither is somebody else’s',un({}).indexOf('u3')<0);
+    // ONE PREDICATE serves the grid and the tray, so a chip can never say
+    // 4 while the tray draws 3.
+    s.eq('the calendar’s own filters apply to it',J(un({lane:'denim'})),J(['u1']));
+    s.eq('and the everyone scope',un({scope:'all'}).length,3);
+    a.run('_tbCalAnchor="2026-10-15";_tbCalView="week";_tbHydrateQueue=[]');
+    const cal=a.run('_tbCalendar()');
+    s.ok('the tray renders beside the grid',/tb-tray/.test(cal));
+    s.ok('saying how many are in it',/unscheduled<span class="tb-count">2</.test(cal));
+    s.ok('and how to get one onto a day',/drag one onto a day/.test(cal));
+    a.run('window.tbTrayToggle()');
+    s.ok('it collapses',!/tb-traybody/.test(a.run('_tbCalendar()')));
+    s.eq('and the preference never reaches Firestore',a.state.writes.length,0);
+  }
+
+  s.section('the week, read as rows by person');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-calendar'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"},'
+      +'{uid:"u-afnan",username:"afnan",displayName:"Afnan"},'
+      +'{uid:"u-dani",username:"daniyal",displayName:"Daniyal"},'
+      +'{uid:"u-must",username:"mustafa",displayName:"Mustafa"},'
+      +'{uid:"u-saim",username:"saim",displayName:"Saim"}]');
+    a.run('tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null');
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"shoot 2",ownerUid:"u-ammar",'
+      +'assigneeUids:["u-dani"],visibility:"shared",date:"2026-10-15"})]');
+    a.run('_tbCalAnchor="2026-10-15";_tbCalView="week";_tbCalRows=true;_tbHydrateQueue=[]');
+    const rows=a.run('_tbCalendar()');
+    s.ok('it renders the person grid',/tb-personweek/.test(rows));
+    s.eq('one row per board user, plus the day header',
+      (rows.match(/class="tb-prow/g)||[]).length,6);
+    s.ok('the item sits in its person’s row',/data-day="2026-10-15"/.test(rows));
+    s.ok('and the toggle says it is on',/tb-seg on" onclick="window.tbCalRows\(false\)/.test(rows));
+    // It is a way of reading the WEEK, so it is not offered on a month.
+    a.run('_tbCalView="month"');
+    s.ok('a month offers no by-person toggle',!/tbCalRows/.test(a.run('_tbCalendar()')));
+    s.ok('and does not render one',!/tb-personweek/.test(a.run('_tbCalendar()')));
+    // Seven columns times five people is not a phone.
+    const p=loadApp({files:FILES,currentPage:'tb-calendar',phone:true});
+    p.run('session='+J(AMMAR));
+    p.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}]');
+    p.run('tbLists=[];tbItems=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null');
+    p.run('_tbCalAnchor="2026-10-15";_tbCalView="week";_tbCalRows=true;_tbHydrateQueue=[]');
+    s.ok('a phone never draws it',!/tb-personweek/.test(p.run('_tbCalendar()')));
+  }
+
+  s.section('on a phone a pill is HELD, not dragged');
+  {
+    // Spec s11: drag & drop replaced by a move-to date picker on
+    // long-press. A 4px threshold aimed at a ~50px day square is not a
+    // gesture a thumb can land.
+    const a=catchToasts(loadApp({files:FILES,currentPage:'tb-calendar',phone:true}));
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}]');
+    a.run('tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null');
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"pricing tiers",ownerUid:"u-ammar",'
+      +'assigneeUids:["u-ammar"],visibility:"shared",date:"2026-10-17"})]');
+    a.run('globalThis.__captured=0;globalThis.__el={classList:{add(){},remove(){}},'
+      +'setPointerCapture(){__captured++;}}');
+    const down=()=>a.run('window.tbPillDown({button:0,pointerId:1,clientX:10,clientY:10,'
+      +'currentTarget:__el,preventDefault(){},stopPropagation(){}},"i1")');
+    const fire=(t,e)=>((a.state.listeners[t]||[]).slice()
+      .forEach(f=>f(Object.assign({type:t,pointerId:1,clientX:10,clientY:10,
+        preventDefault(){},stopPropagation(){}},e||{}))));
+    // A tap that ends before the hold is just a tap.
+    down();
+    fire('pointerup');
+    await new Promise(r=>setTimeout(r,560));
+    s.eq('a tap opens no sheet',a.run('_tbMoveId'),null);
+    s.eq('and never captures the pointer',a.run('__captured'),0);
+    a.run('window.tbPillClick({preventDefault(){}},"i1")');
+    s.eq('so the tap still opens the drawer',a.run('_tbOpenItemId'),'i1');
+    a.run('window.tbCloseItem()');
+    // A hold opens the date picker.
+    down();
+    await new Promise(r=>setTimeout(r,560));
+    s.eq('a hold opens the move sheet',a.run('_tbMoveId'),'i1');
+    s.eq('with no drag anywhere in it',a.run('__captured'),0);
+    s.ok('and a buzz to say it landed',(a.state.vibrations||[]).length>0);
+    const sheet=a.run('_tbMoveSheet()');
+    s.ok('the sheet offers a date',/id="tb-move-date"/.test(sheet));
+    s.ok('and the three answers people actually want',
+      /today/.test(sheet)&&/tomorrow/.test(sheet)&&/next week/.test(sheet));
+    a.run('window.tbCloseMove()');
+    fire('pointerup');
+    // A finger that travels is a scroll, not a hold.
+    down();
+    fire('pointermove',{clientX:60,clientY:60});
+    await new Promise(r=>setTimeout(r,560));
+    s.eq('a finger that moves cancels the hold',a.run('_tbMoveId'),null);
+    fire('pointerup');
+    // The lock is checked before the sheet, not after. AMMAR IS A BOARD
+    // OWNER and overrides any lock -- the premise phases 3 and 4 both had
+    // to correct. Daniyal is who the refusal is for.
+    a.run('tbItems[0].locked=true;tbItems[0].lockedBy="u-afnan"');
+    a.run('userProfiles.push({uid:"u-afnan",username:"afnan",displayName:"Afnan"})');
+    a.run('session='+J(DANIYAL));
+    a.run('window.tbOpenMove("i1")');
+    s.eq('a locked pill opens no sheet',a.run('_tbMoveId'),null);
+    s.ok('and says who holds it',toastsOf(a).some(t=>/locked by Afnan/.test(t)));
+  }
+
   return s;
 };

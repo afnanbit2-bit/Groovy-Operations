@@ -264,6 +264,81 @@ const FRAGMENTS={
     return out;
   },
 
+  // Phase 5. Three fragments rather than one: the search screen and the
+  // last three cards are ordinary flow, the calendar is its own shape, and
+  // the two overlays are position:fixed and would report every control
+  // under them as covered if they shared a page with anything.
+  'the board — search and the last cards':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar',boardLastSeenAt:Date.now()},{uid:'u-afnan',username:'afnan',displayName:'Afnan',boardLastSeenAt:1},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'},{id:'l2',title:'a much longer private list name',kind:'private',adminUid:'u-ammar',color:'clay'}]");
+    app.run("tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[{label:'launch',date:'2026-10-30'}]}");
+    const T=app.run('_tbToday()');
+    app.run("tbItems=[tbDecodeItem({id:'i1',title:'Shoot 2 — knit + outerwear + henley + washed (Oct 15–16)',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-dani'],date:'"+T+"',listId:'l1',lane:'shoot',notes:'CYC must be wired by the 5th.',createdAt:Date.now()-86400000,dateHistory:[{from:'2026-10-15',to:'"+T+"',byUid:'u-afnan',at:Date.now()-3600000}]}),"
+      +"tbDecodeItem({id:'i2',title:'pricing tiers',status:'open',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-afnan'],date:'2026-01-02',listId:'l1',createdAt:Date.now()-172800000}),"
+      +"tbDecodeItem({id:'i3',title:'earmark KG',status:'done',visibility:'shared',ownerUid:'u-must',assigneeUids:['u-must'],listId:'l2',completedAt:Date.now()-7200000,completedByUid:'u-must',createdAt:Date.now()-200000000})]");
+    app.run('_tbHydrateQueue=[]');
+    // The rail carries the search box and the ? button; the dashboard
+    // carries cards 10-12; a query takes the screen over.
+    const dash=app.run('_tbShell("tb-dash",_tbDashboard())');
+    app.run("_tbQuery='pricing'");
+    const found=app.run('_tbSearchScreen()');
+    app.run("_tbQuery='zzzz'");
+    const none=app.run('_tbSearchScreen()');
+    const q=app.run('_tbHydrateQueue');
+    let out=dash+found+none;
+    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    return out;
+  },
+
+  'the board — the tray and the week by person':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-calendar',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+    app.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[{label:'launch',date:'2026-10-30'}]}");
+    app.run("tbItems=[tbDecodeItem({id:'g1',title:'ALL ASSETS IN',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani'],date:'2026-10-15'}),"
+      +"tbDecodeItem({id:'i2',title:'shoot 2 — knit + outerwear',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'2026-10-16'}),"
+      +"tbDecodeItem({id:'u1',title:'denim bulk lands — no date yet, and the title runs on',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']}),"
+      +"tbDecodeItem({id:'u2',title:'knit bulk lands',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']})]");
+    app.run("_tbCalAnchor='2026-10-15';_tbCalView='week';_tbCalFilters.scope='all';_tbTrayOpen=true;_tbCalRows=false;_tbHydrateQueue=[]");
+    const week=app.run('_tbCalendar()');
+    app.run('_tbCalRows=true');
+    const rows=app.run('_tbCalendar()');
+    const q=app.run('_tbHydrateQueue');
+    let out=week+rows;
+    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    return out;
+  },
+
+  'the board — the shortcut list and the move sheet':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-calendar',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'}]");
+    app.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null");
+    app.run("tbItems=[tbDecodeItem({id:'i1',title:'Shoot 2 — knit + outerwear + henley + washed',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'2026-10-16'})]");
+    app.run('_tbHelpOpen=true;_tbMoveId="i1";_tbHydrateQueue=[]');
+    const help=app.run('_tbHelpOverlay()');
+    const sheet=app.run('_tbMoveSheet()');
+    const q=app.run('_tbHydrateQueue');
+    let out=help+sheet;
+    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    // Both backdrops are position:fixed;inset:0 in the app, so side by
+    // side each would report every control under the other as covered --
+    // the documented false hit. The CARDS are what is being measured, so
+    // the backdrops are laid out in flow here and nothing else changes.
+    return '<style>.tb-help,.tb-sheet{position:relative;inset:auto;margin-bottom:12px}</style>'+out;
+  },
+
   'the board — shell and rail':()=>{
     const app=loadApp({
       files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
