@@ -201,6 +201,69 @@ const FRAGMENTS={
     return out;
   },
 
+  // Phase 4. DELIBERATELY NOT folded into the drawer fragment above: the
+  // drawer is already ~900px of content, and the probe SKIPS hit-testing
+  // anything below the window, so a longer one would stop testing partway
+  // down (the lesson the Mood Boards frame fragment records).
+  'the board — thread, files and mentions':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-dani',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+    app.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null");
+    app.run("tbItems=[tbDecodeItem({id:'i1',title:'Shoot 2 — knit + outerwear',status:'open',kind:'gate',locked:true,lockedBy:'u-ammar',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani'],date:'2026-10-16',attachments:[{id:'f1',name:'winter-drop-2027-shot-list-final-v3.pdf',url:'https://res.cloudinary.com/deww4lpym/raw/upload/v1/a.pdf',mime:'application/pdf',size:2411724},{id:'f2',name:'ref.jpg',url:'https://res.cloudinary.com/deww4lpym/image/upload/v1/a.jpg',mime:'image/jpeg',size:81920}]})]");
+    app.run("_tbOpenItemId='i1';_tbMoveReqOpen=true;_tbShowActivity=true");
+    app.run("_tbThreads={i1:{err:false,comments:["
+      +"{_id:'c1',authorUid:'u-ammar',body:'@[daniyal] the CYC has to be wired by the 5th — see **section 2** of `shot-list.pdf`, and https://groovypakistan.com/pages/lookbook for the reference.',createdAt:Date.now()-7200000,attachments:[]},"
+      +"{_id:'c2',authorUid:'u-dani',body:'on it',createdAt:Date.now()-600000,attachments:[{id:'f3',name:'proof.jpg',url:'https://res.cloudinary.com/deww4lpym/image/upload/v1/b.jpg',mime:'image/jpeg',size:40960}]}"
+      +"],activity:[{_id:'a1',type:'moved',byUid:'u-ammar',at:Date.now()-86400000,payload:{from:'2026-10-15',to:'2026-10-16',override:true}},{_id:'a2',type:'locked',byUid:'u-ammar',at:Date.now()-90000000,payload:{}}]}}");
+    app.run('_tbHydrateQueue=[]');
+    const parts=[app.run('_tbMoveReqSection(tbItems[0])'),
+                 app.run('_tbFilesSection(tbItems[0])'),
+                 app.run('_tbThreadSection(tbItems[0])'),
+                 app.run('_tbActivitySection(tbItems[0])')].join('');
+    // The popover's OPEN state is a class _tbPaintMentions toggles at
+    // runtime, and the probe cannot type — so the markup below is the
+    // real builder's output with that one class applied by hand. It goes
+    // LAST, over its own spacer: a popover genuinely covers what is under
+    // it, and covering the thread would be the fragment measuring itself.
+    app.run("_tbMentionList=[{uid:'u-afnan',handle:'afnan',name:'Afnan',initial:'A'},{uid:'u-ammar',handle:'ammar',name:'Ammar',initial:'A'},{uid:'u-must',handle:'mustafa',name:'Mustafa',initial:'M'}];_tbMentionIdx=1");
+    const pop='<div class="tb-comp"><textarea class="tb-compin" rows="2">@a</textarea>'
+      +'<div class="tb-mentions on">'+app.run('_tbMentionHTML()')+'</div></div>'
+      +'<div style="height:260px"></div>';
+    const q=app.run('_tbHydrateQueue');
+    let out=parts;
+    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    return '<div class="tb-drawer" style="position:static;width:auto;height:auto">'+out+pop+'</div>';
+  },
+
+  'the board — inbox':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-inbox',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-dani',u:'daniyal',name:'Daniyal',role:'creator_content_ops_lead',email:'daniyal@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'}]");
+    app.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;_tbNotifSeeded=true");
+    app.run("tbItems=[tbDecodeItem({id:'i1',title:'Shoot 2 — knit + outerwear + henley + washed',ownerUid:'u-ammar',assigneeUids:['u-dani'],visibility:'shared'})]");
+    const n=(id,type,item,read,msg,ago)=>"{_id:'"+id+"',source:'tb',forUser:'daniyal',type:'"+type
+      +"',itemId:'"+item+"',fromUid:'u-ammar',createdAt:Date.now()-"+ago+",readBy:"+(read?"['daniyal']":"[]")
+      +",message:'"+msg+"'}";
+    app.run('tbNotifs=['+[
+      n('n1','mention','i1',false,'Ammar mentioned you on “Shoot 2” — @Daniyal the CYC has to be wired by the 5th',300000),
+      n('n2','comment','i1',false,'Ammar commented on “Shoot 2” — on it',900000),
+      n('n3','move_request','i2',true,'Ammar asks to move “ALL ASSETS IN” to 2026-10-28 — shoot slipped',86400000)
+    ].join(',')+']');
+    app.run('_tbHydrateQueue=[]');
+    const body=app.run('_tbShell("tb-inbox",_tbInboxScreen())')+app.run('_tbDashboard()');
+    const q=app.run('_tbHydrateQueue');
+    let out=body;
+    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+    return out;
+  },
+
   'the board — shell and rail':()=>{
     const app=loadApp({
       files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',

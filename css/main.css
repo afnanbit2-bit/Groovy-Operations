@@ -3178,3 +3178,117 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 @media(prefers-reduced-motion:reduce){
   .tb-day,.tb-pill,.tb-calbtn,.tb-seg,.tb-dayadd{transition:none}
 }
+
+/* ── THE BOARD — phase 4: comments, mentions, files, inbox ─────────────
+   Every colour is a token. The one deliberate exception is the unread
+   count, which reuses --count-accent: the app's single real red, which
+   does NOT invert because it sits both on a plain surface and on the
+   --dark chip of an active rail button, and --dark swaps with the theme.
+   Spec s10 allows exactly one red on this module, and that is it. */
+
+/* markdown-lite. A mention is a CHIP, not a colour: spec s10 says colour
+   carries meaning and nothing decorative, and "this names a person" is
+   carried perfectly well by weight and a soft ground. */
+.tb-mention{display:inline;padding:1px 5px;border-radius:5px;
+  background:var(--soft);color:var(--text);font-weight:600}
+.tb-code{font-family:var(--font-mono);font-size:12px;padding:1px 4px;
+  border-radius:4px;background:var(--surface-2);color:var(--text)}
+.tb-link{color:var(--link-accent);text-decoration:underline;word-break:break-word}
+
+/* files */
+.tb-files{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.tb-filewrap{position:relative;display:inline-flex}
+.tb-file{display:flex;flex-direction:column;gap:4px;max-width:160px;padding:6px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:9px;
+  text-decoration:none;color:var(--text)}
+.tb-file:hover{background:var(--hover)}
+.tb-fthumb{display:block;width:100%;max-width:148px;max-height:110px;
+  object-fit:contain;border-radius:6px;background:var(--soft)}
+.tb-fmeta{display:flex;flex-direction:column;gap:1px;min-width:0}
+.tb-fname{font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-fsize{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.tb-frm{position:absolute;top:-6px;right:-6px;min-height:24px;padding:0 6px;
+  background:var(--surface);border:1px solid var(--border);border-radius:50%;line-height:1}
+.tb-addfile{margin-left:auto;background:none;border:none;cursor:pointer;
+  font-family:inherit;font-size:12px;font-weight:600;color:var(--muted);
+  padding:4px 6px;border-radius:6px;min-height:32px}
+.tb-addfile:hover{background:var(--hover);color:var(--text)}
+
+/* the thread */
+.tb-cmt{display:flex;gap:8px;padding:8px 0;border-top:1px solid var(--border)}
+.tb-cmt:first-of-type{border-top:none}
+.tb-cmtbody{flex:1;min-width:0}
+.tb-cmthead{display:flex;align-items:baseline;gap:8px}
+.tb-cmtwho{font-size:13px;font-weight:700;color:var(--text)}
+.tb-cmtwhen{font-family:var(--font-mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.tb-cmttext{font-size:14px;line-height:1.6;color:var(--text);word-break:break-word}
+
+/* the composer. It is position:relative because the mention popover is
+   anchored to it, and the popover must not be clipped by the drawer's
+   own scroll -- it opens DOWNWARD under the field for that reason. */
+.tb-comp{position:relative;margin-top:10px}
+.tb-compin{width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;
+  line-height:1.5;color:var(--text);outline:none;resize:vertical;min-height:44px}
+.tb-comprow{display:flex;align-items:center;gap:8px;margin-top:6px}
+.tb-comprow .btn-primary{margin-left:auto}
+.tb-comprow .tb-addfile{margin-left:0}
+.tb-mentions{display:none}
+.tb-mentions.on{display:block;position:absolute;left:0;right:0;top:100%;z-index:20;
+  margin-top:4px;padding:4px;background:var(--surface);border:1px solid var(--border);
+  border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.16);max-height:230px;overflow:auto}
+.tb-mrow{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;padding:0 8px;
+  background:none;border:none;border-radius:7px;cursor:pointer;text-align:left;
+  font-family:inherit;color:var(--text)}
+.tb-mrow:hover,.tb-mrow.on{background:var(--hover)}
+.tb-mname{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-mhandle{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+
+/* activity */
+.tb-actl{display:flex;flex-direction:column;gap:2px}
+.tb-act{display:flex;align-items:baseline;gap:8px;padding:4px 0}
+.tb-acttext{flex:1;min-width:0;font-size:13px;color:var(--muted);line-height:1.5}
+
+/* request move */
+.tb-mr{margin:0 0 12px}
+.tb-mrform{margin-top:8px;padding:10px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:10px}
+.tb-mrform input{width:100%;box-sizing:border-box;min-height:38px;padding:0 8px;
+  margin-bottom:8px;background:var(--surface);border:1px solid var(--border);
+  border-radius:7px;font-family:inherit;font-size:13px;color:var(--text)}
+
+/* the inbox */
+.tb-railn{margin-left:8px;font-family:var(--font-mono);font-size:11px;font-weight:700;
+  color:var(--count-accent)}
+.tb-railn:empty{display:none}
+.tb-nfhead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.tb-nfhead .tb-dsech{margin-bottom:0}
+.tb-nfhead .btn-outline{margin-left:auto}
+.tb-nfgroup{margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius-card);
+  overflow:hidden;background:var(--surface)}
+.tb-nfitem{display:block;padding:8px 12px 4px;font-size:12px;font-weight:700;
+  color:var(--muted);letter-spacing:.03em}
+.tb-nf{display:flex;align-items:center;gap:9px;width:100%;min-height:44px;padding:6px 12px;
+  background:none;border:none;border-top:1px solid var(--border);cursor:pointer;
+  text-align:left;font-family:inherit}
+.tb-nfgroup .tb-nf:first-of-type{border-top:none}
+.tb-nf:hover{background:var(--hover)}
+.tb-nfmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.tb-nftype{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted)}
+.tb-nfmsg{font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* unread is WEIGHT, not colour -- spec s10 keeps the only red for the
+   overdue count, and a bold row reads as unread in both themes. */
+.tb-nf.unread .tb-nfmsg{font-weight:700}
+.tb-nf.unread::before{content:"";flex:0 0 auto;width:6px;height:6px;border-radius:50%;
+  background:var(--text)}
+.tb-nf::before{content:"";flex:0 0 auto;width:6px;height:6px}
+.tb-card .tb-nf{padding:6px 0;border-top:1px solid var(--border)}
+
+@media(max-width:600px){
+  .tb-nf{min-height:48px}
+  .tb-mentions.on{max-height:180px}
+}
+@media(prefers-reduced-motion:reduce){
+  .tb-file,.tb-nf,.tb-mrow,.tb-addfile{transition:none}
+}

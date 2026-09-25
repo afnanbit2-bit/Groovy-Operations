@@ -293,7 +293,12 @@ module.exports=async function(){
     // invent a second UI vocabulary). Anything else is a namespace nobody
     // agreed to -- and a `board-` token is the collision this prefix exists
     // to prevent.
-    const REUSED=['btn-outline','btn-primary','empty','card','section-title'];
+    // `red` is an app-WIDE modifier, not a class of ours: .item-bal.red,
+    // .kpi-card.red and .month-stat.red all carry it, and .tb-count.red
+    // follows that convention rather than inventing a second word for it.
+    // Phase 2 used it too — at js/theboard.js's `(o.red?' red':'')`, which
+    // this scan could not see because the token is built by concatenation.
+    const REUSED=['btn-outline','btn-primary','empty','card','section-title','red'];
     const tokens=new Set();
     (src.match(/class="([^"]*)"/g)||[]).forEach(c=>{
       c.slice(7,-1).split(/[ ]+/).forEach(t=>{ if(t&&/^[a-z][a-z0-9-]*$/.test(t))tokens.add(t); });
@@ -1101,6 +1106,565 @@ module.exports=async function(){
     s.eq('month view steps a month',a.run('_tbCalAnchor').slice(0,7),'2026-11');
     a.run('_tbCalView="week";_tbCalAnchor="2026-10-15";window.tbCalStep(1)');
     s.eq('week view steps a week',a.run('_tbCalAnchor'),'2026-10-22');
+  }
+
+
+  // ══ PHASE 4 ═══════════════════════════════════════════════════════════
+
+  s.section('markdown-lite: escape first, format second');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-afnan",username:"afnan",displayName:"Afnan"}]');
+    const R=t=>a.run('tbRenderBody('+J(t)+')');
+    // THE WHOLE BOUNDARY. _tbEsc runs on the raw text BEFORE any marker is
+    // read, so a tag the author typed is already inert by the time this
+    // function starts writing tags of its own.
+    const evil=R('<img src=x onerror="alert(1)"> and <script>bad()</script>');
+    s.ok('a tag in a comment body cannot reach the DOM',!/<img|<script/i.test(evil));
+    s.ok('it is shown as the text it is',/&lt;img/.test(evil));
+    s.ok('quotes are escaped too',/&quot;|&#39;/.test(R('he said "no" and it\'s fine')));
+    s.ok('**bold** becomes strong',/<strong>yes<\/strong>/.test(R('**yes**')));
+    s.ok('*italic* becomes em',/<em>maybe<\/em>/.test(R('*maybe*')));
+    s.ok('`code` becomes code',/<code class="tb-code">a\*\*b<\/code>/.test(R('`a**b`')));
+    // The code span is lifted out FIRST, so markdown inside it is text.
+    s.ok('and markdown inside a code span is left alone',!/<strong>/.test(R('`a**b**c`')));
+    s.ok('a newline becomes a break',/<br>/.test(R('one\ntwo')));
+    // THE SCHEME CHECK IS THE REGEX: only http(s) can match at all.
+    s.ok('an http url is linked',/<a class="tb-link" href="https:\/\/x\.test"/.test(R('see https://x.test')));
+    s.ok('a javascript: url is NOT',!/<a /.test(R('javascript:alert(1)')));
+    s.ok('and never loses rel=noopener',/rel="noopener noreferrer"/.test(R('https://x.test')));
+    s.ok('trailing punctuation stays out of the href',
+      /href="https:\/\/x\.test"[^>]*>https:\/\/x\.test<\/a>\./.test(R('https://x.test.')));
+    // A mention renders as the PERSON, with the handle kept in the title so
+    // two people who share a first name are still tellable apart.
+    const men=R('hi @[afnan] ok');
+    s.ok('a known mention renders the name',/<span class="tb-mention" title="@afnan">@Afnan<\/span>/.test(men));
+    s.ok('an unknown handle renders as typed',/@\[baber\]|@baber/.test(R('@[baber]')));
+    s.eq('an empty body renders nothing',R(''),'');
+  }
+
+  s.section('mentions: the query, the insert and the ranking');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    const Q=(t,c)=>a.run('tbMentionQuery('+J(t)+','+c+')');
+    s.eq('no @ before the caret is no popover',Q('hello',5),null);
+    s.eq('a bare @ opens it with an empty prefix',J(Q('hi @',4)),J({at:3,prefix:''}));
+    s.eq('and the typed prefix comes back',J(Q('hi @afn',7)),J({at:3,prefix:'afn'}));
+    s.eq('an @ inside a word is not a mention',Q('mail@groovy',11),null);
+    s.eq('a space inside the token closes it',Q('@af nan',7),null);
+    s.eq('the caret BEFORE the @ sees nothing',Q('hi @afn',3),null);
+    const I=(t,c,h)=>a.run('tbMentionInsert('+J(t)+','+c+','+J(h)+')');
+    s.eq('picking writes the stored token form',I('hi @afn',7,'afnan').text,'hi @[afnan] ');
+    s.eq('and puts the caret after it',I('hi @afn',7,'afnan').caret,12);
+    s.eq('text after the caret survives',I('hi @afn there',7,'afnan').text,'hi @[afnan]  there');
+    s.eq('nothing to replace changes nothing',I('hello',5,'afnan').text,'hello');
+
+    const USERS=[{uid:'u-ammar',handle:'ammar',name:'Ammar'},
+                 {uid:'u-afnan',handle:'afnan',name:'Afnan'},
+                 {uid:'u-must',handle:'mustafa',name:'Mustafa'},
+                 {uid:'u-dani',handle:'daniyal',name:'Daniyal'}];
+    const NOW=1790000000000;
+    const C=(p,ctx)=>a.run('tbMentionCandidates('+J(p)+','+J(Object.assign({users:USERS,now:NOW},ctx))+')');
+    s.eq('an empty prefix shows the top five',C('',{me:'u-ammar'}).length,3);
+    s.ok('and never yourself',!C('',{me:'u-ammar'}).some(u=>u.uid==='u-ammar'));
+    // Spec s9: self is allowed when the handle is typed IN FULL.
+    s.ok('typing your own handle in full offers you',
+      C('ammar',{me:'u-ammar'}).some(u=>u.uid==='u-ammar'));
+    s.ok('a partial match of your own handle does not',
+      !C('amm',{me:'u-ammar'}).some(u=>u.uid==='u-ammar'));
+    s.eq('a prefix filters on the first name',J(C('must',{me:'u-ammar'}).map(u=>u.handle)),J(['mustafa']));
+    s.eq('and on the handle',J(C('dan',{me:'u-ammar'}).map(u=>u.handle)),J(['daniyal']));
+    s.eq('a prefix nobody matches shows nobody',C('zzz',{me:'u-ammar'}).length,0);
+    // score = count x recencyWeight, + 2 on this item, + 1 already in the
+    // thread. So history beats nothing, and presence beats history.
+    const stats={'u-dani':{count:20,lastAt:NOW}};
+    s.eq('somebody you mention often comes first',
+      C('',{me:'u-ammar',stats:stats})[0].handle,'daniyal');
+    s.eq('but a person ON the item outranks a stale habit',
+      C('',{me:'u-ammar',stats:{'u-dani':{count:1,lastAt:NOW-90*86400000}},
+          assigneeUids:['u-must']})[0].handle,'mustafa');
+    s.eq('and a thread voice outranks a silent one',
+      C('',{me:'u-ammar',threadUids:['u-afnan']})[0].handle,'afnan');
+    s.eq('ties break alphabetically by first name',
+      J(C('',{me:'u-ammar'}).map(u=>u.handle)),J(['afnan','daniyal','mustafa']));
+    // Recency decays: the same count, 6 months ago, loses to a fresh one.
+    const old={'u-must':{count:20,lastAt:NOW-180*86400000},'u-afnan':{count:3,lastAt:NOW}};
+    s.eq('a recent mention beats an old one with a bigger count',
+      C('',{me:'u-ammar',stats:old})[0].handle,'afnan');
+  }
+
+  s.section("Enter selects only when there is one answer");
+  {
+    // AMMAR'S RULE, added at phase 0 and not in the spec. A popover that
+    // swallows Enter on an ambiguous list picks somebody at random on the
+    // author's behalf, and the author finds out when the wrong person
+    // answers.
+    const a=loadApp({files:FILES});
+    const A=(n,i)=>a.run('tbMentionAccepts(new Array('+n+').fill({}),'+i+')');
+    s.eq('three candidates, nothing arrowed to → Enter is the textarea’s',A(3,-1),-1);
+    s.eq('exactly one candidate → Enter picks it',A(1,-1),0);
+    s.eq('three candidates, one arrowed to → Enter picks that one',A(3,1),1);
+    s.eq('an empty list never picks',A(0,-1),-1);
+    s.eq('an empty list with an index never picks',A(0,0),-1);
+    s.eq('an index past the end falls back to the same rule',A(3,9),-1);
+    s.eq('…and to the single candidate when there is one',A(1,9),0);
+  }
+
+  s.section('resolving what was typed');
+  {
+    const a=loadApp({files:FILES});
+    const MAP={afnan:'u-afnan',ammar:'u-ammar'};
+    const R=t=>a.run('tbResolveMentions('+J(t)+','+J(MAP)+')');
+    s.eq('a bare handle becomes the stored token',R('hi @afnan').body,'hi @[afnan]');
+    s.eq('and resolves to a uid',J(R('hi @afnan').mentionUids),J(['u-afnan']));
+    s.eq('an already-tokenised one is left alone',R('hi @[afnan]').body,'hi @[afnan]');
+    // The quick-add rule, again: @baber is a real person, just not here.
+    s.eq('an unknown handle stays literal',R('ask @baber').body,'ask @baber');
+    s.eq('and names nobody',R('ask @baber').mentionUids.length,0);
+    s.eq('the same person twice is one uid',R('@afnan @afnan').mentionUids.length,1);
+    s.eq('an email address is not a mention',R('mail me at a@b.test').mentionUids.length,0);
+    const B=(st,u,n)=>a.run('tbMentionBump('+J(st)+','+J(u)+','+n+')');
+    s.eq('a first mention counts one',B({},['u-afnan'],5)['u-afnan'].count,1);
+    s.eq('a second counts two',B({'u-afnan':{count:1,lastAt:1}},['u-afnan'],9)['u-afnan'].count,2);
+    s.eq('and records when',B({'u-afnan':{count:1,lastAt:1}},['u-afnan'],9)['u-afnan'].lastAt,9);
+    s.eq('bumping does not mutate what it was given',
+      J(a.run('(function(){var s={};tbMentionBump(s,["u-afnan"],5);return s;})()')),'{}');
+  }
+
+  s.section('what posting a comment becomes');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    const ITEM={id:'i1',title:'pricing tiers',ownerUid:'u-afnan',
+      assigneeUids:['u-ammar','u-must'],commentCount:2,listId:'l1'};
+    const MAP={afnan:'u-afnan',ammar:'u-ammar',mustafa:'u-must',daniyal:'u-dani'};
+    const P=o=>a.run('tbCommentPlan('+J(ITEM)+','+J(Object.assign(
+      {uid:'u-ammar',now:5,handleMap:MAP},o))+')');
+    s.ok('an empty comment is refused',!!P({body:'   '}).error);
+    s.ok('but a file on its own is a comment',
+      !P({body:'',attachments:[{id:'f',name:'x.pdf'}]}).error);
+    const plain=P({body:'looks right'});
+    s.eq('the count goes up by one',plain.data.commentCount,3);
+    s.ok('and the item’s last activity moves',plain.data.lastActivityAt===5);
+    // Everyone already in this conversation hears about it — ONCE.
+    s.eq('the owner and the other assignee are told',
+      J(plain.notify.map(n=>n.uid).sort()),J(['u-afnan','u-must']));
+    s.ok('as a plain comment',plain.notify.every(n=>n.type==='comment'));
+    s.ok('and the author is never told about their own',
+      !plain.notify.some(n=>n.uid==='u-ammar'));
+    const men=P({body:'@afnan can you look'});
+    s.eq('a mentioned person gets a mention, not a comment',
+      J(men.notify.filter(n=>n.uid==='u-afnan')),J([{type:'mention',uid:'u-afnan'}]));
+    s.eq('and only ONE row, though they are also the owner',
+      men.notify.filter(n=>n.uid==='u-afnan').length,1);
+    s.eq('the body is stored in token form',men.comment.body,'@[afnan] can you look');
+    s.eq('with the uid resolved',J(men.comment.mentionUids),J(['u-afnan']));
+    // Someone not on the item and not in the thread hears nothing.
+    s.ok('a bystander is not notified',!plain.notify.some(n=>n.uid==='u-dani'));
+    s.ok('…until they have spoken here',
+      P({body:'ok',threadUids:['u-dani']}).notify.some(n=>n.uid==='u-dani'));
+    s.eq('a mention of yourself notifies nobody',
+      P({body:'@ammar note to self'}).notify.filter(n=>n.uid==='u-ammar').length,0);
+  }
+
+  s.section('posting it, driven');
+  {
+    const mk=()=>{
+      const a=catchToasts(loadApp({files:FILES,currentPage:'tb-dash'}));
+      a.run('session='+J(AMMAR));
+      a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar",tbMentionStats:{}},'
+        +'{uid:"u-afnan",username:"afnan",displayName:"Afnan"}]');
+      a.run('tbLists=[];tbConfig=null;tbLoaded=true;_tbLoadErrors=[]');
+      a.run('tbItems=[tbDecodeItem({id:"i1",title:"pricing tiers",ownerUid:"u-afnan",'
+        +'assigneeUids:["u-ammar"],visibility:"shared",commentCount:0})]');
+      a.run('_tbThreads={i1:{comments:[],activity:[],err:false}};_tbOpenItemId="i1"');
+      return a;
+    };
+    const settle=()=>new Promise(r=>setTimeout(r,0));
+    const a=mk();
+    a.el('tb-comp').value='@afnan look at this';
+    a.run('window.tbPostComment()');
+    await settle();
+    // ONE BATCH. Counting the writes does not prove it — the assertion has
+    // to read the batch's CONTENTS, which is what caught phase 2's first
+    // version passing with the log split into its own setDoc.
+    s.eq('the comment, the item and the ranking go in one batch',a.state.batches.length,1);
+    s.eq('all three documents are in it',a.state.batches[0].length,3);
+    const cmt=a.state.writes.filter(w=>w.data&&w.data.authorUid)[0];
+    s.ok('the comment is written',!!cmt);
+    s.eq('in stored token form',cmt&&cmt.data.body,'@[afnan] look at this');
+    const stats=a.state.writes.filter(w=>w.data&&w.data.tbMentionStats)[0];
+    s.ok('the author’s own ranking data rides along',!!stats);
+    s.eq('carrying the uid, so the profile rule passes on create as well as update',
+      stats&&stats.data.uid,'u-ammar');
+    s.eq('and counts the person mentioned',stats&&stats.data.tbMentionStats['u-afnan'].count,1);
+    // A SET, not an update: a profile row that does not exist yet would
+    // fail an updateDoc and take the whole comment down with it. The
+    // `{merge:true}` third argument itself is invisible to the harness's
+    // batch stub, so what is held here is the op — the half that decides
+    // whether the write can fail at all.
+    const pw=a.state.batches[0].filter(o=>o.data&&o.data.tbMentionStats)[0];
+    s.eq('written as a set, so a missing profile cannot fail the comment',pw&&pw.op,'set');
+    const notif=a.state.writes.filter(w=>w.data&&w.data.source==='tb')[0];
+    s.ok('the mentioned person is pinged',!!notif);
+    s.eq('by username, which is the bell’s key',notif&&notif.data.forUser,'afnan');
+    s.eq('as a mention',notif&&notif.data.type,'mention');
+    s.ok('and the snippet reads the NAME, not the raw token',
+      /mentioned you/.test((notif&&notif.data.message)||'')
+      &&!/@\[afnan\]/.test((notif&&notif.data.message)||''));
+    s.eq('the draft is cleared',a.run('_tbCompDraft.i1'),'');
+    s.eq('and the comment is in the thread without a re-read',a.run('_tbThreads.i1.comments.length'),1);
+
+    // A COMMENT BODY IS A NOTIFICATION SNIPPET, and js/hrm.js prints that
+    // RAW. tbNotifPayload is the one thing standing between the two.
+    const x=mk();
+    x.el('tb-comp').value='<img src=x onerror="alert(1)"> @afnan';
+    x.run('window.tbPostComment()');
+    await settle();
+    const bad=x.state.writes.filter(w=>w.data&&w.data.source==='tb')[0];
+    s.ok('a tag in a comment cannot reach the bell',
+      !!bad&&!/<img/i.test(bad.data.message)&&/&lt;img/.test(bad.data.message));
+
+    // An empty comment must not write anything at all.
+    const e=mk();
+    e.el('tb-comp').value='   ';
+    e.run('window.tbPostComment()');
+    await settle();
+    s.eq('an empty comment writes nothing',e.state.writes.length,0);
+    s.ok('and says why',toastsOf(e).some(t=>/Write something/.test(t)));
+  }
+
+  s.section('typing must not repaint the page');
+  {
+    // The board has ONE repaint and it rebuilds main-content wholesale, so
+    // a repaint on every keystroke would destroy the textarea the caret is
+    // in — and take the mention popover's anchor with it. The popover
+    // repaints ONE element instead.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"},'
+      +'{uid:"u-afnan",username:"afnan",displayName:"Afnan"}]');
+    a.run('tbLists=[];tbLoaded=true;_tbLoadErrors=[]');
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"x",ownerUid:"u-ammar",assigneeUids:["u-ammar"]})]');
+    a.run('_tbThreads={i1:{comments:[],activity:[],err:false}};_tbOpenItemId="i1"');
+    a.run('globalThis.__paints=0;var __op=_tbRepaint;_tbRepaint=function(){__paints++;return __op.apply(null,arguments);};');
+    a.run('window.tbCompInput({value:"hi @af",selectionStart:6})');
+    s.eq('typing repaints nothing',a.run('__paints'),0);
+    s.eq('but the popover has candidates',a.run('_tbMentionList.length'),1);
+    s.eq('with nothing arrowed to yet',a.run('_tbMentionIdx'),-1);
+    s.ok('and the popover element was filled',/tb-mrow/.test(a.el('tb-mentions').innerHTML));
+    s.ok('and marked open',a.el('tb-mentions').classList.contains('on'));
+    a.run('window.tbCompInput({value:"hi there",selectionStart:8})');
+    s.eq('leaving the token closes it',a.run('_tbMentionList.length'),0);
+    s.ok('and unmarks it',!a.el('tb-mentions').classList.contains('on'));
+    // Arrow keys move the highlight; Enter then picks (see tbMentionAccepts).
+    a.run('window.tbCompInput({value:"@",selectionStart:1})');
+    const n=a.run('_tbMentionList.length');
+    a.run('window.tbCompKey({key:"ArrowDown",preventDefault(){}},null)');
+    s.eq('arrow down highlights the first row',a.run('_tbMentionIdx'),0);
+    a.run('window.tbCompKey({key:"ArrowUp",preventDefault(){}},null)');
+    s.eq('arrow up wraps to the last',a.run('_tbMentionIdx'),n-1);
+    a.run('window.tbCompKey({key:"Escape",preventDefault(){}},null)');
+    s.eq('escape dismisses it',a.run('_tbMentionList.length'),0);
+  }
+
+  s.section('files');
+  {
+    const a=loadApp({files:FILES});
+    const CL='https://res.cloudinary.com/deww4lpym/image/upload/v1/a.jpg';
+    s.eq('the cap is 25 MB',a.run('TB_MAX_UPLOAD_MB'),25);
+    s.eq('a file at the cap is allowed',a.run('tbTooBig({size:25*1024*1024})'),false);
+    s.eq('one byte over is not',a.run('tbTooBig({size:25*1024*1024+1})'),true);
+    s.eq('no file is not too big',a.run('tbTooBig(null)'),false);
+    // THE THUMBNAIL IS A DELIVERY TRANSFORM, not a second upload: nothing
+    // to keep in step, nothing to migrate, the original untouched.
+    s.ok('an image gets a Cloudinary transform',
+      /\/upload\/f_auto,q_auto,c_fit,w_320\//.test(a.run('tbThumbUrl({url:'+J(CL)+',mime:"image/jpeg"})')));
+    const pdf='https://res.cloudinary.com/deww4lpym/raw/upload/v1/b.pdf';
+    const pt=a.run('tbThumbUrl({url:'+J(pdf)+',mime:"application/pdf"})');
+    s.ok('a pdf asks Cloudinary for page 1',/pg_1/.test(pt));
+    s.ok('and as a jpg',/\.jpg$/.test(pt));
+    s.eq('a zip has no preview and says so by returning nothing',
+      a.run('tbThumbUrl({url:"https://res.cloudinary.com/x/upload/v1/c.zip",mime:"application/zip"})'),'');
+    s.eq('a url that is not Cloudinary is never transformed',
+      a.run('tbThumbUrl({url:"https://evil.test/a.jpg",mime:"image/jpeg"})'),'');
+    // The anchored-host rule _profPhotoUrl and _boardsCoverUrl already hold.
+    s.eq('a lookalike host is refused',
+      a.run('tbFileHref({url:"https://res.cloudinary.com.evil.test/a.jpg"})'),'');
+    s.eq('http is refused too',a.run('tbFileHref({url:"http://res.cloudinary.com/a.jpg"})'),'');
+    s.eq('the real thing passes',a.run('tbFileHref({url:'+J(CL)+'})'),CL);
+    const att=a.run('tbAttachment({secure_url:'+J(CL)+',public_id:"p1",width:800,height:600},'
+      +'{name:"shot.jpg",type:"image/jpeg",size:1234},"u-ammar",7)');
+    s.eq('an attachment keeps the file’s own name',att.name,'shot.jpg');
+    s.eq('its size',att.size,1234);
+    s.eq('who put it there',att.uploadedByUid,'u-ammar');
+    s.eq('and when',att.at,7);
+    s.eq('sizes read in human units',a.run('tbFileSize(2621440)'),'2.5 MB');
+    s.eq('and small ones in KB',a.run('tbFileSize(4096)'),'4 KB');
+  }
+
+  s.section('request move');
+  {
+    const a=loadApp({files:FILES});
+    const LOCKED={id:'g1',title:'ALL ASSETS IN',locked:true,lockedBy:'u-ammar',date:'2026-10-25'};
+    const P=(it,o)=>a.run('tbMoveRequestPlan('+J(it)+','+J(Object.assign(
+      {uid:'u-dani',toDay:'2026-10-28',reason:'shoot slipped',lockerHandle:'ammar',now:5},o))+')');
+    s.ok('an unlocked item does not need a request',
+      !!P({id:'i',locked:false}).error);
+    s.ok('nor does one you hold the lock on',!!P(LOCKED,{uid:'u-ammar'}).error);
+    s.ok('a request with no reason is refused',!!P(LOCKED,{reason:'  '}).error);
+    s.ok('and one with no date',!!P(LOCKED,{toDay:''}).error);
+    const ok=P(LOCKED,{});
+    s.ok('the ask mentions the locker in stored token form',
+      /^@\[ammar\] requesting move to 2026-10-28 — reason: shoot slipped$/.test(ok.comment.body));
+    s.eq('and names them as the mention',J(ok.comment.mentionUids),J(['u-ammar']));
+    s.eq('the locker is the one pinged',J(ok.notify),J([{type:'move_request',uid:'u-ammar'}]));
+    s.eq('the thread count goes up',ok.data.commentCount,1);
+    // A locker with no profile row yet still gets the ping; the body just
+    // carries no chip. Never a raw uid — that was the phase-2 bug below.
+    s.ok('an unresolvable handle drops the chip rather than printing a uid',
+      !/u-ammar/.test(P(LOCKED,{lockerHandle:''}).comment.body));
+  }
+
+  s.section('the handover comment, fixed');
+  {
+    // A LIVE BUG PHASE 4 EXPOSED. tbHandoverPlan interpolated the raw UID,
+    // so the thread — which nothing could read until this phase — would
+    // have said "handed over to @u-dani".
+    const a=loadApp({files:FILES});
+    const item={id:'i1',assigneeUids:['u-afnan'],ownerUid:'u-afnan'};
+    const p=a.run('tbHandoverPlan('+J(item)+',"u-afnan","u-dani","check the rates",false,5,"daniyal")');
+    s.eq('it is the stored mention token now',p.comment.body,'handed over to @[daniyal] — check the rates');
+    s.ok('no raw uid reaches the thread',!/u-dani/.test(p.comment.body));
+    s.eq('and it renders as a chip',
+      /<span class="tb-mention"/.test(a.run('tbRenderBody('+J(p.comment.body)+')')),true);
+  }
+
+  s.section('the inbox');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    const N=[
+      {_id:'n1',source:'tb',forUser:'ammar',type:'mention',itemId:'i1',createdAt:30,readBy:[]},
+      {_id:'n2',source:'tb',forUser:'ammar',type:'comment',itemId:'i1',createdAt:20,readBy:['ammar']},
+      {_id:'n3',source:'tb',forUser:'ammar',type:'done',itemId:'i2',createdAt:10,readBy:[]},
+      {_id:'n4',source:'tb',forUser:'afnan',type:'mention',itemId:'i1',createdAt:40,readBy:[]},
+      {_id:'n5',type:'advance',forUser:'ammar',createdAt:50,readBy:[]}
+    ];
+    const rows=a.run('tbInboxRows('+J(N)+',"ammar")');
+    s.eq('only this person’s rows',rows.length,3);
+    s.ok('somebody else’s are never shown',!rows.some(r=>r._id==='n4'));
+    // The bell is SHARED with HRM, so the filter has to be on source as
+    // well as recipient or an advance request would land on the board.
+    s.ok('and an HRM notification is not a board one',!rows.some(r=>r._id==='n5'));
+    s.eq('newest first',J(rows.map(r=>r._id)),J(['n1','n2','n3']));
+    s.eq('unread is what readBy does not name',a.run('tbUnreadCount('+J(N)+',"ammar")'),2);
+    s.eq('somebody with nothing has nothing',a.run('tbUnreadCount('+J(N)+',"saim")'),0);
+    // Spec s7.5: CONSECUTIVE rows about one item read as one block. Five
+    // pings about one thread is one conversation, not five.
+    const g=a.run('tbGroupByItem('+J(rows)+')');
+    s.eq('consecutive rows about one item group',g.length,2);
+    s.eq('the first group holds both',g[0].rows.length,2);
+    const split=a.run('tbGroupByItem('+J([N[0],N[2],N[1]])+')');
+    s.eq('but a row in between splits them — it is consecutive, not sorted',split.length,3);
+  }
+
+  s.section('the inbox is live, and that is the phase’s definition of done');
+  {
+    const a=catchToasts(loadApp({files:FILES,currentPage:'tb-dash'}));
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-afnan",username:"afnan",displayName:"Afnan"}]');
+    a.run('tbLists=[];tbItems=[];tbLoaded=true;_tbLoadErrors=[]');
+    // js/shared.js declares `currentPage` at TOP LEVEL, so it clobbers the
+    // harness's currentPage option exactly the way it clobbers `session`
+    // (the phase-1 lesson). Set it with app.run after load, or the toast
+    // branch never runs and "the first snapshot toasts nothing" passes
+    // vacuously -- verified by breaking the seeding and watching it pass.
+    a.run('currentPage="tb-dash"');
+    a.run('globalThis.__q=null;onSnapshot=function(q,next,err){__q=next;return function(){};};');
+    a.run('where=function(f,op,v){return{f:f,v:v};}');
+    a.run('tbWatchNotifs()');
+    s.ok('a listener was started',a.run('!!__q'));
+    const snap=rows=>'__q({docs:'+J(rows)+'.map(function(r){return{id:r._id,data:function(){return r;}};})})';
+    a.run(snap([{_id:'n1',source:'tb',forUser:'ammar',type:'mention',itemId:'i1',
+      createdAt:10,readBy:[],message:'Afnan mentioned you'}]));
+    // THE THIRD SURFACE. Phase 1 already shipped the span in js/shared.js,
+    // so this is painted from here and that cross-track file needs no
+    // further edit.
+    s.eq('the sidebar badge shows the unread count',a.el('tb-nav-badge').textContent,'1');
+    // The FIRST snapshot is history, not news — signing in must not fire a
+    // toast for every unread row at once.
+    s.eq('and the first snapshot toasts nothing',toastsOf(a).length,0);
+    a.run(snap([
+      {_id:'n1',source:'tb',forUser:'ammar',type:'mention',itemId:'i1',createdAt:10,readBy:[],message:'a'},
+      {_id:'n2',source:'tb',forUser:'ammar',type:'comment',itemId:'i1',createdAt:20,readBy:[],message:'Afnan commented'}
+    ]));
+    s.eq('a new row moves the badge',a.el('tb-nav-badge').textContent,'2');
+    s.eq('and a genuinely new one toasts',toastsOf(a).length,1);
+    s.ok('saying what happened',/commented/.test(toastsOf(a)[0]));
+    // Spec s5: a toast only while the Board is OPEN.
+    a.run('currentPage="dashboard"');
+    a.run(snap([
+      {_id:'n1',source:'tb',forUser:'ammar',type:'mention',itemId:'i1',createdAt:10,readBy:[],message:'a'},
+      {_id:'n2',source:'tb',forUser:'ammar',type:'comment',itemId:'i1',createdAt:20,readBy:[],message:'b'},
+      {_id:'nx',source:'tb',forUser:'ammar',type:'mention',itemId:'i1',createdAt:25,readBy:[],message:'off board'}
+    ]));
+    s.eq('off the board it does not toast',toastsOf(a).length,1);
+    s.eq('though the badge still moves',a.el('tb-nav-badge').textContent,'3');
+    a.run('currentPage="tb-dash"');
+    a.run(snap([
+      {_id:'n1',source:'tb',forUser:'ammar',type:'mention',itemId:'i1',createdAt:10,readBy:[],message:'a'},
+      {_id:'n2',source:'tb',forUser:'ammar',type:'comment',itemId:'i1',createdAt:20,readBy:[],message:'b'},
+      {_id:'n3',source:'tb',forUser:'ammar',type:'mention',itemId:'i1',createdAt:30,readBy:[],message:'Afnan mentioned you again'}
+    ]));
+    s.eq('back on it, a new row toasts again',toastsOf(a).length,2);
+    s.ok('saying what happened',/mentioned you again/.test(toastsOf(a)[1]));
+    s.eq('the badge follows',a.el('tb-nav-badge').textContent,'3');
+    // Reading them clears it, and the write is ONE batch.
+    a.state.batches.length=0;
+    a.run('window.tbMarkAllRead()');
+    s.eq('marking all read is one round trip',a.state.batches.length,1);
+    s.eq('carrying every unread row',a.state.batches[0].length,3);
+    s.eq('and the badge empties at once',a.el('tb-nav-badge').textContent,'');
+    // readBy is the SAME field the bell uses, so the two surfaces can never
+    // disagree about what has been read.
+    s.ok('by writing the bell’s own readBy field',
+      a.state.writes.every(w=>!w.data||!w.data.readBy||w.data.readBy.indexOf('ammar')>-1));
+  }
+
+  s.section('no listener is a fallback, not a hang');
+  {
+    // onSnapshot is bridged onto window in index.html; an old cached shell
+    // may not carry it. An inbox waiting forever for a snapshot that will
+    // never come is the stuck-skeleton failure this codebase keeps
+    // recording, so it falls back to a one-off read.
+    const rows=[{_id:'n1',source:'tb',forUser:'ammar',type:'mention',itemId:'i1',
+      createdAt:10,readBy:[],message:'Afnan mentioned you'}];
+    const a=loadApp({files:FILES,currentPage:'tb-inbox',globals:{
+      getDocs:async()=>({docs:rows.map(r=>({id:r._id,data:()=>r}))})
+    }});
+    a.run('session='+J(AMMAR));
+    a.run('tbLists=[];tbItems=[];tbLoaded=true;_tbLoadErrors=[];onSnapshot=undefined');
+    a.run('tbWatchNotifs()');
+    await new Promise(r=>setTimeout(r,0));
+    s.eq('the rows are read once instead',a.run('tbNotifs.length'),1);
+    s.eq('the badge still paints',a.el('tb-nav-badge').textContent,'1');
+    s.ok('and the screen is not stuck on loading',
+      !/loading/.test(a.run('_tbInboxScreen()')));
+    s.ok('a one-off read never toasts its own history',toastsOf(catchToasts(a)).length===0);
+
+    // A REFUSED read and an EMPTY inbox must never render the same screen.
+    const b=loadApp({files:FILES,currentPage:'tb-inbox',globals:{
+      getDocs:async()=>{throw new Error('Missing or insufficient permissions');}
+    }});
+    b.run('session='+J(AMMAR));
+    b.run('tbLists=[];tbItems=[];tbLoaded=true;_tbLoadErrors=[];onSnapshot=undefined');
+    b.run('tbWatchNotifs()');
+    await new Promise(r=>setTimeout(r,0));
+    const scr=b.run('_tbInboxScreen()');
+    s.ok('a refused read says so',/Could not read your inbox/.test(scr));
+    s.ok('not "nothing in your inbox"',!/nothing in your inbox/.test(scr));
+    s.ok('and offers a retry',/tbRetryInbox/.test(scr));
+  }
+
+  s.section('a listener is not started for someone without access');
+  {
+    const a=loadApp({files:FILES,currentPage:'dashboard'});
+    a.run('session='+J(HARIS));
+    a.run('globalThis.__q=null;onSnapshot=function(q,next){__q=next;return function(){};};');
+    a.run('tbWatchNotifs()');
+    s.eq('a non-board user gets no inbox listener',a.run('__q'),null);
+    // And the wrap exists at all — without it the badge is only live while
+    // the Board is open, which is not what the phase asks for.
+    s.ok('startApp is wrapped so the count is live on every page',
+      /window\.startApp=async function/.test(read('js/theboard.js')));
+  }
+
+  s.section('the phase 4 screens');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-inbox'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"},'
+      +'{uid:"u-afnan",username:"afnan",displayName:"Afnan"}]');
+    a.run('tbLists=[];tbConfig=null;tbLoaded=true;_tbLoadErrors=[]');
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"pricing tiers",ownerUid:"u-ammar",'
+      +'assigneeUids:["u-ammar"],visibility:"shared",attachments:[{id:"f1",name:"brief.pdf",'
+      +'url:"https://res.cloudinary.com/x/raw/upload/v1/brief.pdf",mime:"application/pdf",size:2048}]})]');
+    a.run('_tbNotifSeeded=true;tbNotifs=[{_id:"n1",source:"tb",forUser:"ammar",type:"mention",'
+      +'itemId:"i1",fromUid:"u-afnan",createdAt:'+Date.now()+',readBy:[],message:"Afnan mentioned you"}]');
+    const inbox=a.run('_tbInboxScreen()');
+    s.ok('the inbox renders a row',/tb-nf /.test(inbox)||/class="tb-nf unread"/.test(inbox));
+    s.ok('unread is marked',/tb-nf unread/.test(inbox));
+    s.ok('and offers mark all read',/tbMarkAllRead/.test(inbox));
+    s.ok('the row opens the item it is about',/tbOpenNotif\('n1','i1'\)/.test(inbox));
+    a.run('tbNotifs=[]');
+    s.ok('an empty inbox says so rather than rendering nothing',
+      /nothing in your inbox/.test(a.run('_tbInboxScreen()')));
+    // The drawer's phase-4 half.
+    a.run('_tbOpenItemId="i1";_tbThreads={i1:{comments:[{_id:"c1",authorUid:"u-afnan",'
+      +'body:"looks right to me",createdAt:'+Date.now()+',attachments:[]}],activity:[],err:false}}');
+    const d=a.run('_tbDrawer()');
+    s.ok('the drawer carries the thread',/tb-cmt/.test(d));
+    s.ok('the comment body is rendered, not slotted',/looks right to me/.test(d));
+    s.ok('there is a composer',/id="tb-comp"/.test(d));
+    s.ok('with a mention popover anchored to it',/id="tb-mentions"/.test(d));
+    s.ok('a files section',/tb-files|nothing attached/.test(d));
+    s.ok('showing the attachment',/brief\.pdf/.test(d)||/tb-file/.test(d));
+    s.ok('one picker for both destinations',(d.match(/id="tb-filepick"/g)||[]).length===1);
+    s.ok('and an activity section, collapsed',/tbToggleActivity/.test(d)&&!/tb-actl/.test(d));
+    // A thread that could not be read must never look like an empty one.
+    a.run('_tbThreads={i1:{comments:[],activity:[],err:true}}');
+    s.ok('a refused thread read says so',/Could not read the thread/.test(a.run('_tbDrawer()')));
+    // Request move only appears to somebody who cannot move it.
+    a.run('_tbThreads={i1:{comments:[],activity:[],err:false}}');
+    a.run('tbItems[0].locked=true;tbItems[0].lockedBy="u-afnan"');
+    // AMMAR IS A BOARD OWNER and can override any lock, so he is never
+    // shown this — the premise phase 3's lock tests had to be corrected on
+    // too. Daniyal is the person the button exists for.
+    a.run('session='+J(DANIYAL));
+    s.ok('a locked item offers a way to ask',/tbOpenMoveReq/.test(a.run('_tbDrawer()')));
+    a.run('tbItems[0].lockedBy="u-dani"');
+    s.ok('the lock holder is not offered it',!/tbOpenMoveReq/.test(a.run('_tbDrawer()')));
+    a.run('tbItems[0].lockedBy="u-afnan"');
+    a.run('session='+J(AMMAR));
+    s.ok('and neither is a board owner, who can just move it',
+      !/tbOpenMoveReq/.test(a.run('_tbDrawer()')));
+    // Card 9 and the rail count.
+    a.run('tbItems[0].locked=false;_tbOpenItemId=null');
+    a.run('tbNotifs=[{_id:"n1",source:"tb",forUser:"ammar",type:"mention",itemId:"i1",'
+      +'fromUid:"u-afnan",createdAt:'+Date.now()+',readBy:[],message:"Afnan mentioned you"}]');
+    s.ok('the dashboard carries an inbox card',/inbox/.test(a.run('_tbDashboard()')));
+    s.ok('the rail carries the unread slot',/id="tb-rail-n"/.test(a.run('_tbShell("tb-inbox","")')));
+    a.run('tbNotifs=[]');
+    s.ok('and the card is hidden when there is nothing in it',
+      !/view all/.test(a.run('_tbDashboard()')));
+  }
+
+  s.section('the activity log reads as sentences');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"},'
+      +'{uid:"u-dani",username:"daniyal",displayName:"Daniyal"}]');
+    const L=o=>a.run('tbActivityLine('+J(o)+')');
+    s.ok('a move says where from and to',
+      /Ammar moved it 2026-10-25 → 2026-10-28/.test(
+        L({type:'moved',byUid:'u-ammar',payload:{from:'2026-10-25',to:'2026-10-28'}})));
+    // The override is in the PAYLOAD, not only in a toast — phase 3's
+    // promise, and this is where it is finally read back.
+    s.ok('an overridden lock is on the record',
+      /overrode the lock/.test(L({type:'moved',byUid:'u-ammar',
+        payload:{from:'a',to:'b',override:true}})));
+    s.ok('a handover names who',
+      /Ammar handed it to Daniyal/.test(L({type:'handover',byUid:'u-ammar',payload:{toUid:'u-dani'}})));
+    s.ok('a file is named',/added brief\.pdf/.test(
+      L({type:'file_added',byUid:'u-ammar',payload:{name:'brief.pdf'}})));
+    s.ok('an unknown verb admits it rather than rendering a blank line',
+      /changed something/.test(L({type:'whatever',byUid:'u-ammar'})));
+    s.ok('and an unresolvable person is “someone”, never a uid',
+      !/u-nobody/.test(L({type:'done',byUid:'u-nobody'})));
   }
 
   return s;
