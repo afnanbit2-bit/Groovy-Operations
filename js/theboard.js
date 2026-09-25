@@ -204,6 +204,7 @@ async function loadTbData(force){
       tbConfig=ex?snap.data():{markers:[]};
     }else{fail.push('board_config');console.warn('[the board] config read failed',r[4].reason);}
     _tbLoadErrors=fail;
+    _tbCalLoadPrefs();
     tbLoaded=true;
     _tbLoading=null;
   })();
@@ -1208,6 +1209,516 @@ async function _tbNotify(o){
   catch(e){ console.warn('[the board] notify failed',e); }   // never blocks the action
 }
 
+// ══ PHASE 3 — THE CALENDAR ════════════════════════════════════════════
+// Month and week over the same items the Dashboard reads. Same rule as
+// phase 2: every decision is a pure function and the drag is a thin
+// wrapper around one, so "may this person move this" and "what does a
+// move record" are assertable with no database and no pointer.
+//
+// Rows-by-person and the unscheduled tray are phase 5.
+
+// The week starts MONDAY. Pakistan's weekend is Saturday and Sunday, so a
+// Sunday-first grid splits the working week across two rows.
+const TB_WEEK_START=1;
+const TB_DOW_LABELS=['mon','tue','wed','thu','fri','sat','sun'];
+
+// ── The grid ──────────────────────────────────────────────────────────
+/** Which weekday a 'YYYY-MM-DD' falls on, 0=Sunday. Pure. */
+function _tbDow(day){
+  if(!_tbValidDay(day))return -1;
+  const p=String(day).split('-').map(Number);
+  return new Date(p[0],p[1]-1,p[2],12,0,0).getDay();
+}
+/** The Monday on or before `day`. Pure. */
+function tbWeekStart(day){
+  const d=_tbDow(day);
+  if(d<0)return'';
+  return _tbDayAdd(day,-(((d-TB_WEEK_START)+7)%7));
+}
+/** The seven days of the week holding `day`. Pure. */
+function tbWeekDays(day){
+  const s=tbWeekStart(day);
+  if(!s)return[];
+  const out=[];
+  for(let i=0;i<7;i++)out.push(_tbDayAdd(s,i));
+  return out;
+}
+/** `YYYY-MM` → the 5 or 6 rows of 7 the month needs, each day flagged
+ *  with whether it belongs to the month or is spill from a neighbour.
+ *  Pure — no clock is read, so a test can sit on any month. */
+function tbMonthGrid(month){
+  if(!/^\d{4}-\d{2}$/.test(String(month||'')))return[];
+  const first=month+'-01';
+  if(!_tbValidDay(first))return[];
+  const last=_tbMonthLast(month);
+  const start=tbWeekStart(first);
+  const rows=[];
+  let cur=start;
+  // Run whole weeks until one starts after the month's last day. That is
+  // what gives 5 rows for a short month and 6 for a long one, rather than
+  // a fixed 6 with a blank trailing week.
+  while(cur<=last){
+    const week=[];
+    for(let i=0;i<7;i++){
+      const d=_tbDayAdd(cur,i);
+      week.push({day:d,inMonth:d.slice(0,7)===month});
+    }
+    rows.push(week);
+    cur=_tbDayAdd(cur,7);
+  }
+  return rows;
+}
+function _tbMonthLast(month){
+  const p=String(month).split('-').map(Number);
+  const d=new Date(p[0],p[1],0,12,0,0);   // day 0 of next month = last of this
+  return _tbDay(d);
+}
+function _tbMonthAdd(month,n){
+  const p=String(month).split('-').map(Number);
+  const d=new Date(p[0],p[1]-1+Number(n||0),1,12,0,0);
+  return _tbDay(d).slice(0,7);
+}
+const _TB_MONTH_NAMES=['january','february','march','april','may','june',
+                       'july','august','september','october','november','december'];
+function tbMonthLabel(month){
+  const p=String(month||'').split('-');
+  const i=Number(p[1])-1;
+  return(_TB_MONTH_NAMES[i]||'')+' '+(p[0]||'');
+}
+/** "29 sep – 5 oct" — the week's own name. Pure. */
+function tbWeekLabel(day){
+  const d=tbWeekDays(day);
+  if(!d.length)return'';
+  const s=d[0].split('-'),e=d[6].split('-');
+  const m=x=>_TB_MONTHS[Number(x)-1];
+  return Number(s[2])+' '+m(s[1])+' – '+Number(e[2])+' '+m(e[1]);
+}
+
+// ── What the calendar shows ───────────────────────────────────────────
+// The filters are ONE predicate, used by the month, the week and the
+// counts — so a chip can never say 4 while the grid draws 3.
+/** Pure. `scope` is 'me' or 'all'; an empty filter field means no filter. */
+function tbCalFilter(items,o){
+  const f=o||{},uid=f.uid||'';
+  const lanes=f.lane?[f.lane]:null;
+  return(items||[]).filter(i=>{
+    if(!i||!i.date)return false;                       // undated is phase 5's tray
+    if(f.hideDone&&i.status==='done')return false;
+    // 'me' is what I am ON, not what I own — the calendar answers "what is
+    // my week", and something I set for someone else is not my week.
+    if(f.scope!=='all'&&(i.assigneeUids||[]).indexOf(uid)<0)return false;
+    if(f.scope==='all'&&i.visibility!=='shared'&&i.ownerUid!==uid)return false;
+    if(f.person&&(i.assigneeUids||[]).indexOf(f.person)<0)return false;
+    if(f.list&&i.listId!==f.list)return false;
+    if(lanes&&lanes.indexOf(i.lane||'')<0)return false;
+    if(f.color&&tbItemColorKey(i,tbLists,tbUserColors())!==f.color)return false;
+    return true;
+  });
+}
+/** day → items, each day sorted gates-first then events then tasks. Pure. */
+function tbItemsByDay(items){
+  const map={};
+  (items||[]).forEach(i=>{
+    if(!i||!i.date)return;
+    (map[i.date]=map[i.date]||[]).push(i);
+  });
+  Object.keys(map).forEach(d=>map[d].sort(_tbByKind));
+  return map;
+}
+/** The markers the calendar draws as a rule down a day. Pure. */
+function tbMarkersByDay(config){
+  const out={};
+  (((config||{}).markers)||[]).forEach(m=>{
+    if(m&&m.date)(out[m.date]=out[m.date]||[]).push(String(m.label||''));
+  });
+  return out;
+}
+
+// ── Moving an item ────────────────────────────────────────────────────
+/**
+ * THE WHOLE POINT OF THE LOCK LIVES HERE. A drop is one pure decision:
+ * refused with a reason, or a patch plus the history entry and the people
+ * who need telling. The drag handler does no thinking of its own, and
+ * `firestore.rules` enforces the same clause on the server — this is the
+ * UI's echo, not the boundary.
+ *
+ * Pure.
+ */
+function tbMovePlan(item,toDay,uid,isOwner,now){
+  const it=item||{};
+  if(!_tbValidDay(toDay))return{refused:true,reason:'That is not a date.'};
+  if((it.date||null)===toDay)return{refused:true,reason:'',noop:true};
+  if(!tbCanMoveDate(it,uid,isOwner)){
+    return{refused:true,locked:true,lockedBy:it.lockedBy||'',
+           reason:'locked by '+tbUser(it.lockedBy).name};
+  }
+  const plan=tbItemPatch(it,{date:toDay},uid,now);
+  // An OVERRIDE is logged as one. A board owner moving somebody else's
+  // locked gate is exactly the thing a log exists to record.
+  const override=!!(it.locked&&it.lockedBy&&it.lockedBy!==uid&&isOwner);
+  if(override)plan.activity.forEach(a=>{a.payload=Object.assign({},a.payload,{override:true});});
+  // Everyone else ON the item hears about it — a date somebody else moved
+  // is the definition of something you need to know.
+  const notify=(it.assigneeUids||[]).filter(u=>u&&u!==uid);
+  return{data:plan.data,activity:plan.activity,notify:notify,override:override,
+         from:it.date||null,to:toDay};
+}
+
+/** Keyboard nudge (spec s8.2): `[` / `]` a day, Shift+arrows a week.
+ *  Pure — returns the day to move to, or '' when there is nothing to do. */
+function tbNudgeTarget(item,delta){
+  const from=(item||{}).date;
+  if(!from||!_tbValidDay(from))return'';
+  return _tbDayAdd(from,Number(delta||0));
+}
+
+// ── Calendar state ────────────────────────────────────────────────────
+// Per VIEWER, in localStorage — a view preference is about the screen you
+// are looking at, not about the board. Same rule the Mood Boards minimap
+// and snap toggles follow.
+let _tbCalView='month';
+let _tbCalAnchor='';
+let _tbCalFilters={scope:'me',person:'',list:'',lane:'',color:'',hideDone:false};
+const _TB_CAL_KEY='groovy-tb-cal';
+
+/** Spec s11: on a phone the calendar opens on the WEEK — a month grid
+ *  is seven ~50px columns there, which fits a day number and nothing
+ *  else. Only a DEFAULT: a saved preference is the person's own
+ *  choice and outranks it. */
+function _tbIsPhone(){
+  try{ return !!(window.matchMedia&&window.matchMedia('(max-width:600px)').matches); }
+  catch(e){ return false; }
+}
+function _tbCalLoadPrefs(){
+  if(_tbIsPhone())_tbCalView='week';
+  try{
+    const raw=localStorage.getItem(_TB_CAL_KEY);
+    if(!raw)return;
+    const o=JSON.parse(raw)||{};
+    if(o.view==='week'||o.view==='month')_tbCalView=o.view;
+    if(o.filters&&typeof o.filters==='object')
+      _tbCalFilters=Object.assign({scope:'me',person:'',list:'',lane:'',color:'',hideDone:false},o.filters);
+  }catch(e){}                      // a corrupt or blocked store is not an error
+}
+function _tbCalSavePrefs(){
+  try{ localStorage.setItem(_TB_CAL_KEY,JSON.stringify({view:_tbCalView,filters:_tbCalFilters})); }catch(e){}
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────
+/** A pill. Gates are solid, a lock shows, a done item fades rather than
+ *  celebrating (spec s10: no gamification). */
+function _tbPill(item,today){
+  const me=_tbMe();
+  const ck=tbItemColorKey(item,tbLists,tbUserColors());
+  const canMove=tbCanMoveDate(item,me,_tbIsBoardOwner());
+  const cls=['tb-pill','tb-c-'+ck]
+    .concat(item.kind==='gate'?['gate']:[])
+    .concat(item.kind==='event'?['event']:[])
+    .concat(item.status==='done'?['done']:[])
+    .concat(item.locked?['locked']:[])
+    .concat(canMove?['draggable']:[]);
+  return'<div class="'+cls.join(' ')+'" data-id="'+_tbEsc(item.id)+'"'
+    +' data-day="'+_tbEsc(item.date||'')+'"'
+    +(canMove?' onpointerdown="window.tbPillDown(event,\''+_tbEsc(item.id)+'\')"':'')
+    +' onclick="window.tbPillClick(event,\''+_tbEsc(item.id)+'\')"'
+    +' tabindex="0" onkeydown="window.tbPillKey(event,\''+_tbEsc(item.id)+'\')">'
+    +'<span class="tb-pillbar"></span>'
+    +(item.locked?'<span class="tb-pilllock" title="locked">&#128274;</span>':'')
+    +_tbSlot(item.title||'untitled','tb-pilltitle')
+  +'</div>';
+}
+
+function _tbCalHead(){
+  const today=_tbToday();
+  const label=_tbCalView==='week'?tbWeekLabel(_tbCalAnchor):tbMonthLabel(_tbCalAnchor.slice(0,7));
+  const seg=(v,l)=>'<button class="tb-seg'+(_tbCalView===v?' on':'')+'"'
+    +' onclick="window.tbCalView(\''+v+'\')">'+_tbEsc(l)+'</button>';
+  const scope=(v,l)=>'<button class="tb-seg'+(_tbCalFilters.scope===v?' on':'')+'"'
+    +' onclick="window.tbCalScope(\''+v+'\')">'+_tbEsc(l)+'</button>';
+  const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
+  const people=_tbBoardUsernames().map(h=>{
+    const uid=tbHandleMap()[h];
+    return uid?opt(uid,_tbCalFilters.person,tbUser(uid).name):'';
+  }).join('');
+  return'<div class="tb-calbar">'
+    +'<div class="tb-calnav">'
+      +'<button class="tb-calbtn" onclick="window.tbCalStep(-1)" title="back">&lsaquo;</button>'
+      +'<button class="tb-calbtn" onclick="window.tbCalToday()">today</button>'
+      +'<button class="tb-calbtn" onclick="window.tbCalStep(1)" title="forward">&rsaquo;</button>'
+      +'<span class="tb-callabel">'+_tbEsc(label)+'</span>'
+    +'</div>'
+    +'<div class="tb-calseg">'+seg('month','month')+seg('week','week')+'</div>'
+    +'<div class="tb-calseg">'+scope('me','me')+scope('all','everyone')+'</div>'
+    +'<div class="tb-calfilters">'
+      +'<select onchange="window.tbCalFilter(\'person\',this.value)">'
+        +opt('',_tbCalFilters.person,'anyone')+people+'</select>'
+      +'<select onchange="window.tbCalFilter(\'list\',this.value)">'
+        +opt('',_tbCalFilters.list,'any list')
+        +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,_tbCalFilters.list,l.title||'untitled')).join('')
+      +'</select>'
+      +'<select onchange="window.tbCalFilter(\'lane\',this.value)">'
+        +opt('',_tbCalFilters.lane,'any lane')
+        +TB_LANES.map(l=>opt(l,_tbCalFilters.lane,l)).join('')
+      +'</select>'
+      +'<label class="tb-calchk"><input type="checkbox"'+(_tbCalFilters.hideDone?' checked':'')
+        +' onchange="window.tbCalFilter(\'hideDone\',this.checked)"> hide done</label>'
+      +(_tbCalActive()?'<button class="tb-calbtn" onclick="window.tbCalClear()">clear</button>':'')
+    +'</div>'
+  +'</div>';
+}
+function _tbCalActive(){
+  const f=_tbCalFilters;
+  return!!(f.person||f.list||f.lane||f.color||f.hideDone||f.scope==='all');
+}
+
+/** A day cell — the drop target. `data-day` is what the drag reads. */
+function _tbDayCell(day,items,today,opts){
+  const o=opts||{};
+  const marks=(_tbCalMarks[day]||[]);
+  const cls=['tb-day']
+    .concat(day===today?['today']:[])
+    .concat(o.inMonth===false?['out']:[])
+    .concat(marks.length?['marked']:[])
+    .concat(_tbDow(day)===0||_tbDow(day)===6?['weekend']:[]);
+  return'<div class="'+cls.join(' ')+'" data-day="'+_tbEsc(day)+'">'
+    +'<div class="tb-dayhead">'
+      +'<span class="tb-daynum">'+Number(String(day).slice(8))+'</span>'
+      +(marks.length?'<span class="tb-daymark">'+_tbEsc(marks.join(' · '))+'</span>':'')
+      +'<button class="tb-dayadd" title="add on this day"'
+        +' onclick="window.tbCalAdd(\''+_tbEsc(day)+'\')">+</button>'
+    +'</div>'
+    +'<div class="tb-daylist">'+items.map(i=>_tbPill(i,today)).join('')+'</div>'
+  +'</div>';
+}
+
+let _tbCalMarks={};
+function _tbCalendar(){
+  const me=_tbMe(),today=_tbToday();
+  if(!_tbCalAnchor)_tbCalAnchor=today;
+  if(_tbLoadFailed('board_items')){
+    return _tbCalHead()+'<div class="tb-err">Could not read the board. '
+      +'<button class="btn-outline" onclick="window.tbRetry()">Retry</button>'
+      +'<div class="tb-errsub">If this keeps happening, firestore.rules may not be deployed — see BOARD.md.</div></div>';
+  }
+  const shown=tbCalFilter(tbItems,Object.assign({uid:me},_tbCalFilters));
+  const byDay=tbItemsByDay(shown);
+  _tbCalMarks=tbMarkersByDay(tbConfig);
+  const dow='<div class="tb-dowrow">'+TB_DOW_LABELS.map(d=>'<div class="tb-dow">'+_tbEsc(d)+'</div>').join('')+'</div>';
+  let grid='';
+  if(_tbCalView==='week'){
+    const days=tbWeekDays(_tbCalAnchor);
+    grid='<div class="tb-weekgrid">'
+      +days.map(d=>_tbDayCell(d,byDay[d]||[],today,{})).join('')+'</div>';
+  }else{
+    const rows=tbMonthGrid(_tbCalAnchor.slice(0,7));
+    grid='<div class="tb-monthgrid">'+rows.map(w=>
+      w.map(c=>_tbDayCell(c.day,byDay[c.day]||[],today,{inMonth:c.inMonth})).join('')
+    ).join('')+'</div>';
+  }
+  const count=shown.length;
+  const note='<div class="tb-calnote">'+count+' item'+(count===1?'':'s')+' shown'
+    +(_tbCalActive()?' · filtered':'')
+    +' · drag a pill to move it'
+    +'</div>';
+  return _tbCalHead()+dow+grid+note;
+}
+
+// ── View controls ─────────────────────────────────────────────────────
+window.tbCalView=function(v){
+  _tbCalView=(v==='week')?'week':'month';
+  _tbCalSavePrefs();_tbRepaint();
+};
+window.tbCalScope=function(v){
+  _tbCalFilters.scope=(v==='all')?'all':'me';
+  _tbCalSavePrefs();_tbRepaint();
+};
+window.tbCalFilter=function(k,v){
+  if(k==='hideDone')_tbCalFilters.hideDone=!!v;
+  else _tbCalFilters[k]=v||'';
+  _tbCalSavePrefs();_tbRepaint();
+};
+window.tbCalClear=function(){
+  _tbCalFilters={scope:'me',person:'',list:'',lane:'',color:'',hideDone:false};
+  _tbCalSavePrefs();_tbRepaint();
+};
+window.tbCalStep=function(n){
+  _tbCalAnchor=_tbCalView==='week'
+    ?_tbDayAdd(_tbCalAnchor,7*Number(n||0))
+    :(_tbMonthAdd(_tbCalAnchor.slice(0,7),Number(n||0))+'-01');
+  _tbRepaint();
+};
+window.tbCalToday=function(){ _tbCalAnchor=_tbToday(); _tbRepaint(); };
+window.tbCalAdd=function(day){
+  // Spec s7.2: the day's "+" creates an item on that day. It goes through
+  // the same builder the quick-add uses, so nothing about what a new item
+  // IS lives in two places.
+  const title=typeof prompt==='function'?prompt('What is happening on '+tbDayLabel(day,_tbToday())+'?'):'';
+  if(!title||!String(title).trim())return;
+  window.tbCreateOn(String(title),day);
+};
+window.tbCreateOn=async function(text,day){
+  const me=_tbMe();
+  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap()});
+  const assignees=parsed.assigneeUids.slice();
+  if(assignees.indexOf(me)<0)assignees.unshift(me);
+  const data=tbNewItem({
+    title:parsed.title||String(text).slice(0,140),
+    assigneeUids:assignees,lane:parsed.lane,priority:parsed.priority,
+    // The DAY WINS over a date typed into the text — you pressed + on a
+    // specific square, and that is the more deliberate of the two.
+    date:day
+  },me,_tbNow(),tbLists);
+  await _tbTry(async()=>{
+    const ref=doc(collection(db,'board_items'));
+    const b=writeBatch(db);
+    b.set(ref,data);
+    b.set(doc(collection(db,'board_items',ref.id,'activity')),
+      {type:'created',byUid:me,at:data.createdAt,payload:{}});
+    await b.commit();
+    tbItems.push(tbDecodeItem(Object.assign({id:ref.id},data)));
+    _tbRepaint();
+  },'add that');
+};
+
+// ── Pills: click, keyboard, drag ──────────────────────────────────────
+window.tbPillClick=function(e,id){
+  // A drag ends with a click on whatever is under the pointer. Swallow it,
+  // or every move would also open the drawer — the file-card bug, in a new
+  // place.
+  if(_tbDragMoved){_tbDragMoved=false;if(e&&e.preventDefault)e.preventDefault();return;}
+  window.tbOpenItem(id);
+};
+window.tbPillKey=function(e,id){
+  if(!e)return;
+  const k=e.key;
+  let delta=0;
+  if(k==='[')delta=-1;
+  else if(k===']')delta=1;
+  else if(e.shiftKey&&k==='ArrowLeft')delta=-7;
+  else if(e.shiftKey&&k==='ArrowRight')delta=7;
+  else if(k==='Enter'||k===' '){ if(e.preventDefault)e.preventDefault(); window.tbOpenItem(id); return; }
+  if(!delta)return;
+  if(e.preventDefault)e.preventDefault();
+  const it=tbItems.filter(x=>x.id===id)[0];
+  if(!it)return;
+  window.tbMoveItem(id,tbNudgeTarget(it,delta));
+};
+
+// THE DRAG. Pointer events only — never HTML5 drag, the rule this repo
+// learned from the board canvas reading a native dragstart as "files from
+// the desktop". The pointer is captured LAZILY, past the threshold, so a
+// press that never becomes a drag leaves the click alone: an eager
+// setPointerCapture RETARGETS the following click to the capturing
+// element, which is the bug js/boards.js found five times under five
+// names.
+const _TB_DRAG_PX=4;
+let _tbDragId=null,_tbDragMoved=false,_tbDragGhost=null,_tbDragOverDay='';
+window.tbPillDown=function(e,id){
+  if(!e||e.button===2)return;
+  const it=tbItems.filter(x=>x.id===id)[0];
+  if(!it)return;
+  if(!tbCanMoveDate(it,_tbMe(),_tbIsBoardOwner())){
+    _tbToast('locked by '+tbUser(it.lockedBy).name);
+    return;
+  }
+  const startX=e.clientX,startY=e.clientY,pid=e.pointerId;
+  const el=e.currentTarget;
+  let captured=false;
+  _tbDragId=id;_tbDragMoved=false;_tbDragOverDay='';
+
+  const move=ev=>{
+    if(ev.pointerId!==undefined&&ev.pointerId!==pid)return;   // a 2nd finger is not this drag
+    const dx=ev.clientX-startX,dy=ev.clientY-startY;
+    if(!captured){
+      if(Math.abs(dx)<_TB_DRAG_PX&&Math.abs(dy)<_TB_DRAG_PX)return;
+      captured=true;_tbDragMoved=true;
+      try{ if(el&&el.setPointerCapture)el.setPointerCapture(pid); }catch(err){}
+      if(el&&el.classList)el.classList.add('dragging');
+      _tbDragGhostShow(it,ev.clientX,ev.clientY);
+    }
+    _tbDragGhostMove(ev.clientX,ev.clientY);
+    _tbDragHover(ev.clientX,ev.clientY);
+  };
+  const up=ev=>{
+    if(ev&&ev.pointerId!==undefined&&ev.pointerId!==pid)return;
+    document.removeEventListener('pointermove',move,true);
+    document.removeEventListener('pointerup',up,true);
+    document.removeEventListener('pointercancel',up,true);
+    _tbDragGhostHide();
+    if(el&&el.classList)el.classList.remove('dragging');
+    _tbDayHighlight('');
+    const to=_tbDragOverDay;
+    _tbDragId=null;_tbDragOverDay='';
+    if(captured&&to)window.tbMoveItem(id,to);
+  };
+  document.addEventListener('pointermove',move,true);
+  document.addEventListener('pointerup',up,true);
+  document.addEventListener('pointercancel',up,true);
+};
+/** Which day square is under the pointer. Extracted because it is the
+ *  ONE part of the drag that needs a laid-out page — so a test can
+ *  replace it and drive everything else for real, rather than asserting
+ *  a helper and proving only the helper. */
+function _tbDayFromPoint(x,y){
+  const el=document.elementFromPoint?document.elementFromPoint(x,y):null;
+  const cell=el&&el.closest?el.closest('.tb-day'):null;
+  return(cell&&cell.getAttribute)?(cell.getAttribute('data-day')||''):'';
+}
+function _tbDragHover(x,y){
+  const day=_tbDayFromPoint(x,y);
+  if(day!==_tbDragOverDay){_tbDragOverDay=day||'';_tbDayHighlight(_tbDragOverDay);}
+}
+function _tbDayHighlight(day){
+  if(!document.querySelectorAll)return;
+  document.querySelectorAll('.tb-day.drop').forEach(n=>n.classList.remove('drop'));
+  if(!day)return;
+  const cell=document.querySelector('.tb-day[data-day="'+day+'"]');
+  if(cell&&cell.classList)cell.classList.add('drop');
+}
+function _tbDragGhostShow(item,x,y){
+  if(!document.createElement)return;
+  const g=document.createElement('div');
+  g.className='tb-dragghost tb-c-'+tbItemColorKey(item,tbLists,tbUserColors());
+  g.textContent=item.title||'untitled';        // NEVER interpolated
+  if(document.body&&document.body.appendChild)document.body.appendChild(g);
+  _tbDragGhost=g;_tbDragGhostMove(x,y);
+}
+function _tbDragGhostMove(x,y){
+  if(!_tbDragGhost||!_tbDragGhost.style)return;
+  _tbDragGhost.style.left=(x+12)+'px';
+  _tbDragGhost.style.top=(y+12)+'px';
+}
+function _tbDragGhostHide(){
+  if(_tbDragGhost&&_tbDragGhost.remove)_tbDragGhost.remove();
+  _tbDragGhost=null;
+}
+
+/** The one move path — the drag, the keyboard and anything later all come
+ *  through here, so a refusal reads the same however it was attempted. */
+window.tbMoveItem=async function(id,toDay){
+  const it=tbItems.filter(x=>x.id===id)[0];
+  if(!it||!toDay)return;
+  const plan=tbMovePlan(it,toDay,_tbMe(),_tbIsBoardOwner(),_tbNow());
+  if(plan.refused){ if(plan.reason)_tbToast(plan.reason); return; }
+  // Optimistic: the pill moves at once and the write follows. _tbTry
+  // re-reads and repaints if the server refuses, so a rules rejection
+  // snaps it back rather than leaving a lie on screen.
+  const before=it.date;
+  _tbApplyLocal(id,{date:toDay});
+  _tbRepaint();
+  const ok=await _tbTry(async()=>{
+    await _tbCommit(id,plan.data,plan.activity);
+    _tbApplyLocal(id,plan.data);
+    (plan.notify||[]).forEach(uid=>_tbNotify({
+      type:'moved',forUid:uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
+      title:'the board',
+      message:tbUser(_tbMe()).name+' moved “'+(it.title||'')+'” to '+tbDayLabel(toDay,_tbToday())}));
+    if(plan.override)_tbToast('moved — you overrode '+tbUser(plan.data.lockedBy||it.lockedBy).name+"'s lock, and it is logged");
+    _tbRepaint();
+  },'move that');
+  if(!ok)_tbApplyLocal(id,{date:before});
+};
+
 // ── Routing ───────────────────────────────────────────────────────────
 // ONE entry point for every tb-* page, so js/shared.js holds a single line
 // for this whole module no matter how many screens it grows.
@@ -1261,8 +1772,7 @@ function _tbShell(page,body){
 
 function _tbScreen(page){
   if(page==='tb-lists')return _tbListsScreen();
-  if(page==='tb-calendar')return'<div class="tb-empty"><div class="tb-empty-h">calendar</div>'
-    +'<div class="tb-empty-p">Month and week land in phase 3.</div></div>';
+  if(page==='tb-calendar')return _tbCalendar();
   if(page==='tb-inbox')return'<div class="tb-empty"><div class="tb-empty-h">inbox</div>'
     +'<div class="tb-empty-p">The inbox lands in phase 4. Board notifications already reach the bell.</div></div>';
   return _tbDashboard();

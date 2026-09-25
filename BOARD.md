@@ -206,8 +206,10 @@ And one this module adds:
 - **Comments, @mentions and file attachments are phase 4.** The drawer
   has no thread yet; handover still posts its note as a comment document,
   which the thread will pick up when it lands.
-- The calendar is phase 3, and the inbox screen is phase 4 — board
-  notifications already reach the bell.
+- The inbox screen is phase 4 — board notifications already reach the bell.
+- **The calendar's month grid hides a marker's LABEL at phone width.** A
+  ~50px day square crushed it to 1px (measured). The left bar stays, so
+  the day is still visibly marked, and the week view carries the word.
 - **`tests/store-accounts.test.js:1196` fails on Windows only.** Its regex
   matches a bare `
 ` while git checks `js/shared.js` out with CRLF here;
@@ -225,7 +227,7 @@ And one this module adds:
 | 0 — inventory + plan | done |
 | 1 — foundations | **done** — audience, gating, nav, rules, indexes, routing, empty screens |
 | 2 — items, lists, dashboard, drawer | **done** — item CRUD, quick-add grammar, cards 1–8, the drawer, the seed |
-| 3 — calendar | next |
+| 3 — calendar | **done** — month + week, filters, pointer drag with lock enforcement |
 | 3 — calendar | |
 | 4 — comments, mentions, files, inbox | |
 | 4b — scheduled reminder (Netlify) | |
@@ -292,6 +294,45 @@ landing). They appear in Ammar's and Afnan's "needs a date" card on day one.
 - **A refused write says so and re-reads** rather than leaving a row
   looking done. A permission error names the rules deploy as the likely
   cause, because that is what it usually is.
+
+## Phase 3 — the calendar
+
+Month and week over the same items the Dashboard reads, with the drag the
+whole lock model exists for. **Rows-by-person and the unscheduled tray are
+phase 5**, as agreed.
+
+- **The week starts MONDAY.** Pakistan's weekend is Saturday and Sunday, so
+  a Sunday-first grid splits the working week across two rows.
+- **A month gets the rows it needs** — five for October 2026, six for August,
+  four for February 2027 — rather than a fixed six with a blank trailing
+  week. A day from a neighbouring month is dimmed but **still a drop target**,
+  or the 1st of next month would be unreachable from the month you are on.
+- **"Me" is what you are ON, not what you own.** The calendar answers "what
+  is my week", and something you set for someone else is not your week.
+  "Everyone" adds the shared items and **still never shows someone else's
+  private one** — the rules would refuse it, and the UI has to agree.
+- **One filter predicate** serves the month, the week and the count, so a
+  chip can never say 4 while the grid draws 3. View and filters are per
+  VIEWER in `localStorage`, never on the board.
+- **`tbMovePlan` is the whole lock model in one pure function**: refused with
+  a reason naming the locker, or a patch plus the history entry plus the
+  people to tell. A board owner's override is recorded **in the activity
+  payload**, not only in a toast. Everyone else on the item is notified; the
+  mover is not told about their own move.
+- **The drag is pointer-only and captures LAZILY, past a 4px threshold.** An
+  eager `setPointerCapture` retargets the following `click` to the capturing
+  element — the bug `js/boards.js` found five times under five names.
+  Verified by removing the threshold: the click stops opening the drawer.
+- **The keyboard reaches the same decision** — `[` / `]` a day, Shift+arrows
+  a week — and cannot walk around a lock either.
+- **A locked pill offers no drag affordance at all** to someone who cannot
+  move it: the refusal is visible before the pointer goes down.
+- **The move is optimistic and snaps back.** The pill moves at once; a
+  refused write re-reads, repaints and restores the old date rather than
+  leaving a lie on screen.
+- **On a phone the calendar opens on the WEEK** (spec §11). A month grid at
+  420px is seven ~50px columns, which fits a day number and nothing else.
+  Only a default — a saved preference outranks it.
 
 ## Acceptance script
 

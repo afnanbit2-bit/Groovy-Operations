@@ -7114,6 +7114,49 @@ the living record** — read it before touching this module.
   back. It requires `firebase-admin` INSIDE the run, not at the top, because
   CI installs nothing and a top-level require would make it untestable.
 
+**Phase 3 (the calendar: month + week, filters, drag).** Rows-by-person
+and the unscheduled tray are phase 5.
+
+- **The drag captures the pointer LAZILY, past a 4px threshold**, and the
+  tracking is on the DOCUMENT. This is `js/boards.js`'s hardest-won lesson
+  applied from the start rather than after the sixth report: an eager
+  `setPointerCapture` RETARGETS the following `click` to the capturing
+  element. Verified by removing the threshold -- the click stops opening
+  the drawer, which is the bug in its purest form.
+- **`tbMovePlan` is the lock model in ONE pure function** -- refused with a
+  reason, or a patch plus history plus who to tell -- so the drag, the
+  keyboard and anything added later cannot disagree about what a move is.
+  A board owner's override is written into the ACTIVITY PAYLOAD, not only
+  said in a toast.
+- **The drag is DRIVEN in the test, not grepped.** `_tbDayFromPoint` was
+  extracted precisely so it is the one part a test replaces; everything
+  else -- threshold, capture, document tracking, drop, batch, notify --
+  runs for real. Asserting the helpers would have proved only the helpers.
+- **The layout probe caught a real dark-mode bug on its first run**: the
+  padlock on a GATE pill inherited `var(--text)` while the pill is
+  `var(--dark)`, which INVERTS -- 1.11:1 in light, 1.01:1 in dark. The rule
+  this app keeps relearning: **anything painted on `--dark` takes its ink
+  from `--on-dark`**. It also caught a marker label crushed to **1px** in a
+  ~50px phone day square.
+- **What that fragment does NOT hold, checked by breaking it:** the pill
+  title's `min-width:0`. The pill clips its own content, so an overlong
+  title ellipsizes rather than overflowing anything measurable. The INK is
+  guarded (a gate title painted in its own chip colour fails at 1:1 and
+  names it); the flex geometry is not, and the CSS comment says so rather
+  than leaving the claim standing. **Phase 2's row title had the same
+  shape** -- two rounds running, `min-width:0` turned out not to be what
+  the probe was watching.
+- **The week starts Monday** (Pakistan's weekend is Sat/Sun), and **a month
+  gets the rows it needs** rather than a fixed six. A spill day from a
+  neighbouring month is dimmed but still a drop target, or the 1st of next
+  month is unreachable from the month you are on.
+- **"Me" is what you are ON, not what you own**, and "everyone" still never
+  shows someone else's PRIVATE item -- the rules would refuse it and the UI
+  has to agree.
+- A test regex of `/class="tb-day/` counted **35 for 7 cells**: `tb-dayhead`,
+  `tb-daynum`, `tb-daymark`, `tb-dayadd` and `tb-daylist` all start with it.
+  **Any class-prefix count needs a boundary.**
+
 **A layout fragment that proved nothing, and how it showed up.** The first
 `smoke-layout` fragment for the rail PASSED two deliberate breaks — covering
 the rail, and painting the active tab's ink the same colour as its chip.
