@@ -339,6 +339,17 @@ module.exports=async function(){
     s.eq('Inventory Intel opens (view-only page)',r['shopify-intel'],'shopify-intel');
     s.eq('the avatar still reaches Profile',r['profile'],'profile');
     s.eq('and the bug tracker',r['bug-tracker'],'bug-tracker');
+    // Creative Hub (Sept 2026): every hub page gets through for him, not
+    // only 'creative-hub' -- a hub that throws him out on opening a note or
+    // a board would be the partial rollout the one-list gate exists to stop.
+    const HUB=['creative-hub','notes','note-detail','boards','boards-all','board-canvas'];
+    const h=go(lead,HUB);
+    HUB.forEach(id=>s.eq('the lead reaches '+id,h[id],id));
+    s.eq('the page list is the one the router keeps',J(full.run('_CREATIVE_HUB_PAGES')),J(HUB));
+    // The exemption follows the LIST, not the role: the same role for
+    // somebody who is not on _CREATIVE_HUB_USERS is still scoped away.
+    const other=go(Object.assign({},lead,{u:'someone',uid:'9',email:'someone@groovy.op'}),HUB);
+    HUB.forEach(id=>s.eq('the same role off the list is sent home from '+id,other[id],'mkt-creators'));
     const o=go({uid:'1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'},['dashboard','mkt-creators','hrm-payroll']);
     s.ok('an owner is redirected nowhere',Object.keys(o).every(k=>o[k]===k),J(o));
 
@@ -348,6 +359,7 @@ module.exports=async function(){
     s.ok('with Marketing ▸ Creator Database',/Marketing[\s\S]*Creator Database/.test(side));
     s.ok('and Inventory Intel',/Inventory Intel/.test(side));
     s.ok('and nothing else',!/Dashboard|PO Registry|Gate Pass|Payroll/.test(side));
+    s.ok('and Creative Hub, last',/showPage\('creative-hub'\)[^]*$/.test(side)&&side.lastIndexOf('creative-hub')>side.lastIndexOf('shopify-intel'));
     const mob=full.el('mob-nav').innerHTML;
     s.ok('the phone nav has Creators',/mkt-creators/.test(mob));
     // Sept 2026: The Board took the fifth slot, so Inventory Intel moved
@@ -357,6 +369,7 @@ module.exports=async function(){
     s.ok('and Intel behind More, not as a direct button',/More/.test(mob)&&!/shopify-intel/.test(mob));
     full.run('window.openMktMoreSheet()');
     s.ok('reachable from that sheet',/shopify-intel/.test(full.el('mob-sheet-items').innerHTML));
+    s.ok('and so is Creative Hub, on the phone',/creative-hub/.test(full.el('mob-sheet-items').innerHTML));
 
     full.run('session='+J({uid:'1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op',canPO:true}));
     full.run('buildNav()');

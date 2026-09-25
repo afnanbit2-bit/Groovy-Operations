@@ -704,10 +704,15 @@ function _salesTeamNavHTML(groups){
 
    To roll out to everyone: return true. This is a NAV-ONLY gate —
    firestore.rules already lets any signed-in user create and read pages. */
-const _CREATIVE_HUB_USERS=['afnan','ammar','sami','mustafa','abbas'];
+const _CREATIVE_HUB_USERS=['afnan','ammar','sami','mustafa','abbas','daniyal'];
 function _canSeeCreativeHub(){
   return !!(typeof session!=='undefined'&&session&&_CREATIVE_HUB_USERS.indexOf(session.u)>-1);
 }
+/* Every page id the hub is made of. A role whose showPage scope rewrites
+   ids (the Marketing lead's) has to let ALL of these through, not just
+   'creative-hub' -- otherwise the hub opens and then throws the person out
+   the moment they open a note or a board. */
+const _CREATIVE_HUB_PAGES=['creative-hub','notes','note-detail','boards','boards-all','board-canvas'];
 /* The Board's sidebar entry (Sept 2026). Five routes render it: the main
    sidebar, the Marketing lead's sidebar, the designer's sidebar, the
    owner/manager More sheet and the designer's phone nav. One builder, so
@@ -738,7 +743,8 @@ function buildNav(){
     // sees, not a Marketing sub-page.
     const tbTop=_canSeeTheBoard()?_tbNavItemHTML(String(currentPage||'').startsWith('tb-'))+'<div class="nav-divider"></div>':'';
     if(sb)sb.innerHTML=tbTop+_salesTeamNavHTML(_salesTeamGroups()).replace(/^\s*<div class="nav-divider"><\/div>/,'')
-      +`<div class="nav-divider"></div><div class="nav-item" id="nav-shopify-intel" onclick="window.showPage('shopify-intel')">Inventory Intel</div>`;
+      +`<div class="nav-divider"></div><div class="nav-item" id="nav-shopify-intel" onclick="window.showPage('shopify-intel')">Inventory Intel</div>`
+      +(_canSeeCreativeHub()?`<div class="nav-item" id="nav-creative-hub" onclick="window.showPage('creative-hub')">Creative Hub</div>`:'');
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -1148,6 +1154,7 @@ window.openHRMSheet=function(){
 window.openMktMoreSheet=function(){
   const items=[{iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'}];
   if(_canSeeTheBoard())items.unshift({label:_tbNavLabel(),pageId:_tbNavHome()});
+  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // no icon — see buildNav()
   window.openMobSheet('More',items);
 };
 
@@ -1250,8 +1257,10 @@ window.showPage=async function(id){
   // view-only Inventory Intel, plus the chrome pages. Inventory Intel is
   // allowed ONLY because that page never writes — if it ever gains a write
   // action this grant must be revisited (logged in the Inventory
-  // Intelligence change request).
-  if(session&&session.role==='creator_content_ops_lead'&&!String(id).startsWith('mkt-')&&!String(id).startsWith('tb-')&&id!=='shopify-intel'&&_CHROME_PAGES.indexOf(id)<0)id='mkt-creators';
+  // Intelligence change request). Creative Hub's pages get through only
+  // for someone ON the hub list (_canSeeCreativeHub), never for the role.
+  if(session&&session.role==='creator_content_ops_lead'&&!String(id).startsWith('mkt-')&&!String(id).startsWith('tb-')&&id!=='shopify-intel'&&_CHROME_PAGES.indexOf(id)<0
+     &&!(_CREATIVE_HUB_PAGES.indexOf(id)>-1&&_canSeeCreativeHub()))id='mkt-creators';
   // Designer (Saim): the board and the chrome pages, nothing else. Same
   // rewrite-the-id shape as the scopes above.
   if(session&&session.role==='designer'&&!String(id).startsWith('tb-')&&_CHROME_PAGES.indexOf(id)<0)id='tb-dash';
