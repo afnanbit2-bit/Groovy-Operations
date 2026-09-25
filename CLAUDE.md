@@ -157,6 +157,12 @@ verification needs the human, a phone, or Claude in Chrome.
                      review. Pages `acct-*`, one renderPage line. Loaded
                      right after store.js. See "Store Accounts" below and
                      ACCOUNTS_PLAN.md.
+/js/warehouse-sales.js Accounts level 2 (Sept 2026): Umair's customer
+                     purchases, each copied from its ERP bill with the bill
+                     (photo or PDF) attached. A third SECTION on the
+                     fulfillment page, not a page id. Firestore `wh_sales`,
+                     id = the ERP order number. Loaded right after
+                     fulfillment.js. See "Store Accounts — level 2".
 /js/gatepass.js      gate passes, returns, fabric-in, GP edit/approval,
                      generateGPPdf, generateJobSheetPDF.
 /js/fulfillment.js   Daily Performance track: per-day dispatch & returns
@@ -6397,6 +6403,102 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
 sign in. 535 assertions hold the logic; the layout probe holds the shape.
 
+## Store Accounts — level 2: warehouse customer sales (Sept 2026)
+
+Afnan: *"Umair is the warehouse manager and customers that come in and buy
+stuff — the ERP we use makes a bill … an accounts section in Umair's tab …
+to punch an entry Umair must take a picture or upload the PDF … customer
+name + number + order # + due date (pay later, usually people we know) …
+discount max 20% … article name searchable with quantity … once it is set
+up I will review, then we will add the receivable to Raees's store account
+section, as cash is managed by Raees."* The ERP ("Trade Unleashed") bill is
+an *Internal Order Tracking* sheet: Bill & Ship To name + phone, Order #
+(`SO0334`), Due Date, lines of Name / Barcode (`GP092-M`) / Qty / Price /
+Discount / Total, and Notes. **The decisions are tabled in
+`ACCOUNTS_PLAN.md` §5 for Afnan's review — overrule them there.**
+
+- **A SECTION, not a page.** Umair's role is scoped in `showPage` to the one
+  page `fulfillment`, so Accounts is a third segment of its pill (Daily
+  Reporting · PostEx · **Accounts**), plus a sidebar item and a 4th phone
+  button (`cols-4`) that call `showFulfillTab('accounts')`. **The
+  `showPage` scope line is untouched**, asserted by driving it. The pill
+  `flex-wrap`s — three segments overflowed a 390px phone, seen in a real
+  render, and the 420px layout probe could not see it. `_fulfillMarkNav()`
+  lights the phone button and sidebar item for what is on screen; before
+  it, every tab was one page id and only Analytics ever lit.
+- **Audience: Umair by USERNAME plus the owners** (`_WHS_USERS`,
+  `whsCanView()`), mirrored in `firestore.rules` `isWhSales()` by email.
+  Managers see Courier Performance and NOT this section; a manager asking
+  for it (`showFulfillTab('accounts')`, a forced `_fulfillSection`) lands on
+  Daily Reporting. Raees is not in it yet — the receivable is the next step.
+- **One document per ERP order, and its id IS the order number**
+  (`whsOrderId`: trimmed, upper-cased, `^[A-Z0-9][A-Z0-9._-]{1,39}$`, the
+  same pattern the rule checks on the path). The save is a
+  `runTransaction` that reads first and refuses a duplicate BY NAME (who
+  recorded it, when); a bill already in memory is refused before any
+  network call. The rules are the backstop: a write to an existing id is an
+  UPDATE, and updates are held to the void and review fields. **It needs a
+  connection** — a transaction cannot use the offline cache — and says so.
+- **The bill is required, photo or PDF.** Two pickers: `capture=
+  "environment"` for the camera, and a plain one (`image/*,application/pdf`)
+  because a `capture` input cannot pick a PDF. It posts to Cloudinary
+  `/auto/upload` (the shared `uploadToCloudinary` is `/image/upload`), 15 MB
+  cap, and **only an anchored `https://res.cloudinary.com/` URL is kept**
+  (`whsBillUrl`), checked on the way back from Cloudinary, in
+  `whsBuildSale`, in the rules, and before rendering a stored one.
+- **Articles are the daily Shopify copy** (`shopify_products`, the only
+  in-app source with a price; the SKU IS the bill's barcode — `GP092` is the
+  Pattern Hub's "EFFORTLESS TEE | DEEP BLUE"). Reuses Inventory Intel's
+  `_siProducts` when loaded, else one read per session; never rejects; says
+  how old the copy is. **Marketing's `mktVariantFromDoc` was NOT reused — it
+  drops the price.** `whsSearchCatalog`: an exact barcode first, then a SKU
+  prefix, then every word in the name; archived out, drafts after active.
+  **Enter picks the top hit and clears the box**, so a USB barcode scanner
+  (types the SKU + Enter) adds a line per scan; the same size twice is one
+  line with a bigger quantity.
+- **A line is a SNAPSHOT** — title, variant, barcode, article code, the
+  price charged, the catalog price of the day. The catalog is rewritten
+  every day and never deletes a variant, so a pointer would drift.
+- **Price: prefilled, editable, and FLAGGED when changed** (`priceEdited`,
+  `needsReview`, `reviewFlags`), not refused — the ERP bill is what was
+  charged. An article not in the catalog can be typed in (`manual`),
+  flagged the same way. "Warn, never block." Owners clear it (**Mark
+  reviewed**).
+- **The 20% cap is HARD, in the form AND the rules**
+  (`discount * 100 <= subtotal * 20`, with `WHS_MAX_DISCOUNT_PCT` asserted
+  equal). Whole rupees throughout, so `total == subtotal - discount` is
+  exact in the rules. A percentage that rounds a rupee past the cap is held
+  AT the cap (20% of 3,493 is 698, not 699); a rupee amount over it is
+  refused naming the cap. Asserted across every subtotal 1–5,000.
+- **Paid now → Cash or Bank transfer; pay later → a due date** on or after
+  the sale date. **Collecting a pay-later bill is not recorded yet** — the
+  "to collect" and "Overdue" tiles count every active pay-later sale, and
+  the page says collection comes with Raees's accounts.
+- **Void, never edit** (Umair or an owner, with a reason, `_WHS_VOID_FIELDS`);
+  owners clear the review flag (`_WHS_REVIEW_FIELDS`); both lists are
+  asserted equal to the rules' `hasOnly`. Delete is Afnan/Ammar
+  (`isAcctSuper`, via `_acctIsSuper` behind a `typeof` guard).
+- **A failed read is an error card naming `wh_sales` and the republish,
+  never an empty ledger** (the Store lesson); the loader never rejects.
+- **Rows are flex cards, not a table** — read on a phone at the warehouse.
+  Every stored string is escaped (`_whsEsc`, quotes included).
+- `tests/warehouse-sales.test.js` (214 assertions) drives the save, the
+  void/review/delete, the loader, the upload, the nav and the section, and
+  holds the rules to the JS. Verified by breaking each of eleven pieces
+  (cap, URL anchor, server duplicate check, audience, price flag, failed
+  read, void field list, escaping, rules cap, section gate, phone grid) —
+  each fails by name. `smoke-layout` gained **`warehouse sales — the
+  Accounts list, the new-sale form and a sale`** at all three widths;
+  breaking the amount's ink fails 6 jobs, forcing a row onto one line fails
+  at 420. **It does NOT hold the phone layout of a form line** — squeezed
+  columns still leave the text technically visible — so that was checked by
+  rendering it at 390px in real Chromium and looking. `SMOKE_LAYOUT_ONLY=
+  <text>` now measures only matching fragments (CI never sets it).
+
+**Next (not built): the receivable in Raees's Store Accounts.** Open
+questions are in `ACCOUNTS_PLAN.md` §5. **Nobody has recorded a sale on a
+real screen** — the sandbox cannot sign in.
+
 ## The Sales Team ▸ Marketing (Sept 2026)
 
 Replaces the **Content Tracker 2026** Google Sheet (Master List + monthly
@@ -8332,6 +8434,10 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   delete one, delete a vendor with no entries, reopen the last closed
   month, reset the module. Mirror: `firestore.rules` `isAcctSuper()`. See
   "Afnan's correction tools" under Store Accounts.
+- `whsCanView()` / `whsCanEntry()` (`js/warehouse-sales.js`, `_WHS_USERS`) →
+  **umair by username + the owners by role** — the Accounts section on the
+  fulfillment page (warehouse customer sales). Managers see the page, not
+  the section. Mirror: `firestore.rules` `isWhSales()`.
 - `_storeIsSuper()` (`js/store.js`, `_STORE_SUPER_USERS`) → **afnan + ammar
   by username** (25 Sept 2026; was four hardcoded `session.u==='afnan'`
   checks) — the Store Dashboard's Danger Zone: full stock overwrite and
@@ -8696,8 +8802,11 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `afnan@groovy.op` AND `ammar@groovy.op` (it was Afnan alone). Until the
 Console has it, Ammar sees the Store Accounts admin buttons (Edit / Delete
 an entry, Delete vendor, Reopen, Reset) but every one of their writes is
-refused with "Missing or insufficient permissions". Nothing else in the
-file moved.
+refused with "Missing or insufficient permissions". **Then, the same day,
+`isWhSales()` and `match /wh_sales/{orderNo}` (warehouse sales) were
+added** — until they are published, Umair's Accounts section shows its
+"could not be read" card and every save is refused. One paste carries
+both.
 
 **No republish outstanding as of 23 Sept 2026 (evening).** Afnan
 confirmed ("rules pushed") from the repo file at

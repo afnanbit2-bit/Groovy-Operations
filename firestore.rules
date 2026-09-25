@@ -75,6 +75,10 @@ service cloud.firestore {
     // reopen a closed month or reset the module. By person, never isOwner().
     // Mirror in js/store-accounts.js _ACCT_SUPER_USERS / _acctIsSuper().
     function isAcctSuper() { return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op']; }
+    // Warehouse sales ("accounts level 2", Sept 2026): Umair records the
+    // customer purchases at the warehouse; owners review. By person, never a
+    // role. Mirror in js/warehouse-sales.js _WHS_USERS / whsCanView().
+    function isWhSales() { return isOwner() || (signedIn() && userEmail() == 'umair@groovy.op'); }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
     match /pos/{doc}                  { allow read, write: if signedIn(); }
@@ -175,6 +179,41 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
     match /acct_closes/{doc}      { allow read: if signedIn(); allow create: if isOwner(); allow update: if false; allow delete: if isAcctSuper(); }
+    // ── Warehouse sales (Sept 2026) — js/warehouse-sales.js ──
+    // One document per ERP order, and the document id IS the order number,
+    // so a second entry of the same bill is not a second sale: writing to an
+    // id that already exists is an UPDATE here, and an update may only VOID
+    // the sale (isWhSales) or clear its review flag (owners) — the two
+    // hasOnly lists mirror _WHS_VOID_FIELDS / _WHS_REVIEW_FIELDS. The money
+    // rules are enforced HERE, not only in the form: the bill is attached, the
+    // discount is at most 20% (whole rupees, so the arithmetic is exact),
+    // the total is the subtotal less the discount, and pay later carries a
+    // due date. Delete is the Store Accounts correction pair.
+    match /wh_sales/{orderNo} {
+      allow read: if isWhSales();
+      allow create: if isWhSales()
+        && orderNo.matches('^[A-Z0-9][A-Z0-9._-]{1,39}$')
+        && request.resource.data.orderNo == orderNo
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.customerName is string && request.resource.data.customerName.size() > 0
+        && request.resource.data.customerPhone is string && request.resource.data.customerPhone.size() > 0
+        && request.resource.data.billUrl is string
+        && request.resource.data.billUrl.matches('^https://res[.]cloudinary[.]com/.+')
+        && request.resource.data.lines is list && request.resource.data.lines.size() > 0
+        && request.resource.data.subtotal is number && request.resource.data.subtotal > 0
+        && request.resource.data.discount is number && request.resource.data.discount >= 0
+        && request.resource.data.discount * 100 <= request.resource.data.subtotal * 20
+        && request.resource.data.total == request.resource.data.subtotal - request.resource.data.discount
+        && request.resource.data.terms in ['paid','later']
+        && (request.resource.data.terms == 'paid' || request.resource.data.dueDate is string);
+      allow update: if (isWhSales()
+          && resource.data.status == 'active' && request.resource.data.status == 'void'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidedByName','voidReason']))
+        || (isOwner()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['needsReview','reviewedAt','reviewedBy','reviewedByName']));
+      allow delete: if isAcctSuper();
+    }
     // Legacy Store Cash Ledger — read-only history. Kept so the owner-only
     // one-time import in js/store-accounts.js can read it.
     match /store_cash_ledger/{doc}    { allow read: if signedIn(); allow write: if isOwner(); }

@@ -2861,6 +2861,89 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   .acct-table{font-size:13px}
 }
 
+/* ── Warehouse sales — Accounts on Umair's page (js/warehouse-sales.js) ──
+   Reuses the Store Accounts tiles, chips, modal and table. Tokens only, so
+   both themes follow. A row is a flex card, not a table: this is read on a
+   phone at the warehouse, where a sideways-scrolling table is a list
+   nobody finishes reading. The customer never shares a line with the
+   amount's column — the Profile-directory rule — so a long name wraps
+   instead of crushing the total. */
+.whs-card{padding:0;overflow:hidden}
+.whs-find{flex:1 1 200px;min-width:0}
+.whs-new{width:auto!important;margin:0!important;padding:10px 18px}
+.whs-list{display:flex;flex-direction:column}
+.whs-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;align-items:start}
+.whs-row:hover{background:var(--hover)}
+.whs-main{min-width:0}
+.whs-top{display:flex;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.whs-ord{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.whs-cust{font-size:15px;font-weight:600;color:var(--text);overflow-wrap:anywhere;margin-top:2px}
+.whs-sub{font-size:13px;color:var(--muted);overflow-wrap:anywhere;margin-top:1px}
+.whs-side{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.whs-amt{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--text)}
+.whs-badges{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
+.whs-row.void .whs-cust,.whs-row.void .whs-amt{text-decoration:line-through;color:var(--muted)}
+.whs-foot-note{font-size:13px;color:var(--muted);margin:10px 2px 0;line-height:1.45}
+
+/* the new-sale form */
+.whs-h{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:16px 0 7px}
+.whs-form>.whs-h:first-child{margin-top:0}
+.whs-hint{font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted)}
+.whs-muted{color:var(--muted)}
+.whs-ok{color:var(--accent-success);font-weight:700}
+.whs-err{color:var(--accent-urgent);font-size:13px;line-height:1.4}
+.whs-flag{font-size:12.5px;color:var(--accent-warning);font-weight:600}
+.whs-billrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.whs-billst{font-size:13px;margin-top:7px;min-height:18px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.whs-billst a{color:var(--accent-success);font-weight:700}
+.whs-billthumb img{display:block;width:44px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);background:var(--surface-2)}
+.whs-grid{margin-top:14px}
+.whs-search{position:relative}
+.whs-q{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none}
+.whs-q:focus{border-color:var(--text);background:var(--surface)}
+.whs-results{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.whs-results:empty{display:none}
+.whs-hit{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;padding:9px 11px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-family:inherit;font-size:14px;cursor:pointer;min-height:44px}
+.whs-hit:hover,.whs-hit.first{border-color:var(--text)}
+.whs-hit-t{min-width:0;overflow-wrap:anywhere}
+.whs-hit-m{display:flex;flex-direction:column;align-items:flex-end;gap:1px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.whs-sku{font-size:12.5px;color:var(--muted);font-family:var(--font-mono,monospace)}
+.whs-nohit{font-size:13px;color:var(--muted);padding:6px 2px}
+.whs-catnote{font-size:12.5px;margin:6px 2px 8px;line-height:1.4}
+.whs-lines{display:flex;flex-direction:column;gap:8px}
+.whs-nolines{font-size:13px;color:var(--muted);padding:12px;border:1.5px dashed var(--border);border-radius:10px;text-align:center}
+.whs-line{display:grid;grid-template-columns:minmax(0,1fr) 70px 96px 96px 32px;gap:8px;align-items:end;padding:9px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.whs-lname{min-width:0;align-self:center}
+.whs-lname b{display:block;font-size:14px;font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.whs-lname small{display:block;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere;margin-top:1px}
+.whs-lin{width:100%;box-sizing:border-box;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font-size:14px;background:var(--surface-2);color:var(--text);font-family:inherit}
+.whs-num{display:flex;flex-direction:column;gap:2px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);min-width:0}
+.whs-num input{width:100%;box-sizing:border-box;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font-size:15px;background:var(--surface-2);color:var(--text);font-family:inherit;text-align:right;font-variant-numeric:tabular-nums}
+.whs-ltot{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;align-self:center;color:var(--text)}
+.whs-lx{align-self:center}
+.whs-lflag{grid-column:1/-1}
+.whs-lflag:empty{display:none}
+.whs-add-manual{margin-top:8px;background:none;border:none;padding:6px 0;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;text-decoration:underline;min-height:32px}
+.whs-disc{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+.whs-disc input{width:140px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:15px;background:var(--surface-2);color:var(--text);font-family:inherit}
+.whs-sum{margin-top:14px}
+.whs-srow{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:3px 2px;color:var(--text)}
+.whs-srow b{font-variant-numeric:tabular-nums}
+.whs-billview{display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;color:var(--accent-success);font-weight:700}
+.whs-billview img{max-width:100%;max-height:360px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2)}
+.whs-lt-table{min-width:520px}
+.whs-danger{color:var(--accent-urgent)!important;border-color:var(--accent-urgent)!important}
+@media(max-width:600px){
+  .whs-line{grid-template-columns:1fr 1fr 32px;grid-template-areas:"name name x" "qty price ." "tot tot tot"}
+  .whs-line>.whs-lname{grid-area:name}
+  .whs-line>.whs-num:nth-of-type(1){grid-area:qty}
+  .whs-line>.whs-num:nth-of-type(2){grid-area:price}
+  .whs-line>.whs-ltot{grid-area:tot;text-align:right}
+  .whs-line>.whs-lx{grid-area:x}
+  .whs-billrow{grid-template-columns:1fr}
+  .whs-new{width:100%!important}
+}
+
 /* ── The Board, phase 2 ───────────────────────────────────────────────
    Spec s10: one primary action per screen, 44px rows on desktop and 48 on
    mobile, colour carries meaning and nothing is decorative, RED APPEARS

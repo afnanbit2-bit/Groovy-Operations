@@ -765,7 +765,12 @@ function buildNav(){
   // Fulfilment account (Umair) — a single-purpose nav: Daily Performance only.
   if(session.role==='fulfillment'){
     const sb=document.getElementById('sidebar');
-    if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-fulfillment" onclick="window.showPage('fulfillment')">Courier Performance</div>`;
+    // Accounts (customer purchases, js/warehouse-sales.js) is a SECTION of
+    // the one page this role is scoped to, so the showPage scope below
+    // stays exactly as it is. typeof-guarded, fails closed.
+    const acc=typeof whsCanView==='function'&&whsCanView();
+    if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-fulfillment" onclick="window.showFulfillTab('analytics')">Courier Performance</div>`
+      +(acc?`<div class="nav-item" id="nav-fulfillment-accounts" onclick="window.showFulfillTab('accounts')">Accounts</div>`:'');
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -929,12 +934,14 @@ function _renderMobNav(ctx){
   let html='',cols=5;
 
   if(session&&session.role==='fulfillment'){
-    // Fulfilment (Umair): Analytics · Record · Log.
-    mob.className='cols-3';
+    // Fulfilment (Umair): Analytics · Record · Log · Accounts.
+    const acc=typeof whsCanView==='function'&&whsCanView();
+    mob.className=acc?'cols-4':'cols-3';
     mob.style.gridTemplateColumns='';
     mob.innerHTML=_mobNavBtn('fulfillment','activity','Analytics',"window.showFulfillTab('analytics')")
                  +_mobNavBtn('fulfillment-entry','plus','Record',"window.showFulfillTab('entry')")
-                 +_mobNavBtn('fulfillment-log','list','Log',"window.showFulfillTab('log')");
+                 +_mobNavBtn('fulfillment-log','list','Log',"window.showFulfillTab('log')")
+                 +(acc?_mobNavBtn('fulfillment-accounts','money','Accounts',"window.showFulfillTab('accounts')"):'');
     _updateMobNavActive(currentPage);
     return;
   }

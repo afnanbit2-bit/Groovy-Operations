@@ -1,0 +1,928 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   js/warehouse-sales.js — Accounts, level 2: customer purchases at the
+   warehouse (Sept 2026)
+
+   Afnan: "Umair is the warehouse manager and customers that come in and
+   buy stuff — the ERP we use makes a bill … there should be an accounts
+   section in Umair's tab where Umair can record the customer purchases. In
+   order to punch an entry Umair must take a picture or upload the PDF …
+   customer name + number + order # + due date (for customers that pay
+   after making purchases — pay later, usually people we know), a tab to
+   apply discount max 20%, article name is searchable with quantity …
+   this account sits with Umair; once it is set up I will review, then we
+   will add logic to add the receivable to Raees's Store Accounts section,
+   as cash is managed by Raees."
+
+   WHERE IT LIVES: a third SECTION on Umair's one page (Courier Performance
+   → Daily Reporting · PostEx · Accounts), not a new page id. His role is
+   scoped in showPage to exactly one page, so a section needs no change to
+   that scope and cannot open a side door to anything else.
+
+   DECISIONS, each recorded in ACCOUNTS_PLAN.md ("Level 2") for Afnan's
+   review, all overrulable:
+
+   - ONE DOCUMENT PER ERP ORDER, AND ITS ID IS THE ORDER NUMBER
+     (wh_sales/SO0334). The bill is the source of truth and its number is
+     unique, so a second entry of the same bill is not a second sale. The
+     write is a transaction that reads the document first and refuses a
+     duplicate by name; firestore.rules is the backstop, since a second
+     write to an existing id is an UPDATE there and updates are held to
+     the void and review fields.
+   - THE BILL IS REQUIRED, photo or PDF (Cloudinary /auto/upload — the
+     /image/upload path the rest of the app uses does not take a PDF).
+     Only an anchored https://res.cloudinary.com/ URL is stored, because it
+     is rendered straight into an <img src> / <a href>.
+   - A LINE IS A SNAPSHOT, never a pointer. The catalog is the daily copy
+     of Shopify (shopify_products): prices are rewritten every day and
+     variants are never deleted, so a sale that only pointed at the catalog
+     would change under its own bill. Each line keeps the title, variant,
+     SKU, article code, the price charged and the catalog price of the day.
+   - THE PRICE IS PREFILLED AND EDITABLE, and an edited price is FLAGGED
+     for owner review rather than refused — the ERP bill is what was
+     charged, and this ledger copies it. An article that is not in the
+     catalog can be typed in, flagged the same way. "Warn, never block",
+     the Store Accounts rule.
+   - THE 20% DISCOUNT CAP IS A HARD LIMIT, in the form AND in
+     firestore.rules (discount * 100 <= subtotal * 20). Whole rupees only,
+     so the rule's arithmetic is exact.
+   - PAY LATER NEEDS A DUE DATE; paid now needs Cash or Bank transfer.
+     Collecting a pay-later bill is NOT recorded here — that is the next
+     step, when this links into Raees's Store Accounts (where the cash is).
+   - VOID, NEVER EDIT — the Store Accounts rule. Umair and the owners void
+     with a reason; the owners clear a review flag; Afnan and Ammar (the
+     Store Accounts correction pair, isAcctSuper) may delete.
+
+   The audience is Umair BY USERNAME plus the owners by role, mirrored in
+   firestore.rules isWhSales() by email. Managers see Courier Performance
+   and do NOT see this section.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// ── Audience ─────────────────────────────────────────────────────────────
+const _WHS_USERS=['umair'];
+function _whsSession(){return (typeof session!=='undefined'&&session)||null;}
+function whsCanView(){const s=_whsSession();return !!(s&&(s.role==='owner'||_WHS_USERS.indexOf(s.u)>=0));}
+function whsCanEntry(){return whsCanView();}
+function _whsIsOwner(){const s=_whsSession();return !!(s&&s.role==='owner');}
+// The Store Accounts correction pair (afnan, ammar). Fails CLOSED if
+// js/store-accounts.js did not load.
+function _whsIsSuper(){return typeof _acctIsSuper==='function'&&!!_acctIsSuper();}
+function _whsUid(){
+  try{if(typeof auth!=='undefined'&&auth&&auth.currentUser&&auth.currentUser.uid)return auth.currentUser.uid;}catch(_){}
+  const s=_whsSession();return (s&&s.uid)||'';
+}
+
+// ── Rules ────────────────────────────────────────────────────────────────
+const WHS_MAX_DISCOUNT_PCT=20;
+const WHS_MAX_UPLOAD_MB=15;
+const WHS_PAID_VIA=[{key:'cash',label:'Cash'},{key:'bank',label:'Bank transfer'}];
+// The only fields an update may touch. firestore.rules holds the same two
+// lists in hasOnly(), and tests/warehouse-sales.test.js asserts they agree.
+const _WHS_VOID_FIELDS=['status','voidedAt','voidedBy','voidedByName','voidReason'];
+const _WHS_REVIEW_FIELDS=['needsReview','reviewedAt','reviewedBy','reviewedByName'];
+const _WHS_PAGE=40;
+const _WHS_CATALOG_STALE_MS=30*3600000;
+// The Shopify SKU grammar (shopify-catalog-sync.js ARTICLE_SKU_RE): article
+// code, then an optional size — GP092-M → GP092.
+const _WHS_SKU_RE=/^([A-Z]{2,3}\d{3,}(?:-[TB])?)(?:-([A-Z0-9]+))?$/;
+
+// ── State ────────────────────────────────────────────────────────────────
+let whSales=[];            // newest first
+let whSalesLoaded=false;
+let _whsLoadErr=null;      // {code,message} when the read FAILED — never shown as an empty list
+let _whsLoading=null;
+let _whsCatalog=null,_whsCatalogErr=null,_whsCatalogLoading=null,_whsCatalogAt=null;
+let _whsFilter='all',_whsQuery='',_whsShown=_WHS_PAGE;
+let _whsQueryTimer=null;
+let _whsDraft=null;        // the open new-sale form
+let _whsHits=[];           // the search results on screen, so Enter picks the first
+let _whsBusy=false;
+
+// ── Formatting ───────────────────────────────────────────────────────────
+function _whsEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function _whsRs(n){const v=Math.round(Number(n)||0);return (v<0?'−':'')+'Rs '+Math.abs(v).toLocaleString('en-US');}
+function _whsPad(n){return String(n).padStart(2,'0');}
+// LOCAL day, never the UTC ISO string (which names yesterday before 5am PKT).
+function _whsDayStr(d){return d.getFullYear()+'-'+_whsPad(d.getMonth()+1)+'-'+_whsPad(d.getDate());}
+function whsToday(){return _whsDayStr(new Date());}
+function _whsIsDay(s){
+  const v=String(s||'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return false;
+  const d=new Date(v+'T00:00:00');
+  return !isNaN(d)&&_whsDayStr(d)===v;
+}
+function _whsFmtDay(iso){
+  if(!_whsIsDay(iso))return iso||'';
+  return new Date(iso+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
+function _whsDaysBetween(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000);}
+function _whsMs(v){
+  if(!v)return null;
+  if(typeof v==='number')return v;
+  if(typeof v.toMillis==='function')return v.toMillis();
+  if(typeof v.seconds==='number')return v.seconds*1000;
+  const t=Date.parse(v);return isNaN(t)?null:t;
+}
+
+// ── Normalisers (pure) ───────────────────────────────────────────────────
+/** The order number as a document id, or '' if it cannot be one. */
+function whsOrderId(raw){
+  const s=String(raw==null?'':raw).trim().toUpperCase().replace(/\s+/g,'');
+  return /^[A-Z0-9][A-Z0-9._-]{1,39}$/.test(s)?s:'';
+}
+/** A Pakistani phone number as digits starting 0 (0300… or 021…), or ''. */
+function whsPhone(raw){
+  let d=String(raw==null?'':raw).replace(/\D/g,'');
+  if(/^0092\d{10}$/.test(d))d='0'+d.slice(4);
+  else if(/^92\d{10}$/.test(d))d='0'+d.slice(2);
+  else if(/^3\d{9}$/.test(d))d='0'+d;
+  return /^0\d{9,10}$/.test(d)?d:'';
+}
+function whsFmtPhone(p){const d=String(p||'');return /^03\d{9}$/.test(d)?d.slice(0,4)+'-'+d.slice(4):d;}
+/** Only an anchored Cloudinary delivery URL — it goes into src/href. */
+function whsBillUrl(u){return typeof u==='string'&&/^https:\/\/res\.cloudinary\.com\/[^\s"'<>\\]+$/.test(u);}
+function whsArticleCode(sku){const m=_WHS_SKU_RE.exec(String(sku||'').trim().toUpperCase());return m?m[1]:'';}
+
+// ── The catalog ──────────────────────────────────────────────────────────
+function whsCatalogFromDoc(id,d){
+  const o=d||{};
+  const variant=[o.color,o.size,o.option3].map(x=>String(x||'').trim()).filter(x=>x&&x.toLowerCase()!=='default title').join(' / ');
+  const price=Number(o.price);
+  return{
+    id:String(id),
+    sku:String(o.sku||'').trim(),
+    title:String(o.product_title||'').trim(),
+    variant,
+    price:isFinite(price)&&price>0?Math.round(price):0,
+    status:String(o.status||'')
+  };
+}
+/**
+ * Search the catalog. An exact SKU (a barcode scanner types one and presses
+ * Enter) ranks first, then a SKU prefix, then every word matching the title,
+ * variant or SKU. Archived products are left out; drafts rank after active.
+ */
+function whsSearchCatalog(catalog,q,limit){
+  const raw=String(q||'').trim().toLowerCase();
+  const words=raw.split(/\s+/).filter(Boolean);
+  if(!words.length)return[];
+  const out=[];
+  for(const v of catalog||[]){
+    if(!v||v.status==='archived')continue;
+    const sku=String(v.sku||'').toLowerCase();
+    let rank;
+    if(sku&&sku===raw)rank=0;
+    else if(sku&&words.length===1&&sku.indexOf(raw)===0)rank=1;
+    else{
+      const hay=(v.title+' '+v.variant+' '+v.sku).toLowerCase();
+      if(!words.every(w=>hay.indexOf(w)>=0))continue;
+      rank=2;
+    }
+    out.push({v,rank});
+  }
+  const act=v=>v.status==='active'?0:1;
+  out.sort((a,b)=>a.rank-b.rank||act(a.v)-act(b.v)||(a.v.title+' '+a.v.variant).localeCompare(b.v.title+' '+b.v.variant));
+  return out.slice(0,limit||8).map(x=>x.v);
+}
+function _whsLoadCatalog(){
+  if(_whsCatalog)return Promise.resolve();
+  if(_whsCatalogLoading)return _whsCatalogLoading;
+  _whsCatalogErr=null;
+  _whsCatalogLoading=(async()=>{
+    try{
+      let rows;
+      // Inventory Intel's copy, when that page already read it this session.
+      if(typeof _siCollectionsLoaded!=='undefined'&&_siCollectionsLoaded&&typeof _siProducts!=='undefined'&&Array.isArray(_siProducts)&&_siProducts.length)
+        rows=_siProducts.map(p=>[p._id,p]);
+      else{
+        const snap=await getDocs(collection(db,'shopify_products'));
+        rows=snap.docs.map(d=>[d.id,d.data()]);
+      }
+      _whsCatalog=rows.map(r=>whsCatalogFromDoc(r[0],r[1])).filter(v=>v.title||v.sku);
+    }catch(e){
+      _whsCatalogErr=(e&&(e.code||e.message))||'could not read the catalog';
+      console.warn('[warehouse-sales] catalog load failed',e);
+    }
+    try{
+      const m=await getDoc(doc(db,'shopify_sync_meta','catalog_sync'));
+      const md=m&&typeof m.exists==='function'&&m.exists()?m.data():{};
+      _whsCatalogAt=_whsMs(md&&md.last_success_at);
+    }catch(_){_whsCatalogAt=null;}
+    _whsCatalogLoading=null;
+    _whsPaintSearch();
+  })();
+  return _whsCatalogLoading;
+}
+
+// ── Money (pure) ─────────────────────────────────────────────────────────
+/**
+ * The discount on a subtotal. mode 'none' | 'pct' | 'rs'. Whole rupees, and
+ * never more than WHS_MAX_DISCOUNT_PCT of the subtotal: a percentage that
+ * rounds a rupee past the cap is held at the cap, a rupee amount over it is
+ * refused with the cap named.
+ * @returns {{amount:number,pct:number,max:number,error?:string}}
+ */
+function whsDiscount(subtotal,mode,value){
+  const sub=Math.max(0,Math.round(Number(subtotal)||0));
+  const max=Math.floor(sub*WHS_MAX_DISCOUNT_PCT/100);
+  if(mode!=='pct'&&mode!=='rs')return{amount:0,pct:0,max};
+  const raw=String(value==null?'':value).trim();
+  if(raw==='')return{amount:0,pct:0,max};
+  const v=Number(raw);
+  if(!isFinite(v)||v<0)return{amount:0,pct:0,max,error:'The discount must be a number, 0 or more.'};
+  let amount;
+  if(mode==='pct'){
+    if(v>WHS_MAX_DISCOUNT_PCT)return{amount:0,pct:0,max,error:`The discount can be at most ${WHS_MAX_DISCOUNT_PCT}%.`};
+    amount=Math.min(Math.round(sub*v/100),max);
+  }else{
+    amount=Math.round(v);
+    if(amount>max)return{amount:0,pct:0,max,error:`The discount can be at most ${WHS_MAX_DISCOUNT_PCT}% — ${_whsRs(max)} on this bill.`};
+  }
+  const pct=sub?Math.round(amount*10000/sub)/100:0;
+  return{amount,pct,max};
+}
+function whsLineFromVariant(v){
+  return{variantId:v.id,sku:v.sku,code:whsArticleCode(v.sku),title:v.title,variant:v.variant,price:v.price||'',catalogPrice:v.price||null,qty:1};
+}
+function whsManualLine(){return{manual:true,variantId:'',sku:'',code:'',title:'',variant:'',price:'',catalogPrice:null,qty:1};}
+/** Totals of the lines as they stand in the form — tolerant of half-typed input. */
+function whsLineTotals(lines){
+  let qty=0,subtotal=0;
+  for(const l of lines||[]){
+    const q=Number(l&&l.qty),p=Number(l&&l.price);
+    if(Number.isInteger(q)&&q>0)qty+=q;
+    if(Number.isInteger(q)&&q>0&&isFinite(p)&&p>0)subtotal+=Math.round(p)*q;
+  }
+  return{qty,subtotal};
+}
+
+/**
+ * Turn the form into the document that is written. Pure: every refusal is
+ * a message naming what to fix, in the order a person fills the form in.
+ * @returns {{error:string}|{id:string,data:object}}
+ */
+function whsBuildSale(f,ctx){
+  f=f||{};ctx=ctx||{};
+  const today=ctx.today||whsToday();
+  const bill=f.bill||{};
+  if(!whsBillUrl(bill.url))return{error:'Attach the bill — a photo of it, or the PDF from the ERP. Every sale needs one.'};
+  const id=whsOrderId(f.orderNo);
+  if(!id)return{error:'Type the order number exactly as it is printed on the bill (e.g. SO0334).'};
+  const date=String(f.date||'');
+  if(!_whsIsDay(date))return{error:'Pick the date of the sale.'};
+  if(date>today)return{error:'The sale date cannot be in the future.'};
+  const name=String(f.customerName||'').trim().replace(/\s+/g,' ');
+  if(!name)return{error:'Type the customer\'s name.'};
+  if(name.length>80)return{error:'The customer\'s name is too long — 80 characters at most.'};
+  const phone=whsPhone(f.customerPhone);
+  if(!phone)return{error:'Type the customer\'s phone number — 11 digits, e.g. 0300 1234567.'};
+  const src=Array.isArray(f.lines)?f.lines:[];
+  if(!src.length)return{error:'Add at least one article.'};
+  const lines=[];let qtyTotal=0,subtotal=0,edited=0,manual=0;
+  for(let i=0;i<src.length;i++){
+    const l=src[i]||{};
+    const title=String(l.title||'').trim().replace(/\s+/g,' ');
+    const label=title||('line '+(i+1));
+    if(l.manual&&!title)return{error:'Type the name of the article that is not in the list (line '+(i+1)+').'};
+    if(!l.manual&&!l.variantId)return{error:'"'+label+'" is not linked to the catalog — remove it and pick it again.'};
+    const qtyRaw=String(l.qty==null?'':l.qty).trim();
+    const qty=Number(qtyRaw);
+    if(qtyRaw===''||!Number.isInteger(qty)||qty<1||qty>9999)return{error:'The quantity for "'+label+'" must be a whole number, 1 or more.'};
+    const priceRaw=String(l.price==null?'':l.price).trim();
+    const price=Number(priceRaw);
+    if(priceRaw===''||!isFinite(price)||price<=0)return{error:'The price for "'+label+'" must be more than 0.'};
+    const p=Math.round(price);
+    const cat=l.manual||l.catalogPrice==null||l.catalogPrice===''?null:Math.round(Number(l.catalogPrice));
+    const priceEdited=cat!=null&&isFinite(cat)&&cat>0&&p!==cat;
+    const line={
+      title:title.slice(0,160),
+      variant:String(l.variant||'').trim().slice(0,80),
+      sku:String(l.sku||'').trim().slice(0,40),
+      code:String(l.code||whsArticleCode(l.sku)||''),
+      variantId:String(l.variantId||''),
+      qty,price:p,total:p*qty
+    };
+    if(l.manual){line.manual=true;manual++;}
+    if(cat!=null&&isFinite(cat)&&cat>0)line.catalogPrice=cat;
+    if(priceEdited){line.priceEdited=true;edited++;}
+    lines.push(line);qtyTotal+=qty;subtotal+=p*qty;
+  }
+  const d=whsDiscount(subtotal,f.discMode,f.discVal);
+  if(d.error)return{error:d.error};
+  const terms=f.terms==='later'?'later':f.terms==='paid'?'paid':'';
+  if(!terms)return{error:'Choose how the customer is paying — paid now, or pay later.'};
+  let paidVia=null,dueDate=null;
+  if(terms==='paid'){
+    paidVia=WHS_PAID_VIA.some(v=>v.key===f.paidVia)?f.paidVia:'';
+    if(!paidVia)return{error:'Choose how it was paid — cash or bank transfer.'};
+  }else{
+    dueDate=String(f.dueDate||'');
+    if(!_whsIsDay(dueDate))return{error:'Pay later needs a due date — when the customer has promised to pay.'};
+    if(dueDate<date)return{error:'The due date cannot be before the date of the sale.'};
+  }
+  const note=String(f.note||'').trim().slice(0,300);
+  const flags=[];
+  if(edited)flags.push(edited===1?'price changed on 1 article':'price changed on '+edited+' articles');
+  if(manual)flags.push(manual===1?'1 article not in the catalog':manual+' articles not in the catalog');
+  return{id,data:{
+    orderNo:id,date,month:date.slice(0,7),
+    customerName:name,customerPhone:phone,
+    lines,qtyTotal,subtotal,discount:d.amount,discountPct:d.pct,total:subtotal-d.amount,
+    terms,paidVia,dueDate,note,
+    billUrl:bill.url,billKind:bill.kind==='pdf'?'pdf':'image',billName:String(bill.name||'').slice(0,120),
+    needsReview:flags.length>0,reviewFlags:flags,
+    status:'active',
+    createdBy:String(ctx.uid||''),createdByName:String(ctx.name||''),createdByU:String(ctx.u||''),
+    createdAt:ctx.now||Date.now()
+  }};
+}
+
+// ── Reading the ledger (pure) ────────────────────────────────────────────
+function _whsLive(s){return s&&s.status!=='void';}
+function whsIsOverdue(s,today){return _whsLive(s)&&s.terms==='later'&&_whsIsDay(s.dueDate)&&s.dueDate<(today||whsToday());}
+function whsSummary(sales,today){
+  const t=today||whsToday(),m=t.slice(0,7);
+  const r={todayTotal:0,todayCount:0,monthTotal:0,monthCount:0,laterTotal:0,laterCount:0,laterCustomers:0,overdueTotal:0,overdueCount:0,reviewCount:0};
+  const who=new Set();
+  for(const s of sales||[]){
+    if(!_whsLive(s))continue;
+    const amt=Number(s.total)||0;
+    if(s.date===t){r.todayTotal+=amt;r.todayCount++;}
+    if(String(s.date||'').slice(0,7)===m){r.monthTotal+=amt;r.monthCount++;}
+    if(s.terms==='later'){r.laterTotal+=amt;r.laterCount++;who.add(s.customerPhone||s.customerName);}
+    if(whsIsOverdue(s,t)){r.overdueTotal+=amt;r.overdueCount++;}
+    if(s.needsReview)r.reviewCount++;
+  }
+  r.laterCustomers=who.size;
+  return r;
+}
+const WHS_FILTERS=[['all','All sales'],['paid','Paid'],['later','Pay later'],['overdue','Overdue'],['review','Needs review'],['void','Void']];
+function whsFilterSales(sales,filter,q,today){
+  const t=today||whsToday();
+  const words=String(q||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const digits=String(q||'').replace(/\D/g,'');
+  return (sales||[]).filter(s=>{
+    if(filter==='void'){if(s.status!=='void')return false;}
+    else if(filter&&filter!=='all'){
+      if(!_whsLive(s))return false;
+      if(filter==='paid'&&s.terms!=='paid')return false;
+      if(filter==='later'&&s.terms!=='later')return false;
+      if(filter==='overdue'&&!whsIsOverdue(s,t))return false;
+      if(filter==='review'&&!s.needsReview)return false;
+    }
+    if(!words.length)return true;
+    const hay=[s.orderNo,s._id,s.customerName,s.customerPhone,s.note].concat((s.lines||[]).map(l=>(l.title||'')+' '+(l.variant||'')+' '+(l.sku||''))).join(' ').toLowerCase();
+    if(words.every(w=>hay.indexOf(w)>=0))return true;
+    return digits.length>=4&&String(s.customerPhone||'').indexOf(digits)>=0;
+  });
+}
+/** Past customers, newest spelling of each name, keyed by phone. Derived. */
+function whsCustomers(sales){
+  const byPhone=new Map();
+  for(const s of sales||[]){
+    if(!s||!s.customerPhone||byPhone.has(s.customerPhone))continue;
+    byPhone.set(s.customerPhone,String(s.customerName||''));
+  }
+  return byPhone;
+}
+function _whsSort(){
+  whSales.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||(_whsMs(b.createdAt)||0)-(_whsMs(a.createdAt)||0));
+}
+
+// ── Loading ──────────────────────────────────────────────────────────────
+// Never rejects: renderPage dispatches with no .catch, and a failed read
+// must render as a failure, never as an empty ledger.
+function loadWhSales(force){
+  if(whSalesLoaded&&!force)return Promise.resolve();
+  if(_whsLoading)return _whsLoading;
+  _whsLoading=(async()=>{
+    try{
+      const snap=await getDocs(query(collection(db,'wh_sales'),orderBy('createdAt','desc'),limit(1000)));
+      whSales=snap.docs.map(d=>Object.assign({},d.data(),{_id:d.id}));
+      _whsSort();
+      _whsLoadErr=null;
+    }catch(e){
+      _whsLoadErr={code:(e&&e.code)||'',message:(e&&e.message)||String(e)};
+      console.warn('[warehouse-sales] load failed',e);
+    }
+    whSalesLoaded=true;
+    _whsLoading=null;
+  })();
+  return _whsLoading;
+}
+window.whsRetry=function(){
+  loadWhSales(true).then(_whsRepaint);
+  _whsRepaint();
+};
+
+// ── Rendering: the section ───────────────────────────────────────────────
+function _whsSectionShown(){return typeof _fulfillSection!=='undefined'&&_fulfillSection==='accounts';}
+function _whsRepaint(){
+  if(!_whsSectionShown())return;
+  const b=document.getElementById('fulfill-body');
+  if(b)b.innerHTML=whsSectionHTML();
+}
+function _whsErrorCard(){
+  const e=_whsLoadErr||{};
+  const denied=/permission/i.test(String(e.code)+' '+String(e.message));
+  return `<div class="acct-alert urgent" style="cursor:default;margin-bottom:12px">
+    <b>The sales could not be read</b> (wh_sales: ${_whsEsc(e.code||e.message||'unknown error')}).
+    ${denied?'The Firestore rules for warehouse sales may not be published yet — republish firestore.rules in the Firebase Console.':'Check the connection and try again.'}
+    Nothing is shown below because nothing was read, not because there are no sales.
+    <div style="margin-top:8px"><button class="btn-sm" onclick="window.whsRetry()">Retry</button></div>
+  </div>`;
+}
+function _whsTile(label,value,sub,cls){
+  return `<div class="acct-tile${cls?' '+cls:''}"><div class="acct-tile-l">${label}</div><div class="acct-tile-v">${value}</div>${sub?`<div class="acct-tile-s">${sub}</div>`:''}</div>`;
+}
+function _whsBadges(s,today){
+  const out=[];
+  if(s.status==='void')out.push('<span class="acct-chip">Void</span>');
+  else if(s.terms==='later'){
+    if(whsIsOverdue(s,today)){const n=_whsDaysBetween(s.dueDate,today);out.push(`<span class="acct-chip urgent">Overdue · ${n} day${n===1?'':'s'}</span>`);}
+    else out.push(`<span class="acct-chip warn">Pay later · due ${_whsEsc(_whsFmtDay(s.dueDate))}</span>`);
+  }else{
+    const via=(WHS_PAID_VIA.find(v=>v.key===s.paidVia)||{label:'paid'}).label;
+    out.push(`<span class="acct-chip ok">Paid · ${_whsEsc(via.toLowerCase())}</span>`);
+  }
+  if(s.status!=='void'&&s.needsReview)out.push('<span class="acct-chip urgent">Review</span>');
+  return out.join(' ');
+}
+function _whsRowHTML(s,today){
+  const lines=s.lines||[];
+  const first=lines[0]?(lines[0].title+(lines[0].variant?' · '+lines[0].variant:'')):'';
+  const more=lines.length>1?` + ${lines.length-1} more`:'';
+  const qty=Number(s.qtyTotal)||0;
+  return `<div class="whs-row${s.status==='void'?' void':''}" onclick="window.whsOpen('${_whsEsc(s._id)}')">
+    <div class="whs-main">
+      <div class="whs-top"><span class="whs-ord">${_whsEsc(s.orderNo||s._id)}</span><span>${_whsEsc(_whsFmtDay(s.date))}</span></div>
+      <div class="whs-cust">${_whsEsc(s.customerName)}</div>
+      <div class="whs-sub">${_whsEsc(whsFmtPhone(s.customerPhone))} · ${qty} item${qty===1?'':'s'}${first?' · '+_whsEsc(first)+_whsEsc(more):''}</div>
+    </div>
+    <div class="whs-side"><div class="whs-amt">${_whsRs(s.total)}</div><div class="whs-badges">${_whsBadges(s,today)}</div></div>
+  </div>`;
+}
+function whsSectionHTML(){
+  if(!whsCanView())return '<div class="empty">Accounts is for the warehouse manager and the owners.</div>';
+  if(!whSalesLoaded){
+    loadWhSales().then(_whsRepaint);
+    return (typeof gvSkeleton==='function')?gvSkeleton(4):'<div class="empty">Loading…</div>';
+  }
+  const today=whsToday();
+  const sum=whsSummary(whSales,today);
+  const list=whsFilterSales(whSales,_whsFilter,_whsQuery,today);
+  const shown=list.slice(0,_whsShown);
+  const alerts=[];
+  if(sum.overdueCount)alerts.push(`<div class="acct-alert urgent" onclick="window.whsSetFilter('overdue')">${sum.overdueCount} pay-later bill${sum.overdueCount===1?' is':'s are'} past the due date — ${_whsRs(sum.overdueTotal)} to collect.</div>`);
+  if(sum.reviewCount&&_whsIsOwner())alerts.push(`<div class="acct-alert warn" onclick="window.whsSetFilter('review')">${sum.reviewCount} sale${sum.reviewCount===1?'':'s'} to review — a price that differs from the catalog, or an article that is not in it.</div>`);
+  return `<div id="whs-root">
+    ${_whsLoadErr?_whsErrorCard():''}
+    <div class="acct-tiles">
+      ${_whsTile('Today',_whsRs(sum.todayTotal),sum.todayCount+' sale'+(sum.todayCount===1?'':'s'))}
+      ${_whsTile('This month',_whsRs(sum.monthTotal),sum.monthCount+' sale'+(sum.monthCount===1?'':'s'))}
+      ${_whsTile('Pay later — to collect',_whsRs(sum.laterTotal),sum.laterCount?sum.laterCount+' bill'+(sum.laterCount===1?'':'s')+' · '+sum.laterCustomers+' customer'+(sum.laterCustomers===1?'':'s'):'nothing outstanding')}
+      ${_whsTile('Overdue',_whsRs(sum.overdueTotal),sum.overdueCount?sum.overdueCount+' past the due date':'none',sum.overdueCount?'danger':'')}
+    </div>
+    ${alerts.length?`<div class="acct-alerts">${alerts.join('')}</div>`:''}
+    <div class="card whs-card">
+      <div class="acct-toolbar">
+        ${whsCanEntry()?'<button class="btn-primary whs-new" onclick="window.whsNewSale()">+ Record a sale</button>':''}
+        <select class="acct-sel" aria-label="Show" onchange="window.whsSetFilter(this.value)">${WHS_FILTERS.map(f=>`<option value="${f[0]}"${_whsFilter===f[0]?' selected':''}>${f[1]}</option>`).join('')}</select>
+        <input id="whs-find" class="acct-sel whs-find" type="search" placeholder="Order #, customer, phone or article" value="${_whsEsc(_whsQuery)}" oninput="window.whsFind(this.value)">
+        <button class="btn-sm btn-outline" onclick="window.whsExport()">Export Excel</button>
+      </div>
+      <div id="whs-list" class="whs-list">
+        ${shown.length?shown.map(s=>_whsRowHTML(s,today)).join(''):`<div class="empty" style="padding:18px">${whSales.length?'No sale matches this filter.':(_whsLoadErr?'—':'No sales recorded yet. Press “+ Record a sale” with the ERP bill in hand.')}</div>`}
+      </div>
+      ${list.length>shown.length?`<div class="acct-pager"><button class="btn-sm btn-outline" onclick="window.whsMore()">Show ${Math.min(_WHS_PAGE,list.length-shown.length)} more</button> <span>${shown.length} of ${list.length}</span></div>`:''}
+    </div>
+    <div class="whs-foot-note">Collecting a pay-later bill is not recorded here yet — that comes when these sales are linked into Raees's Store Accounts, where the cash is.</div>
+  </div>`;
+}
+window.whsSetFilter=function(f){_whsFilter=WHS_FILTERS.some(x=>x[0]===f)?f:'all';_whsShown=_WHS_PAGE;_whsRepaint();};
+window.whsMore=function(){_whsShown+=_WHS_PAGE;_whsRepaint();};
+// Debounced, and the box keeps its caret across the repaint (the
+// fabInvSetSearch pattern).
+window.whsFind=function(v){
+  _whsQuery=String(v||'');
+  clearTimeout(_whsQueryTimer);
+  _whsQueryTimer=setTimeout(()=>{
+    _whsShown=_WHS_PAGE;
+    _whsRepaint();
+    const el=document.getElementById('whs-find');
+    if(el&&typeof el.focus==='function'){el.focus();try{el.setSelectionRange(el.value.length,el.value.length);}catch(_){}}
+  },180);
+};
+
+// ── Modal ────────────────────────────────────────────────────────────────
+// The Store Accounts modal's look (.acct-modal), under its own id, so the
+// two can never close each other.
+function _whsModal(title,body,foot,opts){
+  opts=opts||{};
+  const old=document.getElementById('whs-modal');if(old)old.remove();
+  const m=document.createElement('div');m.id='whs-modal';m.className='acct-modal-back';
+  m.innerHTML=`<div class="acct-modal" style="max-width:${opts.width||560}px" role="dialog" aria-modal="true">
+    <div class="acct-modal-head"><span>${title}</span><button class="acct-x" onclick="window.whsModalClose()" aria-label="Close">×</button></div>
+    <div class="acct-modal-body">${body}</div>
+    ${foot?`<div class="acct-modal-foot">${foot}</div>`:''}
+  </div>`;
+  if(typeof m.addEventListener==='function')m.addEventListener('click',ev=>{if(ev.target===m&&!opts.sticky)window.whsModalClose();});
+  document.body.appendChild(m);
+}
+window.whsModalClose=function(){const m=document.getElementById('whs-modal');if(m)m.remove();};
+
+// ── The new-sale form ────────────────────────────────────────────────────
+function _whsChips(group,opts,sel){
+  return `<div class="acct-chips" id="whs-${group}-chips">${opts.map(o=>`<button type="button" class="acct-chipbtn${sel===o[0]?' on':''}" data-v="${o[0]}" onclick="window.whsChip('${group}','${o[0]}')">${o[1]}${o[2]?`<small>${o[2]}</small>`:''}</button>`).join('')}</div>`;
+}
+function _whsFormHTML(){
+  const today=whsToday();
+  const names=[...whsCustomers(whSales).values()].filter(Boolean);
+  return `<div class="whs-form">
+    <div class="whs-h">The bill *</div>
+    <div class="whs-billrow">
+      <label for="whs-bill-cam" class="acct-photo-btn">📷 Take a photo</label>
+      <input id="whs-bill-cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="window.whsBillPicked(this)">
+      <label for="whs-bill-file" class="acct-photo-btn">📄 Upload a photo or PDF</label>
+      <input id="whs-bill-file" type="file" accept="image/*,application/pdf,.pdf" style="display:none" onchange="window.whsBillPicked(this)">
+    </div>
+    <div id="whs-bill-st" class="whs-billst">${_whsBillStatusHTML()}</div>
+
+    <div class="form-grid whs-grid">
+      <div class="field"><label>Order # (from the bill) *</label><input id="whs-order" placeholder="e.g. SO0334" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+      <div class="field"><label>Date of sale *</label><input id="whs-date" type="date" value="${today}" max="${today}"></div>
+      <div class="field"><label>Customer name *</label><input id="whs-name" list="whs-names" autocomplete="off" oninput="window.whsNameInput(this.value)"><datalist id="whs-names">${names.map(n=>`<option value="${_whsEsc(n)}">`).join('')}</datalist></div>
+      <div class="field"><label>Phone number *</label><input id="whs-phone" type="tel" inputmode="tel" placeholder="0300 1234567" autocomplete="off" onblur="window.whsPhoneBlur(this.value)"></div>
+    </div>
+
+    <div class="whs-h">Articles *</div>
+    <div class="whs-search">
+      <input id="whs-q" class="whs-q" type="search" placeholder="Search a name, or type / scan the barcode (e.g. GP092-M)" autocomplete="off" spellcheck="false" oninput="window.whsSearchInput()" onkeydown="window.whsSearchKey(event)">
+      <div id="whs-results" class="whs-results"></div>
+    </div>
+    <div id="whs-catnote" class="whs-catnote">${_whsCatalogNoteHTML()}</div>
+    <div id="whs-lines" class="whs-lines">${_whsLinesHTML()}</div>
+    <button type="button" class="whs-add-manual" onclick="window.whsAddManual()">+ An article that is not in the list</button>
+
+    <div class="whs-h">Discount <span class="whs-hint">— ${WHS_MAX_DISCOUNT_PCT}% at most</span></div>
+    ${_whsChips('disc',[['none','No discount'],['pct','Percent'],['rs','Rupees']],_whsDraft.discMode)}
+    <div id="whs-disc-wrap" class="whs-disc" style="${_whsDraft.discMode==='none'?'display:none':''}">
+      <input id="whs-disc" type="number" inputmode="decimal" min="0" placeholder="${_whsDraft.discMode==='rs'?'Rs':'%'}" oninput="window.whsPaintSummary()">
+      <span id="whs-disc-hint" class="whs-hint"></span>
+    </div>
+
+    <div class="whs-h">Payment *</div>
+    ${_whsChips('terms',[['paid','Paid now'],['later','Pay later','due date']],_whsDraft.terms)}
+    <div id="whs-paid-wrap" style="${_whsDraft.terms==='paid'?'':'display:none'};margin-top:8px">
+      ${_whsChips('via',WHS_PAID_VIA.map(v=>[v.key,v.label]),_whsDraft.paidVia)}
+    </div>
+    <div id="whs-later-wrap" class="field" style="${_whsDraft.terms==='later'?'':'display:none'};margin-top:8px;max-width:260px">
+      <label>Due date — when the customer will pay *</label><input id="whs-due" type="date">
+    </div>
+
+    <div class="field" style="margin-top:12px"><label>Note</label><input id="whs-note" maxlength="300" placeholder="e.g. Awaiting payment"></div>
+    <div id="whs-sum" class="whs-sum">${_whsSummaryHTML()}</div>
+  </div>`;
+}
+window.whsNewSale=function(){
+  if(!whsCanEntry())return;
+  _whsDraft={lines:[],discMode:'none',terms:'',paidVia:'',bill:null,uploading:false};
+  _whsLoadCatalog();
+  _whsModal('Record a customer purchase',_whsFormHTML(),
+    `<button class="btn-outline" onclick="window.whsModalClose()">Cancel</button><button class="btn-primary" id="whs-save" onclick="window.whsSaveSale()">Save sale</button>`,
+    {sticky:true,width:760});
+};
+window.whsChip=function(group,v){
+  if(!_whsDraft)return;
+  if(group==='disc'){
+    _whsDraft.discMode=['none','pct','rs'].indexOf(v)>=0?v:'none';
+    const w=document.getElementById('whs-disc-wrap');if(w)w.style.display=_whsDraft.discMode==='none'?'none':'';
+    const i=document.getElementById('whs-disc');if(i){i.placeholder=_whsDraft.discMode==='rs'?'Rs':'%';if(_whsDraft.discMode==='none')i.value='';}
+  }else if(group==='terms'){
+    _whsDraft.terms=v==='later'?'later':'paid';
+    const p=document.getElementById('whs-paid-wrap');if(p)p.style.display=_whsDraft.terms==='paid'?'':'none';
+    const l=document.getElementById('whs-later-wrap');if(l)l.style.display=_whsDraft.terms==='later'?'':'none';
+  }else if(group==='via'){
+    _whsDraft.paidVia=WHS_PAID_VIA.some(x=>x.key===v)?v:'';
+  }
+  const set=_whsDraft[group==='disc'?'discMode':group==='terms'?'terms':'paidVia'];
+  document.querySelectorAll('#whs-'+group+'-chips .acct-chipbtn').forEach(b=>b.classList.toggle('on',b.dataset.v===set));
+  window.whsPaintSummary();
+};
+// A known customer: the phone fills the name, the name fills the phone.
+window.whsPhoneBlur=function(v){
+  const p=whsPhone(v);if(!p)return;
+  const nm=document.getElementById('whs-name');
+  const known=whsCustomers(whSales).get(p);
+  if(nm&&known&&!String(nm.value||'').trim())nm.value=known;
+};
+window.whsNameInput=function(v){
+  const ph=document.getElementById('whs-phone');
+  if(!ph||String(ph.value||'').trim())return;
+  const want=String(v||'').trim().toLowerCase();if(!want)return;
+  for(const [p,n] of whsCustomers(whSales)){if(String(n).trim().toLowerCase()===want){ph.value=whsFmtPhone(p);break;}}
+};
+
+// ── The bill ─────────────────────────────────────────────────────────────
+function _whsThumbUrl(url){return whsBillUrl(url)&&url.indexOf('/upload/')>0?url.replace('/upload/','/upload/w_600,f_auto,q_auto/'):url;}
+function _whsBillStatusHTML(){
+  const d=_whsDraft;
+  if(!d)return '';
+  if(d.uploading)return '<span class="whs-muted">Uploading the bill…</span>';
+  if(d.billError)return `<span class="whs-err">${_whsEsc(d.billError)}</span>`;
+  const b=d.bill;
+  if(!b||!whsBillUrl(b.url))return '<span class="whs-muted">No bill attached yet — the sale cannot be saved without it.</span>';
+  const view=`<a href="${_whsEsc(b.url)}" target="_blank" rel="noopener noreferrer">view</a>`;
+  if(b.kind==='pdf')return `<span class="whs-ok">✓ PDF attached</span> <span class="whs-muted">${_whsEsc(b.name||'')}</span> · ${view} · <button type="button" class="acct-link" onclick="window.whsBillClear()">remove</button>`;
+  return `<span class="whs-billthumb"><img src="${_whsEsc(_whsThumbUrl(b.url))}" alt="The bill" onerror="this.style.display='none'"></span><span class="whs-ok">✓ Photo attached</span> · ${view} · <button type="button" class="acct-link" onclick="window.whsBillClear()">remove</button>`;
+}
+function _whsPaintBill(){const st=document.getElementById('whs-bill-st');if(st)st.innerHTML=_whsBillStatusHTML();}
+async function _whsUpload(file){
+  if(typeof FormData==='undefined')throw new Error('This browser cannot upload files.');
+  const fd=new FormData();
+  fd.append('file',file);
+  fd.append('upload_preset','groovy-ops');
+  const r=await fetch('https://api.cloudinary.com/v1_1/deww4lpym/auto/upload',{method:'POST',body:fd});
+  let d={};try{d=await r.json();}catch(_){d={};}
+  const url=d&&d.secure_url;
+  // Re-checked here, the moment not to trust a URL.
+  if(!whsBillUrl(url))throw new Error((d&&d.error&&d.error.message)||'The upload did not come back with a file.');
+  return{url,format:String(d.format||'')};
+}
+window.whsBillPicked=async function(inp){
+  const file=inp&&inp.files&&inp.files[0];
+  if(!file||!_whsDraft)return;
+  const isPdf=/pdf/i.test(file.type||'')||/\.pdf$/i.test(file.name||'');
+  const isImg=/^image\//i.test(file.type||'');
+  _whsDraft.billError='';
+  if(!isPdf&&!isImg){_whsDraft.billError='That file is neither a photo nor a PDF.';inp.value='';_whsPaintBill();return;}
+  if(file.size>WHS_MAX_UPLOAD_MB*1024*1024){_whsDraft.billError=`That file is ${(file.size/1048576).toFixed(1)} MB — ${WHS_MAX_UPLOAD_MB} MB at most.`;inp.value='';_whsPaintBill();return;}
+  const draft=_whsDraft;
+  draft.uploading=true;_whsPaintBill();
+  try{
+    const res=await _whsUpload(file);
+    draft.bill={url:res.url,kind:isPdf||/^pdf$/i.test(res.format)?'pdf':'image',name:String(file.name||'')};
+  }catch(e){
+    draft.bill=null;
+    draft.billError='The bill did not upload: '+((e&&e.message)||e)+'. Try again.';
+  }finally{
+    draft.uploading=false;
+    try{inp.value='';}catch(_){}
+    if(_whsDraft===draft)_whsPaintBill();
+  }
+};
+window.whsBillClear=function(){if(!_whsDraft)return;_whsDraft.bill=null;_whsDraft.billError='';_whsPaintBill();};
+
+// ── Articles ─────────────────────────────────────────────────────────────
+function _whsCatalogNoteHTML(){
+  if(_whsCatalogErr)return `<span class="whs-err">The product list could not be loaded (${_whsEsc(_whsCatalogErr)}). An article can still be typed in with “+ An article that is not in the list”.</span>`;
+  if(!_whsCatalog)return '<span class="whs-muted">Loading the product list…</span>';
+  if(!_whsCatalogAt)return `<span class="whs-muted">${_whsCatalog.length} products and sizes, copied from Shopify.</span>`;
+  const stale=Date.now()-_whsCatalogAt>_WHS_CATALOG_STALE_MS;
+  const when=new Date(_whsCatalogAt).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  return `<span class="${stale?'whs-err':'whs-muted'}">Product list as of ${_whsEsc(when)} — copied from Shopify once a day, so a product added since then is not here yet${stale?'. This copy is more than a day old.':'.'}</span>`;
+}
+function _whsPaintSearch(){
+  const note=document.getElementById('whs-catnote');if(note)note.innerHTML=_whsCatalogNoteHTML();
+  const box=document.getElementById('whs-results');if(!box)return;
+  const q=(document.getElementById('whs-q')||{}).value||'';
+  if(!String(q).trim()){box.innerHTML='';_whsHits=[];return;}
+  if(!_whsCatalog){box.innerHTML='';_whsHits=[];return;}
+  _whsHits=whsSearchCatalog(_whsCatalog,q,8);
+  box.innerHTML=_whsHits.length
+    ?_whsHits.map((v,i)=>`<button type="button" class="whs-hit${i===0?' first':''}" onclick="window.whsPick('${_whsEsc(v.id)}')"><span class="whs-hit-t">${_whsEsc(v.title)}${v.variant?` <span class="whs-muted">· ${_whsEsc(v.variant)}</span>`:''}</span><span class="whs-hit-m"><span class="whs-sku">${_whsEsc(v.sku||'no SKU')}</span><b>${v.price?_whsRs(v.price):'no price'}</b></span></button>`).join('')
+    :'<div class="whs-nohit">Nothing matches. Check the spelling or the barcode — or add it as an article that is not in the list.</div>';
+}
+window.whsSearchInput=function(){_whsPaintSearch();};
+window.whsSearchKey=function(e){
+  if(!e)return;
+  if(e.key==='Enter'){
+    e.preventDefault&&e.preventDefault();
+    if(_whsHits[0])window.whsPick(_whsHits[0].id);
+  }else if(e.key==='Escape'){
+    const q=document.getElementById('whs-q');if(q)q.value='';
+    _whsPaintSearch();
+  }
+};
+window.whsPick=function(id){
+  if(!_whsDraft||!_whsCatalog)return;
+  const v=_whsCatalog.find(x=>x.id===String(id));if(!v)return;
+  // The same size picked twice is one line with a bigger quantity.
+  const have=_whsDraft.lines.find(l=>!l.manual&&l.variantId===v.id);
+  if(have){const q=Number(have.qty);have.qty=Number.isInteger(q)&&q>0?q+1:1;}
+  else _whsDraft.lines.push(whsLineFromVariant(v));
+  const q=document.getElementById('whs-q');if(q){q.value='';if(typeof q.focus==='function')q.focus();}
+  _whsPaintSearch();
+  _whsPaintLines();
+};
+window.whsAddManual=function(){if(!_whsDraft)return;_whsDraft.lines.push(whsManualLine());_whsPaintLines();};
+window.whsLineRemove=function(i){if(!_whsDraft)return;_whsDraft.lines.splice(i,1);_whsPaintLines();};
+// Typing never rebuilds the lines — the caret stays where it is. Only the
+// line's own total, its flag and the summary repaint.
+window.whsLineSet=function(i,k,v){
+  const l=_whsDraft&&_whsDraft.lines[i];if(!l)return;
+  if(k==='qty'||k==='price'||(l.manual&&k==='title'))l[k]=v;
+  const t=document.getElementById('whs-ltot-'+i);if(t)t.textContent=_whsLineTotalText(l);
+  const f=document.getElementById('whs-lflag-'+i);if(f)f.innerHTML=_whsLineFlagHTML(l);
+  window.whsPaintSummary();
+};
+function _whsLineTotalText(l){
+  const q=Number(l.qty),p=Number(l.price);
+  return Number.isInteger(q)&&q>0&&isFinite(p)&&p>0?_whsRs(Math.round(p)*q):'—';
+}
+function _whsLineFlagHTML(l){
+  if(l.manual)return '<span class="whs-flag">Not in the catalog — flagged for the owners to review.</span>';
+  const p=Math.round(Number(l.price)),c=Number(l.catalogPrice);
+  if(isFinite(p)&&c>0&&p!==Math.round(c))return `<span class="whs-flag">Catalog price is ${_whsRs(c)} — a different price is flagged for review.</span>`;
+  return '';
+}
+function _whsLinesHTML(){
+  const d=_whsDraft;
+  if(!d||!d.lines.length)return '<div class="whs-nolines">No articles yet — search above, or scan the barcode.</div>';
+  return d.lines.map((l,i)=>`<div class="whs-line" id="whs-line-${i}">
+    <div class="whs-lname">${l.manual
+      ?`<input class="whs-lin" placeholder="Article name, as on the bill" value="${_whsEsc(l.title)}" oninput="window.whsLineSet(${i},'title',this.value)">`
+      :`<b>${_whsEsc(l.title)}</b><small>${_whsEsc(l.variant||'')}${l.variant&&l.sku?' · ':''}${_whsEsc(l.sku||'')}</small>`}</div>
+    <label class="whs-num"><span>Qty</span><input inputmode="numeric" value="${_whsEsc(l.qty)}" oninput="window.whsLineSet(${i},'qty',this.value)"></label>
+    <label class="whs-num"><span>Price</span><input inputmode="numeric" value="${_whsEsc(l.price)}" oninput="window.whsLineSet(${i},'price',this.value)"></label>
+    <div class="whs-ltot" id="whs-ltot-${i}">${_whsLineTotalText(l)}</div>
+    <button type="button" class="acct-x whs-lx" onclick="window.whsLineRemove(${i})" aria-label="Remove this article">×</button>
+    <div class="whs-lflag" id="whs-lflag-${i}">${_whsLineFlagHTML(l)}</div>
+  </div>`).join('');
+}
+function _whsPaintLines(){const b=document.getElementById('whs-lines');if(b)b.innerHTML=_whsLinesHTML();window.whsPaintSummary();}
+
+// ── Summary ──────────────────────────────────────────────────────────────
+function _whsSummaryHTML(){
+  const d=_whsDraft;if(!d)return '';
+  const t=whsLineTotals(d.lines);
+  const discVal=(document.getElementById('whs-disc')||{}).value;
+  const disc=whsDiscount(t.subtotal,d.discMode,discVal);
+  const row=(k,v,cls)=>`<div class="whs-srow${cls?' '+cls:''}"><span>${k}</span><b>${v}</b></div>`;
+  return row('Items',String(t.qty))
+    +row('Subtotal',_whsRs(t.subtotal))
+    +(d.discMode!=='none'&&(disc.amount||disc.error)?row('Discount'+(disc.amount?` (${disc.pct}%)`:''),disc.error?'—':'−'+_whsRs(disc.amount)):'')
+    +(disc.error?`<div class="whs-err" style="margin:4px 0">${_whsEsc(disc.error)}</div>`:'')
+    +`<div class="acct-total"><span>Total</span><b>${_whsRs(t.subtotal-(disc.error?0:disc.amount))}</b></div>`;
+}
+window.whsPaintSummary=function(){
+  const s=document.getElementById('whs-sum');if(s)s.innerHTML=_whsSummaryHTML();
+  const h=document.getElementById('whs-disc-hint');
+  if(h&&_whsDraft){const t=whsLineTotals(_whsDraft.lines);h.textContent=t.subtotal?`at most ${_whsRs(Math.floor(t.subtotal*WHS_MAX_DISCOUNT_PCT/100))} on this bill`:'';}
+};
+
+// ── Saving ───────────────────────────────────────────────────────────────
+function _whsDupMsg(s){
+  const who=s&&(s.createdByName||s.createdByU);
+  return `Order ${s&&(s.orderNo||s._id)} is already recorded${s&&s.date?' ('+_whsFmtDay(s.date)+(who?', by '+who:'')+')':''}. One bill, one sale — open it from the list if something needs correcting.`;
+}
+function _whsWriteErrMsg(e){
+  const c=String((e&&e.code)||'')+' '+String((e&&e.message)||'');
+  if(/permission/i.test(c))return 'The save was refused. The Firestore rules for warehouse sales may not be published yet — ask Afnan to republish firestore.rules.';
+  if(/unavailable|offline|network|failed-precondition/i.test(c))return 'No connection. A sale is checked against the server for a duplicate bill, so it needs to be online — try again when connected.';
+  return 'The sale was not saved: '+((e&&e.message)||e);
+}
+function _whsSaveBtn(on,label){const b=document.getElementById('whs-save');if(b){b.disabled=!on;b.textContent=label;}}
+window.whsSaveSale=async function(){
+  if(!whsCanEntry()||!_whsDraft||_whsBusy)return;
+  if(_whsDraft.uploading){showToast('Wait for the bill to finish uploading.',true);return;}
+  const g=id=>{const el=document.getElementById(id);return el?el.value:'';};
+  const s=_whsSession()||{};
+  const r=whsBuildSale({
+    orderNo:g('whs-order'),date:g('whs-date'),customerName:g('whs-name'),customerPhone:g('whs-phone'),
+    lines:_whsDraft.lines,discMode:_whsDraft.discMode,discVal:g('whs-disc'),
+    terms:_whsDraft.terms,paidVia:_whsDraft.paidVia,dueDate:g('whs-due'),note:g('whs-note'),
+    bill:_whsDraft.bill||{}
+  },{today:whsToday(),uid:_whsUid(),name:s.name,u:s.u,now:Date.now()});
+  if(r.error){showToast(r.error,true);return;}
+  const local=whSales.find(x=>x._id===r.id);
+  if(local){showToast(_whsDupMsg(local),true);return;}
+  _whsBusy=true;_whsSaveBtn(false,'Saving…');
+  try{
+    await runTransaction(db,async tx=>{
+      const ref=doc(db,'wh_sales',r.id);
+      const snap=await tx.get(ref);
+      if(snap&&typeof snap.exists==='function'&&snap.exists()){
+        const e=new Error('duplicate');e.dup=Object.assign({_id:r.id},snap.data()||{});throw e;
+      }
+      tx.set(ref,r.data);
+    });
+  }catch(e){
+    _whsBusy=false;_whsSaveBtn(true,'Save sale');
+    showToast(e&&e.dup?_whsDupMsg(e.dup):_whsWriteErrMsg(e),true);
+    return;
+  }
+  _whsBusy=false;
+  whSales.unshift(Object.assign({},r.data,{_id:r.id}));
+  _whsSort();
+  try{logActivity('Warehouse sale recorded',`${r.id} · ${r.data.customerName} · ${_whsRs(r.data.total)}${r.data.terms==='later'?' · pay later, due '+r.data.dueDate:''}`);}catch(_){}
+  window.whsModalClose();
+  _whsDraft=null;
+  showToast(`Sale ${r.id} recorded — ${_whsRs(r.data.total)}${r.data.needsReview?' · flagged for review':''}`);
+  _whsRepaint();
+};
+
+// ── One sale ─────────────────────────────────────────────────────────────
+function _whsById(id){return whSales.find(s=>s._id===String(id))||null;}
+function _whsKV(k,v){return `<div class="acct-kv"><span>${k}</span><b>${v}</b></div>`;}
+window.whsOpen=function(id){
+  const s=_whsById(id);if(!s)return;
+  const today=whsToday();
+  const pay=s.terms==='later'
+    ?`Pay later — due ${_whsEsc(_whsFmtDay(s.dueDate))}${whsIsOverdue(s,today)?' <span class="acct-chip urgent">overdue</span>':''}`
+    :`Paid · ${_whsEsc((WHS_PAID_VIA.find(v=>v.key===s.paidVia)||{label:'—'}).label)}`;
+  const bill=whsBillUrl(s.billUrl)
+    ?(s.billKind==='pdf'
+      ?`<a class="acct-photo-link" href="${_whsEsc(s.billUrl)}" target="_blank" rel="noopener noreferrer">📄 Open the bill (PDF)</a>`
+      :`<a class="whs-billview" href="${_whsEsc(s.billUrl)}" target="_blank" rel="noopener noreferrer"><img src="${_whsEsc(_whsThumbUrl(s.billUrl))}" alt="The bill" onerror="this.style.display='none'"><span>Open the bill</span></a>`)
+    :'<div class="whs-err">No bill is attached to this sale.</div>';
+  const lines=(s.lines||[]).map(l=>`<tr>
+      <td>${_whsEsc(l.title)}${l.variant?`<div class="whs-muted">${_whsEsc(l.variant)}</div>`:''}${l.manual?'<div class="whs-flag">not in the catalog</div>':''}${l.priceEdited?`<div class="whs-flag">catalog price ${_whsRs(l.catalogPrice)}</div>`:''}</td>
+      <td class="ref">${_whsEsc(l.sku||'')}</td>
+      <td class="num">${Number(l.qty)||0}</td>
+      <td class="num">${_whsRs(l.price)}</td>
+      <td class="num">${_whsRs(l.total)}</td></tr>`).join('');
+  const recorded=_whsMs(s.createdAt);
+  const body=`
+    ${s.status==='void'?`<div class="acct-alert urgent" style="cursor:default;margin-bottom:12px">Void — ${_whsEsc(s.voidReason||'')} (${_whsEsc(s.voidedByName||s.voidedBy||'')}${_whsMs(s.voidedAt)?', '+_whsEsc(new Date(_whsMs(s.voidedAt)).toLocaleString('en-GB')):''})</div>`:''}
+    ${s.status!=='void'&&s.needsReview?`<div class="acct-alert warn" style="cursor:default;margin-bottom:12px">Needs review: ${_whsEsc((s.reviewFlags||[]).join(' · ')||'flagged')}</div>`:''}
+    ${!s.needsReview&&s.reviewedBy?`<div class="whs-muted" style="margin-bottom:10px">Reviewed by ${_whsEsc(s.reviewedByName||s.reviewedBy)}.</div>`:''}
+    <div class="acct-kv-grid">
+      ${_whsKV('Order #',_whsEsc(s.orderNo||s._id))}
+      ${_whsKV('Date',_whsEsc(_whsFmtDay(s.date)))}
+      ${_whsKV('Customer',_whsEsc(s.customerName))}
+      ${_whsKV('Phone',_whsEsc(whsFmtPhone(s.customerPhone)))}
+      ${_whsKV('Payment',pay)}
+      ${_whsKV('Recorded by',_whsEsc(s.createdByName||s.createdByU||'')+(recorded?' · '+_whsEsc(new Date(recorded).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''))}
+    </div>
+    <div class="acct-table-wrap" style="margin-top:14px"><table class="acct-table whs-lt-table"><thead><tr><th>Article</th><th>Barcode</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr></thead><tbody>${lines}</tbody></table></div>
+    <div class="whs-sum" style="margin-top:10px">
+      <div class="whs-srow"><span>Subtotal</span><b>${_whsRs(s.subtotal)}</b></div>
+      ${s.discount?`<div class="whs-srow"><span>Discount (${Number(s.discountPct)||0}%)</span><b>−${_whsRs(s.discount)}</b></div>`:''}
+      <div class="acct-total"><span>Total</span><b>${_whsRs(s.total)}</b></div>
+    </div>
+    ${s.note?`<div style="margin-top:10px;font-size:14px"><span class="whs-muted">Note:</span> ${_whsEsc(s.note)}</div>`:''}
+    <div style="margin-top:12px">${bill}</div>`;
+  const acts=[];
+  if(s.status!=='void'&&_whsIsOwner()&&s.needsReview)acts.push(`<button class="btn-sm" onclick="window.whsMarkReviewed('${_whsEsc(s._id)}')">Mark reviewed</button>`);
+  if(s.status!=='void'&&whsCanEntry())acts.push(`<button class="btn-sm btn-outline" onclick="window.whsVoid('${_whsEsc(s._id)}')">Void this sale…</button>`);
+  if(_whsIsSuper())acts.push(`<button class="btn-sm btn-outline whs-danger" onclick="window.whsDelete('${_whsEsc(s._id)}')">Delete (admin)…</button>`);
+  acts.push('<button class="btn-outline" onclick="window.whsModalClose()">Close</button>');
+  _whsModal('Sale '+_whsEsc(s.orderNo||s._id),body,acts.join(''),{width:680});
+};
+window.whsVoid=async function(id){
+  const s=_whsById(id);if(!s||s.status==='void'||!whsCanEntry())return;
+  const reason=String(prompt(`Void sale ${s.orderNo||s._id} (${_whsRs(s.total)})?\n\nIt stays in the list, struck through, with your reason. Why is it being voided?`,'')||'').trim();
+  if(!reason){showToast('Not voided — a reason is needed.',true);return;}
+  const who=_whsSession()||{};
+  const patch={status:'void',voidedAt:Date.now(),voidedBy:String(who.u||''),voidedByName:String(who.name||''),voidReason:reason.slice(0,200)};
+  try{await updateDoc(doc(db,'wh_sales',s._id),patch);}
+  catch(e){showToast(_whsWriteErrMsg(e),true);return;}
+  Object.assign(s,patch);
+  try{logActivity('Warehouse sale voided',`${s._id} · ${reason}`);}catch(_){}
+  window.whsModalClose();
+  showToast('Sale '+s._id+' voided.');
+  _whsRepaint();
+};
+window.whsMarkReviewed=async function(id){
+  const s=_whsById(id);if(!s||!_whsIsOwner()||!s.needsReview)return;
+  const who=_whsSession()||{};
+  const patch={needsReview:false,reviewedAt:Date.now(),reviewedBy:String(who.u||''),reviewedByName:String(who.name||'')};
+  try{await updateDoc(doc(db,'wh_sales',s._id),patch);}
+  catch(e){showToast(_whsWriteErrMsg(e),true);return;}
+  Object.assign(s,patch);
+  window.whsModalClose();
+  showToast('Marked reviewed.');
+  _whsRepaint();
+};
+window.whsDelete=async function(id){
+  const s=_whsById(id);if(!s||!_whsIsSuper())return;
+  if(!confirm(`Delete sale ${s._id} for good?\n\nThere is no undo. Void keeps the record and says why — delete is for an entry made by mistake.`))return;
+  try{await deleteDoc(doc(db,'wh_sales',s._id));}
+  catch(e){showToast(_whsWriteErrMsg(e),true);return;}
+  whSales=whSales.filter(x=>x._id!==s._id);
+  try{logActivity('Warehouse sale deleted (admin)',`${s._id} · ${s.customerName} · ${_whsRs(s.total)}`);}catch(_){}
+  window.whsModalClose();
+  showToast('Sale '+s._id+' deleted.');
+  _whsRepaint();
+};
+
+// ── Excel ────────────────────────────────────────────────────────────────
+window.whsExport=function(){
+  if(typeof XLSX==='undefined'){showToast('Excel export is not available — the spreadsheet library did not load.',true);return;}
+  const today=whsToday();
+  const list=whsFilterSales(whSales,_whsFilter,_whsQuery,today);
+  if(!list.length){showToast('Nothing to export for this filter.',true);return;}
+  const sales=[['Date','Order #','Customer','Phone','Items','Subtotal','Discount','Discount %','Total','Payment','Paid via','Due date','Overdue','Status','Needs review','Recorded by','Bill','Note']]
+    .concat(list.map(s=>[s.date,s.orderNo||s._id,s.customerName,whsFmtPhone(s.customerPhone),Number(s.qtyTotal)||0,Number(s.subtotal)||0,Number(s.discount)||0,Number(s.discountPct)||0,Number(s.total)||0,s.terms==='later'?'Pay later':'Paid',s.paidVia||'',s.dueDate||'',whsIsOverdue(s,today)?'yes':'',s.status==='void'?'void':'active',s.needsReview?(s.reviewFlags||[]).join('; '):'',s.createdByName||s.createdByU||'',s.billUrl||'',s.note||'']));
+  const lines=[['Date','Order #','Customer','Article','Variant','Barcode','Article code','Qty','Price','Line total','Catalog price','Flag']];
+  for(const s of list)for(const l of s.lines||[])
+    lines.push([s.date,s.orderNo||s._id,s.customerName,l.title||'',l.variant||'',l.sku||'',l.code||'',Number(l.qty)||0,Number(l.price)||0,Number(l.total)||0,l.catalogPrice==null?'':l.catalogPrice,l.manual?'not in the catalog':l.priceEdited?'price changed':'']);
+  const wb=XLSX.utils.book_new();
+  [['Sales',sales],['Articles',lines]].forEach(([name,aoa])=>{
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=aoa[0].map((_,i)=>({wch:Math.min(40,Math.max(8,...aoa.map(r=>String(r[i]==null?'':r[i]).length)))}));
+    XLSX.utils.book_append_sheet(wb,ws,name);
+  });
+  XLSX.writeFile(wb,`warehouse-sales-${today}.xlsx`);
+  showToast(`Exported ${list.length} sale${list.length===1?'':'s'}.`);
+};

@@ -591,6 +591,53 @@ const FRAGMENTS={
     const form=modal(body.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'))+modal(expBody)+modal(payBody)+modal(noVendorBody)+modal(settleBody);
     return Promise.resolve(tiles+form);
   },
+  // Warehouse sales — the Accounts section on Umair's page (js/warehouse-
+  // sales.js): the tiles and the list as he reads them on his phone at the
+  // warehouse, the new-sale form with every branch showing (a bill
+  // attached, search hits, a catalog line, a line whose price was changed
+  // and one not in the catalog, a discount, pay later with its due date) and
+  // one sale opened. The list is flex cards, not a table, precisely so it
+  // holds at 420px — so this runs at every width.
+  'warehouse sales — the Accounts list, the new-sale form and a sale':()=>{
+    const LS={getItem:()=>null,setItem(){},removeItem(){}};
+    const app=loadApp({files:['js/store.js','js/store-accounts.js','js/fulfillment.js','js/warehouse-sales.js'],currentPage:'fulfillment',globals:{localStorage:LS,auth:{currentUser:null}}});
+    const pad=n=>String(n).padStart(2,'0');
+    const day=n=>{const d=new Date();d.setDate(d.getDate()-n);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+    const bill='https://res.cloudinary.com/deww4lpym/image/upload/v1/so0334.jpg';
+    const L=(t,v,sku,q,p,o)=>Object.assign({title:t,variant:v,sku,code:sku.split('-')[0],qty:q,price:p,total:q*p,catalogPrice:p},o||{});
+    const S=(id,o)=>Object.assign({_id:id,orderNo:id,date:day(0),customerName:'Walk-in',customerPhone:'03001112222',lines:[L('EFFORTLESS TEE | DEEP BLUE','Mint Green / M','GP092-M',1,3490)],qtyTotal:1,subtotal:3490,discount:0,discountPct:0,total:3490,terms:'paid',paidVia:'cash',dueDate:null,status:'active',needsReview:false,reviewFlags:[],billUrl:bill,billKind:'image',createdAt:1,createdByName:'Umair'},o||{});
+    const sales=[
+      S('SO0334',{customerName:'Sheikh Bilal (Rare Project)',customerPhone:'03009225227',terms:'later',paidVia:null,dueDate:day(-7),note:'Awaiting Payment'}),
+      S('SO0335',{customerName:'Ayesha Khan',lines:[L('EFFORTLESS TEE | DEEP BLUE','Mint Green / L','GP092-L',2,3490),L('LIVE IN PANTS | CHARCOAL','Charcoal / 32','GLP004-32',1,4990)],qtyTotal:3,subtotal:11970,discount:1197,discountPct:10,total:10773,paidVia:'bank'}),
+      S('SO0321',{date:day(12),customerName:'Muhammad Abdullah Siddiqui, for the Karachi Streetwear Collective pop-up at Dolmen Mall Clifton',terms:'later',paidVia:null,dueDate:day(3),total:21940,subtotal:21940,qtyTotal:6}),
+      S('SO0330',{date:day(2),customerName:'Hamza',needsReview:true,reviewFlags:['price changed on 1 article'],lines:[L('EFFORTLESS TEE | CLOUD','White / M','GP090-M',1,3000,{catalogPrice:3290,priceEdited:true})],subtotal:3000,total:3000}),
+      S('SO0310',{date:day(9),customerName:'Bilal',status:'void',voidReason:'entered twice'})
+    ];
+    const catalog=[
+      {id:'v1',sku:'GP092-M',title:'EFFORTLESS TEE | DEEP BLUE',variant:'Mint Green / M',price:3490,status:'active'},
+      {id:'v2',sku:'GP092-L',title:'EFFORTLESS TEE | DEEP BLUE',variant:'Mint Green / L',price:3490,status:'active'},
+      {id:'v3',sku:'GP092-XL',title:'EFFORTLESS TEE | DEEP BLUE',variant:'Mint Green / XL',price:3490,status:'active'}
+    ];
+    app.run("session={uid:'u-umair',u:'umair',name:'Umair',role:'fulfillment',email:'umair@groovy.op'}");
+    app.run(`whSales=${JSON.stringify(sales)};_whsSort();whSalesLoaded=true;_whsCatalog=${JSON.stringify(catalog)};_whsCatalogAt=Date.now();_fulfillSection='accounts';1`);
+    const page=app.run('renderFulfillmentPage()');
+    // the form, as the modal would draw it
+    app.run("window.whsNewSale()");
+    app.run(`_whsDraft.bill={url:'${bill}',kind:'image',name:'so0334.jpg'};_whsDraft.discMode='pct';_whsDraft.terms='later';`+
+      `_whsDraft.lines=[whsLineFromVariant(_whsCatalog[0]),Object.assign(whsLineFromVariant(_whsCatalog[1]),{qty:'2',price:'3200'}),Object.assign(whsManualLine(),{title:'B-stock hoodie, washed black',price:'1500'})];1`);
+    app.el('whs-q').value='GP092';
+    app.run('_whsPaintSearch()');
+    const hits=app.el('whs-results').innerHTML;
+    const body=app.run('_whsFormHTML()')
+      .replace('<div id="whs-results" class="whs-results"></div>','<div id="whs-results" class="whs-results">'+hits+'</div>')
+      .replace('class="acct-chipbtn" data-v="pct"','class="acct-chipbtn on" data-v="pct"');
+    const modal=(title,b,foot)=>'<div class="acct-modal" style="position:static;max-width:760px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>'+title+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot">'+foot+'</div></div>';
+    const form=modal('Record a customer purchase',body,'<button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Save sale</button>');
+    // one sale opened: two lines, a discount, paid by bank
+    app.run("window.whsOpen('SO0335')");
+    const det=app.bodyHtml('whs-modal');
+    return Promise.resolve(page+form+det.replace('class="acct-modal"','class="acct-modal" style="position:static;max-width:680px;margin-top:14px;max-height:none"'));
+  },
   // Afnan's correction tools: the Admin tools card on the review page (the
   // whole page, which had never been measured), the admin edit modal and
   // the reset modal. The fixture's session is made afnan by name — the card
@@ -2122,7 +2169,12 @@ document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
 
 (async function main(){
   const cases=[];
+  // SMOKE_LAYOUT_ONLY=<text> measures only the fragments whose name contains
+  // it — for checking one fragment, or breaking it on purpose to confirm it
+  // has teeth, without waiting on all of them. CI never sets it.
+  const only=String(process.env.SMOKE_LAYOUT_ONLY||'').toLowerCase();
   for(const [name,build] of Object.entries(FRAGMENTS)){
+    if(only&&name.toLowerCase().indexOf(only)<0)continue;
     const built=await build();
     // A builder may return {html,widths} to opt out of a width. The board
     // TOP BAR fragments do: they render the DESKTOP markup (seven controls),
