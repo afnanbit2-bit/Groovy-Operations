@@ -154,7 +154,7 @@ const FRAGMENTS={
   'login — the sign-in screen and the fingerprint lock':()=>{
     const idx=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
     const login=idx.slice(idx.indexOf('<div id="scr-login">'),idx.indexOf('<!-- ══ APP LOCK'))
-      .replace('<div id="scr-login">','<div id="scr-login" style="display:flex">')
+      .replace('<div id="scr-login">','<div id="scr-login" style="display:flex;position:relative;height:auto">')
       .replace('id="login-help" hidden','id="login-help"')
       .replace('<button type="button" class="login-theme" id="login-theme-btn" onclick="window.loginCycleTheme()" aria-label="Change theme" title="Theme"></button>',
         '<button type="button" class="login-theme" id="login-theme-btn" onclick="window.loginCycleTheme()" aria-label="Change theme"><span>Auto</span></button>');

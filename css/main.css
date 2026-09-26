@@ -141,14 +141,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
    var(--on-dark), which is black-on-white in light mode and white-on-black
    in dark, exactly the mockup's pair. Decorative waves are two radial
    blobs on ::before/::after, pointer-events:none. */
-#scr-login{display:none;min-height:100vh;min-height:100dvh;align-items:center;justify-content:center;background:var(--bg);position:relative}
+/* The login is a FIXED full-screen layer, not a page in the document flow.
+   As a flow page it sat inside body{min-height:100vh}: on Android 100vh is
+   the LARGE viewport (browser bars hidden) while the card was 100dvh, so the
+   document was taller than the card and the whole screen scrolled, showing
+   a bare strip of --bg under it (Afnan's screenshot, 26 Sept). Now nothing
+   behind it can scroll (html.gv-login) and the layer itself scrolls ONLY
+   when its content does not fit — which happens when the keyboard is open
+   (interactive-widget=resizes-content shrinks the viewport), so the Sign in
+   button stays reachable. overscroll-behavior stops the rubber band and
+   pull-to-refresh. */
+#scr-login{display:none;position:fixed;inset:0;height:100vh;height:100dvh;overflow-y:auto;overscroll-behavior:none;-webkit-overflow-scrolling:touch;background:var(--bg);z-index:50}
+/* margin:auto (not align-items:center) centres the card: a centred flex item
+   taller than its box overflows off the TOP, where no scroll can reach it. */
+@media (min-width:561px){#scr-login{padding:16px}}
+html.gv-login,html.gv-login body{overflow:hidden;overscroll-behavior:none;height:100%}
 #scr-lock{position:fixed;inset:0;height:100vh;height:100dvh;z-index:10000;display:flex;align-items:center;justify-content:center;background:var(--bg);overflow:auto}
 #scr-lock[hidden]{display:none}
 html.app-locked,html.app-locked body{overflow:hidden}
 @keyframes loginFadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes loginShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
 @keyframes loginWave{0%,60%,100%{transform:rotate(0)}10%,30%{transform:rotate(16deg)}20%,40%{transform:rotate(-8deg)}}
-.login-box{position:relative;overflow:hidden;isolation:isolate;background:var(--surface);border:1px solid var(--border);border-radius:32px;padding:56px 36px 28px;width:100%;max-width:440px;margin:1rem;animation:loginFadeIn .32s ease;box-shadow:0 30px 80px rgba(0,0,0,.12)}
+.login-box{position:relative;overflow:hidden;isolation:isolate;background:var(--surface);border:1px solid var(--border);border-radius:32px;padding:56px 36px 28px;width:100%;max-width:440px;margin:auto;animation:loginFadeIn .32s ease;box-shadow:0 30px 80px rgba(0,0,0,.12)}
 .login-box::before,.login-box::after{content:"";position:absolute;z-index:-1;pointer-events:none;border-radius:50%}
 .login-box::before{width:340px;height:300px;right:-170px;top:-120px;background:radial-gradient(closest-side,var(--soft),transparent)}
 .login-box::after{width:420px;height:320px;left:-210px;bottom:-150px;background:radial-gradient(closest-side,var(--soft),transparent)}
@@ -212,8 +226,13 @@ html.app-locked,html.app-locked body{overflow:hidden}
 .lock-offer-b button{min-height:40px;padding:0 16px;font-size:14px;border-radius:10px}
 .lock-offer-ghost{background:none;border:1px solid var(--border);color:var(--text);font-family:inherit;cursor:pointer}
 @media (max-width:560px){
-  #scr-login,#scr-lock{align-items:stretch}
-  .login-box{margin:0;max-width:none;min-height:100vh;min-height:100dvh;border:none;border-radius:0;box-shadow:none;
+  /* flex-start + min-height:100%, NOT stretch: a stretched card is exactly
+     the screen tall, so with the keyboard open its contents SHRANK to fit
+     (the Sign in button measured 22px). This way the card is at least the
+     screen and grows past it, and the layer scrolls instead. */
+  #scr-login,#scr-lock{align-items:flex-start}
+  .login-box>*{flex-shrink:0}
+  .login-box{margin:0;max-width:none;min-height:100%;border:none;border-radius:0;box-shadow:none;
     padding:calc(72px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
     display:flex;flex-direction:column}
   .login-hello{font-size:28px}
@@ -225,8 +244,24 @@ html.app-locked,html.app-locked body{overflow:hidden}
   .login-hello{font-size:25px}
   .login-row{flex-wrap:wrap;gap:0 12px}
 }
-@media (max-height:700px) and (max-width:560px){
-  .login-logo{margin-bottom:22px}.login-sub{margin-bottom:20px}.btn-login{margin-bottom:22px}
+@media (max-height:760px) and (max-width:560px){
+  .login-box{padding-top:calc(56px + env(safe-area-inset-top))}
+  .login-logo{margin-bottom:20px}.login-mark{width:200px}.login-ops{margin-top:8px}
+  .login-hello{font-size:25px;margin-bottom:8px}.login-sub{font-size:14px;margin-bottom:18px}
+  .login-input{margin-bottom:14px}.login-box .login-input input{height:52px}
+  .login-row{margin-bottom:14px}.btn-login{height:54px;margin-bottom:18px}
+}
+/* Keyboard open (the viewport shrinks to ~400px): drop what is not needed
+   to sign in, so as little as possible has to scroll. */
+@media (max-height:560px) and (max-width:560px){
+  .login-box{padding-top:calc(14px + env(safe-area-inset-top));padding-bottom:10px}
+  .login-sub,.login-foot,.login-hello,.login-theme{display:none}
+  .login-logo{margin-bottom:10px}.login-ops{margin-top:4px;font-size:13px}
+  .login-mark{width:150px}
+  .login-field-label{margin-bottom:5px}
+  .login-input{margin-bottom:10px}.login-box .login-input input{height:48px}
+  .login-row{margin-bottom:8px;min-height:40px}.login-check,.login-link{min-height:40px}
+  .btn-login{height:50px;margin-bottom:0}
 }
 @media (prefers-reduced-motion:reduce){.login-wave{animation:none}.login-box{animation:none}}
 #scr-app{display:none;min-height:100vh;flex-direction:column}

@@ -188,6 +188,7 @@ window.doLogout=async function(){
 // ── App start & nav ──
 async function startApp(){
   document.getElementById('scr-login').style.display='none';
+  document.documentElement.classList.remove('gv-login');
   document.getElementById('scr-app').style.display='flex';
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;
@@ -476,6 +477,9 @@ function _authRestoreDecision(user,tabU,keepFlag,rememberedU,defs){
 
 // Remembered username, pre-fill, and the Remember-me box.
 (function(){
+  // Nothing behind the login may scroll (css: html.gv-login). Removed in
+  // startApp; a sign-out reloads the page, which puts it back.
+  try{document.documentElement.classList.add('gv-login');}catch(_){}
   const saved=_authRead('groovy_remembered_user');
   const r=document.getElementById('l-remember');
   if(r)r.checked=_authRead('groovy-keep-signed-in')!=='0';

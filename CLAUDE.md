@@ -9116,6 +9116,24 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   on one line; `.login-mark` shows its first 448 of 744px and OPERATIONS is
   spaced text. The theme pill cycles Light → Dark → Auto and writes the same
   `groovy-theme` key Profile → Appearance does.
+- **The login does not scroll (fixed 26 Sept, from Afnan's phone).** It
+  was a page in the document flow under `body{min-height:100vh}`; on
+  Android `100vh` is the LARGE viewport while the card was `100dvh`, so the
+  document was taller than the card and the screen scrolled onto a bare
+  strip. **That cause is reasoned, not reproduced** — an iframe's vh equals
+  its dvh, so the sandbox cannot show the difference. `#scr-login` is now
+  `position:fixed` at `100dvh` with its own `overflow-y:auto` and
+  `overscroll-behavior:none`, and `html.gv-login` (added at load, removed
+  in `startApp`) stops everything behind it scrolling. Measured at 390px
+  wide: nothing scrolls at 844/740/667px, nor at 420/380px (keyboard open,
+  where the heading, subtitle, footer and theme pill hide). **600px scrolls
+  24px**, with Sign in still on screen. The first cut stretched the card to
+  the layer, which squashed Sign in to **22px** with the keyboard open —
+  the card is `flex-start` + `min-height:100%` and its children don't shrink.
+- **Chrome's own "Use saved password?" sheet is not the fingerprint lock.**
+  The lock comes AFTER a Remember-me sign-in (offered once) and then
+  replaces the login on every reopen. Asking for a fingerprint before
+  Chrome FILLS a password is Chrome's setting, not the app's.
 - **Nobody has signed in, saved a password or used the lock on a real
   phone** — the sandbox cannot sign in. Rendered and measured in headless
   Chromium at 390/360px and desktop, both themes.

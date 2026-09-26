@@ -177,5 +177,21 @@ module.exports=async function(){
       &&/\n\s*setPersistence,browserLocalPersistence,browserSessionPersistence,\n/.test(html));
   }
 
+  // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────
+  {
+    const fs=require('fs'),path=require('path');
+    const css=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');
+    const auth=fs.readFileSync(path.join(__dirname,'..','js','auth.js'),'utf8');
+    const rule=(css.match(/#scr-login\{[^}]*\}/)||[''])[0];
+    s.section('the login is a fixed layer; nothing behind it scrolls');
+    s.ok('#scr-login is position:fixed, full height, scrolls only itself',/position:fixed/.test(rule)&&/height:100dvh/.test(rule)&&/overflow-y:auto/.test(rule));
+    s.ok('… with no rubber band / pull-to-refresh',/overscroll-behavior:none/.test(rule));
+    s.ok('html.gv-login stops the page behind it scrolling',/html\.gv-login,html\.gv-login body\{[^}]*overflow:hidden/.test(css));
+    s.ok('the class is set on load and removed when the app starts',
+      /classList\.add\('gv-login'\)/.test(auth)&&/async function startApp\(\)\{[^]*?classList\.remove\('gv-login'\)/.test(auth));
+    s.ok('on a phone the card is NOT stretched (a stretched card squashed Sign in to 22px with the keyboard open)',
+      /#scr-login,#scr-lock\{align-items:flex-start\}/.test(css)&&/\.login-box>\*\{flex-shrink:0\}/.test(css));
+  }
+
   return s;
 };
