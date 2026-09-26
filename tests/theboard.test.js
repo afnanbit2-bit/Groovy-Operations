@@ -1796,6 +1796,83 @@ module.exports=async function(){
     a.run('_tbEditableFocus=function(){return false;};clearTimeout(_tbLiveTimer);_tbLiveTimer=null;_tbLivePending=false');
   }
 
+  // ══ SESSION 2 — P2: THE ADMIN SCREEN (markers + pin) ═══════════════
+  s.section('the admin screen: launch markers, and pins on Deadlines');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[];tbConfig={markers:[{label:"launch",date:"2026-10-30"}]}');
+    const C=rows=>a.run('tbMarkersClean('+J(rows)+')');
+    s.eq('an empty row is dropped quietly',J(C([{label:'',date:''}]).markers),J([]));
+    s.ok('a name with no date is an error, not a guess',/needs a date/.test(C([{label:'rehearsal',date:''}]).errors[0]||''));
+    s.ok('so is a date with no name',/no name/.test(C([{label:'',date:'2026-10-29'}]).errors[0]||''));
+    s.ok('and a date that is not one',/needs a date/.test(C([{label:'x',date:'soon'}]).errors[0]||''));
+    s.ok('a name over 40 characters is refused',/longer than 40/.test(C([{label:'x'.repeat(41),date:'2026-10-29'}]).errors[0]||''));
+    s.eq('trimmed, twins removed, sorted by date',J(C([{label:' founders  out ',date:'2026-11-01'},{label:'launch',date:'2026-10-30'},
+      {label:'Launch',date:'2026-10-30'}]).markers),J([{label:'launch',date:'2026-10-30'},{label:'founders out',date:'2026-11-01'}]));
+    s.ok('at most twelve',/At most 12/.test(C(Array.from({length:13},(_,i)=>({label:'m'+i,date:'2026-10-'+String(10+i)}))).errors.join(' ')));
+    const P=(it,own)=>a.run('tbCanPin('+J(it)+','+J(own)+')');
+    const base={status:'open',visibility:'shared',date:'2026-12-01'};
+    s.eq('an owner can pin a shared, dated, open item',P(base,true).ok,true);
+    s.eq('a member cannot pin',P(base,false).ok,false);
+    s.ok('nor can anyone pin a private item (nobody would see it there)',!P(Object.assign({},base,{visibility:'private'}),true).ok);
+    s.ok('or an undated one',/Give it a date/.test(P(Object.assign({},base,{date:null}),true).why));
+    s.ok('or a done one',!P(Object.assign({},base,{status:'done'}),true).ok);
+    s.eq('a pin survives decoding as a boolean',a.run('tbDecodeItem({pinned:"yes"}).pinned'),false);
+    const pp=a.run('tbItemPatch({id:"x",pinned:false,visibility:"shared",assigneeUids:["u-ammar","u-afnan"],ownerUid:"u-ammar"},{pinned:true},"u-ammar",5)');
+    s.eq('pinning is logged',J(pp.activity.map(x=>x.type)),J(['pinned']));
+    s.eq('in words',a.run('tbActivityLine({type:"pinned",byUid:"u-ammar"})'),'Ammar pinned it to Deadlines');
+    // The pin write, as an owner and as a member.
+    const it={id:'far',title:'Restock order #2',status:'open',visibility:'shared',kind:'task',date:'2026-11-09',
+      ownerUid:'u-must',assigneeUids:['u-must','u-afnan']};
+    a.run('tbItems=[tbDecodeItem('+J(it)+')];var __c=[];_tbCommit=async function(id,d,act){__c.push([id,d.pinned,(act||[]).map(x=>x.type).join()]);}');
+    s.eq('a task a month out is not on Deadlines',a.run('tbDeadlines(tbItems,"2026-09-26").length'),0);
+    await a.run('window.tbTogglePin("far")');
+    s.eq('pinning writes the pin and its log',J(a.run('__c')),J([['far',true,'pinned']]));
+    s.eq('and it is on Deadlines at once',a.run('tbDeadlines(tbItems,"2026-09-26").map(function(i){return i.id;}).join()'),'far');
+    a.run('tbItems[0].visibility="private"');
+    await a.run('window.tbTogglePin("far")');
+    s.eq('an owner can always unpin, even what no longer qualifies',J(a.run('__c')[1]),J(['far',false,'unpinned']));
+    a.run('session='+J(DANIYAL));
+    a.run('tbItems[0].visibility="shared";tbItems[0].pinned=false');
+    await a.run('window.tbTogglePin("far")');
+    s.eq('a member pins nothing',a.run('__c.length'),2);
+    a.run('tbItems[0].pinned=true');
+    await a.run('window.tbTogglePin("far")');
+    s.eq('and unpins nothing either',a.run('__c.length'),2);
+    a.run('tbItems[0].pinned=false');
+    a.run('_tbOpenItemId="far"');
+    s.ok('and is offered no Pin button',!/tbTogglePin/.test(a.run('_tbDrawer()')));
+    a.run('session='+J(AMMAR));
+    s.ok('an owner is',/tb-pinbtn/.test(a.run('_tbDrawer()')));
+    a.run('tbItems[0].date=null');
+    s.ok('disabled, saying why, when it cannot sit in Deadlines',/tb-pinbtn[^>]*disabled title="Give it a date first/.test(a.run('_tbDrawer()')));
+    a.run('tbItems[0].date="2026-11-09";tbItems[0].pinned=true');
+    // The editor.
+    a.run('window.tbToggleSettings()');
+    let ov=a.run('_tbSettingsOverlay()');
+    s.ok('Settings carries the markers',/id="tb-mk-l0"[^>]*value="launch"/.test(ov));
+    s.ok('and the pinned list, with Unpin',/Pinned to Deadlines/.test(ov)&&/tbTogglePin\('far'\)/.test(ov));
+    a.run('window.tbMarkerAdd();window.tbMarkerInput(1,"label",'+J('"><img src=x onerror=1>')+');window.tbMarkerInput(1,"date","2026-10-29")');
+    ov=a.run('_tbSettingsOverlay()');
+    s.ok('a name is escaped in its field',!/<img/.test(ov)&&/value="&quot;&gt;&lt;img src=x onerror=1&gt;"/.test(ov));
+    a.run('var __set=null;setDoc=async function(r,d,o){__set={d:d,o:o};}');
+    await a.run('window.tbMarkerSave()');
+    s.eq('Save writes the cleaned, sorted markers',J(a.run('__set&&__set.d.markers')),
+      J([{label:'"><img src=x onerror=1>',date:'2026-10-29'},{label:'launch',date:'2026-10-30'}]));
+    s.eq('as a merge, carrying who did it',J(a.run('[__set.o&&__set.o.merge,__set.d.updatedBy]')),J([true,'u-ammar']));
+    s.eq('and the calendar has them at once',a.run('tbConfig.markers.length'),2);
+    a.run('window.tbMarkerAdd();window.tbMarkerInput(2,"label","rehearsal");__set=null');
+    await a.run('window.tbMarkerSave()');
+    s.eq('a row missing its date saves nothing',a.run('__set'),null);
+    a.run('window.tbMarkerRemove(2)');
+    s.eq('a row can be removed',a.run('_tbMarkerDraft.length'),2);
+    a.run('window.tbMarkerAdd();window.tbToggleSettings();window.tbToggleSettings()');
+    s.eq('closing Settings drops an unsaved edit',a.run('_tbMarkerRows().length'),2);
+    a.run('session='+J(DANIYAL)+';window.tbMarkerAdd()');
+    s.eq('a member cannot touch the markers',a.run('_tbMarkerRows().length'),2);
+  }
+
   // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
   s.section('the composer: no date means undated, never today');
   {

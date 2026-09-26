@@ -280,6 +280,7 @@ function tbDecodeItem(raw){
   it.priority=[0,1,2].indexOf(Number(it.priority))>-1?Number(it.priority):0;
   it.date=it.date||null;
   it.listId=it.listId||null;
+  it.pinned=it.pinned===true;
   return it;
 }
 
@@ -541,6 +542,7 @@ function tbItemPatch(item,patch,uid,now,reason){
   if('dueAt' in p && (p.dueAt||null)!==(it.dueAt||null))out.dueAt=p.dueAt||null;
   if(out.assigneeUids)acts.push({type:'assigned',payload:{to:out.assigneeUids}});
   if('locked' in out)acts.push({type:out.locked?'locked':'unlocked',payload:{}});
+  if('pinned' in out)acts.push({type:out.pinned?'pinned':'unpinned',payload:{}});
   // Visibility follows the assignees and the list, always.
   const merged=Object.assign({},it,out);
   const vis=tbVisibilityFor(merged,tbLists);
@@ -1297,6 +1299,15 @@ function _tbDrawer(){
       +'<button class="tb-lockbtn'+(it.locked?' on':'')+'" onclick="window.tbToggleLock(\''+jid+'\')"'
         +(ro?dis:(it.locked&&!canMove?' disabled title="only '+_tbEsc(lockedBy.name)+' or a board owner can unlock this"':''))
         +'>'+_tbIcon(it.locked?'lock':'lock-open','sm')+(it.locked?'Locked':'Lock')+'</button>'
+      // A Board owner can pin it to the Deadlines card (P2).
+      +(_tbIsBoardOwner()?(function(){
+          const pc=tbCanPin(it,true),on=it.pinned===true;
+          return'<button class="tb-lockbtn tb-pinbtn'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
+            +' onclick="window.tbTogglePin(\''+jid+'\')"'
+            +(!on&&!pc.ok?' disabled title="'+_tbEsc(pc.why)+'"'
+              :' title="'+(on?'Take it off the Deadlines card':'Keep it on the Deadlines card')+'"')
+            +'>'+_tbIcon('flag','sm')+(on?'Pinned':'Pin')+'</button>';
+        })():'')
       +'<button class="tb-pclose" title="Close (Esc)" aria-label="Close" onclick="window.tbCloseItem()">'+_tbIcon('x')+'</button>'
     +'</div>'
     +(it.locked&&!canMove?'<div class="tb-lockwho">Locked by '+_tbEsc(lockedBy.name)+'</div>':'')
@@ -2977,6 +2988,8 @@ function tbActivityLine(a,dayLabel){
     case'reopened':  return who+' reopened it';
     case'locked':    return who+' locked the date';
     case'unlocked':  return who+' unlocked the date';
+    case'pinned':    return who+' pinned it to Deadlines';
+    case'unpinned':  return who+' took it off Deadlines';
     case'step_done': return who+' ticked “'+(p.title||'a step')+'”';
     case'file_added':return who+' added '+(p.name||'a file');
     case'comment':   return who+' commented';
@@ -3900,6 +3913,7 @@ let _tbSeedState={busy:false,result:'',error:'',dry:false};
 window.tbToggleSettings=function(){
   if(!_tbIsBoardOwner()){ _tbSettingsOpen=false; return; }
   _tbSettingsOpen=!_tbSettingsOpen;
+  _tbMarkerDraft=null;          // an unsaved edit does not outlive the sheet
   _tbRepaint();
 };
 
@@ -3964,6 +3978,125 @@ window.tbRunSeed=async function(dry){
   if(_tbOnBoardPage())_tbRepaint();
 };
 
+// ══ SESSION 2 — P2: THE ADMIN SCREEN (markers + pin) ════════════════
+// Board owners only, inside Board Settings. Two things only an owner
+// should decide: the drop's launch MARKERS the calendar and the date
+// picker draw (board_config/markers, owner-written by firestore.rules),
+// and which items are PINNED to the Deadlines card beside the gates.
+const TB_MARKERS_MAX=12;
+/** The markers as they will be saved, and what is wrong with the rest.
+ *  A row with neither a label nor a date is an empty row and is dropped
+ *  quietly; a row with one but not the other is an ERROR, never guessed.
+ *  Sorted by date, twins removed. Pure. */
+function tbMarkersClean(rows){
+  const out=[],errors=[],seen={};
+  (rows||[]).forEach(function(r,i){
+    const label=String((r&&r.label)||'').trim().replace(/\s+/g,' ');
+    const date=String((r&&r.date)||'').trim();
+    if(!label&&!date)return;
+    if(!label){errors.push('Marker '+(i+1)+' has a date but no name.');return;}
+    if(!_tbSaneDay(date)){errors.push('“'+label.slice(0,40)+'” needs a date.');return;}
+    if(label.length>40){errors.push('“'+label.slice(0,40)+'…” is longer than 40 characters.');return;}
+    const k=label.toLowerCase()+'|'+date;
+    if(seen[k])return;
+    seen[k]=1;out.push({label:label,date:date});
+  });
+  if(out.length>TB_MARKERS_MAX)errors.push('At most '+TB_MARKERS_MAX+' markers — the calendar has room for no more.');
+  out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.label<b.label?-1:1));
+  return{markers:out,errors:errors};
+}
+/** May this be pinned to Deadlines? The card lists SHARED items with a
+ *  DATE, so pinning anything else would be a pin nobody sees. Pure. */
+function tbCanPin(item,isOwnerRole){
+  if(!isOwnerRole)return{ok:false,why:'Only a Board owner can pin to Deadlines'};
+  if(!item||item.status==='done')return{ok:false,why:'A done item is not a deadline'};
+  if(item.visibility!=='shared')return{ok:false,why:'Only a shared item can sit in Deadlines'};
+  if(!item.date)return{ok:false,why:'Give it a date first — Deadlines are dated'};
+  return{ok:true,why:''};
+}
+let _tbMarkerDraft=null;      // the editor's rows while Settings is open
+function _tbMarkerRows(){
+  if(_tbMarkerDraft)return _tbMarkerDraft;
+  return((tbConfig&&tbConfig.markers)||[]).map(m=>({label:String(m.label||''),date:String(m.date||'')}));
+}
+function _tbEnsureMarkerDraft(){ if(!_tbMarkerDraft)_tbMarkerDraft=_tbMarkerRows(); return _tbMarkerDraft; }
+// Typing does not repaint (the caret would be lost); adding and removing
+// a row does.
+window.tbMarkerInput=function(i,field,v){
+  if(!_tbIsBoardOwner())return;
+  const d=_tbEnsureMarkerDraft();
+  if(d[i]&&(field==='label'||field==='date'))d[i][field]=String(v==null?'':v);
+};
+window.tbMarkerAdd=function(){
+  if(!_tbIsBoardOwner())return;
+  _tbEnsureMarkerDraft().push({label:'',date:''});
+  _tbRepaint();
+};
+window.tbMarkerRemove=function(i){
+  if(!_tbIsBoardOwner())return;
+  const d=_tbEnsureMarkerDraft();
+  if(d[i]){ d.splice(i,1); _tbRepaint(); }
+};
+window.tbMarkerSave=async function(){
+  if(!_tbIsBoardOwner())return;
+  const c=tbMarkersClean(_tbMarkerRows());
+  if(c.errors.length){ _tbToast(c.errors[0]); return; }
+  const ok=await _tbTry(async()=>{
+    await setDoc(doc(db,'board_config','markers'),{markers:c.markers,updatedAt:_tbNow(),updatedBy:_tbMe()},{merge:true});
+  },'save the markers');
+  if(!ok)return;
+  tbConfig=Object.assign({},tbConfig||{},{markers:c.markers});
+  _tbMarkerDraft=null;
+  _tbToast(c.markers.length?'Markers saved — the calendar shows them now.':'Markers cleared.');
+  _tbRepaint();
+};
+window.tbTogglePin=async function(id){
+  const it=tbItems.filter(i=>i.id===id)[0];
+  if(!it)return;
+  const can=tbCanPin(it,_tbIsBoardOwner());
+  // Unpinning is always allowed to an owner, even for something that no
+  // longer qualifies -- that is exactly when it wants taking off.
+  if(!it.pinned&&!can.ok){ _tbToast(can.why); return; }
+  if(!_tbIsBoardOwner()){ _tbToast('Only a Board owner can pin to Deadlines'); return; }
+  const plan=tbItemPatch(it,{pinned:!it.pinned},_tbMe(),_tbNow());
+  await _tbTry(async()=>{
+    await _tbCommit(it.id,plan.data,plan.activity);
+    _tbApplyLocal(it.id,plan.data);
+    _tbRepaint();
+  },it.pinned?'unpin that':'pin that');
+};
+function _tbAdminSections(){
+  const rows=_tbMarkerRows();
+  const pinned=tbItems.filter(i=>i.pinned===true).sort(_tbByDate);
+  return'<div class="tb-setsec">'
+      +'<div class="tb-setsech">Launch markers</div>'
+      +'<div class="tb-hint">The days the calendar and the date picker flag for everyone. Up to '+TB_MARKERS_MAX+'.</div>'
+      +'<div class="tb-mkrows">'+rows.map(function(r,i){
+        return'<div class="tb-mkrow">'
+          +'<input class="tb-mkname" id="tb-mk-l'+i+'" maxlength="40" placeholder="Name" aria-label="Marker name"'
+            +' value="'+_tbEsc(r.label)+'" oninput="window.tbMarkerInput('+i+',\'label\',this.value)">'
+          +'<input class="tb-mkdate" type="date" data-tb-fp id="tb-mk-d'+i+'" aria-label="Marker date"'
+            +' value="'+_tbEsc(r.date)+'" onchange="window.tbMarkerInput('+i+',\'date\',this.value)">'
+          +'<button class="tb-x" title="Remove marker" aria-label="Remove marker" onclick="window.tbMarkerRemove('+i+')">'+_tbIcon('x','sm')+'</button>'
+        +'</div>';
+      }).join('')+'</div>'
+      +(rows.length?'':'<div class="tb-hint">No markers yet.</div>')
+      +'<div class="tb-setbtns">'
+        +'<button class="btn-outline" onclick="window.tbMarkerAdd()">Add Marker</button>'
+        +'<button class="btn-primary" onclick="window.tbMarkerSave()">Save Markers</button>'
+      +'</div>'
+    +'</div>'
+    +'<div class="tb-setsec">'
+      +'<div class="tb-setsech">Pinned to Deadlines</div>'
+      +'<div class="tb-hint">Deadlines shows every shared gate in the next two weeks. A pin keeps something else there too. Pin an item from its pane.</div>'
+      +(pinned.length?pinned.map(function(i){
+          return'<div class="tb-pinrow">'+_tbSlot(i.title||'untitled','tb-pintitle')
+            +'<span class="tb-pindate">'+_tbEsc(i.date?_tbCap(tbDayLabel(i.date,_tbToday())):'no date')+'</span>'
+            +'<button class="btn-outline tb-unpin" onclick="window.tbTogglePin(\''+_tbJs(i.id)+'\')">Unpin</button></div>';
+        }).join(''):'<div class="tb-hint">Nothing pinned.</div>')
+    +'</div>';
+}
+
 function _tbSettingsOverlay(){
   if(!_tbSettingsOpen||!_tbIsBoardOwner())return'';
   const st=_tbSeedState;
@@ -3984,6 +4117,7 @@ function _tbSettingsOverlay(){
         +(st.result?_tbSlot(st.result,'tb-setresult','div'):'')
         +(st.error?_tbSlot(st.error,'tb-setresult tb-seterr','div'):'')
       +'</div>'
+      +_tbAdminSections()
       +'<button class="btn-outline" onclick="window.tbToggleSettings()">Close</button>'
     +'</div></div>';
 }

@@ -3798,7 +3798,25 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
 .tb-helpwhat{font-size:13px;color:var(--muted)}
 .tb-helpcard .btn-outline{margin-top:12px;width:100%}
 /* Board settings (owners only): same overlay as the shortcut list. */
-.tb-setcard{max-width:440px}
+/* The Settings card scrolls: with the markers editor and the pinned list
+   it is taller than a short screen, and a centred card taller than the
+   viewport loses its top -- Close included -- off the screen. */
+.tb-setcard{max-width:440px;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}
+/* The admin rows (P2): a marker is name | date | remove; a pin is title |
+   date | Unpin. The flexing field keeps min-width:0, the fixed parts do
+   not shrink -- the Profile-directory shape. */
+.tb-mkrows{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.tb-mkrow{display:flex;align-items:center;gap:6px}
+.tb-mkname{flex:1 1 auto;min-width:0}
+.tb-mkdate{flex:0 0 150px;width:150px}
+.tb-mkname,.tb-mkdate{min-height:36px;box-sizing:border-box;padding:0 8px;font:inherit;font-size:14px;
+  color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--tb-r6)}
+.tb-mkrow .tb-x{flex:0 0 auto}
+.tb-pinrow{display:flex;align-items:center;gap:8px;min-height:40px}
+.tb-pintitle{flex:1 1 auto;min-width:0;font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-pindate{flex:0 0 auto;font-size:12px;color:var(--muted)}
+.tb-pinrow .tb-unpin{flex:0 0 auto;width:auto;margin-top:0;min-height:32px;padding:0 12px}
+.tb-pinbtn.on{background:var(--tb-accent);border-color:var(--tb-accent);color:var(--tb-on-accent)}
 .tb-setsec{margin-top:8px;padding-top:10px;border-top:1px solid var(--line)}
 .tb-setsech{font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px}
 .tb-setbtns{display:flex;gap:8px;margin-top:12px}

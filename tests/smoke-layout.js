@@ -457,6 +457,11 @@ const FRAGMENTS={
   // Measured at every width: at 420 the card is a sheet over the page.
   'the board — settings and a seed result':()=>{
     const app=tbBoardApp('tb-dash');
+    // P2: the admin sections -- a marker whose name is the longest the
+    // field takes, and a pinned item with a long real title.
+    app.run("tbConfig={markers:[{label:'launch',date:'2026-10-30'},{label:'Founders to Islamabad; Ammar remote 1-5',date:'2026-11-01'}]};"
+      +"tbItems=[tbDecodeItem({id:'p1',title:'Restock order #2 placed (on 9 days of sell-through)',status:'open',visibility:'shared',"
+      +"pinned:true,date:'2026-11-09',ownerUid:'u-must',assigneeUids:['u-must']})]");
     app.run("_tbSettingsOpen=true;_tbHydrateQueue=[];_tbSeedState={busy:false,dry:true,error:'Refused — the seed function answered 403: only a Board owner may run it.',"
       +"result:tbSeedSummary({created:40,alreadySeeded:2,listCreated:true,profilesCreated:['afnan','daniyal','mustafa'],skippedUsers:['saim'],"
       +"skippedItems:['Saim: lookbook retouch — every hero frame','Saim: size-chart graphics'],listMembersAdded:['saim'],markersWritten:true,"
