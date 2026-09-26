@@ -83,7 +83,10 @@ function buildReminderPlan(o){
       if(!handle){ if(report.noUsername.indexOf(uid)<0)report.noUsername.push(uid); return; }
       const id=reminderId(type,it.id,uid,today);
       if(existing[id]){ report.alreadySent++; return; }
-      const title=String(it.title||'untitled');
+      // A PRIVATE item's title never goes into the row: hrm_notifications
+      // is readable by every signed-in account, Board or not (review of
+      // 0e6f33e, verified). The owner still learns something is due.
+      const title=it.visibility==='shared'?String(it.title||'untitled'):null;
       writes.push({id:id,data:{
         source:TB_NOTIF_SOURCE,type:type,forUser:String(handle),fromUid:'',
         itemId:String(it.id),listId:it.listId?String(it.listId):null,
@@ -91,7 +94,7 @@ function buildReminderPlan(o){
         // Cut THEN escape, as the client does: escaping first and cutting
         // after can leave half an entity (&am) for the bell to print.
         message:esc(((type==='due_today'?'Due today: ':'Overdue since '+shortDay(it.date)+': ')
-          +'“'+title+'”').slice(0,120)),
+          +(title==null?'one of your private items':'“'+title+'”')).slice(0,120)),
         actionUrl:'tb-dash',priority:'normal',readBy:[],createdAt:now,reminderDay:today
       }});
       report[type==='due_today'?'dueToday':'overdue']++;

@@ -251,6 +251,43 @@ module.exports=async function(){
     s.eq('a real person never pings the harness',sent(),'claude');
   }
 
+  // ══ Review of 0e6f33e (the killed wf_83e2d9b9 run), verified by hand ══
+  s.section('an edit never decides visibility from a list it cannot see');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    // Mustafa's one-person item in a SHARED list Ammar is not a member of:
+    // it is not in Ammar's tbLists.
+    const it={id:'m1',listId:'Lfactory',visibility:'shared',ownerUid:'u-must',assigneeUids:['u-must'],title:'Cut fleece'};
+    a.run('tbLists=[]');
+    const pin=a.run('tbItemPatch('+J(it)+',{pinned:true},"u-ammar",1).data');
+    s.ok('pinning it leaves its visibility alone (it used to write private)',!('visibility' in pin));
+    const ren=a.run('tbItemPatch('+J(it)+',{title:"Cut fleece (stock)"},"u-ammar",1).data');
+    s.ok('so does renaming it',!('visibility' in ren));
+    const add=a.run('tbItemPatch('+J(Object.assign({},it,{visibility:'private'}))+',{assigneeUids:["u-must","u-saim"]},"u-ammar",1).data');
+    s.eq('adding someone else still makes a private item shared',add.visibility,'shared');
+    const drop=a.run('tbItemPatch('+J(Object.assign({},it,{assigneeUids:['u-must','u-saim']}))+',{assigneeUids:["u-must"]},"u-ammar",1).data');
+    s.ok('but an unseen list never turns it private',!('visibility' in drop));
+    // In a list the editor CAN see, the old rule stands.
+    a.run('tbLists='+J([{id:'Lp',kind:'private',adminUid:'u-must',memberUids:['u-must']}]));
+    const known=a.run('tbItemPatch('+J({id:'m2',listId:'Lp',visibility:'shared',ownerUid:'u-must',assigneeUids:['u-must','u-saim']})+',{assigneeUids:["u-must"]},"u-must",1).data');
+    s.eq('in a list it can see, taking the last other person off makes it private',known.visibility,'private');
+  }
+
+  s.section('a bell row never carries a private item\'s title');
+  {
+    const n=loadApp({files:FILES,globals:{userProfiles:[{uid:'u-ammar',username:'ammar'},{uid:'u-saim',username:'saim'}]}});
+    n.run('session='+J(AMMAR));
+    n.run('tbItems='+J([{id:'pv',title:'Salary talk',visibility:'private',ownerUid:'u-ammar',assigneeUids:['u-ammar']},
+                        {id:'sh',title:'Shoot 1',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-saim']}]));
+    const msgs=()=>n.state.writes.filter(w=>w.op==='set'&&w.data&&w.data.forUser).map(w=>w.data.message);
+    await n.run('_tbNotify({type:"mention",forUid:"u-saim",fromUid:"u-ammar",itemId:"pv",title:"The Board",message:"Ammar mentioned you on “Salary talk”"})');
+    await n.run('_tbNotify({type:"mention",forUid:"u-saim",fromUid:"u-ammar",itemId:"sh",title:"The Board",message:"Ammar mentioned you on “Shoot 1”"})');
+    const m=msgs();
+    s.ok('a private item: no title, just that there is one',!/Salary/.test(m[0]||'')&&/private item/.test(m[0]||''));
+    s.ok('a shared item keeps its words',/Shoot 1/.test(m[1]||''));
+  }
+
   s.section('the tab, on every route that renders it');
   {
     const nav=u=>{

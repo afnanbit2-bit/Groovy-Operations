@@ -80,13 +80,23 @@ module.exports=async function(){
 
   s.section('the row is the client’s own notification, escaped for the bell');
   {
-    const nasty=R.buildReminderPlan({items:[{id:'x',status:'open',date:'2026-09-26',assigneeUids:['u-ammar'],
+    const nasty=R.buildReminderPlan({items:[{id:'x',status:'open',date:'2026-09-26',assigneeUids:['u-ammar'],visibility:'shared',
       title:'<img src=x onerror=alert(1)> & "q"'}],usernameByUid:names,nowMs:NOW}).writes[0].data;
     s.ok('the title in the message is escaped (the bell prints it raw)',
       !/<img/.test(nasty.message)&&/&lt;img src=x onerror=alert\(1\)&gt; &amp; &quot;q&quot;/.test(nasty.message));
-    const long=R.buildReminderPlan({items:[{id:'y',status:'open',date:'2026-09-26',assigneeUids:['u-ammar'],
+    const long=R.buildReminderPlan({items:[{id:'y',status:'open',date:'2026-09-26',assigneeUids:['u-ammar'],visibility:'shared',
       title:'a'.repeat(100)+'&&&&&&&&&&&&&&&&&&&&'}],usernameByUid:names,nowMs:NOW}).writes[0].data;
     s.ok('cut BEFORE escaping, so no half entity is left',!/&(a|am|amp)?$/.test(long.message)&&/&amp;$/.test(long.message));
+    // A PRIVATE item's title never reaches a row every signed-in account can
+    // read (review of 0e6f33e, verified): the owner learns only that
+    // something is due. An item with no visibility field is treated as
+    // private -- the safe side.
+    const priv=R.buildReminderPlan({items:[{id:'p',status:'open',date:'2026-09-26',assigneeUids:['u-ammar'],visibility:'private',
+      title:'Salary talk with Mustafa'}],usernameByUid:names,nowMs:NOW}).writes[0].data;
+    s.ok('a private item is reminded without its title',!/Salary/.test(priv.message)&&/private item/.test(priv.message));
+    const unk=R.buildReminderPlan({items:[{id:'q',status:'open',date:'2026-09-20',assigneeUids:['u-ammar'],
+      title:'No field on it'}],usernameByUid:names,nowMs:NOW}).writes[0].data;
+    s.ok('so is one with no visibility field, overdue wording kept',!/No field/.test(unk.message)&&/^Overdue since 20 Sep: /.test(unk.message));
     const a=loadApp({files:['js/shared.js','js/auth.js','js/theboard.js'],
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
     const clientKeys=Object.keys(a.run('tbNotifPayload({})')).sort();

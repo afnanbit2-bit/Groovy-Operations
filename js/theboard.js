@@ -548,10 +548,22 @@ function tbItemPatch(item,patch,uid,now,reason){
   if(out.assigneeUids)acts.push({type:'assigned',payload:{to:out.assigneeUids}});
   if('locked' in out)acts.push({type:out.locked?'locked':'unlocked',payload:{}});
   if('pinned' in out)acts.push({type:out.pinned?'pinned':'unpinned',payload:{}});
-  // Visibility follows the assignees and the list, always.
-  const merged=Object.assign({},it,out);
-  const vis=tbVisibilityFor(merged,tbLists);
-  if(vis!==it.visibility)out.visibility=vis;
+  // Visibility follows the assignees and the list -- but ONLY when one of
+  // them changed, and never decided from a list this viewer cannot see.
+  // It used to be recomputed on EVERY patch from tbLists, which holds only
+  // the lists the editor can read: a Board owner pinning, renaming or
+  // noting a one-person item in a shared list they are not a member of
+  // found no list, read it as private, and wrote visibility:'private' --
+  // the item vanished for everyone else (review of 0e6f33e, verified).
+  if('assigneeUids' in out||'listId' in out){
+    const merged=Object.assign({},it,out);
+    const known=!merged.listId||(tbLists||[]).some(l=>l&&l.id===merged.listId);
+    const vis=tbVisibilityFor(merged,tbLists);
+    // An unseen list can make it shared (someone else is on it now), but
+    // never private: that is the list's call, and we cannot read it.
+    const next=known?vis:(vis==='shared'?'shared':(it.visibility||vis));
+    if(next!==it.visibility)out.visibility=next;
+  }
   return {data:out,activity:acts.map(a=>({type:a.type,byUid:uid,at:now,payload:a.payload}))};
 }
 
@@ -2058,6 +2070,13 @@ window.tbCloseItem=function(){ _tbFlushNotes(); _tbOpenItemId=null; _tbCloseMent
 // ── Notifications ─────────────────────────────────────────────────────
 // Everything goes through here, and here alone — see tbNotifPayload for
 // why (the bell renders title and message RAW).
+/** The message a bell row may carry about this item. A private item (or
+ *  one this session cannot see) says only that there is one -- the row
+ *  lands in a collection every signed-in account can read. Pure. */
+function tbNotifMessageFor(message,item,fromName){
+  if(item&&item.visibility==='shared')return message;
+  return String(fromName||'Someone')+' — about a private item on '+TB_NAME+'. Open it there.';
+}
 const _TB_QA_NO_SANDBOX='QA: create a list first — the harness writes only into its own QA lists.';
 /** May a bell row from this session go to this handle? The two worlds
  *  never cross: the harness writes only to itself, and a real session
@@ -2073,6 +2092,11 @@ async function _tbNotify(o){
   // nothing reaches a real person -- the rules refuse it too.
   const fromQa=_tbIsQa()||_tbQaHandles().indexOf(tbUser(o.fromUid).handle)>-1;
   if(!tbQaMayNotify(to.handle,fromQa,_tbQaHandles()))return;
+  // A PRIVATE item's title and text never go into a bell row: every
+  // signed-in account can read hrm_notifications, Board or not (review of
+  // 0e6f33e -- the server reminder had the same leak).
+  const it=(tbItems||[]).filter(x=>x&&x.id===o.itemId)[0];
+  o=Object.assign({},o,{message:tbNotifMessageFor(o.message,it,tbUser(o.fromUid).name)});
   const at=_tbNow();
   const id=_tbNotifId(o.type,o.itemId,o.fromUid,at);
   const row=tbNotifPayload(Object.assign({},o,{forUser:to.handle,at:at}));
