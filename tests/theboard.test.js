@@ -567,9 +567,9 @@ module.exports=async function(){
     s.ok('and it stops the click reaching the row',/event\.stopPropagation\(\);window\.tbToggleDone/.test(g));
     s.ok('a colour dot',/tb-dot tb-c-[a-z]+/.test(g));
     s.ok('a lock glyph when locked',/tb-lock/.test(g));
-    s.ok('step progress',/tb-steps">1\/2</.test(g));
-    s.ok('a comment count',/tb-cc">3</.test(g));
-    s.ok('the date',/tb-date">oct 25</.test(g));
+    s.ok('step progress',/class="tb-steps"[^>]*>[\s\S]*?1\/2<\/span>/.test(g));
+    s.ok('a comment count',/class="tb-cc"[^>]*>[\s\S]*?3<\/span>/.test(g));
+    s.ok('the date, capitalised on the meta line',/class="tb-date">[\s\S]*?Oct 25<\/span>/.test(g));
     s.ok('a gate says so',/tb-kind-gate/.test(g));
     // Your own face on your own list is noise; only OTHERS get an avatar.
     s.eq('one avatar, not two',(g.match(/class="tb-av"/g)||[]).length,1);
@@ -732,7 +732,7 @@ module.exports=async function(){
 
     a.run('_tbListId="l1"');
     const det=a.run('_tbListsScreen()');
-    s.ok('the detail splits Open from Done',/>Open</.test(det)&&/>Done</.test(det));
+    s.ok('the detail splits Open from Completed',/>Open</.test(det)&&/Completed<span class="tb-count">1</.test(det));
     s.ok('back goes one level, to lists',/tbCloseList/.test(det));
     s.ok('it says whether the list is team or private',/tb-badge">Team</.test(det));
     s.ok('and that I administer it',/tb-badge">Admin</.test(det));
@@ -1449,7 +1449,9 @@ module.exports=async function(){
     s.eq('the rail is Title Case',a.run('_TB_RAIL.map(t=>t.label).join()'),'Dashboard,Calendar,Lists,Inbox');
     const src=read('js/theboard.js');
     const titles=(src.match(/_tbCard\('([^']+)'/g)||[]).map(x=>x.slice(9,-1));
-    s.ok('every card title starts with a capital ('+titles.join(', ')+')',titles.length>=14&&titles.every(t=>/^[A-Z0-9]/.test(t)));
+    s.ok('every card title starts with a capital ('+titles.join(', ')+')',titles.length>=13&&titles.every(t=>/^[A-Z0-9]/.test(t)));
+    // P1.3: a list's done items are the Completed group, not a 'Done' card.
+    s.ok('the Completed group is Title Case too',/'Completed'/.test(src));
     s.eq('no bell row is titled in lowercase',/title:'the board'/.test(src),false);
     const sh=read('js/shared.js');
     s.ok('the bug tracker names the screens in Title Case',/'tb-calendar':'The Board — Calendar'/.test(sh));
@@ -1570,6 +1572,52 @@ module.exports=async function(){
     const hd=d.run('_tbShell("tb-dash","")');
     s.ok('a member gets New list but no Settings',/tb-rail-newlist/.test(hd)&&!/tb-settings-btn/.test(hd));
     s.ok('no lists yet draws no empty group',!/tb-raillists/.test(hd));
+  }
+
+  // ══ SESSION 2 — P1.3: THE ROW ═══════════════════════════════════════
+  s.section('the row: a round check, a meta line, a star for My Day, Completed');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    const today='2026-09-26';
+    a.run("tbLoaded=true;tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar']}]");
+    a.run("tbItems=["+
+      "tbDecodeItem({id:'s1',title:'starred',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'"+today+"',listId:'l1',myDay:{'u-ammar':'"+today+"'}}),"+
+      "tbDecodeItem({id:'s2',title:'stale star',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],myDay:{'u-ammar':'2026-09-20'}}),"+
+      "tbDecodeItem({id:'d1',title:'done one',status:'done',completedAt:1000,ownerUid:'u-ammar',assigneeUids:['u-ammar'],listId:'l1'}),"+
+      "tbDecodeItem({id:'d2',title:'done later',status:'done',completedAt:2000,ownerUid:'u-ammar',assigneeUids:['u-ammar'],listId:'l1'})]");
+    a.run('_tbHydrateQueue=[]');
+    const r1=a.run('_tbRow(tbItems[0],"'+today+'")');
+    s.ok('the check is round and labelled',/class="tb-check" title="Mark done" aria-label="Mark done" aria-pressed="false"/.test(r1));
+    s.ok('it draws a check icon, shown by CSS on hover',/tb-check[^>]*>[^<]*<svg[^>]*><use href="[^"]*#lucide-check"/.test(r1));
+    s.ok('a starred item wears the star on, and says what it does',
+      /class="tb-star on" title="Remove from My Day"[^>]*aria-pressed="true"/.test(r1));
+    s.ok('the star acts without opening the item',/event\.stopPropagation\(\);window\.tbAddToMyDay\('s1'\)/.test(r1));
+    s.ok('the meta line names the list, off the list screen',/class="tb-rowlist"/.test(r1)
+      &&a.run('_tbHydrateQueue.some(q=>q.text==="Winter Drop 2027")'));
+    s.ok('and says Today with a capital',/class="tb-date">[\s\S]*?Today<\/span>/.test(r1));
+    s.ok('on the list screen it does not repeat the list',!/tb-rowlist/.test(a.run('_tbRow(tbItems[0],"'+today+'",{inList:true})')));
+    s.ok('a star from ANOTHER day is off',/class="tb-star" title="Add to My Day"/.test(a.run('_tbRow(tbItems[1],"'+today+'")')));
+    s.ok('an undated row carries no date at all',!/tb-date/.test(a.run('_tbRow(tbItems[1],"'+today+'")')));
+    s.ok('and with nothing else to say, no meta line -- not a lone dot',!/tb-rowmeta|tb-dot/.test(a.run('_tbRow(tbItems[1],"'+today+'")')));
+    const rd=a.run('_tbRow(tbItems[2],"'+today+'")');
+    s.ok('a done item has no star',!/tb-star/.test(rd));
+    s.ok('and its check is on and says the way back',/class="tb-check on" title="Mark not done"[^>]*aria-pressed="true"/.test(rd));
+
+    a.run("_tbListId='l1';_tbDoneOpen={};_tbHydrateQueue=[]");
+    const det=a.run('_tbListsScreen()');
+    s.ok('Completed is its own group, open by default',/tb-donegroup open[\s\S]*aria-expanded="true"/.test(det));
+    s.ok('most recently completed first',a.run('_tbHydrateQueue.map(q=>q.text).filter(t=>/^done/.test(t)).join()')==='done later,done one');
+    a.run('_tbRepaint=function(){}');
+    a.run("window.tbToggleCompleted('l1')");
+    const shut=a.run('_tbListsScreen()');
+    s.ok('the header folds it',/aria-expanded="false"/.test(shut)&&!/tb-row done/.test(shut));
+    s.ok('and the count still says how many',/Completed<span class="tb-count">2</.test(shut));
+    s.ok('the fold is per list',a.run('_tbDoneOpen["l1"]===false&&_tbDoneOpen["l2"]===undefined'));
+    a.run("window.tbToggleCompleted('l1')");
+    s.ok('and opens again',/tb-donegroup open/.test(a.run('_tbListsScreen()')));
+    s.eq('no done items, no group',a.run("_tbCompleted('l1',[],'"+today+"')"),'');
+    s.ok('the My Day toast is Title Case',/'Added to My Day':'Removed from My Day'/.test(read('js/theboard.js')));
   }
 
   s.section('the calendar prefs are cleaned on load');

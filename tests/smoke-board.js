@@ -422,6 +422,17 @@ function DRIVE(){
       if(row){act('open an item from the Dashboard',function(){document.querySelector('.tb-rowmain').click();});await wait(200);
         L(!!document.querySelector('.tb-drawer'),'the Dashboard row opened its drawer');
         act('close it',function(){window.tbCloseItem();});}
+      // ── the row (P1.3): the star puts it in My Day, without opening it ──
+      var star=document.querySelector('.tb-row .tb-star:not(.on)');
+      L(!!star,'a Dashboard row carries a star');
+      if(star){
+        var sid=star.closest('.tb-row').getAttribute('data-id');
+        star.click();
+        await wait(300);
+        var sit=tbItems.filter(function(i){return i.id===sid;})[0]||{};
+        L(((sit.myDay||{})[_tbMe()])===_tbToday(),'the star put the item in My Day');
+        L(!document.querySelector('.tb-drawer'),'and did not open it');
+      }
       window.showPage('tb-lists');await wait(200);
       var list=document.querySelector('[onclick^="window.tbOpenList"]');
       L(!!list,'there is a list to open');

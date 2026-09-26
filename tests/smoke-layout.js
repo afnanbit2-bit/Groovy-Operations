@@ -181,6 +181,38 @@ const FRAGMENTS={
     return out;
   },
 
+  // A list's own screen (session 2, P1.3): the densest rows the Board
+  // draws -- a gate with three other people, steps, comments, a lock and a
+  // long title; a starred row; and the Completed group open, with a done
+  // item's struck-through title. The meta line has to WRAP at 420px.
+  'the board — a list, its rows and Completed':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-lists',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027 — denim, knits and the Karachi suppliers',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+    app.run("tbConfig={markers:[]};tbLoaded=true;_tbLoadErrors=[];_tbListId='l1';_tbDoneOpen={}");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',locked:true,lockedBy:'u-afnan',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan','u-must','u-dani','u-saim'],date:'2026-09-20',listId:'l1',commentCount:128,steps:[{id:'1',done:true},{id:'2',done:false},{id:'3',done:false}],priority:2})," +
+      "tbDecodeItem({id:'b',title:'Walika visit',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:_tbToday(),listId:'l1',myDay:{'u-ammar':_tbToday()}})," +
+      "tbDecodeItem({id:'c',title:'Denim bulk lands → Mustafa QC',status:'open',kind:'deadline',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-must'],date:null,listId:'l1'})," +
+      "tbDecodeItem({id:'d',title:'Trims ordered: zips, rivets, the woven labels and the care labels for every size',status:'done',completedAt:5,visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-afnan'],date:'2026-09-10',listId:'l1'})]");
+    app.run("_tbHydrateQueue=[]");
+    // The same gate OFF its list (a Dashboard card), where the meta line
+    // also names the list: the longest meta line the Board draws.
+    const html=app.run('_tbListsScreen()')+app.run("_tbCard('Assigned to Me',[_tbRow(tbItems[0],_tbToday())])");
+    let out=html;
+    app.run('_tbHydrateQueue').forEach(x=>{
+      out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+    });
+    // .tb-main ALONE, not inside .tb-wrap: the frame is a grid since P1.2,
+    // and a .tb-wrap without its rail puts the content in the 240px rail
+    // column -- which is how this fragment first measured a 136px row.
+    return '<div class="tb-main">'+out+'</div>';
+  },
+
   // The quick-add composer OPEN (session 2, P0.5): three rows of chips that
   // must wrap at phone width rather than push the page sideways, a date
   // field, two selects, a picked date with its clear button, a picked
@@ -195,7 +227,7 @@ const FRAGMENTS={
     app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
     app.run("tbConfig={markers:[]};tbLoaded=true;_tbLoadErrors=[];tbItems=[];_tbListId=null");
     app.run("_tbQaReset(true);_tbQa.text='denim samples @afnan';_tbQa.dateSet=true;_tbQa.date='2026-10-05';_tbQa.assign=['u-dani'];_tbQa.lane='denim'");
-    return '<div class="tb-wrap"><div class="tb-main">'+app.run("_tbComposer('add something — try: denim samples @afnan #denim oct 5 !')")+'</div></div>';
+    return '<div class="tb-main">'+app.run("_tbComposer('add something — try: denim samples @afnan #denim oct 5 !')")+'</div>';
   },
 
   // The drawer: a fixed panel over the page, with a disabled date field

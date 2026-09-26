@@ -859,37 +859,61 @@ function _tbHydrate(){
   _tbHydrateQueue=[];
 }
 
-/** The row, everywhere (spec s7.1): checkbox · colour dot · title ·
- *  assignee avatars (OTHERS only — your own face on your own list is
- *  noise) · lock · step progress · comment count · date. One tap opens the
- *  drawer; the checkbox completes without opening. */
-function _tbRow(item,today){
+/** The row, everywhere (spec s7.1; session 2, P1.3 -- the To Do pattern):
+ *  a ROUND checkbox · the title (up to two lines) with a META LINE under it
+ *  -- colour dot, kind, date, steps, comments, lock, the list (off a list's
+ *  own screen), the OTHER assignees -- and a STAR on the right that puts
+ *  the item in My Day. One tap on the title opens the item; the checkbox
+ *  and the star act without opening it.
+ *  `o.inList`: on a list's own screen, where naming the list is noise. */
+function _tbRow(item,today,o){
+  o=o||{};
   const me=_tbMe();
   const ck=tbItemColorKey(item,tbLists,tbUserColors());
   const others=(item.assigneeUids||[]).filter(u=>u!==me);
   const pr=tbStepProgress(item);
-  const overdue=item.date&&item.date<today&&item.status!=='done';
+  const done=item.status==='done';
+  const overdue=item.date&&item.date<today&&!done;
+  const starred=!done&&(item.myDay||{})[me]===today;
+  const list=(!o.inList&&item.listId)?tbLists.filter(l=>l&&l.id===item.listId)[0]:null;
+  const id=_tbEsc(item.id);
   const avatars=others.slice(0,3).map(u=>{
     const p=tbUser(u);
     return'<span class="tb-av" title="'+_tbEsc(p.name)+'">'+_tbEsc(p.initial)+'</span>';
   }).join('')+(others.length>3?'<span class="tb-av tb-av-more">+'+(others.length-3)+'</span>':'');
-  return'<div class="tb-row'+(item.status==='done'?' done':'')+(item.priority===2?' crit':'')+'" data-id="'+_tbEsc(item.id)+'">'
-    +'<button class="tb-check'+(item.status==='done'?' on':'')+'" title="mark done"'
-      +' onclick="event.stopPropagation();window.tbToggleDone(\''+_tbEsc(item.id)+'\')"></button>'
-    +'<span class="tb-dot tb-c-'+_tbEsc(ck)+'"></span>'
-    +'<button class="tb-rowmain" onclick="window.tbOpenItem(\''+_tbEsc(item.id)+'\')">'
+  const lockedBy=item.locked?tbUser(item.lockedBy):null;
+  const meta=[
+    item.kind!=='task'?'<span class="tb-kind tb-kind-'+_tbEsc(item.kind)+'">'+_tbEsc(_tbCap(item.kind))+'</span>':'',
+    // No date is said by saying nothing: the Needs a Date card already
+    // says it, and "no date" on every undated row is noise.
+    item.date?'<span class="tb-date'+(overdue?' over':'')+'">'+_tbIcon('calendar','sm')+_tbEsc(_tbCap(tbDayLabel(item.date,today)))+'</span>':'',
+    pr.label?'<span class="tb-steps" title="steps done">'+_tbIcon('list-checks','sm')+_tbEsc(pr.label)+'</span>':'',
+    item.commentCount>0?'<span class="tb-cc" title="comments">'+_tbIcon('message-circle','sm')+_tbEsc(item.commentCount)+'</span>':'',
+    item.locked?'<span class="tb-lock" title="locked by '+_tbEsc(lockedBy.name)+'">'+_tbIcon('lock','sm')+'</span>':'',
+    list?'<span class="tb-rowlist">'+_tbIcon(list.kind==='shared'?'users':'list','sm')+_tbSlot(list.title||'untitled','tb-rowlistname')+'</span>':'',
+    avatars?'<span class="tb-avs">'+avatars+'</span>':''
+  ].join('');
+  // A row with nothing to say has no meta line at all -- a lone colour dot
+  // on a line of its own (seen on the P1.3 screenshots) is a wasted line.
+  // The dot leads the line when there is one; on a list's own screen every
+  // row shares the list's colour, so there it is only drawn with other meta.
+  return'<div class="tb-row'+(done?' done':'')+(item.priority===2?' crit':'')+'" data-id="'+id+'">'
+    +'<button class="tb-check'+(done?' on':'')+'" title="'+(done?'Mark not done':'Mark done')+'"'
+      +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
+      +' onclick="event.stopPropagation();window.tbToggleDone(\''+id+'\')">'+_tbIcon('check','sm')+'</button>'
+    +'<button class="tb-rowmain" onclick="window.tbOpenItem(\''+id+'\')">'
       +_tbSlot(item.title||'untitled','tb-rowtitle')
-      +'<span class="tb-rowmeta">'
-        +(item.kind!=='task'?'<span class="tb-kind tb-kind-'+_tbEsc(item.kind)+'">'+_tbEsc(item.kind)+'</span>':'')
-        +avatars
-        +(item.locked?'<span class="tb-lock" title="locked">&#128274;</span>':'')
-        +(pr.label?'<span class="tb-steps">'+_tbEsc(pr.label)+'</span>':'')
-        +(item.commentCount>0?'<span class="tb-cc">'+_tbEsc(item.commentCount)+'</span>':'')
-        +'<span class="tb-date'+(overdue?' over':'')+'">'+_tbEsc(tbDayLabel(item.date,today))+'</span>'
-      +'</span>'
+      +(meta?'<span class="tb-rowmeta"><span class="tb-dot tb-c-'+_tbEsc(ck)+'"></span>'+meta+'</span>':'')
     +'</button>'
+    // A done item has no day left to be in, so it has no star.
+    +(done?'':'<button class="tb-star'+(starred?' on':'')+'"'
+      +' title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
+      +' aria-label="'+(starred?'Remove from My Day':'Add to My Day')+'" aria-pressed="'+(starred?'true':'false')+'"'
+      +' onclick="event.stopPropagation();window.tbAddToMyDay(\''+id+'\')">'+_tbIcon('star')+'</button>')
   +'</div>';
 }
+/** First letter up: "today" -> "Today", "gate" -> "Gate". Pure. */
+function _tbCap(s){ s=String(s==null?'':s); return s.charAt(0).toUpperCase()+s.slice(1); }
 
 /** A card. Returns '' when there is nothing to show — spec s7.1: cards
  *  with nothing in them are HIDDEN, not rendered empty. That rule is what
@@ -1016,9 +1040,35 @@ function _tbListDetail(l){
     +(isAdmin?'<span class="tb-badge">Admin</span>':'')
   +'</div>'
   +_tbComposer('add to this list')
-  +_tbCard('Open',open.map(i=>_tbRow(i,today)),{keepEmpty:true,empty:'nothing open in this list'})
-  +(done.length?_tbCard('Done',done.map(i=>_tbRow(i,today))):'');
+  +_tbCard('Open',open.map(i=>_tbRow(i,today,{inList:true})),{keepEmpty:true,empty:'nothing open in this list'})
+  +_tbCompleted(l.id,done,today);
 }
+
+// ── Completed, per list (session 2, P1.3) ─────────────────────────────
+// The To Do pattern: done items sit in their own group at the foot of the
+// list, OPEN by default (nothing is hidden until you ask), and the fold is
+// remembered per list for this session. In memory, not localStorage: a
+// stored preference is one more key for the cleaner to police, for
+// something that costs one click to redo.
+let _tbDoneOpen={};
+function _tbCompleted(listId,done,today){
+  if(!done.length)return'';
+  const open=_tbDoneOpen[listId]!==false;
+  // Most recently completed first -- the thing you just ticked is the thing
+  // you are most likely to want back.
+  const rows=done.slice().sort((a,b)=>Number(b.completedAt||0)-Number(a.completedAt||0));
+  return'<div class="tb-card tb-donegroup'+(open?' open':'')+'">'
+    +'<button class="tb-cardh tb-donetoggle" aria-expanded="'+(open?'true':'false')+'"'
+      +' onclick="window.tbToggleCompleted(\''+_tbEsc(listId)+'\')">'
+      +_tbIcon(open?'chevron-down':'chevron-right','sm')+'Completed'
+      +'<span class="tb-count">'+done.length+'</span></button>'
+    +(open?rows.map(i=>_tbRow(i,today,{inList:true})).join(''):'')
+  +'</div>';
+}
+window.tbToggleCompleted=function(listId){
+  _tbDoneOpen[listId]=!(_tbDoneOpen[listId]!==false);
+  _tbRepaint();
+};
 
 /** The drawer. Phase 2: title, kind, lock, the meta row, steps, notes and
  *  the footer actions. Comments, files and @mentions are phase 4. */
@@ -1493,7 +1543,7 @@ window.tbAddToMyDay=async function(id){
   await _tbTry(async()=>{
     await _tbCommit(it.id,{myDay:myDay,updatedAt:_tbNow()},null);
     _tbApplyLocal(it.id,{myDay:myDay});
-    _tbToast(myDay[me]?'added to your day':'removed from your day');
+    _tbToast(myDay[me]?'Added to My Day':'Removed from My Day');
     _tbRepaint();
   },'update my day');
 };
