@@ -19,6 +19,18 @@ module.exports=function(){
 
   const indexHtml=read('index.html');
   const sw=read('sw.js');
+  // What is REALLY precached and really loaded: the PRECACHE_URLS array
+  // with its comments removed, and index.html without <!-- --> comments. A
+  // commented-out entry used to satisfy both checks (review of 302879a).
+  const precacheLive=(()=>{
+    const body=((/const PRECACHE_URLS\s*=\s*\[([\s\S]*?)\]/.exec(sw)||[,''])[1]).replace(/\/\*[\s\S]*?\*\//g,'');
+    return body.split('\n').map(l=>{
+      let q=false;
+      for(let i=0;i<l.length;i++){ if(l[i]==="'")q=!q; else if(!q&&l[i]==='/'&&l[i+1]==='/')return l.slice(0,i); }
+      return l;
+    }).join('\n');
+  })();
+  const indexLive=indexHtml.replace(/<!--[\s\S]*?-->/g,'');
   const css=read('css/main.css');
   const jsFiles=fs.readdirSync(path.join(ROOT,'js')).filter(f=>f.endsWith('.js')).sort();
 
@@ -28,9 +40,9 @@ module.exports=function(){
   s.section('every js module is wired into the shell and the service worker');
   jsFiles.forEach(f=>{
     s.ok(f+' has a <script> tag in index.html',
-      indexHtml.indexOf('/js/'+f)!==-1);
+      new RegExp('<script[^>]*src="/js/'+f.replace('.','\\.')+'[?"]').test(indexLive));
     s.ok(f+' is in sw.js PRECACHE_URLS',
-      new RegExp("'/js/"+f.replace('.','\\.')+"'").test(sw));
+      new RegExp("'/js/"+f.replace('.','\\.')+"'").test(precacheLive));
   });
 
   s.section('nothing is precached that does not exist');
@@ -111,7 +123,7 @@ module.exports=function(){
     const LIC={'lucide-sprite-1.48.0.svg':'lucide-static-1.48.0.LICENSE'};
     const js=jsFiles.map(f=>read('js/'+f)).join('\n');
     vend.forEach(f=>{
-      s.ok('vendored '+f+' is precached by sw.js',sw.indexOf("'/assets/vendor/"+f+"'")>-1);
+      s.ok('vendored '+f+' is precached by sw.js',precacheLive.indexOf("'/assets/vendor/"+f+"'")>-1);
       if(/\.js$/.test(f))return;                          // covered above
       s.ok('vendored '+f+' carries its version in the filename',/-\d+\.\d+\.\d+[.-]/.test(f));
       const lic='assets/vendor/'+(LIC[f]||f.replace(/(\.min)?\.(css|svg)$/,'.LICENSE'));
@@ -144,7 +156,9 @@ module.exports=function(){
       const bad=[];
       (css.match(/[^{}]+\{[^{}]*\}/g)||[]).forEach(r=>{
         const sel=r.slice(0,r.indexOf('{')),body=r.slice(r.indexOf('{'));
-        if(/\.tb-/.test(sel)&&/text-transform\s*:\s*(?!none)/.test(body))bad.push(sel.trim().slice(0,60));
+        // (?!\s*none): with `\s*(?!none)`, backtracking let the space before
+        // "none" satisfy the lookahead, so text-transform: none was flagged.
+        if(/\.tb-/.test(sel)&&/text-transform\s*:(?!\s*none\b)/.test(body))bad.push(sel.trim().slice(0,60));
       });
       s.eq('no .tb- rule transforms the case of its text',bad.join(' | '),'');
     }
