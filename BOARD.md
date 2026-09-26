@@ -124,6 +124,118 @@ nobody can edit his profile and `boardColor` has nowhere to live.
 
 ---
 
+## The QA identity (26 Sept 2026)
+
+`claude@groovy.op` — handle `claude`, name "Claude (QA)", role `qa` — is
+the account Claude Code's test harness signs in as, so subagents can drive
+the real platform instead of a stub. **It is not a person.** It is a Board
+MEMBER (never an owner), so it exercises the member paths, including being
+refused on someone else's locked item.
+
+**The fence is `firestore.rules`, and it is proved in the emulator**
+(`tests/rules-emulator-board.js`, the "QA harness" sections: every fence
+has a case that must be refused and every path the harness needs has one
+that must succeed):
+
+- `signedIn()` **excludes** it (`isQa()`), so every collection opened to
+  "any signed-in user" — POs, gate passes, HRM, the store, bug reports,
+  notes — stays shut with no clause each. `authed()` is "anyone, QA
+  included", used only where it must read: `user_profiles`, `mood_boards`,
+  and the Board's collections through `isBoardUser()`.
+- **Reads:** what a member reads on the Board (shared items, its own, the
+  markers, lists it is on), the profile directory, TEAM mood boards, and
+  notifications addressed to `claude`.
+- **Lists:** it creates and edits only lists it admins ALONE
+  (`memberUids == [its uid]`) carrying `qa: true`. `qa` is set at create,
+  never changes (not even for a Board owner), and **nobody but QA may set
+  it** — so a real list can never be hidden from its people.
+- **Items:** create/update/delete only its own, only in a QA list it
+  admins, assigned to nobody but itself (`assigneeUids == [its uid]`),
+  flagged `qa: true`. The lock rule is untouched.
+- **Comments / activity:** only on items it owns.
+- **Notifications:** create, read and mark-read only rows where
+  `forUser == 'claude'` (`forUser` holds a USERNAME, not a uid — the brief
+  said uid; the field says otherwise). The bell's unfiltered read is
+  refused it and caught.
+- **Mood Boards:** reads TEAM boards; writes only its own PRIVATE boards,
+  shared with nobody; presence and comments only there.
+- `board_config`: read only.
+
+**The client half** (`js/theboard.js`, held by `tests/theboard.test.js`):
+a real session never sees a `qa: true` list or item (`tbQaVisible`, applied
+where `loadTbData` and the live listener set `tbItems`/`tbLists`), never
+addresses the harness (`_tbBoardUsernames` — assign, mentions, handover,
+the person filter) and never notifies it; the harness addresses and
+notifies only itself (`tbQaMayNotify`). Team Today is the real five for
+everyone (`_tbTeamUsernames`), so the harness's screenshots show what
+people see. **A harness create lands in its sandbox** — the first QA list
+it admins (`_tbQaFenceListId`) — or is refused with a toast when it has
+none; an item in a QA list is born `qa: true` by `tbNewItem` itself.
+
+**Pages:** `tb-*`, Mood Boards (`boards`, `boards-all`, `board-canvas`)
+and its own Profile. The Creative Hub's ids land on Mood Boards' Home; the
+bug tracker is refused (the rules deny it `bug_reports`, and its FAB is
+hidden). `startApp` does not call `loadData()` for it. It is on
+`_CREATIVE_HUB_USERS` only so a `#board=` deep link opens for it.
+
+**Credentials live in the operator's shell and nowhere else** — never in
+the repo, the log or a commit message. `.gitignore` carries targeted
+backstop patterns (not a blanket `*.json`).
+
+**Deploy before the first sign-in.** Until the rules carrying `isQa()`
+are published, the live `signedIn()` still includes this account, i.e. it
+can read and write most of the app.
+
+### Running the harness (Part B)
+
+Both tools read the operator's shell and **skip with a printed reason**
+when it is not set up. Neither is in `tests/run.js`; CI runs neither.
+
+**`node tests/e2e/board.e2e.js`** — real Chrome over the DevTools protocol
+(Node 22's global WebSocket; no dependency), `GROOVY_QA_URL` /
+`GROOVY_QA_EMAIL` / `GROOVY_QA_PASSWORD`, optional `CHROME_BIN`. It signs
+in through the real form (the password is a DevTools call argument, never
+inside an evaluated expression), checks the role is `qa`, and then **the
+containment gate**: if `pos` or `bug_reports` can be read, the QA rules are
+not live and it signs out and exits 2 before writing anything. Then: the
+Dashboard, a PRIVATE "QA Sandbox" list made through the app's own + New on
+first run (private, so the RULES hide its items from everyone — not just
+the client, which an old cached build would not have), an item typed into
+the composer, the calendar, the list, the item pane, the inbox, a refused
+write on a real locked gate (written to its CURRENT date, so a wrong rule
+would still change nothing), a refused notification for a real person,
+Mood Boards, the phone at 390px, and deleting its item. Screenshots, a
+`report.json` and a `report.md` (with the `CACHE_VERSION` the site served)
+land in `docs/board-screens/<local commit>/`, which is **gitignored: this
+repo is public and the screens show the live drop plan**. The login form
+takes a USERNAME mapped through `USER_DEFS`, so the site must carry the
+`claude` entry — a deploy preview of the branch until it is on `main`.
+It **unticks Remember me** before signing in (ticked by default since the
+26 Sept login round) and checks it took: the harness must never keep a
+session, offer the QA password to a password manager, or raise the
+fingerprint-lock offer card over the pages it screenshots.
+Rehearsed against the real shell with an in-memory Firestore, both with the
+QA rules imitated (15/15) and without them (stopped at the gate, exit 2).
+
+**`node scripts/board-inspect.js <cmd> [arg]`** — Admin SDK reads (they
+bypass the rules, which is why it can explain what no app user sees):
+`counts [project]`, `items <project>`, `item <id>` (fields, `dateHistory`,
+activity), `notifications <username>`, `markers`, `seed-check` (every
+seeded milestone: counted open for everyone, done, private, moved, deleted
+since, never written). Credentials: `GOOGLE_CLOUD_PROJECT` + Application
+Default Credentials. **Read-only by construction:** it first `update()`s a
+random nonexistent document; `PERMISSION_DENIED` → runs, `NOT_FOUND` (a
+credential that can write) → **refuses, exit 3**. So ADC from the project
+owner's own Google account is refused; use ADC that impersonates an account
+holding only `roles/datastore.viewer`. Driven against the emulator, which
+is how the first probe id (`__inspect_probe__`, RESERVED by Firestore →
+`INVALID_ARGUMENT` for every credential) was caught.
+
+**Agents:** `.claude/agents/board-tester.md` (runs the e2e, looks at every
+screen, returns PASS/FAIL with evidence) and `board-reviewer.md` (reviews a
+Board diff against this file and the gates). Both carry the line: run
+`scripts/board-inspect.js` when a screenshot needs a data explanation.
+
 ## Deploying the rules
 
 ```bash

@@ -71,32 +71,128 @@ Lines marked **→ NEEDS YOU** are actions for a human.
 | P2.3 | `e194b03` | **The inbox reads only the Board's rows, newest first, capped.** It listened to **every** notification addressed to the person (HRM ones too) with no limit, and P2.1 now adds rows every morning, so its reads grew without bound. The query is now `forUser` + `source=='tb'` + `orderBy createdAt desc` + `limit 200`. That needs a composite index, added to `firestore.indexes.json` and listed in **the batched deploy list below**. **Until the index is deployed, nothing breaks:** the refusal is *failed-precondition*, and the listener lets go and re-listens on the old wide query, so the inbox is only slower. A real **refusal** (permission) is not mistaken for a missing index; it still says "could not read your inbox". The one-off read (a shell without `onSnapshot`) falls back the same way. Reverted each: always wide (2 failures), no fallback (3), any error treated as a missing index (2). | v203 | run.js 6,387/6,387 · smoke-board 3/3 · smoke-browser 8/8 · smoke-startapp 4/4 |
 | P2.4 | `4ed7e5f` | **Memoised lookups: measured, and deliberately NOT built.** Before adding caches I timed the render functions in the node harness, with a directory of 65 profiles and every item shared with two people. Render time is the string only; the browser's own parse and layout come on top and are not measured here. The call counts come from wrappers on `tbUser`, `tbUserColors`, `tbPeople` and `_tbCanEditIt`. **Dashboard: 6.0 ms at 42 items (the real launch size), 11.8 ms at 300, 19.9 ms at 1,000. List detail: 1.4 / 11.9 / 23.5 ms. Calendar month: ≤ 2.6 ms at every size** (it caps pills per day). `tbUser` and `tbUserColors` are called once per row (about 2,500 calls at 1,000 items), each a scan of the directory. **Why no cache:** a cache that is checked on every call costs about as much as the scan it replaces. A cache reset once per render goes stale, because `profile.js` edits the directory **in place** (`userProfiles[i]=row`, same array, same length), and the partial repaints (chips, inbox, badges) do not go through one render entry. So the trade is a few milliseconds against names that stop updating. **Revisit when** a real board passes about 1,000 items, and start from the browser's layout cost, not these lookups. The measuring script is in the session scratchpad, not the repo. | v204 | no code change |
 | P2.5 | `39532f3` | **Acceptance prep.** `BOARD.md` → *Session 2 acceptance*: fifteen ordered steps for the first morning, **S1–S15**, run by two people in two browsers (Ammar, a Board owner, and Saim, who is on few items). Each step says what "pass" looks like and has a column for the result. They cover the landing, the seed (first run, re-run, a deleted milestone), live updates, the read-only pane, the composer's double Enter, the list default, pins, markers, notes going to the right item, the tablet pane, the dark date picker, the inbox after the index, and the 08:00 reminder. Two wordings were checked against the code before being written in (the quick-add grammar parses `tomorrow`; the re-run summary's exact text). The stale step-15 paragraph (5,227 assertions, the old list of files touched) is corrected from `git diff --name-only origin/main...HEAD`: **`firestore.rules` is unchanged on this branch.** **Not run:** nothing here can be run from a session, which cannot sign in. | v205 | no code change |
-| R-lock | *(this commit)* | **The lock rule had two holes and one wrong refusal, found by running it in the Firestore emulator for the first time.** The Board's rules had only ever been checked as TEXT; `tests/rules-emulator-board.js` (new, hand-run like `tests/rules-emulator.js`: CI installs nothing) drives them in the real emulator with items built by the app's own `tbNewItem`/`tbItemPatch`/`tbDonePlan`/`tbHandoverPlan`. Against the old rule, 3 of its cases failed: (1) **a member on a locked item could take the lock over** (set `lockedBy` to themselves: the clause meant to stop that allowed exactly that) and then move the date; (2) **a member could set `locked:false`** and leave the name, then move it; (3) **a locker who is not a Board owner could not unlock their own lock** (a gate Saim made could never be unlocked by Saim). `tbLockOk()` replaces the clause: on a locked item only the locker or a Board owner may touch `date`, `dueAt`, `locked` or `lockedBy`; on an unlocked item, locking it names the caller. **The app never wrote (1) or (2)** (the lock button refuses a non-locker), so those were raw-write holes; (3) was a live bug in the button. The two text assertions in `tests/theboard.test.js` that claimed "lockedBy cannot be re-pointed" were matching the old rule's text while it allowed it; replaced with checks on the helper, which fail 4 ways against the old file. **`firestore.rules` changed: in the batched list below.** | v206 | emulator: Board 39/39 (old rule: 3 fail) · wh_sales/acct 103/103 · run.js 6,389 · theboard 1,131 |
+| R-lock | `801bcfd` | **The lock rule had two holes and one wrong refusal, found by running it in the Firestore emulator for the first time.** The Board's rules had only ever been checked as TEXT; `tests/rules-emulator-board.js` (new, hand-run like `tests/rules-emulator.js`: CI installs nothing) drives them in the real emulator with items built by the app's own `tbNewItem`/`tbItemPatch`/`tbDonePlan`/`tbHandoverPlan`. Against the old rule, 3 of its cases failed: (1) **a member on a locked item could take the lock over** (set `lockedBy` to themselves: the clause meant to stop that allowed exactly that) and then move the date; (2) **a member could set `locked:false`** and leave the name, then move it; (3) **a locker who is not a Board owner could not unlock their own lock** (a gate Saim made could never be unlocked by Saim). `tbLockOk()` replaces the clause: on a locked item only the locker or a Board owner may touch `date`, `dueAt`, `locked` or `lockedBy`; on an unlocked item, locking it names the caller. **The app never wrote (1) or (2)** (the lock button refuses a non-locker), so those were raw-write holes; (3) was a live bug in the button. The two text assertions in `tests/theboard.test.js` that claimed "lockedBy cannot be re-pointed" were matching the old rule's text while it allowed it; replaced with checks on the helper, which fail 4 ways against the old file. **`firestore.rules` changed: in the batched list below.** | v206 | emulator: Board 39/39 (old rule: 3 fail) · wh_sales/acct 103/103 · run.js 6,389 · theboard 1,131 |
+| CO-5 | `3f70748` | **Change order §5, the two checks — done first, because the second could have been a P0.** **(a) Samad onboarding on Mon 28 instead of Sun 27: NOT the grid.** 27 Sep 2026 is a Sunday, the LAST column of a Monday-first grid, so a week-boundary slip would look exactly like the report — which is why it was checked rather than reasoned away. The seed has written `2026-09-27` for it in every version (`git log -S`). `tests/smoke-board.js` now checks placement in real Chromium by GEOMETRY: every drawn cell sits under its own weekday header and prints its own number, and every pill is in the cell of its own date, in the month AND the week, with the Samad pill asserted in the Sunday 27 cell. The Ammar mode now runs in **Asia/Karachi** (the others in the runner's zone, UTC on CI), so a date that only slips in one zone shows. All pass: 35 cells / 14 pills (month), 7 / 7 (week). **Verified by breaking it:** starting the week on Sunday fails naming `2026-08-30 drawn in column 0, belongs in 6` and the Samad pill missing from the week. Every other date the app prints is split from the string (`tbDayLabel`); nothing parses an item date through UTC. **So the live document most likely carries `date: 2026-09-28`, i.e. it was moved** — `board_items/tb_edits_samad-onboarding-meeting-brief-grade-references`, fields `date` and `dateHistory` (each move is `{from,to,byUid,at,reason}`); the Dashboard's Activity card lists every move from `dateHistory` too. **→ NEEDS YOU** to read which. **(b) Winter Drop 2027 shows 39, the seed wrote 42: every list counter counts OPEN items only** (`status !== 'done'` — the rail, the list card, My Lists, the project row). The seed has 42 rows, 42 distinct ids, none a duplicate, none skipped for want of a login (no row's only person is someone without an account). So the 3 are, in some mix: **done** (they are in the list page's Completed group, which shows its own count), **made private by their owner** (a private item is not loaded for anyone else), **deleted since**, or **not written**. The sandbox cannot read the live board, so it cannot name them; two screens do: the list's **Completed** count, and **Settings → Preview**, which reads every seeded document server-side whatever its visibility and prints "N already on the board", "deleted since: …" and "skipped …". 42 already on the board + Completed 3 = done. 42 + Completed < 3 = the rest are private. Fewer than 42 = the Preview names them. **→ NEEDS YOU.** No precached file changed, so no cache bump. | v206 | smoke-board 192×3 in real Chromium (Asia/Karachi + UTC) · run.js |
 
+| QA-A | `dc98484` | **The QA identity: `claude@groovy.op`, a harness account fenced by the rules.** The brief's priority item, so subagents can debug the real platform. Handle `claude`, "Claude (QA)", role `qa`, in `USER_DEFS` and `BOARD_USERS` (never `BOARD_OWNERS`). **The fence is `firestore.rules`:** `signedIn()` now excludes it (`isQa()`), so every collection opened to "any signed-in user" stays shut with no clause each; `authed()` gives it back only what it must read (`user_profiles`, `mood_boards`, the Board through `isBoardUser()`). Writes: lists it admins **alone** carrying `qa:true` (set at create, immutable even for a Board owner, and **no one else may set it**); items only in those lists, assigned only to itself, flagged `qa:true`; comments/activity only on its own items; notifications only where `forUser=='claude'` (a USERNAME: the brief said uid, the field is a username); Mood Boards only its own PRIVATE boards shared with nobody, presence and comments only there; no `board_config` write. **Client** (`js/theboard.js`): `qa` lists and items hidden from real sessions where `tbItems`/`tbLists` are set (load and live listener); real people never address or notify the harness, it addresses and notifies only itself; Team Today is the real five for everyone; a harness create lands in its sandbox (`_tbQaFenceListId`) or is refused. Pages `tb-*`, Mood Boards and its Profile; no `loadData`, no bug FAB. `.gitignore` gains **targeted** credential patterns (a blanket `*.json` would drop `manifest.json`, `firebase.json` and the indexes file). Reverted each: `signedIn()` including QA, the item-create fence and the notification fence fail 16 emulator cases by name; the loader hiding and the notify guard fail 4 client assertions. **`firestore.rules` changed: in the batched list below, and it must be deployed before the harness signs in.** | v207 | emulator: Board **100/100** (61 new) · wh_sales/acct 103/103 · run.js 6,443 · smoke-board 192×3 |
+| QA-B | `aec9d9d` | **The harness uses the QA identity: `tests/e2e/board.e2e.js`, `scripts/board-inspect.js`, two agents.** **e2e:** real Chrome over the DevTools protocol (Node 22's WebSocket, no dependency) signs in at `GROOVY_QA_URL` through the real login form. The password is a DevTools call argument, never inside an evaluated expression, and a search of both reports found none. It checks the role is `qa`, then **the containment gate**: if `pos` or `bug_reports` can be read, the QA rules are not live, and it signs out and exits 2 before any write of its own. (The APP's sign-in has already logged a "signed in" `activity` row, refused by the QA rules and accepted by the old ones.) It then covers: the Dashboard; a **PRIVATE** QA Sandbox made through the app's + New (private so the RULES hide its items, not just the client, which an old cached build lacks); an item typed into the composer; the calendar, list, pane and inbox; a refused write on a real locked gate, written to its **current** date so a wrong rule still changes nothing; a refused notification for a real person; Mood Boards; the phone at 390px; and deleting its item. Output goes to `docs/board-screens/<commit>/` (PNGs, `report.json`, `report.md` with the site's `CACHE_VERSION`). **That folder is gitignored: the repo is public and the screens show the live drop plan.** **Rehearsed** on the real shell with an in-memory Firestore: 14/14 with the QA rules imitated, and stopped at the gate (exit 2, no screens) without them. Two harness bugs were found by running it (headless gives no focus, so the typed login landed nowhere; an SDK blocked by the network was blamed on `USER_DEFS`). **board-inspect:** Admin SDK reads over ADC + `GOOGLE_CLOUD_PROJECT`: `counts`, `items`, `item` (fields, `dateHistory`, activity), `notifications`, `markers`, `seed-check`. **Read-only by construction:** an `update()` of a random nonexistent doc must come back `PERMISSION_DENIED`, or it exits 3. **Driven against the emulator**, which caught two bugs. (1) The first probe id `__inspect_probe__` is RESERVED, so every credential got `INVALID_ARGUMENT` and the script could never have run live. (2) A private item counted as open for everyone. On a fixture with one deleted, one done and one private milestone it reports **39 of 42 counted open** and names all three. `tests/board-inspect.test.js` (31) holds the pure decisions; reverting the private rule or the probe id fails 5. **Agents:** `.claude/agents/board-tester.md` and `board-reviewer.md`, each told to run `board-inspect` when a screen needs a data explanation. **Assumption:** none existed in the repo; if Ammar has user-level agents of those names, they need the same line. | v207 | run.js 6,474 · board-inspect 31 · e2e rehearsal 14/14 + gate stop · emulator seed-check |
+| R-vis | `e39e5c1` | **From the review run that was killed (`wf_83e2d9b9-2d3`: it reached its find phase and verified nothing; its journal is the source).** Two of its three "major" findings were checked by hand against HEAD and **confirmed**. **(1) An edit could make an item private.** `tbItemPatch` recomputed visibility on EVERY patch from `tbLists`, which holds only the lists the editor can read. So a Board owner pinning, renaming or noting a one-person item in a shared list they are not a member of found no list, read it as private and wrote `visibility:'private'`: the item vanished for everyone else. Visibility is now recomputed only when the assignees or the list change, and an unseen list can make an item shared but never private. **(2) Private titles in bell rows.** The 08:00 reminder and the client's `_tbNotify` copied item titles and comment text into `hrm_notifications`, which **every signed-in account can read**. A private item's row now says only that there is one (`tbNotifMessageFor`; an item with no visibility field is treated as private). **Not fixed here, and raised below: the same is true of SHARED items**, whose titles and comment text reach every signed-in account through the bell's collection. Reverting each fix fails 4 assertions by name. The run's other 12 findings are **unverified**; they are listed below so they are not lost. | v208 | run.js 6,483 · smoke-board 192×3 |
+| main-merge | (this commit) | **`main` moved under the PR (`d7bc59e`, the login round: phone redesign, Remember me that actually keeps you signed in, the fingerprint app lock) and landed at `v208` — the SAME number as this branch, different bytes.** The merge was clean and `sw.js` was not in it at all: both sides had written the identical line, the dangerous collision CLAUDE.md records. Bumped past both to **`v209`** (and the `?v=` tags on the three merged/changed scripts). **One knock-on for the harness, fixed:** the login is a real `<form>` now and **Remember me is ticked by default**, so a QA sign-in would have kept its session, offered the QA password to the browser's password manager, and could have raised the fingerprint-lock offer card (z-index 600) over the pages the e2e screenshots. `tests/e2e/board.e2e.js` unticks it before submitting and **checks `groovy-keep-signed-in` is not `1`** afterwards. Rehearsed on the merged shell: **15/15**; with the untick removed the new check FAILS by name (`groovy-keep-signed-in is 1`). `startApp`'s QA branch and the login's `gv-login` class merged side by side; smoke-board 192×3, smoke-startapp 4/4, smoke-browser 8/8, the login layout fragment 6/6. | v209 | run.js 6,542 · smoke-board 192×3 · e2e rehearsal 15/15 + mutation |
 ---
 
 ## Rules / index deploys — batched
 
-**`firestore.rules` CHANGED (R-lock): republish the whole file.** The
-Board's lock rule (`tbLockOk()`). It carries every other outstanding rules
-change with it (Board phase 1, Store Accounts edit rights, Ammar in
-`isAcctSuper`, warehouse sales and handover), since the Console takes the
-whole file. Verified in the emulator before handing over: Board 39/39,
-wh_sales/acct 103/103.
+**OUTSTANDING (26 Sept 2026, evening): QA-A (`dc98484`) changed
+`firestore.rules`** — `isQa()`, `signedIn()` excluding it, `authed()`, and
+the QA fences on `board_lists`, `board_items` (+ comments, activity),
+`hrm_notifications`, `user_profiles` and `mood_boards` (+ presence,
+comments, trash). **Deploy it BEFORE anything signs in as
+`claude@groovy.op`:** until then the live `signedIn()` includes that
+account, i.e. it can read and write most of the app. No index change.
+`firebase deploy --only firestore:rules` from the branch head (or `main`
+once merged). Everything below was already deployed.
 
-One index:
+**DEPLOYED 26 Sept 2026 — nothing in this list was outstanding then.** Afnan
+ran `firebase deploy --only firestore:indexes` then `firebase deploy --only
+firestore:rules` from `main` at `f18536c` (the PR #88 merge), `firebase use`
+→ `groovy-gatepass`, rules file `md5 95273f84be02ebf8f0a54bae9f814dae`.
+The CLI answered "deployed indexes in firestore.indexes.json successfully
+for (default) database" and "released rules firestore.rules to
+cloud.firestore", with no prompt to delete an index and no `--force`. All
+13 composite indexes reported Enabled, none in Error; the new ones, as
+Afnan listed them: `hrm_notifications` (forUser, source, createdAt desc)
+for the P2.3 inbox, `board_lists` (kind, memberUids array-contains) and
+five on `board_items`. The rules file carried the R-lock `tbLockOk()`
+and every other outstanding change (Board phase 1, Store Accounts edit
+rights, Ammar in `isAcctSuper`, warehouse sales and handover).
 
-1. **`hrm_notifications`: `forUser` ASC, `source` ASC, `createdAt` DESC**
-   (P2.3, the Board inbox's narrowed query). It is in
-   `firestore.indexes.json`, so `firebase deploy --only firestore:indexes`
-   creates it; or Firebase Console → Firestore → Indexes → Composite → Add
-   with those three fields. **Nothing breaks before it exists**: until then
-   the inbox is refused with *failed-precondition* and falls back to the
-   old query, which is only slower. Once it is built (a few minutes), each
-   Board user's inbox reads at most 200 of their own Board rows instead of
-   every notification ever addressed to them.
+What that removes: the P2.3 inbox no longer needs its fallback, so each
+Board user's inbox reads at most 200 of their own Board rows. The lock
+holes found by the emulator are closed on the live project.
 
 ## → NEEDS YOU
+
+- **A decision (Afnan's track, since it is the HRM bell): Board text in a
+  collection everyone reads.** `hrm_notifications` is `read: if
+  signedIn()`, and the bell (`js/hrm.js`) reads the WHOLE collection and
+  filters by user in the browser. The Board writes its notifications there
+  (a phase-1 decision, to inherit the bell), so every signed-in account
+  (workers, the store, fulfilment) can read every Board notification:
+  shared item titles, comment excerpts, handover notes. R-vis stopped it
+  for PRIVATE items only. **Proposed fix:** the rule becomes "your own
+  rows", `resource.data.forUser + '@groovy.op' == userEmail()` (every
+  account is `username@groovy.op`), plus whatever role-addressed HRM rows
+  need. The bell then queries `where('forUser','==',u)` instead of the
+  whole collection, since the rules are not a query filter and the current
+  unfiltered read would be refused. That changes `js/hrm.js` and the rules
+  for every notification in the app, so it is **proposed, not made**.
+
+- **Twelve unverified findings from the killed run**, recorded so they are
+  not lost. None has been verified; each needs checking before any fix.
+  - `afa7056` tests: "a malformed date is left alone" passes with the
+    format check removed; the run-level test cannot see `runReminder`'s own
+    owner fallback.
+  - `0e6f33e`: overdue reminders pile up (a new row per overdue day,
+    per person, never superseded); Escape on a marker's date picker also
+    closes Settings and drops unsaved markers; only the UI stops a
+    non-owner assignee writing `pinned:true` (no rules check).
+  - `e194b03` tests: the Settings layout fragment never hit-tests its
+    controls; where the markers are saved is never asserted (the stub drops
+    the ref); "a row can be removed" checks only the count; only one of four
+    member guards is tested.
+  - `e194b03`/`e91c819`: after falling back to the wide inbox query,
+    `_tbNotifSeeded` can stay true and toast old unread rows as new (moot
+    while the index is deployed); the `!_tbInboxWide` guard is untested.
+  - `e91c819`: a board seeded BEFORE the seed record existed is adopted
+    from what is on it, so a milestone deleted before the first record is
+    recreated by the next Run seed. **`board-inspect seed-check` shows
+    whether the live record exists**; run it before pressing Run seed again.
+
+- **QA identity — Ammar's side (the console and his shell).** Recorded
+  as sent. **Do not run the harness until QA-A's rules are deployed**
+  (above). The password, the URL and any credential stay in Ammar's
+  shell: nothing under the repo, in this log or in a commit message.
+  1. Create `~/.groovy-qa.env` with exactly these lines:
+     ```
+     export GROOVY_QA_URL="https://groovyoperations.netlify.app"
+     export GROOVY_QA_EMAIL="claude@groovy.op"
+     export GROOVY_QA_PASSWORD="<the password Ammar set>"
+     export GOOGLE_CLOUD_PROJECT="groovy-gatepass"
+     ```
+     Service account JSON keys are blocked by org policy — ADC instead; no
+     `GROOVY_FIRESTORE_RO_KEY` line.
+  2. `chmod 600 ~/.groovy-qa.env`
+  3. Add `source ~/.groovy-qa.env` to `~/.zshrc` if it isn't there.
+  4. `source ~/.groovy-qa.env` in the current shell.
+  5. `echo $GROOVY_QA_EMAIL` — should print `claude@groovy.op`.
+  6. `gcloud version` — if not found, `brew install google-cloud-sdk`.
+  7. `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/datastore`
+     (browser; the Google account that owns the Firebase project).
+  8. `ls -la ~/.config/gcloud/application_default_credentials.json`.
+
+  **Then (Part C, once the rules are deployed and step 8 lands):**
+  `node scripts/board-inspect.js seed-check` answers 39 vs 42 with titles;
+  `node scripts/board-inspect.js item tb_edits_samad-onboarding-meeting-brief-grade-references`
+  gives the Samad date and its `dateHistory`; `node tests/e2e/board.e2e.js`
+  runs the harness (point `GROOVY_QA_URL` at
+  `https://deploy-preview-90--groovyoperations.netlify.app` — the URL from
+  Netlify's own comment on the PR — until this branch is on `main`, since
+  production does not know the `claude` username yet). Paste the outputs
+  back; screenshots stay on the Mac.
+
+  **Two things to decide before step 7 (Claude's review, not in the
+  steps as sent):** (a) ADC from the project owner's own account is an
+  OWNER credential, read AND write — the `datastore` scope does not make
+  it read-only. The brief has `scripts/board-inspect.js` refuse any key
+  that can write (a no-op write probe); with this ADC the probe will
+  refuse, correctly. The fix that keeps "no JSON keys": a service account
+  with only `roles/datastore.viewer`, Ammar granted
+  `roles/iam.serviceAccountTokenCreator` on it, and step 7 run with
+  `--impersonate-service-account=<that account>`. Whether the org policy
+  allows impersonation is not known from here. (b) Steps 1–8 run on
+  Ammar's Mac; a session in the cloud cannot run them, and the harness
+  (`tests/e2e/board.e2e.js`) cannot reach `*.netlify.app` or `gstatic`
+  from the sandbox, so it runs on Ammar's machine.
 
 - **P2.1 — nothing to press; one thing to look at.** The 08:00 PKT reminder
   runs by itself on the published production deploy (it uses the same

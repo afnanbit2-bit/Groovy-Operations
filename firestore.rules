@@ -14,7 +14,27 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() { return request.auth != null; }
+    // THE QA IDENTITY (26 Sept 2026). claude@groovy.op is not a person: it
+    // is the account Claude Code's test harness signs in as, so subagents
+    // can drive the real platform. It is contained HERE, not in the app:
+    //   · signedIn() EXCLUDES it, so every collection this file opens to
+    //     "any signed-in user" -- POs, gate passes, HRM, the store, bug
+    //     reports, notes -- stays shut to it without a clause each.
+    //   · authed() is "anyone signed in, QA included", used only where the
+    //     Board and Mood Boards need QA to READ: user_profiles, mood_boards
+    //     and the Board's own collections (through isBoardUser()).
+    //   · Every WRITE it makes is fenced: board_lists it admins alone
+    //     (memberUids == [its uid], qa: true, immutable), board_items in
+    //     those lists, assigned to nobody but itself; comments and activity
+    //     only on items it owns; hrm_notifications only for itself; Mood
+    //     Boards only its own PRIVATE boards, shared with nobody.
+    // Mirror: USER_DEFS / BOARD_USERS / QA_ROLE in js/auth.js;
+    // tests/rules-emulator-board.js runs every fence in the emulator.
+    function isQa() {
+      return request.auth != null && request.auth.token.get('email', '') == 'claude@groovy.op';
+    }
+    function signedIn() { return request.auth != null && !isQa(); }
+    function authed() { return request.auth != null; }
     function userEmail() { return request.auth.token.email; }
     function isOwner() {
       return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op'];
@@ -43,9 +63,11 @@ service cloud.firestore {
     // ever disagree. isBoardOwner() is NOT the app's `owner` role -- it is
     // who may override a lock, manage access and run the seed. Same two
     // people today, kept separate so that stays a decision.
+    // authed(), not signedIn(): the QA harness is a Board MEMBER (never an
+    // owner), and every write below fences it separately.
     function isBoardUser() {
-      return signedIn() && userEmail() in
-        ['ammar@groovy.op','afnan@groovy.op','daniyal@groovy.op','mustafa@groovy.op','saim@groovy.op'];
+      return authed() && userEmail() in
+        ['ammar@groovy.op','afnan@groovy.op','daniyal@groovy.op','mustafa@groovy.op','saim@groovy.op','claude@groovy.op'];
     }
     function isBoardOwner() {
       return signedIn() && userEmail() in ['ammar@groovy.op','afnan@groovy.op'];
@@ -58,6 +80,23 @@ service cloud.firestore {
       return listId is string
         && exists(/databases/$(database)/documents/board_lists/$(listId))
         && get(/databases/$(database)/documents/board_lists/$(listId)).data.adminUid == request.auth.uid;
+    }
+    // QA fences. A QA list is one the harness admins ALONE and that carries
+    // qa: true; a QA item lives in one. `qa` is set at create and never
+    // changes, and nobody but QA may set it -- so a real list can never be
+    // hidden from the people on it.
+    function tbQaList(listId) {
+      return listId is string
+        && exists(/databases/$(database)/documents/board_lists/$(listId))
+        && get(/databases/$(database)/documents/board_lists/$(listId)).data.adminUid == request.auth.uid
+        && get(/databases/$(database)/documents/board_lists/$(listId)).data.get('qa', false) == true;
+    }
+    function tbQaSame(d, r) { return d.get('qa', false) == r.get('qa', false); }
+    // Does the caller own this item? QA's comments and activity rows go
+    // only on items it owns.
+    function tbOwnsItem(itemId) {
+      return exists(/databases/$(database)/documents/board_items/$(itemId))
+        && get(/databases/$(database)/documents/board_items/$(itemId)).data.ownerUid == request.auth.uid;
     }
     // Can the caller read the parent item? A comment or an activity row on
     // a private item must be no more readable than the item itself -- the
@@ -442,9 +481,17 @@ service cloud.firestore {
     // Notifications: any signed-in user reads (so workers see their
     // own and dismiss them). Writes any signed-in (notifications are
     // produced by many flows; integrity is enforced by the app).
+    // THE QA HARNESS reads and writes only rows addressed to itself --
+    // `forUser` holds a USERNAME, and its username is `claude` -- so
+    // nothing it does can ever reach a real person's bell. The bell's own
+    // unfiltered read is refused it (and caught); the Board's inbox asks
+    // with where('forUser','==',…), which this clause proves.
     match /hrm_notifications/{doc} {
-      allow read:  if signedIn();
-      allow write: if signedIn();
+      allow read:   if signedIn() || (isQa() && resource.data.get('forUser', '') == 'claude');
+      allow create: if signedIn() || (isQa() && request.resource.data.get('forUser', '') == 'claude');
+      allow update: if signedIn() || (isQa() && resource.data.get('forUser', '') == 'claude'
+                                     && request.resource.data.get('forUser', '') == 'claude');
+      allow delete: if signedIn();
     }
 
     // ── Bug Tracker ──
@@ -498,11 +545,14 @@ service cloud.firestore {
     //
     // Owners keep delete for moderation, matching the fabricin/loans
     // pattern elsewhere in this file. See js/profile.js.
+    // authed(): the QA harness reads the directory (the Board resolves
+    // every avatar and name from it) and keeps its OWN row -- the admin
+    // half below is owners/Mustafa only, and signedIn() excludes QA.
     match /user_profiles/{uid} {
-      allow read:   if signedIn();
-      allow create: if signedIn() && uid == request.auth.uid
+      allow read:   if authed();
+      allow create: if authed() && uid == request.auth.uid
                     && request.resource.data.uid == request.auth.uid;
-      allow update: if signedIn()
+      allow update: if authed()
                     && request.resource.data.uid == uid
                     && (
                       uid == request.auth.uid
@@ -539,14 +589,24 @@ service cloud.firestore {
     // every query is provably safe without a composite index.
     function boardShared(b)  { return 'sharedWith' in b && userEmail() in b.sharedWith; }
     function canReadBoard(b) { return b.visibility=='shared' || b.ownerUid==request.auth.uid || boardShared(b); }
+    // THE QA HARNESS reads what any member reads (TEAM boards, its own)
+    // and writes ONLY its own PRIVATE boards, shared with nobody: a board
+    // it shared would land in a real person's gallery.
+    function qaBoardOk(b) {
+      return b.visibility == 'personal' && b.ownerUid == request.auth.uid
+        && b.get('sharedWith', []).size() == 0;
+    }
     match /mood_boards/{doc} {
-      allow read:   if signedIn() && canReadBoard(resource.data);
-      allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
-      allow update: if signedIn() && (resource.data.visibility=='shared'
+      allow read:   if authed() && canReadBoard(resource.data);
+      allow create: if (signedIn() && request.resource.data.ownerUid==request.auth.uid)
+                    || (isQa() && qaBoardOk(request.resource.data));
+      allow update: if (signedIn() && (resource.data.visibility=='shared'
                                       || resource.data.ownerUid==request.auth.uid
                                       || boardShared(resource.data)
-                                      || isOwner());
-      allow delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
+                                      || isOwner()))
+                    || (isQa() && qaBoardOk(resource.data) && qaBoardOk(request.resource.data));
+      allow delete: if (signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner()))
+                    || (isQa() && qaBoardOk(resource.data));
 
       // ── Sub-collections (Stage 6) ──
       // Each one checks the PARENT board with a get() rather than a bare
@@ -557,12 +617,17 @@ service cloud.firestore {
       function parentBoard() {
         return get(/databases/$(database)/documents/mood_boards/$(doc)).data;
       }
-      function canSeeParent() { return signedIn() && canReadBoard(parentBoard()); }
+      function canSeeParent() { return authed() && canReadBoard(parentBoard()); }
+      // QA edits only its own private boards, so it writes sub-collections
+      // only there -- including presence: a harness "looking at" a real
+      // TEAM board would show up on a real person's screen.
+      function qaOwnsParent() { return isQa() && qaBoardOk(parentBoard()); }
       function canEditParent() {
-        return signedIn() && (parentBoard().visibility=='shared'
+        return (signedIn() && (parentBoard().visibility=='shared'
                               || parentBoard().ownerUid==request.auth.uid
                               || boardShared(parentBoard())
-                              || isOwner());
+                              || isOwner()))
+               || qaOwnsParent();
       }
 
       // Who is looking at this board right now. One doc per viewer, keyed
@@ -571,7 +636,8 @@ service cloud.firestore {
       // deletes its row simply goes stale.
       match /presence/{uid} {
         allow read:  if canSeeParent();
-        allow write: if canSeeParent() && uid==request.auth.uid;
+        allow write: if uid==request.auth.uid
+                     && ((signedIn() && canSeeParent()) || qaOwnsParent());
       }
       // Comments. Anyone who can edit the board may post; the author (or
       // an app owner) may delete; resolve/reopen is open to any editor,
@@ -580,7 +646,8 @@ service cloud.firestore {
         allow read:   if canSeeParent();
         allow create: if canEditParent() && request.resource.data.byUid==request.auth.uid;
         allow update: if canEditParent();
-        allow delete: if signedIn() && (resource.data.byUid==request.auth.uid || isOwner());
+        allow delete: if (signedIn() && (resource.data.byUid==request.auth.uid || isOwner()))
+                      || (qaOwnsParent() && resource.data.byUid==request.auth.uid);
       }
       // The card trash. One document per deleted card, so two people
       // deleting at the same time cannot clobber each other's entry the
@@ -594,9 +661,10 @@ service cloud.firestore {
         allow read:   if canSeeParent();
         allow create: if canEditParent() && request.resource.data.byUid==request.auth.uid;
         allow update: if false;
-        allow delete: if signedIn() && (resource.data.byUid==request.auth.uid
+        allow delete: if (signedIn() && (resource.data.byUid==request.auth.uid
                                         || parentBoard().ownerUid==request.auth.uid
-                                        || isOwner());
+                                        || isOwner()))
+                      || qaOwnsParent();
       }
       // Per-board activity feed — append-only, like fabric_movements:
       // a record nobody can quietly rewrite, not even an owner.
@@ -929,9 +997,21 @@ service cloud.firestore {
         && ( (resource.data.kind == 'shared' && request.auth.uid in resource.data.memberUids)
              || request.auth.uid == resource.data.adminUid );
       allow create: if isBoardUser()
-        && request.resource.data.adminUid == request.auth.uid;
-      allow update, delete: if isBoardUser()
-        && (request.auth.uid == resource.data.adminUid || isBoardOwner());
+        && request.resource.data.adminUid == request.auth.uid
+        && ( isQa()
+             ? ( request.resource.data.get('qa', false) == true
+                 && request.resource.data.get('memberUids', []) == [request.auth.uid] )
+             : request.resource.data.get('qa', false) != true );
+      allow update: if isBoardUser()
+        && (request.auth.uid == resource.data.adminUid || isBoardOwner())
+        && tbQaSame(request.resource.data, resource.data)
+        && ( !isQa()
+             || ( resource.data.get('qa', false) == true
+                  && request.resource.data.adminUid == request.auth.uid
+                  && request.resource.data.get('memberUids', []) == [request.auth.uid] ) );
+      allow delete: if isBoardUser()
+        && (request.auth.uid == resource.data.adminUid || isBoardOwner())
+        && ( !isQa() || resource.data.get('qa', false) == true );
     }
 
     // board_items/{id}: the whole product. Query as: visibility=='shared',
@@ -944,7 +1024,12 @@ service cloud.firestore {
       // nobody is assigned to would never appear on any calendar.
       allow create: if isBoardUser()
         && request.resource.data.ownerUid == request.auth.uid
-        && request.auth.uid in request.resource.data.assigneeUids;
+        && request.auth.uid in request.resource.data.assigneeUids
+        && ( isQa()
+             ? ( request.resource.data.get('qa', false) == true
+                 && request.resource.data.assigneeUids == [request.auth.uid]
+                 && tbQaList(request.resource.data.get('listId', null)) )
+             : request.resource.data.get('qa', false) != true );
 
       // THE LOCK IS THE POINT OF THE WHOLE PRODUCT, and it is enforced
       // here rather than in the UI: on a locked item only the locker (or a
@@ -957,22 +1042,35 @@ service cloud.firestore {
              || request.auth.uid == resource.data.ownerUid
              || tbListAdmin(resource.data.get('listId', null))
              || isBoardOwner() )
-        && tbLockOk();
+        && tbLockOk()
+        && tbQaSame(request.resource.data, resource.data)
+        && ( !isQa()
+             || ( resource.data.ownerUid == request.auth.uid
+                  && resource.data.get('qa', false) == true
+                  && request.resource.data.ownerUid == request.auth.uid
+                  && request.resource.data.assigneeUids == [request.auth.uid]
+                  && tbQaList(request.resource.data.get('listId', null)) ) );
 
       allow delete: if isBoardUser()
         && (request.auth.uid == resource.data.ownerUid || isBoardOwner())
         && ( resource.data.get('locked', false) != true
              || request.auth.uid == resource.data.get('lockedBy', '')
-             || isBoardOwner() );
+             || isBoardOwner() )
+        && ( !isQa()
+             || ( resource.data.get('qa', false) == true
+                  && tbQaList(resource.data.get('listId', null)) ) );
 
       // Comments: readable exactly as far as the item is. Editing and
       // deleting are your own only; a Board owner may delete one for
       // moderation, matching the fabricin/loans pattern elsewhere here.
       match /comments/{c} {
         allow read:   if isBoardUser() && tbCanReadItem(id);
-        allow create: if isBoardUser() && request.resource.data.authorUid == request.auth.uid;
-        allow update: if isBoardUser() && resource.data.authorUid == request.auth.uid;
-        allow delete: if isBoardUser() && (resource.data.authorUid == request.auth.uid || isBoardOwner());
+        allow create: if isBoardUser() && request.resource.data.authorUid == request.auth.uid
+                      && ( !isQa() || tbOwnsItem(id) );
+        allow update: if isBoardUser() && resource.data.authorUid == request.auth.uid
+                      && ( !isQa() || tbOwnsItem(id) );
+        allow delete: if isBoardUser() && (resource.data.authorUid == request.auth.uid || isBoardOwner())
+                      && ( !isQa() || tbOwnsItem(id) );
       }
 
       // Activity is APPEND-ONLY -- the same principle as fabric_movements
@@ -981,7 +1079,8 @@ service cloud.firestore {
       // inconveniences.
       match /activity/{a} {
         allow read:   if isBoardUser() && tbCanReadItem(id);
-        allow create: if isBoardUser() && request.resource.data.byUid == request.auth.uid;
+        allow create: if isBoardUser() && request.resource.data.byUid == request.auth.uid
+                      && ( !isQa() || tbOwnsItem(id) );
         allow update, delete: if false;
       }
     }
