@@ -9270,6 +9270,20 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   fingerprint key on this phone signs straight in; any other fills the
   username and focuses the password. "All saved passwords" still opens
   Chrome's list; with nobody on the list the key goes straight there.
+- **"Saving…" only for a save somebody made (27 Sept).** Afnan: it said
+  Saving as soon as the app opened. Every Firestore write goes through the
+  `__bootApp` wrap, and a write slower than 260ms raised the blocking
+  overlay — including the app's OWN start-up writes (sign-in log, profile
+  row, The Board's `boardLastSeenAt`). `_gvWriteStart` (js/shared.js, a
+  cross-track file — one rule added) now also treats a write as ambient,
+  i.e. silent, when (a) `Date.now() < _gvQuietUntil` — `startApp` opens an
+  8s window with `window._gvQuietFor(8000)` — or (b) nobody has tapped or
+  typed in the last 5s (`_gvLastInput`, capture-phase `pointerdown` and
+  **`keyup`** — not keydown, because The Board's test counts the document's
+  keydown listeners). A save after a tap still says Saving…. The handover:
+  the login fades out (`_loginLeave`) and `#scr-app` fades up
+  (`.gv-enter`, 420ms); The Board's first paint is a shimmer skeleton
+  (`_tbSkeleton`, reusing `.gv-skel`) instead of the word "loading…".
 - **Swipe down closes a login sheet (27 Sept)** — Afnan: "down to close
   does not work"; it had never been built. `_loginSheetDrag` on both sheets:
   the card follows the finger 1:1, the backdrop fades with it, release closes

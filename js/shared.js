@@ -600,11 +600,23 @@ window.gvSkeleton=gvSkeleton;window.gvBtnBusy=gvBtnBusy;window.gvBtnDone=gvBtnDo
 // just its own write calls with _gvSilentSaveStart()/_gvSilentSaveStop() —
 // never globally for a whole page visit — so writes elsewhere still get
 // the normal blocking "Saving…" feedback.
-let _gvWr=0,_gvWrTimer=null,_gvWrShown=false,_gvSilentSaveCount=0;
+//
+// "Saving…" means YOU saved something (Afnan, 27 Sept: it flashed up as the
+// app opened, before anyone had saved anything). The app writes on its own
+// when it starts — the sign-in log, the profile row, The Board's last-seen
+// time — and a slow one of those raised the blocking overlay. So a write is
+// ALSO silent when (a) it happens in the first seconds after the app opens
+// (_gvQuietUntil, set by startApp via window._gvQuietFor), or (b) nobody has
+// tapped or typed in the last 5s — a write nobody asked for is ambient.
+let _gvWr=0,_gvWrTimer=null,_gvWrShown=false,_gvSilentSaveCount=0,_gvQuietUntil=0,_gvLastInput=0;
+function _gvWriteAmbient(now){return now<_gvQuietUntil||now-_gvLastInput>5000;}
+window._gvQuietFor=function(ms){_gvQuietUntil=Math.max(_gvQuietUntil,Date.now()+(ms||0));};
+// keyup, not keydown: The Board counts the document's keydown listeners.
+try{['pointerdown','keyup'].forEach(t=>document.addEventListener(t,()=>{_gvLastInput=Date.now();},{capture:true,passive:true}));}catch(_){}
 function _gvWriteStart(){
   _gvWr++;
   if(_gvWr===1){clearTimeout(_gvWrTimer);_gvWrTimer=setTimeout(()=>{
-    const silent=(typeof _fabBusy!=='undefined'&&_fabBusy)||_gvSilentSaveCount>0;
+    const silent=(typeof _fabBusy!=='undefined'&&_fabBusy)||_gvSilentSaveCount>0||_gvWriteAmbient(Date.now());
     if(_gvWr>0&&!silent){_gvWrShown=true;showLoader('Saving…');}
   },260);}
 }

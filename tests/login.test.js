@@ -436,6 +436,28 @@ module.exports=async function(){
     s.ok('a touch on a sheet never reaches the pull-to-refresh underneath',/e\.target\.closest\('\.login-sheet'\)/.test(auth)&&(auth.match(/e\.stopPropagation\(\);/g)||[]).length>=2);
   }
 
+  // ── "Saving…" only for a save somebody made ─────────────────────────
+  {
+    const app=loadApp({files:['js/shared.js']});
+    const wait=ms=>new Promise(r=>setTimeout(r,ms));
+    const shown=()=>app.run('_gvBufCount')>0;
+    s.section('"Saving…" is for YOUR saves, not the app\'s own (27 Sept)');
+    app.run('_gvLastInput=0;_gvQuietUntil=0');
+    app.run('_gvWriteStart()');await wait(320);
+    s.eq('a slow write nobody asked for (no tap in 5s) stays silent',shown(),false);
+    app.run('_gvWriteStop()');
+    app.run('_gvLastInput=Date.now();window._gvQuietFor(8000)');
+    app.run('_gvWriteStart()');await wait(320);
+    s.eq('… and so does one in the seconds after the app opens, tap or not',shown(),false);
+    app.run('_gvWriteStop();_gvQuietUntil=0;_gvLastInput=Date.now()');
+    app.run('_gvWriteStart()');await wait(320);
+    s.eq('a slow write right after a tap still says Saving…',shown(),true);
+    app.run('_gvWriteStop()');
+    s.eq('… and clears when it lands',shown(),false);
+    const auth=require('fs').readFileSync(require('path').join(__dirname,'..','js','auth.js'),'utf8');
+    s.ok('startApp opens the quiet window and fades the app in',/window\._gvQuietFor\(8000\)/.test(auth)&&/classList\.add\('gv-enter'\)/.test(auth));
+  }
+
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────
   {
     const fs=require('fs'),path=require('path');

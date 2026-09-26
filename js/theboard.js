@@ -4157,6 +4157,16 @@ function _tbSettingsOverlay(){
     +'</div></div>';
 }
 
+// The loading state: shimmering rows shaped like the Dashboard's cards.
+function _tbSkeleton(){
+  const row=i=>'<div class="tb-skel-row"><div class="gv-skel tb-skel-dot"></div><div class="tb-skel-lines">'
+    +'<div class="gv-skel" style="height:12px;width:'+[62,48,70,54][i%4]+'%"></div>'
+    +'<div class="gv-skel" style="height:10px;width:'+[34,40,28,36][i%4]+'%;margin-top:8px"></div></div></div>';
+  const card=n=>'<div class="tb-skel-card">'+Array.from({length:n},(_,i)=>row(i)).join('')+'</div>';
+  return '<div class="tb-skel" aria-busy="true" aria-label="Loading">'
+    +'<div class="gv-skel" style="height:22px;width:42%;margin:4px 0 18px"></div>'
+    +card(4)+card(2)+'</div>';
+}
 // ── boardLastSeenAt (spec §5) ─────────────────────────────────────────
 /** Throttled to once every ten minutes, so opening the Dashboard five
  *  times in a row is one write. Pure. */
@@ -4530,7 +4540,9 @@ function tbRenderPage(id){
   // link, a reload) without the wrap having fired.
   tbWatchNotifs();
   if(!tbLoaded){
-    m.innerHTML=_tbShell(_tbPage,'<div class="tb-empty"><div class="tb-empty-h">loading…</div></div>');
+    // A skeleton in the shape of what is coming, not the word "loading…"
+    // (Afnan, 27 Sept: the first thing after signing in was bare text).
+    m.innerHTML=_tbShell(_tbPage,_tbSkeleton());
     // The loader CANNOT reject (see loadTbData), so this needs no .catch
     // to avoid the stuck-skeleton failure -- but the repaint is guarded
     // anyway, since the person may have navigated away meanwhile.
