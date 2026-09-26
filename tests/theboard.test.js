@@ -1454,6 +1454,44 @@ module.exports=async function(){
     s.ok('the sidebar falls back to The Board',/\|\|'The Board'; \}/.test(sh));
   }
 
+  // ══ SESSION 2 — P0.7: THE BOARD IS HOME ════════════════════════════
+  s.section('The Board is the landing page, and first in the phone More sheet');
+  {
+    const land=async sess=>{
+      const a=loadApp({files:NAV_FILES,currentPage:'',globals:{loadData:()=>{},loadStoreData:()=>{},
+        loadStoreNotifications:()=>{},profileBootstrap:()=>{},mktBootstrap:()=>{},
+        sessionStorage:{getItem:()=>null,setItem(){},removeItem(){},clear(){}}}});
+      a.run('session='+J(sess));
+      a.run('globalThis.__landed=[];showPage=function(id){__landed.push(id);}');
+      await a.run('startApp()');
+      return a.run('__landed.join()');
+    };
+    const MUST={uid:'u-must',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op',canPO:true,canFabric:true};
+    const AFNAN={uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op',canPO:true,canFabric:true};
+    const ARFAT={uid:'u-arfat',u:'arfat',name:'Arfat',role:'manager',email:'arfat@groovy.op',canPO:true,canFabric:true};
+    s.eq('Ammar lands on The Board',await land(AMMAR),'tb-dash');
+    s.eq('Afnan lands on The Board',await land(AFNAN),'tb-dash');
+    s.eq('Mustafa lands on The Board',await land(MUST),'tb-dash');
+    s.eq('Daniyal lands on The Board',await land(DANIYAL),'tb-dash');
+    s.eq('Saim lands on The Board',await land(SAIM),'tb-dash');
+    // Nobody else moves: the gate is the Board list, not a role.
+    s.eq('Arfat (a manager, not on The Board) lands where he always did',await land(ARFAT),'dashboard');
+    s.eq('a worker lands on My Work',await land(HARIS),'my-work');
+
+    const sheet=(sess,fn)=>{
+      const a=loadApp({files:NAV_FILES,currentPage:'dashboard'});
+      a.run('session='+J(sess));
+      a.run('globalThis.__sheet=null;window.openMobSheet=function(t,items){__sheet=items;}');
+      a.run('window.'+fn+'()');
+      return a.run('(__sheet||[]).map(i=>i.label)[0]');
+    };
+    s.eq('Ammar’s More sheet opens with The Board',sheet(AMMAR,'openMoreSheet'),'The Board');
+    s.eq('Afnan’s too',sheet(AFNAN,'openMoreSheet'),'The Board');
+    s.eq('Mustafa’s too',sheet(MUST,'openMoreSheet'),'The Board');
+    s.eq('Daniyal’s More sheet opens with The Board',sheet(DANIYAL,'openMktMoreSheet'),'The Board');
+    s.ok('Arfat’s does not carry it',sheet(ARFAT,'openMoreSheet')!=='The Board');
+  }
+
   s.section('the calendar prefs are cleaned on load');
   {
     const a=loadApp({files:FILES});

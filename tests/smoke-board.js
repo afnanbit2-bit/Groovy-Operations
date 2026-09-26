@@ -229,6 +229,7 @@ function DRIVE(){
       session=window.__SESSION;
       window.startApp();
       await wait(400);
+      L(currentPage==='tb-dash','a Board user lands on The Board ('+currentPage+')');
 
       // ── every page ──
       var pages=['tb-dash','tb-calendar','tb-lists','tb-inbox'];
