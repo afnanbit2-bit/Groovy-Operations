@@ -642,6 +642,47 @@ const FRAGMENTS={
     // carrying the voided entry in its history
     return Promise.resolve(page+form+opened('SO0335')+opened('SO0310')+opened('SO0340'));
   },
+  // The warehouse → Raees handover (26 Sept 2026). Both ends, on the phone
+  // widths too — Raees confirms at the store and Umair collects at the
+  // warehouse: Raees's alert strip and the "From the warehouse" queue (a day
+  // with cash AND an MCB transfer, a collected pay-later bill with the
+  // longest customer name the list produces, and a payment received whose
+  // sale was voided afterwards), then Umair's list carrying the new badges,
+  // a collected sale opened, and the Mark collected form.
+  'store accounts — from the warehouse (both ends)':()=>{
+    const LS={getItem:()=>null,setItem(){},removeItem(){}};
+    const pad=n=>String(n).padStart(2,'0');
+    const day=n=>{const d=new Date();d.setDate(d.getDate()-n);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+    const bill='https://res.cloudinary.com/deww4lpym/image/upload/v1/so0351.jpg';
+    const L=(t,v,sku,q,p)=>({title:t,variant:v,sku,code:sku.split('-')[0],qty:q,price:p,total:q*p,catalogPrice:p});
+    const S=(id,o)=>Object.assign({_id:id,orderNo:id,date:day(0),customerName:'Walk-in',customerPhone:'03001112222',lines:[L('EFFORTLESS TEE | DEEP BLUE','Mint Green / M','GP092-M',1,3490)],qtyTotal:1,subtotal:3490,discount:0,discountPct:0,total:3490,terms:'paid',paidVia:'cash',dueDate:null,status:'active',needsReview:false,reviewFlags:[],billUrl:bill,billKind:'image',createdAt:1,createdByU:'umair',createdByName:'Umair'},o||{});
+    const sales=[
+      S('SO0351',{customerName:'Saad Hussain'}),
+      S('SO0352',{customerName:'Ayesha Khan',paidVia:'bank',total:10773,subtotal:10773}),
+      S('SO0321',{date:day(12),customerName:'Muhammad Abdullah Siddiqui, for the Karachi Streetwear Collective pop-up at Dolmen Mall Clifton',terms:'later',paidVia:null,dueDate:day(3),total:21940,subtotal:21940,qtyTotal:6,collectedAt:Date.now(),collectedVia:'bank',collectedDate:day(1),collectedBy:'umair',collectedByName:'Umair'}),
+      S('SO0334',{date:day(6),customerName:'Sheikh Bilal (Rare Project)',terms:'later',paidVia:null,dueDate:day(-7)}),
+      S('SO0340',{date:day(3),customerName:'Zainab',total:6980,subtotal:6980}),
+      S('SO0310',{date:day(9),customerName:'Bilal',status:'void',voidReason:'entered twice',voidedBy:'umair',voidedByName:'Umair',voidedAt:Date.now()})
+    ];
+    const conf=(id,sale,amt,acc,o)=>Object.assign({_id:id,type:'cash_in',src:'wh',whSale:sale+'#0',whOrder:sale,date:day(2),month:day(2).slice(0,7),ts:1,by:'raees',byName:'Raees',person:'',account:acc,amount:amt,source:'Warehouse sale',category:'Warehouse sale',ref:sale,note:'',status:'posted',lines:[],reviewFlags:[]},o||{});
+    const confs=[conf('whs_SO0340_0','SO0340',6980,'cash',{person:'Zainab'}),conf('whs_SO0310_0','SO0310',3490,'cash',{person:'Bilal'})];
+    const app=loadApp({files:['js/store.js','js/store-accounts.js','js/warehouse-sales.js','js/fulfillment.js'],currentPage:'acct-ledger',globals:{
+      allItems:[],allTransactions:[],allTemplates:[],allRequests:[],allActivePOs:[],allStoreCategories:[],allPoIssueRequests:[],allPoEditRequests:[],allPoShortfalls:[],
+      auth:{currentUser:{getIdToken:async()=>'tok'}},localStorage:LS}});
+    app.run("session={uid:'u-raees',u:'raees',name:'Raees',role:'store',email:'raees@groovy.op'}");
+    app.run(`whSales=${JSON.stringify(sales)};_whsSort();whSalesLoaded=true;whsConfirmations=${JSON.stringify(confs)};whsConfLoaded=true;acctEntries=${JSON.stringify(confs)};acctLoaded=true;1`);
+    app.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    const alerts=app.run('_acctAlerts(_acctOpenFloats())');
+    app.run('window.acctWarehouse()');
+    const modal=(title,b,foot)=>'<div class="acct-modal" style="position:static;max-width:720px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>'+title+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot">'+(foot||'')+'</div></div>';
+    const queue=modal('From the warehouse',app.run('window.__cap.b'),app.run('window.__cap.f'));
+    // Umair's end
+    app.run("session={uid:'u-umair',u:'umair',name:'Umair',role:'fulfillment',email:'umair@groovy.op'};currentPage='fulfillment';_fulfillSection='accounts';1");
+    const page=app.run('renderFulfillmentPage()');
+    const opened=id=>{app.run(`window.whsOpen('${id}')`);return app.bodyHtml('whs-modal').replace('class="acct-modal"','class="acct-modal" style="position:static;max-width:680px;margin-top:14px;max-height:none"');};
+    const collectForm=()=>{app.run("window.whsCollect('SO0334')");return app.bodyHtml('whs-modal').replace('class="acct-modal"','class="acct-modal" style="position:static;max-width:680px;margin-top:14px;max-height:none"');};
+    return Promise.resolve('<div>'+alerts+'</div>'+queue+page+opened('SO0321')+opened('SO0340')+collectForm());
+  },
   // Afnan's correction tools: the Admin tools card on the review page (the
   // whole page, which had never been measured), the admin edit modal and
   // the reset modal. The fixture's session is made afnan by name — the card

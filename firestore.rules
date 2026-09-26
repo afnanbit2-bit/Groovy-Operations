@@ -256,6 +256,12 @@ service cloud.firestore {
     // are usernames, and every account is <username>@groovy.op), because
     // those are what the ledger shows the owners. Delete is the Store
     // Accounts correction pair.
+    // Handover to Raees (26 Sept 2026): Store Accounts READS the sales —
+    // Raees confirms receiving the money the warehouse took, which writes a
+    // cash_in on his side; he never writes a sale. The one more update Umair
+    // makes is COLLECTING a live pay-later bill (or undoing that): exactly
+    // the five collection keys, bound to the signed-in email, cash or bank,
+    // on or after the sale date. The list mirrors _WHS_COLLECT_FIELDS.
     function whSaleValid(d, orderNo) {
       return d.orderNo == orderNo
         && d.status == 'active'
@@ -274,7 +280,7 @@ service cloud.firestore {
         && (d.terms == 'paid' || d.dueDate is string);
     }
     match /wh_sales/{orderNo} {
-      allow read: if isWhSales();
+      allow read: if isWhSales() || isStoreAccounts();
       allow create: if isWhSales()
         && orderNo.matches('^[A-Z0-9][A-Z0-9._-]{1,39}$')
         && whSaleValid(request.resource.data, orderNo);
@@ -289,7 +295,22 @@ service cloud.firestore {
           && resource.data.status == 'void'
           && whSaleValid(request.resource.data, orderNo)
           && request.resource.data.priorVoids is list
-          && request.resource.data.priorVoids.size() == resource.data.get('priorVoids', []).size() + 1);
+          && request.resource.data.priorVoids.size() == resource.data.get('priorVoids', []).size() + 1)
+        || (isWhSales()
+          && resource.data.status == 'active' && request.resource.data.status == 'active'
+          && resource.data.terms == 'later'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collectedAt','collectedBy','collectedByName','collectedVia','collectedDate'])
+          && ((request.resource.data.get('collectedAt', null) is number
+               && request.resource.data.collectedVia in ['cash','bank']
+               && request.resource.data.collectedDate is string
+               && request.resource.data.collectedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+               && request.resource.data.collectedDate >= resource.data.date
+               && request.resource.data.collectedBy is string
+               && request.resource.data.collectedBy + '@groovy.op' == userEmail())
+              || (request.resource.data.get('collectedAt', null) == null
+                  && request.resource.data.get('collectedBy', null) == null
+                  && request.resource.data.get('collectedVia', null) == null
+                  && request.resource.data.get('collectedDate', null) == null)));
       allow delete: if isAcctSuper();
     }
     // Legacy Store Cash Ledger — read-only history. Kept so the owner-only

@@ -120,6 +120,23 @@ async function t(name,fn){
   await t('Umair cannot delete',async()=>{await reset();const r=build({},UMAIR);await seed(r.id,r.data);await assertFails(deleteDoc(doc(as(UMAIR),'wh_sales',r.id)));});
   await t('Ammar can delete',async()=>{await reset();const r=build({},UMAIR);await seed(r.id,r.data);await assertSucceeds(deleteDoc(doc(as(AMMAR),'wh_sales',r.id)));});
 
+  const expect=(cond,msg)=>{if(!cond)throw new Error(msg);};
+  console.log('handover (26 Sept 2026): Raees reads; Umair collects a pay-later bill');
+  const RAE={uid:'u-raees',email:'raees@groovy.op',u:'raees',name:'Raees'};
+  const later=()=>build({terms:'later',paidVia:'',dueDate:'2026-10-01',date:'2026-09-20'},UMAIR);
+  const collect=(r,f,w)=>JSON.parse(app.run('JSON.stringify(whsCollectPatch('+JSON.stringify(Object.assign({_id:r.id},r.data))+','+JSON.stringify(f)+','+JSON.stringify({today:'2026-09-25',u:(w||UMAIR).u,name:(w||UMAIR).name,now:1790000300000})+'))'));
+  await t('Raees reads a sale (Store Accounts needs to see what is waiting)',async()=>{await reset();const r=build({},UMAIR);await seed(r.id,r.data);await assertSucceeds(getDoc(doc(as(RAE),'wh_sales',r.id)));});
+  await t('Raees cannot record, void or change a sale',async()=>{await reset();const r=build({},UMAIR);await assertFails(setDoc(doc(as(RAE),'wh_sales',r.id),r.data));await seed(r.id,r.data);await assertFails(updateDoc(doc(as(RAE),'wh_sales',r.id),voidPatch(RAE)));await assertFails(updateDoc(doc(as(RAE),'wh_sales',r.id),{note:'x'}));});
+  await t('Umair marks a pay-later bill collected (the app\'s own patch)',async()=>{await reset();const r=later();await seed(r.id,r.data);const p=collect(r,{via:'bank',date:'2026-09-24'});expect(p.patch,'refused by the app: '+p.error);await assertSucceeds(updateDoc(doc(as(UMAIR),'wh_sales',r.id),p.patch));});
+  await t('… not in Afnan\'s name',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),collect(r,{via:'cash',date:'2026-09-24'},AFNAN).patch));});
+  await t('… not on a PAID sale',async()=>{await reset();const r=build({},UMAIR);await seed(r.id,r.data);const p=collect(later(),{via:'cash',date:'2026-09-24'}).patch;await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),p));});
+  await t('… not on a void one',async()=>{await reset();const r=later();await seed(r.id,Object.assign({},r.data,voidPatch(UMAIR)));await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),collect(r,{via:'cash',date:'2026-09-24'}).patch));});
+  await t('… not dated before the sale',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),Object.assign(collect(r,{via:'cash',date:'2026-09-24'}).patch,{collectedDate:'2026-09-19'})));});
+  await t('… not by card (cash or bank only)',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),Object.assign(collect(r,{via:'cash',date:'2026-09-24'}).patch,{collectedVia:'card'})));});
+  await t('… and a collection may not touch the money',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),Object.assign(collect(r,{via:'cash',date:'2026-09-24'}).patch,{total:1})));});
+  await t('Umair undoes a collection',async()=>{await reset();const r=later();await seed(r.id,Object.assign({},r.data,collect(r,{via:'cash',date:'2026-09-24'}).patch));await assertSucceeds(updateDoc(doc(as(UMAIR),'wh_sales',r.id),{collectedAt:null,collectedBy:null,collectedByName:null,collectedVia:null,collectedDate:null}));});
+  await t('Raees cannot mark a bill collected',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(RAE),'wh_sales',r.id),collect(r,{via:'cash',date:'2026-09-24'},RAE).patch));});
+
   // ── Store Accounts: acct_entries (Sept 2026 — Raees can edit) ──
   // Here the WRITES are the app's own: js/store.js's REST helpers, aimed at
   // the emulator, driven by js/store-accounts.js's real edit / void / stock
@@ -155,7 +172,26 @@ async function t(name,fn){
   const allOf=async(col)=>{let v=[];await env.withSecurityRulesDisabled(async c=>{const q=await getDocs(collection(c.firestore(),col));v=q.docs.map(d=>Object.assign({_id:d.id},d.data()));});return v;};
   // the app's edit: form values → _acctSaveEdit, with a reason in the field
   const edit=async(a,id,changes,reason)=>{a.el('f-edit-reason').value=reason==null?'typed it wrong':reason;a.run(`_acctEditId=${JSON.stringify(id)}`);return a.run(`(async()=>{const o=_acctById(${JSON.stringify(id)});const n=Object.assign({},o,${JSON.stringify(changes)});const r=await _acctSaveEdit(o,n);_acctEditId=null;return !!r;})()`);};
-  const expect=(cond,msg)=>{if(!cond)throw new Error(msg);};
+
+  console.log('store accounts — Raees confirms a warehouse payment (the app\'s own create)');
+  const acctWh=(who)=>{const a=harness.loadApp({files:[path.relative(harness.ROOT,tmpStore),'js/store-accounts.js','js/warehouse-sales.js'],session:who,currentPage:'acct-ledger',
+      globals:{fetch:globalThis.fetch,auth:{currentUser:{getIdToken:async()=>tokenFor(who)}},localStorage:LS,allItems:[],allTransactions:[]}});
+    a.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');return a;};
+  const whSale=Object.assign({_id:'SO0351'},build({orderNo:'SO0351',customerName:'RAVI KUMAR'},UMAIR).data);
+  await t('Raees confirms: the cash in is created under the sale\'s id',async()=>{await reset();const a=acctWh(RAEES);
+    a.run(`whSales=[${JSON.stringify(whSale)}];whSalesLoaded=true;whsConfirmations=[];whsConfLoaded=true;1`);
+    const r=await a.run("_acctWhConfirmOne(_acctWhFind('SO0351#0'),_acctWhFind('SO0351#0').money.amount,'')");
+    expect(r&&r.row,'refused: '+JSON.stringify(r));
+    const d=await readAcct('acct_entries','whs_SO0351_0');expect(d&&d.type==='cash_in'&&d.src==='wh'&&d.whSale==='SO0351#0'&&d.amount===whSale.total&&d.account==='cash','stored '+JSON.stringify(d));});
+  await t('a second device confirming the same sale is refused by the server',async()=>{const a=acctWh(RAEES);
+    a.run(`whSales=[${JSON.stringify(whSale)}];whSalesLoaded=true;whsConfirmations=[];whsConfLoaded=true;1`);
+    const r=await a.run("_acctWhConfirmOne(_acctWhFind('SO0351#0'),1,'')");
+    expect(r&&r.error&&r.exists,'allowed a second create: '+JSON.stringify(r));
+    const d=await readAcct('acct_entries','whs_SO0351_0');expect(d.amount===whSale.total,'the first was overwritten');});
+  await t('Mustafa (a manager) cannot confirm',async()=>{await reset();const a=acctWh(MUS);
+    a.run(`whSales=[${JSON.stringify(whSale)}];whSalesLoaded=true;whsConfirmations=[];whsConfLoaded=true;1`);
+    const r=await a.run("_acctWhConfirmOne(_acctWhFind('SO0351#0'),10,'')");
+    expect(r&&r.error,'allowed');expect(!(await readAcct('acct_entries','whs_SO0351_0')),'written');});
 
   console.log('store accounts — Raees edits his own entry (the app\'s own REST writes)');
   await t('Raees corrects the amount of his own payment',async()=>{await reset();const e=ENT();await seedAcct('acct_entries','p1',e);

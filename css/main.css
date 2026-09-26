@@ -2773,6 +2773,21 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .acct-alert{font-size:13px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;line-height:1.4}
 .acct-alert.urgent{border-color:var(--accent-urgent);background:var(--accent-urgent-soft)}
 .acct-alert.warn{border-color:var(--accent-warning);background:var(--accent-warning-soft)}
+/* From the warehouse — Umair's payments waiting for Raees (26 Sept 2026).
+   A row is identity on the left and the amount + actions on the right; the
+   identity column carries min-width:0 so a long customer name wraps rather
+   than crushing the buttons (the Profile-directory rule). */
+.acct-wh-day{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--surface)}
+.acct-wh-dayhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;font-size:14px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.acct-wh-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px}
+.acct-wh-row:last-child{border-bottom:none}
+.acct-wh-main{flex:1;min-width:0;overflow-wrap:anywhere}
+.acct-wh-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+.acct-wh-amt{font-weight:700;font-variant-numeric:tabular-nums}
+.acct-wh-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.acct-wh-sub{font-size:13px;color:var(--muted)}
+.acct-wh-orphans{border:1px solid var(--accent-urgent);background:var(--accent-urgent-soft);border-radius:10px;padding:10px 12px;margin-top:10px}
+@media (max-width:600px){.acct-wh-row{flex-direction:column;align-items:stretch}.acct-wh-side{align-items:flex-start}.acct-wh-acts{justify-content:flex-start}}
 .acct-alert.info{color:var(--muted)}
 .acct-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface)}
 .acct-sel{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;min-width:0}

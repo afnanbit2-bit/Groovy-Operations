@@ -691,6 +691,14 @@ function _acctAlerts(floats){
   for(const r of Object.values(_acctRunnerOwed())){
     if(r.owed>0)items.push({k:'warn',t:`<b>${_acctEsc(r.name)}</b> is owed ${_acctPKR(r.owed)} — bills over the float, not yet settled`,go:`window.acctOpenRunner(${JSON.stringify(r.name).replace(/"/g,'&quot;')})`});
   }
+  const wh=_acctWh();
+  if(wh&&wh.ready){
+    if(wh.err)items.push({k:'urgent',t:`<b>Warehouse sales could not be read</b> (${_acctEsc(wh.err.col)}) — what Umair has handed over is not shown`,go:'window.acctWarehouse()'});
+    else{
+      if(wh.pending.length&&_acctCanEntry()){const t=_acctWhTotals(wh.pending);items.push({k:'warn',t:`<b>From the warehouse</b> — ${wh.pending.length} payment${wh.pending.length===1?'':'s'}, ${_acctPKR(t.all)}${t.cash&&t.mcb?` (cash ${_acctPKR(t.cash)} · MCB ${_acctPKR(t.mcb)})`:t.mcb?' in MCB':' in cash'} — <b>confirm you received ${wh.pending.length===1?'it':'them'}</b>`,go:'window.acctWarehouse()'});}
+      if(wh.orphans.length)items.push({k:'urgent',t:`<b>${wh.orphans.length} warehouse sale${wh.orphans.length===1?' was':'s were'} voided or un-collected after the money was received</b> — the money stays in the books; review ${wh.orphans.length===1?'it':'them'}`,go:'window.acctWarehouse()'});
+    }
+  }
   for(const e of acctEntries){
     if(e.status==='pending'&&_acctCanEntry())items.push({k:'warn',t:`Cash in of ${_acctPKR(e.amount)} (${e.via==='mcb'?'MCB transfer':'cash'}) recorded by ${_acctEsc(e.byName||e.by)} — <b>confirm you received it</b>`,go:`window.acctOpenEntry('${e._id}')`});
     if(e.stockPosted===false&&e.status!=='void')items.push({k:'urgent',t:`Purchase ${_acctDateLabel(e.date)} ${_acctEsc(_acctVendorName(e))} — <b>stock was not posted to inventory</b>${e.stockError?' ('+_acctEsc(e.stockError)+')':''}`,go:`window.acctOpenEntry('${e._id}')`});
@@ -1257,6 +1265,8 @@ function _acctReviewPage(){
     ${queue.length?`<div class="acct-table-wrap"><table class="acct-table"><thead><tr><th>Date</th><th>Particulars</th><th>Vendor / person</th><th class="num">Amount</th><th>Why</th><th>By</th><th></th></tr></thead><tbody>${queue.map(e=>`<tr onclick="window.acctOpenEntry('${e._id}')"><td class="date">${_acctDateLabel(e.date)}</td><td class="part">${_acctEsc(_acctParticulars(e))}</td><td>${_acctEsc(_acctVendorName(e)||e.person||'')}</td><td class="num">${_acctPKR(e.amount)}</td><td>${(e.reviewFlags||[]).map(f=>`<span class="acct-chip urgent">${_acctEsc(f)}</span>`).join(' ')}${(e.reviewFlags||[]).includes('edited')&&e.edits&&e.edits.length?`<div class="acct-hist-why">${_acctEsc(e.edits[e.edits.length-1].byName||'')}: “${_acctEsc(e.edits[e.edits.length-1].reason||'')}”</div>`:''}</td><td>${_acctEsc(e.byName||e.by)}</td><td class="flags"><button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="event.stopPropagation();window.acctReview('${e._id}')">Clear</button></td></tr>`).join('')}</tbody></table></div>`:`<div class="empty" style="padding:18px">Nothing waiting. Entries above the approval limit (${s.approvalLimit?_acctPKR(s.approvalLimit):'off'}) or without a receipt above ${_acctPKR(s.receiptRequiredAbove)} land here.</div>`}
   </div>`;
   if(pending.length)h+=`<div class="card"><div class="card-title">Cash in awaiting Raees's confirmation · ${pending.length}</div>${pending.map(e=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px"><span>${_acctDateLabel(e.date)} · ${_acctPKR(e.amount)} into ${_acctAccountLabel(e.account)} by ${_acctEsc(e.byName||e.by)}</span><button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="window.acctOpenEntry('${e._id}')">Open</button></div>`).join('')}</div>`;
+  const whq=_acctWh();
+  if(whq&&whq.ready&&!whq.err&&(whq.pending.length||whq.orphans.length)){const t=_acctWhTotals(whq.pending);h+=`<div class="card"><div class="card-title">From the warehouse</div><div style="font-size:14px;line-height:1.6">${whq.pending.length?`<b>${whq.pending.length}</b> payment${whq.pending.length===1?'':'s'} (${_acctPKR(t.all)}) not yet confirmed as received — they are not in the books, so check them before closing a month.`:''}${whq.orphans.length?`<div style="color:var(--accent-urgent)"><b>${whq.orphans.length}</b> received payment${whq.orphans.length===1?'':'s'} whose sale was voided or un-collected afterwards.</div>`:''}</div><button class="btn-outline" style="margin-top:8px" onclick="window.acctWarehouse()">Open</button></div>`;}
   h+=`<div class="card">
     <div class="card-title">Month close</div>
     ${lastClose?`<div style="font-size:13px;color:var(--muted);margin-bottom:10px">Last closed: <b>${_acctMonthLabel(lastClose.month)}</b> by ${_acctEsc(lastClose.closedByName||lastClose.closedBy||'')} · cash book ${_acctPKR(lastClose.cashBook)} / counted ${_acctPKR(lastClose.cashCounted)}${lastClose.variance?` · variance ${_acctPKR(lastClose.variance)}`:' · no variance'}</div>`:`<div style="font-size:13px;color:var(--muted);margin-bottom:10px">No month has been closed yet. Closing a month freezes it (no new entries, no voids) and stores a checkpoint so the ledger never has to replay from day one.</div>`}
@@ -1376,6 +1386,167 @@ window.acctReview=async function(id){
   try{await _acctFsMask('acct_entries',id,patch,Object.keys(patch));}
   catch(err){showToast('Not cleared: '+(err.message||err),true);return;}
   Object.assign(e,patch);showToast('Cleared ✓');_acctRerender();
+};
+
+/* ════════════════════ FROM THE WAREHOUSE (26 Sept 2026) ════════════════════ */
+// Umair's warehouse sales (js/warehouse-sales.js) that put money in hand —
+// paid at the counter, or a pay-later bill collected — wait here until Raees
+// (or an owner) confirms receiving it. The list is DERIVED from the sales and
+// the confirmations (whsHandovers), never copied, so a sale recorded before
+// this shipped is in it too. Confirming writes an ordinary cash_in: cash into
+// the drawer, a bank transfer into MCB, dated the day it was RECEIVED (a late
+// handover still lands in an open month). It is tagged src:'wh' + whSale (the
+// order number and version), which is what the warehouse side reads back.
+let _acctWhKick=false;
+function _acctWhOn(){return typeof whsHandovers==='function'&&typeof loadWhSales==='function'&&typeof whsLoadConfirmations==='function';}
+function _acctWh(){
+  if(!_acctWhOn()||!_acctCanView())return null;
+  if(!whSalesLoaded||!whsConfLoaded){
+    if(!_acctWhKick){_acctWhKick=true;Promise.all([loadWhSales(),whsLoadConfirmations()]).then(()=>{_acctWhKick=false;_acctRerender();_acctWhRepaint();});}
+    return{ready:false};
+  }
+  const le=typeof _whsLoadErr!=='undefined'?_whsLoadErr:null,ce=typeof _whsConfErr!=='undefined'?_whsConfErr:null;
+  const err=le?Object.assign({col:'wh_sales'},le):ce?Object.assign({col:'acct_entries'},ce):null;
+  return Object.assign({ready:true,err},whsHandovers(whSales,whsConfirmations));
+}
+function _acctWhTotals(list){const t={all:0,cash:0,mcb:0};for(const i of list||[]){t.all+=i.money.amount;t[i.money.account]+=i.money.amount;}return t;}
+// A confirmation's document id: the order and its version, so two devices
+// confirming the same sale cannot both land (the create is refused when the
+// id exists). A confirmation voided by mistake keeps its id, so a second one
+// takes the next suffix.
+function _acctWhId(key){
+  const base='whs_'+String(key).replace('#','_').replace(/[^A-Za-z0-9._-]/g,'');
+  const taken=new Set((typeof whsConfirmations!=='undefined'?whsConfirmations:[]).map(e=>e._id));
+  if(!taken.has(base))return base;
+  for(let n=2;n<100;n++)if(!taken.has(base+'_'+n))return base+'_'+n;
+  return base+'_'+Date.now();
+}
+/** The cash_in a confirmation writes. Pure — the caller writes it. */
+function _acctWhEntry(item,amount,reason){
+  const s=item.sale,m=item.money;
+  const e=Object.assign(_acctBase('cash_in'),{
+    account:m.account,via:m.account,amount:Math.round(amount),
+    person:String(s.customerName||''),ref:String(s.orderNo||s._id||''),category:'Warehouse sale',
+    note:(m.kind==='collected'?'Pay-later bill collected':'Warehouse sale')+' · sold '+_acctDateLabel(s.date)+(reason?' — '+String(reason).trim().slice(0,200):''),
+    photo:typeof whsBillUrl==='function'&&whsBillUrl(s.billUrl)?s.billUrl:null,
+    src:'wh',whSale:item.key,whOrder:String(s.orderNo||s._id||''),whSaleTotal:m.amount,whSaleDate:m.date,whKind:m.kind
+  });
+  const flags=_acctReviewFlags(e);
+  if(e.amount<m.amount)flags.push('short handover');
+  if(e.amount>m.amount)flags.push('more than the bill');
+  e.reviewFlags=flags;e.needsReview=flags.length>0;
+  return e;
+}
+// Create-only: refused when the id exists, which is the cross-device guard.
+async function _acctWhCreate(id,entry){
+  const tok=await getStoreToken();
+  const r=await fetch(`${_FS_BASE}/acct_entries/${encodeURIComponent(id)}?currentDocument.exists=false`,{method:'PATCH',headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},body:JSON.stringify({fields:toFsFields(entry)})});
+  if(!r.ok){const b=await r.json().catch(()=>({}));const err=new Error((b.error&&b.error.message)||('HTTP '+r.status));err.status=r.status;err.code=b.error&&b.error.status;throw err;}
+}
+let _acctWhBusy=false;
+async function _acctWhConfirmOne(item,amount,reason){
+  const today=_acctToday(),month=_acctMonthOf(today),cl=_acctLastClose();
+  if(_acctMonthClosed(month)||(cl&&month<=cl.month))return{error:_acctMonthLabel(month)+' is closed — reopen it before confirming.'};
+  const e=_acctWhEntry(item,amount,reason);
+  e.date=today;e.month=month;
+  const id=_acctWhId(item.key);
+  try{await _acctWhCreate(id,e);}
+  catch(err){return{error:err.message||String(err),exists:err.status===409||/exist/i.test(String(err.code)+' '+String(err.message))};}
+  const row=Object.assign({},e,{_id:id});
+  acctEntries.unshift(row);_acctSort(acctEntries);
+  whsConfirmations=whsConfirmations.concat([row]);
+  _acctLog('Warehouse payment received',`${e.whOrder} · ${e.person} · ${_acctPKR(e.amount)} into ${_acctAccountLabel(e.account)}${e.amount!==item.money.amount?' (bill '+_acctPKR(item.money.amount)+')':''}`);
+  return{row};
+}
+function _acctWhFind(key){const wh=_acctWh();return wh&&wh.ready?wh.items.find(i=>i.key===key)||null:null;}
+// Re-read the confirmations first: another device may have confirmed it.
+async function _acctWhFresh(){await whsLoadConfirmations(true);}
+window.acctWhConfirm=async function(key){
+  if(!_acctCanEntry()||_acctWhBusy)return;
+  _acctWhBusy=true;
+  try{
+    await _acctWhFresh();
+    const it=_acctWhFind(key);
+    if(!it){showToast('That sale is no longer waiting — it may have been voided.',true);return;}
+    if(it.confs.length){showToast(`${it.sale.orderNo||it.sale._id} was already confirmed by ${it.confs[0].byName||it.confs[0].by}.`,true);return;}
+    if(!confirm(`Confirm you received ${_acctPKR(it.money.amount)} ${it.money.account==='mcb'?'in MCB (bank transfer)':'in cash'} for ${it.sale.orderNo||it.sale._id} · ${it.sale.customerName}?`))return;
+    const r=await _acctWhConfirmOne(it,it.money.amount,'');
+    if(r.error){await _acctWhFresh();showToast(r.exists?'Already confirmed on another device.':'Not confirmed: '+r.error,true);return;}
+    showToast(`Received ✓ — ${_acctPKR(it.money.amount)} into ${_acctAccountLabel(it.money.account)}`);
+  }finally{_acctWhBusy=false;_acctRerender();_acctWhRepaint();}
+};
+window.acctWhConfirmDay=async function(day){
+  if(!_acctCanEntry()||_acctWhBusy)return;
+  _acctWhBusy=true;
+  try{
+    await _acctWhFresh();
+    const wh=_acctWh();if(!wh||!wh.ready||wh.err)return;
+    const list=wh.pending.filter(i=>i.money.date===day);
+    if(!list.length){showToast('Nothing left to confirm for that day.');return;}
+    const t=_acctWhTotals(list);
+    if(!confirm(`Confirm you received all ${list.length} payment${list.length===1?'':'s'} from ${_acctDateLabel(day)} — ${_acctPKR(t.all)}${t.cash?`\n  cash ${_acctPKR(t.cash)}`:''}${t.mcb?`\n  MCB ${_acctPKR(t.mcb)}`:''}?\n\nIf any amount is different, confirm that one on its own instead.`))return;
+    let ok=0;const failed=[];
+    for(const it of list){const r=await _acctWhConfirmOne(it,it.money.amount,'');if(r.error)failed.push((it.sale.orderNo||it.sale._id)+(r.exists?' (already confirmed)':''));else ok++;}
+    if(failed.length){await _acctWhFresh();showToast(`${ok} confirmed; not confirmed: ${failed.join(', ')}`,true);}
+    else showToast(`Received ✓ — ${ok} payment${ok===1?'':'s'}, ${_acctPKR(t.all)}`);
+  }finally{_acctWhBusy=false;_acctRerender();_acctWhRepaint();}
+};
+window.acctWhDifferent=function(key){
+  const it=_acctWhFind(key);if(!it||!_acctCanEntry())return;
+  _acctModal('Received a different amount',`<div style="font-size:14px;margin-bottom:10px"><b>${_acctEsc(it.sale.orderNo||it.sale._id)}</b> · ${_acctEsc(it.sale.customerName)} · bill <b>${_acctPKR(it.money.amount)}</b> ${it.money.account==='mcb'?'in MCB':'in cash'}</div>
+    <div class="form-grid">
+      <div class="field"><label>Amount actually received (₨) *</label><input id="f-wh-amt" type="number" inputmode="numeric" min="1" value="${it.money.amount}"></div>
+      <div class="field" style="grid-column:1/-1"><label>What happened? *</label><input id="f-wh-why" placeholder="e.g. Rs 500 short — Umair will hand it over tomorrow"></div>
+    </div>
+    <div style="font-size:13px;color:var(--muted);margin-top:8px">This records what you received. It is flagged for Afnan and Ammar with your reason.</div>`,
+    `<button class="btn-outline" onclick="window.acctWarehouse()">Back</button><button class="btn-primary" style="width:auto;padding:10px 16px" onclick="window.acctWhDifferentSave('${_acctEsc(key)}')">Record received</button>`);
+};
+window.acctWhDifferentSave=async function(key){
+  if(!_acctCanEntry()||_acctWhBusy)return;
+  const amt=Math.round(Number((document.getElementById('f-wh-amt')||{}).value));
+  const why=String((document.getElementById('f-wh-why')||{}).value||'').trim();
+  if(!(amt>0)){showToast('Enter the amount received.',true);return;}
+  if(!why){showToast('Say what happened — it goes to the owners with the entry.',true);return;}
+  _acctWhBusy=true;
+  try{
+    await _acctWhFresh();
+    const it=_acctWhFind(key);
+    if(!it||it.confs.length){showToast('That sale is no longer waiting — it may have been confirmed or voided.',true);return;}
+    if(amt===it.money.amount&&!confirm('That is the full bill. Record it as received in full?'))return;
+    const r=await _acctWhConfirmOne(it,amt,amt===it.money.amount?'':why);
+    if(r.error){await _acctWhFresh();showToast(r.exists?'Already confirmed on another device.':'Not recorded: '+r.error,true);return;}
+    showToast(`Recorded ${_acctPKR(amt)} received${amt!==it.money.amount?' — flagged for review':''}`);
+    window.acctModalClose();
+  }finally{_acctWhBusy=false;_acctRerender();_acctWhRepaint();}
+};
+function _acctWhRepaint(){const b=document.getElementById('acct-wh-body');if(b)b.innerHTML=_acctWhBodyHTML();}
+function _acctWhBodyHTML(){
+  if(!_acctWhOn())return '<div class="empty">Warehouse sales are not available in this build.</div>';
+  const wh=_acctWh();
+  if(!wh||!wh.ready)return '<div class="empty" style="padding:18px">Loading warehouse sales…</div>';
+  if(wh.err)return `<div class="acct-alert urgent" style="cursor:default"><b>Could not read ${_acctEsc(wh.err.col)}</b> (${_acctEsc(wh.err.code||wh.err.message||'error')}). ${/permission/i.test(String(wh.err.code)+' '+String(wh.err.message))?'The Firestore rules that let Store Accounts read warehouse sales may not be published yet — republish firestore.rules.':'Check the connection.'} Nothing below means nothing is waiting — nothing could be read.<div style="margin-top:8px"><button class="btn-sm" onclick="window.acctWhRetry()">Retry</button></div></div>`;
+  const can=_acctCanEntry();
+  const via=a=>a==='mcb'?'MCB transfer':'Cash';
+  let h='';
+  if(!wh.pending.length)h+='<div class="empty" style="padding:18px">Nothing waiting — every warehouse payment has been confirmed.</div>';
+  const days=[...new Set(wh.pending.map(i=>i.money.date))].sort().reverse();
+  for(const d of days){
+    const list=wh.pending.filter(i=>i.money.date===d);const t=_acctWhTotals(list);
+    h+=`<div class="acct-wh-day"><div class="acct-wh-dayhead"><div><b>${_acctDateLabel(d)}</b> · ${list.length} payment${list.length===1?'':'s'} · <b>${_acctPKR(t.all)}</b><div class="acct-wh-sub">${t.cash?'cash '+_acctPKR(t.cash):''}${t.cash&&t.mcb?' · ':''}${t.mcb?'MCB '+_acctPKR(t.mcb):''}</div></div>${can&&list.length>1?`<button class="btn-sm" onclick="window.acctWhConfirmDay('${d}')">Confirm all ${list.length}</button>`:''}</div>
+      ${list.map(i=>`<div class="acct-wh-row"><div class="acct-wh-main"><div><b>${_acctEsc(i.sale.orderNo||i.sale._id)}</b> · ${_acctEsc(i.sale.customerName)}</div><div class="acct-wh-sub">${i.money.kind==='collected'?'Pay-later bill collected':'Paid at the counter'} · ${via(i.money.account)}${i.money.kind==='collected'?' · sold '+_acctDateLabel(i.sale.date):''}</div></div><div class="acct-wh-side"><div class="acct-wh-amt">${_acctPKR(i.money.amount)}</div>${can?`<div class="acct-wh-acts"><button class="btn-sm" onclick="window.acctWhConfirm('${_acctEsc(i.key)}')">Received</button><button class="btn-sm btn-outline" onclick="window.acctWhDifferent('${_acctEsc(i.key)}')">Different amount…</button></div>`:''}</div></div>`).join('')}
+    </div>`;
+  }
+  if(wh.orphans.length){
+    h+=`<div class="acct-wh-orphans"><div class="card-title" style="color:var(--accent-urgent)">Voided or un-collected after it was received · ${wh.orphans.length}</div><div class="acct-wh-sub" style="margin-bottom:6px">The money was confirmed into the books and stays there. If it should not have been, void the cash in (${_acctIsSuper()?'or edit it':'ask Afnan or Ammar'}).</div>
+      ${wh.orphans.map(e=>`<div class="acct-wh-row"><div class="acct-wh-main"><div><b>${_acctEsc(e.whOrder||e.ref)}</b> · ${_acctEsc(e.person)}</div><div class="acct-wh-sub">${_acctPKR(e.amount)} into ${_acctAccountLabel(e.account)} on ${_acctDateLabel(e.date)} by ${_acctEsc(e.byName||e.by)}</div></div><div class="acct-wh-side">${_acctById(e._id)?`<button class="btn-sm btn-outline" onclick="window.acctOpenEntry('${_acctEsc(e._id)}')">Open</button>`:'<span class="acct-wh-sub">in a closed month</span>'}</div></div>`).join('')}
+    </div>`;
+  }
+  h+=`<div class="acct-wh-sub" style="margin-top:12px">Cash goes into the drawer, a bank transfer into MCB. Each counts in the books from the day you confirm it. Pay-later bills appear once Umair marks them collected.</div>`;
+  return h;
+}
+window.acctWhRetry=function(){Promise.all([loadWhSales(true),whsLoadConfirmations(true)]).then(()=>{_acctRerender();_acctWhRepaint();});};
+window.acctWarehouse=function(){
+  _acctModal('From the warehouse',`<div id="acct-wh-body">${_acctWhBodyHTML()}</div>`,'<button class="btn-outline" onclick="window.acctModalClose()">Close</button>');
 };
 
 /* ════════════════════════ WRITES ════════════════════════ */
@@ -2469,6 +2640,7 @@ window.acctOpenEntry=function(id){
       ${kv('Type',ACCT_TYPES[e.type]?ACCT_TYPES[e.type].label:e.type)}${kv('Date',_acctDateLabel(e.date))}${kv('Amount',_acctPKR(e.amount))}
       ${kv('Vendor',e.vendorId&&_acctVendorName(e)?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenVendor('${e.vendorId}')">${_acctEsc(_acctVendorName(e))}</a>`:'')}${kv('Paid to',!e.vendorId&&e.payee?_acctEsc(e.payee)+' <span class="acct-chip">no vendor account</span>':'')}${kv('Person',e.type==='runner_pay'||e.type==='float_out'||e.type==='float_in'?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenRunner(this.textContent)">${_acctEsc(e.person)}</a>`:_acctEsc(e.person))}
       ${kv('Source / account',_acctEsc(_acctSourceLabel(e)))}${e.toAccount?kv('To',_acctAccountLabel(e.toAccount)):''}
+      ${e.src==='wh'?kv('From the warehouse',`Sale ${_acctEsc(e.whOrder||e.ref)} · bill ${_acctPKR(e.whSaleTotal)}${e.whKind==='collected'?' · pay-later bill collected':' · paid at the counter'}${e.whSaleDate?' · '+_acctDateLabel(e.whSaleDate):''}${Math.round(e.whSaleTotal||0)!==Math.round(e.amount||0)?` <span class="acct-chip urgent">received ${_acctSigned(Math.round(e.amount||0)-Math.round(e.whSaleTotal||0))} vs the bill</span>`:''}`):''}
       ${kv('Ref',_acctEsc(e.ref))}${kv('Category',e.category?`<a class="acct-link" onclick="window.acctModalClose();window.acctOpenCategory(this.textContent)">${_acctEsc(e.category)}</a>`:'')}${kv('Note',_acctEsc(e.note))}
       ${kv('Entered by',_acctEsc(e.byName||e.by)+' · '+new Date(e.ts||0).toLocaleString('en-PK'))}
       ${kv('Effect',[fx.cash?'Cash '+_acctSigned(fx.cash):'',fx.mcb?'MCB '+_acctSigned(fx.mcb):'',fx.payable?'Owed to vendor '+_acctSigned(fx.payable):'',fx.floatUsed?'Float used '+_acctPKR(fx.floatUsed):'',fx.floatBack?'Float returned '+_acctPKR(fx.floatBack):'',fx.runnerPaid?'Owed to runner '+_acctSigned(-fx.runnerPaid):''].filter(Boolean).join(' · '))}
