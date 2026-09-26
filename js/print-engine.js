@@ -925,6 +925,18 @@ function _renderGatePass(doc, data) {
   doc.__groovyY = y + bandH;
 
   // 3) SECTION 1 — IDENTITY TABLE
+  // A fabric issue carries the cutting master who cut it (js/fabric.js — any
+  // name, not only Hassan/Alam). It TAKES THE PURPOSE ROW'S PLACE when there
+  // is no purpose, which is always true of a fabric issue (the issue payload
+  // has no purpose field, so that row would only ever print "—"). Adding a
+  // ninth row instead was MEASURED to push a single-fabric issue's signature
+  // blocks onto a second page (gate-guard box at y=765 of 806 → over), so
+  // the row count stays eight. With both fields, both print. A pass with no
+  // cutting master prints exactly as it did.
+  const cutMaster = String(data.cutMaster == null ? '' : data.cutMaster).trim();
+  const purpose = String(data.purpose == null ? '' : data.purpose).trim();
+  const cutRow = { labelEn: 'Cutting master', labelUr: 'کٹنگ ماسٹر', value: cutMaster };
+  const purposeRow = { labelEn: 'Purpose', labelUr: 'مقصد', value: _gpDash(data.purpose) };
   _renderInfoTable(doc, {
     startY: doc.__groovyY + 12,
     rows: [
@@ -934,9 +946,8 @@ function _renderGatePass(doc, data) {
       { labelEn: 'Person', labelUr: 'شخص', value: _gpDash(data.person || data.recipientName || data.name) },
       { labelEn: 'Article', labelUr: 'آرٹیکل', value: _gpDash(data.article || data.articleName) },
       { labelEn: 'Spec', labelUr: '', value: _gpDash(data.spec) },
-      { labelEn: 'Destination', labelUr: 'منزل', value: _gpDash(data.destination || data.dest) },
-      { labelEn: 'Purpose', labelUr: 'مقصد', value: _gpDash(data.purpose) }
-    ]
+      { labelEn: 'Destination', labelUr: 'منزل', value: _gpDash(data.destination || data.dest) }
+    ].concat(!cutMaster ? [purposeRow] : (purpose ? [cutRow, purposeRow] : [cutRow]))
   });
 
   // 4) SECTION 2 — ITEMS

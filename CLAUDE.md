@@ -8865,6 +8865,53 @@ This month / Custom, the same shape as Monitor's `_monitorFilter`.
   is an **array**, not a comma-joined string: `'OPTION,OPTGROUP'.indexOf('P')`
   is 1, which would silently exempt every `<p>` in the app.
 
+### Cutting masters beyond Hassan and Alam (Sept 2026)
+
+Afnan, with the Issue fabric form's Cutting master dropdown circled: *"logic
+to add other master names as well and the will be implemented in the pdf as
+well, masters other than Alam and Hassan."* The dropdown was two hardcoded
+`<option>`s in two places (the issue form and the registry's Edit form), and
+**no PDF printed the cutting master at all**.
+
+- **THE LIST IS DERIVED, NEVER STORED** (`_fabCutMasters`, `js/fabric.js`):
+  Hassan and Alam first, then every `cutMaster` already on a fabric issue
+  (`_fabIssueRecords()` — `allPasses` is loaded whole, no limit), then any
+  name added this session, A–Z, matched **case-insensitively** so `alam`
+  selects Alam rather than minting a twin. **"+ Add cutting master…"** is the
+  last option: a name is typed, added and selected, and it joins the list for
+  everyone **the moment an issue is saved under it**. The Store Accounts
+  runner rule. **A stored list was ruled out on purpose:** `settings/*` is
+  `isOwner()`-write, and Mustafa (manager) and Uzaib (viewer) are the people
+  who issue fabric — a settings doc would have refused them until a rules
+  change was published. No `firestore.rules` change, no republish. **Known
+  limit:** a name added and never used for an issue does not survive a
+  reload (it has cut nothing yet), and a master who leaves stays on the list
+  while any issue names them — correcting a typo'd name in Edit removes it.
+- **A LIVE BUG FIXED WITH IT:** the Edit form offered only Hassan and Alam,
+  so saving an edit on an issue cut by anyone else **silently wrote
+  `cutMaster:''`**. `_fabCutMasterOptions(selected)` always offers the
+  current value, even one on no record. `_fabCutMasterValue` is the one
+  reader both saves use, and it never saves the `__new` sentinel.
+- The registry search matches the cutting master too.
+- **The PDF is the fabric-issue GATE PASS** (Gate Pass registry → ⬇ PDF →
+  `generateGPPdf` → the engine's `gate-pass` variant) — a fabric issue IS a
+  gate pass. **Cutting master takes the Purpose row's place** when there is
+  no purpose, which is always true of an issue (its payload has no purpose
+  field, so that row only ever printed "—"). **A ninth row was tried first
+  and MEASURED to push a single-fabric issue's signature blocks onto a second
+  page** (gate-guard box at y=765 of 806 → page 2). With both fields both
+  print; a pass with no master prints exactly as before. The legacy
+  (`__usePrintEngine=false`) fallback follows the same rule.
+- **Not touched: the Pattern Hub's `_PTN_TRACERS`** (`js/patterns.js`,
+  "Traced by") — also Hassan and Alam, but a different job (tracing a
+  pattern, not cutting a PO) with its own hardcoded list.
+
+`tests/fabric.test.js` drives it (+29): verified by reverting the Edit form
+to two options, making the dedupe case-sensitive, saving `__new`, adding the
+PDF row as a ninth row (`got 2, expected 1` pages) and dropping the search
+field — each fails by name. **Nobody has picked a new master or printed the
+PDF on a real screen** — the sandbox cannot sign in.
+
 ## Credentials — never in client code
 
 `js/*.js`, `css/*` and every `*.html` are **public static assets**, served
