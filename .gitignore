@@ -20,3 +20,7 @@ keys/
 *credentials*.json
 application_default_credentials.json
 groovy-gatepass-*.json
+
+# The e2e harness's screenshots of the LIVE Board (tests/e2e/board.e2e.js).
+# This repo is public and they show the drop plan: kept local, never pushed.
+docs/board-screens/

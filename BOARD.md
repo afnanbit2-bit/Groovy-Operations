@@ -186,6 +186,52 @@ backstop patterns (not a blanket `*.json`).
 are published, the live `signedIn()` still includes this account, i.e. it
 can read and write most of the app.
 
+### Running the harness (Part B)
+
+Both tools read the operator's shell and **skip with a printed reason**
+when it is not set up. Neither is in `tests/run.js`; CI runs neither.
+
+**`node tests/e2e/board.e2e.js`** — real Chrome over the DevTools protocol
+(Node 22's global WebSocket; no dependency), `GROOVY_QA_URL` /
+`GROOVY_QA_EMAIL` / `GROOVY_QA_PASSWORD`, optional `CHROME_BIN`. It signs
+in through the real form (the password is a DevTools call argument, never
+inside an evaluated expression), checks the role is `qa`, and then **the
+containment gate**: if `pos` or `bug_reports` can be read, the QA rules are
+not live and it signs out and exits 2 before writing anything. Then: the
+Dashboard, a PRIVATE "QA Sandbox" list made through the app's own + New on
+first run (private, so the RULES hide its items from everyone — not just
+the client, which an old cached build would not have), an item typed into
+the composer, the calendar, the list, the item pane, the inbox, a refused
+write on a real locked gate (written to its CURRENT date, so a wrong rule
+would still change nothing), a refused notification for a real person,
+Mood Boards, the phone at 390px, and deleting its item. Screenshots, a
+`report.json` and a `report.md` (with the `CACHE_VERSION` the site served)
+land in `docs/board-screens/<local commit>/`, which is **gitignored: this
+repo is public and the screens show the live drop plan**. The login form
+takes a USERNAME mapped through `USER_DEFS`, so the site must carry the
+`claude` entry — a deploy preview of the branch until it is on `main`.
+Rehearsed against the real shell with an in-memory Firestore, both with the
+QA rules imitated (14/14) and without them (stopped at the gate, exit 2).
+
+**`node scripts/board-inspect.js <cmd> [arg]`** — Admin SDK reads (they
+bypass the rules, which is why it can explain what no app user sees):
+`counts [project]`, `items <project>`, `item <id>` (fields, `dateHistory`,
+activity), `notifications <username>`, `markers`, `seed-check` (every
+seeded milestone: counted open for everyone, done, private, moved, deleted
+since, never written). Credentials: `GOOGLE_CLOUD_PROJECT` + Application
+Default Credentials. **Read-only by construction:** it first `update()`s a
+random nonexistent document; `PERMISSION_DENIED` → runs, `NOT_FOUND` (a
+credential that can write) → **refuses, exit 3**. So ADC from the project
+owner's own Google account is refused; use ADC that impersonates an account
+holding only `roles/datastore.viewer`. Driven against the emulator, which
+is how the first probe id (`__inspect_probe__`, RESERVED by Firestore →
+`INVALID_ARGUMENT` for every credential) was caught.
+
+**Agents:** `.claude/agents/board-tester.md` (runs the e2e, looks at every
+screen, returns PASS/FAIL with evidence) and `board-reviewer.md` (reviews a
+Board diff against this file and the gates). Both carry the line: run
+`scripts/board-inspect.js` when a screenshot needs a data explanation.
+
 ## Deploying the rules
 
 ```bash
