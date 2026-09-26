@@ -646,6 +646,35 @@ const FRAGMENTS={
   // whole page, which had never been measured), the admin edit modal and
   // the reset modal. The fixture's session is made afnan by name — the card
   // and the buttons are gated on the username, not the owner role.
+  // Raees editing his own entries (Sept 2026): the edit banner and its reason
+  // field over the REAL recording forms, a purchase whose sized line went into
+  // inventory and is locked, and an entry detail carrying an edit history and
+  // one carrying the line that says why it cannot be edited.
+  'store accounts — editing an entry and its history':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("session.u='raees';session.role='store';session.name='Raees';currentPage='acct-ledger';_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    app.run("allItems.push({code:'NL1',name:'Neck label woven',unit:'pcs',sizeSpecific:true,sizes:{S:10,M:10,L:5},_id:'NL1'});const p=acctEntries.find(e=>e.vendorId==='thread'&&e.type==='purchase');p.lines.push({itemCode:'NL1',desc:'Neck label woven',qty:30,unit:'pcs',rate:2.5,total:75,sizes:{S:10,M:20}});p.amount+=75;");
+    const pid=app.run("acctEntries.find(e=>e.vendorId==='thread'&&e.type==='purchase')._id");
+    app.run(`window.acctEditEntry('${pid}')`);
+    const pc=JSON.parse(app.run('JSON.stringify(window.__cap)'));
+    const lines=app.run("_acctFormLines.map((l,i)=>_acctLineHTML(l,i)).join('')");
+    app.run('_acctEditId=null');
+    const payId=app.run("acctEntries.find(e=>e.type==='payment')._id");
+    app.run(`window.acctEditEntry('${payId}')`);
+    const pay=JSON.parse(app.run('JSON.stringify(window.__cap)'));
+    app.run('_acctEditId=null');
+    // the payment, now carrying two edits (one from an owner) and the review flag they raised
+    app.run(`(()=>{const e=_acctById('${payId}');e.edits=[{at:Date.now()-86400000,by:'raees',byName:'Raees',reason:'typed 13,000 — the bank transfer was 13,500',fields:['amount','ref'],before:{amount:13000,ref:'TRX-884'},after:{amount:13500,ref:'TRX-88400'}},{at:Date.now()-3600000,by:'afnan',byName:'Afnan',admin:true,reason:'Admin correction',fields:['account','date'],before:{account:'cash',date:'2026-09-01'},after:{account:'mcb',date:'2026-09-02'}}];e.needsReview=true;e.reviewFlags=['edited'];})()`);
+    app.run(`window.acctOpenEntry('${payId}')`);
+    const det=JSON.parse(app.run('JSON.stringify(window.__cap)'));
+    // an entry an owner has reviewed: no Edit… button, one line saying why
+    app.run(`(()=>{const e=acctEntries.find(x=>x.reviewFlags&&x.reviewFlags.includes('over limit'));e.reviewedAt=Date.now();e.reviewedBy='afnan';window.__rid=e._id;})()`);
+    app.run('window.acctOpenEntry(window.__rid)');
+    const locked=JSON.parse(app.run('JSON.stringify(window.__cap)'));
+    const modal=(c,w)=>'<div class="acct-modal" style="position:static;max-width:'+(w||640)+'px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>'+c.t+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+c.b+'</div><div class="acct-modal-foot">'+c.f+'</div></div>';
+    return Promise.resolve(modal({t:pc.t,b:pc.b.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'),f:pc.f},720)+modal(pay)+modal(det,620)+modal(locked,620));
+  },
   'store accounts — admin tools, edit and reset':()=>{
     const {app,seed}=_acctFixture();
     seed(app);

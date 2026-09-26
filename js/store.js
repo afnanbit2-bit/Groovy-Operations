@@ -1199,20 +1199,23 @@ function refreshIssueLog(){
   const body=document.getElementById('il-body');const pager=document.getElementById('il-pager');if(!body)return;
   if(!slice.length){body.innerHTML='<div class="empty">No records found.</div>';if(pager)pager.innerHTML='';return;}
   body.innerHTML=slice.map(tx=>{
-    const isIn=tx.type==='received';
+    // A Store Accounts correction is a `received` row with a NEGATIVE qty
+    // (a purchase quantity corrected down) — it reads as going out.
+    const corr=tx.type==='received'&&(Number(tx.qty)||0)<0;
+    const isIn=tx.type==='received'&&!corr;
     return`<div class="tx-row">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:11px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ INBOUND':'▼ OUTBOUND'}</span>
+          <span style="font-size:11px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${corr?'▼ CORRECTION':isIn?'▲ INBOUND':'▼ OUTBOUND'}</span>
           <span style="font-size:12px;font-weight:700">${tx.itemCode||'—'}</span>
           ${tx.size?`<span style="font-size:11px;font-weight:700;background:var(--accent-warning-soft);color:var(--accent-warning);padding:2px 7px;border-radius:8px">${tx.size}</span>`:''}
           ${tx.poRef||tx.poId?`<span style="font-size:11px;font-weight:700;background:var(--soft);color:var(--text);padding:2px 7px;border-radius:8px">${tx.poRef||tx.poId}</span>`:''}
         </div>
         <div style="font-size:14px;font-weight:500;margin-top:2px">${tx.itemName||'—'}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:1px">${isIn?`From: ${tx.supplier||'—'}`:`To: ${tx.issuedTo||'—'}`}${tx.purpose?` · ${tx.purpose}`:''}${tx.notes?` · ${tx.notes}`:''}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:1px">${tx.type==='received'?`From: ${tx.supplier||'—'}`:`To: ${tx.issuedTo||'—'}`}${tx.purpose?` · ${tx.purpose}`:''}${tx.notes?` · ${tx.notes}`:''}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:17px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'+':'−'}${tx.qty||0} <span style="font-size:12px;font-weight:400;color:var(--muted)">${tx.unit||'pcs'}</span></div>
+        <div style="font-size:17px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'+':'−'}${corr?Math.abs(Number(tx.qty)):(tx.qty||0)} <span style="font-size:12px;font-weight:400;color:var(--muted)">${tx.unit||'pcs'}</span></div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">${tx.date||''}</div>
         <div style="font-size:11px;color:var(--muted)">${tx.by||'—'}</div>
       </div>
@@ -1263,16 +1266,16 @@ function renderStoreDashboard(){
   </div>`:''}
   <div class="card">
     <div class="card-title">Recent Activity (last 10)</div>
-    ${recent.length?recent.map(tx=>{const isIn=tx.type==='received';return`<div class="tx-row">
+    ${recent.length?recent.map(tx=>{const corr=tx.type==='received'&&(Number(tx.qty)||0)<0;const isIn=tx.type==='received'&&!corr;return`<div class="tx-row">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:11px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'▲ IN':'▼ OUT'}</span>
+          <span style="font-size:11px;font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${corr?'▼ CORR':isIn?'▲ IN':'▼ OUT'}</span>
           <span style="font-size:12px;font-weight:700">${tx.itemCode||'—'}</span>
         </div>
         <div style="font-size:14px;margin-top:1px">${tx.itemName||'—'}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div style="font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'+':'−'}${tx.qty||0} ${tx.unit||'pcs'}</div>
+        <div style="font-weight:700;color:${isIn?'var(--green)':'var(--red)'}">${isIn?'+':'−'}${corr?Math.abs(Number(tx.qty)):(tx.qty||0)} ${tx.unit||'pcs'}</div>
         <div style="font-size:11px;color:var(--muted)">${tx.date||''}</div>
       </div>
     </div>`;}).join(''):'<div class="empty" style="padding:1rem">No transactions yet.</div>'}
