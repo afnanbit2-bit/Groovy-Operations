@@ -423,6 +423,47 @@ function DRIVE(){
         await wait(100);
         L(!_tbCalFilters.person,'and again shows everyone');
       }
+      // ── Placement (change order, 26 Sept 2026): "Samad onboarding" was
+      // seeded on Sun 27 Sep and reported on Mon 28. Sunday is the LAST
+      // column of a Monday-first grid, so a week-boundary slip would look
+      // exactly like that. Every drawn cell must sit under its own weekday
+      // and print its own number, and every pill must be in the cell of
+      // its own date -- in the month AND the week, checked by geometry,
+      // not by reading the markup back.
+      async function placement(view){
+        // One act per control: the instrument allows one repaint per action.
+        act('clear',function(){window.tbCalClear();});
+        act('scope all',function(){window.tbCalScope('all');});
+        act('by person off',function(){window.tbCalRows(false);});
+        act('view '+view,function(){window.tbCalView(view);});
+        act('today',function(){window.tbCalToday();});
+        await wait(200);
+        var heads=[].slice.call(document.querySelectorAll('.tb-dowrow .tb-dow'));
+        var cells=[].slice.call(document.querySelectorAll('.tb-monthgrid .tb-day,.tb-weekgrid .tb-day'));
+        var bad=[],pills=0;
+        cells.forEach(function(c,ix){
+          var d=c.getAttribute('data-day'),col=(_tbDow(d)+6)%7;
+          if(ix%7!==col)bad.push(d+' drawn in column '+(ix%7)+', belongs in '+col);
+          var num=c.querySelector('.tb-daynum');
+          if(num&&Number(num.textContent.trim())!==Number(d.slice(8)))bad.push(d+' prints '+num.textContent.trim());
+          var r=c.getBoundingClientRect(),h=heads[col]&&heads[col].getBoundingClientRect();
+          if(h&&Math.abs((r.left+r.width/2)-(h.left+h.width/2))>2)bad.push(d+' is not under '+heads[col].textContent.trim());
+          c.querySelectorAll('.tb-pill').forEach(function(p){
+            pills++;
+            var it=tbItems.filter(function(x){return x.id===p.getAttribute('data-id');})[0];
+            if(!it||it.date!==d)bad.push((it?it.title.slice(0,24)+' ('+it.date+')':'?')+' drawn on '+d);
+          });
+        });
+        L(cells.length>=7&&pills>0&&!bad.length,view+': '+cells.length+' cells and '+pills+' pills each sit on their own date and weekday'+(bad.length?' — '+bad.slice(0,4).join('; '):''));
+        var sam=tbItems.filter(function(x){return /^Samad onboarding/.test(x.title||'');})[0];
+        var sp=sam&&document.querySelector('.tb-pill[data-id="'+sam.id+'"]');
+        var sc=sp&&sp.closest('.tb-day');
+        L(!!sc&&sc.getAttribute('data-day')==='2026-09-27'&&(_tbDow('2026-09-27')===0),
+          view+': the Samad onboarding pill is in the Sunday 27 Sep cell ('+(sc?sc.getAttribute('data-day'):'not drawn')+')');
+      }
+      await placement('month');
+      await placement('week');
+      act('back to me',function(){window.tbCalClear();window.tbCalScope('me');});
       // ── "+N more": four on one day, and the month shows two and the rest ──
       for(var k=0;k<4;k++){await window.tbCreateOn('smoke more '+k,'2026-09-30');}
       act('scope me, month',function(){window.tbCalClear();window.tbCalView('month');window.tbCalToday();});
@@ -653,7 +694,9 @@ function poison(){
   return s+' '.repeat(Math.max(0,1400000-s.length));
 }
 const MODES=[
-  {id:'ammar',label:'Ammar (Board owner), desktop',user:'ammar'},
+  // Asia/Karachi is where the Board is used; the others keep the runner's
+  // own zone (UTC on CI), so a date that only goes wrong in one shows up.
+  {id:'ammar',label:'Ammar (Board owner), desktop, Asia/Karachi',user:'ammar',tz:'Asia/Karachi'},
   {id:'saim',label:'Saim (designer), desktop',user:'saim'},
   {id:'poisoned',label:'Ammar, with the freeze’s 1.36 MB junk filter in localStorage',user:'ammar',poison:true}
 ];
@@ -706,7 +749,8 @@ function runMode(port,mode){
     '--metrics-recording-only','--mute-audio','--no-proxy-server','--window-size=1440,900',
     '--user-data-dir='+profile+'-'+mode.id,'--virtual-time-budget=60000','--dump-dom',
     'http://127.0.0.1:'+port+'/__board/'+mode.id],
-    {encoding:'utf8',maxBuffer:64*1024*1024,timeout:150000},
+    {encoding:'utf8',maxBuffer:64*1024*1024,timeout:150000,
+     env:Object.assign({},process.env,mode.tz?{TZ:mode.tz}:{})},
     (err,stdout)=>report(mode,err,stdout||''));
 }
 
