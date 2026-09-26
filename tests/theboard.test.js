@@ -262,12 +262,22 @@ module.exports=async function(){
     s.ok('board_items has its own block',items.length>0);
     // The lock IS the product. A member may comment on a locked item and
     // may not move it; that has to hold on the server, not in the UI.
-    s.ok('an update on a locked item must leave date and dueAt alone…',
-      /resource\.data\.get\('locked', false\) != true[\s\S]*?date[\s\S]*?dueAt/.test(items));
+    //
+    // THESE ARE TEXT CHECKS, AND TEXT CHECKS HAD NO TEETH HERE (26 Sept
+    // 2026). The old rule passed "lockedBy cannot be re-pointed" while
+    // letting a member re-point it at THEMSELVES and then move the date --
+    // found only by running it in the emulator. The proof is
+    // tests/rules-emulator-board.js (hand-run; CI installs nothing). What
+    // these hold is that the update rule still goes through the helper
+    // that proof exercised, and the helper still names every lock field.
+    const lockFn=(/function tbLockOk\(\) \{[\s\S]*?\n    \}/.exec(rules)||[''])[0];
+    s.ok('the item update rule goes through tbLockOk()',/allow update: if isBoardUser\(\)[\s\S]*?&& tbLockOk\(\);/.test(items));
+    s.ok('on a locked item, date, dueAt, locked and lockedBy are all held',
+      /affectedKeys\(\)\.hasAny\(\['date','dueAt','locked','lockedBy'\]\)/.test(lockFn));
     s.ok('…unless you are the locker or a board owner',
-      /request\.auth\.uid == resource\.data\.get\('lockedBy', ''\)[\s\S]*?isBoardOwner\(\)/.test(items));
-    s.ok('and lockedBy cannot be re-pointed to walk around it',
-      /request\.resource\.data\.get\('lockedBy', null\) == resource\.data\.get\('lockedBy', null\)/.test(items));
+      /isBoardOwner\(\)/.test(lockFn)&&/request\.auth\.uid == r\.get\('lockedBy', ''\)/.test(lockFn));
+    s.ok('and locking an unlocked item names the caller, nobody else',
+      /d\.get\('lockedBy', null\) == request\.auth\.uid/.test(lockFn));
     s.ok('a private item is unreadable by anyone but its owner',
       /resource\.data\.visibility == 'shared' \|\| request\.auth\.uid == resource\.data\.ownerUid/.test(items));
     s.ok('the creator owns what they create and is on it',

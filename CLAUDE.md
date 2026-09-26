@@ -9227,6 +9227,17 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
+**REPUBLISH OUTSTANDING (26 Sept 2026, session 2): The Board's lock
+rule** (`tbLockOk()`, `board_items` update). The old clause let a member on
+a locked item re-point `lockedBy` at themselves (or set `locked:false`) and
+then move the date, and refused a non-owner locker their own unlock --
+found by running the Board rules in the emulator for the first time
+(`tests/rules-emulator-board.js`, 39/39 after; the old rule fails 3). One
+paste of the current file carries this AND every outstanding entry below.
+**The Board's phase-1 rules (`board_*`) are in the same file; if they were
+never published, the Board shows "could not read" to all five of its
+users, and it is their landing page.**
+
 **REPUBLISH OUTSTANDING (26 Sept 2026, later): the warehouse handover,
 and its review round.** `wh_sales` read now includes `isStoreAccounts()`,
 and a new update clause lets Umair mark a pay-later bill collected. Until
