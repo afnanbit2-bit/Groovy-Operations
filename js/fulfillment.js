@@ -391,7 +391,11 @@ window.showFulfillTab=function(tab){
   if(tab==='postex'){_fulfillSection='postex';}
   else if(tab==='accounts'&&_fulfillCanAccounts()){_fulfillSection='accounts';}
   else{_fulfillSection='reporting';_fulfillTab=(['entry','log'].includes(tab)?tab:'analytics');}
-  Promise.resolve(window.showPage('fulfillment')).then(_fulfillMarkNav,_fulfillMarkNav);
+  // No .then/.catch here: the render marks the nav itself (see
+  // renderFulfillmentPage), and a render that THROWS must stay an unhandled
+  // rejection — that is what js/diagnostics.js records. Catching it here made
+  // a broken tap look like a tap that did nothing.
+  return window.showPage('fulfillment');
 };
 // The Accounts section (customer purchases, js/warehouse-sales.js) is Umair's
 // and the owners' — managers see Courier Performance but not this. typeof-
@@ -1138,7 +1142,16 @@ function _fulfillSectionBar(){
     </div>`;
 }
 
+// Every route onto this page — the logo, Profile and back, a dashboard card,
+// showFulfillTab — goes through here, and showPage has already lit the
+// FIRST button (every section is one page id). So the render is what
+// re-lights the one that matches what is actually on screen.
 function renderFulfillmentPage(){
+  const html=_renderFulfillmentPage();
+  try{_fulfillMarkNav();}catch(_){}
+  return html;
+}
+function _renderFulfillmentPage(){
   if(!_canViewFulfillment())
     return '<div class="empty">Courier Performance is restricted to owners and managers.</div>';
   const head=(sub,title)=>`<div class="page-head">

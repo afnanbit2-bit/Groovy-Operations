@@ -481,7 +481,11 @@ let _tplRowIdx=0,_tplProdCode='',_tplProdName='',_tplEditId=null,_tplPage=1;
 const TPL_PER=15;
 let _poIssueData=null,_txFilterQ='',_txFilterType='';
 const IL_PER=15,IL_MAX_PAGES=1000;   // effectively uncapped — page through all loaded movements
-function showToast(msg,isErr=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(isErr?' err':'');setTimeout(()=>t.className='toast',3200);}
+// A long message stays up long enough to be read (~60ms a character, 3.2s
+// to 9s), and a new toast cancels the old one's timer — otherwise an earlier
+// toast's timeout hides the newer one early.
+let _toastTimer=null;
+function showToast(msg,isErr=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(isErr?' err':'');clearTimeout(_toastTimer);_toastTimer=setTimeout(()=>t.className='toast',Math.min(9000,Math.max(3200,String(msg==null?'':msg).length*60)));}
 
 // ── Service worker update banner ──
 // sw.js always calls self.skipWaiting() on install, so a new SW takes

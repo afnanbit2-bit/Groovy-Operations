@@ -611,7 +611,9 @@ const FRAGMENTS={
       S('SO0335',{customerName:'Ayesha Khan',lines:[L('EFFORTLESS TEE | DEEP BLUE','Mint Green / L','GP092-L',2,3490),L('LIVE IN PANTS | CHARCOAL','Charcoal / 32','GLP004-32',1,4990)],qtyTotal:3,subtotal:11970,discount:1197,discountPct:10,total:10773,paidVia:'bank'}),
       S('SO0321',{date:day(12),customerName:'Muhammad Abdullah Siddiqui, for the Karachi Streetwear Collective pop-up at Dolmen Mall Clifton',terms:'later',paidVia:null,dueDate:day(3),total:21940,subtotal:21940,qtyTotal:6}),
       S('SO0330',{date:day(2),customerName:'Hamza',needsReview:true,reviewFlags:['price changed on 1 article'],lines:[L('EFFORTLESS TEE | CLOUD','White / M','GP090-M',1,3000,{catalogPrice:3290,priceEdited:true})],subtotal:3000,total:3000}),
-      S('SO0310',{date:day(9),customerName:'Bilal',status:'void',voidReason:'entered twice'})
+      S('SO0310',{date:day(9),customerName:'Bilal',status:'void',voidReason:'entered twice',voidedBy:'umair',voidedByName:'Umair',voidedAt:Date.now()}),
+      // a bill recorded again over a voided entry: its history is drawn
+      S('SO0340',{date:day(1),customerName:'Zainab',priorVoids:[{date:day(1),customerName:'Zainab',customerPhone:'03001112222',total:10470,qtyTotal:3,createdAt:Date.now()-7200000,createdByU:'umair',createdByName:'Umair',voidedAt:Date.now()-3600000,voidedBy:'umair',voidedByName:'Umair',voidReason:'the bill says one tee, not three — entered the quantity wrong',billUrl:bill}]})
     ];
     const catalog=[
       {id:'v1',sku:'GP092-M',title:'EFFORTLESS TEE | DEEP BLUE',variant:'Mint Green / M',price:3490,status:'active'},
@@ -634,14 +636,45 @@ const FRAGMENTS={
     const modal=(title,b,foot)=>'<div class="acct-modal" style="position:static;max-width:760px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>'+title+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot">'+foot+'</div></div>';
     const form=modal('Record a customer purchase',body,'<button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Save sale</button>');
     // one sale opened: two lines, a discount, paid by bank
-    app.run("window.whsOpen('SO0335')");
-    const det=app.bodyHtml('whs-modal');
-    return Promise.resolve(page+form+det.replace('class="acct-modal"','class="acct-modal" style="position:static;max-width:680px;margin-top:14px;max-height:none"'));
+    const opened=id=>{app.run(`window.whsOpen('${id}')`);return app.bodyHtml('whs-modal').replace('class="acct-modal"','class="acct-modal" style="position:static;max-width:680px;margin-top:14px;max-height:none"');};
+    // one sale opened: two lines, a discount, paid by bank; a voided one
+    // (its banner and "Record this bill again"); and one recorded again,
+    // carrying the voided entry in its history
+    return Promise.resolve(page+form+opened('SO0335')+opened('SO0310')+opened('SO0340'));
   },
   // Afnan's correction tools: the Admin tools card on the review page (the
   // whole page, which had never been measured), the admin edit modal and
   // the reset modal. The fixture's session is made afnan by name — the card
   // and the buttons are gated on the username, not the owner role.
+  // Raees editing his own entries (Sept 2026): the edit banner and its reason
+  // field over the REAL recording forms, a purchase whose sized line went into
+  // inventory and is locked, and an entry detail carrying an edit history and
+  // one carrying the line that says why it cannot be edited.
+  'store accounts — editing an entry and its history':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("session.u='raees';session.role='store';session.name='Raees';currentPage='acct-ledger';_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    app.run("allItems.push({code:'NL1',name:'Neck label woven',unit:'pcs',sizeSpecific:true,sizes:{S:10,M:10,L:5},_id:'NL1'});const p=acctEntries.find(e=>e.vendorId==='thread'&&e.type==='purchase');p.lines.push({itemCode:'NL1',desc:'Neck label woven',qty:30,unit:'pcs',rate:2.5,total:75,sizes:{S:10,M:20}});p.amount+=75;");
+    const pid=app.run("acctEntries.find(e=>e.vendorId==='thread'&&e.type==='purchase')._id");
+    app.run(`window.acctEditEntry('${pid}')`);
+    const pc=JSON.parse(app.run('JSON.stringify(window.__cap)'));
+    const lines=app.run("_acctFormLines.map((l,i)=>_acctLineHTML(l,i)).join('')");
+    app.run('_acctEditId=null');
+    const payId=app.run("acctEntries.find(e=>e.type==='payment')._id");
+    app.run(`window.acctEditEntry('${payId}')`);
+    const pay=JSON.parse(app.run('JSON.stringify(window.__cap)'));
+    app.run('_acctEditId=null');
+    // the payment, now carrying two edits (one from an owner) and the review flag they raised
+    app.run(`(()=>{const e=_acctById('${payId}');e.edits=[{at:Date.now()-86400000,by:'raees',byName:'Raees',reason:'typed 13,000 — the bank transfer was 13,500',fields:['amount','ref'],before:{amount:13000,ref:'TRX-884'},after:{amount:13500,ref:'TRX-88400'}},{at:Date.now()-3600000,by:'afnan',byName:'Afnan',admin:true,reason:'Admin correction',fields:['account','date'],before:{account:'cash',date:'2026-09-01'},after:{account:'mcb',date:'2026-09-02'}}];e.needsReview=true;e.reviewFlags=['edited'];})()`);
+    app.run(`window.acctOpenEntry('${payId}')`);
+    const det=JSON.parse(app.run('JSON.stringify(window.__cap)'));
+    // an entry an owner has reviewed: no Edit… button, one line saying why
+    app.run(`(()=>{const e=acctEntries.find(x=>x.reviewFlags&&x.reviewFlags.includes('over limit'));e.reviewedAt=Date.now();e.reviewedBy='afnan';window.__rid=e._id;})()`);
+    app.run('window.acctOpenEntry(window.__rid)');
+    const locked=JSON.parse(app.run('JSON.stringify(window.__cap)'));
+    const modal=(c,w)=>'<div class="acct-modal" style="position:static;max-width:'+(w||640)+'px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>'+c.t+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+c.b+'</div><div class="acct-modal-foot">'+c.f+'</div></div>';
+    return Promise.resolve(modal({t:pc.t,b:pc.b.replace('<div id="acct-lines"></div>','<div id="acct-lines">'+lines+'</div>'),f:pc.f},720)+modal(pay)+modal(det,620)+modal(locked,620));
+  },
   'store accounts — admin tools, edit and reset':()=>{
     const {app,seed}=_acctFixture();
     seed(app);

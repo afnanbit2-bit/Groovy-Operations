@@ -247,7 +247,14 @@ function _acctEffect(e){
 function _acctLastClose(){return acctCloses.length?acctCloses[acctCloses.length-1]:null;}
 // Posted entries. A closed month is already inside the checkpoint, so its
 // entries are skipped unless a caller wants history (the rate card does).
-function _acctLive(includeClosed){const cl=_acctLastClose();return acctEntries.filter(e=>e.status!=='void'&&e.status!=='pending'&&(includeClosed||!cl||e.month>cl.month));}
+// While an edit form is open, the entry being edited is left out, so every
+// balance the form shows or checks answers "as if this entry were not there"
+// — a payment that settled a vendor in full must not read that vendor as
+// owing nothing. Set by the edit forms only; cleared whenever a modal closes
+// or a different one opens (_acctModal).
+let _acctEditId=null;
+let _acctEditPreview=null;
+function _acctLive(includeClosed){const cl=_acctLastClose();const ok=e=>e.status!=='void'&&e.status!=='pending'&&(includeClosed||!cl||e.month>cl.month);const out=acctEntries.filter(e=>ok(e)&&(!_acctEditId||e._id!==_acctEditId)&&(!_acctEditPreview||e._id!==_acctEditPreview._id));if(_acctEditPreview&&ok(_acctEditPreview))out.push(_acctEditPreview);return out;}
 // Balances as of now (or up to and including `upToDate`), starting from the
 // last close's checkpoint. Returns {cash,mcb,payables:{vendorId:amt},floats:{floatId:{...}}}.
 function _acctBalances(upToDate){
@@ -258,7 +265,10 @@ function _acctBalances(upToDate){
     const fx=_acctEffect(e);
     b.cash+=fx.cash;b.mcb+=fx.mcb;
     if(e.vendorId&&fx.payable)b.payables[e.vendorId]=(b.payables[e.vendorId]||0)+fx.payable;
-    if(e.type==='float_out'){const f=b.floats[e._id]=b.floats[e._id]||{id:e._id,person:e.person,date:e.date,category:e.category||'',out:0,used:0,back:0};f.out+=fx.floatOut;}
+    // The float_out is the authority on who holds a float and what for: a
+    // bill iterated before it (entries run newest first) opens the slot with
+    // the BILL's person and no category, so those are taken from here.
+    if(e.type==='float_out'){const f=b.floats[e._id]=b.floats[e._id]||{id:e._id,out:0,used:0,back:0};f.person=e.person;f.date=e.date;f.category=e.category||'';f.out+=fx.floatOut;}
     if(e.floatId&&(fx.floatUsed||fx.floatBack)){const f=b.floats[e.floatId]=b.floats[e.floatId]||{id:e.floatId,person:e.person,date:e.date,out:0,used:0,back:0};f.used+=fx.floatUsed;f.back+=fx.floatBack;}
   }
   b.cash=Math.round(b.cash);b.mcb=Math.round(b.mcb);
@@ -705,7 +715,7 @@ function _acctLedgerTable(rows,opening,closing){
   for(const r of shown){
     const e=r.e;const fx=r.fx;
     const cls=[e.status==='void'?'void':'',e.status==='pending'?'pending':'',e.needsReview&&!e.reviewedAt&&e.status!=='void'?'review':''].filter(Boolean).join(' ');
-    const flags=[e.photo?'<span title="Receipt attached">📎</span>':'',e.status==='pending'?'<span class="acct-chip warn">pending</span>':'',e.status==='void'?'<span class="acct-chip">void</span>':'',e.needsReview&&!e.reviewedAt&&e.status!=='void'?'<span class="acct-chip urgent">review</span>':'',e.stockPosted===false?'<span class="acct-chip urgent">stock!</span>':'',e.stockPosted===true?'<span class="acct-chip ok">stock ✓</span>':''].filter(Boolean).join(' ');
+    const flags=[e.photo?'<span title="Receipt attached">📎</span>':'',e.status==='pending'?'<span class="acct-chip warn">pending</span>':'',e.status==='void'?'<span class="acct-chip">void</span>':'',e.needsReview&&!e.reviewedAt&&e.status!=='void'?'<span class="acct-chip urgent">review</span>':'',e.stockPosted===false?'<span class="acct-chip urgent">stock!</span>':'',e.stockPosted===true?'<span class="acct-chip ok">stock ✓</span>':'',e.edits&&e.edits.length?`<span class="acct-chip" title="Edited ${e.edits.length} time${e.edits.length===1?'':'s'} — open it for the history">edited</span>`:''].filter(Boolean).join(' ');
     const type=`<span class="acct-type">${ACCT_TYPES[e.type]?ACCT_TYPES[e.type].label:e.type}</span>`;
     const who=_acctVendorName(e)||e.person||'';
     const cells=book
@@ -1244,7 +1254,7 @@ function _acctReviewPage(){
   const b=_acctBalances(closable+'-31');
   let h=`<div class="card">
     <div class="card-title">Needs review · ${queue.length}</div>
-    ${queue.length?`<div class="acct-table-wrap"><table class="acct-table"><thead><tr><th>Date</th><th>Particulars</th><th>Vendor / person</th><th class="num">Amount</th><th>Why</th><th>By</th><th></th></tr></thead><tbody>${queue.map(e=>`<tr onclick="window.acctOpenEntry('${e._id}')"><td class="date">${_acctDateLabel(e.date)}</td><td class="part">${_acctEsc(_acctParticulars(e))}</td><td>${_acctEsc(_acctVendorName(e)||e.person||'')}</td><td class="num">${_acctPKR(e.amount)}</td><td>${(e.reviewFlags||[]).map(f=>`<span class="acct-chip urgent">${_acctEsc(f)}</span>`).join(' ')}</td><td>${_acctEsc(e.byName||e.by)}</td><td class="flags"><button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="event.stopPropagation();window.acctReview('${e._id}')">Clear</button></td></tr>`).join('')}</tbody></table></div>`:`<div class="empty" style="padding:18px">Nothing waiting. Entries above the approval limit (${s.approvalLimit?_acctPKR(s.approvalLimit):'off'}) or without a receipt above ${_acctPKR(s.receiptRequiredAbove)} land here.</div>`}
+    ${queue.length?`<div class="acct-table-wrap"><table class="acct-table"><thead><tr><th>Date</th><th>Particulars</th><th>Vendor / person</th><th class="num">Amount</th><th>Why</th><th>By</th><th></th></tr></thead><tbody>${queue.map(e=>`<tr onclick="window.acctOpenEntry('${e._id}')"><td class="date">${_acctDateLabel(e.date)}</td><td class="part">${_acctEsc(_acctParticulars(e))}</td><td>${_acctEsc(_acctVendorName(e)||e.person||'')}</td><td class="num">${_acctPKR(e.amount)}</td><td>${(e.reviewFlags||[]).map(f=>`<span class="acct-chip urgent">${_acctEsc(f)}</span>`).join(' ')}${(e.reviewFlags||[]).includes('edited')&&e.edits&&e.edits.length?`<div class="acct-hist-why">${_acctEsc(e.edits[e.edits.length-1].byName||'')}: “${_acctEsc(e.edits[e.edits.length-1].reason||'')}”</div>`:''}</td><td>${_acctEsc(e.byName||e.by)}</td><td class="flags"><button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="event.stopPropagation();window.acctReview('${e._id}')">Clear</button></td></tr>`).join('')}</tbody></table></div>`:`<div class="empty" style="padding:18px">Nothing waiting. Entries above the approval limit (${s.approvalLimit?_acctPKR(s.approvalLimit):'off'}) or without a receipt above ${_acctPKR(s.receiptRequiredAbove)} land here.</div>`}
   </div>`;
   if(pending.length)h+=`<div class="card"><div class="card-title">Cash in awaiting Raees's confirmation · ${pending.length}</div>${pending.map(e=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px"><span>${_acctDateLabel(e.date)} · ${_acctPKR(e.amount)} into ${_acctAccountLabel(e.account)} by ${_acctEsc(e.byName||e.by)}</span><button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="window.acctOpenEntry('${e._id}')">Open</button></div>`).join('')}</div>`;
   h+=`<div class="card">
@@ -1340,10 +1350,32 @@ window.acctSaveSettings=async function(){
   try{await fsSet('acct_settings','main',doc);acctSettings=Object.assign({},doc,{_id:'main'});showToast('Settings saved ✓');_acctRerender();}
   catch(e){showToast('Save failed: '+e.message,true);}
 };
+// Clearing is a statement about the entry as it was LOOKED AT, and accounts
+// data loads once per session. So the entry is re-read first: if Raees edited
+// it since this page loaded, the fresh copy is shown and nothing is cleared.
+// Known limit: an edit landing in the fraction of a second between that read
+// and the write is not caught. An updateTime precondition would close it, but
+// the emulator refuses a precondition on an UNCHANGED entry, and that could
+// not be checked against live Firestore — a Clear that always fails is worse.
 window.acctReview=async function(id){
   if(!_acctCanAdmin())return;
-  const ok=await _acctPatch(id,{reviewedAt:Date.now(),reviewedBy:_acctUser().by});
-  if(ok){showToast('Cleared ✓');_acctRerender();}
+  const e=_acctById(id);if(!e){showToast('Entry not found.',true);return;}
+  let doc;
+  try{
+    const tok=await getStoreToken();
+    const raw=await _fsJson('acct_entries',await fetch(`${_FS_BASE}/acct_entries/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${tok}`}}));
+    doc=fromFsDoc(raw);
+  }catch(err){showToast('Could not re-read the entry before clearing it: '+(err.message||err),true);return;}
+  const sig=x=>JSON.stringify([(x.edits||[]).length,x.editedAt||null,Math.round(x.amount||0),x.status,x.date,x.vendorId||null,x.account||null]);
+  if(!doc.type||sig(doc)!==sig(e)){
+    if(doc.type){for(const k of Object.keys(e))if(k!=='_id'&&!(k in doc))delete e[k];Object.assign(e,doc,{_id:id});_acctSort(acctEntries);}
+    showToast('This entry changed after the page loaded — here it is as it stands now. Look again before clearing it.',true);
+    _acctRerender();return;
+  }
+  const patch={reviewedAt:Date.now(),reviewedBy:_acctUser().by};
+  try{await _acctFsMask('acct_entries',id,patch,Object.keys(patch));}
+  catch(err){showToast('Not cleared: '+(err.message||err),true);return;}
+  Object.assign(e,patch);showToast('Cleared ✓');_acctRerender();
 };
 
 /* ════════════════════════ WRITES ════════════════════════ */
@@ -1382,11 +1414,23 @@ async function _acctWrite(entry,quiet){
     return null;
   }
 }
-// Status/control fields only — the rules' hasOnly list mirrors these keys.
+// A PATCH of exactly `fields` (an updateMask), refusing to create the
+// document if it has gone. fsSet replaces the WHOLE document from this
+// tab's copy, so a tab opened before an owner cleared a review would put
+// the review back to "not reviewed" the next time it voided or confirmed
+// anything — and a patch would resurrect an entry deleted meanwhile. A
+// field named in the mask but absent from `data` is removed.
+async function _acctFsMask(col,id,data,fields,pre){
+  const tok=await getStoreToken();
+  const q=fields.map(f=>'updateMask.fieldPaths='+encodeURIComponent(f)).concat(pre||'currentDocument.exists=true').join('&');
+  const body={};for(const f of fields)if(data[f]!==undefined)body[f]=data[f];
+  const r=await fetch(`${_FS_BASE}/${col}/${encodeURIComponent(id)}?${q}`,{method:'PATCH',headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},body:JSON.stringify({fields:toFsFields(body)})});
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error((e.error&&e.error.message)||('HTTP '+r.status));}
+}
+// Status/control fields only — the rules' hasOnly lists mirror these keys.
 async function _acctPatch(id,patch){
   const e=_acctById(id);if(!e){showToast('Entry not found.',true);return false;}
-  const doc=Object.assign({},e,patch);delete doc._id;
-  try{await fsSet('acct_entries',id,doc);Object.assign(e,patch);return true;}
+  try{await _acctFsMask('acct_entries',id,patch,Object.keys(patch));Object.assign(e,patch);return true;}
   catch(err){showToast('Update failed: '+(err.message||err),true);return false;}
 }
 window.acctVoid=async function(id){
@@ -1411,47 +1455,175 @@ window.acctConfirmCashIn=async function(id){
   if(ok){showToast('Confirmed ✓');window.acctModalClose();_acctRerender();}
 };
 
-// ── Stock posting: a purchase line naming a store item is a Store Receive ──
-async function _acctPostStock(entry){
-  const lines=(entry.lines||[]).filter(l=>l.itemCode);
-  if(!lines.length)return;
+// ── Stock: a purchase line naming a store item is a Store Receive ──
+// THE INVENTORY LOG IS THE TRUTH. What a purchase has already put into
+// inventory is read back from the store log (store_transactions carrying its
+// acctEntryId), never from a flag on the entry — stockTx used to be
+// overwritten on every run and stockPosted never said WHICH lines landed.
+// Comparing that with what the lines say now, only the DIFFERENCE is posted,
+// so the first post, a Retry after a partial failure, and an edit that
+// changes a quantity are one function, and running it twice posts nothing
+// the second time. (Before this, Retry posted every line again: a partial
+// failure retried twice took a balance of 20 + 12 to 32 → 44 → 56.)
+//
+// A reduction is a `received` row with a NEGATIVE qty, tagged correction —
+// the one shape the Store's rebuild, its Analytics and its log all already
+// sum correctly; an `issued` row would read as consumption and trip the
+// PO data-quality flags, and a new type would be dropped by the rebuild.
+//
+// A SIZED item's rows carry no per-size history (they never have), so once
+// a sized item is in inventory it is never re-posted here — the edit form
+// locks that line, and a change is corrected on the Store side. New rows
+// carry `sizes` so that can change later.
+
+// What the lines say should be in inventory, per item code. Pure.
+function _acctStockTargets(entry){
+  const out={};
+  for(const l of (entry&&entry.lines)||[]){
+    if(!l||!l.itemCode)continue;
+    const t=out[l.itemCode]=out[l.itemCode]||{qty:0,sizes:null,rate:0,unit:l.unit||''};
+    const sz=l.sizes&&typeof l.sizes==='object'?Object.entries(l.sizes).filter(([,v])=>Number(v)):[];
+    if(sz.length){t.sizes=t.sizes||{};for(const [k,v] of sz){t.sizes[k]=(t.sizes[k]||0)+Number(v);t.qty+=Number(v);}}
+    else t.qty+=Number(l.qty)||0;
+    t.rate=Number(l.rate)||0;
+  }
+  return out;
+}
+// What the store log says is already in, per item code. Pure.
+function _acctStockPostedFrom(rows){
+  const out={};
+  for(const r of rows||[]){if(!r||!r.itemCode)continue;const p=out[r.itemCode]=out[r.itemCode]||{qty:0,rows:0};p.qty+=Number(r.qty)||0;p.rows++;}
+  return out;
+}
+const _acctQ=n=>Math.round((Number(n)||0)*1000)/1000;
+// The rows to write, and what cannot be written. Pure — `items` is allItems.
+// `codes` (optional) limits it to the item codes an edit actually changed: an
+// edit to a rate must not reconcile an item whose code was renamed on the
+// Store side since (the log then carries the new code and the entry the old
+// one, and reconciling both would take the whole purchase out again).
+function _acctStockPlan(entry,postedRows,items,codes){
+  const tgt=_acctStockTargets(entry),done=_acctStockPostedFrom(postedRows);
+  const plan=[],errors=[];
+  for(const code of new Set(Object.keys(tgt).concat(Object.keys(done)))){
+    if(codes&&!codes.includes(code))continue;
+    const t=tgt[code]||{qty:0,sizes:null,rate:0,unit:''},d=done[code]||{qty:0,rows:0};
+    const item=(items||[]).find(i=>i.code===code);
+    if(!item){if(_acctQ(t.qty)!==_acctQ(d.qty))errors.push(code+': not in inventory');continue;}
+    if(item.sizeSpecific){
+      if(d.rows){if(_acctQ(t.qty)!==_acctQ(d.qty))errors.push(code+': a sized item already in inventory — correct its sizes on the Store side');continue;}
+      if(!t.qty)continue;
+      if(!t.sizes){errors.push(code+': no size quantities');continue;}
+      plan.push({code,item,qty:_acctQ(t.qty),sizes:t.sizes,rate:t.rate,correction:false,was:0});
+      continue;
+    }
+    const delta=_acctQ(t.qty-d.qty);
+    if(!delta)continue;
+    plan.push({code,item,qty:delta,sizes:null,rate:t.rate,correction:d.rows>0,was:_acctQ(d.qty),now:_acctQ(t.qty)});
+  }
+  return {plan,errors};
+}
+// One row and the item's new balance, in ONE atomic commit — a row without
+// its balance (or the reverse) is exactly the half-failure that made the
+// old poster double-count on Retry.
+async function _acctStockCommit(item,updated,txId,tx){
+  const tok=await getStoreToken();
+  const r=await fetch(`${_FS_BASE}:commit`,{method:'POST',headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},
+    body:JSON.stringify({writes:[
+      {update:{name:`${_FS_DOCS}/store_transactions/${txId}`,fields:toFsFields(tx)},currentDocument:{exists:false}},
+      {update:{name:`${_FS_DOCS}/store_items/${encodeURIComponent(item.code)}`,fields:toFsFields(updated)}}
+    ]})});
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error((e.error&&e.error.message)||('HTTP '+r.status));}
+}
+// opts.fresh: the entry was just created, so nothing can be in the log yet
+// and the read is skipped (a new purchase posts exactly as it always did).
+// Item codes whose stock an edit changes (quantity or sizes), from the lines
+// before and after. Pure.
+function _acctStockChangedCodes(before,after){
+  const a=_acctStockTargets(before),b=_acctStockTargets(after);
+  return [...new Set(Object.keys(a).concat(Object.keys(b)))].filter(k=>JSON.stringify(a[k]?[_acctQ(a[k].qty),a[k].sizes]:null)!==JSON.stringify(b[k]?[_acctQ(b[k].qty),b[k].sizes]:null));
+}
+// The item as the server holds it NOW: allItems is loaded once per session,
+// and a correction may run hours later, after the Store has issued from it
+// on another device — writing from the stale copy would erase that issue.
+async function _acctFreshItem(code){
+  const tok=await getStoreToken();
+  const raw=await _fsJson('store_items',await fetch(`${_FS_BASE}/store_items/${encodeURIComponent(code)}`,{headers:{Authorization:`Bearer ${tok}`}}));
+  const it=fromFsDoc(raw);if(!it.code)throw new Error('not in inventory');return it;
+}
+// One sync per entry at a time: two at once (a double-tapped Retry, an edit
+// saved again mid-sync) would both read the same log and both post the gap.
+const _acctSyncing=new Set();
+async function _acctStockSync(entry,opts){
+  opts=opts||{};
+  if(!entry||!entry._id||entry.status==='void')return;
+  if(_acctSyncing.has(entry._id)){showToast('Stock for this entry is already being posted — wait a moment.',true);return;}
+  _acctSyncing.add(entry._id);
+  try{return await _acctStockSyncRun(entry,opts);}finally{_acctSyncing.delete(entry._id);}
+}
+async function _acctStockSyncRun(entry,opts){
   if(typeof allItems==='undefined'){await _acctPatch(entry._id,{stockPosted:false,stockError:'Store module not loaded'});return;}
   if(typeof _storeDataLoaded==='function'&&!_storeDataLoaded()&&typeof loadStoreData==='function'){try{await loadStoreData();}catch(_){}}
-  const errors=[];const txIds=[];
-  const vendorName=entry.vendorName||'';
-  for(const l of lines){
-    const item=allItems.find(i=>i.code===l.itemCode);
-    if(!item){errors.push(l.itemCode+': not in inventory');continue;}
-    const updated=Object.assign({},item);delete updated._id;
-    let qty=0;
-    if(item.sizeSpecific){
-      const sizes=Object.assign({},item.sizes||{});let any=false;
-      for(const [sz,q] of Object.entries(l.sizes||{})){const n=Number(q)||0;if(n){sizes[sz]=(parseInt(sizes[sz])||0)+n;any=true;qty+=n;}}
-      if(!any){errors.push(l.itemCode+': no size quantities');continue;}
+  let rows=[];
+  if(!opts.fresh){
+    try{rows=await fsQueryWhere('store_transactions','acctEntryId',entry._id,500);}
+    catch(e){await _acctPatch(entry._id,{stockPosted:false,stockError:'Could not read the inventory log ('+(e.message||e)+') — press Retry when back online'});return;}
+  }
+  // A retry that finds NOTHING in the log for a purchase that failed before:
+  // an older version wrote the balance before the log row, so its failure
+  // could leave the balance already raised. Ask rather than risk it twice.
+  if(opts.retry&&!rows.length&&(entry.lines||[]).some(l=>l&&l.itemCode)&&!(entry.stockTx||[]).length&&typeof confirm==='function'
+    &&!confirm('The store log shows nothing from this purchase yet. If an item\'s balance already went up when it was first saved, cancel and check it on the Store side first — otherwise it will be counted twice. Post it now?'))return;
+  const {plan,errors}=_acctStockPlan(entry,rows,allItems,opts.codes||null);
+  const txIds=rows.map(r=>r._id).filter(Boolean);const low=[];
+  for(const p of plan){
+    if(!opts.fresh){
+      try{p.item=await _acctFreshItem(p.code);}
+      catch(e){errors.push(p.code+': could not re-read the item ('+(e.message||e)+')');continue;}
+    }
+    const updated=Object.assign({},p.item);delete updated._id;
+    if(p.sizes){
+      const sizes=Object.assign({},p.item.sizes||{});
+      for(const [sz,q] of Object.entries(p.sizes))sizes[sz]=(parseInt(sizes[sz])||0)+Number(q);
       updated.sizes=sizes;
     }else{
-      qty=Number(l.qty)||0;
-      if(!qty){errors.push(l.itemCode+': no quantity');continue;}
-      updated.balance=(parseInt(item.balance)||0)+qty;
+      // The Store never holds a balance below zero, so a correction bigger
+      // than what is left takes back only what is there — and the LOG row
+      // says exactly that, so log and balance keep agreeing and a later
+      // correction lands on the truth instead of minting stock.
+      const cur=Number(p.item.balance)||0;const next=Math.max(0,_acctQ(cur+p.qty));
+      const applied=_acctQ(next-cur);
+      if(applied!==p.qty){low.push(`${p.code} (only ${Math.abs(applied)} of ${Math.abs(p.qty)} ${p.item.unit||''} could be taken back — the rest was already issued)`);errors.push(p.code+': '+Math.abs(_acctQ(p.qty-applied))+' already issued, not taken back');}
+      if(!applied)continue;
+      p.now=_acctQ(p.was+applied);p.qty=applied;
+      updated.balance=next;
     }
+    const unit=p.item.unit||'';
+    const tx={type:'received',itemCode:p.code,itemName:p.item.name,supplier:entry.vendorName||entry.payee||'',
+      date:p.correction?_acctToday():entry.date,
+      notes:p.correction?`Accounts correction · purchase ${_acctDateLabel(entry.date)}${entry.ref?' · '+entry.ref:''} — was ${p.was}, now ${p.now} ${unit}`:'Accounts purchase'+(entry.ref?' · '+entry.ref:'')+' @ '+_acctPKR(p.rate)+'/'+(unit||'unit'),
+      by:_acctUser().byName,ts:Date.now(),qty:p.qty,unit,rate:p.rate,acctEntryId:entry._id};
+    if(p.sizes)tx.sizes=p.sizes;
+    if(p.correction)tx.correction=true;
+    const txId=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
     try{
-      await fsSet('store_items',item.code,updated);
-      const tx={type:'received',itemCode:item.code,itemName:item.name,supplier:vendorName,date:entry.date,notes:'Accounts purchase'+(entry.ref?' · '+entry.ref:'')+' @ '+_acctPKR(l.rate)+'/'+(l.unit||item.unit||'unit'),by:_acctUser().byName,ts:Date.now(),qty,unit:item.unit,rate:Number(l.rate)||0,acctEntryId:entry._id};
-      const txId=await fsAdd('store_transactions',tx);
+      await _acctStockCommit(p.item,updated,txId,tx);
       txIds.push(txId);
-      const idx=allItems.findIndex(i=>i.code===item.code);if(idx>=0)allItems[idx]=Object.assign({},updated,{_id:item.code});
+      const idx=allItems.findIndex(i=>i.code===p.code);if(idx>=0)allItems[idx]=Object.assign({},updated,{_id:p.code});
       if(typeof allTransactions!=='undefined'&&Array.isArray(allTransactions))allTransactions.unshift(Object.assign({},tx,{_id:txId}));
-      if(typeof _checkShortfallsOnReceive==='function')_checkShortfallsOnReceive(item.code).catch(()=>{});
-    }catch(e){errors.push(item.code+': '+(e.message||e));}
+      if(p.qty>0&&typeof _checkShortfallsOnReceive==='function')_checkShortfallsOnReceive(p.code).catch(()=>{});
+    }catch(e){errors.push(p.code+': '+(e.message||e));}
   }
   await _acctPatch(entry._id,{stockPosted:errors.length===0,stockError:errors.join('; '),stockTx:txIds});
-  if(errors.length)showToast('Money recorded, but stock was not fully posted: '+errors.join('; '),true);
+  if(low.length)showToast('Stock corrected — '+low.join('; ')+'. Check it on the Store side.',true);
+  else if(errors.length)showToast('Money recorded, but stock was not fully posted: '+errors.join('; '),true);
+  return plan;
 }
-window.acctRetryStock=async function(id){const e=_acctById(id);if(!e||e.status==='void')return;await _acctPostStock(e);_acctRerender();if(e.stockPosted)showToast('Stock posted ✓');};
+window.acctRetryStock=async function(id){const e=_acctById(id);if(!e||e.status==='void')return;await _acctStockSync(e,{retry:true});_acctRerender();if(e.stockPosted)showToast('Stock posted ✓');};
 
 /* ════════════════════════ MODAL ════════════════════════ */
 function _acctModal(title,body,foot,opts){
   opts=opts||{};
+  if(!opts.edit)_acctEditId=null;   // any other modal ends an edit session
   document.getElementById('acct-modal')?.remove();
   const m=document.createElement('div');m.id='acct-modal';m.className='acct-modal-back';
   m.innerHTML=`<div class="acct-modal" style="max-width:${opts.width||560}px" role="dialog" aria-modal="true">
@@ -1463,7 +1635,7 @@ function _acctModal(title,body,foot,opts){
   document.body.appendChild(m);
   const first=m.querySelector('[autofocus]');if(first)setTimeout(()=>first.focus(),40);
 }
-window.acctModalClose=function(){document.getElementById('acct-modal')?.remove();};
+window.acctModalClose=function(){_acctEditId=null;document.getElementById('acct-modal')?.remove();};
 function _acctPhotoField(id,label){
   return `<label for="${id}" class="acct-photo-btn">📷 ${label}</label>
     <input id="${id}" type="file" accept="image/*" capture="environment" style="display:none" onchange="window.acctUploadPhoto('${id}')">
@@ -1486,9 +1658,12 @@ window.acctNewMenu=function(){
 };
 
 /* ════════════════════════ ENTRY FORMS ════════════════════════ */
+// While editing, the entry's own vendor is listed even if it has since been
+// deactivated (or the form would open on "pick a vendor" and refuse to save),
+// and "+ New vendor…" is left off — it opens a fresh form and loses the edit.
 function _acctVendorOptions(sel,filter){
-  const list=acctVendors.filter(v=>v.active!==false&&(!filter||filter(v))).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  return `<option value="">— pick a vendor —</option>`+list.map(v=>`<option value="${v._id}"${sel===v._id?' selected':''}>${_acctEsc(v.name)}${v.terms&&v.terms.mode==='credit'?' · credit':''}</option>`).join('')+`<option value="__new__">+ New vendor…</option>`;
+  const list=acctVendors.filter(v=>(v.active!==false||(sel&&v._id===sel))&&(!filter||filter(v))).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  return `<option value="">— pick a vendor —</option>`+list.map(v=>`<option value="${v._id}"${sel===v._id?' selected':''}>${_acctEsc(v.name)}${v.terms&&v.terms.mode==='credit'?' · credit':''}</option>`).join('')+(_acctEditId?'':`<option value="__new__">+ New vendor…</option>`);
 }
 function _acctAccountChips(name,sel,extra){
   const opts=ACCT_ACCOUNTS.map(a=>({key:a.key,label:a.label})).concat(extra||[]);
@@ -1517,8 +1692,13 @@ function _acctCategories(){
 const _ACCT_NEW_CAT='__new__';
 const _ACCT_CAT_FIELDS=['categories','updatedAt','updatedBy']; // mirrored in firestore.rules acct_settings
 function _acctCatOptions(sel,blank){
+  // A category spelled differently from the list's spelling (the list dedupes
+  // case-insensitively) is kept as its own option, so opening an entry to edit
+  // it never quietly re-spells — or loses — its category.
+  const cats=_acctCategories();
+  if(sel&&sel!==_ACCT_NEW_CAT&&!cats.includes(sel))cats.unshift(sel);
   return (blank?`<option value=""${!sel?' selected':''}>${_acctEsc(blank)}</option>`:'')
-    +_acctCategories().map(c=>`<option${sel===c?' selected':''}>${_acctEsc(c)}</option>`).join('')
+    +cats.map(c=>`<option${sel===c?' selected':''}>${_acctEsc(c)}</option>`).join('')
     +`<option value="${_ACCT_NEW_CAT}">+ New category…</option>`;
 }
 // "+ New category…" on the purchase form's Category select. Asks for a
@@ -1563,10 +1743,16 @@ window.acctForm=function(type,pre){
   pre=pre||{};
   if(!_acctCanEntry())return;
   if(type==='adjust'&&!_acctCanAdmin())return;
+  // EDIT: the same form, filled from the entry (window.acctEditEntry).
+  const ed=pre.edit?_acctById(pre.edit):null;
+  if(pre.edit){const why=_acctEditBlock(ed);if(why){showToast(why,true);return;}if(ed.type!==type)return;pre=Object.assign(_acctEditPre(ed),pre);}
+  _acctEditId=ed?ed._id:null;
+  // a photo attached in a cancelled form must never ride into this one
+  delete window._acctPhoto['f-photo'];
   if(type==='purchase')return _acctPurchaseForm(pre);
   const T=ACCT_TYPES[type];if(!T)return;
   let body='';
-  const floats=_acctOpenFloats();
+  const floats=_acctFloatsFor(ed&&ed.floatId);
   if(type==='payment'){
     const v=_acctVendor(pre.vendorId);const bal=v?_acctVendorBalance(v._id):0;
     body=`<div class="form-grid">
@@ -1611,17 +1797,18 @@ window.acctForm=function(type,pre){
       <div style="grid-column:1/-1;font-size:13px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:8px 10px">When the bills come back, record each as a <b>Purchase</b> paid <b>from this float</b> — it starts in this category; then record the <b>change back</b>. The float closes itself when it is fully accounted for.</div>
     </div>`;
   }else if(type==='float_in'){
-    if(!floats.length){showToast('No open floats.',true);return;}
+    if(!floats.length){_acctEditId=null;showToast('No open floats.',true);return;}
+    const curF=(pre.floatId&&floats.find(f=>f.id===pre.floatId))||floats[0];
     body=`<div class="form-grid">
-      <div class="field" style="grid-column:1/-1"><label>Which float *</label><select id="f-float" onchange="window.acctFloatPick(this.value)">${floats.map(f=>`<option value="${f.id}"${pre.floatId===f.id?' selected':''}>${_acctEsc(f.person)} · ${_acctDateLabel(f.date)} · ${_acctPKR(f.left)} left</option>`).join('')}</select></div>
-      <div class="field"><label>Change returned (₨) *</label><input id="f-amount" type="number" inputmode="numeric" min="1" value="${(pre.floatId?floats.find(f=>f.id===pre.floatId):floats[0]).left}" autofocus></div>
+      <div class="field" style="grid-column:1/-1"><label>Which float *</label><select id="f-float" onchange="window.acctFloatPick(this.value)">${floats.map(f=>`<option value="${f.id}"${curF.id===f.id?' selected':''}>${_acctEsc(f.person)} · ${_acctDateLabel(f.date)} · ${_acctPKR(f.left)} left</option>`).join('')}</select></div>
+      <div class="field"><label>Change returned (₨) *</label><input id="f-amount" type="number" inputmode="numeric" min="1" value="${curF.left}" autofocus></div>
       ${_acctDateField('f-date')}
       <div class="field" style="grid-column:1/-1"><label>Into *</label>${_acctAccountChips('f-acc','cash')}</div>
       <div class="field" style="grid-column:1/-1"><label>Note</label><input id="f-note" placeholder="optional"></div>
     </div>`;
   }else if(type==='runner_pay'){
     const owedAll=Object.values(_acctRunnerOwed()).filter(r=>r.owed>0).sort((a,b)=>b.owed-a.owed);
-    if(!owedAll.length){showToast('No runner is owed anything — every bill fits its float.',true);return;}
+    if(!owedAll.length){_acctEditId=null;showToast('No runner is owed anything — every bill fits its float.',true);return;}
     const cur=owedAll.find(r=>r.key===_acctRunnerKey(pre.person))||owedAll[0];
     body=`<div class="form-grid">
       <div class="field" style="grid-column:1/-1"><label>Runner *</label><select id="f-person" onchange="window.acctRunnerPayPick(this.value)">${owedAll.map(r=>`<option value="${_acctEsc(r.name)}"${r.key===cur.key?' selected':''}>${_acctEsc(r.name)} · owed ${_acctPKR(r.owed)}</option>`).join('')}</select><div id="f-owed" style="font-size:13px;color:var(--muted);margin-top:4px">Spent ${_acctPKR(cur.over)} over the float${cur.paid?`, ${_acctPKR(cur.paid)} already settled`:''} — <b>${_acctPKR(cur.owed)}</b> still owed.</div></div>
@@ -1641,14 +1828,15 @@ window.acctForm=function(type,pre){
       <div style="grid-column:1/-1;font-size:13px;color:var(--accent-urgent)">Adjustments are always flagged for review and are visible to everyone who can see the ledger.</div>
     </div>`;
   }
-  _acctModal(T.verb,body,`<button class="btn-outline" onclick="window.acctModalClose()">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="f-submit" onclick="window.acctSubmit('${type}')">Record</button>`,{sticky:true});
+  _acctModal(ed?'Edit · '+_acctEsc(T.label):T.verb,(ed?_acctEditBanner(ed):'')+body,`<button class="btn-outline" onclick="${ed?`window.acctOpenEntry('${ed._id}')`:'window.acctModalClose()'}">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="f-submit" onclick="window.acctSubmit('${type}')">${ed?'Save changes':'Record'}</button>`,{sticky:true,edit:!!ed});
   if(type==='payment'||type==='runner_pay')window.acctChip('f-acc','cash');
+  if(ed)_acctFillEdit(ed);
 };
 window.acctRunnerPayPick=function(name){
   const r=_acctRunnerOwed()[_acctRunnerKey(name)];const el=document.getElementById('f-owed');const a=document.getElementById('f-amount');
   if(!r){if(el)el.textContent='';return;}
   if(el)el.innerHTML=`Spent ${_acctPKR(r.over)} over the float${r.paid?`, ${_acctPKR(r.paid)} already settled`:''} — <b>${_acctPKR(r.owed)}</b> still owed.`;
-  if(a)a.value=r.owed;
+  if(a&&!_acctEditId)a.value=r.owed;
 };
 window.acctPayVendorChanged=function(v){
   if(v==='__new__'){window.acctVendorWizard(null,null,{then:id=>window.acctForm('payment',{vendorId:id})});return;}
@@ -1656,14 +1844,17 @@ window.acctPayVendorChanged=function(v){
   if(!v){if(el)el.textContent='';return;}
   const bal=_acctVendorBalance(v),ag=_acctVendorAging(v);
   if(el)el.innerHTML=`Owed: <b>${_acctPKR(bal)}</b>${ag.overdue?` · <span style="color:var(--accent-urgent)">${_acctPKR(ag.overdue)} overdue</span>`:''}`;
-  if(a&&bal>0)a.value=bal;
+  if(a&&bal>0&&!_acctEditId)a.value=bal;
 };
-window.acctFloatPick=function(id){const f=_acctOpenFloats().find(x=>x.id===id);const a=document.getElementById('f-amount');if(f&&a)a.value=f.left;};
+window.acctFloatPick=function(id){const f=_acctFloatsFor(_acctEditFloat()).find(x=>x.id===id);const a=document.getElementById('f-amount');if(f&&a&&!_acctEditId)a.value=f.left;};
 
 window.acctSubmit=async function(type){
   const g=id=>{const el=document.getElementById(id);return el?el.value:'';};
   const amount=parseInt(g('f-amount'));
   const btn=document.getElementById('f-submit');
+  // editing: the same checks, then _acctFinishEdit instead of a new entry
+  const ed=_acctEditId?_acctById(_acctEditId):null;
+  if(_acctEditId&&(!ed||ed.type!==type)){showToast('That entry is no longer open for editing — close and try again.',true);return;}
   const e=_acctBase(type);
   e.date=g('f-date')||_acctToday();e.note=(g('f-note')||'').trim();e.ref=(g('f-ref')||'').trim();e.photo=window._acctPhoto['f-photo']||null;
   if(type!=='adjust'&&(!amount||amount<=0)){showToast('Enter an amount.',true);return;}
@@ -1689,9 +1880,16 @@ window.acctSubmit=async function(type){
     if(!e.person){showToast('Who is taking the float?',true);return;}
     if(!e.category||e.category===_ACCT_NEW_CAT){showToast('Pick a category — what is the runner sent for?',true);return;}
     const b=_acctBalances();
+    if(ed){
+      // bills and change already on this float (the float itself is left out
+      // of the balances while it is being edited, so its slot holds only them)
+      const f=b.floats[ed._id];const used=f?f.used+f.back:0;
+      if(used&&_acctRunnerKey(e.person)!==_acctRunnerKey(ed.person)){showToast(`Bills or change are recorded against this float under ${ed.person} — it cannot move to someone else. Void those first, or ask Afnan or Ammar.`,true);return;}
+      if(used>amount&&!confirm(`${_acctPKR(used)} is already accounted for on this float (bills and change back). At ${_acctPKR(amount)} the extra ${_acctPKR(used-amount)} becomes owed to ${e.person}. Save anyway?`))return;
+    }
     if(amount>b[e.account]&&!confirm(`${_acctAccountLabel(e.account)} shows only ${_acctPKR(b[e.account])}. Record anyway?`))return;
   }else if(type==='float_in'){
-    const f=_acctOpenFloats().find(x=>x.id===g('f-float'));if(!f){showToast('Pick a float.',true);return;}
+    const f=_acctFloatsFor(ed&&ed.floatId).find(x=>x.id===g('f-float'));if(!f){showToast('Pick a float.',true);return;}
     if(amount>f.left){showToast(`Only ${_acctPKR(f.left)} is outstanding on that float.`,true);return;}
     e.floatId=f.id;e.person=f.person;e.account=g('f-acc')||'cash';
   }else if(type==='runner_pay'){
@@ -1706,6 +1904,7 @@ window.acctSubmit=async function(type){
   }else if(type==='adjust'){
     e.account=g('f-acc')||'cash';if(!e.note){showToast('A reason is required.',true);return;}
   }
+  if(ed)return _acctFinishEdit(ed,e);
   if(btn){btn.disabled=true;btn.textContent='Saving…';}
   const row=await _acctWrite(e);
   if(row){
@@ -1729,11 +1928,12 @@ const ACCT_PURCHASE_KINDS=[
   {key:'expense',label:'Expense / service',sub:'work, repairs, transport — no inventory'}
 ];
 function _acctPurchaseKindFor(v){return v&&(v.kind==='service'||v.kind==='utility')?'expense':'stock';}
-function _acctKindChips(sel){
-  return `<div class="acct-chips" id="f-kind-chips">${ACCT_PURCHASE_KINDS.map(k=>`<button type="button" class="acct-chipbtn${sel===k.key?' on':''}" data-v="${k.key}" onclick="window.acctPurchaseKind('${k.key}')">${k.label}<small>${k.sub}</small></button>`).join('')}<input type="hidden" id="f-kind" value="${_acctEsc(sel)}"></div>`;
+function _acctKindChips(sel,stockOnly){
+  return `<div class="acct-chips" id="f-kind-chips">${ACCT_PURCHASE_KINDS.filter(k=>!stockOnly||k.key==='stock').map(k=>`<button type="button" class="acct-chipbtn${sel===k.key?' on':''}" data-v="${k.key}" onclick="window.acctPurchaseKind('${k.key}')">${k.label}<small>${k.sub}</small></button>`).join('')}<input type="hidden" id="f-kind" value="${_acctEsc(sel)}"></div>`;
 }
 window.acctPurchaseKind=function(k){
   if(!ACCT_PURCHASE_KINDS.some(x=>x.key===k))k='stock';
+  if(k==='expense'&&_acctFormLines.some(l=>l.locked)){showToast('This purchase put sized items into inventory — it stays a stock purchase.',true);k='stock';}
   const h=document.getElementById('f-kind');if(h)h.value=k;
   document.querySelectorAll('#f-kind-chips .acct-chipbtn').forEach(b=>b.classList.toggle('on',b.dataset.v===k));
   const st=document.getElementById('acct-stock-wrap'),ex=document.getElementById('acct-expense-wrap');
@@ -1742,10 +1942,34 @@ window.acctPurchaseKind=function(k){
   _acctTotalPaint();
   if(k==='expense')setTimeout(()=>document.getElementById('f-exp-desc')?.focus(),20);
 };
+// The stored lines, back in the form's shape. A SIZED line that has already
+// gone into inventory is LOCKED (item, sizes and quantity): the store log
+// has no per-size history to reconcile against, so its sizes are corrected
+// on the Store side. A flat line stays editable — the sync posts only the
+// difference.
+function _acctEditLines(e){
+  // Posted means it really went in: stockPosted true, or rows in the log for
+  // an entry whose error does not name this item (a sized line whose post
+  // FAILED stays editable, so its sizes can be typed and posted).
+  const err=String(e.stockError||'');
+  const posted=e.stockPosted===true||!!(e.stockTx&&e.stockTx.length);
+  const items=typeof allItems!=='undefined'?allItems:[];
+  return (e.lines||[]).map(l=>{
+    const item=l.itemCode?items.find(x=>x.code===l.itemCode):null;
+    const sized=!!(l.sizes&&Object.keys(l.sizes).length)||!!(item&&item.sizeSpecific);
+    let sizes=null;
+    if(sized){sizes={};for(const k of Object.keys((item&&item.sizes)||{}))sizes[k]='';for(const [k,v] of Object.entries(l.sizes||{}))sizes[k]=String(v);}
+    const locked=!!(posted&&l.itemCode&&sized&&!(e.stockPosted!==true&&err.includes(l.itemCode+':')));
+    return {itemCode:l.itemCode||'',desc:l.desc||'',qty:String(l.qty==null?'':l.qty),unit:l.unit||'',rate:String(l.rate==null?'':l.rate),sizes,sizeSpecific:sized,locked,
+      hint:locked?'In inventory by size — its sizes are corrected on the Store side.':(posted&&l.itemCode?'In inventory — a changed quantity posts only the difference.':'')};
+  });
+}
 function _acctPurchaseForm(pre){
   const v=_acctVendor(pre.vendorId);
-  _acctFormLines=[];
-  const floats=_acctOpenFloats();
+  const ed=_acctEditId?_acctById(_acctEditId):null;
+  _acctFormLines=ed&&!ed.expense?_acctEditLines(ed):[];
+  const stockOnly=_acctFormLines.some(l=>l.locked);
+  const floats=_acctFloatsFor(ed&&ed.floatId);
   const defSource=pre.source||(v&&v.terms&&['credit','monthly','weekly'].includes(v.terms.mode)?'credit':'cash');
   const src=[{key:'cash',label:'Cash'},{key:'mcb',label:'MCB'},{key:'credit',label:'On credit',sub:'adds to what they are owed'}].concat(floats.map(f=>({key:'float:'+f.id,label:'Float · '+f.person,sub:_acctPKR(f.left)+' left'})));
   const kind=pre.kind||_acctPurchaseKindFor(v);
@@ -1763,7 +1987,7 @@ function _acctPurchaseForm(pre){
     <div class="field"><label>Bill / invoice no.</label><input id="f-ref" placeholder="optional"></div>
     <div class="field"><label>Category</label><select id="f-cat" onchange="window.acctCatChange(this);window.acctPurchaseCatChanged()">${_acctCatOptions(cat)}</select></div>
     <div class="field"><label>Note</label><input id="f-note" placeholder="optional"></div>
-    <div class="field" style="grid-column:1/-1"><label>What is this? *</label>${_acctKindChips(kind)}</div>
+    <div class="field" style="grid-column:1/-1"><label>What is this? *</label>${_acctKindChips(stockOnly?'stock':kind,stockOnly)}</div>
   </div>
   <div id="acct-expense-wrap" class="form-grid" style="${kind==='expense'?'':'display:none'}">
     <div class="field" style="grid-column:1/-1"><label>What was done *</label><input id="f-exp-desc" placeholder="e.g. paint job for the studio" value="${_acctEsc(pre.desc||'')}"></div>
@@ -1781,10 +2005,11 @@ function _acctPurchaseForm(pre){
     <div class="field" style="grid-column:1/-1" id="f-src-hint" style="font-size:13px"></div>
     <div class="field" style="grid-column:1/-1"><label>Receipt / bill photo <span id="f-photo-req" style="font-weight:400"></span></label>${_acctPhotoField('f-photo','Attach the bill')}</div>
   </div>`;
-  _acctModal('Record purchase',body,`<button class="btn-outline" onclick="window.acctModalClose()">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="f-submit" onclick="window.acctSubmitPurchase()">Record purchase</button>`,{sticky:true,width:720});
+  _acctModal(ed?'Edit · Purchase':'Record purchase',(ed?_acctEditBanner(ed):'')+body,`<button class="btn-outline" onclick="${ed?`window.acctOpenEntry('${ed._id}')`:'window.acctModalClose()'}">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="f-submit" onclick="window.acctSubmitPurchase()">${ed?'Save changes':'Record purchase'}</button>`,{sticky:true,width:720,edit:!!ed});
   // The chip builder paints ONLY cash/mcb balances; strip those from credit/float chips' labels — already handled (no balance key).
-  window.acctLineAdd();
+  if(_acctFormLines.length)_acctLinesRender();else window.acctLineAdd();
   window.acctPurchaseHasVendor(hasV);
+  if(ed)_acctFillEdit(ed);
 }
 // Everyone a vendor-less bill was paid to, most recent first — the
 // datalist behind "Paid to", derived from the entries like the runner list.
@@ -1820,8 +2045,13 @@ window.acctPurchaseVendorChanged=function(v){
   if(v==='__new__'){window.acctVendorWizard(null,null,{then:id=>window.acctForm('purchase',{vendorId:id})});return;}
   const vd=_acctVendor(v);const el=document.getElementById('f-vendor-hint');
   if(el)el.innerHTML=vd?_acctEsc(_acctTermsLabel(vd))+(_acctVendorBalance(vd._id)?' · owed '+_acctPKR(_acctVendorBalance(vd._id)):''):'';
-  if(vd&&vd.terms)window.acctChip('f-source',vd.terms.mode==='cash'?'cash':'credit');
-  if(vd)window.acctPurchaseKind(_acctPurchaseKindFor(vd));
+  // a new entry follows the vendor's terms and kind; a corrected one keeps
+  // what was recorded — picking the right vendor must not quietly change
+  // how it was paid
+  if(!_acctEditId){
+    if(vd&&vd.terms)window.acctChip('f-source',vd.terms.mode==='cash'?'cash':'credit');
+    if(vd)window.acctPurchaseKind(_acctPurchaseKindFor(vd));
+  }
   // refresh rate hints on existing lines
   _acctFormLines.forEach((l,i)=>window.acctLineItem(i,l.itemCode,true));
 };
@@ -1830,7 +2060,7 @@ window.acctPurchaseSourceChanged=function(){
   const rr=_acctSettings().receiptRequiredAbove;
   if(el){
     if(s==='credit')el.innerHTML=`<span style="color:var(--accent-warning)">Goes on the vendor's account — pay it later from their page.</span>`;
-    else if(s.startsWith('float:')){const f=_acctOpenFloats().find(x=>'float:'+x.id===s);el.innerHTML=f?`Paid out of <b>${_acctEsc(f.person)}</b>'s float (${_acctPKR(f.left)} still to account for)${f.category?` · started as <b>${_acctEsc(f.category)}</b>`:''}.`:'';
+    else if(s.startsWith('float:')){const f=_acctFloatsFor(_acctEditFloat()).find(x=>'float:'+x.id===s);el.innerHTML=f?`Paid out of <b>${_acctEsc(f.person)}</b>'s float (${_acctPKR(f.left)} still to account for)${f.category?` · started as <b>${_acctEsc(f.category)}</b>`:''}.`:'';
       // a bill paid from a float starts in the float's own category — the
       // purpose the runner was sent for — and the pick can still be changed
       const cat=document.getElementById('f-cat');
@@ -1849,19 +2079,19 @@ window.acctLineAdd=function(){
   _acctLinesRender();
   const n=_acctFormLines.length-1;setTimeout(()=>document.getElementById('l-item-'+n)?.focus(),20);
 };
-window.acctLineRemove=function(i){_acctFormLines.splice(i,1);if(!_acctFormLines.length)_acctFormLines.push(_acctNewLine());_acctLinesRender();};
+window.acctLineRemove=function(i){if(_acctFormLines[i]&&_acctFormLines[i].locked)return;_acctFormLines.splice(i,1);if(!_acctFormLines.length)_acctFormLines.push(_acctNewLine());_acctLinesRender();};
 // One line of the purchase form. Pure (no DOM), so the layout probe can
 // render the REAL row — it used to hand-roll a copy with a shorter
 // placeholder than the one shipped, and measured that instead.
 function _acctLineHTML(l,i){
   return `<div class="acct-line" id="l-row-${i}">
-    <input id="l-item-${i}" class="li" list="acct-items-dl" placeholder="Item code" value="${_acctEsc(l.itemCode)}" onchange="window.acctLineItem(${i},this.value)" title="Store item code — leave blank for anything that is not a store item">
+    <input id="l-item-${i}" class="li" list="acct-items-dl" placeholder="Item code" value="${_acctEsc(l.itemCode)}" onchange="window.acctLineItem(${i},this.value)" title="Store item code — leave blank for anything that is not a store item"${l.locked?' readonly':''}>
     <input id="l-desc-${i}" class="ld" placeholder="What was bought — e.g. paint job for studio" value="${_acctEsc(l.desc)}" oninput="window.acctLineSet(${i},'desc',this.value)">
-    <input id="l-qty-${i}" class="ln" type="number" inputmode="decimal" min="0" step="any" placeholder="Qty" value="${_acctEsc(l.qty)}" oninput="window.acctLineSet(${i},'qty',this.value)" ${l.sizeSpecific?'readonly title="Sum of the sizes below"':''}>
+    <input id="l-qty-${i}" class="ln" type="number" inputmode="decimal" min="0" step="any" placeholder="Qty" value="${_acctEsc(l.qty)}" oninput="window.acctLineSet(${i},'qty',this.value)" ${l.sizeSpecific||l.locked?'readonly title="Sum of the sizes below"':''}>
     <input id="l-unit-${i}" class="lu" placeholder="unit" value="${_acctEsc(l.unit)}" oninput="window.acctLineSet(${i},'unit',this.value)">
     <input id="l-rate-${i}" class="ln" type="number" inputmode="decimal" min="0" step="any" placeholder="Rate ₨" value="${_acctEsc(l.rate)}" oninput="window.acctLineSet(${i},'rate',this.value)">
     <span class="lt" id="l-tot-${i}">${_acctPKR((Number(l.qty)||0)*(Number(l.rate)||0))}</span>
-    <button type="button" class="acct-x" onclick="window.acctLineRemove(${i})" title="Remove line">×</button>
+    ${l.locked?'<span class="acct-x" aria-hidden="true"></span>':`<button type="button" class="acct-x" onclick="window.acctLineRemove(${i})" title="Remove line">×</button>`}
     <div class="acct-line-sub" id="l-sub-${i}">${_acctLineSubHTML(l,i)}</div>
   </div>`;
 }
@@ -1872,16 +2102,19 @@ function _acctLinesRender(){
 }
 function _acctLineSubHTML(l,i){
   let h='';
-  if(l.sizeSpecific){h+=`<div class="acct-sizes">${Object.keys(l.sizes||{}).map(sz=>`<label>${_acctEsc(sz)}<input type="number" inputmode="numeric" min="0" value="${_acctEsc(l.sizes[sz]||'')}" placeholder="0" oninput="window.acctLineSize(${i},'${_acctEsc(sz)}',this.value)"></label>`).join('')}</div>`;}
+  if(l.sizeSpecific){h+=`<div class="acct-sizes">${Object.keys(l.sizes||{}).map(sz=>`<label>${_acctEsc(sz)}<input type="number" inputmode="numeric" min="0" value="${_acctEsc(l.sizes[sz]||'')}" placeholder="0" oninput="window.acctLineSize(${i},'${_acctEsc(sz)}',this.value)"${l.locked?' readonly':''}></label>`).join('')}</div>`;}
   if(l.hint)h+=`<div class="acct-line-hint">${l.hint}</div>`;
   return h;
 }
 window.acctLineItem=function(i,code,keep){
-  const l=_acctFormLines[i];if(!l)return;
+  const l=_acctFormLines[i];if(!l||l.locked)return;
   code=(code||'').trim().toUpperCase();
   const items=typeof allItems!=='undefined'?allItems:[];
   let item=items.find(x=>x.code===code);
   if(!item&&code){const m=items.filter(x=>x.code.startsWith(code)||(x.name||'').toUpperCase().includes(code));if(m.length===1)item=m[0];}
+  // a refresh (keep) of a line whose item is not loaded leaves it alone —
+  // clearing its code would read, to the stock sync, as the item removed
+  if(keep&&!item&&l.itemCode)return;
   l.itemCode=item?item.code:'';
   if(item){
     if(!keep||!l.desc)l.desc=item.name;
@@ -1902,7 +2135,7 @@ window.acctLineItem=function(i,code,keep){
   if(!keep)setTimeout(()=>document.getElementById(item?'l-qty-'+i:'l-desc-'+i)?.focus(),20);
 };
 window.acctLineSet=function(i,k,v){const l=_acctFormLines[i];if(!l)return;l[k]=v;const t=document.getElementById('l-tot-'+i);if(t)t.textContent=_acctPKR((Number(l.qty)||0)*(Number(l.rate)||0));_acctTotalPaint();};
-window.acctLineSize=function(i,sz,v){const l=_acctFormLines[i];if(!l||!l.sizes)return;l.sizes[sz]=v;const sum=Object.values(l.sizes).reduce((s,x)=>s+(Number(x)||0),0);l.qty=sum||'';const q=document.getElementById('l-qty-'+i);if(q)q.value=l.qty;window.acctLineSet(i,'qty',l.qty);};
+window.acctLineSize=function(i,sz,v){const l=_acctFormLines[i];if(!l||!l.sizes||l.locked)return;l.sizes[sz]=v;const sum=Object.values(l.sizes).reduce((s,x)=>s+(Number(x)||0),0);l.qty=sum||'';const q=document.getElementById('l-qty-'+i);if(q)q.value=l.qty;window.acctLineSet(i,'qty',l.qty);};
 function _acctFormTotal(){
   const kind=document.getElementById('f-kind')?.value||'stock';
   if(kind==='expense')return Math.round(Number(document.getElementById('f-exp-amount')?.value)||0);
@@ -1911,6 +2144,8 @@ function _acctFormTotal(){
 function _acctTotalPaint(){const t=document.getElementById('f-total');if(t)t.textContent=_acctPKR(_acctFormTotal());}
 window.acctSubmitPurchase=async function(){
   const g=id=>{const el=document.getElementById(id);return el?el.value:'';};
+  const ed=_acctEditId?_acctById(_acctEditId):null;
+  if(_acctEditId&&(!ed||ed.type!=='purchase')){showToast('That entry is no longer open for editing — close and try again.',true);return;}
   const hasV=g('f-hasv')!=='no';
   const v=hasV?_acctVendor(g('f-vendor')):null;
   if(hasV&&!v){showToast('Pick a vendor — or say it has none.',true);return;}
@@ -1941,6 +2176,11 @@ window.acctSubmitPurchase=async function(){
     lines.push(line);
   }
   if(!lines.length){showToast('Add at least one line — or switch to Expense / service if nothing was bought for stock.',true);return;}
+  // a sized line already in inventory must come back exactly as it was
+  if(ed)for(const l of _acctEditLines(ed).filter(x=>x.locked)){
+    const want=JSON.stringify(Object.fromEntries(Object.entries(l.sizes||{}).filter(([,v])=>Number(v)).map(([k,v])=>[k,Number(v)])));
+    if(!lines.some(n=>n.itemCode===l.itemCode&&JSON.stringify(n.sizes||{})===want)){showToast(`${l.desc||l.itemCode} is in inventory by size — correct its sizes on the Store side.`,true);return;}
+  }
   const amount=lines.reduce((s,l)=>s+l.total,0);
   if(amount<=0){showToast('The total is zero — enter each line\'s rate (or, for a service, its amount).',true);return;}
   const src=g('f-source')||'cash';
@@ -1955,13 +2195,14 @@ window.acctSubmitPurchase=async function(){
     const lim=v.terms&&parseInt(v.terms.creditLimit)||0;
     if(lim&&_acctVendorBalance(v._id)+amount>lim&&!confirm(`This takes ${v.name}'s balance to ${_acctPKR(_acctVendorBalance(v._id)+amount)}, over the ${_acctPKR(lim)} credit limit. Record anyway?`))return;
   }else if(src.startsWith('float:')){
-    const f=_acctOpenFloats().find(x=>'float:'+x.id===src);if(!f){showToast('That float is no longer open.',true);return;}
+    const f=_acctFloatsFor(ed&&ed.floatId).find(x=>'float:'+x.id===src);if(!f){showToast('That float is no longer open.',true);return;}
     // Over the float: the excess is owed to the runner until it is settled
     if(amount>f.left&&!confirm(`This bill (${_acctPKR(amount)}) is ${_acctPKR(amount-f.left)} more than the ${_acctPKR(f.left)} left on ${f.person}'s float. The extra will be owed to ${f.person} until it is settled. Record it?`))return;
     e.source='float';e.floatId=f.id;e.person=f.person;e.account=null;
   }else{e.source=src;e.account=src;
     const b=_acctBalances();if(amount>b[src]&&!confirm(`${_acctAccountLabel(src)} shows only ${_acctPKR(b[src])}. Record anyway?`))return;
   }
+  if(ed)return _acctFinishEdit(ed,e);
   const btn=document.getElementById('f-submit');if(btn){btn.disabled=true;btn.textContent='Saving…';}
   const row=await _acctWrite(e);
   if(!row){if(btn){btn.disabled=false;btn.textContent='Record purchase';}return;}
@@ -1969,12 +2210,250 @@ window.acctSubmitPurchase=async function(){
   window.acctModalClose();
   showToast(`${_acctPKR(amount)} recorded ✓`+(lines.some(l=>l.itemCode)?' · posting stock…':''));
   _acctRerender();
-  if(lines.some(l=>l.itemCode)){await _acctPostStock(row);_acctRerender();if(row.stockPosted)showToast('Stock posted into inventory ✓');}
+  if(lines.some(l=>l.itemCode)){await _acctStockSync(row,{fresh:true});_acctRerender();if(row.stockPosted)showToast('Stock posted into inventory ✓');}
 };
+
+/* ════════════════════════ EDIT ════════════════════════
+   Afnan, 26 Sept 2026: "raees has been using the accounts tab we made and he
+   is insisting that he needs edit rights as well as there are multiple things
+   that he needs to do and sometimes they do get wrong so lets make a edit
+   logic". Until now the only correction was void-and-record-again, which
+   breaks everything that points at an entry by id (a float's bills and change
+   point at the float) and fills the ledger with struck-through rows.
+
+   An edit is IN PLACE, and it is the RECORDING FORM filled from the entry —
+   one definition of what a valid entry is, so every check a new entry gets
+   (from ≠ to, MCB needs proof, never over-settle a runner, no credit without
+   a vendor, the bill photo above ₨1,000…) applies to a changed one too. While
+   the form is open _acctEditId leaves the entry out of every balance, so a
+   payment that settled a vendor in full does not read that vendor as owing
+   nothing.
+
+   Raees edits HIS OWN posted entries in an OPEN month that no owner has yet
+   reviewed. Every edit keeps a history on the entry (who, when, why, each
+   field before → after) and sends the entry to the owners' review queue — the
+   rules require both. Afnan and Ammar can edit any non-void entry in an open
+   month this way; their raw "Edit (admin)" stays for everything else. The
+   TYPE never changes — a payment recorded as a purchase is voided and
+   recorded again. Mirror: firestore.rules acctOwnEdit(). */
+const _ACCT_EDIT_FIELDS=['date','month','amount','vendorId','vendorName','payee','person','account','toAccount','via','source','floatId','category','ref','note','photo','lines','expense'];
+const _ACCT_EDIT_META=['edits','editedAt','editedBy','needsReview','reviewFlags'];
+const _ACCT_EDIT_TYPES=['purchase','payment','cash_in','transfer','float_out','float_in','runner_pay','adjust'];
+// Why this person may not edit this entry through the form — or null.
+function _acctEditBlock(e){
+  if(!e)return 'Entry not found.';
+  if(!_acctCanEntry())return 'You cannot change entries.';
+  if(e.status==='void')return 'This entry is void — it stays on the record as it was.';
+  if(!_ACCT_EDIT_TYPES.includes(e.type))return 'An opening balance is corrected by Afnan or Ammar.';
+  if(e.legacyId)return 'Imported from the old cash ledger — ask Afnan or Ammar to correct it.';
+  if(e.meterKey)return 'Generated from the daily log — correct the log, void this bill and generate it again.';
+  const cl=_acctLastClose();
+  if(_acctMonthClosed(e.month)||(cl&&String(e.month||'')<=cl.month))return _acctMonthLabel(e.month)+' is closed — ask Afnan or Ammar.';
+  if(_acctIsSuper())return null;
+  if(e.type==='adjust'&&!_acctCanAdmin())return 'Adjustments are corrected by an owner.';
+  if(e.status==='pending')return 'This cash in is waiting for you to confirm it — confirm it, or void it.';
+  if(e.by!==_acctUser().by)return `Entered by ${e.byName||e.by} — ask Afnan or Ammar to change it.`;
+  if(e.reviewedAt)return 'An owner has reviewed this entry — ask Afnan or Ammar to change it.';
+  return null;
+}
+// The float a bill or change-back is on, when that entry is the one being edited.
+function _acctEditFloat(){const e=_acctEditId&&_acctById(_acctEditId);return e&&e.floatId||null;}
+// The open floats, plus the float the edited entry is on even if it no longer
+// counts as open — a bill that closed its float must still be able to name it.
+function _acctFloatsFor(keepId){
+  const open=_acctOpenFloats();
+  if(!keepId||open.some(f=>f.id===keepId))return open;
+  const f=_acctBalances().floats[keepId];
+  return f?open.concat([Object.assign({},f,{left:f.out-f.used-f.back})]):open;
+}
+// The form's `pre` for an entry: what the forms already know how to take.
+function _acctEditPre(e){
+  const l0=(e.lines&&e.lines[0])||{};
+  return {vendorId:e.vendorId||'',person:e.person||'',category:e.category||'',floatId:e.floatId||'',payee:e.payee||'',
+    hasVendor:!!e.vendorId,kind:e.expense?'expense':'stock',
+    source:e.source==='float'?'float:'+e.floatId:(e.source||'cash'),
+    desc:e.expense?(l0.desc||''):'',amount:e.expense?String(Math.round(e.amount||0)):''};
+}
+function _acctEditBanner(e){
+  const note=[
+    e.saleRef?`It came from gate pass <b>${_acctEsc(e.saleRef)}</b> — the gate pass itself is not changed.`:'',
+    e.type==='purchase'&&(e.lines||[]).some(l=>l.itemCode)&&e.stockPosted!==undefined?'A changed quantity posts only the <b>difference</b> into inventory.':''
+  ].filter(Boolean).join(' ');
+  return `<div class="acct-alert info" style="cursor:default;margin-bottom:10px">Changing a <b>${_acctEsc((ACCT_TYPES[e.type]||{}).label||e.type)}</b> of ${_acctPKR(e.amount)} from ${_acctDateLabel(e.date)}, entered by ${_acctEsc(e.byName||e.by)}. ${_acctIsSuper()?'':'The change is kept with the entry and goes to Afnan and Ammar for review. '}${note}</div>
+    <div class="field" style="margin-bottom:12px"><label>Why is it being changed? *</label><input id="f-edit-reason" placeholder="e.g. typed 1,200 — the bill says 1,500" maxlength="200"></div>`;
+}
+function _acctPhotoPaint(id,url){
+  const st=document.getElementById(id+'-st');if(!st)return;
+  st.innerHTML=url?`<a href="${_acctEsc(url)}" target="_blank" rel="noopener" style="color:var(--accent-success);font-weight:700">✓ Attached — view</a> <button type="button" class="acct-link" onclick="window.acctClearPhoto('${id}')">remove</button>`:'';
+}
+// Puts the entry's own values into the rendered form. Runs AFTER the form's
+// own defaults (a payment's amount = the balance, Cash picked) so it wins.
+function _acctFillEdit(e){
+  const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null)el.value=v;};
+  set('f-date',e.date);set('f-ref',e.ref||'');set('f-note',e.note||'');
+  if(e.type!=='purchase')set('f-amount',String(Math.round(e.amount||0)));
+  if(['cash_in','float_out'].includes(e.type))set('f-person',e.person||'');
+  // a runner's select lists the spelling on their newest float; the entry may
+  // carry another, so match by the case-folded key rather than the text
+  if(e.type==='runner_pay'){const el=document.getElementById('f-person');const k=_acctRunnerKey(e.person);const o=el&&el.options?[...el.options].find(x=>_acctRunnerKey(x.value)===k):null;if(el)el.value=o?o.value:(e.person||'');}
+  if(e.type==='float_in')set('f-float',e.floatId||'');
+  if(e.type==='payment')set('f-vendor',e.vendorId||'');
+  if(document.getElementById('f-acc')&&e.account)window.acctChip('f-acc',e.account);
+  if(document.getElementById('f-to')&&e.toAccount)window.acctChip('f-to',e.toAccount);
+  if(document.getElementById('f-via')&&e.via)window.acctChip('f-via',e.via);
+  if(e.type==='purchase'){
+    // the paid-via chip first: picking a float re-points the category at the
+    // float's own, so the entry's category is put back after it
+    window.acctChip('f-source',e.source==='float'?'float:'+e.floatId:(e.source||'cash'));
+    const c=document.getElementById('f-cat');if(c&&e.category){c.value=e.category;c.dataset.prev=e.category;}
+  }else if(e.type==='float_out'){const c=document.getElementById('f-cat');if(c&&e.category){c.value=e.category;c.dataset.prev=e.category;}}
+  if(e.photo){window._acctPhoto['f-photo']=e.photo;_acctPhotoPaint('f-photo',e.photo);}
+}
+window.acctEditEntry=function(id){
+  const e=_acctById(id);const why=_acctEditBlock(e);
+  if(why){showToast(why,true);return;}
+  window.acctForm(e.type,{edit:e._id});
+};
+// Pure: what an edit changes. `next` is the entry the form built; only the
+// editable fields are read from it, and a field that is empty on both sides
+// is not a change. Returns {fields,patch,before,after}. A patch value of
+// undefined removes the field (payee, expense and via exist only when set).
+const _ACCT_EDIT_OPTIONAL=['payee','expense','via'];
+function _acctEditNorm(k,v){
+  if(v===undefined||v===null||v==='')return null;
+  if(k==='expense')return v?true:null;
+  if(k==='amount')return Math.round(Number(v)||0);
+  if(k==='lines')return (v||[]).map(l=>{const o={itemCode:l.itemCode||'',desc:l.desc||'',qty:Number(l.qty)||0,unit:l.unit||'',rate:Number(l.rate)||0,total:Math.round(Number(l.total)||0)};const sz=l.sizes&&typeof l.sizes==='object'?Object.entries(l.sizes).filter(([,x])=>Number(x)).map(([k,x])=>[k,Number(x)]).sort((p,q)=>p[0]<q[0]?-1:1):[];if(sz.length)o.sizes=Object.fromEntries(sz);return o;});
+  return v;
+}
+function _acctEditDiff(old,next){
+  const out={fields:[],patch:{},before:{},after:{}};
+  for(const k of _ACCT_EDIT_FIELDS){
+    if(k==='month'||k==='vendorName')continue;
+    const a=_acctEditNorm(k,old[k]),b=_acctEditNorm(k,next[k]);
+    if(JSON.stringify(a)===JSON.stringify(b))continue;
+    out.fields.push(k);
+    out.before[k]=a;out.after[k]=b;
+    out.patch[k]=b===null?(_ACCT_EDIT_OPTIONAL.includes(k)?undefined:(['person','category','ref','note'].includes(k)?'':null)):(k==='lines'?next.lines:b);
+  }
+  if('date' in out.patch)out.patch.month=_acctMonthOf(out.patch.date);
+  if('vendorId' in out.patch)out.patch.vendorName=out.patch.vendorId?((_acctVendor(out.patch.vendorId)||{}).name||''):'';
+  return out;
+}
+// The write. Only the changed fields and the edit's own bookkeeping are sent
+// (an updateMask), so nothing this tab did not change can be put back.
+// Which entry forms carry which of these inputs. An edit keeps a stored value
+// the form never showed (a gate-pass sale's 'Fabric sale' category, a ref set
+// through the admin edit) instead of reading its absence as "cleared".
+const _ACCT_FORM_HAS={ref:['payment','cash_in','runner_pay','purchase'],category:['purchase','float_out'],via:['cash_in']};
+function _acctKeepUnshown(old,next){
+  for(const[k,types]of Object.entries(_ACCT_FORM_HAS))if(!types.includes(old.type))next[k]=old[k];
+  return next;
+}
+// Settled-with-runner money the books no longer explain, per runner: what has
+// been paid to a runner beyond everything their floats ran over. `with` is
+// the version of the entry being edited to count (the stored one is left out
+// of _acctLive while its form is open).
+function _acctRunnerExcess(withEntry){
+  _acctEditPreview=withEntry||null;
+  try{const out={};for(const r of Object.values(_acctRunnerOwed()))if(r.paid>r.over)out[r.key]={name:r.name,amt:r.paid-r.over};return out;}
+  finally{_acctEditPreview=null;}
+}
+// An edit to a float, a bill on one, or change back can shrink what a runner
+// was owed below what has ALREADY been handed to them — that money would then
+// be accounted for nowhere. Refused, naming the runner; a new entry cannot
+// reach this state, only an edit (or a void) can.
+function _acctEditOverpaysRunner(old,next){
+  if(!['float_out','float_in','purchase','runner_pay'].includes(old.type))return null;
+  const cand=Object.assign({},old,next,{_id:old._id,status:old.status,month:_acctMonthOf(next.date||old.date)});
+  const before=_acctRunnerExcess(old),after=_acctRunnerExcess(cand);
+  for(const[k,v]of Object.entries(after)){const was=before[k]?before[k].amt:0;if(v.amt>was)return `${_acctPKR(v.amt-was)} has already been settled with ${v.name} for an over-spend this change would remove. Void that settlement first (or ask Afnan or Ammar), then edit.`;}
+  return null;
+}
+async function _acctSaveEdit(old,next){
+  const why=_acctEditBlock(old);if(why){showToast(why,true);return null;}
+  _acctKeepUnshown(old,next);
+  const over=_acctEditOverpaysRunner(old,next);if(over){showToast(over,true);return null;}
+  if(_acctBusy){showToast('Please wait…',true);return null;}
+  const reason=String((document.getElementById('f-edit-reason')||{}).value||'').trim();
+  if(!reason){showToast('Say why it is being changed — it is kept with the entry.',true);document.getElementById('f-edit-reason')?.focus();return null;}
+  if(!next.date||!/^\d{4}-\d{2}-\d{2}$/.test(next.date)){showToast('Enter a valid date.',true);return null;}
+  if(next.date>_acctToday()){showToast('The date cannot be in the future.',true);return null;}
+  const month=_acctMonthOf(next.date);const cl=_acctLastClose();
+  if(_acctMonthClosed(month)||(cl&&month<=cl.month)){showToast(_acctMonthLabel(month)+' is closed — pick a date after the close.',true);return null;}
+  const ch=_acctEditDiff(old,next);
+  if(!ch.fields.length){showToast('Nothing changed.');return null;}
+  const u=_acctUser();const sup=_acctIsSuper();
+  const merged=Object.assign({},old,ch.patch);
+  const flags=_acctReviewFlags(merged);
+  // Raees's edit always goes to the owners. An owner's own edit does not flag
+  // itself, but does not clear an 'edited' flag still waiting for review.
+  if(!sup||((old.reviewFlags||[]).includes('edited')&&!old.reviewedAt))flags.push('edited');
+  const edit={at:Date.now(),by:u.by,byName:u.byName,reason:reason.slice(0,200),fields:ch.fields,before:ch.before,after:ch.after};
+  const meta={edits:(old.edits||[]).concat([edit]),editedAt:edit.at,editedBy:u.by,reviewFlags:flags,needsReview:flags.length>0&&!old.reviewedAt};
+  const data=Object.assign({},ch.patch,meta);
+  const fields=Object.keys(data);
+  _acctBusy=true;
+  try{await _acctFsMask('acct_entries',old._id,data,fields);}
+  catch(err){_acctBusy=false;showToast('Edit refused: '+(err.message||err),true);return null;}
+  _acctBusy=false;
+  for(const k of fields){if(data[k]===undefined)delete old[k];else old[k]=data[k];}
+  _acctSort(acctEntries);
+  _acctLog('Accounts entry edited',`${_acctParticulars(old)} ${_acctPKR(old.amount)} — ${ch.fields.join(', ')} — ${reason}`);
+  return {entry:old,change:ch};
+}
+// After the form's own checks: save, then bring inventory in line if the
+// lines changed (only the difference is posted — see _acctStockSync).
+async function _acctFinishEdit(old,next){
+  const btn=document.getElementById('f-submit');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const had=(old.lines||[]).some(l=>l.itemCode)||old.stockPosted!==undefined;
+  const codes=_acctStockChangedCodes(old,next);
+  const r=await _acctSaveEdit(old,next);
+  if(!r){if(btn){btn.disabled=false;btn.textContent='Save changes';}return;}
+  delete window._acctPhoto['f-photo'];
+  window.acctModalClose();
+  showToast(_acctIsSuper()?'Entry updated ✓':'Entry updated ✓ — sent to Afnan and Ammar for review');
+  _acctRerender();
+  if(r.entry.type==='purchase'&&r.change.fields.includes('lines')&&(had||(r.entry.lines||[]).some(l=>l.itemCode))){
+    if(codes.length){await _acctStockSync(r.entry,{codes});_acctRerender();}
+    if(r.entry.stockPosted)showToast('Inventory brought in line with the change ✓');
+  }
+}
+// How a stored value reads in the edit history. User text is escaped.
+function _acctEditVal(k,v,e){
+  if(v===null||v===undefined||v==='')return '<i>none</i>';
+  switch(k){
+    case 'date':return _acctDateLabel(v);
+    case 'amount':return _acctPKR(v);
+    case 'vendorId':{const vd=_acctVendor(v);return _acctEsc(vd?vd.name:v);}
+    case 'account':case 'toAccount':return _acctEsc(_acctAccountLabel(v));
+    case 'source':return _acctEsc({credit:'On credit',float:'A float',cash:'Cash',mcb:'MCB'}[v]||v);
+    case 'via':return v==='mcb'?'MCB transfer':'Physical cash';
+    case 'floatId':{const f=_acctById(v);return f?_acctEsc('Float to '+(f.person||'runner')+' · '+_acctDateLabel(f.date)):'another float';}
+    case 'photo':return /^https:\/\//.test(v)?'<a class="acct-link" href="'+_acctEsc(v)+'" target="_blank" rel="noopener">a photo</a>':'a photo';
+    case 'expense':return 'Expense / service';
+    case 'lines':return (v||[]).map(l=>_acctEsc((l.desc||l.itemCode||'line')+' · '+(l.qty||0)+(l.unit?' '+l.unit:'')+' @ '+_acctPKR(l.rate))).join('<br>')||'<i>none</i>';
+  }
+  return _acctEsc(v);
+}
+const _ACCT_EDIT_LABELS={date:'Date',amount:'Amount',vendorId:'Vendor',payee:'Paid to',person:'Person',account:'Account',toAccount:'To account',via:'Arrived as',source:'Paid via',floatId:'Float',category:'Category',ref:'Ref',note:'Note',photo:'Photo',lines:'Lines',expense:'Kind'};
+function _acctEditHistoryHTML(e){
+  const eds=(e.edits||[]).slice().reverse();
+  if(!eds.length)return '';
+  return `<div class="acct-hist"><div class="acct-hist-title">Edit history · ${eds.length}</div>${eds.map(x=>`<div class="acct-hist-row">
+    <div class="acct-hist-head"><b>${_acctEsc(x.byName||x.by)}</b> · ${new Date(x.at||0).toLocaleString('en-PK',{day:'2-digit',month:'short',hour:'numeric',minute:'2-digit'})}${x.admin?' <span class="acct-chip">admin</span>':''}</div>
+    ${x.reason?`<div class="acct-hist-why">“${_acctEsc(x.reason)}”</div>`:''}
+    ${(x.fields||[]).map(k=>`<div class="acct-hist-ch"><span>${_ACCT_EDIT_LABELS[k]||_acctEsc(k)}</span><span class="acct-hist-v">${_acctEditVal(k,(x.before||{})[k],e)} → ${_acctEditVal(k,(x.after||{})[k],e)}</span></div>`).join('')}
+  </div>`).join('')}</div>`;
+}
 
 /* ════════════════════════ ENTRY DETAIL ════════════════════════ */
 window.acctOpenEntry=function(id){
+  _acctEditId=null;   // Cancel on an edit form comes back here
   const e=_acctById(id);if(!e){showToast('Entry not found.',true);return;}
+  // Why an entry-user cannot edit this one (said once, plainly) — nothing
+  // for someone who cannot record entries at all, or for a void.
+  const editWhy=_acctCanEntry()&&e.status!=='void'?_acctEditBlock(e):null;
   const fx=_acctEffect(Object.assign({},e,{status:'posted'}));
   const kv=(k,v)=>v?`<div class="acct-kv"><span>${k}</span><b>${v}</b></div>`:'';
   let lines='';
@@ -2001,10 +2480,13 @@ window.acctOpenEntry=function(id){
       ${e.legacyId?kv('Imported','from the old cash ledger'):''}
     </div>
     ${lines}${float}
-    ${e.photo?`<a href="${_acctEsc(e.photo)}" target="_blank" rel="noopener" class="acct-photo-link">📎 View attached receipt</a>`:''}`;
+    ${e.photo?`<a href="${_acctEsc(e.photo)}" target="_blank" rel="noopener" class="acct-photo-link">📎 View attached receipt</a>`:''}
+    ${editWhy?`<div class="acct-edit-lock">Can't be edited here: ${_acctEsc(editWhy)}</div>`:''}
+    ${_acctEditHistoryHTML(e)}`;
   const foot=[
     e.status==='pending'&&_acctCanEntry()?`<button class="btn-primary" style="width:auto;margin:0;padding:9px 14px" onclick="window.acctConfirmCashIn('${e._id}')">Confirm received</button>`:'',
     e.needsReview&&!e.reviewedAt&&e.status!=='void'&&_acctCanAdmin()?`<button class="btn-outline" onclick="window.acctReview('${e._id}');window.acctModalClose()">Clear review</button>`:'',
+    !editWhy&&e.status!=='void'&&_acctCanEntry()?`<button class="btn-outline" onclick="window.acctEditEntry('${e._id}')">Edit…</button>`:'',
     e.status!=='void'&&_acctCanEntry()?`<button class="btn-outline" style="color:var(--accent-urgent);border-color:var(--accent-urgent)" onclick="window.acctVoid('${e._id}')">Void…</button>`:'',
     // A bill generated from a daily log carries its month in meterKey; the
     // PDF is the same one the consumables page prints, reachable from the
@@ -2037,7 +2519,7 @@ window.acctAdminEdit=function(id){
   const accOpts=(sel,other)=>`<option value="">— none —</option>`+ACCT_ACCOUNTS.concat(other?[ACCT_OTHER]:[]).map(a=>`<option value="${a.key}"${sel===a.key?' selected':''}>${_acctEsc(a.label)}</option>`).join('');
   const srcOpts=sel=>['','cash','mcb','credit','float'].map(k=>`<option value="${k}"${(sel||'')===k?' selected':''}>${k||'— none —'}</option>`).join('');
   const body=`
-    <div class="acct-alert info" style="cursor:default;margin-bottom:10px">Admin correction of a <b>${_acctEsc(T.label)}</b> entered by ${_acctEsc(e.byName||e.by)}. The change is written in place and logged under your name. ${e.stockPosted===true?'<b>Inventory is not touched</b> — the stock this purchase posted stays as it is.':''}${e.status==='void'?' This entry is VOID; editing does not un-void it.':''}</div>
+    <div class="acct-alert info" style="cursor:default;margin-bottom:10px">Admin correction of a <b>${_acctEsc(T.label)}</b> entered by ${_acctEsc(e.byName||e.by)}. The change is written in place and logged under your name. ${e.stockPosted===true?'<b>Inventory is not touched</b> — the stock this purchase posted stays as it is.':''}${e.status==='void'?' This entry is VOID; editing does not un-void it.':''} These raw fields are not checked the way a new entry is${_acctEditBlock(e)?'':' — <b>Edit…</b> on the entry is the checked way'}.</div>
     <div class="form-grid">
       <div class="field"><label>Date</label><input id="ae-date" type="date" value="${_acctEsc(e.date||'')}"></div>
       <div class="field"><label>Amount (₨)${e.type==='adjust'?' — signed':''}</label><input id="ae-amount" type="number" inputmode="numeric" value="${Math.round(e.amount||0)}"></div>
@@ -2050,6 +2532,7 @@ window.acctAdminEdit=function(id){
       <div class="field"><label>Category</label><input id="ae-category" value="${_acctEsc(e.category||'')}"></div>
       <div class="field"><label>Ref</label><input id="ae-ref" value="${_acctEsc(e.ref||'')}"></div>
       <div class="field" style="grid-column:1/-1"><label>Note</label><input id="ae-note" value="${_acctEsc(e.note||'')}"></div>
+      <div class="field" style="grid-column:1/-1"><label>Why (kept in the entry's history)</label><input id="ae-reason" maxlength="200" placeholder="optional"></div>
     </div>`;
   _acctModal('Edit entry (admin)',body,`<button class="btn-outline" onclick="window.acctOpenEntry('${e._id}')">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px" id="ae-submit" onclick="window.acctAdminSave('${e._id}')">Save changes</button>`,{sticky:true,width:640});
 };
@@ -2081,13 +2564,20 @@ window.acctAdminSave=async function(id){
   if(e.type!=='adjust'&&!(parseInt(vals.amount)>0)){showToast('Enter an amount above zero.',true);return;}
   const p=_acctAdminPatch(e,vals);
   if(!Object.keys(p).length){showToast('Nothing changed.');window.acctOpenEntry(id);return;}
+  // A closed month is inside its checkpoint: an entry moved into one (or
+  // changed while in one) would change Cash with nothing in the close to
+  // match, and drop out of the loaded window on the next visit. Reopen first.
+  const cl=_acctLastClose();const shut=mo=>mo&&(_acctMonthClosed(mo)||(cl&&mo<=cl.month));
+  if(shut(e.month)||shut(p.month)){showToast(_acctMonthLabel(shut(e.month)?e.month:p.month)+' is closed — reopen it from Review & close first.',true);return;}
   const u=_acctUser();
-  Object.assign(p,{editedAt:Date.now(),editedBy:u.by});
-  const doc=Object.assign({},e,p);delete doc._id;
-  const btn=document.getElementById('ae-submit');if(btn)btn.disabled=true;
-  try{await fsSet('acct_entries',id,doc);}
-  catch(err){if(btn)btn.disabled=false;showToast('Edit refused: '+(err.message||err),true);return;}
   const changed=Object.keys(p).filter(k=>!/^(editedAt|editedBy|month|vendorName|lines)$/.test(k));
+  const at=Date.now();
+  const hist={at,by:u.by,byName:u.byName,reason:String(g('reason')||'').trim().slice(0,200)||'Admin correction',admin:true,fields:changed,before:{},after:{}};
+  for(const k of changed){hist.before[k]=e[k]===undefined?null:e[k];hist.after[k]=p[k]===undefined?null:p[k];}
+  Object.assign(p,{editedAt:at,editedBy:u.by,edits:(e.edits||[]).concat([hist])});
+  const btn=document.getElementById('ae-submit');if(btn)btn.disabled=true;
+  try{await _acctFsMask('acct_entries',id,p,Object.keys(p));}
+  catch(err){if(btn)btn.disabled=false;showToast('Edit refused: '+(err.message||err),true);return;}
   Object.assign(e,p);_acctSort(acctEntries);
   _acctLog('Accounts entry edited (admin)',`${_acctParticulars(e)} ${_acctPKR(e.amount)} — ${changed.join(', ')}`);
   showToast('Entry updated.');window.acctModalClose();_acctRerender();

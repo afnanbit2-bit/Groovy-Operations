@@ -114,6 +114,20 @@ browser" step for any UI change is therefore still NOT possible from this
 sandbox** — say so explicitly rather than skip the caveat. Real UI
 verification needs the human, a phone, or Claude in Chrome.
 
+**THE FIRESTORE EMULATOR DOES RUN HERE (verified 25 Sept 2026)**, which
+this file never said and which changes what "the rules are unverifiable"
+means. Java 21 is installed, `firebase-tools` and
+`@firebase/rules-unit-testing` install from `registry.npmjs.org`, and the
+emulator jar downloads (from `storage.googleapis.com`, reachable). So a
+rules FILE can be exercised for real, by the Firestore rules engine itself,
+instead of only being read as text. **`tests/rules-emulator.js`** does this
+for `wh_sales` (32 checks, every document built by the app's own
+`whsBuildSale`); its header has the exact commands. It is not a
+`*.test.js` — CI installs nothing, so `tests/run.js` must not pick it up —
+and it runs under a `demo-` project id, so it cannot reach
+`groovy-gatepass`. **What it cannot tell you is what the Console has
+PUBLISHED** — that is still a question only the human can answer.
+
 ## File architecture (split from the old single `index.html`)
 
 ```
@@ -6411,6 +6425,103 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     `runner_pay` or `_acctRunnerOwed` on a hunch. **The vendor-less bill
     and its ₨1,000 photo rule have not been reported on either way** —
     still unseen on a real screen.
+- **Raees can EDIT his own entries (26 Sept 2026) — REVERSES "void, never
+  edit" for him.** Afnan: *"raees … is insisting that he needs edit rights …
+  sometimes they do get wrong so lets make a edit logic"*. Void-and-re-record
+  broke everything that points at an entry by id (bills and change-back
+  point at a float's id) and filled the ledger with struck-through typos.
+  Design in `ACCOUNTS_PLAN.md` §6; the load-bearing parts:
+  - **Which entries:** his OWN (`by == session.u`), `posted`, not yet
+    reviewed by an owner (`reviewedAt` null), in an OPEN month — the one it
+    is in AND the one its new date lands in. Never a void or pending entry,
+    an opening balance, a daily-log bill (`meterKey`) or a legacy import;
+    the TYPE never changes. `_acctEditBlock(e)` is the ONE decision and
+    says why ("Entered by X — ask Afnan or Ammar", "reviewed", "closed");
+    the entry detail shows **Edit…** or that line. Afnan/Ammar use the same
+    edit on anything in an open month; the raw **Edit (admin)** stays and
+    now appends to the same history and refuses a closed month.
+  - **The edit IS the recording form, prefilled** (`acctForm(type,{edit})`,
+    `_acctPurchaseForm({edit})`), so what a valid entry is has one
+    definition. While it is open `_acctEditId` is set and **`_acctLive()`
+    leaves that entry out**, so every derived check (balances, open floats,
+    runner owed, vendor balance) answers "as if this entry were not there"
+    — otherwise a payment that settled a vendor reads the vendor as owing
+    nothing. Cleared by any other modal and on close.
+  - **Every Raees edit goes to the owners**: a reason is required, the
+    entry gets `'edited'` in `reviewFlags` and `needsReview:true`, and
+    `e.edits` grows by `{at,by,byName,reason,fields,before,after}` (only
+    the changed fields). An "edited" chip on the ledger row, the history on
+    the detail, the last reason in the review queue. **Once an owner clears
+    it, it is locked to him.**
+  - **The write is a MASKED PATCH** (`_acctFsMask`, `updateMask` +
+    `currentDocument.exists=true`) of only the changed fields plus the
+    edit's bookkeeping — `_acctPatch` uses it too now, so nothing this tab
+    did not change is written back and a deleted entry is never recreated.
+  - **A field the type's form never shows is KEPT** (`_ACCT_FORM_HAS`):
+    editing a gate-pass fabric sale's amount must not blank its `Fabric
+    sale` category, nor a transfer lose a ref set by the admin edit.
+  - **An edit that would leave money already handed to a runner
+    unexplained is REFUSED** (`_acctEditOverpaysRunner`, via a one-entry
+    `_acctEditPreview` in `_acctLive`): raising a float, or lowering a bill
+    on it, below a `runner_pay` already made. A new entry cannot reach that
+    state; only an edit or a void can.
+  - **Stock: the store log is the truth.** `_acctStockSync(entry,opts)`
+    reads what the entry already posted (`store_transactions where
+    acctEntryId == id`) and posts only the DIFFERENCE as a `received` row
+    (negative = correction, `correction:true`, shown as "▼ CORRECTION" in
+    the Store log) plus the item, in ONE atomic REST `:commit`. It replaced
+    `_acctPostStock` for the first post and for **Retry, which had a live
+    bug: it re-posted every line each press (32 → 44 → 56).** Hardened by
+    the review round: the item is **re-read from the server** before the
+    write (allItems is session-stale — a correction hours later would erase
+    an issue made on another device); an edit reconciles **only the codes
+    whose quantity or sizes changed** (a rate fix must not reconcile a code
+    the Store renamed since, which would take the whole purchase back out);
+    **one sync per entry at a time** (a double-tapped Retry posted twice);
+    a correction bigger than what is left **logs what was really taken
+    back** (the Store never holds a negative balance, so the row and the
+    balance keep agreeing and a later correction lands on the truth instead
+    of minting stock); and a Retry that finds an empty log on a failed
+    entry **asks first** (the old poster wrote the balance before the row).
+    **A sized line that already went in is LOCKED** in the edit (rows carry
+    no per-size history); one whose post FAILED stays editable.
+    **Void still does not reverse stock.**
+  - **An owner's Clear re-reads the entry first**: accounts data loads once
+    per session, so a Clear from a page opened before Raees's edit would
+    have cleared an edit nobody looked at (and locked it for good). Changed
+    since load → the fresh copy is shown and nothing is cleared. **Known
+    limit:** an edit landing in the fraction of a second between the read
+    and the write is not caught. An `updateTime` precondition would close
+    it, but **the emulator refused one on an UNCHANGED entry** ("base
+    version (0)") and that could not be checked against live Firestore — a
+    Clear that always fails is worse, so it was left out.
+  - **Rules (`firestore.rules`, `acct_entries` update) — CHANGED, needs a
+    republish.** Four clauses: `isAcctSuper()`; `acctControl()` — status
+    and stock fields only, a real transition (no un-voiding), a void bound
+    to the caller, refused in a closed month, **the void fields move only
+    with the status**, and **an entry an owner reviewed is voided by an
+    owner only**; `acctReview()` — owners, review fields only (**the review
+    fields left the control list: Raees could have cleared the flag his own
+    edit raised**); `acctOwnEdit()` — the edit above, history growing by
+    exactly one with the old rows untouched, the new row carrying only the
+    app's keys (never `admin`) and naming **exactly** the fields that
+    changed. `tests/store-accounts.test.js` holds the lists equal to
+    `_ACCT_EDIT_FIELDS`/`_ACCT_EDIT_META` and the history-row keys equal to
+    what `_acctSaveEdit` writes.
+  - **Known limit, not new:** `acct_entries` CREATE is a bare
+    `isStoreAccounts()`, so a modified client can already write any entry
+    in any month. `acctOwnEdit` checks the close for the exact months
+    involved, so a raw write could move an entry into a month before the
+    FIRST close (no close doc exists for it) — no worse than what create
+    already allows, and the app refuses it.
+  - Verified: 671 assertions; `tests/rules-emulator.js` 77/77 in the real
+    emulator with the app's own code writing, and the five new rule cases
+    each FAIL against the previous rules; every client guard was reverted
+    once and caught by name (the codes filter first survived — a rate-only
+    edit never reaches the sync — and got a direct assertion). The runner
+    select's case-folded match is not held by a test (the harness has no
+    `<select>` options). **Nobody has edited an entry on a real screen** —
+    the sandbox cannot sign in.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
@@ -6495,6 +6606,27 @@ Discount / Total, and Notes. **The decisions are tabled in
   owners clear the review flag (`_WHS_REVIEW_FIELDS`); both lists are
   asserted equal to the rules' `hasOnly`. Delete is Afnan/Ammar
   (`isAcctSuper`, via `_acctIsSuper` behind a `typeof` guard).
+- **A VOIDED BILL CAN BE RECORDED AGAIN — and that is the correction, not a
+  loophole** (added after the review round, below). The first cut refused
+  any second write to an order number, so a bill entered wrong, once
+  voided, could NEVER be recorded correctly: the id was taken forever and
+  the only way out was an admin delete. A void's detail now offers
+  **Record this bill again**, which opens the form holding everything the
+  voided entry held (bill, customer, articles, payment), and the save
+  writes over the void carrying it forward in **`priorVoids`** (plain
+  values only — Firestore refuses nested arrays), shown on the sale as
+  "Recorded before and voided". Typed in from scratch over a void, it asks
+  first. **An ACTIVE sale is still one bill, one sale.** The rules allow the
+  overwrite only when the stored sale is `void`, through the SAME
+  `whSaleValid()` a create uses (so a re-record cannot sneak past the 20%
+  cap), and only when `priorVoids` grows by exactly one.
+- **Who did it is bound to the signed-in email.** `createdByU`, `voidedBy`
+  and `reviewedBy` are usernames and every account is
+  `<username>@groovy.op`, so the rules require `+ '@groovy.op' ==
+  userEmail()` on each; the ledger reads the NAME from that username
+  (`_whsWho`, via `USER_DEFS`), never from the free-text `createdByName`
+  beside it. Before this, "Recorded by Afnan" could be written by anyone
+  who could write a sale.
 - **A failed read is an error card naming `wh_sales` and the republish,
   never an empty ledger** (the Store lesson); the loader never rejects.
 - **Rows are flex cards, not a table** — read on a phone at the warehouse.
@@ -6511,6 +6643,75 @@ Discount / Total, and Notes. **The decisions are tabled in
   columns still leave the text technically visible — so that was checked by
   rendering it at 390px in real Chromium and looking. `SMOKE_LAYOUT_ONLY=
   <text>` now measures only matching fragments (CI never sets it).
+
+**THE REVIEW ROUND (25 Sept 2026).** An adversarial review — five lenses,
+each finding checked by three skeptics told to refute it — returned 24
+findings; the **16 confirmed by at least two** are all fixed, each one
+verified by undoing it and watching `tests/warehouse-sales.test.js` fail by
+name (15 undo checks; two first crashed the suite instead and were made
+null-safe; two first passed because the OTHER guard covered them, and each
+got its own assertion). Besides the two above:
+
+- **Searching an order number matched phone numbers.** The digit fallback
+  ran on ANY query, so `SO0334` also found every customer whose phone
+  starts 0334 — which, for SO03xx, is most Pakistani mobiles; the Excel
+  export carried them too. It runs only on a query that IS a phone
+  (`_whsPhoneQuery`: digits and separators only), and now understands
+  `+92` / `0092`.
+- **The name autofill ran on every keystroke**, so a new customer "Ali
+  Raza" got a known "Ali"'s phone the moment the field read "Ali". It is
+  reversible now: a phone the handler filled is taken back the moment the
+  name stops matching, unless Umair has edited it since.
+- **Two bill uploads in flight**: the one to finish LAST won and the first
+  to finish ended "Uploading…". A pick counter (`billSeq`) means the latest
+  pick wins and only it ends the upload; removing a bill mid-upload keeps
+  it removed.
+- **A price of 0.4 passed "more than 0" and was stored as Rs 0** (and a
+  one-line bill then failed on the rules with a message blaming an
+  unpublished ruleset). Checked on the rounded rupee; the permission
+  message now says the sale may have broken a check.
+- **A mobile with a digit missing** (10 digits starting 03) was accepted.
+  A mobile is exactly 11; a landline 10 or 11.
+- Smaller: the quantity message names the 9,999 cap; a new form clears the
+  previous form's search hits and Enter needs text in the box (a scanner
+  sends a stray Enter); a read that hits the 1,000-sale cap says so on
+  screen instead of silently dropping the oldest pay-later bills.
+- **`showFulfillTab` swallowed render errors** — its `.then(f,f)` handled
+  the rejection, so a broken render looked like a tap that did nothing and
+  `js/diagnostics.js` recorded nothing. It returns the promise again, and
+  `renderFulfillmentPage` re-lights its own nav item, which also fixes the
+  highlight showing Courier Performance over the Accounts ledger after the
+  logo or a Profile round trip.
+- **The toast ran off both sides of a phone** (`white-space:nowrap`,
+  measured in Chromium at 390px: 1,024px wide from −317 to 707). It wraps
+  inside the screen now (358px, 16–374) and stays up in proportion to its
+  length — **`css/main.css` `.toast` and `js/shared.js` `showToast`, both
+  cross-track, one rule each; it changes every toast in the app, for the
+  better.**
+
+**Not fixed — the 8 the skeptics refuted, with the reasons they gave:**
+the rules do not tie `subtotal` to the lines (only a writer the rule
+already trusts — Umair or an owner, writing to Firestore directly with
+their own login — could state a subtotal its lines do not add up to, and
+the rules language has no loop to sum them); lowering an article's price
+gets past the 20% cap (by design: an edited price is flagged for review,
+not refused, because the ERP bill is what was charged); the ERP bill's
+per-line Discount column has no field (Afnan asked for ONE bill-level
+discount tab); the create rule does not bar the review fields (the review
+flag is computed by Umair's own client anyway); an owner who opened
+Accounts lands on it again from the Courier Performance card (the section
+has always persisted for the session — PostEx does the same); a
+malformed hand-written document crashes the detail view (direct writes
+only). **My own call, not theirs:** the subtotal one is worth revisiting
+when the receivable into Raees's accounts starts reading these totals.
+
+**One refuted finding is a REAL, PRE-EXISTING bug elsewhere, recorded so
+it is not lost:** `loadActivity` in `js/activity.js` puts `a.detail`
+straight into `innerHTML`, and every `logActivity` caller in the app passes
+raw user text (customer names, void reasons, recipe revision reasons …) —
+a stored-XSS sink in the owner-only Activity Log. Refuted here only
+because this change did not introduce it; Monitor escapes the same field.
+The fix belongs in `js/activity.js`, not in each caller.
 
 **Next (not built): the receivable in Raees's Store Accounts.** Open
 questions are in `ACCOUNTS_PLAN.md` §5. **Nobody has recorded a sale on a
@@ -8464,6 +8665,10 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   delete one, delete a vendor with no entries, reopen the last closed
   month, reset the module. Mirror: `firestore.rules` `isAcctSuper()`. See
   "Afnan's correction tools" under Store Accounts.
+- `_acctEditBlock(e)` (`js/store-accounts.js`) → who may edit which entry:
+  Raees (`store`) his OWN posted, unreviewed entries in an open month;
+  afnan + ammar (`_acctIsSuper`) anything in an open month; nobody else.
+  Mirror: `firestore.rules` `acctOwnEdit()`. See "Raees can EDIT".
 - `whsCanView()` / `whsCanEntry()` (`js/warehouse-sales.js`, `_WHS_USERS`) →
   **umair by username + the owners by role** — the Accounts section on the
   fulfillment page (warehouse customer sales). Managers see the page, not
@@ -8828,6 +9033,14 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
+**REPUBLISH OUTSTANDING (26 Sept 2026): Raees's edit rights.**
+`acct_entries` update now splits into `acctControl()` / `acctReview()` /
+`acctOwnEdit()` (see Store Accounts, "Raees can EDIT his own entries").
+Until the Console has it, Raees's **Edit…** is refused with "Missing or
+insufficient permissions" — and the old ruleset still lets him clear a
+review flag through the control list. Ran 77/77 in the emulator. **If the
+25 Sept republish below was never done, this one paste carries it too.**
+
 **REPUBLISH OUTSTANDING (25 Sept 2026):** `isAcctSuper()` now lists
 `afnan@groovy.op` AND `ammar@groovy.op` (it was Afnan alone). Until the
 Console has it, Ammar sees the Store Accounts admin buttons (Edit / Delete
@@ -8835,8 +9048,12 @@ an entry, Delete vendor, Reopen, Reset) but every one of their writes is
 refused with "Missing or insufficient permissions". **Then, the same day,
 `isWhSales()` and `match /wh_sales/{orderNo}` (warehouse sales) were
 added** — until they are published, Umair's Accounts section shows its
-"could not be read" card and every save is refused. One paste carries
-both.
+"could not be read" card and every save is refused. **The `wh_sales` block
+changed AGAIN the same day** (the review round: `whSaleValid()`, recording
+a bill again over a void, and the who-bindings) — so a paste of the file
+taken BEFORE that commit is missing them; the newest file is the one to
+publish. One paste carries all three. It was run in the Firestore
+emulator (`tests/rules-emulator.js`, 32/32) before it was handed over.
 
 **No republish outstanding as of 23 Sept 2026 (evening).** Afnan
 confirmed ("rules pushed") from the repo file at
