@@ -716,13 +716,30 @@ helper by bare name; both **guard with `typeof` and fail CLOSED**, so a
 `shared.js` that failed to parse hides the hub rather than opening the
 side door.
 
-**Audience: `afnan`, `ammar`, `sami`, `mustafa`, `abbas`** — Afnan dogfooded
+**Audience: `afnan`, `ammar`, `sami`, `mustafa`, `abbas`, `daniyal`** — Afnan dogfooded
 it alone while the module was being shaped and opened it to Ammar once the
 Trash/rail round landed; Sami (CSR Team Lead) was added 17 Sept 2026 at
 Ammar's request, **Mustafa on 18 Sept 2026** (Afnan: "give mustafa creative
-hub and all its features") and **Abbas on 21 Sept 2026**. The helper is
-called from **eight** routes: the six below plus the CSR Team Lead's own
-sidebar and phone "More" sheet.
+hub and all its features"), **Abbas on 21 Sept 2026** and **Daniyal on 25
+Sept 2026**. The helper is called from **eleven** routes: the six below,
+the CSR Team Lead's own sidebar and phone "More" sheet, and the Marketing
+lead's sidebar, phone "More" sheet (`openMktMoreSheet`) and `showPage`
+scope.
+
+**Daniyal took three edits, not one word, and that is the thing to know
+about any role that rewrites page ids.** He is `creator_content_ops_lead`,
+whose `showPage` scope sends every id that is not `mkt-*`, `tb-*`,
+`shopify-intel` or a chrome page to the Creator Database — so with only his
+name on the list, clicking Creative Hub would have silently landed him back
+on Creators. The scope now lets through **`_CREATIVE_HUB_PAGES`** (all six
+hub ids, in `js/shared.js` beside the list) **only when
+`_canSeeCreativeHub()` is true** — by the list, never by the role.
+`tests/marketing.test.js` drives it both ways: Daniyal reaches all six, and
+the same role under another username is still sent home from every one.
+His role also builds its own sidebar and phone More sheet, so each gained a
+Creative Hub entry (last, after Inventory Intel). `tests/theboard.test.js`
+used to hold `boards` as a page he is sent home from; it now asserts he
+reaches it. No `firestore.rules` change — the gate is nav-only.
 
 **Abbas is the first WORKER on the list, and that is the only thing about
 him that is new.** He is `worker` (Washing/Rider), and a worker's phone nav
@@ -6628,7 +6645,9 @@ page's "Check Shopify access", which asks Shopify directly).
   Afnan created in Firebase Auth; an earlier cut used a Gmail address, which
   never existed in Auth and was corrected before anyone signed in), role
   `creator_content_ops_lead`, landing on `mkt-creators`. `showPage` scopes
-  that role to `mkt-*` pages, `shopify-intel` and `_CHROME_PAGES` — same
+  that role to `mkt-*` pages, `shopify-intel`, `tb-*`, `_CHROME_PAGES` and
+  (for Daniyal, on the Creative Hub list since 25 Sept 2026)
+  `_CREATIVE_HUB_PAGES` — same
   pattern as the fulfilment redirect. **Inventory Intel is granted only
   because that page never writes**; if it gains a write action, re-scope
   (logged as a follow-up in the Inventory Intelligence change request).
