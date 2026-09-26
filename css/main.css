@@ -3090,6 +3090,8 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   cursor:pointer;font-family:inherit;font-size:13px;color:var(--muted);padding:0 12px;min-height:34px;
   transition:background .15s ease-out,color .15s ease-out}
 .tb-person.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
+/* A Board person with no account yet: listed, not assignable, and saying so. */
+.tb-person.tb-person-off{opacity:.55;cursor:not-allowed;border-style:dashed}
 .tb-step{display:flex;align-items:center;gap:8px;min-height:36px}
 .tb-steptitle{flex:1;min-width:0;font-size:14px;color:var(--text)}
 .tb-x{background:none;border:none;cursor:pointer;font-family:inherit;font-size:15px;
@@ -3423,6 +3425,7 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 /* The ONE red on this module is the overdue count, so a person carrying
    overdue work reads in it too -- it is the same fact, one card over. */
 .tb-teamn.over{color:var(--count-accent)}
+.tb-teamrow-off .tb-teamname{color:var(--muted)}
 .tb-teamdot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;
   background:var(--border);border:1px solid var(--muted)}
 .tb-actcard .tb-act{border-top:1px solid var(--border)}

@@ -571,7 +571,10 @@ module.exports=async function(){
     a.run('tbItems=[]');
     const bare=a.run('_tbDashboard()');
     s.ok('an empty board says so in one sentence',/nothing on the board today/.test(bare));
-    s.ok('and shows no empty cards',!/tb-cardh/.test(bare));
+    // Session 2 (brief s4): Team today lists all five from day one, so the
+    // ONLY card an empty board carries is that one -- none of mine.
+    s.eq('and shows no empty cards of mine — only Team today',
+      (bare.match(/class="tb-cardh">([^<]*)/g)||[]).map(x=>x.replace(/.*>/,'')).join('|'),'team today');
     s.ok('the quick-add is still there',/id="tb-qa"/.test(bare));
     s.ok('and the countdown',/day[s]? to launch/.test(bare));
 
@@ -1132,6 +1135,83 @@ module.exports=async function(){
     s.eq('a non-string value becomes no filter',a.run('_tbCalFilters.lane'),'');
     a.run('window.tbCalSetFilter("lane","denim")');
     s.eq('a real one sets',a.run('_tbCalFilters.lane'),'denim');
+  }
+
+  // ══ SESSION 2 — P0.2: PEOPLE ═════════════════════════════════════════
+  s.section('people: all five Board users resolve, from the profile directory');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    // Only your own row -- what profileBootstrap leaves when nothing loads
+    // the directory. This is the state that rendered everyone as "someone".
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"}]');
+    s.eq('with only your own row, one person resolves',a.run('Object.keys(tbHandleMap()).join()'),'ammar');
+    s.eq('but all five are LISTED',a.run('tbPeople().map(p=>p.handle).join()'),'ammar,afnan,daniyal,mustafa,saim');
+    s.eq('four of them not set up',a.run('tbPeople().filter(p=>!p.setUp).length'),4);
+    // Yourself with no row at all still resolves, from the session.
+    a.run('userProfiles=[]');
+    s.eq('you resolve from the session with no row',a.run('tbHandleMap().ammar'),'u-ammar');
+    s.eq('and by name',a.run('tbUser("u-ammar").name'),'Ammar');
+    // The directory loaded: everyone resolves by name, not "someone".
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"},'
+      +'{uid:"u-dani",username:"daniyal"},{uid:"u-must",username:"mustafa"},{uid:"u-saim",username:"saim"},'
+      +'{uid:"u-sami",username:"sami"}]');
+    s.eq('all five resolve',a.run('Object.keys(tbHandleMap()).sort().join()'),'afnan,ammar,daniyal,mustafa,saim');
+    s.eq('Sami is never a Board person',a.run('tbHandleMap().sami'),undefined);
+    s.eq('a name comes from USER_DEFS when the row has none',a.run('tbUser("u-dani").name'),'Daniyal Tufail');
+    // Team today: five rows even with nothing on the board.
+    a.run('tbItems=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;tbLists=[]');
+    const team=a.run('_tbTeamCard()');
+    s.eq('Team today lists all five with nothing open',(team.match(/class="tb-teamrow/g)||[]).length,5);
+    a.run('userProfiles=userProfiles.filter(p=>p.username!=="saim")');
+    const team2=a.run('_tbTeamCard()');
+    s.eq('still five when one has no profile',(team2.match(/class="tb-teamrow/g)||[]).length,5);
+    s.ok('and that one says not set up yet',/tb-teamrow-off[\s\S]*not set up yet/.test(team2));
+    // The drawer lists all five; Saim is there but cannot be assigned.
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"x",ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"private"})];_tbOpenItemId="i1"');
+    const dr=a.run('_tbDrawer()');
+    s.eq('the drawer offers four assignable people',(dr.match(/class="tb-person( on)?"/g)||[]).length,4);
+    s.ok('and shows the fifth as not set up',/tb-person tb-person-off" disabled[^>]*>Saim · not set up/.test(dr));
+    // The person filter carries everyone who resolves.
+    a.run('_tbOpenItemId=null;_tbCalAnchor="2026-10-01"');
+    const head=a.run('_tbCalHead()');
+    s.eq('the person filter offers four people and "anyone"',
+      ((/tbCalSetFilter\('person'[\s\S]*?<\/select>/.exec(head)||[''])[0].match(/<option/g)||[]).length,5);
+  }
+
+  s.section('people: quick add turns @handle into an assignee, never title text');
+  {
+    const a=loadApp({files:FILES});
+    const P=(t,h)=>a.run('tbParseQuickAdd('+J(t)+','+J({today:'2026-09-26',handles:h,
+      boardHandles:['ammar','afnan','daniyal','mustafa','saim']})+')');
+    const full={ammar:'u-ammar',afnan:'u-afnan',daniyal:'u-dani',mustafa:'u-must',saim:'u-saim'};
+    const r=P('follow up baber @afnan',full);
+    s.eq('@afnan is an assignee',J(r.assigneeUids),J(['u-afnan']));
+    s.eq('and gone from the title',r.title,'follow up baber');
+    // A Board person the session cannot resolve yet is still not title text.
+    const r2=P('follow up baber @afnan',{ammar:'u-ammar'});
+    s.eq('an unresolved Board person is not assigned',J(r2.assigneeUids),J([]));
+    s.eq('is not title text either',r2.title,'follow up baber');
+    s.eq('and is reported',J(r2.pendingHandles),J(['afnan']));
+    // Someone who is not on the Board at all stays literal (Baber is real).
+    const r3=P('ping @baber about samples',full);
+    s.eq('a non-Board handle stays in the title',r3.title,'ping @baber about samples');
+    s.eq('and is reported as unknown',J(r3.unknownHandles),J(['baber']));
+  }
+
+  s.section('people: the Board loads the profile directory with its data');
+  {
+    let called=0;
+    const a=loadApp({files:FILES,globals:{loadProfiles:async()=>{called++;}}});
+    a.run('session='+J(AMMAR));
+    await a.run('loadTbData(true)');
+    s.eq('loadTbData asks for the directory',called,1);
+    // A refused directory read leaves the Board usable but says so.
+    const b=loadApp({files:FILES,globals:{loadProfiles:async()=>{},_profileLoadErr:'Missing or insufficient permissions.'}});
+    b.run('session='+J(AMMAR));
+    await b.run('loadTbData(true)');
+    s.ok('a refused directory is named in the warning strip',b.run('_tbLoadErrors').indexOf('user_profiles')>-1);
+    s.eq('and does not take the board down',b.run('_tbLoadFailed("board_items")'),false);
   }
 
   s.section('the calendar prefs are cleaned on load');
@@ -1952,7 +2032,10 @@ module.exports=async function(){
     const bare=a.run('_tbDashboard()');
     s.ok('an empty board still says so',/nothing on the board today/.test(bare));
     s.ok('with one action, not none',/tb-calendar/.test(bare));
-    s.ok('no team card',!/team today/.test(bare));
+    // REVERSED in session 2 (brief s4): Team today lists all five from day
+    // one, even with zero items -- "who is on the board" is a question an
+    // empty board still has to answer.
+    s.ok('the team card is there from day one',/team today/.test(bare));
     s.ok('no list chips',!/my lists/.test(bare));
     a.run('tbItems=[tbDecodeItem({id:"i1",title:"a",ownerUid:"u-ammar",'
       +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l1",date:"'+a.run('_tbToday()')+'"})]');

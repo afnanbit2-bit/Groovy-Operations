@@ -182,7 +182,13 @@ async function loadTbData(force){
       getDocs(query(collection(db,'board_items'),where('ownerUid','==',uid))),
       getDocs(query(collection(db,'board_lists'),where('kind','==','shared'),where('memberUids','array-contains',uid))),
       getDocs(query(collection(db,'board_lists'),where('adminUid','==',uid))),
-      getDoc(doc(db,'board_config','markers'))
+      getDoc(doc(db,'board_config','markers')),
+      // THE PROFILE DIRECTORY. js/profile.js owns it and loads it only when
+      // the Profile page opens; the Board needs every Board person's uid,
+      // so it asks for it here. loadProfiles cannot reject (it records its
+      // own error), so it is read back below.
+      (typeof loadProfiles==='function'&&!(typeof profilesLoaded!=='undefined'&&profilesLoaded))
+        ?loadProfiles():Promise.resolve()
     ]);
     const fail=[];
     const rows=(a,b,name)=>{
@@ -203,6 +209,9 @@ async function loadTbData(force){
       const ex=snap&&typeof snap.exists==='function'?snap.exists():false;
       tbConfig=ex?snap.data():{markers:[]};
     }else{fail.push('board_config');console.warn('[the board] config read failed',r[4].reason);}
+    // A refused directory read leaves the Board usable (you still resolve
+    // from the session) but says so in the warning strip.
+    if(typeof _profileLoadErr!=='undefined'&&_profileLoadErr)fail.push('user_profiles');
     _tbLoadErrors=fail;
     _tbCalLoadPrefs();
     tbLoaded=true;
@@ -392,21 +401,30 @@ function _tbDaysBetween(a,b){
 function tbParseQuickAdd(text,ctx){
   const c=ctx||{},today=c.today||'',handles=c.handles||{};
   let s=' '+String(text||'')+' ';
-  const out={title:'',assigneeUids:[],assigneeHandles:[],lane:null,date:null,priority:0,unknownHandles:[]};
+  const out={title:'',assigneeUids:[],assigneeHandles:[],lane:null,date:null,priority:0,unknownHandles:[],pendingHandles:[]};
 
   // priority first: it is a standalone token and cannot be confused
   s=s.replace(/(\s)(!{1,2})(?=\s)/g,(m,sp,bangs)=>{
     out.priority=Math.max(out.priority,bangs.length===2?2:1);return sp;
   });
   // @handle
+  const board=c.boardHandles||[];
   s=s.replace(/(\s)@([a-z0-9._-]+)/gi,(m,sp,h)=>{
     const key=String(h).toLowerCase();
     if(handles[key]){
       if(out.assigneeUids.indexOf(handles[key])<0){out.assigneeUids.push(handles[key]);out.assigneeHandles.push(key);}
       return sp;
     }
+    // A BOARD person the session cannot resolve yet (no profile row) is
+    // still never title text -- "@afnan" in a title is the bug the brief
+    // names. It is taken out and reported, so the preview can say why
+    // they were not assigned.
+    if(board.indexOf(key)>-1){
+      if(out.pendingHandles.indexOf(key)<0)out.pendingHandles.push(key);
+      return sp;
+    }
     out.unknownHandles.push(key);
-    return m;                       // unknown → left in the title, verbatim
+    return m;                       // not on the board → left in the title, verbatim
   });
   // #lane
   s=s.replace(/(\s)#([a-z0-9-]+)/gi,(m,sp,l)=>{out.lane=String(l).toLowerCase();return sp;});
@@ -603,12 +621,44 @@ function _tbProfiles(){ return (typeof userProfiles!=='undefined'&&userProfiles)
 function _tbDefs(){ return (typeof USER_DEFS!=='undefined'&&USER_DEFS)||[]; }
 function _tbBoardUsernames(){ return (typeof BOARD_USERS!=='undefined'&&BOARD_USERS)||[]; }
 
+/** THE FIVE BOARD PEOPLE, resolved as far as this session can. A uid
+ *  comes from the person's profile row -- the ONLY username<->uid link the
+ *  client has -- or, for yourself, from the session. Someone with neither
+ *  (never signed in, never synced) is still LISTED, as not set up yet:
+ *  Team today names all five from day one, and a person you cannot assign
+ *  says why rather than vanishing.
+ *
+ *  Session 2 fix: until now nothing on the Board loaded the profile
+ *  DIRECTORY -- only your own row from profileBootstrap -- so every other
+ *  person rendered as "someone", Team today listed one person, and the
+ *  assign chips, @mentions, handover, the person filter and bell
+ *  addressing all knew nobody but you. Never throws. */
+function tbPeople(){
+  const profiles=_tbProfiles();
+  const me=(typeof session!=='undefined'&&session)||null;
+  return _tbBoardUsernames().map(function(h){
+    const p=profiles.filter(x=>x&&x.username===h)[0];
+    const def=_tbDefs().filter(u=>u&&u.u===h)[0]||null;
+    let uid=(p&&p.uid)||'';
+    if(!uid&&me&&me.u===h&&me.uid)uid=me.uid;
+    const name=(p&&p.displayName)||(def&&def.name)||h;
+    return{handle:h,uid:uid,name:name,
+      initial:String(name).trim().charAt(0).toUpperCase()||'?',setUp:!!uid};
+  });
+}
+
 /** Everything the UI needs about a person, from a uid. Never throws, and
  *  never renders a bare uid at someone: an unresolvable one reads as
  *  "someone", which is honest. */
 function tbUser(uid){
   if(!uid)return{uid:'',name:'—',handle:'',initial:'?',colorKey:null};
   const p=_tbProfiles().filter(x=>x&&x.uid===uid)[0];
+  if(!p){
+    // No profile row -- but it may be a Board person the session knows
+    // (yourself, before your row exists).
+    const bp=tbPeople().filter(x=>x.uid===uid)[0];
+    if(bp)return{uid:uid,name:bp.name,handle:bp.handle,initial:bp.initial,colorKey:null};
+  }
   const def=p?_tbDefs().filter(u=>u.u===p.username)[0]:null;
   const name=(p&&p.displayName)||(def&&def.name)||(p&&p.username)||'someone';
   return{
@@ -621,10 +671,10 @@ function tbUser(uid){
 }
 /** handle -> uid, for the quick-add grammar and @mentions. ONLY Board
  *  users are candidates (spec s9), so Sami — one letter from Saim — can
- *  never be offered here. */
+ *  never be offered here. Only people with a resolvable uid appear. */
 function tbHandleMap(){
-  const out={},allow=_tbBoardUsernames();
-  _tbProfiles().forEach(p=>{ if(p&&p.username&&allow.indexOf(p.username)>-1)out[p.username]=p.uid; });
+  const out={};
+  tbPeople().forEach(p=>{ if(p.uid)out[p.handle]=p.uid; });
   return out;
 }
 function tbUserColors(){
@@ -762,7 +812,10 @@ function _tbDashboard(){
     _tbActivityCard(),    // card 11
     _tbListsCard()        // card 12
   ].join('');
-  const empty=(!left&&!right)
+  // The one-sentence empty state is about YOUR board -- the left column.
+  // The right column always carries Team today now (all five from day
+  // one, brief s4), so keying the sentence off both would hide it forever.
+  const empty=!left
     ?'<div class="tb-empty"><div class="tb-empty-h">nothing on the board today</div>'
      +'<div class="tb-empty-p">add something above, or open the calendar.</div>'
      +'<button class="btn-outline" onclick="window.showPage(\'tb-calendar\')">open the calendar</button>'
@@ -866,12 +919,15 @@ function _tbDrawer(){
       +'</select></label>'
     +'</div>'
     +'<div class="tb-dsec"><div class="tb-dsech">people</div><div class="tb-people">'
-      +_tbBoardUsernames().map(h=>{
-        const uid=tbHandleMap()[h];
-        if(!uid)return'';
-        const on=(it.assigneeUids||[]).indexOf(uid)>-1;
-        return'<button class="tb-person'+(on?' on':'')+'" onclick="window.tbToggleAssignee(\''+_tbEsc(uid)+'\')">'
-          +_tbEsc(tbUser(uid).name)+'</button>';
+      +tbPeople().map(p=>{
+        // Listed even when they cannot be assigned yet, and saying why --
+        // a person who silently is not there reads as a missing feature.
+        if(!p.uid)return'<button class="tb-person tb-person-off" disabled title="'+_tbEsc(p.name)
+          +' is not set up yet — an owner can press Sync accounts on the Profile page">'
+          +_tbEsc(p.name)+' · not set up</button>';
+        const on=(it.assigneeUids||[]).indexOf(p.uid)>-1;
+        return'<button class="tb-person'+(on?' on':'')+'" onclick="window.tbToggleAssignee(\''+_tbEsc(p.uid)+'\')">'
+          +_tbEsc(tbUser(p.uid).name)+'</button>';
       }).join('')
     +'</div></div>'
     +'<div class="tb-dsec"><div class="tb-dsech">steps'+(pr.label?' <span class="tb-steps">'+_tbEsc(pr.label)+'</span>':'')+'</div>'
@@ -953,12 +1009,14 @@ window.tbQuickPreview=function(){
   const el=document.getElementById('tb-qa');
   const out=document.getElementById('tb-qa-prev');
   if(!el||!out)return;
-  const parsed=tbParseQuickAdd(el.value,{today:_tbToday(),handles:tbHandleMap()});
+  const parsed=tbParseQuickAdd(el.value,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
   const names={};
   Object.keys(tbHandleMap()).forEach(h=>{names[h]=tbUser(tbHandleMap()[h]).name;});
   const line=tbQuickAddPreview(parsed,{today:_tbToday(),names:names});
   out.textContent=line+(parsed.unknownHandles.length
-    ?(line?'   ':'')+'(@'+parsed.unknownHandles.join(', @')+' is not on the board — left in the title)':'');
+    ?(line?'   ':'')+'(@'+parsed.unknownHandles.join(', @')+' is not on the board — left in the title)':'')
+    +(parsed.pendingHandles.length
+    ?'   (@'+parsed.pendingHandles.join(', @')+' is not set up yet — not assigned; an owner can press Sync accounts on the Profile page)':'');
 };
 window.tbQuickKey=function(e){
   if(e.key!=='Enter')return;
@@ -973,7 +1031,7 @@ window.tbQuickKey=function(e){
 };
 window.tbCreateFromQuick=async function(text,openAfter){
   const me=_tbMe();
-  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap()});
+  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
   if(!parsed.title){ _tbToast('Give it a title.'); return; }
   // On the Dashboard an undated item defaults to today and me; inside a
   // list it stays undated, because a list is a backlog (spec s8.1).
@@ -998,6 +1056,8 @@ window.tbCreateFromQuick=async function(text,openAfter){
     tbItems.push(tbDecodeItem(Object.assign({id:ref.id},data)));
     if(openAfter)_tbOpenItemId=ref.id;
     _tbRepaint();
+    if(parsed.pendingHandles.length)_tbToast('Added — @'+parsed.pendingHandles.join(', @')
+      +' is not set up yet, so not assigned. An owner can press Sync accounts on the Profile page.');
   },'add that');
 };
 
@@ -1148,8 +1208,8 @@ window.tbOpenHandover=function(){
   if(!it)return;
   const me=_tbMe();
   host.innerHTML='<div class="tb-ho"><div class="tb-dsech">hand over</div>'
-    +'<select id="tb-ho-who">'+_tbBoardUsernames().map(h=>{
-      const uid=tbHandleMap()[h];
+    +'<select id="tb-ho-who">'+tbPeople().map(p=>{
+      const uid=p.uid;
       return (uid&&uid!==me)?'<option value="'+_tbEsc(uid)+'">'+_tbEsc(tbUser(uid).name)+'</option>':'';
     }).join('')+'</select>'
     +'<input id="tb-ho-note" placeholder="one line — what do they need to know?" maxlength="200">'
@@ -1515,8 +1575,8 @@ function _tbCalHead(){
   const scope=(v,l)=>'<button class="tb-seg'+(_tbCalFilters.scope===v?' on':'')+'"'
     +' onclick="window.tbCalScope(\''+v+'\')">'+_tbEsc(l)+'</button>';
   const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
-  const people=_tbBoardUsernames().map(h=>{
-    const uid=tbHandleMap()[h];
+  const people=tbPeople().map(p=>{
+    const uid=p.uid;
     return uid?opt(uid,_tbCalFilters.person,tbUser(uid).name):'';
   }).join('');
   return'<div class="tb-calbar">'
@@ -1664,7 +1724,7 @@ window.tbCalAdd=function(day){
 };
 window.tbCreateOn=async function(text,day){
   const me=_tbMe();
-  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap()});
+  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
   const assignees=parsed.assigneeUids.slice();
   if(assignees.indexOf(me)<0)assignees.unshift(me);
   const data=tbNewItem({
@@ -3164,11 +3224,24 @@ function tbMyLists(items,lists,uid){
 
 function _tbTeamCard(){
   const today=_tbToday();
-  const uids=_tbBoardUsernames().map(h=>tbHandleMap()[h]).filter(Boolean);
-  const rows=tbTeamToday(tbItems,uids,today,_tbProfiles());
-  if(!rows.length||!rows.some(r=>r.open))return'';
-  return _tbCard('team today',rows.map(function(r){
-    const u=tbUser(r.uid);
+  const people=tbPeople();
+  if(!people.length)return'';
+  const stats={};
+  tbTeamToday(tbItems,people.filter(p=>p.uid).map(p=>p.uid),today,_tbProfiles())
+    .forEach(r=>{stats[r.uid]=r;});
+  // ALL FIVE, FROM DAY ONE, even with nothing open (brief s4): the card
+  // answers "who is on the board", and a person missing from it reads as
+  // a person missing from the drop.
+  return _tbCard('team today',people.map(function(p){
+    if(!p.uid){
+      return'<div class="tb-teamrow tb-teamrow-off">'
+        +'<span class="tb-av">'+_tbEsc(p.initial)+'</span>'
+        +_tbSlot(p.name,'tb-teamname')
+        +'<span class="tb-teamn">not set up yet</span>'
+      +'</div>';
+    }
+    const r=stats[p.uid]||{open:0,due:0,overdue:0,seenToday:null};
+    const u=tbUser(p.uid);
     const bits=[r.open+' open']
       .concat(r.due?[r.due+' due today']:[])
       .concat(r.overdue?[r.overdue+' overdue']:[]);
@@ -3252,7 +3325,7 @@ let _tbCalRows=false;
 window.tbCalRows=function(v){ _tbCalRows=!!v; _tbCalSavePrefs(); _tbRepaint(); };
 
 function _tbPersonWeek(days,today){
-  const uids=_tbBoardUsernames().map(h=>tbHandleMap()[h]).filter(Boolean);
+  const uids=tbPeople().map(p=>p.uid).filter(Boolean);
   const me=_tbMe();
   const head='<div class="tb-prow tb-prowhead"><div class="tb-pname"></div>'
     +days.map(function(d){

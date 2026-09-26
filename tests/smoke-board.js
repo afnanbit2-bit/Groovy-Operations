@@ -220,6 +220,20 @@ function DRIVE(){
         L(onBoard(),pages[p]+' renders a Board screen');
       }
 
+      // ── people: the whole team resolves (session 2, P0.2) ──
+      window.showPage('tb-dash');
+      await wait(300);
+      var main=document.getElementById('main-content');
+      L(document.querySelectorAll('.tb-teamrow').length===5,'Team today lists all five ('+document.querySelectorAll('.tb-teamrow').length+')');
+      L(!/\bsomeone\b/.test(main.innerText||''),'nobody on the Dashboard renders as "someone"');
+      var before=(typeof tbItems!=='undefined'?tbItems.length:0);
+      await window.tbCreateFromQuick('smoke follow up @afnan',false);
+      await wait(100);
+      var made=tbItems[tbItems.length-1]||{};
+      L(tbItems.length===before+1,'quick add created an item');
+      L((made.assigneeUids||[]).indexOf('u-afnan')>-1,'@afnan became an assignee');
+      L(String(made.title||'').indexOf('@afnan')<0,'and is not title text ('+made.title+')');
+
       // ── the calendar, every control ──
       window.showPage('tb-calendar');
       await wait(300);
