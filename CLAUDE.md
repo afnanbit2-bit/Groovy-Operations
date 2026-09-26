@@ -378,14 +378,22 @@ previews break again.
 
 ### Icons
 
-`/assets/icons/icon-{192,512}.png` + `icon-maskable-v2-512.png` are the real
+`/assets/icons/icon-{192,512}.png` + `icon-maskable-v3-512.png` are the real
 GROOVY wing/"G" mark (Sept 2026 — replaced the black/white "GO" placeholder).
 Source: a 1920×1080 RGBA PNG the user supplied, transparent background,
 mark itself ~880×484 after cropping to its alpha bounding box. Regenerated
 with Pillow (`Image.alpha_composite`, `LANCZOS` resize) rather than by hand:
 - `icon-192.png` / `icon-512.png` (`purpose: "any"`) — mark centered on a
   **transparent** canvas at 80% fill (by its longer dimension).
-- **27 Sept: `icon-maskable-v2-512.png` replaced `icon-maskable-512.png`.**
+- **27 Sept, later: `icon-maskable-v3-512.png` — the logo on WARM WHITE
+  (#FAF7F4), Afnan's pick "B" of three mock-ups** (white-on-gradient,
+  gradient-on-white, graphite) after he called the black tile hideous. Same
+  69.3% safe-circle fill. The same art at 180px is now the iPhone
+  `apple-touch-icon` (`apple-touch-icon-180.png`, opaque — iOS fills
+  transparency with black, which is the look he rejected). Precached.
+  `manifest.json` `background_color` (the splash) is still black — not
+  the icon, and the login is dark by default.
+- **27 Sept: `icon-maskable-v2-512.png` replaced `icon-maskable-512.png`** (superseded by v3 above).
   Afnan asked for a transparent Android icon; that is not available to a
   web app (the launcher masks every icon to a shape and Chrome fills a
   non-maskable one onto a WHITE plate), so he chose "the mark fills the
