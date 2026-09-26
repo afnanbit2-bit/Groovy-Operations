@@ -114,8 +114,13 @@ module.exports=async function(){
       .forEach(id=>s.eq('daniyal reaches '+id,go(dani,id),id));
     ['mkt-creators','mkt-dispatches','shopify-intel','profile']
       .forEach(id=>s.eq('daniyal keeps '+id,go(dani,id),id));
-    ['dashboard','po-registry','users','boards']
+    ['dashboard','po-registry','users','pattern-hub']
       .forEach(id=>s.eq('daniyal is still sent home from '+id,go(dani,id),'mkt-creators'));
+    // 'boards' (Mood Boards) used to sit in that list. Daniyal was given
+    // Creative Hub in Sept 2026, so it now opens for him through the hub
+    // list -- tests/marketing.test.js holds that the same ROLE off the list
+    // is still sent home, which is what keeps tb- and board- apart.
+    s.eq('daniyal reaches Mood Boards through Creative Hub',go(dani,'boards'),'boards');
 
     const ammar=app(AMMAR);
     s.eq('an owner reaches the board',go(ammar,'tb-dash'),'tb-dash');
