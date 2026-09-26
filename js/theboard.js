@@ -305,6 +305,9 @@ function tbLiveMerge(maps){
 /** Is someone in the middle of something a repaint would destroy? */
 function _tbLiveBusy(){
   if(typeof _tbDragId!=='undefined'&&_tbDragId!=null)return true;
+  // An open date picker is a gesture in progress: a repaint would tear
+  // the calendar out from under the pointer.
+  if(_tbFpOpen())return true;
   return _tbEditableFocus();
 }
 // (The quick-add composer keeps its text and chips in _tbQa, so a live
@@ -1205,7 +1208,7 @@ function _tbDrawer(){
     +'<div class="tb-pcard tb-props">'
       +(done?'':'<button class="tb-prop tb-propbtn'+(starred?' on':'')+'" onclick="window.tbAddToMyDay(\''+id+'\')">'
         +_tbIcon('sun')+'<span class="tb-proplabel tb-propwide">'+(starred?'Added to My Day':'Add to My Day')+'</span></button>')
-      +prop('calendar','Date','<input type="date" id="tb-d-date" value="'+_tbEsc(it.date||'')+'"'+(canMove?'':' disabled')
+      +prop('calendar','Date','<input type="date" data-tb-fp id="tb-d-date" value="'+_tbEsc(it.date||'')+'"'+(canMove?'':' disabled')
         +' onchange="window.tbFieldChange(\'date\',this.value)">',
         moved?'<span class="tb-was">was '+_tbEsc(_tbCap(tbDayLabel(it.datePlanned,today)))+'</span>':'')
       +'<div class="tb-prop tb-propstack">'+_tbIcon('users')+'<span class="tb-proplabel">People</span>'
@@ -1378,7 +1381,7 @@ function _tbQaChipsHTML(){
   const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
   return'<div class="tb-qarow"><span class="tb-qalabel">date</span>'
       +dateBtn(today,'today')+dateBtn(_tbDayAdd(today,1),'tomorrow')+dateBtn(nextMon,'next mon')
-      +'<input type="date" class="tb-qadate" id="tb-qa-date" value="'+_tbEsc(plan.date||'')+'"'
+      +'<input type="date" data-tb-fp class="tb-qadate" id="tb-qa-date" value="'+_tbEsc(plan.date||'')+'"'
         +' onchange="window.tbQaDate(this.value)">'
       +'<span class="tb-qadatenow'+(plan.date?'':' none')+'">'+_tbEsc(dateLabel)+'</span>'
       +(plan.date?'<button type="button" class="tb-qachip tb-qaclear"'+keep+' onclick="window.tbQaDate(\'\')" title="no date">&times;</button>':'')
@@ -1398,7 +1401,7 @@ function _tbQaChipsHTML(){
 /** Repaint the chip row and the preview line only -- never the input. */
 function _tbQaPaint(){
   const chips=document.getElementById('tb-qa-chips');
-  if(chips)chips.innerHTML=_tbQa.open?_tbQaChipsHTML():'';
+  if(chips){ chips.innerHTML=_tbQa.open?_tbQaChipsHTML():''; _tbFpPrune(false); _tbPickers(chips); }
   const wrap=document.getElementById('tb-quick');
   if(wrap&&wrap.classList)wrap.classList[_tbQa.open?'add':'remove']('open');
   const out=document.getElementById('tb-qa-prev');
@@ -1469,7 +1472,7 @@ window.tbQuickKey=function(e){
   document.addEventListener('pointerdown',function(e){
     if(!_tbQa.open)return;
     const t=e&&e.target;
-    if(t&&t.closest&&t.closest('#tb-quick'))return;
+    if(t&&t.closest&&(t.closest('#tb-quick')||t.closest('.flatpickr-calendar')))return;
     if(_tbQa.text||_tbQa.dateSet||_tbQa.assign.length||_tbQa.lane||_tbQa.listId!==undefined)return;
     _tbQa.open=false;
     _tbQaPaint();
@@ -3176,7 +3179,7 @@ function _tbMoveReqSection(it){
     +(_tbMoveReqOpen
       ?'<div class="tb-mrform"><div class="tb-hint">'+_tbEsc(locker.name)
         +' holds the lock. This posts the ask in the thread and pings them.</div>'
-        +'<input type="date" id="tb-mr-date" value="'+_tbEsc(it.date||'')+'">'
+        +'<input type="date" data-tb-fp id="tb-mr-date" value="'+_tbEsc(it.date||'')+'">'
         +'<input id="tb-mr-why" maxlength="200" placeholder="why does it need to move?">'
         +'<button class="btn-primary" onclick="window.tbRequestMove()">send</button></div>'
       :'')
@@ -3590,6 +3593,9 @@ function _tbOnKeydown(e){
   // Board settings sits over everything, so Escape closes it before
   // anything underneath -- read before the editable bail, like the rest.
   if(e&&e.key==='Escape'&&_tbSettingsOpen){ if(e.preventDefault)e.preventDefault(); window.tbToggleSettings(); return; }
+  // An open date picker takes Escape for itself (it closes the calendar);
+  // closing the pane under it as well would lose the date being picked.
+  if(e&&e.key==='Escape'&&_tbFpOpen())return;
   const act=tbShortcutFor(e,{
     editable:_tbEditableFocus(),
     drawerOpen:!!_tbOpenItemId,
@@ -3967,7 +3973,7 @@ function _tbMoveSheet(){
       +'<div class="tb-sheetquick">'+quick(today,'today')
         +quick(_tbDayAdd(today,1),'tomorrow')
         +quick(_tbDayAdd(today,7),'next week')+'</div>'
-      +'<input type="date" id="tb-move-date" value="'+_tbEsc(it.date||today)+'">'
+      +'<input type="date" data-tb-fp id="tb-move-date" value="'+_tbEsc(it.date||today)+'">'
       +'<div class="tb-sheetfoot">'
         +'<button class="btn-outline" onclick="window.tbCloseMove()">cancel</button>'
         +'<button class="btn-primary" onclick="window.tbMoveTo()">move</button>'
@@ -3982,6 +3988,69 @@ function _tbMoveSheet(){
   if(typeof document==='undefined'||!document.addEventListener)return;
   document.addEventListener('keydown',_tbOnKeydown);
 })();
+
+// ── Date pickers (session 2, P1.7) ────────────────────────────────────
+// Every date the Board asks for is a native <input type="date"> in the
+// markup -- its id, value and onchange are what everything reads -- and
+// after each paint it is ENHANCED with the vendored flatpickr: a calendar
+// that starts on Monday and SHOWS THE DROP'S MARKERS (launch, founders
+// out) on their days, restyled to the tokens (P1.1). flatpickr fires a real
+// `change` on the original input, so no handler had to learn about it.
+// On a phone flatpickr hands over to the native picker, which is the right
+// control there. Without flatpickr (an old cached shell, the node harness)
+// the native input simply stays -- nothing depends on the enhancement.
+let _tbFp=[];
+/** Is any Board date picker open right now? */
+function _tbFpOpen(){ return _tbFp.some(f=>f&&f.isOpen); }
+/** Destroy pickers whose input left the page (or all of them). A repaint
+ *  replaces the DOM, and a picker whose calendar still hangs off <body> is
+ *  a leak -- one per repaint, for as long as the tab is open. */
+function _tbFpPrune(all){
+  _tbFp=_tbFp.filter(function(f){
+    const gone=all||!f||!f.input||!(typeof document!=='undefined'&&document.contains&&document.contains(f.input));
+    if(gone&&f&&f.destroy){ try{ f.destroy(); }catch(e){} }
+    return!gone;
+  });
+}
+/** The marker labels for one day in a picker, or null. Pure. */
+function tbFpDayMarks(day,marks){
+  const m=(marks||{})[day];
+  return(Array.isArray(m)&&m.length)?m.slice():null;
+}
+/** The options every Board picker uses. Pure but for the callback it
+ *  closes over. */
+function tbFpOptions(marks,cls){
+  return{
+    dateFormat:'Y-m-d',altInput:true,altFormat:'D j M Y',
+    altInputClass:String(cls||'').trim()+' tb-fpalt',
+    locale:{firstDayOfWeek:1},
+    onDayCreate:function(sel,str,fp,dayEl){
+      const d=(dayEl&&dayEl.dateObj)?_tbDay(dayEl.dateObj):'';
+      const m=tbFpDayMarks(d,marks);
+      if(m&&dayEl){
+        if(dayEl.classList)dayEl.classList.add('tb-fp-marker');
+        dayEl.title=m.join(' · ');
+      }
+    }
+  };
+}
+/** Enhance these inputs. A DISABLED one (a lock you cannot move) stays
+ *  native and disabled -- a picker would offer a date it cannot take. */
+function _tbPickersOn(els,marks){
+  if(typeof flatpickr!=='function')return 0;
+  let n=0;
+  Array.prototype.forEach.call(els||[],function(el){
+    if(!el||el.disabled||el._flatpickr)return;
+    try{ _tbFp.push(flatpickr(el,tbFpOptions(marks,el.className))); n++; }catch(e){}
+  });
+  return n;
+}
+function _tbPickers(root){
+  if(typeof flatpickr!=='function'||typeof document==='undefined')return;
+  const host=root||document;
+  if(!host.querySelectorAll)return;
+  _tbPickersOn(host.querySelectorAll('input[type="date"][data-tb-fp]'),tbMarkersByDay(tbConfig));
+}
 
 // ── Routing ───────────────────────────────────────────────────────────
 // ONE entry point for every tb-* page, so js/shared.js holds a single line
@@ -4029,11 +4098,13 @@ function _tbRepaint(reload){
   const ae=(typeof document!=='undefined'&&document.activeElement)||null;
   if(ae&&ae.id==='tb-qa'&&_tbQa.open)_tbQaRefocus=true;
   _tbHydrateQueue=[];
+  _tbFpPrune(true);
   const body=_tbScreen(_tbPage);
   // The detail pane is the frame's THIRD column (P1.4), not an overlay
   // appended after it -- so the list beside it stays on screen.
   m.innerHTML=_tbShell(_tbPage,body,_tbDrawer())+_tbMoveSheet()+_tbHelpOverlay()+_tbSettingsOverlay();
   _tbHydrate();
+  _tbPickers(m);
   _tbPaintBadges();
   _tbPaintMentions();
   // The repaint rebuilds main-content wholesale, so a composer that had

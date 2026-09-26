@@ -489,6 +489,43 @@ function DRIVE(){
         L(((sit.myDay||{})[_tbMe()])===_tbToday(),'the star put the item in My Day');
         L(!document.querySelector('.tb-drawer'),'and did not open it');
       }
+      // ── date pickers (P1.7): the vendored flatpickr, Monday first, markers ──
+      var mv=tbItems.filter(function(i){return i.status!=='done'&&tbCanMoveDate(i,_tbMe(),_tbIsBoardOwner());})[0];
+      L(!!mv,'there is an item this person can re-date');
+      if(mv){
+        act('open it',function(){window.tbOpenItem(mv.id);});
+        await wait(300);
+        var alt=document.querySelector('#tb-drawer .tb-fpalt');
+        L(!!alt&&typeof flatpickr==='function','the pane’s date field is a picker');
+        if(alt){
+          alt.click();await wait(200);
+          var cal=document.querySelector('.flatpickr-calendar.open');
+          L(!!cal,'it opens a calendar');
+          var wd=cal&&cal.querySelector('.flatpickr-weekday');
+          L(!!wd&&/Mon/.test(wd.textContent),'that starts on Monday ('+(wd?wd.textContent.trim():'')+')');
+          var mk=((tbConfig&&tbConfig.markers)||[])[0];
+          var el1=document.getElementById('tb-d-date');var fpi=el1&&el1._flatpickr;
+          if(mk&&fpi){fpi.jumpToDate(mk.date);await wait(100);}
+          L(!!mk&&!!document.querySelector('.flatpickr-calendar.open .flatpickr-day.tb-fp-marker'),'and shows the drop’s markers ('+(mk?mk.label+' '+mk.date:'none')+')');
+          // Escape closes the calendar, not the pane under it.
+          document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+          await wait(150);
+          L(!!document.querySelector('.tb-drawer'),'Escape with the calendar open keeps the pane');
+          // Pick a day.
+          var alt2=document.querySelector('#tb-drawer .tb-fpalt');
+          if(alt2){alt2.click();await wait(150);}
+          var el2=document.getElementById('tb-d-date');var fp2=el2&&el2._flatpickr;
+          if(fp2){fp2.jumpToDate('2026-10-20');await wait(100);}
+          var d20=document.querySelector('.flatpickr-calendar.open .flatpickr-day[aria-label="October 20, 2026"]');
+          L(!!d20,'the picker shows 20 October');
+          if(d20){d20.click();await wait(300);}
+          var after=tbItems.filter(function(i){return i.id===mv.id;})[0]||{};
+          L(after.date==='2026-10-20','a picked day re-dates the item ('+after.date+')');
+          L(document.querySelectorAll('.flatpickr-calendar').length<=2,'and repaints leave no calendars behind ('+document.querySelectorAll('.flatpickr-calendar').length+')');
+        }
+        act('close it',function(){window.tbCloseItem();});
+        await wait(100);
+      }
       window.showPage('tb-lists');await wait(200);
       var list=document.querySelector('[onclick^="window.tbOpenList"]');
       L(!!list,'there is a list to open');

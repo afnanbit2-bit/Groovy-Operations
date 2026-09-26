@@ -3818,7 +3818,10 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
   padding-bottom:calc(18px + env(safe-area-inset-bottom))}
 .tb-sheettitle{display:block;margin-bottom:12px;font-size:15px;font-weight:700;color:var(--text)}
 .tb-sheetquick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-.tb-sheetcard input[type=date]{width:100%;box-sizing:border-box;min-height:44px;
+/* flatpickr's own input (P1.7) replaces the native date field on screen
+   and has to look like it wherever it lands. */
+.tb-fpalt{cursor:pointer}
+.tb-sheetcard input[type=date],.tb-sheetcard .tb-fpalt{width:100%;box-sizing:border-box;min-height:44px;
   padding:0 10px;background:var(--surface-2);border:1px solid var(--border);
   border-radius:8px;font-family:inherit;font-size:14px;color:var(--text)}
 .tb-sheetfoot{display:flex;gap:8px;margin-top:14px}

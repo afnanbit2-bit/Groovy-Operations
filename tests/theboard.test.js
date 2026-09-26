@@ -1403,7 +1403,7 @@ module.exports=async function(){
     const html=a.run('_tbComposer("add something")');
     s.ok('the composer opens with its chip row',/tb-quick open/.test(html)&&/tb-qarow/.test(html));
     s.ok('today, tomorrow and next mon',/>today</.test(html)&&/>tomorrow</.test(html)&&/>next mon</.test(html));
-    s.ok('a date field',/type="date" class="tb-qadate"/.test(html));
+    s.ok('a date field',/type="date" data-tb-fp class="tb-qadate"/.test(html));
     const assignRow=(/<span class="tb-qalabel">assign<\/span>([\s\S]*?)<\/div>/.exec(html)||['',''])[1];
     s.eq('five people on the assign row: you, three to pick, one not set up',
       (assignRow.match(/<button /g)||[]).length,5);
@@ -1784,6 +1784,40 @@ module.exports=async function(){
     const darkBlock=(/html\[data-theme="dark"\]\{--tb-pal-moss[^}]*\}/.exec(css)||[''])[0];
     s.ok('every palette key has a dark value',keys.every(k=>new RegExp('--tb-pal-'+k+':#[0-9a-f]{6}').test(darkBlock)));
     s.ok('and no palette rule paints a literal colour',!/\.tb-c-[a-z]+(\s\.tb-pillbar)?\{background:#/.test(css));
+  }
+
+  // ══ SESSION 2 — P1.7: FLATPICKR EVERYWHERE A DATE IS PICKED ══════════
+  s.section('date pickers: every date field, Monday first, the markers shown');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    const src=read('js/theboard.js');
+    s.eq('all four date fields are marked for the picker',(src.match(/'<input type="date" data-tb-fp/g)||[]).length,4);
+    s.eq('and no date field is left out',(src.match(/'<input type="date"/g)||[]).length,4);
+    s.eq('with nothing to enhance, nothing happens',a.run('_tbPickersOn([{}],{})'),0);
+    // A fake flatpickr that records what it was asked for.
+    a.run('globalThis.__fp=[];flatpickr=function(el,o){const f={input:el,isOpen:false,o:o,destroyed:false,destroy(){this.destroyed=true;}};el._flatpickr=f;__fp.push(f);return f;}');
+    const n=a.run('_tbPickersOn([{className:"tb-qadate"},{disabled:true},{_flatpickr:{}}],{"2026-10-30":["launch"]})');
+    s.eq('an enabled field is enhanced; a disabled or already-enhanced one is not',n,1);
+    const o=a.run('__fp[0].o');
+    s.eq('it writes the date the handlers expect',o.dateFormat,'Y-m-d');
+    s.eq('the week starts Monday, like the calendar',o.locale.firstDayOfWeek,1);
+    s.ok('the field keeps its look',o.altInput===true&&o.altInputClass==='tb-qadate tb-fpalt');
+    const day=a.run('(function(){const d={dateObj:new Date(2026,9,30,12),title:"",classList:{c:[],add(x){this.c.push(x);}}};__fp[0].o.onDayCreate([],"",null,d);return{t:d.title,c:d.classList.c};})()');
+    s.eq('a marker day is marked in the picker',J(day),J({t:'launch',c:['tb-fp-marker']}));
+    const plain=a.run('(function(){const d={dateObj:new Date(2026,9,29,12),title:"",classList:{c:[],add(x){this.c.push(x);}}};__fp[0].o.onDayCreate([],"",null,d);return d.classList.c.length;})()');
+    s.eq('and an ordinary day is not',plain,0);
+    s.eq('two markers on a day read together',J(a.run('tbFpDayMarks("d",{d:["launch","founders out"]})')),J(['launch','founders out']));
+    s.eq('no marker is null',a.run('tbFpDayMarks("d",{})'),null);
+    // A repaint replaces the DOM: every picker is destroyed first, or each
+    // repaint would leave a calendar hanging off <body>.
+    a.run('_tbFpPrune(true)');
+    s.ok('pruning destroys them all',a.run('__fp[0].destroyed===true&&_tbFp.length===0'));
+    a.run('_tbFp=[{isOpen:true,input:{},destroy(){}}]');
+    s.ok('an open picker holds a live repaint',a.run('_tbLiveBusy()')===true);
+    s.ok('and keeps Escape for itself (the pane stays open)',/if\(e&&e\.key==='Escape'&&_tbFpOpen\(\)\)return;/.test(src));
+    s.ok('a click in its calendar is not "outside" the composer',/t\.closest\('\.flatpickr-calendar'\)/.test(src));
+    a.run('_tbFp=[]');
   }
 
   s.section('the calendar prefs are cleaned on load');
