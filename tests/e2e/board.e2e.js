@@ -204,12 +204,20 @@ function cdp(wsUrl){
         'the Firebase SDK (www.gstatic.com) -- a network that blocks it cannot sign in');
     await fill('l-user',handle);
     await fill('l-pass',PASS);
+    // Remember me is ticked by default since the 26 Sept login round. The
+    // harness must never keep a session, offer the QA password to the
+    // browser's password manager, or raise the fingerprint-lock offer card
+    // (z-index 600, over the pages it screenshots) -- so it is unticked.
+    // A deploy older than that round has no box, and nothing is lost.
+    await ev('(function(){var r=document.getElementById("l-remember");if(r)r.checked=false;return !r||!r.checked;})()');
     await ev('document.getElementById("login-btn").click()');
     try{ await waitFor('typeof session!=="undefined"&&session&&session.uid',30000,'sign-in'); }
     catch(e){ const why=await ev('(document.querySelector(".toast")||{}).textContent||""').catch(()=>'');
       throw new Error('sign-in failed'+(why?': '+why:'')+' (does this deploy carry the `'+handle+'` USER_DEFS entry?)'); }
     const role=await ev('session.role');
     check('signed in with the qa role',role==='qa','role is '+role);
+    const kept=await ev('(function(){try{return localStorage.getItem("groovy-keep-signed-in");}catch(e){return null;}})()').catch(()=>null);
+    check('signed in WITHOUT Remember me (no kept session, no saved password)',kept!=='1','groovy-keep-signed-in is '+kept);
     if(role!=='qa'){ exit=2; throw new Error('not the QA role -- stopping before anything is written'); }
 
     // ── THE CONTAINMENT GATE ──────────────────────────────────────────

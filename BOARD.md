@@ -210,8 +210,12 @@ land in `docs/board-screens/<local commit>/`, which is **gitignored: this
 repo is public and the screens show the live drop plan**. The login form
 takes a USERNAME mapped through `USER_DEFS`, so the site must carry the
 `claude` entry — a deploy preview of the branch until it is on `main`.
+It **unticks Remember me** before signing in (ticked by default since the
+26 Sept login round) and checks it took: the harness must never keep a
+session, offer the QA password to a password manager, or raise the
+fingerprint-lock offer card over the pages it screenshots.
 Rehearsed against the real shell with an in-memory Firestore, both with the
-QA rules imitated (14/14) and without them (stopped at the gate, exit 2).
+QA rules imitated (15/15) and without them (stopped at the gate, exit 2).
 
 **`node scripts/board-inspect.js <cmd> [arg]`** — Admin SDK reads (they
 bypass the rules, which is why it can explain what no app user sees):
