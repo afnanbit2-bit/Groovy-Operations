@@ -6730,12 +6730,15 @@ land in MCB. Decisions tabled in `ACCOUNTS_PLAN.md` §5a.
   that puts money in hand (`whsMoneyIn`: paid now, or a pay-later bill with
   `collectedVia`/`collectedDate`) minus those with a live confirmation =
   **pending**; a live confirmation whose sale no longer puts money in hand
-  (voided, un-collected, recorded again) = **orphan**. Umair's list, Raees's
-  queue, the alert strip and the review card all read it.
+  (voided, un-collected) = **orphan**. Umair's list, Raees's queue, the alert
+  strip and the review card all read it. **A confirmation is MATCHED BY ORDER
+  NUMBER** (`whsConfOrder`), not by version — see the review round below.
 - **A confirmation is an ordinary `cash_in`** in `acct_entries`
   (`_acctWhEntry`, `js/store-accounts.js`): `src:'wh'`, `whSale` =
-  `whsHandKey(sale)` = `<order>#<priorVoids.length>` (so a bill recorded
-  again after a void is a NEW version and needs its own confirmation),
+  `whsHandKey(sale)` = `<order>#<priorVoids.length>` (kept as HISTORY: a
+  bill recorded again after a void is the SAME order, covered by the money
+  already received — ~~a new version needing its own confirmation~~ was the
+  review round's first money bug),
   account `cash` or `mcb` (`WHS_ACCT_OF`), **dated the day Raees confirms**,
   category *Warehouse sale*, the customer as person, the order as ref, the
   bill as the photo. `_acctEffect` needed no change. **Until confirmed it is
@@ -6774,10 +6777,11 @@ land in MCB. Decisions tabled in `ACCOUNTS_PLAN.md` §5a.
   read widened to `isStoreAccounts()`; one new update clause lets
   `isWhSales()` set (or clear, for undo) EXACTLY the five collection fields
   (`_WHS_COLLECT_FIELDS`, asserted equal) on an active pay-later sale, bound
-  to the caller's email, `collectedDate >= date`. The confirmation needs no
-  rule change (`acct_entries` create is `isStoreAccounts()`). Emulator:
-  91/91 with the app's own code writing; the three new permissions fail
-  against the previous rules.
+  to the caller's email, `collectedDate >= date`. ~~The confirmation needs
+  no rule change~~ — it does since the review round (`whConfValid`, below).
+  Emulator: 91/91 at the time, 103/103 after the review round, with the
+  app's own code writing; the new permissions fail against the previous
+  rules.
 - Tests: `tests/warehouse-sales.test.js` (money in hand, the derived queue,
   collect/undo driven through the modal, Raees confirming through the REST
   create, a second device refused, a different amount, confirm-all for a
@@ -6785,6 +6789,73 @@ land in MCB. Decisions tabled in `ACCOUNTS_PLAN.md` §5a.
   reverted once and caught by name. `smoke-layout` gained **`store accounts
   — from the warehouse (both ends)`** at all three widths — breaking the
   amount ink fails naming all three queue rows.
+
+**THE REVIEW ROUND (26 Sept 2026, later).** An adversarial review (money,
+rules, concurrency, UX lenses; each finding given to three skeptics told to
+refute it) confirmed 8 findings. Half its verifiers died on the session
+limit, so the unverified concurrency and UX findings were checked by hand
+against the code: 7 were real. All are fixed, and **every fix was reverted
+once and caught by a test by name** (19 mutations; the one not caught is the
+second layer of escaping behind a date that is already sanitised, so it
+cannot be reached while the first layer holds):
+
+- **A bill voided and recorded again asked Raees to receive the same money
+  again** (the one-click default put it in the books TWICE, and a first
+  confirmation in a closed month could never be voided). Matched by order
+  now: the money received covers the corrected entry. When the corrected
+  bill no longer matches what was received (another total, cash vs bank) it
+  is **CHANGED** (`whsConfChanged`: `whSaleTotal`/`account` against the
+  sale) — a warn alert and a list for the owners, never re-queued. Umair's
+  side reads "With Raees · bill changed since".
+- **Month close ignored unconfirmed warehouse cash**, so the drawer count
+  (an adjustment dated in the month) and the later confirmation (a cash in
+  dated that day) both added it. `_acctWhCloseBlock` re-reads both lists and
+  refuses the close while a payment dated on or before the month's last day
+  is waiting — or when the warehouse data cannot be read. Like a pending
+  cash in, it blocks.
+- **Voiding / editing / deleting a warehouse cash in** left the warehouse's
+  own copy of the confirmations stale — the sale stayed "with Raees" with
+  its money in no book. `_acctWhTouched` updates that copy at once and
+  re-reads it.
+- **Raees confirmed against a list read once per session.** Every
+  confirmation now RE-READS THE SALE over REST first (`_acctWhSaleNow`) and
+  refuses one voided, un-collected or recorded again since
+  (`_acctWhStillSame`); a failed re-read of the confirmations refuses too
+  (it used to fall through to the old copy). Both lists also refresh when
+  looked at again after a minute (`whsRefreshIfStale`) and when the queue
+  is opened.
+- **Stored XSS through the sale date.** The rules never checked `date`, and
+  the queue drew it raw into HTML and an `onclick`. `whSaleValid` requires
+  a YYYY-MM-DD day now; `whsMoneyIn` only ever returns a day; every date in
+  the queue and the entry detail is escaped; Confirm-all needs a real day.
+- **A collection could be rewritten in place after Raees confirmed it**
+  (cash → bank by a direct write). The rule sets a collection only on an
+  UNcollected bill and clears it only on a collected one.
+- **A confirmation was whatever the client wrote.** `whConfValid` (rules,
+  `acct_entries` create when `src=='wh'`): the sale exists and still puts
+  money in hand, `whSaleTotal` is the sale's total, and an amount that is
+  not the bill must carry `needsReview` — so it cannot quietly clear the
+  queue for less. An ordinary cash in is untouched.
+- **Managers** view Store Accounts but may not read `wh_sales`, so they
+  carried a permanent urgent "could not be read — republish" alert. The
+  queue is for the people who receive the money (`_acctCanEntry`).
+- **Past the 1,000-sale read cap**, an old confirmation with no sale in the
+  read was reported as an urgent orphan. It is `outside` now, and the queue
+  says the read is capped.
+- **Undo collection** read Raees's side BEFORE asking, trusted an offline
+  cached read (`snap.metadata.fromCache`), and vanished when the read had
+  failed. It asks first, refuses a cached answer, and is offered while the
+  state is unknown (it re-checks).
+- **Mark collected offline** held `_whsBusy` until the write reached the
+  server, silently blocking every new sale. Its own flag now, and it says
+  it needs a connection.
+- The REST create and the sale re-read give up after 20s (`_acctWhFetch`),
+  so a hung request cannot leave every Received button dead.
+
+**Not fixed, on purpose:** a short handover still reads "With Raees ✓ …
+₨X short" — the rest of the money has no path through the queue; the
+entry is flagged for the owners, who settle it. Emulator: **103/103**; the
+8 new rule cases each FAIL against the previous rules.
 
 **Nobody has confirmed a warehouse payment or marked a bill collected on a
 real screen** — the sandbox cannot sign in.
@@ -9141,11 +9212,14 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
-**REPUBLISH OUTSTANDING (26 Sept 2026, later): the warehouse handover.**
-`wh_sales` read now includes `isStoreAccounts()`, and a new update clause
-lets Umair mark a pay-later bill collected. Until the Console has it,
-Raees's ledger shows "Warehouse sales could not be read" and Umair's *Mark
-collected* is refused. **The same paste carries Raees's edit rights below
+**REPUBLISH OUTSTANDING (26 Sept 2026, later): the warehouse handover,
+and its review round.** `wh_sales` read now includes `isStoreAccounts()`,
+and a new update clause lets Umair mark a pay-later bill collected. Until
+the Console has it, Raees's ledger shows "Warehouse sales could not be
+read" and Umair's *Mark collected* is refused. **The review round changed
+the file again** (`whSaleValid` checks the date, a collection is set only
+on an uncollected bill, `whConfValid` on `acct_entries` create) — publish
+the NEWEST file; an older paste is missing those. **The same paste carries Raees's edit rights below
 if that one was not published yet.**
 
 **REPUBLISH OUTSTANDING (26 Sept 2026): Raees's edit rights.**

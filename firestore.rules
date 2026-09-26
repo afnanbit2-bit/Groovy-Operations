@@ -221,9 +221,30 @@ service cloud.firestore {
         && d.needsReview == true && d.reviewFlags is list && 'edited' in d.reviewFlags
         && d.diff(r).affectedKeys().hasOnly(['date','month','amount','vendorId','vendorName','payee','person','account','toAccount','via','source','floatId','category','ref','note','photo','lines','expense','edits','editedAt','editedBy','needsReview','reviewFlags']);
     }
+    // A warehouse confirmation (src 'wh', js/store-accounts.js _acctWhEntry)
+    // is held to its sale: the sale exists, still puts money in hand (paid,
+    // or a pay-later bill collected, and not void), the bill total on the
+    // entry is the sale's, and an amount that is not the bill is flagged for
+    // the owners — so a confirmation cannot quietly clear the queue for less
+    // than was taken. Its id is whs_<order>…, and it is created posted.
+    function whConfValid(id) {
+      let d = request.resource.data;
+      let sale = get(/databases/$(database)/documents/wh_sales/$(d.whOrder)).data;
+      return id.matches('^whs_.+')
+        && d.type == 'cash_in' && d.status == 'posted'
+        && d.whOrder is string && d.whOrder.matches('^[A-Z0-9][A-Z0-9._-]{1,39}$')
+        && d.whSale is string
+        && d.account in ['cash','mcb']
+        && sale.status == 'active'
+        && (sale.terms == 'paid' || sale.get('collectedAt', null) != null)
+        && d.whSaleTotal == sale.total
+        && d.amount is number && d.amount > 0
+        && (d.amount == d.whSaleTotal || d.needsReview == true);
+    }
     match /acct_entries/{doc} {
       allow read: if signedIn();
-      allow create: if isStoreAccounts();
+      allow create: if isStoreAccounts()
+        && (request.resource.data.get('src', '') != 'wh' || whConfValid(doc));
       allow update: if isAcctSuper() || acctControl() || acctReview() || acctOwnEdit();
       allow delete: if isAcctSuper();
     }
@@ -262,6 +283,10 @@ service cloud.firestore {
     // makes is COLLECTING a live pay-later bill (or undoing that): exactly
     // the five collection keys, bound to the signed-in email, cash or bank,
     // on or after the sale date. The list mirrors _WHS_COLLECT_FIELDS.
+    // A collection is set on an UNcollected bill and cleared on a collected
+    // one — never rewritten in place, so cash cannot turn into bank (or the
+    // day move) under a payment Raees already confirmed. The sale date is a
+    // YYYY-MM-DD day: it is drawn into Raees's page.
     function whSaleValid(d, orderNo) {
       return d.orderNo == orderNo
         && d.status == 'active'
@@ -276,6 +301,7 @@ service cloud.firestore {
         && d.discount is number && d.discount >= 0
         && d.discount * 100 <= d.subtotal * 20
         && d.total == d.subtotal - d.discount
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && d.terms in ['paid','later']
         && (d.terms == 'paid' || d.dueDate is string);
     }
@@ -300,14 +326,16 @@ service cloud.firestore {
           && resource.data.status == 'active' && request.resource.data.status == 'active'
           && resource.data.terms == 'later'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collectedAt','collectedBy','collectedByName','collectedVia','collectedDate'])
-          && ((request.resource.data.get('collectedAt', null) is number
+          && ((resource.data.get('collectedAt', null) == null
+               && request.resource.data.get('collectedAt', null) is number
                && request.resource.data.collectedVia in ['cash','bank']
                && request.resource.data.collectedDate is string
                && request.resource.data.collectedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
                && request.resource.data.collectedDate >= resource.data.date
                && request.resource.data.collectedBy is string
                && request.resource.data.collectedBy + '@groovy.op' == userEmail())
-              || (request.resource.data.get('collectedAt', null) == null
+              || (resource.data.get('collectedAt', null) != null
+                  && request.resource.data.get('collectedAt', null) == null
                   && request.resource.data.get('collectedBy', null) == null
                   && request.resource.data.get('collectedVia', null) == null
                   && request.resource.data.get('collectedDate', null) == null)));

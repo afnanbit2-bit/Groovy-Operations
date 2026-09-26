@@ -135,6 +135,9 @@ async function t(name,fn){
   await t('… not by card (cash or bank only)',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),Object.assign(collect(r,{via:'cash',date:'2026-09-24'}).patch,{collectedVia:'card'})));});
   await t('… and a collection may not touch the money',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),Object.assign(collect(r,{via:'cash',date:'2026-09-24'}).patch,{total:1})));});
   await t('Umair undoes a collection',async()=>{await reset();const r=later();await seed(r.id,Object.assign({},r.data,collect(r,{via:'cash',date:'2026-09-24'}).patch));await assertSucceeds(updateDoc(doc(as(UMAIR),'wh_sales',r.id),{collectedAt:null,collectedBy:null,collectedByName:null,collectedVia:null,collectedDate:null}));});
+  await t('a collected bill cannot be collected again (cash → bank rewritten in place)',async()=>{await reset();const r=later();await seed(r.id,Object.assign({},r.data,collect(r,{via:'cash',date:'2026-09-24'}).patch));await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),{collectedVia:'bank',collectedDate:'2026-09-25',collectedAt:1790000400000,collectedBy:'umair',collectedByName:'Umair'}));});
+  await t('an uncollected bill cannot be "un-collected"',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(UMAIR),'wh_sales',r.id),{collectedAt:null,collectedBy:null,collectedByName:null,collectedVia:null,collectedDate:null}));});
+  await t('a sale whose date is not a day is refused (it is drawn into Raees\'s page)',async()=>{await reset();const r=build({},UMAIR);await assertFails(setDoc(doc(as(UMAIR),'wh_sales',r.id),Object.assign({},r.data,{date:'<img src=x onerror=alert(1)>'})));});
   await t('Raees cannot mark a bill collected',async()=>{await reset();const r=later();await seed(r.id,r.data);await assertFails(updateDoc(doc(as(RAE),'wh_sales',r.id),collect(r,{via:'cash',date:'2026-09-24'},RAE).patch));});
 
   // ── Store Accounts: acct_entries (Sept 2026 — Raees can edit) ──
@@ -178,7 +181,8 @@ async function t(name,fn){
       globals:{fetch:globalThis.fetch,auth:{currentUser:{getIdToken:async()=>tokenFor(who)}},localStorage:LS,allItems:[],allTransactions:[]}});
     a.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');return a;};
   const whSale=Object.assign({_id:'SO0351'},build({orderNo:'SO0351',customerName:'RAVI KUMAR'},UMAIR).data);
-  await t('Raees confirms: the cash in is created under the sale\'s id',async()=>{await reset();const a=acctWh(RAEES);
+  const whData=Object.assign({},whSale);delete whData._id;
+  await t('Raees confirms: the cash in is created under the sale\'s id',async()=>{await reset();await seed('SO0351',whData);const a=acctWh(RAEES);
     a.run(`whSales=[${JSON.stringify(whSale)}];whSalesLoaded=true;whsConfirmations=[];whsConfLoaded=true;1`);
     const r=await a.run("_acctWhConfirmOne(_acctWhFind('SO0351#0'),_acctWhFind('SO0351#0').money.amount,'')");
     expect(r&&r.row,'refused: '+JSON.stringify(r));
@@ -188,10 +192,30 @@ async function t(name,fn){
     const r=await a.run("_acctWhConfirmOne(_acctWhFind('SO0351#0'),1,'')");
     expect(r&&r.error&&r.exists,'allowed a second create: '+JSON.stringify(r));
     const d=await readAcct('acct_entries','whs_SO0351_0');expect(d.amount===whSale.total,'the first was overwritten');});
-  await t('Mustafa (a manager) cannot confirm',async()=>{await reset();const a=acctWh(MUS);
+  await t('a short handover is accepted — flagged for review',async()=>{await reset();await seed('SO0351',whData);const a=acctWh(RAEES);
     a.run(`whSales=[${JSON.stringify(whSale)}];whSalesLoaded=true;whsConfirmations=[];whsConfLoaded=true;1`);
-    const r=await a.run("_acctWhConfirmOne(_acctWhFind('SO0351#0'),10,'')");
-    expect(r&&r.error,'allowed');expect(!(await readAcct('acct_entries','whs_SO0351_0')),'written');});
+    const r=await a.run("_acctWhConfirmOne(_acctWhFind('SO0351#0'),100,'short')");
+    expect(r&&r.row,'refused: '+JSON.stringify(r));const d=await readAcct('acct_entries','whs_SO0351_0');expect(d.amount===100&&d.needsReview===true,'stored '+JSON.stringify(d));});
+  // The rules, with the app bypassed: a confirmation must match its sale.
+  const rawConf=o=>{const a=acctWh(RAEES);a.run(`whSales=[${JSON.stringify(whSale)}];whSalesLoaded=true;whsConfirmations=[];whsConfLoaded=true;1`);
+    const e=JSON.parse(a.run("JSON.stringify(Object.assign(_acctWhEntry(_acctWhFind('SO0351#0'),_acctWhFind('SO0351#0').money.amount,''),{date:_acctToday(),month:_acctThisMonth()}))"));return Object.assign(e,o||{});};
+  await t('raw: the app\'s confirmation passes the rules',async()=>{await reset();await seed('SO0351',whData);await assertSucceeds(setDoc(doc(as(RAE),'acct_entries','whs_SO0351_0'),rawConf()));});
+  await t('raw: a short amount NOT flagged for review is refused',async()=>{await reset();await seed('SO0351',whData);await assertFails(setDoc(doc(as(RAE),'acct_entries','whs_SO0351_0'),rawConf({amount:1,needsReview:false,reviewFlags:[]})));});
+  await t('raw: a bill total that is not the sale\'s is refused',async()=>{await reset();await seed('SO0351',whData);await assertFails(setDoc(doc(as(RAE),'acct_entries','whs_SO0351_0'),rawConf({amount:1,whSaleTotal:1})));});
+  await t('raw: a confirmation for a VOID sale is refused',async()=>{await reset();await seed('SO0351',Object.assign({},whData,voidPatch(UMAIR)));await assertFails(setDoc(doc(as(RAE),'acct_entries','whs_SO0351_0'),rawConf()));});
+  await t('raw: a confirmation for a pay-later bill not yet collected is refused',async()=>{await reset();await seed('SO0351',Object.assign({},whData,{terms:'later',paidVia:'',dueDate:'2026-10-01'}));await assertFails(setDoc(doc(as(RAE),'acct_entries','whs_SO0351_0'),rawConf()));});
+  await t('raw: a confirmation for a sale that does not exist is refused',async()=>{await reset();await assertFails(setDoc(doc(as(RAE),'acct_entries','whs_SO0351_0'),rawConf()));});
+  await t('raw: an ordinary cash in (no src) is unaffected',async()=>{await reset();await assertSucceeds(setDoc(doc(as(RAE),'acct_entries','c1'),ENT({type:'cash_in',vendorId:null,vendorName:''})));});
+  await t('the app refuses a sale voided since the page loaded (re-read)',async()=>{await reset();await seed('SO0351',Object.assign({},whData,voidPatch(UMAIR)));const a=acctWh(RAEES);
+    a.run(`whSales=[${JSON.stringify(whSale)}];whSalesLoaded=true;whsConfirmations=[];whsConfLoaded=true;1`);
+    const r=await a.run("_acctWhConfirmOne(_acctWhFind('SO0351#0'),_acctWhFind('SO0351#0').money.amount,'')");
+    expect(r&&r.stale,'not refused as stale: '+JSON.stringify(r));expect(!(await readAcct('acct_entries','whs_SO0351_0')),'written');});
+  await t('Mustafa (a manager) cannot confirm — the app offers him nothing, and the rules refuse a raw write',async()=>{await reset();await seed('SO0351',whData);const a=acctWh(MUS);
+    a.run(`whSales=[${JSON.stringify(whSale)}];whSalesLoaded=true;whsConfirmations=[];whsConfLoaded=true;1`);
+    expect(a.run('_acctWh()')===null,'the queue is shown to a manager');
+    const MUSC={uid:MUS.uid,email:MUS.email};
+    await assertFails(setDoc(doc(as(MUSC),'acct_entries','whs_SO0351_0'),rawConf()));
+    expect(!(await readAcct('acct_entries','whs_SO0351_0')),'written');});
 
   console.log('store accounts — Raees edits his own entry (the app\'s own REST writes)');
   await t('Raees corrects the amount of his own payment',async()=>{await reset();const e=ENT();await seedAcct('acct_entries','p1',e);

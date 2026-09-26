@@ -662,15 +662,18 @@ const FRAGMENTS={
       S('SO0321',{date:day(12),customerName:'Muhammad Abdullah Siddiqui, for the Karachi Streetwear Collective pop-up at Dolmen Mall Clifton',terms:'later',paidVia:null,dueDate:day(3),total:21940,subtotal:21940,qtyTotal:6,collectedAt:Date.now(),collectedVia:'bank',collectedDate:day(1),collectedBy:'umair',collectedByName:'Umair'}),
       S('SO0334',{date:day(6),customerName:'Sheikh Bilal (Rare Project)',terms:'later',paidVia:null,dueDate:day(-7)}),
       S('SO0340',{date:day(3),customerName:'Zainab',total:6980,subtotal:6980}),
-      S('SO0310',{date:day(9),customerName:'Bilal',status:'void',voidReason:'entered twice',voidedBy:'umair',voidedByName:'Umair',voidedAt:Date.now()})
+      S('SO0310',{date:day(9),customerName:'Bilal',status:'void',voidReason:'entered twice',voidedBy:'umair',voidedByName:'Umair',voidedAt:Date.now()}),
+      // recorded again after Raees received it, with another total: CHANGED
+      S('SO0345',{date:day(4),customerName:'Hamza Tariq, collecting for the whole Clifton Block 5 order',total:4990,subtotal:4990,priorVoids:[{total:3490,voidReason:'wrong size'}]})
     ];
     const conf=(id,sale,amt,acc,o)=>Object.assign({_id:id,type:'cash_in',src:'wh',whSale:sale+'#0',whOrder:sale,date:day(2),month:day(2).slice(0,7),ts:1,by:'raees',byName:'Raees',person:'',account:acc,amount:amt,source:'Warehouse sale',category:'Warehouse sale',ref:sale,note:'',status:'posted',lines:[],reviewFlags:[]},o||{});
-    const confs=[conf('whs_SO0340_0','SO0340',6980,'cash',{person:'Zainab'}),conf('whs_SO0310_0','SO0310',3490,'cash',{person:'Bilal'})];
+    const confs=[conf('whs_SO0340_0','SO0340',6980,'cash',{person:'Zainab',whSaleTotal:6980}),conf('whs_SO0310_0','SO0310',3490,'cash',{person:'Bilal',whSaleTotal:3490}),
+      conf('whs_SO0345_0','SO0345',3490,'cash',{person:'Hamza Tariq',whSaleTotal:3490})];
     const app=loadApp({files:['js/store.js','js/store-accounts.js','js/warehouse-sales.js','js/fulfillment.js'],currentPage:'acct-ledger',globals:{
       allItems:[],allTransactions:[],allTemplates:[],allRequests:[],allActivePOs:[],allStoreCategories:[],allPoIssueRequests:[],allPoEditRequests:[],allPoShortfalls:[],
       auth:{currentUser:{getIdToken:async()=>'tok'}},localStorage:LS}});
     app.run("session={uid:'u-raees',u:'raees',name:'Raees',role:'store',email:'raees@groovy.op'}");
-    app.run(`whSales=${JSON.stringify(sales)};_whsSort();whSalesLoaded=true;whsConfirmations=${JSON.stringify(confs)};whsConfLoaded=true;acctEntries=${JSON.stringify(confs)};acctLoaded=true;1`);
+    app.run(`whSales=${JSON.stringify(sales)};_whsSort();whSalesLoaded=true;whsConfirmations=${JSON.stringify(confs)};whsConfLoaded=true;_whsConfAt=Date.now();_whsSalesAt=Date.now();acctEntries=${JSON.stringify(confs)};acctLoaded=true;1`);
     app.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
     const alerts=app.run('_acctAlerts(_acctOpenFloats())');
     app.run('window.acctWarehouse()');
