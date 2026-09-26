@@ -593,17 +593,49 @@ Record pass/fail here as it is worked through.
 | 14b | the 08:00 PKT reminder writes one `due_today` per person on an item due that day, and the bell shows it | an item dated today; the first morning after it ships | |
 | 15 | tests pass; nothing outside the Board changed | — | **pass** (below) |
 
-**Step 15 is the one that can be answered from here, and it is.**
-`node tests/run.js` is 5,227 assertions with one failure, and that failure
-is the pre-existing Windows-only CRLF assertion in
-`tests/store-accounts.test.js:1196` recorded under Known gaps — CI on
-Linux passes it. Outside its own files the whole module has touched
-exactly: `js/auth.js` (`USER_DEFS` + `BOARD_USERS`/`BOARD_OWNERS` + the
-`designer` role), `js/shared.js` (the nav entry on five routes, one
-`renderPage` line, the `tb-*` scope in `showPage`, the phone `groups`
-map), `firestore.rules`, `firestore.indexes.json`, `index.html`, `sw.js`
-and `css/main.css`. **Phase 5 touched none of them** beyond the
-`CACHE_VERSION` bump.
+**Step 15 is the one that can be answered from here.** At the end of
+session 2 (`4ed7e5f`): `node tests/run.js` is **6,387 assertions, all
+passing**; `smoke-board` drives three users through every Board page in
+real Chromium; `smoke-layout` measures 362 fragment × width × theme jobs.
+Outside its own files (`js/theboard.js`, `tests/theboard.test.js`, the
+`BOARD*.md` docs) the branch changes exactly: `js/auth.js` (the landing
+page), `js/shared.js` (the nav and phone More sheet), `css/main.css`,
+`index.html`, `sw.js`, `netlify.toml`, `firestore.indexes.json`, the
+vendored flatpickr and Lucide files under `assets/vendor/`, two Netlify
+functions (`board-seed`, `board-reminder`) with their `scripts/` bodies,
+the CI workflow, and these test files: `invariants`, `marketing`,
+`smoke-board`, `smoke-browser`, `smoke-layout`, `board-seed`,
+`board-reminder`. **`firestore.rules` is unchanged.**
+
+### Session 2 acceptance — run on the first morning (prepared, not run)
+
+Two people, two browsers. **Ammar** (a Board owner) and **Saim**, who is on
+few items. Where a step says Afnan or Daniyal, anyone else on the Board will
+do. Record each result in the right-hand column. Everything needs the branch
+**merged and deployed**; "index" means the one composite index in the
+batched list in `BOARD-LOG.md` is built.
+
+| # | Step | Pass looks like | Result |
+|---|---|---|---|
+| S1 | Ammar signs in | lands on The Board's Dashboard, not the old dashboard | |
+| S2 | Ammar → Settings (rail foot) → **Preview**, then **Run seed** | Preview says "nothing was written"; Run seed says it created 42 milestones and the list; Team Today lists all five | |
+| S3 | Ammar presses **Run seed** again | "Created 0 milestones; 42 already on the board (not touched)." — nothing changes on any item | |
+| S4 | Ammar deletes one seeded milestone, then runs the seed again | "Not brought back — deleted since the seed made it" | |
+| S5 | Saim, in the second browser, keeps the Dashboard open; Ammar drags a milestone to another day | Saim's screen moves it within a few seconds, with no reload | |
+| S6 | Saim opens a shared item he is **not** on | the pane says he can read and comment but not change it; no star, disabled tick; he can post a comment | |
+| S7 | Ammar quick-adds `call baber tomorrow` and presses Enter twice fast | exactly one item appears, dated tomorrow | |
+| S8 | Ammar opens a list, goes back to the Dashboard, quick-adds `note to self` | it lands in **no** list and stays private | |
+| S9 | Ammar pins a task more than two weeks out (pane → **Pin**) | it appears on Deadlines; Settings lists it; **Unpin** removes it | |
+| S10 | Ammar adds a marker "rehearsal" on 29 Oct in Settings → **Save Markers** | Saim's calendar and date picker show it without reloading | |
+| S11 | Ammar types in an item's note, then opens another item within a second | the text is saved to the **first** item; the second item's note is untouched | |
+| S12 | at a tablet width (about 800 px), open an item | the pane opens over the list; the list behind it is not squeezed to a sliver | |
+| S13 | dark mode: open any date picker | the year arrows are visible; a picked day in the next month's grid is the accent colour | |
+| S14 | after the index is built: open the Inbox | it lists Board rows only (no HRM notices); the browser console shows no "index not deployed yet" warning | |
+| S15 | the first morning after it ships, 08:00 PKT | the bell has a "Due today" row for anything dated that day, one per person on it; `board_config/reminder` has the run summary | |
+
+The Monday steps that **cannot** be pre-checked from a session are all of
+them: nothing here has been seen in a signed-in browser (gstatic is blocked
+in the sandbox). What *is* verified is listed per commit in `BOARD-LOG.md`.
 
 ## Tests
 
