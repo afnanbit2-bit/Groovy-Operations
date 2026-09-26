@@ -511,6 +511,20 @@ const FRAGMENTS={
   // 380px track there and left the list 116px wide at 800 (review of
   // d38b96c). The overlay itself is hidden: it covers the page by design,
   // and this measures the frame under it.
+  // The RAIL with more lists than fit, on a short screen (review of
+  // f256c83). The lists are meant to scroll INSIDE their group while the
+  // nav above and the foot below stay put; with the nav allowed to shrink,
+  // a long list squeezed it and Calendar and Inbox sat under the lists.
+  // Only >=1440 shows lists in the rail, and a short window is the case.
+  'the board — the rail with many lists, on a short screen':()=>{
+    const app=tbBoardApp('tb-lists');
+    app.run("tbLists=[];for(var i=0;i<20;i++)tbLists.push({id:'l'+i,title:'Capsule list number '+(i+1),kind:i%2?'shared':'private',"
+      +"adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss',sort:i});tbItems=[];_tbListId=null");
+    app.run("_tbHydrateQueue=[]");
+    const out=tbFillSlots(app,app.run("_tbShell('tb-lists','<div class=\"tb-empty\">x</div>','')"));
+    return {widths:[1900],heights:[700],html:out};
+  },
+
   'the board — the Dashboard with the pane open, on a tablet':()=>{
     const app=tbBoardApp('tb-dash');
     app.run("_tbOpenItemId='a'");
@@ -2393,7 +2407,22 @@ document.querySelectorAll('#main-content button, #main-content [onclick], #main-
   }
   // Off-screen at this width is a layout question, already covered above.
   if(r.bottom<0||r.top>innerHeight||r.right<0||r.left>innerWidth)return;
-  const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+  // SCROLLED AWAY is not covered. A control whose centre lies outside the
+  // visible box of a SCROLLABLE ancestor (overflow auto or scroll on that
+  // axis) is one scroll from reachable, and hit-testing it reported the
+  // scroller as the coverer -- the false hit several fragments here had to
+  // work around. An overflow:hidden ancestor still counts: nothing brings
+  // that control back.
+  const cx=r.left+r.width/2,cy=r.top+r.height/2;
+  let scrolledAway=false;
+  for(let p=el.parentElement;p&&p!==document.body;p=p.parentElement){
+    const ps=getComputedStyle(p),pr=p.getBoundingClientRect();
+    const sy=ps.overflowY==='auto'||ps.overflowY==='scroll';
+    const sx=ps.overflowX==='auto'||ps.overflowX==='scroll';
+    if((sy&&(cy<pr.top||cy>pr.bottom))||(sx&&(cx<pr.left||cx>pr.right))){ scrolledAway=true; break; }
+  }
+  if(scrolledAway)return;
+  const hit=document.elementFromPoint(cx,cy);
   // The click reaches the control if the hit IS the control, or a
   // descendant of it (it still bubbles). Anything else means something is
   // painted on top — INCLUDING an ancestor, which is how an ::after

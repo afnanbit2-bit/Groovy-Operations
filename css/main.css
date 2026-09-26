@@ -2825,7 +2825,11 @@ span.flatpickr-weekday{color:var(--muted);font-weight:600;background:transparent
 .tb-railnav,.tb-railgroup{display:flex;flex-direction:column;gap:2px;min-height:0}
 .tb-railgroup{flex:0 1 auto}
 /* Many lists scroll INSIDE the group; the nav above and the foot below
-   stay put. */
+   stay put -- which needs them NOT to shrink. With the default flex-shrink
+   and min-height:0, a long list squeezed the nav and Inbox was painted
+   under the list labels (measured at 1900x700 with 20 lists; review of
+   f256c83). Only the group gives up height. */
+.tb-railnav,.tb-railfoot{flex:0 0 auto}
 .tb-raillists{display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-height:0;
   padding-left:var(--tb-s12);scrollbar-width:thin}
 .tb-railfoot{display:flex;flex-direction:column;gap:2px;margin-top:auto;
