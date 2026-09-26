@@ -2720,7 +2720,77 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
    Spec s10: one primary action per screen, 44px rows on desktop and 48 on
    mobile, colour carries meaning and nothing is decorative, and the only
    red in the product is the overdue count. Motion is 150ms ease-out and
-   only on the things that move. Labels are lowercase. */
+   only on the things that move. Labels are Title Case (session 2). */
+
+/* ══ tb-tokens ══════════════════════════════════════════════════════════
+   The Board's design tokens (session 2, P1.1), in ONE block. Built on the
+   app's own theme (--surface, --text, --muted, --border, --dark, the
+   accents) and adding:
+     · a 12-step neutral and a 12-step accent scale — Radix Colors slate and
+       blue (MIT), VALUES COPIED here rather than vendored, light and dark;
+     · type 12/13/14/16/20/28, spacing 4/8/12/16/24/32, radius 6/10/16, one
+       shadow for the pane (Open Props shadow-3, MIT) and one motion (150ms,
+       Open Props ease-out-3).
+   Names are --tb-* so nothing here can collide with another module.
+
+   CONTRAST, measured on the values below (not assumed): white on blue-9 is
+   only 3.26:1, so the accent FILL carries icons and never body text; text
+   on an accent fill uses --tb-on-accent against --tb-accent (light: blue-11
+   #0d74ce, 4.8:1 under white; dark: blue-9 under blue-1, 5.6:1). blue-11 on
+   blue-3 is 4.25:1 in light, so ink on an accent-tinted chip is blue-12. */
+:root{
+  --tb-n1:#fcfcfd;--tb-n2:#f9f9fb;--tb-n3:#f0f0f3;--tb-n4:#e8e8ec;--tb-n5:#e0e1e6;--tb-n6:#d9d9e0;
+  --tb-n7:#cdced6;--tb-n8:#b9bbc6;--tb-n9:#8b8d98;--tb-n10:#80838d;--tb-n11:#60646c;--tb-n12:#1c2024;
+  --tb-a1:#fbfdff;--tb-a2:#f4faff;--tb-a3:#e6f4fe;--tb-a4:#d5efff;--tb-a5:#c2e5ff;--tb-a6:#acd8fc;
+  --tb-a7:#8ec8f6;--tb-a8:#5eb1ef;--tb-a9:#0090ff;--tb-a10:#0588f0;--tb-a11:#0d74ce;--tb-a12:#113264;
+  --tb-accent:var(--tb-a11);--tb-on-accent:#ffffff;
+  --tb-accent-soft:var(--tb-a3);--tb-accent-ink:var(--tb-a12);
+  --tb-hover:var(--tb-n3);--tb-line:var(--tb-n5);--tb-weekend:var(--tb-n2);
+  --tb-over:var(--count-accent);
+  --tb-t12:12px;--tb-t13:13px;--tb-t14:14px;--tb-t16:16px;--tb-t20:20px;--tb-t28:28px;
+  --tb-s4:4px;--tb-s8:8px;--tb-s12:12px;--tb-s16:16px;--tb-s24:24px;--tb-s32:32px;
+  --tb-r6:6px;--tb-r10:10px;--tb-r16:16px;
+  --tb-shadow-pane:0 -1px 3px 0 hsl(220 3% 15% / 3%),0 1px 2px -5px hsl(220 3% 15% / 3%),0 2px 5px -5px hsl(220 3% 15% / 5%),0 4px 12px -5px hsl(220 3% 15% / 6%),0 12px 15px -5px hsl(220 3% 15% / 8%);
+  --tb-ease:cubic-bezier(0,0,.3,1);--tb-dur:150ms;
+  --tb-mono:var(--font-mono);
+}
+html[data-theme="dark"]{
+  --tb-n1:#111113;--tb-n2:#18191b;--tb-n3:#212225;--tb-n4:#272a2d;--tb-n5:#2e3135;--tb-n6:#363a3f;
+  --tb-n7:#43484e;--tb-n8:#5a6169;--tb-n9:#696e77;--tb-n10:#777b84;--tb-n11:#b0b4ba;--tb-n12:#edeef0;
+  --tb-a1:#0d1520;--tb-a2:#111927;--tb-a3:#0d2847;--tb-a4:#003362;--tb-a5:#004074;--tb-a6:#104d87;
+  --tb-a7:#205d9e;--tb-a8:#2870bd;--tb-a9:#0090ff;--tb-a10:#3b9eff;--tb-a11:#70b8ff;--tb-a12:#c2e6ff;
+  --tb-accent:var(--tb-a9);--tb-on-accent:var(--tb-a1);
+  --tb-shadow-pane:0 -1px 3px 0 hsl(220 40% 2% / 12%),0 2px 5px -5px hsl(220 40% 2% / 20%),0 12px 15px -5px hsl(220 40% 2% / 35%);
+}
+
+/* ── flatpickr, restyled to the tokens (P1.1) ─────────────────────────
+   The vendored base sheet loads first (index.html); these rules make the
+   calendar a Board surface in BOTH themes, so its own dark theme is not
+   vendored. Only the Board opens one. */
+.flatpickr-calendar{background:var(--surface);border:1px solid var(--border);border-radius:var(--tb-r10);
+  box-shadow:var(--tb-shadow-pane);font-family:inherit;color:var(--text)}
+.flatpickr-calendar.arrowTop:before,.flatpickr-calendar.arrowTop:after{border-bottom-color:var(--border)}
+.flatpickr-calendar.arrowBottom:before,.flatpickr-calendar.arrowBottom:after{border-top-color:var(--border)}
+.flatpickr-months .flatpickr-month,.flatpickr-current-month .flatpickr-monthDropdown-months,
+.flatpickr-current-month input.cur-year{color:var(--text);fill:var(--text);background:transparent}
+.flatpickr-current-month .flatpickr-monthDropdown-months .flatpickr-monthDropdown-month{background:var(--surface);color:var(--text)}
+.flatpickr-months .flatpickr-prev-month,.flatpickr-months .flatpickr-next-month{color:var(--muted);fill:var(--muted)}
+.flatpickr-months .flatpickr-prev-month:hover svg,.flatpickr-months .flatpickr-next-month:hover svg{fill:var(--text)}
+span.flatpickr-weekday{color:var(--muted);font-weight:600;background:transparent}
+.flatpickr-day{color:var(--text);border-radius:var(--tb-r6)}
+.flatpickr-day:hover,.flatpickr-day:focus{background:var(--tb-hover);border-color:var(--tb-hover)}
+.flatpickr-day.today{border-color:var(--tb-accent)}
+.flatpickr-day.selected,.flatpickr-day.selected:hover,.flatpickr-day.selected:focus{
+  background:var(--tb-accent);border-color:var(--tb-accent);color:var(--tb-on-accent)}
+.flatpickr-day.prevMonthDay,.flatpickr-day.nextMonthDay,.flatpickr-day.flatpickr-disabled{color:var(--muted);opacity:.6}
+/* A day carrying one of the drop's markers (launch, founders out) — the
+   picker shows them, as the calendar does (brief s4.2). */
+.flatpickr-day.tb-fp-marker{box-shadow:inset 0 -2px 0 var(--tb-accent);font-weight:700}
+
+.tb-ic{width:18px;height:18px;flex:0 0 auto;display:inline-block;vertical-align:middle}
+.tb-ic-sm{width:14px;height:14px}
+.tb-ic-lg{width:20px;height:20px}
+
 .tb-wrap{display:flex;align-items:flex-start;gap:18px}
 .tb-rail{display:flex;flex-direction:column;gap:2px;flex:0 0 156px;position:sticky;top:64px}
 .tb-railbtn{display:block;width:100%;text-align:left;min-height:44px;padding:0 12px;

@@ -100,6 +100,46 @@ module.exports=function(){
       s.ok('vendored '+f+' ships its licence',exists(lic),exists(lic)?undefined:'missing '+lic);
     });
 
+  // ── The Board's vendored stylesheet and sprite (session 2, P1.1) ───────
+  // The .js loop above covers scripts. A stylesheet or a sprite that is not
+  // precached is a page that draws without its picker or its icons offline,
+  // and one that ships without its licence breaks the vendoring rule.
+  s.section('every vendored file is precached, licensed and referenced');
+  {
+    const vend=fs.readdirSync(path.join(ROOT,'assets','vendor'))
+      .filter(f=>!/\.LICENSE$|^README\.md$/.test(f));
+    const LIC={'lucide-sprite-1.48.0.svg':'lucide-static-1.48.0.LICENSE'};
+    const js=jsFiles.map(f=>read('js/'+f)).join('\n');
+    vend.forEach(f=>{
+      s.ok('vendored '+f+' is precached by sw.js',sw.indexOf("'/assets/vendor/"+f+"'")>-1);
+      if(/\.js$/.test(f))return;                          // covered above
+      s.ok('vendored '+f+' carries its version in the filename',/-\d+\.\d+\.\d+[.-]/.test(f));
+      const lic='assets/vendor/'+(LIC[f]||f.replace(/(\.min)?\.(css|svg)$/,'.LICENSE'));
+      s.ok('vendored '+f+' ships its licence',exists(lic),exists(lic)?undefined:'missing '+lic);
+      if(/\.css$/.test(f))s.ok('vendored '+f+' is linked from index.html',indexHtml.indexOf('/assets/vendor/'+f)>-1);
+      if(/\.svg$/.test(f))s.ok('vendored '+f+' is used by a module',js.indexOf('/assets/vendor/'+f)>-1);
+    });
+  }
+
+  s.section('the Lucide sprite: every icon the Board draws is in it, and nothing else can be');
+  {
+    const sprite=read('assets/vendor/lucide-sprite-1.48.0.svg');
+    const ids=(sprite.match(/<symbol id="lucide-([a-z0-9-]+)"/g)||[]).map(x=>x.replace(/.*lucide-/,'').replace(/"$/,''));
+    s.eq('47 symbols, no duplicates',[ids.length,new Set(ids).size].join('/'),'47/47');
+    s.ok('no script, event handler, href or foreignObject',
+      !/<script|\son[a-z]+\s*=|\shref\s*=|javascript:|foreignObject/i.test(sprite));
+    s.ok('no literal colour (fill is none or currentColor)',
+      (sprite.match(/fill="([^"]+)"/g)||[]).every(x=>/fill="(none|currentColor)"/.test(x)));
+    const tb=read('js/theboard.js');
+    const listed=((/const TB_ICONS=\[([\s\S]*?)\];/.exec(tb)||[])[1]||'').match(/'([a-z0-9-]+)'/g)||[];
+    const names=listed.map(x=>x.replace(/'/g,''));
+    s.ok('the Board lists icons',names.length>0);
+    s.eq('every icon the Board lists is in the sprite',names.filter(n=>ids.indexOf(n)<0).join(','),'');
+    const used=(tb.match(/_tbIcon\('([a-z0-9-]+)'/g)||[]).map(x=>x.slice(8,-1));
+    s.eq('every icon the Board draws is one it lists',used.filter(n=>names.indexOf(n)<0).join(','),'');
+    s.ok('the builder that makes the sprite is in the repo',exists('scripts/build-lucide-sprite.js'));
+  }
+
   // ── Realtime Database stays read-only from the browser (CLAUDE.md) ──────
   // Every RTDB write comes from netlify/functions/iclock.js via the Admin
   // SDK. If a client write function ever gets imported, ".write": false

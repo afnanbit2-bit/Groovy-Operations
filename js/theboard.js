@@ -58,6 +58,28 @@ const _TB_RAIL=[
   {id:'tb-inbox',    label:'Inbox'}
 ];
 
+// ── Icons (session 2, P1.1) ───────────────────────────────────────────
+// Lucide (ISC), 47 glyphs built into ONE vendored sprite by
+// scripts/build-lucide-sprite.js -- see assets/vendor/README.md. Used by
+// reference, same-origin and precached, so nothing is fetched at runtime
+// beyond the app's own files. The icon NAME comes from this file, never
+// from user text, and an unknown name draws nothing rather than a broken
+// reference. tests/invariants.test.js checks every name used here exists
+// in the sprite.
+const TB_SPRITE='/assets/vendor/lucide-sprite-1.48.0.svg';
+const TB_ICONS=['layout-dashboard','calendar','calendar-days','calendar-plus','calendar-x','inbox','list',
+  'list-checks','list-todo','plus','users','user','user-plus','settings','search','circle-help','circle',
+  'circle-check','check','star','lock','lock-open','message-circle','paperclip','sun','flag','tag','palette',
+  'file-text','sticky-note','trash-2','x','chevron-left','chevron-right','chevron-down','chevron-up',
+  'ellipsis','clock','circle-alert','bell','arrow-right-left','send','grip-vertical','eye','eye-off',
+  'filter','hand'];
+/** `<svg>` for one sprite icon. `size` is '' | 'sm' | 'lg'. Pure. */
+function _tbIcon(name,size){
+  if(TB_ICONS.indexOf(name)<0)return'';
+  return'<svg class="tb-ic'+(size?' tb-ic-'+size:'')+'" aria-hidden="true" focusable="false">'
+    +'<use href="'+TB_SPRITE+'#lucide-'+name+'"></use></svg>';
+}
+
 // ── Day strings ───────────────────────────────────────────────────────
 // A day on The Board is a 'YYYY-MM-DD' string in Asia/Karachi, so every
 // calendar query is a string range query with no timezone arithmetic.

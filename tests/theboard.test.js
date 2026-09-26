@@ -1492,6 +1492,17 @@ module.exports=async function(){
     s.ok('Arfat’s does not carry it',sheet(ARFAT,'openMoreSheet')!=='The Board');
   }
 
+  // ══ SESSION 2 — P1.1: ICONS ═════════════════════════════════════════
+  s.section('icons: one sprite, by reference, and nothing from user text');
+  {
+    const a=loadApp({files:FILES});
+    const h=a.run('_tbIcon("calendar","sm")');
+    s.ok('a known icon references the vendored sprite',
+      /<use href="\/assets\/vendor\/lucide-sprite-1\.48\.0\.svg#lucide-calendar">/.test(h));
+    s.ok('sized by class, hidden from screen readers',/class="tb-ic tb-ic-sm" aria-hidden="true"/.test(h));
+    s.eq('an unknown name draws nothing',a.run('_tbIcon("\\"><img src=x onerror=alert(1)>")'),'');
+  }
+
   s.section('the calendar prefs are cleaned on load');
   {
     const a=loadApp({files:FILES});

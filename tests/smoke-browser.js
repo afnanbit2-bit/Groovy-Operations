@@ -59,7 +59,7 @@ function buildProbe(){
   const want=['showPage','renderPage','buildNav','showToast','_icon','logActivity',
     'uploadToCloudinary','printDocument','startApp','doLogin','renderProfilePage',
     'loadProfiles','renderBoardsGallery','boardsCreate','renderNotesPage',
-    'renderPatternHub','ptnRenderPage','qrcode'];
+    'renderPatternHub','ptnRenderPage','qrcode','flatpickr','tbRenderPage'];
   return{srcs,html:`<!doctype html><meta charset="utf-8"><body><pre id="out">running</pre>
 <script>window.__errs=[];window.onerror=function(m,u,l){window.__errs.push(m+' @'+String(u||'').split('/').pop()+':'+l);};</script>
 ${srcs.map(s=>`<script src="${s}"></script>`).join('\n')}
@@ -87,6 +87,12 @@ t('SheetJS writes a workbook',function(){
 t('qrcode-generator encodes a pattern deep link',function(){
   var q=qrcode(0,'M');q.addData('https://groovyoperations.netlify.app/#pattern=ptn_0042');q.make();
   var n=q.getModuleCount();if(!(n>=21&&q.isDark(0,0)&&q.isDark(0,6)&&!q.isDark(0,7)))throw new Error('bad symbol '+n);return n+'x'+n+' modules';
+});
+t('flatpickr formats and parses a Board day',function(){
+  var d=flatpickr.parseDate('2026-10-30','Y-m-d');
+  var back=flatpickr.formatDate(d,'Y-m-d');
+  if(back!=='2026-10-30')throw new Error('round trip gave '+back);
+  return 'v'+(flatpickr.version||'4.6.13')+', 2026-10-30 round-trips';
 });
 t('JsBarcode draws a CODE128',function(){
   var c=document.createElement('canvas');JsBarcode(c,'GRV-123',{format:'CODE128'});
