@@ -76,6 +76,7 @@ Lines marked **→ NEEDS YOU** are actions for a human.
 
 | QA-A | `dc98484` | **The QA identity: `claude@groovy.op`, a harness account fenced by the rules.** The brief's priority item, so subagents can debug the real platform. Handle `claude`, "Claude (QA)", role `qa`, in `USER_DEFS` and `BOARD_USERS` (never `BOARD_OWNERS`). **The fence is `firestore.rules`:** `signedIn()` now excludes it (`isQa()`), so every collection opened to "any signed-in user" stays shut with no clause each; `authed()` gives it back only what it must read (`user_profiles`, `mood_boards`, the Board through `isBoardUser()`). Writes: lists it admins **alone** carrying `qa:true` (set at create, immutable even for a Board owner, and **no one else may set it**); items only in those lists, assigned only to itself, flagged `qa:true`; comments/activity only on its own items; notifications only where `forUser=='claude'` (a USERNAME: the brief said uid, the field is a username); Mood Boards only its own PRIVATE boards shared with nobody, presence and comments only there; no `board_config` write. **Client** (`js/theboard.js`): `qa` lists and items hidden from real sessions where `tbItems`/`tbLists` are set (load and live listener); real people never address or notify the harness, it addresses and notifies only itself; Team Today is the real five for everyone; a harness create lands in its sandbox (`_tbQaFenceListId`) or is refused. Pages `tb-*`, Mood Boards and its Profile; no `loadData`, no bug FAB. `.gitignore` gains **targeted** credential patterns (a blanket `*.json` would drop `manifest.json`, `firebase.json` and the indexes file). Reverted each: `signedIn()` including QA, the item-create fence and the notification fence fail 16 emulator cases by name; the loader hiding and the notify guard fail 4 client assertions. **`firestore.rules` changed: in the batched list below, and it must be deployed before the harness signs in.** | v207 | emulator: Board **100/100** (61 new) · wh_sales/acct 103/103 · run.js 6,443 · smoke-board 192×3 |
 | QA-B | `aec9d9d` | **The harness uses the QA identity: `tests/e2e/board.e2e.js`, `scripts/board-inspect.js`, two agents.** **e2e:** real Chrome over the DevTools protocol (Node 22's WebSocket, no dependency) signs in at `GROOVY_QA_URL` through the real login form. The password is a DevTools call argument, never inside an evaluated expression, and a search of both reports found none. It checks the role is `qa`, then **the containment gate**: if `pos` or `bug_reports` can be read, the QA rules are not live, and it signs out and exits 2 before any write of its own. (The APP's sign-in has already logged a "signed in" `activity` row, refused by the QA rules and accepted by the old ones.) It then covers: the Dashboard; a **PRIVATE** QA Sandbox made through the app's + New (private so the RULES hide its items, not just the client, which an old cached build lacks); an item typed into the composer; the calendar, list, pane and inbox; a refused write on a real locked gate, written to its **current** date so a wrong rule still changes nothing; a refused notification for a real person; Mood Boards; the phone at 390px; and deleting its item. Output goes to `docs/board-screens/<commit>/` (PNGs, `report.json`, `report.md` with the site's `CACHE_VERSION`). **That folder is gitignored: the repo is public and the screens show the live drop plan.** **Rehearsed** on the real shell with an in-memory Firestore: 14/14 with the QA rules imitated, and stopped at the gate (exit 2, no screens) without them. Two harness bugs were found by running it (headless gives no focus, so the typed login landed nowhere; an SDK blocked by the network was blamed on `USER_DEFS`). **board-inspect:** Admin SDK reads over ADC + `GOOGLE_CLOUD_PROJECT`: `counts`, `items`, `item` (fields, `dateHistory`, activity), `notifications`, `markers`, `seed-check`. **Read-only by construction:** an `update()` of a random nonexistent doc must come back `PERMISSION_DENIED`, or it exits 3. **Driven against the emulator**, which caught two bugs. (1) The first probe id `__inspect_probe__` is RESERVED, so every credential got `INVALID_ARGUMENT` and the script could never have run live. (2) A private item counted as open for everyone. On a fixture with one deleted, one done and one private milestone it reports **39 of 42 counted open** and names all three. `tests/board-inspect.test.js` (31) holds the pure decisions; reverting the private rule or the probe id fails 5. **Agents:** `.claude/agents/board-tester.md` and `board-reviewer.md`, each told to run `board-inspect` when a screen needs a data explanation. **Assumption:** none existed in the repo; if Ammar has user-level agents of those names, they need the same line. | v207 | run.js 6,474 · board-inspect 31 · e2e rehearsal 14/14 + gate stop · emulator seed-check |
+| R-vis | `e39e5c1` | **From the review run that was killed (`wf_83e2d9b9-2d3`: it reached its find phase and verified nothing; its journal is the source).** Two of its three "major" findings were checked by hand against HEAD and **confirmed**. **(1) An edit could make an item private.** `tbItemPatch` recomputed visibility on EVERY patch from `tbLists`, which holds only the lists the editor can read. So a Board owner pinning, renaming or noting a one-person item in a shared list they are not a member of found no list, read it as private and wrote `visibility:'private'`: the item vanished for everyone else. Visibility is now recomputed only when the assignees or the list change, and an unseen list can make an item shared but never private. **(2) Private titles in bell rows.** The 08:00 reminder and the client's `_tbNotify` copied item titles and comment text into `hrm_notifications`, which **every signed-in account can read**. A private item's row now says only that there is one (`tbNotifMessageFor`; an item with no visibility field is treated as private). **Not fixed here, and raised below: the same is true of SHARED items**, whose titles and comment text reach every signed-in account through the bell's collection. Reverting each fix fails 4 assertions by name. The run's other 12 findings are **unverified**; they are listed below so they are not lost. | v208 | run.js 6,483 · smoke-board 192×3 |
 ---
 
 ## Rules / index deploys — batched
@@ -109,6 +110,42 @@ Board user's inbox reads at most 200 of their own Board rows. The lock
 holes found by the emulator are closed on the live project.
 
 ## → NEEDS YOU
+
+- **A decision (Afnan's track, since it is the HRM bell): Board text in a
+  collection everyone reads.** `hrm_notifications` is `read: if
+  signedIn()`, and the bell (`js/hrm.js`) reads the WHOLE collection and
+  filters by user in the browser. The Board writes its notifications there
+  (a phase-1 decision, to inherit the bell), so every signed-in account
+  (workers, the store, fulfilment) can read every Board notification:
+  shared item titles, comment excerpts, handover notes. R-vis stopped it
+  for PRIVATE items only. **Proposed fix:** the rule becomes "your own
+  rows", `resource.data.forUser + '@groovy.op' == userEmail()` (every
+  account is `username@groovy.op`), plus whatever role-addressed HRM rows
+  need. The bell then queries `where('forUser','==',u)` instead of the
+  whole collection, since the rules are not a query filter and the current
+  unfiltered read would be refused. That changes `js/hrm.js` and the rules
+  for every notification in the app, so it is **proposed, not made**.
+
+- **Twelve unverified findings from the killed run**, recorded so they are
+  not lost. None has been verified; each needs checking before any fix.
+  - `afa7056` tests: "a malformed date is left alone" passes with the
+    format check removed; the run-level test cannot see `runReminder`'s own
+    owner fallback.
+  - `0e6f33e`: overdue reminders pile up (a new row per overdue day,
+    per person, never superseded); Escape on a marker's date picker also
+    closes Settings and drops unsaved markers; only the UI stops a
+    non-owner assignee writing `pinned:true` (no rules check).
+  - `e194b03` tests: the Settings layout fragment never hit-tests its
+    controls; where the markers are saved is never asserted (the stub drops
+    the ref); "a row can be removed" checks only the count; only one of four
+    member guards is tested.
+  - `e194b03`/`e91c819`: after falling back to the wide inbox query,
+    `_tbNotifSeeded` can stay true and toast old unread rows as new (moot
+    while the index is deployed); the `!_tbInboxWide` guard is untested.
+  - `e91c819`: a board seeded BEFORE the seed record existed is adopted
+    from what is on it, so a milestone deleted before the first record is
+    recreated by the next Run seed. **`board-inspect seed-check` shows
+    whether the live record exists**; run it before pressing Run seed again.
 
 - **QA identity — Ammar's side (the console and his shell).** Recorded
   as sent. **Do not run the harness until QA-A's rules are deployed**
