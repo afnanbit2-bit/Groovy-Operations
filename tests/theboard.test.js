@@ -1448,8 +1448,11 @@ module.exports=async function(){
     s.eq('the product is The Board',a.run('TB_NAME'),'The Board');
     s.eq('the rail is Title Case',a.run('_TB_RAIL.map(t=>t.label).join()'),'Dashboard,Calendar,Lists,Inbox');
     const src=read('js/theboard.js');
-    const titles=(src.match(/_tbCard\('([^']+)'/g)||[]).map(x=>x.slice(9,-1));
-    s.ok('every card title starts with a capital ('+titles.join(', ')+')',titles.length>=13&&titles.every(t=>/^[A-Z0-9]/.test(t)));
+    // P1.5: the Dashboard's left column is groups (_tbGroup), not cards, so
+    // both are counted.
+    const titles=(src.match(/_tbCard\('([^']+)'/g)||[]).map(x=>x.slice(9,-1))
+      .concat((src.match(/_tbGroup\('[a-z0-9]+','([^']+)'/g)||[]).map(x=>x.replace(/^_tbGroup\('[a-z0-9]+','/,'').slice(0,-1)));
+    s.ok('every card and group title starts with a capital ('+titles.join(', ')+')',titles.length>=12&&titles.every(t=>/^[A-Z0-9]/.test(t)));
     // P1.3: a list's done items are the Completed group, not a 'Done' card.
     s.ok('the Completed group is Title Case too',/'Completed'/.test(src));
     s.eq('no bell row is titled in lowercase',/title:'the board'/.test(src),false);
@@ -1666,6 +1669,62 @@ module.exports=async function(){
     a.run("tbItems[0].status='done'");
     const pd=a.run('_tbDrawer()');
     s.ok('a done item: no star, struck title, Reopen',!/tb-star/.test(pd)&&/tb-dtitle done/.test(pd)&&/>Reopen</.test(pd));
+  }
+
+  // ══ SESSION 2 — P1.5: THE DASHBOARD ═════════════════════════════════
+  s.section('the Dashboard: collapsible groups, and a right column of five');
+  {
+    const store={};
+    const LS={getItem:k=>(k in store)?store[k]:null,setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}};
+    const a=loadApp({files:FILES,currentPage:'tb-dash',globals:{localStorage:LS}});
+    a.run('session='+J(AMMAR));
+    const today=a.run('_tbToday()');
+    const past=a.run('_tbDayAdd(_tbToday(),-3)');
+    a.run("tbLoaded=true;_tbLoadErrors=[];tbConfig=null;tbLists=[];userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'}]");
+    a.run("tbItems=["+
+      "tbDecodeItem({id:'o',title:'late',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',date:'"+past+"'}),"+
+      "tbDecodeItem({id:'t',title:'now',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',date:'"+today+"'}),"+
+      "tbDecodeItem({id:'w',title:'waiting',status:'open',ownerUid:'u-ammar',assigneeUids:['u-afnan'],visibility:'shared',date:'"+today+"'})]");
+    const d=a.run('_tbDashboard()');
+    s.ok('the left column is one surface of groups',/<div class="tb-col"><div class="tb-card tb-groups"><section class="tb-group"/.test(d));
+    s.ok('Overdue first, its count red',/data-group="overdue"[\s\S]*?Overdue<\/span><span class="tb-count red">1</.test(d));
+    s.ok('then Due Today',/data-group="overdue"[\s\S]*data-group="today"/.test(d));
+    s.ok('an empty group is not drawn',!/data-group="myday"/.test(d)&&!/data-group="needsdate"/.test(d));
+    const right=d.slice(d.lastIndexOf('<div class="tb-col">'));
+    const cards=(right.match(/<div class="tb-cardh">([A-Z][A-Za-z ]+)/g)||[]).map(x=>x.replace(/.*>/,''));
+    s.eq('the right column: Assigned by Me, Deadlines, …, Team Today — and no My Lists',
+      cards.join(','),'Assigned by Me,Team Today');
+    s.ok('and never the list chips',!/My Lists/.test(d));
+    const team=a.run('_tbTeamCard()');
+    s.ok('Team Today: only the overdue count is red, not the whole line',
+      /<span class="tb-teamn">\d+ open · 1 due today · <span class="tb-teamover">1 overdue<\/span><\/span>/.test(team)&&!/tb-teamn over/.test(team));
+
+    a.run('_tbRepaint=function(){}');
+    a.run("window.tbToggleGroup('overdue')");
+    const shut=a.run('_tbDashboard()');
+    s.ok('a header folds its group, and says so',/data-group="overdue"><button class="tb-grouph" aria-expanded="false"/.test(shut));
+    s.ok('its rows go, its count stays',!/data-id="o"/.test(shut)&&/Overdue<\/span><span class="tb-count red">1</.test(shut));
+    s.eq('the fold is remembered',store['tb-dash-fold'],'["overdue"]');
+    a.run("window.tbToggleGroup('not-a-group')");
+    s.eq('an unknown key is refused',store['tb-dash-fold'],'["overdue"]');
+
+    const C=v=>a.run('tbCleanDashFold('+J(v)+')');
+    s.eq('nothing stored is nothing folded',J(C(null)),'[]');
+    s.eq('only known keys survive',J(C(JSON.stringify(['next7','[object Object]','overdue',{x:1}]))),J(['overdue','next7']));
+    s.eq('unreadable is removed',C('{nope'),null);
+    s.eq('a non-array is removed',C('{"overdue":true}'),null);
+    s.eq('over 4 KB is removed',C(JSON.stringify(['overdue','x'.repeat(5000)])),null);
+    // Driven through the loader: junk on disk is REMOVED, not merely ignored.
+    const store2={'tb-dash-fold':'x'.repeat(5000)};
+    const b=loadApp({files:FILES,currentPage:'tb-dash',globals:{localStorage:{getItem:k=>(k in store2)?store2[k]:null,
+      setItem:(k,v)=>{store2[k]=String(v);},removeItem:k=>{delete store2[k];}}}});
+    b.run('session='+J(AMMAR));
+    b.run('_tbDashFoldGet()');
+    s.ok('an oversized fold is deleted on load',!('tb-dash-fold' in store2));
+
+    const css=read('css/main.css');
+    s.ok('the columns stack when the CONTENT is narrow (a container query)',
+      /\.tb-main\{container-type:inline-size;container-name:tbmain\}/.test(css)&&/@container tbmain \(max-width:720px\)\{\.tb-cols\{grid-template-columns:minmax\(0,1fr\)\}\}/.test(css));
   }
 
   s.section('the calendar prefs are cleaned on load');
@@ -2495,16 +2554,10 @@ module.exports=async function(){
       +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l1",date:"'+a.run('_tbToday()')+'"})]');
     const full=a.run('_tbDashboard()');
     s.ok('with work on it the team card appears',/Team Today/.test(full));
-    s.ok('and the list chips',/My Lists/.test(full));
-    // _tbCard's count chip reads rows.length, so the chips have to be one
-    // row each -- joined into a single string the card says "1" however
-    // many lists there are.
-    a.run('tbLists.push({id:"l2",title:"second",kind:"private",adminUid:"u-ammar"})');
-    a.run('tbItems.push(tbDecodeItem({id:"i2",title:"b",ownerUid:"u-ammar",'
-      +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l2"}))');
-    const two=a.run('_tbDashboard()');
-    s.ok('the card counts the lists, not the string it built',
-      /My Lists<span class="tb-count">2</.test(two));
+    // SESSION 2, P1.5: the list chips (card 12) LEFT the Dashboard -- the
+    // rail lists every list with its open count, so a second copy here was
+    // one more thing to keep in step.
+    s.ok('and no list chips: the lists live in the rail now',!/My Lists/.test(full)&&!/tb-listchip/.test(full));
   }
 
   s.section('the unscheduled tray');

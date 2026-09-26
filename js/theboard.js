@@ -917,6 +917,55 @@ function _tbRow(item,today,o){
 /** First letter up: "today" -> "Today", "gate" -> "Gate". Pure. */
 function _tbCap(s){ s=String(s==null?'':s); return s.charAt(0).toUpperCase()+s.slice(1); }
 
+// ── The Dashboard's groups (session 2, P1.5) ──────────────────────────
+// Folded per viewer, in localStorage -- a preference about this screen,
+// not the board. It is CLEANED ON LOAD like the calendar prefs (Ammar's
+// decision 6): only the six known group keys survive, and anything
+// unreadable or over 4 KB is removed rather than trusted.
+const TB_DASH_GROUPS=['overdue','today','myday','assigned','needsdate','next7'];
+const _TB_DASH_FOLD_KEY='tb-dash-fold';
+let _tbDashFold=null;
+/** What a stored fold may hold. [] for nothing stored; null means "remove
+ *  what is there". Pure. */
+function tbCleanDashFold(raw){
+  if(raw==null)return[];
+  if(typeof raw!=='string'||raw.length>_TB_CAL_PREFS_MAX)return null;
+  let v;
+  try{ v=JSON.parse(raw); }catch(e){ return null; }
+  if(!Array.isArray(v))return null;
+  return TB_DASH_GROUPS.filter(k=>v.indexOf(k)>-1);
+}
+function _tbDashFoldGet(){
+  if(_tbDashFold)return _tbDashFold;
+  let raw=null;
+  try{ raw=localStorage.getItem(_TB_DASH_FOLD_KEY); }catch(e){}
+  const clean=tbCleanDashFold(raw);
+  if(clean===null){ try{ localStorage.removeItem(_TB_DASH_FOLD_KEY); }catch(e){} }
+  _tbDashFold=new Set(clean||[]);
+  return _tbDashFold;
+}
+window.tbToggleGroup=function(k){
+  if(TB_DASH_GROUPS.indexOf(k)<0)return;
+  const f=_tbDashFoldGet();
+  if(f.has(k))f.delete(k); else f.add(k);
+  try{ localStorage.setItem(_TB_DASH_FOLD_KEY,JSON.stringify(TB_DASH_GROUPS.filter(x=>f.has(x)))); }catch(e){}
+  _tbRepaint();
+};
+/** One group: a header that folds it, and its rows. '' when empty. */
+function _tbGroup(key,title,items,today,o){
+  if(!items.length)return'';
+  const shut=_tbDashFoldGet().has(key);
+  return'<section class="tb-group'+(shut?' tb-shut':'')+'" data-group="'+_tbEsc(key)+'">'
+    +'<button class="tb-grouph" aria-expanded="'+(shut?'false':'true')+'"'
+      +' onclick="window.tbToggleGroup(\''+_tbEsc(key)+'\')">'
+      +_tbIcon(shut?'chevron-right':'chevron-down','sm')
+      +'<span class="tb-groupname">'+_tbEsc(title)+'</span>'
+      +'<span class="tb-count'+(o&&o.red?' red':'')+'">'+items.length+'</span>'
+    +'</button>'
+    +(shut?'':'<div class="tb-groupbody">'+items.map(i=>_tbRow(i,today)).join('')+'</div>')
+  +'</section>';
+}
+
 /** A card. Returns '' when there is nothing to show — spec s7.1: cards
  *  with nothing in them are HIDDEN, not rendered empty. That rule is what
  *  keeps the Dashboard short on a quiet day. */
@@ -973,21 +1022,26 @@ function _tbDashboard(){
       +'<div class="tb-errsub">If this keeps happening, firestore.rules may not be deployed — see BOARD.md.</div></div>';
   }
   const R=list=>list.map(i=>_tbRow(i,today));
-  const left=[
-    _tbCard('Overdue',R(tbOverdue(tbItems,me,today)),{red:true,cls:'tb-over'}),
-    _tbCard('Due Today',R(tbDueToday(tbItems,me,today))),
-    _tbCard('My Day',R(tbMyDay(tbItems,me,today))),
-    _tbCard('Assigned to Me',R(tbAssignedToMe(tbItems,me,today))),
-    _tbCard('Needs a Date',R(tbNeedsDate(tbItems,me))),
-    _tbCard('Next 7 Days',R(tbNext7(tbItems,me,today)))
+  // Session 2, P1.5: the left column is ONE surface of COLLAPSIBLE GROUPS
+  // (the To Do pattern) -- what is yours to do, in the order you would do
+  // it. An empty group is not drawn, the rule the cards already followed.
+  const groups=[
+    _tbGroup('overdue','Overdue',tbOverdue(tbItems,me,today),today,{red:true}),
+    _tbGroup('today','Due Today',tbDueToday(tbItems,me,today),today),
+    _tbGroup('myday','My Day',tbMyDay(tbItems,me,today),today),
+    _tbGroup('assigned','Assigned to Me',tbAssignedToMe(tbItems,me,today),today),
+    _tbGroup('needsdate','Needs a Date',tbNeedsDate(tbItems,me),today),
+    _tbGroup('next7','Next 7 Days',tbNext7(tbItems,me,today),today)
   ].join('');
+  const left=groups?'<div class="tb-card tb-groups">'+groups+'</div>':'';
+  // The right column is what OTHER people are doing. "My Lists" (card 12)
+  // is gone from here: the rail lists every list with its count now.
   const right=[
     _tbCard('Assigned by Me',R(tbAssignedByMe(tbItems,me))),
     _tbCard('Deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'}),
-    _tbInboxCard(),       // card 9
+    _tbInboxCard(),       // card 9: the five newest, unread first
     _tbTeamCard(),        // card 10
-    _tbActivityCard(),    // card 11
-    _tbListsCard()        // card 12
+    _tbActivityCard()     // card 11
   ].join('');
   // The one-sentence empty state is about YOUR board -- the left column.
   // The right column always carries Team today now (all five from day
@@ -3737,13 +3791,16 @@ function _tbTeamCard(){
     }
     const r=stats[p.uid]||{open:0,due:0,overdue:0,seenToday:null};
     const u=tbUser(p.uid);
-    const bits=[r.open+' open']
-      .concat(r.due?[r.due+' due today']:[])
-      .concat(r.overdue?[r.overdue+' overdue']:[]);
+    // Only the OVERDUE count is red (spec s10: the one red in the product
+    // is the overdue count) -- the whole line used to turn red with it,
+    // which made "3 open" look like an alarm (seen on the P1.5 screenshots).
+    const bits=[_tbEsc(r.open+' open')]
+      .concat(r.due?[_tbEsc(r.due+' due today')]:[])
+      .concat(r.overdue?['<span class="tb-teamover">'+_tbEsc(r.overdue+' overdue')+'</span>']:[]);
     return'<div class="tb-teamrow">'
       +'<span class="tb-av">'+_tbEsc(u.initial)+'</span>'
       +_tbSlot(u.name,'tb-teamname')
-      +'<span class="tb-teamn'+(r.overdue?' over':'')+'">'+_tbEsc(bits.join(' · '))+'</span>'
+      +'<span class="tb-teamn">'+bits.join(' · ')+'</span>'
       +(r.seenToday===false?'<span class="tb-teamdot" title="has not opened the board today"></span>':'')
     +'</div>';
   }));
@@ -3762,20 +3819,6 @@ function _tbActivityCard(){
   }),{cls:'tb-actcard'});
 }
 
-function _tbListsCard(){
-  const rows=tbMyLists(tbItems,tbLists,_tbMe());
-  if(!rows.length||!rows.some(l=>l.open))return'';
-  // ONE CHIP PER ROW, not one joined string: _tbCard's count chip reads
-  // rows.length, so a single joined blob would have the card say "1"
-  // however many lists there are. The chips are inline-flex, so they
-  // still flow into a strip.
-  return _tbCard('My Lists',rows.map(function(l){
-    return'<button class="tb-listchip" onclick="window.tbGoList(\''+_tbEsc(l.id)+'\')">'
-      +'<span class="tb-dot tb-c-'+_tbEsc(TB_COLORS[l.color]?l.color:'slate')+'"></span>'
-      +_tbSlot(l.title,'tb-chipname')
-      +'<span class="tb-listn">'+l.open+'</span></button>';
-  }),{cls:'tb-chipcard'});
-}
 window.tbGoList=function(id){
   _tbListId=id;
   if(typeof showPage==='function')showPage('tb-lists'); else window.showPage('tb-lists');

@@ -3138,8 +3138,24 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 @media (prefers-reduced-motion:reduce){ .tb-qachip{transition:none} }
 
 /* cards */
-.tb-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+/* Session 2, P1.5: yours on the left (the groups, the wider column), other
+   people's on the right. The columns stack whenever the CONTENT is narrow
+   -- a container query on .tb-main, so opening the detail pane beside a
+   1280px list stacks them too, which a viewport query cannot know. */
+.tb-cols{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px;align-items:start}
 .tb-col{min-width:0}
+.tb-main{container-type:inline-size;container-name:tbmain}
+@container tbmain (max-width:720px){.tb-cols{grid-template-columns:minmax(0,1fr)}}
+/* the Dashboard's groups: one surface, a header per group that folds it */
+.tb-groups{padding:4px 0}
+.tb-group+.tb-group{border-top:1px solid var(--tb-line)}
+.tb-grouph{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:0 12px;
+  background:none;border:none;cursor:pointer;font-family:inherit;font-size:var(--tb-t14);
+  font-weight:600;color:var(--muted);text-align:left;border-radius:var(--tb-r6)}
+.tb-grouph:hover{background:var(--tb-hover)}
+.tb-grouph:focus-visible{outline:2px solid var(--tb-accent);outline-offset:-2px}
+.tb-groupname{color:var(--text)}
+.tb-groupbody{padding:0 4px 6px}
 .tb-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);
   padding:4px 4px 6px;margin-bottom:14px}
 /* Title Case (session 2, P0.6): the markup has been Title Case since P0.6,
@@ -3652,7 +3668,7 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-nf.unread::before{content:"";flex:0 0 auto;width:6px;height:6px;border-radius:50%;
   background:var(--text)}
 .tb-nf::before{content:"";flex:0 0 auto;width:6px;height:6px}
-.tb-card .tb-nf{padding:6px 0;border-top:1px solid var(--border)}
+.tb-card .tb-nf{padding:6px 12px;border-top:1px solid var(--border)}
 
 @media(max-width:639px){
   .tb-nf{min-height:48px}
@@ -3720,19 +3736,15 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-teamn{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap}
 /* The ONE red on this module is the overdue count, so a person carrying
    overdue work reads in it too -- it is the same fact, one card over. */
-.tb-teamn.over{color:var(--count-accent)}
+.tb-teamover{color:var(--count-accent);font-weight:700}
+/* Rows that are direct children of a card get the card's side padding --
+   they sat against its edge (seen on the P1.5 screenshots). */
+.tb-card>.tb-teamrow,.tb-card>.tb-act{padding-left:12px;padding-right:12px}
 .tb-teamrow-off .tb-teamname{color:var(--muted)}
 .tb-teamdot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;
   background:var(--border);border:1px solid var(--muted)}
 .tb-actcard .tb-act{border-top:1px solid var(--border)}
 .tb-actcard .tb-act:first-of-type{border-top:none}
-.tb-chipcard{display:block}
-.tb-listchip{display:inline-flex;align-items:center;gap:7px;min-height:36px;
-  margin:0 6px 6px 0;padding:0 11px;background:var(--surface-2);
-  border:1px solid var(--border);border-radius:18px;cursor:pointer;
-  font-family:inherit;font-size:13px;color:var(--text)}
-.tb-listchip:hover{background:var(--hover)}
-.tb-chipname{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* the unscheduled tray, on the right edge of the calendar (spec s7.2) */
 .tb-calbody{display:flex;align-items:flex-start;gap:14px}
@@ -3792,5 +3804,5 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   .tb-trayhint{flex:1 1 100%}
 }
 @media(prefers-reduced-motion:reduce){
-  .tb-tray,.tb-search,.tb-listchip,.tb-helpbtn{transition:none}
+  .tb-tray,.tb-search,.tb-helpbtn{transition:none}
 }

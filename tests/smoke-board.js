@@ -273,6 +273,21 @@ function DRIVE(){
       window.showPage('tb-dash');
       await wait(300);
       var main=document.getElementById('main-content');
+      // ── the Dashboard's groups fold, and remember it (P1.5) ──
+      var gh=document.querySelector('.tb-group .tb-grouph');
+      L(!!gh,'the Dashboard has a group header');
+      if(gh){
+        var gk=gh.closest('.tb-group').getAttribute('data-group');
+        act('fold a group',function(){document.querySelector('.tb-group[data-group="'+gk+'"] .tb-grouph').click();});
+        await wait(200);
+        var g2=document.querySelector('.tb-group[data-group="'+gk+'"]');
+        L(!!g2&&!g2.querySelector('.tb-row'),'the header folded its group ('+gk+')');
+        L((localStorage.getItem('tb-dash-fold')||'').indexOf('"'+gk+'"')>-1,'and the fold is remembered');
+        act('unfold it',function(){document.querySelector('.tb-group[data-group="'+gk+'"] .tb-grouph').click();});
+        await wait(200);
+        L(!!document.querySelector('.tb-group[data-group="'+gk+'"] .tb-row'),'and unfolds again');
+      }
+      L(!document.querySelector('.tb-listchip'),'no list chips on the Dashboard (the rail has the lists)');
       L(document.querySelectorAll('.tb-teamrow').length===5,'Team today lists all five ('+document.querySelectorAll('.tb-teamrow').length+')');
       L(!/\bsomeone\b/.test(main.innerText||''),'nobody on the Dashboard renders as "someone"');
       var before=(typeof tbItems!=='undefined'?tbItems.length:0);
