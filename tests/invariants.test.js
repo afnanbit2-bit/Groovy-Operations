@@ -487,8 +487,11 @@ module.exports=function(){
   // decision, and this is what makes it show up in a diff review.
   const hubList=(sharedSrc.match(/_CREATIVE_HUB_USERS\s*=\s*\[([^\]]*)\]/)||[])[1]||'';
   const hubNames=(hubList.match(/'([^']+)'/g)||[]).map(x=>x.replace(/'/g,''));
-  s.eq('the Creative Hub audience is afnan, ammar, sami, mustafa, abbas, daniyal',
-    hubNames.join(','),'afnan,ammar,sami,mustafa,abbas,daniyal');
+  // `claude` is the QA harness (26 Sept 2026): on the list so a #board=
+  // deep link opens Mood Boards for it, and scoped in showPage to Mood
+  // Boards alone -- it never sees the hub grid or Notes.
+  s.eq('the Creative Hub audience is afnan, ammar, sami, mustafa, abbas, daniyal, claude (QA)',
+    hubNames.join(','),'afnan,ammar,sami,mustafa,abbas,daniyal,claude');
   // Nothing may still gate the hub on a bare username — that is the shape
   // the helper replaced, and a leftover would silently outrank it.
   const strays=GATE_FILES

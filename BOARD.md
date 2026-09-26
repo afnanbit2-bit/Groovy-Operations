@@ -124,6 +124,68 @@ nobody can edit his profile and `boardColor` has nowhere to live.
 
 ---
 
+## The QA identity (26 Sept 2026)
+
+`claude@groovy.op` — handle `claude`, name "Claude (QA)", role `qa` — is
+the account Claude Code's test harness signs in as, so subagents can drive
+the real platform instead of a stub. **It is not a person.** It is a Board
+MEMBER (never an owner), so it exercises the member paths, including being
+refused on someone else's locked item.
+
+**The fence is `firestore.rules`, and it is proved in the emulator**
+(`tests/rules-emulator-board.js`, the "QA harness" sections: every fence
+has a case that must be refused and every path the harness needs has one
+that must succeed):
+
+- `signedIn()` **excludes** it (`isQa()`), so every collection opened to
+  "any signed-in user" — POs, gate passes, HRM, the store, bug reports,
+  notes — stays shut with no clause each. `authed()` is "anyone, QA
+  included", used only where it must read: `user_profiles`, `mood_boards`,
+  and the Board's collections through `isBoardUser()`.
+- **Reads:** what a member reads on the Board (shared items, its own, the
+  markers, lists it is on), the profile directory, TEAM mood boards, and
+  notifications addressed to `claude`.
+- **Lists:** it creates and edits only lists it admins ALONE
+  (`memberUids == [its uid]`) carrying `qa: true`. `qa` is set at create,
+  never changes (not even for a Board owner), and **nobody but QA may set
+  it** — so a real list can never be hidden from its people.
+- **Items:** create/update/delete only its own, only in a QA list it
+  admins, assigned to nobody but itself (`assigneeUids == [its uid]`),
+  flagged `qa: true`. The lock rule is untouched.
+- **Comments / activity:** only on items it owns.
+- **Notifications:** create, read and mark-read only rows where
+  `forUser == 'claude'` (`forUser` holds a USERNAME, not a uid — the brief
+  said uid; the field says otherwise). The bell's unfiltered read is
+  refused it and caught.
+- **Mood Boards:** reads TEAM boards; writes only its own PRIVATE boards,
+  shared with nobody; presence and comments only there.
+- `board_config`: read only.
+
+**The client half** (`js/theboard.js`, held by `tests/theboard.test.js`):
+a real session never sees a `qa: true` list or item (`tbQaVisible`, applied
+where `loadTbData` and the live listener set `tbItems`/`tbLists`), never
+addresses the harness (`_tbBoardUsernames` — assign, mentions, handover,
+the person filter) and never notifies it; the harness addresses and
+notifies only itself (`tbQaMayNotify`). Team Today is the real five for
+everyone (`_tbTeamUsernames`), so the harness's screenshots show what
+people see. **A harness create lands in its sandbox** — the first QA list
+it admins (`_tbQaFenceListId`) — or is refused with a toast when it has
+none; an item in a QA list is born `qa: true` by `tbNewItem` itself.
+
+**Pages:** `tb-*`, Mood Boards (`boards`, `boards-all`, `board-canvas`)
+and its own Profile. The Creative Hub's ids land on Mood Boards' Home; the
+bug tracker is refused (the rules deny it `bug_reports`, and its FAB is
+hidden). `startApp` does not call `loadData()` for it. It is on
+`_CREATIVE_HUB_USERS` only so a `#board=` deep link opens for it.
+
+**Credentials live in the operator's shell and nowhere else** — never in
+the repo, the log or a commit message. `.gitignore` carries targeted
+backstop patterns (not a blanket `*.json`).
+
+**Deploy before the first sign-in.** Until the rules carrying `isQa()`
+are published, the live `signedIn()` still includes this account, i.e. it
+can read and write most of the app.
+
 ## Deploying the rules
 
 ```bash

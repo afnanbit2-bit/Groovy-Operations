@@ -30,11 +30,11 @@ const LS={getItem:()=>null,setItem(){},removeItem(){}};
 const app=harness.loadApp({files:['js/shared.js','js/auth.js','js/theboard.js'],globals:{localStorage:LS}});
 const J=v=>JSON.stringify(v);
 const NOW=Date.UTC(2026,8,26,6,0);
-const U={ammar:'u-ammar',afnan:'u-afnan',saim:'u-saim',daniyal:'u-dani',mustafa:'u-must',umair:'u-umair'};
+const U={ammar:'u-ammar',afnan:'u-afnan',saim:'u-saim',daniyal:'u-dani',mustafa:'u-must',umair:'u-umair',claude:'u-claude'};
 // What the app writes, built by the app.
 // Round-tripped through JSON: an object built inside the harness belongs to
 // another realm, and the Firestore SDK refuses it as "a custom Object".
-const newItem=(o,uid)=>JSON.parse(app.run('JSON.stringify(tbNewItem('+J(o)+','+J(uid)+','+NOW+',[]))'));
+const newItem=(o,uid,lists)=>JSON.parse(app.run('JSON.stringify(tbNewItem('+J(o)+','+J(uid)+','+NOW+','+J(lists||[])+'))'));
 const patch=(it,p,uid)=>JSON.parse(app.run('JSON.stringify(tbItemPatch('+J(it)+','+J(p)+','+J(uid)+','+(NOW+1000)+'))'));
 
 let passed=0,failed=0;
@@ -165,6 +165,114 @@ async function check(name,fn){
     const cur=await read('board_items/inL');
     await assertSucceeds(updateDoc(doc(as('daniyal'),'board_items/inL'),patch(cur,{notes:'from the admin'},U.daniyal).data));
   });
+
+  // ── THE QA HARNESS (claude@groovy.op) ──────────────────────────────
+  // A Board member whose every write is fenced. Each fence has a case that
+  // must be REFUSED, and each path the harness needs has one that must
+  // SUCCEED -- a fence that also blocks the harness is a harness that
+  // cannot test anything.
+  console.log('the QA harness: signedIn() no longer includes it');
+  await seed('pos/p1',{poNumber:'GR-1'});
+  await seed('bug_reports/b1',{title:'x'});
+  await seed('notes_pages/n1',{visibility:'shared',ownerUid:U.ammar,title:'SOP'});
+  await check('a real signed-in user still reads pos (the control)',()=>assertSucceeds(getDoc(doc(as('saim'),'pos/p1'))));
+  await check('QA cannot read pos',()=>assertFails(getDoc(doc(as('claude'),'pos/p1'))));
+  await check('QA cannot write a gate pass',()=>assertFails(setDoc(doc(as('claude'),'gatepasses/g1'),{x:1})));
+  await check('QA cannot read bug_reports',()=>assertFails(getDoc(doc(as('claude'),'bug_reports/b1'))));
+  await check('QA cannot read a TEAM note',()=>assertFails(getDoc(doc(as('claude'),'notes_pages/n1'))));
+
+  console.log('the QA harness: lists');
+  const qaList={title:'QA Sandbox',kind:'shared',adminUid:U.claude,memberUids:[U.claude],color:'slate',emoji:null,
+    sort:0,archived:false,createdAt:NOW,updatedAt:NOW,qa:true};
+  await check('QA creates its own QA list',()=>assertSucceeds(setDoc(doc(as('claude'),'board_lists/QA'),qaList)));
+  await check('QA cannot create a list without qa: true',()=>assertFails(setDoc(doc(as('claude'),'board_lists/QA2'),Object.assign({},qaList,{qa:false}))));
+  await check('QA cannot create a QA list with a real member on it',()=>assertFails(setDoc(doc(as('claude'),'board_lists/QA3'),Object.assign({},qaList,{memberUids:[U.claude,U.saim]}))));
+  await check('a real user cannot create a list flagged qa: true',()=>assertFails(setDoc(doc(as('saim'),'board_lists/S1'),Object.assign({},qaList,{adminUid:U.saim,memberUids:[U.saim]}))));
+  await check('QA cannot add a real person to its list',()=>assertFails(updateDoc(doc(as('claude'),'board_lists/QA'),{memberUids:[U.claude,U.saim]})));
+  await check('QA cannot clear its list\'s qa flag',()=>assertFails(updateDoc(doc(as('claude'),'board_lists/QA'),{qa:false})));
+  await check('…and neither can a Board owner (it is immutable)',()=>assertFails(updateDoc(doc(as('ammar'),'board_lists/QA'),{qa:false})));
+  await check('QA renames its own list',()=>assertSucceeds(updateDoc(doc(as('claude'),'board_lists/QA'),{title:'QA Sandbox 2',updatedAt:NOW+1})));
+
+  console.log('the QA harness: items');
+  await seed('board_lists/Lreal',{kind:'shared',adminUid:U.ammar,memberUids:[U.ammar,U.saim],title:'Winter',qa:false});
+  const qaListRow=Object.assign({id:'QA'},qaList);
+  const qaItem=newItem({title:'QA item',listId:'QA',date:'2026-10-01'},U.claude,[qaListRow]);
+  await check('the app\'s own builder flags an item in a QA list qa: true',async()=>{ if(qaItem.qa!==true)throw new Error(J(qaItem)); });
+  await check('…and leaves a real item without the field',async()=>{ if('qa' in newItem({title:'real'},U.saim))throw new Error('qa on a real item'); });
+  await check('QA creates an item in its QA list, as the app builds it',()=>assertSucceeds(setDoc(doc(as('claude'),'board_items/qa1'),qaItem)));
+  await check('QA cannot create an item with no list',()=>assertFails(setDoc(doc(as('claude'),'board_items/qa2'),Object.assign({},qaItem,{listId:null}))));
+  await check('QA cannot create an item in a list it does not admin',()=>assertFails(setDoc(doc(as('claude'),'board_items/qa3'),Object.assign({},qaItem,{listId:'Lreal'}))));
+  await check('QA cannot assign a real person',()=>assertFails(setDoc(doc(as('claude'),'board_items/qa4'),Object.assign({},qaItem,{assigneeUids:[U.claude,U.saim]}))));
+  await check('QA cannot create an item without the qa flag',()=>assertFails(setDoc(doc(as('claude'),'board_items/qa5'),Object.assign({},qaItem,{qa:false}))));
+  await check('a real user cannot create an item flagged qa: true',()=>assertFails(setDoc(doc(as('saim'),'board_items/s5'),Object.assign(newItem({title:'x'},U.saim),{qa:true}))));
+  await check('QA renames its own item',async()=>{ const it=await read('board_items/qa1'); await assertSucceeds(updateDoc(doc(as('claude'),'board_items/qa1'),patch(it,{title:'QA item 2'},U.claude).data)); });
+  await check('QA locks its own item',async()=>{ const it=await read('board_items/qa1'); await assertSucceeds(updateDoc(doc(as('claude'),'board_items/qa1'),patch(it,{locked:true,lockedBy:U.claude},U.claude).data)); });
+  await check('QA cannot put a real person on its item',async()=>{ const it=await read('board_items/qa1'); await assertFails(updateDoc(doc(as('claude'),'board_items/qa1'),patch(it,{assigneeUids:[U.claude,U.saim]},U.claude).data)); });
+  await check('QA cannot move its item into a real list',async()=>{ const it=await read('board_items/qa1'); await assertFails(updateDoc(doc(as('claude'),'board_items/qa1'),patch(it,{listId:'Lreal'},U.claude).data)); });
+  await check('a real user cannot flag a real item qa: true',async()=>{
+    const it=newItem({title:'Real',listId:'Lreal'},U.ammar); await seed('board_items/real1',it);
+    await assertFails(updateDoc(doc(as('ammar'),'board_items/real1'),{qa:true}));
+  });
+  await check('QA reads a real shared item (it reads what a member reads)',async()=>{
+    await seed('board_items/realShared',newItem({title:'Shoot',assigneeUids:[U.saim]},U.ammar));
+    await assertSucceeds(getDoc(doc(as('claude'),'board_items/realShared')));
+  });
+  await check('QA cannot read a real private item',()=>assertFails(getDoc(doc(as('claude'),'board_items/priv'))));
+  await check('QA cannot edit a real item even when (somehow) assigned to it',async()=>{
+    await seed('board_items/realOnQa',newItem({title:'Odd',assigneeUids:[U.ammar,U.claude]},U.ammar));
+    const it=await read('board_items/realOnQa');
+    await assertFails(updateDoc(doc(as('claude'),'board_items/realOnQa'),patch(it,{title:'x'},U.claude).data));
+  });
+  await check('QA cannot move a real, locked gate',async()=>{ await relock(); await tryAs('claude',{date:'2026-10-09'},false); });
+  await check('QA\'s item queries are provable (shared, and its own)',async()=>{
+    await assertSucceeds(getDocs(query(collection(as('claude'),'board_items'),where('visibility','==','shared'))));
+    await assertSucceeds(getDocs(query(collection(as('claude'),'board_items'),where('ownerUid','==',U.claude))));
+    await assertSucceeds(getDocs(query(collection(as('claude'),'board_lists'),where('adminUid','==',U.claude))));
+  });
+
+  console.log('the QA harness: comments, activity, config');
+  await check('QA comments on its own item',()=>assertSucceeds(setDoc(doc(as('claude'),'board_items/qa1/comments/c1'),{authorUid:U.claude,body:'x',createdAt:NOW})));
+  await check('QA cannot comment on a real item',()=>assertFails(setDoc(doc(as('claude'),'board_items/realShared/comments/c1'),{authorUid:U.claude,body:'x',createdAt:NOW})));
+  await check('QA writes activity on its own item',()=>assertSucceeds(setDoc(doc(as('claude'),'board_items/qa1/activity/a1'),{byUid:U.claude,type:'created',at:NOW,payload:{}})));
+  await check('QA cannot write activity on a real item',()=>assertFails(setDoc(doc(as('claude'),'board_items/realShared/activity/a1'),{byUid:U.claude,type:'moved',at:NOW,payload:{}})));
+  await check('QA reads the launch markers',()=>assertSucceeds(getDoc(doc(as('claude'),'board_config/markers'))));
+  await check('QA cannot write board_config',()=>assertFails(setDoc(doc(as('claude'),'board_config/markers'),{markers:[]})));
+
+  console.log('the QA harness: notifications');
+  await seed('hrm_notifications/real1',{forUser:'ammar',title:'x',createdAt:NOW});
+  await check('QA writes a notification for itself',()=>assertSucceeds(setDoc(doc(as('claude'),'hrm_notifications/q1'),{forUser:'claude',title:'x',createdAt:NOW})));
+  await check('QA cannot write a notification for anyone else',()=>assertFails(setDoc(doc(as('claude'),'hrm_notifications/q2'),{forUser:'ammar',title:'x',createdAt:NOW})));
+  await check('QA reads its own inbox, as the Board queries it',()=>assertSucceeds(getDocs(query(collection(as('claude'),'hrm_notifications'),where('forUser','==','claude')))));
+  await check('QA marks its own row read',()=>assertSucceeds(updateDoc(doc(as('claude'),'hrm_notifications/q1'),{readBy:['claude']})));
+  await check('QA cannot read a real person\'s notification',()=>assertFails(getDoc(doc(as('claude'),'hrm_notifications/real1'))));
+  await check('QA cannot mark a real person\'s row read',()=>assertFails(updateDoc(doc(as('claude'),'hrm_notifications/real1'),{readBy:['claude']})));
+  await check('the bell\'s unfiltered read is refused it',()=>assertFails(getDocs(collection(as('claude'),'hrm_notifications'))));
+
+  console.log('the QA harness: profiles');
+  await seed('user_profiles/'+U.saim,{uid:U.saim,username:'saim'});
+  await check('QA reads the directory',()=>assertSucceeds(getDoc(doc(as('claude'),'user_profiles/'+U.saim))));
+  await check('QA writes its own row',()=>assertSucceeds(setDoc(doc(as('claude'),'user_profiles/'+U.claude),{uid:U.claude,username:'claude'})));
+  await check('QA cannot write someone else\'s',()=>assertFails(setDoc(doc(as('claude'),'user_profiles/'+U.saim),{uid:U.saim,username:'saim',displayName:'x'},{merge:true})));
+
+  console.log('the QA harness: Mood Boards');
+  await seed('mood_boards/team1',{visibility:'shared',ownerUid:U.ammar,title:'Winter refs',cards:[]});
+  const qaBoard={visibility:'personal',ownerUid:U.claude,title:'QA board',cards:[]};
+  await check('QA reads a real TEAM board',()=>assertSucceeds(getDoc(doc(as('claude'),'mood_boards/team1'))));
+  await check('QA cannot edit a real TEAM board',()=>assertFails(updateDoc(doc(as('claude'),'mood_boards/team1'),{title:'x'})));
+  await check('QA creates its own PRIVATE board',()=>assertSucceeds(setDoc(doc(as('claude'),'mood_boards/qab'),qaBoard)));
+  await check('QA cannot create a TEAM board',()=>assertFails(setDoc(doc(as('claude'),'mood_boards/qab2'),Object.assign({},qaBoard,{visibility:'shared'}))));
+  await check('QA cannot share its board with a real person',()=>assertFails(updateDoc(doc(as('claude'),'mood_boards/qab'),{sharedWith:['ammar@groovy.op']})));
+  await check('QA edits its own board',()=>assertSucceeds(updateDoc(doc(as('claude'),'mood_boards/qab'),{title:'QA board 2'})));
+  await check('QA cannot show as present on a real board',()=>assertFails(setDoc(doc(as('claude'),'mood_boards/team1/presence/'+U.claude),{at:NOW})));
+  await check('QA is present on its own board',()=>assertSucceeds(setDoc(doc(as('claude'),'mood_boards/qab/presence/'+U.claude),{at:NOW})));
+  await check('QA comments on its own board',()=>assertSucceeds(setDoc(doc(as('claude'),'mood_boards/qab/comments/c1'),{byUid:U.claude,body:'x',at:NOW})));
+  await check('QA cannot comment on a real board',()=>assertFails(setDoc(doc(as('claude'),'mood_boards/team1/comments/c1'),{byUid:U.claude,body:'x',at:NOW})));
+  await check('a real user still edits a TEAM board (Stage 6, unchanged)',()=>assertSucceeds(updateDoc(doc(as('saim'),'mood_boards/team1'),{title:'Winter refs 2'})));
+
+  console.log('the QA harness: clean-up');
+  await check('QA deletes its own item',()=>assertSucceeds(deleteDoc(doc(as('claude'),'board_items/qa1'))));
+  await check('QA deletes its own list',()=>assertSucceeds(deleteDoc(doc(as('claude'),'board_lists/QA'))));
+  await check('QA deletes its own board',()=>assertSucceeds(deleteDoc(doc(as('claude'),'mood_boards/qab'))));
 
   await env.cleanup();
   console.log('\n'+passed+' passed, '+failed+' failed');

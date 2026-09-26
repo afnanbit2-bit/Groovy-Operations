@@ -38,6 +38,13 @@ const USER_DEFS=[
   // two different people. Sami is not a Board user and is therefore never a
   // mention candidate inside The Board, so the two never appear in one list.
   {u:'saim',   email:'saim@groovy.op',   name:'Saim',   role:'designer', title:'Graphic Designer',  canPO:false,canFabric:false, stages:[]},
+  // QA (26 Sept 2026). NOT A PERSON: the account Claude Code's test
+  // harness signs in as, so a subagent can drive the real platform. A Board
+  // MEMBER (never an owner) whose every write is fenced into lists it owns
+  // and flags qa:true -- see QA_ROLE below, isQa() in firestore.rules and
+  // "The QA identity" in BOARD.md. Its password lives in Ammar's shell and
+  // nowhere else.
+  {u:'claude', email:'claude@groovy.op', name:'Claude (QA)', role:'qa', title:'Test harness',  canPO:false,canFabric:false, stages:[]},
 ];
 
 // ── CSR Team Lead (Sept 2026) ──
@@ -64,6 +71,23 @@ function isCsrLead(){ return !!(session && session.role===CSR_LEAD_ROLE); }
 const DESIGNER_ROLE='designer';
 function isDesigner(){ return !!(session && session.role===DESIGNER_ROLE); }
 
+// == QA (26 Sept 2026) ==
+// The harness account. It reaches The Board (tb-*), Mood Boards (the
+// Milanote half of the Creative Hub) and its own Profile -- nothing else:
+// no HRM, no POs, no store, no Users, not even the bug tracker, whose
+// collection it cannot read. showPage (js/shared.js) rewrites anything
+// else to the Board. Its nav mirrors the designer's.
+//
+// THE CONTAINMENT IS THE RULES, NOT THIS. firestore.rules redefines
+// signedIn() to exclude it, so every collection the app opens to "any
+// signed-in user" stays shut to it, and grants it back only what the Board
+// and Mood Boards read -- with every WRITE fenced to lists it admins and
+// flags qa:true. The client half (hiding qa lists and items from real
+// people, never notifying a real person from it) is js/theboard.js.
+const QA_ROLE='qa';
+const QA_PAGES=['boards','boards-all','board-canvas'];
+function isQaSession(){ return !!(typeof session!=='undefined' && session && session.role===QA_ROLE); }
+
 // == The Board (Sept 2026) ==
 // Audience by USERNAME here, mirrored BY EMAIL in firestore.rules
 // (isBoardUser / isBoardOwner). A test in tests/theboard.test.js fails if
@@ -78,7 +102,10 @@ function isDesigner(){ return !!(session && session.role===DESIGNER_ROLE); }
 //
 // To widen: add the username here AND the email in firestore.rules.
 const BOARD_OWNERS=['ammar','afnan'];
-const BOARD_USERS=['ammar','afnan','daniyal','mustafa','saim'];
+// `claude` is the QA harness (see QA_ROLE): a MEMBER so it can drive the
+// member paths -- including being refused on someone else's locked item --
+// and never an owner.
+const BOARD_USERS=['ammar','afnan','daniyal','mustafa','saim','claude'];
 function isBoardUser(){  return !!(typeof session!=='undefined' && session && BOARD_USERS.indexOf(session.u)>-1); }
 function isBoardOwner(){ return !!(typeof session!=='undefined' && session && BOARD_OWNERS.indexOf(session.u)>-1); }
 
@@ -180,11 +207,14 @@ async function startApp(){
   if(typeof mktBootstrap==='function'){try{mktBootstrap();}catch(_){}}
   // Inject the notification bell for everyone (HRM notifs are routed by user/role).
   if(typeof _ensureNotifBell==='function')_ensureNotifBell();
-  // Show the bug-report FAB for every signed-in user
+  // Show the bug-report FAB for every signed-in user -- except the QA
+  // harness, which the rules refuse bug_reports: a button that can only
+  // fail is not one to hand it.
+  const qa=session.role===QA_ROLE;
   const bugFab=document.getElementById('bug-report-fab');
-  if(bugFab)bugFab.style.display='flex';
+  if(bugFab)bugFab.style.display=qa?'none':'flex';
   // Background-load bug reports so the dashboard widget can populate
-  if(typeof loadBugReports==='function'&&!bugsLoaded)loadBugReports().catch(()=>{});
+  if(!qa&&typeof loadBugReports==='function'&&!bugsLoaded)loadBugReports().catch(()=>{});
   if(session.role==='owner'){loadStoreNotifications();}
   buildNav();
   if(auth.currentUser){try{await auth.currentUser.getIdToken();}catch(_){}}
@@ -208,6 +238,11 @@ async function startApp(){
     // Creator & Content Operations Lead — The Sales Team ▸ Marketing and a
     // view-only Inventory Intel. No PO data is needed, so none is loaded.
     showPage(boardHome||'mkt-creators');
+  }else if(session.role===QA_ROLE){
+    // The QA harness: the Board is all it has. loadData() is NOT called --
+    // it reads POs, gate passes and bundles, which the rules refuse this
+    // account, and the refusal would be a toast on every sign-in.
+    showPage(boardHome||'tb-dash');
   }else if(session.role==='packing'){
     // Packing account (Faizan) — receives finished pieces against POs.
     loadData();

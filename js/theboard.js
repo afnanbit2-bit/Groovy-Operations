@@ -238,8 +238,8 @@ async function loadTbData(force){
       if(bad.length){fail.push(name);console.warn('[the board] '+name+' read failed',bad[0]);}
       return Object.keys(out).map(k=>out[k]);
     };
-    tbItems=rows(r[0],r[1],'board_items').map(tbDecodeItem);
-    tbLists=rows(r[2],r[3],'board_lists');
+    tbItems=tbQaVisible(rows(r[0],r[1],'board_items'),_tbIsQa()).map(tbDecodeItem);
+    tbLists=tbQaVisible(rows(r[2],r[3],'board_lists'),_tbIsQa());
     // Seed the live maps from THIS read, so a listener that has not
     // delivered yet never drops what the first paint showed (P0.3).
     const byId=x=>{const o={};if(x&&x.status==='fulfilled')x.value.docs.forEach(d=>{o[d.id]=Object.assign({id:d.id},d.data());});return o;};
@@ -392,8 +392,8 @@ function _tbLiveStop(){
 }
 function _tbLiveApply(){
   const merged=tbLiveMerge(_tbLive.maps);
-  tbItems=merged.items.map(tbDecodeItem);
-  tbLists=merged.lists;
+  tbItems=tbQaVisible(merged.items,_tbIsQa()).map(tbDecodeItem);
+  tbLists=tbQaVisible(merged.lists,_tbIsQa());
   // A collection is failing while EITHER of its two queries is: the same
   // rule loadTbData's first read applies (one half refused is still said).
   const bad=_tbLive.bad||{};
@@ -513,6 +513,11 @@ function tbNewItem(o,uid,now,lists){
   };
   base.lockedBy=base.locked?uid:null;
   base.visibility=tbVisibilityFor(base,lists);
+  // An item in a QA list IS a QA item (the rules require the flag on the
+  // harness's creates and refuse it on everyone else's). Absent otherwise,
+  // so a real item's document is unchanged.
+  const inList=(lists||[]).filter(l=>l&&l.id===base.listId)[0];
+  if(inList&&inList.qa===true)base.qa=true;
   return base;
 }
 
@@ -866,7 +871,52 @@ function tbDonePlan(item,uid,now,listAdminUid){
 // shipped (see BOARD.md, "Adding the user").
 function _tbProfiles(){ return (typeof userProfiles!=='undefined'&&userProfiles)||[]; }
 function _tbDefs(){ return (typeof USER_DEFS!=='undefined'&&USER_DEFS)||[]; }
-function _tbBoardUsernames(){ return (typeof BOARD_USERS!=='undefined'&&BOARD_USERS)||[]; }
+// ── The QA harness (26 Sept 2026) ───────────────────────────────────
+// claude@groovy.op is a Board MEMBER that is not a person. Two worlds that
+// never meet: a real person never sees it -- not its lists, not its items,
+// not its face in Team today, a filter, an assign chip or the @mention
+// popover -- and it never sees, addresses or notifies a real person
+// through any of those either. It still READS what any member reads
+// (shared items, the calendar, the markers), which is the platform it is
+// here to test. firestore.rules is the fence; this is only the display.
+// By ROLE on the USER_DEFS entry, so a second harness account needs no
+// edit here.
+function _tbQaHandles(){ return _tbDefs().filter(u=>u&&u.role==='qa').map(u=>u.u); }
+function _tbIsQa(){ return !!(typeof session!=='undefined'&&session&&session.role==='qa'); }
+/** THE PEOPLE THIS SESSION MAY ADDRESS: assign, @mention, hand over,
+ *  filter by. Real people for a real session; only the harness for the
+ *  harness. */
+function _tbBoardUsernames(){
+  const all=(typeof BOARD_USERS!=='undefined'&&BOARD_USERS)||[];
+  const qa=_tbQaHandles();
+  return all.filter(h=>_tbIsQa()?qa.indexOf(h)>-1:qa.indexOf(h)<0);
+}
+/** TEAM TODAY'S PEOPLE: the real team, for every session. It is a
+ *  read-only card, and the harness's screenshots should show the one
+ *  everybody else sees. */
+function _tbTeamUsernames(){
+  const qa=_tbQaHandles();
+  return ((typeof BOARD_USERS!=='undefined'&&BOARD_USERS)||[]).filter(h=>qa.indexOf(h)<0);
+}
+/** What this session may SEE of what it could read. A real session never
+ *  sees a list or an item flagged qa:true; the harness sees everything its
+ *  rules let it read. Pure. */
+function tbQaVisible(rows,isQa){
+  const r=Array.isArray(rows)?rows:[];
+  return isQa?r:r.filter(x=>!(x&&x.qa===true));
+}
+/** The list a harness create lands in. Its rules take items only in a
+ *  qa:true list it admins, so anything else is re-pointed at its sandbox
+ *  (the first such list) -- or refused, said, when it has none. Real
+ *  sessions pass straight through. */
+function _tbQaFenceListId(listId){
+  if(!_tbIsQa())return{ok:true,listId:listId||null};
+  const me=_tbMe();
+  const mine=(tbLists||[]).filter(l=>l&&l.qa===true&&l.adminUid===me);
+  if(mine.some(l=>l.id===listId))return{ok:true,listId:listId};
+  if(mine.length)return{ok:true,listId:mine[0].id};
+  return{ok:false,listId:null};
+}
 
 /** THE FIVE BOARD PEOPLE, resolved as far as this session can. A uid
  *  comes from the person's profile row -- the ONLY username<->uid link the
@@ -880,11 +930,11 @@ function _tbBoardUsernames(){ return (typeof BOARD_USERS!=='undefined'&&BOARD_US
  *  person rendered as "someone", Team today listed one person, and the
  *  assign chips, @mentions, handover, the person filter and bell
  *  addressing all knew nobody but you. Never throws. */
-function tbPeople(){
+function tbPeople(handles){
   const profiles=_tbProfiles();
   const me=(typeof session!=='undefined'&&session)||null;
   const unread=_tbLoadFailed('user_profiles');
-  return _tbBoardUsernames().map(function(h){
+  return (Array.isArray(handles)?handles:_tbBoardUsernames()).map(function(h){
     const rows=profiles.filter(x=>x&&x.username===h&&x.uid);
     const uids=rows.map(x=>x.uid).filter((u,i,a)=>a.indexOf(u)===i);
     const def=_tbDefs().filter(u=>u&&u.u===h)[0]||null;
@@ -1705,12 +1755,14 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
     if(el)el.value='';
     _tbQaPaint();
   }
+  const fence=_tbQaFenceListId(plan.listId);
+  if(!fence.ok){ _tbToast(_TB_QA_NO_SANDBOX); if(saved&&!_tbQaHasContent()){_tbQa=Object.assign(saved,{open:true});_tbRepaint();} return; }
   const data=tbNewItem({
     title:plan.title,
     assigneeUids:plan.assigneeUids,
     lane:plan.lane,
     priority:plan.priority,
-    listId:plan.listId,
+    listId:fence.listId,
     date:plan.date                    // NEVER today by default (session 2)
   },me,_tbNow(),tbLists);
   const ok=await _tbTry(async()=>{
@@ -1971,6 +2023,9 @@ window.tbNewList=async function(kind){
     color:'slate',emoji:null,sort:tbLists.length,archived:false,
     createdAt:now,updatedAt:now
   };
+  // The harness's lists are QA lists: flagged at birth, never changed, and
+  // hidden from every real person (tbQaVisible).
+  if(_tbIsQa())data.qa=true;
   await _tbTry(async()=>{
     const ref=doc(collection(db,'board_lists'));
     await setDoc(ref,data);
@@ -2003,9 +2058,21 @@ window.tbCloseItem=function(){ _tbFlushNotes(); _tbOpenItemId=null; _tbCloseMent
 // ── Notifications ─────────────────────────────────────────────────────
 // Everything goes through here, and here alone — see tbNotifPayload for
 // why (the bell renders title and message RAW).
+const _TB_QA_NO_SANDBOX='QA: create a list first — the harness writes only into its own QA lists.';
+/** May a bell row from this session go to this handle? The two worlds
+ *  never cross: the harness writes only to itself, and a real session
+ *  never writes to the harness. Pure. */
+function tbQaMayNotify(toHandle,fromIsQa,qaHandles){
+  const toQa=(qaHandles||[]).indexOf(toHandle)>-1;
+  return fromIsQa?toQa:!toQa;
+}
 async function _tbNotify(o){
   const to=tbUser(o.forUid);
   if(!to.handle)return;                       // no username, no bell row
+  // From the harness (the session, or a fromUid that resolves to it)
+  // nothing reaches a real person -- the rules refuse it too.
+  const fromQa=_tbIsQa()||_tbQaHandles().indexOf(tbUser(o.fromUid).handle)>-1;
+  if(!tbQaMayNotify(to.handle,fromQa,_tbQaHandles()))return;
   const at=_tbNow();
   const id=_tbNotifId(o.type,o.itemId,o.fromUid,at);
   const row=tbNotifPayload(Object.assign({},o,{forUser:to.handle,at:at}));
@@ -2481,8 +2548,11 @@ window.tbCreateOn=async function(text,day){
   if(!parsed.title){ _tbToast('Give it a title.'); return; }
   const assignees=parsed.assigneeUids.slice();
   if(assignees.indexOf(me)<0)assignees.unshift(me);
+  const fence=_tbQaFenceListId(null);
+  if(!fence.ok){ _tbToast(_TB_QA_NO_SANDBOX); return; }
   const data=tbNewItem({
     title:parsed.title,
+    listId:fence.listId,
     assigneeUids:assignees,lane:parsed.lane,priority:parsed.priority,
     // The DAY WINS over a date typed into the text — you pressed + on a
     // specific square, and that is the more deliberate of the two.
@@ -4263,7 +4333,7 @@ function tbMyLists(items,lists,uid){
 
 function _tbTeamCard(){
   const today=_tbToday();
-  const people=tbPeople();
+  const people=tbPeople(_tbTeamUsernames());
   if(!people.length)return'';
   const stats={};
   tbTeamToday(tbItems,people.filter(p=>p.uid).map(p=>p.uid),today,_tbProfiles())

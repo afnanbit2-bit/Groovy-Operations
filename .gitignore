@@ -1,2 +1,22 @@
 node_modules/
 .netlify/
+
+# Credentials never live in this repo (26 Sept 2026, the QA harness). The
+# QA password, the Netlify URL and any Google credential live in the
+# operator's shell (~/.groovy-qa.env) and nowhere else. These patterns are a
+# backstop against a key file copied into the tree by mistake -- targeted,
+# not a blanket *.json, which would drop manifest.json, firebase.json and
+# firestore.indexes.json.
+keys/
+*.pem
+*.p12
+*.key
+.env
+.env.*
+*.env
+*service-account*.json
+*serviceaccount*.json
+*-sa-key*.json
+*credentials*.json
+application_default_credentials.json
+groovy-gatepass-*.json

@@ -58,7 +58,10 @@ module.exports=async function(){
       a.run("BOARD_USERS.filter(u=>!USER_DEFS.some(d=>d.u===u)).join(',')"),'');
     s.eq('and so is every owner',
       a.run("BOARD_OWNERS.filter(u=>BOARD_USERS.indexOf(u)<0).join(',')"),'');
-    s.eq('the five at launch',a.run('BOARD_USERS.join(",")'),'ammar,afnan,daniyal,mustafa,saim');
+    // The five people, plus the QA harness (26 Sept 2026) -- a member so
+    // it can drive the member paths, never an owner. It is NOT a person:
+    // see 'the QA harness' below for how it is kept apart from the five.
+    s.eq('the five at launch, plus the QA harness',a.run('BOARD_USERS.join(",")'),'ammar,afnan,daniyal,mustafa,saim,claude');
     s.eq('two of them own it',a.run('BOARD_OWNERS.join(",")'),'ammar,afnan');
   }
 
@@ -125,6 +128,127 @@ module.exports=async function(){
     const ammar=app(AMMAR);
     s.eq('an owner reaches the board',go(ammar,'tb-dash'),'tb-dash');
     s.eq('and everything else he had',go(ammar,'po-registry'),'po-registry');
+  }
+
+  // ══ THE QA HARNESS (26 Sept 2026) ════════════════════════════════════
+  // claude@groovy.op: the account Claude Code's harness signs in as. The
+  // RULES are the fence (tests/rules-emulator-board.js runs every one in
+  // the emulator); what this holds is the client half -- the account, the
+  // pages it reaches, and the two worlds never meeting on screen.
+  const QA={uid:'u-claude',u:'claude',name:'Claude (QA)',role:'qa',email:'claude@groovy.op'};
+  s.section('the QA harness: the account and where it can go');
+  {
+    const a=loadApp({files:FILES});
+    const d=a.run("USER_DEFS.find(x=>x.u==='claude')");
+    s.eq('claude is in USER_DEFS with the qa role',d&&d.role,'qa');
+    s.eq('as claude@groovy.op',d&&d.email,'claude@groovy.op');
+    s.eq('named so nobody mistakes it for a person',d&&d.name,'Claude (QA)');
+    s.ok('with no password field',d&&!('pass' in d));
+    s.ok('a Board member',a.run("BOARD_USERS.indexOf('claude')")>-1);
+    s.ok('and NEVER a Board owner',a.run("BOARD_OWNERS.indexOf('claude')")===-1);
+    // isQa() in the rules names the same account the app gives the role to.
+    const rules=read('firestore.rules');
+    const qaFn=(/function isQa\(\) \{[\s\S]*?\n    \}/.exec(rules)||[''])[0];
+    const ruleEmails=(qaFn.match(/'([^']+@[^']+)'/g)||[]).map(x=>x.replace(/'/g,''));
+    s.eq('isQa() in the rules names exactly the qa accounts in USER_DEFS',
+      J(ruleEmails),J(a.run("USER_DEFS.filter(u=>u.role==='qa').map(u=>u.email)")));
+    s.ok('and signedIn() excludes it, which is what shuts every other collection',
+      /function signedIn\(\) \{ return request\.auth != null && !isQa\(\); \}/.test(rules));
+
+    const go=(b,id)=>{b.run('globalThis.__got=null');b.run('window.showPage('+J(id)+')');return b.run('__got');};
+    const b=loadApp({files:FILES,currentPage:'tb-dash'});
+    b.run('session='+J(QA));
+    b.run('renderPage=function(id){globalThis.__got=id;}');
+    ['tb-dash','tb-calendar','tb-lists','tb-inbox','profile','boards','boards-all','board-canvas']
+      .forEach(id=>s.eq('QA reaches '+id,go(b,id),id));
+    ['creative-hub','notes','note-detail']
+      .forEach(id=>s.eq('the Creative Hub\'s '+id+' lands QA on Mood Boards',go(b,id),'boards'));
+    ['dashboard','po-registry','gatepass','users','store-dashboard','mkt-creators','pattern-hub','fabric-inventory','bug-tracker','my-work']
+      .forEach(id=>s.eq('QA is sent to the Board from '+id,go(b,id),'tb-dash'));
+
+    const n=loadApp({files:NAV_FILES,currentPage:'tb-dash'});
+    n.run('session='+J(QA));
+    n.run('buildNav()');
+    const sb=n.el('sidebar').innerHTML;
+    s.eq('its sidebar is the Board and Mood Boards, nothing else',
+      J((sb.match(/showPage\('([a-z-]+)'\)/g)||[]).map(x=>x.slice(10,-2))),J(['tb-dash','boards']));
+    s.eq('its phone bar is the designer\'s four tabs',n.el('mob-nav').className,'cols-4');
+  }
+
+  s.section('the QA harness: two worlds on one Board');
+  {
+    const a=loadApp({files:FILES});
+    const as=u=>a.run('session='+J(u));
+    as(AMMAR);
+    s.eq('a real person addresses the five, never the harness',a.run('_tbBoardUsernames().join(",")'),'ammar,afnan,daniyal,mustafa,saim');
+    s.eq('Team today is the five',a.run('_tbTeamUsernames().join(",")'),'ammar,afnan,daniyal,mustafa,saim');
+    as(QA);
+    s.eq('the harness addresses only itself',a.run('_tbBoardUsernames().join(",")'),'claude');
+    s.eq('and still sees the real team in Team today',a.run('_tbTeamUsernames().join(",")'),'ammar,afnan,daniyal,mustafa,saim');
+
+    const rows=[{id:'r'},{id:'q',qa:true},{id:'f',qa:false}];
+    s.eq('a real session never sees a qa row',a.run('tbQaVisible('+J(rows)+',false).map(x=>x.id).join()'),'r,f');
+    s.eq('the harness sees everything it could read',a.run('tbQaVisible('+J(rows)+',true).map(x=>x.id).join()'),'r,q,f');
+    s.eq('and nothing is not an error',a.run('tbQaVisible(null,false).length'),0);
+
+    const qaList={id:'QA',qa:true,adminUid:'u-claude',kind:'shared',memberUids:['u-claude']};
+    const it=a.run('tbNewItem({title:"x",listId:"QA"},"u-claude",1,'+J([qaList])+')');
+    s.eq('an item in a QA list is born qa: true',it.qa,true);
+    const real=a.run('tbNewItem({title:"x",listId:"L"},"u-ammar",1,[{id:"L",kind:"shared"}])');
+    s.ok('a real item carries no qa field at all',!('qa' in real));
+
+    s.eq('the harness may notify itself',a.run('tbQaMayNotify("claude",true,["claude"])'),true);
+    s.eq('the harness never notifies a real person',a.run('tbQaMayNotify("ammar",true,["claude"])'),false);
+    s.eq('a real person never notifies the harness',a.run('tbQaMayNotify("claude",false,["claude"])'),false);
+    s.eq('and real people still notify each other',a.run('tbQaMayNotify("saim",false,["claude"])'),true);
+
+    // The fence the create paths go through.
+    as(QA); a.run('tbLists=[]');
+    s.eq('with no QA list the harness is refused, not pointed somewhere real',a.run('_tbQaFenceListId("L").ok'),false);
+    a.run('tbLists='+J([{id:'L',kind:'shared',adminUid:'u-ammar'},qaList]));
+    s.eq('a real list is re-pointed at its sandbox',a.run('_tbQaFenceListId("L").listId'),'QA');
+    s.eq('no list at all lands in the sandbox too',a.run('_tbQaFenceListId(null).listId'),'QA');
+    as(AMMAR);
+    s.eq('a real session passes straight through',a.run('_tbQaFenceListId("L").listId'),'L');
+  }
+
+  s.section('the QA harness: what the loader and the bell do with it');
+  {
+    // loadTbData, for real, with the four queries answered by where().
+    const shared=[{id:'r1',title:'Shoot',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']},
+                  {id:'q1',title:'QA item',visibility:'shared',ownerUid:'u-claude',assigneeUids:['u-claude'],qa:true,listId:'QA'}];
+    const lists=[{id:'L',title:'Winter',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar','u-claude']},
+                 {id:'QA',title:'QA Sandbox',kind:'shared',adminUid:'u-claude',memberUids:['u-claude'],qa:true}];
+    const load=async u=>{
+      const a=loadApp({files:FILES,globals:{loadProfiles:async()=>{}}});
+      a.run('session='+J(u));
+      a.run('collection=function(db,p){return{p:p};};where=function(f,op,v){return f+op+v;};'
+        +'query=function(c){return{p:c.p,w:[].slice.call(arguments,1).join("&")};};'
+        +'globalThis.__S='+J(shared)+';globalThis.__L='+J(lists)+';'
+        +'getDocs=async function(q){const rows=q.p==="board_items"?(/visibility/.test(q.w)?__S:[]):(/kind/.test(q.w)?__L:__L.filter(l=>q.w.indexOf(l.adminUid)>-1));'
+        +'return{docs:rows.map(r=>({id:r.id,data:()=>r}))};};'
+        +'getDoc=async function(){return{exists:()=>false};};onSnapshot=undefined;');
+      await a.run('loadTbData(true)');
+      return a;
+    };
+    const real=await load(AMMAR);
+    s.eq('a real person\'s Board holds no QA item',real.run('tbItems.map(x=>x.id).join()'),'r1');
+    s.eq('and no QA list',real.run('tbLists.map(x=>x.id).join()'),'L');
+    const qa=await load(QA);
+    s.eq('the harness sees its own item beside the real one',qa.run('tbItems.map(x=>x.id).sort().join()'),'q1,r1');
+    s.eq('and its sandbox',qa.run('tbLists.map(x=>x.id).sort().join()'),'L,QA');
+
+    // _tbNotify through the real writer: nothing crosses.
+    const n=loadApp({files:FILES,globals:{userProfiles:[{uid:'u-ammar',username:'ammar'},{uid:'u-claude',username:'claude'}]}});
+    const sent=()=>n.state.writes.filter(w=>w.op==='set'&&w.data&&w.data.forUser).map(w=>w.data.forUser).join();
+    n.run('session='+J(QA));
+    await n.run('_tbNotify({type:"assigned",forUid:"u-ammar",fromUid:"u-claude",itemId:"q1",title:"x"})');
+    s.eq('from the harness, a real person gets no bell row',sent(),'');
+    await n.run('_tbNotify({type:"assigned",forUid:"u-claude",fromUid:"u-claude",itemId:"q1",title:"x"})');
+    s.eq('the harness can still ping itself',sent(),'claude');
+    n.run('session='+J(AMMAR));
+    await n.run('_tbNotify({type:"assigned",forUid:"u-claude",fromUid:"u-ammar",itemId:"r1",title:"x"})');
+    s.eq('a real person never pings the harness',sent(),'claude');
   }
 
   s.section('the tab, on every route that renders it');
@@ -271,7 +395,7 @@ module.exports=async function(){
     // these hold is that the update rule still goes through the helper
     // that proof exercised, and the helper still names every lock field.
     const lockFn=(/function tbLockOk\(\) \{[\s\S]*?\n    \}/.exec(rules)||[''])[0];
-    s.ok('the item update rule goes through tbLockOk()',/allow update: if isBoardUser\(\)[\s\S]*?&& tbLockOk\(\);/.test(items));
+    s.ok('the item update rule goes through tbLockOk()',/allow update: if isBoardUser\(\)[\s\S]*?&& tbLockOk\(\)/.test(items));
     s.ok('on a locked item, date, dueAt, locked and lockedBy are all held',
       /affectedKeys\(\)\.hasAny\(\['date','dueAt','locked','lockedBy'\]\)/.test(lockFn));
     s.ok('…unless you are the locker or a board owner',
