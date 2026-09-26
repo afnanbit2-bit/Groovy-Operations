@@ -3340,7 +3340,13 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
 /* The list track is capped at the content's own 960px and the columns are
    packed LEFT, so the pane sits beside the list rather than floating away
    from it on a wide screen (seen at 1920 on the P1.4 screenshots). */
-.tb-wrap.has-pane{grid-template-columns:240px minmax(0,960px) 380px;justify-content:start}
+/* The third column exists only where the pane is a column (>=1024). Below
+   that the pane is a fixed overlay, so this unscoped rule used to reserve
+   an empty 380px track and a 240px rail on a tablet, and the list was
+   MEASURED at 116px wide at 800 (review of d38b96c). */
+@media(min-width:1024px){
+  .tb-wrap.has-pane{grid-template-columns:240px minmax(0,960px) 380px;justify-content:start}
+}
 .tb-drawer{position:sticky;top:0;align-self:start;min-width:0;box-sizing:border-box;
   max-height:calc(100vh - 88px);max-height:calc(100dvh - 88px);overflow-y:auto;
   padding:var(--tb-s12);background:var(--tb-n2);border:1px solid var(--tb-line);

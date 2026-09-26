@@ -506,6 +506,23 @@ const FRAGMENTS={
   // laid out at full height, as in the frame fragment, so nothing is
   // "covered" for sitting below its own scroll. Below 1024 the pane is an
   // overlay on purpose, so narrower widths would measure it covering.
+  // The same, on a TABLET, where the pane is a fixed overlay and the frame
+  // must stay two columns. An unscoped three-column rule reserved an empty
+  // 380px track there and left the list 116px wide at 800 (review of
+  // d38b96c). The overlay itself is hidden: it covers the page by design,
+  // and this measures the frame under it.
+  'the board — the Dashboard with the pane open, on a tablet':()=>{
+    const app=tbBoardApp('tb-dash');
+    app.run("_tbOpenItemId='a'");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan'],date:'2020-01-20',listId:'l1'})," +
+      "tbDecodeItem({id:'b',title:'Walika visit → Jibran procures → dye orders placed (200 kg MOQ per shade)',status:'open',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],date:_tbToday(),listId:'l1'})]");
+    app.run("_tbHydrateQueue=[]");
+    const body=app.run('_tbDashboard()');
+    const out=tbFillSlots(app,app.run("_tbShell('tb-dash',"+JSON.stringify(body)+",_tbDrawer())"));
+    return {widths:[800],html:'<style>.tb-drawer{display:none!important}</style>'+out};
+  },
+
   'the board — the Dashboard beside the pane':()=>{
     const app=tbBoardApp('tb-dash');
     app.run("_tbOpenItemId='a'");
