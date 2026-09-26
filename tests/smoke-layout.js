@@ -123,6 +123,28 @@ function tbWeekFragment(byPerson){
   return out;
 }
 
+// Board fragments hydrate every user string with textContent, so a fragment
+// that did not fill them in would measure EMPTY boxes and prove nothing.
+function tbFillSlots(app,html){
+  let out=html;
+  app.run('_tbHydrateQueue').forEach(x=>{
+    out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+  });
+  return out;
+}
+function tbBoardApp(page){
+  const app=loadApp({
+    files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:page,
+    globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+  });
+  // js/auth.js declares `session` at top level and clobbers the option.
+  app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+  app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+  app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+  app.run("tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[{label:'launch',date:'2026-10-30'},{label:'founders out',date:'2026-11-01'}]}");
+  return app;
+}
+
 const FRAGMENTS={
   // The Board's shell. The rail is NAVIGATION CHROME and the only route
   // between the four screens, so every button has to be reachable at every
@@ -428,6 +450,72 @@ const FRAGMENTS={
     // the documented false hit. The CARDS are what is being measured, so
     // the backdrops are laid out in flow here and nothing else changes.
     return '<style>.tb-help,.tb-sheet{position:relative;inset:auto;margin-bottom:12px}</style>'+out;
+  },
+
+  // Board Settings, open (P0.4), as an owner sees it after a Preview: the
+  // seed's longest real summary AND an error line, since both can show.
+  // Measured at every width: at 420 the card is a sheet over the page.
+  'the board — settings and a seed result':()=>{
+    const app=tbBoardApp('tb-dash');
+    app.run("_tbSettingsOpen=true;_tbHydrateQueue=[];_tbSeedState={busy:false,dry:true,error:'Refused — the seed function answered 403: only a Board owner may run it.',"
+      +"result:tbSeedSummary({created:40,alreadySeeded:2,listCreated:true,profilesCreated:['afnan','daniyal','mustafa'],skippedUsers:['saim'],"
+      +"skippedItems:['Saim: lookbook retouch — every hero frame','Saim: size-chart graphics'],keptAssignees:3},true)}");
+    return tbFillSlots(app,app.run('_tbSettingsOverlay()'));
+  },
+
+  // A date picker OPEN (P1.7): the vendored flatpickr, drawn inline so the
+  // probe can see it, restyled by css/main.css -- so main.css is linked
+  // AGAIN after flatpickr's own sheet, the order index.html uses. A marker
+  // day and the picked day are both on screen; both themes.
+  'the board — a date picker, open':()=>{
+    const fs=require('fs');
+    const js=fs.readFileSync(path.join(ROOT,'assets/vendor/flatpickr-4.6.13.min.js'),'utf8');
+    return '<link rel="stylesheet" href="/assets/vendor/flatpickr-4.6.13.min.css">'
+      +'<link rel="stylesheet" href="/css/main.css">'
+      +'<div class="tb-pane" style="max-width:380px"><div class="tb-prop"><span class="tb-proplabel">Date</span>'
+      +'<input id="fp" data-tb-fp class="tb-qadate" value="2026-10-20"></div></div>'
+      +'<script>'+js.replace(/<\/script/gi,'<\\/script')+'<\/script>'
+      +'<script>flatpickr(document.getElementById("fp"),{inline:true,dateFormat:"Y-m-d",altInput:true,altFormat:"D j M Y",'
+      +'altInputClass:"tb-qadate tb-fpalt",locale:{firstDayOfWeek:1},defaultDate:"2026-10-20",'
+      +'onDayCreate:function(d,s,fp,el){var t=fp.formatDate(el.dateObj,"Y-m-d");'
+      +'if(t==="2026-10-30"){el.classList.add("tb-fp-marker");el.title="launch";}}});<\/script>';
+  },
+
+  // The calendar with ONE FACE CHOSEN and a day OPENED past its cap (P1.6):
+  // four of Ammar's items on the 25th, so the day carries "Show less" and
+  // every pill it was hiding.
+  'the board — calendar, a face chosen and a day opened':()=>{
+    const app=tbBoardApp('tb-calendar');
+    app.run("_tbCalAnchor='2026-10-15';_tbCalView='month';_tbCalFilters={scope:'all',person:'u-ammar',list:'',lane:'',color:'',hideDone:false};_tbCalMore='2026-10-25'");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'ALL ASSETS IN — including website UI assets',date:'2026-10-25',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'c',title:'November runbook signed: restock triggers, daily report, cash authority',date:'2026-10-25',kind:'gate',status:'open',ownerUid:'u-must',assigneeUids:['u-must','u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'d',title:'Ad copy + headlines',date:'2026-10-25',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'e',title:'done already',date:'2026-10-25',status:'done',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared'})," +
+      "tbDecodeItem({id:'f',title:'LAUNCH',date:'2026-10-30',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'m',title:'Mustafa only — hidden by the face',date:'2026-10-26',status:'open',ownerUid:'u-must',assigneeUids:['u-must'],visibility:'shared'})]");
+    app.run('_tbHydrateQueue=[]');
+    return tbFillSlots(app,app.run('_tbCalendar()'));
+  },
+
+  // The DASHBOARD BESIDE THE PANE (P1.5 + P1.4). Its two columns sit side by
+  // side while .tb-main is wide, and STACK (a container query, not a media
+  // query) once the pane leaves it under 720px -- at 1100 here. The pane is
+  // laid out at full height, as in the frame fragment, so nothing is
+  // "covered" for sitting below its own scroll. Below 1024 the pane is an
+  // overlay on purpose, so narrower widths would measure it covering.
+  'the board — the Dashboard beside the pane':()=>{
+    const app=tbBoardApp('tb-dash');
+    app.run("_tbOpenItemId='a'");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',locked:true,lockedBy:'u-afnan',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan','u-must'],date:'2020-01-20',listId:'l1',commentCount:12,steps:[{id:'1',title:'call the supplier',done:true},{id:'2',title:'confirm the sample date in writing',done:false}]})," +
+      "tbDecodeItem({id:'b',title:'Walika visit → Jibran procures → dye orders placed (200 kg MOQ per shade)',status:'open',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],date:_tbToday(),listId:'l1'})," +
+      "tbDecodeItem({id:'c',title:'Denim bulk lands → Mustafa QC',status:'open',kind:'gate',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-must'],date:null,listId:'l1'})," +
+      "tbDecodeItem({id:'h',title:'Handed to Daniyal: the lookbook captions',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani'],date:_tbDayAdd(_tbToday(),3)})]");
+    app.run("_tbHydrateQueue=[]");
+    const body=app.run('_tbDashboard()');
+    const out=tbFillSlots(app,app.run("_tbShell('tb-dash',"+JSON.stringify(body)+",_tbDrawer())"));
+    return {widths:[1900,1280,1100],html:'<style>.tb-drawer{max-height:none;position:static}</style>'+out};
   },
 
   'the board — shell and rail':()=>{
@@ -2344,7 +2432,7 @@ document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
     if(m){
       const c=cases[Number(m[1])];
       const q=new URLSearchParams(req.url.split('?')[1]||'');
-      res.writeHead(200,{'Content-Type':'text/html'});
+      res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
       // A fragment that declares heights is measured INSIDE AN IFRAME of
       // exactly that viewport, the same device tests/smoke-phone.js uses and
       // for the same reason: --window-size sets the WINDOW, not the viewport,

@@ -1136,7 +1136,7 @@ function _tbDashboard(){
   const empty=!left&&!rightMost&&!activity
     ?'<div class="tb-empty"><div class="tb-empty-h">Nothing on The Board today</div>'
      +'<div class="tb-empty-p">add something above, or open the calendar.</div>'
-     +'<button class="btn-outline" onclick="window.showPage(\'tb-calendar\')">open the calendar</button>'
+     +'<button class="btn-outline" onclick="window.showPage(\'tb-calendar\')">Open the calendar</button>'
      +'</div>':'';
   const warn=_tbLoadErrors.length&&!_tbLoadFailed('board_items')
     ?'<div class="tb-warn">'+_tbEsc(_tbLoadErrors.join(', '))+' could not be read — some of this may be incomplete.</div>':'';
@@ -1478,14 +1478,14 @@ function _tbQaChipsHTML(){
   const dateLabel=plan.date?tbDayLabel(plan.date,today)+(plan.dateFromText?' (from the title)':''):'no date';
   const people=tbPeople().map(function(p){
     if(!p.uid)return'<button type="button" class="tb-qachip tb-qachip-off" disabled title="'+_tbEsc(tbPersonOffText(p))+'">'+_tbEsc(p.name)+'</button>';
-    if(p.uid===me)return'<button type="button" class="tb-qachip on tb-qachip-me" disabled title="you are always on what you add">you</button>';
+    if(p.uid===me)return'<button type="button" class="tb-qachip on tb-qachip-me" disabled title="You are always on what you add">You</button>';
     const on=plan.assigneeUids.indexOf(p.uid)>-1;
     return'<button type="button" class="tb-qachip'+(on?' on':'')+'"'+keep
       +' onclick="window.tbQaAssign(\''+_tbEsc(p.uid)+'\')">'+_tbEsc(p.name)+'</button>';
   }).join('');
   const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
   return'<div class="tb-qarow"><span class="tb-qalabel">date</span>'
-      +dateBtn(today,'today')+dateBtn(_tbDayAdd(today,1),'tomorrow')+dateBtn(nextMon,'next mon')
+      +dateBtn(today,'Today')+dateBtn(_tbDayAdd(today,1),'Tomorrow')+dateBtn(nextMon,'Next Mon')
       +'<input type="date" data-tb-fp class="tb-qadate" id="tb-qa-date" value="'+_tbEsc(plan.date||'')+'"'
         +' onchange="window.tbQaDate(this.value,true)" onblur="window.tbQaDateBlur()">'
       +'<span class="tb-qadatenow'+(plan.date?'':' none')+'" id="tb-qa-datenow">'+_tbEsc(dateLabel)+'</span>'
@@ -1829,7 +1829,7 @@ window.tbOpenHandover=function(){
     }).join('')+'</select>'
     +'<input id="tb-ho-note" placeholder="one line — what do they need to know?" maxlength="200">'
     +'<label class="tb-hokeep"><input type="checkbox" id="tb-ho-keep"> keep me on it</label>'
-    +'<button class="btn-primary" onclick="window.tbHandOver()">hand over</button></div>';
+    +'<button class="btn-primary" onclick="window.tbHandOver()">Hand over</button></div>';
 };
 window.tbHandOver=async function(){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
@@ -3312,8 +3312,8 @@ function _tbThreadSection(it){
           return _tbFileChip(a,{onRemove:'window.tbUnstageFile('+i+')'});
         }).join('')+'</div>':'')
       +'<div class="tb-comprow">'
-        +'<button class="tb-addfile" onclick="window.tbPickFiles(\'comment\')">attach</button>'
-        +'<button class="btn-primary" onclick="window.tbPostComment()">post</button>'
+        +'<button class="tb-addfile" onclick="window.tbPickFiles(\'comment\')">Attach</button>'
+        +'<button class="btn-primary" onclick="window.tbPostComment()">Post</button>'
       +'</div>'
     +'</div></div>';
 }
@@ -3347,7 +3347,7 @@ function _tbMoveReqSection(it){
         +' holds the lock. This posts the ask in the thread and pings them.</div>'
         +'<input type="date" data-tb-fp id="tb-mr-date" value="'+_tbEsc(it.date||'')+'">'
         +'<input id="tb-mr-why" maxlength="200" placeholder="why does it need to move?">'
-        +'<button class="btn-primary" onclick="window.tbRequestMove()">send</button></div>'
+        +'<button class="btn-primary" onclick="window.tbRequestMove()">Send</button></div>'
       :'')
   +'</div>';
 }
@@ -3555,7 +3555,7 @@ function _tbInboxScreen(){
   }).join('');
   return'<div class="tb-nfhead"><span class="tb-dsech">Inbox</span>'
       +(unread?'<span class="tb-count red">'+unread+'</span>':'')
-      +(unread?'<button class="btn-outline" onclick="window.tbMarkAllRead()">mark all read</button>':'')
+      +(unread?'<button class="btn-outline" onclick="window.tbMarkAllRead()">Mark all read</button>':'')
     +'</div>'+groups;
 }
 
@@ -3584,7 +3584,7 @@ function _tbInboxCard(){
       +'<span class="tb-av">'+_tbEsc(tbUser(n.fromUid).initial)+'</span>'
       +'<span class="tb-nfmain">'+_tbSlot(_tbUnesc(n.message||''),'tb-nfmsg')+'</span>'
       +'<span class="tb-cmtwhen">'+_tbEsc(_tbAgo(n.createdAt))+'</span></button>';
-  }),{action:'<button class="tb-addfile" onclick="window.showPage(\'tb-inbox\')">view all</button>'});
+  }),{action:'<button class="tb-addfile" onclick="window.showPage(\'tb-inbox\')">View all</button>'});
 }
 
 // ── Starting the listener ─────────────────────────────────────────────
@@ -3693,11 +3693,11 @@ function _tbSearchScreen(){
     return'<div class="tb-empty"><div class="tb-empty-h">nothing matches “'+_tbEsc(_tbQuery)+'”</div>'
       +'<div class="tb-empty-p">search covers titles, notes, steps and lanes. '
       +'Comments are searched only in threads you have opened this session.</div>'
-      +'<button class="btn-outline" onclick="window.tbSearchClear()">clear search</button></div>';
+      +'<button class="btn-outline" onclick="window.tbSearchClear()">Clear search</button></div>';
   }
   return'<div class="tb-sechead">'+hits.length+' result'+(hits.length===1?'':'s')
       +' for “'+_tbEsc(_tbQuery)+'”'
-      +'<button class="tb-calbtn" onclick="window.tbSearchClear()">clear</button></div>'
+      +'<button class="tb-calbtn" onclick="window.tbSearchClear()">Clear</button></div>'
     +hits.map(function(h){
       return'<div class="tb-hit">'+_tbRow(h.item,today)
         +'<div class="tb-hitwhere">matched in '+_tbEsc(h.where.join(', '))+'</div></div>';
@@ -3800,7 +3800,7 @@ function _tbHelpOverlay(){
         return'<div class="tb-helprow"><kbd class="tb-kbd">'+_tbEsc(s.k)+'</kbd>'
           +'<span class="tb-helpwhat">'+_tbEsc(s.what)+'</span></div>';
       }).join('')
-      +'<button class="btn-outline" onclick="window.tbToggleHelp()">close</button>'
+      +'<button class="btn-outline" onclick="window.tbToggleHelp()">Close</button>'
     +'</div></div>';
 }
 
@@ -3882,14 +3882,14 @@ function _tbSettingsOverlay(){
           +'already changed are left alone.</div>'
         +'<div class="tb-setbtns">'
           +'<button class="btn-outline" id="tb-seed-preview"'+(st.busy?' disabled':'')
-            +' onclick="window.tbRunSeed(true)">preview</button>'
+            +' onclick="window.tbRunSeed(true)">Preview</button>'
           +'<button class="btn-primary" id="tb-seed-run"'+(st.busy?' disabled':'')
-            +' onclick="window.tbRunSeed(false)">'+(st.busy?'working…':'run seed')+'</button>'
+            +' onclick="window.tbRunSeed(false)">'+(st.busy?'Working…':'Run seed')+'</button>'
         +'</div>'
         +(st.result?_tbSlot(st.result,'tb-setresult','div'):'')
         +(st.error?_tbSlot(st.error,'tb-setresult tb-seterr','div'):'')
       +'</div>'
-      +'<button class="btn-outline" onclick="window.tbToggleSettings()">close</button>'
+      +'<button class="btn-outline" onclick="window.tbToggleSettings()">Close</button>'
     +'</div></div>';
 }
 
@@ -4142,8 +4142,8 @@ function _tbMoveSheet(){
         +quick(_tbDayAdd(today,7),'next week')+'</div>'
       +'<input type="date" data-tb-fp id="tb-move-date" value="'+_tbEsc(it.date||today)+'">'
       +'<div class="tb-sheetfoot">'
-        +'<button class="btn-outline" onclick="window.tbCloseMove()">cancel</button>'
-        +'<button class="btn-primary" onclick="window.tbMoveTo()">move</button>'
+        +'<button class="btn-outline" onclick="window.tbCloseMove()">Cancel</button>'
+        +'<button class="btn-primary" onclick="window.tbMoveTo()">Move</button>'
       +'</div>'
     +'</div></div>';
 }

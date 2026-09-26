@@ -344,7 +344,7 @@ function DRIVE(){
       await wait(50);
       L(!!document.querySelector('#tb-quick.open .tb-qarow'),'focusing quick add opens the composer');
       var btns=[].slice.call(document.querySelectorAll('#tb-qa-chips .tb-qachip'));
-      var tomorrow=btns.filter(function(b){return(b.textContent||'').trim()==='tomorrow';})[0];
+      var tomorrow=btns.filter(function(b){return(b.textContent||'').trim()==='Tomorrow';})[0];
       var dani=btns.filter(function(b){return/Daniyal/.test(b.textContent||'');})[0];
       act('pick tomorrow',function(){tomorrow.click();},0);
       act('pick Daniyal',function(){[].slice.call(document.querySelectorAll('#tb-qa-chips .tb-qachip')).filter(function(b){return/Daniyal/.test(b.textContent||'');})[0].click();},0);

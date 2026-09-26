@@ -1421,7 +1421,7 @@ module.exports=async function(){
         profilesCreated:['saim'],skippedUsers:[],skippedItems:[],keptAssignees:0}})};});
     s.ok('a Board owner has one',/tb-settings-btn/.test(a.run('_tbShell("tb-dash","")')));
     a.run('window.tbToggleSettings()');
-    s.ok('it opens the settings with the seed',/run seed/.test(a.run('_tbSettingsOverlay()')));
+    s.ok('it opens the settings with the seed',/Run seed/.test(a.run('_tbSettingsOverlay()')));
     await a.run('window.tbRunSeed(true)');
     s.eq('it calls the function',sent&&sent.url,'/.netlify/functions/board-seed');
     s.eq('with POST',sent&&sent.init.method,'POST');
@@ -1500,7 +1500,7 @@ module.exports=async function(){
     a.run('tbLists=[{id:"l1",title:"Winter Drop 2027",kind:"shared"}];_tbQaReset(true)');
     const html=a.run('_tbComposer("add something")');
     s.ok('the composer opens with its chip row',/tb-quick open/.test(html)&&/tb-qarow/.test(html));
-    s.ok('today, tomorrow and next mon',/>today</.test(html)&&/>tomorrow</.test(html)&&/>next mon</.test(html));
+    s.ok('Today, Tomorrow and Next Mon',/>Today</.test(html)&&/>Tomorrow</.test(html)&&/>Next Mon</.test(html));
     s.ok('a date field',/type="date" data-tb-fp class="tb-qadate"/.test(html));
     const assignRow=(/<span class="tb-qalabel">assign<\/span>([\s\S]*?)<\/div>/.exec(html)||['',''])[1];
     s.eq('five people on the assign row: you, three to pick, one not set up',
@@ -1517,7 +1517,7 @@ module.exports=async function(){
       enabled.filter(b=>/onpointerdown="event\.preventDefault\(\)"/.test(b)).length,enabled.length);
     // Next Mon is the Monday AFTER today, never today itself.
     a.run('_tbToday=function(){return "2026-09-28";}');   // a Monday
-    s.ok('"next mon" on a Monday is a week out',/tbQaDate\('2026-10-05'\)"[^>]*>next mon</.test(a.run('_tbQaChipsHTML()')));
+    s.ok('"next mon" on a Monday is a week out',/tbQaDate\('2026-10-05'\)"[^>]*>Next Mon</.test(a.run('_tbQaChipsHTML()')));
     // Escape: clears first, closes second.
     a.run('_tbQa.text="half";_tbQa.open=true');
     a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
@@ -1749,6 +1749,10 @@ module.exports=async function(){
     s.ok('every card and group title starts with a capital ('+titles.join(', ')+')',titles.length>=12&&titles.every(t=>/^[A-Z0-9]/.test(t)));
     // P1.3: a list's done items are the Completed group, not a 'Done' card.
     s.ok('the Completed group is Title Case too',/'Completed'/.test(src));
+    // No button label written in the source starts lowercase (session 2,
+    // P1.8 sweep: "close", "run seed", "hand over", "view all" … all did).
+    const lowBtn=(src.match(/>[a-z][a-z …]*<\/button>/g)||[]);
+    s.eq('no literal button label starts lowercase',lowBtn.join(' | '),'');
     s.eq('no bell row is titled in lowercase',/title:'the board'/.test(src),false);
     const sh=read('js/shared.js');
     s.ok('the bug tracker names the screens in Title Case',/'tb-calendar':'The Board — Calendar'/.test(sh));
@@ -2677,10 +2681,11 @@ module.exports=async function(){
     a.run('tbNotifs=[{_id:"n1",source:"tb",forUser:"ammar",type:"mention",itemId:"i1",'
       +'fromUid:"u-afnan",createdAt:'+Date.now()+',readBy:[],message:"Afnan mentioned you"}]');
     s.ok('the dashboard carries an inbox card',/inbox/.test(a.run('_tbDashboard()')));
+    s.ok('with a way to the whole inbox',/>View all</.test(a.run('_tbDashboard()')));
     s.ok('the rail carries the unread slot',/id="tb-rail-n"/.test(a.run('_tbShell("tb-inbox","")')));
     a.run('tbNotifs=[]');
     s.ok('and the card is hidden when there is nothing in it',
-      !/view all/.test(a.run('_tbDashboard()')));
+      !/View all/.test(a.run('_tbDashboard()')));
   }
 
   s.section('the activity log reads as sentences');

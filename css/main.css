@@ -3762,10 +3762,14 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
 .tb-seterr{border-color:var(--accent-urgent);color:var(--accent-urgent)}
 
 /* cards 10-12 */
-.tb-teamrow{display:flex;align-items:center;gap:9px;min-height:44px;padding:2px 0}
-.tb-teamname{flex:1;min-width:0;font-size:14px;color:var(--text);
+/* The NAME keeps a floor and the counts WRAP under it when the column is
+   too narrow for both. With the counts unshrinkable beside a flex:1 name,
+   the detail pane open at 1280px left "Ammar" 0px wide -- measured by the
+   layout probe (P1.8), the Profile-directory bug in a new place. */
+.tb-teamrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 9px;min-height:44px;padding:2px 0}
+.tb-teamname{flex:1 1 6em;min-width:5em;font-size:14px;color:var(--text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tb-teamn{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.tb-teamn{margin-left:auto;font-family:var(--font-mono);font-size:12px;color:var(--muted);text-align:right}
 /* The ONE red on this module is the overdue count, so a person carrying
    overdue work reads in it too -- it is the same fact, one card over. */
 .tb-teamover{color:var(--count-accent);font-weight:700}
