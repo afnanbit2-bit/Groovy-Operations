@@ -378,14 +378,23 @@ previews break again.
 
 ### Icons
 
-`/assets/icons/icon-{192,512}.png` + `icon-maskable-512.png` are the real
+`/assets/icons/icon-{192,512}.png` + `icon-maskable-v2-512.png` are the real
 GROOVY wing/"G" mark (Sept 2026 — replaced the black/white "GO" placeholder).
 Source: a 1920×1080 RGBA PNG the user supplied, transparent background,
 mark itself ~880×484 after cropping to its alpha bounding box. Regenerated
 with Pillow (`Image.alpha_composite`, `LANCZOS` resize) rather than by hand:
 - `icon-192.png` / `icon-512.png` (`purpose: "any"`) — mark centered on a
   **transparent** canvas at 80% fill (by its longer dimension).
-- `icon-maskable-512.png` (`purpose: "maskable"`) — mark centered on an
+- **27 Sept: `icon-maskable-v2-512.png` replaced `icon-maskable-512.png`.**
+  Afnan asked for a transparent Android icon; that is not available to a
+  web app (the launcher masks every icon to a shape and Chrome fills a
+  non-maskable one onto a WHITE plate), so he chose "the mark fills the
+  tile": 69.3% fill, the largest a 1.83:1 mark can take while its bounding
+  box's corners stay inside Android's guaranteed 80% safe circle (2px
+  margin; half-diagonal 202.3 ≤ 204.8). Built from `icon-512.png` cropped to
+  its alpha bbox. A NEW filename, so Chrome's WebAPK update check sees a
+  changed icon; an installed icon may still need uninstall/reinstall.
+- (was) `icon-maskable-512.png` (`purpose: "maskable"`) — mark centered on an
   **opaque black** canvas (matches `manifest.json`'s `theme_color`/
   `background_color`, both `#000000`) at a conservative **60%** fill, so it
   stays inside Android's ~66%-diameter safe-zone circle after masking.
