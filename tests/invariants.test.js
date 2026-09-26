@@ -148,11 +148,25 @@ module.exports=function(){
       });
       s.eq('no .tb- rule transforms the case of its text',bad.join(' | '),'');
     }
-    // `_tbIcon('` is NINE characters. P1.1 sliced eight and never noticed,
-    // because no literal call existed until the P1.2 rail.
-    const used=(tb.match(/_tbIcon\('([a-z0-9-]+)'/g)||[]).map(x=>x.slice(9,-1));
-    s.ok('and it found the literal calls',used.length>0,used.length+' calls');
-    s.eq('every icon the Board draws is one it lists',used.filter(n=>names.indexOf(n)<0).join(','),'');
+    // Every icon NAME the source can hand to _tbIcon: a literal first
+    // argument, every quoted name inside the call (a ternary picks one of
+    // two), an `icon:'x'` property (the rail items) and a `prop('x'` row in
+    // the item pane. _tbIcon returns '' for a name it does not list, so a
+    // miss is an icon that silently is not there. The first cut read only
+    // literal first arguments -- and sliced `_tbIcon('` as eight characters
+    // when it is nine. tests/smoke-board.js also records every name asked
+    // for at run time, which covers what no pattern here can.
+    const used=[];
+    (tb.match(/_tbIcon\([^)]*\)/g)||[]).forEach(call=>{
+      // A name is a quoted string right after `(`, `?` or `:` -- never the
+      // `'shared'` a ternary compares against.
+      (call.match(/[(?:]\s*'([a-z0-9-]+)'/g)||[]).forEach(q=>{const n=q.replace(/^[(?:]\s*'|'$/g,'');if(n!=='sm'&&n!=='lg')used.push(n);});
+    });
+    (tb.match(/\bicon:'([a-z0-9-]+)'/g)||[]).forEach(x=>used.push(x.replace(/^icon:'|'$/g,'')));
+    (tb.match(/\bprop\('([a-z0-9-]+)'/g)||[]).forEach(x=>used.push(x.replace(/^prop\('|'$/g,'')));
+    s.ok('and it found the calls, the rail properties and the pane rows',used.length>20,used.length+' names');
+    s.ok('including a name chosen by a ternary',used.indexOf('lock-open')>-1&&used.indexOf('chevron-right')>-1);
+    s.eq('every icon the Board draws is one it lists',[...new Set(used.filter(n=>names.indexOf(n)<0))].join(','),'');
     s.ok('the builder that makes the sprite is in the repo',exists('scripts/build-lucide-sprite.js'));
   }
 

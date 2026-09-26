@@ -200,7 +200,21 @@ function DRIVE(){
       try{return orig.apply(this,arguments);}finally{R.depth--;}
     };
     _tbRepaint.__smoke=true;
+    // Every icon name asked for while the driver walks the Board. _tbIcon
+    // draws nothing for a name it does not list, so a miss is an icon that
+    // is silently not there; the static check in invariants.test.js reads
+    // the source, this reads what really ran.
+    if(typeof _tbIcon==='function'&&!_tbIcon.__smoke){
+      var icon0=_tbIcon;
+      _tbIcon=function(n){
+        ICONS.seen[n]=1;
+        if(TB_ICONS.indexOf(n)<0)ICONS.missing[n]=1;
+        return icon0.apply(this,arguments);
+      };
+      _tbIcon.__smoke=true;
+    }
   }
+  var ICONS={seen:{},missing:{}};
   var MAX_REPAINTS=4;
   // `exact`, when given, is the number of full repaints the action must
   // cause -- 0 for a chip click, which repaints the chip row alone. Without
@@ -538,6 +552,65 @@ function DRIVE(){
         act('close it',function(){window.tbCloseItem();});
         await wait(100);
       }
+      // ── the picker in BOTH themes (review, 26 Sept 2026) ──
+      // flatpickr's own sheet carries literal colours on rules MORE specific
+      // than the restyle in css/main.css, so a state could slip through in
+      // its blue, its greys or its black arrows -- invisible on the dark
+      // surface. No logic suite and no contrast bar sees that (the blue is
+      // 2.7:1 under white). So: put a real picker in each state and require
+      // that no computed colour, on any element or its ::before/::after, is
+      // one of flatpickr's. Hover-only rules (the month and year hover
+      // washes) cannot be driven here and are held by nothing.
+      var FPV=['rgb(86, 159, 247)','rgb(230, 230, 230)','rgb(149, 158, 169)','rgb(246, 71, 71)','rgb(57, 57, 57)'];
+      var fpVendor=function(c){
+        if(!c||c==='none')return false;
+        if(FPV.indexOf(c)>=0)return true;
+        var m=/^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(c);if(!m||!(+m[4]>0))return false;
+        return (m[1]==='57'&&m[2]==='57'&&m[3]==='57')||(m[1]==='0'&&m[2]==='0'&&m[3]==='0'&&+m[4]>=0.5);
+      };
+      var fpProps=['color','backgroundColor','borderTopColor','borderRightColor','borderBottomColor','borderLeftColor','fill'];
+      var fpSweep=function(root){
+        var hit='';
+        [root].concat([].slice.call(root.querySelectorAll('*'))).some(function(el){
+          return [null,'::before','::after'].some(function(ps){
+            var cs=getComputedStyle(el,ps);
+            if(ps&&(cs.content==='none'||cs.content===''))return false;
+            return fpProps.some(function(pr){
+              if(fpVendor(cs[pr])){hit=(el.className&&el.className.baseVal!=null?el.tagName:(el.tagName+'.'+String(el.className).split(' ').join('.')))+(ps||'')+' '+pr+' '+cs[pr];return true;}
+              return false;
+            });
+          });
+        });
+        return hit;
+      };
+      var fpTok=function(v){var t=document.createElement('i');t.style.color='var('+v+')';document.body.appendChild(t);var c=getComputedStyle(t).color;t.remove();return c;};
+      var theme0=document.documentElement.getAttribute('data-theme');
+      ['light','dark'].forEach(function(th){
+        document.documentElement.setAttribute('data-theme',th);
+        var host=document.createElement('div');document.body.appendChild(host);
+        var inp=document.createElement('input');host.appendChild(inp);
+        var fpx=flatpickr(inp,{inline:true,dateFormat:'Y-m-d',locale:{firstDayOfWeek:1},defaultDate:'2026-10-31'});
+        fpx.changeMonth(1);
+        var outSel=fpx.calendarContainer.querySelector('.flatpickr-day.selected.prevMonthDay');
+        L(!!outSel,th+': the picked 31st shows in November’s grid as a day from October');
+        var nx=fpx.calendarContainer.querySelector('.flatpickr-day.nextMonthDay');
+        if(nx)nx.focus();
+        var cs=outSel&&getComputedStyle(outSel);
+        L(!!cs&&cs.backgroundColor===fpTok('--tb-accent')&&cs.opacity==='1',
+          th+': a picked day outside its month keeps the accent ('+(cs?cs.backgroundColor+' at '+cs.opacity:'none')+')');
+        var up=fpx.calendarContainer.querySelector('.flatpickr-current-month .numInputWrapper span.arrowUp');
+        var upc=up&&getComputedStyle(up,'::after').borderBottomColor;
+        L(upc===fpTok('--text'),th+': the year arrows take the text colour ('+upc+')');
+        var hit1=fpSweep(fpx.calendarContainer);
+        L(!hit1,th+': no flatpickr colour on a picker with a focused outside day'+(hit1?' -- '+hit1:''));
+        fpx.jumpToDate(new Date());
+        var td=fpx.calendarContainer.querySelector('.flatpickr-day.today');
+        if(td)td.focus();
+        var hit2=fpSweep(fpx.calendarContainer);
+        L(!!td&&!hit2,th+': nor with today focused'+(hit2?' -- '+hit2:''));
+        fpx.destroy();host.remove();
+      });
+      if(theme0==null)document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',theme0);
       window.showPage('tb-lists');await wait(200);
       var list=document.querySelector('[onclick^="window.tbOpenList"]');
       L(!!list,'there is a list to open');
@@ -550,6 +623,9 @@ function DRIVE(){
       act('help off',function(){window.tbToggleHelp();});
 
       L(onBoard(),'the Board is still on screen at the end');
+      var iconSeen=Object.keys(ICONS.seen).length,iconMiss=Object.keys(ICONS.missing);
+      L(iconSeen>10&&!iconMiss.length,'every icon asked for is in the sprite ('+iconSeen+' names'
+        +(iconMiss.length?'; missing: '+iconMiss.join(', '):'')+')');
       var errs=(window.__errs||[]).filter(function(e){return!/ERR_|Failed to load resource/.test(e);});
       L(!errs.length,'no JavaScript errors'+(errs.length?': '+errs.slice(0,3).join(' | '):''));
     }catch(e){L(false,'the driver threw: '+e.message);}

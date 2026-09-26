@@ -2780,9 +2780,30 @@ span.flatpickr-weekday{color:var(--muted);font-weight:600;background:transparent
 .flatpickr-day{color:var(--text);border-radius:var(--tb-r6)}
 .flatpickr-day:hover,.flatpickr-day:focus{background:var(--tb-hover);border-color:var(--tb-hover)}
 .flatpickr-day.today{border-color:var(--tb-accent)}
+/* flatpickr's own sheet has HIGHER-specificity rules with literal colours
+   for these states (review, 26 Sept 2026): a focused or hovered day from
+   the next or previous month went #e6e6e6 -- a light slab under light ink
+   in dark mode -- and a focused or hovered TODAY went a grey #959ea9 chip.
+   Placed BEFORE the selected rule, so a selected day keeps its accent. */
+.flatpickr-day.today:hover,.flatpickr-day.today:focus{background:var(--tb-hover);border-color:var(--tb-accent);color:var(--text)}
+.flatpickr-day.prevMonthDay:hover,.flatpickr-day.prevMonthDay:focus,
+.flatpickr-day.nextMonthDay:hover,.flatpickr-day.nextMonthDay:focus{background:var(--tb-hover);border-color:var(--tb-hover)}
 .flatpickr-day.selected,.flatpickr-day.selected:hover,.flatpickr-day.selected:focus{
   background:var(--tb-accent);border-color:var(--tb-accent);color:var(--tb-on-accent)}
 .flatpickr-day.prevMonthDay,.flatpickr-day.nextMonthDay,.flatpickr-day.flatpickr-disabled{color:var(--muted);opacity:.6}
+/* A SELECTED day shown outside its own month (the 31st, seen from the next
+   month's grid) matched flatpickr's .selected.prevMonthDay -- its blue --
+   AND the muted rule above, so it read as a washed-out foreign chip. */
+.flatpickr-day.selected.prevMonthDay,.flatpickr-day.selected.nextMonthDay{
+  background:var(--tb-accent);border-color:var(--tb-accent);color:var(--tb-on-accent);opacity:1}
+/* The year spinner: flatpickr paints its arrows rgba(0,0,0,.9), which is
+   invisible on the dark surface, and its hover washes rgba(0,0,0,.05). */
+.flatpickr-current-month .numInputWrapper span.arrowUp:after{border-bottom-color:var(--text)}
+.flatpickr-current-month .numInputWrapper span.arrowDown:after{border-top-color:var(--text)}
+.numInputWrapper span{border-color:var(--border)}
+.numInputWrapper:hover,.numInputWrapper span:hover,.flatpickr-current-month span.cur-month:hover,
+.flatpickr-current-month .flatpickr-monthDropdown-months:hover{background:var(--tb-hover)}
+.numInputWrapper span:active{background:var(--tb-line)}
 /* A day carrying one of the drop's markers (launch, founders out) — the
    picker shows them, as the calendar does (brief s4.2). */
 .flatpickr-day.tb-fp-marker{box-shadow:inset 0 -2px 0 var(--tb-accent);font-weight:700}
