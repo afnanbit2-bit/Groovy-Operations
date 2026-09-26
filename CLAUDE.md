@@ -9250,6 +9250,26 @@ fragment `login — the sign-in screen and the fingerprint lock`.
     `FIREBASE_SERVICE_ACCOUNT` can sign custom tokens (it must hold a
     private key — the other functions only prove it can read/write), and
     what a real phone sends. Afnan's phone is the first real test.
+- **"Choose an account" is OUR sheet, not Chrome's (27 Sept, recording 3).**
+  The key opened Chrome's full-screen "Sign in as" list with blank grey
+  avatars (Afnan's own row had his picture — the `iconURL` fix worked — but
+  every account Chrome saved by itself had none). That window is Chrome's: no
+  site can size, style or add pictures to it. The key now opens
+  `#login-accounts`, a half-height sheet (`.login-acct-list` ≤52vh, scrolls)
+  listing the accounts that signed in HERE with Remember me
+  (`localStorage['groovy-accounts']`, {u:{name,photo,at}}, recorded on every
+  password and passkey sign-in; most recent first). **Chrome's own list
+  cannot be read by any site**, so accounts Chrome saved before this shipped
+  appear once that person signs in again. **Photos cannot be read before
+  sign-in** (user_profiles needs a signed-in reader), so after any sign-in
+  `_profileCacheAccountPhotos` (js/profile.js) refreshes the picture of
+  every account ALREADY on the list from the team directory — one
+  `user_profiles` read, only when there is someone besides you; a refresh
+  never adds anyone. A photo must be an anchored
+  `https://res.cloudinary.com/` URL; names are `textContent`. A row with a
+  fingerprint key on this phone signs straight in; any other fills the
+  username and focuses the password. "All saved passwords" still opens
+  Chrome's list; with nobody on the list the key goes straight there.
 - **Busy = the whole button, never a spinning icon (27 Sept).** Afnan: a
   rotating fingerprint while signing in "is stupid". While the phone and
   the server answer, a sheen sweeps across the button (`loginSheen`, a

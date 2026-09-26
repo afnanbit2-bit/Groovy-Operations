@@ -379,6 +379,53 @@ module.exports=async function(){
     s.eq('… label',app.el('login-btn-label').textContent,'Signed in');
   }
 
+  // ── recording 3: our own "Choose an account" sheet ────────────────────
+  {
+    const {app,run,ls}=boot();
+    s.section('accounts on this phone: who is on the list');
+    run(`window._loginRememberAccount('afnan','Afnan','https://res.cloudinary.com/x/image/upload/v1/a.jpg')`);
+    run(`window._loginRememberAccount('stranger','Evil','https://res.cloudinary.com/x/a.jpg')`);
+    s.eq('only real accounts are recorded',run('JSON.stringify(window._loginAccountsKnown())'),'["afnan"]');
+    run(`window._loginRememberAccount('ammar','Ammar','javascript:alert(1)')`);
+    s.eq('a photo that is not an https Cloudinary URL is refused',JSON.parse(ls.m['groovy-accounts']).ammar.photo,'');
+    run(`window._loginRememberAccount('ammar','Ammar','https://res.cloudinary.com.evil.test/a.jpg')`);
+    s.eq('… including a lookalike host',JSON.parse(ls.m['groovy-accounts']).ammar.photo,'');
+    run(`window._loginRememberAccount('uzaib','Uzaib','https://res.cloudinary.com/x/u.jpg',true)`);
+    s.ok('a directory refresh never ADDS someone to this phone\'s list',!run('window._loginAccountsKnown()').includes('uzaib'));
+    run(`window._loginRememberAccount('afnan','Afnan K','https://res.cloudinary.com/x/new.jpg',true)`);
+    s.eq('… but it does refresh the picture of someone already on it',JSON.parse(ls.m['groovy-accounts']).afnan.photo,'https://res.cloudinary.com/x/new.jpg');
+
+    s.section('the sheet');
+    run(`window._loginRememberAccount('ammar','<img src=x onerror=alert(1)>')`);
+    run('window.loginOpenAccounts()');
+    const list=app.el('login-acct-list');
+    s.eq('one row per account',list.children.length,2);
+    const names=[];(function walk(n){(n.children||[]).forEach(c=>{if(c.className==='login-acct-n')names.push(c.textContent);walk(c);});})(list);
+    s.ok('a name is set as TEXT, never markup',names.includes('<img src=x onerror=alert(1)>')&&!/<img/.test(list.innerHTML||''));
+    s.eq('the sheet opens',app.el('login-accounts').hidden,false);
+  }
+  {
+    const {app,run}=boot();
+    run(`window._loginRememberAccount('ammar','Ammar');window._loginRememberAccount('afnan','Afnan')`);
+    run(`_authStore('groovy-passkey',JSON.stringify({afnan:{id:'AQIDBAUGBwgJCgsMDQ4PEA',name:'Afnan'}}))`);
+    run(`var __fp=[];window.loginWithFingerprint=function(u){__fp.push(u)}`);
+    s.section('picking an account');
+    run(`window.loginPickAccount('ammar')`);
+    await new Promise(r=>setTimeout(r,300));
+    s.eq('no fingerprint key here: the username is filled',app.el('l-user').value,'ammar');
+    s.eq('… and nothing is signed in on its own',run('__fp.length'),0);
+    run(`window.loginPickAccount('afnan')`);
+    await new Promise(r=>setTimeout(r,300));
+    s.eq('a fingerprint key here: it signs straight in with it',run('JSON.stringify(__fp)'),'["afnan"]');
+  }
+  {
+    const {run}=boot();
+    run(`var __chrome=0;window.loginFillSaved=function(){__chrome++}`);
+    s.section('nobody on this phone\'s list yet');
+    run('window.loginOpenAccounts()');
+    s.eq('the key falls back to the phone\'s own saved-password list',run('__chrome'),1);
+  }
+
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────
   {
     const fs=require('fs'),path=require('path');
