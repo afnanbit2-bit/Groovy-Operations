@@ -1617,6 +1617,48 @@ module.exports=async function(){
     a.run('clearTimeout(_tbLiveTimer);_tbLiveTimer=null');
   }
 
+  // The open list outlived the Lists page, and every quick-add used it as
+  // the default: after opening a SHARED list, a note-to-self added on the
+  // Dashboard went into it and became visible to the list's members
+  // (review of f256c83).
+  s.section('a new item goes into a list only when that list is on screen');
+  {
+    const mk=page=>{
+      const a=loadApp({files:FILES,currentPage:page});
+      a.run('session='+J(AMMAR));a.run('currentPage='+J(page));
+      a.run('tbItems=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[];'
+        +'tbLists=[{id:"L",title:"team",kind:"shared",adminUid:"u-ammar",memberUids:["u-ammar","u-afnan"]}];_tbListId="L"');
+      return a;
+    };
+    const created=a=>{const w=a.state.writes.filter(x=>x.op==='set'&&x.data&&x.data.title==='call baber')[0];return w&&w.data;};
+    {
+      const a=mk('tb-lists');
+      await a.run('window.tbCreateFromQuick("call baber",false,true)');
+      const d=created(a)||{};
+      s.eq('on the open list, it goes into that list',d.listId,'L');
+      s.eq('and takes its visibility',d.visibility,'shared');
+    }
+    {
+      const a=mk('tb-dash');
+      await a.run('window.tbCreateFromQuick("call baber",false,true)');
+      const d=created(a)||{};
+      s.eq('on the Dashboard, with that list last opened, it goes into NO list',d.listId,null);
+      s.eq('so a note-to-self is not shown to that list\'s members',d.visibility,'private');
+    }
+    {
+      const a=mk('tb-calendar');
+      s.eq('nor does the calendar default to it',a.run('_tbQaList()'),null);
+    }
+    {
+      const a=mk('tb-dash');
+      a.run('_tbListId=null;var __to=[];showPage=function(p){__to.push(p);currentPage=p;};prompt=function(){return "Winter extras";};'
+        +'doc=function(){return{id:"NEWLIST"};}');
+      await a.run('window.tbNewList("private")');
+      s.eq('+ New list from the rail opens the new list on the Lists page',J(a.run('__to')),J(['tb-lists']));
+      s.ok('with it selected there',!!a.run('_tbListId')&&a.run('_tbViewList()')===a.run('_tbListId'));
+    }
+  }
+
   // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
   s.section('the composer: no date means undated, never today');
   {

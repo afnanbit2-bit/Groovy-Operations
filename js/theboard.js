@@ -1431,9 +1431,19 @@ function _tbSaneDay(d){
   const y=Number(String(d).slice(0,4));
   return y>=2000&&y<=2099;
 }
+/** The list on SCREEN: the one open on the Lists page, else none.
+ *  `_tbListId` outlives the page (it is what the Lists page reopens), so it
+ *  is never the default for a new item anywhere else -- it used to be, and
+ *  after opening any list, or making one from the rail, a Dashboard or
+ *  calendar add went silently into that list and took its visibility
+ *  (review of f256c83). */
+function _tbViewList(){
+  return(_tbOnPage('tb-lists')&&_tbListId&&tbLists.some(l=>l.id===_tbListId))?_tbListId:null;
+}
+function _tbOnPage(id){ return String((typeof currentPage!=='undefined'&&currentPage)||'')===id; }
 /** The list a new item lands in: the chip's choice, else the list you are
  *  looking at, else none. */
-function _tbQaList(){ return _tbQa.listId!==undefined?(_tbQa.listId||null):(_tbListId||null); }
+function _tbQaList(){ return _tbQa.listId!==undefined?(_tbQa.listId||null):_tbViewList(); }
 function _tbQaParse(){
   return tbParseQuickAdd(_tbQa.text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
 }
@@ -1470,7 +1480,7 @@ function _tbComposer(placeholder){
 }
 function _tbQaChipsHTML(){
   const today=_tbToday(),me=_tbMe();
-  const plan=tbComposerPlan(_tbQaParse(),_tbQa,me,_tbListId);
+  const plan=tbComposerPlan(_tbQaParse(),_tbQa,me,_tbViewList());
   const keep=' onpointerdown="event.preventDefault()"';   // the caret stays in the title
   const dateBtn=(d,l)=>'<button type="button" class="tb-qachip'+(plan.date===d?' on':'')+'"'+keep
     +' onclick="window.tbQaDate(\''+_tbEsc(d)+'\')">'+_tbEsc(l)+'</button>';
@@ -1514,7 +1524,7 @@ function _tbQaPaint(){
   if(chips&&typing){
     const now=document.getElementById('tb-qa-datenow');
     if(now){
-      const plan=tbComposerPlan(_tbQaParse(),_tbQa,_tbMe(),_tbListId);
+      const plan=tbComposerPlan(_tbQaParse(),_tbQa,_tbMe(),_tbViewList());
       now.textContent=plan.date?tbDayLabel(plan.date,_tbToday()):'no date';
     }
   }else if(chips){ chips.innerHTML=_tbQa.open?_tbQaChipsHTML():''; _tbFpPrune(false); _tbPickers(chips); }
@@ -1523,7 +1533,7 @@ function _tbQaPaint(){
   const out=document.getElementById('tb-qa-prev');
   if(!out)return;
   const parsed=_tbQaParse();
-  const plan=tbComposerPlan(parsed,_tbQa,_tbMe(),_tbListId);
+  const plan=tbComposerPlan(parsed,_tbQa,_tbMe(),_tbViewList());
   const names={};
   Object.keys(tbHandleMap()).forEach(h=>{names[h]=tbUser(tbHandleMap()[h]).name;});
   const others=plan.assigneeUids.filter(u=>u!==_tbMe()).map(u=>tbUser(u).name);
@@ -1558,15 +1568,15 @@ window.tbQaDateBlur=function(){ if(_tbQa.open)setTimeout(_tbQaPaint,0); };
 window.tbQaAssign=function(uid){
   const q=_tbQa;
   q.unassign=q.unassign||[];
-  const on=tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbListId).assigneeUids.indexOf(uid)>-1;
+  const on=tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbViewList()).assigneeUids.indexOf(uid)>-1;
   const rm=(a,u)=>{ const i=a.indexOf(u); if(i>-1)a.splice(i,1); };
   if(on){
     rm(q.assign,uid);
     // Still on means the TITLE named them: switch that off too.
-    if(tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbListId).assigneeUids.indexOf(uid)>-1)q.unassign.push(uid);
+    if(tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbViewList()).assigneeUids.indexOf(uid)>-1)q.unassign.push(uid);
   }else{
     rm(q.unassign,uid);
-    if(tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbListId).assigneeUids.indexOf(uid)<0)q.assign.push(uid);
+    if(tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbViewList()).assigneeUids.indexOf(uid)<0)q.assign.push(uid);
   }
   _tbQaPaint();
 };
@@ -1622,7 +1632,7 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
   if(!parsed.title){ _tbToast('Give it a title.'); return; }
   // The chips count only when the text came FROM the composer; a caller
   // passing plain text (a test, a future shortcut) gets the grammar alone.
-  const plan=tbComposerPlan(parsed,fromComposer?_tbQa:{},me,_tbListId);
+  const plan=tbComposerPlan(parsed,fromComposer?_tbQa:{},me,_tbViewList());
   // CLEARED BEFORE THE WRITE, not after it (review of 05431c2). The text
   // used to stay in the box until commit() resolved -- a network round
   // trip, and never, offline -- so a second Enter (a double press, key
@@ -1907,8 +1917,11 @@ window.tbNewList=async function(kind){
     await setDoc(ref,data);
     _tbLiveRemember('lists_admin',ref.id,data);
     _tbUpsert(tbLists,Object.assign({id:ref.id},data));
+    // Open it where it can be seen -- on the Lists page -- rather than
+    // leaving it selected behind whatever page the rail was pressed on.
     _tbListId=ref.id;
-    _tbRepaint();
+    if(_tbOnPage('tb-lists'))_tbRepaint();
+    else if(typeof showPage==='function')showPage('tb-lists'); else window.showPage('tb-lists');
   },'create the list');
 };
 window.tbOpenList=function(id){ _tbListId=id; _tbRepaint(); };
