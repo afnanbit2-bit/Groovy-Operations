@@ -237,6 +237,42 @@ module.exports=async function(){
     s.eq('a refusal after the dialog was up is the person cancelling: no card',run('__offer'),1);
   }
 
+  // ── pull down to refresh ──────────────────────────────────────────────
+  {
+    const {app,run}=boot();
+    s.section('pull to refresh: the rubber band');
+    const d=x=>run(`_ptrDistance(${x})`);
+    s.eq('no pull, no movement',d(0),0);
+    s.ok('it follows the finger',d(50)>0&&d(100)>d(50));
+    s.ok('… with resistance (less than the finger moved)',d(100)<100);
+    s.ok('… and never past the cap',d(5000)<=128);
+    s.ok('the threshold is reachable with a normal pull (~120px)',d(120)>=72);
+
+    run(`var __ref=0;var __sc=document.getElementById('ptr-sc');__sc.scrollTop=0;
+      _gvPullToRefresh(__sc,document.getElementById('ptr-ind'),function(){__ref++;return Promise.resolve();})`);
+    const sc=app.el('ptr-sc');
+    const T=y=>({touches:[{clientY:y}],cancelable:true});
+    s.section('pull to refresh: the gesture');
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(140));app.fire(sc,'touchend',{});
+    await new Promise(r=>setTimeout(r,5));
+    s.eq('a short pull does not refresh',run('__ref'),0);
+    app.fire(sc,'touchstart',T(100));
+    const mv=app.fire(sc,'touchmove',T(320));
+    s.ok('a pull takes the gesture from the browser (preventDefault)',mv.defaultPrevented);
+    s.ok('the arrow flips when a release will refresh',app.el('ptr-ind').classList.contains('ready'));
+    app.fire(sc,'touchend',{});
+    await new Promise(r=>setTimeout(r,5));
+    s.eq('a long pull, released, refreshes once',run('__ref'),1);
+    sc.scrollTop=50;
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(400));app.fire(sc,'touchend',{});
+    await new Promise(r=>setTimeout(r,5));
+    s.eq('not while the screen is scrolled down (keyboard open): that drag is a scroll',run('__ref'),1);
+    sc.scrollTop=0;
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(300));app.fire(sc,'touchmove',T(110));app.fire(sc,'touchend',{});
+    await new Promise(r=>setTimeout(r,5));
+    s.eq('pulled past and back again: no refresh',run('__ref'),1);
+  }
+
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────
   {
     const fs=require('fs'),path=require('path');

@@ -9143,6 +9143,16 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   card, whose button is a tap; a later refusal is a cancel and is left
   alone — a timing heuristic, labelled as one. The card is now marked
   offered only when ANSWERED.
+- **Pull down to refresh on the login and lock screens is OURS**
+  (`_gvPullToRefresh`, js/auth.js), because `overscroll-behavior:none` —
+  the no-scroll fix — also switches off the browser's own. Rubber band
+  `128·(1−e^(−dy/140))`, refresh at 72 (≈120px of finger), a ring that
+  fills, an arrow that flips with a buzz, the card following at 0.4×. It
+  only starts at `scrollTop 0` (with the keyboard open the drag is a
+  scroll) and takes the gesture with `preventDefault`. A release first asks
+  the service worker to `update()` (≤2.5s) and then reloads — so a pull
+  also brings in a new build, which a plain reload behind a cache-first
+  worker does not promise. Driven in `tests/login.test.js`.
 - **Chrome's own "Use saved password?" sheet is not the fingerprint lock.**
   The lock comes AFTER a Remember-me sign-in (offered once) and then
   replaces the login on every reopen. Asking for a fingerprint before

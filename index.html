@@ -22,7 +22,7 @@
 </script>
 <!-- flatpickr's base sheet FIRST, so css/main.css restyles it to the app's tokens (The Board, P1). -->
 <link rel="stylesheet" href="/assets/vendor/flatpickr-4.6.13.min.css">
-<link rel="stylesheet" href="/css/main.css?v=20260926v209">
+<link rel="stylesheet" href="/css/main.css?v=20260926v210">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#000000">
 <script>try{if(window.__gvThemeDark)document.querySelector('meta[name="theme-color"]').setAttribute('content','#0E0E10');}catch(e){}</script>
@@ -46,6 +46,7 @@ if('serviceWorker' in navigator){
      a password anywhere — see js/auth.js, "Login, persistence and the app
      lock". -->
 <div id="scr-login">
+  <div class="ptr" id="login-ptr" aria-hidden="true"><svg viewBox="0 0 24 24"><circle class="ptr-track" cx="12" cy="12" r="8.5"/><circle class="ptr-arc" cx="12" cy="12" r="8.5"/><path class="ptr-arrow" d="M12 8v8M8.5 12.5 12 16l3.5-3.5"/></svg></div>
   <button type="button" class="login-theme" id="login-theme-btn" onclick="window.loginCycleTheme()" aria-label="Change theme" title="Theme"></button>
   <form class="login-box" id="login-form" method="post" action="#" autocomplete="on" novalidate onsubmit="event.preventDefault();window.doLogin()">
     <div class="login-logo">
@@ -86,6 +87,7 @@ if('serviceWorker' in navigator){
 <!-- ══ APP LOCK ══ — fingerprint / phone PIN before a kept session opens.
      js/auth.js decides when it shows; nothing here is a password. -->
 <div id="scr-lock" hidden>
+  <div class="ptr" id="lock-ptr" aria-hidden="true"><svg viewBox="0 0 24 24"><circle class="ptr-track" cx="12" cy="12" r="8.5"/><circle class="ptr-arc" cx="12" cy="12" r="8.5"/><path class="ptr-arrow" d="M12 8v8M8.5 12.5 12 16l3.5-3.5"/></svg></div>
   <div class="login-box lock-box">
     <div class="login-logo">
       <div class="login-mark"><img src="assets/groovy-operations-wordmark.png.png" alt="GROOVY"></div>
@@ -185,7 +187,7 @@ window.__vendorFallback=function(url){
 <script src="/js/diagnostics.js?v=20260917type"></script>
 <script src="/js/shared.js?v=20260926v207"></script>
 <script src="/js/print-engine.js?v=20260926v184"></script>
-<script src="/js/auth.js?v=20260926v209"></script>
+<script src="/js/auth.js?v=20260926v210"></script>
 <script src="/js/pos.js?v=20260921emb"></script>
 <script src="/js/embellishments.js?v=20260921emb"></script>
 <script src="/js/hrm.js?v=20260917type"></script>

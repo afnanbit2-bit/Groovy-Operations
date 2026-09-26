@@ -501,6 +501,86 @@ function _authRestoreDecision(user,tabU,keepFlag,rememberedU,defs){
   _loginPaintTheme();
 })();
 
+// ── Pull down to refresh (login + lock) ──
+// The login is a fixed layer with overscroll-behavior:none — that is what
+// stopped it scrolling — and the same property switches off the browser's
+// own pull-to-refresh. So it is rebuilt here, on purpose, with motion:
+// the card follows the finger with resistance, a ring fills as the pull
+// nears the threshold, the arrow flips with a buzz when a release will
+// refresh, and on release the ring spins while the app checks for a NEW
+// VERSION before reloading — so the pull that refreshes also brings in an
+// update, which a plain reload behind a cache-first service worker would
+// not guarantee.
+const _PTR_READY=72, _PTR_MAX=128;
+function _ptrDistance(dy){           // rubber band: easy at first, harder later
+  if(dy<=0)return 0;
+  return Math.min(_PTR_MAX,_PTR_MAX*(1-Math.exp(-dy/140)));
+}
+function _gvPullToRefresh(scroller,indicator,onRefresh){
+  if(!scroller||!indicator||scroller.__ptr)return;
+  scroller.__ptr=true;
+  const card=scroller.querySelector('.login-box');
+  const arc=indicator.querySelector('.ptr-arc');
+  let y0=null,pull=0,ready=false,busy=false,tracking=false;
+  const paint=(p,anim)=>{
+    const t=anim?'transform .45s cubic-bezier(.2,.9,.25,1.15), opacity .3s':'none';
+    indicator.style.transition=t;
+    indicator.style.transform='translate(-50%,'+(p-56)+'px) rotate('+(p*2.4)+'deg)';
+    indicator.style.opacity=String(Math.min(1,p/40));
+    if(arc)arc.style.strokeDashoffset=String(53.4*(1-Math.min(1,p/_PTR_READY)));
+    if(card){card.style.transition=anim?'transform .45s cubic-bezier(.2,.9,.25,1.15)':'none';
+      card.style.transform=p?'translateY('+(p*0.4)+'px)':'';}
+  };
+  scroller.addEventListener('touchstart',e=>{
+    if(busy||e.touches.length!==1||scroller.scrollTop>0){y0=null;return;}
+    y0=e.touches[0].clientY;tracking=false;pull=0;ready=false;
+  },{passive:true});
+  scroller.addEventListener('touchmove',e=>{
+    if(y0==null||busy)return;
+    const dy=e.touches[0].clientY-y0;
+    if(!tracking){if(dy<6)return;tracking=true;}
+    if(e.cancelable)e.preventDefault();
+    pull=_ptrDistance(dy);
+    const nowReady=pull>=_PTR_READY;
+    if(nowReady!==ready){
+      ready=nowReady;indicator.classList.toggle('ready',ready);
+      if(ready&&navigator.vibrate)try{navigator.vibrate(8);}catch(_){}
+    }
+    paint(pull,false);
+  },{passive:false});
+  const end=()=>{
+    if(y0==null)return;y0=null;
+    if(!tracking)return;tracking=false;
+    if(ready&&!busy){
+      busy=true;indicator.classList.remove('ready');indicator.classList.add('spin');
+      paint(_PTR_READY,true);
+      Promise.resolve(onRefresh()).catch(()=>{}).then(()=>{
+        busy=false;indicator.classList.remove('spin');paint(0,true);
+      });
+    }else{indicator.classList.remove('ready');paint(0,true);}
+  };
+  scroller.addEventListener('touchend',end,{passive:true});
+  scroller.addEventListener('touchcancel',end,{passive:true});
+}
+// Check for a new build, give it a moment to take over, then reload.
+async function _ptrRefresh(){
+  const started=Date.now();
+  try{
+    if(navigator.serviceWorker&&navigator.serviceWorker.getRegistration){
+      const reg=await navigator.serviceWorker.getRegistration();
+      if(reg){await Promise.race([reg.update(),new Promise(r=>setTimeout(r,2500))]);}
+    }
+  }catch(_){}
+  const wait=Math.max(0,700-(Date.now()-started));   // long enough to SEE it spin
+  await new Promise(r=>setTimeout(r,wait));
+  location.reload();
+  return new Promise(()=>{});                         // stay spinning until the page goes
+}
+try{
+  _gvPullToRefresh(document.getElementById('scr-login'),document.getElementById('login-ptr'),_ptrRefresh);
+  _gvPullToRefresh(document.getElementById('scr-lock'),document.getElementById('lock-ptr'),_ptrRefresh);
+}catch(_){}
+
 window.loginForgot=function(){
   const h=document.getElementById('login-help');
   if(h)h.hidden=!h.hidden;

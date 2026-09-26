@@ -220,6 +220,36 @@ html.app-locked,html.app-locked body{overflow:hidden}
 .lock-print:active{transform:scale(.97)}
 .lock-msg{min-height:22px;text-align:center;font-size:14px;color:var(--muted);margin-bottom:14px}
 .lock-alt{display:block;margin:-22px auto 26px}
+/* Pull-to-refresh indicator: a ring that fills with the pull, an arrow
+   that flips when a release will refresh, a spin while it does. Placed by
+   js (_gvPullToRefresh); hidden above the top edge at rest. */
+.ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 8px);z-index:3;width:44px;height:44px;border-radius:50%;
+  background:var(--surface);border:1px solid var(--border);box-shadow:0 6px 18px rgba(0,0,0,.18);
+  display:flex;align-items:center;justify-content:center;transform:translate(-50%,-56px);opacity:0;pointer-events:none;color:var(--text)}
+.ptr svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ptr .ptr-track{stroke:var(--border)}
+.ptr .ptr-arc{stroke-dasharray:53.4;stroke-dashoffset:53.4;transform:rotate(-90deg);transform-origin:12px 12px}
+.ptr .ptr-arrow{transition:transform .2s ease;transform-origin:12px 12px}
+.ptr.ready .ptr-arrow{transform:rotate(180deg)}
+.ptr.spin svg{animation:ptrSpin .8s linear infinite}
+.ptr.spin .ptr-arrow{opacity:0}
+.ptr.spin .ptr-arc{stroke-dashoffset:38}
+@keyframes ptrSpin{to{transform:rotate(360deg)}}
+/* Entrance: the pieces of the card rise in, one after another. */
+@keyframes loginRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#scr-login .login-box>*{animation:loginRise .5s cubic-bezier(.2,.8,.2,1) both}
+#scr-login .login-box>:nth-child(1){animation-delay:.02s}
+#scr-login .login-box>:nth-child(2){animation-delay:.08s}
+#scr-login .login-box>:nth-child(3){animation-delay:.13s}
+#scr-login .login-box>:nth-child(n+4){animation-delay:.18s}
+#scr-login .login-box>:nth-child(n+8){animation-delay:.23s}
+#scr-login .login-box>:nth-child(n+10){animation-delay:.28s}
+/* Switching theme on the login cross-fades instead of snapping. */
+#scr-login,#scr-login .login-box,#scr-login .login-input,#scr-login .btn-login,#scr-login .login-theme,#scr-login .login-box-tick{transition:background-color .35s ease,border-color .35s ease,color .35s ease,box-shadow .15s,opacity .15s,transform .1s}
+@media (prefers-reduced-motion:reduce){
+  #scr-login .login-box>*{animation:none}
+  .ptr.spin svg{animation-duration:2s}
+}
 /* The one-time offer after sign-in: above the mobile nav and the bug FAB. */
 .lock-offer{position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:600;max-width:420px;margin:0 auto;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.25);animation:loginFadeIn .25s ease}
 .lock-offer-t{font-weight:700;font-size:15px;margin-bottom:4px}
