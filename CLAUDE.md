@@ -9070,6 +9070,74 @@ PDF row as a ninth row (`got 2, expected 1` pages) and dropping the search
 field — each fails by name. **Nobody has picked a new master or printed the
 PDF on a real screen** — the sandbox cannot sign in.
 
+## Login, Remember me and the fingerprint lock (26 Sept 2026)
+
+Afnan sent a phone mockup of the login (dark + light) and asked for the
+phone logic around it: theme, saved passwords, fingerprint. `js/auth.js`,
+section "Login, persistence and the app lock"; markup in `index.html`
+(`#scr-login`, `#scr-lock`); `tests/login.test.js`; a `smoke-layout`
+fragment `login — the sign-in screen and the fingerprint lock`.
+
+- **A LIVE BUG FIXED WITH IT: "Remember me" never kept anyone signed in.**
+  It saved the username only; the restore in `onAuthStateChanged`
+  (`js/shared.js`) needed sessionStorage `'u'`, which a phone clears every
+  time the installed app is closed — so everyone retyped their password on
+  every open. The restore now finds the account by the signed-in **email**
+  and follows the person's choice (`_authRestoreDecision`, pure, tested):
+  Remember me ticked → `browserLocalPersistence` + flag
+  `groovy-keep-signed-in='1'`; unticked → `browserSessionPersistence`. A
+  session from the old build with no flag is kept only if the old build had
+  remembered that username. `setPersistence` and both persistences are
+  bridged in `index.html`.
+- **THE APP NEVER STORES A PASSWORD.** "Save password" is the phone's own
+  manager: the login is a real `<form>` (`autocomplete=username` /
+  `current-password`, a submit button — the password field no longer calls
+  `doLogin` on Enter, or the form would sign in twice), and on success, only
+  with Remember me ticked, the password is OFFERED via
+  `navigator.credentials.store(new PasswordCredential(...))`. A test asserts
+  the password appears nowhere in app storage.
+- **Fingerprint = APP LOCK, Afnan's choice over passkey sign-in.** WebAuthn,
+  platform authenticator, `userVerification:'required'`; the credential id
+  is kept in `localStorage['groovy-applock']` per uid, nothing goes to a
+  server and the app never sees a fingerprint. It locks a kept session on a
+  **cold open** (not a same-tab reload) and after **5 minutes** in the
+  background. It opens only when the authenticator data's **UV bit** is set
+  (presence alone is refused). It **never strands anyone**: no record, no
+  WebAuthn, or an old cached `index.html` with no `#scr-lock` → straight
+  in; "Use password instead" signs out to the login. Offered once per
+  person per device after a Remember-me sign-in; switched in **Profile →
+  Fingerprint lock**. It guards an unattended phone; it is not a login on a
+  new device. **Passkey sign-in (fingerprint INSTEAD of the password) was
+  the other option** — it needs a Netlify function to verify the assertion
+  and mint a custom token, and was deliberately not built.
+- **Forgot password?** opens a note, not an email: `@groovy.op` inboxes are
+  not real, so it names who can set a new one (Afnan, Ammar, Mustafa).
+- **The wordmark is cropped, not re-drawn**: the PNG is "groovy® OPERATIONS"
+  on one line; `.login-mark` shows its first 448 of 744px and OPERATIONS is
+  spaced text. The theme pill cycles Light → Dark → Auto and writes the same
+  `groovy-theme` key Profile → Appearance does.
+- **The login does not scroll (fixed 26 Sept, from Afnan's phone).** It
+  was a page in the document flow under `body{min-height:100vh}`; on
+  Android `100vh` is the LARGE viewport while the card was `100dvh`, so the
+  document was taller than the card and the screen scrolled onto a bare
+  strip. **That cause is reasoned, not reproduced** — an iframe's vh equals
+  its dvh, so the sandbox cannot show the difference. `#scr-login` is now
+  `position:fixed` at `100dvh` with its own `overflow-y:auto` and
+  `overscroll-behavior:none`, and `html.gv-login` (added at load, removed
+  in `startApp`) stops everything behind it scrolling. Measured at 390px
+  wide: nothing scrolls at 844/740/667px, nor at 420/380px (keyboard open,
+  where the heading, subtitle, footer and theme pill hide). **600px scrolls
+  24px**, with Sign in still on screen. The first cut stretched the card to
+  the layer, which squashed Sign in to **22px** with the keyboard open —
+  the card is `flex-start` + `min-height:100%` and its children don't shrink.
+- **Chrome's own "Use saved password?" sheet is not the fingerprint lock.**
+  The lock comes AFTER a Remember-me sign-in (offered once) and then
+  replaces the login on every reopen. Asking for a fingerprint before
+  Chrome FILLS a password is Chrome's setting, not the app's.
+- **Nobody has signed in, saved a password or used the lock on a real
+  phone** — the sandbox cannot sign in. Rendered and measured in headless
+  Chromium at 390/360px and desktop, both themes.
+
 ## Credentials — never in client code
 
 `js/*.js`, `css/*` and every `*.html` are **public static assets**, served

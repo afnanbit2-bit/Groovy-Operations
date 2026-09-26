@@ -2322,9 +2322,24 @@ document.addEventListener('keydown',e=>{
 onAuthStateChanged(auth,async user=>{
   if(loginInProgress)return;
   if(user&&!session){
-    const saved=sessionStorage.getItem('u');
-    const def=saved?USER_DEFS.find(x=>x.u===saved):null;
-    if(def){session={...def,uid:user.uid};startApp();}
+    // Who this is comes from the signed-in EMAIL, and whether to let them
+    // straight back in is their Remember-me choice — see
+    // _authRestoreDecision (js/auth.js). It used to need sessionStorage,
+    // which a phone clears whenever the installed app is closed, so
+    // "Remember me" never actually kept anyone signed in.
+    let saved=null;try{saved=sessionStorage.getItem('u');}catch(_){}
+    const d=(typeof _authRestoreDecision==='function')
+      ?_authRestoreDecision(user,saved,_authRead('groovy-keep-signed-in'),_authRead('groovy_remembered_user'))
+      :{def:saved?USER_DEFS.find(x=>x.u===saved):null,allow:!!saved,cold:false};
+    if(d.def&&d.allow){
+      session={...d.def,uid:user.uid};
+      // A fresh open of a kept session on a phone with the fingerprint lock
+      // on: nothing renders until the phone says yes. Waiting on a PERSON
+      // is not the network wait that blanked the app once — the lock
+      // screen is on screen with a way out.
+      if(d.cold&&typeof lockEnabledFor==='function'&&lockEnabledFor(user.uid))_lockShow(session,()=>startApp());
+      else startApp();
+    }
     else{await signOut(auth);document.getElementById('scr-login').style.display='flex';}
   }else if(!user&&!session){
     document.getElementById('scr-login').style.display='flex';

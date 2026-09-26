@@ -214,6 +214,7 @@ function renderProfilePage(){
     </div>`:''}
     ${_profileEdit?_profileEditCardHTML():_profileViewCardHTML(me)}
     ${_profileAppearanceHTML()}
+    ${_profileSecurityHTML()}
     ${_profileDirectoryHTML()}`;
 }
 
@@ -339,6 +340,29 @@ function _profileAppearanceHTML(){
       ${opt('dark','Dark','Always dark')}
       ${opt('system','System','Follows your device')}
     </div>
+  </div>`;
+}
+
+// ── Security: the fingerprint lock (this device) ──
+// The lock itself lives in js/auth.js (it has to run before the app does).
+// This card only switches it, and says plainly what it is and is not: a
+// lock on this phone over a kept session — not a way to sign in elsewhere,
+// and the app never sees a fingerprint.
+function _profileSecurityHTML(){
+  const can=typeof lockEnabledFor==='function'&&typeof _lockSupported==='function';
+  const on=can&&lockEnabledFor(session.uid);
+  const supported=can&&_lockSupported();
+  const kept=(function(){try{return localStorage.getItem('groovy-keep-signed-in')!=='0';}catch(_){return true;}})();
+  return`<div class="card">
+    <div style="font-weight:700;margin-bottom:4px">Fingerprint lock</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${on
+      ?'On for this device. The app asks for your fingerprint, face or phone PIN when you open it, and again after 5 minutes away.'
+      :supported
+        ?'Stay signed in on this phone and unlock the app with your fingerprint, face or phone PIN instead of typing your password. Only this device; your fingerprint never leaves the phone.'
+        :'This browser cannot do a fingerprint lock. On a phone, open Groovy Ops in Chrome or Safari, or from the installed app.'}</div>
+    ${on&&!kept?`<div style="font-size:13px;color:var(--accent-warning);margin-bottom:10px">You signed in without Remember me, so you will be signed out when the app closes and the lock will not come up.</div>`:''}
+    ${on?`<button class="btn-sm" onclick="window.lockDisable();_profileRerender()">Turn off</button>`
+      :supported?`<button class="btn-sm" onclick="window.lockEnable().then(()=>_profileRerender())">Turn on</button>`:''}
   </div>`;
 }
 
