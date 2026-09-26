@@ -192,7 +192,11 @@ async function startApp(){
   // the drop runs on it, so it is the first thing they see. Each role's
   // own data still loads exactly as before -- only the page they land on
   // changes, and every other account lands where it always did.
-  const boardHome=(typeof isBoardUser==='function'&&isBoardUser())
+  // ONLY WHEN THE BOARD LOADED: if js/theboard.js failed to parse, four of
+  // these five have a normal home, and landing them on "The Board did not
+  // load" would strand them there (review of b43a3db). Saim has no other
+  // page, and showPage's designer scope still sends him to the Board.
+  const boardHome=(typeof isBoardUser==='function'&&isBoardUser()&&typeof tbRenderPage==='function')
     ?((typeof TB_HOME!=='undefined'&&TB_HOME)||'tb-dash'):null;
   if(session.role==='store'){
     loadStoreData();

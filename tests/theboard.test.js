@@ -2127,6 +2127,22 @@ module.exports=async function(){
     // Nobody else moves: the gate is the Board list, not a role.
     s.eq('Arfat (a manager, not on The Board) lands where he always did',await land(ARFAT),'dashboard');
     s.eq('a worker lands on My Work',await land(HARIS),'my-work');
+    // If js/theboard.js failed to load, the Board users with another home
+    // go there rather than to "The Board did not load" (review of b43a3db).
+    {
+      const landNoBoard=async sess=>{
+        const a=loadApp({files:NAV_FILES.filter(f=>f!=='js/theboard.js'),currentPage:'',globals:{loadData:()=>{},loadStoreData:()=>{},
+          loadStoreNotifications:()=>{},profileBootstrap:()=>{},mktBootstrap:()=>{},
+          sessionStorage:{getItem:()=>null,setItem(){},removeItem(){},clear(){}}}});
+        a.run('session='+J(sess));
+        a.run('globalThis.__landed=[];showPage=function(id){__landed.push(id);}');
+        await a.run('startApp()');
+        return a.run('__landed.join()');
+      };
+      s.ok('the check leaves theboard.js out',NAV_FILES.indexOf('js/theboard.js')>-1);
+      s.eq('without The Board loaded, Ammar lands on his dashboard',await landNoBoard(AMMAR),'dashboard');
+      s.eq('and Daniyal on the Creator Database',await landNoBoard(DANIYAL),'mkt-creators');
+    }
 
     const sheet=(sess,fn)=>{
       const a=loadApp({files:NAV_FILES,currentPage:'dashboard'});
