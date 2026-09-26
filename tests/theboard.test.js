@@ -927,11 +927,18 @@ module.exports=async function(){
     s.ok('and says nothing about it',plan('u-ammar',false,'2026-10-25').reason==='');
     s.ok('a date that is not a date is refused',plan('u-ammar',true,'not-a-day').refused===true);
 
-    // An UNLOCKED item is anyone's to move, which is the normal case.
+    // An UNLOCKED item moves for anyone ON it, which is the normal case.
+    // It said "anyone's" and used Daniyal, who is not on it -- a move the
+    // rules refuse (review of 2ab0a8f).
     const open=J({id:'i2',title:'x',date:'2026-10-05',datePlanned:'2026-10-05',
-      ownerUid:'u-ammar',assigneeUids:['u-ammar'],status:'open',visibility:'shared',dateHistory:[],steps:[]});
-    s.ok('an unlocked item moves for a member',
-      !a.run('tbMovePlan('+open+',"2026-10-06","u-dani",false,'+NOW+')').refused);
+      ownerUid:'u-ammar',assigneeUids:['u-ammar','u-must'],status:'open',visibility:'shared',dateHistory:[],steps:[]});
+    s.ok('an unlocked item moves for someone on it',
+      !a.run('tbMovePlan('+open+',"2026-10-06","u-must",false,'+NOW+')').refused);
+    const notOn=a.run('tbMovePlan('+open+',"2026-10-06","u-dani",false,'+NOW+',[])');
+    s.ok('but not for someone who is not on it -- the rules refuse that',notOn.refused&&notOn.notOn===true);
+    s.eq('and it says why',notOn.reason,'only the people on it can move it');
+    s.ok('the admin of its list may',!a.run('tbMovePlan('+open.replace('"steps":[]','"steps":[],"listId":"L"')
+      +',"2026-10-06","u-dani",false,'+NOW+',[{id:"L",adminUid:"u-dani"}])').refused);
 
     s.eq('the keyboard nudges a day',a.run('tbNudgeTarget({date:"2026-10-25"},1)'),'2026-10-26');
     s.eq('and a week',a.run('tbNudgeTarget({date:"2026-10-25"},7)'),'2026-11-01');
@@ -1696,6 +1703,55 @@ module.exports=async function(){
     const bad=sites.filter(x=>!/^\\''\+(_tbJs\(|jid\+)/.test(x));
     s.ok('found the handler arguments',sites.length>20,sites.length+' sites');
     s.eq('every one is _tbJs, never _tbEsc or a raw value',bad.join(' | '),'');
+  }
+
+  // The rules let an assignee, the owner, the list's admin or a Board owner
+  // change an item; a shared item is READ by everyone. The UI offered the
+  // star, the tick, the drag and every pane field to every reader, and each
+  // was refused with a message blaming a lock or an undeployed ruleset
+  // (review of 2ab0a8f).
+  s.section('someone not on an item can read it and comment, and is offered nothing else');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(DANIYAL));a.run('currentPage="tb-dash"');
+    const it={id:'x1',title:'Hyderabad supplier',status:'open',ownerUid:'u-afnan',assigneeUids:['u-afnan','u-must'],
+      visibility:'shared',date:'2026-10-01',listId:'L',steps:[{id:'s1',title:'call',done:false}],notes:'n'};
+    a.run('tbItems=[tbDecodeItem('+J(it)+')];tbLists=[{id:"L",title:"team",kind:"shared",adminUid:"u-afnan",memberUids:["u-afnan","u-dani"]}];'
+      +'tbLoaded=true;_tbLoadErrors=[];userProfiles=[];_tbThreads={x1:{comments:[],activity:[],err:false}}');
+    const C=(uid,own,lists)=>a.run('tbCanEdit('+J(it)+','+J(uid)+','+J(own)+','+J(lists||[])+')');
+    s.eq('an assignee may change it',C('u-must',false),true);
+    s.eq('its owner may',C('u-afnan',false),true);
+    s.eq('a Board owner may',C('u-dani',true),true);
+    s.eq('the admin of its list may',C('u-dani',false,[{id:'L',adminUid:'u-dani'}]),true);
+    s.eq('a list MEMBER who is not on it may not',C('u-dani',false,[{id:'L',adminUid:'u-afnan'}]),false);
+    s.eq('nor anyone else',C('u-dani',false),false);
+    s.eq('nor nobody',C('',false),false);
+    const row=a.run('_tbRow(tbItems[0],"2026-09-26",{})');
+    s.ok('the row has no star',!/tb-star/.test(row));
+    s.ok('and its tick is disabled, saying why',/class="tb-check"[^>]*title="Only the people on this item can change it"[^>]*disabled/.test(row));
+    a.run('_tbOpenItemId="x1"');
+    const d=a.run('_tbDrawer()');
+    s.ok('the pane says so',/You are not on this item, so you can read it and comment, but not change it\./.test(d));
+    s.ok('the title cannot be edited',/id="tb-d-title"[^>]*readonly/.test(d));
+    s.ok('nor the note',/id="tb-d-notes"[^>]*readonly/.test(d));
+    s.ok('the list, lane, priority and kind are disabled',['tb-d-list','tb-d-lane','tb-d-pri','tb-d-kind']
+      .every(k=>new RegExp('id="'+k+'"[^>]*disabled').test(d)));
+    s.ok('the date is disabled',/id="tb-d-date"[^>]*disabled/.test(d));
+    s.ok('no star, no Hand over, no Mark done',!/tbAddToMyDay|tbOpenHandover|>Mark done</.test(d));
+    s.ok('no step can be added or removed',!/tb-step-new|tbRemoveStep/.test(d));
+    s.ok('no file can be attached or removed',!/tbPickFiles\(\\?'item|tbRemoveFile/.test(d));
+    s.ok('the comment box IS there -- comments are open to every reader',/id="tb-comp"/.test(d));
+    // And the writes themselves refuse, plainly, writing nothing.
+    const w0=a.state.writes.length+a.state.batches.length;
+    ['window.tbToggleDone("x1")','window.tbAddToMyDay("x1")','window.tbFieldChange("title","renamed")',
+     'window.tbToggleStep(0)','window.tbToggleAssignee("u-dani")','window.tbToggleLock("x1")',
+     'window.tbMoveItem("x1","2026-10-09")'].forEach(c=>a.run(c));
+    await new Promise(r=>setTimeout(r,0));
+    s.eq('none of the seven writes anything',a.state.writes.length+a.state.batches.length,w0);
+    // Positive control: on the item, the same pane is editable.
+    a.run('session='+J(Object.assign({},DANIYAL,{uid:'u-must',u:'mustafa'})));
+    const d2=a.run('_tbDrawer()');
+    s.ok('on the item, the title is editable again',!/id="tb-d-title"[^>]*readonly/.test(d2)&&/tbOpenHandover/.test(d2));
   }
 
   // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
@@ -2916,7 +2972,8 @@ module.exports=async function(){
     // too. Daniyal is the person the button exists for.
     a.run('session='+J(DANIYAL));
     s.ok('a locked item offers a way to ask',/tbOpenMoveReq/.test(a.run('_tbDrawer()')));
-    a.run('tbItems[0].lockedBy="u-dani"');
+    // You can only lock what you are on, so the holder is on it here.
+    a.run('tbItems[0].lockedBy="u-dani";tbItems[0].assigneeUids=(tbItems[0].assigneeUids||[]).concat("u-dani")');
     s.ok('the lock holder is not offered it',!/tbOpenMoveReq/.test(a.run('_tbDrawer()')));
     a.run('tbItems[0].lockedBy="u-afnan"');
     a.run('session='+J(AMMAR));
@@ -3314,9 +3371,16 @@ module.exports=async function(){
     a.run('tbItems[0].locked=true;tbItems[0].lockedBy="u-afnan"');
     a.run('userProfiles.push({uid:"u-afnan",username:"afnan",displayName:"Afnan"})');
     a.run('session='+J(DANIYAL));
+    const onBefore=a.run('JSON.stringify(tbItems[0].assigneeUids||[])');
+    a.run('tbItems[0].assigneeUids=["u-ammar","u-dani"]');
     a.run('window.tbOpenMove("i1")');
     s.eq('a locked pill opens no sheet',a.run('_tbMoveId'),null);
     s.ok('and says who holds it',toastsOf(a).some(t=>/locked by Afnan/.test(t)));
+    a.run('tbItems[0].assigneeUids=["u-ammar"];tbItems[0].locked=false');
+    a.run('window.tbOpenMove("i1")');
+    s.eq('someone not on it gets no sheet either',a.run('_tbMoveId'),null);
+    s.ok('and is told why, not blamed on a lock',toastsOf(a).some(t=>/Only the people on this item can change it/.test(t)));
+    a.run('tbItems[0].assigneeUids='+onBefore);
   }
 
   return s;

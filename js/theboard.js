@@ -548,8 +548,33 @@ function tbItemPatch(item,patch,uid,now,reason){
   return {data:out,activity:acts.map(a=>({type:a.type,byUid:uid,at:now,payload:a.payload}))};
 }
 
+/** May this person change this item AT ALL? The first clause of the
+ *  board_items update rule, echoed: someone on it (an assignee or its
+ *  owner), the admin of its list, or a Board owner. A shared item is
+ *  READABLE by every Board user but not writable by them, and the UI used
+ *  to offer the star, the tick, the drag and every pane field to everyone
+ *  who could read it -- each refused by the rules with a message blaming a
+ *  lock or an undeployed ruleset (review of 2ab0a8f). Comments are open
+ *  to every reader and stay so. Pure. */
+function tbCanEdit(item,uid,isOwnerRole,lists){
+  if(!item||!uid)return false;
+  if(isOwnerRole)return true;
+  if(item.ownerUid===uid||(item.assigneeUids||[]).indexOf(uid)>-1)return true;
+  const l=(lists||[]).filter(x=>x&&x.id===item.listId)[0];
+  return !!(l&&l.adminUid===uid);
+}
+const _TB_NOT_ON='Only the people on this item can change it';
+function _tbCanEditIt(it){ return tbCanEdit(it,_tbMe(),_tbIsBoardOwner(),tbLists); }
+/** Say it plainly, once, and write nothing. True when refused. */
+function _tbNotOnIt(it){
+  if(!it||_tbCanEditIt(it))return false;
+  _tbToast('Only the people on this item can change it — leave a comment to ask them.');
+  return true;
+}
+
 /** May this person move this item's date? The UI's echo of the rules
- *  clause — it hides a drag handle, it does not enforce anything. Pure. */
+ *  clause — it hides a drag handle, it does not enforce anything. Pure.
+ *  The LOCK only: whether they may change the item at all is tbCanEdit. */
 function tbCanMoveDate(item,uid,isOwnerRole){
   if(!item)return false;
   if(!item.locked)return true;
@@ -974,6 +999,9 @@ function _tbRow(item,today,o){
   const list=(!o.inList&&item.listId)?tbLists.filter(l=>l&&l.id===item.listId)[0]:null;
   const id=_tbEsc(item.id);
   const jid=_tbJs(item.id);
+  // Someone the rules will not let change it sees no star and a tick that
+  // says why it will not move (review of 2ab0a8f).
+  const canEdit=_tbCanEditIt(item);
   const avatars=others.slice(0,3).map(u=>{
     const p=tbUser(u);
     return'<span class="tb-av" title="'+_tbEsc(p.name)+'">'+_tbEsc(p.initial)+'</span>';
@@ -997,15 +1025,16 @@ function _tbRow(item,today,o){
   // The item open in the pane is marked in the list, so the eye can find
   // what the pane is describing (the To Do pattern).
   return'<div class="tb-row'+(done?' done':'')+(item.priority===2?' crit':'')+(item.id===_tbOpenItemId?' tb-sel':'')+'" data-id="'+id+'">'
-    +'<button class="tb-check'+(done?' on':'')+'" title="'+(done?'Mark not done':'Mark done')+'"'
+    +'<button class="tb-check'+(done?' on':'')+'" title="'+(canEdit?(done?'Mark not done':'Mark done'):_TB_NOT_ON)+'"'
       +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
+      +(canEdit?'':' disabled')
       +' onclick="event.stopPropagation();window.tbToggleDone(\''+jid+'\')">'+_tbIcon('check','sm')+'</button>'
     +'<button class="tb-rowmain" onclick="window.tbOpenItem(\''+jid+'\')">'
       +_tbSlot(item.title||'untitled','tb-rowtitle')
       +(meta?'<span class="tb-rowmeta"><span class="tb-dot tb-c-'+_tbEsc(ck)+'"></span>'+meta+'</span>':'')
     +'</button>'
     // A done item has no day left to be in, so it has no star.
-    +(done?'':'<button class="tb-star'+(starred?' on':'')+'"'
+    +(done||!canEdit?'':'<button class="tb-star'+(starred?' on':'')+'"'
       +' title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
       +' aria-label="'+(starred?'Remove from My Day':'Add to My Day')+'" aria-pressed="'+(starred?'true':'false')+'"'
       +' onclick="event.stopPropagation();window.tbAddToMyDay(\''+jid+'\')">'+_tbIcon('star')+'</button>')
@@ -1243,7 +1272,12 @@ function _tbDrawer(){
   if(!it)return'';
   const me=_tbMe(),today=_tbToday();
   const id=_tbEsc(it.id),jid=_tbJs(it.id);
-  const canMove=tbCanMoveDate(it,me,_tbIsBoardOwner());
+  // READ-ONLY for someone the rules will not let change it: they can read
+  // it and comment, and every other control says so instead of offering a
+  // write that would be refused.
+  const ro=!_tbCanEditIt(it);
+  const dis=ro?' disabled title="'+_TB_NOT_ON+'"':'';
+  const canMove=!ro&&tbCanMoveDate(it,me,_tbIsBoardOwner());
   const pr=tbStepProgress(it);
   const lockedBy=it.locked?tbUser(it.lockedBy):null;
   const moved=it.datePlanned&&it.date&&it.datePlanned!==it.date;
@@ -1261,11 +1295,12 @@ function _tbDrawer(){
     +'<div class="tb-pbar">'
       +'<span class="tb-kind tb-kind-'+_tbEsc(it.kind)+'">'+_tbEsc(_tbCap(it.kind))+'</span>'
       +'<button class="tb-lockbtn'+(it.locked?' on':'')+'" onclick="window.tbToggleLock(\''+jid+'\')"'
-        +(it.locked&&!canMove?' disabled title="only '+_tbEsc(lockedBy.name)+' or a board owner can unlock this"':'')
+        +(ro?dis:(it.locked&&!canMove?' disabled title="only '+_tbEsc(lockedBy.name)+' or a board owner can unlock this"':''))
         +'>'+_tbIcon(it.locked?'lock':'lock-open','sm')+(it.locked?'Locked':'Lock')+'</button>'
       +'<button class="tb-pclose" title="Close (Esc)" aria-label="Close" onclick="window.tbCloseItem()">'+_tbIcon('x')+'</button>'
     +'</div>'
     +(it.locked&&!canMove?'<div class="tb-lockwho">Locked by '+_tbEsc(lockedBy.name)+'</div>':'')
+    +(ro?'<div class="tb-lockwho tb-rowho">You are not on this item, so you can read it and comment, but not change it.</div>':'')
     // A locked item you cannot move is not a dead end (spec s7.4): the
     // ask goes into the thread, where the answer belongs.
     +(it.locked&&!canMove?_tbMoveReqSection(it):'')
@@ -1273,37 +1308,37 @@ function _tbDrawer(){
     // ── the title card ──
     +'<div class="tb-pcard tb-phead">'
       +'<div class="tb-ptitle">'
-        +'<button class="tb-check'+(done?' on':'')+'" title="'+(done?'Mark not done':'Mark done')+'"'
+        +'<button class="tb-check'+(done?' on':'')+'" title="'+(ro?_TB_NOT_ON:(done?'Mark not done':'Mark done'))+'"'
           +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
-          +' onclick="window.tbToggleDone(\''+jid+'\')">'+_tbIcon('check','sm')+'</button>'
+          +(ro?' disabled':'')+' onclick="window.tbToggleDone(\''+jid+'\')">'+_tbIcon('check','sm')+'</button>'
         // A TEXTAREA sized to its content, not an input: the real titles
         // run to two lines, and an input showed "Hyderabad supplier in
         // Karachi:" and nothing more (seen on the P1.4 screenshots). Enter
         // still commits -- a title is one line -- and blurring saves.
         +'<textarea class="tb-dtitle'+(done?' done':'')+'" id="tb-d-title" rows="1" maxlength="140"'
-          +' aria-label="Title" onkeydown="window.tbTitleKey(event)"'
+          +' aria-label="Title"'+(ro?' readonly':'')+' onkeydown="window.tbTitleKey(event)"'
           +' onchange="window.tbFieldChange(\'title\',this.value)">'+_tbEsc(it.title||'')+'</textarea>'
-        +(done?'':'<button class="tb-star'+(starred?' on':'')+'" title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
+        +(done||ro?'':'<button class="tb-star'+(starred?' on':'')+'" title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
           +' aria-label="'+(starred?'Remove from My Day':'Add to My Day')+'" aria-pressed="'+(starred?'true':'false')+'"'
           +' onclick="window.tbAddToMyDay(\''+jid+'\')">'+_tbIcon('star')+'</button>')
       +'</div>'
       +(pr.allDone?'<div class="tb-hint">All steps done — mark the item done when you have reviewed it.</div>':'')
       +'<div class="tb-stepl">'+(it.steps||[]).map((st,i)=>
         '<div class="tb-step"><button class="tb-check tb-check-sm'+(st.done?' on':'')+'"'
-          +' aria-label="'+(st.done?'Mark step not done':'Mark step done')+'" onclick="window.tbToggleStep('+i+')">'+_tbIcon('check','sm')+'</button>'
+          +' aria-label="'+(st.done?'Mark step not done':'Mark step done')+'"'+dis+' onclick="window.tbToggleStep('+i+')">'+_tbIcon('check','sm')+'</button>'
         +_tbSlot(st.title||'','tb-steptitle'+(st.done?' done':''))
-        +'<button class="tb-x" onclick="window.tbRemoveStep('+i+')" title="Remove step" aria-label="Remove step">'+_tbIcon('x','sm')+'</button></div>').join('')
+        +(ro?'':'<button class="tb-x" onclick="window.tbRemoveStep('+i+')" title="Remove step" aria-label="Remove step">'+_tbIcon('x','sm')+'</button>')+'</div>').join('')
       +'</div>'
-      +'<label class="tb-stepaddrow">'+_tbIcon('plus')
+      +(ro?(pr.label?'<div class="tb-steps">'+_tbEsc(pr.label)+'</div>':''):'<label class="tb-stepaddrow">'+_tbIcon('plus')
         +'<input class="tb-stepadd" id="tb-step-new" placeholder="'+((it.steps||[]).length?'Next step':'Add step')+'"'
         +' aria-label="Add step" onkeydown="window.tbStepKey(event)">'
         +(pr.label?'<span class="tb-steps">'+_tbEsc(pr.label)+'</span>':'')
-      +'</label>'
+      +'</label>')
     +'</div>'
 
     // ── property rows ──
     +'<div class="tb-pcard tb-props">'
-      +(done?'':'<button class="tb-prop tb-propbtn'+(starred?' on':'')+'" onclick="window.tbAddToMyDay(\''+jid+'\')">'
+      +(done||ro?'':'<button class="tb-prop tb-propbtn'+(starred?' on':'')+'" onclick="window.tbAddToMyDay(\''+jid+'\')">'
         +_tbIcon('sun')+'<span class="tb-proplabel tb-propwide">'+(starred?'Added to My Day':'Add to My Day')+'</span></button>')
       +prop('calendar','Date','<input type="date" data-tb-fp id="tb-d-date" value="'+_tbEsc(it.date||'')+'"'+(canMove?'':' disabled')
         +' onchange="window.tbFieldChange(\'date\',this.value)">',
@@ -1316,39 +1351,39 @@ function _tbDrawer(){
           if(!p.uid)return'<button class="tb-person tb-person-off" disabled title="'+_tbEsc(tbPersonOffText(p))+'">'
             +_tbEsc(p.name)+' · '+(p.reason==='unread'?'not loaded':p.reason==='ambiguous'?'check profile':'not set up')+'</button>';
           const on=(it.assigneeUids||[]).indexOf(p.uid)>-1;
-          return'<button class="tb-person'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
+          return'<button class="tb-person'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'+dis
             +' onclick="window.tbToggleAssignee(\''+_tbJs(p.uid)+'\')">'+_tbEsc(tbUser(p.uid).name)+'</button>';
         }).join('')
       +'</div></div>'
-      +prop('list','List','<select id="tb-d-list" onchange="window.tbFieldChange(\'listId\',this.value)">'
+      +prop('list','List','<select id="tb-d-list"'+dis+' onchange="window.tbFieldChange(\'listId\',this.value)">'
         +opt('',it.listId||'','None')
         +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,it.listId||'',l.title||'untitled')).join('')
       +'</select>')
-      +prop('tag','Lane','<select id="tb-d-lane" onchange="window.tbFieldChange(\'lane\',this.value)">'
+      +prop('tag','Lane','<select id="tb-d-lane"'+dis+' onchange="window.tbFieldChange(\'lane\',this.value)">'
         +opt('',it.lane||'','None')+TB_LANES.map(l=>opt(l,it.lane||'',_tbCap(l))).join('')
       +'</select>')
-      +prop('flag','Priority','<select id="tb-d-pri" onchange="window.tbFieldChange(\'priority\',this.value)">'
+      +prop('flag','Priority','<select id="tb-d-pri"'+dis+' onchange="window.tbFieldChange(\'priority\',this.value)">'
         +opt('0',String(it.priority),'Normal')+opt('1',String(it.priority),'High')+opt('2',String(it.priority),'Critical')
       +'</select>')
-      +prop('circle','Kind','<select id="tb-d-kind" onchange="window.tbFieldChange(\'kind\',this.value)">'
+      +prop('circle','Kind','<select id="tb-d-kind"'+dis+' onchange="window.tbFieldChange(\'kind\',this.value)">'
         +TB_KINDS.map(k=>opt(k,it.kind,_tbCap(k))).join('')
       +'</select>')
     +'</div>'
 
     // ── the note ──
     +'<div class="tb-pcard tb-pnote">'
-      +'<textarea class="tb-notes" id="tb-d-notes" rows="4" placeholder="Add a note" aria-label="Note"'
+      +'<textarea class="tb-notes" id="tb-d-notes" rows="4" placeholder="'+(ro?'':'Add a note')+'" aria-label="Note"'+(ro?' readonly':'')
         +' oninput="window.tbNotesInput(this.value)">'+_tbEsc(it.notes||'')+'</textarea>'
       +'<div class="tb-savestate" id="tb-d-save"></div>'
     +'</div>'
-    +_tbFilesSection(it)
+    +_tbFilesSection(it,ro)
     +_tbThreadSection(it)
     +_tbActivitySection(it)
 
     // ── the footer ──
     +'<div class="tb-dfoot">'
-      +'<button class="btn-outline" onclick="window.tbOpenHandover()">'+_tbIcon('arrow-right-left','sm')+'Hand over</button>'
-      +'<button class="btn-primary" onclick="window.tbToggleDone(\''+jid+'\')">'+(done?'Reopen':'Mark done')+'</button>'
+      +(ro?'':'<button class="btn-outline" onclick="window.tbOpenHandover()">'+_tbIcon('arrow-right-left','sm')+'Hand over</button>'
+      +'<button class="btn-primary" onclick="window.tbToggleDone(\''+jid+'\')">'+(done?'Reopen':'Mark done')+'</button>')
       +(it.ownerUid===me||_tbIsBoardOwner()
         ?'<button class="tb-x tb-del" onclick="window.tbDeleteItem(\''+jid+'\')" title="Delete" aria-label="Delete">'+_tbIcon('trash-2')+'</button>':'')
     +'</div>'
@@ -1694,7 +1729,7 @@ let _tbQaRefocus=false;
 // ── Edit ──────────────────────────────────────────────────────────────
 window.tbFieldChange=async function(field,value){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   let v=value;
   if(field==='priority')v=Number(value);
   if(field==='listId'||field==='lane')v=value||null;
@@ -1720,7 +1755,7 @@ window.tbTitleKey=function(e){
 
 window.tbToggleAssignee=async function(uid){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const cur=(it.assigneeUids||[]).slice();
   const i=cur.indexOf(uid);
   if(i>-1)cur.splice(i,1); else cur.push(uid);
@@ -1735,7 +1770,7 @@ window.tbToggleAssignee=async function(uid){
 
 window.tbToggleLock=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const me=_tbMe();
   if(it.locked&&!tbCanMoveDate(it,me,_tbIsBoardOwner())){
     _tbToast('Locked by '+tbUser(it.lockedBy).name+'.');
@@ -1774,7 +1809,7 @@ function _tbFlushNotes(){
 window.tbSaveNotes=async function(v,id){
   const it=tbItems.filter(i=>i.id===(id||_tbOpenItemId))[0];
   const val=String(v||'');
-  if(!it||String(it.notes||'')===val)return;
+  if(!it||String(it.notes||'')===val||!_tbCanEditIt(it))return;
   const prev=it.notes;
   const status=t=>{ if(_tbOpenItemId!==it.id)return; const e=document.getElementById('tb-d-save'); if(e)e.textContent=t; };
   status('saving…');
@@ -1800,14 +1835,14 @@ window.tbStepKey=function(e){
 };
 window.tbAddStep=async function(title){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   if((it.steps||[]).length>=30){ _tbToast('Thirty steps is the limit — this wants to be its own list.'); return; }
   const steps=(it.steps||[]).concat([{id:'s'+_tbNow()+Math.floor(Math.random()*1000),title:String(title).slice(0,140),done:false,doneByUid:null,doneAt:null}]);
   await _tbStepsWrite(it,steps,null);
 };
 window.tbToggleStep=async function(i){
   const it=tbItems.filter(x=>x.id===_tbOpenItemId)[0];
-  if(!it||!it.steps[i])return;
+  if(!it||!it.steps[i]||_tbNotOnIt(it))return;
   const steps=it.steps.map((s,n)=>n!==i?s:Object.assign({},s,
     {done:!s.done,doneByUid:!s.done?_tbMe():null,doneAt:!s.done?_tbNow():null}));
   // Completing the LAST step does not complete the item — people want to
@@ -1816,7 +1851,7 @@ window.tbToggleStep=async function(i){
 };
 window.tbRemoveStep=async function(i){
   const it=tbItems.filter(x=>x.id===_tbOpenItemId)[0];
-  if(!it||!it.steps[i])return;
+  if(!it||!it.steps[i]||_tbNotOnIt(it))return;
   await _tbStepsWrite(it,it.steps.filter((s,n)=>n!==i),null);
 };
 async function _tbStepsWrite(it,steps,activity){
@@ -1830,7 +1865,7 @@ async function _tbStepsWrite(it,steps,activity){
 // ── Done, my day, handover, delete ────────────────────────────────────
 window.tbToggleDone=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const list=tbLists.filter(l=>l.id===it.listId)[0];
   const plan=tbDonePlan(it,_tbMe(),_tbNow(),list&&list.adminUid);
   await _tbTry(async()=>{
@@ -1844,7 +1879,7 @@ window.tbToggleDone=async function(id){
 };
 window.tbAddToMyDay=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const me=_tbMe(),today=_tbToday();
   const myDay=Object.assign({},it.myDay||{});
   if(myDay[me]===today)delete myDay[me]; else myDay[me]=today;
@@ -1872,7 +1907,7 @@ window.tbOpenHandover=function(){
 };
 window.tbHandOver=async function(){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const who=document.getElementById('tb-ho-who');
   const note=document.getElementById('tb-ho-note');
   const keep=document.getElementById('tb-ho-keep');
@@ -2105,10 +2140,12 @@ function tbMarkersByDay(config){
  *
  * Pure.
  */
-function tbMovePlan(item,toDay,uid,isOwner,now){
+function tbMovePlan(item,toDay,uid,isOwner,now,lists){
   const it=item||{};
   if(!_tbValidDay(toDay))return{refused:true,reason:'That is not a date.'};
   if((it.date||null)===toDay)return{refused:true,reason:'',noop:true};
+  if(!tbCanEdit(it,uid,isOwner,lists===undefined?tbLists:lists))
+    return{refused:true,notOn:true,reason:'only the people on it can move it'};
   if(!tbCanMoveDate(it,uid,isOwner)){
     return{refused:true,locked:true,lockedBy:it.lockedBy||'',
            reason:'locked by '+tbUser(it.lockedBy).name};
@@ -2211,7 +2248,7 @@ function _tbCalSavePrefs(){
 function _tbPill(item,today){
   const me=_tbMe();
   const ck=tbItemColorKey(item,tbLists,tbUserColors());
-  const canMove=tbCanMoveDate(item,me,_tbIsBoardOwner());
+  const canMove=_tbCanEditIt(item)&&tbCanMoveDate(item,me,_tbIsBoardOwner());
   const cls=['tb-pill','tb-c-'+ck]
     .concat(item.kind==='gate'?['gate']:[])
     .concat(item.kind==='event'?['event']:[])
@@ -2492,7 +2529,7 @@ let _tbDragId=null,_tbDragMoved=false,_tbDragGhost=null,_tbDragOverDay='';
 window.tbPillDown=function(e,id){
   if(!e||e.button===2)return;
   const it=tbItems.filter(x=>x.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   if(!tbCanMoveDate(it,_tbMe(),_tbIsBoardOwner())){
     _tbToast('locked by '+tbUser(it.lockedBy).name);
     return;
@@ -3133,6 +3170,7 @@ function _tbFileChip(att,opts){
  *  without a second hidden input to keep in step. */
 let _tbPickFor='item';
 window.tbPickFiles=function(kind){
+  if(kind!=='comment'&&_tbNotOnIt(tbItems.filter(i=>i.id===_tbOpenItemId)[0]))return;
   _tbPickFor=kind==='comment'?'comment':'item';
   const el=document.getElementById('tb-filepick');
   if(el&&el.click)el.click();
@@ -3197,7 +3235,7 @@ async function _tbAttachToItem(files){
 window.tbRemoveFile=async function(idx){
   const id=_tbOpenItemId;
   const it=tbItems.filter(x=>x.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const list=(it.attachments||[]).slice();
   if(idx<0||idx>=list.length)return;
   list.splice(idx,1);
@@ -3309,16 +3347,16 @@ window.tbRequestMove=async function(){
 window.tbToggleActivity=function(){ _tbShowActivity=!_tbShowActivity; _tbRepaint(); };
 
 // ── The drawer's phase-4 half ─────────────────────────────────────────
-function _tbFilesSection(it){
+function _tbFilesSection(it,ro){
   const files=it.attachments||[];
   return'<div class="tb-dsec"><div class="tb-dsech">Files'
     +(files.length?' <span class="tb-steps">'+files.length+'</span>':'')
-    +'<button class="tb-addfile" onclick="window.tbPickFiles(\'item\')">+ add</button></div>'
+    +(ro?'':'<button class="tb-addfile" onclick="window.tbPickFiles(\'item\')">+ add</button>')+'</div>'
     +(files.length
       ?'<div class="tb-files">'+files.map(function(a,i){
-          return _tbFileChip(a,{onRemove:'window.tbRemoveFile('+i+')'});
+          return _tbFileChip(a,ro?{}:{onRemove:'window.tbRemoveFile('+i+')'});
         }).join('')+'</div>'
-      :'<div class="tb-hint">nothing attached — up to '+TB_MAX_UPLOAD_MB+' MB a file</div>')
+      :'<div class="tb-hint">'+(ro?'nothing attached':'nothing attached — up to '+TB_MAX_UPLOAD_MB+' MB a file')+'</div>')
   +'</div>';
 }
 
@@ -4167,7 +4205,7 @@ function _tbPersonWeek(days,today){
 let _tbMoveId=null;
 window.tbOpenMove=function(id){
   const it=tbItems.filter(x=>x.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   if(!tbCanMoveDate(it,_tbMe(),_tbIsBoardOwner())){
     _tbToast('locked by '+tbUser(it.lockedBy).name);
     return;

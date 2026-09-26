@@ -516,7 +516,9 @@ function DRIVE(){
         L(!document.querySelector('.tb-drawer'),'and did not open it');
       }
       // ── date pickers (P1.7): the vendored flatpickr, Monday first, markers ──
-      var mv=tbItems.filter(function(i){return i.status!=='done'&&tbCanMoveDate(i,_tbMe(),_tbIsBoardOwner());})[0];
+      // "Can re-date" is BOTH halves: on the item (tbCanEdit, the rules'
+      // first clause) and not held by someone else's lock.
+      var mv=tbItems.filter(function(i){return i.status!=='done'&&_tbCanEditIt(i)&&tbCanMoveDate(i,_tbMe(),_tbIsBoardOwner());})[0];
       L(!!mv,'there is an item this person can re-date');
       if(mv){
         act('open it',function(){window.tbOpenItem(mv.id);});
