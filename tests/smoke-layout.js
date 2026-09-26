@@ -296,7 +296,12 @@ const FRAGMENTS={
     app.run("_tbOpenItemId='i1';_tbHydrateQueue=[]");
     const html=app.run('_tbDrawer()');
     const q=app.run('_tbHydrateQueue');
-    let out=html;
+    // Laid out at full height, like the frame fragment above. Since P1.4 the
+    // drawer is a sticky pane that scrolls inside its own box, and with the
+    // CI runner's fonts the Files '+ add' fell below that box: the hit-test
+    // then reads a control scrolled away inside a scroller as covered by
+    // BODY - the documented false hit, not a layout fault.
+    let out='<style>.tb-drawer{max-height:none;position:static}</style>'+html;
     q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
     return out;
   },
@@ -2012,6 +2017,18 @@ if(!browser){
 // The measuring script. Anything with its own text that ends up zero-wide
 // or zero-high is invisible to a human no matter what the DOM says.
 const PROBE=`
+// Measure the STEADY state. A CSS transition still running when this runs
+// is read at its start value: on the CI runner the Board composer's chips
+// were caught mid-way (their text colour, which does not transition, was
+// already final) and reported 1.03:1 for chips that read fine at rest, on
+// four pushes running, while every local run passed. Finishing each
+// transition jumps it to its end value, so a steady-state failure still
+// fails (checked by painting the chip ink its own background) and only the
+// in-flight frame is skipped. Animations, the infinite ones included, are
+// left alone.
+try{(document.getAnimations?document.getAnimations():[]).forEach(function(a){
+  if(typeof CSSTransition!=='undefined'&&a instanceof CSSTransition){try{a.finish();}catch(e){}}
+});}catch(e){}
 const bad=[];
 // An element's class as a STRING. .className on an SVG element is an
 // SVGAnimatedString, which stringifies to "[object SVGAnimatedString]" and
