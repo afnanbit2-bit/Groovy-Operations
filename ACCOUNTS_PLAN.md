@@ -141,3 +141,23 @@ pay-later sale becomes money owed *to* Groovy, and collecting it is a
 from Umair. Open questions for that step: does Umair hand cash to Raees
 daily (a handover entry) or per sale; who marks a pay-later bill collected;
 and does a bank-transfer sale land in MCB directly.
+
+## 6. Raees edits his own entries (26 Sept 2026)
+
+Afnan: *"raees has been using the accounts tab … he is insisting that he
+needs edit rights … sometimes they do get wrong so lets make a edit logic."*
+Claude's calls, to be overruled here:
+
+| # | Decision | Why |
+|---|---|---|
+| 1 | Edit **in place with a full history** on the entry, not void-and-re-record | Bills and change-back point at a float by id; re-recording would orphan them and fill the ledger with struck-through typos |
+| 2 | Only **his own**, **posted**, **not yet reviewed**, in an **open month** (where it is and where its new date lands); never the type; never a daily-log bill, an opening balance or a legacy import | Keeps a correction a correction; anything else is still void + record again, or Afnan/Ammar |
+| 3 | **Every edit goes back to Afnan/Ammar for review**, with a required reason; once cleared, it is locked to him | "Warn, never block" — he is never stopped from fixing a typo, and the owners see every change |
+| 4 | The edit **is the recording form, prefilled** | One definition of a valid entry; the same checks run |
+| 5 | Stock follows the edit — **only the difference** is posted, as a correction row in the Store log; a sized line already in stock is locked (fix its sizes on the Store side) | The Store log is the truth; rows have no per-size history |
+| 6 | An edit that would un-explain money **already settled with a runner** is refused | Void the settlement first, then edit |
+| 7 | Afnan and Ammar use the same edit on anyone's entry; the raw **Edit (admin)** stays for everything else and now keeps history too | — |
+
+**Not decided, open for Afnan:** whether Raees should also edit an entry an
+owner has already reviewed (today: no — ask an owner), and whether a void
+should take stock back out (today: no, unchanged).

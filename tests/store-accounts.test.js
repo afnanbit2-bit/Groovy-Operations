@@ -221,7 +221,9 @@ module.exports=async function(){
 
   s.section('review flags warn, never block');
   {
-    const a=app();
+    // the Clear re-reads the entry first: this fetch answers that read with
+    // the entry as the app holds it (i.e. nobody changed it meanwhile)
+    const h={};const a=app({globals:{fetch:async(url,init)=>{const u=String(url);h.a.state.fetches.push({url:u,init:init||{}});const m=/\/acct_entries\/([^?]+)$/.exec(u);if(m&&!(init&&init.method)){const doc=h.a.run(`(function(){const e=Object.assign({},_acctById('${decodeURIComponent(m[1])}'));delete e._id;return toFsFields(e);})()`);return{ok:true,status:200,json:async()=>({name:'projects/p/databases/(default)/documents/acct_entries/'+m[1],fields:doc,updateTime:'2026-09-26T10:00:00.000000Z'})};}return{ok:true,status:200,json:async()=>({documents:[]})};}}});h.a=a;
     a.seed([],[V('v')],{settings:{approvalLimit:10000,receiptRequiredAbove:2000}});
     const r1=await a.run(`_acctWrite(${J(E('purchase',{source:'cash',account:'cash',amount:15000,photo:'https://res.cloudinary.com/x/y.jpg',vendorId:'v'}))})`);
     s.ok('over the limit is written',!!r1);
@@ -234,6 +236,8 @@ module.exports=async function(){
     s.ok('an adjustment always is',r4.reviewFlags.indexOf('adjustment')>-1);
     await a.run(`window.acctReview('${r1._id}')`);
     s.ok('an owner clears it',a.run(`_acctById('${r1._id}').reviewedAt>0`));
+    {const w=a.state.fetches.filter(f=>f.init.method==='PATCH'&&f.url.indexOf('/acct_entries/'+r1._id+'?')>-1).pop();
+     s.ok('… after re-reading it first',!!w&&a.state.fetches.some(f=>!f.init.method&&/\/acct_entries\/[^?]+$/.test(f.url)));}
     s.eq('the queue is derived',a.run("acctEntries.filter(e=>e.needsReview&&!e.reviewedAt).length"),2);
   }
 
@@ -1170,6 +1174,8 @@ module.exports=async function(){
     // records every call, so a test can read what was written
     const appF=(sess,rows,extra)=>{const holder={};const a=app({session:sess,globals:Object.assign({fetch:async(url,init)=>{holder.a.state.fetches.push({url:String(url),init:init||{}});
       if(/:runQuery$/.test(String(url)))return{ok:true,status:200,json:async()=>(rows||[]).map(r=>({document:{name:'projects/p/databases/(default)/documents/store_transactions/'+r._id,fields:{itemCode:{stringValue:r.itemCode},qty:{integerValue:String(r.qty)},acctEntryId:{stringValue:r.acctEntryId||'p1'}}}}))};
+      {const m=/\/store_items\/([^?:]+)$/.exec(String(url));if(m&&!(init&&init.method)){const code=decodeURIComponent(m[1]);const it=JSON.parse(JSON.stringify(holder.a.server||JSON.parse(holder.a.run('JSON.stringify(allItems)')))).find(x=>x.code===code);
+        if(!it)return{ok:false,status:404,json:async()=>({error:{message:'not found'}})};delete it._id;const f=holder.a.run(`toFsFields(${J(it)})`);return{ok:true,status:200,json:async()=>({name:'x/store_items/'+m[1],fields:f})};}}
       return{ok:true,status:200,json:async()=>({documents:[]})};}},extra||{})});holder.a=a;return a;};
     const patches=(a,id)=>a.state.fetches.filter(f=>new RegExp('/acct_entries/'+id+'\\?').test(f.url)&&f.init.method==='PATCH');
     const bodyOf=f=>JSON.parse(f.init.body).fields;
@@ -1252,6 +1258,53 @@ module.exports=async function(){
       a.el('f-date').value=daysAgo(-2);
       await a.run("window.acctSubmit('payment')");
       s.eq('a future date → no write',patches(a,'p1').length,0);
+    }
+    // an owner's Clear from a page loaded before Raees's edit: the entry is
+    // re-read, the fresh copy shown, and nothing is cleared
+    {
+      const stale=E('payment',{_id:'p9',vendorId:'A',vendorName:'A',account:'cash',amount:12000,needsReview:true,reviewFlags:['over limit']});
+      const fresh=Object.assign({},stale,{amount:50000,editedAt:5,editedBy:'raees',edits:[{at:5,by:'raees',byName:'Raees',reason:'x',fields:['amount'],before:{amount:12000},after:{amount:50000}}],reviewFlags:['over limit','edited']});
+      delete fresh._id;
+      const h={};const a=app({session:OWNER,globals:{fetch:async(url,init)=>{const u=String(url);h.a.state.fetches.push({url:u,init:init||{}});if(/\/acct_entries\/p9$/.test(u))return{ok:true,status:200,json:async()=>({name:'x/acct_entries/p9',fields:h.a.run(`toFsFields(${J(fresh)})`),updateTime:'t2'})};return{ok:true,status:200,json:async()=>({documents:[]})};}}});h.a=a;
+      a.seed([stale],[V('A')]);
+      await a.run("window.acctReview('p9')");
+      s.eq('a stale Clear writes nothing',a.state.fetches.filter(f=>f.init.method==='PATCH').length,0);
+      s.eq('… and the page now holds the edited entry',a.run("_acctById('p9').amount"),50000);
+      s.ok('… still waiting for review',a.run("!_acctById('p9').reviewedAt&&_acctById('p9').reviewFlags.includes('edited')"));
+      s.ok('… and says so',a.state.toasts.some(t=>/changed after the page loaded/.test(t.msg||t)));
+      const b=app({session:OWNER});b.seed([E('payment',{_id:'p8',vendorId:'A',account:'cash',amount:5,needsReview:true})],[V('A')]);
+      await b.run("window.acctReview('p8')");
+      s.eq('an entry that cannot be re-read is not cleared',b.run("!!_acctById('p8').reviewedAt"),false);
+    }
+    // a field the form never shows is kept, not read as cleared
+    {
+      const a=appF(RAEES);
+      a.seed([E('cash_in',{_id:'c1',account:'cash',via:'cash',amount:800,category:'Fabric sale',saleRef:'GP-1'}),E('transfer',{_id:'t1',account:'cash',toAccount:'mcb',amount:300,ref:'TRX-9'})],[]);
+      a.run("window.acctEditEntry('c1')");a.el('f-amount').value='850';a.el('f-edit-reason').value='miscounted';
+      await a.run("window.acctSubmit('cash_in')");
+      const w=patches(a,'c1')[0];
+      s.ok('a gate-pass sale keeps its Fabric sale category',!!w&&!maskOf(w).includes('category')&&a.run("_acctById('c1').category")==='Fabric sale');
+      s.eq('… and the history names only the amount',J(a.run("_acctById('c1').edits[0].fields")),J(['amount']));
+      a.run("window.acctEditEntry('t1')");a.el('f-amount').value='350';a.el('f-edit-reason').value='x';
+      await a.run("window.acctSubmit('transfer')");
+      s.eq('a transfer keeps the ref it has no field for',a.run("_acctById('t1').ref"),'TRX-9');
+    }
+    // an edit that would leave money already handed to a runner unexplained
+    {
+      const seed=()=>[E('float_out',{_id:'f1',person:'Noman',account:'cash',amount:1000,category:'Fuel & transport',ts:1}),E('purchase',{_id:'b1',source:'float',floatId:'f1',person:'Noman',amount:1500,ts:2,lines:[{itemCode:'',desc:'x',qty:1,unit:'',rate:1500,total:1500}],expense:true}),E('runner_pay',{_id:'r1',person:'Noman',account:'cash',amount:500,ts:3})];
+      const a=appF(RAEES);a.seed(seed(),[]);
+      s.eq('before: Noman was owed 500 and was paid 500',a.run("_acctRunnerOwedTo('Noman')"),0);
+      a.run("window.acctEditEntry('f1')");a.el('f-amount').value='1500';a.el('f-edit-reason').value='was 1500';
+      await a.run("window.acctSubmit('float_out')");
+      s.eq('raising the float under a settled over-spend → no write',patches(a,'f1').length,0);
+      s.ok('… naming the runner and the settlement',a.state.toasts.some(t=>/already been settled with Noman/.test(t.msg||t)));
+      s.eq('… and the float is as it was',a.run("_acctById('f1').amount"),1000);
+      const b=appF(RAEES);b.seed(seed(),[]);
+      b.run("window.acctEditEntry('f1')");b.el('f-amount').value='900';b.el('f-edit-reason').value='was 900';
+      await b.run("window.acctSubmit('float_out')");
+      s.eq('lowering it (more owed, not less) is fine',b.run("_acctById('f1').amount"),900);
+      s.eq('… and Noman is now owed the extra 100',b.run("_acctRunnerOwedTo('Noman')"),100);
+      s.eq('the preview never leaks into the books',b.run('_acctEditPreview'),null);
     }
     // runner_pay: a full settlement can be re-saved; never over what is owed
     {
@@ -1336,6 +1389,85 @@ module.exports=async function(){
       s.ok('… tagged as a correction',tx[0]&&tx[0].correction&&tx[0].correction.booleanValue===true);
       s.eq('the balance moved by the difference only',a.run("allItems.find(i=>i.code==='TH1').balance"),35);
       s.eq('the sized item was not posted again',a.run("JSON.stringify(allItems.find(i=>i.code==='NL1').sizes)"),J({S:20,M:30}));
+    }
+    // the review round's stock findings (26 Sept 2026)
+    {
+      // a rate-only edit posts nothing, even when the Store renamed the code since
+      const a=appF(RAEES,[{_id:'t0',itemCode:'THR01A',qty:20}]);
+      a.run("allItems="+J([{code:'THR01A',name:'Thread',unit:'cone',balance:20,sizeSpecific:false,_id:'THR01A'}]));
+      a.seed([E('purchase',{_id:'p1',vendorId:'A',vendorName:'A',source:'credit',amount:2000,category:'Store purchase',stockPosted:true,stockTx:['t0'],lines:[{itemCode:'THR01',desc:'Thread',qty:20,unit:'cone',rate:100,total:2000}]})],[V('A')]);
+      s.eq('a rate-only change touches no item code',J(a.run("_acctStockChangedCodes(_acctById('p1'),Object.assign({},_acctById('p1'),{lines:[{itemCode:'THR01',desc:'Thread',qty:20,unit:'cone',rate:120,total:2400}]}))")),'[]');
+      a.run("window.acctEditEntry('p1')");a.run("_acctFormLines[0].rate='120'");
+      a.el('f-edit-reason').value='price typo';a.el('f-vendor').value='A';a.el('f-hasv').value='yes';a.el('f-source').value='credit';a.el('f-kind').value='stock';a.el('f-cat').value='Store purchase';
+      await a.run('window.acctSubmitPurchase()');
+      s.eq('… the edit is saved',a.run("_acctById('p1').lines[0].rate"),120);
+      s.eq('… and nothing is taken out of the renamed item',txWrites(a).length,0);
+      s.eq('… whose balance is untouched',a.run("allItems[0].balance"),20);
+      await a.run("_acctStockSync(_acctById('p1'),{codes:['THR01']})");
+      s.eq('a sync limited to the edited code leaves the renamed one alone',txWrites(a).length,0);
+    }
+    {
+      // a correction bigger than what is left: the row logs what was really taken back
+      const rows=[{_id:'t0',itemCode:'TH1',qty:20}];
+      const a=appF(RAEES,rows);
+      a.run("allItems="+J([{code:'TH1',name:'Thread',unit:'cone',balance:5,sizeSpecific:false,_id:'TH1'}]));
+      a.seed([E('purchase',{_id:'p1',vendorId:'A',vendorName:'A',source:'credit',amount:0,stockPosted:true,stockTx:['t0'],lines:[{itemCode:'TH1',desc:'Thread',qty:0,unit:'cone',rate:100,total:0}]})],[V('A')]);
+      await a.run("_acctStockSync(_acctById('p1'),{codes:['TH1']})");
+      const t1=txWrites(a);
+      s.eq('20 → 0 with 15 issued: the row takes back 5, not 20',t1[0]&&(t1[0].qty.integerValue||t1[0].qty.doubleValue),'-5');
+      s.eq('… the balance is 0',a.run("allItems[0].balance"),0);
+      s.ok('… and says 15 were already issued',a.state.toasts.some(t=>/only 5 of 20/.test(t.msg||t))&&/already issued/.test(a.run("_acctById('p1').stockError")));
+      rows.push({_id:'t1',itemCode:'TH1',qty:-5});
+      a.run("_acctById('p1').lines[0].qty=20");
+      await a.run("_acctStockSync(_acctById('p1'),{codes:['TH1']})");
+      const t2=txWrites(a);
+      s.eq('putting it back to 20 posts +5',t2[1]&&(t2[1].qty.integerValue||t2[1].qty.doubleValue),'5');
+      s.eq('… and lands on the truth (20 in − 15 issued), no stock minted',a.run("allItems[0].balance"),5);
+    }
+    {
+      // the item is re-read before the write, so a stale page cannot erase an issue
+      const a=appF(RAEES,[{_id:'t0',itemCode:'TH1',qty:20}]);
+      a.run("allItems="+J([{code:'TH1',name:'Thread',unit:'cone',balance:50,sizeSpecific:false,_id:'TH1'}]));
+      a.server=[{code:'TH1',name:'Thread',unit:'cone',balance:40,sizeSpecific:false}];
+      a.seed([E('purchase',{_id:'p1',vendorId:'A',vendorName:'A',source:'credit',amount:0,stockPosted:true,stockTx:['t0'],lines:[{itemCode:'TH1',desc:'Thread',qty:22,unit:'cone',rate:100,total:2200}]})],[V('A')]);
+      await a.run("_acctStockSync(_acctById('p1'),{codes:['TH1']})");
+      const w=commitWrites(a,/\/store_items\//)[0];
+      s.eq('the page held 50, the server 40: +2 writes 42, not 52',w&&(w.update.fields.balance.integerValue||w.update.fields.balance.doubleValue),'42');
+      // two syncs at once post once
+      const b=appF(RAEES,[]);
+      b.run("allItems="+J([{code:'TH1',name:'Thread',unit:'cone',balance:0,sizeSpecific:false,_id:'TH1'}]));
+      b.seed([E('purchase',{_id:'p2',vendorId:'A',vendorName:'A',source:'credit',amount:0,stockPosted:false,stockTx:['x'],lines:[{itemCode:'TH1',desc:'Thread',qty:20,unit:'cone',rate:100,total:2000}]})],[V('A')]);
+      await b.run("Promise.all([window.acctRetryStock('p2'),window.acctRetryStock('p2')])");
+      s.eq('a double-tapped Retry posts once',txWrites(b).length,1);
+      // a retry that finds an empty log asks first (an older version could raise the balance before the row)
+      const c=appF(RAEES,[],{confirm:()=>false});
+      c.run("allItems="+J([{code:'TH1',name:'Thread',unit:'cone',balance:0,sizeSpecific:false,_id:'TH1'}]));
+      c.seed([E('purchase',{_id:'p3',vendorId:'A',vendorName:'A',source:'credit',amount:0,stockPosted:false,stockError:'x',lines:[{itemCode:'TH1',desc:'Thread',qty:20,unit:'cone',rate:100,total:2000}]})],[V('A')]);
+      await c.run("window.acctRetryStock('p3')");
+      s.eq('… and, told no, posts nothing',txWrites(c).length,0);
+    }
+    {
+      // a sized line whose post FAILED is not locked as "already in inventory"
+      const a=appF(RAEES,[]);
+      a.run("allItems="+J([{code:'NL1',name:'Neck label',unit:'pcs',sizeSpecific:true,sizes:{S:0,M:0},_id:'NL1'}]));
+      a.seed([E('purchase',{_id:'p1',vendorId:'A',vendorName:'A',source:'credit',amount:500,stockPosted:false,stockError:'NL1: no size quantities',stockTx:[],lines:[{itemCode:'NL1',desc:'Neck label',qty:1,unit:'pcs',rate:500,total:500,sizes:{}}]})],[V('A')]);
+      a.run("window.acctEditEntry('p1')");
+      s.eq('a sized line that never went in stays editable',a.run('_acctFormLines[0].locked'),false);
+      const b=appF(RAEES,[]);
+      b.run("allItems="+J([{code:'NL1',name:'Neck label',unit:'pcs',sizeSpecific:true,sizes:{S:10},_id:'NL1'},{code:'TH1',name:'Thread',unit:'cone',balance:0,sizeSpecific:false,_id:'TH1'}]));
+      b.seed([E('purchase',{_id:'p2',vendorId:'A',vendorName:'A',source:'credit',amount:510,stockPosted:false,stockError:'TH1: HTTP 500',stockTx:['t9'],lines:[{itemCode:'NL1',desc:'Neck label',qty:10,unit:'pcs',rate:50,total:500,sizes:{S:10}},{itemCode:'TH1',desc:'Thread',qty:1,unit:'cone',rate:10,total:10}]})],[V('A')]);
+      b.run("window.acctEditEntry('p2')");
+      s.eq('… while one that did go in (the error names another item) stays locked',b.run('_acctFormLines[0].locked'),true);
+    }
+    {
+      // changing the vendor while correcting a payment keeps the amount being corrected
+      const a=appF(RAEES);
+      a.seed([E('purchase',{_id:'b1',vendorId:'B',vendorName:'B',source:'credit',amount:42000,lines:[]}),E('payment',{_id:'p1',vendorId:'A',vendorName:'A',account:'cash',amount:5000})],[V('A'),V('B')]);
+      a.run("window.acctEditEntry('p1')");a.el('f-vendor').value='B';a.run("window.acctPayVendorChanged('B')");
+      s.eq('switching the vendor on an edit leaves the amount at 5,000',a.el('f-amount').value,'5000');
+      const n=appF(RAEES);n.seed([E('purchase',{_id:'b1',vendorId:'B',vendorName:'B',source:'credit',amount:42000,lines:[]})],[V('A'),V('B')]);
+      n.run("window.acctForm('payment')");n.run("window.acctPayVendorChanged('B')");
+      s.eq('… while a NEW payment still fills in what is owed',n.el('f-amount').value,42000);
     }
     // Retry is idempotent: the log already holds what the lines say
     {
@@ -1449,7 +1581,7 @@ module.exports=async function(){
     s.ok('the masked write uses exactly those fields in its updateMask',/_ACCT_CAT_FIELDS\.map\(f=>'updateMask\.fieldPaths='\+f\)/.test(src));
     // every key _acctPatch writes must be allowed by the clause it goes through:
     // the review fields by acctReview() (owners), everything else by acctControl()
-    const fnList=name=>{const b=new RegExp('function '+name+'\\(\\) \\{([\\s\\S]*?)\\n    \\}').exec(rules);const m=b&&/hasOnly\(\[([^\]]*)\]\)/.exec(b[1]);return (m?m[1]:'').split(',').map(x=>x.trim().replace(/'/g,'')).filter(Boolean);};
+    const fnList=name=>{const b=new RegExp('function '+name+'\\(\\) \\{([\\s\\S]*?)\\n    \\}').exec(rules);const m=b&&/(?:affectedKeys\(\)|\bkeys)\.hasOnly\(\[([^\]]*)\]\)/.exec(b[1]);return (m?m[1]:'').split(',').map(x=>x.trim().replace(/'/g,'')).filter(Boolean);};
     const control=new Set(fnList('acctControl')),review=new Set(fnList('acctReview'));
     const REVIEW=['needsReview','reviewFlags','reviewedAt','reviewedBy'];
     const written=new Set();
@@ -1463,6 +1595,18 @@ module.exports=async function(){
     const jsEdit=(/const _ACCT_EDIT_FIELDS=\[([^\]]*)\]/.exec(src)||[])[1]||'';const jsMeta=(/const _ACCT_EDIT_META=\[([^\]]*)\]/.exec(src)||[])[1]||'';
     const jsAll=(jsEdit+','+jsMeta).split(',').map(x=>x.trim().replace(/'/g,'')).filter(Boolean).sort().join(',');
     s.eq('acctOwnEdit allows exactly _ACCT_EDIT_FIELDS + _ACCT_EDIT_META',fnList('acctOwnEdit').sort().join(','),jsAll);
+    {
+      const hb=/function acctOwnEdit\(\) \{([\s\S]*?)\n    \}/.exec(rules);
+      const hm=hb&&/edits\[n\]\.keys\(\)\.hasOnly\(\[([^\]]*)\]\)/.exec(hb[1]);
+      const ruleKeys=(hm?hm[1]:'').split(',').map(x=>x.trim().replace(/'/g,'')).filter(Boolean).sort().join(',');
+      const src=fs.readFileSync(path.join(ROOT,'js/store-accounts.js'),'utf8');
+      const em=/const edit=\{([^}]*)\};/.exec(src.slice(src.indexOf('async function _acctSaveEdit')));
+      const jsKeys=[...(em?em[1]:'').matchAll(/(?:^|,)\s*(\w+):/g)].map(m=>m[1]).sort().join(',');
+      s.eq('the history row Raees writes carries exactly the keys the rule allows (never admin)',ruleKeys,jsKeys);
+      s.ok('… and must name exactly the fields that changed',!!hb&&/hasAll\(d\.edits\[n\]\.fields\)/.test(hb[1])&&/hasOnly\(d\.edits\[n\]\.fields\)/.test(hb[1]));
+      const cb=/function acctControl\(\) \{([\s\S]*?)\n    \}/.exec(rules);
+      s.ok('acctControl moves the void fields only with the status, and a reviewed entry is voided by an owner only',!!cb&&/!keys\.hasAny\(\['voidedAt','voidedBy','voidReason'\]\)/.test(cb[1])&&/reviewedAt', null\) == null \|\| isOwner\(\)/.test(cb[1]));
+    }
     s.ok('… and never the type, the author, the status stamps or the review stamps',!['type','by','byName','ts','status','reviewedAt','reviewedBy','voidedAt','voidedBy','meterKey','legacyId','stockPosted','stockTx'].some(k=>fnList('acctOwnEdit').includes(k)));
     s.ok('the old page id is gone from shared.js',!/store-cash-ledger/.test(shared));
     s.ok('the ledger is in the store nav',/id:'acct-ledger'/.test(shared)&&/pageId:'acct-ledger'/.test(shared));

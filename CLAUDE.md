@@ -6425,6 +6425,103 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     `runner_pay` or `_acctRunnerOwed` on a hunch. **The vendor-less bill
     and its ₨1,000 photo rule have not been reported on either way** —
     still unseen on a real screen.
+- **Raees can EDIT his own entries (26 Sept 2026) — REVERSES "void, never
+  edit" for him.** Afnan: *"raees … is insisting that he needs edit rights …
+  sometimes they do get wrong so lets make a edit logic"*. Void-and-re-record
+  broke everything that points at an entry by id (bills and change-back
+  point at a float's id) and filled the ledger with struck-through typos.
+  Design in `ACCOUNTS_PLAN.md` §6; the load-bearing parts:
+  - **Which entries:** his OWN (`by == session.u`), `posted`, not yet
+    reviewed by an owner (`reviewedAt` null), in an OPEN month — the one it
+    is in AND the one its new date lands in. Never a void or pending entry,
+    an opening balance, a daily-log bill (`meterKey`) or a legacy import;
+    the TYPE never changes. `_acctEditBlock(e)` is the ONE decision and
+    says why ("Entered by X — ask Afnan or Ammar", "reviewed", "closed");
+    the entry detail shows **Edit…** or that line. Afnan/Ammar use the same
+    edit on anything in an open month; the raw **Edit (admin)** stays and
+    now appends to the same history and refuses a closed month.
+  - **The edit IS the recording form, prefilled** (`acctForm(type,{edit})`,
+    `_acctPurchaseForm({edit})`), so what a valid entry is has one
+    definition. While it is open `_acctEditId` is set and **`_acctLive()`
+    leaves that entry out**, so every derived check (balances, open floats,
+    runner owed, vendor balance) answers "as if this entry were not there"
+    — otherwise a payment that settled a vendor reads the vendor as owing
+    nothing. Cleared by any other modal and on close.
+  - **Every Raees edit goes to the owners**: a reason is required, the
+    entry gets `'edited'` in `reviewFlags` and `needsReview:true`, and
+    `e.edits` grows by `{at,by,byName,reason,fields,before,after}` (only
+    the changed fields). An "edited" chip on the ledger row, the history on
+    the detail, the last reason in the review queue. **Once an owner clears
+    it, it is locked to him.**
+  - **The write is a MASKED PATCH** (`_acctFsMask`, `updateMask` +
+    `currentDocument.exists=true`) of only the changed fields plus the
+    edit's bookkeeping — `_acctPatch` uses it too now, so nothing this tab
+    did not change is written back and a deleted entry is never recreated.
+  - **A field the type's form never shows is KEPT** (`_ACCT_FORM_HAS`):
+    editing a gate-pass fabric sale's amount must not blank its `Fabric
+    sale` category, nor a transfer lose a ref set by the admin edit.
+  - **An edit that would leave money already handed to a runner
+    unexplained is REFUSED** (`_acctEditOverpaysRunner`, via a one-entry
+    `_acctEditPreview` in `_acctLive`): raising a float, or lowering a bill
+    on it, below a `runner_pay` already made. A new entry cannot reach that
+    state; only an edit or a void can.
+  - **Stock: the store log is the truth.** `_acctStockSync(entry,opts)`
+    reads what the entry already posted (`store_transactions where
+    acctEntryId == id`) and posts only the DIFFERENCE as a `received` row
+    (negative = correction, `correction:true`, shown as "▼ CORRECTION" in
+    the Store log) plus the item, in ONE atomic REST `:commit`. It replaced
+    `_acctPostStock` for the first post and for **Retry, which had a live
+    bug: it re-posted every line each press (32 → 44 → 56).** Hardened by
+    the review round: the item is **re-read from the server** before the
+    write (allItems is session-stale — a correction hours later would erase
+    an issue made on another device); an edit reconciles **only the codes
+    whose quantity or sizes changed** (a rate fix must not reconcile a code
+    the Store renamed since, which would take the whole purchase back out);
+    **one sync per entry at a time** (a double-tapped Retry posted twice);
+    a correction bigger than what is left **logs what was really taken
+    back** (the Store never holds a negative balance, so the row and the
+    balance keep agreeing and a later correction lands on the truth instead
+    of minting stock); and a Retry that finds an empty log on a failed
+    entry **asks first** (the old poster wrote the balance before the row).
+    **A sized line that already went in is LOCKED** in the edit (rows carry
+    no per-size history); one whose post FAILED stays editable.
+    **Void still does not reverse stock.**
+  - **An owner's Clear re-reads the entry first**: accounts data loads once
+    per session, so a Clear from a page opened before Raees's edit would
+    have cleared an edit nobody looked at (and locked it for good). Changed
+    since load → the fresh copy is shown and nothing is cleared. **Known
+    limit:** an edit landing in the fraction of a second between the read
+    and the write is not caught. An `updateTime` precondition would close
+    it, but **the emulator refused one on an UNCHANGED entry** ("base
+    version (0)") and that could not be checked against live Firestore — a
+    Clear that always fails is worse, so it was left out.
+  - **Rules (`firestore.rules`, `acct_entries` update) — CHANGED, needs a
+    republish.** Four clauses: `isAcctSuper()`; `acctControl()` — status
+    and stock fields only, a real transition (no un-voiding), a void bound
+    to the caller, refused in a closed month, **the void fields move only
+    with the status**, and **an entry an owner reviewed is voided by an
+    owner only**; `acctReview()` — owners, review fields only (**the review
+    fields left the control list: Raees could have cleared the flag his own
+    edit raised**); `acctOwnEdit()` — the edit above, history growing by
+    exactly one with the old rows untouched, the new row carrying only the
+    app's keys (never `admin`) and naming **exactly** the fields that
+    changed. `tests/store-accounts.test.js` holds the lists equal to
+    `_ACCT_EDIT_FIELDS`/`_ACCT_EDIT_META` and the history-row keys equal to
+    what `_acctSaveEdit` writes.
+  - **Known limit, not new:** `acct_entries` CREATE is a bare
+    `isStoreAccounts()`, so a modified client can already write any entry
+    in any month. `acctOwnEdit` checks the close for the exact months
+    involved, so a raw write could move an entry into a month before the
+    FIRST close (no close doc exists for it) — no worse than what create
+    already allows, and the app refuses it.
+  - Verified: 671 assertions; `tests/rules-emulator.js` 77/77 in the real
+    emulator with the app's own code writing, and the five new rule cases
+    each FAIL against the previous rules; every client guard was reverted
+    once and caught by name (the codes filter first survived — a rate-only
+    edit never reaches the sync — and got a direct assertion). The runner
+    select's case-folded match is not held by a test (the harness has no
+    `<select>` options). **Nobody has edited an entry on a real screen** —
+    the sandbox cannot sign in.
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
@@ -8557,6 +8654,10 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   delete one, delete a vendor with no entries, reopen the last closed
   month, reset the module. Mirror: `firestore.rules` `isAcctSuper()`. See
   "Afnan's correction tools" under Store Accounts.
+- `_acctEditBlock(e)` (`js/store-accounts.js`) → who may edit which entry:
+  Raees (`store`) his OWN posted, unreviewed entries in an open month;
+  afnan + ammar (`_acctIsSuper`) anything in an open month; nobody else.
+  Mirror: `firestore.rules` `acctOwnEdit()`. See "Raees can EDIT".
 - `whsCanView()` / `whsCanEntry()` (`js/warehouse-sales.js`, `_WHS_USERS`) →
   **umair by username + the owners by role** — the Accounts section on the
   fulfillment page (warehouse customer sales). Managers see the page, not
@@ -8920,6 +9021,14 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**REPUBLISH OUTSTANDING (26 Sept 2026): Raees's edit rights.**
+`acct_entries` update now splits into `acctControl()` / `acctReview()` /
+`acctOwnEdit()` (see Store Accounts, "Raees can EDIT his own entries").
+Until the Console has it, Raees's **Edit…** is refused with "Missing or
+insufficient permissions" — and the old ruleset still lets him clear a
+review flag through the control list. Ran 77/77 in the emulator. **If the
+25 Sept republish below was never done, this one paste carries it too.**
 
 **REPUBLISH OUTSTANDING (25 Sept 2026):** `isAcctSuper()` now lists
 `afnan@groovy.op` AND `ammar@groovy.op` (it was Afnan alone). Until the

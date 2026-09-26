@@ -161,6 +161,9 @@ service cloud.firestore {
     //                  posting and the vendor's bill figure. The review fields
     //                  are NOT here: Raees could otherwise clear the review
     //                  flag his own edit raised.
+    //                  A void may not be rewritten afterwards (the void
+    //                  fields move only with the status), and an entry an
+    //                  owner has reviewed is voided by an owner only.
     //   acctReview   — an owner clears the review.
     //   acctOwnEdit  — Raees corrects HIS OWN entry (26 Sept 2026 — "he needs
     //                  edit rights"): still posted, not yet reviewed, in an
@@ -168,7 +171,11 @@ service cloud.firestore {
     //                  lands in — acct_closes/{YYYY-MM} is the close), only
     //                  the editable fields, a reason, and the edit history
     //                  grows by exactly one with the old history untouched.
-    //                  The edit ALWAYS goes back to the owners for review.
+    //                  The new history row carries only the keys the app
+    //                  writes (never `admin`) and names EXACTLY the fields
+    //                  that changed, so it cannot hide a change from the
+    //                  owner reading it. The edit ALWAYS goes back to the
+    //                  owners for review.
     //   isAcctSuper()— Afnan, Ammar: anything, plus delete.
     // The field lists mirror _ACCT_EDIT_FIELDS / _ACCT_EDIT_META and the
     // _acctPatch calls in js/store-accounts.js.
@@ -178,12 +185,14 @@ service cloud.firestore {
     function acctControl() {
       let r = resource.data;
       let d = request.resource.data;
+      let keys = d.diff(r).affectedKeys();
       return isStoreAccounts()
-        && d.diff(r).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidReason','confirmedAt','confirmedBy','stockPosted','stockError','stockTx','vendorBillAmount'])
-        && (d.status == r.status
-            || (r.status == 'pending' && d.status == 'posted')
+        && keys.hasOnly(['status','voidedAt','voidedBy','voidReason','confirmedAt','confirmedBy','stockPosted','stockError','stockTx','vendorBillAmount'])
+        && (((d.status == r.status || (r.status == 'pending' && d.status == 'posted'))
+              && !keys.hasAny(['voidedAt','voidedBy','voidReason']))
             || (r.status in ['posted','pending'] && d.status == 'void'
                 && d.voidedBy is string && d.voidedBy + '@groovy.op' == userEmail()
+                && (r.get('reviewedAt', null) == null || isOwner())
                 && !acctClosed(r.month)));
     }
     function acctReview() {
@@ -203,8 +212,12 @@ service cloud.firestore {
         && d.amount is number
         && d.edits is list && d.edits.size() == n + 1 && (n == 0 || d.edits[0:n] == r.edits)
         && d.editedBy is string && d.editedBy + '@groovy.op' == userEmail()
+        && d.edits[n].keys().hasOnly(['at','by','byName','reason','fields','before','after'])
         && d.edits[n].by == d.editedBy
         && d.edits[n].reason is string && d.edits[n].reason.size() > 0
+        && d.edits[n].fields is list
+        && d.diff(r).affectedKeys().difference(['edits','editedAt','editedBy','needsReview','reviewFlags','month','vendorName'].toSet()).hasAll(d.edits[n].fields)
+        && d.diff(r).affectedKeys().difference(['edits','editedAt','editedBy','needsReview','reviewFlags','month','vendorName'].toSet()).hasOnly(d.edits[n].fields)
         && d.needsReview == true && d.reviewFlags is list && 'edited' in d.reviewFlags
         && d.diff(r).affectedKeys().hasOnly(['date','month','amount','vendorId','vendorName','payee','person','account','toAccount','via','source','floatId','category','ref','note','photo','lines','expense','edits','editedAt','editedBy','needsReview','reviewFlags']);
     }

@@ -253,7 +253,8 @@ function _acctLastClose(){return acctCloses.length?acctCloses[acctCloses.length-
 // owing nothing. Set by the edit forms only; cleared whenever a modal closes
 // or a different one opens (_acctModal).
 let _acctEditId=null;
-function _acctLive(includeClosed){const cl=_acctLastClose();return acctEntries.filter(e=>e.status!=='void'&&e.status!=='pending'&&(includeClosed||!cl||e.month>cl.month)&&(!_acctEditId||e._id!==_acctEditId));}
+let _acctEditPreview=null;
+function _acctLive(includeClosed){const cl=_acctLastClose();const ok=e=>e.status!=='void'&&e.status!=='pending'&&(includeClosed||!cl||e.month>cl.month);const out=acctEntries.filter(e=>ok(e)&&(!_acctEditId||e._id!==_acctEditId)&&(!_acctEditPreview||e._id!==_acctEditPreview._id));if(_acctEditPreview&&ok(_acctEditPreview))out.push(_acctEditPreview);return out;}
 // Balances as of now (or up to and including `upToDate`), starting from the
 // last close's checkpoint. Returns {cash,mcb,payables:{vendorId:amt},floats:{floatId:{...}}}.
 function _acctBalances(upToDate){
@@ -1349,10 +1350,32 @@ window.acctSaveSettings=async function(){
   try{await fsSet('acct_settings','main',doc);acctSettings=Object.assign({},doc,{_id:'main'});showToast('Settings saved ✓');_acctRerender();}
   catch(e){showToast('Save failed: '+e.message,true);}
 };
+// Clearing is a statement about the entry as it was LOOKED AT, and accounts
+// data loads once per session. So the entry is re-read first: if Raees edited
+// it since this page loaded, the fresh copy is shown and nothing is cleared.
+// Known limit: an edit landing in the fraction of a second between that read
+// and the write is not caught. An updateTime precondition would close it, but
+// the emulator refuses a precondition on an UNCHANGED entry, and that could
+// not be checked against live Firestore — a Clear that always fails is worse.
 window.acctReview=async function(id){
   if(!_acctCanAdmin())return;
-  const ok=await _acctPatch(id,{reviewedAt:Date.now(),reviewedBy:_acctUser().by});
-  if(ok){showToast('Cleared ✓');_acctRerender();}
+  const e=_acctById(id);if(!e){showToast('Entry not found.',true);return;}
+  let doc;
+  try{
+    const tok=await getStoreToken();
+    const raw=await _fsJson('acct_entries',await fetch(`${_FS_BASE}/acct_entries/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${tok}`}}));
+    doc=fromFsDoc(raw);
+  }catch(err){showToast('Could not re-read the entry before clearing it: '+(err.message||err),true);return;}
+  const sig=x=>JSON.stringify([(x.edits||[]).length,x.editedAt||null,Math.round(x.amount||0),x.status,x.date,x.vendorId||null,x.account||null]);
+  if(!doc.type||sig(doc)!==sig(e)){
+    if(doc.type){for(const k of Object.keys(e))if(k!=='_id'&&!(k in doc))delete e[k];Object.assign(e,doc,{_id:id});_acctSort(acctEntries);}
+    showToast('This entry changed after the page loaded — here it is as it stands now. Look again before clearing it.',true);
+    _acctRerender();return;
+  }
+  const patch={reviewedAt:Date.now(),reviewedBy:_acctUser().by};
+  try{await _acctFsMask('acct_entries',id,patch,Object.keys(patch));}
+  catch(err){showToast('Not cleared: '+(err.message||err),true);return;}
+  Object.assign(e,patch);showToast('Cleared ✓');_acctRerender();
 };
 
 /* ════════════════════════ WRITES ════════════════════════ */
@@ -1397,9 +1420,9 @@ async function _acctWrite(entry,quiet){
 // the review back to "not reviewed" the next time it voided or confirmed
 // anything — and a patch would resurrect an entry deleted meanwhile. A
 // field named in the mask but absent from `data` is removed.
-async function _acctFsMask(col,id,data,fields){
+async function _acctFsMask(col,id,data,fields,pre){
   const tok=await getStoreToken();
-  const q=fields.map(f=>'updateMask.fieldPaths='+encodeURIComponent(f)).concat('currentDocument.exists=true').join('&');
+  const q=fields.map(f=>'updateMask.fieldPaths='+encodeURIComponent(f)).concat(pre||'currentDocument.exists=true').join('&');
   const body={};for(const f of fields)if(data[f]!==undefined)body[f]=data[f];
   const r=await fetch(`${_FS_BASE}/${col}/${encodeURIComponent(id)}?${q}`,{method:'PATCH',headers:{Authorization:`Bearer ${tok}`,'Content-Type':'application/json'},body:JSON.stringify({fields:toFsFields(body)})});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error((e.error&&e.error.message)||('HTTP '+r.status));}
@@ -1474,10 +1497,15 @@ function _acctStockPostedFrom(rows){
 }
 const _acctQ=n=>Math.round((Number(n)||0)*1000)/1000;
 // The rows to write, and what cannot be written. Pure — `items` is allItems.
-function _acctStockPlan(entry,postedRows,items){
+// `codes` (optional) limits it to the item codes an edit actually changed: an
+// edit to a rate must not reconcile an item whose code was renamed on the
+// Store side since (the log then carries the new code and the entry the old
+// one, and reconciling both would take the whole purchase out again).
+function _acctStockPlan(entry,postedRows,items,codes){
   const tgt=_acctStockTargets(entry),done=_acctStockPostedFrom(postedRows);
   const plan=[],errors=[];
   for(const code of new Set(Object.keys(tgt).concat(Object.keys(done)))){
+    if(codes&&!codes.includes(code))continue;
     const t=tgt[code]||{qty:0,sizes:null,rate:0,unit:''},d=done[code]||{qty:0,rows:0};
     const item=(items||[]).find(i=>i.code===code);
     if(!item){if(_acctQ(t.qty)!==_acctQ(d.qty))errors.push(code+': not in inventory');continue;}
@@ -1508,9 +1536,31 @@ async function _acctStockCommit(item,updated,txId,tx){
 }
 // opts.fresh: the entry was just created, so nothing can be in the log yet
 // and the read is skipped (a new purchase posts exactly as it always did).
+// Item codes whose stock an edit changes (quantity or sizes), from the lines
+// before and after. Pure.
+function _acctStockChangedCodes(before,after){
+  const a=_acctStockTargets(before),b=_acctStockTargets(after);
+  return [...new Set(Object.keys(a).concat(Object.keys(b)))].filter(k=>JSON.stringify(a[k]?[_acctQ(a[k].qty),a[k].sizes]:null)!==JSON.stringify(b[k]?[_acctQ(b[k].qty),b[k].sizes]:null));
+}
+// The item as the server holds it NOW: allItems is loaded once per session,
+// and a correction may run hours later, after the Store has issued from it
+// on another device — writing from the stale copy would erase that issue.
+async function _acctFreshItem(code){
+  const tok=await getStoreToken();
+  const raw=await _fsJson('store_items',await fetch(`${_FS_BASE}/store_items/${encodeURIComponent(code)}`,{headers:{Authorization:`Bearer ${tok}`}}));
+  const it=fromFsDoc(raw);if(!it.code)throw new Error('not in inventory');return it;
+}
+// One sync per entry at a time: two at once (a double-tapped Retry, an edit
+// saved again mid-sync) would both read the same log and both post the gap.
+const _acctSyncing=new Set();
 async function _acctStockSync(entry,opts){
   opts=opts||{};
   if(!entry||!entry._id||entry.status==='void')return;
+  if(_acctSyncing.has(entry._id)){showToast('Stock for this entry is already being posted — wait a moment.',true);return;}
+  _acctSyncing.add(entry._id);
+  try{return await _acctStockSyncRun(entry,opts);}finally{_acctSyncing.delete(entry._id);}
+}
+async function _acctStockSyncRun(entry,opts){
   if(typeof allItems==='undefined'){await _acctPatch(entry._id,{stockPosted:false,stockError:'Store module not loaded'});return;}
   if(typeof _storeDataLoaded==='function'&&!_storeDataLoaded()&&typeof loadStoreData==='function'){try{await loadStoreData();}catch(_){}}
   let rows=[];
@@ -1518,18 +1568,34 @@ async function _acctStockSync(entry,opts){
     try{rows=await fsQueryWhere('store_transactions','acctEntryId',entry._id,500);}
     catch(e){await _acctPatch(entry._id,{stockPosted:false,stockError:'Could not read the inventory log ('+(e.message||e)+') — press Retry when back online'});return;}
   }
-  const {plan,errors}=_acctStockPlan(entry,rows,allItems);
+  // A retry that finds NOTHING in the log for a purchase that failed before:
+  // an older version wrote the balance before the log row, so its failure
+  // could leave the balance already raised. Ask rather than risk it twice.
+  if(opts.retry&&!rows.length&&(entry.lines||[]).some(l=>l&&l.itemCode)&&!(entry.stockTx||[]).length&&typeof confirm==='function'
+    &&!confirm('The store log shows nothing from this purchase yet. If an item\'s balance already went up when it was first saved, cancel and check it on the Store side first — otherwise it will be counted twice. Post it now?'))return;
+  const {plan,errors}=_acctStockPlan(entry,rows,allItems,opts.codes||null);
   const txIds=rows.map(r=>r._id).filter(Boolean);const low=[];
   for(const p of plan){
+    if(!opts.fresh){
+      try{p.item=await _acctFreshItem(p.code);}
+      catch(e){errors.push(p.code+': could not re-read the item ('+(e.message||e)+')');continue;}
+    }
     const updated=Object.assign({},p.item);delete updated._id;
     if(p.sizes){
       const sizes=Object.assign({},p.item.sizes||{});
       for(const [sz,q] of Object.entries(p.sizes))sizes[sz]=(parseInt(sizes[sz])||0)+Number(q);
       updated.sizes=sizes;
     }else{
-      const next=(Number(p.item.balance)||0)+p.qty;
-      if(next<0)low.push(p.code);
-      updated.balance=Math.max(0,_acctQ(next));
+      // The Store never holds a balance below zero, so a correction bigger
+      // than what is left takes back only what is there — and the LOG row
+      // says exactly that, so log and balance keep agreeing and a later
+      // correction lands on the truth instead of minting stock.
+      const cur=Number(p.item.balance)||0;const next=Math.max(0,_acctQ(cur+p.qty));
+      const applied=_acctQ(next-cur);
+      if(applied!==p.qty){low.push(`${p.code} (only ${Math.abs(applied)} of ${Math.abs(p.qty)} ${p.item.unit||''} could be taken back — the rest was already issued)`);errors.push(p.code+': '+Math.abs(_acctQ(p.qty-applied))+' already issued, not taken back');}
+      if(!applied)continue;
+      p.now=_acctQ(p.was+applied);p.qty=applied;
+      updated.balance=next;
     }
     const unit=p.item.unit||'';
     const tx={type:'received',itemCode:p.code,itemName:p.item.name,supplier:entry.vendorName||entry.payee||'',
@@ -1548,11 +1614,11 @@ async function _acctStockSync(entry,opts){
     }catch(e){errors.push(p.code+': '+(e.message||e));}
   }
   await _acctPatch(entry._id,{stockPosted:errors.length===0,stockError:errors.join('; '),stockTx:txIds});
-  if(errors.length)showToast('Money recorded, but stock was not fully posted: '+errors.join('; '),true);
-  else if(low.length)showToast('Stock corrected — '+low.join(', ')+' would have gone below zero, so it was set to 0. Check it on the Store side.',true);
+  if(low.length)showToast('Stock corrected — '+low.join('; ')+'. Check it on the Store side.',true);
+  else if(errors.length)showToast('Money recorded, but stock was not fully posted: '+errors.join('; '),true);
   return plan;
 }
-window.acctRetryStock=async function(id){const e=_acctById(id);if(!e||e.status==='void')return;await _acctStockSync(e);_acctRerender();if(e.stockPosted)showToast('Stock posted ✓');};
+window.acctRetryStock=async function(id){const e=_acctById(id);if(!e||e.status==='void')return;await _acctStockSync(e,{retry:true});_acctRerender();if(e.stockPosted)showToast('Stock posted ✓');};
 
 /* ════════════════════════ MODAL ════════════════════════ */
 function _acctModal(title,body,foot,opts){
@@ -1770,7 +1836,7 @@ window.acctRunnerPayPick=function(name){
   const r=_acctRunnerOwed()[_acctRunnerKey(name)];const el=document.getElementById('f-owed');const a=document.getElementById('f-amount');
   if(!r){if(el)el.textContent='';return;}
   if(el)el.innerHTML=`Spent ${_acctPKR(r.over)} over the float${r.paid?`, ${_acctPKR(r.paid)} already settled`:''} — <b>${_acctPKR(r.owed)}</b> still owed.`;
-  if(a)a.value=r.owed;
+  if(a&&!_acctEditId)a.value=r.owed;
 };
 window.acctPayVendorChanged=function(v){
   if(v==='__new__'){window.acctVendorWizard(null,null,{then:id=>window.acctForm('payment',{vendorId:id})});return;}
@@ -1778,9 +1844,9 @@ window.acctPayVendorChanged=function(v){
   if(!v){if(el)el.textContent='';return;}
   const bal=_acctVendorBalance(v),ag=_acctVendorAging(v);
   if(el)el.innerHTML=`Owed: <b>${_acctPKR(bal)}</b>${ag.overdue?` · <span style="color:var(--accent-urgent)">${_acctPKR(ag.overdue)} overdue</span>`:''}`;
-  if(a&&bal>0)a.value=bal;
+  if(a&&bal>0&&!_acctEditId)a.value=bal;
 };
-window.acctFloatPick=function(id){const f=_acctFloatsFor(_acctEditFloat()).find(x=>x.id===id);const a=document.getElementById('f-amount');if(f&&a)a.value=f.left;};
+window.acctFloatPick=function(id){const f=_acctFloatsFor(_acctEditFloat()).find(x=>x.id===id);const a=document.getElementById('f-amount');if(f&&a&&!_acctEditId)a.value=f.left;};
 
 window.acctSubmit=async function(type){
   const g=id=>{const el=document.getElementById(id);return el?el.value:'';};
@@ -1882,14 +1948,18 @@ window.acctPurchaseKind=function(k){
 // on the Store side. A flat line stays editable — the sync posts only the
 // difference.
 function _acctEditLines(e){
-  const posted=e.stockPosted!==undefined||!!(e.stockTx&&e.stockTx.length);
+  // Posted means it really went in: stockPosted true, or rows in the log for
+  // an entry whose error does not name this item (a sized line whose post
+  // FAILED stays editable, so its sizes can be typed and posted).
+  const err=String(e.stockError||'');
+  const posted=e.stockPosted===true||!!(e.stockTx&&e.stockTx.length);
   const items=typeof allItems!=='undefined'?allItems:[];
   return (e.lines||[]).map(l=>{
     const item=l.itemCode?items.find(x=>x.code===l.itemCode):null;
     const sized=!!(l.sizes&&Object.keys(l.sizes).length)||!!(item&&item.sizeSpecific);
     let sizes=null;
     if(sized){sizes={};for(const k of Object.keys((item&&item.sizes)||{}))sizes[k]='';for(const [k,v] of Object.entries(l.sizes||{}))sizes[k]=String(v);}
-    const locked=!!(posted&&l.itemCode&&sized);
+    const locked=!!(posted&&l.itemCode&&sized&&!(e.stockPosted!==true&&err.includes(l.itemCode+':')));
     return {itemCode:l.itemCode||'',desc:l.desc||'',qty:String(l.qty==null?'':l.qty),unit:l.unit||'',rate:String(l.rate==null?'':l.rate),sizes,sizeSpecific:sized,locked,
       hint:locked?'In inventory by size — its sizes are corrected on the Store side.':(posted&&l.itemCode?'In inventory — a changed quantity posts only the difference.':'')};
   });
@@ -2222,7 +2292,10 @@ function _acctFillEdit(e){
   const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null)el.value=v;};
   set('f-date',e.date);set('f-ref',e.ref||'');set('f-note',e.note||'');
   if(e.type!=='purchase')set('f-amount',String(Math.round(e.amount||0)));
-  if(['cash_in','float_out','runner_pay'].includes(e.type))set('f-person',e.person||'');
+  if(['cash_in','float_out'].includes(e.type))set('f-person',e.person||'');
+  // a runner's select lists the spelling on their newest float; the entry may
+  // carry another, so match by the case-folded key rather than the text
+  if(e.type==='runner_pay'){const el=document.getElementById('f-person');const k=_acctRunnerKey(e.person);const o=el&&el.options?[...el.options].find(x=>_acctRunnerKey(x.value)===k):null;if(el)el.value=o?o.value:(e.person||'');}
   if(e.type==='float_in')set('f-float',e.floatId||'');
   if(e.type==='payment')set('f-vendor',e.vendorId||'');
   if(document.getElementById('f-acc')&&e.account)window.acctChip('f-acc',e.account);
@@ -2269,8 +2342,38 @@ function _acctEditDiff(old,next){
 }
 // The write. Only the changed fields and the edit's own bookkeeping are sent
 // (an updateMask), so nothing this tab did not change can be put back.
+// Which entry forms carry which of these inputs. An edit keeps a stored value
+// the form never showed (a gate-pass sale's 'Fabric sale' category, a ref set
+// through the admin edit) instead of reading its absence as "cleared".
+const _ACCT_FORM_HAS={ref:['payment','cash_in','runner_pay','purchase'],category:['purchase','float_out'],via:['cash_in']};
+function _acctKeepUnshown(old,next){
+  for(const[k,types]of Object.entries(_ACCT_FORM_HAS))if(!types.includes(old.type))next[k]=old[k];
+  return next;
+}
+// Settled-with-runner money the books no longer explain, per runner: what has
+// been paid to a runner beyond everything their floats ran over. `with` is
+// the version of the entry being edited to count (the stored one is left out
+// of _acctLive while its form is open).
+function _acctRunnerExcess(withEntry){
+  _acctEditPreview=withEntry||null;
+  try{const out={};for(const r of Object.values(_acctRunnerOwed()))if(r.paid>r.over)out[r.key]={name:r.name,amt:r.paid-r.over};return out;}
+  finally{_acctEditPreview=null;}
+}
+// An edit to a float, a bill on one, or change back can shrink what a runner
+// was owed below what has ALREADY been handed to them — that money would then
+// be accounted for nowhere. Refused, naming the runner; a new entry cannot
+// reach this state, only an edit (or a void) can.
+function _acctEditOverpaysRunner(old,next){
+  if(!['float_out','float_in','purchase','runner_pay'].includes(old.type))return null;
+  const cand=Object.assign({},old,next,{_id:old._id,status:old.status,month:_acctMonthOf(next.date||old.date)});
+  const before=_acctRunnerExcess(old),after=_acctRunnerExcess(cand);
+  for(const[k,v]of Object.entries(after)){const was=before[k]?before[k].amt:0;if(v.amt>was)return `${_acctPKR(v.amt-was)} has already been settled with ${v.name} for an over-spend this change would remove. Void that settlement first (or ask Afnan or Ammar), then edit.`;}
+  return null;
+}
 async function _acctSaveEdit(old,next){
   const why=_acctEditBlock(old);if(why){showToast(why,true);return null;}
+  _acctKeepUnshown(old,next);
+  const over=_acctEditOverpaysRunner(old,next);if(over){showToast(over,true);return null;}
   if(_acctBusy){showToast('Please wait…',true);return null;}
   const reason=String((document.getElementById('f-edit-reason')||{}).value||'').trim();
   if(!reason){showToast('Say why it is being changed — it is kept with the entry.',true);document.getElementById('f-edit-reason')?.focus();return null;}
@@ -2304,6 +2407,7 @@ async function _acctSaveEdit(old,next){
 async function _acctFinishEdit(old,next){
   const btn=document.getElementById('f-submit');if(btn){btn.disabled=true;btn.textContent='Saving…';}
   const had=(old.lines||[]).some(l=>l.itemCode)||old.stockPosted!==undefined;
+  const codes=_acctStockChangedCodes(old,next);
   const r=await _acctSaveEdit(old,next);
   if(!r){if(btn){btn.disabled=false;btn.textContent='Save changes';}return;}
   delete window._acctPhoto['f-photo'];
@@ -2311,7 +2415,7 @@ async function _acctFinishEdit(old,next){
   showToast(_acctIsSuper()?'Entry updated ✓':'Entry updated ✓ — sent to Afnan and Ammar for review');
   _acctRerender();
   if(r.entry.type==='purchase'&&r.change.fields.includes('lines')&&(had||(r.entry.lines||[]).some(l=>l.itemCode))){
-    await _acctStockSync(r.entry);_acctRerender();
+    if(codes.length){await _acctStockSync(r.entry,{codes});_acctRerender();}
     if(r.entry.stockPosted)showToast('Inventory brought in line with the change ✓');
   }
 }
