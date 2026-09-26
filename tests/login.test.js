@@ -92,7 +92,7 @@ module.exports=async function(){
     if(keep)s.eq('… under the username, which is what the login field takes',rec.stored[0]&&rec.stored[0].id,'afnan');
     s.ok('the password is NOWHERE in app storage',!JSON.stringify(ls.m).includes('s3cret-PASS'));
     s.eq('the app does NOT cut straight in: the login fades first',run('__started'),0);
-    await new Promise(r=>setTimeout(r,260));
+    await new Promise(r=>setTimeout(r,560));
     s.eq('the app started, after the fade',run('__started'),1);
   }
 
@@ -359,6 +359,24 @@ module.exports=async function(){
       run(`window._loginStoreCredIcon('https://res.cloudinary.com/x/image/upload/c_fill,w_96/v1/a.jpg','Afnan Khan')`),true);
     s.eq('… as the credential\'s iconURL',rec.stored[1]&&rec.stored[1].iconURL,'https://res.cloudinary.com/x/image/upload/c_fill,w_96/v1/a.jpg');
     s.eq('… and only once (the password is then dropped from memory)',run(`window._loginStoreCredIcon('https://a/b.jpg')`),false);
+  }
+
+  {
+    const fs=require('fs'),path=require('path');
+    const css=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');
+    s.section('busy is the whole button, never a spinning fingerprint');
+    s.ok('no rule spins the fingerprint button\'s icon',!/\.btn-login-alt[^{]*svg\{[^}]*ptrSpin/.test(css));
+    s.ok('a sheen sweeps across the button while it works',/\.btn-login-alt\.busy::after\{[^}]*\n?[^}]*animation:loginSheen/.test(css));
+    s.ok('it fills solid when you are in (.ok)',/\.btn-login-alt\.ok\{background:var\(--dark\)/.test(css));
+    s.ok('reduced motion switches the sweep off',/prefers-reduced-motion:reduce\)\{\.btn-login\.busy::after/.test(css));
+  }
+  {
+    const {app,run}=boot();
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw';app.el('l-remember').checked=true;
+    await run('window.doLogin()');
+    s.section('a password sign-in ends on a beat, not a cut');
+    s.ok('the button turns to "Signed in"',app.el('login-btn').classList.contains('ok'));
+    s.eq('… label',app.el('login-btn-label').textContent,'Signed in');
   }
 
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────

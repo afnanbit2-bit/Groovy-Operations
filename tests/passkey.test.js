@@ -235,7 +235,7 @@ module.exports=async function(){
       s.eq('the answer names this phone\'s key',calls[1]&&calls[1].assertion.id,'CQkJ');
       s.eq('signs in to Firebase with the server\'s token',signedWith,'custom:u-afnan');
       s.eq('the session is the account the TOKEN belongs to',app.run('session&&session.u'),'afnan');
-      await new Promise(r=>setTimeout(r,260));
+      await new Promise(r=>setTimeout(r,560));
       s.eq('the app starts (after the login fades out)',app.run('__started'),1);
       s.eq('and stays signed in on this phone',mem['groovy-keep-signed-in'],'1');
     }
@@ -265,7 +265,7 @@ module.exports=async function(){
       s.ok('it asks for ANY key this site has (no allow-list), so the browser can offer the phone',opts&&!opts.allowCredentials);
       s.eq('… still verified',opts&&opts.userVerification,'required');
       s.eq('… and signs in through the same server check',calls.join(','),'login-options,login');
-      await new Promise(r=>setTimeout(r,260));
+      await new Promise(r=>setTimeout(r,560));
       s.eq('the app starts',app.run('__started'),1);
     }
   }finally{

@@ -9250,6 +9250,16 @@ fragment `login — the sign-in screen and the fingerprint lock`.
     `FIREBASE_SERVICE_ACCOUNT` can sign custom tokens (it must hold a
     private key — the other functions only prove it can read/write), and
     what a real phone sends. Afnan's phone is the first real test.
+- **Busy = the whole button, never a spinning icon (27 Sept).** Afnan: a
+  rotating fingerprint while signing in "is stupid". While the phone and
+  the server answer, a sheen sweeps across the button (`loginSheen`, a
+  `::after` at `z-index:-1` inside `isolation:isolate`, so it sits over the
+  button's fill and under its text) and the outlined fingerprint button's
+  border breathes; on success the button turns to "Signed in" and FILLS
+  solid (`.ok`) for 260ms before the login fades. Same on the password
+  button. The outlined button needed a stronger sheen (.42) — at .30 it was
+  invisible over no fill, seen in a render, not guessed. Tests assert no
+  rule spins the icon.
 - **Desktop: "Sign in with a passkey" (27 Sept).** Afnan: the phone shows
   the fingerprint lock, the desktop "does not hold fingerprint". A
   passkey lives on the device that made it, so a computer has no local

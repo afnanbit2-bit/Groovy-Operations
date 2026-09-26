@@ -140,7 +140,9 @@ window.doLogin=async function(){
     // must not leave a saved password behind.
     if(keep)_loginOfferSave(u,p,def.name);
     loginInProgress=false;
-    _loginLeave(()=>startApp());
+    btn.classList.remove('busy');btn.classList.add('ok');
+    {const lab=document.getElementById('login-btn-label');if(lab)lab.textContent='Signed in';}
+    setTimeout(()=>_loginLeave(()=>startApp()),260);
     logActivity('Login',`${def.name} signed in`);
     // The fingerprint choice made ON the login screen. Asked straight away,
     // while the person is still looking at the phone — the first cut only
@@ -856,11 +858,13 @@ window.loginWithFingerprint=async function(){
     session={...def,uid:c.user.uid};
     _authStore('groovy-keep-signed-in','1');_authStore('groovy_remembered_user',def.u);
     loginInProgress=false;
-    _loginLeave(()=>startApp());
+    if(btn){btn.classList.remove('busy');btn.classList.add('ok');}
+    _loginSetBusy(true,'Signed in');
+    setTimeout(()=>_loginLeave(()=>startApp()),260);   // let the fill be SEEN
     logActivity('Login',`${def.name} signed in with fingerprint`);
   }catch(e){
     loginInProgress=false;
-    if(btn){btn.disabled=false;btn.classList.remove('busy');}
+    if(btn){btn.disabled=false;btn.classList.remove('busy');btn.classList.remove('ok');}
     _loginSetBusy(false);
     if(e&&e.status===404){_passkeySave(u,null);_loginPaintFinger();}
     showToast(e&&e.name==='NotAllowedError'?'Fingerprint not checked. Try again, or use your password.':'Fingerprint sign-in failed: '+(e&&e.message||e),true);
