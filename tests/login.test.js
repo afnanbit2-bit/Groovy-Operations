@@ -177,6 +177,66 @@ module.exports=async function(){
       &&/\n\s*setPersistence,browserLocalPersistence,browserSessionPersistence,\n/.test(html));
   }
 
+  // ── the fingerprint choice on the login screen ────────────────────────
+  // Afnan signed in twice and never got the lock: it was only offered in a
+  // card 1.5s after the app opened, and marked "offered" when SHOWN.
+  for(const [bio,rowShown,pre,label] of [
+    [true,true,false,'ticked, row showing: the phone is asked for the fingerprint straight away'],
+    [false,true,true,'unticked while the lock was on: the lock is turned off'],
+    [true,false,false,'row hidden (phone cannot do it): nothing is asked']]){
+    const {app,rec,run}=boot(rowShown?undefined:{globals:{window:{PasswordCredential:function(d){Object.assign(this,d);},
+      PublicKeyCredential:{isUserVerifyingPlatformAuthenticatorAvailable:async()=>false},
+      isSecureContext:true,addEventListener(){},matchMedia:()=>({matches:false})}}});
+    await new Promise(r=>setTimeout(r,5));
+    if(pre)run(`_authStore('groovy-applock',JSON.stringify({'uid-afnan':{id:'AQID',u:'afnan'}}))`);
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw';
+    app.el('l-remember').checked=true;
+    app.run('window.loginBioSync()');app.el('l-bio').checked=bio;
+    s.eq('the row is '+(rowShown?'shown':'hidden')+' by the phone\'s own answer',app.el('login-bio').hidden,!rowShown);
+    await run('window.doLogin()');
+    await new Promise(r=>setTimeout(r,20));
+    s.section('fingerprint on the login screen — '+label);
+    if(bio&&rowShown){
+      s.eq('the fingerprint set-up is asked once, straight after sign-in',rec.creates.length,1);
+      s.eq('… and the lock is on',run(`lockEnabledFor('uid-afnan')`),true);
+    }else if(pre){
+      s.eq('lock turned off',run(`lockEnabledFor('uid-afnan')`),false);
+      s.eq('… without asking the phone anything',rec.creates.length,0);
+    }else{
+      s.eq('nothing asked',rec.creates.length,0);
+    }
+  }
+  {
+    const {app,rec,run}=boot();
+    await new Promise(r=>setTimeout(r,5));   // let the load-time row check settle first
+    run(`session=null`);
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw';
+    app.el('l-remember').checked=false;app.el('login-bio').hidden=false;app.el('l-bio').checked=true;
+    await run('window.doLogin()');
+    await new Promise(r=>setTimeout(r,20));
+    s.section('fingerprint needs Remember me');
+    s.eq('not asked when Remember me is unticked (there is no kept session to lock)',rec.creates.length,0);
+  }
+  {
+    const {app,run,ls}=boot();
+    run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan'}`);
+    await run('_lockMaybeOffer(true)');
+    s.section('the offer card is marked offered only when ANSWERED');
+    s.eq('shown, not yet answered: not marked',ls.m['groovy-applock-offered']||null,null);
+    void app;
+  }
+  {
+    const {run}=boot();
+    s.section('Safari refuses WebAuthn outside a tap: the card is the fallback');
+    run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan'};var __offer=0;_lockMaybeOffer=function(){__offer++};`);
+    run(`navigator.credentials.create=async function(){var e=new Error('x');e.name='NotAllowedError';throw e}`);
+    await run('_lockEnableAfterLogin()');
+    s.eq('an instant refusal (no dialog was shown) falls back to the offer card',run('__offer'),1);
+    run(`navigator.credentials.create=async function(){await new Promise(r=>setTimeout(r,1100));var e=new Error('x');e.name='NotAllowedError';throw e}`);
+    await run('_lockEnableAfterLogin()');
+    s.eq('a refusal after the dialog was up is the person cancelling: no card',run('__offer'),1);
+  }
+
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────
   {
     const fs=require('fs'),path=require('path');

@@ -142,7 +142,15 @@ window.doLogin=async function(){
     loginInProgress=false;
     startApp();
     logActivity('Login',`${def.name} signed in`);
-    if(keep)setTimeout(()=>{try{_lockMaybeOffer();}catch(_){}},1500);
+    // The fingerprint choice made ON the login screen. Asked straight away,
+    // while the person is still looking at the phone — the first cut only
+    // offered it in a card 1.5s after the app opened, and Afnan signed in
+    // twice without ever getting it.
+    const bioEl=document.getElementById('l-bio'),bioRow=document.getElementById('login-bio');
+    const bioShown=!!(bioRow&&!bioRow.hidden);
+    const bio=bioShown&&!!(bioEl&&bioEl.checked)&&keep;
+    if(bio&&!lockEnabledFor(session.uid))_lockEnableAfterLogin();
+    else if(bioShown&&!bio&&lockEnabledFor(session.uid))_lockClear(session.uid);
   }catch(e){
     loginInProgress=false;
     uEl.disabled=false;pEl.disabled=false;
@@ -559,7 +567,9 @@ function _lockUserVerified(authData){
   try{const b=new Uint8Array(authData);return b.length>32&&(b[32]&0x04)===0x04;}catch(_){return false;}
 }
 
-window.lockEnable=async function(){
+let _lockLastErr='';
+window.lockEnable=async function(opts){
+  _lockLastErr='';
   if(!session){showToast('Sign in first.',true);return false;}
   if(!(await lockAvailable())){showToast('This phone or browser cannot do a fingerprint lock.',true);return false;}
   try{
@@ -578,7 +588,9 @@ window.lockEnable=async function(){
     showToast('Fingerprint lock is on for this phone.');
     return true;
   }catch(e){
-    showToast(e&&e.name==='NotAllowedError'?'Fingerprint lock was not turned on.':'Could not turn on the fingerprint lock: '+(e&&e.message||e),true);
+    _lockLastErr=(e&&e.name)||'Error';
+    if(!(opts&&opts.quietCancel&&_lockLastErr==='NotAllowedError'))
+      showToast(_lockLastErr==='NotAllowedError'?'Fingerprint lock was not turned on. You can turn it on in Profile.':'Could not turn on the fingerprint lock: '+(e&&e.message||e),true);
     return false;
   }
 };
@@ -654,14 +666,42 @@ document.addEventListener('visibilitychange',()=>{
   if(!session||_lockShowing||!lockEnabledFor(session.uid))return;
   if(_lockHiddenAt&&Date.now()-_lockHiddenAt>=_LOCK_AFTER_MS)_lockShow(session,null);
 });
-// After a password sign-in with Remember me on a phone that can do it,
-// offer the lock ONCE per person per device.
-async function _lockMaybeOffer(){
+// The login screen's fingerprint row: visible only where the phone can
+// check a fingerprint, and only while Remember me is ticked.
+let _lockCapable=false;
+window.loginBioSync=function(){
+  const row=document.getElementById('login-bio'),rm=document.getElementById('l-remember');
+  if(!row)return;
+  row.hidden=!(_lockCapable&&rm&&rm.checked);
+};
+(function(){
+  try{
+    lockAvailable().then(ok=>{_lockCapable=!!ok;window.loginBioSync();}).catch(()=>{});
+  }catch(_){}
+})();
+function _lockClear(uid){
+  const all=_lockAll();delete all[uid];_authStore(_LOCK_KEY,JSON.stringify(all));
+}
+// Straight after a sign-in with the box ticked. Chrome on Android asks for
+// the fingerprint here; Safari refuses WebAuthn outside a tap, and the
+// sign-in's tap has gone stale by the time Firebase answers. A refusal
+// that comes back almost at once (no dialog was ever shown) therefore
+// falls back to the offer card, whose own button IS a tap. A refusal after
+// a second or more is the person cancelling the dialog, and is left alone.
+async function _lockEnableAfterLogin(){
+  const t0=Date.now();
+  const ok=await window.lockEnable({quietCancel:true});
+  if(!ok&&_lockLastErr==='NotAllowedError'&&Date.now()-t0<1000)_lockMaybeOffer(true);
+}
+// The offer card. Recorded as offered only once the person ANSWERS it — the
+// first cut marked it when shown, so a card that went unseen was never
+// shown again.
+async function _lockMaybeOffer(force){
   if(!session||lockEnabledFor(session.uid))return;
   let offered={};try{offered=JSON.parse(_authRead(_LOCK_OFFERED_KEY)||'{}')||{};}catch(_){}
-  if(offered[session.uid])return;
+  if(offered[session.uid]&&!force)return;
   if(!(await lockAvailable()))return;
-  offered[session.uid]=Date.now();_authStore(_LOCK_OFFERED_KEY,JSON.stringify(offered));
+  const mark=()=>{offered[session.uid]=Date.now();_authStore(_LOCK_OFFERED_KEY,JSON.stringify(offered));};
   if(document.getElementById('lock-offer'))return;
   const d=document.createElement('div');
   d.id='lock-offer';d.className='lock-offer';
@@ -669,8 +709,8 @@ async function _lockMaybeOffer(){
     +'<div class="lock-offer-s">You stay signed in on this phone. The app asks for your fingerprint, face or phone PIN when you open it. Change it any time in Profile.</div>'
     +'<div class="lock-offer-b"><button type="button" class="lock-offer-ghost" id="lock-offer-no">Not now</button><button type="button" class="btn-sm" id="lock-offer-yes">Turn on</button></div>';
   document.body.appendChild(d);
-  d.querySelector('#lock-offer-no').onclick=()=>d.remove();
-  d.querySelector('#lock-offer-yes').onclick=async()=>{d.remove();await window.lockEnable();};
+  d.querySelector('#lock-offer-no').onclick=()=>{mark();d.remove();};
+  d.querySelector('#lock-offer-yes').onclick=async()=>{mark();d.remove();await window.lockEnable();};
 }
 
 // ══════════════════════════════════════════

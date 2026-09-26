@@ -9130,6 +9130,19 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   24px**, with Sign in still on screen. The first cut stretched the card to
   the layer, which squashed Sign in to **22px** with the keyboard open —
   the card is `flex-start` + `min-height:100%` and its children don't shrink.
+- **The fingerprint choice is ON the login screen now** ("Unlock with
+  fingerprint next time", `#login-bio`, 26 Sept). Afnan signed in twice on
+  v207/v208 and never got the lock: it was only offered in a card 1.5s
+  after the app opened, and that card was marked "offered" when SHOWN, so
+  an unseen card never came back. **Which of the two it was is not known**
+  — no log from the phone. The row shows only where
+  `isUserVerifyingPlatformAuthenticatorAvailable()` says yes AND Remember
+  me is ticked; ticked → `_lockEnableAfterLogin()` asks straight after
+  sign-in; unticked while the lock was on → turned off. A refusal inside
+  1s (Safari: WebAuthn outside a tap, no dialog shown) falls back to the
+  card, whose button is a tap; a later refusal is a cancel and is left
+  alone — a timing heuristic, labelled as one. The card is now marked
+  offered only when ANSWERED.
 - **Chrome's own "Use saved password?" sheet is not the fingerprint lock.**
   The lock comes AFTER a Remember-me sign-in (offered once) and then
   replaces the login on every reopen. Asking for a fingerprint before
