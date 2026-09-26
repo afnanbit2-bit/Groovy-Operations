@@ -1430,18 +1430,53 @@ function _tbIsPhone(){
   try{ return !!(window.matchMedia&&window.matchMedia('(max-width:639px)').matches); }
   catch(e){ return false; }
 }
+// The calendar's filters, and the ONLY keys a stored filter may carry. The
+// Sep 2026 freeze wrote a junk key ("[object Object],[object Object],...")
+// holding a nested copy of the filters on every recursion, and the entry
+// grew to 1.36 MB. A loader that Object.assign()ed whatever was stored
+// would carry that forward and rewrite it on every save -- so the stored
+// value is REBUILT from this list, never merged.
+const _TB_CAL_FILTER_KEYS=['scope','person','list','lane','color','hideDone'];
+const _TB_CAL_PREFS_MAX=4096;   // bytes; a real entry is ~150
+/** Rebuild a stored filter from the known keys only. Pure. */
+function tbCleanCalFilters(raw){
+  const o=(raw&&typeof raw==='object')?raw:{};
+  const str=v=>(typeof v==='string'&&v.length<=200)?v:'';
+  return{scope:o.scope==='all'?'all':'me',person:str(o.person),list:str(o.list),
+         lane:str(o.lane),color:str(o.color),hideDone:o.hideDone===true};
+}
+/** The whole stored entry, cleaned. Returns null when it should be thrown
+ *  away (missing, oversized or unreadable). Pure. */
+function tbCleanCalPrefs(raw){
+  if(typeof raw!=='string'||!raw||raw.length>_TB_CAL_PREFS_MAX)return null;
+  let o;
+  try{ o=JSON.parse(raw); }catch(e){ return null; }
+  if(!o||typeof o!=='object')return null;
+  const out={filters:tbCleanCalFilters(o.filters)};
+  if(o.view==='week'||o.view==='month')out.view=o.view;
+  if(typeof o.tray==='boolean')out.tray=o.tray;
+  if(typeof o.rows==='boolean')out.rows=o.rows;
+  return out;
+}
 function _tbCalLoadPrefs(){
   if(_tbIsPhone())_tbCalView='week';
-  try{
-    const raw=localStorage.getItem(_TB_CAL_KEY);
-    if(!raw)return;
-    const o=JSON.parse(raw)||{};
-    if(o.view==='week'||o.view==='month')_tbCalView=o.view;
-    if(o.filters&&typeof o.filters==='object')
-      _tbCalFilters=Object.assign({scope:'me',person:'',list:'',lane:'',color:'',hideDone:false},o.filters);
-    if(typeof o.tray==='boolean')_tbTrayOpen=o.tray;
-    if(typeof o.rows==='boolean')_tbCalRows=o.rows;
-  }catch(e){}                      // a corrupt or blocked store is not an error
+  let raw=null;
+  try{ raw=localStorage.getItem(_TB_CAL_KEY); }catch(e){ return; }   // blocked store: defaults
+  if(raw==null)return;
+  const o=tbCleanCalPrefs(raw);
+  if(!o){
+    // Oversized or corrupt -- the freeze's leftovers. Drop it rather than
+    // parse 1 MB on every open.
+    try{ localStorage.removeItem(_TB_CAL_KEY); }catch(e){}
+    return;
+  }
+  if(o.view)_tbCalView=o.view;
+  _tbCalFilters=o.filters;
+  if(typeof o.tray==='boolean')_tbTrayOpen=o.tray;
+  if(typeof o.rows==='boolean')_tbCalRows=o.rows;
+  // Rewrite it in its clean shape, so a junk key is gone for good rather
+  // than merely ignored.
+  if(JSON.stringify(o)!==raw)_tbCalSavePrefs();
 }
 function _tbCalSavePrefs(){
   try{ localStorage.setItem(_TB_CAL_KEY,JSON.stringify(
@@ -1501,18 +1536,18 @@ function _tbCalHead(){
     +'</div>'
     +'<div class="tb-calseg">'+scope('me','me')+scope('all','everyone')+'</div>'
     +'<div class="tb-calfilters">'
-      +'<select onchange="window.tbCalFilter(\'person\',this.value)">'
+      +'<select onchange="window.tbCalSetFilter(\'person\',this.value)">'
         +opt('',_tbCalFilters.person,'anyone')+people+'</select>'
-      +'<select onchange="window.tbCalFilter(\'list\',this.value)">'
+      +'<select onchange="window.tbCalSetFilter(\'list\',this.value)">'
         +opt('',_tbCalFilters.list,'any list')
         +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,_tbCalFilters.list,l.title||'untitled')).join('')
       +'</select>'
-      +'<select onchange="window.tbCalFilter(\'lane\',this.value)">'
+      +'<select onchange="window.tbCalSetFilter(\'lane\',this.value)">'
         +opt('',_tbCalFilters.lane,'any lane')
         +TB_LANES.map(l=>opt(l,_tbCalFilters.lane,l)).join('')
       +'</select>'
       +'<label class="tb-calchk"><input type="checkbox"'+(_tbCalFilters.hideDone?' checked':'')
-        +' onchange="window.tbCalFilter(\'hideDone\',this.checked)"> hide done</label>'
+        +' onchange="window.tbCalSetFilter(\'hideDone\',this.checked)"> hide done</label>'
       +(_tbCalActive()?'<button class="tb-calbtn" onclick="window.tbCalClear()">clear</button>':'')
     +'</div>'
   +'</div>';
@@ -1592,9 +1627,20 @@ window.tbCalScope=function(v){
   _tbCalFilters.scope=(v==='all')?'all':'me';
   _tbCalSavePrefs();_tbRepaint();
 };
-window.tbCalFilter=function(k,v){
+// NAMED tbCalSetFilter, NOT tbCalFilter, AND THAT IS THE WHOLE FIX FOR THE
+// SEP 2026 FREEZE. A top-level `function tbCalFilter` in a classic script
+// IS `window.tbCalFilter` in a browser, so assigning this handler to that
+// name replaced the pure filter above: _tbCalendar then called the handler,
+// which repainted, which called it again -- a recursion that locked the tab
+// for ~17s before the stack overflowed, and saved a 1.36 MB junk filter on
+// every attempt. The node harness gives each script its own `window`, so no
+// logic suite could see it; tests/invariants.test.js now forbids the shape
+// repo-wide and tests/smoke-board.js drives every calendar control in real
+// Chromium.
+window.tbCalSetFilter=function(k,v){
+  if(_TB_CAL_FILTER_KEYS.indexOf(k)<0)return;   // a key nobody asked for is not a filter
   if(k==='hideDone')_tbCalFilters.hideDone=!!v;
-  else _tbCalFilters[k]=v||'';
+  else _tbCalFilters[k]=(typeof v==='string')?v:'';
   _tbCalSavePrefs();_tbRepaint();
 };
 window.tbCalClear=function(){

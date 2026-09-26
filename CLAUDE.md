@@ -7203,6 +7203,17 @@ the living record** — read it before touching this module.
   `database` key (RTDB rules still go in by hand). `firebase deploy --only
   firestore` replaces the Console paste.
 
+**THE CALENDAR SHIPPED FROZEN (fixed 26 Sept 2026, session 2).**
+`window.tbCalFilter=` (a dropdown handler) replaced the top-level `function
+tbCalFilter` (the pure filter) — in a browser those are ONE binding — so the
+calendar recursed into its own repaint for ~17s and left a 1.36 MB junk
+filter in localStorage. 5,466 assertions were green: the harness gives each
+script its own `window`. **Never name a `window.X=` handler after a top-level
+function** (invariant now), and **run `node tests/smoke-board.js` before
+pushing any Board change** — it drives every page and calendar control in
+real Chromium against an in-memory Firestore. The session-2 run is logged in
+`BOARD-LOG.md`.
+
 **Phase 2 (items, lists, Dashboard cards 1-8, the drawer, the seed).**
 
 - **Every DECISION is a pure function and the writers are thin wrappers.**

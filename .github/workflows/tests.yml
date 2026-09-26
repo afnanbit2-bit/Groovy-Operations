@@ -66,6 +66,12 @@ jobs:
       - name: Phone smoke test
         run: node tests/smoke-phone.js
 
+      # Drives every Board page and every calendar control in real Chromium.
+      # Exists because the calendar shipped frozen while every logic suite
+      # stayed green (see the header of tests/smoke-board.js).
+      - name: Board smoke test
+        run: node tests/smoke-board.js
+
       - name: CACHE_VERSION was bumped
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then

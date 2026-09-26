@@ -185,10 +185,22 @@ Three the codebase learned the hard way, now part of the spec:
    rebuild, sanitising on **read and write** — a body written by an older
    build or by hand in the Console is cleaned before it is ever shown.
 
-And one this module adds:
+And two this module adds:
 
 4. **Never `toISOString().slice(0,10)` for a day.** It is UTC, and in PKT
    (UTC+5) it names the *previous* day between midnight and 5am. Use `_tbDay`.
+5. **Never give a `window.X=` handler the name of a top-level function.** In
+   a browser a classic script's top-level `function X` IS `window.X`, so the
+   assignment silently replaces it. That is the Sep 2026 calendar freeze:
+   `window.tbCalFilter=` (the dropdown handler) replaced `function
+   tbCalFilter` (the pure filter), the calendar called the handler, the
+   handler repainted the calendar, and the tab locked for ~17s until the
+   stack overflowed — leaving a 1.36 MB junk filter in localStorage each
+   time. The node harness gives every script its own `window`, so no logic
+   suite could see it. `tests/invariants.test.js` now forbids the shape
+   repo-wide (a self-alias or a capture-and-call wrap is allowed), and
+   **`tests/smoke-board.js` drives every Board page and calendar control in
+   real Chromium** — run it before pushing any Board change.
 
 ---
 
@@ -226,7 +238,8 @@ And one this module adds:
   matches a bare `
 ` while git checks `js/shared.js` out with CRLF here;
   CI (Linux, LF) passes. One character fixes it (`
-` → `?
+` → `
+?
 `). Not
   this module's file, so it is left alone.
 

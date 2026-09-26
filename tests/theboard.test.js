@@ -1113,6 +1113,63 @@ module.exports=async function(){
     s.eq('week view steps a week',a.run('_tbCalAnchor'),'2026-10-22');
   }
 
+  // ══ SESSION 2 — P0.1: THE FREEZE ════════════════════════════════════
+  s.section('the calendar freeze: the filter and its handler are two names');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    // The pure filter still filters — it is what _tbCalendar calls.
+    a.run('tbItems=[{id:"i1",title:"a",date:"2026-10-01",assigneeUids:["u-ammar"],visibility:"shared",status:"open",kind:"task"}]');
+    s.eq('tbCalFilter is still the pure filter',
+      a.run('tbCalFilter(tbItems,{uid:"u-ammar",scope:"me"}).length'),1);
+    s.eq('the handler is tbCalSetFilter',a.run('typeof window.tbCalSetFilter'),'function');
+    // A key nobody asked for is not a filter. The freeze wrote the whole
+    // item array's toString() as a key.
+    a.run('window.tbCalSetFilter("[object Object]",{x:1})');
+    s.eq('an unknown key is refused',a.run('Object.keys(_tbCalFilters).sort().join()'),
+      'color,hideDone,lane,list,person,scope');
+    a.run('window.tbCalSetFilter("lane",{not:"a string"})');
+    s.eq('a non-string value becomes no filter',a.run('_tbCalFilters.lane'),'');
+    a.run('window.tbCalSetFilter("lane","denim")');
+    s.eq('a real one sets',a.run('_tbCalFilters.lane'),'denim');
+  }
+
+  s.section('the calendar prefs are cleaned on load');
+  {
+    const a=loadApp({files:FILES});
+    const C=v=>a.run('tbCleanCalPrefs('+J(v)+')');
+    s.eq('nothing stored is nothing',C(null),null);
+    s.eq('unreadable is thrown away',C('{not json'),null);
+    s.eq('over 4 KB is thrown away',C(JSON.stringify({view:'week',pad:'x'.repeat(5000)})),null);
+    const junk=JSON.stringify({view:'week',tray:false,rows:true,
+      filters:{scope:'all',lane:'denim','[object Object],[object Object]':{nested:{deep:1}},hideDone:true}});
+    const got=C(junk);
+    s.eq('only known filter keys survive',J(Object.keys(got.filters).sort()),
+      J(['color','hideDone','lane','list','person','scope']));
+    s.eq('their values survive',J([got.filters.scope,got.filters.lane,got.filters.hideDone]),J(['all','denim',true]));
+    s.eq('and the view, tray and rows',J([got.view,got.tray,got.rows]),J(['week',false,true]));
+    s.eq('a bad scope reads as me',C(JSON.stringify({filters:{scope:'everyone'}})).filters.scope,'me');
+    s.eq('hideDone must be a real boolean',C(JSON.stringify({filters:{hideDone:'yes'}})).filters.hideDone,false);
+
+    // Driven through the loader: the junk entry is REWRITTEN clean, so it is
+    // gone for good rather than merely ignored.
+    const store={};
+    const b=harness.loadApp({files:FILES,globals:{localStorage:{
+      getItem:k=>store[k]==null?null:store[k],setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}}}});
+    store['groovy-tb-cal']=junk;
+    b.run('_tbCalLoadPrefs()');
+    s.ok('the loader rewrites the entry without the junk key',
+      store['groovy-tb-cal']&&store['groovy-tb-cal'].indexOf('[object Object]')<0);
+    s.eq('and keeps the real lane',b.run('_tbCalFilters.lane'),'denim');
+    // A fresh session opening onto the freeze's leftover.
+    const store2={'groovy-tb-cal':'{"view":"month","filters":{"x":"'+'y'.repeat(1400000)+'"}}'};
+    const c=harness.loadApp({files:FILES,globals:{localStorage:{
+      getItem:k=>store2[k]==null?null:store2[k],setItem:(k,v)=>{store2[k]=String(v);},removeItem:k=>{delete store2[k];}}}});
+    c.run('_tbCalLoadPrefs()');
+    s.eq('a 1.4 MB entry is removed outright',store2['groovy-tb-cal'],undefined);
+    s.eq('and the filters are the defaults',c.run('_tbCalFilters.scope+"|"+_tbCalFilters.lane'),'me|');
+  }
+
 
   // ══ PHASE 4 ═══════════════════════════════════════════════════════════
 

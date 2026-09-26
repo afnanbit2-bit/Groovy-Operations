@@ -774,5 +774,59 @@ module.exports=function(){
     });
   }
 
+  // ── No window.X= may replace a same-named top-level function ─────────
+  // THE SEP 2026 BOARD FREEZE. js/theboard.js declared `function
+  // tbCalFilter(items,o)` (the calendar's pure filter) and later assigned
+  // `window.tbCalFilter=function(k,v){…repaint…}` (the dropdown handler).
+  // In a browser a classic script's top-level function IS a window
+  // property, so the handler replaced the filter, the calendar called the
+  // handler, the handler repainted the calendar -- and the tab locked for
+  // ~17s until the stack overflowed. The node harness gives each script
+  // its own `window`, so no logic suite could see it.
+  //
+  // So, across EVERY js/*.js (they share one global scope): a `window.X=`
+  // where X is a top-level function declared anywhere must be either
+  //   · a self-alias      window.X=X;
+  //   · a WRAP            the file captures the original first
+  //                       (`const prev=window.X` / `=X`) and calls it —
+  //                       the startApp pattern js/boards.js, patterns.js
+  //                       and theboard.js all use on purpose.
+  // Anything else silently swaps one function for a different one.
+  s.section('no window.X= replaces a same-named top-level function');
+  {
+    const declared={};
+    jsFiles.forEach(f=>{
+      const src=read('js/'+f);
+      for(const m of src.matchAll(/^(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/gm))
+        (declared[m[1]]=declared[m[1]]||[]).push(f);
+    });
+    const bad=[];
+    jsFiles.forEach(f=>{
+      const src=read('js/'+f);
+      for(const m of src.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=(?![=>])\s*([^;\n]*)/g)){
+        const name=m[1];
+        if(!declared[name])continue;
+        const rhs=m[2].trim();
+        if(rhs===name)continue;                                   // self-alias
+        const before=src.slice(0,m.index);
+        const cap=new RegExp('(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:window\\.)?'+name.replace(/\$/g,'\\$')+'\\s*;','g');
+        const caps=[...before.matchAll(cap)].map(c=>c[1]);
+        const after=src.slice(m.index,m.index+800);
+        if(caps.some(v=>new RegExp('\\b'+v.replace(/\$/g,'\\$')+'\\s*(?:\\.apply|\\.call|\\()').test(after)))continue;  // a wrap
+        const line=before.split('\n').length;
+        bad.push(f+':'+line+' window.'+name+'= (declared in '+declared[name].join(', ')+')');
+      }
+    });
+    s.ok('every window.X= over a declared function is a self-alias or a wrap',bad.length===0,bad.join('; '));
+
+    // And the specific one, by name, so a future rename cannot quietly
+    // bring the collision back under a different handler.
+    const tb=read('js/theboard.js');
+    s.ok('the calendar filter handler is tbCalSetFilter',/window\.tbCalSetFilter\s*=\s*function/.test(tb));
+    s.eq('nothing assigns window.tbCalFilter',/window\.tbCalFilter\s*=/.test(tb),false);
+    s.eq('the dropdowns call tbCalSetFilter, not the pure filter',
+      (tb.match(/onchange="window\.tbCalFilter\(/g)||[]).length,0);
+  }
+
   return s;
 };
