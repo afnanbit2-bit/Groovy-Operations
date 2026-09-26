@@ -202,7 +202,11 @@ function DRIVE(){
     _tbRepaint.__smoke=true;
   }
   var MAX_REPAINTS=4;
-  function act(name,fn){
+  // `exact`, when given, is the number of full repaints the action must
+  // cause -- 0 for a chip click, which repaints the chip row alone. Without
+  // it the label printed "(0 repaints)" and failed only above four, so a
+  // chip click rebuilding the whole Dashboard passed (review of 05431c2).
+  function act(name,fn,exact){
     instrument();
     R.calls=0;R.max=0;R.depth=0;
     var errs0=(window.__errs||[]).length;
@@ -211,11 +215,13 @@ function DRIVE(){
     var d=Math.round(performance.now()-t);
     var newErr=(window.__errs||[]).slice(errs0).filter(function(e){return!/ERR_|Failed to load resource/.test(e);})[0];
     var nested=R.max>1,many=R.calls>MAX_REPAINTS;
-    var bad=err||newErr||d>MAX_MS||nested||many;
+    var wrong=exact!=null&&R.calls!==exact;
+    var bad=err||newErr||d>MAX_MS||nested||many||wrong;
     L(!bad,name+' ('+R.calls+' repaint'+(R.calls===1?'':'s')+')'
       +(err?' threw: '+err.message:'')+(newErr?' raised: '+newErr:'')
       +(nested?' — a repaint NESTED '+R.max+' deep: the freeze':'')
       +(many?' — '+R.calls+' repaints for one action':'')
+      +(wrong?' — expected exactly '+exact:'')
       +(d>MAX_MS?' — '+d+'ms, the tab would feel frozen':''));
     return!bad;
   }
@@ -325,8 +331,14 @@ function DRIVE(){
       L(!tbItems.some(function(i){return i.id==='smoke_remote';}),'a remote delete takes it off');
 
       // ── the composer (P0.5) ──
+      // From a CLOSED composer: the P0.3 section above left it open, and the
+      // check then passed on that state rather than on the focus (review of
+      // 05431c2).
+      if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+      _tbQaReset(false);
       window.showPage('tb-dash');
       await wait(300);
+      L(!document.querySelector('#tb-quick.open'),'the composer starts closed');
       var qin=document.getElementById('tb-qa');
       qin.focus();
       await wait(50);
@@ -334,8 +346,8 @@ function DRIVE(){
       var btns=[].slice.call(document.querySelectorAll('#tb-qa-chips .tb-qachip'));
       var tomorrow=btns.filter(function(b){return(b.textContent||'').trim()==='tomorrow';})[0];
       var dani=btns.filter(function(b){return/Daniyal/.test(b.textContent||'');})[0];
-      act('pick tomorrow',function(){tomorrow.click();});
-      act('pick Daniyal',function(){[].slice.call(document.querySelectorAll('#tb-qa-chips .tb-qachip')).filter(function(b){return/Daniyal/.test(b.textContent||'');})[0].click();});
+      act('pick tomorrow',function(){tomorrow.click();},0);
+      act('pick Daniyal',function(){[].slice.call(document.querySelectorAll('#tb-qa-chips .tb-qachip')).filter(function(b){return/Daniyal/.test(b.textContent||'');})[0].click();},0);
       qin=document.getElementById('tb-qa');
       qin.value='smoke composer item';qin.dispatchEvent(new Event('input',{bubbles:true}));
       var n0=tbItems.length;

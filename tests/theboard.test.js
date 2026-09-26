@@ -1509,7 +1509,12 @@ module.exports=async function(){
     s.ok('someone not set up says so',/tb-qachip tb-qachip-off" disabled title="Saim is not set up yet"/.test(html));
     s.ok('a list and a lane',/id="tb-qa-list"/.test(html)&&/id="tb-qa-lane"/.test(html));
     s.ok('the list offers the drop',/Winter Drop 2027/.test(html));
-    s.ok('chip clicks keep the caret in the title',/onpointerdown="event.preventDefault\(\)"/.test(html));
+    // EVERY enabled chip, not just one of them (review of 05431c2: dropping
+    // the guard from the date chips passed, since the people chips kept it).
+    const enabled=(html.match(/<button (?![^>]*disabled)[^>]*>/g)||[]);
+    s.ok('there are enabled chips to check',enabled.length>=6);
+    s.eq('every enabled chip keeps the caret in the title',
+      enabled.filter(b=>/onpointerdown="event\.preventDefault\(\)"/.test(b)).length,enabled.length);
     // Next Mon is the Monday AFTER today, never today itself.
     a.run('_tbToday=function(){return "2026-09-28";}');   // a Monday
     s.ok('"next mon" on a Monday is a week out',/tbQaDate\('2026-10-05'\)"[^>]*>next mon</.test(a.run('_tbQaChipsHTML()')));
@@ -1519,6 +1524,121 @@ module.exports=async function(){
     s.eq('Escape clears a half-typed title first',a.run('_tbQa.text+"|"+_tbQa.open'),'|true');
     a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
     s.eq('and closes on the second press',a.run('_tbQa.open'),false);
+    // A picked lane or list alone is content too (review of 05431c2).
+    a.run('_tbQaReset(true);window.tbQaSet("lane","denim")');
+    a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
+    s.eq('Escape clears a picked lane first, and stays open',a.run('_tbQa.lane+"|"+_tbQa.laneSet+"|"+_tbQa.open'),'|false|true');
+    a.run('_tbQaReset(true);window.tbQaSet("listId","l1")');
+    a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
+    s.eq('and a picked list',a.run('String(_tbQa.listId)+"|"+_tbQa.open'),'undefined|true');
+  }
+  s.section('composer: the review fixes (05431c2)');
+  {
+    const mk=()=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash'});
+      a.run('session='+J(AMMAR)+';currentPage="tb-dash"');
+      a.run('userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"},{uid:"u-dani",username:"daniyal"}]');
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbListId=null;_tbQaReset(true)');
+      return a;
+    };
+    const plan=a=>a.run('tbComposerPlan(_tbQaParse(),_tbQa,"u-ammar",null)');
+    {
+      // A SECOND ENTER DURING THE WRITE creates nothing: the box is empty.
+      const a=mk();
+      a.run('globalThis.__commits=0;globalThis.__release=null;'
+        +'writeBatch=function(){return{set(){return this;},commit(){__commits++;return new Promise(r=>{__release=r;});}};};');
+      a.run('document.getElementById("tb-qa").value="call baber";_tbQa.text="call baber"');
+      a.run('globalThis.__p=window.tbQuickKey({key:"Enter",shiftKey:false,preventDefault(){}})');
+      s.eq('the composer is empty at once, before the write lands',a.run('_tbQa.text+"|"+document.getElementById("tb-qa").value'),'|');
+      s.eq('and still open',a.run('_tbQa.open'),true);
+      a.run('window.tbQuickKey({key:"Enter",shiftKey:false,preventDefault(){}})');
+      s.eq('a second Enter during the write starts no second create',a.run('__commits'),1);
+      a.run('__release()');
+      await new Promise(r=>setTimeout(r,20));
+      s.eq('one item',a.run('tbItems.length'),1);
+    }
+    {
+      // A REFUSED write gives the text back, unless something new was typed.
+      const a=mk();
+      a.run('writeBatch=function(){return{set(){return this;},commit(){return Promise.reject(new Error("Missing or insufficient permissions"));}};};'
+        +'loadTbData=async function(){};_tbRepaint=function(){};');
+      a.run('_tbQa.text="shoot prep";window.tbQaSet("lane","shoot")');
+      await a.run('window.tbCreateFromQuick("shoot prep",false,true)');
+      s.eq('a refused add puts the title and the chips back',a.run('_tbQa.text+"|"+_tbQa.lane'),'shoot prep|shoot');
+      a.run('_tbQaReset(true);_tbQa.text="first";globalThis.__rej=null;'
+        +'writeBatch=function(){return{set(){return this;},commit(){return new Promise((r,j)=>{__rej=j;});}};};');
+      a.run('globalThis.__p=window.tbCreateFromQuick("first",false,true)');
+      a.run('_tbQa.text="second"');                        // typed while the write was out
+      a.run('__rej(new Error("Missing or insufficient permissions"))');
+      await a.run('__p');
+      s.eq('but never over something typed since',a.run('_tbQa.text'),'second');
+    }
+    {
+      // THE OUTSIDE CLICK closes on CLICK, not on pointerdown.
+      const a=mk();
+      const fireD=(type,target)=>{
+        const e={type:type,target:target||{closest:()=>null},preventDefault(){},stopPropagation(){}};
+        ((a.state.listeners&&a.state.listeners[type])||[]).slice().forEach(fn=>{try{fn(e);}catch(x){}});
+      };
+      fireD('pointerdown');
+      s.eq('a pointerdown outside does not close it (the rows would jump under the press)',a.run('_tbQa.open'),true);
+      fireD('click');
+      s.eq('the click outside does',a.run('_tbQa.open'),false);
+      a.run('_tbQaReset(true);window.tbQaSet("lane","denim")');
+      fireD('click');
+      s.eq('a composer holding a picked lane stays open',a.run('_tbQa.open'),true);
+      a.run('_tbQaReset(true)');
+      fireD('click',{closest:sel=>sel==='#tb-quick'?{}:null});
+      s.eq('a click inside the composer never closes it',a.run('_tbQa.open'),true);
+    }
+    {
+      // A CHIP CAN SWITCH OFF WHAT THE TITLE SAID.
+      const a=mk();
+      a.run('_tbQa.text="x #denim"');
+      s.eq('the title\'s lane counts',plan(a).lane,'denim');
+      a.run('window.tbQaSet("lane","")');
+      s.eq('"none" on the lane chip means none, even with #denim in the title',plan(a).lane,null);
+      a.run('_tbQaReset(true);_tbQa.text="brief @afnan"');
+      s.ok('the title names Afnan',plan(a).assigneeUids.indexOf('u-afnan')>-1);
+      a.run('window.tbQaAssign("u-afnan")');
+      s.ok('his chip switches him off',plan(a).assigneeUids.indexOf('u-afnan')<0);
+      a.run('window.tbQaAssign("u-afnan")');
+      s.ok('and back on',plan(a).assigneeUids.indexOf('u-afnan')>-1);
+      a.run('window.tbQaAssign("u-dani");window.tbQaAssign("u-dani")');
+      s.ok('a chip-only person toggles as before',plan(a).assigneeUids.indexOf('u-dani')<0);
+      a.run('window.tbQaAssign("u-ammar")');
+      s.ok('nothing switches off yourself',plan(a).assigneeUids.indexOf('u-ammar')>-1);
+    }
+    {
+      // A DATE TYPED INTO THE FIELD: partial values are not choices.
+      const a=mk();
+      a.run('window.tbQaDate("2026-10-01")');
+      a.run('window.tbQaDate("0002-10-05",true)');
+      s.eq('the first digit of a year does not wipe the date',a.run('_tbQa.date'),'2026-10-01');
+      a.run('window.tbQaDate("0202-10-05",true)');
+      s.eq('nor does a real but absurd year on the way to 2026',a.run('_tbQa.date'),'2026-10-01');
+      a.run('window.tbQaDate("2026-10-05",true)');
+      s.eq('the finished date is taken',a.run('_tbQa.date'),'2026-10-05');
+      a.run('window.tbQaDate("",true)');
+      s.eq('clearing the field is still "no date"',a.run('_tbQa.dateSet+"|"+_tbQa.date'),'true|');
+      // and the field being typed in is not rebuilt under the caret
+      a.run('document.getElementById("tb-qa-chips").innerHTML="SENTINEL";document.getElementById("tb-qa-date").focus()');
+      a.run('window.tbQaDate("2026-10-06",true)');
+      s.eq('typing in the date field does not rebuild the chip row',a.run('document.getElementById("tb-qa-chips").innerHTML'),'SENTINEL');
+      s.eq('but the label follows',a.run('document.getElementById("tb-qa-datenow").textContent'),a.run('tbDayLabel("2026-10-06",_tbToday())'));
+      a.run('document.getElementById("tb-qa-date").blur();window.tbQaDateBlur()');
+      await new Promise(r=>setTimeout(r,5));
+      s.ok('leaving the field rebuilds it',a.run('document.getElementById("tb-qa-chips").innerHTML')!=='SENTINEL');
+    }
+    {
+      // A REPAINT WHILE THE COMPOSER HAS FOCUS puts the caret at the END.
+      const a=mk();
+      a.run('globalThis.__sel=null;var q=document.getElementById("tb-qa");q.value="half typed";'
+        +'q.setSelectionRange=function(x,y){__sel=[x,y];};q.focus();_tbQa.open=true;');
+      a.run('_tbRepaint()');
+      s.eq('the caret goes back to the end of what was typed',J(a.run('__sel')),J([10,10]));
+      s.eq('and the composer has focus again',a.run('document.activeElement&&document.activeElement.id'),'tb-qa');
+    }
   }
 
   s.section('needs a date: undated items I own OR am assigned to');
@@ -1529,10 +1649,15 @@ module.exports=async function(){
       it({id:'mine',ownerUid:'u-ammar',assigneeUids:['u-ammar']}),
       it({id:'onIt',ownerUid:'u-must',assigneeUids:['u-must','u-afnan']}),     // the seed's bulk-landing shape
       it({id:'notMine',ownerUid:'u-must',assigneeUids:['u-must']}),
-      it({id:'dated',ownerUid:'u-must',assigneeUids:['u-afnan'],date:'2026-10-02'})
+      it({id:'dated',ownerUid:'u-must',assigneeUids:['u-afnan'],date:'2026-10-02'}),
+      // Handed over without "keep me on it": OWNED, not assigned. Every other
+      // fixture's owner is also an assignee, so the "I own" half had no test
+      // of its own (review of 05431c2).
+      it({id:'handed',ownerUid:'u-dani',assigneeUids:['u-afnan']})
     ];
     const ids=x=>x.map(i=>i.id);
-    s.eq('Afnan sees the undated gate he is on',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-afnan")'))),J(['onIt']));
+    s.eq('Afnan sees the undated items he is on',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-afnan")')).sort()),J(['handed','onIt']));
+    s.eq('Daniyal sees the one he OWNS but handed over',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-dani")'))),J(['handed']));
     s.eq('Mustafa sees both he owns',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-must")'))),J(['notMine','onIt']));
     s.eq('Ammar sees his own',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-ammar")'))),J(['mine']));
     const assigned=ids(a.run('tbAssignedToMe('+J(ITEMS)+',"u-afnan","2026-09-26")'));

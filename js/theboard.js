@@ -1379,9 +1379,26 @@ window.tbRetry=function(){ tbLoaded=false; _tbRepaint(true); };
 // an input would be lost. Chip clicks repaint the chip row alone and keep
 // the caret in the input (pointerdown preventDefault), so typing is never
 // interrupted.
-let _tbQa={open:false,text:'',date:'',dateSet:false,assign:[],listId:undefined,lane:''};
+let _tbQa={open:false,text:'',date:'',dateSet:false,assign:[],unassign:[],listId:undefined,lane:'',laneSet:false};
 function _tbQaReset(keepOpen){
-  _tbQa={open:!!keepOpen,text:'',date:'',dateSet:false,assign:[],listId:undefined,lane:''};
+  _tbQa={open:!!keepOpen,text:'',date:'',dateSet:false,assign:[],unassign:[],listId:undefined,lane:'',laneSet:false};
+}
+/** Does the composer hold anything a keystroke or a stray click would
+ *  throw away? ONE definition, so Escape and the outside click agree
+ *  (review of 05431c2: Escape ignored a picked lane or list, closed the
+ *  composer with it still set, and the next item landed in that lane). */
+function _tbQaHasContent(){
+  const q=_tbQa;
+  return !!(q.text||q.dateSet||(q.assign||[]).length||(q.unassign||[]).length
+    ||q.laneSet||q.lane||q.listId!==undefined);
+}
+/** A day typed into the native field is only taken once it is a real,
+ *  plausible day: typing 10052026 passes through 0002-, 0020- and
+ *  0202-10-05 on the way, and 0202 is a valid date (review of 05431c2). */
+function _tbSaneDay(d){
+  if(!_tbValidDay(d))return false;
+  const y=Number(String(d).slice(0,4));
+  return y>=2000&&y<=2099;
 }
 /** The list a new item lands in: the chip's choice, else the list you are
  *  looking at, else none. */
@@ -1393,14 +1410,19 @@ function _tbQaParse(){
  *  over its inputs, so the preview and the create cannot disagree. */
 function tbComposerPlan(parsed,qa,me,listFallback){
   const p=parsed||{},q=qa||{};
+  // A chip can switch OFF a person the title named (q.unassign); nothing
+  // switches off yourself.
+  const off=q.unassign||[];
   const assignees=[me].concat(p.assigneeUids||[]).concat(q.assign||[])
-    .filter((u,i,a)=>u&&a.indexOf(u)===i);
+    .filter((u,i,a)=>u&&a.indexOf(u)===i&&(u===me||off.indexOf(u)<0));
   return{
     title:p.title||'',
     date:q.dateSet?(q.date||null):(p.date||null),
     dateFromText:!q.dateSet&&!!p.date,
     assigneeUids:assignees,
-    lane:q.lane||p.lane||null,
+    // "none" on the lane chip means none, even when the title says #denim
+    // (laneSet is the lane's dateSet).
+    lane:q.laneSet?(q.lane||null):(q.lane||p.lane||null),
     listId:q.listId!==undefined?(q.listId||null):(listFallback||null),
     priority:p.priority||0,
     pendingHandles:p.pendingHandles||[],unknownHandles:p.unknownHandles||[]
@@ -1434,8 +1456,8 @@ function _tbQaChipsHTML(){
   return'<div class="tb-qarow"><span class="tb-qalabel">date</span>'
       +dateBtn(today,'today')+dateBtn(_tbDayAdd(today,1),'tomorrow')+dateBtn(nextMon,'next mon')
       +'<input type="date" data-tb-fp class="tb-qadate" id="tb-qa-date" value="'+_tbEsc(plan.date||'')+'"'
-        +' onchange="window.tbQaDate(this.value)">'
-      +'<span class="tb-qadatenow'+(plan.date?'':' none')+'">'+_tbEsc(dateLabel)+'</span>'
+        +' onchange="window.tbQaDate(this.value,true)" onblur="window.tbQaDateBlur()">'
+      +'<span class="tb-qadatenow'+(plan.date?'':' none')+'" id="tb-qa-datenow">'+_tbEsc(dateLabel)+'</span>'
       +(plan.date?'<button type="button" class="tb-qachip tb-qaclear"'+keep+' onclick="window.tbQaDate(\'\')" title="no date">&times;</button>':'')
     +'</div>'
     +'<div class="tb-qarow"><span class="tb-qalabel">assign</span>'+people+'</div>'
@@ -1453,7 +1475,18 @@ function _tbQaChipsHTML(){
 /** Repaint the chip row and the preview line only -- never the input. */
 function _tbQaPaint(){
   const chips=document.getElementById('tb-qa-chips');
-  if(chips){ chips.innerHTML=_tbQa.open?_tbQaChipsHTML():''; _tbFpPrune(false); _tbPickers(chips); }
+  // NEVER rebuild the date field someone is typing into: the rebuild took
+  // the caret out after the first digit (review of 05431c2). Only the
+  // label moves until they leave it (tbQaDateBlur).
+  const ae=(typeof document!=='undefined'&&document.activeElement)||null;
+  const typing=!!(ae&&ae.id==='tb-qa-date');
+  if(chips&&typing){
+    const now=document.getElementById('tb-qa-datenow');
+    if(now){
+      const plan=tbComposerPlan(_tbQaParse(),_tbQa,_tbMe(),_tbListId);
+      now.textContent=plan.date?tbDayLabel(plan.date,_tbToday()):'no date';
+    }
+  }else if(chips){ chips.innerHTML=_tbQa.open?_tbQaChipsHTML():''; _tbFpPrune(false); _tbPickers(chips); }
   const wrap=document.getElementById('tb-quick');
   if(wrap&&wrap.classList)wrap.classList[_tbQa.open?'add':'remove']('open');
   const out=document.getElementById('tb-qa-prev');
@@ -1480,19 +1513,33 @@ window.tbQaFocus=function(){
   _tbQa.open=true;
   _tbQaPaint();
 };
-window.tbQaDate=function(d){
+window.tbQaDate=function(d,fromField){
+  // From the field: a half-typed value is not a choice yet. Ignore it,
+  // rather than recording "no date" (which wiped a date chosen earlier).
+  if(fromField&&d&&!_tbSaneDay(d))return;
   _tbQa.dateSet=true;
-  _tbQa.date=(d&&_tbValidDay(d))?d:'';
+  _tbQa.date=(d&&_tbSaneDay(d))?d:'';
   _tbQaPaint();
 };
+window.tbQaDateBlur=function(){ if(_tbQa.open)setTimeout(_tbQaPaint,0); };
 window.tbQaAssign=function(uid){
-  const i=_tbQa.assign.indexOf(uid);
-  if(i>-1)_tbQa.assign.splice(i,1);else _tbQa.assign.push(uid);
+  const q=_tbQa;
+  q.unassign=q.unassign||[];
+  const on=tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbListId).assigneeUids.indexOf(uid)>-1;
+  const rm=(a,u)=>{ const i=a.indexOf(u); if(i>-1)a.splice(i,1); };
+  if(on){
+    rm(q.assign,uid);
+    // Still on means the TITLE named them: switch that off too.
+    if(tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbListId).assigneeUids.indexOf(uid)>-1)q.unassign.push(uid);
+  }else{
+    rm(q.unassign,uid);
+    if(tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbListId).assigneeUids.indexOf(uid)<0)q.assign.push(uid);
+  }
   _tbQaPaint();
 };
 window.tbQaSet=function(k,v){
   if(k==='listId')_tbQa.listId=v||'';
-  else if(k==='lane')_tbQa.lane=(TB_LANES.indexOf(v)>-1)?v:'';
+  else if(k==='lane'){ _tbQa.lane=(TB_LANES.indexOf(v)>-1)?v:''; _tbQa.laneSet=true; }
   _tbQaPaint();
 };
 window.tbQuickPreview=function(){
@@ -1504,7 +1551,7 @@ window.tbQuickKey=function(e){
   if(e.key==='Escape'){
     // Empty: close it. Not empty: clear it first -- losing a half-typed
     // title to one keystroke would be worse than a second press.
-    if(_tbQa.text||_tbQa.dateSet||_tbQa.assign.length){ _tbQaReset(true); const el=document.getElementById('tb-qa'); if(el)el.value=''; }
+    if(_tbQaHasContent()){ _tbQaReset(true); const el=document.getElementById('tb-qa'); if(el)el.value=''; }
     else{ _tbQa.open=false; const el=document.getElementById('tb-qa'); if(el&&el.blur)el.blur(); }
     _tbQaPaint();
     return;
@@ -1519,13 +1566,18 @@ window.tbQuickKey=function(e){
 };
 // Registered ONCE: a click outside an EMPTY composer closes it. One with
 // anything in it stays open -- a stray click must not throw away a date.
+// ON CLICK, NOT POINTERDOWN (review of 05431c2): closing on pointerdown
+// collapsed the ~120px chip rows before pointerup, everything below
+// jumped, pointerdown and pointerup landed on different rows, and the
+// click that closed it never reached anything. The click's target is
+// fixed by the time a capture listener sees it.
 (function(){
   if(typeof document==='undefined'||!document.addEventListener)return;
-  document.addEventListener('pointerdown',function(e){
+  document.addEventListener('click',function(e){
     if(!_tbQa.open)return;
     const t=e&&e.target;
     if(t&&t.closest&&(t.closest('#tb-quick')||t.closest('.flatpickr-calendar')))return;
-    if(_tbQa.text||_tbQa.dateSet||_tbQa.assign.length||_tbQa.lane||_tbQa.listId!==undefined)return;
+    if(_tbQaHasContent())return;
     _tbQa.open=false;
     _tbQaPaint();
   },true);
@@ -1538,6 +1590,19 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
   // The chips count only when the text came FROM the composer; a caller
   // passing plain text (a test, a future shortcut) gets the grammar alone.
   const plan=tbComposerPlan(parsed,fromComposer?_tbQa:{},me,_tbListId);
+  // CLEARED BEFORE THE WRITE, not after it (review of 05431c2). The text
+  // used to stay in the box until commit() resolved -- a network round
+  // trip, and never, offline -- so a second Enter (a double press, key
+  // repeat) created the same item again. It comes back if the write is
+  // refused, unless something new has been typed since.
+  let saved=null;
+  if(fromComposer){
+    saved=Object.assign({},_tbQa,{assign:(_tbQa.assign||[]).slice(),unassign:(_tbQa.unassign||[]).slice()});
+    _tbQaReset(true); _tbQaRefocus=true;
+    const el=typeof document!=='undefined'&&document.getElementById('tb-qa');
+    if(el)el.value='';
+    _tbQaPaint();
+  }
   const data=tbNewItem({
     title:plan.title,
     assigneeUids:plan.assigneeUids,
@@ -1546,7 +1611,7 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
     listId:plan.listId,
     date:plan.date                    // NEVER today by default (session 2)
   },me,_tbNow(),tbLists);
-  await _tbTry(async()=>{
+  const ok=await _tbTry(async()=>{
     const ref=doc(collection(db,'board_items'));
     const b=writeBatch(db);
     b.set(ref,data);
@@ -1556,13 +1621,18 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
     _tbLiveRemember('items_own',ref.id,data);
     _tbUpsert(tbItems,tbDecodeItem(Object.assign({id:ref.id},data)));
     if(openAfter)_tbOpenItemId=ref.id;
-    // Ready for the next one: cleared, still open, caret back in it.
-    if(fromComposer){ _tbQaReset(true); _tbQaRefocus=true; }
+    // Ready for the next one: still open, caret back in it.
+    if(fromComposer)_tbQaRefocus=true;
     _tbRepaint();
     if(parsed.pendingHandles.length)_tbToast('Added — @'+parsed.pendingHandles.join(', @')
       +' is not set up yet, so not assigned. An owner can press Sync accounts on the Profile page.');
     else if(!data.date)_tbToast('Added with no date — it is in Needs a date.');
   },'add that');
+  if(!ok&&saved&&!_tbQaHasContent()){
+    _tbQa=Object.assign(saved,{open:true});
+    _tbQaRefocus=true;
+    _tbRepaint();
+  }
 };
 let _tbQaRefocus=false;
 
@@ -4178,7 +4248,13 @@ function _tbRepaint(reload){
   if(_tbQaRefocus){
     _tbQaRefocus=false;
     const q=document.getElementById('tb-qa');
-    if(q&&q.focus)q.focus();
+    if(q&&q.focus){
+      q.focus();
+      // A rebuilt input puts the caret at 0, and the next keystrokes went
+      // in FRONT of what was there (review of 05431c2).
+      const n=String(q.value||'').length;
+      if(q.setSelectionRange)try{q.setSelectionRange(n,n);}catch(e){}
+    }
   }
   if(_tbCompFocus){
     _tbCompFocus=false;
