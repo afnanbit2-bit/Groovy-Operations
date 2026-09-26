@@ -9143,6 +9143,29 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   card, whose button is a tap; a later refusal is a cancel and is left
   alone — a timing heuristic, labelled as one. The card is now marked
   offered only when ANSWERED.
+- **Pull-to-refresh REBUILT from Afnan's screen recording (27 Sept).**
+  Read frame by frame (cv2, 90fps): every release was a hard cut to a
+  blank page (brightness 42 → 12.5 in ONE frame), then the entrance
+  animation replayed for ~0.8s, then the fingerprint row popped in late
+  and shoved the form up. Now a pull is a CHECK, not a reload:
+  `_ptrRefresh` asks the service worker for a new build and returns
+  `'current'` (the ring turns into a tick, "Up to date", a double-pulse,
+  the card springs home — the page never goes away) or `'update'` (only
+  when a worker actually installed: "Updating…", the card fades, reload,
+  and `html.ptr-return` from the `<head>` script skips the entrance so it
+  reads as one screen). The fingerprint row is decided at load from the
+  remembered answer (`groovy-bio-capable`), not popped in later. The
+  bubble only moves and grows; only the ARC rotates (turning the whole
+  bubble swung the arrow sideways and tipped the label over), and the
+  arrow flips with `scaleY(-1)`, never through sideways. Behind the card,
+  on a phone, the layer is `--surface`. **Haptics** (`navigator.vibrate`,
+  Android only; iOS has no API): 8ms tick at the threshold, 14ms on
+  release, `[10,50,16]` when done, `[10,40,10]` on an update. Chrome drops
+  vibrate until the page has been tapped once, so the very first
+  threshold tick on a fresh page can be silent. **Verified by driving a
+  real touch gesture in headless Chromium** (playwright-core + CDP
+  `Input.dispatchTouchEvent`, per-frame transform log): 263 frames, the
+  card never jumps more than 5.8px a frame, no reload on the current path.
 - **Pull down to refresh on the login and lock screens is OURS**
   (`_gvPullToRefresh`, js/auth.js), because `overscroll-behavior:none` —
   the no-scroll fix — also switches off the browser's own. Rubber band

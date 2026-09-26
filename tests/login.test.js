@@ -248,29 +248,75 @@ module.exports=async function(){
     s.ok('… and never past the cap',d(5000)<=128);
     s.ok('the threshold is reachable with a normal pull (~120px)',d(120)>=72);
 
-    run(`var __ref=0;var __sc=document.getElementById('ptr-sc');__sc.scrollTop=0;
-      _gvPullToRefresh(__sc,document.getElementById('ptr-ind'),function(){__ref++;return Promise.resolve();})`);
-    const sc=app.el('ptr-sc');
+    run(`var __ref=0,__vib=[];navigator.vibrate=function(v){__vib.push(JSON.stringify(v));return true};
+      var __sc=document.getElementById('ptr-sc');__sc.scrollTop=0;
+      _gvPullToRefresh(__sc,document.getElementById('ptr-ind'),function(){__ref++;return Promise.resolve('current');})`);
+    const sc=app.el('ptr-sc'),ind=app.el('ptr-ind');
     const T=y=>({touches:[{clientY:y}],cancelable:true});
-    s.section('pull to refresh: the gesture');
+    const wait=ms=>new Promise(r=>setTimeout(r,ms));
+    s.section('pull to refresh: the gesture (rebuilt from the 27 Sept recording)');
     app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(140));app.fire(sc,'touchend',{});
-    await new Promise(r=>setTimeout(r,5));
+    await wait(5);
     s.eq('a short pull does not refresh',run('__ref'),0);
+    s.eq('… and does not buzz',run('__vib.length'),0);
     app.fire(sc,'touchstart',T(100));
     const mv=app.fire(sc,'touchmove',T(320));
     s.ok('a pull takes the gesture from the browser (preventDefault)',mv.defaultPrevented);
-    s.ok('the arrow flips when a release will refresh',app.el('ptr-ind').classList.contains('ready'));
+    s.ok('the arrow flips when a release will refresh',ind.classList.contains('ready'));
+    s.eq('crossing the line is a light tick',run('__vib[0]'),'8');
     app.fire(sc,'touchend',{});
-    await new Promise(r=>setTimeout(r,5));
+    await wait(5);
     s.eq('a long pull, released, refreshes once',run('__ref'),1);
+    s.eq('the release is a firmer tap',run('__vib[1]'),'14');
+    s.ok('nothing new: the ring becomes a TICK — the page is NOT reloaded',ind.classList.contains('done'));
+    s.eq('… with a double-pulse',run('__vib[2]'),'[10,50,16]');
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(400));app.fire(sc,'touchend',{});
+    await wait(5);
+    s.eq('a second pull while the first is finishing is ignored',run('__ref'),1);
+    await wait(1150);
+    s.ok('then it settles back to rest',!ind.classList.contains('done')&&!ind.classList.contains('spin'));
     sc.scrollTop=50;
     app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(400));app.fire(sc,'touchend',{});
-    await new Promise(r=>setTimeout(r,5));
+    await wait(5);
     s.eq('not while the screen is scrolled down (keyboard open): that drag is a scroll',run('__ref'),1);
     sc.scrollTop=0;
     app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(300));app.fire(sc,'touchmove',T(110));app.fire(sc,'touchend',{});
-    await new Promise(r=>setTimeout(r,5));
+    await wait(5);
     s.eq('pulled past and back again: no refresh',run('__ref'),1);
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(320));app.fire(sc,'touchend',{});
+    await wait(5);
+    s.eq('once settled, a new pull works again',run('__ref'),2);
+    await wait(1150);
+
+    run(`_gvPullToRefresh(document.getElementById('ptr-sc2'),document.getElementById('ptr-ind2'),function(){return Promise.resolve('update');})`);
+    const sc2=app.el('ptr-sc2');sc2.scrollTop=0;
+    app.fire(sc2,'touchstart',T(100));app.fire(sc2,'touchmove',T(320));app.fire(sc2,'touchend',{});
+    await wait(5);
+    s.ok('a NEW build: the ring says Updating… (the page is about to reload)',app.el('ptr-ind2').classList.contains('update'));
+    s.ok('… and it does not spring back first',!app.el('ptr-ind2').classList.contains('done'));
+  }
+
+  // ── what a refresh actually does ──────────────────────────────────────
+  for(const [newBuild,label] of [[false,'no new build: refreshed IN PLACE, no reload'],[true,'a new build arrived: THEN it reloads']]){
+    const {run}=boot();
+    run(`var __rl=0;_ptrReload=function(){__rl++};var __cc=null;
+      navigator.serviceWorker={getRegistration:async function(){return{update:async function(){if(${newBuild})setTimeout(function(){__cc&&__cc()},10)},installing:${newBuild}?{}:null,waiting:null}},
+        addEventListener:function(t,f){if(t==='controllerchange')__cc=f}}`);
+    const out=await run('_ptrRefresh()');
+    s.section('pull to refresh: '+label);
+    s.eq('answers '+(newBuild?'update':'current'),out,newBuild?'update':'current');
+    s.eq(newBuild?'the page reloads once':'the page is NOT reloaded',run('__rl'),newBuild?1:0);
+  }
+  {
+    const fs=require('fs'),path=require('path');
+    const idx=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
+    const head=idx.slice(0,idx.indexOf('</head>'));
+    s.section('coming back from an update reload is one continuous screen');
+    s.ok('the <head> script marks the return before anything paints',/sessionStorage\.getItem\('gv-ptr'\)[^\n]*ptr-return/.test(head));
+    const css=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');
+    s.ok('… and the entrance animation is skipped for it',/html\.ptr-return #scr-login \.login-box,html\.ptr-return #scr-login \.login-box>\*\{animation:none!important\}/.test(css));
+    s.ok('the fingerprint row is decided from the remembered answer at load, not popped in later',
+      /let _lockCapable=_authRead\('groovy-bio-capable'\)==='1';/.test(fs.readFileSync(path.join(__dirname,'..','js','auth.js'),'utf8')));
   }
 
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────

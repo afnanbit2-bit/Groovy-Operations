@@ -502,35 +502,61 @@ function _authRestoreDecision(user,tabU,keepFlag,rememberedU,defs){
 })();
 
 // ── Pull down to refresh (login + lock) ──
-// The login is a fixed layer with overscroll-behavior:none — that is what
-// stopped it scrolling — and the same property switches off the browser's
-// own pull-to-refresh. So it is rebuilt here, on purpose, with motion:
-// the card follows the finger with resistance, a ring fills as the pull
-// nears the threshold, the arrow flips with a buzz when a release will
-// refresh, and on release the ring spins while the app checks for a NEW
-// VERSION before reloading — so the pull that refreshes also brings in an
-// update, which a plain reload behind a cache-first service worker would
-// not guarantee.
-const _PTR_READY=72, _PTR_MAX=128;
+// Rebuilt 27 Sept from Afnan's screen recording, read frame by frame: the
+// first cut reloaded the whole page on EVERY pull, so each release was a
+// hard cut to a blank screen (brightness 42 → 12.5 in one frame), then the
+// entrance animation replayed for ~0.8s, then the fingerprint row popped in
+// late and shoved the form up. Three breaks in one gesture.
+//
+// Now a pull is a CHECK, not a reload:
+//   pull     the card follows the finger with resistance (rAF, no layout),
+//            the ring fills and turns; crossing the line = a light tick
+//   release  a firmer tap; the card settles to a holding height with a
+//            spring and the ring spins while the app asks the service
+//            worker for a new build
+//   current  the ring becomes a tick, a double-pulse, and the card springs
+//            home — the page never goes away
+//   update   only when there IS a new build: "Updating…", the card fades,
+//            the page reloads and comes back WITHOUT the entrance animation
+//            (html.ptr-return, set by the <head> script)
+// Haptics: navigator.vibrate is Android only (iOS Safari has none) and
+// Chrome ignores it until the person has tapped the page once, so the
+// FIRST threshold tick of a fresh page may be silent; the release and
+// completion pulses come after a touchend, which counts as that tap.
+const _PTR_READY=72, _PTR_MAX=128, _PTR_HOLD=56;
+const _PTR_SPRING='cubic-bezier(.22,1.25,.36,1)';   // a little overshoot
+const _PTR_EASE='cubic-bezier(.2,.8,.2,1)';
 function _ptrDistance(dy){           // rubber band: easy at first, harder later
   if(dy<=0)return 0;
   return Math.min(_PTR_MAX,_PTR_MAX*(1-Math.exp(-dy/140)));
 }
+function _ptrBuzz(p){try{if(navigator.vibrate)navigator.vibrate(p);}catch(_){}}
 function _gvPullToRefresh(scroller,indicator,onRefresh){
   if(!scroller||!indicator||scroller.__ptr)return;
   scroller.__ptr=true;
   const card=scroller.querySelector('.login-box');
   const arc=indicator.querySelector('.ptr-arc');
-  let y0=null,pull=0,ready=false,busy=false,tracking=false;
-  const paint=(p,anim)=>{
-    const t=anim?'transform .45s cubic-bezier(.2,.9,.25,1.15), opacity .3s':'none';
-    indicator.style.transition=t;
-    indicator.style.transform='translate(-50%,'+(p-56)+'px) rotate('+(p*2.4)+'deg)';
-    indicator.style.opacity=String(Math.min(1,p/40));
-    if(arc)arc.style.strokeDashoffset=String(53.4*(1-Math.min(1,p/_PTR_READY)));
-    if(card){card.style.transition=anim?'transform .45s cubic-bezier(.2,.9,.25,1.15)':'none';
-      card.style.transform=p?'translateY('+(p*0.4)+'px)':'';}
+  const label=indicator.querySelector('.ptr-label');
+  let y0=null,pull=0,ready=false,busy=false,tracking=false,raf=0;
+  const set=(p,mode)=>{
+    // mode: 'drag' (no transition), 'spring' (settle), 'ease' (leave)
+    const tr=mode==='drag'?'none':mode==='spring'
+      ?'transform .5s '+_PTR_SPRING+', opacity .25s ease'
+      :'transform .38s '+_PTR_EASE+', opacity .25s ease';
+    const k=Math.min(1,p/_PTR_READY);
+    indicator.style.transition=tr;
+    // The bubble only MOVES and grows; only the ARC turns. Rotating the
+    // whole bubble (the first cut) swung the arrow sideways and tipped the
+    // "Up to date" label over — both visible in the recorded frames.
+    indicator.style.transform='translate(-50%,'+(p-56)+'px) scale('+(0.6+0.4*k)+')';
+    indicator.style.opacity=String(Math.min(1,p/32));
+    if(arc&&!indicator.classList.contains('spin')){
+      arc.style.strokeDashoffset=String(53.4*(1-k));
+      arc.style.transform='rotate('+(-90+p*2.6)+'deg)';
+    }
+    if(card){card.style.transition=tr;card.style.transform=p?'translate3d(0,'+(p*0.42).toFixed(1)+'px,0)':'';}
   };
+  const reset=()=>{['ready','spin','done','update'].forEach(c=>indicator.classList.remove(c));if(label)label.textContent='';};
   scroller.addEventListener('touchstart',e=>{
     if(busy||e.touches.length!==1||scroller.scrollTop>0){y0=null;return;}
     y0=e.touches[0].clientY;tracking=false;pull=0;ready=false;
@@ -538,43 +564,73 @@ function _gvPullToRefresh(scroller,indicator,onRefresh){
   scroller.addEventListener('touchmove',e=>{
     if(y0==null||busy)return;
     const dy=e.touches[0].clientY-y0;
-    if(!tracking){if(dy<6)return;tracking=true;}
+    if(!tracking){if(dy<6)return;tracking=true;if(card)card.style.willChange='transform';}
     if(e.cancelable)e.preventDefault();
     pull=_ptrDistance(dy);
     const nowReady=pull>=_PTR_READY;
     if(nowReady!==ready){
       ready=nowReady;indicator.classList.toggle('ready',ready);
-      if(ready&&navigator.vibrate)try{navigator.vibrate(8);}catch(_){}
+      if(ready)_ptrBuzz(8);
     }
-    paint(pull,false);
+    if(!raf)raf=(window.requestAnimationFrame||setTimeout)(()=>{raf=0;set(pull,'drag');});
   },{passive:false});
-  const end=()=>{
+  const end=async()=>{
     if(y0==null)return;y0=null;
     if(!tracking)return;tracking=false;
-    if(ready&&!busy){
-      busy=true;indicator.classList.remove('ready');indicator.classList.add('spin');
-      paint(_PTR_READY,true);
-      Promise.resolve(onRefresh()).catch(()=>{}).then(()=>{
-        busy=false;indicator.classList.remove('spin');paint(0,true);
-      });
-    }else{indicator.classList.remove('ready');paint(0,true);}
+    if(raf){(window.cancelAnimationFrame||clearTimeout)(raf);raf=0;}
+    if(!(ready&&!busy)){reset();set(0,'ease');if(card)card.style.willChange='';return;}
+    busy=true;
+    _ptrBuzz(14);                                   // the release
+    indicator.classList.remove('ready');indicator.classList.add('spin');
+    if(arc){arc.style.strokeDashoffset='';arc.style.transform='';}
+    set(_PTR_HOLD,'spring');
+    let res='current';
+    try{res=(await onRefresh())||'current';}catch(_){res='current';}
+    indicator.classList.remove('spin');
+    if(res==='update'){
+      indicator.classList.add('update');if(label)label.textContent='Updating…';
+      _ptrBuzz([10,40,10]);
+      return;                                       // the page is about to go
+    }
+    indicator.classList.add('done');if(label)label.textContent='Up to date';
+    _ptrBuzz([10,50,16]);                            // done: a double pulse
+    await new Promise(r=>setTimeout(r,650));
+    set(0,'ease');
+    await new Promise(r=>setTimeout(r,420));
+    reset();if(card)card.style.willChange='';
+    busy=false;
   };
   scroller.addEventListener('touchend',end,{passive:true});
   scroller.addEventListener('touchcancel',end,{passive:true});
 }
-// Check for a new build, give it a moment to take over, then reload.
+// Ask the service worker for a new build. Only a build that actually
+// arrived reloads the page; otherwise the screen is refreshed IN PLACE.
 async function _ptrRefresh(){
   const started=Date.now();
+  let updated=false;
   try{
-    if(navigator.serviceWorker&&navigator.serviceWorker.getRegistration){
-      const reg=await navigator.serviceWorker.getRegistration();
-      if(reg){await Promise.race([reg.update(),new Promise(r=>setTimeout(r,2500))]);}
+    const swc=navigator.serviceWorker;
+    const reg=swc&&swc.getRegistration?await swc.getRegistration():null;
+    if(reg){
+      const took=new Promise(r=>{try{swc.addEventListener('controllerchange',()=>r(true),{once:true});}catch(_){r(false);}});
+      await Promise.race([reg.update(),new Promise(r=>setTimeout(r,3000))]);
+      if(reg.installing||reg.waiting){
+        // sw.js calls skipWaiting, so a new worker takes over by itself.
+        updated=await Promise.race([took,new Promise(r=>setTimeout(()=>r(true),4000))]);
+      }
     }
   }catch(_){}
-  const wait=Math.max(0,700-(Date.now()-started));   // long enough to SEE it spin
+  const wait=Math.max(0,650-(Date.now()-started));  // long enough to SEE it spin
   await new Promise(r=>setTimeout(r,wait));
-  location.reload();
-  return new Promise(()=>{});                         // stay spinning until the page goes
+  if(updated){_ptrReload();return'update';}
+  // In place: re-read what the login screen shows.
+  try{window.loginBioSync();_loginPaintFinger();_loginPaintTheme();}catch(_){}
+  return'current';
+}
+function _ptrReload(){
+  try{sessionStorage.setItem('gv-ptr','1');}catch(_){}
+  try{document.documentElement.classList.add('ptr-leaving');}catch(_){}
+  setTimeout(()=>location.reload(),220);
 }
 try{
   _gvPullToRefresh(document.getElementById('scr-login'),document.getElementById('login-ptr'),_ptrRefresh);
@@ -864,7 +920,10 @@ document.addEventListener('visibilitychange',()=>{
 });
 // The login screen's fingerprint row: visible only where the phone can
 // check a fingerprint, and only while Remember me is ticked.
-let _lockCapable=false;
+// The fingerprint row must not POP IN after the page has drawn (the
+// recording showed it shoving the form up). The last answer this phone gave
+// is remembered and applied synchronously; the async check only corrects it.
+let _lockCapable=_authRead('groovy-bio-capable')==='1';
 window.loginBioSync=function(){
   const row=document.getElementById('login-bio'),rm=document.getElementById('l-remember');
   if(!row)return;
@@ -872,7 +931,8 @@ window.loginBioSync=function(){
 };
 (function(){
   try{
-    lockAvailable().then(ok=>{_lockCapable=!!ok;window.loginBioSync();}).catch(()=>{});
+    window.loginBioSync();
+    lockAvailable().then(ok=>{_lockCapable=!!ok;_authStore('groovy-bio-capable',ok?'1':'0');window.loginBioSync();}).catch(()=>{});
   }catch(_){}
 })();
 function _lockClear(uid){

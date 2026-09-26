@@ -230,21 +230,37 @@ html.app-locked,html.app-locked body{overflow:hidden}
 .lock-print:active{transform:scale(.97)}
 .lock-msg{min-height:22px;text-align:center;font-size:14px;color:var(--muted);margin-bottom:14px}
 .lock-alt{display:block;margin:-22px auto 26px}
-/* Pull-to-refresh indicator: a ring that fills with the pull, an arrow
-   that flips when a release will refresh, a spin while it does. Placed by
-   js (_gvPullToRefresh); hidden above the top edge at rest. */
+/* Pull-to-refresh indicator (js: _gvPullToRefresh). A ring that fills and
+   turns with the pull, an arrow that flips when a release will refresh, a
+   spin while it checks, and a tick + "Up to date" when it is done. Every
+   state change is a class, so the motion lives here and the js only moves
+   one transform. */
 .ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 8px);z-index:3;width:44px;height:44px;border-radius:50%;
-  background:var(--surface);border:1px solid var(--border);box-shadow:0 6px 18px rgba(0,0,0,.18);
-  display:flex;align-items:center;justify-content:center;transform:translate(-50%,-56px);opacity:0;pointer-events:none;color:var(--text)}
-.ptr svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 22px rgba(0,0,0,.22);
+  display:flex;align-items:center;justify-content:center;transform:translate(-50%,-56px);opacity:0;pointer-events:none;color:var(--text);will-change:transform,opacity}
+.ptr svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
 .ptr .ptr-track{stroke:var(--border)}
-.ptr .ptr-arc{stroke-dasharray:53.4;stroke-dashoffset:53.4;transform:rotate(-90deg);transform-origin:12px 12px}
-.ptr .ptr-arrow{transition:transform .2s ease;transform-origin:12px 12px}
-.ptr.ready .ptr-arrow{transform:rotate(180deg)}
-.ptr.spin svg{animation:ptrSpin .8s linear infinite}
-.ptr.spin .ptr-arrow{opacity:0}
-.ptr.spin .ptr-arc{stroke-dashoffset:38}
+.ptr .ptr-arc{stroke-dasharray:53.4;stroke-dashoffset:53.4;transform:rotate(-90deg);transform-origin:12px 12px;transition:stroke-dashoffset .12s linear}
+.ptr .ptr-arrow{transition:transform .28s cubic-bezier(.22,1.25,.36,1),opacity .15s;transform-origin:12px 12px}
+.ptr .ptr-check{stroke-dasharray:14;stroke-dashoffset:14;opacity:0}
+.ptr.ready .ptr-arrow{transform:scaleY(-1)}
+.ptr.ready{box-shadow:0 10px 26px rgba(0,0,0,.3)}
+.ptr.spin svg{animation:ptrSpin .75s linear infinite}
+.ptr.spin .ptr-arrow,.ptr.done .ptr-arrow,.ptr.update .ptr-arrow{opacity:0}
+.ptr.spin .ptr-arc{stroke-dashoffset:40;transition:none}
+.ptr.done .ptr-arc,.ptr.update .ptr-arc{stroke-dashoffset:0}
+.ptr.done .ptr-check{opacity:1;animation:ptrTick .32s cubic-bezier(.2,.8,.2,1) forwards}
+.ptr.done{animation:ptrPop .42s cubic-bezier(.22,1.25,.36,1)}
+.ptr.update svg{animation:ptrSpin .75s linear infinite}
+.ptr-label{position:absolute;top:52px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--muted);opacity:0;transition:opacity .2s}
+.ptr.done .ptr-label,.ptr.update .ptr-label{opacity:1}
 @keyframes ptrSpin{to{transform:rotate(360deg)}}
+@keyframes ptrTick{to{stroke-dashoffset:0}}
+@keyframes ptrPop{0%{scale:1}40%{scale:1.14}100%{scale:1}}
+/* Leaving for a reload that brings a new build, and arriving back: one
+   continuous screen, never a blank frame followed by a replayed entrance. */
+html.ptr-leaving #scr-login .login-box,html.ptr-leaving #scr-lock .login-box{opacity:0;transform:translate3d(0,24px,0)!important;transition:opacity .2s ease,transform .2s ease!important}
+html.ptr-return #scr-login .login-box,html.ptr-return #scr-login .login-box>*{animation:none!important}
 /* Entrance: the pieces of the card rise in, one after another. */
 @keyframes loginRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 #scr-login .login-box>*{animation:loginRise .5s cubic-bezier(.2,.8,.2,1) both}
@@ -273,6 +289,9 @@ html.app-locked,html.app-locked body{overflow:hidden}
      (the Sign in button measured 22px). This way the card is at least the
      screen and grows past it, and the layer scrolls instead. */
   #scr-login,#scr-lock{align-items:flex-start}
+  /* The card IS the screen here, so what shows above it while it is pulled
+     down must be the same colour — not a darker band. */
+  #scr-login,#scr-lock{background:var(--surface)}
   .login-box>*{flex-shrink:0}
   .login-box{margin:0;max-width:none;min-height:100%;border:none;border-radius:0;box-shadow:none;
     padding:calc(72px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
