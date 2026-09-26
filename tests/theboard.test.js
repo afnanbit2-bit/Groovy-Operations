@@ -1659,6 +1659,45 @@ module.exports=async function(){
     }
   }
 
+  // A document id went into onclick="f('…')" through HTML escaping alone;
+  // the browser decodes &#39; back to ' before the handler runs, so a
+  // crafted id closed the string and ran what followed (review of 2ab0a8f).
+  s.section('an id in an inline handler arrives as the id, and runs nothing');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+    const decode=h=>h.replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+    // Run the handler the way a browser would, with the target stubbed.
+    const call=(code,fn)=>{
+      const vm=require('vm');const got=[];const box={pwned:false};
+      const ctx={window:{},event:{stopPropagation(){}},got,box};
+      ctx.window[fn]=function(){got.push([].slice.call(arguments));};
+      ctx.window.tbCloseMove=function(){};
+      try{ vm.runInNewContext(code,ctx); }catch(e){ return{err:String(e.message||e)}; }
+      return{got,pwned:ctx.pwned||box.pwned};
+    };
+    const nasty=["x');box.pwned=true;//","a\\b'c\"d<e>&f","line\nbreak","sep x"];
+    nasty.forEach(function(id){
+      a.run('tbItems=[tbDecodeItem({id:'+J(id)+',title:"t",status:"open",ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"shared",date:"2026-10-01"})]');
+      const html=a.run('_tbRow(tbItems[0],"2026-09-26",{})');
+      const m=/class="tb-rowmain" onclick="([^"]*)"/.exec(html);
+      const r=m?call(decode(m[1]),'tbOpenItem'):{err:'no handler'};
+      s.eq('the row opens exactly '+J(id),J(r.got&&r.got[0]),J([id]));
+      s.ok('and runs nothing else',!r.pwned&&!r.err,r.err||'');
+    });
+    // The inbox's itemId comes from hrm_notifications, which anyone signed in can write.
+    const html=a.run('_tbJs("n1\');box.pwned=true;//")');
+    const r=call("window.tbOpenNotif('"+decode(html)+"','')",'tbOpenNotif');
+    s.ok('a notification id cannot break out either',!r.pwned&&J(r.got&&r.got[0])===J(["n1');box.pwned=true;//",'']));
+    // Every quoted handler argument in the module goes through _tbJs.
+    const src=read('js/theboard.js');
+    const sites=src.match(/\\''\+[^+]*?\+/g)||[];
+    const bad=sites.filter(x=>!/^\\''\+(_tbJs\(|jid\+)/.test(x));
+    s.ok('found the handler arguments',sites.length>20,sites.length+' sites');
+    s.eq('every one is _tbJs, never _tbEsc or a raw value',bad.join(' | '),'');
+  }
+
   // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
   s.section('the composer: no date means undated, never today');
   {

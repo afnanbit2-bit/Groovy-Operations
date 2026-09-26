@@ -118,6 +118,18 @@ function _tbEsc(s){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+/** A value spliced into a quoted argument of an INLINE HANDLER,
+ *  onclick="f('…')". _tbEsc alone is not enough there: the browser decodes
+ *  &#39; back to ' before the handler runs, so an id carrying a quote
+ *  closes the string and runs whatever follows (review of 2ab0a8f). A
+ *  document id is whatever its writer chose, and hrm_notifications -- the
+ *  inbox's itemId -- is writable by anyone signed in. So: escape for the
+ *  JS string first, then for the attribute. Every such site uses this;
+ *  tests/theboard.test.js fails on one that does not. */
+function _tbJs(s){
+  return _tbEsc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+    .replace(/\n/g,'\\n').replace(/\r/g,'\\r').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029'));
+}
 
 // ── Notifications ─────────────────────────────────────────────────────
 // The Board does NOT get a collection of its own. This app already has a
@@ -961,6 +973,7 @@ function _tbRow(item,today,o){
   const starred=!done&&(item.myDay||{})[me]===today;
   const list=(!o.inList&&item.listId)?tbLists.filter(l=>l&&l.id===item.listId)[0]:null;
   const id=_tbEsc(item.id);
+  const jid=_tbJs(item.id);
   const avatars=others.slice(0,3).map(u=>{
     const p=tbUser(u);
     return'<span class="tb-av" title="'+_tbEsc(p.name)+'">'+_tbEsc(p.initial)+'</span>';
@@ -986,8 +999,8 @@ function _tbRow(item,today,o){
   return'<div class="tb-row'+(done?' done':'')+(item.priority===2?' crit':'')+(item.id===_tbOpenItemId?' tb-sel':'')+'" data-id="'+id+'">'
     +'<button class="tb-check'+(done?' on':'')+'" title="'+(done?'Mark not done':'Mark done')+'"'
       +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
-      +' onclick="event.stopPropagation();window.tbToggleDone(\''+id+'\')">'+_tbIcon('check','sm')+'</button>'
-    +'<button class="tb-rowmain" onclick="window.tbOpenItem(\''+id+'\')">'
+      +' onclick="event.stopPropagation();window.tbToggleDone(\''+jid+'\')">'+_tbIcon('check','sm')+'</button>'
+    +'<button class="tb-rowmain" onclick="window.tbOpenItem(\''+jid+'\')">'
       +_tbSlot(item.title||'untitled','tb-rowtitle')
       +(meta?'<span class="tb-rowmeta"><span class="tb-dot tb-c-'+_tbEsc(ck)+'"></span>'+meta+'</span>':'')
     +'</button>'
@@ -995,7 +1008,7 @@ function _tbRow(item,today,o){
     +(done?'':'<button class="tb-star'+(starred?' on':'')+'"'
       +' title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
       +' aria-label="'+(starred?'Remove from My Day':'Add to My Day')+'" aria-pressed="'+(starred?'true':'false')+'"'
-      +' onclick="event.stopPropagation();window.tbAddToMyDay(\''+id+'\')">'+_tbIcon('star')+'</button>')
+      +' onclick="event.stopPropagation();window.tbAddToMyDay(\''+jid+'\')">'+_tbIcon('star')+'</button>')
   +'</div>';
 }
 /** First letter up: "today" -> "Today", "gate" -> "Gate". Pure. */
@@ -1041,7 +1054,7 @@ function _tbGroup(key,title,items,today,o){
   const shut=_tbDashFoldGet().has(key);
   return'<section class="tb-group'+(shut?' tb-shut':'')+'" data-group="'+_tbEsc(key)+'">'
     +'<button class="tb-grouph" aria-expanded="'+(shut?'false':'true')+'"'
-      +' onclick="window.tbToggleGroup(\''+_tbEsc(key)+'\')">'
+      +' onclick="window.tbToggleGroup(\''+_tbJs(key)+'\')">'
       +_tbIcon(shut?'chevron-right':'chevron-down','sm')
       +'<span class="tb-groupname">'+_tbEsc(title)+'</span>'
       +'<span class="tb-count'+(o&&o.red?' red':'')+'">'+items.length+'</span>'
@@ -1159,13 +1172,13 @@ function _tbListsScreen(){
   const priv=mine.filter(l=>l.kind!=='shared');
   const card=l=>{
     const open=tbItems.filter(i=>i.listId===l.id&&i.status!=='done').length;
-    return'<button class="tb-listcard" onclick="window.tbOpenList(\''+_tbEsc(l.id)+'\')">'
+    return'<button class="tb-listcard" onclick="window.tbOpenList(\''+_tbJs(l.id)+'\')">'
       +'<span class="tb-dot tb-c-'+_tbEsc(TB_COLORS[l.color]?l.color:'slate')+'"></span>'
       +_tbSlot(l.title||'untitled','tb-listname')
       +'<span class="tb-listn">'+open+'</span></button>';
   };
   const sec=(t,ls,kind)=>'<div class="tb-sec"><div class="tb-sech">'+_tbEsc(t)
-    +'<button class="tb-newlist" onclick="window.tbNewList(\''+kind+'\')">+ New</button></div>'
+    +'<button class="tb-newlist" onclick="window.tbNewList(\''+_tbJs(kind)+'\')">+ New</button></div>'
     +(ls.length?ls.map(card).join(''):'<div class="tb-cardempty">no '+_tbEsc(String(t).toLowerCase())+' lists yet</div>')+'</div>';
   return sec('Team',shared,'shared')+sec('Private',priv,'private');
 }
@@ -1202,7 +1215,7 @@ function _tbCompleted(listId,done,today){
   const rows=done.slice().sort((a,b)=>Number(b.completedAt||0)-Number(a.completedAt||0));
   return'<div class="tb-card tb-donegroup'+(open?' open':'')+'">'
     +'<button class="tb-cardh tb-donetoggle" aria-expanded="'+(open?'true':'false')+'"'
-      +' onclick="window.tbToggleCompleted(\''+_tbEsc(listId)+'\')">'
+      +' onclick="window.tbToggleCompleted(\''+_tbJs(listId)+'\')">'
       +_tbIcon(open?'chevron-down':'chevron-right','sm')+'Completed'
       +'<span class="tb-count">'+done.length+'</span></button>'
     +(open?rows.map(i=>_tbRow(i,today,{inList:true})).join(''):'')
@@ -1229,7 +1242,7 @@ function _tbDrawer(){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
   if(!it)return'';
   const me=_tbMe(),today=_tbToday();
-  const id=_tbEsc(it.id);
+  const id=_tbEsc(it.id),jid=_tbJs(it.id);
   const canMove=tbCanMoveDate(it,me,_tbIsBoardOwner());
   const pr=tbStepProgress(it);
   const lockedBy=it.locked?tbUser(it.lockedBy):null;
@@ -1247,7 +1260,7 @@ function _tbDrawer(){
   return'<aside class="tb-drawer tb-pane" id="tb-drawer" aria-label="Item details">'
     +'<div class="tb-pbar">'
       +'<span class="tb-kind tb-kind-'+_tbEsc(it.kind)+'">'+_tbEsc(_tbCap(it.kind))+'</span>'
-      +'<button class="tb-lockbtn'+(it.locked?' on':'')+'" onclick="window.tbToggleLock(\''+id+'\')"'
+      +'<button class="tb-lockbtn'+(it.locked?' on':'')+'" onclick="window.tbToggleLock(\''+jid+'\')"'
         +(it.locked&&!canMove?' disabled title="only '+_tbEsc(lockedBy.name)+' or a board owner can unlock this"':'')
         +'>'+_tbIcon(it.locked?'lock':'lock-open','sm')+(it.locked?'Locked':'Lock')+'</button>'
       +'<button class="tb-pclose" title="Close (Esc)" aria-label="Close" onclick="window.tbCloseItem()">'+_tbIcon('x')+'</button>'
@@ -1262,7 +1275,7 @@ function _tbDrawer(){
       +'<div class="tb-ptitle">'
         +'<button class="tb-check'+(done?' on':'')+'" title="'+(done?'Mark not done':'Mark done')+'"'
           +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
-          +' onclick="window.tbToggleDone(\''+id+'\')">'+_tbIcon('check','sm')+'</button>'
+          +' onclick="window.tbToggleDone(\''+jid+'\')">'+_tbIcon('check','sm')+'</button>'
         // A TEXTAREA sized to its content, not an input: the real titles
         // run to two lines, and an input showed "Hyderabad supplier in
         // Karachi:" and nothing more (seen on the P1.4 screenshots). Enter
@@ -1272,7 +1285,7 @@ function _tbDrawer(){
           +' onchange="window.tbFieldChange(\'title\',this.value)">'+_tbEsc(it.title||'')+'</textarea>'
         +(done?'':'<button class="tb-star'+(starred?' on':'')+'" title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
           +' aria-label="'+(starred?'Remove from My Day':'Add to My Day')+'" aria-pressed="'+(starred?'true':'false')+'"'
-          +' onclick="window.tbAddToMyDay(\''+id+'\')">'+_tbIcon('star')+'</button>')
+          +' onclick="window.tbAddToMyDay(\''+jid+'\')">'+_tbIcon('star')+'</button>')
       +'</div>'
       +(pr.allDone?'<div class="tb-hint">All steps done — mark the item done when you have reviewed it.</div>':'')
       +'<div class="tb-stepl">'+(it.steps||[]).map((st,i)=>
@@ -1290,7 +1303,7 @@ function _tbDrawer(){
 
     // ── property rows ──
     +'<div class="tb-pcard tb-props">'
-      +(done?'':'<button class="tb-prop tb-propbtn'+(starred?' on':'')+'" onclick="window.tbAddToMyDay(\''+id+'\')">'
+      +(done?'':'<button class="tb-prop tb-propbtn'+(starred?' on':'')+'" onclick="window.tbAddToMyDay(\''+jid+'\')">'
         +_tbIcon('sun')+'<span class="tb-proplabel tb-propwide">'+(starred?'Added to My Day':'Add to My Day')+'</span></button>')
       +prop('calendar','Date','<input type="date" data-tb-fp id="tb-d-date" value="'+_tbEsc(it.date||'')+'"'+(canMove?'':' disabled')
         +' onchange="window.tbFieldChange(\'date\',this.value)">',
@@ -1304,7 +1317,7 @@ function _tbDrawer(){
             +_tbEsc(p.name)+' · '+(p.reason==='unread'?'not loaded':p.reason==='ambiguous'?'check profile':'not set up')+'</button>';
           const on=(it.assigneeUids||[]).indexOf(p.uid)>-1;
           return'<button class="tb-person'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
-            +' onclick="window.tbToggleAssignee(\''+_tbEsc(p.uid)+'\')">'+_tbEsc(tbUser(p.uid).name)+'</button>';
+            +' onclick="window.tbToggleAssignee(\''+_tbJs(p.uid)+'\')">'+_tbEsc(tbUser(p.uid).name)+'</button>';
         }).join('')
       +'</div></div>'
       +prop('list','List','<select id="tb-d-list" onchange="window.tbFieldChange(\'listId\',this.value)">'
@@ -1335,9 +1348,9 @@ function _tbDrawer(){
     // ── the footer ──
     +'<div class="tb-dfoot">'
       +'<button class="btn-outline" onclick="window.tbOpenHandover()">'+_tbIcon('arrow-right-left','sm')+'Hand over</button>'
-      +'<button class="btn-primary" onclick="window.tbToggleDone(\''+id+'\')">'+(done?'Reopen':'Mark done')+'</button>'
+      +'<button class="btn-primary" onclick="window.tbToggleDone(\''+jid+'\')">'+(done?'Reopen':'Mark done')+'</button>'
       +(it.ownerUid===me||_tbIsBoardOwner()
-        ?'<button class="tb-x tb-del" onclick="window.tbDeleteItem(\''+id+'\')" title="Delete" aria-label="Delete">'+_tbIcon('trash-2')+'</button>':'')
+        ?'<button class="tb-x tb-del" onclick="window.tbDeleteItem(\''+jid+'\')" title="Delete" aria-label="Delete">'+_tbIcon('trash-2')+'</button>':'')
     +'</div>'
     +(owner?'<div class="tb-pmade">Created by '+_tbEsc(owner.uid===me?'you':owner.name)
       +(made?' · '+_tbEsc(_tbCap(tbDayLabel(made,today))):'')+'</div>':'')
@@ -1483,7 +1496,7 @@ function _tbQaChipsHTML(){
   const plan=tbComposerPlan(_tbQaParse(),_tbQa,me,_tbViewList());
   const keep=' onpointerdown="event.preventDefault()"';   // the caret stays in the title
   const dateBtn=(d,l)=>'<button type="button" class="tb-qachip'+(plan.date===d?' on':'')+'"'+keep
-    +' onclick="window.tbQaDate(\''+_tbEsc(d)+'\')">'+_tbEsc(l)+'</button>';
+    +' onclick="window.tbQaDate(\''+_tbJs(d)+'\')">'+_tbEsc(l)+'</button>';
   const nextMon=_tbNextDow(_tbDayAdd(today,1),1);
   const dateLabel=plan.date?tbDayLabel(plan.date,today)+(plan.dateFromText?' (from the title)':''):'no date';
   const people=tbPeople().map(function(p){
@@ -1491,7 +1504,7 @@ function _tbQaChipsHTML(){
     if(p.uid===me)return'<button type="button" class="tb-qachip on tb-qachip-me" disabled title="You are always on what you add">You</button>';
     const on=plan.assigneeUids.indexOf(p.uid)>-1;
     return'<button type="button" class="tb-qachip'+(on?' on':'')+'"'+keep
-      +' onclick="window.tbQaAssign(\''+_tbEsc(p.uid)+'\')">'+_tbEsc(p.name)+'</button>';
+      +' onclick="window.tbQaAssign(\''+_tbJs(p.uid)+'\')">'+_tbEsc(p.name)+'</button>';
   }).join('');
   const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
   return'<div class="tb-qarow"><span class="tb-qalabel">date</span>'
@@ -2207,9 +2220,9 @@ function _tbPill(item,today){
     .concat(canMove?['draggable']:[]);
   return'<div class="'+cls.join(' ')+'" data-id="'+_tbEsc(item.id)+'"'
     +' data-day="'+_tbEsc(item.date||'')+'"'
-    +(canMove?' onpointerdown="window.tbPillDown(event,\''+_tbEsc(item.id)+'\')"':'')
-    +' onclick="window.tbPillClick(event,\''+_tbEsc(item.id)+'\')"'
-    +' tabindex="0" onkeydown="window.tbPillKey(event,\''+_tbEsc(item.id)+'\')">'
+    +(canMove?' onpointerdown="window.tbPillDown(event,\''+_tbJs(item.id)+'\')"':'')
+    +' onclick="window.tbPillClick(event,\''+_tbJs(item.id)+'\')"'
+    +' tabindex="0" onkeydown="window.tbPillKey(event,\''+_tbJs(item.id)+'\')">'
     +'<span class="tb-pillbar"></span>'
     +(item.locked?'<span class="tb-pilllock" title="locked">'+_tbIcon('lock','sm')+'</span>':'')
     +_tbSlot(item.title||'untitled','tb-pilltitle')
@@ -2228,9 +2241,9 @@ function _tbTitleCase(s){ return String(s==null?'':s).replace(/(^|[\s(–-])([a-
 function _tbCalHead(){
   const label=_tbCalView==='week'?tbWeekLabel(_tbCalAnchor):tbMonthLabel(_tbCalAnchor.slice(0,7));
   const seg=(v,l)=>'<button class="tb-seg'+(_tbCalView===v?' on':'')+'" aria-pressed="'+(_tbCalView===v?'true':'false')+'"'
-    +' onclick="window.tbCalView(\''+v+'\')">'+_tbEsc(l)+'</button>';
+    +' onclick="window.tbCalView(\''+_tbJs(v)+'\')">'+_tbEsc(l)+'</button>';
   const scope=(v,l)=>'<button class="tb-seg'+(_tbCalFilters.scope===v?' on':'')+'" aria-pressed="'+(_tbCalFilters.scope===v?'true':'false')+'"'
-    +' onclick="window.tbCalScope(\''+v+'\')">'+_tbEsc(l)+'</button>';
+    +' onclick="window.tbCalScope(\''+_tbJs(v)+'\')">'+_tbEsc(l)+'</button>';
   const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
   // Only people with an account can be filtered to -- a person with no
   // uid owns nothing on the calendar yet.
@@ -2239,7 +2252,7 @@ function _tbCalHead(){
     return'<button class="tb-calav'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
       +' title="'+_tbEsc(on?'Showing '+u.name+' — tap to show everyone':'Show only '+u.name)+'"'
       +' aria-label="'+_tbEsc('Show only '+u.name)+'"'
-      +' onclick="window.tbCalPerson(\''+_tbEsc(p.uid)+'\')">'+_tbEsc(u.initial)+'</button>';
+      +' onclick="window.tbCalPerson(\''+_tbJs(p.uid)+'\')">'+_tbEsc(u.initial)+'</button>';
   }).join('');
   return'<div class="tb-calbar">'
     +'<div class="tb-calnav">'
@@ -2315,12 +2328,12 @@ function _tbDayCell(day,items,today,opts){
     +'<div class="tb-dayhead">'
       +'<span class="tb-daynum">'+Number(String(day).slice(8))+'</span>'
       +'<button class="tb-dayadd" title="Add on '+_tbEsc(dl)+'" aria-label="Add on '+_tbEsc(dl)+'"'
-        +' onclick="window.tbCalAdd(\''+_tbEsc(day)+'\')">'+_tbIcon('plus','sm')+'</button>'
+        +' onclick="window.tbCalAdd(\''+_tbJs(day)+'\')">'+_tbIcon('plus','sm')+'</button>'
     +'</div>'
     +(marks.length?'<div class="tb-daymarks">'+marks.map(m=>'<span class="tb-daymark">'+_tbIcon('flag','sm')+_tbEsc(m)+'</span>').join('')+'</div>':'')
     +'<div class="tb-daylist">'+shown.map(i=>_tbPill(i,today)).join('')+'</div>'
-    +(over?'<button class="tb-daymore" onclick="window.tbCalMore(\''+_tbEsc(day)+'\')">+'+(items.length-shown.length)+' more</button>'
-      :(open&&month&&items.length>TB_CAL_MONTH_CAP?'<button class="tb-daymore" onclick="window.tbCalMore(\''+_tbEsc(day)+'\')">Show less</button>':''))
+    +(over?'<button class="tb-daymore" onclick="window.tbCalMore(\''+_tbJs(day)+'\')">+'+(items.length-shown.length)+' more</button>'
+      :(open&&month&&items.length>TB_CAL_MONTH_CAP?'<button class="tb-daymore" onclick="window.tbCalMore(\''+_tbJs(day)+'\')">Show less</button>':''))
   +'</div>';
 }
 
@@ -3573,7 +3586,7 @@ function _tbInboxScreen(){
       +g.rows.map(function(n){
         const read=_tbNotifRead(n,h);
         return'<button class="tb-nf'+(read?'':' unread')+'"'
-          +' onclick="window.tbOpenNotif(\''+_tbEsc(n._id)+'\',\''+_tbEsc(n.itemId||'')+'\')">'
+          +' onclick="window.tbOpenNotif(\''+_tbJs(n._id)+'\',\''+_tbJs(n.itemId||'')+'\')">'
           +'<span class="tb-av">'+_tbEsc(tbUser(n.fromUid).initial)+'</span>'
           +'<span class="tb-nfmain">'
             +'<span class="tb-nftype">'+_tbEsc(_TB_NOTIF_WORDS[n.type]||String(n.type||''))+'</span>'
@@ -3613,7 +3626,7 @@ function _tbInboxCard(){
   const pick=unread.concat(rows.filter(n=>_tbNotifRead(n,h))).slice(0,5);
   return _tbCard('Inbox',pick.map(function(n){
     return'<button class="tb-nf'+(_tbNotifRead(n,h)?'':' unread')+'"'
-      +' onclick="window.tbOpenNotif(\''+_tbEsc(n._id)+'\',\''+_tbEsc(n.itemId||'')+'\')">'
+      +' onclick="window.tbOpenNotif(\''+_tbJs(n._id)+'\',\''+_tbJs(n.itemId||'')+'\')">'
       +'<span class="tb-av">'+_tbEsc(tbUser(n.fromUid).initial)+'</span>'
       +'<span class="tb-nfmain">'+_tbSlot(_tbUnesc(n.message||''),'tb-nfmsg')+'</span>'
       +'<span class="tb-cmtwhen">'+_tbEsc(_tbAgo(n.createdAt))+'</span></button>';
@@ -4175,8 +4188,8 @@ function _tbMoveSheet(){
   const it=tbItems.filter(x=>x.id===_tbMoveId)[0];
   if(!it)return'';
   const today=_tbToday();
-  const quick=(d,l)=>'<button class="tb-calbtn" onclick="window.tbMoveItem(\''+_tbEsc(it.id)
-    +'\',\''+_tbEsc(d)+'\');window.tbCloseMove()">'+_tbEsc(l)+'</button>';
+  const quick=(d,l)=>'<button class="tb-calbtn" onclick="window.tbMoveItem(\''+_tbJs(it.id)
+    +'\',\''+_tbJs(d)+'\');window.tbCloseMove()">'+_tbEsc(l)+'</button>';
   return'<div class="tb-sheet" onclick="window.tbCloseMove()">'
     +'<div class="tb-sheetcard" onclick="event.stopPropagation()">'
       +'<div class="tb-dsech">Move To</div>'
@@ -4407,7 +4420,7 @@ function _tbShell(page,body,pane){
   const me=_tbMe(),today=_tbToday();
   const c=tbLoaded?tbRailCounts(tbItems,me,today):{dash:0,over:0,due:0,week:0};
   const listOpen=page==='tb-lists'&&!!_tbListId;
-  const go=id=>'window.showPage(\''+_tbEsc(id)+'\')';
+  const go=id=>'window.showPage(\''+_tbJs(id)+'\')';
   const byId={};_TB_RAIL.forEach(t=>{byId[t.id]=t;});
   const nav=t=>{
     let pill='';
@@ -4428,7 +4441,7 @@ function _tbShell(page,body,pane){
   const listRows=lists.map(l=>_tbRailBtn({cls:'tb-raillist',on:listOpen&&_tbListId===l.id,
     icon:l.kind==='shared'?'users':'list',labelHtml:_tbSlot(l.title,'tb-raillabel'),
     pill:_tbRailPill(l.open,'',l.open+' open'),
-    onclick:'window.tbGoList(\''+_tbEsc(l.id)+'\')'})).join('');
+    onclick:'window.tbGoList(\''+_tbJs(l.id)+'\')'})).join('');
   const rail='<nav class="tb-rail" aria-label="'+_tbEsc(TB_NAME)+'">'
     +'<div class="tb-railnav">'+['tb-dash','tb-calendar','tb-inbox'].map(id=>nav(byId[id])).join('')+'</div>'
     +'<div class="tb-railgroup">'+nav(byId['tb-lists'])
