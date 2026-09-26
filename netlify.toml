@@ -47,6 +47,11 @@
 [functions."instagram-token-refresh"]
   schedule = "15 2 * * *"
 
+# 3am UTC = 8am PKT — The Board's reminder: due today + overdue, one row per
+# item per person per day (see netlify/functions/board-reminder.js)
+[functions."board-reminder"]
+  schedule = "0 3 * * *"
+
 # 2am UTC Saturday = 7am PKT — weekly close rollup
 [functions."shopify-weekly-close"]
   schedule = "0 2 * * 6"

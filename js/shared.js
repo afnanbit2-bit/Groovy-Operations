@@ -729,7 +729,7 @@ const _CREATIVE_HUB_PAGES=['creative-hub','notes','note-detail','boards','boards
 function _canSeeTheBoard(){
   return !!(typeof isBoardUser==='function' && isBoardUser());
 }
-function _tbNavLabel(){ return (typeof TB_NAME!=='undefined'&&TB_NAME)||'the board'; }
+function _tbNavLabel(){ return (typeof TB_NAME!=='undefined'&&TB_NAME)||'The Board'; }
 function _tbNavHome(){  return (typeof TB_HOME!=='undefined'&&TB_HOME)||'tb-dash'; }
 /* The unread badge (spec s2) is filled in phase 4; the span ships now so
    the count has somewhere to land and CSS hides it while it is empty. */
@@ -989,7 +989,7 @@ function _renderMobNav(ctx){
     // already carries their other modules and cannot give up a slot.
     mob.className='cols-4';
     mob.style.gridTemplateColumns='';
-    mob.innerHTML=_mobNavBtn('tb-dash','home','Board',"window.showPage('tb-dash')")
+    mob.innerHTML=_mobNavBtn('tb-dash','home','The Board',"window.showPage('tb-dash')")
                  +_mobNavBtn('tb-calendar','clock','Calendar',"window.showPage('tb-calendar')")
                  +_mobNavBtn('tb-lists','list','Lists',"window.showPage('tb-lists')")
                  +_mobNavBtn('tb-inbox','tray','Inbox',"window.showPage('tb-inbox')");
@@ -1472,10 +1472,10 @@ const BUG_PAGE_NAMES={
   'creative-hub':'Creative Hub',
   'notes':'Notes',
   'note-detail':'Note Detail',
-  'tb-dash':'the board — dashboard',
-  'tb-calendar':'the board — calendar',
-  'tb-lists':'the board — lists',
-  'tb-inbox':'the board — inbox',
+  'tb-dash':'The Board — Dashboard',
+  'tb-calendar':'The Board — Calendar',
+  'tb-lists':'The Board — Lists',
+  'tb-inbox':'The Board — Inbox',
   'boards':'Mood Boards (Home)',
   'boards-all':'Mood Boards — All boards',
   'board-canvas':'Mood Board Canvas',

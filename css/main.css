@@ -2720,16 +2720,154 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
    Spec s10: one primary action per screen, 44px rows on desktop and 48 on
    mobile, colour carries meaning and nothing is decorative, and the only
    red in the product is the overdue count. Motion is 150ms ease-out and
-   only on the things that move. Labels are lowercase. */
-.tb-wrap{display:flex;align-items:flex-start;gap:18px}
-.tb-rail{display:flex;flex-direction:column;gap:2px;flex:0 0 156px;position:sticky;top:64px}
-.tb-railbtn{display:block;width:100%;text-align:left;min-height:44px;padding:0 12px;
-  background:none;border:none;border-radius:8px;cursor:pointer;
-  font-family:inherit;font-size:14px;font-weight:600;color:var(--muted);
-  transition:background .15s ease-out,color .15s ease-out}
-.tb-railbtn:hover{background:var(--hover);color:var(--text)}
-.tb-railbtn.on{background:var(--dark);color:var(--on-dark)}
-.tb-main{flex:1;min-width:0}
+   only on the things that move. Labels are Title Case (session 2). */
+
+/* ══ tb-tokens ══════════════════════════════════════════════════════════
+   The Board's design tokens (session 2, P1.1), in ONE block. Built on the
+   app's own theme (--surface, --text, --muted, --border, --dark, the
+   accents) and adding:
+     · a 12-step neutral and a 12-step accent scale — Radix Colors slate and
+       blue (MIT), VALUES COPIED here rather than vendored, light and dark;
+     · type 12/13/14/16/20/28, spacing 4/8/12/16/24/32, radius 6/10/16, one
+       shadow for the pane (Open Props shadow-3, MIT) and one motion (150ms,
+       Open Props ease-out-3).
+   Names are --tb-* so nothing here can collide with another module.
+
+   CONTRAST, measured on the values below (not assumed): white on blue-9 is
+   only 3.26:1, so the accent FILL carries icons and never body text; text
+   on an accent fill uses --tb-on-accent against --tb-accent (light: blue-11
+   #0d74ce, 4.8:1 under white; dark: blue-9 under blue-1, 5.6:1). blue-11 on
+   blue-3 is 4.25:1 in light, so ink on an accent-tinted chip is blue-12. */
+:root{
+  --tb-n1:#fcfcfd;--tb-n2:#f9f9fb;--tb-n3:#f0f0f3;--tb-n4:#e8e8ec;--tb-n5:#e0e1e6;--tb-n6:#d9d9e0;
+  --tb-n7:#cdced6;--tb-n8:#b9bbc6;--tb-n9:#8b8d98;--tb-n10:#80838d;--tb-n11:#60646c;--tb-n12:#1c2024;
+  --tb-a1:#fbfdff;--tb-a2:#f4faff;--tb-a3:#e6f4fe;--tb-a4:#d5efff;--tb-a5:#c2e5ff;--tb-a6:#acd8fc;
+  --tb-a7:#8ec8f6;--tb-a8:#5eb1ef;--tb-a9:#0090ff;--tb-a10:#0588f0;--tb-a11:#0d74ce;--tb-a12:#113264;
+  --tb-accent:var(--tb-a11);--tb-on-accent:#ffffff;
+  --tb-accent-soft:var(--tb-a3);--tb-accent-ink:var(--tb-a12);
+  --tb-hover:var(--tb-n3);--tb-line:var(--tb-n5);--tb-weekend:var(--tb-n2);
+  --tb-over:var(--count-accent);
+  --tb-t12:12px;--tb-t13:13px;--tb-t14:14px;--tb-t16:16px;--tb-t20:20px;--tb-t28:28px;
+  --tb-s4:4px;--tb-s8:8px;--tb-s12:12px;--tb-s16:16px;--tb-s24:24px;--tb-s32:32px;
+  --tb-r6:6px;--tb-r10:10px;--tb-r16:16px;
+  --tb-shadow-pane:0 -1px 3px 0 hsl(220 3% 15% / 3%),0 1px 2px -5px hsl(220 3% 15% / 3%),0 2px 5px -5px hsl(220 3% 15% / 5%),0 4px 12px -5px hsl(220 3% 15% / 6%),0 12px 15px -5px hsl(220 3% 15% / 8%);
+  --tb-ease:cubic-bezier(0,0,.3,1);--tb-dur:150ms;
+  --tb-mono:var(--font-mono);
+}
+html[data-theme="dark"]{
+  --tb-n1:#111113;--tb-n2:#18191b;--tb-n3:#212225;--tb-n4:#272a2d;--tb-n5:#2e3135;--tb-n6:#363a3f;
+  --tb-n7:#43484e;--tb-n8:#5a6169;--tb-n9:#696e77;--tb-n10:#777b84;--tb-n11:#b0b4ba;--tb-n12:#edeef0;
+  --tb-a1:#0d1520;--tb-a2:#111927;--tb-a3:#0d2847;--tb-a4:#003362;--tb-a5:#004074;--tb-a6:#104d87;
+  --tb-a7:#205d9e;--tb-a8:#2870bd;--tb-a9:#0090ff;--tb-a10:#3b9eff;--tb-a11:#70b8ff;--tb-a12:#c2e6ff;
+  --tb-accent:var(--tb-a9);--tb-on-accent:var(--tb-a1);
+  --tb-shadow-pane:0 -1px 3px 0 hsl(220 40% 2% / 12%),0 2px 5px -5px hsl(220 40% 2% / 20%),0 12px 15px -5px hsl(220 40% 2% / 35%);
+}
+
+/* ── flatpickr, restyled to the tokens (P1.1) ─────────────────────────
+   The vendored base sheet loads first (index.html); these rules make the
+   calendar a Board surface in BOTH themes, so its own dark theme is not
+   vendored. Only the Board opens one. */
+.flatpickr-calendar{background:var(--surface);border:1px solid var(--border);border-radius:var(--tb-r10);
+  box-shadow:var(--tb-shadow-pane);font-family:inherit;color:var(--text)}
+.flatpickr-calendar.arrowTop:before,.flatpickr-calendar.arrowTop:after{border-bottom-color:var(--border)}
+.flatpickr-calendar.arrowBottom:before,.flatpickr-calendar.arrowBottom:after{border-top-color:var(--border)}
+.flatpickr-months .flatpickr-month,.flatpickr-current-month .flatpickr-monthDropdown-months,
+.flatpickr-current-month input.cur-year{color:var(--text);fill:var(--text);background:transparent}
+.flatpickr-current-month .flatpickr-monthDropdown-months .flatpickr-monthDropdown-month{background:var(--surface);color:var(--text)}
+.flatpickr-months .flatpickr-prev-month,.flatpickr-months .flatpickr-next-month{color:var(--muted);fill:var(--muted)}
+.flatpickr-months .flatpickr-prev-month:hover svg,.flatpickr-months .flatpickr-next-month:hover svg{fill:var(--text)}
+span.flatpickr-weekday{color:var(--muted);font-weight:600;background:transparent}
+.flatpickr-day{color:var(--text);border-radius:var(--tb-r6)}
+.flatpickr-day:hover,.flatpickr-day:focus{background:var(--tb-hover);border-color:var(--tb-hover)}
+.flatpickr-day.today{border-color:var(--tb-accent)}
+/* flatpickr's own sheet has HIGHER-specificity rules with literal colours
+   for these states (review, 26 Sept 2026): a focused or hovered day from
+   the next or previous month went #e6e6e6 -- a light slab under light ink
+   in dark mode -- and a focused or hovered TODAY went a grey #959ea9 chip.
+   Placed BEFORE the selected rule, so a selected day keeps its accent. */
+.flatpickr-day.today:hover,.flatpickr-day.today:focus{background:var(--tb-hover);border-color:var(--tb-accent);color:var(--text)}
+.flatpickr-day.prevMonthDay:hover,.flatpickr-day.prevMonthDay:focus,
+.flatpickr-day.nextMonthDay:hover,.flatpickr-day.nextMonthDay:focus{background:var(--tb-hover);border-color:var(--tb-hover)}
+.flatpickr-day.selected,.flatpickr-day.selected:hover,.flatpickr-day.selected:focus{
+  background:var(--tb-accent);border-color:var(--tb-accent);color:var(--tb-on-accent)}
+.flatpickr-day.prevMonthDay,.flatpickr-day.nextMonthDay,.flatpickr-day.flatpickr-disabled{color:var(--muted);opacity:.6}
+/* A SELECTED day shown outside its own month (the 31st, seen from the next
+   month's grid) matched flatpickr's .selected.prevMonthDay -- its blue --
+   AND the muted rule above, so it read as a washed-out foreign chip. */
+.flatpickr-day.selected.prevMonthDay,.flatpickr-day.selected.nextMonthDay{
+  background:var(--tb-accent);border-color:var(--tb-accent);color:var(--tb-on-accent);opacity:1}
+/* The year spinner: flatpickr paints its arrows rgba(0,0,0,.9), which is
+   invisible on the dark surface, and its hover washes rgba(0,0,0,.05). */
+.flatpickr-current-month .numInputWrapper span.arrowUp:after{border-bottom-color:var(--text)}
+.flatpickr-current-month .numInputWrapper span.arrowDown:after{border-top-color:var(--text)}
+.numInputWrapper span{border-color:var(--border)}
+.numInputWrapper:hover,.numInputWrapper span:hover,.flatpickr-current-month span.cur-month:hover,
+.flatpickr-current-month .flatpickr-monthDropdown-months:hover{background:var(--tb-hover)}
+.numInputWrapper span:active{background:var(--tb-line)}
+/* A day carrying one of the drop's markers (launch, founders out) — the
+   picker shows them, as the calendar does (brief s4.2). */
+.flatpickr-day.tb-fp-marker{box-shadow:inset 0 -2px 0 var(--tb-accent);font-weight:700}
+
+.tb-ic{width:18px;height:18px;flex:0 0 auto;display:inline-block;vertical-align:middle}
+.tb-ic-sm{width:14px;height:14px}
+.tb-ic-lg{width:20px;height:20px}
+
+/* ── The frame (session 2, P1.2): rail | content, the To Do pattern ──
+   Desktop >=1024: a 240px rail beside the content, which stops at 960px
+   (the calendar keeps the full width -- it is a grid). The detail pane is
+   the third column and arrives with P1.4. */
+.tb-wrap{display:grid;grid-template-columns:240px minmax(0,1fr);gap:var(--tb-s24);align-items:start}
+.tb-main{min-width:0;max-width:960px}
+.tb-wrap.tb-page-calendar .tb-main{max-width:none}
+
+.tb-rail{position:sticky;top:0;display:flex;flex-direction:column;gap:var(--tb-s12);
+  min-height:0;max-height:calc(100vh - 88px);max-height:calc(100dvh - 88px)}
+.tb-railnav,.tb-railgroup{display:flex;flex-direction:column;gap:2px;min-height:0}
+.tb-railgroup{flex:0 1 auto}
+/* Many lists scroll INSIDE the group; the nav above and the foot below
+   stay put -- which needs them NOT to shrink. With the default flex-shrink
+   and min-height:0, a long list squeezed the nav and Inbox was painted
+   under the list labels (measured at 1900x700 with 20 lists; review of
+   f256c83). Only the group gives up height. */
+.tb-railnav,.tb-railfoot{flex:0 0 auto}
+.tb-raillists{display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-height:0;
+  padding-left:var(--tb-s12);scrollbar-width:thin}
+.tb-railfoot{display:flex;flex-direction:column;gap:2px;margin-top:auto;
+  padding-top:var(--tb-s8);border-top:1px solid var(--tb-line)}
+.tb-railbtn{position:relative;display:flex;align-items:center;gap:10px;width:100%;
+  min-height:40px;padding:0 8px 0 12px;background:none;border:none;border-radius:var(--tb-r6);
+  cursor:pointer;text-align:left;font-family:inherit;font-size:var(--tb-t14);font-weight:500;
+  color:var(--text);transition:background var(--tb-dur) var(--tb-ease),color var(--tb-dur) var(--tb-ease)}
+.tb-railbtn .tb-ic{color:var(--muted)}
+.tb-railbtn:hover{background:var(--tb-hover)}
+.tb-railbtn:focus-visible{outline:2px solid var(--tb-accent);outline-offset:-2px}
+/* Active: a soft accent row and a 3px accent bar at its left edge. Ink on
+   the accent tint is blue-12 (--tb-accent-ink), never blue-11 -- 4.25:1 is
+   not enough for a label (measured, tb-tokens). */
+.tb-railbtn.on{background:var(--tb-accent-soft);color:var(--tb-accent-ink);font-weight:600}
+.tb-railbtn.on .tb-ic{color:var(--tb-accent)}
+.tb-railbtn.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;
+  border-radius:2px;background:var(--tb-accent)}
+.tb-raillabel{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-raillist{min-height:36px;font-size:var(--tb-t13)}
+.tb-railnew,.tb-setbtn{color:var(--muted)}
+.tb-railnew:hover,.tb-setbtn:hover{color:var(--text)}
+/* Count pills. Neutral by default; red INK only for a count that holds an
+   overdue item (the one red in the product); the unread inbox count on the
+   accent tint. An empty pill is not drawn -- a zero says nothing. */
+.tb-railpill{flex:0 0 auto;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;
+  display:inline-flex;align-items:center;justify-content:center;border-radius:10px;
+  background:var(--tb-n4);color:var(--tb-n11);font-family:var(--tb-mono);font-size:var(--tb-t12);
+  font-weight:600;line-height:1}
+.tb-railpill:empty{display:none}
+.tb-railpill.tb-pill-over{color:var(--tb-over)}
+.tb-railpill.tb-pill-unread{background:var(--tb-a4);color:var(--tb-a12)}
+
+/* The header row every screen now opens with: the screen's name, the one
+   search box, the shortcut list. */
+.tb-head{display:flex;align-items:center;gap:var(--tb-s12);margin-bottom:var(--tb-s16);min-width:0}
+.tb-h1{flex:1 1 auto;min-width:0;margin:0;font-size:var(--tb-t20);font-weight:700;color:var(--text);
+  letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* The unread badge on the sidebar tab. Empty until phase 4 fills it, and
    hidden while empty rather than rendering an empty chip. --count-accent
@@ -2743,20 +2881,37 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .tb-empty-h{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
 .tb-empty-p{font-size:14px;color:var(--muted);line-height:1.6}
 
+/* Tablet 640-1023: the same rail, 56px and icon-only. Labels stay in the
+   markup (and as each button's title); the lists live behind the Lists
+   entry, and a count becomes a small badge on the icon's corner. */
 @media(max-width:1023px){
-  /* The rail docks as a horizontal scroller, the way the Mood Boards tool
-     rail does on a phone -- #mob-nav is full for owners and managers and
-     cannot give up a slot. The designer's role gets the real four-tab bar
-     instead (_renderMobNav, js/shared.js). */
-  .tb-wrap{flex-direction:column;gap:12px}
-  .tb-rail{flex:0 0 auto;flex-direction:row;width:100%;position:static;
+  .tb-wrap{grid-template-columns:56px minmax(0,1fr);gap:var(--tb-s16)}
+  .tb-rail{gap:var(--tb-s8)}
+  .tb-railbtn{justify-content:center;padding:0;min-height:44px}
+  .tb-railbtn .tb-raillabel{display:none}
+  .tb-raillists{display:none}
+  .tb-railbtn.on::before{top:10px;bottom:10px}
+  .tb-railpill{position:absolute;top:3px;right:3px;min-width:16px;height:16px;padding:0 4px;font-size:10px}
+  .tb-empty{padding:28px 0}
+}
+/* Phone <640: a strip across the top, icon over label. The foot keeps
+   Settings (owners) but not "+ New list" -- the Lists screen has both
+   "+ New" buttons, and a strip has room for five, not six. */
+@media(max-width:639px){
+  .tb-wrap{display:block}
+  .tb-rail{position:static;flex-direction:row;gap:2px;max-height:none;margin-bottom:var(--tb-s12);
     overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .tb-rail::-webkit-scrollbar{display:none}
-  .tb-railbtn{width:auto;flex:0 0 auto;min-height:48px;white-space:nowrap}
-  .tb-main{width:100%}
-  .tb-empty{padding:28px 0}
-  .tb-searchwrap{flex:1 1 180px;min-width:140px}
-  .tb-helpbtn{display:none}     /* no keyboard to shortcut */
+  .tb-railnav,.tb-railgroup,.tb-railfoot{flex-direction:row;gap:2px;flex:0 0 auto}
+  .tb-railfoot{margin:0;padding:0;border:none}
+  .tb-railbtn{flex:1 0 auto;flex-direction:column;justify-content:center;gap:2px;
+    width:auto;min-width:64px;min-height:52px;padding:4px 6px}
+  .tb-railbtn .tb-raillabel{display:block;flex:0 0 auto;font-size:11px;font-weight:600}
+  .tb-railnew{display:none}
+  .tb-railbtn.on::before{left:12px;right:12px;top:auto;bottom:0;width:auto;height:3px}
+  .tb-railpill{top:2px;right:8px}
+  .tb-head{margin-bottom:var(--tb-s12)}
+  .tb-h1{display:none}
 }
 @media(prefers-reduced-motion:reduce){.tb-railbtn{transition:none}}
 /* ── Store Accounts (js/store-accounts.js, Sept 2026) ──
@@ -2984,7 +3139,8 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
    Spec s10: one primary action per screen, 44px rows on desktop and 48 on
    mobile, colour carries meaning and nothing is decorative, RED APPEARS
    EXACTLY ONCE (the overdue count), motion is 150ms ease-out and only on
-   the things that move, labels are lowercase. No gamification: a done item
+   the things that move. Labels were lowercase in phase 2; session 2 made
+   them Title Case (card titles, screens, the rail). No gamification: a done item
    just fades. */
 
 /* the header strip */
@@ -3001,34 +3157,84 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   transition:border-color .15s ease-out}
 .tb-qainput:focus{border-color:var(--text)}
 .tb-qaprev{min-height:18px;padding:3px 12px 0;font-size:12px;color:var(--muted);font-family:var(--font-mono)}
+/* The composer (session 2, P0.5): opens under the title on focus. Chips
+   wrap rather than scroll, so every person and every date is visible. */
+.tb-qachips{display:none}
+.tb-quick.open .tb-qachips{display:flex;flex-direction:column;gap:6px;padding:8px 2px 2px}
+.tb-qarow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.tb-qalabel{font-size:12px;color:var(--muted);min-width:44px}
+.tb-qachip{min-height:32px;padding:0 10px;background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;font-family:inherit;font-size:13px;color:var(--text);cursor:pointer;
+  transition:background .15s ease-out,border-color .15s ease-out}
+.tb-qachip:hover{border-color:var(--text)}
+.tb-qachip.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
+.tb-qachip-me,.tb-qachip-off{cursor:default}
+.tb-qachip-off{opacity:.55;border-style:dashed}
+.tb-qaclear{padding:0 9px}
+.tb-qadate,.tb-qasel{min-height:32px;padding:0 8px;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;font-family:inherit;font-size:13px;color:var(--text);max-width:100%}
+.tb-qadatenow{font-family:var(--font-mono);font-size:12px;color:var(--text)}
+.tb-qadatenow.none{color:var(--muted)}
+@media (prefers-reduced-motion:reduce){ .tb-qachip{transition:none} }
 
 /* cards */
-.tb-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+/* Session 2, P1.5: yours on the left (the groups, the wider column), other
+   people's on the right. The columns stack whenever the CONTENT is narrow
+   -- a container query on .tb-main, so opening the detail pane beside a
+   1280px list stacks them too, which a viewport query cannot know. */
+.tb-cols{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px;align-items:start}
 .tb-col{min-width:0}
+.tb-main{container-type:inline-size;container-name:tbmain}
+@container tbmain (max-width:720px){.tb-cols{grid-template-columns:minmax(0,1fr)}}
+/* the Dashboard's groups: one surface, a header per group that folds it */
+.tb-groups{padding:4px 0}
+.tb-group+.tb-group{border-top:1px solid var(--tb-line)}
+.tb-grouph{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:0 12px;
+  background:none;border:none;cursor:pointer;font-family:inherit;font-size:var(--tb-t14);
+  font-weight:600;color:var(--muted);text-align:left;border-radius:var(--tb-r6)}
+.tb-grouph:hover{background:var(--tb-hover)}
+.tb-grouph:focus-visible{outline:2px solid var(--tb-accent);outline-offset:-2px}
+.tb-groupname{color:var(--text)}
+.tb-groupbody{padding:0 4px 6px}
 .tb-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);
   padding:4px 4px 6px;margin-bottom:14px}
+/* Title Case (session 2, P0.6): the markup has been Title Case since P0.6,
+   but this rule forced it back to lowercase on screen -- textContent does
+   not see text-transform, so the check that read it passed. No .tb- rule
+   may transform case; tests/invariants.test.js holds that. */
 .tb-cardh{display:flex;align-items:center;gap:8px;padding:10px 12px 8px;
-  font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:lowercase;color:var(--muted)}
+  font-size:13px;font-weight:600;letter-spacing:0;color:var(--muted)}
 .tb-count{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--muted)}
 /* THE ONLY RED ON THE BOARD. --count-accent deliberately does not invert:
    it sits on --surface, which does. */
 .tb-count.red{color:var(--count-accent)}
 .tb-cardempty{padding:8px 12px 12px;font-size:13px;color:var(--muted)}
 
-/* the row — the same anatomy everywhere */
-.tb-row{display:flex;align-items:center;gap:8px;min-height:44px;padding:5px 8px;border-radius:8px;
-  transition:background .15s ease-out}
-.tb-row:hover{background:var(--hover)}
-.tb-row.done .tb-rowtitle{text-decoration:line-through;opacity:.5}
+/* the row — the same anatomy everywhere (session 2, P1.3: the To Do
+   pattern). A ROUND checkbox, the title with a META LINE under it, and a
+   star on the right for My Day. 44px minimum on desktop, 48 on a phone. */
+.tb-row{display:flex;align-items:center;gap:var(--tb-s12);min-height:44px;padding:2px 4px 2px 10px;
+  border-radius:var(--tb-r6);transition:background var(--tb-dur) var(--tb-ease)}
+.tb-row:hover{background:var(--tb-hover)}
+.tb-row.tb-sel,.tb-row.tb-sel:hover{background:var(--tb-accent-soft)}
+.tb-row.done .tb-rowtitle{text-decoration:line-through;color:var(--muted)}
 /* critical is a tick mark, nothing louder (spec s7.1) */
 .tb-row.crit{box-shadow:inset 3px 0 0 var(--text)}
-.tb-check{flex:0 0 auto;width:18px;height:18px;padding:0;border:1.5px solid var(--border);
-  border-radius:5px;background:var(--surface);cursor:pointer;transition:background .15s ease-out,border-color .15s ease-out}
-.tb-check:hover{border-color:var(--text)}
-.tb-check.on{background:var(--dark);border-color:var(--dark)}
+/* The check is drawn and transparent: hover shows it in the accent, done
+   fills the circle. An icon on the accent fill is the one thing the fill
+   may carry (tb-tokens: white on blue-9 is too weak for text). */
+.tb-check{flex:0 0 auto;width:20px;height:20px;padding:0;display:inline-flex;align-items:center;
+  justify-content:center;border:1.5px solid var(--tb-n8);border-radius:50%;background:transparent;
+  color:transparent;cursor:pointer;
+  transition:background var(--tb-dur) var(--tb-ease),border-color var(--tb-dur) var(--tb-ease),color var(--tb-dur) var(--tb-ease)}
+.tb-check .tb-ic{width:12px;height:12px;stroke-width:3}
+.tb-check:hover{border-color:var(--tb-accent);color:var(--tb-accent)}
+.tb-check.on{background:var(--tb-accent);border-color:var(--tb-accent);color:var(--tb-on-accent)}
+.tb-check:focus-visible,.tb-star:focus-visible,.tb-rowmain:focus-visible{outline:2px solid var(--tb-accent);outline-offset:2px}
 .tb-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%}
-.tb-rowmain{flex:1;min-width:0;display:flex;align-items:center;gap:10px;
-  background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left}
+.tb-rowmain{flex:1;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:2px;
+  background:none;border:none;padding:6px 0;cursor:pointer;font-family:inherit;text-align:left;
+  border-radius:var(--tb-r6)}
 /* `flex:1` is the load-bearing part: MEASURED, a title that cannot shrink
    (flex:0 0 auto) overflows the row by 361px at 420px wide, and the probe
    names both .tb-row and .tb-rowmain. `min-width:0` is belt-and-braces
@@ -3048,27 +3254,64 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
    [class*="-row"] selector, and an ellipsized element ALWAYS reports
    scrollWidth > clientWidth. Renaming the class to dodge that check would
    have hidden every real overflow in these rows along with it. */
-.tb-rowtitle{flex:1;min-width:0;font-size:14px;line-height:1.35;color:var(--text);
+.tb-rowtitle{min-width:0;font-size:var(--tb-t14);line-height:1.35;color:var(--text);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
   overflow:hidden;overflow-wrap:anywhere}
-.tb-rowmeta{flex:0 0 auto;display:flex;align-items:center;gap:7px}
+/* The meta line WRAPS rather than overflowing: at 420px a gate with three
+   people, steps, comments and a list name is wider than the row. */
+.tb-rowmeta{display:flex;align-items:center;flex-wrap:wrap;gap:2px 10px;min-width:0;
+  font-size:var(--tb-t12);line-height:18px;color:var(--muted)}
+.tb-rowmeta>span{display:inline-flex;align-items:center;gap:4px;min-width:0}
+.tb-rowmeta .tb-ic{width:13px;height:13px}
+.tb-avs{gap:2px}
 .tb-av{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
   border-radius:50%;background:var(--soft);color:var(--text);font-size:11px;font-weight:700}
+.tb-rowmeta .tb-av{width:18px;height:18px;font-size:10px}
 .tb-av-more{background:transparent;color:var(--muted)}
-.tb-lock{font-size:11px;opacity:.7}
+.tb-lock{font-size:11px}
 .tb-steps,.tb-cc{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
 .tb-cc::before{content:"";}
 .tb-date{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap}
 .tb-date.over{color:var(--count-accent);font-weight:700}
-.tb-kind{font-size:11px;font-weight:700;letter-spacing:.05em;padding:1px 6px;border-radius:6px;
+/* The list a row belongs to, off that list's own screen. User text, so it
+   is hydrated; capped so a long list name cannot push the rest of the meta
+   line off the row. CLAMPED TO ONE LINE, NOT ELLIPSIZED -- the row title's
+   rule, for the row title's reason: this class matches the layout probe's
+   [class*="-row"], and a nowrap ellipsis always reports overflow (measured:
+   321 wide in a 203 box), which would hide a real one. */
+.tb-rowlist{max-width:220px}
+.tb-rowlistname{min-width:0;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;
+  overflow:hidden;overflow-wrap:anywhere}
+.tb-kind{font-size:11px;font-weight:700;letter-spacing:.02em;padding:1px 6px;border-radius:6px;
   background:var(--soft);color:var(--muted)}
 /* a gate is the calendar, not a celebration: solid, dark, quiet */
 .tb-kind-gate{background:var(--dark);color:var(--on-dark)}
+/* The star: My Day. Lucide's star is an outline and the sprite sets
+   fill="none" on the symbol, which CSS cannot reach through <use> -- so
+   "starred" is the accent ink on a soft accent tile (plus aria-pressed),
+   not a filled star. A filled glyph would need a new sprite file. */
+.tb-star{flex:0 0 auto;width:36px;height:36px;padding:0;display:inline-flex;align-items:center;
+  justify-content:center;background:none;border:none;border-radius:var(--tb-r6);cursor:pointer;
+  color:var(--tb-n9);transition:background var(--tb-dur) var(--tb-ease),color var(--tb-dur) var(--tb-ease)}
+.tb-star:hover{color:var(--tb-accent);background:var(--tb-hover)}
+.tb-star.on{color:var(--tb-accent);background:var(--tb-accent-soft)}
+/* Completed, per list: the group header is a button that folds it. */
+.tb-donetoggle{width:100%;background:none;border:none;cursor:pointer;font-family:inherit;text-align:left}
+.tb-donetoggle:hover{color:var(--text)}
+.tb-donegroup:not(.open) .tb-donetoggle{padding-bottom:10px}
 
-/* the eight palette keys (spec s8.6) */
-.tb-c-moss{background:#23412e}.tb-c-ink{background:#16160f}.tb-c-clay{background:#b45309}
-.tb-c-amber{background:#a1580e}.tb-c-slate{background:#4a5568}.tb-c-sand{background:#b9a77a}
-.tb-c-wine{background:#6b2137}.tb-c-teal{background:#1f5f5b}
+/* the eight palette keys (spec s8.6). Variables with a DARK set (session
+   2, P1.6): the literal dark shades vanished on a dark card -- measured
+   ink 1.03:1, moss 1.56, wine 1.59 on #18191b; the dark set is 5.6-9.6:1.
+   Sand is darkened in light (2.37 -> 3.77:1 on white) for the same reason.
+   Colour here is identity (a list, a person), so it has to be SEEN. */
+:root{--tb-pal-moss:#23412e;--tb-pal-ink:#16160f;--tb-pal-clay:#b45309;--tb-pal-amber:#a1580e;
+  --tb-pal-slate:#4a5568;--tb-pal-sand:#94824f;--tb-pal-wine:#6b2137;--tb-pal-teal:#1f5f5b}
+html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay:#e8854a;--tb-pal-amber:#dca050;
+  --tb-pal-slate:#93a0b4;--tb-pal-sand:#cdbf94;--tb-pal-wine:#d47590;--tb-pal-teal:#5bb5ad}
+.tb-c-moss{background:var(--tb-pal-moss)}.tb-c-ink{background:var(--tb-pal-ink)}.tb-c-clay{background:var(--tb-pal-clay)}
+.tb-c-amber{background:var(--tb-pal-amber)}.tb-c-slate{background:var(--tb-pal-slate)}.tb-c-sand{background:var(--tb-pal-sand)}
+.tb-c-wine{background:var(--tb-pal-wine)}.tb-c-teal{background:var(--tb-pal-teal)}
 
 /* lists */
 .tb-sec{margin-bottom:22px}
@@ -3092,55 +3335,133 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   color:var(--muted);padding:6px 8px;border-radius:6px;min-height:32px}
 .tb-back:hover{background:var(--hover);color:var(--text)}
 
-/* the drawer — a right-hand panel on desktop, a full sheet on a phone */
-.tb-drawer{position:fixed;top:0;right:0;width:min(440px,100%);height:100dvh;height:100vh;
-  z-index:130;overflow-y:auto;padding:16px;box-sizing:border-box;
-  background:var(--surface);border-left:1px solid var(--border);
-  box-shadow:-8px 0 28px rgba(0,0,0,.12);
-  animation:tb-slide .15s ease-out}
-@supports(height:100dvh){.tb-drawer{height:100dvh}}
+/* ── The detail pane (session 2, P1.4 -- the To Do pattern) ──────────
+   >=1440: the frame's third column, beside the list, sticky, scrolling on
+   its own. 1024-1439: the same, and the rail folds to its 56px icons so
+   the list keeps its room. <1024: a panel over the page (the old drawer),
+   and a full sheet on a phone. It keeps the .tb-drawer class and id --
+   the tests and the Escape shortcut find it by that name. */
+/* The list track is capped at the content's own 960px and the columns are
+   packed LEFT, so the pane sits beside the list rather than floating away
+   from it on a wide screen (seen at 1920 on the P1.4 screenshots). */
+/* The third column exists only where the pane is a column (>=1024). Below
+   that the pane is a fixed overlay, so this unscoped rule used to reserve
+   an empty 380px track and a 240px rail on a tablet, and the list was
+   MEASURED at 116px wide at 800 (review of d38b96c). */
+@media(min-width:1024px){
+  .tb-wrap.has-pane{grid-template-columns:240px minmax(0,960px) 380px;justify-content:start}
+}
+.tb-drawer{position:sticky;top:0;align-self:start;min-width:0;box-sizing:border-box;
+  max-height:calc(100vh - 88px);max-height:calc(100dvh - 88px);overflow-y:auto;
+  padding:var(--tb-s12);background:var(--tb-n2);border:1px solid var(--tb-line);
+  border-radius:var(--tb-r10);box-shadow:var(--tb-shadow-pane);
+  animation:tb-slide var(--tb-dur) var(--tb-ease)}
 @keyframes tb-slide{from{transform:translateX(12px);opacity:.6}to{transform:none;opacity:1}}
-.tb-dhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.tb-lockbtn{margin-left:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
-  cursor:pointer;font-family:inherit;font-size:12px;color:var(--muted);padding:6px 10px;min-height:32px}
+@media(min-width:1024px) and (max-width:1439px){
+  .tb-wrap.has-pane{grid-template-columns:56px minmax(0,960px) 360px;gap:var(--tb-s16)}
+  .tb-wrap.has-pane .tb-railbtn{justify-content:center;padding:0;min-height:44px}
+  .tb-wrap.has-pane .tb-railbtn .tb-raillabel,.tb-wrap.has-pane .tb-raillists{display:none}
+  .tb-wrap.has-pane .tb-railbtn.on::before{top:10px;bottom:10px}
+  .tb-wrap.has-pane .tb-railpill{position:absolute;top:3px;right:3px;min-width:16px;height:16px;padding:0 4px;font-size:10px}
+}
+@media(max-width:1023px){
+  .tb-drawer{position:fixed;top:0;right:0;z-index:130;width:min(420px,100%);height:100vh;height:100dvh;
+    max-height:none;border-radius:0;border:none;border-left:1px solid var(--tb-line)}
+}
+
+/* the bar: kind, lock, close */
+.tb-pbar{display:flex;align-items:center;gap:var(--tb-s8);margin-bottom:var(--tb-s8)}
+.tb-pclose{margin-left:auto;flex:0 0 auto;width:36px;height:36px;display:inline-flex;align-items:center;
+  justify-content:center;background:none;border:none;border-radius:var(--tb-r6);cursor:pointer;color:var(--muted)}
+.tb-pclose:hover{background:var(--tb-hover);color:var(--text)}
+.tb-lockbtn{display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--tb-line);
+  border-radius:var(--tb-r6);cursor:pointer;font-family:inherit;font-size:var(--tb-t12);font-weight:600;
+  color:var(--muted);padding:0 10px;min-height:32px}
 .tb-lockbtn.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
 .tb-lockbtn[disabled]{cursor:not-allowed;opacity:.6}
-.tb-lockwho{font-size:12px;color:var(--muted);width:100%}
-.tb-dtitle{width:100%;box-sizing:border-box;min-height:44px;padding:0 10px;margin-bottom:12px;
-  background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
-  font-family:inherit;font-size:17px;font-weight:700;color:var(--text);outline:none}
-.tb-dmeta{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
-.tb-dmeta label{display:flex;flex-direction:column;gap:3px;font-size:11px;
-  letter-spacing:.06em;color:var(--muted)}
-.tb-dmeta input,.tb-dmeta select{min-height:36px;padding:0 8px;background:var(--surface-2);
-  border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px;
-  color:var(--text);outline:none}
-.tb-dmeta input[disabled]{opacity:.6;cursor:not-allowed}
+.tb-lockwho{font-size:var(--tb-t12);color:var(--muted);margin:0 0 var(--tb-s8)}
+
+/* the cards the pane is made of: white on the pane's grey, To Do's look */
+.tb-pcard{background:var(--surface);border:1px solid var(--tb-line);border-radius:var(--tb-r10);
+  padding:var(--tb-s8) var(--tb-s12);margin-bottom:var(--tb-s8)}
+.tb-ptitle{display:flex;align-items:center;gap:var(--tb-s8)}
+.tb-dtitle{flex:1 1 auto;min-width:0;box-sizing:border-box;min-height:44px;padding:10px 6px;
+  background:transparent;border:1px solid transparent;border-radius:var(--tb-r6);resize:none;
+  field-sizing:content;overflow:hidden;overflow-wrap:anywhere;line-height:1.35;
+  font-family:inherit;font-size:var(--tb-t16);font-weight:700;color:var(--text);outline:none}
+.tb-ptitle{align-items:flex-start}
+.tb-ptitle>.tb-check{margin-top:12px}
+.tb-ptitle>.tb-star{margin-top:4px}
+.tb-dtitle:hover{border-color:var(--tb-line)}
+.tb-dtitle:focus{border-color:var(--tb-accent);background:var(--surface)}
+.tb-dtitle.done{text-decoration:line-through;color:var(--muted)}
+.tb-check.tb-check-sm{width:16px;height:16px}
+.tb-check.tb-check-sm .tb-ic{width:10px;height:10px}
+.tb-stepl{display:flex;flex-direction:column}
+.tb-step{display:flex;align-items:center;gap:var(--tb-s8);min-height:36px;padding-left:2px;
+  border-top:1px solid var(--tb-line)}
+.tb-steptitle{flex:1;min-width:0;font-size:var(--tb-t14);color:var(--text);overflow-wrap:anywhere}
+.tb-steptitle.done{text-decoration:line-through;color:var(--muted)}
+.tb-stepaddrow{display:flex;align-items:center;gap:var(--tb-s8);min-height:40px;
+  border-top:1px solid var(--tb-line);color:var(--tb-accent);cursor:text}
+.tb-stepl:empty+.tb-stepaddrow{border-top:none}
+.tb-stepadd{flex:1;min-width:0;min-height:36px;padding:0 4px;background:transparent;border:none;
+  font-family:inherit;font-size:var(--tb-t14);color:var(--text);outline:none}
+.tb-stepadd::placeholder{color:var(--tb-accent-ink);opacity:.8}
+
+/* property rows: icon · label · control */
+.tb-props{padding:2px var(--tb-s12)}
+.tb-prop{display:flex;align-items:center;gap:var(--tb-s12);min-height:44px;padding:4px 0;
+  border-top:1px solid var(--tb-line);color:var(--text)}
+.tb-props>.tb-prop:first-child{border-top:none}
+.tb-prop>.tb-ic{color:var(--muted)}
+.tb-proplabel{flex:0 0 64px;font-size:var(--tb-t13);color:var(--muted)}
+.tb-propwide{flex:1 1 auto}
+.tb-propval{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:var(--tb-s8);flex-wrap:wrap}
+.tb-propval input,.tb-propval select{flex:1 1 auto;min-width:0;max-width:100%;min-height:34px;padding:0 8px;
+  background:var(--surface-2);border:1px solid var(--tb-line);border-radius:var(--tb-r6);
+  font-family:inherit;font-size:var(--tb-t13);color:var(--text);outline:none}
+.tb-propval input:focus,.tb-propval select:focus{border-color:var(--tb-accent)}
+.tb-propval input[disabled]{opacity:.6;cursor:not-allowed}
+.tb-propbtn{width:100%;background:none;border-left:none;border-right:none;border-bottom:none;
+  cursor:pointer;font-family:inherit;text-align:left}
+.tb-props>.tb-propbtn:first-child{border-top:none}
+.tb-propbtn:hover .tb-proplabel{color:var(--text)}
+.tb-propbtn.on .tb-ic,.tb-propbtn.on .tb-proplabel{color:var(--tb-accent-ink)}
+.tb-propstack{flex-wrap:wrap;align-items:flex-start;padding:10px 0}
+.tb-propstack>.tb-ic,.tb-propstack>.tb-proplabel{margin-top:8px}
+.tb-propstack .tb-people{flex:1 1 180px;min-width:0}
+.tb-pnote{padding:var(--tb-s8)}
+.tb-pnote .tb-notes{background:transparent;border-color:transparent}
+.tb-pnote .tb-notes:focus{border-color:var(--tb-accent)}
+.tb-pmade{margin-top:var(--tb-s8);font-size:var(--tb-t12);color:var(--muted);text-align:center}
+.tb-dfoot .btn-outline,.tb-dfoot .btn-primary{display:inline-flex;align-items:center;gap:6px;margin-top:0;width:auto}
 .tb-was{align-self:flex-end;font-family:var(--font-mono);font-size:12px;color:var(--muted);
   text-decoration:line-through;padding-bottom:9px}
 .tb-dsec{margin-bottom:18px}
 .tb-dsech{display:flex;align-items:center;gap:8px;margin-bottom:8px;
-  font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--muted)}
+  font-size:13px;font-weight:600;letter-spacing:0;color:var(--muted)}
+/* In the pane, files, comments and activity are cards like the rest. */
+.tb-drawer .tb-dsec{background:var(--surface);border:1px solid var(--tb-line);border-radius:var(--tb-r10);
+  padding:var(--tb-s8) var(--tb-s12);margin-bottom:var(--tb-s8)}
 .tb-people{display:flex;flex-wrap:wrap;gap:6px}
 .tb-person{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;
   cursor:pointer;font-family:inherit;font-size:13px;color:var(--muted);padding:0 12px;min-height:34px;
   transition:background .15s ease-out,color .15s ease-out}
-.tb-person.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
-.tb-step{display:flex;align-items:center;gap:8px;min-height:36px}
-.tb-steptitle{flex:1;min-width:0;font-size:14px;color:var(--text)}
-.tb-x{background:none;border:none;cursor:pointer;font-family:inherit;font-size:15px;
-  color:var(--muted);padding:4px 8px;border-radius:6px;min-height:32px}
+.tb-person.on{background:var(--tb-accent-soft);border-color:var(--tb-a7);color:var(--tb-accent-ink);font-weight:600}
+/* A Board person with no account yet: listed, not assignable, and saying so. */
+.tb-person.tb-person-off{opacity:.55;cursor:not-allowed;border-style:dashed}
+.tb-x{display:inline-flex;align-items:center;justify-content:center;background:none;border:none;
+  cursor:pointer;font-family:inherit;font-size:15px;color:var(--muted);padding:4px 8px;border-radius:6px;min-height:32px}
 .tb-x:hover{background:var(--hover);color:var(--text)}
 .tb-del{margin-left:auto;font-size:13px}
-.tb-stepadd,.tb-notes{width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface-2);
+.tb-notes{width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface-2);
   border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;
   color:var(--text);outline:none}
-.tb-stepadd{min-height:40px;margin-top:4px}
 .tb-notes{resize:vertical;line-height:1.6}
 .tb-hint{font-size:12px;color:var(--muted);margin-bottom:6px}
 .tb-savestate{min-height:16px;padding-top:4px;font-size:11px;color:var(--muted)}
-.tb-dfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:8px;
-  border-top:1px solid var(--border)}
+.tb-dfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:var(--tb-s8)}
 .tb-ho{margin-top:14px;padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px}
 .tb-ho select,.tb-ho input[type=text],.tb-ho input:not([type=checkbox]){width:100%;box-sizing:border-box;
   min-height:38px;padding:0 8px;margin-bottom:8px;background:var(--surface);
@@ -3157,16 +3478,16 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 @media(max-width:1023px){.tb-cols{grid-template-columns:1fr}}
 @media(max-width:639px){
   .tb-row{min-height:48px}
-  .tb-check{width:20px;height:20px}
+  .tb-check{width:22px;height:22px}
+  .tb-rowlist{max-width:140px}
   .tb-stripcount{margin-left:0;width:100%}
-  /* the drawer is a full-screen sheet on a phone. 100dvh, not inset:0 --
+  /* the pane is a full-screen sheet on a phone. 100dvh, not inset:0 --
      100vh is a lie on a phone, as the board canvas takeover documents. */
   .tb-drawer{width:100%;border-left:none;height:100dvh}
-  .tb-dmeta label{flex:1 1 45%}
 }
 @media(prefers-reduced-motion:reduce){
   .tb-drawer{animation:none}
-  .tb-row,.tb-check,.tb-person,.tb-qainput,.tb-listcard{transition:none}
+  .tb-row,.tb-check,.tb-star,.tb-person,.tb-qainput,.tb-listcard{transition:none}
 }
 
 /* ── The Board — the calendar (phase 3) ───────────────────────────────
@@ -3174,63 +3495,85 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
    locked one shows its padlock, a done one fades rather than celebrating.
    The only red on the board is still the overdue count, so nothing here
    is red. */
-.tb-calbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
-.tb-calnav{display:flex;align-items:center;gap:6px}
-.tb-calbtn{min-height:34px;padding:0 11px;background:var(--surface-2);border:1px solid var(--border);
-  border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px;color:var(--text);
-  transition:background .15s ease-out}
-.tb-calbtn:hover{background:var(--hover)}
-.tb-callabel{margin-left:6px;font-size:15px;font-weight:700;color:var(--text)}
-.tb-calseg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
-.tb-seg{min-height:34px;padding:0 12px;background:var(--surface);border:none;cursor:pointer;
-  font-family:inherit;font-size:13px;color:var(--muted);transition:background .15s ease-out,color .15s ease-out}
-.tb-seg:hover{background:var(--hover);color:var(--text)}
-.tb-seg.on{background:var(--dark);color:var(--on-dark)}
-.tb-calfilters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
-.tb-calfilters select{min-height:34px;padding:0 8px;background:var(--surface-2);
-  border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;
+/* the toolbar (session 2, P1.6) */
+.tb-calbar{display:flex;align-items:center;gap:var(--tb-s12);flex-wrap:wrap;margin-bottom:var(--tb-s12)}
+.tb-calnav{display:flex;align-items:center;gap:4px}
+.tb-calbtn{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:34px;padding:0 12px;
+  background:var(--surface);border:1px solid var(--tb-line);border-radius:var(--tb-r6);cursor:pointer;
+  font-family:inherit;font-size:var(--tb-t13);font-weight:600;color:var(--text);
+  transition:background var(--tb-dur) var(--tb-ease)}
+.tb-calbtn:hover{background:var(--tb-hover)}
+.tb-calbtn.tb-calicon{width:34px;padding:0;color:var(--muted)}
+.tb-callabel{margin-left:8px;font-size:var(--tb-t20);font-weight:700;color:var(--text);white-space:nowrap}
+.tb-calseg{display:flex;padding:2px;gap:2px;background:var(--tb-n3);border-radius:8px}
+.tb-seg{min-height:30px;padding:0 12px;background:none;border:none;border-radius:6px;cursor:pointer;
+  font-family:inherit;font-size:var(--tb-t13);font-weight:600;color:var(--muted);
+  transition:background var(--tb-dur) var(--tb-ease),color var(--tb-dur) var(--tb-ease)}
+.tb-seg:hover{color:var(--text)}
+.tb-seg.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px hsl(220 3% 15% / 12%)}
+/* the avatar row: one face per person; the chosen one is ringed */
+.tb-calpeople{display:flex;align-items:center;gap:4px}
+.tb-calav{width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:50%;background:var(--tb-n4);border:2px solid transparent;cursor:pointer;
+  font-family:inherit;font-size:var(--tb-t12);font-weight:700;color:var(--text);
+  transition:border-color var(--tb-dur) var(--tb-ease)}
+.tb-calav:hover{border-color:var(--tb-n8)}
+.tb-calav.on{border-color:var(--tb-accent);background:var(--tb-accent-soft);color:var(--tb-accent-ink)}
+.tb-calfilters{display:flex;align-items:center;gap:var(--tb-s8);flex-wrap:wrap;margin-left:auto}
+.tb-calfilters select{min-height:34px;padding:0 8px;background:var(--surface);
+  border:1px solid var(--tb-line);border-radius:var(--tb-r6);font-family:inherit;font-size:var(--tb-t13);
   color:var(--text);outline:none}
-.tb-calchk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
-.tb-calnote{padding-top:10px;font-size:12px;color:var(--muted);font-family:var(--font-mono)}
+.tb-calchk{display:flex;align-items:center;gap:6px;font-size:var(--tb-t13);color:var(--muted)}
+.tb-calnote{padding-top:10px;font-size:var(--tb-t12);color:var(--muted);font-family:var(--font-mono)}
 
-.tb-dowrow,.tb-monthgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
-.tb-dowrow{gap:6px;margin-bottom:6px}
-.tb-dow{padding:0 6px;font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--muted)}
-.tb-monthgrid{gap:6px}
-.tb-weekgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+/* the grids: HAIRLINES, not gapped tiles -- the grid's own background
+   shows through a 1px gap, so every cell shares its borders */
+.tb-dowrow,.tb-monthgrid,.tb-weekgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.tb-dowrow{margin-bottom:4px}
+.tb-dow{padding:0 8px;font-size:var(--tb-t12);font-weight:600;color:var(--muted)}
+.tb-monthgrid,.tb-weekgrid{gap:1px;background:var(--tb-line);border:1px solid var(--tb-line);
+  border-radius:var(--tb-r10);overflow:hidden}
 
-.tb-day{display:flex;flex-direction:column;gap:4px;min-height:104px;padding:6px;
-  background:var(--surface);border:1px solid var(--border);border-radius:10px;
-  transition:border-color .15s ease-out,background .15s ease-out}
-.tb-weekgrid .tb-day{min-height:280px}
+.tb-day{display:flex;flex-direction:column;gap:3px;min-height:112px;padding:6px;
+  background:var(--surface);transition:background var(--tb-dur) var(--tb-ease),box-shadow var(--tb-dur) var(--tb-ease)}
+.tb-weekgrid .tb-day{min-height:300px}
+.tb-day.weekend{background:var(--tb-weekend)}
 /* A day outside the month is still a real day you can drop on — it is
    dimmed, never disabled, or the first of next month would be
    unreachable from the month you are looking at. */
-.tb-day.out{background:var(--bg);opacity:.72}
-.tb-day.weekend .tb-daynum{color:var(--muted)}
-.tb-day.today{border-color:var(--text)}
-.tb-day.today .tb-daynum{background:var(--dark);color:var(--on-dark);border-radius:6px;padding:0 5px}
-/* A marker (launch, founders out) is a rule down the day, not a banner —
-   it has to be visible behind whatever is on that date. */
+.tb-day.out{background:var(--tb-n2)}
+.tb-day.out .tb-daynum{color:var(--tb-n9)}
+.tb-day.today .tb-daynum{background:var(--tb-accent);color:var(--tb-on-accent)}
+/* A marker (launch, founders out) is a rule down the day and a flag chip:
+   visible behind whatever is on that date. */
 .tb-day.marked{box-shadow:inset 3px 0 0 var(--accent-warning)}
-.tb-day.drop{border-color:var(--text);background:var(--hover)}
-.tb-dayhead{display:flex;align-items:center;gap:6px;min-height:22px}
-.tb-daynum{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text)}
-.tb-daymark{flex:1;min-width:0;font-size:11px;font-weight:700;letter-spacing:.04em;
-  color:var(--accent-warning);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tb-dayadd{margin-left:auto;width:22px;height:22px;padding:0;background:none;border:none;
-  border-radius:6px;cursor:pointer;font-family:inherit;font-size:15px;color:var(--muted);
-  opacity:0;transition:opacity .15s ease-out,background .15s ease-out}
-.tb-day:hover .tb-dayadd,.tb-dayadd:focus{opacity:1;background:var(--hover);color:var(--text)}
-.tb-daylist{display:flex;flex-direction:column;gap:3px;min-height:0}
+.tb-day.drop{box-shadow:inset 0 0 0 2px var(--tb-accent);background:var(--tb-accent-soft)}
+.tb-dayhead{display:flex;align-items:center;gap:6px;min-height:24px}
+.tb-daynum{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;
+  padding:0 4px;box-sizing:border-box;border-radius:12px;font-family:var(--font-mono);
+  font-size:var(--tb-t12);font-weight:700;color:var(--text)}
+.tb-daymarks{display:flex;flex-wrap:wrap;gap:3px}
+.tb-daymark{display:inline-flex;align-items:center;gap:3px;min-width:0;max-width:100%;padding:1px 6px;
+  border-radius:var(--tb-r6);background:var(--accent-warning-soft);font-size:11px;font-weight:700;
+  color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-daymark .tb-ic{width:11px;height:11px;color:var(--accent-warning)}
+.tb-dayadd{margin-left:auto;width:24px;height:24px;padding:0;display:inline-flex;align-items:center;
+  justify-content:center;background:none;border:none;border-radius:var(--tb-r6);cursor:pointer;
+  color:var(--muted);opacity:0;transition:opacity var(--tb-dur) var(--tb-ease),background var(--tb-dur) var(--tb-ease)}
+.tb-day:hover .tb-dayadd,.tb-dayadd:focus-visible{opacity:1;background:var(--tb-hover);color:var(--text)}
+.tb-daylist{display:flex;flex-direction:column;gap:2px;min-height:0}
+.tb-daymore{align-self:flex-start;min-height:24px;padding:0 6px;background:none;border:none;
+  border-radius:var(--tb-r6);cursor:pointer;font-family:inherit;font-size:var(--tb-t12);font-weight:600;
+  color:var(--muted)}
+.tb-daymore:hover{background:var(--tb-hover);color:var(--text)}
 
-.tb-pill{display:flex;align-items:center;gap:5px;min-height:24px;padding:2px 6px;
-  border-radius:6px;background:var(--surface-2);border:1px solid var(--border);
-  cursor:pointer;overflow:hidden;transition:background .15s ease-out}
-.tb-pill:hover{background:var(--hover)}
+.tb-pill{display:flex;align-items:center;gap:5px;min-height:24px;padding:2px 6px 2px 4px;
+  border-radius:var(--tb-r6);background:var(--tb-n3);border:1px solid transparent;
+  cursor:pointer;overflow:hidden;transition:background var(--tb-dur) var(--tb-ease)}
+.tb-pill:hover{background:var(--tb-n4)}
 .tb-pill.draggable{cursor:grab}
 .tb-pill.dragging{opacity:.4}
-.tb-pill:focus-visible{outline:2px solid var(--text);outline-offset:1px}
+.tb-pill:focus-visible{outline:2px solid var(--tb-accent);outline-offset:1px}
 .tb-pillbar{flex:0 0 auto;width:3px;align-self:stretch;min-height:16px;border-radius:2px;background:var(--muted)}
 /* What the layout fragment DOES and does NOT hold, checked by breaking
    each: painting a gate's title in its own chip colour fails at 1:1 and
@@ -3239,7 +3582,7 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
    ellipsized rather than overflowing anything the probe can see. The
    min-width:0 is a guard for whatever is added to a pill next, not a rule
    the probe is watching. */
-.tb-pilltitle{flex:1;min-width:0;font-size:12px;color:var(--text);
+.tb-pilltitle{flex:1;min-width:0;font-size:var(--tb-t12);color:var(--text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* The padlock inherits nothing: on a GATE the pill is var(--dark),
    which INVERTS, so an inherited var(--text) is near-black on
@@ -3247,24 +3590,25 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
    at 1.11:1 and 1.01:1 by the layout probe before this line existed.
    The rule this app keeps relearning: anything painted on --dark
    takes its ink from --on-dark. */
-.tb-pilllock{flex:0 0 auto;font-size:10px;color:var(--text);opacity:.85}
+.tb-pilllock{flex:0 0 auto;display:inline-flex;color:var(--text);opacity:.85}
+.tb-pilllock .tb-ic{width:11px;height:11px}
 /* A gate is the calendar: solid, dark, and it does not invite a click
    that will not work. */
 .tb-pill.gate{background:var(--dark);border-color:var(--dark)}
 .tb-pill.gate .tb-pilltitle{color:var(--on-dark);font-weight:600}
 .tb-pill.gate .tb-pillbar{background:var(--on-dark);opacity:.55}
 .tb-pill.gate .tb-pilllock{color:var(--on-dark)}
-.tb-pill.event{border-style:dashed}
+.tb-pill.event{border-color:var(--tb-n8);border-style:dashed;background:transparent}
 .tb-pill.done{opacity:.5}
 .tb-pill.done .tb-pilltitle{text-decoration:line-through}
 
 /* The colour bar takes the item's palette key; the pill body does not, so
    a title always reads against the surface rather than against a colour
    that has to work in both themes. */
-.tb-c-moss .tb-pillbar{background:#23412e}.tb-c-ink .tb-pillbar{background:#16160f}
-.tb-c-clay .tb-pillbar{background:#b45309}.tb-c-amber .tb-pillbar{background:#a1580e}
-.tb-c-slate .tb-pillbar{background:#4a5568}.tb-c-sand .tb-pillbar{background:#b9a77a}
-.tb-c-wine .tb-pillbar{background:#6b2137}.tb-c-teal .tb-pillbar{background:#1f5f5b}
+.tb-c-moss .tb-pillbar{background:var(--tb-pal-moss)}.tb-c-ink .tb-pillbar{background:var(--tb-pal-ink)}
+.tb-c-clay .tb-pillbar{background:var(--tb-pal-clay)}.tb-c-amber .tb-pillbar{background:var(--tb-pal-amber)}
+.tb-c-slate .tb-pillbar{background:var(--tb-pal-slate)}.tb-c-sand .tb-pillbar{background:var(--tb-pal-sand)}
+.tb-c-wine .tb-pillbar{background:var(--tb-pal-wine)}.tb-c-teal .tb-pillbar{background:var(--tb-pal-teal)}
 
 /* The ghost follows the pointer and must never be hit-tested: the drop is
    decided by asking what is under the pointer, so a ghost that could be
@@ -3291,13 +3635,14 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
      go — measured at 1px by the layout probe. The left bar stays, so the
      day is still visibly marked, and the week view (one full-width column
      on a phone, per spec s11) is where the label is read. */
-  .tb-monthgrid .tb-daymark{display:none}
+  .tb-monthgrid .tb-daymarks{display:none}
   .tb-monthgrid .tb-day.marked{box-shadow:inset 4px 0 0 var(--accent-warning)}
+  .tb-calpeople{order:5}
   .tb-dayadd{opacity:1}
   .tb-pill{min-height:28px}
 }
 @media(prefers-reduced-motion:reduce){
-  .tb-day,.tb-pill,.tb-calbtn,.tb-seg,.tb-dayadd{transition:none}
+  .tb-day,.tb-pill,.tb-calbtn,.tb-seg,.tb-dayadd,.tb-calav{transition:none}
 }
 
 /* ── THE BOARD — phase 4: comments, mentions, files, inbox ─────────────
@@ -3380,9 +3725,6 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   border-radius:7px;font-family:inherit;font-size:13px;color:var(--text)}
 
 /* the inbox */
-.tb-railn{margin-left:8px;font-family:var(--font-mono);font-size:11px;font-weight:700;
-  color:var(--count-accent)}
-.tb-railn:empty{display:none}
 .tb-nfhead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .tb-nfhead .tb-dsech{margin-bottom:0}
 .tb-nfhead .btn-outline{margin-left:auto}
@@ -3404,7 +3746,7 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-nf.unread::before{content:"";flex:0 0 auto;width:6px;height:6px;border-radius:50%;
   background:var(--text)}
 .tb-nf::before{content:"";flex:0 0 auto;width:6px;height:6px}
-.tb-card .tb-nf{padding:6px 0;border-top:1px solid var(--border)}
+.tb-card .tb-nf{padding:6px 12px;border-top:1px solid var(--border)}
 
 @media(max-width:639px){
   .tb-nf{min-height:48px}
@@ -3419,8 +3761,10 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
    only; the single red stays the overdue count. */
 
 /* search (spec s10: ONE box, in the rail, so it is on every screen) */
-.tb-searchwrap{position:relative;margin-top:10px}
-.tb-search{width:100%;box-sizing:border-box;min-height:40px;padding:0 28px 0 10px;
+.tb-searchwrap{position:relative;flex:0 1 320px;min-width:160px}
+.tb-searchwrap>.tb-ic{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+@media(max-width:639px){.tb-searchwrap{flex:1 1 auto;min-width:0}}
+.tb-search{width:100%;box-sizing:border-box;min-height:40px;padding:0 28px 0 32px;
   background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
   font-family:inherit;font-size:13px;color:var(--text);outline:none}
 .tb-search:focus{border-color:var(--text)}
@@ -3435,10 +3779,13 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-hitwhere{padding:0 0 6px 34px;font-size:11px;color:var(--muted)}
 
 /* the ? overlay */
-.tb-helpbtn{margin-top:8px;min-height:32px;width:32px;background:none;
-  border:1px solid var(--border);border-radius:8px;cursor:pointer;
-  font-family:inherit;font-size:13px;font-weight:700;color:var(--muted)}
+.tb-helpbtn{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+  min-height:40px;width:40px;background:none;border:1px solid var(--border);border-radius:var(--tb-r6);
+  cursor:pointer;color:var(--muted)}
 .tb-helpbtn:hover{background:var(--hover);color:var(--text)}
+/* After the base rule on purpose: a @media override declared EARLIER in the
+   file than the rule it overrides is silently ignored. */
+@media(max-width:639px){.tb-helpbtn{display:none}}     /* no keyboard to shortcut */
 .tb-help{position:fixed;inset:0;z-index:998;display:flex;align-items:center;
   justify-content:center;padding:16px;background:rgba(0,0,0,.45)}
 .tb-helpcard{width:100%;max-width:360px;padding:18px;background:var(--surface);
@@ -3450,26 +3797,54 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   font-family:var(--font-mono);font-size:12px;color:var(--text)}
 .tb-helpwhat{font-size:13px;color:var(--muted)}
 .tb-helpcard .btn-outline{margin-top:12px;width:100%}
+/* Board settings (owners only): same overlay as the shortcut list. */
+/* The Settings card scrolls: with the markers editor and the pinned list
+   it is taller than a short screen, and a centred card taller than the
+   viewport loses its top -- Close included -- off the screen. */
+.tb-setcard{max-width:440px;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}
+/* The admin rows (P2): a marker is name | date | remove; a pin is title |
+   date | Unpin. The flexing field keeps min-width:0, the fixed parts do
+   not shrink -- the Profile-directory shape. */
+.tb-mkrows{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.tb-mkrow{display:flex;align-items:center;gap:6px}
+.tb-mkname{flex:1 1 auto;min-width:0}
+.tb-mkdate{flex:0 0 150px;width:150px}
+.tb-mkname,.tb-mkdate{min-height:36px;box-sizing:border-box;padding:0 8px;font:inherit;font-size:14px;
+  color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--tb-r6)}
+.tb-mkrow .tb-x{flex:0 0 auto}
+.tb-pinrow{display:flex;align-items:center;gap:8px;min-height:40px}
+.tb-pintitle{flex:1 1 auto;min-width:0;font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-pindate{flex:0 0 auto;font-size:12px;color:var(--muted)}
+.tb-pinrow .tb-unpin{flex:0 0 auto;width:auto;margin-top:0;min-height:32px;padding:0 12px}
+.tb-pinbtn.on{background:var(--tb-accent);border-color:var(--tb-accent);color:var(--tb-on-accent)}
+.tb-setsec{margin-top:8px;padding-top:10px;border-top:1px solid var(--line)}
+.tb-setsech{font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px}
+.tb-setbtns{display:flex;gap:8px;margin-top:12px}
+.tb-setbtns .btn-outline,.tb-setbtns .btn-primary{flex:1;margin-top:0;width:auto}
+.tb-setresult{margin-top:12px;font-size:13px;line-height:1.5;color:var(--text);white-space:pre-line;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px}
+.tb-seterr{border-color:var(--accent-urgent);color:var(--accent-urgent)}
 
 /* cards 10-12 */
-.tb-teamrow{display:flex;align-items:center;gap:9px;min-height:44px;padding:2px 0}
-.tb-teamname{flex:1;min-width:0;font-size:14px;color:var(--text);
+/* The NAME keeps a floor and the counts WRAP under it when the column is
+   too narrow for both. With the counts unshrinkable beside a flex:1 name,
+   the detail pane open at 1280px left "Ammar" 0px wide -- measured by the
+   layout probe (P1.8), the Profile-directory bug in a new place. */
+.tb-teamrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 9px;min-height:44px;padding:2px 0}
+.tb-teamname{flex:1 1 6em;min-width:5em;font-size:14px;color:var(--text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tb-teamn{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.tb-teamn{margin-left:auto;font-family:var(--font-mono);font-size:12px;color:var(--muted);text-align:right}
 /* The ONE red on this module is the overdue count, so a person carrying
    overdue work reads in it too -- it is the same fact, one card over. */
-.tb-teamn.over{color:var(--count-accent)}
+.tb-teamover{color:var(--count-accent);font-weight:700}
+/* Rows that are direct children of a card get the card's side padding --
+   they sat against its edge (seen on the P1.5 screenshots). */
+.tb-card>.tb-teamrow,.tb-card>.tb-act{padding-left:12px;padding-right:12px}
+.tb-teamrow-off .tb-teamname{color:var(--muted)}
 .tb-teamdot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;
   background:var(--border);border:1px solid var(--muted)}
 .tb-actcard .tb-act{border-top:1px solid var(--border)}
 .tb-actcard .tb-act:first-of-type{border-top:none}
-.tb-chipcard{display:block}
-.tb-listchip{display:inline-flex;align-items:center;gap:7px;min-height:36px;
-  margin:0 6px 6px 0;padding:0 11px;background:var(--surface-2);
-  border:1px solid var(--border);border-radius:18px;cursor:pointer;
-  font-family:inherit;font-size:13px;color:var(--text)}
-.tb-listchip:hover{background:var(--hover)}
-.tb-chipname{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* the unscheduled tray, on the right edge of the calendar (spec s7.2) */
 .tb-calbody{display:flex;align-items:flex-start;gap:14px}
@@ -3479,26 +3854,29 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-trayhead{display:flex;align-items:center;gap:6px;width:100%;min-height:36px;
   padding:0 8px;background:var(--surface-2);border:1px solid var(--border);
   border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;
-  font-weight:700;letter-spacing:.05em;color:var(--muted);white-space:nowrap;overflow:hidden}
+  font-weight:600;letter-spacing:0;color:var(--muted);white-space:nowrap;overflow:hidden}
 .tb-trayhead:hover{background:var(--hover);color:var(--text)}
 .tb-traychev{margin-left:auto;font-size:14px}
 .tb-tray:not(.open) .tb-trayhead{writing-mode:vertical-rl;min-height:120px;justify-content:flex-start}
 .tb-traybody{display:flex;flex-direction:column;gap:4px;margin-top:8px}
 .tb-trayhint{margin-top:4px}
 
-/* the week as rows by person (spec s7.2) */
-.tb-personweek{display:flex;flex-direction:column;gap:2px}
-.tb-prow{display:grid;grid-template-columns:132px repeat(7,1fr);gap:2px}
-.tb-pname{display:flex;align-items:center;gap:7px;padding:4px 6px;min-width:0}
-.tb-pnametext{min-width:0;font-size:13px;font-weight:600;color:var(--text);
+/* the week as rows by person (spec s7.2; hairlines since P1.6) */
+.tb-personweek{display:flex;flex-direction:column;gap:1px;background:var(--tb-line);
+  border:1px solid var(--tb-line);border-radius:var(--tb-r10);overflow:hidden}
+.tb-prow{display:grid;grid-template-columns:140px repeat(7,minmax(0,1fr));gap:1px}
+.tb-pname{display:flex;align-items:center;gap:7px;padding:6px 8px;min-width:0;background:var(--surface)}
+.tb-pnametext{min-width:0;font-size:var(--tb-t13);font-weight:600;color:var(--text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tb-pday{min-height:58px;padding:4px;background:var(--surface);
-  border:1px solid var(--border);border-radius:7px;
-  display:flex;flex-direction:column;gap:3px}
-.tb-prowhead .tb-pday{min-height:0;border:none;background:none;padding:2px 4px;
-  font-family:var(--font-mono);font-size:11px;color:var(--muted)}
-.tb-pday.today{border-color:var(--text)}
-.tb-prowhead .tb-pday.today{color:var(--text);font-weight:700}
+.tb-pday{min-height:64px;padding:4px;background:var(--surface);
+  display:flex;flex-direction:column;gap:2px}
+.tb-prowhead .tb-pname,.tb-prowhead .tb-pday{min-height:0;background:var(--tb-n2);padding:6px 6px;
+  font-size:var(--tb-t12);font-weight:600;color:var(--muted)}
+.tb-pday.today{background:var(--tb-accent-soft)}
+.tb-prowhead .tb-pday.today{color:var(--tb-accent-ink)}
+/* A tablet (640-1023) is the narrowest screen that draws the week by
+   person; a narrower name column gives the seven days their room. */
+@media(max-width:1023px){.tb-prow{grid-template-columns:104px repeat(7,minmax(0,1fr))}}
 
 /* the phone's move-to sheet (spec s11) */
 .tb-sheet{position:fixed;inset:0;z-index:998;display:flex;align-items:flex-end;
@@ -3508,7 +3886,10 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   padding-bottom:calc(18px + env(safe-area-inset-bottom))}
 .tb-sheettitle{display:block;margin-bottom:12px;font-size:15px;font-weight:700;color:var(--text)}
 .tb-sheetquick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-.tb-sheetcard input[type=date]{width:100%;box-sizing:border-box;min-height:44px;
+/* flatpickr's own input (P1.7) replaces the native date field on screen
+   and has to look like it wherever it lands. */
+.tb-fpalt{cursor:pointer}
+.tb-sheetcard input[type=date],.tb-sheetcard .tb-fpalt{width:100%;box-sizing:border-box;min-height:44px;
   padding:0 10px;background:var(--surface-2);border:1px solid var(--border);
   border-radius:8px;font-family:inherit;font-size:14px;color:var(--text)}
 .tb-sheetfoot{display:flex;gap:8px;margin-top:14px}
@@ -3529,5 +3910,5 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   .tb-trayhint{flex:1 1 100%}
 }
 @media(prefers-reduced-motion:reduce){
-  .tb-tray,.tb-search,.tb-listchip,.tb-helpbtn{transition:none}
+  .tb-tray,.tb-search,.tb-helpbtn{transition:none}
 }

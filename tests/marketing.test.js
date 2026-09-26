@@ -379,7 +379,11 @@ module.exports=async function(){
     s.ok('a manager sidebar does not',!/The Sales Team/.test(full.el('sidebar').innerHTML));
     s.ok('renderPage hands every mkt-* page to mktRenderPage',/id\.startsWith\('mkt-'\)\)\{if\(typeof mktRenderPage==='function'\)mktRenderPage\(id\)/.test(read('js/shared.js')));
     s.ok('the lead phone nav has Dispatches',/mkt-dispatches/.test(mob));
-    s.ok('startApp lands the lead on it',/MKT_LEAD_ROLE\)\{[\s\S]{0,200}showPage\('mkt-creators'\)/.test(read('js/auth.js')));
+    // Session 2 of The Board: a Board user lands on The Board (Ammar's
+    // decision 4), so Daniyal -- who is on it -- opens there; a lead who is
+    // NOT on The Board still lands on the Creator Database.
+    s.ok('startApp lands the lead on it (unless the lead is on The Board)',
+      /MKT_LEAD_ROLE\)\{[\s\S]{0,200}showPage\(boardHome\|\|'mkt-creators'\)/.test(read('js/auth.js')));
   }
 
   // ════════════════════════════════════════════════════════════════════

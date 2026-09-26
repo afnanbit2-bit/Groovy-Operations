@@ -104,6 +104,47 @@ function _acctFixture(){
 // because the modules hydrate them with textContent at runtime, which the
 // node harness's stub DOM records but does not put into the markup — the
 // hydration itself is covered by tests/profile.test.js.
+// The calendar's week, built once for two fragments (session 2, P1.6).
+function tbWeekFragment(byPerson){
+  const app=loadApp({
+    files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-calendar',
+    globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+  });
+  app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+  app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+  app.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[{label:'launch',date:'2026-10-30'}]}");
+  app.run("tbItems=[tbDecodeItem({id:'g1',title:'ALL ASSETS IN',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani'],date:'2026-10-15'}),"
+    +"tbDecodeItem({id:'i2',title:'shoot 2 — knit + outerwear',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'2026-10-16'}),"
+    +"tbDecodeItem({id:'u1',title:'denim bulk lands — no date yet, and the title runs on',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']}),"
+    +"tbDecodeItem({id:'u2',title:'knit bulk lands',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']})]");
+  app.run("_tbCalAnchor='2026-10-15';_tbCalView='week';_tbCalFilters.scope='all';_tbTrayOpen=true;_tbCalRows="+(byPerson?'true':'false')+";_tbHydrateQueue=[]");
+  let out=app.run('_tbCalendar()');
+  app.run('_tbHydrateQueue').forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+  return out;
+}
+
+// Board fragments hydrate every user string with textContent, so a fragment
+// that did not fill them in would measure EMPTY boxes and prove nothing.
+function tbFillSlots(app,html){
+  let out=html;
+  app.run('_tbHydrateQueue').forEach(x=>{
+    out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+  });
+  return out;
+}
+function tbBoardApp(page){
+  const app=loadApp({
+    files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:page,
+    globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+  });
+  // js/auth.js declares `session` at top level and clobbers the option.
+  app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+  app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+  app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+  app.run("tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[{label:'launch',date:'2026-10-30'},{label:'founders out',date:'2026-11-01'}]}");
+  return app;
+}
+
 const FRAGMENTS={
   // The Board's shell. The rail is NAVIGATION CHROME and the only route
   // between the four screens, so every button has to be reachable at every
@@ -181,6 +222,87 @@ const FRAGMENTS={
     return out;
   },
 
+  // A list's own screen (session 2, P1.3): the densest rows the Board
+  // draws -- a gate with three other people, steps, comments, a lock and a
+  // long title; a starred row; and the Completed group open, with a done
+  // item's struck-through title. The meta line has to WRAP at 420px.
+  'the board — a list, its rows and Completed':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-lists',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027 — denim, knits and the Karachi suppliers',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+    app.run("tbConfig={markers:[]};tbLoaded=true;_tbLoadErrors=[];_tbListId='l1';_tbDoneOpen={}");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',locked:true,lockedBy:'u-afnan',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan','u-must','u-dani','u-saim'],date:'2026-09-20',listId:'l1',commentCount:128,steps:[{id:'1',done:true},{id:'2',done:false},{id:'3',done:false}],priority:2})," +
+      "tbDecodeItem({id:'b',title:'Walika visit',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:_tbToday(),listId:'l1',myDay:{'u-ammar':_tbToday()}})," +
+      "tbDecodeItem({id:'c',title:'Denim bulk lands → Mustafa QC',status:'open',kind:'deadline',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-must'],date:null,listId:'l1'})," +
+      "tbDecodeItem({id:'d',title:'Trims ordered: zips, rivets, the woven labels and the care labels for every size',status:'done',completedAt:5,visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-afnan'],date:'2026-09-10',listId:'l1'})]");
+    app.run("_tbHydrateQueue=[]");
+    // The same gate OFF its list (a Dashboard card), where the meta line
+    // also names the list: the longest meta line the Board draws.
+    const html=app.run('_tbListsScreen()')+app.run("_tbCard('Assigned to Me',[_tbRow(tbItems[0],_tbToday())])");
+    let out=html;
+    app.run('_tbHydrateQueue').forEach(x=>{
+      out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+    });
+    // .tb-main ALONE, not inside .tb-wrap: the frame is a grid since P1.2,
+    // and a .tb-wrap without its rail puts the content in the 240px rail
+    // column -- which is how this fragment first measured a 136px row.
+    return '<div class="tb-main">'+out+'</div>';
+  },
+
+  // The whole frame with an item open (session 2, P1.4): rail | list |
+  // detail pane. At 1900 the pane is the third column beside a full rail;
+  // at 1280 (the 1024-1439 band) the rail folds to its icons so the list
+  // keeps its room. Below 1024 the pane is a panel OVER the page, so a
+  // narrower width would measure the pane covering the list on purpose --
+  // the fragment measuring itself -- and those widths are the drawer
+  // fragment's (the pane's own content) and smoke-board's (it opens).
+  'the board — the frame with the detail pane open':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-lists',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'},{id:'l2',title:'Errands',kind:'private',adminUid:'u-ammar',memberUids:['u-ammar']}]");
+    app.run("tbConfig={markers:[]};tbLoaded=true;_tbLoadErrors=[];_tbListId='l1';_tbDoneOpen={};_tbOpenItemId='a'");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',locked:true,lockedBy:'u-afnan',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan','u-must'],date:'2026-09-20',datePlanned:'2026-09-18',listId:'l1',lane:'denim',commentCount:3,createdAt:Date.now()-86400000*6,steps:[{id:'1',title:'call the supplier',done:true},{id:'2',title:'confirm the sample date in writing',done:false}]})," +
+      "tbDecodeItem({id:'b',title:'Walika visit',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:_tbToday(),listId:'l1'})]");
+    app.run("_tbHydrateQueue=[]");
+    const body=app.run('_tbListsScreen()');
+    let out=app.run("_tbShell('tb-lists',"+JSON.stringify(body)+",_tbDrawer())");
+    app.run('_tbHydrateQueue').forEach(x=>{
+      out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+    });
+    // The pane scrolls on its own in the app (a max-height off 100dvh);
+    // here it is laid out at full height so every control in it is
+    // measured, rather than reported "covered" for sitting below its own
+    // scroll -- the documented false hit.
+    return {widths:[1900,1280],html:'<style>.tb-drawer{max-height:none;position:static}</style>'+out};
+  },
+
+  // The quick-add composer OPEN (session 2, P0.5): three rows of chips that
+  // must wrap at phone width rather than push the page sideways, a date
+  // field, two selects, a picked date with its clear button, a picked
+  // person, and one person not set up yet (dashed, disabled).
+  'the board — the quick-add composer':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+    app.run("tbConfig={markers:[]};tbLoaded=true;_tbLoadErrors=[];tbItems=[];_tbListId=null");
+    app.run("_tbQaReset(true);_tbQa.text='denim samples @afnan';_tbQa.dateSet=true;_tbQa.date='2026-10-05';_tbQa.assign=['u-dani'];_tbQa.lane='denim'");
+    return '<div class="tb-main">'+app.run("_tbComposer('add something — try: denim samples @afnan #denim oct 5 !')")+'</div>';
+  },
+
   // The drawer: a fixed panel over the page, with a disabled date field
   // (someone else holds the lock) and the "was" date beside it.
   'the board — item drawer':()=>{
@@ -196,7 +318,12 @@ const FRAGMENTS={
     app.run("_tbOpenItemId='i1';_tbHydrateQueue=[]");
     const html=app.run('_tbDrawer()');
     const q=app.run('_tbHydrateQueue');
-    let out=html;
+    // Laid out at full height, like the frame fragment above. Since P1.4 the
+    // drawer is a sticky pane that scrolls inside its own box, and with the
+    // CI runner's fonts the Files '+ add' fell below that box: the hit-test
+    // then reads a control scrolled away inside a scroller as covered by
+    // BODY - the documented false hit, not a layout fault.
+    let out='<style>.tb-drawer{max-height:none;position:static}</style>'+html;
     q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
     return out;
   },
@@ -295,27 +422,13 @@ const FRAGMENTS={
     return out;
   },
 
-  'the board — the tray and the week by person':()=>{
-    const app=loadApp({
-      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-calendar',
-      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
-    });
-    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
-    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
-    app.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[{label:'launch',date:'2026-10-30'}]}");
-    app.run("tbItems=[tbDecodeItem({id:'g1',title:'ALL ASSETS IN',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani'],date:'2026-10-15'}),"
-      +"tbDecodeItem({id:'i2',title:'shoot 2 — knit + outerwear',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'2026-10-16'}),"
-      +"tbDecodeItem({id:'u1',title:'denim bulk lands — no date yet, and the title runs on',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']}),"
-      +"tbDecodeItem({id:'u2',title:'knit bulk lands',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']})]");
-    app.run("_tbCalAnchor='2026-10-15';_tbCalView='week';_tbCalFilters.scope='all';_tbTrayOpen=true;_tbCalRows=false;_tbHydrateQueue=[]");
-    const week=app.run('_tbCalendar()');
-    app.run('_tbCalRows=true');
-    const rows=app.run('_tbCalendar()');
-    const q=app.run('_tbHydrateQueue');
-    let out=week+rows;
-    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
-    return out;
-  },
+  'the board — the tray and the week':()=>tbWeekFragment(false),
+  // SESSION 2, P1.6: the week BY PERSON has its own fragment, measured at
+  // the widths that draw it. It is never drawn on a phone (_tbCalendar
+  // guards it with !_tbIsPhone()), and at 420 the harness -- which cannot
+  // know the viewport -- rendered it anyway, crushing a locked gate's title
+  // in a 34px day column: a state the app never reaches, measured.
+  'the board — the week by person':()=>({widths:[1900,1280,800],html:tbWeekFragment(true)}),
 
   'the board — the shortcut list and the move sheet':()=>{
     const app=loadApp({
@@ -339,6 +452,110 @@ const FRAGMENTS={
     return '<style>.tb-help,.tb-sheet{position:relative;inset:auto;margin-bottom:12px}</style>'+out;
   },
 
+  // Board Settings, open (P0.4), as an owner sees it after a Preview: the
+  // seed's longest real summary AND an error line, since both can show.
+  // Measured at every width: at 420 the card is a sheet over the page.
+  'the board — settings and a seed result':()=>{
+    const app=tbBoardApp('tb-dash');
+    // P2: the admin sections -- a marker whose name is the longest the
+    // field takes, and a pinned item with a long real title.
+    app.run("tbConfig={markers:[{label:'launch',date:'2026-10-30'},{label:'Founders to Islamabad; Ammar remote 1-5',date:'2026-11-01'}]};"
+      +"tbItems=[tbDecodeItem({id:'p1',title:'Restock order #2 placed (on 9 days of sell-through)',status:'open',visibility:'shared',"
+      +"pinned:true,date:'2026-11-09',ownerUid:'u-must',assigneeUids:['u-must']})]");
+    app.run("_tbSettingsOpen=true;_tbHydrateQueue=[];_tbSeedState={busy:false,dry:true,error:'Refused — the seed function answered 403: only a Board owner may run it.',"
+      +"result:tbSeedSummary({created:40,alreadySeeded:2,listCreated:true,profilesCreated:['afnan','daniyal','mustafa'],skippedUsers:['saim'],"
+      +"skippedItems:['Saim: lookbook retouch — every hero frame','Saim: size-chart graphics'],listMembersAdded:['saim'],markersWritten:true,"
+      +"deletedSince:['Shoot 2: knit + outerwear + henley + washed (Oct 15–16)'],"
+      +"peopleAdded:[{title:'Launch rehearsal: theme preview, stock count, CSR scripts, courier',who:['saim']}]},true)}");
+    return tbFillSlots(app,app.run('_tbSettingsOverlay()'));
+  },
+
+  // A date picker OPEN (P1.7): the vendored flatpickr, drawn inline so the
+  // probe can see it, restyled by css/main.css -- so main.css is linked
+  // AGAIN after flatpickr's own sheet, the order index.html uses. A marker
+  // day and the picked day are both on screen; both themes.
+  'the board — a date picker, open':()=>{
+    const fs=require('fs');
+    const js=fs.readFileSync(path.join(ROOT,'assets/vendor/flatpickr-4.6.13.min.js'),'utf8');
+    return '<link rel="stylesheet" href="/assets/vendor/flatpickr-4.6.13.min.css">'
+      +'<link rel="stylesheet" href="/css/main.css">'
+      +'<div class="tb-pane" style="max-width:380px"><div class="tb-prop"><span class="tb-proplabel">Date</span>'
+      +'<input id="fp" data-tb-fp class="tb-qadate" value="2026-10-20"></div></div>'
+      +'<script>'+js.replace(/<\/script/gi,'<\\/script')+'<\/script>'
+      +'<script>flatpickr(document.getElementById("fp"),{inline:true,dateFormat:"Y-m-d",altInput:true,altFormat:"D j M Y",'
+      +'altInputClass:"tb-qadate tb-fpalt",locale:{firstDayOfWeek:1},defaultDate:"2026-10-20",'
+      +'onDayCreate:function(d,s,fp,el){var t=fp.formatDate(el.dateObj,"Y-m-d");'
+      +'if(t==="2026-10-30"){el.classList.add("tb-fp-marker");el.title="launch";}}});<\/script>';
+  },
+
+  // The calendar with ONE FACE CHOSEN and a day OPENED past its cap (P1.6):
+  // four of Ammar's items on the 25th, so the day carries "Show less" and
+  // every pill it was hiding.
+  'the board — calendar, a face chosen and a day opened':()=>{
+    const app=tbBoardApp('tb-calendar');
+    app.run("_tbCalAnchor='2026-10-15';_tbCalView='month';_tbCalFilters={scope:'all',person:'u-ammar',list:'',lane:'',color:'',hideDone:false};_tbCalMore='2026-10-25'");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'ALL ASSETS IN — including website UI assets',date:'2026-10-25',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'c',title:'November runbook signed: restock triggers, daily report, cash authority',date:'2026-10-25',kind:'gate',status:'open',ownerUid:'u-must',assigneeUids:['u-must','u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'d',title:'Ad copy + headlines',date:'2026-10-25',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'e',title:'done already',date:'2026-10-25',status:'done',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared'})," +
+      "tbDecodeItem({id:'f',title:'LAUNCH',date:'2026-10-30',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',listId:'l1'})," +
+      "tbDecodeItem({id:'m',title:'Mustafa only — hidden by the face',date:'2026-10-26',status:'open',ownerUid:'u-must',assigneeUids:['u-must'],visibility:'shared'})]");
+    app.run('_tbHydrateQueue=[]');
+    return tbFillSlots(app,app.run('_tbCalendar()'));
+  },
+
+  // The DASHBOARD BESIDE THE PANE (P1.5 + P1.4). Its two columns sit side by
+  // side while .tb-main is wide, and STACK (a container query, not a media
+  // query) once the pane leaves it under 720px -- at 1100 here. The pane is
+  // laid out at full height, as in the frame fragment, so nothing is
+  // "covered" for sitting below its own scroll. Below 1024 the pane is an
+  // overlay on purpose, so narrower widths would measure it covering.
+  // The same, on a TABLET, where the pane is a fixed overlay and the frame
+  // must stay two columns. An unscoped three-column rule reserved an empty
+  // 380px track there and left the list 116px wide at 800 (review of
+  // d38b96c). The overlay itself is hidden: it covers the page by design,
+  // and this measures the frame under it.
+  // The RAIL with more lists than fit, on a short screen (review of
+  // f256c83). The lists are meant to scroll INSIDE their group while the
+  // nav above and the foot below stay put; with the nav allowed to shrink,
+  // a long list squeezed it and Calendar and Inbox sat under the lists.
+  // Only >=1440 shows lists in the rail, and a short window is the case.
+  'the board — the rail with many lists, on a short screen':()=>{
+    const app=tbBoardApp('tb-lists');
+    app.run("tbLists=[];for(var i=0;i<20;i++)tbLists.push({id:'l'+i,title:'Capsule list number '+(i+1),kind:i%2?'shared':'private',"
+      +"adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss',sort:i});tbItems=[];_tbListId=null");
+    app.run("_tbHydrateQueue=[]");
+    const out=tbFillSlots(app,app.run("_tbShell('tb-lists','<div class=\"tb-empty\">x</div>','')"));
+    return {widths:[1900],heights:[700],html:out};
+  },
+
+  'the board — the Dashboard with the pane open, on a tablet':()=>{
+    const app=tbBoardApp('tb-dash');
+    app.run("_tbOpenItemId='a'");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan'],date:'2020-01-20',listId:'l1'})," +
+      "tbDecodeItem({id:'b',title:'Walika visit → Jibran procures → dye orders placed (200 kg MOQ per shade)',status:'open',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],date:_tbToday(),listId:'l1'})]");
+    app.run("_tbHydrateQueue=[]");
+    const body=app.run('_tbDashboard()');
+    const out=tbFillSlots(app,app.run("_tbShell('tb-dash',"+JSON.stringify(body)+",_tbDrawer())"));
+    return {widths:[800],html:'<style>.tb-drawer{display:none!important}</style>'+out};
+  },
+
+  'the board — the Dashboard beside the pane':()=>{
+    const app=tbBoardApp('tb-dash');
+    app.run("_tbOpenItemId='a'");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',locked:true,lockedBy:'u-afnan',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan','u-must'],date:'2020-01-20',listId:'l1',commentCount:12,steps:[{id:'1',title:'call the supplier',done:true},{id:'2',title:'confirm the sample date in writing',done:false}]})," +
+      "tbDecodeItem({id:'b',title:'Walika visit → Jibran procures → dye orders placed (200 kg MOQ per shade)',status:'open',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],date:_tbToday(),listId:'l1'})," +
+      "tbDecodeItem({id:'c',title:'Denim bulk lands → Mustafa QC',status:'open',kind:'gate',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar','u-must'],date:null,listId:'l1'})," +
+      "tbDecodeItem({id:'h',title:'Handed to Daniyal: the lookbook captions',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani'],date:_tbDayAdd(_tbToday(),3)})]");
+    app.run("_tbHydrateQueue=[]");
+    const body=app.run('_tbDashboard()');
+    const out=tbFillSlots(app,app.run("_tbShell('tb-dash',"+JSON.stringify(body)+",_tbDrawer())"));
+    return {widths:[1900,1280,1100],html:'<style>.tb-drawer{max-height:none;position:static}</style>'+out};
+  },
+
   'the board — shell and rail':()=>{
     const app=loadApp({
       files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
@@ -353,8 +570,24 @@ const FRAGMENTS={
     // "you do not have access" message and measures a single div, which
     // passes every check while proving nothing.
     app.run("session={uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
-    app.run("tbRenderPage('tb-dash')");
-    return app.el('main-content').innerHTML;
+    // Session 2, P1.2: the rail as the team will see it -- LOADED, with a
+    // count on every entry, an open list, a list whose title is too long
+    // for the rail, and the inbox count the listener paints. Measured at a
+    // tablet width too, where the rail is 56px and icon-only.
+    app.run("tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[]};_tbListId='l1'");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'uid-ammar',memberUids:['uid-ammar']},"+
+      "{id:'l2',title:'Denim sampling, trims and the Karachi supplier follow-ups',kind:'private',adminUid:'uid-ammar',memberUids:['uid-ammar']},"+
+      "{id:'l3',title:'Studio',kind:'private',adminUid:'uid-ammar',memberUids:['uid-ammar']}]");
+    app.run("tbItems=[{id:'a',title:'x',status:'open',visibility:'shared',ownerUid:'uid-ammar',assigneeUids:['uid-ammar'],date:'2020-01-01',listId:'l1'},"+
+      "{id:'b',title:'y',status:'open',visibility:'shared',ownerUid:'uid-ammar',assigneeUids:['uid-ammar'],date:_tbToday(),listId:'l2'},"+
+      "{id:'c',title:'z',status:'open',visibility:'shared',ownerUid:'uid-ammar',assigneeUids:['uid-ammar'],date:null,listId:'l2'}]");
+    app.run("_tbHydrateQueue=[]");
+    let out=app.run("_tbShell('tb-lists','<div class=\"tb-empty\"><div class=\"tb-empty-h\">content</div></div>')");
+    app.run('_tbHydrateQueue').forEach(x=>{
+      out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+    });
+    out=out.replace('id="tb-rail-n"></span>','id="tb-rail-n">12</span>');
+    return {widths:[1900,1280,800,420],html:out};
   },
   'profile page (owner, mixed profiles)':()=>{
     const app=loadApp({
@@ -1954,6 +2187,18 @@ if(!browser){
 // The measuring script. Anything with its own text that ends up zero-wide
 // or zero-high is invisible to a human no matter what the DOM says.
 const PROBE=`
+// Measure the STEADY state. A CSS transition still running when this runs
+// is read at its start value: on the CI runner the Board composer's chips
+// were caught mid-way (their text colour, which does not transition, was
+// already final) and reported 1.03:1 for chips that read fine at rest, on
+// four pushes running, while every local run passed. Finishing each
+// transition jumps it to its end value, so a steady-state failure still
+// fails (checked by painting the chip ink its own background) and only the
+// in-flight frame is skipped. Animations, the infinite ones included, are
+// left alone.
+try{(document.getAnimations?document.getAnimations():[]).forEach(function(a){
+  if(typeof CSSTransition!=='undefined'&&a instanceof CSSTransition){try{a.finish();}catch(e){}}
+});}catch(e){}
 const bad=[];
 // An element's class as a STRING. .className on an SVG element is an
 // SVGAnimatedString, which stringifies to "[object SVGAnimatedString]" and
@@ -2167,7 +2412,22 @@ document.querySelectorAll('#main-content button, #main-content [onclick], #main-
   }
   // Off-screen at this width is a layout question, already covered above.
   if(r.bottom<0||r.top>innerHeight||r.right<0||r.left>innerWidth)return;
-  const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+  // SCROLLED AWAY is not covered. A control whose centre lies outside the
+  // visible box of a SCROLLABLE ancestor (overflow auto or scroll on that
+  // axis) is one scroll from reachable, and hit-testing it reported the
+  // scroller as the coverer -- the false hit several fragments here had to
+  // work around. An overflow:hidden ancestor still counts: nothing brings
+  // that control back.
+  const cx=r.left+r.width/2,cy=r.top+r.height/2;
+  let scrolledAway=false;
+  for(let p=el.parentElement;p&&p!==document.body;p=p.parentElement){
+    const ps=getComputedStyle(p),pr=p.getBoundingClientRect();
+    const sy=ps.overflowY==='auto'||ps.overflowY==='scroll';
+    const sx=ps.overflowX==='auto'||ps.overflowX==='scroll';
+    if((sy&&(cy<pr.top||cy>pr.bottom))||(sx&&(cx<pr.left||cx>pr.right))){ scrolledAway=true; break; }
+  }
+  if(scrolledAway)return;
+  const hit=document.elementFromPoint(cx,cy);
   // The click reaches the control if the hit IS the control, or a
   // descendant of it (it still bubbles). Anything else means something is
   // painted on top — INCLUDING an ancestor, which is how an ::after
@@ -2269,7 +2529,7 @@ document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
     if(m){
       const c=cases[Number(m[1])];
       const q=new URLSearchParams(req.url.split('?')[1]||'');
-      res.writeHead(200,{'Content-Type':'text/html'});
+      res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
       // A fragment that declares heights is measured INSIDE AN IFRAME of
       // exactly that viewport, the same device tests/smoke-phone.js uses and
       // for the same reason: --window-size sets the WINDOW, not the viewport,

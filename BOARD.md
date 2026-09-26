@@ -185,10 +185,22 @@ Three the codebase learned the hard way, now part of the spec:
    rebuild, sanitising on **read and write** — a body written by an older
    build or by hand in the Console is cleaned before it is ever shown.
 
-And one this module adds:
+And two this module adds:
 
 4. **Never `toISOString().slice(0,10)` for a day.** It is UTC, and in PKT
    (UTC+5) it names the *previous* day between midnight and 5am. Use `_tbDay`.
+5. **Never give a `window.X=` handler the name of a top-level function.** In
+   a browser a classic script's top-level `function X` IS `window.X`, so the
+   assignment silently replaces it. That is the Sep 2026 calendar freeze:
+   `window.tbCalFilter=` (the dropdown handler) replaced `function
+   tbCalFilter` (the pure filter), the calendar called the handler, the
+   handler repainted the calendar, and the tab locked for ~17s until the
+   stack overflowed — leaving a 1.36 MB junk filter in localStorage each
+   time. The node harness gives every script its own `window`, so no logic
+   suite could see it. `tests/invariants.test.js` now forbids the shape
+   repo-wide (a self-alias or a capture-and-call wrap is allowed), and
+   **`tests/smoke-board.js` drives every Board page and calendar control in
+   real Chromium** — run it before pushing any Board change.
 
 ---
 
@@ -208,12 +220,20 @@ And one this module adds:
   the real-Chromium script load and the rendered geometry of the shell are
   tested.
 - Phase 1 screens are honest placeholders, not loading states.
-- **Phase 4b** — the 08:00 PKT reminder — is the only piece of the build
-  spec not built. It is a scheduled Netlify function with the service
-  account (not a Cloud Function, so there is no Blaze dependency), and it
-  writes `due_today` / `overdue` rows through the same
-  `hrm_notifications` shape `_tbNotify` uses. It is deliberately last:
-  a reminder that writes into a board nobody can read yet is untestable.
+- **Phase 4b — the 08:00 PKT reminder — is BUILT (session 2, P2).**
+  `netlify/functions/board-reminder.js`, scheduled `0 3 * * *` (03:00 UTC =
+  08:00 PKT), body in `scripts/board-reminder-plan.js`. Every open item due
+  today gets one `due_today` row per person on it; every open item past its
+  date gets one `overdue` row per person, **every day** it stays overdue.
+  Rows go into `hrm_notifications` in the client's own shape (source `tb`,
+  `forUser` = username, escaped for the bell), with an id of
+  `tb_<type>_<item>_<uid>_<YYYYMMDD>`, so a second run the same day writes
+  nothing and a read reminder never comes back unread. "Today" is
+  Pakistan's day (UTC+5, no DST). A summary of each run is kept at
+  `board_config/reminder`. It runs only on the **published production
+  deploy** and cannot be opened by URL (a scheduled function answers 403).
+  Priority is `normal`, not `high`: an overdue item repeats daily, and a
+  red card per item per morning would be noise.
 - **The Dashboard activity card does not show step ticks, file adds, lock
   changes or handovers.** It is derived from the items in memory, not from
   the activity subcollections — see phase 5 below for why. Those events
@@ -226,7 +246,8 @@ And one this module adds:
   matches a bare `
 ` while git checks `js/shared.js` out with CRLF here;
   CI (Linux, LF) passes. One character fixes it (`
-` → `?
+` → `
+?
 `). Not
   this module's file, so it is left alone.
 
@@ -242,7 +263,7 @@ And one this module adds:
 | 3 — calendar | **done** — month + week, filters, pointer drag with lock enforcement |
 | 4 — comments, mentions, files, inbox | **done** — the thread, @ ranking, Cloudinary files, the live inbox |
 | 5 — responsive, shortcuts, search, cards 10–12 | **done** — see below |
-| 4b — scheduled reminder (Netlify) | the last piece; needs the rules deployed first |
+| 4b — scheduled reminder (Netlify) | **built** (session 2, P2) — `board-reminder`, 08:00 PKT |
 
 Cuts agreed for the Sep 28 date: Dashboard ships cards 1–8 in phase 2 (9–12
 move to phase 5); the calendar ships month + week, filters and pointer drag
@@ -251,27 +272,49 @@ to phase 5).
 
 ## Running the seed
 
+**The normal way is the Run seed button** in Board Settings (Board owners
+only: the rail's Settings, at the foot). Preview first — it writes nothing
+and says what it would do. The button calls
+`netlify/functions/board-seed.js`, which checks the caller's verified ID
+token server-side and runs the Admin SDK there.
+
+The command line is the fallback, and it **writes by default** (session 2):
+
 ```bash
-node scripts/seed-board.js            # dry run — prints what it would do
-node scripts/seed-board.js --write    # actually writes
+node scripts/seed-board.js --dry-run   # prints what it would write
+node scripts/seed-board.js             # writes
 ```
 
-Run it **locally, as an owner**. It uses the Admin SDK, which bypasses
-security rules by design and must never be reachable from a browser. It
-needs `FIREBASE_SERVICE_ACCOUNT` (the JSON) or `GOOGLE_APPLICATION_CREDENTIALS`
-(a path to the key file), and it needs every one of the five Auth accounts to
-exist — including Saim's, or it stops and says so rather than seeding a
-half-populated board.
+It needs `FIREBASE_SERVICE_ACCOUNT` (the JSON) or
+`GOOGLE_APPLICATION_CREDENTIALS` (a path to the key file). Both ways run the
+same body, `scripts/board-seed-plan.js`.
 
-It writes `board_config/markers`, the **Winter Drop 2027** list and 42
-milestones.
+It writes `board_config/markers`, the **Winter Drop 2027** list, 42
+milestones, a profile row for each Board person, and its own record,
+`board_config/seed`. **A missing login is skipped and named, not fatal**;
+any other Auth error stops the run before it writes anything.
 
-**Re-running is safe, by deterministic id rather than by "does a row with
-this title exist".** The id is `tb_<lane>_<title-slug>`, so a re-run
-addresses the same documents and merges. It also **never undoes real work**:
-`date`, `status`, `steps`, `notes`, `myDay`, `assigneeUids`, `locked` and
-`dateHistory` are written once, on create, and left alone after that — so
-re-seeding after someone has moved a date does not move it back.
+**Re-running is safe, and it touches nothing that exists** (review of
+`9e3b521`, 26 Sept 2026). Ids are deterministic — `tb_<lane>_<title-slug>` —
+so a re-run addresses the same documents, and:
+
+- an item already on the board is **not written at all** (its title, list,
+  visibility, owner, attachments, dates and steps are whoever's using it);
+- a milestone **deleted since** the seed made it is **not brought back** —
+  the record remembers it;
+- the list's title, colour, archive state and admin are its owner's; the
+  seed only **adds a person it has never added before** (someone with no
+  login last time), so a person taken off the list stays off;
+- the markers are written only if there are none;
+- the one thing a re-run adds to an existing milestone is a person the seed
+  **left off for want of a login** who has one now — by `arrayUnion`, so it
+  can only add, and only them.
+
+A board seeded before the record existed is **adopted as it stands**: nothing
+on it changes, nobody is added to anything, and the record starts from what
+is there. The first version merged every field but a short keep-list back
+onto each item, which emptied attachments, put back renamed titles and made
+privately-moved items shared again.
 
 Two milestones are seeded with **no date** on purpose (denim and knit bulk
 landing). They appear in Ammar's and Afnan's "needs a date" card on day one.
@@ -547,20 +590,52 @@ Record pass/fail here as it is worked through.
 | 12 | Ammar types `@` → the people he mentions most; typing `d` shows Daniyal | rules + a few real mentions | |
 | 13 | phone: all four screens usable; drawer as a sheet; long-press move works | rules | |
 | 14 | the seed re-run duplicates nothing | seed run once already | |
-| 14b | the 08:00 PKT reminder writes one `due_today` per assignee | **phase 4b, not built** | — |
+| 14b | the 08:00 PKT reminder writes one `due_today` per person on an item due that day, and the bell shows it | an item dated today; the first morning after it ships | |
 | 15 | tests pass; nothing outside the Board changed | — | **pass** (below) |
 
-**Step 15 is the one that can be answered from here, and it is.**
-`node tests/run.js` is 5,227 assertions with one failure, and that failure
-is the pre-existing Windows-only CRLF assertion in
-`tests/store-accounts.test.js:1196` recorded under Known gaps — CI on
-Linux passes it. Outside its own files the whole module has touched
-exactly: `js/auth.js` (`USER_DEFS` + `BOARD_USERS`/`BOARD_OWNERS` + the
-`designer` role), `js/shared.js` (the nav entry on five routes, one
-`renderPage` line, the `tb-*` scope in `showPage`, the phone `groups`
-map), `firestore.rules`, `firestore.indexes.json`, `index.html`, `sw.js`
-and `css/main.css`. **Phase 5 touched none of them** beyond the
-`CACHE_VERSION` bump.
+**Step 15 is the one that can be answered from here.** At the end of
+session 2 (`4ed7e5f`): `node tests/run.js` is **6,387 assertions, all
+passing**; `smoke-board` drives three users through every Board page in
+real Chromium; `smoke-layout` measures 362 fragment × width × theme jobs.
+Outside its own files (`js/theboard.js`, `tests/theboard.test.js`, the
+`BOARD*.md` docs) the branch changes exactly: `js/auth.js` (the landing
+page), `js/shared.js` (the nav and phone More sheet), `css/main.css`,
+`index.html`, `sw.js`, `netlify.toml`, `firestore.indexes.json`, the
+vendored flatpickr and Lucide files under `assets/vendor/`, two Netlify
+functions (`board-seed`, `board-reminder`) with their `scripts/` bodies,
+the CI workflow, and these test files: `invariants`, `marketing`,
+`smoke-board`, `smoke-browser`, `smoke-layout`, `board-seed`,
+`board-reminder`. **`firestore.rules` is unchanged.**
+
+### Session 2 acceptance — run on the first morning (prepared, not run)
+
+Two people, two browsers. **Ammar** (a Board owner) and **Saim**, who is on
+few items. Where a step says Afnan or Daniyal, anyone else on the Board will
+do. Record each result in the right-hand column. Everything needs the branch
+**merged and deployed**; "index" means the one composite index in the
+batched list in `BOARD-LOG.md` is built.
+
+| # | Step | Pass looks like | Result |
+|---|---|---|---|
+| S1 | Ammar signs in | lands on The Board's Dashboard, not the old dashboard | |
+| S2 | Ammar → Settings (rail foot) → **Preview**, then **Run seed** | Preview says "nothing was written"; Run seed says it created 42 milestones and the list; Team Today lists all five | |
+| S3 | Ammar presses **Run seed** again | "Created 0 milestones; 42 already on the board (not touched)." — nothing changes on any item | |
+| S4 | Ammar deletes one seeded milestone, then runs the seed again | "Not brought back — deleted since the seed made it" | |
+| S5 | Saim, in the second browser, keeps the Dashboard open; Ammar drags a milestone to another day | Saim's screen moves it within a few seconds, with no reload | |
+| S6 | Saim opens a shared item he is **not** on | the pane says he can read and comment but not change it; no star, disabled tick; he can post a comment | |
+| S7 | Ammar quick-adds `call baber tomorrow` and presses Enter twice fast | exactly one item appears, dated tomorrow | |
+| S8 | Ammar opens a list, goes back to the Dashboard, quick-adds `note to self` | it lands in **no** list and stays private | |
+| S9 | Ammar pins a task more than two weeks out (pane → **Pin**) | it appears on Deadlines; Settings lists it; **Unpin** removes it | |
+| S10 | Ammar adds a marker "rehearsal" on 29 Oct in Settings → **Save Markers** | Saim's calendar and date picker show it without reloading | |
+| S11 | Ammar types in an item's note, then opens another item within a second | the text is saved to the **first** item; the second item's note is untouched | |
+| S12 | at a tablet width (about 800 px), open an item | the pane opens over the list; the list behind it is not squeezed to a sliver | |
+| S13 | dark mode: open any date picker | the year arrows are visible; a picked day in the next month's grid is the accent colour | |
+| S14 | after the index is built: open the Inbox | it lists Board rows only (no HRM notices); the browser console shows no "index not deployed yet" warning | |
+| S15 | the first morning after it ships, 08:00 PKT | the bell has a "Due today" row for anything dated that day, one per person on it; `board_config/reminder` has the run summary | |
+
+The Monday steps that **cannot** be pre-checked from a session are all of
+them: nothing here has been seen in a signed-in browser (gstatic is blocked
+in the sandbox). What *is* verified is listed per commit in `BOARD-LOG.md`.
 
 ## Tests
 

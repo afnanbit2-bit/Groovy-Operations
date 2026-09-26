@@ -7547,6 +7547,17 @@ the living record** — read it before touching this module.
   `database` key (RTDB rules still go in by hand). `firebase deploy --only
   firestore` replaces the Console paste.
 
+**THE CALENDAR SHIPPED FROZEN (fixed 26 Sept 2026, session 2).**
+`window.tbCalFilter=` (a dropdown handler) replaced the top-level `function
+tbCalFilter` (the pure filter) — in a browser those are ONE binding — so the
+calendar recursed into its own repaint for ~17s and left a 1.36 MB junk
+filter in localStorage. 5,466 assertions were green: the harness gives each
+script its own `window`. **Never name a `window.X=` handler after a top-level
+function** (invariant now), and **run `node tests/smoke-board.js` before
+pushing any Board change** — it drives every page and calendar control in
+real Chromium against an in-memory Firestore. The session-2 run is logged in
+`BOARD-LOG.md`.
+
 **Phase 2 (items, lists, Dashboard cards 1-8, the drawer, the seed).**
 
 - **Every DECISION is a pure function and the writers are thin wrappers.**
@@ -7579,11 +7590,15 @@ the living record** — read it before touching this module.
   the comment claiming it was got corrected rather than left standing.
   Checked by removing it.
 - **The seed is idempotent by DETERMINISTIC ID** (`tb_<lane>_<slug>`), not
-  by "does a row with this title exist", and a re-run never touches `date`,
-  `status`, `steps`, `notes`, `myDay`, `assigneeUids`, `locked` or
-  `dateHistory` -- so re-seeding after someone moved a date does not move it
-  back. It requires `firebase-admin` INSIDE the run, not at the top, because
-  CI installs nothing and a top-level require would make it untestable.
+  by "does a row with this title exist", and **a re-run writes no item that
+  exists** (26 Sept 2026 -- it used to merge every field but a keep-list
+  back, which emptied attachments and made private items shared again). It
+  keeps a record in `board_config/seed`, so a milestone deleted since is not
+  brought back and a person taken off the list is not put back; the only
+  addition to an existing item is someone left off for want of a login, by
+  `arrayUnion`. `BOARD.md` "Running the seed" has the full rule. The body is
+  `scripts/board-seed-plan.js`, which never requires `firebase-admin` --
+  CI installs nothing, so the callers hand it the Admin handles.
 
 **Phase 3 (the calendar: month + week, filters, drag).** Rows-by-person
 and the unscheduled tray are phase 5.
@@ -9211,6 +9226,17 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**REPUBLISH OUTSTANDING (26 Sept 2026, session 2): The Board's lock
+rule** (`tbLockOk()`, `board_items` update). The old clause let a member on
+a locked item re-point `lockedBy` at themselves (or set `locked:false`) and
+then move the date, and refused a non-owner locker their own unlock --
+found by running the Board rules in the emulator for the first time
+(`tests/rules-emulator-board.js`, 39/39 after; the old rule fails 3). One
+paste of the current file carries this AND every outstanding entry below.
+**The Board's phase-1 rules (`board_*`) are in the same file; if they were
+never published, the Board shows "could not read" to all five of its
+users, and it is their landing page.**
 
 **REPUBLISH OUTSTANDING (26 Sept 2026, later): the warehouse handover,
 and its review round.** `wh_sales` read now includes `isStoreAccounts()`,

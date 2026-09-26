@@ -188,6 +188,16 @@ async function startApp(){
   if(session.role==='owner'){loadStoreNotifications();}
   buildNav();
   if(auth.currentUser){try{await auth.currentUser.getIdToken();}catch(_){}}
+  // THE BOARD IS HOME for its five users (session 2, Ammar's decision 4):
+  // the drop runs on it, so it is the first thing they see. Each role's
+  // own data still loads exactly as before -- only the page they land on
+  // changes, and every other account lands where it always did.
+  // ONLY WHEN THE BOARD LOADED: if js/theboard.js failed to parse, four of
+  // these five have a normal home, and landing them on "The Board did not
+  // load" would strand them there (review of b43a3db). Saim has no other
+  // page, and showPage's designer scope still sends him to the Board.
+  const boardHome=(typeof isBoardUser==='function'&&isBoardUser()&&typeof tbRenderPage==='function')
+    ?((typeof TB_HOME!=='undefined'&&TB_HOME)||'tb-dash'):null;
   if(session.role==='store'){
     loadStoreData();
     showPage('store-dashboard');
@@ -197,14 +207,14 @@ async function startApp(){
   }else if(session.role===MKT_LEAD_ROLE){
     // Creator & Content Operations Lead — The Sales Team ▸ Marketing and a
     // view-only Inventory Intel. No PO data is needed, so none is loaded.
-    showPage('mkt-creators');
+    showPage(boardHome||'mkt-creators');
   }else if(session.role==='packing'){
     // Packing account (Faizan) — receives finished pieces against POs.
     loadData();
     showPage('packing');
   }else{
     loadData();
-    showPage(session.role==='worker'?'my-work':'dashboard');
+    showPage(boardHome||(session.role==='worker'?'my-work':'dashboard'));
   }
 }
 

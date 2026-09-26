@@ -30,7 +30,9 @@
 
 // The one label. If the product is ever renamed, this is the only string
 // to change — the nav, the page titles and the empty states all read it.
-const TB_NAME='the board';
+// "The Board", Title Case, wherever it names the tab or the product
+// (session 2 brief s1/s4.5 -- this reverses the spec's lowercase voice).
+const TB_NAME='The Board';
 
 // ── Audience ──────────────────────────────────────────────────────────
 // BOARD_USERS / BOARD_OWNERS live in js/auth.js beside USER_DEFS, because
@@ -50,11 +52,33 @@ const TB_NAME='the board';
 const TB_PAGES=['tb-dash','tb-calendar','tb-lists','tb-inbox'];
 const TB_HOME='tb-dash';
 const _TB_RAIL=[
-  {id:'tb-dash',     label:'dashboard'},
-  {id:'tb-calendar', label:'calendar'},
-  {id:'tb-lists',    label:'lists'},
-  {id:'tb-inbox',    label:'inbox'}
+  {id:'tb-dash',     label:'Dashboard', icon:'layout-dashboard'},
+  {id:'tb-calendar', label:'Calendar',  icon:'calendar'},
+  {id:'tb-lists',    label:'Lists',     icon:'list-todo'},
+  {id:'tb-inbox',    label:'Inbox',     icon:'inbox'}
 ];
+
+// ── Icons (session 2, P1.1) ───────────────────────────────────────────
+// Lucide (ISC), 47 glyphs built into ONE vendored sprite by
+// scripts/build-lucide-sprite.js -- see assets/vendor/README.md. Used by
+// reference, same-origin and precached, so nothing is fetched at runtime
+// beyond the app's own files. The icon NAME comes from this file, never
+// from user text, and an unknown name draws nothing rather than a broken
+// reference. tests/invariants.test.js checks every name used here exists
+// in the sprite.
+const TB_SPRITE='/assets/vendor/lucide-sprite-1.48.0.svg';
+const TB_ICONS=['layout-dashboard','calendar','calendar-days','calendar-plus','calendar-x','inbox','list',
+  'list-checks','list-todo','plus','users','user','user-plus','settings','search','circle-help','circle',
+  'circle-check','check','star','lock','lock-open','message-circle','paperclip','sun','flag','tag','palette',
+  'file-text','sticky-note','trash-2','x','chevron-left','chevron-right','chevron-down','chevron-up',
+  'ellipsis','clock','circle-alert','bell','arrow-right-left','send','grip-vertical','eye','eye-off',
+  'filter','hand'];
+/** `<svg>` for one sprite icon. `size` is '' | 'sm' | 'lg'. Pure. */
+function _tbIcon(name,size){
+  if(TB_ICONS.indexOf(name)<0)return'';
+  return'<svg class="tb-ic'+(size?' tb-ic-'+size:'')+'" aria-hidden="true" focusable="false">'
+    +'<use href="'+TB_SPRITE+'#lucide-'+name+'"></use></svg>';
+}
 
 // ── Day strings ───────────────────────────────────────────────────────
 // A day on The Board is a 'YYYY-MM-DD' string in Asia/Karachi, so every
@@ -93,6 +117,18 @@ function _tbEsc(s){
   return String(s==null?'':s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+/** A value spliced into a quoted argument of an INLINE HANDLER,
+ *  onclick="f('…')". _tbEsc alone is not enough there: the browser decodes
+ *  &#39; back to ' before the handler runs, so an id carrying a quote
+ *  closes the string and runs whatever follows (review of 2ab0a8f). A
+ *  document id is whatever its writer chose, and hrm_notifications -- the
+ *  inbox's itemId -- is writable by anyone signed in. So: escape for the
+ *  JS string first, then for the attribute. Every such site uses this;
+ *  tests/theboard.test.js fails on one that does not. */
+function _tbJs(s){
+  return _tbEsc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+    .replace(/\n/g,'\\n').replace(/\r/g,'\\r').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029'));
 }
 
 // ── Notifications ─────────────────────────────────────────────────────
@@ -182,7 +218,13 @@ async function loadTbData(force){
       getDocs(query(collection(db,'board_items'),where('ownerUid','==',uid))),
       getDocs(query(collection(db,'board_lists'),where('kind','==','shared'),where('memberUids','array-contains',uid))),
       getDocs(query(collection(db,'board_lists'),where('adminUid','==',uid))),
-      getDoc(doc(db,'board_config','markers'))
+      getDoc(doc(db,'board_config','markers')),
+      // THE PROFILE DIRECTORY. js/profile.js owns it and loads it only when
+      // the Profile page opens; the Board needs every Board person's uid,
+      // so it asks for it here. loadProfiles cannot reject (it records its
+      // own error), so it is read back below.
+      (typeof loadProfiles==='function'&&!(typeof profilesLoaded!=='undefined'&&profilesLoaded))
+        ?loadProfiles():Promise.resolve()
     ]);
     const fail=[];
     const rows=(a,b,name)=>{
@@ -198,15 +240,25 @@ async function loadTbData(force){
     };
     tbItems=rows(r[0],r[1],'board_items').map(tbDecodeItem);
     tbLists=rows(r[2],r[3],'board_lists');
+    // Seed the live maps from THIS read, so a listener that has not
+    // delivered yet never drops what the first paint showed (P0.3).
+    const byId=x=>{const o={};if(x&&x.status==='fulfilled')x.value.docs.forEach(d=>{o[d.id]=Object.assign({id:d.id},d.data());});return o;};
+    const seedMaps={items_shared:byId(r[0]),items_own:byId(r[1]),lists_shared:byId(r[2]),lists_admin:byId(r[3])};
+    const seedBad={};
+    ['items_shared','items_own','lists_shared','lists_admin'].forEach((k,i)=>{ if(r[i].status!=='fulfilled')seedBad[k]=true; });
     if(r[4].status==='fulfilled'){
       const snap=r[4].value;
       const ex=snap&&typeof snap.exists==='function'?snap.exists():false;
       tbConfig=ex?snap.data():{markers:[]};
     }else{fail.push('board_config');console.warn('[the board] config read failed',r[4].reason);}
+    // A refused directory read leaves the Board usable (you still resolve
+    // from the session) but says so in the warning strip.
+    if(typeof _profileLoadErr!=='undefined'&&_profileLoadErr)fail.push('user_profiles');
     _tbLoadErrors=fail;
     _tbCalLoadPrefs();
     tbLoaded=true;
     _tbLoading=null;
+    _tbLiveStart(seedMaps,seedBad);
   })();
   return _tbLoading;
 }
@@ -228,8 +280,180 @@ function tbDecodeItem(raw){
   it.priority=[0,1,2].indexOf(Number(it.priority))>-1?Number(it.priority):0;
   it.date=it.date||null;
   it.listId=it.listId||null;
+  it.pinned=it.pinned===true;
   return it;
 }
+
+// ══ SESSION 2 — P0.3: LIVE ITEMS ═════════════════════════════════════
+// The board used to be read ONCE per session (and again only after a
+// refused write or a Retry), so a date Ammar moved never reached Afnan's
+// open screen until he reloaded -- on a board whose whole job is five
+// people agreeing on dates. Now the same four queries loadTbData reads are
+// LISTENED to, and any change lands on every open Board within a second.
+//
+// Three rules keep it from being worse than a static page:
+//   · The FIRST PAINT stays on getDocs. The listeners start after it, with
+//     their maps seeded from that read, so one that has not delivered yet
+//     never drops an item the screen already showed. (The harness's
+//     onSnapshot never fires, and every logic suite relies on getDocs.)
+//   · Each query owns ONE map and a snapshot replaces only that map. The
+//     screen is the UNION, exactly as loadTbData merges -- two queries,
+//     never one, because the rules are not a query filter (BOARD.md).
+//   · A REMOTE UPDATE NEVER LANDS MID-GESTURE. The data is taken at once,
+//     but the repaint waits while a field has focus or a pill is being
+//     dragged -- a repaint rebuilds #main-content wholesale, which would
+//     eat the caret, the composer and the drag. The Mood Boards Stage 6
+//     rule, for the same reason.
+let _tbLive=null;              // {uid, maps, unsubs}
+let _tbLivePending=false;
+let _tbLiveTimer=null;
+const _TB_LIVE_RETRY_MS=700;
+
+/** The union the screen shows. PURE: maps in, {items, lists} out. */
+function tbLiveMerge(maps){
+  const m=maps||{};
+  const items={},lists={};
+  ['items_shared','items_own'].forEach(k=>{ Object.keys(m[k]||{}).forEach(id=>{ items[id]=m[k][id]; }); });
+  ['lists_shared','lists_admin'].forEach(k=>{ Object.keys(m[k]||{}).forEach(id=>{ lists[id]=m[k][id]; }); });
+  return{items:Object.keys(items).map(id=>items[id]),lists:Object.keys(lists).map(id=>lists[id])};
+}
+/** Is someone in the middle of something a repaint would destroy? */
+function _tbLiveBusy(){
+  if(typeof _tbDragId!=='undefined'&&_tbDragId!=null)return true;
+  // A PRESS IN PROGRESS. A repaint between pointerdown and click detaches
+  // the pressed button, so the click lands on a new node and is lost.
+  // Bounded, so a release the page never hears (outside the window) can
+  // hold live updates for a few seconds at most, never for good.
+  if(_tbPtrDown&&Date.now()-_tbPtrDownAt<_TB_PRESS_MAX_MS)return true;
+  // An open date picker is a gesture in progress: a repaint would tear
+  // the calendar out from under the pointer.
+  if(_tbFpOpen())return true;
+  return _tbEditableFocus();
+}
+// (The quick-add composer keeps its text and chips in _tbQa, so a live
+// repaint redraws it intact; its focus is restored by _tbRepaint.)
+function _tbOnBoardPage(){
+  return String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')===0;
+}
+function _tbLiveStart(seedMaps,seedBad){
+  if(typeof onSnapshot!=='function')return;           // an old cached shell: stay static
+  const uid=_tbMe();
+  if(!uid)return;
+  if(_tbLive&&_tbLive.uid===uid){
+    // A re-read (Retry, or a refused write) refreshes the maps; the
+    // listeners carry on.
+    Object.assign(_tbLive.maps,seedMaps||{});
+    _tbLive.bad=Object.assign({},seedBad||{});
+    return;
+  }
+  _tbLiveStop();
+  // `bad` is WHICH QUERY is failing, per query. A read failure used to be
+  // cleared by a snapshot from ANY listener, so a refused board_items read
+  // turned into an empty board the moment the lists listener delivered
+  // (review of 14ad9f3). A failure now clears only when the query behind
+  // it delivers, and a listener that starts failing puts it back.
+  _tbLive={uid:uid,maps:Object.assign({items_shared:{},items_own:{},lists_shared:{},lists_admin:{}},seedMaps||{}),
+           bad:Object.assign({},seedBad||{}),unsubs:[]};
+  const defs=[
+    {key:'items_shared',q:()=>query(collection(db,'board_items'),where('visibility','==','shared'))},
+    {key:'items_own',   q:()=>query(collection(db,'board_items'),where('ownerUid','==',uid))},
+    {key:'lists_shared',q:()=>query(collection(db,'board_lists'),where('kind','==','shared'),where('memberUids','array-contains',uid))},
+    {key:'lists_admin', q:()=>query(collection(db,'board_lists'),where('adminUid','==',uid))}
+  ];
+  defs.forEach(function(d){
+    try{
+      _tbLive.unsubs.push(onSnapshot(d.q(),function(snap){
+        if(!_tbLive||_tbLive.uid!==uid)return;
+        const map={};
+        ((snap&&snap.docs)||[]).forEach(x=>{ map[x.id]=Object.assign({id:x.id},x.data()); });
+        _tbLive.maps[d.key]=map;
+        delete _tbLive.bad[d.key];
+        _tbLiveApply();
+      },function(e){
+        console.warn('[the board] live '+d.key+' failed',e);
+        if(!_tbLive||_tbLive.uid!==uid)return;
+        _tbLive.bad[d.key]=true;
+        _tbLiveApply();
+      }));
+    }catch(e){ console.warn('[the board] live '+d.key+' could not start',e); }
+  });
+  try{
+    _tbLive.unsubs.push(onSnapshot(doc(db,'board_config','markers'),function(snap){
+      if(!_tbLive||_tbLive.uid!==uid)return;
+      const ex=snap&&typeof snap.exists==='function'?snap.exists():false;
+      tbConfig=ex?snap.data():{markers:[]};
+      _tbLiveRepaint();
+    },function(e){ console.warn('[the board] live config failed',e); }));
+  }catch(e){}
+}
+function _tbLiveStop(){
+  if(_tbLive)(_tbLive.unsubs||[]).forEach(u=>{ try{ if(typeof u==='function')u(); }catch(e){} });
+  _tbLive=null;
+}
+function _tbLiveApply(){
+  const merged=tbLiveMerge(_tbLive.maps);
+  tbItems=merged.items.map(tbDecodeItem);
+  tbLists=merged.lists;
+  // A collection is failing while EITHER of its two queries is: the same
+  // rule loadTbData's first read applies (one half refused is still said).
+  const bad=_tbLive.bad||{};
+  _tbLoadErrors=_tbLoadErrors.filter(c=>c!=='board_items'&&c!=='board_lists');
+  if(bad.items_shared||bad.items_own)_tbLoadErrors.push('board_items');
+  if(bad.lists_shared||bad.lists_admin)_tbLoadErrors.push('board_lists');
+  _tbLiveRepaint();
+}
+/** A doc THIS tab just created. Real Firestore hands a local write to the
+ *  listener before commit() resolves (latency compensation), so by the
+ *  time the create path runs its own "add it to the list" the listener
+ *  may already have done so: pushing again showed every new item twice
+ *  (review of 14ad9f3). Upsert by id, and record it in the live map the
+ *  listener owns so a rebuild from the maps cannot drop it either. */
+function _tbUpsert(arr,obj){
+  // No id, nothing to match on: a ref always carries one in the browser.
+  const i=obj&&obj.id!=null?arr.findIndex(x=>x&&x.id===obj.id):-1;
+  if(i>-1)arr[i]=obj;else arr.push(obj);
+  return arr;
+}
+function _tbLiveRemember(key,id,data){
+  if(_tbLive&&_tbLive.maps&&_tbLive.maps[key])_tbLive.maps[key][id]=Object.assign({id:id},data);
+}
+/** Repaint now, or as soon as nobody is mid-gesture. */
+function _tbLiveRepaint(){
+  if(!_tbOnBoardPage()){ _tbLivePending=false; return; }
+  if(_tbLiveBusy()){
+    _tbLivePending=true;
+    if(!_tbLiveTimer)_tbLiveTimer=setTimeout(_tbLiveFlush,_TB_LIVE_RETRY_MS);
+    return;
+  }
+  _tbLivePending=false;
+  _tbRepaint();
+}
+function _tbLiveFlush(){
+  _tbLiveTimer=null;
+  if(!_tbLivePending)return;
+  _tbLiveRepaint();
+}
+// Registered ONCE at load: leaving a field or finishing a press is when a
+// deferred update lands, rather than waiting for the retry timer.
+// NOT ON POINTERUP, AND NOT ON A FOCUSOUT A PRESS CAUSED (review of
+// 14ad9f3). A mouse press moves focus during mousedown; flushing then
+// repainted before mouseup, the pressed button was replaced, and its click
+// was lost -- leaving a field by clicking Mark done did nothing. The flush
+// now waits for the CLICK (this listener bubbles last, after the button's
+// own handler) and a keyboard focusout, which no press is behind.
+let _tbPtrDown=false,_tbPtrDownAt=0;
+const _TB_PRESS_MAX_MS=5000;
+(function(){
+  if(typeof document==='undefined'||!document.addEventListener)return;
+  const later=()=>{ if(_tbLivePending)setTimeout(_tbLiveFlush,0); };
+  document.addEventListener('pointerdown',()=>{ _tbPtrDown=true;_tbPtrDownAt=Date.now(); },true);
+  const up=()=>{ _tbPtrDown=false; };
+  document.addEventListener('pointerup',up,true);
+  document.addEventListener('pointercancel',up,true);
+  if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('blur',up);
+  document.addEventListener('focusout',()=>{ if(!_tbPtrDown)later(); });
+  document.addEventListener('click',later);
+})();
 
 // ── The item ──────────────────────────────────────────────────────────
 const TB_KINDS=['task','gate','event'];
@@ -318,6 +542,7 @@ function tbItemPatch(item,patch,uid,now,reason){
   if('dueAt' in p && (p.dueAt||null)!==(it.dueAt||null))out.dueAt=p.dueAt||null;
   if(out.assigneeUids)acts.push({type:'assigned',payload:{to:out.assigneeUids}});
   if('locked' in out)acts.push({type:out.locked?'locked':'unlocked',payload:{}});
+  if('pinned' in out)acts.push({type:out.pinned?'pinned':'unpinned',payload:{}});
   // Visibility follows the assignees and the list, always.
   const merged=Object.assign({},it,out);
   const vis=tbVisibilityFor(merged,tbLists);
@@ -325,8 +550,33 @@ function tbItemPatch(item,patch,uid,now,reason){
   return {data:out,activity:acts.map(a=>({type:a.type,byUid:uid,at:now,payload:a.payload}))};
 }
 
+/** May this person change this item AT ALL? The first clause of the
+ *  board_items update rule, echoed: someone on it (an assignee or its
+ *  owner), the admin of its list, or a Board owner. A shared item is
+ *  READABLE by every Board user but not writable by them, and the UI used
+ *  to offer the star, the tick, the drag and every pane field to everyone
+ *  who could read it -- each refused by the rules with a message blaming a
+ *  lock or an undeployed ruleset (review of 2ab0a8f). Comments are open
+ *  to every reader and stay so. Pure. */
+function tbCanEdit(item,uid,isOwnerRole,lists){
+  if(!item||!uid)return false;
+  if(isOwnerRole)return true;
+  if(item.ownerUid===uid||(item.assigneeUids||[]).indexOf(uid)>-1)return true;
+  const l=(lists||[]).filter(x=>x&&x.id===item.listId)[0];
+  return !!(l&&l.adminUid===uid);
+}
+const _TB_NOT_ON='Only the people on this item can change it';
+function _tbCanEditIt(it){ return tbCanEdit(it,_tbMe(),_tbIsBoardOwner(),tbLists); }
+/** Say it plainly, once, and write nothing. True when refused. */
+function _tbNotOnIt(it){
+  if(!it||_tbCanEditIt(it))return false;
+  _tbToast('Only the people on this item can change it — leave a comment to ask them.');
+  return true;
+}
+
 /** May this person move this item's date? The UI's echo of the rules
- *  clause — it hides a drag handle, it does not enforce anything. Pure. */
+ *  clause — it hides a drag handle, it does not enforce anything. Pure.
+ *  The LOCK only: whether they may change the item at all is tbCanEdit. */
 function tbCanMoveDate(item,uid,isOwnerRole){
   if(!item)return false;
   if(!item.locked)return true;
@@ -392,21 +642,30 @@ function _tbDaysBetween(a,b){
 function tbParseQuickAdd(text,ctx){
   const c=ctx||{},today=c.today||'',handles=c.handles||{};
   let s=' '+String(text||'')+' ';
-  const out={title:'',assigneeUids:[],assigneeHandles:[],lane:null,date:null,priority:0,unknownHandles:[]};
+  const out={title:'',assigneeUids:[],assigneeHandles:[],lane:null,date:null,priority:0,unknownHandles:[],pendingHandles:[]};
 
   // priority first: it is a standalone token and cannot be confused
   s=s.replace(/(\s)(!{1,2})(?=\s)/g,(m,sp,bangs)=>{
     out.priority=Math.max(out.priority,bangs.length===2?2:1);return sp;
   });
   // @handle
+  const board=c.boardHandles||[];
   s=s.replace(/(\s)@([a-z0-9._-]+)/gi,(m,sp,h)=>{
     const key=String(h).toLowerCase();
     if(handles[key]){
       if(out.assigneeUids.indexOf(handles[key])<0){out.assigneeUids.push(handles[key]);out.assigneeHandles.push(key);}
       return sp;
     }
+    // A BOARD person the session cannot resolve yet (no profile row) is
+    // still never title text -- "@afnan" in a title is the bug the brief
+    // names. It is taken out and reported, so the preview can say why
+    // they were not assigned.
+    if(board.indexOf(key)>-1){
+      if(out.pendingHandles.indexOf(key)<0)out.pendingHandles.push(key);
+      return sp;
+    }
     out.unknownHandles.push(key);
-    return m;                       // unknown → left in the title, verbatim
+    return m;                       // not on the board → left in the title, verbatim
   });
   // #lane
   s=s.replace(/(\s)#([a-z0-9-]+)/gi,(m,sp,l)=>{out.lane=String(l).toLowerCase();return sp;});
@@ -500,11 +759,17 @@ function tbMyDay(items,uid,today){
 function tbAssignedToMe(items,uid,today){
   const above=new Set(tbOverdue(items,uid,today).concat(tbDueToday(items,uid,today))
     .concat(tbMyDay(items,uid,today)).map(i=>i.id));
-  return (items||[]).filter(i=>_tbOpen(i)&&_tbMine(i,uid)&&i.ownerUid!==uid&&!above.has(i.id)).sort(_tbByDate);
+  // Undated ones live in Needs a date now (decision 5); a card that
+  // repeats another's rows makes both harder to read.
+  return (items||[]).filter(i=>_tbOpen(i)&&_tbMine(i,uid)&&i.ownerUid!==uid&&!!i.date&&!above.has(i.id)).sort(_tbByDate);
 }
-/** The set-a-date chore. Mine to answer, because I own them. */
+/** The set-a-date chore: undated items I OWN OR AM ASSIGNED TO.
+ *  Session 2 (Ammar's decision 5): the spec's owner-only rule was wrong --
+ *  the seed makes a milestone's first assignee its owner, so both undated
+ *  bulk-landing gates were Mustafa's alone, while the people who have to
+ *  schedule them (Afnan and Mustafa, both on them) never saw one. */
 function tbNeedsDate(items,uid){
-  return (items||[]).filter(i=>_tbOpen(i)&&i.ownerUid===uid&&!i.date)
+  return (items||[]).filter(i=>_tbOpen(i)&&!i.date&&(i.ownerUid===uid||_tbMine(i,uid)))
     .sort((a,b)=>String(a.title||'').localeCompare(String(b.title||'')));
 }
 function tbNext7(items,uid,today){
@@ -603,12 +868,73 @@ function _tbProfiles(){ return (typeof userProfiles!=='undefined'&&userProfiles)
 function _tbDefs(){ return (typeof USER_DEFS!=='undefined'&&USER_DEFS)||[]; }
 function _tbBoardUsernames(){ return (typeof BOARD_USERS!=='undefined'&&BOARD_USERS)||[]; }
 
+/** THE FIVE BOARD PEOPLE, resolved as far as this session can. A uid
+ *  comes from the person's profile row -- the ONLY username<->uid link the
+ *  client has -- or, for yourself, from the session. Someone with neither
+ *  (never signed in, never synced) is still LISTED, as not set up yet:
+ *  Team today names all five from day one, and a person you cannot assign
+ *  says why rather than vanishing.
+ *
+ *  Session 2 fix: until now nothing on the Board loaded the profile
+ *  DIRECTORY -- only your own row from profileBootstrap -- so every other
+ *  person rendered as "someone", Team today listed one person, and the
+ *  assign chips, @mentions, handover, the person filter and bell
+ *  addressing all knew nobody but you. Never throws. */
+function tbPeople(){
+  const profiles=_tbProfiles();
+  const me=(typeof session!=='undefined'&&session)||null;
+  const unread=_tbLoadFailed('user_profiles');
+  return _tbBoardUsernames().map(function(h){
+    const rows=profiles.filter(x=>x&&x.username===h&&x.uid);
+    const uids=rows.map(x=>x.uid).filter((u,i,a)=>a.indexOf(u)===i);
+    const def=_tbDefs().filter(u=>u&&u.u===h)[0]||null;
+    let uid='',reason='';
+    // YOU are always your session (review of a96cddb): `username` on a
+    // profile row is self-writable, so a row claiming your handle must not
+    // outrank the account you are signed in as.
+    if(me&&me.u===h&&me.uid)uid=me.uid;
+    // TWO ROWS CLAIMING ONE HANDLE are not guessed between: the first one
+    // returned used to win, so a row anyone can write for themselves could
+    // take a teammate's assignments. Not assignable, and said -- an owner
+    // removes the stale row on the Profile page.
+    else if(uids.length>1)reason='ambiguous';
+    else if(uids.length===1)uid=uids[0];
+    else reason=unread?'unread':'missing';
+    const p=rows.filter(x=>x.uid===uid)[0]||(uids.length===1?rows[0]:null);
+    const name=(p&&p.displayName)||(def&&def.name)||h;
+    return{handle:h,uid:uid,name:name,reason:reason,
+      initial:String(name).trim().charAt(0).toUpperCase()||'?',setUp:!!uid};
+  });
+}
+/** Why someone cannot be assigned, in words. A failed directory read used
+ *  to say every teammate was "not set up yet" and send an owner to Sync
+ *  accounts for four people who all had accounts (review of a96cddb). */
+function tbPersonOffText(p){
+  const n=(p&&p.name)||'They';
+  if(p&&p.reason==='unread')return n+' could not be matched — the team directory did not load. Reload The Board.';
+  if(p&&p.reason==='ambiguous')return 'Two profiles claim @'+p.handle+' — an owner should remove the stale one on the Profile page.';
+  return n+' is not set up yet — an owner can press Sync accounts on the Profile page.';
+}
+/** The toast for handles a create could not assign. */
+function _tbPendingToast(handles){
+  if(!handles||!handles.length)return '';
+  const at='@'+handles.join(', @');
+  if(_tbLoadFailed('user_profiles'))return 'Added — '+at+' could not be assigned: the team directory did not load. Reload The Board and assign from the item.';
+  return 'Added — '+at+' is not set up yet, so not assigned. An owner can press Sync accounts on the Profile page.';
+}
+
 /** Everything the UI needs about a person, from a uid. Never throws, and
  *  never renders a bare uid at someone: an unresolvable one reads as
  *  "someone", which is honest. */
 function tbUser(uid){
   if(!uid)return{uid:'',name:'—',handle:'',initial:'?',colorKey:null};
   const p=_tbProfiles().filter(x=>x&&x.uid===uid)[0];
+  if(!p){
+    // No profile row -- but it may be a Board person the session knows
+    // (yourself, before your row exists).
+    const bp=tbPeople().filter(x=>x.uid===uid)[0];
+    if(bp)return{uid:uid,name:bp.name,handle:bp.handle,initial:bp.initial,colorKey:null};
+  }
   const def=p?_tbDefs().filter(u=>u.u===p.username)[0]:null;
   const name=(p&&p.displayName)||(def&&def.name)||(p&&p.username)||'someone';
   return{
@@ -621,10 +947,10 @@ function tbUser(uid){
 }
 /** handle -> uid, for the quick-add grammar and @mentions. ONLY Board
  *  users are candidates (spec s9), so Sami — one letter from Saim — can
- *  never be offered here. */
+ *  never be offered here. Only people with a resolvable uid appear. */
 function tbHandleMap(){
-  const out={},allow=_tbBoardUsernames();
-  _tbProfiles().forEach(p=>{ if(p&&p.username&&allow.indexOf(p.username)>-1)out[p.username]=p.uid; });
+  const out={};
+  tbPeople().forEach(p=>{ if(p.uid)out[p.handle]=p.uid; });
   return out;
 }
 function tbUserColors(){
@@ -656,36 +982,116 @@ function _tbHydrate(){
   _tbHydrateQueue=[];
 }
 
-/** The row, everywhere (spec s7.1): checkbox · colour dot · title ·
- *  assignee avatars (OTHERS only — your own face on your own list is
- *  noise) · lock · step progress · comment count · date. One tap opens the
- *  drawer; the checkbox completes without opening. */
-function _tbRow(item,today){
+/** The row, everywhere (spec s7.1; session 2, P1.3 -- the To Do pattern):
+ *  a ROUND checkbox · the title (up to two lines) with a META LINE under it
+ *  -- colour dot, kind, date, steps, comments, lock, the list (off a list's
+ *  own screen), the OTHER assignees -- and a STAR on the right that puts
+ *  the item in My Day. One tap on the title opens the item; the checkbox
+ *  and the star act without opening it.
+ *  `o.inList`: on a list's own screen, where naming the list is noise. */
+function _tbRow(item,today,o){
+  o=o||{};
   const me=_tbMe();
   const ck=tbItemColorKey(item,tbLists,tbUserColors());
   const others=(item.assigneeUids||[]).filter(u=>u!==me);
   const pr=tbStepProgress(item);
-  const overdue=item.date&&item.date<today&&item.status!=='done';
+  const done=item.status==='done';
+  const overdue=item.date&&item.date<today&&!done;
+  const starred=!done&&(item.myDay||{})[me]===today;
+  const list=(!o.inList&&item.listId)?tbLists.filter(l=>l&&l.id===item.listId)[0]:null;
+  const id=_tbEsc(item.id);
+  const jid=_tbJs(item.id);
+  // Someone the rules will not let change it sees no star and a tick that
+  // says why it will not move (review of 2ab0a8f).
+  const canEdit=_tbCanEditIt(item);
   const avatars=others.slice(0,3).map(u=>{
     const p=tbUser(u);
     return'<span class="tb-av" title="'+_tbEsc(p.name)+'">'+_tbEsc(p.initial)+'</span>';
   }).join('')+(others.length>3?'<span class="tb-av tb-av-more">+'+(others.length-3)+'</span>':'');
-  return'<div class="tb-row'+(item.status==='done'?' done':'')+(item.priority===2?' crit':'')+'" data-id="'+_tbEsc(item.id)+'">'
-    +'<button class="tb-check'+(item.status==='done'?' on':'')+'" title="mark done"'
-      +' onclick="event.stopPropagation();window.tbToggleDone(\''+_tbEsc(item.id)+'\')"></button>'
-    +'<span class="tb-dot tb-c-'+_tbEsc(ck)+'"></span>'
-    +'<button class="tb-rowmain" onclick="window.tbOpenItem(\''+_tbEsc(item.id)+'\')">'
+  const lockedBy=item.locked?tbUser(item.lockedBy):null;
+  const meta=[
+    item.kind!=='task'?'<span class="tb-kind tb-kind-'+_tbEsc(item.kind)+'">'+_tbEsc(_tbCap(item.kind))+'</span>':'',
+    // No date is said by saying nothing: the Needs a Date card already
+    // says it, and "no date" on every undated row is noise.
+    item.date?'<span class="tb-date'+(overdue?' over':'')+'">'+_tbIcon('calendar','sm')+_tbEsc(_tbCap(tbDayLabel(item.date,today)))+'</span>':'',
+    pr.label?'<span class="tb-steps" title="steps done">'+_tbIcon('list-checks','sm')+_tbEsc(pr.label)+'</span>':'',
+    item.commentCount>0?'<span class="tb-cc" title="comments">'+_tbIcon('message-circle','sm')+_tbEsc(item.commentCount)+'</span>':'',
+    item.locked?'<span class="tb-lock" title="locked by '+_tbEsc(lockedBy.name)+'">'+_tbIcon('lock','sm')+'</span>':'',
+    list?'<span class="tb-rowlist">'+_tbIcon(list.kind==='shared'?'users':'list','sm')+_tbSlot(list.title||'untitled','tb-rowlistname')+'</span>':'',
+    avatars?'<span class="tb-avs">'+avatars+'</span>':''
+  ].join('');
+  // A row with nothing to say has no meta line at all -- a lone colour dot
+  // on a line of its own (seen on the P1.3 screenshots) is a wasted line.
+  // The dot leads the line when there is one; on a list's own screen every
+  // row shares the list's colour, so there it is only drawn with other meta.
+  // The item open in the pane is marked in the list, so the eye can find
+  // what the pane is describing (the To Do pattern).
+  return'<div class="tb-row'+(done?' done':'')+(item.priority===2?' crit':'')+(item.id===_tbOpenItemId?' tb-sel':'')+'" data-id="'+id+'">'
+    +'<button class="tb-check'+(done?' on':'')+'" title="'+(canEdit?(done?'Mark not done':'Mark done'):_TB_NOT_ON)+'"'
+      +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
+      +(canEdit?'':' disabled')
+      +' onclick="event.stopPropagation();window.tbToggleDone(\''+jid+'\')">'+_tbIcon('check','sm')+'</button>'
+    +'<button class="tb-rowmain" onclick="window.tbOpenItem(\''+jid+'\')">'
       +_tbSlot(item.title||'untitled','tb-rowtitle')
-      +'<span class="tb-rowmeta">'
-        +(item.kind!=='task'?'<span class="tb-kind tb-kind-'+_tbEsc(item.kind)+'">'+_tbEsc(item.kind)+'</span>':'')
-        +avatars
-        +(item.locked?'<span class="tb-lock" title="locked">&#128274;</span>':'')
-        +(pr.label?'<span class="tb-steps">'+_tbEsc(pr.label)+'</span>':'')
-        +(item.commentCount>0?'<span class="tb-cc">'+_tbEsc(item.commentCount)+'</span>':'')
-        +'<span class="tb-date'+(overdue?' over':'')+'">'+_tbEsc(tbDayLabel(item.date,today))+'</span>'
-      +'</span>'
+      +(meta?'<span class="tb-rowmeta"><span class="tb-dot tb-c-'+_tbEsc(ck)+'"></span>'+meta+'</span>':'')
     +'</button>'
+    // A done item has no day left to be in, so it has no star.
+    +(done||!canEdit?'':'<button class="tb-star'+(starred?' on':'')+'"'
+      +' title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
+      +' aria-label="'+(starred?'Remove from My Day':'Add to My Day')+'" aria-pressed="'+(starred?'true':'false')+'"'
+      +' onclick="event.stopPropagation();window.tbAddToMyDay(\''+jid+'\')">'+_tbIcon('star')+'</button>')
   +'</div>';
+}
+/** First letter up: "today" -> "Today", "gate" -> "Gate". Pure. */
+function _tbCap(s){ s=String(s==null?'':s); return s.charAt(0).toUpperCase()+s.slice(1); }
+
+// ── The Dashboard's groups (session 2, P1.5) ──────────────────────────
+// Folded per viewer, in localStorage -- a preference about this screen,
+// not the board. It is CLEANED ON LOAD like the calendar prefs (Ammar's
+// decision 6): only the six known group keys survive, and anything
+// unreadable or over 4 KB is removed rather than trusted.
+const TB_DASH_GROUPS=['overdue','today','myday','assigned','needsdate','next7'];
+const _TB_DASH_FOLD_KEY='tb-dash-fold';
+let _tbDashFold=null;
+/** What a stored fold may hold. [] for nothing stored; null means "remove
+ *  what is there". Pure. */
+function tbCleanDashFold(raw){
+  if(raw==null)return[];
+  if(typeof raw!=='string'||raw.length>_TB_CAL_PREFS_MAX)return null;
+  let v;
+  try{ v=JSON.parse(raw); }catch(e){ return null; }
+  if(!Array.isArray(v))return null;
+  return TB_DASH_GROUPS.filter(k=>v.indexOf(k)>-1);
+}
+function _tbDashFoldGet(){
+  if(_tbDashFold)return _tbDashFold;
+  let raw=null;
+  try{ raw=localStorage.getItem(_TB_DASH_FOLD_KEY); }catch(e){}
+  const clean=tbCleanDashFold(raw);
+  if(clean===null){ try{ localStorage.removeItem(_TB_DASH_FOLD_KEY); }catch(e){} }
+  _tbDashFold=new Set(clean||[]);
+  return _tbDashFold;
+}
+window.tbToggleGroup=function(k){
+  if(TB_DASH_GROUPS.indexOf(k)<0)return;
+  const f=_tbDashFoldGet();
+  if(f.has(k))f.delete(k); else f.add(k);
+  try{ localStorage.setItem(_TB_DASH_FOLD_KEY,JSON.stringify(TB_DASH_GROUPS.filter(x=>f.has(x)))); }catch(e){}
+  _tbRepaint();
+};
+/** One group: a header that folds it, and its rows. '' when empty. */
+function _tbGroup(key,title,items,today,o){
+  if(!items.length)return'';
+  const shut=_tbDashFoldGet().has(key);
+  return'<section class="tb-group'+(shut?' tb-shut':'')+'" data-group="'+_tbEsc(key)+'">'
+    +'<button class="tb-grouph" aria-expanded="'+(shut?'false':'true')+'"'
+      +' onclick="window.tbToggleGroup(\''+_tbJs(key)+'\')">'
+      +_tbIcon(shut?'chevron-right':'chevron-down','sm')
+      +'<span class="tb-groupname">'+_tbEsc(title)+'</span>'
+      +'<span class="tb-count'+(o&&o.red?' red':'')+'">'+items.length+'</span>'
+    +'</button>'
+    +(shut?'':'<div class="tb-groupbody">'+items.map(i=>_tbRow(i,today)).join('')+'</div>')
+  +'</section>';
 }
 
 /** A card. Returns '' when there is nothing to show — spec s7.1: cards
@@ -723,16 +1129,14 @@ function _tbHeaderStrip(today){
     +(countdown?'<div class="tb-stripmark">'+_tbEsc(countdown)+'</div>':'')
     +'<div class="tb-stripcount">'+_tbEsc(counts)+'</div>'
   +'</div>'
-  +'<div class="tb-quick">'
-    +'<input id="tb-qa" class="tb-qainput" placeholder="add something — try: denim samples @afnan #denim oct 5 !"'
-      +' oninput="window.tbQuickPreview()" onkeydown="window.tbQuickKey(event)" autocomplete="off">'
-    +'<div id="tb-qa-prev" class="tb-qaprev"></div>'
-  +'</div>';
+  +_tbComposer('add something — try: denim samples @afnan #denim oct 5 !');
 }
 function _tbLongDay(day){
   const p=String(day).split('-');
   const d=new Date(Number(p[0]),Number(p[1])-1,Number(p[2]),12,0,0);
-  return d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}).toLowerCase();
+  // Title Case, like every heading on The Board (session 2): 'Saturday 26
+  // September'. It used to be forced to lowercase with the spec's voice.
+  return d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
 }
 
 /** The Dashboard — cards 1-8. Order matters and is not to be changed for
@@ -741,31 +1145,42 @@ function _tbLongDay(day){
 function _tbDashboard(){
   const me=_tbMe(),today=_tbToday();
   if(_tbLoadFailed('board_items')){
-    return _tbHeaderStrip(today)+'<div class="tb-err">Could not read the board. '
+    return _tbHeaderStrip(today)+'<div class="tb-err">Could not read The Board. '
       +'<button class="btn-outline" onclick="window.tbRetry()">Retry</button>'
       +'<div class="tb-errsub">If this keeps happening, firestore.rules may not be deployed — see BOARD.md.</div></div>';
   }
   const R=list=>list.map(i=>_tbRow(i,today));
-  const left=[
-    _tbCard('overdue',R(tbOverdue(tbItems,me,today)),{red:true,cls:'tb-over'}),
-    _tbCard('due today',R(tbDueToday(tbItems,me,today))),
-    _tbCard('my day',R(tbMyDay(tbItems,me,today))),
-    _tbCard('assigned to me',R(tbAssignedToMe(tbItems,me,today))),
-    _tbCard('needs a date',R(tbNeedsDate(tbItems,me))),
-    _tbCard('next 7 days',R(tbNext7(tbItems,me,today)))
+  // Session 2, P1.5: the left column is ONE surface of COLLAPSIBLE GROUPS
+  // (the To Do pattern) -- what is yours to do, in the order you would do
+  // it. An empty group is not drawn, the rule the cards already followed.
+  const groups=[
+    _tbGroup('overdue','Overdue',tbOverdue(tbItems,me,today),today,{red:true}),
+    _tbGroup('today','Due Today',tbDueToday(tbItems,me,today),today),
+    _tbGroup('myday','My Day',tbMyDay(tbItems,me,today),today),
+    _tbGroup('assigned','Assigned to Me',tbAssignedToMe(tbItems,me,today),today),
+    _tbGroup('needsdate','Needs a Date',tbNeedsDate(tbItems,me),today),
+    _tbGroup('next7','Next 7 Days',tbNext7(tbItems,me,today),today)
   ].join('');
-  const right=[
-    _tbCard('assigned by me',R(tbAssignedByMe(tbItems,me))),
-    _tbCard('deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'}),
-    _tbInboxCard(),       // card 9
-    _tbTeamCard(),        // card 10
-    _tbActivityCard(),    // card 11
-    _tbListsCard()        // card 12
+  const left=groups?'<div class="tb-card tb-groups">'+groups+'</div>':'';
+  // The right column is what OTHER people are doing. "My Lists" (card 12)
+  // is gone from here: the rail lists every list with its count now.
+  const rightMost=[
+    _tbCard('Assigned by Me',R(tbAssignedByMe(tbItems,me))),
+    _tbCard('Deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'}),
+    _tbInboxCard()        // card 9: the five newest, unread first
   ].join('');
-  const empty=(!left&&!right)
-    ?'<div class="tb-empty"><div class="tb-empty-h">nothing on the board today</div>'
+  const team=_tbTeamCard();        // card 10
+  const activity=_tbActivityCard(); // card 11
+  const right=rightMost+team+activity;
+  // The one-sentence empty state: nothing on YOUR board and nothing in the
+  // right column either -- except Team Today, which always lists all five
+  // (brief s4) and would otherwise hide the sentence forever. Keying it off
+  // the left column alone said "nothing on The Board" over a Deadlines card
+  // full of gates (review of a96cddb).
+  const empty=!left&&!rightMost&&!activity
+    ?'<div class="tb-empty"><div class="tb-empty-h">Nothing on The Board today</div>'
      +'<div class="tb-empty-p">add something above, or open the calendar.</div>'
-     +'<button class="btn-outline" onclick="window.showPage(\'tb-calendar\')">open the calendar</button>'
+     +'<button class="btn-outline" onclick="window.showPage(\'tb-calendar\')">Open the calendar</button>'
      +'</div>':'';
   const warn=_tbLoadErrors.length&&!_tbLoadFailed('board_items')
     ?'<div class="tb-warn">'+_tbEsc(_tbLoadErrors.join(', '))+' could not be read — some of this may be incomplete.</div>':'';
@@ -788,15 +1203,15 @@ function _tbListsScreen(){
   const priv=mine.filter(l=>l.kind!=='shared');
   const card=l=>{
     const open=tbItems.filter(i=>i.listId===l.id&&i.status!=='done').length;
-    return'<button class="tb-listcard" onclick="window.tbOpenList(\''+_tbEsc(l.id)+'\')">'
+    return'<button class="tb-listcard" onclick="window.tbOpenList(\''+_tbJs(l.id)+'\')">'
       +'<span class="tb-dot tb-c-'+_tbEsc(TB_COLORS[l.color]?l.color:'slate')+'"></span>'
       +_tbSlot(l.title||'untitled','tb-listname')
       +'<span class="tb-listn">'+open+'</span></button>';
   };
   const sec=(t,ls,kind)=>'<div class="tb-sec"><div class="tb-sech">'+_tbEsc(t)
-    +'<button class="tb-newlist" onclick="window.tbNewList(\''+kind+'\')">+ new</button></div>'
-    +(ls.length?ls.map(card).join(''):'<div class="tb-cardempty">no '+_tbEsc(t)+' lists yet</div>')+'</div>';
-  return sec('team',shared,'shared')+sec('private',priv,'private');
+    +'<button class="tb-newlist" onclick="window.tbNewList(\''+_tbJs(kind)+'\')">+ New</button></div>'
+    +(ls.length?ls.map(card).join(''):'<div class="tb-cardempty">no '+_tbEsc(String(t).toLowerCase())+' lists yet</div>')+'</div>';
+  return sec('Team',shared,'shared')+sec('Private',priv,'private');
 }
 
 function _tbListDetail(l){
@@ -806,105 +1221,191 @@ function _tbListDetail(l){
   const done=all.filter(i=>i.status==='done');
   const isAdmin=l.adminUid===_tbMe()||_tbIsBoardOwner();
   return'<div class="tb-listhead">'
-    +'<button class="tb-back" onclick="window.tbCloseList()">&lsaquo; lists</button>'
+    +'<button class="tb-back" onclick="window.tbCloseList()">&lsaquo; Lists</button>'
     +_tbSlot(l.title||'untitled','tb-listtitle','h2')
-    +'<span class="tb-badge">'+_tbEsc(l.kind==='shared'?'team':'private')+'</span>'
-    +(isAdmin?'<span class="tb-badge">admin</span>':'')
+    +'<span class="tb-badge">'+_tbEsc(l.kind==='shared'?'Team':'Private')+'</span>'
+    +(isAdmin?'<span class="tb-badge">Admin</span>':'')
   +'</div>'
-  +'<div class="tb-quick">'
-    +'<input id="tb-qa" class="tb-qainput" placeholder="add to this list"'
-      +' oninput="window.tbQuickPreview()" onkeydown="window.tbQuickKey(event)" autocomplete="off">'
-    +'<div id="tb-qa-prev" class="tb-qaprev"></div>'
-  +'</div>'
-  +_tbCard('open',open.map(i=>_tbRow(i,today)),{keepEmpty:true,empty:'nothing open in this list'})
-  +(done.length?_tbCard('done',done.map(i=>_tbRow(i,today))):'');
+  +_tbComposer('add to this list')
+  +_tbCard('Open',open.map(i=>_tbRow(i,today,{inList:true})),{keepEmpty:true,empty:'nothing open in this list'})
+  +_tbCompleted(l.id,done,today);
 }
 
-/** The drawer. Phase 2: title, kind, lock, the meta row, steps, notes and
- *  the footer actions. Comments, files and @mentions are phase 4. */
+// ── Completed, per list (session 2, P1.3) ─────────────────────────────
+// The To Do pattern: done items sit in their own group at the foot of the
+// list, OPEN by default (nothing is hidden until you ask), and the fold is
+// remembered per list for this session. In memory, not localStorage: a
+// stored preference is one more key for the cleaner to police, for
+// something that costs one click to redo.
+let _tbDoneOpen={};
+function _tbCompleted(listId,done,today){
+  if(!done.length)return'';
+  const open=_tbDoneOpen[listId]!==false;
+  // Most recently completed first -- the thing you just ticked is the thing
+  // you are most likely to want back.
+  const rows=done.slice().sort((a,b)=>Number(b.completedAt||0)-Number(a.completedAt||0));
+  return'<div class="tb-card tb-donegroup'+(open?' open':'')+'">'
+    +'<button class="tb-cardh tb-donetoggle" aria-expanded="'+(open?'true':'false')+'"'
+      +' onclick="window.tbToggleCompleted(\''+_tbJs(listId)+'\')">'
+      +_tbIcon(open?'chevron-down':'chevron-right','sm')+'Completed'
+      +'<span class="tb-count">'+done.length+'</span></button>'
+    +(open?rows.map(i=>_tbRow(i,today,{inList:true})).join(''):'')
+  +'</div>';
+}
+window.tbToggleCompleted=function(listId){
+  _tbDoneOpen[listId]=!(_tbDoneOpen[listId]!==false);
+  _tbRepaint();
+};
+
+/** The item's DETAIL PANE (session 2, P1.4 -- the To Do pattern; it was a
+ *  drawer laid over the page). Desktop: the third column, beside the list,
+ *  so the list stays visible and clickable while an item is open. Below
+ *  1024px it is still a panel over the page, and a full sheet on a phone.
+ *  Top to bottom: kind, lock, close · the TITLE CARD (round check, title,
+ *  star, the steps and "Add step") · PROPERTY ROWS (My Day, date, people,
+ *  list, lane, priority, kind) · note · files · comments · activity · a
+ *  footer (hand over, done, who created it, delete). Every id and handler
+ *  the drawer had is kept, so nothing that drives it moved.
+ *  Still named _tbDrawer, with class tb-drawer: the tests, the shortcut
+ *  table ("close-drawer") and smoke-board all find it by that name. */
 function _tbDrawer(){
   if(!_tbOpenItemId)return'';
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
   if(!it)return'';
   const me=_tbMe(),today=_tbToday();
-  const canMove=tbCanMoveDate(it,me,_tbIsBoardOwner());
+  const id=_tbEsc(it.id),jid=_tbJs(it.id);
+  // READ-ONLY for someone the rules will not let change it: they can read
+  // it and comment, and every other control says so instead of offering a
+  // write that would be refused.
+  const ro=!_tbCanEditIt(it);
+  const dis=ro?' disabled title="'+_TB_NOT_ON+'"':'';
+  const canMove=!ro&&tbCanMoveDate(it,me,_tbIsBoardOwner());
   const pr=tbStepProgress(it);
   const lockedBy=it.locked?tbUser(it.lockedBy):null;
   const moved=it.datePlanned&&it.date&&it.datePlanned!==it.date;
+  const done=it.status==='done';
+  const starred=!done&&(it.myDay||{})[me]===today;
   const opt=(v,cur,label)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(label||v)+'</option>';
-  return'<div class="tb-drawer" id="tb-drawer">'
-    +'<div class="tb-dhead">'
-      +'<button class="tb-back" onclick="window.tbCloseItem()">close</button>'
-      +'<span class="tb-kind tb-kind-'+_tbEsc(it.kind)+'">'+_tbEsc(it.kind)+'</span>'
-      +'<button class="tb-lockbtn'+(it.locked?' on':'')+'" onclick="window.tbToggleLock(\''+_tbEsc(it.id)+'\')"'
-        +(it.locked&&!canMove?' disabled title="only '+_tbEsc(lockedBy.name)+' or a board owner can unlock this"':'')
-        +'>'+(it.locked?'&#128274; locked':'&#128275; lock')+'</button>'
-      +(it.locked&&!canMove?'<span class="tb-lockwho">locked by '+_tbEsc(lockedBy.name)+'</span>':'')
+  // One property row: icon, label, control. A <label> so a tap on the
+  // label reaches the control.
+  const prop=(icon,label,control,extra)=>'<label class="tb-prop">'+_tbIcon(icon)
+    +'<span class="tb-proplabel">'+_tbEsc(label)+'</span>'
+    +'<span class="tb-propval">'+control+(extra||'')+'</span></label>';
+  const owner=it.ownerUid?tbUser(it.ownerUid):null;
+  const made=it.createdAt?_tbDay(new Date(Number(it.createdAt))):'';
+  return'<aside class="tb-drawer tb-pane" id="tb-drawer" aria-label="Item details">'
+    +'<div class="tb-pbar">'
+      +'<span class="tb-kind tb-kind-'+_tbEsc(it.kind)+'">'+_tbEsc(_tbCap(it.kind))+'</span>'
+      +'<button class="tb-lockbtn'+(it.locked?' on':'')+'" onclick="window.tbToggleLock(\''+jid+'\')"'
+        +(ro?dis:(it.locked&&!canMove?' disabled title="only '+_tbEsc(lockedBy.name)+' or a board owner can unlock this"':''))
+        +'>'+_tbIcon(it.locked?'lock':'lock-open','sm')+(it.locked?'Locked':'Lock')+'</button>'
+      // A Board owner can pin it to the Deadlines card (P2).
+      +(_tbIsBoardOwner()?(function(){
+          const pc=tbCanPin(it,true),on=it.pinned===true;
+          return'<button class="tb-lockbtn tb-pinbtn'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
+            +' onclick="window.tbTogglePin(\''+jid+'\')"'
+            +(!on&&!pc.ok?' disabled title="'+_tbEsc(pc.why)+'"'
+              :' title="'+(on?'Take it off the Deadlines card':'Keep it on the Deadlines card')+'"')
+            +'>'+_tbIcon('flag','sm')+(on?'Pinned':'Pin')+'</button>';
+        })():'')
+      +'<button class="tb-pclose" title="Close (Esc)" aria-label="Close" onclick="window.tbCloseItem()">'+_tbIcon('x')+'</button>'
     +'</div>'
+    +(it.locked&&!canMove?'<div class="tb-lockwho">Locked by '+_tbEsc(lockedBy.name)+'</div>':'')
+    +(ro?'<div class="tb-lockwho tb-rowho">You are not on this item, so you can read it and comment, but not change it.</div>':'')
     // A locked item you cannot move is not a dead end (spec s7.4): the
     // ask goes into the thread, where the answer belongs.
     +(it.locked&&!canMove?_tbMoveReqSection(it):'')
-    +'<input class="tb-dtitle" id="tb-d-title" value="'+_tbEsc(it.title||'')+'" maxlength="140"'
-      +' onchange="window.tbFieldChange(\'title\',this.value)">'
-    +'<div class="tb-dmeta">'
-      +'<label>date'
-        +'<input type="date" id="tb-d-date" value="'+_tbEsc(it.date||'')+'"'+(canMove?'':' disabled')
-        +' onchange="window.tbFieldChange(\'date\',this.value)"></label>'
-      +(moved?'<span class="tb-was">was '+_tbEsc(tbDayLabel(it.datePlanned,today))+'</span>':'')
-      +'<label>list<select id="tb-d-list" onchange="window.tbFieldChange(\'listId\',this.value)">'
-        +opt('',it.listId||'','none')
-        +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,it.listId||'',l.title||'untitled')).join('')
-      +'</select></label>'
-      +'<label>lane<select id="tb-d-lane" onchange="window.tbFieldChange(\'lane\',this.value)">'
-        +opt('',it.lane||'','none')+TB_LANES.map(l=>opt(l,it.lane||'')).join('')
-      +'</select></label>'
-      +'<label>priority<select id="tb-d-pri" onchange="window.tbFieldChange(\'priority\',this.value)">'
-        +opt('0',String(it.priority),'normal')+opt('1',String(it.priority),'high')+opt('2',String(it.priority),'critical')
-      +'</select></label>'
-      +'<label>kind<select id="tb-d-kind" onchange="window.tbFieldChange(\'kind\',this.value)">'
-        +TB_KINDS.map(k=>opt(k,it.kind)).join('')
-      +'</select></label>'
-    +'</div>'
-    +'<div class="tb-dsec"><div class="tb-dsech">people</div><div class="tb-people">'
-      +_tbBoardUsernames().map(h=>{
-        const uid=tbHandleMap()[h];
-        if(!uid)return'';
-        const on=(it.assigneeUids||[]).indexOf(uid)>-1;
-        return'<button class="tb-person'+(on?' on':'')+'" onclick="window.tbToggleAssignee(\''+_tbEsc(uid)+'\')">'
-          +_tbEsc(tbUser(uid).name)+'</button>';
-      }).join('')
-    +'</div></div>'
-    +'<div class="tb-dsec"><div class="tb-dsech">steps'+(pr.label?' <span class="tb-steps">'+_tbEsc(pr.label)+'</span>':'')+'</div>'
-      +(pr.allDone?'<div class="tb-hint">all steps done — mark the item done when you have reviewed it</div>':'')
-      +'<div class="tb-stepl">'+(it.steps||[]).map((st,i)=>
-        '<div class="tb-step"><button class="tb-check'+(st.done?' on':'')+'" onclick="window.tbToggleStep('+i+')"></button>'
-        +_tbSlot(st.title||'','tb-steptitle')
-        +'<button class="tb-x" onclick="window.tbRemoveStep('+i+')" title="remove">&times;</button></div>').join('')
+
+    // ── the title card ──
+    +'<div class="tb-pcard tb-phead">'
+      +'<div class="tb-ptitle">'
+        +'<button class="tb-check'+(done?' on':'')+'" title="'+(ro?_TB_NOT_ON:(done?'Mark not done':'Mark done'))+'"'
+          +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
+          +(ro?' disabled':'')+' onclick="window.tbToggleDone(\''+jid+'\')">'+_tbIcon('check','sm')+'</button>'
+        // A TEXTAREA sized to its content, not an input: the real titles
+        // run to two lines, and an input showed "Hyderabad supplier in
+        // Karachi:" and nothing more (seen on the P1.4 screenshots). Enter
+        // still commits -- a title is one line -- and blurring saves.
+        +'<textarea class="tb-dtitle'+(done?' done':'')+'" id="tb-d-title" rows="1" maxlength="140"'
+          +' aria-label="Title"'+(ro?' readonly':'')+' onkeydown="window.tbTitleKey(event)"'
+          +' onchange="window.tbFieldChange(\'title\',this.value)">'+_tbEsc(it.title||'')+'</textarea>'
+        +(done||ro?'':'<button class="tb-star'+(starred?' on':'')+'" title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
+          +' aria-label="'+(starred?'Remove from My Day':'Add to My Day')+'" aria-pressed="'+(starred?'true':'false')+'"'
+          +' onclick="window.tbAddToMyDay(\''+jid+'\')">'+_tbIcon('star')+'</button>')
       +'</div>'
-      +'<input class="tb-stepadd" id="tb-step-new" placeholder="add a step" onkeydown="window.tbStepKey(event)">'
+      +(pr.allDone?'<div class="tb-hint">All steps done — mark the item done when you have reviewed it.</div>':'')
+      +'<div class="tb-stepl">'+(it.steps||[]).map((st,i)=>
+        '<div class="tb-step"><button class="tb-check tb-check-sm'+(st.done?' on':'')+'"'
+          +' aria-label="'+(st.done?'Mark step not done':'Mark step done')+'"'+dis+' onclick="window.tbToggleStep('+i+')">'+_tbIcon('check','sm')+'</button>'
+        +_tbSlot(st.title||'','tb-steptitle'+(st.done?' done':''))
+        +(ro?'':'<button class="tb-x" onclick="window.tbRemoveStep('+i+')" title="Remove step" aria-label="Remove step">'+_tbIcon('x','sm')+'</button>')+'</div>').join('')
+      +'</div>'
+      +(ro?(pr.label?'<div class="tb-steps">'+_tbEsc(pr.label)+'</div>':''):'<label class="tb-stepaddrow">'+_tbIcon('plus')
+        +'<input class="tb-stepadd" id="tb-step-new" placeholder="'+((it.steps||[]).length?'Next step':'Add step')+'"'
+        +' aria-label="Add step" onkeydown="window.tbStepKey(event)">'
+        +(pr.label?'<span class="tb-steps">'+_tbEsc(pr.label)+'</span>':'')
+      +'</label>')
     +'</div>'
-    +'<div class="tb-dsec"><div class="tb-dsech">notes</div>'
-      +'<textarea class="tb-notes" id="tb-d-notes" rows="4" placeholder="markdown-lite"'
+
+    // ── property rows ──
+    +'<div class="tb-pcard tb-props">'
+      +(done||ro?'':'<button class="tb-prop tb-propbtn'+(starred?' on':'')+'" onclick="window.tbAddToMyDay(\''+jid+'\')">'
+        +_tbIcon('sun')+'<span class="tb-proplabel tb-propwide">'+(starred?'Added to My Day':'Add to My Day')+'</span></button>')
+      +prop('calendar','Date','<input type="date" data-tb-fp id="tb-d-date" value="'+_tbEsc(it.date||'')+'"'+(canMove?'':' disabled')
+        +' onchange="window.tbFieldChange(\'date\',this.value)">',
+        moved?'<span class="tb-was">was '+_tbEsc(_tbCap(tbDayLabel(it.datePlanned,today)))+'</span>':'')
+      +'<div class="tb-prop tb-propstack">'+_tbIcon('users')+'<span class="tb-proplabel">People</span>'
+        +'<div class="tb-people">'
+        +tbPeople().map(p=>{
+          // Listed even when they cannot be assigned yet, and saying why --
+          // a person who silently is not there reads as a missing feature.
+          if(!p.uid)return'<button class="tb-person tb-person-off" disabled title="'+_tbEsc(tbPersonOffText(p))+'">'
+            +_tbEsc(p.name)+' · '+(p.reason==='unread'?'not loaded':p.reason==='ambiguous'?'check profile':'not set up')+'</button>';
+          const on=(it.assigneeUids||[]).indexOf(p.uid)>-1;
+          return'<button class="tb-person'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'+dis
+            +' onclick="window.tbToggleAssignee(\''+_tbJs(p.uid)+'\')">'+_tbEsc(tbUser(p.uid).name)+'</button>';
+        }).join('')
+      +'</div></div>'
+      +prop('list','List','<select id="tb-d-list"'+dis+' onchange="window.tbFieldChange(\'listId\',this.value)">'
+        +opt('',it.listId||'','None')
+        +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,it.listId||'',l.title||'untitled')).join('')
+      +'</select>')
+      +prop('tag','Lane','<select id="tb-d-lane"'+dis+' onchange="window.tbFieldChange(\'lane\',this.value)">'
+        +opt('',it.lane||'','None')+TB_LANES.map(l=>opt(l,it.lane||'',_tbCap(l))).join('')
+      +'</select>')
+      +prop('flag','Priority','<select id="tb-d-pri"'+dis+' onchange="window.tbFieldChange(\'priority\',this.value)">'
+        +opt('0',String(it.priority),'Normal')+opt('1',String(it.priority),'High')+opt('2',String(it.priority),'Critical')
+      +'</select>')
+      +prop('circle','Kind','<select id="tb-d-kind"'+dis+' onchange="window.tbFieldChange(\'kind\',this.value)">'
+        +TB_KINDS.map(k=>opt(k,it.kind,_tbCap(k))).join('')
+      +'</select>')
+    +'</div>'
+
+    // ── the note ──
+    +'<div class="tb-pcard tb-pnote">'
+      +'<textarea class="tb-notes" id="tb-d-notes" rows="4" placeholder="'+(ro?'':'Add a note')+'" aria-label="Note"'+(ro?' readonly':'')
         +' oninput="window.tbNotesInput(this.value)">'+_tbEsc(it.notes||'')+'</textarea>'
       +'<div class="tb-savestate" id="tb-d-save"></div>'
     +'</div>'
-    +_tbFilesSection(it)
+    +_tbFilesSection(it,ro)
     +_tbThreadSection(it)
     +_tbActivitySection(it)
+
+    // ── the footer ──
     +'<div class="tb-dfoot">'
-      +'<button class="btn-outline" onclick="window.tbAddToMyDay(\''+_tbEsc(it.id)+'\')">add to my day</button>'
-      +'<button class="btn-outline" onclick="window.tbOpenHandover()">hand over</button>'
-      +'<button class="btn-primary" onclick="window.tbToggleDone(\''+_tbEsc(it.id)+'\')">'
-        +(it.status==='done'?'reopen':'done')+'</button>'
+      +(ro?'':'<button class="btn-outline" onclick="window.tbOpenHandover()">'+_tbIcon('arrow-right-left','sm')+'Hand over</button>'
+      +'<button class="btn-primary" onclick="window.tbToggleDone(\''+jid+'\')">'+(done?'Reopen':'Mark done')+'</button>')
       +(it.ownerUid===me||_tbIsBoardOwner()
-        ?'<button class="tb-x tb-del" onclick="window.tbDeleteItem(\''+_tbEsc(it.id)+'\')">delete</button>':'')
+        ?'<button class="tb-x tb-del" onclick="window.tbDeleteItem(\''+jid+'\')" title="Delete" aria-label="Delete">'+_tbIcon('trash-2')+'</button>':'')
     +'</div>'
+    +(owner?'<div class="tb-pmade">Created by '+_tbEsc(owner.uid===me?'you':owner.name)
+      +(made?' · '+_tbEsc(_tbCap(tbDayLabel(made,today))):'')+'</div>':'')
     +'<div id="tb-handover"></div>'
     // ONE picker for both destinations — _tbPickFor says which — so there
     // is no second hidden input to keep in step with the first.
     +'<input type="file" id="tb-filepick" multiple style="display:none"'
       +' onchange="window.tbFilesPicked(this)">'
-  +'</div>';
+  +'</aside>';
 }
 
 // ── Writing ───────────────────────────────────────────────────────────
@@ -949,67 +1450,305 @@ async function _tbTry(fn,what){
 window.tbRetry=function(){ tbLoaded=false; _tbRepaint(true); };
 
 // ── Create ────────────────────────────────────────────────────────────
-window.tbQuickPreview=function(){
-  const el=document.getElementById('tb-qa');
+// ══ SESSION 2 — P0.5: THE QUICK-ADD COMPOSER ═════════════════════════
+// One input that opens, on focus, into a row of chips: Date (Today /
+// Tomorrow / Next Mon / a date field), Assign (the five), List and Lane.
+// Enter creates.
+//
+// NO DATE MEANS UNDATED. It used to default to today on the Dashboard, so
+// "title, Enter" made a task due today that nobody had asked for (the
+// brief's own example). An undated item lands in Needs a date, which is
+// what an item with no date IS.
+//
+// A date typed in the title ("oct 5") FILLS the Date chip, live, and a
+// date picked on the chip outranks it -- the chip is the more deliberate
+// of the two, the rule tbCreateOn already applies to a calendar day's "+".
+//
+// The composer's state lives HERE, not in the DOM: a repaint (a live
+// update, a chip click) rebuilds the markup, and text that lived only in
+// an input would be lost. Chip clicks repaint the chip row alone and keep
+// the caret in the input (pointerdown preventDefault), so typing is never
+// interrupted.
+let _tbQa={open:false,text:'',date:'',dateSet:false,assign:[],unassign:[],listId:undefined,lane:'',laneSet:false};
+function _tbQaReset(keepOpen){
+  _tbQa={open:!!keepOpen,text:'',date:'',dateSet:false,assign:[],unassign:[],listId:undefined,lane:'',laneSet:false};
+}
+/** Does the composer hold anything a keystroke or a stray click would
+ *  throw away? ONE definition, so Escape and the outside click agree
+ *  (review of 05431c2: Escape ignored a picked lane or list, closed the
+ *  composer with it still set, and the next item landed in that lane). */
+function _tbQaHasContent(){
+  const q=_tbQa;
+  return !!(q.text||q.dateSet||(q.assign||[]).length||(q.unassign||[]).length
+    ||q.laneSet||q.lane||q.listId!==undefined);
+}
+/** A day typed into the native field is only taken once it is a real,
+ *  plausible day: typing 10052026 passes through 0002-, 0020- and
+ *  0202-10-05 on the way, and 0202 is a valid date (review of 05431c2). */
+function _tbSaneDay(d){
+  if(!_tbValidDay(d))return false;
+  const y=Number(String(d).slice(0,4));
+  return y>=2000&&y<=2099;
+}
+/** The list on SCREEN: the one open on the Lists page, else none.
+ *  `_tbListId` outlives the page (it is what the Lists page reopens), so it
+ *  is never the default for a new item anywhere else -- it used to be, and
+ *  after opening any list, or making one from the rail, a Dashboard or
+ *  calendar add went silently into that list and took its visibility
+ *  (review of f256c83). */
+function _tbViewList(){
+  return(_tbOnPage('tb-lists')&&_tbListId&&tbLists.some(l=>l.id===_tbListId))?_tbListId:null;
+}
+function _tbOnPage(id){ return String((typeof currentPage!=='undefined'&&currentPage)||'')===id; }
+/** The list a new item lands in: the chip's choice, else the list you are
+ *  looking at, else none. */
+function _tbQaList(){ return _tbQa.listId!==undefined?(_tbQa.listId||null):_tbViewList(); }
+function _tbQaParse(){
+  return tbParseQuickAdd(_tbQa.text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
+}
+/** What the new item WILL be, from the text and the chips together. Pure
+ *  over its inputs, so the preview and the create cannot disagree. */
+function tbComposerPlan(parsed,qa,me,listFallback){
+  const p=parsed||{},q=qa||{};
+  // A chip can switch OFF a person the title named (q.unassign); nothing
+  // switches off yourself.
+  const off=q.unassign||[];
+  const assignees=[me].concat(p.assigneeUids||[]).concat(q.assign||[])
+    .filter((u,i,a)=>u&&a.indexOf(u)===i&&(u===me||off.indexOf(u)<0));
+  return{
+    title:p.title||'',
+    date:q.dateSet?(q.date||null):(p.date||null),
+    dateFromText:!q.dateSet&&!!p.date,
+    assigneeUids:assignees,
+    // "none" on the lane chip means none, even when the title says #denim
+    // (laneSet is the lane's dateSet).
+    lane:q.laneSet?(q.lane||null):(q.lane||p.lane||null),
+    listId:q.listId!==undefined?(q.listId||null):(listFallback||null),
+    priority:p.priority||0,
+    pendingHandles:p.pendingHandles||[],unknownHandles:p.unknownHandles||[]
+  };
+}
+function _tbComposer(placeholder){
+  return'<div class="tb-quick'+(_tbQa.open?' open':'')+'" id="tb-quick">'
+    +'<input id="tb-qa" class="tb-qainput" placeholder="'+_tbEsc(placeholder)+'"'
+      +' value="'+_tbEsc(_tbQa.text)+'"'
+      +' onfocus="window.tbQaFocus()" oninput="window.tbQuickPreview()" onkeydown="window.tbQuickKey(event)" autocomplete="off">'
+    +'<div id="tb-qa-chips" class="tb-qachips">'+(_tbQa.open?_tbQaChipsHTML():'')+'</div>'
+    +'<div id="tb-qa-prev" class="tb-qaprev"></div>'
+  +'</div>';
+}
+function _tbQaChipsHTML(){
+  const today=_tbToday(),me=_tbMe();
+  const plan=tbComposerPlan(_tbQaParse(),_tbQa,me,_tbViewList());
+  const keep=' onpointerdown="event.preventDefault()"';   // the caret stays in the title
+  const dateBtn=(d,l)=>'<button type="button" class="tb-qachip'+(plan.date===d?' on':'')+'"'+keep
+    +' onclick="window.tbQaDate(\''+_tbJs(d)+'\')">'+_tbEsc(l)+'</button>';
+  const nextMon=_tbNextDow(_tbDayAdd(today,1),1);
+  const dateLabel=plan.date?tbDayLabel(plan.date,today)+(plan.dateFromText?' (from the title)':''):'no date';
+  const people=tbPeople().map(function(p){
+    if(!p.uid)return'<button type="button" class="tb-qachip tb-qachip-off" disabled title="'+_tbEsc(tbPersonOffText(p))+'">'+_tbEsc(p.name)+'</button>';
+    if(p.uid===me)return'<button type="button" class="tb-qachip on tb-qachip-me" disabled title="You are always on what you add">You</button>';
+    const on=plan.assigneeUids.indexOf(p.uid)>-1;
+    return'<button type="button" class="tb-qachip'+(on?' on':'')+'"'+keep
+      +' onclick="window.tbQaAssign(\''+_tbJs(p.uid)+'\')">'+_tbEsc(p.name)+'</button>';
+  }).join('');
+  const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
+  return'<div class="tb-qarow"><span class="tb-qalabel">date</span>'
+      +dateBtn(today,'Today')+dateBtn(_tbDayAdd(today,1),'Tomorrow')+dateBtn(nextMon,'Next Mon')
+      +'<input type="date" data-tb-fp class="tb-qadate" id="tb-qa-date" value="'+_tbEsc(plan.date||'')+'"'
+        +' onchange="window.tbQaDate(this.value,true)" onblur="window.tbQaDateBlur()">'
+      +'<span class="tb-qadatenow'+(plan.date?'':' none')+'" id="tb-qa-datenow">'+_tbEsc(dateLabel)+'</span>'
+      +(plan.date?'<button type="button" class="tb-qachip tb-qaclear"'+keep+' onclick="window.tbQaDate(\'\')" title="no date">&times;</button>':'')
+    +'</div>'
+    +'<div class="tb-qarow"><span class="tb-qalabel">assign</span>'+people+'</div>'
+    +'<div class="tb-qarow"><span class="tb-qalabel">list</span>'
+      +'<select class="tb-qasel" id="tb-qa-list" onchange="window.tbQaSet(\'listId\',this.value)">'
+        +opt('',plan.listId||'','none')
+        +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,plan.listId||'',l.title||'untitled')).join('')
+      +'</select>'
+      +'<span class="tb-qalabel">lane</span>'
+      +'<select class="tb-qasel" id="tb-qa-lane" onchange="window.tbQaSet(\'lane\',this.value)">'
+        +opt('',plan.lane||'','none')+TB_LANES.map(l=>opt(l,plan.lane||'',l)).join('')
+      +'</select>'
+    +'</div>';
+}
+/** Repaint the chip row and the preview line only -- never the input. */
+function _tbQaPaint(){
+  const chips=document.getElementById('tb-qa-chips');
+  // NEVER rebuild the date field someone is typing into: the rebuild took
+  // the caret out after the first digit (review of 05431c2). Only the
+  // label moves until they leave it (tbQaDateBlur).
+  const ae=(typeof document!=='undefined'&&document.activeElement)||null;
+  const typing=!!(ae&&ae.id==='tb-qa-date');
+  if(chips&&typing){
+    const now=document.getElementById('tb-qa-datenow');
+    if(now){
+      const plan=tbComposerPlan(_tbQaParse(),_tbQa,_tbMe(),_tbViewList());
+      now.textContent=plan.date?tbDayLabel(plan.date,_tbToday()):'no date';
+    }
+  }else if(chips){ chips.innerHTML=_tbQa.open?_tbQaChipsHTML():''; _tbFpPrune(false); _tbPickers(chips); }
+  const wrap=document.getElementById('tb-quick');
+  if(wrap&&wrap.classList)wrap.classList[_tbQa.open?'add':'remove']('open');
   const out=document.getElementById('tb-qa-prev');
-  if(!el||!out)return;
-  const parsed=tbParseQuickAdd(el.value,{today:_tbToday(),handles:tbHandleMap()});
+  if(!out)return;
+  const parsed=_tbQaParse();
+  const plan=tbComposerPlan(parsed,_tbQa,_tbMe(),_tbViewList());
   const names={};
   Object.keys(tbHandleMap()).forEach(h=>{names[h]=tbUser(tbHandleMap()[h]).name;});
-  const line=tbQuickAddPreview(parsed,{today:_tbToday(),names:names});
-  out.textContent=line+(parsed.unknownHandles.length
-    ?(line?'   ':'')+'(@'+parsed.unknownHandles.join(', @')+' is not on the board — left in the title)':'');
+  const others=plan.assigneeUids.filter(u=>u!==_tbMe()).map(u=>tbUser(u).name);
+  const bits=[];
+  if(plan.title)bits.push('“'+plan.title+'”');
+  bits.push(plan.date?tbDayLabel(plan.date,_tbToday()):'no date');
+  if(others.length)bits.push(others.join(', '));
+  if(plan.lane)bits.push(plan.lane);
+  if(plan.priority===2)bits.push('critical');else if(plan.priority===1)bits.push('high');
+  out.textContent=(_tbQa.text||plan.date||others.length||plan.lane?'→ '+bits.join(' · '):'')
+    +(plan.unknownHandles.length
+      ?'   (@'+plan.unknownHandles.join(', @')+' is not on The Board — left in the title)':'')
+    +(plan.pendingHandles.length
+      ?(_tbLoadFailed('user_profiles')
+        ?'   (@'+plan.pendingHandles.join(', @')+' cannot be matched — the team directory did not load)'
+        :'   (@'+plan.pendingHandles.join(', @')+' is not set up yet — not assigned; an owner can press Sync accounts on the Profile page)'):'');
+}
+window.tbQaFocus=function(){
+  if(_tbQa.open)return;
+  _tbQa.open=true;
+  _tbQaPaint();
+};
+window.tbQaDate=function(d,fromField){
+  // From the field: a half-typed value is not a choice yet. Ignore it,
+  // rather than recording "no date" (which wiped a date chosen earlier).
+  if(fromField&&d&&!_tbSaneDay(d))return;
+  _tbQa.dateSet=true;
+  _tbQa.date=(d&&_tbSaneDay(d))?d:'';
+  _tbQaPaint();
+};
+window.tbQaDateBlur=function(){ if(_tbQa.open)setTimeout(_tbQaPaint,0); };
+window.tbQaAssign=function(uid){
+  const q=_tbQa;
+  q.unassign=q.unassign||[];
+  const on=tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbViewList()).assigneeUids.indexOf(uid)>-1;
+  const rm=(a,u)=>{ const i=a.indexOf(u); if(i>-1)a.splice(i,1); };
+  if(on){
+    rm(q.assign,uid);
+    // Still on means the TITLE named them: switch that off too.
+    if(tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbViewList()).assigneeUids.indexOf(uid)>-1)q.unassign.push(uid);
+  }else{
+    rm(q.unassign,uid);
+    if(tbComposerPlan(_tbQaParse(),q,_tbMe(),_tbViewList()).assigneeUids.indexOf(uid)<0)q.assign.push(uid);
+  }
+  _tbQaPaint();
+};
+window.tbQaSet=function(k,v){
+  if(k==='listId')_tbQa.listId=v||'';
+  else if(k==='lane'){ _tbQa.lane=(TB_LANES.indexOf(v)>-1)?v:''; _tbQa.laneSet=true; }
+  _tbQaPaint();
+};
+window.tbQuickPreview=function(){
+  const el=document.getElementById('tb-qa');
+  if(el)_tbQa.text=String(el.value||'');
+  _tbQaPaint();
 };
 window.tbQuickKey=function(e){
+  if(e.key==='Escape'){
+    // Empty: close it. Not empty: clear it first -- losing a half-typed
+    // title to one keystroke would be worse than a second press.
+    if(_tbQaHasContent()){ _tbQaReset(true); const el=document.getElementById('tb-qa'); if(el)el.value=''; }
+    else{ _tbQa.open=false; const el=document.getElementById('tb-qa'); if(el&&el.blur)el.blur(); }
+    _tbQaPaint();
+    return;
+  }
   if(e.key!=='Enter')return;
   e.preventDefault();
   const el=document.getElementById('tb-qa');
-  if(!el||!String(el.value).trim())return;
-  const text=el.value;
-  el.value='';
-  window.tbQuickPreview();
+  if(el)_tbQa.text=String(el.value||'');
+  if(!String(_tbQa.text).trim())return;
   // Shift+Enter opens the drawer on the new item for detail (spec s8.1).
-  window.tbCreateFromQuick(text,e.shiftKey);
+  window.tbCreateFromQuick(_tbQa.text,e.shiftKey,true);
 };
-window.tbCreateFromQuick=async function(text,openAfter){
+// Registered ONCE: a click outside an EMPTY composer closes it. One with
+// anything in it stays open -- a stray click must not throw away a date.
+// ON CLICK, NOT POINTERDOWN (review of 05431c2): closing on pointerdown
+// collapsed the ~120px chip rows before pointerup, everything below
+// jumped, pointerdown and pointerup landed on different rows, and the
+// click that closed it never reached anything. The click's target is
+// fixed by the time a capture listener sees it.
+(function(){
+  if(typeof document==='undefined'||!document.addEventListener)return;
+  document.addEventListener('click',function(e){
+    if(!_tbQa.open)return;
+    const t=e&&e.target;
+    if(t&&t.closest&&(t.closest('#tb-quick')||t.closest('.flatpickr-calendar')))return;
+    if(_tbQaHasContent())return;
+    _tbQa.open=false;
+    _tbQaPaint();
+  },true);
+})();
+
+window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
   const me=_tbMe();
-  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap()});
+  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
   if(!parsed.title){ _tbToast('Give it a title.'); return; }
-  // On the Dashboard an undated item defaults to today and me; inside a
-  // list it stays undated, because a list is a backlog (spec s8.1).
-  const inList=!!_tbListId;
-  const assignees=parsed.assigneeUids.slice();
-  if(assignees.indexOf(me)<0)assignees.unshift(me);
+  // The chips count only when the text came FROM the composer; a caller
+  // passing plain text (a test, a future shortcut) gets the grammar alone.
+  const plan=tbComposerPlan(parsed,fromComposer?_tbQa:{},me,_tbViewList());
+  // CLEARED BEFORE THE WRITE, not after it (review of 05431c2). The text
+  // used to stay in the box until commit() resolved -- a network round
+  // trip, and never, offline -- so a second Enter (a double press, key
+  // repeat) created the same item again. It comes back if the write is
+  // refused, unless something new has been typed since.
+  let saved=null;
+  if(fromComposer){
+    saved=Object.assign({},_tbQa,{assign:(_tbQa.assign||[]).slice(),unassign:(_tbQa.unassign||[]).slice()});
+    _tbQaReset(true); _tbQaRefocus=true;
+    const el=typeof document!=='undefined'&&document.getElementById('tb-qa');
+    if(el)el.value='';
+    _tbQaPaint();
+  }
   const data=tbNewItem({
-    title:parsed.title,
-    assigneeUids:assignees,
-    lane:parsed.lane,
-    priority:parsed.priority,
-    listId:_tbListId||null,
-    date:parsed.date||(inList?null:_tbToday())
+    title:plan.title,
+    assigneeUids:plan.assigneeUids,
+    lane:plan.lane,
+    priority:plan.priority,
+    listId:plan.listId,
+    date:plan.date                    // NEVER today by default (session 2)
   },me,_tbNow(),tbLists);
-  await _tbTry(async()=>{
+  const ok=await _tbTry(async()=>{
     const ref=doc(collection(db,'board_items'));
     const b=writeBatch(db);
     b.set(ref,data);
     b.set(doc(collection(db,'board_items',ref.id,'activity')),
       {type:'created',byUid:me,at:data.createdAt,payload:{}});
     await b.commit();
-    tbItems.push(tbDecodeItem(Object.assign({id:ref.id},data)));
-    if(openAfter)_tbOpenItemId=ref.id;
+    _tbLiveRemember('items_own',ref.id,data);
+    _tbUpsert(tbItems,tbDecodeItem(Object.assign({id:ref.id},data)));
+    if(openAfter){ _tbFlushNotes(); _tbOpenItemId=ref.id; }
+    // Ready for the next one: still open, caret back in it.
+    if(fromComposer)_tbQaRefocus=true;
     _tbRepaint();
+    if(parsed.pendingHandles.length)_tbToast(_tbPendingToast(parsed.pendingHandles));
+    else if(!data.date)_tbToast('Added with no date — it is in Needs a date.');
   },'add that');
+  if(!ok&&saved&&!_tbQaHasContent()){
+    _tbQa=Object.assign(saved,{open:true});
+    _tbQaRefocus=true;
+    _tbRepaint();
+  }
 };
+let _tbQaRefocus=false;
 
 // ── Edit ──────────────────────────────────────────────────────────────
 window.tbFieldChange=async function(field,value){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   let v=value;
   if(field==='priority')v=Number(value);
   if(field==='listId'||field==='lane')v=value||null;
   if(field==='date')v=value||null;
   if(field==='kind'&&TB_KINDS.indexOf(v)<0)return;
+  // The title is a textarea now (P1.4): a pasted line break is not part of
+  // a title.
+  if(field==='title')v=String(value==null?'':value).replace(/\s*[\r\n]+\s*/g,' ').trim();
   const plan=tbItemPatch(it,_tbObj(field,v),_tbMe(),_tbNow());
   if(!Object.keys(plan.data).filter(k=>k!=='updatedAt'&&k!=='lastActivityAt').length)return;
   await _tbTry(async()=>{
@@ -1019,10 +1758,15 @@ window.tbFieldChange=async function(field,value){
   },'save that');
 };
 function _tbObj(k,v){ const o={}; o[k]=v; return o; }
+/** Enter commits the title (blur fires the change); Escape puts it back. */
+window.tbTitleKey=function(e){
+  if(!e)return;
+  if(e.key==='Enter'){ if(e.preventDefault)e.preventDefault(); if(e.target&&e.target.blur)e.target.blur(); }
+};
 
 window.tbToggleAssignee=async function(uid){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const cur=(it.assigneeUids||[]).slice();
   const i=cur.indexOf(uid);
   if(i>-1)cur.splice(i,1); else cur.push(uid);
@@ -1037,7 +1781,7 @@ window.tbToggleAssignee=async function(uid){
 
 window.tbToggleLock=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const me=_tbMe();
   if(it.locked&&!tbCanMoveDate(it,me,_tbIsBoardOwner())){
     _tbToast('Locked by '+tbUser(it.lockedBy).name+'.');
@@ -1054,24 +1798,40 @@ window.tbToggleLock=async function(id){
 
 // Notes autosave, 800ms after the last keystroke (spec s8.3). Last write
 // wins; there is no merge in v1 and the drawer says nothing about one.
-let _tbNotesTimer=null;
+//
+// THE PENDING TEXT CARRIES THE ITEM IT WAS TYPED IN (review of d38b96c).
+// The timer used to save to whichever item was open WHEN IT FIRED, so
+// typing in one item's notes and opening another within 800ms wrote the
+// first item's text over the second's. Opening or closing an item now
+// flushes what is pending to its own item first.
+let _tbNotesTimer=null,_tbNotesPend=null;
 window.tbNotesInput=function(v){
   const st=document.getElementById('tb-d-save');
   if(st)st.textContent='unsaved…';
+  _tbNotesPend={id:_tbOpenItemId,v:String(v||'')};
   if(_tbNotesTimer)clearTimeout(_tbNotesTimer);
-  _tbNotesTimer=setTimeout(()=>window.tbSaveNotes(v),800);
+  _tbNotesTimer=setTimeout(_tbFlushNotes,800);
 };
-window.tbSaveNotes=async function(v){
-  const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it||String(it.notes||'')===String(v||''))return;
-  const st=document.getElementById('tb-d-save');
-  if(st)st.textContent='saving…';
+function _tbFlushNotes(){
+  if(_tbNotesTimer){ clearTimeout(_tbNotesTimer); _tbNotesTimer=null; }
+  const p=_tbNotesPend;_tbNotesPend=null;
+  return(p&&p.id)?window.tbSaveNotes(p.v,p.id):Promise.resolve();
+}
+window.tbSaveNotes=async function(v,id){
+  const it=tbItems.filter(i=>i.id===(id||_tbOpenItemId))[0];
+  const val=String(v||'');
+  if(!it||String(it.notes||'')===val||!_tbCanEditIt(it))return;
+  const prev=it.notes;
+  const status=t=>{ if(_tbOpenItemId!==it.id)return; const e=document.getElementById('tb-d-save'); if(e)e.textContent=t; };
+  status('saving…');
+  // In memory first, like every other field, so reopening the item before
+  // the write resolves shows what was typed (offline it never resolves).
+  it.notes=val;
   const ok=await _tbTry(async()=>{
-    await _tbCommit(it.id,{notes:String(v||''),updatedAt:_tbNow(),lastActivityAt:_tbNow()},null);
-    it.notes=String(v||'');
+    await _tbCommit(it.id,{notes:val,updatedAt:_tbNow(),lastActivityAt:_tbNow()},null);
   },'save the notes');
-  const st2=document.getElementById('tb-d-save');
-  if(st2)st2.textContent=ok?'saved':'save failed';
+  if(!ok&&it.notes===val)it.notes=prev;
+  status(ok?'saved':'save failed');
 };
 
 // ── Steps ─────────────────────────────────────────────────────────────
@@ -1086,14 +1846,14 @@ window.tbStepKey=function(e){
 };
 window.tbAddStep=async function(title){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   if((it.steps||[]).length>=30){ _tbToast('Thirty steps is the limit — this wants to be its own list.'); return; }
   const steps=(it.steps||[]).concat([{id:'s'+_tbNow()+Math.floor(Math.random()*1000),title:String(title).slice(0,140),done:false,doneByUid:null,doneAt:null}]);
   await _tbStepsWrite(it,steps,null);
 };
 window.tbToggleStep=async function(i){
   const it=tbItems.filter(x=>x.id===_tbOpenItemId)[0];
-  if(!it||!it.steps[i])return;
+  if(!it||!it.steps[i]||_tbNotOnIt(it))return;
   const steps=it.steps.map((s,n)=>n!==i?s:Object.assign({},s,
     {done:!s.done,doneByUid:!s.done?_tbMe():null,doneAt:!s.done?_tbNow():null}));
   // Completing the LAST step does not complete the item — people want to
@@ -1102,7 +1862,7 @@ window.tbToggleStep=async function(i){
 };
 window.tbRemoveStep=async function(i){
   const it=tbItems.filter(x=>x.id===_tbOpenItemId)[0];
-  if(!it||!it.steps[i])return;
+  if(!it||!it.steps[i]||_tbNotOnIt(it))return;
   await _tbStepsWrite(it,it.steps.filter((s,n)=>n!==i),null);
 };
 async function _tbStepsWrite(it,steps,activity){
@@ -1116,7 +1876,7 @@ async function _tbStepsWrite(it,steps,activity){
 // ── Done, my day, handover, delete ────────────────────────────────────
 window.tbToggleDone=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const list=tbLists.filter(l=>l.id===it.listId)[0];
   const plan=tbDonePlan(it,_tbMe(),_tbNow(),list&&list.adminUid);
   await _tbTry(async()=>{
@@ -1124,20 +1884,20 @@ window.tbToggleDone=async function(id){
     _tbApplyLocal(it.id,plan.data);
     (plan.notify||[]).forEach(uid=>_tbNotify({
       type:'done',forUid:uid,fromUid:_tbMe(),itemId:it.id,listId:it.listId,
-      title:'the board',message:tbUser(_tbMe()).name+' completed “'+(it.title||'')+'”'}));
+      title:TB_NAME,message:tbUser(_tbMe()).name+' completed “'+(it.title||'')+'”'}));
     _tbRepaint();
   },'mark that done');
 };
 window.tbAddToMyDay=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const me=_tbMe(),today=_tbToday();
   const myDay=Object.assign({},it.myDay||{});
   if(myDay[me]===today)delete myDay[me]; else myDay[me]=today;
   await _tbTry(async()=>{
     await _tbCommit(it.id,{myDay:myDay,updatedAt:_tbNow()},null);
     _tbApplyLocal(it.id,{myDay:myDay});
-    _tbToast(myDay[me]?'added to your day':'removed from your day');
+    _tbToast(myDay[me]?'Added to My Day':'Removed from My Day');
     _tbRepaint();
   },'update my day');
 };
@@ -1147,18 +1907,18 @@ window.tbOpenHandover=function(){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
   if(!it)return;
   const me=_tbMe();
-  host.innerHTML='<div class="tb-ho"><div class="tb-dsech">hand over</div>'
-    +'<select id="tb-ho-who">'+_tbBoardUsernames().map(h=>{
-      const uid=tbHandleMap()[h];
+  host.innerHTML='<div class="tb-ho"><div class="tb-dsech">Hand Over</div>'
+    +'<select id="tb-ho-who">'+tbPeople().map(p=>{
+      const uid=p.uid;
       return (uid&&uid!==me)?'<option value="'+_tbEsc(uid)+'">'+_tbEsc(tbUser(uid).name)+'</option>':'';
     }).join('')+'</select>'
     +'<input id="tb-ho-note" placeholder="one line — what do they need to know?" maxlength="200">'
     +'<label class="tb-hokeep"><input type="checkbox" id="tb-ho-keep"> keep me on it</label>'
-    +'<button class="btn-primary" onclick="window.tbHandOver()">hand over</button></div>';
+    +'<button class="btn-primary" onclick="window.tbHandOver()">Hand over</button></div>';
 };
 window.tbHandOver=async function(){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const who=document.getElementById('tb-ho-who');
   const note=document.getElementById('tb-ho-note');
   const keep=document.getElementById('tb-ho-keep');
@@ -1178,7 +1938,7 @@ window.tbHandOver=async function(){
     const th=_tbThreads[it.id];
     if(th)th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
     _tbNotify({type:'handover',forUid:plan.notifyUid,fromUid:_tbMe(),itemId:it.id,listId:it.listId,
-      title:'the board',message:tbUser(_tbMe()).name+' handed you “'+(it.title||'')+'” — '+plan.note});
+      title:TB_NAME,message:tbUser(_tbMe()).name+' handed you “'+(it.title||'')+'” — '+plan.note});
     _tbToast('handed to '+tbUser(plan.notifyUid).name);
     _tbRepaint();
   },'hand that over');
@@ -1214,23 +1974,31 @@ window.tbNewList=async function(kind){
   await _tbTry(async()=>{
     const ref=doc(collection(db,'board_lists'));
     await setDoc(ref,data);
-    tbLists.push(Object.assign({id:ref.id},data));
+    _tbLiveRemember('lists_admin',ref.id,data);
+    _tbUpsert(tbLists,Object.assign({id:ref.id},data));
+    // Open it where it can be seen -- on the Lists page -- rather than
+    // leaving it selected behind whatever page the rail was pressed on.
     _tbListId=ref.id;
-    _tbRepaint();
+    if(_tbOnPage('tb-lists'))_tbRepaint();
+    else if(typeof showPage==='function')showPage('tb-lists'); else window.showPage('tb-lists');
   },'create the list');
 };
 window.tbOpenList=function(id){ _tbListId=id; _tbRepaint(); };
 window.tbCloseList=function(){ _tbListId=null; _tbRepaint(); };
 window.tbOpenItem=function(id){
+  _tbFlushNotes();
   _tbOpenItemId=id;
   _tbMoveReqOpen=false;_tbShowActivity=false;_tbCloseMentions();
   _tbRepaint();
   // The thread is a subcollection, so it is read when a drawer OPENS —
   // 42 seeded items' threads is not something to pull on every page load.
   // loadTbThread cannot reject, so this needs no .catch.
-  if(id)loadTbThread(id).then(function(){ if(_tbOpenItemId===id)_tbRepaint(); });
+  // Through the live repaint, which waits while someone is typing: the
+  // thread arriving used to rebuild the pane under a title or a comment
+  // being written (review of d38b96c).
+  if(id)loadTbThread(id).then(function(){ if(_tbOpenItemId===id)_tbLiveRepaint(); });
 };
-window.tbCloseItem=function(){ _tbOpenItemId=null; _tbCloseMentions(); _tbRepaint(); };
+window.tbCloseItem=function(){ _tbFlushNotes(); _tbOpenItemId=null; _tbCloseMentions(); _tbRepaint(); };
 
 // ── Notifications ─────────────────────────────────────────────────────
 // Everything goes through here, and here alone — see tbNotifPayload for
@@ -1383,10 +2151,12 @@ function tbMarkersByDay(config){
  *
  * Pure.
  */
-function tbMovePlan(item,toDay,uid,isOwner,now){
+function tbMovePlan(item,toDay,uid,isOwner,now,lists){
   const it=item||{};
   if(!_tbValidDay(toDay))return{refused:true,reason:'That is not a date.'};
   if((it.date||null)===toDay)return{refused:true,reason:'',noop:true};
+  if(!tbCanEdit(it,uid,isOwner,lists===undefined?tbLists:lists))
+    return{refused:true,notOn:true,reason:'only the people on it can move it'};
   if(!tbCanMoveDate(it,uid,isOwner)){
     return{refused:true,locked:true,lockedBy:it.lockedBy||'',
            reason:'locked by '+tbUser(it.lockedBy).name};
@@ -1430,18 +2200,53 @@ function _tbIsPhone(){
   try{ return !!(window.matchMedia&&window.matchMedia('(max-width:639px)').matches); }
   catch(e){ return false; }
 }
+// The calendar's filters, and the ONLY keys a stored filter may carry. The
+// Sep 2026 freeze wrote a junk key ("[object Object],[object Object],...")
+// holding a nested copy of the filters on every recursion, and the entry
+// grew to 1.36 MB. A loader that Object.assign()ed whatever was stored
+// would carry that forward and rewrite it on every save -- so the stored
+// value is REBUILT from this list, never merged.
+const _TB_CAL_FILTER_KEYS=['scope','person','list','lane','color','hideDone'];
+const _TB_CAL_PREFS_MAX=4096;   // bytes; a real entry is ~150
+/** Rebuild a stored filter from the known keys only. Pure. */
+function tbCleanCalFilters(raw){
+  const o=(raw&&typeof raw==='object')?raw:{};
+  const str=v=>(typeof v==='string'&&v.length<=200)?v:'';
+  return{scope:o.scope==='all'?'all':'me',person:str(o.person),list:str(o.list),
+         lane:str(o.lane),color:str(o.color),hideDone:o.hideDone===true};
+}
+/** The whole stored entry, cleaned. Returns null when it should be thrown
+ *  away (missing, oversized or unreadable). Pure. */
+function tbCleanCalPrefs(raw){
+  if(typeof raw!=='string'||!raw||raw.length>_TB_CAL_PREFS_MAX)return null;
+  let o;
+  try{ o=JSON.parse(raw); }catch(e){ return null; }
+  if(!o||typeof o!=='object')return null;
+  const out={filters:tbCleanCalFilters(o.filters)};
+  if(o.view==='week'||o.view==='month')out.view=o.view;
+  if(typeof o.tray==='boolean')out.tray=o.tray;
+  if(typeof o.rows==='boolean')out.rows=o.rows;
+  return out;
+}
 function _tbCalLoadPrefs(){
   if(_tbIsPhone())_tbCalView='week';
-  try{
-    const raw=localStorage.getItem(_TB_CAL_KEY);
-    if(!raw)return;
-    const o=JSON.parse(raw)||{};
-    if(o.view==='week'||o.view==='month')_tbCalView=o.view;
-    if(o.filters&&typeof o.filters==='object')
-      _tbCalFilters=Object.assign({scope:'me',person:'',list:'',lane:'',color:'',hideDone:false},o.filters);
-    if(typeof o.tray==='boolean')_tbTrayOpen=o.tray;
-    if(typeof o.rows==='boolean')_tbCalRows=o.rows;
-  }catch(e){}                      // a corrupt or blocked store is not an error
+  let raw=null;
+  try{ raw=localStorage.getItem(_TB_CAL_KEY); }catch(e){ return; }   // blocked store: defaults
+  if(raw==null)return;
+  const o=tbCleanCalPrefs(raw);
+  if(!o){
+    // Oversized or corrupt -- the freeze's leftovers. Drop it rather than
+    // parse 1 MB on every open.
+    try{ localStorage.removeItem(_TB_CAL_KEY); }catch(e){}
+    return;
+  }
+  if(o.view)_tbCalView=o.view;
+  _tbCalFilters=o.filters;
+  if(typeof o.tray==='boolean')_tbTrayOpen=o.tray;
+  if(typeof o.rows==='boolean')_tbCalRows=o.rows;
+  // Rewrite it in its clean shape, so a junk key is gone for good rather
+  // than merely ignored.
+  if(JSON.stringify(o)!==raw)_tbCalSavePrefs();
 }
 function _tbCalSavePrefs(){
   try{ localStorage.setItem(_TB_CAL_KEY,JSON.stringify(
@@ -1454,7 +2259,7 @@ function _tbCalSavePrefs(){
 function _tbPill(item,today){
   const me=_tbMe();
   const ck=tbItemColorKey(item,tbLists,tbUserColors());
-  const canMove=tbCanMoveDate(item,me,_tbIsBoardOwner());
+  const canMove=_tbCanEditIt(item)&&tbCanMoveDate(item,me,_tbIsBoardOwner());
   const cls=['tb-pill','tb-c-'+ck]
     .concat(item.kind==='gate'?['gate']:[])
     .concat(item.kind==='event'?['event']:[])
@@ -1463,66 +2268,97 @@ function _tbPill(item,today){
     .concat(canMove?['draggable']:[]);
   return'<div class="'+cls.join(' ')+'" data-id="'+_tbEsc(item.id)+'"'
     +' data-day="'+_tbEsc(item.date||'')+'"'
-    +(canMove?' onpointerdown="window.tbPillDown(event,\''+_tbEsc(item.id)+'\')"':'')
-    +' onclick="window.tbPillClick(event,\''+_tbEsc(item.id)+'\')"'
-    +' tabindex="0" onkeydown="window.tbPillKey(event,\''+_tbEsc(item.id)+'\')">'
+    +(canMove?' onpointerdown="window.tbPillDown(event,\''+_tbJs(item.id)+'\')"':'')
+    +' onclick="window.tbPillClick(event,\''+_tbJs(item.id)+'\')"'
+    +' tabindex="0" onkeydown="window.tbPillKey(event,\''+_tbJs(item.id)+'\')">'
     +'<span class="tb-pillbar"></span>'
-    +(item.locked?'<span class="tb-pilllock" title="locked">&#128274;</span>':'')
+    +(item.locked?'<span class="tb-pilllock" title="locked">'+_tbIcon('lock','sm')+'</span>':'')
     +_tbSlot(item.title||'untitled','tb-pilltitle')
   +'</div>';
 }
 
+/** Every word up: "october 2026" -> "October 2026", "26 oct – 1 nov" ->
+ *  "26 Oct – 1 Nov". The pure label builders stay lowercase (their tests
+ *  pin them); the SCREEN is Title Case (session 2). Pure. */
+function _tbTitleCase(s){ return String(s==null?'':s).replace(/(^|[\s(–-])([a-z])/g,(m,a,b)=>a+b.toUpperCase()); }
+
+/** The calendar's toolbar (session 2, P1.6): back · Today · forward and the
+ *  range; Month | Week (and By Person on a week); Me | Everyone; a row of
+ *  AVATARS -- one tap shows that person's calendar -- then the list and
+ *  lane filters, Hide done and Clear. */
 function _tbCalHead(){
-  const today=_tbToday();
   const label=_tbCalView==='week'?tbWeekLabel(_tbCalAnchor):tbMonthLabel(_tbCalAnchor.slice(0,7));
-  const seg=(v,l)=>'<button class="tb-seg'+(_tbCalView===v?' on':'')+'"'
-    +' onclick="window.tbCalView(\''+v+'\')">'+_tbEsc(l)+'</button>';
-  const scope=(v,l)=>'<button class="tb-seg'+(_tbCalFilters.scope===v?' on':'')+'"'
-    +' onclick="window.tbCalScope(\''+v+'\')">'+_tbEsc(l)+'</button>';
+  const seg=(v,l)=>'<button class="tb-seg'+(_tbCalView===v?' on':'')+'" aria-pressed="'+(_tbCalView===v?'true':'false')+'"'
+    +' onclick="window.tbCalView(\''+_tbJs(v)+'\')">'+_tbEsc(l)+'</button>';
+  const scope=(v,l)=>'<button class="tb-seg'+(_tbCalFilters.scope===v?' on':'')+'" aria-pressed="'+(_tbCalFilters.scope===v?'true':'false')+'"'
+    +' onclick="window.tbCalScope(\''+_tbJs(v)+'\')">'+_tbEsc(l)+'</button>';
   const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
-  const people=_tbBoardUsernames().map(h=>{
-    const uid=tbHandleMap()[h];
-    return uid?opt(uid,_tbCalFilters.person,tbUser(uid).name):'';
+  // Only people with an account can be filtered to -- a person with no
+  // uid owns nothing on the calendar yet.
+  const avatars=tbPeople().filter(p=>p.uid).map(function(p){
+    const u=tbUser(p.uid),on=_tbCalFilters.person===p.uid;
+    return'<button class="tb-calav'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
+      +' title="'+_tbEsc(on?'Showing '+u.name+' — tap to show everyone':'Show only '+u.name)+'"'
+      +' aria-label="'+_tbEsc('Show only '+u.name)+'"'
+      +' onclick="window.tbCalPerson(\''+_tbJs(p.uid)+'\')">'+_tbEsc(u.initial)+'</button>';
   }).join('');
   return'<div class="tb-calbar">'
     +'<div class="tb-calnav">'
-      +'<button class="tb-calbtn" onclick="window.tbCalStep(-1)" title="back">&lsaquo;</button>'
-      +'<button class="tb-calbtn" onclick="window.tbCalToday()">today</button>'
-      +'<button class="tb-calbtn" onclick="window.tbCalStep(1)" title="forward">&rsaquo;</button>'
-      +'<span class="tb-callabel">'+_tbEsc(label)+'</span>'
+      +'<button class="tb-calbtn tb-calicon" onclick="window.tbCalStep(-1)" title="Back" aria-label="Back">'+_tbIcon('chevron-left')+'</button>'
+      +'<button class="tb-calbtn" onclick="window.tbCalToday()">Today</button>'
+      +'<button class="tb-calbtn tb-calicon" onclick="window.tbCalStep(1)" title="Forward" aria-label="Forward">'+_tbIcon('chevron-right')+'</button>'
+      +'<span class="tb-callabel">'+_tbEsc(_tbTitleCase(label))+'</span>'
     +'</div>'
-    +'<div class="tb-calseg">'+seg('month','month')+seg('week','week')
+    +'<div class="tb-calseg">'+seg('month','Month')+seg('week','Week')
       // Rows-by-person is a way of reading the WEEK, so it lives beside
       // the view segment and only appears when a week is on screen.
       +(_tbCalView==='week'&&!_tbIsPhone()
         ?'<button class="tb-seg'+(_tbCalRows?' on':'')+'"'
-          +' onclick="window.tbCalRows('+(_tbCalRows?'false':'true')+')">by person</button>'
+          +' onclick="window.tbCalRows('+(_tbCalRows?'false':'true')+')">By Person</button>'
         :'')
     +'</div>'
-    +'<div class="tb-calseg">'+scope('me','me')+scope('all','everyone')+'</div>'
+    +'<div class="tb-calseg">'+scope('me','Me')+scope('all','Everyone')+'</div>'
+    +(avatars?'<div class="tb-calpeople" role="group" aria-label="Show one person">'+avatars+'</div>':'')
     +'<div class="tb-calfilters">'
-      +'<select onchange="window.tbCalFilter(\'person\',this.value)">'
-        +opt('',_tbCalFilters.person,'anyone')+people+'</select>'
-      +'<select onchange="window.tbCalFilter(\'list\',this.value)">'
-        +opt('',_tbCalFilters.list,'any list')
+      +'<select aria-label="List" onchange="window.tbCalSetFilter(\'list\',this.value)">'
+        +opt('',_tbCalFilters.list,'Any list')
         +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,_tbCalFilters.list,l.title||'untitled')).join('')
       +'</select>'
-      +'<select onchange="window.tbCalFilter(\'lane\',this.value)">'
-        +opt('',_tbCalFilters.lane,'any lane')
-        +TB_LANES.map(l=>opt(l,_tbCalFilters.lane,l)).join('')
+      +'<select aria-label="Lane" onchange="window.tbCalSetFilter(\'lane\',this.value)">'
+        +opt('',_tbCalFilters.lane,'Any lane')
+        +TB_LANES.map(l=>opt(l,_tbCalFilters.lane,_tbCap(l))).join('')
       +'</select>'
       +'<label class="tb-calchk"><input type="checkbox"'+(_tbCalFilters.hideDone?' checked':'')
-        +' onchange="window.tbCalFilter(\'hideDone\',this.checked)"> hide done</label>'
-      +(_tbCalActive()?'<button class="tb-calbtn" onclick="window.tbCalClear()">clear</button>':'')
+        +' onchange="window.tbCalSetFilter(\'hideDone\',this.checked)"> Hide done</label>'
+      +(_tbCalActive()?'<button class="tb-calbtn" onclick="window.tbCalClear()">Clear</button>':'')
     +'</div>'
   +'</div>';
 }
+/** An avatar is "whose calendar": it shows that person across the TEAM
+ *  (scope Everyone), because Me plus a person would show only the items you
+ *  share -- not what anyone means by tapping a face. Tapping the same face
+ *  again shows everyone. */
+window.tbCalPerson=function(uid){
+  uid=(typeof uid==='string')?uid:'';
+  if(!uid||_tbCalFilters.person===uid){ _tbCalFilters.person=''; }
+  else{ _tbCalFilters.person=uid; _tbCalFilters.scope='all'; }
+  _tbCalSavePrefs();_tbRepaint();
+};
 function _tbCalActive(){
   const f=_tbCalFilters;
   return!!(f.person||f.list||f.lane||f.color||f.hideDone||f.scope==='all');
 }
 
-/** A day cell — the drop target. `data-day` is what the drag reads. */
+/** A day cell — the drop target. `data-day` is what the drag reads.
+ *  Session 2, P1.6: markers are flag chips; a MONTH day shows three pills
+ *  at most, or two and "+N more" (the week shows them all); the "+" is an
+ *  icon that says which day it adds to. */
+const TB_CAL_MONTH_CAP=3;
+let _tbCalMore=null;            // the one month day opened past its cap
+window.tbCalMore=function(day){
+  _tbCalMore=(_tbCalMore===day)?null:(/^\d{4}-\d{2}-\d{2}$/.test(String(day||''))?day:null);
+  _tbRepaint();
+};
 function _tbDayCell(day,items,today,opts){
   const o=opts||{};
   const marks=(_tbCalMarks[day]||[]);
@@ -1531,14 +2367,21 @@ function _tbDayCell(day,items,today,opts){
     .concat(o.inMonth===false?['out']:[])
     .concat(marks.length?['marked']:[])
     .concat(_tbDow(day)===0||_tbDow(day)===6?['weekend']:[]);
+  const month=o.inMonth!=null;
+  const open=_tbCalMore===day;
+  const over=month&&items.length>TB_CAL_MONTH_CAP&&!open;
+  const shown=over?items.slice(0,TB_CAL_MONTH_CAP-1):items;
+  const dl=_tbTitleCase(tbDayLabel(day,today));
   return'<div class="'+cls.join(' ')+'" data-day="'+_tbEsc(day)+'">'
     +'<div class="tb-dayhead">'
       +'<span class="tb-daynum">'+Number(String(day).slice(8))+'</span>'
-      +(marks.length?'<span class="tb-daymark">'+_tbEsc(marks.join(' · '))+'</span>':'')
-      +'<button class="tb-dayadd" title="add on this day"'
-        +' onclick="window.tbCalAdd(\''+_tbEsc(day)+'\')">+</button>'
+      +'<button class="tb-dayadd" title="Add on '+_tbEsc(dl)+'" aria-label="Add on '+_tbEsc(dl)+'"'
+        +' onclick="window.tbCalAdd(\''+_tbJs(day)+'\')">'+_tbIcon('plus','sm')+'</button>'
     +'</div>'
-    +'<div class="tb-daylist">'+items.map(i=>_tbPill(i,today)).join('')+'</div>'
+    +(marks.length?'<div class="tb-daymarks">'+marks.map(m=>'<span class="tb-daymark">'+_tbIcon('flag','sm')+_tbEsc(m)+'</span>').join('')+'</div>':'')
+    +'<div class="tb-daylist">'+shown.map(i=>_tbPill(i,today)).join('')+'</div>'
+    +(over?'<button class="tb-daymore" onclick="window.tbCalMore(\''+_tbJs(day)+'\')">+'+(items.length-shown.length)+' more</button>'
+      :(open&&month&&items.length>TB_CAL_MONTH_CAP?'<button class="tb-daymore" onclick="window.tbCalMore(\''+_tbJs(day)+'\')">Show less</button>':''))
   +'</div>';
 }
 
@@ -1547,14 +2390,14 @@ function _tbCalendar(){
   const me=_tbMe(),today=_tbToday();
   if(!_tbCalAnchor)_tbCalAnchor=today;
   if(_tbLoadFailed('board_items')){
-    return _tbCalHead()+'<div class="tb-err">Could not read the board. '
+    return _tbCalHead()+'<div class="tb-err">Could not read The Board. '
       +'<button class="btn-outline" onclick="window.tbRetry()">Retry</button>'
       +'<div class="tb-errsub">If this keeps happening, firestore.rules may not be deployed — see BOARD.md.</div></div>';
   }
   const shown=tbCalFilter(tbItems,Object.assign({uid:me},_tbCalFilters));
   const byDay=tbItemsByDay(shown);
   _tbCalMarks=tbMarkersByDay(tbConfig);
-  const dow='<div class="tb-dowrow">'+TB_DOW_LABELS.map(d=>'<div class="tb-dow">'+_tbEsc(d)+'</div>').join('')+'</div>';
+  const dow='<div class="tb-dowrow">'+TB_DOW_LABELS.map(d=>'<div class="tb-dow">'+_tbEsc(_tbCap(d))+'</div>').join('')+'</div>';
   let grid='';
   if(_tbCalView==='week'&&_tbCalRows&&!_tbIsPhone()){
     grid=_tbPersonWeek(tbWeekDays(_tbCalAnchor),today);
@@ -1585,6 +2428,7 @@ function _tbCalendar(){
 
 // ── View controls ─────────────────────────────────────────────────────
 window.tbCalView=function(v){
+  _tbCalMore=null;
   _tbCalView=(v==='week')?'week':'month';
   _tbCalSavePrefs();_tbRepaint();
 };
@@ -1592,9 +2436,20 @@ window.tbCalScope=function(v){
   _tbCalFilters.scope=(v==='all')?'all':'me';
   _tbCalSavePrefs();_tbRepaint();
 };
-window.tbCalFilter=function(k,v){
+// NAMED tbCalSetFilter, NOT tbCalFilter, AND THAT IS THE WHOLE FIX FOR THE
+// SEP 2026 FREEZE. A top-level `function tbCalFilter` in a classic script
+// IS `window.tbCalFilter` in a browser, so assigning this handler to that
+// name replaced the pure filter above: _tbCalendar then called the handler,
+// which repainted, which called it again -- a recursion that locked the tab
+// for ~17s before the stack overflowed, and saved a 1.36 MB junk filter on
+// every attempt. The node harness gives each script its own `window`, so no
+// logic suite could see it; tests/invariants.test.js now forbids the shape
+// repo-wide and tests/smoke-board.js drives every calendar control in real
+// Chromium.
+window.tbCalSetFilter=function(k,v){
+  if(_TB_CAL_FILTER_KEYS.indexOf(k)<0)return;   // a key nobody asked for is not a filter
   if(k==='hideDone')_tbCalFilters.hideDone=!!v;
-  else _tbCalFilters[k]=v||'';
+  else _tbCalFilters[k]=(typeof v==='string')?v:'';
   _tbCalSavePrefs();_tbRepaint();
 };
 window.tbCalClear=function(){
@@ -1602,6 +2457,7 @@ window.tbCalClear=function(){
   _tbCalSavePrefs();_tbRepaint();
 };
 window.tbCalStep=function(n){
+  _tbCalMore=null;
   _tbCalAnchor=_tbCalView==='week'
     ?_tbDayAdd(_tbCalAnchor,7*Number(n||0))
     :(_tbMonthAdd(_tbCalAnchor.slice(0,7),Number(n||0))+'-01');
@@ -1618,11 +2474,15 @@ window.tbCalAdd=function(day){
 };
 window.tbCreateOn=async function(text,day){
   const me=_tbMe();
-  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap()});
+  const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
+  // The quick-add's rule: no title, no item. The old fallback to the raw
+  // text saved "@saim" as the title of an item assigned to nobody else
+  // (review of a96cddb).
+  if(!parsed.title){ _tbToast('Give it a title.'); return; }
   const assignees=parsed.assigneeUids.slice();
   if(assignees.indexOf(me)<0)assignees.unshift(me);
   const data=tbNewItem({
-    title:parsed.title||String(text).slice(0,140),
+    title:parsed.title,
     assigneeUids:assignees,lane:parsed.lane,priority:parsed.priority,
     // The DAY WINS over a date typed into the text — you pressed + on a
     // specific square, and that is the more deliberate of the two.
@@ -1635,8 +2495,12 @@ window.tbCreateOn=async function(text,day){
     b.set(doc(collection(db,'board_items',ref.id,'activity')),
       {type:'created',byUid:me,at:data.createdAt,payload:{}});
     await b.commit();
-    tbItems.push(tbDecodeItem(Object.assign({id:ref.id},data)));
+    _tbLiveRemember('items_own',ref.id,data);
+    _tbUpsert(tbItems,tbDecodeItem(Object.assign({id:ref.id},data)));
     _tbRepaint();
+    // Said, as the quick-add says it: a handle taken out of the title and
+    // assigned to nobody used to vanish without a word (review of a96cddb).
+    if(parsed.pendingHandles.length)_tbToast(_tbPendingToast(parsed.pendingHandles));
   },'add that');
 };
 
@@ -1676,7 +2540,7 @@ let _tbDragId=null,_tbDragMoved=false,_tbDragGhost=null,_tbDragOverDay='';
 window.tbPillDown=function(e,id){
   if(!e||e.button===2)return;
   const it=tbItems.filter(x=>x.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   if(!tbCanMoveDate(it,_tbMe(),_tbIsBoardOwner())){
     _tbToast('locked by '+tbUser(it.lockedBy).name);
     return;
@@ -1794,7 +2658,7 @@ window.tbMoveItem=async function(id,toDay){
     _tbApplyLocal(id,plan.data);
     (plan.notify||[]).forEach(uid=>_tbNotify({
       type:'moved',forUid:uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
-      title:'the board',
+      title:TB_NAME,
       message:tbUser(_tbMe()).name+' moved “'+(it.title||'')+'” to '+tbDayLabel(toDay,_tbToday())}));
     if(plan.override)_tbToast('moved — you overrode '+tbUser(plan.data.lockedBy||it.lockedBy).name+"'s lock, and it is logged");
     _tbRepaint();
@@ -2025,7 +2889,7 @@ function tbFileHref(att){
 async function _tbUpload(file){
   if(tbTooBig(file))
     throw new Error(String((file&&file.name)||'That file')+' is '+tbFileSize(file&&file.size)
-      +' — the board caps uploads at '+TB_MAX_UPLOAD_MB+' MB.');
+      +' — The Board caps uploads at '+TB_MAX_UPLOAD_MB+' MB.');
   const fd=new FormData();
   fd.append('file',file);
   fd.append('upload_preset','groovy-ops');
@@ -2037,7 +2901,7 @@ async function _tbUpload(file){
     // account's plan, which nothing in this app can raise.
     if(/file size|too large|maximum is/i.test(m))
       m+=" (that is Cloudinary's own cap for this account's plan, not the "
-        +TB_MAX_UPLOAD_MB+' MB one the board sets)';
+        +TB_MAX_UPLOAD_MB+' MB one The Board sets)';
     throw new Error(m);
   }
   return d;
@@ -2124,6 +2988,8 @@ function tbActivityLine(a,dayLabel){
     case'reopened':  return who+' reopened it';
     case'locked':    return who+' locked the date';
     case'unlocked':  return who+' unlocked the date';
+    case'pinned':    return who+' pinned it to Deadlines';
+    case'unpinned':  return who+' took it off Deadlines';
     case'step_done': return who+' ticked “'+(p.title||'a step')+'”';
     case'file_added':return who+' added '+(p.name||'a file');
     case'comment':   return who+' commented';
@@ -2317,6 +3183,7 @@ function _tbFileChip(att,opts){
  *  without a second hidden input to keep in step. */
 let _tbPickFor='item';
 window.tbPickFiles=function(kind){
+  if(kind!=='comment'&&_tbNotOnIt(tbItems.filter(i=>i.id===_tbOpenItemId)[0]))return;
   _tbPickFor=kind==='comment'?'comment':'item';
   const el=document.getElementById('tb-filepick');
   if(el&&el.click)el.click();
@@ -2381,7 +3248,7 @@ async function _tbAttachToItem(files){
 window.tbRemoveFile=async function(idx){
   const id=_tbOpenItemId;
   const it=tbItems.filter(x=>x.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   const list=(it.attachments||[]).slice();
   if(idx<0||idx>=list.length)return;
   list.splice(idx,1);
@@ -2422,7 +3289,9 @@ window.tbPostComment=async function(){
     // satisfies both the create and the update clause of the
     // user_profiles rule.
     const me=_tbMe();
-    if(me&&plan.mentionUids.length)
+    // Not after a failed directory read: _tbMyStats() is empty then, and
+    // the merge would reset the count of everyone mentioned to 1.
+    if(me&&plan.mentionUids.length&&!_tbLoadFailed('user_profiles'))
       b.set(doc(db,'user_profiles',me),
         {uid:me,tbMentionStats:tbMentionBump(_tbMyStats(),plan.mentionUids,_tbNow())},{merge:true});
     await b.commit();
@@ -2434,7 +3303,7 @@ window.tbPostComment=async function(){
     _tbCloseMentions();
     (plan.notify||[]).forEach(function(n){
       _tbNotify({type:n.type,forUid:n.uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
-        title:'the board',
+        title:TB_NAME,
         message:tbUser(_tbMe()).name+(n.type==='mention'?' mentioned you on ':' commented on ')
           +'“'+(it.title||'')+'” — '+_tbPlain(plan.comment.body)});
     });
@@ -2479,7 +3348,7 @@ window.tbRequestMove=async function(){
     _tbThreads[id]=th;
     (plan.notify||[]).forEach(function(n){
       _tbNotify({type:n.type,forUid:n.uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
-        title:'the board',
+        title:TB_NAME,
         message:tbUser(_tbMe()).name+' asks to move “'+(it.title||'')+'” to '+plan.toDay
           +' — '+plan.reason});
     });
@@ -2491,25 +3360,25 @@ window.tbRequestMove=async function(){
 window.tbToggleActivity=function(){ _tbShowActivity=!_tbShowActivity; _tbRepaint(); };
 
 // ── The drawer's phase-4 half ─────────────────────────────────────────
-function _tbFilesSection(it){
+function _tbFilesSection(it,ro){
   const files=it.attachments||[];
-  return'<div class="tb-dsec"><div class="tb-dsech">files'
+  return'<div class="tb-dsec"><div class="tb-dsech">Files'
     +(files.length?' <span class="tb-steps">'+files.length+'</span>':'')
-    +'<button class="tb-addfile" onclick="window.tbPickFiles(\'item\')">+ add</button></div>'
+    +(ro?'':'<button class="tb-addfile" onclick="window.tbPickFiles(\'item\')">+ add</button>')+'</div>'
     +(files.length
       ?'<div class="tb-files">'+files.map(function(a,i){
-          return _tbFileChip(a,{onRemove:'window.tbRemoveFile('+i+')'});
+          return _tbFileChip(a,ro?{}:{onRemove:'window.tbRemoveFile('+i+')'});
         }).join('')+'</div>'
-      :'<div class="tb-hint">nothing attached — up to '+TB_MAX_UPLOAD_MB+' MB a file</div>')
+      :'<div class="tb-hint">'+(ro?'nothing attached':'nothing attached — up to '+TB_MAX_UPLOAD_MB+' MB a file')+'</div>')
   +'</div>';
 }
 
 function _tbThreadSection(it){
   const th=_tbThread(it.id);
   const me=_tbMe();
-  if(!th)return'<div class="tb-dsec"><div class="tb-dsech">comments</div>'
+  if(!th)return'<div class="tb-dsec"><div class="tb-dsech">Comments</div>'
     +'<div class="tb-hint">loading the thread…</div></div>';
-  if(th.err)return'<div class="tb-dsec"><div class="tb-dsech">comments</div>'
+  if(th.err)return'<div class="tb-dsec"><div class="tb-dsech">Comments</div>'
     +'<div class="tb-err">Could not read the thread. '
     +'<button class="btn-outline" onclick="window.tbReloadThread()">Retry</button></div></div>';
   const rows=th.comments.slice().sort((a,b)=>Number(a.createdAt||0)-Number(b.createdAt||0))
@@ -2527,7 +3396,7 @@ function _tbThreadSection(it){
         +'</div></div>';
     }).join('');
   const staged=(_tbCompFiles[it.id]||[]);
-  return'<div class="tb-dsec tb-thread"><div class="tb-dsech">comments'
+  return'<div class="tb-dsec tb-thread"><div class="tb-dsech">Comments'
       +(th.comments.length?' <span class="tb-steps">'+th.comments.length+'</span>':'')+'</div>'
     +(rows||'<div class="tb-hint">no comments yet</div>')
     +'<div class="tb-comp">'
@@ -2540,8 +3409,8 @@ function _tbThreadSection(it){
           return _tbFileChip(a,{onRemove:'window.tbUnstageFile('+i+')'});
         }).join('')+'</div>':'')
       +'<div class="tb-comprow">'
-        +'<button class="tb-addfile" onclick="window.tbPickFiles(\'comment\')">attach</button>'
-        +'<button class="btn-primary" onclick="window.tbPostComment()">post</button>'
+        +'<button class="tb-addfile" onclick="window.tbPickFiles(\'comment\')">Attach</button>'
+        +'<button class="btn-primary" onclick="window.tbPostComment()">Post</button>'
       +'</div>'
     +'</div></div>';
 }
@@ -2550,7 +3419,7 @@ function _tbActivitySection(it){
   const th=_tbThread(it.id);
   const rows=(th&&th.activity)||[];
   const today=_tbToday();
-  return'<div class="tb-dsec"><div class="tb-dsech">activity'
+  return'<div class="tb-dsec"><div class="tb-dsech">Activity'
       +'<button class="tb-addfile" onclick="window.tbToggleActivity()">'
       +(_tbShowActivity?'hide':'show'+(rows.length?' ('+rows.length+')':''))+'</button></div>'
     +(_tbShowActivity
@@ -2573,9 +3442,9 @@ function _tbMoveReqSection(it){
     +(_tbMoveReqOpen
       ?'<div class="tb-mrform"><div class="tb-hint">'+_tbEsc(locker.name)
         +' holds the lock. This posts the ask in the thread and pings them.</div>'
-        +'<input type="date" id="tb-mr-date" value="'+_tbEsc(it.date||'')+'">'
+        +'<input type="date" data-tb-fp id="tb-mr-date" value="'+_tbEsc(it.date||'')+'">'
         +'<input id="tb-mr-why" maxlength="200" placeholder="why does it need to move?">'
-        +'<button class="btn-primary" onclick="window.tbRequestMove()">send</button></div>'
+        +'<button class="btn-primary" onclick="window.tbRequestMove()">Send</button></div>'
       :'')
   +'</div>';
 }
@@ -2640,6 +3509,28 @@ function _tbPaintBadges(){
 /** Live, because the phase's definition of done is a badge that moves in
  *  ANOTHER browser within a second. Started from a startApp wrap so the
  *  count is live on every page, not only while the Board is open. */
+// THE INBOX READS ONLY THE BOARD'S OWN ROWS, NEWEST FIRST, CAPPED (P2).
+// It used to listen to EVERY notification addressed to the person -- the
+// HRM ones too -- forever, and the 08:00 reminder now adds rows every day.
+// The narrow query needs a composite index (forUser, source, createdAt
+// desc; firestore.indexes.json). Until that index is DEPLOYED the query is
+// refused with failed-precondition, so the listener falls back to the old
+// wide one rather than leaving an empty inbox: main has to work before
+// anyone runs the deploy.
+const _TB_INBOX_LIMIT=200;
+let _tbInboxWide=false;
+function _tbInboxQuery(h,wide){
+  if(wide||typeof orderBy!=='function'||typeof limit!=='function')
+    return query(collection(db,'hrm_notifications'),where('forUser','==',h));
+  return query(collection(db,'hrm_notifications'),where('forUser','==',h),where('source','==',TB_NOTIF_SOURCE),
+    orderBy('createdAt','desc'),limit(_TB_INBOX_LIMIT));
+}
+/** Is this the "that index does not exist yet" refusal? Pure. */
+function _tbNeedsIndex(e){
+  const c=String((e&&e.code)||''),m=String((e&&e.message)||'');
+  return c==='failed-precondition'||/requires an index|FAILED_PRECONDITION/i.test(m);
+}
+
 function tbWatchNotifs(){
   if(_tbNotifUnsub)return;
   const h=_tbHandle();
@@ -2652,7 +3543,7 @@ function tbWatchNotifs(){
   if(typeof onSnapshot!=='function'){ loadTbNotifsOnce(); return; }
   try{
     _tbNotifUnsub=onSnapshot(
-      query(collection(db,'hrm_notifications'),where('forUser','==',h)),
+      _tbInboxQuery(h,_tbInboxWide),
       function(snap){
         tbNotifs=(snap&&snap.docs||[]).map(d=>Object.assign({_id:d.id},d.data()));
         const rows=tbInboxRows(tbNotifs,h);
@@ -2678,6 +3569,13 @@ function tbWatchNotifs(){
           &&String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')===0)_tbRepaint();
       },
       function(e){
+        if(!_tbInboxWide&&_tbNeedsIndex(e)){
+          console.warn('[the board] inbox index not deployed yet -- reading the wide query meanwhile',e);
+          try{ if(_tbNotifUnsub)_tbNotifUnsub(); }catch(_){}
+          _tbNotifUnsub=null;_tbInboxWide=true;
+          tbWatchNotifs();
+          return;
+        }
         console.warn('[the board] inbox listener failed',e);
         // A refused read and an empty inbox must never render the same
         // screen -- the Store lesson.
@@ -2694,7 +3592,13 @@ async function loadTbNotifsOnce(){
   if(!h||_tbNotifOnce)return;
   _tbNotifOnce=true;
   try{
-    const snap=await getDocs(query(collection(db,'hrm_notifications'),where('forUser','==',h)));
+    let snap;
+    try{ snap=await getDocs(_tbInboxQuery(h,_tbInboxWide)); }
+    catch(e){
+      if(_tbInboxWide||!_tbNeedsIndex(e))throw e;
+      _tbInboxWide=true;
+      snap=await getDocs(_tbInboxQuery(h,true));
+    }
     tbNotifs=(snap&&snap.docs||[]).map(d=>Object.assign({_id:d.id},d.data()));
   }catch(e){
     console.warn('[the board] inbox read failed',e);
@@ -2768,7 +3672,7 @@ function _tbInboxScreen(){
       +g.rows.map(function(n){
         const read=_tbNotifRead(n,h);
         return'<button class="tb-nf'+(read?'':' unread')+'"'
-          +' onclick="window.tbOpenNotif(\''+_tbEsc(n._id)+'\',\''+_tbEsc(n.itemId||'')+'\')">'
+          +' onclick="window.tbOpenNotif(\''+_tbJs(n._id)+'\',\''+_tbJs(n.itemId||'')+'\')">'
           +'<span class="tb-av">'+_tbEsc(tbUser(n.fromUid).initial)+'</span>'
           +'<span class="tb-nfmain">'
             +'<span class="tb-nftype">'+_tbEsc(_TB_NOTIF_WORDS[n.type]||String(n.type||''))+'</span>'
@@ -2781,9 +3685,9 @@ function _tbInboxScreen(){
       }).join('')
     +'</div>';
   }).join('');
-  return'<div class="tb-nfhead"><span class="tb-dsech">inbox</span>'
+  return'<div class="tb-nfhead"><span class="tb-dsech">Inbox</span>'
       +(unread?'<span class="tb-count red">'+unread+'</span>':'')
-      +(unread?'<button class="btn-outline" onclick="window.tbMarkAllRead()">mark all read</button>':'')
+      +(unread?'<button class="btn-outline" onclick="window.tbMarkAllRead()">Mark all read</button>':'')
     +'</div>'+groups;
 }
 
@@ -2806,13 +3710,13 @@ function _tbInboxCard(){
   if(!rows.length)return'';
   const unread=rows.filter(n=>!_tbNotifRead(n,h));
   const pick=unread.concat(rows.filter(n=>_tbNotifRead(n,h))).slice(0,5);
-  return _tbCard('inbox',pick.map(function(n){
+  return _tbCard('Inbox',pick.map(function(n){
     return'<button class="tb-nf'+(_tbNotifRead(n,h)?'':' unread')+'"'
-      +' onclick="window.tbOpenNotif(\''+_tbEsc(n._id)+'\',\''+_tbEsc(n.itemId||'')+'\')">'
+      +' onclick="window.tbOpenNotif(\''+_tbJs(n._id)+'\',\''+_tbJs(n.itemId||'')+'\')">'
       +'<span class="tb-av">'+_tbEsc(tbUser(n.fromUid).initial)+'</span>'
       +'<span class="tb-nfmain">'+_tbSlot(_tbUnesc(n.message||''),'tb-nfmsg')+'</span>'
       +'<span class="tb-cmtwhen">'+_tbEsc(_tbAgo(n.createdAt))+'</span></button>';
-  }),{action:'<button class="tb-addfile" onclick="window.showPage(\'tb-inbox\')">view all</button>'});
+  }),{action:'<button class="tb-addfile" onclick="window.showPage(\'tb-inbox\')">View all</button>'});
 }
 
 // ── Starting the listener ─────────────────────────────────────────────
@@ -2905,8 +3809,8 @@ window.tbFocusSearch=function(){
 let _tbSearchFocus=false;
 
 function _tbSearchBox(){
-  return'<div class="tb-searchwrap">'
-    +'<input id="tb-search" class="tb-search" type="search" autocomplete="off"'
+  return'<div class="tb-searchwrap">'+_tbIcon('search','sm')
+    +'<input id="tb-search" class="tb-search" type="search" autocomplete="off" aria-label="Search The Board"'
       +' placeholder="search titles, notes and steps"'
       +' value="'+_tbEsc(_tbQuery)+'"'
       +' oninput="window.tbSearchInput(this.value)">'
@@ -2921,11 +3825,11 @@ function _tbSearchScreen(){
     return'<div class="tb-empty"><div class="tb-empty-h">nothing matches “'+_tbEsc(_tbQuery)+'”</div>'
       +'<div class="tb-empty-p">search covers titles, notes, steps and lanes. '
       +'Comments are searched only in threads you have opened this session.</div>'
-      +'<button class="btn-outline" onclick="window.tbSearchClear()">clear search</button></div>';
+      +'<button class="btn-outline" onclick="window.tbSearchClear()">Clear search</button></div>';
   }
   return'<div class="tb-sechead">'+hits.length+' result'+(hits.length===1?'':'s')
       +' for “'+_tbEsc(_tbQuery)+'”'
-      +'<button class="tb-calbtn" onclick="window.tbSearchClear()">clear</button></div>'
+      +'<button class="tb-calbtn" onclick="window.tbSearchClear()">Clear</button></div>'
     +hits.map(function(h){
       return'<div class="tb-hit">'+_tbRow(h.item,today)
         +'<div class="tb-hitwhere">matched in '+_tbEsc(h.where.join(', '))+'</div></div>';
@@ -2984,6 +3888,12 @@ function _tbOnKeydown(e){
   // Only while the Board is on screen: `d` must not navigate away from
   // somebody typing a PO number on another page.
   if(String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')!==0)return;
+  // Board settings sits over everything, so Escape closes it before
+  // anything underneath -- read before the editable bail, like the rest.
+  if(e&&e.key==='Escape'&&_tbSettingsOpen){ if(e.preventDefault)e.preventDefault(); window.tbToggleSettings(); return; }
+  // An open date picker takes Escape for itself (it closes the calendar);
+  // closing the pane under it as well would lose the date being picked.
+  if(e&&e.key==='Escape'&&_tbFpOpen())return;
   const act=tbShortcutFor(e,{
     editable:_tbEditableFocus(),
     drawerOpen:!!_tbOpenItemId,
@@ -3017,12 +3927,233 @@ function _tbHelpOverlay(){
   if(!_tbHelpOpen)return'';
   return'<div class="tb-help" onclick="window.tbToggleHelp()">'
     +'<div class="tb-helpcard" onclick="event.stopPropagation()">'
-      +'<div class="tb-dsech">keyboard</div>'
+      +'<div class="tb-dsech">Keyboard</div>'
       +TB_SHORTCUTS.map(function(s){
         return'<div class="tb-helprow"><kbd class="tb-kbd">'+_tbEsc(s.k)+'</kbd>'
           +'<span class="tb-helpwhat">'+_tbEsc(s.what)+'</span></div>';
       }).join('')
-      +'<button class="btn-outline" onclick="window.tbToggleHelp()">close</button>'
+      +'<button class="btn-outline" onclick="window.tbToggleHelp()">Close</button>'
+    +'</div></div>';
+}
+
+// ══ SESSION 2 — P0.4: BOARD SETTINGS AND "RUN SEED" ══════════════════
+// Board owners only. The seed writes items owned by OTHER people (a
+// milestone's owner is its first assignee), which the rules rightly forbid
+// a client, so it runs in netlify/functions/board-seed.js with the Admin
+// SDK, behind a gate that checks the caller's VERIFIED ID token there --
+// this button is a convenience, never the boundary.
+let _tbSettingsOpen=false;
+let _tbSeedState={busy:false,result:'',error:'',dry:false};
+
+window.tbToggleSettings=function(){
+  if(!_tbIsBoardOwner()){ _tbSettingsOpen=false; return; }
+  _tbSettingsOpen=!_tbSettingsOpen;
+  _tbMarkerDraft=null;          // an unsaved edit does not outlive the sheet
+  _tbRepaint();
+};
+
+/** What a seed run did, in plain words. PURE, so the wording is assertable
+ *  and every number the function returns is said out loud. */
+function tbSeedSummary(r,dry){
+  const x=r||{};
+  const lines=[];
+  const n=(k,w)=>k+' '+w+(k===1?'':'s');
+  lines.push(dry?'Preview — nothing was written.':'Done.');
+  lines.push((dry?'Would create ':'Created ')+n(x.created||0,'milestone')
+    +'; '+(x.alreadySeeded||0)+' already on the board (not touched).');
+  if(x.adopted&&x.alreadySeeded)lines.push('No seed record was found, so the board was taken as it stands: nothing on it '
+    +(dry?'would change':'changed')+', and nobody '+(dry?'would be':'was')+' added to the list or to a milestone. From now on the seed keeps a record.');
+  if(x.listCreated)lines.push((dry?'Would create':'Created')+' the Winter Drop 2027 list.');
+  if((x.listMembersAdded||[]).length)lines.push((dry?'Would add ':'Added ')+x.listMembersAdded.join(', ')+' to the list.');
+  if(x.markersWritten)lines.push((dry?'Would add':'Added')+' the launch markers.');
+  if((x.profilesCreated||[]).length)lines.push((dry?'Would add':'Added')+' a profile row for '+x.profilesCreated.join(', ')+'.');
+  (x.peopleAdded||[]).forEach(p=>lines.push((dry?'Would add ':'Added ')+(p.who||[]).join(', ')+' to “'+p.title+'” (no login last time).'));
+  if((x.deletedSince||[]).length)lines.push('Not brought back — deleted since the seed made '+((x.deletedSince.length===1)?'it':'them')
+    +': '+x.deletedSince.join('; ')+'.');
+  if((x.skippedUsers||[]).length)lines.push('No login yet for '+x.skippedUsers.join(', ')
+    +' — left off. Once they can sign in, run it again: it adds them to the milestones they were left off, and nothing else changes.');
+  if((x.skippedItems||[]).length)lines.push('Skipped '+n(x.skippedItems.length,'milestone')
+    +' whose only person has no login: '+x.skippedItems.join('; ')+'.');
+  return lines.join('\n');
+}
+
+window.tbRunSeed=async function(dry){
+  if(!_tbIsBoardOwner()||_tbSeedState.busy)return;
+  if(!dry&&typeof confirm==='function'&&!confirm('Run the Winter Drop 2027 seed now?\n\n'
+    +'It is safe to run again: a milestone already on the board is not touched, '
+    +'and one that was deleted is not brought back.'))return;
+  _tbSeedState={busy:true,result:'',error:'',dry:!!dry};
+  _tbRepaint();
+  try{
+    const u=(typeof auth!=='undefined'&&auth&&auth.currentUser)||null;
+    if(!u||typeof u.getIdToken!=='function')throw new Error('You are not signed in — sign in again and retry.');
+    const idToken=await u.getIdToken();
+    const r=await fetch('/.netlify/functions/board-seed',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:idToken,dryRun:!!dry})});
+    let body={};
+    try{ body=await r.json(); }catch(e){}
+    if(!r.ok){
+      if(r.status===404)throw new Error('The seed function is not on this site yet — it ships with this build; if you are on a preview, deploy first.');
+      throw new Error((body&&body.error)||('The seed answered HTTP '+r.status+'.'));
+    }
+    _tbSeedState={busy:false,result:tbSeedSummary(body.report,!!dry),error:'',dry:!!dry};
+    if(!dry){
+      // The live listeners carry the items in on their own; the profile
+      // rows the seed wrote are a directory read, so ask for it again.
+      if(typeof loadProfiles==='function')await loadProfiles(true);
+      await loadTbData(true);
+    }
+  }catch(e){
+    _tbSeedState={busy:false,result:'',error:String((e&&e.message)||e),dry:!!dry};
+  }
+  // The run can take a while and the owner may have closed Settings and
+  // gone to another page meanwhile; repainting then would put the Board
+  // over that page (review of 9e3b521). The result is kept either way and
+  // shows next time Settings opens.
+  if(_tbOnBoardPage())_tbRepaint();
+};
+
+// ══ SESSION 2 — P2: THE ADMIN SCREEN (markers + pin) ════════════════
+// Board owners only, inside Board Settings. Two things only an owner
+// should decide: the drop's launch MARKERS the calendar and the date
+// picker draw (board_config/markers, owner-written by firestore.rules),
+// and which items are PINNED to the Deadlines card beside the gates.
+const TB_MARKERS_MAX=12;
+/** The markers as they will be saved, and what is wrong with the rest.
+ *  A row with neither a label nor a date is an empty row and is dropped
+ *  quietly; a row with one but not the other is an ERROR, never guessed.
+ *  Sorted by date, twins removed. Pure. */
+function tbMarkersClean(rows){
+  const out=[],errors=[],seen={};
+  (rows||[]).forEach(function(r,i){
+    const label=String((r&&r.label)||'').trim().replace(/\s+/g,' ');
+    const date=String((r&&r.date)||'').trim();
+    if(!label&&!date)return;
+    if(!label){errors.push('Marker '+(i+1)+' has a date but no name.');return;}
+    if(!_tbSaneDay(date)){errors.push('“'+label.slice(0,40)+'” needs a date.');return;}
+    if(label.length>40){errors.push('“'+label.slice(0,40)+'…” is longer than 40 characters.');return;}
+    const k=label.toLowerCase()+'|'+date;
+    if(seen[k])return;
+    seen[k]=1;out.push({label:label,date:date});
+  });
+  if(out.length>TB_MARKERS_MAX)errors.push('At most '+TB_MARKERS_MAX+' markers — the calendar has room for no more.');
+  out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.label<b.label?-1:1));
+  return{markers:out,errors:errors};
+}
+/** May this be pinned to Deadlines? The card lists SHARED items with a
+ *  DATE, so pinning anything else would be a pin nobody sees. Pure. */
+function tbCanPin(item,isOwnerRole){
+  if(!isOwnerRole)return{ok:false,why:'Only a Board owner can pin to Deadlines'};
+  if(!item||item.status==='done')return{ok:false,why:'A done item is not a deadline'};
+  if(item.visibility!=='shared')return{ok:false,why:'Only a shared item can sit in Deadlines'};
+  if(!item.date)return{ok:false,why:'Give it a date first — Deadlines are dated'};
+  return{ok:true,why:''};
+}
+let _tbMarkerDraft=null;      // the editor's rows while Settings is open
+function _tbMarkerRows(){
+  if(_tbMarkerDraft)return _tbMarkerDraft;
+  return((tbConfig&&tbConfig.markers)||[]).map(m=>({label:String(m.label||''),date:String(m.date||'')}));
+}
+function _tbEnsureMarkerDraft(){ if(!_tbMarkerDraft)_tbMarkerDraft=_tbMarkerRows(); return _tbMarkerDraft; }
+// Typing does not repaint (the caret would be lost); adding and removing
+// a row does.
+window.tbMarkerInput=function(i,field,v){
+  if(!_tbIsBoardOwner())return;
+  const d=_tbEnsureMarkerDraft();
+  if(d[i]&&(field==='label'||field==='date'))d[i][field]=String(v==null?'':v);
+};
+window.tbMarkerAdd=function(){
+  if(!_tbIsBoardOwner())return;
+  _tbEnsureMarkerDraft().push({label:'',date:''});
+  _tbRepaint();
+};
+window.tbMarkerRemove=function(i){
+  if(!_tbIsBoardOwner())return;
+  const d=_tbEnsureMarkerDraft();
+  if(d[i]){ d.splice(i,1); _tbRepaint(); }
+};
+window.tbMarkerSave=async function(){
+  if(!_tbIsBoardOwner())return;
+  const c=tbMarkersClean(_tbMarkerRows());
+  if(c.errors.length){ _tbToast(c.errors[0]); return; }
+  const ok=await _tbTry(async()=>{
+    await setDoc(doc(db,'board_config','markers'),{markers:c.markers,updatedAt:_tbNow(),updatedBy:_tbMe()},{merge:true});
+  },'save the markers');
+  if(!ok)return;
+  tbConfig=Object.assign({},tbConfig||{},{markers:c.markers});
+  _tbMarkerDraft=null;
+  _tbToast(c.markers.length?'Markers saved — the calendar shows them now.':'Markers cleared.');
+  _tbRepaint();
+};
+window.tbTogglePin=async function(id){
+  const it=tbItems.filter(i=>i.id===id)[0];
+  if(!it)return;
+  const can=tbCanPin(it,_tbIsBoardOwner());
+  // Unpinning is always allowed to an owner, even for something that no
+  // longer qualifies -- that is exactly when it wants taking off.
+  if(!it.pinned&&!can.ok){ _tbToast(can.why); return; }
+  if(!_tbIsBoardOwner()){ _tbToast('Only a Board owner can pin to Deadlines'); return; }
+  const plan=tbItemPatch(it,{pinned:!it.pinned},_tbMe(),_tbNow());
+  await _tbTry(async()=>{
+    await _tbCommit(it.id,plan.data,plan.activity);
+    _tbApplyLocal(it.id,plan.data);
+    _tbRepaint();
+  },it.pinned?'unpin that':'pin that');
+};
+function _tbAdminSections(){
+  const rows=_tbMarkerRows();
+  const pinned=tbItems.filter(i=>i.pinned===true).sort(_tbByDate);
+  return'<div class="tb-setsec">'
+      +'<div class="tb-setsech">Launch markers</div>'
+      +'<div class="tb-hint">The days the calendar and the date picker flag for everyone. Up to '+TB_MARKERS_MAX+'.</div>'
+      +'<div class="tb-mkrows">'+rows.map(function(r,i){
+        return'<div class="tb-mkrow">'
+          +'<input class="tb-mkname" id="tb-mk-l'+i+'" maxlength="40" placeholder="Name" aria-label="Marker name"'
+            +' value="'+_tbEsc(r.label)+'" oninput="window.tbMarkerInput('+i+',\'label\',this.value)">'
+          +'<input class="tb-mkdate" type="date" data-tb-fp id="tb-mk-d'+i+'" aria-label="Marker date"'
+            +' value="'+_tbEsc(r.date)+'" onchange="window.tbMarkerInput('+i+',\'date\',this.value)">'
+          +'<button class="tb-x" title="Remove marker" aria-label="Remove marker" onclick="window.tbMarkerRemove('+i+')">'+_tbIcon('x','sm')+'</button>'
+        +'</div>';
+      }).join('')+'</div>'
+      +(rows.length?'':'<div class="tb-hint">No markers yet.</div>')
+      +'<div class="tb-setbtns">'
+        +'<button class="btn-outline" onclick="window.tbMarkerAdd()">Add Marker</button>'
+        +'<button class="btn-primary" onclick="window.tbMarkerSave()">Save Markers</button>'
+      +'</div>'
+    +'</div>'
+    +'<div class="tb-setsec">'
+      +'<div class="tb-setsech">Pinned to Deadlines</div>'
+      +'<div class="tb-hint">Deadlines shows every shared gate in the next two weeks. A pin keeps something else there too. Pin an item from its pane.</div>'
+      +(pinned.length?pinned.map(function(i){
+          return'<div class="tb-pinrow">'+_tbSlot(i.title||'untitled','tb-pintitle')
+            +'<span class="tb-pindate">'+_tbEsc(i.date?_tbCap(tbDayLabel(i.date,_tbToday())):'no date')+'</span>'
+            +'<button class="btn-outline tb-unpin" onclick="window.tbTogglePin(\''+_tbJs(i.id)+'\')">Unpin</button></div>';
+        }).join(''):'<div class="tb-hint">Nothing pinned.</div>')
+    +'</div>';
+}
+
+function _tbSettingsOverlay(){
+  if(!_tbSettingsOpen||!_tbIsBoardOwner())return'';
+  const st=_tbSeedState;
+  return'<div class="tb-help" onclick="window.tbToggleSettings()">'
+    +'<div class="tb-helpcard tb-setcard" onclick="event.stopPropagation()">'
+      +'<div class="tb-dsech">Board Settings</div>'
+      +'<div class="tb-setsec">'
+        +'<div class="tb-setsech">Winter Drop 2027</div>'
+        +'<div class="tb-hint">Writes the drop list, its 42 milestones, the launch markers, and a profile row '
+          +'for each Board person. Safe to run again: a milestone already on the board is not touched, '
+          +'one that was deleted is not brought back, and the list and markers keep any changes.</div>'
+        +'<div class="tb-setbtns">'
+          +'<button class="btn-outline" id="tb-seed-preview"'+(st.busy?' disabled':'')
+            +' onclick="window.tbRunSeed(true)">Preview</button>'
+          +'<button class="btn-primary" id="tb-seed-run"'+(st.busy?' disabled':'')
+            +' onclick="window.tbRunSeed(false)">'+(st.busy?'Working…':'Run seed')+'</button>'
+        +'</div>'
+        +(st.result?_tbSlot(st.result,'tb-setresult','div'):'')
+        +(st.error?_tbSlot(st.error,'tb-setresult tb-seterr','div'):'')
+      +'</div>'
+      +_tbAdminSections()
+      +'<button class="btn-outline" onclick="window.tbToggleSettings()">Close</button>'
     +'</div></div>';
 }
 
@@ -3042,8 +4173,22 @@ async function _tbTouchSeen(){
   _tbSeenAt=now;
   // set-with-merge and carrying `uid`, for the reason the mention stats
   // do: a profile row that does not exist yet must not throw here.
+  //
+  // SILENT (review of b43a3db). setDoc is the app's wrapped one, and a write
+  // slower than 260ms raises the blocking "Saving…" overlay -- on every
+  // launch, for all five Board users, who land here; offline, until its 25s
+  // failsafe. This is ambient bookkeeping nobody asked to wait for, so it
+  // takes the documented opt-out. The opt-out is released after 2s even if
+  // the write never answers (offline it does not), or it would silence
+  // every other module's overlay for the rest of the session.
+  const hush=typeof _gvSilentSaveStart==='function'&&typeof _gvSilentSaveStop==='function';
+  let held=false;
+  const release=()=>{ if(held){ held=false; _gvSilentSaveStop(); } };
+  if(hush){ _gvSilentSaveStart(); held=true; }
+  const cap=hush?setTimeout(release,2000):null;
   try{ await setDoc(doc(db,'user_profiles',me),{uid:me,boardLastSeenAt:now},{merge:true}); }
   catch(e){ console.warn('[the board] last-seen write failed',e); }
+  finally{ if(cap)clearTimeout(cap); release(); }
   const p=_tbProfiles().filter(x=>x&&x.uid===me)[0];
   if(p)p.boardLastSeenAt=now;
 }
@@ -3118,18 +4263,35 @@ function tbMyLists(items,lists,uid){
 
 function _tbTeamCard(){
   const today=_tbToday();
-  const uids=_tbBoardUsernames().map(h=>tbHandleMap()[h]).filter(Boolean);
-  const rows=tbTeamToday(tbItems,uids,today,_tbProfiles());
-  if(!rows.length||!rows.some(r=>r.open))return'';
-  return _tbCard('team today',rows.map(function(r){
-    const u=tbUser(r.uid);
-    const bits=[r.open+' open']
-      .concat(r.due?[r.due+' due today']:[])
-      .concat(r.overdue?[r.overdue+' overdue']:[]);
+  const people=tbPeople();
+  if(!people.length)return'';
+  const stats={};
+  tbTeamToday(tbItems,people.filter(p=>p.uid).map(p=>p.uid),today,_tbProfiles())
+    .forEach(r=>{stats[r.uid]=r;});
+  // ALL FIVE, FROM DAY ONE, even with nothing open (brief s4): the card
+  // answers "who is on the board", and a person missing from it reads as
+  // a person missing from the drop.
+  return _tbCard('Team Today',people.map(function(p){
+    if(!p.uid){
+      return'<div class="tb-teamrow tb-teamrow-off">'
+        +'<span class="tb-av">'+_tbEsc(p.initial)+'</span>'
+        +_tbSlot(p.name,'tb-teamname')
+        +'<span class="tb-teamn" title="'+_tbEsc(tbPersonOffText(p))+'">'
+          +(p.reason==='unread'?'not loaded':p.reason==='ambiguous'?'check profile':'not set up yet')+'</span>'
+      +'</div>';
+    }
+    const r=stats[p.uid]||{open:0,due:0,overdue:0,seenToday:null};
+    const u=tbUser(p.uid);
+    // Only the OVERDUE count is red (spec s10: the one red in the product
+    // is the overdue count) -- the whole line used to turn red with it,
+    // which made "3 open" look like an alarm (seen on the P1.5 screenshots).
+    const bits=[_tbEsc(r.open+' open')]
+      .concat(r.due?[_tbEsc(r.due+' due today')]:[])
+      .concat(r.overdue?['<span class="tb-teamover">'+_tbEsc(r.overdue+' overdue')+'</span>']:[]);
     return'<div class="tb-teamrow">'
       +'<span class="tb-av">'+_tbEsc(u.initial)+'</span>'
       +_tbSlot(u.name,'tb-teamname')
-      +'<span class="tb-teamn'+(r.overdue?' over':'')+'">'+_tbEsc(bits.join(' · '))+'</span>'
+      +'<span class="tb-teamn">'+bits.join(' · ')+'</span>'
       +(r.seenToday===false?'<span class="tb-teamdot" title="has not opened the board today"></span>':'')
     +'</div>';
   }));
@@ -3139,7 +4301,7 @@ function _tbActivityCard(){
   const today=_tbToday();
   const rows=tbRecentActivity(tbItems,15);
   if(!rows.length)return'';
-  return _tbCard('activity',rows.map(function(r){
+  return _tbCard('Activity',rows.map(function(r){
     // tbActivityLine is the ONE definition of how a log entry reads, so
     // the card and the drawer can never word the same event differently.
     return'<div class="tb-act">'
@@ -3148,20 +4310,6 @@ function _tbActivityCard(){
   }),{cls:'tb-actcard'});
 }
 
-function _tbListsCard(){
-  const rows=tbMyLists(tbItems,tbLists,_tbMe());
-  if(!rows.length||!rows.some(l=>l.open))return'';
-  // ONE CHIP PER ROW, not one joined string: _tbCard's count chip reads
-  // rows.length, so a single joined blob would have the card say "1"
-  // however many lists there are. The chips are inline-flex, so they
-  // still flow into a strip.
-  return _tbCard('my lists',rows.map(function(l){
-    return'<button class="tb-listchip" onclick="window.tbGoList(\''+_tbEsc(l.id)+'\')">'
-      +'<span class="tb-dot tb-c-'+_tbEsc(TB_COLORS[l.color]?l.color:'slate')+'"></span>'
-      +_tbSlot(l.title,'tb-chipname')
-      +'<span class="tb-listn">'+l.open+'</span></button>';
-  }),{cls:'tb-chipcard'});
-}
 window.tbGoList=function(id){
   _tbListId=id;
   if(typeof showPage==='function')showPage('tb-lists'); else window.showPage('tb-lists');
@@ -3183,15 +4331,15 @@ function _tbTray(){
   const rows=tbUnscheduled(tbItems,Object.assign({uid:me},_tbCalFilters));
   return'<div class="tb-tray'+(_tbTrayOpen?' open':'')+'">'
     +'<button class="tb-trayhead" onclick="window.tbTrayToggle()">'
-      +'unscheduled<span class="tb-count">'+rows.length+'</span>'
+      +'Unscheduled<span class="tb-count">'+rows.length+'</span>'
       +'<span class="tb-traychev">'+(_tbTrayOpen?'&rsaquo;':'&lsaquo;')+'</span></button>'
     +(_tbTrayOpen
       ?'<div class="tb-traybody">'
         +(rows.length
           ?rows.map(i=>_tbPill(i,_tbToday())).join('')
-          :'<div class="tb-hint">nothing without a date</div>')
+          :'<div class="tb-hint">Nothing without a date</div>')
         +'<div class="tb-hint tb-trayhint">'
-        +(_tbIsPhone()?'hold a pill to give it a date':'drag one onto a day')+'</div>'
+        +(_tbIsPhone()?'Hold a pill to give it a date.':'Drag one onto a day.')+'</div>'
       +'</div>'
       :'')
   +'</div>';
@@ -3206,12 +4354,12 @@ let _tbCalRows=false;
 window.tbCalRows=function(v){ _tbCalRows=!!v; _tbCalSavePrefs(); _tbRepaint(); };
 
 function _tbPersonWeek(days,today){
-  const uids=_tbBoardUsernames().map(h=>tbHandleMap()[h]).filter(Boolean);
+  const uids=tbPeople().map(p=>p.uid).filter(Boolean);
   const me=_tbMe();
   const head='<div class="tb-prow tb-prowhead"><div class="tb-pname"></div>'
     +days.map(function(d){
       return'<div class="tb-pday'+(d===today?' today':'')+'">'
-        +_tbEsc(TB_DOW_LABELS[(_tbDow(d)+6)%7])+' '+Number(String(d).slice(8))+'</div>';
+        +_tbEsc(_tbCap(TB_DOW_LABELS[(_tbDow(d)+6)%7]))+' '+Number(String(d).slice(8))+'</div>';
     }).join('')+'</div>';
   return'<div class="tb-personweek">'+head+uids.map(function(uid){
     // Each person's row reads the SAME filter the grid does, with the
@@ -3240,7 +4388,7 @@ function _tbPersonWeek(days,today){
 let _tbMoveId=null;
 window.tbOpenMove=function(id){
   const it=tbItems.filter(x=>x.id===id)[0];
-  if(!it)return;
+  if(!it||_tbNotOnIt(it))return;
   if(!tbCanMoveDate(it,_tbMe(),_tbIsBoardOwner())){
     _tbToast('locked by '+tbUser(it.lockedBy).name);
     return;
@@ -3261,19 +4409,19 @@ function _tbMoveSheet(){
   const it=tbItems.filter(x=>x.id===_tbMoveId)[0];
   if(!it)return'';
   const today=_tbToday();
-  const quick=(d,l)=>'<button class="tb-calbtn" onclick="window.tbMoveItem(\''+_tbEsc(it.id)
-    +'\',\''+_tbEsc(d)+'\');window.tbCloseMove()">'+_tbEsc(l)+'</button>';
+  const quick=(d,l)=>'<button class="tb-calbtn" onclick="window.tbMoveItem(\''+_tbJs(it.id)
+    +'\',\''+_tbJs(d)+'\');window.tbCloseMove()">'+_tbEsc(l)+'</button>';
   return'<div class="tb-sheet" onclick="window.tbCloseMove()">'
     +'<div class="tb-sheetcard" onclick="event.stopPropagation()">'
-      +'<div class="tb-dsech">move to</div>'
+      +'<div class="tb-dsech">Move To</div>'
       +_tbSlot(it.title||'untitled','tb-sheettitle')
       +'<div class="tb-sheetquick">'+quick(today,'today')
         +quick(_tbDayAdd(today,1),'tomorrow')
         +quick(_tbDayAdd(today,7),'next week')+'</div>'
-      +'<input type="date" id="tb-move-date" value="'+_tbEsc(it.date||today)+'">'
+      +'<input type="date" data-tb-fp id="tb-move-date" value="'+_tbEsc(it.date||today)+'">'
       +'<div class="tb-sheetfoot">'
-        +'<button class="btn-outline" onclick="window.tbCloseMove()">cancel</button>'
-        +'<button class="btn-primary" onclick="window.tbMoveTo()">move</button>'
+        +'<button class="btn-outline" onclick="window.tbCloseMove()">Cancel</button>'
+        +'<button class="btn-primary" onclick="window.tbMoveTo()">Move</button>'
       +'</div>'
     +'</div></div>';
 }
@@ -3285,6 +4433,69 @@ function _tbMoveSheet(){
   if(typeof document==='undefined'||!document.addEventListener)return;
   document.addEventListener('keydown',_tbOnKeydown);
 })();
+
+// ── Date pickers (session 2, P1.7) ────────────────────────────────────
+// Every date the Board asks for is a native <input type="date"> in the
+// markup -- its id, value and onchange are what everything reads -- and
+// after each paint it is ENHANCED with the vendored flatpickr: a calendar
+// that starts on Monday and SHOWS THE DROP'S MARKERS (launch, founders
+// out) on their days, restyled to the tokens (P1.1). flatpickr fires a real
+// `change` on the original input, so no handler had to learn about it.
+// On a phone flatpickr hands over to the native picker, which is the right
+// control there. Without flatpickr (an old cached shell, the node harness)
+// the native input simply stays -- nothing depends on the enhancement.
+let _tbFp=[];
+/** Is any Board date picker open right now? */
+function _tbFpOpen(){ return _tbFp.some(f=>f&&f.isOpen); }
+/** Destroy pickers whose input left the page (or all of them). A repaint
+ *  replaces the DOM, and a picker whose calendar still hangs off <body> is
+ *  a leak -- one per repaint, for as long as the tab is open. */
+function _tbFpPrune(all){
+  _tbFp=_tbFp.filter(function(f){
+    const gone=all||!f||!f.input||!(typeof document!=='undefined'&&document.contains&&document.contains(f.input));
+    if(gone&&f&&f.destroy){ try{ f.destroy(); }catch(e){} }
+    return!gone;
+  });
+}
+/** The marker labels for one day in a picker, or null. Pure. */
+function tbFpDayMarks(day,marks){
+  const m=(marks||{})[day];
+  return(Array.isArray(m)&&m.length)?m.slice():null;
+}
+/** The options every Board picker uses. Pure but for the callback it
+ *  closes over. */
+function tbFpOptions(marks,cls){
+  return{
+    dateFormat:'Y-m-d',altInput:true,altFormat:'D j M Y',
+    altInputClass:String(cls||'').trim()+' tb-fpalt',
+    locale:{firstDayOfWeek:1},
+    onDayCreate:function(sel,str,fp,dayEl){
+      const d=(dayEl&&dayEl.dateObj)?_tbDay(dayEl.dateObj):'';
+      const m=tbFpDayMarks(d,marks);
+      if(m&&dayEl){
+        if(dayEl.classList)dayEl.classList.add('tb-fp-marker');
+        dayEl.title=m.join(' · ');
+      }
+    }
+  };
+}
+/** Enhance these inputs. A DISABLED one (a lock you cannot move) stays
+ *  native and disabled -- a picker would offer a date it cannot take. */
+function _tbPickersOn(els,marks){
+  if(typeof flatpickr!=='function')return 0;
+  let n=0;
+  Array.prototype.forEach.call(els||[],function(el){
+    if(!el||el.disabled||el._flatpickr)return;
+    try{ _tbFp.push(flatpickr(el,tbFpOptions(marks,el.className))); n++; }catch(e){}
+  });
+  return n;
+}
+function _tbPickers(root){
+  if(typeof flatpickr!=='function'||typeof document==='undefined')return;
+  const host=root||document;
+  if(!host.querySelectorAll)return;
+  _tbPickersOn(host.querySelectorAll('input[type="date"][data-tb-fp]'),tbMarkersByDay(tbConfig));
+}
 
 // ── Routing ───────────────────────────────────────────────────────────
 // ONE entry point for every tb-* page, so js/shared.js holds a single line
@@ -3299,7 +4510,15 @@ function tbRenderPage(id){
     m.innerHTML='<div class="empty">You do not have access to '+_tbEsc(TB_NAME)+'.</div>';
     return;
   }
+  const prev=_tbPage;
   _tbPage=TB_PAGES.indexOf(id)>-1?id:TB_HOME;
+  // The SAME page re-rendered from outside -- loadData's closing
+  // renderPage(currentPage), which lands seconds after a Board user arrives
+  // here -- used to rebuild everything at once, under a title being typed
+  // or between a press and its click (review of b43a3db). It now waits
+  // like a live update does. Navigating here from another page is never
+  // deferred: the old page must not stay on screen.
+  const again=tbLoaded&&prev===_tbPage&&!!(m.querySelector&&m.querySelector('.tb-wrap'));
   // Spec s5: written on Dashboard OPEN, throttled to once every ten
   // minutes -- it is what card 10's "has not opened the board today" dot
   // reads. Deliberately here and not in _tbDashboard: a render function
@@ -3318,6 +4537,7 @@ function tbRenderPage(id){
     loadTbData().then(()=>{ if(currentPage===_tbPage||String(currentPage||'').indexOf('tb-')===0)_tbRepaint(); });
     return;
   }
+  if(again){ _tbLiveRepaint(); return; }
   _tbRepaint();
 }
 
@@ -3329,10 +4549,16 @@ function _tbRepaint(reload){
   const m=document.getElementById('main-content');
   if(!m)return;
   if(reload&&!tbLoaded){ tbRenderPage(_tbPage); return; }
+  const ae=(typeof document!=='undefined'&&document.activeElement)||null;
+  if(ae&&ae.id==='tb-qa'&&_tbQa.open)_tbQaRefocus=true;
   _tbHydrateQueue=[];
+  _tbFpPrune(true);
   const body=_tbScreen(_tbPage);
-  m.innerHTML=_tbShell(_tbPage,body)+_tbDrawer()+_tbMoveSheet()+_tbHelpOverlay();
+  // The detail pane is the frame's THIRD column (P1.4), not an overlay
+  // appended after it -- so the list beside it stays on screen.
+  m.innerHTML=_tbShell(_tbPage,body,_tbDrawer())+_tbMoveSheet()+_tbHelpOverlay()+_tbSettingsOverlay();
   _tbHydrate();
+  _tbPickers(m);
   _tbPaintBadges();
   _tbPaintMentions();
   // The repaint rebuilds main-content wholesale, so a composer that had
@@ -3348,6 +4574,17 @@ function _tbRepaint(reload){
       if(q.setSelectionRange)try{q.setSelectionRange(n,n);}catch(e){}
     }
   }
+  if(_tbQaRefocus){
+    _tbQaRefocus=false;
+    const q=document.getElementById('tb-qa');
+    if(q&&q.focus){
+      q.focus();
+      // A rebuilt input puts the caret at 0, and the next keystrokes went
+      // in FRONT of what was there (review of 05431c2).
+      const n=String(q.value||'').length;
+      if(q.setSelectionRange)try{q.setSelectionRange(n,n);}catch(e){}
+    }
+  }
   if(_tbCompFocus){
     _tbCompFocus=false;
     const c=document.getElementById('tb-comp');
@@ -3359,25 +4596,110 @@ function _tbRepaint(reload){
   }
 }
 
-/** The rail + content frame every Board screen sits in. */
-function _tbShell(page,body){
-  const tabs=_TB_RAIL.map(t=>
-    '<button class="tb-railbtn'+(t.id===page?' on':'')+'" id="tb-rail-'+_tbEsc(t.id)+'"'
-    +' onclick="window.showPage(\''+_tbEsc(t.id)+'\')">'+_tbEsc(t.label)
-    // The second of the three surfaces. Filled by _tbPaintBadges, which
-    // the live listener calls, so it moves without a repaint.
-    +(t.id==='tb-inbox'?'<span class="tb-railn" id="tb-rail-n"></span>':'')
-    +'</button>'
-  ).join('');
-  return'<div class="tb-wrap">'
-    +'<div class="tb-rail">'+tabs
-      // Spec s10: ONE box. It lives in the rail so it is on every screen,
-      // and `/` focuses it from anywhere on the board.
-      +_tbSearchBox()
-      +'<button class="tb-helpbtn" title="keyboard shortcuts"'
-        +' onclick="window.tbToggleHelp()">?</button>'
+/** The rail's count pills (session 2, P1.2). Pure.
+ *  Dashboard = what needs you TODAY: overdue + due today, for you.
+ *  Calendar  = your open dated items in this Mon-Sun week.
+ *  The inbox count is NOT here: it is painted live by _tbPaintBadges from
+ *  the notification listener, so it moves without a repaint. */
+function tbRailCounts(items,uid,today){
+  const over=tbOverdue(items,uid,today).length;
+  const due=tbDueToday(items,uid,today).length;
+  const ws=tbWeekStart(today),we=ws?_tbDayAdd(ws,6):'';
+  const week=ws?(items||[]).filter(i=>i&&_tbOpen(i)&&_tbMine(i,uid)&&i.date&&i.date>=ws&&i.date<=we).length:0;
+  return{dash:over+due,over:over,due:due,week:week};
+}
+
+/** One rail entry. The label is ALWAYS in the markup (a tablet hides it
+ *  with CSS and keeps it as the title), so the rail reads the same to a
+ *  screen reader at every width. */
+function _tbRailBtn(o){
+  return'<button class="tb-railbtn'+(o.cls?' '+o.cls:'')+(o.on?' on':'')+'"'
+    +(o.id?' id="'+_tbEsc(o.id)+'"':'')
+    +(o.title?' title="'+_tbEsc(o.title)+'"':'')
+    +(o.on?' aria-current="page"':'')
+    +' onclick="'+o.onclick+'">'
+    +_tbIcon(o.icon)
+    +(o.labelHtml!=null?o.labelHtml:'<span class="tb-raillabel">'+_tbEsc(o.label)+'</span>')
+    +(o.pill||'')
+    +'</button>';
+}
+/** A count pill. Empty renders nothing visible (`:empty` hides it), so a
+ *  zero is said by saying nothing -- the Mood Boards rail rule. */
+function _tbRailPill(n,cls,title,id){
+  return'<span class="tb-railpill'+(cls?' '+cls:'')+'"'
+    +(id?' id="'+id+'"':'')
+    +(title&&n?' title="'+_tbEsc(title)+'"':'')+'>'+(n?_tbEsc(n>99?'99+':String(n)):'')+'</span>';
+}
+window.tbRailLists=function(){
+  // The Lists header always means the OVERVIEW; a list left open is the
+  // entry under it, not what the header should reopen.
+  _tbListId=null;
+  if(typeof showPage==='function')showPage('tb-lists'); else window.showPage('tb-lists');
+};
+
+/** The rail + content frame every Board screen sits in (session 2, P1.2).
+ *  Desktop (>=1024): a 240px rail -- icons, labels, count pills, a Lists
+ *  group with every list and its open count, "+ New list" and Settings at
+ *  the foot -- beside the content, which stops at 960px (the calendar
+ *  keeps the full width: it is a grid). Tablet (640-1023): the same rail,
+ *  56px and icon-only, the lists behind the Lists entry. Phone (<640): a
+ *  strip across the top, icon over label. The search box and the ? moved
+ *  out of the rail into a header row on every screen, so the rail is only
+ *  navigation. The third pane (the item detail) arrives with P1.4. */
+function _tbShell(page,body,pane){
+  const me=_tbMe(),today=_tbToday();
+  const c=tbLoaded?tbRailCounts(tbItems,me,today):{dash:0,over:0,due:0,week:0};
+  const listOpen=page==='tb-lists'&&!!_tbListId;
+  const go=id=>'window.showPage(\''+_tbJs(id)+'\')';
+  const byId={};_TB_RAIL.forEach(t=>{byId[t.id]=t;});
+  const nav=t=>{
+    let pill='';
+    if(t.id==='tb-dash')pill=_tbRailPill(c.dash,c.over?'tb-pill-over':'',
+      [c.over?c.over+' overdue':'',c.due?c.due+' due today':''].filter(Boolean).join(' · '));
+    else if(t.id==='tb-calendar')pill=_tbRailPill(c.week,'',c.week+' on you this week');
+    // The live unread count: filled by _tbPaintBadges, the id is what the
+    // listener paints into. Keeps its old id and class so nothing that
+    // reads it moves.
+    else if(t.id==='tb-inbox')pill='<span class="tb-railpill tb-pill-unread tb-railn" id="tb-rail-n"></span>';
+    return _tbRailBtn({id:'tb-rail-'+t.id,on:t.id===page&&!listOpen,icon:t.icon,label:t.label,
+      title:t.label,pill:pill,onclick:t.id==='tb-lists'?'window.tbRailLists()':go(t.id)});
+  };
+  // Lists are drawn only once the board has loaded: a list title is user
+  // text and goes through the hydrate queue, which the loading paint
+  // never runs.
+  const lists=tbLoaded?tbMyLists(tbItems,tbLists,me):[];
+  const listRows=lists.map(l=>_tbRailBtn({cls:'tb-raillist',on:listOpen&&_tbListId===l.id,
+    icon:l.kind==='shared'?'users':'list',labelHtml:_tbSlot(l.title,'tb-raillabel'),
+    pill:_tbRailPill(l.open,'',l.open+' open'),
+    onclick:'window.tbGoList(\''+_tbJs(l.id)+'\')'})).join('');
+  const rail='<nav class="tb-rail" aria-label="'+_tbEsc(TB_NAME)+'">'
+    +'<div class="tb-railnav">'+['tb-dash','tb-calendar','tb-inbox'].map(id=>nav(byId[id])).join('')+'</div>'
+    +'<div class="tb-railgroup">'+nav(byId['tb-lists'])
+      +(listRows?'<div class="tb-raillists">'+listRows+'</div>':'')
     +'</div>'
-    +'<div class="tb-main">'+body+'</div>'
+    +'<div class="tb-railfoot">'
+      // Private by default: a list made from the rail is yours until you
+      // share it. Team lists are made from the Lists screen's Team "+ New",
+      // so nothing becomes visible to four other people by accident.
+      +_tbRailBtn({id:'tb-rail-newlist',cls:'tb-railnew',icon:'plus',label:'New list',
+        title:'New private list',onclick:'window.tbNewList(\'private\')'})
+      // Board owners only: the seed and, later, the markers.
+      +(_tbIsBoardOwner()?_tbRailBtn({id:'tb-settings-btn',cls:'tb-setbtn',icon:'settings',
+        label:'Settings',title:'Board Settings',onclick:'window.tbToggleSettings()'}):'')
+    +'</div>'
+  +'</nav>';
+  const title=String(_tbQuery||'').trim()?'Search':((byId[page]||byId[TB_HOME]).label);
+  // Spec s10: ONE search box, on every screen; `/` focuses it from anywhere.
+  const head='<div class="tb-head">'
+    +'<h1 class="tb-h1">'+_tbEsc(title)+'</h1>'
+    +_tbSearchBox()
+    +'<button class="tb-helpbtn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts"'
+      +' onclick="window.tbToggleHelp()">'+_tbIcon('circle-help')+'</button>'
+  +'</div>';
+  return'<div class="tb-wrap tb-page-'+_tbEsc(String(page||'').replace(/^tb-/,''))+(pane?' has-pane':'')+'">'
+    +rail
+    +'<div class="tb-main">'+head+body+'</div>'
+    +(pane||'')
     +'</div>';
 }
 

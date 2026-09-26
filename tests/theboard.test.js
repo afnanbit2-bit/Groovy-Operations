@@ -185,7 +185,10 @@ module.exports=async function(){
     a.run("tbRenderPage('tb-dash')");
     const html=a.el('main-content').innerHTML;
     s.ok('the rail renders',/class="tb-rail"/.test(html));
-    s.ok('with all four screens',/tb-calendar[\s\S]*tb-lists[\s\S]*tb-inbox/.test(html));
+    // Session 2, P1.2: the rail is nav (Dashboard, Calendar, Inbox) then
+    // the Lists group, so the order is no longer the array's.
+    s.ok('with all four screens',['tb-dash','tb-calendar','tb-lists','tb-inbox']
+      .every(id=>html.indexOf('id="tb-rail-'+id+'"')>-1));
     s.ok('the current one marked',/tb-railbtn on/.test(html));
     // A deep link is not a way in: the module re-checks rather than
     // trusting that the nav hid the tab.
@@ -259,12 +262,22 @@ module.exports=async function(){
     s.ok('board_items has its own block',items.length>0);
     // The lock IS the product. A member may comment on a locked item and
     // may not move it; that has to hold on the server, not in the UI.
-    s.ok('an update on a locked item must leave date and dueAt alone…',
-      /resource\.data\.get\('locked', false\) != true[\s\S]*?date[\s\S]*?dueAt/.test(items));
+    //
+    // THESE ARE TEXT CHECKS, AND TEXT CHECKS HAD NO TEETH HERE (26 Sept
+    // 2026). The old rule passed "lockedBy cannot be re-pointed" while
+    // letting a member re-point it at THEMSELVES and then move the date --
+    // found only by running it in the emulator. The proof is
+    // tests/rules-emulator-board.js (hand-run; CI installs nothing). What
+    // these hold is that the update rule still goes through the helper
+    // that proof exercised, and the helper still names every lock field.
+    const lockFn=(/function tbLockOk\(\) \{[\s\S]*?\n    \}/.exec(rules)||[''])[0];
+    s.ok('the item update rule goes through tbLockOk()',/allow update: if isBoardUser\(\)[\s\S]*?&& tbLockOk\(\);/.test(items));
+    s.ok('on a locked item, date, dueAt, locked and lockedBy are all held',
+      /affectedKeys\(\)\.hasAny\(\['date','dueAt','locked','lockedBy'\]\)/.test(lockFn));
     s.ok('…unless you are the locker or a board owner',
-      /request\.auth\.uid == resource\.data\.get\('lockedBy', ''\)[\s\S]*?isBoardOwner\(\)/.test(items));
-    s.ok('and lockedBy cannot be re-pointed to walk around it',
-      /request\.resource\.data\.get\('lockedBy', null\) == resource\.data\.get\('lockedBy', null\)/.test(items));
+      /isBoardOwner\(\)/.test(lockFn)&&/request\.auth\.uid == r\.get\('lockedBy', ''\)/.test(lockFn));
+    s.ok('and locking an unlocked item names the caller, nobody else',
+      /d\.get\('lockedBy', null\) == request\.auth\.uid/.test(lockFn));
     s.ok('a private item is unreadable by anyone but its owner',
       /resource\.data\.visibility == 'shared' \|\| request\.auth\.uid == resource\.data\.ownerUid/.test(items));
     s.ok('the creator owns what they create and is on it',
@@ -303,7 +316,11 @@ module.exports=async function(){
     // follows that convention rather than inventing a second word for it.
     // Phase 2 used it too — at js/theboard.js's `(o.red?' red':'')`, which
     // this scan could not see because the token is built by concatenation.
-    const REUSED=['btn-outline','btn-primary','empty','card','section-title','red'];
+    // `on` is this file's selected-state modifier (.tb-seg.on, .tb-railbtn.on,
+    // .tb-person.on, .tb-check.on) — invisible to this scan until session 2,
+    // because every use was concatenated; the composer's "you" chip is the
+    // first literal one.
+    const REUSED=['btn-outline','btn-primary','empty','card','section-title','red','on'];
     const tokens=new Set();
     (src.match(/class="([^"]*)"/g)||[]).forEach(c=>{
       c.slice(7,-1).split(/[ ]+/).forEach(t=>{ if(t&&/^[a-z][a-z0-9-]*$/.test(t))tokens.add(t); });
@@ -560,9 +577,9 @@ module.exports=async function(){
     s.ok('and it stops the click reaching the row',/event\.stopPropagation\(\);window\.tbToggleDone/.test(g));
     s.ok('a colour dot',/tb-dot tb-c-[a-z]+/.test(g));
     s.ok('a lock glyph when locked',/tb-lock/.test(g));
-    s.ok('step progress',/tb-steps">1\/2</.test(g));
-    s.ok('a comment count',/tb-cc">3</.test(g));
-    s.ok('the date',/tb-date">oct 25</.test(g));
+    s.ok('step progress',/class="tb-steps"[^>]*>[\s\S]*?1\/2<\/span>/.test(g));
+    s.ok('a comment count',/class="tb-cc"[^>]*>[\s\S]*?3<\/span>/.test(g));
+    s.ok('the date, capitalised on the meta line',/class="tb-date">[\s\S]*?Oct 25<\/span>/.test(g));
     s.ok('a gate says so',/tb-kind-gate/.test(g));
     // Your own face on your own list is noise; only OTHERS get an avatar.
     s.eq('one avatar, not two',(g.match(/class="tb-av"/g)||[]).length,1);
@@ -570,18 +587,21 @@ module.exports=async function(){
     // Cards with nothing to show are HIDDEN, not rendered empty.
     a.run('tbItems=[]');
     const bare=a.run('_tbDashboard()');
-    s.ok('an empty board says so in one sentence',/nothing on the board today/.test(bare));
-    s.ok('and shows no empty cards',!/tb-cardh/.test(bare));
+    s.ok('an empty board says so in one sentence',/Nothing on The Board today/.test(bare));
+    // Session 2 (brief s4): Team today lists all five from day one, so the
+    // ONLY card an empty board carries is that one -- none of mine.
+    s.eq('and shows no empty cards of mine — only Team today',
+      (bare.match(/class="tb-cardh">([^<]*)/g)||[]).map(x=>x.replace(/.*>/,'')).join('|'),'Team Today');
     s.ok('the quick-add is still there',/id="tb-qa"/.test(bare));
     s.ok('and the countdown',/day[s]? to launch/.test(bare));
 
     // A REFUSED READ AND AN EMPTY BOARD MUST NEVER LOOK THE SAME.
     a.run('_tbLoadErrors=["board_items"]');
     const err=a.run('_tbDashboard()');
-    s.ok('a failed read renders an error, not an empty board',/Could not read the board/.test(err));
+    s.ok('a failed read renders an error, not an empty board',/Could not read The Board/.test(err));
     s.ok('with a retry',/tbRetry/.test(err));
     s.ok('and names the likely cause',/firestore\.rules/.test(err));
-    s.ok('it does NOT claim the board is empty',!/nothing on the board today/.test(err));
+    s.ok('it does NOT claim the board is empty',!/Nothing on The Board today/.test(err));
     a.run('_tbLoadErrors=["board_config"]');
     s.ok('a partial failure warns but still renders',/tb-warn/.test(a.run('_tbDashboard()')));
     a.run('_tbLoadErrors=[]');
@@ -600,12 +620,12 @@ module.exports=async function(){
     a.run('_tbOpenItemId="i1"');
     const d=a.run('_tbDrawer()');
     s.ok('the date input is DISABLED for someone who cannot move it',/id="tb-d-date"[^>]*disabled/.test(d));
-    s.ok('and it says who holds the lock',/locked by/.test(d));
+    s.ok('and it says who holds the lock',/tb-lockwho">Locked by [^<]+</.test(d));
     s.ok('the lock button is disabled too',/tb-lockbtn[^>]*disabled/.test(d));
     // "was Oct 17" — the whole point of datePlanned never changing.
-    s.ok('a moved date shows what it was',/tb-was">was oct 17</.test(d));
+    s.ok('a moved date shows what it was',/tb-was">was Oct 17</.test(d));
     s.ok('steps, notes and the footer are all there',
-      /tb-step-new/.test(d)&&/tb-d-notes/.test(d)&&/add to my day/.test(d)&&/hand over/.test(d));
+      /tb-step-new/.test(d)&&/tb-d-notes/.test(d)&&/Add to My Day/.test(d)&&/Hand over/.test(d));
     s.ok('delete is offered to the owner only',!/tbDeleteItem/.test(d));
     s.eq('and a board owner is not fooled by any of that',
       a.run('tbCanMoveDate(tbItems[0],"u-ammar",true)'),true);
@@ -619,7 +639,7 @@ module.exports=async function(){
     // All steps done is a HINT, never an auto-complete.
     a.run('tbItems[0].steps=[{id:"a",title:"x",done:true}]');
     s.ok('all steps done offers a hint, not a completion',
-      /all steps done/.test(a.run('_tbDrawer()')));
+      /All steps done/.test(a.run('_tbDrawer()')));
     s.eq('and the item is still open',a.run('tbItems[0].status'),'open');
   }
 
@@ -716,16 +736,16 @@ module.exports=async function(){
     const scr=a.run('_tbListsScreen()');
     // Two always-visible sections, never a tab switcher — a tab hides half
     // of what you own behind a click (the rule Notes already follows).
-    s.ok('team and private are both on screen at once',/team/.test(scr)&&/private/.test(scr));
+    s.ok('Team and Private are both on screen at once',/>Team</.test(scr)&&/>Private</.test(scr));
     s.ok('each with its own new button',(scr.match(/tbNewList/g)||[]).length===2);
     s.ok('and an open count that excludes done',/tb-listn">1</.test(scr));
 
     a.run('_tbListId="l1"');
     const det=a.run('_tbListsScreen()');
-    s.ok('the detail splits open from done',/open/.test(det)&&/done/.test(det));
+    s.ok('the detail splits Open from Completed',/>Open</.test(det)&&/Completed<span class="tb-count">1</.test(det));
     s.ok('back goes one level, to lists',/tbCloseList/.test(det));
-    s.ok('it says whether the list is team or private',/tb-badge">team</.test(det));
-    s.ok('and that I administer it',/tb-badge">admin</.test(det));
+    s.ok('it says whether the list is team or private',/tb-badge">Team</.test(det));
+    s.ok('and that I administer it',/tb-badge">Admin</.test(det));
     // An empty list must still say so rather than rendering nothing.
     a.run('tbItems=[]');
     s.ok('an empty list is explained, not blank',/nothing open in this list/.test(a.run('_tbListsScreen()')));
@@ -748,10 +768,10 @@ module.exports=async function(){
       ===seed.seedId('edits','ALL ASSETS IN — including website UI assets'));
     s.eq('derived from lane and title',seed.seedId('walika','Shade list locked'),'tb_walika_shade-list-locked');
 
-    // A RE-RUN MUST NOT UNDO REAL WORK. Anything someone has changed since
-    // the first run is written once, on create, and never touched again.
-    ['date','status','steps','notes','myDay','assigneeUids','locked','dateHistory']
-      .forEach(f=>s.ok('a re-run leaves '+f+' alone',seed.KEEP_FIELDS.indexOf(f)>-1));
+    // A RE-RUN LEAVES WHAT EXISTS ALONE. tests/board-seed.test.js drives
+    // buildSeedPlan against items people have changed and requires that
+    // none of them is written; the record is what tells deleted from new.
+    s.eq('the seed keeps its record beside the markers',seed.RECORD_PATH,'board_config/seed');
 
     // The two undated gates are deliberate: they land in Ammar's and
     // Afnan's "needs a date" card on day one.
@@ -772,11 +792,17 @@ module.exports=async function(){
       /require\.main!==module/.test(read('scripts/seed-board.js')));
     // Firestore caps a batch at 500 writes; 42 items plus a list and the
     // config fit in one, but the loop has to hold if the list grows.
-    const src=read('scripts/seed-board.js');
+    // Session 2: the body moved to scripts/board-seed-plan.js, shared
+    // with the Run seed button's Netlify function.
+    const src=read('scripts/board-seed-plan.js');
     const chunk=Number((/i\+=(\d+)\)\s*\{[\s\S]{0,40}?db\.batch/.exec(src)||[])[1]||0);
     s.ok('it writes in batches within the Firestore limit',chunk>0&&chunk<=500,chunk);
-    s.ok('a dry run is the default; writing needs --write',
-      /--write/.test(src)&&/Dry run\. Nothing was written/.test(src));
+    // REVERSED in session 2 (Ammar's decision 2): the script WRITES by
+    // default and --dry-run previews. A dry-run default is one of the ways
+    // the board went live with nothing on it.
+    const cli=read('scripts/seed-board.js');
+    s.ok('the script writes by default; --dry-run previews',
+      /'--dry-run'/.test(cli)&&!/'--write'/.test(cli));
   }
 
   // ══ PHASE 3 — THE CALENDAR ══════════════════════════════════════════
@@ -911,11 +937,18 @@ module.exports=async function(){
     s.ok('and says nothing about it',plan('u-ammar',false,'2026-10-25').reason==='');
     s.ok('a date that is not a date is refused',plan('u-ammar',true,'not-a-day').refused===true);
 
-    // An UNLOCKED item is anyone's to move, which is the normal case.
+    // An UNLOCKED item moves for anyone ON it, which is the normal case.
+    // It said "anyone's" and used Daniyal, who is not on it -- a move the
+    // rules refuse (review of 2ab0a8f).
     const open=J({id:'i2',title:'x',date:'2026-10-05',datePlanned:'2026-10-05',
-      ownerUid:'u-ammar',assigneeUids:['u-ammar'],status:'open',visibility:'shared',dateHistory:[],steps:[]});
-    s.ok('an unlocked item moves for a member',
-      !a.run('tbMovePlan('+open+',"2026-10-06","u-dani",false,'+NOW+')').refused);
+      ownerUid:'u-ammar',assigneeUids:['u-ammar','u-must'],status:'open',visibility:'shared',dateHistory:[],steps:[]});
+    s.ok('an unlocked item moves for someone on it',
+      !a.run('tbMovePlan('+open+',"2026-10-06","u-must",false,'+NOW+')').refused);
+    const notOn=a.run('tbMovePlan('+open+',"2026-10-06","u-dani",false,'+NOW+',[])');
+    s.ok('but not for someone who is not on it -- the rules refuse that',notOn.refused&&notOn.notOn===true);
+    s.eq('and it says why',notOn.reason,'only the people on it can move it');
+    s.ok('the admin of its list may',!a.run('tbMovePlan('+open.replace('"steps":[]','"steps":[],"listId":"L"')
+      +',"2026-10-06","u-dani",false,'+NOW+',[{id:"L",adminUid:"u-dani"}])').refused);
 
     s.eq('the keyboard nudges a day',a.run('tbNudgeTarget({date:"2026-10-25"},1)'),'2026-10-26');
     s.eq('and a week',a.run('tbNudgeTarget({date:"2026-10-25"},7)'),'2026-11-01');
@@ -1085,9 +1118,9 @@ module.exports=async function(){
     a.run('_tbCalAnchor="2026-10-15";_tbCalView="month"');
     const m=a.run('_tbCalendar()');
     s.ok('the month grid renders',/tb-monthgrid/.test(m));
-    s.ok('with a weekday header starting Monday',/tb-dow">mon</.test(m));
+    s.ok('with a weekday header starting Monday, Title Case',/tb-dow">Mon</.test(m));
     s.ok('every day is a drop target',/data-day="2026-10-30"/.test(m));
-    s.ok('the marker is drawn on its day',/tb-daymark">launch</.test(m));
+    s.ok('the marker is drawn on its day, as a flag chip',/class="tb-daymark"><svg[^>]*><use href="[^"]*#lucide-flag"><\/use><\/svg>launch</.test(m));
     s.ok('and its day is flagged',/class="tb-day[^"]*marked/.test(m));
     s.ok('a day offers a way to add on it',/tbCalAdd\('2026-10-30'\)/.test(m));
     s.ok('the view says what it is showing',/1 item shown/.test(m));
@@ -1100,7 +1133,7 @@ module.exports=async function(){
     // A refused read and an empty calendar must never look the same.
     a.run('_tbLoadErrors=["board_items"]');
     const err=a.run('_tbCalendar()');
-    s.ok('a failed read renders an error',/Could not read the board/.test(err));
+    s.ok('a failed read renders an error',/Could not read The Board/.test(err));
     s.ok('not an empty month',!/tb-monthgrid/.test(err));
     a.run('_tbLoadErrors=[]');
     // The view preference is per VIEWER, never on the board.
@@ -1111,6 +1144,1499 @@ module.exports=async function(){
     s.eq('month view steps a month',a.run('_tbCalAnchor').slice(0,7),'2026-11');
     a.run('_tbCalView="week";_tbCalAnchor="2026-10-15";window.tbCalStep(1)');
     s.eq('week view steps a week',a.run('_tbCalAnchor'),'2026-10-22');
+  }
+
+  // ══ SESSION 2 — P0.1: THE FREEZE ════════════════════════════════════
+  s.section('the calendar freeze: the filter and its handler are two names');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    // The pure filter still filters — it is what _tbCalendar calls.
+    // NOTE WHAT THIS CANNOT PROVE: in this harness `window` is a plain
+    // object, not the vm global, so a `window.tbCalFilter=` assignment
+    // would NOT replace the bare function here and this would pass with
+    // the freeze restored (the adversarial review of c06ad14 showed it).
+    // The collision itself is guarded by tests/invariants.test.js ("no
+    // window.X= replaces a same-named top-level function") and by
+    // tests/smoke-board.js in real Chromium.
+    a.run('tbItems=[{id:"i1",title:"a",date:"2026-10-01",assigneeUids:["u-ammar"],visibility:"shared",status:"open",kind:"task"}]');
+    s.eq('the pure filter still filters (the clobber is guarded by the invariant and smoke-board)',
+      a.run('tbCalFilter(tbItems,{uid:"u-ammar",scope:"me"}).length'),1);
+    s.eq('the handler is tbCalSetFilter',a.run('typeof window.tbCalSetFilter'),'function');
+    // A key nobody asked for is not a filter. The freeze wrote the whole
+    // item array's toString() as a key.
+    a.run('window.tbCalSetFilter("[object Object]",{x:1})');
+    s.eq('an unknown key is refused',a.run('Object.keys(_tbCalFilters).sort().join()'),
+      'color,hideDone,lane,list,person,scope');
+    a.run('window.tbCalSetFilter("lane",{not:"a string"})');
+    s.eq('a non-string value becomes no filter',a.run('_tbCalFilters.lane'),'');
+    a.run('window.tbCalSetFilter("lane","denim")');
+    s.eq('a real one sets',a.run('_tbCalFilters.lane'),'denim');
+  }
+
+  // ══ SESSION 2 — P0.2: PEOPLE ═════════════════════════════════════════
+  s.section('people: all five Board users resolve, from the profile directory');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    // Only your own row -- what profileBootstrap leaves when nothing loads
+    // the directory. This is the state that rendered everyone as "someone".
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"}]');
+    s.eq('with only your own row, one person resolves',a.run('Object.keys(tbHandleMap()).join()'),'ammar');
+    s.eq('but all five are LISTED',a.run('tbPeople().map(p=>p.handle).join()'),'ammar,afnan,daniyal,mustafa,saim');
+    s.eq('four of them not set up',a.run('tbPeople().filter(p=>!p.setUp).length'),4);
+    // Yourself with no row at all still resolves, from the session.
+    a.run('userProfiles=[]');
+    s.eq('you resolve from the session with no row',a.run('tbHandleMap().ammar'),'u-ammar');
+    s.eq('and by name',a.run('tbUser("u-ammar").name'),'Ammar');
+    // The directory loaded: everyone resolves by name, not "someone".
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"},'
+      +'{uid:"u-dani",username:"daniyal"},{uid:"u-must",username:"mustafa"},{uid:"u-saim",username:"saim"},'
+      +'{uid:"u-sami",username:"sami"}]');
+    s.eq('all five resolve',a.run('Object.keys(tbHandleMap()).sort().join()'),'afnan,ammar,daniyal,mustafa,saim');
+    s.eq('Sami is never a Board person',a.run('tbHandleMap().sami'),undefined);
+    s.eq('a name comes from USER_DEFS when the row has none',a.run('tbUser("u-dani").name'),'Daniyal Tufail');
+    // Team today: five rows even with nothing on the board.
+    a.run('tbItems=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;tbLists=[]');
+    const team=a.run('_tbTeamCard()');
+    s.eq('Team today lists all five with nothing open',(team.match(/class="tb-teamrow/g)||[]).length,5);
+    a.run('userProfiles=userProfiles.filter(p=>p.username!=="saim")');
+    const team2=a.run('_tbTeamCard()');
+    s.eq('still five when one has no profile',(team2.match(/class="tb-teamrow/g)||[]).length,5);
+    s.ok('and that one says not set up yet',/tb-teamrow-off[\s\S]*not set up yet/.test(team2));
+    // The drawer lists all five; Saim is there but cannot be assigned.
+    a.run('tbItems=[tbDecodeItem({id:"i1",title:"x",ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"private"})];_tbOpenItemId="i1"');
+    const dr=a.run('_tbDrawer()');
+    s.eq('the drawer offers four assignable people',(dr.match(/class="tb-person( on)?"/g)||[]).length,4);
+    s.ok('and shows the fifth as not set up',/tb-person tb-person-off" disabled[^>]*>Saim · not set up/.test(dr));
+    // The person filter carries everyone who resolves.
+    a.run('_tbOpenItemId=null;_tbCalAnchor="2026-10-01"');
+    const head=a.run('_tbCalHead()');
+    // P1.6: the person filter is a row of AVATARS now, one per person with
+    // an account (a person not set up owns nothing on the calendar yet).
+    s.eq('the person filter offers four faces',(head.match(/class="tb-calav"/g)||[]).length,4);
+  }
+
+  s.section('people: quick add turns @handle into an assignee, never title text');
+  {
+    const a=loadApp({files:FILES});
+    const P=(t,h)=>a.run('tbParseQuickAdd('+J(t)+','+J({today:'2026-09-26',handles:h,
+      boardHandles:['ammar','afnan','daniyal','mustafa','saim']})+')');
+    const full={ammar:'u-ammar',afnan:'u-afnan',daniyal:'u-dani',mustafa:'u-must',saim:'u-saim'};
+    const r=P('follow up baber @afnan',full);
+    s.eq('@afnan is an assignee',J(r.assigneeUids),J(['u-afnan']));
+    s.eq('and gone from the title',r.title,'follow up baber');
+    // A Board person the session cannot resolve yet is still not title text.
+    const r2=P('follow up baber @afnan',{ammar:'u-ammar'});
+    s.eq('an unresolved Board person is not assigned',J(r2.assigneeUids),J([]));
+    s.eq('is not title text either',r2.title,'follow up baber');
+    s.eq('and is reported',J(r2.pendingHandles),J(['afnan']));
+    // Someone who is not on the Board at all stays literal (Baber is real).
+    const r3=P('ping @baber about samples',full);
+    s.eq('a non-Board handle stays in the title',r3.title,'ping @baber about samples');
+    s.eq('and is reported as unknown',J(r3.unknownHandles),J(['baber']));
+  }
+
+  s.section('people: the Board loads the profile directory with its data');
+  {
+    let called=0;
+    const a=loadApp({files:FILES,globals:{loadProfiles:async()=>{called++;}}});
+    a.run('session='+J(AMMAR));
+    await a.run('loadTbData(true)');
+    s.eq('loadTbData asks for the directory',called,1);
+    // A refused directory read leaves the Board usable but says so.
+    const b=loadApp({files:FILES,globals:{loadProfiles:async()=>{},_profileLoadErr:'Missing or insufficient permissions.'}});
+    b.run('session='+J(AMMAR));
+    await b.run('loadTbData(true)');
+    s.ok('a refused directory is named in the warning strip',b.run('_tbLoadErrors').indexOf('user_profiles')>-1);
+    s.eq('and does not take the board down',b.run('_tbLoadFailed("board_items")'),false);
+  }
+
+  // ══ SESSION 2 — P0.3: LIVE ITEMS ═════════════════════════════════════
+  s.section('live items: a change reaches every open Board');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    // Name every query, so each listener can be told apart.
+    a.run('collection=function(db,p){return{p:p};};where=function(f,op,v){return f+op+v;};'
+      +'query=function(c){return{p:c.p,w:[].slice.call(arguments,1).join("&")};};'
+      +'doc=function(db,c,id){return{p:c+"/"+id};};'
+      +'globalThis.__subs=[];globalThis.__dead=0;'
+      +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next,err:err});return function(){__dead++;};};'
+      +'globalThis.__rp=0;_tbRepaint=function(){__rp++;};');
+    const snap=docs=>'({docs:'+J(docs)+'.map(d=>({id:d.id,data:()=>d}))})';
+    const fire=(re,docs)=>a.run('__subs.filter(x=>'+re+'.test(x.q.w||x.q.p))[0].next('+snap(docs)+')');
+    const own={id:'o1',title:'mine',visibility:'private',ownerUid:'u-ammar',assigneeUids:['u-ammar'],status:'open'};
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbLiveStart({items_own:{o1:'+J(own)+'}})');
+    s.eq('four queries and the markers are listened to',a.run('__subs.length'),5);
+    s.eq('the two item queries are the two loadTbData reads',
+      a.run('__subs.filter(x=>x.q.p==="board_items").map(x=>x.q.w).join("|")'),'visibility==shared|ownerUid==u-ammar');
+    // A colleague adds a shared item.
+    fire('/visibility/',[{id:'r1',title:'remote',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],date:'2026-09-28',status:'open'}]);
+    s.eq('it is on the board',a.run('tbItems.map(i=>i.id).sort().join()'),'o1,r1');
+    s.eq('and the screen repaints',a.run('__rp'),1);
+    s.ok('a shared snapshot never drops my own private item',a.run('tbItems.some(i=>i.id==="o1")'));
+    // Deleted remotely: gone.
+    fire('/visibility/',[]);
+    s.eq('a remote delete takes it off',a.run('tbItems.map(i=>i.id).join()'),'o1');
+    // Mid-typing: the data is taken, the repaint waits.
+    a.run('__rp=0;_tbEditableFocus=function(){return true;}');
+    fire('/visibility/',[{id:'r2',title:'while typing',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],status:'open'}]);
+    s.ok('the data is taken at once',a.run('tbItems.some(i=>i.id==="r2")'));
+    s.eq('but nothing repaints under the caret',a.run('__rp'),0);
+    s.eq('it is pending',a.run('_tbLivePending'),true);
+    a.run('_tbEditableFocus=function(){return false;};_tbLiveFlush()');
+    s.eq('and lands the moment typing stops',a.run('__rp'),1);
+    s.eq('once',a.run('_tbLivePending'),false);
+    // Mid-drag: same.
+    a.run('__rp=0;_tbDragId="r2"');
+    fire('/visibility/',[]);
+    s.eq('a drag in flight is not repainted under',a.run('__rp'),0);
+    a.run('_tbDragId=null;_tbLiveFlush()');
+    s.eq('and the drop lets it land',a.run('__rp'),1);
+    // Off the Board, memory updates and nothing paints.
+    a.run('__rp=0;currentPage="dashboard"');
+    fire('/ownerUid/',[own,{id:'o2',title:'new',ownerUid:'u-ammar',assigneeUids:['u-ammar'],status:'open'}]);
+    s.ok('memory updates off the Board',a.run('tbItems.some(i=>i.id==="o2")'));
+    s.eq('with no repaint',a.run('__rp'),0);
+    // A second start for the same person adds no listeners.
+    a.run('_tbLiveStart({})');
+    s.eq('restarting for the same person adds none',a.run('__subs.length'),5);
+    // Lists and the markers are live too.
+    a.run('currentPage="tb-lists"');
+    fire('/memberUids/',[{id:'l1',title:'Winter Drop 2027',kind:'shared',memberUids:['u-ammar']}]);
+    s.eq('a list shared with me appears',a.run('tbLists.map(l=>l.id).join()'),'l1');
+    a.run('__subs.filter(x=>x.q.p==="board_config/markers")[0].next({exists:()=>true,data:()=>({markers:[{label:"launch",date:"2026-10-31"}]})})');
+    s.eq('a moved launch date lands',a.run('tbConfig.markers[0].date'),'2026-10-31');
+    // A read failure belongs to ITS query (review of 14ad9f3): a snapshot
+    // from another listener used to clear it, so a refused board_items read
+    // became an empty board the moment the lists listener delivered.
+    a.run('_tbLive.bad={items_own:true};_tbLoadErrors=["board_items"]');
+    fire('/memberUids/',[]);
+    s.eq('a LISTS snapshot does not clear an items failure',a.run('_tbLoadErrors.join()'),'board_items');
+    fire('/visibility/',[]);
+    s.eq('nor does the OTHER items query — one half refused is still said',a.run('_tbLoadErrors.join()'),'board_items');
+    fire('/ownerUid/',[own]);
+    s.eq('the query that failed delivering is what clears it',a.run('_tbLoadErrors.length'),0);
+    a.run('__subs.filter(x=>x.q.p==="board_lists")[0].err(new Error("denied"))');
+    s.eq('a listener that starts failing puts its collection back',a.run('_tbLoadErrors.join()'),'board_lists');
+  }
+  {
+    // The seed wiring: which first-read halves failed is handed to the
+    // listeners, so the warning survives the first unrelated snapshot.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('collection=function(db,p){return{p:p};};where=function(f,op,v){return f+op+v;};'
+      +'query=function(c){return{p:c.p,w:[].slice.call(arguments,1).join("&")};};'
+      +'doc=function(db,c,id){return{p:c+"/"+id};};globalThis.__subs=[];'
+      +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next,err:err});return function(){};};'
+      +'getDocs=function(q){return /ownerUid/.test(q.w)?Promise.reject(new Error("denied")):Promise.resolve({docs:[]});};'
+      +'loadProfiles=function(){return Promise.resolve();};profilesLoaded=true;_tbRepaint=function(){};');
+    await a.run('loadTbData(true)');
+    s.eq('the refused half is recorded',a.run('_tbLoadErrors.join()'),'board_items');
+    s.ok('and handed to the listeners',a.run('!!(_tbLive&&_tbLive.bad.items_own)'));
+    a.run('__subs.filter(x=>/memberUids/.test(x.q.w))[0].next({docs:[]})');
+    s.eq('an unrelated first snapshot does not wipe it',a.run('_tbLoadErrors.join()'),'board_items');
+  }
+  {
+    // THE LISTENER DELIVERS A LOCAL WRITE BEFORE commit() RESOLVES (real
+    // Firestore's latency compensation), and the create path then added
+    // it again: every new item showed twice (review of 14ad9f3).
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"}]');
+    a.run('collection=function(db,p){return{p:p};};where=function(f,op,v){return f+op+v;};'
+      +'query=function(c){return{p:c.p,w:[].slice.call(arguments,1).join("&")};};'
+      +'globalThis.__n=0;doc=function(a,b,c){return c?{id:c}:{id:"new"+(++__n)};};globalThis.__subs=[];'
+      +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next,err:err});return function(){};};'
+      +'_tbRepaint=function(){};'
+      +'globalThis.__written=null;'
+      // A real snapshot carries EVERY doc the query matches, not just the new one.
+      +'globalThis.__own=[];globalThis.__adm=[];prompt=function(){return "Winter";};'
+      +'writeBatch=function(){return{set:function(r,p){if(!__written&&p&&p.title)__written=Object.assign({id:r.id},p);return this;},'
+      +'commit:async function(){var own=__subs.filter(x=>/ownerUid/.test(x.q.w))[0];__own.push(__written);'
+      +'own.next({docs:__own.map(w=>({id:w.id,data:()=>w}))});}};};'
+      +'setDoc=async function(r,p){var adm=__subs.filter(x=>/adminUid/.test(x.q.w))[0];__adm.push(Object.assign({id:r.id},p));'
+      +'adm.next({docs:__adm.map(w=>({id:w.id,data:()=>w}))});};');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbLiveStart({})');
+    await a.run('window.tbCreateFromQuick("call baber",false,false)');
+    s.eq('a quick-add shows ONCE when the listener got there first',a.run('tbItems.length'),1);
+    a.run('__written=null');
+    await a.run('window.tbCreateOn("shoot prep","2026-10-01")');
+    s.eq('so does a calendar "+" create',a.run('tbItems.length'),2);
+    await a.run('window.tbNewList("private")');
+    s.eq('and a new list',a.run('tbLists.length'),1);
+    // And the other order: the ack first, the listener later, never twice.
+    a.run('__written=null;writeBatch=function(){return{set:function(r,p){if(!__written&&p&&p.title)__written=Object.assign({id:r.id},p);return this;},commit:async function(){}};}');
+    await a.run('window.tbCreateFromQuick("later listener",false,false)');
+    s.eq('an item the listener has not delivered yet is still shown',a.run('tbItems.length'),3);
+    a.run('__subs.filter(x=>/visibility/.test(x.q.w))[0].next({docs:[]})');
+    s.eq('and an unrelated snapshot does not drop it',a.run('tbItems.length'),3);
+  }
+  {
+    // A PRESS IN PROGRESS holds a deferred update (review of 14ad9f3). The
+    // mouse moves focus on mousedown; flushing then repainted before
+    // mouseup and the pressed button's click was lost.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('currentPage="tb-dash"');   // shared.js clobbers the loadApp option
+    a.run('globalThis.__rp=0;_tbRepaint=function(){__rp++;};onSnapshot=function(q,n){return function(){};};');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbLiveStart({})');
+    const fireD=(type)=>{
+      const e={type:type,pointerId:1,target:null,preventDefault(){},stopPropagation(){}};
+      ((a.state.listeners&&a.state.listeners[type])||[]).slice().forEach(fn=>{try{fn(e);}catch(x){}});
+    };
+    const settle=()=>new Promise(r=>setTimeout(r,10));
+    a.run('_tbEditableFocus=function(){return true;};_tbLiveRepaint()');
+    s.eq('an update arriving while a field has focus waits',a.run('_tbLivePending'),true);
+    fireD('pointerdown');
+    a.run('_tbEditableFocus=function(){return false;}');   // mousedown moved focus off the field
+    fireD('focusout');
+    await settle();
+    s.eq('the focusout a press caused does not repaint under it',a.run('__rp'),0);
+    fireD('pointerup');
+    await settle();
+    s.eq('nor does the release, before the click',a.run('__rp'),0);
+    fireD('click');
+    await settle();
+    s.eq('the click lands first, then the update',a.run('__rp'),1);
+    // Leaving a field with the keyboard has no press behind it.
+    a.run('__rp=0;_tbEditableFocus=function(){return true;};_tbLiveRepaint();_tbEditableFocus=function(){return false;}');
+    fireD('focusout');
+    await settle();
+    s.eq('a keyboard focusout still lands it at once',a.run('__rp'),1);
+    // A release the page never heard cannot hold updates for good.
+    a.run('_tbPtrDown=true;_tbPtrDownAt=Date.now()');
+    s.eq('a press in progress is busy',a.run('_tbLiveBusy()'),true);
+    a.run('_tbPtrDownAt=Date.now()-_TB_PRESS_MAX_MS-1');
+    s.eq('a press older than the bound is not',a.run('_tbLiveBusy()'),false);
+  }
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR)+';onSnapshot=undefined');
+    s.eq('an old shell with no onSnapshot stays static, and does not throw',
+      a.run('(function(){_tbLiveStart({});return _tbLive;})()'),null);
+  }
+
+  // ══ SESSION 2 — P0.4: BOARD SETTINGS AND RUN SEED ═══════════════════
+  s.section('board settings: Run seed, for Board owners only');
+  {
+    const mk=(sess,fetchImpl)=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash',globals:Object.assign(
+        {auth:{currentUser:{getIdToken:async()=>'tok-'+sess.u}}},fetchImpl?{fetch:fetchImpl}:{})});
+      a.run('session='+J(sess));a.run('currentPage="tb-dash"');
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;userProfiles=[]');
+      return a;
+    };
+    const d=mk(DANIYAL);
+    s.ok('a member has no settings button',!/tb-settings-btn/.test(d.run('_tbShell("tb-dash","")')));
+    d.run('window.tbToggleSettings()');
+    s.eq('and cannot open it',d.run('_tbSettingsOverlay()'),'');
+    let sent=null;
+    const a=mk(AMMAR,async(url,init)=>{sent={url:String(url),init:init};
+      return{ok:true,status:200,json:async()=>({ok:true,report:{created:42,alreadySeeded:0,listCreated:true,
+        profilesCreated:['saim'],skippedUsers:[],skippedItems:[]}})};});
+    s.ok('a Board owner has one',/tb-settings-btn/.test(a.run('_tbShell("tb-dash","")')));
+    a.run('window.tbToggleSettings()');
+    s.ok('it opens the settings with the seed',/Run seed/.test(a.run('_tbSettingsOverlay()')));
+    await a.run('window.tbRunSeed(true)');
+    s.eq('it calls the function',sent&&sent.url,'/.netlify/functions/board-seed');
+    s.eq('with POST',sent&&sent.init.method,'POST');
+    s.eq('carrying the ID token and the preview flag',sent&&sent.init.body,J({idToken:'tok-ammar',dryRun:true}));
+    s.ok('and says what it would do',/Would create 42 milestones/.test(a.run('_tbSeedState.result')));
+    s.ok('naming the profile rows',/profile row for saim/.test(a.run('_tbSeedState.result')));
+    // The answer is hydrated as TEXT, never markup.
+    const ov=a.run('_tbSettingsOverlay()');
+    s.ok('the result is a hydrate slot, not interpolated',/<div id="tbh\d+" class="tb-setresult"><\/div>/.test(ov));
+    // A refusal is said out loud.
+    const b=mk(AMMAR,async()=>({ok:false,status:403,json:async()=>({error:'Only a Board owner can run the seed.'})}));
+    b.run('window.tbToggleSettings()');
+    await b.run('window.tbRunSeed(true)');
+    s.eq('a refusal is shown, not swallowed',b.run('_tbSeedState.error'),'Only a Board owner can run the seed.');
+    const c=mk(AMMAR,async()=>({ok:false,status:404,json:async()=>{throw new Error('html');}}));
+    c.run('window.tbToggleSettings()');
+    await c.run('window.tbRunSeed(true)');
+    s.ok('a missing function says it is not deployed',/not on this site yet/.test(c.run('_tbSeedState.error')));
+    // A member calling it directly does nothing at all.
+    let called=0;
+    const m=mk(DANIYAL,async()=>{called++;return{ok:true,status:200,json:async()=>({})};});
+    await m.run('window.tbRunSeed(false)');
+    s.eq('a member cannot call it',called,0);
+    // The summary, pure.
+    const S=(r,dry)=>a.run('tbSeedSummary('+J(r)+','+J(dry)+')');
+    s.ok('a real run says Done',/^Done\./.test(S({created:0,alreadySeeded:42},false)));
+    s.ok('a re-run says nothing was duplicated',/Created 0 milestones; 42 already on the board/.test(S({created:0,alreadySeeded:42},false)));
+    s.ok('a missing login is named',/No login yet for saim/.test(S({skippedUsers:['saim']},false)));
+    s.ok('a re-run says it touched nothing',/42 already on the board \(not touched\)/.test(S({created:0,alreadySeeded:42},false)));
+    s.ok('a deleted milestone is said to stay deleted',
+      /Not brought back — deleted since the seed made it: Shade list locked\./.test(S({deletedSince:['Shade list locked']},false)));
+    s.ok('a person added now is named with the milestone',
+      /Added saim to “Design production locked; prints to floor” \(no login last time\)/
+        .test(S({peopleAdded:[{title:'Design production locked; prints to floor',who:['saim']}]},false)));
+    s.ok('the old promise is gone: nothing says “left alone” about changed dates',
+      !/dates, steps and people/.test(a.run('_tbSettingsOverlay()')));
+  }
+
+  // THE BUTTONS, not just the function (review of 9e3b521): the Preview
+  // and Run seed buttons were never clicked in any test, so swapping their
+  // handlers -- the button labelled Preview writing -- or hard-coding the
+  // preview flag stayed green everywhere.
+  s.section('board settings: the Preview and Run seed buttons do what they say');
+  {
+    const mk=(extra)=>{
+      const log={bodies:[],profiles:[],data:[]};
+      const a=loadApp({files:FILES,currentPage:'tb-dash',globals:Object.assign({
+        auth:{currentUser:{getIdToken:async()=>'tok-ammar'}},
+        fetch:async(url,init)=>{log.bodies.push(JSON.parse(init.body));
+          return{ok:true,status:200,json:async()=>({ok:true,report:{created:0,alreadySeeded:42}})};}
+      },extra||{})});
+      a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;userProfiles=[]');
+      a.run('var __log={p:[],d:[]};loadProfiles=async function(f){__log.p.push(f);};'
+        +'loadTbData=async function(f){__log.d.push(f);}');
+      a.run('window.tbToggleSettings()');
+      return{a,log};
+    };
+    // Run the button's own onclick, as the page would.
+    const click=(a,id)=>{
+      const ov=a.run('_tbSettingsOverlay()');
+      const m=new RegExp('id="'+id+'"[^>]*onclick="([^"]+)"').exec(ov);
+      return m?a.run(m[1]):Promise.reject(new Error('no '+id));
+    };
+    {
+      const {a,log}=mk();
+      await click(a,'tb-seed-preview');
+      s.eq('Preview sends a dry run',log.bodies.length&&log.bodies[0].dryRun,true);
+      s.eq('and re-reads nothing',J(a.run('[__log.p.length,__log.d.length]')),J([0,0]));
+      s.ok('and says nothing was written',/^Preview — nothing was written\./.test(a.run('_tbSeedState.result')));
+    }
+    {
+      const {a,log}=mk();
+      await click(a,'tb-seed-run');
+      s.eq('Run seed asks first',a.state.confirms&&a.state.confirms.length,1);
+      s.eq('and sends a REAL run',log.bodies.length&&log.bodies[0].dryRun,false);
+      s.eq('then re-reads the directory and the Board',J(a.run('[__log.p,__log.d]')),J([[true],[true]]));
+      s.ok('and says Done',/^Done\./.test(a.run('_tbSeedState.result')));
+    }
+    {
+      const {a,log}=mk({confirm:()=>false});
+      await click(a,'tb-seed-run');
+      s.eq('saying no to the confirm sends nothing',log.bodies.length,0);
+      s.eq('and leaves the button idle',a.run('_tbSeedState.busy'),false);
+    }
+  }
+
+  // Leaving while it runs (review of 9e3b521): the run repainted the Board
+  // over whatever page the owner had gone to while it worked.
+  s.section('board settings: a seed that finishes after you left does not paint over the page you are on');
+  {
+    let release;
+    const gate=new Promise(r=>{release=r;});
+    const a=loadApp({files:FILES,currentPage:'tb-dash',globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok-ammar'}},
+      fetch:async()=>{await gate;return{ok:true,status:200,json:async()=>({ok:true,report:{created:0,alreadySeeded:42}})};}
+    }});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;userProfiles=[]');
+    a.run('window.tbToggleSettings()');
+    const run=a.run('window.tbRunSeed(true)');
+    s.eq('it is working',a.run('_tbSeedState.busy'),true);
+    a.run('window.tbToggleSettings()');
+    a.run('currentPage="dashboard";document.getElementById("main-content").innerHTML="DASHBOARD PAGE"');
+    release();await run;
+    s.eq('the page you went to is left as it is',a.run('document.getElementById("main-content").innerHTML'),'DASHBOARD PAGE');
+    s.ok('and the result is kept for when Settings opens again',/^Preview/.test(a.run('_tbSeedState.result')));
+    // Positive control: still on the Board, it repaints.
+    a.run('currentPage="tb-dash";_tbSettingsOpen=true;document.getElementById("main-content").innerHTML="x"');
+    await a.run('window.tbRunSeed(true)');
+    s.ok('on the Board it repaints as before',/tb-wrap/.test(a.run('document.getElementById("main-content").innerHTML')));
+  }
+
+  // The notes timer saved to whichever item was open WHEN IT FIRED, so
+  // typing in one item and opening another within 800ms wrote the first
+  // item's text over the second's (review of d38b96c).
+  s.section('item notes save to the item they were typed in');
+  {
+    const mk=()=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash'});
+      a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+      a.run('tbItems=["A","B"].map(function(k){return tbDecodeItem({id:k,title:k,notes:k+" notes",status:"open",'
+        +'ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"shared",date:null});});'
+        +'tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+      a.run('var __c=[];_tbCommit=async function(id,d){__c.push([id,d.notes]);};loadTbThread=async function(){}');
+      return a;
+    };
+    const settle=()=>new Promise(r=>setTimeout(r,0));
+    {
+      const a=mk();
+      a.run('window.tbOpenItem("A");window.tbNotesInput("typed in A");window.tbOpenItem("B")');
+      await settle();
+      s.eq('opening another item saves the notes to the one they were typed in',J(a.run('__c')),J([['A','typed in A']]));
+      s.eq('the other item keeps its own',a.run('tbItems.filter(function(i){return i.id==="B";})[0].notes'),'B notes');
+      await new Promise(r=>setTimeout(r,900));
+      s.eq('and the timer does not fire a second time',a.run('__c.length'),1);
+      s.ok('and nothing is ever written to the other item',!a.run('__c').some(x=>x[0]==='B'));
+    }
+    {
+      const a=mk();
+      a.run('window.tbOpenItem("A");window.tbNotesInput("typed in A")');
+      await new Promise(r=>setTimeout(r,900));
+      s.eq('left alone, the timer saves to the same item',J(a.run('__c')),J([['A','typed in A']]));
+    }
+    {
+      const a=mk();
+      a.run('window.tbOpenItem("A");window.tbNotesInput("typed then closed");window.tbCloseItem()');
+      await settle();
+      s.eq('closing the pane saves what was typed',J(a.run('__c')),J([['A','typed then closed']]));
+      a.run('window.tbOpenItem("A")');
+      s.ok('and reopening it shows it straight away',/typed then closed/.test(a.run('_tbDrawer()')));
+    }
+    {
+      // The pending save looks its item up by id, so a deleted item gets
+      // nothing written to it -- and a REFUSED delete still keeps the notes.
+      const a=mk();
+      a.run('window.tbOpenItem("B");window.tbNotesInput("about to go")');
+      a.run('deleteDoc=async function(){}');
+      await a.run('window.tbDeleteItem("B")');
+      await new Promise(r=>setTimeout(r,900));
+      s.eq('nothing is written to an item that was deleted',a.run('__c.length'),0);
+      const b=mk();
+      b.run('window.tbOpenItem("B");window.tbNotesInput("kept after a refusal")');
+      // A refused write re-reads the Board; in a browser that read brings B
+      // back, here it would return nothing, so it is held still.
+      b.run('deleteDoc=async function(){throw new Error("Missing or insufficient permissions");};loadTbData=async function(){}');
+      await b.run('window.tbDeleteItem("B")');
+      await new Promise(r=>setTimeout(r,900));
+      s.eq('a refused delete still saves what was typed',J(b.run('__c')),J([['B','kept after a refusal']]));
+    }
+  }
+
+  // The thread arriving after an item opens repainted the pane with no
+  // busy check, under a title or a comment being typed (review of d38b96c).
+  s.section('the thread arriving does not repaint under someone typing');
+  {
+    let release;
+    const gate=new Promise(r=>{release=r;});
+    const a=loadApp({files:FILES,currentPage:'tb-dash',globals:{__g:gate}});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[tbDecodeItem({id:"A",title:"a",status:"open",ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"shared"})];'
+      +'tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+    a.run('var __rp=0;loadTbThread=function(){return __g;}');
+    a.run('window.tbOpenItem("A")');
+    a.run('var __r0=_tbRepaint;_tbRepaint=function(){__rp++;return __r0.apply(this,arguments);};_tbEditableFocus=function(){return true;}');
+    release();await gate;await new Promise(r=>setTimeout(r,0));
+    s.eq('while a field has focus, the thread waits',a.run('__rp'),0);
+    s.eq('and is marked to land later',a.run('_tbLivePending'),true);
+    // Positive control -- and it stops the retry timer re-arming for good,
+    // which a field that never loses focus (only possible here) would do.
+    a.run('_tbEditableFocus=function(){return false;};_tbLiveFlush()');
+    s.eq('once the field is left, it lands',a.run('__rp'),1);
+    a.run('clearTimeout(_tbLiveTimer);_tbLiveTimer=null');
+  }
+
+  // The open list outlived the Lists page, and every quick-add used it as
+  // the default: after opening a SHARED list, a note-to-self added on the
+  // Dashboard went into it and became visible to the list's members
+  // (review of f256c83).
+  s.section('a new item goes into a list only when that list is on screen');
+  {
+    const mk=page=>{
+      const a=loadApp({files:FILES,currentPage:page});
+      a.run('session='+J(AMMAR));a.run('currentPage='+J(page));
+      a.run('tbItems=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[];'
+        +'tbLists=[{id:"L",title:"team",kind:"shared",adminUid:"u-ammar",memberUids:["u-ammar","u-afnan"]}];_tbListId="L"');
+      return a;
+    };
+    const created=a=>{const w=a.state.writes.filter(x=>x.op==='set'&&x.data&&x.data.title==='call baber')[0];return w&&w.data;};
+    {
+      const a=mk('tb-lists');
+      await a.run('window.tbCreateFromQuick("call baber",false,true)');
+      const d=created(a)||{};
+      s.eq('on the open list, it goes into that list',d.listId,'L');
+      s.eq('and takes its visibility',d.visibility,'shared');
+    }
+    {
+      const a=mk('tb-dash');
+      await a.run('window.tbCreateFromQuick("call baber",false,true)');
+      const d=created(a)||{};
+      s.eq('on the Dashboard, with that list last opened, it goes into NO list',d.listId,null);
+      s.eq('so a note-to-self is not shown to that list\'s members',d.visibility,'private');
+    }
+    {
+      const a=mk('tb-calendar');
+      s.eq('nor does the calendar default to it',a.run('_tbQaList()'),null);
+    }
+    {
+      const a=mk('tb-dash');
+      a.run('_tbListId=null;var __to=[];showPage=function(p){__to.push(p);currentPage=p;};prompt=function(){return "Winter extras";};'
+        +'doc=function(){return{id:"NEWLIST"};}');
+      await a.run('window.tbNewList("private")');
+      s.eq('+ New list from the rail opens the new list on the Lists page',J(a.run('__to')),J(['tb-lists']));
+      s.ok('with it selected there',!!a.run('_tbListId')&&a.run('_tbViewList()')===a.run('_tbListId'));
+    }
+  }
+
+  // A document id went into onclick="f('…')" through HTML escaping alone;
+  // the browser decodes &#39; back to ' before the handler runs, so a
+  // crafted id closed the string and ran what followed (review of 2ab0a8f).
+  s.section('an id in an inline handler arrives as the id, and runs nothing');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+    const decode=h=>h.replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+    // Run the handler the way a browser would, with the target stubbed.
+    const call=(code,fn)=>{
+      const vm=require('vm');const got=[];const box={pwned:false};
+      const ctx={window:{},event:{stopPropagation(){}},got,box};
+      ctx.window[fn]=function(){got.push([].slice.call(arguments));};
+      ctx.window.tbCloseMove=function(){};
+      try{ vm.runInNewContext(code,ctx); }catch(e){ return{err:String(e.message||e)}; }
+      return{got,pwned:ctx.pwned||box.pwned};
+    };
+    const nasty=["x');box.pwned=true;//","a\\b'c\"d<e>&f","line\nbreak","sep x"];
+    nasty.forEach(function(id){
+      a.run('tbItems=[tbDecodeItem({id:'+J(id)+',title:"t",status:"open",ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"shared",date:"2026-10-01"})]');
+      const html=a.run('_tbRow(tbItems[0],"2026-09-26",{})');
+      const m=/class="tb-rowmain" onclick="([^"]*)"/.exec(html);
+      const r=m?call(decode(m[1]),'tbOpenItem'):{err:'no handler'};
+      s.eq('the row opens exactly '+J(id),J(r.got&&r.got[0]),J([id]));
+      s.ok('and runs nothing else',!r.pwned&&!r.err,r.err||'');
+    });
+    // The inbox's itemId comes from hrm_notifications, which anyone signed in can write.
+    const html=a.run('_tbJs("n1\');box.pwned=true;//")');
+    const r=call("window.tbOpenNotif('"+decode(html)+"','')",'tbOpenNotif');
+    s.ok('a notification id cannot break out either',!r.pwned&&J(r.got&&r.got[0])===J(["n1');box.pwned=true;//",'']));
+    // Every quoted handler argument in the module goes through _tbJs.
+    const src=read('js/theboard.js');
+    const sites=src.match(/\\''\+[^+]*?\+/g)||[];
+    const bad=sites.filter(x=>!/^\\''\+(_tbJs\(|jid\+)/.test(x));
+    s.ok('found the handler arguments',sites.length>20,sites.length+' sites');
+    s.eq('every one is _tbJs, never _tbEsc or a raw value',bad.join(' | '),'');
+  }
+
+  // The rules let an assignee, the owner, the list's admin or a Board owner
+  // change an item; a shared item is READ by everyone. The UI offered the
+  // star, the tick, the drag and every pane field to every reader, and each
+  // was refused with a message blaming a lock or an undeployed ruleset
+  // (review of 2ab0a8f).
+  s.section('someone not on an item can read it and comment, and is offered nothing else');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(DANIYAL));a.run('currentPage="tb-dash"');
+    const it={id:'x1',title:'Hyderabad supplier',status:'open',ownerUid:'u-afnan',assigneeUids:['u-afnan','u-must'],
+      visibility:'shared',date:'2026-10-01',listId:'L',steps:[{id:'s1',title:'call',done:false}],notes:'n'};
+    a.run('tbItems=[tbDecodeItem('+J(it)+')];tbLists=[{id:"L",title:"team",kind:"shared",adminUid:"u-afnan",memberUids:["u-afnan","u-dani"]}];'
+      +'tbLoaded=true;_tbLoadErrors=[];userProfiles=[];_tbThreads={x1:{comments:[],activity:[],err:false}}');
+    const C=(uid,own,lists)=>a.run('tbCanEdit('+J(it)+','+J(uid)+','+J(own)+','+J(lists||[])+')');
+    s.eq('an assignee may change it',C('u-must',false),true);
+    s.eq('its owner may',C('u-afnan',false),true);
+    s.eq('a Board owner may',C('u-dani',true),true);
+    s.eq('the admin of its list may',C('u-dani',false,[{id:'L',adminUid:'u-dani'}]),true);
+    s.eq('a list MEMBER who is not on it may not',C('u-dani',false,[{id:'L',adminUid:'u-afnan'}]),false);
+    s.eq('nor anyone else',C('u-dani',false),false);
+    s.eq('nor nobody',C('',false),false);
+    const row=a.run('_tbRow(tbItems[0],"2026-09-26",{})');
+    s.ok('the row has no star',!/tb-star/.test(row));
+    s.ok('and its tick is disabled, saying why',/class="tb-check"[^>]*title="Only the people on this item can change it"[^>]*disabled/.test(row));
+    a.run('_tbOpenItemId="x1"');
+    const d=a.run('_tbDrawer()');
+    s.ok('the pane says so',/You are not on this item, so you can read it and comment, but not change it\./.test(d));
+    s.ok('the title cannot be edited',/id="tb-d-title"[^>]*readonly/.test(d));
+    s.ok('nor the note',/id="tb-d-notes"[^>]*readonly/.test(d));
+    s.ok('the list, lane, priority and kind are disabled',['tb-d-list','tb-d-lane','tb-d-pri','tb-d-kind']
+      .every(k=>new RegExp('id="'+k+'"[^>]*disabled').test(d)));
+    s.ok('the date is disabled',/id="tb-d-date"[^>]*disabled/.test(d));
+    s.ok('no star, no Hand over, no Mark done',!/tbAddToMyDay|tbOpenHandover|>Mark done</.test(d));
+    s.ok('no step can be added or removed',!/tb-step-new|tbRemoveStep/.test(d));
+    s.ok('no file can be attached or removed',!/tbPickFiles\(\\?'item|tbRemoveFile/.test(d));
+    s.ok('the comment box IS there -- comments are open to every reader',/id="tb-comp"/.test(d));
+    // And the writes themselves refuse, plainly, writing nothing.
+    const w0=a.state.writes.length+a.state.batches.length;
+    ['window.tbToggleDone("x1")','window.tbAddToMyDay("x1")','window.tbFieldChange("title","renamed")',
+     'window.tbToggleStep(0)','window.tbToggleAssignee("u-dani")','window.tbToggleLock("x1")',
+     'window.tbMoveItem("x1","2026-10-09")'].forEach(c=>a.run(c));
+    await new Promise(r=>setTimeout(r,0));
+    s.eq('none of the seven writes anything',a.state.writes.length+a.state.batches.length,w0);
+    // Positive control: on the item, the same pane is editable.
+    a.run('session='+J(Object.assign({},DANIYAL,{uid:'u-must',u:'mustafa'})));
+    const d2=a.run('_tbDrawer()');
+    s.ok('on the item, the title is editable again',!/id="tb-d-title"[^>]*readonly/.test(d2)&&/tbOpenHandover/.test(d2));
+  }
+
+  // Landing on the Board (all five Board users do, every launch) wrote the
+  // last-seen stamp through the app's wrapped setDoc, which raises the
+  // blocking "Saving…" overlay for any write slower than 260ms -- and
+  // loadData's closing renderPage(currentPage) then rebuilt the page with
+  // no busy check (review of b43a3db).
+  s.section('landing on the Board: no blocking overlay, and the late re-render waits');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+    a.run('var __held=null;setDoc=async function(){__held=_gvSilentSaveCount;}');
+    await a.run('_tbTouchSeen()');
+    s.eq('the last-seen write runs with the overlay opted out',a.run('__held'),1);
+    s.eq('and the opt-out is released after',a.run('_gvSilentSaveCount'),0);
+    // Offline the write never answers; the opt-out must not outlive 2s, or
+    // every other module's overlay would stay silenced for the session.
+    const b=loadApp({files:FILES,currentPage:'tb-dash'});
+    b.run('session='+J(AMMAR));b.run('currentPage="tb-dash"');
+    b.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+    b.run('setDoc=function(){return new Promise(function(){});}');
+    b.run('_tbTouchSeen()');
+    s.eq('a write that never answers holds it at first',b.run('_gvSilentSaveCount'),1);
+    await new Promise(r=>setTimeout(r,2100));
+    s.eq('and lets go after two seconds',b.run('_gvSilentSaveCount'),0);
+  }
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[];setDoc=async function(){}');
+    a.run('tbRenderPage("tb-dash")');
+    a.run('var __rp=0;var __r0=_tbRepaint;_tbRepaint=function(){__rp++;return __r0.apply(this,arguments);};'
+      +'document.getElementById("main-content").querySelector=function(){return {};};_tbEditableFocus=function(){return true;}');
+    a.run('tbRenderPage("tb-dash")');
+    s.eq('re-rendering the page already on screen waits while a field is in use',a.run('__rp'),0);
+    s.eq('and is queued',a.run('_tbLivePending'),true);
+    a.run('_tbEditableFocus=function(){return false;};_tbLiveFlush();clearTimeout(_tbLiveTimer);_tbLiveTimer=null');
+    s.eq('and lands once the field is left',a.run('__rp'),1);
+    a.run('_tbEditableFocus=function(){return true;};currentPage="tb-calendar";tbRenderPage("tb-calendar")');
+    s.eq('navigating to another Board page is never held back',a.run('__rp'),2);
+    a.run('_tbEditableFocus=function(){return false;};clearTimeout(_tbLiveTimer);_tbLiveTimer=null;_tbLivePending=false');
+  }
+
+  // ══ SESSION 2 — P2: THE ADMIN SCREEN (markers + pin) ═══════════════
+  s.section('the admin screen: launch markers, and pins on Deadlines');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[];tbConfig={markers:[{label:"launch",date:"2026-10-30"}]}');
+    const C=rows=>a.run('tbMarkersClean('+J(rows)+')');
+    s.eq('an empty row is dropped quietly',J(C([{label:'',date:''}]).markers),J([]));
+    s.ok('a name with no date is an error, not a guess',/needs a date/.test(C([{label:'rehearsal',date:''}]).errors[0]||''));
+    s.ok('so is a date with no name',/no name/.test(C([{label:'',date:'2026-10-29'}]).errors[0]||''));
+    s.ok('and a date that is not one',/needs a date/.test(C([{label:'x',date:'soon'}]).errors[0]||''));
+    s.ok('a name over 40 characters is refused',/longer than 40/.test(C([{label:'x'.repeat(41),date:'2026-10-29'}]).errors[0]||''));
+    s.eq('trimmed, twins removed, sorted by date',J(C([{label:' founders  out ',date:'2026-11-01'},{label:'launch',date:'2026-10-30'},
+      {label:'Launch',date:'2026-10-30'}]).markers),J([{label:'launch',date:'2026-10-30'},{label:'founders out',date:'2026-11-01'}]));
+    s.ok('at most twelve',/At most 12/.test(C(Array.from({length:13},(_,i)=>({label:'m'+i,date:'2026-10-'+String(10+i)}))).errors.join(' ')));
+    const P=(it,own)=>a.run('tbCanPin('+J(it)+','+J(own)+')');
+    const base={status:'open',visibility:'shared',date:'2026-12-01'};
+    s.eq('an owner can pin a shared, dated, open item',P(base,true).ok,true);
+    s.eq('a member cannot pin',P(base,false).ok,false);
+    s.ok('nor can anyone pin a private item (nobody would see it there)',!P(Object.assign({},base,{visibility:'private'}),true).ok);
+    s.ok('or an undated one',/Give it a date/.test(P(Object.assign({},base,{date:null}),true).why));
+    s.ok('or a done one',!P(Object.assign({},base,{status:'done'}),true).ok);
+    s.eq('a pin survives decoding as a boolean',a.run('tbDecodeItem({pinned:"yes"}).pinned'),false);
+    const pp=a.run('tbItemPatch({id:"x",pinned:false,visibility:"shared",assigneeUids:["u-ammar","u-afnan"],ownerUid:"u-ammar"},{pinned:true},"u-ammar",5)');
+    s.eq('pinning is logged',J(pp.activity.map(x=>x.type)),J(['pinned']));
+    s.eq('in words',a.run('tbActivityLine({type:"pinned",byUid:"u-ammar"})'),'Ammar pinned it to Deadlines');
+    // The pin write, as an owner and as a member.
+    const it={id:'far',title:'Restock order #2',status:'open',visibility:'shared',kind:'task',date:'2026-11-09',
+      ownerUid:'u-must',assigneeUids:['u-must','u-afnan']};
+    a.run('tbItems=[tbDecodeItem('+J(it)+')];var __c=[];_tbCommit=async function(id,d,act){__c.push([id,d.pinned,(act||[]).map(x=>x.type).join()]);}');
+    s.eq('a task a month out is not on Deadlines',a.run('tbDeadlines(tbItems,"2026-09-26").length'),0);
+    await a.run('window.tbTogglePin("far")');
+    s.eq('pinning writes the pin and its log',J(a.run('__c')),J([['far',true,'pinned']]));
+    s.eq('and it is on Deadlines at once',a.run('tbDeadlines(tbItems,"2026-09-26").map(function(i){return i.id;}).join()'),'far');
+    a.run('tbItems[0].visibility="private"');
+    await a.run('window.tbTogglePin("far")');
+    s.eq('an owner can always unpin, even what no longer qualifies',J(a.run('__c')[1]),J(['far',false,'unpinned']));
+    a.run('session='+J(DANIYAL));
+    a.run('tbItems[0].visibility="shared";tbItems[0].pinned=false');
+    await a.run('window.tbTogglePin("far")');
+    s.eq('a member pins nothing',a.run('__c.length'),2);
+    a.run('tbItems[0].pinned=true');
+    await a.run('window.tbTogglePin("far")');
+    s.eq('and unpins nothing either',a.run('__c.length'),2);
+    a.run('tbItems[0].pinned=false');
+    a.run('_tbOpenItemId="far"');
+    s.ok('and is offered no Pin button',!/tbTogglePin/.test(a.run('_tbDrawer()')));
+    a.run('session='+J(AMMAR));
+    s.ok('an owner is',/tb-pinbtn/.test(a.run('_tbDrawer()')));
+    a.run('tbItems[0].date=null');
+    s.ok('disabled, saying why, when it cannot sit in Deadlines',/tb-pinbtn[^>]*disabled title="Give it a date first/.test(a.run('_tbDrawer()')));
+    a.run('tbItems[0].date="2026-11-09";tbItems[0].pinned=true');
+    // The editor.
+    a.run('window.tbToggleSettings()');
+    let ov=a.run('_tbSettingsOverlay()');
+    s.ok('Settings carries the markers',/id="tb-mk-l0"[^>]*value="launch"/.test(ov));
+    s.ok('and the pinned list, with Unpin',/Pinned to Deadlines/.test(ov)&&/tbTogglePin\('far'\)/.test(ov));
+    a.run('window.tbMarkerAdd();window.tbMarkerInput(1,"label",'+J('"><img src=x onerror=1>')+');window.tbMarkerInput(1,"date","2026-10-29")');
+    ov=a.run('_tbSettingsOverlay()');
+    s.ok('a name is escaped in its field',!/<img/.test(ov)&&/value="&quot;&gt;&lt;img src=x onerror=1&gt;"/.test(ov));
+    a.run('var __set=null;setDoc=async function(r,d,o){__set={d:d,o:o};}');
+    await a.run('window.tbMarkerSave()');
+    s.eq('Save writes the cleaned, sorted markers',J(a.run('__set&&__set.d.markers')),
+      J([{label:'"><img src=x onerror=1>',date:'2026-10-29'},{label:'launch',date:'2026-10-30'}]));
+    s.eq('as a merge, carrying who did it',J(a.run('[__set.o&&__set.o.merge,__set.d.updatedBy]')),J([true,'u-ammar']));
+    s.eq('and the calendar has them at once',a.run('tbConfig.markers.length'),2);
+    a.run('window.tbMarkerAdd();window.tbMarkerInput(2,"label","rehearsal");__set=null');
+    await a.run('window.tbMarkerSave()');
+    s.eq('a row missing its date saves nothing',a.run('__set'),null);
+    a.run('window.tbMarkerRemove(2)');
+    s.eq('a row can be removed',a.run('_tbMarkerDraft.length'),2);
+    a.run('window.tbMarkerAdd();window.tbToggleSettings();window.tbToggleSettings()');
+    s.eq('closing Settings drops an unsaved edit',a.run('_tbMarkerRows().length'),2);
+    a.run('session='+J(DANIYAL)+';window.tbMarkerAdd()');
+    s.eq('a member cannot touch the markers',a.run('_tbMarkerRows().length'),2);
+  }
+
+  // The inbox listened to EVERY notification addressed to the person, HRM
+  // ones too, forever -- and the reminder now adds rows every morning.
+  s.section('the inbox reads only the Board’s rows, newest first, capped; and survives a missing index');
+  {
+    const mk=()=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash'});
+      a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[{uid:"u-ammar",username:"ammar"}]');
+      a.run('var __subs=[],__unsub=0;query=function(){return{args:[].slice.call(arguments,1)};};'
+        +'where=function(f,o,v){return{w:[f,o,v]};};orderBy=function(f,d){return{o:[f,d]};};limit=function(n){return{l:n};};'
+        +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next,err:err});return function(){__unsub++;};}');
+      return a;
+    };
+    const a=mk();
+    a.run('tbWatchNotifs()');
+    s.eq('it asks for the person’s Board rows, newest first, at most 200',J(a.run('__subs[0].q.args')),
+      J([{w:['forUser','==','ammar']},{w:['source','==','tb']},{o:['createdAt','desc']},{l:200}]));
+    a.run('__subs[0].err({code:"failed-precondition",message:"The query requires an index"})');
+    s.eq('an index not deployed yet: it lets go of that listener',a.run('__unsub'),1);
+    s.eq('and reads the wide query meanwhile, rather than an empty inbox',J(a.run('__subs[1]&&__subs[1].q.args')),J([{w:['forUser','==','ammar']}]));
+    s.eq('which is not an error on screen',a.run('_tbNotifErr'),false);
+    a.run('__subs[1].next({docs:[{id:"n1",data:function(){return{source:"tb",forUser:"ammar",type:"due_today",createdAt:1,readBy:[]};}}]})');
+    s.eq('and the inbox fills',a.run('tbNotifs.length'),1);
+    const b=mk();
+    b.run('tbWatchNotifs();__subs[0].err({code:"permission-denied",message:"Missing or insufficient permissions."})');
+    s.eq('a REFUSAL is not mistaken for a missing index',b.run('__subs.length'),1);
+    s.eq('it says the inbox could not be read',b.run('_tbNotifErr'),true);
+    // The one-off read (a shell without onSnapshot) falls back the same way.
+    const c=mk();
+    c.run('var __gd=[];getDocs=async function(q){__gd.push(q.args.length);if(q.args.length>1)throw{code:"failed-precondition"};'
+      +'return{docs:[{id:"n2",data:function(){return{source:"tb",forUser:"ammar",createdAt:2,readBy:[]};}}]};}');
+    await c.run('loadTbNotifsOnce()');
+    s.eq('the one-off read tries the narrow query, then the wide one',J(c.run('__gd')),J([4,1]));
+    s.eq('and gets the rows',c.run('tbNotifs.length'),1);
+    const idx=JSON.parse(read('firestore.indexes.json')).indexes.filter(x=>x.collectionGroup==='hrm_notifications');
+    s.eq('the index it needs is declared',J(idx.map(x=>x.fields.map(f=>f.fieldPath+':'+f.order))),
+      J([['forUser:ASCENDING','source:ASCENDING','createdAt:DESCENDING']]));
+  }
+
+  // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
+  s.section('the composer: no date means undated, never today');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    const P=(text,qa,fallback)=>a.run('tbComposerPlan(tbParseQuickAdd('+J(text)+','
+      +J({today:'2026-09-26',handles:{ammar:'u-ammar',afnan:'u-afnan',daniyal:'u-dani'},boardHandles:['ammar','afnan','daniyal','mustafa','saim']})
+      +'),'+J(qa||{})+',"u-ammar",'+J(fallback||null)+')');
+    s.eq('a bare title has NO date',P('call baber').date,null);
+    const t=P('denim samples oct 5');
+    s.eq('a date in the title fills the chip',t.date,'2026-10-05');
+    s.eq('and says it came from the title',t.dateFromText,true);
+    s.eq('a picked date outranks the title',P('denim samples oct 5',{dateSet:true,date:'2026-10-09'}).date,'2026-10-09');
+    s.eq('"no date" on the chip beats a date in the title',P('denim samples oct 5',{dateSet:true,date:''}).date,null);
+    const who=P('brief @daniyal',{assign:['u-afnan','u-dani']});
+    s.eq('you, then the title, then the chips — once each',J(who.assigneeUids),J(['u-ammar','u-dani','u-afnan']));
+    s.eq('a lane chip outranks #lane',P('x #denim',{lane:'knit'}).lane,'knit');
+    s.eq('with no chip, #lane counts',P('x #denim',{}).lane,'denim');
+    s.eq('the list you are in is the default',P('x',{},'l1').listId,'l1');
+    s.eq('"none" on the list chip means none',P('x',{listId:''},'l1').listId,null);
+  }
+  {
+    // Driven through the create: "title, Enter" is undated on the Dashboard.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"}]');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbListId=null;_tbQaReset(true);_tbQa.text="call baber"');
+    await a.run('window.tbCreateFromQuick("call baber",false,true)');
+    s.eq('created',a.run('tbItems.length'),1);
+    s.eq('with NO date — not today',a.run('tbItems[0].date'),null);
+    s.eq('the composer is cleared',a.run('_tbQa.text'),'');
+    s.eq('and still open for the next one',a.run('_tbQa.open'),true);
+    a.run('_tbQa.dateSet=true;_tbQa.date="2026-09-27";_tbQa.assign=["u-afnan"];_tbQa.text="shoot prep"');
+    await a.run('window.tbCreateFromQuick("shoot prep",false,true)');
+    s.eq('a picked date is used',a.run('tbItems[1].date'),'2026-09-27');
+    s.eq('and a picked person',J(a.run('tbItems[1].assigneeUids')),J(['u-ammar','u-afnan']));
+    // Plain text from elsewhere (not the composer) ignores stale chips.
+    a.run('_tbQa.dateSet=true;_tbQa.date="2027-01-01"');
+    await a.run('window.tbCreateFromQuick("plain",false,false)');
+    s.eq('a caller that is not the composer gets the grammar alone',a.run('tbItems[2].date'),null);
+  }
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"},{uid:"u-dani",username:"daniyal"},{uid:"u-must",username:"mustafa"}]');
+    a.run('tbLists=[{id:"l1",title:"Winter Drop 2027",kind:"shared"}];_tbQaReset(true)');
+    const html=a.run('_tbComposer("add something")');
+    s.ok('the composer opens with its chip row',/tb-quick open/.test(html)&&/tb-qarow/.test(html));
+    s.ok('Today, Tomorrow and Next Mon',/>Today</.test(html)&&/>Tomorrow</.test(html)&&/>Next Mon</.test(html));
+    s.ok('a date field',/type="date" data-tb-fp class="tb-qadate"/.test(html));
+    const assignRow=(/<span class="tb-qalabel">assign<\/span>([\s\S]*?)<\/div>/.exec(html)||['',''])[1];
+    s.eq('five people on the assign row: you, three to pick, one not set up',
+      (assignRow.match(/<button /g)||[]).length,5);
+    s.ok('you are always on it',/tb-qachip on tb-qachip-me" disabled/.test(html));
+    s.ok('someone not set up says so',/tb-qachip tb-qachip-off" disabled title="Saim is not set up yet/.test(html));
+    s.ok('a list and a lane',/id="tb-qa-list"/.test(html)&&/id="tb-qa-lane"/.test(html));
+    s.ok('the list offers the drop',/Winter Drop 2027/.test(html));
+    // EVERY enabled chip, not just one of them (review of 05431c2: dropping
+    // the guard from the date chips passed, since the people chips kept it).
+    const enabled=(html.match(/<button (?![^>]*disabled)[^>]*>/g)||[]);
+    s.ok('there are enabled chips to check',enabled.length>=6);
+    s.eq('every enabled chip keeps the caret in the title',
+      enabled.filter(b=>/onpointerdown="event\.preventDefault\(\)"/.test(b)).length,enabled.length);
+    // Next Mon is the Monday AFTER today, never today itself.
+    a.run('_tbToday=function(){return "2026-09-28";}');   // a Monday
+    s.ok('"next mon" on a Monday is a week out',/tbQaDate\('2026-10-05'\)"[^>]*>Next Mon</.test(a.run('_tbQaChipsHTML()')));
+    // Escape: clears first, closes second.
+    a.run('_tbQa.text="half";_tbQa.open=true');
+    a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
+    s.eq('Escape clears a half-typed title first',a.run('_tbQa.text+"|"+_tbQa.open'),'|true');
+    a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
+    s.eq('and closes on the second press',a.run('_tbQa.open'),false);
+    // A picked lane or list alone is content too (review of 05431c2).
+    a.run('_tbQaReset(true);window.tbQaSet("lane","denim")');
+    a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
+    s.eq('Escape clears a picked lane first, and stays open',a.run('_tbQa.lane+"|"+_tbQa.laneSet+"|"+_tbQa.open'),'|false|true');
+    a.run('_tbQaReset(true);window.tbQaSet("listId","l1")');
+    a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
+    s.eq('and a picked list',a.run('String(_tbQa.listId)+"|"+_tbQa.open'),'undefined|true');
+  }
+  s.section('composer: the review fixes (05431c2)');
+  {
+    const mk=()=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash'});
+      a.run('session='+J(AMMAR)+';currentPage="tb-dash"');
+      a.run('userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"},{uid:"u-dani",username:"daniyal"}]');
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbListId=null;_tbQaReset(true)');
+      return a;
+    };
+    const plan=a=>a.run('tbComposerPlan(_tbQaParse(),_tbQa,"u-ammar",null)');
+    {
+      // A SECOND ENTER DURING THE WRITE creates nothing: the box is empty.
+      const a=mk();
+      a.run('globalThis.__commits=0;globalThis.__release=null;'
+        +'writeBatch=function(){return{set(){return this;},commit(){__commits++;return new Promise(r=>{__release=r;});}};};');
+      a.run('document.getElementById("tb-qa").value="call baber";_tbQa.text="call baber"');
+      a.run('globalThis.__p=window.tbQuickKey({key:"Enter",shiftKey:false,preventDefault(){}})');
+      s.eq('the composer is empty at once, before the write lands',a.run('_tbQa.text+"|"+document.getElementById("tb-qa").value'),'|');
+      s.eq('and still open',a.run('_tbQa.open'),true);
+      a.run('window.tbQuickKey({key:"Enter",shiftKey:false,preventDefault(){}})');
+      s.eq('a second Enter during the write starts no second create',a.run('__commits'),1);
+      a.run('__release()');
+      await new Promise(r=>setTimeout(r,20));
+      s.eq('one item',a.run('tbItems.length'),1);
+    }
+    {
+      // A REFUSED write gives the text back, unless something new was typed.
+      const a=mk();
+      a.run('writeBatch=function(){return{set(){return this;},commit(){return Promise.reject(new Error("Missing or insufficient permissions"));}};};'
+        +'loadTbData=async function(){};_tbRepaint=function(){};');
+      a.run('_tbQa.text="shoot prep";window.tbQaSet("lane","shoot")');
+      await a.run('window.tbCreateFromQuick("shoot prep",false,true)');
+      s.eq('a refused add puts the title and the chips back',a.run('_tbQa.text+"|"+_tbQa.lane'),'shoot prep|shoot');
+      a.run('_tbQaReset(true);_tbQa.text="first";globalThis.__rej=null;'
+        +'writeBatch=function(){return{set(){return this;},commit(){return new Promise((r,j)=>{__rej=j;});}};};');
+      a.run('globalThis.__p=window.tbCreateFromQuick("first",false,true)');
+      a.run('_tbQa.text="second"');                        // typed while the write was out
+      a.run('__rej(new Error("Missing or insufficient permissions"))');
+      await a.run('__p');
+      s.eq('but never over something typed since',a.run('_tbQa.text'),'second');
+    }
+    {
+      // THE OUTSIDE CLICK closes on CLICK, not on pointerdown.
+      const a=mk();
+      const fireD=(type,target)=>{
+        const e={type:type,target:target||{closest:()=>null},preventDefault(){},stopPropagation(){}};
+        ((a.state.listeners&&a.state.listeners[type])||[]).slice().forEach(fn=>{try{fn(e);}catch(x){}});
+      };
+      fireD('pointerdown');
+      s.eq('a pointerdown outside does not close it (the rows would jump under the press)',a.run('_tbQa.open'),true);
+      fireD('click');
+      s.eq('the click outside does',a.run('_tbQa.open'),false);
+      a.run('_tbQaReset(true);window.tbQaSet("lane","denim")');
+      fireD('click');
+      s.eq('a composer holding a picked lane stays open',a.run('_tbQa.open'),true);
+      a.run('_tbQaReset(true)');
+      fireD('click',{closest:sel=>sel==='#tb-quick'?{}:null});
+      s.eq('a click inside the composer never closes it',a.run('_tbQa.open'),true);
+    }
+    {
+      // A CHIP CAN SWITCH OFF WHAT THE TITLE SAID.
+      const a=mk();
+      a.run('_tbQa.text="x #denim"');
+      s.eq('the title\'s lane counts',plan(a).lane,'denim');
+      a.run('window.tbQaSet("lane","")');
+      s.eq('"none" on the lane chip means none, even with #denim in the title',plan(a).lane,null);
+      a.run('_tbQaReset(true);_tbQa.text="brief @afnan"');
+      s.ok('the title names Afnan',plan(a).assigneeUids.indexOf('u-afnan')>-1);
+      a.run('window.tbQaAssign("u-afnan")');
+      s.ok('his chip switches him off',plan(a).assigneeUids.indexOf('u-afnan')<0);
+      a.run('window.tbQaAssign("u-afnan")');
+      s.ok('and back on',plan(a).assigneeUids.indexOf('u-afnan')>-1);
+      a.run('window.tbQaAssign("u-dani");window.tbQaAssign("u-dani")');
+      s.ok('a chip-only person toggles as before',plan(a).assigneeUids.indexOf('u-dani')<0);
+      a.run('window.tbQaAssign("u-ammar")');
+      s.ok('nothing switches off yourself',plan(a).assigneeUids.indexOf('u-ammar')>-1);
+    }
+    {
+      // A DATE TYPED INTO THE FIELD: partial values are not choices.
+      const a=mk();
+      a.run('window.tbQaDate("2026-10-01")');
+      a.run('window.tbQaDate("0002-10-05",true)');
+      s.eq('the first digit of a year does not wipe the date',a.run('_tbQa.date'),'2026-10-01');
+      a.run('window.tbQaDate("0202-10-05",true)');
+      s.eq('nor does a real but absurd year on the way to 2026',a.run('_tbQa.date'),'2026-10-01');
+      a.run('window.tbQaDate("2026-10-05",true)');
+      s.eq('the finished date is taken',a.run('_tbQa.date'),'2026-10-05');
+      a.run('window.tbQaDate("",true)');
+      s.eq('clearing the field is still "no date"',a.run('_tbQa.dateSet+"|"+_tbQa.date'),'true|');
+      // and the field being typed in is not rebuilt under the caret
+      a.run('document.getElementById("tb-qa-chips").innerHTML="SENTINEL";document.getElementById("tb-qa-date").focus()');
+      a.run('window.tbQaDate("2026-10-06",true)');
+      s.eq('typing in the date field does not rebuild the chip row',a.run('document.getElementById("tb-qa-chips").innerHTML'),'SENTINEL');
+      s.eq('but the label follows',a.run('document.getElementById("tb-qa-datenow").textContent'),a.run('tbDayLabel("2026-10-06",_tbToday())'));
+      a.run('document.getElementById("tb-qa-date").blur();window.tbQaDateBlur()');
+      await new Promise(r=>setTimeout(r,5));
+      s.ok('leaving the field rebuilds it',a.run('document.getElementById("tb-qa-chips").innerHTML')!=='SENTINEL');
+    }
+    {
+      // A REPAINT WHILE THE COMPOSER HAS FOCUS puts the caret at the END.
+      const a=mk();
+      a.run('globalThis.__sel=null;var q=document.getElementById("tb-qa");q.value="half typed";'
+        +'q.setSelectionRange=function(x,y){__sel=[x,y];};q.focus();_tbQa.open=true;');
+      a.run('_tbRepaint()');
+      s.eq('the caret goes back to the end of what was typed',J(a.run('__sel')),J([10,10]));
+      s.eq('and the composer has focus again',a.run('document.activeElement&&document.activeElement.id'),'tb-qa');
+    }
+  }
+
+  s.section('people: the review fixes (a96cddb)');
+  {
+    const mk=(profiles)=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash'});
+      a.run('session='+J(AMMAR)+';currentPage="tb-dash"');
+      a.run('userProfiles='+J(profiles));
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbListId=null');
+      return a;
+    };
+    const ALL=[{uid:'u-ammar',username:'ammar'},{uid:'u-afnan',username:'afnan'},{uid:'u-dani',username:'daniyal'},{uid:'u-must',username:'mustafa'}];
+    {
+      // The calendar "+" drops an unresolved @handle OUT LOUD.
+      const a=mk([{uid:'u-ammar',username:'ammar'}]);
+      a.run('globalThis.__t=[];_tbToast=function(m){__t.push(m);};_tbRepaint=function(){};');
+      await a.run('window.tbCreateOn("shoot lookbook @saim","2026-10-01")');
+      s.eq('the item is made, without the handle in its title',a.run('tbItems[0]&&tbItems[0].title'),'shoot lookbook');
+      s.ok('and the dropped @saim is SAID',a.run('__t.some(m=>/@saim/.test(m)&&/not set up/.test(m))'));
+      await a.run('window.tbCreateOn("@saim","2026-10-01")');
+      s.eq('a title that was only a handle makes nothing',a.run('tbItems.length'),1);
+      s.ok('and asks for a title',a.run('__t.some(m=>/Give it a title/.test(m))'));
+    }
+    {
+      // A FAILED DIRECTORY READ is not "not set up".
+      const a=mk([]);
+      a.run('_tbLoadErrors=["user_profiles"]');
+      const ppl=a.run('tbPeople()');
+      s.ok('you still resolve from your session',ppl.filter(p=>p.handle==='ammar')[0].uid==='u-ammar');
+      s.ok('the others read as NOT LOADED',ppl.filter(p=>p.handle!=='ammar').every(p=>p.reason==='unread'));
+      s.ok('and the words say the directory, not Sync accounts',
+        /did not load/.test(a.run('tbPersonOffText(tbPeople()[1])'))&&!/Sync accounts/.test(a.run('tbPersonOffText(tbPeople()[1])')));
+      s.ok('the create toast says the same',/did not load/.test(a.run('_tbPendingToast(["afnan"])')));
+      s.ok('Team Today says "not loaded"',/not loaded/.test(a.run('_tbTeamCard()'))&&!/not set up yet/.test(a.run('_tbTeamCard()')));
+      // and a comment's mention stats are not reset from an empty read
+      a.run('globalThis.__sets=[];writeBatch=function(){return{set(r,p){__sets.push(p);return this;},update(){return this;},commit:async function(){}};};'
+        +'updateDoc=async function(){};_tbRepaint=function(){};'
+        +'tbItems=[tbDecodeItem({id:"i1",title:"x",status:"open",visibility:"shared",ownerUid:"u-ammar",assigneeUids:["u-ammar"]})]');
+      a.run('_tbLoadErrors=["user_profiles"];userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"}]');
+      // tbPostComment reads the open item and the composer from the page.
+      a.run('_tbOpenItemId="i1";document.getElementById("tb-comp").value="@[afnan] see this"');
+      await a.run('window.tbPostComment()');
+      s.ok('the comment itself is still written',a.run('__sets.some(p=>p&&typeof p.body==="string")'));
+      s.ok('but no mention-stats write after a failed directory read',!a.run('__sets.some(p=>p&&p.tbMentionStats)'));
+      // The control: with the directory read, the stats DO ride along.
+      a.run('_tbLoadErrors=[];__sets=[];document.getElementById("tb-comp").value="@[afnan] again"');
+      await a.run('window.tbPostComment()');
+      s.ok('with the directory read, they do (so the check above has teeth)',a.run('__sets.some(p=>p&&p.tbMentionStats)'));
+    }
+    {
+      // A HANDLE TWO ROWS CLAIM is not guessed between; YOU are your session.
+      const a=mk(ALL.concat([{uid:'u-evil',username:'afnan'},{uid:'u-evil2',username:'ammar'}]));
+      const ppl=a.run('tbPeople()');
+      const af=ppl.filter(p=>p.handle==='afnan')[0],am=ppl.filter(p=>p.handle==='ammar')[0];
+      s.eq('a second row claiming @afnan makes him not assignable',af.uid,'');
+      s.eq('and says why',af.reason,'ambiguous');
+      s.ok('in words an owner can act on',/Two profiles claim @afnan/.test(a.run('tbPersonOffText(tbPeople().filter(p=>p.handle==="afnan")[0])')));
+      s.eq('a row claiming YOUR handle never outranks your session',am.uid,'u-ammar');
+      s.ok('@afnan in quick-add is not handed to the impostor',a.run('tbHandleMap().afnan')!=='u-evil');
+    }
+    {
+      // THE EMPTY-STATE SENTENCE is about the whole board, except Team Today.
+      const a=mk(ALL);
+      a.run('_tbToday=function(){return "2026-09-26";};_tbInboxCard=function(){return"";};_tbActivityCard=function(){return"";}');
+      s.ok('an empty board says so (Team Today alone does not hide it)',/Nothing on The Board today/.test(a.run('_tbDashboard()')));
+      a.run('tbItems=[tbDecodeItem({id:"g1",title:"Afnan\'s gate",kind:"gate",status:"open",visibility:"shared",ownerUid:"u-afnan",assigneeUids:["u-afnan"],date:"2026-10-01"})]');
+      const d=a.run('_tbDashboard()');
+      s.ok('a Deadlines card with a gate on it',/Deadlines/.test(d));
+      s.ok('means the sentence does not say "nothing"',!/Nothing on The Board today/.test(d));
+    }
+  }
+
+  s.section('needs a date: undated items I own OR am assigned to');
+  {
+    const a=loadApp({files:FILES});
+    const it=o=>Object.assign({status:'open',kind:'gate',visibility:'shared',steps:[],myDay:{},date:null,title:o.id},o);
+    const ITEMS=[
+      it({id:'mine',ownerUid:'u-ammar',assigneeUids:['u-ammar']}),
+      it({id:'onIt',ownerUid:'u-must',assigneeUids:['u-must','u-afnan']}),     // the seed's bulk-landing shape
+      it({id:'notMine',ownerUid:'u-must',assigneeUids:['u-must']}),
+      it({id:'dated',ownerUid:'u-must',assigneeUids:['u-afnan'],date:'2026-10-02'}),
+      // Handed over without "keep me on it": OWNED, not assigned. Every other
+      // fixture's owner is also an assignee, so the "I own" half had no test
+      // of its own (review of 05431c2).
+      it({id:'handed',ownerUid:'u-dani',assigneeUids:['u-afnan']})
+    ];
+    const ids=x=>x.map(i=>i.id);
+    s.eq('Afnan sees the undated items he is on',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-afnan")')).sort()),J(['handed','onIt']));
+    s.eq('Daniyal sees the one he OWNS but handed over',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-dani")'))),J(['handed']));
+    s.eq('Mustafa sees both he owns',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-must")'))),J(['notMine','onIt']));
+    s.eq('Ammar sees his own',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-ammar")'))),J(['mine']));
+    const assigned=ids(a.run('tbAssignedToMe('+J(ITEMS)+',"u-afnan","2026-09-26")'));
+    s.eq('Assigned to me does not repeat the undated one',J(assigned),J(['dated']));
+  }
+
+  // ══ SESSION 2 — P0.6: NAMING ════════════════════════════════════════
+  s.section('naming: The Board, and Title Case on the tab, screens and cards');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    s.eq('the product is The Board',a.run('TB_NAME'),'The Board');
+    s.eq('the rail is Title Case',a.run('_TB_RAIL.map(t=>t.label).join()'),'Dashboard,Calendar,Lists,Inbox');
+    const src=read('js/theboard.js');
+    // P1.5: the Dashboard's left column is groups (_tbGroup), not cards, so
+    // both are counted.
+    const titles=(src.match(/_tbCard\('([^']+)'/g)||[]).map(x=>x.slice(9,-1))
+      .concat((src.match(/_tbGroup\('[a-z0-9]+','([^']+)'/g)||[]).map(x=>x.replace(/^_tbGroup\('[a-z0-9]+','/,'').slice(0,-1)));
+    s.ok('every card and group title starts with a capital ('+titles.join(', ')+')',titles.length>=12&&titles.every(t=>/^[A-Z0-9]/.test(t)));
+    // P1.3: a list's done items are the Completed group, not a 'Done' card.
+    s.ok('the Completed group is Title Case too',/'Completed'/.test(src));
+    // No button label written in the source starts lowercase (session 2,
+    // P1.8 sweep: "close", "run seed", "hand over", "view all" … all did).
+    const lowBtn=(src.match(/>[a-z][a-z …]*<\/button>/g)||[]);
+    s.eq('no literal button label starts lowercase',lowBtn.join(' | '),'');
+    s.eq('no bell row is titled in lowercase',/title:'the board'/.test(src),false);
+    const sh=read('js/shared.js');
+    s.ok('the bug tracker names the screens in Title Case',/'tb-calendar':'The Board — Calendar'/.test(sh));
+    s.ok('the designer’s phone tab says The Board',/_mobNavBtn\('tb-dash','home','The Board'/.test(sh));
+    s.ok('the sidebar falls back to The Board',/\|\|'The Board'; \}/.test(sh));
+  }
+
+  // ══ SESSION 2 — P0.7: THE BOARD IS HOME ════════════════════════════
+  s.section('The Board is the landing page, and first in the phone More sheet');
+  {
+    const land=async sess=>{
+      const a=loadApp({files:NAV_FILES,currentPage:'',globals:{loadData:()=>{},loadStoreData:()=>{},
+        loadStoreNotifications:()=>{},profileBootstrap:()=>{},mktBootstrap:()=>{},
+        sessionStorage:{getItem:()=>null,setItem(){},removeItem(){},clear(){}}}});
+      a.run('session='+J(sess));
+      a.run('globalThis.__landed=[];showPage=function(id){__landed.push(id);}');
+      await a.run('startApp()');
+      return a.run('__landed.join()');
+    };
+    const MUST={uid:'u-must',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op',canPO:true,canFabric:true};
+    const AFNAN={uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op',canPO:true,canFabric:true};
+    const ARFAT={uid:'u-arfat',u:'arfat',name:'Arfat',role:'manager',email:'arfat@groovy.op',canPO:true,canFabric:true};
+    s.eq('Ammar lands on The Board',await land(AMMAR),'tb-dash');
+    s.eq('Afnan lands on The Board',await land(AFNAN),'tb-dash');
+    s.eq('Mustafa lands on The Board',await land(MUST),'tb-dash');
+    s.eq('Daniyal lands on The Board',await land(DANIYAL),'tb-dash');
+    s.eq('Saim lands on The Board',await land(SAIM),'tb-dash');
+    // Nobody else moves: the gate is the Board list, not a role.
+    s.eq('Arfat (a manager, not on The Board) lands where he always did',await land(ARFAT),'dashboard');
+    s.eq('a worker lands on My Work',await land(HARIS),'my-work');
+    // If js/theboard.js failed to load, the Board users with another home
+    // go there rather than to "The Board did not load" (review of b43a3db).
+    {
+      const landNoBoard=async sess=>{
+        const a=loadApp({files:NAV_FILES.filter(f=>f!=='js/theboard.js'),currentPage:'',globals:{loadData:()=>{},loadStoreData:()=>{},
+          loadStoreNotifications:()=>{},profileBootstrap:()=>{},mktBootstrap:()=>{},
+          sessionStorage:{getItem:()=>null,setItem(){},removeItem(){},clear(){}}}});
+        a.run('session='+J(sess));
+        a.run('globalThis.__landed=[];showPage=function(id){__landed.push(id);}');
+        await a.run('startApp()');
+        return a.run('__landed.join()');
+      };
+      s.ok('the check leaves theboard.js out',NAV_FILES.indexOf('js/theboard.js')>-1);
+      s.eq('without The Board loaded, Ammar lands on his dashboard',await landNoBoard(AMMAR),'dashboard');
+      s.eq('and Daniyal on the Creator Database',await landNoBoard(DANIYAL),'mkt-creators');
+    }
+
+    const sheet=(sess,fn)=>{
+      const a=loadApp({files:NAV_FILES,currentPage:'dashboard'});
+      a.run('session='+J(sess));
+      a.run('globalThis.__sheet=null;window.openMobSheet=function(t,items){__sheet=items;}');
+      a.run('window.'+fn+'()');
+      return a.run('(__sheet||[]).map(i=>i.label)[0]');
+    };
+    s.eq('Ammar’s More sheet opens with The Board',sheet(AMMAR,'openMoreSheet'),'The Board');
+    s.eq('Afnan’s too',sheet(AFNAN,'openMoreSheet'),'The Board');
+    s.eq('Mustafa’s too',sheet(MUST,'openMoreSheet'),'The Board');
+    s.eq('Daniyal’s More sheet opens with The Board',sheet(DANIYAL,'openMktMoreSheet'),'The Board');
+    s.ok('Arfat’s does not carry it',sheet(ARFAT,'openMoreSheet')!=='The Board');
+  }
+
+  // ══ SESSION 2 — P1.1: ICONS ═════════════════════════════════════════
+  s.section('icons: one sprite, by reference, and nothing from user text');
+  {
+    const a=loadApp({files:FILES});
+    const h=a.run('_tbIcon("calendar","sm")');
+    s.ok('a known icon references the vendored sprite',
+      /<use href="\/assets\/vendor\/lucide-sprite-1\.48\.0\.svg#lucide-calendar">/.test(h));
+    s.ok('sized by class, hidden from screen readers',/class="tb-ic tb-ic-sm" aria-hidden="true"/.test(h));
+    s.eq('an unknown name draws nothing',a.run('_tbIcon("\\"><img src=x onerror=alert(1)>")'),'');
+  }
+
+  // ══ SESSION 2 — P1.2: THE RAIL ══════════════════════════════════════
+  s.section('the rail: icons, count pills, a Lists group, New list');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    // 26 Sep 2026 is a Saturday; its Mon-Sun week is 21-27 Sep.
+    const today='2026-09-26';
+    const I=o=>Object.assign({status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']},o);
+    const items=[I({id:'o1',date:'2026-09-20'}),I({id:'o2',date:'2026-09-24'}),I({id:'t1',date:today}),
+      I({id:'w1',date:'2026-09-27'}),I({id:'n1',date:'2026-09-29'}),I({id:'u1',date:null}),
+      I({id:'x1',date:today,status:'done'}),I({id:'z1',date:today,assigneeUids:['u-afnan']})];
+    const c=a.run('tbRailCounts('+J(items)+',"u-ammar","'+today+'")');
+    s.eq('Dashboard counts overdue + due today, mine, open',c.dash,3);
+    s.eq('and knows how many of those are overdue',c.over,2);
+    s.eq('Calendar counts my open dated items in this Mon-Sun week',c.week,3);
+    s.eq('nothing mine counts nothing',J(a.run('tbRailCounts([],"u-ammar","'+today+'")')),J({dash:0,over:0,due:0,week:0}));
+
+    a.run("tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[]}");
+    a.run("tbLists=["+
+      "{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar']},"+
+      "{id:'l2',title:'<img src=x onerror=alert(1)>',kind:'private',adminUid:'u-ammar',memberUids:['u-ammar']},"+
+      "{id:'l3',title:'archived one',kind:'private',archived:true,adminUid:'u-ammar',memberUids:['u-ammar']}]");
+    a.run("tbItems="+J([I({id:'a',listId:'l1',date:'2026-09-20'}),I({id:'b',listId:'l1'}),I({id:'c',listId:'l1',status:'done'})]));
+    a.run('_tbListId=null;_tbHydrateQueue=[]');
+    const h=a.run('_tbShell("tb-dash","")');
+    s.ok('every nav entry carries its icon',['layout-dashboard','calendar','inbox','list-todo']
+      .every(n=>h.indexOf('#lucide-'+n+'"')>-1));
+    s.ok('the Dashboard entry is the current one',/class="tb-railbtn on" id="tb-rail-tb-dash"[^>]*aria-current="page"/.test(h));
+    s.ok('its pill counts what needs me, red because one is overdue',
+      /id="tb-rail-tb-dash"[\s\S]*?<span class="tb-railpill tb-pill-over" title="1 overdue">1<\/span>/.test(h));
+    s.ok('the inbox keeps its live slot, empty until the listener paints it',
+      /<span class="tb-railpill tb-pill-unread tb-railn" id="tb-rail-n"><\/span>/.test(h));
+    const railPart=h.slice(h.indexOf('<nav class="tb-rail"'),h.indexOf('</nav>'));
+    s.eq('the Lists group lists every live list, not the archived one',(railPart.match(/tb-railbtn tb-raillist\b/g)||[]).length,2);
+    s.ok('a team list wears the people icon, a private one the list icon',
+      /tbGoList\('l1'\)[\s\S]*?#lucide-users"/.test(railPart)&&/tbGoList\('l2'\)[\s\S]*?#lucide-list"/.test(railPart));
+    s.ok('with its open count',/tbGoList\('l1'\)[\s\S]*?<span class="tb-railpill" title="2 open">2<\/span>/.test(railPart));
+    s.ok('a list title is hydrated, never interpolated',
+      h.indexOf('<img src=x')<0&&a.run('_tbHydrateQueue.some(q=>q.text==="<img src=x onerror=alert(1)>")'));
+    s.ok('+ New list makes a PRIVATE list',/id="tb-rail-newlist"[^>]*onclick="window\.tbNewList\('private'\)"/.test(h));
+    s.ok('the rail holds no search box any more',railPart.indexOf('tb-search')<0);
+    s.ok('the header row opens the screen: its name, the search, the ?',
+      /<div class="tb-head"><h1 class="tb-h1">Dashboard<\/h1><div class="tb-searchwrap">[\s\S]*id="tb-search"[\s\S]*class="tb-helpbtn"/.test(h));
+    s.ok('the frame says which page it is',/class="tb-wrap tb-page-dash"/.test(h));
+
+    a.run("_tbListId='l1'");
+    const hl=a.run('_tbShell("tb-lists","")');
+    s.ok('an open list is the current entry',/class="tb-railbtn tb-raillist on"[^>]*onclick="window\.tbGoList\('l1'\)"/.test(hl));
+    s.ok('and the Lists header is not, while a list is open',!/class="tb-railbtn on" id="tb-rail-tb-lists"/.test(hl));
+    a.run("_tbListId=null");
+    s.ok('with no list open, the Lists header is',/class="tb-railbtn on" id="tb-rail-tb-lists"/.test(a.run('_tbShell("tb-lists","")')));
+    a.run("_tbListId='l1';globalThis.__went=null;window.showPage=function(id){__went=id;};showPage=window.showPage");
+    a.run('window.tbRailLists()');
+    s.eq('the Lists header always opens the OVERVIEW',a.run('[_tbListId,__went].join()'),',tb-lists');
+    a.run("_tbQuery='denim'");
+    s.ok('a search says so in the header',/<h1 class="tb-h1">Search<\/h1>/.test(a.run('_tbShell("tb-dash","")')));
+    a.run("_tbQuery=''");
+
+    const d=loadApp({files:FILES,currentPage:'tb-dash'});
+    d.run('session='+J(SAIM));
+    d.run("tbLoaded=true;tbLists=[];tbItems=[]");
+    const hd=d.run('_tbShell("tb-dash","")');
+    s.ok('a member gets New list but no Settings',/tb-rail-newlist/.test(hd)&&!/tb-settings-btn/.test(hd));
+    s.ok('no lists yet draws no empty group',!/tb-raillists/.test(hd));
+  }
+
+  // ══ SESSION 2 — P1.3: THE ROW ═══════════════════════════════════════
+  s.section('the row: a round check, a meta line, a star for My Day, Completed');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    const today='2026-09-26';
+    a.run("tbLoaded=true;tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar']}]");
+    a.run("tbItems=["+
+      "tbDecodeItem({id:'s1',title:'starred',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'"+today+"',listId:'l1',myDay:{'u-ammar':'"+today+"'}}),"+
+      "tbDecodeItem({id:'s2',title:'stale star',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],myDay:{'u-ammar':'2026-09-20'}}),"+
+      "tbDecodeItem({id:'d1',title:'done one',status:'done',completedAt:1000,ownerUid:'u-ammar',assigneeUids:['u-ammar'],listId:'l1'}),"+
+      "tbDecodeItem({id:'d2',title:'done later',status:'done',completedAt:2000,ownerUid:'u-ammar',assigneeUids:['u-ammar'],listId:'l1'})]");
+    a.run('_tbHydrateQueue=[]');
+    const r1=a.run('_tbRow(tbItems[0],"'+today+'")');
+    s.ok('the check is round and labelled',/class="tb-check" title="Mark done" aria-label="Mark done" aria-pressed="false"/.test(r1));
+    s.ok('it draws a check icon, shown by CSS on hover',/tb-check[^>]*>[^<]*<svg[^>]*><use href="[^"]*#lucide-check"/.test(r1));
+    s.ok('a starred item wears the star on, and says what it does',
+      /class="tb-star on" title="Remove from My Day"[^>]*aria-pressed="true"/.test(r1));
+    s.ok('the star acts without opening the item',/event\.stopPropagation\(\);window\.tbAddToMyDay\('s1'\)/.test(r1));
+    s.ok('the meta line names the list, off the list screen',/class="tb-rowlist"/.test(r1)
+      &&a.run('_tbHydrateQueue.some(q=>q.text==="Winter Drop 2027")'));
+    s.ok('and says Today with a capital',/class="tb-date">[\s\S]*?Today<\/span>/.test(r1));
+    s.ok('on the list screen it does not repeat the list',!/tb-rowlist/.test(a.run('_tbRow(tbItems[0],"'+today+'",{inList:true})')));
+    s.ok('a star from ANOTHER day is off',/class="tb-star" title="Add to My Day"/.test(a.run('_tbRow(tbItems[1],"'+today+'")')));
+    s.ok('an undated row carries no date at all',!/tb-date/.test(a.run('_tbRow(tbItems[1],"'+today+'")')));
+    s.ok('and with nothing else to say, no meta line -- not a lone dot',!/tb-rowmeta|tb-dot/.test(a.run('_tbRow(tbItems[1],"'+today+'")')));
+    const rd=a.run('_tbRow(tbItems[2],"'+today+'")');
+    s.ok('a done item has no star',!/tb-star/.test(rd));
+    s.ok('and its check is on and says the way back',/class="tb-check on" title="Mark not done"[^>]*aria-pressed="true"/.test(rd));
+
+    a.run("_tbListId='l1';_tbDoneOpen={};_tbHydrateQueue=[]");
+    const det=a.run('_tbListsScreen()');
+    s.ok('Completed is its own group, open by default',/tb-donegroup open[\s\S]*aria-expanded="true"/.test(det));
+    s.ok('most recently completed first',a.run('_tbHydrateQueue.map(q=>q.text).filter(t=>/^done/.test(t)).join()')==='done later,done one');
+    a.run('_tbRepaint=function(){}');
+    a.run("window.tbToggleCompleted('l1')");
+    const shut=a.run('_tbListsScreen()');
+    s.ok('the header folds it',/aria-expanded="false"/.test(shut)&&!/tb-row done/.test(shut));
+    s.ok('and the count still says how many',/Completed<span class="tb-count">2</.test(shut));
+    s.ok('the fold is per list',a.run('_tbDoneOpen["l1"]===false&&_tbDoneOpen["l2"]===undefined'));
+    a.run("window.tbToggleCompleted('l1')");
+    s.ok('and opens again',/tb-donegroup open/.test(a.run('_tbListsScreen()')));
+    s.eq('no done items, no group',a.run("_tbCompleted('l1',[],'"+today+"')"),'');
+    s.ok('the My Day toast is Title Case',/'Added to My Day':'Removed from My Day'/.test(read('js/theboard.js')));
+  }
+
+  // ══ SESSION 2 — P1.4: THE DETAIL PANE ═══════════════════════════════
+  s.section('the detail pane: the third column, To Do’s anatomy');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-lists'});
+    a.run('session='+J(AMMAR));
+    const today=a.run('_tbToday()');
+    a.run("tbLoaded=true;tbConfig=null;tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar']}]");
+    a.run("tbItems=[tbDecodeItem({id:'i1',title:'lock the sample date',status:'open',kind:'gate',visibility:'shared',ownerUid:'u-ammar',"
+      +"assigneeUids:['u-ammar'],date:'"+today+"',listId:'l1',createdAt:Date.now(),steps:[{id:'s',title:'call',done:false}]}),"
+      +"tbDecodeItem({id:'i2',title:'other',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],listId:'l1'})]");
+    s.ok('no item open, no pane column',!/has-pane/.test(a.run('_tbShell("tb-lists","",_tbDrawer())')));
+    a.run("_tbOpenItemId='i1';_tbHydrateQueue=[]");
+    const pane=a.run('_tbDrawer()');
+    const frame=a.run('_tbShell("tb-lists","<div>list</div>",'+J(pane)+')');
+    s.ok('an open item makes the frame three columns',/class="tb-wrap tb-page-lists has-pane"/.test(frame));
+    s.ok('and the pane sits INSIDE the frame, after the list',
+      /<div class="tb-main">[\s\S]*<\/div><aside class="tb-drawer tb-pane" id="tb-drawer"[\s\S]*<\/aside><\/div>$/.test(frame));
+    s.ok('the title card: a round check, the title, the star',
+      /tb-ptitle[\s\S]*?class="tb-check"[\s\S]*?id="tb-d-title"[\s\S]*?class="tb-star"/.test(pane));
+    s.ok('the title is a textarea, so a long one wraps',/<textarea class="tb-dtitle" id="tb-d-title" rows="1"/.test(pane));
+    s.ok('Enter commits it',/onkeydown="window\.tbTitleKey\(event\)"/.test(pane));
+    s.ok('steps carry their own small check',/tb-check tb-check-sm/.test(pane));
+    s.ok('and "Next step" once there is one',/placeholder="Next step"/.test(pane));
+    s.ok('property rows, in To Do’s order',
+      /Add to My Day[\s\S]*?>Date<[\s\S]*?>People<[\s\S]*?>List<[\s\S]*?>Lane<[\s\S]*?>Priority<[\s\S]*?>Kind</.test(pane));
+    s.ok('each with its icon',['sun','calendar','users','list','tag','flag'].every(n=>pane.indexOf('#lucide-'+n+'"')>-1));
+    s.ok('the option labels are Title Case',/>Normal<\/option>[\s\S]*>Critical<\/option>/.test(pane)&&/>Gate<\/option>/.test(pane));
+    s.ok('it says who made it',/tb-pmade">Created by you · Today</.test(pane));
+    s.ok('the close button says Esc',/class="tb-pclose" title="Close \(Esc\)"/.test(pane));
+    s.ok('every section header is Title Case',/tb-dsech">Files/.test(pane)&&/tb-dsech">Comments/.test(pane)&&/tb-dsech">Activity/.test(pane));
+    s.ok('the open item is marked in the list',/class="tb-row tb-sel" data-id="i1"/.test(a.run('_tbRow(tbItems[0],"'+today+'")')));
+    s.ok('and no other row is',!/tb-sel/.test(a.run('_tbRow(tbItems[1],"'+today+'")')));
+
+    // A pasted line break is not part of a title.
+    let wrote=null;
+    a.run('_tbCommit=async function(id,data){ globalThis.__w=data; };_tbRepaint=function(){}');
+    await a.run("window.tbFieldChange('title','two\\n  lines ')");
+    wrote=a.run('globalThis.__w');
+    s.eq('a line break in the title becomes a space',wrote&&wrote.title,'two lines');
+    a.run('globalThis.__ev={key:"Enter",preventDefault(){this.p=1;},target:{blur(){globalThis.__blurred=1;}}}');
+    a.run('window.tbTitleKey(__ev)');
+    s.ok('Enter is not a newline, and blurs to save',a.run('__ev.p===1&&globalThis.__blurred===1'));
+
+    a.run("tbItems[0].status='done'");
+    const pd=a.run('_tbDrawer()');
+    s.ok('a done item: no star, struck title, Reopen',!/tb-star/.test(pd)&&/tb-dtitle done/.test(pd)&&/>Reopen</.test(pd));
+  }
+
+  // ══ SESSION 2 — P1.5: THE DASHBOARD ═════════════════════════════════
+  s.section('the Dashboard: collapsible groups, and a right column of five');
+  {
+    const store={};
+    const LS={getItem:k=>(k in store)?store[k]:null,setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}};
+    const a=loadApp({files:FILES,currentPage:'tb-dash',globals:{localStorage:LS}});
+    a.run('session='+J(AMMAR));
+    const today=a.run('_tbToday()');
+    const past=a.run('_tbDayAdd(_tbToday(),-3)');
+    a.run("tbLoaded=true;_tbLoadErrors=[];tbConfig=null;tbLists=[];userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'}]");
+    a.run("tbItems=["+
+      "tbDecodeItem({id:'o',title:'late',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',date:'"+past+"'}),"+
+      "tbDecodeItem({id:'t',title:'now',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',date:'"+today+"'}),"+
+      "tbDecodeItem({id:'w',title:'waiting',status:'open',ownerUid:'u-ammar',assigneeUids:['u-afnan'],visibility:'shared',date:'"+today+"'})]");
+    const d=a.run('_tbDashboard()');
+    s.ok('the left column is one surface of groups',/<div class="tb-col"><div class="tb-card tb-groups"><section class="tb-group"/.test(d));
+    s.ok('Overdue first, its count red',/data-group="overdue"[\s\S]*?Overdue<\/span><span class="tb-count red">1</.test(d));
+    s.ok('then Due Today',/data-group="overdue"[\s\S]*data-group="today"/.test(d));
+    s.ok('an empty group is not drawn',!/data-group="myday"/.test(d)&&!/data-group="needsdate"/.test(d));
+    const right=d.slice(d.lastIndexOf('<div class="tb-col">'));
+    const cards=(right.match(/<div class="tb-cardh">([A-Z][A-Za-z ]+)/g)||[]).map(x=>x.replace(/.*>/,''));
+    s.eq('the right column: Assigned by Me, Deadlines, …, Team Today — and no My Lists',
+      cards.join(','),'Assigned by Me,Team Today');
+    s.ok('and never the list chips',!/My Lists/.test(d));
+    const team=a.run('_tbTeamCard()');
+    s.ok('Team Today: only the overdue count is red, not the whole line',
+      /<span class="tb-teamn">\d+ open · 1 due today · <span class="tb-teamover">1 overdue<\/span><\/span>/.test(team)&&!/tb-teamn over/.test(team));
+
+    a.run('_tbRepaint=function(){}');
+    a.run("window.tbToggleGroup('overdue')");
+    const shut=a.run('_tbDashboard()');
+    s.ok('a header folds its group, and says so',/data-group="overdue"><button class="tb-grouph" aria-expanded="false"/.test(shut));
+    s.ok('its rows go, its count stays',!/data-id="o"/.test(shut)&&/Overdue<\/span><span class="tb-count red">1</.test(shut));
+    s.eq('the fold is remembered',store['tb-dash-fold'],'["overdue"]');
+    a.run("window.tbToggleGroup('not-a-group')");
+    s.eq('an unknown key is refused',store['tb-dash-fold'],'["overdue"]');
+
+    const C=v=>a.run('tbCleanDashFold('+J(v)+')');
+    s.eq('nothing stored is nothing folded',J(C(null)),'[]');
+    s.eq('only known keys survive',J(C(JSON.stringify(['next7','[object Object]','overdue',{x:1}]))),J(['overdue','next7']));
+    s.eq('unreadable is removed',C('{nope'),null);
+    s.eq('a non-array is removed',C('{"overdue":true}'),null);
+    s.eq('over 4 KB is removed',C(JSON.stringify(['overdue','x'.repeat(5000)])),null);
+    // Driven through the loader: junk on disk is REMOVED, not merely ignored.
+    const store2={'tb-dash-fold':'x'.repeat(5000)};
+    const b=loadApp({files:FILES,currentPage:'tb-dash',globals:{localStorage:{getItem:k=>(k in store2)?store2[k]:null,
+      setItem:(k,v)=>{store2[k]=String(v);},removeItem:k=>{delete store2[k];}}}});
+    b.run('session='+J(AMMAR));
+    b.run('_tbDashFoldGet()');
+    s.ok('an oversized fold is deleted on load',!('tb-dash-fold' in store2));
+
+    const css=read('css/main.css');
+    s.ok('the columns stack when the CONTENT is narrow (a container query)',
+      /\.tb-main\{container-type:inline-size;container-name:tbmain\}/.test(css)&&/@container tbmain \(max-width:720px\)\{\.tb-cols\{grid-template-columns:minmax\(0,1fr\)\}\}/.test(css));
+  }
+
+  // ══ SESSION 2 — P1.6: THE CALENDAR ══════════════════════════════════
+  s.section('the calendar: Title Case, avatar filters, "+N more", a palette that shows in dark');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-calendar'});
+    a.run('session='+J(AMMAR));
+    s.eq('a month name is Title Case on screen',a.run('_tbTitleCase(tbMonthLabel("2026-10"))'),'October 2026');
+    s.eq('and a week range',a.run('_tbTitleCase(tbWeekLabel("2026-10-30"))'),'26 Oct – 1 Nov');
+    a.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'}]");
+    a.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[]};_tbCalAnchor='2026-10-15';_tbCalView='month';_tbCalMore=null");
+    a.run("_tbCalFilters={scope:'me',person:'',list:'',lane:'',color:'',hideDone:false}");
+    const I=(id,day)=>"tbDecodeItem({id:'"+id+"',title:'"+id+"',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',date:'"+day+"'})";
+    a.run("tbItems=["+['a','b','c','d','e'].map(x=>I(x,'2026-10-14')).join(',')+","+['f','g','h'].map(x=>I(x,'2026-10-21')).join(',')+"]");
+    const head=a.run('_tbCalHead()');
+    s.ok('the toolbar is Title Case',['>Today<','>Month<','>Week<','>Me<','>Everyone<','>Any list<','>Any lane<','> Hide done<'].every(t=>head.indexOf(t)>-1));
+    s.ok('the range is too',/tb-callabel">October 2026</.test(head));
+    s.ok('back and forward are icons that say what they do',/aria-label="Back"[^>]*>[\s\S]*?#lucide-chevron-left/.test(head)&&/aria-label="Forward"/.test(head));
+    s.eq('one face per person with an account',(head.match(/class="tb-calav"/g)||[]).length,2);
+
+    // An avatar is "whose calendar": it shows that person across the team.
+    a.run('_tbRepaint=function(){};_tbCalSavePrefs=function(){}');
+    a.run("window.tbCalPerson('u-afnan')");
+    s.eq('a face picks that person, across Everyone',a.run('[_tbCalFilters.person,_tbCalFilters.scope].join()'),'u-afnan,all');
+    s.ok('and is ringed',/class="tb-calav on" aria-pressed="true"[^>]*onclick="window\.tbCalPerson\('u-afnan'\)"/.test(a.run('_tbCalHead()')));
+    a.run("window.tbCalPerson('u-afnan')");
+    s.eq('the same face again shows everyone',a.run('_tbCalFilters.person'),'');
+    a.run("window.tbCalPerson({evil:1})");
+    s.eq('anything but a string clears it',a.run('_tbCalFilters.person'),'');
+    a.run("_tbCalFilters.scope='me'");
+
+    const cal=a.run('_tbCalendar()');
+    const day=d=>(new RegExp('data-day="'+d+'">[\\s\\S]*?(?=<div class="tb-day[ "])').exec(cal)||[''])[0];
+    const d14=day('2026-10-14');
+    s.eq('five on a month day: two pills',(d14.match(/class="tb-pill /g)||[]).length,2);
+    s.ok('and "+3 more"',/class="tb-daymore" onclick="window\.tbCalMore\('2026-10-14'\)">\+3 more</.test(d14));
+    const d21=day('2026-10-21');
+    s.eq('three fit, all shown',(d21.match(/class="tb-pill /g)||[]).length,3);
+    s.ok('with no "more"',!/tb-daymore/.test(d21));
+    a.run("window.tbCalMore('2026-10-14')");
+    const open=(new RegExp('data-day="2026-10-14">[\\s\\S]*?(?=<div class="tb-day[ "])').exec(a.run('_tbCalendar()'))||[''])[0];
+    s.eq('"+3 more" opens the day: all five',(open.match(/class="tb-pill /g)||[]).length,5);
+    s.ok('and offers "Show less"',/>Show less</.test(open));
+    a.run("window.tbCalStep(1)");
+    s.eq('stepping closes it',a.run('_tbCalMore'),null);
+    a.run("_tbCalAnchor='2026-10-14';window.tbCalMore('2026-10-14');window.tbCalView('week')");
+    s.eq('so does changing the view',a.run('_tbCalMore'),null);
+    const wk=a.run('_tbCalendar()');
+    s.ok('a week shows every pill, no cap',(wk.match(/class="tb-pill /g)||[]).length>=5&&!/tb-daymore/.test(wk));
+    s.ok('the "+" says which day it adds to',/class="tb-dayadd" title="Add on [A-Z][^"]*" aria-label="Add on/.test(wk));
+    a.run("window.tbCalMore('not a day')");
+    s.eq('a bad day opens nothing',a.run('_tbCalMore'),null);
+
+    const css=read('css/main.css');
+    const keys=['moss','ink','clay','amber','slate','sand','wine','teal'];
+    const darkBlock=(/html\[data-theme="dark"\]\{--tb-pal-moss[^}]*\}/.exec(css)||[''])[0];
+    s.ok('every palette key has a dark value',keys.every(k=>new RegExp('--tb-pal-'+k+':#[0-9a-f]{6}').test(darkBlock)));
+    s.ok('and no palette rule paints a literal colour',!/\.tb-c-[a-z]+(\s\.tb-pillbar)?\{background:#/.test(css));
+  }
+
+  // ══ SESSION 2 — P1.7: FLATPICKR EVERYWHERE A DATE IS PICKED ══════════
+  s.section('date pickers: every date field, Monday first, the markers shown');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    const src=read('js/theboard.js');
+    s.eq('all four date fields are marked for the picker',(src.match(/'<input type="date" data-tb-fp/g)||[]).length,4);
+    s.eq('and no date field is left out',(src.match(/'<input type="date"/g)||[]).length,4);
+    s.eq('with nothing to enhance, nothing happens',a.run('_tbPickersOn([{}],{})'),0);
+    // A fake flatpickr that records what it was asked for.
+    a.run('globalThis.__fp=[];flatpickr=function(el,o){const f={input:el,isOpen:false,o:o,destroyed:false,destroy(){this.destroyed=true;}};el._flatpickr=f;__fp.push(f);return f;}');
+    const n=a.run('_tbPickersOn([{className:"tb-qadate"},{disabled:true},{_flatpickr:{}}],{"2026-10-30":["launch"]})');
+    s.eq('an enabled field is enhanced; a disabled or already-enhanced one is not',n,1);
+    const o=a.run('__fp[0].o');
+    s.eq('it writes the date the handlers expect',o.dateFormat,'Y-m-d');
+    s.eq('the week starts Monday, like the calendar',o.locale.firstDayOfWeek,1);
+    s.ok('the field keeps its look',o.altInput===true&&o.altInputClass==='tb-qadate tb-fpalt');
+    const day=a.run('(function(){const d={dateObj:new Date(2026,9,30,12),title:"",classList:{c:[],add(x){this.c.push(x);}}};__fp[0].o.onDayCreate([],"",null,d);return{t:d.title,c:d.classList.c};})()');
+    s.eq('a marker day is marked in the picker',J(day),J({t:'launch',c:['tb-fp-marker']}));
+    const plain=a.run('(function(){const d={dateObj:new Date(2026,9,29,12),title:"",classList:{c:[],add(x){this.c.push(x);}}};__fp[0].o.onDayCreate([],"",null,d);return d.classList.c.length;})()');
+    s.eq('and an ordinary day is not',plain,0);
+    s.eq('two markers on a day read together',J(a.run('tbFpDayMarks("d",{d:["launch","founders out"]})')),J(['launch','founders out']));
+    s.eq('no marker is null',a.run('tbFpDayMarks("d",{})'),null);
+    // A repaint replaces the DOM: every picker is destroyed first, or each
+    // repaint would leave a calendar hanging off <body>.
+    a.run('_tbFpPrune(true)');
+    s.ok('pruning destroys them all',a.run('__fp[0].destroyed===true&&_tbFp.length===0'));
+    a.run('_tbFp=[{isOpen:true,input:{},destroy(){}}]');
+    s.ok('an open picker holds a live repaint',a.run('_tbLiveBusy()')===true);
+    s.ok('and keeps Escape for itself (the pane stays open)',/if\(e&&e\.key==='Escape'&&_tbFpOpen\(\)\)return;/.test(src));
+    s.ok('a click in its calendar is not "outside" the composer',/t\.closest\('\.flatpickr-calendar'\)/.test(src));
+    a.run('_tbFp=[]');
+  }
+
+  s.section('the calendar prefs are cleaned on load');
+  {
+    const a=loadApp({files:FILES});
+    const C=v=>a.run('tbCleanCalPrefs('+J(v)+')');
+    s.eq('nothing stored is nothing',C(null),null);
+    s.eq('unreadable is thrown away',C('{not json'),null);
+    s.eq('over 4 KB is thrown away',C(JSON.stringify({view:'week',pad:'x'.repeat(5000)})),null);
+    const junk=JSON.stringify({view:'week',tray:false,rows:true,
+      filters:{scope:'all',lane:'denim','[object Object],[object Object]':{nested:{deep:1}},hideDone:true}});
+    const got=C(junk);
+    s.eq('only known filter keys survive',J(Object.keys(got.filters).sort()),
+      J(['color','hideDone','lane','list','person','scope']));
+    s.eq('their values survive',J([got.filters.scope,got.filters.lane,got.filters.hideDone]),J(['all','denim',true]));
+    s.eq('and the view, tray and rows',J([got.view,got.tray,got.rows]),J(['week',false,true]));
+    s.eq('a bad scope reads as me',C(JSON.stringify({filters:{scope:'everyone'}})).filters.scope,'me');
+    s.eq('hideDone must be a real boolean',C(JSON.stringify({filters:{hideDone:'yes'}})).filters.hideDone,false);
+
+    // Driven through the loader: the junk entry is REWRITTEN clean, so it is
+    // gone for good rather than merely ignored.
+    const store={};
+    const b=harness.loadApp({files:FILES,globals:{localStorage:{
+      getItem:k=>store[k]==null?null:store[k],setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}}}});
+    store['groovy-tb-cal']=junk;
+    b.run('_tbCalLoadPrefs()');
+    s.ok('the loader rewrites the entry without the junk key',
+      store['groovy-tb-cal']&&store['groovy-tb-cal'].indexOf('[object Object]')<0);
+    s.eq('and keeps the real lane',b.run('_tbCalFilters.lane'),'denim');
+    // A fresh session opening onto the freeze's leftover.
+    const store2={'groovy-tb-cal':'{"view":"month","filters":{"x":"'+'y'.repeat(1400000)+'"}}'};
+    const c=harness.loadApp({files:FILES,globals:{localStorage:{
+      getItem:k=>store2[k]==null?null:store2[k],setItem:(k,v)=>{store2[k]=String(v);},removeItem:k=>{delete store2[k];}}}});
+    c.run('_tbCalLoadPrefs()');
+    s.eq('a 1.4 MB entry is removed outright',store2['groovy-tb-cal'],undefined);
+    s.eq('and the filters are the defaults',c.run('_tbCalFilters.scope+"|"+_tbCalFilters.lane'),'me|');
   }
 
 
@@ -1630,7 +3156,8 @@ module.exports=async function(){
     // too. Daniyal is the person the button exists for.
     a.run('session='+J(DANIYAL));
     s.ok('a locked item offers a way to ask',/tbOpenMoveReq/.test(a.run('_tbDrawer()')));
-    a.run('tbItems[0].lockedBy="u-dani"');
+    // You can only lock what you are on, so the holder is on it here.
+    a.run('tbItems[0].lockedBy="u-dani";tbItems[0].assigneeUids=(tbItems[0].assigneeUids||[]).concat("u-dani")');
     s.ok('the lock holder is not offered it',!/tbOpenMoveReq/.test(a.run('_tbDrawer()')));
     a.run('tbItems[0].lockedBy="u-afnan"');
     a.run('session='+J(AMMAR));
@@ -1641,10 +3168,11 @@ module.exports=async function(){
     a.run('tbNotifs=[{_id:"n1",source:"tb",forUser:"ammar",type:"mention",itemId:"i1",'
       +'fromUid:"u-afnan",createdAt:'+Date.now()+',readBy:[],message:"Afnan mentioned you"}]');
     s.ok('the dashboard carries an inbox card',/inbox/.test(a.run('_tbDashboard()')));
+    s.ok('with a way to the whole inbox',/>View all</.test(a.run('_tbDashboard()')));
     s.ok('the rail carries the unread slot',/id="tb-rail-n"/.test(a.run('_tbShell("tb-inbox","")')));
     a.run('tbNotifs=[]');
     s.ok('and the card is hidden when there is nothing in it',
-      !/view all/.test(a.run('_tbDashboard()')));
+      !/View all/.test(a.run('_tbDashboard()')));
   }
 
   s.section('the activity log reads as sentences');
@@ -1893,24 +3421,21 @@ module.exports=async function(){
     a.run('tbLists=[{id:"l1",title:"Winter Drop 2027",kind:"shared",adminUid:"u-ammar"}]');
     a.run('tbItems=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null');
     const bare=a.run('_tbDashboard()');
-    s.ok('an empty board still says so',/nothing on the board today/.test(bare));
+    s.ok('an empty board still says so',/Nothing on The Board today/.test(bare));
     s.ok('with one action, not none',/tb-calendar/.test(bare));
-    s.ok('no team card',!/team today/.test(bare));
-    s.ok('no list chips',!/my lists/.test(bare));
+    // REVERSED in session 2 (brief s4): Team today lists all five from day
+    // one, even with zero items -- "who is on the board" is a question an
+    // empty board still has to answer.
+    s.ok('the team card is there from day one',/Team Today/.test(bare));
+    s.ok('no list chips',!/My Lists/.test(bare));
     a.run('tbItems=[tbDecodeItem({id:"i1",title:"a",ownerUid:"u-ammar",'
       +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l1",date:"'+a.run('_tbToday()')+'"})]');
     const full=a.run('_tbDashboard()');
-    s.ok('with work on it the team card appears',/team today/.test(full));
-    s.ok('and the list chips',/my lists/.test(full));
-    // _tbCard's count chip reads rows.length, so the chips have to be one
-    // row each -- joined into a single string the card says "1" however
-    // many lists there are.
-    a.run('tbLists.push({id:"l2",title:"second",kind:"private",adminUid:"u-ammar"})');
-    a.run('tbItems.push(tbDecodeItem({id:"i2",title:"b",ownerUid:"u-ammar",'
-      +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l2"}))');
-    const two=a.run('_tbDashboard()');
-    s.ok('the card counts the lists, not the string it built',
-      /my lists<span class="tb-count">2</.test(two));
+    s.ok('with work on it the team card appears',/Team Today/.test(full));
+    // SESSION 2, P1.5: the list chips (card 12) LEFT the Dashboard -- the
+    // rail lists every list with its open count, so a second copy here was
+    // one more thing to keep in step.
+    s.ok('and no list chips: the lists live in the rail now',!/My Lists/.test(full)&&!/tb-listchip/.test(full));
   }
 
   s.section('the unscheduled tray');
@@ -1940,8 +3465,8 @@ module.exports=async function(){
     a.run('_tbCalAnchor="2026-10-15";_tbCalView="week";_tbHydrateQueue=[]');
     const cal=a.run('_tbCalendar()');
     s.ok('the tray renders beside the grid',/tb-tray/.test(cal));
-    s.ok('saying how many are in it',/unscheduled<span class="tb-count">2</.test(cal));
-    s.ok('and how to get one onto a day',/drag one onto a day/.test(cal));
+    s.ok('saying how many are in it',/Unscheduled<span class="tb-count">2</.test(cal));
+    s.ok('and how to get one onto a day',/Drag one onto a day/.test(cal));
     a.run('window.tbTrayToggle()');
     s.ok('it collapses',!/tb-traybody/.test(a.run('_tbCalendar()')));
     s.eq('and the preference never reaches Firestore',a.state.writes.length,0);
@@ -2030,9 +3555,16 @@ module.exports=async function(){
     a.run('tbItems[0].locked=true;tbItems[0].lockedBy="u-afnan"');
     a.run('userProfiles.push({uid:"u-afnan",username:"afnan",displayName:"Afnan"})');
     a.run('session='+J(DANIYAL));
+    const onBefore=a.run('JSON.stringify(tbItems[0].assigneeUids||[])');
+    a.run('tbItems[0].assigneeUids=["u-ammar","u-dani"]');
     a.run('window.tbOpenMove("i1")');
     s.eq('a locked pill opens no sheet',a.run('_tbMoveId'),null);
     s.ok('and says who holds it',toastsOf(a).some(t=>/locked by Afnan/.test(t)));
+    a.run('tbItems[0].assigneeUids=["u-ammar"];tbItems[0].locked=false');
+    a.run('window.tbOpenMove("i1")');
+    s.eq('someone not on it gets no sheet either',a.run('_tbMoveId'),null);
+    s.ok('and is told why, not blamed on a lock',toastsOf(a).some(t=>/Only the people on this item can change it/.test(t)));
+    a.run('tbItems[0].assigneeUids='+onBefore);
   }
 
   return s;

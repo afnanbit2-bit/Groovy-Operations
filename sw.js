@@ -10,7 +10,7 @@
  * Bump CACHE_VERSION on every deploy that changes a precached file; the
  * activate handler deletes every cache from a prior version.
  */
-const CACHE_VERSION = 'v169';
+const CACHE_VERSION = 'v206';
 const STATIC_CACHE = `groovy-ops-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `groovy-ops-runtime-${CACHE_VERSION}`;
 // Deliberately NOT version-scoped: a Cloudinary delivery URL is immutable
@@ -56,6 +56,10 @@ const PRECACHE_URLS = [
   '/assets/vendor/xlsx-0.18.5.full.min.js',
   '/assets/vendor/jsbarcode-3.11.6.all.min.js',
   '/assets/vendor/qrcode-generator-2.0.4.js',
+  // The Board (session 2, P1): the date picker and the icon sprite.
+  '/assets/vendor/flatpickr-4.6.13.min.js',
+  '/assets/vendor/flatpickr-4.6.13.min.css',
+  '/assets/vendor/lucide-sprite-1.48.0.svg',
   '/js/activity.js',
   '/js/theboard.js',
   '/js/marketing.js',

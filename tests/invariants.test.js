@@ -19,6 +19,18 @@ module.exports=function(){
 
   const indexHtml=read('index.html');
   const sw=read('sw.js');
+  // What is REALLY precached and really loaded: the PRECACHE_URLS array
+  // with its comments removed, and index.html without <!-- --> comments. A
+  // commented-out entry used to satisfy both checks (review of 302879a).
+  const precacheLive=(()=>{
+    const body=((/const PRECACHE_URLS\s*=\s*\[([\s\S]*?)\]/.exec(sw)||[,''])[1]).replace(/\/\*[\s\S]*?\*\//g,'');
+    return body.split('\n').map(l=>{
+      let q=false;
+      for(let i=0;i<l.length;i++){ if(l[i]==="'")q=!q; else if(!q&&l[i]==='/'&&l[i+1]==='/')return l.slice(0,i); }
+      return l;
+    }).join('\n');
+  })();
+  const indexLive=indexHtml.replace(/<!--[\s\S]*?-->/g,'');
   const css=read('css/main.css');
   const jsFiles=fs.readdirSync(path.join(ROOT,'js')).filter(f=>f.endsWith('.js')).sort();
 
@@ -28,9 +40,9 @@ module.exports=function(){
   s.section('every js module is wired into the shell and the service worker');
   jsFiles.forEach(f=>{
     s.ok(f+' has a <script> tag in index.html',
-      indexHtml.indexOf('/js/'+f)!==-1);
+      new RegExp('<script[^>]*src="/js/'+f.replace('.','\\.')+'[?"]').test(indexLive));
     s.ok(f+' is in sw.js PRECACHE_URLS',
-      new RegExp("'/js/"+f.replace('.','\\.')+"'").test(sw));
+      new RegExp("'/js/"+f.replace('.','\\.')+"'").test(precacheLive));
   });
 
   s.section('nothing is precached that does not exist');
@@ -99,6 +111,78 @@ module.exports=function(){
       const lic='assets/vendor/'+f.replace(/(\.(umd|full|all))?(\.min)?\.js$/,'.LICENSE');
       s.ok('vendored '+f+' ships its licence',exists(lic),exists(lic)?undefined:'missing '+lic);
     });
+
+  // ── The Board's vendored stylesheet and sprite (session 2, P1.1) ───────
+  // The .js loop above covers scripts. A stylesheet or a sprite that is not
+  // precached is a page that draws without its picker or its icons offline,
+  // and one that ships without its licence breaks the vendoring rule.
+  s.section('every vendored file is precached, licensed and referenced');
+  {
+    const vend=fs.readdirSync(path.join(ROOT,'assets','vendor'))
+      .filter(f=>!/\.LICENSE$|^README\.md$/.test(f));
+    const LIC={'lucide-sprite-1.48.0.svg':'lucide-static-1.48.0.LICENSE'};
+    const js=jsFiles.map(f=>read('js/'+f)).join('\n');
+    vend.forEach(f=>{
+      s.ok('vendored '+f+' is precached by sw.js',precacheLive.indexOf("'/assets/vendor/"+f+"'")>-1);
+      if(/\.js$/.test(f))return;                          // covered above
+      s.ok('vendored '+f+' carries its version in the filename',/-\d+\.\d+\.\d+[.-]/.test(f));
+      const lic='assets/vendor/'+(LIC[f]||f.replace(/(\.min)?\.(css|svg)$/,'.LICENSE'));
+      s.ok('vendored '+f+' ships its licence',exists(lic),exists(lic)?undefined:'missing '+lic);
+      if(/\.css$/.test(f))s.ok('vendored '+f+' is linked from index.html',indexHtml.indexOf('/assets/vendor/'+f)>-1);
+      if(/\.svg$/.test(f))s.ok('vendored '+f+' is used by a module',js.indexOf('/assets/vendor/'+f)>-1);
+    });
+  }
+
+  s.section('the Lucide sprite: every icon the Board draws is in it, and nothing else can be');
+  {
+    const sprite=read('assets/vendor/lucide-sprite-1.48.0.svg');
+    const ids=(sprite.match(/<symbol id="lucide-([a-z0-9-]+)"/g)||[]).map(x=>x.replace(/.*lucide-/,'').replace(/"$/,''));
+    s.eq('47 symbols, no duplicates',[ids.length,new Set(ids).size].join('/'),'47/47');
+    s.ok('no script, event handler, href or foreignObject',
+      !/<script|\son[a-z]+\s*=|\shref\s*=|javascript:|foreignObject/i.test(sprite));
+    s.ok('no literal colour (fill is none or currentColor)',
+      (sprite.match(/fill="([^"]+)"/g)||[]).every(x=>/fill="(none|currentColor)"/.test(x)));
+    const tb=read('js/theboard.js');
+    const listed=((/const TB_ICONS=\[([\s\S]*?)\];/.exec(tb)||[])[1]||'').match(/'([a-z0-9-]+)'/g)||[];
+    const names=listed.map(x=>x.replace(/'/g,''));
+    s.ok('the Board lists icons',names.length>0);
+    s.eq('every icon the Board lists is in the sprite',names.filter(n=>ids.indexOf(n)<0).join(','),'');
+    // Session 2 asked for Title Case on the Board's screens and card
+    // titles. P0.6 changed the markup and a CSS rule forced it straight
+    // back to lowercase -- invisible to every check that reads
+    // textContent. No .tb- rule may transform case.
+    {
+      const css=read('css/main.css').replace(/\/\*[\s\S]*?\*\//g,'');
+      const bad=[];
+      (css.match(/[^{}]+\{[^{}]*\}/g)||[]).forEach(r=>{
+        const sel=r.slice(0,r.indexOf('{')),body=r.slice(r.indexOf('{'));
+        // (?!\s*none): with `\s*(?!none)`, backtracking let the space before
+        // "none" satisfy the lookahead, so text-transform: none was flagged.
+        if(/\.tb-/.test(sel)&&/text-transform\s*:(?!\s*none\b)/.test(body))bad.push(sel.trim().slice(0,60));
+      });
+      s.eq('no .tb- rule transforms the case of its text',bad.join(' | '),'');
+    }
+    // Every icon NAME the source can hand to _tbIcon: a literal first
+    // argument, every quoted name inside the call (a ternary picks one of
+    // two), an `icon:'x'` property (the rail items) and a `prop('x'` row in
+    // the item pane. _tbIcon returns '' for a name it does not list, so a
+    // miss is an icon that silently is not there. The first cut read only
+    // literal first arguments -- and sliced `_tbIcon('` as eight characters
+    // when it is nine. tests/smoke-board.js also records every name asked
+    // for at run time, which covers what no pattern here can.
+    const used=[];
+    (tb.match(/_tbIcon\([^)]*\)/g)||[]).forEach(call=>{
+      // A name is a quoted string right after `(`, `?` or `:` -- never the
+      // `'shared'` a ternary compares against.
+      (call.match(/[(?:]\s*'([a-z0-9-]+)'/g)||[]).forEach(q=>{const n=q.replace(/^[(?:]\s*'|'$/g,'');if(n!=='sm'&&n!=='lg')used.push(n);});
+    });
+    (tb.match(/\bicon:'([a-z0-9-]+)'/g)||[]).forEach(x=>used.push(x.replace(/^icon:'|'$/g,'')));
+    (tb.match(/\bprop\('([a-z0-9-]+)'/g)||[]).forEach(x=>used.push(x.replace(/^prop\('|'$/g,'')));
+    s.ok('and it found the calls, the rail properties and the pane rows',used.length>20,used.length+' names');
+    s.ok('including a name chosen by a ternary',used.indexOf('lock-open')>-1&&used.indexOf('chevron-right')>-1);
+    s.eq('every icon the Board draws is one it lists',[...new Set(used.filter(n=>names.indexOf(n)<0))].join(','),'');
+    s.ok('the builder that makes the sprite is in the repo',exists('scripts/build-lucide-sprite.js'));
+  }
 
   // ── Realtime Database stays read-only from the browser (CLAUDE.md) ──────
   // Every RTDB write comes from netlify/functions/iclock.js via the Admin
@@ -772,6 +856,60 @@ module.exports=function(){
       s.ok(fn+' is defined in js/embellishments.js',
         new RegExp('function\\s+'+fn+'\\s*\\(').test(emb));
     });
+  }
+
+  // ── No window.X= may replace a same-named top-level function ─────────
+  // THE SEP 2026 BOARD FREEZE. js/theboard.js declared `function
+  // tbCalFilter(items,o)` (the calendar's pure filter) and later assigned
+  // `window.tbCalFilter=function(k,v){…repaint…}` (the dropdown handler).
+  // In a browser a classic script's top-level function IS a window
+  // property, so the handler replaced the filter, the calendar called the
+  // handler, the handler repainted the calendar -- and the tab locked for
+  // ~17s until the stack overflowed. The node harness gives each script
+  // its own `window`, so no logic suite could see it.
+  //
+  // So, across EVERY js/*.js (they share one global scope): a `window.X=`
+  // where X is a top-level function declared anywhere must be either
+  //   · a self-alias      window.X=X;
+  //   · a WRAP            the file captures the original first
+  //                       (`const prev=window.X` / `=X`) and calls it —
+  //                       the startApp pattern js/boards.js, patterns.js
+  //                       and theboard.js all use on purpose.
+  // Anything else silently swaps one function for a different one.
+  s.section('no window.X= replaces a same-named top-level function');
+  {
+    const declared={};
+    jsFiles.forEach(f=>{
+      const src=read('js/'+f);
+      for(const m of src.matchAll(/^(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/gm))
+        (declared[m[1]]=declared[m[1]]||[]).push(f);
+    });
+    const bad=[];
+    jsFiles.forEach(f=>{
+      const src=read('js/'+f);
+      for(const m of src.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=(?![=>])\s*([^;\n]*)/g)){
+        const name=m[1];
+        if(!declared[name])continue;
+        const rhs=m[2].trim();
+        if(rhs===name)continue;                                   // self-alias
+        const before=src.slice(0,m.index);
+        const cap=new RegExp('(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:window\\.)?'+name.replace(/\$/g,'\\$')+'\\s*;','g');
+        const caps=[...before.matchAll(cap)].map(c=>c[1]);
+        const after=src.slice(m.index,m.index+800);
+        if(caps.some(v=>new RegExp('\\b'+v.replace(/\$/g,'\\$')+'\\s*(?:\\.apply|\\.call|\\()').test(after)))continue;  // a wrap
+        const line=before.split('\n').length;
+        bad.push(f+':'+line+' window.'+name+'= (declared in '+declared[name].join(', ')+')');
+      }
+    });
+    s.ok('every window.X= over a declared function is a self-alias or a wrap',bad.length===0,bad.join('; '));
+
+    // And the specific one, by name, so a future rename cannot quietly
+    // bring the collision back under a different handler.
+    const tb=read('js/theboard.js');
+    s.ok('the calendar filter handler is tbCalSetFilter',/window\.tbCalSetFilter\s*=\s*function/.test(tb));
+    s.eq('nothing assigns window.tbCalFilter',/window\.tbCalFilter\s*=/.test(tb),false);
+    s.eq('the dropdowns call tbCalSetFilter, not the pure filter',
+      (tb.match(/onchange="window\.tbCalFilter\(/g)||[]).length,0);
   }
 
   return s;

@@ -67,6 +67,26 @@ service cloud.firestore {
         && ( get(/databases/$(database)/documents/board_items/$(itemId)).data.visibility == 'shared'
              || get(/databases/$(database)/documents/board_items/$(itemId)).data.ownerUid == request.auth.uid );
     }
+    // THE LOCK (26 Sept 2026, session 2 -- run in the emulator,
+    // tests/rules-emulator-board.js). On a LOCKED item only the locker or a
+    // Board owner may touch `date`, `dueAt`, `locked` or `lockedBy`;
+    // everyone else on the item edits the rest freely. On an UNLOCKED item,
+    // locking it names the caller. The rule this replaces let a member
+    // re-point `lockedBy` at themselves (or just set `locked` false) and
+    // then move the date -- and refused a locker who is not a Board owner
+    // their own unlock, since it only let `lockedBy` change TO the caller.
+    function tbLockOk() {
+      let r = resource.data;
+      let d = request.resource.data;
+      let wasLocked = r.get('locked', false) == true;
+      return isBoardOwner()
+        || ( wasLocked
+             && ( request.auth.uid == r.get('lockedBy', '')
+                  || !d.diff(r).affectedKeys().hasAny(['date','dueAt','locked','lockedBy']) ) )
+        || ( !wasLocked
+             && ( d.get('locked', false) != true
+                  || d.get('lockedBy', null) == request.auth.uid ) );
+    }
     // Store Accounts (Sept 2026): Raees enters, owners enter and administer.
     // Mirror in js/store-accounts.js _acctCanEntry().
     function isStoreAccounts() { return isOwner() || (signedIn() && userEmail() == 'raees@groovy.op'); }
@@ -928,26 +948,16 @@ service cloud.firestore {
 
       // THE LOCK IS THE POINT OF THE WHOLE PRODUCT, and it is enforced
       // here rather than in the UI: on a locked item only the locker (or a
-      // Board owner) may change `date` or `dueAt`. Everything else --
-      // comments, steps, notes, files, status, assignees -- stays open to
-      // the people doing the work. Locked is not frozen; it means one
-      // person moves the date.
-      //
-      // The third clause stops a member from re-pointing `lockedBy` at
-      // themselves and walking through the second.
+      // Board owner) may change `date`, `dueAt`, `locked` or `lockedBy`.
+      // Everything else -- comments, steps, notes, files, status,
+      // assignees -- stays open to the people doing the work. Locked is not
+      // frozen; it means one person moves the date. See tbLockOk() above.
       allow update: if isBoardUser()
         && ( request.auth.uid in resource.data.assigneeUids
              || request.auth.uid == resource.data.ownerUid
              || tbListAdmin(resource.data.get('listId', null))
              || isBoardOwner() )
-        && ( resource.data.get('locked', false) != true
-             || request.auth.uid == resource.data.get('lockedBy', '')
-             || isBoardOwner()
-             || ( request.resource.data.get('date', null) == resource.data.get('date', null)
-                  && request.resource.data.get('dueAt', null) == resource.data.get('dueAt', null) ) )
-        && ( request.resource.data.get('lockedBy', null) == resource.data.get('lockedBy', null)
-             || request.auth.uid == request.resource.data.get('lockedBy', '')
-             || isBoardOwner() );
+        && tbLockOk();
 
       allow delete: if isBoardUser()
         && (request.auth.uid == resource.data.ownerUid || isBoardOwner())
