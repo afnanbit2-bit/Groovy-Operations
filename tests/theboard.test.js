@@ -1506,7 +1506,7 @@ module.exports=async function(){
     s.eq('five people on the assign row: you, three to pick, one not set up',
       (assignRow.match(/<button /g)||[]).length,5);
     s.ok('you are always on it',/tb-qachip on tb-qachip-me" disabled/.test(html));
-    s.ok('someone not set up says so',/tb-qachip tb-qachip-off" disabled title="Saim is not set up yet"/.test(html));
+    s.ok('someone not set up says so',/tb-qachip tb-qachip-off" disabled title="Saim is not set up yet/.test(html));
     s.ok('a list and a lane',/id="tb-qa-list"/.test(html)&&/id="tb-qa-lane"/.test(html));
     s.ok('the list offers the drop',/Winter Drop 2027/.test(html));
     // EVERY enabled chip, not just one of them (review of 05431c2: dropping
@@ -1638,6 +1638,76 @@ module.exports=async function(){
       a.run('_tbRepaint()');
       s.eq('the caret goes back to the end of what was typed',J(a.run('__sel')),J([10,10]));
       s.eq('and the composer has focus again',a.run('document.activeElement&&document.activeElement.id'),'tb-qa');
+    }
+  }
+
+  s.section('people: the review fixes (a96cddb)');
+  {
+    const mk=(profiles)=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash'});
+      a.run('session='+J(AMMAR)+';currentPage="tb-dash"');
+      a.run('userProfiles='+J(profiles));
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbListId=null');
+      return a;
+    };
+    const ALL=[{uid:'u-ammar',username:'ammar'},{uid:'u-afnan',username:'afnan'},{uid:'u-dani',username:'daniyal'},{uid:'u-must',username:'mustafa'}];
+    {
+      // The calendar "+" drops an unresolved @handle OUT LOUD.
+      const a=mk([{uid:'u-ammar',username:'ammar'}]);
+      a.run('globalThis.__t=[];_tbToast=function(m){__t.push(m);};_tbRepaint=function(){};');
+      await a.run('window.tbCreateOn("shoot lookbook @saim","2026-10-01")');
+      s.eq('the item is made, without the handle in its title',a.run('tbItems[0]&&tbItems[0].title'),'shoot lookbook');
+      s.ok('and the dropped @saim is SAID',a.run('__t.some(m=>/@saim/.test(m)&&/not set up/.test(m))'));
+      await a.run('window.tbCreateOn("@saim","2026-10-01")');
+      s.eq('a title that was only a handle makes nothing',a.run('tbItems.length'),1);
+      s.ok('and asks for a title',a.run('__t.some(m=>/Give it a title/.test(m))'));
+    }
+    {
+      // A FAILED DIRECTORY READ is not "not set up".
+      const a=mk([]);
+      a.run('_tbLoadErrors=["user_profiles"]');
+      const ppl=a.run('tbPeople()');
+      s.ok('you still resolve from your session',ppl.filter(p=>p.handle==='ammar')[0].uid==='u-ammar');
+      s.ok('the others read as NOT LOADED',ppl.filter(p=>p.handle!=='ammar').every(p=>p.reason==='unread'));
+      s.ok('and the words say the directory, not Sync accounts',
+        /did not load/.test(a.run('tbPersonOffText(tbPeople()[1])'))&&!/Sync accounts/.test(a.run('tbPersonOffText(tbPeople()[1])')));
+      s.ok('the create toast says the same',/did not load/.test(a.run('_tbPendingToast(["afnan"])')));
+      s.ok('Team Today says "not loaded"',/not loaded/.test(a.run('_tbTeamCard()'))&&!/not set up yet/.test(a.run('_tbTeamCard()')));
+      // and a comment's mention stats are not reset from an empty read
+      a.run('globalThis.__sets=[];writeBatch=function(){return{set(r,p){__sets.push(p);return this;},update(){return this;},commit:async function(){}};};'
+        +'updateDoc=async function(){};_tbRepaint=function(){};'
+        +'tbItems=[tbDecodeItem({id:"i1",title:"x",status:"open",visibility:"shared",ownerUid:"u-ammar",assigneeUids:["u-ammar"]})]');
+      a.run('_tbLoadErrors=["user_profiles"];userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"}]');
+      // tbPostComment reads the open item and the composer from the page.
+      a.run('_tbOpenItemId="i1";document.getElementById("tb-comp").value="@[afnan] see this"');
+      await a.run('window.tbPostComment()');
+      s.ok('the comment itself is still written',a.run('__sets.some(p=>p&&typeof p.body==="string")'));
+      s.ok('but no mention-stats write after a failed directory read',!a.run('__sets.some(p=>p&&p.tbMentionStats)'));
+      // The control: with the directory read, the stats DO ride along.
+      a.run('_tbLoadErrors=[];__sets=[];document.getElementById("tb-comp").value="@[afnan] again"');
+      await a.run('window.tbPostComment()');
+      s.ok('with the directory read, they do (so the check above has teeth)',a.run('__sets.some(p=>p&&p.tbMentionStats)'));
+    }
+    {
+      // A HANDLE TWO ROWS CLAIM is not guessed between; YOU are your session.
+      const a=mk(ALL.concat([{uid:'u-evil',username:'afnan'},{uid:'u-evil2',username:'ammar'}]));
+      const ppl=a.run('tbPeople()');
+      const af=ppl.filter(p=>p.handle==='afnan')[0],am=ppl.filter(p=>p.handle==='ammar')[0];
+      s.eq('a second row claiming @afnan makes him not assignable',af.uid,'');
+      s.eq('and says why',af.reason,'ambiguous');
+      s.ok('in words an owner can act on',/Two profiles claim @afnan/.test(a.run('tbPersonOffText(tbPeople().filter(p=>p.handle==="afnan")[0])')));
+      s.eq('a row claiming YOUR handle never outranks your session',am.uid,'u-ammar');
+      s.ok('@afnan in quick-add is not handed to the impostor',a.run('tbHandleMap().afnan')!=='u-evil');
+    }
+    {
+      // THE EMPTY-STATE SENTENCE is about the whole board, except Team Today.
+      const a=mk(ALL);
+      a.run('_tbToday=function(){return "2026-09-26";};_tbInboxCard=function(){return"";};_tbActivityCard=function(){return"";}');
+      s.ok('an empty board says so (Team Today alone does not hide it)',/Nothing on The Board today/.test(a.run('_tbDashboard()')));
+      a.run('tbItems=[tbDecodeItem({id:"g1",title:"Afnan\'s gate",kind:"gate",status:"open",visibility:"shared",ownerUid:"u-afnan",assigneeUids:["u-afnan"],date:"2026-10-01"})]');
+      const d=a.run('_tbDashboard()');
+      s.ok('a Deadlines card with a gate on it',/Deadlines/.test(d));
+      s.ok('means the sentence does not say "nothing"',!/Nothing on The Board today/.test(d));
     }
   }
 

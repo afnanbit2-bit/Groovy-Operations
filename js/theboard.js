@@ -844,15 +844,44 @@ function _tbBoardUsernames(){ return (typeof BOARD_USERS!=='undefined'&&BOARD_US
 function tbPeople(){
   const profiles=_tbProfiles();
   const me=(typeof session!=='undefined'&&session)||null;
+  const unread=_tbLoadFailed('user_profiles');
   return _tbBoardUsernames().map(function(h){
-    const p=profiles.filter(x=>x&&x.username===h)[0];
+    const rows=profiles.filter(x=>x&&x.username===h&&x.uid);
+    const uids=rows.map(x=>x.uid).filter((u,i,a)=>a.indexOf(u)===i);
     const def=_tbDefs().filter(u=>u&&u.u===h)[0]||null;
-    let uid=(p&&p.uid)||'';
-    if(!uid&&me&&me.u===h&&me.uid)uid=me.uid;
+    let uid='',reason='';
+    // YOU are always your session (review of a96cddb): `username` on a
+    // profile row is self-writable, so a row claiming your handle must not
+    // outrank the account you are signed in as.
+    if(me&&me.u===h&&me.uid)uid=me.uid;
+    // TWO ROWS CLAIMING ONE HANDLE are not guessed between: the first one
+    // returned used to win, so a row anyone can write for themselves could
+    // take a teammate's assignments. Not assignable, and said -- an owner
+    // removes the stale row on the Profile page.
+    else if(uids.length>1)reason='ambiguous';
+    else if(uids.length===1)uid=uids[0];
+    else reason=unread?'unread':'missing';
+    const p=rows.filter(x=>x.uid===uid)[0]||(uids.length===1?rows[0]:null);
     const name=(p&&p.displayName)||(def&&def.name)||h;
-    return{handle:h,uid:uid,name:name,
+    return{handle:h,uid:uid,name:name,reason:reason,
       initial:String(name).trim().charAt(0).toUpperCase()||'?',setUp:!!uid};
   });
+}
+/** Why someone cannot be assigned, in words. A failed directory read used
+ *  to say every teammate was "not set up yet" and send an owner to Sync
+ *  accounts for four people who all had accounts (review of a96cddb). */
+function tbPersonOffText(p){
+  const n=(p&&p.name)||'They';
+  if(p&&p.reason==='unread')return n+' could not be matched — the team directory did not load. Reload The Board.';
+  if(p&&p.reason==='ambiguous')return 'Two profiles claim @'+p.handle+' — an owner should remove the stale one on the Profile page.';
+  return n+' is not set up yet — an owner can press Sync accounts on the Profile page.';
+}
+/** The toast for handles a create could not assign. */
+function _tbPendingToast(handles){
+  if(!handles||!handles.length)return '';
+  const at='@'+handles.join(', @');
+  if(_tbLoadFailed('user_profiles'))return 'Added — '+at+' could not be assigned: the team directory did not load. Reload The Board and assign from the item.';
+  return 'Added — '+at+' is not set up yet, so not assigned. An owner can press Sync accounts on the Profile page.';
 }
 
 /** Everything the UI needs about a person, from a uid. Never throws, and
@@ -1091,17 +1120,20 @@ function _tbDashboard(){
   const left=groups?'<div class="tb-card tb-groups">'+groups+'</div>':'';
   // The right column is what OTHER people are doing. "My Lists" (card 12)
   // is gone from here: the rail lists every list with its count now.
-  const right=[
+  const rightMost=[
     _tbCard('Assigned by Me',R(tbAssignedByMe(tbItems,me))),
     _tbCard('Deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'}),
-    _tbInboxCard(),       // card 9: the five newest, unread first
-    _tbTeamCard(),        // card 10
-    _tbActivityCard()     // card 11
+    _tbInboxCard()        // card 9: the five newest, unread first
   ].join('');
-  // The one-sentence empty state is about YOUR board -- the left column.
-  // The right column always carries Team today now (all five from day
-  // one, brief s4), so keying the sentence off both would hide it forever.
-  const empty=!left
+  const team=_tbTeamCard();        // card 10
+  const activity=_tbActivityCard(); // card 11
+  const right=rightMost+team+activity;
+  // The one-sentence empty state: nothing on YOUR board and nothing in the
+  // right column either -- except Team Today, which always lists all five
+  // (brief s4) and would otherwise hide the sentence forever. Keying it off
+  // the left column alone said "nothing on The Board" over a Deadlines card
+  // full of gates (review of a96cddb).
+  const empty=!left&&!rightMost&&!activity
     ?'<div class="tb-empty"><div class="tb-empty-h">Nothing on The Board today</div>'
      +'<div class="tb-empty-p">add something above, or open the calendar.</div>'
      +'<button class="btn-outline" onclick="window.showPage(\'tb-calendar\')">open the calendar</button>'
@@ -1268,9 +1300,8 @@ function _tbDrawer(){
         +tbPeople().map(p=>{
           // Listed even when they cannot be assigned yet, and saying why --
           // a person who silently is not there reads as a missing feature.
-          if(!p.uid)return'<button class="tb-person tb-person-off" disabled title="'+_tbEsc(p.name)
-            +' is not set up yet — an owner can press Sync accounts on the Profile page">'
-            +_tbEsc(p.name)+' · not set up</button>';
+          if(!p.uid)return'<button class="tb-person tb-person-off" disabled title="'+_tbEsc(tbPersonOffText(p))+'">'
+            +_tbEsc(p.name)+' · '+(p.reason==='unread'?'not loaded':p.reason==='ambiguous'?'check profile':'not set up')+'</button>';
           const on=(it.assigneeUids||[]).indexOf(p.uid)>-1;
           return'<button class="tb-person'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
             +' onclick="window.tbToggleAssignee(\''+_tbEsc(p.uid)+'\')">'+_tbEsc(tbUser(p.uid).name)+'</button>';
@@ -1446,7 +1477,7 @@ function _tbQaChipsHTML(){
   const nextMon=_tbNextDow(_tbDayAdd(today,1),1);
   const dateLabel=plan.date?tbDayLabel(plan.date,today)+(plan.dateFromText?' (from the title)':''):'no date';
   const people=tbPeople().map(function(p){
-    if(!p.uid)return'<button type="button" class="tb-qachip tb-qachip-off" disabled title="'+_tbEsc(p.name)+' is not set up yet">'+_tbEsc(p.name)+'</button>';
+    if(!p.uid)return'<button type="button" class="tb-qachip tb-qachip-off" disabled title="'+_tbEsc(tbPersonOffText(p))+'">'+_tbEsc(p.name)+'</button>';
     if(p.uid===me)return'<button type="button" class="tb-qachip on tb-qachip-me" disabled title="you are always on what you add">you</button>';
     const on=plan.assigneeUids.indexOf(p.uid)>-1;
     return'<button type="button" class="tb-qachip'+(on?' on':'')+'"'+keep
@@ -1506,7 +1537,9 @@ function _tbQaPaint(){
     +(plan.unknownHandles.length
       ?'   (@'+plan.unknownHandles.join(', @')+' is not on The Board — left in the title)':'')
     +(plan.pendingHandles.length
-      ?'   (@'+plan.pendingHandles.join(', @')+' is not set up yet — not assigned; an owner can press Sync accounts on the Profile page)':'');
+      ?(_tbLoadFailed('user_profiles')
+        ?'   (@'+plan.pendingHandles.join(', @')+' cannot be matched — the team directory did not load)'
+        :'   (@'+plan.pendingHandles.join(', @')+' is not set up yet — not assigned; an owner can press Sync accounts on the Profile page)'):'');
 }
 window.tbQaFocus=function(){
   if(_tbQa.open)return;
@@ -1624,8 +1657,7 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
     // Ready for the next one: still open, caret back in it.
     if(fromComposer)_tbQaRefocus=true;
     _tbRepaint();
-    if(parsed.pendingHandles.length)_tbToast('Added — @'+parsed.pendingHandles.join(', @')
-      +' is not set up yet, so not assigned. An owner can press Sync accounts on the Profile page.');
+    if(parsed.pendingHandles.length)_tbToast(_tbPendingToast(parsed.pendingHandles));
     else if(!data.date)_tbToast('Added with no date — it is in Needs a date.');
   },'add that');
   if(!ok&&saved&&!_tbQaHasContent()){
@@ -2349,10 +2381,14 @@ window.tbCalAdd=function(day){
 window.tbCreateOn=async function(text,day){
   const me=_tbMe();
   const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
+  // The quick-add's rule: no title, no item. The old fallback to the raw
+  // text saved "@saim" as the title of an item assigned to nobody else
+  // (review of a96cddb).
+  if(!parsed.title){ _tbToast('Give it a title.'); return; }
   const assignees=parsed.assigneeUids.slice();
   if(assignees.indexOf(me)<0)assignees.unshift(me);
   const data=tbNewItem({
-    title:parsed.title||String(text).slice(0,140),
+    title:parsed.title,
     assigneeUids:assignees,lane:parsed.lane,priority:parsed.priority,
     // The DAY WINS over a date typed into the text — you pressed + on a
     // specific square, and that is the more deliberate of the two.
@@ -2368,6 +2404,9 @@ window.tbCreateOn=async function(text,day){
     _tbLiveRemember('items_own',ref.id,data);
     _tbUpsert(tbItems,tbDecodeItem(Object.assign({id:ref.id},data)));
     _tbRepaint();
+    // Said, as the quick-add says it: a handle taken out of the title and
+    // assigned to nobody used to vanish without a word (review of a96cddb).
+    if(parsed.pendingHandles.length)_tbToast(_tbPendingToast(parsed.pendingHandles));
   },'add that');
 };
 
@@ -3153,7 +3192,9 @@ window.tbPostComment=async function(){
     // satisfies both the create and the update clause of the
     // user_profiles rule.
     const me=_tbMe();
-    if(me&&plan.mentionUids.length)
+    // Not after a failed directory read: _tbMyStats() is empty then, and
+    // the merge would reset the count of everyone mentioned to 1.
+    if(me&&plan.mentionUids.length&&!_tbLoadFailed('user_profiles'))
       b.set(doc(db,'user_profiles',me),
         {uid:me,tbMentionStats:tbMentionBump(_tbMyStats(),plan.mentionUids,_tbNow())},{merge:true});
     await b.commit();
@@ -3957,7 +3998,8 @@ function _tbTeamCard(){
       return'<div class="tb-teamrow tb-teamrow-off">'
         +'<span class="tb-av">'+_tbEsc(p.initial)+'</span>'
         +_tbSlot(p.name,'tb-teamname')
-        +'<span class="tb-teamn">not set up yet</span>'
+        +'<span class="tb-teamn" title="'+_tbEsc(tbPersonOffText(p))+'">'
+          +(p.reason==='unread'?'not loaded':p.reason==='ambiguous'?'check profile':'not set up yet')+'</span>'
       +'</div>';
     }
     const r=stats[p.uid]||{open:0,due:0,overdue:0,seenToday:null};
