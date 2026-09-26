@@ -115,35 +115,66 @@ window.doLogin=async function(){
   const def=USER_DEFS.find(x=>x.u===u);
   if(!def){uEl.classList.add('l-error');_loginShake();showToast('Username not found.',true);return;}
   const btn=document.getElementById('login-btn');
-  btn.disabled=true;btn.textContent='Signing in…';
+  const _rm=document.getElementById('l-remember');
+  const keep=!!(_rm&&_rm.checked);
+  _loginBusy(btn,true);
   uEl.disabled=true;pEl.disabled=true;
   loginInProgress=true;
   try{
+    // Remember me = STAY SIGNED IN. Local persistence survives closing the
+    // app; session persistence ends with the tab. Set BEFORE signing in so
+    // the new session is written to the right store. A build whose
+    // index.html predates the bridge simply keeps Firebase's default.
+    if(typeof setPersistence==='function'&&typeof browserLocalPersistence!=='undefined'){
+      try{await setPersistence(auth,keep?browserLocalPersistence:browserSessionPersistence);}catch(_){}
+    }
     const cred=await signInWithEmailAndPassword(auth,def.email,p);
     session={...def,uid:cred.user.uid};
     window._loginFailCount=0;
-    const _rm=document.getElementById('l-remember');
-    if(_rm&&_rm.checked)localStorage.setItem('groovy_remembered_user',u);
-    else localStorage.removeItem('groovy_remembered_user');
+    _authStore('groovy-keep-signed-in',keep?'1':'0');
+    if(keep)_authStore('groovy_remembered_user',u);
+    else _authStore('groovy_remembered_user',null);
+    // Offer the PHONE'S password manager the password (Chrome/Android shows
+    // "Save password?"). Never awaited, never stored by us, and only when
+    // the person asked to be remembered — an unticked box on a shared PC
+    // must not leave a saved password behind.
+    if(keep)_loginOfferSave(u,p,def.name);
     loginInProgress=false;
     startApp();
     logActivity('Login',`${def.name} signed in`);
+    if(keep)setTimeout(()=>{try{_lockMaybeOffer();}catch(_){}},1500);
   }catch(e){
     loginInProgress=false;
     uEl.disabled=false;pEl.disabled=false;
-    btn.disabled=false;btn.textContent='Sign in';
+    _loginBusy(btn,false);
     pEl.classList.add('l-error');
     window._loginFailCount=(window._loginFailCount||0)+1;
     _loginShake();
     let msg=e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'
       ?'Wrong password. Try again.'
-      :(e.message||'').toLowerCase().includes('fetch')
-        ?'No internet connection. Check your network.'
-        :'Error: '+e.message;
-    if(window._loginFailCount>=3)msg+=' ('+window._loginFailCount+' attempts — check Caps Lock)';
+      :e.code==='auth/too-many-requests'
+        ?'Too many attempts. Wait a few minutes, or ask Afnan or Ammar to reset it.'
+        :(e.message||'').toLowerCase().includes('fetch')||e.code==='auth/network-request-failed'
+          ?'No internet connection. Check your network.'
+          :'Error: '+e.message;
+    if(window._loginFailCount>=3&&e.code!=='auth/too-many-requests')msg+=' ('+window._loginFailCount+' attempts — check Caps Lock)';
     showToast(msg,true);
   }
 };
+function _loginBusy(btn,on){
+  if(!btn)return;
+  btn.disabled=on;
+  const lab=document.getElementById('login-btn-label');
+  if(lab)lab.textContent=on?'Signing in…':'Sign in';
+  else btn.textContent=on?'Signing in…':'Sign in';
+  btn.classList.toggle('busy',!!on);
+}
+function _loginOfferSave(u,p,name){
+  try{
+    if(typeof window.PasswordCredential!=='function'||!navigator.credentials||!navigator.credentials.store)return;
+    navigator.credentials.store(new window.PasswordCredential({id:u,password:p,name:name||u})).catch(()=>{});
+  }catch(_){}
+}
 window.doLogout=async function(){
   await signOut(auth);session=null;sessionStorage.clear();location.reload();
 };
@@ -396,16 +427,247 @@ window._checkCapsLock=function(e){
   if(e.getModifierState&&e.getModifierState('CapsLock'))warn.classList.add('visible');
   else warn.classList.remove('visible');
 };
+// ══════════════════════════════════════════
+// Login, persistence and the app lock (Sept 2026)
+// ══════════════════════════════════════════
+// Three rules this section holds:
+//
+// 1. THE APP NEVER STORES A PASSWORD. "Save password" is the phone's own
+//    password manager (Google Password Manager, iCloud Keychain, Samsung
+//    Pass) — the login is a real <form> with autocomplete attributes, and
+//    on success the password is OFFERED to it through the Credential
+//    Management API. The manager can ask for a fingerprint before it
+//    fills, which is the phone's feature, not ours.
+// 2. "Remember me" means STAY SIGNED IN. It used to remember only the
+//    username: the session was restored only when sessionStorage (one tab)
+//    still named the user, so closing the installed app signed everyone
+//    out. The restore now resolves the account from the signed-in EMAIL
+//    and respects the person's choice (_authRestoreDecision).
+// 3. The fingerprint lock is an APP LOCK over a kept session, not a login.
+//    WebAuthn with a platform authenticator (fingerprint / face / PIN) and
+//    userVerification:'required'. Nothing is sent to a server and nothing
+//    about the fingerprint ever reaches the app — the phone answers yes or
+//    no. It guards an unattended phone; it does not replace the password
+//    on a new device.
+function _authStore(k,v){try{if(v==null)localStorage.removeItem(k);else localStorage.setItem(k,v);}catch(_){}}
+function _authRead(k){try{return localStorage.getItem(k);}catch(_){return null;}}
+function _authSessRead(k){try{return sessionStorage.getItem(k);}catch(_){return null;}}
+
+// Which account a restored Firebase user is, and whether to let them in.
+// PURE — every input is an argument, so the whole rule is testable.
+//   user      {email}           the Firebase user being restored
+//   tabU      sessionStorage 'u' (same tab: a reload, always allowed)
+//   keepFlag  '1' | '0' | null  the Remember-me choice at last sign-in
+//   rememberedU               the username saved by an older build
+// → {def, allow, cold}. cold = a fresh app open (not a reload), which is
+// when the app lock applies.
+function _authRestoreDecision(user,tabU,keepFlag,rememberedU,defs){
+  const list=defs||USER_DEFS;
+  const email=String(user&&user.email||'').toLowerCase();
+  const def=(email&&list.find(x=>String(x.email||'').toLowerCase()===email))
+    ||(tabU&&list.find(x=>x.u===tabU))||null;
+  if(!def)return{def:null,allow:false,cold:false};
+  if(tabU&&tabU===def.u)return{def,allow:true,cold:false};
+  // A session from before this shipped carries no flag: it was kept only
+  // if the old build had remembered this username.
+  const keep=keepFlag==='1'||(keepFlag==null&&rememberedU===def.u);
+  return{def,allow:keep,cold:true};
+}
+
+// Remembered username, pre-fill, and the Remember-me box.
 (function(){
-  const saved=localStorage.getItem('groovy_remembered_user');
+  const saved=_authRead('groovy_remembered_user');
+  const r=document.getElementById('l-remember');
+  if(r)r.checked=_authRead('groovy-keep-signed-in')!=='0';
   if(saved){
     const u=document.getElementById('l-user');
-    if(u){u.value=saved;const r=document.getElementById('l-remember');if(r)r.checked=true;}
+    if(u)u.value=saved;
     setTimeout(()=>{const p=document.getElementById('l-pass');if(p)p.focus();},60);
   }else{
     setTimeout(()=>{const u=document.getElementById('l-user');if(u)u.focus();},60);
   }
+  _loginPaintTheme();
 })();
+
+window.loginForgot=function(){
+  const h=document.getElementById('login-help');
+  if(h)h.hidden=!h.hidden;
+};
+
+// The theme toggle on the login screen: Light → Dark → System. Writes the
+// same key Profile → Appearance does, so the two can never disagree.
+const _LOGIN_THEME_ORDER=['light','dark','system'];
+function _loginThemePref(){
+  if(typeof profileThemePref==='function')return profileThemePref();
+  const v=_authRead('groovy-theme');return v==='dark'||v==='light'?v:'system';
+}
+function _loginPaintTheme(){
+  const b=document.getElementById('login-theme-btn');
+  if(!b)return;
+  const pref=_loginThemePref();
+  const icon={
+    light:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    dark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg>',
+    system:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 010 17z" fill="currentColor"/></svg>'
+  }[pref];
+  b.innerHTML=icon+'<span>'+({light:'Light',dark:'Dark',system:'Auto'}[pref])+'</span>';
+  b.setAttribute('aria-label','Theme: '+pref+'. Tap to change.');
+}
+window.loginCycleTheme=function(){
+  const cur=_loginThemePref();
+  const next=_LOGIN_THEME_ORDER[(_LOGIN_THEME_ORDER.indexOf(cur)+1)%_LOGIN_THEME_ORDER.length];
+  _authStore('groovy-theme',next==='system'?null:next);
+  if(typeof profileApplyTheme==='function')profileApplyTheme();
+  _loginPaintTheme();
+};
+
+// ── The app lock ──
+const _LOCK_KEY='groovy-applock';         // {uid:{id,u,at}} — THIS device only
+const _LOCK_AFTER_MS=5*60*1000;           // background this long → lock again
+const _LOCK_OFFERED_KEY='groovy-applock-offered';
+function _lockAll(){try{return JSON.parse(_authRead(_LOCK_KEY)||'{}')||{};}catch(_){return{};}}
+function _lockFor(uid){const a=_lockAll();return uid&&a[uid]&&a[uid].id?a[uid]:null;}
+function lockEnabledFor(uid){return!!_lockFor(uid);}
+function _lockSupported(){
+  try{return!!(window.PublicKeyCredential&&navigator.credentials&&navigator.credentials.create&&window.isSecureContext!==false);}
+  catch(_){return false;}
+}
+async function lockAvailable(){
+  if(!_lockSupported())return false;
+  try{return!!(await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());}
+  catch(_){return false;}
+}
+function _b64u(buf){
+  const b=new Uint8Array(buf);let s='';for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function _b64uDec(str){
+  const s=String(str).replace(/-/g,'+').replace(/_/g,'/');
+  const bin=atob(s+'==='.slice((s.length+3)%4));
+  const out=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
+  return out;
+}
+function _lockRandom(n){const a=new Uint8Array(n);crypto.getRandomValues(a);return a;}
+// The authenticator data's flags byte (offset 32): bit 0 = user PRESENT,
+// bit 2 = user VERIFIED. A tap on a security key is presence; only
+// verification means a fingerprint, face or PIN was checked. Required.
+function _lockUserVerified(authData){
+  try{const b=new Uint8Array(authData);return b.length>32&&(b[32]&0x04)===0x04;}catch(_){return false;}
+}
+
+window.lockEnable=async function(){
+  if(!session){showToast('Sign in first.',true);return false;}
+  if(!(await lockAvailable())){showToast('This phone or browser cannot do a fingerprint lock.',true);return false;}
+  try{
+    const cred=await navigator.credentials.create({publicKey:{
+      rp:{name:'Groovy Operations'},
+      user:{id:_lockRandom(16),name:session.u,displayName:session.name||session.u},
+      challenge:_lockRandom(32),
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+      authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'discouraged'},
+      timeout:60000,attestation:'none'
+    }});
+    if(!cred||!cred.rawId)throw new Error('no credential');
+    const all=_lockAll();
+    all[session.uid]={id:_b64u(cred.rawId),u:session.u,at:Date.now()};
+    _authStore(_LOCK_KEY,JSON.stringify(all));
+    showToast('Fingerprint lock is on for this phone.');
+    return true;
+  }catch(e){
+    showToast(e&&e.name==='NotAllowedError'?'Fingerprint lock was not turned on.':'Could not turn on the fingerprint lock: '+(e&&e.message||e),true);
+    return false;
+  }
+};
+window.lockDisable=function(){
+  if(!session)return;
+  const all=_lockAll();delete all[session.uid];
+  _authStore(_LOCK_KEY,JSON.stringify(all));
+  showToast('Fingerprint lock is off for this phone.');
+};
+
+let _lockPending=null;   // what to run once unlocked (the cold-start startApp)
+let _lockShowing=false;
+let _lockHiddenAt=0;
+function _lockShow(def,onUnlock){
+  _lockPending=onUnlock||null;
+  _lockShowing=true;
+  const scr=document.getElementById('scr-lock');
+  if(!scr){_lockDone();return;}   // an old cached index.html: never strand anyone
+  const n=document.getElementById('lock-name');
+  if(n)n.textContent=((def&&def.name)||'').split(' ')[0]+'.';
+  const m=document.getElementById('lock-msg');if(m)m.textContent='';
+  scr.hidden=false;
+  document.documentElement.classList.add('app-locked');
+  // Try once without a tap; Safari needs a user gesture and will refuse,
+  // which is fine — the button is right there.
+  setTimeout(()=>{if(_lockShowing)window.lockUnlock(true);},250);
+}
+function _lockDone(){
+  _lockShowing=false;
+  const scr=document.getElementById('scr-lock');
+  if(scr)scr.hidden=true;
+  document.documentElement.classList.remove('app-locked');
+  const f=_lockPending;_lockPending=null;
+  if(f)f();
+}
+let _lockBusy=false;
+window.lockUnlock=async function(auto){
+  if(!_lockShowing||_lockBusy)return;
+  const uid=(session&&session.uid)||(auth&&auth.currentUser&&auth.currentUser.uid);
+  const rec=_lockFor(uid);
+  const m=document.getElementById('lock-msg');
+  if(!rec||!_lockSupported()){_lockDone();return;}   // lock record gone: nothing to guard
+  _lockBusy=true;
+  try{
+    const res=await navigator.credentials.get({publicKey:{
+      challenge:_lockRandom(32),
+      allowCredentials:[{type:'public-key',id:_b64uDec(rec.id),transports:['internal']}],
+      userVerification:'required',timeout:60000
+    }});
+    if(res&&res.response&&_lockUserVerified(res.response.authenticatorData)){_lockDone();return;}
+    if(m)m.textContent='Your fingerprint was not checked. Try again.';
+  }catch(e){
+    if(m&&!auto)m.textContent=e&&e.name==='NotAllowedError'
+      ?'Not unlocked. Tap the fingerprint to try again.'
+      :'This phone could not check your fingerprint. Use your password instead.';
+  }finally{_lockBusy=false;}
+};
+window.lockUsePassword=async function(){
+  _lockPending=null;_lockShowing=false;
+  const scr=document.getElementById('scr-lock');if(scr)scr.hidden=true;
+  document.documentElement.classList.remove('app-locked');
+  const u=(session&&session.u)||'';
+  try{await signOut(auth);}catch(_){}
+  session=null;
+  try{sessionStorage.clear();}catch(_){}
+  if(u)_authStore('groovy_remembered_user',u);
+  location.reload();
+};
+// Coming back after a while in the background locks again — the banking
+// app rule. A reload in the same tab does not (sessionStorage says so).
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){_lockHiddenAt=Date.now();return;}
+  if(!session||_lockShowing||!lockEnabledFor(session.uid))return;
+  if(_lockHiddenAt&&Date.now()-_lockHiddenAt>=_LOCK_AFTER_MS)_lockShow(session,null);
+});
+// After a password sign-in with Remember me on a phone that can do it,
+// offer the lock ONCE per person per device.
+async function _lockMaybeOffer(){
+  if(!session||lockEnabledFor(session.uid))return;
+  let offered={};try{offered=JSON.parse(_authRead(_LOCK_OFFERED_KEY)||'{}')||{};}catch(_){}
+  if(offered[session.uid])return;
+  if(!(await lockAvailable()))return;
+  offered[session.uid]=Date.now();_authStore(_LOCK_OFFERED_KEY,JSON.stringify(offered));
+  if(document.getElementById('lock-offer'))return;
+  const d=document.createElement('div');
+  d.id='lock-offer';d.className='lock-offer';
+  d.innerHTML='<div class="lock-offer-t">Unlock with your fingerprint?</div>'
+    +'<div class="lock-offer-s">You stay signed in on this phone. The app asks for your fingerprint, face or phone PIN when you open it. Change it any time in Profile.</div>'
+    +'<div class="lock-offer-b"><button type="button" class="lock-offer-ghost" id="lock-offer-no">Not now</button><button type="button" class="btn-sm" id="lock-offer-yes">Turn on</button></div>';
+  document.body.appendChild(d);
+  d.querySelector('#lock-offer-no').onclick=()=>d.remove();
+  d.querySelector('#lock-offer-yes').onclick=async()=>{d.remove();await window.lockEnable();};
+}
 
 // ══════════════════════════════════════════
 // STORE — RENDER FUNCTIONS
