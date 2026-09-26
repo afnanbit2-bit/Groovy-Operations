@@ -253,8 +253,12 @@ window.doLogout=async function(){
 
 // ── App start & nav ──
 async function startApp(){
+  // The app's own start-up writes must not raise "Saving…" (js/shared.js).
+  if(typeof window._gvQuietFor==='function')window._gvQuietFor(8000);
   document.getElementById('scr-login').style.display='none';
   document.documentElement.classList.remove('gv-login');
+  // The app fades in where the login faded out — one continuous handover.
+  {const a=document.getElementById('scr-app');if(a){a.classList.remove('gv-enter');void a.offsetWidth;a.classList.add('gv-enter');setTimeout(()=>a.classList.remove('gv-enter'),700);}}
   document.getElementById('scr-app').style.display='flex';
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;

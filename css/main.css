@@ -415,6 +415,17 @@ html.ptr-return #scr-login .login-box,html.ptr-return #scr-login .login-box>*{an
 }
 @media (prefers-reduced-motion:reduce){.login-wave{animation:none}.login-box{animation:none}}
 #scr-app{display:none;min-height:100vh;flex-direction:column}
+/* The handover from the login: the app fades up into place (js: startApp). */
+@keyframes gvEnter{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+#scr-app.gv-enter{animation:gvEnter .42s cubic-bezier(.2,.8,.2,1) both}
+@media (prefers-reduced-motion:reduce){#scr-app.gv-enter{animation:none}}
+/* The Board's loading state (js/theboard.js _tbSkeleton). */
+.tb-skel{padding:6px 2px}
+.tb-skel-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px 14px;margin-bottom:14px}
+.tb-skel-row{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border)}
+.tb-skel-row:last-child{border-bottom:none}
+.tb-skel-dot{width:30px;height:30px;border-radius:9px;flex-shrink:0}
+.tb-skel-lines{flex:1;min-width:0}
 .topbar{background:var(--surface);border-bottom:1px solid var(--line);height:52px;min-height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;position:sticky;top:0;z-index:100;flex-shrink:0}
 .topbar-logo{flex:1;display:flex;align-items:center}
 .topbar-user{font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px}

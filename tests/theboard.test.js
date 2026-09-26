@@ -481,7 +481,7 @@ module.exports=async function(){
     // .tb-person.on, .tb-check.on) — invisible to this scan until session 2,
     // because every use was concatenated; the composer's "you" chip is the
     // first literal one.
-    const REUSED=['btn-outline','btn-primary','empty','card','section-title','red','on'];
+    const REUSED=['btn-outline','btn-primary','empty','card','section-title','red','on','gv-skel'];
     const tokens=new Set();
     (src.match(/class="([^"]*)"/g)||[]).forEach(c=>{
       c.slice(7,-1).split(/[ ]+/).forEach(t=>{ if(t&&/^[a-z][a-z0-9-]*$/.test(t))tokens.add(t); });
