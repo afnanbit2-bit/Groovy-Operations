@@ -1754,6 +1754,48 @@ module.exports=async function(){
     s.ok('on the item, the title is editable again',!/id="tb-d-title"[^>]*readonly/.test(d2)&&/tbOpenHandover/.test(d2));
   }
 
+  // Landing on the Board (all five Board users do, every launch) wrote the
+  // last-seen stamp through the app's wrapped setDoc, which raises the
+  // blocking "Saving…" overlay for any write slower than 260ms -- and
+  // loadData's closing renderPage(currentPage) then rebuilt the page with
+  // no busy check (review of b43a3db).
+  s.section('landing on the Board: no blocking overlay, and the late re-render waits');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+    a.run('var __held=null;setDoc=async function(){__held=_gvSilentSaveCount;}');
+    await a.run('_tbTouchSeen()');
+    s.eq('the last-seen write runs with the overlay opted out',a.run('__held'),1);
+    s.eq('and the opt-out is released after',a.run('_gvSilentSaveCount'),0);
+    // Offline the write never answers; the opt-out must not outlive 2s, or
+    // every other module's overlay would stay silenced for the session.
+    const b=loadApp({files:FILES,currentPage:'tb-dash'});
+    b.run('session='+J(AMMAR));b.run('currentPage="tb-dash"');
+    b.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+    b.run('setDoc=function(){return new Promise(function(){});}');
+    b.run('_tbTouchSeen()');
+    s.eq('a write that never answers holds it at first',b.run('_gvSilentSaveCount'),1);
+    await new Promise(r=>setTimeout(r,2100));
+    s.eq('and lets go after two seconds',b.run('_gvSilentSaveCount'),0);
+  }
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[];setDoc=async function(){}');
+    a.run('tbRenderPage("tb-dash")');
+    a.run('var __rp=0;var __r0=_tbRepaint;_tbRepaint=function(){__rp++;return __r0.apply(this,arguments);};'
+      +'document.getElementById("main-content").querySelector=function(){return {};};_tbEditableFocus=function(){return true;}');
+    a.run('tbRenderPage("tb-dash")');
+    s.eq('re-rendering the page already on screen waits while a field is in use',a.run('__rp'),0);
+    s.eq('and is queued',a.run('_tbLivePending'),true);
+    a.run('_tbEditableFocus=function(){return false;};_tbLiveFlush();clearTimeout(_tbLiveTimer);_tbLiveTimer=null');
+    s.eq('and lands once the field is left',a.run('__rp'),1);
+    a.run('_tbEditableFocus=function(){return true;};currentPage="tb-calendar";tbRenderPage("tb-calendar")');
+    s.eq('navigating to another Board page is never held back',a.run('__rp'),2);
+    a.run('_tbEditableFocus=function(){return false;};clearTimeout(_tbLiveTimer);_tbLiveTimer=null;_tbLivePending=false');
+  }
+
   // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
   s.section('the composer: no date means undated, never today');
   {

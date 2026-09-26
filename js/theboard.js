@@ -4004,8 +4004,22 @@ async function _tbTouchSeen(){
   _tbSeenAt=now;
   // set-with-merge and carrying `uid`, for the reason the mention stats
   // do: a profile row that does not exist yet must not throw here.
+  //
+  // SILENT (review of b43a3db). setDoc is the app's wrapped one, and a write
+  // slower than 260ms raises the blocking "Saving…" overlay -- on every
+  // launch, for all five Board users, who land here; offline, until its 25s
+  // failsafe. This is ambient bookkeeping nobody asked to wait for, so it
+  // takes the documented opt-out. The opt-out is released after 2s even if
+  // the write never answers (offline it does not), or it would silence
+  // every other module's overlay for the rest of the session.
+  const hush=typeof _gvSilentSaveStart==='function'&&typeof _gvSilentSaveStop==='function';
+  let held=false;
+  const release=()=>{ if(held){ held=false; _gvSilentSaveStop(); } };
+  if(hush){ _gvSilentSaveStart(); held=true; }
+  const cap=hush?setTimeout(release,2000):null;
   try{ await setDoc(doc(db,'user_profiles',me),{uid:me,boardLastSeenAt:now},{merge:true}); }
   catch(e){ console.warn('[the board] last-seen write failed',e); }
+  finally{ if(cap)clearTimeout(cap); release(); }
   const p=_tbProfiles().filter(x=>x&&x.uid===me)[0];
   if(p)p.boardLastSeenAt=now;
 }
@@ -4327,7 +4341,15 @@ function tbRenderPage(id){
     m.innerHTML='<div class="empty">You do not have access to '+_tbEsc(TB_NAME)+'.</div>';
     return;
   }
+  const prev=_tbPage;
   _tbPage=TB_PAGES.indexOf(id)>-1?id:TB_HOME;
+  // The SAME page re-rendered from outside -- loadData's closing
+  // renderPage(currentPage), which lands seconds after a Board user arrives
+  // here -- used to rebuild everything at once, under a title being typed
+  // or between a press and its click (review of b43a3db). It now waits
+  // like a live update does. Navigating here from another page is never
+  // deferred: the old page must not stay on screen.
+  const again=tbLoaded&&prev===_tbPage&&!!(m.querySelector&&m.querySelector('.tb-wrap'));
   // Spec s5: written on Dashboard OPEN, throttled to once every ten
   // minutes -- it is what card 10's "has not opened the board today" dot
   // reads. Deliberately here and not in _tbDashboard: a render function
@@ -4346,6 +4368,7 @@ function tbRenderPage(id){
     loadTbData().then(()=>{ if(currentPage===_tbPage||String(currentPage||'').indexOf('tb-')===0)_tbRepaint(); });
     return;
   }
+  if(again){ _tbLiveRepaint(); return; }
   _tbRepaint();
 }
 
