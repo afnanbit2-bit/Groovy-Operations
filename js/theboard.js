@@ -204,6 +204,10 @@ async function loadTbData(force){
     };
     tbItems=rows(r[0],r[1],'board_items').map(tbDecodeItem);
     tbLists=rows(r[2],r[3],'board_lists');
+    // Seed the live maps from THIS read, so a listener that has not
+    // delivered yet never drops what the first paint showed (P0.3).
+    const byId=x=>{const o={};if(x&&x.status==='fulfilled')x.value.docs.forEach(d=>{o[d.id]=Object.assign({id:d.id},d.data());});return o;};
+    const seedMaps={items_shared:byId(r[0]),items_own:byId(r[1]),lists_shared:byId(r[2]),lists_admin:byId(r[3])};
     if(r[4].status==='fulfilled'){
       const snap=r[4].value;
       const ex=snap&&typeof snap.exists==='function'?snap.exists():false;
@@ -216,6 +220,7 @@ async function loadTbData(force){
     _tbCalLoadPrefs();
     tbLoaded=true;
     _tbLoading=null;
+    _tbLiveStart(seedMaps);
   })();
   return _tbLoading;
 }
@@ -239,6 +244,122 @@ function tbDecodeItem(raw){
   it.listId=it.listId||null;
   return it;
 }
+
+// ══ SESSION 2 — P0.3: LIVE ITEMS ═════════════════════════════════════
+// The board used to be read ONCE per session (and again only after a
+// refused write or a Retry), so a date Ammar moved never reached Afnan's
+// open screen until he reloaded -- on a board whose whole job is five
+// people agreeing on dates. Now the same four queries loadTbData reads are
+// LISTENED to, and any change lands on every open Board within a second.
+//
+// Three rules keep it from being worse than a static page:
+//   · The FIRST PAINT stays on getDocs. The listeners start after it, with
+//     their maps seeded from that read, so one that has not delivered yet
+//     never drops an item the screen already showed. (The harness's
+//     onSnapshot never fires, and every logic suite relies on getDocs.)
+//   · Each query owns ONE map and a snapshot replaces only that map. The
+//     screen is the UNION, exactly as loadTbData merges -- two queries,
+//     never one, because the rules are not a query filter (BOARD.md).
+//   · A REMOTE UPDATE NEVER LANDS MID-GESTURE. The data is taken at once,
+//     but the repaint waits while a field has focus or a pill is being
+//     dragged -- a repaint rebuilds #main-content wholesale, which would
+//     eat the caret, the composer and the drag. The Mood Boards Stage 6
+//     rule, for the same reason.
+let _tbLive=null;              // {uid, maps, unsubs}
+let _tbLivePending=false;
+let _tbLiveTimer=null;
+const _TB_LIVE_RETRY_MS=700;
+
+/** The union the screen shows. PURE: maps in, {items, lists} out. */
+function tbLiveMerge(maps){
+  const m=maps||{};
+  const items={},lists={};
+  ['items_shared','items_own'].forEach(k=>{ Object.keys(m[k]||{}).forEach(id=>{ items[id]=m[k][id]; }); });
+  ['lists_shared','lists_admin'].forEach(k=>{ Object.keys(m[k]||{}).forEach(id=>{ lists[id]=m[k][id]; }); });
+  return{items:Object.keys(items).map(id=>items[id]),lists:Object.keys(lists).map(id=>lists[id])};
+}
+/** Is someone in the middle of something a repaint would destroy? */
+function _tbLiveBusy(){
+  if(typeof _tbDragId!=='undefined'&&_tbDragId!=null)return true;
+  return _tbEditableFocus();
+}
+function _tbOnBoardPage(){
+  return String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')===0;
+}
+function _tbLiveStart(seedMaps){
+  if(typeof onSnapshot!=='function')return;           // an old cached shell: stay static
+  const uid=_tbMe();
+  if(!uid)return;
+  if(_tbLive&&_tbLive.uid===uid){
+    // A re-read (Retry, or a refused write) refreshes the maps; the
+    // listeners carry on.
+    Object.assign(_tbLive.maps,seedMaps||{});
+    return;
+  }
+  _tbLiveStop();
+  _tbLive={uid:uid,maps:Object.assign({items_shared:{},items_own:{},lists_shared:{},lists_admin:{}},seedMaps||{}),unsubs:[]};
+  const defs=[
+    {key:'items_shared',q:()=>query(collection(db,'board_items'),where('visibility','==','shared'))},
+    {key:'items_own',   q:()=>query(collection(db,'board_items'),where('ownerUid','==',uid))},
+    {key:'lists_shared',q:()=>query(collection(db,'board_lists'),where('kind','==','shared'),where('memberUids','array-contains',uid))},
+    {key:'lists_admin', q:()=>query(collection(db,'board_lists'),where('adminUid','==',uid))}
+  ];
+  defs.forEach(function(d){
+    try{
+      _tbLive.unsubs.push(onSnapshot(d.q(),function(snap){
+        if(!_tbLive||_tbLive.uid!==uid)return;
+        const map={};
+        ((snap&&snap.docs)||[]).forEach(x=>{ map[x.id]=Object.assign({id:x.id},x.data()); });
+        _tbLive.maps[d.key]=map;
+        _tbLiveApply();
+      },function(e){ console.warn('[the board] live '+d.key+' failed',e); }));
+    }catch(e){ console.warn('[the board] live '+d.key+' could not start',e); }
+  });
+  try{
+    _tbLive.unsubs.push(onSnapshot(doc(db,'board_config','markers'),function(snap){
+      if(!_tbLive||_tbLive.uid!==uid)return;
+      const ex=snap&&typeof snap.exists==='function'?snap.exists():false;
+      tbConfig=ex?snap.data():{markers:[]};
+      _tbLiveRepaint();
+    },function(e){ console.warn('[the board] live config failed',e); }));
+  }catch(e){}
+}
+function _tbLiveStop(){
+  if(_tbLive)(_tbLive.unsubs||[]).forEach(u=>{ try{ if(typeof u==='function')u(); }catch(e){} });
+  _tbLive=null;
+}
+function _tbLiveApply(){
+  const merged=tbLiveMerge(_tbLive.maps);
+  tbItems=merged.items.map(tbDecodeItem);
+  tbLists=merged.lists;
+  // A refused read that has since succeeded is no longer a failure.
+  _tbLoadErrors=_tbLoadErrors.filter(c=>c!=='board_items'&&c!=='board_lists');
+  _tbLiveRepaint();
+}
+/** Repaint now, or as soon as nobody is mid-gesture. */
+function _tbLiveRepaint(){
+  if(!_tbOnBoardPage()){ _tbLivePending=false; return; }
+  if(_tbLiveBusy()){
+    _tbLivePending=true;
+    if(!_tbLiveTimer)_tbLiveTimer=setTimeout(_tbLiveFlush,_TB_LIVE_RETRY_MS);
+    return;
+  }
+  _tbLivePending=false;
+  _tbRepaint();
+}
+function _tbLiveFlush(){
+  _tbLiveTimer=null;
+  if(!_tbLivePending)return;
+  _tbLiveRepaint();
+}
+// Registered ONCE at load: leaving a field or ending a drag is when a
+// deferred update lands, rather than waiting for the retry timer.
+(function(){
+  if(typeof document==='undefined'||!document.addEventListener)return;
+  const later=()=>{ if(_tbLivePending)setTimeout(_tbLiveFlush,0); };
+  document.addEventListener('focusout',later);
+  document.addEventListener('pointerup',later);
+})();
 
 // ── The item ──────────────────────────────────────────────────────────
 const TB_KINDS=['task','gate','event'];

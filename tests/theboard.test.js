@@ -1214,6 +1214,74 @@ module.exports=async function(){
     s.eq('and does not take the board down',b.run('_tbLoadFailed("board_items")'),false);
   }
 
+  // ══ SESSION 2 — P0.3: LIVE ITEMS ═════════════════════════════════════
+  s.section('live items: a change reaches every open Board');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    // Name every query, so each listener can be told apart.
+    a.run('collection=function(db,p){return{p:p};};where=function(f,op,v){return f+op+v;};'
+      +'query=function(c){return{p:c.p,w:[].slice.call(arguments,1).join("&")};};'
+      +'doc=function(db,c,id){return{p:c+"/"+id};};'
+      +'globalThis.__subs=[];globalThis.__dead=0;'
+      +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next});return function(){__dead++;};};'
+      +'globalThis.__rp=0;_tbRepaint=function(){__rp++;};');
+    const snap=docs=>'({docs:'+J(docs)+'.map(d=>({id:d.id,data:()=>d}))})';
+    const fire=(re,docs)=>a.run('__subs.filter(x=>'+re+'.test(x.q.w||x.q.p))[0].next('+snap(docs)+')');
+    const own={id:'o1',title:'mine',visibility:'private',ownerUid:'u-ammar',assigneeUids:['u-ammar'],status:'open'};
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbLiveStart({items_own:{o1:'+J(own)+'}})');
+    s.eq('four queries and the markers are listened to',a.run('__subs.length'),5);
+    s.eq('the two item queries are the two loadTbData reads',
+      a.run('__subs.filter(x=>x.q.p==="board_items").map(x=>x.q.w).join("|")'),'visibility==shared|ownerUid==u-ammar');
+    // A colleague adds a shared item.
+    fire('/visibility/',[{id:'r1',title:'remote',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],date:'2026-09-28',status:'open'}]);
+    s.eq('it is on the board',a.run('tbItems.map(i=>i.id).sort().join()'),'o1,r1');
+    s.eq('and the screen repaints',a.run('__rp'),1);
+    s.ok('a shared snapshot never drops my own private item',a.run('tbItems.some(i=>i.id==="o1")'));
+    // Deleted remotely: gone.
+    fire('/visibility/',[]);
+    s.eq('a remote delete takes it off',a.run('tbItems.map(i=>i.id).join()'),'o1');
+    // Mid-typing: the data is taken, the repaint waits.
+    a.run('__rp=0;_tbEditableFocus=function(){return true;}');
+    fire('/visibility/',[{id:'r2',title:'while typing',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar'],status:'open'}]);
+    s.ok('the data is taken at once',a.run('tbItems.some(i=>i.id==="r2")'));
+    s.eq('but nothing repaints under the caret',a.run('__rp'),0);
+    s.eq('it is pending',a.run('_tbLivePending'),true);
+    a.run('_tbEditableFocus=function(){return false;};_tbLiveFlush()');
+    s.eq('and lands the moment typing stops',a.run('__rp'),1);
+    s.eq('once',a.run('_tbLivePending'),false);
+    // Mid-drag: same.
+    a.run('__rp=0;_tbDragId="r2"');
+    fire('/visibility/',[]);
+    s.eq('a drag in flight is not repainted under',a.run('__rp'),0);
+    a.run('_tbDragId=null;_tbLiveFlush()');
+    s.eq('and the drop lets it land',a.run('__rp'),1);
+    // Off the Board, memory updates and nothing paints.
+    a.run('__rp=0;currentPage="dashboard"');
+    fire('/ownerUid/',[own,{id:'o2',title:'new',ownerUid:'u-ammar',assigneeUids:['u-ammar'],status:'open'}]);
+    s.ok('memory updates off the Board',a.run('tbItems.some(i=>i.id==="o2")'));
+    s.eq('with no repaint',a.run('__rp'),0);
+    // A second start for the same person adds no listeners.
+    a.run('_tbLiveStart({})');
+    s.eq('restarting for the same person adds none',a.run('__subs.length'),5);
+    // Lists and the markers are live too.
+    a.run('currentPage="tb-lists"');
+    fire('/memberUids/',[{id:'l1',title:'Winter Drop 2027',kind:'shared',memberUids:['u-ammar']}]);
+    s.eq('a list shared with me appears',a.run('tbLists.map(l=>l.id).join()'),'l1');
+    a.run('__subs.filter(x=>x.q.p==="board_config/markers")[0].next({exists:()=>true,data:()=>({markers:[{label:"launch",date:"2026-10-31"}]})})');
+    s.eq('a moved launch date lands',a.run('tbConfig.markers[0].date'),'2026-10-31');
+    // A refused read that has since succeeded is no longer a failure.
+    a.run('_tbLoadErrors=["board_items"]');
+    fire('/visibility/',[]);
+    s.eq('a live snapshot clears a stale read failure',a.run('_tbLoadErrors.length'),0);
+  }
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR)+';onSnapshot=undefined');
+    s.eq('an old shell with no onSnapshot stays static, and does not throw',
+      a.run('(function(){_tbLiveStart({});return _tbLive;})()'),null);
+  }
+
   s.section('the calendar prefs are cleaned on load');
   {
     const a=loadApp({files:FILES});

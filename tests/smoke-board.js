@@ -234,6 +234,32 @@ function DRIVE(){
       L((made.assigneeUids||[]).indexOf('u-afnan')>-1,'@afnan became an assignee');
       L(String(made.title||'').indexOf('@afnan')<0,'and is not title text ('+made.title+')');
 
+      // ── live: another person's write lands without a reload (P0.3) ──
+      window.showPage('tb-dash');
+      await wait(300);
+      var remoteRef=doc(db,'board_items','smoke_remote');
+      await setDoc(remoteRef,{title:'SMOKE REMOTE ITEM',visibility:'shared',ownerUid:'u-afnan',
+        assigneeUids:[window.__UID,'u-afnan'],date:null,status:'open',kind:'task',steps:[],myDay:{},createdAt:Date.now()});
+      await wait(200);
+      L(tbItems.some(function(i){return i.id==='smoke_remote';}),'a colleague\u2019s new item is in memory without a reload');
+      L(/SMOKE REMOTE ITEM/.test(document.getElementById('main-content').innerText||''),'and on screen');
+      // While typing, it waits.
+      var qa=document.getElementById('tb-qa');
+      if(qa){
+        qa.focus();qa.value='half typed';
+        await updateDoc(remoteRef,{title:'SMOKE RENAMED'});
+        await wait(200);
+        var qa2=document.getElementById('tb-qa');
+        L(qa2===qa&&qa2.value==='half typed'&&document.activeElement===qa2,'a remote change does not repaint under the caret');
+        L(tbItems.some(function(i){return i.title==='SMOKE RENAMED';}),'but the data is already current');
+        qa.value='';qa.blur();
+        await wait(900);
+        L(/SMOKE RENAMED/.test(document.getElementById('main-content').innerText||''),'and it lands once typing stops');
+      }
+      await deleteDoc(remoteRef);
+      await wait(200);
+      L(!tbItems.some(function(i){return i.id==='smoke_remote';}),'a remote delete takes it off');
+
       // ── the calendar, every control ──
       window.showPage('tb-calendar');
       await wait(300);
