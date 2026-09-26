@@ -76,6 +76,24 @@ function seedCols(){
 // Runs in the browser. Mirrors exactly the surface index.html bridges onto
 // window. A write re-runs every listener on that collection, so a live
 // board can be proven here without a network.
+// THE PAGE'S CLOCK IS PINNED to Saturday 26 Sep 2026, 09:00 PKT — the day
+// the seed was written for. Every date in the seed is fixed (Sep 25 to
+// Nov 20 2026), so a test that read the real clock would stop finding them:
+// the adversarial review of c06ad14 proved that from 1 Dec 2026 the month
+// grid holds no seeded item and every push goes red with no code change.
+// Only `new Date()` / `Date.now()` move; timers run in real time.
+function CLOCK(){
+  var Real=Date,off=Date.UTC(2026,8,26,4,0,0)-Real.now();
+  function D(){
+    if(!(this instanceof D))return new Real(Real.now()+off).toString();
+    var a=[].slice.call(arguments);
+    return a.length?new(Function.prototype.bind.apply(Real,[null].concat(a)))():new Real(Real.now()+off);
+  }
+  D.prototype=Real.prototype;
+  D.now=function(){return Real.now()+off;};
+  D.UTC=Real.UTC;D.parse=Real.parse;
+  window.Date=D;
+}
 function STUB(){
   var S=window.__FS={cols:window.__SEED||{},writes:0,reads:0,listeners:[]};
   var n=0;
@@ -220,6 +238,8 @@ function DRIVE(){
         L(onBoard(),pages[p]+' renders a Board screen');
       }
 
+      L(_tbToday()==='2026-09-26','the page clock is pinned to 26 Sep 2026 ('+_tbToday()+')');
+
       // ── people: the whole team resolves (session 2, P0.2) ──
       window.showPage('tb-dash');
       await wait(300);
@@ -306,6 +326,7 @@ function DRIVE(){
       L(document.querySelectorAll('.tb-pill').length>0,'and pills on them ('+document.querySelectorAll('.tb-pill').length+')');
       // a pill opens the drawer and it closes again
       var pill=document.querySelector('.tb-pill');
+      L(!!pill,'there is a pill to click (none means the checks below would not run)');
       if(pill){
         act('click a pill',function(){document.querySelector('.tb-pill').click();});
         await wait(200);
@@ -339,11 +360,13 @@ function DRIVE(){
       // ── the rest of the Board ──
       window.showPage('tb-dash');await wait(200);
       var row=document.querySelector('.tb-rowmain');
+      L(!!row,'there is a Dashboard row to open');
       if(row){act('open an item from the Dashboard',function(){document.querySelector('.tb-rowmain').click();});await wait(200);
         L(!!document.querySelector('.tb-drawer'),'the Dashboard row opened its drawer');
         act('close it',function(){window.tbCloseItem();});}
       window.showPage('tb-lists');await wait(200);
       var list=document.querySelector('[onclick^="window.tbOpenList"]');
+      L(!!list,'there is a list to open');
       if(list){act('open a list',function(){document.querySelector('[onclick^="window.tbOpenList"]').click();});
         act('close it',function(){window.tbCloseList();});}
       act('search',function(){window.tbSearchInput('shoot');});
@@ -393,7 +416,7 @@ function pageFor(mode){
     +';window.__EMAIL='+JSON.stringify(u.email)+';window.__SESSION='+JSON.stringify(u)
     +';window.__PROMPT="smoke test item";'
     +(mode.poison?'try{localStorage.setItem("groovy-tb-cal",'+JSON.stringify(poison())+');}catch(e){}':'try{localStorage.removeItem("groovy-tb-cal");}catch(e){}')
-    +'</script><script>('+STUB.toString()+')();</script>';
+    +'</script><script>('+CLOCK.toString()+')();('+STUB.toString()+')();</script>';
   return noModule.replace('<head>','<head>'+pre)
     .replace('</body>','<pre id="__out">running</pre><script>('+DRIVE.toString()+')();</script></body>');
 }

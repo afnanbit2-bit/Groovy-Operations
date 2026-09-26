@@ -1128,8 +1128,15 @@ module.exports=async function(){
     const a=loadApp({files:FILES});
     a.run('session='+J(AMMAR));
     // The pure filter still filters — it is what _tbCalendar calls.
+    // NOTE WHAT THIS CANNOT PROVE: in this harness `window` is a plain
+    // object, not the vm global, so a `window.tbCalFilter=` assignment
+    // would NOT replace the bare function here and this would pass with
+    // the freeze restored (the adversarial review of c06ad14 showed it).
+    // The collision itself is guarded by tests/invariants.test.js ("no
+    // window.X= replaces a same-named top-level function") and by
+    // tests/smoke-board.js in real Chromium.
     a.run('tbItems=[{id:"i1",title:"a",date:"2026-10-01",assigneeUids:["u-ammar"],visibility:"shared",status:"open",kind:"task"}]');
-    s.eq('tbCalFilter is still the pure filter',
+    s.eq('the pure filter still filters (the clobber is guarded by the invariant and smoke-board)',
       a.run('tbCalFilter(tbItems,{uid:"u-ammar",scope:"me"}).length'),1);
     s.eq('the handler is tbCalSetFilter',a.run('typeof window.tbCalSetFilter'),'function');
     // A key nobody asked for is not a filter. The freeze wrote the whole
