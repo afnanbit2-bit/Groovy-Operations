@@ -6713,8 +6713,80 @@ a stored-XSS sink in the owner-only Activity Log. Refuted here only
 because this change did not introduce it; Monitor escapes the same field.
 The fix belongs in `js/activity.js`, not in each caller.
 
-**Next (not built): the receivable in Raees's Store Accounts.** Open
-questions are in `ACCOUNTS_PLAN.md` §5. **Nobody has recorded a sale on a
+**Nobody has recorded a sale on a real screen** — the sandbox cannot sign
+in.
+
+### The warehouse money reaches Raees (26 Sept 2026)
+
+Afnan: a paid order's money should land in Raees's accounts *"with the
+correct medium, such as cash or bank transfer in MCB … Raees will confirm
+that he has received the payment"*. His answers: Umair gets **Mark
+collected** on a pay-later bill and it flows the same way; **Raees, Afnan
+and Ammar** can confirm; **bank transfers wait for confirmation too** and
+land in MCB. Decisions tabled in `ACCOUNTS_PLAN.md` §5a.
+
+- **NOTHING IS COPIED — the queue is DERIVED.** `whsHandovers(sales,
+  confirmations)` (`js/warehouse-sales.js`) is the one decision: every sale
+  that puts money in hand (`whsMoneyIn`: paid now, or a pay-later bill with
+  `collectedVia`/`collectedDate`) minus those with a live confirmation =
+  **pending**; a live confirmation whose sale no longer puts money in hand
+  (voided, un-collected, recorded again) = **orphan**. Umair's list, Raees's
+  queue, the alert strip and the review card all read it.
+- **A confirmation is an ordinary `cash_in`** in `acct_entries`
+  (`_acctWhEntry`, `js/store-accounts.js`): `src:'wh'`, `whSale` =
+  `whsHandKey(sale)` = `<order>#<priorVoids.length>` (so a bill recorded
+  again after a void is a NEW version and needs its own confirmation),
+  account `cash` or `mcb` (`WHS_ACCT_OF`), **dated the day Raees confirms**,
+  category *Warehouse sale*, the customer as person, the order as ref, the
+  bill as the photo. `_acctEffect` needed no change. **Until confirmed it is
+  not in the books.**
+- **One confirmation per version, without a transaction.** The id is
+  `whs_<ORDER>_<v>` (`_acctWhId`), written by a REST PATCH with
+  `currentDocument.exists=false` (`_acctWhCreate`) — a second device's
+  confirm is refused by Firestore and says someone got there first. If a
+  VOIDED confirmation holds the id, the next free suffix (`_2`, …) is used.
+  A transaction would need a connection; this needs one too, but is a single
+  write.
+- **Different amount…** records what was really received with a required
+  reason, flagged for owner review (`short handover` / `more than the
+  bill`). The books follow the cash, not the bill.
+- **An orphan's money STAYS in the books** — the cash really was handed
+  over. The owners are told (urgent alert + the queue's orphan list) and
+  voiding the cash in is their deliberate act. Voiding the SALE warns Umair
+  first when Raees already received it.
+- **Confirmations are read ALL-TIME** (`whsLoadConfirmations`: `where('src',
+  '==','wh')` through the SDK, never rejects) — Store Accounts itself loads
+  only months after the last close, and a sale confirmed in a closed month
+  would otherwise come back as waiting. A failed read is an error card
+  naming `acct_entries`, never an empty queue. A confirm into a CLOSED month
+  is refused (it is dated today, so only after a close of the current
+  month).
+- **Umair's side:** `window.whsCollect` → cash or bank + the day (not before
+  the sale, not in the future; `whsCollectPatch` is pure and is exactly what
+  the rules check). A collected bill leaves *to collect* and *Overdue*; new
+  filters *Collected* and *Not with Raees yet*; each sale says **With Raees
+  ✓** or **Not with Raees yet**; *Undo collection* only while Raees has not
+  received it; the Excel export gained three columns.
+- **Load order:** `store-accounts.js` loads BEFORE `warehouse-sales.js`, so
+  every call across is at RUNTIME behind `typeof` (`_acctWhOn()`); a build
+  without warehouse sales shows nothing.
+- **Rules (`firestore.rules`, `wh_sales`) — CHANGED, needs a republish:**
+  read widened to `isStoreAccounts()`; one new update clause lets
+  `isWhSales()` set (or clear, for undo) EXACTLY the five collection fields
+  (`_WHS_COLLECT_FIELDS`, asserted equal) on an active pay-later sale, bound
+  to the caller's email, `collectedDate >= date`. The confirmation needs no
+  rule change (`acct_entries` create is `isStoreAccounts()`). Emulator:
+  91/91 with the app's own code writing; the three new permissions fail
+  against the previous rules.
+- Tests: `tests/warehouse-sales.test.js` (money in hand, the derived queue,
+  collect/undo driven through the modal, Raees confirming through the REST
+  create, a second device refused, a different amount, confirm-all for a
+  day, a voided id's suffix, a closed month, who may do what); every piece
+  reverted once and caught by name. `smoke-layout` gained **`store accounts
+  — from the warehouse (both ends)`** at all three widths — breaking the
+  amount ink fails naming all three queue rows.
+
+**Nobody has confirmed a warehouse payment or marked a bill collected on a
 real screen** — the sandbox cannot sign in.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
@@ -9068,6 +9140,13 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**REPUBLISH OUTSTANDING (26 Sept 2026, later): the warehouse handover.**
+`wh_sales` read now includes `isStoreAccounts()`, and a new update clause
+lets Umair mark a pay-later bill collected. Until the Console has it,
+Raees's ledger shows "Warehouse sales could not be read" and Umair's *Mark
+collected* is refused. **The same paste carries Raees's edit rights below
+if that one was not published yet.**
 
 **REPUBLISH OUTSTANDING (26 Sept 2026): Raees's edit rights.**
 `acct_entries` update now splits into `acctControl()` / `acctReview()` /
