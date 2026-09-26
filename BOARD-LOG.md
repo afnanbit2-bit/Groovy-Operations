@@ -71,30 +71,29 @@ Lines marked **→ NEEDS YOU** are actions for a human.
 | P2.3 | `e194b03` | **The inbox reads only the Board's rows, newest first, capped.** It listened to **every** notification addressed to the person (HRM ones too) with no limit, and P2.1 now adds rows every morning, so its reads grew without bound. The query is now `forUser` + `source=='tb'` + `orderBy createdAt desc` + `limit 200`. That needs a composite index, added to `firestore.indexes.json` and listed in **the batched deploy list below**. **Until the index is deployed, nothing breaks:** the refusal is *failed-precondition*, and the listener lets go and re-listens on the old wide query, so the inbox is only slower. A real **refusal** (permission) is not mistaken for a missing index; it still says "could not read your inbox". The one-off read (a shell without `onSnapshot`) falls back the same way. Reverted each: always wide (2 failures), no fallback (3), any error treated as a missing index (2). | v203 | run.js 6,387/6,387 · smoke-board 3/3 · smoke-browser 8/8 · smoke-startapp 4/4 |
 | P2.4 | `4ed7e5f` | **Memoised lookups: measured, and deliberately NOT built.** Before adding caches I timed the render functions in the node harness, with a directory of 65 profiles and every item shared with two people. Render time is the string only; the browser's own parse and layout come on top and are not measured here. The call counts come from wrappers on `tbUser`, `tbUserColors`, `tbPeople` and `_tbCanEditIt`. **Dashboard: 6.0 ms at 42 items (the real launch size), 11.8 ms at 300, 19.9 ms at 1,000. List detail: 1.4 / 11.9 / 23.5 ms. Calendar month: ≤ 2.6 ms at every size** (it caps pills per day). `tbUser` and `tbUserColors` are called once per row (about 2,500 calls at 1,000 items), each a scan of the directory. **Why no cache:** a cache that is checked on every call costs about as much as the scan it replaces. A cache reset once per render goes stale, because `profile.js` edits the directory **in place** (`userProfiles[i]=row`, same array, same length), and the partial repaints (chips, inbox, badges) do not go through one render entry. So the trade is a few milliseconds against names that stop updating. **Revisit when** a real board passes about 1,000 items, and start from the browser's layout cost, not these lookups. The measuring script is in the session scratchpad, not the repo. | v204 | no code change |
 | P2.5 | `39532f3` | **Acceptance prep.** `BOARD.md` → *Session 2 acceptance*: fifteen ordered steps for the first morning, **S1–S15**, run by two people in two browsers (Ammar, a Board owner, and Saim, who is on few items). Each step says what "pass" looks like and has a column for the result. They cover the landing, the seed (first run, re-run, a deleted milestone), live updates, the read-only pane, the composer's double Enter, the list default, pins, markers, notes going to the right item, the tablet pane, the dark date picker, the inbox after the index, and the 08:00 reminder. Two wordings were checked against the code before being written in (the quick-add grammar parses `tomorrow`; the re-run summary's exact text). The stale step-15 paragraph (5,227 assertions, the old list of files touched) is corrected from `git diff --name-only origin/main...HEAD`: **`firestore.rules` is unchanged on this branch.** **Not run:** nothing here can be run from a session, which cannot sign in. | v205 | no code change |
-| R-lock | *(this commit)* | **The lock rule had two holes and one wrong refusal, found by running it in the Firestore emulator for the first time.** The Board's rules had only ever been checked as TEXT; `tests/rules-emulator-board.js` (new, hand-run like `tests/rules-emulator.js`: CI installs nothing) drives them in the real emulator with items built by the app's own `tbNewItem`/`tbItemPatch`/`tbDonePlan`/`tbHandoverPlan`. Against the old rule, 3 of its cases failed: (1) **a member on a locked item could take the lock over** (set `lockedBy` to themselves: the clause meant to stop that allowed exactly that) and then move the date; (2) **a member could set `locked:false`** and leave the name, then move it; (3) **a locker who is not a Board owner could not unlock their own lock** (a gate Saim made could never be unlocked by Saim). `tbLockOk()` replaces the clause: on a locked item only the locker or a Board owner may touch `date`, `dueAt`, `locked` or `lockedBy`; on an unlocked item, locking it names the caller. **The app never wrote (1) or (2)** (the lock button refuses a non-locker), so those were raw-write holes; (3) was a live bug in the button. The two text assertions in `tests/theboard.test.js` that claimed "lockedBy cannot be re-pointed" were matching the old rule's text while it allowed it; replaced with checks on the helper, which fail 4 ways against the old file. **`firestore.rules` changed: in the batched list below.** | v206 | emulator: Board 39/39 (old rule: 3 fail) · wh_sales/acct 103/103 · run.js 6,389 · theboard 1,131 |
+| R-lock | `801bcfd` | **The lock rule had two holes and one wrong refusal, found by running it in the Firestore emulator for the first time.** The Board's rules had only ever been checked as TEXT; `tests/rules-emulator-board.js` (new, hand-run like `tests/rules-emulator.js`: CI installs nothing) drives them in the real emulator with items built by the app's own `tbNewItem`/`tbItemPatch`/`tbDonePlan`/`tbHandoverPlan`. Against the old rule, 3 of its cases failed: (1) **a member on a locked item could take the lock over** (set `lockedBy` to themselves: the clause meant to stop that allowed exactly that) and then move the date; (2) **a member could set `locked:false`** and leave the name, then move it; (3) **a locker who is not a Board owner could not unlock their own lock** (a gate Saim made could never be unlocked by Saim). `tbLockOk()` replaces the clause: on a locked item only the locker or a Board owner may touch `date`, `dueAt`, `locked` or `lockedBy`; on an unlocked item, locking it names the caller. **The app never wrote (1) or (2)** (the lock button refuses a non-locker), so those were raw-write holes; (3) was a live bug in the button. The two text assertions in `tests/theboard.test.js` that claimed "lockedBy cannot be re-pointed" were matching the old rule's text while it allowed it; replaced with checks on the helper, which fail 4 ways against the old file. **`firestore.rules` changed: in the batched list below.** | v206 | emulator: Board 39/39 (old rule: 3 fail) · wh_sales/acct 103/103 · run.js 6,389 · theboard 1,131 |
 
 ---
 
 ## Rules / index deploys — batched
 
-**`firestore.rules` CHANGED (R-lock): republish the whole file.** The
-Board's lock rule (`tbLockOk()`). It carries every other outstanding rules
-change with it (Board phase 1, Store Accounts edit rights, Ammar in
-`isAcctSuper`, warehouse sales and handover), since the Console takes the
-whole file. Verified in the emulator before handing over: Board 39/39,
-wh_sales/acct 103/103.
+**DEPLOYED 26 Sept 2026 — nothing in this list is outstanding.** Afnan
+ran `firebase deploy --only firestore:indexes` then `firebase deploy --only
+firestore:rules` from `main` at `f18536c` (the PR #88 merge), `firebase use`
+→ `groovy-gatepass`, rules file `md5 95273f84be02ebf8f0a54bae9f814dae`.
+The CLI answered "deployed indexes in firestore.indexes.json successfully
+for (default) database" and "released rules firestore.rules to
+cloud.firestore", with no prompt to delete an index and no `--force`. All
+13 composite indexes reported Enabled, none in Error; the new ones, as
+Afnan listed them: `hrm_notifications` (forUser, source, createdAt desc)
+for the P2.3 inbox, `board_lists` (kind, memberUids array-contains) and
+five on `board_items`. The rules file carried the R-lock `tbLockOk()`
+and every other outstanding change (Board phase 1, Store Accounts edit
+rights, Ammar in `isAcctSuper`, warehouse sales and handover).
 
-One index:
-
-1. **`hrm_notifications`: `forUser` ASC, `source` ASC, `createdAt` DESC**
-   (P2.3, the Board inbox's narrowed query). It is in
-   `firestore.indexes.json`, so `firebase deploy --only firestore:indexes`
-   creates it; or Firebase Console → Firestore → Indexes → Composite → Add
-   with those three fields. **Nothing breaks before it exists**: until then
-   the inbox is refused with *failed-precondition* and falls back to the
-   old query, which is only slower. Once it is built (a few minutes), each
-   Board user's inbox reads at most 200 of their own Board rows instead of
-   every notification ever addressed to them.
+What that removes: the P2.3 inbox no longer needs its fallback, so each
+Board user's inbox reads at most 200 of their own Board rows. The lock
+holes found by the emulator are closed on the live project.
 
 ## → NEEDS YOU
 

@@ -6495,8 +6495,8 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     it, but **the emulator refused one on an UNCHANGED entry** ("base
     version (0)") and that could not be checked against live Firestore — a
     Clear that always fails is worse, so it was left out.
-  - **Rules (`firestore.rules`, `acct_entries` update) — CHANGED, needs a
-    republish.** Four clauses: `isAcctSuper()`; `acctControl()` — status
+  - **Rules (`firestore.rules`, `acct_entries` update) — CHANGED;
+    published 26 Sept 2026.** Four clauses: `isAcctSuper()`; `acctControl()` — status
     and stock fields only, a real transition (no un-voiding), a void bound
     to the caller, refused in a closed month, **the void fields move only
     with the status**, and **an entry an owner reviewed is voided by an
@@ -6773,7 +6773,7 @@ land in MCB. Decisions tabled in `ACCOUNTS_PLAN.md` §5a.
 - **Load order:** `store-accounts.js` loads BEFORE `warehouse-sales.js`, so
   every call across is at RUNTIME behind `typeof` (`_acctWhOn()`); a build
   without warehouse sales shows nothing.
-- **Rules (`firestore.rules`, `wh_sales`) — CHANGED, needs a republish:**
+- **Rules (`firestore.rules`, `wh_sales`) — CHANGED; published 26 Sept 2026:**
   read widened to `isStoreAccounts()`; one new update clause lets
   `isWhSales()` set (or clear, for undo) EXACTLY the five collection fields
   (`_WHS_COLLECT_FIELDS`, asserted equal) on an active pay-later sale, bound
@@ -9177,6 +9177,25 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
+**No republish outstanding as of 26 Sept 2026 (session 2) — rules AND
+indexes.** Afnan deployed with the Firebase CLI from `main` at `f18536c`
+(the PR #88 merge), `firebase use` → `groovy-gatepass`, from the repo file
+at `md5 95273f84be02ebf8f0a54bae9f814dae` (LF) — `git log --oneline -1 --
+firestore.rules` is `801bcfd`. `firebase deploy --only firestore:indexes`
+("deployed indexes in firestore.indexes.json successfully for (default)
+database"; no prompt to delete an index, no `--force`) then `firebase
+deploy --only firestore:rules` ("released rules firestore.rules to
+cloud.firestore"). All **13** composite indexes reported **Enabled**, none
+in Error. The CLI output was pasted into the session; the Console's own
+state was reported by the human and cannot be checked from a session.
+**That one file carries every entry below still headed "was outstanding"**
+— the Board's lock rule and its phase-1 `board_*` rules, the warehouse
+handover and its review round, Raees's edit rights, and Ammar in
+`isAcctSuper()` — so this supersedes all of them. **The CLI is the publish
+route from now on** (`firebase.json` + `.firebaserc`, on Afnan's machine);
+the Console paste still works. If a write in any of those areas is still
+refused after this, that is new evidence — reopen the code, not the rules.
+
 **No republish outstanding as of 14 Sept 2026.** Afnan republished at
 1:38 pm that day (confirmed from the Console's own rules history), from the
 repo file at `md5 e922310a963b373ba41d6dd434d276b8` — the version carrying
@@ -9208,7 +9227,7 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (18 Sept 2026):** two rounds, both waiting.
+**PUBLISHED 18 Sept 2026, was outstanding (18 Sept 2026):** two rounds, both waiting.
 The field round — `dispatches` gained `'on_hold_stock'` on create and
 update, `paid_pr_requests` delete now allows the requester as well as an
 owner (still pending-only), and `marketing_settings` is a new collection.
@@ -9227,7 +9246,7 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
-**REPUBLISH OUTSTANDING (26 Sept 2026, session 2): The Board's lock
+**PUBLISHED 26 Sept 2026, was outstanding (session 2): The Board's lock
 rule** (`tbLockOk()`, `board_items` update). The old clause let a member on
 a locked item re-point `lockedBy` at themselves (or set `locked:false`) and
 then move the date, and refused a non-owner locker their own unlock --
@@ -9238,7 +9257,7 @@ paste of the current file carries this AND every outstanding entry below.
 never published, the Board shows "could not read" to all five of its
 users, and it is their landing page.**
 
-**REPUBLISH OUTSTANDING (26 Sept 2026, later): the warehouse handover,
+**PUBLISHED 26 Sept 2026, was outstanding (later): the warehouse handover,
 and its review round.** `wh_sales` read now includes `isStoreAccounts()`,
 and a new update clause lets Umair mark a pay-later bill collected. Until
 the Console has it, Raees's ledger shows "Warehouse sales could not be
@@ -9248,7 +9267,7 @@ on an uncollected bill, `whConfValid` on `acct_entries` create) — publish
 the NEWEST file; an older paste is missing those. **The same paste carries Raees's edit rights below
 if that one was not published yet.**
 
-**REPUBLISH OUTSTANDING (26 Sept 2026): Raees's edit rights.**
+**PUBLISHED 26 Sept 2026, was outstanding: Raees's edit rights.**
 `acct_entries` update now splits into `acctControl()` / `acctReview()` /
 `acctOwnEdit()` (see Store Accounts, "Raees can EDIT his own entries").
 Until the Console has it, Raees's **Edit…** is refused with "Missing or
@@ -9256,7 +9275,7 @@ insufficient permissions" — and the old ruleset still lets him clear a
 review flag through the control list. Ran 77/77 in the emulator. **If the
 25 Sept republish below was never done, this one paste carries it too.**
 
-**REPUBLISH OUTSTANDING (25 Sept 2026):** `isAcctSuper()` now lists
+**PUBLISHED 26 Sept 2026, was outstanding (25 Sept 2026):** `isAcctSuper()` now lists
 `afnan@groovy.op` AND `ammar@groovy.op` (it was Afnan alone). Until the
 Console has it, Ammar sees the Store Accounts admin buttons (Edit / Delete
 an entry, Delete vendor, Reopen, Reset) but every one of their writes is
