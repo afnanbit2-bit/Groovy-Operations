@@ -235,7 +235,8 @@ module.exports=async function(){
       s.eq('the answer names this phone\'s key',calls[1]&&calls[1].assertion.id,'CQkJ');
       s.eq('signs in to Firebase with the server\'s token',signedWith,'custom:u-afnan');
       s.eq('the session is the account the TOKEN belongs to',app.run('session&&session.u'),'afnan');
-      s.eq('the app starts',app.run('__started'),1);
+      await new Promise(r=>setTimeout(r,260));
+      s.eq('the app starts (after the login fades out)',app.run('__started'),1);
       s.eq('and stays signed in on this phone',mem['groovy-keep-signed-in'],'1');
     }
   }finally{

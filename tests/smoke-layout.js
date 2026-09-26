@@ -155,7 +155,7 @@ const FRAGMENTS={
     const idx=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
     const login=idx.slice(idx.indexOf('<div id="scr-login">'),idx.indexOf('<!-- ══ APP LOCK'))
       .replace('<div id="scr-login">','<div id="scr-login" style="display:flex;position:relative;height:auto">')
-      .replace('id="login-help" hidden','id="login-help"')
+      
       .replace('id="login-finger" onclick="window.loginWithFingerprint()" hidden','id="login-finger" onclick="window.loginWithFingerprint()"')
       .replace('title="Use a saved password" hidden','title="Use a saved password"')
       .replace('<button type="button" class="login-theme" id="login-theme-btn" onclick="window.loginCycleTheme()" aria-label="Change theme" title="Theme"></button>',
@@ -164,7 +164,14 @@ const FRAGMENTS={
     const lock=idx.slice(lockAt,idx.indexOf('<!-- ══ APP ══ -->'));
     const lockBox=lock.slice(0,lock.lastIndexOf('</div>'))
       .replace('<div class="lock-msg" id="lock-msg" role="status"></div>','<div class="lock-msg" id="lock-msg" role="status">Not unlocked. Tap the fingerprint to try again.</div>');
-    return login+'<div style="display:flex;justify-content:center;padding:20px 0">'+lockBox+'</div>';
+    // The forgot-password sheet is position:fixed in the app; here it is
+    // taken OUT of #scr-login (a flex row, where it would squeeze the form)
+    // and laid out in flow, open, so its text is measured too.
+    const sheetAt=login.indexOf('<div class="login-sheet"');
+    const sheet=login.slice(sheetAt,login.lastIndexOf('</div>'))
+      .replace('class="login-sheet" id="login-help" hidden','class="login-sheet open" id="login-help" style="position:relative;inset:auto;z-index:auto;background:none"');
+    const loginOnly=login.slice(0,sheetAt)+'</div>';
+    return loginOnly+sheet+'<div style="display:flex;justify-content:center;padding:20px 0">'+lockBox+'</div>';
   },
   // The Board's shell. The rail is NAVIGATION CHROME and the only route
   // between the four screens, so every button has to be reachable at every

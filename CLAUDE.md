@@ -9152,6 +9152,28 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   card, whose button is a tap; a later refusal is a cancel and is left
   alone — a timing heuristic, labelled as one. The card is now marked
   offered only when ANSWERED.
+- **The nitty-gritty round (27 Sept, second recording).** Read frame by
+  frame; every item was real: (1) Chrome's blue **tap highlight** made the
+  eye, key and Remember-me row look "selected" — `-webkit-tap-highlight-color:
+  transparent` on `#scr-login,#scr-lock,.topbar`, each control has its own
+  `:active` press state, keyboard keeps `:focus-visible`; (2) **Sign in
+  stuck grey** — a `:hover` sticks on touch, so all login hover styles live
+  in `@media (hover:hover) and (pointer:fine)` (asserted); (3) Chrome's
+  **"Sign in as" list** showed blank avatars — a `PasswordCredential` can
+  carry `name` and `iconURL`, so the credential is stored again once the
+  profile photo is known (`_loginStoreCredIcon`, called from
+  `profileApplyToSession`; the password is held IN MEMORY for ≤30s for
+  that, never written). Accounts Chrome saved on its own get a picture only
+  after that person signs in on the new build; (4) closing that list
+  showed a red error — silent now; (5) **Forgot password** is a bottom
+  sheet OUTSIDE the form, not a box that shoved the page up; (6) after the
+  fingerprint the login sat still for ~1.5s — the button now says "Waiting
+  for your fingerprint…" / "Signing you in…" and the rest of the form steps
+  back (`is-busy`), and every sign-in FADES the login out (`_loginLeave`,
+  230ms) instead of cutting; (7) the phone **top bar** wrapped "Change
+  password" and pushed Sign out off the screen — below 600px it keeps logo,
+  bell and avatar; **Sign out moved onto the Profile card** (the avatar),
+  which already had Change password.
 - **Pull-to-refresh REBUILT from Afnan's screen recording (27 Sept).**
   Read frame by frame (cv2, 90fps): every release was a hard cut to a
   blank page (brightness 42 → 12.5 in ONE frame), then the entrance

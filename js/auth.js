@@ -117,7 +117,7 @@ window.doLogin=async function(){
   const btn=document.getElementById('login-btn');
   const _rm=document.getElementById('l-remember');
   const keep=!!(_rm&&_rm.checked);
-  _loginBusy(btn,true);
+  _loginBusy(btn,true);_loginSetBusy(true);
   uEl.disabled=true;pEl.disabled=true;
   loginInProgress=true;
   try{
@@ -140,7 +140,7 @@ window.doLogin=async function(){
     // must not leave a saved password behind.
     if(keep)_loginOfferSave(u,p,def.name);
     loginInProgress=false;
-    startApp();
+    _loginLeave(()=>startApp());
     logActivity('Login',`${def.name} signed in`);
     // The fingerprint choice made ON the login screen. Asked straight away,
     // while the person is still looking at the phone — the first cut only
@@ -154,7 +154,7 @@ window.doLogin=async function(){
   }catch(e){
     loginInProgress=false;
     uEl.disabled=false;pEl.disabled=false;
-    _loginBusy(btn,false);
+    _loginBusy(btn,false);_loginSetBusy(false);
     pEl.classList.add('l-error');
     window._loginFailCount=(window._loginFailCount||0)+1;
     _loginShake();
@@ -177,11 +177,40 @@ function _loginBusy(btn,on){
   else btn.textContent=on?'Signing in…':'Sign in';
   btn.classList.toggle('busy',!!on);
 }
+// Chrome's "Sign in as" list shows a credential's NAME and PICTURE
+// (iconURL) when the site gives them. The picture is only known once the
+// profile loads (after sign-in), so the password is held IN MEMORY ONLY for
+// up to 30s and the credential is stored once more with the photo
+// (window._loginStoreCredIcon, called from js/profile.js). Never written
+// anywhere by the app.
+let _loginPendingCred=null;
 function _loginOfferSave(u,p,name){
   try{
     if(typeof window.PasswordCredential!=='function'||!navigator.credentials||!navigator.credentials.store)return;
     navigator.credentials.store(new window.PasswordCredential({id:u,password:p,name:name||u})).catch(()=>{});
+    _loginPendingCred={u,p,name:name||u};
+    setTimeout(()=>{_loginPendingCred=null;},30000);
   }catch(_){}
+}
+window._loginStoreCredIcon=function(iconURL,name){
+  const c=_loginPendingCred;_loginPendingCred=null;
+  if(!c||!/^https:\/\//.test(String(iconURL||'')))return false;
+  try{
+    navigator.credentials.store(new window.PasswordCredential({id:c.u,password:c.p,name:name||c.name,iconURL})).catch(()=>{});
+    return true;
+  }catch(_){return false;}
+};
+// Leaving the login: the screen fades out instead of vanishing mid-frame.
+function _loginLeave(then){
+  const l=document.getElementById('scr-login');
+  if(!l||l.style.display==='none'){then();return;}
+  l.classList.add('leaving');
+  setTimeout(()=>{l.classList.remove('leaving','is-busy');then();},230);
+}
+function _loginSetBusy(on,label){
+  const l=document.getElementById('scr-login');if(l)l.classList.toggle('is-busy',!!on);
+  const f=document.getElementById('login-finger');
+  if(f){const sp=f.querySelector('span');if(sp)sp.textContent=on&&label?label:'Sign in with fingerprint';}
 }
 window.doLogout=async function(){
   await signOut(auth);session=null;sessionStorage.clear();location.reload();
@@ -637,9 +666,12 @@ try{
   _gvPullToRefresh(document.getElementById('scr-lock'),document.getElementById('lock-ptr'),_ptrRefresh);
 }catch(_){}
 
-window.loginForgot=function(){
+window.loginForgot=function(open){
   const h=document.getElementById('login-help');
-  if(h)h.hidden=!h.hidden;
+  if(!h)return;
+  const show=open===undefined?h.hidden:!!open;
+  if(show){h.hidden=false;requestAnimationFrame(()=>h.classList.add('open'));}
+  else{h.classList.remove('open');setTimeout(()=>{if(!h.classList.contains('open'))h.hidden=true;},260);}
 };
 
 // The theme toggle on the login screen: Light → Dark → System. Writes the
@@ -798,12 +830,14 @@ window.loginWithFingerprint=async function(){
   loginInProgress=true;
   try{
     const opt=await _passkeyCall({action:'login-options'});
+    _loginSetBusy(true,'Waiting for your fingerprint…');
     const a=await navigator.credentials.get({publicKey:{
       challenge:_b64uDec(opt.challenge),rpId:opt.rpId,
       allowCredentials:[{type:'public-key',id:_b64uDec(rec.id),transports:['internal']}],
       userVerification:'required',timeout:60000
     }});
     if(!a||!a.response)throw new Error('no answer from the phone');
+    _loginSetBusy(true,'Signing you in…');
     const res=await _passkeyCall({action:'login',challengeId:opt.challengeId,assertion:{
       id:_b64u(a.rawId),clientDataJSON:_b64u(a.response.clientDataJSON),
       authenticatorData:_b64u(a.response.authenticatorData),signature:_b64u(a.response.signature)}});
@@ -817,11 +851,12 @@ window.loginWithFingerprint=async function(){
     session={...def,uid:c.user.uid};
     _authStore('groovy-keep-signed-in','1');_authStore('groovy_remembered_user',def.u);
     loginInProgress=false;
-    startApp();
+    _loginLeave(()=>startApp());
     logActivity('Login',`${def.name} signed in with fingerprint`);
   }catch(e){
     loginInProgress=false;
     if(btn){btn.disabled=false;btn.classList.remove('busy');}
+    _loginSetBusy(false);
     if(e&&e.status===404){_passkeySave(u,null);_loginPaintFinger();}
     showToast(e&&e.name==='NotAllowedError'?'Fingerprint not checked. Try again, or use your password.':'Fingerprint sign-in failed: '+(e&&e.message||e),true);
   }
@@ -839,7 +874,7 @@ function _loginPaintFinger(){
 window.loginFillSaved=async function(){
   try{
     const c=await navigator.credentials.get({password:true,mediation:'required'});
-    if(!c||!c.password){showToast('No saved password was chosen.',true);return;}
+    if(!c||!c.password)return;          // closing the list is not an error
     const uEl=document.getElementById('l-user'),pEl=document.getElementById('l-pass');
     if(uEl)uEl.value=c.id||'';if(pEl)pEl.value=c.password;
     window.doLogin();

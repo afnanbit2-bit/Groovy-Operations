@@ -91,7 +91,9 @@ module.exports=async function(){
     s.eq(keep?'the phone\'s password manager is OFFERED the password':'nothing is offered to a password manager on a shared device',rec.stored.length,keep?1:0);
     if(keep)s.eq('… under the username, which is what the login field takes',rec.stored[0]&&rec.stored[0].id,'afnan');
     s.ok('the password is NOWHERE in app storage',!JSON.stringify(ls.m).includes('s3cret-PASS'));
-    s.eq('the app started',run('__started'),1);
+    s.eq('the app does NOT cut straight in: the login fades first',run('__started'),0);
+    await new Promise(r=>setTimeout(r,260));
+    s.eq('the app started, after the fade',run('__started'),1);
   }
 
   // ── the user-verified flag ────────────────────────────────────────────
@@ -317,6 +319,46 @@ module.exports=async function(){
     s.ok('… and the entrance animation is skipped for it',/html\.ptr-return #scr-login \.login-box,html\.ptr-return #scr-login \.login-box>\*\{animation:none!important\}/.test(css));
     s.ok('the fingerprint row is decided from the remembered answer at load, not popped in later',
       /let _lockCapable=_authRead\('groovy-bio-capable'\)==='1';/.test(fs.readFileSync(path.join(__dirname,'..','js','auth.js'),'utf8')));
+  }
+
+  // ── the 27 Sept recording's nitty-gritty ──────────────────────────────
+  {
+    const fs=require('fs'),path=require('path');
+    const css=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');
+    const prof=fs.readFileSync(path.join(__dirname,'..','js','profile.js'),'utf8');
+    s.section('the recording: every tap looked "selected"');
+    s.ok('Chrome\'s blue tap boxes are off on the login, the lock and the top bar',/#scr-login,#scr-lock,\.topbar\{-webkit-tap-highlight-color:transparent\}/.test(css));
+    s.ok('… replaced by each control\'s own press state',/\.login-eye:active\{/.test(css)&&/\.login-check:active \.login-box-tick\{/.test(css));
+    s.ok('keyboard focus still gets a visible ring',/#scr-login button:focus-visible/.test(css));
+    const outside=css.replace(/@media \(hover:hover\) and \(pointer:fine\)\{[\s\S]*?\n\}/g,'');
+    s.ok('Sign in has NO hover style outside a real-hover device (it stuck grey on touch)',!/\.btn-login:hover/.test(outside));
+    s.section('the recording: the top bar ran off the phone');
+    s.ok('on a phone the top bar drops Change password / Sign out',/@media \(max-width:600px\)\{\s*\.topbar-user \.btn-logout\{display:none\}/.test(css));
+    s.ok('… and Sign out is on the Profile card instead',/onclick="window\.doLogout\(\)">Sign out</.test(prof));
+    s.section('the recording: Forgot password shoved the page up');
+    const idx=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
+    const card=idx.slice(idx.indexOf('<form class="login-box"'),idx.indexOf('</form>'));
+    s.ok('the note is no longer inside the form',!/id="login-help"/.test(card));
+    s.ok('it is a sheet over the screen',/\.login-sheet\{position:fixed;inset:0/.test(css));
+  }
+  {
+    const {app,run}=boot();
+    s.section('the recording: closing the saved-password list was an error');
+    run(`navigator.credentials.get=async function(){return null}`);
+    const n=app.state.toasts.length;
+    await run('window.loginFillSaved()');
+    s.eq('closing the list shows nothing (no red toast)',app.state.toasts.length,n);
+  }
+  {
+    const {app,rec,run}=boot();
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw9';app.el('l-remember').checked=true;
+    await run('window.doLogin()');
+    s.section('the saved account shows your picture in the phone\'s list');
+    s.eq('first saved with the name',rec.stored[0]&&rec.stored[0].name,'Afnan');
+    s.eq('then, once the profile photo is known, saved again WITH the picture',
+      run(`window._loginStoreCredIcon('https://res.cloudinary.com/x/image/upload/c_fill,w_96/v1/a.jpg','Afnan Khan')`),true);
+    s.eq('… as the credential\'s iconURL',rec.stored[1]&&rec.stored[1].iconURL,'https://res.cloudinary.com/x/image/upload/c_fill,w_96/v1/a.jpg');
+    s.eq('… and only once (the password is then dropped from memory)',run(`window._loginStoreCredIcon('https://a/b.jpg')`),false);
   }
 
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────

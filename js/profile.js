@@ -243,6 +243,7 @@ function _profileViewCardHTML(p){
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-sm" onclick="window.profileStartEdit()">Edit profile</button>
       <button class="btn-sm" onclick="window.openChangePasswordModal()">Change password</button>
+      <button class="btn-sm profile-signout" onclick="window.doLogout()">Sign out</button>
     </div>
   </div>`;
 }
@@ -725,6 +726,11 @@ function profileApplyToSession(){
   if(p&&p.displayName)session.name=p.displayName;
   if(p&&p.jobTitle)session.jobTitle=p.jobTitle;
   session.photoUrl=p?_profPhotoUrl(p.photoUrl):'';
+  // The phone's "Sign in as" list shows this picture beside the saved
+  // password (js/auth.js holds the just-typed password for 30s for this).
+  if(session.photoUrl&&typeof window._loginStoreCredIcon==='function'){
+    try{window._loginStoreCredIcon(_profAvatarUrl(session.photoUrl,96),session.name);}catch(_){}
+  }
   session.nameColor=p?_profHex(p.nameColor):'';
   const n=document.getElementById('user-name');
   if(n){

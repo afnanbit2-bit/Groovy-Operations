@@ -213,11 +213,17 @@ html.app-locked,html.app-locked body{overflow:hidden}
 .login-key{right:50px}
 .login-key[hidden]{display:none}
 .btn-login{width:100%;height:58px;display:flex;align-items:center;justify-content:center;gap:12px;background:var(--dark);color:var(--on-dark);border:none;border-radius:999px;font-size:18px;font-weight:700;cursor:pointer;margin:0 0 34px;font-family:inherit;transition:opacity .15s,transform .1s}
-.btn-login:hover:not(:disabled){opacity:.9;transform:translateY(-1px)}
-.btn-login:active:not(:disabled){transform:translateY(0) scale(.99)}
+/* Hover effects only where there IS hover. On a phone a :hover sticks to
+   the last thing touched, which is why Sign in went grey whenever anything
+   near it was tapped (Afnan's recording, 27 Sept). */
+@media (hover:hover) and (pointer:fine){
+  .btn-login:hover:not(:disabled){opacity:.9;transform:translateY(-1px)}
+  .btn-login:hover .login-arrow{transform:translateX(3px)}
+    .btn-login-alt:hover:not(:disabled){border-color:var(--text)}
+}
+.btn-login:active:not(:disabled){transform:scale(.97);transition:transform .08s}
 .btn-login:disabled{opacity:.7;cursor:default}
 .login-arrow{width:22px;height:22px;transition:transform .2s}
-.btn-login:hover .login-arrow{transform:translateX(3px)}
 .btn-login.busy .login-arrow{display:none}
 .login-foot{display:flex;align-items:center;justify-content:center;gap:14px;font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:var(--muted)}
 .login-foot::before,.login-foot::after{content:"";flex:1;max-width:48px;height:1px;background:var(--border)}
@@ -276,6 +282,50 @@ html.ptr-return #scr-login .login-box,html.ptr-return #scr-login .login-box>*{an
   #scr-login .login-box>*{animation:none}
   .ptr.spin svg{animation-duration:2s}
 }
+/* ── Touch feedback, not Chrome's blue boxes ──
+   Chrome paints a translucent blue rectangle over whatever is tapped
+   (-webkit-tap-highlight-color); on the eye, the key and the Remember-me
+   row it read as "this is now selected". Switched off on the login, the
+   lock and the top bar, and replaced by the control's OWN press state.
+   Keyboard focus keeps a clear ring (:focus-visible). */
+#scr-login,#scr-lock,.topbar{-webkit-tap-highlight-color:transparent}
+#scr-login button:focus,#scr-lock button:focus{outline:none}
+#scr-login button:focus-visible,#scr-lock button:focus-visible,.login-check input:focus-visible+.login-box-tick{outline:2px solid var(--text);outline-offset:2px}
+.login-eye{transition:background-color .15s,transform .1s}
+.login-eye:active{background:var(--soft);transform:scale(.9)}
+.login-check .login-box-tick{transition:background-color .15s,border-color .15s,transform .12s}
+.login-check:active .login-box-tick{transform:scale(.88)}
+.login-link:active,.lock-alt:active{opacity:.55}
+.btn-login-alt:active:not(:disabled){transform:scale(.97);transition:transform .08s}
+.login-theme:active{transform:scale(.95)}
+/* Busy: while signing in, everything else steps back and cannot be pressed. */
+#scr-login.is-busy .login-box>*:not(#login-finger):not(#login-btn){opacity:.4;pointer-events:none;transition:opacity .25s}
+#scr-login.is-busy #login-finger,#scr-login.is-busy #login-btn{pointer-events:none}
+/* Leaving: the login fades and lifts instead of vanishing mid-frame. */
+#scr-login.leaving .login-box{opacity:0;transform:translate3d(0,-10px,0)!important;transition:opacity .22s ease,transform .22s ease!important}
+#scr-login.leaving .login-theme{opacity:0;transition:opacity .2s}
+/* Forgot password — a sheet over the screen. */
+.login-sheet{position:fixed;inset:0;z-index:20;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,0);transition:background-color .25s ease}
+.login-sheet[hidden]{display:none}
+.login-sheet.open{background:rgba(0,0,0,.5)}
+.login-sheet-card{width:100%;max-width:440px;background:var(--surface);color:var(--text);border-radius:24px 24px 0 0;padding:10px 24px calc(22px + env(safe-area-inset-bottom));
+  transform:translateY(100%);transition:transform .32s cubic-bezier(.2,.9,.25,1);box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+.login-sheet.open .login-sheet-card{transform:none}
+.login-sheet-grab{width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 16px}
+.login-sheet-t{font-size:19px;font-weight:800;margin-bottom:8px}
+.login-sheet-card p{font-size:15px;line-height:1.55;color:var(--muted);margin:0 0 20px}
+.login-sheet-card p b{color:var(--text)}
+.login-sheet-card .btn-login{margin:0}
+@media (min-width:561px){.login-sheet{align-items:center}.login-sheet-card{border-radius:24px;margin:16px}}
+@media (prefers-reduced-motion:reduce){.login-sheet,.login-sheet-card{transition:none}}
+/* The phone's top bar: logo, bell, avatar — nothing that wraps or falls
+   off the edge. "Change password" wrapped onto two lines and pushed Sign
+   out off the screen; both live on the Profile card (the avatar). */
+@media (max-width:600px){
+  .topbar-user .btn-logout{display:none}
+  .topbar-user{gap:12px}
+}
+@media (max-width:420px){.topbar-name,#user-title{display:none}}
 /* The one-time offer after sign-in: above the mobile nav and the bug FAB. */
 .lock-offer{position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:600;max-width:420px;margin:0 auto;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.25);animation:loginFadeIn .25s ease}
 .lock-offer-t{font-weight:700;font-size:15px;margin-bottom:4px}
