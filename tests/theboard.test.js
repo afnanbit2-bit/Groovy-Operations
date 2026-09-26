@@ -610,12 +610,12 @@ module.exports=async function(){
     a.run('_tbOpenItemId="i1"');
     const d=a.run('_tbDrawer()');
     s.ok('the date input is DISABLED for someone who cannot move it',/id="tb-d-date"[^>]*disabled/.test(d));
-    s.ok('and it says who holds the lock',/locked by/.test(d));
+    s.ok('and it says who holds the lock',/tb-lockwho">Locked by [^<]+</.test(d));
     s.ok('the lock button is disabled too',/tb-lockbtn[^>]*disabled/.test(d));
     // "was Oct 17" — the whole point of datePlanned never changing.
-    s.ok('a moved date shows what it was',/tb-was">was oct 17</.test(d));
+    s.ok('a moved date shows what it was',/tb-was">was Oct 17</.test(d));
     s.ok('steps, notes and the footer are all there',
-      /tb-step-new/.test(d)&&/tb-d-notes/.test(d)&&/add to my day/.test(d)&&/hand over/.test(d));
+      /tb-step-new/.test(d)&&/tb-d-notes/.test(d)&&/Add to My Day/.test(d)&&/Hand over/.test(d));
     s.ok('delete is offered to the owner only',!/tbDeleteItem/.test(d));
     s.eq('and a board owner is not fooled by any of that',
       a.run('tbCanMoveDate(tbItems[0],"u-ammar",true)'),true);
@@ -629,7 +629,7 @@ module.exports=async function(){
     // All steps done is a HINT, never an auto-complete.
     a.run('tbItems[0].steps=[{id:"a",title:"x",done:true}]');
     s.ok('all steps done offers a hint, not a completion',
-      /all steps done/.test(a.run('_tbDrawer()')));
+      /All steps done/.test(a.run('_tbDrawer()')));
     s.eq('and the item is still open',a.run('tbItems[0].status'),'open');
   }
 
@@ -1618,6 +1618,54 @@ module.exports=async function(){
     s.ok('and opens again',/tb-donegroup open/.test(a.run('_tbListsScreen()')));
     s.eq('no done items, no group',a.run("_tbCompleted('l1',[],'"+today+"')"),'');
     s.ok('the My Day toast is Title Case',/'Added to My Day':'Removed from My Day'/.test(read('js/theboard.js')));
+  }
+
+  // ══ SESSION 2 — P1.4: THE DETAIL PANE ═══════════════════════════════
+  s.section('the detail pane: the third column, To Do’s anatomy');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-lists'});
+    a.run('session='+J(AMMAR));
+    const today=a.run('_tbToday()');
+    a.run("tbLoaded=true;tbConfig=null;tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar']}]");
+    a.run("tbItems=[tbDecodeItem({id:'i1',title:'lock the sample date',status:'open',kind:'gate',visibility:'shared',ownerUid:'u-ammar',"
+      +"assigneeUids:['u-ammar'],date:'"+today+"',listId:'l1',createdAt:Date.now(),steps:[{id:'s',title:'call',done:false}]}),"
+      +"tbDecodeItem({id:'i2',title:'other',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],listId:'l1'})]");
+    s.ok('no item open, no pane column',!/has-pane/.test(a.run('_tbShell("tb-lists","",_tbDrawer())')));
+    a.run("_tbOpenItemId='i1';_tbHydrateQueue=[]");
+    const pane=a.run('_tbDrawer()');
+    const frame=a.run('_tbShell("tb-lists","<div>list</div>",'+J(pane)+')');
+    s.ok('an open item makes the frame three columns',/class="tb-wrap tb-page-lists has-pane"/.test(frame));
+    s.ok('and the pane sits INSIDE the frame, after the list',
+      /<div class="tb-main">[\s\S]*<\/div><aside class="tb-drawer tb-pane" id="tb-drawer"[\s\S]*<\/aside><\/div>$/.test(frame));
+    s.ok('the title card: a round check, the title, the star',
+      /tb-ptitle[\s\S]*?class="tb-check"[\s\S]*?id="tb-d-title"[\s\S]*?class="tb-star"/.test(pane));
+    s.ok('the title is a textarea, so a long one wraps',/<textarea class="tb-dtitle" id="tb-d-title" rows="1"/.test(pane));
+    s.ok('Enter commits it',/onkeydown="window\.tbTitleKey\(event\)"/.test(pane));
+    s.ok('steps carry their own small check',/tb-check tb-check-sm/.test(pane));
+    s.ok('and "Next step" once there is one',/placeholder="Next step"/.test(pane));
+    s.ok('property rows, in To Do’s order',
+      /Add to My Day[\s\S]*?>Date<[\s\S]*?>People<[\s\S]*?>List<[\s\S]*?>Lane<[\s\S]*?>Priority<[\s\S]*?>Kind</.test(pane));
+    s.ok('each with its icon',['sun','calendar','users','list','tag','flag'].every(n=>pane.indexOf('#lucide-'+n+'"')>-1));
+    s.ok('the option labels are Title Case',/>Normal<\/option>[\s\S]*>Critical<\/option>/.test(pane)&&/>Gate<\/option>/.test(pane));
+    s.ok('it says who made it',/tb-pmade">Created by you · Today</.test(pane));
+    s.ok('the close button says Esc',/class="tb-pclose" title="Close \(Esc\)"/.test(pane));
+    s.ok('every section header is Title Case',/tb-dsech">Files/.test(pane)&&/tb-dsech">Comments/.test(pane)&&/tb-dsech">Activity/.test(pane));
+    s.ok('the open item is marked in the list',/class="tb-row tb-sel" data-id="i1"/.test(a.run('_tbRow(tbItems[0],"'+today+'")')));
+    s.ok('and no other row is',!/tb-sel/.test(a.run('_tbRow(tbItems[1],"'+today+'")')));
+
+    // A pasted line break is not part of a title.
+    let wrote=null;
+    a.run('_tbCommit=async function(id,data){ globalThis.__w=data; };_tbRepaint=function(){}');
+    await a.run("window.tbFieldChange('title','two\\n  lines ')");
+    wrote=a.run('globalThis.__w');
+    s.eq('a line break in the title becomes a space',wrote&&wrote.title,'two lines');
+    a.run('globalThis.__ev={key:"Enter",preventDefault(){this.p=1;},target:{blur(){globalThis.__blurred=1;}}}');
+    a.run('window.tbTitleKey(__ev)');
+    s.ok('Enter is not a newline, and blurs to save',a.run('__ev.p===1&&globalThis.__blurred===1'));
+
+    a.run("tbItems[0].status='done'");
+    const pd=a.run('_tbDrawer()');
+    s.ok('a done item: no star, struck title, Reopen',!/tb-star/.test(pd)&&/tb-dtitle done/.test(pd)&&/>Reopen</.test(pd));
   }
 
   s.section('the calendar prefs are cleaned on load');

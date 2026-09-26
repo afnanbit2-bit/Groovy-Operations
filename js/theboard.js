@@ -897,7 +897,9 @@ function _tbRow(item,today,o){
   // on a line of its own (seen on the P1.3 screenshots) is a wasted line.
   // The dot leads the line when there is one; on a list's own screen every
   // row shares the list's colour, so there it is only drawn with other meta.
-  return'<div class="tb-row'+(done?' done':'')+(item.priority===2?' crit':'')+'" data-id="'+id+'">'
+  // The item open in the pane is marked in the list, so the eye can find
+  // what the pane is describing (the To Do pattern).
+  return'<div class="tb-row'+(done?' done':'')+(item.priority===2?' crit':'')+(item.id===_tbOpenItemId?' tb-sel':'')+'" data-id="'+id+'">'
     +'<button class="tb-check'+(done?' on':'')+'" title="'+(done?'Mark not done':'Mark done')+'"'
       +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
       +' onclick="event.stopPropagation();window.tbToggleDone(\''+id+'\')">'+_tbIcon('check','sm')+'</button>'
@@ -1070,94 +1072,141 @@ window.tbToggleCompleted=function(listId){
   _tbRepaint();
 };
 
-/** The drawer. Phase 2: title, kind, lock, the meta row, steps, notes and
- *  the footer actions. Comments, files and @mentions are phase 4. */
+/** The item's DETAIL PANE (session 2, P1.4 -- the To Do pattern; it was a
+ *  drawer laid over the page). Desktop: the third column, beside the list,
+ *  so the list stays visible and clickable while an item is open. Below
+ *  1024px it is still a panel over the page, and a full sheet on a phone.
+ *  Top to bottom: kind, lock, close · the TITLE CARD (round check, title,
+ *  star, the steps and "Add step") · PROPERTY ROWS (My Day, date, people,
+ *  list, lane, priority, kind) · note · files · comments · activity · a
+ *  footer (hand over, done, who created it, delete). Every id and handler
+ *  the drawer had is kept, so nothing that drives it moved.
+ *  Still named _tbDrawer, with class tb-drawer: the tests, the shortcut
+ *  table ("close-drawer") and smoke-board all find it by that name. */
 function _tbDrawer(){
   if(!_tbOpenItemId)return'';
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
   if(!it)return'';
   const me=_tbMe(),today=_tbToday();
+  const id=_tbEsc(it.id);
   const canMove=tbCanMoveDate(it,me,_tbIsBoardOwner());
   const pr=tbStepProgress(it);
   const lockedBy=it.locked?tbUser(it.lockedBy):null;
   const moved=it.datePlanned&&it.date&&it.datePlanned!==it.date;
+  const done=it.status==='done';
+  const starred=!done&&(it.myDay||{})[me]===today;
   const opt=(v,cur,label)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(label||v)+'</option>';
-  return'<div class="tb-drawer" id="tb-drawer">'
-    +'<div class="tb-dhead">'
-      +'<button class="tb-back" onclick="window.tbCloseItem()">close</button>'
-      +'<span class="tb-kind tb-kind-'+_tbEsc(it.kind)+'">'+_tbEsc(it.kind)+'</span>'
-      +'<button class="tb-lockbtn'+(it.locked?' on':'')+'" onclick="window.tbToggleLock(\''+_tbEsc(it.id)+'\')"'
+  // One property row: icon, label, control. A <label> so a tap on the
+  // label reaches the control.
+  const prop=(icon,label,control,extra)=>'<label class="tb-prop">'+_tbIcon(icon)
+    +'<span class="tb-proplabel">'+_tbEsc(label)+'</span>'
+    +'<span class="tb-propval">'+control+(extra||'')+'</span></label>';
+  const owner=it.ownerUid?tbUser(it.ownerUid):null;
+  const made=it.createdAt?_tbDay(new Date(Number(it.createdAt))):'';
+  return'<aside class="tb-drawer tb-pane" id="tb-drawer" aria-label="Item details">'
+    +'<div class="tb-pbar">'
+      +'<span class="tb-kind tb-kind-'+_tbEsc(it.kind)+'">'+_tbEsc(_tbCap(it.kind))+'</span>'
+      +'<button class="tb-lockbtn'+(it.locked?' on':'')+'" onclick="window.tbToggleLock(\''+id+'\')"'
         +(it.locked&&!canMove?' disabled title="only '+_tbEsc(lockedBy.name)+' or a board owner can unlock this"':'')
-        +'>'+(it.locked?'&#128274; locked':'&#128275; lock')+'</button>'
-      +(it.locked&&!canMove?'<span class="tb-lockwho">locked by '+_tbEsc(lockedBy.name)+'</span>':'')
+        +'>'+_tbIcon(it.locked?'lock':'lock-open','sm')+(it.locked?'Locked':'Lock')+'</button>'
+      +'<button class="tb-pclose" title="Close (Esc)" aria-label="Close" onclick="window.tbCloseItem()">'+_tbIcon('x')+'</button>'
     +'</div>'
+    +(it.locked&&!canMove?'<div class="tb-lockwho">Locked by '+_tbEsc(lockedBy.name)+'</div>':'')
     // A locked item you cannot move is not a dead end (spec s7.4): the
     // ask goes into the thread, where the answer belongs.
     +(it.locked&&!canMove?_tbMoveReqSection(it):'')
-    +'<input class="tb-dtitle" id="tb-d-title" value="'+_tbEsc(it.title||'')+'" maxlength="140"'
-      +' onchange="window.tbFieldChange(\'title\',this.value)">'
-    +'<div class="tb-dmeta">'
-      +'<label>date'
-        +'<input type="date" id="tb-d-date" value="'+_tbEsc(it.date||'')+'"'+(canMove?'':' disabled')
-        +' onchange="window.tbFieldChange(\'date\',this.value)"></label>'
-      +(moved?'<span class="tb-was">was '+_tbEsc(tbDayLabel(it.datePlanned,today))+'</span>':'')
-      +'<label>list<select id="tb-d-list" onchange="window.tbFieldChange(\'listId\',this.value)">'
-        +opt('',it.listId||'','none')
-        +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,it.listId||'',l.title||'untitled')).join('')
-      +'</select></label>'
-      +'<label>lane<select id="tb-d-lane" onchange="window.tbFieldChange(\'lane\',this.value)">'
-        +opt('',it.lane||'','none')+TB_LANES.map(l=>opt(l,it.lane||'')).join('')
-      +'</select></label>'
-      +'<label>priority<select id="tb-d-pri" onchange="window.tbFieldChange(\'priority\',this.value)">'
-        +opt('0',String(it.priority),'normal')+opt('1',String(it.priority),'high')+opt('2',String(it.priority),'critical')
-      +'</select></label>'
-      +'<label>kind<select id="tb-d-kind" onchange="window.tbFieldChange(\'kind\',this.value)">'
-        +TB_KINDS.map(k=>opt(k,it.kind)).join('')
-      +'</select></label>'
-    +'</div>'
-    +'<div class="tb-dsec"><div class="tb-dsech">people</div><div class="tb-people">'
-      +tbPeople().map(p=>{
-        // Listed even when they cannot be assigned yet, and saying why --
-        // a person who silently is not there reads as a missing feature.
-        if(!p.uid)return'<button class="tb-person tb-person-off" disabled title="'+_tbEsc(p.name)
-          +' is not set up yet — an owner can press Sync accounts on the Profile page">'
-          +_tbEsc(p.name)+' · not set up</button>';
-        const on=(it.assigneeUids||[]).indexOf(p.uid)>-1;
-        return'<button class="tb-person'+(on?' on':'')+'" onclick="window.tbToggleAssignee(\''+_tbEsc(p.uid)+'\')">'
-          +_tbEsc(tbUser(p.uid).name)+'</button>';
-      }).join('')
-    +'</div></div>'
-    +'<div class="tb-dsec"><div class="tb-dsech">steps'+(pr.label?' <span class="tb-steps">'+_tbEsc(pr.label)+'</span>':'')+'</div>'
-      +(pr.allDone?'<div class="tb-hint">all steps done — mark the item done when you have reviewed it</div>':'')
-      +'<div class="tb-stepl">'+(it.steps||[]).map((st,i)=>
-        '<div class="tb-step"><button class="tb-check'+(st.done?' on':'')+'" onclick="window.tbToggleStep('+i+')"></button>'
-        +_tbSlot(st.title||'','tb-steptitle')
-        +'<button class="tb-x" onclick="window.tbRemoveStep('+i+')" title="remove">&times;</button></div>').join('')
+
+    // ── the title card ──
+    +'<div class="tb-pcard tb-phead">'
+      +'<div class="tb-ptitle">'
+        +'<button class="tb-check'+(done?' on':'')+'" title="'+(done?'Mark not done':'Mark done')+'"'
+          +' aria-label="'+(done?'Mark not done':'Mark done')+'" aria-pressed="'+(done?'true':'false')+'"'
+          +' onclick="window.tbToggleDone(\''+id+'\')">'+_tbIcon('check','sm')+'</button>'
+        // A TEXTAREA sized to its content, not an input: the real titles
+        // run to two lines, and an input showed "Hyderabad supplier in
+        // Karachi:" and nothing more (seen on the P1.4 screenshots). Enter
+        // still commits -- a title is one line -- and blurring saves.
+        +'<textarea class="tb-dtitle'+(done?' done':'')+'" id="tb-d-title" rows="1" maxlength="140"'
+          +' aria-label="Title" onkeydown="window.tbTitleKey(event)"'
+          +' onchange="window.tbFieldChange(\'title\',this.value)">'+_tbEsc(it.title||'')+'</textarea>'
+        +(done?'':'<button class="tb-star'+(starred?' on':'')+'" title="'+(starred?'Remove from My Day':'Add to My Day')+'"'
+          +' aria-label="'+(starred?'Remove from My Day':'Add to My Day')+'" aria-pressed="'+(starred?'true':'false')+'"'
+          +' onclick="window.tbAddToMyDay(\''+id+'\')">'+_tbIcon('star')+'</button>')
       +'</div>'
-      +'<input class="tb-stepadd" id="tb-step-new" placeholder="add a step" onkeydown="window.tbStepKey(event)">'
+      +(pr.allDone?'<div class="tb-hint">All steps done — mark the item done when you have reviewed it.</div>':'')
+      +'<div class="tb-stepl">'+(it.steps||[]).map((st,i)=>
+        '<div class="tb-step"><button class="tb-check tb-check-sm'+(st.done?' on':'')+'"'
+          +' aria-label="'+(st.done?'Mark step not done':'Mark step done')+'" onclick="window.tbToggleStep('+i+')">'+_tbIcon('check','sm')+'</button>'
+        +_tbSlot(st.title||'','tb-steptitle'+(st.done?' done':''))
+        +'<button class="tb-x" onclick="window.tbRemoveStep('+i+')" title="Remove step" aria-label="Remove step">'+_tbIcon('x','sm')+'</button></div>').join('')
+      +'</div>'
+      +'<label class="tb-stepaddrow">'+_tbIcon('plus')
+        +'<input class="tb-stepadd" id="tb-step-new" placeholder="'+((it.steps||[]).length?'Next step':'Add step')+'"'
+        +' aria-label="Add step" onkeydown="window.tbStepKey(event)">'
+        +(pr.label?'<span class="tb-steps">'+_tbEsc(pr.label)+'</span>':'')
+      +'</label>'
     +'</div>'
-    +'<div class="tb-dsec"><div class="tb-dsech">notes</div>'
-      +'<textarea class="tb-notes" id="tb-d-notes" rows="4" placeholder="markdown-lite"'
+
+    // ── property rows ──
+    +'<div class="tb-pcard tb-props">'
+      +(done?'':'<button class="tb-prop tb-propbtn'+(starred?' on':'')+'" onclick="window.tbAddToMyDay(\''+id+'\')">'
+        +_tbIcon('sun')+'<span class="tb-proplabel tb-propwide">'+(starred?'Added to My Day':'Add to My Day')+'</span></button>')
+      +prop('calendar','Date','<input type="date" id="tb-d-date" value="'+_tbEsc(it.date||'')+'"'+(canMove?'':' disabled')
+        +' onchange="window.tbFieldChange(\'date\',this.value)">',
+        moved?'<span class="tb-was">was '+_tbEsc(_tbCap(tbDayLabel(it.datePlanned,today)))+'</span>':'')
+      +'<div class="tb-prop tb-propstack">'+_tbIcon('users')+'<span class="tb-proplabel">People</span>'
+        +'<div class="tb-people">'
+        +tbPeople().map(p=>{
+          // Listed even when they cannot be assigned yet, and saying why --
+          // a person who silently is not there reads as a missing feature.
+          if(!p.uid)return'<button class="tb-person tb-person-off" disabled title="'+_tbEsc(p.name)
+            +' is not set up yet — an owner can press Sync accounts on the Profile page">'
+            +_tbEsc(p.name)+' · not set up</button>';
+          const on=(it.assigneeUids||[]).indexOf(p.uid)>-1;
+          return'<button class="tb-person'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
+            +' onclick="window.tbToggleAssignee(\''+_tbEsc(p.uid)+'\')">'+_tbEsc(tbUser(p.uid).name)+'</button>';
+        }).join('')
+      +'</div></div>'
+      +prop('list','List','<select id="tb-d-list" onchange="window.tbFieldChange(\'listId\',this.value)">'
+        +opt('',it.listId||'','None')
+        +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,it.listId||'',l.title||'untitled')).join('')
+      +'</select>')
+      +prop('tag','Lane','<select id="tb-d-lane" onchange="window.tbFieldChange(\'lane\',this.value)">'
+        +opt('',it.lane||'','None')+TB_LANES.map(l=>opt(l,it.lane||'',_tbCap(l))).join('')
+      +'</select>')
+      +prop('flag','Priority','<select id="tb-d-pri" onchange="window.tbFieldChange(\'priority\',this.value)">'
+        +opt('0',String(it.priority),'Normal')+opt('1',String(it.priority),'High')+opt('2',String(it.priority),'Critical')
+      +'</select>')
+      +prop('circle','Kind','<select id="tb-d-kind" onchange="window.tbFieldChange(\'kind\',this.value)">'
+        +TB_KINDS.map(k=>opt(k,it.kind,_tbCap(k))).join('')
+      +'</select>')
+    +'</div>'
+
+    // ── the note ──
+    +'<div class="tb-pcard tb-pnote">'
+      +'<textarea class="tb-notes" id="tb-d-notes" rows="4" placeholder="Add a note" aria-label="Note"'
         +' oninput="window.tbNotesInput(this.value)">'+_tbEsc(it.notes||'')+'</textarea>'
       +'<div class="tb-savestate" id="tb-d-save"></div>'
     +'</div>'
     +_tbFilesSection(it)
     +_tbThreadSection(it)
     +_tbActivitySection(it)
+
+    // ── the footer ──
     +'<div class="tb-dfoot">'
-      +'<button class="btn-outline" onclick="window.tbAddToMyDay(\''+_tbEsc(it.id)+'\')">add to my day</button>'
-      +'<button class="btn-outline" onclick="window.tbOpenHandover()">hand over</button>'
-      +'<button class="btn-primary" onclick="window.tbToggleDone(\''+_tbEsc(it.id)+'\')">'
-        +(it.status==='done'?'reopen':'done')+'</button>'
+      +'<button class="btn-outline" onclick="window.tbOpenHandover()">'+_tbIcon('arrow-right-left','sm')+'Hand over</button>'
+      +'<button class="btn-primary" onclick="window.tbToggleDone(\''+id+'\')">'+(done?'Reopen':'Mark done')+'</button>'
       +(it.ownerUid===me||_tbIsBoardOwner()
-        ?'<button class="tb-x tb-del" onclick="window.tbDeleteItem(\''+_tbEsc(it.id)+'\')">delete</button>':'')
+        ?'<button class="tb-x tb-del" onclick="window.tbDeleteItem(\''+id+'\')" title="Delete" aria-label="Delete">'+_tbIcon('trash-2')+'</button>':'')
     +'</div>'
+    +(owner?'<div class="tb-pmade">Created by '+_tbEsc(owner.uid===me?'you':owner.name)
+      +(made?' · '+_tbEsc(_tbCap(tbDayLabel(made,today))):'')+'</div>':'')
     +'<div id="tb-handover"></div>'
     // ONE picker for both destinations — _tbPickFor says which — so there
     // is no second hidden input to keep in step with the first.
     +'<input type="file" id="tb-filepick" multiple style="display:none"'
       +' onchange="window.tbFilesPicked(this)">'
-  +'</div>';
+  +'</aside>';
 }
 
 // ── Writing ───────────────────────────────────────────────────────────
@@ -1416,6 +1465,9 @@ window.tbFieldChange=async function(field,value){
   if(field==='listId'||field==='lane')v=value||null;
   if(field==='date')v=value||null;
   if(field==='kind'&&TB_KINDS.indexOf(v)<0)return;
+  // The title is a textarea now (P1.4): a pasted line break is not part of
+  // a title.
+  if(field==='title')v=String(value==null?'':value).replace(/\s*[\r\n]+\s*/g,' ').trim();
   const plan=tbItemPatch(it,_tbObj(field,v),_tbMe(),_tbNow());
   if(!Object.keys(plan.data).filter(k=>k!=='updatedAt'&&k!=='lastActivityAt').length)return;
   await _tbTry(async()=>{
@@ -1425,6 +1477,11 @@ window.tbFieldChange=async function(field,value){
   },'save that');
 };
 function _tbObj(k,v){ const o={}; o[k]=v; return o; }
+/** Enter commits the title (blur fires the change); Escape puts it back. */
+window.tbTitleKey=function(e){
+  if(!e)return;
+  if(e.key==='Enter'){ if(e.preventDefault)e.preventDefault(); if(e.target&&e.target.blur)e.target.blur(); }
+};
 
 window.tbToggleAssignee=async function(uid){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
@@ -1553,7 +1610,7 @@ window.tbOpenHandover=function(){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
   if(!it)return;
   const me=_tbMe();
-  host.innerHTML='<div class="tb-ho"><div class="tb-dsech">hand over</div>'
+  host.innerHTML='<div class="tb-ho"><div class="tb-dsech">Hand Over</div>'
     +'<select id="tb-ho-who">'+tbPeople().map(p=>{
       const uid=p.uid;
       return (uid&&uid!==me)?'<option value="'+_tbEsc(uid)+'">'+_tbEsc(tbUser(uid).name)+'</option>':'';
@@ -2945,7 +3002,7 @@ window.tbToggleActivity=function(){ _tbShowActivity=!_tbShowActivity; _tbRepaint
 // ── The drawer's phase-4 half ─────────────────────────────────────────
 function _tbFilesSection(it){
   const files=it.attachments||[];
-  return'<div class="tb-dsec"><div class="tb-dsech">files'
+  return'<div class="tb-dsec"><div class="tb-dsech">Files'
     +(files.length?' <span class="tb-steps">'+files.length+'</span>':'')
     +'<button class="tb-addfile" onclick="window.tbPickFiles(\'item\')">+ add</button></div>'
     +(files.length
@@ -2959,9 +3016,9 @@ function _tbFilesSection(it){
 function _tbThreadSection(it){
   const th=_tbThread(it.id);
   const me=_tbMe();
-  if(!th)return'<div class="tb-dsec"><div class="tb-dsech">comments</div>'
+  if(!th)return'<div class="tb-dsec"><div class="tb-dsech">Comments</div>'
     +'<div class="tb-hint">loading the thread…</div></div>';
-  if(th.err)return'<div class="tb-dsec"><div class="tb-dsech">comments</div>'
+  if(th.err)return'<div class="tb-dsec"><div class="tb-dsech">Comments</div>'
     +'<div class="tb-err">Could not read the thread. '
     +'<button class="btn-outline" onclick="window.tbReloadThread()">Retry</button></div></div>';
   const rows=th.comments.slice().sort((a,b)=>Number(a.createdAt||0)-Number(b.createdAt||0))
@@ -2979,7 +3036,7 @@ function _tbThreadSection(it){
         +'</div></div>';
     }).join('');
   const staged=(_tbCompFiles[it.id]||[]);
-  return'<div class="tb-dsec tb-thread"><div class="tb-dsech">comments'
+  return'<div class="tb-dsec tb-thread"><div class="tb-dsech">Comments'
       +(th.comments.length?' <span class="tb-steps">'+th.comments.length+'</span>':'')+'</div>'
     +(rows||'<div class="tb-hint">no comments yet</div>')
     +'<div class="tb-comp">'
@@ -3002,7 +3059,7 @@ function _tbActivitySection(it){
   const th=_tbThread(it.id);
   const rows=(th&&th.activity)||[];
   const today=_tbToday();
-  return'<div class="tb-dsec"><div class="tb-dsech">activity'
+  return'<div class="tb-dsec"><div class="tb-dsech">Activity'
       +'<button class="tb-addfile" onclick="window.tbToggleActivity()">'
       +(_tbShowActivity?'hide':'show'+(rows.length?' ('+rows.length+')':''))+'</button></div>'
     +(_tbShowActivity
@@ -3233,7 +3290,7 @@ function _tbInboxScreen(){
       }).join('')
     +'</div>';
   }).join('');
-  return'<div class="tb-nfhead"><span class="tb-dsech">inbox</span>'
+  return'<div class="tb-nfhead"><span class="tb-dsech">Inbox</span>'
       +(unread?'<span class="tb-count red">'+unread+'</span>':'')
       +(unread?'<button class="btn-outline" onclick="window.tbMarkAllRead()">mark all read</button>':'')
     +'</div>'+groups;
@@ -3472,7 +3529,7 @@ function _tbHelpOverlay(){
   if(!_tbHelpOpen)return'';
   return'<div class="tb-help" onclick="window.tbToggleHelp()">'
     +'<div class="tb-helpcard" onclick="event.stopPropagation()">'
-      +'<div class="tb-dsech">keyboard</div>'
+      +'<div class="tb-dsech">Keyboard</div>'
       +TB_SHORTCUTS.map(function(s){
         return'<div class="tb-helprow"><kbd class="tb-kbd">'+_tbEsc(s.k)+'</kbd>'
           +'<span class="tb-helpwhat">'+_tbEsc(s.what)+'</span></div>';
@@ -3822,7 +3879,7 @@ function _tbMoveSheet(){
     +'\',\''+_tbEsc(d)+'\');window.tbCloseMove()">'+_tbEsc(l)+'</button>';
   return'<div class="tb-sheet" onclick="window.tbCloseMove()">'
     +'<div class="tb-sheetcard" onclick="event.stopPropagation()">'
-      +'<div class="tb-dsech">move to</div>'
+      +'<div class="tb-dsech">Move To</div>'
       +_tbSlot(it.title||'untitled','tb-sheettitle')
       +'<div class="tb-sheetquick">'+quick(today,'today')
         +quick(_tbDayAdd(today,1),'tomorrow')
@@ -3890,7 +3947,9 @@ function _tbRepaint(reload){
   if(ae&&ae.id==='tb-qa'&&_tbQa.open)_tbQaRefocus=true;
   _tbHydrateQueue=[];
   const body=_tbScreen(_tbPage);
-  m.innerHTML=_tbShell(_tbPage,body)+_tbDrawer()+_tbMoveSheet()+_tbHelpOverlay()+_tbSettingsOverlay();
+  // The detail pane is the frame's THIRD column (P1.4), not an overlay
+  // appended after it -- so the list beside it stays on screen.
+  m.innerHTML=_tbShell(_tbPage,body,_tbDrawer())+_tbMoveSheet()+_tbHelpOverlay()+_tbSettingsOverlay();
   _tbHydrate();
   _tbPaintBadges();
   _tbPaintMentions();
@@ -3973,7 +4032,7 @@ window.tbRailLists=function(){
  *  strip across the top, icon over label. The search box and the ? moved
  *  out of the rail into a header row on every screen, so the rail is only
  *  navigation. The third pane (the item detail) arrives with P1.4. */
-function _tbShell(page,body){
+function _tbShell(page,body,pane){
   const me=_tbMe(),today=_tbToday();
   const c=tbLoaded?tbRailCounts(tbItems,me,today):{dash:0,over:0,due:0,week:0};
   const listOpen=page==='tb-lists'&&!!_tbListId;
@@ -4023,9 +4082,10 @@ function _tbShell(page,body){
     +'<button class="tb-helpbtn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts"'
       +' onclick="window.tbToggleHelp()">'+_tbIcon('circle-help')+'</button>'
   +'</div>';
-  return'<div class="tb-wrap tb-page-'+_tbEsc(String(page||'').replace(/^tb-/,''))+'">'
+  return'<div class="tb-wrap tb-page-'+_tbEsc(String(page||'').replace(/^tb-/,''))+(pane?' has-pane':'')+'">'
     +rail
     +'<div class="tb-main">'+head+body+'</div>'
+    +(pane||'')
     +'</div>';
 }
 

@@ -421,6 +421,19 @@ function DRIVE(){
       L(!!row,'there is a Dashboard row to open');
       if(row){act('open an item from the Dashboard',function(){document.querySelector('.tb-rowmain').click();});await wait(200);
         L(!!document.querySelector('.tb-drawer'),'the Dashboard row opened its drawer');
+        // P1.4: at 1440 the detail is the frame's third column -- the list
+        // stays on screen beside it, and the open row is marked.
+        var pane=document.querySelector('.tb-wrap.has-pane > .tb-drawer');
+        var pr=pane?pane.getBoundingClientRect():{width:0,left:0};
+        var mr=(document.querySelector('.tb-wrap.has-pane > .tb-main')||{getBoundingClientRect:function(){return{right:0,width:0};}}).getBoundingClientRect();
+        L(!!pane&&getComputedStyle(pane).position==='sticky','the detail is a column of the frame, not an overlay');
+        L(mr.width>300&&mr.right<=pr.left,'the list stays on screen beside it ('+Math.round(mr.width)+'px, ends '+Math.round(mr.right)+' < '+Math.round(pr.left)+')');
+        L(!!document.querySelector('.tb-row.tb-sel'),'the open row is marked in the list');
+        var ta=document.getElementById('tb-d-title');
+        L(!!ta&&ta.tagName==='TEXTAREA'&&ta.getBoundingClientRect().height>=40,'the title is a textarea that shows it whole');
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        await wait(200);
+        L(!document.querySelector('.tb-drawer')&&!document.querySelector('.tb-wrap.has-pane'),'Escape closes the pane and the frame goes back to two columns');
         act('close it',function(){window.tbCloseItem();});}
       // ── the row (P1.3): the star puts it in My Day, without opening it ──
       var star=document.querySelector('.tb-row .tb-star:not(.on)');

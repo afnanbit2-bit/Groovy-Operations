@@ -3160,6 +3160,7 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-row{display:flex;align-items:center;gap:var(--tb-s12);min-height:44px;padding:2px 4px 2px 10px;
   border-radius:var(--tb-r6);transition:background var(--tb-dur) var(--tb-ease)}
 .tb-row:hover{background:var(--tb-hover)}
+.tb-row.tb-sel,.tb-row.tb-sel:hover{background:var(--tb-accent-soft)}
 .tb-row.done .tb-rowtitle{text-decoration:line-through;color:var(--muted)}
 /* critical is a tick mark, nothing louder (spec s7.1) */
 .tb-row.crit{box-shadow:inset 3px 0 0 var(--text)}
@@ -3270,57 +3271,127 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   color:var(--muted);padding:6px 8px;border-radius:6px;min-height:32px}
 .tb-back:hover{background:var(--hover);color:var(--text)}
 
-/* the drawer — a right-hand panel on desktop, a full sheet on a phone */
-.tb-drawer{position:fixed;top:0;right:0;width:min(440px,100%);height:100dvh;height:100vh;
-  z-index:130;overflow-y:auto;padding:16px;box-sizing:border-box;
-  background:var(--surface);border-left:1px solid var(--border);
-  box-shadow:-8px 0 28px rgba(0,0,0,.12);
-  animation:tb-slide .15s ease-out}
-@supports(height:100dvh){.tb-drawer{height:100dvh}}
+/* ── The detail pane (session 2, P1.4 -- the To Do pattern) ──────────
+   >=1440: the frame's third column, beside the list, sticky, scrolling on
+   its own. 1024-1439: the same, and the rail folds to its 56px icons so
+   the list keeps its room. <1024: a panel over the page (the old drawer),
+   and a full sheet on a phone. It keeps the .tb-drawer class and id --
+   the tests and the Escape shortcut find it by that name. */
+/* The list track is capped at the content's own 960px and the columns are
+   packed LEFT, so the pane sits beside the list rather than floating away
+   from it on a wide screen (seen at 1920 on the P1.4 screenshots). */
+.tb-wrap.has-pane{grid-template-columns:240px minmax(0,960px) 380px;justify-content:start}
+.tb-drawer{position:sticky;top:0;align-self:start;min-width:0;box-sizing:border-box;
+  max-height:calc(100vh - 88px);max-height:calc(100dvh - 88px);overflow-y:auto;
+  padding:var(--tb-s12);background:var(--tb-n2);border:1px solid var(--tb-line);
+  border-radius:var(--tb-r10);box-shadow:var(--tb-shadow-pane);
+  animation:tb-slide var(--tb-dur) var(--tb-ease)}
 @keyframes tb-slide{from{transform:translateX(12px);opacity:.6}to{transform:none;opacity:1}}
-.tb-dhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.tb-lockbtn{margin-left:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
-  cursor:pointer;font-family:inherit;font-size:12px;color:var(--muted);padding:6px 10px;min-height:32px}
+@media(min-width:1024px) and (max-width:1439px){
+  .tb-wrap.has-pane{grid-template-columns:56px minmax(0,960px) 360px;gap:var(--tb-s16)}
+  .tb-wrap.has-pane .tb-railbtn{justify-content:center;padding:0;min-height:44px}
+  .tb-wrap.has-pane .tb-railbtn .tb-raillabel,.tb-wrap.has-pane .tb-raillists{display:none}
+  .tb-wrap.has-pane .tb-railbtn.on::before{top:10px;bottom:10px}
+  .tb-wrap.has-pane .tb-railpill{position:absolute;top:3px;right:3px;min-width:16px;height:16px;padding:0 4px;font-size:10px}
+}
+@media(max-width:1023px){
+  .tb-drawer{position:fixed;top:0;right:0;z-index:130;width:min(420px,100%);height:100vh;height:100dvh;
+    max-height:none;border-radius:0;border:none;border-left:1px solid var(--tb-line)}
+}
+
+/* the bar: kind, lock, close */
+.tb-pbar{display:flex;align-items:center;gap:var(--tb-s8);margin-bottom:var(--tb-s8)}
+.tb-pclose{margin-left:auto;flex:0 0 auto;width:36px;height:36px;display:inline-flex;align-items:center;
+  justify-content:center;background:none;border:none;border-radius:var(--tb-r6);cursor:pointer;color:var(--muted)}
+.tb-pclose:hover{background:var(--tb-hover);color:var(--text)}
+.tb-lockbtn{display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--tb-line);
+  border-radius:var(--tb-r6);cursor:pointer;font-family:inherit;font-size:var(--tb-t12);font-weight:600;
+  color:var(--muted);padding:0 10px;min-height:32px}
 .tb-lockbtn.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
 .tb-lockbtn[disabled]{cursor:not-allowed;opacity:.6}
-.tb-lockwho{font-size:12px;color:var(--muted);width:100%}
-.tb-dtitle{width:100%;box-sizing:border-box;min-height:44px;padding:0 10px;margin-bottom:12px;
-  background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
-  font-family:inherit;font-size:17px;font-weight:700;color:var(--text);outline:none}
-.tb-dmeta{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
-.tb-dmeta label{display:flex;flex-direction:column;gap:3px;font-size:11px;
-  letter-spacing:.06em;color:var(--muted)}
-.tb-dmeta input,.tb-dmeta select{min-height:36px;padding:0 8px;background:var(--surface-2);
-  border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px;
-  color:var(--text);outline:none}
-.tb-dmeta input[disabled]{opacity:.6;cursor:not-allowed}
+.tb-lockwho{font-size:var(--tb-t12);color:var(--muted);margin:0 0 var(--tb-s8)}
+
+/* the cards the pane is made of: white on the pane's grey, To Do's look */
+.tb-pcard{background:var(--surface);border:1px solid var(--tb-line);border-radius:var(--tb-r10);
+  padding:var(--tb-s8) var(--tb-s12);margin-bottom:var(--tb-s8)}
+.tb-ptitle{display:flex;align-items:center;gap:var(--tb-s8)}
+.tb-dtitle{flex:1 1 auto;min-width:0;box-sizing:border-box;min-height:44px;padding:10px 6px;
+  background:transparent;border:1px solid transparent;border-radius:var(--tb-r6);resize:none;
+  field-sizing:content;overflow:hidden;overflow-wrap:anywhere;line-height:1.35;
+  font-family:inherit;font-size:var(--tb-t16);font-weight:700;color:var(--text);outline:none}
+.tb-ptitle{align-items:flex-start}
+.tb-ptitle>.tb-check{margin-top:12px}
+.tb-ptitle>.tb-star{margin-top:4px}
+.tb-dtitle:hover{border-color:var(--tb-line)}
+.tb-dtitle:focus{border-color:var(--tb-accent);background:var(--surface)}
+.tb-dtitle.done{text-decoration:line-through;color:var(--muted)}
+.tb-check.tb-check-sm{width:16px;height:16px}
+.tb-check.tb-check-sm .tb-ic{width:10px;height:10px}
+.tb-stepl{display:flex;flex-direction:column}
+.tb-step{display:flex;align-items:center;gap:var(--tb-s8);min-height:36px;padding-left:2px;
+  border-top:1px solid var(--tb-line)}
+.tb-steptitle{flex:1;min-width:0;font-size:var(--tb-t14);color:var(--text);overflow-wrap:anywhere}
+.tb-steptitle.done{text-decoration:line-through;color:var(--muted)}
+.tb-stepaddrow{display:flex;align-items:center;gap:var(--tb-s8);min-height:40px;
+  border-top:1px solid var(--tb-line);color:var(--tb-accent);cursor:text}
+.tb-stepl:empty+.tb-stepaddrow{border-top:none}
+.tb-stepadd{flex:1;min-width:0;min-height:36px;padding:0 4px;background:transparent;border:none;
+  font-family:inherit;font-size:var(--tb-t14);color:var(--text);outline:none}
+.tb-stepadd::placeholder{color:var(--tb-accent-ink);opacity:.8}
+
+/* property rows: icon · label · control */
+.tb-props{padding:2px var(--tb-s12)}
+.tb-prop{display:flex;align-items:center;gap:var(--tb-s12);min-height:44px;padding:4px 0;
+  border-top:1px solid var(--tb-line);color:var(--text)}
+.tb-props>.tb-prop:first-child{border-top:none}
+.tb-prop>.tb-ic{color:var(--muted)}
+.tb-proplabel{flex:0 0 64px;font-size:var(--tb-t13);color:var(--muted)}
+.tb-propwide{flex:1 1 auto}
+.tb-propval{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:var(--tb-s8);flex-wrap:wrap}
+.tb-propval input,.tb-propval select{flex:1 1 auto;min-width:0;max-width:100%;min-height:34px;padding:0 8px;
+  background:var(--surface-2);border:1px solid var(--tb-line);border-radius:var(--tb-r6);
+  font-family:inherit;font-size:var(--tb-t13);color:var(--text);outline:none}
+.tb-propval input:focus,.tb-propval select:focus{border-color:var(--tb-accent)}
+.tb-propval input[disabled]{opacity:.6;cursor:not-allowed}
+.tb-propbtn{width:100%;background:none;border-left:none;border-right:none;border-bottom:none;
+  cursor:pointer;font-family:inherit;text-align:left}
+.tb-props>.tb-propbtn:first-child{border-top:none}
+.tb-propbtn:hover .tb-proplabel{color:var(--text)}
+.tb-propbtn.on .tb-ic,.tb-propbtn.on .tb-proplabel{color:var(--tb-accent-ink)}
+.tb-propstack{flex-wrap:wrap;align-items:flex-start;padding:10px 0}
+.tb-propstack>.tb-ic,.tb-propstack>.tb-proplabel{margin-top:8px}
+.tb-propstack .tb-people{flex:1 1 180px;min-width:0}
+.tb-pnote{padding:var(--tb-s8)}
+.tb-pnote .tb-notes{background:transparent;border-color:transparent}
+.tb-pnote .tb-notes:focus{border-color:var(--tb-accent)}
+.tb-pmade{margin-top:var(--tb-s8);font-size:var(--tb-t12);color:var(--muted);text-align:center}
+.tb-dfoot .btn-outline,.tb-dfoot .btn-primary{display:inline-flex;align-items:center;gap:6px;margin-top:0;width:auto}
 .tb-was{align-self:flex-end;font-family:var(--font-mono);font-size:12px;color:var(--muted);
   text-decoration:line-through;padding-bottom:9px}
 .tb-dsec{margin-bottom:18px}
 .tb-dsech{display:flex;align-items:center;gap:8px;margin-bottom:8px;
-  font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--muted)}
+  font-size:13px;font-weight:600;letter-spacing:0;color:var(--muted)}
+/* In the pane, files, comments and activity are cards like the rest. */
+.tb-drawer .tb-dsec{background:var(--surface);border:1px solid var(--tb-line);border-radius:var(--tb-r10);
+  padding:var(--tb-s8) var(--tb-s12);margin-bottom:var(--tb-s8)}
 .tb-people{display:flex;flex-wrap:wrap;gap:6px}
 .tb-person{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;
   cursor:pointer;font-family:inherit;font-size:13px;color:var(--muted);padding:0 12px;min-height:34px;
   transition:background .15s ease-out,color .15s ease-out}
-.tb-person.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
+.tb-person.on{background:var(--tb-accent-soft);border-color:var(--tb-a7);color:var(--tb-accent-ink);font-weight:600}
 /* A Board person with no account yet: listed, not assignable, and saying so. */
 .tb-person.tb-person-off{opacity:.55;cursor:not-allowed;border-style:dashed}
-.tb-step{display:flex;align-items:center;gap:8px;min-height:36px}
-.tb-steptitle{flex:1;min-width:0;font-size:14px;color:var(--text)}
-.tb-x{background:none;border:none;cursor:pointer;font-family:inherit;font-size:15px;
-  color:var(--muted);padding:4px 8px;border-radius:6px;min-height:32px}
+.tb-x{display:inline-flex;align-items:center;justify-content:center;background:none;border:none;
+  cursor:pointer;font-family:inherit;font-size:15px;color:var(--muted);padding:4px 8px;border-radius:6px;min-height:32px}
 .tb-x:hover{background:var(--hover);color:var(--text)}
 .tb-del{margin-left:auto;font-size:13px}
-.tb-stepadd,.tb-notes{width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface-2);
+.tb-notes{width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface-2);
   border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;
   color:var(--text);outline:none}
-.tb-stepadd{min-height:40px;margin-top:4px}
 .tb-notes{resize:vertical;line-height:1.6}
 .tb-hint{font-size:12px;color:var(--muted);margin-bottom:6px}
 .tb-savestate{min-height:16px;padding-top:4px;font-size:11px;color:var(--muted)}
-.tb-dfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:8px;
-  border-top:1px solid var(--border)}
+.tb-dfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:var(--tb-s8)}
 .tb-ho{margin-top:14px;padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px}
 .tb-ho select,.tb-ho input[type=text],.tb-ho input:not([type=checkbox]){width:100%;box-sizing:border-box;
   min-height:38px;padding:0 8px;margin-bottom:8px;background:var(--surface);
@@ -3340,10 +3411,9 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   .tb-check{width:22px;height:22px}
   .tb-rowlist{max-width:140px}
   .tb-stripcount{margin-left:0;width:100%}
-  /* the drawer is a full-screen sheet on a phone. 100dvh, not inset:0 --
+  /* the pane is a full-screen sheet on a phone. 100dvh, not inset:0 --
      100vh is a lie on a phone, as the board canvas takeover documents. */
   .tb-drawer{width:100%;border-left:none;height:100dvh}
-  .tb-dmeta label{flex:1 1 45%}
 }
 @media(prefers-reduced-motion:reduce){
   .tb-drawer{animation:none}

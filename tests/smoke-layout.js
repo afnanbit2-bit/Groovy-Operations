@@ -213,6 +213,38 @@ const FRAGMENTS={
     return '<div class="tb-main">'+out+'</div>';
   },
 
+  // The whole frame with an item open (session 2, P1.4): rail | list |
+  // detail pane. At 1900 the pane is the third column beside a full rail;
+  // at 1280 (the 1024-1439 band) the rail folds to its icons so the list
+  // keeps its room. Below 1024 the pane is a panel OVER the page, so a
+  // narrower width would measure the pane covering the list on purpose --
+  // the fragment measuring itself -- and those widths are the drawer
+  // fragment's (the pane's own content) and smoke-board's (it opens).
+  'the board — the frame with the detail pane open':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-lists',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'},{id:'l2',title:'Errands',kind:'private',adminUid:'u-ammar',memberUids:['u-ammar']}]");
+    app.run("tbConfig={markers:[]};tbLoaded=true;_tbLoadErrors=[];_tbListId='l1';_tbDoneOpen={};_tbOpenItemId='a'");
+    app.run("tbItems=[" +
+      "tbDecodeItem({id:'a',title:'Hyderabad supplier in Karachi: lock sample date + bulk date (bulk must land by Oct 24)',status:'open',kind:'gate',locked:true,lockedBy:'u-afnan',visibility:'shared',ownerUid:'u-afnan',assigneeUids:['u-ammar','u-afnan','u-must'],date:'2026-09-20',datePlanned:'2026-09-18',listId:'l1',lane:'denim',commentCount:3,createdAt:Date.now()-86400000*6,steps:[{id:'1',title:'call the supplier',done:true},{id:'2',title:'confirm the sample date in writing',done:false}]})," +
+      "tbDecodeItem({id:'b',title:'Walika visit',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:_tbToday(),listId:'l1'})]");
+    app.run("_tbHydrateQueue=[]");
+    const body=app.run('_tbListsScreen()');
+    let out=app.run("_tbShell('tb-lists',"+JSON.stringify(body)+",_tbDrawer())");
+    app.run('_tbHydrateQueue').forEach(x=>{
+      out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+    });
+    // The pane scrolls on its own in the app (a max-height off 100dvh);
+    // here it is laid out at full height so every control in it is
+    // measured, rather than reported "covered" for sitting below its own
+    // scroll -- the documented false hit.
+    return {widths:[1900,1280],html:'<style>.tb-drawer{max-height:none;position:static}</style>'+out};
+  },
+
   // The quick-add composer OPEN (session 2, P0.5): three rows of chips that
   // must wrap at phone width rather than push the page sideways, a date
   // field, two selects, a picked date with its clear button, a picked
