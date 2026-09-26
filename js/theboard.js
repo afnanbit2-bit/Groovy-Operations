@@ -30,7 +30,9 @@
 
 // The one label. If the product is ever renamed, this is the only string
 // to change — the nav, the page titles and the empty states all read it.
-const TB_NAME='the board';
+// "The Board", Title Case, wherever it names the tab or the product
+// (session 2 brief s1/s4.5 -- this reverses the spec's lowercase voice).
+const TB_NAME='The Board';
 
 // ── Audience ──────────────────────────────────────────────────────────
 // BOARD_USERS / BOARD_OWNERS live in js/auth.js beside USER_DEFS, because
@@ -50,10 +52,10 @@ const TB_NAME='the board';
 const TB_PAGES=['tb-dash','tb-calendar','tb-lists','tb-inbox'];
 const TB_HOME='tb-dash';
 const _TB_RAIL=[
-  {id:'tb-dash',     label:'dashboard'},
-  {id:'tb-calendar', label:'calendar'},
-  {id:'tb-lists',    label:'lists'},
-  {id:'tb-inbox',    label:'inbox'}
+  {id:'tb-dash',     label:'Dashboard'},
+  {id:'tb-calendar', label:'Calendar'},
+  {id:'tb-lists',    label:'Lists'},
+  {id:'tb-inbox',    label:'Inbox'}
 ];
 
 // ── Day strings ───────────────────────────────────────────────────────
@@ -916,22 +918,22 @@ function _tbLongDay(day){
 function _tbDashboard(){
   const me=_tbMe(),today=_tbToday();
   if(_tbLoadFailed('board_items')){
-    return _tbHeaderStrip(today)+'<div class="tb-err">Could not read the board. '
+    return _tbHeaderStrip(today)+'<div class="tb-err">Could not read The Board. '
       +'<button class="btn-outline" onclick="window.tbRetry()">Retry</button>'
       +'<div class="tb-errsub">If this keeps happening, firestore.rules may not be deployed — see BOARD.md.</div></div>';
   }
   const R=list=>list.map(i=>_tbRow(i,today));
   const left=[
-    _tbCard('overdue',R(tbOverdue(tbItems,me,today)),{red:true,cls:'tb-over'}),
-    _tbCard('due today',R(tbDueToday(tbItems,me,today))),
-    _tbCard('my day',R(tbMyDay(tbItems,me,today))),
-    _tbCard('assigned to me',R(tbAssignedToMe(tbItems,me,today))),
-    _tbCard('needs a date',R(tbNeedsDate(tbItems,me))),
-    _tbCard('next 7 days',R(tbNext7(tbItems,me,today)))
+    _tbCard('Overdue',R(tbOverdue(tbItems,me,today)),{red:true,cls:'tb-over'}),
+    _tbCard('Due Today',R(tbDueToday(tbItems,me,today))),
+    _tbCard('My Day',R(tbMyDay(tbItems,me,today))),
+    _tbCard('Assigned to Me',R(tbAssignedToMe(tbItems,me,today))),
+    _tbCard('Needs a Date',R(tbNeedsDate(tbItems,me))),
+    _tbCard('Next 7 Days',R(tbNext7(tbItems,me,today)))
   ].join('');
   const right=[
-    _tbCard('assigned by me',R(tbAssignedByMe(tbItems,me))),
-    _tbCard('deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'}),
+    _tbCard('Assigned by Me',R(tbAssignedByMe(tbItems,me))),
+    _tbCard('Deadlines',R(tbDeadlines(tbItems,today,14)),{cls:'tb-deadlines'}),
     _tbInboxCard(),       // card 9
     _tbTeamCard(),        // card 10
     _tbActivityCard(),    // card 11
@@ -941,7 +943,7 @@ function _tbDashboard(){
   // The right column always carries Team today now (all five from day
   // one, brief s4), so keying the sentence off both would hide it forever.
   const empty=!left
-    ?'<div class="tb-empty"><div class="tb-empty-h">nothing on the board today</div>'
+    ?'<div class="tb-empty"><div class="tb-empty-h">Nothing on The Board today</div>'
      +'<div class="tb-empty-p">add something above, or open the calendar.</div>'
      +'<button class="btn-outline" onclick="window.showPage(\'tb-calendar\')">open the calendar</button>'
      +'</div>':'';
@@ -972,9 +974,9 @@ function _tbListsScreen(){
       +'<span class="tb-listn">'+open+'</span></button>';
   };
   const sec=(t,ls,kind)=>'<div class="tb-sec"><div class="tb-sech">'+_tbEsc(t)
-    +'<button class="tb-newlist" onclick="window.tbNewList(\''+kind+'\')">+ new</button></div>'
-    +(ls.length?ls.map(card).join(''):'<div class="tb-cardempty">no '+_tbEsc(t)+' lists yet</div>')+'</div>';
-  return sec('team',shared,'shared')+sec('private',priv,'private');
+    +'<button class="tb-newlist" onclick="window.tbNewList(\''+kind+'\')">+ New</button></div>'
+    +(ls.length?ls.map(card).join(''):'<div class="tb-cardempty">no '+_tbEsc(String(t).toLowerCase())+' lists yet</div>')+'</div>';
+  return sec('Team',shared,'shared')+sec('Private',priv,'private');
 }
 
 function _tbListDetail(l){
@@ -990,8 +992,8 @@ function _tbListDetail(l){
     +(isAdmin?'<span class="tb-badge">admin</span>':'')
   +'</div>'
   +_tbComposer('add to this list')
-  +_tbCard('open',open.map(i=>_tbRow(i,today)),{keepEmpty:true,empty:'nothing open in this list'})
-  +(done.length?_tbCard('done',done.map(i=>_tbRow(i,today))):'');
+  +_tbCard('Open',open.map(i=>_tbRow(i,today)),{keepEmpty:true,empty:'nothing open in this list'})
+  +(done.length?_tbCard('Done',done.map(i=>_tbRow(i,today))):'');
 }
 
 /** The drawer. Phase 2: title, kind, lock, the meta row, steps, notes and
@@ -1237,7 +1239,7 @@ function _tbQaPaint(){
   if(plan.priority===2)bits.push('critical');else if(plan.priority===1)bits.push('high');
   out.textContent=(_tbQa.text||plan.date||others.length||plan.lane?'→ '+bits.join(' · '):'')
     +(plan.unknownHandles.length
-      ?'   (@'+plan.unknownHandles.join(', @')+' is not on the board — left in the title)':'')
+      ?'   (@'+plan.unknownHandles.join(', @')+' is not on The Board — left in the title)':'')
     +(plan.pendingHandles.length
       ?'   (@'+plan.pendingHandles.join(', @')+' is not set up yet — not assigned; an owner can press Sync accounts on the Profile page)':'');
 }
@@ -1454,7 +1456,7 @@ window.tbToggleDone=async function(id){
     _tbApplyLocal(it.id,plan.data);
     (plan.notify||[]).forEach(uid=>_tbNotify({
       type:'done',forUid:uid,fromUid:_tbMe(),itemId:it.id,listId:it.listId,
-      title:'the board',message:tbUser(_tbMe()).name+' completed “'+(it.title||'')+'”'}));
+      title:TB_NAME,message:tbUser(_tbMe()).name+' completed “'+(it.title||'')+'”'}));
     _tbRepaint();
   },'mark that done');
 };
@@ -1508,7 +1510,7 @@ window.tbHandOver=async function(){
     const th=_tbThreads[it.id];
     if(th)th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
     _tbNotify({type:'handover',forUid:plan.notifyUid,fromUid:_tbMe(),itemId:it.id,listId:it.listId,
-      title:'the board',message:tbUser(_tbMe()).name+' handed you “'+(it.title||'')+'” — '+plan.note});
+      title:TB_NAME,message:tbUser(_tbMe()).name+' handed you “'+(it.title||'')+'” — '+plan.note});
     _tbToast('handed to '+tbUser(plan.notifyUid).name);
     _tbRepaint();
   },'hand that over');
@@ -1912,7 +1914,7 @@ function _tbCalendar(){
   const me=_tbMe(),today=_tbToday();
   if(!_tbCalAnchor)_tbCalAnchor=today;
   if(_tbLoadFailed('board_items')){
-    return _tbCalHead()+'<div class="tb-err">Could not read the board. '
+    return _tbCalHead()+'<div class="tb-err">Could not read The Board. '
       +'<button class="btn-outline" onclick="window.tbRetry()">Retry</button>'
       +'<div class="tb-errsub">If this keeps happening, firestore.rules may not be deployed — see BOARD.md.</div></div>';
   }
@@ -2170,7 +2172,7 @@ window.tbMoveItem=async function(id,toDay){
     _tbApplyLocal(id,plan.data);
     (plan.notify||[]).forEach(uid=>_tbNotify({
       type:'moved',forUid:uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
-      title:'the board',
+      title:TB_NAME,
       message:tbUser(_tbMe()).name+' moved “'+(it.title||'')+'” to '+tbDayLabel(toDay,_tbToday())}));
     if(plan.override)_tbToast('moved — you overrode '+tbUser(plan.data.lockedBy||it.lockedBy).name+"'s lock, and it is logged");
     _tbRepaint();
@@ -2401,7 +2403,7 @@ function tbFileHref(att){
 async function _tbUpload(file){
   if(tbTooBig(file))
     throw new Error(String((file&&file.name)||'That file')+' is '+tbFileSize(file&&file.size)
-      +' — the board caps uploads at '+TB_MAX_UPLOAD_MB+' MB.');
+      +' — The Board caps uploads at '+TB_MAX_UPLOAD_MB+' MB.');
   const fd=new FormData();
   fd.append('file',file);
   fd.append('upload_preset','groovy-ops');
@@ -2413,7 +2415,7 @@ async function _tbUpload(file){
     // account's plan, which nothing in this app can raise.
     if(/file size|too large|maximum is/i.test(m))
       m+=" (that is Cloudinary's own cap for this account's plan, not the "
-        +TB_MAX_UPLOAD_MB+' MB one the board sets)';
+        +TB_MAX_UPLOAD_MB+' MB one The Board sets)';
     throw new Error(m);
   }
   return d;
@@ -2810,7 +2812,7 @@ window.tbPostComment=async function(){
     _tbCloseMentions();
     (plan.notify||[]).forEach(function(n){
       _tbNotify({type:n.type,forUid:n.uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
-        title:'the board',
+        title:TB_NAME,
         message:tbUser(_tbMe()).name+(n.type==='mention'?' mentioned you on ':' commented on ')
           +'“'+(it.title||'')+'” — '+_tbPlain(plan.comment.body)});
     });
@@ -2855,7 +2857,7 @@ window.tbRequestMove=async function(){
     _tbThreads[id]=th;
     (plan.notify||[]).forEach(function(n){
       _tbNotify({type:n.type,forUid:n.uid,fromUid:_tbMe(),itemId:id,listId:it.listId,
-        title:'the board',
+        title:TB_NAME,
         message:tbUser(_tbMe()).name+' asks to move “'+(it.title||'')+'” to '+plan.toDay
           +' — '+plan.reason});
     });
@@ -3182,7 +3184,7 @@ function _tbInboxCard(){
   if(!rows.length)return'';
   const unread=rows.filter(n=>!_tbNotifRead(n,h));
   const pick=unread.concat(rows.filter(n=>_tbNotifRead(n,h))).slice(0,5);
-  return _tbCard('inbox',pick.map(function(n){
+  return _tbCard('Inbox',pick.map(function(n){
     return'<button class="tb-nf'+(_tbNotifRead(n,h)?'':' unread')+'"'
       +' onclick="window.tbOpenNotif(\''+_tbEsc(n._id)+'\',\''+_tbEsc(n.itemId||'')+'\')">'
       +'<span class="tb-av">'+_tbEsc(tbUser(n.fromUid).initial)+'</span>'
@@ -3475,7 +3477,7 @@ function _tbSettingsOverlay(){
   const st=_tbSeedState;
   return'<div class="tb-help" onclick="window.tbToggleSettings()">'
     +'<div class="tb-helpcard tb-setcard" onclick="event.stopPropagation()">'
-      +'<div class="tb-dsech">board settings</div>'
+      +'<div class="tb-dsech">Board Settings</div>'
       +'<div class="tb-setsec">'
         +'<div class="tb-setsech">Winter Drop 2027</div>'
         +'<div class="tb-hint">Writes the drop list, its 42 milestones, the launch markers, and a profile row '
@@ -3594,7 +3596,7 @@ function _tbTeamCard(){
   // ALL FIVE, FROM DAY ONE, even with nothing open (brief s4): the card
   // answers "who is on the board", and a person missing from it reads as
   // a person missing from the drop.
-  return _tbCard('team today',people.map(function(p){
+  return _tbCard('Team Today',people.map(function(p){
     if(!p.uid){
       return'<div class="tb-teamrow tb-teamrow-off">'
         +'<span class="tb-av">'+_tbEsc(p.initial)+'</span>'
@@ -3620,7 +3622,7 @@ function _tbActivityCard(){
   const today=_tbToday();
   const rows=tbRecentActivity(tbItems,15);
   if(!rows.length)return'';
-  return _tbCard('activity',rows.map(function(r){
+  return _tbCard('Activity',rows.map(function(r){
     // tbActivityLine is the ONE definition of how a log entry reads, so
     // the card and the drawer can never word the same event differently.
     return'<div class="tb-act">'
@@ -3636,7 +3638,7 @@ function _tbListsCard(){
   // rows.length, so a single joined blob would have the card say "1"
   // however many lists there are. The chips are inline-flex, so they
   // still flow into a strip.
-  return _tbCard('my lists',rows.map(function(l){
+  return _tbCard('My Lists',rows.map(function(l){
     return'<button class="tb-listchip" onclick="window.tbGoList(\''+_tbEsc(l.id)+'\')">'
       +'<span class="tb-dot tb-c-'+_tbEsc(TB_COLORS[l.color]?l.color:'slate')+'"></span>'
       +_tbSlot(l.title,'tb-chipname')
@@ -3865,8 +3867,8 @@ function _tbShell(page,body){
       +'<button class="tb-helpbtn" title="keyboard shortcuts"'
         +' onclick="window.tbToggleHelp()">?</button>'
       // Board owners only: the seed and, later, the markers.
-      +(_tbIsBoardOwner()?'<button class="tb-setbtn" id="tb-settings-btn" title="board settings"'
-        +' onclick="window.tbToggleSettings()">settings</button>':'')
+      +(_tbIsBoardOwner()?'<button class="tb-setbtn" id="tb-settings-btn" title="Board Settings"'
+        +' onclick="window.tbToggleSettings()">Settings</button>':'')
     +'</div>'
     +'<div class="tb-main">'+body+'</div>'
     +'</div>';

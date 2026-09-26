@@ -574,21 +574,21 @@ module.exports=async function(){
     // Cards with nothing to show are HIDDEN, not rendered empty.
     a.run('tbItems=[]');
     const bare=a.run('_tbDashboard()');
-    s.ok('an empty board says so in one sentence',/nothing on the board today/.test(bare));
+    s.ok('an empty board says so in one sentence',/Nothing on The Board today/.test(bare));
     // Session 2 (brief s4): Team today lists all five from day one, so the
     // ONLY card an empty board carries is that one -- none of mine.
     s.eq('and shows no empty cards of mine — only Team today',
-      (bare.match(/class="tb-cardh">([^<]*)/g)||[]).map(x=>x.replace(/.*>/,'')).join('|'),'team today');
+      (bare.match(/class="tb-cardh">([^<]*)/g)||[]).map(x=>x.replace(/.*>/,'')).join('|'),'Team Today');
     s.ok('the quick-add is still there',/id="tb-qa"/.test(bare));
     s.ok('and the countdown',/day[s]? to launch/.test(bare));
 
     // A REFUSED READ AND AN EMPTY BOARD MUST NEVER LOOK THE SAME.
     a.run('_tbLoadErrors=["board_items"]');
     const err=a.run('_tbDashboard()');
-    s.ok('a failed read renders an error, not an empty board',/Could not read the board/.test(err));
+    s.ok('a failed read renders an error, not an empty board',/Could not read The Board/.test(err));
     s.ok('with a retry',/tbRetry/.test(err));
     s.ok('and names the likely cause',/firestore\.rules/.test(err));
-    s.ok('it does NOT claim the board is empty',!/nothing on the board today/.test(err));
+    s.ok('it does NOT claim the board is empty',!/Nothing on The Board today/.test(err));
     a.run('_tbLoadErrors=["board_config"]');
     s.ok('a partial failure warns but still renders',/tb-warn/.test(a.run('_tbDashboard()')));
     a.run('_tbLoadErrors=[]');
@@ -723,13 +723,13 @@ module.exports=async function(){
     const scr=a.run('_tbListsScreen()');
     // Two always-visible sections, never a tab switcher — a tab hides half
     // of what you own behind a click (the rule Notes already follows).
-    s.ok('team and private are both on screen at once',/team/.test(scr)&&/private/.test(scr));
+    s.ok('Team and Private are both on screen at once',/>Team</.test(scr)&&/>Private</.test(scr));
     s.ok('each with its own new button',(scr.match(/tbNewList/g)||[]).length===2);
     s.ok('and an open count that excludes done',/tb-listn">1</.test(scr));
 
     a.run('_tbListId="l1"');
     const det=a.run('_tbListsScreen()');
-    s.ok('the detail splits open from done',/open/.test(det)&&/done/.test(det));
+    s.ok('the detail splits Open from Done',/>Open</.test(det)&&/>Done</.test(det));
     s.ok('back goes one level, to lists',/tbCloseList/.test(det));
     s.ok('it says whether the list is team or private',/tb-badge">team</.test(det));
     s.ok('and that I administer it',/tb-badge">admin</.test(det));
@@ -1113,7 +1113,7 @@ module.exports=async function(){
     // A refused read and an empty calendar must never look the same.
     a.run('_tbLoadErrors=["board_items"]');
     const err=a.run('_tbCalendar()');
-    s.ok('a failed read renders an error',/Could not read the board/.test(err));
+    s.ok('a failed read renders an error',/Could not read The Board/.test(err));
     s.ok('not an empty month',!/tb-monthgrid/.test(err));
     a.run('_tbLoadErrors=[]');
     // The view preference is per VIEWER, never on the board.
@@ -1435,6 +1435,23 @@ module.exports=async function(){
     s.eq('Ammar sees his own',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-ammar")'))),J(['mine']));
     const assigned=ids(a.run('tbAssignedToMe('+J(ITEMS)+',"u-afnan","2026-09-26")'));
     s.eq('Assigned to me does not repeat the undated one',J(assigned),J(['dated']));
+  }
+
+  // ══ SESSION 2 — P0.6: NAMING ════════════════════════════════════════
+  s.section('naming: The Board, and Title Case on the tab, screens and cards');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    s.eq('the product is The Board',a.run('TB_NAME'),'The Board');
+    s.eq('the rail is Title Case',a.run('_TB_RAIL.map(t=>t.label).join()'),'Dashboard,Calendar,Lists,Inbox');
+    const src=read('js/theboard.js');
+    const titles=(src.match(/_tbCard\('([^']+)'/g)||[]).map(x=>x.slice(9,-1));
+    s.ok('every card title starts with a capital ('+titles.join(', ')+')',titles.length>=14&&titles.every(t=>/^[A-Z0-9]/.test(t)));
+    s.eq('no bell row is titled in lowercase',/title:'the board'/.test(src),false);
+    const sh=read('js/shared.js');
+    s.ok('the bug tracker names the screens in Title Case',/'tb-calendar':'The Board — Calendar'/.test(sh));
+    s.ok('the designer’s phone tab says The Board',/_mobNavBtn\('tb-dash','home','The Board'/.test(sh));
+    s.ok('the sidebar falls back to The Board',/\|\|'The Board'; \}/.test(sh));
   }
 
   s.section('the calendar prefs are cleaned on load');
@@ -2253,18 +2270,18 @@ module.exports=async function(){
     a.run('tbLists=[{id:"l1",title:"Winter Drop 2027",kind:"shared",adminUid:"u-ammar"}]');
     a.run('tbItems=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null');
     const bare=a.run('_tbDashboard()');
-    s.ok('an empty board still says so',/nothing on the board today/.test(bare));
+    s.ok('an empty board still says so',/Nothing on The Board today/.test(bare));
     s.ok('with one action, not none',/tb-calendar/.test(bare));
     // REVERSED in session 2 (brief s4): Team today lists all five from day
     // one, even with zero items -- "who is on the board" is a question an
     // empty board still has to answer.
-    s.ok('the team card is there from day one',/team today/.test(bare));
-    s.ok('no list chips',!/my lists/.test(bare));
+    s.ok('the team card is there from day one',/Team Today/.test(bare));
+    s.ok('no list chips',!/My Lists/.test(bare));
     a.run('tbItems=[tbDecodeItem({id:"i1",title:"a",ownerUid:"u-ammar",'
       +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l1",date:"'+a.run('_tbToday()')+'"})]');
     const full=a.run('_tbDashboard()');
-    s.ok('with work on it the team card appears',/team today/.test(full));
-    s.ok('and the list chips',/my lists/.test(full));
+    s.ok('with work on it the team card appears',/Team Today/.test(full));
+    s.ok('and the list chips',/My Lists/.test(full));
     // _tbCard's count chip reads rows.length, so the chips have to be one
     // row each -- joined into a single string the card says "1" however
     // many lists there are.
@@ -2273,7 +2290,7 @@ module.exports=async function(){
       +'assigneeUids:["u-ammar"],visibility:"shared",listId:"l2"}))');
     const two=a.run('_tbDashboard()');
     s.ok('the card counts the lists, not the string it built',
-      /my lists<span class="tb-count">2</.test(two));
+      /My Lists<span class="tb-count">2</.test(two));
   }
 
   s.section('the unscheduled tray');

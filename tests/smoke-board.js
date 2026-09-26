@@ -239,6 +239,8 @@ function DRIVE(){
       }
 
       L(_tbToday()==='2026-09-26','the page clock is pinned to 26 Sep 2026 ('+_tbToday()+')');
+      L(/The Board/.test((document.getElementById('sidebar')||{}).textContent||''),'the sidebar says The Board');
+      L(((document.querySelector('.tb-rail')||{}).textContent||'').indexOf('Dashboard')>-1,'the rail says Dashboard');
 
       // ── people: the whole team resolves (session 2, P0.2) ──
       window.showPage('tb-dash');
