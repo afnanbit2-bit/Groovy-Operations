@@ -2019,62 +2019,93 @@ function _tbPill(item,today){
     +' onclick="window.tbPillClick(event,\''+_tbEsc(item.id)+'\')"'
     +' tabindex="0" onkeydown="window.tbPillKey(event,\''+_tbEsc(item.id)+'\')">'
     +'<span class="tb-pillbar"></span>'
-    +(item.locked?'<span class="tb-pilllock" title="locked">&#128274;</span>':'')
+    +(item.locked?'<span class="tb-pilllock" title="locked">'+_tbIcon('lock','sm')+'</span>':'')
     +_tbSlot(item.title||'untitled','tb-pilltitle')
   +'</div>';
 }
 
+/** Every word up: "october 2026" -> "October 2026", "26 oct – 1 nov" ->
+ *  "26 Oct – 1 Nov". The pure label builders stay lowercase (their tests
+ *  pin them); the SCREEN is Title Case (session 2). Pure. */
+function _tbTitleCase(s){ return String(s==null?'':s).replace(/(^|[\s(–-])([a-z])/g,(m,a,b)=>a+b.toUpperCase()); }
+
+/** The calendar's toolbar (session 2, P1.6): back · Today · forward and the
+ *  range; Month | Week (and By Person on a week); Me | Everyone; a row of
+ *  AVATARS -- one tap shows that person's calendar -- then the list and
+ *  lane filters, Hide done and Clear. */
 function _tbCalHead(){
-  const today=_tbToday();
   const label=_tbCalView==='week'?tbWeekLabel(_tbCalAnchor):tbMonthLabel(_tbCalAnchor.slice(0,7));
-  const seg=(v,l)=>'<button class="tb-seg'+(_tbCalView===v?' on':'')+'"'
+  const seg=(v,l)=>'<button class="tb-seg'+(_tbCalView===v?' on':'')+'" aria-pressed="'+(_tbCalView===v?'true':'false')+'"'
     +' onclick="window.tbCalView(\''+v+'\')">'+_tbEsc(l)+'</button>';
-  const scope=(v,l)=>'<button class="tb-seg'+(_tbCalFilters.scope===v?' on':'')+'"'
+  const scope=(v,l)=>'<button class="tb-seg'+(_tbCalFilters.scope===v?' on':'')+'" aria-pressed="'+(_tbCalFilters.scope===v?'true':'false')+'"'
     +' onclick="window.tbCalScope(\''+v+'\')">'+_tbEsc(l)+'</button>';
   const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
-  const people=tbPeople().map(p=>{
-    const uid=p.uid;
-    return uid?opt(uid,_tbCalFilters.person,tbUser(uid).name):'';
+  // Only people with an account can be filtered to -- a person with no
+  // uid owns nothing on the calendar yet.
+  const avatars=tbPeople().filter(p=>p.uid).map(function(p){
+    const u=tbUser(p.uid),on=_tbCalFilters.person===p.uid;
+    return'<button class="tb-calav'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'"'
+      +' title="'+_tbEsc(on?'Showing '+u.name+' — tap to show everyone':'Show only '+u.name)+'"'
+      +' aria-label="'+_tbEsc('Show only '+u.name)+'"'
+      +' onclick="window.tbCalPerson(\''+_tbEsc(p.uid)+'\')">'+_tbEsc(u.initial)+'</button>';
   }).join('');
   return'<div class="tb-calbar">'
     +'<div class="tb-calnav">'
-      +'<button class="tb-calbtn" onclick="window.tbCalStep(-1)" title="back">&lsaquo;</button>'
-      +'<button class="tb-calbtn" onclick="window.tbCalToday()">today</button>'
-      +'<button class="tb-calbtn" onclick="window.tbCalStep(1)" title="forward">&rsaquo;</button>'
-      +'<span class="tb-callabel">'+_tbEsc(label)+'</span>'
+      +'<button class="tb-calbtn tb-calicon" onclick="window.tbCalStep(-1)" title="Back" aria-label="Back">'+_tbIcon('chevron-left')+'</button>'
+      +'<button class="tb-calbtn" onclick="window.tbCalToday()">Today</button>'
+      +'<button class="tb-calbtn tb-calicon" onclick="window.tbCalStep(1)" title="Forward" aria-label="Forward">'+_tbIcon('chevron-right')+'</button>'
+      +'<span class="tb-callabel">'+_tbEsc(_tbTitleCase(label))+'</span>'
     +'</div>'
-    +'<div class="tb-calseg">'+seg('month','month')+seg('week','week')
+    +'<div class="tb-calseg">'+seg('month','Month')+seg('week','Week')
       // Rows-by-person is a way of reading the WEEK, so it lives beside
       // the view segment and only appears when a week is on screen.
       +(_tbCalView==='week'&&!_tbIsPhone()
         ?'<button class="tb-seg'+(_tbCalRows?' on':'')+'"'
-          +' onclick="window.tbCalRows('+(_tbCalRows?'false':'true')+')">by person</button>'
+          +' onclick="window.tbCalRows('+(_tbCalRows?'false':'true')+')">By Person</button>'
         :'')
     +'</div>'
-    +'<div class="tb-calseg">'+scope('me','me')+scope('all','everyone')+'</div>'
+    +'<div class="tb-calseg">'+scope('me','Me')+scope('all','Everyone')+'</div>'
+    +(avatars?'<div class="tb-calpeople" role="group" aria-label="Show one person">'+avatars+'</div>':'')
     +'<div class="tb-calfilters">'
-      +'<select onchange="window.tbCalSetFilter(\'person\',this.value)">'
-        +opt('',_tbCalFilters.person,'anyone')+people+'</select>'
-      +'<select onchange="window.tbCalSetFilter(\'list\',this.value)">'
-        +opt('',_tbCalFilters.list,'any list')
+      +'<select aria-label="List" onchange="window.tbCalSetFilter(\'list\',this.value)">'
+        +opt('',_tbCalFilters.list,'Any list')
         +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,_tbCalFilters.list,l.title||'untitled')).join('')
       +'</select>'
-      +'<select onchange="window.tbCalSetFilter(\'lane\',this.value)">'
-        +opt('',_tbCalFilters.lane,'any lane')
-        +TB_LANES.map(l=>opt(l,_tbCalFilters.lane,l)).join('')
+      +'<select aria-label="Lane" onchange="window.tbCalSetFilter(\'lane\',this.value)">'
+        +opt('',_tbCalFilters.lane,'Any lane')
+        +TB_LANES.map(l=>opt(l,_tbCalFilters.lane,_tbCap(l))).join('')
       +'</select>'
       +'<label class="tb-calchk"><input type="checkbox"'+(_tbCalFilters.hideDone?' checked':'')
-        +' onchange="window.tbCalSetFilter(\'hideDone\',this.checked)"> hide done</label>'
-      +(_tbCalActive()?'<button class="tb-calbtn" onclick="window.tbCalClear()">clear</button>':'')
+        +' onchange="window.tbCalSetFilter(\'hideDone\',this.checked)"> Hide done</label>'
+      +(_tbCalActive()?'<button class="tb-calbtn" onclick="window.tbCalClear()">Clear</button>':'')
     +'</div>'
   +'</div>';
 }
+/** An avatar is "whose calendar": it shows that person across the TEAM
+ *  (scope Everyone), because Me plus a person would show only the items you
+ *  share -- not what anyone means by tapping a face. Tapping the same face
+ *  again shows everyone. */
+window.tbCalPerson=function(uid){
+  uid=(typeof uid==='string')?uid:'';
+  if(!uid||_tbCalFilters.person===uid){ _tbCalFilters.person=''; }
+  else{ _tbCalFilters.person=uid; _tbCalFilters.scope='all'; }
+  _tbCalSavePrefs();_tbRepaint();
+};
 function _tbCalActive(){
   const f=_tbCalFilters;
   return!!(f.person||f.list||f.lane||f.color||f.hideDone||f.scope==='all');
 }
 
-/** A day cell — the drop target. `data-day` is what the drag reads. */
+/** A day cell — the drop target. `data-day` is what the drag reads.
+ *  Session 2, P1.6: markers are flag chips; a MONTH day shows three pills
+ *  at most, or two and "+N more" (the week shows them all); the "+" is an
+ *  icon that says which day it adds to. */
+const TB_CAL_MONTH_CAP=3;
+let _tbCalMore=null;            // the one month day opened past its cap
+window.tbCalMore=function(day){
+  _tbCalMore=(_tbCalMore===day)?null:(/^\d{4}-\d{2}-\d{2}$/.test(String(day||''))?day:null);
+  _tbRepaint();
+};
 function _tbDayCell(day,items,today,opts){
   const o=opts||{};
   const marks=(_tbCalMarks[day]||[]);
@@ -2083,14 +2114,21 @@ function _tbDayCell(day,items,today,opts){
     .concat(o.inMonth===false?['out']:[])
     .concat(marks.length?['marked']:[])
     .concat(_tbDow(day)===0||_tbDow(day)===6?['weekend']:[]);
+  const month=o.inMonth!=null;
+  const open=_tbCalMore===day;
+  const over=month&&items.length>TB_CAL_MONTH_CAP&&!open;
+  const shown=over?items.slice(0,TB_CAL_MONTH_CAP-1):items;
+  const dl=_tbTitleCase(tbDayLabel(day,today));
   return'<div class="'+cls.join(' ')+'" data-day="'+_tbEsc(day)+'">'
     +'<div class="tb-dayhead">'
       +'<span class="tb-daynum">'+Number(String(day).slice(8))+'</span>'
-      +(marks.length?'<span class="tb-daymark">'+_tbEsc(marks.join(' · '))+'</span>':'')
-      +'<button class="tb-dayadd" title="add on this day"'
-        +' onclick="window.tbCalAdd(\''+_tbEsc(day)+'\')">+</button>'
+      +'<button class="tb-dayadd" title="Add on '+_tbEsc(dl)+'" aria-label="Add on '+_tbEsc(dl)+'"'
+        +' onclick="window.tbCalAdd(\''+_tbEsc(day)+'\')">'+_tbIcon('plus','sm')+'</button>'
     +'</div>'
-    +'<div class="tb-daylist">'+items.map(i=>_tbPill(i,today)).join('')+'</div>'
+    +(marks.length?'<div class="tb-daymarks">'+marks.map(m=>'<span class="tb-daymark">'+_tbIcon('flag','sm')+_tbEsc(m)+'</span>').join('')+'</div>':'')
+    +'<div class="tb-daylist">'+shown.map(i=>_tbPill(i,today)).join('')+'</div>'
+    +(over?'<button class="tb-daymore" onclick="window.tbCalMore(\''+_tbEsc(day)+'\')">+'+(items.length-shown.length)+' more</button>'
+      :(open&&month&&items.length>TB_CAL_MONTH_CAP?'<button class="tb-daymore" onclick="window.tbCalMore(\''+_tbEsc(day)+'\')">Show less</button>':''))
   +'</div>';
 }
 
@@ -2106,7 +2144,7 @@ function _tbCalendar(){
   const shown=tbCalFilter(tbItems,Object.assign({uid:me},_tbCalFilters));
   const byDay=tbItemsByDay(shown);
   _tbCalMarks=tbMarkersByDay(tbConfig);
-  const dow='<div class="tb-dowrow">'+TB_DOW_LABELS.map(d=>'<div class="tb-dow">'+_tbEsc(d)+'</div>').join('')+'</div>';
+  const dow='<div class="tb-dowrow">'+TB_DOW_LABELS.map(d=>'<div class="tb-dow">'+_tbEsc(_tbCap(d))+'</div>').join('')+'</div>';
   let grid='';
   if(_tbCalView==='week'&&_tbCalRows&&!_tbIsPhone()){
     grid=_tbPersonWeek(tbWeekDays(_tbCalAnchor),today);
@@ -2137,6 +2175,7 @@ function _tbCalendar(){
 
 // ── View controls ─────────────────────────────────────────────────────
 window.tbCalView=function(v){
+  _tbCalMore=null;
   _tbCalView=(v==='week')?'week':'month';
   _tbCalSavePrefs();_tbRepaint();
 };
@@ -2165,6 +2204,7 @@ window.tbCalClear=function(){
   _tbCalSavePrefs();_tbRepaint();
 };
 window.tbCalStep=function(n){
+  _tbCalMore=null;
   _tbCalAnchor=_tbCalView==='week'
     ?_tbDayAdd(_tbCalAnchor,7*Number(n||0))
     :(_tbMonthAdd(_tbCalAnchor.slice(0,7),Number(n||0))+'-01');
@@ -3840,15 +3880,15 @@ function _tbTray(){
   const rows=tbUnscheduled(tbItems,Object.assign({uid:me},_tbCalFilters));
   return'<div class="tb-tray'+(_tbTrayOpen?' open':'')+'">'
     +'<button class="tb-trayhead" onclick="window.tbTrayToggle()">'
-      +'unscheduled<span class="tb-count">'+rows.length+'</span>'
+      +'Unscheduled<span class="tb-count">'+rows.length+'</span>'
       +'<span class="tb-traychev">'+(_tbTrayOpen?'&rsaquo;':'&lsaquo;')+'</span></button>'
     +(_tbTrayOpen
       ?'<div class="tb-traybody">'
         +(rows.length
           ?rows.map(i=>_tbPill(i,_tbToday())).join('')
-          :'<div class="tb-hint">nothing without a date</div>')
+          :'<div class="tb-hint">Nothing without a date</div>')
         +'<div class="tb-hint tb-trayhint">'
-        +(_tbIsPhone()?'hold a pill to give it a date':'drag one onto a day')+'</div>'
+        +(_tbIsPhone()?'Hold a pill to give it a date.':'Drag one onto a day.')+'</div>'
       +'</div>'
       :'')
   +'</div>';
@@ -3868,7 +3908,7 @@ function _tbPersonWeek(days,today){
   const head='<div class="tb-prow tb-prowhead"><div class="tb-pname"></div>'
     +days.map(function(d){
       return'<div class="tb-pday'+(d===today?' today':'')+'">'
-        +_tbEsc(TB_DOW_LABELS[(_tbDow(d)+6)%7])+' '+Number(String(d).slice(8))+'</div>';
+        +_tbEsc(_tbCap(TB_DOW_LABELS[(_tbDow(d)+6)%7]))+' '+Number(String(d).slice(8))+'</div>';
     }).join('')+'</div>';
   return'<div class="tb-personweek">'+head+uids.map(function(uid){
     // Each person's row reads the SAME filter the grid does, with the

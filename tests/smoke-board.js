@@ -383,6 +383,34 @@ function DRIVE(){
         await wait(20);
         L(onBoard()&&!!document.querySelector('.tb-calbar'),'still on the calendar after '+name);
       }
+      // The loop above taps every face in the avatar row, so a person
+      // filter is left on; clear it so the rest of the run sees the items.
+      act('clear the filters',function(){window.tbCalClear();});
+      // ── the calendar (P1.6): a face is "whose calendar" ──
+      var av=document.querySelector('.tb-calav');
+      L(!!av,'the toolbar has a row of faces');
+      if(av){
+        act('tap a face',function(){document.querySelector('.tb-calav').click();});
+        await wait(100);
+        L(!!_tbCalFilters.person&&_tbCalFilters.scope==='all'&&!!document.querySelector('.tb-calav.on'),'a face shows that person, across Everyone');
+        act('tap it again',function(){document.querySelector('.tb-calav.on').click();});
+        await wait(100);
+        L(!_tbCalFilters.person,'and again shows everyone');
+      }
+      // ── "+N more": four on one day, and the month shows two and the rest ──
+      for(var k=0;k<4;k++){await window.tbCreateOn('smoke more '+k,'2026-09-30');}
+      act('scope me, month',function(){window.tbCalClear();window.tbCalView('month');window.tbCalToday();});
+      await wait(200);
+      var cell=document.querySelector('.tb-day[data-day="2026-09-30"]');
+      var more=cell&&cell.querySelector('.tb-daymore');
+      L(!!more&&/^\+\d+ more$/.test(more.textContent.trim()),'a crowded month day says "+N more" ('+(more?more.textContent.trim():'none')+')');
+      L(!!cell&&cell.querySelectorAll('.tb-pill').length===2,'and shows two pills ('+(cell?cell.querySelectorAll('.tb-pill').length:0)+')');
+      if(more){
+        act('+N more',function(){document.querySelector('.tb-day[data-day="2026-09-30"] .tb-daymore').click();});
+        await wait(200);
+        var c2=document.querySelector('.tb-day[data-day="2026-09-30"]');
+        L(!!c2&&c2.querySelectorAll('.tb-pill').length>=4,'and opens to show them all');
+      }
       // both views, both scopes, stepping, by-person
       ['month','week'].forEach(function(v){act('view '+v,function(){window.tbCalView(v);});});
       ['all','me'].forEach(function(v){act('scope '+v,function(){window.tbCalScope(v);});});

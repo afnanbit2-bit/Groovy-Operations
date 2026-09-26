@@ -1101,9 +1101,9 @@ module.exports=async function(){
     a.run('_tbCalAnchor="2026-10-15";_tbCalView="month"');
     const m=a.run('_tbCalendar()');
     s.ok('the month grid renders',/tb-monthgrid/.test(m));
-    s.ok('with a weekday header starting Monday',/tb-dow">mon</.test(m));
+    s.ok('with a weekday header starting Monday, Title Case',/tb-dow">Mon</.test(m));
     s.ok('every day is a drop target',/data-day="2026-10-30"/.test(m));
-    s.ok('the marker is drawn on its day',/tb-daymark">launch</.test(m));
+    s.ok('the marker is drawn on its day, as a flag chip',/class="tb-daymark"><svg[^>]*><use href="[^"]*#lucide-flag"><\/use><\/svg>launch</.test(m));
     s.ok('and its day is flagged',/class="tb-day[^"]*marked/.test(m));
     s.ok('a day offers a way to add on it',/tbCalAdd\('2026-10-30'\)/.test(m));
     s.ok('the view says what it is showing',/1 item shown/.test(m));
@@ -1195,8 +1195,9 @@ module.exports=async function(){
     // The person filter carries everyone who resolves.
     a.run('_tbOpenItemId=null;_tbCalAnchor="2026-10-01"');
     const head=a.run('_tbCalHead()');
-    s.eq('the person filter offers four people and "anyone"',
-      ((/tbCalSetFilter\('person'[\s\S]*?<\/select>/.exec(head)||[''])[0].match(/<option/g)||[]).length,5);
+    // P1.6: the person filter is a row of AVATARS now, one per person with
+    // an account (a person not set up owns nothing on the calendar yet).
+    s.eq('the person filter offers four faces',(head.match(/class="tb-calav"/g)||[]).length,4);
   }
 
   s.section('people: quick add turns @handle into an assignee, never title text');
@@ -1725,6 +1726,64 @@ module.exports=async function(){
     const css=read('css/main.css');
     s.ok('the columns stack when the CONTENT is narrow (a container query)',
       /\.tb-main\{container-type:inline-size;container-name:tbmain\}/.test(css)&&/@container tbmain \(max-width:720px\)\{\.tb-cols\{grid-template-columns:minmax\(0,1fr\)\}\}/.test(css));
+  }
+
+  // ══ SESSION 2 — P1.6: THE CALENDAR ══════════════════════════════════
+  s.section('the calendar: Title Case, avatar filters, "+N more", a palette that shows in dark');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-calendar'});
+    a.run('session='+J(AMMAR));
+    s.eq('a month name is Title Case on screen',a.run('_tbTitleCase(tbMonthLabel("2026-10"))'),'October 2026');
+    s.eq('and a week range',a.run('_tbTitleCase(tbWeekLabel("2026-10-30"))'),'26 Oct – 1 Nov');
+    a.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'}]");
+    a.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[]};_tbCalAnchor='2026-10-15';_tbCalView='month';_tbCalMore=null");
+    a.run("_tbCalFilters={scope:'me',person:'',list:'',lane:'',color:'',hideDone:false}");
+    const I=(id,day)=>"tbDecodeItem({id:'"+id+"',title:'"+id+"',status:'open',ownerUid:'u-ammar',assigneeUids:['u-ammar'],visibility:'shared',date:'"+day+"'})";
+    a.run("tbItems=["+['a','b','c','d','e'].map(x=>I(x,'2026-10-14')).join(',')+","+['f','g','h'].map(x=>I(x,'2026-10-21')).join(',')+"]");
+    const head=a.run('_tbCalHead()');
+    s.ok('the toolbar is Title Case',['>Today<','>Month<','>Week<','>Me<','>Everyone<','>Any list<','>Any lane<','> Hide done<'].every(t=>head.indexOf(t)>-1));
+    s.ok('the range is too',/tb-callabel">October 2026</.test(head));
+    s.ok('back and forward are icons that say what they do',/aria-label="Back"[^>]*>[\s\S]*?#lucide-chevron-left/.test(head)&&/aria-label="Forward"/.test(head));
+    s.eq('one face per person with an account',(head.match(/class="tb-calav"/g)||[]).length,2);
+
+    // An avatar is "whose calendar": it shows that person across the team.
+    a.run('_tbRepaint=function(){};_tbCalSavePrefs=function(){}');
+    a.run("window.tbCalPerson('u-afnan')");
+    s.eq('a face picks that person, across Everyone',a.run('[_tbCalFilters.person,_tbCalFilters.scope].join()'),'u-afnan,all');
+    s.ok('and is ringed',/class="tb-calav on" aria-pressed="true"[^>]*onclick="window\.tbCalPerson\('u-afnan'\)"/.test(a.run('_tbCalHead()')));
+    a.run("window.tbCalPerson('u-afnan')");
+    s.eq('the same face again shows everyone',a.run('_tbCalFilters.person'),'');
+    a.run("window.tbCalPerson({evil:1})");
+    s.eq('anything but a string clears it',a.run('_tbCalFilters.person'),'');
+    a.run("_tbCalFilters.scope='me'");
+
+    const cal=a.run('_tbCalendar()');
+    const day=d=>(new RegExp('data-day="'+d+'">[\\s\\S]*?(?=<div class="tb-day[ "])').exec(cal)||[''])[0];
+    const d14=day('2026-10-14');
+    s.eq('five on a month day: two pills',(d14.match(/class="tb-pill /g)||[]).length,2);
+    s.ok('and "+3 more"',/class="tb-daymore" onclick="window\.tbCalMore\('2026-10-14'\)">\+3 more</.test(d14));
+    const d21=day('2026-10-21');
+    s.eq('three fit, all shown',(d21.match(/class="tb-pill /g)||[]).length,3);
+    s.ok('with no "more"',!/tb-daymore/.test(d21));
+    a.run("window.tbCalMore('2026-10-14')");
+    const open=(new RegExp('data-day="2026-10-14">[\\s\\S]*?(?=<div class="tb-day[ "])').exec(a.run('_tbCalendar()'))||[''])[0];
+    s.eq('"+3 more" opens the day: all five',(open.match(/class="tb-pill /g)||[]).length,5);
+    s.ok('and offers "Show less"',/>Show less</.test(open));
+    a.run("window.tbCalStep(1)");
+    s.eq('stepping closes it',a.run('_tbCalMore'),null);
+    a.run("_tbCalAnchor='2026-10-14';window.tbCalMore('2026-10-14');window.tbCalView('week')");
+    s.eq('so does changing the view',a.run('_tbCalMore'),null);
+    const wk=a.run('_tbCalendar()');
+    s.ok('a week shows every pill, no cap',(wk.match(/class="tb-pill /g)||[]).length>=5&&!/tb-daymore/.test(wk));
+    s.ok('the "+" says which day it adds to',/class="tb-dayadd" title="Add on [A-Z][^"]*" aria-label="Add on/.test(wk));
+    a.run("window.tbCalMore('not a day')");
+    s.eq('a bad day opens nothing',a.run('_tbCalMore'),null);
+
+    const css=read('css/main.css');
+    const keys=['moss','ink','clay','amber','slate','sand','wine','teal'];
+    const darkBlock=(/html\[data-theme="dark"\]\{--tb-pal-moss[^}]*\}/.exec(css)||[''])[0];
+    s.ok('every palette key has a dark value',keys.every(k=>new RegExp('--tb-pal-'+k+':#[0-9a-f]{6}').test(darkBlock)));
+    s.ok('and no palette rule paints a literal colour',!/\.tb-c-[a-z]+(\s\.tb-pillbar)?\{background:#/.test(css));
   }
 
   s.section('the calendar prefs are cleaned on load');
@@ -2587,8 +2646,8 @@ module.exports=async function(){
     a.run('_tbCalAnchor="2026-10-15";_tbCalView="week";_tbHydrateQueue=[]');
     const cal=a.run('_tbCalendar()');
     s.ok('the tray renders beside the grid',/tb-tray/.test(cal));
-    s.ok('saying how many are in it',/unscheduled<span class="tb-count">2</.test(cal));
-    s.ok('and how to get one onto a day',/drag one onto a day/.test(cal));
+    s.ok('saying how many are in it',/Unscheduled<span class="tb-count">2</.test(cal));
+    s.ok('and how to get one onto a day',/Drag one onto a day/.test(cal));
     a.run('window.tbTrayToggle()');
     s.ok('it collapses',!/tb-traybody/.test(a.run('_tbCalendar()')));
     s.eq('and the preference never reaches Firestore',a.state.writes.length,0);

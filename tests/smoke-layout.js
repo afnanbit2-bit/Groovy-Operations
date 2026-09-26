@@ -104,6 +104,25 @@ function _acctFixture(){
 // because the modules hydrate them with textContent at runtime, which the
 // node harness's stub DOM records but does not put into the markup — the
 // hydration itself is covered by tests/profile.test.js.
+// The calendar's week, built once for two fragments (session 2, P1.6).
+function tbWeekFragment(byPerson){
+  const app=loadApp({
+    files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-calendar',
+    globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+  });
+  app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+  app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
+  app.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[{label:'launch',date:'2026-10-30'}]}");
+  app.run("tbItems=[tbDecodeItem({id:'g1',title:'ALL ASSETS IN',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani'],date:'2026-10-15'}),"
+    +"tbDecodeItem({id:'i2',title:'shoot 2 — knit + outerwear',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'2026-10-16'}),"
+    +"tbDecodeItem({id:'u1',title:'denim bulk lands — no date yet, and the title runs on',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']}),"
+    +"tbDecodeItem({id:'u2',title:'knit bulk lands',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']})]");
+  app.run("_tbCalAnchor='2026-10-15';_tbCalView='week';_tbCalFilters.scope='all';_tbTrayOpen=true;_tbCalRows="+(byPerson?'true':'false')+";_tbHydrateQueue=[]");
+  let out=app.run('_tbCalendar()');
+  app.run('_tbHydrateQueue').forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
+  return out;
+}
+
 const FRAGMENTS={
   // The Board's shell. The rail is NAVIGATION CHROME and the only route
   // between the four screens, so every button has to be reachable at every
@@ -376,27 +395,13 @@ const FRAGMENTS={
     return out;
   },
 
-  'the board — the tray and the week by person':()=>{
-    const app=loadApp({
-      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-calendar',
-      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
-    });
-    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
-    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'},{uid:'u-saim',username:'saim',displayName:'Saim'}]");
-    app.run("tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[{label:'launch',date:'2026-10-30'}]}");
-    app.run("tbItems=[tbDecodeItem({id:'g1',title:'ALL ASSETS IN',kind:'gate',locked:true,lockedBy:'u-ammar',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-dani'],date:'2026-10-15'}),"
-      +"tbDecodeItem({id:'i2',title:'shoot 2 — knit + outerwear',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar'],date:'2026-10-16'}),"
-      +"tbDecodeItem({id:'u1',title:'denim bulk lands — no date yet, and the title runs on',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']}),"
-      +"tbDecodeItem({id:'u2',title:'knit bulk lands',status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']})]");
-    app.run("_tbCalAnchor='2026-10-15';_tbCalView='week';_tbCalFilters.scope='all';_tbTrayOpen=true;_tbCalRows=false;_tbHydrateQueue=[]");
-    const week=app.run('_tbCalendar()');
-    app.run('_tbCalRows=true');
-    const rows=app.run('_tbCalendar()');
-    const q=app.run('_tbHydrateQueue');
-    let out=week+rows;
-    q.forEach(x=>{ out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))); });
-    return out;
-  },
+  'the board — the tray and the week':()=>tbWeekFragment(false),
+  // SESSION 2, P1.6: the week BY PERSON has its own fragment, measured at
+  // the widths that draw it. It is never drawn on a phone (_tbCalendar
+  // guards it with !_tbIsPhone()), and at 420 the harness -- which cannot
+  // know the viewport -- rendered it anyway, crushing a locked gate's title
+  // in a 34px day column: a state the app never reaches, measured.
+  'the board — the week by person':()=>({widths:[1900,1280,800],html:tbWeekFragment(true)}),
 
   'the board — the shortcut list and the move sheet':()=>{
     const app=loadApp({
