@@ -590,6 +590,7 @@ function _gvPullToRefresh(scroller,indicator,onRefresh){
   const reset=()=>{['ready','spin','done','update'].forEach(c=>indicator.classList.remove(c));if(label)label.textContent='';};
   scroller.addEventListener('touchstart',e=>{
     if(busy||e.touches.length!==1||scroller.scrollTop>0){y0=null;return;}
+    try{if(e.target&&e.target.closest&&e.target.closest('.login-sheet')){y0=null;return;}}catch(_){}
     y0=e.touches[0].clientY;tracking=false;pull=0;ready=false;
   },{passive:true});
   scroller.addEventListener('touchmove',e=>{
@@ -675,6 +676,55 @@ function _loginSheet(h,open){
   else{h.classList.remove('open');setTimeout(()=>{if(!h.classList.contains('open'))h.hidden=true;},260);}
 }
 window.loginForgot=function(open){_loginSheet(document.getElementById('login-help'),open);};
+// Swipe a sheet DOWN to close it (Afnan, 27 Sept: "down to close does not
+// work" — it had never been built). The card follows the finger 1:1, the
+// backdrop fades with it, and on release it closes if pulled past a third
+// of its height or flicked (>0.45px/ms); otherwise it springs back. In the
+// account list, a drag only takes over when the list is scrolled to its top
+// — otherwise it is the list scrolling. Every touch here stops at the sheet,
+// so the login's pull-to-refresh underneath never sees it.
+function _loginSheetDrag(sheet){
+  if(!sheet||sheet.__drag)return;sheet.__drag=true;
+  const card=sheet.querySelector('.login-sheet-card');if(!card)return;
+  let y0=null,t0=0,dy=0,lastY=0,lastT=0,v=0,on=false;
+  const list=card.querySelector('.login-acct-list');
+  sheet.addEventListener('touchstart',e=>{
+    e.stopPropagation();
+    if(e.touches.length!==1||!sheet.classList.contains('open'))return;
+    const inList=list&&list.contains(e.target);
+    if(inList&&list.scrollTop>0){y0=null;return;}
+    y0=lastY=e.touches[0].clientY;t0=lastT=e.timeStamp||Date.now();dy=0;v=0;on=false;
+  },{passive:true});
+  sheet.addEventListener('touchmove',e=>{
+    e.stopPropagation();
+    if(y0==null)return;
+    const y=e.touches[0].clientY;dy=Math.max(0,y-y0);
+    const t=e.timeStamp||Date.now();v=(y-lastY)/Math.max(1,t-lastT);lastY=y;lastT=t;
+    if(!on){if(dy<6)return;on=true;card.style.transition='none';sheet.style.transition='none';}
+    if(e.cancelable)e.preventDefault();
+    card.style.transform='translate3d(0,'+dy+'px,0)';
+    const h=card.offsetHeight||400;
+    sheet.style.backgroundColor='rgba(0,0,0,'+(0.5*Math.max(0,1-dy/h)).toFixed(3)+')';
+  },{passive:false});
+  const end=e=>{
+    if(e)e.stopPropagation();
+    if(y0==null)return;y0=null;
+    if(!on)return;on=false;
+    const h=card.offsetHeight||400;
+    card.style.transition='';sheet.style.transition='';
+    if(dy>h/3||v>0.45){
+      card.style.transform='translate3d(0,100%,0)';sheet.style.backgroundColor='';
+      _loginSheet(sheet,false);
+      setTimeout(()=>{card.style.transform='';},300);
+    }else{card.style.transform='';sheet.style.backgroundColor='';}
+  };
+  sheet.addEventListener('touchend',end,{passive:true});
+  sheet.addEventListener('touchcancel',end,{passive:true});
+}
+try{
+  _loginSheetDrag(document.getElementById('login-help'));
+  _loginSheetDrag(document.getElementById('login-accounts'));
+}catch(_){}
 
 // The theme toggle on the login screen: Light → Dark → System. Writes the
 // same key Profile → Appearance does, so the two can never disagree.

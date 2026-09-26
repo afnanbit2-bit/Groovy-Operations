@@ -9270,6 +9270,17 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   fingerprint key on this phone signs straight in; any other fills the
   username and focuses the password. "All saved passwords" still opens
   Chrome's list; with nobody on the list the key goes straight there.
+- **Swipe down closes a login sheet (27 Sept)** — Afnan: "down to close
+  does not work"; it had never been built. `_loginSheetDrag` on both sheets:
+  the card follows the finger 1:1, the backdrop fades with it, release closes
+  past a third of the card's height or on a flick (>0.45px/ms), else springs
+  back; in the account list it only takes over at `scrollTop 0`. Sheet
+  touches `stopPropagation` and the pull-to-refresh also ignores any touch
+  starting in `.login-sheet`. **Verified by driving CDP touch gestures in
+  headless Chromium** (short drag → stays, long drag → closes, flick →
+  closes, both sheets, refresh never fired). Note for re-testing: a CDP
+  touch event takes ~50ms to land when the page has listeners, so a "fast"
+  10px-step gesture measures ~0.2px/ms — use 45px steps to simulate a flick.
 - **Busy = the whole button, never a spinning icon (27 Sept).** Afnan: a
   rotating fingerprint while signing in "is stupid". While the phone and
   the server answer, a sheen sweeps across the button (`loginSheen`, a
