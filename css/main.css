@@ -3099,7 +3099,8 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
    Spec s10: one primary action per screen, 44px rows on desktop and 48 on
    mobile, colour carries meaning and nothing is decorative, RED APPEARS
    EXACTLY ONCE (the overdue count), motion is 150ms ease-out and only on
-   the things that move, labels are lowercase. No gamification: a done item
+   the things that move. Labels were lowercase in phase 2; session 2 made
+   them Title Case (card titles, screens, the rail). No gamification: a done item
    just fades. */
 
 /* the header strip */
@@ -3141,8 +3142,12 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-col{min-width:0}
 .tb-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);
   padding:4px 4px 6px;margin-bottom:14px}
+/* Title Case (session 2, P0.6): the markup has been Title Case since P0.6,
+   but this rule forced it back to lowercase on screen -- textContent does
+   not see text-transform, so the check that read it passed. No .tb- rule
+   may transform case; tests/invariants.test.js holds that. */
 .tb-cardh{display:flex;align-items:center;gap:8px;padding:10px 12px 8px;
-  font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:lowercase;color:var(--muted)}
+  font-size:13px;font-weight:600;letter-spacing:0;color:var(--muted)}
 .tb-count{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--muted)}
 /* THE ONLY RED ON THE BOARD. --count-accent deliberately does not invert:
    it sits on --surface, which does. */

@@ -931,7 +931,9 @@ function _tbHeaderStrip(today){
 function _tbLongDay(day){
   const p=String(day).split('-');
   const d=new Date(Number(p[0]),Number(p[1])-1,Number(p[2]),12,0,0);
-  return d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}).toLowerCase();
+  // Title Case, like every heading on The Board (session 2): 'Saturday 26
+  // September'. It used to be forced to lowercase with the spec's voice.
+  return d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
 }
 
 /** The Dashboard — cards 1-8. Order matters and is not to be changed for
@@ -1008,10 +1010,10 @@ function _tbListDetail(l){
   const done=all.filter(i=>i.status==='done');
   const isAdmin=l.adminUid===_tbMe()||_tbIsBoardOwner();
   return'<div class="tb-listhead">'
-    +'<button class="tb-back" onclick="window.tbCloseList()">&lsaquo; lists</button>'
+    +'<button class="tb-back" onclick="window.tbCloseList()">&lsaquo; Lists</button>'
     +_tbSlot(l.title||'untitled','tb-listtitle','h2')
-    +'<span class="tb-badge">'+_tbEsc(l.kind==='shared'?'team':'private')+'</span>'
-    +(isAdmin?'<span class="tb-badge">admin</span>':'')
+    +'<span class="tb-badge">'+_tbEsc(l.kind==='shared'?'Team':'Private')+'</span>'
+    +(isAdmin?'<span class="tb-badge">Admin</span>':'')
   +'</div>'
   +_tbComposer('add to this list')
   +_tbCard('Open',open.map(i=>_tbRow(i,today)),{keepEmpty:true,empty:'nothing open in this list'})

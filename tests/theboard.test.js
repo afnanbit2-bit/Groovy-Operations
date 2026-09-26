@@ -734,8 +734,8 @@ module.exports=async function(){
     const det=a.run('_tbListsScreen()');
     s.ok('the detail splits Open from Done',/>Open</.test(det)&&/>Done</.test(det));
     s.ok('back goes one level, to lists',/tbCloseList/.test(det));
-    s.ok('it says whether the list is team or private',/tb-badge">team</.test(det));
-    s.ok('and that I administer it',/tb-badge">admin</.test(det));
+    s.ok('it says whether the list is team or private',/tb-badge">Team</.test(det));
+    s.ok('and that I administer it',/tb-badge">Admin</.test(det));
     // An empty list must still say so rather than rendering nothing.
     a.run('tbItems=[]');
     s.ok('an empty list is explained, not blank',/nothing open in this list/.test(a.run('_tbListsScreen()')));

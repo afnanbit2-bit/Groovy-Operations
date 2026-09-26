@@ -250,6 +250,12 @@ function DRIVE(){
       var icb=ic&&ic.getBBox?ic.getBBox():{width:0};
       L(!!ic&&icb.width>0,'a rail icon draws from the vendored sprite ('+(icb.width||0)+'px)');
       L(!!document.querySelector('.tb-head .tb-h1'),'the screen opens with its header row');
+      // innerText, not textContent: it is what is ON SCREEN, after CSS. A
+      // text-transform once undid P0.6's Title Case and textContent never saw it.
+      var hs=[].slice.call(document.querySelectorAll('.tb-cardh')).map(function(h){return(h.innerText||'').trim();});
+      var lower=hs.filter(function(t){return /^[a-z]/.test(t);});
+      L(hs.length>0&&!lower.length,'every card title is on screen in Title Case ('+(lower[0]||hs.slice(0,3).join(', '))+')');
+      L(/^[A-Z]/.test(((document.querySelector('.tb-stripday')||{}).innerText||'').trim()),'the day heading is Title Case');
       L(!document.querySelector('.tb-rail #tb-search')&&!!document.querySelector('.tb-head #tb-search'),'the search box lives in the header, not the rail');
       var rl=document.querySelector('.tb-rail .tb-raillist');
       L(!!rl,'the rail lists the lists');

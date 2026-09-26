@@ -135,6 +135,19 @@ module.exports=function(){
     const names=listed.map(x=>x.replace(/'/g,''));
     s.ok('the Board lists icons',names.length>0);
     s.eq('every icon the Board lists is in the sprite',names.filter(n=>ids.indexOf(n)<0).join(','),'');
+    // Session 2 asked for Title Case on the Board's screens and card
+    // titles. P0.6 changed the markup and a CSS rule forced it straight
+    // back to lowercase -- invisible to every check that reads
+    // textContent. No .tb- rule may transform case.
+    {
+      const css=read('css/main.css').replace(/\/\*[\s\S]*?\*\//g,'');
+      const bad=[];
+      (css.match(/[^{}]+\{[^{}]*\}/g)||[]).forEach(r=>{
+        const sel=r.slice(0,r.indexOf('{')),body=r.slice(r.indexOf('{'));
+        if(/\.tb-/.test(sel)&&/text-transform\s*:\s*(?!none)/.test(body))bad.push(sel.trim().slice(0,60));
+      });
+      s.eq('no .tb- rule transforms the case of its text',bad.join(' | '),'');
+    }
     // `_tbIcon('` is NINE characters. P1.1 sliced eight and never noticed,
     // because no literal call existed until the P1.2 rail.
     const used=(tb.match(/_tbIcon\('([a-z0-9-]+)'/g)||[]).map(x=>x.slice(9,-1));
