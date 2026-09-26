@@ -9246,6 +9246,12 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
+**OUTSTANDING (26 Sept 2026, evening): the QA identity** (`dc98484`,
+`isQa()` / `authed()` / the QA fences — see "The QA identity" in
+`BOARD.md`). `signedIn()` now EXCLUDES `claude@groovy.op`. **Publish it
+before anything signs in as that account** — under the live rules it is an
+ordinary signed-in user. Emulator: Board 100/100, wh_sales/acct 103/103.
+
 **PUBLISHED 26 Sept 2026, was outstanding (session 2): The Board's lock
 rule** (`tbLockOk()`, `board_items` update). The old clause let a member on
 a locked item re-point `lockedBy` at themselves (or set `locked:false`) and

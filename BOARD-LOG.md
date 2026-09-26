@@ -74,11 +74,22 @@ Lines marked **→ NEEDS YOU** are actions for a human.
 | R-lock | `801bcfd` | **The lock rule had two holes and one wrong refusal, found by running it in the Firestore emulator for the first time.** The Board's rules had only ever been checked as TEXT; `tests/rules-emulator-board.js` (new, hand-run like `tests/rules-emulator.js`: CI installs nothing) drives them in the real emulator with items built by the app's own `tbNewItem`/`tbItemPatch`/`tbDonePlan`/`tbHandoverPlan`. Against the old rule, 3 of its cases failed: (1) **a member on a locked item could take the lock over** (set `lockedBy` to themselves: the clause meant to stop that allowed exactly that) and then move the date; (2) **a member could set `locked:false`** and leave the name, then move it; (3) **a locker who is not a Board owner could not unlock their own lock** (a gate Saim made could never be unlocked by Saim). `tbLockOk()` replaces the clause: on a locked item only the locker or a Board owner may touch `date`, `dueAt`, `locked` or `lockedBy`; on an unlocked item, locking it names the caller. **The app never wrote (1) or (2)** (the lock button refuses a non-locker), so those were raw-write holes; (3) was a live bug in the button. The two text assertions in `tests/theboard.test.js` that claimed "lockedBy cannot be re-pointed" were matching the old rule's text while it allowed it; replaced with checks on the helper, which fail 4 ways against the old file. **`firestore.rules` changed: in the batched list below.** | v206 | emulator: Board 39/39 (old rule: 3 fail) · wh_sales/acct 103/103 · run.js 6,389 · theboard 1,131 |
 | CO-5 | `3f70748` | **Change order §5, the two checks — done first, because the second could have been a P0.** **(a) Samad onboarding on Mon 28 instead of Sun 27: NOT the grid.** 27 Sep 2026 is a Sunday, the LAST column of a Monday-first grid, so a week-boundary slip would look exactly like the report — which is why it was checked rather than reasoned away. The seed has written `2026-09-27` for it in every version (`git log -S`). `tests/smoke-board.js` now checks placement in real Chromium by GEOMETRY: every drawn cell sits under its own weekday header and prints its own number, and every pill is in the cell of its own date, in the month AND the week, with the Samad pill asserted in the Sunday 27 cell. The Ammar mode now runs in **Asia/Karachi** (the others in the runner's zone, UTC on CI), so a date that only slips in one zone shows. All pass: 35 cells / 14 pills (month), 7 / 7 (week). **Verified by breaking it:** starting the week on Sunday fails naming `2026-08-30 drawn in column 0, belongs in 6` and the Samad pill missing from the week. Every other date the app prints is split from the string (`tbDayLabel`); nothing parses an item date through UTC. **So the live document most likely carries `date: 2026-09-28`, i.e. it was moved** — `board_items/tb_edits_samad-onboarding-meeting-brief-grade-references`, fields `date` and `dateHistory` (each move is `{from,to,byUid,at,reason}`); the Dashboard's Activity card lists every move from `dateHistory` too. **→ NEEDS YOU** to read which. **(b) Winter Drop 2027 shows 39, the seed wrote 42: every list counter counts OPEN items only** (`status !== 'done'` — the rail, the list card, My Lists, the project row). The seed has 42 rows, 42 distinct ids, none a duplicate, none skipped for want of a login (no row's only person is someone without an account). So the 3 are, in some mix: **done** (they are in the list page's Completed group, which shows its own count), **made private by their owner** (a private item is not loaded for anyone else), **deleted since**, or **not written**. The sandbox cannot read the live board, so it cannot name them; two screens do: the list's **Completed** count, and **Settings → Preview**, which reads every seeded document server-side whatever its visibility and prints "N already on the board", "deleted since: …" and "skipped …". 42 already on the board + Completed 3 = done. 42 + Completed < 3 = the rest are private. Fewer than 42 = the Preview names them. **→ NEEDS YOU.** No precached file changed, so no cache bump. | v206 | smoke-board 192×3 in real Chromium (Asia/Karachi + UTC) · run.js |
 
+| QA-A | `dc98484` | **The QA identity: `claude@groovy.op`, a harness account fenced by the rules.** The brief's priority item, so subagents can debug the real platform. Handle `claude`, "Claude (QA)", role `qa`, in `USER_DEFS` and `BOARD_USERS` (never `BOARD_OWNERS`). **The fence is `firestore.rules`:** `signedIn()` now excludes it (`isQa()`), so every collection opened to "any signed-in user" stays shut with no clause each; `authed()` gives it back only what it must read (`user_profiles`, `mood_boards`, the Board through `isBoardUser()`). Writes: lists it admins **alone** carrying `qa:true` (set at create, immutable even for a Board owner, and **no one else may set it**); items only in those lists, assigned only to itself, flagged `qa:true`; comments/activity only on its own items; notifications only where `forUser=='claude'` (a USERNAME: the brief said uid, the field is a username); Mood Boards only its own PRIVATE boards shared with nobody, presence and comments only there; no `board_config` write. **Client** (`js/theboard.js`): `qa` lists and items hidden from real sessions where `tbItems`/`tbLists` are set (load and live listener); real people never address or notify the harness, it addresses and notifies only itself; Team Today is the real five for everyone; a harness create lands in its sandbox (`_tbQaFenceListId`) or is refused. Pages `tb-*`, Mood Boards and its Profile; no `loadData`, no bug FAB. `.gitignore` gains **targeted** credential patterns (a blanket `*.json` would drop `manifest.json`, `firebase.json` and the indexes file). Reverted each: `signedIn()` including QA, the item-create fence and the notification fence fail 16 emulator cases by name; the loader hiding and the notify guard fail 4 client assertions. **`firestore.rules` changed: in the batched list below, and it must be deployed before the harness signs in.** | v207 | emulator: Board **100/100** (61 new) · wh_sales/acct 103/103 · run.js 6,443 · smoke-board 192×3 |
 ---
 
 ## Rules / index deploys — batched
 
-**DEPLOYED 26 Sept 2026 — nothing in this list is outstanding.** Afnan
+**OUTSTANDING (26 Sept 2026, evening): QA-A (`dc98484`) changed
+`firestore.rules`** — `isQa()`, `signedIn()` excluding it, `authed()`, and
+the QA fences on `board_lists`, `board_items` (+ comments, activity),
+`hrm_notifications`, `user_profiles` and `mood_boards` (+ presence,
+comments, trash). **Deploy it BEFORE anything signs in as
+`claude@groovy.op`:** until then the live `signedIn()` includes that
+account, i.e. it can read and write most of the app. No index change.
+`firebase deploy --only firestore:rules` from the branch head (or `main`
+once merged). Everything below was already deployed.
+
+**DEPLOYED 26 Sept 2026 — nothing in this list was outstanding then.** Afnan
 ran `firebase deploy --only firestore:indexes` then `firebase deploy --only
 firestore:rules` from `main` at `f18536c` (the PR #88 merge), `firebase use`
 → `groovy-gatepass`, rules file `md5 95273f84be02ebf8f0a54bae9f814dae`.
@@ -97,6 +108,42 @@ Board user's inbox reads at most 200 of their own Board rows. The lock
 holes found by the emulator are closed on the live project.
 
 ## → NEEDS YOU
+
+- **QA identity — Ammar's side (the console and his shell).** Recorded
+  as sent. **Do not run the harness until QA-A's rules are deployed**
+  (above). The password, the URL and any credential stay in Ammar's
+  shell: nothing under the repo, in this log or in a commit message.
+  1. Create `~/.groovy-qa.env` with exactly these lines:
+     ```
+     export GROOVY_QA_URL="https://groovyoperations.netlify.app"
+     export GROOVY_QA_EMAIL="claude@groovy.op"
+     export GROOVY_QA_PASSWORD="<the password Ammar set>"
+     export GOOGLE_CLOUD_PROJECT="groovy-gatepass"
+     ```
+     Service account JSON keys are blocked by org policy — ADC instead; no
+     `GROOVY_FIRESTORE_RO_KEY` line.
+  2. `chmod 600 ~/.groovy-qa.env`
+  3. Add `source ~/.groovy-qa.env` to `~/.zshrc` if it isn't there.
+  4. `source ~/.groovy-qa.env` in the current shell.
+  5. `echo $GROOVY_QA_EMAIL` — should print `claude@groovy.op`.
+  6. `gcloud version` — if not found, `brew install google-cloud-sdk`.
+  7. `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/datastore`
+     (browser; the Google account that owns the Firebase project).
+  8. `ls -la ~/.config/gcloud/application_default_credentials.json`.
+
+  **Two things to decide before step 7 (Claude's review, not in the
+  steps as sent):** (a) ADC from the project owner's own account is an
+  OWNER credential, read AND write — the `datastore` scope does not make
+  it read-only. The brief has `scripts/board-inspect.js` refuse any key
+  that can write (a no-op write probe); with this ADC the probe will
+  refuse, correctly. The fix that keeps "no JSON keys": a service account
+  with only `roles/datastore.viewer`, Ammar granted
+  `roles/iam.serviceAccountTokenCreator` on it, and step 7 run with
+  `--impersonate-service-account=<that account>`. Whether the org policy
+  allows impersonation is not known from here. (b) Steps 1–8 run on
+  Ammar's Mac; a session in the cloud cannot run them, and the harness
+  (`tests/e2e/board.e2e.js`) cannot reach `*.netlify.app` or `gstatic`
+  from the sandbox, so it runs on Ammar's machine.
 
 - **P2.1 — nothing to press; one thing to look at.** The 08:00 PKT reminder
   runs by itself on the published production deploy (it uses the same
