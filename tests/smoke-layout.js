@@ -181,6 +181,23 @@ const FRAGMENTS={
     return out;
   },
 
+  // The quick-add composer OPEN (session 2, P0.5): three rows of chips that
+  // must wrap at phone width rather than push the page sideways, a date
+  // field, two selects, a picked date with its clear button, a picked
+  // person, and one person not set up yet (dashed, disabled).
+  'the board — the quick-add composer':()=>{
+    const app=loadApp({
+      files:['js/shared.js','js/auth.js','js/theboard.js'],currentPage:'tb-dash',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}
+    });
+    app.run("session={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
+    app.run("userProfiles=[{uid:'u-ammar',username:'ammar',displayName:'Ammar'},{uid:'u-afnan',username:'afnan',displayName:'Afnan'},{uid:'u-dani',username:'daniyal',displayName:'Daniyal Tufail'},{uid:'u-must',username:'mustafa',displayName:'Mustafa'}]");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar'],color:'moss'}]");
+    app.run("tbConfig={markers:[]};tbLoaded=true;_tbLoadErrors=[];tbItems=[];_tbListId=null");
+    app.run("_tbQaReset(true);_tbQa.text='denim samples @afnan';_tbQa.dateSet=true;_tbQa.date='2026-10-05';_tbQa.assign=['u-dani'];_tbQa.lane='denim'");
+    return '<div class="tb-wrap"><div class="tb-main">'+app.run("_tbComposer('add something — try: denim samples @afnan #denim oct 5 !')")+'</div></div>';
+  },
+
   // The drawer: a fixed panel over the page, with a disabled date field
   // (someone else holds the lock) and the "was" date beside it.
   'the board — item drawer':()=>{

@@ -280,6 +280,35 @@ function DRIVE(){
       await wait(200);
       L(!tbItems.some(function(i){return i.id==='smoke_remote';}),'a remote delete takes it off');
 
+      // ── the composer (P0.5) ──
+      window.showPage('tb-dash');
+      await wait(300);
+      var qin=document.getElementById('tb-qa');
+      qin.focus();
+      await wait(50);
+      L(!!document.querySelector('#tb-quick.open .tb-qarow'),'focusing quick add opens the composer');
+      var btns=[].slice.call(document.querySelectorAll('#tb-qa-chips .tb-qachip'));
+      var tomorrow=btns.filter(function(b){return(b.textContent||'').trim()==='tomorrow';})[0];
+      var dani=btns.filter(function(b){return/Daniyal/.test(b.textContent||'');})[0];
+      act('pick tomorrow',function(){tomorrow.click();});
+      act('pick Daniyal',function(){[].slice.call(document.querySelectorAll('#tb-qa-chips .tb-qachip')).filter(function(b){return/Daniyal/.test(b.textContent||'');})[0].click();});
+      qin=document.getElementById('tb-qa');
+      qin.value='smoke composer item';qin.dispatchEvent(new Event('input',{bubbles:true}));
+      var n0=tbItems.length;
+      qin.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+      await wait(300);
+      var c=tbItems[tbItems.length-1]||{};
+      L(tbItems.length===n0+1&&c.title==='smoke composer item','Enter created it');
+      L(c.date===_tbDayAdd(_tbToday(),1),'with the picked date (tomorrow)');
+      L((c.assigneeUids||[]).indexOf('u-daniyal')>-1,'and the picked person');
+      var q2=document.getElementById('tb-qa');
+      L(!!q2&&q2.value===''&&document.activeElement===q2,'the composer is cleared, caret back in it');
+      q2.value='smoke undated item';q2.dispatchEvent(new Event('input',{bubbles:true}));
+      q2.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+      await wait(300);
+      var u=tbItems[tbItems.length-1]||{};
+      L(u.title==='smoke undated item'&&u.date===null,'a bare title is created with NO date');
+
       // ── the calendar, every control ──
       window.showPage('tb-calendar');
       await wait(300);

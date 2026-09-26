@@ -283,6 +283,8 @@ function _tbLiveBusy(){
   if(typeof _tbDragId!=='undefined'&&_tbDragId!=null)return true;
   return _tbEditableFocus();
 }
+// (The quick-add composer keeps its text and chips in _tbQa, so a live
+// repaint redraws it intact; its focus is restored by _tbRepaint.)
 function _tbOnBoardPage(){
   return String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')===0;
 }
@@ -639,11 +641,17 @@ function tbMyDay(items,uid,today){
 function tbAssignedToMe(items,uid,today){
   const above=new Set(tbOverdue(items,uid,today).concat(tbDueToday(items,uid,today))
     .concat(tbMyDay(items,uid,today)).map(i=>i.id));
-  return (items||[]).filter(i=>_tbOpen(i)&&_tbMine(i,uid)&&i.ownerUid!==uid&&!above.has(i.id)).sort(_tbByDate);
+  // Undated ones live in Needs a date now (decision 5); a card that
+  // repeats another's rows makes both harder to read.
+  return (items||[]).filter(i=>_tbOpen(i)&&_tbMine(i,uid)&&i.ownerUid!==uid&&!!i.date&&!above.has(i.id)).sort(_tbByDate);
 }
-/** The set-a-date chore. Mine to answer, because I own them. */
+/** The set-a-date chore: undated items I OWN OR AM ASSIGNED TO.
+ *  Session 2 (Ammar's decision 5): the spec's owner-only rule was wrong --
+ *  the seed makes a milestone's first assignee its owner, so both undated
+ *  bulk-landing gates were Mustafa's alone, while the people who have to
+ *  schedule them (Afnan and Mustafa, both on them) never saw one. */
 function tbNeedsDate(items,uid){
-  return (items||[]).filter(i=>_tbOpen(i)&&i.ownerUid===uid&&!i.date)
+  return (items||[]).filter(i=>_tbOpen(i)&&!i.date&&(i.ownerUid===uid||_tbMine(i,uid)))
     .sort((a,b)=>String(a.title||'').localeCompare(String(b.title||'')));
 }
 function tbNext7(items,uid,today){
@@ -894,11 +902,7 @@ function _tbHeaderStrip(today){
     +(countdown?'<div class="tb-stripmark">'+_tbEsc(countdown)+'</div>':'')
     +'<div class="tb-stripcount">'+_tbEsc(counts)+'</div>'
   +'</div>'
-  +'<div class="tb-quick">'
-    +'<input id="tb-qa" class="tb-qainput" placeholder="add something — try: denim samples @afnan #denim oct 5 !"'
-      +' oninput="window.tbQuickPreview()" onkeydown="window.tbQuickKey(event)" autocomplete="off">'
-    +'<div id="tb-qa-prev" class="tb-qaprev"></div>'
-  +'</div>';
+  +_tbComposer('add something — try: denim samples @afnan #denim oct 5 !');
 }
 function _tbLongDay(day){
   const p=String(day).split('-');
@@ -985,11 +989,7 @@ function _tbListDetail(l){
     +'<span class="tb-badge">'+_tbEsc(l.kind==='shared'?'team':'private')+'</span>'
     +(isAdmin?'<span class="tb-badge">admin</span>':'')
   +'</div>'
-  +'<div class="tb-quick">'
-    +'<input id="tb-qa" class="tb-qainput" placeholder="add to this list"'
-      +' oninput="window.tbQuickPreview()" onkeydown="window.tbQuickKey(event)" autocomplete="off">'
-    +'<div id="tb-qa-prev" class="tb-qaprev"></div>'
-  +'</div>'
+  +_tbComposer('add to this list')
   +_tbCard('open',open.map(i=>_tbRow(i,today)),{keepEmpty:true,empty:'nothing open in this list'})
   +(done.length?_tbCard('done',done.map(i=>_tbRow(i,today))):'');
 }
@@ -1126,46 +1126,191 @@ async function _tbTry(fn,what){
 window.tbRetry=function(){ tbLoaded=false; _tbRepaint(true); };
 
 // ── Create ────────────────────────────────────────────────────────────
-window.tbQuickPreview=function(){
-  const el=document.getElementById('tb-qa');
+// ══ SESSION 2 — P0.5: THE QUICK-ADD COMPOSER ═════════════════════════
+// One input that opens, on focus, into a row of chips: Date (Today /
+// Tomorrow / Next Mon / a date field), Assign (the five), List and Lane.
+// Enter creates.
+//
+// NO DATE MEANS UNDATED. It used to default to today on the Dashboard, so
+// "title, Enter" made a task due today that nobody had asked for (the
+// brief's own example). An undated item lands in Needs a date, which is
+// what an item with no date IS.
+//
+// A date typed in the title ("oct 5") FILLS the Date chip, live, and a
+// date picked on the chip outranks it -- the chip is the more deliberate
+// of the two, the rule tbCreateOn already applies to a calendar day's "+".
+//
+// The composer's state lives HERE, not in the DOM: a repaint (a live
+// update, a chip click) rebuilds the markup, and text that lived only in
+// an input would be lost. Chip clicks repaint the chip row alone and keep
+// the caret in the input (pointerdown preventDefault), so typing is never
+// interrupted.
+let _tbQa={open:false,text:'',date:'',dateSet:false,assign:[],listId:undefined,lane:''};
+function _tbQaReset(keepOpen){
+  _tbQa={open:!!keepOpen,text:'',date:'',dateSet:false,assign:[],listId:undefined,lane:''};
+}
+/** The list a new item lands in: the chip's choice, else the list you are
+ *  looking at, else none. */
+function _tbQaList(){ return _tbQa.listId!==undefined?(_tbQa.listId||null):(_tbListId||null); }
+function _tbQaParse(){
+  return tbParseQuickAdd(_tbQa.text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
+}
+/** What the new item WILL be, from the text and the chips together. Pure
+ *  over its inputs, so the preview and the create cannot disagree. */
+function tbComposerPlan(parsed,qa,me,listFallback){
+  const p=parsed||{},q=qa||{};
+  const assignees=[me].concat(p.assigneeUids||[]).concat(q.assign||[])
+    .filter((u,i,a)=>u&&a.indexOf(u)===i);
+  return{
+    title:p.title||'',
+    date:q.dateSet?(q.date||null):(p.date||null),
+    dateFromText:!q.dateSet&&!!p.date,
+    assigneeUids:assignees,
+    lane:q.lane||p.lane||null,
+    listId:q.listId!==undefined?(q.listId||null):(listFallback||null),
+    priority:p.priority||0,
+    pendingHandles:p.pendingHandles||[],unknownHandles:p.unknownHandles||[]
+  };
+}
+function _tbComposer(placeholder){
+  return'<div class="tb-quick'+(_tbQa.open?' open':'')+'" id="tb-quick">'
+    +'<input id="tb-qa" class="tb-qainput" placeholder="'+_tbEsc(placeholder)+'"'
+      +' value="'+_tbEsc(_tbQa.text)+'"'
+      +' onfocus="window.tbQaFocus()" oninput="window.tbQuickPreview()" onkeydown="window.tbQuickKey(event)" autocomplete="off">'
+    +'<div id="tb-qa-chips" class="tb-qachips">'+(_tbQa.open?_tbQaChipsHTML():'')+'</div>'
+    +'<div id="tb-qa-prev" class="tb-qaprev"></div>'
+  +'</div>';
+}
+function _tbQaChipsHTML(){
+  const today=_tbToday(),me=_tbMe();
+  const plan=tbComposerPlan(_tbQaParse(),_tbQa,me,_tbListId);
+  const keep=' onpointerdown="event.preventDefault()"';   // the caret stays in the title
+  const dateBtn=(d,l)=>'<button type="button" class="tb-qachip'+(plan.date===d?' on':'')+'"'+keep
+    +' onclick="window.tbQaDate(\''+_tbEsc(d)+'\')">'+_tbEsc(l)+'</button>';
+  const nextMon=_tbNextDow(_tbDayAdd(today,1),1);
+  const dateLabel=plan.date?tbDayLabel(plan.date,today)+(plan.dateFromText?' (from the title)':''):'no date';
+  const people=tbPeople().map(function(p){
+    if(!p.uid)return'<button type="button" class="tb-qachip tb-qachip-off" disabled title="'+_tbEsc(p.name)+' is not set up yet">'+_tbEsc(p.name)+'</button>';
+    if(p.uid===me)return'<button type="button" class="tb-qachip on tb-qachip-me" disabled title="you are always on what you add">you</button>';
+    const on=plan.assigneeUids.indexOf(p.uid)>-1;
+    return'<button type="button" class="tb-qachip'+(on?' on':'')+'"'+keep
+      +' onclick="window.tbQaAssign(\''+_tbEsc(p.uid)+'\')">'+_tbEsc(p.name)+'</button>';
+  }).join('');
+  const opt=(v,cur,l)=>'<option value="'+_tbEsc(v)+'"'+(v===cur?' selected':'')+'>'+_tbEsc(l)+'</option>';
+  return'<div class="tb-qarow"><span class="tb-qalabel">date</span>'
+      +dateBtn(today,'today')+dateBtn(_tbDayAdd(today,1),'tomorrow')+dateBtn(nextMon,'next mon')
+      +'<input type="date" class="tb-qadate" id="tb-qa-date" value="'+_tbEsc(plan.date||'')+'"'
+        +' onchange="window.tbQaDate(this.value)">'
+      +'<span class="tb-qadatenow'+(plan.date?'':' none')+'">'+_tbEsc(dateLabel)+'</span>'
+      +(plan.date?'<button type="button" class="tb-qachip tb-qaclear"'+keep+' onclick="window.tbQaDate(\'\')" title="no date">&times;</button>':'')
+    +'</div>'
+    +'<div class="tb-qarow"><span class="tb-qalabel">assign</span>'+people+'</div>'
+    +'<div class="tb-qarow"><span class="tb-qalabel">list</span>'
+      +'<select class="tb-qasel" id="tb-qa-list" onchange="window.tbQaSet(\'listId\',this.value)">'
+        +opt('',plan.listId||'','none')
+        +tbLists.filter(l=>!l.archived).map(l=>opt(l.id,plan.listId||'',l.title||'untitled')).join('')
+      +'</select>'
+      +'<span class="tb-qalabel">lane</span>'
+      +'<select class="tb-qasel" id="tb-qa-lane" onchange="window.tbQaSet(\'lane\',this.value)">'
+        +opt('',plan.lane||'','none')+TB_LANES.map(l=>opt(l,plan.lane||'',l)).join('')
+      +'</select>'
+    +'</div>';
+}
+/** Repaint the chip row and the preview line only -- never the input. */
+function _tbQaPaint(){
+  const chips=document.getElementById('tb-qa-chips');
+  if(chips)chips.innerHTML=_tbQa.open?_tbQaChipsHTML():'';
+  const wrap=document.getElementById('tb-quick');
+  if(wrap&&wrap.classList)wrap.classList[_tbQa.open?'add':'remove']('open');
   const out=document.getElementById('tb-qa-prev');
-  if(!el||!out)return;
-  const parsed=tbParseQuickAdd(el.value,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
+  if(!out)return;
+  const parsed=_tbQaParse();
+  const plan=tbComposerPlan(parsed,_tbQa,_tbMe(),_tbListId);
   const names={};
   Object.keys(tbHandleMap()).forEach(h=>{names[h]=tbUser(tbHandleMap()[h]).name;});
-  const line=tbQuickAddPreview(parsed,{today:_tbToday(),names:names});
-  out.textContent=line+(parsed.unknownHandles.length
-    ?(line?'   ':'')+'(@'+parsed.unknownHandles.join(', @')+' is not on the board — left in the title)':'')
-    +(parsed.pendingHandles.length
-    ?'   (@'+parsed.pendingHandles.join(', @')+' is not set up yet — not assigned; an owner can press Sync accounts on the Profile page)':'');
+  const others=plan.assigneeUids.filter(u=>u!==_tbMe()).map(u=>tbUser(u).name);
+  const bits=[];
+  if(plan.title)bits.push('“'+plan.title+'”');
+  bits.push(plan.date?tbDayLabel(plan.date,_tbToday()):'no date');
+  if(others.length)bits.push(others.join(', '));
+  if(plan.lane)bits.push(plan.lane);
+  if(plan.priority===2)bits.push('critical');else if(plan.priority===1)bits.push('high');
+  out.textContent=(_tbQa.text||plan.date||others.length||plan.lane?'→ '+bits.join(' · '):'')
+    +(plan.unknownHandles.length
+      ?'   (@'+plan.unknownHandles.join(', @')+' is not on the board — left in the title)':'')
+    +(plan.pendingHandles.length
+      ?'   (@'+plan.pendingHandles.join(', @')+' is not set up yet — not assigned; an owner can press Sync accounts on the Profile page)':'');
+}
+window.tbQaFocus=function(){
+  if(_tbQa.open)return;
+  _tbQa.open=true;
+  _tbQaPaint();
+};
+window.tbQaDate=function(d){
+  _tbQa.dateSet=true;
+  _tbQa.date=(d&&_tbValidDay(d))?d:'';
+  _tbQaPaint();
+};
+window.tbQaAssign=function(uid){
+  const i=_tbQa.assign.indexOf(uid);
+  if(i>-1)_tbQa.assign.splice(i,1);else _tbQa.assign.push(uid);
+  _tbQaPaint();
+};
+window.tbQaSet=function(k,v){
+  if(k==='listId')_tbQa.listId=v||'';
+  else if(k==='lane')_tbQa.lane=(TB_LANES.indexOf(v)>-1)?v:'';
+  _tbQaPaint();
+};
+window.tbQuickPreview=function(){
+  const el=document.getElementById('tb-qa');
+  if(el)_tbQa.text=String(el.value||'');
+  _tbQaPaint();
 };
 window.tbQuickKey=function(e){
+  if(e.key==='Escape'){
+    // Empty: close it. Not empty: clear it first -- losing a half-typed
+    // title to one keystroke would be worse than a second press.
+    if(_tbQa.text||_tbQa.dateSet||_tbQa.assign.length){ _tbQaReset(true); const el=document.getElementById('tb-qa'); if(el)el.value=''; }
+    else{ _tbQa.open=false; const el=document.getElementById('tb-qa'); if(el&&el.blur)el.blur(); }
+    _tbQaPaint();
+    return;
+  }
   if(e.key!=='Enter')return;
   e.preventDefault();
   const el=document.getElementById('tb-qa');
-  if(!el||!String(el.value).trim())return;
-  const text=el.value;
-  el.value='';
-  window.tbQuickPreview();
+  if(el)_tbQa.text=String(el.value||'');
+  if(!String(_tbQa.text).trim())return;
   // Shift+Enter opens the drawer on the new item for detail (spec s8.1).
-  window.tbCreateFromQuick(text,e.shiftKey);
+  window.tbCreateFromQuick(_tbQa.text,e.shiftKey,true);
 };
-window.tbCreateFromQuick=async function(text,openAfter){
+// Registered ONCE: a click outside an EMPTY composer closes it. One with
+// anything in it stays open -- a stray click must not throw away a date.
+(function(){
+  if(typeof document==='undefined'||!document.addEventListener)return;
+  document.addEventListener('pointerdown',function(e){
+    if(!_tbQa.open)return;
+    const t=e&&e.target;
+    if(t&&t.closest&&t.closest('#tb-quick'))return;
+    if(_tbQa.text||_tbQa.dateSet||_tbQa.assign.length||_tbQa.lane||_tbQa.listId!==undefined)return;
+    _tbQa.open=false;
+    _tbQaPaint();
+  },true);
+})();
+
+window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
   const me=_tbMe();
   const parsed=tbParseQuickAdd(text,{today:_tbToday(),handles:tbHandleMap(),boardHandles:_tbBoardUsernames()});
   if(!parsed.title){ _tbToast('Give it a title.'); return; }
-  // On the Dashboard an undated item defaults to today and me; inside a
-  // list it stays undated, because a list is a backlog (spec s8.1).
-  const inList=!!_tbListId;
-  const assignees=parsed.assigneeUids.slice();
-  if(assignees.indexOf(me)<0)assignees.unshift(me);
+  // The chips count only when the text came FROM the composer; a caller
+  // passing plain text (a test, a future shortcut) gets the grammar alone.
+  const plan=tbComposerPlan(parsed,fromComposer?_tbQa:{},me,_tbListId);
   const data=tbNewItem({
-    title:parsed.title,
-    assigneeUids:assignees,
-    lane:parsed.lane,
-    priority:parsed.priority,
-    listId:_tbListId||null,
-    date:parsed.date||(inList?null:_tbToday())
+    title:plan.title,
+    assigneeUids:plan.assigneeUids,
+    lane:plan.lane,
+    priority:plan.priority,
+    listId:plan.listId,
+    date:plan.date                    // NEVER today by default (session 2)
   },me,_tbNow(),tbLists);
   await _tbTry(async()=>{
     const ref=doc(collection(db,'board_items'));
@@ -1176,11 +1321,15 @@ window.tbCreateFromQuick=async function(text,openAfter){
     await b.commit();
     tbItems.push(tbDecodeItem(Object.assign({id:ref.id},data)));
     if(openAfter)_tbOpenItemId=ref.id;
+    // Ready for the next one: cleared, still open, caret back in it.
+    if(fromComposer){ _tbQaReset(true); _tbQaRefocus=true; }
     _tbRepaint();
     if(parsed.pendingHandles.length)_tbToast('Added — @'+parsed.pendingHandles.join(', @')
       +' is not set up yet, so not assigned. An owner can press Sync accounts on the Profile page.');
+    else if(!data.date)_tbToast('Added with no date — it is in Needs a date.');
   },'add that');
 };
+let _tbQaRefocus=false;
 
 // ── Edit ──────────────────────────────────────────────────────────────
 window.tbFieldChange=async function(field,value){
@@ -3661,6 +3810,8 @@ function _tbRepaint(reload){
   const m=document.getElementById('main-content');
   if(!m)return;
   if(reload&&!tbLoaded){ tbRenderPage(_tbPage); return; }
+  const ae=(typeof document!=='undefined'&&document.activeElement)||null;
+  if(ae&&ae.id==='tb-qa'&&_tbQa.open)_tbQaRefocus=true;
   _tbHydrateQueue=[];
   const body=_tbScreen(_tbPage);
   m.innerHTML=_tbShell(_tbPage,body)+_tbDrawer()+_tbMoveSheet()+_tbHelpOverlay()+_tbSettingsOverlay();
@@ -3679,6 +3830,11 @@ function _tbRepaint(reload){
       const n=String(q.value||'').length;
       if(q.setSelectionRange)try{q.setSelectionRange(n,n);}catch(e){}
     }
+  }
+  if(_tbQaRefocus){
+    _tbQaRefocus=false;
+    const q=document.getElementById('tb-qa');
+    if(q&&q.focus)q.focus();
   }
   if(_tbCompFocus){
     _tbCompFocus=false;

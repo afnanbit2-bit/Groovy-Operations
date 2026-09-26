@@ -2990,6 +2990,25 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   transition:border-color .15s ease-out}
 .tb-qainput:focus{border-color:var(--text)}
 .tb-qaprev{min-height:18px;padding:3px 12px 0;font-size:12px;color:var(--muted);font-family:var(--font-mono)}
+/* The composer (session 2, P0.5): opens under the title on focus. Chips
+   wrap rather than scroll, so every person and every date is visible. */
+.tb-qachips{display:none}
+.tb-quick.open .tb-qachips{display:flex;flex-direction:column;gap:6px;padding:8px 2px 2px}
+.tb-qarow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.tb-qalabel{font-size:12px;color:var(--muted);min-width:44px}
+.tb-qachip{min-height:32px;padding:0 10px;background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;font-family:inherit;font-size:13px;color:var(--text);cursor:pointer;
+  transition:background .15s ease-out,border-color .15s ease-out}
+.tb-qachip:hover{border-color:var(--text)}
+.tb-qachip.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
+.tb-qachip-me,.tb-qachip-off{cursor:default}
+.tb-qachip-off{opacity:.55;border-style:dashed}
+.tb-qaclear{padding:0 9px}
+.tb-qadate,.tb-qasel{min-height:32px;padding:0 8px;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;font-family:inherit;font-size:13px;color:var(--text);max-width:100%}
+.tb-qadatenow{font-family:var(--font-mono);font-size:12px;color:var(--text)}
+.tb-qadatenow.none{color:var(--muted)}
+@media (prefers-reduced-motion:reduce){ .tb-qachip{transition:none} }
 
 /* cards */
 .tb-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}

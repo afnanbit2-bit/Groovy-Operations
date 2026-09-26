@@ -303,7 +303,11 @@ module.exports=async function(){
     // follows that convention rather than inventing a second word for it.
     // Phase 2 used it too — at js/theboard.js's `(o.red?' red':'')`, which
     // this scan could not see because the token is built by concatenation.
-    const REUSED=['btn-outline','btn-primary','empty','card','section-title','red'];
+    // `on` is this file's selected-state modifier (.tb-seg.on, .tb-railbtn.on,
+    // .tb-person.on, .tb-check.on) — invisible to this scan until session 2,
+    // because every use was concatenated; the composer's "you" chip is the
+    // first literal one.
+    const REUSED=['btn-outline','btn-primary','empty','card','section-title','red','on'];
     const tokens=new Set();
     (src.match(/class="([^"]*)"/g)||[]).forEach(c=>{
       c.slice(7,-1).split(/[ ]+/).forEach(t=>{ if(t&&/^[a-z][a-z0-9-]*$/.test(t))tokens.add(t); });
@@ -1344,6 +1348,93 @@ module.exports=async function(){
     s.ok('a real run says Done',/^Done\./.test(S({created:0,alreadySeeded:42},false)));
     s.ok('a re-run says nothing was duplicated',/Created 0 milestones; 42 already on the board/.test(S({created:0,alreadySeeded:42},false)));
     s.ok('a missing login is named',/No login yet for saim/.test(S({skippedUsers:['saim']},false)));
+  }
+
+  // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
+  s.section('the composer: no date means undated, never today');
+  {
+    const a=loadApp({files:FILES});
+    a.run('session='+J(AMMAR));
+    const P=(text,qa,fallback)=>a.run('tbComposerPlan(tbParseQuickAdd('+J(text)+','
+      +J({today:'2026-09-26',handles:{ammar:'u-ammar',afnan:'u-afnan',daniyal:'u-dani'},boardHandles:['ammar','afnan','daniyal','mustafa','saim']})
+      +'),'+J(qa||{})+',"u-ammar",'+J(fallback||null)+')');
+    s.eq('a bare title has NO date',P('call baber').date,null);
+    const t=P('denim samples oct 5');
+    s.eq('a date in the title fills the chip',t.date,'2026-10-05');
+    s.eq('and says it came from the title',t.dateFromText,true);
+    s.eq('a picked date outranks the title',P('denim samples oct 5',{dateSet:true,date:'2026-10-09'}).date,'2026-10-09');
+    s.eq('"no date" on the chip beats a date in the title',P('denim samples oct 5',{dateSet:true,date:''}).date,null);
+    const who=P('brief @daniyal',{assign:['u-afnan','u-dani']});
+    s.eq('you, then the title, then the chips — once each',J(who.assigneeUids),J(['u-ammar','u-dani','u-afnan']));
+    s.eq('a lane chip outranks #lane',P('x #denim',{lane:'knit'}).lane,'knit');
+    s.eq('with no chip, #lane counts',P('x #denim',{}).lane,'denim');
+    s.eq('the list you are in is the default',P('x',{},'l1').listId,'l1');
+    s.eq('"none" on the list chip means none',P('x',{listId:''},'l1').listId,null);
+  }
+  {
+    // Driven through the create: "title, Enter" is undated on the Dashboard.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"}]');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbListId=null;_tbQaReset(true);_tbQa.text="call baber"');
+    await a.run('window.tbCreateFromQuick("call baber",false,true)');
+    s.eq('created',a.run('tbItems.length'),1);
+    s.eq('with NO date — not today',a.run('tbItems[0].date'),null);
+    s.eq('the composer is cleared',a.run('_tbQa.text'),'');
+    s.eq('and still open for the next one',a.run('_tbQa.open'),true);
+    a.run('_tbQa.dateSet=true;_tbQa.date="2026-09-27";_tbQa.assign=["u-afnan"];_tbQa.text="shoot prep"');
+    await a.run('window.tbCreateFromQuick("shoot prep",false,true)');
+    s.eq('a picked date is used',a.run('tbItems[1].date'),'2026-09-27');
+    s.eq('and a picked person',J(a.run('tbItems[1].assigneeUids')),J(['u-ammar','u-afnan']));
+    // Plain text from elsewhere (not the composer) ignores stale chips.
+    a.run('_tbQa.dateSet=true;_tbQa.date="2027-01-01"');
+    await a.run('window.tbCreateFromQuick("plain",false,false)');
+    s.eq('a caller that is not the composer gets the grammar alone',a.run('tbItems[2].date'),null);
+  }
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"},{uid:"u-afnan",username:"afnan"},{uid:"u-dani",username:"daniyal"},{uid:"u-must",username:"mustafa"}]');
+    a.run('tbLists=[{id:"l1",title:"Winter Drop 2027",kind:"shared"}];_tbQaReset(true)');
+    const html=a.run('_tbComposer("add something")');
+    s.ok('the composer opens with its chip row',/tb-quick open/.test(html)&&/tb-qarow/.test(html));
+    s.ok('today, tomorrow and next mon',/>today</.test(html)&&/>tomorrow</.test(html)&&/>next mon</.test(html));
+    s.ok('a date field',/type="date" class="tb-qadate"/.test(html));
+    const assignRow=(/<span class="tb-qalabel">assign<\/span>([\s\S]*?)<\/div>/.exec(html)||['',''])[1];
+    s.eq('five people on the assign row: you, three to pick, one not set up',
+      (assignRow.match(/<button /g)||[]).length,5);
+    s.ok('you are always on it',/tb-qachip on tb-qachip-me" disabled/.test(html));
+    s.ok('someone not set up says so',/tb-qachip tb-qachip-off" disabled title="Saim is not set up yet"/.test(html));
+    s.ok('a list and a lane',/id="tb-qa-list"/.test(html)&&/id="tb-qa-lane"/.test(html));
+    s.ok('the list offers the drop',/Winter Drop 2027/.test(html));
+    s.ok('chip clicks keep the caret in the title',/onpointerdown="event.preventDefault\(\)"/.test(html));
+    // Next Mon is the Monday AFTER today, never today itself.
+    a.run('_tbToday=function(){return "2026-09-28";}');   // a Monday
+    s.ok('"next mon" on a Monday is a week out',/tbQaDate\('2026-10-05'\)"[^>]*>next mon</.test(a.run('_tbQaChipsHTML()')));
+    // Escape: clears first, closes second.
+    a.run('_tbQa.text="half";_tbQa.open=true');
+    a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
+    s.eq('Escape clears a half-typed title first',a.run('_tbQa.text+"|"+_tbQa.open'),'|true');
+    a.run('window.tbQuickKey({key:"Escape",preventDefault(){}})');
+    s.eq('and closes on the second press',a.run('_tbQa.open'),false);
+  }
+
+  s.section('needs a date: undated items I own OR am assigned to');
+  {
+    const a=loadApp({files:FILES});
+    const it=o=>Object.assign({status:'open',kind:'gate',visibility:'shared',steps:[],myDay:{},date:null,title:o.id},o);
+    const ITEMS=[
+      it({id:'mine',ownerUid:'u-ammar',assigneeUids:['u-ammar']}),
+      it({id:'onIt',ownerUid:'u-must',assigneeUids:['u-must','u-afnan']}),     // the seed's bulk-landing shape
+      it({id:'notMine',ownerUid:'u-must',assigneeUids:['u-must']}),
+      it({id:'dated',ownerUid:'u-must',assigneeUids:['u-afnan'],date:'2026-10-02'})
+    ];
+    const ids=x=>x.map(i=>i.id);
+    s.eq('Afnan sees the undated gate he is on',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-afnan")'))),J(['onIt']));
+    s.eq('Mustafa sees both he owns',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-must")'))),J(['notMine','onIt']));
+    s.eq('Ammar sees his own',J(ids(a.run('tbNeedsDate('+J(ITEMS)+',"u-ammar")'))),J(['mine']));
+    const assigned=ids(a.run('tbAssignedToMe('+J(ITEMS)+',"u-afnan","2026-09-26")'));
+    s.eq('Assigned to me does not repeat the undated one',J(assigned),J(['dated']));
   }
 
   s.section('the calendar prefs are cleaned on load');
