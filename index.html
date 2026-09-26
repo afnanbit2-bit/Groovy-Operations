@@ -25,7 +25,7 @@
 </script>
 <!-- flatpickr's base sheet FIRST, so css/main.css restyles it to the app's tokens (The Board, P1). -->
 <link rel="stylesheet" href="/assets/vendor/flatpickr-4.6.13.min.css">
-<link rel="stylesheet" href="/css/main.css?v=20260927v217">
+<link rel="stylesheet" href="/css/main.css?v=20260927v218">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#000000">
 <script>try{if(window.__gvThemeDark)document.querySelector('meta[name="theme-color"]').setAttribute('content','#0E0E10');}catch(e){}</script>
@@ -67,7 +67,7 @@ if('serviceWorker' in navigator){
     <div class="login-input">
       <svg class="login-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 017 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="currentColor"/></svg>
       <input id="l-pass" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" enterkeyhint="go" onkeydown="window._checkCapsLock(event)" onkeyup="window._checkCapsLock(event)">
-      <button type="button" id="pass-fill-btn" class="login-eye login-key" onclick="window.loginFillSaved()" aria-label="Use a saved password" title="Use a saved password" hidden>
+      <button type="button" id="pass-fill-btn" class="login-eye login-key" onclick="window.loginOpenAccounts()" aria-label="Choose an account" title="Choose an account" hidden>
         <svg width="21" height="21" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16.5 6.5l2.5 2.5M14 9l2 2"/></svg>
       </button>
       <button type="button" id="pass-eye-btn" class="login-eye" onclick="window._togglePass()" aria-label="Show password">
@@ -88,6 +88,19 @@ if('serviceWorker' in navigator){
     <button type="submit" class="btn-login" id="login-btn"><span id="login-btn-label">Sign in</span><svg class="login-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
     <div class="login-foot"><span>People</span><i>|</i><span>Products</span><i>|</i><span>Progress</span></div>
   </form>
+  <!-- Choose an account (the key button): OUR sheet, half height, with each
+       account's picture — not Chrome's full-screen list. js/auth.js fills it. -->
+  <div class="login-sheet" id="login-accounts" hidden onclick="if(event.target===this)window.loginCloseAccounts()">
+    <div class="login-sheet-card" role="dialog" aria-labelledby="login-acct-t">
+      <div class="login-sheet-grab" aria-hidden="true"></div>
+      <div class="login-sheet-t" id="login-acct-t">Choose an account</div>
+      <div class="login-acct-list" id="login-acct-list"></div>
+      <div class="login-acct-foot">
+        <button type="button" class="login-link" onclick="window.loginOtherAccount()">Use another account</button>
+        <button type="button" class="login-link" id="login-acct-all" onclick="window.loginAllSaved()">All saved passwords</button>
+      </div>
+    </div>
+  </div>
   <!-- Forgot password: a sheet OVER the screen, not a box pushed into the
        form — the box shoved everything up (Afnan's recording, 27 Sept). -->
   <div class="login-sheet" id="login-help" hidden onclick="if(event.target===this)window.loginForgot(false)">
@@ -203,7 +216,7 @@ window.__vendorFallback=function(url){
 <script src="/js/diagnostics.js?v=20260917type"></script>
 <script src="/js/shared.js?v=20260926v207"></script>
 <script src="/js/print-engine.js?v=20260926v184"></script>
-<script src="/js/auth.js?v=20260927v217"></script>
+<script src="/js/auth.js?v=20260927v218"></script>
 <script src="/js/pos.js?v=20260921emb"></script>
 <script src="/js/embellishments.js?v=20260921emb"></script>
 <script src="/js/hrm.js?v=20260917type"></script>
@@ -217,7 +230,7 @@ window.__vendorFallback=function(url){
 <script src="/js/warehouse-sales.js?v=20260926wh2"></script>
 <script src="/js/notes.js?v=20260917type"></script>
 <script src="/js/boards.js?v=20260921selrail"></script>
-<script src="/js/profile.js?v=20260927v214"></script>
+<script src="/js/profile.js?v=20260927v218"></script>
 <script src="/js/activity.js?v=20260918rep"></script>
 <script src="/js/marketing.js?v=20260918chart"></script>
 <script src="/js/patterns.js?v=20260917label"></script>

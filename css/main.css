@@ -333,6 +333,22 @@ html.ptr-return #scr-login .login-box,html.ptr-return #scr-login .login-box>*{an
 .login-sheet-card p{font-size:15px;line-height:1.55;color:var(--muted);margin:0 0 20px}
 .login-sheet-card p b{color:var(--text)}
 .login-sheet-card .btn-login{margin:0}
+/* Choose an account — rows with the person's picture. The list scrolls
+   inside the sheet, never past half the screen. */
+.login-acct-list{max-height:min(52vh,420px);overflow-y:auto;overscroll-behavior:contain;margin:4px -8px 8px;padding:0 8px}
+.login-acct{display:flex;align-items:center;gap:14px;width:100%;min-height:64px;padding:8px 10px;border:none;background:none;border-radius:14px;color:var(--text);font:inherit;text-align:left;cursor:pointer;transition:background-color .15s,transform .1s}
+.login-acct:active{background:var(--soft);transform:scale(.985)}
+@media (hover:hover) and (pointer:fine){.login-acct:hover{background:var(--hover)}}
+.login-acct-av{position:relative;width:46px;height:46px;flex-shrink:0;border-radius:50%;overflow:hidden;background:var(--soft);border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+.login-acct-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.login-acct-ini{font-weight:700;font-size:16px;color:var(--muted)}
+.login-acct-t{flex:1;min-width:0;display:flex;flex-direction:column}
+.login-acct-n{font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.login-acct-h{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.login-acct-fp{flex-shrink:0;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--soft);color:var(--text)}
+.login-acct-fp svg{width:20px;height:20px}
+.login-acct-foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:6px}
+.login-acct-foot [hidden]{display:none}
 @media (min-width:561px){.login-sheet{align-items:center}.login-sheet-card{border-radius:24px;margin:16px}}
 @media (prefers-reduced-motion:reduce){.login-sheet,.login-sheet-card{transition:none}}
 /* The phone's top bar: logo, bell, avatar — nothing that wraps or falls

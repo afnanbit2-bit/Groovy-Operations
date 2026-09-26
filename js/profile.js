@@ -786,6 +786,30 @@ async function profileBootstrap(){
     }
   }catch(e){/* a denied read, or rules not yet republished — neither is fatal */}
   profileApplyToSession();
+  _profileCacheAccountPhotos();
+}
+// The login screen's "Choose an account" sheet shows each account used on
+// this phone with its picture — but pictures can only be READ once signed
+// in. So after a sign-in, refresh the cached photo of every account on this
+// phone's list from the team directory. One read of user_profiles, only
+// when there is more than just yourself to refresh; never awaited.
+async function _profileCacheAccountPhotos(){
+  try{
+    if(typeof window._loginRememberAccount!=='function'||typeof window._loginAccountsKnown!=='function')return;
+    let known=window._loginAccountsKnown();
+    const me=profileFor(session.uid);
+    // Someone still signed in from before this list existed: add them, if
+    // they asked to be remembered on this phone.
+    let kept=false;try{kept=localStorage.getItem('groovy-keep-signed-in')==='1';}catch(_){}
+    if(kept&&!known.includes(session.u)){window._loginRememberAccount(session.u,session.name);known=window._loginAccountsKnown();}
+    if(known.includes(session.u))window._loginRememberAccount(session.u,(me&&me.displayName)||session.name,me&&me.photoUrl?_profPhotoUrl(me.photoUrl):null,true);
+    if(!known.some(u=>u!==session.u))return;
+    await loadProfiles();
+    known.forEach(u=>{
+      const p=profileForUsername(u);if(!p)return;
+      window._loginRememberAccount(u,p.displayName||'',p.photoUrl?_profPhotoUrl(p.photoUrl):null,true);
+    });
+  }catch(_){}
 }
 async function _profileSeedRow(){
   const row={uid:session.uid,username:session.u,updatedAt:Date.now()};

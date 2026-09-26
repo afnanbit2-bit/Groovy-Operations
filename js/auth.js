@@ -138,7 +138,7 @@ window.doLogin=async function(){
     // "Save password?"). Never awaited, never stored by us, and only when
     // the person asked to be remembered — an unticked box on a shared PC
     // must not leave a saved password behind.
-    if(keep)_loginOfferSave(u,p,def.name);
+    if(keep){_loginOfferSave(u,p,def.name);window._loginRememberAccount(def.u,def.name);}
     loginInProgress=false;
     btn.classList.remove('busy');btn.classList.add('ok');
     {const lab=document.getElementById('login-btn-label');if(lab)lab.textContent='Signed in';}
@@ -668,13 +668,13 @@ try{
   _gvPullToRefresh(document.getElementById('scr-lock'),document.getElementById('lock-ptr'),_ptrRefresh);
 }catch(_){}
 
-window.loginForgot=function(open){
-  const h=document.getElementById('login-help');
+function _loginSheet(h,open){
   if(!h)return;
   const show=open===undefined?h.hidden:!!open;
   if(show){h.hidden=false;requestAnimationFrame(()=>h.classList.add('open'));}
   else{h.classList.remove('open');setTimeout(()=>{if(!h.classList.contains('open'))h.hidden=true;},260);}
-};
+}
+window.loginForgot=function(open){_loginSheet(document.getElementById('login-help'),open);};
 
 // The theme toggle on the login screen: Light → Dark → System. Writes the
 // same key Profile → Appearance does, so the two can never disagree.
@@ -820,9 +820,9 @@ window.lockDisable=function(){
 };
 
 // ── The login screen: sign in with the fingerprint ──
-window.loginWithFingerprint=async function(){
+window.loginWithFingerprint=async function(pick){
   const uEl=document.getElementById('l-user');
-  const typed=uEl?uEl.value.trim().toLowerCase():'';
+  const typed=typeof pick==='string'&&pick?pick:(uEl?uEl.value.trim().toLowerCase():'');
   const all=_passkeyAll();
   const u=passkeyFor(typed)?typed:(passkeyFor(_authRead('groovy_remembered_user'))?_authRead('groovy_remembered_user'):Object.keys(all)[0]);
   const rec=passkeyFor(u);
@@ -857,6 +857,7 @@ window.loginWithFingerprint=async function(){
     if(!def){await signOut(auth);throw new Error('this account is not set up in Groovy Ops');}
     session={...def,uid:c.user.uid};
     _authStore('groovy-keep-signed-in','1');_authStore('groovy_remembered_user',def.u);
+    window._loginRememberAccount(def.u,def.name);
     loginInProgress=false;
     if(btn){btn.classList.remove('busy');btn.classList.add('ok');}
     _loginSetBusy(true,'Signed in');
@@ -891,6 +892,112 @@ function _loginPaintFinger(){
 // The key inside the password field: ask the phone's password manager for
 // the password it saved, then sign in — one tap. Chrome can require the
 // fingerprint before it hands it over (its own setting).
+// ── Accounts on this phone: our own "Choose an account" sheet ──
+// Afnan, 27 Sept, recording 3: the key opened CHROME's "Sign in as" list —
+// full-screen, and blank grey avatars for everyone whose password Chrome
+// had saved on its own. That window belongs to Chrome: a site cannot size,
+// style or add pictures to it. So the key opens OUR sheet instead: half
+// height, one row per account used on this phone, with the profile picture.
+//   • The list is who has signed in HERE with Remember me (recorded on each
+//     sign-in) — Chrome's own list cannot be read by any site.
+//   • Pictures cannot be fetched before sign-in (profiles need a signed-in
+//     reader), so they are cached on this device: after any sign-in the
+//     profile module refreshes the photo of every account on this list from
+//     the team directory (_profileCacheAccountPhotos).
+//   • A row with a fingerprint key on this phone signs straight in; any other
+//     row fills the username and puts the cursor in the password, where the
+//     phone's password manager offers that account's saved password.
+//   • Chrome's full list is still one tap away ("All saved passwords").
+const _ACCTS_KEY='groovy-accounts';
+function _loginAccounts(){try{return JSON.parse(_authRead(_ACCTS_KEY)||'{}')||{};}catch(_){return{};}}
+function _loginPhotoOk(u){return/^https:\/\/res\.cloudinary\.com\/[^\s"'<>]+$/.test(String(u||''));}
+// photo: a URL to set, null to clear, undefined to keep. `refresh` = a
+// directory update, not a sign-in, so the list order (most recent sign-in
+// first) is not disturbed.
+window._loginRememberAccount=function(u,name,photo,refresh){
+  if(!u||!USER_DEFS.some(x=>x.u===u))return;
+  const all=_loginAccounts();const prev=all[u];
+  if(refresh&&!prev)return;           // a refresh never ADDS someone to this phone's list
+  const p=prev||{};
+  all[u]={name:String(name||p.name||u).slice(0,60),photo:_loginPhotoOk(photo)?photo:(photo===null?'':p.photo||''),at:refresh?(p.at||0):Date.now()};
+  _authStore(_ACCTS_KEY,JSON.stringify(all));
+  try{_loginPaintKey();}catch(_){}
+};
+window._loginAccountsKnown=function(){return Object.keys(_loginAccounts());};
+window.loginForgetAccount=function(u){
+  const all=_loginAccounts();delete all[u];_authStore(_ACCTS_KEY,JSON.stringify(all));
+  _loginRenderAccounts();_loginPaintKey();
+  if(!Object.keys(all).length)_loginSheet(document.getElementById('login-accounts'),false);
+};
+function _loginAccountRows(){
+  const all=_loginAccounts(),first=_authRead('groovy_remembered_user');
+  return Object.keys(all).filter(u=>USER_DEFS.some(x=>x.u===u))
+    .map(u=>Object.assign({u},all[u]))
+    .sort((a,b)=>(b.u===first)-(a.u===first)||(b.at||0)-(a.at||0));
+}
+function _loginAvatarEl(r){
+  const wrap=document.createElement('span');wrap.className='login-acct-av';
+  const ini=document.createElement('span');ini.className='login-acct-ini';
+  ini.textContent=String(r.name||r.u).trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  wrap.appendChild(ini);
+  if(_loginPhotoOk(r.photo)){
+    const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
+    img.src=typeof _profAvatarUrl==='function'?_profAvatarUrl(r.photo,64):r.photo;
+    img.onerror=()=>img.remove();
+    wrap.appendChild(img);
+  }
+  return wrap;
+}
+function _loginRenderAccounts(){
+  const list=document.getElementById('login-acct-list');if(!list)return;
+  list.textContent='';
+  _loginAccountRows().forEach(r=>{
+    const row=document.createElement('button');row.type='button';row.className='login-acct';
+    row.appendChild(_loginAvatarEl(r));
+    const t=document.createElement('span');t.className='login-acct-t';
+    const n=document.createElement('span');n.className='login-acct-n';n.textContent=r.name||r.u;
+    const h=document.createElement('span');h.className='login-acct-h';h.textContent='@'+r.u;
+    t.appendChild(n);t.appendChild(h);row.appendChild(t);
+    if(passkeyFor(r.u)&&_lockSupported()){
+      const b=document.createElement('span');b.className='login-acct-fp';b.title='Fingerprint sign-in';
+      b.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M6.5 5.5A8 8 0 0120 12v1.5"/><path d="M4 9.5A8 8 0 004 13c0 2 .5 3.6 1.3 5"/><path d="M8.3 20.3A11 11 0 017 13a5 5 0 0110 0v1"/><path d="M12 13c0 3.2.9 5.8 2.4 7.8"/><path d="M9.6 9.2A3 3 0 0115 11"/></svg>';
+      row.appendChild(b);
+    }
+    row.onclick=()=>window.loginPickAccount(r.u);
+    list.appendChild(row);
+  });
+  const all=document.getElementById('login-acct-all');
+  if(all)all.hidden=!(typeof window.PasswordCredential==='function'&&navigator.credentials&&navigator.credentials.get);
+}
+window.loginPickAccount=function(u){
+  const sheet=document.getElementById('login-accounts');
+  const uEl=document.getElementById('l-user'),pEl=document.getElementById('l-pass');
+  if(uEl)uEl.value=u;if(pEl)pEl.value='';
+  _loginSheet(sheet,false);
+  if(passkeyFor(u)&&_lockSupported()){setTimeout(()=>window.loginWithFingerprint(u),200);return;}
+  setTimeout(()=>{if(pEl)pEl.focus();},260);
+};
+window.loginOpenAccounts=function(){
+  if(!_loginAccountRows().length){window.loginFillSaved();return;}
+  _loginRenderAccounts();
+  _loginSheet(document.getElementById('login-accounts'),true);
+};
+window.loginCloseAccounts=function(){_loginSheet(document.getElementById('login-accounts'),false);};
+window.loginOtherAccount=function(){
+  _loginSheet(document.getElementById('login-accounts'),false);
+  const uEl=document.getElementById('l-user'),pEl=document.getElementById('l-pass');
+  if(uEl)uEl.value='';if(pEl)pEl.value='';
+  setTimeout(()=>{if(uEl)uEl.focus();},260);
+};
+window.loginAllSaved=function(){
+  _loginSheet(document.getElementById('login-accounts'),false);
+  setTimeout(()=>window.loginFillSaved(),200);
+};
+function _loginPaintKey(){
+  const k=document.getElementById('pass-fill-btn');if(!k)return;
+  const chrome=typeof window.PasswordCredential==='function'&&!!(navigator.credentials&&navigator.credentials.get);
+  k.hidden=!(chrome||_loginAccountRows().length);
+}
 window.loginFillSaved=async function(){
   try{
     const c=await navigator.credentials.get({password:true,mediation:'required'});
@@ -902,8 +1009,7 @@ window.loginFillSaved=async function(){
 };
 (function(){
   try{
-    const k=document.getElementById('pass-fill-btn');
-    if(k)k.hidden=!(typeof window.PasswordCredential==='function'&&navigator.credentials&&navigator.credentials.get);
+    _loginPaintKey();
     _loginPaintFinger();
   }catch(_){}
 })();
