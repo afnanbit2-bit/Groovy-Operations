@@ -1653,7 +1653,7 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
     await b.commit();
     _tbLiveRemember('items_own',ref.id,data);
     _tbUpsert(tbItems,tbDecodeItem(Object.assign({id:ref.id},data)));
-    if(openAfter)_tbOpenItemId=ref.id;
+    if(openAfter){ _tbFlushNotes(); _tbOpenItemId=ref.id; }
     // Ready for the next one: still open, caret back in it.
     if(fromComposer)_tbQaRefocus=true;
     _tbRepaint();
@@ -1729,24 +1729,40 @@ window.tbToggleLock=async function(id){
 
 // Notes autosave, 800ms after the last keystroke (spec s8.3). Last write
 // wins; there is no merge in v1 and the drawer says nothing about one.
-let _tbNotesTimer=null;
+//
+// THE PENDING TEXT CARRIES THE ITEM IT WAS TYPED IN (review of d38b96c).
+// The timer used to save to whichever item was open WHEN IT FIRED, so
+// typing in one item's notes and opening another within 800ms wrote the
+// first item's text over the second's. Opening or closing an item now
+// flushes what is pending to its own item first.
+let _tbNotesTimer=null,_tbNotesPend=null;
 window.tbNotesInput=function(v){
   const st=document.getElementById('tb-d-save');
   if(st)st.textContent='unsaved…';
+  _tbNotesPend={id:_tbOpenItemId,v:String(v||'')};
   if(_tbNotesTimer)clearTimeout(_tbNotesTimer);
-  _tbNotesTimer=setTimeout(()=>window.tbSaveNotes(v),800);
+  _tbNotesTimer=setTimeout(_tbFlushNotes,800);
 };
-window.tbSaveNotes=async function(v){
-  const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
-  if(!it||String(it.notes||'')===String(v||''))return;
-  const st=document.getElementById('tb-d-save');
-  if(st)st.textContent='saving…';
+function _tbFlushNotes(){
+  if(_tbNotesTimer){ clearTimeout(_tbNotesTimer); _tbNotesTimer=null; }
+  const p=_tbNotesPend;_tbNotesPend=null;
+  return(p&&p.id)?window.tbSaveNotes(p.v,p.id):Promise.resolve();
+}
+window.tbSaveNotes=async function(v,id){
+  const it=tbItems.filter(i=>i.id===(id||_tbOpenItemId))[0];
+  const val=String(v||'');
+  if(!it||String(it.notes||'')===val)return;
+  const prev=it.notes;
+  const status=t=>{ if(_tbOpenItemId!==it.id)return; const e=document.getElementById('tb-d-save'); if(e)e.textContent=t; };
+  status('saving…');
+  // In memory first, like every other field, so reopening the item before
+  // the write resolves shows what was typed (offline it never resolves).
+  it.notes=val;
   const ok=await _tbTry(async()=>{
-    await _tbCommit(it.id,{notes:String(v||''),updatedAt:_tbNow(),lastActivityAt:_tbNow()},null);
-    it.notes=String(v||'');
+    await _tbCommit(it.id,{notes:val,updatedAt:_tbNow(),lastActivityAt:_tbNow()},null);
   },'save the notes');
-  const st2=document.getElementById('tb-d-save');
-  if(st2)st2.textContent=ok?'saved':'save failed';
+  if(!ok&&it.notes===val)it.notes=prev;
+  status(ok?'saved':'save failed');
 };
 
 // ── Steps ─────────────────────────────────────────────────────────────
@@ -1898,15 +1914,19 @@ window.tbNewList=async function(kind){
 window.tbOpenList=function(id){ _tbListId=id; _tbRepaint(); };
 window.tbCloseList=function(){ _tbListId=null; _tbRepaint(); };
 window.tbOpenItem=function(id){
+  _tbFlushNotes();
   _tbOpenItemId=id;
   _tbMoveReqOpen=false;_tbShowActivity=false;_tbCloseMentions();
   _tbRepaint();
   // The thread is a subcollection, so it is read when a drawer OPENS —
   // 42 seeded items' threads is not something to pull on every page load.
   // loadTbThread cannot reject, so this needs no .catch.
-  if(id)loadTbThread(id).then(function(){ if(_tbOpenItemId===id)_tbRepaint(); });
+  // Through the live repaint, which waits while someone is typing: the
+  // thread arriving used to rebuild the pane under a title or a comment
+  // being written (review of d38b96c).
+  if(id)loadTbThread(id).then(function(){ if(_tbOpenItemId===id)_tbLiveRepaint(); });
 };
-window.tbCloseItem=function(){ _tbOpenItemId=null; _tbCloseMentions(); _tbRepaint(); };
+window.tbCloseItem=function(){ _tbFlushNotes(); _tbOpenItemId=null; _tbCloseMentions(); _tbRepaint(); };
 
 // ── Notifications ─────────────────────────────────────────────────────
 // Everything goes through here, and here alone — see tbNotifPayload for

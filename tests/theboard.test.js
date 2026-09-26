@@ -1535,6 +1535,88 @@ module.exports=async function(){
     s.ok('on the Board it repaints as before',/tb-wrap/.test(a.run('document.getElementById("main-content").innerHTML')));
   }
 
+  // The notes timer saved to whichever item was open WHEN IT FIRED, so
+  // typing in one item and opening another within 800ms wrote the first
+  // item's text over the second's (review of d38b96c).
+  s.section('item notes save to the item they were typed in');
+  {
+    const mk=()=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash'});
+      a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+      a.run('tbItems=["A","B"].map(function(k){return tbDecodeItem({id:k,title:k,notes:k+" notes",status:"open",'
+        +'ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"shared",date:null});});'
+        +'tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+      a.run('var __c=[];_tbCommit=async function(id,d){__c.push([id,d.notes]);};loadTbThread=async function(){}');
+      return a;
+    };
+    const settle=()=>new Promise(r=>setTimeout(r,0));
+    {
+      const a=mk();
+      a.run('window.tbOpenItem("A");window.tbNotesInput("typed in A");window.tbOpenItem("B")');
+      await settle();
+      s.eq('opening another item saves the notes to the one they were typed in',J(a.run('__c')),J([['A','typed in A']]));
+      s.eq('the other item keeps its own',a.run('tbItems.filter(function(i){return i.id==="B";})[0].notes'),'B notes');
+      await new Promise(r=>setTimeout(r,900));
+      s.eq('and the timer does not fire a second time',a.run('__c.length'),1);
+      s.ok('and nothing is ever written to the other item',!a.run('__c').some(x=>x[0]==='B'));
+    }
+    {
+      const a=mk();
+      a.run('window.tbOpenItem("A");window.tbNotesInput("typed in A")');
+      await new Promise(r=>setTimeout(r,900));
+      s.eq('left alone, the timer saves to the same item',J(a.run('__c')),J([['A','typed in A']]));
+    }
+    {
+      const a=mk();
+      a.run('window.tbOpenItem("A");window.tbNotesInput("typed then closed");window.tbCloseItem()');
+      await settle();
+      s.eq('closing the pane saves what was typed',J(a.run('__c')),J([['A','typed then closed']]));
+      a.run('window.tbOpenItem("A")');
+      s.ok('and reopening it shows it straight away',/typed then closed/.test(a.run('_tbDrawer()')));
+    }
+    {
+      // The pending save looks its item up by id, so a deleted item gets
+      // nothing written to it -- and a REFUSED delete still keeps the notes.
+      const a=mk();
+      a.run('window.tbOpenItem("B");window.tbNotesInput("about to go")');
+      a.run('deleteDoc=async function(){}');
+      await a.run('window.tbDeleteItem("B")');
+      await new Promise(r=>setTimeout(r,900));
+      s.eq('nothing is written to an item that was deleted',a.run('__c.length'),0);
+      const b=mk();
+      b.run('window.tbOpenItem("B");window.tbNotesInput("kept after a refusal")');
+      // A refused write re-reads the Board; in a browser that read brings B
+      // back, here it would return nothing, so it is held still.
+      b.run('deleteDoc=async function(){throw new Error("Missing or insufficient permissions");};loadTbData=async function(){}');
+      await b.run('window.tbDeleteItem("B")');
+      await new Promise(r=>setTimeout(r,900));
+      s.eq('a refused delete still saves what was typed',J(b.run('__c')),J([['B','kept after a refusal']]));
+    }
+  }
+
+  // The thread arriving after an item opens repainted the pane with no
+  // busy check, under a title or a comment being typed (review of d38b96c).
+  s.section('the thread arriving does not repaint under someone typing');
+  {
+    let release;
+    const gate=new Promise(r=>{release=r;});
+    const a=loadApp({files:FILES,currentPage:'tb-dash',globals:{__g:gate}});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[tbDecodeItem({id:"A",title:"a",status:"open",ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"shared"})];'
+      +'tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[]');
+    a.run('var __rp=0;loadTbThread=function(){return __g;}');
+    a.run('window.tbOpenItem("A")');
+    a.run('var __r0=_tbRepaint;_tbRepaint=function(){__rp++;return __r0.apply(this,arguments);};_tbEditableFocus=function(){return true;}');
+    release();await gate;await new Promise(r=>setTimeout(r,0));
+    s.eq('while a field has focus, the thread waits',a.run('__rp'),0);
+    s.eq('and is marked to land later',a.run('_tbLivePending'),true);
+    // Positive control -- and it stops the retry timer re-arming for good,
+    // which a field that never loses focus (only possible here) would do.
+    a.run('_tbEditableFocus=function(){return false;};_tbLiveFlush()');
+    s.eq('once the field is left, it lands',a.run('__rp'),1);
+    a.run('clearTimeout(_tbLiveTimer);_tbLiveTimer=null');
+  }
+
   // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
   s.section('the composer: no date means undated, never today');
   {
