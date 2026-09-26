@@ -243,6 +243,26 @@ function DRIVE(){
       L(/The Board/.test((document.getElementById('sidebar')||{}).textContent||''),'the sidebar says The Board');
       L(((document.querySelector('.tb-rail')||{}).textContent||'').indexOf('Dashboard')>-1,'the rail says Dashboard');
 
+      // ── the rail (session 2, P1.2): icons draw, lists open, the header ──
+      window.showPage('tb-dash');
+      await wait(300);
+      var ic=document.querySelector('.tb-rail svg.tb-ic use');
+      var icb=ic&&ic.getBBox?ic.getBBox():{width:0};
+      L(!!ic&&icb.width>0,'a rail icon draws from the vendored sprite ('+(icb.width||0)+'px)');
+      L(!!document.querySelector('.tb-head .tb-h1'),'the screen opens with its header row');
+      L(!document.querySelector('.tb-rail #tb-search')&&!!document.querySelector('.tb-head #tb-search'),'the search box lives in the header, not the rail');
+      var rl=document.querySelector('.tb-rail .tb-raillist');
+      L(!!rl,'the rail lists the lists');
+      if(rl){
+        act('open a list from the rail',function(){document.querySelector('.tb-rail .tb-raillist').click();});
+        await wait(300);
+        L(currentPage==='tb-lists'&&!!_tbListId,'a rail list opens that list ('+currentPage+', '+_tbListId+')');
+        L(!!document.querySelector('.tb-rail .tb-raillist.on'),'and is the current rail entry');
+        act('the Lists header',function(){document.getElementById('tb-rail-tb-lists').click();});
+        await wait(300);
+        L(!_tbListId&&!!document.querySelector('.tb-listcard'),'the Lists header opens the overview');
+      }
+
       // ── people: the whole team resolves (session 2, P0.2) ──
       window.showPage('tb-dash');
       await wait(300);

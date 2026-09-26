@@ -52,10 +52,10 @@ const TB_NAME='The Board';
 const TB_PAGES=['tb-dash','tb-calendar','tb-lists','tb-inbox'];
 const TB_HOME='tb-dash';
 const _TB_RAIL=[
-  {id:'tb-dash',     label:'Dashboard'},
-  {id:'tb-calendar', label:'Calendar'},
-  {id:'tb-lists',    label:'Lists'},
-  {id:'tb-inbox',    label:'Inbox'}
+  {id:'tb-dash',     label:'Dashboard', icon:'layout-dashboard'},
+  {id:'tb-calendar', label:'Calendar',  icon:'calendar'},
+  {id:'tb-lists',    label:'Lists',     icon:'list-todo'},
+  {id:'tb-inbox',    label:'Inbox',     icon:'inbox'}
 ];
 
 // ── Icons (session 2, P1.1) ───────────────────────────────────────────
@@ -3305,8 +3305,8 @@ window.tbFocusSearch=function(){
 let _tbSearchFocus=false;
 
 function _tbSearchBox(){
-  return'<div class="tb-searchwrap">'
-    +'<input id="tb-search" class="tb-search" type="search" autocomplete="off"'
+  return'<div class="tb-searchwrap">'+_tbIcon('search','sm')
+    +'<input id="tb-search" class="tb-search" type="search" autocomplete="off" aria-label="Search The Board"'
       +' placeholder="search titles, notes and steps"'
       +' value="'+_tbEsc(_tbQuery)+'"'
       +' oninput="window.tbSearchInput(this.value)">'
@@ -3871,28 +3871,109 @@ function _tbRepaint(reload){
   }
 }
 
-/** The rail + content frame every Board screen sits in. */
+/** The rail's count pills (session 2, P1.2). Pure.
+ *  Dashboard = what needs you TODAY: overdue + due today, for you.
+ *  Calendar  = your open dated items in this Mon-Sun week.
+ *  The inbox count is NOT here: it is painted live by _tbPaintBadges from
+ *  the notification listener, so it moves without a repaint. */
+function tbRailCounts(items,uid,today){
+  const over=tbOverdue(items,uid,today).length;
+  const due=tbDueToday(items,uid,today).length;
+  const ws=tbWeekStart(today),we=ws?_tbDayAdd(ws,6):'';
+  const week=ws?(items||[]).filter(i=>i&&_tbOpen(i)&&_tbMine(i,uid)&&i.date&&i.date>=ws&&i.date<=we).length:0;
+  return{dash:over+due,over:over,due:due,week:week};
+}
+
+/** One rail entry. The label is ALWAYS in the markup (a tablet hides it
+ *  with CSS and keeps it as the title), so the rail reads the same to a
+ *  screen reader at every width. */
+function _tbRailBtn(o){
+  return'<button class="tb-railbtn'+(o.cls?' '+o.cls:'')+(o.on?' on':'')+'"'
+    +(o.id?' id="'+_tbEsc(o.id)+'"':'')
+    +(o.title?' title="'+_tbEsc(o.title)+'"':'')
+    +(o.on?' aria-current="page"':'')
+    +' onclick="'+o.onclick+'">'
+    +_tbIcon(o.icon)
+    +(o.labelHtml!=null?o.labelHtml:'<span class="tb-raillabel">'+_tbEsc(o.label)+'</span>')
+    +(o.pill||'')
+    +'</button>';
+}
+/** A count pill. Empty renders nothing visible (`:empty` hides it), so a
+ *  zero is said by saying nothing -- the Mood Boards rail rule. */
+function _tbRailPill(n,cls,title,id){
+  return'<span class="tb-railpill'+(cls?' '+cls:'')+'"'
+    +(id?' id="'+id+'"':'')
+    +(title&&n?' title="'+_tbEsc(title)+'"':'')+'>'+(n?_tbEsc(n>99?'99+':String(n)):'')+'</span>';
+}
+window.tbRailLists=function(){
+  // The Lists header always means the OVERVIEW; a list left open is the
+  // entry under it, not what the header should reopen.
+  _tbListId=null;
+  if(typeof showPage==='function')showPage('tb-lists'); else window.showPage('tb-lists');
+};
+
+/** The rail + content frame every Board screen sits in (session 2, P1.2).
+ *  Desktop (>=1024): a 240px rail -- icons, labels, count pills, a Lists
+ *  group with every list and its open count, "+ New list" and Settings at
+ *  the foot -- beside the content, which stops at 960px (the calendar
+ *  keeps the full width: it is a grid). Tablet (640-1023): the same rail,
+ *  56px and icon-only, the lists behind the Lists entry. Phone (<640): a
+ *  strip across the top, icon over label. The search box and the ? moved
+ *  out of the rail into a header row on every screen, so the rail is only
+ *  navigation. The third pane (the item detail) arrives with P1.4. */
 function _tbShell(page,body){
-  const tabs=_TB_RAIL.map(t=>
-    '<button class="tb-railbtn'+(t.id===page?' on':'')+'" id="tb-rail-'+_tbEsc(t.id)+'"'
-    +' onclick="window.showPage(\''+_tbEsc(t.id)+'\')">'+_tbEsc(t.label)
-    // The second of the three surfaces. Filled by _tbPaintBadges, which
-    // the live listener calls, so it moves without a repaint.
-    +(t.id==='tb-inbox'?'<span class="tb-railn" id="tb-rail-n"></span>':'')
-    +'</button>'
-  ).join('');
-  return'<div class="tb-wrap">'
-    +'<div class="tb-rail">'+tabs
-      // Spec s10: ONE box. It lives in the rail so it is on every screen,
-      // and `/` focuses it from anywhere on the board.
-      +_tbSearchBox()
-      +'<button class="tb-helpbtn" title="keyboard shortcuts"'
-        +' onclick="window.tbToggleHelp()">?</button>'
-      // Board owners only: the seed and, later, the markers.
-      +(_tbIsBoardOwner()?'<button class="tb-setbtn" id="tb-settings-btn" title="Board Settings"'
-        +' onclick="window.tbToggleSettings()">Settings</button>':'')
+  const me=_tbMe(),today=_tbToday();
+  const c=tbLoaded?tbRailCounts(tbItems,me,today):{dash:0,over:0,due:0,week:0};
+  const listOpen=page==='tb-lists'&&!!_tbListId;
+  const go=id=>'window.showPage(\''+_tbEsc(id)+'\')';
+  const byId={};_TB_RAIL.forEach(t=>{byId[t.id]=t;});
+  const nav=t=>{
+    let pill='';
+    if(t.id==='tb-dash')pill=_tbRailPill(c.dash,c.over?'tb-pill-over':'',
+      [c.over?c.over+' overdue':'',c.due?c.due+' due today':''].filter(Boolean).join(' · '));
+    else if(t.id==='tb-calendar')pill=_tbRailPill(c.week,'',c.week+' on you this week');
+    // The live unread count: filled by _tbPaintBadges, the id is what the
+    // listener paints into. Keeps its old id and class so nothing that
+    // reads it moves.
+    else if(t.id==='tb-inbox')pill='<span class="tb-railpill tb-pill-unread tb-railn" id="tb-rail-n"></span>';
+    return _tbRailBtn({id:'tb-rail-'+t.id,on:t.id===page&&!listOpen,icon:t.icon,label:t.label,
+      title:t.label,pill:pill,onclick:t.id==='tb-lists'?'window.tbRailLists()':go(t.id)});
+  };
+  // Lists are drawn only once the board has loaded: a list title is user
+  // text and goes through the hydrate queue, which the loading paint
+  // never runs.
+  const lists=tbLoaded?tbMyLists(tbItems,tbLists,me):[];
+  const listRows=lists.map(l=>_tbRailBtn({cls:'tb-raillist',on:listOpen&&_tbListId===l.id,
+    icon:l.kind==='shared'?'users':'list',labelHtml:_tbSlot(l.title,'tb-raillabel'),
+    pill:_tbRailPill(l.open,'',l.open+' open'),
+    onclick:'window.tbGoList(\''+_tbEsc(l.id)+'\')'})).join('');
+  const rail='<nav class="tb-rail" aria-label="'+_tbEsc(TB_NAME)+'">'
+    +'<div class="tb-railnav">'+['tb-dash','tb-calendar','tb-inbox'].map(id=>nav(byId[id])).join('')+'</div>'
+    +'<div class="tb-railgroup">'+nav(byId['tb-lists'])
+      +(listRows?'<div class="tb-raillists">'+listRows+'</div>':'')
     +'</div>'
-    +'<div class="tb-main">'+body+'</div>'
+    +'<div class="tb-railfoot">'
+      // Private by default: a list made from the rail is yours until you
+      // share it. Team lists are made from the Lists screen's Team "+ New",
+      // so nothing becomes visible to four other people by accident.
+      +_tbRailBtn({id:'tb-rail-newlist',cls:'tb-railnew',icon:'plus',label:'New list',
+        title:'New private list',onclick:'window.tbNewList(\'private\')'})
+      // Board owners only: the seed and, later, the markers.
+      +(_tbIsBoardOwner()?_tbRailBtn({id:'tb-settings-btn',cls:'tb-setbtn',icon:'settings',
+        label:'Settings',title:'Board Settings',onclick:'window.tbToggleSettings()'}):'')
+    +'</div>'
+  +'</nav>';
+  const title=String(_tbQuery||'').trim()?'Search':((byId[page]||byId[TB_HOME]).label);
+  // Spec s10: ONE search box, on every screen; `/` focuses it from anywhere.
+  const head='<div class="tb-head">'
+    +'<h1 class="tb-h1">'+_tbEsc(title)+'</h1>'
+    +_tbSearchBox()
+    +'<button class="tb-helpbtn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts"'
+      +' onclick="window.tbToggleHelp()">'+_tbIcon('circle-help')+'</button>'
+  +'</div>';
+  return'<div class="tb-wrap tb-page-'+_tbEsc(String(page||'').replace(/^tb-/,''))+'">'
+    +rail
+    +'<div class="tb-main">'+head+body+'</div>'
     +'</div>';
 }
 

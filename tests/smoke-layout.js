@@ -370,8 +370,24 @@ const FRAGMENTS={
     // "you do not have access" message and measures a single div, which
     // passes every check while proving nothing.
     app.run("session={uid:'uid-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'}");
-    app.run("tbRenderPage('tb-dash')");
-    return app.el('main-content').innerHTML;
+    // Session 2, P1.2: the rail as the team will see it -- LOADED, with a
+    // count on every entry, an open list, a list whose title is too long
+    // for the rail, and the inbox count the listener paints. Measured at a
+    // tablet width too, where the rail is 56px and icon-only.
+    app.run("tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[]};_tbListId='l1'");
+    app.run("tbLists=[{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'uid-ammar',memberUids:['uid-ammar']},"+
+      "{id:'l2',title:'Denim sampling, trims and the Karachi supplier follow-ups',kind:'private',adminUid:'uid-ammar',memberUids:['uid-ammar']},"+
+      "{id:'l3',title:'Studio',kind:'private',adminUid:'uid-ammar',memberUids:['uid-ammar']}]");
+    app.run("tbItems=[{id:'a',title:'x',status:'open',visibility:'shared',ownerUid:'uid-ammar',assigneeUids:['uid-ammar'],date:'2020-01-01',listId:'l1'},"+
+      "{id:'b',title:'y',status:'open',visibility:'shared',ownerUid:'uid-ammar',assigneeUids:['uid-ammar'],date:_tbToday(),listId:'l2'},"+
+      "{id:'c',title:'z',status:'open',visibility:'shared',ownerUid:'uid-ammar',assigneeUids:['uid-ammar'],date:null,listId:'l2'}]");
+    app.run("_tbHydrateQueue=[]");
+    let out=app.run("_tbShell('tb-lists','<div class=\"tb-empty\"><div class=\"tb-empty-h\">content</div></div>')");
+    app.run('_tbHydrateQueue').forEach(x=>{
+      out=out.replace(new RegExp('(id="'+x.id+'"[^>]*>)'),'$1'+String(x.text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+    });
+    out=out.replace('id="tb-rail-n"></span>','id="tb-rail-n">12</span>');
+    return {widths:[1900,1280,800,420],html:out};
   },
   'profile page (owner, mixed profiles)':()=>{
     const app=loadApp({

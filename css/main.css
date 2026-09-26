@@ -2791,15 +2791,58 @@ span.flatpickr-weekday{color:var(--muted);font-weight:600;background:transparent
 .tb-ic-sm{width:14px;height:14px}
 .tb-ic-lg{width:20px;height:20px}
 
-.tb-wrap{display:flex;align-items:flex-start;gap:18px}
-.tb-rail{display:flex;flex-direction:column;gap:2px;flex:0 0 156px;position:sticky;top:64px}
-.tb-railbtn{display:block;width:100%;text-align:left;min-height:44px;padding:0 12px;
-  background:none;border:none;border-radius:8px;cursor:pointer;
-  font-family:inherit;font-size:14px;font-weight:600;color:var(--muted);
-  transition:background .15s ease-out,color .15s ease-out}
-.tb-railbtn:hover{background:var(--hover);color:var(--text)}
-.tb-railbtn.on{background:var(--dark);color:var(--on-dark)}
-.tb-main{flex:1;min-width:0}
+/* ── The frame (session 2, P1.2): rail | content, the To Do pattern ──
+   Desktop >=1024: a 240px rail beside the content, which stops at 960px
+   (the calendar keeps the full width -- it is a grid). The detail pane is
+   the third column and arrives with P1.4. */
+.tb-wrap{display:grid;grid-template-columns:240px minmax(0,1fr);gap:var(--tb-s24);align-items:start}
+.tb-main{min-width:0;max-width:960px}
+.tb-wrap.tb-page-calendar .tb-main{max-width:none}
+
+.tb-rail{position:sticky;top:0;display:flex;flex-direction:column;gap:var(--tb-s12);
+  min-height:0;max-height:calc(100vh - 88px);max-height:calc(100dvh - 88px)}
+.tb-railnav,.tb-railgroup{display:flex;flex-direction:column;gap:2px;min-height:0}
+.tb-railgroup{flex:0 1 auto}
+/* Many lists scroll INSIDE the group; the nav above and the foot below
+   stay put. */
+.tb-raillists{display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-height:0;
+  padding-left:var(--tb-s12);scrollbar-width:thin}
+.tb-railfoot{display:flex;flex-direction:column;gap:2px;margin-top:auto;
+  padding-top:var(--tb-s8);border-top:1px solid var(--tb-line)}
+.tb-railbtn{position:relative;display:flex;align-items:center;gap:10px;width:100%;
+  min-height:40px;padding:0 8px 0 12px;background:none;border:none;border-radius:var(--tb-r6);
+  cursor:pointer;text-align:left;font-family:inherit;font-size:var(--tb-t14);font-weight:500;
+  color:var(--text);transition:background var(--tb-dur) var(--tb-ease),color var(--tb-dur) var(--tb-ease)}
+.tb-railbtn .tb-ic{color:var(--muted)}
+.tb-railbtn:hover{background:var(--tb-hover)}
+.tb-railbtn:focus-visible{outline:2px solid var(--tb-accent);outline-offset:-2px}
+/* Active: a soft accent row and a 3px accent bar at its left edge. Ink on
+   the accent tint is blue-12 (--tb-accent-ink), never blue-11 -- 4.25:1 is
+   not enough for a label (measured, tb-tokens). */
+.tb-railbtn.on{background:var(--tb-accent-soft);color:var(--tb-accent-ink);font-weight:600}
+.tb-railbtn.on .tb-ic{color:var(--tb-accent)}
+.tb-railbtn.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;
+  border-radius:2px;background:var(--tb-accent)}
+.tb-raillabel{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-raillist{min-height:36px;font-size:var(--tb-t13)}
+.tb-railnew,.tb-setbtn{color:var(--muted)}
+.tb-railnew:hover,.tb-setbtn:hover{color:var(--text)}
+/* Count pills. Neutral by default; red INK only for a count that holds an
+   overdue item (the one red in the product); the unread inbox count on the
+   accent tint. An empty pill is not drawn -- a zero says nothing. */
+.tb-railpill{flex:0 0 auto;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;
+  display:inline-flex;align-items:center;justify-content:center;border-radius:10px;
+  background:var(--tb-n4);color:var(--tb-n11);font-family:var(--tb-mono);font-size:var(--tb-t12);
+  font-weight:600;line-height:1}
+.tb-railpill:empty{display:none}
+.tb-railpill.tb-pill-over{color:var(--tb-over)}
+.tb-railpill.tb-pill-unread{background:var(--tb-a4);color:var(--tb-a12)}
+
+/* The header row every screen now opens with: the screen's name, the one
+   search box, the shortcut list. */
+.tb-head{display:flex;align-items:center;gap:var(--tb-s12);margin-bottom:var(--tb-s16);min-width:0}
+.tb-h1{flex:1 1 auto;min-width:0;margin:0;font-size:var(--tb-t20);font-weight:700;color:var(--text);
+  letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* The unread badge on the sidebar tab. Empty until phase 4 fills it, and
    hidden while empty rather than rendering an empty chip. --count-accent
@@ -2813,24 +2856,37 @@ span.flatpickr-weekday{color:var(--muted);font-weight:600;background:transparent
 .tb-empty-h{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
 .tb-empty-p{font-size:14px;color:var(--muted);line-height:1.6}
 
+/* Tablet 640-1023: the same rail, 56px and icon-only. Labels stay in the
+   markup (and as each button's title); the lists live behind the Lists
+   entry, and a count becomes a small badge on the icon's corner. */
 @media(max-width:1023px){
-  /* The rail docks as a horizontal scroller, the way the Mood Boards tool
-     rail does on a phone -- #mob-nav is full for owners and managers and
-     cannot give up a slot. The designer's role gets the real four-tab bar
-     instead (_renderMobNav, js/shared.js). */
-  .tb-wrap{flex-direction:column;gap:12px}
-  .tb-rail{flex:0 0 auto;flex-direction:row;width:100%;position:static;
+  .tb-wrap{grid-template-columns:56px minmax(0,1fr);gap:var(--tb-s16)}
+  .tb-rail{gap:var(--tb-s8)}
+  .tb-railbtn{justify-content:center;padding:0;min-height:44px}
+  .tb-railbtn .tb-raillabel{display:none}
+  .tb-raillists{display:none}
+  .tb-railbtn.on::before{top:10px;bottom:10px}
+  .tb-railpill{position:absolute;top:3px;right:3px;min-width:16px;height:16px;padding:0 4px;font-size:10px}
+  .tb-empty{padding:28px 0}
+}
+/* Phone <640: a strip across the top, icon over label. The foot keeps
+   Settings (owners) but not "+ New list" -- the Lists screen has both
+   "+ New" buttons, and a strip has room for five, not six. */
+@media(max-width:639px){
+  .tb-wrap{display:block}
+  .tb-rail{position:static;flex-direction:row;gap:2px;max-height:none;margin-bottom:var(--tb-s12);
     overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .tb-rail::-webkit-scrollbar{display:none}
-  .tb-railbtn{width:auto;flex:0 0 auto;min-height:48px;white-space:nowrap}
-  .tb-main{width:100%}
-  .tb-empty{padding:28px 0}
-  .tb-searchwrap{flex:1 1 180px;min-width:140px}
-  .tb-helpbtn{display:none}     /* no keyboard to shortcut */
-  /* Board settings is a DESKTOP tool in P0 (>=1024px): below that the rail
-     is a sideways strip and the button sat past its end (measured by
-     smoke-layout at 420px). P1's rail rebuild gives it a place there. */
-  .tb-setbtn{display:none}
+  .tb-railnav,.tb-railgroup,.tb-railfoot{flex-direction:row;gap:2px;flex:0 0 auto}
+  .tb-railfoot{margin:0;padding:0;border:none}
+  .tb-railbtn{flex:1 0 auto;flex-direction:column;justify-content:center;gap:2px;
+    width:auto;min-width:64px;min-height:52px;padding:4px 6px}
+  .tb-railbtn .tb-raillabel{display:block;flex:0 0 auto;font-size:11px;font-weight:600}
+  .tb-railnew{display:none}
+  .tb-railbtn.on::before{left:12px;right:12px;top:auto;bottom:0;width:auto;height:3px}
+  .tb-railpill{top:2px;right:8px}
+  .tb-head{margin-bottom:var(--tb-s12)}
+  .tb-h1{display:none}
 }
 @media(prefers-reduced-motion:reduce){.tb-railbtn{transition:none}}
 /* ── Store Accounts (js/store-accounts.js, Sept 2026) ──
@@ -3460,9 +3516,6 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   border-radius:7px;font-family:inherit;font-size:13px;color:var(--text)}
 
 /* the inbox */
-.tb-railn{margin-left:8px;font-family:var(--font-mono);font-size:11px;font-weight:700;
-  color:var(--count-accent)}
-.tb-railn:empty{display:none}
 .tb-nfhead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .tb-nfhead .tb-dsech{margin-bottom:0}
 .tb-nfhead .btn-outline{margin-left:auto}
@@ -3499,8 +3552,10 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
    only; the single red stays the overdue count. */
 
 /* search (spec s10: ONE box, in the rail, so it is on every screen) */
-.tb-searchwrap{position:relative;margin-top:10px}
-.tb-search{width:100%;box-sizing:border-box;min-height:40px;padding:0 28px 0 10px;
+.tb-searchwrap{position:relative;flex:0 1 320px;min-width:160px}
+.tb-searchwrap>.tb-ic{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+@media(max-width:639px){.tb-searchwrap{flex:1 1 auto;min-width:0}}
+.tb-search{width:100%;box-sizing:border-box;min-height:40px;padding:0 28px 0 32px;
   background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
   font-family:inherit;font-size:13px;color:var(--text);outline:none}
 .tb-search:focus{border-color:var(--text)}
@@ -3515,10 +3570,13 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-hitwhere{padding:0 0 6px 34px;font-size:11px;color:var(--muted)}
 
 /* the ? overlay */
-.tb-helpbtn{margin-top:8px;min-height:32px;width:32px;background:none;
-  border:1px solid var(--border);border-radius:8px;cursor:pointer;
-  font-family:inherit;font-size:13px;font-weight:700;color:var(--muted)}
+.tb-helpbtn{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+  min-height:40px;width:40px;background:none;border:1px solid var(--border);border-radius:var(--tb-r6);
+  cursor:pointer;color:var(--muted)}
 .tb-helpbtn:hover{background:var(--hover);color:var(--text)}
+/* After the base rule on purpose: a @media override declared EARLIER in the
+   file than the rule it overrides is silently ignored. */
+@media(max-width:639px){.tb-helpbtn{display:none}}     /* no keyboard to shortcut */
 .tb-help{position:fixed;inset:0;z-index:998;display:flex;align-items:center;
   justify-content:center;padding:16px;background:rgba(0,0,0,.45)}
 .tb-helpcard{width:100%;max-width:360px;padding:18px;background:var(--surface);
@@ -3531,9 +3589,6 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
 .tb-helpwhat{font-size:13px;color:var(--muted)}
 .tb-helpcard .btn-outline{margin-top:12px;width:100%}
 /* Board settings (owners only): same overlay as the shortcut list. */
-.tb-setbtn{margin-top:8px;min-height:32px;padding:0 10px;background:none;border:1px solid var(--border);
-  border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer;align-self:flex-start}
-.tb-setbtn:hover{background:var(--hover);color:var(--text)}
 .tb-setcard{max-width:440px}
 .tb-setsec{margin-top:8px;padding-top:10px;border-top:1px solid var(--line)}
 .tb-setsech{font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px}

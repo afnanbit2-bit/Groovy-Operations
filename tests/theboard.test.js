@@ -185,7 +185,10 @@ module.exports=async function(){
     a.run("tbRenderPage('tb-dash')");
     const html=a.el('main-content').innerHTML;
     s.ok('the rail renders',/class="tb-rail"/.test(html));
-    s.ok('with all four screens',/tb-calendar[\s\S]*tb-lists[\s\S]*tb-inbox/.test(html));
+    // Session 2, P1.2: the rail is nav (Dashboard, Calendar, Inbox) then
+    // the Lists group, so the order is no longer the array's.
+    s.ok('with all four screens',['tb-dash','tb-calendar','tb-lists','tb-inbox']
+      .every(id=>html.indexOf('id="tb-rail-'+id+'"')>-1));
     s.ok('the current one marked',/tb-railbtn on/.test(html));
     // A deep link is not a way in: the module re-checks rather than
     // trusting that the nav hid the tab.
@@ -1501,6 +1504,72 @@ module.exports=async function(){
       /<use href="\/assets\/vendor\/lucide-sprite-1\.48\.0\.svg#lucide-calendar">/.test(h));
     s.ok('sized by class, hidden from screen readers',/class="tb-ic tb-ic-sm" aria-hidden="true"/.test(h));
     s.eq('an unknown name draws nothing',a.run('_tbIcon("\\"><img src=x onerror=alert(1)>")'),'');
+  }
+
+  // ══ SESSION 2 — P1.2: THE RAIL ══════════════════════════════════════
+  s.section('the rail: icons, count pills, a Lists group, New list');
+  {
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    // 26 Sep 2026 is a Saturday; its Mon-Sun week is 21-27 Sep.
+    const today='2026-09-26';
+    const I=o=>Object.assign({status:'open',visibility:'shared',ownerUid:'u-ammar',assigneeUids:['u-ammar']},o);
+    const items=[I({id:'o1',date:'2026-09-20'}),I({id:'o2',date:'2026-09-24'}),I({id:'t1',date:today}),
+      I({id:'w1',date:'2026-09-27'}),I({id:'n1',date:'2026-09-29'}),I({id:'u1',date:null}),
+      I({id:'x1',date:today,status:'done'}),I({id:'z1',date:today,assigneeUids:['u-afnan']})];
+    const c=a.run('tbRailCounts('+J(items)+',"u-ammar","'+today+'")');
+    s.eq('Dashboard counts overdue + due today, mine, open',c.dash,3);
+    s.eq('and knows how many of those are overdue',c.over,2);
+    s.eq('Calendar counts my open dated items in this Mon-Sun week',c.week,3);
+    s.eq('nothing mine counts nothing',J(a.run('tbRailCounts([],"u-ammar","'+today+'")')),J({dash:0,over:0,due:0,week:0}));
+
+    a.run("tbLoaded=true;_tbLoadErrors=[];tbConfig={markers:[]}");
+    a.run("tbLists=["+
+      "{id:'l1',title:'Winter Drop 2027',kind:'shared',adminUid:'u-ammar',memberUids:['u-ammar']},"+
+      "{id:'l2',title:'<img src=x onerror=alert(1)>',kind:'private',adminUid:'u-ammar',memberUids:['u-ammar']},"+
+      "{id:'l3',title:'archived one',kind:'private',archived:true,adminUid:'u-ammar',memberUids:['u-ammar']}]");
+    a.run("tbItems="+J([I({id:'a',listId:'l1',date:'2026-09-20'}),I({id:'b',listId:'l1'}),I({id:'c',listId:'l1',status:'done'})]));
+    a.run('_tbListId=null;_tbHydrateQueue=[]');
+    const h=a.run('_tbShell("tb-dash","")');
+    s.ok('every nav entry carries its icon',['layout-dashboard','calendar','inbox','list-todo']
+      .every(n=>h.indexOf('#lucide-'+n+'"')>-1));
+    s.ok('the Dashboard entry is the current one',/class="tb-railbtn on" id="tb-rail-tb-dash"[^>]*aria-current="page"/.test(h));
+    s.ok('its pill counts what needs me, red because one is overdue',
+      /id="tb-rail-tb-dash"[\s\S]*?<span class="tb-railpill tb-pill-over" title="1 overdue">1<\/span>/.test(h));
+    s.ok('the inbox keeps its live slot, empty until the listener paints it',
+      /<span class="tb-railpill tb-pill-unread tb-railn" id="tb-rail-n"><\/span>/.test(h));
+    const railPart=h.slice(h.indexOf('<nav class="tb-rail"'),h.indexOf('</nav>'));
+    s.eq('the Lists group lists every live list, not the archived one',(railPart.match(/tb-railbtn tb-raillist\b/g)||[]).length,2);
+    s.ok('a team list wears the people icon, a private one the list icon',
+      /tbGoList\('l1'\)[\s\S]*?#lucide-users"/.test(railPart)&&/tbGoList\('l2'\)[\s\S]*?#lucide-list"/.test(railPart));
+    s.ok('with its open count',/tbGoList\('l1'\)[\s\S]*?<span class="tb-railpill" title="2 open">2<\/span>/.test(railPart));
+    s.ok('a list title is hydrated, never interpolated',
+      h.indexOf('<img src=x')<0&&a.run('_tbHydrateQueue.some(q=>q.text==="<img src=x onerror=alert(1)>")'));
+    s.ok('+ New list makes a PRIVATE list',/id="tb-rail-newlist"[^>]*onclick="window\.tbNewList\('private'\)"/.test(h));
+    s.ok('the rail holds no search box any more',railPart.indexOf('tb-search')<0);
+    s.ok('the header row opens the screen: its name, the search, the ?',
+      /<div class="tb-head"><h1 class="tb-h1">Dashboard<\/h1><div class="tb-searchwrap">[\s\S]*id="tb-search"[\s\S]*class="tb-helpbtn"/.test(h));
+    s.ok('the frame says which page it is',/class="tb-wrap tb-page-dash"/.test(h));
+
+    a.run("_tbListId='l1'");
+    const hl=a.run('_tbShell("tb-lists","")');
+    s.ok('an open list is the current entry',/class="tb-railbtn tb-raillist on"[^>]*onclick="window\.tbGoList\('l1'\)"/.test(hl));
+    s.ok('and the Lists header is not, while a list is open',!/class="tb-railbtn on" id="tb-rail-tb-lists"/.test(hl));
+    a.run("_tbListId=null");
+    s.ok('with no list open, the Lists header is',/class="tb-railbtn on" id="tb-rail-tb-lists"/.test(a.run('_tbShell("tb-lists","")')));
+    a.run("_tbListId='l1';globalThis.__went=null;window.showPage=function(id){__went=id;};showPage=window.showPage");
+    a.run('window.tbRailLists()');
+    s.eq('the Lists header always opens the OVERVIEW',a.run('[_tbListId,__went].join()'),',tb-lists');
+    a.run("_tbQuery='denim'");
+    s.ok('a search says so in the header',/<h1 class="tb-h1">Search<\/h1>/.test(a.run('_tbShell("tb-dash","")')));
+    a.run("_tbQuery=''");
+
+    const d=loadApp({files:FILES,currentPage:'tb-dash'});
+    d.run('session='+J(SAIM));
+    d.run("tbLoaded=true;tbLists=[];tbItems=[]");
+    const hd=d.run('_tbShell("tb-dash","")');
+    s.ok('a member gets New list but no Settings',/tb-rail-newlist/.test(hd)&&!/tb-settings-btn/.test(hd));
+    s.ok('no lists yet draws no empty group',!/tb-raillists/.test(hd));
   }
 
   s.section('the calendar prefs are cleaned on load');

@@ -135,7 +135,10 @@ module.exports=function(){
     const names=listed.map(x=>x.replace(/'/g,''));
     s.ok('the Board lists icons',names.length>0);
     s.eq('every icon the Board lists is in the sprite',names.filter(n=>ids.indexOf(n)<0).join(','),'');
-    const used=(tb.match(/_tbIcon\('([a-z0-9-]+)'/g)||[]).map(x=>x.slice(8,-1));
+    // `_tbIcon('` is NINE characters. P1.1 sliced eight and never noticed,
+    // because no literal call existed until the P1.2 rail.
+    const used=(tb.match(/_tbIcon\('([a-z0-9-]+)'/g)||[]).map(x=>x.slice(9,-1));
+    s.ok('and it found the literal calls',used.length>0,used.length+' calls');
     s.eq('every icon the Board draws is one it lists',used.filter(n=>names.indexOf(n)<0).join(','),'');
     s.ok('the builder that makes the sprite is in the repo',exists('scripts/build-lucide-sprite.js'));
   }
