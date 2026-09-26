@@ -426,6 +426,16 @@ module.exports=async function(){
     s.eq('the key falls back to the phone\'s own saved-password list',run('__chrome'),1);
   }
 
+  {
+    const fs=require('fs'),path=require('path');
+    const auth=fs.readFileSync(path.join(__dirname,'..','js','auth.js'),'utf8');
+    s.section('swipe down closes a sheet (driven for real in Chromium; wiring held here)');
+    s.ok('both sheets get the drag',/_loginSheetDrag\(document\.getElementById\('login-help'\)\);\s*_loginSheetDrag\(document\.getElementById\('login-accounts'\)\);/.test(auth));
+    s.ok('a third of the height, or a flick, closes it',/if\(dy>h\/3\|\|v>0\.45\)\{/.test(auth));
+    s.ok('the account list only hands over when scrolled to its top',/if\(inList&&list\.scrollTop>0\)\{y0=null;return;\}/.test(auth));
+    s.ok('a touch on a sheet never reaches the pull-to-refresh underneath',/e\.target\.closest\('\.login-sheet'\)/.test(auth)&&(auth.match(/e\.stopPropagation\(\);/g)||[]).length>=2);
+  }
+
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────
   {
     const fs=require('fs'),path=require('path');
