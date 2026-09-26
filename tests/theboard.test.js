@@ -1245,7 +1245,7 @@ module.exports=async function(){
       +'query=function(c){return{p:c.p,w:[].slice.call(arguments,1).join("&")};};'
       +'doc=function(db,c,id){return{p:c+"/"+id};};'
       +'globalThis.__subs=[];globalThis.__dead=0;'
-      +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next});return function(){__dead++;};};'
+      +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next,err:err});return function(){__dead++;};};'
       +'globalThis.__rp=0;_tbRepaint=function(){__rp++;};');
     const snap=docs=>'({docs:'+J(docs)+'.map(d=>({id:d.id,data:()=>d}))})';
     const fire=(re,docs)=>a.run('__subs.filter(x=>'+re+'.test(x.q.w||x.q.p))[0].next('+snap(docs)+')');
@@ -1291,10 +1291,108 @@ module.exports=async function(){
     s.eq('a list shared with me appears',a.run('tbLists.map(l=>l.id).join()'),'l1');
     a.run('__subs.filter(x=>x.q.p==="board_config/markers")[0].next({exists:()=>true,data:()=>({markers:[{label:"launch",date:"2026-10-31"}]})})');
     s.eq('a moved launch date lands',a.run('tbConfig.markers[0].date'),'2026-10-31');
-    // A refused read that has since succeeded is no longer a failure.
-    a.run('_tbLoadErrors=["board_items"]');
+    // A read failure belongs to ITS query (review of 14ad9f3): a snapshot
+    // from another listener used to clear it, so a refused board_items read
+    // became an empty board the moment the lists listener delivered.
+    a.run('_tbLive.bad={items_own:true};_tbLoadErrors=["board_items"]');
+    fire('/memberUids/',[]);
+    s.eq('a LISTS snapshot does not clear an items failure',a.run('_tbLoadErrors.join()'),'board_items');
     fire('/visibility/',[]);
-    s.eq('a live snapshot clears a stale read failure',a.run('_tbLoadErrors.length'),0);
+    s.eq('nor does the OTHER items query — one half refused is still said',a.run('_tbLoadErrors.join()'),'board_items');
+    fire('/ownerUid/',[own]);
+    s.eq('the query that failed delivering is what clears it',a.run('_tbLoadErrors.length'),0);
+    a.run('__subs.filter(x=>x.q.p==="board_lists")[0].err(new Error("denied"))');
+    s.eq('a listener that starts failing puts its collection back',a.run('_tbLoadErrors.join()'),'board_lists');
+  }
+  {
+    // The seed wiring: which first-read halves failed is handed to the
+    // listeners, so the warning survives the first unrelated snapshot.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('collection=function(db,p){return{p:p};};where=function(f,op,v){return f+op+v;};'
+      +'query=function(c){return{p:c.p,w:[].slice.call(arguments,1).join("&")};};'
+      +'doc=function(db,c,id){return{p:c+"/"+id};};globalThis.__subs=[];'
+      +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next,err:err});return function(){};};'
+      +'getDocs=function(q){return /ownerUid/.test(q.w)?Promise.reject(new Error("denied")):Promise.resolve({docs:[]});};'
+      +'loadProfiles=function(){return Promise.resolve();};profilesLoaded=true;_tbRepaint=function(){};');
+    await a.run('loadTbData(true)');
+    s.eq('the refused half is recorded',a.run('_tbLoadErrors.join()'),'board_items');
+    s.ok('and handed to the listeners',a.run('!!(_tbLive&&_tbLive.bad.items_own)'));
+    a.run('__subs.filter(x=>/memberUids/.test(x.q.w))[0].next({docs:[]})');
+    s.eq('an unrelated first snapshot does not wipe it',a.run('_tbLoadErrors.join()'),'board_items');
+  }
+  {
+    // THE LISTENER DELIVERS A LOCAL WRITE BEFORE commit() RESOLVES (real
+    // Firestore's latency compensation), and the create path then added
+    // it again: every new item showed twice (review of 14ad9f3).
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('userProfiles=[{uid:"u-ammar",username:"ammar"}]');
+    a.run('collection=function(db,p){return{p:p};};where=function(f,op,v){return f+op+v;};'
+      +'query=function(c){return{p:c.p,w:[].slice.call(arguments,1).join("&")};};'
+      +'globalThis.__n=0;doc=function(a,b,c){return c?{id:c}:{id:"new"+(++__n)};};globalThis.__subs=[];'
+      +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next,err:err});return function(){};};'
+      +'_tbRepaint=function(){};'
+      +'globalThis.__written=null;'
+      // A real snapshot carries EVERY doc the query matches, not just the new one.
+      +'globalThis.__own=[];globalThis.__adm=[];prompt=function(){return "Winter";};'
+      +'writeBatch=function(){return{set:function(r,p){if(!__written&&p&&p.title)__written=Object.assign({id:r.id},p);return this;},'
+      +'commit:async function(){var own=__subs.filter(x=>/ownerUid/.test(x.q.w))[0];__own.push(__written);'
+      +'own.next({docs:__own.map(w=>({id:w.id,data:()=>w}))});}};};'
+      +'setDoc=async function(r,p){var adm=__subs.filter(x=>/adminUid/.test(x.q.w))[0];__adm.push(Object.assign({id:r.id},p));'
+      +'adm.next({docs:__adm.map(w=>({id:w.id,data:()=>w}))});};');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbLiveStart({})');
+    await a.run('window.tbCreateFromQuick("call baber",false,false)');
+    s.eq('a quick-add shows ONCE when the listener got there first',a.run('tbItems.length'),1);
+    a.run('__written=null');
+    await a.run('window.tbCreateOn("shoot prep","2026-10-01")');
+    s.eq('so does a calendar "+" create',a.run('tbItems.length'),2);
+    await a.run('window.tbNewList("private")');
+    s.eq('and a new list',a.run('tbLists.length'),1);
+    // And the other order: the ack first, the listener later, never twice.
+    a.run('__written=null;writeBatch=function(){return{set:function(r,p){if(!__written&&p&&p.title)__written=Object.assign({id:r.id},p);return this;},commit:async function(){}};}');
+    await a.run('window.tbCreateFromQuick("later listener",false,false)');
+    s.eq('an item the listener has not delivered yet is still shown',a.run('tbItems.length'),3);
+    a.run('__subs.filter(x=>/visibility/.test(x.q.w))[0].next({docs:[]})');
+    s.eq('and an unrelated snapshot does not drop it',a.run('tbItems.length'),3);
+  }
+  {
+    // A PRESS IN PROGRESS holds a deferred update (review of 14ad9f3). The
+    // mouse moves focus on mousedown; flushing then repainted before
+    // mouseup and the pressed button's click was lost.
+    const a=loadApp({files:FILES,currentPage:'tb-dash'});
+    a.run('session='+J(AMMAR));
+    a.run('currentPage="tb-dash"');   // shared.js clobbers the loadApp option
+    a.run('globalThis.__rp=0;_tbRepaint=function(){__rp++;};onSnapshot=function(q,n){return function(){};};');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];_tbLiveStart({})');
+    const fireD=(type)=>{
+      const e={type:type,pointerId:1,target:null,preventDefault(){},stopPropagation(){}};
+      ((a.state.listeners&&a.state.listeners[type])||[]).slice().forEach(fn=>{try{fn(e);}catch(x){}});
+    };
+    const settle=()=>new Promise(r=>setTimeout(r,10));
+    a.run('_tbEditableFocus=function(){return true;};_tbLiveRepaint()');
+    s.eq('an update arriving while a field has focus waits',a.run('_tbLivePending'),true);
+    fireD('pointerdown');
+    a.run('_tbEditableFocus=function(){return false;}');   // mousedown moved focus off the field
+    fireD('focusout');
+    await settle();
+    s.eq('the focusout a press caused does not repaint under it',a.run('__rp'),0);
+    fireD('pointerup');
+    await settle();
+    s.eq('nor does the release, before the click',a.run('__rp'),0);
+    fireD('click');
+    await settle();
+    s.eq('the click lands first, then the update',a.run('__rp'),1);
+    // Leaving a field with the keyboard has no press behind it.
+    a.run('__rp=0;_tbEditableFocus=function(){return true;};_tbLiveRepaint();_tbEditableFocus=function(){return false;}');
+    fireD('focusout');
+    await settle();
+    s.eq('a keyboard focusout still lands it at once',a.run('__rp'),1);
+    // A release the page never heard cannot hold updates for good.
+    a.run('_tbPtrDown=true;_tbPtrDownAt=Date.now()');
+    s.eq('a press in progress is busy',a.run('_tbLiveBusy()'),true);
+    a.run('_tbPtrDownAt=Date.now()-_TB_PRESS_MAX_MS-1');
+    s.eq('a press older than the bound is not',a.run('_tbLiveBusy()'),false);
   }
   {
     const a=loadApp({files:FILES});

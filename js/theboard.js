@@ -232,6 +232,8 @@ async function loadTbData(force){
     // delivered yet never drops what the first paint showed (P0.3).
     const byId=x=>{const o={};if(x&&x.status==='fulfilled')x.value.docs.forEach(d=>{o[d.id]=Object.assign({id:d.id},d.data());});return o;};
     const seedMaps={items_shared:byId(r[0]),items_own:byId(r[1]),lists_shared:byId(r[2]),lists_admin:byId(r[3])};
+    const seedBad={};
+    ['items_shared','items_own','lists_shared','lists_admin'].forEach((k,i)=>{ if(r[i].status!=='fulfilled')seedBad[k]=true; });
     if(r[4].status==='fulfilled'){
       const snap=r[4].value;
       const ex=snap&&typeof snap.exists==='function'?snap.exists():false;
@@ -244,7 +246,7 @@ async function loadTbData(force){
     _tbCalLoadPrefs();
     tbLoaded=true;
     _tbLoading=null;
-    _tbLiveStart(seedMaps);
+    _tbLiveStart(seedMaps,seedBad);
   })();
   return _tbLoading;
 }
@@ -305,6 +307,11 @@ function tbLiveMerge(maps){
 /** Is someone in the middle of something a repaint would destroy? */
 function _tbLiveBusy(){
   if(typeof _tbDragId!=='undefined'&&_tbDragId!=null)return true;
+  // A PRESS IN PROGRESS. A repaint between pointerdown and click detaches
+  // the pressed button, so the click lands on a new node and is lost.
+  // Bounded, so a release the page never hears (outside the window) can
+  // hold live updates for a few seconds at most, never for good.
+  if(_tbPtrDown&&Date.now()-_tbPtrDownAt<_TB_PRESS_MAX_MS)return true;
   // An open date picker is a gesture in progress: a repaint would tear
   // the calendar out from under the pointer.
   if(_tbFpOpen())return true;
@@ -315,7 +322,7 @@ function _tbLiveBusy(){
 function _tbOnBoardPage(){
   return String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')===0;
 }
-function _tbLiveStart(seedMaps){
+function _tbLiveStart(seedMaps,seedBad){
   if(typeof onSnapshot!=='function')return;           // an old cached shell: stay static
   const uid=_tbMe();
   if(!uid)return;
@@ -323,10 +330,17 @@ function _tbLiveStart(seedMaps){
     // A re-read (Retry, or a refused write) refreshes the maps; the
     // listeners carry on.
     Object.assign(_tbLive.maps,seedMaps||{});
+    _tbLive.bad=Object.assign({},seedBad||{});
     return;
   }
   _tbLiveStop();
-  _tbLive={uid:uid,maps:Object.assign({items_shared:{},items_own:{},lists_shared:{},lists_admin:{}},seedMaps||{}),unsubs:[]};
+  // `bad` is WHICH QUERY is failing, per query. A read failure used to be
+  // cleared by a snapshot from ANY listener, so a refused board_items read
+  // turned into an empty board the moment the lists listener delivered
+  // (review of 14ad9f3). A failure now clears only when the query behind
+  // it delivers, and a listener that starts failing puts it back.
+  _tbLive={uid:uid,maps:Object.assign({items_shared:{},items_own:{},lists_shared:{},lists_admin:{}},seedMaps||{}),
+           bad:Object.assign({},seedBad||{}),unsubs:[]};
   const defs=[
     {key:'items_shared',q:()=>query(collection(db,'board_items'),where('visibility','==','shared'))},
     {key:'items_own',   q:()=>query(collection(db,'board_items'),where('ownerUid','==',uid))},
@@ -340,8 +354,14 @@ function _tbLiveStart(seedMaps){
         const map={};
         ((snap&&snap.docs)||[]).forEach(x=>{ map[x.id]=Object.assign({id:x.id},x.data()); });
         _tbLive.maps[d.key]=map;
+        delete _tbLive.bad[d.key];
         _tbLiveApply();
-      },function(e){ console.warn('[the board] live '+d.key+' failed',e); }));
+      },function(e){
+        console.warn('[the board] live '+d.key+' failed',e);
+        if(!_tbLive||_tbLive.uid!==uid)return;
+        _tbLive.bad[d.key]=true;
+        _tbLiveApply();
+      }));
     }catch(e){ console.warn('[the board] live '+d.key+' could not start',e); }
   });
   try{
@@ -361,9 +381,28 @@ function _tbLiveApply(){
   const merged=tbLiveMerge(_tbLive.maps);
   tbItems=merged.items.map(tbDecodeItem);
   tbLists=merged.lists;
-  // A refused read that has since succeeded is no longer a failure.
+  // A collection is failing while EITHER of its two queries is: the same
+  // rule loadTbData's first read applies (one half refused is still said).
+  const bad=_tbLive.bad||{};
   _tbLoadErrors=_tbLoadErrors.filter(c=>c!=='board_items'&&c!=='board_lists');
+  if(bad.items_shared||bad.items_own)_tbLoadErrors.push('board_items');
+  if(bad.lists_shared||bad.lists_admin)_tbLoadErrors.push('board_lists');
   _tbLiveRepaint();
+}
+/** A doc THIS tab just created. Real Firestore hands a local write to the
+ *  listener before commit() resolves (latency compensation), so by the
+ *  time the create path runs its own "add it to the list" the listener
+ *  may already have done so: pushing again showed every new item twice
+ *  (review of 14ad9f3). Upsert by id, and record it in the live map the
+ *  listener owns so a rebuild from the maps cannot drop it either. */
+function _tbUpsert(arr,obj){
+  // No id, nothing to match on: a ref always carries one in the browser.
+  const i=obj&&obj.id!=null?arr.findIndex(x=>x&&x.id===obj.id):-1;
+  if(i>-1)arr[i]=obj;else arr.push(obj);
+  return arr;
+}
+function _tbLiveRemember(key,id,data){
+  if(_tbLive&&_tbLive.maps&&_tbLive.maps[key])_tbLive.maps[key][id]=Object.assign({id:id},data);
 }
 /** Repaint now, or as soon as nobody is mid-gesture. */
 function _tbLiveRepaint(){
@@ -381,13 +420,26 @@ function _tbLiveFlush(){
   if(!_tbLivePending)return;
   _tbLiveRepaint();
 }
-// Registered ONCE at load: leaving a field or ending a drag is when a
+// Registered ONCE at load: leaving a field or finishing a press is when a
 // deferred update lands, rather than waiting for the retry timer.
+// NOT ON POINTERUP, AND NOT ON A FOCUSOUT A PRESS CAUSED (review of
+// 14ad9f3). A mouse press moves focus during mousedown; flushing then
+// repainted before mouseup, the pressed button was replaced, and its click
+// was lost -- leaving a field by clicking Mark done did nothing. The flush
+// now waits for the CLICK (this listener bubbles last, after the button's
+// own handler) and a keyboard focusout, which no press is behind.
+let _tbPtrDown=false,_tbPtrDownAt=0;
+const _TB_PRESS_MAX_MS=5000;
 (function(){
   if(typeof document==='undefined'||!document.addEventListener)return;
   const later=()=>{ if(_tbLivePending)setTimeout(_tbLiveFlush,0); };
-  document.addEventListener('focusout',later);
-  document.addEventListener('pointerup',later);
+  document.addEventListener('pointerdown',()=>{ _tbPtrDown=true;_tbPtrDownAt=Date.now(); },true);
+  const up=()=>{ _tbPtrDown=false; };
+  document.addEventListener('pointerup',up,true);
+  document.addEventListener('pointercancel',up,true);
+  if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('blur',up);
+  document.addEventListener('focusout',()=>{ if(!_tbPtrDown)later(); });
+  document.addEventListener('click',later);
 })();
 
 // ── The item ──────────────────────────────────────────────────────────
@@ -1501,7 +1553,8 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
     b.set(doc(collection(db,'board_items',ref.id,'activity')),
       {type:'created',byUid:me,at:data.createdAt,payload:{}});
     await b.commit();
-    tbItems.push(tbDecodeItem(Object.assign({id:ref.id},data)));
+    _tbLiveRemember('items_own',ref.id,data);
+    _tbUpsert(tbItems,tbDecodeItem(Object.assign({id:ref.id},data)));
     if(openAfter)_tbOpenItemId=ref.id;
     // Ready for the next one: cleared, still open, caret back in it.
     if(fromComposer){ _tbQaReset(true); _tbQaRefocus=true; }
@@ -1734,7 +1787,8 @@ window.tbNewList=async function(kind){
   await _tbTry(async()=>{
     const ref=doc(collection(db,'board_lists'));
     await setDoc(ref,data);
-    tbLists.push(Object.assign({id:ref.id},data));
+    _tbLiveRemember('lists_admin',ref.id,data);
+    _tbUpsert(tbLists,Object.assign({id:ref.id},data));
     _tbListId=ref.id;
     _tbRepaint();
   },'create the list');
@@ -2241,7 +2295,8 @@ window.tbCreateOn=async function(text,day){
     b.set(doc(collection(db,'board_items',ref.id,'activity')),
       {type:'created',byUid:me,at:data.createdAt,payload:{}});
     await b.commit();
-    tbItems.push(tbDecodeItem(Object.assign({id:ref.id},data)));
+    _tbLiveRemember('items_own',ref.id,data);
+    _tbUpsert(tbItems,tbDecodeItem(Object.assign({id:ref.id},data)));
     _tbRepaint();
   },'add that');
 };
