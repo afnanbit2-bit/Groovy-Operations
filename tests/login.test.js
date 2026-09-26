@@ -458,6 +458,20 @@ module.exports=async function(){
     s.ok('startApp opens the quiet window and fades the app in',/window\._gvQuietFor\(8000\)/.test(auth)&&/classList\.add\('gv-enter'\)/.test(auth));
   }
 
+  {
+    const fs=require('fs'),path=require('path');
+    const css=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');
+    const auth=fs.readFileSync(path.join(__dirname,'..','js','auth.js'),'utf8');
+    s.section('the frame is not a page to select, save or search (27 Sept)');
+    s.ok('no text selection or long-press callout on the login, lock and app frame',
+      /#scr-login,#scr-lock,\.topbar,#sidebar,#mob-nav,\.mob-sheet,\.login-sheet,#gv-overlay,\s*button,[^{]*\{\s*-webkit-user-select:none;user-select:none;-webkit-touch-callout:none\}/.test(css));
+    s.ok('… but fields keep it (you edit text there)',/#scr-login input,[^{]*\{\s*-webkit-user-select:text;user-select:text/.test(css));
+    s.ok('images cannot be dragged off',/img\{-webkit-user-drag:none\}/.test(css));
+    s.ok('Chrome\'s long-press image/link menu is stopped on the frame',/addEventListener\('contextmenu',e=>\{if\(_gvInFrame\(e\.target\)\)e\.preventDefault\(\);\}/.test(auth));
+    s.ok('… never inside a field, a note or a mood board',/if\(t\.closest\('input,textarea,select,\[contenteditable="true"\],\[contenteditable=""\]'\)\)return false;/.test(auth));
+    s.ok('page CONTENT is not in the frame list (PO numbers stay copyable)',!/_GV_FRAME='[^']*main-content/.test(auth));
+  }
+
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────
   {
     const fs=require('fs'),path=require('path');

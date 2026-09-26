@@ -9270,6 +9270,21 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   fingerprint key on this phone signs straight in; any other fills the
   username and focuses the password. "All saved passwords" still opens
   Chrome's list; with nobody on the list the key goes straight there.
+- **The app frame cannot be selected, saved or searched (27 Sept).**
+  Afnan's recording: a long-press on the logo opened Chrome's image menu
+  (Copy / Download / Share / Open in Chrome), a long-press on text started
+  a selection that spread over the screen, a tap on text raised Google's
+  "Tap to search", and the logo dragged off as a picture. `user-select:none`
+  + `-webkit-touch-callout:none` on the login, lock and the app's CHROME
+  (`.topbar,#sidebar,#mob-nav,.mob-sheet,.login-sheet,#gv-overlay`, every
+  `button`/`label`); inputs keep `user-select:text`; `img{-webkit-user-drag:
+  none}` everywhere. Chrome/Android still opens its long-press menu without
+  JS, so js/auth.js `preventDefault`s `contextmenu`, `dragstart` and
+  `selectstart` inside `_GV_FRAME` — never in a field or contenteditable.
+  **Page content stays selectable on purpose** (copying a PO number is daily
+  work), and Mood Boards keeps its own menus (not in the frame; the 30
+  smoke-phone checks still pass). Verified in headless Chromium by
+  dispatching the events and reading computed styles.
 - **"Saving…" only for a save somebody made (27 Sept).** Afnan: it said
   Saving as soon as the app opened. Every Firestore write goes through the
   `__bootApp` wrap, and a write slower than 260ms raised the blocking

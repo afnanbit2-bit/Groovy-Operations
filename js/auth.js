@@ -571,6 +571,26 @@ function _authRestoreDecision(user,tabU,keepFlag,rememberedU,defs){
   _loginPaintTheme();
 })();
 
+// ── No long-press menus or image drags on the app's frame ──
+// See css/main.css ("The app frame is not a web page"). CSS stops text
+// selection and the iOS callout; Chrome on Android still opens its image
+// and link menu on a long-press, which only a contextmenu preventDefault
+// stops. Scoped to the frame: a field, a note or a mood board keeps its
+// own menu (Mood Boards has its own right-click menu and handles it).
+const _GV_FRAME='#scr-login,#scr-lock,.topbar,#sidebar,#mob-nav,.mob-sheet,.login-sheet,#gv-overlay';
+function _gvInFrame(t){
+  try{
+    if(!t||!t.closest)return false;
+    if(t.closest('input,textarea,select,[contenteditable="true"],[contenteditable=""]'))return false;
+    return!!t.closest(_GV_FRAME);
+  }catch(_){return false;}
+}
+try{
+  document.addEventListener('contextmenu',e=>{if(_gvInFrame(e.target))e.preventDefault();},{capture:true});
+  document.addEventListener('dragstart',e=>{if(_gvInFrame(e.target))e.preventDefault();},{capture:true});
+  document.addEventListener('selectstart',e=>{if(_gvInFrame(e.target))e.preventDefault();},{capture:true});
+}catch(_){}
+
 // ── Pull down to refresh (login + lock) ──
 // Rebuilt 27 Sept from Afnan's screen recording, read frame by frame: the
 // first cut reloaded the whole page on EVERY pull, so each release was a
