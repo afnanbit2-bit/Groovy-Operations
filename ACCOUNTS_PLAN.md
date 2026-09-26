@@ -130,17 +130,34 @@ is Claude's call, made so the review has something concrete to overrule.**
 | **Price prefilled, editable, and a changed price FLAGGED for owner review**, not refused. An article not in the catalog can be typed in, flagged the same way | The ERP bill is what was charged; "warn, never block" | make the price read-only |
 | **Discount max 20% is HARD** — refused in the form and in `firestore.rules` (`discount*100 <= subtotal*20`). Percent or rupees; whole rupees | "max 20%" | change `WHS_MAX_DISCOUNT_PCT` **and** the rule |
 | **Paid now → Cash or Bank transfer; Pay later → a due date (on or after the sale date)** | The due date is only asked for pay later | — |
-| **Collecting a pay-later bill is NOT recorded yet.** The "Pay later — to collect" and "Overdue" tiles count every active pay-later sale | Collection is the Raees step, where the cash is | next wave |
+| ~~Collecting a pay-later bill is NOT recorded yet~~ — **built 26 Sept 2026**, see §5a: Umair marks it collected (cash or bank, the day), and a collected bill leaves "to collect" and "Overdue" | — | — |
 | **Void, never edit** (Umair or an owner, with a reason). Owners clear a review flag. Afnan/Ammar may delete (`isAcctSuper`) | The Store Accounts rule | — |
 | **A voided bill can be recorded again** — "Record this bill again" on the void, the new entry written over it with the voided one kept in `priorVoids`; an ACTIVE sale is still one bill, one sale. The rules allow it only over a void, through the same checks as a create, with the history growing by one (25 Sept 2026, from the review round) | Without it a bill entered wrong could never be recorded correctly: its order number stayed taken until an admin deleted the void | Record-again copies the voided entry into the form; the alternative — an edit — is what void-never-edit rules out |
 | A returning customer's phone fills the name (and the name the phone), from past sales — derived, nothing stored | "usually people we know" | — |
 
-**Next wave (not built):** the receivable in Raees's Store Accounts — a
-pay-later sale becomes money owed *to* Groovy, and collecting it is a
-`cash_in` Raees confirms; a paid-now cash sale becomes cash Raees receives
-from Umair. Open questions for that step: does Umair hand cash to Raees
-daily (a handover entry) or per sale; who marks a pay-later bill collected;
-and does a bank-transfer sale land in MCB directly.
+## 5a. The warehouse money reaches Raees (26 Sept 2026)
+
+Afnan, with Sale SO0351 open: *"when an order has been paid the payment
+lands in Raees's account with the correct medium, such as cash or bank
+transfer in MCB … Raees will confirm that he has received the payment."*
+His answers to the three questions: **(1) A** — Umair gets *Mark collected*
+on a pay-later bill and it flows to Raees the same way; **(2)** Raees, Afnan
+and Ammar can all confirm; **(3)** bank transfers wait for Raees's
+confirmation too, and land in MCB.
+
+| Decision | Why | Overrule by |
+|---|---|---|
+| **Nothing is copied.** Raees's queue is DERIVED: every sale that puts money in hand (paid now, or a pay-later bill marked collected), minus the ones already confirmed (`whsHandovers`) | A copy is a second record that drifts the first time a sale is voided | — |
+| **A confirmation is an ordinary `cash_in`** (`src:'wh'`, category *Warehouse sale*, the customer as person, the order as ref, the bill as photo) into **Cash** for cash and **MCB** for a bank transfer, dated **the day Raees confirms it** | One ledger shape; the drawer counts from when the money is in it | date it the sale day instead |
+| **Until confirmed it is NOT in the books** — the ledger's alert strip and the review page say how much is waiting | "raees will confirm that he has received" | — |
+| **One confirmation per sale**, id `whs_<ORDER>_<n>` created with `exists=false`, so two devices cannot post the same sale twice. ~~A sale recorded again after a void is a new version~~ — **REVERSED by the review round:** a confirmation is matched by ORDER NUMBER, so a corrected bill is covered by the money already received; if the corrected bill differs (total, cash vs bank) it is shown to the owners as *changed*, never asked for again | The customer paid once; asking again double-counts | match by version again |
+| **A month cannot be closed while warehouse money dated in it is unconfirmed** (or while the warehouse data cannot be read) | The drawer count and the later confirmation would both add it | warn instead of block |
+| **The rules hold a confirmation to its sale** — the sale exists and puts money in hand, the bill total is the sale's, a different amount is flagged | A confirmation must not quietly clear the queue for less | — |
+| **Different amount…** records what was actually received, with a required reason, flagged for owner review (*short handover* / *more than the bill*) | The bill and the cash can disagree; the books follow the cash | refuse any difference |
+| **A sale voided or un-collected AFTER it was received** is named to the owners ("orphans"); **the money stays in the books** — voiding the cash in is a separate, deliberate act | The cash really was handed over; a void of the sale says nothing about the drawer | void it automatically |
+| **Confirmations are read all-time** (`where src=='wh'`), not only after the last month close | Otherwise a sale confirmed in a closed month would reappear as waiting | — |
+| **Who confirms:** Raees, Afnan, Ammar (`_acctCanEntry`). Managers do not see the queue (the rules do not let them read the sales). **Who collects:** Umair (and the owners), cash or bank, the day, never before the sale date | Afnan's answer (2) | — |
+| **Rules:** Store Accounts may READ `wh_sales`; Umair may set or clear exactly the five collection fields on an active pay-later sale, bound to his own email. No other `wh_sales` write | Least that makes it work | — |
 
 ## 6. Raees edits his own entries (26 Sept 2026)
 

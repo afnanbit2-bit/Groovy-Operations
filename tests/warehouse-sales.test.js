@@ -48,7 +48,7 @@ function app(o){
     globals:Object.assign({localStorage:LS,XLSX:fakeXlsx(xlsx),auth:{currentUser:null}},o.globals||{})});
   a.xlsx=xlsx;
   a.run('session='+J(o.session||UMAIR));
-  a.seed=(sales,catalog)=>a.run(`whSales=${J(sales||[])};_whsSort();whSalesLoaded=true;_whsLoadErr=null;_whsCatalog=${J(catalog||null)};1`);
+  a.seed=(sales,catalog)=>a.run(`whSales=${J(sales||[])};_whsSort();whSalesLoaded=true;_whsSalesAt=Date.now();_whsLoadErr=null;_whsCatalog=${J(catalog||null)};1`);
   return a;
 }
 const CATALOG=[
@@ -69,6 +69,15 @@ const sale=o=>Object.assign({_id:'SO1',orderNo:'SO1',date:'2026-09-20',customerN
   lines:[{title:'T',variant:'M',sku:'GP092-M',qty:2,price:1000,total:2000}],qtyTotal:2,subtotal:2000,discount:0,discountPct:0,total:2000,
   terms:'paid',paidVia:'cash',dueDate:null,status:'active',needsReview:false,reviewFlags:[],billUrl:BILL.url,billKind:'image',createdAt:1},o||{});
 
+// The REST read of one sale that a confirmation makes first (_acctWhSaleNow):
+// served from the app's own whSales unless a test says the server differs.
+function saleGet(a,url,serverSales){
+  const id=decodeURIComponent(String(url).split('/wh_sales/')[1].split('?')[0]);
+  const sv=(serverSales&&serverSales[id])||a.run('whSales').find(x=>x._id===id);
+  if(!sv)return{ok:false,status:404,json:async()=>({error:{status:'NOT_FOUND',message:'not found'}})};
+  const clean=Object.assign({},sv);delete clean._id;
+  return{ok:true,status:200,json:async()=>({name:'projects/p/databases/(default)/documents/wh_sales/'+id,fields:a.run('toFsFields')(clean)})};
+}
 module.exports=async function(){
   const s=suite('warehouse-sales');
 
@@ -406,7 +415,8 @@ module.exports=async function(){
     s.ok('only isWhSales may void, and only from active to void',/isWhSales\(\)\s*&& resource\.data\.status == 'active' && request\.resource\.data\.status == 'void'/.test(block));
     s.ok('only an owner may clear a review flag',/\|\| \(isOwner\(\)\s*&& request\.resource\.data\.diff/.test(block));
     s.ok('delete is the correction pair',/allow delete: if isAcctSuper\(\);/.test(block));
-    s.ok('read is the audience',/allow read: if isWhSales\(\);/.test(block));
+    s.ok('read is the audience, plus Store Accounts (Raees confirms the handover)',/allow read: if isWhSales\(\) \|\| isStoreAccounts\(\);/.test(block));
+    s.ok('… and Store Accounts never WRITES a sale',!/allow (create|update|delete)[^;]*isStoreAccounts/.test(block));
     // One definition of a valid sale, used by the create AND by recording a
     // bill again over a void — a re-record is held to every create check.
     const valid=(/function whSaleValid\(d, orderNo\) \{([\s\S]*?)\n    \}/.exec(rules)||[])[1]||'';
@@ -729,6 +739,301 @@ module.exports=async function(){
     s.ok('the toast no longer refuses to wrap',rule&&!/white-space:nowrap/.test(rule));
     s.ok('and is kept inside the screen',/max-width:calc\(100vw - 32px\)/.test(rule)&&/width:max-content/.test(rule));
     s.ok('a long toast stays up longer, and a new one cancels the old timer',/clearTimeout\(_toastTimer\)/.test(read('js/shared.js'))&&/length\*60/.test(read('js/shared.js')));
+  }
+  // ══ The handover to Raees (26 Sept 2026) ══════════════════════════════
+  s.section('handover: what money a sale put in hand');
+  {
+    const a=app();
+    const m=o=>a.run(`whsMoneyIn(${J(sale(o))})`);
+    s.eq('paid in cash → the cash drawer',J(m({})&&[m({}).account,m({}).amount,m({}).kind]),J(['cash',2000,'paid']));
+    s.eq('paid by bank transfer → MCB',m({paidVia:'bank'}).account,'mcb');
+    s.eq('a pay-later bill not yet collected puts nothing in hand',m({terms:'later',paidVia:null,dueDate:'2026-09-30'}),null);
+    const col=m({terms:'later',paidVia:null,dueDate:'2026-09-30',collectedAt:5,collectedBy:'umair',collectedVia:'bank',collectedDate:'2026-09-24'})||{};
+    s.eq('… once collected by bank it goes to MCB, dated the day it was paid',J([col.account,col.date,col.kind]),J(['mcb','2026-09-24','collected']));
+    s.eq('a void sale puts nothing in hand',m({status:'void'}),null);
+    s.eq('the key carries the version: first recording',a.run(`whsHandKey(${J(sale())})`),'SO1#0');
+    s.eq('… a bill recorded again after a void is a new sale',a.run(`whsHandKey(${J(sale({priorVoids:[{total:1}]}))})`),'SO1#1');
+  }
+  s.section('handover: the queue is derived from the sales and the confirmations');
+  {
+    const a=app();
+    const sales=[sale({_id:'SO1',orderNo:'SO1'}),sale({_id:'SO2',orderNo:'SO2',paidVia:'bank',total:3000}),sale({_id:'SO3',orderNo:'SO3',terms:'later',paidVia:null,dueDate:'2026-10-01'}),
+      sale({_id:'SO4',orderNo:'SO4',status:'void'}),sale({_id:'SO5',orderNo:'SO5',priorVoids:[{total:2000}]})];
+    const C=(id,o)=>Object.assign({_id:'whs_'+id+'_0',whSale:id+'#0',whOrder:id,amount:2000,whSaleTotal:2000,account:'cash',status:'posted'},o||{});
+    const confs=[C('SO2',{amount:3000,whSaleTotal:3000,account:'mcb'}),C('SO1',{status:'void'}),C('SO4'),C('SO5')];
+    const r=a.run(`whsHandovers(${J(sales)},${J(confs)})`);
+    s.eq('three sales put money in hand (paid ×2 + the re-recorded one)',r.items.map(i=>i.key).sort().join(','),'SO1#0,SO2#0,SO5#1');
+    s.eq('waiting: only the one never confirmed (its confirmation was voided)',r.pending.map(i=>i.key).sort().join(','),'SO1#0');
+    s.eq('received is summed from the live confirmations',r.items.find(i=>i.key==='SO2#0').received,3000);
+    s.eq('orphans: money confirmed for a sale voided since',r.orphans.map(e=>e._id).sort().join(','),'whs_SO4_0');
+    s.eq('an uncollected pay-later bill is not in the queue',r.items.some(i=>i.key==='SO3#0'),false);
+    // THE review finding: the customer paid once. A bill voided and recorded
+    // again after Raees received it must not ask him to receive it again.
+    const re=r.items.find(i=>i.key==='SO5#1');
+    s.ok('a bill voided and recorded again is covered by the money already received',!!re&&re.confs.length===1&&re.received===2000);
+    s.ok('… it says the confirmation was for the earlier entry, and nothing changed',re&&re.earlier===true&&re.changed===false);
+    s.eq('… so it is neither waiting nor changed',r.changed.length,0);
+    // re-recorded with another total, and a collection moved from bank to cash
+    const r2=a.run(`whsHandovers(${J([sale({_id:'SO6',orderNo:'SO6',total:2500,subtotal:2500,priorVoids:[{total:2000}]}),
+      sale({_id:'SO8',orderNo:'SO8',terms:'later',paidVia:null,dueDate:'2026-10-01',collectedAt:5,collectedVia:'cash',collectedDate:'2026-09-24'})])},${J([C('SO6'),C('SO8',{account:'mcb'})])})`);
+    s.eq('a bill confirmed and then changed is CHANGED, not waiting again',J([r2.pending.length,r2.changed.map(i=>i.key).sort()]),J([0,['SO6#1','SO8#0']]));
+    // the read cap: a confirmation whose sale is not in the read at all
+    const r3=a.run(`whsHandovers(${J([sale({_id:'SO4',orderNo:'SO4',status:'void'})])},${J([C('SO4'),C('SO99')])},{truncated:true})`);
+    s.eq('capped read: a sale not read is OUTSIDE, never an orphan',J([r3.orphans.map(e=>e._id),r3.outside.map(e=>e._id)]),J([['whs_SO4_0'],['whs_SO99_0']]));
+    const r4=a.run(`whsHandovers([],${J([C('SO99')])})`);
+    s.eq('… uncapped, a confirmation with no sale at all is an orphan (the sale was deleted)',r4.orphans.length,1);
+    s.eq('an old confirmation without whOrder is matched by the order in whSale',a.run(`whsConfOrder({whSale:'SO7#2'})`),'SO7');
+  }
+  s.section('review: a date that is not a day never reaches Raees\'s page');
+  {
+    const a=app();
+    const bad='<img src=x onerror=alert(1)>';
+    s.eq('a paid sale with a bad date puts money in hand with no date',a.run(`whsMoneyIn(${J(sale({date:bad}))}).date`),'');
+    const b=app({session:RAEES});b.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');
+    b.seed([sale({date:bad}),sale({_id:'SO2',orderNo:'SO2',date:bad})]);b.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    const h=b.run('_acctWhBodyHTML()');
+    s.ok('the list carries no markup from the date, and no Confirm-all for a non-day',!/<img/.test(h)&&!/acctWhConfirmDay\(/.test(h)&&/No date/.test(h));
+    s.eq('the entry would carry no date either',b.run(`_acctWhEntry({key:'SO1#0',sale:${J(sale({date:bad}))},money:whsMoneyIn(${J(sale({date:bad}))})},2000,'').whSaleDate`),'');
+    const wsv=(/function whSaleValid[\s\S]*?\n    \}/.exec(read('firestore.rules'))||[''])[0];
+    s.ok('the rules hold the sale date to a day (inside whSaleValid)',/d\.date is string && d\.date\.matches\('\^\[0-9\]\{4\}/.test(wsv));
+  }
+  s.section('collecting a pay-later bill');
+  {
+    const a=app();
+    const later=sale({terms:'later',paidVia:null,dueDate:'2026-09-30',date:'2026-09-20'});
+    const P=(sv,f)=>a.run(`whsCollectPatch(${J(sv)},${J(f)},${J({today:'2026-09-26',u:'umair',name:'Umair',now:9})})`);
+    s.ok('a paid sale cannot be "collected"',!!P(sale(),{via:'cash',date:'2026-09-26'}).error);
+    s.ok('a void one cannot',!!P(Object.assign({},later,{status:'void'}),{via:'cash',date:'2026-09-26'}).error);
+    s.ok('an already collected one cannot',!!P(Object.assign({},later,{collectedAt:1,collectedVia:'cash',collectedDate:'2026-09-25'}),{via:'cash',date:'2026-09-26'}).error);
+    s.ok('how it was paid is required',/cash or bank/.test(P(later,{via:'',date:'2026-09-26'}).error||''));
+    s.ok('not in the future',/future/.test(P(later,{via:'cash',date:'2026-09-27'}).error||''));
+    s.ok('not before the sale',/before the sale/.test(P(later,{via:'cash',date:'2026-09-19'}).error||''));
+    const ok=P(later,{via:'bank',date:'2026-09-25'});
+    s.eq('the patch writes exactly the collection keys',Object.keys(ok.patch||{}).sort().join(','),a.run('_WHS_COLLECT_FIELDS').slice().sort().join(','));
+    s.eq('… as the signed-in person',ok.patch&&ok.patch.collectedBy,'umair');
+    const cs=Object.assign({},later,ok.patch);
+    s.eq('a collected bill is no longer overdue',a.run(`whsIsOverdue(${J(Object.assign({},cs,{dueDate:'2026-09-21'}))},'2026-09-26')`),false);
+    const sum=a.run(`whsSummary(${J([later,Object.assign({},later,{_id:'SO9'},ok.patch)])},'2026-09-26')`);
+    s.eq('… nor still "to collect"',sum.laterCount,1);
+    // driven through the modal
+    const b=app();b.seed([later]);
+    b.run("window.whsCollect('SO1')");b.run("window.whsCollectVia('cash')");b.el('whs-cdate').value=b.run('whsToday()');
+    await b.run("window.whsCollectSave('SO1')");
+    const w=b.state.writes.filter(x=>x.op==='update').pop();
+    s.ok('Mark collected writes the collection',!!w&&w.data.collectedVia==='cash'&&w.data.collectedBy==='umair');
+    s.ok('… and the bill now puts cash in hand',b.run("(whsMoneyIn(_whsById('SO1'))||{}).account")==='cash');
+  }
+  s.section('undoing a collection: only while Raees has not confirmed it');
+  {
+    const col=sale({terms:'later',paidVia:null,dueDate:'2026-09-30',collectedAt:5,collectedBy:'umair',collectedVia:'cash',collectedDate:'2026-09-25'});
+    const server=[{_id:'whs_SO1_0',whSale:'SO1#0',amount:2000,status:'posted',by:'raees',byName:'Raees',date:'2026-09-25'}];
+    const a=app({globals:{getDocs:async()=>({docs:server.map(e=>({id:e._id,data:()=>e}))})}});a.seed([col]);
+    await a.run("window.whsUncollect('SO1')");
+    s.eq('received → refused, nothing written',a.state.writes.length,0);
+    s.ok('… and says why',a.state.toasts.some(t=>/already confirmed/.test(t)));
+    const b=app();b.seed([col]);
+    await b.run("window.whsUncollect('SO1')");
+    const w=b.state.writes.pop();
+    s.ok('not yet received → the collection is cleared',!!w&&w.data.collectedAt===null&&w.data.collectedVia===null);
+  }
+  s.section('the warehouse list says where each payment stands');
+  {
+    const a=app();a.seed([sale({_id:'SO1',orderNo:'SO1'}),sale({_id:'SO2',orderNo:'SO2',total:500})]);
+    a.run(`whsConfirmations=${J([{_id:'whs_SO2_0',whSale:'SO2#0',amount:500,whSaleTotal:500,account:'cash',status:'posted',by:'raees',byName:'Raees',date:'2026-09-26'}])};whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;_fulfillSection='accounts';1`);
+    const h=a.run('whsSectionHTML()');
+    s.ok('a waiting payment is marked',/Not with Raees yet/.test(h));
+    s.ok('a confirmed one is marked',/With Raees ✓/.test(h));
+    s.ok('the tile totals what is still with the warehouse',/Not with Raees yet<\/div><div class="acct-tile-v">Rs 2,000/.test(h));
+    a.run(`_whsConfErr={code:'permission-denied'};1`);
+    const e=a.run('whsSectionHTML()');
+    s.ok('a failed read says so and never claims "not with Raees"',/Could not read what Raees has confirmed/.test(e)&&!/acct-chip warn">Not with Raees yet/.test(e));
+  }
+  s.section('Raees confirms what the warehouse handed over');
+  {
+    const server=[];
+    const mk=(sess,extra)=>{const h={};const a=app({session:sess,globals:Object.assign({
+      auth:{currentUser:{getIdToken:async()=>'tok'}},
+      getDocs:async()=>({docs:server.map(e=>({id:e._id,data:()=>e}))}),
+      fetch:async(url,init)=>{h.a.state.fetches.push({url:String(url),init:init||{}});
+        if(/\/wh_sales\//.test(url))return saleGet(h.a,url,h.serverSales);
+        if(init&&init.method==='PATCH'&&/currentDocument\.exists=false/.test(url)){const id=decodeURIComponent(String(url).split('/acct_entries/')[1].split('?')[0]);
+          if(server.some(e=>e._id===id))return{ok:false,status:409,json:async()=>({error:{status:'ALREADY_EXISTS',message:'exists'}})};
+          const f=JSON.parse(init.body).fields;const o={_id:id};for(const k of Object.keys(f)){const v=f[k];o[k]=v.stringValue!=null?v.stringValue:v.integerValue!=null?Number(v.integerValue):v.booleanValue!=null?v.booleanValue:null;}server.push(o);}
+        return{ok:true,status:200,json:async()=>({documents:[]})};}},extra||{})});h.a=a;
+      a.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');
+      a.h=h;return a;};
+    const today=(new Date()).toISOString().slice(0,10);
+    const a=mk(RAEES);
+    a.seed([sale({_id:'SO1',orderNo:'SO1',date:'2026-09-20',customerName:'Ravi Kumar'}),sale({_id:'SO2',orderNo:'SO2',date:'2026-09-20',paidVia:'bank',total:3000}),sale({_id:'SO3',orderNo:'SO3',date:'2026-09-21',total:700})]);
+    a.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    const alerts=a.run('_acctAlerts([])');
+    s.ok('the ledger says what is waiting, split by account',/From the warehouse<\/b> — 3 payments, ₨5,700 \(cash ₨2,700 · MCB ₨3,000\)/.test(alerts));
+    const body=a.run('_acctWhBodyHTML()');
+    s.ok('the list groups by day, newest first',body.indexOf("acctWhConfirm('SO3#0')")>-1&&body.indexOf("acctWhConfirm('SO3#0')")<body.indexOf("acctWhConfirm('SO1#0')"));
+    s.ok('… Confirm all only where a day has more than one',/acctWhConfirmDay\('2026-09-20'\)/.test(body)&&!/acctWhConfirmDay\('2026-09-21'\)/.test(body));
+    await a.run("window.acctWhConfirm('SO1#0')");
+    const w=a.state.fetches.filter(f=>f.init.method==='PATCH').pop();
+    s.ok('confirming writes a create-only document named for the sale',!!w&&/\/acct_entries\/whs_SO1_0\?currentDocument\.exists=false$/.test(w.url));
+    const f=w?JSON.parse(w.init.body).fields:{};
+    s.eq('… a cash in',f.type&&f.type.stringValue,'cash_in');
+    s.eq('… into the cash drawer',f.account&&f.account.stringValue,'cash');
+    s.eq('… for the bill',f.amount&&f.amount.integerValue,'2000');
+    s.eq('… dated the day it was received',f.date&&f.date.stringValue,a.run('_acctToday()'));
+    s.eq('… tagged with the sale',J([f.src&&f.src.stringValue,f.whSale&&f.whSale.stringValue,f.ref&&f.ref.stringValue,f.person&&f.person.stringValue]),J(['wh','SO1#0','SO1','Ravi Kumar']));
+    s.eq('… posted, not pending',f.status&&f.status.stringValue,'posted');
+    s.eq('it counts in the books straight away',a.run('_acctBalances().cash'),2000);
+    s.eq('SO1 leaves the list',a.run("_acctWh().pending.map(i=>i.key).sort().join(',')"),'SO2#0,SO3#0');
+    // the same sale again, e.g. from a second device
+    server.push({_id:'whs_SO2_0',whSale:'SO2#0',amount:3000,status:'posted',by:'afnan',byName:'Afnan'});
+    const n0=a.state.fetches.filter(x=>x.init.method==='PATCH').length;
+    await a.run("window.acctWhConfirm('SO2#0')");
+    s.eq('a sale confirmed elsewhere is refused before writing',a.state.fetches.filter(x=>x.init.method==='PATCH').length,n0);
+    s.ok('… and says who confirmed it',a.state.toasts.some(t=>/already confirmed by Afnan/.test(t)));
+    // a different amount
+    a.run("window.acctWhDifferent('SO3#0')");a.el('f-wh-amt').value='500';a.el('f-wh-why').value='Rs 200 short, tomorrow';
+    await a.run("window.acctWhDifferentSave('SO3#0')");
+    const d=server.find(e=>e._id==='whs_SO3_0');
+    s.ok('a short handover records what was received',!!d&&d.amount===500);
+    const dw=a.state.fetches.filter(x=>x.init.method==='PATCH').pop();const df=dw?JSON.parse(dw.init.body).fields:{};
+    s.ok('… flagged for review with the reason',df.needsReview&&df.needsReview.booleanValue===true&&/short handover/.test(JSON.stringify(df.reviewFlags))&&/200 short/.test(df.note.stringValue));
+    s.eq('… and the bill total is kept beside it',df.whSaleTotal&&df.whSaleTotal.integerValue,'700');
+    // THE review finding: Raees's list is read once; Umair may have voided the
+    // sale on his phone since. The sale is re-read before any money is booked.
+    const b=mk(RAEES);
+    b.seed([sale({_id:'SO11',orderNo:'SO11'})]);b.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    b.h.serverSales={SO11:sale({_id:'SO11',orderNo:'SO11',status:'void'})};
+    const p0=b.state.fetches.filter(x=>x.init.method==='PATCH').length;
+    await b.run("window.acctWhConfirm('SO11#0')");
+    s.eq('a sale voided since the page loaded is re-read and refused — nothing written',b.state.fetches.filter(x=>x.init.method==='PATCH').length,p0);
+    s.ok('… and says it changed',b.state.toasts.some(t=>/changed since this page loaded/.test(t)));
+    s.eq('… the fresh copy replaces the stale one, so it leaves the list',b.run("_acctWh().pending.length"),0);
+    // a confirmations re-read that fails must not confirm on the old copy
+    const c=mk(RAEES,{getDocs:async()=>{throw Object.assign(new Error('offline'),{code:'unavailable'});}});
+    c.seed([sale({_id:'SO12',orderNo:'SO12'})]);c.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    await c.run("window.acctWhConfirm('SO12#0')");
+    s.eq('a failed re-read of the confirmations writes nothing',c.state.fetches.filter(x=>x.init.method==='PATCH').length,0);
+    s.ok('… and says why',c.state.toasts.some(t=>/Could not check what has already been confirmed/.test(t)));
+  }
+  s.section('review: voiding a warehouse cash in brings the sale back at once');
+  {
+    const a=app({session:RAEES,globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},fetch:async()=>({ok:true,status:200,json:async()=>({})}),prompt:()=>'wrong account'}});
+    const conf={_id:'whs_SO1_0',type:'cash_in',src:'wh',whSale:'SO1#0',whOrder:'SO1',amount:2000,whSaleTotal:2000,account:'mcb',status:'posted',date:a.run('_acctToday()'),month:a.run('_acctThisMonth()'),by:'raees'};
+    a.run(`acctEntries=[${J(conf)}];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1`);
+    a.seed([sale()]);a.run(`whsConfirmations=[${J(conf)}];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1`);
+    s.eq('before: with Raees',a.run('_acctWh().pending.length'),0);
+    await a.run("window.acctVoid('whs_SO1_0')");
+    s.eq('after the void the sale is waiting again, without a reload',a.run("(whsConfirmations[0]||{}).status+'/'+_acctWh().pending.length"),'void/1');
+    a.run(`whsConfirmations=[${J(conf)}];acctEntries=[${J(conf)}];1`);
+    a.run('_acctWhTouched(acctEntries[0],true)');
+    s.eq('an admin delete takes it out of the warehouse copy too',a.run('whsConfirmations.length'),0);
+  }
+  s.section('review: a month cannot be closed while warehouse money dated in it is unconfirmed');
+  {
+    const byCol={wh_sales:[],acct_entries:[]};
+    const g={auth:{currentUser:{getIdToken:async()=>'tok'}},collection:(db,name)=>({name}),query:c=>c,
+      getDocs:async q=>({docs:(byCol[q&&q.name]||[]).map(e=>({id:e._id,data:()=>e}))}),fetch:async()=>({ok:true,status:200,json:async()=>({})})};
+    const a=app({session:AFNAN,globals:g});
+    const mo=a.run('_acctThisMonth()'),day=mo+'-01';
+    byCol.wh_sales=[sale({date:day})];
+    a.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');
+    a.seed([]);a.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    a.el('acct-close-counted').value='2000';a.el('acct-close-note').value='counted';
+    await a.run(`window.acctCloseMonth('${mo}')`);
+    s.eq('an unconfirmed payment dated in the month blocks the close (nothing written)',a.state.writes.length+a.state.fetches.filter(f=>/acct_closes|acct_entries/.test(f.url)).length,0);
+    s.ok('… and says why',a.state.toasts.some(t=>/not yet confirmed/.test(t)&&/both add/.test(t)));
+    s.ok('… it re-read the sales rather than trust the page',a.run('whSales.length')===1);
+    byCol.acct_entries=[{_id:'whs_SO1_0',whSale:'SO1#0',whOrder:'SO1',amount:2000,whSaleTotal:2000,account:'cash',status:'posted'}];
+    s.eq('once it is confirmed, nothing blocks',await a.run(`_acctWhCloseBlock('${mo}-28')`),null);
+    const b=app({session:AFNAN,globals:Object.assign({},g,{getDocs:async()=>{throw Object.assign(new Error('denied'),{code:'permission-denied'});}})});
+    b.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');
+    s.ok('a failed read refuses the close rather than guess',/could not be read/.test(await b.run(`_acctWhCloseBlock('${mo}-28')`)||''));
+  }
+  s.section('review: undoing a collection asks first, then checks with the server');
+  {
+    const col=sale({terms:'later',paidVia:null,dueDate:'2026-09-30',collectedAt:5,collectedBy:'umair',collectedVia:'cash',collectedDate:'2026-09-25'});
+    let asked=false,readAfter=false;
+    const a=app({globals:{confirm:()=>{asked=true;return true;},getDocs:async()=>{readAfter=asked;return{docs:[],metadata:{fromCache:false}};}}});a.seed([col]);
+    await a.run("window.whsUncollect('SO1')");
+    s.ok('the confirmations are read AFTER the question, so a confirmation made meanwhile still counts',readAfter);
+    const b=app({globals:{getDocs:async()=>({docs:[],metadata:{fromCache:true}})}});b.seed([col]);
+    await b.run("window.whsUncollect('SO1')");
+    s.eq('an answer from the offline cache refuses the undo',b.state.writes.length,0);
+    s.ok('… and says so',b.state.toasts.some(t=>/try again when online/.test(t)));
+    const c=app();c.seed([col]);c.run(`whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr={code:'unavailable'};1`);
+    c.run("window.whsOpen('SO1')");
+    s.ok('with Raees\'s side unread, Undo collection is still offered (it re-checks)',/whsUncollect\(/.test(c.bodyHtml('whs-modal')||''));
+  }
+  s.section('review: both lists are read again when looked at after a minute');
+  {
+    let reads=0;
+    const a=app({globals:{getDocs:async()=>{reads++;return{docs:[{id:'whs_SO1_0',data:()=>({whSale:'SO1#0',whOrder:'SO1',amount:2000,whSaleTotal:2000,account:'cash',status:'posted'})}]};}}});
+    a.seed([sale()]);a.run('whsConfirmations=[];whsConfLoaded=true;_whsConfErr=null;_whsConfAt=Date.now();1');
+    s.eq('fresh: nothing is re-read',a.run('whsRefreshIfStale()'),null);
+    a.run('_whsConfAt=Date.now()-61000;1');
+    await a.run('whsRefreshIfStale()');
+    s.ok('a minute on, the confirmations are read again and the sale shows with Raees',reads===1&&a.run("whsHandStatus(_whsById('SO1')).state")==='received');
+  }
+  s.section('review: marking a bill collected never blocks saving a sale');
+  {
+    const later=sale({terms:'later',paidVia:null,dueDate:'2026-09-30',date:'2026-09-20'});
+    const a=app({globals:{updateDoc:()=>new Promise(()=>{})}});a.seed([later]);
+    a.run("window.whsCollect('SO1')");a.run("window.whsCollectVia('cash')");a.el('whs-cdate').value=a.run('whsToday()');
+    a.run("window.whsCollectSave('SO1')");await new Promise(r=>setTimeout(r,5));
+    s.eq('a collection write that never answers leaves the sale form free',a.run('_whsBusy'),false);
+    const b=app();b.seed([later]);b.run('navigator.onLine=false');
+    b.run("window.whsCollect('SO1')");b.run("window.whsCollectVia('cash')");b.el('whs-cdate').value=b.run('whsToday()');
+    await b.run("window.whsCollectSave('SO1')");
+    s.ok('offline, it is refused and says it needs a connection',b.state.writes.length===0&&b.state.toasts.some(t=>/needs a connection/.test(t)));
+  }
+  s.section('confirming a whole day, a voided confirmation, a closed month');
+  {
+    const server=[];
+    const hh={};
+    const a=app({session:RAEES,globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},getDocs:async()=>({docs:server.map(e=>({id:e._id,data:()=>e}))}),
+      fetch:async(url,init)=>{if(/\/wh_sales\//.test(url))return saleGet(hh.a,url);if(init&&init.method==='PATCH'){const id=decodeURIComponent(String(url).split('/acct_entries/')[1].split('?')[0]);server.push({_id:id,whSale:JSON.parse(init.body).fields.whSale.stringValue,amount:Number(JSON.parse(init.body).fields.amount.integerValue),status:'posted'});}return{ok:true,status:200,json:async()=>({documents:[]})};}}});
+    hh.a=a;
+    a.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');
+    a.seed([sale({_id:'SO1',orderNo:'SO1'}),sale({_id:'SO2',orderNo:'SO2',paidVia:'bank'}),sale({_id:'SO7',orderNo:'SO7',date:'2026-09-19'})]);
+    server.push({_id:'whs_SO7_0',whSale:'SO7#0',amount:2000,status:'void'});
+    a.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    await a.run("window.acctWhConfirmDay('2026-09-20')");
+    s.eq('confirm all writes one entry per sale of that day',server.filter(e=>/^whs_SO[12]_0$/.test(e._id)).length,2);
+    s.eq('… each into its own account',a.run("acctEntries.map(e=>e.account).sort().join(',')"),'cash,mcb');
+    await a.run("window.acctWhConfirm('SO7#0')");
+    s.ok('a voided confirmation keeps its id; the new one takes the next',server.some(e=>e._id==='whs_SO7_0_2'));
+    const b=app({session:RAEES,globals:{auth:{currentUser:{getIdToken:async()=>'tok'}},getDocs:async()=>({docs:[]})}});
+    const mo=b.run('_acctThisMonth()');
+    b.run(`acctEntries=[];acctVendors=[];acctCloses=${J([{month:mo,cashBook:0,mcbBook:0,payables:{}}])};acctSettings=null;_acctLoaded=true;1`);
+    b.seed([sale()]);b.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    await b.run("window.acctWhConfirm('SO1#0')");
+    s.ok('a closed month refuses, and nothing is written',b.state.fetches.filter(x=>x.init.method==='PATCH').length===0&&b.state.toasts.some(t=>/closed/.test(t)));
+  }
+  s.section('who sees and confirms the handover');
+  {
+    const a=app({session:MUSTAFA});
+    a.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');
+    a.seed([sale()]);a.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    s.ok('a manager cannot confirm',!/acctWhConfirm\(/.test(a.run('_acctWhBodyHTML()')));
+    a.run(`_whsLoadErr={code:'permission-denied',message:'Missing or insufficient permissions.'};1`);
+    s.ok('… and the rules do not let managers read the sales, so they carry no "could not be read" alert',a.run('_acctWh()')===null&&!/Warehouse sales could not be read/.test(a.run('_acctAlerts([])')));
+    const b=app({session:AMMAR});b.run('acctEntries=[];acctVendors=[];acctCloses=[];acctSettings=null;_acctLoaded=true;1');
+    b.seed([sale()]);b.run('whsConfirmations=[];whsConfLoaded=true;_whsConfAt=Date.now();_whsConfErr=null;1');
+    s.ok('an owner can confirm',/acctWhConfirm\(/.test(b.run('_acctWhBodyHTML()')));
+    b.run(`_whsLoadErr={code:'permission-denied',message:'Missing or insufficient permissions.'};1`);
+    const e=b.run('_acctWhBodyHTML()');
+    s.ok('a refused read of the sales says so, names the rules, and lists nothing',/Could not read wh_sales/.test(e)&&/republish/.test(e)&&!/acctWhConfirm\(/.test(e));
+  }
+  s.section('the collection rule matches the JS');
+  {
+    const rules=read('firestore.rules');
+    const m=/affectedKeys\(\)\.hasOnly\(\['collectedAt'[^\]]*\]\)/.exec(rules);
+    const keys=m?m[0].replace(/^[^[]*\[/,'').replace(/\].*$/,'').split(',').map(x=>x.trim().replace(/'/g,'')).sort().join(','):'';
+    s.eq('the rule lists exactly _WHS_COLLECT_FIELDS',keys,app().run('_WHS_COLLECT_FIELDS').slice().sort().join(','));
+    s.ok('… and binds who collected it to the signed-in email',/collectedBy \+ '@groovy\.op' == userEmail\(\)/.test(rules));
+    s.ok('… only on a live pay-later bill',/resource\.data\.terms == 'later'/.test(rules));
+    s.ok('a collection is set only on an uncollected bill (never rewritten in place)',/resource\.data\.get\('collectedAt', null\) == null\s*&& request\.resource\.data\.get\('collectedAt', null\) is number/.test(rules));
+    s.ok('… and cleared only on a collected one',/resource\.data\.get\('collectedAt', null\) != null\s*&& request\.resource\.data\.get\('collectedAt', null\) == null/.test(rules));
+    s.ok('a warehouse confirmation is held to its sale by the rules',/src', ''\) != 'wh' \|\| whConfValid\(doc\)/.test(rules)&&/d\.whSaleTotal == sale\.total/.test(rules)&&/d\.amount == d\.whSaleTotal \|\| d\.needsReview == true/.test(rules));
   }
   s.section('the shell: the file is wired into index.html and the service worker');
   {

@@ -87,6 +87,12 @@ const WHS_PAID_VIA=[{key:'cash',label:'Cash'},{key:'bank',label:'Bank transfer'}
 // lists in hasOnly(), and tests/warehouse-sales.test.js asserts they agree.
 const _WHS_VOID_FIELDS=['status','voidedAt','voidedBy','voidedByName','voidReason'];
 const _WHS_REVIEW_FIELDS=['needsReview','reviewedAt','reviewedBy','reviewedByName'];
+// Collecting a pay-later bill (26 Sept 2026). The only other update Umair
+// makes to a sale; firestore.rules holds the write to exactly these keys.
+const _WHS_COLLECT_FIELDS=['collectedAt','collectedBy','collectedByName','collectedVia','collectedDate'];
+// Where the money lands in Raees's Store Accounts: cash in the drawer, a bank
+// transfer in MCB. The ONE mapping both sides read.
+const WHS_ACCT_OF={cash:'cash',bank:'mcb'};
 const _WHS_PAGE=40;
 // The ledger read is capped. Past it the oldest sales — the pay-later bills
 // most likely to be overdue — drop out of every total, so reaching the cap
@@ -109,6 +115,11 @@ let _whsQueryTimer=null;
 let _whsDraft=null;        // the open new-sale form
 let _whsHits=[];           // the search results on screen, so Enter picks the first
 let _whsBusy=false;
+// Raees's confirmations of what the warehouse handed over: acct_entries with
+// src 'wh', read ALL-TIME with one single-field query — Store Accounts only
+// loads the months after its last close, and a confirmation in a closed month
+// must still count, or that sale would come back into Raees's list.
+let whsConfirmations=[],whsConfLoaded=false,_whsConfErr=null,_whsConfLoading=null,_whsConfFromCache=false,_whsConfAt=0,_whsSalesAt=0;
 
 // ── Formatting ───────────────────────────────────────────────────────────
 function _whsEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
@@ -375,24 +386,148 @@ function whsBuildSale(f,ctx){
 
 // ── Reading the ledger (pure) ────────────────────────────────────────────
 function _whsLive(s){return s&&s.status!=='void';}
-function whsIsOverdue(s,today){return _whsLive(s)&&s.terms==='later'&&_whsIsDay(s.dueDate)&&s.dueDate<(today||whsToday());}
+function whsCollected(s){return !!(s&&s.terms==='later'&&s.collectedAt&&WHS_ACCT_OF[s.collectedVia]);}
+function whsIsOverdue(s,today){return _whsLive(s)&&s.terms==='later'&&!whsCollected(s)&&_whsIsDay(s.dueDate)&&s.dueDate<(today||whsToday());}
+
+// ── The handover to Raees (26 Sept 2026) ─────────────────────────────────
+// A sale that has put money in someone's hand — paid at the counter, or a
+// pay-later bill since collected — is waiting for Raees until he confirms
+// it. Nothing is copied: the queue is DERIVED from the sales and his
+// confirmations, so a sale recorded before this shipped is in it too.
+// A version is how many times the bill was recorded before (priorVoids). It
+// is written on a confirmation (whSale = ORDER#version) as history, but a
+// confirmation is MATCHED BY ORDER NUMBER: a bill voided and recorded again
+// is the same order the customer paid once for, so the money Raees already
+// received covers the corrected entry too. Asking him to receive it again
+// would put the payment in the books twice. If the corrected bill no longer
+// matches what he received (another total, cash vs bank), it is CHANGED —
+// shown to the owners, never re-queued.
+function whsVersion(s){return Array.isArray(s&&s.priorVoids)?s.priorVoids.length:0;}
+function whsHandKey(s){return String((s&&(s.orderNo||s._id))||'')+'#'+whsVersion(s);}
+function whsOrderOf(s){return String((s&&(s.orderNo||s._id))||'');}
+/** The order a confirmation belongs to. */
+function whsConfOrder(e){return String((e&&(e.whOrder||String(e.whSale||'').split('#')[0]))||'');}
+/** What money this sale put in someone's hand, or null. Pure. The date is
+ *  only ever a YYYY-MM-DD day: it is drawn into Raees's page. */
+function whsMoneyIn(s){
+  if(!_whsLive(s))return null;
+  const amount=Math.round(Number(s.total)||0);
+  if(amount<=0)return null;
+  const day=_whsIsDay(s.date)?s.date:'';
+  if(s.terms==='paid'&&WHS_ACCT_OF[s.paidVia])return{via:s.paidVia,account:WHS_ACCT_OF[s.paidVia],date:day,amount,kind:'paid'};
+  if(whsCollected(s))return{via:s.collectedVia,account:WHS_ACCT_OF[s.collectedVia],date:_whsIsDay(s.collectedDate)?s.collectedDate:day,amount,kind:'collected'};
+  return null;
+}
+/** Does a live confirmation no longer describe the sale? Pure. */
+function whsConfChanged(e,m){
+  return Math.round(Number(e&&e.whSaleTotal)||0)!==m.amount||String(e&&e.account||'')!==m.account;
+}
+/**
+ * The sales against Raees's confirmations. Pure.
+ *   items    — every sale that put money in hand, each with its live
+ *              confirmations (a voided confirmation does not count, so the
+ *              sale goes back to the list) and the amount received;
+ *   pending  — the ones nobody has confirmed yet;
+ *   changed  — confirmed, but the sale no longer matches what was received
+ *              (recorded again with another total, or cash vs bank);
+ *   orphans  — confirmations whose sale no longer puts money in hand: voided
+ *              after Raees received it, or a collection undone. The money
+ *              stays in the books; the owners are told.
+ *   outside  — confirmations whose sale is not in the read at all while the
+ *              read is capped (opts.truncated): older than what was loaded,
+ *              so nothing can be said about them — never an orphan.
+ */
+function whsHandovers(sales,confs,opts){
+  opts=opts||{};
+  const byOrder=new Map();
+  for(const e of confs||[]){
+    if(!e||e.status==='void'||!e.whSale)continue;
+    const o=whsConfOrder(e);if(!o)continue;
+    if(!byOrder.has(o))byOrder.set(o,[]);
+    byOrder.get(o).push(e);
+  }
+  const items=[],seen=new Set(),present=new Set();
+  for(const s of sales||[]){
+    const o=whsOrderOf(s);present.add(o);
+    const m=whsMoneyIn(s);if(!m)continue;
+    seen.add(o);
+    const got=byOrder.get(o)||[];
+    const key=whsHandKey(s);
+    items.push({key,sale:s,money:m,confs:got,received:got.reduce((t,e)=>t+Math.round(Number(e.amount)||0),0),
+      earlier:got.some(e=>e.whSale!==key),changed:got.some(e=>whsConfChanged(e,m))});
+  }
+  const orphans=[],outside=[];
+  for(const [o,list] of byOrder)if(!seen.has(o))for(const e of list)(opts.truncated&&!present.has(o)?outside:orphans).push(e);
+  return{items,pending:items.filter(i=>!i.confs.length),changed:items.filter(i=>i.confs.length&&i.changed),orphans,outside};
+}
+/** Where one sale stands with Raees, for the warehouse side. */
+let _whsConfMapFor=null,_whsConfMapVal=null;
+function _whsConfMap(){
+  if(_whsConfMapFor===whsConfirmations)return _whsConfMapVal;
+  const m=new Map();
+  for(const e of whsConfirmations||[]){if(!e||e.status==='void'||!e.whSale)continue;const o=whsConfOrder(e);if(!m.has(o))m.set(o,[]);m.get(o).push(e);}
+  _whsConfMapFor=whsConfirmations;_whsConfMapVal=m;return m;
+}
+function whsHandStatus(s){
+  const m=whsMoneyIn(s);if(!m)return null;
+  if(!whsConfLoaded||_whsConfErr)return{state:'unknown',money:m};
+  const got=_whsConfMap().get(whsOrderOf(s))||[];
+  if(!got.length)return{state:'waiting',money:m};
+  const received=got.reduce((t,e)=>t+Math.round(Number(e.amount)||0),0);
+  return{state:'received',money:m,received,entry:got[0],changed:got.some(e=>whsConfChanged(e,m))};
+}
+// Never rejects. A failed read leaves the status UNKNOWN — never "not handed
+// over", which would send somebody looking for money Raees already has.
+// fromCache: offline, the SDK answers from the local cache without failing,
+// so a read that did not reach the server says so — Undo collection refuses
+// on it rather than trust a copy that may predate Raees's confirmation.
+function whsLoadConfirmations(force){
+  if(whsConfLoaded&&!force)return Promise.resolve();
+  if(_whsConfLoading)return _whsConfLoading;
+  _whsConfLoading=(async()=>{
+    try{
+      const snap=await getDocs(query(collection(db,'acct_entries'),where('src','==','wh')));
+      whsConfirmations=snap.docs.map(d=>Object.assign({},d.data(),{_id:d.id}));
+      _whsConfFromCache=!!(snap.metadata&&snap.metadata.fromCache);
+      _whsConfErr=null;
+    }catch(e){
+      _whsConfErr={code:(e&&e.code)||'',message:(e&&e.message)||String(e)};
+      console.warn('[warehouse-sales] handover read failed',e);
+    }
+    whsConfLoaded=true;_whsConfAt=Date.now();
+    _whsConfLoading=null;
+  })();
+  return _whsConfLoading;
+}
+// Both lists are read once and then refreshed when somebody looks again after
+// a while, so Raees's queue and Umair's "with Raees" status follow each other
+// across devices without a listener. Returns true when a refresh was started.
+const _WHS_STALE_MS=60000;
+function whsRefreshIfStale(){
+  const now=Date.now();let kicked=false;
+  if(whsConfLoaded&&!_whsConfLoading&&now-_whsConfAt>_WHS_STALE_MS){whsLoadConfirmations(true);kicked=true;}
+  if(whSalesLoaded&&!_whsLoading&&now-_whsSalesAt>_WHS_STALE_MS){loadWhSales(true);kicked=true;}
+  return kicked?Promise.all([_whsConfLoading,_whsLoading].filter(Boolean)):null;
+}
 function whsSummary(sales,today){
   const t=today||whsToday(),m=t.slice(0,7);
-  const r={todayTotal:0,todayCount:0,monthTotal:0,monthCount:0,laterTotal:0,laterCount:0,laterCustomers:0,overdueTotal:0,overdueCount:0,reviewCount:0};
+  const r={todayTotal:0,todayCount:0,monthTotal:0,monthCount:0,laterTotal:0,laterCount:0,laterCustomers:0,overdueTotal:0,overdueCount:0,reviewCount:0,withMeTotal:0,withMeCount:0};
   const who=new Set();
   for(const s of sales||[]){
     if(!_whsLive(s))continue;
     const amt=Number(s.total)||0;
     if(s.date===t){r.todayTotal+=amt;r.todayCount++;}
     if(String(s.date||'').slice(0,7)===m){r.monthTotal+=amt;r.monthCount++;}
-    if(s.terms==='later'){r.laterTotal+=amt;r.laterCount++;who.add(s.customerPhone||s.customerName);}
+    if(s.terms==='later'&&!whsCollected(s)){r.laterTotal+=amt;r.laterCount++;who.add(s.customerPhone||s.customerName);}
+    const h=whsHandStatus(s);
+    if(h&&h.state==='waiting'){r.withMeTotal+=h.money.amount;r.withMeCount++;}
     if(whsIsOverdue(s,t)){r.overdueTotal+=amt;r.overdueCount++;}
     if(s.needsReview)r.reviewCount++;
   }
   r.laterCustomers=who.size;
   return r;
 }
-const WHS_FILTERS=[['all','All sales'],['paid','Paid'],['later','Pay later'],['overdue','Overdue'],['review','Needs review'],['void','Void']];
+const WHS_FILTERS=[['all','All sales'],['paid','Paid'],['later','Pay later — to collect'],['collected','Pay later — collected'],['overdue','Overdue'],['handover','Not with Raees yet'],['review','Needs review'],['void','Void']];
 function whsFilterSales(sales,filter,q,today){
   const t=today||whsToday();
   const words=String(q||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -402,7 +537,9 @@ function whsFilterSales(sales,filter,q,today){
     else if(filter&&filter!=='all'){
       if(!_whsLive(s))return false;
       if(filter==='paid'&&s.terms!=='paid')return false;
-      if(filter==='later'&&s.terms!=='later')return false;
+      if(filter==='later'&&(s.terms!=='later'||whsCollected(s)))return false;
+      if(filter==='collected'&&!whsCollected(s))return false;
+      if(filter==='handover'){const h=whsHandStatus(s);if(!h||h.state!=='waiting')return false;}
       if(filter==='overdue'&&!whsIsOverdue(s,t))return false;
       if(filter==='review'&&!s.needsReview)return false;
     }
@@ -442,11 +579,12 @@ function loadWhSales(force){
       _whsLoadErr={code:(e&&e.code)||'',message:(e&&e.message)||String(e)};
       console.warn('[warehouse-sales] load failed',e);
     }
-    whSalesLoaded=true;
+    whSalesLoaded=true;_whsSalesAt=Date.now();
     _whsLoading=null;
   })();
   return _whsLoading;
 }
+window.whsConfRetry=function(){whsLoadConfirmations(true).then(_whsRepaint);};
 window.whsRetry=function(){
   loadWhSales(true).then(_whsRepaint);
   _whsRepaint();
@@ -475,13 +613,19 @@ function _whsTile(label,value,sub,cls){
 function _whsBadges(s,today){
   const out=[];
   if(s.status==='void')out.push('<span class="acct-chip">Void</span>');
-  else if(s.terms==='later'){
+  else if(whsCollected(s)){
+    const via=(WHS_PAID_VIA.find(v=>v.key===s.collectedVia)||{label:'paid'}).label;
+    out.push(`<span class="acct-chip ok">Collected · ${_whsEsc(via.toLowerCase())}</span>`);
+  }else if(s.terms==='later'){
     if(whsIsOverdue(s,today)){const n=_whsDaysBetween(s.dueDate,today);out.push(`<span class="acct-chip urgent">Overdue · ${n} day${n===1?'':'s'}</span>`);}
     else out.push(`<span class="acct-chip warn">Pay later · due ${_whsEsc(_whsFmtDay(s.dueDate))}</span>`);
   }else{
     const via=(WHS_PAID_VIA.find(v=>v.key===s.paidVia)||{label:'paid'}).label;
     out.push(`<span class="acct-chip ok">Paid · ${_whsEsc(via.toLowerCase())}</span>`);
   }
+  const h=whsHandStatus(s);
+  if(h&&h.state==='received')out.push(h.changed?'<span class="acct-chip warn">With Raees · bill changed since</span>':'<span class="acct-chip ok">With Raees ✓</span>');
+  else if(h&&h.state==='waiting')out.push('<span class="acct-chip warn">Not with Raees yet</span>');
   if(s.status!=='void'&&s.needsReview)out.push('<span class="acct-chip urgent">Review</span>');
   return out.join(' ');
 }
@@ -501,6 +645,8 @@ function _whsRowHTML(s,today){
 }
 function whsSectionHTML(){
   if(!whsCanView())return '<div class="empty">Accounts is for the warehouse manager and the owners.</div>';
+  if(!whsConfLoaded)whsLoadConfirmations().then(_whsRepaint);
+  else{const r=whsRefreshIfStale();if(r)r.then(_whsRepaint);}
   if(!whSalesLoaded){
     loadWhSales().then(_whsRepaint);
     return (typeof gvSkeleton==='function')?gvSkeleton(4):'<div class="empty">Loading…</div>';
@@ -511,6 +657,8 @@ function whsSectionHTML(){
   const shown=list.slice(0,_whsShown);
   const alerts=[];
   if(sum.overdueCount)alerts.push(`<div class="acct-alert urgent" onclick="window.whsSetFilter('overdue')">${sum.overdueCount} pay-later bill${sum.overdueCount===1?' is':'s are'} past the due date — ${_whsRs(sum.overdueTotal)} to collect.</div>`);
+  if(sum.withMeCount)alerts.push(`<div class="acct-alert warn" onclick="window.whsSetFilter('handover')">${sum.withMeCount} payment${sum.withMeCount===1?' has':'s have'} not been confirmed by Raees yet — ${_whsRs(sum.withMeTotal)}. Hand the cash over; he confirms it in Store Accounts.</div>`);
+  if(whsConfLoaded&&_whsConfErr)alerts.push(`<div class="acct-alert urgent" style="cursor:default">Could not read what Raees has confirmed (acct_entries: ${_whsEsc(_whsConfErr.code||_whsConfErr.message||'error')}) — the "with Raees" status is not shown. <button class="btn-sm" onclick="event.stopPropagation();window.whsConfRetry()">Retry</button></div>`);
   if(sum.reviewCount&&_whsIsOwner())alerts.push(`<div class="acct-alert warn" onclick="window.whsSetFilter('review')">${sum.reviewCount} sale${sum.reviewCount===1?'':'s'} to review — a price that differs from the catalog, or an article that is not in it.</div>`);
   return `<div id="whs-root">
     ${_whsLoadErr?_whsErrorCard():''}
@@ -518,6 +666,7 @@ function whsSectionHTML(){
     <div class="acct-tiles">
       ${_whsTile('Today',_whsRs(sum.todayTotal),sum.todayCount+' sale'+(sum.todayCount===1?'':'s'))}
       ${_whsTile('This month',_whsRs(sum.monthTotal),sum.monthCount+' sale'+(sum.monthCount===1?'':'s'))}
+      ${_whsTile('Not with Raees yet',_whsConfErr||!whsConfLoaded?'—':_whsRs(sum.withMeTotal),_whsConfErr?'could not be read':!whsConfLoaded?'loading…':sum.withMeCount?sum.withMeCount+' payment'+(sum.withMeCount===1?'':'s')+' waiting for Raees':'everything handed over',sum.withMeCount?'warn':'')}
       ${_whsTile('Pay later — to collect',_whsRs(sum.laterTotal),sum.laterCount?sum.laterCount+' bill'+(sum.laterCount===1?'':'s')+' · '+sum.laterCustomers+' customer'+(sum.laterCustomers===1?'':'s'):'nothing outstanding')}
       ${_whsTile('Overdue',_whsRs(sum.overdueTotal),sum.overdueCount?sum.overdueCount+' past the due date':'none',sum.overdueCount?'danger':'')}
     </div>
@@ -534,7 +683,7 @@ function whsSectionHTML(){
       </div>
       ${list.length>shown.length?`<div class="acct-pager"><button class="btn-sm btn-outline" onclick="window.whsMore()">Show ${Math.min(_WHS_PAGE,list.length-shown.length)} more</button> <span>${shown.length} of ${list.length}</span></div>`:''}
     </div>
-    <div class="whs-foot-note">Collecting a pay-later bill is not recorded here yet — that comes when these sales are linked into Raees's Store Accounts, where the cash is.</div>
+    <div class="whs-foot-note">Paid sales, and pay-later bills once you mark them collected, go to Raees's Store Accounts. They count in his books only after he confirms he received the money: cash into the drawer, a bank transfer into MCB.</div>
   </div>`;
 }
 window.whsSetFilter=function(f){_whsFilter=WHS_FILTERS.some(x=>x[0]===f)?f:'all';_whsShown=_WHS_PAGE;_whsRepaint();};
@@ -951,9 +1100,20 @@ function _whsKV(k,v){return `<div class="acct-kv"><span>${k}</span><b>${v}</b></
 window.whsOpen=function(id){
   const s=_whsById(id);if(!s)return;
   const today=whsToday();
-  const pay=s.terms==='later'
+  const viaLabel=k=>_whsEsc((WHS_PAID_VIA.find(v=>v.key===k)||{label:'—'}).label);
+  const pay=whsCollected(s)
+    ?`Pay later — collected ${_whsEsc(_whsFmtDay(s.collectedDate))} · ${viaLabel(s.collectedVia)}<div class="whs-muted" style="font-weight:400">by ${_whsEsc(_whsWho(s.collectedBy,s.collectedByName))}, was due ${_whsEsc(_whsFmtDay(s.dueDate))}</div>`
+    :s.terms==='later'
     ?`Pay later — due ${_whsEsc(_whsFmtDay(s.dueDate))}${whsIsOverdue(s,today)?' <span class="acct-chip urgent">overdue</span>':''}`
-    :`Paid · ${_whsEsc((WHS_PAID_VIA.find(v=>v.key===s.paidVia)||{label:'—'}).label)}`;
+    :`Paid · ${viaLabel(s.paidVia)}`;
+  const h=whsHandStatus(s);
+  const handed=!h?'':h.state==='unknown'
+    ?(_whsConfErr?'Could not be read — see the note on the list':'Checking…')
+    :h.state==='waiting'
+    ?`<span class="acct-chip warn">Not with Raees yet</span><div class="whs-muted" style="font-weight:400">${_whsRs(h.money.amount)} ${h.money.account==='mcb'?'in MCB — Raees confirms it from the bank':'in cash — hand it to Raees, he confirms it'}</div>`
+    :h.changed
+    ?`<span class="acct-chip warn">With Raees · bill changed since</span><div class="whs-muted" style="font-weight:400">${_whsEsc(_whsWho(h.entry.by,h.entry.byName))} confirmed ${_whsRs(h.received)} into ${h.entry.account==='mcb'?'MCB':'cash'} on ${_whsEsc(_whsFmtDay(h.entry.date))}, for a bill of ${_whsRs(h.entry.whSaleTotal)}. The bill is now ${_whsRs(h.money.amount)} ${h.money.account==='mcb'?'by bank transfer':'in cash'} — it is not asked for again; the owners are shown the difference.</div>`
+    :`<span class="acct-chip ok">With Raees ✓</span><div class="whs-muted" style="font-weight:400">${_whsEsc(_whsWho(h.entry.by,h.entry.byName))} confirmed ${_whsRs(h.received)} on ${_whsEsc(_whsFmtDay(h.entry.date))}${h.received!==h.money.amount?` · <b>${h.received<h.money.amount?_whsRs(h.money.amount-h.received)+' short':_whsRs(h.received-h.money.amount)+' more than the bill'}</b>`:''}</div>`;
   const bill=whsBillUrl(s.billUrl)
     ?(s.billKind==='pdf'
       ?`<a class="acct-photo-link" href="${_whsEsc(s.billUrl)}" target="_blank" rel="noopener noreferrer">📄 Open the bill (PDF)</a>`
@@ -976,6 +1136,7 @@ window.whsOpen=function(id){
       ${_whsKV('Customer',_whsEsc(s.customerName))}
       ${_whsKV('Phone',_whsEsc(whsFmtPhone(s.customerPhone)))}
       ${_whsKV('Payment',pay)}
+      ${handed?_whsKV('Raees',handed):''}
       ${_whsKV('Recorded by',_whsEsc(_whsWho(s.createdByU,s.createdByName))+(recorded?' · '+_whsEsc(new Date(recorded).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''))}
     </div>
     <div class="acct-table-wrap" style="margin-top:14px"><table class="acct-table whs-lt-table"><thead><tr><th>Article</th><th>Barcode</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr></thead><tbody>${lines}</tbody></table></div>
@@ -989,15 +1150,94 @@ window.whsOpen=function(id){
     ${_whsHistoryHTML(s)}`;
   const acts=[];
   if(s.status==='void'&&whsCanEntry())acts.push(`<button class="btn-sm" onclick="window.whsNewSale('${_whsEsc(s._id)}')">Record this bill again</button>`);
+  if(s.status!=='void'&&s.terms==='later'&&whsCanEntry()){
+    if(!whsCollected(s))acts.push(`<button class="btn-sm" onclick="window.whsCollect('${_whsEsc(s._id)}')">Mark collected…</button>`);
+    else if(h&&(h.state==='waiting'||h.state==='unknown'))acts.push(`<button class="btn-sm btn-outline" onclick="window.whsUncollect('${_whsEsc(s._id)}')">Undo collection</button>`);
+  }
   if(s.status!=='void'&&_whsIsOwner()&&s.needsReview)acts.push(`<button class="btn-sm" onclick="window.whsMarkReviewed('${_whsEsc(s._id)}')">Mark reviewed</button>`);
   if(s.status!=='void'&&whsCanEntry())acts.push(`<button class="btn-sm btn-outline" onclick="window.whsVoid('${_whsEsc(s._id)}')">Void this sale…</button>`);
   if(_whsIsSuper())acts.push(`<button class="btn-sm btn-outline whs-danger" onclick="window.whsDelete('${_whsEsc(s._id)}')">Delete (admin)…</button>`);
   acts.push('<button class="btn-outline" onclick="window.whsModalClose()">Close</button>');
   _whsModal('Sale '+_whsEsc(s.orderNo||s._id),body,acts.join(''),{width:680});
 };
+// ── Collecting a pay-later bill ─────────────────────────────────────────
+// Pure: the patch a collection writes, or {error}. Collected in full — a
+// part payment is not recorded here, and the modal says so.
+function whsCollectPatch(s,f,ctx){
+  f=f||{};ctx=ctx||{};
+  if(!s||!_whsLive(s)||s.terms!=='later')return{error:'Only a live pay-later bill can be collected.'};
+  if(whsCollected(s))return{error:'This bill is already marked collected.'};
+  const via=WHS_ACCT_OF[f.via]?f.via:'';
+  if(!via)return{error:'Choose how the customer paid — cash or bank transfer.'};
+  const date=String(f.date||'');
+  const today=ctx.today||whsToday();
+  if(!_whsIsDay(date))return{error:'Pick the date the customer paid.'};
+  if(date>today)return{error:'The date cannot be in the future.'};
+  if(date<s.date)return{error:'The customer cannot have paid before the sale ('+_whsFmtDay(s.date)+').'};
+  return{patch:{collectedAt:ctx.now||Date.now(),collectedBy:String(ctx.u||''),collectedByName:String(ctx.name||''),collectedVia:via,collectedDate:date}};
+}
+let _whsCollectVia='';
+window.whsCollect=function(id){
+  const s=_whsById(id);if(!s||!whsCanEntry())return;
+  if(whsCollected(s)||s.terms!=='later'||!_whsLive(s))return;
+  _whsCollectVia='';
+  const body=`<div style="font-size:14px;margin-bottom:10px"><b>${_whsEsc(s.orderNo||s._id)}</b> · ${_whsEsc(s.customerName)} · <b>${_whsRs(s.total)}</b><div class="whs-muted">Due ${_whsEsc(_whsFmtDay(s.dueDate))}. The full amount is recorded as paid — a part payment is not recorded here.</div></div>
+    <div class="field"><label>How did the customer pay? *</label><div class="acct-chips" id="whs-cvia-chips">${WHS_PAID_VIA.map(v=>`<button type="button" class="acct-chipbtn" data-v="${v.key}" onclick="window.whsCollectVia('${v.key}')">${_whsEsc(v.label)}</button>`).join('')}</div></div>
+    <div class="field"><label>Date paid *</label><input id="whs-cdate" type="date" value="${whsToday()}" min="${_whsEsc(s.date)}" max="${whsToday()}"></div>
+    <div class="whs-muted" style="margin-top:8px">It then goes to Raees: cash to hand over, a bank transfer he checks in MCB. It counts in his books once he confirms.</div>`;
+  _whsModal('Mark collected',body,`<button class="btn-outline" onclick="window.whsModalClose()">Cancel</button><button class="btn-primary" id="whs-csave" style="width:auto;padding:10px 16px" onclick="window.whsCollectSave('${_whsEsc(s._id)}')">Mark collected</button>`,{width:480});
+};
+window.whsCollectVia=function(v){
+  _whsCollectVia=WHS_ACCT_OF[v]?v:'';
+  document.querySelectorAll('#whs-cvia-chips .acct-chipbtn').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')===_whsCollectVia));
+};
+// Its own busy flag, never _whsBusy: an updateDoc made offline does not
+// resolve until it reaches the server, and holding the sale form's flag for
+// that long would silently stop every new sale from saving. It needs a
+// connection anyway — Raees cannot see a collection that has not synced.
+let _whsCollectBusy=false;
+window.whsCollectSave=async function(id){
+  const s=_whsById(id);if(!s||!whsCanEntry()||_whsCollectBusy)return;
+  if(typeof navigator!=='undefined'&&navigator.onLine===false){showToast('Marking a bill collected needs a connection — Raees has to see it.',true);return;}
+  const who=_whsSession()||{};
+  const r=whsCollectPatch(s,{via:_whsCollectVia,date:(document.getElementById('whs-cdate')||{}).value},{today:whsToday(),u:who.u,name:who.name,now:Date.now()});
+  if(r.error){showToast(r.error,true);return;}
+  _whsCollectBusy=true;
+  try{await updateDoc(doc(db,'wh_sales',s._id),r.patch);}
+  catch(e){_whsCollectBusy=false;showToast(_whsWriteErrMsg(e),true);return;}
+  _whsCollectBusy=false;
+  Object.assign(s,r.patch);
+  try{logActivity('Warehouse bill collected',`${s._id} · ${s.customerName} · ${_whsRs(s.total)} · ${r.patch.collectedVia}`);}catch(_){}
+  window.whsModalClose();
+  showToast(`${s._id} marked collected — ${_whsRs(s.total)} now waits for Raees to confirm.`);
+  _whsRepaint();
+};
+// A collection marked by mistake, before Raees has confirmed it. Once he has,
+// the money is in his books and this is refused — void the sale instead,
+// which the owners are told about.
+window.whsUncollect=async function(id){
+  const s=_whsById(id);if(!s||!whsCanEntry()||!whsCollected(s))return;
+  // Ask FIRST, then check with Raees's accounts: a confirmation made while
+  // the dialog was open must still stop the undo.
+  if(!confirm(`Undo the collection of ${s._id} (${_whsRs(s.total)})?\n\nIt goes back to "pay later — to collect".`))return;
+  await whsLoadConfirmations(true);
+  const h=whsHandStatus(s);
+  if(h&&h.state==='received'){showToast('Raees has already confirmed receiving this — it cannot be undone here. Ask Raees or the owners.',true);_whsRepaint();return;}
+  if(!h||h.state!=='waiting'||_whsConfFromCache){showToast('Could not check with Raees\'s accounts — try again when online.',true);return;}
+  const patch={};for(const k of _WHS_COLLECT_FIELDS)patch[k]=null;
+  try{await updateDoc(doc(db,'wh_sales',s._id),patch);}
+  catch(e){showToast(_whsWriteErrMsg(e),true);return;}
+  Object.assign(s,patch);
+  try{logActivity('Warehouse bill collection undone',`${s._id} · ${s.customerName}`);}catch(_){}
+  window.whsModalClose();
+  showToast('Collection undone.');
+  _whsRepaint();
+};
 window.whsVoid=async function(id){
   const s=_whsById(id);if(!s||s.status==='void'||!whsCanEntry())return;
-  const reason=String(prompt(`Void sale ${s.orderNo||s._id} (${_whsRs(s.total)})?\n\nIt stays in the list, struck through, with your reason. Why is it being voided?`,'')||'').trim();
+  const h=whsHandStatus(s);
+  const held=h&&h.state==='received'?`\n\nRaees has already received ${_whsRs(h.received)} for it — the money stays in his books. If you record this bill again, that money covers it and Raees is not asked again; if you don't, the owners are told.`:'';
+  const reason=String(prompt(`Void sale ${s.orderNo||s._id} (${_whsRs(s.total)})?${held}\n\nIt stays in the list, struck through, with your reason. Why is it being voided?`,'')||'').trim();
   if(!reason){showToast('Not voided — a reason is needed.',true);return;}
   const who=_whsSession()||{};
   const patch={status:'void',voidedAt:Date.now(),voidedBy:String(who.u||''),voidedByName:String(who.name||''),voidReason:reason.slice(0,200)};
@@ -1038,8 +1278,9 @@ window.whsExport=function(){
   const today=whsToday();
   const list=whsFilterSales(whSales,_whsFilter,_whsQuery,today);
   if(!list.length){showToast('Nothing to export for this filter.',true);return;}
-  const sales=[['Date','Order #','Customer','Phone','Items','Subtotal','Discount','Discount %','Total','Payment','Paid via','Due date','Overdue','Status','Needs review','Recorded by','Bill','Note']]
-    .concat(list.map(s=>[s.date,s.orderNo||s._id,s.customerName,whsFmtPhone(s.customerPhone),Number(s.qtyTotal)||0,Number(s.subtotal)||0,Number(s.discount)||0,Number(s.discountPct)||0,Number(s.total)||0,s.terms==='later'?'Pay later':'Paid',s.paidVia||'',s.dueDate||'',whsIsOverdue(s,today)?'yes':'',s.status==='void'?'void':'active',s.needsReview?(s.reviewFlags||[]).join('; '):'',_whsWho(s.createdByU,s.createdByName),s.billUrl||'',s.note||'']));
+  const hand=s=>{const h=whsHandStatus(s);return !h?'':h.state==='received'?'received '+h.received+(h.changed?' (bill changed since)':''):h.state==='waiting'?'waiting':'unknown';};
+  const sales=[['Date','Order #','Customer','Phone','Items','Subtotal','Discount','Discount %','Total','Payment','Paid via','Due date','Collected','Collected via','Overdue','With Raees','Status','Needs review','Recorded by','Bill','Note']]
+    .concat(list.map(s=>[s.date,s.orderNo||s._id,s.customerName,whsFmtPhone(s.customerPhone),Number(s.qtyTotal)||0,Number(s.subtotal)||0,Number(s.discount)||0,Number(s.discountPct)||0,Number(s.total)||0,s.terms==='later'?'Pay later':'Paid',s.paidVia||'',s.dueDate||'',whsCollected(s)?s.collectedDate:'',whsCollected(s)?s.collectedVia:'',whsIsOverdue(s,today)?'yes':'',hand(s),s.status==='void'?'void':'active',s.needsReview?(s.reviewFlags||[]).join('; '):'',_whsWho(s.createdByU,s.createdByName),s.billUrl||'',s.note||'']));
   const lines=[['Date','Order #','Customer','Article','Variant','Barcode','Article code','Qty','Price','Line total','Catalog price','Flag']];
   for(const s of list)for(const l of s.lines||[])
     lines.push([s.date,s.orderNo||s._id,s.customerName,l.title||'',l.variant||'',l.sku||'',l.code||'',Number(l.qty)||0,Number(l.price)||0,Number(l.total)||0,l.catalogPrice==null?'':l.catalogPrice,l.manual?'not in the catalog':l.priceEdited?'price changed':'']);
