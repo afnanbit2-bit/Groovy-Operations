@@ -1591,6 +1591,58 @@ function _fabIssueRecords(){
     .filter(g=>g.gpType==='fabric')
     .sort((a,b)=>(b.ts||0)-(a.ts||0));
 }
+
+// ── Cutting masters ──────────────────────────────────────────────────────
+// The list is DERIVED, never stored: the two long-standing masters, plus
+// every name already recorded on a fabric issue, plus any name added in this
+// session. Adding a master is therefore just picking "+ Add cutting master…"
+// and issuing fabric under that name — nothing is written to make the list,
+// so it needs no rules change and works for everyone who issues fabric
+// (settings/* is owner-write, and Mustafa and Uzaib issue fabric). A name
+// added and never used for an issue does not survive a reload, which is fine:
+// it has not cut anything yet. Names match case-insensitively, so "alam"
+// selects Alam rather than minting a twin.
+const _FAB_CUT_MASTERS_DEFAULT=['Hassan','Alam'];
+const _FAB_CUT_MASTER_NEW='__new';
+let _fabCutMasterAdded=[];
+function _fabCutMasterNorm(v){return String(v==null?'':v).replace(/\s+/g,' ').trim().slice(0,40);}
+function _fabCutMasters(current){
+  const out=[],seen=new Set();
+  const add=n=>{n=_fabCutMasterNorm(n);const k=n.toLowerCase();if(!n||k===_FAB_CUT_MASTER_NEW||seen.has(k))return;seen.add(k);out.push(n);};
+  _FAB_CUT_MASTERS_DEFAULT.forEach(add);
+  const rest=[];const restSeen=new Set(seen);
+  _fabIssueRecords().map(g=>g.cutMaster).concat(_fabCutMasterAdded,[current]).forEach(n=>{
+    n=_fabCutMasterNorm(n);const k=n.toLowerCase();
+    if(!n||k===_FAB_CUT_MASTER_NEW||restSeen.has(k))return;restSeen.add(k);rest.push(n);
+  });
+  rest.sort((a,b)=>a.localeCompare(b)).forEach(add);
+  return out;
+}
+// The <option>s for a cutting-master <select>. `selected` is always offered,
+// even when it is on no record, so editing an issue can never silently blank
+// the name it was saved with.
+function _fabCutMasterOptions(selected){
+  const sel=_fabCutMasterNorm(selected).toLowerCase();
+  return `<option value="">Select cutting master…</option>`
+    +_fabCutMasters(selected).map(n=>`<option value="${_gpEsc(n)}"${n.toLowerCase()===sel?' selected':''}>${_gpEsc(n)}</option>`).join('')
+    +`<option value="${_FAB_CUT_MASTER_NEW}">+ Add cutting master…</option>`;
+}
+function _fabCutMasterValue(id){
+  const v=_fabCutMasterNorm(document.getElementById(id)?.value);
+  return v===_FAB_CUT_MASTER_NEW?'':v;
+}
+window.fabCutMasterChange=function(sel){
+  if(!sel)return;
+  if(sel.value!==_FAB_CUT_MASTER_NEW){sel.dataset.prev=sel.value;return;}
+  const typed=_fabCutMasterNorm(typeof prompt==='function'?prompt('Cutting master\'s name'):'');
+  if(!typed){sel.value=sel.dataset.prev||'';return;}
+  const existing=_fabCutMasters().find(n=>n.toLowerCase()===typed.toLowerCase());
+  const name=existing||typed;
+  if(!existing)_fabCutMasterAdded.push(name);
+  sel.innerHTML=_fabCutMasterOptions(name);
+  sel.value=name;sel.dataset.prev=name;
+  showToast(existing?`${name} is already on the list — selected`:`${name} added — saved to the list with this issue`);
+};
 function _fabRegFiltered(){
   const f=_fabRegQ.toLowerCase();
   const[dFrom,dTo]=_fabRegDateBounds();
@@ -1605,7 +1657,7 @@ function _fabRegFiltered(){
     if(_fabRegLabelFilter){const lf=_fabRegLabelFilter.toUpperCase();if(!(g.regLabels||[]).some(l=>String(l.text||'').toUpperCase()===lf))return false;}
     if(!f)return true;
     const labelText=(g.regLabels||[]).map(l=>l.text).join(' ');
-    return [g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id,labelText].some(v=>String(v||'').toLowerCase().includes(f));
+    return [g.poId,g.articleName,g.articleCode,g.fabricType,g.fabricColor,g.id,g.cutMaster,labelText].some(v=>String(v||'').toLowerCase().includes(f));
   }).sort((a,b)=>{
     // Day first, newest day first, then newest within the day. _fabIssueRecords
     // sorts on `ts` alone, which is the CREATION time — an entry whose date was
@@ -1744,7 +1796,7 @@ function renderFabricIssueRegistry(){
     <div id="fab-reg-datebar" style="margin-bottom:10px">${_fabRegDateBarHTML()}</div>
     <div id="fab-reg-stats" style="margin-bottom:10px">${_fabRegStatsHTML()}</div>
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
-      <input id="fab-reg-search" placeholder="Search PO, article, fabric…" oninput="window.fabRegFilter(this.value)" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box">
+      <input id="fab-reg-search" placeholder="Search PO, article, fabric, cutting master…" oninput="window.fabRegFilter(this.value)" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box">
       <select onchange="window.fabRegSetPer(this.value)" title="Entries per page" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:14px">
         ${[12,20,50,100].map(n=>`<option value="${n}"${_fabRegPer===n?' selected':''}>${n}/page</option>`).join('')}
       </select>
@@ -1939,10 +1991,8 @@ window.fabRegEdit=function(gpId){
       <div class="field" style="flex:1"><label>Article code</label><input id="fed-code" value="${_gpEsc(g.articleCode||'')}" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
     </div>
     <div class="field"><label>Cutting master</label>
-      <select id="fed-cutmaster" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
-        <option value="">Select cutting master…</option>
-        <option value="Hassan"${g.cutMaster==='Hassan'?' selected':''}>Hassan</option>
-        <option value="Alam"${g.cutMaster==='Alam'?' selected':''}>Alam</option>
+      <select id="fed-cutmaster" data-prev="${_gpEsc(_fabCutMasterNorm(g.cutMaster))}" onchange="window.fabCutMasterChange(this)" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
+        ${_fabCutMasterOptions(g.cutMaster)}
       </select>
     </div>
     <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin:6px 0 6px">Cutting — bundles per size</div>
@@ -1987,7 +2037,7 @@ window._fabRegSaveEdit=async function(gpId){
   const po=(document.getElementById('fed-po')?.value||'').trim();
   const articleName=(document.getElementById('fed-article')?.value||'').trim();
   const articleCode=(document.getElementById('fed-code')?.value||'').trim();
-  const cutMaster=document.getElementById('fed-cutmaster')?.value||'';
+  const cutMaster=_fabCutMasterValue('fed-cutmaster');
   const sizeBreakdown=_fabEditSizes
     .map(s=>({size:(s.size||'').trim(),bundles:_fabParseBundles(s.bundles)}))
     .filter(s=>s.size||s.bundles.length)
@@ -2285,10 +2335,8 @@ function renderFabricIssueTab(){
   </div>
   <div class="card"><div class="card-title">Cutting <span style="font-weight:400;color:var(--muted);font-size:12px">quantity after cutting · one number per bundle (e.g. 9-8-6-7)</span></div>
     <div class="field" style="max-width:280px"><label>Cutting master *</label>
-      <select id="fab-iss-cutmaster" style="width:100%;font-size:16px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
-        <option value="">Select cutting master…</option>
-        <option value="Hassan">Hassan</option>
-        <option value="Alam">Alam</option>
+      <select id="fab-iss-cutmaster" data-prev="" onchange="window.fabCutMasterChange(this)" style="width:100%;font-size:16px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
+        ${_fabCutMasterOptions('')}
       </select>
     </div>
     <div id="fab-iss-sizes" style="margin-top:12px"></div>
@@ -2678,8 +2726,8 @@ window.submitFabricIssue=async function(){
     .map(s=>({...s,bundleCount:s.bundles.length,qty:s.bundles.reduce((a,b)=>a+b,0)}));
   const cutQty=sizeBreakdown.reduce((n,s)=>n+s.qty,0);
   const totalBundles=sizeBreakdown.reduce((n,s)=>n+s.bundleCount,0);
-  const cutMaster=document.getElementById('fab-iss-cutmaster')?.value||'';
-  if(!cutMaster){showToast('Select the cutting master (Hassan or Alam).',true);return;}
+  const cutMaster=_fabCutMasterValue('fab-iss-cutmaster');
+  if(!cutMaster){showToast('Select the cutting master — or pick "+ Add cutting master…" for someone new.',true);return;}
   if(!cutQty){ if(!confirm('No cut quantities entered. Issue anyway?'))return; }
   const rollCodes=_fabIssueRolls.map(r=>r.rollCode);
   const fabUnit=primary.unit||'kg';

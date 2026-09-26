@@ -1310,6 +1310,10 @@ window.generateGPPdf=function(gpId){
   // Info
   pdf.setFontSize(10);pdf.setFont(undefined,'normal');
   const rows=[[`Person: ${gp.name||'—'}`,`Issued by: ${gp.issuer||gp.name||'—'}`],[`Article: ${gp.article||'—'}`,`Specification: ${gp.spec||'—'}`],[`Destination: ${gp.dest||'—'}`,`Purpose: ${gp.purpose||'—'}`]];
+  // A fabric issue names who cut it — the same rule the print engine follows:
+  // it takes the (always empty) Purpose slot, so the page does not grow.
+  const _cm=String(gp.cutMaster||'').trim();
+  if(_cm){if(String(gp.purpose||'').trim())rows.push([`Cutting master: ${_cm}`,'']);else rows[2][1]=`Cutting master: ${_cm}`;}
   rows.forEach(row=>{pdf.text(row[0],M,y);if(row[1])pdf.text(row[1],W/2,y);y+=7;});
   y+=4;
 
