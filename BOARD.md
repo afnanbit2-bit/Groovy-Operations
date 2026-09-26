@@ -220,12 +220,20 @@ And two this module adds:
   the real-Chromium script load and the rendered geometry of the shell are
   tested.
 - Phase 1 screens are honest placeholders, not loading states.
-- **Phase 4b** — the 08:00 PKT reminder — is the only piece of the build
-  spec not built. It is a scheduled Netlify function with the service
-  account (not a Cloud Function, so there is no Blaze dependency), and it
-  writes `due_today` / `overdue` rows through the same
-  `hrm_notifications` shape `_tbNotify` uses. It is deliberately last:
-  a reminder that writes into a board nobody can read yet is untestable.
+- **Phase 4b — the 08:00 PKT reminder — is BUILT (session 2, P2).**
+  `netlify/functions/board-reminder.js`, scheduled `0 3 * * *` (03:00 UTC =
+  08:00 PKT), body in `scripts/board-reminder-plan.js`. Every open item due
+  today gets one `due_today` row per person on it; every open item past its
+  date gets one `overdue` row per person, **every day** it stays overdue.
+  Rows go into `hrm_notifications` in the client's own shape (source `tb`,
+  `forUser` = username, escaped for the bell), with an id of
+  `tb_<type>_<item>_<uid>_<YYYYMMDD>`, so a second run the same day writes
+  nothing and a read reminder never comes back unread. "Today" is
+  Pakistan's day (UTC+5, no DST). A summary of each run is kept at
+  `board_config/reminder`. It runs only on the **published production
+  deploy** and cannot be opened by URL (a scheduled function answers 403).
+  Priority is `normal`, not `high`: an overdue item repeats daily, and a
+  red card per item per morning would be noise.
 - **The Dashboard activity card does not show step ticks, file adds, lock
   changes or handovers.** It is derived from the items in memory, not from
   the activity subcollections — see phase 5 below for why. Those events
@@ -255,7 +263,7 @@ And two this module adds:
 | 3 — calendar | **done** — month + week, filters, pointer drag with lock enforcement |
 | 4 — comments, mentions, files, inbox | **done** — the thread, @ ranking, Cloudinary files, the live inbox |
 | 5 — responsive, shortcuts, search, cards 10–12 | **done** — see below |
-| 4b — scheduled reminder (Netlify) | the last piece; needs the rules deployed first |
+| 4b — scheduled reminder (Netlify) | **built** (session 2, P2) — `board-reminder`, 08:00 PKT |
 
 Cuts agreed for the Sep 28 date: Dashboard ships cards 1–8 in phase 2 (9–12
 move to phase 5); the calendar ships month + week, filters and pointer drag
@@ -582,7 +590,7 @@ Record pass/fail here as it is worked through.
 | 12 | Ammar types `@` → the people he mentions most; typing `d` shows Daniyal | rules + a few real mentions | |
 | 13 | phone: all four screens usable; drawer as a sheet; long-press move works | rules | |
 | 14 | the seed re-run duplicates nothing | seed run once already | |
-| 14b | the 08:00 PKT reminder writes one `due_today` per assignee | **phase 4b, not built** | — |
+| 14b | the 08:00 PKT reminder writes one `due_today` per person on an item due that day, and the bell shows it | an item dated today; the first morning after it ships | |
 | 15 | tests pass; nothing outside the Board changed | — | **pass** (below) |
 
 **Step 15 is the one that can be answered from here, and it is.**
