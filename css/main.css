@@ -299,6 +299,24 @@ html.ptr-return #scr-login .login-box,html.ptr-return #scr-login .login-box>*{an
   #scr-login .login-box>*{animation:none}
   .ptr.spin svg{animation-duration:2s}
 }
+/* ── The app frame is not a web page to select, save or search ──
+   Afnan's recording (27 Sept): a long-press on the logo opened Chrome's
+   image menu (Copy / Download / Share / Open in Chrome), a long-press on
+   text started a selection that spread over the whole screen, a tap on
+   text raised Google's "Tap to search", and the logo could be dragged off
+   as a picture. On the login, the lock and the app's CHROME (top bar,
+   sidebar, phone nav, sheets, every button and label) that is all switched
+   off. Inputs keep selection (you edit text there), and page CONTENT —
+   PO numbers, tables, notes — stays selectable on purpose: copying those
+   is daily work. js/auth.js stops the long-press menu and image drags on
+   the same areas. */
+#scr-login,#scr-lock,.topbar,#sidebar,#mob-nav,.mob-sheet,.login-sheet,#gv-overlay,
+button,[role="button"],label,.btn-login,.btn-login-alt,.tool-btn,.mob-nav-btn,.mob-nav-item{
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#scr-login input,#scr-lock input,.login-sheet input,.topbar input,#sidebar input,.mob-sheet input,.mob-sheet textarea{
+  -webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+img{-webkit-user-drag:none}
+#scr-login img,#scr-lock img,.topbar img,#sidebar img,#mob-nav img,.login-sheet img{pointer-events:none}
 /* ── Touch feedback, not Chrome's blue boxes ──
    Chrome paints a translucent blue rectangle over whatever is tapped
    (-webkit-tap-highlight-color); on the eye, the key and the Remember-me
