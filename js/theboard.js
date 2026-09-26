@@ -3509,6 +3509,28 @@ function _tbPaintBadges(){
 /** Live, because the phase's definition of done is a badge that moves in
  *  ANOTHER browser within a second. Started from a startApp wrap so the
  *  count is live on every page, not only while the Board is open. */
+// THE INBOX READS ONLY THE BOARD'S OWN ROWS, NEWEST FIRST, CAPPED (P2).
+// It used to listen to EVERY notification addressed to the person -- the
+// HRM ones too -- forever, and the 08:00 reminder now adds rows every day.
+// The narrow query needs a composite index (forUser, source, createdAt
+// desc; firestore.indexes.json). Until that index is DEPLOYED the query is
+// refused with failed-precondition, so the listener falls back to the old
+// wide one rather than leaving an empty inbox: main has to work before
+// anyone runs the deploy.
+const _TB_INBOX_LIMIT=200;
+let _tbInboxWide=false;
+function _tbInboxQuery(h,wide){
+  if(wide||typeof orderBy!=='function'||typeof limit!=='function')
+    return query(collection(db,'hrm_notifications'),where('forUser','==',h));
+  return query(collection(db,'hrm_notifications'),where('forUser','==',h),where('source','==',TB_NOTIF_SOURCE),
+    orderBy('createdAt','desc'),limit(_TB_INBOX_LIMIT));
+}
+/** Is this the "that index does not exist yet" refusal? Pure. */
+function _tbNeedsIndex(e){
+  const c=String((e&&e.code)||''),m=String((e&&e.message)||'');
+  return c==='failed-precondition'||/requires an index|FAILED_PRECONDITION/i.test(m);
+}
+
 function tbWatchNotifs(){
   if(_tbNotifUnsub)return;
   const h=_tbHandle();
@@ -3521,7 +3543,7 @@ function tbWatchNotifs(){
   if(typeof onSnapshot!=='function'){ loadTbNotifsOnce(); return; }
   try{
     _tbNotifUnsub=onSnapshot(
-      query(collection(db,'hrm_notifications'),where('forUser','==',h)),
+      _tbInboxQuery(h,_tbInboxWide),
       function(snap){
         tbNotifs=(snap&&snap.docs||[]).map(d=>Object.assign({_id:d.id},d.data()));
         const rows=tbInboxRows(tbNotifs,h);
@@ -3547,6 +3569,13 @@ function tbWatchNotifs(){
           &&String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')===0)_tbRepaint();
       },
       function(e){
+        if(!_tbInboxWide&&_tbNeedsIndex(e)){
+          console.warn('[the board] inbox index not deployed yet -- reading the wide query meanwhile',e);
+          try{ if(_tbNotifUnsub)_tbNotifUnsub(); }catch(_){}
+          _tbNotifUnsub=null;_tbInboxWide=true;
+          tbWatchNotifs();
+          return;
+        }
         console.warn('[the board] inbox listener failed',e);
         // A refused read and an empty inbox must never render the same
         // screen -- the Store lesson.
@@ -3563,7 +3592,13 @@ async function loadTbNotifsOnce(){
   if(!h||_tbNotifOnce)return;
   _tbNotifOnce=true;
   try{
-    const snap=await getDocs(query(collection(db,'hrm_notifications'),where('forUser','==',h)));
+    let snap;
+    try{ snap=await getDocs(_tbInboxQuery(h,_tbInboxWide)); }
+    catch(e){
+      if(_tbInboxWide||!_tbNeedsIndex(e))throw e;
+      _tbInboxWide=true;
+      snap=await getDocs(_tbInboxQuery(h,true));
+    }
     tbNotifs=(snap&&snap.docs||[]).map(d=>Object.assign({_id:d.id},d.data()));
   }catch(e){
     console.warn('[the board] inbox read failed',e);

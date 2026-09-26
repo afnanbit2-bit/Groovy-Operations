@@ -1873,6 +1873,45 @@ module.exports=async function(){
     s.eq('a member cannot touch the markers',a.run('_tbMarkerRows().length'),2);
   }
 
+  // The inbox listened to EVERY notification addressed to the person, HRM
+  // ones too, forever -- and the reminder now adds rows every morning.
+  s.section('the inbox reads only the Board’s rows, newest first, capped; and survives a missing index');
+  {
+    const mk=()=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash'});
+      a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];userProfiles=[{uid:"u-ammar",username:"ammar"}]');
+      a.run('var __subs=[],__unsub=0;query=function(){return{args:[].slice.call(arguments,1)};};'
+        +'where=function(f,o,v){return{w:[f,o,v]};};orderBy=function(f,d){return{o:[f,d]};};limit=function(n){return{l:n};};'
+        +'onSnapshot=function(q,next,err){__subs.push({q:q,next:next,err:err});return function(){__unsub++;};}');
+      return a;
+    };
+    const a=mk();
+    a.run('tbWatchNotifs()');
+    s.eq('it asks for the person’s Board rows, newest first, at most 200',J(a.run('__subs[0].q.args')),
+      J([{w:['forUser','==','ammar']},{w:['source','==','tb']},{o:['createdAt','desc']},{l:200}]));
+    a.run('__subs[0].err({code:"failed-precondition",message:"The query requires an index"})');
+    s.eq('an index not deployed yet: it lets go of that listener',a.run('__unsub'),1);
+    s.eq('and reads the wide query meanwhile, rather than an empty inbox',J(a.run('__subs[1]&&__subs[1].q.args')),J([{w:['forUser','==','ammar']}]));
+    s.eq('which is not an error on screen',a.run('_tbNotifErr'),false);
+    a.run('__subs[1].next({docs:[{id:"n1",data:function(){return{source:"tb",forUser:"ammar",type:"due_today",createdAt:1,readBy:[]};}}]})');
+    s.eq('and the inbox fills',a.run('tbNotifs.length'),1);
+    const b=mk();
+    b.run('tbWatchNotifs();__subs[0].err({code:"permission-denied",message:"Missing or insufficient permissions."})');
+    s.eq('a REFUSAL is not mistaken for a missing index',b.run('__subs.length'),1);
+    s.eq('it says the inbox could not be read',b.run('_tbNotifErr'),true);
+    // The one-off read (a shell without onSnapshot) falls back the same way.
+    const c=mk();
+    c.run('var __gd=[];getDocs=async function(q){__gd.push(q.args.length);if(q.args.length>1)throw{code:"failed-precondition"};'
+      +'return{docs:[{id:"n2",data:function(){return{source:"tb",forUser:"ammar",createdAt:2,readBy:[]};}}]};}');
+    await c.run('loadTbNotifsOnce()');
+    s.eq('the one-off read tries the narrow query, then the wide one',J(c.run('__gd')),J([4,1]));
+    s.eq('and gets the rows',c.run('tbNotifs.length'),1);
+    const idx=JSON.parse(read('firestore.indexes.json')).indexes.filter(x=>x.collectionGroup==='hrm_notifications');
+    s.eq('the index it needs is declared',J(idx.map(x=>x.fields.map(f=>f.fieldPath+':'+f.order))),
+      J([['forUser:ASCENDING','source:ASCENDING','createdAt:DESCENDING']]));
+  }
+
   // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════
   s.section('the composer: no date means undated, never today');
   {
