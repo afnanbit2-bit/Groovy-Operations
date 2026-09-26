@@ -243,6 +243,7 @@ function _profileViewCardHTML(p){
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-sm" onclick="window.profileStartEdit()">Edit profile</button>
       <button class="btn-sm" onclick="window.openChangePasswordModal()">Change password</button>
+      <button class="btn-sm profile-signout" onclick="window.doLogout()">Sign out</button>
     </div>
   </div>`;
 }
@@ -351,14 +352,17 @@ function _profileAppearanceHTML(){
 function _profileSecurityHTML(){
   const can=typeof lockEnabledFor==='function'&&typeof _lockSupported==='function';
   const on=can&&lockEnabledFor(session.uid);
+  const signIn=on&&typeof passkeyFor==='function'&&!!passkeyFor(session.u);
   const supported=can&&_lockSupported();
   const kept=(function(){try{return localStorage.getItem('groovy-keep-signed-in')!=='0';}catch(_){return true;}})();
   return`<div class="card">
-    <div style="font-weight:700;margin-bottom:4px">Fingerprint lock</div>
+    <div style="font-weight:700;margin-bottom:4px">Fingerprint</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${on
-      ?'On for this device. The app asks for your fingerprint, face or phone PIN when you open it, and again after 5 minutes away.'
+      ?(signIn
+        ?'On for this phone. Sign in with your fingerprint from the login screen, and the app asks for it when you reopen it or come back after 5 minutes.'
+        :'The lock is on for this phone, but fingerprint SIGN-IN is not — the set-up could not reach the server. Turn it off and on again to retry.')
       :supported
-        ?'Stay signed in on this phone and unlock the app with your fingerprint, face or phone PIN instead of typing your password. Only this device; your fingerprint never leaves the phone.'
+        ?'Sign in with your fingerprint, face or phone PIN instead of typing your password, and lock the app when you leave it. Only this phone; your fingerprint never leaves it.'
         :'This browser cannot do a fingerprint lock. On a phone, open Groovy Ops in Chrome or Safari, or from the installed app.'}</div>
     ${on&&!kept?`<div style="font-size:13px;color:var(--accent-warning);margin-bottom:10px">You signed in without Remember me, so you will be signed out when the app closes and the lock will not come up.</div>`:''}
     ${on?`<button class="btn-sm" onclick="window.lockDisable();_profileRerender()">Turn off</button>`
@@ -722,6 +726,11 @@ function profileApplyToSession(){
   if(p&&p.displayName)session.name=p.displayName;
   if(p&&p.jobTitle)session.jobTitle=p.jobTitle;
   session.photoUrl=p?_profPhotoUrl(p.photoUrl):'';
+  // The phone's "Sign in as" list shows this picture beside the saved
+  // password (js/auth.js holds the just-typed password for 30s for this).
+  if(session.photoUrl&&typeof window._loginStoreCredIcon==='function'){
+    try{window._loginStoreCredIcon(_profAvatarUrl(session.photoUrl,96),session.name);}catch(_){}
+  }
   session.nameColor=p?_profHex(p.nameColor):'';
   const n=document.getElementById('user-name');
   if(n){

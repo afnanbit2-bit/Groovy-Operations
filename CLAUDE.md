@@ -378,14 +378,31 @@ previews break again.
 
 ### Icons
 
-`/assets/icons/icon-{192,512}.png` + `icon-maskable-512.png` are the real
+`/assets/icons/icon-{192,512}.png` + `icon-maskable-v3-512.png` are the real
 GROOVY wing/"G" mark (Sept 2026 — replaced the black/white "GO" placeholder).
 Source: a 1920×1080 RGBA PNG the user supplied, transparent background,
 mark itself ~880×484 after cropping to its alpha bounding box. Regenerated
 with Pillow (`Image.alpha_composite`, `LANCZOS` resize) rather than by hand:
 - `icon-192.png` / `icon-512.png` (`purpose: "any"`) — mark centered on a
   **transparent** canvas at 80% fill (by its longer dimension).
-- `icon-maskable-512.png` (`purpose: "maskable"`) — mark centered on an
+- **27 Sept, later: `icon-maskable-v3-512.png` — the logo on WARM WHITE
+  (#FAF7F4), Afnan's pick "B" of three mock-ups** (white-on-gradient,
+  gradient-on-white, graphite) after he called the black tile hideous. Same
+  69.3% safe-circle fill. The same art at 180px is now the iPhone
+  `apple-touch-icon` (`apple-touch-icon-180.png`, opaque — iOS fills
+  transparency with black, which is the look he rejected). Precached.
+  `manifest.json` `background_color` (the splash) is still black — not
+  the icon, and the login is dark by default.
+- **27 Sept: `icon-maskable-v2-512.png` replaced `icon-maskable-512.png`** (superseded by v3 above).
+  Afnan asked for a transparent Android icon; that is not available to a
+  web app (the launcher masks every icon to a shape and Chrome fills a
+  non-maskable one onto a WHITE plate), so he chose "the mark fills the
+  tile": 69.3% fill, the largest a 1.83:1 mark can take while its bounding
+  box's corners stay inside Android's guaranteed 80% safe circle (2px
+  margin; half-diagonal 202.3 ≤ 204.8). Built from `icon-512.png` cropped to
+  its alpha bbox. A NEW filename, so Chrome's WebAPK update check sees a
+  changed icon; an installed icon may still need uninstall/reinstall.
+- (was) `icon-maskable-512.png` (`purpose: "maskable"`) — mark centered on an
   **opaque black** canvas (matches `manifest.json`'s `theme_color`/
   `background_color`, both `#000000`) at a conservative **60%** fill, so it
   stays inside Android's ~66%-diameter safe-zone circle after masking.
@@ -9130,6 +9147,132 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   24px**, with Sign in still on screen. The first cut stretched the card to
   the layer, which squashed Sign in to **22px** with the keyboard open —
   the card is `flex-start` + `min-height:100%` and its children don't shrink.
+- **The fingerprint choice is ON the login screen now** ("Unlock with
+  fingerprint next time", `#login-bio`, 26 Sept). Afnan signed in twice on
+  v207/v208 and never got the lock: it was only offered in a card 1.5s
+  after the app opened, and that card was marked "offered" when SHOWN, so
+  an unseen card never came back. **Which of the two it was is not known**
+  — no log from the phone. The row shows only where
+  `isUserVerifyingPlatformAuthenticatorAvailable()` says yes AND Remember
+  me is ticked; ticked → `_lockEnableAfterLogin()` asks straight after
+  sign-in; unticked while the lock was on → turned off. A refusal inside
+  1s (Safari: WebAuthn outside a tap, no dialog shown) falls back to the
+  card, whose button is a tap; a later refusal is a cancel and is left
+  alone — a timing heuristic, labelled as one. The card is now marked
+  offered only when ANSWERED.
+- **The nitty-gritty round (27 Sept, second recording).** Read frame by
+  frame; every item was real: (1) Chrome's blue **tap highlight** made the
+  eye, key and Remember-me row look "selected" — `-webkit-tap-highlight-color:
+  transparent` on `#scr-login,#scr-lock,.topbar`, each control has its own
+  `:active` press state, keyboard keeps `:focus-visible`; (2) **Sign in
+  stuck grey** — a `:hover` sticks on touch, so all login hover styles live
+  in `@media (hover:hover) and (pointer:fine)` (asserted); (3) Chrome's
+  **"Sign in as" list** showed blank avatars — a `PasswordCredential` can
+  carry `name` and `iconURL`, so the credential is stored again once the
+  profile photo is known (`_loginStoreCredIcon`, called from
+  `profileApplyToSession`; the password is held IN MEMORY for ≤30s for
+  that, never written). Accounts Chrome saved on its own get a picture only
+  after that person signs in on the new build; (4) closing that list
+  showed a red error — silent now; (5) **Forgot password** is a bottom
+  sheet OUTSIDE the form, not a box that shoved the page up; (6) after the
+  fingerprint the login sat still for ~1.5s — the button now says "Waiting
+  for your fingerprint…" / "Signing you in…" and the rest of the form steps
+  back (`is-busy`), and every sign-in FADES the login out (`_loginLeave`,
+  230ms) instead of cutting; (7) the phone **top bar** wrapped "Change
+  password" and pushed Sign out off the screen — below 600px it keeps logo,
+  bell and avatar; **Sign out moved onto the Profile card** (the avatar),
+  which already had Change password.
+- **Pull-to-refresh REBUILT from Afnan's screen recording (27 Sept).**
+  Read frame by frame (cv2, 90fps): every release was a hard cut to a
+  blank page (brightness 42 → 12.5 in ONE frame), then the entrance
+  animation replayed for ~0.8s, then the fingerprint row popped in late
+  and shoved the form up. Now a pull is a CHECK, not a reload:
+  `_ptrRefresh` asks the service worker for a new build and returns
+  `'current'` (the ring turns into a tick, "Up to date", a double-pulse,
+  the card springs home — the page never goes away) or `'update'` (only
+  when a worker actually installed: "Updating…", the card fades, reload,
+  and `html.ptr-return` from the `<head>` script skips the entrance so it
+  reads as one screen). The fingerprint row is decided at load from the
+  remembered answer (`groovy-bio-capable`), not popped in later. The
+  bubble only moves and grows; only the ARC rotates (turning the whole
+  bubble swung the arrow sideways and tipped the label over), and the
+  arrow flips with `scaleY(-1)`, never through sideways. Behind the card,
+  on a phone, the layer is `--surface`. **Haptics** (`navigator.vibrate`,
+  Android only; iOS has no API): 8ms tick at the threshold, 14ms on
+  release, `[10,50,16]` when done, `[10,40,10]` on an update. Chrome drops
+  vibrate until the page has been tapped once, so the very first
+  threshold tick on a fresh page can be silent. **Verified by driving a
+  real touch gesture in headless Chromium** (playwright-core + CDP
+  `Input.dispatchTouchEvent`, per-frame transform log): 263 frames, the
+  card never jumps more than 5.8px a frame, no reload on the current path.
+- **Pull down to refresh on the login and lock screens is OURS**
+  (`_gvPullToRefresh`, js/auth.js), because `overscroll-behavior:none` —
+  the no-scroll fix — also switches off the browser's own. Rubber band
+  `128·(1−e^(−dy/140))`, refresh at 72 (≈120px of finger), a ring that
+  fills, an arrow that flips with a buzz, the card following at 0.4×. It
+  only starts at `scrollTop 0` (with the keyboard open the drag is a
+  scroll) and takes the gesture with `preventDefault`. A release first asks
+  the service worker to `update()` (≤2.5s) and then reloads — so a pull
+  also brings in a new build, which a plain reload behind a cache-first
+  worker does not promise. Driven in `tests/login.test.js`.
+- **FINGERPRINT SIGN-IN (passkeys) — 26 Sept, REVERSES "not built".**
+  Afnan tried the lock and reported "it does not log in by fingerprint":
+  he wanted a fingerprint button ON the login screen. He chose "both":
+  - `netlify/functions/passkey.js` is the boundary. `register-options` /
+    `register` (caller's verified ID token) store `passkeys/{credentialId}`
+    = the PUBLIC key (SPKI), alg, rpId, uid **from the token**, signCount.
+    `login-options` / `login` verify: single-use 2-min challenge (read and
+    deleted in one transaction), `webauthn.get`, the challenge, the
+    **signed** origin (exactly `https://groovyoperations.netlify.app` or a
+    `--groovyoperations.netlify.app` preview), rpIdHash, UP **and UV**, the
+    ES256/RS256 signature, a non-regressing counter, and a live, enabled
+    Firebase user; only then `createCustomToken(uid-stored-with-the-key)`.
+    `passkeys` and `passkey_challenges` have **no** `firestore.rules` block
+    (default deny — asserted), so no client can touch them and **no
+    republish was needed**.
+  - One fingerprint sets up both: `lockEnable` registers the passkey and
+    uses the same credential id as the lock record. Server unreachable →
+    the lock still turns on locally, and the toast says sign-in did not.
+    Needs `getPublicKey()`/`getAuthenticatorData()` on the response
+    (current Chrome/Safari).
+  - Login screen: **"Sign in with fingerprint"** (`#login-finger`, shown
+    when this phone holds a passkey record, `localStorage['groovy-passkey']`,
+    by username) → `signInWithCustomToken` (bridged in index.html). A 404
+    (key removed) forgets it locally. A **key button in the password
+    field** (`loginFillSaved`) asks Chrome's password manager for the saved
+    password via `navigator.credentials.get({password:true})` and signs in;
+    Chrome only, and whether Chrome wants a fingerprint first is ITS setting.
+  - `tests/passkey.test.js` (56) runs the function with REAL P-256 and RSA
+    keys, byte-built authenticator/client data, and every refusal (replay,
+    other key, no UV, other challenge/origin/rpId, expired, unregistered,
+    copied counter, disabled/deleted user, stealing a key id, removing
+    someone else's); six guards reverted and caught. **Unverified:** that
+    `FIREBASE_SERVICE_ACCOUNT` can sign custom tokens (it must hold a
+    private key — the other functions only prove it can read/write), and
+    what a real phone sends. Afnan's phone is the first real test.
+- **Busy = the whole button, never a spinning icon (27 Sept).** Afnan: a
+  rotating fingerprint while signing in "is stupid". While the phone and
+  the server answer, a sheen sweeps across the button (`loginSheen`, a
+  `::after` at `z-index:-1` inside `isolation:isolate`, so it sits over the
+  button's fill and under its text) and the outlined fingerprint button's
+  border breathes; on success the button turns to "Signed in" and FILLS
+  solid (`.ok`) for 260ms before the login fades. Same on the password
+  button. The outlined button needed a stronger sheen (.42) — at .30 it was
+  invisible over no fill, seen in a render, not guessed. Tests assert no
+  rule spins the icon.
+- **Desktop: "Sign in with a passkey" (27 Sept).** Afnan: the phone shows
+  the fingerprint lock, the desktop "does not hold fingerprint". A
+  passkey lives on the device that made it, so a computer has no local
+  record. On a computer (`_loginIsDesktop`: ≥561px, `hover:hover`,
+  `pointer:fine`) the button now shows anyway, labelled "Sign in with a
+  passkey", and asks for a DISCOVERABLE credential (no `allowCredentials`)
+  — the browser then offers a passkey synced to its account, or "use a
+  phone" (QR → the phone's fingerprint, the `hybrid` transport). The
+  server needs no change: it finds the uid from the credential id. Keys
+  are registered with `residentKey:'preferred'`. **Unverified:** whether
+  the key Afnan's Samsung made is discoverable/synced (it depends on which
+  passkey provider the phone used — Google Password Manager or Samsung
+  Pass); the QR route works whenever the phone's key is discoverable.
 - **Chrome's own "Use saved password?" sheet is not the fingerprint lock.**
   The lock comes AFTER a Remember-me sign-in (offered once) and then
   replaces the login on every reopen. Asking for a fingerprint before

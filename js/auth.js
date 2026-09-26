@@ -144,7 +144,7 @@ window.doLogin=async function(){
   const btn=document.getElementById('login-btn');
   const _rm=document.getElementById('l-remember');
   const keep=!!(_rm&&_rm.checked);
-  _loginBusy(btn,true);
+  _loginBusy(btn,true);_loginSetBusy(true);
   uEl.disabled=true;pEl.disabled=true;
   loginInProgress=true;
   try{
@@ -167,13 +167,23 @@ window.doLogin=async function(){
     // must not leave a saved password behind.
     if(keep)_loginOfferSave(u,p,def.name);
     loginInProgress=false;
-    startApp();
+    btn.classList.remove('busy');btn.classList.add('ok');
+    {const lab=document.getElementById('login-btn-label');if(lab)lab.textContent='Signed in';}
+    setTimeout(()=>_loginLeave(()=>startApp()),260);
     logActivity('Login',`${def.name} signed in`);
-    if(keep)setTimeout(()=>{try{_lockMaybeOffer();}catch(_){}},1500);
+    // The fingerprint choice made ON the login screen. Asked straight away,
+    // while the person is still looking at the phone — the first cut only
+    // offered it in a card 1.5s after the app opened, and Afnan signed in
+    // twice without ever getting it.
+    const bioEl=document.getElementById('l-bio'),bioRow=document.getElementById('login-bio');
+    const bioShown=!!(bioRow&&!bioRow.hidden);
+    const bio=bioShown&&!!(bioEl&&bioEl.checked)&&keep;
+    if(bio&&!lockEnabledFor(session.uid))_lockEnableAfterLogin();
+    else if(bioShown&&!bio&&lockEnabledFor(session.uid))_lockClear(session.uid);
   }catch(e){
     loginInProgress=false;
     uEl.disabled=false;pEl.disabled=false;
-    _loginBusy(btn,false);
+    _loginBusy(btn,false);_loginSetBusy(false);
     pEl.classList.add('l-error');
     window._loginFailCount=(window._loginFailCount||0)+1;
     _loginShake();
@@ -196,11 +206,40 @@ function _loginBusy(btn,on){
   else btn.textContent=on?'Signing in…':'Sign in';
   btn.classList.toggle('busy',!!on);
 }
+// Chrome's "Sign in as" list shows a credential's NAME and PICTURE
+// (iconURL) when the site gives them. The picture is only known once the
+// profile loads (after sign-in), so the password is held IN MEMORY ONLY for
+// up to 30s and the credential is stored once more with the photo
+// (window._loginStoreCredIcon, called from js/profile.js). Never written
+// anywhere by the app.
+let _loginPendingCred=null;
 function _loginOfferSave(u,p,name){
   try{
     if(typeof window.PasswordCredential!=='function'||!navigator.credentials||!navigator.credentials.store)return;
     navigator.credentials.store(new window.PasswordCredential({id:u,password:p,name:name||u})).catch(()=>{});
+    _loginPendingCred={u,p,name:name||u};
+    setTimeout(()=>{_loginPendingCred=null;},30000);
   }catch(_){}
+}
+window._loginStoreCredIcon=function(iconURL,name){
+  const c=_loginPendingCred;_loginPendingCred=null;
+  if(!c||!/^https:\/\//.test(String(iconURL||'')))return false;
+  try{
+    navigator.credentials.store(new window.PasswordCredential({id:c.u,password:c.p,name:name||c.name,iconURL})).catch(()=>{});
+    return true;
+  }catch(_){return false;}
+};
+// Leaving the login: the screen fades out instead of vanishing mid-frame.
+function _loginLeave(then){
+  const l=document.getElementById('scr-login');
+  if(!l||l.style.display==='none'){then();return;}
+  l.classList.add('leaving');
+  setTimeout(()=>{l.classList.remove('leaving','is-busy');then();},230);
+}
+function _loginSetBusy(on,label){
+  const l=document.getElementById('scr-login');if(l)l.classList.toggle('is-busy',!!on);
+  const f=document.getElementById('login-finger');
+  if(f){const sp=f.querySelector('span');if(sp)sp.textContent=on&&label?label:(f.dataset.label||'Sign in with fingerprint');}
 }
 window.doLogout=async function(){
   await signOut(auth);session=null;sessionStorage.clear();location.reload();
@@ -528,9 +567,148 @@ function _authRestoreDecision(user,tabU,keepFlag,rememberedU,defs){
   _loginPaintTheme();
 })();
 
-window.loginForgot=function(){
+// ── Pull down to refresh (login + lock) ──
+// Rebuilt 27 Sept from Afnan's screen recording, read frame by frame: the
+// first cut reloaded the whole page on EVERY pull, so each release was a
+// hard cut to a blank screen (brightness 42 → 12.5 in one frame), then the
+// entrance animation replayed for ~0.8s, then the fingerprint row popped in
+// late and shoved the form up. Three breaks in one gesture.
+//
+// Now a pull is a CHECK, not a reload:
+//   pull     the card follows the finger with resistance (rAF, no layout),
+//            the ring fills and turns; crossing the line = a light tick
+//   release  a firmer tap; the card settles to a holding height with a
+//            spring and the ring spins while the app asks the service
+//            worker for a new build
+//   current  the ring becomes a tick, a double-pulse, and the card springs
+//            home — the page never goes away
+//   update   only when there IS a new build: "Updating…", the card fades,
+//            the page reloads and comes back WITHOUT the entrance animation
+//            (html.ptr-return, set by the <head> script)
+// Haptics: navigator.vibrate is Android only (iOS Safari has none) and
+// Chrome ignores it until the person has tapped the page once, so the
+// FIRST threshold tick of a fresh page may be silent; the release and
+// completion pulses come after a touchend, which counts as that tap.
+const _PTR_READY=72, _PTR_MAX=128, _PTR_HOLD=56;
+const _PTR_SPRING='cubic-bezier(.22,1.25,.36,1)';   // a little overshoot
+const _PTR_EASE='cubic-bezier(.2,.8,.2,1)';
+function _ptrDistance(dy){           // rubber band: easy at first, harder later
+  if(dy<=0)return 0;
+  return Math.min(_PTR_MAX,_PTR_MAX*(1-Math.exp(-dy/140)));
+}
+function _ptrBuzz(p){try{if(navigator.vibrate)navigator.vibrate(p);}catch(_){}}
+function _gvPullToRefresh(scroller,indicator,onRefresh){
+  if(!scroller||!indicator||scroller.__ptr)return;
+  scroller.__ptr=true;
+  const card=scroller.querySelector('.login-box');
+  const arc=indicator.querySelector('.ptr-arc');
+  const label=indicator.querySelector('.ptr-label');
+  let y0=null,pull=0,ready=false,busy=false,tracking=false,raf=0;
+  const set=(p,mode)=>{
+    // mode: 'drag' (no transition), 'spring' (settle), 'ease' (leave)
+    const tr=mode==='drag'?'none':mode==='spring'
+      ?'transform .5s '+_PTR_SPRING+', opacity .25s ease'
+      :'transform .38s '+_PTR_EASE+', opacity .25s ease';
+    const k=Math.min(1,p/_PTR_READY);
+    indicator.style.transition=tr;
+    // The bubble only MOVES and grows; only the ARC turns. Rotating the
+    // whole bubble (the first cut) swung the arrow sideways and tipped the
+    // "Up to date" label over — both visible in the recorded frames.
+    indicator.style.transform='translate(-50%,'+(p-56)+'px) scale('+(0.6+0.4*k)+')';
+    indicator.style.opacity=String(Math.min(1,p/32));
+    if(arc&&!indicator.classList.contains('spin')){
+      arc.style.strokeDashoffset=String(53.4*(1-k));
+      arc.style.transform='rotate('+(-90+p*2.6)+'deg)';
+    }
+    if(card){card.style.transition=tr;card.style.transform=p?'translate3d(0,'+(p*0.42).toFixed(1)+'px,0)':'';}
+  };
+  const reset=()=>{['ready','spin','done','update'].forEach(c=>indicator.classList.remove(c));if(label)label.textContent='';};
+  scroller.addEventListener('touchstart',e=>{
+    if(busy||e.touches.length!==1||scroller.scrollTop>0){y0=null;return;}
+    y0=e.touches[0].clientY;tracking=false;pull=0;ready=false;
+  },{passive:true});
+  scroller.addEventListener('touchmove',e=>{
+    if(y0==null||busy)return;
+    const dy=e.touches[0].clientY-y0;
+    if(!tracking){if(dy<6)return;tracking=true;if(card)card.style.willChange='transform';}
+    if(e.cancelable)e.preventDefault();
+    pull=_ptrDistance(dy);
+    const nowReady=pull>=_PTR_READY;
+    if(nowReady!==ready){
+      ready=nowReady;indicator.classList.toggle('ready',ready);
+      if(ready)_ptrBuzz(8);
+    }
+    if(!raf)raf=(window.requestAnimationFrame||setTimeout)(()=>{raf=0;set(pull,'drag');});
+  },{passive:false});
+  const end=async()=>{
+    if(y0==null)return;y0=null;
+    if(!tracking)return;tracking=false;
+    if(raf){(window.cancelAnimationFrame||clearTimeout)(raf);raf=0;}
+    if(!(ready&&!busy)){reset();set(0,'ease');if(card)card.style.willChange='';return;}
+    busy=true;
+    _ptrBuzz(14);                                   // the release
+    indicator.classList.remove('ready');indicator.classList.add('spin');
+    if(arc){arc.style.strokeDashoffset='';arc.style.transform='';}
+    set(_PTR_HOLD,'spring');
+    let res='current';
+    try{res=(await onRefresh())||'current';}catch(_){res='current';}
+    indicator.classList.remove('spin');
+    if(res==='update'){
+      indicator.classList.add('update');if(label)label.textContent='Updating…';
+      _ptrBuzz([10,40,10]);
+      return;                                       // the page is about to go
+    }
+    indicator.classList.add('done');if(label)label.textContent='Up to date';
+    _ptrBuzz([10,50,16]);                            // done: a double pulse
+    await new Promise(r=>setTimeout(r,650));
+    set(0,'ease');
+    await new Promise(r=>setTimeout(r,420));
+    reset();if(card)card.style.willChange='';
+    busy=false;
+  };
+  scroller.addEventListener('touchend',end,{passive:true});
+  scroller.addEventListener('touchcancel',end,{passive:true});
+}
+// Ask the service worker for a new build. Only a build that actually
+// arrived reloads the page; otherwise the screen is refreshed IN PLACE.
+async function _ptrRefresh(){
+  const started=Date.now();
+  let updated=false;
+  try{
+    const swc=navigator.serviceWorker;
+    const reg=swc&&swc.getRegistration?await swc.getRegistration():null;
+    if(reg){
+      const took=new Promise(r=>{try{swc.addEventListener('controllerchange',()=>r(true),{once:true});}catch(_){r(false);}});
+      await Promise.race([reg.update(),new Promise(r=>setTimeout(r,3000))]);
+      if(reg.installing||reg.waiting){
+        // sw.js calls skipWaiting, so a new worker takes over by itself.
+        updated=await Promise.race([took,new Promise(r=>setTimeout(()=>r(true),4000))]);
+      }
+    }
+  }catch(_){}
+  const wait=Math.max(0,650-(Date.now()-started));  // long enough to SEE it spin
+  await new Promise(r=>setTimeout(r,wait));
+  if(updated){_ptrReload();return'update';}
+  // In place: re-read what the login screen shows.
+  try{window.loginBioSync();_loginPaintFinger();_loginPaintTheme();}catch(_){}
+  return'current';
+}
+function _ptrReload(){
+  try{sessionStorage.setItem('gv-ptr','1');}catch(_){}
+  try{document.documentElement.classList.add('ptr-leaving');}catch(_){}
+  setTimeout(()=>location.reload(),220);
+}
+try{
+  _gvPullToRefresh(document.getElementById('scr-login'),document.getElementById('login-ptr'),_ptrRefresh);
+  _gvPullToRefresh(document.getElementById('scr-lock'),document.getElementById('lock-ptr'),_ptrRefresh);
+}catch(_){}
+
+window.loginForgot=function(open){
   const h=document.getElementById('login-help');
-  if(h)h.hidden=!h.hidden;
+  if(!h)return;
+  const show=open===undefined?h.hidden:!!open;
+  if(show){h.hidden=false;requestAnimationFrame(()=>h.classList.add('open'));}
+  else{h.classList.remove('open');setTimeout(()=>{if(!h.classList.contains('open'))h.hidden=true;},260);}
 };
 
 // The theme toggle on the login screen: Light → Dark → System. Writes the
@@ -594,35 +772,176 @@ function _lockUserVerified(authData){
   try{const b=new Uint8Array(authData);return b.length>32&&(b[32]&0x04)===0x04;}catch(_){return false;}
 }
 
-window.lockEnable=async function(){
+// ── Fingerprint sign-in (passkeys) + the lock, set up in ONE prompt ──
+// Afnan's second ask (26 Sept): the lock alone was not it — he wanted to
+// SIGN IN with a fingerprint from the login screen. So the credential the
+// phone makes is now a real passkey registered with
+// netlify/functions/passkey.js, which verifies the fingerprint signature
+// server-side and mints the Firebase sign-in. The SAME credential id is the
+// lock's record, so setting it up is one fingerprint, not two.
+// If the server is unreachable the lock still turns on, locally, exactly as
+// before — the sign-in part is said to have failed, not silently skipped.
+const _PASSKEY_KEY='groovy-passkey';      // {username:{id,name,at}} — THIS device
+const _PASSKEY_FN='/.netlify/functions/passkey';
+function _passkeyAll(){try{return JSON.parse(_authRead(_PASSKEY_KEY)||'{}')||{};}catch(_){return{};}}
+function passkeyFor(u){const a=_passkeyAll();return u&&a[u]&&a[u].id?a[u]:null;}
+function _passkeySave(u,rec){const a=_passkeyAll();if(rec)a[u]=rec;else delete a[u];_authStore(_PASSKEY_KEY,JSON.stringify(a));}
+async function _passkeyCall(body){
+  const r=await fetch(_PASSKEY_FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  let j={};try{j=await r.json();}catch(_){}
+  if(!r.ok){const e=new Error(j.error||('HTTP '+r.status));e.status=r.status;throw e;}
+  return j;
+}
+let _lockLastErr='';
+window.lockEnable=async function(opts){
+  _lockLastErr='';
   if(!session){showToast('Sign in first.',true);return false;}
   if(!(await lockAvailable())){showToast('This phone or browser cannot do a fingerprint lock.',true);return false;}
+  // 1. Ask the server for a challenge. Failure here is not fatal: the lock
+  //    can still be made locally.
+  let srv=null,idToken=null,srvErr='';
   try{
-    const cred=await navigator.credentials.create({publicKey:{
-      rp:{name:'Groovy Operations'},
-      user:{id:_lockRandom(16),name:session.u,displayName:session.name||session.u},
-      challenge:_lockRandom(32),
+    idToken=auth&&auth.currentUser?await auth.currentUser.getIdToken():null;
+    if(idToken)srv=await _passkeyCall({action:'register-options',idToken});
+  }catch(e){srvErr=e&&e.message||String(e);srv=null;}
+  let cred;
+  try{
+    cred=await navigator.credentials.create({publicKey:{
+      rp:srv?{id:srv.rpId,name:'Groovy Operations'}:{name:'Groovy Operations'},
+      user:{id:srv?_b64uDec(srv.userId):_lockRandom(16),name:session.u,displayName:session.name||session.u},
+      challenge:srv?_b64uDec(srv.challenge):_lockRandom(32),
       pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
-      authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'discouraged'},
+      authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},
       timeout:60000,attestation:'none'
     }});
     if(!cred||!cred.rawId)throw new Error('no credential');
-    const all=_lockAll();
-    all[session.uid]={id:_b64u(cred.rawId),u:session.u,at:Date.now()};
-    _authStore(_LOCK_KEY,JSON.stringify(all));
-    showToast('Fingerprint lock is on for this phone.');
-    return true;
   }catch(e){
-    showToast(e&&e.name==='NotAllowedError'?'Fingerprint lock was not turned on.':'Could not turn on the fingerprint lock: '+(e&&e.message||e),true);
+    _lockLastErr=(e&&e.name)||'Error';
+    if(!(opts&&opts.quietCancel&&_lockLastErr==='NotAllowedError'))
+      showToast(_lockLastErr==='NotAllowedError'?'Fingerprint was not set up. You can do it any time in Profile.':'Could not set up the fingerprint: '+(e&&e.message||e),true);
     return false;
   }
+  const id=_b64u(cred.rawId);
+  const all=_lockAll();
+  all[session.uid]={id,u:session.u,at:Date.now()};
+  _authStore(_LOCK_KEY,JSON.stringify(all));
+  // 2. Register the public key so the login screen can use it.
+  const r=cred.response||{};
+  const pk=typeof r.getPublicKey==='function'?r.getPublicKey():null;
+  const alg=typeof r.getPublicKeyAlgorithm==='function'?r.getPublicKeyAlgorithm():null;
+  const ad=typeof r.getAuthenticatorData==='function'?r.getAuthenticatorData():null;
+  if(srv&&pk&&ad&&alg!=null){
+    try{
+      await _passkeyCall({action:'register',idToken,challengeId:srv.challengeId,label:(navigator.userAgent||'').slice(0,80),
+        credential:{id,alg,publicKey:_b64u(pk),authenticatorData:_b64u(ad),clientDataJSON:_b64u(r.clientDataJSON)}});
+      _passkeySave(session.u,{id,name:session.name||session.u,at:Date.now()});
+      showToast('Fingerprint is on: sign in with it, and it locks the app on this phone.');
+      return true;
+    }catch(e){srvErr=e&&e.message||String(e);}
+  }else if(srv&&!srvErr){srvErr='this browser cannot hand over the key';}
+  showToast('Fingerprint lock is on. Fingerprint SIGN-IN could not be set up'+(srvErr?': '+srvErr:'')+'.',true);
+  return true;
 };
 window.lockDisable=function(){
   if(!session)return;
   const all=_lockAll();delete all[session.uid];
   _authStore(_LOCK_KEY,JSON.stringify(all));
-  showToast('Fingerprint lock is off for this phone.');
+  const pk=passkeyFor(session.u);
+  _passkeySave(session.u,null);
+  if(pk&&auth&&auth.currentUser){
+    auth.currentUser.getIdToken().then(t=>_passkeyCall({action:'remove',idToken:t,id:pk.id})).catch(()=>{});
+  }
+  showToast('Fingerprint is off for this phone.');
 };
+
+// ── The login screen: sign in with the fingerprint ──
+window.loginWithFingerprint=async function(){
+  const uEl=document.getElementById('l-user');
+  const typed=uEl?uEl.value.trim().toLowerCase():'';
+  const all=_passkeyAll();
+  const u=passkeyFor(typed)?typed:(passkeyFor(_authRead('groovy_remembered_user'))?_authRead('groovy_remembered_user'):Object.keys(all)[0]);
+  const rec=passkeyFor(u);
+  // No key on THIS device. On a computer that is normal — the key lives on
+  // the phone — so ask for ANY passkey this site has: Chrome/Edge/Safari
+  // then offer a key synced to the browser's account, or "use a phone"
+  // (a QR code the phone scans, then the phone asks for the fingerprint).
+  // The server finds the person from the key itself, so nothing about who
+  // is signing in needs to be known here.
+  const discoverable=!rec&&_loginIsDesktop();
+  if(!rec&&!discoverable){showToast('Fingerprint sign-in is not set up on this phone. Sign in with your password and tick the fingerprint box.',true);return;}
+  const btn=document.getElementById('login-finger');
+  if(btn){btn.disabled=true;btn.classList.add('busy');}
+  loginInProgress=true;
+  try{
+    const opt=await _passkeyCall({action:'login-options'});
+    _loginSetBusy(true,discoverable?'Waiting for your passkey…':'Waiting for your fingerprint…');
+    const pk={challenge:_b64uDec(opt.challenge),rpId:opt.rpId,userVerification:'required',timeout:120000};
+    if(rec)pk.allowCredentials=[{type:'public-key',id:_b64uDec(rec.id),transports:['internal','hybrid']}];
+    const a=await navigator.credentials.get({publicKey:pk});
+    if(!a||!a.response)throw new Error('no answer from the phone');
+    _loginSetBusy(true,'Signing you in…');
+    const res=await _passkeyCall({action:'login',challengeId:opt.challengeId,assertion:{
+      id:_b64u(a.rawId),clientDataJSON:_b64u(a.response.clientDataJSON),
+      authenticatorData:_b64u(a.response.authenticatorData),signature:_b64u(a.response.signature)}});
+    if(typeof setPersistence==='function'&&typeof browserLocalPersistence!=='undefined'){
+      try{await setPersistence(auth,browserLocalPersistence);}catch(_){}
+    }
+    const c=await signInWithCustomToken(auth,res.token);
+    const email=String((c.user&&c.user.email)||res.email||'').toLowerCase();
+    const def=USER_DEFS.find(x=>String(x.email||'').toLowerCase()===email);
+    if(!def){await signOut(auth);throw new Error('this account is not set up in Groovy Ops');}
+    session={...def,uid:c.user.uid};
+    _authStore('groovy-keep-signed-in','1');_authStore('groovy_remembered_user',def.u);
+    loginInProgress=false;
+    if(btn){btn.classList.remove('busy');btn.classList.add('ok');}
+    _loginSetBusy(true,'Signed in');
+    setTimeout(()=>_loginLeave(()=>startApp()),260);   // let the fill be SEEN
+    logActivity('Login',`${def.name} signed in with fingerprint`);
+  }catch(e){
+    loginInProgress=false;
+    if(btn){btn.disabled=false;btn.classList.remove('busy');btn.classList.remove('ok');}
+    _loginSetBusy(false);
+    if(e&&e.status===404){_passkeySave(u,null);_loginPaintFinger();}
+    showToast(e&&e.name==='NotAllowedError'?'Fingerprint not checked. Try again, or use your password.':'Fingerprint sign-in failed: '+(e&&e.message||e),true);
+  }
+};
+// A computer: a mouse and a wide screen. Where the fingerprint key usually
+// is NOT (it lives on the phone that made it).
+function _loginIsDesktop(){
+  try{return!!(window.matchMedia&&window.matchMedia('(min-width:561px) and (hover:hover) and (pointer:fine)').matches);}catch(_){return false;}
+}
+function _loginPaintFinger(){
+  const b=document.getElementById('login-finger'),row=document.getElementById('login-bio');
+  const any=Object.keys(_passkeyAll()).length>0&&_lockSupported();
+  const desk=!any&&_loginIsDesktop()&&_lockSupported();
+  if(b){
+    b.hidden=!(any||desk);
+    b.dataset.label=any?'Sign in with fingerprint':'Sign in with a passkey';
+    const sp=b.querySelector('span');if(sp)sp.textContent=b.dataset.label;
+    b.title=desk?'Use the fingerprint key on your phone (scan a QR code) or one saved in this browser':'';
+  }
+  // Already set up on this phone: the "next time" box would only ask again.
+  if(row&&any)row.hidden=true;
+}
+// The key inside the password field: ask the phone's password manager for
+// the password it saved, then sign in — one tap. Chrome can require the
+// fingerprint before it hands it over (its own setting).
+window.loginFillSaved=async function(){
+  try{
+    const c=await navigator.credentials.get({password:true,mediation:'required'});
+    if(!c||!c.password)return;          // closing the list is not an error
+    const uEl=document.getElementById('l-user'),pEl=document.getElementById('l-pass');
+    if(uEl)uEl.value=c.id||'';if(pEl)pEl.value=c.password;
+    window.doLogin();
+  }catch(e){showToast('Could not read a saved password: '+(e&&e.message||e),true);}
+};
+(function(){
+  try{
+    const k=document.getElementById('pass-fill-btn');
+    if(k)k.hidden=!(typeof window.PasswordCredential==='function'&&navigator.credentials&&navigator.credentials.get);
+    _loginPaintFinger();
+  }catch(_){}
+})();
 
 let _lockPending=null;   // what to run once unlocked (the cold-start startApp)
 let _lockShowing=false;
@@ -689,14 +1008,46 @@ document.addEventListener('visibilitychange',()=>{
   if(!session||_lockShowing||!lockEnabledFor(session.uid))return;
   if(_lockHiddenAt&&Date.now()-_lockHiddenAt>=_LOCK_AFTER_MS)_lockShow(session,null);
 });
-// After a password sign-in with Remember me on a phone that can do it,
-// offer the lock ONCE per person per device.
-async function _lockMaybeOffer(){
+// The login screen's fingerprint row: visible only where the phone can
+// check a fingerprint, and only while Remember me is ticked.
+// The fingerprint row must not POP IN after the page has drawn (the
+// recording showed it shoving the form up). The last answer this phone gave
+// is remembered and applied synchronously; the async check only corrects it.
+let _lockCapable=_authRead('groovy-bio-capable')==='1';
+window.loginBioSync=function(){
+  const row=document.getElementById('login-bio'),rm=document.getElementById('l-remember');
+  if(!row)return;
+  row.hidden=!(_lockCapable&&rm&&rm.checked)||Object.keys(_passkeyAll()).length>0;
+};
+(function(){
+  try{
+    window.loginBioSync();
+    lockAvailable().then(ok=>{_lockCapable=!!ok;_authStore('groovy-bio-capable',ok?'1':'0');window.loginBioSync();}).catch(()=>{});
+  }catch(_){}
+})();
+function _lockClear(uid){
+  const all=_lockAll();delete all[uid];_authStore(_LOCK_KEY,JSON.stringify(all));
+}
+// Straight after a sign-in with the box ticked. Chrome on Android asks for
+// the fingerprint here; Safari refuses WebAuthn outside a tap, and the
+// sign-in's tap has gone stale by the time Firebase answers. A refusal
+// that comes back almost at once (no dialog was ever shown) therefore
+// falls back to the offer card, whose own button IS a tap. A refusal after
+// a second or more is the person cancelling the dialog, and is left alone.
+async function _lockEnableAfterLogin(){
+  const t0=Date.now();
+  const ok=await window.lockEnable({quietCancel:true});
+  if(!ok&&_lockLastErr==='NotAllowedError'&&Date.now()-t0<1000)_lockMaybeOffer(true);
+}
+// The offer card. Recorded as offered only once the person ANSWERS it — the
+// first cut marked it when shown, so a card that went unseen was never
+// shown again.
+async function _lockMaybeOffer(force){
   if(!session||lockEnabledFor(session.uid))return;
   let offered={};try{offered=JSON.parse(_authRead(_LOCK_OFFERED_KEY)||'{}')||{};}catch(_){}
-  if(offered[session.uid])return;
+  if(offered[session.uid]&&!force)return;
   if(!(await lockAvailable()))return;
-  offered[session.uid]=Date.now();_authStore(_LOCK_OFFERED_KEY,JSON.stringify(offered));
+  const mark=()=>{offered[session.uid]=Date.now();_authStore(_LOCK_OFFERED_KEY,JSON.stringify(offered));};
   if(document.getElementById('lock-offer'))return;
   const d=document.createElement('div');
   d.id='lock-offer';d.className='lock-offer';
@@ -704,8 +1055,8 @@ async function _lockMaybeOffer(){
     +'<div class="lock-offer-s">You stay signed in on this phone. The app asks for your fingerprint, face or phone PIN when you open it. Change it any time in Profile.</div>'
     +'<div class="lock-offer-b"><button type="button" class="lock-offer-ghost" id="lock-offer-no">Not now</button><button type="button" class="btn-sm" id="lock-offer-yes">Turn on</button></div>';
   document.body.appendChild(d);
-  d.querySelector('#lock-offer-no').onclick=()=>d.remove();
-  d.querySelector('#lock-offer-yes').onclick=async()=>{d.remove();await window.lockEnable();};
+  d.querySelector('#lock-offer-no').onclick=()=>{mark();d.remove();};
+  d.querySelector('#lock-offer-yes').onclick=async()=>{mark();d.remove();await window.lockEnable();};
 }
 
 // ══════════════════════════════════════════

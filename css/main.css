@@ -198,15 +198,50 @@ html.app-locked,html.app-locked body{overflow:hidden}
 .login-check input:checked+.login-box-tick::after{content:"";width:6px;height:11px;border:solid var(--on-dark);border-width:0 2.5px 2.5px 0;transform:translateY(-1px) rotate(45deg)}
 .login-check input:focus-visible+.login-box-tick{box-shadow:0 0 0 3px var(--soft)}
 .login-link{background:none;border:none;padding:10px 0;font:inherit;font-size:15px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer;min-height:44px}
+.login-bio{margin:-14px 0 16px}
+.login-bio[hidden]{display:none}
 .login-help{font-size:14px;line-height:1.5;color:var(--text);background:var(--soft);border-radius:12px;padding:12px 14px;margin:-8px 0 18px}
 .login-help[hidden]{display:none}
+/* Fingerprint sign-in: the same pill, outlined, ABOVE the password button
+   when this phone has a passkey — the quick way in comes first. */
+.btn-login-alt{width:100%;height:58px;display:flex;align-items:center;justify-content:center;gap:10px;background:transparent;color:var(--text);border:1.5px solid var(--border);border-radius:999px;font-size:17px;font-weight:700;cursor:pointer;margin:0 0 12px;font-family:inherit;transition:border-color .2s,transform .1s}
+.btn-login-alt[hidden]{display:none}
+.btn-login-alt svg{width:24px;height:24px}
+.btn-login-alt:active:not(:disabled){transform:scale(.99)}
+/* Busy = the WHOLE button works, never a spinning icon (Afnan, 27 Sept:
+   a rotating fingerprint read as broken). A light sheen sweeps across the
+   pill while the phone and the server answer; when you are in, the button
+   fills solid for a beat before the app opens (.ok). */
+.btn-login,.btn-login-alt{position:relative;overflow:hidden;isolation:isolate}
+.btn-login.busy::after,.btn-login-alt.busy::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:linear-gradient(105deg,transparent 30%,rgba(128,128,128,.30) 50%,transparent 70%);
+  transform:translateX(-100%);animation:loginSheen 1.25s cubic-bezier(.45,0,.35,1) infinite}
+.btn-login-alt.busy{border-color:var(--text);animation:loginBreathe 1.6s ease-in-out infinite}
+.btn-login-alt.busy::after{background:linear-gradient(105deg,transparent 20%,rgba(128,128,128,.42) 50%,transparent 80%)}
+.btn-login-alt.ok{background:var(--dark);color:var(--on-dark);border-color:var(--dark);animation:none;transition:background-color .22s,color .22s,border-color .22s}
+.btn-login.ok::after,.btn-login-alt.ok::after{animation:none;opacity:0}
+.btn-login-alt.ok svg{animation:loginPop .35s cubic-bezier(.22,1.25,.36,1)}
+@keyframes loginSheen{to{transform:translateX(100%)}}
+@keyframes loginBreathe{50%{box-shadow:0 0 0 4px var(--soft)}}
+@keyframes loginPop{40%{transform:scale(1.18)}}
+@media (prefers-reduced-motion:reduce){.btn-login.busy::after,.btn-login-alt.busy::after,.btn-login-alt.busy{animation:none}}
+.login-box .login-input input#l-pass:has(~ .login-key:not([hidden])){padding-right:100px}
+.login-key{right:50px}
+.login-key[hidden]{display:none}
 .btn-login{width:100%;height:58px;display:flex;align-items:center;justify-content:center;gap:12px;background:var(--dark);color:var(--on-dark);border:none;border-radius:999px;font-size:18px;font-weight:700;cursor:pointer;margin:0 0 34px;font-family:inherit;transition:opacity .15s,transform .1s}
-.btn-login:hover:not(:disabled){opacity:.9;transform:translateY(-1px)}
-.btn-login:active:not(:disabled){transform:translateY(0) scale(.99)}
+/* Hover effects only where there IS hover. On a phone a :hover sticks to
+   the last thing touched, which is why Sign in went grey whenever anything
+   near it was tapped (Afnan's recording, 27 Sept). */
+@media (hover:hover) and (pointer:fine){
+  .btn-login:hover:not(:disabled){opacity:.9;transform:translateY(-1px)}
+  .btn-login:hover .login-arrow{transform:translateX(3px)}
+    .btn-login-alt:hover:not(:disabled){border-color:var(--text)}
+}
+.btn-login:active:not(:disabled){transform:scale(.97);transition:transform .08s}
 .btn-login:disabled{opacity:.7;cursor:default}
 .login-arrow{width:22px;height:22px;transition:transform .2s}
-.btn-login:hover .login-arrow{transform:translateX(3px)}
 .btn-login.busy .login-arrow{display:none}
+.btn-login.busy:disabled{opacity:1}
 .login-foot{display:flex;align-items:center;justify-content:center;gap:14px;font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:var(--muted)}
 .login-foot::before,.login-foot::after{content:"";flex:1;max-width:48px;height:1px;background:var(--border)}
 .login-foot i{font-style:normal;letter-spacing:0}
@@ -218,6 +253,96 @@ html.app-locked,html.app-locked body{overflow:hidden}
 .lock-print:active{transform:scale(.97)}
 .lock-msg{min-height:22px;text-align:center;font-size:14px;color:var(--muted);margin-bottom:14px}
 .lock-alt{display:block;margin:-22px auto 26px}
+/* Pull-to-refresh indicator (js: _gvPullToRefresh). A ring that fills and
+   turns with the pull, an arrow that flips when a release will refresh, a
+   spin while it checks, and a tick + "Up to date" when it is done. Every
+   state change is a class, so the motion lives here and the js only moves
+   one transform. */
+.ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 8px);z-index:3;width:44px;height:44px;border-radius:50%;
+  background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 22px rgba(0,0,0,.22);
+  display:flex;align-items:center;justify-content:center;transform:translate(-50%,-56px);opacity:0;pointer-events:none;color:var(--text);will-change:transform,opacity}
+.ptr svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.ptr .ptr-track{stroke:var(--border)}
+.ptr .ptr-arc{stroke-dasharray:53.4;stroke-dashoffset:53.4;transform:rotate(-90deg);transform-origin:12px 12px;transition:stroke-dashoffset .12s linear}
+.ptr .ptr-arrow{transition:transform .28s cubic-bezier(.22,1.25,.36,1),opacity .15s;transform-origin:12px 12px}
+.ptr .ptr-check{stroke-dasharray:14;stroke-dashoffset:14;opacity:0}
+.ptr.ready .ptr-arrow{transform:scaleY(-1)}
+.ptr.ready{box-shadow:0 10px 26px rgba(0,0,0,.3)}
+.ptr.spin svg{animation:ptrSpin .75s linear infinite}
+.ptr.spin .ptr-arrow,.ptr.done .ptr-arrow,.ptr.update .ptr-arrow{opacity:0}
+.ptr.spin .ptr-arc{stroke-dashoffset:40;transition:none}
+.ptr.done .ptr-arc,.ptr.update .ptr-arc{stroke-dashoffset:0}
+.ptr.done .ptr-check{opacity:1;animation:ptrTick .32s cubic-bezier(.2,.8,.2,1) forwards}
+.ptr.done{animation:ptrPop .42s cubic-bezier(.22,1.25,.36,1)}
+.ptr.update svg{animation:ptrSpin .75s linear infinite}
+.ptr-label{position:absolute;top:52px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--muted);opacity:0;transition:opacity .2s}
+.ptr.done .ptr-label,.ptr.update .ptr-label{opacity:1}
+@keyframes ptrSpin{to{transform:rotate(360deg)}}
+@keyframes ptrTick{to{stroke-dashoffset:0}}
+@keyframes ptrPop{0%{scale:1}40%{scale:1.14}100%{scale:1}}
+/* Leaving for a reload that brings a new build, and arriving back: one
+   continuous screen, never a blank frame followed by a replayed entrance. */
+html.ptr-leaving #scr-login .login-box,html.ptr-leaving #scr-lock .login-box{opacity:0;transform:translate3d(0,24px,0)!important;transition:opacity .2s ease,transform .2s ease!important}
+html.ptr-return #scr-login .login-box,html.ptr-return #scr-login .login-box>*{animation:none!important}
+/* Entrance: the pieces of the card rise in, one after another. */
+@keyframes loginRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#scr-login .login-box>*{animation:loginRise .5s cubic-bezier(.2,.8,.2,1) both}
+#scr-login .login-box>:nth-child(1){animation-delay:.02s}
+#scr-login .login-box>:nth-child(2){animation-delay:.08s}
+#scr-login .login-box>:nth-child(3){animation-delay:.13s}
+#scr-login .login-box>:nth-child(n+4){animation-delay:.18s}
+#scr-login .login-box>:nth-child(n+8){animation-delay:.23s}
+#scr-login .login-box>:nth-child(n+10){animation-delay:.28s}
+/* Switching theme on the login cross-fades instead of snapping. */
+#scr-login,#scr-login .login-box,#scr-login .login-input,#scr-login .btn-login,#scr-login .login-theme,#scr-login .login-box-tick{transition:background-color .35s ease,border-color .35s ease,color .35s ease,box-shadow .15s,opacity .15s,transform .1s}
+@media (prefers-reduced-motion:reduce){
+  #scr-login .login-box>*{animation:none}
+  .ptr.spin svg{animation-duration:2s}
+}
+/* ── Touch feedback, not Chrome's blue boxes ──
+   Chrome paints a translucent blue rectangle over whatever is tapped
+   (-webkit-tap-highlight-color); on the eye, the key and the Remember-me
+   row it read as "this is now selected". Switched off on the login, the
+   lock and the top bar, and replaced by the control's OWN press state.
+   Keyboard focus keeps a clear ring (:focus-visible). */
+#scr-login,#scr-lock,.topbar{-webkit-tap-highlight-color:transparent}
+#scr-login button:focus,#scr-lock button:focus{outline:none}
+#scr-login button:focus-visible,#scr-lock button:focus-visible,.login-check input:focus-visible+.login-box-tick{outline:2px solid var(--text);outline-offset:2px}
+.login-eye{transition:background-color .15s,transform .1s}
+.login-eye:active{background:var(--soft);transform:scale(.9)}
+.login-check .login-box-tick{transition:background-color .15s,border-color .15s,transform .12s}
+.login-check:active .login-box-tick{transform:scale(.88)}
+.login-link:active,.lock-alt:active{opacity:.55}
+.btn-login-alt:active:not(:disabled){transform:scale(.97);transition:transform .08s}
+.login-theme:active{transform:scale(.95)}
+/* Busy: while signing in, everything else steps back and cannot be pressed. */
+#scr-login.is-busy .login-box>*:not(#login-finger):not(#login-btn){opacity:.4;pointer-events:none;transition:opacity .25s}
+#scr-login.is-busy #login-finger,#scr-login.is-busy #login-btn{pointer-events:none}
+/* Leaving: the login fades and lifts instead of vanishing mid-frame. */
+#scr-login.leaving .login-box{opacity:0;transform:translate3d(0,-10px,0)!important;transition:opacity .22s ease,transform .22s ease!important}
+#scr-login.leaving .login-theme{opacity:0;transition:opacity .2s}
+/* Forgot password — a sheet over the screen. */
+.login-sheet{position:fixed;inset:0;z-index:20;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,0);transition:background-color .25s ease}
+.login-sheet[hidden]{display:none}
+.login-sheet.open{background:rgba(0,0,0,.5)}
+.login-sheet-card{width:100%;max-width:440px;background:var(--surface);color:var(--text);border-radius:24px 24px 0 0;padding:10px 24px calc(22px + env(safe-area-inset-bottom));
+  transform:translateY(100%);transition:transform .32s cubic-bezier(.2,.9,.25,1);box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+.login-sheet.open .login-sheet-card{transform:none}
+.login-sheet-grab{width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 16px}
+.login-sheet-t{font-size:19px;font-weight:800;margin-bottom:8px}
+.login-sheet-card p{font-size:15px;line-height:1.55;color:var(--muted);margin:0 0 20px}
+.login-sheet-card p b{color:var(--text)}
+.login-sheet-card .btn-login{margin:0}
+@media (min-width:561px){.login-sheet{align-items:center}.login-sheet-card{border-radius:24px;margin:16px}}
+@media (prefers-reduced-motion:reduce){.login-sheet,.login-sheet-card{transition:none}}
+/* The phone's top bar: logo, bell, avatar — nothing that wraps or falls
+   off the edge. "Change password" wrapped onto two lines and pushed Sign
+   out off the screen; both live on the Profile card (the avatar). */
+@media (max-width:600px){
+  .topbar-user .btn-logout{display:none}
+  .topbar-user{gap:12px}
+}
+@media (max-width:420px){.topbar-name,#user-title{display:none}}
 /* The one-time offer after sign-in: above the mobile nav and the bug FAB. */
 .lock-offer{position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:600;max-width:420px;margin:0 auto;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.25);animation:loginFadeIn .25s ease}
 .lock-offer-t{font-weight:700;font-size:15px;margin-bottom:4px}
@@ -231,6 +356,9 @@ html.app-locked,html.app-locked body{overflow:hidden}
      (the Sign in button measured 22px). This way the card is at least the
      screen and grows past it, and the layer scrolls instead. */
   #scr-login,#scr-lock{align-items:flex-start}
+  /* The card IS the screen here, so what shows above it while it is pulled
+     down must be the same colour — not a darker band. */
+  #scr-login,#scr-lock{background:var(--surface)}
   .login-box>*{flex-shrink:0}
   .login-box{margin:0;max-width:none;min-height:100%;border:none;border-radius:0;box-shadow:none;
     padding:calc(72px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
@@ -246,10 +374,13 @@ html.app-locked,html.app-locked body{overflow:hidden}
 }
 @media (max-height:760px) and (max-width:560px){
   .login-box{padding-top:calc(56px + env(safe-area-inset-top))}
-  .login-logo{margin-bottom:20px}.login-mark{width:200px}.login-ops{margin-top:8px}
+  .login-logo{margin-bottom:16px}.login-mark{width:190px}.login-ops{margin-top:8px}
   .login-hello{font-size:25px;margin-bottom:8px}.login-sub{font-size:14px;margin-bottom:18px}
   .login-input{margin-bottom:14px}.login-box .login-input input{height:52px}
-  .login-row{margin-bottom:14px}.btn-login{height:54px;margin-bottom:18px}
+  .login-row{margin-bottom:14px}.login-bio{margin:-10px 0 10px}.btn-login{height:54px;margin-bottom:18px}
+  .btn-login-alt{height:50px;margin-bottom:10px}
+  /* With the fingerprint button there, the subtitle makes way for it. */
+  .login-box:has(#login-finger:not([hidden])) .login-sub{display:none}
 }
 /* Keyboard open (the viewport shrinks to ~400px): drop what is not needed
    to sign in, so as little as possible has to scroll. */
@@ -261,7 +392,10 @@ html.app-locked,html.app-locked body{overflow:hidden}
   .login-field-label{margin-bottom:5px}
   .login-input{margin-bottom:10px}.login-box .login-input input{height:48px}
   .login-row{margin-bottom:8px;min-height:40px}.login-check,.login-link{min-height:40px}
+  .login-bio{margin:-8px 0 4px}
   .btn-login{height:50px;margin-bottom:0}
+  .btn-login-alt{height:46px;margin-bottom:8px}
+  .login-box:has(#login-finger:not([hidden])) .login-logo{display:none}
 }
 @media (prefers-reduced-motion:reduce){.login-wave{animation:none}.login-box{animation:none}}
 #scr-app{display:none;min-height:100vh;flex-direction:column}

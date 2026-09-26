@@ -91,7 +91,9 @@ module.exports=async function(){
     s.eq(keep?'the phone\'s password manager is OFFERED the password':'nothing is offered to a password manager on a shared device',rec.stored.length,keep?1:0);
     if(keep)s.eq('… under the username, which is what the login field takes',rec.stored[0]&&rec.stored[0].id,'afnan');
     s.ok('the password is NOWHERE in app storage',!JSON.stringify(ls.m).includes('s3cret-PASS'));
-    s.eq('the app started',run('__started'),1);
+    s.eq('the app does NOT cut straight in: the login fades first',run('__started'),0);
+    await new Promise(r=>setTimeout(r,560));
+    s.eq('the app started, after the fade',run('__started'),1);
   }
 
   // ── the user-verified flag ────────────────────────────────────────────
@@ -153,7 +155,7 @@ module.exports=async function(){
     app2.run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan',role:'owner'}`);
     const html=app2.run('_profileSecurityHTML()');
     s.ok('offers Turn on where the phone can do it',/lockEnable/.test(html)&&/Turn on/.test(html));
-    s.ok('says the fingerprint never leaves the phone',/never leaves the phone/.test(html));
+    s.ok('says the fingerprint never leaves the phone',/never leaves it/.test(html));
     const app3=loadApp({files:['js/auth.js','js/profile.js'],USER_DEFS:DEFS,globals:{localStorage:memStore()}});
     app3.run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan',role:'owner'}`);
     const h3=app3.run('_profileSecurityHTML()');
@@ -173,8 +175,208 @@ module.exports=async function(){
     s.ok('the password field no longer calls doLogin on Enter itself (the form does — twice would sign in twice)',
       !/id="l-pass"[^>]*doLogin/.test(login));
     s.ok('the lock screen exists and starts hidden',/<div id="scr-lock" hidden>/.test(html));
-    s.ok('setPersistence is bridged from the Auth SDK',/setPersistence,browserLocalPersistence,browserSessionPersistence\}from'https:\/\/www\.gstatic\.com\/firebasejs\/[^']+firebase-auth\.js'/.test(html)
-      &&/\n\s*setPersistence,browserLocalPersistence,browserSessionPersistence,\n/.test(html));
+    s.ok('setPersistence is bridged from the Auth SDK',/setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken\}from'https:\/\/www\.gstatic\.com\/firebasejs\/[^']+firebase-auth\.js'/.test(html)
+      &&/\n\s*setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken,\n/.test(html));
+  }
+
+  // ── the fingerprint choice on the login screen ────────────────────────
+  // Afnan signed in twice and never got the lock: it was only offered in a
+  // card 1.5s after the app opened, and marked "offered" when SHOWN.
+  for(const [bio,rowShown,pre,label] of [
+    [true,true,false,'ticked, row showing: the phone is asked for the fingerprint straight away'],
+    [false,true,true,'unticked while the lock was on: the lock is turned off'],
+    [true,false,false,'row hidden (phone cannot do it): nothing is asked']]){
+    const {app,rec,run}=boot(rowShown?undefined:{globals:{window:{PasswordCredential:function(d){Object.assign(this,d);},
+      PublicKeyCredential:{isUserVerifyingPlatformAuthenticatorAvailable:async()=>false},
+      isSecureContext:true,addEventListener(){},matchMedia:()=>({matches:false})}}});
+    await new Promise(r=>setTimeout(r,5));
+    if(pre)run(`_authStore('groovy-applock',JSON.stringify({'uid-afnan':{id:'AQID',u:'afnan'}}))`);
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw';
+    app.el('l-remember').checked=true;
+    app.run('window.loginBioSync()');app.el('l-bio').checked=bio;
+    s.eq('the row is '+(rowShown?'shown':'hidden')+' by the phone\'s own answer',app.el('login-bio').hidden,!rowShown);
+    await run('window.doLogin()');
+    await new Promise(r=>setTimeout(r,20));
+    s.section('fingerprint on the login screen — '+label);
+    if(bio&&rowShown){
+      s.eq('the fingerprint set-up is asked once, straight after sign-in',rec.creates.length,1);
+      s.eq('… and the lock is on',run(`lockEnabledFor('uid-afnan')`),true);
+    }else if(pre){
+      s.eq('lock turned off',run(`lockEnabledFor('uid-afnan')`),false);
+      s.eq('… without asking the phone anything',rec.creates.length,0);
+    }else{
+      s.eq('nothing asked',rec.creates.length,0);
+    }
+  }
+  {
+    const {app,rec,run}=boot();
+    await new Promise(r=>setTimeout(r,5));   // let the load-time row check settle first
+    run(`session=null`);
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw';
+    app.el('l-remember').checked=false;app.el('login-bio').hidden=false;app.el('l-bio').checked=true;
+    await run('window.doLogin()');
+    await new Promise(r=>setTimeout(r,20));
+    s.section('fingerprint needs Remember me');
+    s.eq('not asked when Remember me is unticked (there is no kept session to lock)',rec.creates.length,0);
+  }
+  {
+    const {app,run,ls}=boot();
+    run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan'}`);
+    await run('_lockMaybeOffer(true)');
+    s.section('the offer card is marked offered only when ANSWERED');
+    s.eq('shown, not yet answered: not marked',ls.m['groovy-applock-offered']||null,null);
+    void app;
+  }
+  {
+    const {run}=boot();
+    s.section('Safari refuses WebAuthn outside a tap: the card is the fallback');
+    run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan'};var __offer=0;_lockMaybeOffer=function(){__offer++};`);
+    run(`navigator.credentials.create=async function(){var e=new Error('x');e.name='NotAllowedError';throw e}`);
+    await run('_lockEnableAfterLogin()');
+    s.eq('an instant refusal (no dialog was shown) falls back to the offer card',run('__offer'),1);
+    run(`navigator.credentials.create=async function(){await new Promise(r=>setTimeout(r,1100));var e=new Error('x');e.name='NotAllowedError';throw e}`);
+    await run('_lockEnableAfterLogin()');
+    s.eq('a refusal after the dialog was up is the person cancelling: no card',run('__offer'),1);
+  }
+
+  // ── pull down to refresh ──────────────────────────────────────────────
+  {
+    const {app,run}=boot();
+    s.section('pull to refresh: the rubber band');
+    const d=x=>run(`_ptrDistance(${x})`);
+    s.eq('no pull, no movement',d(0),0);
+    s.ok('it follows the finger',d(50)>0&&d(100)>d(50));
+    s.ok('… with resistance (less than the finger moved)',d(100)<100);
+    s.ok('… and never past the cap',d(5000)<=128);
+    s.ok('the threshold is reachable with a normal pull (~120px)',d(120)>=72);
+
+    run(`var __ref=0,__vib=[];navigator.vibrate=function(v){__vib.push(JSON.stringify(v));return true};
+      var __sc=document.getElementById('ptr-sc');__sc.scrollTop=0;
+      _gvPullToRefresh(__sc,document.getElementById('ptr-ind'),function(){__ref++;return Promise.resolve('current');})`);
+    const sc=app.el('ptr-sc'),ind=app.el('ptr-ind');
+    const T=y=>({touches:[{clientY:y}],cancelable:true});
+    const wait=ms=>new Promise(r=>setTimeout(r,ms));
+    s.section('pull to refresh: the gesture (rebuilt from the 27 Sept recording)');
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(140));app.fire(sc,'touchend',{});
+    await wait(5);
+    s.eq('a short pull does not refresh',run('__ref'),0);
+    s.eq('… and does not buzz',run('__vib.length'),0);
+    app.fire(sc,'touchstart',T(100));
+    const mv=app.fire(sc,'touchmove',T(320));
+    s.ok('a pull takes the gesture from the browser (preventDefault)',mv.defaultPrevented);
+    s.ok('the arrow flips when a release will refresh',ind.classList.contains('ready'));
+    s.eq('crossing the line is a light tick',run('__vib[0]'),'8');
+    app.fire(sc,'touchend',{});
+    await wait(5);
+    s.eq('a long pull, released, refreshes once',run('__ref'),1);
+    s.eq('the release is a firmer tap',run('__vib[1]'),'14');
+    s.ok('nothing new: the ring becomes a TICK — the page is NOT reloaded',ind.classList.contains('done'));
+    s.eq('… with a double-pulse',run('__vib[2]'),'[10,50,16]');
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(400));app.fire(sc,'touchend',{});
+    await wait(5);
+    s.eq('a second pull while the first is finishing is ignored',run('__ref'),1);
+    await wait(1150);
+    s.ok('then it settles back to rest',!ind.classList.contains('done')&&!ind.classList.contains('spin'));
+    sc.scrollTop=50;
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(400));app.fire(sc,'touchend',{});
+    await wait(5);
+    s.eq('not while the screen is scrolled down (keyboard open): that drag is a scroll',run('__ref'),1);
+    sc.scrollTop=0;
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(300));app.fire(sc,'touchmove',T(110));app.fire(sc,'touchend',{});
+    await wait(5);
+    s.eq('pulled past and back again: no refresh',run('__ref'),1);
+    app.fire(sc,'touchstart',T(100));app.fire(sc,'touchmove',T(320));app.fire(sc,'touchend',{});
+    await wait(5);
+    s.eq('once settled, a new pull works again',run('__ref'),2);
+    await wait(1150);
+
+    run(`_gvPullToRefresh(document.getElementById('ptr-sc2'),document.getElementById('ptr-ind2'),function(){return Promise.resolve('update');})`);
+    const sc2=app.el('ptr-sc2');sc2.scrollTop=0;
+    app.fire(sc2,'touchstart',T(100));app.fire(sc2,'touchmove',T(320));app.fire(sc2,'touchend',{});
+    await wait(5);
+    s.ok('a NEW build: the ring says Updating… (the page is about to reload)',app.el('ptr-ind2').classList.contains('update'));
+    s.ok('… and it does not spring back first',!app.el('ptr-ind2').classList.contains('done'));
+  }
+
+  // ── what a refresh actually does ──────────────────────────────────────
+  for(const [newBuild,label] of [[false,'no new build: refreshed IN PLACE, no reload'],[true,'a new build arrived: THEN it reloads']]){
+    const {run}=boot();
+    run(`var __rl=0;_ptrReload=function(){__rl++};var __cc=null;
+      navigator.serviceWorker={getRegistration:async function(){return{update:async function(){if(${newBuild})setTimeout(function(){__cc&&__cc()},10)},installing:${newBuild}?{}:null,waiting:null}},
+        addEventListener:function(t,f){if(t==='controllerchange')__cc=f}}`);
+    const out=await run('_ptrRefresh()');
+    s.section('pull to refresh: '+label);
+    s.eq('answers '+(newBuild?'update':'current'),out,newBuild?'update':'current');
+    s.eq(newBuild?'the page reloads once':'the page is NOT reloaded',run('__rl'),newBuild?1:0);
+  }
+  {
+    const fs=require('fs'),path=require('path');
+    const idx=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
+    const head=idx.slice(0,idx.indexOf('</head>'));
+    s.section('coming back from an update reload is one continuous screen');
+    s.ok('the <head> script marks the return before anything paints',/sessionStorage\.getItem\('gv-ptr'\)[^\n]*ptr-return/.test(head));
+    const css=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');
+    s.ok('… and the entrance animation is skipped for it',/html\.ptr-return #scr-login \.login-box,html\.ptr-return #scr-login \.login-box>\*\{animation:none!important\}/.test(css));
+    s.ok('the fingerprint row is decided from the remembered answer at load, not popped in later',
+      /let _lockCapable=_authRead\('groovy-bio-capable'\)==='1';/.test(fs.readFileSync(path.join(__dirname,'..','js','auth.js'),'utf8')));
+  }
+
+  // ── the 27 Sept recording's nitty-gritty ──────────────────────────────
+  {
+    const fs=require('fs'),path=require('path');
+    const css=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');
+    const prof=fs.readFileSync(path.join(__dirname,'..','js','profile.js'),'utf8');
+    s.section('the recording: every tap looked "selected"');
+    s.ok('Chrome\'s blue tap boxes are off on the login, the lock and the top bar',/#scr-login,#scr-lock,\.topbar\{-webkit-tap-highlight-color:transparent\}/.test(css));
+    s.ok('… replaced by each control\'s own press state',/\.login-eye:active\{/.test(css)&&/\.login-check:active \.login-box-tick\{/.test(css));
+    s.ok('keyboard focus still gets a visible ring',/#scr-login button:focus-visible/.test(css));
+    const outside=css.replace(/@media \(hover:hover\) and \(pointer:fine\)\{[\s\S]*?\n\}/g,'');
+    s.ok('Sign in has NO hover style outside a real-hover device (it stuck grey on touch)',!/\.btn-login:hover/.test(outside));
+    s.section('the recording: the top bar ran off the phone');
+    s.ok('on a phone the top bar drops Change password / Sign out',/@media \(max-width:600px\)\{\s*\.topbar-user \.btn-logout\{display:none\}/.test(css));
+    s.ok('… and Sign out is on the Profile card instead',/onclick="window\.doLogout\(\)">Sign out</.test(prof));
+    s.section('the recording: Forgot password shoved the page up');
+    const idx=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
+    const card=idx.slice(idx.indexOf('<form class="login-box"'),idx.indexOf('</form>'));
+    s.ok('the note is no longer inside the form',!/id="login-help"/.test(card));
+    s.ok('it is a sheet over the screen',/\.login-sheet\{position:fixed;inset:0/.test(css));
+  }
+  {
+    const {app,run}=boot();
+    s.section('the recording: closing the saved-password list was an error');
+    run(`navigator.credentials.get=async function(){return null}`);
+    const n=app.state.toasts.length;
+    await run('window.loginFillSaved()');
+    s.eq('closing the list shows nothing (no red toast)',app.state.toasts.length,n);
+  }
+  {
+    const {app,rec,run}=boot();
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw9';app.el('l-remember').checked=true;
+    await run('window.doLogin()');
+    s.section('the saved account shows your picture in the phone\'s list');
+    s.eq('first saved with the name',rec.stored[0]&&rec.stored[0].name,'Afnan');
+    s.eq('then, once the profile photo is known, saved again WITH the picture',
+      run(`window._loginStoreCredIcon('https://res.cloudinary.com/x/image/upload/c_fill,w_96/v1/a.jpg','Afnan Khan')`),true);
+    s.eq('… as the credential\'s iconURL',rec.stored[1]&&rec.stored[1].iconURL,'https://res.cloudinary.com/x/image/upload/c_fill,w_96/v1/a.jpg');
+    s.eq('… and only once (the password is then dropped from memory)',run(`window._loginStoreCredIcon('https://a/b.jpg')`),false);
+  }
+
+  {
+    const fs=require('fs'),path=require('path');
+    const css=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');
+    s.section('busy is the whole button, never a spinning fingerprint');
+    s.ok('no rule spins the fingerprint button\'s icon',!/\.btn-login-alt[^{]*svg\{[^}]*ptrSpin/.test(css));
+    s.ok('a sheen sweeps across the button while it works',/\.btn-login-alt\.busy::after\{[^}]*\n?[^}]*animation:loginSheen/.test(css));
+    s.ok('it fills solid when you are in (.ok)',/\.btn-login-alt\.ok\{background:var\(--dark\)/.test(css));
+    s.ok('reduced motion switches the sweep off',/prefers-reduced-motion:reduce\)\{\.btn-login\.busy::after/.test(css));
+  }
+  {
+    const {app,run}=boot();
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw';app.el('l-remember').checked=true;
+    await run('window.doLogin()');
+    s.section('a password sign-in ends on a beat, not a cut');
+    s.ok('the button turns to "Signed in"',app.el('login-btn').classList.contains('ok'));
+    s.eq('… label',app.el('login-btn-label').textContent,'Signed in');
   }
 
   // ── the login screen does not scroll (Afnan's screenshot, 26 Sept) ────

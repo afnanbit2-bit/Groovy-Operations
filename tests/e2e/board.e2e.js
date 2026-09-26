@@ -218,7 +218,7 @@ function cdp(wsUrl){
     check('signed in with the qa role',role==='qa','role is '+role);
     const kept=await ev('(function(){try{return localStorage.getItem("groovy-keep-signed-in");}catch(e){return null;}})()').catch(()=>null);
     check('signed in WITHOUT Remember me (no kept session, no saved password)',kept!=='1','groovy-keep-signed-in is '+kept);
-    if(role!=='qa'){ exit=2; throw new Error('not the QA role -- stopping before anything is written'); }
+    if(role!=='qa'){ exit=2; throw new Error('not the QA role -- stopping before the harness writes anything (the sign-in itself has already logged a Login row)'); }
 
     // ── THE CONTAINMENT GATE ──────────────────────────────────────────
     const pos=await probe('await getDocs(query(collection(db,"pos"),limit(1)))');
@@ -227,7 +227,7 @@ function cdp(wsUrl){
     check('the rules refuse it bug_reports',bugs==='permission-denied',bugs);
     if(pos!=='permission-denied'||bugs!=='permission-denied'){
       exit=2; report.notes.push('GATE: the QA rules are not live. Nothing was written. Deploy firestore.rules first.');
-      throw new Error('the QA rules are not deployed -- stopped before writing anything');
+      throw new Error('the QA rules are not deployed -- stopped before the harness writes anything (the sign-in itself has already logged a Login row)');
     }
 
     // ── Dashboard ─────────────────────────────────────────────────────
