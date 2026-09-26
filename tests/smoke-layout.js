@@ -459,7 +459,9 @@ const FRAGMENTS={
     const app=tbBoardApp('tb-dash');
     app.run("_tbSettingsOpen=true;_tbHydrateQueue=[];_tbSeedState={busy:false,dry:true,error:'Refused — the seed function answered 403: only a Board owner may run it.',"
       +"result:tbSeedSummary({created:40,alreadySeeded:2,listCreated:true,profilesCreated:['afnan','daniyal','mustafa'],skippedUsers:['saim'],"
-      +"skippedItems:['Saim: lookbook retouch — every hero frame','Saim: size-chart graphics'],keptAssignees:3},true)}");
+      +"skippedItems:['Saim: lookbook retouch — every hero frame','Saim: size-chart graphics'],listMembersAdded:['saim'],markersWritten:true,"
+      +"deletedSince:['Shoot 2: knit + outerwear + henley + washed (Oct 15–16)'],"
+      +"peopleAdded:[{title:'Launch rehearsal: theme preview, stock count, CSR scripts, courier',who:['saim']}]},true)}");
     return tbFillSlots(app,app.run('_tbSettingsOverlay()'));
   },
 

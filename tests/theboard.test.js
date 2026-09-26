@@ -758,10 +758,10 @@ module.exports=async function(){
       ===seed.seedId('edits','ALL ASSETS IN — including website UI assets'));
     s.eq('derived from lane and title',seed.seedId('walika','Shade list locked'),'tb_walika_shade-list-locked');
 
-    // A RE-RUN MUST NOT UNDO REAL WORK. Anything someone has changed since
-    // the first run is written once, on create, and never touched again.
-    ['date','status','steps','notes','myDay','assigneeUids','locked','dateHistory']
-      .forEach(f=>s.ok('a re-run leaves '+f+' alone',seed.KEEP_FIELDS.indexOf(f)>-1));
+    // A RE-RUN LEAVES WHAT EXISTS ALONE. tests/board-seed.test.js drives
+    // buildSeedPlan against items people have changed and requires that
+    // none of them is written; the record is what tells deleted from new.
+    s.eq('the seed keeps its record beside the markers',seed.RECORD_PATH,'board_config/seed');
 
     // The two undated gates are deliberate: they land in Ammar's and
     // Afnan's "needs a date" card on day one.
@@ -1418,7 +1418,7 @@ module.exports=async function(){
     let sent=null;
     const a=mk(AMMAR,async(url,init)=>{sent={url:String(url),init:init};
       return{ok:true,status:200,json:async()=>({ok:true,report:{created:42,alreadySeeded:0,listCreated:true,
-        profilesCreated:['saim'],skippedUsers:[],skippedItems:[],keptAssignees:0}})};});
+        profilesCreated:['saim'],skippedUsers:[],skippedItems:[]}})};});
     s.ok('a Board owner has one',/tb-settings-btn/.test(a.run('_tbShell("tb-dash","")')));
     a.run('window.tbToggleSettings()');
     s.ok('it opens the settings with the seed',/Run seed/.test(a.run('_tbSettingsOverlay()')));
@@ -1450,6 +1450,89 @@ module.exports=async function(){
     s.ok('a real run says Done',/^Done\./.test(S({created:0,alreadySeeded:42},false)));
     s.ok('a re-run says nothing was duplicated',/Created 0 milestones; 42 already on the board/.test(S({created:0,alreadySeeded:42},false)));
     s.ok('a missing login is named',/No login yet for saim/.test(S({skippedUsers:['saim']},false)));
+    s.ok('a re-run says it touched nothing',/42 already on the board \(not touched\)/.test(S({created:0,alreadySeeded:42},false)));
+    s.ok('a deleted milestone is said to stay deleted',
+      /Not brought back — deleted since the seed made it: Shade list locked\./.test(S({deletedSince:['Shade list locked']},false)));
+    s.ok('a person added now is named with the milestone',
+      /Added saim to “Design production locked; prints to floor” \(no login last time\)/
+        .test(S({peopleAdded:[{title:'Design production locked; prints to floor',who:['saim']}]},false)));
+    s.ok('the old promise is gone: nothing says “left alone” about changed dates',
+      !/dates, steps and people/.test(a.run('_tbSettingsOverlay()')));
+  }
+
+  // THE BUTTONS, not just the function (review of 9e3b521): the Preview
+  // and Run seed buttons were never clicked in any test, so swapping their
+  // handlers -- the button labelled Preview writing -- or hard-coding the
+  // preview flag stayed green everywhere.
+  s.section('board settings: the Preview and Run seed buttons do what they say');
+  {
+    const mk=(extra)=>{
+      const log={bodies:[],profiles:[],data:[]};
+      const a=loadApp({files:FILES,currentPage:'tb-dash',globals:Object.assign({
+        auth:{currentUser:{getIdToken:async()=>'tok-ammar'}},
+        fetch:async(url,init)=>{log.bodies.push(JSON.parse(init.body));
+          return{ok:true,status:200,json:async()=>({ok:true,report:{created:0,alreadySeeded:42}})};}
+      },extra||{})});
+      a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;userProfiles=[]');
+      a.run('var __log={p:[],d:[]};loadProfiles=async function(f){__log.p.push(f);};'
+        +'loadTbData=async function(f){__log.d.push(f);}');
+      a.run('window.tbToggleSettings()');
+      return{a,log};
+    };
+    // Run the button's own onclick, as the page would.
+    const click=(a,id)=>{
+      const ov=a.run('_tbSettingsOverlay()');
+      const m=new RegExp('id="'+id+'"[^>]*onclick="([^"]+)"').exec(ov);
+      return m?a.run(m[1]):Promise.reject(new Error('no '+id));
+    };
+    {
+      const {a,log}=mk();
+      await click(a,'tb-seed-preview');
+      s.eq('Preview sends a dry run',log.bodies.length&&log.bodies[0].dryRun,true);
+      s.eq('and re-reads nothing',J(a.run('[__log.p.length,__log.d.length]')),J([0,0]));
+      s.ok('and says nothing was written',/^Preview — nothing was written\./.test(a.run('_tbSeedState.result')));
+    }
+    {
+      const {a,log}=mk();
+      await click(a,'tb-seed-run');
+      s.eq('Run seed asks first',a.state.confirms&&a.state.confirms.length,1);
+      s.eq('and sends a REAL run',log.bodies.length&&log.bodies[0].dryRun,false);
+      s.eq('then re-reads the directory and the Board',J(a.run('[__log.p,__log.d]')),J([[true],[true]]));
+      s.ok('and says Done',/^Done\./.test(a.run('_tbSeedState.result')));
+    }
+    {
+      const {a,log}=mk({confirm:()=>false});
+      await click(a,'tb-seed-run');
+      s.eq('saying no to the confirm sends nothing',log.bodies.length,0);
+      s.eq('and leaves the button idle',a.run('_tbSeedState.busy'),false);
+    }
+  }
+
+  // Leaving while it runs (review of 9e3b521): the run repainted the Board
+  // over whatever page the owner had gone to while it worked.
+  s.section('board settings: a seed that finishes after you left does not paint over the page you are on');
+  {
+    let release;
+    const gate=new Promise(r=>{release=r;});
+    const a=loadApp({files:FILES,currentPage:'tb-dash',globals:{
+      auth:{currentUser:{getIdToken:async()=>'tok-ammar'}},
+      fetch:async()=>{await gate;return{ok:true,status:200,json:async()=>({ok:true,report:{created:0,alreadySeeded:42}})};}
+    }});
+    a.run('session='+J(AMMAR));a.run('currentPage="tb-dash"');
+    a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;userProfiles=[]');
+    a.run('window.tbToggleSettings()');
+    const run=a.run('window.tbRunSeed(true)');
+    s.eq('it is working',a.run('_tbSeedState.busy'),true);
+    a.run('window.tbToggleSettings()');
+    a.run('currentPage="dashboard";document.getElementById("main-content").innerHTML="DASHBOARD PAGE"');
+    release();await run;
+    s.eq('the page you went to is left as it is',a.run('document.getElementById("main-content").innerHTML'),'DASHBOARD PAGE');
+    s.ok('and the result is kept for when Settings opens again',/^Preview/.test(a.run('_tbSeedState.result')));
+    // Positive control: still on the Board, it repaints.
+    a.run('currentPage="tb-dash";_tbSettingsOpen=true;document.getElementById("main-content").innerHTML="x"');
+    await a.run('window.tbRunSeed(true)');
+    s.ok('on the Board it repaints as before',/tb-wrap/.test(a.run('document.getElementById("main-content").innerHTML')));
   }
 
   // ══ SESSION 2 — P0.5: THE COMPOSER, AND NEEDS A DATE ═══════════════

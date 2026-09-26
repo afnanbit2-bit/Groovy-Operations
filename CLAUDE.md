@@ -7590,11 +7590,15 @@ real Chromium against an in-memory Firestore. The session-2 run is logged in
   the comment claiming it was got corrected rather than left standing.
   Checked by removing it.
 - **The seed is idempotent by DETERMINISTIC ID** (`tb_<lane>_<slug>`), not
-  by "does a row with this title exist", and a re-run never touches `date`,
-  `status`, `steps`, `notes`, `myDay`, `assigneeUids`, `locked` or
-  `dateHistory` -- so re-seeding after someone moved a date does not move it
-  back. It requires `firebase-admin` INSIDE the run, not at the top, because
-  CI installs nothing and a top-level require would make it untestable.
+  by "does a row with this title exist", and **a re-run writes no item that
+  exists** (26 Sept 2026 -- it used to merge every field but a keep-list
+  back, which emptied attachments and made private items shared again). It
+  keeps a record in `board_config/seed`, so a milestone deleted since is not
+  brought back and a person taken off the list is not put back; the only
+  addition to an existing item is someone left off for want of a login, by
+  `arrayUnion`. `BOARD.md` "Running the seed" has the full rule. The body is
+  `scripts/board-seed-plan.js`, which never requires `firebase-admin` --
+  CI installs nothing, so the callers hand it the Admin handles.
 
 **Phase 3 (the calendar: month + week, filters, drag).** Rows-by-person
 and the unscheduled tray are phase 5.

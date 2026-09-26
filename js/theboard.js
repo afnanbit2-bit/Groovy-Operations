@@ -3824,24 +3824,31 @@ window.tbToggleSettings=function(){
 function tbSeedSummary(r,dry){
   const x=r||{};
   const lines=[];
+  const n=(k,w)=>k+' '+w+(k===1?'':'s');
   lines.push(dry?'Preview — nothing was written.':'Done.');
-  lines.push((dry?'Would create ':'Created ')+(x.created||0)+' milestone'+((x.created===1)?'':'s')
-    +'; '+(x.alreadySeeded||0)+' already on the board (left as they are).');
+  lines.push((dry?'Would create ':'Created ')+n(x.created||0,'milestone')
+    +'; '+(x.alreadySeeded||0)+' already on the board (not touched).');
+  if(x.adopted&&x.alreadySeeded)lines.push('No seed record was found, so the board was taken as it stands: nothing on it '
+    +(dry?'would change':'changed')+', and nobody '+(dry?'would be':'was')+' added to the list or to a milestone. From now on the seed keeps a record.');
   if(x.listCreated)lines.push((dry?'Would create':'Created')+' the Winter Drop 2027 list.');
+  if((x.listMembersAdded||[]).length)lines.push((dry?'Would add ':'Added ')+x.listMembersAdded.join(', ')+' to the list.');
+  if(x.markersWritten)lines.push((dry?'Would add':'Added')+' the launch markers.');
   if((x.profilesCreated||[]).length)lines.push((dry?'Would add':'Added')+' a profile row for '+x.profilesCreated.join(', ')+'.');
-  if((x.skippedUsers||[]).length)lines.push('No login yet for '+x.skippedUsers.join(', ')+' — left off; run it again once they exist.');
-  if((x.skippedItems||[]).length)lines.push('Skipped '+x.skippedItems.length+' milestone'+(x.skippedItems.length===1?'':'s')
+  (x.peopleAdded||[]).forEach(p=>lines.push((dry?'Would add ':'Added ')+(p.who||[]).join(', ')+' to “'+p.title+'” (no login last time).'));
+  if((x.deletedSince||[]).length)lines.push('Not brought back — deleted since the seed made '+((x.deletedSince.length===1)?'it':'them')
+    +': '+x.deletedSince.join('; ')+'.');
+  if((x.skippedUsers||[]).length)lines.push('No login yet for '+x.skippedUsers.join(', ')
+    +' — left off. Once they can sign in, run it again: it adds them to the milestones they were left off, and nothing else changes.');
+  if((x.skippedItems||[]).length)lines.push('Skipped '+n(x.skippedItems.length,'milestone')
     +' whose only person has no login: '+x.skippedItems.join('; ')+'.');
-  if(x.keptAssignees)lines.push(x.keptAssignees+' already-seeded item'+(x.keptAssignees===1?'':'s')
-    +' name someone they do not carry — left alone, since people may have been handed over.');
   return lines.join('\n');
 }
 
 window.tbRunSeed=async function(dry){
   if(!_tbIsBoardOwner()||_tbSeedState.busy)return;
   if(!dry&&typeof confirm==='function'&&!confirm('Run the Winter Drop 2027 seed now?\n\n'
-    +'It is safe to run again: nothing is duplicated, and dates, steps and people '
-    +'already changed on the board are left alone.'))return;
+    +'It is safe to run again: a milestone already on the board is not touched, '
+    +'and one that was deleted is not brought back.'))return;
   _tbSeedState={busy:true,result:'',error:'',dry:!!dry};
   _tbRepaint();
   try{
@@ -3866,7 +3873,11 @@ window.tbRunSeed=async function(dry){
   }catch(e){
     _tbSeedState={busy:false,result:'',error:String((e&&e.message)||e),dry:!!dry};
   }
-  _tbRepaint();
+  // The run can take a while and the owner may have closed Settings and
+  // gone to another page meanwhile; repainting then would put the Board
+  // over that page (review of 9e3b521). The result is kept either way and
+  // shows next time Settings opens.
+  if(_tbOnBoardPage())_tbRepaint();
 };
 
 function _tbSettingsOverlay(){
@@ -3878,8 +3889,8 @@ function _tbSettingsOverlay(){
       +'<div class="tb-setsec">'
         +'<div class="tb-setsech">Winter Drop 2027</div>'
         +'<div class="tb-hint">Writes the drop list, its 42 milestones, the launch markers, and a profile row '
-          +'for each Board person. Safe to run again: nothing is duplicated, and dates, steps and people '
-          +'already changed are left alone.</div>'
+          +'for each Board person. Safe to run again: a milestone already on the board is not touched, '
+          +'one that was deleted is not brought back, and the list and markers keep any changes.</div>'
         +'<div class="tb-setbtns">'
           +'<button class="btn-outline" id="tb-seed-preview"'+(st.busy?' disabled':'')
             +' onclick="window.tbRunSeed(true)">Preview</button>'

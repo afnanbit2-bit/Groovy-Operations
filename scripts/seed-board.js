@@ -15,8 +15,9 @@
      FIREBASE_SERVICE_ACCOUNT          the JSON itself (what Netlify uses)
      GOOGLE_APPLICATION_CREDENTIALS    a path to the key file
 
-   Idempotent by deterministic id; never undoes real work; a missing login
-   is skipped with a warning, never fatal. The whole body lives in
+   Idempotent by deterministic id; a re-run leaves what exists alone and
+   keeps a record in board_config/seed; a missing login is skipped with a
+   warning, never fatal. The whole body lives in
    scripts/board-seed-plan.js — read its header.
    ───────────────────────────────────────────────────────────────────────── */
 'use strict';
@@ -41,15 +42,20 @@ const DRY=process.argv.indexOf('--dry-run')>-1;
     process.exit(1);
   }
   admin.initializeApp({credential:cred});
-  const r=await plan.runSeed({db:admin.firestore(),auth:admin.auth(),dryRun:DRY,now:Date.now(),
-    log:m=>console.warn('WARNING: '+m)});
+  const r=await plan.runSeed({db:admin.firestore(),auth:admin.auth(),fieldValue:admin.firestore.FieldValue,
+    dryRun:DRY,by:'scripts/seed-board.js',now:Date.now(),log:m=>console.warn('WARNING: '+m)});
   console.log((DRY?'DRY RUN — nothing written.\n':'Written.\n')
     +'  items created:        '+r.created+'\n'
-    +'  items already seeded: '+r.alreadySeeded+' (dates, status, steps and people left as they are)\n'
+    +'  items already seeded: '+r.alreadySeeded+' (not written: left exactly as they are)\n'
     +'  profile rows created: '+(r.profilesCreated.join(', ')||'none')+'\n'
-    +'  list:                 '+(r.listCreated?'created':'already there')+'\n'
+    +'  list:                 '+(r.listCreated?'created':'already there')
+      +(r.listMembersAdded.length?' — added '+r.listMembersAdded.join(', '):'')+'\n'
+    +'  markers:              '+(r.markersWritten?'written':'already there, left alone')+'\n'
+    +(r.peopleAdded.length?'  people added (they had no login last time):\n    '
+      +r.peopleAdded.map(p=>p.who.join(', ')+' → '+p.title).join('\n    ')+'\n':'')
+    +(r.deletedSince.length?'  NOT recreated (deleted since the seed made them):\n    '+r.deletedSince.join('\n    ')+'\n':'')
     +(r.skippedUsers.length?'  SKIPPED (no login):   '+r.skippedUsers.join(', ')+'\n':'')
     +(r.skippedItems.length?'  SKIPPED items (their only assignee has no login):\n    '+r.skippedItems.join('\n    ')+'\n':'')
-    +(r.keptAssignees?'  '+r.keptAssignees+' already-seeded item(s) name someone they do not carry — left alone\n':''));
+    +(r.adopted?'  (no seed record found — started one from what is on the board)\n':''));
   process.exit(0);
 })().catch(e=>{ console.error(e); process.exit(1); });

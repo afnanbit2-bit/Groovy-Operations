@@ -11,9 +11,10 @@
 // The body of the seed is scripts/board-seed-plan.js, shared with the
 // command-line fallback (scripts/seed-board.js), so the button and the
 // script cannot disagree about what a seeded board is. Idempotent: ids are
-// derived from lane + title, and a re-run never undoes a moved date, a
-// ticked step or a handover. A missing login is skipped and named, never
-// fatal.
+// derived from lane + title, and a re-run leaves every item, the list's own
+// fields and the markers exactly as they are -- it only creates what was
+// never made and adds people who had no login last time. A missing login
+// is skipped and named, never fatal.
 //
 // BOARD_OWNER_EMAILS mirrors isBoardOwner() in firestore.rules and
 // BOARD_OWNERS in js/auth.js; tests/theboard.test.js fails if they drift.
@@ -72,7 +73,9 @@ exports.handler = async function (event) {
     const report = await runSeed({
       db: app.firestore(),
       auth: app.auth(),
+      fieldValue: app.firestore.FieldValue,
       dryRun: body.dryRun === true,
+      by: email,
       now: Date.now(),
       log: (m) => notes.push(m),
     });

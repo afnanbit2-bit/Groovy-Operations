@@ -264,27 +264,49 @@ to phase 5).
 
 ## Running the seed
 
+**The normal way is the Run seed button** in Board Settings (Board owners
+only: the rail's Settings, at the foot). Preview first — it writes nothing
+and says what it would do. The button calls
+`netlify/functions/board-seed.js`, which checks the caller's verified ID
+token server-side and runs the Admin SDK there.
+
+The command line is the fallback, and it **writes by default** (session 2):
+
 ```bash
-node scripts/seed-board.js            # dry run — prints what it would do
-node scripts/seed-board.js --write    # actually writes
+node scripts/seed-board.js --dry-run   # prints what it would write
+node scripts/seed-board.js             # writes
 ```
 
-Run it **locally, as an owner**. It uses the Admin SDK, which bypasses
-security rules by design and must never be reachable from a browser. It
-needs `FIREBASE_SERVICE_ACCOUNT` (the JSON) or `GOOGLE_APPLICATION_CREDENTIALS`
-(a path to the key file), and it needs every one of the five Auth accounts to
-exist — including Saim's, or it stops and says so rather than seeding a
-half-populated board.
+It needs `FIREBASE_SERVICE_ACCOUNT` (the JSON) or
+`GOOGLE_APPLICATION_CREDENTIALS` (a path to the key file). Both ways run the
+same body, `scripts/board-seed-plan.js`.
 
-It writes `board_config/markers`, the **Winter Drop 2027** list and 42
-milestones.
+It writes `board_config/markers`, the **Winter Drop 2027** list, 42
+milestones, a profile row for each Board person, and its own record,
+`board_config/seed`. **A missing login is skipped and named, not fatal**;
+any other Auth error stops the run before it writes anything.
 
-**Re-running is safe, by deterministic id rather than by "does a row with
-this title exist".** The id is `tb_<lane>_<title-slug>`, so a re-run
-addresses the same documents and merges. It also **never undoes real work**:
-`date`, `status`, `steps`, `notes`, `myDay`, `assigneeUids`, `locked` and
-`dateHistory` are written once, on create, and left alone after that — so
-re-seeding after someone has moved a date does not move it back.
+**Re-running is safe, and it touches nothing that exists** (review of
+`9e3b521`, 26 Sept 2026). Ids are deterministic — `tb_<lane>_<title-slug>` —
+so a re-run addresses the same documents, and:
+
+- an item already on the board is **not written at all** (its title, list,
+  visibility, owner, attachments, dates and steps are whoever's using it);
+- a milestone **deleted since** the seed made it is **not brought back** —
+  the record remembers it;
+- the list's title, colour, archive state and admin are its owner's; the
+  seed only **adds a person it has never added before** (someone with no
+  login last time), so a person taken off the list stays off;
+- the markers are written only if there are none;
+- the one thing a re-run adds to an existing milestone is a person the seed
+  **left off for want of a login** who has one now — by `arrayUnion`, so it
+  can only add, and only them.
+
+A board seeded before the record existed is **adopted as it stands**: nothing
+on it changes, nobody is added to anything, and the record starts from what
+is there. The first version merged every field but a short keep-list back
+onto each item, which emptied attachments, put back renamed titles and made
+privately-moved items shared again.
 
 Two milestones are seeded with **no date** on purpose (denim and knit bulk
 landing). They appear in Ammar's and Afnan's "needs a date" card on day one.

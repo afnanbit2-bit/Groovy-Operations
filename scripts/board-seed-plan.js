@@ -14,10 +14,25 @@
    the suites here have no dependencies at all.
 
    IDEMPOTENT, by DETERMINISTIC ID: an item's id is derived from lane +
-   title, so a re-run addresses the same documents and merges them. It also
-   NEVER UNDOES REAL WORK: the fields in KEEP_FIELDS (a moved date, a
-   ticked step, a handover) are written once, on create, and left alone
-   after that.
+   title, so a re-run addresses the same documents.
+
+   A RE-RUN LEAVES WHAT EXISTS ALONE (review of 9e3b521, 26 Sept 2026). It
+   used to merge every field but a short keep-list back onto each seeded
+   item, which emptied its attachments, put back the seed title, kind,
+   priority and list, made a privately-moved item shared again, and moved
+   ownerUid to someone not on it. Now an existing item is not written at
+   all, an existing list only gains people the seed could not add before,
+   and the markers are written only if there are none. The one thing added
+   to an existing item is a person the seed LEFT OFF for want of a login
+   who has one now -- an arrayUnion, so it can only add, and only them.
+
+   THE SEED KEEPS A RECORD, board_config/seed: every item id it created,
+   who each one was missing, and who it put on the list. That is what lets
+   a re-run tell "deleted since" from "never made" (a deleted milestone is
+   not brought back), and "never added" from "taken off on purpose" (a
+   person removed from the list is not put back). A board seeded before the
+   record existed is adopted as it stands: nothing on it changes, and the
+   record starts from what is there.
 
    A MISSING LOGIN IS SKIPPED, NOT FATAL. The old script stopped outright if
    any of the five Auth accounts was missing, which is how a board goes
@@ -80,12 +95,8 @@ const ITEMS=[
 [null,'knit','Knit bulk lands → QC',['mustafa','afnan'],'gate',false]
 ];
 
-// A re-run must not undo real work. These belong to whoever has been using
-// the board since the first run: written ONCE, on create, never again.
-const KEEP_FIELDS=['date','status','completedAt','completedByUid','steps','notes',
-                   'myDay','commentCount','dateHistory','assigneeUids','locked','lockedBy'];
-// Nor may a re-run pretend the item was just touched.
-const CREATE_ONLY=['createdAt','updatedAt','lastActivityAt'];
+// Where the seed keeps its record (see the header).
+const RECORD_PATH='board_config/seed';
 
 /** Deterministic, stable, and safe as a Firestore document id. */
 function seedId(lane,title){
@@ -102,21 +113,49 @@ function seedId(lane,title){
  *   existing      { itemId: data }   — seeded items already in Firestore
  *   listDoc       the list document if it exists, else null
  *   profiles      { uid: true }      — user_profiles rows that exist
+ *   record        board_config/seed if it exists, else null
+ *   hasMarkers    board_config/markers exists
+ *   by            who ran it (an email), for the record
  *   now           ms
+ *
+ * A write is {path, data, merge, union?}: `union` names array fields whose
+ * values are ADDED (arrayUnion), never replaced.
  */
 function buildSeedPlan(o){
   const uid=(o&&o.uidByHandle)||{};
   const existing=(o&&o.existing)||{};
   const listDoc=(o&&o.listDoc)||null;
   const profiles=(o&&o.profiles)||{};
+  const rec0=(o&&o.record)||null;
   const now=Number((o&&o.now)||0);
   const writes=[];
   const report={created:0,alreadySeeded:0,skippedUsers:[],skippedItems:[],
-    profilesCreated:[],listCreated:!listDoc,keptAssignees:0,items:ITEMS.length};
+    profilesCreated:[],listCreated:!listDoc,items:ITEMS.length,
+    deletedSince:[],peopleAdded:[],listMembersAdded:[],markersWritten:false,
+    // Adopting = no record, but a board already there to take as it stands.
+    adopted:!rec0&&(!!listDoc||Object.keys(existing).length>0)};
 
   MEMBERS.forEach(h=>{ if(!uid[h])report.skippedUsers.push(h); });
   const resolved=MEMBERS.filter(h=>uid[h]);
   const locker=LOCKERS.map(h=>uid[h]).filter(Boolean)[0]||null;
+
+  // The record this run leaves. Adopting a board seeded before records
+  // existed: every seeded item already there counts as made by the seed,
+  // with nobody known to be missing (so nobody is added to it), and the
+  // list's people count as already handled.
+  const rec={
+    itemIds:rec0&&Array.isArray(rec0.itemIds)?rec0.itemIds.slice():Object.keys(existing),
+    missing:Object.assign({},(rec0&&rec0.missing)||{}),
+    // Adopting: the people on the list AND everyone with a login now count
+    // as handled, so an adopted list gains nobody -- someone missing from it
+    // may have been taken off on purpose, and there is no record to say.
+    members:rec0&&Array.isArray(rec0.members)?rec0.members.slice()
+      :(listDoc&&Array.isArray(listDoc.memberUids)?listDoc.memberUids.slice():[])
+        .concat(listDoc?resolved.map(h=>uid[h]):[]).filter((u,i,a)=>a.indexOf(u)===i),
+    runs:((rec0&&rec0.runs)||0)+1,
+    firstRunAt:(rec0&&rec0.firstRunAt)||now,
+    lastRunAt:now,lastRunBy:(o&&o.by)||null
+  };
 
   // A profile row for every Board person who has a login: the Board's
   // only username<->uid link is user_profiles, so a person with no row
@@ -127,60 +166,92 @@ function buildSeedPlan(o){
     if(!profiles[uid[h]])report.profilesCreated.push(h);
   });
 
-  writes.push({path:'board_config/markers',data:{markers:MARKERS,updatedAt:now},merge:true,what:'config: markers'});
+  // The markers are Board Settings' to edit once they exist.
+  if(!(o&&o.hasMarkers)){
+    writes.push({path:'board_config/markers',data:{markers:MARKERS,updatedAt:now},merge:false,what:'config: markers'});
+    report.markersWritten=true;
+  }
 
-  // Members are a UNION with whoever is already on the list: a re-run adds
-  // someone who was missing last time and never removes anyone.
-  const had=(listDoc&&Array.isArray(listDoc.memberUids))?listDoc.memberUids:[];
-  const members=had.slice();
-  resolved.forEach(h=>{ if(members.indexOf(uid[h])<0)members.push(uid[h]); });
-  const list={title:'Winter Drop 2027',kind:'shared',memberUids:members,color:'moss',
-    emoji:null,sort:0,archived:false,updatedAt:now};
-  if(!listDoc){list.adminUid=uid.ammar||locker||uid[resolved[0]]||null;list.createdAt=now;}
-  writes.push({path:'board_lists/'+LIST_ID,data:list,merge:true,what:'list: Winter Drop 2027'});
+  // The list: made whole once. After that its title, colour, archive state
+  // and admin are its owner's; the seed only adds a person it has never
+  // put on it before (someone who had no login last time). Anyone the
+  // record says it added and who is not there now was taken off on purpose.
+  if(!listDoc){
+    const members=resolved.map(h=>uid[h]);
+    writes.push({path:'board_lists/'+LIST_ID,data:{title:'Winter Drop 2027',kind:'shared',memberUids:members,
+      color:'moss',emoji:null,sort:0,archived:false,adminUid:uid.ammar||locker||members[0]||null,
+      createdAt:now,updatedAt:now},merge:false,what:'list: Winter Drop 2027'});
+    members.forEach(u=>{ if(rec.members.indexOf(u)<0)rec.members.push(u); });
+  }else{
+    const had=Array.isArray(listDoc.memberUids)?listDoc.memberUids:[];
+    const add=resolved.filter(h=>rec.members.indexOf(uid[h])<0&&had.indexOf(uid[h])<0);
+    if(add.length){
+      writes.push({path:'board_lists/'+LIST_ID,data:{updatedAt:now},union:{memberUids:add.map(h=>uid[h])},
+        merge:true,what:'list: add '+add.join(', ')});
+      report.listMembersAdded=add;
+    }
+    resolved.forEach(h=>{ if(rec.members.indexOf(uid[h])<0)rec.members.push(uid[h]); });
+  }
 
   ITEMS.forEach(r=>{
     const [date,lane,title,who,kind,locked]=r;
     const id=seedId(lane,title);
+    if(existing[id]){
+      report.alreadySeeded++;
+      // The one addition: people the seed left off this item for want of a
+      // login, who have one now.
+      const was=Array.isArray(rec.missing[id])?rec.missing[id]:[];
+      const now_=was.filter(h=>uid[h]);
+      if(now_.length){
+        writes.push({path:'board_items/'+id,data:{},union:{assigneeUids:now_.map(h=>uid[h])},
+          merge:true,what:'add '+now_.join(', ')+' to '+id});
+        report.peopleAdded.push({title:title,who:now_});
+      }
+      const still=was.filter(h=>!uid[h]);
+      if(still.length)rec.missing[id]=still;else delete rec.missing[id];
+      if(rec.itemIds.indexOf(id)<0)rec.itemIds.push(id);
+      return;
+    }
+    if(rec.itemIds.indexOf(id)>-1){ report.deletedSince.push(title); return; }
     const assignees=who.filter(h=>uid[h]).map(h=>uid[h]);
     if(!assignees.length){ report.skippedItems.push(title); return; }
     const lockedBy=locked?locker:null;
-    const full={
+    writes.push({path:'board_items/'+id,merge:false,what:'create '+id,data:{
       title:title,notes:'',listId:LIST_ID,ownerUid:assignees[0],assigneeUids:assignees,
       visibility:'shared',kind:kind,date:date,datePlanned:date,dateHistory:[],
       dueAt:null,timeLabel:null,color:null,lane:lane,priority:0,
       locked:!!lockedBy,lockedBy:lockedBy,
       status:'open',completedAt:null,completedByUid:null,steps:[],attachments:[],
       myDay:{},commentCount:0,lastActivityAt:now,createdAt:now,updatedAt:now,seededAt:now
-    };
-    if(existing[id]){
-      const data={};
-      Object.keys(full).forEach(k=>{ if(KEEP_FIELDS.indexOf(k)<0&&CREATE_ONLY.indexOf(k)<0)data[k]=full[k]; });
-      // An item seeded while someone was missing keeps its assignees (they
-      // belong to whoever has used the board since) — but say so.
-      const cur=Array.isArray(existing[id].assigneeUids)?existing[id].assigneeUids:[];
-      if(assignees.some(u=>cur.indexOf(u)<0))report.keptAssignees++;
-      writes.push({path:'board_items/'+id,data:data,merge:true,what:'update '+id});
-      report.alreadySeeded++;
-    }else{
-      writes.push({path:'board_items/'+id,data:full,merge:false,what:'create '+id});
-      report.created++;
-    }
+    }});
+    report.created++;
+    rec.itemIds.push(id);
+    const left=who.filter(h=>!uid[h]);
+    if(left.length)rec.missing[id]=left;
   });
-  return{writes:writes,report:report};
+
+  writes.push({path:RECORD_PATH,data:rec,merge:false,what:'the seed record'});
+  return{writes:writes,report:report,record:rec};
 }
 
 /**
  * The run: resolve logins, read what exists, build the plan, write it.
- * `admin` is firebase-admin's namespace (for FieldPath), `db` and `auth`
- * its handles. `dryRun` writes nothing and returns the same report.
+ * `db` and `auth` are firebase-admin handles; `fieldValue` is
+ * admin.firestore.FieldValue (for arrayUnion). `dryRun` writes nothing and
+ * returns the same report. `by` is who ran it, kept on the record.
  */
 async function runSeed(o){
   const db=o.db,auth=o.auth,log=o.log||function(){};
   const uidByHandle={};
   for(const h of MEMBERS){
     try{ uidByHandle[h]=(await auth.getUserByEmail(EMAIL(h))).uid; }
-    catch(e){ log('No Firebase Auth account for '+EMAIL(h)+' — skipping '+h+'.'); }
+    catch(e){
+      // Only "there is no such account" means a missing login. Anything
+      // else (a network blip, a quota) would make the run think a person
+      // is missing when they are not, so it stops before writing anything.
+      if(e&&e.code==='auth/user-not-found'){ log('No Firebase Auth account for '+EMAIL(h)+' — skipping '+h+'.'); continue; }
+      throw new Error('Could not look up '+EMAIL(h)+' ('+((e&&(e.code||e.message))||e)+') — nothing was written. Try again.');
+    }
   }
   const existing={};
   const ids=ITEMS.map(r=>seedId(r[1],r[2]));
@@ -188,17 +259,23 @@ async function runSeed(o){
     const refs=ids.slice(i,i+100).map(id=>db.doc('board_items/'+id));
     (await db.getAll(...refs)).forEach(s=>{ if(s.exists)existing[s.id]=s.data(); });
   }
-  const ls=await db.doc('board_lists/'+LIST_ID).get();
+  const [ls,rs,ms]=await db.getAll(db.doc('board_lists/'+LIST_ID),db.doc(RECORD_PATH),db.doc('board_config/markers'));
   const profiles={};
   const pu=Object.keys(uidByHandle).map(h=>uidByHandle[h]);
   if(pu.length)(await db.getAll(...pu.map(u=>db.doc('user_profiles/'+u)))).forEach(s=>{ if(s.exists)profiles[s.id]=true; });
-  const plan=buildSeedPlan({uidByHandle,existing,listDoc:ls.exists?ls.data():null,profiles,now:o.now||Date.now()});
+  const plan=buildSeedPlan({uidByHandle,existing,listDoc:ls.exists?ls.data():null,profiles,
+    record:rs.exists?rs.data():null,hasMarkers:ms.exists,by:o.by||null,now:o.now||Date.now()});
   if(!o.dryRun){
+    const FV=o.fieldValue;
+    if(plan.writes.some(w=>w.union)&&!(FV&&typeof FV.arrayUnion==='function'))
+      throw new Error('The seed needs FieldValue.arrayUnion to add people — nothing was written.');
     for(let i=0;i<plan.writes.length;i+=400){
       const b=db.batch();
       plan.writes.slice(i,i+400).forEach(w=>{
         const ref=db.doc(w.path);
-        if(w.merge)b.set(ref,w.data,{merge:true});else b.set(ref,w.data);
+        const data=Object.assign({},w.data);
+        Object.keys(w.union||{}).forEach(f=>{ data[f]=FV.arrayUnion(...w.union[f]); });
+        if(w.merge)b.set(ref,data,{merge:true});else b.set(ref,data);
       });
       await b.commit();
     }
@@ -206,4 +283,4 @@ async function runSeed(o){
   return Object.assign({dryRun:!!o.dryRun,writes:plan.writes.length},plan.report);
 }
 
-module.exports={LIST_ID,EMAIL,MEMBERS,LOCKERS,MARKERS,ITEMS,KEEP_FIELDS,CREATE_ONLY,seedId,buildSeedPlan,runSeed};
+module.exports={LIST_ID,EMAIL,MEMBERS,LOCKERS,MARKERS,ITEMS,RECORD_PATH,seedId,buildSeedPlan,runSeed};
