@@ -9153,6 +9153,41 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   the service worker to `update()` (≤2.5s) and then reloads — so a pull
   also brings in a new build, which a plain reload behind a cache-first
   worker does not promise. Driven in `tests/login.test.js`.
+- **FINGERPRINT SIGN-IN (passkeys) — 26 Sept, REVERSES "not built".**
+  Afnan tried the lock and reported "it does not log in by fingerprint":
+  he wanted a fingerprint button ON the login screen. He chose "both":
+  - `netlify/functions/passkey.js` is the boundary. `register-options` /
+    `register` (caller's verified ID token) store `passkeys/{credentialId}`
+    = the PUBLIC key (SPKI), alg, rpId, uid **from the token**, signCount.
+    `login-options` / `login` verify: single-use 2-min challenge (read and
+    deleted in one transaction), `webauthn.get`, the challenge, the
+    **signed** origin (exactly `https://groovyoperations.netlify.app` or a
+    `--groovyoperations.netlify.app` preview), rpIdHash, UP **and UV**, the
+    ES256/RS256 signature, a non-regressing counter, and a live, enabled
+    Firebase user; only then `createCustomToken(uid-stored-with-the-key)`.
+    `passkeys` and `passkey_challenges` have **no** `firestore.rules` block
+    (default deny — asserted), so no client can touch them and **no
+    republish was needed**.
+  - One fingerprint sets up both: `lockEnable` registers the passkey and
+    uses the same credential id as the lock record. Server unreachable →
+    the lock still turns on locally, and the toast says sign-in did not.
+    Needs `getPublicKey()`/`getAuthenticatorData()` on the response
+    (current Chrome/Safari).
+  - Login screen: **"Sign in with fingerprint"** (`#login-finger`, shown
+    when this phone holds a passkey record, `localStorage['groovy-passkey']`,
+    by username) → `signInWithCustomToken` (bridged in index.html). A 404
+    (key removed) forgets it locally. A **key button in the password
+    field** (`loginFillSaved`) asks Chrome's password manager for the saved
+    password via `navigator.credentials.get({password:true})` and signs in;
+    Chrome only, and whether Chrome wants a fingerprint first is ITS setting.
+  - `tests/passkey.test.js` (56) runs the function with REAL P-256 and RSA
+    keys, byte-built authenticator/client data, and every refusal (replay,
+    other key, no UV, other challenge/origin/rpId, expired, unregistered,
+    copied counter, disabled/deleted user, stealing a key id, removing
+    someone else's); six guards reverted and caught. **Unverified:** that
+    `FIREBASE_SERVICE_ACCOUNT` can sign custom tokens (it must hold a
+    private key — the other functions only prove it can read/write), and
+    what a real phone sends. Afnan's phone is the first real test.
 - **Chrome's own "Use saved password?" sheet is not the fingerprint lock.**
   The lock comes AFTER a Remember-me sign-in (offered once) and then
   replaces the login on every reopen. Asking for a fingerprint before

@@ -156,6 +156,8 @@ const FRAGMENTS={
     const login=idx.slice(idx.indexOf('<div id="scr-login">'),idx.indexOf('<!-- ══ APP LOCK'))
       .replace('<div id="scr-login">','<div id="scr-login" style="display:flex;position:relative;height:auto">')
       .replace('id="login-help" hidden','id="login-help"')
+      .replace('id="login-finger" onclick="window.loginWithFingerprint()" hidden','id="login-finger" onclick="window.loginWithFingerprint()"')
+      .replace('title="Use a saved password" hidden','title="Use a saved password"')
       .replace('<button type="button" class="login-theme" id="login-theme-btn" onclick="window.loginCycleTheme()" aria-label="Change theme" title="Theme"></button>',
         '<button type="button" class="login-theme" id="login-theme-btn" onclick="window.loginCycleTheme()" aria-label="Change theme"><span>Auto</span></button>');
     const lockAt=idx.indexOf('<div class="login-box lock-box">');

@@ -22,7 +22,7 @@
 </script>
 <!-- flatpickr's base sheet FIRST, so css/main.css restyles it to the app's tokens (The Board, P1). -->
 <link rel="stylesheet" href="/assets/vendor/flatpickr-4.6.13.min.css">
-<link rel="stylesheet" href="/css/main.css?v=20260926v210">
+<link rel="stylesheet" href="/css/main.css?v=20260926v211">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#000000">
 <script>try{if(window.__gvThemeDark)document.querySelector('meta[name="theme-color"]').setAttribute('content','#0E0E10');}catch(e){}</script>
@@ -64,6 +64,9 @@ if('serviceWorker' in navigator){
     <div class="login-input">
       <svg class="login-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 017 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="currentColor"/></svg>
       <input id="l-pass" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" enterkeyhint="go" onkeydown="window._checkCapsLock(event)" onkeyup="window._checkCapsLock(event)">
+      <button type="button" id="pass-fill-btn" class="login-eye login-key" onclick="window.loginFillSaved()" aria-label="Use a saved password" title="Use a saved password" hidden>
+        <svg width="21" height="21" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16.5 6.5l2.5 2.5M14 9l2 2"/></svg>
+      </button>
       <button type="button" id="pass-eye-btn" class="login-eye" onclick="window._togglePass()" aria-label="Show password">
         <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
@@ -79,6 +82,7 @@ if('serviceWorker' in navigator){
          fingerprint once to set the lock up. -->
     <label class="login-check login-bio" id="login-bio" hidden><input type="checkbox" id="l-bio" checked><span class="login-box-tick" aria-hidden="true"></span>Unlock with fingerprint next time</label>
     <div class="login-help" id="login-help" hidden>Passwords are not reset by email here. Ask <b>Afnan</b>, <b>Ammar</b> or <b>Mustafa</b> to set a new one for you — they can do it from Profile → Team.</div>
+    <button type="button" class="btn-login-alt" id="login-finger" onclick="window.loginWithFingerprint()" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6.5 5.5A8 8 0 0120 12v1.5"/><path d="M4 9.5A8 8 0 004 13c0 2 .5 3.6 1.3 5"/><path d="M8.3 20.3A11 11 0 017 13a5 5 0 0110 0v1"/><path d="M12 13c0 3.2.9 5.8 2.4 7.8"/><path d="M16.9 17.2c.3 1.3.7 2.4 1.3 3.3"/><path d="M9.6 9.2A3 3 0 0115 11"/></svg><span>Sign in with fingerprint</span></button>
     <button type="submit" class="btn-login" id="login-btn"><span id="login-btn-label">Sign in</span><svg class="login-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
     <div class="login-foot"><span>People</span><i>|</i><span>Products</span><i>|</i><span>Progress</span></div>
   </form>
@@ -187,7 +191,7 @@ window.__vendorFallback=function(url){
 <script src="/js/diagnostics.js?v=20260917type"></script>
 <script src="/js/shared.js?v=20260926v207"></script>
 <script src="/js/print-engine.js?v=20260926v184"></script>
-<script src="/js/auth.js?v=20260926v210"></script>
+<script src="/js/auth.js?v=20260926v211"></script>
 <script src="/js/pos.js?v=20260921emb"></script>
 <script src="/js/embellishments.js?v=20260921emb"></script>
 <script src="/js/hrm.js?v=20260917type"></script>
@@ -201,7 +205,7 @@ window.__vendorFallback=function(url){
 <script src="/js/warehouse-sales.js?v=20260926wh2"></script>
 <script src="/js/notes.js?v=20260917type"></script>
 <script src="/js/boards.js?v=20260921selrail"></script>
-<script src="/js/profile.js?v=20260926v207"></script>
+<script src="/js/profile.js?v=20260926v211"></script>
 <script src="/js/activity.js?v=20260918rep"></script>
 <script src="/js/marketing.js?v=20260918chart"></script>
 <script src="/js/patterns.js?v=20260917label"></script>
@@ -209,7 +213,7 @@ window.__vendorFallback=function(url){
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,updatePassword,reauthenticateWithCredential,EmailAuthProvider,setPersistence,browserLocalPersistence,browserSessionPersistence}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,updatePassword,reauthenticateWithCredential,EmailAuthProvider,setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild,onValue as rtdbOnValue,off as rtdbOff}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 const app=initializeApp({apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'});
 // Persistent local cache (IndexedDB) so reads work offline; multi-tab manager
@@ -229,7 +233,7 @@ Object.assign(window,{
   collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot,
   signInWithEmailAndPassword,signOut,onAuthStateChanged,
   updatePassword,reauthenticateWithCredential,EmailAuthProvider,
-  setPersistence,browserLocalPersistence,browserSessionPersistence,
+  setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken,
   rtdbRef,rtdbGet,rtdbChild,rtdbOnValue,rtdbOff
 });
 if(typeof window.__bootApp==='function')window.__bootApp();

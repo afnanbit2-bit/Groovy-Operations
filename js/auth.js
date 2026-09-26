@@ -647,39 +647,155 @@ function _lockUserVerified(authData){
   try{const b=new Uint8Array(authData);return b.length>32&&(b[32]&0x04)===0x04;}catch(_){return false;}
 }
 
+// ── Fingerprint sign-in (passkeys) + the lock, set up in ONE prompt ──
+// Afnan's second ask (26 Sept): the lock alone was not it — he wanted to
+// SIGN IN with a fingerprint from the login screen. So the credential the
+// phone makes is now a real passkey registered with
+// netlify/functions/passkey.js, which verifies the fingerprint signature
+// server-side and mints the Firebase sign-in. The SAME credential id is the
+// lock's record, so setting it up is one fingerprint, not two.
+// If the server is unreachable the lock still turns on, locally, exactly as
+// before — the sign-in part is said to have failed, not silently skipped.
+const _PASSKEY_KEY='groovy-passkey';      // {username:{id,name,at}} — THIS device
+const _PASSKEY_FN='/.netlify/functions/passkey';
+function _passkeyAll(){try{return JSON.parse(_authRead(_PASSKEY_KEY)||'{}')||{};}catch(_){return{};}}
+function passkeyFor(u){const a=_passkeyAll();return u&&a[u]&&a[u].id?a[u]:null;}
+function _passkeySave(u,rec){const a=_passkeyAll();if(rec)a[u]=rec;else delete a[u];_authStore(_PASSKEY_KEY,JSON.stringify(a));}
+async function _passkeyCall(body){
+  const r=await fetch(_PASSKEY_FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  let j={};try{j=await r.json();}catch(_){}
+  if(!r.ok){const e=new Error(j.error||('HTTP '+r.status));e.status=r.status;throw e;}
+  return j;
+}
 let _lockLastErr='';
 window.lockEnable=async function(opts){
   _lockLastErr='';
   if(!session){showToast('Sign in first.',true);return false;}
   if(!(await lockAvailable())){showToast('This phone or browser cannot do a fingerprint lock.',true);return false;}
+  // 1. Ask the server for a challenge. Failure here is not fatal: the lock
+  //    can still be made locally.
+  let srv=null,idToken=null,srvErr='';
   try{
-    const cred=await navigator.credentials.create({publicKey:{
-      rp:{name:'Groovy Operations'},
-      user:{id:_lockRandom(16),name:session.u,displayName:session.name||session.u},
-      challenge:_lockRandom(32),
+    idToken=auth&&auth.currentUser?await auth.currentUser.getIdToken():null;
+    if(idToken)srv=await _passkeyCall({action:'register-options',idToken});
+  }catch(e){srvErr=e&&e.message||String(e);srv=null;}
+  let cred;
+  try{
+    cred=await navigator.credentials.create({publicKey:{
+      rp:srv?{id:srv.rpId,name:'Groovy Operations'}:{name:'Groovy Operations'},
+      user:{id:srv?_b64uDec(srv.userId):_lockRandom(16),name:session.u,displayName:session.name||session.u},
+      challenge:srv?_b64uDec(srv.challenge):_lockRandom(32),
       pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
-      authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'discouraged'},
+      authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},
       timeout:60000,attestation:'none'
     }});
     if(!cred||!cred.rawId)throw new Error('no credential');
-    const all=_lockAll();
-    all[session.uid]={id:_b64u(cred.rawId),u:session.u,at:Date.now()};
-    _authStore(_LOCK_KEY,JSON.stringify(all));
-    showToast('Fingerprint lock is on for this phone.');
-    return true;
   }catch(e){
     _lockLastErr=(e&&e.name)||'Error';
     if(!(opts&&opts.quietCancel&&_lockLastErr==='NotAllowedError'))
-      showToast(_lockLastErr==='NotAllowedError'?'Fingerprint lock was not turned on. You can turn it on in Profile.':'Could not turn on the fingerprint lock: '+(e&&e.message||e),true);
+      showToast(_lockLastErr==='NotAllowedError'?'Fingerprint was not set up. You can do it any time in Profile.':'Could not set up the fingerprint: '+(e&&e.message||e),true);
     return false;
   }
+  const id=_b64u(cred.rawId);
+  const all=_lockAll();
+  all[session.uid]={id,u:session.u,at:Date.now()};
+  _authStore(_LOCK_KEY,JSON.stringify(all));
+  // 2. Register the public key so the login screen can use it.
+  const r=cred.response||{};
+  const pk=typeof r.getPublicKey==='function'?r.getPublicKey():null;
+  const alg=typeof r.getPublicKeyAlgorithm==='function'?r.getPublicKeyAlgorithm():null;
+  const ad=typeof r.getAuthenticatorData==='function'?r.getAuthenticatorData():null;
+  if(srv&&pk&&ad&&alg!=null){
+    try{
+      await _passkeyCall({action:'register',idToken,challengeId:srv.challengeId,label:(navigator.userAgent||'').slice(0,80),
+        credential:{id,alg,publicKey:_b64u(pk),authenticatorData:_b64u(ad),clientDataJSON:_b64u(r.clientDataJSON)}});
+      _passkeySave(session.u,{id,name:session.name||session.u,at:Date.now()});
+      showToast('Fingerprint is on: sign in with it, and it locks the app on this phone.');
+      return true;
+    }catch(e){srvErr=e&&e.message||String(e);}
+  }else if(srv&&!srvErr){srvErr='this browser cannot hand over the key';}
+  showToast('Fingerprint lock is on. Fingerprint SIGN-IN could not be set up'+(srvErr?': '+srvErr:'')+'.',true);
+  return true;
 };
 window.lockDisable=function(){
   if(!session)return;
   const all=_lockAll();delete all[session.uid];
   _authStore(_LOCK_KEY,JSON.stringify(all));
-  showToast('Fingerprint lock is off for this phone.');
+  const pk=passkeyFor(session.u);
+  _passkeySave(session.u,null);
+  if(pk&&auth&&auth.currentUser){
+    auth.currentUser.getIdToken().then(t=>_passkeyCall({action:'remove',idToken:t,id:pk.id})).catch(()=>{});
+  }
+  showToast('Fingerprint is off for this phone.');
 };
+
+// ── The login screen: sign in with the fingerprint ──
+window.loginWithFingerprint=async function(){
+  const uEl=document.getElementById('l-user');
+  const typed=uEl?uEl.value.trim().toLowerCase():'';
+  const all=_passkeyAll();
+  const u=passkeyFor(typed)?typed:(passkeyFor(_authRead('groovy_remembered_user'))?_authRead('groovy_remembered_user'):Object.keys(all)[0]);
+  const rec=passkeyFor(u);
+  if(!rec){showToast('Fingerprint sign-in is not set up on this phone. Sign in with your password and tick the fingerprint box.',true);return;}
+  const btn=document.getElementById('login-finger');
+  if(btn){btn.disabled=true;btn.classList.add('busy');}
+  loginInProgress=true;
+  try{
+    const opt=await _passkeyCall({action:'login-options'});
+    const a=await navigator.credentials.get({publicKey:{
+      challenge:_b64uDec(opt.challenge),rpId:opt.rpId,
+      allowCredentials:[{type:'public-key',id:_b64uDec(rec.id),transports:['internal']}],
+      userVerification:'required',timeout:60000
+    }});
+    if(!a||!a.response)throw new Error('no answer from the phone');
+    const res=await _passkeyCall({action:'login',challengeId:opt.challengeId,assertion:{
+      id:_b64u(a.rawId),clientDataJSON:_b64u(a.response.clientDataJSON),
+      authenticatorData:_b64u(a.response.authenticatorData),signature:_b64u(a.response.signature)}});
+    if(typeof setPersistence==='function'&&typeof browserLocalPersistence!=='undefined'){
+      try{await setPersistence(auth,browserLocalPersistence);}catch(_){}
+    }
+    const c=await signInWithCustomToken(auth,res.token);
+    const email=String((c.user&&c.user.email)||res.email||'').toLowerCase();
+    const def=USER_DEFS.find(x=>String(x.email||'').toLowerCase()===email);
+    if(!def){await signOut(auth);throw new Error('this account is not set up in Groovy Ops');}
+    session={...def,uid:c.user.uid};
+    _authStore('groovy-keep-signed-in','1');_authStore('groovy_remembered_user',def.u);
+    loginInProgress=false;
+    startApp();
+    logActivity('Login',`${def.name} signed in with fingerprint`);
+  }catch(e){
+    loginInProgress=false;
+    if(btn){btn.disabled=false;btn.classList.remove('busy');}
+    if(e&&e.status===404){_passkeySave(u,null);_loginPaintFinger();}
+    showToast(e&&e.name==='NotAllowedError'?'Fingerprint not checked. Try again, or use your password.':'Fingerprint sign-in failed: '+(e&&e.message||e),true);
+  }
+};
+function _loginPaintFinger(){
+  const b=document.getElementById('login-finger'),row=document.getElementById('login-bio');
+  const any=Object.keys(_passkeyAll()).length>0&&_lockSupported();
+  if(b)b.hidden=!any;
+  // Already set up on this phone: the "next time" box would only ask again.
+  if(row&&any)row.hidden=true;
+}
+// The key inside the password field: ask the phone's password manager for
+// the password it saved, then sign in — one tap. Chrome can require the
+// fingerprint before it hands it over (its own setting).
+window.loginFillSaved=async function(){
+  try{
+    const c=await navigator.credentials.get({password:true,mediation:'required'});
+    if(!c||!c.password){showToast('No saved password was chosen.',true);return;}
+    const uEl=document.getElementById('l-user'),pEl=document.getElementById('l-pass');
+    if(uEl)uEl.value=c.id||'';if(pEl)pEl.value=c.password;
+    window.doLogin();
+  }catch(e){showToast('Could not read a saved password: '+(e&&e.message||e),true);}
+};
+(function(){
+  try{
+    const k=document.getElementById('pass-fill-btn');
+    if(k)k.hidden=!(typeof window.PasswordCredential==='function'&&navigator.credentials&&navigator.credentials.get);
+    _loginPaintFinger();
+  }catch(_){}
+})();
 
 let _lockPending=null;   // what to run once unlocked (the cold-start startApp)
 let _lockShowing=false;
@@ -752,7 +868,7 @@ let _lockCapable=false;
 window.loginBioSync=function(){
   const row=document.getElementById('login-bio'),rm=document.getElementById('l-remember');
   if(!row)return;
-  row.hidden=!(_lockCapable&&rm&&rm.checked);
+  row.hidden=!(_lockCapable&&rm&&rm.checked)||Object.keys(_passkeyAll()).length>0;
 };
 (function(){
   try{

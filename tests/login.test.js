@@ -153,7 +153,7 @@ module.exports=async function(){
     app2.run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan',role:'owner'}`);
     const html=app2.run('_profileSecurityHTML()');
     s.ok('offers Turn on where the phone can do it',/lockEnable/.test(html)&&/Turn on/.test(html));
-    s.ok('says the fingerprint never leaves the phone',/never leaves the phone/.test(html));
+    s.ok('says the fingerprint never leaves the phone',/never leaves it/.test(html));
     const app3=loadApp({files:['js/auth.js','js/profile.js'],USER_DEFS:DEFS,globals:{localStorage:memStore()}});
     app3.run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan',role:'owner'}`);
     const h3=app3.run('_profileSecurityHTML()');
@@ -173,8 +173,8 @@ module.exports=async function(){
     s.ok('the password field no longer calls doLogin on Enter itself (the form does — twice would sign in twice)',
       !/id="l-pass"[^>]*doLogin/.test(login));
     s.ok('the lock screen exists and starts hidden',/<div id="scr-lock" hidden>/.test(html));
-    s.ok('setPersistence is bridged from the Auth SDK',/setPersistence,browserLocalPersistence,browserSessionPersistence\}from'https:\/\/www\.gstatic\.com\/firebasejs\/[^']+firebase-auth\.js'/.test(html)
-      &&/\n\s*setPersistence,browserLocalPersistence,browserSessionPersistence,\n/.test(html));
+    s.ok('setPersistence is bridged from the Auth SDK',/setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken\}from'https:\/\/www\.gstatic\.com\/firebasejs\/[^']+firebase-auth\.js'/.test(html)
+      &&/\n\s*setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken,\n/.test(html));
   }
 
   // ── the fingerprint choice on the login screen ────────────────────────
