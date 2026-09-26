@@ -2757,6 +2757,10 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .tb-empty{padding:28px 0}
   .tb-searchwrap{flex:1 1 180px;min-width:140px}
   .tb-helpbtn{display:none}     /* no keyboard to shortcut */
+  /* Board settings is a DESKTOP tool in P0 (>=1024px): below that the rail
+     is a sideways strip and the button sat past its end (measured by
+     smoke-layout at 420px). P1's rail rebuild gives it a place there. */
+  .tb-setbtn{display:none}
 }
 @media(prefers-reduced-motion:reduce){.tb-railbtn{transition:none}}
 /* ── Store Accounts (js/store-accounts.js, Sept 2026) ──
@@ -3437,6 +3441,18 @@ a.acct-link{color:var(--text);cursor:pointer;font-size:inherit}
   font-family:var(--font-mono);font-size:12px;color:var(--text)}
 .tb-helpwhat{font-size:13px;color:var(--muted)}
 .tb-helpcard .btn-outline{margin-top:12px;width:100%}
+/* Board settings (owners only): same overlay as the shortcut list. */
+.tb-setbtn{margin-top:8px;min-height:32px;padding:0 10px;background:none;border:1px solid var(--border);
+  border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer;align-self:flex-start}
+.tb-setbtn:hover{background:var(--hover);color:var(--text)}
+.tb-setcard{max-width:440px}
+.tb-setsec{margin-top:8px;padding-top:10px;border-top:1px solid var(--line)}
+.tb-setsech{font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px}
+.tb-setbtns{display:flex;gap:8px;margin-top:12px}
+.tb-setbtns .btn-outline,.tb-setbtns .btn-primary{flex:1;margin-top:0;width:auto}
+.tb-setresult{margin-top:12px;font-size:13px;line-height:1.5;color:var(--text);white-space:pre-line;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px}
+.tb-seterr{border-color:var(--accent-urgent);color:var(--accent-urgent)}
 
 /* cards 10-12 */
 .tb-teamrow{display:flex;align-items:center;gap:9px;min-height:44px;padding:2px 0}

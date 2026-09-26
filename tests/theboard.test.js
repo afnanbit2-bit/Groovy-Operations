@@ -775,11 +775,17 @@ module.exports=async function(){
       /require\.main!==module/.test(read('scripts/seed-board.js')));
     // Firestore caps a batch at 500 writes; 42 items plus a list and the
     // config fit in one, but the loop has to hold if the list grows.
-    const src=read('scripts/seed-board.js');
+    // Session 2: the body moved to scripts/board-seed-plan.js, shared
+    // with the Run seed button's Netlify function.
+    const src=read('scripts/board-seed-plan.js');
     const chunk=Number((/i\+=(\d+)\)\s*\{[\s\S]{0,40}?db\.batch/.exec(src)||[])[1]||0);
     s.ok('it writes in batches within the Firestore limit',chunk>0&&chunk<=500,chunk);
-    s.ok('a dry run is the default; writing needs --write',
-      /--write/.test(src)&&/Dry run\. Nothing was written/.test(src));
+    // REVERSED in session 2 (Ammar's decision 2): the script WRITES by
+    // default and --dry-run previews. A dry-run default is one of the ways
+    // the board went live with nothing on it.
+    const cli=read('scripts/seed-board.js');
+    s.ok('the script writes by default; --dry-run previews',
+      /'--dry-run'/.test(cli)&&!/'--write'/.test(cli));
   }
 
   // ══ PHASE 3 — THE CALENDAR ══════════════════════════════════════════
@@ -1280,6 +1286,57 @@ module.exports=async function(){
     a.run('session='+J(AMMAR)+';onSnapshot=undefined');
     s.eq('an old shell with no onSnapshot stays static, and does not throw',
       a.run('(function(){_tbLiveStart({});return _tbLive;})()'),null);
+  }
+
+  // ══ SESSION 2 — P0.4: BOARD SETTINGS AND RUN SEED ═══════════════════
+  s.section('board settings: Run seed, for Board owners only');
+  {
+    const mk=(sess,fetchImpl)=>{
+      const a=loadApp({files:FILES,currentPage:'tb-dash',globals:Object.assign(
+        {auth:{currentUser:{getIdToken:async()=>'tok-'+sess.u}}},fetchImpl?{fetch:fetchImpl}:{})});
+      a.run('session='+J(sess));a.run('currentPage="tb-dash"');
+      a.run('tbItems=[];tbLists=[];tbLoaded=true;_tbLoadErrors=[];tbConfig=null;userProfiles=[]');
+      return a;
+    };
+    const d=mk(DANIYAL);
+    s.ok('a member has no settings button',!/tb-settings-btn/.test(d.run('_tbShell("tb-dash","")')));
+    d.run('window.tbToggleSettings()');
+    s.eq('and cannot open it',d.run('_tbSettingsOverlay()'),'');
+    let sent=null;
+    const a=mk(AMMAR,async(url,init)=>{sent={url:String(url),init:init};
+      return{ok:true,status:200,json:async()=>({ok:true,report:{created:42,alreadySeeded:0,listCreated:true,
+        profilesCreated:['saim'],skippedUsers:[],skippedItems:[],keptAssignees:0}})};});
+    s.ok('a Board owner has one',/tb-settings-btn/.test(a.run('_tbShell("tb-dash","")')));
+    a.run('window.tbToggleSettings()');
+    s.ok('it opens the settings with the seed',/run seed/.test(a.run('_tbSettingsOverlay()')));
+    await a.run('window.tbRunSeed(true)');
+    s.eq('it calls the function',sent&&sent.url,'/.netlify/functions/board-seed');
+    s.eq('with POST',sent&&sent.init.method,'POST');
+    s.eq('carrying the ID token and the preview flag',sent&&sent.init.body,J({idToken:'tok-ammar',dryRun:true}));
+    s.ok('and says what it would do',/Would create 42 milestones/.test(a.run('_tbSeedState.result')));
+    s.ok('naming the profile rows',/profile row for saim/.test(a.run('_tbSeedState.result')));
+    // The answer is hydrated as TEXT, never markup.
+    const ov=a.run('_tbSettingsOverlay()');
+    s.ok('the result is a hydrate slot, not interpolated',/<div id="tbh\d+" class="tb-setresult"><\/div>/.test(ov));
+    // A refusal is said out loud.
+    const b=mk(AMMAR,async()=>({ok:false,status:403,json:async()=>({error:'Only a Board owner can run the seed.'})}));
+    b.run('window.tbToggleSettings()');
+    await b.run('window.tbRunSeed(true)');
+    s.eq('a refusal is shown, not swallowed',b.run('_tbSeedState.error'),'Only a Board owner can run the seed.');
+    const c=mk(AMMAR,async()=>({ok:false,status:404,json:async()=>{throw new Error('html');}}));
+    c.run('window.tbToggleSettings()');
+    await c.run('window.tbRunSeed(true)');
+    s.ok('a missing function says it is not deployed',/not on this site yet/.test(c.run('_tbSeedState.error')));
+    // A member calling it directly does nothing at all.
+    let called=0;
+    const m=mk(DANIYAL,async()=>{called++;return{ok:true,status:200,json:async()=>({})};});
+    await m.run('window.tbRunSeed(false)');
+    s.eq('a member cannot call it',called,0);
+    // The summary, pure.
+    const S=(r,dry)=>a.run('tbSeedSummary('+J(r)+','+J(dry)+')');
+    s.ok('a real run says Done',/^Done\./.test(S({created:0,alreadySeeded:42},false)));
+    s.ok('a re-run says nothing was duplicated',/Created 0 milestones; 42 already on the board/.test(S({created:0,alreadySeeded:42},false)));
+    s.ok('a missing login is named',/No login yet for saim/.test(S({skippedUsers:['saim']},false)));
   }
 
   s.section('the calendar prefs are cleaned on load');

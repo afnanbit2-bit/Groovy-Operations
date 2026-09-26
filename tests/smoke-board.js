@@ -319,6 +319,23 @@ function DRIVE(){
       var known=['scope','person','list','lane','color','hideDone'];
       L(keys.every(function(k){return known.indexOf(k)>-1;}),'and only known filter keys ('+keys.join(',')+')');
 
+      // ── Board settings (P0.4): owners only; a function that is not
+      // there says so rather than failing silently ──
+      window.showPage('tb-dash');await wait(200);
+      var sb=document.getElementById('tb-settings-btn');
+      if(window.__SESSION.u==='ammar'){
+        L(!!sb,'a Board owner has Board settings');
+        act('open Board settings',function(){document.getElementById('tb-settings-btn').click();});
+        L(!!document.querySelector('.tb-setcard #tb-seed-run'),'with Run seed in it');
+        await window.tbRunSeed(true);
+        await wait(100);
+        L(/not on this site yet/.test(_tbSeedState.error||''),'a preview with no function deployed says so ('+(_tbSeedState.error||'nothing')+')');
+        L(/not on this site yet/.test((document.querySelector('.tb-setresult')||{}).textContent||''),'on screen, as text');
+        act('close Board settings',function(){window.tbToggleSettings();});
+      }else{
+        L(!sb,'a member has no Board settings');
+      }
+
       // ── the rest of the Board ──
       window.showPage('tb-dash');await wait(200);
       var row=document.querySelector('.tb-rowmain');

@@ -3211,6 +3211,9 @@ function _tbOnKeydown(e){
   // Only while the Board is on screen: `d` must not navigate away from
   // somebody typing a PO number on another page.
   if(String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')!==0)return;
+  // Board settings sits over everything, so Escape closes it before
+  // anything underneath -- read before the editable bail, like the rest.
+  if(e&&e.key==='Escape'&&_tbSettingsOpen){ if(e.preventDefault)e.preventDefault(); window.tbToggleSettings(); return; }
   const act=tbShortcutFor(e,{
     editable:_tbEditableFocus(),
     drawerOpen:!!_tbOpenItemId,
@@ -3250,6 +3253,95 @@ function _tbHelpOverlay(){
           +'<span class="tb-helpwhat">'+_tbEsc(s.what)+'</span></div>';
       }).join('')
       +'<button class="btn-outline" onclick="window.tbToggleHelp()">close</button>'
+    +'</div></div>';
+}
+
+// ══ SESSION 2 — P0.4: BOARD SETTINGS AND "RUN SEED" ══════════════════
+// Board owners only. The seed writes items owned by OTHER people (a
+// milestone's owner is its first assignee), which the rules rightly forbid
+// a client, so it runs in netlify/functions/board-seed.js with the Admin
+// SDK, behind a gate that checks the caller's VERIFIED ID token there --
+// this button is a convenience, never the boundary.
+let _tbSettingsOpen=false;
+let _tbSeedState={busy:false,result:'',error:'',dry:false};
+
+window.tbToggleSettings=function(){
+  if(!_tbIsBoardOwner()){ _tbSettingsOpen=false; return; }
+  _tbSettingsOpen=!_tbSettingsOpen;
+  _tbRepaint();
+};
+
+/** What a seed run did, in plain words. PURE, so the wording is assertable
+ *  and every number the function returns is said out loud. */
+function tbSeedSummary(r,dry){
+  const x=r||{};
+  const lines=[];
+  lines.push(dry?'Preview — nothing was written.':'Done.');
+  lines.push((dry?'Would create ':'Created ')+(x.created||0)+' milestone'+((x.created===1)?'':'s')
+    +'; '+(x.alreadySeeded||0)+' already on the board (left as they are).');
+  if(x.listCreated)lines.push((dry?'Would create':'Created')+' the Winter Drop 2027 list.');
+  if((x.profilesCreated||[]).length)lines.push((dry?'Would add':'Added')+' a profile row for '+x.profilesCreated.join(', ')+'.');
+  if((x.skippedUsers||[]).length)lines.push('No login yet for '+x.skippedUsers.join(', ')+' — left off; run it again once they exist.');
+  if((x.skippedItems||[]).length)lines.push('Skipped '+x.skippedItems.length+' milestone'+(x.skippedItems.length===1?'':'s')
+    +' whose only person has no login: '+x.skippedItems.join('; ')+'.');
+  if(x.keptAssignees)lines.push(x.keptAssignees+' already-seeded item'+(x.keptAssignees===1?'':'s')
+    +' name someone they do not carry — left alone, since people may have been handed over.');
+  return lines.join('\n');
+}
+
+window.tbRunSeed=async function(dry){
+  if(!_tbIsBoardOwner()||_tbSeedState.busy)return;
+  if(!dry&&typeof confirm==='function'&&!confirm('Run the Winter Drop 2027 seed now?\n\n'
+    +'It is safe to run again: nothing is duplicated, and dates, steps and people '
+    +'already changed on the board are left alone.'))return;
+  _tbSeedState={busy:true,result:'',error:'',dry:!!dry};
+  _tbRepaint();
+  try{
+    const u=(typeof auth!=='undefined'&&auth&&auth.currentUser)||null;
+    if(!u||typeof u.getIdToken!=='function')throw new Error('You are not signed in — sign in again and retry.');
+    const idToken=await u.getIdToken();
+    const r=await fetch('/.netlify/functions/board-seed',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:idToken,dryRun:!!dry})});
+    let body={};
+    try{ body=await r.json(); }catch(e){}
+    if(!r.ok){
+      if(r.status===404)throw new Error('The seed function is not on this site yet — it ships with this build; if you are on a preview, deploy first.');
+      throw new Error((body&&body.error)||('The seed answered HTTP '+r.status+'.'));
+    }
+    _tbSeedState={busy:false,result:tbSeedSummary(body.report,!!dry),error:'',dry:!!dry};
+    if(!dry){
+      // The live listeners carry the items in on their own; the profile
+      // rows the seed wrote are a directory read, so ask for it again.
+      if(typeof loadProfiles==='function')await loadProfiles(true);
+      await loadTbData(true);
+    }
+  }catch(e){
+    _tbSeedState={busy:false,result:'',error:String((e&&e.message)||e),dry:!!dry};
+  }
+  _tbRepaint();
+};
+
+function _tbSettingsOverlay(){
+  if(!_tbSettingsOpen||!_tbIsBoardOwner())return'';
+  const st=_tbSeedState;
+  return'<div class="tb-help" onclick="window.tbToggleSettings()">'
+    +'<div class="tb-helpcard tb-setcard" onclick="event.stopPropagation()">'
+      +'<div class="tb-dsech">board settings</div>'
+      +'<div class="tb-setsec">'
+        +'<div class="tb-setsech">Winter Drop 2027</div>'
+        +'<div class="tb-hint">Writes the drop list, its 42 milestones, the launch markers, and a profile row '
+          +'for each Board person. Safe to run again: nothing is duplicated, and dates, steps and people '
+          +'already changed are left alone.</div>'
+        +'<div class="tb-setbtns">'
+          +'<button class="btn-outline" id="tb-seed-preview"'+(st.busy?' disabled':'')
+            +' onclick="window.tbRunSeed(true)">preview</button>'
+          +'<button class="btn-primary" id="tb-seed-run"'+(st.busy?' disabled':'')
+            +' onclick="window.tbRunSeed(false)">'+(st.busy?'working…':'run seed')+'</button>'
+        +'</div>'
+        +(st.result?_tbSlot(st.result,'tb-setresult','div'):'')
+        +(st.error?_tbSlot(st.error,'tb-setresult tb-seterr','div'):'')
+      +'</div>'
+      +'<button class="btn-outline" onclick="window.tbToggleSettings()">close</button>'
     +'</div></div>';
 }
 
@@ -3571,7 +3663,7 @@ function _tbRepaint(reload){
   if(reload&&!tbLoaded){ tbRenderPage(_tbPage); return; }
   _tbHydrateQueue=[];
   const body=_tbScreen(_tbPage);
-  m.innerHTML=_tbShell(_tbPage,body)+_tbDrawer()+_tbMoveSheet()+_tbHelpOverlay();
+  m.innerHTML=_tbShell(_tbPage,body)+_tbDrawer()+_tbMoveSheet()+_tbHelpOverlay()+_tbSettingsOverlay();
   _tbHydrate();
   _tbPaintBadges();
   _tbPaintMentions();
@@ -3616,6 +3708,9 @@ function _tbShell(page,body){
       +_tbSearchBox()
       +'<button class="tb-helpbtn" title="keyboard shortcuts"'
         +' onclick="window.tbToggleHelp()">?</button>'
+      // Board owners only: the seed and, later, the markers.
+      +(_tbIsBoardOwner()?'<button class="tb-setbtn" id="tb-settings-btn" title="board settings"'
+        +' onclick="window.tbToggleSettings()">settings</button>':'')
     +'</div>'
     +'<div class="tb-main">'+body+'</div>'
     +'</div>';
