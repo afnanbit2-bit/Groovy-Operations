@@ -9250,6 +9250,19 @@ fragment `login — the sign-in screen and the fingerprint lock`.
     `FIREBASE_SERVICE_ACCOUNT` can sign custom tokens (it must hold a
     private key — the other functions only prove it can read/write), and
     what a real phone sends. Afnan's phone is the first real test.
+- **Desktop: "Sign in with a passkey" (27 Sept).** Afnan: the phone shows
+  the fingerprint lock, the desktop "does not hold fingerprint". A
+  passkey lives on the device that made it, so a computer has no local
+  record. On a computer (`_loginIsDesktop`: ≥561px, `hover:hover`,
+  `pointer:fine`) the button now shows anyway, labelled "Sign in with a
+  passkey", and asks for a DISCOVERABLE credential (no `allowCredentials`)
+  — the browser then offers a passkey synced to its account, or "use a
+  phone" (QR → the phone's fingerprint, the `hybrid` transport). The
+  server needs no change: it finds the uid from the credential id. Keys
+  are registered with `residentKey:'preferred'`. **Unverified:** whether
+  the key Afnan's Samsung made is discoverable/synced (it depends on which
+  passkey provider the phone used — Google Password Manager or Samsung
+  Pass); the QR route works whenever the phone's key is discoverable.
 - **Chrome's own "Use saved password?" sheet is not the fingerprint lock.**
   The lock comes AFTER a Remember-me sign-in (offered once) and then
   replaces the login on every reopen. Asking for a fingerprint before

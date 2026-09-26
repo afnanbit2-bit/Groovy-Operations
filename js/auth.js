@@ -210,7 +210,7 @@ function _loginLeave(then){
 function _loginSetBusy(on,label){
   const l=document.getElementById('scr-login');if(l)l.classList.toggle('is-busy',!!on);
   const f=document.getElementById('login-finger');
-  if(f){const sp=f.querySelector('span');if(sp)sp.textContent=on&&label?label:'Sign in with fingerprint';}
+  if(f){const sp=f.querySelector('span');if(sp)sp.textContent=on&&label?label:(f.dataset.label||'Sign in with fingerprint');}
 }
 window.doLogout=async function(){
   await signOut(auth);session=null;sessionStorage.clear();location.reload();
@@ -824,18 +824,23 @@ window.loginWithFingerprint=async function(){
   const all=_passkeyAll();
   const u=passkeyFor(typed)?typed:(passkeyFor(_authRead('groovy_remembered_user'))?_authRead('groovy_remembered_user'):Object.keys(all)[0]);
   const rec=passkeyFor(u);
-  if(!rec){showToast('Fingerprint sign-in is not set up on this phone. Sign in with your password and tick the fingerprint box.',true);return;}
+  // No key on THIS device. On a computer that is normal — the key lives on
+  // the phone — so ask for ANY passkey this site has: Chrome/Edge/Safari
+  // then offer a key synced to the browser's account, or "use a phone"
+  // (a QR code the phone scans, then the phone asks for the fingerprint).
+  // The server finds the person from the key itself, so nothing about who
+  // is signing in needs to be known here.
+  const discoverable=!rec&&_loginIsDesktop();
+  if(!rec&&!discoverable){showToast('Fingerprint sign-in is not set up on this phone. Sign in with your password and tick the fingerprint box.',true);return;}
   const btn=document.getElementById('login-finger');
   if(btn){btn.disabled=true;btn.classList.add('busy');}
   loginInProgress=true;
   try{
     const opt=await _passkeyCall({action:'login-options'});
-    _loginSetBusy(true,'Waiting for your fingerprint…');
-    const a=await navigator.credentials.get({publicKey:{
-      challenge:_b64uDec(opt.challenge),rpId:opt.rpId,
-      allowCredentials:[{type:'public-key',id:_b64uDec(rec.id),transports:['internal']}],
-      userVerification:'required',timeout:60000
-    }});
+    _loginSetBusy(true,discoverable?'Waiting for your passkey…':'Waiting for your fingerprint…');
+    const pk={challenge:_b64uDec(opt.challenge),rpId:opt.rpId,userVerification:'required',timeout:120000};
+    if(rec)pk.allowCredentials=[{type:'public-key',id:_b64uDec(rec.id),transports:['internal','hybrid']}];
+    const a=await navigator.credentials.get({publicKey:pk});
     if(!a||!a.response)throw new Error('no answer from the phone');
     _loginSetBusy(true,'Signing you in…');
     const res=await _passkeyCall({action:'login',challengeId:opt.challengeId,assertion:{
@@ -861,10 +866,21 @@ window.loginWithFingerprint=async function(){
     showToast(e&&e.name==='NotAllowedError'?'Fingerprint not checked. Try again, or use your password.':'Fingerprint sign-in failed: '+(e&&e.message||e),true);
   }
 };
+// A computer: a mouse and a wide screen. Where the fingerprint key usually
+// is NOT (it lives on the phone that made it).
+function _loginIsDesktop(){
+  try{return!!(window.matchMedia&&window.matchMedia('(min-width:561px) and (hover:hover) and (pointer:fine)').matches);}catch(_){return false;}
+}
 function _loginPaintFinger(){
   const b=document.getElementById('login-finger'),row=document.getElementById('login-bio');
   const any=Object.keys(_passkeyAll()).length>0&&_lockSupported();
-  if(b)b.hidden=!any;
+  const desk=!any&&_loginIsDesktop()&&_lockSupported();
+  if(b){
+    b.hidden=!(any||desk);
+    b.dataset.label=any?'Sign in with fingerprint':'Sign in with a passkey';
+    const sp=b.querySelector('span');if(sp)sp.textContent=b.dataset.label;
+    b.title=desk?'Use the fingerprint key on your phone (scan a QR code) or one saved in this browser':'';
+  }
   // Already set up on this phone: the "next time" box would only ask again.
   if(row&&any)row.hidden=true;
 }

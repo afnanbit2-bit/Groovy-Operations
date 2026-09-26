@@ -239,6 +239,35 @@ module.exports=async function(){
       s.eq('the app starts (after the login fades out)',app.run('__started'),1);
       s.eq('and stays signed in on this phone',mem['groovy-keep-signed-in'],'1');
     }
+
+    // ── the desktop: no key on this computer, sign in with the phone's ──
+    {
+      const calls=[];let opts=null;
+      const app=loadApp({files:['js/auth.js'],USER_DEFS:[{u:'afnan',name:'Afnan',email:'afnan@groovy.op',role:'owner'}],globals:{
+        localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+        btoa:x=>Buffer.from(x,'binary').toString('base64'),atob:x=>Buffer.from(x,'base64').toString('binary'),
+        crypto:{getRandomValues:a=>a},Uint8Array,
+        fetch:async(u,init)=>{const b=JSON.parse(init.body);calls.push(b.action);
+          const body=b.action==='login-options'?{challengeId:'c1',challenge:'AAAA',rpId:HOST}:{token:'custom:u-afnan',email:'afnan@groovy.op'};
+          return{ok:true,status:200,json:async()=>body};},
+        signInWithCustomToken:async()=>({user:{uid:'u-afnan',email:'afnan@groovy.op'}}),
+        signOut:async()=>{},
+        navigator:{credentials:{create:async()=>null,get:async o=>{opts=o.publicKey;return{rawId:new Uint8Array([7,7,7]).buffer,response:{clientDataJSON:new Uint8Array([1]).buffer,authenticatorData:new Uint8Array([2]).buffer,signature:new Uint8Array([3]).buffer}};}}},
+        window:{PublicKeyCredential:{isUserVerifyingPlatformAuthenticatorAvailable:async()=>false},isSecureContext:true,addEventListener(){},
+          matchMedia:q=>({matches:/min-width:561px/.test(q)})}
+      }});
+      app.run('session=null;var __started=0;startApp=function(){__started++}');
+      s.section('the desktop: no key here, so use the phone\'s');
+      app.run('_loginPaintFinger()');
+      s.eq('the button shows on a computer even with no key on it',app.el('login-finger').hidden,false);
+      s.eq('… labelled for what it does there',app.el('login-finger').dataset.label,'Sign in with a passkey');
+      await app.run('window.loginWithFingerprint()');
+      s.ok('it asks for ANY key this site has (no allow-list), so the browser can offer the phone',opts&&!opts.allowCredentials);
+      s.eq('… still verified',opts&&opts.userVerification,'required');
+      s.eq('… and signs in through the same server check',calls.join(','),'login-options,login');
+      await new Promise(r=>setTimeout(r,260));
+      s.eq('the app starts',app.run('__started'),1);
+    }
   }finally{
     if(savedEnv===undefined)delete process.env.FIREBASE_SERVICE_ACCOUNT;else process.env.FIREBASE_SERVICE_ACCOUNT=savedEnv;
   }
