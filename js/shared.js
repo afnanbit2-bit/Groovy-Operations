@@ -1691,8 +1691,8 @@ function renderBugTrackerPage(){
 
   // Tabs (owners/managers only — workers don't need Fix Sessions)
   const tabs=isOM?`<div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px">
-    <button onclick="window.bugSetTab('bugs')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='bugs'?'#1A1A2E':'transparent'};font-weight:${_bugTab==='bugs'?'700':'500'};color:${_bugTab==='bugs'?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:14px">🐛 Bugs</button>
-    <button onclick="window.bugSetTab('sessions')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='sessions'?'#1A1A2E':'transparent'};font-weight:${_bugTab==='sessions'?'700':'500'};color:${_bugTab==='sessions'?'#1A1A2E':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:14px">📦 Fix Sessions</button>
+    <button onclick="window.bugSetTab('bugs')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='bugs'?'var(--text)':'transparent'};font-weight:${_bugTab==='bugs'?'700':'500'};color:${_bugTab==='bugs'?'var(--text)':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:14px">🐛 Bugs</button>
+    <button onclick="window.bugSetTab('sessions')" style="padding:10px 16px;background:none;border:none;border-bottom:2px solid ${_bugTab==='sessions'?'var(--text)':'transparent'};font-weight:${_bugTab==='sessions'?'700':'500'};color:${_bugTab==='sessions'?'var(--text)':'var(--muted)'};cursor:pointer;font-family:inherit;font-size:14px">📦 Fix Sessions</button>
   </div>`:'';
 
   const head=`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">

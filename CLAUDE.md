@@ -9382,6 +9382,46 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   phone** — the sandbox cannot sign in. Rendered and measured in headless
   Chromium at 390/360px and desktop, both themes.
 
+## The phone sweep (27 Sept 2026)
+
+Afnan: *"can you debug groovy ops by yourself? Phone UI only."* The sandbox
+cannot sign in, so the app was loaded in headless Chromium at 390px with a
+stubbed Firebase and fake data, every page opened for seven roles in both
+themes, screenshotted screen by screen (a full-page capture drags the fixed
+bottom nav and the off-screen sheets into the middle of the picture — use
+viewport-sized shots) and LOOKED at, then measured. Found and fixed:
+
+- **Dashboard stage tiles** broke their labels mid-word ("Cuttin g",
+  "Embe llishm ents"): seven `flex:1` tiles on one phone line.
+  `.stage-ov-grid` (auto-fit, 88px min) → rows of three. Also the
+  Embellishments overview row. `js/embellishments.js` is Ammar's file —
+  two class swaps, tell him.
+- **Users page** printed raw role keys (`Creator_content_ops_lead`,
+  `Csr_lead`) and the long row pushed Reset password off the screen.
+  `_roleLabel()` in `js/auth.js`; `.user-row` wraps the button under the
+  name on a phone. The stage-owner names were `STAGES` literal ink —
+  1.06:1 in dark; `var(--text)` now.
+- **The toast sat on the bottom nav** (`bottom:20px` under a 71px fixed
+  nav). Phone: `bottom:calc(84px + safe-area)`.
+- **24–29px buttons and chips** (`.btn-sm`, `.btn-outline`,
+  `.filter-chip`, `.dest-chip`) → 34px min-height on a phone, height only.
+  The gate pass size row's remove × was 20×21 → 32×34.
+- **Dark mode: the Dashboard KPI tiles** were `background:white` /
+  cream literals under themed ink — 1.09–1.18:1. `var(--surface)` and dark
+  overrides for the amber/red tints; light mode is unchanged.
+- The bug tracker's tabs used a navy literal (1.13:1 in dark); the worker
+  card's "No image" was `#aaa` (2.02:1); the payroll card's › wrapped onto
+  its own line; Fabric Inventory said its title twice; the PO row left a
+  dangling " ·" when a field was empty; the gate pass bundle header
+  wrapped ("BUNDLES (E.G. 9-8-6-7)") — now Size · Bundles · Count · Qty.
+
+**Seen and NOT changed** (judgement calls, not bugs): the Payroll and
+Store Accounts tables scroll sideways on a phone (the columns are there);
+the Inventory page opens on a 39-row low-stock list before the inventory;
+Observer Tower opens on twelve zero tiles; the bug FAB passes over content
+while scrolling. **Still only a phone can say:** the keyboard, the
+fingerprint dialog and real data volumes.
+
 ## Credentials — never in client code
 
 `js/*.js`, `css/*` and every `*.html` are **public static assets**, served
@@ -9873,6 +9913,16 @@ Chrome.
   already-red CI. **Check the check-runs on a push, not just the local
   run; "green here" is not the claim CI makes.**
 
+  **A job whose probe NEVER RAN is retried once, with double the
+  virtual-time budget (27 Sept 2026).** CI on `main` failed "the board —
+  item drawer @ 1280px light — the probe never ran" with no error text
+  (Chrome exited normally, no result), while the same commit passed on the
+  branch run and the fragment passed 5/5 locally; the session could not
+  re-run the job (GitHub 403). Only a MISSING answer is retried — a probe
+  that ran and reported a finding never is. Verified both ways: a dropped
+  first answer recovers on the retry, and a probe that never answers still
+  fails all six jobs.
+
   **OPEN, and deliberately not decided by picking a number:** what a
   768px-tall LAPTOP really leaves. This file puts a 900px screen at ~790px
   of viewport, i.e. ~110px of OS and browser chrome; the same subtraction
@@ -9881,6 +9931,22 @@ Chrome.
   overflows the shortest screen we claim to support. That is a product
   question about the shortest supported screen, so it is flagged here
   rather than answered in a probe setting.
+- **`tests/smoke-app-phone.js`** (27 Sept 2026) — the WHOLE app on a
+  390px phone: the real `index.html` shell and scripts, signed in through
+  the in-memory Firestore (`STUB`/`CLOCK` are read out of
+  `tests/smoke-board.js`, not copied), inside an iframe of the real width
+  (the `--window-size` clamp). Owner in both themes on 46 pages, plus a
+  worker, viewer, store, fulfilment, Marketing and CSR account. Fails on:
+  the page scrolling sideways, anything laid out past the right edge
+  (outside a strip that scrolls on purpose), text under 2.2:1 (text over a
+  gradient is skipped — the probe cannot read one), a `.btn-sm` /
+  `.btn-outline` / `.filter-chip` / `.dest-chip` under 34px, the toast
+  resting on the bottom nav, and anything thrown. **What it does NOT hold,
+  checked:** a label that breaks mid-word (the Dashboard's stage tiles —
+  the text is still visible) and the Users row pushing its button off the
+  screen (the card clips it rather than letting it overflow the page).
+  Verified by undoing the toast, the dark KPI tiles and the tap-target
+  rule one at a time: each fails by name.
 - **`tests/check-cache-version.js`** — a CI guard rather than a suite,
   because it needs git history. If a precached file changed between the base
   ref and HEAD, `CACHE_VERSION` must have changed too. Forgetting it fails

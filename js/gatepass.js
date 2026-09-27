@@ -382,14 +382,14 @@ function _gpSyncSizesFromDOM(){
 function _gpRenderSizes(){
   const el=document.getElementById('gp-sizes');if(!el)return;
   if(!_gpSizes.length)_gpSizes=[{size:'',bundles:''}];
-  el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px"><span>Size</span><span>Bundles (e.g. 9-8-6-7)</span><span style="text-align:center"># Bundles</span><span style="text-align:right">Qty</span><span></span></div>`+
+  el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 32px;gap:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px"><span>Size</span><span>Bundles</span><span style="text-align:center">Count</span><span style="text-align:right">Qty</span><span></span></div>`+
     _gpSizes.map((s,i)=>{const arr=_gpParseBundles(s.bundles);const q=arr.reduce((a,b)=>a+b,0);
-      return`<div class="gps-row" style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;align-items:center;margin-bottom:8px">
+      return`<div class="gps-row" style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 32px;gap:8px;align-items:center;margin-bottom:8px">
         <input class="gps-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.gpRecalc()" style="margin:0;font-size:16px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
         <input class="gps-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.gpRecalc()" style="margin:0;font-size:16px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
         <span class="gps-nb" style="text-align:center;font-weight:700;font-size:15px;color:var(--muted)">${arr.length||'—'}</span>
         <span class="gps-qty" style="text-align:right;font-weight:800;font-size:17px">${q?q.toLocaleString():'—'}</span>
-        <button type="button" onclick="window.gpRemoveSize(${i})" title="Remove" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:21px;padding:0;line-height:1">×</button>
+        <button type="button" onclick="window.gpRemoveSize(${i})" title="Remove" aria-label="Remove this size" style="background:none;border:none;color:var(--accent-urgent);cursor:pointer;font-size:21px;padding:0;line-height:1;min-width:32px;min-height:34px">×</button>
       </div>`;}).join('');
   window.gpRecalc();
 }

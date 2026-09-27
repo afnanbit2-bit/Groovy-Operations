@@ -4130,7 +4130,7 @@ function _renderMyWorkInner(){
     ${myPOs.map(p=>`<div class="work-card">
       <div style="display:flex;gap:14px;align-items:flex-start">
         <div style="width:80px;height:104px;flex-shrink:0;background:var(--soft);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="window.openPODetail('${p.fbKey}')">
-          ${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:11px;color:#aaa;text-align:center;padding:4px">No image</span>'}
+          ${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:11px;color:var(--muted);text-align:center;padding:4px">No image</span>'}
         </div>
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="po-num">${p.id}</span>
@@ -4175,7 +4175,7 @@ function renderDashboard(){
     const borderStyle=alert?`border:2px solid var(--dark)`:`border:1px solid var(--border)`;
     return`<div style="flex:1;min-width:0;padding:10px 8px;background:var(--surface);${borderStyle};border-radius:8px;text-align:center">
       <div style="font-size:17px;font-weight:700;color:var(--text)">${count}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px;word-break:break-word;overflow-wrap:break-word;line-height:1.3">${label}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;overflow-wrap:break-word;line-height:1.3">${label}</div>
       ${flagged?`<div style="font-size:11px;color:#dc2626;font-weight:700;margin-top:2px">⚠ ${flagged} flagged</div>`:''}
     </div>`;
   }
@@ -4206,7 +4206,7 @@ function renderDashboard(){
       <span id="emb-ov-arrow" style="font-size:13px;color:var(--muted);transition:transform .2s">${embDefaultOpen?'▾':'▸'}</span>
     </div>
     <div id="emb-ov-body" style="overflow:hidden;transition:max-height .25s;max-height:${embDefaultOpen?'200px':'0'};border-top:${embDefaultOpen?'1px solid var(--border)':'none'}">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 14px">
+      <div class="stage-ov-grid" style="padding:12px 14px">
         ${[['Printing',inPrinting,'var(--text)'],['Sublimation',inSubl,'var(--text)'],['Embroidery',inEmbr,'var(--text)'],['Rework Pending',inRework,'var(--text)'],['Overdue',overdue,overdue>0?'var(--text)':'var(--muted)']].map(([label,val,color])=>`<div style="flex:1;min-width:0;padding:9px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:17px;font-weight:700;color:${color}">${val}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${label}</div></div>`).join('')}
       </div>
     </div>
@@ -4228,7 +4228,7 @@ function renderDashboard(){
   </div>
   <div style="margin-bottom:16px">
     <div class="section-title">Stage overview</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${stageCards}</div>
+    <div class="stage-ov-grid">${stageCards}</div>
   </div>
   ${embOverviewSection}`;
 
