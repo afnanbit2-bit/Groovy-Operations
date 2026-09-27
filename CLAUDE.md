@@ -6918,8 +6918,9 @@ category, a subscriptions register per owner, targets like the marriage
 and the car (saved so far, monthly need, ETA), assets and liabilities, net
 worth, reconciliation — and the ~₨15 lac Groovy borrowed from it is ONE
 document posting on both books, with a Payfast payout repaying it first.
-Asghar's printing unit is an `affiliate` party with real accounts from day
-one; every document carries a tax block ("no tax" is a choice, never an
+Asghar is a printing vendor like any other, with agreed terms and a rate
+card (Afnan, later the same day, overruling the plan's first "affiliate"
+idea: *"treat him the same, no special demand for Asghar"*); every document carries a tax block ("no tax" is a choice, never an
 absence; the rates are blank until the accountant fills them); the books
 close by the QUARTER on a fiscal year from 1 July, with a soft month close
 where a month matters; the 3–4 months of payroll on Excel are imported;
@@ -6932,8 +6933,8 @@ pay days and names a day the holders cannot fund. Store Accounts and
 warehouse sales are absorbed in M8. Fifteen open questions are tabled in
 §23 with the default each takes until answered (the Payfast payout
 account, the loan's split per lender, what the TCS account is, Blue-Ex's
-balance, the subscriptions list, the targets' amounts, Asghar's investment,
-the tax regime, the payroll sheet).
+balance, the subscriptions list, the targets' amounts, the tax regime, the
+payroll sheet).
 
 Verified while planning, and worth knowing before any of it is built (every
 claim carries file:line in the plan's §1): nothing in HRM records HOW a

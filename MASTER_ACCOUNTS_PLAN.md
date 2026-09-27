@@ -16,8 +16,10 @@
 > by hand; most dealings are cash, not bank; four couriers in four different
 > states; Payfast money goes to the owners' savings, which need a book of
 > their own; about ₨15 lac is borrowed from those savings and paid back
-> slowly; Asghar's printing unit is neither a vendor nor an employee; every
-> entry may or may not carry tax; the books close by the quarter. **v2's
+> slowly; Asghar, who prints for Groovy, is a vendor with agreed terms like
+> any other (Afnan, later the same day, overruling the plan's first
+> "affiliate" idea); every entry may or may not carry tax; the books close
+> by the quarter. **v2's
 > skeleton stands** — the party master, terms with history, rate cards,
 > documents with a lifecycle, the validation engine, per-party ledgers,
 > costing — and v3 puts the cash under it, the couriers in front of it, a
@@ -53,8 +55,8 @@
      │
  PRODUCTION       every production PO collects its cost, leg by leg ──► cost per piece ──► COGS
      │
- PEOPLE           payroll (3–4 months imported from the Excel sheet) · advances · loans · Asghar's
-                  unit as an affiliate with its own account from day one
+ PEOPLE           payroll (3–4 months imported from the Excel sheet) · advances and loans as
+                  employee ledgers with schedules
      │
  SAVINGS          the owners' own book: Payfast payouts, spend by category, subscriptions per
  (second book)    owner, targets (the marriage, the car), assets and liabilities, net worth,
@@ -88,7 +90,7 @@ does with the fact.
 | 3 | *"Ammar receives online payments from PAYFAST, an online gateway on the website; we use that money for personal saving. I want that money in a savings section of the accounts module: where the money sits, with clear attachment plus recon method, plus how that money is spent; a logic for how we manage our savings — expense calculation, save-for-a-target, recurring cost such as subscriptions for me and Ammar both. A build better than what I said. Ammar is currently funding the marriage and our new car, so it should have a calculation of assets and liabilities too."* | A **second book, the Savings book**, with the same two-person audience and its own chart of accounts: accounts (the Payfast payout account, each owner's bank, cash), inflows, spend by category, a **subscriptions register per owner** (next due, annualised cost, detected from history), **targets** (amount, saved so far, monthly need, ETA at the current pace, funded by whom), an **assets and liabilities register** with valuations → net worth per owner and joint, reconciliation with attachments. Payfast money is Groovy revenue first (a prepaid web order), a Payfast receivable, then a **payout that posts on both books** in one document. | §9, §10 |
 | 4 | *"Nothing — all done on paper, no logic to it. The build should be cash-logic based; every rupee is precious. Terms are the key, as we manage debt on our end, so it's the most important logic."* (vendors, terms, who pays) | Terms live on the party with history and drive three things: the due date on every bill, the **pay-day list** (Wed/Sat) and the cash calendar's outflows. Credit limits, overdue and an unfunded pay day are the first three lines of the concern logic. Every payment is from a named holder and the holder cannot go below zero. | §4.2, §6, §17 |
 | 5 | *"We have payroll records of the past 3–4 months on Excel: advances + loans + salary + deductions."* | A **payroll importer** reads that sheet in the browser (vendored SheetJS, the Marketing M7 pattern), previews, and writes accruals, payments and the employee ledgers' openings, idempotent by employee + month. | §14, M6 |
-| 6 | *"Asghar is not an employee, he gets no salary. He is part of Groovy: he costs us less to print from him because we helped him build his own printing unit, but we consider it our own. He needs proper accounts from day one."* | A party kind **`affiliate`**: his approved printing bills become real payables at his rate card, his payments are real payments, what Groovy put into the unit is an **investment asset** with its own ledger, and his statement exists from the first entry. | §11 |
+| 6 | *"Asghar is not an employee, he gets no salary. He is part of Groovy: he costs us less to print from him because we helped him build his own printing unit, but we consider it our own. He needs proper accounts from day one."* | **Overruled the same day** — Afnan: *"Asghar is the same as other vendors, he has terms we agree on, treat him the same, no special demand for Asghar."* So he is a `vendor` with role `printing`, the terms agreed with him, a rate card seeded from the printing rate master, and his approved printing bills become `ma_bill` on his ledger exactly as an external printer's do. No affiliate kind, no investment account, nothing special. | §3 #12, §11 |
 | 7 | *"We both manage the factory; if I don't have cash Ammar steps in. Groovy vs savings have a relationship: around 1.5 million is borrowed from savings when the business required it; it is paid back, at slow speed."* | **Cash with Afnan / cash with Ammar are company holders.** The ₨15 lac is a **loan from the owners' savings**: one document per draw or repayment posts a liability on Groovy's book and an asset on the Savings book; the outstanding shows on both overviews; a Payfast payout repays it first (default, tabled). | §4.1, §10 |
 | 8 | *"It has to be something I build with logic, then a one-go print. Proper vendor management with entry logic set up from day one, so I can do it at my own pace and the build does not slow me down. Well calculated — 20 million of cash a month to be accounted for."* | **Entry at your own pace**: history can be entered back to 1 July 2026 until the owners close that quarter; a vendor is created inline from any form; a PO is optional; quick forms for the four daily documents; importers for payroll, Store Accounts and PostEx; refusals only for what cannot be true. Statements print in one go for any range. Whole rupees, bounded reads, rollups. | §14, §2 |
 | 9 | *"Quarter to quarter; monthly is too soon. Three months is the closing period, but monthly closing where it is required."* | **Quarterly hard close** on a fiscal year from 1 July (Jul–Sep, Oct–Dec, Jan–Mar, Apr–Jun) with locks; **monthly soft close** on demand (a checkpoint and a warning on backdating, no lock) for payroll months and monthly-billed vendors. | §20 |
@@ -110,7 +112,7 @@ re-checked by grep in this session (27 Sept 2026).
 | **Gate passes and returns** | `dest` free text (chips for FebKnit, Al-Hamd, Al-Nisa, Aqib Sublimation, JR Traders, Rahim Gul, Khursheed), `gpReason`, sizes and units sent; `returns` record `sentQty, returnedQty, cumulative, shortage`. | **No vendor record, no rate, no bill** for stitching, washing, dyeing or embroidery. | `js/gatepass.js:98-106, 550-623, 664-666` |
 | **Fabric in** `fabricin` | Supplier (free text), type, gsm, colour, rolls, kg or metres, QC per roll. | **No rate, cost, invoice or purchase order.** | `js/fabric.js:794` |
 | **Production** `pos.*`, `bstock_*`, `stock_transfers` | Pieces by PO, article and size at every mile. | **No money anywhere**; no cost per PO or per piece. | `js/production.js:155-180, 284-295, 636-664` |
-| **Embellishment** `printing_billing`, `printing_jobs` | `netPayable = finalApprovedQty × ratePerPiece − materialCostImpact`; a per-piece rate master for 183 article codes. | A payable with **no payee field**; in-house work (Asghar's unit) billed the same way with nothing owed to anyone; no paid state. | `js/embellishments.js:59-152, 3368-3400, 3716` |
+| **Embellishment** `printing_billing`, `printing_jobs` | `netPayable = finalApprovedQty × ratePerPiece − materialCostImpact`; a per-piece rate master for 183 article codes. | A payable with **no payee field**; a bill for Asghar's printing is computed the same way as an external printer's, with nothing recording what is owed to him or paid; no paid state. | `js/embellishments.js:59-152, 3368-3400, 3716` |
 | **Warehouse sales** `wh_sales` | One doc per ERP order, lines snapshotted, the 20% cap in the rules, pay-later, collection fields, Raees's confirmation as a `cash_in` with `src:'wh'`. | The sale, its collection and its confirmation live in two collections. | `js/warehouse-sales.js:309-385, 412-420`; `js/store-accounts.js:1464-1478` |
 | **Payroll** `payroll_runs`, `payslips`, `advance_requests`, `loans`, `employees` | Run totals, per-slip net, deductions for advances and loans, mark-paid per month or per person. | **Nothing records how a salary was paid**; loans never updated after creation; UTC-day dates; the last 3–4 months live in Excel, not here. | `js/hrm.js:1908-1963, 1958, 1983-2027, 2810` |
 | **Marketing** `paid_pr_requests` | Approved amount (frozen at decision), one set of payment fields. | No partial payment; the discount given on a code is not stored. | `js/marketing.js:2476-2537` |
@@ -129,7 +131,7 @@ only**.
 | **Terms are the key** | A vendor's terms drive the due date, the pay-day list and the calendar; editing them keeps history and never moves an existing bill's due date. |
 | **The ledger validates what it is fed** | Every document passes `maValidate(doc, ctx)` before it posts: `refuse` (with the rule named), `flag` (posts, marked for review) or `ok`. §6 is the rule table. |
 | **A document has a lifecycle, a posting does not** | Draft → posted → (partly) settled → void. A void keeps the document struck through with who/when/why; an edit appends `edits[]` and re-posts under the same key. |
-| **One party master** | Vendor, customer, courier, employee, owner, bank, affiliate: ONE record with a kind, what it provides, terms, a rate card and a ledger. A vendor typed as a string anywhere is a defect the migration ends. |
+| **One party master** | Vendor, customer, courier, employee, owner, bank: ONE record with a kind, what it provides, terms, a rate card and a ledger. A vendor typed as a string anywhere is a defect the migration ends. |
 | **Two books, one audience** | Groovy's book and the Savings book are separate ledgers with separate charts of accounts; the loan and the Payfast payout are the only documents that post on both, and each is ONE document. Nothing from Savings reaches Groovy's P&L. |
 | **Balances derived, never stored** | Party, account, holder, target and loan balances are computed from postings; closes store checkpoints; rollups are a rebuildable cache. |
 | **Double entry underneath, plain words on top** | Every posting balances; the UI says money in, money out, owed to us, we owe, saved so far. The trial balance is a test invariant and a nightly check on both books. |
@@ -156,7 +158,7 @@ only**.
 | 9 | **Payfast** | Prepaid web orders are Groovy revenue (4011) and a **1125 Receivable — Payfast**; a payout is ONE document (`ma_payout`) that clears the receivable on Groovy's book and lands in the Savings book's Payfast payout account. On Groovy's side the payout is **loan repayment first** (2110), then drawings per owner. Payfast's fee is a line on the payout. | "That money is used for personal saving" — but it is sales revenue first, and taking it out is either repaying what savings lent or a drawing. | drawings first; a fixed split; a different receiving account |
 | 10 | **The Savings book** | A second ledger (`ma_sv_*`) with its own chart (§4.5), accounts, inflows, spend by category, a subscriptions register per owner, targets, an assets-and-liabilities register with valuation history, net worth per owner and joint, reconciliation with attachments. One shared book; every entry tagged `afnan`, `ammar` or `joint`. | "A build better than what I said." | two separate books, one per owner |
 | 11 | **The loan** | `ma_loan`: opening (~₨15 lac, split tabled), draws (savings → a Groovy holder) and repayments (a Groovy holder → a savings account), each ONE document posting 2110 on Groovy's book and S1040 on the Savings book; no interest by default; the outstanding on both overviews; a repayment pace on the Savings page. | "Around 1.5 million is borrowed … paid back at slow speed." | interest; per-owner sub-loans |
-| 12 | **Asghar's unit** | Party kind `affiliate`: a rate card seeded from the printing rate master; an approved `printing_billing` for a job assigned to his unit becomes an `ma_bill` (qty ≤ `finalApprovedQty`, refused otherwise); payments as any vendor; **1170 Investment — Asghar's unit** for what Groovy put in, with its own ledger; his statement from the first entry. His unit's own P&L is not kept. | "Not an employee … we consider it our own … proper accounts from day one." | recovering the investment from his rate |
+| 12 | **Asghar** | **A vendor like any other**: kind `vendor`, role `printing`, the terms agreed with him, a rate card seeded from the printing rate master (Ammar's file — read, not edited), his approved `printing_billing` becoming an `ma_bill` on his ledger exactly as an external printer's does (qty ≤ `finalApprovedQty`, rate flagged off his card), payments from a named holder, a statement and aging like every vendor's. No affiliate kind, no investment account, no deduction from his rate. | Afnan, 27 Sept, overruling the first draft: "Asghar is the same as other vendors, he has terms we agree on, treat him the same, no special demand for Asghar." | — |
 | 13 | **Tax on every document** | `tax:{kind: sales\|services\|withholding\|none, rate, amount, inclusive, ref?}`; defaults from the party (`tax.regime`, `withholdingPct`, NTN/filer) and the item; the form shows the block and the person confirms; accounts 2120 sales tax payable, 1160 input tax, 2130 withholding payable; a quarterly tax page. **Rates are blank settings until the accountant fills them.** | "A lot of entries do have taxes, some don't." | — |
 | 14 | **Periods** | Fiscal year from 1 July; **quarter close = hard lock**; **month close = soft** (checkpoint, warning on backdating, no lock), taken where a month matters (payroll, monthly-billed vendors, the Store's month). Reopen by an owner with a reason. | "Three months is the closing period, monthly where required." | monthly hard close |
 | 15 | **Go-live and history** | Live from **1 Oct 2026** (Q2). Q1 (1 Jul–30 Sep 2026) stays open for **backfill at your own pace**, documents dated in it marked `historical`, until the owners close it. Openings on 1 July 2026. | "Entry logic from day one so I can do it at my own pace." | opening balances on 1 Oct and no history |
@@ -165,10 +167,10 @@ only**.
 | 18 | Rate cards, terms, history | Per party, per item or service, history kept; terms with `termsHistory[]`, older bills keep their terms; `history[]`/`edits[]` on every record and document. | v2 §3.4–5, 18. | — |
 | 19 | Purchase orders, receipts, bills, payments | As v2 §3.6–9: PO optional and assignable to production POs; fabric-in and gate-pass returns are receipts; bills matched three ways with `invoiceNo` unique per vendor; payments allocated (owner picks, default FIFO), from a named holder; retention. | — | — |
 | 20 | Sales | Warehouse sales → invoices + collections; Shopify orders → invoices per order **with the gateway deciding the receivable** (COD → the courier; Payfast → 1125); gate sales → invoice + receipt. Needs `gateway` on the order sync (proposal to Ammar). | — | — |
-| 21 | Costing | Standard-then-actual per production PO, FIFO across POs, a missing leg named; Asghar's printing is the embellishment leg at his card rate. | v2 §3.11. | average cost |
+| 21 | Costing | Standard-then-actual per production PO, FIFO across POs, a missing leg named; each printing vendor's bill is the embellishment leg at that vendor's card rate. | v2 §3.11. | average cost |
 | 22 | Chart of accounts | Seeded (§4.1), typed, codes never reused; the Savings book has its own (§4.5). | — | — |
 | 23 | Charts and learning | HTML charts, validated `--chart-*` palette, table twins; deterministic statistics with a basis; the concern logic is rule-based from M3 and learned from M10. | — | — |
-| 24 | Not built, named | Multi-currency; tax filing; bank or gateway API feeds; an accountant role; AI Q&A; consolidation; forecasting beyond 90 days; a vendor portal; Asghar's own P&L; interest on the owners' loan. | Each is a phase. | — |
+| 24 | Not built, named | Multi-currency; tax filing; bank or gateway API feeds; an accountant role; AI Q&A; consolidation; forecasting beyond 90 days; a vendor portal; interest on the owners' loan. | Each is a phase. | — |
 
 ## 4. Master data
 
@@ -181,19 +183,19 @@ accounts are the **holders**; `holder` names the person or place.
 | Range | Accounts |
 |---|---|
 | Money (holders) | **1010 Cash — store drawer (Raees)** · **1011 Cash — with Afnan** · **1012 Cash — with Ammar** · **1020 MCB current** · 1030… other banks and wallets (placeholders) · **1040 Warehouse till (Umair, not yet handed over)** · **1050 Runner floats** · **1060 TCS account (credited at 90 days)** |
-| Receivables | 1110 Customers (warehouse pay-later) · **1120 PostEx — delivered, not yet on a CPR** · **1121 PostEx — CPRs issued, not yet collected** · **1122 TCS — delivered, inside 90 days** · **1123 Blue-Ex (legacy)** · **1124 Bykea** · **1125 Payfast (prepaid, not yet paid out)** · 1140 Employees (advances, loans) · 1150 Vendor advances · **1160 Input tax** · **1170 Investment — Asghar's unit** |
+| Receivables | 1110 Customers (warehouse pay-later) · **1120 PostEx — delivered, not yet on a CPR** · **1121 PostEx — CPRs issued, not yet collected** · **1122 TCS — delivered, inside 90 days** · **1123 Blue-Ex (legacy)** · **1124 Bykea** · **1125 Payfast (prepaid, not yet paid out)** · 1140 Employees (advances, loans) · 1150 Vendor advances · **1160 Input tax** |
 | Stock and assets | 1210 Fabric · 1220 Trims · 1230 Work in progress · 1240 Finished goods · 1310 Fixed assets |
-| Liabilities | 2010 Payable — vendors · **2011 Payable — Asghar's unit** · 2020 Retention held · 2040 Payable — salaries · 2050 Payable — runners · 2060 Payable — creators · 2070 Customer deposits · **2110 Loan from owners' savings** · **2120 Sales tax payable** · **2130 Withholding tax payable** · 2140 Other loans |
+| Liabilities | 2010 Payable — vendors · 2020 Retention held · 2040 Payable — salaries · 2050 Payable — runners · 2060 Payable — creators · 2070 Customer deposits · **2110 Loan from owners' savings** · **2120 Sales tax payable** · **2130 Withholding tax payable** · 2140 Other loans |
 | Equity | 3010/3011 Capital — Afnan / Ammar · 3020/3021 Drawings — Afnan / Ammar · 3090 Retained result |
 | Revenue | **4010 Online — COD** (sub-accounts per courier) · **4011 Online — prepaid (Payfast)** · 4020 Warehouse · 4030 Fabric & garment sales · 4040 Discounts given · 4050 Refunds & returns · 4090 Other income |
-| Cost of goods | 5010 Fabric · 5020 Stitching · 5030 Embellishment (**5031 Asghar's unit**) · 5040 Trims · 5050 Washing & dyeing · **5060 Courier fees & tax** · **5070 Reversals & returns** · 5080 Packaging · 5090 Cost variance |
+| Cost of goods | 5010 Fabric · 5020 Stitching · 5030 Embellishment · 5040 Trims · 5050 Washing & dyeing · **5060 Courier fees & tax** · **5070 Reversals & returns** · 5080 Packaging · 5090 Cost variance |
 | Expenses | 6010 Salaries · 6020 Marketing & PR · 6030 Utilities · 6040 Rent · 6050 Maintenance · 6060 Fuel & transport · 6070 Office · **6080 Bank & gateway charges** · 6090 Depreciation · **6100 Subscriptions (company)** · **6110 Taxes & levies (non-recoverable)** · 6190 Other |
 | Suspense | 9010 Unclassified in · 9020 Unclassified out · 9030 Reconciliation differences |
 
-### 4.2 `ma_parties/{id}` — one record per vendor, customer, courier, employee, owner, bank, affiliate
+### 4.2 `ma_parties/{id}` — one record per vendor, customer, courier, employee, owner, bank
 
 ```
-{ kind: vendor|customer|courier|employee|owner|bank|affiliate,
+{ kind: vendor|customer|courier|employee|owner|bank,
   name, code (short, unique), active,
   vendor: {
     roles: [fabric_mill|stitching|washing|dyeing|embroidery|printing|sublimation|trims|packaging|
@@ -218,8 +220,6 @@ accounts are the **holders**; `holder` names the person or place.
   employee: {employeeId (HRM), schedules:[{kind:advance|loan, monthly, from, balance}]},
   owner:    {username, holderAccount: 1011|1012},
   bank:     {accountCode},
-  affiliate:{rateCard:[...], investment:{account:1170, openingAmount, openingDate, attachment},
-             billsFrom: 'printing_billing'},
   openingBalance, openingDate, notes, createdAt/By, updatedAt/By, history[] }
 ```
 
@@ -276,7 +276,7 @@ accounts, so saving toward one never leaves the account the money sits in.
 | **Owner loan draw / repayment** | `ma_loan` | the form | posted · void | Groovy: a holder ↔ 2110. Savings: S1040 ↔ a savings account |
 | Purchase order | `ma_po` | the form; a production PO's needs; a gate pass | draft → sent → partly received → received → closed · cancelled | nothing (a commitment) |
 | Receipt | `ma_receipt` | fabric-in + rate · vendor return on a gate pass · printing QC approval · store receive | posted · void | inventory or WIP ↔ accrued payable |
-| Vendor bill | `ma_bill` | the form (invoice required above a threshold); a metered vendor's month; **Asghar's approved billing**; Store Accounts purchase (until M8) | draft → posted → partly paid → paid · void | accrued payable ↔ 2010/2011; tax ↔ 1160/2130 |
+| Vendor bill | `ma_bill` | the form (invoice required above a threshold); a metered vendor's month; **an approved printing billing (Asghar's or an external printer's)**; Store Accounts purchase (until M8) | draft → posted → partly paid → paid · void | accrued payable ↔ 2010; tax ↔ 1160/2130 |
 | Vendor payment | `ma_payment` | the form; a pay-day run; from a named holder | posted · void | 2010 (allocations) ↔ holder; unallocated → 1150; withholding ↔ 2130 |
 | Retention release | `ma_payment` kind `retention` | QC cleared | posted · void | 2020 ↔ holder |
 | Customer invoice | `ma_invoice` | warehouse sale · Shopify order (gateway → COD courier or Payfast) · gate sale | posted → partly collected → collected · void | 1110/1120/1122/1124/1125 ↔ 4010/4011/4020/4030; tax ↔ 2120 |
@@ -331,7 +331,7 @@ queue. **Every rule is a test.**
 | Receipt qty ≤ ordered × (1 + `qtyPct`) | refuse | receipt |
 | Returned pieces ≤ pieces sent on the gate pass | refuse | service receipt |
 | Bill qty ≤ received qty on the referenced receipts | refuse | bill |
-| **Asghar's bill qty ≤ `finalApprovedQty` on the billing; rate = his card** | refuse · flag | affiliate bill |
+| **A printing bill's qty ≤ `finalApprovedQty` on the billing; rate = that printer's card** | refuse · flag | printing bill (Asghar's or an external printer's) |
 | Bill vs PO (three-way match); variances by qty and rate shown | flag; refuse above `refuseAbove.matchVariance` | bill |
 | `invoiceNo` unique per vendor | refuse | bill |
 | Invoice attached above `flagAbove.noInvoice` | flag; refuse above `refuseAbove.noInvoice` | bill, payment |
@@ -372,8 +372,7 @@ control account is a row — date · document · debit · credit · running
 balance · state (matched, flagged, partly paid, overdue, pending) ·
 attachment; a statement by range; aging from open items with FIFO where a
 payment did not allocate. A courier's ledger reads: delivered (owed to us)
-· on a CPR · collected · fees; a customer's: invoiced · collected; an
-affiliate's: billed · paid · investment.
+· on a CPR · collected · fees; a customer's: invoiced · collected.
 
 **Allocation** (`maAllocate`): a payment's allocations are the record; open
 items are bills minus allocations; an unallocated remainder is an advance
@@ -490,25 +489,28 @@ cannot disagree:
   reason. **A payout larger than the Payfast receivable is flagged** — it
   means orders the sync has not seen, or refunds, and the sentence says so.
 
-## 11. Asghar's unit — the affiliate
+## 11. Asghar — a vendor like any other
 
-- Party kind `affiliate`, with a rate card seeded from the printing rate
-  master (`PRINTING_RATE_MASTER`, Ammar's file — read, not edited) and
-  editable with history like any card.
-- **An approved `printing_billing` for a job assigned to his unit becomes an
-  `ma_bill`** on his ledger (adapter in M6, the payee join through the job's
-  `vendorName/assignedTo`), qty refused above `finalApprovedQty`, rate
-  flagged off his card, `materialCostImpact` as a negative line. Payments
-  to him are `ma_payment` from a named holder. His ledger reads billed ·
-  paid · balance, with a statement and aging like a vendor's.
-- **1170 Investment — Asghar's unit**: what Groovy put in (amount, dates,
-  materials — §23 Q10), with its own ledger and attachments; further
-  support is a document on it; nothing is deducted from his bills unless an
-  owner decides so (a setting, off).
-- His unit's own P&L, stock or payroll are **not kept** — Groovy's book
-  records what Groovy owes him, paid him and invested in him. If that ever
-  changes, it is a third book, not lines in this one.
-- The specimen shows him as a party row and a ledger; page `ma-party`.
+The first draft of v3 gave Asghar a party kind of his own (`affiliate`,
+with an investment account for what Groovy put into his unit). **Afnan
+overruled it the same day:** *"Asghar is the same as other vendors, he has
+terms we agree on, treat him the same, no special demand for Asghar."*
+So:
+
+- He is a `vendor` party with role `printing`, the terms agreed with him
+  (mode, days, pay days — edited with history like anyone's), and a rate
+  card seeded from the printing rate master (`PRINTING_RATE_MASTER`, Ammar's
+  file — read, not edited) and editable with history like any card.
+- **An approved `printing_billing` becomes an `ma_bill` on the printing
+  vendor's ledger** — his or an external printer's, the same adapter (M3),
+  the payee joined through the job's `vendorName/assignedTo` — with qty
+  refused above `finalApprovedQty`, the rate flagged off the card, and
+  `materialCostImpact` as a negative line. Payments to him are `ma_payment`
+  from a named holder. His ledger, statement and aging are a vendor's.
+- **Nothing else is built for him.** No affiliate kind, no investment
+  account, no deduction from his rate. If what Groovy contributed to his
+  unit is ever to be on the books, it is a journal an owner writes on the
+  day (a loan to a vendor, or a gift), not a structure in the party master.
 
 ## 12. Tax on every document
 
@@ -530,8 +532,8 @@ document is ever written without a tax decision.
 
 `maCost(po)` reads the production PO's fabric issues (× the receipt rate of
 the rolls issued, FIFO by roll), the service receipts and bills linked to it
-(stitching, washing, embellishment — Asghar's at his card rate, external
-printers at theirs — per piece), the trims issued (× rate) and the overhead
+(stitching, washing, embellishment — each printing vendor at its own card rate, Asghar
+included — per piece), the trims issued (× rate) and the overhead
 % setting, and returns `{legs:{fabric, stitching, washing, embellishment,
 trims, overhead}, pieces:{cut, received, passed, transferred, bstock},
 perPiece, missing:[legs with no rate]}`. WIP carries the cost while the PO
@@ -575,7 +577,7 @@ zero.**
 | Gate pass to a vendor (`dest`) | M3 | `dest` becomes a party pick; the pass is the dispatch; the return is the receipt |
 | Fabric in (`fabricin`) | M3 | gains `poRef`, `rate`, `invoiceRef`, tax; the supplier is a party |
 | Store receive | M3 | gains `rate`, `poRef` |
-| Embellishment billing | M6 adapter | Asghar's approved bills → `ma_bill` on the affiliate; external printers' → `ma_bill` on the vendor |
+| Embellishment billing | M3 adapter | an approved billing → `ma_bill` on the printing vendor's ledger (Asghar's or an external printer's), the payee joined through the job's `vendorName/assignedTo` |
 | Payroll (`payroll_runs`, the Excel sheet) | M6 | the importer; accrual adapter; payroll payment documents; `paidVia` proposed on the slip |
 | Shopify | M5 | invoices per order, the receivable by gateway; proposals to Ammar: `gateway` on the sync, a 14-day refresh |
 | Production (`pos.*`) | M7 | units for costing; no change to the screens |
@@ -593,7 +595,7 @@ rollup schedule.
 | `ma-overview` | cash by holder (hero, with who holds what), in/out this month, owed to us (in transit · CPRs to collect · TCS · Blue-Ex · customers), we owe, runway; **the concern strip** (the three sentences that matter today); **the 30-day cash calendar**; **the spend map**; cash in/out by week; balance and projection; where the money went; revenue by channel; aging both ways; the loan outstanding |
 | `ma-couriers` | §8: tiles, the CPR table, the Tue/Fri rhythm, collections, fees and reversals, a card per courier |
 | `ma-ledger` | every posting, one line shape, filters by document kind, party, holder and account |
-| `ma-parties` / `ma-party` | vendors · customers · couriers · employees · owners · banks · affiliates; the party page with what it provides, terms (history), rate card (history), open POs, the credit/debit ledger, statement, aging, attachments |
+| `ma-parties` / `ma-party` | vendors · customers · couriers · employees · owners · banks; the party page with what it provides, terms (history), rate card (history), open POs, the credit/debit ledger, statement, aging, attachments |
 | `ma-purchasing` | purchase orders, receipts, bills with match status, the review queue; + PO · + Bill · + Receipt |
 | `ma-payments` | the pay-day list (Wed/Sat, from terms), pay runs by holder, allocations, retention, advances |
 | `ma-money` | one page per holder: statement, running balance, confirmations pending, reconciliation, transfers, floats; MCB import |
@@ -601,7 +603,7 @@ rollup schedule.
 | `ma-savings`, `-targets`, `-recurring`, `-networth`, `-accounts` | §9 |
 | `ma-loan` | the loan ledger on both books, draws, repayments, pace, the payout rule |
 | `ma-costing` | cost sheets, cost per piece, margin by article and channel, missing legs |
-| `ma-people` | payroll accruals and payments, the importer, employee ledgers, Asghar's page |
+| `ma-people` | payroll accruals and payments, the importer, employee ledgers |
 | `ma-tax` | §12 |
 | `ma-pnl`, `ma-balance`, `ma-cashflow`, `ma-aging`, `ma-reports` | the statements, exports |
 | `ma-budgets`, `ma-insights` | the learning layer |
@@ -726,10 +728,10 @@ the backfill quarter and closes when the owners say so, not on 30 September.
 | **M0** | this plan, the specimen, §23 answered | — |
 | **M1 Foundation & cash positions** | both charts of accounts, holders, party master with terms/rate cards/history, items, `js/ma-core.js` (postings, validation, allocation, balances, trial balance, the tax block), journals, **transfers between holders with confirmation**, the calendar (rule-based), `ma-overview` (live: cash by holder, calendar), `ma-ledger`, `ma-parties`/`ma-party`, `ma-money`, `ma-settings`, rules (the app's first owner-only reads), the dashboard widget | `index.html`, `sw.js`, `shared.js` (nav + one line), `css/main.css` tokens + `.ma-` block, rules republish |
 | **M2 Couriers & collections** | `ma_cpr` derived from `postex_orders` (the rollup), manual statements for TCS/Blue-Ex/Bykea, collections with holder and attachment, COD in transit, the TCS account and its 90-day expectation, Blue-Ex's opening, Bykea pending Raees, `ma-couriers`, the Tue/Fri calendar entries, courier fees and reversals in the P&L | `netlify.toml` (the rollup schedule) |
-| **M3 Procurement, terms & pay days** | `ma-purchasing`: purchase orders (assignable to production POs), receipts from fabric-in and vendor returns, bills matched three ways with tax, the review queue; `ma-payments` with allocation from a holder, the Wed/Sat pay-day list, retention, credit limits; `ma-aging`; **the concern strip's rule-based half**; a bank CSV import once a statement is seen | `js/gatepass.js` (party pick), `js/fabric.js` (party pick, rate, poRef), `js/store.js` (rate on receive) |
+| **M3 Procurement, terms & pay days** | `ma-purchasing`: purchase orders (assignable to production POs), receipts from fabric-in and vendor returns, bills matched three ways with tax, printing bills from approved `printing_billing` (Asghar's and every external printer's, each at its own card rate), the review queue; `ma-payments` with allocation from a holder, the Wed/Sat pay-day list, retention, credit limits; `ma-aging`; **the concern strip's rule-based half**; a bank CSV import once a statement is seen | `js/gatepass.js` (party pick), `js/fabric.js` (party pick, rate, poRef), `js/store.js` (rate on receive); the printing rate master read from `js/embellishments.js` |
 | **M4 Savings & the loan** | the Savings book: accounts, entries, statement import and reconciliation, spend by category, the subscriptions register with detection, targets, assets and liabilities, net worth; `ma_loan`, `ma_payout` with the repay-then-draw rule; `ma-savings*`, `ma-loan`; the loan on both overviews | — |
 | **M5 Sales** | invoices from Shopify orders by gateway, warehouse sales (adapter) and gate sales; the Payfast receivable; customer ledgers; `ma-sales`; revenue by channel and gateway | proposal to Ammar (`gateway`, refresh) |
-| **M6 People & the affiliate** | the payroll Excel importer, accrual and payment documents, employee ledgers (advances, loans with schedules), `ma-people`; Asghar's unit: the affiliate party, bills from approved billing, the investment ledger, his statement | proposal on `paidVia`; read of the printing rate master |
+| **M6 People** | the payroll Excel importer, accrual and payment documents, employee ledgers (advances, loans with schedules), `ma-people` | proposal on `paidVia` |
 | **M7 Costing** | `ma-costing`, WIP and finished goods at cost, COGS on sale, margin by article | — |
 | **M8 Absorb Store Accounts & warehouse sales** | migration (idempotent by `legacyId`), forms re-pointed, Raees's and Umair's rules carried over (own entries, edits with history, review, confirmations), the Reset retired | `js/store-accounts.js`, `js/warehouse-sales.js` |
 | **M9 Reports, exports & tax** | `ma-pnl`, `ma-balance`, `ma-cashflow`, `ma-reports`, `ma-tax`; Excel; print-engine variants (party statement, holder statement, cost sheet, collection receipt, savings statement) | `js/print-engine.js` |
@@ -751,7 +753,7 @@ CPR is two rows, never doubled); the TCS 90-day expectation; the Blue-Ex
 opening; the payout split (repay first, then draws; over the receivable
 flagged); the loan on both books and the outstanding never negative; the
 tax block (absent refused, `none` accepted, amount = rate × base, inclusive
-vs exclusive, withholding on the vendor's ledger); Asghar's qty ceiling;
+vs exclusive, withholding on the vendor's ledger); the printing bill's qty ceiling;
 allocation (partial, FIFO default, advance remainder, over-allocation
 refused); rate-card and terms history; the cost sheet; the party ledger's
 running balance; the calendar (Tue/Fri inflows, Wed/Sat outflows, an
@@ -771,7 +773,8 @@ themes, the spend map and the calendar included.
 ## 23. Open questions — with the default each takes until answered
 
 The seven answers of 27 Sept 2026 resolved v2's questions 2, 3, 4, 5, 6,
-8, 9 and 10 (see §0a). What they opened:
+8, 9 and 10 (see §0a), and Asghar's was answered the same day (§11: a
+vendor like any other). What they opened:
 
 1. **Payfast**: which account receives the payouts (Ammar's personal bank?
    a joint account?), Payfast's fee and settlement cycle; send one
@@ -802,26 +805,22 @@ The seven answers of 27 Sept 2026 resolved v2's questions 2, 3, 4, 5, 6,
    confirm.
 9. **Targets**: the marriage and the car — amounts, dates, funded by whom,
    already paid. Default: two targets with placeholder amounts.
-10. **Asghar's unit**: what Groovy put in (amount, dates, materials), whether
-    any of it is recovered from his rate, whether he bills at the printing
-    rate master's rates. Default: the investment at the stated amount, no
-    recovery, his card seeded from the master.
-11. **Tax**: which taxes actually apply (sales tax on goods, provincial
+10. **Tax**: which taxes actually apply (sales tax on goods, provincial
     sales tax on services, withholding on vendor payments), the rates, and
     Groovy's registration and filer status — the accountant's call. Default:
     the block exists, rates blank, `none` until set.
-12. **Payroll**: send the Excel sheet (its real columns are what the
+11. **Payroll**: send the Excel sheet (its real columns are what the
     importer is written to), and how salaries are paid (cash from which
     holder, bank). Default: cash from the drawer.
-13. **Go-live and history**: live from 1 Oct 2026 with Q1 (Jul–Sep) entered
+12. **Go-live and history**: live from 1 Oct 2026 with Q1 (Jul–Sep) entered
     at your own pace, or open the whole fiscal year? Default: Q1 open for
     backfill until you close it.
-14. **Retention, match tolerance, PO-for-services, Raees's view of
+13. **Retention, match tolerance, PO-for-services, Raees's view of
     production rate cards, nav label, Mustafa's access, the Reset**: as v2
     (0% retention with the mechanism shipped; 2% qty, 0% rate with a reason;
     the gate pass can raise the PO; only his; "Master Accounts"; no; retired
     at M8).
-15. **Whole rupees everywhere** (no paisa) and one currency. Default: yes.
+14. **Whole rupees everywhere** (no paisa) and one currency. Default: yes.
 
 ## 24. What cannot be verified from a session
 

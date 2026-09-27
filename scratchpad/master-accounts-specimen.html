@@ -457,7 +457,7 @@ const D={
     {n:'TCS account',v:62000,kind:'tcs'},
   ],
   recv:{postex:1418700,cpr:962000,tcs:190000,bluex:235000,payfast:241000,customers:312000,employees:86000},
-  pay:{vendors:846500,asghar:128000,salaries:1180000,runners:4200},
+  pay:{vendors:974500,salaries:1180000,runners:4200},
   loan:{outstanding:1140000,opening:1500000,repaidQ:360000,pace:120000},
   cprRhythm:{weeks:['18 Aug','25 Aug','1 Sep','8 Sep','15 Sep','22 Sep'],tue:[790,840,710,880,770,810],fri:[960,1020,830,990,900,962]},
   courierCost:{months:['Apr','May','Jun','Jul','Aug','Sep'],fees:[312,338,296,352,364,392],rev:[41,48,39,57,61,89]},
@@ -587,7 +587,7 @@ function sparkline(vals,cur){const max=Math.max(...vals);return `<div class="spa
 
 /* ── screens ── */
 function overview(){
-  const cash=sum(D.accounts.map(a=>a.v));const recv=Object.values(D.recv).reduce((a,b)=>a+b,0);const pay=D.pay.vendors+D.pay.asghar+D.pay.salaries+D.pay.runners;
+  const cash=sum(D.accounts.map(a=>a.v));const recv=Object.values(D.recv).reduce((a,b)=>a+b,0);const pay=D.pay.vendors+D.pay.salaries+D.pay.runners;
   const thisIn=sum(D.weeks.slice(4).map(w=>w[1]))*1000,thisOut=sum(D.weeks.slice(4).map(w=>w[2]))*1000;
   const holders=D.accounts.map(a=>`${a.n.split(' · ')[0].replace('Cash with ','')} ${compact(a.v).replace('₨','')}`).join(' · ');
   return `<div class="page-head"><div><div class="page-title">Accounts</div><div class="page-sub">Sunday 27 September 2026 · Tuesday's CPR, then Wednesday's pay day</div></div>
@@ -598,7 +598,7 @@ function overview(){
     <div class="kpi"><div class="kpi-label">In this month</div><div class="kpi-val">${compact(thisIn)}</div><div class="kpi-sub">9 CPRs collected · warehouse · fabric</div></div>
     <div class="kpi"><div class="kpi-label">Out this month</div><div class="kpi-val">${compact(thisOut)}</div><div class="kpi-sub"><span class="delta down">▲ 9%</span> vs the 6-month median</div></div>
     <div class="kpi"><div class="kpi-label">Owed to us</div><div class="kpi-val">${compact(recv)}</div><div class="kpi-sub">in transit ${compact(D.recv.postex)} · CPR to collect ${compact(D.recv.cpr)} · TCS ${compact(D.recv.tcs)} · Blue-Ex ${compact(D.recv.bluex)}</div></div>
-    <div class="kpi warn"><div class="kpi-label">We owe</div><div class="kpi-val">${compact(pay)}</div><div class="kpi-sub">salaries ${compact(D.pay.salaries)} on 1 Oct · Wed ₨6.4 lac · Asghar ${compact(D.pay.asghar)}</div></div>
+    <div class="kpi warn"><div class="kpi-label">We owe</div><div class="kpi-val">${compact(pay)}</div><div class="kpi-sub">salaries ${compact(D.pay.salaries)} on 1 Oct · vendors ${compact(D.pay.vendors)} · Wed ₨6.4 lac</div></div>
     <div class="kpi"><div class="kpi-label">Loan from savings</div><div class="kpi-val">${compact(D.loan.outstanding)}</div><div class="kpi-sub">of ${compact(D.loan.opening)} · ${compact(D.loan.pace)} a month back</div></div>
   </div>
   <div class="alerts">
