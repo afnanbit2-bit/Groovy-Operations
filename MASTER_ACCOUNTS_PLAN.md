@@ -39,7 +39,8 @@
                   TCS delivers ──► credited to the TCS account after 90 days ──► drawn out
                   Blue-Ex (legacy) ──► balances still owed, collected against a statement
                   Bykea ──► transferred to Raees ──► the drawer (manual until a feed exists)
-                  Payfast (prepaid web orders) ──► paid out to the OWNERS' SAVINGS ──► the loan
+                  Payfast (prepaid web orders) ──► paid out on WEEKDAYS, daily, some days skipped
+                  ──► the OWNERS' SAVINGS ──► the loan
                   Warehouse customers ──► Umair's till ──► Raees confirms ──► the drawer
      │
  CASH HOLDERS     every rupee has a holder: the drawer (Raees) · cash with Afnan · cash with
@@ -87,7 +88,7 @@ does with the fact.
 |---|---|---|---|
 | 1 | *"Groovy gets paid mostly from PostEx, 90% of cash flow. The CPR generated in PostEx is the money we get every Tuesday and Friday, but I mostly collect it a day later, or the same day when needed urgently. Most dealings are in cash, not account-managed."* | Couriers are the **first mile of money in**, built before purchasing. A CPR is a document derived nightly from `postex_orders`; a **collection** records the cash physically received from it — by whom, when, how much against the CPR's net, with the receipt attached. Cash is modelled by **holder**: the drawer, cash with Afnan, cash with Ammar, MCB, the till, floats, the TCS account. Every payment names the holder it left. A 30-day cash calendar puts Tue/Fri inflows against Wed/Sat pay days. | §8, §4.1, §17 |
 | 2 | *"Blue-Ex was our previous vendor; we don't use it, but there are balances that need to be collected, so it holds importance until dues are cleared. TCS payment gets credited to my TCS account after 90 days. Bykea payments are usually transferred to Raees; there is no module to connect currently — keep it in the plan, least priority."* | Four couriers, four terms on the courier party: PostEx `cpr` (Tue/Fri, collected in cash); TCS `account` (delivered → receivable → **the TCS account, an asset**, credited at 90 days → drawn to cash or MCB); Blue-Ex `legacy` (an opening receivable from their statement, aged, collected against, never dispatched to); Bykea `manual` (a statement typed in, collected **into the drawer and confirmed by Raees**, a feed later). | §8 |
-| 3 | *"Ammar receives online payments from PAYFAST, an online gateway on the website; we use that money for personal saving. I want that money in a savings section of the accounts module: where the money sits, with clear attachment plus recon method, plus how that money is spent; a logic for how we manage our savings — expense calculation, save-for-a-target, recurring cost such as subscriptions for me and Ammar both. A build better than what I said. Ammar is currently funding the marriage and our new car, so it should have a calculation of assets and liabilities too."* | A **second book, the Savings book**, with the same two-person audience and its own chart of accounts: accounts (the Payfast payout account, each owner's bank, cash), inflows, spend by category, a **subscriptions register per owner** (next due, annualised cost, detected from history), **targets** (amount, saved so far, monthly need, ETA at the current pace, funded by whom), an **assets and liabilities register** with valuations → net worth per owner and joint, reconciliation with attachments. Payfast money is Groovy revenue first (a prepaid web order), a Payfast receivable, then a **payout that posts on both books** in one document. | §9, §10 |
+| 3 | *"Ammar receives online payments from PAYFAST, an online gateway on the website; we use that money for personal saving. I want that money in a savings section of the accounts module: where the money sits, with clear attachment plus recon method, plus how that money is spent; a logic for how we manage our savings — expense calculation, save-for-a-target, recurring cost such as subscriptions for me and Ammar both. A build better than what I said. Ammar is currently funding the marriage and our new car, so it should have a calculation of assets and liabilities too."* | A **second book, the Savings book**, with the same two-person audience and its own chart of accounts: accounts (the Payfast payout account, each owner's bank, cash), inflows, spend by category, a **subscriptions register per owner** (next due, annualised cost, detected from history), **targets** (amount, saved so far, monthly need, ETA at the current pace, funded by whom), an **assets and liabilities register** with valuations → net worth per owner and joint, reconciliation with attachments. Payfast money is Groovy revenue first (a prepaid web order), a Payfast receivable, then a **payout that posts on both books** in one document. **Later the same day, on the payouts:** *"the payment comes in on weekdays, daily; sometimes days are skipped."* So a payout is ONE document per payout day, a weekday with none is a normal state, and the calendar and the concern logic learn the rhythm — a gap past the usual is a watch, then a concern. | §8, §9, §10, §17 |
 | 4 | *"Nothing — all done on paper, no logic to it. The build should be cash-logic based; every rupee is precious. Terms are the key, as we manage debt on our end, so it's the most important logic."* (vendors, terms, who pays) | Terms live on the party with history and drive three things: the due date on every bill, the **pay-day list** (Wed/Sat) and the cash calendar's outflows. Credit limits, overdue and an unfunded pay day are the first three lines of the concern logic. Every payment is from a named holder and the holder cannot go below zero. | §4.2, §6, §17 |
 | 5 | *"We have payroll records of the past 3–4 months on Excel: advances + loans + salary + deductions."* | A **payroll importer** reads that sheet in the browser (vendored SheetJS, the Marketing M7 pattern), previews, and writes accruals, payments and the employee ledgers' openings, idempotent by employee + month. | §14, M6 |
 | 6 | *"Asghar is not an employee, he gets no salary. He is part of Groovy: he costs us less to print from him because we helped him build his own printing unit, but we consider it our own. He needs proper accounts from day one."* | **Overruled the same day** — Afnan: *"Asghar is the same as other vendors, he has terms we agree on, treat him the same, no special demand for Asghar."* So he is a `vendor` with role `printing`, the terms agreed with him, a rate card seeded from the printing rate master, and his approved printing bills become `ma_bill` on his ledger exactly as an external printer's do. No affiliate kind, no investment account, nothing special. | §3 #12, §11 |
@@ -131,7 +132,7 @@ only**.
 | **Terms are the key** | A vendor's terms drive the due date, the pay-day list and the calendar; editing them keeps history and never moves an existing bill's due date. |
 | **The ledger validates what it is fed** | Every document passes `maValidate(doc, ctx)` before it posts: `refuse` (with the rule named), `flag` (posts, marked for review) or `ok`. §6 is the rule table. |
 | **A document has a lifecycle, a posting does not** | Draft → posted → (partly) settled → void. A void keeps the document struck through with who/when/why; an edit appends `edits[]` and re-posts under the same key. |
-| **One party master** | Vendor, customer, courier, employee, owner, bank: ONE record with a kind, what it provides, terms, a rate card and a ledger. A vendor typed as a string anywhere is a defect the migration ends. |
+| **One party master** | Vendor, customer, courier, gateway, employee, owner, bank: ONE record with a kind, what it provides, terms, a rate card and a ledger. A vendor typed as a string anywhere is a defect the migration ends. |
 | **Two books, one audience** | Groovy's book and the Savings book are separate ledgers with separate charts of accounts; the loan and the Payfast payout are the only documents that post on both, and each is ONE document. Nothing from Savings reaches Groovy's P&L. |
 | **Balances derived, never stored** | Party, account, holder, target and loan balances are computed from postings; closes store checkpoints; rollups are a rebuildable cache. |
 | **Double entry underneath, plain words on top** | Every posting balances; the UI says money in, money out, owed to us, we owe, saved so far. The trial balance is a test invariant and a nightly check on both books. |
@@ -155,7 +156,7 @@ only**.
 | 6 | **TCS** | Delivered parcels → 1122 Receivable — TCS; **90 days after delivery** (setting `tcsCreditDays`) the expected credit moves to **1060 TCS account**, an asset held at TCS, confirmed against TCS's own statement; withdrawals from it are transfers to cash or MCB. | "Credited to my TCS account after 90 days." | treating the TCS account as a receivable rather than money |
 | 7 | **Blue-Ex** | A `legacy` courier party: an opening receivable from their last statement (attached), aged from that date, collections against it, nothing dispatched to it. Its open balance is on the overview until zero. | "Holds importance until dues cleared." | — |
 | 8 | **Bykea** | A `manual` courier: a statement typed in as a CPR-shaped document (attachment), collected **into the drawer, pending Raees's confirmation**. A feed is a later milestone. | "Transferred to Raees; no module; least priority." | — |
-| 9 | **Payfast** | Prepaid web orders are Groovy revenue (4011) and a **1125 Receivable — Payfast**; a payout is ONE document (`ma_payout`) that clears the receivable on Groovy's book and lands in the Savings book's Payfast payout account. On Groovy's side the payout is **loan repayment first** (2110), then drawings per owner. Payfast's fee is a line on the payout. | "That money is used for personal saving" — but it is sales revenue first, and taking it out is either repaying what savings lent or a drawing. | drawings first; a fixed split; a different receiving account |
+| 9 | **Payfast** | Prepaid web orders are Groovy revenue (4011) and a **1125 Receivable — Payfast**; a payout is ONE document (`ma_payout`) that clears the receivable on Groovy's book and lands in the Savings book's Payfast payout account. On Groovy's side the payout is **loan repayment first** (2110), then drawings per owner. Payfast's fee is a line on the payout. **Payouts arrive on weekdays, daily, with some days skipped** (Afnan), so `ma_payout` is one document per payout day (`payfast_<date>`), a weekday with none is normal until the gap passes the learned usual, and the calendar expects one every weekday at the learned median. | "That money is used for personal saving" — but it is sales revenue first, and taking it out is either repaying what savings lent or a drawing. | drawings first; a fixed split; a different receiving account |
 | 10 | **The Savings book** | A second ledger (`ma_sv_*`) with its own chart (§4.5), accounts, inflows, spend by category, a subscriptions register per owner, targets, an assets-and-liabilities register with valuation history, net worth per owner and joint, reconciliation with attachments. One shared book; every entry tagged `afnan`, `ammar` or `joint`. | "A build better than what I said." | two separate books, one per owner |
 | 11 | **The loan** | `ma_loan`: opening (~₨15 lac, split tabled), draws (savings → a Groovy holder) and repayments (a Groovy holder → a savings account), each ONE document posting 2110 on Groovy's book and S1040 on the Savings book; no interest by default; the outstanding on both overviews; a repayment pace on the Savings page. | "Around 1.5 million is borrowed … paid back at slow speed." | interest; per-owner sub-loans |
 | 12 | **Asghar** | **A vendor like any other**: kind `vendor`, role `printing`, the terms agreed with him, a rate card seeded from the printing rate master (Ammar's file — read, not edited), his approved `printing_billing` becoming an `ma_bill` on his ledger exactly as an external printer's does (qty ≤ `finalApprovedQty`, rate flagged off his card), payments from a named holder, a statement and aging like every vendor's. No affiliate kind, no investment account, no deduction from his rate. | Afnan, 27 Sept, overruling the first draft: "Asghar is the same as other vendors, he has terms we agree on, treat him the same, no special demand for Asghar." | — |
@@ -192,10 +193,10 @@ accounts are the **holders**; `holder` names the person or place.
 | Expenses | 6010 Salaries · 6020 Marketing & PR · 6030 Utilities · 6040 Rent · 6050 Maintenance · 6060 Fuel & transport · 6070 Office · **6080 Bank & gateway charges** · 6090 Depreciation · **6100 Subscriptions (company)** · **6110 Taxes & levies (non-recoverable)** · 6190 Other |
 | Suspense | 9010 Unclassified in · 9020 Unclassified out · 9030 Reconciliation differences |
 
-### 4.2 `ma_parties/{id}` — one record per vendor, customer, courier, employee, owner, bank
+### 4.2 `ma_parties/{id}` — one record per vendor, customer, courier, gateway, employee, owner, bank
 
 ```
-{ kind: vendor|customer|courier|employee|owner|bank,
+{ kind: vendor|customer|courier|gateway|employee|owner|bank,
   name, code (short, unique), active,
   vendor: {
     roles: [fabric_mill|stitching|washing|dyeing|embroidery|printing|sublimation|trims|packaging|
@@ -209,8 +210,10 @@ accounts are the **holders**; `holder` names the person or place.
     bank: {title, iban?}, contact: {person, phone, address},
     meter?: {type:count|weighed, unit, rate} },
   customer: {terms:{mode, creditDays, creditLimit}, phone, address},
-  courier:  {cycle: cpr|account|legacy|manual,
+  courier|gateway: {cycle: cpr|account|legacy|manual|weekdays,
              cprDays?: [2,5],            // PostEx: Tuesday, Friday
+             weekdaySkips?: true,        // Payfast: daily on weekdays, some days none
+             payoutAccount?: 'S1020',    // Payfast: lands in the Savings book
              collectBy?: 'afnan',        // who usually collects, in cash
              collectLagDays?: 1,
              creditDays?: 90,            // TCS: delivery → the TCS account
@@ -246,7 +249,7 @@ holderFloor:{1010:…}, categoryMap, budgets, bankRules, overheadPct,
 matchTolerance:{qtyPct, ratePct}, refuseAbove:{…}, flagAbove:{…},
 tax:{defaults per kind, rates (blank until set)}, payout:{rule:
 'repay_then_draw', drawSplit:{afnan:50, ammar:50}}, concern:{madWatch:2,
-madConcern:3, minAmount, budgetWatchPct:90}, learning:{…}}` — every
+madConcern:3, minAmount, budgetWatchPct:90, payoutGapWatch:3, payoutGapConcern:5}, learning:{…}}` — every
 threshold the validation engine or the concern logic reads is here and on
 the settings page.
 
@@ -272,7 +275,7 @@ accounts, so saving toward one never leaves the account the money sits in.
 | **Collection** | `ma_collection` | the form: CPRs, amount, holder, date, receipt photo; who collected | pending (another person's hands) → posted · void | holder ↔ 1121 (or 1122/1123/1124); a difference ↔ 9030 with a reason |
 | **TCS credit** | `ma_cpr` kind `account` | TCS's statement (typed, attached); the calendar expects it at delivery + 90 days | expected → credited · disputed | 1060 TCS account ↔ 1122 |
 | **Transfer between holders** | `ma_transfer` | the form; a bank withdrawal or deposit; a TCS withdrawal | pending (until the receiver confirms) → posted · void | to-holder ↔ from-holder |
-| **Payfast payout** | `ma_payout` | the form with Payfast's statement attached | posted · void | Groovy: 2110 then 3020/3021 ↔ 1125; 6080 fee. Savings: S1020 ↔ S1040 then S4011 |
+| **Payfast payout** | `ma_payout` | the form, one per payout day, with Payfast's statement line attached (weekdays, daily; a skipped day is normal) | posted · void | Groovy: 2110 then 3020/3021 ↔ 1125; 6080 fee. Savings: S1020 ↔ S1040 then S4011 |
 | **Owner loan draw / repayment** | `ma_loan` | the form | posted · void | Groovy: a holder ↔ 2110. Savings: S1040 ↔ a savings account |
 | Purchase order | `ma_po` | the form; a production PO's needs; a gate pass | draft → sent → partly received → received → closed · cancelled | nothing (a commitment) |
 | Receipt | `ma_receipt` | fabric-in + rate · vendor return on a gate pass · printing QC approval · store receive | posted · void | inventory or WIP ↔ accrued payable |
@@ -324,6 +327,7 @@ queue. **Every rule is a test.**
 | A parcel on two upfront CPRs or two reserve CPRs in the derivation | flag as a data issue, never doubled | ma_cpr (derived) |
 | A TCS credit before delivery + `tcsCreditDays` − 7 | flag ("earlier than the 90 days") | TCS credit |
 | Payout amount ≤ Payfast receivable outstanding (+ tolerance); the fee named; the repayment part ≤ the loan outstanding | flag · refuse | payout |
+| **One payout per Payfast payout day** (a second for the same date is refused unless the first is void); a payout dated on a weekend is flagged, never refused — they arrive on weekdays | refuse · flag | payout |
 | Loan repayment ≤ outstanding; a draw names the savings account it left and the holder it reached | refuse | loan |
 | A line's item is on the vendor's `provides` list | flag | PO, bill |
 | A line's rate equals the current card rate (± `ratePct`) | flag with the card rate; refuse if no reason when over the tolerance | PO, bill |
@@ -419,12 +423,26 @@ pending until Raees confirms** (his Store Accounts cash-in form is the
 confirmation surface after M8; until then the owner records it and the
 document waits). A Bykea feed is a later milestone; nothing here prevents it.
 
+**Payfast (`cycle: weekdays`, a `gateway` party).** Afnan: *"the payment
+comes in on weekdays, daily; sometimes days are skipped."* A prepaid web
+order is revenue and a receivable in 1125 the day the sync sees it; a
+payout is an `ma_payout` per payout day, matched to Payfast's statement
+line, clearing the receivable and landing in the Savings book (§10). **A
+weekday with no payout is a normal state, not a missing document** — the
+rollup learns the median payout per weekday, the share of weekdays skipped
+and the longest gap seen, the calendar expects a payout every weekday at
+that median with the skip rate widening the band, and the concern logic
+speaks only when a gap passes the usual (`payoutGapWatch` 3 weekdays →
+watch, `payoutGapConcern` 5 → concern: *"No Payfast payout since Tuesday —
+four weekdays; the usual gap is one. ₨2.4 lac is waiting in the
+receivable."*). Weekends are never expected and never alarmed.
+
 **The courier page** (`ma-couriers`, specimen *Couriers*): tiles (in
 transit with PostEx · CPRs waiting to be collected · collected this month ·
 TCS due inside 90 days and the TCS account · Blue-Ex still owed), the CPR
 table (no · day · parcels · COD · fees · net · collected by / when ·
 state), the Tue/Fri collection rhythm with the next expected amounts, fees
-and reversals by month, and one card per courier with its terms.
+and reversals by month, and one card per courier with its terms, Payfast's weekday rhythm beside them.
 
 ## 9. Savings — the owners' book
 
@@ -488,6 +506,9 @@ cannot disagree:
   then draws by `drawSplit`) and can be overridden on the document with a
   reason. **A payout larger than the Payfast receivable is flagged** — it
   means orders the sync has not seen, or refunds, and the sentence says so.
+  One document per payout day: Payfast pays on weekdays, daily, and skips
+  some, so a weekday with no payout is normal until the gap passes the
+  learned usual (§8, §17) — never a missing document to chase.
 
 ## 11. Asghar — a vendor like any other
 
@@ -595,7 +616,7 @@ rollup schedule.
 | `ma-overview` | cash by holder (hero, with who holds what), in/out this month, owed to us (in transit · CPRs to collect · TCS · Blue-Ex · customers), we owe, runway; **the concern strip** (the three sentences that matter today); **the 30-day cash calendar**; **the spend map**; cash in/out by week; balance and projection; where the money went; revenue by channel; aging both ways; the loan outstanding |
 | `ma-couriers` | §8: tiles, the CPR table, the Tue/Fri rhythm, collections, fees and reversals, a card per courier |
 | `ma-ledger` | every posting, one line shape, filters by document kind, party, holder and account |
-| `ma-parties` / `ma-party` | vendors · customers · couriers · employees · owners · banks; the party page with what it provides, terms (history), rate card (history), open POs, the credit/debit ledger, statement, aging, attachments |
+| `ma-parties` / `ma-party` | vendors · customers · couriers · gateways · employees · owners · banks; the party page with what it provides, terms (history), rate card (history), open POs, the credit/debit ledger, statement, aging, attachments |
 | `ma-purchasing` | purchase orders, receipts, bills with match status, the review queue; + PO · + Bill · + Receipt |
 | `ma-payments` | the pay-day list (Wed/Sat, from terms), pay runs by holder, allocations, retention, advances |
 | `ma-money` | one page per holder: statement, running balance, confirmations pending, reconciliation, transfers, floats; MCB import |
@@ -630,7 +651,7 @@ action}`. Three tests, the worst wins:
 |---|---|---|
 | **Against its own history** (median and MAD of the last 6 months; a minimum amount so ₨2,000 never shouts) | above median + 2·MAD | above median + 3·MAD |
 | **Against its budget** (the accepted one; none → no test) | past `budgetWatchPct` (90%) with days left in the month | over the budget |
-| **Against its terms and commitments** (the rule-based half, live from M3) | a vendor past 80% of the credit limit; a bill due inside 3 days with the pay-day holder short; a CPR two days past its collection lag; a subscription due tomorrow with the account short | overdue; a pay day the holders cannot fund; a CPR a week uncollected; a holder below its floor; a loan repayment missed |
+| **Against its terms and commitments** (the rule-based half, live from M3) | a vendor past 80% of the credit limit; a bill due inside 3 days with the pay-day holder short; a CPR two days past its collection lag; no Payfast payout for `payoutGapWatch` (3) weekdays; a subscription due tomorrow with the account short | overdue; a pay day the holders cannot fund; a CPR a week uncollected; no Payfast payout for `payoutGapConcern` (5) weekdays; a holder below its floor; a loan repayment missed |
 
 The sentence is plain words with the number and the comparison — *"Fabric
 is ₨21.3 lac this month against a usual ₨13.9 lac; two Al-Karam bills carry
@@ -654,7 +675,8 @@ Visuals, all HTML with the page's own text sizes:
   it in three strokes.
 - **The cash calendar**: 30 days from today, one cell a day, **inflows**
   (Tuesday and Friday CPRs at their expected net, TCS credits at day 90,
-  pay-later customers on their due date, the usual Payfast payout) and
+  pay-later customers on their due date, a Payfast payout on every weekday
+  at its learned median with the learned skip rate widening the band) and
   **outflows** (Wednesday and Saturday pay-day totals from the terms,
   salaries on the payroll day, subscriptions, the loan repayment) with the
   projected holders' balance under it; a day the holders cannot fund is
@@ -670,7 +692,10 @@ Baselines (median/MAD over 6 months; seasonality once 24 months exist),
 anomalies (3·MAD with a minimum amount, explained by their lines), cash
 forecast 30/60/90 from the calendar and expected inflows with a band,
 runway, budget suggestions the owner accepts, category-mapping suggestions,
-data quality. New in v3: **the CPR rhythm** (median CPR net by weekday,
+data quality. New in v3: **the Payfast rhythm** (median payout per
+weekday, the share of weekdays skipped, the longest gap seen — the
+calendar's daily inflow and the gap alarm are built on it), **the CPR
+rhythm** (median CPR net by weekday,
 the lag from CPR to collection, what a Tuesday and a Friday usually bring,
 so the calendar's expected inflows are learned, not typed), **courier
 behaviour** (reversal rate and fee per parcel per courier; TCS's real days
@@ -777,9 +802,13 @@ The seven answers of 27 Sept 2026 resolved v2's questions 2, 3, 4, 5, 6,
 vendor like any other). What they opened:
 
 1. **Payfast**: which account receives the payouts (Ammar's personal bank?
-   a joint account?), Payfast's fee and settlement cycle; send one
-   statement. Default: the Savings account "Payfast payout account", fee
-   from the statement, cycle learned.
+   a joint account?) and Payfast's fee; send one statement. **The cadence
+   is answered** — *"the payment comes in on weekdays, daily; sometimes days
+   are skipped"* (27 Sept; read as the Payfast payouts — if it was Bykea's
+   transfers that was meant, the same `weekdays` cycle moves to that party
+   and nothing else changes). Default: the Savings account "Payfast payout
+   account", fee from the statement, `cycle: weekdays` with the skip rate
+   learned.
 2. **The payout rule**: repay the loan first, then drawings — and drawings
    split how? Default: repay first; then 50/50 unless the document says
    otherwise.

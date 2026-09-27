@@ -381,7 +381,7 @@ tr.sub td:first-child{padding-left:22px}
       <h2>What each screen is for</h2>
       <div class="pages">
         <div class="pg"><b>Overview</b><code>ma-overview</code><p>Cash by holder — the drawer, Afnan, Ammar, MCB, the till, floats, the TCS account — this month in and out, owed to us and by us, runway; the three concerns of the day in plain words, the 30-day cash calendar and the spend map.</p></div>
-        <div class="pg"><b>Couriers &amp; collections</b><code>ma-couriers</code><p>The first mile of money in: PostEx CPRs derived from the parcels, issued Tuesday and Friday, collected in cash by a named holder with the receipt attached; TCS credited at 90 days; Blue-Ex's legacy balance; Bykea via Raees.</p></div>
+        <div class="pg"><b>Couriers &amp; collections</b><code>ma-couriers</code><p>The first mile of money in: PostEx CPRs derived from the parcels, issued Tuesday and Friday, collected in cash by a named holder with the receipt attached; TCS credited at 90 days; Blue-Ex's legacy balance; Bykea via Raees; Payfast's payouts on weekdays, daily, some days skipped.</p></div>
         <div class="pg"><b>Parties &amp; the vendor page</b><code>ma-parties · ma-party</code><p>Every vendor, customer, courier, employee, owner and bank: what a vendor provides, terms with history, the rate card with history, open orders, the credit/debit ledger with a running balance, statement, aging.</p></div>
         <div class="pg"><b>Purchasing</b><code>ma-purchasing</code><p>Purchase orders assigned to production POs, receipts from fabric-in and vendor returns, bills matched three ways, and the queue of documents the validation engine flagged.</p></div>
         <div class="pg"><b>Payments</b><code>ma-payments</code><p>The pay-day list from every vendor's terms, pay runs, allocation of each payment to bills, advances and retention releases.</p></div>
@@ -472,7 +472,7 @@ const D={
     ['BYK-0912','manual','Fri 12 Sep','41','38,400','6,100','—','32,300','Raees · drawer · confirmed','<span class="tag ok">reconciled</span>'],
   ],
   sv:{
-    accounts:[['Payfast payout account','Ammar',1462000,'24 Sep · 3 payouts matched'],['Bank · Ammar','Ammar',1218000,'20 Sep'],['Bank · Afnan','Afnan',862000,'25 Sep'],['Cash · Ammar','Ammar',214000,'counted 26 Sep'],['Cash · Afnan','Afnan',104000,'counted 26 Sep']],
+    accounts:[['Payfast payout account','Ammar',1462000,'25 Sep · 17 payouts matched'],['Bank · Ammar','Ammar',1218000,'20 Sep'],['Bank · Afnan','Afnan',862000,'25 Sep'],['Cash · Ammar','Ammar',214000,'counted 26 Sep'],['Cash · Afnan','Afnan',104000,'counted 26 Sep']],
     targets:[
       {n:'The marriage',who:'Ammar',amt:2500000,saved:1420000,spent:310000,by:'March 2027',need:180000,pace:155000,eta:'April 2027'},
       {n:'The car',who:'Ammar',amt:4200000,saved:3600000,spent:3600000,by:'',need:0,pace:60000,eta:'Bought and financed: ₨60,000 a month to the finance company, ₨6.0 lac left, clear in June 2027.'},
@@ -481,7 +481,7 @@ const D={
     spend:[['The marriage',310000,'watch'],['Household',96000,'fine'],['Family',70000,'fine'],['Car finance',60000,'fine'],['Travel',48000,'fine'],['Subscriptions',31800,'watch'],['Other',22000,'fine']],
     assets:[['Payfast, banks and cash','money',3860000,'joint'],['Loan to Groovy','loan',1140000,'joint'],['The car','vehicle',4200000,'Ammar'],['Savings certificates','investment',1500000,'Afnan']],
     liabilities:[['Car finance','vehicle finance',600000,'Ammar'],['Borrowed from family','borrowed',250000,'Ammar']],
-    inflows:[['Payfast payout · 24 Sep',262000],['Payfast payout · 17 Sep',205000],['Payfast payout · 10 Sep',241000]],
+    inflows:[['Payfast payouts · 17 weekdays, 5 with none',708000]],
   },
   weeks:[['4 Aug',1240,980],['11 Aug',1580,1130],['18 Aug',910,1420],['25 Aug',1725,1050],['1 Sep',1330,1610],['8 Sep',1490,1120],['15 Sep',2010,1380],['22 Sep',1660,1290]],
   expense:[['Fabric & mills',2133000],['Salaries',1180000],['Stitching',954000],['Embellishment',505000],['Marketing',337000],['Other',505000]],
@@ -604,7 +604,7 @@ function overview(){
   <div class="alerts">
     <div class="alert urgent"><span class="ic">!</span><div><b>Fabric is ₨21.3 lac this month against a usual ₨13.9 lac.</b> Two Al-Karam bills carry ₨6.1 lac of it. If the winter drop is being cut this is expected; say so and the baseline learns it.</div><span class="act">Open the lines →</span></div>
     <div class="alert warn"><span class="ic">?</span><div><b>Friday's CPR, ₨9.62 lac for 318 parcels, is not collected yet</b> — two days; Afnan usually collects the next day. Wednesday's pay day needs ₨6.4 lac and the drawer plus Afnan's cash hold ₨4.9 lac.</div><span class="act">Record the collection →</span></div>
-    <div class="alert warn"><span class="ic">?</span><div><b>Saturday 3 October is tight:</b> Nishat's ₨18.7 lac bill and the pay day land two days after salaries; the holders dip to about ₨7.9 lac before Monday's Payfast payout and Tuesday's CPR.</div><span class="act">Move the bill →</span></div>
+    <div class="alert warn"><span class="ic">?</span><div><b>Saturday 3 October is tight:</b> Nishat's ₨18.7 lac bill and the pay day land two days after salaries; the holders dip to about ₨8.5 lac before the weekday Payfast payouts and Tuesday's CPR lift them.</div><span class="act">Move the bill →</span></div>
     <div class="alert ok"><span class="ic">✓</span><div><b>MCB reconciled to 25 Sept.</b> 41 of 41 bank lines matched a posting. Tuesday's two CPRs reconciled: 517 parcels agree with ₨10.51 lac counted.</div><span class="act">Statements →</span></div>
   </div>
   <div class="card"><div class="card-title"><span>The next 30 days — what comes in, what goes out, from what is already known</span>${tvBtn('cal')}</div>${cashCal()}</div>
@@ -671,7 +671,7 @@ function insights(){
   <div class="ins">
     <div class="card"><h3><span class="ic urgent">!</span>Fabric spend is 1.5× its baseline</h3><p>₨21.3 lac posted this month against a median of ₨13.9 lac (Mar–Aug). Two Al-Karam invoices carry ₨6.1 lac of the difference. If a winter drop is being cut, this is expected; if not, look at those two lines.</p><div class="basis"><b>Basis:</b> median and spread of the last 6 months of Fabric &amp; mills purchases in Store Accounts; flagged past 2 standard deviations. First seen 24 Sep.</div><div class="btn-row" style="margin-top:8px"><button class="btn">Expected, it is the drop</button><button class="btn">Open the lines</button></div></div>
     <div class="card"><h3><span class="ic warn">?</span>Star Trims' rate for cotton thread rose 18% in two purchases</h3><p>₨1,180 per box on 23 Sep against ₨1,000 in July and August. Zain Trims last supplied it at ₨1,020.</p><div class="basis"><b>Basis:</b> the vendor rate card, derived from purchase lines (last, min, max per item per vendor). Compared with every other vendor supplying the same item code.</div></div>
-    <div class="card"><h3><span class="ic ok">✓</span>Cash will cover the next 30 days, with one tight week</h3><p>Projected low point ₨7.9 lac on Saturday 3 October, when Nishat's ₨18.7 lac bill and the pay day land two days after salaries (₨11.8 lac, 1 Oct); Monday's Payfast payout and Tuesday's CPR lift it again. Nothing due is unfunded.</p><div class="basis"><b>Basis:</b> today's balances by holder, plus what is already known to be due (vendor terms and the Wednesday and Saturday pay days, the payroll date, pay-later due dates, the loan repayment) and the learned Tuesday and Friday CPR medians for what comes in. A range, not a promise.</div></div>
+    <div class="card"><h3><span class="ic ok">✓</span>Cash will cover the next 30 days, with one tight week</h3><p>Projected low point ₨8.5 lac on Saturday 3 October, when Nishat's ₨18.7 lac bill and the pay day land two days after salaries (₨11.8 lac, 1 Oct); the weekday Payfast payouts and Tuesday's CPR lift it again. Nothing due is unfunded.</p><div class="basis"><b>Basis:</b> today's balances by holder, plus what is already known to be due (vendor terms and the Wednesday and Saturday pay days, the payroll date, pay-later due dates, the loan repayment) and the learned Tuesday and Friday CPR medians and the weekday Payfast median for what comes in. A range, not a promise.</div></div>
     <div class="card"><h3><span class="ic info">≈</span>Suggested budgets for October</h3><p>Marketing &amp; PR ₨3.0 lac (6-month median ₨2.9 lac, rising), Utilities ₨2.2 lac (flat), Maintenance ₨0.4 lac (August's ₨0.3 lac was low, September's ₨0.9 lac carried the studio paint job).</p><div class="basis"><b>Basis:</b> the median of the last 6 months per category, nudged by the trend of the last 3. An owner accepts, edits or ignores each; the app never sets a budget on its own.</div><div class="btn-row" style="margin-top:8px"><button class="btn primary">Accept all three</button><button class="btn">Edit</button></div></div>
     <div class="card"><h3><span class="ic info">≈</span>Warehouse customers who pay later settle in 17 days; two are slower</h3><p>Ahmed Traders averages 31 days over 6 bills and has ₨78,000 open; Bilal Garments 9 days. Overdue reminders could start at day 21 instead of day 30 for the slower accounts.</p><div class="basis"><b>Basis:</b> collection dates on pay-later warehouse sales, per customer, since April (n=41).</div></div>
   </div>`;
@@ -777,10 +777,10 @@ const L=n=>(n<0?'−':'')+'₨'+(Math.abs(n)/1e5).toFixed(1)+'L';
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function calendarDays(){
   const start=new Date(2026,8,27);let bal=sum(D.accounts.map(a=>a.v));const out=[];
-  const cprNet={2:960000,5:1120000};const payDay={3:640000,6:410000};
-  const special={'10-1':{out:1180000,ol:'Salaries'},'10-3':{out:1872000,ol:'Nishat bill'},'10-5':{in:241000,il:'Payfast payout'},'10-8':{in:190000,il:'TCS credit'},'10-9':{in:78000,il:'Ahmed Traders'},'10-15':{out:120000,ol:'Loan repayment'},'10-2':{out:41000,ol:'Subscriptions'}};
+  const cprNet={2:960000,5:1120000};const payDay={3:640000,6:560000};const payfast=42000;   /* weekdays, daily; some days skipped — the learned median */
+  const special={'10-1':{out:1180000,ol:'Salaries'},'10-3':{out:1872000,ol:'Nishat bill'},'10-8':{in:190000,il:'TCS credit'},'10-9':{in:78000,il:'Ahmed Traders'},'10-15':{out:120000,ol:'Loan repayment'},'10-2':{out:41000,ol:'Subscriptions'}};
   for(let i=0;i<30;i++){const d=new Date(start);d.setDate(start.getDate()+i);const wd=d.getDay();let inn=0,o=0,il=[],ol=[];
-    if(cprNet[wd]){inn+=cprNet[wd];il.push('CPR');} if(payDay[wd]){o+=payDay[wd];ol.push('pay day');}
+    if(cprNet[wd]){inn+=cprNet[wd];il.push('CPR');} if(wd>=1&&wd<=5){inn+=payfast;il.push('Payfast');} if(payDay[wd]){o+=payDay[wd];ol.push('pay day');}
     const sp=special[(d.getMonth()+1)+'-'+d.getDate()];if(sp){if(sp.in){inn+=sp.in;il.push(sp.il);} if(sp.out){o+=sp.out;ol.push(sp.ol);}}
     bal+=inn-o;out.push({d,wd,inn,out:o,il,ol,bal});}
   return out;
@@ -791,7 +791,7 @@ function cashCal(){
     return `<div class="${cls}" title="Projected holders' balance ${compact(x.bal)}"><small>${WD[x.wd]}</small><b>${x.d.getDate()} ${['Sep','Oct'][x.d.getMonth()-8]}</b>${x.inn?`<span class="in">+${L(x.inn)} ${x.il.join(', ')}</span>`:''}${x.out?`<span class="out">−${L(x.out)} ${x.ol.join(', ')}</span>`:''}</div>`}).join('');
   return `<div class="cal">${cells}</div>
   <div class="cal-key"><span><i style="background:var(--accent-warning-soft);border-color:transparent"></i>the holders dip under the ₨10 lac floor</span><span><i style="background:var(--accent-urgent-soft);border-color:transparent"></i>a day that cannot be funded</span><span><i style="border-color:var(--dark);border-width:2px"></i>today</span></div>
-  <div class="basis"><b>Low point ${compact(low.bal)} on ${WD[low.wd]} ${low.d.getDate()} Oct.</b> Inflows: Tuesday and Friday CPRs at their learned median (₨9.6 lac, ₨11.2 lac over 12 weeks), TCS at day 90, Payfast on its usual Monday, pay-later customers on their due date. Outflows: Wednesday and Saturday pay days from every vendor's terms, salaries on the 1st, the loan repayment on the 15th, subscriptions. A range, not a promise.</div>
+  <div class="basis"><b>Low point ${compact(low.bal)} on ${WD[low.wd]} ${low.d.getDate()} Oct.</b> Inflows: Tuesday and Friday CPRs at their learned median (₨9.6 lac, ₨11.2 lac over 12 weeks), TCS at day 90, Payfast on every weekday at its learned median (₨42,000 — paid on 17 of the last 22 weekdays, the band widened for the skips), pay-later customers on their due date. Outflows: Wednesday and Saturday pay days from every vendor's terms, salaries on the 1st, the loan repayment on the 15th, subscriptions. A range, not a promise.</div>
   ${tableFor(['Day','In','Out','Balance'],days.filter(x=>x.inn||x.out).map(x=>[WD[x.wd]+' '+x.d.getDate()+' '+['Sep','Oct'][x.d.getMonth()-8]+(x.il.length?' · '+x.il.join(', '):'')+(x.ol.length?' · '+x.ol.join(', '):''),x.inn?money(x.inn):'',x.out?money(x.out):'',money(x.bal)]))}`;
 }
 const SM=[
@@ -831,7 +831,7 @@ function couriers(){
   const r=D.cprRhythm,c=D.courierCost;
   return `<div class="page-head"><div><div class="page-title">Couriers &amp; collections</div><div class="page-sub">The first mile of money in. PostEx issues a CPR on Tuesday and Friday; it is collected in cash by a named holder, with the receipt attached.</div></div>
   <div class="btn-row"><button class="btn">+ Statement (TCS · Bykea · Blue-Ex)</button><button class="btn primary">Collect a CPR</button></div></div>
-  <div class="filters"><span class="chip on">All couriers</span><span class="chip">PostEx</span><span class="chip">TCS</span><span class="chip">Blue-Ex</span><span class="chip">Bykea</span><span style="width:8px"></span><span class="chip on">September</span><span class="chip">Custom…</span></div>
+  <div class="filters"><span class="chip on">All couriers</span><span class="chip">PostEx</span><span class="chip">TCS</span><span class="chip">Blue-Ex</span><span class="chip">Bykea</span><span class="chip">Payfast</span><span style="width:8px"></span><span class="chip on">September</span><span class="chip">Custom…</span></div>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-label">In transit with PostEx</div><div class="kpi-val">${compact(D.recv.postex)}</div><div class="kpi-sub">delivered, not yet on a CPR · 412 parcels</div></div>
     <div class="kpi warn"><div class="kpi-label">CPR to collect</div><div class="kpi-val">${compact(D.recv.cpr)}</div><div class="kpi-sub">Friday 25 Sep · 318 parcels · 2 days</div></div>
@@ -862,6 +862,8 @@ function couriers(){
       <tr><td>Opening</td><td class="num">₨3,25,000 · statement 30 Jun 2026</td></tr><tr><td>Collected since</td><td class="num">₨90,000 · 17 Aug</td></tr><tr><td>Still owed</td><td class="num">₨2,35,000 · 89 days old</td></tr><tr><td>New orders</td><td class="num">refused — nothing is dispatched to Blue-Ex</td></tr></tbody></table></div></div>
     <div class="card"><div class="card-title"><span>Bykea · <span class="tag warn">manual</span></span></div><div class="tbl-wrap"><table><tbody>
       <tr><td>Money reaches</td><td class="num">Raees · the drawer</td></tr><tr><td>Confirmed by</td><td class="num">Raees, before it counts</td></tr><tr><td>Statement</td><td class="num">typed · last 12 Sep · ₨32,300</td></tr><tr><td>Feed</td><td class="num">later — least priority</td></tr></tbody></table></div></div>
+    <div class="card"><div class="card-title"><span>Payfast · <span class="tag ok">weekdays</span></span></div><div class="tbl-wrap"><table><tbody>
+      <tr><td>Pays out</td><td class="num">on weekdays, daily · some days none</td></tr><tr><td>Last payout</td><td class="num">Fri 25 Sep · ₨41,200</td></tr><tr><td>This month</td><td class="num">17 of 22 weekdays · ₨7.08 lac · longest gap 3 days</td></tr><tr><td>Lands in</td><td class="num">the Savings book's payout account</td></tr><tr><td>Alarm</td><td class="num">3 weekdays without one → watch · 5 → concern</td></tr></tbody></table></div></div>
   </div>`;
 }
 
@@ -884,7 +886,7 @@ function savings(){
   <div class="alerts">
     <div class="alert warn"><span class="ic">?</span><div><b>The marriage: ₨14.2 lac of ₨25 lac by March 2027.</b> That needs ₨1.8 lac a month; the last three months averaged ₨1.55 lac, which lands in April. ₨25,000 more a month makes March.</div><span class="act">The target →</span></div>
     <div class="alert warn"><span class="ic">?</span><div><b>Adobe Creative Cloud was paid twice in September</b> — ₨15,900 on 4 Sep and again on 26 Sep from Ammar's bank.</div><span class="act">The two lines →</span></div>
-    <div class="alert ok"><span class="ic">✓</span><div><b>Payfast payout account reconciled to 24 Sept.</b> Three payouts (${compact(infl)}) matched Groovy's Payfast receivable: ${compact(D.loan.repaidQ)} repaid the loan, the rest drawn.</div><span class="act">Statement →</span></div>
+    <div class="alert ok"><span class="ic">✓</span><div><b>Payfast payout account reconciled to 25 Sept.</b> Seventeen weekday payouts (${compact(infl)}) matched Groovy's Payfast receivable; five weekdays had none, the longest gap three days. ${compact(D.loan.repaidQ)} repaid the loan, the rest was drawn.</div><span class="act">Statement →</span></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title"><span>Saving for</span><button class="tv">+ Target</button></div><div class="tgt">${tg}</div><div class="basis">A target is an envelope — a tag on entries and on assets — not an account; the money stays where it sits. Saved so far is derived, never typed.</div></div>

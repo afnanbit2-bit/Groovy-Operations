@@ -6918,6 +6918,11 @@ category, a subscriptions register per owner, targets like the marriage
 and the car (saved so far, monthly need, ETA), assets and liabilities, net
 worth, reconciliation — and the ~₨15 lac Groovy borrowed from it is ONE
 document posting on both books, with a Payfast payout repaying it first.
+Payfast pays out on WEEKDAYS, daily, with some days skipped (Afnan, later
+the same day — read as the Payfast payouts), so a payout is one document
+per payout day, a skipped weekday is a normal state, and the calendar and
+the concern logic learn the rhythm: a gap past the usual is a watch, then
+a concern.
 Asghar is a printing vendor like any other, with agreed terms and a rate
 card (Afnan, later the same day, overruling the plan's first "affiliate"
 idea: *"treat him the same, no special demand for Asghar"*); every document carries a tax block ("no tax" is a choice, never an
