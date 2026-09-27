@@ -301,7 +301,7 @@ function poRowHTML(p){
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="po-num">${p.id}</span>
         <span class="stage-badge" style="background:${badgeBg};color:${badgeColor}">${badgeLabel}</span>${p.damageFlagged?`<span style="padding:2px 6px;background:var(--accent-urgent-soft);color:var(--accent-urgent);border-radius:6px;font-size:11px;font-weight:700">⚠ Loss</span>`:''}</div>
       <div class="po-name">${p.name||'—'}</div>
-      <div class="po-meta">${p.qty||'?'} pcs · ${p.fabric||''} · ${p.createdBy||'—'} · ${p.createdAt||''}</div>
+      <div class="po-meta">${[(p.qty||'?')+' pcs',p.fabric,p.createdBy||'—',p.createdAt].filter(Boolean).join(' · ')}</div>
     </div><div class="po-arrow">›</div></div>`;
 }
 

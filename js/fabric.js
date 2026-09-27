@@ -191,8 +191,9 @@ function renderFabricInventory(){
   const kpiStock=totalKg.toFixed(1)+' kg'+(totalM?`<div style="font-size:12px;font-weight:500;color:var(--muted)">+ ${totalM.toFixed(1)} m</div>`:'');
   const kpiAlerts=alertCount+(outCount?`<div style="font-size:12px;font-weight:500;color:var(--muted)">${outCount} empty</div>`:'');
 
-  let h=`<div class="page-head"><div class="page-title">Fabric Inventory</div></div>`;
-  h+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px">
+  // No second "Fabric Inventory" heading here: the page head above the tabs
+  // already says it, and on a phone the two stacked read as a glitch.
+  let h=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px">
     ${_fabKpiTile('Total Stock',kpiStock,'#2563eb')}
     ${_fabKpiTile('Rolls',totalRolls,'#7c3aed')}
     ${_fabKpiTile('Vendors',vendorNames.length,'#0891b2')}

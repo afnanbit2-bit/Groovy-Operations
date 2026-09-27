@@ -512,8 +512,33 @@ img{-webkit-user-drag:none}
    max-content keeps a short toast on one line at any width. */
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--dark);color:var(--on-dark);padding:10px 20px;border-radius:30px;font-size:14px;font-weight:500;opacity:0;transition:all .2s;pointer-events:none;width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;text-align:center;line-height:1.4;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.18)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* Stage overview tiles (dashboard). They used to be flex:1 in one wrapping
+   row, so all seven shrank onto a phone's single line and their labels broke
+   mid-word ("Cuttin g"). A grid wraps them into rows of three on a phone and
+   keeps one row on a wide screen. Phone sweep, 27 Sept 2026. */
+.stage-ov-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:6px}
+.stage-ov-grid>div{min-width:0}
+/* Users page rows. The name column shrinks (min-width:0) instead of pushing
+   the Reset password button off the screen; on a phone the button drops to
+   its own line under the name. */
+.user-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
+.user-row-id{flex:1;min-width:0}
+.user-row-role{text-align:right;flex-shrink:0}
+.user-row-btn{flex-shrink:0;padding:5px 10px;font-size:12px}
+@media (max-width:600px){
+  .user-row{flex-wrap:wrap;row-gap:8px}
+  .user-row-id{flex:1 1 120px}
+  .user-row-btn{margin-left:48px;min-height:34px}
+  /* A thumb needs ~34px. The small buttons and filter chips were 24-29px
+     tall on a phone (phone sweep, 27 Sept 2026): too easy to miss, and the
+     neighbour gets the tap. Height only -- widths and layout are unchanged. */
+  .btn-sm,.btn-outline,.filter-chip,.dest-chip{min-height:34px}
+}
 .toast.err{background:#dc2626}
-@media (max-width:600px){.toast{border-radius:18px}}
+/* On a phone the bottom nav (#mob-nav, ~71px) is fixed at the foot of the
+   screen, and a toast at 20px painted straight over it (phone sweep, 27
+   Sept 2026). It sits above the nav now. */
+@media (max-width:600px){.toast{border-radius:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px))}}
 .empty{text-align:center;padding:2.5rem 1rem;color:var(--muted);font-size:14px}
 .dest-chip{padding:4px 10px;border:1px solid var(--border);border-radius:16px;background:var(--surface);font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)}
 .dest-chip:hover{border-color:var(--dark);color:var(--dark)}
@@ -756,7 +781,7 @@ img{-webkit-user-drag:none}
 .advance-row{margin-top:6px;font-size:13px;color:var(--muted)}
 .advance-row .text-red{color:#dc2626;font-weight:700}
 .owner-kpi-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
-.kpi-card{background:white;border-radius:var(--radius-bubble);padding:16px;text-align:center;border:1px solid var(--border)}
+.kpi-card{background:var(--surface);border-radius:var(--radius-bubble);padding:16px;text-align:center;border:1px solid var(--border)}
 .kpi-card.amber{background:var(--accent-warning-soft);border-color:transparent}
 .kpi-card.red{background:var(--accent-urgent-soft);border-color:transparent}
 .kpi-card .kpi-icon{display:inline-flex;align-items:center;justify-content:center;color:var(--text);margin-bottom:6px}
@@ -765,6 +790,11 @@ img{-webkit-user-drag:none}
 .kpi-card.red .kpi-icon{color:var(--accent-urgent)}
 .kpi-card.amber{background:#FFFBEF}
 .kpi-card.red{background:#FEF4F4}
+/* The two literals above are light-mode tints; in dark mode they left the
+   Dashboard's KPI tiles cream-white under near-white numbers -- measured
+   1.09-1.18:1 by the phone sweep (27 Sept 2026). */
+html[data-theme="dark"] .kpi-card.amber{background:var(--accent-warning-soft)}
+html[data-theme="dark"] .kpi-card.red{background:var(--accent-urgent-soft)}
 .kpi-num{font-size:29px;font-weight:700;color:#1A1A2E}
 .kpi-label{font-size:12px;color:var(--muted);margin-top:4px}
 .kpi-icon{font-size:21px;margin-bottom:6px}

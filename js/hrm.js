@@ -2437,8 +2437,8 @@ function _populateOwnerPayrollKPI(){
   const prevKey=`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
   const prevRun=_payrollRunFor(prevKey);
   if(!prevRun||prevRun.status==='draft'){
-    alert.innerHTML=`<div class="card" style="border-left:3px solid var(--accent-warning);background:var(--accent-warning-soft);padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer" onclick="window.showPage('hrm-payroll')">
-      <div>
+    alert.innerHTML=`<div class="card" style="border-left:3px solid var(--accent-warning);background:var(--accent-warning-soft);padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer" onclick="window.showPage('hrm-payroll')">
+      <div style="flex:1;min-width:0">
         <div style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-warning);font-weight:700">📌 Payroll ready to process</div>
         <div style="font-size:15px;font-weight:600;margin-top:2px">${_payrollMonthLabel(prevKey)} payroll has not been processed yet.</div>
         <div style="font-size:13px;color:var(--muted);margin-top:2px">Tap to open the Payroll page and run it.</div>

@@ -294,19 +294,26 @@ async function startApp(){
   }
 }
 
+// What each role is called on screen. The raw keys (csr_lead,
+// creator_content_ops_lead) are code, and the Users page used to print them
+// as "Csr_lead" (phone sweep, 27 Sept 2026).
+const _ROLE_LABELS={owner:'Owner',manager:'Manager',store:'Store',worker:'Worker',viewer:'Viewer',
+  packing:'Packing',fulfillment:'Fulfilment',creator_content_ops_lead:'Content Ops Lead',
+  csr_lead:'CSR Lead',designer:'Designer'};
+function _roleLabel(r){return _ROLE_LABELS[r]||String(r||'').replace(/_/g,' ').replace(/^./,c=>c.toUpperCase());}
 function renderUsers(){
   if(session.role!=='owner')return'<div class="empty">Owners only.</div>';
   return`<div class="page-head"><div class="page-title">Users</div><div class="page-sub">${USER_DEFS.length} accounts · Role-based access</div></div>
   <div class="card"><div class="card-title">User accounts</div>
-    ${USER_DEFS.map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)">
+    ${USER_DEFS.map(u=>`<div class="user-row">
       <div style="width:36px;height:36px;border-radius:50%;background:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--on-dark);flex-shrink:0">${u.name[0]}</div>
-      <div style="flex:1"><div style="font-weight:600;font-size:14px">${u.name} <span style="font-size:12px;font-weight:400;color:var(--muted)">@${u.u}</span></div><div style="font-size:12px;color:var(--muted)">${u.title}</div></div>
-      <div style="text-align:right;flex-shrink:0"><div style="font-size:12px;font-weight:600;color:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'};text-transform:capitalize">${u.role}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">${u.canPO?'Can create PO':'View only'}</div></div>
-      <button class="btn-outline" style="flex-shrink:0;padding:5px 10px;font-size:12px" onclick="window.openOwnerResetModal('${u.u}')">Reset password</button>
+      <div class="user-row-id"><div style="font-weight:600;font-size:14px">${u.name} <span style="font-size:12px;font-weight:400;color:var(--muted)">@${u.u}</span></div><div style="font-size:12px;color:var(--muted)">${u.title}</div></div>
+      <div class="user-row-role"><div style="font-size:12px;font-weight:600;color:${u.role==='owner'?'var(--dark)':u.role==='manager'?'var(--red)':'var(--green)'}">${_roleLabel(u.role)}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">${u.canPO?'Can create PO':'View only'}</div></div>
+      <button class="btn-outline user-row-btn" onclick="window.openOwnerResetModal('${u.u}')">Reset password</button>
     </div>`).join('')}
   </div>
   <div class="card"><div class="card-title">Stage assignments</div>
-    ${STAGES.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px"><span style="font-weight:500">${s.label}</span><span style="font-weight:600;color:${s.color}">${s.owner}</span></div>`).join('')}
+    ${STAGES.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px"><span style="font-weight:500">${s.label}</span><span style="font-weight:600;color:var(--text)">${s.owner}</span></div>`).join('')}
   </div>
   <div style="height:80px"></div>`;
 }

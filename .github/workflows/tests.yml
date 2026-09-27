@@ -71,6 +71,11 @@ jobs:
       # stayed green (see the header of tests/smoke-board.js).
       - name: Board smoke test
         run: node tests/smoke-board.js
+      # Every page, every role, both themes, on a real 390px phone frame:
+      # sideways scroll, text past the edge, unreadable text, small tap
+      # targets, the toast over the bottom nav (the 27 Sept 2026 sweep).
+      - name: Whole-app phone smoke test
+        run: node tests/smoke-app-phone.js
 
       - name: CACHE_VERSION was bumped
         run: |
