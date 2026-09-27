@@ -182,42 +182,53 @@ module.exports=async function(){
   // ── the fingerprint choice on the login screen ────────────────────────
   // Afnan signed in twice and never got the lock: it was only offered in a
   // card 1.5s after the app opened, and marked "offered" when SHOWN.
-  for(const [bio,rowShown,pre,label] of [
-    [true,true,false,'ticked, row showing: the phone is asked for the fingerprint straight away'],
-    [false,true,true,'unticked while the lock was on: the lock is turned off'],
-    [true,false,false,'row hidden (phone cannot do it): nothing is asked']]){
-    const {app,rec,run}=boot(rowShown?undefined:{globals:{window:{PasswordCredential:function(d){Object.assign(this,d);},
+  // ── no tick box: the first password sign-in sets the fingerprint up ──
+  for(const [capable,keep,pre,label] of [
+    [true,true,'','capable phone, Remember me: the phone is asked straight away'],
+    [true,false,'','Remember me unticked (a shared device): nothing is asked'],
+    [false,true,'','the phone cannot check a fingerprint: nothing is asked'],
+    [true,true,'key','a key already on this phone: not asked again'],
+    [true,true,'declined','said no before: not asked on every sign-in'],
+    [true,true,'lockonly','a lock left by a failed server half: asked again (recording 5)']]){
+    const {app,rec,run}=boot(capable?undefined:{globals:{window:{PasswordCredential:function(d){Object.assign(this,d);},
       PublicKeyCredential:{isUserVerifyingPlatformAuthenticatorAvailable:async()=>false},
       isSecureContext:true,addEventListener(){},matchMedia:()=>({matches:false})}}});
     await new Promise(r=>setTimeout(r,5));
-    if(pre)run(`_authStore('groovy-applock',JSON.stringify({'uid-afnan':{id:'AQID',u:'afnan'}}))`);
+    if(pre==='key')run(`_authStore('groovy-passkey',JSON.stringify({afnan:{id:'AQIDBAUGBwgJCgsMDQ4PEA',name:'Afnan'}}))`);
+    if(pre==='declined')run(`_fpDeclineSave('afnan',true)`);
+    if(pre==='lockonly')run(`_authStore('groovy-applock',JSON.stringify({'uid-afnan':{id:'AQID',u:'afnan'}}))`);
     app.el('l-user').value='afnan';app.el('l-pass').value='pw';
-    app.el('l-remember').checked=true;
-    app.run('window.loginBioSync()');app.el('l-bio').checked=bio;
-    s.eq('the row is '+(rowShown?'shown':'hidden')+' by the phone\'s own answer',app.el('login-bio').hidden,!rowShown);
+    app.el('l-remember').checked=keep;
     await run('window.doLogin()');
     await new Promise(r=>setTimeout(r,20));
-    s.section('fingerprint on the login screen — '+label);
-    if(bio&&rowShown){
-      s.eq('the fingerprint set-up is asked once, straight after sign-in',rec.creates.length,1);
-      s.eq('… and the lock is on',run(`lockEnabledFor('uid-afnan')`),true);
-    }else if(pre){
-      s.eq('lock turned off',run(`lockEnabledFor('uid-afnan')`),false);
-      s.eq('… without asking the phone anything',rec.creates.length,0);
-    }else{
-      s.eq('nothing asked',rec.creates.length,0);
-    }
+    s.section('fingerprint after a password sign-in — '+label);
+    const want=capable&&keep&&(pre===''||pre==='lockonly');
+    s.eq(want?'the phone is asked once':'the phone is not asked',rec.creates.length,want?1:0);
   }
   {
-    const {app,rec,run}=boot();
-    await new Promise(r=>setTimeout(r,5));   // let the load-time row check settle first
-    run(`session=null`);
-    app.el('l-user').value='afnan';app.el('l-pass').value='pw';
-    app.el('l-remember').checked=false;app.el('login-bio').hidden=false;app.el('l-bio').checked=true;
-    await run('window.doLogin()');
-    await new Promise(r=>setTimeout(r,20));
-    s.section('fingerprint needs Remember me');
-    s.eq('not asked when Remember me is unticked (there is no kept session to lock)',rec.creates.length,0);
+    const {app,run}=boot();
+    s.section('no tick box on the login screen');
+    s.eq('the old "Unlock with fingerprint next time" row is gone',require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8').includes('l-bio'),false);
+    run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan'};navigator.credentials.create=async function(){await new Promise(r=>setTimeout(r,1100));var e=new Error('x');e.name='NotAllowedError';throw e}`);
+    await run('_lockEnableAfterLogin()');
+    s.eq('cancelling the phone\'s dialog is remembered as a no',run(`_fpDeclined('afnan')`),true);
+    void app;
+  }
+  // ── later: the login screen asks for the fingerprint itself ──
+  for(const [flag,typed,label,want] of [
+    ['', 'afnan','the account in the field has a key: the fingerprint is asked for straight away',1],
+    ['1','afnan','right after a deliberate sign-out: not asked (maybe switching account)',0],
+    ['', 'ammar','an account with no key here: the password form, nothing asked',0]]){
+    const {app,run,rec}=boot();
+    await new Promise(r=>setTimeout(r,5));
+    run(`_authStore('groovy-passkey',JSON.stringify({afnan:{id:'AQIDBAUGBwgJCgsMDQ4PEA',name:'Afnan'}}))`);
+    if(flag)run(`sessionStorage.setItem('gv-no-auto-fp','1')`);
+    app.el('l-user').value=typed;
+    run(`fetch=async function(){return{ok:true,status:200,json:async()=>({challengeId:'c',challenge:'AAAA',rpId:'x'})}}`);
+    run('_loginAutoFinger();_loginAutoFinger()');
+    await new Promise(r=>setTimeout(r,520));
+    s.section('the login screen, later — '+label);
+    s.eq(want?'the phone is asked once (not twice)':'the phone is not asked',rec.gets.length,want);
   }
   {
     const {app,run,ls}=boot();
@@ -239,49 +250,22 @@ module.exports=async function(){
     s.eq('a refusal after the dialog was up is the person cancelling: no card',run('__offer'),1);
   }
 
-  // ── recording 5 (27 Sept): the fingerprint never came back ───────────
+  // ── recording 5 (27 Sept): the fingerprint follows the TYPED account ─
   {
-    // A lock left behind by a set-up whose SERVER half failed used to make
-    // doLogin skip the set-up forever, so ticking the box again did nothing.
-    const {app,rec,run}=boot();
+    const {app,run}=boot();
     await new Promise(r=>setTimeout(r,5));
-    run(`_authStore('groovy-applock',JSON.stringify({'uid-afnan':{id:'AQID',u:'afnan'}}))`);
-    app.el('l-user').value='afnan';app.el('l-pass').value='pw';app.el('l-remember').checked=true;
-    app.run('window.loginBioSync()');app.el('l-bio').checked=true;
-    s.section('recording 5: a lock with no sign-in key does not block setting it up again');
-    s.eq('the box is offered (no sign-in key on this phone)',app.el('login-bio').hidden,false);
-    await run('window.doLogin()');
-    await new Promise(r=>setTimeout(r,20));
-    s.eq('ticking it asks the phone again',rec.creates.length,1);
-    s.ok('… and when the server half fails, WHY is kept for Profile',run(`passkeyError('afnan')`).length>0);
+    run(`_authStore('groovy-passkey',JSON.stringify({afnan:{id:'AQIDBAUGBwgJCgsMDQ4PEA',name:'Afnan'}}))`);
+    s.section('recording 5: a shared phone — the fingerprint follows the TYPED username');
+    app.el('l-user').value='ammar';run('_loginPaintFinger()');
+    s.eq('no fingerprint button that would sign in as Afnan',app.el('login-finger').hidden,true);
+    app.el('l-user').value='afnan';run('_loginPaintFinger()');
+    s.eq('the key\'s owner gets the button',app.el('login-finger').hidden,false);
+    run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan'}`);
+    await run('window.lockEnable()');
+    s.ok('a server half that fails keeps WHY for Profile',run(`passkeyError('afnan')`).length>0);
     run(`window.lockDisable({quiet:true})`);
     s.eq('turning it off forgets the failure',run(`passkeyError('afnan')`),'');
-  }
-  {
-    const {app,run}=boot();
-    await new Promise(r=>setTimeout(r,5));
-    run(`_authStore('groovy-passkey',JSON.stringify({afnan:{id:'AQIDBAUGBwgJCgsMDQ4PEA',name:'Afnan'}}))`);
-    app.el('l-remember').checked=true;
-    s.section('recording 5: a shared phone — the fingerprint follows the TYPED username');
-    app.el('l-user').value='ammar';run('_loginPaintFinger();window.loginBioSync()');
-    s.eq('another person still gets the "next time" box',app.el('login-bio').hidden,false);
-    s.eq('… and no fingerprint button that would sign in as Afnan',app.el('login-finger').hidden,true);
-    app.el('l-user').value='afnan';run('_loginPaintFinger();window.loginBioSync()');
-    s.eq('the key\'s owner gets the button',app.el('login-finger').hidden,false);
-    s.eq('… and not the box (already set up)',app.el('login-bio').hidden,true);
-  }
-  {
-    const {app,run}=boot();
-    await new Promise(r=>setTimeout(r,5));
-    run(`_authStore('groovy-passkey',JSON.stringify({afnan:{id:'AQIDBAUGBwgJCgsMDQ4PEA',name:'Afnan'}}))`);
-    run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan'}`);
-    app.el('l-user').value='afnan';app.el('l-pass').value='pw';app.el('l-remember').checked=true;
-    app.el('login-bio').hidden=false;app.el('l-bio').checked=false;
-    run(`session=null`);
-    await run('window.doLogin()');
-    await new Promise(r=>setTimeout(r,20));
-    s.section('recording 5: unticking turns the whole thing off, not only the lock');
-    s.eq('the sign-in key is forgotten on this phone too',run(`passkeyFor('afnan')`),null);
+    s.eq('… and the key',run(`passkeyFor('afnan')`),null);
   }
 
   // ── pull down to refresh ──────────────────────────────────────────────

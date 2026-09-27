@@ -2352,9 +2352,10 @@ onAuthStateChanged(auth,async user=>{
       if(d.cold&&typeof lockEnabledFor==='function'&&lockEnabledFor(user.uid))_lockShow(session,()=>startApp());
       else startApp();
     }
-    else{await signOut(auth);document.getElementById('scr-login').style.display='flex';}
+    else{await signOut(auth);document.getElementById('scr-login').style.display='flex';if(typeof _loginAutoFinger==='function')_loginAutoFinger();}
   }else if(!user&&!session){
     document.getElementById('scr-login').style.display='flex';
+    if(typeof _loginAutoFinger==='function')_loginAutoFinger();
   }
 });
 };

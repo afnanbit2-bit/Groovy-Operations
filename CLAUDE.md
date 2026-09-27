@@ -9356,6 +9356,28 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   `DEPLOY_PRIME_URL` / `DEPLOY_URL` (a custom domain would have been
   refused with 403), and a 403 now names the origin it saw. **If it still
   fails, Profile shows the exact reason — ask for that text.**
+- **NO TICK BOX (27 Sept, Afnan) — REVERSES "the fingerprint choice is
+  ON the login screen".** *"it should be the case after first login …
+  when a fingerprint is not registered it should direct to sign in and
+  when sign in is done later it should use fingerprint."* The
+  "Unlock with fingerprint next time" row is DELETED (markup, CSS, the
+  `l-bio` reads). Now: (1) a password sign-in with Remember me, on a phone
+  that can check a fingerprint, with no key for that username here, asks
+  the phone to set it up straight away (`_fpShouldSetUp`, the whole rule);
+  (2) cancelling that dialog is remembered per username
+  (`groovy-fp-declined`, `_fpDeclined`) so it does not nag every sign-in —
+  Profile → Turn on clears it; (3) when the LOGIN SCREEN comes up
+  (`_loginAutoFinger`, called from both `scr-login` display sites in
+  `js/shared.js`) and the username in the field has a key on this phone,
+  the fingerprint is asked for at once — once per page load, never right
+  after a deliberate sign-out or "Use password instead"
+  (`sessionStorage['gv-no-auto-fp']`, set by both), never on a computer;
+  a quiet refusal (the browser wanting a tap) leaves the button. An
+  unticked Remember me no longer touches an existing key.
+  `window.loginBioSync` survives only as a repaint of the button (the
+  Remember-me box and cached markup call it). **Unverified on a phone:**
+  whether Chrome on Android shows the fingerprint dialog without a tap —
+  if not, the button is what works.
 - **Nobody has signed in, saved a password or used the lock on a real
   phone** — the sandbox cannot sign in. Rendered and measured in headless
   Chromium at 390/360px and desktop, both themes.
