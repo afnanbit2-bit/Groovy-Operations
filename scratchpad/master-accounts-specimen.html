@@ -265,12 +265,14 @@ tr.sub td:first-child{padding-left:22px}
   <header class="spec-head">
     <div>
       <h1>Master Accounts</h1>
-      <p>A specimen of the owners' accounts module for Groovy Ops, drawn in the app's own chrome. Every figure is a sample, not the books. Switch screens, width and theme with the controls.</p>
+      <p>A specimen of the owners' accounts module for Groovy Ops, drawn in the app's own chrome: the books, a vendor's page with terms and rate card, and purchasing with the checks every bill passes. Every figure is a sample, not the books. Switch screens, width and theme with the controls.</p>
     </div>
     <div class="spec-controls">
       <div><span class="seg-label">Screen</span><div class="seg" id="tabs">
         <button class="on" data-tab="overview" id="tab-overview">Overview</button>
         <button data-tab="ledger" id="tab-ledger">Ledger</button>
+        <button data-tab="purchasing" id="tab-purchasing">Purchasing</button>
+        <button data-tab="vendors" id="tab-vendors">Vendor</button>
         <button data-tab="pnl" id="tab-pnl">P&amp;L</button>
         <button data-tab="insights" id="tab-insights">Insights</button>
       </div></div>
@@ -299,11 +301,15 @@ tr.sub td:first-child{padding-left:22px}
         <div class="nav-group">Accounts</div>
         <button class="nav-item nav-sub on" data-nav="overview">Overview</button>
         <button class="nav-item nav-sub" data-nav="ledger">Ledger</button>
+        <button class="nav-item nav-sub" data-nav="vendors">Parties</button>
+        <button class="nav-item nav-sub" data-nav="purchasing">Purchasing</button>
+        <button class="nav-item nav-sub">Payments</button>
+        <button class="nav-item nav-sub">Sales &amp; couriers</button>
+        <button class="nav-item nav-sub">Money</button>
+        <button class="nav-item nav-sub">Costing</button>
+        <button class="nav-item nav-sub">People</button>
         <button class="nav-item nav-sub" data-nav="pnl">Profit &amp; loss</button>
-        <button class="nav-item nav-sub">Balance sheet</button>
-        <button class="nav-item nav-sub">Cash flow</button>
-        <button class="nav-item nav-sub">Owed &amp; owing</button>
-        <button class="nav-item nav-sub">Banks &amp; cash</button>
+        <button class="nav-item nav-sub">Reports</button>
         <button class="nav-item nav-sub">Budgets</button>
         <button class="nav-item nav-sub" data-nav="insights">Insights</button>
         <button class="nav-item nav-sub">Close &amp; audit</button>
@@ -318,8 +324,8 @@ tr.sub td:first-child{padding-left:22px}
     <div class="mobnav" id="mobnav">
       <button data-nav="overview" class="on"><i></i>Overview</button>
       <button data-nav="ledger"><i></i>Ledger</button>
-      <button data-nav="pnl"><i></i>P&amp;L</button>
-      <button data-nav="insights"><i></i>Insights</button>
+      <button data-nav="purchasing"><i></i>Purchasing</button>
+      <button data-nav="vendors"><i></i>Parties</button>
       <button><i></i>More</button>
     </div>
   </div>
@@ -329,12 +335,17 @@ tr.sub td:first-child{padding-left:22px}
       <h2>What each screen is for</h2>
       <div class="pages">
         <div class="pg"><b>Overview</b><code>ma-overview</code><p>Cash position across every account, this month in and out, what is owed to us and by us, runway, and the alerts that need an owner today.</p></div>
+        <div class="pg"><b>Parties &amp; the vendor page</b><code>ma-parties · ma-party</code><p>Every vendor, customer, courier, employee, owner and bank: what a vendor provides, terms with history, the rate card with history, open orders, the credit/debit ledger with a running balance, statement, aging.</p></div>
+        <div class="pg"><b>Purchasing</b><code>ma-purchasing</code><p>Purchase orders assigned to production POs, receipts from fabric-in and vendor returns, bills matched three ways, and the queue of documents the validation engine flagged.</p></div>
+        <div class="pg"><b>Payments</b><code>ma-payments</code><p>The pay-day list from every vendor's terms, pay runs, allocation of each payment to bills, advances and retention releases.</p></div>
+        <div class="pg"><b>Costing</b><code>ma-costing</code><p>A cost sheet per production PO: fabric at receipt rate, stitching, washing, embellishment and trims per piece; cost per piece by article; margin by channel; a missing leg named, never zero.</p></div>
         <div class="pg"><b>Ledger</b><code>ma-ledger</code><p>Every posting from every source on one line shape, filterable by date, source and account, each line opening the record it came from.</p></div>
         <div class="pg"><b>Profit &amp; loss</b><code>ma-pnl</code><p>Revenue by channel, cost of goods, operating expenses by category, month against month and against budget.</p></div>
         <div class="pg"><b>Balance sheet</b><code>ma-balance</code><p>What the company holds and owes on a day: cash, banks, receivables, stock at cost, payables, loans, capital.</p></div>
         <div class="pg"><b>Cash flow</b><code>ma-cashflow</code><p>Where cash came from and went, by kind, with the next 30, 60 and 90 days projected from what is already known to be due.</p></div>
+        <div class="pg"><b>Sales &amp; couriers</b><code>ma-sales</code><p>Invoices by channel, collections, courier remittances matched to their receipts, pay-later reminders.</p></div>
         <div class="pg"><b>Owed &amp; owing</b><code>ma-aging</code><p>Receivables and payables aged into buckets, per customer, courier and vendor, with the pay-day and collection calendar.</p></div>
-        <div class="pg"><b>Banks &amp; cash</b><code>ma-accounts</code><p>One page per money account: statement, reconciliation against the bank's own statement, opening balances.</p></div>
+        <div class="pg"><b>Money</b><code>ma-money</code><p>One page per money account: statement, reconciliation against the bank's own statement, opening balances.</p></div>
         <div class="pg"><b>Budgets</b><code>ma-budgets</code><p>A monthly budget per category, suggested from the last six months and accepted or overruled by an owner; variance tracked.</p></div>
         <div class="pg"><b>Insights</b><code>ma-insights</code><p>What the app has learned: baselines, anomalies, forecasts, rate drift and a data-quality score, each with its basis stated.</p></div>
         <div class="pg later"><b>Close &amp; audit</b><code>ma-close</code><p>Month-end: reconcile, lock the period, export the books, and the audit trail of every manual journal and override.</p></div>
@@ -578,9 +589,103 @@ function insights(){
   </div>`;
 }
 
+
+function vendors(){
+  const led=[
+    ['27 Sep','Payment #PAY-0412 · from MCB · allocated to BILL-0198, BILL-0203','','325,000','421,000','<span class="tag ok">allocated</span>'],
+    ['24 Sep','Bill #BILL-0211 · inv AH-1188 · stitching GD007 · 1,180 pcs @ ₨260','306,800','','746,000','<span class="tag warn">rate above card +4%</span>'],
+    ['22 Sep','Receipt · GP-142 returned · 1,180 of 1,200 pcs (20 short)','','','','<span class="tag warn">20 short</span>'],
+    ['19 Sep','Bill #BILL-0203 · inv AH-1179 · washing GD007 · 1,200 pcs @ ₨45','54,000','','439,200','<span class="tag ok">matched</span>'],
+    ['15 Sep','Retention 5% held on BILL-0198','','','','<span class="tag ok">₨18,050 held</span>'],
+    ['15 Sep','Bill #BILL-0198 · inv AH-1171 · stitching GST073 · 3,800 pcs @ ₨95','361,000','','385,200','<span class="tag ok">matched</span>'],
+    ['12 Sep','Receipt · GP-137 returned · 3,800 of 3,800 pcs','','','','<span class="tag ok">complete</span>'],
+    ['1 Sep','Opening balance carried from Store Accounts (legacy 7xk2a)','24,200','','24,200',''],
+  ];
+  return `<div class="page-head"><div><div class="page-title">Al-Hamd Garments</div><div class="page-sub">Vendor · stitching, washing · credit 30 days · since 1 Mar 2026 · <span class="tag ok">active</span></div></div>
+  <div class="btn-row"><button class="btn">Statement</button><button class="btn">Edit terms</button><button class="btn">+ Bill</button><button class="btn primary">+ Purchase order</button></div></div>
+  <div class="kpi-grid">
+    <div class="kpi warn"><div class="kpi-label">We owe</div><div class="kpi-val">₨4.21 lac</div><div class="kpi-sub">₨1.10 lac past 30 days · due Wed 1 Oct</div></div>
+    <div class="kpi"><div class="kpi-label">Retention held</div><div class="kpi-val">₨18,050</div><div class="kpi-sub">5% · released when QC clears PO-088</div></div>
+    <div class="kpi"><div class="kpi-label">Open orders</div><div class="kpi-val">2</div><div class="kpi-sub">₨3.9 lac on order · 1 partly received</div></div>
+    <div class="kpi"><div class="kpi-label">Reliability</div><div class="kpi-val">98%</div><div class="kpi-sub">pieces back vs sent, 12 passes · 1.7% short</div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="card-title"><span>What they provide</span></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Service</th><th>Articles</th><th class="num">Unit</th><th class="num">Current rate</th><th>Since</th></tr></thead><tbody>
+      <tr><td>Stitching</td><td>GST tees, GHZ hoodies</td><td class="num">pc</td><td class="num">₨95 · ₨240</td><td>1 Sep 2026</td></tr>
+      <tr><td>Stitching</td><td>GD denim</td><td class="num">pc</td><td class="num">₨250</td><td>1 Mar 2026</td></tr>
+      <tr><td>Washing</td><td>GD denim · enzyme</td><td class="num">pc</td><td class="num">₨45 · ₨60</td><td>1 Mar 2026</td></tr>
+      </tbody></table></div>
+      <div class="basis">Rate history: GST tee stitching <b>₨90 → ₨95</b> on 1 Sep 2026 (Afnan: "winter volume agreed"). A bill at another rate is flagged against this card and needs a reason.</div></div>
+    <div class="card"><div class="card-title"><span>Terms</span><button class="tv">History</button></div>
+      <div class="tbl-wrap"><table><tbody>
+      <tr><td>How we pay</td><td class="num">Credit · 30 days</td></tr>
+      <tr><td>Credit limit</td><td class="num">₨7,50,000</td></tr>
+      <tr><td>Retention</td><td class="num">5% until QC clears the PO</td></tr>
+      <tr><td>Advance allowed</td><td class="num">No</td></tr>
+      <tr><td>Pay days</td><td class="num">Wednesday · Saturday</td></tr>
+      <tr><td>Withholding</td><td class="num">None recorded</td></tr>
+      </tbody></table></div>
+      <div class="basis">Changed <b>1 Jul 2026</b> by Ammar: credit 15 → 30 days, retention added ("volume agreement"). Bills raised before that keep their 15-day due dates.</div></div>
+  </div>
+  <div class="card" style="margin-top:12px"><div class="card-title"><span>Ledger · credit / debit · running balance</span><button class="tv">Excel</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Document</th><th class="num">Debit (we owe)</th><th class="num">Credit (paid)</th><th class="num">Balance</th><th>State</th></tr></thead><tbody>
+    ${led.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="num">${r[2]}</td><td class="num">${r[3]}</td><td class="num">${r[4]}</td><td>${r[5]}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="basis">The balance is derived from the documents above; nothing stores it. Every row opens its document, its attachment and its history.</div></div>
+  <div class="card" style="margin-top:12px"><div class="card-title"><span>Aging</span></div>${aging([['Current',311],['1–30 days',0],['31–60 days',86],['Over 60',24]],'owed')}</div>
+  <div class="grid2" style="grid-template-columns:1fr">
+    <div class="card"><div class="card-title"><span>Open purchase orders</span></div>
+      <div class="tbl-wrap"><table><thead><tr><th>PO</th><th>For</th><th>Lines</th><th class="num">Ordered</th><th class="num">Received</th><th class="num">Billed</th><th>State</th></tr></thead><tbody>
+      <tr><td>PO-V-0231</td><td>PO-091 · GST073 tee</td><td>Stitching</td><td class="num">4,000 pc</td><td class="num">2,400</td><td class="num">0</td><td><span class="tag warn">partly received</span></td></tr>
+      <tr><td>PO-V-0236</td><td>PO-094 · GD012 denim</td><td>Stitching · Washing</td><td class="num">1,500 pc</td><td class="num">0</td><td class="num">0</td><td><span class="tag ok">sent</span></td></tr>
+      </tbody></table></div></div>
+  </div>`;
+}
+function purchasing(){
+  const pos=[
+    ['PO-V-0231','Al-Hamd','PO-091 · GST073','Stitching 4,000 pc @ ₨95','3,80,000','2,400','0','<span class="tag warn">partly received</span>'],
+    ['PO-V-0234','Nishat Mills','PO-094, PO-095','Denim 12 oz · 1,800 kg @ ₨1,040','18,72,000','1,800','1,800','<span class="tag ok">received · billed</span>'],
+    ['PO-V-0236','Al-Hamd','PO-094 · GD012','Stitching 1,500 @ ₨250 · Washing 1,500 @ ₨45','4,42,500','0','0','<span class="tag ok">sent</span>'],
+    ['PO-V-0237','Prime Embroidery','PO-093 · GHZ004','Embroidery front · 2,000 pc @ ₨38','76,000','2,000','2,000','<span class="tag ok">closed</span>'],
+  ];
+  const bills=[
+    ['BILL-0211','Al-Hamd · AH-1188','₨3,06,800','PO-V-0231 · GP-142 return','qty 1,180 = received · rate ₨260 vs card ₨250','<span class="tag warn">rate +4% · reason given</span>','Review'],
+    ['BILL-0214','Star Trims · ST-5521','₨1,41,600','no order','—','<span class="tag warn">no PO</span> <span class="tag warn">rate +18%</span>','Review'],
+    ['BILL-0215','Nishat Mills · NM-88012','₨18,72,000','PO-V-0234 · FAB-118','1,800 kg = received · rate = card','<span class="tag ok">matched 3-way</span>','Post'],
+    ['—','Aqib Sublimation (draft)','₨96,000','PO-V-0229 · job PJ-77','qty 2,400 &gt; 2,200 approved by QC','<span class="tag bad">refused · qty over receipt</span>','Fix'],
+    ['BILL-0209','Karachi Prints · KP-301','₨1,14,000','PO-V-0228','matched','<span class="tag warn">no invoice attached</span>','Attach'],
+  ];
+  return `<div class="page-head"><div><div class="page-title">Purchasing</div><div class="page-sub">Orders, receipts and bills, and what the checks said about each.</div></div>
+  <div class="btn-row"><button class="btn">+ Receipt</button><button class="btn">+ Bill</button><button class="btn primary">+ Purchase order</button></div></div>
+  <div class="filters"><span class="chip on">Needs attention</span><span class="chip">Open orders</span><span class="chip">Awaiting receipt</span><span class="chip">Bills to match</span><span class="chip">All</span></div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">On order</div><div class="kpi-val">₨27.7 lac</div><div class="kpi-sub">4 orders · 2 vendors waiting</div></div>
+    <div class="kpi"><div class="kpi-label">Received, not billed</div><div class="kpi-val">₨2.28 lac</div><div class="kpi-sub">accrued as a payable already</div></div>
+    <div class="kpi warn"><div class="kpi-label">Flagged</div><div class="kpi-val">4</div><div class="kpi-sub">2 rate · 1 no PO · 1 no invoice</div></div>
+    <div class="kpi bad"><div class="kpi-label">Refused</div><div class="kpi-val">1</div><div class="kpi-sub">qty over what QC approved</div></div>
+  </div>
+  <div class="card"><div class="card-title"><span>Bills and what the checks said</span></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Bill</th><th>Vendor · invoice</th><th class="num">Amount</th><th>Matched against</th><th>Check</th><th>Result</th><th></th></tr></thead><tbody>
+    ${bills.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="num">${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td><td><button class="btn">${r[6]}</button></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="basis"><b>Refused</b> means it cannot be true (more pieces than came back, a closed month, an allocation over the outstanding) and never posts. <b>Flagged</b> posts and waits for an owner. Everything else is matched three ways: ordered · received · billed.</div></div>
+  <div class="card"><div class="card-title"><span>Purchase orders</span></div>
+    <div class="tbl-wrap"><table><thead><tr><th>PO</th><th>Vendor</th><th>For production PO</th><th>Lines</th><th class="num">Value</th><th class="num">Received</th><th class="num">Billed</th><th>State</th></tr></thead><tbody>
+    ${pos.map(r=>`<tr>${r.map((c,i)=>`<td${i>=4&&i<=6?' class="num"':''}>${c}</td>`).join('')}</tr>`).join('')}
+    </tbody></table></div>
+    <div class="basis">A gate pass to a vendor can raise the order in one tap; the vendor's return on that pass is the receipt; the bill is matched to both, not retyped.</div></div>
+  <div class="card"><div class="card-title"><span>How a document is checked before it posts</span></div>
+    <div class="ins">
+      <div class="card"><h3><span class="ic urgent">!</span>Refuse</h3><p>Wrong party kind · date in a closed month or the future · amount ≠ lines · received &gt; ordered beyond tolerance · returned &gt; sent · billed &gt; received · duplicate invoice number · payment over the outstanding when advances are not allowed · cash drawer going negative · unbalanced journal.</p></div>
+      <div class="card"><h3><span class="ic warn">?</span>Flag for an owner</h3><p>Rate off the card (with the card rate shown) · item not on the vendor's list · no order · no invoice above the threshold · credit limit exceeded · possible duplicate · courier remittance off its receipt · a document edited after posting.</p></div>
+      <div class="card"><h3><span class="ic ok">✓</span>Offer, never change</h3><p>The card rate, the due date from terms, the outstanding to allocate, the last receipt to match. The person accepts or overrides with a reason, and the ledger records which.</p></div>
+    </div></div>`;
+}
+
 /* ── wiring ── */
 const main=document.getElementById('main');
-const screens={overview,ledger,pnl,insights};
+const screens={overview,ledger,vendors,purchasing,pnl,insights};
 let tab='overview';
 function render(){
   main.innerHTML=screens[tab]();

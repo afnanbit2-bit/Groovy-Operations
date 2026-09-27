@@ -6891,20 +6891,24 @@ themes, sample figures) is `scratchpad/master-accounts-specimen.html`,
 published at https://claude.ai/artifact/9bmhjEuaZMisWLb2TiQNyZ (private to
 its owner until shared).
 
-What the plan settles, in one paragraph: the owners' consolidated books,
-read by afnan and ammar only (by username, mirrored by email — the first
-owner-only READ rule in the app); double entry underneath, plain words on
-top; every source record (Store Accounts, warehouse sales, Shopify, PostEx,
-payroll, Paid PR, external printing billing) is turned into balanced
-postings by pure adapters in ONE file shared by the browser, a nightly
-rollup function and the tests — nothing is typed twice and nothing is
-copied; journals only for what no module records; history materialised
-nightly into `ma_daily` / `ma_month` with a Rebuild; charts in HTML with a
-validated `--chart-*` palette (the app's own tokens FAIL the colour-blind
-checks — measured, not assumed); a learning layer that is deterministic
-statistics with a stated basis on every number, and owner feedback as the
-only stored memory. Fifteen open questions are tabled in the plan's §14
-with the default each takes until answered.
+**v1 was a reporting layer over other modules' entries; Afnan rejected it
+the same day** (*"a proper end to end app which validates what you feed to
+it … a vendor — fabric, washing, stitching — what does he provide, at what
+term and what rate; a proper credit/debit ledger with history, edit terms,
+assigning purchase orders; first-to-last-mile logic"*). **v2 is the system
+of record**: a chart of accounts; ONE party master (vendor, customer,
+courier, employee, owner, bank) with what a vendor provides, terms with
+history and a rate card with history; documents with a lifecycle (purchase
+order → receipt → bill matched three ways → payment allocated to bills;
+invoice → collection; payroll; journals); a validation engine that REFUSES
+what cannot be true and FLAGS the rest for the owners; per-party
+credit/debit ledgers with running balances; costing per production PO;
+month close with locks; charts in HTML with a validated `--chart-*` palette
+(the app's own tokens FAIL the colour-blind checks — measured); a learning
+layer of deterministic statistics with a stated basis. Store Accounts and
+warehouse sales are ABSORBED in a named milestone (M7), not read from a
+distance. Fifteen open questions are tabled in the plan's §15 with the
+default each takes until answered.
 
 Verified while planning, and worth knowing before any of it is built (every
 claim carries file:line in the plan's §1): nothing in HRM records HOW a
