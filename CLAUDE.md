@@ -6877,6 +6877,43 @@ entry is flagged for the owners, who settle it. Emulator: **103/103**; the
 **Nobody has confirmed a warehouse payment or marked a bill collected on a
 real screen** — the sandbox cannot sign in.
 
+## Master Accounts — PLANNED, NOTHING BUILT (27 Sept 2026)
+
+Afnan: *"I want accounts but just for me and ammar, in short master
+accounts … plan all the logics of build first so we have a good foundation
+… plan the UI … our charts, pie chart, how the app will learn with the
+data … we are just planning at this stage."*
+
+**`MASTER_ACCOUNTS_PLAN.md` is the plan; read it before touching anything
+named `ma-` / `ma_` / `js/ma-core.js` / `js/master-accounts.js` — none of
+which exist yet.** The UI specimen (every screen, desktop and phone, both
+themes, sample figures) is `scratchpad/master-accounts-specimen.html`,
+published at https://claude.ai/artifact/9bmhjEuaZMisWLb2TiQNyZ (private to
+its owner until shared).
+
+What the plan settles, in one paragraph: the owners' consolidated books,
+read by afnan and ammar only (by username, mirrored by email — the first
+owner-only READ rule in the app); double entry underneath, plain words on
+top; every source record (Store Accounts, warehouse sales, Shopify, PostEx,
+payroll, Paid PR, external printing billing) is turned into balanced
+postings by pure adapters in ONE file shared by the browser, a nightly
+rollup function and the tests — nothing is typed twice and nothing is
+copied; journals only for what no module records; history materialised
+nightly into `ma_daily` / `ma_month` with a Rebuild; charts in HTML with a
+validated `--chart-*` palette (the app's own tokens FAIL the colour-blind
+checks — measured, not assumed); a learning layer that is deterministic
+statistics with a stated basis on every number, and owner feedback as the
+only stored memory. Fifteen open questions are tabled in the plan's §14
+with the default each takes until answered.
+
+Verified while planning, and worth knowing before any of it is built (every
+claim carries file:line in the plan's §1): nothing in HRM records HOW a
+salary was paid; a Shopify order is written once and never updated, so a
+later refund is invisible; PostEx is the only remittance data in the app
+and nothing posts it; `printing_billing` is a PAYABLE with no payee field;
+no cost of goods exists anywhere (no fabric rate, no CMT rate); and Reset
+Store Accounts deletes the very ledger the master would feed from.
+
 ## The Sales Team ▸ Marketing (Sept 2026)
 
 Replaces the **Content Tracker 2026** Google Sheet (Master List + monthly

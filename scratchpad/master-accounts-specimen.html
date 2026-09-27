@@ -1,0 +1,630 @@
+<title>Master Accounts</title>
+<style>
+/* ── Tokens: the app's own (css/main.css :root), plus the chart series
+   tokens this module would add. Text never wears a series colour. ── */
+:root{
+  --bg:#F4F4F4;--surface:#fff;--surface-2:#FAFAFA;--border:#D9D9D9;--line:#000;
+  --text:#111111;--muted:#6B6B6B;--soft:#EFEFEF;--hover:#F4F4F6;--dark:#000;--on-dark:#fff;
+  --accent-urgent:#7B1F2A;--accent-urgent-soft:#F6E4E5;
+  --accent-warning:#B47512;--accent-warning-soft:#FAEEDA;
+  --accent-success:#14532D;--accent-success-soft:#E6EFE9;
+  --count-accent:#DC2626;--link-accent:#C2410C;
+  --radius-card:14px;--radius-bubble:16px;
+  /* chart series (validated on #fff with the dataviz six checks) */
+  --chart-1:#2a78d6;--chart-2:#eb6834;--chart-3:#1baf7a;--chart-4:#eda100;--chart-5:#e87ba4;--chart-6:#4a3aa7;
+  --chart-other:#898781;--chart-neg:#e34948;
+  --seq-1:#86b6ef;--seq-2:#3987e5;--seq-3:#1c5cab;--seq-4:#0d366b;
+  --grid:#E8E8E8;--axis:#C9C9C9;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E0E10;--surface:#17171A;--surface-2:#1E1E22;--border:#2E2E34;--line:#2E2E34;
+    --text:#ECECEE;--muted:#9A9AA3;--soft:#232329;--hover:#232329;--dark:#EDEDED;--on-dark:#111114;
+    --accent-urgent:#F2A0A8;--accent-urgent-soft:#3A1F23;
+    --accent-warning:#E3B061;--accent-warning-soft:#3A2E18;
+    --accent-success:#7FC49C;--accent-success-soft:#16301F;
+    --link-accent:#FB923C;
+    --chart-1:#3987e5;--chart-2:#d95926;--chart-3:#199e70;--chart-4:#c98500;--chart-5:#d55181;--chart-6:#9085e9;
+    --chart-other:#898781;--chart-neg:#e66767;
+    --seq-1:#184f95;--seq-2:#2a78d6;--seq-3:#5598e7;--seq-4:#9ec5f4;
+    --grid:#26262B;--axis:#3A3A41;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E0E10;--surface:#17171A;--surface-2:#1E1E22;--border:#2E2E34;--line:#2E2E34;
+  --text:#ECECEE;--muted:#9A9AA3;--soft:#232329;--hover:#232329;--dark:#EDEDED;--on-dark:#111114;
+  --accent-urgent:#F2A0A8;--accent-urgent-soft:#3A1F23;
+  --accent-warning:#E3B061;--accent-warning-soft:#3A2E18;
+  --accent-success:#7FC49C;--accent-success-soft:#16301F;
+  --link-accent:#FB923C;
+  --chart-1:#3987e5;--chart-2:#d95926;--chart-3:#199e70;--chart-4:#c98500;--chart-5:#d55181;--chart-6:#9085e9;
+  --chart-other:#898781;--chart-neg:#e66767;
+  --seq-1:#184f95;--seq-2:#2a78d6;--seq-3:#5598e7;--seq-4:#9ec5f4;
+  --grid:#26262B;--axis:#3A3A41;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.45;color:var(--text);background:var(--bg);padding-inline:16px;padding-block:16px 48px}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--link-accent);outline-offset:2px}
+h1,h2,h3{text-wrap:balance}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:18px}
+
+/* ── the specimen's own chrome (not part of the app) ── */
+.spec-head{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end;justify-content:space-between}
+.spec-head h1{font-size:22px;font-weight:700}
+.spec-head p{color:var(--muted);font-size:13px;max-width:62ch}
+.spec-controls{display:flex;flex-wrap:wrap;gap:10px 16px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:999px;background:var(--surface);padding:2px}
+.seg button{padding:5px 12px;border-radius:999px;font-size:13px;font-weight:600;color:var(--muted);min-height:32px}
+.seg button.on{background:var(--dark);color:var(--on-dark)}
+.seg-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;display:block;margin-bottom:4px}
+.note-strip{font-size:13px;color:var(--muted);border-left:3px solid var(--accent-warning);padding:6px 12px;background:var(--surface);border-radius:0 8px 8px 0}
+
+/* ── the app frame: topbar + sidebar + main, or phone ── */
+.frame{container-type:inline-size;container-name:frame;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:0 auto;width:100%;transition:width .25s ease}
+.frame.phone{width:390px;max-width:100%}
+.topbar{background:var(--surface);border-bottom:1px solid var(--line);height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 16px}
+.topbar-logo{font-weight:800;letter-spacing:.14em;font-size:14px}
+.topbar-logo small{font-weight:600;letter-spacing:.1em;color:var(--muted);margin-left:8px;font-size:11px}
+.topbar-user{display:flex;align-items:center;gap:10px;font-size:13px}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--soft);border:1px solid var(--border);display:grid;place-items:center;font-weight:700;font-size:13px}
+.frame-body{display:flex;min-height:640px}
+#sidebar{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:12px 8px}
+.nav-item{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;font-size:14px;color:var(--text);width:100%;text-align:left;min-height:38px}
+.nav-item:hover{background:var(--hover)}
+.nav-item.on{background:var(--dark);color:var(--on-dark);font-weight:600}
+.nav-group{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;padding:12px 12px 4px}
+.nav-sub{padding-left:22px;font-size:13.5px}
+main{flex:1;min-width:0;padding:16px}
+.mobnav{display:none;background:var(--surface);border-top:1px solid var(--border);grid-template-columns:repeat(5,1fr);padding:6px 4px 10px}
+.mobnav button{font-size:11px;font-weight:600;color:var(--muted);display:grid;justify-items:center;gap:3px;padding:6px 2px;min-height:44px}
+.mobnav button.on{color:var(--text)}
+.mobnav i{width:22px;height:22px;border-radius:7px;background:var(--soft);display:block}
+.mobnav button.on i{background:var(--dark)}
+
+/* ── page chrome, lifted from the app's classes ── */
+.page-head{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.page-title{font-size:19px;font-weight:700}
+.page-sub{font-size:13px;color:var(--muted)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.chip{border:1px solid var(--border);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);min-height:34px}
+.chip.on{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:14px 16px;margin-bottom:12px;min-width:0}
+.card-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card-title .tv{font-size:11px;letter-spacing:.04em;text-transform:none;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 9px;min-height:26px}
+.card-title .tv.on{background:var(--soft);color:var(--text)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.grid2 .card,.grid3 .card{margin-bottom:0}
+
+/* KPI tiles (the app's .kpi-card, sized for money) */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-bubble);padding:12px 14px;min-width:0}
+.kpi-label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.kpi-val{font-size:25px;font-weight:700;margin-top:2px;line-height:1.15;letter-spacing:-.01em}
+.kpi-val.hero{font-size:31px}
+.kpi.lead{grid-column:span 2}
+.kpi-sub{font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.delta{font-weight:600}
+.delta.up{color:var(--accent-success)}.delta.down{color:var(--accent-urgent)}
+.spark{display:flex;align-items:flex-end;gap:2px;height:22px;margin-top:8px}
+.spark i{flex:1;background:var(--soft);border-radius:2px 2px 0 0;min-height:2px}
+.spark i.cur{background:var(--chart-1)}
+.kpi.warn{background:var(--accent-warning-soft);border-color:transparent}
+.kpi.bad{background:var(--accent-urgent-soft);border-color:transparent}
+
+/* alerts */
+.alerts{display:grid;gap:6px;margin-bottom:12px}
+.alert{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--border);font-size:13.5px}
+.alert b{font-weight:700}
+.alert .ic{flex-shrink:0;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800}
+.alert.urgent .ic{background:var(--accent-urgent);color:var(--on-dark)}
+.alert.warn .ic{background:var(--accent-warning);color:var(--on-dark)}
+.alert.ok .ic{background:var(--accent-success);color:var(--on-dark)}
+:root[data-theme="dark"] .alert .ic{color:var(--bg)}
+.alert .act{margin-left:auto;font-size:12px;font-weight:600;color:var(--link-accent);white-space:nowrap}
+
+/* ── charts ── */
+.chart{position:relative}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-bottom:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.legend i.line{width:14px;height:2px;border-radius:1px}
+.plot{position:relative;height:190px;margin-top:16px}
+.gridline{position:absolute;left:0;right:0;border-top:1px solid var(--grid);pointer-events:none}
+.gridline.base{border-top-color:var(--axis)}
+.ytick{position:absolute;right:calc(100% + 6px);transform:translateY(-50%);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.plot.padl{margin-left:44px}
+.cols{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:space-around;gap:6px}
+.col{flex:1;max-width:60px;height:100%;display:flex;align-items:flex-end;justify-content:center;gap:2px;position:relative}
+.bar{width:100%;max-width:24px;border-radius:4px 4px 0 0;background:var(--chart-1);position:relative;transition:filter .12s}
+.bar.s2{background:var(--chart-2)}.bar.s3{background:var(--chart-3)}.bar.s4{background:var(--chart-4)}.bar.s5{background:var(--chart-5)}.bar.s6{background:var(--chart-6)}.bar.other{background:var(--chart-other)}.bar.neg{background:var(--chart-neg);border-radius:0 0 4px 4px}
+.col:hover .bar,.col:focus-visible .bar{filter:brightness(1.12)}
+.stack{width:100%;max-width:24px;display:flex;flex-direction:column-reverse;gap:2px}
+.stack i{display:block;background:var(--chart-1)}
+.stack i:last-child{border-radius:4px 4px 0 0}
+.stack i.s2{background:var(--chart-2)}.stack i.s3{background:var(--chart-3)}
+.xlab{display:flex;justify-content:space-around;gap:6px;margin-top:6px}
+.xlab span{flex:1;max-width:60px;text-align:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.plot.padl + .xlab{margin-left:44px}
+.dlabel{position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
+.col:last-child .dlabel{left:auto;right:0;transform:none}
+.col:first-child .dlabel{left:0;transform:none}
+.col.dim .bar{opacity:.55}
+.tip{position:absolute;z-index:5;background:var(--dark);color:var(--on-dark);border-radius:8px;padding:7px 10px;font-size:12px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.18);display:none}
+.tip b{font-size:13px;display:block}
+.tip .k{display:inline-block;width:12px;height:2px;vertical-align:middle;margin-right:6px;border-radius:1px}
+.tip.show{display:block}
+/* line */
+.lineplot{position:relative;height:190px}
+.lineplot svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.lineplot path.l{fill:none;stroke:var(--chart-1);stroke-width:2px;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.lineplot path.f{stroke:var(--chart-1);stroke-dasharray:6 5;fill:none;stroke-width:2px;vector-effect:non-scaling-stroke}
+.lineplot path.a{fill:var(--chart-1);opacity:.10;stroke:none}
+.lineplot path.band{fill:var(--chart-1);opacity:.08;stroke:none}
+.lineplot path.l2{fill:none;stroke:var(--chart-2);stroke-width:2px;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.dot{position:absolute;width:10px;height:10px;border-radius:50%;background:var(--chart-1);border:2px solid var(--surface);transform:translate(-50%,-50%);pointer-events:none}
+.dot.s2{background:var(--chart-2)}
+.xhair{position:absolute;top:0;bottom:0;border-left:1px solid var(--axis);pointer-events:none;display:none}
+.endlab{position:absolute;transform:translate(6px,-50%);font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;background:var(--surface);padding:0 4px;border-radius:4px;font-variant-numeric:tabular-nums}
+.today{position:absolute;top:0;bottom:0;border-left:1px solid var(--axis);pointer-events:none}
+.today small{position:absolute;top:-2px;left:4px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+/* donut */
+.donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.donut{width:150px;height:150px;border-radius:50%;flex-shrink:0;position:relative;display:grid;place-items:center}
+.donut::after{content:"";position:absolute;inset:34px;border-radius:50%;background:var(--surface)}
+.donut b{position:relative;z-index:1;font-size:13px;text-align:center;line-height:1.2;font-weight:700}
+.donut b small{display:block;font-size:11px;font-weight:600;color:var(--muted)}
+.dl{flex:1;min-width:180px;display:grid;gap:5px;font-size:13px}
+.dl div{display:grid;grid-template-columns:10px 1fr auto auto;gap:8px;align-items:center;padding:3px 4px;border-radius:6px}
+.dl div:hover{background:var(--hover)}
+.dl i{width:10px;height:10px;border-radius:2px}
+.dl .v{font-variant-numeric:tabular-nums;font-weight:600}
+.dl .p{font-variant-numeric:tabular-nums;color:var(--muted);width:38px;text-align:right}
+/* horizontal bars */
+.hbars{display:grid;gap:8px}
+.hb{display:grid;grid-template-columns:110px 1fr 74px;gap:10px;align-items:center;font-size:13px}
+.hb .n{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hb .t{height:12px;background:var(--soft);border-radius:0 4px 4px 0;position:relative;overflow:visible}
+.hb .t i{position:absolute;left:0;top:0;bottom:0;background:var(--chart-1);border-radius:0 4px 4px 0}
+.hb .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.hb.o1 .t i{background:var(--seq-1)}.hb.o2 .t i{background:var(--seq-2)}.hb.o3 .t i{background:var(--seq-3)}.hb.o4 .t i{background:var(--seq-4)}
+.meter{height:12px;background:var(--soft);border-radius:999px;overflow:hidden;position:relative}
+.meter i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--chart-1)}
+.meter.warn i{background:var(--accent-warning)}.meter.bad i{background:var(--accent-urgent)}
+/* tables */
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:8px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:8px 8px;border-bottom:1px solid var(--grid);vertical-align:top}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.total td{font-weight:700;border-top:2px solid var(--axis)}
+tr.sub td{color:var(--muted)}
+tr.sub td:first-child{padding-left:22px}
+.src{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px;background:var(--soft);color:var(--text);white-space:nowrap}
+.src.void{text-decoration:line-through;color:var(--muted)}
+.tag{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.tag.ok{background:var(--accent-success-soft);color:var(--accent-success)}
+.tag.warn{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.tag.bad{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
+.tbl-view{margin-top:6px}
+.basis{font-size:12px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)}
+.basis b{color:var(--text);font-weight:600}
+.ins{display:grid;gap:10px}
+.ins .card{margin:0}
+.ins h3{font-size:15px;font-weight:700;margin-bottom:4px}
+.ins p{font-size:13.5px}
+.ins .ic{width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;font-size:12px;font-weight:800;margin-right:8px;vertical-align:middle;color:var(--on-dark)}
+:root[data-theme="dark"] .ins .ic{color:var(--bg)}
+.ic.urgent{background:var(--accent-urgent)}.ic.warn{background:var(--accent-warning)}.ic.ok{background:var(--accent-success)}.ic.info{background:var(--muted)}
+.btn{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:7px 12px;font-size:13px;font-weight:600;min-height:34px}
+.btn.primary{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── notes below the frame ── */
+.notes{display:grid;gap:14px}
+.notes h2{font-size:17px;font-weight:700;margin-bottom:6px}
+.notes .card{margin:0}
+.notes p,.notes li{font-size:14px;max-width:70ch}
+.notes ul{padding-left:20px;display:grid;gap:4px}
+.pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.pg{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface-2)}
+.pg b{display:block;font-size:14px}
+.pg code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted)}
+.pg p{font-size:13px;color:var(--muted);margin-top:4px;max-width:none}
+.pg.later{opacity:.72}
+.swatches{display:flex;flex-wrap:wrap;gap:8px}
+.sw{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.sw i{width:16px;height:16px;border-radius:4px;display:inline-block}
+
+/* ── phone layout inside the frame ── */
+@container frame (max-width:600px){
+  #sidebar{display:none}
+  .mobnav{display:grid}
+  .frame-body{min-height:560px}
+  main{padding:12px}
+  .grid2,.grid3{grid-template-columns:1fr}
+  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi-val{font-size:21px}.kpi-val.hero{font-size:27px}
+  .plot,.lineplot{height:160px}
+  .hb{grid-template-columns:86px 1fr 64px}
+  .donut-wrap{justify-content:center}
+  .alert .act{display:none}
+}
+@media (max-width:640px){
+  .spec-head h1{font-size:19px}
+  .frame.phone{width:100%}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="spec-head">
+    <div>
+      <h1>Master Accounts</h1>
+      <p>A specimen of the owners' accounts module for Groovy Ops, drawn in the app's own chrome. Every figure is a sample, not the books. Switch screens, width and theme with the controls.</p>
+    </div>
+    <div class="spec-controls">
+      <div><span class="seg-label">Screen</span><div class="seg" id="tabs">
+        <button class="on" data-tab="overview" id="tab-overview">Overview</button>
+        <button data-tab="ledger" id="tab-ledger">Ledger</button>
+        <button data-tab="pnl" id="tab-pnl">P&amp;L</button>
+        <button data-tab="insights" id="tab-insights">Insights</button>
+      </div></div>
+      <div><span class="seg-label">Width</span><div class="seg" id="widths">
+        <button class="on" data-w="desktop" id="w-desktop">Desktop</button>
+        <button data-w="phone" id="w-phone">Phone 390</button>
+      </div></div>
+      <div><span class="seg-label">Theme</span><div class="seg" id="themes">
+        <button data-t="light" id="t-light">Light</button>
+        <button data-t="dark" id="t-dark">Dark</button>
+        <button class="on" data-t="system" id="t-system">System</button>
+      </div></div>
+    </div>
+  </header>
+  <div class="note-strip">Sample figures. The point of this page is the shape of each screen, what each chart answers and how the app explains what it has learned. Numbers are invented and rounded.</div>
+
+  <div class="frame" id="frame">
+    <div class="topbar">
+      <div class="topbar-logo">GROOVY<small>OPERATIONS</small></div>
+      <div class="topbar-user"><span class="topbar-name">Afnan</span><span class="avatar">A</span></div>
+    </div>
+    <div class="frame-body">
+      <nav id="sidebar" aria-label="Sidebar">
+        <button class="nav-item">Dashboard</button>
+        <button class="nav-item on" id="nav-ma">Accounts</button>
+        <div class="nav-group">Accounts</div>
+        <button class="nav-item nav-sub on" data-nav="overview">Overview</button>
+        <button class="nav-item nav-sub" data-nav="ledger">Ledger</button>
+        <button class="nav-item nav-sub" data-nav="pnl">Profit &amp; loss</button>
+        <button class="nav-item nav-sub">Balance sheet</button>
+        <button class="nav-item nav-sub">Cash flow</button>
+        <button class="nav-item nav-sub">Owed &amp; owing</button>
+        <button class="nav-item nav-sub">Banks &amp; cash</button>
+        <button class="nav-item nav-sub">Budgets</button>
+        <button class="nav-item nav-sub" data-nav="insights">Insights</button>
+        <button class="nav-item nav-sub">Close &amp; audit</button>
+        <button class="nav-item nav-sub">Settings</button>
+        <div class="nav-group">Everything else</div>
+        <button class="nav-item">PO Registry</button>
+        <button class="nav-item">Store Accounts</button>
+        <button class="nav-item">HRM</button>
+      </nav>
+      <main id="main" aria-live="polite"></main>
+    </div>
+    <div class="mobnav" id="mobnav">
+      <button data-nav="overview" class="on"><i></i>Overview</button>
+      <button data-nav="ledger"><i></i>Ledger</button>
+      <button data-nav="pnl"><i></i>P&amp;L</button>
+      <button data-nav="insights"><i></i>Insights</button>
+      <button><i></i>More</button>
+    </div>
+  </div>
+
+  <section class="notes">
+    <div class="card">
+      <h2>What each screen is for</h2>
+      <div class="pages">
+        <div class="pg"><b>Overview</b><code>ma-overview</code><p>Cash position across every account, this month in and out, what is owed to us and by us, runway, and the alerts that need an owner today.</p></div>
+        <div class="pg"><b>Ledger</b><code>ma-ledger</code><p>Every posting from every source on one line shape, filterable by date, source and account, each line opening the record it came from.</p></div>
+        <div class="pg"><b>Profit &amp; loss</b><code>ma-pnl</code><p>Revenue by channel, cost of goods, operating expenses by category, month against month and against budget.</p></div>
+        <div class="pg"><b>Balance sheet</b><code>ma-balance</code><p>What the company holds and owes on a day: cash, banks, receivables, stock at cost, payables, loans, capital.</p></div>
+        <div class="pg"><b>Cash flow</b><code>ma-cashflow</code><p>Where cash came from and went, by kind, with the next 30, 60 and 90 days projected from what is already known to be due.</p></div>
+        <div class="pg"><b>Owed &amp; owing</b><code>ma-aging</code><p>Receivables and payables aged into buckets, per customer, courier and vendor, with the pay-day and collection calendar.</p></div>
+        <div class="pg"><b>Banks &amp; cash</b><code>ma-accounts</code><p>One page per money account: statement, reconciliation against the bank's own statement, opening balances.</p></div>
+        <div class="pg"><b>Budgets</b><code>ma-budgets</code><p>A monthly budget per category, suggested from the last six months and accepted or overruled by an owner; variance tracked.</p></div>
+        <div class="pg"><b>Insights</b><code>ma-insights</code><p>What the app has learned: baselines, anomalies, forecasts, rate drift and a data-quality score, each with its basis stated.</p></div>
+        <div class="pg later"><b>Close &amp; audit</b><code>ma-close</code><p>Month-end: reconcile, lock the period, export the books, and the audit trail of every manual journal and override.</p></div>
+        <div class="pg later"><b>Settings</b><code>ma-settings</code><p>Chart of accounts, category mapping, fiscal year, tax rates, which sources feed the ledger.</p></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>How the charts are drawn</h2>
+        <ul>
+          <li>HTML and CSS, the way the Marketing reports draw theirs: bars are boxes, a donut is a conic gradient, a line is an SVG path with every label in HTML. No chart library.</li>
+          <li>Series colours are new tokens, validated for colour-blind separation on the app's light and dark surfaces. Text never wears a series colour; identity comes from the swatch beside it.</li>
+          <li>Every chart has a table twin, one filter row scopes the whole screen, and hovering any mark shows its value.</li>
+          <li>A donut only for a part-to-whole glance with six segments or fewer; rankings and comparisons are bars.</li>
+        </ul>
+        <div class="swatches" style="margin-top:10px">
+          <span class="sw"><i style="background:var(--chart-1)"></i>series 1</span>
+          <span class="sw"><i style="background:var(--chart-2)"></i>series 2</span>
+          <span class="sw"><i style="background:var(--chart-3)"></i>series 3</span>
+          <span class="sw"><i style="background:var(--chart-4)"></i>series 4</span>
+          <span class="sw"><i style="background:var(--chart-5)"></i>series 5</span>
+          <span class="sw"><i style="background:var(--chart-6)"></i>series 6</span>
+          <span class="sw"><i style="background:var(--chart-other)"></i>other</span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>How the app learns</h2>
+        <ul>
+          <li>Nothing is guessed. Every learned number carries its basis: the months it was computed over, the count, the method.</li>
+          <li>Baselines first (medians, seasonality), then anomalies (a figure far outside its own history), then forecasts (cash runway from what is already known to be due), then budget suggestions.</li>
+          <li>Learning is only as good as the entry discipline, so the data-quality score is on the same screen.</li>
+          <li>All of it is computed from rollups the app already writes; no third party sees the books.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+'use strict';
+/* ── sample data (₨, rounded) ── */
+const D={
+  accounts:[
+    {n:'Cash drawer (Raees)',v:184300,kind:'cash'},
+    {n:'MCB current',v:2146900,kind:'bank'},
+    {n:'Umair, not yet handed over',v:96500,kind:'till'},
+    {n:'Runner floats out',v:12000,kind:'float'},
+  ],
+  recv:{postex:1418700,customers:312000,employees:86000},
+  pay:{vendors:846500,salaries:1180000,runners:4200},
+  weeks:[['4 Aug',1240,980],['11 Aug',1580,1130],['18 Aug',910,1420],['25 Aug',1725,1050],['1 Sep',1330,1610],['8 Sep',1490,1120],['15 Sep',2010,1380],['22 Sep',1660,1290]],
+  expense:[['Fabric & mills',2133000],['Salaries',1180000],['Stitching',954000],['Embellishment',505000],['Marketing',337000],['Other',505000]],
+  channels:{months:['Apr','May','Jun','Jul','Aug','Sep'],online:[5120,5880,4310,6920,7480,6210],warehouse:[640,720,590,910,1040,880],other:[120,90,210,160,140,230]},
+  vendors:[['Al-Karam Textile',612000],['Nishat Mills',488000],['Zain Stitching',421000],['Prime Embroidery',288000],['Star Trims',146000],['Karachi Prints',124000]],
+  agingR:[['Current',210],['1–30 days',78],['31–60 days',19],['Over 60',5]],
+  agingP:[['Current',520],['1–30 days',231],['31–60 days',72],['Over 60',23]],
+  pnl:{months:['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep'],
+       rev:[5.9,7.4,8.1,6.2,5.4,6.8,5.9,6.7,5.1,8.0,8.7,7.3],
+       exp:[5.2,6.1,6.6,6.0,5.6,5.9,5.4,5.8,5.5,6.5,6.9,6.2]},
+  balance:{hist:[],fcast:[]},
+};
+/* cash balance: 30 days history + 30 days forecast (₨000) */
+(function(){let b=2620;for(let i=0;i<30;i++){b+=Math.round(Math.sin(i/3.1)*95+ (i%7===2?-260:0)+(i%7===5?310:0)+22);D.balance.hist.push(b);} let f=D.balance.hist[29];for(let i=1;i<=30;i++){f+=(i%7===3?-240:0)+(i%7===6?290:0)+(i===12?-1180:0)+38;D.balance.fcast.push({m:f,lo:f-90-i*14,hi:f+90+i*14});}})();
+
+/* ── helpers ── */
+const money=n=>'₨'+Math.round(n).toLocaleString('en-PK');
+const compact=n=>{const a=Math.abs(n);if(a>=1e7)return '₨'+(n/1e7).toFixed(2)+' cr';if(a>=1e5)return '₨'+(n/1e5).toFixed(2)+' lac';return money(n)};
+const k=n=>n===0?'0':'₨'+n.toLocaleString('en-PK')+'k';
+const sum=a=>a.reduce((s,x)=>s+x,0);
+function niceMax(v,step){const s=step||Math.pow(10,Math.floor(Math.log10(v)));const m=v/s;const f=m<=1?1:m<=2?2:m<=2.5?2.5:m<=5?5:10;return f*s}
+function tvBtn(id){return `<button class="tv" data-tv="${id}" aria-pressed="false">Table</button>`}
+function tableFor(head,rows){return `<div class="tbl-wrap tbl-view"><table><thead><tr>${head.map((h,i)=>`<th${i?' class="num"':''}>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((c,i)=>`<td${i?' class="num"':''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
+function gridlines(max,fmt,steps){steps=steps||4;let h='';for(let i=0;i<=steps;i++){const y=100-(i/steps)*100;h+=`<div class="gridline${i===0?' base':''}" style="top:${y}%"><span class="ytick">${fmt(max*i/steps)}</span></div>`}return h}
+
+/* ── chart builders ── */
+function groupedBars(){
+  const max=niceMax(Math.max(...D.weeks.map(w=>Math.max(w[1],w[2]))));
+  const cols=D.weeks.map((w,i)=>{const last=i===D.weeks.length-1;return `<div class="col" tabindex="0" data-tip="${w[0]}|${k(w[1])} in|${k(w[2])} out">${last?`<span class="dlabel">${k(w[1])} · ${k(w[2])}</span>`:''}<div class="bar" style="height:${w[1]/max*100}%"></div><div class="bar s2" style="height:${w[2]/max*100}%"></div></div>`}).join('');
+  return `<div class="legend"><span><i style="background:var(--chart-1)"></i>Money in</span><span><i style="background:var(--chart-2)"></i>Money out</span></div>
+  <div class="chart" data-chart="weeks"><div class="plot padl">${gridlines(max,v=>k(v))}<div class="cols">${cols}</div></div><div class="xlab">${D.weeks.map(w=>`<span>${w[0]}</span>`).join('')}</div><div class="tip"></div></div>
+  ${tableFor(['Week','Money in','Money out','Net'],D.weeks.map(w=>[w[0],k(w[1]),k(w[2]),k(w[1]-w[2])]))}`;
+}
+function balanceLine(){
+  const all=D.balance.hist.concat(D.balance.fcast.map(f=>f.m));
+  const lo=Math.min(...D.balance.hist,...D.balance.fcast.map(f=>f.lo)),hi=Math.max(...all,...D.balance.fcast.map(f=>f.hi));
+  const ymin=Math.floor(lo/500)*500-250,ymax=Math.ceil(hi/500)*500;
+  const n=60,W=1000,H=400;
+  const X=i=>i/(n-1)*W,Y=v=>H-(v-ymin)/(ymax-ymin)*H;
+  const hp=D.balance.hist.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+  const fp=D.balance.fcast.map((f,i)=>`${i?'L':'M'}${X(29+i+1-1+ (i===0?0:0)).toFixed(1)},${Y(f.m).toFixed(1)}`);
+  const fpath='M'+X(29).toFixed(1)+','+Y(D.balance.hist[29]).toFixed(1)+D.balance.fcast.map((f,i)=>`L${X(30+i).toFixed(1)},${Y(f.m).toFixed(1)}`).join('');
+  const band='M'+X(29).toFixed(1)+','+Y(D.balance.hist[29]).toFixed(1)+D.balance.fcast.map((f,i)=>`L${X(30+i).toFixed(1)},${Y(f.hi).toFixed(1)}`).join('')+D.balance.fcast.slice().reverse().map((f,i)=>`L${X(59-i).toFixed(1)},${Y(f.lo).toFixed(1)}`).join('')+'Z';
+  const area=hp+`L${X(29).toFixed(1)},${H}L0,${H}Z`;
+  let grid='';for(let i=0;i<=4;i++){const v=ymin+(ymax-ymin)*i/4;grid+=`<div class="gridline${i===0?' base':''}" style="top:${100-i*25}%"><span class="ytick">${k(Math.round(v))}</span></div>`}
+  const endv=D.balance.hist[29];
+  return `<div class="legend"><span><i class="line" style="background:var(--chart-1)"></i>Balance, all accounts</span><span><i class="line" style="background:var(--chart-1);opacity:.55"></i>Projected from what is due</span></div>
+  <div class="chart" data-chart="balance"><div class="lineplot padl plot" style="margin-left:44px">${grid}
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="band" d="${band}"/><path class="a" d="${area}"/><path class="l" d="${hp}"/><path class="f" d="${fpath}"/></svg>
+    <div class="today" style="left:${29/59*100}%"><small>today</small></div>
+    <div class="dot" style="left:${29/59*100}%;top:${(Y(endv)/H*100).toFixed(2)}%"></div>
+    <span class="endlab" style="left:${29/59*100}%;top:${(Y(endv)/H*100).toFixed(2)}%">${k(endv)}</span>
+    <div class="xhair"></div><div class="hover" style="position:absolute;inset:0"></div></div>
+    <div class="xlab" style="margin-left:44px;justify-content:space-between"><span style="text-align:left">28 Aug</span><span>today</span><span style="text-align:right">27 Oct</span></div><div class="tip"></div></div>
+  ${tableFor(['Day','Balance'],[['28 Aug',k(D.balance.hist[0])],['12 Sep',k(D.balance.hist[15])],['27 Sep (today)',k(endv)],['12 Oct (projected)',k(D.balance.fcast[14].m)+' ('+k(D.balance.fcast[14].lo)+' to '+k(D.balance.fcast[14].hi)+')'],['27 Oct (projected)',k(D.balance.fcast[29].m)+' ('+k(D.balance.fcast[29].lo)+' to '+k(D.balance.fcast[29].hi)+')']])}`;
+}
+function donut(){
+  const tot=sum(D.expense.map(e=>e[1]));const cols=['var(--chart-1)','var(--chart-2)','var(--chart-3)','var(--chart-4)','var(--chart-5)','var(--chart-other)'];
+  let acc=0,stops=[];const gap=0.6;
+  D.expense.forEach((e,i)=>{const p=e[1]/tot*100;stops.push(`${cols[i]} ${acc+gap/2}% ${acc+p-gap/2}%`);stops.push(`var(--surface) ${acc+p-gap/2}% ${acc+p+gap/2}%`);acc+=p;});
+  const leg=D.expense.map((e,i)=>`<div><i style="background:${cols[i]}"></i><span>${e[0]}</span><span class="v">${compact(e[1])}</span><span class="p">${(e[1]/tot*100).toFixed(0)}%</span></div>`).join('');
+  return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops.join(',')})" role="img" aria-label="Expense mix, September"><b>${compact(tot)}<small>September</small></b></div><div class="dl">${leg}</div></div>
+  ${tableFor(['Category','Amount','Share'],D.expense.map(e=>[e[0],money(e[1]),(e[1]/tot*100).toFixed(1)+'%']))}`;
+}
+function channels(){
+  const c=D.channels;const totals=c.months.map((m,i)=>c.online[i]+c.warehouse[i]+c.other[i]);const max=niceMax(Math.max(...totals));
+  const cols=c.months.map((m,i)=>{const t=totals[i];return `<div class="col" tabindex="0" data-tip="${m}|${k(c.online[i])} online|${k(c.warehouse[i])} warehouse|${k(c.other[i])} other"><span class="dlabel">${k(t)}</span><div class="stack" style="height:${t/max*100}%"><i style="flex:${c.online[i]}"></i><i class="s2" style="flex:${c.warehouse[i]}"></i><i class="s3" style="flex:${c.other[i]}"></i></div></div>`}).join('');
+  return `<div class="legend"><span><i style="background:var(--chart-1)"></i>Online (Shopify)</span><span><i style="background:var(--chart-2)"></i>Warehouse</span><span><i style="background:var(--chart-3)"></i>Fabric &amp; other</span></div>
+  <div class="chart" data-chart="channels"><div class="plot padl">${gridlines(max,v=>k(v))}<div class="cols">${cols}</div></div><div class="xlab">${c.months.map(m=>`<span>${m}</span>`).join('')}</div><div class="tip"></div></div>
+  ${tableFor(['Month','Online','Warehouse','Fabric & other','Total'],c.months.map((m,i)=>[m,k(c.online[i]),k(c.warehouse[i]),k(c.other[i]),k(totals[i])]))}`;
+}
+function vendorBars(){
+  const max=D.vendors[0][1];
+  return `<div class="hbars">${D.vendors.map(v=>`<div class="hb"><span class="n" title="${v[0]}">${v[0]}</span><span class="t"><i style="width:${v[1]/max*100}%"></i></span><span class="v">${compact(v[1])}</span></div>`).join('')}</div>
+  <div class="basis">Top six of 23 vendors by spend, this month. Rates come from each purchase line, so this is what was actually invoiced.</div>`;
+}
+function aging(rows,label){
+  const max=Math.max(...rows.map(r=>r[1]));const tot=sum(rows.map(r=>r[1]));const over=rows[2][1]+rows[3][1];
+  return `<div class="hbars">${rows.map((r,i)=>`<div class="hb o${i+1}"><span class="n">${r[0]}</span><span class="t"><i style="width:${r[1]/max*100}%"></i></span><span class="v">${k(r[1])}</span></div>`).join('')}</div>
+  <div class="basis"><b>${k(tot)} ${label}</b> · <span class="tag ${over>50?'bad':'warn'}">⚠ ${k(over)} past 30 days</span></div>`;
+}
+function pnlLines(){
+  const p=D.pnl;const n=p.months.length,W=1000,H=400;const max=10,min=4;
+  const X=i=>i/(n-1)*W,Y=v=>H-(v-min)/(max-min)*H;
+  const path=a=>a.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+  let grid='';for(let i=0;i<=3;i++){const v=min+(max-min)*i/3;grid+=`<div class="gridline${i===0?' base':''}" style="top:${100-i/3*100}%"><span class="ytick">₨${v.toFixed(0)}M</span></div>`}
+  const last=n-1;
+  return `<div class="legend"><span><i class="line" style="background:var(--chart-1)"></i>Revenue</span><span><i class="line" style="background:var(--chart-2)"></i>Expenses</span></div>
+  <div class="chart" data-chart="pnl"><div class="lineplot padl plot" style="margin-left:44px">${grid}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="l" d="${path(p.rev)}"/><path class="l2" d="${path(p.exp)}"/></svg>
+  <div class="dot" style="left:100%;top:${(Y(p.rev[last])/H*100).toFixed(2)}%"></div><span class="endlab" style="left:100%;top:${(Y(p.rev[last])/H*100).toFixed(2)}%">₨${p.rev[last]}M</span>
+  <div class="dot s2" style="left:100%;top:${(Y(p.exp[last])/H*100).toFixed(2)}%"></div><span class="endlab" style="left:100%;top:${(Y(p.exp[last])/H*100).toFixed(2)}%">₨${p.exp[last]}M</span>
+  <div class="xhair"></div><div class="hover" style="position:absolute;inset:0"></div></div><div class="xlab" style="margin-left:44px">${p.months.map(m=>`<span>${m}</span>`).join('')}</div><div class="tip"></div></div>
+  ${tableFor(['Month','Revenue','Expenses','Net'],p.months.map((m,i)=>[m,'₨'+p.rev[i].toFixed(1)+'M','₨'+p.exp[i].toFixed(1)+'M','₨'+(p.rev[i]-p.exp[i]).toFixed(1)+'M']))}`;
+}
+function netBars(){
+  const p=D.pnl;const net=p.rev.map((r,i)=>+(r-p.exp[i]).toFixed(1));const max=niceMax(Math.max(...net.map(Math.abs)),0.5);
+  const cols=net.map((v,i)=>`<div class="col" tabindex="0" data-tip="${p.months[i]}|₨${v.toFixed(1)}M net" style="align-items:${v>=0?'flex-end':'flex-start'};height:50%;position:absolute;top:${v>=0?0:50}%;left:${i/net.length*100}%;width:${100/net.length}%"><div class="bar${v<0?' neg':''}" style="height:${Math.abs(v)/max*100}%"></div></div>`).join('');
+  return `<div class="chart" data-chart="net"><div class="plot padl" style="height:150px"><div class="gridline" style="top:0"><span class="ytick">₨${max}M</span></div><div class="gridline base" style="top:50%"><span class="ytick">0</span></div><div class="gridline" style="top:100%"><span class="ytick">−₨${max}M</span></div><div class="cols" style="display:block">${cols}</div></div><div class="xlab">${p.months.map(m=>`<span>${m}</span>`).join('')}</div><div class="tip"></div></div>
+  <div class="basis">Above the line is profit, below is loss. Nothing is smoothed.</div>`;
+}
+function meter(pct,cls){return `<div class="meter ${cls||''}"><i style="width:${pct}%"></i></div>`}
+function sparkline(vals,cur){const max=Math.max(...vals);return `<div class="spark">${vals.map((v,i)=>`<i style="height:${Math.max(8,v/max*100)}%"${i===vals.length-1?' class="cur"':''}></i>`).join('')}</div>`}
+
+/* ── screens ── */
+function overview(){
+  const cash=sum(D.accounts.map(a=>a.v));const recv=D.recv.postex+D.recv.customers+D.recv.employees;const pay=D.pay.vendors+D.pay.salaries+D.pay.runners;
+  const thisIn=sum(D.weeks.slice(4).map(w=>w[1]))*1000,thisOut=sum(D.weeks.slice(4).map(w=>w[2]))*1000;
+  return `<div class="page-head"><div><div class="page-title">Accounts</div><div class="page-sub">Saturday 27 September 2026 · a pay day (Wednesday, Saturday)</div></div>
+  <div class="btn-row"><button class="btn">Export</button><button class="btn primary">+ Journal entry</button></div></div>
+  <div class="filters"><span class="chip on">This month</span><span class="chip">Last month</span><span class="chip">Quarter</span><span class="chip">Year</span><span class="chip">Custom…</span></div>
+  <div class="kpi-grid">
+    <div class="kpi lead"><div class="kpi-label">Cash &amp; bank</div><div class="kpi-val hero">${compact(cash)}</div><div class="kpi-sub"><span class="delta up">▲ ₨2.1 lac</span> vs 30 days ago</div>${sparkline(D.balance.hist.filter((v,i)=>i%3===0),true)}</div>
+    <div class="kpi"><div class="kpi-label">In this month</div><div class="kpi-val">${compact(thisIn)}</div><div class="kpi-sub">4 weeks · online, warehouse, fabric</div></div>
+    <div class="kpi"><div class="kpi-label">Out this month</div><div class="kpi-val">${compact(thisOut)}</div><div class="kpi-sub"><span class="delta down">▲ 9%</span> vs the 6-month median</div></div>
+    <div class="kpi"><div class="kpi-label">Owed to us</div><div class="kpi-val">${compact(recv)}</div><div class="kpi-sub">PostEx COD in transit ${compact(D.recv.postex)}</div></div>
+    <div class="kpi warn"><div class="kpi-label">We owe</div><div class="kpi-val">${compact(pay)}</div><div class="kpi-sub">Salaries ${compact(D.pay.salaries)} due 1 Oct</div></div>
+    <div class="kpi"><div class="kpi-label">Runway</div><div class="kpi-val">11 wk</div><div class="kpi-sub">at the 12-week median burn</div></div>
+  </div>
+  <div class="alerts">
+    <div class="alert urgent"><span class="ic">!</span><div><b>Pay day.</b> ₨5.2 lac owed to 6 vendors is due today, ₨1.1 lac of it overdue. The drawer holds ₨1.8 lac and MCB ₨21.5 lac.</div><span class="act">Pay list →</span></div>
+    <div class="alert warn"><span class="ic">?</span><div><b>Fabric spend is unusual.</b> ₨21.3 lac this month against a median of ₨13.9 lac over the last 6 months. Two Al-Karam invoices explain ₨6.1 lac of it.</div><span class="act">See the lines →</span></div>
+    <div class="alert warn"><span class="ic">?</span><div><b>₨96,500 sold at the warehouse has not reached Raees.</b> Three sales from Thursday and Friday are waiting for confirmation.</div><span class="act">Handover queue →</span></div>
+    <div class="alert ok"><span class="ic">✓</span><div><b>MCB reconciled to 25 Sept.</b> 41 of 41 bank lines matched a posting; nothing unexplained.</div><span class="act">Statement →</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="card-title"><span>Cash in and out, by week</span>${tvBtn('weeks')}</div>${groupedBars()}</div>
+    <div class="card"><div class="card-title"><span>Cash balance and the next 30 days</span>${tvBtn('balance')}</div>${balanceLine()}</div>
+  </div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="card"><div class="card-title"><span>Where the money went</span>${tvBtn('donut')}</div>${donut()}</div>
+    <div class="card"><div class="card-title"><span>Revenue by channel, six months</span>${tvBtn('channels')}</div>${channels()}</div>
+  </div>
+  <div class="grid3" style="margin-top:12px">
+    <div class="card"><div class="card-title"><span>Biggest vendors this month</span></div>${vendorBars()}</div>
+    <div class="card"><div class="card-title"><span>Owed to us, by age</span></div>${aging(D.agingR,'receivable')}</div>
+    <div class="card"><div class="card-title"><span>We owe, by age</span></div>${aging(D.agingP,'payable')}</div>
+  </div>`;
+}
+function ledger(){
+  const rows=[
+    ['27 Sep','Store Accounts','Payment · Al-Karam Textile · inv 4471','MCB','','612,000','2,146,900',''],
+    ['27 Sep','Warehouse','SO0361 · Ahmed Traders · cash, confirmed by Raees','Cash drawer','48,500','','184,300',''],
+    ['26 Sep','Shopify','Daily orders · 84 orders, 3 refunds (rollup)','PostEx receivable','1,264,300','','1,418,700','<span class="tag ok">auto</span>'],
+    ['26 Sep','PostEx','Remittance · 21–25 Sep, 312 parcels','MCB','','','','<span class="tag warn">to reconcile</span>'],
+    ['26 Sep','Store Accounts','Float to Abbas · Fuel & transport','Runner floats','','4,000','12,000',''],
+    ['25 Sep','Payroll','September payroll processed · 42 employees','Salaries payable','','1,180,000','',''],
+    ['25 Sep','Manual','Owner capital · Ammar · bank deposit','MCB','500,000','','','<span class="tag ok">journal</span>'],
+    ['24 Sep','Store Accounts','<span class="src void">Purchase · Star Trims</span> voided by Raees: duplicate','Vendor payable','','','','<span class="tag bad">void</span>'],
+    ['24 Sep','Marketing','Paid PR · @aitzazism · approved ₨45,000, paid ₨45,000','MCB','','45,000','',''],
+    ['23 Sep','Store Accounts','Purchase · Karachi Prints · 1,200 pcs @ ₨95 · on credit','Vendor payable','','114,000','846,500',''],
+  ];
+  return `<div class="page-head"><div><div class="page-title">Ledger</div><div class="page-sub">Every posting from every source, newest first. A line opens the record it came from.</div></div><div class="btn-row"><button class="btn">Excel</button><button class="btn">PDF</button></div></div>
+  <div class="filters"><span class="chip on">This month</span><span class="chip">Custom…</span><span style="width:8px"></span><span class="chip on">All sources</span><span class="chip">Store Accounts</span><span class="chip">Warehouse</span><span class="chip">Shopify</span><span class="chip">PostEx</span><span class="chip">Payroll</span><span class="chip">Marketing</span><span class="chip">Manual</span><span style="width:8px"></span><span class="chip">All accounts ▾</span></div>
+  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Source</th><th>What</th><th>Account</th><th class="num">In</th><th class="num">Out</th><th class="num">Balance</th><th></th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td>${r[0]}</td><td><span class="src">${r[1]}</span></td><td>${r[2]}</td><td>${r[3]}</td><td class="num">${r[4]}</td><td class="num">${r[5]}</td><td class="num">${r[6]}</td><td>${r[7]}</td></tr>`).join('')}
+  </tbody></table></div><div class="basis">2,184 postings this month from 6 sources. <b>Nothing here was typed twice</b>: a Store Accounts entry, a warehouse sale, a payslip or a Shopify order is read from where it lives and shown as the posting it implies. Only a <b>journal</b> line is the ledger's own.</div></div>`;
+}
+function pnl(){
+  const cur=[['Online sales (Shopify)',6210000,5880000,6000000],['Warehouse sales',880000,1040000,900000],['Fabric & other',230000,140000,150000]];
+  const cogs=[['Fabric & mills',2133000,1390000,1500000],['Stitching',954000,910000,900000],['Embellishment',505000,470000,480000],['Trims & consumables',312000,290000,300000],['Courier',364000,338000,350000]];
+  const opex=[['Salaries',1180000,1180000,1180000],['Marketing & PR',337000,290000,300000],['Utilities & rent',214000,209000,215000],['Maintenance',86000,31000,40000],['Other',193000,160000,170000]];
+  const t=a=>a.reduce((s,r)=>[s[0]+r[1],s[1]+r[2],s[2]+r[3]],[0,0,0]);
+  const R=t(cur),C=t(cogs),O=t(opex);const gm=[R[0]-C[0],R[1]-C[1],R[2]-C[2]];const net=[gm[0]-O[0],gm[1]-O[1],gm[2]-O[2]];
+  const d=(a,b)=>{const p=b?((a-b)/b*100):0;return `<span class="delta ${p>=0?'up':'down'}">${p>=0?'▲':'▼'} ${Math.abs(p).toFixed(0)}%</span>`};
+  const row=(r,cls)=>`<tr class="${cls||''}"><td>${r[0]}</td><td class="num">${money(r[1])}</td><td class="num">${money(r[2])}</td><td class="num">${d(r[1],r[2])}</td><td class="num">${money(r[3])}</td><td class="num">${d(r[1],r[3])}</td></tr>`;
+  return `<div class="page-head"><div><div class="page-title">Profit &amp; loss</div><div class="page-sub">September 2026 against August and against the budget the app suggested and Afnan accepted.</div></div><div class="btn-row"><button class="btn">Excel</button><button class="btn">PDF</button></div></div>
+  <div class="filters"><span class="chip on">September</span><span class="chip">Quarter</span><span class="chip">Year to date</span><span class="chip">Custom…</span></div>
+  <div class="grid2"><div class="card"><div class="card-title"><span>Revenue and expenses, twelve months</span>${tvBtn('pnl')}</div>${pnlLines()}</div><div class="card"><div class="card-title"><span>Net result by month</span></div>${netBars()}</div></div>
+  <div class="card" style="margin-top:12px"><div class="tbl-wrap"><table><thead><tr><th>September</th><th class="num">This month</th><th class="num">August</th><th class="num">vs Aug</th><th class="num">Budget</th><th class="num">vs budget</th></tr></thead><tbody>
+  ${cur.map(r=>row(r,'sub')).join('')}${row(['Revenue',...R],'total')}
+  ${cogs.map(r=>row(r,'sub')).join('')}${row(['Cost of goods',...C],'total')}
+  ${row(['Gross margin',...gm],'total')}
+  ${opex.map(r=>row(r,'sub')).join('')}${row(['Operating expenses',...O],'total')}
+  ${row(['Net result',...net],'total')}
+  </tbody></table></div><div class="basis">Cost of goods is what was <b>bought and paid for</b> in the month, not the cost of what was sold: stock is not yet valued piece by piece. The balance sheet says how much sits in fabric, trims and finished goods at cost, so the two pages read together.</div></div>`;
+}
+function insights(){
+  return `<div class="page-head"><div><div class="page-title">Insights</div><div class="page-sub">What the app has learned from 7 months of entries. Every figure says how it was worked out.</div></div></div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Data quality</div><div class="kpi-val">86<span style="font-size:15px;color:var(--muted)">/100</span></div>${meter(86)}<div class="kpi-sub">3 uncategorised · 5 bills missing · 3 handovers waiting</div></div>
+    <div class="kpi"><div class="kpi-label">Typical week</div><div class="kpi-val">₨14.6 lac</div><div class="kpi-sub">median cash out, 12 weeks (n=12)</div></div>
+    <div class="kpi"><div class="kpi-label">Collection time</div><div class="kpi-val">17 days</div><div class="kpi-sub">median, pay-later bills, 6 months (n=41)</div></div>
+    <div class="kpi"><div class="kpi-label">PostEx cycle</div><div class="kpi-val">9 days</div><div class="kpi-sub">dispatch to remittance, last 8 statements</div></div>
+  </div>
+  <div class="ins">
+    <div class="card"><h3><span class="ic urgent">!</span>Fabric spend is 1.5× its baseline</h3><p>₨21.3 lac posted this month against a median of ₨13.9 lac (Mar–Aug). Two Al-Karam invoices carry ₨6.1 lac of the difference. If a winter drop is being cut, this is expected; if not, look at those two lines.</p><div class="basis"><b>Basis:</b> median and spread of the last 6 months of Fabric &amp; mills purchases in Store Accounts; flagged past 2 standard deviations. First seen 24 Sep.</div><div class="btn-row" style="margin-top:8px"><button class="btn">Expected, it is the drop</button><button class="btn">Open the lines</button></div></div>
+    <div class="card"><h3><span class="ic warn">?</span>Star Trims' rate for cotton thread rose 18% in two purchases</h3><p>₨1,180 per box on 23 Sep against ₨1,000 in July and August. Zain Trims last supplied it at ₨1,020.</p><div class="basis"><b>Basis:</b> the vendor rate card, derived from purchase lines (last, min, max per item per vendor). Compared with every other vendor supplying the same item code.</div></div>
+    <div class="card"><h3><span class="ic ok">✓</span>Cash will cover the next 30 days, with one tight week</h3><p>Projected low point ₨9.4 lac around 9 Oct, when salaries (₨11.8 lac, 1 Oct) land before the PostEx remittance expected 6–8 Oct. Nothing due is unfunded.</p><div class="basis"><b>Basis:</b> today's balances, plus what is already known to be due (vendor terms and pay days, payroll date, pay-later due dates, the courier's usual remittance cycle) and the 12-week median for everything else. A range, not a promise.</div></div>
+    <div class="card"><h3><span class="ic info">≈</span>Suggested budgets for October</h3><p>Marketing &amp; PR ₨3.0 lac (6-month median ₨2.9 lac, rising), Utilities ₨2.2 lac (flat), Maintenance ₨0.4 lac (August's ₨0.3 lac was low, September's ₨0.9 lac carried the studio paint job).</p><div class="basis"><b>Basis:</b> the median of the last 6 months per category, nudged by the trend of the last 3. An owner accepts, edits or ignores each; the app never sets a budget on its own.</div><div class="btn-row" style="margin-top:8px"><button class="btn primary">Accept all three</button><button class="btn">Edit</button></div></div>
+    <div class="card"><h3><span class="ic info">≈</span>Warehouse customers who pay later settle in 17 days; two are slower</h3><p>Ahmed Traders averages 31 days over 6 bills and has ₨78,000 open; Bilal Garments 9 days. Overdue reminders could start at day 21 instead of day 30 for the slower accounts.</p><div class="basis"><b>Basis:</b> collection dates on pay-later warehouse sales, per customer, since April (n=41).</div></div>
+  </div>`;
+}
+
+/* ── wiring ── */
+const main=document.getElementById('main');
+const screens={overview,ledger,pnl,insights};
+let tab='overview';
+function render(){
+  main.innerHTML=screens[tab]();
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  document.querySelectorAll('[data-nav]').forEach(b=>b.classList.toggle('on',b.dataset.nav===tab));
+  wire();
+}
+function wire(){
+  /* table view toggles */
+  main.querySelectorAll('.tv').forEach(btn=>{const card=btn.closest('.card');const tbl=card.querySelector('.tbl-view');const chart=card.querySelector('.chart, .donut-wrap');if(tbl){tbl.hidden=true;}
+    btn.addEventListener('click',()=>{const on=btn.classList.toggle('on');btn.setAttribute('aria-pressed',on);if(tbl)tbl.hidden=!on;if(chart)chart.hidden=on;card.querySelectorAll('.legend').forEach(l=>l.hidden=on);});});
+  /* bar tooltips */
+  main.querySelectorAll('.chart').forEach(ch=>{const tip=ch.querySelector('.tip');if(!tip)return;
+    ch.querySelectorAll('.col[data-tip]').forEach(col=>{
+      const show=()=>{const parts=col.dataset.tip.split('|');tip.innerHTML='<b>'+parts[0]+'</b>'+parts.slice(1).map((p,i)=>`<span class="k" style="background:var(--chart-${i+1})"></span>${p}`).join('<br>');
+        const r=col.getBoundingClientRect(),cr=ch.getBoundingClientRect();tip.classList.add('show');let left=r.left-cr.left+r.width/2-tip.offsetWidth/2;left=Math.max(0,Math.min(left,cr.width-tip.offsetWidth));tip.style.left=left+'px';tip.style.top=Math.max(0,(r.top-cr.top)-tip.offsetHeight-8)+'px';
+        ch.querySelectorAll('.col').forEach(c=>c.classList.toggle('dim',c!==col));};
+      const hide=()=>{tip.classList.remove('show');ch.querySelectorAll('.col').forEach(c=>c.classList.remove('dim'));};
+      col.addEventListener('pointerenter',show);col.addEventListener('focus',show);col.addEventListener('pointerleave',hide);col.addEventListener('blur',hide);});
+    /* line crosshair */
+    const hov=ch.querySelector('.hover');if(hov){const xh=ch.querySelector('.xhair');const plot=hov.parentElement;
+      const kind=ch.dataset.chart;
+      hov.addEventListener('pointermove',e=>{const r=hov.getBoundingClientRect();const f=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+        let label='',lines=[];
+        if(kind==='balance'){const i=Math.round(f*59);const x=i/59*100;xh.style.left=x+'%';xh.style.display='block';
+          if(i<=29){label='Day '+(i-29);lines=[`<span class="k" style="background:var(--chart-1)"></span>${k(D.balance.hist[i])} balance`];label=i===29?'Today':(29-i)+' days ago';}
+          else{const fc=D.balance.fcast[i-30];label='In '+(i-29)+' days';lines=[`<span class="k" style="background:var(--chart-1);opacity:.6"></span>${k(fc.m)} projected`,`${k(fc.lo)} to ${k(fc.hi)}`];}
+        }else{const i=Math.round(f*11);const x=i/11*100;xh.style.left=x+'%';xh.style.display='block';label=D.pnl.months[i]+' '+(i<3?'2025':'2026');lines=[`<span class="k" style="background:var(--chart-1)"></span>₨${D.pnl.rev[i].toFixed(1)}M revenue`,`<span class="k" style="background:var(--chart-2)"></span>₨${D.pnl.exp[i].toFixed(1)}M expenses`];}
+        tip.innerHTML='<b>'+label+'</b>'+lines.join('<br>');tip.classList.add('show');
+        const cr=ch.getBoundingClientRect();let left=(e.clientX-cr.left)+12;if(left+tip.offsetWidth>cr.width)left=(e.clientX-cr.left)-tip.offsetWidth-12;tip.style.left=Math.max(0,left)+'px';tip.style.top=(plot.getBoundingClientRect().top-cr.top+8)+'px';});
+      hov.addEventListener('pointerleave',()=>{tip.classList.remove('show');xh.style.display='none';});}
+  });
+}
+document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.tab;render();});
+document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{tab=b.dataset.nav;render();}));
+document.getElementById('widths').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#widths button').forEach(x=>x.classList.toggle('on',x===b));document.getElementById('frame').classList.toggle('phone',b.dataset.w==='phone');});
+document.getElementById('themes').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#themes button').forEach(x=>x.classList.toggle('on',x===b));const t=b.dataset.t;if(t==='system')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('ma-spec-theme',t)}catch(err){}});
+/* deep links: #ledger #pnl #insights #phone #dark #phone-dark */
+(function(){const h=(location.hash||'').slice(1).toLowerCase();if(!h)return;const parts=h.split('-');
+  if(screens[parts[0]])tab=parts[0];
+  if(parts.includes('phone')){document.getElementById('frame').classList.add('phone');document.querySelectorAll('#widths button').forEach(x=>x.classList.toggle('on',x.dataset.w==='phone'));}
+  if(parts.includes('dark')){document.documentElement.setAttribute('data-theme','dark');document.querySelectorAll('#themes button').forEach(x=>x.classList.toggle('on',x.dataset.t==='dark'));}
+})();
+try{const t=localStorage.getItem('ma-spec-theme');if(t&&t!=='system'&&!document.documentElement.hasAttribute('data-theme')){document.documentElement.setAttribute('data-theme',t);document.querySelectorAll('#themes button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));}}catch(err){}
+render();
+})();
+</script>
