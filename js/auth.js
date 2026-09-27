@@ -144,18 +144,14 @@ window.doLogin=async function(){
     {const lab=document.getElementById('login-btn-label');if(lab)lab.textContent='Signed in';}
     setTimeout(()=>_loginLeave(()=>startApp()),260);
     logActivity('Login',`${def.name} signed in`);
-    // The fingerprint choice made ON the login screen. Asked straight away,
-    // while the person is still looking at the phone — the first cut only
-    // offered it in a card 1.5s after the app opened, and Afnan signed in
-    // twice without ever getting it.
-    const bioEl=document.getElementById('l-bio'),bioRow=document.getElementById('login-bio');
-    const bioShown=!!(bioRow&&!bioRow.hidden);
-    const bio=bioShown&&!!(bioEl&&bioEl.checked)&&keep;
-    // Keyed on the SIGN-IN key, not the lock record: a lock left behind by
-    // a set-up whose server half failed used to make this skip forever, so
-    // ticking the box again did nothing (Afnan, 27 Sept, recording 5).
-    if(bio&&!passkeyFor(u))_lockEnableAfterLogin();
-    else if(bioShown&&!bio&&(lockEnabledFor(session.uid)||passkeyFor(u)))window.lockDisable({quiet:true});
+    // NO tick box (Afnan, 27 Sept): a password sign-in on a phone that can
+    // check a fingerprint, with no key for this person yet, sets one up
+    // straight away — the phone asks, once. From then on the login screen
+    // uses the fingerprint. Not on a shared device (Remember me unticked),
+    // and not again for someone who said no (Profile turns it on).
+    // Keyed on the SIGN-IN key, never the lock record: a lock left behind
+    // by a failed server half used to block this forever (recording 5).
+    if(_fpShouldSetUp(u,keep))_lockEnableAfterLogin();
   }catch(e){
     loginInProgress=false;
     uEl.disabled=false;pEl.disabled=false;
@@ -218,7 +214,9 @@ function _loginSetBusy(on,label){
   if(f){const sp=f.querySelector('span');if(sp)sp.textContent=on&&label?label:(f.dataset.label||'Sign in with fingerprint');}
 }
 window.doLogout=async function(){
-  await signOut(auth);session=null;sessionStorage.clear();location.reload();
+  await signOut(auth);session=null;sessionStorage.clear();
+  try{sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}   // signing out on purpose: may be switching account
+  location.reload();
 };
 
 
@@ -886,8 +884,8 @@ window.lockEnable=async function(opts){
       await _passkeyCall({action:'register',idToken,challengeId:srv.challengeId,label:(navigator.userAgent||'').slice(0,80),
         credential:{id,alg,publicKey:_b64u(pk),authenticatorData:_b64u(ad),clientDataJSON:_b64u(r.clientDataJSON)}});
       _passkeySave(session.u,{id,name:session.name||session.u,at:Date.now()});
-      _passkeyErrSave(session.u,null);
-      try{_loginPaintFinger();window.loginBioSync();}catch(_){}
+      _passkeyErrSave(session.u,null);_fpDeclineSave(session.u,false);
+      try{_loginPaintFinger();}catch(_){}
       showToast('Fingerprint is on: sign in with it, and it locks the app on this phone.');
       return true;
     }catch(e){srvErr=e&&e.message||String(e);}
@@ -912,7 +910,8 @@ window.lockDisable=function(opts){
 };
 
 // ── The login screen: sign in with the fingerprint ──
-window.loginWithFingerprint=async function(pick){
+window.loginWithFingerprint=async function(pick,opts){
+  const auto=!!(opts&&opts.auto);
   const uEl=document.getElementById('l-user');
   const typed=typeof pick==='string'&&pick?pick:(uEl?uEl.value.trim().toLowerCase():'');
   const all=_passkeyAll();
@@ -925,7 +924,7 @@ window.loginWithFingerprint=async function(pick){
   // The server finds the person from the key itself, so nothing about who
   // is signing in needs to be known here.
   const discoverable=!rec&&_loginIsDesktop();
-  if(!rec&&!discoverable){showToast('Fingerprint sign-in is not set up on this phone. Sign in with your password and tick the fingerprint box.',true);return;}
+  if(!rec&&!discoverable){showToast('Fingerprint sign-in is not set up on this phone. Sign in with your password once and the phone will ask to set it up.',true);return;}
   const btn=document.getElementById('login-finger');
   if(btn){btn.disabled=true;btn.classList.add('busy');}
   loginInProgress=true;
@@ -960,6 +959,7 @@ window.loginWithFingerprint=async function(pick){
     if(btn){btn.disabled=false;btn.classList.remove('busy');btn.classList.remove('ok');}
     _loginSetBusy(false);
     if(e&&e.status===404){_passkeySave(u,null);_loginPaintFinger();}
+    if(auto&&e&&e.name==='NotAllowedError')return;   // dismissed, or no tap yet: the button is right there
     showToast(e&&e.name==='NotAllowedError'?'Fingerprint not checked. Try again, or use your password.':'Fingerprint sign-in failed: '+(e&&e.message||e),true);
   }
 };
@@ -970,11 +970,11 @@ function _loginIsDesktop(){
 }
 // The username in the field decides: a phone shared by five people shows
 // the fingerprint button only for the person whose key it holds, and the
-// "next time" box for everyone else (it used to hide for ALL of them the
-// moment any one had a key). An empty field falls back to any key here.
+// password form for everyone else (it used to follow ANY key on the
+// phone). An empty field falls back to any key here.
 function _loginTypedUser(){const e=document.getElementById('l-user');return e?e.value.trim().toLowerCase():'';}
 function _loginPaintFinger(){
-  const b=document.getElementById('login-finger'),row=document.getElementById('login-bio');
+  const b=document.getElementById('login-finger');
   const typed=_loginTypedUser();
   const any=(typed?!!passkeyFor(typed):Object.keys(_passkeyAll()).length>0)&&_lockSupported();
   const desk=!any&&_loginIsDesktop()&&_lockSupported();
@@ -984,8 +984,6 @@ function _loginPaintFinger(){
     const sp=b.querySelector('span');if(sp)sp.textContent=b.dataset.label;
     b.title=desk?'Use the fingerprint key on your phone (scan a QR code) or one saved in this browser':'';
   }
-  // Already set up on this phone: the "next time" box would only ask again.
-  if(row&&any)row.hidden=true;
 }
 // Typing or picking a username repaints both.
 (function(){
@@ -1174,7 +1172,7 @@ window.lockUsePassword=async function(){
   const u=(session&&session.u)||'';
   try{await signOut(auth);}catch(_){}
   session=null;
-  try{sessionStorage.clear();}catch(_){}
+  try{sessionStorage.clear();sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}
   if(u)_authStore('groovy_remembered_user',u);
   location.reload();
 };
@@ -1191,13 +1189,37 @@ document.addEventListener('visibilitychange',()=>{
 // recording showed it shoving the form up). The last answer this phone gave
 // is remembered and applied synchronously; the async check only corrects it.
 let _lockCapable=_authRead('groovy-bio-capable')==='1';
-window.loginBioSync=function(){
-  const row=document.getElementById('login-bio'),rm=document.getElementById('l-remember');
-  if(!row)return;
-  const typed=_loginTypedUser();
-  const has=typed?!!passkeyFor(typed):Object.keys(_passkeyAll()).length>0;
-  row.hidden=!(_lockCapable&&rm&&rm.checked)||has;
-};
+// The tick box is gone; the name stays because the Remember-me box and
+// older cached markup still call it. It repaints the fingerprint button.
+window.loginBioSync=function(){try{_loginPaintFinger();}catch(_){}};
+// Said no to the phone's fingerprint dialog: not asked again on every
+// sign-in. Per username, this phone. Profile → Turn on clears it.
+const _FP_DECLINED_KEY='groovy-fp-declined';
+function _fpDeclined(u){try{return!!(JSON.parse(_authRead(_FP_DECLINED_KEY)||'{}')||{})[u];}catch(_){return false;}}
+function _fpDeclineSave(u,on){
+  let a={};try{a=JSON.parse(_authRead(_FP_DECLINED_KEY)||'{}')||{};}catch(_){}
+  if(on)a[u]=Date.now();else delete a[u];
+  _authStore(_FP_DECLINED_KEY,Object.keys(a).length?JSON.stringify(a):null);
+}
+// The whole rule for "set it up now", pure apart from what this phone knows.
+function _fpShouldSetUp(u,keep){
+  return!!(keep&&u&&_lockCapable&&!passkeyFor(u)&&!_fpDeclined(u));
+}
+// The login screen came up (not a kept session). If the account in the
+// field has a key on this phone, ask for the fingerprint straight away —
+// the banking-app rule. Once per page load, never right after a deliberate
+// sign-out or "Use password instead", never on a computer (the key is on
+// the phone). If the browser wants a tap first it refuses quietly and the
+// button is there.
+let _loginAutoDone=false;
+function _loginAutoFinger(){
+  if(_loginAutoDone)return;_loginAutoDone=true;
+  let no=false;try{no=sessionStorage.getItem('gv-no-auto-fp')==='1';sessionStorage.removeItem('gv-no-auto-fp');}catch(_){}
+  if(no||_loginIsDesktop()||!_lockSupported())return;
+  const u=_loginTypedUser();
+  if(!u||!passkeyFor(u))return;
+  setTimeout(()=>{if(!session&&!(typeof loginInProgress!=='undefined'&&loginInProgress)&&_loginTypedUser()===u)window.loginWithFingerprint(u,{auto:true});},450);
+}
 (function(){
   try{
     window.loginBioSync();
@@ -1216,7 +1238,10 @@ function _lockClear(uid){
 async function _lockEnableAfterLogin(){
   const t0=Date.now();
   const ok=await window.lockEnable({quietCancel:true});
-  if(!ok&&_lockLastErr==='NotAllowedError'&&Date.now()-t0<1000)_lockMaybeOffer(true);
+  if(!ok&&_lockLastErr==='NotAllowedError'){
+    if(Date.now()-t0<1000)_lockMaybeOffer(true);
+    else if(session)_fpDeclineSave(session.u,true);
+  }
 }
 // The offer card. Recorded as offered only once the person ANSWERS it — the
 // first cut marked it when shown, so a card that went unseen was never
@@ -1234,7 +1259,7 @@ async function _lockMaybeOffer(force){
     +'<div class="lock-offer-s">You stay signed in on this phone. The app asks for your fingerprint, face or phone PIN when you open it. Change it any time in Profile.</div>'
     +'<div class="lock-offer-b"><button type="button" class="lock-offer-ghost" id="lock-offer-no">Not now</button><button type="button" class="btn-sm" id="lock-offer-yes">Turn on</button></div>';
   document.body.appendChild(d);
-  d.querySelector('#lock-offer-no').onclick=()=>{mark();d.remove();};
+  d.querySelector('#lock-offer-no').onclick=()=>{mark();_fpDeclineSave(session.u,true);d.remove();};
   d.querySelector('#lock-offer-yes').onclick=async()=>{mark();d.remove();await window.lockEnable();};
 }
 
