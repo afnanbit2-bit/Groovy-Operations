@@ -9888,6 +9888,16 @@ Chrome.
   already-red CI. **Check the check-runs on a push, not just the local
   run; "green here" is not the claim CI makes.**
 
+  **A job whose probe NEVER RAN is retried once, with double the
+  virtual-time budget (27 Sept 2026).** CI on `main` failed "the board —
+  item drawer @ 1280px light — the probe never ran" with no error text
+  (Chrome exited normally, no result), while the same commit passed on the
+  branch run and the fragment passed 5/5 locally; the session could not
+  re-run the job (GitHub 403). Only a MISSING answer is retried — a probe
+  that ran and reported a finding never is. Verified both ways: a dropped
+  first answer recovers on the retry, and a probe that never answers still
+  fails all six jobs.
+
   **OPEN, and deliberately not decided by picking a number:** what a
   768px-tall LAPTOP really leaves. This file puts a 900px screen at ~790px
   of viewport, i.e. ~110px of OS and browser chrome; the same subtraction

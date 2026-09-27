@@ -2616,7 +2616,16 @@ document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
     let next=0;
     const launch=()=>{
       if(next>=jobs.length)return;
-      const j=jobs[next++];
+      run(jobs[next++]);
+    };
+    // A job whose probe NEVER RAN (no result, or still "running" when the
+    // virtual-time budget ran out) is retried ONCE with double the budget.
+    // That is the runner not finishing, not a layout finding — seen on CI
+    // on 27 Sept 2026 (the Board drawer @1280 light, green on the branch
+    // run of the same commit and 5/5 locally). A probe that RAN and reported
+    // a problem is never retried: only a missing answer is.
+    const run=(j,attempt)=>{
+      attempt=attempt||1;
       execFile(browser,['--headless=new','--no-sandbox','--disable-gpu',
         '--disable-dev-shm-usage','--no-first-run','--no-default-browser-check',
         '--disable-background-networking','--disable-component-update','--disable-sync',
@@ -2624,14 +2633,18 @@ document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
         '--mute-audio','--no-proxy-server',
         '--window-size='+j.w+','+j.h,
         '--user-data-dir='+j.dir,
-        '--virtual-time-budget=8000','--dump-dom',
+        '--virtual-time-budget='+(8000*attempt),'--dump-dom',
         'http://127.0.0.1:'+port+'/__frag/'+j.i+'?t='+j.t+
          (j.c.heights?'&vw='+j.w+'&vh='+j.h:'')],
         {encoding:'utf8',maxBuffer:32*1024*1024,timeout:120000},
         (err,stdout)=>{
           const label=j.c.name+' @ '+j.w+'px '+(j.h!==1000?j.h+'px tall ':'')+j.t;
-          checks++;
           const m=/<pre id="__out">([\s\S]*?)<\/pre>/.exec(stdout||'');
+          if((!m||m[1].trim()==='running')&&attempt===1){
+            console.log('  ..   '+label+' — the probe never ran, retrying once');
+            return run(j,2);
+          }
+          checks++;
           if(!m||m[1].trim()==='running'){
             failures++;
             console.log('  FAIL '+label+' — the probe never ran'+(err?' ('+err.message+')':''));
