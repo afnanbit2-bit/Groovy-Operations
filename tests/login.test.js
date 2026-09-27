@@ -239,6 +239,51 @@ module.exports=async function(){
     s.eq('a refusal after the dialog was up is the person cancelling: no card',run('__offer'),1);
   }
 
+  // ── recording 5 (27 Sept): the fingerprint never came back ───────────
+  {
+    // A lock left behind by a set-up whose SERVER half failed used to make
+    // doLogin skip the set-up forever, so ticking the box again did nothing.
+    const {app,rec,run}=boot();
+    await new Promise(r=>setTimeout(r,5));
+    run(`_authStore('groovy-applock',JSON.stringify({'uid-afnan':{id:'AQID',u:'afnan'}}))`);
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw';app.el('l-remember').checked=true;
+    app.run('window.loginBioSync()');app.el('l-bio').checked=true;
+    s.section('recording 5: a lock with no sign-in key does not block setting it up again');
+    s.eq('the box is offered (no sign-in key on this phone)',app.el('login-bio').hidden,false);
+    await run('window.doLogin()');
+    await new Promise(r=>setTimeout(r,20));
+    s.eq('ticking it asks the phone again',rec.creates.length,1);
+    s.ok('… and when the server half fails, WHY is kept for Profile',run(`passkeyError('afnan')`).length>0);
+    run(`window.lockDisable({quiet:true})`);
+    s.eq('turning it off forgets the failure',run(`passkeyError('afnan')`),'');
+  }
+  {
+    const {app,run}=boot();
+    await new Promise(r=>setTimeout(r,5));
+    run(`_authStore('groovy-passkey',JSON.stringify({afnan:{id:'AQIDBAUGBwgJCgsMDQ4PEA',name:'Afnan'}}))`);
+    app.el('l-remember').checked=true;
+    s.section('recording 5: a shared phone — the fingerprint follows the TYPED username');
+    app.el('l-user').value='ammar';run('_loginPaintFinger();window.loginBioSync()');
+    s.eq('another person still gets the "next time" box',app.el('login-bio').hidden,false);
+    s.eq('… and no fingerprint button that would sign in as Afnan',app.el('login-finger').hidden,true);
+    app.el('l-user').value='afnan';run('_loginPaintFinger();window.loginBioSync()');
+    s.eq('the key\'s owner gets the button',app.el('login-finger').hidden,false);
+    s.eq('… and not the box (already set up)',app.el('login-bio').hidden,true);
+  }
+  {
+    const {app,run}=boot();
+    await new Promise(r=>setTimeout(r,5));
+    run(`_authStore('groovy-passkey',JSON.stringify({afnan:{id:'AQIDBAUGBwgJCgsMDQ4PEA',name:'Afnan'}}))`);
+    run(`session={u:'afnan',name:'Afnan',uid:'uid-afnan'}`);
+    app.el('l-user').value='afnan';app.el('l-pass').value='pw';app.el('l-remember').checked=true;
+    app.el('login-bio').hidden=false;app.el('l-bio').checked=false;
+    run(`session=null`);
+    await run('window.doLogin()');
+    await new Promise(r=>setTimeout(r,20));
+    s.section('recording 5: unticking turns the whole thing off, not only the lock');
+    s.eq('the sign-in key is forgotten on this phone too',run(`passkeyFor('afnan')`),null);
+  }
+
   // ── pull down to refresh ──────────────────────────────────────────────
   {
     const {app,run}=boot();

@@ -360,12 +360,15 @@ function _profileSecurityHTML(){
     <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${on
       ?(signIn
         ?'On for this phone. Sign in with your fingerprint from the login screen, and the app asks for it when you reopen it or come back after 5 minutes.'
-        :'The lock is on for this phone, but fingerprint SIGN-IN is not — the set-up could not reach the server. Turn it off and on again to retry.')
+        :'The lock is on for this phone, but fingerprint SIGN-IN did not set up, so the login screen still asks for your password.')
       :supported
         ?'Sign in with your fingerprint, face or phone PIN instead of typing your password, and lock the app when you leave it. Only this phone; your fingerprint never leaves it.'
         :'This browser cannot do a fingerprint lock. On a phone, open Groovy Ops in Chrome or Safari, or from the installed app.'}</div>
+    ${(function(){const err=typeof passkeyError==='function'?passkeyError(session.u):'';
+      return err&&!signIn?`<div style="font-size:13px;color:var(--accent-urgent);margin-bottom:10px">Last try failed: <span id="prof-pk-err"></span></div>`:'';})()}
     ${on&&!kept?`<div style="font-size:13px;color:var(--accent-warning);margin-bottom:10px">You signed in without Remember me, so you will be signed out when the app closes and the lock will not come up.</div>`:''}
-    ${on?`<button class="btn-sm" onclick="window.lockDisable();_profileRerender()">Turn off</button>`
+    ${on&&!signIn&&supported?`<button class="btn-sm" style="margin-right:8px" onclick="window.lockEnable().then(()=>_profileRerender())">Set up fingerprint sign-in</button>`:''}
+    ${on?`<button class="btn-sm${signIn?'':' btn-outline'}" onclick="window.lockDisable();_profileRerender()">Turn off</button>`
       :supported?`<button class="btn-sm" onclick="window.lockEnable().then(()=>_profileRerender())">Turn on</button>`:''}
   </div>`;
 }
@@ -443,6 +446,7 @@ function _profileDirRows(){
 // user and read by every other one.
 function _profileHydrate(){
   if(!session)return;
+  {const pe=document.getElementById('prof-pk-err');if(pe&&typeof passkeyError==='function')pe.textContent=passkeyError(session.u);}
   const me=profileFor(session.uid)||{};
   const n=document.getElementById('prof-name');
   if(n)n.textContent=me.displayName||session.name||'';

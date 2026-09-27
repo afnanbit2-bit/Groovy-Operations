@@ -9337,6 +9337,25 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   The lock comes AFTER a Remember-me sign-in (offered once) and then
   replaces the login on every reopen. Asking for a fingerprint before
   Chrome FILLS a password is Chrome's setting, not the app's.
+- **Recording 5 (27 Sept): fingerprint sign-in never came back.** On a
+  phone signed into by five people, the "next time" box was still offered
+  and "Sign in with fingerprint" never appeared — i.e. NO sign-in key was
+  ever saved on that phone, so the server half of the set-up failed. **The
+  failure's text was not in the recording, so its cause is NOT known.**
+  Three logic bugs that made it permanent are fixed: (1) `doLogin` gated
+  the set-up on the LOCK record, so a lock left behind by a failed server
+  half made ticking the box do nothing forever — it gates on
+  `passkeyFor(u)` now; (2) unticking only cleared the lock and left the
+  sign-in key, it calls `lockDisable({quiet:true})` now; (3) the box and
+  the fingerprint button looked at ANY key on the phone, they follow the
+  TYPED username now (repainted on input and on picking an account).
+  The failure reason is kept per username (`groovy-passkey-err`,
+  `passkeyError`) and Profile shows it with **Set up fingerprint sign-in**,
+  hydrated with `textContent`. Hedge, labelled: `passkey.js`'s origin check
+  also accepts the request's own Host and Netlify's `URL` /
+  `DEPLOY_PRIME_URL` / `DEPLOY_URL` (a custom domain would have been
+  refused with 403), and a 403 now names the origin it saw. **If it still
+  fails, Profile shows the exact reason — ask for that text.**
 - **Nobody has signed in, saved a password or used the lock on a real
   phone** — the sandbox cannot sign in. Rendered and measured in headless
   Chromium at 390/360px and desktop, both themes.
