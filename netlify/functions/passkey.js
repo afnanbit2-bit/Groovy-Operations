@@ -60,12 +60,23 @@ const sha256 = (b) => crypto.createHash("sha256").update(b).digest();
 
 // Which origins may use this, and the rpId each implies. Exact match only —
 // "groovyoperations.netlify.app.evil.test" and "http://" are refused.
-function originInfo(origin) {
+// Also allowed: the host THIS request was served on (the Host header) and
+// Netlify's own URL / DEPLOY_PRIME_URL / DEPLOY_URL — so a custom domain or
+// a renamed site works without an edit here. That is safe: a browser only
+// signs clientData with origin X on a page served from X, and only sends a
+// request with Host X to X, so a foreign page can pass neither check.
+function _hostOf(v) {
+  try { const u = new URL(String(v || "")); return u.protocol === "https:" && !u.port ? u.hostname.toLowerCase() : ""; }
+  catch { return ""; }
+}
+function originInfo(origin, reqHost, env) {
   let u;
   try { u = new URL(String(origin || "")); } catch { return null; }
   if (u.protocol !== "https:" || u.port) return null;
   const h = u.hostname.toLowerCase();
-  if (h === SITE_HOST || /^[a-z0-9-]+--groovyoperations\.netlify\.app$/.test(h)) {
+  const e = env || {};
+  const own = [String(reqHost || "").toLowerCase(), _hostOf(e.URL), _hostOf(e.DEPLOY_PRIME_URL), _hostOf(e.DEPLOY_URL)].filter(Boolean);
+  if (h === SITE_HOST || /^[a-z0-9-]+--groovyoperations\.netlify\.app$/.test(h) || own.includes(h)) {
     return { origin: "https://" + h, rpId: h };
   }
   return null;
@@ -145,8 +156,9 @@ exports.handler = async function (event) {
   let body;
   try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Invalid JSON body" }); }
   const hdr = event.headers || {};
-  const info = originInfo(hdr.origin || hdr.Origin);
-  if (!info) return json(403, { error: "This site is not allowed to use fingerprint sign-in." });
+  const seen = hdr.origin || hdr.Origin || "";
+  const info = originInfo(seen, hdr.host || hdr.Host, process.env);
+  if (!info) return json(403, { error: "This site (" + (String(seen).slice(0, 80) || "no origin") + ") is not allowed to use fingerprint sign-in." });
 
   const app = getAdmin();
   const db = app.firestore();

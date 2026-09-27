@@ -208,6 +208,19 @@ module.exports=async function(){
       s.ok('no browser script reads the collections directly',!/collection\([^)]*['"]passkey/.test(js));
     }
 
+    {
+      s.section('which sites may use it (recording 5: set-up never stuck)');
+      const oi=require(path.join(ROOT,'netlify/functions/passkey.js'))._test.originInfo;
+      s.eq('the site itself',(oi('https://'+HOST)||{}).rpId,HOST);
+      s.eq('the host this request was served on (a custom domain)',(oi('https://ops.example.pk','ops.example.pk')||{}).rpId,'ops.example.pk');
+      s.eq('Netlify\'s own URL',(oi('https://ops.example.pk','',{URL:'https://ops.example.pk'})||{}).rpId,'ops.example.pk');
+      s.eq('a foreign page is still refused',oi('https://evil.test','ops.example.pk',{URL:'https://ops.example.pk'}),null);
+      s.eq('… and a lookalike',oi('https://ops.example.pk.evil.test','ops.example.pk'),null);
+      s.eq('… and plain http on our own host',oi('http://ops.example.pk','ops.example.pk'),null);
+      const r=await loadFn(fresh()).handler({httpMethod:'POST',headers:{origin:'https://evil.test'},body:'{}'});
+      s.ok('a refusal names the origin it saw, so the toast says why',r.statusCode===403&&/evil\.test/.test(JSON.parse(r.body).error));
+    }
+
     // ── the client: the login screen's button, end to end with a fake
     //    server and a fake phone ──
     {

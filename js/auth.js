@@ -178,8 +178,11 @@ window.doLogin=async function(){
     const bioEl=document.getElementById('l-bio'),bioRow=document.getElementById('login-bio');
     const bioShown=!!(bioRow&&!bioRow.hidden);
     const bio=bioShown&&!!(bioEl&&bioEl.checked)&&keep;
-    if(bio&&!lockEnabledFor(session.uid))_lockEnableAfterLogin();
-    else if(bioShown&&!bio&&lockEnabledFor(session.uid))_lockClear(session.uid);
+    // Keyed on the SIGN-IN key, not the lock record: a lock left behind by
+    // a set-up whose server half failed used to make this skip forever, so
+    // ticking the box again did nothing (Afnan, 27 Sept, recording 5).
+    if(bio&&!passkeyFor(u))_lockEnableAfterLogin();
+    else if(bioShown&&!bio&&(lockEnabledFor(session.uid)||passkeyFor(u)))window.lockDisable({quiet:true});
   }catch(e){
     loginInProgress=false;
     uEl.disabled=false;pEl.disabled=false;
@@ -857,6 +860,15 @@ function _lockUserVerified(authData){
 // before — the sign-in part is said to have failed, not silently skipped.
 const _PASSKEY_KEY='groovy-passkey';      // {username:{id,name,at}} — THIS device
 const _PASSKEY_FN='/.netlify/functions/passkey';
+// Why fingerprint SIGN-IN last failed to set up, per username, on this
+// phone. A toast is gone in four seconds; Profile shows this until it works.
+const _PASSKEY_ERR_KEY='groovy-passkey-err';
+function passkeyError(u){try{return(JSON.parse(_authRead(_PASSKEY_ERR_KEY)||'{}')||{})[u]||'';}catch(_){return'';}}
+function _passkeyErrSave(u,msg){
+  let a={};try{a=JSON.parse(_authRead(_PASSKEY_ERR_KEY)||'{}')||{};}catch(_){}
+  if(msg)a[u]=String(msg).slice(0,200);else delete a[u];
+  _authStore(_PASSKEY_ERR_KEY,Object.keys(a).length?JSON.stringify(a):null);
+}
 function _passkeyAll(){try{return JSON.parse(_authRead(_PASSKEY_KEY)||'{}')||{};}catch(_){return{};}}
 function passkeyFor(u){const a=_passkeyAll();return u&&a[u]&&a[u].id?a[u]:null;}
 function _passkeySave(u,rec){const a=_passkeyAll();if(rec)a[u]=rec;else delete a[u];_authStore(_PASSKEY_KEY,JSON.stringify(a));}
@@ -909,15 +921,20 @@ window.lockEnable=async function(opts){
       await _passkeyCall({action:'register',idToken,challengeId:srv.challengeId,label:(navigator.userAgent||'').slice(0,80),
         credential:{id,alg,publicKey:_b64u(pk),authenticatorData:_b64u(ad),clientDataJSON:_b64u(r.clientDataJSON)}});
       _passkeySave(session.u,{id,name:session.name||session.u,at:Date.now()});
+      _passkeyErrSave(session.u,null);
+      try{_loginPaintFinger();window.loginBioSync();}catch(_){}
       showToast('Fingerprint is on: sign in with it, and it locks the app on this phone.');
       return true;
     }catch(e){srvErr=e&&e.message||String(e);}
   }else if(srv&&!srvErr){srvErr='this browser cannot hand over the key';}
+  if(!srv&&!srvErr)srvErr='not signed in to the server';
+  _passkeyErrSave(session.u,srvErr||'unknown error');
   showToast('Fingerprint lock is on. Fingerprint SIGN-IN could not be set up'+(srvErr?': '+srvErr:'')+'.',true);
   return true;
 };
-window.lockDisable=function(){
+window.lockDisable=function(opts){
   if(!session)return;
+  _passkeyErrSave(session.u,null);
   const all=_lockAll();delete all[session.uid];
   _authStore(_LOCK_KEY,JSON.stringify(all));
   const pk=passkeyFor(session.u);
@@ -925,7 +942,8 @@ window.lockDisable=function(){
   if(pk&&auth&&auth.currentUser){
     auth.currentUser.getIdToken().then(t=>_passkeyCall({action:'remove',idToken:t,id:pk.id})).catch(()=>{});
   }
-  showToast('Fingerprint is off for this phone.');
+  try{_loginPaintFinger();window.loginBioSync();}catch(_){}
+  if(!(opts&&opts.quiet))showToast('Fingerprint is off for this phone.');
 };
 
 // ── The login screen: sign in with the fingerprint ──
@@ -933,7 +951,7 @@ window.loginWithFingerprint=async function(pick){
   const uEl=document.getElementById('l-user');
   const typed=typeof pick==='string'&&pick?pick:(uEl?uEl.value.trim().toLowerCase():'');
   const all=_passkeyAll();
-  const u=passkeyFor(typed)?typed:(passkeyFor(_authRead('groovy_remembered_user'))?_authRead('groovy_remembered_user'):Object.keys(all)[0]);
+  const u=typed?typed:(passkeyFor(_authRead('groovy_remembered_user'))?_authRead('groovy_remembered_user'):Object.keys(all)[0]);
   const rec=passkeyFor(u);
   // No key on THIS device. On a computer that is normal — the key lives on
   // the phone — so ask for ANY passkey this site has: Chrome/Edge/Safari
@@ -985,9 +1003,15 @@ window.loginWithFingerprint=async function(pick){
 function _loginIsDesktop(){
   try{return!!(window.matchMedia&&window.matchMedia('(min-width:561px) and (hover:hover) and (pointer:fine)').matches);}catch(_){return false;}
 }
+// The username in the field decides: a phone shared by five people shows
+// the fingerprint button only for the person whose key it holds, and the
+// "next time" box for everyone else (it used to hide for ALL of them the
+// moment any one had a key). An empty field falls back to any key here.
+function _loginTypedUser(){const e=document.getElementById('l-user');return e?e.value.trim().toLowerCase():'';}
 function _loginPaintFinger(){
   const b=document.getElementById('login-finger'),row=document.getElementById('login-bio');
-  const any=Object.keys(_passkeyAll()).length>0&&_lockSupported();
+  const typed=_loginTypedUser();
+  const any=(typed?!!passkeyFor(typed):Object.keys(_passkeyAll()).length>0)&&_lockSupported();
   const desk=!any&&_loginIsDesktop()&&_lockSupported();
   if(b){
     b.hidden=!(any||desk);
@@ -998,6 +1022,13 @@ function _loginPaintFinger(){
   // Already set up on this phone: the "next time" box would only ask again.
   if(row&&any)row.hidden=true;
 }
+// Typing or picking a username repaints both.
+(function(){
+  try{
+    const e=document.getElementById('l-user');
+    if(e)e.addEventListener('input',()=>{try{_loginPaintFinger();window.loginBioSync();}catch(_){}});
+  }catch(_){}
+})();
 // The key inside the password field: ask the phone's password manager for
 // the password it saved, then sign in — one tap. Chrome can require the
 // fingerprint before it hands it over (its own setting).
@@ -1083,6 +1114,7 @@ window.loginPickAccount=function(u){
   const uEl=document.getElementById('l-user'),pEl=document.getElementById('l-pass');
   if(uEl)uEl.value=u;if(pEl)pEl.value='';
   _loginSheet(sheet,false);
+  try{_loginPaintFinger();window.loginBioSync();}catch(_){}
   if(passkeyFor(u)&&_lockSupported()){setTimeout(()=>window.loginWithFingerprint(u),200);return;}
   setTimeout(()=>{if(pEl)pEl.focus();},260);
 };
@@ -1197,7 +1229,9 @@ let _lockCapable=_authRead('groovy-bio-capable')==='1';
 window.loginBioSync=function(){
   const row=document.getElementById('login-bio'),rm=document.getElementById('l-remember');
   if(!row)return;
-  row.hidden=!(_lockCapable&&rm&&rm.checked)||Object.keys(_passkeyAll()).length>0;
+  const typed=_loginTypedUser();
+  const has=typed?!!passkeyFor(typed):Object.keys(_passkeyAll()).length>0;
+  row.hidden=!(_lockCapable&&rm&&rm.checked)||has;
 };
 (function(){
   try{
@@ -1223,7 +1257,7 @@ async function _lockEnableAfterLogin(){
 // first cut marked it when shown, so a card that went unseen was never
 // shown again.
 async function _lockMaybeOffer(force){
-  if(!session||lockEnabledFor(session.uid))return;
+  if(!session||(lockEnabledFor(session.uid)&&passkeyFor(session.u)))return;
   let offered={};try{offered=JSON.parse(_authRead(_LOCK_OFFERED_KEY)||'{}')||{};}catch(_){}
   if(offered[session.uid]&&!force)return;
   if(!(await lockAvailable()))return;
