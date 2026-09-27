@@ -201,6 +201,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:8px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
 td{padding:8px 8px;border-bottom:1px solid var(--grid);vertical-align:top}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.nw{white-space:nowrap}
 tr.total td{font-weight:700;border-top:2px solid var(--axis)}
 tr.sub td{color:var(--muted)}
 tr.sub td:first-child{padding-left:22px}
@@ -223,6 +224,42 @@ tr.sub td:first-child{padding-left:22px}
 .btn{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:7px 12px;font-size:13px;font-weight:600;min-height:34px}
 .btn.primary{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
 .btn-row{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── the money speaks: spend map, cash calendar, of every ₨100 ── */
+.smap{display:grid;gap:6px}
+.smap-kind{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-top:4px}
+.smap-kind em{font-style:normal;text-transform:none;letter-spacing:0}
+.smap-row{display:flex;gap:4px;min-height:44px}
+.smap-tile{min-width:58px;border-radius:8px;padding:6px 8px;background:var(--surface-2);border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;cursor:default}
+.smap-tile.watch{background:var(--accent-warning-soft);border-color:transparent}
+.smap-tile.concern{background:var(--accent-urgent-soft);border-color:transparent}
+.smap-tile b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smap-tile span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.smap-tile:hover{filter:brightness(.97)}
+.cal{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
+.cal-d{border:1px solid var(--border);border-radius:8px;padding:5px 6px;min-height:64px;background:var(--surface-2);font-size:11px;min-width:0;overflow:hidden}
+.cal-d small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.cal-d b{display:block;font-size:12px;margin-bottom:2px}
+.cal-d .in,.cal-d .out{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-weight:600}
+.cal-d .in{color:var(--accent-success)}
+.cal-d .out{color:var(--text)}
+.cal-d.cal-today{border-color:var(--dark);border-width:2px}
+.cal-d.tight{background:var(--accent-warning-soft);border-color:transparent}
+.cal-d.short{background:var(--accent-urgent-soft);border-color:transparent}
+.cal-d.quiet{opacity:.72}
+.cal-key{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:8px}
+.cal-key i{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--border);vertical-align:-2px;margin-right:5px}
+.r100{display:flex;gap:3px;margin-top:10px}
+.r100 div{min-width:0;text-align:center;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r100 i{display:block;height:14px;border-radius:4px;margin-bottom:3px}
+.r100 b{color:var(--text);font-variant-numeric:tabular-nums}
+.tgt{display:grid;gap:12px}
+.tgt-row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:baseline}
+.tgt-row h4{font-size:15px;font-weight:700}
+.tgt-row .amt{font-variant-numeric:tabular-nums;font-weight:700}
+.tgt-row .meter{grid-column:1/-1}
+.tgt-row p{grid-column:1/-1;font-size:13px;color:var(--muted)}
+.tgt-row p b{color:var(--text);font-weight:600}
 
 /* ── notes below the frame ── */
 .notes{display:grid;gap:14px}
@@ -253,6 +290,9 @@ tr.sub td:first-child{padding-left:22px}
   .hb{grid-template-columns:86px 1fr 64px}
   .donut-wrap{justify-content:center}
   .alert .act{display:none}
+  .cal{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .smap-tile{padding:4px 6px}
+  .smap-tile b,.smap-tile span{font-size:11px}
 }
 @media (max-width:640px){
   .spec-head h1{font-size:19px}
@@ -265,14 +305,16 @@ tr.sub td:first-child{padding-left:22px}
   <header class="spec-head">
     <div>
       <h1>Master Accounts</h1>
-      <p>A specimen of the owners' accounts module for Groovy Ops, drawn in the app's own chrome: the books, a vendor's page with terms and rate card, and purchasing with the checks every bill passes. Every figure is a sample, not the books. Switch screens, width and theme with the controls.</p>
+      <p>A specimen of the owners' accounts module for Groovy Ops, drawn in the app's own chrome: cash by holder and the money speaking on the overview, the couriers that bring 90% of it in, purchasing with the checks every bill passes, a vendor's page with terms and rate card, and the owners' Savings book with the loan between the two. Every figure is a sample, not the books. Switch screens, width and theme with the controls.</p>
     </div>
     <div class="spec-controls">
       <div><span class="seg-label">Screen</span><div class="seg" id="tabs">
         <button class="on" data-tab="overview" id="tab-overview">Overview</button>
+        <button data-tab="couriers" id="tab-couriers">Couriers</button>
         <button data-tab="ledger" id="tab-ledger">Ledger</button>
         <button data-tab="purchasing" id="tab-purchasing">Purchasing</button>
         <button data-tab="vendors" id="tab-vendors">Vendor</button>
+        <button data-tab="savings" id="tab-savings">Savings</button>
         <button data-tab="pnl" id="tab-pnl">P&amp;L</button>
         <button data-tab="insights" id="tab-insights">Insights</button>
       </div></div>
@@ -300,15 +342,19 @@ tr.sub td:first-child{padding-left:22px}
         <button class="nav-item on" id="nav-ma">Accounts</button>
         <div class="nav-group">Accounts</div>
         <button class="nav-item nav-sub on" data-nav="overview">Overview</button>
+        <button class="nav-item nav-sub" data-nav="couriers">Couriers</button>
         <button class="nav-item nav-sub" data-nav="ledger">Ledger</button>
         <button class="nav-item nav-sub" data-nav="vendors">Parties</button>
         <button class="nav-item nav-sub" data-nav="purchasing">Purchasing</button>
         <button class="nav-item nav-sub">Payments</button>
-        <button class="nav-item nav-sub">Sales &amp; couriers</button>
         <button class="nav-item nav-sub">Money</button>
+        <button class="nav-item nav-sub">Sales</button>
         <button class="nav-item nav-sub">Costing</button>
         <button class="nav-item nav-sub">People</button>
+        <button class="nav-item nav-sub" data-nav="savings">Savings</button>
+        <button class="nav-item nav-sub">Loan</button>
         <button class="nav-item nav-sub" data-nav="pnl">Profit &amp; loss</button>
+        <button class="nav-item nav-sub">Tax</button>
         <button class="nav-item nav-sub">Reports</button>
         <button class="nav-item nav-sub">Budgets</button>
         <button class="nav-item nav-sub" data-nav="insights">Insights</button>
@@ -323,9 +369,9 @@ tr.sub td:first-child{padding-left:22px}
     </div>
     <div class="mobnav" id="mobnav">
       <button data-nav="overview" class="on"><i></i>Overview</button>
-      <button data-nav="ledger"><i></i>Ledger</button>
+      <button data-nav="couriers"><i></i>Couriers</button>
       <button data-nav="purchasing"><i></i>Purchasing</button>
-      <button data-nav="vendors"><i></i>Parties</button>
+      <button data-nav="savings"><i></i>Savings</button>
       <button><i></i>More</button>
     </div>
   </div>
@@ -334,7 +380,8 @@ tr.sub td:first-child{padding-left:22px}
     <div class="card">
       <h2>What each screen is for</h2>
       <div class="pages">
-        <div class="pg"><b>Overview</b><code>ma-overview</code><p>Cash position across every account, this month in and out, what is owed to us and by us, runway, and the alerts that need an owner today.</p></div>
+        <div class="pg"><b>Overview</b><code>ma-overview</code><p>Cash by holder — the drawer, Afnan, Ammar, MCB, the till, floats, the TCS account — this month in and out, owed to us and by us, runway; the three concerns of the day in plain words, the 30-day cash calendar and the spend map.</p></div>
+        <div class="pg"><b>Couriers &amp; collections</b><code>ma-couriers</code><p>The first mile of money in: PostEx CPRs derived from the parcels, issued Tuesday and Friday, collected in cash by a named holder with the receipt attached; TCS credited at 90 days; Blue-Ex's legacy balance; Bykea via Raees.</p></div>
         <div class="pg"><b>Parties &amp; the vendor page</b><code>ma-parties · ma-party</code><p>Every vendor, customer, courier, employee, owner and bank: what a vendor provides, terms with history, the rate card with history, open orders, the credit/debit ledger with a running balance, statement, aging.</p></div>
         <div class="pg"><b>Purchasing</b><code>ma-purchasing</code><p>Purchase orders assigned to production POs, receipts from fabric-in and vendor returns, bills matched three ways, and the queue of documents the validation engine flagged.</p></div>
         <div class="pg"><b>Payments</b><code>ma-payments</code><p>The pay-day list from every vendor's terms, pay runs, allocation of each payment to bills, advances and retention releases.</p></div>
@@ -345,14 +392,17 @@ tr.sub td:first-child{padding-left:22px}
         <div class="pg"><b>Cash flow</b><code>ma-cashflow</code><p>Where cash came from and went, by kind, with the next 30, 60 and 90 days projected from what is already known to be due.</p></div>
         <div class="pg"><b>Sales &amp; couriers</b><code>ma-sales</code><p>Invoices by channel, collections, courier remittances matched to their receipts, pay-later reminders.</p></div>
         <div class="pg"><b>Owed &amp; owing</b><code>ma-aging</code><p>Receivables and payables aged into buckets, per customer, courier and vendor, with the pay-day and collection calendar.</p></div>
-        <div class="pg"><b>Money</b><code>ma-money</code><p>One page per money account: statement, reconciliation against the bank's own statement, opening balances.</p></div>
+        <div class="pg"><b>Money</b><code>ma-money</code><p>One page per holder: statement, running balance, transfers pending the receiver's confirmation, reconciliation against the bank's or the person's own count.</p></div>
+        <div class="pg"><b>Savings</b><code>ma-savings · -targets · -recurring · -networth</code><p>The owners' own book: where the Payfast money sits, spend by category, subscriptions per owner with the annual cost, targets like the marriage and the car with the monthly need and an ETA, assets and liabilities, net worth, reconciliation.</p></div>
+        <div class="pg"><b>Loan</b><code>ma-loan</code><p>The ₨15 lac borrowed from savings: draws and repayments as one document on both books, the outstanding on both overviews, the repayment pace, the Payfast payout rule.</p></div>
+        <div class="pg"><b>Tax</b><code>ma-tax</code><p>Every document carries a tax block (sales, services, withholding, or none — chosen, never absent); the quarter's output tax, input tax and withholding by vendor, for the accountant.</p></div>
         <div class="pg"><b>Budgets</b><code>ma-budgets</code><p>A monthly budget per category, suggested from the last six months and accepted or overruled by an owner; variance tracked.</p></div>
         <div class="pg"><b>Insights</b><code>ma-insights</code><p>What the app has learned: baselines, anomalies, forecasts, rate drift and a data-quality score, each with its basis stated.</p></div>
-        <div class="pg later"><b>Close &amp; audit</b><code>ma-close</code><p>Month-end: reconcile, lock the period, export the books, and the audit trail of every manual journal and override.</p></div>
-        <div class="pg later"><b>Settings</b><code>ma-settings</code><p>Chart of accounts, category mapping, fiscal year, tax rates, which sources feed the ledger.</p></div>
+        <div class="pg later"><b>Close &amp; audit</b><code>ma-close</code><p>Quarter-end (fiscal year from 1 July): reconcile every holder, lock the quarter, export the books; a soft month close where a month matters; the audit trail of every journal and override.</p></div>
+        <div class="pg later"><b>Settings</b><code>ma-settings</code><p>Both charts of accounts, holders, pay days and CPR days, tolerances, tax defaults, the payout rule, fiscal year, go-live.</p></div>
       </div>
     </div>
-    <div class="grid2">
+    <div class="grid3">
       <div class="card">
         <h2>How the charts are drawn</h2>
         <ul>
@@ -370,6 +420,14 @@ tr.sub td:first-child{padding-left:22px}
           <span class="sw"><i style="background:var(--chart-6)"></i>series 6</span>
           <span class="sw"><i style="background:var(--chart-other)"></i>other</span>
         </div>
+      </div>
+      <div class="card">
+        <h2>How the money speaks</h2>
+        <ul>
+          <li>Every line of spend — a category, a vendor, a courier's fees, salaries, a subscription — carries a state: fine, watch or concern, from three tests: its own six-month history, its budget, and its terms and commitments. The worst wins.</li>
+          <li>Each state is a sentence with the number and the comparison, its basis, and one action. "This is the drop" is remembered and teaches the baseline.</li>
+          <li>The spend map is sized by rupees and tinted by state; the cash calendar puts Tuesday and Friday CPRs against Wednesday and Saturday pay days and names a day the holders cannot fund.</li>
+        </ul>
       </div>
       <div class="card">
         <h2>How the app learns</h2>
@@ -390,13 +448,41 @@ tr.sub td:first-child{padding-left:22px}
 /* ── sample data (₨, rounded) ── */
 const D={
   accounts:[
-    {n:'Cash drawer (Raees)',v:184300,kind:'cash'},
+    {n:'Store drawer · Raees',v:184300,kind:'cash'},
+    {n:'Cash with Afnan',v:310000,kind:'cash'},
+    {n:'Cash with Ammar',v:45000,kind:'cash'},
     {n:'MCB current',v:2146900,kind:'bank'},
-    {n:'Umair, not yet handed over',v:96500,kind:'till'},
-    {n:'Runner floats out',v:12000,kind:'float'},
+    {n:'Warehouse till · Umair',v:96500,kind:'till'},
+    {n:'Runner floats',v:12000,kind:'float'},
+    {n:'TCS account',v:62000,kind:'tcs'},
   ],
-  recv:{postex:1418700,customers:312000,employees:86000},
-  pay:{vendors:846500,salaries:1180000,runners:4200},
+  recv:{postex:1418700,cpr:962000,tcs:190000,bluex:235000,payfast:241000,customers:312000,employees:86000},
+  pay:{vendors:846500,asghar:128000,salaries:1180000,runners:4200},
+  loan:{outstanding:1140000,opening:1500000,repaidQ:360000,pace:120000},
+  cprRhythm:{weeks:['18 Aug','25 Aug','1 Sep','8 Sep','15 Sep','22 Sep'],tue:[790,840,710,880,770,810],fri:[960,1020,830,990,900,962]},
+  courierCost:{months:['Apr','May','Jun','Jul','Aug','Sep'],fees:[312,338,296,352,364,392],rev:[41,48,39,57,61,89]},
+  cprs:[
+    ['CPR-118842','upfront','Fri 25 Sep','318','11,84,200','1,62,900','59,300','9,62,000','—','<span class="tag warn">waiting · 2 days</span>'],
+    ['CPR-118611','upfront','Tue 22 Sep','276','9,96,400','1,38,100','48,600','8,09,700','Afnan · Wed 23 Sep · cash','<span class="tag ok">reconciled</span>'],
+    ['CPR-118610','reserve','Tue 22 Sep','241','2,41,000','—','—','2,41,000','Afnan · Wed 23 Sep · cash','<span class="tag ok">reconciled</span>'],
+    ['CPR-118377','upfront','Fri 18 Sep','305','11,20,800','1,55,400','61,200','9,04,200','Afnan · Fri 18 Sep · cash','<span class="tag ok">reconciled</span>'],
+    ['CPR-118102','upfront','Tue 15 Sep','262','9,41,600','1,29,900','44,100','7,67,600','Ammar · Wed 16 Sep · MCB','<span class="tag ok">reconciled</span>'],
+    ['CPR-117868','upfront','Fri 11 Sep','297','10,88,300','1,50,200','57,800','8,80,300','Afnan · Sat 12 Sep · cash','<span class="tag warn">₨300 short · reason given</span>'],
+    ['TCS · Sep statement','account','due Thu 8 Oct','188','1,90,000','per statement','—','1,90,000','— (the TCS account)','<span class="tag ok">expected · day 90</span>'],
+    ['BYK-0912','manual','Fri 12 Sep','41','38,400','6,100','—','32,300','Raees · drawer · confirmed','<span class="tag ok">reconciled</span>'],
+  ],
+  sv:{
+    accounts:[['Payfast payout account','Ammar',1462000,'24 Sep · 3 payouts matched'],['Bank · Ammar','Ammar',1218000,'20 Sep'],['Bank · Afnan','Afnan',862000,'25 Sep'],['Cash · Ammar','Ammar',214000,'counted 26 Sep'],['Cash · Afnan','Afnan',104000,'counted 26 Sep']],
+    targets:[
+      {n:'The marriage',who:'Ammar',amt:2500000,saved:1420000,spent:310000,by:'March 2027',need:180000,pace:155000,eta:'April 2027'},
+      {n:'The car',who:'Ammar',amt:4200000,saved:3600000,spent:3600000,by:'',need:0,pace:60000,eta:'Bought and financed: ₨60,000 a month to the finance company, ₨6.0 lac left, clear in June 2027.'},
+    ],
+    subs:[['Adobe Creative Cloud','Ammar',15900,'monthly','4 Oct'],['Domain & hosting','Ammar',18500,'yearly','14 Jan'],['Gym','Ammar',6000,'monthly','1 Oct'],['Canva Pro','Afnan',3200,'monthly','12 Oct'],['iCloud 2 TB','Afnan',2800,'monthly','2 Oct'],['Netflix','joint',2300,'monthly','9 Oct'],['Spotify family','joint',1600,'monthly','16 Oct']],
+    spend:[['The marriage',310000,'watch'],['Household',96000,'fine'],['Family',70000,'fine'],['Car finance',60000,'fine'],['Travel',48000,'fine'],['Subscriptions',31800,'watch'],['Other',22000,'fine']],
+    assets:[['Payfast, banks and cash','money',3860000,'joint'],['Loan to Groovy','loan',1140000,'joint'],['The car','vehicle',4200000,'Ammar'],['Savings certificates','investment',1500000,'Afnan']],
+    liabilities:[['Car finance','vehicle finance',600000,'Ammar'],['Borrowed from family','borrowed',250000,'Ammar']],
+    inflows:[['Payfast payout · 24 Sep',262000],['Payfast payout · 17 Sep',205000],['Payfast payout · 10 Sep',241000]],
+  },
   weeks:[['4 Aug',1240,980],['11 Aug',1580,1130],['18 Aug',910,1420],['25 Aug',1725,1050],['1 Sep',1330,1610],['8 Sep',1490,1120],['15 Sep',2010,1380],['22 Sep',1660,1290]],
   expense:[['Fabric & mills',2133000],['Salaries',1180000],['Stitching',954000],['Embellishment',505000],['Marketing',337000],['Other',505000]],
   channels:{months:['Apr','May','Jun','Jul','Aug','Sep'],online:[5120,5880,4310,6920,7480,6210],warehouse:[640,720,590,910,1040,880],other:[120,90,210,160,140,230]},
@@ -501,35 +587,37 @@ function sparkline(vals,cur){const max=Math.max(...vals);return `<div class="spa
 
 /* ── screens ── */
 function overview(){
-  const cash=sum(D.accounts.map(a=>a.v));const recv=D.recv.postex+D.recv.customers+D.recv.employees;const pay=D.pay.vendors+D.pay.salaries+D.pay.runners;
+  const cash=sum(D.accounts.map(a=>a.v));const recv=Object.values(D.recv).reduce((a,b)=>a+b,0);const pay=D.pay.vendors+D.pay.asghar+D.pay.salaries+D.pay.runners;
   const thisIn=sum(D.weeks.slice(4).map(w=>w[1]))*1000,thisOut=sum(D.weeks.slice(4).map(w=>w[2]))*1000;
-  return `<div class="page-head"><div><div class="page-title">Accounts</div><div class="page-sub">Saturday 27 September 2026 · a pay day (Wednesday, Saturday)</div></div>
-  <div class="btn-row"><button class="btn">Export</button><button class="btn primary">+ Journal entry</button></div></div>
+  const holders=D.accounts.map(a=>`${a.n.split(' · ')[0].replace('Cash with ','')} ${compact(a.v).replace('₨','')}`).join(' · ');
+  return `<div class="page-head"><div><div class="page-title">Accounts</div><div class="page-sub">Sunday 27 September 2026 · Tuesday's CPR, then Wednesday's pay day</div></div>
+  <div class="btn-row"><button class="btn">Collect a CPR</button><button class="btn">Hand cash over</button><button class="btn primary">+ Journal entry</button></div></div>
   <div class="filters"><span class="chip on">This month</span><span class="chip">Last month</span><span class="chip">Quarter</span><span class="chip">Year</span><span class="chip">Custom…</span></div>
   <div class="kpi-grid">
-    <div class="kpi lead"><div class="kpi-label">Cash &amp; bank</div><div class="kpi-val hero">${compact(cash)}</div><div class="kpi-sub"><span class="delta up">▲ ₨2.1 lac</span> vs 30 days ago</div>${sparkline(D.balance.hist.filter((v,i)=>i%3===0),true)}</div>
-    <div class="kpi"><div class="kpi-label">In this month</div><div class="kpi-val">${compact(thisIn)}</div><div class="kpi-sub">4 weeks · online, warehouse, fabric</div></div>
+    <div class="kpi lead"><div class="kpi-label">Cash, by holder</div><div class="kpi-val hero">${compact(cash)}</div><div class="kpi-sub">${holders}</div>${sparkline(D.balance.hist.filter((v,i)=>i%3===0),true)}</div>
+    <div class="kpi"><div class="kpi-label">In this month</div><div class="kpi-val">${compact(thisIn)}</div><div class="kpi-sub">9 CPRs collected · warehouse · fabric</div></div>
     <div class="kpi"><div class="kpi-label">Out this month</div><div class="kpi-val">${compact(thisOut)}</div><div class="kpi-sub"><span class="delta down">▲ 9%</span> vs the 6-month median</div></div>
-    <div class="kpi"><div class="kpi-label">Owed to us</div><div class="kpi-val">${compact(recv)}</div><div class="kpi-sub">PostEx COD in transit ${compact(D.recv.postex)}</div></div>
-    <div class="kpi warn"><div class="kpi-label">We owe</div><div class="kpi-val">${compact(pay)}</div><div class="kpi-sub">Salaries ${compact(D.pay.salaries)} due 1 Oct</div></div>
-    <div class="kpi"><div class="kpi-label">Runway</div><div class="kpi-val">11 wk</div><div class="kpi-sub">at the 12-week median burn</div></div>
+    <div class="kpi"><div class="kpi-label">Owed to us</div><div class="kpi-val">${compact(recv)}</div><div class="kpi-sub">in transit ${compact(D.recv.postex)} · CPR to collect ${compact(D.recv.cpr)} · TCS ${compact(D.recv.tcs)} · Blue-Ex ${compact(D.recv.bluex)}</div></div>
+    <div class="kpi warn"><div class="kpi-label">We owe</div><div class="kpi-val">${compact(pay)}</div><div class="kpi-sub">salaries ${compact(D.pay.salaries)} on 1 Oct · Wed ₨6.4 lac · Asghar ${compact(D.pay.asghar)}</div></div>
+    <div class="kpi"><div class="kpi-label">Loan from savings</div><div class="kpi-val">${compact(D.loan.outstanding)}</div><div class="kpi-sub">of ${compact(D.loan.opening)} · ${compact(D.loan.pace)} a month back</div></div>
   </div>
   <div class="alerts">
-    <div class="alert urgent"><span class="ic">!</span><div><b>Pay day.</b> ₨5.2 lac owed to 6 vendors is due today, ₨1.1 lac of it overdue. The drawer holds ₨1.8 lac and MCB ₨21.5 lac.</div><span class="act">Pay list →</span></div>
-    <div class="alert warn"><span class="ic">?</span><div><b>Fabric spend is unusual.</b> ₨21.3 lac this month against a median of ₨13.9 lac over the last 6 months. Two Al-Karam invoices explain ₨6.1 lac of it.</div><span class="act">See the lines →</span></div>
-    <div class="alert warn"><span class="ic">?</span><div><b>₨96,500 sold at the warehouse has not reached Raees.</b> Three sales from Thursday and Friday are waiting for confirmation.</div><span class="act">Handover queue →</span></div>
-    <div class="alert ok"><span class="ic">✓</span><div><b>MCB reconciled to 25 Sept.</b> 41 of 41 bank lines matched a posting; nothing unexplained.</div><span class="act">Statement →</span></div>
+    <div class="alert urgent"><span class="ic">!</span><div><b>Fabric is ₨21.3 lac this month against a usual ₨13.9 lac.</b> Two Al-Karam bills carry ₨6.1 lac of it. If the winter drop is being cut this is expected; say so and the baseline learns it.</div><span class="act">Open the lines →</span></div>
+    <div class="alert warn"><span class="ic">?</span><div><b>Friday's CPR, ₨9.62 lac for 318 parcels, is not collected yet</b> — two days; Afnan usually collects the next day. Wednesday's pay day needs ₨6.4 lac and the drawer plus Afnan's cash hold ₨4.9 lac.</div><span class="act">Record the collection →</span></div>
+    <div class="alert warn"><span class="ic">?</span><div><b>Saturday 3 October is tight:</b> Nishat's ₨18.7 lac bill and the pay day land two days after salaries; the holders dip to about ₨7.9 lac before Monday's Payfast payout and Tuesday's CPR.</div><span class="act">Move the bill →</span></div>
+    <div class="alert ok"><span class="ic">✓</span><div><b>MCB reconciled to 25 Sept.</b> 41 of 41 bank lines matched a posting. Tuesday's two CPRs reconciled: 517 parcels agree with ₨10.51 lac counted.</div><span class="act">Statements →</span></div>
   </div>
+  <div class="card"><div class="card-title"><span>The next 30 days — what comes in, what goes out, from what is already known</span>${tvBtn('cal')}</div>${cashCal()}</div>
   <div class="grid2">
     <div class="card"><div class="card-title"><span>Cash in and out, by week</span>${tvBtn('weeks')}</div>${groupedBars()}</div>
     <div class="card"><div class="card-title"><span>Cash balance and the next 30 days</span>${tvBtn('balance')}</div>${balanceLine()}</div>
   </div>
+  <div class="card" style="margin-top:12px"><div class="card-title"><span>Where the money went this month — and whether to worry</span>${tvBtn('smap')}</div>${spendMap()}</div>
   <div class="grid2" style="margin-top:12px">
-    <div class="card"><div class="card-title"><span>Where the money went</span>${tvBtn('donut')}</div>${donut()}</div>
     <div class="card"><div class="card-title"><span>Revenue by channel, six months</span>${tvBtn('channels')}</div>${channels()}</div>
-  </div>
-  <div class="grid3" style="margin-top:12px">
     <div class="card"><div class="card-title"><span>Biggest vendors this month</span></div>${vendorBars()}</div>
+  </div>
+  <div class="grid2" style="margin-top:12px">
     <div class="card"><div class="card-title"><span>Owed to us, by age</span></div>${aging(D.agingR,'receivable')}</div>
     <div class="card"><div class="card-title"><span>We owe, by age</span></div>${aging(D.agingP,'payable')}</div>
   </div>`;
@@ -583,7 +671,7 @@ function insights(){
   <div class="ins">
     <div class="card"><h3><span class="ic urgent">!</span>Fabric spend is 1.5× its baseline</h3><p>₨21.3 lac posted this month against a median of ₨13.9 lac (Mar–Aug). Two Al-Karam invoices carry ₨6.1 lac of the difference. If a winter drop is being cut, this is expected; if not, look at those two lines.</p><div class="basis"><b>Basis:</b> median and spread of the last 6 months of Fabric &amp; mills purchases in Store Accounts; flagged past 2 standard deviations. First seen 24 Sep.</div><div class="btn-row" style="margin-top:8px"><button class="btn">Expected, it is the drop</button><button class="btn">Open the lines</button></div></div>
     <div class="card"><h3><span class="ic warn">?</span>Star Trims' rate for cotton thread rose 18% in two purchases</h3><p>₨1,180 per box on 23 Sep against ₨1,000 in July and August. Zain Trims last supplied it at ₨1,020.</p><div class="basis"><b>Basis:</b> the vendor rate card, derived from purchase lines (last, min, max per item per vendor). Compared with every other vendor supplying the same item code.</div></div>
-    <div class="card"><h3><span class="ic ok">✓</span>Cash will cover the next 30 days, with one tight week</h3><p>Projected low point ₨9.4 lac around 9 Oct, when salaries (₨11.8 lac, 1 Oct) land before the PostEx remittance expected 6–8 Oct. Nothing due is unfunded.</p><div class="basis"><b>Basis:</b> today's balances, plus what is already known to be due (vendor terms and pay days, payroll date, pay-later due dates, the courier's usual remittance cycle) and the 12-week median for everything else. A range, not a promise.</div></div>
+    <div class="card"><h3><span class="ic ok">✓</span>Cash will cover the next 30 days, with one tight week</h3><p>Projected low point ₨7.9 lac on Saturday 3 October, when Nishat's ₨18.7 lac bill and the pay day land two days after salaries (₨11.8 lac, 1 Oct); Monday's Payfast payout and Tuesday's CPR lift it again. Nothing due is unfunded.</p><div class="basis"><b>Basis:</b> today's balances by holder, plus what is already known to be due (vendor terms and the Wednesday and Saturday pay days, the payroll date, pay-later due dates, the loan repayment) and the learned Tuesday and Friday CPR medians for what comes in. A range, not a promise.</div></div>
     <div class="card"><h3><span class="ic info">≈</span>Suggested budgets for October</h3><p>Marketing &amp; PR ₨3.0 lac (6-month median ₨2.9 lac, rising), Utilities ₨2.2 lac (flat), Maintenance ₨0.4 lac (August's ₨0.3 lac was low, September's ₨0.9 lac carried the studio paint job).</p><div class="basis"><b>Basis:</b> the median of the last 6 months per category, nudged by the trend of the last 3. An owner accepts, edits or ignores each; the app never sets a budget on its own.</div><div class="btn-row" style="margin-top:8px"><button class="btn primary">Accept all three</button><button class="btn">Edit</button></div></div>
     <div class="card"><h3><span class="ic info">≈</span>Warehouse customers who pay later settle in 17 days; two are slower</h3><p>Ahmed Traders averages 31 days over 6 bills and has ₨78,000 open; Bilal Garments 9 days. Overdue reminders could start at day 21 instead of day 30 for the slower accounts.</p><div class="basis"><b>Basis:</b> collection dates on pay-later warehouse sales, per customer, since April (n=41).</div></div>
   </div>`;
@@ -683,9 +771,163 @@ function purchasing(){
     </div></div>`;
 }
 
+
+/* ── the money speaks ── */
+const L=n=>(n<0?'−':'')+'₨'+(Math.abs(n)/1e5).toFixed(1)+'L';
+const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function calendarDays(){
+  const start=new Date(2026,8,27);let bal=sum(D.accounts.map(a=>a.v));const out=[];
+  const cprNet={2:960000,5:1120000};const payDay={3:640000,6:410000};
+  const special={'10-1':{out:1180000,ol:'Salaries'},'10-3':{out:1872000,ol:'Nishat bill'},'10-5':{in:241000,il:'Payfast payout'},'10-8':{in:190000,il:'TCS credit'},'10-9':{in:78000,il:'Ahmed Traders'},'10-15':{out:120000,ol:'Loan repayment'},'10-2':{out:41000,ol:'Subscriptions'}};
+  for(let i=0;i<30;i++){const d=new Date(start);d.setDate(start.getDate()+i);const wd=d.getDay();let inn=0,o=0,il=[],ol=[];
+    if(cprNet[wd]){inn+=cprNet[wd];il.push('CPR');} if(payDay[wd]){o+=payDay[wd];ol.push('pay day');}
+    const sp=special[(d.getMonth()+1)+'-'+d.getDate()];if(sp){if(sp.in){inn+=sp.in;il.push(sp.il);} if(sp.out){o+=sp.out;ol.push(sp.ol);}}
+    bal+=inn-o;out.push({d,wd,inn,out:o,il,ol,bal});}
+  return out;
+}
+function cashCal(){
+  const days=calendarDays();const floor=1000000;const low=days.reduce((m,x)=>x.bal<m.bal?x:m,days[0]);
+  const cells=days.map((x,i)=>{const cls=['cal-d',i===0?'cal-today':'',x.bal<0?'short':x.bal<floor?'tight':'',(!x.inn&&!x.out)?'quiet':''].join(' ');
+    return `<div class="${cls}" title="Projected holders' balance ${compact(x.bal)}"><small>${WD[x.wd]}</small><b>${x.d.getDate()} ${['Sep','Oct'][x.d.getMonth()-8]}</b>${x.inn?`<span class="in">+${L(x.inn)} ${x.il.join(', ')}</span>`:''}${x.out?`<span class="out">−${L(x.out)} ${x.ol.join(', ')}</span>`:''}</div>`}).join('');
+  return `<div class="cal">${cells}</div>
+  <div class="cal-key"><span><i style="background:var(--accent-warning-soft);border-color:transparent"></i>the holders dip under the ₨10 lac floor</span><span><i style="background:var(--accent-urgent-soft);border-color:transparent"></i>a day that cannot be funded</span><span><i style="border-color:var(--dark);border-width:2px"></i>today</span></div>
+  <div class="basis"><b>Low point ${compact(low.bal)} on ${WD[low.wd]} ${low.d.getDate()} Oct.</b> Inflows: Tuesday and Friday CPRs at their learned median (₨9.6 lac, ₨11.2 lac over 12 weeks), TCS at day 90, Payfast on its usual Monday, pay-later customers on their due date. Outflows: Wednesday and Saturday pay days from every vendor's terms, salaries on the 1st, the loan repayment on the 15th, subscriptions. A range, not a promise.</div>
+  ${tableFor(['Day','In','Out','Balance'],days.filter(x=>x.inn||x.out).map(x=>[WD[x.wd]+' '+x.d.getDate()+' '+['Sep','Oct'][x.d.getMonth()-8]+(x.il.length?' · '+x.il.join(', '):'')+(x.ol.length?' · '+x.ol.join(', '):''),x.inn?money(x.inn):'',x.out?money(x.out):'',money(x.bal)]))}`;
+}
+const SM=[
+  {kind:'Cost of goods',items:[['Fabric & mills',2133000,'concern','1.5× its usual ₨13.9 lac — two Al-Karam bills'],['Stitching',954000,'fine','as usual'],['Embellishment',505000,'fine','as usual · Asghar ₨1.28 lac at his card'],['Courier fees & reversals',364000,'watch','reversals 8.1% of parcels against a usual 5.4%'],['Trims',312000,'fine','as usual']]},
+  {kind:'People',items:[['Salaries',1180000,'fine','as budgeted · 42 people'],['Runners & floats',16200,'fine','']]},
+  {kind:'Running the business',items:[['Marketing & PR',337000,'fine','₨3.0 lac budget, ₨0.37 lac over — Paid PR approved by Ammar'],['Utilities & rent',214000,'fine','as usual'],['Maintenance',86000,'watch','₨0.9 lac against a usual ₨0.3 lac — the studio paint job'],['Subscriptions',41000,'fine',''],['Other',152000,'fine','']]},
+];
+function spendMap(){
+  const rowTot=SM.map(r=>sum(r.items.map(i=>i[1])));const max=Math.max(...rowTot);
+  const rows=SM.map((r,ri)=>`<div class="smap-kind">${r.kind} · <em>${compact(rowTot[ri])}</em></div><div class="smap-row" style="height:${Math.max(44,Math.round(rowTot[ri]/max*96))}px">${r.items.map(i=>`<div class="smap-tile ${i[2]}" style="flex:${i[1]}" title="${i[3]}"><b>${i[0]}</b><span>${compact(i[1])}${i[2]==='concern'?' · concern':i[2]==='watch'?' · watch':''}</span></div>`).join('')}</div>`).join('');
+  const r100=[['Fabric',29,'var(--chart-1)'],['Stitching',13,'var(--chart-2)'],['Embellishment',7,'var(--chart-3)'],['Couriers',5,'var(--chart-5)'],['Salaries',16,'var(--chart-6)'],['Everything else',15,'var(--chart-other)'],['Kept',15,'var(--accent-success)']];
+  const all=SM.flatMap(r=>r.items);
+  return `<div class="smap">${rows}</div>
+  <div class="cal-key" style="margin-top:10px"><span><i style="background:var(--surface-2)"></i>fine</span><span><i style="background:var(--accent-warning-soft);border-color:transparent"></i>watch — above its history or near its budget</span><span><i style="background:var(--accent-urgent-soft);border-color:transparent"></i>concern — far above its history, over budget, or a term broken</span></div>
+  <div class="smap-kind" style="margin-top:12px">Of every ₨100 that came in this month</div>
+  <div class="r100">${r100.map(x=>`<div style="flex:${x[1]}"><i style="background:${x[2]}"></i><b>${x[1]}</b> ${x[0]}</div>`).join('')}</div>
+  <div class="basis">Area is rupees; the tint is the state from three tests — its own six months (median and spread), its budget, and its terms — the worst wins. Hover a tile for the comparison. <b>"This is the drop"</b> on a concern silences it for the month and teaches the baseline.</div>
+  ${tableFor(['Line','Amount','State','Why'],all.map(i=>[i[0],money(i[1]),i[2],i[3]||'—']))}`;
+}
+function groupedOf(cats,a,b,la,lb,fmt,id){
+  const max=niceMax(Math.max(...a,...b));
+  const cols=cats.map((c,i)=>{const last=i===cats.length-1;return `<div class="col" tabindex="0" data-tip="${c}|${fmt(a[i])} ${la}|${fmt(b[i])} ${lb}">${last?`<span class="dlabel">${fmt(a[i])} · ${fmt(b[i])}</span>`:''}<div class="bar" style="height:${a[i]/max*100}%"></div><div class="bar s2" style="height:${b[i]/max*100}%"></div></div>`}).join('');
+  return `<div class="legend"><span><i style="background:var(--chart-1)"></i>${la}</span><span><i style="background:var(--chart-2)"></i>${lb}</span></div>
+  <div class="chart" data-chart="${id}"><div class="plot padl">${gridlines(max,v=>fmt(v))}<div class="cols">${cols}</div></div><div class="xlab">${cats.map(c=>`<span>${c}</span>`).join('')}</div><div class="tip"></div></div>
+  ${tableFor(['',la,lb],cats.map((c,i)=>[c,fmt(a[i]),fmt(b[i])]))}`;
+}
+function stackedOf(cats,series,fmt,id){
+  const totals=cats.map((c,i)=>sum(series.map(sr=>sr.vals[i])));const max=niceMax(Math.max(...totals));
+  const cols=cats.map((c,i)=>`<div class="col" tabindex="0" data-tip="${c}|${series.map(sr=>fmt(sr.vals[i])+' '+sr.name).join('|')}"><span class="dlabel">${fmt(totals[i])}</span><div class="stack" style="height:${totals[i]/max*100}%">${series.map((sr,si)=>`<i class="${si?'s'+(si+1):''}" style="flex:${sr.vals[i]}"></i>`).join('')}</div></div>`).join('');
+  return `<div class="legend">${series.map((sr,si)=>`<span><i style="background:var(--chart-${si+1})"></i>${sr.name}</span>`).join('')}</div>
+  <div class="chart" data-chart="${id}"><div class="plot padl">${gridlines(max,v=>fmt(v))}<div class="cols">${cols}</div></div><div class="xlab">${cats.map(c=>`<span>${c}</span>`).join('')}</div><div class="tip"></div></div>
+  ${tableFor(['',...series.map(sr=>sr.name),'Total'],cats.map((c,i)=>[c,...series.map(sr=>fmt(sr.vals[i])),fmt(totals[i])]))}`;
+}
+
+/* ── couriers ── */
+function couriers(){
+  const r=D.cprRhythm,c=D.courierCost;
+  return `<div class="page-head"><div><div class="page-title">Couriers &amp; collections</div><div class="page-sub">The first mile of money in. PostEx issues a CPR on Tuesday and Friday; it is collected in cash by a named holder, with the receipt attached.</div></div>
+  <div class="btn-row"><button class="btn">+ Statement (TCS · Bykea · Blue-Ex)</button><button class="btn primary">Collect a CPR</button></div></div>
+  <div class="filters"><span class="chip on">All couriers</span><span class="chip">PostEx</span><span class="chip">TCS</span><span class="chip">Blue-Ex</span><span class="chip">Bykea</span><span style="width:8px"></span><span class="chip on">September</span><span class="chip">Custom…</span></div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">In transit with PostEx</div><div class="kpi-val">${compact(D.recv.postex)}</div><div class="kpi-sub">delivered, not yet on a CPR · 412 parcels</div></div>
+    <div class="kpi warn"><div class="kpi-label">CPR to collect</div><div class="kpi-val">${compact(D.recv.cpr)}</div><div class="kpi-sub">Friday 25 Sep · 318 parcels · 2 days</div></div>
+    <div class="kpi"><div class="kpi-label">Collected this month</div><div class="kpi-val">₨78.4 lac</div><div class="kpi-sub">9 CPRs · 8 into cash, 1 into MCB · ₨300 short once</div></div>
+    <div class="kpi"><div class="kpi-label">TCS</div><div class="kpi-val">${compact(D.recv.tcs)}</div><div class="kpi-sub">due Thu 8 Oct (day 90) · TCS account ₨62,000</div></div>
+    <div class="kpi bad"><div class="kpi-label">Blue-Ex still owes</div><div class="kpi-val">${compact(D.recv.bluex)}</div><div class="kpi-sub">legacy · unchanged 41 days</div></div>
+  </div>
+  <div class="alerts">
+    <div class="alert warn"><span class="ic">?</span><div><b>Friday's CPR is not collected.</b> ₨9,62,000 net for 318 parcels; Afnan usually collects the day after. Tuesday's will add about ₨9.6 lac.</div><span class="act">Record the collection →</span></div>
+    <div class="alert urgent"><span class="ic">!</span><div><b>Blue-Ex: ₨2.35 lac unchanged since 17 August.</b> Nothing collected in 41 days against the statement of 30 June.</div><span class="act">Their statement →</span></div>
+    <div class="alert ok"><span class="ic">✓</span><div><b>Tuesday's two CPRs reconciled.</b> 517 parcels' settle flags agree with ₨10,50,700 counted into Afnan's cash on Wednesday.</div><span class="act">CPR-118611 →</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="card-title"><span>What a Tuesday and a Friday bring (₨000, net)</span>${tvBtn('rhythm')}</div>${groupedOf(r.weeks,r.tue,r.fri,'Tuesday CPR','Friday CPR',k,'rhythm')}<div class="basis">Median over 12 weeks: Tuesday ₨9.6 lac, Friday ₨11.2 lac — the calendar's expected inflows are learned from this, not typed.</div></div>
+    <div class="card"><div class="card-title"><span>What the couriers cost (₨000)</span>${tvBtn('cost')}</div>${stackedOf(c.months,[{name:'Fees & tax',vals:c.fees},{name:'Reversals',vals:c.rev}],k,'cost')}<div class="basis">Reversal fees are <b>8.1% of parcels in September against a usual 5.4%</b> — the courier line on the spend map is on watch for that.</div></div>
+  </div>
+  <div class="card" style="margin-top:12px"><div class="card-title"><span>CPRs and statements</span><button class="tv">Excel</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>CPR</th><th>Kind</th><th>Day</th><th class="num">Parcels</th><th class="num">COD</th><th class="num">Fees &amp; tax</th><th class="num">Reversals</th><th class="num">Net</th><th>Collected by · when · into</th><th>State</th></tr></thead><tbody>
+    ${D.cprs.map(x=>`<tr><td class="nw">${x[0]}</td><td><span class="src">${x[1]}</span></td><td class="nw">${x[2]}</td><td class="num">${x[3]}</td><td class="num">${x[4]}</td><td class="num">${x[5]}</td><td class="num">${x[6]}</td><td class="num">${x[7]}</td><td class="nw">${x[8]}</td><td class="nw">${x[9]}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="basis">A PostEx CPR is <b>derived every night from the parcels</b> (grouped by CPR number; upfront and reserve are two receipts) — never typed. Only the <b>collection</b> is typed: which CPRs, the cash counted, the holder, the receipt. One collection per CPR; a difference from the net needs a reason.</div></div>
+  <div class="grid2">
+    <div class="card"><div class="card-title"><span>PostEx · <span class="tag ok">cpr</span></span></div><div class="tbl-wrap"><table><tbody>
+      <tr><td>CPR days</td><td class="num">Tuesday · Friday</td></tr><tr><td>Usually collected by</td><td class="num">Afnan, the next day, in cash</td></tr><tr><td>Tolerance</td><td class="num">0.5% of net, else a reason</td></tr><tr><td>Fees</td><td class="num">per parcel + tax · reversal fee per return</td></tr><tr><td>Share of money in</td><td class="num">90%</td></tr></tbody></table></div></div>
+    <div class="card"><div class="card-title"><span>TCS · <span class="tag ok">account</span></span></div><div class="tbl-wrap"><table><tbody>
+      <tr><td>Credited</td><td class="num">90 days after delivery, to the TCS account</td></tr><tr><td>Owed inside the 90 days</td><td class="num">₨1,90,000 · 188 parcels</td></tr><tr><td>TCS account</td><td class="num">₨62,000 · drawn to MCB by transfer</td></tr><tr><td>Statement</td><td class="num">typed with attachment · no feed</td></tr></tbody></table></div></div>
+    <div class="card"><div class="card-title"><span>Blue-Ex · <span class="tag bad">legacy</span></span></div><div class="tbl-wrap"><table><tbody>
+      <tr><td>Opening</td><td class="num">₨3,25,000 · statement 30 Jun 2026</td></tr><tr><td>Collected since</td><td class="num">₨90,000 · 17 Aug</td></tr><tr><td>Still owed</td><td class="num">₨2,35,000 · 89 days old</td></tr><tr><td>New orders</td><td class="num">refused — nothing is dispatched to Blue-Ex</td></tr></tbody></table></div></div>
+    <div class="card"><div class="card-title"><span>Bykea · <span class="tag warn">manual</span></span></div><div class="tbl-wrap"><table><tbody>
+      <tr><td>Money reaches</td><td class="num">Raees · the drawer</td></tr><tr><td>Confirmed by</td><td class="num">Raees, before it counts</td></tr><tr><td>Statement</td><td class="num">typed · last 12 Sep · ₨32,300</td></tr><tr><td>Feed</td><td class="num">later — least priority</td></tr></tbody></table></div></div>
+  </div>`;
+}
+
+/* ── savings: the owners' book ── */
+function savings(){
+  const v=D.sv;const money_=sum(v.accounts.map(a=>a[2]));const assets=sum(v.assets.map(a=>a[2]));const liab=sum(v.liabilities.map(a=>a[2]));const infl=sum(v.inflows.map(x=>x[1]));const spend=sum(v.spend.map(x=>x[1]));
+  const annual=r=>r[3]==='yearly'?r[2]:r[3]==='weekly'?r[2]*52:r[2]*12;
+  const byOwner={};v.subs.forEach(r=>{byOwner[r[1]]=(byOwner[r[1]]||0)+annual(r)});
+  const tg=v.targets.map(t=>{const pct=Math.min(100,Math.round(t.saved/t.amt*100));return `<div class="tgt-row"><h4>${t.n} <span class="src">${t.who}</span></h4><span class="amt">${compact(t.saved)} of ${compact(t.amt)}</span>${meter(pct,pct<50?'warn':'')}<p><b>${pct}% there.</b> ${t.spent?`Spent so far ${compact(t.spent)}. `:''}${t.need?`Needs <b>${compact(t.need)} a month</b> for ${t.by}; the last three months averaged ${compact(t.pace)}, so at this pace ${t.eta}.`:t.eta}</p></div>`}).join('');
+  const smax=Math.max(...v.spend.map(x=>x[1]));
+  return `<div class="page-head"><div><div class="page-title">Savings</div><div class="page-sub">The owners' own book — Afnan, Ammar and joint. Separate from Groovy's ledger; the loan between the two is the only bridge.</div></div>
+  <div class="btn-row"><button class="btn">Statement</button><button class="btn">+ Valuation</button><button class="btn">+ Payfast payout</button><button class="btn primary">+ Entry</button></div></div>
+  <div class="filters"><span class="chip on">All</span><span class="chip">Afnan</span><span class="chip">Ammar</span><span class="chip">Joint</span><span style="width:8px"></span><span class="chip on">September</span><span class="chip">Quarter</span><span class="chip">Custom…</span></div>
+  <div class="kpi-grid">
+    <div class="kpi lead"><div class="kpi-label">Savings — money in hand</div><div class="kpi-val hero">${compact(money_)}</div><div class="kpi-sub">${v.accounts.map(a=>a[0].replace(' account','')+' '+compact(a[2]).replace('₨','')).join(' · ')}</div></div>
+    <div class="kpi"><div class="kpi-label">Net worth</div><div class="kpi-val">${compact(assets-liab)}</div><div class="kpi-sub">assets ${compact(assets)} · owes ${compact(liab)}</div></div>
+    <div class="kpi"><div class="kpi-label">Groovy owes savings</div><div class="kpi-val">${compact(D.loan.outstanding)}</div><div class="kpi-sub">of ${compact(D.loan.opening)} · ${compact(D.loan.repaidQ)} back this quarter</div></div>
+    <div class="kpi"><div class="kpi-label">Saved this month</div><div class="kpi-val">${compact(infl-spend)}</div><div class="kpi-sub">in ${compact(infl)} · spent ${compact(spend)}</div></div>
+  </div>
+  <div class="alerts">
+    <div class="alert warn"><span class="ic">?</span><div><b>The marriage: ₨14.2 lac of ₨25 lac by March 2027.</b> That needs ₨1.8 lac a month; the last three months averaged ₨1.55 lac, which lands in April. ₨25,000 more a month makes March.</div><span class="act">The target →</span></div>
+    <div class="alert warn"><span class="ic">?</span><div><b>Adobe Creative Cloud was paid twice in September</b> — ₨15,900 on 4 Sep and again on 26 Sep from Ammar's bank.</div><span class="act">The two lines →</span></div>
+    <div class="alert ok"><span class="ic">✓</span><div><b>Payfast payout account reconciled to 24 Sept.</b> Three payouts (${compact(infl)}) matched Groovy's Payfast receivable: ${compact(D.loan.repaidQ)} repaid the loan, the rest drawn.</div><span class="act">Statement →</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="card-title"><span>Saving for</span><button class="tv">+ Target</button></div><div class="tgt">${tg}</div><div class="basis">A target is an envelope — a tag on entries and on assets — not an account; the money stays where it sits. Saved so far is derived, never typed.</div></div>
+    <div class="card"><div class="card-title"><span>The loan to Groovy</span><button class="tv">Ledger</button></div>
+      <div class="tbl-wrap"><table><tbody>
+      <tr><td>Borrowed by Groovy</td><td class="num">${compact(D.loan.opening)} · opening, 1 Oct 2026</td></tr>
+      <tr><td>Repaid</td><td class="num">${compact(D.loan.opening-D.loan.outstanding)}</td></tr>
+      <tr><td>Outstanding</td><td class="num"><b>${compact(D.loan.outstanding)}</b></td></tr>
+      <tr><td>Pace</td><td class="num">${compact(D.loan.pace)} a month · clear by August 2027</td></tr>
+      <tr><td>Payfast rule</td><td class="num">a payout repays the loan first, then is drawn 50 / 50</td></tr>
+      </tbody></table></div>${meter(Math.round((D.loan.opening-D.loan.outstanding)/D.loan.opening*100))}
+      <div class="basis">One document per draw or repayment, posted on <b>both books</b>: a liability on Groovy's, an asset here. The two can never disagree.</div></div>
+  </div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="card"><div class="card-title"><span>Where the money sits</span><button class="tv">Import statement</button></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Account</th><th>Owner</th><th class="num">Balance</th><th>Reconciled to</th></tr></thead><tbody>
+      ${v.accounts.map(a=>`<tr><td>${a[0]}</td><td><span class="src">${a[1]}</span></td><td class="num">${money(a[2])}</td><td>${a[3]}</td></tr>`).join('')}
+      <tr class="total"><td>Money in hand</td><td></td><td class="num">${money(money_)}</td><td></td></tr>
+      </tbody></table></div><div class="basis">Every inflow carries its attachment — the Payfast statement line, the bank line. Cash is counted, and the count is the reconciliation.</div></div>
+    <div class="card"><div class="card-title"><span>Spent this month, and whether to worry</span></div>
+      <div class="hbars">${v.spend.map(x=>`<div class="hb"><span class="n">${x[0]}</span><span class="t"><i style="width:${x[1]/smax*100}%${x[2]==='watch'?';background:var(--accent-warning)':''}"></i></span><span class="v">${compact(x[1])}</span></div>`).join('')}</div>
+      <div class="basis"><b>${compact(spend)} spent</b> · the marriage is on watch against its plan, subscriptions for the double Adobe charge; everything else is inside its usual range.</div></div>
+  </div>
+  <div class="card" style="margin-top:12px"><div class="card-title"><span>Subscriptions — what we are paying for</span><button class="tv">+ Subscription</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Subscription</th><th>Owner</th><th class="num">Amount</th><th>Every</th><th>Next due</th><th class="num">A year</th></tr></thead><tbody>
+    ${v.subs.map(r=>`<tr><td>${r[0]}</td><td><span class="src">${r[1]}</span></td><td class="num">${money(r[2])}</td><td>${r[3].replace('ly','')}</td><td>${r[4]}</td><td class="num">${money(annual(r))}</td></tr>`).join('')}
+    ${Object.keys(byOwner).map(o=>`<tr class="total"><td>${o}</td><td></td><td class="num">${money(Math.round(byOwner[o]/12))} a month</td><td></td><td></td><td class="num">${money(byOwner[o])}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="basis">Detected from the statements — the same payee, the same amount, a regular gap — and confirmed by an owner. A subscription paid twice, one not paid on its day, or one whose amount moved shows up on the strip above.</div></div>
+  <div class="card"><div class="card-title"><span>Assets and liabilities — net worth</span><button class="tv">History</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>What</th><th>Kind</th><th>Whose</th><th class="num">Value</th></tr></thead><tbody>
+    ${v.assets.map(a=>`<tr><td>${a[0]}</td><td>${a[1]}</td><td><span class="src">${a[3]}</span></td><td class="num">${money(a[2])}</td></tr>`).join('')}
+    <tr class="total"><td>Assets</td><td></td><td></td><td class="num">${money(assets)}</td></tr>
+    ${v.liabilities.map(a=>`<tr><td>${a[0]}</td><td>${a[1]}</td><td><span class="src">${a[3]}</span></td><td class="num">−${money(a[2])}</td></tr>`).join('')}
+    <tr class="total"><td>Owed</td><td></td><td></td><td class="num">−${money(liab)}</td></tr>
+    <tr class="total"><td>Net worth</td><td></td><td></td><td class="num">${money(assets-liab)}</td></tr>
+    </tbody></table></div>
+    <div class="basis">Money accounts are valued by their ledger; the car, the certificates and the loan to Groovy by their latest valuation or outstanding — a revaluation is a journal here, never income. Per owner and joint on the filter above.</div></div>`;
+}
+
 /* ── wiring ── */
 const main=document.getElementById('main');
-const screens={overview,ledger,vendors,purchasing,pnl,insights};
+const screens={overview,couriers,ledger,vendors,purchasing,savings,pnl,insights};
 let tab='overview';
 function render(){
   main.innerHTML=screens[tab]();
@@ -723,7 +965,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
 document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{tab=b.dataset.nav;render();}));
 document.getElementById('widths').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#widths button').forEach(x=>x.classList.toggle('on',x===b));document.getElementById('frame').classList.toggle('phone',b.dataset.w==='phone');});
 document.getElementById('themes').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#themes button').forEach(x=>x.classList.toggle('on',x===b));const t=b.dataset.t;if(t==='system')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('ma-spec-theme',t)}catch(err){}});
-/* deep links: #ledger #pnl #insights #phone #dark #phone-dark */
+/* deep links: #couriers #savings #ledger #pnl #insights #vendors #purchasing #phone #dark #phone-dark */
 (function(){const h=(location.hash||'').slice(1).toLowerCase();if(!h)return;const parts=h.split('-');
   if(screens[parts[0]])tab=parts[0];
   if(parts.includes('phone')){document.getElementById('frame').classList.add('phone');document.querySelectorAll('#widths button').forEach(x=>x.classList.toggle('on',x.dataset.w==='phone'));}

@@ -6884,39 +6884,75 @@ accounts … plan all the logics of build first so we have a good foundation
 … plan the UI … our charts, pie chart, how the app will learn with the
 data … we are just planning at this stage."*
 
-**`MASTER_ACCOUNTS_PLAN.md` is the plan; read it before touching anything
-named `ma-` / `ma_` / `js/ma-core.js` / `js/master-accounts.js` — none of
-which exist yet.** The UI specimen (every screen, desktop and phone, both
+**`MASTER_ACCOUNTS_PLAN.md` is the plan (v3); read it before touching
+anything named `ma-` / `ma_` / `js/ma-core.js` / `js/master-accounts.js` —
+none of which exist yet.** The UI specimen (Overview with the concern
+strip, the 30-day cash calendar and the spend map; Couriers; Ledger;
+Purchasing; a Vendor page; Savings; P&L; Insights — desktop and phone, both
 themes, sample figures) is `scratchpad/master-accounts-specimen.html`,
 published at https://claude.ai/artifact/9bmhjEuaZMisWLb2TiQNyZ (private to
 its owner until shared).
 
-**v1 was a reporting layer over other modules' entries; Afnan rejected it
-the same day** (*"a proper end to end app which validates what you feed to
-it … a vendor — fabric, washing, stitching — what does he provide, at what
-term and what rate; a proper credit/debit ledger with history, edit terms,
-assigning purchase orders; first-to-last-mile logic"*). **v2 is the system
-of record**: a chart of accounts; ONE party master (vendor, customer,
-courier, employee, owner, bank) with what a vendor provides, terms with
-history and a rate card with history; documents with a lifecycle (purchase
-order → receipt → bill matched three ways → payment allocated to bills;
-invoice → collection; payroll; journals); a validation engine that REFUSES
-what cannot be true and FLAGS the rest for the owners; per-party
-credit/debit ledgers with running balances; costing per production PO;
-month close with locks; charts in HTML with a validated `--chart-*` palette
-(the app's own tokens FAIL the colour-blind checks — measured); a learning
-layer of deterministic statistics with a stated basis. Store Accounts and
-warehouse sales are ABSORBED in a named milestone (M7), not read from a
-distance. Fifteen open questions are tabled in the plan's §15 with the
-default each takes until answered.
+**Three versions in one day, and the third is the one that stands.** v1
+was a reporting layer over other modules' entries (*"you thought like baby
+accounts"*). v2 made it the system of record: a chart of accounts; ONE
+party master (vendor, customer, courier, employee, owner, bank) with what a
+vendor provides, terms with history and a rate card with history; documents
+with a lifecycle (purchase order → receipt → bill matched three ways →
+payment allocated to bills); a validation engine that REFUSES what cannot
+be true and FLAGS the rest for the owners; per-party credit/debit ledgers
+with running balances; costing per production PO. **v3 folds in how the
+money actually moves, as Afnan stated it** (the plan's §0a — an owner's
+account, not code-verified): 90% of the cash arrives as PostEx CPRs on
+Tuesday and Friday and is collected BY HAND, so money is modelled by HOLDER
+(the drawer, cash with Afnan, cash with Ammar, MCB, the warehouse till,
+runner floats, the TCS account — a holder cannot go below zero, and a
+transfer into another person's hands is pending until they confirm) and
+the couriers are built BEFORE purchasing (a CPR is DERIVED nightly from
+`postex_orders`, where upfront and reserve are two receipts per parcel;
+only the collection is typed: which CPRs, the cash counted, the holder,
+the receipt). TCS credits its own account at 90 days; Blue-Ex is a legacy
+receivable; Bykea lands with Raees. Payfast money goes to the owners'
+savings, so there is a SECOND BOOK — the Savings book: accounts, spend by
+category, a subscriptions register per owner, targets like the marriage
+and the car (saved so far, monthly need, ETA), assets and liabilities, net
+worth, reconciliation — and the ~₨15 lac Groovy borrowed from it is ONE
+document posting on both books, with a Payfast payout repaying it first.
+Asghar's printing unit is an `affiliate` party with real accounts from day
+one; every document carries a tax block ("no tax" is a choice, never an
+absence; the rates are blank until the accountant fills them); the books
+close by the QUARTER on a fiscal year from 1 July, with a soft month close
+where a month matters; the 3–4 months of payroll on Excel are imported;
+history back to 1 July 2026 stays enterable at Afnan's own pace until the
+owners close Q1; and **"the money speaks"** — every line of spend carries
+fine / watch / concern from three tests (its own six months, its budget,
+its terms) with a sentence and its basis, a spend map sized by rupees and
+tinted by state, and a cash calendar that puts Tue/Fri CPRs against Wed/Sat
+pay days and names a day the holders cannot fund. Store Accounts and
+warehouse sales are absorbed in M8. Fifteen open questions are tabled in
+§23 with the default each takes until answered (the Payfast payout
+account, the loan's split per lender, what the TCS account is, Blue-Ex's
+balance, the subscriptions list, the targets' amounts, Asghar's investment,
+the tax regime, the payroll sheet).
 
 Verified while planning, and worth knowing before any of it is built (every
 claim carries file:line in the plan's §1): nothing in HRM records HOW a
-salary was paid; a Shopify order is written once and never updated, so a
-later refund is invisible; PostEx is the only remittance data in the app
-and nothing posts it; `printing_billing` is a PAYABLE with no payee field;
-no cost of goods exists anywhere (no fabric rate, no CMT rate); and Reset
-Store Accounts deletes the very ledger the master would feed from.
+salary was paid; a Shopify order is written once, never updated, and
+carries NO gateway field, so COD and Payfast orders cannot be told apart;
+PostEx is the only remittance data in the app, nothing posts it, and
+nothing records that a CPR's cash was ever collected; `printing_billing` is
+a PAYABLE with no payee field; "payfast" appears nowhere in `js/`,
+`netlify/` or `index.html`; no cost of goods exists anywhere (no fabric
+rate, no CMT rate); and Reset Store Accounts deletes the very ledger the
+master would feed from.
+
+The specimen's first render caught a class collision worth carrying into
+the build: its calendar cell wore `today`, a class the same stylesheet
+already used for the balance chart's `position:absolute` marker, and the
+cell painted as a full-height stripe down the page. It is `cal-today` now.
+**Every `.ma-` rule the module adds to `css/main.css` has to be checked
+against the 259 `.board-*` and every other class already there** — the
+`tb` lesson from The Board, in CSS.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 
