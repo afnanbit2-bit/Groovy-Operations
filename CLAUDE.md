@@ -3379,6 +3379,48 @@ checked by breaking the ink, not by reading the fill.**
 **Nobody has seen the panel, the presets or a literal-coloured card on a
 real screen** — the sandbox cannot sign in.
 
+### Mood Boards — phone share: "Share → Groovy Ops" (Sept 2026)
+
+The first gap built from the Milanote gap study (four research agents,
+28 Sept 2026; Milanote itself is unreachable from the sandbox, so a Claude
+in Chrome study was briefed to fill in how it looks and behaves). The
+installed app now appears in the phone's **Share** menu; a shared photo,
+file, link or text lands in the **Unsorted** of a board the person picks.
+
+- **Three halves, one route.** `manifest.json` `share_target` (POST,
+  multipart, file field `files`) → `sw.js` `handleShare` parks the share in
+  Cache Storage (`groovy-share-inbox`: a `/__share/<id>/meta` JSON entry
+  plus one entry per file) and 303s to `/index.html#share=<id>` →
+  `js/boards.js` reads it back through the existing deep-link consumer
+  (`_boardsParseHash` / `_boardsConsumeDeepLink`, same Creative Hub gate).
+- **The bucket is NOT named `groovy-ops-*`** — the activate handler deletes
+  every such cache from a prior version, and a deploy landing between the
+  share and the page reading it must not eat it. Entries older than a day
+  are swept on every share.
+- **A picker, not an inbox board.** Recently opened boards first, search by
+  name; Home (no Unsorted), templates and boards you cannot edit are left
+  out. `_boardsSharePlan` is the one pure decision: Android usually puts
+  the link INSIDE `text`, so a link found there wins; otherwise the text
+  (or title) becomes a note. Files go through `_boardsTrayAddFiles`, so the
+  35 MB limit and the Cloudinary upload are the ones every other route uses.
+- **Forgotten only once delivered.** Closing the picker keeps the share
+  until the sweep, so a mis-tap is not data loss. An account without the
+  hub is told and the share is dropped.
+- Classes are `board-sendto-*` — `board-share-*` already belongs to the
+  board's Share (people) modal.
+- `netlify.toml` 303s a POST to `/share-target` to `/index.html` when no
+  service worker controls the page (first open) — the share is lost there,
+  but the person lands in the app rather than on an error. **Unverified**
+  that Netlify applies a 303 redirect to a POST.
+- `tests/share-target.test.js` (47) runs the real `sw.js` handler against a
+  fake Cache Storage and the real page flow end to end. Verified by
+  reverting the text-link search (5 fail), naming the bucket `groovy-ops-*`
+  (3) and not dropping a refused share (1).
+- **Nobody has shared into the app from a real phone.** Android only offers
+  a share target for an INSTALLED PWA, and may need the app reinstalled (or
+  a while) before the new manifest is picked up. iOS Safari does not
+  support Web Share Target at all — iPhones will not see it.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

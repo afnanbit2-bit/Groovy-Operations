@@ -2468,6 +2468,19 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;font-size:15px;font-weight:700;position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border)}
 .board-sheet-done{background:none;border:none;color:var(--accent-urgent);font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer;padding:4px 2px}
 .board-sheet-body{padding:10px 14px 16px}
+/* Phone share: the "Save to a board" picker (js/boards.js _boardsShareOpenPicker).
+   A row is the board's tile, its whole name (the Profile-directory rule: the
+   name never shares its row with a button, it IS the button) and a state word. */
+.board-sendto-what{font-size:13px;color:var(--muted);margin:2px 0 10px}
+.board-sendto-search{width:100%;box-sizing:border-box;min-height:40px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:15px;margin-bottom:8px}
+.board-sendto-list{display:flex;flex-direction:column;gap:4px;max-height:52vh;overflow-y:auto}
+.board-sendto-row{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 8px;border:none;border-radius:10px;background:transparent;color:var(--text);text-align:left;cursor:pointer;font:inherit}
+.board-sendto-row:active{background:var(--hover)}
+@media (hover:hover){.board-sendto-row:hover{background:var(--hover)}}
+.board-sendto-name{flex:1;min-width:0;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-sendto-vis{flex-shrink:0;font-size:12px;color:var(--muted)}
+.board-sendto-empty{font-size:14px;color:var(--muted);padding:16px 4px}
+
 .board-sheet-label{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:10px 0 6px}
 .board-sheet-empty{font-size:13px;color:var(--muted)}
 .board-sheet-row{display:flex;flex-wrap:wrap;gap:5px}

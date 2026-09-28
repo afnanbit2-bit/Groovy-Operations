@@ -2086,6 +2086,7 @@ async function _boardsOpenCanvas(){
       if(!_boardsIsEditableFocus())_boardsRenderCanvasAndWire();
     }).catch(()=>{});
   }
+  if(_boardsPendingShare&&_boardsPendingShare.target===b.id)_boardsShareDeliver();
   if(_boardsPendingFocusCard){
     const target=_boardsPendingFocusCard;
     _boardsPendingFocusCard=null;
@@ -10357,6 +10358,7 @@ function _boardsParseHash(){
     const i=kv.indexOf('=');
     if(i>0){try{p[decodeURIComponent(kv.slice(0,i))]=decodeURIComponent(kv.slice(i+1));}catch(e){}}
   });
+  if(p.share)return{share:p.share};
   if(p.note)return{note:p.note};
   return p.board?{board:p.board,card:p.card||null}:null;
 }
@@ -10368,7 +10370,17 @@ function _boardsConsumeDeepLink(){
   // with every other Creative Hub route (see _canSeeCreativeHub in
   // js/shared.js). Guarded with typeof so a shared.js that failed to parse
   // leaves the side door SHUT rather than open — fail closed.
-  if(typeof _canSeeCreativeHub!=='function'||!_canSeeCreativeHub())return false;
+  if(typeof _canSeeCreativeHub!=='function'||!_canSeeCreativeHub()){
+    if(link.share){
+      _boardsShareClearHash();
+      if(link.share!=='failed')_boardsShareForget(link.share);
+      showToast('Shared items are saved into Mood Boards, which is not open to your account yet',true);
+      return true;
+    }
+    return false;
+  }
+  // A phone share (sw.js parks it and sends the app here).
+  if(link.share){_boardsShareStart(link.share);return true;}
   // A document link (Convert to Document writes these): the Notes page.
   if(link.note){
     if(typeof window.notesOpenPage!=='function')return false;
@@ -10382,6 +10394,144 @@ function _boardsConsumeDeepLink(){
   return true;
 }
 window.addEventListener('hashchange',()=>{_boardsConsumeDeepLink();});
+
+/* ── Phone share (Sept 2026) ────────────────────────────────────────────
+   manifest.json's share_target puts the installed app in the phone's Share
+   menu. sw.js receives the POST, parks it in Cache Storage and sends the
+   app to #share=<id>. Here it is read back, the person picks a board, and
+   it lands in that board's UNSORTED — the holding pen this module already
+   has for "things I collected and have not placed yet", so nothing about
+   a shared item is a new kind of thing.
+
+   Why a board picker rather than a fixed inbox board: an inbox is a second
+   Unsorted nobody opens. Recently opened boards come first, so the usual
+   case is one tap. Home and templates are left out — Home has no Unsorted
+   and a template is not where work goes.
+
+   The share is only FORGOTTEN once delivered (or refused). Closing the
+   picker leaves it in the cache until sw.js sweeps it after a day, so a
+   mis-tap is not data loss — share again, or reload onto the link.
+
+   _boardsSharePlan is the one decision about what the share becomes, and
+   it is pure. Android usually puts a link inside `text` ("Title
+   https://…") rather than `url`, so a link found in the text wins; with
+   no link the text (or the title) becomes a note. Files go through
+   _boardsTrayAddFiles, which already enforces the 35 MB limit and uploads
+   through _boardsUploadAny like every other route in. */
+const _BOARDS_SHARE_CACHE='groovy-share-inbox';
+let _boardsPendingShare=null;
+function _boardsSharePlan(meta){
+  const m=meta||{};
+  const title=String(m.title||'').trim(),text=String(m.text||'').trim();
+  let url=String(m.url||'').trim();
+  if(!/^https?:\/\/\S+$/i.test(url))url='';
+  if(!url){
+    const hit=text.match(/https?:\/\/[^\s<>"]+/i);
+    if(hit)url=hit[0].replace(/[).,;:!?'"]+$/,'');
+  }
+  let note='';
+  if(!url){
+    note=text||title;
+    if(title&&text&&text.indexOf(title)<0)note=title+'\n'+text;
+  }
+  const files=Array.isArray(m.files)?m.files.filter(f=>f&&typeof f.key==='string'):[];
+  return{url,note:note.slice(0,4000),files};
+}
+function _boardsShareSummary(plan,fileObjs){
+  const fl=fileObjs||[];
+  const img=fl.filter(f=>/^image\//.test(f.type||'')).length,other=fl.length-img;
+  const parts=[];
+  if(img)parts.push(img+(img===1?' photo':' photos'));
+  if(other)parts.push(other+(other===1?' file':' files'));
+  if(plan.url)parts.push('a link');
+  else if(plan.note)parts.push('a note');
+  return parts.join(' · ');
+}
+function _boardsShareClearHash(){
+  try{history.replaceState(null,'',location.pathname+location.search);}catch(e){}
+}
+async function _boardsShareRead(id){
+  if(typeof caches==='undefined'||!/^[a-z0-9]+$/i.test(String(id||'')))return null;
+  const c=await caches.open(_BOARDS_SHARE_CACHE);
+  const r=await c.match('/__share/'+id+'/meta');
+  if(!r)return null;
+  const meta=await r.json();
+  const files=[];
+  for(const f of (Array.isArray(meta.files)?meta.files:[])){
+    const fr=await c.match(f.key);
+    if(!fr)continue;
+    const blob=await fr.blob();
+    files.push(new File([blob],f.name||'shared',{type:f.type||blob.type||''}));
+  }
+  return{meta,files};
+}
+async function _boardsShareForget(id){
+  try{
+    if(typeof caches==='undefined')return;
+    const c=await caches.open(_BOARDS_SHARE_CACHE);
+    const keys=await c.keys();
+    await Promise.all(keys.filter(k=>String(k.url||k).indexOf('/__share/'+id+'/')>=0).map(k=>c.delete(k)));
+  }catch(e){}
+}
+function _boardsShareTargets(q){
+  const term=String(q||'').trim().toLowerCase();
+  return moodBoards
+    .filter(b=>b&&!b.deletedAt&&!_boardsIsHome(b)&&!b.isTemplate&&_boardsCanEdit(b))
+    .filter(b=>!term||String(b.title||'Untitled board').toLowerCase().indexOf(term)>=0)
+    .sort((a,b)=>(_boardsRecentAt(b.id)-_boardsRecentAt(a.id))||((b.updatedAt||0)-(a.updatedAt||0)));
+}
+async function _boardsShareStart(id){
+  _boardsShareClearHash();
+  if(id==='failed'){showToast('That share could not be received — please share it again',true);return;}
+  let got=null;
+  try{got=await _boardsShareRead(id);}catch(e){console.warn('[boards] share read failed',e);}
+  if(!got){showToast('Nothing to save — that share was already saved, or it expired');return;}
+  const plan=_boardsSharePlan(got.meta);
+  if(!plan.url&&!plan.note&&!got.files.length){_boardsShareForget(id);showToast('That share was empty');return;}
+  _boardsPendingShare={id,url:plan.url,note:plan.note,fileObjs:got.files,summary:_boardsShareSummary(plan,got.files),target:null};
+  if(!boardsLoaded){try{await loadBoardsData();}catch(e){}}
+  _boardsShareOpenPicker();
+}
+function _boardsShareListHTML(q){
+  const list=_boardsShareTargets(q);
+  if(!list.length)return`<div class="board-sendto-empty">${q?'No board matches that.':'There is no board you can add to yet — create one first.'}</div>`;
+  return list.slice(0,40).map(b=>`<button class="board-sendto-row" onclick="window.boardsShareTo('${_boardsEsc(b.id)}')">${_boardsTileHTML(b,34)}<span class="board-sendto-name">${_boardsEsc(b.title||'Untitled board')}</span><span class="board-sendto-vis">${b.visibility==='shared'?'Team':'Private'}</span></button>`).join('');
+}
+function _boardsShareOpenPicker(){
+  const p=_boardsPendingShare;
+  if(!p)return;
+  _boardsOpenSheet('Save to a board',`
+    <div class="board-sendto-what">${_boardsEsc(p.summary)} — goes into the board's Unsorted</div>
+    <input class="board-sendto-search" type="search" placeholder="Search boards" oninput="window.boardsShareFilter(this.value)">
+    <div id="board-sendto-list" class="board-sendto-list">${_boardsShareListHTML('')}</div>`);
+}
+window.boardsShareFilter=function(q){
+  const el=document.querySelector('#board-sendto-list');
+  if(el)el.innerHTML=_boardsShareListHTML(q);
+};
+window.boardsShareTo=function(id){
+  const p=_boardsPendingShare;
+  if(!p){window.boardsCloseSheet();return;}
+  const b=_boardsLiveById()[id];
+  if(!b||!_boardsCanEdit(b)){showToast('You cannot add to that board',true);return;}
+  p.target=id;
+  window.boardsCloseSheet();
+  if(currentPage==='board-canvas'&&_editBoard&&_editBoard.id===id){_boardsShareDeliver();return;}
+  if(currentPage==='board-canvas')_boardsSaveNow();
+  window.boardsOpen(id);
+};
+function _boardsShareDeliver(){
+  const p=_boardsPendingShare;
+  _boardsPendingShare=null;
+  if(!p||!_editBoard)return;
+  if(!_boardsCanEdit(_editBoard)){showToast('You cannot add to this board',true);return;}
+  _boardsCollectInto();
+  if(p.url||p.note)_boardsTrayAddText(p.url||p.note);
+  if(p.fileObjs&&p.fileObjs.length)_boardsTrayAddFiles(p.fileObjs);
+  _boardsShareForget(p.id);
+  showToast('Saved to Unsorted in '+(_editBoard.title||'this board')+(p.fileObjs&&p.fileObjs.length?' — uploading…':''));
+}
+
 // Wrap startApp rather than editing js/auth.js or js/shared.js — both are
 // cross-track files, and this is the same wrap-the-global pattern
 // __bootApp already uses for showPage.

@@ -30,6 +30,7 @@ Read the header of `harness.js` before trusting a green run.
 | `boards.test.js` | Mood Boards: the pinch zoom curve and its detents, the rich-text sanitiser, labels and reactions, board colour/icon validation, phone vs desktop rendering |
 | `profile.test.js` | Profiles: the photo-URL allow-list, the `textContent` boundary, what actually gets written, and a loader that must not reject |
 | `smoke-browser.js` | Not a suite — loads every classic script from `index.html`, in the real load order, in a real headless browser, and checks they execute and define what the rest of the app expects; then makes jsPDF write a PDF, SheetJS write a workbook and JsBarcode draw a barcode. Catches load-order breaks, a top-level `const` declared twice across two files, and a global that quietly stopped existing — none of which `node --check` can see. **Only possible because the libraries are vendored** (`assets/vendor/`); from a CDN they never loaded here. Skips cleanly (exit 0) with no browser; set `CHROME_BIN` to point at one. It still cannot sign in — Firebase loads from gstatic, which the sandbox cannot reach |
+| `share-target.test.js` | Phone share: the manifest's share_target, the real `sw.js` POST handler against a fake Cache Storage, and the page flow that files a share into a board's Unsorted |
 | `check-cache-version.js` | Not a suite — a CI guard. If a precached file changed, `CACHE_VERSION` in `sw.js` must have changed too, or the update silently never reaches anyone who already opened the app |
 
 ## Adding a test
