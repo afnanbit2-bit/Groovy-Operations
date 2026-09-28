@@ -3929,7 +3929,7 @@ function _boardsOpenSheet(title,html,opts){
 }
 /* ── The module's own confirm and one-value ask (Sept 2026) ───────────────
    Milanote asks nothing through the browser's dialogs any more: a native
-   confirm() or prompt() is grey, unstyled, blocks the whole tab and can be
+   confirm or prompt dialog is grey, unstyled, blocks the whole tab and can be
    switched off by the browser. Both resolve a Promise, so a caller awaits.
    Its OWN ids (not #board-sheet), because a confirm is often raised from
    inside an open sheet (removing a label) and must not close it. Every
@@ -3943,8 +3943,11 @@ function _boardsDlgClose(val){
   document.removeEventListener('keydown',_boardsDlgKey,true);
   if(r)r(val);
 }
-// Capture phase on the document, so it runs before anything else. EVERY
-// key stops here while the dialog is open (review of 7f66f64: Delete behind
+// Capture phase on the document, so it runs before the board's own key
+// handlers (only the few capture listeners registered before it -- present,
+// preview, image edit, rail drag -- still see a key first, and none of them
+// is live while a dialog can be raised). EVERY key stops here while the
+// dialog is open (review of 7f66f64: Delete behind
 // the confirm deleted the selected card, Ctrl+Z ran the board's undo).
 // Tab cycles inside the dialog; Enter answers what has focus (Cancel
 // focused + Enter is no, as with the browser's own confirm); the one thing
@@ -3955,7 +3958,12 @@ function _boardsDlgKey(e){
   const a=document.activeElement;
   const inBox=!!(box&&a&&box.contains&&box.contains(a));
   const field=_boardsDlgField?document.getElementById('board-confirm-field'):null;
+  // An input method still composing (Urdu, Japanese…) owns Enter and the rest.
+  if(e.isComposing||e.keyCode===229)return;
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();_boardsDlgClose(null);return;}
+  // Space presses a focused dialog button, as in the browser's own confirm;
+  // it just never reaches the board (Space there is pan).
+  if(e.key===' '&&inBox&&a&&a.tagName==='BUTTON'){e.stopPropagation();return;}
   if(e.key==='Enter'){
     e.preventDefault();e.stopPropagation();
     window.boardsDlgAnswer(!(inBox&&a&&a.id==='board-confirm-no'));
@@ -4012,7 +4020,7 @@ function _boardsAsk(msg,value,opts){
   return _boardsDialog(msg,Object.assign({ok:'Save'},opts||{},{field:(opts&&opts.field)||'text',value}));
 }
 /* In-place rename (Sept 2026). The title turns into an editable field
-   WHERE IT SITS — no prompt(). Enter or leaving the field commits, Escape
+   WHERE IT SITS — no prompt dialog. Enter or leaving the field commits, Escape
    puts the old text back, and an empty field reverts rather than saving a
    blank. The text is read and written with textContent (.value for an
    input), never as markup. While it is being edited, a press, click or

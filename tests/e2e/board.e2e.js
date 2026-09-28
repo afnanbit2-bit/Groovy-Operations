@@ -285,16 +285,21 @@ function NAV_TIMED(id,boardPage){
   };
   const shotRaw=async(name)=>{
     await sleep(400);   // let a repaint and the fonts settle
-    // The WHOLE page, not the viewport: the Dashboard's right column and a
-    // list's Completed group sit below the fold (the tester's first run).
-    const m=await send('Page.getLayoutMetrics').catch(()=>null);
-    const cs=m&&(m.cssContentSize||m.contentSize),vp=m&&(m.cssLayoutViewport||m.layoutViewport);
-    const tall=cs&&vp&&cs.height>vp.clientHeight+2;
-    const {data}=await send('Page.captureScreenshot',tall
-      ?{format:'png',captureBeyondViewport:true,clip:{x:0,y:0,width:vp.clientWidth,height:Math.min(cs.height,8000),scale:1}}
-      :{format:'png'});
-    const f=name+'.png'; fs.writeFileSync(path.join(outDir,f),Buffer.from(data,'base64'));
-    report.screens.push(f); console.log('  shot '+f);
+    // Below the fold too (the Dashboard's right column, a list's Completed
+    // group), as SCROLLED viewport shots: one tall capture paints the
+    // fixed bars and sheets into the middle of the page (the tester's
+    // second run), which is not what anyone sees. Up to four per screen.
+    const vh=await ev('window.innerHeight').catch(()=>0);
+    const total=await ev('Math.max(document.documentElement.scrollHeight,document.body.scrollHeight)').catch(()=>0);
+    const parts=vh>0?Math.min(4,Math.max(1,Math.ceil((total-2)/vh))):1;
+    for(let i=0;i<parts;i++){
+      if(parts>1){ await ev('window.scrollTo(0,'+(i*vh)+')'); await sleep(200); }
+      const {data}=await send('Page.captureScreenshot',{format:'png'});
+      const f=name+(i?'-p'+(i+1):'')+'.png'; fs.writeFileSync(path.join(outDir,f),Buffer.from(data,'base64'));
+      report.screens.push(f); console.log('  shot '+f);
+    }
+    if(parts>1)await ev('window.scrollTo(0,0)');
+    if(vh>0&&total>vh*4+2)report.notes.push(name+': the page is taller than four screens; only the first four were captured.');
   };
   // One screen: screenshot, then every per-screen assertion, with the
   // console and exception counts scoped to what happened since the last one.

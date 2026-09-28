@@ -5628,7 +5628,12 @@ module.exports=function(){
       s.ok('the page name the bug tracker records is Milanote',/'creative-hub':'Milanote'/.test(src('js/shared.js')));
       s.ok('page ids are unchanged',/showPage\('creative-hub'\)/.test(src('js/shared.js')));
       ['js/boards.js','js/notes.js'].forEach(f=>
-        s.ok(f+' calls no browser prompt/confirm/alert',!/(^|[^.\w$])(window\.)?(prompt|confirm|alert)\s*\(/m.test(code(f))));
+        // Line by line, skipping only lines that START as a comment: stripping
+        // /* */ across the file can swallow real code after a "/*" inside a
+        // string (it undercounted the app-wide P2 list by 39).
+        s.ok(f+' calls no browser prompt/confirm/alert',
+          !src(f).split(/\r?\n/).filter(l=>!/^\s*(\/\/|\*|\/\*)/.test(l))
+            .some(l=>/(^|[^.\w$])(window\.)?(prompt|confirm|alert)\s*\(/.test(l))));
     }
   })());
 
