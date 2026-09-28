@@ -375,6 +375,10 @@ module.exports=async function(){
       W.cloud.answerPid=null;
       const out=mkWorld({signedOut:true});
       await out.app.run('maLoad()');
+      // With no signed-in user there is no sign-in time, so the idle lock is
+      // due and no form opens (M1.6b, security F5). Activity a moment ago
+      // lets this reach the upload, which is what is under test here.
+      out.app.run('_maTouch()');
       out.app.run("window.maRecordKind('money_out')");
       await out.pick([out.file('a.jpg','image/jpeg')],'form');
       s.ok('signed out — said, and nothing is sent',/Sign in again — you are signed out\./.test(out.app.el('ma-f-att').innerHTML)&&out.calls.length===0);
@@ -447,8 +451,11 @@ module.exports=async function(){
       s.eq('it is signed as that PDF',J(sign&&sign.body.file&&[sign.body.file.name,sign.body.file.type,sign.body.file.size>0]),J(['Voucher-JV-27-0002.pdf','application/pdf',true]));
       s.eq('uploaded straight to Cloudinary, private',J([W.uploads.length,W.uploads[0]&&W.uploads[0].fields.type]),J([1,'authenticated']));
       const create=W.fnCalls('ma-share').find(c=>c.body.action==='create');
-      s.eq('create names the document, the file, the days and who it is for',J(create&&[create.body.subject,create.body.file.format,create.body.file.type,create.body.days,create.body.to]),
-        J([{type:'journal',id:'JV-27-0002',no:'JV-27-0002'},'pdf','authenticated',7,{party:'Asghar Printers',phone:'+923001234567'}]));
+      // M1.6b: the subject carries the revision the PDF was made at — in `no`,
+      // which ma-share keeps, and as `rev` for a server that stores it — so
+      // the list can say when the document changed since (money M3).
+      s.eq('create names the document at its revision, the file, the days and who it is for',J(create&&[create.body.subject,create.body.file.format,create.body.file.type,create.body.days,create.body.to]),
+        J([{type:'journal',id:'JV-27-0002',no:'JV-27-0002 · rev 1',rev:1},'pdf','authenticated',7,{party:'Asghar Printers',phone:'+923001234567'}]));
       s.ok('… by reference, not by URL',noUrlIn(create&&create.body));
       const sh=shares(W.st);
       s.eq('the function wrote ONE share',sh.length,1);

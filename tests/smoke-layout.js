@@ -182,7 +182,11 @@ function _maFixture(){
     add('transfer',{date:'2026-09-23',from:'1011',to:'1012',amount:25000,note:'For the Saturday pay run'});
     add('count',{date:'2026-09-15',holder:'1012',counted:144000},'ammar',{book:145000,doc:{note:'Short by a thousand'}});
     maData.audit=[{action:'post',target:{dt:'journal',id:'JV-27-0002',no:'JV-27-0002'},detail:'Money out ₨1,50,000',by:'afnan',byName:'Afnan',at:T},{action:'edit',target:{dt:'journal',id:'JV-27-0004',no:'JV-27-0004'},detail:'rev 2 · amount — The washing bill said 38,500',by:'ammar',byName:'Ammar',at:T+5000}];
-    _maMirror={ok:true,cash:52000,why:''};maLoaded=true;_maLoadErrs=[];_maInvalidate();
+    _maMirror={ok:true,cash:52000,why:'',at:Date.now()};maLoaded=true;_maLoadErrs=[];_maInvalidate();
+    // A session in use: since M1.6b a form, like every paint, asks the idle
+    // re-lock first, and this fixture has no signed-in account to vouch for
+    // it — without a touch every form here would silently not open.
+    _maTouch();
     return 1;})()`);
   return app;
 }
@@ -279,7 +283,9 @@ const FRAGMENTS={
     const app=_maFixture();
     const wrap=(t,b)=>'<div class="ma-modal wide" style="position:static;max-height:none;margin-bottom:16px"><div class="ma-modal-head"><h2>'+t+'</h2></div><div class="ma-modal-body">'+b+'</div></div>';
     const now=Date.now(),D=86400000,tok=c=>c.repeat(43);
-    const base={docKind:'journal',docId:'JV-27-0003',docNo:'JV-27-0003',format:'pdf',createdBy:'afnan',createdAt:now-2*D,days:7,revoked:false,opens:0,previews:0};
+    // The record ma-share writes (M1.6b: the page calls a link live only
+    // when the function would serve it, so the file reference is here too).
+    const base={docKind:'journal',docId:'JV-27-0003',docNo:'JV-27-0003 · rev 1',pdfPublicId:'ma/'+'5'.repeat(64),format:'pdf',resourceType:'image',deliveryType:'authenticated',createdBy:'afnan',createdAt:now-2*D,days:7,revoked:false,opens:0,previews:0};
     const rows=[
       Object.assign({},base,{token:tok('a'),filename:'Voucher-JV-27-0003 — Al-Karam Textiles, tax invoice INV-2026-09-0417, single jersey 180 GSM.pdf',to:{party:'Al-Karam Textiles (Faisalabad mill, accounts office)',phone:'+923001234567'},expiresAt:now+5*D,opens:12,lastOpenedAt:now-3600000,previews:3,lastPreviewAt:now-7200000}),
       Object.assign({},base,{token:tok('b'),filename:'Voucher-JV-27-0003.pdf',createdAt:now-20*D,expiresAt:now-13*D,opens:1,lastOpenedAt:now-19*D}),
@@ -289,7 +295,47 @@ const FRAGMENTS={
     const list=app.run('_maShareListHTML()');
     app.run("_maShare.list={state:'error',rows:[],err:'Missing or insufficient permissions.'}");
     const err=app.run('_maShareListHTML()');
-    return Promise.resolve(wrap('Links to this voucher — live, expired, withdrawn, not valid',list)+wrap('Links — a refused read',err));
+    // M1.6b: a live link to a document edited since it was made says so.
+    const stale=[Object.assign({},base,{token:tok('e'),docId:'JV-27-0004',docNo:'JV-27-0004 · rev 1',filename:'Voucher-JV-27-0004 — Al-Hamd Washing, the September wash.pdf',expiresAt:now+5*D,opens:2,lastOpenedAt:now-3600000})];
+    app.run(`_maShare={spec:_maShareSpec('journal','JV-27-0004'),busy:false,step:'',err:'',made:null,list:{state:'ok',rows:${JSON.stringify(stale)},err:''}}`);
+    const moved=app.run('_maShareListHTML()');
+    return Promise.resolve(wrap('Links to this voucher — live, expired, withdrawn, not valid',list)+wrap('Links — a refused read',err)+wrap('Links — the document changed since',moved));
+  },
+  // M1.6b: the drawer could not be read and the backups could not be read —
+  // "incomplete" wherever cash in hand is shown, the 30 days not judged, the
+  // Money page's holder table — and the Ledger's running balance hidden
+  // under a party filter and for the drawer, said in words.
+  'master accounts — the drawer not read, and the backups not read':()=>{
+    const app=_maFixture();
+    // A loom instalment the holders cannot meet: without the drawer that
+    // day cannot be judged, and the page says so instead of "runs short".
+    app.run("maData.commitments.push({id:'c9',name:'Loom instalment',kind:'financing',cadence:'monthly',dueDay:10,amountExpected:9000000,account:'2140',holder:'1020',costCentre:'factory',active:true})");
+    app.run("_maMirror={ok:false,cash:null,why:'Missing or insufficient permissions.',at:Date.now()};_maLoadErrs=[{key:'backups',col:'ma_backups',core:false,message:'Missing or insufficient permissions.',code:'permission-denied'}];_maInvalidate()");
+    return Promise.resolve(app.run("_maPageHTML('ma-overview')")+app.run("_maPageHTML('ma-money')"));
+  },
+  'master accounts — a ledger with no running balance':()=>{
+    const app=_maFixture();
+    app.run("_maPeriod='quarter';_maLedgerTab='postings';_maLF=Object.assign(_maLFBlank(),{holder:'1020',party:'p3'})");
+    const filtered=app.run("_maPageHTML('ma-ledger')");
+    app.run("_maLF=Object.assign(_maLFBlank(),{holder:'1010'})");
+    const drawer=app.run("_maPageHTML('ma-ledger')");
+    return Promise.resolve(filtered+drawer);
+  },
+  // The Dashboard card: locked (it reads nothing), and with the drawer and
+  // the backups unread — two warning words that must wrap at phone width.
+  'master accounts — the Dashboard card, locked and incomplete':()=>{
+    const app=_maFixture();
+    return (async()=>{
+      const card=()=>{const b=app.el('ma-dash-body');return app.run('renderMasterAccountsDashboardWidget()').replace('Loading…',b.innerHTML||app.run('maEsc('+JSON.stringify(b.textContent)+')'));};
+      app.run('_maNeedsRelock=()=>true');
+      await app.run('_maPopulateDashboard()');
+      const locked=card();
+      app.run('_maNeedsRelock=()=>false');
+      app.run("_maMirror={ok:false,cash:null,why:'Missing or insufficient permissions.',at:Date.now()};_maLoadErrs=[{key:'backups',col:'ma_backups',core:false,message:'Missing or insufficient permissions.',code:'permission-denied'}];_maInvalidate()");
+      const b=app.el('ma-dash-body');b.innerHTML='';b.textContent='';
+      await app.run('_maPopulateDashboard()');
+      return locked+card();
+    })();
   },
   'master accounts — backups in every state, and the attachment mode':()=>{
     const app=_maFixture();

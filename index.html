@@ -227,8 +227,8 @@ window.__vendorFallback=function(url){
 <script src="/assets/vendor/flatpickr-4.6.13.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js')"></script>
 <script src="/js/diagnostics.js?v=20260917type"></script>
 <script src="/js/shared.js?v=20260928v228"></script>
-<script src="/js/print-engine.js?v=20260928v229"></script>
-<script src="/js/auth.js?v=20260927v224"></script>
+<script src="/js/print-engine.js?v=20260928v244"></script>
+<script src="/js/auth.js?v=20260928v244"></script>
 <script src="/js/pos.js?v=20260927v224"></script>
 <script src="/js/embellishments.js?v=20260928v228"></script>
 <script src="/js/hrm.js?v=20260927v224"></script>
@@ -247,11 +247,11 @@ window.__vendorFallback=function(url){
 <script src="/js/marketing.js?v=20260918chart"></script>
 <script src="/js/patterns.js?v=20260917label"></script>
 <script src="/js/theboard.js?v=20260927v220"></script>
-<script src="/js/ma-core.js?v=20260928v238"></script>
-<script src="/js/master-accounts.js?v=20260928v238"></script>
+<script src="/js/ma-core.js?v=20260928v244"></script>
+<script src="/js/master-accounts.js?v=20260928v244"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot,terminate,clearIndexedDbPersistence,waitForPendingWrites}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,updatePassword,reauthenticateWithCredential,EmailAuthProvider,setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild,onValue as rtdbOnValue,off as rtdbOff}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 const app=initializeApp({apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'});
@@ -270,6 +270,7 @@ try{
 Object.assign(window,{
   db:firestoreDb, auth:getAuth(app), rtdb:getDatabase(app),
   collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot,
+  terminate,clearIndexedDbPersistence,waitForPendingWrites,
   signInWithEmailAndPassword,signOut,onAuthStateChanged,
   updatePassword,reauthenticateWithCredential,EmailAuthProvider,
   setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken,

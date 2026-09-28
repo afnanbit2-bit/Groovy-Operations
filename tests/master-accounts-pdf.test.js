@@ -270,6 +270,30 @@ module.exports=async function(){
     s.ok('an empty period says so instead of an empty table',prose(d3).indexOf('Nothing was posted to this account in the period.')>=0&&d3.log.text.some(t=>t.t==='Period totals · 0 postings'));
   }
 
+  s.section('M1.6b — the ledger draws no running balance when the core hides it (money F4/F5)');
+  {
+    // Under a narrowing filter: the core hides it, the engine draws none.
+    const NAR=M.maPdfLedgerData(X,{from:FROM,to:TO,holder:'1011',party:'p_asg',label:'Q2 FY27'});
+    s.eq('(the core hides it under a party filter)',J([NAR.opening,NAR.closing,NAR.balanceHidden&&NAR.balanceHidden.narrow]),J([null,null,['party']]));
+    const {d}=await print(e,'ma-ledger',NAR);
+    const T=texts(d);
+    s.ok('no Balance column, no opening row, no closing row',!T.some(t=>t==='Balance'||t==='Opening balance'||t==='Closing balance'));
+    s.ok('no Opening or Closing figure either',!T.some(t=>t==='Opening'||t==='Closing'));
+    s.ok('…and it says why, in the words the page uses',prose(d).indexOf('Balance hidden while filtered by party — a balance over some of an account’s lines is not its balance.')>=0,prose(d).slice(0,300));
+    s.ok('its rows are drawn, with their debits and credits',NAR.rows.length>0&&NAR.rows.every(r=>count(d,r.no)===1));
+    // The drawer: Store Accounts' balance, or "not read".
+    const DR=M.maPdfLedgerData(X,{from:FROM,to:TO,holder:'1010',label:'Q2 FY27'});
+    s.eq('(the core hides the drawer\'s, and hands over Store Accounts\' figure)',J([DR.opening,DR.closing,DR.balanceHidden&&DR.balanceHidden.mirror,DR.balanceHidden&&DR.balanceHidden.mirrorBalance]),J([null,null,'store',45000]));
+    const {d:dd}=await print(e,'ma-ledger',DR);
+    const TD=texts(dd);
+    s.ok('the drawer\'s ledger: no Balance column and no opening or closing',!TD.some(t=>t==='Balance'||t==='Opening balance'||t==='Closing balance'));
+    s.ok('…but Store Accounts\' balance, as a figure',TD.indexOf('Balance in Store Accounts')>=0&&TD.indexOf(rs(45000))>=0);
+    const {d:dn}=await print(e,'ma-ledger',Object.assign(clone(DR),{balanceHidden:Object.assign({},DR.balanceHidden,{mirrorBalance:null})}));
+    s.ok('…and "not read", never a zero, when that read failed',texts(dn).indexOf('not read')>=0);
+    const {d:dw}=await print(e,'ma-ledger',LEDGER);
+    s.ok('(a whole account keeps its Balance column and both balances)',['Balance','Opening balance','Closing balance'].every(h=>texts(dw).indexOf(h)>=0));
+  }
+
   s.section('the statements — the holder\'s and the party\'s');
   {
     const {d}=await print(e,'ma-statement-holder',HOLDER);

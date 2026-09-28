@@ -459,7 +459,20 @@ function maParseRupees(v){
   if(typeof v==='number')return Number.isFinite(v)?v:NaN;
   const s=String(v===undefined||v===null?'':v).replace(/[₨,\s]/g,'').replace(/^rs\.?/i,'');
   if(!/^-?\d+(\.\d+)?$/.test(s))return NaN;
+  // "5.000" is a thousands separator somewhere else in the world, and ₨5
+  // here: it is never read as either (money N2) — maRupeesDotted says what
+  // it probably meant.
+  if(/^-?\d{1,3}(\.\d{3})+$/.test(s))return NaN;
   return Number(s);
+}
+/* "5.000" or "1.500.000" — digits in threes after a point, the way a
+   thousands separator is written elsewhere. The figure it was probably
+   meant to be ('5,000'), or '' for anything else. */
+function maRupeesDotted(v){
+  if(typeof v!=='string')return '';
+  const s=v.replace(/[₨\s]/g,'').replace(/^rs\.?/i,'');
+  if(!/^-?\d{1,3}(\.\d{3})+$/.test(s))return '';
+  return (s.charAt(0)==='-'?'−':'')+maGroup(Number(s.replace(/[-.]/g,'')));
 }
 /* 1,50,000 — three digits, then twos. Done by hand so a browser without
    the en-IN locale data cannot change it. */
@@ -913,9 +926,39 @@ function maTrialBalance(lines,idx,opts){
   const debit=rows.reduce((t,r)=>t+r.debit,0),credit=rows.reduce((t,r)=>t+r.credit,0);
   return {rows,dr,cr,debit,credit,balanced:dr===cr&&debit===credit};
 }
-/* The ledger (§16.2 "every posting, one shape"). With ONE account, holder
-   or party it carries an opening, a running balance and a closing. */
-function maLedger(lines,filter,idx){
+/* The filters that NARROW one account's ledger to SOME of its lines (M1.6b,
+   money F4). A balance run over some of an account's lines is not its
+   balance — "opening ₨0, balance −₨15,000" for MCB filtered to the
+   landlord — so while one is on there is no running balance, no opening
+   and no closing; the totals of the lines shown still stand. The range is
+   not one: the opening carries what came before it. */
+const MA_LEDGER_NARROW=[['party','party'],['dt','document type'],['q','search'],['category','category'],['spendGroup','spend group'],['costCentre','cost centre'],['source','source'],['kind','kind']];
+/* ONE account's running balance is shown only when it IS the account's
+   balance (M1.6b): not under a narrowing filter, and not for a holder whose
+   balance is another module's book — the drawer is Store Accounts' (money
+   F5): its lines here are the handovers alone, and a balance run from them
+   is one nobody holds. → null (a balance is shown) or {narrow:[labels],
+   mirror:'store'|null}. `settings` carries the mirrors; without it no
+   holder is taken for mirrored. */
+function maLedgerBalanceHidden(filter,settings){
+  const f=filter||{};
+  const code=f.account||f.holder;
+  if(!code)return null;
+  const narrow=MA_LEDGER_NARROW.filter(x=>f[x[0]]).map(x=>x[1]);
+  const mirror=settings&&settings.mirrors&&settings.mirrors[String(code)]?String(settings.mirrors[String(code)]):null;
+  return narrow.length||mirror?{narrow,mirror}:null;
+}
+/* "party and search" — the narrowing filters, in words. */
+function maLedgerHiddenWhy(h){
+  if(!h)return '';
+  if(h.mirror)return 'its balance is Store Accounts’ — only handovers to and from it are recorded here';
+  const n=h.narrow||[];
+  return 'balance hidden while filtered by '+(n.length>1?n.slice(0,-1).join(', ')+' and '+n[n.length-1]:n[0]||'a filter')+' — a balance over some of an account’s lines is not its balance';
+}
+/* The ledger (§16.2 "every posting, one shape"). With ONE account or
+   holder it carries an opening, a running balance and a closing — unless
+   maLedgerBalanceHidden says that would not be the account's balance. */
+function maLedger(lines,filter,idx,settings){
   const f=filter||{};
   const q=maNorm(f.q);
   const inRange=l=>(!f.from||l.date>=f.from)&&(!f.to||l.date<=f.to);
@@ -933,7 +976,8 @@ function maLedger(lines,filter,idx){
     (!q||maLineText(l,idx).indexOf(q)>=0);
   const all=(lines||[]).filter(match).slice().sort((a,b)=>
     a.date<b.date?-1:a.date>b.date?1:String(a.doc&&a.doc.no||'').localeCompare(String(b.doc&&b.doc.no||'')));
-  const single=f.account||f.holder;
+  const hidden=maLedgerBalanceHidden(f,settings);
+  const single=hidden?null:(f.account||f.holder);
   const acc=single?maAcc(idx,single)||{normal:'dr'}:null;
   const sign=l=>acc&&acc.normal==='cr'?l.cr-l.dr:l.dr-l.cr;
   let opening=0;
@@ -948,7 +992,7 @@ function maLedger(lines,filter,idx){
     rows.push(r);
   });
   return {rows,opening:single?opening:null,closing:single?run:null,dr,cr,count:rows.length,
-    sources:Array.from(new Set(rows.map(r=>r.source))).length};
+    sources:Array.from(new Set(rows.map(r=>r.source))).length,balanceHidden:hidden};
 }
 function maLineText(l,idx){
   const a=maAcc(idx,l.account);
@@ -1085,7 +1129,10 @@ function maPartyIssues(p,ctx){
     if(tx&&tx.withholdingPct!==undefined&&tx.withholdingPct!==null&&!(Number.isFinite(tx.withholdingPct)&&tx.withholdingPct>=0&&tx.withholdingPct<=100))bad('party.wht','Withholding is 0 to 100%.','tax');
   }
   if(p&&p.courier&&p.courier.cycle&&MA_COURIER_CYCLES.indexOf(p.courier.cycle)<0)bad('party.cycle','Unknown courier cycle.','cycle');
-  if(p&&p.costCentre&&c.settings&&c.settings.costCentres.indexOf(p.costCentre)<0)bad('party.costCentre','Unknown cost centre.','costCentre');
+  // A party kept on a cost centre removed from Settings since may keep it
+  // through an edit (M1.6b, money F1); a new choice must be on the list.
+  const was=p&&(c.parties||[]).find(x=>x&&x.id===p.id);
+  if(p&&p.costCentre&&c.settings&&c.settings.costCentres.indexOf(p.costCentre)<0&&!(was&&was.costCentre===p.costCentre))bad('party.costCentre','Unknown cost centre.','costCentre');
   if(p&&p.owner&&p.kind==='owner'&&MA_OWNERS.indexOf(p.owner.username)<0)bad('party.owner','An owner party is Afnan or Ammar.','owner');
   return out;
 }
@@ -1180,6 +1227,50 @@ function maCommitmentStatus(c,docs,today,settings){
   return {state,due,period,amountPaid,expected:c.amountExpected||0,docs:paid.map(d=>d.id||d._id||d.no),
     next:next.length?next[0]:null};
 }
+/* The period a payment made on `day` most likely settles (M1.6b, money
+   F10): the OLDEST due period on or before that day still not paid in full
+   — a late payment settles the period it was late for, never the one after
+   it, which is what an empty field used to become (the payment date's own
+   period: August's rent paid on 2 Sep marked September paid and hid it).
+   How far back it looks: from the first period anything was ever recorded
+   against — a period before that is one the books never tracked, not one
+   left unpaid — and when nothing ever was, the latest one due on or before
+   the day. Everything due already paid: the next period due after the day
+   (paying ahead). A cadence with no calendar day (per parcel, per piece,
+   varies) names the day itself, the way maCommitmentPeriodKey does. The
+   form shows the answer and the owner may change it; '' only when there is
+   nothing to name. */
+function maCommitmentOpenPeriod(c,docs,day,settings){
+  const s=settings||MA_DEFAULT_SETTINGS;
+  if(!c||!maIsDay(day))return '';
+  if(MA_CADENCES.slice(0,4).indexOf(c.cadence)<0)return day;
+  const lo=c.from&&maIsDay(c.from)&&c.from>s.historyFrom?c.from:s.historyFrom;
+  const periods=[];
+  maCommitmentDueDays(c,lo,day,s.fiscalYearStart).forEach(d=>{const p=maCommitmentPeriodKey(c,d,s.fiscalYearStart);if(periods.indexOf(p)<0)periods.push(p);});
+  const mine=(docs||[]).filter(x=>x&&x.status!=='void'&&x.commitmentId===c.id);
+  const paidIn=p=>mine.filter(x=>x.commitmentPeriod===p).reduce((t,x)=>t+(x.amount||0),0);
+  const any=p=>mine.some(x=>x.commitmentPeriod===p);
+  let start=periods.findIndex(any);
+  if(start<0)start=periods.length-1;
+  const open=p=>!any(p)||(c.amountExpected&&paidIn(p)<c.amountExpected);
+  for(let i=Math.max(0,start);i<periods.length;i++)if(open(periods[i]))return periods[i];
+  // Paying ahead: the first period due after the day not already paid.
+  const later=[];
+  maCommitmentDueDays(c,maDayAdd(day,1),maDayAdd(day,400),s.fiscalYearStart).forEach(d=>{const p=maCommitmentPeriodKey(c,d,s.fiscalYearStart);if(later.indexOf(p)<0)later.push(p);});
+  return later.find(open)||later[0]||'';
+}
+/* A period written the way this commitment's cadence keys it: 2026-09
+   (monthly), 2027-Q1 (quarterly), 2026 (yearly), a day otherwise. A typo
+   ("2026-9") would never match what the status looks for, so the payment
+   would settle nothing and the dues would stay open. */
+function maCommitmentPeriodOk(c,p){
+  const v=String(p||'');
+  if(!c)return !!v;
+  if(c.cadence==='monthly')return /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
+  if(c.cadence==='quarterly')return /^\d{4}-Q[1-4]$/.test(v);
+  if(c.cadence==='yearly')return /^\d{4}$/.test(v);
+  return maIsDay(v);
+}
 function maCommitmentText(c){
   if(!c)return '';
   if(c.cadence==='monthly')return 'Monthly · the '+c.dueDay+_maOrd(c.dueDay);
@@ -1223,13 +1314,32 @@ function maCalendar(o){
   (o.inflows||[]).forEach(x=>{if(byDay[x.day]){byDay[x.day].events.push(Object.assign({dir:'in'},x));byDay[x.day].in+=x.amount||0;}});
   let bal=Math.round(o.start||0);const unfunded=[];
   days.forEach(c=>{bal+=c.in-c.out;c.projected=bal;if(bal<0)unfunded.push(c.day);});
-  return {start:Math.round(o.start||0),days,unfunded,out:days.reduce((t,c)=>t+c.out,0),in:days.reduce((t,c)=>t+c.in,0),end:bal};
+  // `complete:false` — the start left out a holder that could not be read
+  // (the drawer): every figure here is then short by what it holds, and a
+  // "short" day is a question, not an answer (M1.6b, money F3).
+  return {start:Math.round(o.start||0),complete:o.complete!==false,waiting:Math.round(o.waiting||0),
+    days,unfunded,out:days.reduce((t,c)=>t+c.out,0),in:days.reduce((t,c)=>t+c.in,0),end:bal};
 }
-/* What the calendar funds from: the cash and bank holders. */
+/* What the calendar funds from: the cash and bank holders, as they stand
+   with every handover still waiting NOT MOVED (M1.6b). A waiting transfer
+   posts nothing, so the holder it left still holds it and the one it goes
+   to does not — true of every holder kept here. The drawer is Store
+   Accounts' figure, which moves when Raees records the handover, and he
+   records it BEFORE an owner confirms it (M1.6a). So a handover waiting to
+   go INTO the drawer is taken out of the drawer's figure (`waiting`): it is
+   counted where it came from, and never twice. One waiting to come OUT of
+   the drawer is left as Store Accounts has it — adding it back would count
+   money Raees may no longer hold. Neither way can the start be more than
+   what is really there. `complete:false` when a holder could not be read. */
 function maSpendable(rows){
-  let t=0,ok=true;
-  (rows||[]).forEach(r=>{if(!r.active||(r.holderKind!=='cash'&&r.holderKind!=='bank'))return;if(r.balance===null){ok=false;return;}t+=r.balance;});
-  return {total:t,complete:ok};
+  let t=0,ok=true,waiting=0;
+  (rows||[]).forEach(r=>{
+    if(!r.active||(r.holderKind!=='cash'&&r.holderKind!=='bank'))return;
+    if(r.balance===null){ok=false;return;}
+    t+=r.balance;
+    if(r.mirror&&r.pendingIn){t-=r.pendingIn;waiting+=r.pendingIn;}
+  });
+  return {total:t,complete:ok,waiting};
 }
 
 /* ── Validation (§6) ────────────────────────────────────────────────────── */
@@ -1266,7 +1376,10 @@ function maValidate(doc,ctx){
   const holderOk=(code,field,opts)=>{
     const h=acc(code);
     if(!h||!h.money){refuse('holder.money','Name the holder the money '+((opts&&opts.dir)||'moves through')+' — a cash, bank or till account.',field);return false;}
-    if(!h.active){refuse('holder.inactive',h.name+' is switched off in Settings.',field);return false;}
+    // An edit that leaves the holder as it was is not a new use of it: a
+    // holder switched off since stays on the documents it already carries
+    // (M1.6b, money F1 — the form offers it, and must be able to keep it).
+    if(!h.active&&!(c.before&&c.before[field]===h.code)){refuse('holder.inactive',h.name+' is switched off in Settings.',field);return false;}
     if(s.mirrors&&s.mirrors[h.code]&&!(opts&&opts.allowMirror)){
       refuse('holder.mirror',h.name+' is still Raees’s book in Store Accounts (it moves here at M8) — spend and counts on it are recorded there. A handover to or from it is a Transfer.',field);return false;}
     return true;
@@ -1323,7 +1436,7 @@ function maValidate(doc,ctx){
         const a=acc(doc.account);
         if(!a)refuse('account.valid','Pick what this money was for.','account');
         else if(a.money)refuse('account.money','Money moving between two holders is a Transfer.','account');
-        else if(!a.active)refuse('account.inactive',a.name+' is switched off.','account');
+        else if(!a.active&&!(c.before&&c.before.account===a.code))refuse('account.inactive',a.name+' is switched off.','account');
         else if(MA_UNLABELLED.indexOf(a.code)>=0)flag('unlabelled','Not named yet — it waits in the Unlabelled queue until it is.','account');
         else if(k==='money_out'&&a.type==='revenue'&&!doc.note)flag('account.side','Money out booked to an income account — a refund? Say so in the note.','account');
         else if(k==='money_in'&&(a.type==='expense'||a.type==='cogs')&&!doc.note)flag('account.side','Money in booked to a cost — a refund from a vendor? Say so in the note.','account');
@@ -1338,8 +1451,18 @@ function maValidate(doc,ctx){
       }
       if(def.tax)maTaxIssues(doc.tax,doc.amount).forEach(x=>issues.push(x));
       if(def.owner&&MA_OWNERS.indexOf(doc.owner)<0)refuse('owner.who','Which owner — Afnan or Ammar?','owner');
-      if(def.tax&&doc.costCentre&&s.costCentres.indexOf(doc.costCentre)<0)refuse('costCentre.valid','Unknown cost centre “'+doc.costCentre+'”.','costCentre');
+      // A cost centre removed from Settings since stays on the documents
+      // recorded under it: an edit may keep it (money F1), never pick it.
+      if(def.tax&&doc.costCentre&&s.costCentres.indexOf(doc.costCentre)<0&&!(c.before&&c.before.costCentre===doc.costCentre))refuse('costCentre.valid','Unknown cost centre “'+doc.costCentre+'”.','costCentre');
       if(def.tax&&doc.commitmentId&&c.commitments&&!c.commitments.some(x=>x.id===doc.commitmentId))refuse('commitment.exists','That commitment is not in the register.','commitmentId');
+      // A payment against a commitment names the period it settles (money
+      // F10): a blank one used to become the payment date's own period.
+      else if(def.tax&&doc.commitmentId){
+        const cm=(c.commitments||[]).find(x=>x&&x.id===doc.commitmentId)||null;
+        const open=cm&&maIsDay(doc.date)?maCommitmentOpenPeriod(cm,(c.docs||[]).filter(d=>d&&d.id!==doc.id&&(!c.before||d.id!==c.before.id)),doc.date,s):'';
+        if(!maStr(doc.commitmentPeriod))refuse('commitment.period','Say which period this pays'+(open?' — the oldest still open on that day is '+open:'')+'.','commitmentPeriod');
+        else if(cm&&!maCommitmentPeriodOk(cm,doc.commitmentPeriod))refuse('commitment.period_shape','“'+maStr(doc.commitmentPeriod,20)+'” is not a period of '+cm.name+' — write it as '+(open||maCommitmentPeriodKey(cm,maIsDay(doc.date)?doc.date:s.historyFrom,s.fiscalYearStart)||'2026-09')+'.','commitmentPeriod');
+      }
       // Evidence (§6: attach above a threshold; refuse above another)
       if(aOk&&(k==='money_out'||k==='money_in')&&!(doc.attachments||[]).length){
         const ev=s.evidence||{};
@@ -1363,7 +1486,7 @@ function maValidate(doc,ctx){
       lines.forEach((l,i)=>{
         const a=acc(l.account);
         if(!a){refuse('line.account','Line '+(i+1)+': pick an account.','lines');bad=true;return;}
-        if(!a.active){refuse('line.inactive','Line '+(i+1)+': '+a.name+' is switched off.','lines');bad=true;}
+        if(!a.active&&!(c.before&&(c.before.lines||[]).some(x=>x&&x.account===a.code))){refuse('line.inactive','Line '+(i+1)+': '+a.name+' is switched off.','lines');bad=true;}
         if(s.mirrors&&s.mirrors[a.code]){refuse('holder.mirror','Line '+(i+1)+': '+a.name+' is still Raees’s book in Store Accounts until M8.','lines');bad=true;}
         if(k==='opening'){
           if(!Number.isInteger(l.amount)||l.amount<=0){refuse('line.amount','Line '+(i+1)+': whole rupees above zero.','lines');bad=true;return;}
@@ -1640,10 +1763,12 @@ function maNeedsAttention(o){
   (o.holders||[]).forEach(h=>{
     if(h.active&&h.mirror&&!h.mirrorOk)add('watch','The drawer’s balance could not be read from Store Accounts — cash in hand leaves it out.','A refused or failed read is never shown as zero.',{label:'Retry',go:'reload'},5e8);
   });
-  // An unfunded day
+  // An unfunded day — unless a holder could not be read: then the short day
+  // is the missing balance talking, and it is said as that (money F3).
   if(o.calendar&&o.calendar.unfunded&&o.calendar.unfunded.length){
     const d=o.calendar.unfunded[0];const cell=o.calendar.days.find(x=>x.day===d);
-    add('concern','On '+maDayLabel(d)+' the cash and bank holders run '+maRs(cell?cell.projected:0)+' short of what falls due.','Cash and bank today, less the cost register’s dues day by day.',{label:'See the days',go:'calendar'},1e9);
+    if(o.calendar.complete===false)add('watch','Can’t judge the next 30 days — the drawer’s balance could not be read.','Without the drawer, cash and bank would fall short on '+maDayLabel(d)+'; with it they may not.',{label:'Retry',go:'reload'},6e8);
+    else add('concern','On '+maDayLabel(d)+' the cash and bank holders run '+maRs(cell?cell.projected:0)+' short of what falls due.','Cash and bank today, less the cost register’s dues day by day.',{label:'See the days',go:'calendar'},1e9);
   }
   // Commitments overdue and due
   (o.commitments||[]).forEach(c=>{
@@ -1674,7 +1799,10 @@ function maNeedsAttention(o){
   // "running" row older than the watch window is not running, it is stuck
   // (the hourly function would have marked it failed — so it has stopped
   // waking), and that is said.
-  if(o.backup!==undefined){
+  // A read that failed says nothing about last night: that is a concern in
+  // itself, never silence (money M2).
+  if(o.backupUnread)add('concern','The backups could not be read — whether last night’s ran is not known.','ma_backups: the read was refused or failed. A failed read is never taken for a backup that ran.',{label:'Retry',go:'reload'},9e8);
+  else if(o.backup!==undefined){
     const b=o.backup,st=maBackupState(b);
     const age=b&&Number.isFinite(o.nowMs)&&Number.isFinite(b.at)?o.nowMs-b.at:null;
     const over=age!==null&&age>s.backupWatchHours*3600000;
@@ -1816,7 +1944,10 @@ function maPdfLedgerData(x,filter){
   const code=f.holder||f.account;
   if(!code)return null;
   const q={};Object.keys(f).forEach(k=>{if(k!=='label')q[k]=f[k];});
-  const led=maLedger(x.lines,q,x.idx);
+  // The page's own rule (M1.6b, money F4/F5): no running balance under a
+  // narrowing filter, nor for the drawer — whose balance is Store Accounts',
+  // printed as that module has it, or "not read", the holder statement's way.
+  const led=maLedger(x.lines,q,x.idx,x.settings);
   const a=maAcc(x.idx,code);
   const ix=_maPdfIndex(x);
   const filters=[];
@@ -1824,10 +1955,17 @@ function maPdfLedgerData(x,filter){
   if(f.dt)filters.push('Documents: '+(MA_DOC_TYPES[f.dt]?MA_DOC_TYPES[f.dt].label+'s':String(f.dt)));
   ['category','spendGroup','costCentre','source','kind'].forEach(k=>{if(f[k])filters.push(k.replace(/[A-Z]/g,c=>' '+c.toLowerCase()).replace(/^./,c=>c.toUpperCase())+': '+f[k]);});
   if(f.q)filters.push('Search: “'+maStr(f.q,60)+'”');
+  const hid=led.balanceHidden;
+  let mirrorBalance=null;
+  if(hid&&hid.mirror){
+    const h=(x.holders||maHolderRows(x.idx,x.lines,x.docs,{settings:x.settings})).find(y=>y.code===String(code))||null;
+    mirrorBalance=h&&Number.isInteger(h.balance)?h.balance:null;
+  }
   return {account:{code:String(code),name:a?a.name:String(code),type:a?a.type:'',normal:a?a.normal:'dr',holder:!!(a&&a.money)},
     range:{from:f.from||'',to:f.to||'',label:f.label||''},filters,
     opening:led.opening,closing:led.closing,totals:{dr:led.dr,cr:led.cr,count:led.count},
-    rows:led.rows.map(l=>Object.assign(_maPdfRow(x,ix,l),{dr:l.dr,cr:l.cr,balance:l.balance})),
+    balanceHidden:hid?{narrow:hid.narrow.slice(),mirror:hid.mirror,why:maLedgerHiddenWhy(hid),mirrorBalance}:null,
+    rows:led.rows.map(l=>Object.assign(_maPdfRow(x,ix,l),{dr:l.dr,cr:l.cr,balance:hid?null:l.balance})),
     printedOn:x.printedOn||'',printedBy:x.printedBy||''};
 }
 /* ma-statement-holder — one holder for a range: every movement with its
@@ -1843,7 +1981,7 @@ function maPdfHolderStatementData(x,code,range){
   code=String(code);
   const h=(x.holders||maHolderRows(x.idx,x.lines,x.docs,{settings:x.settings})).find(y=>y.code===code)||null;
   const mirror=!!(h?h.mirror:(x.settings&&x.settings.mirrors&&x.settings.mirrors[code]));
-  const led=maLedger(x.lines,{holder:code,from:r.from,to:r.to},x.idx);
+  const led=maLedger(x.lines,{holder:code,from:r.from,to:r.to},x.idx,x.settings);
   const ix=_maPdfIndex(x);
   const conf=(x.docs||[]).filter(d=>d&&d.dt==='transfer'&&(d.from===code||d.to===code)&&
       (d.status==='pending'||(d.status!=='void'&&d.confirmedBy&&(!r.from||d.date>=r.from)&&(!r.to||d.date<=r.to))))
@@ -1958,11 +2096,24 @@ function maWaLink(phone,text){
 /* A share link's state, in the order the ma-share function answers:
    withdrawn says so even when it has also expired; a record the function
    would not serve is 'unknown', never "live". */
+const MA_SHARE_MAX_DAYS=90;
+const MA_SHARE_SKEW_MS=5*60*1000;
 function maShareState(sh,nowMs){
   if(!sh||typeof sh!=='object')return 'unknown';
   if(sh.revoked===true)return 'revoked';
-  if(sh.revoked!==false||!Number.isFinite(sh.expiresAt))return 'unknown';
-  return Number.isFinite(nowMs)&&nowMs>=sh.expiresAt?'expired':'live';
+  if(sh.revoked!==false)return 'unknown';
+  // The rest is netlify/functions/ma-share.js's shareState, check for check
+  // (M1.6b): a record the function would answer "not found" to is not
+  // "live" here, whatever its expiry says.
+  const made=sh.createdAt,exp=sh.expiresAt;
+  if(!Number.isFinite(made)||!Number.isFinite(exp))return 'unknown';
+  if(Number.isFinite(nowMs)&&made>nowMs+MA_SHARE_SKEW_MS)return 'unknown';
+  if(exp<=made||exp-made>MA_SHARE_MAX_DAYS*86400000+MA_SHARE_SKEW_MS)return 'unknown';
+  const type=sh.deliveryType;
+  const rt=sh.resourceType===undefined||sh.resourceType===null||sh.resourceType===''?'image':sh.resourceType;
+  const fmt=typeof sh.format==='string'?sh.format.toLowerCase():'';
+  if((type!=='authenticated'&&type!=='upload')||rt!=='image'||!maAttachPidOk(sh.pdfPublicId,type)||fmt!=='pdf')return 'unknown';
+  return Number.isFinite(nowMs)&&nowMs>=exp?'expired':'live';
 }
 
 /* ── Download the books (§30, layer 3) — the owners' own copy ─────────────
@@ -1980,8 +2131,16 @@ const MA_BOOK_COLS=['ma_settings','ma_accounts','ma_sv_accounts','ma_parties','m
 // The postings and the trial balance are built from these; without one of
 // them they are not the whole book, and they say so.
 const _maBookCore=['ma_settings','ma_accounts','ma_journal','ma_transfer','ma_counts'];
+/* A share link's token IS its document id, and whoever holds it can open
+   the PDF while it is live: the books carry the link's state in its place,
+   never the token (M1.6b). */
+function maBooksNoTokens(cols,nowMs){
+  const out=Object.assign({},cols||{});
+  if(Array.isArray(out.ma_shares))out.ma_shares=out.ma_shares.map(x=>({id:'withheld — '+({live:'live',expired:'expired',revoked:'withdrawn'}[maShareState(x&&x.data,nowMs)]||'not valid'),data:Object.assign({},x&&x.data||{})}));
+  return out;
+}
 function maBooksJson(o){
-  const cols=o&&o.cols||{},failed=o&&o.failed||[];
+  const cols=maBooksNoTokens(o&&o.cols,o&&o.at),failed=o&&o.failed||[];
   const out={format:'groovy-master-accounts-books',version:1,exportedAt:o&&o.at||0,exportedBy:o&&o.by||null,
     complete:!failed.length,failed:failed.map(f=>({collection:String(f.col),error:maStr(f.message,300)})),counts:{},collections:{}};
   MA_BOOK_COLS.forEach(c=>{if(cols[c]){out.counts[c]=cols[c].length;out.collections[c]=cols[c];}});
@@ -1995,7 +2154,7 @@ function _maBookCell(v){
 }
 function maBooksSheets(o){
   o=o||{};
-  const cols=o.cols||{},failed=o.failed||[];
+  const cols=maBooksNoTokens(o.cols,o.at),failed=o.failed||[];
   const when=typeof o.when==='function'?o.when:(ms=>ms);
   const of=c=>(cols[c]||[]).map(x=>Object.assign({},x.data||{},{id:x.data&&x.data.id!==undefined?x.data.id:x.id}));
   const main=(cols.ma_settings||[]).find(x=>x.id==='main');
@@ -2033,7 +2192,7 @@ if(typeof module!=='undefined'&&module.exports){
     MA_COMMIT_KINDS,MA_CADENCES,MA_OWNERS,MA_DOC_TYPES,MA_JOURNAL_KINDS,MA_EDIT_FIELDS,MA_DEFAULT_SETTINGS,
     maSettings,maEsc,maNorm,maDay,maIsDay,maDayAdd,maDaysBetween,maWeekday,maMonthOf,maMonthAdd,maDaysInMonth,
     maFyEndYear,maFyOf,maQuarterOf,maQuarterRange,maQuarterLabel,maPeriodLabels,maMonthLabel,maDayLabel,
-    maParseRupees,maGroup,maRs,maRsSigned,maRsShort,maRsWords,maChart,maChartIndex,maAcc,maIsMoney,maMoneyAccounts,
+    maParseRupees,maRupeesDotted,maGroup,maRs,maRsSigned,maRsShort,maRsWords,maChart,maChartIndex,maAcc,maIsMoney,maMoneyAccounts,
     maTaxBlank,maTaxCompute,maTaxBlock,maTaxIssues,maDocNo,maTransferConfirm,maBuildDoc,maJournalTotal,
     maPost,maPostAll,maSumLines,maBal,maBalanceOf,maRunningMin,maHolderRows,maCashInHand,maTrialBalance,maLedger,
     maTermsIssues,maTermsText,maTermsAt,maTermsChange,maNextPayDay,maDueDate,maRateAt,maRateIssues,maRateChange,
@@ -2044,7 +2203,8 @@ if(typeof module!=='undefined'&&module.exports){
     maPdfLedgerData,maPdfHolderStatementData,maPdfPartyStatementData,maPdfReceiptData,maPdfVoucherData,
     MA_AUDIT_ACTIONS,MA_ATTACH_FORMATS,MA_ATTACH_MAX,MA_ATTACH_KEYS,MA_BACKUP_STATES,MA_BOOK_COLS,
     maAttachPidOk,maAttachOk,maAttachClean,maAttachList,maAttachFromUpload,maAttachRef,maAttachIssues,maRevOf,
-    maLiveFlags,maAnsweredFlags,maBackupState,maBackupMissing,maWaPhone,maWaLink,maShareState,maBooksJson,maBooksSheets,
+    maLiveFlags,maAnsweredFlags,maBackupState,maBackupMissing,maWaPhone,maWaLink,maShareState,MA_SHARE_MAX_DAYS,MA_SHARE_SKEW_MS,maBooksNoTokens,maBooksJson,maBooksSheets,
     MA_EDIT_DERIVED,MA_FIGURE_FIELDS,MA_CONFIRM_KEYS,MA_HANDS,MA_DRAWERS,maHandsOf,maIsDrawer,maTransferNeedsConfirm,
-    maConfirmWarning,maCountBookOf,maQuarterLocked,maEditClearsReview,maFlagRows,maCloseRelock};
+    maConfirmWarning,maCountBookOf,maQuarterLocked,maEditClearsReview,maFlagRows,maCloseRelock,
+    MA_LEDGER_NARROW,maLedgerBalanceHidden,maLedgerHiddenWhy,maCommitmentOpenPeriod,maCommitmentPeriodOk};
 }

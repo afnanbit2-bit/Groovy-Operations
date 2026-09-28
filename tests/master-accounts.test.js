@@ -161,7 +161,10 @@ module.exports=async function(){
     await a.run('maLoad()');
     a.run("window.maRecordKind('money_out')");
     s.ok('the form opens in a modal',/Money out/.test(a.bodyHtml('ma-modal-back')));
-    s.ok('the tax block defaults to No tax, chosen',/value="none"/.test(a.bodyHtml('ma-modal-back'))&&/chosen, not assumed/.test(a.bodyHtml('ma-modal-back')));
+    // Updated deliberately in M1.6b (money N1): the form still starts on No
+    // tax with no party, but no longer calls that a choice — it says it is a
+    // preset, and a party's usual tax replaces it (master-accounts-screens).
+    s.ok('the tax block starts on No tax — said to be a preset, not a choice',/value="none"/.test(a.bodyHtml('ma-modal-back'))&&/No tax is pre-set, not chosen/.test(a.bodyHtml('ma-modal-back'))&&!/chosen, not assumed/.test(a.bodyHtml('ma-modal-back')));
     s.ok('the drawer is left out of the holders, with its reason',!/value="1010"/.test(a.bodyHtml('ma-modal-back'))&&/Store Accounts until M8/.test(a.bodyHtml('ma-modal-back')));
     // A refusal writes nothing.
     set(a,'ma-f-date','2026-09-01');set(a,'ma-f-holder','1011');set(a,'ma-f-account','6050');set(a,'ma-f-payee','Plumber');set(a,'ma-f-amount','');set(a,'ma-f-taxkind','none');

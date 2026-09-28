@@ -214,6 +214,10 @@ function _loginSetBusy(on,label){
   if(f){const sp=f.querySelector('span');if(sp)sp.textContent=on&&label?label:(f.dataset.label||'Sign in with fingerprint');}
 }
 window.doLogout=async function(){
+  // Master Accounts: an owner's sign-out takes the books off this device
+  // first (js/master-accounts.js); while another tab holds them, nothing is
+  // signed out and it says so.
+  if(typeof window.maBooksOffDevice==='function'){let r=null;try{r=await window.maBooksOffDevice();}catch(_){}if(r&&r.stay){location.reload();return;}}
   await signOut(auth);session=null;sessionStorage.clear();
   try{sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}   // signing out on purpose: may be switching account
   location.reload();
@@ -1177,6 +1181,7 @@ window.lockUsePassword=async function(){
   const scr=document.getElementById('scr-lock');if(scr)scr.hidden=true;
   document.documentElement.classList.remove('app-locked');
   const u=(session&&session.u)||'';
+  if(typeof window.maBooksOffDevice==='function'){let r=null;try{r=await window.maBooksOffDevice();}catch(_){}if(r&&r.stay){location.reload();return;}}
   try{await signOut(auth);}catch(_){}
   session=null;
   try{sessionStorage.clear();sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}

@@ -112,7 +112,7 @@ async function maLoad(force){
         }
       });
       _maLoadErrs=errs;
-      await _maLoadMirror(!!force);
+      await _maLoadMirror();
       maLoaded=true;
     }catch(e){
       _maLoadErrs=[{key:'all',col:'ma_*',core:true,message:String(e&&e.message||e),code:''}];
@@ -126,20 +126,61 @@ function _maErr(key){return _maLoadErrs.find(e=>e.key===key)||null;}
 
 /* The drawer (1010) is Raees's book in Store Accounts until M8: its balance
    is read from there. A read that failed is NEVER a zero — mirrorOk:false,
-   and cash in hand says it is incomplete (maCashInHand). */
-async function _maLoadMirror(force){
-  _maMirror={ok:false,cash:null,why:'Store Accounts is not loaded in this build'};
-  if(typeof loadAccountsData!=='function'||typeof _acctBalances!=='function')return;
-  try{
-    await loadAccountsData(force);
-    const err=typeof _acctLoadErr!=='undefined'?_acctLoadErr:null;
-    if(err&&Array.isArray(err.cols)&&err.cols.some(c=>c==='acct_entries'||c==='acct_closes')){
-      _maMirror.why='Store Accounts could not read '+err.cols.join(', ');return;
+   and cash in hand says it is incomplete (maCashInHand).
+   M1.6b (money M1, S2): the read is ALWAYS a fresh one — Store Accounts
+   keeps its own copy for the session, and a figure from whenever that page
+   was first opened must not be shown as now — and it has 12 seconds: one
+   that has not answered by then is "not read", so a Store Accounts read
+   that never settles can no longer hold Master Accounts on its skeleton.
+   `at` is when this answer was had; the pages say "as of" it. */
+const _MA_MIRROR_WAIT=12000;
+const _MA_MIRROR_FRESH=5*60000;   // older than this, a page opening reads it again
+function _maWithin(p,ms){
+  return new Promise((res,rej)=>{
+    const t=setTimeout(()=>res(false),ms);
+    Promise.resolve(p).then(()=>{clearTimeout(t);res(true);},e=>{clearTimeout(t);rej(e);});
+  });
+}
+async function _maLoadMirror(){
+  // One assignment at the end: a paint while a re-read is in flight keeps
+  // showing the last answer (with its "as of"), never a passing "not read".
+  const fail=why=>({ok:false,cash:null,why,at:Date.now()});
+  let next;
+  if(typeof loadAccountsData!=='function'||typeof _acctBalances!=='function')next=fail('Store Accounts is not loaded in this build');
+  else try{
+    if(!await _maWithin(loadAccountsData(true),_MA_MIRROR_WAIT))next=fail('Store Accounts did not answer within '+Math.round(_MA_MIRROR_WAIT/1000)+' seconds');
+    else{
+      const err=typeof _acctLoadErr!=='undefined'?_acctLoadErr:null;
+      const b=err&&Array.isArray(err.cols)&&err.cols.some(c=>c==='acct_entries'||c==='acct_closes')?null:_acctBalances();
+      if(err&&!b)next=fail('Store Accounts could not read '+err.cols.join(', '));
+      else if(!b||!Number.isFinite(b.cash))next=fail('Store Accounts gave no drawer balance');
+      else next={ok:true,cash:Math.round(b.cash),why:'',at:Date.now()};
     }
-    const b=_acctBalances();
-    if(!b||!Number.isFinite(b.cash)){_maMirror.why='Store Accounts gave no drawer balance';return;}
-    _maMirror={ok:true,cash:Math.round(b.cash),why:''};
-  }catch(e){_maMirror={ok:false,cash:null,why:'Store Accounts failed: '+String(e&&e.message||e)};}
+  }catch(e){next=fail('Store Accounts failed: '+String(e&&e.message||e));}
+  _maMirror=next;
+}
+/* "as of 14:05" — when the drawer's figure was read; '' when it was not. */
+function _maMirrorAsOf(){
+  if(!_maMirror.ok||!Number.isFinite(_maMirror.at))return '';
+  const d=new Date(_maMirror.at);
+  return 'as of '+maPad(d.getHours())+':'+maPad(d.getMinutes());
+}
+/* A drawer figure read more than five minutes ago is read again when a
+   page opens (Store Accounts is Raees's live book). The page paints at once
+   with the older figure — it says "as of" — and again when the read lands,
+   unless someone is typing: a repaint would take the caret away. */
+let _maMirrorBusy=null;
+function _maMirrorFreshen(id){
+  if(_maMirrorBusy)return _maMirrorBusy;
+  if(!maLoaded||(Number.isFinite(_maMirror.at)&&Date.now()-_maMirror.at<_MA_MIRROR_FRESH))return null;
+  _maMirrorBusy=_maLoadMirror().then(()=>{
+    _maInvalidate();
+    if(id&&(typeof currentPage==='undefined'||currentPage===id)){
+      const a=document.activeElement;
+      if(!(a&&/^(INPUT|SELECT|TEXTAREA)$/.test(String(a.tagName||''))))_maPaint();
+    }
+  }).finally(()=>{_maMirrorBusy=null;});
+  return _maMirrorBusy;
 }
 
 /* ── The derived context — everything a page reads, computed by the core ─ */
@@ -213,6 +254,22 @@ function _maWriteError(e){
   // clock is wrong is refused too, and says so.
   if(/permission|insufficient/i.test(m+' '+(e&&e.code||'')))return 'Refused by the Firestore rules — check the published firestore.rules carries the Master Accounts block, and that this device’s clock is right (an audit row more than five minutes off the server’s time is refused).';
   return m||'The write failed.';
+}
+/* A save that fails is said where the owner is looking (money F13). The
+   form while it is still open; once it has been closed — × and Escape stay
+   live while a save is in flight — or replaced by another form, a toast
+   that names WHAT was not saved. A failure written into a box nobody can
+   see is a save that failed silently, and the owner believes it landed. */
+function _maFormFail(f,what,e){
+  const msg=_maWriteError(e);
+  if(_maF&&_maF===f){_maShowIssues({refuses:[{message:msg+' Nothing was saved.'}],flags:[],ok:false});return;}
+  _maToast('Not saved: '+what+' — '+msg);
+}
+function _maDocWhat(f,d){
+  if(f.edit)return 'the edit to '+f.edit.no;
+  const k=f.kind;
+  const label=MA_JOURNAL_KINDS[k]?MA_JOURNAL_KINDS[k].label:(MA_DOC_TYPES[f.dt]||{}).label||k;
+  return [label,d&&Number.isInteger(d.amount)&&d.amount?maRs(d.amount):'',d&&maIsDay(d.date)?maDayLabel(d.date):''].filter(Boolean).join(' · ');
 }
 /* A new document: counter + document + audit, one transaction. Returns the
    stored document (with its number) or throws. */
@@ -337,15 +394,100 @@ function _maUnlocked(how){
   _maAuditQuiet('enter',null,'Unlocked with '+how);_maEnterLogged=true;
   maRenderPage(_maPage);
 }
-// Keep "active" fresh while someone is working on an ma-* page.
+/* THE LOCK IS ASKED EVERYWHERE, never only on navigation (M1.6b, security
+   F5). It used to be read in maRenderPage alone, and the activity bump
+   below touched the clock on ANY tap — so a page left open for two hours
+   showed the books until someone touched it, and that one touch (on the
+   sidebar's Ledger, say) reset the clock and opened the next page without a
+   password. Now:
+   - a tap or a key on an ma-* page while the lock is due SHOWS the lock and
+     never touches the clock — on the lock itself, typing the password does
+     not count as activity either;
+   - every repaint (_maPaint, the partial ones, a modal opening) asks first;
+   - coming back to the tab, and a check every 30 seconds, swap an open page
+     for the lock;
+   - the Dashboard card reads nothing while it is due.
+   `_maLockShown` = the lock is what #main-content shows now. */
+let _maLockShown=false;
+function _maShowLock(){
+  // An open form or share panel holds the books' figures — it goes too.
+  if(_maF||_maShare)window.maCloseModal();
+  _maLockShown=true;
+  const m=document.getElementById('main-content');
+  if(m)m.innerHTML=_maLockHTML();
+}
+/* May a Master Accounts page be painted now? false = the lock is (or has
+   just been put) on screen instead. */
+function _maMayPaint(){
+  if(_maLockShown)return false;
+  if(_maNeedsRelock()){_maShowLock();return false;}
+  return true;
+}
+/* An open ma-* page, checked from outside a paint (the tab coming back, the
+   timer, a tap). true = the lock is on screen. */
+function _maRelockCheck(){
+  if(typeof currentPage==='undefined'||!String(currentPage).startsWith('ma-')||!maCanSee())return false;
+  return !_maMayPaint();
+}
 if(typeof document!=='undefined'&&document.addEventListener){
+  // Keep "active" fresh while someone is working on an ma-* page — but a tap
+  // or a key while the lock is due (or showing) shows the lock instead.
   const bump=()=>{
     if(typeof currentPage==='undefined'||!String(currentPage).startsWith('ma-')||!maCanSee())return;
+    if(_maRelockCheck())return;
     if(Date.now()-_maLastTouch>15000)_maTouch();
   };
   document.addEventListener('pointerdown',bump,true);
   document.addEventListener('keyup',bump,true);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)_maRelockCheck();});
 }
+if(typeof setInterval==='function')setInterval(_maRelockCheck,30000);
+
+/* ── The books leave the device with the owner (§29, security F6) ────────
+   The app keeps Firestore's offline copy in IndexedDB (index.html), so every
+   ma_* document an owner has read stays on the device after sign-out — and
+   on a shared computer the next person, or anyone with DevTools, reads it
+   from there whatever the owner-only rules say. So an OWNER's sign-out (the
+   module's own list) takes it off: writes still queued get up to five
+   seconds to reach the server, then Firestore is terminated and its
+   IndexedDB copy deleted. Two outcomes are said out loud, never assumed:
+   - writes still queued (offline): the copy is KEPT — deleting it would
+     lose them — and the owner is told it stays until they sign out online;
+   - the copy is held by another tab (Firestore's failed-precondition, or a
+     delete that does not finish): nothing is signed out, the tab reloads (a
+     terminated Firestore cannot be used again), and the owner is told to
+     close the other Groovy Ops tabs and sign out again.
+   Called by doLogout and lockUsePassword (js/auth.js) behind typeof; a
+   cached index.html without the three bridged functions signs out exactly
+   as before. → {skipped} | {cleared} | {kept} | {stay} | {failed}, with
+   the message said. */
+let _maOffWait=5000;
+function _maSayOff(m){if(typeof alert==='function'){try{alert(m);return;}catch(_){}}_maToast(m);}
+async function _maBooksOffDevice(){
+  const who=typeof session!=='undefined'&&session&&session.u||'';
+  const email=String(typeof auth!=='undefined'&&auth&&auth.currentUser&&auth.currentUser.email||'').toLowerCase();
+  if(!(_MA_USERS.indexOf(who)>-1||_MA_USERS.some(u=>email===u+'@groovy.op')))return {skipped:'not an owner'};
+  if(typeof db==='undefined'||!db||typeof terminate!=='function'||typeof clearIndexedDbPersistence!=='function')return {skipped:'no bridge'};
+  let flushed=true;
+  if(typeof waitForPendingWrites==='function'){
+    try{flushed=await _maWithin(waitForPendingWrites(db),_maOffWait);}catch(_){flushed=false;}
+  }
+  if(!flushed){
+    const m='You are signed out — but this device keeps its offline copy of the books. Some changes have not reached the server yet, and removing the copy would lose them. Sign in again when you are online, let them send, then sign out: that removes it.';
+    _maSayOff(m);return {kept:true,message:m};
+  }
+  try{await terminate(db);}catch(_){}
+  let done=false,err=null;
+  try{done=await _maWithin(Promise.resolve().then(()=>clearIndexedDbPersistence(db)),_maOffWait);}catch(e){err=e;}
+  if(done)return {cleared:true};
+  if(!err||err.code==='failed-precondition'){
+    const m='The books could not be taken off this device: another Groovy Ops tab still has them open. Close the other Groovy Ops tabs and sign out again — you are still signed in.';
+    _maSayOff(m);return {stay:true,message:m};
+  }
+  const m='You are signed out — but the books could not be taken off this device ('+String(err&&err.message||err).slice(0,160)+'). Clear this site’s data in the browser’s settings before someone else uses it.';
+  _maSayOff(m);return {failed:true,message:m};
+}
+window.maBooksOffDevice=function(){return _maBooksOffDevice();};
 function _maLockHTML(){
   const mins=Math.round(_maRelockMs()/60000);
   const finger=typeof lockEnabledFor==='function'&&typeof _lockShow==='function'&&lockEnabledFor(session.uid);
@@ -384,16 +526,27 @@ function renderMasterAccountsDashboardWidget(){
 async function _maPopulateDashboard(){
   const el=document.getElementById('ma-dash-body');
   if(!el||!maCanSee())return;
-  try{
-    if(!maLoaded)await maLoad();
+  // The lock covers the card too (security F5): the Dashboard is where the
+  // owner lands, so a device left signed in would otherwise show the books
+  // on its first screen. While it is due the card says so and reads nothing.
+  if(_maNeedsRelock()){el.textContent='Master Accounts is locked — open it to unlock.';return;}
+  const paint=()=>{
     const body=document.getElementById('ma-dash-body');if(!body)return;
     const errs=_maCoreErrs();
     if(errs.length){body.textContent='Could not read '+errs.map(e=>e.col).join(', ')+' — open Today to retry.';return;}
     const c=_maCtx();
     const cih=maCashInHand(c.holders);
     const na=_maAttention(c);
-    body.innerHTML=`<span class="ma-dash-num">${maRs(cih.total)}</span> cash in hand${cih.complete?'':' (drawer not read)'} · `
-      +(na.length?`<b>${na.length}</b> need${na.length===1?'s':''} attention`:'nothing to worry about');
+    body.innerHTML=`<span class="ma-dash-num">${maRs(cih.total)}</span> cash in hand${cih.complete?'':' <span class="ma-word warn">incomplete — the drawer was not read</span>'} · `
+      +(na.length?`<b>${na.length}</b> need${na.length===1?'s':''} attention`:'nothing to worry about')
+      +(_maErr('backups')?' · <span class="ma-word urgent">the backups could not be read</span>':'');
+  };
+  try{
+    if(!maLoaded)await maLoad();
+    paint();
+    // A drawer figure older than five minutes is read again, then painted.
+    const f=_maMirrorFreshen(null);
+    if(f){await f;paint();}
   }catch(e){const b=document.getElementById('ma-dash-body');if(b)b.textContent='Master Accounts could not load.';}
 }
 
@@ -470,7 +623,8 @@ function maRenderPage(id){
   if(!maCanSee()){m.innerHTML='<div class="ma-page"><div class="ma-errcard">Master Accounts is for Afnan and Ammar.</div></div>';return;}
   if(_maPage!==id){_maRail=null;_maLedgerShown=50;}
   _maPage=id;
-  if(_maNeedsRelock()){m.innerHTML=_maLockHTML();return;}
+  if(_maNeedsRelock()){_maShowLock();return;}
+  _maLockShown=false;
   _maTouch();
   if(!_maEnterLogged){_maEnterLogged=true;_maAuditQuiet('enter',null,'Opened Master Accounts');}
   if(!maLoaded){
@@ -479,10 +633,14 @@ function maRenderPage(id){
     return;
   }
   _maPaint();
+  _maMirrorFreshen(id);
 }
 function _maPaint(){
   const m=document.getElementById('main-content');
   if(!m)return;
+  // Every repaint asks first (security F5): a period switch, a tab, a filter
+  // or a save landing on a page left open past the re-lock shows the lock.
+  if(!_maMayPaint())return;
   m.innerHTML=_maPageHTML(_maPage);
   const parent=_MA_PARENT[_maPage];
   if(parent){const n=document.getElementById('nav-'+parent);if(n&&n.classList)n.classList.add('on');}
@@ -516,8 +674,11 @@ function _maLatestBackup(){
   const r=maData.backups.slice().sort((a,b)=>(b.at||0)-(a.at||0));
   return r[0]||null;
 }
+/* The 30 days fund from cash and bank with every waiting handover NOT
+   moved, and say when the drawer could not be read (maSpendable, M1.6b). */
 function _maCalendarOf(c){
-  return maCalendar({settings:c.s,today:c.today,commitments:maData.commitments,docs:c.docs,start:maSpendable(c.holders).total});
+  const sp=maSpendable(c.holders);
+  return maCalendar({settings:c.s,today:c.today,commitments:maData.commitments,docs:c.docs,start:sp.total,complete:sp.complete,waiting:sp.waiting});
 }
 function _maAttention(c){
   if(c._na)return c._na;
@@ -525,7 +686,7 @@ function _maAttention(c){
   c._cal=cal;
   c._na=maNeedsAttention({settings:c.s,today:c.today,holders:c.holders,calendar:cal,commitments:maData.commitments,docs:c.docs,
     unlabelled:maUnlabelled(c.docs,c.idx,c.s),review:maReviewQueue(c.docs),recon:maBalanceOf(c.lines,c.idx,'9030'),
-    backup:_maLatestBackup(),nowMs:Date.now()});
+    backup:_maLatestBackup(),backupUnread:!!_maErr('backups'),nowMs:Date.now()});
   return c._na;
 }
 function _maSentence(s){return _maE(s).replace(/(−?₨[\d,]+)/g,'<b>$1</b>');}
@@ -551,13 +712,20 @@ window.maConcern=function(i){
   else if(a.go==='account'){_maLedgerTab='postings';_maLF=Object.assign(_maLFBlank(),{account:a.ref});_maPeriod='all';window.showPage('ma-ledger');}
   else if(a.go==='backups'){_maCloseTab='overview';window.showPage('ma-close');}
 };
+/* Money that came in and went out this month. Per document, the net of
+   what moved on the holders: money moved from one holder to another — a
+   transfer, or a journal whose lines only move it between holders — nets
+   to nothing, and an opening balance is where the books start, not money
+   that came in (money N3). A count is a difference, not a movement. */
 function _maMonthFlows(c){
   const month=maMonthOf(c.today);let inM=0,outM=0;
+  const net={};
   c.lines.forEach(l=>{
-    if(l.month!==month||!l.holder||l.account!==l.holder)return;
-    if(l.doc&&(l.doc.dt==='transfer'||l.doc.dt==='count'))return;
-    inM+=l.dr;outM+=l.cr;
+    if(l.month!==month||!l.holder||l.account!==l.holder||!l.doc)return;
+    if(l.doc.dt!=='journal'||l.doc.kind==='opening')return;
+    const k=l.doc.dt+'/'+l.doc.id;net[k]=(net[k]||0)+(l.dr||0)-(l.cr||0);
   });
+  Object.keys(net).forEach(k=>{if(net[k]>0)inM+=net[k];else outM-=net[k];});
   return {inM,outM};
 }
 function _maOwed(c){
@@ -578,7 +746,7 @@ function _maHolderRowsHTML(c,rows,o){
     if(h.balance===null)complete=false;else if(h.active&&h.holderKind!=='wallet')total+=h.balance;
     const bal=h.balance===null?'<span class="ma-word warn">not read</span>':_maRsCell(h.balance);
     const wait=(h.pendingIn?'+'+maRs(h.pendingIn):'')+(h.pendingIn&&h.pendingOut?' · ':'')+(h.pendingOut?'−'+maRs(h.pendingOut):'');
-    const lc=h.mirror?'<span class="ma-muted">in Store Accounts</span>':(h.lastCount?maDayLabel(h.lastCount.date)+(h.lastCount.difference?` <span class="ma-word warn">${maRsSigned(h.lastCount.difference)}</span>`:''):'<span class="ma-muted">never</span>');
+    const lc=h.mirror?'<span class="ma-muted">in Store Accounts'+(h.balance!==null&&_maMirrorAsOf()?' · '+_maMirrorAsOf():'')+'</span>':(h.lastCount?maDayLabel(h.lastCount.date)+(h.lastCount.difference?` <span class="ma-word warn">${maRsSigned(h.lastCount.difference)}</span>`:''):'<span class="ma-muted">never</span>');
     const name=`${_maE(h.name)}${h.active?'':' <span class="ma-muted">off</span>'}`;
     const cells=[name,bal,wait?`<span class="ma-muted">${wait}</span>`:'',lc];
     if(o.full)cells.splice(3,0,h.available===null?'':_maRsCell(h.available));
@@ -599,7 +767,9 @@ function _maCalHTML(cal){
       +(d.events.length>2?`<span class="ma-ev mute">+${d.events.length-2} more</span>`:'');
     const marks=[d.payDay?'pay day':'',d.cprDay?'CPR day':''].filter(Boolean).join(' · ');
     const has=d.events.length||d.payDay||d.cprDay;
-    const short=d.projected<0;
+    // A day is "short" only when every holder was read: without the drawer
+    // a short day is the missing balance talking (money F3).
+    const short=cal.complete!==false&&d.projected<0;
     cells.push(`<div class="ma-cd${i===0?' today':''}${has?' has':''}${short?' short':''}"><b>${_maE(lab)}</b>${ev}${marks?`<span class="ma-ev mute">${marks}</span>`:''}${d.events.length?`<span class="ma-ev ${short?'short':'mute'}">leaves ${maRsShort(d.projected)}</span>`:''}</div>`);
   });
   return `<div class="ma-cal-head" aria-hidden="true">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(x=>`<span>${x}</span>`).join('')}</div><div class="ma-cal">${cells.join('')}</div>`;
@@ -622,15 +792,20 @@ function _maTodayHTML(){
   const active=c.holders.filter(h=>h.active||h.balance);
   const holders=_maSec('Cash by holder','',_maLink('Money','window.showPage(\'ma-money\')'),_maHolderRowsHTML(c,active));
   const first=cal.unfunded[0];
+  // The drawer not read: every figure here is short by what it holds, said
+  // beside each one, and a short day cannot be judged (money F3).
+  const inc=cal.complete===false;
+  const incW=inc?' <span class="ma-word warn">incomplete</span>':'';
   const next=_maSec('The next 30 days','',_maLink('Money out','window.showPage(\'ma-out\')'),
     `<dl class="ma-dl">
-      <dt>Cash and bank today</dt><dd>${maRs(cal.start)}</dd>
+      <dt>Cash and bank today</dt><dd>${maRs(cal.start)}${incW}</dd>
+      ${cal.waiting?`<dt>Handovers waiting</dt><dd>${maRs(cal.waiting)} <span class="ma-muted">into the drawer — counted where they came from until confirmed</span></dd>`:''}
       <dt>Due out</dt><dd>${maRs(cal.out)}</dd>
       <dt>Expected in</dt><dd>${cal.in?maRs(cal.in):'<span class="ma-muted">none yet — CPRs arrive with M2</span>'}</dd>
-      <dt>Leaves</dt><dd>${_maRsCell(cal.end)}</dd>
-      <dt>First short day</dt><dd>${first?`<span class="ma-word urgent">${maDayLabel(first)}</span>`:'<span class="ma-muted">none</span>'}</dd>
+      <dt>Leaves</dt><dd>${_maRsCell(cal.end)}${incW}</dd>
+      <dt>First short day</dt><dd>${inc?(first?'<span class="ma-word warn">can’t judge — the drawer’s balance could not be read</span>':'<span class="ma-muted">none, even without the drawer</span>'):first?`<span class="ma-word urgent">${maDayLabel(first)}</span>`:'<span class="ma-muted">none</span>'}</dd>
     </dl>`);
-  const strip=_maSec('Day by day','the cost register’s dues against cash and bank','',_maCalHTML(cal),'ma-cal');
+  const strip=_maSec('Day by day',inc?'the drawer’s balance could not be read — these leave it out':'the cost register’s dues against cash and bank','',_maCalHTML(cal),'ma-cal');
   const meta=_maE(maDayLabel(c.today,true))+' · '+_maE(maQuarterLabel(maQuarterOf(c.today,c.s.fiscalYearStart),c.s.fiscalYearStart));
   return _maHead('Today',meta,{excel:'today'})+stats+attention+`<div class="ma-cols2">${holders}${next}</div>`+strip;
 }
@@ -655,7 +830,7 @@ function _maMoneyHTML(){
   const c=_maCtx();
   const pend=c.docs.filter(d=>d.dt==='transfer'&&d.status==='pending').sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   const counts=c.docs.filter(d=>d.dt==='count'&&d.status!=='void').sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0)).slice(0,10);
-  const mirrorLine=c.holders.some(h=>h.mirror)?(_maMirror.ok?'drawer read from Store Accounts':'drawer not read — '+_maE(_maMirror.why)):'';
+  const mirrorLine=c.holders.some(h=>h.mirror)?(_maMirror.ok?['drawer read from Store Accounts',_maMirrorAsOf()].filter(Boolean).join(' '):'drawer not read — '+_maE(_maMirror.why)):'';
   const countRows=counts.map(d=>({cells:[maDayLabel(d.date),`<button class="ma-doclink" onclick="event.stopPropagation();window.maOpenDoc('count','${_maQ(d.id)}')">${_maE(d.no)}</button>`,_maE(_maAccName(c,d.holder)),maRs(d.counted),d.difference?`<span class="ma-word warn">${maRsSigned(d.difference)}</span>`:'<span class="ma-word fine">agrees</span>'],click:`window.maOpenDoc('count','${_maQ(d.id)}')`}));
   return _maHead('Money',c.holders.length+' holders'+(mirrorLine?' · '+mirrorLine:''),{excel:'holders'})
     +_maSec('Holders','',`${_maLink('Transfer','window.maRecordKind(\'transfer\')')} ${_maLink('Count','window.maRecordKind(\'count\')')}`,_maHolderRowsHTML(c,c.holders,{full:true}))
@@ -664,7 +839,7 @@ function _maMoneyHTML(){
 }
 function _maHolderStatement(c,code){
   const r=_maRange(c);
-  return {r,led:maLedger(c.lines,{holder:code,from:r.from,to:r.to},c.idx)};
+  return {r,led:maLedger(c.lines,{holder:code,from:r.from,to:r.to},c.idx,c.s)};
 }
 function _maHolderHTML(){
   const c=_maCtx();
@@ -672,7 +847,7 @@ function _maHolderHTML(){
   if(!h)return _maHead('Holder','',{back:['ma-money','Money']})+_maEmpty('That holder is not in the chart.',_maLink('Back to Money','window.showPage(\'ma-money\')'));
   const {r,led}=_maHolderStatement(c,h.code);
   const meta=(h.balance===null?'balance not read':'balance '+maRs(h.balance))+(h.person?' · with '+_maE(_maWho(h.person)):'')+(h.lastCount?' · counted '+maDayLabel(h.lastCount.date):'');
-  const banner=h.mirror?`<div class="ma-note">Raees’s drawer is his book in Store Accounts until M8 — the balance is read from there${_maMirror.ok?' ('+maRs(_maMirror.cash)+')':', and the read failed'}. Only handovers to and from it are recorded here.</div>`:'';
+  const banner=h.mirror?`<div class="ma-note">Raees’s drawer is his book in Store Accounts until M8 — the balance is read from there${_maMirror.ok?' ('+[maRs(_maMirror.cash),_maMirrorAsOf()].filter(Boolean).join(', ')+')':', and the read failed ('+_maE(_maMirror.why)+')'}. Only handovers to and from it are recorded here.</div>`:'';
   const cols=[{h:'Date',cls:'ma-date'},{h:'Document'},{h:'What'},{h:'In',cls:'ma-num',l:'In'},{h:'Out',cls:'ma-num',l:'Out'}];
   if(!h.mirror)cols.push({h:'Balance',cls:'ma-num',l:'Balance'});
   const docOf=l=>c.docs.find(d=>d.id===(l.doc&&l.doc.id))||null;
@@ -726,7 +901,7 @@ function _maCommitRows(c,list){
       x.amountExpected?maRs(x.amountExpected):'<span class="ma-muted">varies</span>',
       `<span class="ma-word ${w[0]}">${w[1]}</span>${when?` <span class="ma-muted">${when}</span>`:''}`,
       _maE(_maAccName(c,x.account)),
-      x.active===false?'<span class="ma-muted">off</span>':`<button class="ma-btn sm" onclick="event.stopPropagation();window.maPayCommitment('${_maQ(x.id)}','${_maQ(st.period||'')}')">Record payment</button>`
+      x.active===false?'<span class="ma-muted">off</span>':`<button class="ma-btn sm" onclick="event.stopPropagation();window.maPayCommitment('${_maQ(x.id)}','')">Record payment</button>`
     ],click:`window.maOpenCommitment('${_maQ(x.id)}')`};
   });
 }
@@ -742,10 +917,15 @@ function _maOutHTML(){
 window.maPayCommitment=function(id,period){
   const x=_maCommit(id);if(!x)return;
   const c=_maCtx();
-  const st=maCommitmentStatus(x,c.docs,c.today,c.s);
-  const left=Math.max(0,(x.amountExpected||0)-(st.amountPaid||0));
+  // What is left of the period this payment will name — the named one, or
+  // the oldest still open today, which the form will offer.
+  const per=period||maCommitmentOpenPeriod(x,c.docs,c.today,c.s);
+  const paid=c.docs.filter(d=>d.status!=='void'&&d.commitmentId===x.id&&d.commitmentPeriod===per).reduce((t,d)=>t+(d.amount||0),0);
+  const left=Math.max(0,(x.amountExpected||0)-paid);
   const hold=x.holder&&!(c.s.mirrors&&c.s.mirrors[x.holder])?x.holder:'';
-  window.maRecordKind('money_out',{commitmentId:x.id,commitmentPeriod:period||st.period||'',account:x.account,holder:hold,party:x.party||'',
+  // The period is the one named (a concern says which); else the form
+  // offers the oldest still open on the day (maCommitmentOpenPeriod).
+  window.maRecordKind('money_out',{commitmentId:x.id,commitmentPeriod:period||'',account:x.account,holder:hold,party:x.party||'',
     amount:left||'',costCentre:x.costCentre||'',labelKind:MA_LABEL_KINDS.indexOf(x.kind)>=0?x.kind:''});
 };
 window.maOpenCommitment=function(id){_maRail={kind:'commitment',id:String(id)};_maPaint();};
@@ -798,7 +978,7 @@ function _maPartiesHTML(){
 window.maPartyKindSet=function(k){_maPartyKind=MA_PARTY_KINDS.indexOf(k)>=0?k:'all';_maPaint();};
 window.maPartyQSet=function(v){
   _maPartyQ=String(v||'');clearTimeout(_maPartyQT);
-  _maPartyQT=setTimeout(()=>{const el=document.getElementById('ma-party-list');if(el)el.innerHTML=_maPartyTableHTML(_maCtx());},180);
+  _maPartyQT=setTimeout(()=>{if(!_maMayPaint())return;const el=document.getElementById('ma-party-list');if(el)el.innerHTML=_maPartyTableHTML(_maCtx());},180);
 };
 window.maOpenParty=function(id){_maPartyId=String(id);window.showPage('ma-party');};
 function _maPartyHTML(){
@@ -854,7 +1034,20 @@ function _maLedgerQuery(c){
 function _maLedgerFiltered(c){
   const r=_maRange(c);
   const q=_maLedgerQuery(c);
-  return {r,led:maLedger(c.lines,q,c.idx),single:q.holder||q.account};
+  // A running balance only when it IS the account's (maLedgerBalanceHidden,
+  // M1.6b): not under a party, document-type or search filter, and not for
+  // the drawer, whose balance is Store Accounts'.
+  const led=maLedger(c.lines,q,c.idx,c.s);
+  return {r,led,single:led.balanceHidden?null:(q.holder||q.account)};
+}
+/* Why a ledger shows no running balance, for the page and the Excel: under
+   a narrowing filter, in words; for the drawer, Store Accounts' own figure
+   with its "as of", or that it could not be read. '' when there is one. */
+function _maLedgerHiddenText(led){
+  const h=led&&led.balanceHidden;
+  if(!h)return '';
+  if(!h.mirror)return maLedgerHiddenWhy(h);
+  return 'no running balance here — the drawer’s balance is Store Accounts’: '+(_maMirror.ok?[maRs(_maMirror.cash),_maMirrorAsOf()].filter(Boolean).join(' '):'it could not be read ('+_maMirror.why+')');
 }
 function _maPostingsTable(c,led,single,limitN){
   const cols=[{h:'Date',cls:'ma-date'},{h:'Document'},{h:'Account',l:'Account'},{h:'Description'},{h:'Labels',cls:'ma-src',l:''},{h:'Debit',cls:'ma-num',l:'Debit'},{h:'Credit',cls:'ma-num',l:'Credit'}];
@@ -902,7 +1095,8 @@ function _maLedgerBodyHTML(){
         maQuarterLocked(d,{closes:maData.closes,settings:c.s})?'<span class="ma-muted">quarter closed</span>':`<button class="ma-btn sm" onclick="event.stopPropagation();window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`],click:`window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')`})));
   }
   const {r,led,single}=_maLedgerFiltered(c);
-  const head=`<div class="ma-scope">${led.count} posting${led.count===1?'':'s'} · ${led.sources} source${led.sources===1?'':'s'} · ${_maE(r.label)}${single&&led.opening!==null?' · opening '+maRs(led.opening):''}</div>`;
+  const hid=_maLedgerHiddenText(led);
+  const head=`<div class="ma-scope">${led.count} posting${led.count===1?'':'s'} · ${led.sources} source${led.sources===1?'':'s'} · ${_maE(r.label)}${single&&led.opening!==null?' · opening '+maRs(led.opening):''}${hid?' · '+_maE(hid):''}</div>`;
   if(!led.count)return head+_maEmpty('No postings match.');
   return head+_maPostingsTable(c,led,single,_maLedgerShown)+(led.count>_maLedgerShown?`<div class="ma-sec-foot">${_maLink('Show 50 more','window.maLedgerMore()')}</div>`:'');
 }
@@ -928,10 +1122,10 @@ window.maLedgerTabSet=function(k){_maLedgerTab=['postings','documents','unlabell
 window.maLedgerFilter=function(k,v){if(!(k in _maLF))return;_maLF[k]=String(v||'');if(k==='holder'&&v)_maLF.account='';if(k==='account'&&v)_maLF.holder='';_maLedgerShown=50;_maPaint();};
 window.maLedgerSearch=function(v){
   _maLF.q=String(v||'');clearTimeout(_maLQT);
-  _maLQT=setTimeout(()=>{const el=document.getElementById('ma-ledger-body');if(el)el.innerHTML=_maLedgerBodyHTML();},180);
+  _maLQT=setTimeout(()=>{if(!_maMayPaint())return;const el=document.getElementById('ma-ledger-body');if(el)el.innerHTML=_maLedgerBodyHTML();},180);
 };
 window.maLedgerClear=function(){_maLF=_maLFBlank();_maPaint();};
-window.maLedgerMore=function(){_maLedgerShown+=50;const el=document.getElementById('ma-ledger-body');if(el)el.innerHTML=_maLedgerBodyHTML();};
+window.maLedgerMore=function(){_maLedgerShown+=50;if(!_maMayPaint())return;const el=document.getElementById('ma-ledger-body');if(el)el.innerHTML=_maLedgerBodyHTML();};
 
 /* ═══ The rail — a document or a commitment, beside whatever page ═══════ */
 let _maRail=null;
@@ -1000,7 +1194,7 @@ function _maCommitRailHTML(c,x){
       ${x.from?`<dt>From</dt><dd>${maDayLabel(x.from,true)}</dd>`:''}${x.to?`<dt>Until</dt><dd>${maDayLabel(x.to,true)}</dd>`:''}${x.note?`<dt>Note</dt><dd>${_maE(x.note)}</dd>`:''}</dl>
     <h4>Paid by</h4>${paid.length?`<ul class="ma-hist">${paid.slice(0,12).map(d=>`<li><button class="ma-doclink" onclick="window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">${_maE(d.no)}</button> · ${maDayLabel(d.date)} · ${maRs(d.amount)} · ${_maE(d.commitmentPeriod||'')}</li>`).join('')}</ul>`:_maEmpty('Nothing recorded against it yet.')}
     ${hist.length?`<h4>Changes</h4><ul class="ma-hist">${hist.map(h=>`<li>${_maE(_maWho(h.by))} · ${_maWhen(h.at)}<div class="ma-muted">${_maE((h.fields||[]).join(', '))}</div></li>`).join('')}</ul>`:''}
-    <div class="ma-rail-acts">${x.active!==false?`<button class="ma-btn primary" onclick="window.maPayCommitment('${_maQ(x.id)}','${_maQ(st.period||'')}')">Record payment</button>`:''}<button class="ma-btn" onclick="window.maRecordKind('commitment',{id:'${_maQ(x.id)}'})">Edit</button><button class="ma-btn" onclick="window.maCommitToggle('${_maQ(x.id)}')">${x.active===false?'Switch on':'Switch off'}</button></div>`;
+    <div class="ma-rail-acts">${x.active!==false?`<button class="ma-btn primary" onclick="window.maPayCommitment('${_maQ(x.id)}','')">Record payment</button>`:''}<button class="ma-btn" onclick="window.maRecordKind('commitment',{id:'${_maQ(x.id)}'})">Edit</button><button class="ma-btn" onclick="window.maCommitToggle('${_maQ(x.id)}')">${x.active===false?'Switch on':'Switch off'}</button></div>`;
 }
 
 /* ═══ Close & audit ══════════════════════════════════════════════════════ */
@@ -1135,12 +1329,14 @@ window.maSaveSettings=async function(){
   if(_maBusy||_maNeedsNet())return;
   const c=_maCtx();const s=c.s;
   const err=document.getElementById('ma-s-err');const say=m=>{if(err)err.textContent=m;};
-  const int=(id,min,max,label,allowEmpty)=>{const v=_maVal(id).replace(/[₨,\s]/g,'');if(v===''&&allowEmpty)return 0;const n=Number(v);if(!Number.isInteger(n)||n<min||n>max)throw new Error(label+' is a whole number from '+min+' to '+max+'.');return n;};
+  const dot=(raw,label)=>{const h=maRupeesDotted(String(raw).trim());if(h)throw new Error(label+' “'+String(raw).trim()+'” — did you mean '+h+'? Rupees take a comma, or none.');};
+  const int=(id,min,max,label,allowEmpty)=>{dot(_maVal(id),label);const v=_maVal(id).replace(/[₨,\s]/g,'');if(v===''&&allowEmpty)return 0;const n=Number(v);if(!Number.isInteger(n)||n<min||n>max)throw new Error(label+' is a whole number from '+min+' to '+max+'.');return n;};
   let next,accWrites=[];
   try{
     const floors={};
     const hs=maMoneyAccounts(c.idx,{all:true});
     hs.forEach(a=>{
+      dot(_maVal('ma-s-floor-'+a.code),'The floor of '+a.name);
       const v=_maVal('ma-s-floor-'+a.code).replace(/[₨,\s]/g,'');
       if(v!==''){const n=Number(v);if(!Number.isInteger(n))throw new Error('A floor is whole rupees ('+a.name+').');if(n)floors[a.code]=n;}
       const on=_maChecked('ma-s-on-'+a.code,a.active);const name=_maVal('ma-s-name-'+a.code).trim()||a.name;
@@ -1167,8 +1363,15 @@ window.maSaveSettings=async function(){
     await _maWriteMasters([{col:'ma_settings',id:'main',data:next}].concat(accWrites),'settings',{dt:'settings',id:'main',no:'settings'},'Settings saved'+(accWrites.length?' · '+accWrites.length+' holder'+(accWrites.length>1?'s':''):''));
     const i=maData.settings.findIndex(x=>x.id==='main');const sd=Object.assign({id:'main'},next);if(i>=0)maData.settings[i]=sd;else maData.settings.push(sd);
     accWrites.forEach(w=>{const j=maData.accounts.findIndex(x=>String(x.code)===w.id);const d=Object.assign({id:w.id},w.data);if(j>=0)maData.accounts[j]=d;else maData.accounts.push(d);});
-    _maInvalidate();_maToast('Settings saved.');_maPaint();
-  }catch(e){say(_maWriteError(e));}finally{_maBusy=false;}
+    // Anything recorded with no cost centre of its own posts to the default
+    // (maPost), so a default that moves — chosen, or because it was taken
+    // off the list — moves those postings, and is said (money F1).
+    const cc=next.defaultCostCentre!==s.defaultCostCentre;
+    _maInvalidate();_maToast('Settings saved.'+(cc?' The default cost centre is now '+next.defaultCostCentre+(next.costCentres.indexOf(s.defaultCostCentre)<0?' ('+s.defaultCostCentre+' is no longer on the list)':'')+' — anything recorded without a cost centre of its own now posts there.':''));_maPaint();
+  }catch(e){
+    // Left the page while it saved: the line under the form is gone.
+    if(_maPage==='ma-close'&&_maCloseTab==='settings')say(_maWriteError(e));else _maToast('Not saved: Settings — '+_maWriteError(e));
+  }finally{_maBusy=false;}
 };
 window.maSaveAccount=async function(code){
   if(_maBusy||_maNeedsNet())return;
@@ -1217,6 +1420,9 @@ window.maNewItem=async function(){
 
 /* ═══ The modal, the Record picker and the forms (§16.1) ════════════════ */
 function _maModal(title,body,foot,wide){
+  // A form or a panel shows the books' figures: none opens while the lock
+  // is due (security F5) — the lock is shown instead.
+  if(!_maMayPaint()){_maF=null;_maShare=null;return;}
   const old=document.getElementById('ma-modal-back');
   if(old&&old.remove)old.remove();
   const back=document.createElement('div');
@@ -1286,10 +1492,27 @@ function _maFld(name,label,control,hint){
 function _maIn(name,val,o){o=o||{};return `<input class="ma-in${o.num?' ma-in-num':''}" id="ma-f-${name}"${o.type?` type="${o.type}"`:''}${o.num?' inputmode="numeric"':''}${o.ph?` placeholder="${_maE(o.ph)}"`:''}${o.min?` min="${o.min}"`:''}${o.max?` max="${o.max}"`:''}${o.dis?' disabled':''}${o.on?` oninput="${o.on}"`:''} value="${_maE(val===undefined||val===null?'':val)}">`;}
 function _maSel(name,opts,cur,o){o=o||{};return `<select class="ma-in" id="ma-f-${name}"${o.dis?' disabled':''}${o.on?` onchange="${o.on}"`:''}>${opts}</select>`;}
 function _maOpt(v,l,cur){return `<option value="${_maE(v)}"${String(v)===String(cur===undefined||cur===null?'':cur)?' selected':''}>${_maE(l)}</option>`;}
+/* A select never hands back a value the owner did not choose (money F1).
+   `cur` is the stored value: it is the one preselected, and when it is no
+   longer on the list it is still offered — under a name that says so — so
+   an untouched select saves exactly what was stored. Without that the
+   browser selects the FIRST option, and a note edit rewrites the field. */
+function _maOptsKeep(list,cur,o){
+  o=o||{};
+  const vals=list.map(x=>Array.isArray(x)?x:[x,x]);
+  const has=cur!==undefined&&cur!==null&&String(cur)!=='';
+  return (o.blank!==undefined?_maOpt('',o.blank,has?cur:''):'')+vals.map(x=>_maOpt(x[0],x[1],cur)).join('')
+    +(has&&!vals.some(x=>String(x[0])===String(cur))?_maOpt(cur,o.gone?o.gone(cur):cur+' — no longer in Settings',cur):'');
+}
+/* The cost-centre options. A blank cost centre posts to Settings' default,
+   whatever it is on the day (maPost), so the blank option says so. */
+function _maCcOpts(s,cur){return _maOptsKeep(s.costCentres,cur,{blank:'Settings’ default (now '+s.defaultCostCentre+')'});}
 function _maHolderOpts(c,cur,o){
   o=o||{};
   const hs=maMoneyAccounts(c.idx).filter(a=>o.mirror||!(c.s.mirrors&&c.s.mirrors[a.code]));
-  return (o.blank?_maOpt('',o.blank,cur):_maOpt('','Choose…',cur))+hs.map(a=>_maOpt(a.code,a.name,cur)).join('');
+  const a=cur&&!hs.some(h=>h.code===cur)?maAcc(c.idx,cur):null;
+  return (o.blank?_maOpt('',o.blank,cur):_maOpt('','Choose…',cur))+hs.map(h=>_maOpt(h.code,h.name,cur)).join('')
+    +(cur&&!hs.some(h=>h.code===cur)?_maOpt(cur,a?a.name+(a.active?'':' — switched off'):cur+' — not in the chart',cur):'');
 }
 const _MA_GROUP_ORDER={money_out:['expense','cogs','asset','liability','equity','revenue','suspense'],money_in:['revenue','liability','asset','equity','expense','cogs','suspense'],any:['asset','liability','equity','revenue','cogs','expense','suspense']};
 const _MA_TYPE_LABEL={asset:'Assets',liability:'Liabilities',equity:'Equity',revenue:'Income',cogs:'Cost of goods',expense:'Expenses',suspense:'Not sure yet'};
@@ -1297,17 +1520,35 @@ function _maAccountOpts(c,kind,cur,o){
   o=o||{};
   const order=_MA_GROUP_ORDER[kind]||_MA_GROUP_ORDER.any;
   const list=c.idx.list.filter(a=>(o.money||!a.money)&&(a.active||a.code===cur));
+  const gone=cur&&!list.some(a=>a.code===cur)?maAcc(c.idx,cur):null;
   return _maOpt('','Choose…',cur)+order.map(t=>{
     const g=list.filter(a=>a.type===t);
     return g.length?`<optgroup label="${_MA_TYPE_LABEL[t]}">${g.map(a=>_maOpt(a.code,a.code+' · '+a.name,cur)).join('')}</optgroup>`:'';
-  }).join('');
+  }).join('')+(cur&&!list.some(a=>a.code===cur)?_maOpt(cur,gone?gone.code+' · '+gone.name:cur+' — not in the chart',cur):'');
 }
 function _maPartyOpts(cur,o){
   o=o||{};
   const ps=maData.parties.filter(p=>p.active!==false||p.id===cur).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
-  return _maOpt('',o.blank||'— none, name them below —',cur)+ps.map(p=>_maOpt(p.id,p.name+' · '+(MA_PARTY_KIND_LABELS[p.kind]||p.kind),cur)).join('')+(o.noNew?'':_maOpt('__new','+ New party…',cur));
+  const gone=cur&&cur!=='__new'&&!ps.some(p=>p.id===cur);
+  return _maOpt('',o.blank||'— none, name them below —',cur)+ps.map(p=>_maOpt(p.id,p.name+' · '+(MA_PARTY_KIND_LABELS[p.kind]||p.kind),cur)).join('')
+    +(gone?_maOpt(cur,'A party that is not loaded ('+cur+')',cur):'')+(o.noNew?'':_maOpt('__new','+ New party…',cur));
 }
-function _maTaxHTML(t){
+/* The tax a party usually carries (§12): the form starts on it, and says
+   where it came from until the owner picks a treatment themselves. A sales
+   or services tax comes without a rate — the party master holds none — so
+   the owner confirms it by giving one. null for a party with no tax on
+   record (a customer, a one-off): the form then starts on No tax, and says
+   that was not chosen. */
+function _maPartyTax(id){
+  const p=id&&id!=='__new'?_maParty(id):null;
+  const t=p&&p.vendor&&p.vendor.tax;
+  if(!t)return null;
+  if(t.regime==='sales'||t.regime==='services')return {tax:{kind:t.regime,rate:'',inclusive:true,claimable:false},from:p.name+'’s usual tax is '+MA_TAX_LABELS[t.regime].toLowerCase()+' — confirm it by giving the rate, or change it.'};
+  if(Number.isFinite(t.withholdingPct)&&t.withholdingPct>0)return {tax:{kind:'withholding',rate:t.withholdingPct,inclusive:true,claimable:false},from:p.name+'’s usual withholding is '+t.withholdingPct+'% — confirm it, or change it.'};
+  return {tax:{kind:'none',rate:0,inclusive:true,claimable:false},from:p.name+' is usually not taxed — confirm it, or change it.'};
+}
+const _MA_TAX_PRESET='No tax is pre-set, not chosen — pick the treatment if this one is taxed.';
+function _maTaxHTML(t,from){
   t=t||maTaxBlank();
   return `<div class="ma-field" id="ma-w-tax"><span class="ma-lbl">Tax</span>
     <input type="hidden" id="ma-f-taxkind" value="${_maE(t.kind||'none')}">
@@ -1317,9 +1558,22 @@ function _maTaxHTML(t){
       <label class="ma-chk"><input type="checkbox" id="ma-f-taxincl"${t.inclusive!==false?' checked':''} onchange="window.maTaxCalc()"> included in the amount</label>
       <label class="ma-chk"><input type="checkbox" id="ma-f-taxclaim"${t.claimable?' checked':''} onchange="window.maTaxCalc()"> claimable</label>
     </div>
-    <span class="ma-hint" id="ma-f-taxcalc">${(t.kind||'none')==='none'?'No tax on this — chosen, not assumed.':''}</span><span class="ma-ferr" id="ma-e-tax"></span></div>`;
+    <span class="ma-hint" id="ma-f-taxcalc">${(t.kind||'none')==='none'?'No tax on this.':''}</span><span class="ma-hint" id="ma-f-taxfrom">${_maE(from||'')}</span><span class="ma-ferr" id="ma-e-tax"></span></div>`;
+}
+/* `auto`: the form set it (a party's usual, or the No tax preset), not the
+   owner — a party picked later may still move it. */
+function _maTaxSet(k,rate,from,auto){
+  const h=document.getElementById('ma-f-taxkind');if(h)h.value=k;
+  MA_TAX_KINDS.forEach(x=>{const b=document.getElementById('ma-tax-'+x);if(b&&b.classList){b.classList.toggle('on',x===k);if(b.setAttribute)b.setAttribute('aria-checked',String(x===k));}});
+  const more=document.getElementById('ma-f-taxmore');if(more)more.hidden=k==='none';
+  if(rate!==undefined){const r=document.getElementById('ma-f-taxrate');if(r)r.value=rate;}
+  const fr=document.getElementById('ma-f-taxfrom');if(fr)fr.textContent=from||'';
+  if(_maF)_maF.taxAuto=!!auto;
+  window.maTaxCalc();
 }
 window.maTaxKind=function(k){
+  if(_maF)_maF.taxAuto=false;
+  const fr=document.getElementById('ma-f-taxfrom');if(fr)fr.textContent='';
   const h=document.getElementById('ma-f-taxkind');if(h)h.value=k;
   MA_TAX_KINDS.forEach(x=>{const b=document.getElementById('ma-tax-'+x);if(b&&b.classList){b.classList.toggle('on',x===k);if(b.setAttribute)b.setAttribute('aria-checked',String(x===k));}});
   const more=document.getElementById('ma-f-taxmore');if(more)more.hidden=k==='none';
@@ -1328,7 +1582,7 @@ window.maTaxKind=function(k){
 window.maTaxCalc=function(){
   const out=document.getElementById('ma-f-taxcalc');if(!out)return;
   const k=_maVal('ma-f-taxkind')||'none';
-  if(k==='none'){out.textContent='No tax on this — chosen, not assumed.';return;}
+  if(k==='none'){out.textContent='No tax on this.';return;}
   const a=_maNum(_maVal('ma-f-amount'));const rate=Number(_maVal('ma-f-taxrate'))||0;
   if(!Number.isFinite(a)||!rate){out.textContent='Give the amount and the rate.';return;}
   const t=maTaxCompute(Math.round(a),{kind:k,rate,inclusive:_maChecked('ma-f-taxincl',true),claimable:_maChecked('ma-f-taxclaim',false)});
@@ -1367,6 +1621,11 @@ window.maFormDirty=function(){
 window.maPartyPicked=function(v){
   const np=document.getElementById('ma-f-np');if(np)np.hidden=v!=='__new';
   const pw=document.getElementById('ma-w-payee');if(pw)pw.hidden=!!v&&v!=='__new';
+  // Until the owner picks a tax treatment, it follows the party (§12).
+  if(_maF&&_maF.taxAuto&&!_maF.edit&&(_maF.kind==='money_out'||_maF.kind==='money_in')){
+    const pt=_maPartyTax(v);
+    if(pt)_maTaxSet(pt.tax.kind,pt.tax.rate,pt.from,true);else _maTaxSet('none',0,_MA_TAX_PRESET,true);
+  }
 };
 window.maCountBook=function(){
   const out=document.getElementById('ma-f-book');if(!out||!_maF)return;
@@ -1377,6 +1636,25 @@ window.maCountBook=function(){
   const book=maCountBookOf(_maF.edit,{date,counted:_maVal('ma-f-counted')},maBalanceOf(lines,c.idx,code,maIsDay(date)?date:undefined));
   const n=_maNum(_maVal('ma-f-counted'));
   out.innerHTML='The book says '+maRs(book)+(Number.isFinite(n)?(Math.round(n)===book?' · <span class="ma-word fine">agrees</span>':' · <span class="ma-word warn">'+maRsSigned(Math.round(n)-book)+'</span>'):'');
+};
+const _MA_PERIOD_HINT='The oldest period not paid in full on that day — change it if this pays another.';
+/* Keep "For the period" in step with the date and the commitment while it
+   is still the form's own suggestion; once the owner types in it, it is
+   theirs and is left alone (money F10). */
+window.maCommitPeriodSync=function(){
+  const f=_maF;if(!f||f.kind!=='money_out')return;
+  const el=document.getElementById('ma-f-commitmentPeriod');if(!el)return;
+  if(!f.periodAuto&&String(el.value||'').trim())return;
+  const c=_maCtx();
+  const cm=_maCommit(_maVal('ma-f-commitmentId'));
+  const docs=f.edit?c.docs.filter(d=>!(d.dt===f.edit.dt&&d.id===f.edit.id)):c.docs;
+  el.value=cm?maCommitmentOpenPeriod(cm,docs,_maVal('ma-f-date'),c.s):'';
+  f.periodAuto=true;
+  const h=document.getElementById('ma-f-cphint');if(h)h.textContent=cm&&el.value?_MA_PERIOD_HINT:'';
+};
+window.maCommitPeriodTyped=function(){
+  if(_maF)_maF.periodAuto=false;
+  const h=document.getElementById('ma-f-cphint');if(h)h.textContent='';
 };
 window.maOwnerPick=function(u){
   const h=document.getElementById('ma-f-owner');if(h)h.value=u;
@@ -1394,7 +1672,9 @@ function _maOpenDocForm(kind,pre,edit){
   _maF={kind,dt,pre:pre||{},edit:edit||null,ack:false,lines:[],atts:maAttachList((pre||{}).attachments),attBusy:0,attErr:'',attNote:''};
   const p=Object.assign({date:c.today},pre||{});
   if(kind==='opening'||kind==='general'){
-    _maF.lines=(p.lines||[]).map(l=>({account:l.account||'',side:l.side||'dr',amount:l.amount||'',dr:l.dr||'',cr:l.cr||'',party:l.party||'',memo:l.memo||''}));
+    // A line's own cost centre has no field on the form; it is carried, so
+    // an edit never drops it (money F1).
+    _maF.lines=(p.lines||[]).map(l=>({account:l.account||'',side:l.side||'dr',amount:l.amount||'',dr:l.dr||'',cr:l.cr||'',party:l.party||'',memo:l.memo||'',costCentre:l.costCentre||''}));
     while(_maF.lines.length<2)_maF.lines.push({account:'',side:'dr',amount:'',dr:'',cr:'',party:'',memo:''});
     if(kind==='opening'&&!edit&&!pre.date)p.date=s.historyFrom<=c.today?s.historyFrom:c.today;
   }
@@ -1403,12 +1683,24 @@ function _maOpenDocForm(kind,pre,edit){
   // refuse the same (maTrEditOk); the form does not offer them.
   const trLock=dt==='transfer'&&!!edit&&maTransferNeedsConfirm(edit);
   const trWhy=trLock?(edit.status==='pending'?'It waits for '+_maWho(edit.confirmBy)+' to confirm':edit.confirmedBy?_maWho(edit.confirmedBy)+' confirmed it as it stands':'It needed a confirmation')+' — its from, to, amount and date cannot change: void it and record it again.':'';
-  const date=_maFld('date','Date',_maIn('date',p.date,{type:'date',min:s.historyFrom,max:c.today,on:'window.maCountBook()',dis:trLock}));
+  const date=_maFld('date','Date',_maIn('date',p.date,{type:'date',min:s.historyFrom,max:c.today,on:'window.maCountBook();window.maCommitPeriodSync()',dis:trLock}));
   const amount=_maFld('amount','Amount, ₨',_maIn('amount',p.amount,{num:true,ph:'0',on:'window.maTaxCalc()',dis:trLock}));
   const note=_maFld('note','Note',`<textarea class="ma-in" id="ma-f-note" rows="2">${_maE(p.note||'')}</textarea>`);
   let body='';
+  // The period a commitment payment settles (money F10): the stored or
+  // named one as it is; otherwise the oldest still open on the date, shown
+  // in the field and kept in step with the date and the commitment until
+  // the owner types their own (maCommitPeriodSync).
+  const period={value:p.commitmentPeriod||'',auto:!edit&&!p.commitmentPeriod};
+  if(kind==='money_out'&&period.auto&&p.commitmentId){const cm=_maCommit(p.commitmentId);if(cm)period.value=maCommitmentOpenPeriod(cm,c.docs,p.date,s);}
+  _maF.periodAuto=period.auto;
   if(kind==='money_out'||kind==='money_in'){
     const partyLocked=!!edit;
+    // The tax a new document starts on: what it was handed, else the party's
+    // usual, else No tax — said to be a preset, not a choice (§12, money N1).
+    const pt=!edit&&!p.tax?_maPartyTax(p.party):null;
+    const tax={value:p.tax||(pt&&pt.tax)||null,from:edit||p.tax?'':pt?pt.from:_MA_TAX_PRESET};
+    _maF.taxAuto=!edit&&!p.tax;
     const commits=maData.commitments.filter(x=>x.active!==false||x.id===p.commitmentId);
     body=`<div class="ma-grid2">${date}${amount}</div>
       <div class="ma-grid2">${_maFld('holder',kind==='money_out'?'Paid from':'Arrived in',_maSel('holder',_maHolderOpts(c,p.holder),p.holder),_maE(_MA_MIRROR_LINE))}
@@ -1416,11 +1708,11 @@ function _maOpenDocForm(kind,pre,edit){
       <div class="ma-grid2">${_maFld('party',kind==='money_out'?'Paid to':'Paid by',_maSel('party',_maPartyOpts(p.party),p.party,{dis:partyLocked,on:'window.maPartyPicked(this.value)'}),partyLocked?'A document cannot change its party — void it and record it again.':'')}
       <label class="ma-field" id="ma-w-payee"${p.party?' hidden':''}><span class="ma-lbl">Or a name, for a one-off</span>${_maIn('payee',p.payee,{ph:'Who was paid',dis:partyLocked})}<span class="ma-ferr" id="ma-e-payee"></span></label></div>
       <div class="ma-np" id="ma-f-np" hidden><div class="ma-grid2">${_maFld('npname','New party’s name',_maIn('npname',''))}${_maFld('npkind','Kind',_maSel('npkind',MA_PARTY_KINDS.map(k=>_maOpt(k,MA_PARTY_KIND_LABELS[k],'vendor')).join(''),'vendor'))}</div><button type="button" class="ma-btn sm" onclick="window.maInlineParty()">Create party</button></div>
-      ${_maTaxHTML(p.tax)}
-      <div class="ma-grid3">${_maFld('costCentre','Cost centre',_maSel('costCentre',s.costCentres.map(x=>_maOpt(x,x,p.costCentre||s.defaultCostCentre)).join(''),''))}
-      ${_maFld('labelKind','Kind',_maSel('labelKind',_maOpt('','From the account',p.labelKind)+MA_LABEL_KINDS.filter(x=>x!=='transfer').map(x=>_maOpt(x,x.replace('_','-'),p.labelKind)).join(''),''))}
-      ${kind==='money_in'?_maFld('channel','Channel',_maSel('channel',_maOpt('','—',p.channel)+MA_CHANNELS.map(x=>_maOpt(x,x.replace('_',' '),p.channel)).join(''),'')):_maFld('commitmentId','Settles a commitment',_maSel('commitmentId',_maOpt('','No',p.commitmentId)+commits.map(x=>_maOpt(x.id,x.name,p.commitmentId)).join(''),''))}</div>
-      <div class="ma-grid3">${kind==='money_out'?_maFld('commitmentPeriod','For the period',_maIn('commitmentPeriod',p.commitmentPeriod,{ph:'2026-10'})):''}${_maFld('po','Production PO',_maIn('po',p.po,{ph:'optional'}))}${_maFld('article','Article',_maIn('article',p.article,{ph:'optional'}))}</div>
+      ${_maTaxHTML(tax.value,tax.from)}
+      <div class="ma-grid3">${_maFld('costCentre','Cost centre',_maSel('costCentre',_maCcOpts(s,edit?(p.costCentre||''):(p.costCentre||s.defaultCostCentre)),''))}
+      ${_maFld('labelKind','Kind',_maSel('labelKind',_maOptsKeep(MA_LABEL_KINDS.filter(x=>x!=='transfer').map(x=>[x,x.replace('_','-')]),p.labelKind,{blank:'From the account',gone:v=>String(v).replace('_','-')}),''))}
+      ${kind==='money_in'?_maFld('channel','Channel',_maSel('channel',_maOptsKeep(MA_CHANNELS.map(x=>[x,x.replace('_',' ')]),p.channel,{blank:'—',gone:v=>String(v).replace('_',' ')}),'')):_maFld('commitmentId','Settles a commitment',_maSel('commitmentId',_maOptsKeep(commits.map(x=>[x.id,x.name]),p.commitmentId,{blank:'No',gone:v=>'A commitment that is not loaded ('+v+')'}),'',{on:'window.maCommitPeriodSync()'}))}</div>
+      <div class="ma-grid3">${kind==='money_out'?_maFld('commitmentPeriod','For the period',_maIn('commitmentPeriod',period.value,{ph:'2026-10',on:'window.maCommitPeriodTyped()'}),'<span id="ma-f-cphint">'+(period.auto&&period.value?_MA_PERIOD_HINT:'')+'</span>'):''}${_maFld('po','Production PO',_maIn('po',p.po,{ph:'optional'}))}${_maFld('article','Article',_maIn('article',p.article,{ph:'optional'}))}</div>
       ${note}${_maFld('tags','Tags',_maIn('tags',(p.tags||[]).join(', '),{ph:'comma between'}))}`;
   }else if(kind==='transfer'){
     body=`${trLock?`<div class="ma-note">${_maE(trWhy)}</div>`:''}<div class="ma-grid2">${date}${amount}</div>
@@ -1431,7 +1723,7 @@ function _maOpenDocForm(kind,pre,edit){
     body=`<div class="ma-grid2">${date}${_maFld('holder','Holder',_maSel('holder',_maHolderOpts(c,p.holder),p.holder,{on:'window.maCountBook()',dis:!!edit}),edit?'Which holder was counted cannot change — void it and count again.':_maE(_MA_MIRROR_LINE.replace(' A handover to or from it is a Transfer.',' Raees counts it there.')))}</div>
       ${_maFld('counted','Counted, ₨',_maIn('counted',p.counted,{num:true,ph:'0',on:'window.maCountBook()'}),'<span id="ma-f-book"></span>')}${note}`;
   }else if(kind==='capital'||kind==='drawing'){
-    const own=MA_OWNERS.indexOf(p.owner)>=0?p.owner:session.u;
+    const own=edit||MA_OWNERS.indexOf(p.owner)>=0?p.owner:session.u;
     body=`<div class="ma-grid2">${date}${amount}</div>
       <div class="ma-field" id="ma-w-owner"><span class="ma-lbl">Owner</span><input type="hidden" id="ma-f-owner" value="${_maE(own)}"><div class="ma-chips">${MA_OWNERS.map(u=>`<button type="button" class="ma-chip${own===u?' on':''}" id="ma-own-${u}" onclick="window.maOwnerPick('${u}')">${_maE(_maWho(u))}</button>`).join('')}</div><span class="ma-ferr" id="ma-e-owner"></span></div>
       ${_maFld('holder',kind==='capital'?'Put into':'Taken from',_maSel('holder',_maHolderOpts(c,p.holder),p.holder),_maE(_MA_MIRROR_LINE))}${note}`;
@@ -1446,6 +1738,13 @@ function _maOpenDocForm(kind,pre,edit){
   _maModal(title,body,`<button class="ma-btn" onclick="window.maCloseModal()">Cancel</button><button class="ma-btn primary" id="ma-f-save" onclick="window.maSaveForm()">${edit?'Save the edit':'Record'}</button>`,kind==='opening'||kind==='general');
   _maPaintLineTotals();window.maTaxCalc();window.maCountBook();
 }
+/* "5.000" is refused before anything is built, and says what it probably
+   meant (money N2): the parser reads it as neither 5 nor 5,000. */
+function _maDottedIssue(raw,field,label){
+  const v=String(raw===undefined||raw===null?'':raw).trim();
+  const hint=maRupeesDotted(v);
+  return hint?{rule:'amount.dotted',level:'refuse',field,message:(label||'The amount')+' “'+v+'” — did you mean '+hint+'? Rupees take a comma, or none.'}:null;
+}
 function _maFormRead(){
   const f=_maF,k=f.kind;
   const input={kind:k,date:_maVal('ma-f-date').trim(),note:_maVal('ma-f-note'),attachments:(f.atts||[]).slice()};
@@ -1453,13 +1752,22 @@ function _maFormRead(){
     Object.assign(input,{holder:_maVal('ma-f-holder'),account:_maVal('ma-f-account'),amount:_maVal('ma-f-amount'),
       party:_maVal('ma-f-party'),payee:_maVal('ma-f-payee'),
       tax:{kind:_maVal('ma-f-taxkind')||'none',rate:Number(_maVal('ma-f-taxrate'))||0,inclusive:_maChecked('ma-f-taxincl',true),claimable:_maChecked('ma-f-taxclaim',false)},
-      costCentre:_maVal('ma-f-costCentre'),labelKind:_maVal('ma-f-labelKind'),channel:_maVal('ma-f-channel'),
-      po:_maVal('ma-f-po'),article:_maVal('ma-f-article'),commitmentId:_maVal('ma-f-commitmentId'),commitmentPeriod:_maVal('ma-f-commitmentPeriod').trim(),
+      costCentre:_maVal('ma-f-costCentre'),labelKind:_maVal('ma-f-labelKind'),
+      po:_maVal('ma-f-po'),article:_maVal('ma-f-article'),
       tags:_maVal('ma-f-tags').split(',').map(x=>x.trim()).filter(Boolean)});
+    // What this kind's form does not show is carried from the stored
+    // document, never cleared by an edit (money F1): Money out has no
+    // channel field, Money in no commitment fields.
+    const was=f.edit||{};
+    if(k==='money_in')Object.assign(input,{channel:_maVal('ma-f-channel'),commitmentId:was.commitmentId||'',commitmentPeriod:was.commitmentPeriod||''});
+    else Object.assign(input,{channel:was.channel||'',commitmentId:_maVal('ma-f-commitmentId'),commitmentPeriod:_maVal('ma-f-commitmentPeriod').trim()});
     if(input.party==='__new')input.party='';
     if(input.party){const p=_maParty(input.party);input.partyKind=p?p.kind:null;input.payee='';}
-    if(input.tax.kind==='none')input.tax={kind:'none',rate:0,inclusive:true,claimable:false};
-    if(input.commitmentId&&!input.commitmentPeriod&&maIsDay(input.date)){const cm=_maCommit(input.commitmentId);if(cm)input.commitmentPeriod=maCommitmentPeriodKey(cm,input.date,_maCtx().s.fiscalYearStart);}
+    // The tax block's reference has no field either; a "No tax" kept as it
+    // was stored.
+    const wt=was.tax;
+    if(input.tax.kind==='none')input.tax=wt&&wt.kind==='none'?{kind:'none',rate:0,inclusive:wt.inclusive!==false,claimable:!!wt.claimable}:{kind:'none',rate:0,inclusive:true,claimable:false};
+    else if(wt&&wt.ref)input.tax.ref=wt.ref;
     if(f.edit){input.party=f.edit.party||'';input.partyKind=f.edit.partyKind||null;if(f.edit.party)input.payee='';}
   }else if(k==='transfer'){
     // What the form does not offer on an edit is read from the document.
@@ -1471,8 +1779,14 @@ function _maFormRead(){
   }else if(k==='capital'||k==='drawing'){
     Object.assign(input,{owner:_maVal('ma-f-owner'),holder:_maVal('ma-f-holder'),amount:_maVal('ma-f-amount')});
   }else{
-    input.lines=f.lines.filter(l=>l.account||l.amount||l.dr||l.cr).map(l=>k==='opening'?{account:l.account,side:l.side,amount:l.amount,party:l.party,memo:l.memo}:{account:l.account,dr:l.dr||0,cr:l.cr||0,party:l.party,memo:l.memo});
+    input.lines=f.lines.filter(l=>l.account||l.amount||l.dr||l.cr).map(l=>{
+      const o=k==='opening'?{account:l.account,side:l.side,amount:l.amount,party:l.party,memo:l.memo}:{account:l.account,dr:l.dr||0,cr:l.cr||0,party:l.party,memo:l.memo};
+      if(l.costCentre)o.costCentre=l.costCentre;
+      return o;
+    });
   }
+  // Only Money out and Money in show tags; every other kind carries them.
+  if(k!=='money_out'&&k!=='money_in')input.tags=f.edit&&Array.isArray(f.edit.tags)?f.edit.tags.slice():[];
   return input;
 }
 const _MA_FIELDS=['date','amount','holder','account','party','payee','tax','costCentre','labelKind','channel','commitmentId','commitmentPeriod','owner','from','to','counted','note','lines','reason',
@@ -1498,6 +1812,9 @@ window.maSaveForm=async function(){
   if(f.attBusy){_maShowIssues({refuses:[{message:'Wait for the upload to finish — the file is not on the document yet.',field:'attachments'}],flags:[],ok:false});return;}
   const c=_maCtx();const s=c.s;
   const input=_maFormRead();
+  const dotted=[_maDottedIssue(input.amount,'amount','The amount'),_maDottedIssue(input.counted,'counted','The count')]
+    .concat(...(input.lines||[]).map((l,i)=>[['amount',''],['dr',' debit'],['cr',' credit']].map(([k,w])=>_maDottedIssue(l[k],'lines','Line '+(i+1)+w)))).filter(Boolean);
+  if(dotted.length){_maShowIssues({refuses:dotted,flags:[],ok:false});return;}
   const meta=f.edit?{by:f.edit.by,byName:f.edit.byName,ts:f.edit.ts,source:f.edit.source}:{by:session.u,byName:session.name||session.u,ts:Date.now(),source:'manual'};
   const others=f.edit?maPostAll(c.docs.filter(d=>!(d.dt===f.edit.dt&&d.id===f.edit.id)),c.idx,s):c.lines;
   // An edit keeps the stored book unless the day or the count moved (money F2).
@@ -1536,9 +1853,10 @@ window.maSaveForm=async function(){
       _maPaint();
     }
   }catch(e){
-    const box=document.getElementById('ma-f-issues');
+    const box=_maF===f?document.getElementById('ma-f-issues'):null;
     if(box)box.innerHTML=`<ul class="ma-flaglist"><li class="refuse"><span class="ma-dot urgent"></span>${_maE(_maWriteError(e))} Nothing was saved.</li></ul>`;
-  }finally{_maBusy=false;const b=document.getElementById('ma-f-save');if(b)b.disabled=false;}
+    else _maToast('Not saved: '+_maDocWhat(f,built)+' — '+_maWriteError(e)+(f.edit?'':' Record it again.'));
+  }finally{_maBusy=false;const b=_maF===f&&document.getElementById('ma-f-save');if(b)b.disabled=false;}
 };
 window.maEditDoc=function(dt,id){
   const d=_maDoc(dt,id);if(!d)return;
@@ -1564,9 +1882,28 @@ window.maVoidDoc=async function(dt,id){
   _maBusy=true;
   try{
     await _maWritePatch(d,patch,'void',reason.trim(),cur=>cur.status==='void'?'It is already void.':null);
-    Object.assign(d,patch);_maInvalidate();_maToast(d.no+' voided — it stays on the record, struck through.');_maPaint();
+    Object.assign(d,patch);_maInvalidate();
+    const links=await _maWithdrawLinks(d);
+    _maToast(d.no+' voided — it stays on the record, struck through.'+links);_maPaint();
   }catch(e){_maToast(_maWriteError(e));}finally{_maBusy=false;}
 };
+/* A voided document's live share links are withdrawn with it (money M3):
+   the PDF they serve says nothing of the void. Through ma-share, one link
+   at a time, so each is an audited withdrawal; what could not be withdrawn
+   — or read — is said, never assumed gone. → the sentence for the toast. */
+async function _maWithdrawLinks(d){
+  let rows;
+  try{
+    const snap=await getDocs(query(collection(db,'ma_shares'),where('docId','==',d.id)));
+    rows=((snap&&snap.docs)||[]).map(x=>Object.assign({},typeof x.data==='function'?x.data():{},{token:x.id})).filter(x=>x.docKind===d.dt);
+  }catch(e){return ' Its share links could not be read — open Share on it and withdraw any that are live.';}
+  const live=rows.filter(x=>maShareState(x,Date.now())==='live');
+  if(!live.length)return '';
+  let gone=0;
+  for(const x of live){try{await _maFn('ma-share',{action:'revoke',token:x.token});gone++;}catch(_){}}
+  if(gone===live.length)return ' Its '+(gone===1?'live link was':gone+' live links were')+' withdrawn.';
+  return ' '+(live.length-gone)+' of its '+live.length+' live link'+(live.length>1?'s':'')+' could not be withdrawn — open Share on it and withdraw '+(live.length-gone>1?'them':'it')+'.';
+}
 /* Review — the one way the review fields are SET (an edit may only clear
    them). Refused in a closed quarter, naming it: the rules refuse it too
    (maReviewOk), in no words a person can act on. */
@@ -1599,14 +1936,16 @@ function _maCommitForm(x,pre){
     <div class="ma-grid2">${_maFld('account','Booked to',_maSel('account',_maAccountOpts(c,'money_out',v.account),v.account))}
     ${_maFld('holder','Usually paid from',_maSel('holder',_maHolderOpts(c,v.holder,{blank:'Not fixed'}),v.holder),_maE(_MA_MIRROR_LINE.replace(' A handover to or from it is a Transfer.',' What Raees pays is recorded there.')))}</div>
     <div class="ma-grid2">${_maFld('party','Party',_maSel('party',_maPartyOpts(v.party,{blank:'None',noNew:true}),v.party))}
-    ${_maFld('costCentre','Cost centre',_maSel('costCentre',s.costCentres.map(k=>_maOpt(k,k,v.costCentre)).join(''),v.costCentre))}</div>
+    ${_maFld('costCentre','Cost centre',_maSel('costCentre',_maCcOpts(s,x?(x.costCentre||''):v.costCentre),''))}</div>
     <div class="ma-grid2">${_maFld('from','From',_maIn('from',v.from,{type:'date'}))}${_maFld('to','Until',_maIn('to',v.to,{type:'date'}))}</div>
     ${_maFld('note','Note',`<textarea class="ma-in" id="ma-f-note" rows="2">${_maE(v.note||'')}</textarea>`)}`;
   _maModal(x?'Edit '+x.name:'New commitment',body,`<button class="ma-btn" onclick="window.maCloseModal()">Cancel</button><button class="ma-btn primary" id="ma-f-save" onclick="window.maSaveForm()">${x?'Save':'Add commitment'}</button>`);
 }
-function _maIntOrNull(v){v=String(v||'').replace(/[₨,\s]/g,'');if(v==='')return null;const n=Number(v);return Number.isFinite(n)?n:NaN;}
+function _maIntOrNull(v){if(maRupeesDotted(String(v||'').trim()))return NaN;v=String(v||'').replace(/[₨,\s]/g,'');if(v==='')return null;const n=Number(v);return Number.isFinite(n)?n:NaN;}
 async function _maSaveCommitment(){
   const c=_maCtx();const f=_maF;const before=f.edit;
+  const dq=_maDottedIssue(_maVal('ma-f-amountExpected'),'amountExpected','The expected amount');
+  if(dq){_maShowIssues({refuses:[dq],flags:[],ok:false});return;}
   const x=Object.assign({},before?_maClean(before):{},{
     name:_maVal('ma-f-name').trim(),kind:_maVal('ma-f-ckind'),cadence:_maVal('ma-f-cadence'),
     amountExpected:_maIntOrNull(_maVal('ma-f-amountExpected')),dueDay:_maIntOrNull(_maVal('ma-f-dueDay')),
@@ -1633,7 +1972,7 @@ async function _maSaveCommitment(){
     await _maWriteMasters([{col:'ma_commitments',id:x.id,data:x}],'commitment',{dt:'commitment',id:x.id,no:x.name},(before?'Edited: '+fields.join(', '):'New commitment')+' · '+x.name);
     const i=maData.commitments.findIndex(y=>y.id===x.id);if(i>=0)maData.commitments[i]=x;else maData.commitments.push(x);
     _maInvalidate();window.maCloseModal();_maToast(x.name+(before?' saved.':' added to the register.'));_maPaint();
-  }catch(e){_maShowIssues({refuses:[{message:_maWriteError(e)}],flags:[],ok:false});}finally{_maBusy=false;}
+  }catch(e){_maFormFail(f,(before?'the edit to ':'the new commitment ')+(x.name||'—'),e);}finally{_maBusy=false;}
 }
 window.maCommitToggle=async function(id){
   const x=_maCommit(id);if(!x||_maBusy||_maNeedsNet())return;
@@ -1660,7 +1999,7 @@ window.maPartyForm=function(id){
     <div class="ma-grid2">${_maFld('pkind','Kind',_maSel('pkind',MA_PARTY_KINDS.map(k=>_maOpt(k,MA_PARTY_KIND_LABELS[k],v.kind)).join(''),v.kind,{on:'window.maPartyKindPicked(this.value)'}))}
     ${_maFld('name','Name',_maIn('name',v.name,{on:p?'':'window.maPartyAutoCode()'}))}</div>
     <div class="ma-grid3">${_maFld('code','Code',_maIn('code',v.code,{ph:'auto'}),'2 to 12 capitals or digits')}
-    ${_maFld('costCentre','Cost centre',_maSel('costCentre',c.s.costCentres.map(k=>_maOpt(k,k,v.costCentre||c.s.defaultCostCentre)).join(''),''))}
+    ${_maFld('costCentre','Cost centre',_maSel('costCentre',_maCcOpts(c.s,p?(p.costCentre||''):v.costCentre),''))}
     ${p?`<label class="ma-field"><span class="ma-lbl">Active</span><label class="ma-chk"><input type="checkbox" id="ma-f-active"${v.active!==false?' checked':''}> in use</label></label>`:'<div></div>'}</div>
     <div class="ma-grid2">${_maFld('person','Contact person',_maIn('person',v.contact&&v.contact.person))}${_maFld('phone','Phone',_maIn('phone',v.contact&&v.contact.phone,{type:'tel'}))}</div>
     <div id="ma-f-vendor"${v.kind==='vendor'?'':' hidden'}>
@@ -1700,7 +2039,7 @@ async function _maSaveParty(){
   const kind=_maVal('ma-f-pkind')||'vendor';
   const p=Object.assign({},before?_maClean(before):{id:_maId('p_'),createdAt:Date.now(),createdBy:session.u,history:[]},{
     kind,name:_maVal('ma-f-name').trim(),code:(_maVal('ma-f-code').trim().toUpperCase())||maPartyCode(_maVal('ma-f-name'),_maPartyCodes()),
-    costCentre:_maVal('ma-f-costCentre')||c.s.defaultCostCentre,active:before?_maChecked('ma-f-active',before.active!==false):true,
+    costCentre:_maVal('ma-f-costCentre'),active:before?_maChecked('ma-f-active',before.active!==false):true,
     contact:{person:_maVal('ma-f-person').trim(),phone:_maVal('ma-f-phone').trim()},notes:_maVal('ma-f-pnotes').trim()});
   if(kind==='vendor'){
     const vd=Object.assign({},(before&&before.vendor)||{});
@@ -1728,12 +2067,12 @@ async function _maSaveParty(){
     _maInvalidate();window.maCloseModal();_maToast(p.name+(before?' saved.':' added.'));
     if(!before){_maPartyId=p.id;if(typeof window.showPage==='function'&&_maPage==='ma-parties'){window.showPage('ma-party');return;}}
     _maPaint();
-  }catch(e){_maShowIssues({refuses:[{message:_maWriteError(e)}],flags:[],ok:false});}finally{_maBusy=false;}
+  }catch(e){_maFormFail(f,(before?'the edit to ':'the new party ')+(p.name||'—'),e);}finally{_maBusy=false;}
 }
 /* "+ New party" from any party field: name and kind, the rest later (§14). */
 window.maInlineParty=async function(){
   if(_maBusy||_maNeedsNet())return;
-  const c=_maCtx();
+  const c=_maCtx();const f=_maF;
   const name=_maVal('ma-f-npname').trim(),kind=_maVal('ma-f-npkind')||'vendor';
   const p={id:_maId('p_'),kind,name,code:maPartyCode(name,_maPartyCodes()),active:true,costCentre:c.s.defaultCostCentre,contact:{person:'',phone:''},notes:'',
     createdAt:Date.now(),createdBy:session.u,history:[{at:Date.now(),by:session.u,fields:['created']}]};
@@ -1747,7 +2086,7 @@ window.maInlineParty=async function(){
     maData.parties.push(p);_maInvalidate();
     const sel=document.getElementById('ma-f-party');if(sel){sel.innerHTML=_maPartyOpts(p.id);sel.value=p.id;}
     window.maPartyPicked(p.id);_maToast(name+' added — the rest of their details can wait.');
-  }catch(err){if(e)e.textContent=_maWriteError(err);}finally{_maBusy=false;}
+  }catch(err){if(e&&_maF===f)e.textContent=_maWriteError(err);else _maToast('Not saved: the new party '+name+' — '+_maWriteError(err));}finally{_maBusy=false;}
 };
 window.maTermsForm=function(pid){
   const p=_maParty(pid);if(!p)return;const c=_maCtx();
@@ -1759,7 +2098,7 @@ window.maTermsForm=function(pid){
     `<button class="ma-btn" onclick="window.maCloseModal()">Cancel</button><button class="ma-btn primary" id="ma-f-save" onclick="window.maSaveForm()">Change terms</button>`);
 };
 async function _maSaveTerms(){
-  const c=_maCtx();const p=_maF.edit;
+  const c=_maCtx();const f=_maF;const p=f.edit;
   const t=_maTermsRead();const from=_maVal('ma-f-tfrom')||c.today;const reason=_maVal('ma-f-reason').trim();
   const iss=maTermsIssues(Object.assign({},t,{from})).map(i=>Object.assign({},i,{field:null}));
   if(!reason)iss.push({rule:'terms.reason',level:'refuse',field:'reason',message:'Say why the terms change.'});
@@ -1773,7 +2112,7 @@ async function _maSaveTerms(){
     await _maWriteMasters([{col:'ma_parties',id:p.id,data:next}],'terms',{dt:'party',id:p.id,no:p.code},maTermsText(t)+' from '+from+' — '+reason);
     const i=maData.parties.findIndex(x=>x.id===p.id);if(i>=0)maData.parties[i]=next;
     _maInvalidate();window.maCloseModal();_maToast('Terms changed — the old ones are kept.');_maPaint();
-  }catch(e){_maShowIssues({refuses:[{message:_maWriteError(e)}],flags:[],ok:false});}finally{_maBusy=false;}
+  }catch(e){_maFormFail(f,'the new terms for '+p.name,e);}finally{_maBusy=false;}
 }
 window.maRateForm=function(pid){
   const p=_maParty(pid);if(!p)return;const c=_maCtx();
@@ -1786,7 +2125,7 @@ window.maRateForm=function(pid){
     `<button class="ma-btn" onclick="window.maCloseModal()">Cancel</button><button class="ma-btn primary" id="ma-f-save" onclick="window.maSaveForm()">Add rate</button>`);
 };
 async function _maSaveRate(){
-  const c=_maCtx();const p=_maF.edit;
+  const c=_maCtx();const f=_maF;const p=f.edit;
   const entry={item:_maVal('ma-f-item').trim(),unit:_maVal('ma-f-unit').trim(),rate:Number(_maVal('ma-f-rate').replace(/[₨,\s]/g,'')),validFrom:_maVal('ma-f-validFrom'),note:_maVal('ma-f-rnote').trim()};
   const iss=maRateIssues(entry);
   _maShowIssues({refuses:iss,flags:[],ok:!iss.length});
@@ -1798,7 +2137,7 @@ async function _maSaveRate(){
     await _maWriteMasters([{col:'ma_parties',id:p.id,data:next}],'rate',{dt:'party',id:p.id,no:p.code},entry.item+' ₨'+entry.rate+'/'+entry.unit+' from '+entry.validFrom);
     const i=maData.parties.findIndex(x=>x.id===p.id);if(i>=0)maData.parties[i]=next;
     _maInvalidate();window.maCloseModal();_maToast('Rate added — the earlier one is kept.');_maPaint();
-  }catch(e){_maShowIssues({refuses:[{message:_maWriteError(e)}],flags:[],ok:false});}finally{_maBusy=false;}
+  }catch(e){_maFormFail(f,'the rate for '+(entry.item||'—')+' ('+p.name+')',e);}finally{_maBusy=false;}
 }
 
 /* ═══ PDF — through js/print-engine.js only (§31, M1.4) ═══════════════════
@@ -1878,7 +2217,15 @@ window.maExcel=function(key){
   const c=_maCtx();const r=_maRange(c);const rng=r.from+'_to_'+r.to;
   const docRow=d=>[d.date,d.no,maDocTitle(d,c.idx),_maDocDesc(d,c),d.amount||0,d.status,maLiveFlags(d).map(x=>x.message).join('; '),d.note||'',maAttachList(d.attachments).length];
   const docHead=['Date','Number','Document','What','Amount','State','Flags','Note','Files'];
-  const postRows=led=>[['Date','Document','Account','Description','Cost centre','Kind','Debit','Credit','Balance']].concat(led.rows.map(l=>[l.date,l.doc&&l.doc.no,maAccLabel(c.idx,l.account),[l.party?_maPartyName(l.party):l.payee,l.memo].filter(Boolean).join(' · '),l.costCentre||'',l.kind||'',l.dr,l.cr,l.balance===undefined?'':l.balance]));
+  // A Balance column only where the ledger carries one (M1.6b): not under a
+  // narrowing filter, not for the drawer — and the sheet says why instead.
+  const postRows=led=>{
+    const bal=led.opening!==null&&led.opening!==undefined;
+    const why=_maLedgerHiddenText(led);
+    const head=['Date','Document','Account','Description','Cost centre','Kind','Debit','Credit'].concat(bal?['Balance']:[]);
+    return [head].concat(led.rows.map(l=>[l.date,l.doc&&l.doc.no,maAccLabel(c.idx,l.account),[l.party?_maPartyName(l.party):l.payee,l.memo].filter(Boolean).join(' · '),l.costCentre||'',l.kind||'',l.dr,l.cr].concat(bal?[l.balance===undefined?'':l.balance]:[])))
+      .concat(why?[[],[why.charAt(0).toUpperCase()+why.slice(1)+'.']]:[]);
+  };
   if(key==='ledger'){const {led}=_maLedgerFiltered(c);const f=Object.keys(_maLF).filter(k=>_maLF[k]).map(k=>k+'-'+_maLF[k]).join('_');return _maXlsx('master-accounts_ledger_'+rng+(f?'_'+f:''),[{name:'Postings',rows:postRows(led)}]);}
   if(key==='documents'){const docs=c.docs.filter(d=>d.date>=r.from&&d.date<=r.to).sort((a,b)=>String(a.date).localeCompare(String(b.date)));return _maXlsx('master-accounts_documents_'+rng,[{name:'Documents',rows:[docHead].concat(docs.map(docRow))}]);}
   if(key==='holders'||key==='today'){
@@ -2176,12 +2523,17 @@ function _maShareSpec(kind,id){
     const d=_maDoc(kind,id);
     if(!d)return {error:'That document is not loaded — refresh and try again.'};
     const tail=(d.no||d.id)+(d.status==='void'?'-VOID':'');
+    // The revision the PDF was made at rides in the link's document number
+    // (the ma-share function keeps `no`, 60 characters): the list can then
+    // say when the document changed after the link was made (money M3).
+    // `rev` is sent as well, for a server that keeps it (M1.6c).
+    const rev=maRevOf(d),no=d.no+' · rev '+rev;
     if(kind==='transfer')return {type:'ma-receipt',what:'Receipt '+d.no,filename:_maPdfFile('Receipt-'+tail),build:()=>maPdfReceiptData(x(),d),
-      subject:{type:'transfer',id:d.id,no:d.no},to:null,listOf:'this document'};
+      subject:{type:'transfer',id:d.id,no,rev},to:null,listOf:'this document'};
     if(d.kind!=='money_out')return {error:'Only a transfer (its receipt) or a Money out (its voucher) has a PDF of its own — share the ledger instead.'};
     const p=d.party?_maParty(d.party):null;
     return {type:'ma-voucher',what:'Voucher '+d.no,filename:_maPdfFile('Voucher-'+tail),build:()=>maPdfVoucherData(x(),d),
-      subject:{type:'journal',id:d.id,no:d.no},to:{party:p?p.name:(d.payee||''),phone:p&&p.contact?p.contact.phone||'':''},listOf:'this document'};
+      subject:{type:'journal',id:d.id,no,rev},to:{party:p?p.name:(d.payee||''),phone:p&&p.contact?p.contact.phone||'':''},listOf:'this document'};
   }
   if(kind==='ledger'){
     const q=_maLedgerQuery(c);const code=q.holder||q.account;
@@ -2286,6 +2638,25 @@ function _maShareListHTML(){
   return `<ul class="ma-sh-list">${L.rows.map(x=>_maShareItemHTML(x,now)).join('')}</ul>`;
 }
 const _MA_SHARE_WORD={live:['fine','live'],expired:['mute','expired'],revoked:['urgent','withdrawn'],unknown:['warn','not valid']};
+/* The revision a link's PDF was made at: the server's own field when it
+   keeps one, else the " · rev N" its document number carries, else — a link
+   made before either — the edits dated before it. */
+function _maShareRevAt(x,d){
+  if(Number.isInteger(x.docRev)&&x.docRev>0)return x.docRev;
+  const m=/ · rev (\d+)$/.exec(String(x.docNo||''));
+  if(m)return Number(m[1]);
+  return 1+((d&&d.edits)||[]).filter(e=>e&&Number.isFinite(e.at)&&Number.isFinite(x.createdAt)&&e.at<=x.createdAt).length;
+}
+/* A live link whose document moved on since: its PDF is the old one. */
+function _maShareStaleHTML(x,st){
+  const sub=_maShare&&_maShare.spec&&_maShare.spec.subject;
+  if(st!=='live'||!sub||(sub.type!=='journal'&&sub.type!=='transfer'))return '';
+  const d=_maDoc(sub.type,sub.id);if(!d)return '';
+  const at=_maShareRevAt(x,d),cur=maRevOf(d);
+  if(d.status==='void')return `<div class="ma-sh-meta"><span class="ma-dot urgent"></span> Made at rev ${at} — the document has been voided since. Withdraw the link.</div>`;
+  if(cur>at)return `<div class="ma-sh-meta"><span class="ma-dot warn"></span> Made at rev ${at} — the document has changed since (it is at rev ${cur} now). The link still serves the old PDF.</div>`;
+  return '';
+}
 function _maShareItemHTML(x,now){
   const st=maShareState(x,now);
   const w=_MA_SHARE_WORD[st];
@@ -2298,7 +2669,7 @@ function _maShareItemHTML(x,now){
       :'Works until '+_maWhen(x.expiresAt),
     'Opened '+opens+' time'+(opens===1?'':'s')+(x.lastOpenedAt?' · last '+_maWhen(x.lastOpenedAt):'')+(prev?' · '+prev+' link preview'+(prev===1?'':'s')+(x.lastPreviewAt?', last '+_maWhen(x.lastPreviewAt):''):'')];
   return `<li class="ma-sh-item"><div class="ma-sh-top"><span class="ma-sh-file">${_maE(x.filename||x.docNo||'PDF')}</span><span class="ma-word ${w[0]}">${w[1]}</span></div>
-    ${lines.map(l=>`<div class="ma-sh-meta">${_maE(l)}</div>`).join('')}
+    ${lines.map(l=>`<div class="ma-sh-meta">${_maE(l)}</div>`).join('')}${_maShareStaleHTML(x,st)}
     ${st==='live'?_maShareActsHTML(x.token,x.docNo||x.filename,_maShareLink(x.token),x.to&&x.to.phone,x.expiresAt,true):''}</li>`;
 }
 function _maSharePaint(part){

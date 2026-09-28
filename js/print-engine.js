@@ -2362,7 +2362,11 @@ function _prMaHeader(doc, type, number, data) {
  * running balance, the period's totals, closing. A4 LANDSCAPE.
  * data (maPdfLedgerData) = { account:{code,name,normal}, range:{from,to,label},
  *   filters:[string], opening, closing, totals:{dr,cr,count},
+ *   balanceHidden: null | {narrow:[string], mirror, why, mirrorBalance},
  *   rows:[{date,no,kind,who,contra,note,dr,cr,balance}], printedOn, printedBy }
+ * balanceHidden (M1.6b): no opening, closing or Balance column — under a
+ * narrowing filter the lines shown are not the account's balance, and the
+ * drawer's balance is Store Accounts' (its figure, or "not read").
  */
 function _renderMaLedger(doc, data) {
   data = data || {};
@@ -2370,29 +2374,44 @@ function _renderMaLedger(doc, data) {
   const t = data.totals || {};
   const rows = data.rows || [];
   const r = data.range || {};
+  // M1.6b (money F4/F5): no running balance, opening or closing when the
+  // core says it would not be the account's balance — a narrowing filter, or
+  // the drawer, whose balance is Store Accounts' (printed as that module has
+  // it, or "not read", the holder statement's way).
+  const hid = data.balanceHidden || null;
   const name = (a.code ? a.code + ' · ' : '') + (a.name || 'Account');
+  const why = hid && hid.why ? String(hid.why) : '';
   _prMaHeader(doc, 'Ledger', a.code, data);
   _prMaTitle(doc, name, [
     _prMaRange(r),
     (data.filters && data.filters.length) ? 'Filtered — ' + data.filters.join('  ·  ') : '',
-    (a.normal === 'cr' ? 'Credit' : 'Debit') + '-normal: the balance is in the account’s own sense; a minus sign is a balance on the other side.'
+    hid ? (hid.mirror ? 'Kept in Store Accounts: its balance is that module’s, and only handovers to and from it are listed here.'
+      : (why ? why.charAt(0).toUpperCase() + why.slice(1) + '.' : 'No running balance under this filter.'))
+      : (a.normal === 'cr' ? 'Credit' : 'Debit') + '-normal: the balance is in the account’s own sense; a minus sign is a balance on the other side.'
   ]);
-  _prMaFigures(doc, [['Opening', _prMaRs(doc, data.opening)], ['Debits', _prMaRs(doc, t.dr)],
-    ['Credits', _prMaRs(doc, t.cr)], ['Closing', _prMaRs(doc, data.closing)]]);
-  const body = [{ cells: [_prMaDay(r.from), '', '', '', 'Opening balance', '', '', _prMaRs(doc, data.opening)], strong: true }];
+  _prMaFigures(doc, !hid
+    ? [['Opening', _prMaRs(doc, data.opening)], ['Debits', _prMaRs(doc, t.dr)], ['Credits', _prMaRs(doc, t.cr)], ['Closing', _prMaRs(doc, data.closing)]]
+    : hid.mirror
+      ? [['Debits', _prMaRs(doc, t.dr)], ['Credits', _prMaRs(doc, t.cr)],
+         ['Balance in Store Accounts', hid.mirrorBalance == null ? 'not read' : _prMaRs(doc, hid.mirrorBalance)]]
+      : [['Debits', _prMaRs(doc, t.dr)], ['Credits', _prMaRs(doc, t.cr)]]);
+  const bal = function (cells, v) { if (!hid) cells.push(v); return cells; };
+  const body = [];
+  if (!hid) body.push({ cells: [_prMaDay(r.from), '', '', '', 'Opening balance', '', '', _prMaRs(doc, data.opening)], strong: true });
   rows.forEach(function (x) {
-    body.push({ cells: [_prMaDay(x.date), x.no, x.kind, x.who, _prMaLines(x.contra, x.note),
-      _prMaCell(doc, x.dr), _prMaCell(doc, x.cr), _prMaRs(doc, x.balance)] });
+    body.push({ cells: bal([_prMaDay(x.date), x.no, x.kind, x.who, _prMaLines(x.contra, x.note),
+      _prMaCell(doc, x.dr), _prMaCell(doc, x.cr)], _prMaRs(doc, x.balance)) });
   });
-  if (!rows.length) body.push({ cells: ['', '', '', '', 'Nothing was posted to this account in the period.', '', '', ''] });
-  body.push({ cells: ['', '', '', '', 'Period totals · ' + (t.count || 0) + ' posting' + (t.count === 1 ? '' : 's'),
-    _prMaRs(doc, t.dr), _prMaRs(doc, t.cr), ''], strong: true, rule: true });
-  body.push({ cells: [_prMaDay(r.to), '', '', '', 'Closing balance', '', '', _prMaRs(doc, data.closing)], strong: true });
+  if (!rows.length) body.push({ cells: bal(['', '', '', '', 'Nothing was posted to this account in the period.', '', ''], '') });
+  body.push({ cells: bal(['', '', '', '', 'Period totals · ' + (t.count || 0) + ' posting' + (t.count === 1 ? '' : 's'),
+    _prMaRs(doc, t.dr), _prMaRs(doc, t.cr)], ''), strong: true, rule: true });
+  if (!hid) body.push({ cells: [_prMaDay(r.to), '', '', '', 'Closing balance', '', '', _prMaRs(doc, data.closing)], strong: true });
+  const cols = [{ h: 'Date', w: 80 }, { h: 'No.', w: 62 }, { h: 'Kind', w: 92, wrap: true }, { h: 'Party / holder', w: 118, wrap: true },
+    { h: 'Particulars', w: 'flex', wrap: true }, { h: 'Debit', w: 76, a: 'right' }, { h: 'Credit', w: 76, a: 'right' }];
+  if (!hid) cols.push({ h: 'Balance', w: 84, a: 'right' });
   _prMaTable(doc, {
     size: 8.5, rows: body, continued: name + '  ·  ' + _prMaRange(r),
-    cols: [{ h: 'Date', w: 80 }, { h: 'No.', w: 62 }, { h: 'Kind', w: 92, wrap: true }, { h: 'Party / holder', w: 118, wrap: true },
-      { h: 'Particulars', w: 'flex', wrap: true }, { h: 'Debit', w: 76, a: 'right' }, { h: 'Credit', w: 76, a: 'right' },
-      { h: 'Balance', w: 84, a: 'right' }]
+    cols: cols
   });
   doc.__groovyY += 8;
   _prMaNote(doc, 'Void documents post nothing and are not listed. A transfer still waiting to be confirmed counts in neither holder until it is.');
