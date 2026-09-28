@@ -1017,21 +1017,20 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-world[data-lod="far"] .board-card-foot,
 .board-world[data-lod="far"] .board-labels,
 .board-world[data-lod="far"] .board-reactions,
-.board-world[data-lod="far"] .board-caption,
 .board-world[data-lod="far"] .board-subboard-open{display:none!important}
 /* The strip survives as a grab target; only its look goes. */
 .board-world[data-lod="far"] .board-card-head{padding:0!important;min-height:10px;height:10px;background:transparent!important;border-bottom:none!important}
 .board-world[data-lod="far"] .board-card-el{box-shadow:none;border-radius:4px}
-/* Text at this zoom is under 5px. Hidden beats painted-but-unreadable —
+/* SUPERSEDED 28 Sept 2026 (Afnan, with a screenshot of blank white cards
+   at far zoom: "some content is not visible … as you zoom in it gets
+   visible"): note, to-do, link text, captions and a sub-board's meta and
+   thumbnails now STAY painted at far zoom. Only the chrome goes. The old
+   reasoning follows. Text at this zoom is under 5px. Hidden beats painted-but-unreadable —
    the picture cards are what carry a board at 22%, which is exactly what
    Milanote's own board looks like at 27%. */
-.board-world[data-lod="far"] .board-text-body,
-.board-world[data-lod="far"] .board-todo-body,
 /* At this zoom the spine's colour (or its cover) is what tells the boards
    apart, and the name is the only text still worth painting. The meta line
    is 13px * 0.25 = 3px, and a 30x22 thumbnail is 7x5 — noise, both. */
-.board-world[data-lod="far"] .board-subboard-meta,
-.board-world[data-lod="far"] .board-subboard-thumbs,
 /* `.board-link-desc` used to be named here and has NEVER existed — the
    class is `.link-desc`, inside `.board-link-meta`. A dead selector in a
    pure-CSS feature has no symptom at all, which is why the far-zoom probe
@@ -1040,7 +1039,6 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
    (Milanote's cards at 27% are just the pictures); with no picture it goes
    invisible but keeps its space, like a note body. */
 .board-world[data-lod="far"] .board-link-img+.board-link-meta,.board-world[data-lod="far"] .board-video+.board-link-meta{display:none!important}
-.board-world[data-lod="far"] .board-link-meta,
 .board-world[data-lod="far"] .board-link-loading{visibility:hidden}
 
 .board-card-el{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden}

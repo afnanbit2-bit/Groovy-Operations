@@ -2426,7 +2426,7 @@ document.querySelectorAll('#main-content *').forEach(el=>{
 // with no other symptom.
 document.querySelectorAll('.board-world[data-lod="far"]').forEach(world=>{
   ['.board-card-kind','.board-card-name','.board-card-del','.board-resize-handle',
-   '.board-labels','.board-reactions','.board-caption',
+   '.board-labels','.board-reactions',
    '.board-link-img+.board-link-meta'].forEach(sel=>{
     world.querySelectorAll(sel).forEach(el=>{
       if(getComputedStyle(el).display!=='none'){
