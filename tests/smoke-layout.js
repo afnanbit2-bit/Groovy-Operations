@@ -2248,6 +2248,29 @@ const FRAGMENTS={
     ].map(x=>app.run('_hrmNotifCardHTML('+JSON.stringify(x)+')')).join('');
     return Promise.resolve('<div style="max-width:360px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px">'+cards+'</div>');
   },
+  // Notes: the page with its gutter, plus the / menu and the block menu drawn
+  // flat (the real popover is position:fixed, so two of them would land on
+  // top of each other and report each other as covering). The block bodies
+  // are hydrated with textContent in the app, which the harness cannot do,
+  // so the text is written into the markup here -- an EMPTY body is a
+  // zero-height box and measures nothing.
+  'notes — the page, the / menu and the block menu':()=>{
+    const app=loadApp({files:['js/notes.js'],currentPage:'note-detail',
+      session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const T=[['h1','Cutting room SOP'],['paragraph','Relax the fabric for 24 hours before it goes on the table, and log the roll code on the gate pass.'],
+      ['h2','Checks'],['checklist','Marker length matches the PO'],['bullet','Grain line straight'],['numbered','Count bundles per size'],
+      ['quote','If in doubt, ask the cutting master before you cut.'],['paragraph','']];
+    app.run("window._gvSilentSaveStart=()=>{};_notesEditPage={id:'P',title:'Cutting room SOP',visibility:'shared',ownerUid:'u1',ownerName:'Afnan',updatedAt:Date.now()};"
+      +"_notesEditBlocks="+JSON.stringify(T.map((t,i)=>({id:'b'+i,type:t[0],text:t[1],checked:false,imageUrl:''}))));
+    let page=app.run('renderNoteDetailPage()');
+    T.forEach((t,i)=>{page=page.replace(new RegExp('(id="nb-'+i+'"[^>]*>)</div>'),'$1'+t[1].replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>');});
+    const pop=(rows,selIdx)=>'<div class="notes-pop open" style="position:static;margin:12px 0">'+rows.map((r,k)=>'<div class="notes-pop-row'+(k===selIdx?' sel':'')+(r.danger?' danger':'')+'"><span class="notes-pop-label">'+r.label+'</span>'+(r.hint?'<span class="notes-pop-hint">'+r.hint+'</span>':'')+'</div>').join('')+'</div>';
+    app.run("_notesSlashOpen(1,'','slash')");
+    const slash=JSON.parse(app.run('JSON.stringify(_notesPopState.rows.map(r=>({label:r.label,hint:r.hint})))'));
+    app.run("window.notesOpenBlockMenu(1,null)");
+    const menu=JSON.parse(app.run('JSON.stringify(_notesPopState.rows.map(r=>({label:r.label,danger:!!r.danger})))'));
+    return Promise.resolve(page+pop(slash,2)+pop(menu,0));
+  },
   'gate pass — dark summary panels':()=>{
     const app=loadApp({files:['js/gatepass.js'],currentPage:'gate-pass',
       session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
