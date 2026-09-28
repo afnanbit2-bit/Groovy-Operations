@@ -1,4 +1,4 @@
-# Master Accounts — Master Plan v3 (cash first · terms are the key · the money speaks)
+# Master Accounts — Master Plan v4 (cash first · terms are the key · every rupee labelled · the money speaks)
 
 > Status: **PLANNING ONLY — nothing built.** Afnan, 27 Sept 2026: *"I want
 > accounts but just for me and ammar, in short master accounts … plan all
@@ -25,12 +25,26 @@
 > costing — and v3 puts the cash under it, the couriers in front of it, a
 > Savings book beside it and the owners' loan between the two.
 >
-> Every decision is Claude's call, tabled to be overruled **here** (§3, §23).
+> **v4 (28 Sept 2026) answers the brief in §0b — *"a whole world of my
+> money … you're 5% there"*.** It maps every rupee the app can see today,
+> module by module and from the code (§25); lists every line the factory
+> spends on, fixed and variable, rent to food to advances, with the state
+> each is in (§26); puts a label on every posting (§27); turns every
+> broken or missing flow into a build item with a milestone (§28); turns
+> every former open question into a rule with a default (§23); and adds
+> security, backup, print, edit and send-by-link as foundations rather
+> than features (§29–§31). The UI is remapped desktop-first — ten pages,
+> one Record button, a page map of what each tab reads — with the visual
+> rules taken from a measured audit of the v3 specimen and from the
+> Polaris, Carbon and Primer design systems (§16).
+>
+> Every decision is Claude's call, tabled to be overruled **here** (§3;
+> §23 is no longer a list of questions but of rules with defaults).
 > Companion: the UI specimen https://claude.ai/artifact/9bmhjEuaZMisWLb2TiQNyZ
-> (`scratchpad/master-accounts-specimen.html`), private until shared.
+> (`scratchpad/master-accounts-specimen.html`), private until shared,
+> rebuilt to §16 in this version.
 > `ACCOUNTS_PLAN.md` is Raees's Store Accounts and Umair's warehouse sales,
 > both absorbed here in a named milestone (M8).
-
 ## 0. First mile to last mile, in one picture
 
 ```
@@ -98,6 +112,47 @@ does with the fact.
 | 10 | *"Tax option inside the build: a lot of entries do have taxes, some don't."* | A **tax block on every document** — kind (sales, services, withholding, none), rate, amount, inclusive or exclusive — defaulted from the party and the item, confirmed by the person; "no tax" is a choice, never an absence. Tax accounts, a quarterly tax page. Rates are settings the accountant fills; the plan invents none. | §12 |
 | 11 | *"It should communicate with me with money: how much is spent where, and should I be concerned spending this much here or not. The money should speak to me visually."* | **The concern logic** (§17): every line of spend — category, vendor, courier cost, salaries, subscriptions — carries a state (fine / watch / concern) from three tests (its own baseline, its budget, its terms) and a sentence in plain words with the basis. A **spend map** sized by rupees and tinted by state, the **cash calendar**, and "of every ₨100 in, where it went". | §17, §16 |
 
+## 0b. The brief of 28 Sept 2026 — a whole world of money, not a module
+
+Afnan, after seeing the specimen (verbatim, two messages): *"All the
+questions you are asking should not be questions but logics that should be
+answers inside the build; the model should be logical enough to do proper
+accounts with variable situations; keep data stored in this account tab
+secure; the data should be backed up; PDF logic wherever it is a must;
+logic to print ledger, edit them, send them by link; this should be the
+best well-calculated build of Groovy Operations with the most
+sophistication in it."* And: *"This is not a plain old accounting module,
+it is a whole world of my money … I think you're 5% there … a complete
+working section which feeds on countless amounts of money logic connected
+to Groovy Ops … study, understand the situation, document it > understand
+what Groovy Ops can actually do > where actual money sits > label money
+with everything > let's calculate this whole Groovy factory > fixed costs
+> rent > food > vendor > petty > transport > advances > everything that is
+there; if something is broken or is not currently in the phase to collect
+money data we plan it inside the build."* On the UI: *"too bulky, not
+clean … logical things should be mapped correctly, what goes where … 80%
+on desktop … I don't want everything on the main view."*
+
+What v4 does with each sentence:
+
+| Ask | Where |
+|---|---|
+| No open questions — logic with a default and a path for the other case | §23, rewritten: every former question is a rule |
+| Proper accounts under variable situations | §6 (the engine refuses only the impossible), §26 (commitments), §27 (labels), §28 (the coverage register names what is not captured yet) |
+| Secure | §29 |
+| Backed up | §30 |
+| PDF everywhere; print the ledger; edit; send by link | §31 |
+| Study what Groovy Ops can do; where money sits | §25 (the money map, module by module, from the code) |
+| Label money with everything | §27 |
+| Calculate the whole factory: fixed, rent, food, vendors, petty, transport, advances | §26 (the cost register) |
+| Plan the gaps inside the build | §28 |
+| The UI: what goes where, desktop first | §16, rewritten as a page map |
+
+Method, in the order he set it: the code was read for money (§25), the
+holders were listed (§4.1), the labels were defined (§27), the factory's
+costs were listed line by line with the state each is in today (§26), and
+every gap became a build item with a milestone (§28).
+
 ## 1. Verified findings this plan rests on (read from the code)
 
 Each row was read with file:line references and the load-bearing ones
@@ -143,6 +198,8 @@ only**.
 | **Reads are bounded; failures are named** | The client reads the master, the open quarter's documents and the rollups; a source that could not be read is an alert, never a zero. ₨20M a month is ~1,000 documents; the open quarter is paged. |
 | **By username, mirrored by email** | `_MA_USERS=['afnan','ammar']` and `isMasterAccounts()`; a test holds them equal. |
 | **Every learned number carries its basis** | `basis:{method, window, n}` on every insight and every concern. |
+| **Every rupee labelled** | A posting carries the labels of §27 — holder, party, category, cost centre, kind, PO, channel, source, who — or it goes to suspense and the Unlabelled queue, which must be empty before a close. |
+| **Nothing is deleted, everything is backed up, everything prints** | No client delete on any `ma_*` collection (void only); a nightly export, PITR and the owners' own copy (§30); an append-only audit trail (§29); a PDF of every document and page, edits with history, and a share link that expires (§31). |
 
 ## 3. Decisions taken (overrule here)
 
@@ -184,13 +241,13 @@ accounts are the **holders**; `holder` names the person or place.
 | Range | Accounts |
 |---|---|
 | Money (holders) | **1010 Cash — store drawer (Raees)** · **1011 Cash — with Afnan** · **1012 Cash — with Ammar** · **1020 MCB current** · 1030… other banks and wallets (placeholders) · **1040 Warehouse till (Umair, not yet handed over)** · **1050 Runner floats** · **1060 TCS account (credited at 90 days)** |
-| Receivables | 1110 Customers (warehouse pay-later) · **1120 PostEx — delivered, not yet on a CPR** · **1121 PostEx — CPRs issued, not yet collected** · **1122 TCS — delivered, inside 90 days** · **1123 Blue-Ex (legacy)** · **1124 Bykea** · **1125 Payfast (prepaid, not yet paid out)** · 1140 Employees (advances, loans) · 1150 Vendor advances · **1160 Input tax** |
+| Receivables | 1110 Customers (warehouse pay-later) · **1120 PostEx — delivered, not yet on a CPR** · **1121 PostEx — CPRs issued, not yet collected** · **1122 TCS — delivered, inside 90 days** · **1123 Blue-Ex (legacy)** · **1124 Bykea** · **1125 Payfast (prepaid, not yet paid out)** · 1140 Employees (advances, loans) · 1150 Vendor advances · **1160 Input tax**  · **1170 Security deposits (rent, utilities)** |
 | Stock and assets | 1210 Fabric · 1220 Trims · 1230 Work in progress · 1240 Finished goods · 1310 Fixed assets |
 | Liabilities | 2010 Payable — vendors · 2020 Retention held · 2040 Payable — salaries · 2050 Payable — runners · 2060 Payable — creators · 2070 Customer deposits · **2110 Loan from owners' savings** · **2120 Sales tax payable** · **2130 Withholding tax payable** · 2140 Other loans |
 | Equity | 3010/3011 Capital — Afnan / Ammar · 3020/3021 Drawings — Afnan / Ammar · 3090 Retained result |
 | Revenue | **4010 Online — COD** (sub-accounts per courier) · **4011 Online — prepaid (Payfast)** · 4020 Warehouse · 4030 Fabric & garment sales · 4040 Discounts given · 4050 Refunds & returns · 4090 Other income |
 | Cost of goods | 5010 Fabric · 5020 Stitching · 5030 Embellishment · 5040 Trims · 5050 Washing & dyeing · **5060 Courier fees & tax** · **5070 Reversals & returns** · 5080 Packaging · 5090 Cost variance |
-| Expenses | 6010 Salaries · 6020 Marketing & PR · 6030 Utilities · 6040 Rent · 6050 Maintenance · 6060 Fuel & transport · 6070 Office · **6080 Bank & gateway charges** · 6090 Depreciation · **6100 Subscriptions (company)** · **6110 Taxes & levies (non-recoverable)** · 6190 Other |
+| Expenses | 6010 Salaries · 6020 Marketing & PR · 6030 Utilities · 6040 Rent · 6050 Maintenance · 6060 Fuel & transport · 6070 Office · **6080 Bank & gateway charges** · 6090 Depreciation · **6100 Subscriptions (company)** · **6110 Taxes & levies (non-recoverable)** · **6120 Food & refreshments** · **6130 Staff welfare & medical** · **6140 Licences & professional fees** · **6150 Insurance** · 6190 Other |
 | Suspense | 9010 Unclassified in · 9020 Unclassified out · 9030 Reconciliation differences |
 
 ### 4.2 `ma_parties/{id}` — one record per vendor, customer, courier, gateway, employee, owner, bank
@@ -267,6 +324,29 @@ Subscriptions (per owner via tag) · S5050 Travel · S5060 Family · S5090
 Other. Targets are **envelopes** (tags on entries and on assets), not
 accounts, so saving toward one never leaves the account the money sits in.
 
+### 4.6 `ma_commitments/{id}` — the cost register (§26)
+
+`{kind: fixed|variable|running|people|financing|one_off|tax, name,
+party?, account, costCentre, cadence: monthly|weekly|quarterly|yearly|
+per_parcel|per_piece|variable, dueDay?, dueWeekday?, amountExpected,
+amountLearned:{median, n, window}, holder, evidenceRequired, active, from,
+to?, history[], lastDoc:{kind, id, date}}`. The calendar and the concern
+logic read it; the month checklist lists every active commitment without
+a document by its due day.
+
+### 4.7 `ma_assets/{id}` — Groovy's asset register
+
+`{name, kind: machine|computer|fixture|vehicle|deposit|other, cost, date,
+party?, life (months), method: straight_line, salvage, costCentre, active,
+disposedAt?, valuations[]}`; the close posts the month's depreciation
+(6090 ↔ 1310); a deposit (1170) is returned by a receipt.
+
+### 4.8 System collections
+
+`ma_audit` (append-only, §29) · `ma_backups` (one row per nightly run,
+§30) · `ma_shares` (share links, §31) · `ma_counts` (a holder's count:
+counted, book, difference, by, at) · `ma_feedback` (§18).
+
 ## 5. Documents and their lifecycle
 
 | Document | Collection | Made from | States | Posts |
@@ -299,6 +379,10 @@ receipts, invoiceNo, gpId, fabId, jobId, cprNos[], legacyId}, attachments[],
 status, flags[], validated:{at, rules[]}, by, byName, ts, confirmedBy/At,
 voidedAt/By/Reason, edits[]}`. Numbers are minted in the same transaction
 as the document (the Pattern Hub lesson).
+From v4 a document also carries the labels its postings inherit
+(`category`, `costCentre`, `kind`, `channel`, `tags[]`, §27), and a
+**Count** (`ma_counts`) and a **Commitment** (`ma_commitments`) are
+documents in their own right (§4.6, §4.8).
 
 ## 6. The validation engine — `maValidate(doc, ctx)`
 
@@ -609,36 +693,182 @@ zero.**
 `js/warehouse-sales.js` are re-pointed in M8; `netlify.toml` gains the
 rollup schedule.
 
-## 16. The UI — pages `ma-*`
+## 16. The UI — what goes where, and why (desktop first; 28 Sept 2026)
 
-| Page | What is on it |
-|---|---|
-| `ma-overview` | cash by holder (hero, with who holds what), in/out this month, owed to us (in transit · CPRs to collect · TCS · Blue-Ex · customers), we owe, runway; **the concern strip** (the three sentences that matter today); **the 30-day cash calendar**; **the spend map**; cash in/out by week; balance and projection; where the money went; revenue by channel; aging both ways; the loan outstanding |
-| `ma-couriers` | §8: tiles, the CPR table, the Tue/Fri rhythm, collections, fees and reversals, a card per courier |
-| `ma-ledger` | every posting, one line shape, filters by document kind, party, holder and account |
-| `ma-parties` / `ma-party` | vendors · customers · couriers · gateways · employees · owners · banks; the party page with what it provides, terms (history), rate card (history), open POs, the credit/debit ledger, statement, aging, attachments |
-| `ma-purchasing` | purchase orders, receipts, bills with match status, the review queue; + PO · + Bill · + Receipt |
-| `ma-payments` | the pay-day list (Wed/Sat, from terms), pay runs by holder, allocations, retention, advances |
-| `ma-money` | one page per holder: statement, running balance, confirmations pending, reconciliation, transfers, floats; MCB import |
-| `ma-sales` | invoices by channel and gateway, collections, pay-later reminders |
-| `ma-savings`, `-targets`, `-recurring`, `-networth`, `-accounts` | §9 |
-| `ma-loan` | the loan ledger on both books, draws, repayments, pace, the payout rule |
-| `ma-costing` | cost sheets, cost per piece, margin by article and channel, missing legs |
-| `ma-people` | payroll accruals and payments, the importer, employee ledgers |
-| `ma-tax` | §12 |
-| `ma-pnl`, `ma-balance`, `ma-cashflow`, `ma-aging`, `ma-reports` | the statements, exports |
-| `ma-budgets`, `ma-insights` | the learning layer |
-| `ma-close` | the quarter checklist, the month soft close, the Q1 backfill count, locks, reopen, the audit trail |
-| `ma-settings` | chart of accounts (both books), items, holders, tolerances, tax defaults, pay days, CPR days, the payout rule, fiscal year, go-live |
+Afnan: *"too bulky, not clean; logical things should be mapped correctly
+— what goes where; 80% on desktop; I don't want everything on the main
+view."* This section is the page map. The specimen
+(`scratchpad/master-accounts-specimen.html`, the artifact) is rebuilt to
+it; the visual rules at the end are what the rebuild follows, and §16.5
+says where they came from.
 
-The specimen shows Overview (with the concern strip, the calendar and the
-spend map), Ledger, Purchasing, a Vendor page, **Couriers**, **Savings**,
-P&L and Insights. Charts: HTML/CSS, the validated `--chart-*` palette
-(light on `#fff`, dark on `#17171A`; worst adjacent colour-blind ΔE
-9.1/8.4, normal 19.6/19.3), a table twin, one filter row. **Concern states
-are painted with the app's semantic accents** (`--accent-warning-soft`,
-`--accent-urgent-soft`), never with a series colour, and their text stays
-`var(--text)`.
+### 16.1 The navigation — ten pages, one Record button
+
+| Page (`ma-*`) | The one question it answers | Above the fold (desktop) | Below, or a drill-down |
+|---|---|---|---|
+| **Today** `ma-overview` | *Where is the money right now, and what needs me?* | four figures in one row — **cash in hand** (the hero), in this month, out this month, owed to us less we owe; **Needs attention** — three lines, worst first, or *nothing to worry about*; then, side by side, **cash by holder** as ONE table with its total and the balance line with its 30-day projection | the 30 days as a seven-column strip, one row per week, only event days carrying text (pay days, CPR days, a short day as a dot); the spend list; aging both ways as two short tables. Nothing else — revenue by channel, the biggest vendors and "of every ₨100" live on Reports. |
+| **Money** `ma-money` | *What does each holder hold, and is it reconciled?* | the holders table: balance · last count · pending confirmations | a holder's page: statement, transfers in and out, confirm, count, the MCB import and reconciliation |
+| **Money in** `ma-in` | *What is owed to us, and what came in?* | tabs — **Couriers** (CPRs to collect, in transit, TCS, Blue-Ex, Bykea) · **Online** (orders by gateway, Payfast payouts) · **Warehouse & gate** (sales, pay-later, collections) · **Customers** (aging) | a CPR, a collection, a payout, an invoice; a courier's fee card |
+| **Money out** `ma-out` | *What do we owe, what is due, what did we pay?* | tabs — **Pay days** (the Wed/Sat list) · **Bills** (match status, the review queue) · **Purchase orders & receipts** · **Commitments** (rent, utilities, subscriptions, insurance — §26) · **Payroll & people** · **Petty & floats** | a bill, a payment, a PO, a commitment, a pay run |
+| **Parties** `ma-parties` | *Who do we deal with, and where do we stand with each?* | one list, filterable by kind; balance and last activity per row | the party page: terms (history), rate card (history), open POs, the ledger with a running balance, statement, aging, attachments, share links |
+| **Ledger** `ma-ledger` | *Every posting, one shape* | the ledger table with filters (range, book, holder, account, party, category, cost centre, PO, source, status) | a document; its edit history; journals; the Unlabelled queue |
+| **Costing** `ma-costing` | *What does a piece cost, and what do we make on it?* | cost per PO (legs: fabric, CMT, wash, embellishment, trims, packaging, courier, overhead) | a cost sheet; margin by article and channel; missing legs named |
+| **Savings** `ma-savings` | *The owners' book* | the accounts and the loan outstanding; targets with their ETA | spend by category, subscriptions per owner, assets and liabilities, net worth, reconciliation, the loan ledger |
+| **Reports** `ma-reports` | *The statements* | the P&L for the period against the last one and the budget | balance sheet, cash flow, aging both ways, revenue by channel, "of every ₨100", tax, budgets, insights, exports |
+| **Close & audit** `ma-close` | *Is the period done, and who did what?* | the quarter checklist; the month soft close; backups (the last run) | reopen; the audit trail; Download the books; settings (the charts of accounts, holders, pay days, tolerances, tax rates, the payout rule, cost centres, thresholds) |
+
+**Record** — one button in the page header on every page — opens the
+document picker: Collection · Transfer · Bill · Payment · Purchase order ·
+Receipt · Journal · Payout · Loan draw or repayment · Savings entry ·
+Commitment · Count. Each form is the same on every page; the page only
+prefills (a party page prefills the party). There is no "+ Journal entry"
+on the overview and no button per page.
+
+Retired from the v3 sidebar: Payments, Sales, People, Loan, Tax, Budgets,
+Insights and Settings as top-level pages — each is a tab or a drill-down
+above. Twenty entries became ten.
+
+### 16.2 The page map — tab → what it shows → what feeds it → where the detail is
+
+| Page | Shows | Reads | Writes (through Record) | Detail |
+|---|---|---|---|---|
+| Today | holders, concerns, this week | `ma_postings` (balances), `ma_commitments`, `ma_cpr`, `ma_bill`, `ma_payout`, `ma_backups`, `ma_feedback`, the rollups | nothing directly | every line links to its page |
+| Money | holders, confirmations, counts | `ma_postings` by holder, `ma_transfer` (pending), `ma_counts` | transfer, count, MCB import, confirm | a holder |
+| Money in | CPRs, collections, payouts, invoices, customers | `ma_cpr`, `ma_collection`, `ma_payout`, `ma_invoice`, `ma_receipt_in`, `postex_orders` (linked), `wh_sales` (adapter) | collection, statement, payout, invoice, receipt | a CPR, a collection, an invoice |
+| Money out | pay days, bills, POs, receipts, commitments, payroll, petty | `ma_bill`, `ma_payment`, `ma_po`, `ma_receipt`, `ma_commitments`, `payroll_runs` (adapter), `acct_entries` (adapter until M8) | bill, payment, PO, receipt, commitment, pay run, float | a bill, a payment, a PO |
+| Parties | the list | `ma_parties`, balances from the postings | a party (inline from any form), terms, a rate | a party |
+| Ledger | the postings | `ma_postings`, every document by reference | journal, edit, void | a document |
+| Costing | cost sheets | `ma_postings` by PO, `pos`, `ma_receipt`, `ma_bill`, `ma_settings.overheadPct` | nothing | a cost sheet |
+| Savings | the Savings book | `ma_sv_*`, `ma_loan`, `ma_payout` | savings entry, valuation, target, subscription, loan | a target, an account |
+| Reports | the statements | the rollups, `ma_postings`, `ma_budgets`, `ma_insights` | budget accept, feedback | a report |
+| Close & audit | periods, backups, audit, settings | `ma_closes`, `ma_backups`, `ma_audit`, `ma_settings`, `ma_shares` | close, reopen, settings, export | — |
+
+Where a document is **stored** is §5 (one collection per document kind,
+the id minted with the number); where its **postings** are is §7
+(`ma_postings`, one line per account movement, labelled per §27); balances
+are never stored (§2). A page never reads a collection the table above
+does not name — that is "the logic to how data is stored and how a tab
+results" in one place.
+
+### 16.3 The phone rule
+
+The five buttons: **Today · Money in · Money out · Ledger · More** (Money,
+Parties, Costing, Savings, Reports, Close under More). Phone-first
+actions, each one screen: record a collection at the counter (the camera
+for the receipt), confirm a transfer, pay a vendor, snap a bill, count a
+holder. Desktop-only depth: the ledger's full filter row, costing, reports,
+settings, the calendar grid (a list on the phone).
+
+### 16.4 The visual rules the rebuild follows
+
+- **Spacing**: 4 · 8 · 12 · 16 · 24 · 32 · 48, nothing between the steps
+  (Polaris and Carbon both stop there); page gutter 32 (24 under 1200px);
+  sections 32 apart; title to content 12; rows 8; content
+  `max-width:1100px`; table cell padding 6 (Polaris's own token).
+- **Type**: page title 22/600; section title 15/600, sentence case, no
+  rule under it; body and table text 14/400/1.4 — the app's own body size,
+  which the v3 specimen never rendered once; the hero number 28/600 with
+  `tabular-nums` and `letter-spacing:-.01em`; secondary numbers 20/600;
+  money in a table 14/500; labels 12/500 `--muted`, sentence case — **no
+  uppercase and no letter-spacing anywhere in the module** (the v3 overview
+  carried 49 uppercase labels); meta 13/400 `--muted`; 11px for axis ticks
+  only; nothing under 11.
+- **Figures**: `font-variant-numeric:tabular-nums` on every money column
+  and tile; the unit once, in the head; right-aligned; whole rupees.
+- **Stat tiles**: only on Today and on a party page; at most **four**, in
+  one row, `repeat(4,1fr)` and never `auto-fill` (the v3 grid left three
+  empty cells); unbordered — a stat row on the surface, stats divided by a
+  1px `--border` left rule with 24px padding; label, number, one sub-line
+  of at most eight words; no tints, no sparkline. A list is a table.
+- **Concerns are lines**: under *Needs attention · N* an 8px dot in
+  `--accent-urgent` or `--accent-warning`, one 14px sentence with its
+  numbers at 500, the action as a trailing `--link-accent` link; no box,
+  no icon disc, no bold lead, no fill; three shown, *and N more* opens the
+  rail; **fine is silent**, and a reconciled state is header meta. In a
+  table a state is the dot or a 12px word in the state colour; a filled
+  pill only for `void`. **One banner or none** on a page, only for what
+  needs action now — never a stack.
+- **Tables**: 40px rows (36 compact); header 12/500 `--muted`, sentence
+  case, over one 1px `--border`; `--soft` separators and a hover row; the
+  date `white-space:nowrap` at 88px; money right-aligned in fixed widths,
+  the balance at 500; only the description wraps — wrap, never truncate;
+  the source as 13px muted text, not a pill; totals 600 over a top rule; a
+  sticky header and a fixed first column on a wide table; paginate past 50
+  and say the scope (*2,184 postings · 6 sources*); a full-width table
+  sits on the surface under a section title, **never inside a card**.
+- **Charts**: one per section, at most two per page above the drill-down,
+  full width or two-thirds with the numbers beside; plot 240px (200 min);
+  bars 32–48px with gaps of at least half a bar; four gridlines, 11px
+  ticks; no legend for one series, an inline legend for two; data labels
+  **or** a y-axis, never both; *Show as table* as a text link beneath;
+  `--chart-*` only inside a plot, marks at 3:1 against the surface or
+  better; no grids of charts, and never two charts of one dataset.
+- **Colour**: one accent — `--dark` for the primary button and the
+  selected control, `--link-accent` for links; semantic colours as dots
+  and words only, never a fill, never on money except a negative;
+  everything else the neutral tokens.
+- **Borders, shadows, radius**: no shadows; one 1px `--border` on an
+  outer container only and nothing bordered inside it (a row takes a
+  `--soft` hairline; a cell takes `--surface-2` or a border, never both);
+  containers 8px, controls 6px, pills only for the period segment. The
+  default is **no container** — sections sit on `--bg`; a card only for a
+  thing lifted as a unit: the rail, a form, an error.
+- **The page header**: one sticky 56px row — the title at 22 with a 13px
+  meta line (*Sun 27 Sep · MCB reconciled to 25 Sep · 41/41*) · the period
+  segment (This month / Last month / Quarter / Year / a date range) ·
+  **Record**, the one primary · a ⋯ overflow (Excel, PDF, settings). No
+  explanatory sentences on any page.
+- **Detail is a right rail**: 380px, `position:sticky`, full height, a
+  `--border` on its left, the main column `minmax(0,1fr)`; it opens on a
+  row, a stat, a day or a spend line and holds the detail — the basis
+  text, six-month bars, terms history, the receipt. Whatever explains
+  lives there or in a tooltip, never on the page. Under 1200px a
+  slide-over; on the phone a bottom sheet.
+- **Empty, loading, failed**: loading is the app's `.gv-skel` shimmer in
+  the section's shape, never a spinner; empty is one 14px muted line with
+  the action as a link (*No CPR waiting · the next lands Tuesday*); a
+  refused read is the app's error card naming the collection, with Retry —
+  never an empty list (the Store lesson).
+- **Phone**: the same order, stacked; the stat row 2×2 without borders;
+  charts 180px; the calendar a list of days; tables as the app's flex-card
+  rows with money right-aligned and the totals row kept; the rail a bottom
+  sheet; the header's actions roll into ⋯; a cell that would truncate
+  becomes a list row.
+
+### 16.5 Where the rules came from — the outside design input
+
+Afnan asked for *"a UI/UX expert … an agent or something from GitHub open
+source"*. Two reports were produced on 28 Sept 2026, both in the
+scratchpad and both model output, to be read as such:
+
+- **`scratchpad/visual-report.md`** — the v3 specimen **measured** in
+  headless Chromium at 1440px and at a true 390px frame, not eyeballed:
+  the overview's main column was **2,532px** tall (the phone's 4,356px),
+  540 elements, **8 font sizes**, **82% of its text at 12px or under** and
+  31 elements at 10px, 49 uppercase labels, **66 bordered boxes of which
+  41 were nested**, 12 background colours, and the first chart at
+  y = 1,183 — under six tiles and four alert bars. The report names the
+  ten worst offenders (the six-tile grid with three empty cells; four
+  alert bars; thirty 78px calendar cells with ellipsised amounts; the
+  four-part card chrome; the spend map's 58px slivers beside a second
+  chart of the same money; a 24-item sidebar; 190px plots in 457px cards;
+  pills on the normal state; five static courier cards; two-line
+  subtitles) and gives the specification above.
+- **`scratchpad/ds-report.md`** — the rules of Shopify **Polaris**, IBM
+  **Carbon** and GitHub **Primer**, read from their repositories over
+  `raw.githubusercontent.com` (the API listing is gated here): the space
+  scales, table cell padding 6, row heights 24–64 with 32–40 as finance
+  density, tabular numbers on money, units in the header, wrap instead of
+  truncate, one banner or none, one primary action in the page header,
+  title metadata for the as-of line, skeletons rather than spinners, the
+  empty-state copy rule, and the breakpoints.
+
+Where the two disagreed — Carbon's table header at 14/600 against the
+audit's 12/500 muted; the column at 1,100 against v3's 1,180 — the audit's
+number stands, because it was measured against this module. The rebuilt
+specimen is the test of the rules: it is rendered and looked at at 1440px
+and 390px in both themes before the plan claims them, and the numbers
+above are what it is checked against.
 
 ## 17. The money speaks — the concern logic and the visuals
 
@@ -667,12 +897,13 @@ Visuals, all HTML with the page's own text sizes:
 - **The concern strip** at the top of the overview: at most three
   sentences, worst first, each with its state chip and action; "nothing to
   worry about today" when there is none — said, not blank.
-- **The spend map**: one rectangle per category this month, area by
-  rupees, tinted by state (`--accent-urgent-soft` for concern,
-  `--accent-warning-soft` for watch, `--surface-2` for fine), the label and
-  the amount inside, the comparison on hover; a click opens the lines. Rows
-  by kind (cost of goods · people · running the business) so the eye reads
-  it in three strokes.
+- **The spend list**: one row per category this month — the name, the
+  amount, a proportional bar, the state dot, the comparison in words —
+  sorted by rupees, grouped by kind (cost of goods · people · running the
+  business · fixed) so the eye reads it in strokes; a click opens the
+  lines. v3's area-tinted map is retired: at real sizes the small
+  categories became unreadable slivers (58px, measured in the specimen
+  audit, §16.5), and it sat beside a second chart of the same money.
 - **The cash calendar**: 30 days from today, one cell a day, **inflows**
   (Tuesday and Friday CPRs at their expected net, TCS credits at day 90,
   pay-later customers on their due date, a Payfast payout on every weekday
@@ -681,7 +912,7 @@ Visuals, all HTML with the page's own text sizes:
   salaries on the payroll day, subscriptions, the loan repayment) with the
   projected holders' balance under it; a day the holders cannot fund is
   marked and named in the strip.
-- **Of every ₨100 that came in** this month: fabric, stitching,
+- **Of every ₨100 that came in** this month (on Reports, not Today): fabric, stitching,
   embellishment, couriers, salaries, everything else, saved — one row of
   proportional boxes with the numbers inside.
 - Every visual has its table twin and says its window and basis.
@@ -732,6 +963,17 @@ layer on its own.
   carries `gateway` and refreshes 14 days of orders (Ammar); HRM records
   `paidVia` (Afnan).
 
+- New in v4: `ma_commitments`, `ma_assets`, `ma_counts`, `ma_shares`:
+  owner read/write; `ma_audit` and `ma_backups`: owner read, **server
+  append only** (`allow update, delete: if false`; the client writes an
+  audit row through the same engine call that posts, never directly).
+  Functions: **`ma-backup`** (scheduled 03:30 UTC, `exportDocuments` to
+  the bucket, §30), **`ma-attach`** (authenticated Cloudinary uploads and
+  signed delivery, §29), **`ma-share`** (the link endpoint, §31),
+  **`ma-import`** (the owners' copy back in, §30). Every one verifies the
+  caller's ID token against `isMasterAccounts()`'s two emails; the share
+  endpoint alone is public, and it serves one PDF per valid token.
+
 ## 20. Periods — quarterly close, monthly where required
 
 Fiscal year from 1 July (setting). Quarters: Q1 Jul–Sep, Q2 Oct–Dec, Q3
@@ -750,18 +992,18 @@ the backfill quarter and closes when the owners say so, not on 30 September.
 
 | M | Ships | Cross-track |
 |---|---|---|
-| **M0** | this plan, the specimen, §23 answered | — |
-| **M1 Foundation & cash positions** | both charts of accounts, holders, party master with terms/rate cards/history, items, `js/ma-core.js` (postings, validation, allocation, balances, trial balance, the tax block), journals, **transfers between holders with confirmation**, the calendar (rule-based), `ma-overview` (live: cash by holder, calendar), `ma-ledger`, `ma-parties`/`ma-party`, `ma-money`, `ma-settings`, rules (the app's first owner-only reads), the dashboard widget | `index.html`, `sw.js`, `shared.js` (nav + one line), `css/main.css` tokens + `.ma-` block, rules republish |
-| **M2 Couriers & collections** | `ma_cpr` derived from `postex_orders` (the rollup), manual statements for TCS/Blue-Ex/Bykea, collections with holder and attachment, COD in transit, the TCS account and its 90-day expectation, Blue-Ex's opening, Bykea pending Raees, `ma-couriers`, the Tue/Fri calendar entries, courier fees and reversals in the P&L | `netlify.toml` (the rollup schedule) |
-| **M3 Procurement, terms & pay days** | `ma-purchasing`: purchase orders (assignable to production POs), receipts from fabric-in and vendor returns, bills matched three ways with tax, printing bills from approved `printing_billing` (Asghar's and every external printer's, each at its own card rate), the review queue; `ma-payments` with allocation from a holder, the Wed/Sat pay-day list, retention, credit limits; `ma-aging`; **the concern strip's rule-based half**; a bank CSV import once a statement is seen | `js/gatepass.js` (party pick), `js/fabric.js` (party pick, rate, poRef), `js/store.js` (rate on receive); the printing rate master read from `js/embellishments.js` |
-| **M4 Savings & the loan** | the Savings book: accounts, entries, statement import and reconciliation, spend by category, the subscriptions register with detection, targets, assets and liabilities, net worth; `ma_loan`, `ma_payout` with the repay-then-draw rule; `ma-savings*`, `ma-loan`; the loan on both overviews | — |
-| **M5 Sales** | invoices from Shopify orders by gateway, warehouse sales (adapter) and gate sales; the Payfast receivable; customer ledgers; `ma-sales`; revenue by channel and gateway | proposal to Ammar (`gateway`, refresh) |
-| **M6 People** | the payroll Excel importer, accrual and payment documents, employee ledgers (advances, loans with schedules), `ma-people` | proposal on `paidVia` |
-| **M7 Costing** | `ma-costing`, WIP and finished goods at cost, COGS on sale, margin by article | — |
-| **M8 Absorb Store Accounts & warehouse sales** | migration (idempotent by `legacyId`), forms re-pointed, Raees's and Umair's rules carried over (own entries, edits with history, review, confirmations), the Reset retired | `js/store-accounts.js`, `js/warehouse-sales.js` |
-| **M9 Reports, exports & tax** | `ma-pnl`, `ma-balance`, `ma-cashflow`, `ma-reports`, `ma-tax`; Excel; print-engine variants (party statement, holder statement, cost sheet, collection receipt, savings statement) | `js/print-engine.js` |
-| **M10 Learning & the money speaks** | baselines, anomalies, forecasts, budgets, the learned half of the concern logic, the spend map, "of every ₨100", `ma-insights`, `ma-budgets`, feedback | bell for an unfunded day and an uncollected CPR |
-| **M11 Close & audit** | the quarter checklist and lock, the month soft close, reopen, the audit trail, `ma-close` | — |
+| **M0** | this plan (v4), the specimen rebuilt to §16, the two design reports (§16.5) | — |
+| **M1 Foundation, cash positions & the frame** | both charts of accounts (§4.1 with 1170, 6120–6150; §4.5), holders, the party master with terms, rate cards and history, items, **`ma_commitments` entered at go-live** (§26) and `ma_counts`, `js/ma-core.js` (postings with every label of §27, validation, allocation, balances, the trial balance, the tax block, the Unlabelled queue), journals, **transfers between holders with confirmation**, the calendar (rule-based, from the commitments and the terms), **the Record picker** (§16.1), the pages Today, Money, Parties, Ledger and Close & audit (with settings), **the app's first owner-only reads** with every `ma_*` block run in the emulator, **the audit trail** (`ma_audit`), **`ma-backup` nightly + PITR + Download the books** (§30), **`ma-attach`** and **`ma-share`** with the re-lock (§29, §31), the first print variants (`ma-ledger`, `ma-statement-party`, `ma-statement-holder`, `ma-receipt`, `ma-voucher`), Excel on every table, the dashboard widget | `index.html`, `sw.js`, `shared.js` (nav + one line), `css/main.css` tokens + `.ma-` block, `netlify.toml` (the backup schedule), the bucket and PITR in the Console, rules republish |
+| **M2 Couriers & collections** | `ma_cpr` derived from `postex_orders` (the rollup), manual statements for TCS, Blue-Ex and Bykea, collections with holder, attachment and the receipt PDF, COD in transit, the TCS account and its 90-day expectation, Blue-Ex's opening, Bykea pending Raees, **Money in → Couriers**, the Tue/Fri calendar entries, courier fees and reversals in the P&L | `netlify.toml` (the rollup schedule) |
+| **M3 Procurement, terms, pay days & the bank** | **Money out**: purchase orders (assignable to production POs), receipts from fabric-in and vendor returns, bills matched three ways with tax, printing bills from approved `printing_billing` (Asghar's and every external printer's, each at its own card rate), **the commitments' bills** (rent, utilities, subscriptions, insurance — a commitment posting its own bill on its due day, confirmed by the payment), the review queue; payments with allocation from a holder, the Wed/Sat pay-day list, retention, credit limits; **the MCB import** with rules, charges posted, reconciliation and **subscription detection**; **the concern logic's rule-based half**; the rates on fabric-in, the gate pass and the Store receive | `js/gatepass.js` (party pick, rate), `js/fabric.js` (party pick, rate, poRef), `js/store.js` (rate on receive); the printing rate master read from `js/embellishments.js` |
+| **M4 Savings & the loan** | the Savings book: accounts, entries, statement import and reconciliation, spend by category, the subscriptions register with detection, targets, assets and liabilities, net worth; `ma_loan`, `ma_payout` with the repay-then-draw rule; **Savings** (one page, the loan on it); the loan on both overviews | — |
+| **M5 Sales** | invoices from Shopify orders by gateway, warehouse sales (adapter) and gate sales; the Payfast receivable; refunds; customer ledgers; **Money in → Online, Warehouse & gate, Customers**; revenue by channel and gateway on Reports | proposal to Ammar (`gateway`, a 14-day refresh) |
+| **M6 People** | the payroll Excel importer, accrual and payment documents naming the holder, payslip adjustments (overtime, bonus, festival money), `wages` documents, employee ledgers (advances, loans with schedules); **Money out → Payroll & people** | proposal on `paidVia` |
+| **M7 Costing** | **Costing**: cost sheets per PO with the missing legs named, WIP and finished goods at cost, COGS on sale, margin by article and channel, creators' product at cost; `ma-cost-sheet` | — |
+| **M8 Absorb Store Accounts & warehouse sales** | migration (idempotent by `legacyId`), forms re-pointed, Raees's and Umair's rules carried over (own entries, edits with history, review, confirmations), the meter logic intact, the Reset retired | `js/store-accounts.js`, `js/warehouse-sales.js` |
+| **M9 Reports, exports, assets & tax** | **Reports**: P&L, balance sheet, cash flow, aging both ways, "of every ₨100", the tax page; **`ma_assets` with depreciation posted at the close** (§4.7); the remaining print variants (§31) and the quarter pack | `js/print-engine.js` (the landscape option, the A5 page) |
+| **M10 Learning & the money speaks** | baselines, anomalies, forecasts, budgets, the learned half of the concern logic, the spend list, insights on Reports, feedback | bell for an unfunded day and an uncollected CPR |
+| **M11 Close** | the quarter checklist and lock, the month soft close, reopen, the restore drill (§30), **Close & audit** complete | — |
 
 Every milestone ends with the standing caveat: nobody can look at it in a
 browser from a session; Afnan's first open is the visual test.
@@ -795,61 +1037,38 @@ the tokens, and that no `ma_sv_*` posting reaches a Groovy account.
 `tests/smoke-layout.js` fragments for every page at three widths and both
 themes, the spend map and the calendar included.
 
-## 23. Open questions — with the default each takes until answered
+## 23. Former open questions — resolved as logic (28 Sept 2026)
 
-The seven answers of 27 Sept 2026 resolved v2's questions 2, 3, 4, 5, 6,
-8, 9 and 10 (see §0a), and Asghar's was answered the same day (§11: a
-vendor like any other). What they opened:
+Afnan: *"All the questions you are asking should not be questions but
+logics that should be answers inside the build."* Each item below is
+therefore a rule with a default, a setting where the default lives, and
+the path the build takes when the situation turns out otherwise. Nothing
+waits on an answer; the first real document teaches the app.
 
-1. **Payfast**: which account receives the payouts (Ammar's personal bank?
-   a joint account?) and Payfast's fee; send one statement. **The cadence
-   is answered** — *"the payment comes in on weekdays, daily; sometimes days
-   are skipped"* (27 Sept; read as the Payfast payouts — if it was Bykea's
-   transfers that was meant, the same `weekdays` cycle moves to that party
-   and nothing else changes). Default: the Savings account "Payfast payout
-   account", fee from the statement, `cycle: weekdays` with the skip rate
-   learned.
-2. **The payout rule**: repay the loan first, then drawings — and drawings
-   split how? Default: repay first; then 50/50 unless the document says
-   otherwise.
-3. **The loan's opening**: the amount per lender (Afnan's savings, Ammar's,
-   joint) and the evidence, as of go-live. Default: ₨15,00,000 joint, dated
-   1 Oct 2026, editable with history.
-4. **The TCS account**: what it is (a merchant wallet at TCS? a bank account
-   TCS pays into?), how its balance is seen, whether TCS deducts fees before
-   crediting. Default: an asset held at TCS, its statement typed in, fees
-   per the statement.
-5. **Blue-Ex**: the balance still owed, the last statement, anything
-   disputed. Default: the opening receivable from the statement, aged from
-   its date.
-6. **Bykea**: how the money reaches Raees (transfer to MCB? cash?), how
-   often, whether a statement exists. Default: a typed statement, collected
-   into the drawer, pending Raees; a feed later.
-7. **Company cash held by an owner**: is the PostEx cash you collect kept
-   apart from your own money until it reaches Raees, a vendor or MCB?
-   Default: yes — 1011/1012 are company money; mixing is a drawing or a
-   capital journal.
-8. **Subscriptions**: the list per owner (name, amount, cadence, account),
-   or let the app detect them from the statements. Default: detect, then
-   confirm.
-9. **Targets**: the marriage and the car — amounts, dates, funded by whom,
-   already paid. Default: two targets with placeholder amounts.
-10. **Tax**: which taxes actually apply (sales tax on goods, provincial
-    sales tax on services, withholding on vendor payments), the rates, and
-    Groovy's registration and filer status — the accountant's call. Default:
-    the block exists, rates blank, `none` until set.
-11. **Payroll**: send the Excel sheet (its real columns are what the
-    importer is written to), and how salaries are paid (cash from which
-    holder, bank). Default: cash from the drawer.
-12. **Go-live and history**: live from 1 Oct 2026 with Q1 (Jul–Sep) entered
-    at your own pace, or open the whole fiscal year? Default: Q1 open for
-    backfill until you close it.
-13. **Retention, match tolerance, PO-for-services, Raees's view of
-    production rate cards, nav label, Mustafa's access, the Reset**: as v2
-    (0% retention with the mechanism shipped; 2% qty, 0% rate with a reason;
-    the gate pass can raise the PO; only his; "Master Accounts"; no; retired
-    at M8).
-14. **Whole rupees everywhere** (no paisa) and one currency. Default: yes.
+| # | Was the question | The rule now | Default | If it is otherwise |
+|---|---|---|---|---|
+| 1 | Which account receives Payfast's payouts; the fee | the payout form carries **Lands in** (a Savings account) and **Fee**, both remembered from the last payout | S1020 "Payfast payout account"; the fee = the last fee learned, else 0 | pick another account on the form and the setting `payout.landsIn` moves with it; a fee typed once becomes the learned default |
+| 2 | Repay the loan first, then draw — split how | `payout.rule = repay_then_draw`; the draw split is `payout.drawSplit` | 50 / 50 | any payout overrides its own split with a reason; the setting changes future payouts; the loan can be put on hold so payouts only draw |
+| 3 | The loan's opening per lender | the Loan page opens with an **Opening** document: amount per lender (Afnan, Ammar, joint), date, evidence optional | ₨15,00,000 joint, 1 Oct 2026 | edit it with history; a lender's share changes freely until the first repayment posts, then by a journal with a reason |
+| 4 | What the TCS account is; fees | 1060 is a holder of kind `courier_wallet`; its balance is what TCS's statement says; fees are lines on the statement | a statement typed monthly, fees per line | if TCS pays into MCB the credit is a transfer 1060 → 1020 from the same form; if TCS deducts fees before crediting, the net is what the statement shows and the fee line is 5060 |
+| 5 | Blue-Ex's balance | an opening-statement document (with the attachment) starts the receivable | opening 0 until a statement is entered; the row reads "no opening statement yet" | a collection with no opening posts to 1123 and is flagged "recovered before its opening"; a later opening reconciles it |
+| 6 | How Bykea's money arrives | a typed statement; the collection names the holder it reached | the drawer, pending Raees | any holder; a feed later replaces the typing, not the document |
+| 7 | Company cash held by an owner | 1011 and 1012 are **company money**; a monthly count per owner reconciles them; personal use is a drawing journal | a count on the last day of each month, prompted | mixing is caught by the count; a drawing is posted, never an expense |
+| 8 | The subscriptions list | detected from imports (the same payee, the same amount ± 5 %, twice at a monthly or yearly interval) → proposed → confirmed; or typed | detect, then confirm | delete a false detection; it is remembered and never proposed again |
+| 9 | The targets' amounts | a target is created with its amount on first open; until then the page reads "no target yet", never a placeholder number | none | edit at any time; the ETA recomputes |
+| 10 | Which taxes apply, the rates, filer status | the tax block is on every document; `none` is a valid kind; rates are settings | every rate blank; the tax page reads "rates not set — the accountant fills them" | the accountant sets rates with a start date; documents from that date default to them; earlier ones are untouched |
+| 11 | The payroll sheet's columns; how salaries are paid | the importer maps columns by header and by hand, previews, and is idempotent by employee + month; a pay run names its holder | the drawer | per run or per slip a different holder; an unknown employee is offered, never invented |
+| 12 | Go-live and history | live from 1 Oct 2026; Q1 open for backfill until closed | as stated | reopen with a reason (§20) |
+| 13 | Retention, tolerances, a PO for services, Raees's view, the nav label, Mustafa, the Reset | 0 % retention with the mechanism shipped; 2 % qty and 0 % rate with a reason; the gate pass can raise the PO; Raees sees his own; "Accounts"; no; retired at M8 | as stated | each is a setting on Close & audit → Settings |
+| 14 | Whole rupees, one currency | yes | — | — |
+| 15 | *(new)* How the data is kept safe and backed up | §29 and §30 | a nightly export kept 90 days; PITR on | a failed nightly is a concern line the next morning |
+| 16 | *(new)* Printing, editing, sending | §31 | every document has a PDF; edits keep history; a share link lives 7 days | the link's life is a setting; a link can be revoked |
+
+What still has to arrive from outside, and how the app behaves until it
+does: the statements (TCS, Blue-Ex, Bykea, Payfast, MCB) — each page reads
+"no statement yet" with the button that takes one; the payroll sheet — the
+importer accepts any sheet; the accountant's rates — the tax page says so.
+None of it blocks entry.
 
 ## 24. What cannot be verified from a session
 
@@ -860,3 +1079,369 @@ order; the shape of the TCS, Blue-Ex, Bykea, Payfast and MCB statements
 (send one of each before the milestone that reads it); the payroll sheet's
 columns; anything visual — the specimen was rendered in headless Chromium
 and looked at; the live module needs Afnan's first open, as always.
+New in v4, and also unverifiable from here: whether the Cloudinary
+account allows authenticated uploads and signed delivery on its plan
+(§29, §31 — the sandbox cannot reach Cloudinary at all), the service
+account's roles on the backup bucket and the bucket itself (§30), what
+WhatsApp does with the link, and every number in §16.4 — the audit measured the v3
+specimen and the rebuilt one is measured the same way, but the module
+inside the real app has not been seen by anyone.
+
+## 25. The money map of Groovy Ops — what the app can actually do today (read from the code, 28 Sept 2026)
+
+Every row was read in this session; line numbers are from the files as
+they stand on `main`. The "state" column is the coverage register's
+vocabulary (§28): **live** (amount, date, party and a person are
+recorded), **partial** (some of those), **missing** (nothing), **broken**
+(recorded in a way the ledger cannot use).
+
+### 25.1 Money in
+
+| Flow | What the app holds | State | File |
+|---|---|---|---|
+| **Online COD via PostEx** (90% of cash) | Per parcel: `cod` (invoicePayment), `transactionFee`, `transactionTax`, `reversalFee`, `reversalTax`, `upfrontPayment` (+date), `reservePayment`, `balancePayment`, `invoiceDivision`; synced every 4 h over a 14-day window; the CPR receipt numbers `cprNumber_1` (upfront) and `cprNumber_2` (reserve) with `cpr1Date`/`cpr2Date`, `settle`, `settlementDate`, enriched daily at 8 am PKT, one API call per parcel | **partial** — every rupee PostEx owes is known per parcel; **who collected the CPR's cash, when, and how much** is nowhere | `netlify/lib/postex-core.js:100-121, 190-262`; `netlify.toml:32-38` |
+| Online prepaid via **Payfast** | Nothing. `financial_status` on the Shopify order is written once; no gateway field | **missing** | `netlify/functions/shopify-order-sync.js:130-145`; grep "payfast" = 0 |
+| **Shopify orders** | `order_number, created_at, total_price, financial_status, fulfillment_status, cancelled_at, discount_codes, line_item_count`; line items with `sku, quantity, price`; written once, never refreshed; the weekly close counts units only | **partial** — revenue per order is known at sync; refunds after sync, the gateway and payouts are not | `shopify-order-sync.js:130-175`; `shopify-weekly-close.js:48-134` |
+| TCS · Blue-Ex · Bykea | Three fixed courier rows on Daily Performance with a colour each; no statement, no receivable | **missing** | `js/fulfillment.js:27-37` |
+| **Warehouse sales** | One document per ERP order: customer, phone, lines with price and catalog price, `subtotal`, `discount` (≤ 20%), `total`, `terms` paid/later, `paidVia`, `dueDate`; collection fields; Raees's confirmation as a Store Accounts `cash_in` (`src:'wh'`) | **live** | `js/warehouse-sales.js:309-385` |
+| **Gate sales** (fabric or garments sold at the gate) | Rate per kg or piece, `amount`, `account`, customer, phone; posts a `cash_in` under "Fabric sale" | **live** | `js/gatepass.js:158-165, 597-605` |
+| Creator discount codes | Redemptions and revenue per code, nightly | live (as analytics, not money) | `netlify/functions/marketing-code-rollup.js` |
+
+### 25.2 Money out
+
+| Flow | What the app holds | State | File |
+|---|---|---|---|
+| **Store purchases, petty cash, floats, runners, consumables** | One ledger (`acct_entries`): `purchase · payment · cash_in · transfer · float_out · float_in · runner_pay · adjust · opening`; two money accounts, **cash** (the drawer) and **mcb**, plus "other"; vendors with terms `cash/credit/monthly/weekly` and a rate card derived from purchase lines; categories *Store purchase · Maintenance & repairs · Wages · Advances · Office & stationery · Fuel & transport · Utilities · Other*; runners (Noman); pay days Wednesday and Saturday; a receipt required above ₨2,000 (₨1,000 with no vendor); metered gas and water logged daily and billed monthly; edits with history; a month close | **live** — for what passes through the drawer | `js/store-accounts.js:48-106, 223-246` |
+| **Salaries** | Employees with `basicSalary` (seed values ₨25,000–₨145,000), paygrades P1–P5, the policy (30 working days, 09:00–17:00, 30 min grace, 3 lates = 1 absent, absent deduction = salary ÷ working days); payslips `basic, gross, net, deductions, absentDeduction, advanceDeduction, loanDeduction, workingDays`; mark-paid writes `status, paidOn, paidBy, paidAt` and the run's `totalAdvanceCleared` / `totalLoanCleared` | **partial** — the accrual is exact; **which holder the cash left** is not recorded | `js/hrm.js:40-56, 1983-2027, 2109-2128` |
+| **Advances and loans to staff** | Advance requests approved with `paidVia`, marked paid with `paidOn/paidBy`; loans with `totalAmount, monthlyDeduction, remainingBalance, paymentHistory[]`, pause and resume | **live** as HRM records — no holder, never posted | `js/hrm.js:2810, 2848, 2987-3039` |
+| **Fabric** | Fabric-in: supplier (chips: Gul Enterprises, JR Trader, Akhlaq Sublimation, Khursheed Enterprise, Daniyal Twill), type, gsm, colour, rolls, kg or m, QC per roll. **No rate, no bill** | **broken** — the biggest cost has no money on it | `js/fabric.js:605-660` |
+| **Stitching, washing, dyeing, embroidery, sublimation by vendors** | A gate pass to a destination (chips: FebKnit, Al-Hamd, Al-Nisa, Aqib Sublimation, JR Traders, Rahim Gul, Khursheed), reason `process / return_vendor / sale / other`, sizes and units; returns with `sentQty, returnedQty, cumulative, shortage`. **No rate, no bill** | **broken** | `js/gatepass.js:20, 98-106, 550-623` |
+| **Printing** (Asghar's unit and external printers) | `PRINTING_RATE_MASTER` (article → rate per piece, tier); billing `netPayable = finalApprovedQty × ratePerPiece − materialCostImpact`; jobs carry `vendorName` / `assignedTo`. **No payee, no paid state** | **partial** | `js/embellishments.js:58-152, 3368-3400` |
+| **Trims and packaging** | Store items in 13 categories (threads, neck labels, neck rib, bottom labels, packaging, hangtags, patches, metal trims, zips, twill tape, sleeve labels, drawstring, bundle tag); a plain Store receive records supplier and quantity **without a rate**; a Store Accounts purchase records the rate | **partial** | `js/store.js:500-507`; `js/store-accounts.js` |
+| **Courier fees, tax and reversals** | Per parcel (above); never posted anywhere | **partial** | `postex-core.js:110-114` |
+| **Paid PR** (creators) | `proposed_amount_pkr` frozen at approval; `payment_status, payment_method, payment_reference, payment_date`; no holder | **partial** | `js/marketing.js:2436-2534` |
+| **Product given to creators** (organic dispatches) | Products by variant on each dispatch; no cost | **missing** — a marketing cost at cost of goods | `js/marketing.js` (M2) |
+| Rent, electricity, internet, phones, food and refreshments, insurance, licences, the accountant, bank charges, Payfast's fee, company subscriptions, machinery, deposits, taxes | Nothing — unless paid from the drawer, where it is a Store Accounts purchase under *Utilities / Other / Maintenance & repairs* | **missing** | grep: no rent, refreshment, kitchen, insurance, subscription, withholding or depreciation in `js/` (28 Sept 2026) |
+| Owner drawings, capital, the loan from savings | Nothing | **missing** | grep "drawing", "capital": UI words only |
+
+### 25.3 Where money sits today, per the code
+
+| Place | Evidence in the app | Balance known to the app? |
+|---|---|---|
+| The store drawer (Raees) | Store Accounts `cash` | yes, derived |
+| MCB current | Store Accounts `mcb` | yes, derived — from the drawer's side only |
+| Cash with Afnan / with Ammar (collected CPRs, personal fronting) | nothing | **no** |
+| The warehouse till (Umair) | `wh_sales` paid-now sales until Raees confirms | partly (what is waiting) |
+| Runner floats | Store Accounts `float_out` / `float_in` | yes |
+| With PostEx (delivered, not yet on a CPR; on a CPR, not yet collected) | per-parcel fields | derivable — never derived |
+| At TCS (the 90-day account), with Blue-Ex, with Bykea | nothing | **no** |
+| With Payfast (prepaid, not paid out) and in the owners' savings | nothing | **no** |
+| With customers (warehouse pay-later) | `wh_sales` terms `later` | yes |
+| With staff (advances, loans) | HRM | yes |
+| With vendors (advances paid ahead) | Store Accounts payments beyond the payable | partly |
+
+### 25.4 The people the money moves through
+
+Sixteen accounts in `USER_DEFS` (`js/auth.js`): Afnan and Ammar (owners);
+Mustafa (operations manager) and Arfat (advisory); Raees (store — the
+drawer); Umair (fulfilment — the till); Haris (QC), Abbas (washing, a
+rider), Waqas (stitching), Asghar (printing), Zohaib (bundling), Uzaib
+(cutting and fabric), Faizan (packing), Daniyal (creators), Sami (CSR),
+Saim (design). Money is entered today by Raees (Store Accounts), Umair
+(sales), the owners (pay runs, approvals, Paid PR) and the functions
+(PostEx, Shopify). Only Afnan and Ammar read the master books (§29).
+
+### 25.5 What the functions already do on a schedule — the feeds the ledger inherits
+
+Catalog 9 am PKT · inventory snapshot 10 am and 10 pm · orders every 4 h ·
+PostEx parcels every 4 h · PostEx CPR enrichment 8 am · code redemptions
+6:30 am · Instagram token 7:15 am · Board reminder 8 am · weekly close
+Saturday 7 am (`netlify.toml:17-57`). The accounts rollups (§19) and the
+nightly backup (§30) join this list; nothing new is polled by the browser.
+
+## 26. The cost register — every line the factory spends on, and the state each is in
+
+The register is a table in the settings (`ma_commitments`, §4.6) with one
+row per line of cost the factory carries. A row says what the cost is, who
+is paid, how often, from which holder, what evidence is required, and
+**what captures it today**. Amounts are entered at go-live or learned from
+the first bills; the plan invents none. A commitment with no document by
+its due day is a **gap the app names** (§17: *"Rent for October — no bill
+recorded; usually ₨X by the 5th"*), which is how "not yet collecting money
+data" becomes a line on the screen rather than silence.
+
+**Kinds:** `fixed` (the same whether or not production runs) · `variable`
+(per piece, per parcel, per kg) · `running` (petty, semi-variable) ·
+`people` · `financing` · `one_off` · `tax`.
+
+### 26.1 Fixed — every month whether or not a piece is cut
+
+| Line | Payee | Cadence · due | Holder (default) | Account | Captured today | The build |
+|---|---|---|---|---|---|---|
+| Rent — factory, warehouse, office, any godown | the landlord (a vendor, role `rent`) | monthly · a due day | MCB | 6040 | nothing | one commitment per premises; the bill is one form, or none — a rent commitment can post its own bill on the due day, confirmed by the payment; a security deposit is an asset (1170) |
+| Electricity | the utility | monthly · the bill date | MCB or the drawer | 6030 | nothing, unless paid from the drawer as *Utilities* | a `utility` vendor; the bill photo is the document; units and rate learned; a missing month named |
+| Gas · water (metered) | the vendors | a daily log → one bill per month | the drawer | 6030 | **live** — `acct_meter_logs`, one bill per vendor-month | absorbed in M8 with its meter logic intact |
+| Internet · phones · mobile packages | the providers | monthly | MCB or the drawer | 6030 | nothing | commitments; a subscription-shaped bill |
+| Company subscriptions (the Shopify plan, the domain, hosting, design tools, the Meta business tools, Cloudinary and Firebase if billed) | the providers | monthly or yearly | MCB or a card | 6100 | nothing | the same subscriptions register the Savings book has (§9), on Groovy's side; detection from the MCB import |
+| Insurance · licences · registrations · the accountant | as named | yearly or quarterly | MCB | 6150 · 6140 | nothing | commitments with a yearly cadence; the calendar shows them a month ahead |
+| Depreciation of machines, computers, fixtures | — | monthly, computed | — | 6090 | nothing | the asset register (`ma_assets`, §4.7): cost, date, life, method; the month's depreciation is a journal the close posts |
+| Bank charges · Payfast's fee · PostEx's fees | MCB · Payfast · PostEx | per statement · per payout · per parcel | MCB · netted · netted | 6080 · 6080 · 5060 | fee fields exist per parcel; nothing else | the MCB import posts charges; the payout carries its fee; the CPR carries its fees |
+
+### 26.2 People
+
+| Line | Captured today | The build |
+|---|---|---|
+| Salaries — basic, deductions for lates, absences, advances, loans | **live** in HRM: the accrual per month, the net per slip | M6: the accrual mirrors into 6010 ↔ 2040; a **payroll payment** names the holder the cash left (default the drawer; per run, per slip override); the Excel months imported |
+| Advances to staff | **live** in HRM (`paidVia`) | posted 1140 ↔ holder when approved and paid; recovered through the slip |
+| Loans to staff (schedules) | **live** in HRM | posted 1140 ↔ holder; the schedule drives the deduction; a paused loan pauses the deduction |
+| Overtime, bonuses, Eid advances, festival gifts | **not in HRM** — no overtime or bonus in the pay logic (grep, 28 Sept) | a payslip **adjustment** on the accrual adapter (plus or minus, with a reason), so a month's people cost is the real one |
+| Wages to daily-wage or piece-rate workers (a cutting master, helpers) | *Wages* in Store Accounts when paid from the drawer | a `wages` document naming the person (an employee party without a payslip); the cutting master on a fabric issue is the hook for piece-rate |
+| Runners' floats and settlements (Noman, Abbas) | **live** in Store Accounts | absorbed in M8; a float is holder 1050, a settlement 2050 |
+| Food and refreshments — the kitchen, tea, staff meals, guests | a purchase under *Other* if paid from the drawer | its own account **6120** and category, so it is never hidden in Other; a daily or weekly commitment learned from history |
+| Staff welfare, medical, uniforms | nothing | account **6130**; a `wages`-style document naming the person |
+
+### 26.3 Variable — per production PO, per sale, per parcel
+
+| Line | Captured today | The build |
+|---|---|---|
+| Fabric — the largest cost | fabric-in with no rate | M3: rate, invoice and PO ref on fabric-in; the supplier a party; receipts → bills matched three ways; FIFO cost per PO (§13) |
+| Stitching (CMT), washing, dyeing, embroidery, sublimation by vendors | a gate pass with no rate | M3: the gate pass **is** the dispatch and the return is the receipt; the vendor's rate card (per piece by article) prices the bill; shortage and damage on the return become the vendor's debit |
+| Printing — Asghar's unit and external printers | billing computed, no payee | M3 adapter: an approved billing → a bill on the printer's ledger at his card rate |
+| Trims, labels, packaging, threads, hangtags, polybags, cartons | a Store receive without a rate; a Store Accounts purchase with one | M3: a rate on every receive; issue-to-PO consumption prices the trims leg of the cost sheet |
+| Courier delivery fee, tax, reversal fee per parcel | per parcel | M2: posted per CPR to 5060 / 5070 |
+| Returns and refunds online | reversal fees only | M5: a refund is a document; a returned parcel's cost stays on the PO's cost sheet |
+| Discounts (codes, warehouse) | on the order and on the sale | M5: 4040, per channel |
+| Creators' product (organic dispatches) and Paid PR | dispatches by variant; Paid PR amounts | M5 / M7: product at cost of goods to 6020; Paid PR approved → a bill on the creator party (2060), paid → a payment from a holder |
+| Samples, wastage, damage | a damage rate on cutting (`js/pos.js:1205`); nothing in money | M7: costed from the PO's actuals; wastage is the cost-variance line (5090) |
+
+### 26.4 Running — petty, transport, upkeep
+
+| Line | Captured today | The build |
+|---|---|---|
+| Petty cash — the drawer | **live** (Store Accounts) | holder 1010 with a floor; the count and close it already has |
+| Fuel, transport, Bykea rides, courier pickups | the *Fuel & transport* category; runners' floats | account 6060; a `transport` category on any document; a per-PO transport cost where a gate pass names it |
+| Maintenance and repairs, a paint job, machine servicing | *Maintenance & repairs* | 6050; above the asset threshold it is an asset instead (§26.6) |
+| Office and stationery, cleaning, paper | *Office & stationery* | 6070 |
+| Generator fuel, water tankers | nothing | 6030 with a `generator` sub-category |
+| Entertainment, guests, gifts | *Other* | 6120 |
+
+### 26.5 Financing and the owners
+
+| Line | Captured today | The build |
+|---|---|---|
+| The loan from the owners' savings (about ₨15 lac) | nothing | §10 |
+| Drawings and capital (Afnan, Ammar) | nothing | journals 3010–3021; money moved from a company holder to personal use is a drawing, never an expense |
+| Vehicle finance, family borrowings (the owners') | nothing | the Savings book's liabilities (§9) |
+| Customer deposits, vendor advances, retention held | Store Accounts payments beyond the payable | 2070 · 1150 · 2020 |
+
+### 26.6 One-off and tax
+
+| Line | Captured today | The build |
+|---|---|---|
+| Machinery, computers, fixtures, renovation | nothing | an asset when above `assetThreshold` (a setting, default ₨50,000), else 6050; `ma_assets` with depreciation |
+| Security deposits (rent, utilities) | nothing | 1170, returned as a receipt |
+| Sales tax, services tax, withholding, income-tax advances, levies | nothing | §12: the tax block on every document; 2120 · 2130 · 1160; 6110 for the non-recoverable |
+| Fines, penalties, disputes with a courier | nothing | 6190 with a `dispute` tag; a disputed CPR keeps its own state |
+
+### 26.7 What the register makes possible
+
+- **The whole month on the P&L**: cost of goods (5010–5090), people
+  (6010, 6120, 6130), running (6030–6070), fixed (6040, 6090, 6100, 6140,
+  6150), financing (6080), tax (6110) — every line either a document or a
+  named gap.
+- **Runway and the calendar** (§17) read the commitments, so a month's
+  fixed outflow is known before any bill arrives.
+- **Cost per piece** (§13) reads the variable lines per PO and allocates
+  the fixed ones by `overheadPct` (a setting) — a piece costs what it costs
+  to make *and* to keep the lights on.
+- **"Of every ₨100 in"** (§17) is the register's kinds in one row.
+
+## 27. Every rupee labelled — the dimensions on every posting
+
+A posting is a line in `ma_postings` (§7). Nothing reaches the ledger
+without the labels below; the engine (§6) refuses a document missing a
+required one, and a value it cannot classify goes to suspense (9010 /
+9020) **and into the Unlabelled queue**, which must be empty before a month
+is soft-closed and a quarter is locked.
+
+| Label | Values | Required | Comes from |
+|---|---|---|---|
+| `book` | `groovy` · `savings` | always | the document kind |
+| `date`, `month`, `quarter`, `fy` | a local day; `2026-10`; `2027-Q2`; `FY27` (July–June) | always | the document's date (§20) |
+| `holder` | 1010 … 1060 (§4.1), or none for an accrual | on every money movement | the form; the adapter's default |
+| `account` | the chart (§4.1 or §4.5) | always | the document kind plus the item or category |
+| `party` / `partyKind` | an `ma_parties` id · vendor, customer, courier, gateway, employee, owner, bank | on bills, payments, receipts, invoices, collections, payroll | the form; a party created inline |
+| `payee` | free text | when there is no party (a one-off) | the form |
+| `category` | the human tree: Cost of goods → Fabric, Stitching, …; People → Salaries, Food, …; Running → …; Fixed → …; Financing; Tax | always on spend | the account's default, editable per line |
+| `costCentre` | `factory` · `warehouse` · `office` · `online` · `owners` | always on spend | the party's or the item's default; the settings list |
+| `kind` | `fixed` · `variable` · `running` · `people` · `financing` · `one_off` · `tax` · `transfer` | always | the commitment or the account default |
+| `po` / `article` | a production PO id; an article code | on cost of goods where known | the gate pass, the fabric issue, the printing job, the store issue |
+| `channel` | `online_cod` · `online_prepaid` · `warehouse` · `gate` · `other` | on revenue and its costs | the invoice's source |
+| `doc` | `{kind, no, id}` | always | the posting document |
+| `evidence` | attachment count; `required` from the rule | as the rule says (§6) | the document |
+| `tax` | `{kind, rate, amount}` | always (`none` is a kind) | §12 |
+| `source` | `manual` · `import` · `postex` · `shopify` · `store` · `warehouse` · `hrm` · `printing` · `gatepass` · `fabric` · `rollup` | always | the writer |
+| `by`, `confirmedBy`, `reviewedBy` | usernames | `by` always | the session; the receiver; an owner |
+| `status` | `posted` · `pending` · `void` · `historical` | always | the lifecycle (§5) |
+| `tags[]` | free: `drop:winter27`, `dispute`, `sample`, `eid` | optional | the form; learned suggestions |
+
+What the labels buy: the spend map by category and state; the P&L by cost
+centre; the cost sheet by PO; revenue and its costs by channel; the courier
+ledger per courier; who entered what on every line; the tax page by kind;
+and a search that answers *"everything Al-Karam this quarter"*,
+*"everything for PO 0412"*, *"everything Abbas took as a float"*. A label
+is never typed twice: the party carries the default cost centre, the item
+the default account, the commitment the kind, and the adapter the source.
+
+## 28. The coverage register — broken or missing today, planned inside the build
+
+One row per flow, in the state vocabulary of §25. A **missing** or
+**broken** row is not a question: its "build" cell is a form, an import,
+a rollup or a rule, with the milestone that ships it. Until that milestone
+the app shows the gap as a named line (the commitment logic), never as a
+zero.
+
+| # | Flow | State today | What the build adds | Entry surface | M |
+|---|---|---|---|---|---|
+| 1 | PostEx COD → CPR → cash in a holder | partial | `ma_cpr` derived nightly; the **collection** form (CPRs, amount, holder, receipt); a difference → 9030 with a reason; the in-transit receivable; fees posted | Money in → Couriers; the CPR tab links to it | M2 |
+| 2 | The TCS 90-day account | missing | a courier party `account`; a typed statement per month with the attachment; the expected credit at delivery + 90; the TCS account a holder | Money in → Couriers | M2 |
+| 3 | Blue-Ex's legacy balance | missing | an opening statement; collections against it; aged | Money in → Couriers | M2 |
+| 4 | Bykea | missing | a typed statement; collected into the drawer pending Raees | Money in → Couriers | M2 |
+| 5 | Payfast prepaid orders and payouts | missing | `gateway` on the order sync (proposal to Ammar); the 1125 receivable; the payout form, one per weekday; the Savings side | Money in → Online; Savings | M4 / M5 |
+| 6 | Shopify refunds after the first sync | missing | a 14-day refresh of `financial_status` (proposal); a refund document | Money in → Online | M5 |
+| 7 | Warehouse sales, collections, confirmations | live | invoices and receipts from `wh_sales`; the till a holder | unchanged for Umair | M5, M8 |
+| 8 | Gate sales | live | an invoice and a receipt from the gate pass | unchanged | M5 |
+| 9 | Fabric purchases | **broken** | rate, PO ref and invoice on fabric-in; the supplier a party; receipt → bill | Fabric in (a cross-track field) | M3 |
+| 10 | Vendor processing (CMT, wash, dye, embroidery, sublimation) | **broken** | the gate pass = the dispatch, the return = the receipt; the rate card prices the bill; a shortage = the vendor's debit | Gate pass (a party pick) | M3 |
+| 11 | Printing bills (Asghar, external) | partial | an approved billing → a bill on the printer's ledger | none new | M3 |
+| 12 | Trims and packaging at cost | partial | a rate on every Store receive; consumption to the PO | Store receive (a cross-track field) | M3 |
+| 13 | Store purchases, petty, floats, runners, gas and water meters | live | absorbed with history and Raees's rules; the drawer = 1010 | unchanged for Raees | M8 |
+| 14 | Rent, electricity, internet, phones, insurance, licences, the accountant | missing | `ma_commitments` and bills; the calendar and the gap line | Money out → Commitments | M1 (the register), M3 (the bills) |
+| 15 | Company subscriptions | missing | the subscriptions register on Groovy's side; detection from the MCB import | Money out → Commitments | M3 / M4 |
+| 16 | Salaries — the payment holder | partial | payroll payment documents; `paidVia` / holder proposed on the slip; the Excel importer | HRM (adapter) | M6 |
+| 17 | Advances and loans to staff | live in HRM | posted with the holder | HRM (adapter) | M6 |
+| 18 | Overtime, bonuses, festival money, daily wages | missing | payslip adjustments; a `wages` document | Money out → Payroll & people | M6 |
+| 19 | Food and refreshments, welfare, guests | partial (Other) | accounts 6120 / 6130; categories; a learned commitment | Money out | M1 (the chart), M3 |
+| 20 | Fuel, transport, maintenance, office | partial (drawer categories) | labels and accounts; a per-PO transport cost | Money out | M3 |
+| 21 | MCB — every line the bank sees | missing | a CSV or statement import with rules; charges posted; reconciliation | Money → MCB | M3 |
+| 22 | Cash with Afnan, cash with Ammar | missing | holders 1011 and 1012; transfers pending confirmation; a monthly count | Money | M1 |
+| 23 | The loan from savings; drawings; capital | missing | `ma_loan`; journals | Savings; Ledger | M1 / M4 |
+| 24 | Machinery, deposits, depreciation | missing | `ma_assets`; the close posts depreciation | Reports → Assets | M9 |
+| 25 | Taxes | missing | the tax block; 2120 · 2130 · 1160; the tax page | every form | M1 / M9 |
+| 26 | Creators' product cost; Paid PR payments | partial | product at cost to 6020; Paid PR → a bill and a payment | Marketing (adapter) | M5 / M7 |
+| 27 | Cost per piece; margin by article and channel | missing | the cost sheet | Costing | M7 |
+| 28 | Backups, the audit trail, share links, PDFs of everything | missing | §29 – §31 | everywhere | M1 |
+
+Rows 9 and 10 are the two that matter most for *"calculate the whole
+factory"*: without a rate on fabric and on vendor processing, the cost of
+a garment cannot be known. Both are cross-track fields on Afnan's own pages
+(`js/fabric.js`, `js/gatepass.js`), one input each, and the ledger refuses
+nothing while they are empty — it names the leg as missing on the cost
+sheet (§13).
+
+## 29. Security — the books are the most sensitive data in the app
+
+Threats, in order: another signed-in account reading the books; a client
+writing what the rules allow rather than what the form allows; an
+attachment reachable by anyone who has its URL; a lost phone that is
+signed in; a mistaken or malicious edit with no trail; a share link that
+lives forever.
+
+| Layer | Rule | Where |
+|---|---|---|
+| **Audience** | `_MA_USERS = ['afnan','ammar']` by username; `isMasterAccounts()` by email in the rules; a test holds them equal. Managers, Raees and Umair see no `ma-*` page and read no `ma_*` document. | `js/master-accounts.js`, `firestore.rules`, `tests/master-accounts.test.js` |
+| **The first owner-only READ in the app** | every `ma_*` and `ma_sv_*` block: `allow read: if isMasterAccounts()`. Today no collection has an owner-only read (§1); this module is where it starts, and the emulator test proves a manager is refused. | `firestore.rules`; `tests/rules-emulator-ma.js` |
+| **Writes bound to the caller** | `by == username(email)`; a posted document changes only through `edits[]` growing by one with `editedBy == caller` and the row naming exactly the changed fields (the Store Accounts `acctOwnEdit` shape); a void is a transition, never a rewrite; **no client delete on any `ma_*` collection, ever** — void only; the Reset retired at M8. | rules |
+| **Periods** | the rules read `ma_closes`: a write dated in a locked quarter is refused at the boundary, not only in the form. | rules |
+| **Adapters** | Raees's and Umair's surfaces keep their own collections and rules (own entries, edits with history, review); the **rollup** (the Admin SDK) is what turns them into postings — a store login never writes `ma_postings`. | §15, §19 |
+| **Attachments** | today every upload is an unsigned upload to a public Cloudinary path, reachable by URL. Accounts attachments go through **`ma-attach`** — a Netlify function holding `CLOUDINARY_API_SECRET`, a new env var — as `type:'authenticated'`, and are read through **signed delivery URLs** with an expiry the function issues to a signed-in owner. The client never holds the secret. *Unverified from the sandbox: whether the account's plan allows authenticated delivery (the sandbox cannot reach Cloudinary at all) — if it does not, the fallback is an unguessable `public_id` of 32 random bytes behind the same function, and the settings page says which one is in force.* | `netlify/functions/ma-attach.js` |
+| **Re-lock** | opening an `ma-*` page after `relockMinutes` (15) idle asks for the fingerprint or passkey again on a phone (`_lockShow` / `lockUnlock` in `js/auth.js`) and for the password on a computer (`reauthenticateWithCredential`, already bridged for Change password). No re-lock, no page. | `js/master-accounts.js` |
+| **Audit trail** | `ma_audit`, append-only (`allow update, delete: if false`): every post, edit, void, close, reopen, export, share link made or revoked, backup run, and every entry into the accounts pages; shown on Close & audit and on each document. | rules; §16 |
+| **Exports and links** | an export is logged with who and what; a share link carries `expiresAt` and `revoked` and is served by a function that checks both (§31). | §31 |
+| **Secrets** | nothing new in client code; every token stays in `process.env` (the standing rule). | CLAUDE.md |
+| **Tests** | every rule both ways in the emulator, including a manager reading, Raees writing a posting, an owner deleting, a write into a locked quarter, an edit naming a field it did not change, and an audit row being updated. | `tests/rules-emulator-ma.js` |
+
+## 30. Backup and recovery — three layers, and a drill
+
+| Layer | What | When | Where it lands | Restore |
+|---|---|---|---|---|
+| **1. The nightly export** | `ma-backup`, a scheduled function calling the Firestore Admin API `exportDocuments` for every `ma_*` and `ma_sv_*` collection and the feeders (`postex_orders`, `wh_sales`, `acct_*`, `payroll_runs`, `payslips`, `shopify_orders`) | 03:30 UTC daily | a Cloud Storage bucket `groovy-books-backups` (created once in the Console), a 90-day lifecycle; the run written to `ma_backups` with the size and the collections | `importDocuments` into the same or a fresh project; the procedure is a page in the plan and an item on the close checklist |
+| **2. Point-in-time recovery** | Firestore PITR, seven days | continuous | Google's | any minute of the last seven days, from the Console |
+| **3. The owners' own copy** | **Download the books**: every collection as JSON, the Excel workbooks (ledger, statements, P&L, balance, aging, tax) and the PDF pack; a button on Close & audit | on demand, and prompted at every quarter close | the owner's machine | the JSON re-imports through `ma-import` (idempotent by document id) |
+| **4. The quarter pack** | the PDFs of a closed quarter (statements, P&L, balance sheet, tax) stored as attachments on the close record | at each quarter close | attachments | evidence, not restore |
+
+- **A missed backup is a concern line** the next morning (*"last backup
+  2 days ago"*) — the concern logic reads `ma_backups`.
+- **The human steps, named:** create the bucket and give the service
+  account *Cloud Datastore Import Export Admin* and *Storage Object Admin*
+  on it; switch PITR on. These are the only Console steps and they are on
+  the M1 checklist. *Unverified from the sandbox: the service account's
+  roles and the bucket cannot be checked from here; the first nightly run
+  is the test, and it writes its own result.*
+- **A restore drill each quarter**: import last night's export into the
+  `demo-` emulator project (`tests/ma-restore.js`) and compare its trial
+  balance with the live one; the close checklist records the result.
+- Offline persistence (IndexedDB) is a cache, not a backup; the plan never
+  counts it as one.
+
+## 31. Print, PDF, edit, and send by link
+
+**PDF is not a feature; it is how every document leaves the app.** Every
+page has *Print* and *Excel*; every document has *PDF*; every PDF has
+*Share*. All of it through `js/print-engine.js` (the standing rule), with
+these variants added:
+
+| Variant | What | Page | Urdu |
+|---|---|---|---|
+| `ma-ledger` | the ledger as filtered (any range, party, holder, account, category) with opening, closing and totals | A4 landscape — the engine gains an orientation option; portrait stays the default for every other variant | none |
+| `ma-statement-party` | a vendor's or customer's statement by range: opening, every bill, payment and credit, a running balance, aging at the foot | A4 | minimal |
+| `ma-statement-holder` | a holder's statement: every movement, confirmations, the count | A4 | none |
+| `ma-receipt` | a collection receipt (which CPRs, the cash counted, the holder, who collected) with two signature lines | A5 — the engine's custom page size | **full** — a runner or a vendor signs it |
+| `ma-voucher` | a payment voucher (the bills allocated, the holder, tax withheld) with a signature line | A5 | full |
+| `ma-bill`, `ma-po`, `ma-invoice` | the document itself | A4 | minimal |
+| `ma-cost-sheet` | a PO's cost sheet, legs named | A4 | none |
+| `ma-pnl`, `ma-balance`, `ma-cashflow`, `ma-aging`, `ma-tax` | the statements for any period | A4 | none |
+| `ma-quarter-pack` | the statements of a closed quarter in one PDF | A4 | none |
+| `ma-savings-statement`, `ma-networth` | the Savings book | A4 | none |
+
+**Edit.** Every document is editable by an owner through the same form it
+was made with, prefilled — the Store Accounts edit (CLAUDE.md, *"Raees can
+EDIT"*) generalised:
+
+- in an open period only; a locked quarter refuses; a soft-closed month
+  warns and records the edit on the close;
+- a reason is required; `edits[]` grows by `{at, by, reason, fields,
+  before, after}`; a PDF regenerated afterwards carries *revised* and the
+  revision number;
+- the engine **re-validates and re-posts** under the same key; allocations
+  that no longer fit are unwound and named; a reconciled document loses
+  its reconciled mark and says so;
+- a void is the same path with every posting reversed; a document another
+  one points at (a bill a payment allocates) cannot be voided until the
+  pointer is answered;
+- the party's ledger and the Ledger page show the history inline (who,
+  when, why, what).
+
+**Send by link.** *Share* on any PDF:
+
+1. the PDF is generated in the browser and uploaded through `ma-attach`
+   (§29) as an authenticated asset;
+2. `ma_shares/{token}` is written: `{docKind, docId, pdfPublicId,
+   createdBy, createdAt, expiresAt (default 7 days, the setting
+   share.defaultDays), revoked:false, opens:0, to?: {party, phone}}`;
+3. the link is `https://groovyoperations.netlify.app/.netlify/functions/ma-share?t=<token>`
+   — the function checks expiry and revocation, counts the open, and
+   answers with a 302 to a signed Cloudinary URL that itself expires in
+   minutes; after expiry or revocation it answers 410 with a plain page;
+4. the buttons: **WhatsApp** (`https://wa.me/<phone>?text=<message and
+   link>`, the party's phone prefilled; on a phone `navigator.share`
+   offers the PDF file itself), **Copy link**, **Email** (`mailto:`);
+5. the document lists its live links with opens and expiry, and
+   **Revoke**; every share and revoke is an audit row.
+
+A vendor sees one PDF and nothing else. *Unverified from the sandbox:*
+WhatsApp's handling of the link and Cloudinary's signed delivery — the
+first real share is the test, and the function logs what it served.
+
+**Excel** for every table (the vendored SheetJS), with the filters in the
+filename — the Store Accounts convention.

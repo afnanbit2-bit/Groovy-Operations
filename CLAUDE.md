@@ -6941,6 +6941,51 @@ account, the loan's split per lender, what the TCS account is, Blue-Ex's
 balance, the subscriptions list, the targets' amounts, the tax regime, the
 payroll sheet).
 
+**v4 (28 Sept 2026) — the brief escalated, three messages in one day:**
+the specimen was *"too bulky, not clean"* and had to map *"what goes
+where"* for a tab used *"80% on desktop"*, with outside design help;
+*"all the questions you are asking should not be questions but logics"*,
+the data *"secure … backed up"*, *"PDF logic wherever it is a must …
+print ledger, edit them, send them by link"*; and *"this is not a plain
+old accounting module, it is a whole world of my money … you're 5% there …
+study what Groovy Ops can actually do > where actual money sits > label
+money with everything > calculate this whole Groovy factory > fixed costs
+> rent > food > vendor > petty > transport > advances … if something is
+broken or not in the phase to collect money data we plan it inside the
+build."* The plan's §0b holds the brief and where each sentence went.
+What v4 added, each a section: **§25 the money map** — every flow the
+code holds today, with file:line, in four states (live · partial ·
+missing · broken; fabric and vendor processing are *broken* — the two
+biggest costs carry no rate anywhere); **§26 the cost register** —
+`ma_commitments`, every line the factory spends on (fixed, people,
+variable, running, financing, one-off, tax) with what captures it today
+and what the build adds, and four new accounts (6120 food, 6130 welfare,
+6140 licences, 6150 insurance; 1170 deposits); **§27 labels** — the
+dimensions every posting carries or it goes to suspense and the
+Unlabelled queue; **§28 the coverage register** — 28 rows, each gap a
+build item with its entry surface and milestone; **§23 rewritten** — the
+sixteen former questions are rules with a default and a path for the other
+case, nothing waits on an answer; **§29 security** (the app's first
+owner-only READ rules, writes bound to the caller, no client delete ever,
+authenticated attachments through `ma-attach`, a 15-minute re-lock, an
+append-only `ma_audit`); **§30 backup** (a nightly `exportDocuments` to a
+bucket, PITR, *Download the books*, a quarterly restore drill — a missed
+backup is a concern line); **§31 print, edit, share** (a print-engine
+variant per document, A4 landscape for the ledger, A5 receipts and
+vouchers in full Urdu; edits with history that re-validate and re-post;
+share links `ma_shares/{token}` served by `ma-share`, expiring, revocable,
+to WhatsApp); and **§16 remapped desktop-first** — ten pages (Today ·
+Money · Money in · Money out · Parties · Ledger · Costing · Savings ·
+Reports · Close & audit), one **Record** button, a page map of what each
+tab reads and writes, and the visual rules. **Those rules came from two
+subagent reports, kept as model output in `scratchpad/visual-report.md`
+(the v3 specimen MEASURED in headless Chromium: the overview 2,532px
+tall, 82% of its text at 12px or under, 66 bordered boxes, the first chart
+at y=1,183) and `scratchpad/ds-report.md` (Polaris, Carbon and Primer read
+over `raw.githubusercontent.com`).** Where the two disagreed the audit's
+number stands. The specimen is being rebuilt to §16; until it is, the
+published artifact is still v3's.
+
 Verified while planning, and worth knowing before any of it is built (every
 claim carries file:line in the plan's §1): nothing in HRM records HOW a
 salary was paid; a Shopify order is written once, never updated, and
