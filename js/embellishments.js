@@ -719,10 +719,10 @@ function renderRecipeDirectory(){
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input id="recipe-q" placeholder="Search article code or name…" oninput="window._filterRecipes(this.value)" value="${q}"
       style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
-    ${!isAsghar?`<select onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
+    ${!isAsghar?`<select aria-label="Filter by status" onchange="window._filterRecipeStatus(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
       <option value="">All status</option><option value="active">Active</option><option value="locked">Locked</option><option value="draft">Draft</option><option value="archived">Archived</option>
     </select>`:''}
-    <select onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
+    <select aria-label="Filter by tier" onchange="window._filterRecipeTier(this.value)" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
       <option value="">All tiers</option>${[1,2,3,4].map(t=>`<option value="${t}">Tier ${t}</option>`).join('')}
     </select>
   </div>
@@ -3619,7 +3619,7 @@ function renderTowerSwimlane(jobType,jobs){
       <div style="font-size:15px;font-weight:700">${meta.icon} ${meta.label}</div>
       <div style="font-size:12px;color:var(--muted)">${laneJobs.filter(j=>j.currentStage!=='closed').length} active · ${laneJobs.length} total</div>
     </div>
-    <div class="tower-cols">
+    <div class="tower-cols" tabindex="0" role="region" aria-label="${String(meta.label).replace(/[&<>"']/g,'')} stages">
       ${cols.map(col=>`<div class="tower-col">
         <div class="tower-col-head" style="border-bottom:2px solid ${col.color};padding-bottom:6px;margin-bottom:8px">
           ${col.label} <span style="font-size:13px;font-weight:400;color:var(--muted)">(${col.jobs.length})</span>

@@ -799,11 +799,11 @@ function _ptnToolbarHTML(){
   const cats=_ptnCategoriesFor(_ptnFilter.brand);
   return`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
     <input type="search" id="ptn-search" placeholder="Search code or name…" value="${_ptnEsc(_ptnFilter.q)}" oninput="window.ptnSearchInput(this.value)" aria-label="Search articles" style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;background:var(--surface-2);color:var(--text)">
-    <select onchange="window.ptnSetFilter('cat',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;background:var(--surface-2);color:var(--text)">
+    <select aria-label="Filter by category" onchange="window.ptnSetFilter('cat',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;background:var(--surface-2);color:var(--text)">
       <option value="all"${_ptnFilter.cat==='all'?' selected':''}>All categories</option>
       ${cats.map(c=>`<option value="${c.prefix}"${_ptnFilter.cat===c.prefix?' selected':''}>${c.prefix} · ${_ptnEsc(c.label)}</option>`).join('')}
     </select>
-    <select onchange="window.ptnSetFilter('needs',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;background:var(--surface-2);color:var(--text)">
+    <select aria-label="Filter by pattern need" onchange="window.ptnSetFilter('needs',this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:14px;background:var(--surface-2);color:var(--text)">
       <option value="all"${_ptnFilter.needs==='all'?' selected':''}>Pattern: any</option>
       <option value="yes"${_ptnFilter.needs==='yes'?' selected':''}>Needs a pattern</option>
       <option value="no"${_ptnFilter.needs==='no'?' selected':''}>No pattern needed</option>

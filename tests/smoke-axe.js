@@ -93,7 +93,8 @@ function DRIVE(){
           rules:{'color-contrast':{enabled:false}}});
         res.push({page:id||'(landing)',v:out.violations.map(function(x){
           return{id:x.id,impact:x.impact,help:x.help,n:x.nodes.length,
-            eg:x.nodes[0].target.join(' ').slice(0,90),html:x.nodes[0].html.slice(0,110)};})});
+            eg:x.nodes[0].target.join(' ').slice(0,90),html:x.nodes[0].html.slice(0,110),
+            all:x.nodes.map(function(nd){return nd.html.slice(0,200);})};})});
       }
     }catch(e){res.push({page:'(driver)',v:[{id:'driver-threw',impact:'serious',help:e.message,n:1,eg:'',html:''}]});}
     window.parent.document.getElementById('__out').textContent=JSON.stringify(res);
@@ -158,12 +159,13 @@ function finish(){
     if(!rows){console.log('  '+job.id+': the frame never reported'+(err?' ('+err.message+')':''));broken++;return;}
     rows.forEach(r=>r.v.forEach(x=>{
       keys[x.id+':'+r.page]=1;
-      const b=byRule[x.id]||(byRule[x.id]={impact:x.impact,help:x.help,pages:{},nodes:0,eg:x.eg,html:x.html});
-      b.pages[r.page]=1;b.nodes+=x.n;}));
+      const b=byRule[x.id]||(byRule[x.id]={impact:x.impact,help:x.help,pages:{},nodes:0,eg:x.eg,html:x.html,uniq:{}});
+      b.pages[r.page]=1;b.nodes+=x.n;(x.all||[]).forEach(h=>{b.uniq[h]=(b.uniq[h]||[]);if(!b.uniq[h].includes(r.page))b.uniq[h].push(r.page);});}));
   });
   const rules=Object.keys(byRule).sort((a,b)=>Object.keys(byRule[b].pages).length-Object.keys(byRule[a].pages).length);
   rules.forEach(id=>{const b=byRule[id];
     console.log('  ['+b.impact+'] '+id+' — '+b.help+'\n      '+b.nodes+' nodes on '+Object.keys(b.pages).length+' pages, e.g. '+b.eg+'\n      '+b.html);});
+  if(process.env.AXE_VERBOSE)rules.forEach(id=>{console.log('\n== '+id);Object.entries(byRule[id].uniq).forEach(([h,pg])=>console.log('  ['+pg.join(',')+'] '+h));});
   console.log('\n'+rules.length+' distinct axe rules violated, '+Object.keys(keys).length+' rule/page pairs');
   server.close();
   JOBS.forEach(j=>{try{fs.rmSync(profile+'-'+j.id,{recursive:true,force:true});}catch(e){}});

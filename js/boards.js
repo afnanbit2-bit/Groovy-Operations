@@ -1870,7 +1870,7 @@ function _boardsGalleryBarHTML(){
   const opts=[['updated','Recently updated'],['opened','Recently opened'],['title','Name A–Z'],['cards','Most cards']];
   return`<div class="board-gallery-bar">
     <input type="search" id="board-gallery-search" class="board-gallery-search" placeholder="Search boards and their cards…" value="${_boardsEsc(_boardsGalleryQuery)}" oninput="window.boardsGallerySearch(this)">
-    <select class="board-gallery-sort" onchange="window.boardsGallerySetSort(this.value)">
+    <select class="board-gallery-sort" aria-label="Sort boards" onchange="window.boardsGallerySetSort(this.value)">
       ${opts.map(o=>`<option value="${o[0]}"${_boardsGallerySort===o[0]?' selected':''}>${o[1]}</option>`).join('')}
     </select>
   </div>`;

@@ -76,10 +76,10 @@ function renderGatePass(){
 function renderOutward(){
   return`<div class="card"><div class="card-title">Issue new pass</div>
     <div class="form-grid">
-      <div class="field"><label>Person name</label><input id="gp-name" value="${session.name}" readonly style="background:var(--soft);cursor:default"></div>
-      <div class="field"><label>Date</label><input id="gp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="field"><label for="gp-name">Person name</label><input id="gp-name" value="${session.name}" readonly style="background:var(--soft);cursor:default"></div>
+      <div class="field"><label for="gp-date">Date</label><input id="gp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
       <div class="field"><label>Pass type *</label>
-        <select id="gp-type" onchange="window.onGPTypeChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%">
+        <select id="gp-type" aria-label="Pass type" onchange="window.onGPTypeChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%">
           ${GP_TYPE_OPTS.map(([v,l])=>`<option value="${v}"${v===_gpType?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>
@@ -106,7 +106,7 @@ function renderOutward(){
         <input id="gp-dest" placeholder="Or type destination…">
       </div>
       <div class="field"><label>Purpose</label><input id="gp-purpose" placeholder="Reason for dispatch"></div>
-      <div class="field"><label>Time</label><input id="gp-time" type="time" value="${new Date().toTimeString().slice(0,5)}"></div>
+      <div class="field"><label for="gp-time">Time</label><input id="gp-time" type="time" value="${new Date().toTimeString().slice(0,5)}"></div>
       <div class="field" id="gp-vendor-field" style="display:none;grid-column:1/-1"><label>Purchased from — vendor to return to *</label><input id="gp-src-vendor" placeholder="Auto-suggested from the fabric's receipt — e.g. Gul Enterprises"></div>
       <div class="field" id="gp-expback-field" style="display:none"><label>Expected back by</label><input id="gp-exp-back" type="date">
         <div style="font-size:11px;color:var(--muted);margin-top:3px">Flags the pass overdue if it hasn't fully returned by this date.</div></div>

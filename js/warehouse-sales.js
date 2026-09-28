@@ -1139,7 +1139,7 @@ window.whsOpen=function(id){
       ${handed?_whsKV('Raees',handed):''}
       ${_whsKV('Recorded by',_whsEsc(_whsWho(s.createdByU,s.createdByName))+(recorded?' · '+_whsEsc(new Date(recorded).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''))}
     </div>
-    <div class="acct-table-wrap" style="margin-top:14px"><table class="acct-table whs-lt-table"><thead><tr><th>Article</th><th>Barcode</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr></thead><tbody>${lines}</tbody></table></div>
+    <div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table" style="margin-top:14px"><table class="acct-table whs-lt-table"><thead><tr><th>Article</th><th>Barcode</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr></thead><tbody>${lines}</tbody></table></div>
     <div class="whs-sum" style="margin-top:10px">
       <div class="whs-srow"><span>Subtotal</span><b>${_whsRs(s.subtotal)}</b></div>
       ${s.discount?`<div class="whs-srow"><span>Discount (${Number(s.discountPct)||0}%)</span><b>−${_whsRs(s.discount)}</b></div>`:''}

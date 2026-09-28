@@ -205,7 +205,7 @@ function renderInventory(){
       <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0">${chipsHTML}</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="inv-search" placeholder="Search code or name…" value="${_invSearchQ.replace(/"/g,'&quot;')}" oninput="window.invSetSearch(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;min-width:180px">
-        <select onchange="window.invSetSort(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:var(--surface)">
+        <select aria-label="Sort items" onchange="window.invSetSort(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:var(--surface)">
           ${[['category','Sort: by category'],['az','A → Z'],['za','Z → A'],['low','Stock low → high'],['recent','Recently added']].map(([v,l])=>`<option value="${v}"${_invSort===v?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>
@@ -279,10 +279,10 @@ function renderStoreReceive(){
   <div class="card">
     <div class="card-title">Record received stock</div>
     <div class="form-grid">
-      <div class="field"><label>Item *</label><select id="rcv-item" onchange="window.onRcvItemChange()">${opts}</select></div>
+      <div class="field"><label for="rcv-item">Item *</label><select id="rcv-item" onchange="window.onRcvItemChange()">${opts}</select></div>
       <div class="field"><label>Supplier</label><input id="rcv-supplier" placeholder="Supplier name"></div>
-      <div class="field"><label>Date</label><input id="rcv-date" type="date" value="${todayStr()}"></div>
-      <div class="field"><label>Received By</label><input value="${session.name}" readonly></div>
+      <div class="field"><label for="rcv-date">Date</label><input id="rcv-date" type="date" value="${todayStr()}"></div>
+      <div class="field"><label>Received By</label><input aria-label="Received by" value="${session.name}" readonly></div>
       <div class="field" style="grid-column:1/-1"><label>Notes</label>
         <textarea id="rcv-notes" rows="2" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);font-family:inherit;outline:none;width:100%;resize:vertical" placeholder="Optional"></textarea>
       </div>
@@ -308,7 +308,7 @@ function _renderRcvNewForm(){
   return`<div style="background:var(--accent-success-soft);border:1px solid var(--accent-success);border-radius:10px;padding:14px;margin-bottom:6px">
     <div style="font-weight:700;font-size:14px;color:var(--accent-success);margin-bottom:10px">New item — will be added to Inventory</div>
     <div class="form-grid">
-      <div class="field"><label>Category *</label>
+      <div class="field"><label for="rcvn-cat">Category *</label>
         <select id="rcvn-cat" onchange="window.onRcvNewCatChange()">${_rcvCatOptions('')}</select>
       </div>
       <div class="field"><label>Code *</label>
@@ -322,18 +322,18 @@ function _renderRcvNewForm(){
         <label>Image <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
         <div style="display:flex;gap:10px;align-items:center">
           <div id="rcvn-img-preview" style="width:54px;height:54px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px">No image</div>
-          <input type="file" id="rcvn-img-file" accept="image/*" style="font-size:12px;font-family:inherit" onchange="window._rcvOnImgPick(this)">
+          <input type="file" id="rcvn-img-file" aria-label="Item image" accept="image/*" style="font-size:12px;font-family:inherit" onchange="window._rcvOnImgPick(this)">
           <input type="hidden" id="rcvn-img-url" value="">
           <input type="hidden" id="rcvn-img-status" value="ready">
         </div>
       </div>
-      <div class="field"><label>Unit *</label>
+      <div class="field"><label for="rcvn-unit">Unit *</label>
         <select id="rcvn-unit" onchange="window.onRcvNewUnitChange()">${_rcvUnitOptions('pcs')}</select>
       </div>
       <div class="field" id="rcvn-custom-unit-wrap" style="display:none"><label>Custom unit</label>
         <input id="rcvn-custom-unit" placeholder="e.g. rolls">
       </div>
-      <div class="field"><label>Low-stock threshold</label>
+      <div class="field"><label for="rcvn-thresh">Low-stock threshold</label>
         <input id="rcvn-thresh" type="number" min="0" value="200">
         <div style="font-size:11px;color:var(--muted);margin-top:3px">Default 200 — change anytime in Inventory.</div>
       </div>
@@ -626,8 +626,8 @@ function _miRowCells(l,idx){
     stockCell=item?`<span style="color:${stock>0?G:R}">${stock}</span>`:'—';
     qtyCell=`<input type="number" min="1" value="${l.qty!=null?l.qty:''}" placeholder="0" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="window._miChangeQty(${idx},this.value)">`;
   }
-  return`<td style="padding:4px;width:28px"><input type="checkbox" class="mi-row-chk" style="cursor:pointer;width:15px;height:15px"></td>
-  <td><select style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="window._miChangeItem(${idx},this.value)">
+  return`<td style="padding:4px;width:28px"><input type="checkbox" class="mi-row-chk" aria-label="Select row" style="cursor:pointer;width:15px;height:15px"></td>
+  <td><select aria-label="Item" style="width:100%;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="window._miChangeItem(${idx},this.value)">
     <option value="">— select —</option>${opts}</select></td>
   <td style="text-align:center;font-size:13px">${l.itemCode?stockCell:'—'}</td>
   <td style="text-align:right">${qtyCell}</td>
@@ -719,16 +719,16 @@ function renderStoreIssue(){
       </div>
       <div class="field"><label>Issued To</label><input id="iss-to" value="Waqas (Stitching)" placeholder="Issued to…"></div>
       <div class="field"><label>Purpose / Notes</label><input id="iss-purpose" placeholder="Reason for issue"></div>
-      <div class="field"><label>Date</label><input id="iss-date" type="date" value="${todayStr()}"></div>
+      <div class="field"><label for="iss-date">Date</label><input id="iss-date" type="date" value="${todayStr()}"></div>
     </div>
     <div style="margin-top:12px">
       <table style="width:100%;border-collapse:collapse;font-size:14px">
         <thead><tr>
-          <th style="padding:6px 4px;border-bottom:2px solid var(--border);width:28px"></th>
+          <th style="padding:6px 4px;border-bottom:2px solid var(--border);width:28px"><span class="sr-only">Select</span></th>
           <th style="text-align:left;padding:6px 4px;border-bottom:2px solid var(--border);font-size:12px;color:var(--muted)">Item</th>
           <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:12px;color:var(--muted);text-align:center">Stock</th>
           <th style="padding:6px 4px;border-bottom:2px solid var(--border);font-size:12px;color:var(--muted);text-align:center">Qty</th>
-          <th style="padding:6px 4px;border-bottom:2px solid var(--border);width:36px"></th>
+          <th style="padding:6px 4px;border-bottom:2px solid var(--border);width:36px"><span class="sr-only">Remove</span></th>
         </tr></thead>
         <tbody id="mi-tbody">${_miLines.map((l,i)=>`<tr id="mi-row-${i}">${_miRowCells(l,i)}</tr>`).join('')}</tbody>
       </table>

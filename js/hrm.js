@@ -468,11 +468,11 @@ function renderHRMEmployeesPage(){
   ${banner}
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input id="emp-search" placeholder="Search name, username, designation…" oninput="window.hrmFilterEmployees()" value="${_empFilterQ}" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
-    <select id="emp-dept" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
+    <select id="emp-dept" aria-label="Department" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
       <option value="">All departments</option>
       ${depts.map(d=>`<option value="${d}" ${_empFilterDept===d?'selected':''}>${d}</option>`).join('')}
     </select>
-    <select id="emp-pay" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
+    <select id="emp-pay" aria-label="Paygrade" onchange="window.hrmFilterEmployees()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
       <option value="">All paygrades</option>
       ${paygrades.map(p=>`<option value="${p}" ${_empFilterPay===p?'selected':''}>${p}</option>`).join('')}
     </select>
@@ -1734,7 +1734,7 @@ function renderPayrollPage(){
       <div class="page-sub">Process and manage monthly salaries</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <select id="payroll-month" onchange="window.payrollSetMonth(this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:14px">
+      <select id="payroll-month" aria-label="Payroll month" onchange="window.payrollSetMonth(this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:14px">
         ${months.map(m=>`<option value="${m.key}" ${m.key===_payrollMonth?'selected':''}>${m.lbl}</option>`).join('')}
       </select>
       ${canProcess&&(!run||run.status!=='paid')?`<button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.processPayroll()">${run?'Re-process Month':'Process Month'}</button>`:''}
@@ -1765,7 +1765,7 @@ function renderPayrollPage(){
           <th style="padding:10px 8px;text-align:right">Loan</th>
           <th style="padding:10px 8px;text-align:right">Other</th>
           <th style="padding:10px 8px;text-align:right;background:var(--accent-success);color:var(--on-dark)">Net Salary</th>
-          <th style="padding:10px 8px;text-align:center"></th>
+          <th style="padding:10px 8px;text-align:center"><span class="sr-only">Open</span></th>
         </tr>
       </thead>
       <tbody id="payroll-tbody"><tr><td colspan="14" style="padding:18px;text-align:center;color:var(--muted)">Loading payroll…</td></tr></tbody>

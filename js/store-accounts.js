@@ -634,14 +634,14 @@ function _acctLedgerPage(){
   h+=`<div class="card" style="padding:0;overflow:hidden">
     <div class="acct-toolbar">
       <div class="gp-tabs" style="margin:0;max-width:460px;flex:1 1 300px">${views.map(v=>`<button class="gp-tab${_acctView===v[0]?' active':''}" onclick="window.acctSetView('${v[0]}')">${v[1]}</button>`).join('')}</div>
-      <select class="acct-sel" onchange="window.acctSetPeriod(this.value)">
+      <select class="acct-sel" aria-label="Period" onchange="window.acctSetPeriod(this.value)">
         ${[['month','This month'],['last','Last month'],['3m','Last 3 months'],['year','This year'],['all','All time'],['custom','Custom range…']].map(o=>`<option value="${o[0]}"${_acctPeriod.preset===o[0]?' selected':''}>${o[1]}</option>`).join('')}
       </select>
       ${_acctPeriod.preset==='custom'?`<input type="date" class="acct-sel" value="${_acctEsc(_acctPeriod.from)}" onchange="window.acctSetRange('from',this.value)"><input type="date" class="acct-sel" value="${_acctEsc(_acctPeriod.to)}" onchange="window.acctSetRange('to',this.value)">`:''}
-      <select class="acct-sel" onchange="window.acctSetFilter('type',this.value)">
+      <select class="acct-sel" aria-label="Entry type" onchange="window.acctSetFilter('type',this.value)">
         <option value="">All types</option>${Object.entries(ACCT_TYPES).filter(t=>t[0]!=='opening').map(t=>`<option value="${t[0]}"${_acctFilter.type===t[0]?' selected':''}>${t[1].label}</option>`).join('')}
       </select>
-      <select class="acct-sel" onchange="window.acctSetFilter('vendor',this.value)">
+      <select class="acct-sel" aria-label="Vendor" onchange="window.acctSetFilter('vendor',this.value)">
         <option value="">All vendors</option>${vendorsWithRows.map(v=>`<option value="${v._id}"${_acctFilter.vendor===v._id?' selected':''}>${_acctEsc(v.name)}</option>`).join('')}
       </select>
       <input id="acct-q" class="acct-sel" placeholder="Search particulars, ref, note" value="${_acctEsc(_acctFilter.q)}" oninput="window.acctSearch(this.value)">
@@ -719,8 +719,8 @@ function _acctLedgerTable(rows,opening,closing){
   const cols=_acctView==='payables'?['Date','Particulars','Vendor / person','Ref','Source','Purchases','Payments','Balance owed','']
     :book?['Date','Particulars','Vendor / person','Ref','Source','In','Out','Balance','']
     :['Date','Particulars','Vendor / person','Ref','Source','Cash','MCB','Credit','Amount',''];
-  let h=`<div class="acct-table-wrap"><table class="acct-table">
-    <thead><tr>${cols.map((c,i)=>`<th${i>=5?' class="num"':''}>${c}</th>`).join('')}</tr></thead><tbody>`;
+  let h=`<div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table">
+    <thead><tr>${cols.map((c,i)=>`<th${i>=5?' class="num"':''}>${c||'<span class="sr-only">Open</span>'}</th>`).join('')}</tr></thead><tbody>`;
   if(!shown.length)h+=`<tr><td colspan="${cols.length}" class="empty" style="padding:32px">No entries for ${_acctEsc(_acctPeriodLabel())}${_acctFilter.q||_acctFilter.type||_acctFilter.vendor?' with these filters':''}.</td></tr>`;
   for(const r of shown){
     const e=r.e;const fx=r.fx;
@@ -775,7 +775,7 @@ function _acctVendorsPage(){
       <button class="btn-outline" onclick="window.acctExportPayables()">⬇ Payables</button>
       ${_acctCanEntry()?`<button class="btn-primary" style="width:auto;margin:0;padding:9px 14px" onclick="window.acctVendorWizard()">+ New vendor</button>`:''}
     </div>
-    <div class="acct-table-wrap"><table class="acct-table">
+    <div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table">
       <thead><tr><th>Vendor</th><th>Supplies</th><th>Terms</th><th>Contact</th><th class="num">Balance owed</th><th class="num">Overdue</th><th class="num">Last purchase</th></tr></thead><tbody>`;
   if(!list.length)h+=`<tr><td colspan="7" class="empty" style="padding:32px">No vendors yet. Create the first one — the wizard asks how you pay them and sets the profile up to match.</td></tr>`;
   for(const v of list){
@@ -840,7 +840,7 @@ function _acctRunnersCard(){
     <div class="acct-toolbar">
       <div style="flex:1"><div style="font-weight:700">${stats.length} runner${stats.length===1?'':'s'}</div><div style="font-size:13px;color:var(--muted)">Everyone who takes a float, each with their own log. A new runner is added by typing their name on the float form.</div></div>
     </div>
-    <div class="acct-table-wrap"><table class="acct-table">
+    <div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table">
       <thead><tr><th>Runner</th><th class="num">Floats given</th><th class="num">Spent on bills</th><th class="num">Change back</th><th class="num">Still to account for</th><th class="num">Owed to runner</th><th class="num">Last float</th></tr></thead><tbody>`;
   for(const r of stats){
     h+=`<tr data-r="${_acctEsc(r.name)}" onclick="window.acctOpenRunner(this.dataset.r)">
@@ -883,7 +883,7 @@ function _acctRunnerPage(){
       ${_acctTile('Owed to runner',st.owed,{danger:st.owed>0,sub:st.owed>0?'spent over the float — settle it':'nothing over the float'})}
     </div>
   </div>`;
-  h+=`<div class="card" style="padding:0;overflow:hidden"><div class="acct-table-wrap"><table class="acct-table">
+  h+=`<div class="card" style="padding:0;overflow:hidden"><div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table">
     <thead><tr><th>Date</th><th>Particulars</th><th>Category</th><th>Vendor</th><th class="num">Amount</th></tr></thead><tbody>`;
   if(!rows.length)h+=`<tr><td colspan="5" class="empty" style="padding:28px">No floats given to ${_acctEsc(name)} yet.</td></tr>`;
   for(const e of rows){
@@ -927,7 +927,7 @@ function _acctCategoriesCard(){
       <div style="flex:1"><div style="font-weight:700">${stats.length} categor${stats.length===1?'y':'ies'}</div><div style="font-size:13px;color:var(--muted)">What the money was spent on — purchases and runner floats by purpose. Open one to see every entry under it.</div></div>
       ${_acctCanEntry()?`<button class="btn-outline" onclick="window.acctCategoryNew()">+ New category</button>`:''}
     </div>
-    <div class="acct-table-wrap"><table class="acct-table">
+    <div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table">
       <thead><tr><th>Category</th><th class="num">Entries</th><th class="num">Spent (purchases)</th><th class="num">Floats given</th><th class="num">Last entry</th></tr></thead><tbody>`;
   for(const c of stats){
     h+=`<tr data-c="${_acctEsc(c.name)}" onclick="window.acctOpenCategory(this.dataset.c)">
@@ -974,7 +974,7 @@ function _acctCategoryPage(){
       ${_acctTile('Entries',rows.length)}
     </div>
   </div>`;
-  h+=`<div class="card" style="padding:0;overflow:hidden"><div class="acct-table-wrap"><table class="acct-table">
+  h+=`<div class="card" style="padding:0;overflow:hidden"><div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table">
     <thead><tr><th>Date</th><th>Particulars</th><th>Vendor / person</th><th>Source</th><th class="num">Amount</th></tr></thead><tbody>`;
   if(!rows.length)h+=`<tr><td colspan="5" class="empty" style="padding:28px">Nothing recorded under this category yet. A purchase's Category, or a float's, puts it here.</td></tr>`;
   for(const e of rows){
@@ -1042,7 +1042,7 @@ function _acctVendorStatement(v){
   let bal=from>'0000-00-00'?Math.round(_acctBalances(_acctAddDays(from,-1)).payables[v._id]||0):(_acctLastClose()?Math.round((_acctLastClose().payables||{})[v._id]||0):0);
   const opening=bal;
   const rows=list.map(e=>{const fx=_acctEffect(e);if(e.status!=='void')bal+=fx.payable;return {e,fx,bal};});
-  let h=`<div class="acct-table-wrap"><table class="acct-table"><thead><tr><th>Date</th><th>Particulars</th><th>Ref</th><th>Paid via</th><th class="num">Purchases</th><th class="num">Payments</th><th class="num">Balance owed</th><th></th></tr></thead><tbody>
+  let h=`<div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table"><thead><tr><th>Date</th><th>Particulars</th><th>Ref</th><th>Paid via</th><th class="num">Purchases</th><th class="num">Payments</th><th class="num">Balance owed</th><th><span class="sr-only">Open</span></th></tr></thead><tbody>
     <tr class="tot"><td colspan="6">Opening balance</td><td class="num bal">${_acctPKR(opening)}</td><td></td></tr>`;
   if(!rows.length)h+=`<tr><td colspan="8" class="empty" style="padding:28px">No transactions with this vendor${from>'0000-00-00'?' in this range':''}.</td></tr>`;
   for(const r of rows.slice().reverse()){
@@ -1058,7 +1058,7 @@ function _acctVendorStatement(v){
 }
 function _acctVendorRates(v){
   const card=_acctRateCard(v._id);
-  let h=`<div class="acct-table-wrap"><table class="acct-table"><thead><tr><th>Item</th><th>Code</th><th>Unit</th><th class="num">Last rate</th><th class="num">Lowest</th><th class="num">Highest</th><th class="num">Bought</th><th class="num">Total qty</th><th class="num">Last bought</th></tr></thead><tbody>`;
+  let h=`<div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table"><thead><tr><th>Item</th><th>Code</th><th>Unit</th><th class="num">Last rate</th><th class="num">Lowest</th><th class="num">Highest</th><th class="num">Bought</th><th class="num">Total qty</th><th class="num">Last bought</th></tr></thead><tbody>`;
   if(!card.length)h+=`<tr><td colspan="9" class="empty" style="padding:28px">No purchase lines yet. Rates appear here automatically from every purchase recorded against this vendor.</td></tr>`;
   for(const c of card){
     const cur=c.rate,trend=c.n>1&&c.min!==c.max?(cur>=c.max?'<span class="acct-chip urgent">highest</span>':cur<=c.min?'<span class="acct-chip ok">lowest</span>':''):'';
@@ -1069,7 +1069,7 @@ function _acctVendorRates(v){
 }
 function _acctVendorAgingTable(v,ag){
   const today=_acctToday();
-  let h=`<div class="acct-table-wrap"><table class="acct-table"><thead><tr><th>Bill date</th><th>Particulars</th><th class="num">Bill</th><th class="num">Still open</th><th class="num">Age</th><th>Due</th></tr></thead><tbody>`;
+  let h=`<div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table"><thead><tr><th>Bill date</th><th>Particulars</th><th class="num">Bill</th><th class="num">Still open</th><th class="num">Age</th><th>Due</th></tr></thead><tbody>`;
   if(!ag.unpaid.length)h+=`<tr><td colspan="6" class="empty" style="padding:28px">Nothing unpaid${ag.advance?' — in fact '+_acctPKR(ag.advance)+' has been paid in advance':''}.</td></tr>`;
   for(const it of ag.unpaid){
     const age=_acctDaysBetween(it.date,today);const over=ag.creditDays>0&&age>ag.creditDays;
@@ -1128,7 +1128,7 @@ function _acctConsGrid(v,month,logs){
   const byDate={};for(const l of logs)byDate[l.date]=l;
   const days=_acctDaysInMonth(month);const today=_acctToday();
   const can=_acctCanEntry()&&!_acctMonthClosed(month);
-  let h=`<div class="acct-table-wrap"><table class="acct-table cons"><thead><tr><th>Day</th><th class="num">${weighed?'Delivered ('+_acctEsc(m.unit)+')':'Received ('+_acctEsc(m.unit)+'s)'}</th>${weighed?`<th class="num">Returned in cylinder (${_acctEsc(m.unit)})</th><th class="num">Net used</th>`:''}<th class="num">Amount</th><th>Logged by</th><th>Note</th></tr></thead><tbody>`;
+  let h=`<div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table cons"><thead><tr><th>Day</th><th class="num">${weighed?'Delivered ('+_acctEsc(m.unit)+')':'Received ('+_acctEsc(m.unit)+'s)'}</th>${weighed?`<th class="num">Returned in cylinder (${_acctEsc(m.unit)})</th><th class="num">Net used</th>`:''}<th class="num">Amount</th><th>Logged by</th><th>Note</th></tr></thead><tbody>`;
   let tot=0,totAmt=0;
   for(let d=1;d<=days;d++){
     const date=month+'-'+_acctPad(d);
@@ -1264,7 +1264,7 @@ function _acctReviewPage(){
   const b=_acctBalances(closable+'-31');
   let h=`<div class="card">
     <div class="card-title">Needs review · ${queue.length}</div>
-    ${queue.length?`<div class="acct-table-wrap"><table class="acct-table"><thead><tr><th>Date</th><th>Particulars</th><th>Vendor / person</th><th class="num">Amount</th><th>Why</th><th>By</th><th></th></tr></thead><tbody>${queue.map(e=>`<tr onclick="window.acctOpenEntry('${e._id}')"><td class="date">${_acctDateLabel(e.date)}</td><td class="part">${_acctEsc(_acctParticulars(e))}</td><td>${_acctEsc(_acctVendorName(e)||e.person||'')}</td><td class="num">${_acctPKR(e.amount)}</td><td>${(e.reviewFlags||[]).map(f=>`<span class="acct-chip urgent">${_acctEsc(f)}</span>`).join(' ')}${(e.reviewFlags||[]).includes('edited')&&e.edits&&e.edits.length?`<div class="acct-hist-why">${_acctEsc(e.edits[e.edits.length-1].byName||'')}: “${_acctEsc(e.edits[e.edits.length-1].reason||'')}”</div>`:''}</td><td>${_acctEsc(e.byName||e.by)}</td><td class="flags"><button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="event.stopPropagation();window.acctReview('${e._id}')">Clear</button></td></tr>`).join('')}</tbody></table></div>`:`<div class="empty" style="padding:18px">Nothing waiting. Entries above the approval limit (${s.approvalLimit?_acctPKR(s.approvalLimit):'off'}) or without a receipt above ${_acctPKR(s.receiptRequiredAbove)} land here.</div>`}
+    ${queue.length?`<div class="acct-table-wrap" tabindex="0" role="region" aria-label="Scrollable table"><table class="acct-table"><thead><tr><th>Date</th><th>Particulars</th><th>Vendor / person</th><th class="num">Amount</th><th>Why</th><th>By</th><th><span class="sr-only">Open</span></th></tr></thead><tbody>${queue.map(e=>`<tr onclick="window.acctOpenEntry('${e._id}')"><td class="date">${_acctDateLabel(e.date)}</td><td class="part">${_acctEsc(_acctParticulars(e))}</td><td>${_acctEsc(_acctVendorName(e)||e.person||'')}</td><td class="num">${_acctPKR(e.amount)}</td><td>${(e.reviewFlags||[]).map(f=>`<span class="acct-chip urgent">${_acctEsc(f)}</span>`).join(' ')}${(e.reviewFlags||[]).includes('edited')&&e.edits&&e.edits.length?`<div class="acct-hist-why">${_acctEsc(e.edits[e.edits.length-1].byName||'')}: “${_acctEsc(e.edits[e.edits.length-1].reason||'')}”</div>`:''}</td><td>${_acctEsc(e.byName||e.by)}</td><td class="flags"><button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="event.stopPropagation();window.acctReview('${e._id}')">Clear</button></td></tr>`).join('')}</tbody></table></div>`:`<div class="empty" style="padding:18px">Nothing waiting. Entries above the approval limit (${s.approvalLimit?_acctPKR(s.approvalLimit):'off'}) or without a receipt above ${_acctPKR(s.receiptRequiredAbove)} land here.</div>`}
   </div>`;
   if(pending.length)h+=`<div class="card"><div class="card-title">Cash in awaiting Raees's confirmation · ${pending.length}</div>${pending.map(e=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px"><span>${_acctDateLabel(e.date)} · ${_acctPKR(e.amount)} into ${_acctAccountLabel(e.account)} by ${_acctEsc(e.byName||e.by)}</span><button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="window.acctOpenEntry('${e._id}')">Open</button></div>`).join('')}</div>`;
   const whq=_acctWh();

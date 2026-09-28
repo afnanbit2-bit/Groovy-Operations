@@ -2930,7 +2930,7 @@ function _fabPoRowHTML(){
   const stocks=_fabPoStocks();
   return `<div class="po-fab-row" id="po-fab-row-${rid}" style="border:1px solid var(--border);border-radius:9px;padding:9px;margin-bottom:8px;background:var(--surface-2)">
     <div style="display:flex;gap:8px;align-items:center">
-      <select id="po-fab-sel-${rid}" onchange="window.fabPoRowPick(${rid})" style="flex:1">
+      <select id="po-fab-sel-${rid}" aria-label="Fabric" onchange="window.fabPoRowPick(${rid})" style="flex:1">
         <option value="">Select fabric…</option>
         ${stocks.map(s=>`<option value="${s._id}">${_gpEsc(s.fabType)} · ${s.gsm||0}gsm · ${_gpEsc(s.color)} — ${s.rollsCount||0} available</option>`).join('')}
       </select>

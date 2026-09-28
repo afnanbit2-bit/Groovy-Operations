@@ -1701,7 +1701,7 @@ function renderBugTrackerPage(){
   const filterBar=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
     ${filters.map(f=>`<button class="filter-chip ${_bugFilter===f?'active':''}" onclick="window.bugSetFilter('${f}')">${filterLabels[f]}</button>`).join('')}
     ${exportBtn}
-    <select id="bug-sort" onchange="window.bugSetSort(this.value)" style="${isOM?'':'margin-left:auto;'}padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface)">
+    <select id="bug-sort" aria-label="Sort reports" onchange="window.bugSetSort(this.value)" style="${isOM?'':'margin-left:auto;'}padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface)">
       <option value="severity" ${_bugSort==='severity'?'selected':''}>Sort by Severity</option>
       <option value="newest" ${_bugSort==='newest'?'selected':''}>Newest First</option>
       <option value="oldest" ${_bugSort==='oldest'?'selected':''}>Oldest First</option>
