@@ -3790,6 +3790,12 @@ none above 0.6, a straight fade between — so a fast drag follows the finger
 exactly and a slow settle aligns. Snap-to-grid and Alt are unchanged.
 Nobody has felt it on a real screen.
 
+**The dot grid is always on, and alignment eases (same day).** At
+Afnan's ask the dots paint on `.board-stage` at rest (REVERSES the second-
+video "placement cue only" rule; `_boardsFlashGrid` still toggles
+`grid-on`, which now changes nothing). The alignment offset glides 30% of
+the way to its target on each move instead of jumping.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

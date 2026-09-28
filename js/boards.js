@@ -5711,6 +5711,7 @@ window.boardsCardDragStart=function(e,cardId){
   const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
   _boardsVel={x:e.clientX,y:e.clientY,t:Date.now(),v:0};
+  const alignOff={x:0,y:0};
   // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
   // This used to call setPointerCapture right here, on the pointerdown.
   // A captured pointer RETARGETS the click and dblclick that follow to the
@@ -5778,7 +5779,11 @@ window.boardsCardDragStart=function(e,cardId){
       // step, and no line is drawn.
       const a=_boardsAlignDelta(probe,others,b.zoom);
       const pull=_boardsAlignPull(ev);
-      dx+=a.dx*pull;dy+=a.dy*pull;
+      // Eased, not applied outright: the offset glides toward its target
+      // each move, so a pull fading in or out never twitches the card.
+      alignOff.x+=(a.dx*pull-alignOff.x)*0.3;
+      alignOff.y+=(a.dy*pull-alignOff.y)*0.3;
+      dx+=alignOff.x;dy+=alignOff.y;
       _boardsHideGuides();
     }else{
       _boardsHideGuides();

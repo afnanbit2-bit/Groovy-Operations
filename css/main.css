@@ -1000,9 +1000,9 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-stage{position:relative;flex:1;overflow:hidden;cursor:crosshair;background-size:22px 22px;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none}
 /* The dot grid is a PLACEMENT CUE, not the canvas background — measured off
    Milanote's own (see _boardsFlashGrid). At rest the canvas is plain. */
-.board-stage.grid-on{background-image:radial-gradient(#00000014 1px,transparent 1px)}
-:root[data-theme="dark"] .board-stage.grid-on{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .board-stage.grid-on{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}}
+.board-stage{background-image:radial-gradient(#00000014 1px,transparent 1px)}
+:root[data-theme="dark"] .board-stage{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .board-stage{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}}
 .board-stage.panning{cursor:grabbing}
 .board-world{position:absolute;left:0;top:0;transform-origin:0 0}
 .board-conn-layer{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
