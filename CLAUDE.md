@@ -4,6 +4,15 @@ Multi-file SPA, deployed to Netlify on every push to `main`.
 Two contributors: Afnan (HRM/operations side, with Claude) and Ammar Shah
 (printing/embellishments side, also with Claude on a separate session).
 
+## Standing rule — delegate the work (Afnan, 28 Sept 2026)
+
+1. **Never do the work yourself.**
+2. **Always hand it over to a sub agent.**
+
+The main session plans, briefs, reviews what comes back and reports to
+Afnan; the reading, writing, testing and fixing is done by sub agents
+(the Agent tool), each given a complete, standalone brief.
+
 ## Ground rule — verify, never guess
 
 **Every factual claim must trace to a tool result, a file, or a command run
