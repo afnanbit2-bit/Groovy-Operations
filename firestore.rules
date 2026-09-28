@@ -537,15 +537,38 @@ service cloud.firestore {
     // Client list queries are three single-field queries (visibility,
     // ownerUid, sharedWith array-contains), one per read clause below, so
     // every query is provably safe without a composite index.
+    //
+    // Sharing ROLES (Sept 2026): a person on sharedWith who is ALSO on
+    // sharedView can only look, and on sharedComment can look and comment.
+    // On sharedWith and neither list = edit, which is what every board
+    // shared before this already meant — nothing migrates. And who a board
+    // is shared with (sharedWith / sharedView / sharedComment) and who owns
+    // it can only be changed by the board's owner or an app owner: before
+    // this, anyone on sharedWith could rewrite sharedWith, so a view-only
+    // person could have made themselves an editor. Mirrored by
+    // _boardsCanEdit / _boardsCanComment / _boardsCanManageShare.
     function boardShared(b)  { return 'sharedWith' in b && userEmail() in b.sharedWith; }
+    function boardListed(b, f) { return f in b && userEmail() in b[f]; }
+    function boardSharedEditor(b) {
+      return boardShared(b) && !boardListed(b, 'sharedView') && !boardListed(b, 'sharedComment');
+    }
+    function boardSharedCommenter(b) {
+      return boardShared(b) && boardListed(b, 'sharedComment') && !boardListed(b, 'sharedView');
+    }
     function canReadBoard(b) { return b.visibility=='shared' || b.ownerUid==request.auth.uid || boardShared(b); }
+    function canEditBoard(b) {
+      return b.visibility=='shared' || b.ownerUid==request.auth.uid || boardSharedEditor(b) || isOwner();
+    }
+    function boardSharingUntouched() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['sharedWith', 'sharedView', 'sharedComment', 'ownerUid']);
+    }
     match /mood_boards/{doc} {
       allow read:   if signedIn() && canReadBoard(resource.data);
       allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
-      allow update: if signedIn() && (resource.data.visibility=='shared'
-                                      || resource.data.ownerUid==request.auth.uid
-                                      || boardShared(resource.data)
-                                      || isOwner());
+      allow update: if signedIn() && canEditBoard(resource.data)
+                    && (resource.data.ownerUid==request.auth.uid || isOwner()
+                        || boardSharingUntouched());
       allow delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
 
       // ── Sub-collections (Stage 6) ──
@@ -558,11 +581,9 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/mood_boards/$(doc)).data;
       }
       function canSeeParent() { return signedIn() && canReadBoard(parentBoard()); }
-      function canEditParent() {
-        return signedIn() && (parentBoard().visibility=='shared'
-                              || parentBoard().ownerUid==request.auth.uid
-                              || boardShared(parentBoard())
-                              || isOwner());
+      function canEditParent() { return signedIn() && canEditBoard(parentBoard()); }
+      function canCommentParent() {
+        return canEditParent() || (signedIn() && boardSharedCommenter(parentBoard()));
       }
 
       // Who is looking at this board right now. One doc per viewer, keyed
@@ -578,7 +599,7 @@ service cloud.firestore {
       // since resolving is a shared housekeeping action, not authorship.
       match /comments/{cdoc} {
         allow read:   if canSeeParent();
-        allow create: if canEditParent() && request.resource.data.byUid==request.auth.uid;
+        allow create: if canCommentParent() && request.resource.data.byUid==request.auth.uid;
         allow update: if canEditParent();
         allow delete: if signedIn() && (resource.data.byUid==request.auth.uid || isOwner());
       }
@@ -602,7 +623,8 @@ service cloud.firestore {
       // a record nobody can quietly rewrite, not even an owner.
       match /activity/{adoc} {
         allow read:   if canSeeParent();
-        allow create: if canEditParent() && request.resource.data.byUid==request.auth.uid;
+        // A commenter's "commented on a card" line belongs in the feed too.
+        allow create: if canCommentParent() && request.resource.data.byUid==request.auth.uid;
         allow update, delete: if false;
       }
     }

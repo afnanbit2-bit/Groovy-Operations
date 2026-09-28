@@ -3455,6 +3455,45 @@ Claude in Chrome study's measured hover time**; it will call the same
   tab's copy of the target, dropping the history purge, dropping the board-
   link refusal — each fails by name.
 
+### Mood Boards — sharing roles: edit, comment, view (Sept 2026)
+
+The third Milanote gap (help centre, search summary: a board is shared per
+person as edit, comment-only or view-only). **`firestore.rules` CHANGED —
+it needs a republish.**
+
+- **Two lists beside `sharedWith`:** `sharedView` and `sharedComment`. A
+  person on `sharedWith` and on neither list can EDIT — which is what every
+  board shared before this already meant, so nothing migrates.
+  `sharedWith` stays the read list (the `array-contains` query and the read
+  rule are untouched). `_boardsShareRole(b,email)` is the one reader;
+  `_boardsSharePatch(picks)` builds the three fields from the sheet (pure).
+- **`_boardsCanEdit` respects the role**, and every one of its ~116 call
+  sites follows with no edit. `_boardsCanComment` (edit, or the comment
+  role) gates the comment box, Reply and `boardsAddComment`; Resolve stays
+  an editor's. The top bar shows **View only** / **Can comment**.
+- **Roles only mean something on a PRIVATE board** — a TEAM board is
+  editable by everyone (Stage 6), and the share sheet says so.
+- **A HOLE CLOSED:** before this, anyone on `sharedWith` could rewrite
+  `sharedWith` (add anyone) and even `ownerUid`, because the update rule
+  never looked at which fields changed. Sharing fields (`sharedWith`,
+  `sharedView`, `sharedComment`, `ownerUid`) are now the board owner's or an
+  app owner's (`boardSharingUntouched()`); the share sheet opens only for
+  them (`_boardsCanManageShare`). **Visibility is deliberately NOT in that
+  list** — any editor can still flip TEAM/PRIVATE, as before; recorded, not
+  changed.
+- Rules: `boardSharedEditor` / `boardSharedCommenter` / `canEditBoard`;
+  comments and the activity feed accept a commenter (`canCommentParent`),
+  trash and comment updates stay editors'.
+- **Verified in the real emulator** (`tests/rules-emulator-boards.js`,
+  26/26, share payload built by the app): against the PREVIOUS rules 12
+  fail, including the escalation and the ownership takeover. Client half:
+  `tests/board-roles.test.js` (27) — reverted role check (7 fail), compose
+  gate (1), share-sheet gate (1). Layout: `boards — the share sheet with
+  roles`, which caught a long name pushing the @username out of the row
+  (the name wraps now). **It cannot measure the role dropdown's own text**
+  (the probe skips `<option>`) — checked by breaking it.
+- **Nobody has used a role on a real screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
@@ -9670,6 +9709,14 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**REPUBLISH OUTSTANDING (28 Sept 2026): Mood Boards sharing roles.**
+`mood_boards` update now requires the editor role and keeps the sharing
+fields to the board's owner; comments/activity accept the comment role.
+Until the Console has it, a view-only person can still edit (the app hides
+the tools, the rules do not stop a direct write) and the old sharedWith
+escalation stays open. Ran 26/26 in the emulator. One paste of the current
+file carries every outstanding entry below as well.
 
 **REPUBLISH OUTSTANDING (26 Sept 2026, session 2): The Board's lock
 rule** (`tbLockOk()`, `board_items` update). The old clause let a member on

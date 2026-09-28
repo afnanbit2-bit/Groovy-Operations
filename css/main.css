@@ -2625,6 +2625,14 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-share-list{flex:1;min-height:0;overflow:auto;padding:6px 14px}
 .board-share-row{display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13.5px;border-bottom:1px solid var(--border);cursor:pointer}
 .board-share-row:last-child{border-bottom:none}
+/* Per-person role (Sept 2026): the name is the flexing column, the role
+   picker a fixed one beside it — the name never gets crushed to 0px. */
+.board-share-who{flex:1;min-width:0;display:flex;align-items:center;gap:9px;cursor:pointer}
+/* Wraps rather than ellipsizing: a long name must not push the @username —
+   the one thing that says WHICH person this is — off the row. */
+.board-share-who>span{min-width:0;overflow-wrap:anywhere}
+.board-share-role{flex-shrink:0;min-height:32px;padding:4px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit;font-size:13px}
+.board-share-role:disabled{opacity:.45}
 .board-share-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 14px;border-top:1px solid var(--border)}
 
 /* ── Card trash panel (Sept 2026) ──────────────────────────────────────

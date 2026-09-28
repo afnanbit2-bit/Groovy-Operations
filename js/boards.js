@@ -148,8 +148,53 @@ function _boardsCanEdit(b){
   if(b.ownerUid===session.uid)return true;
   if(session.role==='owner')return true;
   if(b.visibility==='shared')return true;
-  const me=_boardsMyEmail();
-  return!!(me&&Array.isArray(b.sharedWith)&&b.sharedWith.indexOf(me)>-1);
+  return _boardsShareRole(b,_boardsMyEmail())==='edit';
+}
+/* ── Sharing roles (Sept 2026) ──────────────────────────────────────────
+   Milanote shares a board per person as edit, comment-only or view-only
+   (help centre, "Sharing a board"). A person is on `sharedWith` (the read
+   list — it is what the array-contains query and the read rule check) and
+   ALSO on `sharedView` or `sharedComment` when they are restricted. Anyone
+   on sharedWith and on neither list can edit, so every board shared before
+   this keeps exactly the access it had: nothing migrates.
+
+   Roles only mean something on a PRIVATE board. A TEAM board is editable by
+   every signed-in user (Stage 6), so a role there would be a promise the
+   board cannot keep — the share sheet says so rather than offering it.
+
+   Changing who a board is shared with, and how, is the OWNER's (or an app
+   owner's). firestore.rules enforces it: before this, anyone on
+   sharedWith could rewrite sharedWith itself, which would have let a
+   view-only person make themselves an editor. */
+const _BOARDS_SHARE_ROLES=['edit','comment','view'];
+function _boardsShareRole(b,email){
+  const me=String(email||'').toLowerCase();
+  if(!b||!me)return null;
+  const has=f=>Array.isArray(b[f])&&b[f].some(e=>String(e).toLowerCase()===me);
+  if(!has('sharedWith'))return null;
+  if(has('sharedView'))return'view';
+  if(has('sharedComment'))return'comment';
+  return'edit';
+}
+function _boardsCanComment(b){
+  if(_boardsCanEdit(b))return true;
+  return _boardsShareRole(b,_boardsMyEmail())==='comment';
+}
+function _boardsCanManageShare(b){
+  return!!(b&&session&&(b.ownerUid===session.uid||session.role==='owner'));
+}
+// The three fields a share writes, from a {email: role} pick. Pure, so the
+// shape the rules check is assertable without a database.
+function _boardsSharePatch(picks){
+  const w=[],v=[],c=[];
+  Object.keys(picks||{}).forEach(e=>{
+    const em=String(e).trim().toLowerCase(),r=picks[e];
+    if(!em||_BOARDS_SHARE_ROLES.indexOf(r)<0)return;
+    w.push(em);
+    if(r==='view')v.push(em);
+    if(r==='comment')c.push(em);
+  });
+  return{sharedWith:w,sharedView:v,sharedComment:c};
 }
 // A file card with no thumbnail is a name row and two buttons, so it stays
 // compact. A PDF is not: see _boardsFitPdfCard.
@@ -2015,7 +2060,7 @@ async function _boardsOpenCanvas(){
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
-  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
+  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[],sharedView:Array.isArray(b.sharedView)?b.sharedView.slice():[],sharedComment:Array.isArray(b.sharedComment)?b.sharedComment.slice():[]};
   // Clamped AFTER the assignment, not inside the literal. The floor is
   // Home-aware now (_boardsZoomFloor reads _editBoard), and inside the
   // literal _editBoard is still the PREVIOUS board — so a Home saved below
@@ -2163,7 +2208,8 @@ function _renderBoardCanvasHTML(){
           ?(phone?`<span style="font-size:15.5px;font-weight:700">Home</span>`:'')
           :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         ${phone?'':`<span class="pill">${visLabel}</span>`}
-        ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
+        ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
+        ${canEdit?'':`<span class="pill board-role-pill">${_boardsCanComment(b)?'Can comment':'View only'}</span>`}`}
         ${canEdit?`<span class="board-save-status" id="board-save-status"></span>`:''}
         <span class="board-peers" id="board-peers" style="display:none"></span>
       </div>
@@ -2219,7 +2265,7 @@ function _renderBoardCanvasHTML(){
             ${home?'':`<button onclick="window.boardsDuplicateBoard()">Duplicate board</button>`}
             ${canEdit&&!home?`<button onclick="window.boardsToggleTemplate()">${b.isTemplate?'Remove from templates':'Save as template'}</button>`:''}
             ${canEdit?`<button onclick="window.boardsAddChildBoard()">${home?'New board':'Add sub-board'}</button>`:''}
-            ${canEdit&&!home?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
+            ${_boardsCanManageShare(b)&&!home?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
             ${canEdit&&!home?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
             ${canEdit&&!home?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
             ${phone&&typeof window.openBugReportModal==='function'?`<div class="board-menu-sep"></div>
@@ -11910,6 +11956,8 @@ function _boardsApplyRemote(data){
   // the server's copy mid-upload would drop the row the upload resolves to.
   if(!_editUnsorted.some(u=>u._uploading))_editUnsorted=(data.unsorted||[]).map(u=>({...u}));
   _editBoard.sharedWith=Array.isArray(data.sharedWith)?data.sharedWith.slice():[];
+  _editBoard.sharedView=Array.isArray(data.sharedView)?data.sharedView.slice():[];
+  _editBoard.sharedComment=Array.isArray(data.sharedComment)?data.sharedComment.slice():[];
   _editBoard.isTemplate=!!data.isTemplate;
   // pan/zoom deliberately NOT taken from the remote document.
   _boardsSelection=new Set(Array.from(_boardsSelection).filter(id=>_editCards.some(c=>c.id===id)));
@@ -12503,7 +12551,7 @@ function _boardsRenderCommentPop(){
   const prev=document.getElementById('board-cmt-input');
   const draft=prev&&prev.value?prev.value:'';
   const rows=_boardsThread(_boardsCardComments(id));
-  const canEdit=_boardsCanEdit(_editBoard);
+  const canEdit=_boardsCanEdit(_editBoard),canComment=_boardsCanComment(_editBoard);
   const me=(typeof session!=='undefined'&&session)||{};
   const replying=_boardsReplyTo?rows.find(c=>c.id===_boardsReplyTo):null;
   // Opening the sheet closes the previous one, and closing forgets the
@@ -12517,13 +12565,13 @@ function _boardsRenderCommentPop(){
           <div class="board-cpop-meta"><strong id="board-cpop-name-${c.id}"></strong><span>${_boardsRelTime(c.ts)}</span></div>
           <div class="board-cmt-text" id="board-cpop-text-${c.id}"></div>
           <div class="board-cmt-actions">
-            ${canEdit&&!c.depth?`<button onclick="window.boardsReplyTo('${c.id}')">Reply</button>`:''}
+            ${canComment&&!c.depth?`<button onclick="window.boardsReplyTo('${c.id}')">Reply</button>`:''}
             ${canEdit?`<button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>`:''}
             ${(me.uid&&(c.byUid===me.uid||me.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
           </div>
         </div>
       </div>`).join(''):'<div class="board-sheet-empty">No comments on this card yet.</div>'}</div>
-    ${canEdit?`${replying?`<div class="board-cpop-replying">Replying to <strong id="board-cpop-replying-name"></strong> <button onclick="window.boardsReplyCancel()">cancel</button></div>`:''}
+    ${canComment?`${replying?`<div class="board-cpop-replying">Replying to <strong id="board-cpop-replying-name"></strong> <button onclick="window.boardsReplyCancel()">cancel</button></div>`:''}
     <div class="board-cpop-compose">
       ${_boardsAvatarHTML(me.name)}
       <input type="text" id="board-cmt-input" placeholder="${replying?'Write a reply…':'Write a comment…'}" maxlength="2000" onkeydown="if(event.key==='Enter'){event.preventDefault();window.boardsAddComment();}">
@@ -12553,7 +12601,7 @@ function _boardsRenderDrawer(){
   if(!_boardsDrawerOpen)return;
   const scoped=_boardsDrawerCard?_boardsCardComments(_boardsDrawerCard):_boardsComments;
   const rows=_boardsDrawerTab==='comments'?_boardsThread(scoped):[];
-  const canEdit=_boardsCanEdit(_editBoard);
+  const canEdit=_boardsCanEdit(_editBoard),canComment=_boardsCanComment(_editBoard);
   const scopeLabel=_boardsDrawerCard?'On one card':'Whole board';
   host.innerHTML=`
     <div class="board-drawer-head">
@@ -12578,13 +12626,13 @@ function _boardsRenderDrawer(){
             </div>
             <div class="board-cmt-text" id="board-cmt-text-${c.id}"></div>
             <div class="board-cmt-actions">
-              ${canEdit&&!c.depth&&c.cardId?`<button onclick="window.boardsOpenComments('${c.cardId}');window.boardsReplyTo('${c.id}')">Reply</button>`:''}
-              <button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>
+              ${canComment&&!c.depth&&c.cardId?`<button onclick="window.boardsOpenComments('${c.cardId}');window.boardsReplyTo('${c.id}')">Reply</button>`:''}
+              ${canEdit?`<button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>`:''}
               ${(session&&(c.byUid===session.uid||session.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
             </div>
           </div>`).join(''):'<div class="empty">No comments yet.</div>'}
       </div>
-      ${canEdit?`<div class="board-drawer-compose">
+      ${canComment?`<div class="board-drawer-compose">
         <textarea id="board-cmt-input" placeholder="${_boardsDrawerCard?'Comment on this card…':'Comment on this board…'}" onkeydown="window.boardsCommentKey(event)"></textarea>
         <button class="btn-sm" onclick="window.boardsAddComment()">Post</button>
       </div>`:''}
@@ -12618,6 +12666,7 @@ window.boardsAddComment=async function(){
   const input=document.getElementById('board-cmt-input');
   const text=String((input&&input.value)||'').trim();
   if(!text||!_editBoard||!session)return;
+  if(!_boardsCanComment(_editBoard)){showToast('You can view this board but not comment on it',true);return;}
   try{
     await _qAdd(collection(db,'mood_boards',_editBoard.id,'comments'),{
       cardId:_boardsDrawerCard||null,
@@ -12651,25 +12700,34 @@ window.boardsDeleteComment=async function(id){
 // single-field query mapping exactly onto one clause of the read rule,
 // the same discipline loadNotesData/loadBoardsData already follow.
 window.boardsOpenShare=function(){
-  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  if(!_editBoard||!_boardsCanManageShare(_editBoard))return;
   _boardsMenuOpen=false;_boardsSyncMenu();
   const host=document.getElementById('board-share-modal');
   if(!host)return;
   const mine=_boardsMyEmail();
   const list=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]).filter(u=>String(u.email||'').toLowerCase()!==mine);
-  const current=(_editBoard.sharedWith||[]).map(e=>String(e).toLowerCase());
+  const team=_editBoard.visibility==='shared';
   host.style.display='flex';
   host.innerHTML=`<div class="board-share-box">
     <div class="board-share-head">
       <div><div style="font-weight:700;font-size:15px">Share this board</div>
-      <div style="font-size:12.5px;color:var(--muted);margin-top:2px">People you pick can open and edit it, even while it stays PRIVATE.</div></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${team
+        ?'This is a TEAM board, so everyone can already open and edit it. The roles below take effect if you make it PRIVATE.'
+        :'Pick who can open this PRIVATE board, and whether they can edit it, only comment, or only view.'}</div></div>
       <button class="tool-btn" onclick="window.boardsCloseShare()">✕</button>
     </div>
     <div class="board-share-list">
-      ${list.map(u=>`<label class="board-share-row">
-        <input type="checkbox" value="${_boardsEsc(String(u.email||'').toLowerCase())}" ${current.indexOf(String(u.email||'').toLowerCase())>-1?'checked':''}>
-        <span><strong>${_boardsEsc(u.name||u.u)}</strong> <span style="color:var(--muted)">@${_boardsEsc(u.u)}</span></span>
-      </label>`).join('')}
+      ${list.map(u=>{
+        const em=String(u.email||'').toLowerCase(),role=_boardsShareRole(_editBoard,em);
+        return`<div class="board-share-row">
+        <label class="board-share-who"><input type="checkbox" value="${_boardsEsc(em)}" ${role?'checked':''} onchange="this.closest('.board-share-row').querySelector('select').disabled=!this.checked">
+        <span><strong>${_boardsEsc(u.name||u.u)}</strong> <span style="color:var(--muted)">@${_boardsEsc(u.u)}</span></span></label>
+        <select class="board-share-role" aria-label="Role for ${_boardsEsc(u.name||u.u)}" ${role?'':'disabled'}>
+          <option value="edit"${role==='edit'||!role?' selected':''}>Can edit</option>
+          <option value="comment"${role==='comment'?' selected':''}>Can comment</option>
+          <option value="view"${role==='view'?' selected':''}>Can view</option>
+        </select>
+      </div>`;}).join('')}
     </div>
     <div class="board-share-foot">
       <button class="btn-sm outline" onclick="window.boardsCloseShare()">Cancel</button>
@@ -12684,12 +12742,19 @@ window.boardsCloseShare=function(){
 window.boardsSaveShare=async function(){
   const host=document.getElementById('board-share-modal');
   if(!host||!_editBoard)return;
-  const picked=Array.from(host.querySelectorAll('input[type=checkbox]')).filter(i=>i.checked).map(i=>i.value);
+  if(!_boardsCanManageShare(_editBoard))return;
+  const picks={};
+  Array.from(host.querySelectorAll('.board-share-row')).forEach(row=>{
+    const cb=row.querySelector('input[type=checkbox]'),sel=row.querySelector('select');
+    if(cb&&cb.checked)picks[cb.value]=(sel&&sel.value)||'edit';
+  });
+  const patch=_boardsSharePatch(picks);
+  const picked=patch.sharedWith;
   try{
-    await _qUpdate(doc(db,'mood_boards',_editBoard.id),{sharedWith:picked,updatedAt:Date.now()});
-    _editBoard.sharedWith=picked;
+    await _qUpdate(doc(db,'mood_boards',_editBoard.id),Object.assign({},patch,{updatedAt:Date.now()}));
+    Object.assign(_editBoard,patch);
     const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
-    if(idx>-1)moodBoards[idx].sharedWith=picked;
+    if(idx>-1)Object.assign(moodBoards[idx],patch);
     boardsLoaded=false;
     window.boardsCloseShare();
     _boardsRenderCanvasAndWire();
