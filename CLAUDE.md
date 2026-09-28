@@ -6978,10 +6978,10 @@ to WhatsApp); and **§16 remapped desktop-first** — ten pages (Today ·
 Money · Money in · Money out · Parties · Ledger · Costing · Savings ·
 Reports · Close & audit), one **Record** button, a page map of what each
 tab reads and writes, and the visual rules. **Those rules came from two
-subagent reports, kept as model output in `scratchpad/visual-report.md`
+subagent reports, committed as model output in `scratchpad/master-accounts-visual-audit.md`
 (the v3 specimen MEASURED in headless Chromium: the overview 2,532px
 tall, 82% of its text at 12px or under, 66 bordered boxes, the first chart
-at y=1,183) and `scratchpad/ds-report.md` (Polaris, Carbon and Primer read
+at y=1,183) and `scratchpad/master-accounts-design-systems.md` (Polaris, Carbon and Primer read
 over `raw.githubusercontent.com`).** Where the two disagreed the audit's
 number stands. **The specimen was rebuilt to §16 the same day and
 republished at the same URL**, then MEASURED the way the audit measured

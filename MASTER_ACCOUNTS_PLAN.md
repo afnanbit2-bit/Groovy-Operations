@@ -838,10 +838,10 @@ settings, the calendar grid (a list on the phone).
 ### 16.5 Where the rules came from — the outside design input
 
 Afnan asked for *"a UI/UX expert … an agent or something from GitHub open
-source"*. Two reports were produced on 28 Sept 2026, both in the
-scratchpad and both model output, to be read as such:
+source"*. Two reports were produced on 28 Sept 2026, both committed beside
+the specimen in `scratchpad/` and both model output, to be read as such:
 
-- **`scratchpad/visual-report.md`** — the v3 specimen **measured** in
+- **`scratchpad/master-accounts-visual-audit.md`** — the v3 specimen **measured** in
   headless Chromium at 1440px and at a true 390px frame, not eyeballed:
   the overview's main column was **2,532px** tall (the phone's 4,356px),
   540 elements, **8 font sizes**, **82% of its text at 12px or under** and
@@ -854,7 +854,7 @@ scratchpad and both model output, to be read as such:
   chart of the same money; a 24-item sidebar; 190px plots in 457px cards;
   pills on the normal state; five static courier cards; two-line
   subtitles) and gives the specification above.
-- **`scratchpad/ds-report.md`** — the rules of Shopify **Polaris**, IBM
+- **`scratchpad/master-accounts-design-systems.md`** — the rules of Shopify **Polaris**, IBM
   **Carbon** and GitHub **Primer**, read from their repositories over
   `raw.githubusercontent.com` (the API listing is gated here): the space
   scales, table cell padding 6, row heights 24–64 with 32–40 as finance
