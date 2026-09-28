@@ -246,9 +246,13 @@ module.exports=async function(){
     s.eq('id and no kept',J([e.data.id,e.data.no]),J(['JV-27-0003','JV-27-0003']));
     const f3=S.tx[1].find(x=>x.col==='ma_journal').data;
     const changed=Object.keys(Object.assign({},f3,e.data)).filter(k=>J(f3[k])!==J(e.data[k]));
-    const allowed=['rev','edits','month','quarter','fy','historical','amount','tax','difference','bookBalance','status'].concat(JSON.parse(a.run('JSON.stringify(MA_EDIT_FIELDS.journal)')));
+    // M1.6a: the derived list is the core's (and the rules', held equal
+    // below) — amount and tax are NOT in it, so a moved amount is named.
+    const derived=JSON.parse(a.run('JSON.stringify(MA_EDIT_DERIVED)'));
+    const allowed=derived.concat(JSON.parse(a.run('JSON.stringify(MA_EDIT_FIELDS.journal)')));
     s.ok('every changed key is one the rules allow',changed.every(k=>allowed.indexOf(k)>=0),J(changed));
-    s.ok('and every changed non-derived key is named in the row',changed.filter(k=>['rev','edits','month','quarter','fy','historical','amount','tax','difference','bookBalance','status'].indexOf(k)<0).every(k=>e.data.edits[0].fields.indexOf(k)>=0),J(changed));
+    s.ok('and every changed non-derived key is named in the row',changed.filter(k=>derived.indexOf(k)<0).every(k=>e.data.edits[0].fields.indexOf(k)>=0),J(changed));
+    s.ok('…amount among them — it moved, so the row names it',changed.indexOf('amount')>=0&&e.data.edits[0].fields.indexOf('amount')>=0);
     s.ok('an audit row "edit" goes with it',S.tx[2].some(x=>x.col==='ma_audit'&&x.data.action==='edit'));
 
     // Review: exactly the two review keys, in the reviewer's name.
@@ -432,6 +436,255 @@ module.exports=async function(){
     const c=calls.length;
     app.run("window.maDocPdf('transfer','TR-27-0001');window.maPdf('holder')");
     s.eq('nobody else can print one',calls.length,c);
+  }
+
+  /* ── M1.6a on the page: what the core decides, the page asks, offers and
+     writes. Every block its own app — a refused write in one must not leave
+     another's copy out of step with its store. ─────────────────────────── */
+  const AMMAR={uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'};
+  const {app:mb}=mkApp();
+  const m6=(t,x)=>Object.assign({by:'afnan',byName:'Afnan',ts:T0+t},x||{});
+  const NONE={kind:'none',rate:0,inclusive:true,claimable:false};
+  const cap6=built(mb,'journal',{kind:'capital',date:'2026-07-02',holder:'1011',owner:'afnan',amount:300000},m6(1),'JV-27-0001');
+  const capB6=built(mb,'journal',{kind:'capital',date:'2026-07-02',holder:'1020',owner:'afnan',amount:500000},m6(2),'JV-27-0002');
+  const toAm=built(mb,'transfer',{date:'2026-09-05',from:'1011',to:'1012',amount:20000},m6(3),'TR-27-0001');
+  const toDr=built(mb,'transfer',{date:'2026-09-06',from:'1011',to:'1010',amount:15000},m6(4),'TR-27-0002');
+  const toBk=built(mb,'transfer',{date:'2026-09-07',from:'1011',to:'1020',amount:10000},m6(5),'TR-27-0003');
+  const amC=built(mb,'transfer',{date:'2026-09-08',from:'1020',to:'1012',amount:40000},m6(6),'TR-27-0004');
+  Object.assign(amC,JSON.parse(mb.run('JSON.stringify(maConfirmPatch('+J(amC)+',"ammar",{at:'+(T0+60)+'}).patch)')));
+  const cnt6=built(mb,'count',{date:'2026-09-10',holder:'1011',counted:250000},m6(7,{bookBalance:255000}),'CT-27-0001');
+  const out6=built(mb,'journal',{kind:'money_out',date:'2026-09-12',holder:'1020',account:'6050',payee:'Painter',amount:5000,tax:NONE},m6(8),'JV-27-0003');
+  out6.flags=[{rule:'evidence.missing',message:'No bill or receipt attached (₨5,000).',field:'attachments'}];
+  out6.reviewedAt=T0+50;out6.reviewedBy='ammar';
+  const small6=built(mb,'journal',{kind:'money_out',date:'2026-09-14',holder:'1020',account:'6050',payee:'Tea',amount:1000,tax:NONE},m6(9),'JV-27-0004');
+  const seed6={ma_journal:{[cap6.no]:cap6,[capB6.no]:capB6,[out6.no]:out6,[small6.no]:small6},ma_transfer:{[toAm.no]:toAm,[toDr.no]:toDr,[toBk.no]:toBk,[amC.no]:amC},ma_counts:{[cnt6.no]:cnt6}};
+  const lastEdit=(S,col)=>{const t=S.tx[S.tx.length-1]||[];const x=t.find(y=>y.col===col);return x?x.data:null;};
+  const saveTwice=async(a,S)=>{const n=S.tx.length;await a.run('window.maSaveForm()');if(S.tx.length===n)await a.run('window.maSaveForm()');return S.tx.length>n;};
+
+  s.section('M1.6a — the page: seeded the way the map says');
+  s.eq('into Ammar\'s hands: waits for Ammar, in the app',J([toAm.status,toAm.confirmBy,toAm.confirmPaper]),J(['pending','ammar',false]));
+  s.eq('into the drawer: waits for Raees, on paper',J([toDr.status,toDr.confirmBy,toDr.confirmPaper]),J(['pending','raees',true]));
+  s.eq('into the bank: nobody confirms, it posts',J([toBk.status,toBk.confirmBy]),J(['posted',null]));
+  s.eq('the seeded confirmation: Ammar, in the app',J([amC.status,amC.confirmedBy,amC.confirmVia]),J(['posted','ammar','app']));
+
+  s.section('M1.6a — confirming a handover that touches the drawer asks first (money F9)');
+  {
+    const {app:a,S}=mkApp({seed:seed6});
+    await a.run('maLoad()');
+    const asked=[];a.ctx.confirm=q=>{asked.push(q);return false;};
+    await a.run("window.maConfirmDoc('TR-27-0002')");
+    s.eq('Confirm on a drawer handover asks a question',asked.length,1);
+    s.ok('…that it be confirmed only once Raees has recorded it in Store Accounts',/only once Raees has recorded this ₨15,000 in Store Accounts/.test(asked[0]||'')&&/Has Raees recorded it\?/.test(asked[0]||''),(asked[0]||'').replace(/\s+/g,' '));
+    s.eq('answered no: nothing is written',S.tx.length,0);
+    s.eq('…and it still waits',a.run("_maDoc('transfer','TR-27-0002').status"),'pending');
+    a.ctx.confirm=q=>{asked.push(q);return true;};
+    await a.run("window.maConfirmDoc('TR-27-0002')");
+    const cf=(S.tx[0]||[]).find(x=>x.op==='update');
+    s.eq('answered yes: posted, on paper, for Raees, by Afnan',J(cf&&[cf.data.status,cf.data.confirmVia,cf.data.confirmedFor,cf.data.confirmedBy]),J(['posted','paper','raees','afnan']));
+    // The rail says it before anyone presses Confirm: shown on the waiting
+    // copy (put back to pending on the page for this look only).
+    const rail=a.run("maData.transfer.find(d=>d.id==='TR-27-0002').status='pending';_maInvalidate();_maRail={kind:'doc',dt:'transfer',id:'TR-27-0002'};_maPageHTML('ma-ledger')");
+    s.ok('the rail of a drawer handover that waits says the same',/Confirm it only once Raees has recorded it in Store Accounts\./.test(rail));
+    s.ok('…and a handover into Ammar\'s hands does not',!/only once Raees/.test(a.run("_maRail={kind:'doc',dt:'transfer',id:'TR-27-0001'};_maPageHTML('ma-ledger')")));
+    a.run("maData.transfer.find(d=>d.id==='TR-27-0002').status='posted';_maInvalidate();_maRail=null");
+    a.run('session='+J(AMMAR));
+    const n=asked.length;
+    await a.run("window.maConfirmDoc('TR-27-0001')");
+    s.eq('a handover into Ammar\'s own hands asks nothing — he confirms what he holds',asked.length,n);
+    s.eq('…and is confirmed, by Ammar, in the app',J((((S.tx[1]||[]).find(x=>x.op==='update'))||{data:{}}).data.confirmVia),J('app'));
+  }
+
+  s.section('M1.6a — a confirmation is of the revision on the screen (money F11)');
+  {
+    const {app:a,S,db}=mkApp({seed:seed6,session:AMMAR});
+    await a.run('maLoad()');
+    Object.assign(db.ma_transfer['TR-27-0001'],{rev:2,amount:60000});        // Afnan edited it after Ammar's screen loaded
+    await a.run("window.maConfirmDoc('TR-27-0001')");
+    s.ok('a transfer edited since the screen loaded is not confirmed',!S.tx.some(t=>t.some(x=>x.op==='update')));
+    s.ok('…and it says so',a.state.toasts.some(t=>/It changed since it was opened — refresh and check it before confirming\./.test(t)),J(a.state.toasts));
+    s.eq('…and the stored copy still waits',db.ma_transfer['TR-27-0001'].status,'pending');
+  }
+
+  s.section('M1.6a — editing a transfer that waits or was confirmed (money F6)');
+  {
+    const {app:a,S}=mkApp({seed:seed6});
+    await a.run('maLoad()');
+    a.run("window.maEditDoc('transfer','TR-27-0001')");
+    const h=a.bodyHtml('ma-modal-back');
+    const dis=(html,id)=>new RegExp('id="'+id+'"[^>]*\\sdisabled').test(html);
+    const LOCK=['ma-f-date','ma-f-amount','ma-f-from','ma-f-to'];
+    s.ok('its date, amount, from and to are not offered',LOCK.every(id=>dis(h,id)),J(LOCK.map(id=>dis(h,id))));
+    s.ok('…it says why, and what to do instead',/It waits for Ammar to confirm — its from, to, amount and date cannot change: void it and record it again\./.test(h));
+    s.ok('…and its note is offered',!dis(h,'ma-f-note'));
+    set(a,'ma-f-date','2026-09-09');set(a,'ma-f-from','1020');set(a,'ma-f-amount','99999');set(a,'ma-f-note','in an envelope');set(a,'ma-f-reason','note');
+    const wrote=await saveTwice(a,S);
+    const e=lastEdit(S,'ma_transfer');
+    s.ok('the note edit is written',wrote,a.el('ma-f-issues').innerHTML);
+    s.eq('…the note, and not what the locked fields were made to hold',J(e&&[e.date,e.from,e.to,e.amount,e.note]),J(['2026-09-05','1011','1012',20000,'in an envelope']));
+    s.eq('…still waiting, for Ammar, in the app',J(e&&[e.status,e.confirmBy,e.confirmPaper]),J(['pending','ammar',false]));
+    s.eq('…its row names only the note',J(e&&e.edits.slice(-1)[0].fields),J(['note']));
+
+    a.run("window.maEditDoc('transfer','TR-27-0004')");
+    const hc=a.bodyHtml('ma-modal-back');
+    s.ok('a transfer Ammar confirmed is locked the same way, and says who confirmed it',LOCK.every(id=>dis(hc,id))&&/Ammar confirmed it as it stands — its from, to, amount and date cannot change: void it and record it again\./.test(hc));
+    set(a,'ma-f-date','2026-09-08');set(a,'ma-f-from','1020');set(a,'ma-f-amount','40000');set(a,'ma-f-note','Ammar signed');set(a,'ma-f-reason','note');
+    await saveTwice(a,S);
+    const c=lastEdit(S,'ma_transfer');
+    s.eq('a note on it: still posted, still Ammar\'s confirmation at the same moment',J(c&&[c.status,c.confirmBy,c.confirmedBy,c.confirmVia,c.confirmedAt]),J(['posted','ammar','ammar','app',T0+60]));
+    s.eq('…its row names only the note',J(c&&c.edits.slice(-1)[0].fields),J(['note']));
+    s.eq('…and it still counts in Ammar\'s cash',a.run("maBalanceOf(_maCtx().lines,_maCtx().idx,'1012')"),40000);
+
+    a.run("window.maEditDoc('transfer','TR-27-0003')");
+    const hb=a.bodyHtml('ma-modal-back');
+    s.ok('a transfer nobody confirms offers its date, amount and from',['ma-f-date','ma-f-amount','ma-f-from'].every(id=>!dis(hb,id))&&dis(hb,'ma-f-to'));
+    set(a,'ma-f-date','2026-09-07');set(a,'ma-f-from','1010');set(a,'ma-f-amount','10000');set(a,'ma-f-note','');set(a,'ma-f-reason','it came from the drawer');
+    const n=S.tx.length;
+    await a.run('window.maSaveForm()');await a.run('window.maSaveForm()');
+    s.eq('…but not a route out of the drawer, which would wait for Raees: nothing is written',S.tx.length,n);
+    s.ok('…and it says an edit cannot start a confirmation',/an edit cannot start a confirmation — void it and record it again/.test(a.el('ma-e-from').textContent+' '+a.el('ma-f-issues').innerHTML),a.el('ma-e-from').textContent);
+    set(a,'ma-f-from','1011');set(a,'ma-f-amount','12000');set(a,'ma-f-reason','the slip said 12,000');
+    await saveTwice(a,S);
+    const b=lastEdit(S,'ma_transfer');
+    s.eq('…while a new amount on it is written, named, and it stays posted',J(b&&[b.amount,b.status,b.edits.slice(-1)[0].fields]),J([12000,'posted',['amount']]));
+  }
+
+  s.section('M1.6a — editing a count keeps its holder and its book (money F2, M4)');
+  {
+    const {app:a,S}=mkApp({seed:seed6});
+    await a.run('maLoad()');
+    a.run("window.maEditDoc('count','CT-27-0001')");
+    const h=a.bodyHtml('ma-modal-back');
+    s.ok('the holder is not offered, and it says why',/id="ma-f-holder"[^>]*\sdisabled/.test(h)&&/Which holder was counted cannot change — void it and count again\./.test(h));
+    set(a,'ma-f-date','2026-09-10');set(a,'ma-f-holder','1012');set(a,'ma-f-counted','250000');set(a,'ma-f-note','recounted: the same');set(a,'ma-f-reason','note');
+    a.run('window.maCountBook()');
+    s.ok('the book shown is the one it was counted against',a.el('ma-f-book').innerHTML.indexOf('The book says '+a.run('maRs(255000)'))===0,a.el('ma-f-book').innerHTML);
+    await saveTwice(a,S);
+    const e=lastEdit(S,'ma_counts');
+    s.eq('a note edit keeps holder, book, difference and amount',J(e&&[e.holder,e.bookBalance,e.difference,e.amount]),J(['1011',255000,-5000,5000]));
+    s.eq('…and its row names only the note',J(e&&e.edits.slice(-1)[0].fields),J(['note']));
+    const book=a.run("maBalanceOf(maPostAll(_maCtx().docs.filter(d=>d.id!=='CT-27-0001'),_maCtx().idx,_maCtx().s),_maCtx().idx,'1011','2026-09-10')");
+    s.ok('(the book as it stands is not the stored one)',book!==255000,String(book));
+    a.run("window.maEditDoc('count','CT-27-0001')");
+    set(a,'ma-f-date','2026-09-10');set(a,'ma-f-counted','251000');set(a,'ma-f-note','recounted: the same');set(a,'ma-f-reason','counted again');
+    await saveTwice(a,S);
+    const r=lastEdit(S,'ma_counts');
+    s.eq('a recount is held against the book as it stands, and names counted and amount',J(r&&[r.bookBalance,r.difference,r.amount,r.edits.slice(-1)[0].fields]),J([book,251000-book,Math.abs(251000-book),['counted','amount']]));
+  }
+
+  s.section('M1.6a — an edit stores its flags; a moved figure clears the review (money F8)');
+  {
+    const {app:a,S}=mkApp({seed:seed6});
+    await a.run('maLoad()');
+    const cc=a.run("_maDoc('journal','JV-27-0003').costCentre||''");
+    const fill=(amount,note,reason)=>{
+      set(a,'ma-f-date','2026-09-12');set(a,'ma-f-holder','1020');set(a,'ma-f-account','6050');set(a,'ma-f-payee','Painter');set(a,'ma-f-amount',amount);set(a,'ma-f-taxkind','none');
+      set(a,'ma-f-costCentre',cc);set(a,'ma-f-labelKind','');set(a,'ma-f-po','');set(a,'ma-f-article','');set(a,'ma-f-commitmentId','');set(a,'ma-f-commitmentPeriod','');set(a,'ma-f-tags','');set(a,'ma-f-note',note);set(a,'ma-f-reason',reason);
+    };
+    a.run("window.maEditDoc('journal','JV-27-0003')");fill('5000','second coat','note');
+    await saveTwice(a,S);
+    const n=lastEdit(S,'ma_journal');
+    s.eq('a note on a reviewed document: named "note", the review kept',J(n&&[n.edits.slice(-1)[0].fields,n.reviewedAt,n.reviewedBy]),J([['note'],T0+50,'ammar']));
+    s.eq('…and its flags are the ones this edit raised',J(n&&(n.flags||[]).map(x=>x.rule)),J(['evidence.missing']));
+    a.run("window.maEditDoc('journal','JV-27-0003')");fill('6000','second coat','the bill said 6,000');
+    await saveTwice(a,S);
+    const m=lastEdit(S,'ma_journal');
+    s.eq('a new amount clears the review',J(m&&[m.reviewedAt,m.reviewedBy]),J([null,null]));
+    s.ok('…stores the flag for the new amount',!!m&&(m.flags||[]).some(x=>x.rule==='evidence.missing'&&/₨6,000/.test(x.message)),J(m&&m.flags));
+    s.ok('…so it waits in the review queue again',a.run("maReviewQueue(_maCtx().docs).some(d=>d.id==='JV-27-0003')"));
+    s.ok('…and the save says so',a.state.toasts.some(t=>/^JV-27-0003 saved — revision 3\. It waits for review\.$/.test(t)),J(a.state.toasts));
+    a.run("window.maEditDoc('journal','JV-27-0003')");fill('1500','second coat','it was 1,500 after all');
+    await saveTwice(a,S);
+    const l=lastEdit(S,'ma_journal');
+    s.eq('an edit that raises no flag stores none',J(l&&l.flags),J([]));
+    s.ok('…and it leaves the review queue',!a.run("maReviewQueue(_maCtx().docs).some(d=>d.id==='JV-27-0003')"));
+    // "Record small, edit up" — the reproduction: ₨1,000 with no flags,
+    // edited to ₨95,000 with no bill. The flag shown on the edit is stored.
+    s.ok('(a small money-out, recorded clean)',!('flags' in a.run("_maDoc('journal','JV-27-0004')")));
+    a.run("window.maEditDoc('journal','JV-27-0004')");
+    const cc4=a.run("_maDoc('journal','JV-27-0004').costCentre||''");
+    set(a,'ma-f-date','2026-09-14');set(a,'ma-f-holder','1020');set(a,'ma-f-account','6050');set(a,'ma-f-payee','Tea');set(a,'ma-f-amount','95000');set(a,'ma-f-taxkind','none');
+    set(a,'ma-f-costCentre',cc4);set(a,'ma-f-labelKind','');set(a,'ma-f-po','');set(a,'ma-f-article','');set(a,'ma-f-commitmentId','');set(a,'ma-f-commitmentPeriod','');set(a,'ma-f-tags','');set(a,'ma-f-note','');set(a,'ma-f-reason','it was the paint');
+    await saveTwice(a,S);
+    const up=lastEdit(S,'ma_journal');
+    s.ok('edited up to ₨95,000 with no bill: the flag it raised is stored on it',!!up&&up.amount===95000&&(up.flags||[]).some(x=>x.rule==='evidence.missing'),J(up&&[up.amount,up.flags]));
+    s.ok('…and it waits in the review queue',a.run("maReviewQueue(_maCtx().docs).some(d=>d.id==='JV-27-0004')"));
+  }
+
+  s.section('M1.6a — a closed quarter: no Confirm, no Mark reviewed, and said by name (money F7, security F3b)');
+  {
+    const seedL=clone(seed6);
+    delete seedL.ma_journal['JV-27-0003'].reviewedAt;delete seedL.ma_journal['JV-27-0003'].reviewedBy;
+    seedL.ma_closes={'2027-Q1':{quarter:'2027-Q1',locked:true,closedBy:'afnan',closedAt:T0+100}};
+    const {app:a,S}=mkApp({seed:seedL,session:AMMAR});
+    await a.run('maLoad()');
+    const Q='Q1 FY27 · Jul–Sep 2026';
+    s.eq('(the quarter as the page names it)',a.run("maQuarterLocked(_maDoc('transfer','TR-27-0001'),{closes:maData.closes,settings:_maCtx().s})"),Q);
+    const money=a.run("_maPageHTML('ma-money')");
+    s.ok('the waiting list offers Ammar no Confirm in the closed quarter, and says why',!/maConfirmDoc\('TR-27-0001'\)/.test(money)&&/quarter closed/.test(money));
+    await a.run("window.maConfirmDoc('TR-27-0001')");
+    s.eq('Confirm refused: nothing is written',S.tx.length,0);
+    s.ok('…naming the quarter, not the rules',a.state.toasts.some(t=>t===Q+' is closed — a transfer dated in it cannot be confirmed until an owner reopens the quarter.'),J(a.state.toasts));
+    const rt=a.run("_maRail={kind:'doc',dt:'transfer',id:'TR-27-0001'};_maPageHTML('ma-ledger')");
+    s.ok('the rail offers no Confirm, and says the quarter is closed',!/maConfirmDoc\(/.test(rt)&&rt.indexOf(Q+' is closed, so it cannot be confirmed until the quarter is reopened.')>=0);
+    const rv=a.run("_maRail=null;_maLedgerTab='review';_maPageHTML('ma-ledger')");
+    s.ok('the review queue lists the flagged document, with no Mark reviewed in the closed quarter',rv.indexOf('JV-27-0003')>=0&&/quarter closed/.test(rv)&&!/maReviewDoc\('journal','JV-27-0003'\)/.test(rv));
+    await a.run("window.maReviewDoc('journal','JV-27-0003')");
+    s.eq('Mark reviewed refused: nothing is written',S.tx.length,0);
+    s.ok('…naming the quarter',a.state.toasts.some(t=>t===Q+' is closed — a document dated in it cannot be reviewed until an owner reopens the quarter.'),J(a.state.toasts));
+    const rj=a.run("_maRail={kind:'doc',dt:'journal',id:'JV-27-0003'};_maPageHTML('ma-ledger')");
+    s.ok('its rail offers no Mark reviewed',!/maReviewDoc\(/.test(rj));
+    a.run("maData.closes[0].reopenedAt="+(T0+200)+";maData.closes[0].reopenedBy='afnan';_maInvalidate();_maRail=null");
+    s.ok('a reopened quarter offers Confirm again',/maConfirmDoc\('TR-27-0001'\)/.test(a.run("_maPageHTML('ma-money')")));
+  }
+
+  s.section('M1.6a — the audit trail names who by the signed-in account (security F3)');
+  {
+    const UD=[{u:'afnan',name:'Afnan'},{u:'ammar',name:'Ammar'}];
+    const {app:a}=mkApp({seed:{ma_audit:{r1:{id:'r1',by:'afnan',byName:'Mallory',action:'void',at:T0+5,target:{dt:'journal',id:'JV-27-0001',no:'JV-27-0001'},detail:'wrong'}}},globals:{USER_DEFS:UD}});
+    await a.run('maLoad()');
+    const h=a.run("_maCloseTab='audit';_maPageHTML('ma-close')");
+    s.ok('the trail shows the name of `by`, never the stored byName',/data-l="Who">Afnan<\/td>/.test(h)&&h.indexOf('Mallory')<0,h.slice(h.indexOf('<tbody>'),h.indexOf('<tbody>')+160));
+    const got=[];a.ctx.XLSX={utils:{book_new:()=>({}),aoa_to_sheet:r=>{got.push(r);return {};},book_append_sheet(){}},writeFile(){}};
+    a.run("window.maExcel('audit')");
+    s.eq('…and so does its Excel',J(got[0]&&got[0][1]&&got[0][1][1]),J('Afnan'));
+  }
+
+  s.section('M1.6a — the rules hold the lists the core holds (one decision, two places)');
+  {
+    const rules=read('firestore.rules');
+    const {app:a}=mkApp();
+    const core=n=>JSON.parse(a.run('JSON.stringify('+n+')'));
+    const list=src=>(src.match(/'([^']*)'/g)||[]).map(x=>x.slice(1,-1));
+    const fn=name=>{const m=new RegExp('function '+name+'\\(\\)\\s*\\{\\s*return\\s*([\\s\\S]*?);\\s*\\}').exec(rules);return m?m[1]:'';};
+    const handsSrc=fn('maHands');
+    const hands={};(handsSrc.match(/'[^']+'\s*:\s*'[^']+'/g)||[]).forEach(p=>{const kv=list(p);hands[kv[0]]=kv[1];});
+    s.eq('maHands() is MA_HANDS',J(hands),J(core('MA_HANDS')));
+    s.eq('maDrawers() is MA_DRAWERS',J(list(fn('maDrawers'))),J(core('MA_DRAWERS')));
+    const letList=name=>{const m=new RegExp('let '+name+' = \\[([^\\]]*)\\]').exec(rules);return m?list(m[1]):null;};
+    const sorted=x=>J((x||[]).slice().sort());
+    s.eq('maEditOk\'s derived list is MA_EDIT_DERIVED',sorted(letList('derived')),sorted(core('MA_EDIT_DERIVED')));
+    s.eq('…and its figures list is MA_FIGURE_FIELDS',sorted(letList('figures')),sorted(core('MA_FIGURE_FIELDS')));
+    s.ok('…and neither lets amount or tax go unnamed',['amount','tax'].every(k=>(letList('derived')||['amount']).indexOf(k)<0));
+    [['ma_journal','journal'],['ma_transfer','transfer'],['ma_counts','count']].forEach(([col,dt])=>{
+      const m=new RegExp('match /'+col+'/\\{docId\\}[\\s\\S]*?maEditOk\\(\''+dt+'\', \\[([^\\]]*)\\]').exec(rules);
+      s.eq(col+'\'s editable list is MA_EDIT_FIELDS.'+dt,sorted(m&&list(m[1])),sorted(core('MA_EDIT_FIELDS.'+dt)));
+    });
+    const cm=/maDocCreateOk[\s\S]*?!d\.keys\(\)\.hasAny\(\[([^\]]*)\]\)/.exec(rules);
+    const pend=a.run('JSON.stringify(maBuildDoc("transfer",{date:"2026-09-05",from:"1011",to:"1012",amount:5},{by:"afnan",byName:"Afnan",ts:1},maChartIndex(maChart("groovy")),MA_DEFAULT_SETTINGS))');
+    const paper=a.run('JSON.stringify(maBuildDoc("transfer",{date:"2026-09-05",from:"1011",to:"1040",amount:5},{by:"afnan",byName:"Afnan",ts:1},maChartIndex(maChart("groovy")),MA_DEFAULT_SETTINGS))');
+    const keysOf=x=>JSON.parse(a.run('JSON.stringify(Object.keys('+x+'))'));
+    const confirmKeys=keysOf('maConfirmPatch('+pend+',"ammar",{at:1}).patch').concat(keysOf('maConfirmPatch('+paper+',"afnan",{at:1}).patch')).filter((k,i,x)=>k!=='status'&&x.indexOf(k)===i);
+    const voidKeys=JSON.parse(a.run('JSON.stringify((d=>Object.keys(maApplyVoid(d,{at:1,by:"afnan",byName:"Afnan",reason:"x"})).filter(k=>!(k in d)))('+pend+'))'));
+    const forbidden=confirmKeys.concat(voidKeys,['reviewedAt','reviewedBy']);
+    s.eq('a create may carry none of what confirm, void and review set',sorted(cm&&list(cm[1])),sorted(forbidden));
+    s.ok('…and MA_CONFIRM_KEYS is those four plus the two the map decides',J(core('MA_CONFIRM_KEYS').slice().sort())===J(confirmKeys.concat(['confirmBy','confirmPaper']).sort()));
+    s.ok('a transfer is born with the map\'s answer; anything else with no confirmation at all',/\(dt == 'transfer' \? maTrBornOk\(d\) : !d\.keys\(\)\.hasAny\(\['confirmBy','confirmPaper'\]\)\)/.test(rules));
+    s.ok('ma_shares: no client create, update or delete — the ma-share function writes them',/match \/ma_shares\/\{token\} \{\s*allow read: if isMasterAccounts\(\);\s*allow create, update, delete: if false;/.test(rules));
+    s.ok('…and the page never writes one, nor a close',!/ma_shares:\s*id=>|doc\(db,\s*'ma_shares'|ma_closes:\s*id=>|doc\(db,\s*'ma_closes'/.test(read('js/master-accounts.js')));
+    s.ok('ma_audit: a row is written now — within five minutes of the server\'s clock',/match \/ma_audit\/\{id\}[\s\S]*?math\.abs\(request\.resource\.data\.at - request\.time\.toMillis\(\)\) <= 300000;/.test(rules));
+    s.ok('ma_closes: a close is born locked',/match \/ma_closes\/\{q\}[\s\S]*?allow create:[\s\S]*?request\.resource\.data\.locked == true[\s\S]*?allow update: if maReopenOk\(\) \|\| maRelockOk\(q\);/.test(rules));
+    s.ok('a date is a real month and day in the rules',/function maDayOk\(d\) \{ return d is string && d\.matches\('\^\[0-9\]\{4\}-\(0\[1-9\]\|1\[0-2\]\)-\(0\[1-9\]\|\[12\]\[0-9\]\|3\[01\]\)\$'\); \}/.test(rules));
+    s.ok('review refuses a locked quarter',/function maReviewOk\(\)[\s\S]*?&& !maLocked\(resource\.data\.quarter\);/.test(rules));
   }
 
   s.section('the re-lock');

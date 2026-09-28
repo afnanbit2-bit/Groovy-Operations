@@ -1011,12 +1011,19 @@ service cloud.firestore {
     //     (a pending transfer, by the named person or on paper by an
     //     owner), REVIEW (the two review fields).
     //   - The period lock is read HERE, not only in the form: a create,
-    //     edit, void or confirm dated in a quarter whose ma_closes doc is
-    //     locked and not reopened is refused. The quarter on the document
-    //     must be the one its date falls in (fiscal year from 1 JULY —
-    //     hardcoded; a change to MA_DEFAULT_SETTINGS.fiscalYearStart needs
-    //     maQuarterOfDay changed with it).
-    //   - ma_audit is append-only; ma_backups is server-only (Admin SDK).
+    //     edit, void, confirm or review dated in a quarter whose ma_closes
+    //     doc is locked and not reopened is refused. The quarter, month and
+    //     fiscal year on the document must be the ones its date falls in
+    //     (fiscal year from 1 JULY — hardcoded; a change to
+    //     MA_DEFAULT_SETTINGS.fiscalYearStart needs maQuarterOfDay and
+    //     maFyOfDay changed with it).
+    //   - M1.6a: a transfer's confirmation is DERIVED from whose hands its
+    //     holders are in (maTrWho — MA_HANDS in js/ma-core.js), never the
+    //     form's choice; an edit never moves a status or a confirmation; an
+    //     edit that moves money names it (amount and tax are not derived).
+    //   - ma_audit is append-only and written NOW (its `at` within five
+    //     minutes of the server's clock); ma_backups and ma_shares are
+    //     server-only (Admin SDK).
     // Run in the emulator: tests/rules-emulator-ma.js. Mirror of
     // MA_OWNERS in js/ma-core.js.
     // ═══════════════════════════════════════════════════════════════════
@@ -1024,7 +1031,11 @@ service cloud.firestore {
       return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op'];
     }
     function maUser() { return request.auth.token.email.split('@')[0]; }
-    function maDayOk(d) { return d is string && d.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    // A real month (01–12) and day (01–31) — security F4: '2026-00-01'
+    // passed the old pattern and sorted outside every month and quarter.
+    // Whether 30 February exists is the client's maIsDay: a pattern cannot
+    // count the days in a month.
+    function maDayOk(d) { return d is string && d.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
     // FY from July: Jul–Sep Q1, Oct–Dec Q2, Jan–Mar Q3, Apr–Jun Q4, the
     // year named by the calendar year it ENDS in (maQuarterOf).
     function maQuarterOfDay(d) {
@@ -1034,7 +1045,60 @@ service cloud.firestore {
       let q = m >= 10 ? 2 : (m >= 7 ? 1 : (m >= 4 ? 4 : 3));
       return string(m >= 7 ? y + 1 : y) + '-Q' + string(q);
     }
-    function maPeriodOk(d) { return maDayOk(d.date) && d.quarter == maQuarterOfDay(d.date); }
+    // The month and the fiscal year a day is in (maPeriodLabels): the pages
+    // sum by `month`, so it is its date's own like `quarter` (security F1).
+    function maMonthOfDay(d) { let p = d.split('-'); return p[0] + '-' + p[1]; }
+    function maFyOfDay(d) {
+      let p = d.split('-');
+      let y = int(p[0]);
+      return 'FY' + string(int(p[1]) >= 7 ? y + 1 : y).replace('^20', '');
+    }
+    function maPeriodOk(d) {
+      return maDayOk(d.date)
+        && d.quarter == maQuarterOfDay(d.date)
+        && d.month == maMonthOfDay(d.date)
+        && d.fy == maFyOfDay(d.date);
+    }
+    // Whose hands a holder is in — MA_HANDS in js/ma-core.js, read off
+    // MA_CHART; tests/master-accounts.test.js holds the two equal. The
+    // drawer (1010, MA_DRAWERS) is Raees's hands in BOTH directions: its
+    // balance is his Store Accounts book until M8, so money into or out of
+    // it waits until he has recorded it there (money F9).
+    function maHands() { return {'1010': 'raees', '1011': 'afnan', '1012': 'ammar', '1040': 'umair'}; }
+    function maDrawers() { return ['1010']; }
+    // Who must confirm a transfer (maTransferConfirm): the person whose
+    // hands it reaches; out of the drawer to a holder nobody holds, Raees.
+    // Nobody when the recorder IS that person — except where the drawer is
+    // on either side: there even the receiver's own entry waits.
+    function maTrWho(from, to, by) {
+      let h = maHands();
+      let w = to in h ? h[to] : ((from in maDrawers() && from in h) ? h[from] : null);
+      return (w == null || (w == by && !(from in maDrawers()) && !(to in maDrawers()))) ? null : w;
+    }
+    // A transfer is born with the map's answer — never the form's (security
+    // F2): pending exactly when someone must confirm, that someone named,
+    // and "on paper" exactly when they cannot sign in to the books.
+    function maTrBornOk(d) {
+      let w = maTrWho(d.get('from', ''), d.get('to', ''), d.by);
+      return d.get('confirmBy', null) == w
+        && d.status == (w == null ? 'posted' : 'pending')
+        && d.get('confirmPaper', false) == (w != null && !(w in ['afnan','ammar']));
+    }
+    // A transfer that waits for — or was confirmed by — someone keeps its
+    // route, amount and day: void it and record it again (money F6). One
+    // nobody had to confirm may be re-routed only to where nobody has to:
+    // an edit cannot start a confirmation. A transfer recorded before
+    // M1.6a (when the drawer posted at once) is judged by the map too.
+    function maTrEditOk(o, n, k) {
+      return (o.get('confirmBy', null) != null || maTrWho(o.get('from', ''), o.get('to', ''), o.by) != null)
+        ? !k.hasAny(['from','to','amount','date'])
+        : maTrWho(n.get('from', ''), n.get('to', ''), n.by) == null;
+    }
+    // A count is what was counted less the book it was held against, and
+    // its amount is the size of that difference (money F2).
+    function maCountOk(d) {
+      return d.difference == d.counted - d.bookBalance && d.amount == math.abs(d.difference);
+    }
     // A missing close doc is "not locked" — guarded by exists() so get()
     // is never called on a document that is not there.
     function maLocked(q) {
@@ -1044,6 +1108,17 @@ service cloud.firestore {
     }
     function maText(s) { return s is string && s.trim().size() > 0; }
 
+    // CREATE: by the recorder, at rev 1, with no history, in its own period
+    // — and with NO confirmation, review or void (security F2: those keys
+    // are set only by maConfirmOk, maReviewOk and maVoidOk). A transfer's
+    // status, confirmBy and confirmPaper are the map's answer (maTrBornOk);
+    // a journal or a count carries no confirmation at all; a count's
+    // difference is what was counted less the book.
+    // KNOWN LIMIT: journal lines cannot be checked here — the rules
+    // language has no loop over a list. A general journal that moves money
+    // between two holders (refused), pays out of a holder with no bill or
+    // payee (flagged), or opens an account a second time (flagged) is held
+    // by maValidate in the client ONLY (js/ma-core.js, money F12).
     function maDocCreateOk(dt, docId, statuses) {
       let d = request.resource.data;
       return isMasterAccounts()
@@ -1053,25 +1128,32 @@ service cloud.firestore {
         && d.rev == 1
         && d.edits is list && d.edits.size() == 0
         && d.no == docId
+        && !d.keys().hasAny(['confirmedBy','confirmedAt','confirmedFor','confirmVia','reviewedAt','reviewedBy','voidedAt','voidedBy','voidedByName','voidReason'])
+        && (dt == 'transfer' ? maTrBornOk(d) : !d.keys().hasAny(['confirmBy','confirmPaper']))
+        && (dt != 'count' || maCountOk(d))
         && maPeriodOk(d)
         && !maLocked(d.quarter);
     }
-    // EDIT: identity unchanged, rev + 1, edits[] = old edits + ONE row by
-    // the caller. Every changed field is one the type allows
-    // (MA_EDIT_FIELDS) or one the builder derives again (period labels,
-    // historical, amount/tax/difference); every changed field outside
-    // the derived set is NAMED in the row, and the row names nothing that
-    // did not change (§29: "an edit naming a field it did not change").
-    // A transfer may drop from posted back to pending (the builder asks
-    // for the receiver's confirmation again); no other status moves.
+    // EDIT: identity AND STATUS unchanged — an edit never starts, ends or
+    // moves a confirmation, a review or a void (money F6) — rev + 1, and
+    // edits[] = old edits + ONE row by the caller. Every changed field is
+    // one the type allows (MA_EDIT_FIELDS) or one the builder derives again
+    // (MA_EDIT_DERIVED — both held equal to js/ma-core.js by a test); every
+    // changed field outside the derived set is NAMED in the row, and the
+    // row names nothing that did not change (§29). amount and tax are NOT
+    // derived: they are what posts, so an edit that moves money names them
+    // (security F1). `flags` are the edit's own live flags; the review may
+    // only be CLEARED here, and must be when a figure moved (money F8) —
+    // maReviewOk alone sets it.
     function maEditOk(dt, editable) {
       let o = resource.data;
       let n = request.resource.data;
-      let derived = ['rev','edits','month','quarter','fy','historical','amount','tax','difference','bookBalance'];
+      let derived = ['rev','edits','month','quarter','fy','historical','difference','bookBalance','flags','reviewedAt','reviewedBy'];
+      let figures = ['date','amount','tax','party','account','holder','from','to','owner','lines','counted'];
       let k = n.diff(o).affectedKeys();
       return isMasterAccounts()
         && o.status != 'void'
-        && (n.status == o.status || (dt == 'transfer' && o.status == 'posted' && n.status == 'pending'))
+        && n.status == o.status
         && n.dt == o.dt && n.no == o.no && n.by == o.by && n.ts == o.ts
         && n.get('kind', null) == o.get('kind', null)
         && n.get('party', null) == o.get('party', null)
@@ -1082,9 +1164,13 @@ service cloud.firestore {
         && n.edits[o.edits.size()].by == maUser()
         && n.edits[o.edits.size()].fields is list
         && n.edits[o.edits.size()].fields.size() > 0
-        && k.hasOnly(editable.concat(derived).concat(['status']))
-        && k.difference(derived.concat(['status']).toSet()).hasOnly(n.edits[o.edits.size()].fields)
+        && k.hasOnly(editable.concat(derived))
+        && k.difference(derived.toSet()).hasOnly(n.edits[o.edits.size()].fields)
         && k.hasAll(n.edits[o.edits.size()].fields)
+        && (!k.hasAny(['reviewedAt','reviewedBy']) || (n.get('reviewedAt', null) == null && n.get('reviewedBy', null) == null))
+        && (!k.hasAny(figures) || n.get('reviewedAt', null) == null)
+        && (dt != 'transfer' || maTrEditOk(o, n, k))
+        && (dt != 'count' || (maCountOk(n) && (!k.hasAny(['bookBalance']) || k.hasAny(['date','counted']))))
         && maPeriodOk(n)
         && !maLocked(o.quarter) && !maLocked(n.quarter);
     }
@@ -1110,11 +1196,52 @@ service cloud.firestore {
               && n.get('confirmedFor', null) == o.get('confirmBy', null)) )
         && !maLocked(o.quarter);
     }
+    // REVIEW: the only way the review fields are SET — in the reviewer's
+    // own name, and never inside a locked quarter (security F3b: review and
+    // un-review both change a closed quarter's record).
     function maReviewOk() {
       let n = request.resource.data;
       return isMasterAccounts()
         && n.diff(resource.data).affectedKeys().hasOnly(['reviewedAt','reviewedBy'])
-        && n.reviewedBy == maUser();
+        && n.reviewedBy == maUser()
+        && !maLocked(resource.data.quarter);
+    }
+    // A close is reopened by an owner with a reason — from locked only.
+    function maReopenOk() {
+      let o = resource.data;
+      let n = request.resource.data;
+      return isMasterAccounts()
+        && o.get('reopenedAt', null) == null
+        && n.diff(o).affectedKeys().hasOnly(['reopenedAt','reopenedBy','reopenReason'])
+        && n.reopenedAt != null
+        && n.reopenedBy == maUser()
+        && maText(n.reopenReason);
+    }
+    // RE-LOCK (security F3b): a quarter that is not locked now — reopened,
+    // or born unlocked before the create rule refused that — goes back to
+    // locked in the re-locker's name. The reopen it ends is kept in
+    // `reopens`, and the batch must CREATE the audit row that says so
+    // (`relockAudit`: absent before this write, present after, a `relock`
+    // of this quarter by this owner). Built by maCloseRelock (js/ma-core.js).
+    function maRelockOk(q) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let a = /databases/$(database)/documents/ma_audit/$(n.relockAudit);
+      return isMasterAccounts()
+        && !(o.get('locked', false) == true && o.get('reopenedAt', null) == null)
+        && n.diff(o).affectedKeys().hasOnly(['locked','reopenedAt','reopenedBy','reopenReason','closedBy','closedAt','relockAudit','reopens'])
+        && n.quarter == q
+        && n.locked == true
+        && n.get('reopenedAt', null) == null && n.get('reopenedBy', null) == null && n.get('reopenReason', null) == null
+        && n.closedBy == maUser()
+        && n.closedAt is number
+        && n.reopens == o.get('reopens', []).concat(o.get('reopenedAt', null) == null ? [] : [{'at': o.reopenedAt, 'by': o.reopenedBy, 'reason': o.reopenReason}])
+        && n.relockAudit is string
+        && !exists(a) && existsAfter(a)
+        && getAfter(a).data.action == 'relock'
+        && getAfter(a).data.by == maUser()
+        && getAfter(a).data.target.dt == 'close'
+        && getAfter(a).data.target.id == q;
     }
 
     // Masters and settings: owner read/write, never deleted.
@@ -1146,36 +1273,38 @@ service cloud.firestore {
     match /ma_counts/{docId} {
       allow read:   if isMasterAccounts();
       allow create: if maDocCreateOk('count', docId, ['posted']);
-      allow update: if maEditOk('count', ['date','counted','note','attachments'])
+      allow update: if maEditOk('count', ['date','counted','amount','note','attachments'])
                     || maVoidOk() || maReviewOk();
       allow delete: if false;
     }
 
-    // Quarter closes: written once (locked), reopened by an owner with a
-    // reason. Never deleted, never re-locked in place.
+    // Quarter closes: born LOCKED (a close born unlocked could never be
+    // locked — security F3b), reopened by an owner with a reason, re-locked
+    // by an owner in the same batch as the audit row that says so. Never
+    // deleted.
     match /ma_closes/{q} {
       allow read: if isMasterAccounts();
       allow create: if isMasterAccounts()
         && q.matches('^[0-9]{4}-Q[1-4]$')
         && request.resource.data.quarter == q
-        && request.resource.data.locked is bool
+        && request.resource.data.locked == true
         && request.resource.data.closedBy == maUser()
         && request.resource.data.get('reopenedAt', null) == null;
-      allow update: if isMasterAccounts()
-        && resource.data.get('reopenedAt', null) == null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reopenedAt','reopenedBy','reopenReason'])
-        && request.resource.data.reopenedAt != null
-        && request.resource.data.reopenedBy == maUser()
-        && maText(request.resource.data.reopenReason);
+      allow update: if maReopenOk() || maRelockOk(q);
       allow delete: if false;
     }
 
-    // The audit trail is append-only.
+    // The audit trail is append-only, and a row is written NOW: its `at`
+    // within five minutes of the server's clock, so a row cannot be
+    // back-dated (security F3). Who it was is `by` — bound to the signed-in
+    // person — and the trail shows the name derived from it, never the
+    // stored byName.
     match /ma_audit/{id} {
       allow read: if isMasterAccounts();
       allow create: if isMasterAccounts()
         && request.resource.data.by == maUser()
-        && request.resource.data.at is number;
+        && request.resource.data.at is number
+        && math.abs(request.resource.data.at - request.time.toMillis()) <= 300000;
       allow update, delete: if false;
     }
     // One row per nightly backup, written by ma-backup (Admin SDK) only.
@@ -1183,20 +1312,13 @@ service cloud.firestore {
       allow read: if isMasterAccounts();
       allow create, update, delete: if false;
     }
-    // Share links: made by an owner, revoked once, never un-revoked. The
-    // open count is the ma-share function's (Admin SDK).
+    // Share links are made and withdrawn ONLY by the ma-share function
+    // (Admin SDK), in the same write as their audit row; the page only
+    // reads the list. An owner writing one directly could pick its token
+    // and skip the audit (security F3).
     match /ma_shares/{token} {
       allow read: if isMasterAccounts();
-      allow create: if isMasterAccounts()
-        && request.resource.data.createdBy == maUser()
-        && request.resource.data.revoked == false
-        && request.resource.data.opens == 0;
-      allow update: if isMasterAccounts()
-        && resource.data.revoked == false
-        && request.resource.data.revoked == true
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked','revokedAt','revokedBy'])
-        && request.resource.data.revokedBy == maUser();
-      allow delete: if false;
+      allow create, update, delete: if false;
     }
   }
 }

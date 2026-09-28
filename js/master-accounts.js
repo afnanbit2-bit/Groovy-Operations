@@ -208,7 +208,10 @@ function _maOnline(){return !(typeof navigator!=='undefined'&&navigator&&navigat
 function _maAuditId(){return Date.now()+'-'+_maQ(session&&session.u)+'-'+Math.random().toString(36).slice(2,8);}
 function _maWriteError(e){
   const m=String(e&&e.message||e||'');
-  if(/permission|insufficient/i.test(m+' '+(e&&e.code||'')))return 'Refused by the Firestore rules — check the published firestore.rules carries the Master Accounts block.';
+  // Every write carries an audit row, and the rules refuse a row stamped
+  // more than five minutes off the server's clock (M1.6a) — so a phone whose
+  // clock is wrong is refused too, and says so.
+  if(/permission|insufficient/i.test(m+' '+(e&&e.code||'')))return 'Refused by the Firestore rules — check the published firestore.rules carries the Master Accounts block, and that this device’s clock is right (an audit row more than five minutes off the server’s time is refused).';
   return m||'The write failed.';
 }
 /* A new document: counter + document + audit, one transaction. Returns the
@@ -241,11 +244,13 @@ async function _maPostNew(built){
   });
   return stored;
 }
-/* An edit keeps every key the rules do not let it touch exactly as stored. */
+/* An edit keeps every key the rules do not let it touch exactly as stored:
+   what the edit may change is MA_EDIT_FIELDS plus MA_EDIT_DERIVED, the two
+   lists maEditOk mirrors. */
 function _maEditShape(before,edited){
   const out=_maClean(edited);
   Object.keys(before).forEach(k=>{if(!(k in out)&&before[k]!==undefined)out[k]=_maClean(before[k]);});
-  const allowed=new Set((MA_EDIT_FIELDS[before.dt]||[]).concat(['rev','edits','month','quarter','fy','historical','amount','tax','difference','bookBalance','status']));
+  const allowed=new Set((MA_EDIT_FIELDS[before.dt]||[]).concat(MA_EDIT_DERIVED));
   Object.keys(out).forEach(k=>{if(!(k in before)&&!allowed.has(k))delete out[k];});
   return out;
 }
@@ -637,10 +642,12 @@ function _maPendingHTML(c,list){
   if(!list.length)return _maEmpty('Nothing waiting to be confirmed.');
   const cols=[{h:'Date',cls:'ma-date'},{h:'Transfer'},{h:'Amount',cls:'ma-num',l:'Amount'},{h:'Confirms',l:'Confirms'},{h:'',cls:'ma-nw'}];
   const rows=list.map(d=>{
-    const can=!maConfirmPatch(d,session.u,{at:0}).error;
+    // A closed quarter is said as such, not as "theirs" (money F7).
+    const locked=maQuarterLocked(d,{closes:maData.closes,settings:c.s});
+    const can=!locked&&!maConfirmPatch(d,session.u,{at:0}).error;
     return {cells:[maDayLabel(d.date),`<button class="ma-doclink" onclick="event.stopPropagation();window.maOpenDoc('transfer','${_maQ(d.id)}')">${_maE(d.no)}</button> ${_maE(_maDocDesc(d,c))}`,maRs(d.amount),
       _maE(_maWho(d.confirmBy))+(d.confirmPaper?' <span class="ma-muted">on paper</span>':''),
-      can?`<button class="ma-btn sm" onclick="event.stopPropagation();window.maConfirmDoc('${_maQ(d.id)}')">Confirm</button>`:'<span class="ma-muted">theirs</span>']};
+      can?`<button class="ma-btn sm" onclick="event.stopPropagation();window.maConfirmDoc('${_maQ(d.id)}')">Confirm</button>`:`<span class="ma-muted">${locked?'quarter closed':'theirs'}</span>`]};
   });
   return _maTable(cols,rows);
 }
@@ -683,14 +690,23 @@ function _maHolderHTML(){
       open+(rows.length?_maTable(cols,rows,{total}):_maEmpty('Nothing moved in '+_maE(r.label)+'.')))
     +(pend.length?_maSec('Waiting to be confirmed','','',_maPendingHTML(c,pend)):'');
 }
+/* Confirm (§3 #3). Refused in a closed quarter, naming it (money F7). A
+   handover that touches the drawer asks first: it is confirmed only once
+   Raees has recorded it in Store Accounts (money F9). The stored copy is
+   re-read and must be the revision this screen showed (money F11) — an
+   edit since is a different revision, and the audit row names what was
+   confirmed. */
 window.maConfirmDoc=async function(id){
   const d=_maDoc('transfer',id);if(!d||_maBusy)return;
-  const r=maConfirmPatch(d,session.u,{at:Date.now()});
+  const r=maConfirmPatch(d,session.u,{at:Date.now()},{closes:maData.closes,settings:_maCtx().s});
   if(r.error){_maToast(r.error);return;}
+  const warn=maConfirmWarning(d);
+  if(warn&&!confirm(warn+'\n\nHas Raees recorded it?'))return;
   if(_maNeedsNet())return;
   _maBusy=true;
   try{
-    await _maWritePatch(d,r.patch,'confirm',maRs(d.amount)+' '+(r.patch.confirmVia==='paper'?'on paper for '+_maWho(d.confirmBy):'received'),cur=>cur.status!=='pending'?'It is no longer waiting — refresh.':null);
+    await _maWritePatch(d,r.patch,'confirm',maRs(d.amount)+' '+(r.patch.confirmVia==='paper'?'on paper for '+_maWho(d.confirmBy):'received'),
+      cur=>cur.status!=='pending'?'It is no longer waiting — refresh.':(cur.rev||1)!==(d.rev||1)?'It changed since it was opened — refresh and check it before confirming.':null);
     Object.assign(d,r.patch);_maInvalidate();_maToast(d.no+' confirmed — it counts now.');_maPaint();
   }catch(e){_maToast(_maWriteError(e));}finally{_maBusy=false;}
 };
@@ -882,7 +898,8 @@ function _maLedgerBodyHTML(){
     const q=maReviewQueue(c.docs);
     if(!q.length)return _maEmpty('Nothing waits for review.');
     return _maTable([{h:'Date',cls:'ma-date'},{h:'Document'},{h:'Flagged because'},{h:'Amount',cls:'ma-num',l:'Amount'},{h:'',cls:'ma-nw'}],
-      q.map(d=>({cells:[maDayLabel(d.date),`${_maE(d.no)}<span class="ma-l2">${_maE(maDocTitle(d))}</span>`,maLiveFlags(d).map(x=>_maE(x.message)).join('<br>'),maRs(d.amount||0),`<button class="ma-btn sm" onclick="event.stopPropagation();window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`],click:`window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')`})));
+      q.map(d=>({cells:[maDayLabel(d.date),`${_maE(d.no)}<span class="ma-l2">${_maE(maDocTitle(d))}</span>`,maLiveFlags(d).map(x=>_maE(x.message)).join('<br>'),maRs(d.amount||0),
+        maQuarterLocked(d,{closes:maData.closes,settings:c.s})?'<span class="ma-muted">quarter closed</span>':`<button class="ma-btn sm" onclick="event.stopPropagation();window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`],click:`window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')`})));
   }
   const {r,led,single}=_maLedgerFiltered(c);
   const head=`<div class="ma-scope">${led.count} posting${led.count===1?'':'s'} · ${led.sources} source${led.sources===1?'':'s'} · ${_maE(r.label)}${single&&led.opening!==null?' · opening '+maRs(led.opening):''}</div>`;
@@ -953,12 +970,13 @@ function _maDocRailHTML(c,d){
   const flags=live.length||answered.length?`<h4>Flags</h4><ul class="ma-flaglist">${live.map(x=>`<li><span class="ma-dot warn"></span>${_maE(x.message)}</li>`).join('')}${answered.map(x=>`<li class="ma-answered"><span class="ma-dot fine"></span><span>${_maE(x.message)} <span class="ma-muted">— answered: the document has it now</span></span></li>`).join('')}</ul>${d.reviewedAt?`<div class="ma-muted">Reviewed by ${_maE(_maWho(d.reviewedBy))} · ${_maWhen(d.reviewedAt)}</div>`:''}`:'';
   const hist=(d.edits||[]).slice().reverse().map(e=>`<li><b>${_maE(_maWho(e.by))}</b> · ${_maWhen(e.at)}<div>${_maE(e.reason||'')}</div>${(e.fields||[]).map(f=>`<div class="ma-muted">${_maE(f)}: ${_maE(_maFieldVal(c,e.before||{},f)||'—')} → ${_maE(_maFieldVal(c,e.after||{},f)||'—')}</div>`).join('')}</li>`).join('');
   const voided=d.status==='void'?`<div class="ma-note">Void — ${_maE(d.voidReason||'')} · ${_maE(_maWho(d.voidedBy))} · ${_maWhen(d.voidedAt)}</div>`:'';
-  const pending=d.status==='pending'?`<div class="ma-note">Waiting for ${_maE(_maWho(d.confirmBy))} to confirm${d.confirmPaper?' — an owner confirms on paper with the signed receipt':''}. It counts in neither holder until then.</div>`:'';
+  const locked=maQuarterLocked(d,{closes:maData.closes,settings:c.s});
+  const pending=d.status==='pending'?`<div class="ma-note">Waiting for ${_maE(_maWho(d.confirmBy))} to confirm${d.confirmPaper?' — an owner confirms on paper with the signed receipt':''}. It counts in neither holder until then.${maConfirmWarning(d)?' Confirm it only once Raees has recorded it in Store Accounts.':''}${locked?' '+_maE(locked)+' is closed, so it cannot be confirmed until the quarter is reopened.':''}</div>`:'';
   const acts=[];
   if(d.status!=='void'){
     acts.push(`<button class="ma-btn" onclick="window.maEditDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Edit</button>`);
-    if(d.status==='pending'&&!maConfirmPatch(d,session.u,{at:0}).error)acts.push(`<button class="ma-btn primary" onclick="window.maConfirmDoc('${_maQ(d.id)}')">Confirm</button>`);
-    if(live.length&&!d.reviewedAt)acts.push(`<button class="ma-btn" onclick="window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`);
+    if(d.status==='pending'&&!maConfirmPatch(d,session.u,{at:0},{closes:maData.closes,settings:c.s}).error)acts.push(`<button class="ma-btn primary" onclick="window.maConfirmDoc('${_maQ(d.id)}')">Confirm</button>`);
+    if(live.length&&!d.reviewedAt&&!locked)acts.push(`<button class="ma-btn" onclick="window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`);
     acts.push(`<button class="ma-btn danger" onclick="window.maVoidDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Void</button>`);
   }
   return `<div class="ma-kicker">${_maE(MA_DOC_TYPES[d.dt].label)} · ${_maE(d.no)} · rev ${maRevOf(d)}</div>
@@ -1030,8 +1048,10 @@ function _maAuditHTML(){
   if(e)return _maErrorCard([e]);
   const rows=maData.audit.slice().sort((a,b)=>(b.at||0)-(a.at||0));
   if(!rows.length)return _maEmpty('Nothing recorded yet.');
+  // WHO is derived from `by` — the one field the rules bind to the signed-in
+  // person — never the stored byName, which any owner could write as anyone.
   return `<div class="ma-scope">${rows.length} most recent</div>`+_maTable([{h:'When',cls:'ma-nw'},{h:'Who',l:'Who'},{h:'Action',l:'Action'},{h:'Document',l:'Document'},{h:'Detail'}],
-    rows.map(r=>[_maWhen(r.at),_maE(r.byName||_maWho(r.by)),_maE(r.action),_maE(r.target&&(r.target.no||r.target.id)||''),_maE(r.detail||'')]));
+    rows.map(r=>[_maWhen(r.at),_maE(_maWho(r.by)),_maE(r.action),_maE(r.target&&(r.target.no||r.target.id)||''),_maE(r.detail||'')]));
 }
 function _maNumIn(id,v,label,o){o=o||{};return `<label class="ma-field${o.small?' sm':''}"><span class="ma-lbl">${_maE(label)}</span><input class="ma-in" id="${id}" inputmode="numeric" value="${_maE(v===null||v===undefined?'':v)}">${o.hint?`<span class="ma-hint">${_maE(o.hint)}</span>`:''}</label>`;}
 function _maDaysPick(prefix,cur){
@@ -1350,10 +1370,11 @@ window.maPartyPicked=function(v){
 };
 window.maCountBook=function(){
   const out=document.getElementById('ma-f-book');if(!out||!_maF)return;
-  const c=_maCtx();const code=_maVal('ma-f-holder');const date=_maVal('ma-f-date');
+  const c=_maCtx();const code=_maF.edit&&_maF.edit.holder?_maF.edit.holder:_maVal('ma-f-holder');const date=_maVal('ma-f-date');
   if(!code){out.textContent='';return;}
   const lines=_maF.edit?maPostAll(c.docs.filter(d=>!(d.dt===_maF.edit.dt&&d.id===_maF.edit.id)),c.idx,c.s):c.lines;
-  const book=maBalanceOf(lines,c.idx,code,maIsDay(date)?date:undefined);
+  // The book the save will use: an edit's own, until its day or count moves.
+  const book=maCountBookOf(_maF.edit,{date,counted:_maVal('ma-f-counted')},maBalanceOf(lines,c.idx,code,maIsDay(date)?date:undefined));
   const n=_maNum(_maVal('ma-f-counted'));
   out.innerHTML='The book says '+maRs(book)+(Number.isFinite(n)?(Math.round(n)===book?' · <span class="ma-word fine">agrees</span>':' · <span class="ma-word warn">'+maRsSigned(Math.round(n)-book)+'</span>'):'');
 };
@@ -1377,8 +1398,13 @@ function _maOpenDocForm(kind,pre,edit){
     while(_maF.lines.length<2)_maF.lines.push({account:'',side:'dr',amount:'',dr:'',cr:'',party:'',memo:''});
     if(kind==='opening'&&!edit&&!pre.date)p.date=s.historyFrom<=c.today?s.historyFrom:c.today;
   }
-  const date=_maFld('date','Date',_maIn('date',p.date,{type:'date',min:s.historyFrom,max:c.today,on:'window.maCountBook()'}));
-  const amount=_maFld('amount','Amount, ₨',_maIn('amount',p.amount,{num:true,ph:'0',on:'window.maTaxCalc()'}));
+  // A transfer that waits for — or was confirmed by — someone keeps what was
+  // (or is to be) confirmed: its route, amount and day (money F6). The rules
+  // refuse the same (maTrEditOk); the form does not offer them.
+  const trLock=dt==='transfer'&&!!edit&&maTransferNeedsConfirm(edit);
+  const trWhy=trLock?(edit.status==='pending'?'It waits for '+_maWho(edit.confirmBy)+' to confirm':edit.confirmedBy?_maWho(edit.confirmedBy)+' confirmed it as it stands':'It needed a confirmation')+' — its from, to, amount and date cannot change: void it and record it again.':'';
+  const date=_maFld('date','Date',_maIn('date',p.date,{type:'date',min:s.historyFrom,max:c.today,on:'window.maCountBook()',dis:trLock}));
+  const amount=_maFld('amount','Amount, ₨',_maIn('amount',p.amount,{num:true,ph:'0',on:'window.maTaxCalc()',dis:trLock}));
   const note=_maFld('note','Note',`<textarea class="ma-in" id="ma-f-note" rows="2">${_maE(p.note||'')}</textarea>`);
   let body='';
   if(kind==='money_out'||kind==='money_in'){
@@ -1397,11 +1423,12 @@ function _maOpenDocForm(kind,pre,edit){
       <div class="ma-grid3">${kind==='money_out'?_maFld('commitmentPeriod','For the period',_maIn('commitmentPeriod',p.commitmentPeriod,{ph:'2026-10'})):''}${_maFld('po','Production PO',_maIn('po',p.po,{ph:'optional'}))}${_maFld('article','Article',_maIn('article',p.article,{ph:'optional'}))}</div>
       ${note}${_maFld('tags','Tags',_maIn('tags',(p.tags||[]).join(', '),{ph:'comma between'}))}`;
   }else if(kind==='transfer'){
-    body=`<div class="ma-grid2">${date}${amount}</div>
-      <div class="ma-grid2">${_maFld('from','From',_maSel('from',_maHolderOpts(c,p.from,{mirror:true}),p.from))}${_maFld('to','To',_maSel('to',_maHolderOpts(c,p.to,{mirror:true}),p.to,{dis:!!edit}),edit?'Who received it cannot change — void and record again.':'Into another person’s hands, it waits for them to confirm.')}</div>
-      <div class="ma-hint ma-block">The store drawer (1010) is Raees’s book in Store Accounts until M8 — a handover to or from it is recorded here; spending from it is recorded there.</div>${note}`;
+    body=`${trLock?`<div class="ma-note">${_maE(trWhy)}</div>`:''}<div class="ma-grid2">${date}${amount}</div>
+      <div class="ma-grid2">${_maFld('from','From',_maSel('from',_maHolderOpts(c,p.from,{mirror:true}),p.from,{dis:trLock}))}${_maFld('to','To',_maSel('to',_maHolderOpts(c,p.to,{mirror:true}),p.to,{dis:!!edit}),edit?'Who received it cannot change — void and record again.':'Into another person’s hands — or into or out of the drawer — it waits to be confirmed.')}</div>
+      <div class="ma-hint ma-block">The store drawer (1010) is Raees’s book in Store Accounts until M8 — a handover to or from it is recorded here and waits until an owner confirms it, once Raees has recorded it there; spending from it is recorded there.</div>${note}`;
   }else if(kind==='count'){
-    body=`<div class="ma-grid2">${date}${_maFld('holder','Holder',_maSel('holder',_maHolderOpts(c,p.holder),p.holder,{on:'window.maCountBook()'}),_maE(_MA_MIRROR_LINE.replace(' A handover to or from it is a Transfer.',' Raees counts it there.')))}</div>
+    // Which holder was counted is what a count IS: an edit does not offer it.
+    body=`<div class="ma-grid2">${date}${_maFld('holder','Holder',_maSel('holder',_maHolderOpts(c,p.holder),p.holder,{on:'window.maCountBook()',dis:!!edit}),edit?'Which holder was counted cannot change — void it and count again.':_maE(_MA_MIRROR_LINE.replace(' A handover to or from it is a Transfer.',' Raees counts it there.')))}</div>
       ${_maFld('counted','Counted, ₨',_maIn('counted',p.counted,{num:true,ph:'0',on:'window.maCountBook()'}),'<span id="ma-f-book"></span>')}${note}`;
   }else if(kind==='capital'||kind==='drawing'){
     const own=MA_OWNERS.indexOf(p.owner)>=0?p.owner:session.u;
@@ -1435,9 +1462,12 @@ function _maFormRead(){
     if(input.commitmentId&&!input.commitmentPeriod&&maIsDay(input.date)){const cm=_maCommit(input.commitmentId);if(cm)input.commitmentPeriod=maCommitmentPeriodKey(cm,input.date,_maCtx().s.fiscalYearStart);}
     if(f.edit){input.party=f.edit.party||'';input.partyKind=f.edit.partyKind||null;if(f.edit.party)input.payee='';}
   }else if(k==='transfer'){
-    Object.assign(input,{from:_maVal('ma-f-from'),to:f.edit?f.edit.to:_maVal('ma-f-to'),amount:_maVal('ma-f-amount')});
+    // What the form does not offer on an edit is read from the document.
+    const lock=!!f.edit&&maTransferNeedsConfirm(f.edit);
+    Object.assign(input,{from:lock?f.edit.from:_maVal('ma-f-from'),to:f.edit?f.edit.to:_maVal('ma-f-to'),amount:lock?f.edit.amount:_maVal('ma-f-amount')});
+    if(lock)input.date=f.edit.date;
   }else if(k==='count'){
-    Object.assign(input,{holder:_maVal('ma-f-holder'),counted:_maVal('ma-f-counted')});
+    Object.assign(input,{holder:f.edit?f.edit.holder:_maVal('ma-f-holder'),counted:_maVal('ma-f-counted')});
   }else if(k==='capital'||k==='drawing'){
     Object.assign(input,{owner:_maVal('ma-f-owner'),holder:_maVal('ma-f-holder'),amount:_maVal('ma-f-amount')});
   }else{
@@ -1470,7 +1500,8 @@ window.maSaveForm=async function(){
   const input=_maFormRead();
   const meta=f.edit?{by:f.edit.by,byName:f.edit.byName,ts:f.edit.ts,source:f.edit.source}:{by:session.u,byName:session.name||session.u,ts:Date.now(),source:'manual'};
   const others=f.edit?maPostAll(c.docs.filter(d=>!(d.dt===f.edit.dt&&d.id===f.edit.id)),c.idx,s):c.lines;
-  if(f.dt==='count')meta.bookBalance=maBalanceOf(others,c.idx,input.holder,maIsDay(input.date)?input.date:undefined);
+  // An edit keeps the stored book unless the day or the count moved (money F2).
+  if(f.dt==='count')meta.bookBalance=maCountBookOf(f.edit,input,maBalanceOf(others,c.idx,input.holder,maIsDay(input.date)?input.date:undefined));
   const built=maBuildDoc(f.dt,input,meta,c.idx,s);
   if(f.edit){built.id=f.edit.id;built.no=f.edit.no;}
   const reason=f.edit?_maVal('ma-f-reason').trim():'';
@@ -1487,15 +1518,17 @@ window.maSaveForm=async function(){
   const btn=document.getElementById('ma-f-save');if(btn)btn.disabled=true;
   try{
     if(f.edit){
-      let edited=maApplyEdit(f.edit,built,{at:Date.now(),by:session.u,byName:session.name||session.u,reason});
+      // The edit stores the flags it raised — the ones just shown and
+      // acknowledged — and a figure that moved clears the review (money F8).
+      let edited=maApplyEdit(f.edit,built,{at:Date.now(),by:session.u,byName:session.name||session.u,reason,flags:res.flags});
       if(!edited){_maToast('Nothing changed.');return;}
       edited=_maEditShape(f.edit,edited);
       await _maWriteEdit(f.edit,edited,reason);
       const key=_MA_DOC_KEY[f.dt];const i=maData[key].findIndex(d=>d.id===f.edit.id);if(i>=0)maData[key][i]=edited;
-      _maInvalidate();window.maCloseModal();_maToast(edited.no+' saved — revision '+maRevOf(edited)+'.');
+      _maInvalidate();window.maCloseModal();_maToast(edited.no+' saved — revision '+maRevOf(edited)+'.'+(maReviewQueue([edited]).length?' It waits for review.':''));
       _maRail={kind:'doc',dt:edited.dt,id:edited.id};_maPaint();
     }else{
-      if(res.flags.length)built.flags=res.flags.map(x=>({rule:x.rule,message:x.message,field:x.field||null}));
+      if(res.flags.length)built.flags=maFlagRows(res.flags);
       const stored=await _maPostNew(built);
       maData[_MA_DOC_KEY[f.dt]].push(stored);
       _maInvalidate();window.maCloseModal();
@@ -1534,8 +1567,13 @@ window.maVoidDoc=async function(dt,id){
     Object.assign(d,patch);_maInvalidate();_maToast(d.no+' voided — it stays on the record, struck through.');_maPaint();
   }catch(e){_maToast(_maWriteError(e));}finally{_maBusy=false;}
 };
+/* Review — the one way the review fields are SET (an edit may only clear
+   them). Refused in a closed quarter, naming it: the rules refuse it too
+   (maReviewOk), in no words a person can act on. */
 window.maReviewDoc=async function(dt,id){
   const d=_maDoc(dt,id);if(!d||_maBusy)return;
+  const locked=maQuarterLocked(d,{closes:maData.closes,settings:_maCtx().s});
+  if(locked){_maToast(locked+' is closed — a document dated in it cannot be reviewed until an owner reopens the quarter.');return;}
   if(_maNeedsNet())return;
   const patch={reviewedAt:Date.now(),reviewedBy:session.u};
   _maBusy=true;
@@ -1855,7 +1893,7 @@ window.maExcel=function(key){
     const card=(p.vendor&&p.vendor.rateCard||[]).map(x=>[x.item,x.unit,x.rate,x.validFrom||'',x.validTo||'']);
     return _maXlsx('master-accounts_party-'+p.code+'_'+rng,[{name:'Documents',rows:[docHead].concat(docs.map(docRow))},{name:'Ledger',rows:postRows(led)},{name:'Rate card',rows:[['Item','Unit','Rate','From','To']].concat(card)}]);}
   if(key==='commitments'){const rows=[['Commitment','Kind','Schedule','Expected','State','Due','Account','Party','Active']].concat(maData.commitments.map(x=>{const st=maCommitmentStatus(x,c.docs,c.today,c.s);return [x.name,x.kind,maCommitmentText(x),x.amountExpected||0,st.state,st.due||'',maAccLabel(c.idx,x.account),_maPartyName(x.party),x.active===false?'no':'yes'];}));return _maXlsx('master-accounts_commitments_'+c.today,[{name:'Commitments',rows}]);}
-  if(key==='audit'){const rows=[['When','Who','Action','Document','Detail']].concat(maData.audit.slice().sort((a,b)=>(b.at||0)-(a.at||0)).map(x=>[new Date(x.at||0).toISOString(),x.byName||x.by,x.action,x.target&&(x.target.no||x.target.id)||'',x.detail||'']));return _maXlsx('master-accounts_audit_'+c.today,[{name:'Audit trail',rows}]);}
+  if(key==='audit'){const rows=[['When','Who','Action','Document','Detail']].concat(maData.audit.slice().sort((a,b)=>(b.at||0)-(a.at||0)).map(x=>[new Date(x.at||0).toISOString(),_maWho(x.by),x.action,x.target&&(x.target.no||x.target.id)||'',x.detail||'']));return _maXlsx('master-accounts_audit_'+c.today,[{name:'Audit trail',rows}]);}
 };
 
 /* ═══ Files, links and the owners' copy (M1.5b, 28 Sept 2026) ════════════
@@ -2001,9 +2039,10 @@ window.maAttachDrop=function(i){
    An EDIT, like every other change to a posted document (§31, the rules'
    maEditOk): rev + 1 and one edits[] row by the caller naming exactly
    `attachments`. The reason is what happened ("Attached bill.jpg") — a
-   file changes no figure. The stored flags are left alone (the rules pin
-   them); "no bill attached" leaves the review queue because maLiveFlags
-   sees the file, not because anything was rewritten. */
+   file changes no figure, so neither the stored flags nor the review move
+   (a form edit stores its own flags; this is not one); "no bill attached"
+   leaves the review queue because maLiveFlags sees the file, not because
+   anything was rewritten. */
 function _maDocKey(d){return d.dt+'/'+d.id;}
 function _maRailAttInner(d){
   const st=_maRailAtt&&_maRailAtt.key===_maDocKey(d)?_maRailAtt:{busy:0,err:'',note:''};

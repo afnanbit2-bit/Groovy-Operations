@@ -208,12 +208,49 @@ const MA_JOURNAL_KINDS={
   general:{label:'Journal',lines:true}
 };
 /* The fields an edit may change, per document type (§31). Everything else
-   is derived again by the builder, or is identity (type, kind, party). */
+   is derived again by the builder, or is identity (type, kind, party).
+   firestore.rules lists the same per collection (maEditOk's `editable`) and
+   tests/master-accounts.test.js holds the two equal. A count's `amount` is
+   here, and so NAMED when it moves: it is the size of the difference, and
+   an edit that moves money says so (M1.6a, security F1). */
 const MA_EDIT_FIELDS={
   journal:['date','holder','account','payee','amount','tax','costCentre','labelKind','channel','po','article','commitmentId','commitmentPeriod','owner','lines','note','tags','attachments'],
   transfer:['date','from','to','amount','note','attachments'],
-  count:['date','counted','note','attachments']
+  count:['date','counted','amount','note','attachments']
 };
+/* What an edit may change WITHOUT naming it in its row, because the builder
+   derives it again — maEditOk's `derived` in firestore.rules, held equal by
+   a test (M1.6a). NOT amount and NOT tax: those are what posts, so an edit
+   that moves money names them (security F1). A count's difference is here
+   because the rules bind it (difference = counted − book) and move the
+   book only when the day or the count is named (money F2). `flags` are the
+   edit's own live flags (money F8); the review fields may only be CLEARED
+   by an edit, never set — the review path (maReviewOk) alone sets them. */
+const MA_EDIT_DERIVED=['rev','edits','month','quarter','fy','historical','difference','bookBalance','flags','reviewedAt','reviewedBy'];
+/* The fields that move what a document POSTS. An edit that changes one
+   clears the review (money F8): an owner reviewed the old figures, not the
+   new ones, so a still-flagged document is back in the review queue. The
+   rules hold the same list (maEditOk's `figures`). */
+const MA_FIGURE_FIELDS=['date','amount','tax','party','account','holder','from','to','owner','lines','counted'];
+/* A transfer's confirmation: decided when it is recorded (maTransferConfirm,
+   the rules' maTrBornOk), set by maConfirmPatch, and NEVER touched by an
+   edit (money F6). */
+const MA_CONFIRM_KEYS=['confirmBy','confirmPaper','confirmedBy','confirmedAt','confirmedFor','confirmVia'];
+/* Whose hands each holder is in (§3 #3) — the ONE map a transfer's
+   confirmation is decided from (M1.6a). Read off MA_CHART: every money
+   account that names a person. firestore.rules carries the same map
+   (maHands, maDrawers) and tests/master-accounts.test.js fails if the two
+   disagree. Deliberately the SEEDED chart, never the owners' edited copy:
+   the rules cannot read that, and a confirmation the form and the rules
+   decide differently is exactly what this map exists to prevent. */
+const MA_HANDS=Object.freeze(MA_CHART.reduce((m,a)=>{if(a.money&&a.person)m[a.code]=a.person;return m;},{}));
+/* The drawer: a CASH holder in the hands of someone who cannot sign in to
+   the books (1010, Raees). Its balance is read from his Store Accounts until
+   M8, so money into OR out of it waits until he has recorded it there — the
+   drawer counts as his hands in both directions (money F9). */
+const MA_DRAWERS=Object.freeze(MA_CHART.filter(a=>a.money&&a.holderKind==='cash'&&a.person&&MA_OWNERS.indexOf(a.person)<0).map(a=>a.code));
+function maHandsOf(code){const c=String(code===undefined||code===null?'':code);return Object.prototype.hasOwnProperty.call(MA_HANDS,c)?MA_HANDS[c]:null;}
+function maIsDrawer(code){return MA_DRAWERS.indexOf(String(code===undefined||code===null?'':code))>=0;}
 
 /* ── Attachments (§29) — the bill or receipt on a document ───────────────
    A file is stored as a REFERENCE to a Cloudinary asset the ma-attach
@@ -581,14 +618,37 @@ function maDocNo(dt,fy,seq){
    historical and pending. It never assigns an id or a number — the writer
    mints both in one transaction. What the app writes is exactly what this
    returns, so the tests and the emulator check the real shape. */
-function maTransferConfirm(from,to,idx,recorder,settings){
-  const s=settings||MA_DEFAULT_SETTINGS;
-  const t=maAcc(idx,to);
-  if(!t)return {pending:false,confirmBy:null,paper:false,via:null};
-  if(s.mirrors&&s.mirrors[t.code])return {pending:false,confirmBy:null,paper:false,via:s.mirrors[t.code]};
-  const p=t.person;
-  if(!p||p===recorder)return {pending:false,confirmBy:null,paper:false,via:null};
-  return {pending:true,confirmBy:p,paper:MA_OWNERS.indexOf(p)<0,via:null};
+/* Who must confirm a transfer (§3 #3) — DERIVED from MA_HANDS, never chosen
+   by the form, and the rules decide it the same way (maTrWho). The person
+   whose hands the money reaches confirms: an owner in the app; anyone else
+   (Raees, Umair) on paper, by an owner holding the signed receipt. Out of
+   the drawer to a holder nobody holds (a bank), Raees: the drawer is his
+   hands both ways. A recorder who IS the receiver has confirmed by
+   recording — except where the drawer is on either side: there even the
+   receiver's own entry waits until Raees has recorded it in Store Accounts
+   (money F9: the drawer's balance is read from there, so a handover posted
+   before he books it is counted twice, or not at all). This REPLACES M1's
+   "a transfer into the drawer posts at once". `idx` and `settings` are not
+   read: the map is the seeded chart's, the one the rules can see. */
+function maTransferConfirm(from,to,idx,recorder){
+  const drawer=maIsDrawer(from)||maIsDrawer(to);
+  const who=maHandsOf(to)||(maIsDrawer(from)?maHandsOf(from):null);
+  if(!who||(who===recorder&&!drawer))return {pending:false,confirmBy:null,paper:false};
+  return {pending:true,confirmBy:who,paper:MA_OWNERS.indexOf(who)<0};
+}
+/* A transfer that waits for — or was confirmed by — someone (money F6): its
+   stored confirmBy, or the map's answer for its route (a transfer recorded
+   before M1.6a, when the drawer posted at once, needs one all the same). Its
+   route, amount and day cannot change; it is voided and recorded again. */
+function maTransferNeedsConfirm(d){
+  return !!(d&&d.dt==='transfer'&&(d.confirmBy||maTransferConfirm(d.from,d.to,null,d.by).pending));
+}
+/* What must be said before a confirmation (money F9): a handover that
+   touches the drawer is confirmed only once Raees has recorded it in Store
+   Accounts. '' for every other transfer. */
+function maConfirmWarning(d){
+  if(!d||d.dt!=='transfer'||!(maIsDrawer(d.from)||maIsDrawer(d.to)))return '';
+  return 'Confirm '+(d.no||'this transfer')+' only once Raees has recorded this '+maRs(d.amount)+' in Store Accounts. The drawer’s balance is read from there — confirming before he records it counts the money twice, or not at all.';
 }
 function maBuildDoc(dt,input,meta,idx,settings){
   const s=settings||MA_DEFAULT_SETTINGS;
@@ -640,10 +700,9 @@ function maBuildDoc(dt,input,meta,idx,settings){
     }
   }else if(dt==='transfer'){
     doc.from=maStr(i.from,8);doc.to=maStr(i.to,8);doc.amount=rupees(i.amount);doc.tax=maTaxBlank();
-    const c=maTransferConfirm(doc.from,doc.to,idx,m.by,s);
+    const c=maTransferConfirm(doc.from,doc.to,idx,m.by);
     doc.status=c.pending?'pending':'posted';
     doc.confirmBy=c.confirmBy;doc.confirmPaper=c.paper;
-    if(c.via)doc.confirmVia=c.via;
   }else if(dt==='count'){
     doc.holder=maStr(i.holder,8);doc.counted=rupees(i.counted);
     doc.bookBalance=Number.isInteger(m.bookBalance)?m.bookBalance:0;
@@ -652,6 +711,26 @@ function maBuildDoc(dt,input,meta,idx,settings){
     doc.tax=maTaxBlank();
   }
   return doc;
+}
+/* The book a count is held against (money F2). A new count takes the book as
+   it stands (`bookNow`); an EDIT keeps the stored book unless the day or the
+   figure counted changed — a note must never move the difference, and so
+   the posting, behind a row that says "note". The rules agree: bookBalance
+   moves only in an edit that names date or counted. */
+function maCountBookOf(before,input,bookNow){
+  const i=input||{};
+  if(before&&Number.isInteger(before.bookBalance)&&maStr(i.date,10)===before.date&&maParseRupees(i.counted)===before.counted)return before.bookBalance;
+  return bookNow;
+}
+/* The locked quarter a document sits in, as its label — '' when it is open
+   (security F3b, money F7). One reading of ma_closes for the confirm, the
+   review and anything else that must refuse in a closed quarter with words
+   that name it, rather than leave the rules to refuse with none. */
+function maQuarterLocked(doc,ctx){
+  const c=ctx||{};const s=c.settings||MA_DEFAULT_SETTINGS;
+  if(!doc||!maIsDay(doc.date))return '';
+  const q=maQuarterOf(doc.date,s.fiscalYearStart);
+  return (c.closes||[]).some(x=>x&&x.quarter===q&&x.locked===true&&!x.reopenedAt)?maQuarterLabel(q,s.fiscalYearStart):'';
 }
 /* A journal with its own lines: the total is its debit side. */
 function maJournalTotal(doc){
@@ -1300,6 +1379,40 @@ function maValidate(doc,ctx){
       });
       if(k==='general'&&!bad&&dr!==cr)refuse('journal.balanced','Debits '+maRs(dr)+' and credits '+maRs(cr)+' must be equal.','lines');
       if(k==='opening'&&maIsDay(doc.date)&&doc.date!==s.historyFrom)flag('opening.date','Openings are usually dated '+maDayLabel(s.historyFrom,true)+', the day the books start.','date');
+      // What the lines DO to the holders (money F12). The rules language has
+      // no loop over lines, so these hold in the client only — a known
+      // limit, named in firestore.rules beside maDocCreateOk.
+      if(k==='general'&&!bad){
+        const net={};
+        lines.forEach(l=>{const a=acc(l.account);if(a&&a.money)net[a.code]=(net[a.code]||0)+(l.dr||0)-(l.cr||0);});
+        const into=Object.keys(net).filter(x=>net[x]>0),outOf=Object.keys(net).filter(x=>net[x]<0);
+        const names=list=>list.map(x=>acc(x).name).join(' and ');
+        // Between two holders it is a handover, and a handover into another
+        // person's hands waits for them: a journal would post it at once.
+        if(into.length&&outOf.length)refuse('journal.holders','Money moves from '+names(outOf)+' to '+names(into)+' here — record a transfer: it waits for the receiver.','lines');
+        else if(outOf.length){
+          // Out of a holder against a cost: a Money out in all but name, so
+          // it is flagged the way a Money out is when nothing proves it.
+          const paid=outOf.reduce((t,x)=>t-net[x],0);
+          const cost=lines.reduce((t,l)=>{const a=acc(l.account);return t+(a&&(a.type==='expense'||a.type==='cogs')?(l.dr||0)-(l.cr||0):0);},0);
+          const pays=Math.min(paid,cost);
+          const ev=s.evidence||{};
+          if(pays>0&&ev.flagAbove&&pays>=ev.flagAbove){
+            if(!(doc.attachments||[]).length)flag('evidence.missing','No bill or receipt attached ('+maRs(pays)+' paid out of '+names(outOf)+').','attachments');
+            if(!lines.some(l=>l&&l.party))flag('journal.payee',maRs(pays)+' paid out of '+names(outOf)+' names nobody as paid — a Money out names its payee.','lines');
+          }
+        }
+      }
+      // A second opening for an account doubles its starting balance.
+      if(k==='opening'&&!bad){
+        const prior=(c.docs||[]).filter(d=>d&&d.dt==='journal'&&d.kind==='opening'&&d.status!=='void'&&d.id!==doc.id&&(!c.before||d.id!==c.before.id));
+        const seen={};
+        lines.forEach((l,i)=>{
+          if(seen[l.account])return;
+          const p=prior.find(d=>(d.lines||[]).some(x=>x&&x.account===l.account));
+          if(p){seen[l.account]=true;flag('opening.again','Line '+(i+1)+': '+acc(l.account).name+' already has an opening ('+(p.no||'another document')+') — a second one adds to it.','lines');}
+        });
+      }
       if(!bad&&idx)floorCheck();
     }
   }else if(doc.dt==='transfer'){
@@ -1328,13 +1441,31 @@ function maValidate(doc,ctx){
     if(c.before.dt!==doc.dt||(c.before.kind||null)!==(doc.kind||null))refuse('edit.type','A document cannot change its kind — void it and record the right one.');
     if((c.before.party||null)!==(doc.party||null))refuse('edit.party','A document cannot change its party — void it and record it against the right one.','party');
     if(c.before.status==='void')refuse('edit.void','A void document cannot be edited.');
-    // The receiver decides who confirms (confirmBy, confirmPaper), and the
-    // rules pin confirmBy on an edit — so changing it would leave a
+    // The receiver decides who confirms (confirmBy, confirmPaper), and an
+    // edit never touches a confirmation — so changing it would leave a
     // confirmation owed by one person on money handed to another.
     if(c.before.dt==='transfer'&&(c.before.to||null)!==(doc.to||null))refuse('edit.receiver','A transfer cannot change who received it — void it and record the right one.','to');
+    if(c.before.dt==='transfer'&&doc.dt==='transfer'){
+      const same=f=>_maCanon(c.before[f]===undefined?null:c.before[f])===_maCanon(doc[f]===undefined?null:doc[f]);
+      if(maTransferNeedsConfirm(c.before)){
+        // What was (or is to be) confirmed is this route, this amount, this
+        // day (money F6) — the rules refuse the same (maTrEditOk).
+        const moved=['from','amount','date'].filter(f=>!same(f));
+        if(moved.length){
+          const b=c.before;
+          const who=_maCap(b.confirmBy||maTransferConfirm(b.from,b.to,null,b.by).confirmBy);
+          refuse('edit.confirmed',(b.status==='pending'?'It waits for '+who+' to confirm':b.confirmedBy?_maCap(b.confirmedBy)+' confirmed it as it stands':'It needed '+who+'’s confirmation')+
+            ' — its '+moved.join(', ')+' cannot change: void it and record it again.',moved[0]);
+        }
+      }else if(same('to')&&maTransferConfirm(doc.from,doc.to,null,c.before.by).pending)
+        refuse('edit.route','That route waits to be confirmed, and an edit cannot start a confirmation — void it and record it again.','from');
+    }
+    // A count is of one holder: that is what it IS (money M4).
+    if(c.before.dt==='count'&&(c.before.holder||null)!==(doc.holder||null))refuse('edit.holder','A count cannot change which holder was counted — void it and count again.','holder');
   }
   return _maResult(issues);
 }
+function _maCap(u){u=String(u||'');return u?u.charAt(0).toUpperCase()+u.slice(1):'the receiver';}
 function _maResult(issues){
   const refuses=issues.filter(x=>x.level==='refuse'),flags=issues.filter(x=>x.level==='flag');
   return {ok:!refuses.length,refuses,flags,issues};
@@ -1377,7 +1508,14 @@ function maEditDiff(before,after){
   return d;
 }
 /* The edited document: the rebuilt fields, the same identity, one more
-   row in its history. null when nothing changed. */
+   row in its history. null when nothing changed.
+   An edit NEVER moves a status and never touches a confirmation (M1.6a,
+   money F6): a note on a handover Ammar confirmed leaves it posted and
+   confirmed, key for key — the builder's view of the edited route is not
+   asked. `meta.flags` are the edit's own live flags (maValidate's, money
+   F8); without them the stored ones stay (the writer's _maEditShape — a
+   file attached from the rail changes no figure). A figure that moved
+   clears the review: an owner reviewed the old figures, not these. */
 function maApplyEdit(before,after,meta){
   const d=maEditDiff(before,after);
   if(!d.fields.length)return null;
@@ -1385,28 +1523,39 @@ function maApplyEdit(before,after,meta){
   const out=Object.assign({},after,{
     id:before.id,no:before.no,dt:before.dt,kind:before.kind,party:before.party===undefined?after.party:before.party,
     by:before.by,byName:before.byName,ts:before.ts,source:before.source,
-    status:before.status==='pending'&&after.status==='posted'?'pending'
-      // a transfer nobody had to confirm cannot start waiting on a confirmBy the edit may not set
-      :before.dt==='transfer'&&after.status==='pending'&&!before.confirmBy?(before.status||'posted')
-      :(after.status||before.status),
-    confirmBy:before.confirmBy===undefined?after.confirmBy:before.confirmBy,
-    confirmPaper:before.confirmPaper===undefined?after.confirmPaper:before.confirmPaper,
+    status:before.status,
     rev:(before.rev||1)+1,
     edits:(before.edits||[]).concat([{at:m.at||0,by:m.by||null,byName:m.byName||null,reason:maStr(m.reason,500),fields:d.fields,before:d.before,after:d.after}])
   });
-  ['confirmedBy','confirmedAt','confirmedFor','confirmVia','confirmPaper'].forEach(k=>{if(before[k]!==undefined&&out[k]===undefined)out[k]=before[k];});
+  MA_CONFIRM_KEYS.forEach(k=>{if(before[k]!==undefined)out[k]=maClone(before[k]);else delete out[k];});
+  if(Array.isArray(m.flags)){
+    const f=maFlagRows(m.flags);
+    if(f.length||Array.isArray(before.flags))out.flags=f;
+  }
+  if(maEditClearsReview(d.fields)&&(before.reviewedAt!==undefined||before.reviewedBy!==undefined)){out.reviewedAt=null;out.reviewedBy=null;}
   return out;
 }
+/* Does an edit naming these fields clear the review? Yes when one of them
+   is a figure (MA_FIGURE_FIELDS) — the rules demand the same. */
+function maEditClearsReview(fields){return (fields||[]).some(f=>MA_FIGURE_FIELDS.indexOf(f)>=0);}
+/* maValidate's flags as a document stores them — the one shape, for a new
+   document and an edit alike. */
+function maFlagRows(flags){return (Array.isArray(flags)?flags:[]).filter(x=>x&&x.rule).map(x=>({rule:x.rule,message:x.message||'',field:x.field||null}));}
 function maApplyVoid(doc,meta){
   const m=meta||{};
   return Object.assign({},doc,{status:'void',voidedAt:m.at||0,voidedBy:m.by||null,voidedByName:m.byName||null,voidReason:maStr(m.reason,500)});
 }
 /* The receiver says the money arrived. On paper = an owner confirms for a
    person who cannot sign in to the books (Raees, Umair) with a signed
-   receipt; in the app = the named person themself. */
-function maConfirmPatch(doc,who,meta){
+   receipt; in the app = the named person themself. `ctx` = {closes,
+   settings}: a transfer dated in a locked quarter is refused HERE, naming
+   the quarter (money F7) — the rules refuse it too, but in no words a
+   person can act on. */
+function maConfirmPatch(doc,who,meta,ctx){
   const m=meta||{};
   if(!doc||doc.status!=='pending')return {error:'Only a pending transfer is confirmed.'};
+  const locked=maQuarterLocked(doc,ctx);
+  if(locked)return {error:locked+' is closed — a transfer dated in it cannot be confirmed until an owner reopens the quarter.'};
   if(who===doc.confirmBy)return {patch:{status:'posted',confirmedBy:who,confirmedAt:m.at||0,confirmVia:'app'}};
   if(doc.confirmPaper&&MA_OWNERS.indexOf(who)>=0)return {patch:{status:'posted',confirmedBy:who,confirmedAt:m.at||0,confirmedFor:doc.confirmBy,confirmVia:'paper'}};
   return {error:'Only '+(doc.confirmBy||'the receiver')+' can confirm this.'};
@@ -1427,12 +1576,13 @@ function maUnlabelled(docs,idx,settings){
   return out;
 }
 /* The flags a document still stands by. Flags are stored when it is
-   recorded, and the rules pin them (an edit may not change `flags`). The two
-   that ask for evidence are answered by the document itself: attach the
-   bill and "no bill attached" is no longer true, so it leaves the queue
-   without anybody clearing it — and if the file is removed again, the flag
-   is back. Nothing is rewritten; this only reads. Every other flag is a
-   judgement about the world and waits for an owner's review. */
+   recorded, and an edit through the form stores its own live flags (M1.6a,
+   money F8); a file attached from the rail leaves them as they were. The
+   two that ask for evidence are answered by the document itself: attach
+   the bill and "no bill attached" is no longer true, so it leaves the
+   queue without anybody clearing it — and if the file is removed again,
+   the flag is back. Nothing is rewritten; this only reads. Every other flag
+   is a judgement about the world and waits for an owner's review. */
 const _maAnswered={
   'evidence.missing':d=>maAttachList(d.attachments).length>0,
   'transfer.note':d=>maAttachList(d.attachments).length>0||!!maStr(d.note)
@@ -1506,7 +1656,9 @@ function maNeedsAttention(o){
   // Transfers waiting to be confirmed
   (o.docs||[]).filter(d=>d.dt==='transfer'&&d.status==='pending').forEach(d=>{
     const age=maIsDay(d.date)?maDaysBetween(d.date,today):0;
-    if(age>=s.pendingWatchDays)add('watch',maRs(d.amount)+' handed to '+(d.confirmBy?d.confirmBy.charAt(0).toUpperCase()+d.confirmBy.slice(1):'the receiver')+' on '+maDayLabel(d.date)+' is waiting to be confirmed.','Pending never counts: it is in neither holder until confirmed.',{label:'Confirm',go:'doc',ref:d.id,dt:'transfer'},d.amount);
+    // "handed over", not "handed to": out of the drawer to the bank, Raees
+    // confirms money that LEFT his hands (maTransferConfirm).
+    if(age>=s.pendingWatchDays)add('watch',maRs(d.amount)+' handed over on '+maDayLabel(d.date)+' is waiting to be confirmed by '+_maCap(d.confirmBy)+'.','Pending never counts: it is in neither holder until confirmed.',{label:'Confirm',go:'doc',ref:d.id,dt:'transfer'},d.amount);
   });
   // Cash holders nobody has counted lately
   const stale=(o.holders||[]).filter(h=>h.active&&!h.mirror&&h.holderKind==='cash'&&h.balance&&(!h.lastCount||maDaysBetween(h.lastCount.date,today)>s.countEveryDays));
@@ -1571,6 +1723,24 @@ function maAuditRow(action,target,meta){
   return {action:MA_AUDIT_ACTIONS.indexOf(action)>=0?action:'post',
     target:target?{dt:target.dt||null,id:target.id||null,no:target.no||null}:null,
     detail:maStr(m.detail,300),by:m.by||null,byName:m.byName||null,at:m.at||0};
+}
+/* Re-locking a quarter that was reopened (§20; M1.6a, security F3b). The
+   close goes back to locked in the re-locker's name; the reopen it ends is
+   kept in `reopens`, so clearing the three reopen fields loses nothing; and
+   the audit row that says so — action `relock`, target {dt:'close', id: the
+   quarter} — is written in the SAME batch under meta.auditId: the rules
+   (maRelockOk) refuse a re-lock whose `relockAudit` row was not created by
+   that very write. A close born unlocked (before the rules refused one) is
+   re-locked the same way. No screen writes a close yet — the quarter lock
+   arrives with M11; this and the rules are ready for it. → {patch, audit} */
+function maCloseRelock(close,meta){
+  const c=close||{},m=meta||{};
+  const reopens=Array.isArray(c.reopens)?c.reopens.slice():[];
+  if(c.reopenedAt!==undefined&&c.reopenedAt!==null)reopens.push({at:c.reopenedAt,by:c.reopenedBy,reason:c.reopenReason});
+  return {
+    patch:{locked:true,reopenedAt:null,reopenedBy:null,reopenReason:null,closedBy:m.by||null,closedAt:m.at||0,relockAudit:String(m.auditId||''),reopens},
+    audit:maAuditRow('relock',{dt:'close',id:c.quarter||null,no:c.quarter||null},{by:m.by,byName:m.byName,at:m.at,detail:'Re-locked '+(c.quarter||'')+(maStr(m.reason)?' — '+maStr(m.reason,200):'')})
+  };
 }
 
 /* ── The PDFs (§31, M1.4) — what each one prints is decided HERE ──────────
@@ -1734,7 +1904,9 @@ function maPdfReceiptData(x,d){
   return Object.assign({no:d.no||'',date:d.date||'',amount:d.amount,amountWords:maRsWords(d.amount),
     from:_maPdfSide(x,d.from),to:_maPdfSide(x,d.to),note:d.note||'',state,
     waitingFor:d.status==='pending'?_maPdfPerson(x,d.confirmBy):'',paper:!!d.confirmPaper,
-    confirm:d.confirmedBy?{by:_maPdfPerson(x,d.confirmedBy),at:d.confirmedAt||null,via:d.confirmVia||'app',forWho:d.confirmedFor?_maPdfPerson(x,d.confirmedFor):''}:null,
+    // A slip that says "pending" never also prints a confirmation (money F6):
+    // a document an old edit sent back to pending kept its confirmedBy.
+    confirm:d.status!=='pending'&&d.confirmedBy?{by:_maPdfPerson(x,d.confirmedBy),at:d.confirmedAt||null,via:d.confirmVia||'app',forWho:d.confirmedFor?_maPdfPerson(x,d.confirmedFor):''}:null,
     printedOn:x.printedOn||'',printedBy:x.printedBy||''},_maPdfMarks(x,d));
 }
 /* ma-voucher — a MONEY OUT journal's payment voucher. `paid` is the cash
@@ -1872,5 +2044,7 @@ if(typeof module!=='undefined'&&module.exports){
     maPdfLedgerData,maPdfHolderStatementData,maPdfPartyStatementData,maPdfReceiptData,maPdfVoucherData,
     MA_AUDIT_ACTIONS,MA_ATTACH_FORMATS,MA_ATTACH_MAX,MA_ATTACH_KEYS,MA_BACKUP_STATES,MA_BOOK_COLS,
     maAttachPidOk,maAttachOk,maAttachClean,maAttachList,maAttachFromUpload,maAttachRef,maAttachIssues,maRevOf,
-    maLiveFlags,maAnsweredFlags,maBackupState,maBackupMissing,maWaPhone,maWaLink,maShareState,maBooksJson,maBooksSheets};
+    maLiveFlags,maAnsweredFlags,maBackupState,maBackupMissing,maWaPhone,maWaLink,maShareState,maBooksJson,maBooksSheets,
+    MA_EDIT_DERIVED,MA_FIGURE_FIELDS,MA_CONFIRM_KEYS,MA_HANDS,MA_DRAWERS,maHandsOf,maIsDrawer,maTransferNeedsConfirm,
+    maConfirmWarning,maCountBookOf,maQuarterLocked,maEditClearsReview,maFlagRows,maCloseRelock};
 }

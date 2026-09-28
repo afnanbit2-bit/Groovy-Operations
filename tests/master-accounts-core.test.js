@@ -237,7 +237,13 @@ module.exports=async function(){
     s.eq('cash handed to Ammar waits for Ammar',trp.status+':'+trp.confirmBy,'pending:ammar');
     s.eq('a pending transfer posts NOTHING',post(trp).length,0);
     const trd=T({date:'2026-10-10',from:'1011',to:'1010',amount:25000});
-    s.eq('cash handed to the drawer posts here (Raees confirms in Store Accounts)',trd.status+':'+trd.confirmVia,'posted:store');
+    // M1.6a: M1's "a transfer into the drawer posts at once" is gone — the
+    // drawer's balance is Raees's Store Accounts, so it waits until he has
+    // recorded it and an owner confirms on paper (money F9).
+    s.eq('cash handed to the drawer WAITS — for Raees, on paper (M1.6a)',trd.status+':'+trd.confirmBy+':'+trd.confirmPaper+':'+(trd.confirmVia||''),'pending:raees:true:');
+    s.eq('…and posts nothing until it is confirmed',post(trd).length,0);
+    Object.assign(trd,M.maConfirmPatch(trd,'afnan',{at:9}).patch);
+    s.eq('an owner confirms it on paper for Raees',trd.status+':'+trd.confirmVia+':'+trd.confirmedFor,'posted:paper:raees');
     const self=T({date:'2026-10-10',from:'1012',to:'1011',amount:5000},'afnan');
     s.eq('Afnan recording money reaching his own hands needs nobody',self.status,'posted');
     const cnt=C({date:'2026-10-15',holder:'1011',counted:98000,note:'short'},100000);
@@ -615,6 +621,7 @@ module.exports=async function(){
     const trP=T({date:'2026-10-06',from:'1011',to:'1012',amount:150000});
     const trOld=T({date:'2026-09-10',from:'1011',to:'1012',amount:1000});   // pending since September
     const trD=T({date:'2026-10-04',from:'1011',to:'1010',amount:10000});
+    Object.assign(trD,M.maConfirmPatch(trD,'afnan',{at:1791050000000}).patch);   // M1.6a: into the drawer waits; confirmed on paper for Raees
     const vOut=M.maApplyVoid(J('money_out',{date:'2026-10-08',holder:'1011',account:'2010',party:'p_asg',amount:40000,tax:NONE}),{at:1791100000000,by:'afnan',byName:'Afnan',reason:'Entered twice'});
     const vTr=M.maApplyVoid(T({date:'2026-10-09',from:'1011',to:'1012',amount:70000}),{at:1791200000000,by:'ammar',byName:'Ammar',reason:'Wrong day'});
     const trCV=T({date:'2026-10-10',from:'1011',to:'1012',amount:5000});   // confirmed, then voided
@@ -662,7 +669,7 @@ module.exports=async function(){
     s.eq('holder: opening/closing and totals',JSON.stringify([H.opening,H.closing,H.totals]),JSON.stringify([hl.opening,hl.closing,{in:hl.dr,out:hl.cr,count:hl.count}]));
     s.eq('holder: its closing is maBalanceOf on the last day',H.closing,M.maBalanceOf(lines,IDX,'1011',TO));
     s.eq('holder: who holds it',H.holder.person,'Afnan');
-    s.eq('holder: confirmations — every one still waiting, and those confirmed in the range',H.confirmations.map(c=>c.no+':'+c.state).join(','),[trOld.no+':waiting',trC.no+':confirmed',trP.no+':waiting'].join(','));
+    s.eq('holder: confirmations — every one still waiting, and those confirmed in the range',H.confirmations.map(c=>c.no+':'+c.state).join(','),[trOld.no+':waiting',trC.no+':confirmed',trD.no+':confirmed',trP.no+':waiting'].join(','));
     s.ok('holder: a void handover is never a confirmation — not even one confirmed before it was voided',vTrC.status==='void'&&!!vTrC.confirmedBy&&!H.confirmations.some(c=>c.no===vTr.no||c.no===vTrC.no));
     s.ok('holder: …nor a movement',!H.rows.some(r=>r.no===vTr.no||r.no===vTrC.no));
     const cc=H.confirmations.find(c=>c.no===trC.no);
@@ -699,7 +706,8 @@ module.exports=async function(){
     s.eq('receipt: from and to, with whose hands',JSON.stringify([R.from.name,R.from.person,R.to.name,R.to.person]),JSON.stringify(['Cash — with Afnan','Afnan','Cash — with Ammar','Ammar']));
     s.eq('receipt: pending, and who it waits for',JSON.stringify([R.state,R.waitingFor]),JSON.stringify(['pending','Ammar']));
     s.eq('receipt: confirmed says by whom and when',JSON.stringify([M.maPdfReceiptData(X,trC).state,M.maPdfReceiptData(X,trC).confirm]),JSON.stringify(['confirmed',{by:'Ammar',at:1791000000000,via:'app',forWho:''}]));
-    s.eq('receipt: a handover nobody had to confirm is simply posted',M.maPdfReceiptData(X,trD).state,'posted');
+    s.eq('receipt: a handover nobody had to confirm is simply posted',M.maPdfReceiptData(X,T({date:'2026-10-04',from:'1011',to:'1020',amount:10000})).state,'posted');
+    s.eq('receipt: a drawer handover confirmed on paper says so, and for whom',JSON.stringify(M.maPdfReceiptData(X,trD).confirm),JSON.stringify({by:'Afnan',at:1791050000000,via:'paper',forWho:'Raees'}));
     const RV=M.maPdfReceiptData(X,vTr);
     s.eq('receipt: a void says so, with who, when and why',JSON.stringify([RV.state,RV.void]),JSON.stringify(['void',{reason:'Wrong day',by:'Ammar',at:1791200000000}]));
     s.eq('receipt: never edited → no revision mark',R.revised,null);
@@ -724,6 +732,188 @@ module.exports=async function(){
     s.eq('voucher: a live one does not',V.void,null);
     s.eq('voucher: only Money out has one (capital → null)',M.maPdfVoucherData(X,cap),null);
     s.eq('voucher: …a transfer → null',M.maPdfVoucherData(X,trC),null);
+  }
+
+  s.section('M1.6a — a transfer\'s confirmation is DERIVED from whose hands its holders are in');
+  {
+    s.eq('the map is read off the chart: every money holder that names a person',JSON.stringify(M.MA_HANDS),
+      JSON.stringify(M.MA_CHART.filter(a=>a.money&&a.person).reduce((m,a)=>{m[a.code]=a.person;return m;},{})));
+    s.eq('…which is the drawer (Raees), Afnan\'s and Ammar\'s cash, and the till (Umair)',JSON.stringify(M.MA_HANDS),JSON.stringify({'1010':'raees','1011':'afnan','1012':'ammar','1040':'umair'}));
+    s.eq('the drawer is the one cash holder in a non-owner\'s hands',JSON.stringify(M.MA_DRAWERS),JSON.stringify(['1010']));
+    s.eq('…the same holder the settings mirror from Store Accounts',JSON.stringify(M.MA_DRAWERS),JSON.stringify(Object.keys(M.MA_DEFAULT_SETTINGS.mirrors)));
+    s.eq('the map is frozen',Object.isFrozen(M.MA_HANDS)&&Object.isFrozen(M.MA_DRAWERS),true);
+    s.eq('a name that is not a holder has nobody\'s hands (not even Object\'s own keys)',[M.maHandsOf('toString'),M.maHandsOf('__proto__'),M.maHandsOf(''),M.maHandsOf(null)].join(','),',,,');
+    // [from, to, recorder, who confirms, paper] — the same table the emulator holds the rules to.
+    const MAP=[['1011','1012','afnan','ammar',false],['1011','1012','ammar',null,false],['1011','1020','afnan',null,false],
+      ['1011','1010','afnan','raees',true],['1010','1020','afnan','raees',true],['1020','1010','ammar','raees',true],
+      ['1010','1011','afnan','afnan',false],['1010','1011','ammar','afnan',false],['1010','1012','ammar','ammar',false],
+      ['1011','1040','afnan','umair',true],['1040','1020','afnan',null,false],['1012','1011','afnan',null,false],['1020','1012','afnan','ammar',false]];
+    MAP.forEach(([from,to,by,who,paper])=>{
+      const t=T({date:'2026-10-10',from,to,amount:5000},by);
+      s.eq(from+' → '+to+' recorded by '+by+': '+(who?'waits for '+who+(paper?' (on paper)':' (in the app)'):'posts at once'),
+        [t.status,t.confirmBy,t.confirmPaper,t.confirmVia===undefined].join(':'),[who?'pending':'posted',who,paper,true].join(':'));
+    });
+    s.eq('the drawer is Raees\'s hands BOTH ways: drawer → bank waits for him',M.maTransferConfirm('1010','1020',null,'afnan').confirmBy,'raees');
+    s.eq('…and bank → drawer',M.maTransferConfirm('1020','1010',null,'afnan').confirmBy,'raees');
+    s.eq('out of the drawer into Afnan\'s hands, recorded by Afnan, still waits for Afnan (confirm once Raees has recorded it)',M.maTransferConfirm('1010','1011',null,'afnan').pending,true);
+    s.eq('elsewhere a receiver recording it has confirmed it (Ammar\'s cash to Afnan, by Afnan)',M.maTransferConfirm('1012','1011',null,'afnan').pending,false);
+    s.eq('the owners\' edited chart cannot move a confirmation (the rules cannot read it)',
+      M.maTransferConfirm('1011','1012',M.maChartIndex(M.maChart('groovy',[{code:'1012',person:'raees'}])),'afnan').confirmBy,'ammar');
+    s.eq('a drawer handover is confirmed only once Raees has recorded it — the warning says so',/only once Raees has recorded this ₨25,000 in Store Accounts/.test(M.maConfirmWarning(T({date:'2026-10-10',from:'1011',to:'1010',amount:25000}))),true);
+    s.eq('…out of the drawer too',M.maConfirmWarning(T({date:'2026-10-10',from:'1010',to:'1020',amount:5000}))!=='',true);
+    s.eq('no warning for any other transfer',M.maConfirmWarning(T({date:'2026-10-10',from:'1011',to:'1012',amount:5000}))+M.maConfirmWarning(J('money_out',{date:'2026-10-10',holder:'1011',account:'6050',payee:'x',amount:5,tax:NONE})),'');
+    const legacy=Object.assign(T({date:'2026-10-10',from:'1011',to:'1010',amount:25000}),{status:'posted',confirmBy:null,confirmPaper:false,confirmVia:'store'});
+    s.eq('needs (or needed) a confirmation: pending, confirmed, and a drawer handover recorded before M1.6a',
+      [T({date:'2026-10-10',from:'1011',to:'1012',amount:5}),Object.assign(T({date:'2026-10-10',from:'1011',to:'1012',amount:5}),{status:'posted',confirmedBy:'ammar'}),legacy,T({date:'2026-10-10',from:'1011',to:'1020',amount:5})].map(M.maTransferNeedsConfirm).join(','),'true,true,true,false');
+  }
+
+  s.section('M1.6a — an edit never moves a status or a confirmation (money F6)');
+  {
+    const TIN={date:'2026-10-10',from:'1011',to:'1012',amount:40000};
+    const tp=T(TIN);                                                     // waits for Ammar
+    const tc=Object.assign(T(TIN),{});Object.assign(tc,M.maConfirmPatch(tc,'ammar',{at:7}).patch);   // Ammar confirmed
+    const rebuild=(b,inp,by)=>M.maBuildDoc('transfer',inp,{by:b.by,byName:b.byName,ts:b.ts},IDX,S);
+    const note=M.maApplyEdit(tc,rebuild(tc,Object.assign({},TIN,{note:'receipt 12'})),{by:'afnan',byName:'Afnan',at:9,reason:'note'});
+    s.eq('a note on a transfer Ammar confirmed: it stays posted',note.status,'posted');
+    s.eq('…and confirmed by Ammar, in the app, at the same moment',[note.confirmBy,note.confirmedBy,note.confirmVia,note.confirmedAt].join(':'),'ammar:ammar:app:7');
+    s.eq('…and the row names only the note',JSON.stringify(note.edits[0].fields),JSON.stringify(['note']));
+    s.eq('…and it still counts in Ammar\'s cash',post(note).map(l=>l.account+(l.dr?'+':'-')).join(),'1012+,1011-');
+    const pn=M.maApplyEdit(tp,rebuild(tp,Object.assign({},TIN,{note:'envelope'})),{by:'afnan',at:9,reason:'note'});
+    s.eq('a note on a waiting transfer: it stays waiting, for Ammar',pn.status+':'+pn.confirmBy+':'+pn.confirmPaper,'pending:ammar:false');
+    s.ok('a waiting transfer carries no confirmation it never had',!('confirmedBy' in pn)&&!('confirmVia' in pn)&&!('confirmedFor' in pn));
+    const self=T({date:'2026-10-10',from:'1012',to:'1011',amount:5000},'afnan');   // posted: Afnan recorded money reaching him
+    const selfEd=M.maApplyEdit(self,Object.assign(M.maBuildDoc('transfer',{date:'2026-10-10',from:'1012',to:'1011',amount:5000,note:'x'},{by:'ammar'},IDX,S),{}),{by:'ammar',at:9,reason:'x'});
+    s.eq('a transfer nobody had to confirm never starts waiting through an edit (even when the builder would say so)',selfEd.status+':'+selfEd.confirmBy,'posted:null');
+    const tv=(after,before)=>M.maValidate(after,{lines:[],before,reason:'fix',settings:S,idx:IDX,today:TODAY});
+    const lvlOf=(r,rule)=>(r.refuses.find(x=>x.rule===rule)||{}).level||null;
+    const editRef=r=>r.refuses.filter(x=>/^edit\./.test(x.rule)).map(x=>x.rule).join()||'none';   // lines:[] leaves every holder at 0, so holder.floor is not this section's question
+    [['amount',41000],['date','2026-10-11'],['from','1020']].forEach(([f,v])=>{
+      s.eq('a transfer waiting for Ammar cannot change its '+f,lvlOf(tv(Object.assign({},tp,{[f]:v}),tp),'edit.confirmed'),'refuse');
+      s.eq('…nor one Ammar confirmed',lvlOf(tv(Object.assign({},tc,{[f]:v}),tc),'edit.confirmed'),'refuse');
+    });
+    const said=tv(Object.assign({},tp,{amount:41000}),tp).refuses.find(x=>x.rule==='edit.confirmed');
+    s.ok('…and it says who, what, and "void it and record it again"',!!said&&/waits for Ammar/.test(said.message)&&/amount/.test(said.message)&&/void it and record it again/.test(said.message)&&said.field==='amount',said&&said.message);
+    s.eq('a note is not refused',editRef(tv(Object.assign({},tc,{note:'receipt'}),tc)),'none');
+    s.eq('a drawer handover recorded before M1.6a (posted at once) keeps its amount too',lvlOf(tv(Object.assign({},legacyOf(),{amount:30000}),legacyOf()),'edit.confirmed'),'refuse');
+    function legacyOf(){return Object.assign(T({date:'2026-10-10',from:'1011',to:'1010',amount:25000}),{id:'t-legacy',no:'TR-27-9001',status:'posted',confirmBy:null,confirmPaper:false,confirmVia:'store'});}
+    const tn=T({date:'2026-10-10',from:'1011',to:'1020',amount:90000});      // nobody confirms
+    s.eq('a transfer nobody confirms takes a new amount',editRef(tv(Object.assign({},tn,{amount:95000}),tn)),'none');
+    s.eq('…but is refused a route out of the drawer, where Raees would confirm (an edit cannot start a confirmation)',lvlOf(tv(Object.assign({},tn,{from:'1010'}),tn),'edit.route'),'refuse');
+    s.eq('…and may be re-routed where nobody confirms',editRef(tv(Object.assign({},tn,{from:'1012'}),tn)),'none');
+    const ct=C({date:'2026-10-15',holder:'1011',counted:98000,note:'short'},100000);
+    s.eq('a count cannot change which holder was counted',lvlOf(tv(Object.assign({},ct,{holder:'1012'}),ct),'edit.holder'),'refuse');
+  }
+
+  s.section('M1.6a — a count edit keeps its book; money moved is named (money F2, security F1)');
+  {
+    const CIN={date:'2026-10-15',holder:'1011',counted:98000,note:'short'};
+    const ct=C(CIN,100000);
+    s.eq('a count\'s amount is an edit field — so a moved amount is named',M.MA_EDIT_FIELDS.count.indexOf('amount')>=0,true);
+    s.eq('the derived list no longer exempts amount or tax',M.MA_EDIT_DERIVED.indexOf('amount')+M.MA_EDIT_DERIVED.indexOf('tax'),-2);
+    s.eq('a note keeps the stored book',M.maCountBookOf(ct,Object.assign({},CIN,{note:'recounted'}),5),100000);
+    s.eq('…a figure written with its separators is the same figure',M.maCountBookOf(ct,Object.assign({},CIN,{counted:'98,000'}),5),100000);
+    s.eq('a recount takes the book as it stands',M.maCountBookOf(ct,Object.assign({},CIN,{counted:99000}),101000),101000);
+    s.eq('…and so does another day',M.maCountBookOf(ct,Object.assign({},CIN,{date:'2026-10-16'}),102000),102000);
+    s.eq('a new count takes the book as it stands',M.maCountBookOf(null,CIN,103000),103000);
+    const rb=(inp,now)=>M.maBuildDoc('count',inp,{by:ct.by,byName:ct.byName,ts:ct.ts,bookBalance:M.maCountBookOf(ct,inp,now)},IDX,S);
+    const n=M.maApplyEdit(ct,rb(Object.assign({},CIN,{note:'recounted, the same'}),0),{by:'afnan',at:9,reason:'note'});
+    s.eq('a note-only count edit moves nothing: book, difference, amount, and the posting',[n.bookBalance,n.difference,n.amount,post(n).map(l=>l.account+':'+(l.dr||-l.cr)).join()].join('|'),[100000,-2000,2000,post(ct).map(l=>l.account+':'+(l.dr||-l.cr)).join()].join('|'));
+    s.eq('…and its row says only "note"',JSON.stringify(n.edits[0].fields),JSON.stringify(['note']));
+    const r=M.maApplyEdit(ct,rb(Object.assign({},CIN,{counted:99500}),100000),{by:'afnan',at:9,reason:'recount'});
+    s.eq('a recount names counted AND amount',JSON.stringify(r.edits[0].fields),JSON.stringify(['counted','amount']));
+    const tx=J('money_out',{date:'2026-10-10',holder:'1011',account:'6050',payee:'Bilal',amount:10000,tax:{kind:'services',rate:16,inclusive:false}});
+    const tx2=M.maApplyEdit(tx,M.maBuildDoc('journal',{kind:'money_out',date:'2026-10-10',holder:'1011',account:'6050',payee:'Bilal',amount:12000,tax:{kind:'services',rate:16,inclusive:false}},{by:tx.by,byName:tx.byName,ts:tx.ts},IDX,S),{by:'afnan',at:9,reason:'bill'});
+    s.eq('a money-out whose amount moves names amount AND the tax that moved with it',JSON.stringify(tx2.edits[0].fields),JSON.stringify(['amount','tax']));
+  }
+
+  s.section('M1.6a — an edit stores its own flags, and a moved figure clears the review (money F8)');
+  {
+    const base={date:'2026-10-05',holder:'1011',account:'6050',payee:'Plumber',tax:NONE};
+    const small=Object.assign(J('money_out',Object.assign({},base,{amount:1000})),{reviewedAt:5,reviewedBy:'ammar'});
+    const big=M.maBuildDoc('journal',Object.assign({kind:'money_out'},base,{amount:95000}),{by:small.by,byName:small.byName,ts:small.ts},IDX,S);
+    const res=V(Object.assign({},big,{id:small.id,no:small.no}),{before:small,reason:'the real bill'});
+    s.eq('recorded small, edited up: the edit raises the evidence flag',res.flags.map(x=>x.rule).join(),'evidence.missing');
+    const e=M.maApplyEdit(small,big,{by:'afnan',at:9,reason:'the real bill',flags:res.flags});
+    s.eq('…and STORES it (it used to be shown, acknowledged and dropped)',JSON.stringify(e.flags),JSON.stringify(M.maFlagRows(res.flags)));
+    // Cleared means WRITTEN as null: a key left out is put back from the
+    // stored copy by the writer's edit shape, and the review would survive.
+    s.eq('the amount moved, so Ammar\'s review is cleared — both fields written as null',JSON.stringify(['reviewedAt','reviewedBy'].map(k=>k in e?e[k]:'absent')),JSON.stringify([null,null]));
+    s.eq('…and the document is back in the review queue',M.maReviewQueue([e]).length,1);
+    const noteOnly=M.maApplyEdit(small,M.maBuildDoc('journal',Object.assign({kind:'money_out'},base,{amount:1000,note:'receipt 7'}),{by:small.by},IDX,S),{by:'afnan',at:9,reason:'note',flags:[]});
+    s.ok('a note keeps the review (the writer keeps the stored fields)',!('reviewedAt' in noteOnly)&&!('reviewedBy' in noteOnly));
+    s.ok('…and, with no flag raised on a document that had none, adds no empty flags list',!('flags' in noteOnly));
+    const kept=M.maApplyEdit(Object.assign({},small,{flags:[{rule:'duplicate',message:'Looks like JV-1'}]}),M.maBuildDoc('journal',Object.assign({kind:'money_out'},base,{amount:1000,note:'x'}),{by:small.by},IDX,S),{by:'afnan',at:9,reason:'x',flags:[]});
+    s.eq('a flag the edit no longer raises is cleared (an empty list, stored)',JSON.stringify(kept.flags),'[]');
+    s.ok('without the edit\'s own flags (a file attached from the rail) the stored ones are not touched',!('flags' in M.maApplyEdit(small,big,{by:'afnan',at:9,reason:'x'})));
+    s.eq('which fields are figures',M.MA_FIGURE_FIELDS.join(),'date,amount,tax,party,account,holder,from,to,owner,lines,counted');
+    s.eq('a figure clears the review; a label or a note does not',[['amount'],['note'],['costCentre','tags'],['date'],['lines']].map(f=>M.maEditClearsReview(f)).join(),'true,false,false,true,true');
+    s.eq('a never-reviewed document gains no review fields',('reviewedAt' in M.maApplyEdit(J('money_out',Object.assign({},base,{amount:1000})),big,{by:'afnan',at:9,reason:'x'})),false);
+  }
+
+  s.section('M1.6a — journals are held to what their lines do (money F12; the rules cannot loop)');
+  {
+    const lines=M.maPostAll([open1011],IDX,S);
+    const G=(ls,extra)=>J('general',Object.assign({date:'2026-10-09',lines:ls},extra||{}));
+    const between=V(G([{account:'1012',dr:40000},{account:'1020',cr:40000}]),{lines});
+    s.eq('a journal moving money between two holders is refused',lvl(between,'journal.holders'),'refuse');
+    s.ok('…"record a transfer — it waits for the receiver"',/record a transfer: it waits for the receiver/.test((between.refuses.find(x=>x.rule==='journal.holders')||{}).message||''));
+    s.eq('three-way, two holders in and out: still refused',lvl(V(G([{account:'1012',dr:30000},{account:'6080',dr:500},{account:'1020',cr:30500}]),{lines}),'journal.holders'),'refuse');
+    s.eq('a holder on both sides netting to nothing is not a handover',has(V(G([{account:'1020',dr:500},{account:'1020',cr:500},{account:'6080',dr:100},{account:'4090',cr:100}]),{lines}),'journal.holders'),false);
+    const pay=V(G([{account:'6040',dr:500000},{account:'1020',cr:500000}]),{lines});
+    s.eq('paying ₨5,00,000 out of MCB against rent with no bill is flagged like a Money out',lvl(pay,'evidence.missing'),'flag');
+    s.eq('…and with nobody named as paid, flagged for that too',lvl(pay,'journal.payee'),'flag');
+    s.eq('with the bill and the landlord named: neither flag',R(V(G([{account:'6040',dr:500000,party:'pl'},{account:'1020',cr:500000}],{attachments:[{publicId:'ma/'+'ab'.repeat(32),format:'pdf',type:'authenticated'}]}),{lines,parties:[{id:'pl',kind:'vendor',name:'Landlord',active:true}]})),'');
+    s.eq('under the evidence threshold (₨2,000): no flag, as for a Money out',R(V(G([{account:'6080',dr:350},{account:'1020',cr:350,memo:'SMS'}]),{lines})),'');
+    s.eq('paid out against a payable (not a cost) is not a Money out in disguise',has(V(G([{account:'2010',dr:500000,party:'pl'},{account:'1020',cr:500000}]),{lines,parties:[{id:'pl',kind:'vendor',name:'L',active:true}]}),'evidence.missing'),false);
+    const flagged=Object.assign(G([{account:'6040',dr:500000},{account:'1020',cr:500000}]),{flags:M.maFlagRows(pay.flags)});
+    s.eq('the evidence flag is answered by attaching the bill, like any other',M.maLiveFlags(Object.assign({},flagged,{attachments:[{publicId:'ma/'+'cd'.repeat(32),format:'jpg',type:'authenticated'}]})).map(x=>x.rule).join(),'journal.payee');
+    const second=J('opening',{date:'2026-07-01',lines:[{account:'1011',side:'dr',amount:500000}]});
+    const again=V(second,{lines,docs:[open1011]});
+    s.eq('a second opening for an account that already has one is flagged',lvl(again,'opening.again'),'flag');
+    s.ok('…naming the first',new RegExp(open1011.no).test((again.flags.find(x=>x.rule==='opening.again')||{}).message||''));
+    s.eq('…once per account, however many lines name it',V(J('opening',{date:'2026-07-01',lines:[{account:'1011',side:'dr',amount:5},{account:'1011',side:'dr',amount:6}]}),{lines,docs:[open1011]}).flags.filter(x=>x.rule==='opening.again').length,1);
+    s.eq('an opening for an account nobody opened yet is not',has(V(J('opening',{date:'2026-07-01',lines:[{account:'1030',side:'dr',amount:5}]}),{lines,docs:[open1011],idx:M.maChartIndex(M.maChart('groovy',[{code:'1030',active:true}]))}),'opening.again'),false);
+    s.eq('a VOID first opening does not count',has(V(second,{lines,docs:[M.maApplyVoid(open1011,{reason:'x'})]}),'opening.again'),false);
+    s.eq('editing the one opening is not a second one',has(V(Object.assign({},open1011,{note:'x'}),{lines,docs:[open1011],before:open1011,reason:'x'}),'opening.again'),false);
+  }
+
+  s.section('M1.6a — closed quarters: confirm and review refused by name; a re-lock builder (money F7, security F3b)');
+  {
+    const closes=[{quarter:'2027-Q1',locked:true}];
+    const tq=T({date:'2026-09-01',from:'1011',to:'1012',amount:4000});
+    const r=M.maConfirmPatch(tq,'ammar',{at:5},{closes,settings:S});
+    s.ok('a confirm dated in a locked quarter is refused, naming the quarter',!!r.error&&/Q1 FY27/.test(r.error)&&/closed/.test(r.error)&&!r.patch,r.error);
+    s.eq('…not the rules\' words',/rules/i.test(r.error||''),false);
+    s.eq('a reopened quarter confirms again',M.maConfirmPatch(tq,'ammar',{at:5},{closes:[{quarter:'2027-Q1',locked:true,reopenedAt:9}],settings:S}).patch.status,'posted');
+    s.eq('with no closes given, nothing is locked (as before)',M.maConfirmPatch(tq,'ammar',{at:5}).patch.status,'posted');
+    s.eq('maQuarterLocked names a locked quarter, and is empty for an open one',[M.maQuarterLocked(tq,{closes,settings:S}),M.maQuarterLocked(T({date:'2026-10-05',from:'1011',to:'1012',amount:1}),{closes,settings:S})].join('|'),M.maQuarterLabel('2027-Q1',7)+'|');
+    const reopened={quarter:'2027-Q1',locked:true,closedBy:'afnan',closedAt:1,reopenedAt:5,reopenedBy:'ammar',reopenReason:'late bill'};
+    const rl=M.maCloseRelock(reopened,{by:'afnan',byName:'Afnan',at:10,auditId:'a-1',reason:'booked'});
+    s.eq('a re-lock locks, clears the reopen, and signs it',JSON.stringify([rl.patch.locked,rl.patch.reopenedAt,rl.patch.reopenedBy,rl.patch.reopenReason,rl.patch.closedBy,rl.patch.closedAt,rl.patch.relockAudit]),JSON.stringify([true,null,null,null,'afnan',10,'a-1']));
+    s.eq('…keeping the reopen it ends',JSON.stringify(rl.patch.reopens),JSON.stringify([{at:5,by:'ammar',reason:'late bill'}]));
+    s.eq('…with its audit row: a relock of that quarter, by the re-locker',JSON.stringify([rl.audit.action,rl.audit.target,rl.audit.by,rl.audit.at]),JSON.stringify(['relock',{dt:'close',id:'2027-Q1',no:'2027-Q1'},'afnan',10]));
+    s.eq('a second cycle appends to the history',M.maCloseRelock(Object.assign({},reopened,{reopens:[{at:1,by:'afnan',reason:'x'}]}),{by:'ammar',at:11,auditId:'a-2'}).patch.reopens.length,2);
+    s.eq('a close born unlocked is re-locked with no reopen to keep',JSON.stringify(M.maCloseRelock({quarter:'2027-Q4',locked:false,closedBy:'afnan'},{by:'afnan',at:12,auditId:'a-3'}).patch.reopens),'[]');
+  }
+
+  s.section('M1.6a — a date is a real day, in the client (security F4)');
+  {
+    ['2026-02-30','2026-02-29','2026-04-31','2026-00-01','2026-13-01','2026-10-32','2026-10-00','2026-1-05'].forEach(d=>{
+      s.eq(d+' is not a day, and a document dated on it is refused',[M.maIsDay(d),lvl(V(J('money_out',{date:d,holder:'1011',account:'6050',payee:'x',amount:5,tax:NONE})),'date.real')].join(':'),'false:refuse');
+    });
+    s.eq('29 February in a leap year is',M.maIsDay('2028-02-29'),true);
+    s.eq('a document built on an impossible day carries no period labels to be trusted',JSON.stringify((d=>[d.month,d.quarter,d.fy])(M.maBuildDoc('journal',{kind:'money_out',date:'2026-02-30',holder:'1011',account:'6050',payee:'x',amount:5},{by:'afnan'},IDX,S))),JSON.stringify(['','','']));
+  }
+
+  s.section('M1.6a — the words that follow the new rules');
+  {
+    const out=T({date:'2026-10-05',from:'1010',to:'1020',amount:50000});
+    const na=M.maNeedsAttention({settings:S,today:TODAY,holders:[],docs:[out],commitments:[]});
+    const line=(na.find(x=>/waiting to be confirmed/.test(x.sentence))||{}).sentence||'';
+    s.ok('money out of the drawer is "handed over", waiting for Raees — not "handed to Raees"',/handed over on .* is waiting to be confirmed by Raees\./.test(line)&&!/handed to/.test(line),line);
+    const stale=Object.assign(T({date:'2026-10-05',from:'1011',to:'1012',amount:40000}),{confirmedBy:'ammar',confirmedAt:7,confirmVia:'app'});   // an old edit's pending-with-a-confirmation
+    const X={idx:IDX,settings:S,lines:[],docs:[stale],parties:[],commitments:[],people:{ammar:'Ammar'}};
+    s.eq('a slip that says "pending" never also prints a confirmation',JSON.stringify([M.maPdfReceiptData(X,stale).state,M.maPdfReceiptData(X,stale).confirm]),JSON.stringify(['pending',null]));
   }
 
   s.section('the core is pure, and is the same in the browser and in node');

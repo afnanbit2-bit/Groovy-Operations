@@ -122,6 +122,7 @@ const trC=tr({date:'2026-10-03',from:'1011',to:'1012',amount:25000,note:'Float'}
 Object.assign(trC,M.maConfirmPatch(trC,'ammar',{at:1791000000000}).patch);
 const trP=tr({date:'2026-10-06',from:'1011',to:'1012',amount:150000,note:'For the dyer'});
 const trD=tr({date:'2026-10-04',from:'1011',to:'1010',amount:10000});
+Object.assign(trD,M.maConfirmPatch(trD,'afnan',{at:1791050000000}).patch);   // M1.6a: into the drawer waits; confirmed on paper for Raees
 const vOut=M.maApplyVoid(jv('money_out',{date:'2026-10-08',holder:'1011',account:'2010',party:'p_asg',amount:40000,tax:NONE}),{at:1791100000000,by:'afnan',byName:'Afnan',reason:'Entered twice'});
 const vTr=M.maApplyVoid(tr({date:'2026-10-09',from:'1011',to:'1012',amount:70000}),{at:1791200000000,by:'ammar',byName:'Ammar',reason:'Wrong day'});
 const e0=jv('money_out',{date:'2026-10-07',holder:'1011',account:'6050',payee:'Bilal',amount:12500,tax:{kind:'services',rate:16,inclusive:false}});

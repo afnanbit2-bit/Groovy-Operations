@@ -288,7 +288,11 @@ module.exports=async function(){
     const rules=fs.readFileSync(path.join(ROOT,'firestore.rules'),'utf8');
     const m=/match \/ma_shares\/\{token\}\s*\{([\s\S]*?)\n    \}/.exec(rules);
     s.ok('the ma_shares block lets an owner read',!!m&&/allow read:\s*if isMasterAccounts\(\);/.test(m[1]));
-    s.ok('… and never delete',!!m&&/allow delete:\s*if false;/.test(m[1]));
+    s.ok('… and never delete',!!m&&/allow (create, update, )?delete:\s*if false;/.test(m[1]));
+    // M1.6a (security F3): nor create or withdraw one directly — this
+    // function makes and revokes them, each in the same write as its audit
+    // row, so an owner cannot pick a token or skip the audit.
+    s.ok('… nor create or update one — only this function writes ma_shares',!!m&&/allow create, update, delete:\s*if false;/.test(m[1])&&!/allow create:|allow update:/.test(m[1]));
   }
   return s;
 };

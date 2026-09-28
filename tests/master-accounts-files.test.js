@@ -291,7 +291,7 @@ module.exports=async function(){
       s.eq('rev 2; one edits[] row by the caller naming exactly attachments',J([e.rev,e.edits.length,row.by,row.fields]),J([2,1,'afnan',['attachments']]));
       s.eq('… its reason says what happened',row.reason,'Attached asghar-oct.jpg');
       s.ok('… before/after carry references, never URLs',noUrlIn(row));
-      s.eq('the stored flags are NOT rewritten (the rules pin them)',J(e.flags),J(before.flags));
+      s.eq('the stored flags are NOT rewritten — an attach is not a form edit, and changes no figure',J(e.flags),J(before.flags));
       const au=ops.find(x=>x.col==='ma_audit');
       s.eq('an audit row goes with it: attach, by afnan, rev 2',J(au&&[au.data.action,au.data.by,/^rev 2 · attachments — Attached asghar-oct\.jpg$/.test(au.data.detail)]),J(['attach','afnan',true]));
       s.ok('the review queue no longer holds it — the file answers the flag',!app.run("maReviewQueue(_maCtx().docs).some(d=>d.id==='JV-27-0002')"));
