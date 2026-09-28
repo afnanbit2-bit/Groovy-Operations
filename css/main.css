@@ -2498,9 +2498,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 /* Phone share: the "Save to a board" picker (js/boards.js _boardsShareOpenPicker).
    A row is the board's tile, its whole name (the Profile-directory rule: the
    name never shares its row with a button, it IS the button) and a state word. */
+/* The "new version" banner (js/shared.js, fixed, bottom:0, z-index 2000,
+   53px measured at desktop widths) sat on the foot of every bottom sheet
+   (#97, bug 5). While it is up, a sheet stands on top of it instead. */
+body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:71px}
 .board-sendto-what{font-size:13px;color:var(--muted);margin:2px 0 10px}
 .board-sendto-search{width:100%;box-sizing:border-box;min-height:40px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:15px;margin-bottom:8px}
-.board-sendto-list{display:flex;flex-direction:column;gap:4px;max-height:52vh;overflow-y:auto}
+/* A FIXED height, not a max (GitHub #97, bug 5). The sheet is anchored to
+   the BOTTOM of the screen and sized to its content, so a search that
+   shortened the list shrank the sheet and dropped its top edge — it read
+   as the panel jumping down after every keystroke. The list keeps its
+   height while you type; the rows inside it change. */
+.board-sendto-list{display:flex;flex-direction:column;gap:4px;height:min(52vh,420px);overflow-y:auto}
 .board-sendto-row{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 8px;border:none;border-radius:10px;background:transparent;color:var(--text);text-align:left;cursor:pointer;font:inherit}
 .board-sendto-row:active{background:var(--hover)}
 @media (hover:hover){.board-sendto-row:hover{background:var(--hover)}}
@@ -2887,6 +2896,8 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   /* A menu anchored to a pointer makes no sense on a touch screen — both
      the long-press menu and the rail's More button dock as a sheet. */
   .board-sheet{left:0;right:0;bottom:0;width:auto;max-width:none;transform:none;border-radius:16px 16px 0 0;border-left:none;border-right:none;border-bottom:none;max-height:78%;padding-bottom:env(safe-area-inset-bottom)}
+  /* The update banner wraps to two lines here: 83px measured at 360. */
+  body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:83px}
   .board-sheet-item{padding:15px 2px}
   .board-emoji-grid{grid-template-columns:repeat(7,1fr)}
   .board-emoji{font-size:27px;padding:9px 0}

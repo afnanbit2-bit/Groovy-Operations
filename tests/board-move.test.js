@@ -128,5 +128,17 @@ module.exports=async function(){
     s.eq('an empty or missing tray adds nothing',run(`_boardsUnsortedCount({})+_boardsUnsortedCount({unsorted:[null]})`),0);
   }
 
+  {
+    // GitHub #97, bug 5. Measured in real Chromium: with max-height the
+    // sheet's top edge dropped 182 -> 499 after one search, because the
+    // sheet is bottom-anchored and sized to its content. The layout probe
+    // cannot type into a search, so the rule is held here.
+    s.section('the board picker does not jump while you search');
+    const css=require('fs').readFileSync(require('path').join(__dirname,'..','css','main.css'),'utf8');
+    const rule=(css.match(/\.board-sendto-list\{[^}]*\}/)||[''])[0];
+    s.ok('the list has a FIXED height, so the sheet keeps its size',/(^|[{;])height:/.test(rule.replace(/max-height/g,'')),rule);
+    s.ok('a bottom sheet stands on the update banner rather than under it',/body:has\(#sw-update-banner\) \.board-sheet:not\(\.board-pop\)\{bottom:/.test(css));
+  }
+
   return s;
 };

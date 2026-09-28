@@ -3640,6 +3640,19 @@ stashed column carries). The move already mirrors the target's `unsorted`
 into `moodBoards`, so the tile updates the moment the move lands. Guarded
 in `tests/board-move.test.js`.
 
+**The board picker stopped jumping (#97 bug 5, same day).** `.board-sheet`
+is bottom-anchored and sized to its content, so a search that shortened the
+"Move to a board" list shrank the sheet and dropped its top edge — MEASURED
+in real Chromium at **182 → 499** after one search. `.board-sendto-list`
+has a FIXED `height:min(52vh,420px)` now (was `max-height`): 182 → 182,
+and 218 → 218 on a 360px phone. The same report had it "partly under the
+new-version banner": that banner (`js/shared.js`, fixed, bottom:0,
+z-index 2000) measures **53px** on desktop and **83px** at 360 (it wraps),
+so `body:has(#sw-update-banner) .board-sheet:not(.board-pop)` lifts every
+bottom sheet onto it (71px / 83px). The share-into picker uses the same
+list and gets both. Held in `tests/board-move.test.js` (the probe cannot
+type into a search).
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not
