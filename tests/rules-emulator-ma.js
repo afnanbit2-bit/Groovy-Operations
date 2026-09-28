@@ -320,6 +320,33 @@ async function check(name,fn){
   });
   await check('Mustafa cannot read a share link',()=>assertFails(getDoc(doc(as('mustafa'),'ma_shares/tok1'))));
 
+  console.log('the page writer\'s own shapes (js/master-accounts.js, M1.3)');
+  // The writer stores the core's document plus `flags`, and on an edit keeps
+  // every key the rules do not let an edit touch (_maEditShape). Without
+  // that shape a flagged document could never be edited — proven both ways.
+  const pages=harness.loadApp({files:['js/ma-core.js','js/master-accounts.js'],session:{uid:U.afnan,u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
+  const P=expr=>JSON.parse(pages.run('JSON.stringify((()=>{const IDX=maChartIndex(maChart("groovy"));const S=MA_DEFAULT_SETTINGS;return '+expr+';})())'));
+  const jf=jv('afnan',{date:'2026-10-08',amount:5000,payee:'Painter'});
+  jf.flags=[{rule:'evidence.missing',message:'No bill or receipt attached (₨5,000).',field:'attachments'}];
+  await check('a flagged journal, as the writer stores it, is created',()=>assertSucceeds(setDoc(doc(as('afnan'),pathOf(jf)),jf)));
+  const jfIn={kind:'money_out',date:'2026-10-08',holder:'1011',account:'5010',payee:'Painter',amount:5200};
+  await check('its edit through _maEditShape passes (flags kept)',async()=>{
+    const e=P('_maEditShape('+J(jf)+',maApplyEdit('+J(jf)+',maBuildDoc("journal",'+J(jfIn)+','+J({by:jf.by,byName:jf.byName,ts:jf.ts})+',IDX,S),'+J({by:'afnan',byName:'Afnan',at:T+20,reason:'bill said 5,200'})+'))');
+    if(!(e.flags&&e.flags.length&&e.rev===2))throw new Error(J(e));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(jf)),e));
+  });
+  await check('the same edit WITHOUT the shape (flags dropped) is refused',async()=>{
+    let cur=null;await env.withSecurityRulesDisabled(async c=>{cur=(await getDoc(doc(c.firestore(),pathOf(jf)))).data();});
+    const raw=P('maApplyEdit('+J(cur)+',maBuildDoc("journal",'+J(Object.assign({},jfIn,{amount:5300}))+','+J({by:cur.by,byName:cur.byName,ts:cur.ts})+',IDX,S),'+J({by:'afnan',byName:'Afnan',at:T+22,reason:'again'})+')');
+    if(raw.flags)throw new Error('expected the raw edit to lack flags');
+    await assertFails(setDoc(doc(as('afnan'),pathOf(jf)),raw));
+  });
+  await check('the writer\'s counter document and audit row pass',async()=>{
+    await assertSucceeds(setDoc(doc(as('afnan'),'ma_counters/journal'),{FY27:7,updatedAt:T}));
+    const row=P('_maClean(maAuditRow("post",{dt:"journal",id:"JV-27-0007",no:"JV-27-0007"},{by:"afnan",byName:"Afnan",at:'+T+',detail:"Money out ₨5,000"}))');
+    await assertSucceeds(setDoc(doc(as('afnan'),'ma_audit/w1'),row));
+  });
+
   console.log('default-deny for anything not named');
   await check('an unlisted ma_ collection (ma_postings) is refused to an owner, read and write',async()=>{
     await seed('ma_postings/p1',{a:1});

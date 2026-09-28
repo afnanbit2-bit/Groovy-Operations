@@ -700,6 +700,25 @@ function _salesTeamNavHTML(groups){
     </div>`;
 }
 
+// ── Master Accounts ▸ (Sept 2026) ──
+// Afnan and Ammar only (maNavItems() in js/master-accounts.js, which loads
+// AFTER this file — hence typeof, failing CLOSED). Labelled "Master
+// Accounts" because the Store section already carries an "Accounts" item.
+function _maNavSectionHTML(){
+  const items=typeof maNavItems==='function'?maNavItems():[];
+  if(!items.length)return'';
+  const open=String(currentPage||'').startsWith('ma-');
+  const h=items.length*40+8;
+  return`
+    <div class="nav-divider"></div>
+    <div class="nav-item" id="nav-ma-toggle" onclick="window.toggleMaNav()" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Master Accounts</span><span id="ma-nav-arrow" style="font-size:11px;transition:transform .2s">${open?'▾':'▸'}</span>
+    </div>
+    <div id="ma-subnav" data-h="${h}" style="overflow:hidden;transition:max-height .2s;max-height:${open?h+'px':'0'}">
+      ${items.map(i=>`<div class="nav-item" id="nav-${i.id}" onclick="window.showPage('${i.id}')" style="padding-left:22px;font-size:13px">${i.label.replace(/&/g,'&amp;')}</div>`).join('')}
+    </div>`;
+}
+
 // ── Auth ──
 /* ── Creative Hub staged rollout (Sept 2026) ───────────────────────────
    ONE list, six call sites. Notes + Mood Boards are gated by USERNAME — not
@@ -912,7 +931,7 @@ function buildNav(){
 
   const salesNav=_salesTeamNavHTML(_salesTeamGroups());
 
-  document.getElementById('sidebar').innerHTML=mainNav+salesNav+printNav+storeNav+hrmNav;
+  document.getElementById('sidebar').innerHTML=mainNav+_maNavSectionHTML()+salesNav+printNav+storeNav+hrmNav;
   // ── Mobile bottom nav: 5-button "More" pattern (3 buttons for workers) ──
   _renderMobNav({isOwner,isWorker,isViewer,isStore,om,canPO,printItems,storeSubItems,hrmSubItems,mainItems});
 }
@@ -1062,6 +1081,7 @@ function _updateMobNavActive(pageId){
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','acct-ledger':'more','acct-vendors':'more','acct-vendor':'more','acct-category':'more','acct-runner':'more','acct-consumables':'more','acct-review':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more','pattern-reconcile':'more','pattern-blocks':'more','pattern-block':'more','pattern-unassigned':'more','pattern-poms':'more','pattern-notices':'more',
     'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more','mkt-reports':'more','mkt-import':'more',
+    'ma-overview':'more','ma-money':'more','ma-holder':'more','ma-out':'more','ma-parties':'more','ma-party':'more','ma-ledger':'more','ma-close':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     // The Board: on the owner/manager phone nav it lives behind More; the
     // designer has direct buttons, which _updateMobNavActive matches first.
@@ -1098,6 +1118,19 @@ window.toggleSalesNav=function(){
   const open=sub.style.maxHeight!=='0px'&&sub.style.maxHeight!=='0';
   sub.style.maxHeight=open?'0':((sub.dataset&&sub.dataset.h)||300)+'px';
   if(arrow)arrow.textContent=open?'▸':'▾';
+};
+window.toggleMaNav=function(){
+  const sub=document.getElementById('ma-subnav');
+  const arrow=document.getElementById('ma-nav-arrow');
+  if(!sub)return;
+  const open=sub.style.maxHeight!=='0px'&&sub.style.maxHeight!=='0';
+  sub.style.maxHeight=open?'0':((sub.dataset&&sub.dataset.h)||300)+'px';
+  if(arrow)arrow.textContent=open?'▸':'▾';
+};
+// Mobile: "Master Accounts ›" in the owner More sheet opens its pages.
+window.openMaSheet=function(){
+  const items=(typeof maNavItems==='function'?maNavItems():[]).map(i=>({iconName:'money',label:i.label,pageId:i.id}));
+  window.openMobSheet('Master Accounts',items);
 };
 // Mobile: "The Sales Team ›" in the More sheet opens every sub-area's pages.
 window.openSalesSheet=function(){
@@ -1187,6 +1220,7 @@ window.openMoreSheet=function(){
   if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   if(typeof _canSeePatternHub==='function'&&_canSeePatternHub())items.push({label:'Pattern Hub',pageId:'pattern-hub'}); // test phase — see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
+  if(typeof maNavItems==='function'&&maNavItems().length)items.push({iconName:'money',label:'Master Accounts ›',onClick:'window.openMaSheet()'});
   if(_salesTeamGroups().length)items.push({iconName:'people',label:'The Sales Team ›',onClick:'window.openSalesSheet()'});
   // Embellishments dept items (visible to owners/managers + relevant workers)
   if(om||session.u==='ammar'||session.u==='haris'||(typeof isPrintWorker==='function'&&isPrintWorker()))items.push({iconName:'palette',label:'Recipe Directory',pageId:'recipe-directory'});
@@ -1296,6 +1330,11 @@ window.showPage=async function(id){
     const arrow=document.getElementById('store-nav-arrow');
     if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight='300px';if(arrow)arrow.textContent='▾';}
   }
+  if(id.startsWith('ma-')){
+    const sub=document.getElementById('ma-subnav');
+    const arrow=document.getElementById('ma-nav-arrow');
+    if(sub&&sub.style.maxHeight==='0px'){sub.style.maxHeight=((sub.dataset&&sub.dataset.h)||300)+'px';if(arrow)arrow.textContent='▾';}
+  }
   if(id.startsWith('mkt-')){
     const sub=document.getElementById('sales-subnav');
     const arrow=document.getElementById('sales-nav-arrow');
@@ -1324,7 +1363,7 @@ window.showPage=async function(id){
 
 function renderPage(id){
   const m=document.getElementById('main-content');
-  if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0); if(typeof _fulfillDashboardInject==='function')setTimeout(_fulfillDashboardInject,0); if(typeof _monitorPopulateDashboard==='function')setTimeout(_monitorPopulateDashboard,0); if(typeof _mktPopulateDashboard==='function')setTimeout(_mktPopulateDashboard,0); if(typeof _ptnPopulateDashboard==='function')setTimeout(_ptnPopulateDashboard,0);}
+  if(id==='dashboard'){m.innerHTML=renderDashboard(); if(typeof _hrmPopulateDashboard==='function')setTimeout(_hrmPopulateDashboard,0); if(typeof _fulfillDashboardInject==='function')setTimeout(_fulfillDashboardInject,0); if(typeof _monitorPopulateDashboard==='function')setTimeout(_monitorPopulateDashboard,0); if(typeof _mktPopulateDashboard==='function')setTimeout(_mktPopulateDashboard,0); if(typeof _ptnPopulateDashboard==='function')setTimeout(_ptnPopulateDashboard,0); if(typeof _maPopulateDashboard==='function')setTimeout(_maPopulateDashboard,0);}
   else if(id==='po-create'){m.innerHTML=renderPOCreate(); if(typeof loadProducts==='function'&&!_productsLoaded)loadProducts();}
   else if(id==='po-registry')m.innerHTML=renderRegistry();
   else if(id==='my-work'){m.innerHTML=renderMyWork(); if(typeof _populateWorkerHRMWidget==='function')setTimeout(_populateWorkerHRMWidget,0);}
@@ -1348,6 +1387,8 @@ function renderPage(id){
   // Marketing page never needs a line here. Its loader cannot reject; a
   // failed read renders its own error card with Retry.
   else if(id.startsWith('mkt-')){if(typeof mktRenderPage==='function')mktRenderPage(id);else m.innerHTML='<div class="empty">The Marketing module did not load — refresh the page.</div>';}
+  // Every ma-* page goes through maRenderPage (js/master-accounts.js).
+  else if(id.startsWith('ma-')){if(typeof maRenderPage==='function')maRenderPage(id);else m.innerHTML='<div class="empty">The Master Accounts module did not load — refresh the page.</div>';}
   else if(id==='creative-hub')m.innerHTML=renderCreativeHub();
   // Every tb-* page goes through tbRenderPage (js/theboard.js), so The Board
   // never needs another line in this file for a screen added later -- the
@@ -1476,6 +1517,14 @@ const BUG_PAGE_NAMES={
   'color-library':'Color Library',
   'bug-tracker':'Bug Tracker',
   'shopify-intel':'Inventory Intel',
+  'ma-overview':'Master Accounts · Today',
+  'ma-money':'Master Accounts · Money',
+  'ma-holder':'Master Accounts · Holder',
+  'ma-out':'Master Accounts · Money out',
+  'ma-parties':'Master Accounts · Parties',
+  'ma-party':'Master Accounts · Party',
+  'ma-ledger':'Master Accounts · Ledger',
+  'ma-close':'Master Accounts · Close & audit',
   'mkt-creators':'Marketing — Creator Database',
   'mkt-dispatches':'Marketing — Dispatch Log',
   'mkt-paid-pr':'Marketing — Paid PR Approvals',

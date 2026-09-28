@@ -4220,7 +4220,7 @@ function renderDashboard(){
   // half is _ptnPopulateDashboard() on the 'dashboard' dispatch in
   // js/shared.js — both halves or neither.
   const patternBanner=(typeof renderPatternDashboardWidget==='function')?renderPatternDashboardWidget():'';
-  const base=`${hrmBanner}${monitorBanner}${marketingBanner}${patternBanner}<div class="stats-row">
+  const base=`${hrmBanner}${monitorBanner}${marketingBanner}${patternBanner}${(typeof renderMasterAccountsDashboardWidget==='function')?renderMasterAccountsDashboardWidget():''}<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-val">${total}</div></div>
     <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val">${active}</div></div>
     <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val">${done}</div></div>

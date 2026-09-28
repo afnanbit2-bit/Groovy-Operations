@@ -145,7 +145,93 @@ function tbBoardApp(page){
   return app;
 }
 
+// Master Accounts (js/master-accounts.js): a small, realistic book built by
+// the core itself — an opening, a rent payment against the cost register, a
+// flagged fabric bill, a courier collection, an Unlabelled spend, a drawing,
+// a void, an edited one, a transfer waiting for Ammar, a count that came up
+// short — and the drawer mirrored from Store Accounts.
+function _maFixture(){
+  const LS={getItem:()=>null,setItem(){},removeItem(){}};
+  const app=loadApp({files:['js/ma-core.js','js/master-accounts.js'],currentPage:'ma-overview',
+    session:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'},globals:{localStorage:LS}});
+  app.run(`(()=>{
+    const IDX=maChartIndex(maChart('groovy')),S=MA_DEFAULT_SETTINGS,T=Date.UTC(2026,8,20,6);
+    const n={journal:0,transfer:0,count:0};
+    const add=(dt,i,by,x)=>{const m={by:by||'afnan',byName:by==='ammar'?'Ammar':'Afnan',ts:T+(n[dt]+1)*60000};if(dt==='count')m.bookBalance=x.book;
+      const d=maBuildDoc(dt,i,m,IDX,S);n[dt]++;d.no=maDocNo(dt,d.fy,n[dt]);d.id=d.no;Object.assign(d,(x&&x.doc)||{});maData[_MA_DOC_KEY[dt]].push(d);return d;};
+    maData.parties=[
+      {id:'p1',kind:'vendor',name:'Al-Karam Textiles',code:'ALKA',active:true,costCentre:'factory',contact:{person:'Bilal',phone:'0300-1234567'},notes:'Fabric mill in Faisalabad; bills monthly',vendor:{roles:['fabric_mill'],tax:{regime:'sales'},terms:{mode:'credit',creditDays:30,creditLimit:750000,from:'2026-08-01'},termsHistory:[{mode:'cash',from:'2026-07-01',to:'2026-07-31',by:'afnan',reason:'Moved to credit after the first three orders'}],rateCard:[{id:'r1',item:'Single jersey 180 GSM',unit:'kg',rate:1180,validFrom:'2026-07-01',validTo:'2026-08-31',by:'afnan'},{id:'r2',item:'Single jersey 180 GSM',unit:'kg',rate:1240,validFrom:'2026-09-01',by:'afnan'}]}},
+      {id:'p2',kind:'vendor',name:'Al-Hamd Washing',code:'ALHA',active:true,vendor:{roles:['washing'],tax:{regime:'none'},terms:{mode:'weekly',billWeekdays:[3,6],from:'2026-07-01'},termsHistory:[],rateCard:[]}},
+      {id:'p3',kind:'vendor',name:'Iqbal Estates (factory landlord, Korangi Industrial Area)',code:'IQBA',active:true,vendor:{roles:['rent'],tax:{regime:'none'},terms:{mode:'monthly',billDay:5,from:'2026-07-01'},termsHistory:[],rateCard:[]}},
+      {id:'p4',kind:'courier',name:'PostEx',code:'POST',active:true}];
+    maData.commitments=[
+      {id:'c1',name:'Rent — factory',kind:'fixed',cadence:'monthly',dueDay:5,amountExpected:150000,account:'6040',holder:'1020',party:'p3',costCentre:'factory',active:true},
+      {id:'c2',name:'Electricity — K-Electric, the cutting hall and the stitching floor',kind:'fixed',cadence:'monthly',dueDay:12,amountExpected:62000,account:'6030',holder:'1020',costCentre:'factory',active:true},
+      {id:'c3',name:'Shopify subscription',kind:'fixed',cadence:'monthly',dueDay:28,amountExpected:11500,account:'6100',holder:'1020',costCentre:'online',active:true}];
+    add('journal',{kind:'opening',date:'2026-07-01',lines:[{account:'1020',side:'dr',amount:1850000},{account:'1011',side:'dr',amount:220000},{account:'1012',side:'dr',amount:145000},{account:'2110',side:'cr',amount:1500000}]});
+    add('journal',{kind:'money_out',date:'2026-09-05',holder:'1020',account:'6040',party:'p3',partyKind:'vendor',amount:150000,commitmentId:'c1',commitmentPeriod:'2026-09',costCentre:'factory',tax:{kind:'none'}});
+    add('journal',{kind:'money_out',date:'2026-09-09',holder:'1020',account:'5010',party:'p1',partyKind:'vendor',amount:412000,tax:{kind:'sales',rate:18,inclusive:true,claimable:true},costCentre:'factory',po:'PO-1043'},'afnan',{doc:{flags:[{rule:'evidence.missing',message:'No bill or receipt attached (₨4,12,000).',field:'attachments'}]}});
+    const e=add('journal',{kind:'money_out',date:'2026-09-14',holder:'1011',account:'5050',party:'p2',partyKind:'vendor',amount:38500,tax:{kind:'none'},costCentre:'factory'});
+    e.rev=2;e.edits=[{at:T+5000,by:'ammar',byName:'Ammar',reason:'The washing bill said 38,500',fields:['amount'],before:{amount:36500},after:{amount:38500}}];
+    add('journal',{kind:'money_in',date:'2026-09-16',holder:'1011',account:'4010',party:'p4',partyKind:'courier',amount:486200,tax:{kind:'none'},channel:'online_cod',note:'CPR collected by hand'});
+    add('journal',{kind:'money_out',date:'2026-09-18',holder:'1012',account:'9020',payee:'Cash — not sure yet',amount:6500,tax:{kind:'none'},note:'Receipt lost'},'ammar');
+    add('journal',{kind:'drawing',date:'2026-09-22',holder:'1012',owner:'ammar',amount:40000},'ammar');
+    const v=add('journal',{kind:'money_out',date:'2026-09-19',holder:'1011',account:'6070',payee:'Stationers',amount:1200,tax:{kind:'none'}});
+    Object.assign(v,{status:'void',voidedAt:T,voidedBy:'afnan',voidedByName:'Afnan',voidReason:'Entered twice'});
+    add('transfer',{date:'2026-09-17',from:'1011',to:'1020',amount:400000,note:'Deposited'});
+    add('transfer',{date:'2026-09-23',from:'1011',to:'1012',amount:25000,note:'For the Saturday pay run'});
+    add('count',{date:'2026-09-15',holder:'1012',counted:144000},'ammar',{book:145000,doc:{note:'Short by a thousand'}});
+    maData.audit=[{action:'post',target:{dt:'journal',id:'JV-27-0002',no:'JV-27-0002'},detail:'Money out ₨1,50,000',by:'afnan',byName:'Afnan',at:T},{action:'edit',target:{dt:'journal',id:'JV-27-0004',no:'JV-27-0004'},detail:'rev 2 · amount — The washing bill said 38,500',by:'ammar',byName:'Ammar',at:T+5000}];
+    _maMirror={ok:true,cash:52000,why:''};maLoaded=true;_maLoadErrs=[];_maInvalidate();
+    return 1;})()`);
+  return app;
+}
+
 const FRAGMENTS={
+  // Master Accounts (MASTER_ACCOUNTS_PLAN.md §16.4): Today, Money and a
+  // holder, the Ledger with the review queue, a party page, and the Record
+  // picker with a form. The rail is NOT opened here: under 1200px it is a
+  // fixed slide-over that would sit on the page's own controls (the
+  // documented false hit); its own fragment runs at 1900 only.
+  'master accounts — Today':()=>{
+    const app=_maFixture();
+    return Promise.resolve(app.run("_maPageHTML('ma-overview')"));
+  },
+  'master accounts — Money and a holder':()=>{
+    const app=_maFixture();
+    const money=app.run("_maPageHTML('ma-money')");
+    app.run("_maHolderCode='1011';_maPeriod='quarter'");
+    return Promise.resolve(money+app.run("_maPageHTML('ma-holder')"));
+  },
+  'master accounts — Ledger, documents and review':()=>{
+    const app=_maFixture();
+    app.run("_maPeriod='quarter';_maLedgerTab='postings'");
+    const a=app.run("_maPageHTML('ma-ledger')");
+    app.run("_maLedgerTab='documents'");const b=app.run("_maPageHTML('ma-ledger')");
+    app.run("_maLedgerTab='review'");const c=app.run("_maPageHTML('ma-ledger')");
+    return Promise.resolve(a+b+c);
+  },
+  'master accounts — a party page and the cost register':()=>{
+    const app=_maFixture();
+    app.run("_maPartyId='p1';_maPeriod='quarter'");
+    return Promise.resolve(app.run("_maPageHTML('ma-party')")+app.run("_maPageHTML('ma-out')"));
+  },
+  'master accounts — the document rail':()=>{
+    const app=_maFixture();
+    app.run("_maRail={kind:'doc',dt:'journal',id:'JV-27-0004'};_maPeriod='quarter'");
+    return Promise.resolve({widths:[1900],html:app.run("_maPageHTML('ma-ledger')")});
+  },
+  'master accounts — the Record picker and a form':()=>{
+    const app=_maFixture();
+    const wrap=(t,b,f)=>'<div class="ma-modal wide" style="position:static;max-height:none;margin-bottom:16px"><div class="ma-modal-head"><h2>'+t+'</h2><button class="ma-x" aria-label="Close">×</button></div><div class="ma-modal-body">'+b+'</div>'+(f?'<div class="ma-modal-foot">'+f+'</div>':'')+'</div>';
+    const pick=app.run('_maPickerHTML()');
+    app.run("window.maRecordKind('money_out',{party:'p1',commitmentId:'c2',tax:{kind:'sales',rate:18,inclusive:true}})");
+    const form=(app.bodyHtml('ma-modal-back').match(/<div class="ma-modal-body"[^>]*>([\s\S]*)<\/div>\s*<div class="ma-modal-foot">/)||[])[1]||'';
+    const foot='<button class="ma-btn">Cancel</button><button class="ma-btn primary">Record</button>';
+    app.run("window.maRecordKind('general')");
+    const jv=(app.bodyHtml('ma-modal-back').match(/<div class="ma-modal-body"[^>]*>([\s\S]*)<\/div>\s*<div class="ma-modal-foot">/)||[])[1]||'';
+    return Promise.resolve(wrap('Record',pick,'')+wrap('Money out',form,foot)+wrap('Journal',jv,foot));
+  },
   // The login screen and the app lock, straight out of index.html (the
   // markup lives there, not in a module). Measured with the forgot-password
   // note OPEN, so its text is checked too. The lock's card is taken out of

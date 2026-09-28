@@ -86,7 +86,8 @@ const OWNER_PAGES=['dashboard','po-create','po-registry','gatepass','fabric-inve
   'store-analytics','acct-ledger','po-issue-list','recipe-directory','printing-jobs','observer-tower',
   'color-library','shopify-intel','hrm-employees','attendance','hrm-payroll','hrm-advances','hrm-loans',
   'mkt-creators','mkt-dispatches','mkt-paid-pr','mkt-reports','pattern-hub','pattern-blocks',
-  'tb-dash','tb-calendar','tb-lists','tb-inbox','me'];
+  'tb-dash','tb-calendar','tb-lists','tb-inbox','me',
+  'ma-overview','ma-money','ma-out','ma-parties','ma-ledger','ma-close'];
 const JOBS=[
   {id:'owner-light',user:'afnan',theme:'light',pages:OWNER_PAGES},
   {id:'owner-dark',user:'afnan',theme:'dark',pages:OWNER_PAGES},
@@ -169,6 +170,9 @@ function appPage(job){
     +';window.__EMAIL='+JSON.stringify(def.email)+';window.__SESSION='+JSON.stringify(sess)
     +';window.__PAGES='+JSON.stringify(job.pages)+';try{localStorage.setItem("groovy-theme","'+job.theme+'")}catch(e){}'
     +'</script><script>('+CLOCK+')();('+STUB+')();'
+    // Master Accounts re-locks after idle; the owner was "here a moment ago"
+    // so its pages are measured, not the lock screen (js/master-accounts.js).
+    +'try{var __a={};__a[window.__UID]=Date.now();localStorage.setItem("groovy-ma-active",JSON.stringify(__a))}catch(e){}'
     // js/store.js is the one REST module: answer it with an empty collection.
     +'window.fetch=function(u){var s=String(u),b=s.indexOf("firestore.googleapis")>-1?(s.indexOf(":runQuery")>-1?[]:{documents:[]}):{};'
     +'return Promise.resolve({ok:true,status:200,headers:{get:function(){return null}},json:function(){return Promise.resolve(b)},text:function(){return Promise.resolve(JSON.stringify(b))}});};'
