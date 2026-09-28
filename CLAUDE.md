@@ -3494,6 +3494,41 @@ it needs a republish.**
   (the probe skips `<option>`) — checked by breaking it.
 - **Nobody has used a role on a real screen** — the sandbox cannot sign in.
 
+### Mood Boards — notifications to the bell (Sept 2026)
+
+The fourth Milanote gap (help centre, search summaries). Board events go to
+the **same bell** as everything else — `hrm_notifications`, `forUser` =
+USERNAME, deterministic ids, `source:'moodboards'` — so no new panel, badge
+or rules change. The Board's inbox filters on its own `source` client-side
+too, so these never appear there.
+
+- **A comment** tells the board's owner, everyone who already wrote in that
+  thread (a card's, or the whole-board one) and the author being replied to
+  (as "X replied to you"). Never the writer. **Only people who can READ the
+  board** (`_boardsCanReadAs`, the read rule from the client) — a private
+  board's comment text must not land in someone else's bell. App owners are
+  NOT readers of a private board ("private means private"), so they are not
+  told. Recipients: `_boardsCommentRecipients` (pure). Comments now store
+  `byU` (the username); older ones are traced by display name.
+- **Assigning a task** tells the assignee (not yourself, not someone who
+  cannot open the board, not a re-assignment to the same person). The
+  assignee is a USER_DEFS NAME (`it.who`), mapped to a username.
+- **Due reminders** (today or overdue, not done) are raised by the
+  ASSIGNEE's own device once a day when the board list loads
+  (`_boardsRaiseDueReminders`, the Marketing M5 pattern), written only if
+  absent so a dismissed one stays dismissed that day. **Nothing fires while
+  nobody opens Mood Boards**, and the bell itself is read on HRM load, not
+  live — both pre-existing shapes, not changed here.
+- **The bell renders title and message RAW**, so `_boardsNotifRow` escapes
+  both. **"View" opens the board on the card**: `actionUrl` is a
+  `#board=…&card=…` deep link; `js/shared.js` `_hrmNotifAction` (cross-track,
+  one additive branch) hands a `#…` url to `location.hash`. Ids are cut to
+  `[A-Za-z0-9_-]` because the url is interpolated into an onclick.
+- A notification that fails to write never fails the comment or assignment.
+- **Not built:** @mentions (their own gap), email, "changed since your last
+  visit". `tests/board-notify.test.js` (27): reverting the reader filter
+  (2 fail), the escaping (2) and the only-if-absent check (1).
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

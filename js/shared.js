@@ -1241,6 +1241,14 @@ window.openStoreMoreSheet=function(){
 
 window._hrmNotifAction=function(url){
   if(!url)return;
+  // A Mood Boards notification carries a #board=…&card=… deep link. The
+  // hashchange listener in js/boards.js opens it; the same hash twice fires
+  // no hashchange, so that case is handed over directly.
+  if(url.charAt(0)==='#'){
+    if(location.hash===url){if(typeof _boardsConsumeDeepLink==='function')_boardsConsumeDeepLink();}
+    else location.hash=url;
+    return;
+  }
   const colonIdx=url.indexOf(':');
   if(colonIdx>-1){
     const page=url.slice(0,colonIdx);

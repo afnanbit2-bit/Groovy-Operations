@@ -1250,6 +1250,171 @@ const _qSet=(...a)=>_boardsQuietWrite(()=>setDoc.apply(null,a));
 const _qAdd=(...a)=>_boardsQuietWrite(()=>addDoc.apply(null,a));
 const _qDel=(...a)=>_boardsQuietWrite(()=>deleteDoc.apply(null,a));
 
+/* ── Notifications to the bell (Sept 2026) ─────────────────────────────
+   Milanote tells you when someone comments on a board you are on, replies
+   to you, assigns you a task, and when a task comes due (help centre,
+   search summaries: "Notifications & alerts", "Comments", "To-do lists").
+   Ours go to the SAME bell every other module uses — hrm_notifications,
+   addressed by `forUser` (a USERNAME), deterministic ids — so a board
+   notification needs no new panel, badge or rules change.
+
+   - **Who hears about a comment** (_boardsCommentRecipients, pure): the
+     board's owner, everyone who already wrote in that same thread (a card's
+     thread, or the whole-board one), and the author of the comment being
+     replied to — never the writer, and only people who can READ the board
+     (a PRIVATE board's comment must not surface its text, in a bell row,
+     to someone the board is not shared with). App owners are NOT readers
+     of a private board — "private means private" — so they are not told.
+   - **The bell renders title and message RAW** (_hrmNotifCardHTML), so
+     every row is escaped here, in _boardsNotifRow, before it is written.
+   - **"View" opens the board on the card**: actionUrl is a `#board=…&card=…`
+     deep link, which js/shared.js _hrmNotifAction hands to location.hash.
+     Ids are cut to [A-Za-z0-9_-] because the url is interpolated into an
+     onclick.
+   - **Due reminders are raised by the assignee's own device**, once a day,
+     when the board list loads — the Marketing M5 pattern. Nothing fires
+     while nobody opens Mood Boards; recorded, not hidden. A reminder is only
+     written if absent, so dismissing one sticks for that day.
+   - A notification failing to write never fails the comment or the
+     assignment it describes. */
+const _BOARDS_NOTIF_SOURCE='moodboards';
+function _boardsUserDefs(){return(typeof USER_DEFS!=='undefined'&&Array.isArray(USER_DEFS))?USER_DEFS:[];}
+function _boardsUserByName(name){
+  const n=String(name||'').trim().toLowerCase();
+  if(!n)return null;
+  return _boardsUserDefs().find(u=>u&&String(u.name||'').toLowerCase()===n)||null;
+}
+function _boardsUserByU(u){return _boardsUserDefs().find(x=>x&&x.u===u)||null;}
+// Whether USERNAME could open this board — the read rule, from the client.
+function _boardsCanReadAs(b,username){
+  if(!b||!username)return false;
+  if(b.visibility==='shared')return true;
+  if(b.ownerUsername&&b.ownerUsername===username)return true;
+  const u=_boardsUserByU(username);
+  return!!(u&&u.email&&_boardsShareRole(b,u.email));
+}
+function _boardsIdSafe(v){return String(v||'').replace(/[^A-Za-z0-9_-]/g,'');}
+function _boardsDeepHash(boardId,cardId){
+  const b=_boardsIdSafe(boardId),c=_boardsIdSafe(cardId);
+  return'#board='+b+(c?'&card='+c:'');
+}
+// The row as it is written. Pure.
+function _boardsNotifRow(o){
+  const n=o||{};
+  return{
+    source:_BOARDS_NOTIF_SOURCE,
+    type:String(n.type||''),
+    forUser:String(n.forUser||''),
+    title:_boardsEsc(String(n.title||'').slice(0,80)),
+    message:_boardsEsc(String(n.message||'').replace(/\s+/g,' ').trim().slice(0,140)),
+    actionUrl:_boardsDeepHash(n.boardId,n.cardId),
+    boardId:String(n.boardId||''),cardId:n.cardId?String(n.cardId):null,
+    priority:n.priority||'normal',
+    readBy:[],
+    createdAt:n.at||Date.now()
+  };
+}
+// The username a comment was written by: stored since this shipped, else
+// read back from the display name older comments carry.
+function _boardsCommentAuthorU(c){
+  if(c&&c.byU)return c.byU;
+  const u=_boardsUserByName(c&&c.byName);
+  return u?u.u:null;
+}
+function _boardsCommentRecipients(b,comment,all,me){
+  const out=new Set();
+  if(b&&b.ownerUsername)out.add(b.ownerUsername);
+  const thread=(all||[]).filter(x=>x&&x.id!==comment.id&&(x.cardId||null)===(comment.cardId||null));
+  thread.forEach(x=>{const u=_boardsCommentAuthorU(x);if(u)out.add(u);});
+  if(comment.replyTo){
+    const parent=(all||[]).find(x=>x&&x.id===comment.replyTo);
+    const u=parent&&_boardsCommentAuthorU(parent);
+    if(u)out.add(u);
+  }
+  out.delete(me);
+  return Array.from(out).filter(u=>_boardsCanReadAs(b,u)).slice(0,20);
+}
+async function _boardsNotify(id,row,onlyIfAbsent){
+  try{
+    const ref=doc(db,'hrm_notifications',id);
+    if(onlyIfAbsent){
+      const snap=await getDoc(ref);
+      if(snap&&snap.exists&&snap.exists())return false;
+    }
+    await _qSet(ref,Object.assign({id},row));
+    if(typeof session!=='undefined'&&session&&row.forUser===session.u&&typeof allHRMNotifs!=='undefined'&&Array.isArray(allHRMNotifs)){
+      allHRMNotifs.unshift(Object.assign({id,_id:id},row));
+      if(typeof _renderHRMNotifBadge==='function')_renderHRMNotifBadge();
+    }
+    return true;
+  }catch(e){console.warn('[boards] notify failed',e&&e.message);return false;}
+}
+function _boardsNotifyComment(commentId,comment){
+  const b=_editBoard;
+  if(!b||typeof session==='undefined'||!session)return;
+  const recips=_boardsCommentRecipients(b,Object.assign({id:commentId},comment),_boardsComments,session.u);
+  const parent=comment.replyTo?(_boardsComments||[]).find(x=>x&&x.id===comment.replyTo):null;
+  const parentU=parent?_boardsCommentAuthorU(parent):null;
+  recips.forEach(u=>{
+    const reply=u===parentU;
+    _boardsNotify('mb_cmt_'+_boardsIdSafe(commentId)+'_'+_boardsIdSafe(u),_boardsNotifRow({
+      type:reply?'reply':'comment',forUser:u,boardId:b.id,cardId:comment.cardId,
+      title:reply?(session.name||'Someone')+' replied to you':'New comment on '+(b.title||'a board'),
+      message:(session.name||'Someone')+': '+comment.text
+    }));
+  });
+}
+function _boardsNotifyAssigned(card,i,who){
+  const u=_boardsUserByName(who);
+  if(!u||!_editBoard||typeof session==='undefined'||!session||u.u===session.u)return;
+  if(!_boardsCanReadAs(_editBoard,u.u))return;
+  const it=card.items[i]||{};
+  const due=_boardsTodoValidDue(it.due);
+  _boardsNotify('mb_asg_'+_boardsIdSafe(_editBoard.id)+'_'+_boardsIdSafe(card.id)+'_'+i+'_'+_boardsIdSafe(u.u),_boardsNotifRow({
+    type:'assigned',forUser:u.u,boardId:_editBoard.id,cardId:card.id,
+    title:(session.name||'Someone')+' assigned you a task',
+    message:(it.text||'A task')+' · '+(_editBoard.title||'a board')+(due?' · due '+_boardsDueLabel(due):'')
+  }));
+}
+// My own tasks that are due today or overdue, across every board I can
+// read. Pure over the boards handed in.
+function _boardsDueForMe(boards,myName,today){
+  const n=String(myName||'').trim().toLowerCase();
+  const out=[];
+  if(!n)return out;
+  (boards||[]).forEach(b=>{
+    if(!b||b.deletedAt)return;
+    (Array.isArray(b.cards)?b.cards:[]).forEach(c=>{
+      if(!c||c.type!=='todo'||!Array.isArray(c.items))return;
+      c.items.forEach((it,i)=>{
+        if(!it||it.done)return;
+        if(String(it.who||'').trim().toLowerCase()!==n)return;
+        const due=_boardsTodoValidDue(it.due);
+        if(!due||due>today)return;
+        out.push({board:b,card:c,i,it,due,overdue:due<today});
+      });
+    });
+  });
+  return out.slice(0,30);
+}
+const _BOARDS_DUE_KEY='groovy-boards-due-checked';
+function _boardsRaiseDueReminders(){
+  if(typeof session==='undefined'||!session||!session.u)return 0;
+  const today=_boardsTodayStr();
+  try{if(localStorage.getItem(_BOARDS_DUE_KEY)===session.u+'|'+today)return 0;}catch(e){}
+  const me=_boardsUserByU(session.u);
+  const due=_boardsDueForMe(moodBoards,me&&me.name,today);
+  due.forEach(d=>{
+    _boardsNotify('mb_due_'+_boardsIdSafe(d.board.id)+'_'+_boardsIdSafe(d.card.id)+'_'+d.i+'_'+_boardsIdSafe(session.u)+'_'+today,_boardsNotifRow({
+      type:'due',forUser:session.u,boardId:d.board.id,cardId:d.card.id,priority:d.overdue?'high':'normal',
+      title:d.overdue?'Task overdue':'Task due today',
+      message:(d.it.text||'A task')+' · '+(d.board.title||'a board')+(d.overdue?' · was due '+_boardsDueLabel(d.due):'')
+    }),true);
+  });
+  try{localStorage.setItem(_BOARDS_DUE_KEY,session.u+'|'+today);}catch(e){}
+  return due.length;
+}
+
 /* ── Reading order, the document export and Presentation ────────────────
    A board is a plane; a document and a slideshow are both a LINE. One
    function turns one into the other, and both features consume it — two
@@ -1615,6 +1780,8 @@ async function loadBoardsData(){
   moodBoards=all.filter(b=>!b.deletedAt);
   _boardsTrash=all.filter(b=>!!b.deletedAt).sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
   boardsLoaded=true;
+  // My own due/overdue tasks → the bell, once a day (see Notifications).
+  setTimeout(()=>{try{_boardsRaiseDueReminders();}catch(e){}},0);
 }
 window.boardsRetryLoad=async function(){
   boardsLoaded=false;_boardsLoadError=null;_boardsLoadPartial=null;
@@ -8146,7 +8313,9 @@ window.boardsTodoSetDue=function(id,i,v){
 window.boardsTodoSetWho=function(id,i,who){
   const c=_boardsTodoCard(id);if(!c||!c.items[i]||!_boardsCanEdit(_editBoard))return;
   _boardsPushUndo();
+  const was=c.items[i].who||'';
   if(who)c.items[i].who=String(who); else delete c.items[i].who;
+  if(who&&String(who)!==was){try{_boardsNotifyAssigned(c,i,String(who));}catch(e){}}
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
   showToast(who?('Assigned to '+who):'Assignment cleared');
@@ -12668,13 +12837,15 @@ window.boardsAddComment=async function(){
   if(!text||!_editBoard||!session)return;
   if(!_boardsCanComment(_editBoard)){showToast('You can view this board but not comment on it',true);return;}
   try{
-    await _qAdd(collection(db,'mood_boards',_editBoard.id,'comments'),{
+    const cmt={
       cardId:_boardsDrawerCard||null,
       text:text.slice(0,2000),
-      byUid:session.uid,byName:session.name||'',
+      byUid:session.uid,byName:session.name||'',byU:session.u||'',
       ts:Date.now(),resolved:false,
       replyTo:_boardsReplyTo||null
-    });
+    };
+    const ref=await _qAdd(collection(db,'mood_boards',_editBoard.id,'comments'),cmt);
+    try{_boardsNotifyComment(ref&&ref.id?ref.id:String(cmt.ts),cmt);}catch(e){}
     if(input)input.value='';
     _boardsReplyTo=null;
     _boardsLogBoardActivity(_boardsDrawerCard?'commented on a card':'commented on the board');
