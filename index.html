@@ -25,7 +25,7 @@
 </script>
 <!-- flatpickr's base sheet FIRST, so css/main.css restyles it to the app's tokens (The Board, P1). -->
 <link rel="stylesheet" href="/assets/vendor/flatpickr-4.6.13.min.css">
-<link rel="stylesheet" href="/css/main.css?v=20260927v224">
+<link rel="stylesheet" href="/css/main.css?v=20260928v225">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#000000">
 <script>try{if(window.__gvThemeDark)document.querySelector('meta[name="theme-color"]').setAttribute('content','#0E0E10');}catch(e){}</script>
@@ -51,6 +51,19 @@ if('serviceWorker' in navigator){
 <div id="scr-login">
   <div class="ptr" id="login-ptr" aria-hidden="true"><svg viewBox="0 0 24 24"><circle class="ptr-track" cx="12" cy="12" r="8.5"/><circle class="ptr-arc" cx="12" cy="12" r="8.5"/><path class="ptr-arrow" d="M12 8v8M8.5 12.5 12 16l3.5-3.5"/><path class="ptr-check" d="M8 12.4l2.8 2.8L16.2 9.6"/></svg><span class="ptr-label"></span></div>
   <button type="button" class="login-theme" id="login-theme-btn" onclick="window.loginCycleTheme()" aria-label="Change theme" title="Theme"></button>
+  <!-- Desktop only (>=1024px): the brand half of a split screen. On a phone
+       it is display:none and the form is the whole screen, as before. -->
+  <aside class="login-brand">
+    <div class="login-brand-top">
+      <div class="login-brand-mark"><img src="assets/groovy-operations-wordmark.png.png" alt="GROOVY" draggable="false" onerror="this.parentNode.style.display='none'"></div>
+      <div class="login-brand-ops">OPERATIONS</div>
+    </div>
+    <div class="login-brand-mid">
+      <h2 class="login-brand-h">People.<br>Products.<br><span>Progress.</span></h2>
+      <p class="login-brand-p">One place for production orders, cutting, embellishments, the store, accounts and the team.</p>
+    </div>
+    <div class="login-brand-foot">GROOVY · Internal use only</div>
+  </aside>
   <form class="login-box" id="login-form" method="post" action="#" autocomplete="on" novalidate onsubmit="event.preventDefault();window.doLogin()">
     <div class="login-logo">
       <div class="login-mark"><img src="assets/groovy-operations-wordmark.png.png" alt="GROOVY" draggable="false" onerror="this.parentNode.style.display='none';this.parentNode.nextElementSibling.textContent='GROOVY OPERATIONS'"></div>
