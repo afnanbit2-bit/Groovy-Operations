@@ -3631,6 +3631,15 @@ slide. Checked in real Chromium: nested lists and a colour survive, an
 only line breaks are Shift+Enter `<br>`s counts as "plain", so it is
 stored as `c.text` alone and loses those breaks on the canvas too.
 
+**A board tile counts its Unsorted (#97 bug 4, same day).** After "Move to
+board…", LAB A's tile still read "0 cards" — true of its canvas, but the
+card had landed in its Unsorted, so the move looked like it had failed.
+The sub-board card and the Home panel row now add "· N in Unsorted"
+(`_boardsUnsortedCount`: tray ITEMS, one per row, however many cards a
+stashed column carries). The move already mirrors the target's `unsorted`
+into `moodBoards`, so the tile updates the moment the move lands. Guarded
+in `tests/board-move.test.js`.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

@@ -114,5 +114,19 @@ module.exports=async function(){
     s.eq('no write for any of them',tx.calls,0);
   }
 
+  {
+    // GitHub #97, bug 4: the target's tile said "0 cards" after the move.
+    const {app}=setup();
+    const {run}=app;
+    s.section('the target\'s tile says what landed in its Unsorted');
+    run(`moodBoards[1].unsorted=[]`);
+    const meta=()=>(run(`_boardCardHTML(_editCards.find(c=>c.id==='bl'),true)`).match(/board-subboard-meta">([^<]*)</)||[])[1];
+    s.eq('before the move',meta(),'PRIVATE · 0 cards');
+    await run(`window.boardsMoveCardsTo('DST',['n1'])`);
+    s.eq('after it, the card is counted as waiting',meta(),'PRIVATE · 0 cards · 1 in Unsorted');
+    s.ok('the Home panel row says it too',/0 cards · 1 in Unsorted/.test(run(`_boardsPanelRowHTML(moodBoards[1],false,true,false)`)));
+    s.eq('an empty or missing tray adds nothing',run(`_boardsUnsortedCount({})+_boardsUnsortedCount({unsorted:[null]})`),0);
+  }
+
   return s;
 };

@@ -581,6 +581,11 @@ function _boardsFileExt(name){
 // time, from boards already loaded. The alternative (fixing up parentId
 // whenever a link card is deleted) means a Firestore write inside an
 // undoable action, and an orphan the moment any of it fails.
+// How many items wait in a board's Unsorted — the number its tray shows
+// (one row per item, however many cards a stashed column carries).
+function _boardsUnsortedCount(b){
+  return b&&Array.isArray(b.unsorted)?b.unsorted.filter(Boolean).length:0;
+}
 function _boardsLiveById(){
   const m={};
   moodBoards.forEach(b=>{m[b.id]=b;});
@@ -2894,8 +2899,12 @@ function _boardCardHTML(c,canEdit){
     /* The state word is from the specimen and costs nothing — visibility is
        already on the board document and the panel row already prints it. */
     const state=child?(child.visibility==='shared'?'TEAM':'PRIVATE'):'';
+    // Cards waiting in its Unsorted count too (GitHub #97, bug 4): a card
+    // moved INTO a board lands there, and a tile still reading "0 cards"
+    // after the move looked like the move had failed.
+    const waiting=child?_boardsUnsortedCount(child):0;
     const meta=child
-      ?[state,n+' card'+(n===1?'':'s')].concat(files?[files+' file'+(files===1?'':'s')]:[]).join(' · ')
+      ?[state,n+' card'+(n===1?'':'s')].concat(waiting?[waiting+' in Unsorted']:[],files?[files+' file'+(files===1?'':'s')]:[]).join(' · ')
       :(c.boardId?'Not available — deleted, or private to someone else':'No board linked yet');
     /* NO "Open" PILL ON A POINTER DEVICE (Sept 2026 — Afnan: "open text is
        not required"). Double-click opens it, the idle corner glow says the
@@ -11492,6 +11501,7 @@ function _boardsPanelRowHTML(b,placed,canEdit,flash){
   // back at you is the noise the profile provenance line already avoids.
   const mine=!!(typeof session!=='undefined'&&session&&b.ownerUid===session.uid);
   const meta=(b.visibility==='shared'?'TEAM':'PRIVATE')+' · '+cards.length+' card'+(cards.length===1?'':'s')+
+    (_boardsUnsortedCount(b)?' · '+_boardsUnsortedCount(b)+' in Unsorted':'')+
     (files?' · '+files+' file'+(files===1?'':'s'):'')+
     (subs?' · '+subs+' board'+(subs===1?'':'s'):'')+
     (!mine&&b.ownerName?' · '+b.ownerName:'');
