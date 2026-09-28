@@ -1039,7 +1039,7 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
    picture the text block is removed outright so the picture fills the card
    (Milanote's cards at 27% are just the pictures); with no picture it goes
    invisible but keeps its space, like a note body. */
-.board-world[data-lod="far"] .board-link-img+.board-link-meta{display:none!important}
+.board-world[data-lod="far"] .board-link-img+.board-link-meta,.board-world[data-lod="far"] .board-video+.board-link-meta{display:none!important}
 .board-world[data-lod="far"] .board-link-meta,
 .board-world[data-lod="far"] .board-link-loading{visibility:hidden}
 
@@ -1388,6 +1388,16 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
    CARD. Both text rows clamp instead of pushing anything out of the box. */
 .board-link-preview{display:flex;flex-direction:column;padding:0;min-height:0;overflow:hidden;position:relative}
 .board-link-img{display:block;width:100%;flex:1 1 auto;min-height:0;object-fit:cover;background:var(--soft);-webkit-user-drag:none}
+/* Video in a link card (#94 §12, MEASURED on Milanote): black 16:9 area, a
+   56px rgba(0,0,0,.6) circle with a white play glyph, centred. The area takes
+   whatever the card gives it above the link info, like the picture does. A
+   literal white glyph is right: the circle under it is literal too. */
+.board-video{position:relative;width:100%;flex:1 1 auto;min-height:0;background:#000;overflow:hidden}
+.board-video-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;-webkit-user-drag:none}
+.board-video-play{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.board-video-play svg{width:22px;height:22px;margin-left:3px}
+@media (hover:hover){.board-video-play:hover{background:rgba(0,0,0,.78)}}
+.board-video-frame{position:absolute;inset:0;width:100%;height:100%;border:0}
 .board-link-meta{flex:0 0 auto;display:flex;flex-direction:column;gap:3px;padding:8px 10px 9px;min-width:0}
 /* The URL row: a link glyph, the address, and the show/hide-picture toggle.
    The address is the only thing that flexes, so the glyph and the button
