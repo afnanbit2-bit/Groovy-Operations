@@ -707,6 +707,48 @@ deliberate actions where the normal blocking feedback is still correct.
 If a future module adds its own frequent autosave, use this same pair
 rather than re-deriving another opt-out.
 
+### Notes — the "/" menu and the block gutter (28 Sept 2026)
+
+Afnan had called the block editor "too child-like, not professional". The
+pattern reference was BlockNote (MPL-2.0, read-only, nothing copied); the
+shape of the fix is its `/` menu and side menu, written from scratch here.
+
+- **`/` at the START of a block opens the type list** (`_notesSlashMatch`,
+  pure: `/` plus non-space characters is the whole rule, so "and/or" is
+  text). Typing narrows it by label prefix, then alias (`todo` finds
+  Checklist), then substring (`_notesSlashItems`, pure). Arrow keys move,
+  Enter/Tab pick, Escape closes and leaves the typing. **A menu with nothing
+  matching closes itself and Enter is an ordinary Enter.** It replaces the
+  per-block type `<select>`.
+- **Three modes, one menu:** `slash` (typed; the typed `/query` is cleared on
+  choose), `insert` (the + button, on a fresh empty block) and `turn` (the ⋮
+  menu's "Turn into…", which keeps the block's words and therefore hides
+  Divider, which would throw them away).
+- **The gutter replaces the always-there toolbar:** `+` adds a block below
+  (reusing an empty paragraph rather than stacking one) and ⋮ opens
+  Turn into / Move up / Move down / Duplicate / Delete, each offered only
+  where it applies. **There is no drag-to-reorder yet** — the menu's Move is
+  the route; do not describe the ⋮ as a drag handle.
+- **Placeholders are a cue, not a label:** shown on the focused empty block,
+  on a lone empty page (`.note-only`) and on headings. Before, every empty
+  block carried one.
+- **One popover** (`#notes-pop`, `_notesPopShow`) serves both menus, built
+  with `createElement` + `textContent`. Its document listeners are registered
+  once at load (`__notesPopWired`). `#notes-pop` sits at z-index 210.
+- **The XSS boundary is unchanged:** block structure renders with empty
+  bodies and `_notesHydrateBlocks` fills text with `textContent`. The data
+  model, `firestore.rules` and stored blocks did not change — no migration.
+- **On a phone the gutter moves to the right edge and stays visible** (no
+  hover). Held by `max-width:600px`, the module's own breakpoint.
+- `tests/notes.test.js` (65) drives the real handlers; verified by
+  reverting the key routing, the clear-on-choose and the Divider rule.
+  `smoke-layout` fragment `notes — the page, the / menu and the block menu`
+  holds contrast and overflow (breaking the hint ink fails it by name).
+  **It does NOT hold an overlay covering an editable body** — checked: an
+  `::after` over every block passed.
+- **Nobody has typed into it on a real screen** — the sandbox cannot sign
+  in. It was rendered and looked at in headless Chromium, both themes.
+
 **Nav:** "Creative Hub" (plain text, no icon/emoji — deliberate, per
 Afnan) is a `mainItems` entry in `buildNav()` pointing at page id
 `creative-hub`, in the mobile "More" sheet for owner/manager

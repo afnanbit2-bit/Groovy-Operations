@@ -77,6 +77,12 @@ jobs:
       - name: Whole-app phone smoke test
         run: node tests/smoke-app-phone.js
 
+      # axe-core (dev-only, vendored in tests/vendor) over every page. Fails
+      # only on violations NOT in tests/axe-baseline.json, so the existing
+      # findings are visible without blocking; fix one, delete its key.
+      - name: axe-core accessibility scan
+        run: AXE_BASELINE=tests/axe-baseline.json node tests/smoke-axe.js
+
       - name: CACHE_VERSION was bumped
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
