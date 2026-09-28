@@ -3726,6 +3726,14 @@ measured delay, and the drop already reaches the board.
 `tests/board-dragmove.test.js`. Nobody has dragged onto a board on a real
 screen.
 
+**EVERY card wears the corner chip now, not only a note (same day).**
+Afnan: the black hover strip was still on images, to-dos and "everything"
+else. The bug-6 rules dropped `.type-text` and apply to `.board-card-el>
+.board-card-head`: a small ✕ chip top-right, the type word hidden, the name
+only while being renamed. Only a note keeps the first-line float. Board
+layout probe 152/152 and phone probe 30/30 pass; nobody has hovered one on
+a real screen.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not
