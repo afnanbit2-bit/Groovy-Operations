@@ -918,6 +918,13 @@ window.boardsBeginEdit=function(ev,elId){
   el.setAttribute('contenteditable','true');
   _boardsEditingEl=el;
   el.focus();
+  // A card's NAME renames in place: Enter/leaving commits, Escape reverts.
+  if(c&&el.classList&&el.classList.contains('board-card-name')){
+    _boardsInlineRename(el,{value:c.name||'',
+      commit:v=>{_boardsPushUndo();c.name=v.slice(0,80);_boardsEndEdit();},
+      cancel:()=>_boardsEndEdit()});
+    return;
+  }
   // The rail's mode depends on this — a note in edit mode gets the text
   // rail (desktop). focusin shows the bar on a phone.
   if(_boardsIsRichField(el)&&!_boardsIsPhone()){_boardsFmtTarget=el;_boardsRenderRail();}
@@ -1351,11 +1358,11 @@ function _boardsSaveText(text,filename,mime){
   a.click();
   setTimeout(()=>{try{URL.revokeObjectURL(href);}catch(e){}a.remove();},10000);
 }
-window.boardsExportDoc=function(kind){
+window.boardsExportDoc=async function(kind){
   if(!_editBoard)return;
   _boardsMenuOpen=false;_boardsSyncMenu();
   const subs=_editCards.some(c=>c.type==='board'&&c.boardId)
-    ? confirm('Include the boards nested inside this one?') : false;
+    ? await _boardsConfirm('Include the boards nested inside this one?',{ok:'Include them',no:'Just this board'}) : false;
   const doc=_boardsBuildDoc(subs);
   const base=_boardsExportName(kind==='md'?'md':'doc');
   if(kind==='md'){
@@ -1733,7 +1740,7 @@ window.boardsRestore=async function(id){
 };
 window.boardsDeleteForever=async function(id){
   const b=_boardsTrash.find(x=>x.id===id);
-  if(!confirm('Permanently delete "'+((b&&b.title)||'Untitled board')+'"? This cannot be undone.'))return;
+  if(!await _boardsConfirm('Permanently delete "'+((b&&b.title)||'Untitled board')+'"? This cannot be undone.',{ok:'Delete forever',danger:true}))return;
   try{
     await _qDel(doc(db,'mood_boards',id));
     logActivity('Mood board permanently deleted',`${session.name} permanently deleted "${(b&&b.title)||'Untitled board'}"`);
@@ -1853,7 +1860,7 @@ window.boardsTrashLinkedBoard=async function(boardId,cardId){
   const title=(b&&b.title)||'Untitled board';
   const owner=!!(session&&b&&(b.ownerUid===session.uid||session.role==='owner'));
   if(!owner){showToast('Only the board’s owner can move it to Trash');return;}
-  if(!confirm('Move "'+title+'" to Trash? You can restore it from All boards.'))return;
+  if(!await _boardsConfirm('Move "'+title+'" to Trash? You can restore it from All boards.',{ok:'Move to Trash',danger:true}))return;
   try{
     await _qUpdate(doc(db,'mood_boards',boardId),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
     moodBoards=moodBoards.filter(x=>x.id!==boardId);
@@ -2139,7 +2146,7 @@ function _renderBoardCanvasHTML(){
   const phone=_boardsIsPhone();
   const chain=home?[]:_boardsAncestors(b.id);
   const parent=chain.length?chain[chain.length-1]:null;
-  const backLabel=home?'Creative Hub':(parent?(parent.title||'Untitled board'):(_boardsCameFromAll?'All boards':'Home'));
+  const backLabel=home?'Milanote':(parent?(parent.title||'Untitled board'):(_boardsCameFromAll?'All boards':'Home'));
   // THE TRAIL, Milanote's shape (Sept 2026): a round chip carrying the
   // GROOVY mark, "Home", a slash, then each ancestor and finally the board's
   // own tile and name. On a phone the one-row bar keeps its capped back
@@ -2156,11 +2163,14 @@ function _renderBoardCanvasHTML(){
   return`<div class="board-canvas-wrap">
     <div class="board-topbar">
       <div style="display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap">
-        ${phone||home?`<button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(backLabel)}</button>`:''}
+        ${phone&&!home
+          // A phone board: the arrow alone, so the title keeps the row ("← All boards" was cut to "← A…" at 390).
+          ?`<button class="back-btn" style="margin:0" onclick="window.boardsBack()" aria-label="Back to ${_boardsEsc(backLabel)}" title="Back to ${_boardsEsc(backLabel)}">←</button>`
+          :phone||home?`<button class="back-btn" style="margin:0" onclick="window.boardsBack()">← ${_boardsEsc(backLabel)}</button>`:''}
         ${crumbs}
         ${home
           ?(phone?`<span style="font-size:15.5px;font-weight:700">Home</span>`:'')
-          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
+          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?`onfocus="window.boardsTitleFocus(this)"`:'readonly'} placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         ${phone?'':`<span class="pill">${visLabel}</span>`}
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
         ${canEdit?`<span class="board-save-status" id="board-save-status"></span>`:''}
@@ -2746,7 +2756,7 @@ function _boardCardHTML(c,canEdit){
   return`<div class="board-card-el type-${c.type}${photo?' photo':''}${canEdit&&_boardsDrawOn===c.id?' drawing':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head">
       <span class="board-card-kind">
-        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" oninput="window.boardsCardName('${c.id}',this)" onpointerdown="event.stopPropagation()"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
+        <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" onpointerdown="event.stopPropagation()"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
       <span style="display:flex;align-items:center;gap:4px">
         ${canEdit&&!c.locked?`<button class="board-card-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsDeleteCard('${c.id}')" title="Delete">✕</button>`:''}
       </span>
@@ -3061,10 +3071,10 @@ window.boardsDrawUndo=function(){
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
-window.boardsDrawClear=function(id){
+window.boardsDrawClear=async function(id){
   const c=_editCards.find(x=>x.id===(id||_boardsDrawOn));
   if(!c||!_boardsStrokes(c).length)return;
-  if(!confirm('Erase every mark drawn on this picture? Ctrl+Z undoes it.'))return;
+  if(!await _boardsConfirm('Erase every mark drawn on this picture? Ctrl+Z undoes it.',{ok:'Erase',danger:true}))return;
   _boardsPushUndo();
   delete c.strokes;
   _boardsRenderCanvasAndWire();
@@ -3917,6 +3927,117 @@ function _boardsOpenSheet(title,html,opts){
   document.body.appendChild(el);
   return el;
 }
+/* ── The module's own confirm and one-value ask (Sept 2026) ───────────────
+   Milanote asks nothing through the browser's dialogs any more: a native
+   confirm() or prompt() is grey, unstyled, blocks the whole tab and can be
+   switched off by the browser. Both resolve a Promise, so a caller awaits.
+   Its OWN ids (not #board-sheet), because a confirm is often raised from
+   inside an open sheet (removing a label) and must not close it. Every
+   string goes in with textContent. Enter answers yes, Escape and the
+   backdrop answer no, and while it is open no key reaches the board. */
+let _boardsDlgResolve=null,_boardsDlgField=false;
+function _boardsDlgClose(val){
+  const r=_boardsDlgResolve;
+  _boardsDlgResolve=null;
+  ['board-confirm','board-confirm-back'].forEach(i=>{const e=document.getElementById(i);if(e)e.remove();});
+  document.removeEventListener('keydown',_boardsDlgKey,true);
+  if(r)r(val);
+}
+function _boardsDlgKey(e){
+  if(!_boardsDlgResolve)return;
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();_boardsDlgClose(null);}
+  else if(e.key==='Enter'){e.preventDefault();e.stopPropagation();window.boardsDlgAnswer(true);}
+}
+window.boardsDlgAnswer=function(yes){
+  if(!_boardsDlgResolve)return;
+  const f=_boardsDlgField?document.getElementById('board-confirm-field'):null;
+  _boardsDlgClose(yes?(f?String(f.value):true):null);
+};
+function _boardsDialog(msg,opts){
+  opts=opts||{};
+  if(_boardsDlgResolve)_boardsDlgClose(null);   // one at a time; the older one answers no
+  return new Promise(res=>{
+    _boardsDlgResolve=res;_boardsDlgField=!!opts.field;
+    const bk=document.createElement('div');
+    bk.id='board-confirm-back';bk.className='board-sheet-back board-confirm-back';
+    bk.addEventListener('click',()=>_boardsDlgClose(null));
+    document.body.appendChild(bk);
+    const el=document.createElement('div');
+    el.id='board-confirm';el.className='board-sheet board-confirm';
+    el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');
+    el.innerHTML=`<div class="board-confirm-msg" id="board-confirm-msg"></div>`
+      +(opts.field?`<input class="board-confirm-field" id="board-confirm-field" type="${opts.field==='date'?'date':'text'}" maxlength="120">`:'')
+      +`<div class="board-confirm-btns"><button class="btn-outline" id="board-confirm-no" onclick="window.boardsDlgAnswer(false)"></button>`
+      +`<button class="board-confirm-ok${opts.danger?' danger':''}" id="board-confirm-ok" onclick="window.boardsDlgAnswer(true)"></button></div>`;
+    document.body.appendChild(el);
+    const m=document.getElementById('board-confirm-msg');if(m)m.textContent=String(msg==null?'':msg);
+    const ok=document.getElementById('board-confirm-ok');if(ok)ok.textContent=opts.ok||'OK';
+    const no=document.getElementById('board-confirm-no');if(no)no.textContent=opts.no||'Cancel';
+    const f=_boardsDlgField?document.getElementById('board-confirm-field'):null;
+    if(f)f.value=String(opts.value==null?'':opts.value);
+    document.addEventListener('keydown',_boardsDlgKey,true);
+    try{(f||ok).focus();if(f&&f.select)f.select();}catch(e){}
+  });
+}
+// true / false. The confirm button says what it does ("Move to Trash").
+function _boardsConfirm(msg,opts){
+  return _boardsDialog(msg,opts).then(v=>v===true);
+}
+// The typed string, or null for Cancel.
+function _boardsAsk(msg,value,opts){
+  return _boardsDialog(msg,Object.assign({ok:'Save'},opts||{},{field:(opts&&opts.field)||'text',value}));
+}
+/* In-place rename (Sept 2026). The title turns into an editable field
+   WHERE IT SITS — no prompt(). Enter or leaving the field commits, Escape
+   puts the old text back, and an empty field reverts rather than saving a
+   blank. The text is read and written with textContent (.value for an
+   input), never as markup. While it is being edited, a press, click or
+   double-click on it goes no further: these titles sit on things that drag
+   or open on a click. */
+function _boardsInlineRename(el,opts){
+  if(!el||el._boardsRenaming)return;
+  el._boardsRenaming=true;
+  const isInput=el.tagName==='INPUT';
+  const was=String(opts.value==null?'':opts.value);
+  let done=false;
+  const read=()=>String(isInput?el.value:(el.textContent||'')).replace(/\s+/g,' ').trim();
+  const put=v=>{if(isInput)el.value=v;else el.textContent=v;};
+  const stop=e=>e.stopPropagation();
+  const key=e=>{
+    if(e.key==='Enter'){e.preventDefault();e.stopPropagation();finish(true);}
+    else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finish(false);}
+  };
+  const blur=()=>finish(true);
+  function finish(keep){
+    if(done)return;
+    done=true;
+    el.removeEventListener('keydown',key,true);
+    el.removeEventListener('blur',blur);
+    ['pointerdown','click','dblclick'].forEach(t=>el.removeEventListener(t,stop));
+    delete el._boardsRenaming;
+    const v=read();
+    if(!isInput)el.setAttribute('contenteditable','false');
+    try{if(document.activeElement===el)el.blur();}catch(e){}
+    if(!keep||!v||v===was){put(was);if(opts.cancel)opts.cancel();return;}
+    put(v);
+    opts.commit(v);
+  }
+  el.addEventListener('keydown',key,true);
+  el.addEventListener('blur',blur);
+  ['pointerdown','click','dblclick'].forEach(t=>el.addEventListener(t,stop));
+  if(!isInput){
+    if(el.getAttribute('contenteditable')!=='true'){
+      put(was);
+      el.setAttribute('contenteditable','true');
+    }
+    try{
+      if(document.activeElement!==el)el.focus();
+      const r=document.createRange();r.selectNodeContents(el);
+      const s=window.getSelection();s.removeAllRanges();s.addRange(r);
+    }catch(e){}
+  }
+  return finish;
+}
 function _boardsSelOne(){
   const s=_boardsSelectedCards();
   return s.length===1?s[0]:null;
@@ -3966,7 +4087,7 @@ function _boardsLabelCards(t){
   const tl=String(t).toLowerCase();
   return _editCards.filter(c=>Array.isArray(c.labels)&&c.labels.some(m=>String(m&&m.t).toLowerCase()===tl));
 }
-function _boardsLabelAct(act){
+async function _boardsLabelAct(act){
   const m=/^(rename|drop):(\d+)$/.exec(act);
   if(!m)return;
   const l=_boardsLabelRows&&_boardsLabelRows[+m[2]];
@@ -3974,13 +4095,13 @@ function _boardsLabelAct(act){
   const hits=_boardsLabelCards(l.t);
   const tl=l.t.toLowerCase();
   if(m[1]==='rename'){
-    const next=(prompt('Rename this label on all '+hits.length+' card'+(hits.length===1?'':'s'),l.t)||'').trim();
+    const next=((await _boardsAsk('Rename this label on all '+hits.length+' card'+(hits.length===1?'':'s'),l.t,{ok:'Rename'}))||'').trim();
     if(!next||next===l.t)return;
     _boardsPushUndo();
     hits.forEach(c=>c.labels.forEach(x=>{if(String(x&&x.t).toLowerCase()===tl)x.t=next;}));
     showToast('Renamed on '+hits.length+' card'+(hits.length===1?'':'s'));
   }else{
-    if(!confirm('Remove “'+l.t+'” from '+hits.length+' card'+(hits.length===1?'':'s')+'? Ctrl+Z undoes it.'))return;
+    if(!await _boardsConfirm('Remove “'+l.t+'” from '+hits.length+' card'+(hits.length===1?'':'s')+'? Ctrl+Z undoes it.',{ok:'Remove',danger:true}))return;
     _boardsPushUndo();
     hits.forEach(c=>{c.labels=c.labels.filter(x=>String(x&&x.t).toLowerCase()!==tl);_boardsGrowForChrome(c);});
     showToast('Removed from '+hits.length+' card'+(hits.length===1?'':'s'));
@@ -6000,7 +6121,7 @@ function _boardsRailItems(){
       // the menus cannot offer different things.
       if(canEdit){
         items.push({act:'board-look',label:'Picture',icon:'color'});
-        items.push({act:'board-rename',label:'Board name',icon:'rename'});
+        items.push({act:'board-rename',label:'Title',icon:'rename'});   // the linked board's; 'Board name' was cut to 'Board n…'
       }
     }
     // Milanote's own selected-to-do rail is Color · Title · ⋯; ours keeps
@@ -6531,9 +6652,9 @@ window.boardsSetConn=function(id,patch){
   _boardsRenderRail();
   _boardsSaveDebounced();
 };
-window.boardsConnLabel=function(id){
+window.boardsConnLabel=async function(id){
   const cn=_boardsConnById(id);if(!cn)return;
-  const v=prompt('Label for this line',cn.label||'');
+  const v=await _boardsAsk('Label for this line',cn.label||'',{ok:'Save label'});
   if(v===null)return;
   window.boardsSetConn(id,{label:v.trim()?v.trim().slice(0,60):null});
 };
@@ -6788,6 +6909,11 @@ window.boardsLinkStart=function(e,cardId){
 
 // -- card content --
 window.boardsTitleInput=function(val){if(!_editBoard)return;_editBoard.title=val;_boardsSaveDebounced();};
+// The top bar's title saves on Enter or on leaving it, not per keystroke.
+window.boardsTitleFocus=function(el){
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  _boardsInlineRename(el,{value:_editBoard.title||'',commit:v=>window.boardsTitleInput(v.slice(0,120))});
+};
 window.boardsTextInput=function(id,el){
   const c=_editCards.find(x=>x.id===id);if(!c)return;
   c.text=el.textContent;
@@ -6907,14 +7033,6 @@ window.boardsLinkRefresh=function(id){
 // Empty means "fall back to the type label", which the CSS placeholder
 // renders — so clearing a name restores IMAGE / FILE / NOTE rather than
 // leaving a blank strip.
-window.boardsCardName=function(id,el){
-  const c=_editCards.find(x=>x.id===id);
-  if(!c)return;
-  const v=String(el.textContent||'').replace(/\s+/g,' ').trim();
-  if(v)c.name=v.slice(0,80);
-  else delete c.name;
-  _boardsSaveDebounced();
-};
 /* ── Tables ─────────────────────────────────────────────────────────────
    A plain rows[][] of strings on the card — no per-cell records and no
    column schema. The engineering spec written from the teardown proposed
@@ -8260,7 +8378,7 @@ window.boardsConvertToDocument=async function(){
   if(!c){showToast('Select one note to convert');return;}
   if(c.locked){showToast(_boardsLockedMsg('convert'));return;}
   const vis=_editBoard.visibility==='shared'?'shared':'personal';
-  if(!confirm(`Turn this note into a Document page in Creative Hub (${vis==='shared'?'TEAM':'PRIVATE'})?\nThe note becomes a link to it. Ctrl+Z brings the note back; the page stays.`))return;
+  if(!await _boardsConfirm(`Turn this note into a Document page in Milanote (${vis==='shared'?'TEAM':'PRIVATE'})?\nThe note becomes a link to it. Ctrl+Z brings the note back; the page stays.`,{ok:'Make a Document'}))return;
   const d=_boardsDocFromNote(c);
   let ref;
   try{
@@ -8278,13 +8396,13 @@ window.boardsConvertToDocument=async function(){
   live.type='link';
   live.linkUrl=location.origin+location.pathname+'#note='+encodeURIComponent(ref.id);
   live.linkTitle=d.title;
-  live.linkDesc='Document · Creative Hub';
+  live.linkDesc='Document · Milanote';
   live.linkPreviewOff=true;
   delete live.text;delete live.rich;
   _boardsRenderCanvasAndWire();
   _boardsSaveNow();
   try{logActivity('Note converted to document',`${session.name} converted a note on "${_editBoard.title||'Untitled board'}" into the document "${d.title}"`);}catch(e){}
-  showToast('Document created in Creative Hub — the note is a link to it now. Ctrl+Z restores the note; the page stays.');
+  showToast('Document created in Milanote — the note is a link to it now. Ctrl+Z restores the note; the page stays.');
 };
 window.boardsSetBg=function(color){
   if(!_boardsCanEdit(_editBoard))return;
@@ -8578,13 +8696,13 @@ window.boardsReleaseColumn=function(){
 };
 // The destructive one, and the only place it is offered — separate from ✕
 // and from Delete, both of which keep the cards.
-window.boardsDeleteColumnAndCards=function(){
+window.boardsDeleteColumnAndCards=async function(){
   if(!_boardsCanEdit(_editBoard))return;
   const col=_boardsSelOne();
   if(!col||col.type!=='column')return;
   const kids=_boardsColumnChildren(col).filter(k=>!k.locked);
   const locked=_boardsColumnChildren(col).length-kids.length;
-  if(!confirm('Delete this column AND '+kids.length+' card'+(kids.length===1?'':'s')+' inside it? Ctrl+Z undoes it.'))return;
+  if(!await _boardsConfirm('Delete this column AND '+kids.length+' card'+(kids.length===1?'':'s')+' inside it? Ctrl+Z undoes it.',{ok:'Delete both',danger:true}))return;
   _boardsPushUndo();
   const ids=new Set(kids.map(k=>k.id));ids.add(col.id);
   _boardsColumnChildren(col).forEach(k=>{if(!ids.has(k.id))_boardsLeaveColumn(k);});
@@ -9454,7 +9572,7 @@ window.boardsDelete=async function(){
   if(!_editBoard||!_boardsCanEdit(_editBoard))return;
   _boardsMenuOpen=false;_boardsSyncMenu();
   if(_boardsIsHome(_editBoard)){showToast('Home cannot be deleted');return;}
-  if(!confirm('Move "'+(_editBoard.title||'Untitled board')+'" to Trash? You can restore it from the boards list.'))return;
+  if(!await _boardsConfirm('Move "'+(_editBoard.title||'Untitled board')+'" to Trash? You can restore it from the boards list.',{ok:'Move to Trash',danger:true}))return;
   try{
     await _qUpdate(doc(db,'mood_boards',_editBoard.id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
     moodBoards=moodBoards.filter(b=>b.id!==_editBoard.id);
@@ -10854,10 +10972,9 @@ function _boardsPanelRowHTML(b,placed,canEdit,flash){
 // is exactly what a panel row is. A second menu would be the rail-and-
 // selection-bar mistake again.
 /* Renaming IN PLACE, from a double-click on the name.
-   The gallery's rename is a prompt(), which is right there — a card that is
-   also a click-to-open target would fight an inline editor. A panel row is
-   not that: the name already stops its own clicks, so nothing underneath is
-   competing for the gesture.
+   A panel row's name already stops its own clicks, so nothing underneath
+   is competing for the gesture. (The gallery tile renames in place too,
+   through _boardsInlineRename, which stops the tile's click while editing.)
    Enter or blur saves, Escape restores. The old name is captured BEFORE the
    field is opened rather than read back from the element, so a cancel
    cannot put a half-typed name back. Written in with textContent for the
@@ -11411,10 +11528,10 @@ window.boardsTrayStashCards=function(ids){
 // The reverse of dragging one out, for one card. A thin wrapper on
 // purpose: two implementations is how the two would disagree.
 window.boardsTrayStash=function(cardId){return window.boardsTrayStashCards([cardId]);};
-window.boardsTrayRemove=function(i){
+window.boardsTrayRemove=async function(i){
   const u=_editUnsorted[i];
   if(!u||!_boardsCanEdit(_editBoard))return;
-  if(!confirm('Remove “'+_boardsTrayLabel(u)+'” from Unsorted? This cannot be undone.'))return;
+  if(!await _boardsConfirm('Remove “'+_boardsTrayLabel(u)+'” from Unsorted? This cannot be undone.',{ok:'Remove',danger:true}))return;
   _editUnsorted.splice(i,1);
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
@@ -12055,7 +12172,7 @@ window.boardsTrashRestore=async function(id){
 window.boardsTrashPurge=async function(id){
   const e=_boardsCardTrash.find(x=>x.id===id);
   if(!e||!_boardsTrashCanPurge(e))return;
-  if(!confirm('Delete this '+_boardsCardNoun(e.card).toLowerCase()+' forever? This cannot be undone.'))return;
+  if(!await _boardsConfirm('Delete this '+_boardsCardNoun(e.card).toLowerCase()+' forever? This cannot be undone.',{ok:'Delete forever',danger:true}))return;
   try{await _qDel(doc(db,'mood_boards',_editBoard.id,'trash',id));showToast('Deleted forever');}
   catch(err){showToast('Could not empty that — try again');}
   _boardsRenderTrash();
@@ -12065,7 +12182,7 @@ window.boardsTrashEmpty=async function(){
   const mine=rows.filter(_boardsTrashCanPurge);
   if(!mine.length)return;
   const kept=rows.length-mine.length;
-  if(!confirm('Delete '+mine.length+' item'+(mine.length===1?'':'s')+' forever? This cannot be undone.'))return;
+  if(!await _boardsConfirm('Delete '+mine.length+' item'+(mine.length===1?'':'s')+' forever? This cannot be undone.',{ok:'Delete forever',danger:true}))return;
   try{
     if(typeof writeBatch==='function'){
       const b=writeBatch(db);
@@ -12380,7 +12497,7 @@ window.boardsResolveComment=async function(id,resolved){
 };
 window.boardsDeleteComment=async function(id){
   if(!_editBoard)return;
-  if(!confirm('Delete this comment?'))return;
+  if(!await _boardsConfirm('Delete this comment?',{ok:'Delete',danger:true}))return;
   try{await _qDel(doc(db,'mood_boards',_editBoard.id,'comments',id));}
   catch(e){showToast('Could not delete comment: '+(e.message||e),true);}
 };
@@ -12570,12 +12687,15 @@ function _boardsCtxRun(act){
     if(!f||f.what!=='item')return;
     const v=act.slice(6);
     if(act.indexOf('tddue:')===0){
-      // "Pick a date…" is a prompt rather than a date input: the menu is
-      // built as markup and a native picker inside it would need its own
-      // surface. prompt() is already this file's idiom for a one-value ask.
-      const val=(v==='pick')?(prompt('Due date (YYYY-MM-DD)',_boardsTodayStr())||''):v;
-      if(v==='pick'&&val&&!_boardsTodoValidDue(val.trim())){showToast('Use the form YYYY-MM-DD.',true);return;}
-      window.boardsTodoSetDue(f.id,f.i,val.trim?val.trim():val);
+      // "Pick a date…" opens the module's own dialog with a date field: the
+      // menu is built as markup, so the picker needs a surface of its own.
+      if(v!=='pick'){window.boardsTodoSetDue(f.id,f.i,v);return;}
+      _boardsAsk('Due date',_boardsTodayStr(),{field:'date',ok:'Set date'}).then(val=>{
+        val=String(val||'').trim();
+        if(!val)return;
+        if(!_boardsTodoValidDue(val)){showToast('Use the form YYYY-MM-DD.',true);return;}
+        window.boardsTodoSetDue(f.id,f.i,val);
+      });
     }else window.boardsTodoSetWho(f.id,f.i,v);
     return;
   }
@@ -13666,6 +13786,19 @@ function _boardsGalleryCtxItems(b){
   items.push({title:(b.visibility==='shared'?'TEAM':'PRIVATE')+' · '+n+' card'+(n===1?'':'s')+(b.ownerName?' · '+b.ownerName:'')});
   return items;
 }
+// Where a board's title is on screen right now, for an in-place rename:
+// its tile in a boards list, or the sub-board card linking to it on the
+// open canvas (the selected one first).
+function _boardsRenameTarget(id){
+  const tile=Array.from(document.querySelectorAll('.board-gallery-card'))
+    .filter(t=>t.getAttribute('data-board')===id)
+    .map(t=>t.querySelector('.board-gallery-title span'))[0];
+  if(tile)return tile;
+  if(currentPage!=='board-canvas'||!_editBoard)return null;
+  const cards=_editCards.filter(c=>c.type==='board'&&c.boardId===id);
+  const c=cards.find(x=>_boardsSelection.has(x.id))||cards[0];
+  return c?document.querySelector('#board-card-'+c.id+' .board-subboard-title'):null;
+}
 async function _boardsGalleryCtxRun(act,id){
   const b=moodBoards.find(x=>x.id===id)||_boardsTrash.find(x=>x.id===id);
   switch(act){
@@ -13691,16 +13824,19 @@ async function _boardsGalleryCtxRun(act,id){
     }
     case'g:rename':{
       if(!_boardsCanEdit(b))return;
-      const next=prompt('Rename board',b.title||'Untitled board');
-      if(next==null)return;
-      const title=String(next).trim()||'Untitled board';
-      if(title===b.title)return;
-      try{
-        await _qUpdate(doc(db,'mood_boards',id),{title,updatedAt:Date.now(),updatedByName:session.name});
-        b.title=title;
-        _boardsRerenderGallery();
-        showToast('Renamed');
-      }catch(e){showToast('Could not rename: '+(e.message||e),true);}
+      // In place: the board's title on its gallery tile, or on the sub-board
+      // card that links to it on the open canvas.
+      const el=_boardsRenameTarget(id);
+      if(!el){showToast('Open All boards to rename it');return;}
+      _boardsInlineRename(el,{value:b.title||'Untitled board',commit:async title=>{
+        title=title.slice(0,120);
+        try{
+          await _qUpdate(doc(db,'mood_boards',id),{title,updatedAt:Date.now(),updatedByName:session.name});
+          b.title=title;
+          if(currentPage==='board-canvas'&&_editBoard)_boardsRenderCanvasAndWire();else _boardsRerenderGallery();
+          showToast('Renamed');
+        }catch(e){el.textContent=b.title||'Untitled board';showToast('Could not rename: '+(e.message||e),true);}
+      }});
       break;
     }
     case'g:dup':{
@@ -13734,7 +13870,7 @@ async function _boardsGalleryCtxRun(act,id){
       break;
     }
     case'g:trash':{
-      if(!confirm('Move "'+(b.title||'Untitled board')+'" to Trash? You can restore it from this list.'))return;
+      if(!await _boardsConfirm('Move "'+(b.title||'Untitled board')+'" to Trash? You can restore it from this list.',{ok:'Move to Trash',danger:true}))return;
       try{
         await _qUpdate(doc(db,'mood_boards',id),{deletedAt:Date.now(),deletedByName:session.name,updatedAt:Date.now()});
         logActivity('Mood board deleted',`${session.name} moved "${b.title||'Untitled board'}" to trash`);

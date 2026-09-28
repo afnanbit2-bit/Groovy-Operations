@@ -4965,9 +4965,9 @@ Four real gaps were left:
   PLACE it on the way to renaming it, and the row's drag would start under
   the caret. Enter or blur saves; Escape restores the name captured
   **before** the field opened, so a cancel cannot write back something
-  half-typed. The gallery keeps its `prompt()`: a gallery card is also a
-  click-to-open target and would fight an inline editor, which a panel row
-  is not.
+  half-typed. **The gallery renames in place too since 28 Sept 2026**
+  (`_boardsInlineRename`, which stops the tile's click while the title is
+  being edited — see "Milanote: no browser dialogs" below).
 - **The left rail and the card menu carry Picture and Board name** for a
   selected board card, routed to the same sheet and the same gallery
   router — the rail and the menus cannot offer different things.
@@ -5747,9 +5747,53 @@ opening a board and clicking its title, which is how a gallery full of
 - Permissions follow `_boardsCanEdit` (so anyone can rename a TEAM board,
   per Stage 6) while **Move to Trash stays owner-only**, matching
   `firestore.rules`.
-- Rename uses `prompt()` — `confirm()` is already the app's idiom here, and
-  an inline editor on a card that is also a click-to-open target would
-  fight itself.
+- Rename is **in place** (28 Sept 2026): the tile's title becomes the field
+  and the tile's own click is stopped while it is edited. It used to be a
+  `prompt()`; see "Milanote: no browser dialogs" below.
+
+### Milanote: no browser dialogs, renames in place (28 Sept 2026)
+
+Change order 1 of the Board session-3 run. **"Creative Hub" is called
+Milanote on every screen** — sidebar, phone More sheet, the hub's heading,
+"← Back to Milanote", the Home board's back button, the page name the bug
+tracker records (`'creative-hub':'Milanote'` in `js/shared.js`), the HRM
+dashboard button and the Convert-to-Document text. **Nothing else was
+renamed**: files, functions (`_canSeeCreativeHub`, `renderCreativeHub`),
+page ids (`creative-hub`) and collections keep their names, and comments
+still say Creative Hub where they describe history.
+
+- **No `prompt()`, `confirm()` or `alert()` anywhere in `js/boards.js`
+  or `js/notes.js`.** `_boardsConfirm(msg,{ok,no,danger})` and
+  `_boardsAsk(msg,value,{field:'text'|'date'})` are the module's own
+  dialog (`_boardsDialog`): a Promise, its own ids (`#board-confirm`, not
+  `#board-sheet` — a confirm raised from inside a sheet must not close
+  it), every string set with `textContent`, Enter = yes, Escape and the
+  backdrop = no, and no key reaches the board while it is open. The OK
+  button says what it does ("Move to Trash", "Delete forever"). Centred
+  on desktop, docked to the bottom on a phone. **Every caller now awaits
+  it, so those functions are async** — a test that calls one must await it
+  in its own app (the `_pending` hazard in `tests/boards.test.js`).
+  `js/notes.js` uses it through a `typeof` guard and deletes nothing
+  without it.
+- **`_boardsInlineRename(el,{value,commit,cancel})`** is the one in-place
+  rename: Enter or leaving the field commits, Escape puts the old text
+  back, **an empty field reverts** (never saves a blank), text read and
+  written with `textContent` (`.value` for an input), and while it is
+  edited a press, click or double-click on it goes no further — these
+  titles sit on things that drag or open on a click. Used by the open
+  board's title (`boardsTitleFocus` — it no longer saves per keystroke),
+  a card's name (F2, through `boardsBeginEdit`; **clearing a name now
+  reverts it** rather than removing it — the order said "empty reverts"),
+  and "Rename the board…" (`g:rename`: the gallery tile's title, or the
+  sub-board card's title on the open canvas, via `_boardsRenameTarget`).
+  The label rename, a line's label and a to-do's "Pick a date…" use
+  `_boardsAsk` (the date one with a real date field).
+- Found by the e2e harness's first stub run and fixed with it: the phone
+  board's back button read "← A…" (it is the arrow alone on a phone now,
+  its label in `aria-label`), and the rail's "Board name" read "Board n…"
+  (it is "Title").
+- **Every other native dialog in the app is listed in BOARD-LOG.md as
+  P2** (86, file and line), not changed here.
 
 ### Making it feel instant (Sept 2026 — measured, not guessed)
 

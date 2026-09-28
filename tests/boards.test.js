@@ -1833,7 +1833,7 @@ module.exports=function(){
       !/boardsToggleTemplate/.test(hb)&&!/boardsOpenShare/.test(hb)&&!/boardsToggleVisibility/.test(hb));
     s.ok('no rename field — Home is not a title you edit',!/board-title-input/.test(hb));
     s.ok('but All boards is reachable',/boardsShowAll\(\)/.test(hb));
-    s.ok('and back leaves the module',/← Creative Hub/.test(hb));
+    s.ok('and back leaves the module, which is called Milanote now',/← Milanote/.test(hb));
     run(`_editBoard={id:'A',ownerUid:'u1',visibility:'shared',title:'Winter Drop',zoom:1,panX:0,panY:0}`);
     const nb=run(`_renderBoardCanvasHTML()`);
     s.ok('an ordinary board keeps all of it',
@@ -2227,11 +2227,23 @@ module.exports=function(){
     s.eq('cards kept',run(`_editCards.filter(c=>c.id==='a'||c.id==='b').length`),2);
     s.ok('membership cleared',run(`_editCards.every(c=>c.columnId===undefined)`));
 
-    s.section('and there is a separate, confirmed way to delete both');
-    boot();
-    run(`_boardsSetSelection(['col'])`);
-    run(`window.boardsDeleteColumnAndCards()`);   // harness confirm() returns true
-    s.eq('column and children all gone',run(`_editCards.map(c=>c.id).join(',')`),'free');
+    // Its own app: the delete now awaits Milanote's own confirm, and the
+    // boot() calls below would reset this board before it resumed.
+    _pending.push((async()=>{
+      const t=loadApp({files:FILES,session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+      t.run(`_editBoard={id:'B',title:'T',visibility:'shared',ownerUid:'u1',zoom:1,panX:0,panY:0};
+        _editConnectors=[];_boardsPeers=[];moodBoards=[];boardsLoaded=true;
+        _editCards=[{id:'col',type:'column',title:'Fabric',x:100,y:100,w:280,h:160},
+          {id:'a',type:'text',text:'one',x:0,y:0,w:170,h:100,columnId:'col'},
+          {id:'b',type:'text',text:'two',x:0,y:0,w:200,h:120,columnId:'col'},
+          {id:'free',type:'text',text:'loose',x:800,y:800,w:170,h:100}];
+        _boardsLayoutColumns();_boardsSetSelection(['col']);
+        __asked=[];_boardsConfirm=m=>{__asked.push(m);return Promise.resolve(true);};`);
+      await t.run(`window.boardsDeleteColumnAndCards()`);
+      s.section('and there is a separate, confirmed way to delete both');
+      s.eq('column and children all gone',t.run(`_editCards.map(c=>c.id).join(',')`),'free');
+      s.eq("after asking once, in Milanote's own dialog",t.run(`__asked.length`),1);
+    })());
 
     s.section('Group into Column builds a real container');
     boot();
@@ -3549,28 +3561,34 @@ module.exports=function(){
     run(`window.boardsUndoAction()`);
     s.eq('and undo restores it',run(`_editConnectors.length`),1);
 
-    s.section('the confirmed destructive action states it in the CONFIRM');
-    // boardsDeleteColumnAndCards is the one delete that asks first, so the
-    // undo belongs in the question, not in a toast after the fact.
-    boot();
-    run(`_editCards.push({id:'col',type:'column',x:700,y:0,w:256,h:120,title:'C'},
-                         {id:'k',type:'text',text:'in',x:700,y:30,w:256,h:100,columnId:'col'});
-         _boardsLayoutColumns();_boardsSetSelection(['col'])`);
-    state.confirms.length=0;
-    run(`window.boardsDeleteColumnAndCards()`);
-    s.ok('the question names Ctrl+Z',/Ctrl\+Z/.test(state.confirms.join(' ')),state.confirms.join(' | '));
+    // Both deletes below await Milanote's own confirm, so they run in their
+    // own app: this block's boot() would reset the board mid-await.
+    _pending.push((async()=>{
+      const t=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      const setUp=`_editBoard={id:'b1',title:'B',ownerUid:'u1',visibility:'personal'};
+        _editCards=[{id:'col',type:'column',x:700,y:0,w:256,h:120,title:'C'},
+                    {id:'k',type:'text',text:'in',x:700,y:30,w:256,h:100,columnId:'col'}];
+        _editConnectors=[];_editUnsorted=[];_boardsSelection=new Set();_boardsConnSel=null;
+        __asked=[];_boardsConfirm=m=>{__asked.push(m);return Promise.resolve(true);};`;
+      t.run(setUp+`_boardsLayoutColumns();_boardsSetSelection(['col'])`);
+      await t.run(`window.boardsDeleteColumnAndCards()`);
+      s.section('the confirmed destructive action states it in the CONFIRM');
+      // boardsDeleteColumnAndCards is the one delete that asks first, so the
+      // undo belongs in the question, not in a toast after the fact.
+      const q1=t.run(`__asked.join(' | ')`);
+      s.ok('the question names Ctrl+Z',/Ctrl\+Z/.test(q1),q1);
 
-    s.section('the tray is honest that it is NOT undoable');
-    // _boardsPushUndo snapshots cards and connectors only — the Unsorted
-    // tray is saved in `head` and is genuinely not recoverable. The confirm
-    // says exactly that, and must keep saying it.
-    boot();
-    run(`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
-    state.confirms.length=0;
-    run(`window.boardsTrayRemove(0)`);
-    s.ok('it says it cannot be undone',/cannot be undone/i.test(state.confirms.join(' ')),state.confirms.join(' | '));
-    s.ok('and does not promise Ctrl+Z',!/Ctrl\+Z/.test(state.confirms.join(' ')));
-    s.eq('the item really is gone',run(`_editUnsorted.length`),0);
+      // _boardsPushUndo snapshots cards and connectors only — the Unsorted
+      // tray is saved in head and is genuinely not recoverable. The confirm
+      // says exactly that, and must keep saying it.
+      t.run(setUp+`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
+      await t.run(`window.boardsTrayRemove(0)`);
+      s.section('the tray is honest that it is NOT undoable');
+      const q2=t.run(`__asked.join(' | ')`);
+      s.ok('it says it cannot be undone',/cannot be undone/i.test(q2),q2);
+      s.ok('and does not promise Ctrl+Z',!/Ctrl\+Z/.test(q2));
+      s.eq('the item really is gone',t.run(`_editUnsorted.length`),0);
+    })());
 
     s.section('provenance says "you" for your own card');
     boot();
@@ -4084,14 +4102,24 @@ module.exports=function(){
       _boardsSelection=new Set(['c1']);_boardsLabelRows=_boardsLabelRowsFor('c1','').rows;`);
     s.eq('both cards carry it',run(`_boardsLabelCards('DONE').length`),2);
     s.eq('and the match ignores case',run(`_boardsLabelCards('done').length`),2);
-    run(`globalThis.__prompt='SHIPPED';prompt=()=>__prompt;`);
-    run(`_boardsLabelAct('rename:0')`);
-    s.eq('renaming rewrites every card',
-      run(`_editCards.map(c=>c.labels[0].t).join(',')`),'SHIPPED,SHIPPED');
-    run(`_boardsLabelRows=_boardsLabelRowsFor('c1','').rows;confirm=()=>true;`);
-    run(`_boardsLabelAct('drop:0')`);
-    s.eq('and removing drops it from every card',
-      run(`_editCards.map(c=>c.labels.length).join(',')`),'0,0');
+    // Rename and remove now ask in Milanote's own dialog and await it, so
+    // they run in their own app (this block carries on synchronously).
+    _pending.push((async()=>{
+      const t=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+      t.run(`_editBoard={id:'b1',title:'B',ownerUid:'u1',visibility:'personal'};_editConnectors=[];
+        _editCards=[{id:'c1',type:'text',text:'x',labels:[{t:'DONE',c:'green'}],x:0,y:0,w:200,h:120},
+                    {id:'c2',type:'text',text:'y',labels:[{t:'DONE',c:'green'}],x:0,y:0,w:200,h:120}];
+        _boardsSelection=new Set(['c1']);_boardsLabelRows=_boardsLabelRowsFor('c1','').rows;
+        _boardsAsk=()=>Promise.resolve('SHIPPED');_boardsConfirm=()=>Promise.resolve(true);`);
+      await t.run(`_boardsLabelAct('rename:0')`);
+      s.section('a label renames and drops across the board');
+      s.eq('renaming rewrites every card',
+        t.run(`_editCards.map(c=>c.labels[0].t).join(',')`),'SHIPPED,SHIPPED');
+      t.run(`_boardsLabelRows=_boardsLabelRowsFor('c1','').rows`);
+      await t.run(`_boardsLabelAct('drop:0')`);
+      s.eq('and removing drops it from every card',
+        t.run(`_editCards.map(c=>c.labels.length).join(',')`),'0,0');
+    })());
 
     s.section('the dot grid is a placement cue, not the background');
     s.ok('a helper flashes it',run(`typeof _boardsFlashGrid`)==='function');
@@ -5375,6 +5403,202 @@ module.exports=function(){
   // At the 200×110 file default the name row and the Open/Download buttons
   // left the page thumbnail a ~20px strip. Reported with a screenshot of a
   // production brief that had to be dragged open by hand.
+  // ── Milanote: no browser dialogs, and renames happen in place ─────────
+  // Change order 1 (Sept 2026). "Creative Hub" is called Milanote on every
+  // screen; every confirm() and prompt() in the module became its own
+  // dialog; the board title, a card's name (F2) and "Rename the board…"
+  // edit where they sit. Each case below is its own app, because the dialog
+  // resolves a Promise and a shared app would be reset mid-await.
+  _pending.push((async()=>{
+    const fs=require('fs');
+    const tick=()=>new Promise(r=>setImmediate(r));
+    const fresh=()=>{
+      const a=loadApp({files:FILES,session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'},
+        globals:{requestAnimationFrame:()=>0}});
+      a.run(`_editBoard={id:'b1',title:'Winter Drop',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0};
+        _editCards=[{id:'n',type:'text',text:'note',name:'Rib spec',x:0,y:0,w:170,h:100}];
+        _editConnectors=[];_editUnsorted=[];_boardsSelection=new Set(['n']);moodBoards=[];boardsLoaded=true;
+        _boardsSaveDebounced=()=>{__saves=(typeof __saves==='number'?__saves:0)+1;};`);
+      return a;
+    };
+    const key=(a,el,k)=>{const e={key:k,defaultPrevented:false,stopped:false,
+      preventDefault(){this.defaultPrevented=true;},stopPropagation(){this.stopped=true;}};
+      (el._ls.keydown||[]).slice().forEach(x=>x.fn(e));return e;};
+    const docKey=(a,k)=>{const e={key:k,preventDefault(){},stopPropagation(){this.stopped=true;}};
+      (a.state.listeners.keydown||[]).slice().forEach(fn=>fn(e));return e;};
+
+    s.section('the confirm is Milanote\'s own dialog, not the browser\'s');
+    {
+      const a=fresh();
+      a.run(`__native=0;confirm=()=>{__native++;return true};prompt=()=>{__native++;return 'x'};alert=()=>{__native++;}`);
+      const p1=a.run(`_boardsConfirm('Delete "<img src=x onerror=alert(1)>" forever?',{ok:'Delete forever',danger:true})`);
+      s.ok('it is on screen',a.state.body.some(n=>n.id==='board-confirm'));
+      s.eq('the question is text, never markup',a.el('board-confirm-msg').textContent,'Delete "<img src=x onerror=alert(1)>" forever?');
+      s.ok('and none of it reached the markup',!/<img/.test(a.el('board-confirm').innerHTML));
+      s.eq('the button says what it does',a.el('board-confirm-ok').textContent,'Delete forever');
+      s.eq('and the other says Cancel',a.el('board-confirm-no').textContent,'Cancel');
+      a.run(`window.boardsDlgAnswer(true)`);
+      s.eq('yes is true',await p1,true);
+      s.ok('and the dialog is gone',!a.state.body.some(n=>n.id==='board-confirm'));
+
+      const p2=a.run(`_boardsConfirm('Sure?')`);
+      const esc=docKey(a,'Escape');
+      s.eq('Escape answers no',await p2,false);
+      s.ok('and goes no further (the board would clear its selection)',!!esc.stopped);
+      const p3=a.run(`_boardsConfirm('Sure?')`);
+      docKey(a,'Enter');
+      s.eq('Enter answers yes',await p3,true);
+      const p4=a.run(`_boardsConfirm('first')`);
+      const p5=a.run(`_boardsConfirm('second',{no:'Just this board'})`);
+      s.eq('a second dialog answers the first one no',await p4,false);
+      s.eq('its "no" button can say what no means',a.el('board-confirm-no').textContent,'Just this board');
+      a.run(`window.boardsDlgAnswer(false)`);
+      s.eq('Cancel is false',await p5,false);
+      s.eq('the browser was never asked anything',a.run(`__native`),0);
+
+      const p6=a.run(`_boardsAsk('Label for this line','old')`);
+      s.eq('the ask shows the current value in its field',a.el('board-confirm-field').value,'old');
+      a.el('board-confirm-field').value='  new label ';
+      a.run(`window.boardsDlgAnswer(true)`);
+      s.eq('and hands back what was typed',await p6,'  new label ');
+      const p7=a.run(`_boardsAsk('x','y')`);
+      a.run(`window.boardsDlgAnswer(false)`);
+      s.eq('Cancel hands back null',await p7,null);
+    }
+
+    s.section('every destructive action waits for the answer');
+    {
+      const a=fresh();
+      a.run(`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
+      const pr=a.run(`window.boardsTrayRemove(0)`);
+      await tick();
+      s.eq('nothing is removed while the question is open',a.run(`_editUnsorted.length`),1);
+      a.run(`window.boardsDlgAnswer(false)`);await pr;
+      s.eq('and Cancel keeps it',a.run(`_editUnsorted.length`),1);
+      const pr2=a.run(`window.boardsTrayRemove(0)`);
+      a.run(`window.boardsDlgAnswer(true)`);await pr2;
+      s.eq('yes removes it',a.run(`_editUnsorted.length`),0);
+    }
+
+    s.section('in-place rename: Enter, Escape, empty, leaving');
+    {
+      const a=fresh();
+      const el=a.el('rn');el.textContent='Winter Drop';
+      a.run(`__got=[];_boardsInlineRename(document.getElementById('rn'),{value:'Winter Drop',commit:v=>__got.push(v)})`);
+      s.eq('the field is switched on where it sits',el.getAttribute('contenteditable'),'true');
+      const stopped={v:false};(el._ls.pointerdown||[]).forEach(x=>x.fn({stopPropagation(){stopped.v=true;}}));
+      s.ok('a press on it does not reach the tile or card under it',stopped.v);
+      el.textContent='  Winter   Drop 2027 ';
+      const e=key(a,el,'Enter');
+      s.ok('Enter is taken, not typed',e.defaultPrevented);
+      s.eq('Enter commits, whitespace tidied',a.run(`__got.join('|')`),'Winter Drop 2027');
+      s.eq('and the field is switched off',el.getAttribute('contenteditable'),'false');
+
+      a.run(`__got=[];_boardsInlineRename(document.getElementById('rn'),{value:'Winter Drop 2027',commit:v=>__got.push(v)})`);
+      el.textContent='Half-typ';
+      key(a,el,'Escape');
+      s.eq('Escape saves nothing',a.run(`__got.length`),0);
+      s.eq('and puts the old name back',el.textContent,'Winter Drop 2027');
+
+      a.run(`_boardsInlineRename(document.getElementById('rn'),{value:'Winter Drop 2027',commit:v=>__got.push(v)})`);
+      el.textContent='   ';
+      key(a,el,'Enter');
+      s.eq('an empty name saves nothing',a.run(`__got.length`),0);
+      s.eq('and reverts',el.textContent,'Winter Drop 2027');
+
+      a.run(`_boardsInlineRename(document.getElementById('rn'),{value:'Winter Drop 2027',commit:v=>__got.push(v)})`);
+      el.textContent='Summer';
+      (el._ls.blur||[]).forEach(x=>x.fn({}));
+      s.eq('leaving the field commits',a.run(`__got.join('|')`),'Summer');
+      key(a,el,'Enter');(el._ls.blur||[]).forEach(x=>x.fn({}));
+      s.eq('and only once',a.run(`__got.length`),1);
+    }
+
+    s.section('the board title saves on Enter, not per keystroke');
+    {
+      const a=fresh();
+      const html=a.run(`_renderBoardCanvasHTML()`);
+      const tag=(/<input[^>]*id="board-title-input"[^>]*>/.exec(html)||[''])[0];
+      s.ok('the title field has no per-keystroke save',!/oninput=/.test(tag),tag.slice(0,160));
+      s.ok('it arms the in-place rename when focused',/onfocus="window\.boardsTitleFocus\(this\)"/.test(tag));
+      const el=a.el('board-title-input');el.tagName='INPUT';el.value='Winter Drop';
+      a.run(`window.boardsTitleFocus(document.getElementById('board-title-input'))`);
+      el.value='Winter Drop 2027';
+      key(a,el,'Escape');
+      s.eq('Escape leaves the title as it was',a.run(`_editBoard.title`),'Winter Drop');
+      s.eq('and puts it back in the field',el.value,'Winter Drop');
+      a.run(`window.boardsTitleFocus(document.getElementById('board-title-input'))`);
+      el.value='';key(a,el,'Enter');
+      s.eq('an empty title reverts',a.run(`_editBoard.title`),'Winter Drop');
+      a.run(`window.boardsTitleFocus(document.getElementById('board-title-input'))`);
+      el.value='Winter Drop 2027';key(a,el,'Enter');
+      s.eq('Enter saves it',a.run(`_editBoard.title`),'Winter Drop 2027');
+      const ro=fresh();ro.run(`session={u:'saim',name:'Saim',role:'worker',uid:'u9'}`);
+      const rtag=(/<input[^>]*id="board-title-input"[^>]*>/.exec(ro.run(`_renderBoardCanvasHTML()`))||[''])[0];
+      s.ok('someone who cannot edit gets a read-only title with nothing armed',/readonly/.test(rtag)&&!/onfocus/.test(rtag),rtag.slice(0,160));
+    }
+
+    s.section('a card name (F2) renames in place');
+    {
+      const a=fresh();
+      const html=a.run(`_boardCardHTML(_editCards[0],true)`);
+      s.ok('the name no longer saves per keystroke',!/boardsCardName/.test(html));
+      const el=a.el('board-name-n');
+      el.closest=()=>({dataset:{id:'n'}});el.classList.add('board-card-name');
+      el.textContent='Rib spec';
+      a.run(`window.boardsBeginEdit(null,'board-name-n')`);
+      el.textContent='Rib spec v2';key(a,el,'Enter');
+      s.eq('Enter saves the name',a.run(`_editCards[0].name`),'Rib spec v2');
+      s.ok('undoably',a.run(`(window.boardsUndoAction(),_editCards[0].name)`)==='Rib spec');
+      a.run(`window.boardsBeginEdit(null,'board-name-n')`);
+      el.textContent='';key(a,el,'Enter');
+      s.eq('an empty name reverts rather than wiping it',a.run(`_editCards[0].name`),'Rib spec');
+      a.run(`window.boardsBeginEdit(null,'board-name-n')`);
+      el.textContent='oops';key(a,el,'Escape');
+      s.eq('Escape keeps the old name',a.run(`_editCards[0].name`),'Rib spec');
+      s.eq('and shows it again',el.textContent,'Rib spec');
+    }
+
+    s.section('"Rename the board…" edits the title where it sits');
+    {
+      const a=fresh();
+      a.run(`moodBoards=[{id:'K',title:'Knitwear',ownerUid:'u1',visibility:'personal',cards:[]}];currentPage='boards-all';
+        __native=0;prompt=()=>{__native++;return 'x'};`);
+      const tile=a.el('tile-K'),title=a.el('tile-K-title');
+      tile.getAttribute=k=>k==='data-board'?'K':null;tile.querySelector=()=>title;
+      title.textContent='Knitwear';
+      a.run(`document.querySelectorAll=q=>q==='.board-gallery-card'?[document.getElementById('tile-K')]:[]`);
+      await a.run(`_boardsGalleryCtxRun('g:rename','K')`);
+      s.eq('no browser prompt',a.run(`__native`),0);
+      s.eq('the tile title is the field',title.getAttribute('contenteditable'),'true');
+      const before=a.state.writes.length;
+      title.textContent='Knitwear FW27';key(a,title,'Enter');
+      await tick();
+      const w=a.state.writes.slice(before).find(x=>x.data&&x.data.title);
+      s.eq('Enter writes the new title',w&&w.data.title,'Knitwear FW27');
+      s.eq('and the board has it',a.run(`moodBoards[0].title`),'Knitwear FW27');
+      a.run(`document.querySelectorAll=()=>[];currentPage='boards-all'`);
+      await a.run(`_boardsGalleryCtxRun('g:rename','K')`);
+      s.ok('with no title on screen it says where to rename, and still no prompt',
+        /All boards/.test(a.state.toasts.join(' '))&&a.run(`__native`)===0);
+    }
+
+    s.section('Creative Hub is called Milanote');
+    {
+      const a=fresh();
+      a.run(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0}`);
+      s.ok('the Home board\'s back button says Milanote',/← Milanote/.test(a.run(`_renderBoardCanvasHTML()`)));
+      const src=f=>fs.readFileSync(require('path').join(__dirname,'..',f),'utf8');
+      const code=f=>src(f).replace(/\/\*[\s\S]*?\*\//g,'').split(/\r?\n/).map(l=>l.replace(/(^|[^:'"`])\/\/.*$/,'$1')).join('\n');
+      ['js/shared.js','js/notes.js','js/hrm.js','js/boards.js','js/theboard.js','index.html'].forEach(f=>
+        s.ok(f+' shows no "Creative Hub" on screen',!/Creative Hub/.test(code(f))));
+      s.ok('the page name the bug tracker records is Milanote',/'creative-hub':'Milanote'/.test(src('js/shared.js')));
+      s.ok('page ids are unchanged',/showPage\('creative-hub'\)/.test(src('js/shared.js')));
+      ['js/boards.js','js/notes.js'].forEach(f=>
+        s.ok(f+' calls no browser prompt/confirm/alert',!/(^|[^.\w$])(window\.)?(prompt|confirm|alert)\s*\(/m.test(code(f))));
+    }
+  })());
+
   {
     const app=loadApp({files:FILES,globals:{requestAnimationFrame:()=>0}});
     const {run}=app;
@@ -5743,7 +5967,7 @@ module.exports=function(){
       s.eq('a document from a note: first line is the title',r(`_boardsDocFromNote(_editCards[0]).title`),'Fabric plan');
       s.eq('paragraphs split on blank lines',r(`_boardsDocFromNote(_editCards[0]).blocks.map(b=>b.type+':'+b.text).join('|')`),'paragraph:Order the rib.|paragraph:Check the dye lot.');
       s.eq('an empty note still gets one empty paragraph',r(`_boardsDocFromNote({text:''}).blocks.length`),1);
-      r(`__c=0;confirm=()=>{__c++;return true};location={origin:'https://ops.example',pathname:'/',hash:''}`);
+      r(`__c=0;_boardsConfirm=()=>{__c++;return Promise.resolve(true)};location={origin:'https://ops.example',pathname:'/',hash:''}`);
       const menu=r(`_boardsCardCtxItems(true).map(i=>i.act).join(',')`);
       s.ok('it is on the note\'s menu',/todoc/.test(menu));
       const before=app.state.writes.length;

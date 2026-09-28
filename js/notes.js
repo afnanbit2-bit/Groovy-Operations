@@ -127,7 +127,7 @@ const _HUB_CATEGORIES=[
 function renderCreativeHub(){
   return`
   <div class="page-head" style="margin-bottom:16px">
-    <h2 style="margin:0;font-size:31px;letter-spacing:-.01em">Creative Hub</h2>
+    <h2 style="margin:0;font-size:31px;letter-spacing:-.01em">Milanote</h2>
     <div style="color:var(--muted);font-size:14.5px;margin-top:6px">A shared space for docs and boards</div>
   </div>
   <div class="hub-grid">${_HUB_CATEGORIES.map(c=>`
@@ -149,7 +149,7 @@ window.onHubTileClick=function(id){
 // once, since "segregated" was the explicit ask, not "filtered".
 function renderNotesPage(){
   return`
-  <button class="back-btn" onclick="window.showPage('creative-hub')">← Back to Creative Hub</button>
+  <button class="back-btn" onclick="window.showPage('creative-hub')">← Back to Milanote</button>
   <div class="page-head" style="margin-bottom:10px">
     <div><h2 style="margin:0">Notes</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">Team Wiki, private notes</div></div>
   </div>
@@ -474,7 +474,9 @@ window.notesToggleVisibility=async function(){
 
 window.notesDeletePage=async function(){
   if(!_notesEditPage||!_notesCanEdit(_notesEditPage))return;
-  if(!confirm('Delete "'+(_notesEditPage.title||'Untitled')+'"? This cannot be undone.'))return;
+  // Milanote's own dialog (js/boards.js). Without it, nothing is deleted.
+  if(typeof _boardsConfirm!=='function'){showToast('Could not ask to confirm — reload and try again',true);return;}
+  if(!await _boardsConfirm('Delete "'+(_notesEditPage.title||'Untitled')+'"? This cannot be undone.',{ok:'Delete',danger:true}))return;
   try{
     await deleteDoc(doc(db,'notes_pages',_notesEditPage.id));
     notesPages=notesPages.filter(p=>p.id!==_notesEditPage.id);

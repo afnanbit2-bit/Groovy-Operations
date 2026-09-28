@@ -760,7 +760,7 @@ function buildNav(){
     const tbTop=_canSeeTheBoard()?_tbNavItemHTML(String(currentPage||'').startsWith('tb-'))+'<div class="nav-divider"></div>':'';
     if(sb)sb.innerHTML=tbTop+_salesTeamNavHTML(_salesTeamGroups()).replace(/^\s*<div class="nav-divider"><\/div>/,'')
       +`<div class="nav-divider"></div><div class="nav-item" id="nav-shopify-intel" onclick="window.showPage('shopify-intel')">Inventory Intel</div>`
-      +(_canSeeCreativeHub()?`<div class="nav-item" id="nav-creative-hub" onclick="window.showPage('creative-hub')">Creative Hub</div>`:'');
+      +(_canSeeCreativeHub()?`<div class="nav-item" id="nav-creative-hub" onclick="window.showPage('creative-hub')">Milanote</div>`:'');
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -770,7 +770,7 @@ function buildNav(){
     const item=(id,label)=>`<div class="nav-item${id==='dashboard'?' on':''}" id="nav-${id}" onclick="window.showPage('${id}')">${label}</div>`;
     if(sb)sb.innerHTML=item('dashboard','Dashboard')+item('qc-disposition','QC Disposition')+item('bstock','B-Stock')
       +item('fabric-inventory','Fabric Inventory')+item('shopify-intel','Inventory Intel')
-      +(_canSeeCreativeHub()?item('creative-hub','Creative Hub'):'');
+      +(_canSeeCreativeHub()?item('creative-hub','Milanote'):'');
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -832,7 +832,7 @@ function buildNav(){
   if(om)mainItems.push({id:'bstock',label:'B-Stock'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   // No icon — deliberate, per Afnan's ask. Audience: _CREATIVE_HUB_USERS.
-  if(_canSeeCreativeHub())mainItems.push({id:'creative-hub',label:'Creative Hub'});
+  if(_canSeeCreativeHub())mainItems.push({id:'creative-hub',label:'Milanote'});
   // Pattern Hub (Sept 2026, test phase: afnan/ammar/mustafa by username). The
   // gate lives in js/patterns.js, which loads AFTER this file — hence the
   // typeof guard, which fails CLOSED. See PATTERN_HUB_PLAN.md.
@@ -1130,7 +1130,7 @@ window.toggleHRMNav=function(){
 // ── Mobile bottom-sheet menu ──
 window.openCsrMoreSheet=function(){
   const items=[{iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'}];
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'});
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'});
   window.openMobSheet('More',items);
 };
 window.openMobSheet=function(title,items){
@@ -1183,7 +1183,7 @@ window.openHRMSheet=function(){
 window.openMktMoreSheet=function(){
   const items=[{iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'}];
   if(_canSeeTheBoard())items.unshift({label:_tbNavLabel(),pageId:_tbNavHome()});
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // no icon — see buildNav()
   window.openMobSheet('More',items);
 };
 
@@ -1197,7 +1197,7 @@ window.openMoreSheet=function(){
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   if(typeof _canSeePatternHub==='function'&&_canSeePatternHub())items.push({label:'Pattern Hub',pageId:'pattern-hub'}); // test phase — see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
   if(_salesTeamGroups().length)items.push({iconName:'people',label:'The Sales Team ›',onClick:'window.openSalesSheet()'});
@@ -1234,7 +1234,7 @@ window.openStoreSubSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   window.openMobSheet('Store',items);
 };
 
@@ -1248,7 +1248,7 @@ window.openStoreMoreSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   window.openMobSheet('More',items);
 };
 
@@ -1502,7 +1502,7 @@ const BUG_PAGE_NAMES={
   'mkt-paid-pr':'Marketing — Paid PR Approvals',
   'mkt-reports':'Marketing — Reports',
   'mkt-import':'Marketing — Sheet import',
-  'creative-hub':'Creative Hub',
+  'creative-hub':'Milanote',
   'notes':'Notes',
   'note-detail':'Note Detail',
   'tb-dash':'The Board — Dashboard',
