@@ -3529,6 +3529,50 @@ too, so these never appear there.
   visit". `tests/board-notify.test.js` (27): reverting the reader filter
   (2 fail), the escaping (2) and the only-if-absent check (1).
 
+### Mood Boards — video in a link card (Sept 2026)
+
+The first gap built from the **Claude in Chrome study** — five GitHub issues
+filed 28 Sept 2026 (#92 getting content in, #93 moving and copying, #94 new
+card types, #95 trash and templates, #96 sharing and notifications), each
+fact labelled SEEN / MEASURED / HELP / UNKNOWN. **Read the matching issue
+before building any remaining Milanote gap.** The study's own limits: it
+could only do atomic drags (so no hover-to-open timings or drop cues), had
+no second user, phone or extension, and attached no screenshots.
+
+From #94 §12: **a YouTube link is not a separate card type — it is the link
+card with its preview turned into a player.** A 16:9 black area, the
+thumbnail, a centred 56px `rgba(0,0,0,.6)` ▶ circle; clicking ▶ swaps in the
+provider's iframe with autoplay and it plays INLINE with the provider's
+controls. The existing preview toggle hides and shows it.
+
+- **`_boardsVideoOf(url)` is the one decision, pure:** youtube.com (www./m.)
+  watch / shorts / embed / live, youtu.be, vimeo.com/<digits>[/<hash>], a
+  `t=`/`start=` time carried. The HOST is matched exactly
+  (`youtube.com.evil.test` is not YouTube) and the id is re-validated
+  against the provider's shape before it goes into a URL.
+- **Nothing loads from YouTube until ▶** — no player and no tracker per
+  video on open — and the embed is `youtube-nocookie.com`. The thumbnail is
+  the fetched (Cloudinary-mirrored) preview picture, else YouTube's own
+  `i.ytimg.com` still; Vimeo has no id-based still and shows black until
+  the preview fetch lands.
+- **▶ swaps ONE element** (`window.boardsVideoPlay`). Playing is per viewer
+  and per visit (`_boardsPlaying`, reset on board open), never stored.
+  **KNOWN LIMIT: a full re-render restarts a playing video** — Milanote keeps
+  its iframe mounted; moving an iframe in the DOM reloads it, so matching
+  that would mean never rebuilding the card.
+- A video card is born **340 × 300** (`_BOARDS_VIDEO_W/H`; Milanote 338 wide
+  with a 338×189 media area), sized immediately rather than after the fetch,
+  and only while still at its birth size.
+- **Not built:** uploaded video files (autoplay/loop are for uploads only in
+  Milanote — HELP), the separate "Link info" toggle, and audio / map cards
+  (their own gaps, specified in #94 §13–14). **Vimeo is unverified** — the
+  study did not try it; built from the documented embed URL.
+- `tests/board-video.test.js` (27). Layout fragment `boards — a video link
+  card` (over a white stand-in thumbnail): making the play button
+  unclickable fails it; shrinking the card does NOT (the video area yields
+  its height, which is correct).
+- **Nobody has pressed ▶ on a real screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

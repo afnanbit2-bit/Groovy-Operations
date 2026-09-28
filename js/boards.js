@@ -2251,6 +2251,7 @@ async function _boardsOpenCanvas(){
   // History is per board-opening — undoing your way into a different
   // board's state would be nonsense.
   _boardsUndo=[];_boardsRedo=[];
+  _boardsPlaying=new Set();   // playing is per viewer and per visit
   // The sync baseline: what the server has, as far as we know. Every
   // later "did we change this card?" question is answered by diffing
   // against it (see _boardsLocalChanges).
@@ -2704,14 +2705,16 @@ function _boardCardHTML(c,canEdit){
       // interpolated — the same boundary card text, comments and to-do items
       // hold, and the most obviously third-party strings in the whole file.
       const href=_boardsSafeHref(c.linkUrl);
-      const showImg=c.linkImage&&!c.linkPreviewOff;
-      body=`<div class="board-card-body board-link-preview"${drag}>
+      const vid=_boardsVideoOf(c.linkUrl);
+      const showImg=c.linkImage&&!c.linkPreviewOff&&!vid;
+      body=`<div class="board-card-body board-link-preview${vid?' is-video':''}"${drag}>
+          ${vid&&!c.linkPreviewOff?_boardsVideoBoxHTML(c,vid):''}
           ${showImg?`<img class="board-link-img" src="${_boardsEsc(_boardsDisplayUrl(c.linkImage,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`:''}
           <div class="board-link-meta">
             <div class="board-link-urlrow">
               <svg class="board-link-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-.7.7M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l.7-.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <span class="link-url" id="board-linku-${c.id}"></span>
-              ${c.linkImage&&canEdit?`<button class="board-link-eye${c.linkPreviewOff?' off':''}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsLinkTogglePreview('${c.id}')" title="${c.linkPreviewOff?'Show the preview picture':'Hide the preview picture'}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3.3" width="12.4" height="9.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.8 10.5l3.4-3 3 2.6 2.2-2 3.8 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="eye-slash" d="M2 14L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>`:''}
+              ${(c.linkImage||vid)&&canEdit?`<button class="board-link-eye${c.linkPreviewOff?' off':''}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsLinkTogglePreview('${c.id}')" title="${c.linkPreviewOff?'Show the preview picture':'Hide the preview picture'}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3.3" width="12.4" height="9.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.8 10.5l3.4-3 3 2.6 2.2-2 3.8 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="eye-slash" d="M2 14L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>`:''}
             </div>
             <a class="link-title" id="board-linkt-${c.id}"${href?` href="${_boardsEsc(href)}" target="_blank" rel="noopener noreferrer"`:''} onpointerdown="event.stopPropagation()" title="Open this link in a new tab"></a>
             <div class="link-desc" id="board-linkd-${c.id}" contenteditable="false" data-placeholder="Add a description" onpointerdown="event.stopPropagation()" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-linkd-${c.id}')"`:''} oninput="window.boardsLinkInput('${c.id}','linkDesc',this.textContent)"></div>
@@ -8920,11 +8923,93 @@ function _boardsApplyLinkMeta(c,meta,imageUrl){
   if(meta.siteName)c.linkSite=meta.siteName;
   if(imageUrl)c.linkImage=imageUrl;
   if(_boardsLinkCardUnsized(c)){
-    c.w=_BOARDS_LINK_PREVIEW_W;
-    c.h=imageUrl?_BOARDS_LINK_PREVIEW_H:_BOARDS_LINK_TEXT_H;
+    if(_boardsVideoOf(c.linkUrl)){c.w=_BOARDS_VIDEO_W;c.h=_BOARDS_VIDEO_H;}
+    else{
+      c.w=_BOARDS_LINK_PREVIEW_W;
+      c.h=imageUrl?_BOARDS_LINK_PREVIEW_H:_BOARDS_LINK_TEXT_H;
+    }
   }
   return true;
 }
+/* ── Video in a link card (Sept 2026) ───────────────────────────────────
+   From the Claude in Chrome study (GitHub issue #94, §12 — SEEN/MEASURED on
+   the real Milanote): a YouTube link is NOT a separate card type, it is the
+   link card with its preview area turned into a player. At rest a 16:9
+   thumbnail with a centred 56px ▶ circle (rgba(0,0,0,.6), white glyph);
+   clicking ▶ swaps the thumbnail for the provider's <iframe> with
+   autoplay, and it plays INLINE with the provider's own controls. The
+   Preview toggle hides and shows it. Milanote's card is 338 wide with a
+   338×189 media area — ours is 340 wide.
+
+   - **Nothing loads from YouTube until ▶ is pressed** — a board of twenty
+     videos must not load twenty players (and twenty trackers) on open. The
+     embed is youtube-NOCOOKIE for the same reason.
+   - **_boardsVideoOf is the one decision**, pure, and matches the HOST
+     exactly (youtube.com with or without www./m., youtu.be, vimeo.com) —
+     `youtube.com.evil.test` is not YouTube. The id is re-validated against
+     the provider's own id shape before it is put in a URL.
+   - **Playing is per viewer and transient** (`_boardsPlaying`), never
+     stored: a board opened by someone else does not start playing.
+   - **Pressing ▶ swaps ONE element** rather than re-rendering the canvas.
+     KNOWN LIMIT: a later full re-render (a structural edit, a colleague's
+     change arriving) rebuilds the card, and the iframe restarts from the
+     beginning. Milanote keeps it mounted; moving an iframe in the DOM
+     reloads it in every browser, so keeping it would mean never rebuilding
+     that card. Recorded, not solved.
+   - The thumbnail is the fetched preview picture (mirrored to Cloudinary,
+     so the PNG/PDF export can draw it) when there is one, else YouTube's
+     own still. Vimeo has no id-based still, so it waits for the fetch and
+     shows a black box with ▶ until then.
+   - Uploaded video files and Vimeo were UNKNOWN in the study; Vimeo is
+     built from its documented embed URL and is unverified. */
+const _BOARDS_VIDEO_W=340,_BOARDS_VIDEO_H=300;
+let _boardsPlaying=new Set();
+function _boardsVideoOf(url){
+  let u;
+  try{u=new URL(String(url||'').trim());}catch(e){return null;}
+  if(!/^https?:$/.test(u.protocol))return null;
+  const host=u.hostname.toLowerCase().replace(/^(www\.|m\.)/,'');
+  let start=0;
+  const t=u.searchParams.get('t')||u.searchParams.get('start')||'';
+  const tm=/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/.exec(t);
+  if(t&&tm)start=(+tm[1]||0)*3600+(+tm[2]||0)*60+(+tm[3]||0);
+  const parts=u.pathname.split('/').filter(Boolean);
+  if(host==='vimeo.com'){
+    if(!parts[0]||!/^\d{1,12}$/.test(parts[0]))return null;
+    const hash=parts[1]&&/^[0-9a-f]{6,20}$/i.test(parts[1])?parts[1]:'';
+    return{provider:'vimeo',id:parts[0],thumb:'',
+      embed:'https://player.vimeo.com/video/'+parts[0]+'?autoplay=1'+(hash?'&h='+hash:'')+(start?'#t='+start+'s':'')};
+  }
+  let id='';
+  if(host==='youtube.com'){
+    if(u.pathname==='/watch')id=u.searchParams.get('v')||'';
+    else if(['shorts','embed','live'].indexOf(parts[0])>=0)id=parts[1]||'';
+  }else if(host==='youtu.be'){
+    id=parts[0]||'';
+  }else return null;
+  if(!/^[A-Za-z0-9_-]{11}$/.test(id))return null;
+  return{provider:'youtube',id,thumb:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg',
+    embed:'https://www.youtube-nocookie.com/embed/'+id+'?autoplay=1&rel=0&playsinline=1'+(start?'&start='+start:'')};
+}
+function _boardsVideoIframeHTML(vid){
+  return`<iframe class="board-video-frame" src="${_boardsEsc(vid.embed)}" title="${vid.provider==='vimeo'?'Vimeo':'YouTube'} video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+}
+function _boardsVideoBoxHTML(c,vid){
+  if(_boardsPlaying.has(c.id))return`<div class="board-video" id="board-vid-${c.id}">${_boardsVideoIframeHTML(vid)}</div>`;
+  const pic=c.linkImage?_boardsDisplayUrl(c.linkImage,c.w):vid.thumb;
+  return`<div class="board-video" id="board-vid-${c.id}">
+    ${pic?`<img class="board-video-thumb" src="${_boardsEsc(pic)}" draggable="false" alt="" onerror="this.style.display='none'">`:''}
+    <button class="board-video-play" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsVideoPlay('${c.id}')" title="Play" aria-label="Play video"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4.5v11l9-5.5z" fill="currentColor"/></svg></button>
+  </div>`;
+}
+window.boardsVideoPlay=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  const vid=c&&c.type==='link'&&_boardsVideoOf(c.linkUrl);
+  if(!vid)return;
+  _boardsPlaying.add(id);
+  const el=document.getElementById('board-vid-'+id);
+  if(el)el.innerHTML=_boardsVideoIframeHTML(vid);
+};
 async function _boardsLinkMeta(url){
   if(typeof auth==='undefined'||!auth||!auth.currentUser)return null;
   const idToken=await auth.currentUser.getIdToken();
@@ -8951,6 +9036,7 @@ function _boardsLinkHydrate(cardId){
   const start=_editCards.find(x=>x.id===cardId);
   if(!start||start.type!=='link'||!start.linkUrl)return;
   const boardId=_editBoard&&_editBoard.id,url=start.linkUrl;
+  if(_boardsVideoOf(url)&&_boardsLinkCardUnsized(start)){start.w=_BOARDS_VIDEO_W;start.h=_BOARDS_VIDEO_H;}
   start._fetching=true;
   delete start._linkNoPreview;
   _boardsRenderSoon();
