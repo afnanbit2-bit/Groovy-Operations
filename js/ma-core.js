@@ -1222,6 +1222,10 @@ function maValidate(doc,ctx){
     if(c.before.dt!==doc.dt||(c.before.kind||null)!==(doc.kind||null))refuse('edit.type','A document cannot change its kind — void it and record the right one.');
     if((c.before.party||null)!==(doc.party||null))refuse('edit.party','A document cannot change its party — void it and record it against the right one.','party');
     if(c.before.status==='void')refuse('edit.void','A void document cannot be edited.');
+    // The receiver decides who confirms (confirmBy, confirmPaper), and the
+    // rules pin confirmBy on an edit — so changing it would leave a
+    // confirmation owed by one person on money handed to another.
+    if(c.before.dt==='transfer'&&(c.before.to||null)!==(doc.to||null))refuse('edit.receiver','A transfer cannot change who received it — void it and record the right one.','to');
   }
   return _maResult(issues);
 }
@@ -1262,8 +1266,12 @@ function maApplyEdit(before,after,meta){
   const out=Object.assign({},after,{
     id:before.id,no:before.no,dt:before.dt,kind:before.kind,party:before.party===undefined?after.party:before.party,
     by:before.by,byName:before.byName,ts:before.ts,source:before.source,
-    status:before.status==='pending'&&after.status==='posted'?'pending':(after.status||before.status),
+    status:before.status==='pending'&&after.status==='posted'?'pending'
+      // a transfer nobody had to confirm cannot start waiting on a confirmBy the edit may not set
+      :before.dt==='transfer'&&after.status==='pending'&&!before.confirmBy?(before.status||'posted')
+      :(after.status||before.status),
     confirmBy:before.confirmBy===undefined?after.confirmBy:before.confirmBy,
+    confirmPaper:before.confirmPaper===undefined?after.confirmPaper:before.confirmPaper,
     rev:(before.rev||1)+1,
     edits:(before.edits||[]).concat([{at:m.at||0,by:m.by||null,byName:m.byName||null,reason:maStr(m.reason,500),fields:d.fields,before:d.before,after:d.after}])
   });

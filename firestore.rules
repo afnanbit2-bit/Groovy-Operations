@@ -990,5 +990,213 @@ service cloud.firestore {
     // it inherits the existing bell and unread badge. There is deliberately
     // no board_notifications match block -- see _tbNotify in
     // js/theboard.js.
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Master Accounts (M1.2, Sept 2026) — THE APP'S FIRST OWNER-ONLY READS.
+    //
+    // Every other collection in this file is readable by some wider group
+    // (usually any signed-in user). These are not: the books are read and
+    // written by Afnan and Ammar alone (MASTER_ACCOUNTS_PLAN.md §19, §29).
+    // A manager, Raees, Umair and anyone signed out are refused a READ, not
+    // merely a write. There is deliberately NO catch-all: an ma_* / ma_sv_*
+    // collection not named below stays default-deny.
+    //
+    //   - No client delete on ANY ma_* collection, ever. A document is
+    //     voided, never removed.
+    //   - Writes are bound to the caller: `by` is the username of the
+    //     signed-in email (maUser()).
+    //   - A document (journal, transfer, count) changes in exactly four
+    //     shapes: EDIT (rev + 1, edits[] grows by one row naming the
+    //     changed fields), VOID (a transition, never a rewrite), CONFIRM
+    //     (a pending transfer, by the named person or on paper by an
+    //     owner), REVIEW (the two review fields).
+    //   - The period lock is read HERE, not only in the form: a create,
+    //     edit, void or confirm dated in a quarter whose ma_closes doc is
+    //     locked and not reopened is refused. The quarter on the document
+    //     must be the one its date falls in (fiscal year from 1 JULY —
+    //     hardcoded; a change to MA_DEFAULT_SETTINGS.fiscalYearStart needs
+    //     maQuarterOfDay changed with it).
+    //   - ma_audit is append-only; ma_backups is server-only (Admin SDK).
+    // Run in the emulator: tests/rules-emulator-ma.js. Mirror of
+    // MA_OWNERS in js/ma-core.js.
+    // ═══════════════════════════════════════════════════════════════════
+    function isMasterAccounts() {
+      return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op'];
+    }
+    function maUser() { return request.auth.token.email.split('@')[0]; }
+    function maDayOk(d) { return d is string && d.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    // FY from July: Jul–Sep Q1, Oct–Dec Q2, Jan–Mar Q3, Apr–Jun Q4, the
+    // year named by the calendar year it ENDS in (maQuarterOf).
+    function maQuarterOfDay(d) {
+      let p = d.split('-');
+      let y = int(p[0]);
+      let m = int(p[1]);
+      let q = m >= 10 ? 2 : (m >= 7 ? 1 : (m >= 4 ? 4 : 3));
+      return string(m >= 7 ? y + 1 : y) + '-Q' + string(q);
+    }
+    function maPeriodOk(d) { return maDayOk(d.date) && d.quarter == maQuarterOfDay(d.date); }
+    // A missing close doc is "not locked" — guarded by exists() so get()
+    // is never called on a document that is not there.
+    function maLocked(q) {
+      return exists(/databases/$(database)/documents/ma_closes/$(q))
+        && get(/databases/$(database)/documents/ma_closes/$(q)).data.get('locked', false) == true
+        && get(/databases/$(database)/documents/ma_closes/$(q)).data.get('reopenedAt', null) == null;
+    }
+    function maText(s) { return s is string && s.trim().size() > 0; }
+
+    function maDocCreateOk(dt, docId, statuses) {
+      let d = request.resource.data;
+      return isMasterAccounts()
+        && d.by == maUser()
+        && d.dt == dt
+        && d.status in statuses
+        && d.rev == 1
+        && d.edits is list && d.edits.size() == 0
+        && d.no == docId
+        && maPeriodOk(d)
+        && !maLocked(d.quarter);
+    }
+    // EDIT: identity unchanged, rev + 1, edits[] = old edits + ONE row by
+    // the caller. Every changed field is one the type allows
+    // (MA_EDIT_FIELDS) or one the builder derives again (period labels,
+    // historical, amount/tax/difference); every changed field outside
+    // the derived set is NAMED in the row, and the row names nothing that
+    // did not change (§29: "an edit naming a field it did not change").
+    // A transfer may drop from posted back to pending (the builder asks
+    // for the receiver's confirmation again); no other status moves.
+    function maEditOk(dt, editable) {
+      let o = resource.data;
+      let n = request.resource.data;
+      let derived = ['rev','edits','month','quarter','fy','historical','amount','tax','difference','bookBalance'];
+      let k = n.diff(o).affectedKeys();
+      return isMasterAccounts()
+        && o.status != 'void'
+        && (n.status == o.status || (dt == 'transfer' && o.status == 'posted' && n.status == 'pending'))
+        && n.dt == o.dt && n.no == o.no && n.by == o.by && n.ts == o.ts
+        && n.get('kind', null) == o.get('kind', null)
+        && n.get('party', null) == o.get('party', null)
+        && n.get('confirmBy', null) == o.get('confirmBy', null)
+        && n.rev == o.rev + 1
+        && n.edits is list && n.edits.size() == o.edits.size() + 1
+        && (o.edits.size() == 0 || n.edits[0:o.edits.size()] == o.edits)
+        && n.edits[o.edits.size()].by == maUser()
+        && n.edits[o.edits.size()].fields is list
+        && n.edits[o.edits.size()].fields.size() > 0
+        && k.hasOnly(editable.concat(derived).concat(['status']))
+        && k.difference(derived.concat(['status']).toSet()).hasOnly(n.edits[o.edits.size()].fields)
+        && k.hasAll(n.edits[o.edits.size()].fields)
+        && maPeriodOk(n)
+        && !maLocked(o.quarter) && !maLocked(n.quarter);
+    }
+    function maVoidOk() {
+      let o = resource.data;
+      let n = request.resource.data;
+      return isMasterAccounts()
+        && o.status != 'void' && n.status == 'void'
+        && n.voidedBy == maUser()
+        && maText(n.voidReason)
+        && n.diff(o).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidedByName','voidReason'])
+        && !maLocked(o.quarter);
+    }
+    function maConfirmOk() {
+      let o = resource.data;
+      let n = request.resource.data;
+      return isMasterAccounts()
+        && o.status == 'pending' && n.status == 'posted'
+        && n.diff(o).affectedKeys().hasOnly(['status','confirmedBy','confirmedAt','confirmedFor','confirmVia'])
+        && n.confirmedBy == maUser()
+        && ( (n.confirmVia == 'app' && o.get('confirmBy', null) == maUser())
+          || (n.confirmVia == 'paper' && o.get('confirmPaper', false) == true
+              && n.get('confirmedFor', null) == o.get('confirmBy', null)) )
+        && !maLocked(o.quarter);
+    }
+    function maReviewOk() {
+      let n = request.resource.data;
+      return isMasterAccounts()
+        && n.diff(resource.data).affectedKeys().hasOnly(['reviewedAt','reviewedBy'])
+        && n.reviewedBy == maUser();
+    }
+
+    // Masters and settings: owner read/write, never deleted.
+    match /ma_accounts/{id}    { allow read, create, update: if isMasterAccounts(); allow delete: if false; }
+    match /ma_sv_accounts/{id} { allow read, create, update: if isMasterAccounts(); allow delete: if false; }
+    match /ma_parties/{id}     { allow read, create, update: if isMasterAccounts(); allow delete: if false; }
+    match /ma_items/{id}       { allow read, create, update: if isMasterAccounts(); allow delete: if false; }
+    match /ma_settings/{id}    { allow read, create, update: if isMasterAccounts(); allow delete: if false; }
+    match /ma_commitments/{id} { allow read, create, update: if isMasterAccounts(); allow delete: if false; }
+    match /ma_counters/{id}    { allow read, create, update: if isMasterAccounts(); allow delete: if false; }
+    match /ma_feedback/{id}    { allow read, create, update: if isMasterAccounts(); allow delete: if false; }
+
+    // Documents. The id IS the number (JV-27-0001), minted in the same
+    // transaction as the document.
+    match /ma_journal/{docId} {
+      allow read:   if isMasterAccounts();
+      allow create: if maDocCreateOk('journal', docId, ['posted']);
+      allow update: if maEditOk('journal', ['date','holder','account','payee','amount','tax','costCentre','labelKind','channel','po','article','commitmentId','commitmentPeriod','owner','lines','note','tags','attachments'])
+                    || maVoidOk() || maReviewOk();
+      allow delete: if false;
+    }
+    match /ma_transfer/{docId} {
+      allow read:   if isMasterAccounts();
+      allow create: if maDocCreateOk('transfer', docId, ['posted','pending']);
+      allow update: if maEditOk('transfer', ['date','from','to','amount','note','attachments'])
+                    || maVoidOk() || maConfirmOk() || maReviewOk();
+      allow delete: if false;
+    }
+    match /ma_counts/{docId} {
+      allow read:   if isMasterAccounts();
+      allow create: if maDocCreateOk('count', docId, ['posted']);
+      allow update: if maEditOk('count', ['date','counted','note','attachments'])
+                    || maVoidOk() || maReviewOk();
+      allow delete: if false;
+    }
+
+    // Quarter closes: written once (locked), reopened by an owner with a
+    // reason. Never deleted, never re-locked in place.
+    match /ma_closes/{q} {
+      allow read: if isMasterAccounts();
+      allow create: if isMasterAccounts()
+        && q.matches('^[0-9]{4}-Q[1-4]$')
+        && request.resource.data.quarter == q
+        && request.resource.data.locked is bool
+        && request.resource.data.closedBy == maUser()
+        && request.resource.data.get('reopenedAt', null) == null;
+      allow update: if isMasterAccounts()
+        && resource.data.get('reopenedAt', null) == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reopenedAt','reopenedBy','reopenReason'])
+        && request.resource.data.reopenedAt != null
+        && request.resource.data.reopenedBy == maUser()
+        && maText(request.resource.data.reopenReason);
+      allow delete: if false;
+    }
+
+    // The audit trail is append-only.
+    match /ma_audit/{id} {
+      allow read: if isMasterAccounts();
+      allow create: if isMasterAccounts()
+        && request.resource.data.by == maUser()
+        && request.resource.data.at is number;
+      allow update, delete: if false;
+    }
+    // One row per nightly backup, written by ma-backup (Admin SDK) only.
+    match /ma_backups/{id} {
+      allow read: if isMasterAccounts();
+      allow create, update, delete: if false;
+    }
+    // Share links: made by an owner, revoked once, never un-revoked. The
+    // open count is the ma-share function's (Admin SDK).
+    match /ma_shares/{token} {
+      allow read: if isMasterAccounts();
+      allow create: if isMasterAccounts()
+        && request.resource.data.createdBy == maUser()
+        && request.resource.data.revoked == false
+        && request.resource.data.opens == 0;
+      allow update: if isMasterAccounts()
+        && resource.data.revoked == false
+        && request.resource.data.revoked == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked','revokedAt','revokedBy'])
+        && request.resource.data.revokedBy == maUser();
+      allow delete: if false;
+    }
   }
 }

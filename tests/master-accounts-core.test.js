@@ -416,6 +416,19 @@ module.exports=async function(){
     const paper=M.maConfirmPatch(toRaees,'afnan',{at:8});
     s.eq('an owner confirms for Raees on paper',paper.patch.confirmVia+':'+paper.patch.confirmedFor,'paper:raees');
     s.eq('a posted transfer is not confirmed again',!!M.maConfirmPatch(Object.assign({},tp,{status:'posted'}),'ammar',{}).error,true);
+    // A transfer's receiver is its identity: confirmBy and confirmPaper follow it
+    const tv=(after,before)=>M.maValidate(after,{lines:[],before,reason:'fix',settings:S,idx:IDX,today:TODAY});
+    const toAmmar=T({date:'2026-10-10',from:'1011',to:'1012',amount:40000});
+    const toTill=T({date:'2026-10-10',from:'1011',to:'1040',amount:40000});
+    const moved=Object.assign({},toTill,{id:toAmmar.id,no:toAmmar.no});
+    s.eq('a transfer cannot change who received it',(tv(moved,toAmmar).refuses.find(x=>x.rule==='edit.receiver')||{}).level,'refuse');
+    s.eq('changing only its amount is not a receiver change',!!tv(Object.assign({},toAmmar,{amount:41000}),toAmmar).refuses.find(x=>x.rule==='edit.receiver'),false);
+    const ea=M.maApplyEdit(toAmmar,moved,{by:'afnan',at:9,reason:'x'});
+    s.eq('an edit keeps confirmBy and confirmPaper together',ea.confirmBy+':'+ea.confirmPaper,toAmmar.confirmBy+':'+toAmmar.confirmPaper);
+    const self=T({date:'2026-10-10',from:'1011',to:'1012',amount:40000},'ammar');
+    const reb=T({date:'2026-10-10',from:'1011',to:'1012',amount:41000},'afnan');
+    const es=M.maApplyEdit(self,Object.assign({},reb,{id:self.id,no:self.no}),{by:'afnan',at:9,reason:'x'});
+    s.eq('a transfer nobody had to confirm does not start waiting on an edit',es.status+':'+(es.confirmBy||null),self.status+':'+(self.confirmBy||null));
   }
 
   s.section('parties: terms and rate cards keep their history (§4.2)');
