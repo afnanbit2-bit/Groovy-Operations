@@ -3693,6 +3693,18 @@ times; with the rules removed it sits at 14 and is covered. The old
 assertion "desktop has no Report a bug" in `tests/boards.test.js` was
 reversed, not deleted.
 
+**A reload comes back to the board (#97 bug 9, same day).** Nothing but
+a pasted link ever put a board in the URL, so "Refresh now" landed on the
+app's first page. `_boardsSetHash` writes `#board=<id>` when
+`_boardsOpenCanvas` opens a board (Home too — it opens through the same
+path) and clears it when the `showPage` wrap leaves the canvas or the board
+is not found; the existing `_boardsConsumeDeepLink` after `startApp` does
+the rest, behind the same Creative Hub gate. **`replaceState`, never a new
+history entry**, so Back is unchanged and no `hashchange` fires to re-run
+the consumer; only a `#board=` hash is ever cleared. `tests/board-hash.test.js`.
+**Not verified end to end** — the sandbox cannot sign in, so a real reload
+landing back on a board has not been seen.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

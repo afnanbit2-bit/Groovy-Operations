@@ -2269,7 +2269,7 @@ async function _boardsOpenCanvas(){
     m.innerHTML=gvSkeleton(4);
     try{
       const snap=await getDoc(doc(db,'mood_boards',_boardsViewingId));
-      if(!snap.exists()){m.innerHTML='<div class="empty">Board not found.</div>';return;}
+      if(!snap.exists()){_boardsSetHash(null);m.innerHTML='<div class="empty">Board not found.</div>';return;}
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
@@ -2280,6 +2280,7 @@ async function _boardsOpenCanvas(){
   // 40% came back at the ordinary 25% floor. Found by the test, not by
   // reading.
   _editBoard.zoom=_boardsClampZoom(_editBoard.zoom);
+  _boardsSetHash(b.id);
   _editCards=_boardsDecodeCards((b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;}));
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _editUnsorted=(b.unsorted||[]).map(u=>{const uu={...u};delete uu._uploading;return uu;});
@@ -10843,6 +10844,24 @@ function _boardsParseHash(){
   if(p.note)return{note:p.note};
   return p.board?{board:p.board,card:p.card||null}:null;
 }
+/* The address bar names the open board (GitHub #97, bug 9). A reload —
+   the new-version banner's "Refresh now" among them — used to land on the
+   app's first page, because nothing but a pasted link ever put the board in
+   the URL. Now opening a board writes #board=<id> and leaving the canvas
+   clears it, so a reload walks straight back in through the deep link above
+   (same Creative Hub gate). replaceState, never a new history entry: Back
+   keeps meaning what it meant, and replaceState fires no hashchange, so this
+   cannot re-trigger the consumer. Only OUR hash is ever cleared — #pattern=,
+   #share= and #note= belong to their own consumers. */
+function _boardsSetHash(id){
+  try{
+    const cur=String(location.hash||''),base=location.pathname+(location.search||'');
+    if(id){
+      const want='#board='+encodeURIComponent(id);
+      if(cur!==want)history.replaceState(null,'',base+want);
+    }else if(/^#board=/.test(cur))history.replaceState(null,'',base);
+  }catch(e){}
+}
 function _boardsConsumeDeepLink(){
   const link=_boardsParseHash();
   if(!link||!session)return false;
@@ -12855,7 +12874,7 @@ function _boardsTeardown(){
 const _boardsOrigShowPage=window.showPage;
 if(typeof _boardsOrigShowPage==='function'){
   window.showPage=async function(id){
-    if(currentPage==='board-canvas'&&id!=='board-canvas'){try{_boardsTeardown();}catch(e){console.warn('[boards] teardown failed:',e);}}
+    if(currentPage==='board-canvas'&&id!=='board-canvas'){try{_boardsTeardown();}catch(e){console.warn('[boards] teardown failed:',e);}_boardsSetHash(null);}
     return _boardsOrigShowPage.apply(this,arguments);
   };
 }
