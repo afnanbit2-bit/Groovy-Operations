@@ -1192,6 +1192,11 @@ function _boardsOnKeydown(e){
     const w=map[e.key];
     if(w){e.preventDefault();window.boardsCellRowCol(w);return;}
   }
+  // Tab in a note must never leave the note (GitHub #97, bug 1): the browser
+  // moved focus to the next control, so everything typed after it landed
+  // somewhere else or fired a board shortcut. Read before the editable bail,
+  // because the note IS the editable.
+  if(e.key==='Tab'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&_boardsNoteTab(e))return;
   // Inside a text card or a link field every one of these belongs to the
   // browser — Ctrl+Z is text undo, Backspace deletes a character, Ctrl+A
   // selects the paragraph. Intercepting any of them there would be worse
@@ -1224,6 +1229,33 @@ function _boardsOnKeydown(e){
     e.preventDefault();window.boardsDeleteConnector(_boardsConnSel);return;
   }
   if((k==='delete'||k==='backspace')&&_boardsSelection.size){e.preventDefault();window.boardsDeleteSelection();}
+}
+// Tab inside a note or heading being edited. In a list item it nests
+// (Shift+Tab un-nests) through the browser's own indent/outdent, which
+// writes a nested <ul>/<ol> the sanitiser already keeps. Anywhere else it
+// inserts four no-break spaces — a plain tab character would collapse, the
+// note body is not white-space:pre. A heading is one line: Tab is simply
+// kept inside it. Returns true when it took the key.
+function _boardsNoteTab(e){
+  const el=_boardsEditingEl;
+  if(!_boardsIsRichField(el))return false;
+  e.preventDefault();
+  if(el.classList&&el.classList.contains('board-heading-body'))return true;
+  let inLi=false;
+  try{
+    const sel=window.getSelection&&window.getSelection();
+    let n=sel&&sel.anchorNode;
+    while(n&&n!==el){if(n.nodeType===1&&n.tagName==='LI'){inLi=true;break;}n=n.parentNode;}
+  }catch(err){}
+  try{
+    if(inLi){
+      document.execCommand('styleWithCSS',false,false);
+      document.execCommand(e.shiftKey?'outdent':'indent',false,null);
+    }else if(!e.shiftKey){
+      document.execCommand('insertText',false,'    ');
+    }
+  }catch(err){}
+  return true;
 }
 document.addEventListener('keydown',_boardsOnKeydown);
 window.boardsToggleSnap=function(){

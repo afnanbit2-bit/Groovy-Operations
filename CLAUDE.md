@@ -3603,6 +3603,27 @@ birth size (340 wide; a player's own height + `_BOARDS_EMBED_META_H` 110).
 - **Nobody has seen these on a real screen.** Spotify, SoundCloud and Maps
   are all unreachable from the sandbox.
 
+### Mood Boards — Tab stays in the note (28 Sept 2026)
+
+GitHub #97 (Afnan's own side-by-side test against Milanote), bug 1:
+**Tab in a note moved focus out of the card and whatever was typed next
+was lost** (or fired a board shortcut). A note body had no key handling at
+all, so the browser did its default. `_boardsNoteTab` is read in
+`_boardsOnKeydown` BEFORE the editable bail (the note IS the editable),
+only while `_boardsEditingEl` is a `board-txt-*` field and never with
+Ctrl/Cmd/Alt: in a list item it runs the browser's `indent`/`outdent`
+(a nested `<ul>`/`<ol>`, which the sanitiser already keeps); anywhere
+else Tab inserts four no-break spaces (a `\t` collapses — the body is not
+`white-space:pre`, and making it so would change how every existing note
+renders); in a heading it is simply kept. A to-do keeps its own Tab
+(indent a task). `tests/board-notetab.test.js`. **Nobody has pressed Tab
+in a note on a real screen yet.**
+
+**#97 also reports things `main` already has** (Draw on, body drag, a
+YouTube player), so that test may have run on an older build — the
+Netlify deploy list or the diagnostics build id settles it; do not
+re-diagnose those from the code.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
