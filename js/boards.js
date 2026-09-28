@@ -1756,7 +1756,16 @@ function _boardsPresentPaint(){
     if(c.type==='link'&&c.linkDesc)add('div','bp-cap',c.linkDesc);
   }else{
     if((c.name||'').trim())add('div','bp-kicker',c.name.trim());
-    add('div','bp-body',(c.text||'').trim());
+    // A formatted note keeps its lines, lists, headings and colours on the
+    // slide (GitHub #97: c.text is the note with its structure stripped, so
+    // it read "test- bullet one1. numbered…"). The markup goes through the
+    // SAME sanitiser the canvas uses before it touches the live DOM — never
+    // c.rich raw.
+    const rich=c.type==='text'&&c.rich?_boardsSanitizeRich(c.rich):'';
+    if(rich){
+      const b=add('div','bp-body rich');
+      b.innerHTML=rich;
+    }else add('div','bp-body',(c.text||'').trim());
   }
 }
 

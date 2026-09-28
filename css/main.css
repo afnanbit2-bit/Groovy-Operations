@@ -1471,6 +1471,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .bp-sub{font-size:clamp(22px,4vw,44px);line-height:1.15;margin:0;font-weight:700;color:var(--text)}
 .bp-body{font-size:clamp(18px,2.8vw,34px);line-height:1.45;color:var(--text);
   max-width:22em;white-space:pre-wrap}
+/* A formatted note on a slide: its own block structure carries the lines,
+   so pre-wrap would double them. Sizes are em, off the slide's body size. */
+.bp-body.rich{white-space:normal;text-align:left}
+.bp-body.rich ul{list-style:disc;padding-left:1.2em;margin:.2em 0}
+.bp-body.rich ol{list-style:decimal;padding-left:1.4em;margin:.2em 0}
+.bp-body.rich h2{font-size:1.5em;font-weight:800;line-height:1.2;margin:.2em 0}
+.bp-body.rich h3{font-size:1.2em;font-weight:700;line-height:1.25;margin:.2em 0}
+.bp-body.rich h6{font-size:.75em;font-weight:400;color:var(--muted);margin:.1em 0}
+.bp-body.rich pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.7em;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:.4em .6em;
+  margin:.2em 0;white-space:pre-wrap;word-break:break-word}
+.bp-body.rich blockquote{border-left:3px solid var(--border);margin:.2em 0;padding:0 .5em;color:var(--muted)}
 .bp-cap{font-size:clamp(12px,1.6vw,17px);color:var(--muted);max-width:34em}
 .bp-img{max-width:100%;max-height:72vh;object-fit:contain;border-radius:10px}
 .bp-list{list-style:none;padding:0;margin:0;text-align:left;

@@ -3619,6 +3619,18 @@ renders); in a heading it is simply kept. A to-do keeps its own Tab
 (indent a task). `tests/board-notetab.test.js`. **Nobody has pressed Tab
 in a note on a real screen yet.**
 
+**Present kept a note's structure (#97 bug 3, same day).** A note slide
+drew `c.text` — the note with every line, list and colour stripped — so it
+read "test- bullet one1. numbered…". A note carrying `c.rich` now draws it
+as `.bp-body.rich`, through **`_boardsSanitizeRich`, the same boundary the
+canvas uses** before stored markup touches the live DOM (never `c.rich`
+raw), with em-sized list/heading/code/quote rules so it scales with the
+slide. Checked in real Chromium: nested lists and a colour survive, an
+`<img onerror>` and a `<script>` are stripped and do not run.
+`tests/board-present.test.js`. **Known edge, not changed:** a note whose
+only line breaks are Shift+Enter `<br>`s counts as "plain", so it is
+stored as `c.text` alone and loses those breaks on the canvas too.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

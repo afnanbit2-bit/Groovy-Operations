@@ -35,6 +35,7 @@ Read the header of `harness.js` before trusting a green run.
 | `board-roles.test.js` | Mood Boards sharing roles: who can edit, comment or manage sharing, the share payload, the share sheet and comment gates. The rules half is `rules-emulator-boards.js` (run by hand, needs the emulator) |
 | `board-notify.test.js` | Mood Boards notifications: who a comment, reply, assignment and due task notifies, the escaping of every bell row, and the bell's link into a board |
 | `board-video.test.js` | Mood Boards: which links are YouTube/Vimeo videos (exact host, validated id), the thumbnail-and-play card at rest, the player only after play, and sizing |
+| `board-present.test.js` | Mood Boards: a formatted note keeps its structure on a Present slide, through the canvas's own sanitiser; a plain note stays text (#97) |
 | `board-notetab.test.js` | Mood Boards: Tab while editing a note stays in the note — nests a list item (Shift+Tab un-nests), indents plain text, is inert in a heading, and leaves the to-do's own Tab and Ctrl+Tab alone (#97) |
 | `check-cache-version.js` | Not a suite — a CI guard. If a precached file changed, `CACHE_VERSION` in `sw.js` must have changed too, or the update silently never reaches anyone who already opened the app |
 
