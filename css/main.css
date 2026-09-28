@@ -2470,7 +2470,15 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-sheet-body{padding:10px 14px 16px}
 /* Milanote's own confirm and one-value ask (_boardsDialog) — centred, and
    above any sheet it was raised from. Bottom-docked on a phone like a sheet. */
-.board-sheet-back.board-confirm-back{z-index:429}
+.board-sheet-back.board-confirm-back{z-index:429;background:rgba(0,0,0,.5)}
+/* An in-place rename reads as typed, on a surface nothing shows through
+   (the board-tester's first run: the card head is a see-through overlay and
+   uppercases its label, so a typed name sat over the note's first line in
+   capitals; a sub-board title being edited sat under the card's head). */
+.board-card-head:has(.board-card-name[contenteditable="true"]){background:#111114}
+.board-card-name[contenteditable="true"]{text-transform:none;letter-spacing:0;text-overflow:clip}
+.board-subboard-title[contenteditable="true"]{position:relative;z-index:5;display:block;-webkit-line-clamp:unset;
+  background:var(--surface);color:var(--text);outline:2px solid var(--text);outline-offset:2px;border-radius:4px;cursor:text}
 .board-sheet.board-confirm{z-index:430;top:50%;bottom:auto;transform:translate(-50%,-50%);width:360px;padding:18px 18px 14px;border-radius:14px;display:flex;flex-direction:column;gap:14px}
 .board-confirm-msg{font-size:14.5px;line-height:1.45;white-space:pre-line;color:var(--text);overflow-wrap:anywhere}
 .board-confirm-field{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);min-width:0}

@@ -3943,10 +3943,34 @@ function _boardsDlgClose(val){
   document.removeEventListener('keydown',_boardsDlgKey,true);
   if(r)r(val);
 }
+// Capture phase on the document, so it runs before anything else. EVERY
+// key stops here while the dialog is open (review of 7f66f64: Delete behind
+// the confirm deleted the selected card, Ctrl+Z ran the board's undo).
+// Tab cycles inside the dialog; Enter answers what has focus (Cancel
+// focused + Enter is no, as with the browser's own confirm); the one thing
+// allowed through is typing into the dialog's own field.
 function _boardsDlgKey(e){
   if(!_boardsDlgResolve)return;
-  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();_boardsDlgClose(null);}
-  else if(e.key==='Enter'){e.preventDefault();e.stopPropagation();window.boardsDlgAnswer(true);}
+  const box=document.getElementById('board-confirm');
+  const a=document.activeElement;
+  const inBox=!!(box&&a&&box.contains&&box.contains(a));
+  const field=_boardsDlgField?document.getElementById('board-confirm-field'):null;
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();_boardsDlgClose(null);return;}
+  if(e.key==='Enter'){
+    e.preventDefault();e.stopPropagation();
+    window.boardsDlgAnswer(!(inBox&&a&&a.id==='board-confirm-no'));
+    return;
+  }
+  if(e.key==='Tab'){
+    e.preventDefault();e.stopPropagation();
+    const order=[field,document.getElementById('board-confirm-no'),document.getElementById('board-confirm-ok')].filter(Boolean);
+    const i=order.indexOf(a);
+    const next=order[((i<0?(e.shiftKey?0:-1):i)+(e.shiftKey?-1:1)+order.length)%order.length];
+    try{next.focus();}catch(err){}
+    return;
+  }
+  if(field&&a===field)return;   // typing into the ask's own field
+  e.preventDefault();e.stopPropagation();
 }
 window.boardsDlgAnswer=function(yes){
   if(!_boardsDlgResolve)return;
@@ -6121,7 +6145,7 @@ function _boardsRailItems(){
       // the menus cannot offer different things.
       if(canEdit){
         items.push({act:'board-look',label:'Picture',icon:'color'});
-        items.push({act:'board-rename',label:'Title',icon:'rename'});   // the linked board's; 'Board name' was cut to 'Board n…'
+        items.push({act:'board-rename',label:'Title',icon:'title'});   // the linked board's; 'Board name' was cut to 'Board n…'
       }
     }
     // Milanote's own selected-to-do rail is Color · Title · ⋯; ours keeps
@@ -7029,10 +7053,6 @@ window.boardsLinkRefresh=function(id){
   c._linkFetched=c.linkUrl;
   _boardsLinkHydrate(id);
 };
-// The card's own name, shown in its header in place of the type label.
-// Empty means "fall back to the type label", which the CSS placeholder
-// renders — so clearing a name restores IMAGE / FILE / NOTE rather than
-// leaving a blank strip.
 /* ── Tables ─────────────────────────────────────────────────────────────
    A plain rows[][] of strings on the card — no per-cell records and no
    column schema. The engineering spec written from the teardown proposed
@@ -13827,7 +13847,14 @@ async function _boardsGalleryCtxRun(act,id){
       // In place: the board's title on its gallery tile, or on the sub-board
       // card that links to it on the open canvas.
       const el=_boardsRenameTarget(id);
-      if(!el){showToast('Open All boards to rename it');return;}
+      // Home's boards panel: a board not placed on Home has no card, but its
+      // panel row renames in place already (review of 7f66f64: "Rename…"
+      // from the panel menu had become a dead end).
+      if(!el){
+        const pn=document.getElementById('board-panel-n-'+id);
+        if(pn&&pn.getClientRects&&pn.getClientRects().length){window.boardsPanelRename(id);break;}
+        showToast('Open All boards to rename it');return;
+      }
       _boardsInlineRename(el,{value:b.title||'Untitled board',commit:async title=>{
         title=title.slice(0,120);
         try{

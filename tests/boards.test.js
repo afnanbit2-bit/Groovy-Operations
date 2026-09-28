@@ -5583,6 +5583,39 @@ module.exports=function(){
         /All boards/.test(a.state.toasts.join(' '))&&a.run(`__native`)===0);
     }
 
+    s.section('no key reaches the board while the dialog is open (review of 7f66f64)');
+    {
+      const a=fresh();
+      const p=a.run(`_boardsConfirm('Delete forever?',{ok:'Delete forever',danger:true})`);
+      const box=a.el('board-confirm');box.contains=n=>['board-confirm-no','board-confirm-ok'].indexOf(n&&n.id)>-1;
+      a.el('board-confirm-ok').focus();
+      const del=docKey(a,'Delete');
+      s.ok('Delete is held at the dialog',!!del.stopped);
+      s.ok('and the dialog is still asking',a.state.body.some(n=>n.id==='board-confirm'));
+      const z=docKey(a,'z');
+      s.ok('so is anything else (Ctrl+Z, F2, Space…)',!!z.stopped);
+      docKey(a,'Tab');
+      s.eq('Tab moves inside the dialog, from OK round to Cancel',a.state.activeElement&&a.state.activeElement.id,'board-confirm-no');
+      docKey(a,'Enter');
+      s.eq('Enter on Cancel answers no, as the browser\'s confirm does',await p,false);
+      const p2=a.run(`_boardsAsk('Label for this line','x')`);
+      a.el('board-confirm-field').focus();
+      const typed=docKey(a,'q');
+      s.ok('typing into the ask\'s own field goes through',!typed.stopped);
+      a.run(`window.boardsDlgAnswer(false)`);await p2;
+    }
+
+    s.section('"Rename…" from Home\'s boards panel renames the row in place (review of 7f66f64)');
+    {
+      const a=fresh();
+      a.run(`moodBoards=[{id:'K',title:'Knitwear',ownerUid:'u1',visibility:'personal',cards:[]}];currentPage='board-canvas';
+        _editCards=[];__panel=[];window.boardsPanelRename=id=>__panel.push(id);document.querySelectorAll=()=>[];`);
+      a.el('board-panel-n-K').getClientRects=()=>[{}];
+      await a.run(`_boardsGalleryCtxRun('g:rename','K')`);
+      s.eq('a board with no tile and no card on screen renames through its panel row',a.run(`__panel.join()`),'K');
+      s.ok('and no "open All boards" toast',!/All boards/.test(a.state.toasts.join(' ')));
+    }
+
     s.section('Creative Hub is called Milanote');
     {
       const a=fresh();

@@ -791,7 +791,7 @@ function buildNav(){
   if(session.role==='qa'){
     const sb=document.getElementById('sidebar');
     if(sb)sb.innerHTML=(_canSeeTheBoard()?_tbNavItemHTML(String(currentPage||'').startsWith('tb-')):'')
-      +'<div class="nav-item" id="nav-boards" onclick="window.showPage(\'boards\')">Mood Boards</div>';
+      +'<div class="nav-item" id="nav-boards" onclick="window.showPage(\'boards\')">Milanote</div>';
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }

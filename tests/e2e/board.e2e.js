@@ -285,7 +285,14 @@ function NAV_TIMED(id,boardPage){
   };
   const shotRaw=async(name)=>{
     await sleep(400);   // let a repaint and the fonts settle
-    const {data}=await send('Page.captureScreenshot',{format:'png'});
+    // The WHOLE page, not the viewport: the Dashboard's right column and a
+    // list's Completed group sit below the fold (the tester's first run).
+    const m=await send('Page.getLayoutMetrics').catch(()=>null);
+    const cs=m&&(m.cssContentSize||m.contentSize),vp=m&&(m.cssLayoutViewport||m.layoutViewport);
+    const tall=cs&&vp&&cs.height>vp.clientHeight+2;
+    const {data}=await send('Page.captureScreenshot',tall
+      ?{format:'png',captureBeyondViewport:true,clip:{x:0,y:0,width:vp.clientWidth,height:Math.min(cs.height,8000),scale:1}}
+      :{format:'png'});
     const f=name+'.png'; fs.writeFileSync(path.join(outDir,f),Buffer.from(data,'base64'));
     report.screens.push(f); console.log('  shot '+f);
   };
@@ -452,7 +459,7 @@ function NAV_TIMED(id,boardPage){
         if(!phoneCal){
           await ev('window.tbCalView("month")');await sleep(200);
           await screen('calendar-month-'+tag,'Calendar Month '+tag);
-        }else report.notes.push('At '+v.id+' the calendar offers Week only (the app forces it on a phone); no Month screen there.');
+        }else if(theme===THEMES[0])report.notes.push('At '+v.id+' the calendar opens on Week (the app\'s phone default); no Month screen there.');
         await ev('window.tbCalView("week")');await sleep(200);
         await screen('calendar-week-'+tag,'Calendar Week '+tag);
         await nav('tb-lists','Lists '+tag);
@@ -570,6 +577,22 @@ function NAV_TIMED(id,boardPage){
         check('Milanote '+tag+': Escape answers Cancel and closes it',
           (await ev('window.__e2eDlg.then(function(v){return v;})'))===false&&!(await ev('!!document.getElementById("board-confirm")')));
       }
+    }
+    // No key reaches the board behind the dialog (review of 7f66f64: Delete
+    // deleted the selected card and Ctrl+Z ran undo behind it), and Enter
+    // answers what has focus. Real keys; nothing is committed.
+    if(own){
+      await ev('window.boardsOpenFromAll('+JSON.stringify(own)+')');await sleep(500);
+      const n0=await ev('_editCards.length');
+      await ev('_boardsSetSelection([_editCards[0].id]);window.__e2eDlg=_boardsConfirm("Delete forever?",{ok:"Delete forever",danger:true});true');
+      await sleep(150);
+      await key('Delete','Delete',46);await key('Backspace','Backspace',8);
+      check('Delete and Backspace behind the confirm delete nothing',await ev('_editCards.length')===n0&&await ev('!!document.getElementById("board-confirm")'));
+      await key('Tab','Tab',9);
+      const onNo=await ev('document.activeElement&&document.activeElement.id');
+      await ENTER();
+      check('Tab reaches Cancel inside the dialog, and Enter there answers no',
+        onNo==='board-confirm-no'&&(await ev('window.__e2eDlg.then(function(v){return v;})'))===false,'focus was '+onNo);
     }
     await send('Emulation.clearDeviceMetricsOverride');await setTheme('light');
     if(!own)return;
