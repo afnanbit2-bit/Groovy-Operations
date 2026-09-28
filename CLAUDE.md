@@ -3782,6 +3782,14 @@ hide note, to-do and link text, captions and a sub-board's meta and
 thumbnails; they stay painted now and only the chrome goes. The far-zoom
 probe's chrome list dropped `.board-caption` to match.
 
+**Alignment is motion-driven, and the guide lines are gone (same day).**
+Afnan, with a screen recording: the snap lines "are shit". A card drag no
+longer draws guides; `_boardsAlignPull` scales the pull toward a
+neighbour's edge by the smoothed pointer speed — full below 0.12 px/ms,
+none above 0.6, a straight fade between — so a fast drag follows the finger
+exactly and a slow settle aligns. Snap-to-grid and Alt are unchanged.
+Nobody has felt it on a real screen.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not
