@@ -3705,6 +3705,14 @@ the consumer; only a `#board=` hash is ever cleared. `tests/board-hash.test.js`.
 **Not verified end to end** — the sandbox cannot sign in, so a real reload
 landing back on a board has not been seen.
 
+**Renaming a board in the top bar: Enter saves (#97 bug 10, same day).**
+Enter did nothing — the rename sat in the 900ms debounce with the caret still
+in the box — and the breadcrumb tile kept the old name's first letter. The
+title input now has `onkeydown` (`boardsTitleKey`: Enter blurs, Escape puts
+back the name it had on focus), and `onblur` (`boardsTitleDone`) trims, saves
+at once, mirrors `moodBoards` and repaints `#board-crumb-tile`.
+`tests/board-title.test.js`.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

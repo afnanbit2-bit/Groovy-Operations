@@ -1841,7 +1841,7 @@ module.exports=function(){
     // The trail replaced the "← Home" text (Sept 2026, Milanote's shape):
     // a round chip with the GROOVY mark, then Home, both pointing at Home.
     s.ok('and its trail starts at Home',/board-home-chip[^>]*onclick="window\.boardsGotoGallery\(\)"/.test(nb)&&/board-crumb-home[^>]*onclick="window\.boardsGotoGallery\(\)">Home</.test(nb));
-    s.ok('with the board\'s own tile before its name',/board-crumb-slash">\/<\/span><span class="board-tile/.test(nb));
+    s.ok('with the board\'s own tile before its name',/board-crumb-slash">\/<\/span><span id="board-crumb-tile"><span class="board-tile/.test(nb));
     s.ok('and no "← Home" text button beside it',!/← Home/.test(nb));
   }
 
@@ -5701,7 +5701,7 @@ module.exports=function(){
       r(`_boardsCameFromAll=false;_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0,color:'#7C3AED'}`);
       const bar=r(`_renderBoardCanvasHTML()`);
       s.ok('the chip carries the app icon and goes Home',/board-home-chip[^>]*boardsGotoGallery[^>]*>\s*<img src="\/assets\/icons\/icon-192\.png"/.test(bar));
-      s.ok('Home, then a slash, then the board\'s tile',/board-crumb-home[^>]*>Home<\/button>[\s\S]*board-crumb-slash">\/<\/span><span class="board-tile"[^>]*background:#7C3AED/.test(bar));
+      s.ok('Home, then a slash, then the board\'s tile',/board-crumb-home[^>]*>Home<\/button>[\s\S]*board-crumb-slash">\/<\/span><span id="board-crumb-tile"><span class="board-tile"[^>]*background:#7C3AED/.test(bar));
       r(`_boardsCameFromAll=true`);
       s.ok('opened from All boards, that is a crumb too',/board-crumb-slash">\/<\/span><button class="board-crumb" onclick="window\.boardsShowAll\(\)">All boards<\/button>/.test(r(`_renderBoardCanvasHTML()`)));
       r(`_boardsCameFromAll=false`);

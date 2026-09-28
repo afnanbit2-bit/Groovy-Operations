@@ -2412,7 +2412,7 @@ function _renderBoardCanvasHTML(){
         :`<button class="board-crumb board-crumb-home" onclick="window.boardsGotoGallery()">Home</button>
       ${_boardsCameFromAll&&!chain.length?`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsShowAll()">All boards</button>`:''}
       ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
-      <span class="board-crumb-slash">/</span>${_boardsTileHTML(b,22)}`}
+      <span class="board-crumb-slash">/</span><span id="board-crumb-tile">${_boardsTileHTML(b,22)}</span>`}
     </div>`:'';
   return`<div class="board-canvas-wrap">
     <div class="board-topbar">
@@ -2421,7 +2421,7 @@ function _renderBoardCanvasHTML(){
         ${crumbs}
         ${home
           ?(phone?`<span style="font-size:15.5px;font-weight:700">Home</span>`:'')
-          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
+          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" onfocus="window.boardsTitleFocus(this)" onkeydown="window.boardsTitleKey(event,this)" onblur="window.boardsTitleDone(this)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         ${phone?'':`<span class="pill">${visLabel}</span>`}
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
         ${canEdit?'':`<span class="pill board-role-pill">${_boardsCanComment(b)?'Can comment':'View only'}</span>`}`}
@@ -7111,6 +7111,27 @@ window.boardsLinkStart=function(e,cardId){
 
 // -- card content --
 window.boardsTitleInput=function(val){if(!_editBoard)return;_editBoard.title=val;_boardsSaveDebounced();};
+// Enter commits the rename and leaves the box; Escape puts back the name it
+// had when the box was entered (GitHub #97, bug 10). Leaving by any route
+// saves now and repaints the breadcrumb tile, whose letter is the title's.
+let _boardsTitleWas=null;
+window.boardsTitleFocus=function(el){_boardsTitleWas=el.value;};
+window.boardsTitleKey=function(e,el){
+  if(e.key==='Enter'){e.preventDefault();el.blur();}
+  else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();
+    if(_boardsTitleWas!=null&&el.value!==_boardsTitleWas){el.value=_boardsTitleWas;window.boardsTitleInput(_boardsTitleWas);}
+    el.blur();}
+};
+window.boardsTitleDone=function(el){
+  if(!_editBoard)return;_boardsTitleWas=null;
+  const t=(el&&el.value||'').trim();
+  if(el&&el.value!==t){el.value=t;_editBoard.title=t;}
+  const mb=typeof moodBoards!=='undefined'&&moodBoards.find(x=>x.id===_editBoard.id);
+  if(mb)mb.title=_editBoard.title;
+  const tile=document.getElementById('board-crumb-tile');
+  if(tile)tile.innerHTML=_boardsTileHTML(_editBoard,22);
+  if(typeof _boardsSaveNow==='function')_boardsSaveNow();
+};
 window.boardsTextInput=function(id,el){
   const c=_editCards.find(x=>x.id===id);if(!c)return;
   c.text=el.textContent;
