@@ -52,6 +52,16 @@ module.exports=async function(){
   drag('sb2',550,50);
   s.eq('a board link is never moved into another board',run(`window.__moved`),null);
 
+  s.section('alignment is motion-driven, with no guide lines');
+  run(`_boardsVel={x:0,y:0,t:Date.now()-100,v:0}`);
+  s.eq('a slow drag gets the full pull',run(`_boardsAlignPull({clientX:5,clientY:0})`),1);
+  run(`_boardsVel={x:0,y:0,t:Date.now()-10,v:2}`);
+  s.eq('a fast drag gets none',run(`_boardsAlignPull({clientX:40,clientY:0})`),0);
+  const mid=run(`(_boardsVel={x:0,y:0,t:Date.now()-100,v:0.36/0.6},_boardsAlignPull({clientX:36,clientY:0}))`);
+  s.ok('in between it fades, never steps',mid>0&&mid<1,mid);
+  const srcA=require('fs').readFileSync(require('path').join(__dirname,'..','js','boards.js'),'utf8');
+  s.ok('the drag never draws a guide line',!/_boardsShowGuides\(a\.vx,a\.hy\)/.test(srcA));
+
   s.section('breadcrumbs');
   const src=require('fs').readFileSync(require('path').join(__dirname,'..','js','boards.js'),'utf8');
   s.ok('an ancestor crumb carries its board id as a drop target',/class="board-crumb" data-board-drop="\$\{_boardsEsc\(a\.id\)\}"/.test(src));

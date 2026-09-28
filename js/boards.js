@@ -5658,6 +5658,21 @@ function _boardsMoveTargetAt(targets,ev){
 function _boardsMoveDropMark(targets,hit){
   targets.forEach(t=>{if(t.el.classList)t.el.classList.toggle('board-move-drop',t===hit);});
 }
+/* Screen-pixel speed of the drag, smoothed, and the alignment pull it
+   allows: full below _BOARDS_ALIGN_SLOW px/ms, nothing above
+   _BOARDS_ALIGN_FAST, a straight fade between. */
+const _BOARDS_ALIGN_SLOW=0.12,_BOARDS_ALIGN_FAST=0.6;
+let _boardsVel=null;
+function _boardsAlignPull(ev){
+  const now=Date.now(),v=_boardsVel;
+  if(!v)return 1;
+  const dt=Math.max(1,now-v.t);
+  const inst=Math.hypot(ev.clientX-v.x,ev.clientY-v.y)/dt;
+  v.v=v.v*0.6+inst*0.4;v.x=ev.clientX;v.y=ev.clientY;v.t=now;
+  if(v.v<=_BOARDS_ALIGN_SLOW)return 1;
+  if(v.v>=_BOARDS_ALIGN_FAST)return 0;
+  return 1-(v.v-_BOARDS_ALIGN_SLOW)/(_BOARDS_ALIGN_FAST-_BOARDS_ALIGN_SLOW);
+}
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
   // A press inside whatever is currently open for editing is the user
@@ -5695,6 +5710,7 @@ window.boardsCardDragStart=function(e,cardId){
   const moveTargets=_boardsMoveDragTargets(group);
   const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
+  _boardsVel={x:e.clientX,y:e.clientY,t:Date.now(),v:0};
   // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
   // This used to call setPointerCapture right here, on the pointerdown.
   // A captured pointer RETARGETS the click and dblclick that follow to the
@@ -5754,9 +5770,16 @@ window.boardsCardDragStart=function(e,cardId){
       // Alt suspends snapping for fine placement.
       const lead=origins[0];
       const probe={x:lead.ox+dx,y:lead.oy+dy,w:lead.card.w,h:lead.card.h};
+      // MOTION-DRIVEN, NO GUIDE LINES (Afnan, 28 Sept 2026, with a screen
+      // recording: the guides "are shit"). A fast drag follows the pointer
+      // exactly; only as the hand SLOWS does the pull toward a neighbour's
+      // edge fade in, so settling a card aligns it and flinging one never
+      // jumps. The pull scales with slowness (_boardsAlignPull), never a
+      // step, and no line is drawn.
       const a=_boardsAlignDelta(probe,others,b.zoom);
-      dx+=a.dx;dy+=a.dy;
-      _boardsShowGuides(a.vx,a.hy);
+      const pull=_boardsAlignPull(ev);
+      dx+=a.dx*pull;dy+=a.dy*pull;
+      _boardsHideGuides();
     }else{
       _boardsHideGuides();
     }
