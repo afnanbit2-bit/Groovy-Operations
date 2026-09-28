@@ -188,6 +188,10 @@ can read and write most of the app.
 
 ### Running the harness (Part B)
 
+> **Extended 28 Sept 2026** (session 3): both widths and both themes, the
+> per-screen assertions, `--stub`, and it no longer probes a Winter Drop
+> gate. **"Testing" below is current;** this section is the QA-B record.
+
 Both tools read the operator's shell and **skip with a printed reason**
 when it is not set up. Neither is in `tests/run.js`; CI runs neither.
 
@@ -748,6 +752,98 @@ batched list in `BOARD-LOG.md` is built.
 The Monday steps that **cannot** be pre-checked from a session are all of
 them: nothing here has been seen in a signed-in browser (gstatic is blocked
 in the sandbox). What *is* verified is listed per commit in `BOARD-LOG.md`.
+
+## Testing
+
+**The rule, from the session-3 run on:** every commit that changes
+anything a user sees runs **board-tester** and **board-reviewer** before it
+is pushed; what they find is fixed first, and the screenshot folder and
+both verdicts go into that commit's BOARD-LOG.md entry.
+
+### The QA account and its environment
+
+Ammar creates the QA member account (`claude@groovy.op`, see "The QA
+identity" above) and sets these in **his own shell, never in the repo, a
+log or a commit**:
+
+```
+GROOVY_QA_URL        the deploy preview of board-p1 (or production once merged)
+GROOVY_QA_EMAIL      claude@groovy.op
+GROOVY_QA_PASSWORD   its password
+```
+
+Until they exist, the tester runs against the in-memory stub and the log
+says so; the moment they exist it switches to the real URL.
+
+### The harness — `tests/e2e/board.e2e.js`
+
+```bash
+node tests/e2e/board.e2e.js          # the site in GROOVY_QA_URL, as the QA account
+node tests/e2e/board.e2e.js --stub   # the real shell, in-memory Firestore, QA rules imitated
+```
+
+Real Chrome over the DevTools protocol, **no dependency** (Node 22+'s
+WebSocket; the brief said Playwright — Ammar chose on 28 Sept to keep the
+dependency-free harness and extend it). `CHROME_BIN` points at a browser if
+it is not in a usual place (Windows, macOS and Linux paths are searched).
+With no environment and no `--stub` it **skips with a message** (exit 0).
+
+It signs in through the real form (Remember me unticked, the password a
+DevTools call argument), checks the `qa` role, then **the containment
+gate** (exit 2 if the QA rules are not deployed), then drives, at **1440
+and 390 wide, light and dark**: the Dashboard, the calendar (Month, Week),
+the QA Sandbox list, the item pane, the Inbox, Settings (owners only — the
+QA account is not one, so it is named as not reachable), and Milanote (a
+board, its confirm dialog, the in-place renames). On every screen it
+asserts: **no console errors, no uncaught exception or rejection, painted
+within 500 ms of navigation, no leaf text wider than its box**
+(`scrollWidth > clientWidth`; an ellipsis counts and is marked), **every
+avatar a photo or initials, every pill a lane colour.** Not-yet-built
+screens (a calendar Day view; a list's Calendar/Lanes/Members tabs) are
+**named in the report, not silently skipped**.
+
+**Writes:** only inside its own private "QA Sandbox" list, plus the QA
+account's own private Milanote Home (the app creates it on first open).
+It **never touches Winter Drop 2027**: the refused-gate probe runs only on
+a gate in a list it can see that is not Winter Drop (none today — skipped
+and said), and the run ends by comparing every real item it can read with
+a snapshot taken before its first write. On the live site Milanote is
+driven read-only (Escape, Cancel); the stub also commits the renames.
+
+Output: `docs/board-screens/<commit>[-dirty][-stub]/` — PNGs,
+`report.json`, `report.md` (with the `CACHE_VERSION` the site served).
+**Gitignored**: the repo is public and the screens show the live drop plan.
+
+`tests/e2e/stub-site.js` is the stub: `tests/smoke-board.js`'s in-memory
+Firestore (which now exports itself when required), the Winter Drop seed,
+the QA account, one private Milanote board of its own, and the QA fence
+imitated (`__QA_UID`: pos / bug_reports / activity refused, writes only
+where `isQa()` allows them). It proves the pages, the assertions and the
+harness — not the live data, rules or network.
+
+### The two agents
+
+- **`.claude/agents/board-tester.md`** — runs the harness (the stub when
+  the environment is not set, and says so), opens every screenshot, judges
+  it against **`docs/BOARD-VISUAL-SPEC.md`**, and returns a numbered list:
+  failed assertions with the screenshot path; deviations from the spec as
+  "screen · what's wrong · what the spec says"; anything a new user should
+  not see on Monday. No praise, no summary.
+- **`.claude/agents/board-reviewer.md`** — reviews the staged diff: HTML5
+  drag; a clickable inside a drag surface without the `pointerdown` guard;
+  `innerHTML` with user strings; `toISOString().slice` for a day; a
+  `window.X=` replacing a same-named function; a non-`tb` identifier in
+  `js/theboard.js`; a missing `CACHE_VERSION` bump; a file outside the
+  commit's scope; a spec item silently narrowed. Output: pass, or numbered
+  blocking findings with file:line.
+
+### Branch flow
+
+UI work lands on **`board-p1`**, which has a **draft PR to `main`** so
+Netlify builds it as a deploy preview (the preview URL is in Netlify's
+comment on the PR). The tester runs against that preview. **Merge to
+`main` only after the tester and the reviewer both pass.** `main` stays
+what the team uses.
 
 ## Tests
 

@@ -164,6 +164,33 @@ function STUB(){
     rtdbGet:function(){return Promise.resolve({val:function(){return null;},exists:function(){return false;}});},
     rtdbChild:function(){return{};},rtdbOnValue:function(){},rtdbOff:function(){}
   };
+  // tests/e2e/board.e2e.js --stub sets __QA_UID: the QA account's rules
+  // (firestore.rules isQa()), imitated closely enough for its containment
+  // gate and its fenced writes to mean something. Unset, nothing changes.
+  if(window.__QA_UID){
+    var QA=window.__QA_UID;
+    var deny=function(){var e=new Error('Missing or insufficient permissions.');e.code='permission-denied';return Promise.reject(e);};
+    var top=function(p){return String(p||'').split('/')[0];};
+    var NO_READ=['pos','bug_reports','activity'];
+    var canWrite=function(ref,d,del){
+      var c=ref.col,prev=col(c)[ref.id],next=del?null:Object.assign({},prev||{},d||{});
+      var t=top(c),parts=String(c).split('/');
+      if(t==='board_lists')return !!(prev?prev.qa===true&&prev.adminUid===QA:next.qa===true&&next.adminUid===QA);
+      if(c==='board_items')return !!(prev?prev.qa===true:(next.qa===true&&JSON.stringify(next.assigneeUids)===JSON.stringify([QA])));
+      if(t==='board_items')return !!(col('board_items')[parts[1]]||{}).qa;
+      if(t==='hrm_notifications')return !!(next||prev)&&(next||prev).forUser==='claude';
+      if(c==='user_profiles')return ref.id===QA;
+      if(c==='mood_boards'){var b=prev||next;return !!b&&b.ownerUid===QA&&(b.visibility||'personal')==='personal'&&!(b.sharedWith||[]).length;}
+      if(t==='mood_boards')return (col('mood_boards')[parts[1]]||{}).ownerUid===QA;
+      return false;
+    };
+    var r0=api.getDoc,rq=api.getDocs,w1=api.setDoc,w2=api.updateDoc,w3=api.deleteDoc;
+    api.getDoc=function(ref){return NO_READ.indexOf(top(ref.col))>-1?deny():r0(ref);};
+    api.getDocs=function(q){return NO_READ.indexOf(top(q.path))>-1?deny():rq(q);};
+    api.setDoc=function(ref,d,o){return canWrite(ref,d)?w1(ref,d,o):deny();};
+    api.updateDoc=function(ref,d){return canWrite(ref,d)?w2(ref,d):deny();};
+    api.deleteDoc=function(ref){return canWrite(ref,null,true)?w3(ref):deny();};
+  }
   Object.assign(window,api);
   // No service worker in a test: a registered one would serve its own
   // precache over the files under test.
@@ -716,6 +743,9 @@ function pageFor(mode){
     .replace('</body>','<pre id="__out">running</pre><script>('+DRIVE.toString()+')();</script></body>');
 }
 
+// Required rather than run (tests/e2e/stub-site.js): hand over the stub and
+// the seed, start nothing.
+if(require.main!==module){module.exports={STUB,CLOCK,seedCols,USERS,TYPES,uidOf};return;}
 const browser=findBrowser();
 if(!browser){
   console.log('smoke-board: no Chrome/Chromium found — SKIPPING. This test must pass locally before a Board change is pushed.');

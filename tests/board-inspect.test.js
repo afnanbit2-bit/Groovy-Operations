@@ -82,5 +82,26 @@ module.exports=async function(){
     const t=I.mdTable(['a','b'],[['x|y','line1\nline2'],[null,3]]);
     s.eq('a markdown table',t,'| a | b |\n|---|---|\n| x\\|y | line1 line2 |\n|  | 3 |');
   }
+
+  // ── tests/e2e/board.e2e.js: what can be held without a browser ─────────
+  {
+    const fs=require('fs');
+    const src=fs.readFileSync(path.join(__dirname,'e2e','board.e2e.js'),'utf8');
+    s.section('the e2e harness keeps the QA password out of every expression');
+    const uses=src.split(/\r?\n/).filter(l=>/(^|[^'"\w])PASS(?=[^'"\w]|$)/.test(l)&&!/^\s*(\/\/|\*)/.test(l));
+    s.ok('PASS is read from the environment or the stub, and handed to fill() -- nowhere else',
+      uses.length===3&&uses.every(l=>["let PASS=process.env.GROOVY_QA_PASSWORD||'';","URL_=stubSite.url;EMAIL=stubSite.email;PASS=stubSite.password;","await fill('l-pass',PASS);"].indexOf(l.trim())>-1),
+      uses.join(' | '));
+    s.ok('fill() passes the value as a call ARGUMENT',/Runtime\.callFunctionOn[^\n]*arguments:\[\{value:value\}\]/.test(src));
+    s.section('the e2e harness never writes to Winter Drop 2027');
+    s.ok('the gate probe needs a list it can see, and not Winter Drop',/l&&l\.title!=="Winter Drop 2027"/.test(src));
+    s.ok('it ends by comparing every real item with the snapshot',/no real item changed, Winter Drop 2027 included/.test(src));
+    s.ok('on the live site Milanote renames are abandoned; only the stub commits',/if\(!STUB\)return;/.test(src));
+    s.section('it skips cleanly, and covers both widths and both themes');
+    s.ok('no environment and no --stub is a SKIP, exit 0',/skip\('set '\+missing\.join/.test(src)&&/process\.exit\(0\)/.test(src));
+    s.ok('1440 and 390',/width:1440/.test(src)&&/width:390/.test(src));
+    s.ok('light and dark',/THEMES=\['light','dark'\]/.test(src));
+    s.ok('the 500 ms paint budget',/PAINT_MS=500/.test(src));
+  }
   return s;
 };
