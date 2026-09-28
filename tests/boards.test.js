@@ -5439,10 +5439,21 @@ module.exports=function(){
       s.ok('Comments is in the sheet, id intact',/id="board-cmt-btn"/.test(menu));
       s.ok('Report a bug is in the sheet (the FAB is hidden on a phone)',/openBugReportModal/.test(menu));
       s.eq('the Undo id appears exactly once in the whole render',(html.match(/id="board-undo-btn"/g)||[]).length,1);
+      const dhtmlNoFn=dt.run(`_renderBoardCanvasHTML()`);
+      dt.run(`window.openBugReportModal=function(){};`);
       const dhtml=dt.run(`_renderBoardCanvasHTML()`);
       const dbar=dhtml.slice(dhtml.indexOf('class="board-topbar"'),dhtml.indexOf('id="board-view-menu"'));
       s.ok('desktop keeps Undo in the bar',/id="board-undo-btn"/.test(dbar));
-      s.ok('and no Report a bug in its menu',!/openBugReportModal/.test(dhtml));
+      // REVERSED (GitHub #97, bug 8): the FAB is hidden on the canvas at
+      // every width now — on desktop it sat on the comment drawer's Post
+      // button — so desktop's ⋯ menu carries Report a bug too.
+      s.ok('desktop\'s ⋯ menu offers Report a bug as well',/openBugReportModal/.test(dhtml));
+      s.ok('but not when the bug tracker is not loaded',!/openBugReportModal/.test(dhtmlNoFn));
+      const cssB=require('fs').readFileSync(require('path').join(__dirname,'..','css','main.css'),'utf8');
+      const fabRule=cssB.search(/body\.board-fullscreen #bug-report-fab\{display:none!important\}/);
+      s.ok('the FAB is hidden on the canvas at every width, not only a phone',fabRule>=0&&!/^\s+body\.board-fullscreen #bug-report-fab/m.test(cssB),fabRule);
+      s.ok('Find steps left of an open comment drawer',/\.board-below:has\(>\.board-drawer\[style\*="flex"\]\) \.board-find\{right:/.test(cssB));
+      s.ok('and of an open Unsorted tray, off Home',/\.board-below:not\(\.with-panel\):has\(>\.board-tray:not\(\.collapsed\)\) \.board-find\{right:394px\}/.test(cssB));
 
       s.section('phone: the empty hint says what a finger can do');
       s.ok('double-tap, not double-click',/Double-tap anywhere/.test(html));

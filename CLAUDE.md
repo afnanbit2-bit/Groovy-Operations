@@ -3679,6 +3679,20 @@ is drawn at 200 with `c.h` still 100, and typing grew one to 380;
 removing the render pass puts the 100px of overflow back.
 `tests/board-notegrow.test.js`.
 
+**The Report Bug button left the board, and Find clears the side panels
+(#97 bug 8, same day).** On desktop the fixed `#bug-report-fab` (z 500)
+sat on the comment drawer's Post button. It is now hidden while
+`body.board-fullscreen` at EVERY width (it was phone-only), and the ⋯
+menu offers "Report a bug" at every width. Find lives in the stage at z 28
+while the comment drawer (z 32, 320px) and the Unsorted tray (z 130,
+380px) are its right-hand siblings, so it opened behind them; on desktop
+it now steps left of whichever is open (`.board-below:has(...)`, not on
+Home, whose panel insets the stage). MEASURED in real Chromium: Find at
+right 334 with the drawer open and 394 with the tray, hit-testable both
+times; with the rules removed it sits at 14 and is covered. The old
+assertion "desktop has no Report a bug" in `tests/boards.test.js` was
+reversed, not deleted.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

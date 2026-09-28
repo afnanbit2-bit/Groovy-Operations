@@ -2482,7 +2482,7 @@ function _renderBoardCanvasHTML(){
             ${_boardsCanManageShare(b)&&!home?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
             ${canEdit&&!home?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
             ${canEdit&&!home?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
-            ${phone&&typeof window.openBugReportModal==='function'?`<div class="board-menu-sep"></div>
+            ${typeof window.openBugReportModal==='function'?`<div class="board-menu-sep"></div>
             <button onclick="window.openBugReportModal()">Report a bug</button>`:''}
           </div>
         </div>

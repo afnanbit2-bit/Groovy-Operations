@@ -2320,6 +2320,21 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 
 /* Find within a board */
 .board-find{position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 8px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.1);z-index:28;max-width:calc(100% - 28px);flex-wrap:wrap}
+/* The bug FAB is hidden while the canvas has the screen, at EVERY width;
+   "Report a bug" is in the board's ⋯ menu instead. On a phone it was
+   painted over the rail's last tool and the Boards panel; on desktop it
+   sat on the comment drawer's Post button (GitHub #97, bug 8). */
+body.board-fullscreen #bug-report-fab{display:none!important}
+/* Find opened BEHIND an open side panel (#97 bug 8): it lives in the
+   stage at z 28 and the comment drawer (z 32, 320px), the card trash and
+   the Unsorted tray (z 130, 380px) are its siblings on the right. It steps
+   left of whichever is open. Not on Home, whose panel insets the stage
+   instead of covering it, and not on a phone, where Find spans the width
+   and every panel is a full-width sheet. */
+@media (min-width:561px){
+  .board-below:has(>.board-drawer[style*="flex"]) .board-find{right:calc(min(320px,88vw) + 14px)}
+  .board-below:not(.with-panel):has(>.board-tray:not(.collapsed)) .board-find{right:394px}
+}
 .board-find input{border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:13.5px;font-family:inherit;min-width:140px;background:var(--surface);color:var(--text)}
 .board-find-count{font-size:12px;color:var(--muted);min-width:52px;text-align:center}
 .board-card-el.found,.board-frame.found{outline:2px solid var(--accent-warning);outline-offset:1px}
@@ -2865,11 +2880,6 @@ body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:71px}
   .board-stage{-webkit-touch-callout:none}
   .board-tray.collapsed{left:10px;right:10px;width:auto;height:44px;top:auto;bottom:calc(96px + env(safe-area-inset-bottom,0px));border:1px solid var(--border);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12)}
   .board-tray.collapsed .board-tray-reopen{border-radius:12px}
-  /* The bug FAB is hidden while the canvas has the screen; "Report a bug"
-     is in the ⋯ sheet instead. It was painted over the rail's last tool and
-     over the open Boards panel — the same collision that retired the
-     minimap. */
-  body.board-fullscreen #bug-report-fab{display:none!important}
   /* The Open pill on a sub-board card sat exactly over the 34px resize
      grip in the same corner — the pill is phone-only, so this was a
      phone-only bug. Hit-tested: the grip resolved to the pill. */
