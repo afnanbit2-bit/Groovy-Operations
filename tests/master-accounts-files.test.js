@@ -34,7 +34,7 @@ const File=globalThis.File||require('buffer').File;
 const SECRET='test-secret-not-real-9Kq';
 const KEY='123450987612345';
 const SIGNED_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:KEY,CLOUDINARY_API_SECRET:SECRET,CLOUDINARY_CLOUD_NAME:undefined};
-const UNSIGNED_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:undefined,CLOUDINARY_API_SECRET:undefined,CLOUDINARY_CLOUD_NAME:undefined};
+const UNSIGNED_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:undefined,CLOUDINARY_API_SECRET:undefined,CLOUDINARY_CLOUD_NAME:undefined,MA_ALLOW_PUBLIC_ATTACH:'1'};
 const AFNAN={uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'};
 const PID='ma/'+'0123456789abcdef'.repeat(4);
 
@@ -249,7 +249,7 @@ module.exports=async function(){
       s.eq('… for this file\'s name, type and size',J(fn[0].body.file),J({name:'bill-14-oct.pdf',type:'application/pdf',size:204800}));
       const up=W.uploads[0]||{};
       s.eq('then the file goes STRAIGHT to Cloudinary\'s image upload',up.url,'https://api.cloudinary.com/v1_1/deww4lpym/image/upload');
-      s.eq('… carrying every signed field and the file — nothing else',J(up.keys&&up.keys.slice().sort()),J(['allowed_formats','api_key','file','public_id','signature','timestamp','type']));
+      s.eq('… carrying every signed field and the file — nothing else',J(up.keys&&up.keys.slice().sort()),J(['allowed_formats','api_key','file','overwrite','public_id','signature','timestamp','type']));
       s.ok('… and the signature Cloudinary checks is good (an independent signer agrees)',W.cloudCalls().length===1&&!W.toasts.some(t=>/Invalid Signature/.test(t)));
       const atts=JSON.parse(app.run('JSON.stringify(_maF.atts)'));
       s.eq('the form now holds one reference',atts.length,1);

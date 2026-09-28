@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   Master Accounts share links — netlify/functions/ma-share.js (M1.5a)
+   Master Accounts share links — netlify/functions/ma-share.js (M1.5a, M1.6c)
 
    The one PUBLIC door into the books, so most of this suite is about what it
    refuses: an unknown or malformed token, a withdrawn link, an expired one, a
@@ -7,9 +7,12 @@
    someone who is not an owner. The live path is held too: the open is
    counted AFTER the file link is minted, a link-preview fetch is counted
    apart, and the redirect target is re-derived here and its signature
-   recomputed independently. Cannot prove: what WhatsApp does with the link,
-   or that Cloudinary serves the signed URL — the first real share is that
-   test.
+   recomputed independently. M1.6c: with no Cloudinary key and no
+   MA_ALLOW_PUBLIC_ATTACH=1 no link is made to any file (a link already sent
+   to a public PDF keeps opening); a create carries the document's revision
+   as docRev; and before the caller is known the server says only that it
+   is not set up. Cannot prove: what WhatsApp does with the link, or that
+   Cloudinary serves the signed URL — the first real share is that test.
    ───────────────────────────────────────────────────────────────────────── */
 'use strict';
 const fs=require('fs');
@@ -28,8 +31,12 @@ const SECRET='test-secret-not-real-share';
 const KEY='112233445566778';
 const DAY=86400000;
 const NOW=Date.UTC(2026,9,5,6,30,15,250);          // 5 Oct 2026, 11:30 PKT
-const SIGNED_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:KEY,CLOUDINARY_API_SECRET:SECRET,CLOUDINARY_CLOUD_NAME:undefined};
-const UNSIGNED_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:undefined,CLOUDINARY_API_SECRET:undefined,CLOUDINARY_CLOUD_NAME:undefined};
+// Every env names MA_ALLOW_PUBLIC_ATTACH, so what the machine running the
+// tests happens to have set can never decide a state.
+const SIGNED_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:KEY,CLOUDINARY_API_SECRET:SECRET,CLOUDINARY_CLOUD_NAME:undefined,MA_ALLOW_PUBLIC_ATTACH:undefined};
+const PUBLIC_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:undefined,CLOUDINARY_API_SECRET:undefined,CLOUDINARY_CLOUD_NAME:undefined,MA_ALLOW_PUBLIC_ATTACH:'1'};
+const NONE_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:undefined,CLOUDINARY_API_SECRET:undefined,CLOUDINARY_CLOUD_NAME:undefined,MA_ALLOW_PUBLIC_ATTACH:undefined};
+const NOT_SET_UP='The server is not set up yet — the reason is in the Netlify function log.';
 const PID='ma/'+'e'.repeat(64);
 const CHROME='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36';
 const WHATSAPP='WhatsApp/2.24.19.86 A';
@@ -84,6 +91,45 @@ module.exports=async function(){
       s.ok('… saying what and for how long',/JV-27-0001\.pdf · 7 days/.test((a[0]||{}).detail),(a[0]||{}).detail);
       const r2=await run(fn,post(CREATE));
       s.ok('a second link to the same PDF has its own token',!!(r2.body||{}).token&&(r2.body||{}).token!==t);
+      const pub=await run(fn,post(Object.assign({},CREATE,{file:{publicId:PID,format:'pdf',type:'upload'}})));
+      s.eq('with the key set, a PDF that went up public before can still be linked — the link makes nothing more public',
+        J([pub.status,(st.docs['ma_shares/'+(pub.body||{}).token]||{}).deliveryType]),J([200,'upload']));
+    }
+
+    s.section('create — the revision the PDF was made at (docRev)');
+    {
+      const st={tokens:TOKENS};const fn=loadFn('netlify/functions/ma-share.js',st);
+      const sub=o=>Object.assign({type:'journal',id:'JV-27-0001',no:'JV-27-0001 · rev 3'},o);
+      const mk=o=>run(fn,post(Object.assign({},CREATE,{subject:sub(o)})));
+      const shareOf=r=>st.docs['ma_shares/'+((r&&r.body)||{}).token]||{};
+      const r3=await mk({rev:3});
+      const d3=shareOf(r3);
+      s.eq('rev 3 → 200',r3.status,200);
+      s.eq('… kept on the share as docRev',d3.docRev,3);
+      s.eq('… answered back at the top of the response',(r3.body||{}).docRev,3);
+      s.eq('… and in the share the response carries',((r3.body||{}).share||{}).docRev,3);
+      s.eq('… beside the number the page sent, kept as it came',d3.docNo,'JV-27-0001 · rev 3');
+      s.eq('rev 1 → docRev 1',shareOf(await mk({rev:1})).docRev,1);
+      const r0=await run(fn,post(CREATE));
+      const d0=shareOf(r0);
+      s.eq('not sent → 200, and the share carries NO docRev field at all',J([r0.status,'docRev' in d0]),J([200,false]));
+      s.ok('… nor does the answer',!('docRev' in (r0.body||{}))&&!('docRev' in ((r0.body||{}).share||{})));
+      const rn=await mk({rev:null});
+      s.eq('rev null counts as not sent',J([rn.status,'docRev' in shareOf(rn)]),J([200,false]));
+      const n0=Object.keys(st.docs).length,b0=st.batches.length;
+      let msg='';
+      for(const [label,v] of [['0',0],['-2',-2],['2.5',2.5],['the string "3"','3'],['true',true],['[3]',[3]],['{n:3}',{n:3}],['2^53, past a safe integer',Math.pow(2,53)]]){
+        const r=await mk({rev:v});
+        s.eq('rev '+label+' → 400 subject',J([r.status,(r.body||{}).code]),J([400,'subject']));
+        msg=(r.body||{}).error||'';
+      }
+      s.ok('… saying what a revision must be',/revision must be a whole number, 1 or more/.test(msg),msg);
+      s.eq('… and nothing refused left a share or an audit row behind',J([Object.keys(st.docs).length-n0,st.batches.length-b0]),J([0,0]));
+      const t3=(r3.body||{}).token;
+      s.eq('a share carrying docRev opens like any other',(await run(fn,get(t3),NOW+1000)).status,302);
+      s.eq('… shareState, unchanged, reads it as live',fn._test.shareState(st.docs['ma_shares/'+t3],NOW+1000).state,'live');
+      const rv=await run(fn,post({action:'revoke',token:t3}),NOW+2000);
+      s.eq('withdrawing it leaves docRev as it was',J([rv.status,(st.docs['ma_shares/'+t3]||{}).revoked,(st.docs['ma_shares/'+t3]||{}).docRev]),J([200,true,3]));
     }
 
     s.section('create — how long a link lives');
@@ -113,6 +159,7 @@ module.exports=async function(){
       s.eq('a forged token → 401 auth',await c({},'t_forged'),'401 auth');
       s.eq('Mustafa → 403 forbidden',await c({},'t_mustafa'),'403 forbidden');
       s.eq('Raees → 403 forbidden',await c({},'t_raees'),'403 forbidden');
+      s.eq('Ammar@groovy.op, another case → 403 forbidden, as the rules would say',await c({},'t_ammar_mixed'),'403 forbidden');
       s.eq('no subject → 400 subject',await c({subject:undefined}),'400 subject');
       s.eq('a subject type that is not a word → 400 subject',await c({subject:{type:'Journal!',id:'x'}}),'400 subject');
       s.eq('a subject id with a slash → 400 subject',await c({subject:{type:'journal',id:'a/b'}}),'400 subject');
@@ -234,6 +281,8 @@ module.exports=async function(){
       s.eq('… and the link is untouched',(st.docs['ma_shares/'+t]||{}).revoked,false);
       const nt=await run(fn,post({action:'revoke',token:t},null));
       s.eq('nor anyone without a token → 401',nt.status,401);
+      const mx=await run(fn,post({action:'revoke',token:t},'t_ammar_mixed'));
+      s.eq('nor Ammar@groovy.op in another case → 403',J([mx.status,(st.docs['ma_shares/'+t]||{}).revoked]),J([403,false]));
       const r=await run(fn,post({action:'revoke',token:t},'t_ammar'),NOW+60000);
       s.eq('Ammar revokes Afnan\'s link → 200',J([r.status,(r.body||{}).revoked,(r.body||{}).already]),J([200,true,false]));
       const d=st.docs['ma_shares/'+t]||{};
@@ -253,30 +302,74 @@ module.exports=async function(){
     }
   });
 
-  await withEnv(UNSIGNED_ENV,async()=>{
-    s.section('without the Cloudinary key');
-    const st={tokens:TOKENS,docs:{['ma_shares/'+tok('P')]:stored()}};const fn=loadFn('netlify/functions/ma-share.js',st);
+  await withEnv(NONE_ENV,async()=>{
+    s.section('no key and no opt-in — no link is made (fails closed)');
+    const st={tokens:TOKENS,docs:{['ma_shares/'+tok('P')]:stored(),['ma_shares/'+tok('U')]:stored({deliveryType:'upload'})}};
+    const fn=loadFn('netlify/functions/ma-share.js',st);
     const c=await run(fn,post(CREATE));
     s.eq('a PRIVATE PDF cannot be shared → 503 not_configured',J([c.status,(c.body||{}).code]),J([503,'not_configured']));
+    const pub=Object.assign({},CREATE,{file:{publicId:PID,format:'pdf',type:'upload'}});
+    const r=await run(fn,post(pub));
+    s.eq('nor a PDF that is already public → 503 not_configured: the owners have not chosen public links',J([r.status,(r.body||{}).code]),J([503,'not_configured']));
+    s.ok('… saying attachments are not set up, and both ways out',/^Attachments are not set up:/.test((r.body||{}).error)&&/MA_ALLOW_PUBLIC_ATTACH to 1/.test((r.body||{}).error),(r.body||{}).error);
+    const rr=await run(fn,post(Object.assign({},pub,{subject:Object.assign({},CREATE.subject,{rev:2})})));
+    s.eq('… with a revision or without',J([rr.status,(rr.body||{}).code]),J([503,'not_configured']));
+    s.eq('… and nothing was written: no new share, no audit row',J([Object.keys(st.docs).filter(k=>k.indexOf('ma_shares/')===0).length,audits(st).length,st.batches.length]),J([2,0,0]));
+    const g=await run(fn,get(tok('P')),NOW+1000);
+    s.eq('a private share already made cannot be served → 503 page',J([g.status,/cannot be opened right now/.test(g.raw)]),J([503,true]));
+    s.eq('… and that is not counted as an open',st.docs['ma_shares/'+tok('P')].opens,0);
+    const gu=await run(fn,get(tok('U')),NOW+1000);
+    s.eq('a link already sent to a PUBLIC PDF keeps opening — refusing it would un-publish nothing',J([gu.status,gu.headers.Location]),J([302,'https://res.cloudinary.com/deww4lpym/image/upload/'+PID+'.pdf']));
+    s.eq('… counted',st.docs['ma_shares/'+tok('U')].opens,1);
+  });
+
+  await withEnv(PUBLIC_ENV,async()=>{
+    s.section('no key, public by opt-in (MA_ALLOW_PUBLIC_ATTACH=1)');
+    const st={tokens:TOKENS,docs:{['ma_shares/'+tok('P')]:stored()}};const fn=loadFn('netlify/functions/ma-share.js',st);
+    const c=await run(fn,post(CREATE));
+    s.eq('a PRIVATE PDF still cannot be shared → 503 not_configured',J([c.status,(c.body||{}).code]),J([503,'not_configured']));
     const g=await run(fn,get(tok('P')),NOW+1000);
     s.eq('a private share already made cannot be served → 503 page',J([g.status,/cannot be opened right now/.test(g.raw)]),J([503,true]));
     s.eq('… and that is not counted as an open',st.docs['ma_shares/'+tok('P')].opens,0);
     const pub=Object.assign({},CREATE,{file:{publicId:PID,format:'pdf',type:'upload'}});
     const r=await run(fn,post(pub));
-    s.eq('a PUBLIC PDF (the fallback) can be shared',r.status,200);
+    s.eq('a PUBLIC PDF (the fallback, chosen) can be shared',r.status,200);
     const o=await run(fn,get((r.body||{}).token),NOW+1000);
     s.eq('… and opens at its public URL',J([o.status,o.headers.Location]),J([302,'https://res.cloudinary.com/deww4lpym/image/upload/'+PID+'.pdf']));
     s.eq('… counted',(st.docs['ma_shares/'+(r.body||{}).token]||{}).opens,1);
   });
 
-  await withEnv({FIREBASE_SERVICE_ACCOUNT:undefined},async()=>{
-    s.section('no service account, or Firestore down — a page, never a crash');
-    const fn=loadFn('netlify/functions/ma-share.js',{tokens:TOKENS});
-    const g=await run(fn,get(tok('A')));
-    s.eq('GET → 503 page',J([g.status,g.headers['Content-Type']]),J([503,'text/html; charset=utf-8']));
-    const p=await run(fn,post(CREATE));
-    s.eq('POST → 503 not_configured',J([p.status,(p.body||{}).code]),J([503,'not_configured']));
-  });
+  {
+    const logs=[];const orig=console.error;
+    console.error=(...a)=>{logs.push(a.map(x=>String(x)).join(' '));};
+    try{
+      await withEnv({FIREBASE_SERVICE_ACCOUNT:undefined},async()=>{
+        s.section('no service account, or Firestore down — a page, never a crash');
+        const st={tokens:TOKENS};const fn=loadFn('netlify/functions/ma-share.js',st);
+        const g=await run(fn,get(tok('A')));
+        s.eq('GET → 503 page',J([g.status,g.headers['Content-Type']]),J([503,'text/html; charset=utf-8']));
+        const p=await run(fn,post(CREATE));
+        s.eq('POST → 503 not_configured',J([p.status,(p.body||{}).code]),J([503,'not_configured']));
+        s.eq('… the one generic sentence — nobody is known yet',(p.body||{}).error,NOT_SET_UP);
+        s.ok('… not naming the variable',!/FIREBASE|SERVICE_ACCOUNT|service account/i.test(p.raw));
+        s.eq('… and no token was checked',st.verify.length,0);
+        s.ok('the reason is in the function log',logs.some(l=>l.indexOf('[ma-share]')===0&&/FIREBASE_SERVICE_ACCOUNT/.test(l)),logs.join(' | '));
+      });
+      logs.length=0;
+      await withEnv(SIGNED_ENV,async()=>{
+        const PEM='Failed to parse private key: Error: Invalid PEM formatted message.';
+        const st={tokens:TOKENS,initError:PEM};const fn=loadFn('netlify/functions/ma-share.js',st);
+        const p=await run(fn,post(CREATE));
+        s.eq('an Admin SDK that will not start → POST 503 not_configured',J([p.status,(p.body||{}).code]),J([503,'not_configured']));
+        s.eq('… the same generic sentence',(p.body||{}).error,NOT_SET_UP);
+        s.ok('… never the SDK\'s own error',p.raw.indexOf('PEM')<0&&p.raw.indexOf('private key')<0&&!/Admin SDK/.test(p.raw));
+        s.eq('… no token checked',st.verify.length,0);
+        s.ok('the SDK\'s error is in the function log instead',logs.some(l=>l.indexOf('[ma-share]')===0&&l.indexOf(PEM)>=0),logs.join(' | '));
+        const g=await run(fn,get(tok('A')));
+        s.ok('… and a GET is the plain 503 page, with nothing of it either',g.status===503&&g.raw.indexOf('PEM')<0&&/cannot be opened right now/.test(g.raw));
+      });
+    }finally{console.error=orig;}
+  }
   await withEnv(SIGNED_ENV,async()=>{
     const fn=loadFn('netlify/functions/ma-share.js',{tokens:TOKENS,docs:{['ma_shares/'+tok('A')]:stored()},failRead:'unavailable'});
     const g=await run(fn,get(tok('A')),NOW+1000);

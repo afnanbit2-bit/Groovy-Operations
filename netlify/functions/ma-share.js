@@ -13,7 +13,12 @@
 //                                          Cloudinary link that itself dies
 //                                          in 5 minutes (a private file), or
 //                                          to the file's public URL (the
-//                                          fallback — see ma-attach.js)
+//                                          fallback — see ma-attach.js). A
+//                                          link to a file that is already
+//                                          public keeps opening whatever the
+//                                          opt-in says now: refusing it
+//                                          would break a link already sent
+//                                          and un-publish nothing.
 // Nothing about the books is served from here, the pages echo only what the
 // owner named the document (escaped), and every response carries no-store,
 // no-referrer and noindex. A share document this server would not have
@@ -23,13 +28,22 @@
 // the SHAPE, not the writer.
 //
 // The owners' side, POST JSON with `Authorization: Bearer <ID token>`:
-//   create {subject:{type,id,no}, file:{publicId,format,type,resourceType?},
+//   create {subject:{type,id,no,rev?}, file:{publicId,format,type,resourceType?},
 //           filename?, days?, to?:{party, phone}}
 //          → a 32-byte random token and the PATH to hand out; the client puts
 //            its own origin in front (this function never guesses its host).
+//            `subject.rev` — the document's revision the PDF was made at, a
+//            whole number, 1 or more — is kept on the share as `docRev` and
+//            answered back, so the list can say when the document moved on
+//            since; not sent, the share carries no docRev at all; anything
+//            else is refused (400 subject). FAILS CLOSED like ma-attach:
+//            with no Cloudinary key and no MA_ALLOW_PUBLIC_ATTACH=1, no link
+//            is made to any file (503 not_configured).
 //   revoke {token} → withdrawn for good (never un-revoked); idempotent.
 // Both write an ma_audit row in the same batch as the share (§29, §31).
 // There is no `list`: owners read ma_shares directly under the rules.
+// Before the caller is known, a server that cannot start says only that it
+// is not set up; the reason goes to the function log (lib.startAdmin).
 //
 // Opens: `opens`/`lastOpenedAt` count people; a link-preview fetch (the
 // sender's own WhatsApp builds the preview by fetching the link) is counted
@@ -158,6 +172,18 @@ function checkSubject(s) {
   if (!/^[a-z][a-z0-9_-]{0,31}$/.test(type) || !/^[A-Za-z0-9._-]{1,120}$/.test(id)) return null;
   return { type, id, no: cleanText(s.no, 60) || null };
 }
+// The revision the PDF was made at (maRevOf on the client: edits + 1).
+// → {} when not sent (undefined or null — the days/to rule), {rev} when it
+// is a whole number, 1 or more, else {error}. A string, a fraction, zero, a
+// negative or an unsafe integer is a request this function would not have
+// been sent, so it is refused rather than dropped: a link that silently
+// lost its revision could never say its document had changed.
+function checkRev(s) {
+  const r = s && typeof s === 'object' ? s.rev : undefined;
+  if (r === undefined || r === null) return {};
+  if (typeof r !== 'number' || !Number.isSafeInteger(r) || r < 1) return { error: 'The document’s revision must be a whole number, 1 or more.' };
+  return { rev: r };
+}
 function checkTo(to) {
   if (to === undefined || to === null) return { to: null };
   if (typeof to !== 'object' || Array.isArray(to)) return { error: 'Who the link is for must be {party, phone}.' };
@@ -186,6 +212,8 @@ async function defaultDays(db) {
 async function create(app, owner, body, nowMs) {
   const subject = checkSubject(body.subject);
   if (!subject) return lib.fail(400, 'subject', 'Name the document being shared: subject {type, id, no}.');
+  const rv = checkRev(body.subject);
+  if (rv.error) return lib.fail(400, 'subject', rv.error);
   const a = lib.assetRef(body.file);
   if (a.code) return lib.fail(400, a.code, a.message);
   if (a.ref.format !== 'pdf') return lib.fail(400, 'file', 'Only a PDF can be sent by link.');
@@ -193,6 +221,11 @@ async function create(app, owner, body, nowMs) {
   if (a.ref.type === 'authenticated' && !cfg.signed) {
     return lib.fail(503, 'not_configured', 'This PDF is private and the server has no Cloudinary key to open it with — set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Netlify first.');
   }
+  // Fail closed (M1.6c): with no key and no opt-in, no link is made — not
+  // even to a PDF that went up public before; the owners have not chosen
+  // public links. With the key set, a PDF that is already public may still
+  // be linked: the link makes nothing more public than it is.
+  if (cfg.state === 'not_configured') return lib.fail(503, 'not_configured', lib.attachNotSetUp(cfg));
   const t = checkTo(body.to);
   if (t.error) return lib.fail(400, 'to', t.error);
   const db = app.firestore();
@@ -210,13 +243,18 @@ async function create(app, owner, body, nowMs) {
     revoked: false, revokedAt: null, revokedBy: null,
     opens: 0, lastOpenedAt: null, previews: 0, lastPreviewAt: null
   };
+  // Absent when not sent — never null, never undefined (a write carrying
+  // undefined is refused by Firestore).
+  if (rv.rev !== undefined) share.docRev = rv.rev;
   const audit = lib.auditRow('share', { dt: subject.type, id: subject.id, no: subject.no },
     { detail: 'Link to ' + filename + ' · ' + days + ' day' + (days > 1 ? 's' : '') + (t.to && t.to.party ? ' · for ' + t.to.party : ''), by: owner.u, at: nowMs });
   const b = db.batch();
   b.create(db.collection('ma_shares').doc(token), share);
   b.set(db.collection('ma_audit').doc(lib.auditId(nowMs, owner.u)), audit);
   await b.commit();
-  return lib.json(200, { token, path: SHARE_PATH + token, expiresAt: share.expiresAt, days, share: Object.assign({ token }, share) });
+  const out = { token, path: SHARE_PATH + token, expiresAt: share.expiresAt, days, share: Object.assign({ token }, share) };
+  if (share.docRev !== undefined) out.docRev = share.docRev;
+  return lib.json(200, out);
 }
 
 async function revoke(app, owner, body, nowMs) {
@@ -241,9 +279,10 @@ async function revoke(app, owner, body, nowMs) {
 }
 
 async function owners(event, nowMs) {
-  if (!lib.serviceAccount(process.env)) return lib.fail(503, 'not_configured', 'The server is not set up: FIREBASE_SERVICE_ACCOUNT is missing.');
-  let app;
-  try { app = lib.getAdmin(); } catch (e) { return lib.fail(503, 'not_configured', 'The server could not start the Admin SDK: ' + ((e && e.message) || e)); }
+  // Nobody is known yet: a server that cannot start says so and no more.
+  const boot = lib.startAdmin('ma-share');
+  if (boot.error) return boot.error;
+  const app = boot.app;
   const who = await lib.verifyOwner(event, app);
   if (who.error) return who.error;
   const rb = lib.readBody(event);

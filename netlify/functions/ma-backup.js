@@ -2,10 +2,13 @@
 // Layer 1 of the plan's three: a Firestore managed export of the books and
 // their feeders to a Cloud Storage bucket, one run a day, each run written
 // to ma_backups — which is what the Today page's "needs attention" reads
-// (maNeedsAttention in js/ma-core.js: the LATEST row by `at`; `ok:false`
-// is "Last night's backup failed: <error>", a row older than
-// settings.backupWatchHours (36) is "The last backup ran N days ago", and
-// no row at all is "No nightly backup has run yet").
+// (maNeedsAttention in js/ma-core.js: the LATEST row by `at`, read by its
+// `state` through maBackupState — 'failed' is "Last night’s backup failed:
+// <error>.", 'not_configured' is "Backups are not set up yet — <what is
+// missing>.", a 'done' row older than settings.backupWatchHours (36) is
+// "The last backup ran <how long> ago.", a 'starting'/'running' row that
+// old is "The backup that started <how long> ago has not finished.", and no
+// row at all is "No nightly backup has run yet — …").
 //
 // WHY IT WAKES EVERY HOUR (netlify.toml "30 * * * *") when the plan says
 // "03:30 UTC daily": an export takes minutes and a scheduled function gets
@@ -25,13 +28,16 @@
 //
 // NOT CONFIGURED is a state, never a crash and never a success: with no
 // usable MA_BACKUP_BUCKET, today's row is written {state:'not_configured',
-// ok:false, configured:false, error:'Backups are not set up yet — …'}. The
-// core has no word for it (it only knows ok/error/at), so today it reads as
-// "Last night's backup failed: Backups are not set up yet — …" — never as a
-// backup that worked. Setting the bucket later the same day turns that row
-// into a real run at the next wake. Without FIREBASE_SERVICE_ACCOUNT nothing
-// can be written at all; that is logged, and the Today page keeps saying no
-// backup has run.
+// ok:false, configured:false, missing:[…], error:'Backups are not set up
+// yet — …'}. The core reads that state (maBackupState) and words it as what
+// it is: on Today, a concern "Backups are not set up yet — MA_BACKUP_BUCKET
+// is not set in Netlify." (maBackupMissing takes the reason after the dash,
+// or else the names in `missing`), never "failed" and never a backup that
+// worked; on Close & audit → Backups, "not set up" with the missing names.
+// Setting the bucket later the same day turns that row into a real run at
+// the next wake. Without FIREBASE_SERVICE_ACCOUNT nothing can be written at
+// all; that is logged, and Today goes on reading whatever the latest row
+// already says — "No nightly backup has run yet" when there is none.
 //
 // The export asks for a consistent snapshot (snapshotTime, a minute ago —
 // without it Firestore promises no consistency across documents). If the

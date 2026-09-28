@@ -16,7 +16,10 @@
      transaction is recorded in order;
    - verifyIdToken records whether checkRevoked was asked for.
    `state.failRead` / `state.failWrite` make the next reads or commits throw;
-   `state.reads` counts every read (a get, a query, a transaction's get).
+   `state.reads` counts every read (a get, a query, a transaction's get);
+   `state.initError` makes the Admin SDK fail to START (no app yet, and
+   credential.cert throws that message — firebase-admin's own shape when a
+   service account's key will not parse).
    ───────────────────────────────────────────────────────────────────────── */
 'use strict';
 const path=require('path');
@@ -131,7 +134,8 @@ function makeAdmin(state){
   };
   const firestore=Object.assign(()=>db,{FieldValue:{increment:INC}});
   return{
-    apps:[1],initializeApp(){},credential:{cert:()=>({})},
+    apps:state.initError?[]:[1],initializeApp(){state.inits=(state.inits||0)+1;},
+    credential:{cert:()=>{if(state.initError)throw new Error(state.initError);return {};}},
     app:()=>({options:{credential:{getAccessToken:async()=>{
       state.tokenCalls=(state.tokenCalls||0)+1;
       if(state.tokenError)throw new Error(state.tokenError);
@@ -159,7 +163,12 @@ function loadFn(rel,state){
 
 const TOKENS={
   t_afnan:{uid:'u-afnan',email:'afnan@groovy.op'},
-  t_ammar:{uid:'u-ammar',email:'Ammar@groovy.op'},   // mixed case: the gate lower-cases, as the rules' emails are
+  t_ammar:{uid:'u-ammar',email:'ammar@groovy.op'},
+  // The owners' addresses in another case. firestore.rules compare the
+  // token's email EXACTLY (isMasterAccounts: `userEmail() in [...]`), and so
+  // does the server since M1.6c — both are refused.
+  t_ammar_mixed:{uid:'u-ammar-x',email:'Ammar@groovy.op'},
+  t_afnan_caps:{uid:'u-afnan-x',email:'AFNAN@groovy.op'},
   t_mustafa:{uid:'u-must',email:'mustafa@groovy.op'},
   t_raees:{uid:'u-raees',email:'raees@groovy.op'},
   t_noemail:{uid:'u-phone'}

@@ -12,14 +12,22 @@
  *           js/master-accounts.js and MA_OWNERS in js/ma-core.js;
  *           tests/ma-server.test.js holds all four equal. A role or a name
  *           sent by the client is never trusted — only the verified token's
- *           email. checkRevoked is on: a session revoked after a lost phone,
- *           or a disabled account, is refused at once rather than for the
- *           rest of the token's hour.
+ *           email, compared EXACTLY as the rules compare it (`userEmail() in
+ *           [...]`: no lower-casing, no trimming), so the two layers answer
+ *           the same question. checkRevoked is on: a session revoked after a
+ *           lost phone, or a disabled account, is refused at once rather than
+ *           for the rest of the token's hour. Before the caller is known
+ *           (startAdmin), a server that cannot start says only that it is not
+ *           set up — why goes to the function log, never to the caller.
  *   WHAT  — a Master Accounts file: an image or a PDF stored in Cloudinary
  *           as `ma/<64 hex>` (32 random bytes, minted HERE, never by the
  *           client), delivered as type 'authenticated' when this server
- *           holds the Cloudinary secret, or 'upload' (public) when it does
- *           not (the plan's fallback, §29).
+ *           holds the Cloudinary secret. The public fallback (type 'upload',
+ *           §29) FAILS CLOSED (M1.6c, security F7): it runs only when the
+ *           owners opted in with MA_ALLOW_PUBLIC_ATTACH=1. With neither the
+ *           key nor the opt-in, nothing is uploaded and no link is made —
+ *           cloudinaryConfig's `state` is 'signed', 'public' or
+ *           'not_configured', and every caller reads that one answer.
  *   HOW   — Cloudinary's documented signature, hand-rolled on node's crypto
  *           (no SDK — the zero-new-deps line): every parameter sent except
  *           file, api_key, resource_type, cloud_name and signature itself,
@@ -124,6 +132,24 @@ function getAdmin() {
   if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.cert(serviceAccount(process.env)) });
   return admin;
 }
+// The Admin SDK, for a function that has not yet checked who is calling.
+// → {app} or {error:<response>}. A caller who may not be an owner learns
+// only that the server is not set up — not which variable is missing, and
+// not the SDK's start-up error; the detail goes to the function log (the
+// Netlify function log), where the people who can fix it look.
+const NOT_SET_UP = 'The server is not set up yet — the reason is in the Netlify function log.';
+function startAdmin(tag) {
+  const where = '[' + String(tag || 'ma') + ']';
+  if (!serviceAccount(process.env)) {
+    console.error(where, 'refused before the caller was known: FIREBASE_SERVICE_ACCOUNT is missing or is not JSON');
+    return { error: fail(503, 'not_configured', NOT_SET_UP) };
+  }
+  try { return { app: getAdmin() }; }
+  catch (e) {
+    console.error(where, 'refused before the caller was known: the Admin SDK could not start:', (e && e.message) || e);
+    return { error: fail(503, 'not_configured', NOT_SET_UP) };
+  }
+}
 // The service account's own OAuth token (cloud-platform scope — firebase-
 // admin 13's ServiceAccountCredential), for Google REST APIs the Admin SDK
 // does not wrap. app().options returns class instances as they are, so this
@@ -141,23 +167,59 @@ async function verifyOwner(event, app) {
   let decoded;
   try { decoded = await app.auth().verifyIdToken(token, true); }
   catch (e) { return { error: fail(401, 'auth', 'Could not verify who you are — sign in again and retry.') }; }
-  const email = String((decoded && decoded.email) || '').toLowerCase();
+  // Exactly the rules' test (isMasterAccounts: `userEmail() in [...]`) and
+  // the rules' username (maUser: the part before the @), so an email the
+  // rules would refuse is refused here too, whatever its case.
+  const email = decoded && typeof decoded.email === 'string' ? decoded.email : '';
   if (MA_OWNER_EMAILS.indexOf(email) < 0) return { error: fail(403, 'forbidden', 'Master Accounts is for Afnan and Ammar only.') };
   return { owner: { uid: decoded.uid, email, u: email.split('@')[0] } };
 }
 
 // ── Cloudinary ──────────────────────────────────────────────────────────
+// The owners' explicit opt-in to the public fallback. Exactly "1": an
+// opt-in to a weaker setting is spelled one way, and anything else — "true",
+// "yes", "0" — leaves attachments switched off (and says so).
+const PUBLIC_OPT_IN = 'MA_ALLOW_PUBLIC_ATTACH';
+
+// Which of the three states attachments are in (M1.6c):
+//   'signed'         — both keys set: private files, links that expire.
+//   'public'         — no usable key, and MA_ALLOW_PUBLIC_ATTACH=1: the
+//                      app's unsigned preset, public files (§29's fallback,
+//                      now only on purpose).
+//   'not_configured' — neither: nothing is uploaded and no link is made
+//                      (sign, and share creation, answer 503 not_configured).
+// A key that holds whitespace is not a key (`invalid`), and counts as unset.
 function cloudinaryConfig(env) {
   const e = env || process.env;
   const over = String(e.CLOUDINARY_CLOUD_NAME || '').trim();
   const cloudName = /^[A-Za-z0-9_-]{1,64}$/.test(over) ? over : CLOUDINARY_CLOUD;
   const apiKey = String(e.CLOUDINARY_API_KEY || '').trim();
   const apiSecret = String(e.CLOUDINARY_API_SECRET || '').trim();
-  const missing = [];
-  if (!apiKey) missing.push('CLOUDINARY_API_KEY');
-  if (!apiSecret) missing.push('CLOUDINARY_API_SECRET');
-  const signed = !missing.length && !/\s/.test(apiKey + apiSecret);
-  return { cloudName, apiKey, apiSecret, signed, missing, mode: signed ? 'authenticated' : 'unsigned', preset: CLOUDINARY_PRESET };
+  const missing = [], invalid = [];
+  if (!apiKey) missing.push('CLOUDINARY_API_KEY'); else if (/\s/.test(apiKey)) invalid.push('CLOUDINARY_API_KEY');
+  if (!apiSecret) missing.push('CLOUDINARY_API_SECRET'); else if (/\s/.test(apiSecret)) invalid.push('CLOUDINARY_API_SECRET');
+  const signed = !missing.length && !invalid.length;
+  const opt = e[PUBLIC_OPT_IN] === undefined || e[PUBLIC_OPT_IN] === null ? '' : String(e[PUBLIC_OPT_IN]).trim();
+  const publicOptIn = opt === '1';
+  const state = signed ? 'signed' : publicOptIn ? 'public' : 'not_configured';
+  return {
+    cloudName, apiKey, apiSecret, signed, missing, invalid,
+    publicOptIn, publicOptInSet: opt !== '', state,
+    mode: state === 'signed' ? 'authenticated' : state === 'public' ? 'unsigned' : null,
+    preset: CLOUDINARY_PRESET
+  };
+}
+// What an owner is told when attachments are not set up — the same sentence
+// from status, sign and share creation. It names what is missing (never a
+// value) and both ways out.
+function attachNotSetUp(cfg) {
+  const words = (list, one, many) => list.join(' and ') + (list.length > 1 ? many : one);
+  const why = [];
+  if (cfg.missing.length) why.push(words(cfg.missing, ' is', ' are') + ' not set in Netlify');
+  if (cfg.invalid.length) why.push(words(cfg.invalid, ' holds', ' hold') + ' a space or a line break, so ' + (cfg.invalid.length > 1 ? 'they are not keys' : 'it is not a key'));
+  return 'Attachments are not set up: ' + why.join(', and ') + '. Without the key a file would go up public — open, for good, to anyone who has its link — so nothing is uploaded. '
+    + 'Set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Netlify to keep files private, or set ' + PUBLIC_OPT_IN + ' to 1 to allow public files on purpose.'
+    + (cfg.publicOptInSet ? ' (' + PUBLIC_OPT_IN + ' is set, but not to 1.)' : '');
 }
 
 function cloudinaryToSign(params) {
@@ -242,8 +304,11 @@ function deliveryUrl(cfg, ref, nowMs, opts) {
 
 // ── The audit trail (§29) — the core's own row shape (maAuditRow), so the
 // Close & audit page reads a server row exactly like one it wrote itself.
-// 'backup' is a server-only action the core's MA_AUDIT_ACTIONS does not list
-// (maAuditRow would file it as 'post'), so it is set after. ────────────────
+// The three actions the server writes are all in the core's
+// MA_AUDIT_ACTIONS (js/ma-core.js — tests/ma-server.test.js holds that), so
+// maAuditRow keeps each as it is; the assignment below only pins it, so a
+// core list that ever lost one would not quietly relabel a server row as
+// the core's 'post' fallback. Anything else is refused. ─────────────────────
 const SERVER_AUDIT_ACTIONS = ['share', 'revoke', 'backup'];
 function auditRow(action, target, meta) {
   if (SERVER_AUDIT_ACTIONS.indexOf(action) < 0) throw new Error('not a server audit action: ' + action);
@@ -263,7 +328,8 @@ function esc(s) {
 module.exports = {
   MA_OWNER_EMAILS, CLOUDINARY_CLOUD, CLOUDINARY_PRESET, CLOUDINARY_API, CLOUDINARY_CDN,
   MA_MAX_BYTES, MA_TYPES, MA_EXTS, MA_FORMATS, URL_TTL_SECONDS, SIGN_TTL_SECONDS, CLOUDINARY_UNSIGNED,
-  json, fail, header, bearer, readBody, serviceAccount, getAdmin, accessToken, verifyOwner,
-  cloudinaryConfig, cloudinaryToSign, cloudinarySignature, newPublicId, newToken, assetRef, fileCheck,
+  PUBLIC_OPT_IN, NOT_SET_UP, SERVER_AUDIT_ACTIONS,
+  json, fail, header, bearer, readBody, serviceAccount, getAdmin, startAdmin, accessToken, verifyOwner,
+  cloudinaryConfig, attachNotSetUp, cloudinaryToSign, cloudinarySignature, newPublicId, newToken, assetRef, fileCheck,
   privateDownloadUrl, publicUrl, deliveryUrl, auditRow, auditId, esc, core
 };
