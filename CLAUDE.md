@@ -3653,6 +3653,46 @@ bottom sheet onto it (71px / 83px). The share-into picker uses the same
 list and gets both. Held in `tests/board-move.test.js` (the probe cannot
 type into a search).
 
+**A note's hover strip is a corner chip (#97 bug 6, same day).** The
+full-width dark "NOTE ✕" scrim sat on the first line and the placeholder, so
+hovering a note to read it hid what you came to read. On `.type-text` the
+head is now a small chip in the top-right (the ✕; the lock on a locked
+note; the name only while it is being renamed — it is renamed from the
+rail, F2 or the menu, never by clicking the strip), and the body carries a
+`::before` float on its FIRST LINE (`.board-text-body:not(:empty)`) the chip
+sits in, at rest too, so hovering never reflows the note. A comment pin
+steps left of the chip while it shows. MEASURED in real Chromium: no text
+rect meets the chip on a plain, an empty and a list note; removing either
+rule brings the overlap back. Other card types keep the strip. Held in
+`tests/board-notetab.test.js` (the probe cannot hover).
+
+**A note grows with its text (#97 bug 7, same day).** It kept a fixed
+height and scrolled inside at ~100px. `_boardsFitNotes` (end of
+`_boardsHydrateTextCards`) DRAWS an overflowing note to its text at render
+without writing `c.h` — no write on a read path, nothing migrates — and
+skips a column child, which the column lays out from `c.h`; typing
+(`boardsTextInput` → `_boardsFitNote(c,true)`) grows `c.h` itself, so the
+connectors, frame membership and the column follow. Grow-only; the resize
+clamps a note at its text; capped at `_BOARDS_NOTE_MAX_H` (3000), past which
+it scrolls. MEASURED in real Chromium: a 100px note holding 200px of text
+is drawn at 200 with `c.h` still 100, and typing grew one to 380;
+removing the render pass puts the 100px of overflow back.
+`tests/board-notegrow.test.js`.
+
+**The Report Bug button left the board, and Find clears the side panels
+(#97 bug 8, same day).** On desktop the fixed `#bug-report-fab` (z 500)
+sat on the comment drawer's Post button. It is now hidden while
+`body.board-fullscreen` at EVERY width (it was phone-only), and the ⋯
+menu offers "Report a bug" at every width. Find lives in the stage at z 28
+while the comment drawer (z 32, 320px) and the Unsorted tray (z 130,
+380px) are its right-hand siblings, so it opened behind them; on desktop
+it now steps left of whichever is open (`.board-below:has(...)`, not on
+Home, whose panel insets the stage). MEASURED in real Chromium: Find at
+right 334 with the drawer open and 394 with the tray, hit-testable both
+times; with the rules removed it sits at 14 and is covered. The old
+assertion "desktop has no Report a bug" in `tests/boards.test.js` was
+reversed, not deleted.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not
