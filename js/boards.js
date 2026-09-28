@@ -2411,7 +2411,7 @@ function _renderBoardCanvasHTML(){
       ${home?'<span class="board-crumb board-crumb-home">Home</span>'
         :`<button class="board-crumb board-crumb-home" onclick="window.boardsGotoGallery()">Home</button>
       ${_boardsCameFromAll&&!chain.length?`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsShowAll()">All boards</button>`:''}
-      ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
+      ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" data-board-drop="${_boardsEsc(a.id)}" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
       <span class="board-crumb-slash">/</span><span id="board-crumb-tile">${_boardsTileHTML(b,22)}</span>`}
     </div>`:'';
   return`<div class="board-canvas-wrap">
@@ -5618,6 +5618,46 @@ function _boardsStashDropTarget(on){
   const el=_boardsStashTargetEl();
   if(el&&el.classList)el.classList.toggle('panel-drop',!!on);
 }
+/* ── Dragging a card ONTO another board (GitHub #97, bug 2) ─────────────
+   Drop a card on a sub-board card, or on a breadcrumb above this board,
+   and it moves there — into that board's Unsorted, Milanote's rule —
+   through window.boardsMoveCardsTo, the SAME implementation the menu's
+   "Move to board…" calls, so the refusals, the transaction and the toast
+   cannot drift. The target lights up while the pointer is over it, so a
+   refusal is visible before the pointer comes up. Hover-to-open (holding a
+   card over a board until it opens) is not built: nobody measured the
+   delay, and a drop already reaches the board in one move.
+
+   Targets are decided at grab time: every sub-board card not travelling
+   with the drag, and every breadcrumb carrying data-board-drop, whose board
+   is live, editable, not Home and not this board. A group holding a board
+   link is refused whole, like the stash. */
+function _boardsMoveTargetOk(id){
+  const t=id&&_boardsLiveById()[id];
+  return!!t&&!!_editBoard&&id!==_editBoard.id&&!_boardsIsHome(t)&&_boardsCanEdit(t);
+}
+function _boardsMoveDragTargets(group){
+  if(!group||!group.length||!_editBoard||!_boardsCanEdit(_editBoard)||_boardsIsHome(_editBoard))return[];
+  if(group.some(c=>c.type==='board'))return[];
+  const inGroup=new Set(group.map(c=>c.id)),out=[];
+  _editCards.forEach(c=>{
+    if(c.type!=='board'||inGroup.has(c.id)||!_boardsMoveTargetOk(c.boardId))return;
+    const el=document.getElementById('board-card-'+c.id);
+    if(el)out.push({el,id:c.boardId});
+  });
+  const crumbs=document.querySelectorAll?document.querySelectorAll('[data-board-drop]'):[];
+  Array.prototype.forEach.call(crumbs||[],el=>{
+    const id=el.getAttribute&&el.getAttribute('data-board-drop');
+    if(_boardsMoveTargetOk(id))out.push({el,id});
+  });
+  return out;
+}
+function _boardsMoveTargetAt(targets,ev){
+  return targets.find(t=>_boardsOverEl(t.el,ev))||null;
+}
+function _boardsMoveDropMark(targets,hit){
+  targets.forEach(t=>{if(t.el.classList)t.el.classList.toggle('board-move-drop',t===hit);});
+}
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
   // A press inside whatever is currently open for editing is the user
@@ -5652,6 +5692,7 @@ window.boardsCardDragStart=function(e,cardId){
   const grip=e.currentTarget;
   const unplaceable=_boardsUnplaceDrag(group);
   const stashable=_boardsStashDrag(group);
+  const moveTargets=_boardsMoveDragTargets(group);
   const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
   // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
@@ -5730,6 +5771,7 @@ window.boardsCardDragStart=function(e,cardId){
     if(unplaceable)_boardsPanelDropTarget(_boardsOverPanel(ev));
     // Held over Unsorted, the drop says so before the pointer comes up.
     if(stashable)_boardsStashDropTarget(_boardsOverStash(ev));
+    if(moveTargets.length)_boardsMoveDropMark(moveTargets,_boardsMoveTargetAt(moveTargets,ev));
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
   function up(ev){
@@ -5747,6 +5789,8 @@ window.boardsCardDragStart=function(e,cardId){
     // Read the hit test BEFORE the zone is taken away — when the tray is
     // shut, the zone IS the target.
     const overStash=pushed&&stashable&&_boardsOverStash(ev);
+    const moveHit=pushed&&ev&&moveTargets.length?_boardsMoveTargetAt(moveTargets,ev):null;
+    _boardsMoveDropMark(moveTargets,null);
     _boardsStashZone(false);
     // `pushed` is set on the first real pointermove, so it is exactly
     // "this was a drag, not a click".
@@ -5771,6 +5815,21 @@ window.boardsCardDragStart=function(e,cardId){
     // Ctrl+Z would restore the cards at the spot they were dropped and
     // need a second press to put them back. _boardsUndo is a plain stack
     // of snapshots, so popping the one this gesture pushed is exact.
+    // Dropped on another board: put the cards back where the gesture
+    // started and discard this drag's undo entry — a moved card is purged
+    // from history anyway, and a failed move must leave nothing behind.
+    if(moveHit){
+      origins.forEach(o=>{
+        o.card.x=o.ox;o.card.y=o.oy;
+        const el=document.getElementById('board-card-'+o.card.id);
+        if(el){el.style.left=o.card.x+'px';el.style.top=o.card.y+'px';}
+        _boardsUpdateConnectorsFor(o.card.id);
+      });
+      _boardsUndo.pop();
+      _boardsSyncHistoryButtons();
+      window.boardsMoveCardsTo(moveHit.id,group.map(c=>c.id));
+      return;
+    }
     if(overStash){
       origins.forEach(o=>{o.card.x=o.ox;o.card.y=o.oy;});
       _boardsUndo.pop();

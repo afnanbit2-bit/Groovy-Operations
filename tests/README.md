@@ -40,6 +40,7 @@ Read the header of `harness.js` before trusting a green run.
 | `board-notegrow.test.js` | Mood Boards: a note is as tall as its text — drawn taller at render without writing `c.h`, grown in `c.h` while typing, a column child relaid out rather than drawn over its neighbour, capped, and never resizable shorter than its text (#97 bug 7) |
 | `board-hash.test.js` | Mood Boards: the address bar names the open board — `#board=<id>` written by replaceState on open, cleared on leaving the canvas, another module's hash left alone, and read back by the deep-link consumer after a reload (#97 bug 9) |
 | `board-title.test.js` | Mood Boards: Enter saves a board rename, Escape restores it, the breadcrumb tile follows (#97 bug 10) |
+| `board-dragmove.test.js` | Mood Boards: a card dropped on a sub-board card or breadcrumb moves to that board's Unsorted; Home, empty canvas and board links refused (#97 bug 2) |
 | `check-cache-version.js` | Not a suite — a CI guard. If a precached file changed, `CACHE_VERSION` in `sw.js` must have changed too, or the update silently never reaches anyone who already opened the app |
 
 ## Adding a test

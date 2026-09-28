@@ -1192,6 +1192,11 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-tray.panel-drop{outline:2px dashed var(--text);outline-offset:-6px}
 .board-tray.panel-drop .board-panel-list,
 .board-tray.panel-drop .board-tray-list{background:var(--hover)}
+/* A card held over another board — a sub-board card or a breadcrumb —
+   moves there on release (#97 bug 2): the same dashed outline, one drop
+   look whichever way a card travels. */
+.board-card-el.board-move-drop,.board-crumb.board-move-drop{outline:2px dashed var(--text);outline-offset:3px}
+.board-crumb.board-move-drop{background:var(--hover)}
 /* The Unsorted peek zone (Sept 2026). Built by _boardsStashZone only
    while a card is being dragged and the tray is SHUT — off Home a closed
    tray is not in the DOM at all, so without this there is nothing to aim

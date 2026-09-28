@@ -3713,6 +3713,19 @@ back the name it had on focus), and `onblur` (`boardsTitleDone`) trims, saves
 at once, mirrors `moodBoards` and repaints `#board-crumb-tile`.
 `tests/board-title.test.js`.
 
+**Drag a card onto another board to move it (#97 bug 2, same day).**
+Dropping a card on a sub-board card, or on a breadcrumb above this board,
+moves it into that board's Unsorted through `window.boardsMoveCardsTo` —
+the menu's own implementation, so its refusals and transaction are shared.
+Targets are fixed at grab time (`_boardsMoveDragTargets`: live, editable,
+not Home, not this board; breadcrumbs carry `data-board-drop`) and light up
+with `.board-move-drop` while held. The cards go back to where the gesture
+started and the drag's undo entry is popped before the move. A group
+holding a board link is refused whole. **Hover-to-open is NOT built** — no
+measured delay, and the drop already reaches the board.
+`tests/board-dragmove.test.js`. Nobody has dragged onto a board on a real
+screen.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not
