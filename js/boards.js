@@ -4134,7 +4134,7 @@ window.boardsReactionSearch=function(cardId,el){
 // so the groups are ordered that way: the type's remaining actions first,
 // then Lock, then z-order, then the multi-select arranging, then the
 // clipboard block, and the provenance footer last.
-const _BOARDS_MORE_CLIP=['cut','copy','dup','delete','stash','card-link'];
+const _BOARDS_MORE_CLIP=['cut','copy','dup','delete','stash','movetoboard','card-link'];
 function _boardsMoreItems(canEdit){
   const onRail=new Set(_boardsRailItems().map(i=>i.act).filter(Boolean));
   const src=_boardsCardCtxItems(canEdit).filter(it=>it.act&&!onRail.has(it.act));
@@ -10473,10 +10473,10 @@ async function _boardsShareForget(id){
     await Promise.all(keys.filter(k=>String(k.url||k).indexOf('/__share/'+id+'/')>=0).map(k=>c.delete(k)));
   }catch(e){}
 }
-function _boardsShareTargets(q){
+function _boardsShareTargets(q,excludeId){
   const term=String(q||'').trim().toLowerCase();
   return moodBoards
-    .filter(b=>b&&!b.deletedAt&&!_boardsIsHome(b)&&!b.isTemplate&&_boardsCanEdit(b))
+    .filter(b=>b&&!b.deletedAt&&!_boardsIsHome(b)&&!b.isTemplate&&_boardsCanEdit(b)&&b.id!==excludeId)
     .filter(b=>!term||String(b.title||'Untitled board').toLowerCase().indexOf(term)>=0)
     .sort((a,b)=>(_boardsRecentAt(b.id)-_boardsRecentAt(a.id))||((b.updatedAt||0)-(a.updatedAt||0)));
 }
@@ -10492,10 +10492,11 @@ async function _boardsShareStart(id){
   if(!boardsLoaded){try{await loadBoardsData();}catch(e){}}
   _boardsShareOpenPicker();
 }
-function _boardsShareListHTML(q){
-  const list=_boardsShareTargets(q);
+function _boardsShareListHTML(q,excludeId,act){
+  const list=_boardsShareTargets(q,excludeId);
+  const fn=act||'boardsShareTo';
   if(!list.length)return`<div class="board-sendto-empty">${q?'No board matches that.':'There is no board you can add to yet — create one first.'}</div>`;
-  return list.slice(0,40).map(b=>`<button class="board-sendto-row" onclick="window.boardsShareTo('${_boardsEsc(b.id)}')">${_boardsTileHTML(b,34)}<span class="board-sendto-name">${_boardsEsc(b.title||'Untitled board')}</span><span class="board-sendto-vis">${b.visibility==='shared'?'Team':'Private'}</span></button>`).join('');
+  return list.slice(0,40).map(b=>`<button class="board-sendto-row" onclick="window.${fn}('${_boardsEsc(b.id)}')">${_boardsTileHTML(b,34)}<span class="board-sendto-name">${_boardsEsc(b.title||'Untitled board')}</span><span class="board-sendto-vis">${b.visibility==='shared'?'Team':'Private'}</span></button>`).join('');
 }
 function _boardsShareOpenPicker(){
   const p=_boardsPendingShare;
@@ -10519,6 +10520,107 @@ window.boardsShareTo=function(id){
   if(currentPage==='board-canvas'&&_editBoard&&_editBoard.id===id){_boardsShareDeliver();return;}
   if(currentPage==='board-canvas')_boardsSaveNow();
   window.boardsOpen(id);
+};
+/* ── Move to another board (Sept 2026) ─────────────────────────────────
+   Milanote's rule (help centre, "Moving content between boards"): a card
+   moved to another board lands in THAT board's Unsorted. The drag gesture
+   (hold over a breadcrumb until it opens) waits for the Claude in Chrome
+   study's measured timing; this is the menu half, and the gesture will
+   call boardsMoveCardsTo too.
+
+   It is the stash, aimed at a different board. The same _boardsExpandGroup
+   (a column takes its children), the same _boardsStashItem (the WHOLE card,
+   rows encoded, lines with both ends going), so a moved card comes out of
+   the other board's Unsorted as whatever it was.
+
+   THE TARGET IS WRITTEN FIRST, in a transaction that APPENDS to the
+   server's `unsorted` array — never this tab's copy of it, which may be
+   stale — and only once that commits are the cards taken off this board.
+   A failed write leaves everything where it was. It needs a connection,
+   like every transaction, and says so.
+
+   Undo cannot bring them back, and must not: they now live on another
+   board, and a restored copy here would be the same card in two places.
+   So the moved ids are PURGED from every undo/redo snapshot — the rest of
+   the history is kept — and the toast says Ctrl+Z will not return them.
+
+   Comments on a moved card stay with THIS board's comment thread (they
+   are keyed by card id under this board) and are not carried across. */
+function _boardsPurgeHistory(ids){
+  const strip=json=>{
+    try{
+      const st=JSON.parse(json);
+      st.cards=(st.cards||[]).filter(c=>!ids.has(c.id));
+      st.connectors=(st.connectors||[]).filter(cn=>!(cn&&(ids.has(cn.from)||ids.has(cn.to))));
+      return JSON.stringify(st);
+    }catch(e){return json;}
+  };
+  _boardsUndo=_boardsUndo.map(strip);
+  _boardsRedo=_boardsRedo.map(strip);
+  _boardsSyncHistoryButtons();
+}
+window.boardsOpenMoveTo=function(){
+  const sel=_boardsSelectedCards();
+  if(!sel.length||!_boardsCanEdit(_editBoard)){showToast('Select the cards to move first');return;}
+  if(sel.some(c=>c.type==='board')){showToast('A board link stays on its board — take it off with its ✕ instead',true);return;}
+  const n=_boardsExpandGroup(sel.map(c=>c.id)).filter(c=>!c.locked).length;
+  _boardsOpenSheet('Move to a board',`
+    <div class="board-sendto-what">${n} card${n===1?'':'s'} — ${n===1?'it lands':'they land'} in that board's Unsorted</div>
+    <input class="board-sendto-search" type="search" placeholder="Search boards" oninput="window.boardsMoveFilter(this.value)">
+    <div id="board-sendto-list" class="board-sendto-list">${_boardsShareListHTML('',_editBoard.id,'boardsMoveCardsTo')}</div>`);
+};
+window.boardsMoveFilter=function(q){
+  const el=document.querySelector('#board-sendto-list');
+  if(el)el.innerHTML=_boardsShareListHTML(q,_editBoard&&_editBoard.id,'boardsMoveCardsTo');
+};
+let _boardsMoving=false;
+window.boardsMoveCardsTo=async function(targetId,ids){
+  window.boardsCloseSheet();
+  if(_boardsMoving)return 0;
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return 0;
+  const target=_boardsLiveById()[targetId];
+  if(!target||targetId===_editBoard.id||_boardsIsHome(target)||!_boardsCanEdit(target)){
+    showToast('You cannot move cards to that board',true);return 0;
+  }
+  const group=_boardsExpandGroup(ids||_boardsSelectedCards().map(c=>c.id));
+  if(group.some(c=>c.type==='board')){showToast('A board link stays on its board — take it off with its ✕ instead',true);return 0;}
+  const locked=group.filter(c=>c.locked).length;
+  const move=group.filter(c=>!c.locked);
+  if(!move.length){showToast(_boardsLockedMsg('move'),true);return 0;}
+  const moveIds=new Set(move.map(c=>c.id));
+  const conns=_editConnectors.filter(cn=>cn&&(moveIds.has(cn.from)||moveIds.has(cn.to)));
+  const items=_boardsStashRoots(move).map(g=>_boardsStashItem(g.cards,conns));
+  const who=(typeof session!=='undefined'&&session&&session.name)||'';
+  _boardsMoving=true;
+  try{
+    await runTransaction(db,async tx=>{
+      const ref=doc(db,'mood_boards',targetId);
+      const snap=await tx.get(ref);
+      if(!snap.exists())throw new Error('that board no longer exists');
+      const cur=Array.isArray(snap.data().unsorted)?snap.data().unsorted:[];
+      tx.update(ref,{unsorted:cur.concat(items),updatedAt:Date.now(),updatedByName:who});
+    });
+  }catch(e){
+    _boardsMoving=false;
+    const off=typeof navigator!=='undefined'&&navigator.onLine===false;
+    showToast('Could not move — '+(off?'moving to another board needs a connection':(e.message||e))+'. Nothing was moved.',true);
+    return 0;
+  }
+  _boardsMoving=false;
+  // Mirror what the server now holds, so the other board shows it at once.
+  target.unsorted=(Array.isArray(target.unsorted)?target.unsorted:[]).concat(items);
+  _editCards=_editCards.filter(c=>!moveIds.has(c.id));
+  _editConnectors=_editConnectors.filter(cn=>!(cn&&(moveIds.has(cn.from)||moveIds.has(cn.to))));
+  move.forEach(c=>_boardsSelection.delete(c.id));
+  _boardsPurgeHistory(moveIds);
+  _boardsLayoutColumns();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveNow();
+  try{logActivity('Board cards moved',move.length+' card'+(move.length===1?'':'s')+' from '+(_editBoard.title||'a board')+' to '+(target.title||'a board'));}catch(e){}
+  let m=(move.length===1?'1 card':move.length+' cards')+' moved to Unsorted in '+(target.title||'that board');
+  if(locked)m+=' · '+locked+' locked card'+(locked===1?'':'s')+' kept here';
+  showToast(m+' — Ctrl+Z will not bring '+(move.length===1?'it':'them')+' back');
+  return items.length;
 };
 function _boardsShareDeliver(){
   const p=_boardsPendingShare;
@@ -11512,6 +11614,23 @@ function _boardsStashToast(items,locked){
   if(locked)m+=' · '+locked+' locked card'+(locked===1?'':'s')+' kept on the board';
   return m+' — Ctrl+Z to undo';
 }
+// The cards `ids` name plus everything riding inside them (a column's
+// children, a frame's contents, recursively). Shared by stashing and by
+// moving to another board, so the two agree about what a container takes.
+function _boardsExpandGroup(ids){
+  const want=new Set((Array.isArray(ids)?ids:[ids]).filter(Boolean));
+  if(!want.size)return[];
+  let grew=true,guard=0;
+  while(grew&&guard++<8){
+    grew=false;
+    _editCards.filter(c=>want.has(c.id)).forEach(c=>{
+      const kids=_boardsIsColumn(c)?_boardsColumnChildren(c)
+        :c.type==='frame'?_boardsCardsInFrame(c):[];
+      kids.forEach(k=>{if(!want.has(k.id)){want.add(k.id);grew=true;}});
+    });
+  }
+  return _editCards.filter(c=>want.has(c.id));
+}
 /* THE one implementation. The card menu's single-card action, the phone
    More sheet and the drag onto the tray all come here, so the toast, the
    undo entry and what a container does with its contents cannot drift
@@ -11522,18 +11641,7 @@ window.boardsTrayStashCards=function(ids){
   // there would be saved on the document and reachable from nowhere —
   // the stray-item state the panel has to apologise for.
   if(_boardsIsHome(_editBoard))return 0;
-  const want=new Set((Array.isArray(ids)?ids:[ids]).filter(Boolean));
-  if(!want.size)return 0;
-  let grew=true,guard=0;
-  while(grew&&guard++<8){
-    grew=false;
-    _editCards.filter(c=>want.has(c.id)).forEach(c=>{
-      const kids=_boardsIsColumn(c)?_boardsColumnChildren(c)
-        :c.type==='frame'?_boardsCardsInFrame(c):[];
-      kids.forEach(k=>{if(!want.has(k.id)){want.add(k.id);grew=true;}});
-    });
-  }
-  const group=_editCards.filter(c=>want.has(c.id));
+  const group=_boardsExpandGroup(ids);
   if(!group.length)return 0;
   // Locked cards stay put and are COUNTED, the bulk-delete rule: silently
   // dropping half an action is worse than doing less and saying so.
@@ -12775,6 +12883,7 @@ function _boardsCtxRun(act){
     window.boardsTrayStashCards(_boardsSelectedCards().map(c=>c.id));
     return;
   }
+  if(act==='movetoboard'){window.boardsOpenMoveTo();return;}
   switch(act){
     case'file':place();window.boardsPickFiles();break;
     case'line':window.boardsToggleLineMode();break;
@@ -13572,6 +13681,7 @@ function _boardsCardCtxItems(canEdit){
   if(canEdit&&sel.length&&!_boardsIsHome(_editBoard)&&!sel.some(c=>c.type==='board')){
     if(!one)items.push({sep:true});
     items.push({act:'stash',label:one?'Move to Unsorted':'Move '+sel.length+' cards to Unsorted'});
+    items.push({act:'movetoboard',label:one?'Move to board…':'Move '+sel.length+' cards to board…'});
   }
 
   // ── type-specific ──

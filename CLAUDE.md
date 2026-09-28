@@ -3421,6 +3421,40 @@ file, link or text lands in the **Unsorted** of a board the person picks.
   a while) before the new manifest is picked up. iOS Safari does not
   support Web Share Target at all — iPhones will not see it.
 
+### Mood Boards — Move to board… (Sept 2026)
+
+The second Milanote gap. **The rule is Milanote's (help centre, search
+summary — not seen in the product): a card moved to another board lands in
+THAT board's Unsorted.** This is the menu half — right-click, ⋯ and the
+phone More sheet, in the clipboard block after Move to Unsorted. **The drag
+half (hold a card over a breadcrumb until that board opens) waits for the
+Claude in Chrome study's measured hover time**; it will call the same
+`window.boardsMoveCardsTo(targetId, ids)`.
+
+- **It is the stash aimed at another board**: `_boardsExpandGroup` (pulled
+  out of `boardsTrayStashCards`, which now calls it too — a column takes its
+  children the same way in both) and `_boardsStashItem` (the whole card,
+  rows encoded; only lines inside one row travel — the Unsorted rule).
+- **The target is written FIRST, in a transaction that appends to the
+  SERVER's `unsorted`**, never this tab's copy; only once it commits are the
+  cards taken off this board. A failed write moves nothing and says so. It
+  needs a connection, like every transaction.
+- **Ctrl+Z must not bring a moved card back** — it now lives on another
+  board, and a restored copy here would be the same card twice.
+  `_boardsPurgeHistory` strips the moved ids from every undo/redo snapshot
+  and keeps the rest of the history; the toast says undo will not return
+  them.
+- Refused: a board link (as in the stash), this board, Home (no Unsorted),
+  templates, boards you cannot edit; locked cards stay and are counted.
+- **Comments on a moved card are not carried** — they are keyed by card id
+  under the source board's `comments` subcollection. **Known race:** someone
+  with the target board open who saves its head before their live listener
+  adopts the new Unsorted would write their older copy over it.
+- Activity `Board cards moved` falls in Monitor's Process bucket (checked).
+- `tests/board-move.test.js` (28). Verified by reverting: appending to this
+  tab's copy of the target, dropping the history purge, dropping the board-
+  link refusal — each fails by name.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
