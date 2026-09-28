@@ -428,6 +428,32 @@ img{-webkit-user-drag:none}
   .btn-login-alt{height:46px;margin-bottom:8px}
   .login-box:has(#login-finger:not([hidden])) .login-logo{display:none}
 }
+/* Chrome's autofill paints a filled field its own blue-grey (the password
+   box in Afnan's desktop screenshot, 28 Sept). An inset shadow in the
+   field's own colour covers it; the long transition stops the flash. */
+.login-box .login-input input:-webkit-autofill{-webkit-box-shadow:0 0 0 200px var(--surface-2) inset;-webkit-text-fill-color:var(--text);caret-color:var(--text);transition:background-color 99999s}
+/* DESKTOP: a split screen, not a phone card in the middle of an empty page
+   (Afnan, 28 Sept). The brand half is a LITERAL dark panel in both themes,
+   so its ink is literal white too (the --count-accent rule). The form half
+   drops its card chrome; its logo and footer line move to the brand half. */
+.login-brand{display:none}
+@media (min-width:1024px) and (min-height:560px){
+  #scr-login{padding:0;background:var(--surface)}
+  .login-brand{border-right:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;justify-content:space-between;flex:0 0 50%;max-width:760px;min-height:100%;box-sizing:border-box;padding:56px 64px;position:relative;overflow:hidden;isolation:isolate;color:#fff;
+    background-color:#141418;background-image:radial-gradient(circle at 18% 12%,rgba(220,38,38,.22),transparent 42%),radial-gradient(circle at 90% 95%,rgba(255,255,255,.07),transparent 45%),linear-gradient(160deg,#0c0c0f,#1b1b21)}
+  .login-brand-mark{width:260px;aspect-ratio:448/90;overflow:hidden}
+  .login-brand-mark img{height:100%;width:auto;max-width:none;display:block;filter:invert(1) brightness(1.7)}
+  .login-brand-ops{font-size:14px;font-weight:600;letter-spacing:.55em;margin-top:12px;color:#fff}
+  .login-brand-h{font-size:clamp(44px,4.6vw,68px);line-height:1.02;font-weight:800;letter-spacing:-.03em;margin:0 0 22px;color:#fff}
+  .login-brand-h span{color:rgba(255,255,255,.5)}
+  .login-brand-p{font-size:17px;line-height:1.55;color:rgba(255,255,255,.72);max-width:440px;margin:0}
+  .login-brand-foot{font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+  #scr-login .login-box{background:transparent;border:none;box-shadow:none;border-radius:0;max-width:420px;padding:48px 24px}
+  #scr-login .login-box::before,#scr-login .login-box::after{display:none}
+  #scr-login .login-box .login-logo,#scr-login .login-box .login-foot{display:none}
+  #scr-login .login-box .login-hello,#scr-login .login-box .login-sub{text-align:left;margin-left:0}
+  #scr-login .btn-login{margin-bottom:0}
+}
 @media (prefers-reduced-motion:reduce){.login-wave{animation:none}.login-box{animation:none}}
 #scr-app{display:none;min-height:100vh;flex-direction:column}
 /* The handover from the login: the app fades up into place (js: startApp). */
@@ -622,8 +648,11 @@ img{-webkit-user-drag:none}
 .mob-nav-btn:active{opacity:.6}
 .mob-sheet-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:998;opacity:0;pointer-events:none;transition:opacity .2s}
 .mob-sheet-backdrop.open{opacity:1;pointer-events:auto}
-.mob-sheet{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-radius:20px 20px 0 0;z-index:999;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);padding:12px 0 max(30px,env(safe-area-inset-bottom));max-height:75vh;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,.18)}
-.mob-sheet.open{transform:translateY(0)}
+.mob-sheet{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-radius:20px 20px 0 0;z-index:999;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);padding:12px 0 max(30px,env(safe-area-inset-bottom));max-height:75vh;overflow-y:auto}
+/* The shadow only while OPEN: parked below the screen, its upward shadow
+   bled a grey band along the bottom of every page (seen on the desktop
+   login, 28 Sept). */
+.mob-sheet.open{transform:translateY(0);box-shadow:0 -8px 32px rgba(0,0,0,.18)}
 .mob-sheet-handle{width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 14px}
 .mob-sheet-title{font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:0 20px 12px}
 .mob-sheet-item{display:flex;align-items:center;gap:14px;padding:14px 20px;font-size:16px;font-weight:500;border-bottom:1px solid #F3F4F6;cursor:pointer;color:var(--text);font-family:inherit;width:100%;background:none;border-left:none;border-right:none;border-top:none;text-align:left}

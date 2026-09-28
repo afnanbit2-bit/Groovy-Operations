@@ -9378,6 +9378,22 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   Remember-me box and cached markup call it). **Unverified on a phone:**
   whether Chrome on Android shows the fingerprint dialog without a tap —
   if not, the button is what works.
+- **Desktop is a SPLIT SCREEN (28 Sept, Afnan: "this is not right for
+  desktop view").** At `min-width:1024px and min-height:560px` the login is
+  a brand half (`.login-brand` in `#scr-login`: wordmark, "People. Products.
+  Progress.", one line of what is inside) and a form half without card
+  chrome; the form's own logo and footer line hide there. Below 1024 the
+  card and the phone screen are unchanged. The brand panel is a LITERAL
+  dark in both themes with literal white ink, and carries an opaque
+  `background-color` under its gradients — the probe reads only that, and
+  without it measured the ink at 1:1 (the scrim lesson). Two more fixes from
+  the same screenshot: Chrome's autofill blue-grey on the password box is
+  covered by an inset shadow in `--surface-2` (`:-webkit-autofill`; **not
+  seen on a real autofill** — the sandbox has no saved password), and the
+  closed `.mob-sheet`'s upward shadow, which bled a grey band along the
+  bottom of EVERY page, now shows only while it is open. Rendered and
+  looked at in Chromium at 1919×941, 1366×768, 1100×700 and 800×900, both
+  themes.
 - **Nobody has signed in, saved a password or used the lock on a real
   phone** — the sandbox cannot sign in. Rendered and measured in headless
   Chromium at 390/360px and desktop, both themes.
