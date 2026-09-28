@@ -3796,6 +3796,19 @@ video "placement cue only" rule; `_boardsFlashGrid` still toggles
 `grid-on`, which now changes nothing). The alignment offset glides 30% of
 the way to its target on each move instead of jumping.
 
+**The drag is Milanote's now — lift and tilt, no alignment (same day).**
+Afnan sent Milanote's drag beside ours. Read off its frames (contact sheet,
+cv2): the held card LIFTS (deeper shadow, slightly larger) and TILTS a few
+degrees toward where it is moving, then settles flat; no guide lines, no
+snapping. Ours: `.board-card-el.lifted` with `--tilt` written by the drag
+from eased horizontal speed (capped ±5°), and **no pull toward neighbours
+at all** (the velocity-gated pull above is gone from the drag;
+`_boardsAlignPull` is left unused). Grid snap still works when switched on.
+Also: **Space or the Hand pans over a card** instead of grabbing it (the
+stage takes the press, the card drag bails for a mouse), and **removing an
+Unsorted item asks nothing** — it pushes undo, since the snapshot carries
+the tray. Nobody has felt the drag on a real screen.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

@@ -22,11 +22,13 @@ module.exports=async function(){
       {id:'sh',type:'board',boardId:'H',x:500,y:300,w:340,h:136}${extra||''}];
     window.__moved=null;window.boardsMoveCardsTo=function(t,ids){window.__moved={t,ids};return Promise.resolve(1);};`);
   const rect=(id,l,t)=>{const e=app.el(id);e.getBoundingClientRect=()=>({left:l,top:t,right:l+100,bottom:t+100,width:100,height:100});return e;};
+  let liftedDuring=false;
   const drag=(card,x,y)=>{
     run(`window.boardsCardDragStart({clientX:5,clientY:5,pointerId:1,stopPropagation(){},currentTarget:document.getElementById('board-card-${card}'),target:document.getElementById('board-card-${card}')},'${card}')`);
     const ev={clientX:x,clientY:y,pointerId:1};
     (state.listeners.pointermove||[]).slice().forEach(f=>f(ev));
     const hovering=app.el('board-card-sb').classList.contains('board-move-drop');
+    liftedDuring=app.el('board-card-'+card).classList.contains('lifted');
     (state.listeners.pointerup||[]).slice().forEach(f=>f(ev));
     return hovering;
   };
@@ -39,6 +41,16 @@ module.exports=async function(){
   s.eq('it is put back where it started until the move lands',run(`_editCards.find(c=>c.id==='n1').x`),0);
   s.eq('the drag leaves no undo entry of its own',run(`_boardsUndo.length`),0);
   s.ok('and the highlight is gone',!app.el('board-card-sb').classList.contains('board-move-drop'));
+
+  s.eq('the held card lifts while dragged, like Milanote\'s',liftedDuring,true);
+  s.ok('and settles on release',!app.el('board-card-n1').classList.contains('lifted'));
+
+  s.section('Space pans over a card instead of grabbing it');
+  setup();run(`_boardsSpaceDown=true;window.__moved=null`);
+  const x0=run(`_editCards.find(c=>c.id==='n1').x`);
+  drag('n1',900,900);
+  s.eq('the card does not move',run(`_editCards.find(c=>c.id==='n1').x`),x0);
+  run(`_boardsSpaceDown=false`);
 
   s.section('refused');
   setup();rect('board-card-sb',500,0);rect('board-card-sh',500,300);

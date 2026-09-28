@@ -3560,17 +3560,17 @@ module.exports=function(){
     run(`window.boardsDeleteColumnAndCards()`);
     s.ok('the question names Ctrl+Z',/Ctrl\+Z/.test(state.confirms.join(' ')),state.confirms.join(' | '));
 
-    s.section('the tray is honest that it is NOT undoable');
-    // _boardsPushUndo snapshots cards and connectors only — the Unsorted
-    // tray is saved in `head` and is genuinely not recoverable. The confirm
-    // says exactly that, and must keep saying it.
+    s.section('removing from the tray asks nothing and is undoable');
+    // REVERSED 28 Sept 2026 (Afnan: the popup should not appear). The undo
+    // snapshot carries the tray, so Ctrl+Z brings the item back.
     boot();
     run(`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
     state.confirms.length=0;
     run(`window.boardsTrayRemove(0)`);
-    s.ok('it says it cannot be undone',/cannot be undone/i.test(state.confirms.join(' ')),state.confirms.join(' | '));
-    s.ok('and does not promise Ctrl+Z',!/Ctrl\+Z/.test(state.confirms.join(' ')));
+    s.eq('no confirm',state.confirms.length,0);
     s.eq('the item really is gone',run(`_editUnsorted.length`),0);
+    run(`window.boardsUndoAction()`);
+    s.eq('Ctrl+Z brings it back',run(`_editUnsorted.length`),1);
 
     s.section('provenance says "you" for your own card');
     boot();

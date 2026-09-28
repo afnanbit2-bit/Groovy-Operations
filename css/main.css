@@ -1074,6 +1074,12 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-world[data-lod="far"] .board-link-loading{visibility:hidden}
 
 .board-card-el{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden}
+/* Milanote's drag, read off its recording: the held card LIFTS (a deeper
+   shadow, a hair larger) and TILTS toward where it is going, then settles
+   flat on release. --tilt is written by the drag from the pointer speed. */
+.board-card-el{transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s}
+.board-card-el.lifted{transform:rotate(var(--tilt,0deg)) scale(1.03);box-shadow:0 10px 28px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.12);transition:transform .12s ease-out,box-shadow .12s;z-index:60}
+@media (prefers-reduced-motion:reduce){.board-card-el.lifted{transform:none}.board-card-el{transition:none}}
 .board-card-el.selected{outline:2px solid var(--text);outline-offset:1px}
 /* No native HTML5 drag anywhere inside a card. A dragged <img> or <a> both
    cancels the pointer stream our own card drag runs on AND is advertised to

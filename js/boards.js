@@ -5208,13 +5208,15 @@ function _boardsWireStagePan(){
   _boardsWireContextMenu(stage);
 
   stage.addEventListener('pointerdown',e=>{
-    if(e.target!==stage&&e.target.id!=='board-world')return;
+    // Space or the Hand pans from ANYWHERE, a picture included — a card
+    // under the pointer must not be grabbed while the hand is up.
+    if(e.target!==stage&&e.target.id!=='board-world'&&!_boardsSpaceDown&&!_boardsPanMode)return;
     const b=_editBoard;
 
     // Line mode: drag anywhere empty to draw a freeform arrow. A mode
     // rather than a modifier because it's a deliberate "now I'm annotating"
     // action, and it leaves Shift free for marquee.
-    if(_boardsLineMode&&canEdit){
+    if(_boardsLineMode&&canEdit&&!_boardsSpaceDown&&!_boardsPanMode){
       const svg=document.getElementById('board-conn-layer');
       const start=_boardsScreenToWorld(e.clientX,e.clientY);
       const temp=document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -5674,6 +5676,9 @@ function _boardsAlignPull(ev){
   return 1-(v.v-_BOARDS_ALIGN_SLOW)/(_BOARDS_ALIGN_FAST-_BOARDS_ALIGN_SLOW);
 }
 window.boardsCardDragStart=function(e,cardId){
+  // Hand up (Space held or the Hand tool): leave the press to the stage,
+  // which pans. Mouse only — a finger still drags the card it touches.
+  if((_boardsSpaceDown||_boardsPanMode)&&e.pointerType!=='touch')return;
   e.stopPropagation();
   // A press inside whatever is currently open for editing is the user
   // selecting text, not grabbing the card. stopPropagation still applies,
@@ -5711,7 +5716,8 @@ window.boardsCardDragStart=function(e,cardId){
   const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
   _boardsVel={x:e.clientX,y:e.clientY,t:Date.now(),v:0};
-  const alignOff={x:0,y:0};
+  let tilt=0,lastTX=e.clientX,lastTT=Date.now();
+  const liftEls=()=>origins.map(o=>document.getElementById('board-card-'+o.card.id)).filter(Boolean);
   // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
   // This used to call setPointerCapture right here, on the pointerdown.
   // A captured pointer RETARGETS the click and dblclick that follow to the
@@ -5758,7 +5764,13 @@ window.boardsCardDragStart=function(e,cardId){
       // Only when there is no target already — an OPEN tray is the target
       // and a zone beside it would be a second one.
       if(stashable&&!_boardsStashTargetEl())_boardsStashZone(true);
+      liftEls().forEach(el=>el.classList&&el.classList.add('lifted'));
     }
+    // Tilt toward the direction of travel: horizontal speed, eased and
+    // capped at 5 degrees, so a quick flick leans and a slow move stays flat.
+    {const now=Date.now(),vx=(ev.clientX-lastTX)/Math.max(1,now-lastTT);lastTX=ev.clientX;lastTT=now;
+     tilt+=(Math.max(-5,Math.min(5,vx*4))-tilt)*0.25;
+     liftEls().forEach(el=>el.style&&el.style.setProperty&&el.style.setProperty('--tilt',tilt.toFixed(2)+'deg'));}
     let dx=(ev.clientX-startX)/b.zoom;
     let dy=(ev.clientY-startY)/b.zoom;
     if(_boardsSnapGrid){
@@ -5771,19 +5783,10 @@ window.boardsCardDragStart=function(e,cardId){
       // Alt suspends snapping for fine placement.
       const lead=origins[0];
       const probe={x:lead.ox+dx,y:lead.oy+dy,w:lead.card.w,h:lead.card.h};
-      // MOTION-DRIVEN, NO GUIDE LINES (Afnan, 28 Sept 2026, with a screen
-      // recording: the guides "are shit"). A fast drag follows the pointer
-      // exactly; only as the hand SLOWS does the pull toward a neighbour's
-      // edge fade in, so settling a card aligns it and flinging one never
-      // jumps. The pull scales with slowness (_boardsAlignPull), never a
-      // step, and no line is drawn.
-      const a=_boardsAlignDelta(probe,others,b.zoom);
-      const pull=_boardsAlignPull(ev);
-      // Eased, not applied outright: the offset glides toward its target
-      // each move, so a pull fading in or out never twitches the card.
-      alignOff.x+=(a.dx*pull-alignOff.x)*0.3;
-      alignOff.y+=(a.dy*pull-alignOff.y)*0.3;
-      dx+=alignOff.x;dy+=alignOff.y;
+      // FREE MOTION (Afnan, 28 Sept 2026, with Milanote's drag beside
+      // ours): a card follows the pointer exactly. No guide lines and no
+      // pull toward neighbours — the card never tries to align itself.
+      // Snap-to-grid is still there for anyone who switches it on.
       _boardsHideGuides();
     }else{
       _boardsHideGuides();
@@ -5808,6 +5811,7 @@ window.boardsCardDragStart=function(e,cardId){
     document.removeEventListener('pointermove',move);
     document.removeEventListener('pointerup',up);
     document.removeEventListener('pointercancel',up);
+    liftEls().forEach(el=>el.classList&&el.classList.remove('lifted'));
     if(document.body&&document.body.classList)document.body.classList.remove('board-dragging');
     try{if(grip.hasPointerCapture&&grip.hasPointerCapture(ptr))grip.releasePointerCapture(ptr);}catch(err){}
     _boardsHideGuides();
@@ -12281,8 +12285,10 @@ window.boardsTrayStash=function(cardId){return window.boardsTrayStashCards([card
 window.boardsTrayRemove=function(i){
   const u=_editUnsorted[i];
   if(!u||!_boardsCanEdit(_editBoard))return;
-  if(!confirm('Remove “'+_boardsTrayLabel(u)+'” from Unsorted? This cannot be undone.'))return;
+  // No confirm: the undo snapshot carries the tray, so Ctrl+Z brings it back.
+  _boardsPushUndo();
   _editUnsorted.splice(i,1);
+  showToast('Removed from Unsorted — Ctrl+Z to undo');
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
