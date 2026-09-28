@@ -5587,6 +5587,8 @@ module.exports=function(){
     {
       const a=fresh();
       const p=a.run(`_boardsConfirm('Delete forever?',{ok:'Delete forever',danger:true})`);
+      s.eq('a destructive confirm opens with Cancel focused (a stray Enter answers no)',
+        a.state.activeElement&&a.state.activeElement.id,'board-confirm-no');
       const box=a.el('board-confirm');box.contains=n=>['board-confirm-no','board-confirm-ok'].indexOf(n&&n.id)>-1;
       a.el('board-confirm-ok').focus();
       const del=docKey(a,'Delete');

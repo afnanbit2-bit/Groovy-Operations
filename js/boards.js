@@ -4008,7 +4008,9 @@ function _boardsDialog(msg,opts){
     const f=_boardsDlgField?document.getElementById('board-confirm-field'):null;
     if(f)f.value=String(opts.value==null?'':opts.value);
     document.addEventListener('keydown',_boardsDlgKey,true);
-    try{(f||ok).focus();if(f&&f.select)f.select();}catch(e){}
+    // A destructive question opens on Cancel: a stray Enter or Space right
+    // after "Move to Trash…" must not trash anything (board-tester, a10d7e8).
+    try{(f||(opts.danger?document.getElementById('board-confirm-no'):ok)||ok).focus();if(f&&f.select)f.select();}catch(e){}
   });
 }
 // true / false. The confirm button says what it does ("Move to Trash").

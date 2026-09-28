@@ -291,15 +291,18 @@ function NAV_TIMED(id,boardPage){
     // second run), which is not what anyone sees. Up to four per screen.
     const vh=await ev('window.innerHeight').catch(()=>0);
     const total=await ev('Math.max(document.documentElement.scrollHeight,document.body.scrollHeight)').catch(()=>0);
-    const parts=vh>0?Math.min(4,Math.max(1,Math.ceil((total-2)/vh))):1;
+    // Steps overlap by 140 px, the fixed header and phone bar together, or
+    // the band they cover between two shots is never seen (the tester, a10d7e8).
+    const step=Math.max(200,vh-140);
+    const parts=vh>0?Math.min(4,Math.max(1,1+Math.ceil(Math.max(0,total-vh-2)/step))):1;
     for(let i=0;i<parts;i++){
-      if(parts>1){ await ev('window.scrollTo(0,'+(i*vh)+')'); await sleep(200); }
+      if(parts>1){ await ev('window.scrollTo(0,'+(i*step)+')'); await sleep(200); }
       const {data}=await send('Page.captureScreenshot',{format:'png'});
       const f=name+(i?'-p'+(i+1):'')+'.png'; fs.writeFileSync(path.join(outDir,f),Buffer.from(data,'base64'));
       report.screens.push(f); console.log('  shot '+f);
     }
     if(parts>1)await ev('window.scrollTo(0,0)');
-    if(vh>0&&total>vh*4+2)report.notes.push(name+': the page is taller than four screens; only the first four were captured.');
+    if(vh>0&&total>vh+step*3+2)report.notes.push(name+': the page is taller than four screens; only the first four were captured.');
   };
   // One screen: screenshot, then every per-screen assertion, with the
   // console and exception counts scoped to what happened since the last one.
@@ -593,10 +596,11 @@ function NAV_TIMED(id,boardPage){
       await sleep(150);
       await key('Delete','Delete',46);await key('Backspace','Backspace',8);
       check('Delete and Backspace behind the confirm delete nothing',await ev('_editCards.length')===n0&&await ev('!!document.getElementById("board-confirm")'));
-      await key('Tab','Tab',9);
+      check('a destructive confirm opens with Cancel focused',await ev('document.activeElement&&document.activeElement.id')==='board-confirm-no');
+      await key('Tab','Tab',9);await key('Tab','Tab',9);
       const onNo=await ev('document.activeElement&&document.activeElement.id');
       await ENTER();
-      check('Tab reaches Cancel inside the dialog, and Enter there answers no',
+      check('Tab cycles inside the dialog back to Cancel, and Enter there answers no',
         onNo==='board-confirm-no'&&(await ev('window.__e2eDlg.then(function(v){return v;})'))===false,'focus was '+onNo);
     }
     await send('Emulation.clearDeviceMetricsOverride');await setTheme('light');
