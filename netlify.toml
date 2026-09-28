@@ -56,6 +56,14 @@
 [functions."shopify-weekly-close"]
   schedule = "0 2 * * 6"
 
+# Every hour at :30 — Master Accounts backup (see netlify/functions/ma-backup.js).
+# The EXPORT still runs once a day: at the first wake at or after 03:30 UTC =
+# 08:30 PKT (the plan's time, MASTER_ACCOUNTS_PLAN.md §30). The other wakes only
+# record how a running export ended, so a failed backup reaches the Today page
+# within the hour instead of being buried by the next night's run.
+[functions."ma-backup"]
+  schedule = "30 * * * *"
+
 # ── Cache control ──────────────────────────────────────────────
 # index.html must always be revalidated so a new deploy's bumped
 # ?v= query strings on the JS/CSS reach the browser immediately.
