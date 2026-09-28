@@ -9926,6 +9926,16 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
+**No republish outstanding as of 28 Sept 2026 (evening, ~10:10 pm
+PKT).** Afnan published ("done", after a reload showed the new version and
+`boardSharingUntouched` in the live editor — reported in-session, not
+checked from here) from the repo file at `md5
+b68fc9febc14ec90ad3d29f860147702`, `git log --oneline -1 -- firestore.rules`
+= `430fc28`. That one paste carried EVERY outstanding entry below: the Mood
+Boards sharing roles, The Board's lock rule (`tbLockOk`), the warehouse
+handover and its review round, Raees's edit rights, and Ammar's
+`isAcctSuper()`. The entries below are history now.
+
 **REPUBLISH OUTSTANDING (28 Sept 2026): Mood Boards sharing roles.**
 `mood_boards` update now requires the editor role and keeps the sharing
 fields to the board's owner; comments/activity accept the comment role.
