@@ -1841,7 +1841,7 @@ module.exports=function(){
     // The trail replaced the "← Home" text (Sept 2026, Milanote's shape):
     // a round chip with the GROOVY mark, then Home, both pointing at Home.
     s.ok('and its trail starts at Home',/board-home-chip[^>]*onclick="window\.boardsGotoGallery\(\)"/.test(nb)&&/board-crumb-home[^>]*onclick="window\.boardsGotoGallery\(\)">Home</.test(nb));
-    s.ok('with the board\'s own tile before its name',/board-crumb-slash">\/<\/span><span class="board-tile/.test(nb));
+    s.ok('with the board\'s own tile before its name',/board-crumb-slash">\/<\/span><span id="board-crumb-tile"><span class="board-tile/.test(nb));
     s.ok('and no "← Home" text button beside it',!/← Home/.test(nb));
   }
 
@@ -3560,17 +3560,17 @@ module.exports=function(){
     run(`window.boardsDeleteColumnAndCards()`);
     s.ok('the question names Ctrl+Z',/Ctrl\+Z/.test(state.confirms.join(' ')),state.confirms.join(' | '));
 
-    s.section('the tray is honest that it is NOT undoable');
-    // _boardsPushUndo snapshots cards and connectors only — the Unsorted
-    // tray is saved in `head` and is genuinely not recoverable. The confirm
-    // says exactly that, and must keep saying it.
+    s.section('removing from the tray asks nothing and is undoable');
+    // REVERSED 28 Sept 2026 (Afnan: the popup should not appear). The undo
+    // snapshot carries the tray, so Ctrl+Z brings the item back.
     boot();
     run(`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
     state.confirms.length=0;
     run(`window.boardsTrayRemove(0)`);
-    s.ok('it says it cannot be undone',/cannot be undone/i.test(state.confirms.join(' ')),state.confirms.join(' | '));
-    s.ok('and does not promise Ctrl+Z',!/Ctrl\+Z/.test(state.confirms.join(' ')));
+    s.eq('no confirm',state.confirms.length,0);
     s.eq('the item really is gone',run(`_editUnsorted.length`),0);
+    run(`window.boardsUndoAction()`);
+    s.eq('Ctrl+Z brings it back',run(`_editUnsorted.length`),1);
 
     s.section('provenance says "you" for your own card');
     boot();
@@ -3601,7 +3601,7 @@ module.exports=function(){
     s.ok('⋯ offers nothing the right-click does not',moreActs.every(a=>ctxActs.indexOf(a)>=0));
     s.ok('Convert to Document leads for a note, then Lock, then z-order (Milanote\'s order)',
       /^copytext,todoc,lock,front,back,/.test(moreActs.join(',')),moreActs.join(','));
-    s.ok('the clipboard block comes last',/cut,copy,dup,delete,stash,card-link$/.test(moreActs.join(',')),moreActs.join(','));
+    s.ok('the clipboard block comes last',/cut,copy,dup,delete,stash,movetoboard,card-link$/.test(moreActs.join(',')),moreActs.join(','));
     s.eq('lock reads as Milanote names it',run(`_boardsMoreItems(true).find(i=>i.act==='lock').label`),'Lock position');
     s.ok('the provenance footer closes it',run(`JSON.stringify(_boardsMoreItems(true).slice(-1)[0])`).indexOf('"who":"Afnan"')>=0);
     s.ok('no swatch row rides along — the Color tile is on the rail',!/swatches/.test(run(`JSON.stringify(_boardsMoreItems(true))`)));
@@ -5439,10 +5439,21 @@ module.exports=function(){
       s.ok('Comments is in the sheet, id intact',/id="board-cmt-btn"/.test(menu));
       s.ok('Report a bug is in the sheet (the FAB is hidden on a phone)',/openBugReportModal/.test(menu));
       s.eq('the Undo id appears exactly once in the whole render',(html.match(/id="board-undo-btn"/g)||[]).length,1);
+      const dhtmlNoFn=dt.run(`_renderBoardCanvasHTML()`);
+      dt.run(`window.openBugReportModal=function(){};`);
       const dhtml=dt.run(`_renderBoardCanvasHTML()`);
       const dbar=dhtml.slice(dhtml.indexOf('class="board-topbar"'),dhtml.indexOf('id="board-view-menu"'));
       s.ok('desktop keeps Undo in the bar',/id="board-undo-btn"/.test(dbar));
-      s.ok('and no Report a bug in its menu',!/openBugReportModal/.test(dhtml));
+      // REVERSED (GitHub #97, bug 8): the FAB is hidden on the canvas at
+      // every width now — on desktop it sat on the comment drawer's Post
+      // button — so desktop's ⋯ menu carries Report a bug too.
+      s.ok('desktop\'s ⋯ menu offers Report a bug as well',/openBugReportModal/.test(dhtml));
+      s.ok('but not when the bug tracker is not loaded',!/openBugReportModal/.test(dhtmlNoFn));
+      const cssB=require('fs').readFileSync(require('path').join(__dirname,'..','css','main.css'),'utf8');
+      const fabRule=cssB.search(/body\.board-fullscreen #bug-report-fab\{display:none!important\}/);
+      s.ok('the FAB is hidden on the canvas at every width, not only a phone',fabRule>=0&&!/^\s+body\.board-fullscreen #bug-report-fab/m.test(cssB),fabRule);
+      s.ok('Find steps left of an open comment drawer',/\.board-below:has\(>\.board-drawer\[style\*="flex"\]\) \.board-find\{right:/.test(cssB));
+      s.ok('and of an open Unsorted tray, off Home',/\.board-below:not\(\.with-panel\):has\(>\.board-tray:not\(\.collapsed\)\) \.board-find\{right:394px\}/.test(cssB));
 
       s.section('phone: the empty hint says what a finger can do');
       s.ok('double-tap, not double-click',/Double-tap anywhere/.test(html));
@@ -5690,7 +5701,7 @@ module.exports=function(){
       r(`_boardsCameFromAll=false;_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0,color:'#7C3AED'}`);
       const bar=r(`_renderBoardCanvasHTML()`);
       s.ok('the chip carries the app icon and goes Home',/board-home-chip[^>]*boardsGotoGallery[^>]*>\s*<img src="\/assets\/icons\/icon-192\.png"/.test(bar));
-      s.ok('Home, then a slash, then the board\'s tile',/board-crumb-home[^>]*>Home<\/button>[\s\S]*board-crumb-slash">\/<\/span><span class="board-tile"[^>]*background:#7C3AED/.test(bar));
+      s.ok('Home, then a slash, then the board\'s tile',/board-crumb-home[^>]*>Home<\/button>[\s\S]*board-crumb-slash">\/<\/span><span id="board-crumb-tile"><span class="board-tile"[^>]*background:#7C3AED/.test(bar));
       r(`_boardsCameFromAll=true`);
       s.ok('opened from All boards, that is a crumb too',/board-crumb-slash">\/<\/span><button class="board-crumb" onclick="window\.boardsShowAll\(\)">All boards<\/button>/.test(r(`_renderBoardCanvasHTML()`)));
       r(`_boardsCameFromAll=false`);

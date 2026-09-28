@@ -103,6 +103,17 @@
   status = 200
   force = true
 
+# ── Phone share target (manifest.json share_target) ─────────────
+# The service worker answers POST /share-target itself. This only fires
+# when no worker controls the page (first open, or storage cleared): the
+# share is lost, but the person lands in the app instead of an error.
+# MUST sit above the SPA catch-all below.
+[[redirects]]
+  from = "/share-target"
+  to = "/index.html"
+  status = 303
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

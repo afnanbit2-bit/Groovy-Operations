@@ -1826,6 +1826,60 @@ const FRAGMENTS={
       '<div class="board-stage" style="position:relative;height:400px;width:100%;overflow:hidden">'+
       '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
   },
+  // The share sheet with a role per person (Sept 2026). The row is a name
+  // beside a fixed control — the shape that crushed every Profile directory
+  // name to 0px — so it is measured with a long name, a disabled picker and
+  // an enabled one, at every width.
+  'boards — the share sheet with roles':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`session={uid:'u-mustafa',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'};
+      USER_DEFS=[
+        {u:'mustafa',name:'Mustafa',email:'mustafa@groovy.op'},
+        {u:'daniyal',name:'Daniyal Tufail — Creator & Content Operations Lead',email:'daniyal@groovy.op'},
+        {u:'saim',name:'Saim',email:'saim@groovy.op'},
+        {u:'umair',name:'Umair',email:'umair@groovy.op'},
+        {u:'abbas',name:'Abbas',email:'abbas@groovy.op'}];
+      _editBoard={id:'B',title:'Winter',visibility:'personal',ownerUid:'u-mustafa',
+        sharedWith:['daniyal@groovy.op','saim@groovy.op','umair@groovy.op'],
+        sharedView:['umair@groovy.op'],sharedComment:['saim@groovy.op']};
+      window.boardsOpenShare();`);
+    const box=app.el('board-share-modal').innerHTML;
+    return Promise.resolve('<div class="board-share-modal" style="display:flex;position:relative;min-height:560px">'+box+'</div>');
+  },
+  // A YouTube link card (Sept 2026, from the Milanote study #94 §12): the
+  // 16:9 area with its play button, and the URL and title under it, at the
+  // size a video card is born. Measured over a WHITE stand-in thumbnail, so
+  // a play circle that stopped being opaque enough would show. The play
+  // button is the control inside a drag surface — the shape this module has
+  // lost clicks to five times — so its hit-test is the point.
+  'boards — video, audio and map link cards':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _editCards=[
+        {id:'v1',type:'link',linkUrl:'https://www.youtube.com/watch?v=aqz-KE-bpKQ',linkTitle:'Big Buck Bunny 60fps 4K – Official Blender Foundation Short Film',x:10,y:10,w:_BOARDS_VIDEO_W,h:_BOARDS_VIDEO_H},
+        {id:'v2',type:'link',linkUrl:'https://vimeo.com/76979871',linkTitle:'The New Vimeo Player',x:370,y:10,w:_BOARDS_VIDEO_W,h:_BOARDS_VIDEO_H},
+        {id:'a1',type:'link',linkUrl:'https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8',linkTitle:'Never Gonna Give You Up',x:730,y:10,w:340,h:190},
+        {id:'a2',type:'link',linkUrl:'https://soundcloud.com/forss/flickermood',linkTitle:'Flickermood by Forss',x:1090,y:10,w:340,h:255},
+        {id:'m1',type:'link',linkUrl:'https://www.google.com/maps/place/Eiffel+Tower/@48.8583701,2.2944813,17z',linkTitle:'Eiffel Tower',x:1450,y:10,w:340,h:333}];
+      _boardsSelection=new Set();`);
+    const white='src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'4\' height=\'3\'%3E%3Crect width=\'4\' height=\'3\' fill=\'%23ffffff\'/%3E%3C/svg%3E"';
+    const cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/src="https:\/\/i\.ytimg\.com[^"]*"/g,white)
+      .replace(/(id="board-linku-v1"[^>]*>)/,'$1youtube.com/watch?v=aqz-KE-bpKQ')
+      .replace(/(id="board-linkt-v1"[^>]*>)/,'$1Big Buck Bunny 60fps 4K – Official Blender Foundation Short Film')
+      .replace(/(id="board-linku-v2"[^>]*>)/,'$1vimeo.com/76979871')
+      .replace(/(id="board-linkt-v2"[^>]*>)/,'$1The New Vimeo Player')
+      .replace(/(id="board-linku-a1"[^>]*>)/,'$1open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8').replace(/(id="board-linkt-a1"[^>]*>)/,'$1Never Gonna Give You Up')
+      .replace(/(id="board-linku-a2"[^>]*>)/,'$1soundcloud.com/forss/flickermood').replace(/(id="board-linkt-a2"[^>]*>)/,'$1Flickermood by Forss')
+      .replace(/(id="board-linku-m1"[^>]*>)/,'$1google.com/maps/place/Eiffel+Tower').replace(/(id="board-linkt-m1"[^>]*>)/,'$1Eiffel Tower')
+      // The live players point at hosts the sandbox cannot reach; the probe
+      // measures the boxes, not their contents.
+      .replace(/<iframe class="board-video-frame" src="[^"]*"/g,'<iframe class="board-video-frame" src="about:blank"');
+    return Promise.resolve({widths:[1900],html:
+      '<div class="board-stage" style="position:relative;height:360px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
+  },
   'boards — photo cards':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
@@ -2405,6 +2459,29 @@ const FRAGMENTS={
     ].map(x=>app.run('_hrmNotifCardHTML('+JSON.stringify(x)+')')).join('');
     return Promise.resolve('<div style="max-width:360px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px">'+cards+'</div>');
   },
+  // Notes: the page with its gutter, plus the / menu and the block menu drawn
+  // flat (the real popover is position:fixed, so two of them would land on
+  // top of each other and report each other as covering). The block bodies
+  // are hydrated with textContent in the app, which the harness cannot do,
+  // so the text is written into the markup here -- an EMPTY body is a
+  // zero-height box and measures nothing.
+  'notes — the page, the / menu and the block menu':()=>{
+    const app=loadApp({files:['js/notes.js'],currentPage:'note-detail',
+      session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'}});
+    const T=[['h1','Cutting room SOP'],['paragraph','Relax the fabric for 24 hours before it goes on the table, and log the roll code on the gate pass.'],
+      ['h2','Checks'],['checklist','Marker length matches the PO'],['bullet','Grain line straight'],['numbered','Count bundles per size'],
+      ['quote','If in doubt, ask the cutting master before you cut.'],['paragraph','']];
+    app.run("window._gvSilentSaveStart=()=>{};_notesEditPage={id:'P',title:'Cutting room SOP',visibility:'shared',ownerUid:'u1',ownerName:'Afnan',updatedAt:Date.now()};"
+      +"_notesEditBlocks="+JSON.stringify(T.map((t,i)=>({id:'b'+i,type:t[0],text:t[1],checked:false,imageUrl:''}))));
+    let page=app.run('renderNoteDetailPage()');
+    T.forEach((t,i)=>{page=page.replace(new RegExp('(id="nb-'+i+'"[^>]*>)</div>'),'$1'+t[1].replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>');});
+    const pop=(rows,selIdx)=>'<div class="notes-pop open" style="position:static;margin:12px 0">'+rows.map((r,k)=>'<div class="notes-pop-row'+(k===selIdx?' sel':'')+(r.danger?' danger':'')+'"><span class="notes-pop-label">'+r.label+'</span>'+(r.hint?'<span class="notes-pop-hint">'+r.hint+'</span>':'')+'</div>').join('')+'</div>';
+    app.run("_notesSlashOpen(1,'','slash')");
+    const slash=JSON.parse(app.run('JSON.stringify(_notesPopState.rows.map(r=>({label:r.label,hint:r.hint})))'));
+    app.run("window.notesOpenBlockMenu(1,null)");
+    const menu=JSON.parse(app.run('JSON.stringify(_notesPopState.rows.map(r=>({label:r.label,danger:!!r.danger})))'));
+    return Promise.resolve(page+pop(slash,2)+pop(menu,0));
+  },
   'gate pass — dark summary panels':()=>{
     const app=loadApp({files:['js/gatepass.js'],currentPage:'gate-pass',
       session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
@@ -2583,7 +2660,7 @@ document.querySelectorAll('#main-content *').forEach(el=>{
 // with no other symptom.
 document.querySelectorAll('.board-world[data-lod="far"]').forEach(world=>{
   ['.board-card-kind','.board-card-name','.board-card-del','.board-resize-handle',
-   '.board-labels','.board-reactions','.board-caption',
+   '.board-labels','.board-reactions',
    '.board-link-img+.board-link-meta'].forEach(sel=>{
     world.querySelectorAll(sel).forEach(el=>{
       if(getComputedStyle(el).display!=='none'){
