@@ -3573,6 +3573,91 @@ controls. The existing preview toggle hides and shows it.
   its height, which is correct).
 - **Nobody has pressed ▶ on a real screen** — the sandbox cannot sign in.
 
+### Mood Boards — audio and map in a link card (Sept 2026)
+
+#94 §13–14, the same idea as video: the link card's preview area becomes the
+provider's player. `_boardsEmbedOf(url)` (pure) is now THE decision —
+video (via `_boardsVideoOf`), audio, map — and `_boardsEmbedSize` the one
+birth size (340 wide; a player's own height + `_BOARDS_EMBED_META_H` 110).
+
+- **Spotify** (track / album / playlist / episode / show / artist, 22-char
+  id, `intl-xx/` prefix allowed) renders its LIVE embed immediately — what
+  Milanote does — 80px for a track, 152 otherwise, `loading="lazy"`.
+  **This deliberately differs from video**, which waits for ▶.
+- **SoundCloud** (`soundcloud.com/<user>/<track>`, system pages refused) is
+  artwork + ▶, then the 145px "visual" player with auto_play.
+- **Google Maps** (`google.com/maps` place / search / `@lat,lng,Nz` /
+  `?q=`, and `maps.google.com`) is a LIVE map; the wheel zooms the map, not
+  the board, because the event goes to the iframe's document (as SEEN).
+  **Milanote uses the Maps Embed API, which needs a key we do not have;
+  ours is the keyless `maps.google.com/maps?q=…&z=…&output=embed` — long-
+  standing but NOT a documented API, unverified.** If maps come up blank,
+  that is the first thing to check (the fix is a key + the Embed API).
+  Short links (`maps.app.goo.gl`) stay ordinary links.
+- **A fixed-height player sets the card's floor** (`_boardsMinCardH`:
+  player + link info), because the layout fragment showed a shorter card
+  pushing the title out; the render grows an old card, nothing migrates.
+- Tests: `tests/board-video.test.js` (45 now); layout fragment `boards —
+  video, audio and map link cards` (1900 only — five 340px cards in a row),
+  which names the title when a Spotify card is squeezed.
+- **Nobody has seen these on a real screen.** Spotify, SoundCloud and Maps
+  are all unreachable from the sandbox.
+
+### Mood Boards — Tab stays in the note (28 Sept 2026)
+
+GitHub #97 (Afnan's own side-by-side test against Milanote), bug 1:
+**Tab in a note moved focus out of the card and whatever was typed next
+was lost** (or fired a board shortcut). A note body had no key handling at
+all, so the browser did its default. `_boardsNoteTab` is read in
+`_boardsOnKeydown` BEFORE the editable bail (the note IS the editable),
+only while `_boardsEditingEl` is a `board-txt-*` field and never with
+Ctrl/Cmd/Alt: in a list item it runs the browser's `indent`/`outdent`
+(a nested `<ul>`/`<ol>`, which the sanitiser already keeps); anywhere
+else Tab inserts four no-break spaces (a `\t` collapses — the body is not
+`white-space:pre`, and making it so would change how every existing note
+renders); in a heading it is simply kept. A to-do keeps its own Tab
+(indent a task). `tests/board-notetab.test.js`. **Nobody has pressed Tab
+in a note on a real screen yet.**
+
+**Present kept a note's structure (#97 bug 3, same day).** A note slide
+drew `c.text` — the note with every line, list and colour stripped — so it
+read "test- bullet one1. numbered…". A note carrying `c.rich` now draws it
+as `.bp-body.rich`, through **`_boardsSanitizeRich`, the same boundary the
+canvas uses** before stored markup touches the live DOM (never `c.rich`
+raw), with em-sized list/heading/code/quote rules so it scales with the
+slide. Checked in real Chromium: nested lists and a colour survive, an
+`<img onerror>` and a `<script>` are stripped and do not run.
+`tests/board-present.test.js`. **Known edge, not changed:** a note whose
+only line breaks are Shift+Enter `<br>`s counts as "plain", so it is
+stored as `c.text` alone and loses those breaks on the canvas too.
+
+**A board tile counts its Unsorted (#97 bug 4, same day).** After "Move to
+board…", LAB A's tile still read "0 cards" — true of its canvas, but the
+card had landed in its Unsorted, so the move looked like it had failed.
+The sub-board card and the Home panel row now add "· N in Unsorted"
+(`_boardsUnsortedCount`: tray ITEMS, one per row, however many cards a
+stashed column carries). The move already mirrors the target's `unsorted`
+into `moodBoards`, so the tile updates the moment the move lands. Guarded
+in `tests/board-move.test.js`.
+
+**The board picker stopped jumping (#97 bug 5, same day).** `.board-sheet`
+is bottom-anchored and sized to its content, so a search that shortened the
+"Move to a board" list shrank the sheet and dropped its top edge — MEASURED
+in real Chromium at **182 → 499** after one search. `.board-sendto-list`
+has a FIXED `height:min(52vh,420px)` now (was `max-height`): 182 → 182,
+and 218 → 218 on a 360px phone. The same report had it "partly under the
+new-version banner": that banner (`js/shared.js`, fixed, bottom:0,
+z-index 2000) measures **53px** on desktop and **83px** at 360 (it wraps),
+so `body:has(#sw-update-banner) .board-sheet:not(.board-pop)` lifts every
+bottom sheet onto it (71px / 83px). The share-into picker uses the same
+list and gets both. Held in `tests/board-move.test.js` (the probe cannot
+type into a search).
+
+**#97 also reports things `main` already has** (Draw on, body drag, a
+YouTube player), so that test may have run on an older build — the
+Netlify deploy list or the diagnostics build id settles it; do not
+re-diagnose those from the code.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

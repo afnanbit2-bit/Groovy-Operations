@@ -26,6 +26,35 @@ module.exports=async function(){
   s.eq('a channel page is not a video',v('https://www.youtube.com/@blender'),null);
   s.eq('an ordinary link is not a video',v('https://pinterest.com/pin/1'),null);
 
+  s.section('audio and map links (#94 §13–14)');
+  const e=u=>JSON.parse(run(`JSON.stringify(_boardsEmbedOf(${JSON.stringify(u)}))`));
+  const sp=e('https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8?si=abc');
+  s.eq('a Spotify track is a live compact player',sp&&[sp.kind,sp.live,sp.h,sp.embed].join('|'),'audio|true|80|https://open.spotify.com/embed/track/4PTG3Z6ehGkBFwjybzWkR8');
+  s.eq('an album is the taller player',e('https://open.spotify.com/intl-de/album/4aawyAB9vmqN3uQ7FjRGTy').h,152);
+  s.eq('a Spotify id that is not 22 characters is refused',e('https://open.spotify.com/track/abc'),null);
+  const sc=e('https://soundcloud.com/forss/flickermood');
+  s.eq('SoundCloud waits for play, visual player',sc&&[sc.kind,sc.live,sc.h].join('|'),'audio|false|145');
+  s.ok('with the track url encoded into the player',sc&&sc.embed.indexOf('url=https%3A%2F%2Fsoundcloud.com%2Fforss%2Fflickermood&visual=true')>0);
+  s.eq('a SoundCloud page that is not a track is not audio',e('https://soundcloud.com/discover/sets'),null);
+  const mp=e('https://www.google.com/maps/place/Eiffel+Tower/@48.8583701,2.2944813,17z');
+  s.eq('a Google Maps place is a live map at its zoom',mp&&[mp.kind,mp.live,mp.embed].join('|'),'map|true|https://maps.google.com/maps?q=Eiffel%20Tower&z=17&output=embed');
+  s.eq('bare coordinates work too',e('https://www.google.com/maps/@24.8607,67.0011,12z').id,'24.8607,67.0011');
+  s.eq('a ?q= search',e('https://maps.google.com/maps?q=Lahore').id,'Lahore');
+  s.eq('a Google page that is not Maps is not a map',e('https://www.google.com/search?q=maps'),null);
+  s.eq('a short maps link cannot be read without a redirect — stays a link',e('https://maps.app.goo.gl/abc'),null);
+  s.eq('an embed card is 340 wide, the player over the link info',run(`JSON.stringify(_boardsEmbedSize(_boardsEmbedOf('https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8')))`),'{"w":340,"h":190}');
+  run(`_editCards=[{id:'s1',type:'link',linkUrl:'https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8',x:0,y:0,w:340,h:190},
+    {id:'m1',type:'link',linkUrl:'https://www.google.com/maps/place/Eiffel+Tower/@48.8583701,2.2944813,17z',x:0,y:0,w:340,h:333}];
+    session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};_editBoard={id:'B',ownerUid:'u1',visibility:'personal'};
+    _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;_boardsSelection=new Set();`);
+  const sh=run(`_boardCardHTML(_editCards[0],true)`),mh=run(`_boardCardHTML(_editCards[1],true)`);
+  s.ok('Spotify renders its player straight away, lazily',/<iframe[^>]*open\.spotify\.com\/embed[^>]*loading="lazy"/.test(sh));
+  s.ok('at its own height',/board-embed-audio[^>]*style="flex:0 0 80px"/.test(sh));
+  s.ok('a map renders live',/<iframe[^>]*maps\.google\.com\/maps\?q=Eiffel/.test(mh)&&/board-embed-map/.test(mh));
+  s.ok('no play button on a live embed',sh.indexOf('board-video-play')<0&&mh.indexOf('board-video-play')<0);
+  s.ok('a Spotify card cannot be shrunk below its player and link info',run(`_boardsMinCardH({type:'link',linkUrl:'https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8',w:340,h:50})`)>=190);
+  s.ok('with the preview hidden it can',run(`_boardsMinCardH({type:'link',linkUrl:'https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8',linkPreviewOff:true,w:340,h:50})`)<190);
+
   s.section('the card at rest');
   run(`session={uid:'u1',u:'afnan',name:'Afnan',role:'owner'};
     _editBoard={id:'B',title:'W',ownerUid:'u1',visibility:'personal'};_editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;

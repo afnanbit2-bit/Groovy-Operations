@@ -1398,6 +1398,11 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
 .board-video-play svg{width:22px;height:22px;margin-left:3px}
 @media (hover:hover){.board-video-play:hover{background:rgba(0,0,0,.78)}}
 .board-video-frame{position:absolute;inset:0;width:100%;height:100%;border:0}
+/* Audio and map (#94 §13–14). A map shows Milanote's measured loading grey
+   rgb(102,109,122) until Google's tiles arrive; Spotify draws its own
+   rounded player, so no black box behind it. */
+.board-embed-map{background:rgb(102,109,122)}
+.board-embed-audio{background:transparent}
 .board-link-meta{flex:0 0 auto;display:flex;flex-direction:column;gap:3px;padding:8px 10px 9px;min-width:0}
 /* The URL row: a link glyph, the address, and the show/hide-picture toggle.
    The address is the only thing that flexes, so the glyph and the button
@@ -1466,6 +1471,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .bp-sub{font-size:clamp(22px,4vw,44px);line-height:1.15;margin:0;font-weight:700;color:var(--text)}
 .bp-body{font-size:clamp(18px,2.8vw,34px);line-height:1.45;color:var(--text);
   max-width:22em;white-space:pre-wrap}
+/* A formatted note on a slide: its own block structure carries the lines,
+   so pre-wrap would double them. Sizes are em, off the slide's body size. */
+.bp-body.rich{white-space:normal;text-align:left}
+.bp-body.rich ul{list-style:disc;padding-left:1.2em;margin:.2em 0}
+.bp-body.rich ol{list-style:decimal;padding-left:1.4em;margin:.2em 0}
+.bp-body.rich h2{font-size:1.5em;font-weight:800;line-height:1.2;margin:.2em 0}
+.bp-body.rich h3{font-size:1.2em;font-weight:700;line-height:1.25;margin:.2em 0}
+.bp-body.rich h6{font-size:.75em;font-weight:400;color:var(--muted);margin:.1em 0}
+.bp-body.rich pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.7em;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:.4em .6em;
+  margin:.2em 0;white-space:pre-wrap;word-break:break-word}
+.bp-body.rich blockquote{border-left:3px solid var(--border);margin:.2em 0;padding:0 .5em;color:var(--muted)}
 .bp-cap{font-size:clamp(12px,1.6vw,17px);color:var(--muted);max-width:34em}
 .bp-img{max-width:100%;max-height:72vh;object-fit:contain;border-radius:10px}
 .bp-list{list-style:none;padding:0;margin:0;text-align:left;
@@ -2481,9 +2498,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 /* Phone share: the "Save to a board" picker (js/boards.js _boardsShareOpenPicker).
    A row is the board's tile, its whole name (the Profile-directory rule: the
    name never shares its row with a button, it IS the button) and a state word. */
+/* The "new version" banner (js/shared.js, fixed, bottom:0, z-index 2000,
+   53px measured at desktop widths) sat on the foot of every bottom sheet
+   (#97, bug 5). While it is up, a sheet stands on top of it instead. */
+body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:71px}
 .board-sendto-what{font-size:13px;color:var(--muted);margin:2px 0 10px}
 .board-sendto-search{width:100%;box-sizing:border-box;min-height:40px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:15px;margin-bottom:8px}
-.board-sendto-list{display:flex;flex-direction:column;gap:4px;max-height:52vh;overflow-y:auto}
+/* A FIXED height, not a max (GitHub #97, bug 5). The sheet is anchored to
+   the BOTTOM of the screen and sized to its content, so a search that
+   shortened the list shrank the sheet and dropped its top edge — it read
+   as the panel jumping down after every keystroke. The list keeps its
+   height while you type; the rows inside it change. */
+.board-sendto-list{display:flex;flex-direction:column;gap:4px;height:min(52vh,420px);overflow-y:auto}
 .board-sendto-row{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 8px;border:none;border-radius:10px;background:transparent;color:var(--text);text-align:left;cursor:pointer;font:inherit}
 .board-sendto-row:active{background:var(--hover)}
 @media (hover:hover){.board-sendto-row:hover{background:var(--hover)}}
@@ -2870,6 +2896,8 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   /* A menu anchored to a pointer makes no sense on a touch screen — both
      the long-press menu and the rail's More button dock as a sheet. */
   .board-sheet{left:0;right:0;bottom:0;width:auto;max-width:none;transform:none;border-radius:16px 16px 0 0;border-left:none;border-right:none;border-bottom:none;max-height:78%;padding-bottom:env(safe-area-inset-bottom)}
+  /* The update banner wraps to two lines here: 83px measured at 360. */
+  body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:83px}
   .board-sheet-item{padding:15px 2px}
   .board-emoji-grid{grid-template-columns:repeat(7,1fr)}
   .board-emoji{font-size:27px;padding:9px 0}
