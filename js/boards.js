@@ -2411,8 +2411,8 @@ function _renderBoardCanvasHTML(){
       ${home?'<span class="board-crumb board-crumb-home">Home</span>'
         :`<button class="board-crumb board-crumb-home" onclick="window.boardsGotoGallery()">Home</button>
       ${_boardsCameFromAll&&!chain.length?`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsShowAll()">All boards</button>`:''}
-      ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
-      <span class="board-crumb-slash">/</span>${_boardsTileHTML(b,22)}`}
+      ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" data-board-drop="${_boardsEsc(a.id)}" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
+      <span class="board-crumb-slash">/</span><span id="board-crumb-tile">${_boardsTileHTML(b,22)}</span>`}
     </div>`:'';
   return`<div class="board-canvas-wrap">
     <div class="board-topbar">
@@ -2421,7 +2421,7 @@ function _renderBoardCanvasHTML(){
         ${crumbs}
         ${home
           ?(phone?`<span style="font-size:15.5px;font-weight:700">Home</span>`:'')
-          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
+          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" onfocus="window.boardsTitleFocus(this)" onkeydown="window.boardsTitleKey(event,this)" onblur="window.boardsTitleDone(this)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         ${phone?'':`<span class="pill">${visLabel}</span>`}
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
         ${canEdit?'':`<span class="pill board-role-pill">${_boardsCanComment(b)?'Can comment':'View only'}</span>`}`}
@@ -5618,6 +5618,46 @@ function _boardsStashDropTarget(on){
   const el=_boardsStashTargetEl();
   if(el&&el.classList)el.classList.toggle('panel-drop',!!on);
 }
+/* ── Dragging a card ONTO another board (GitHub #97, bug 2) ─────────────
+   Drop a card on a sub-board card, or on a breadcrumb above this board,
+   and it moves there — into that board's Unsorted, Milanote's rule —
+   through window.boardsMoveCardsTo, the SAME implementation the menu's
+   "Move to board…" calls, so the refusals, the transaction and the toast
+   cannot drift. The target lights up while the pointer is over it, so a
+   refusal is visible before the pointer comes up. Hover-to-open (holding a
+   card over a board until it opens) is not built: nobody measured the
+   delay, and a drop already reaches the board in one move.
+
+   Targets are decided at grab time: every sub-board card not travelling
+   with the drag, and every breadcrumb carrying data-board-drop, whose board
+   is live, editable, not Home and not this board. A group holding a board
+   link is refused whole, like the stash. */
+function _boardsMoveTargetOk(id){
+  const t=id&&_boardsLiveById()[id];
+  return!!t&&!!_editBoard&&id!==_editBoard.id&&!_boardsIsHome(t)&&_boardsCanEdit(t);
+}
+function _boardsMoveDragTargets(group){
+  if(!group||!group.length||!_editBoard||!_boardsCanEdit(_editBoard)||_boardsIsHome(_editBoard))return[];
+  if(group.some(c=>c.type==='board'))return[];
+  const inGroup=new Set(group.map(c=>c.id)),out=[];
+  _editCards.forEach(c=>{
+    if(c.type!=='board'||inGroup.has(c.id)||!_boardsMoveTargetOk(c.boardId))return;
+    const el=document.getElementById('board-card-'+c.id);
+    if(el)out.push({el,id:c.boardId});
+  });
+  const crumbs=document.querySelectorAll?document.querySelectorAll('[data-board-drop]'):[];
+  Array.prototype.forEach.call(crumbs||[],el=>{
+    const id=el.getAttribute&&el.getAttribute('data-board-drop');
+    if(_boardsMoveTargetOk(id))out.push({el,id});
+  });
+  return out;
+}
+function _boardsMoveTargetAt(targets,ev){
+  return targets.find(t=>_boardsOverEl(t.el,ev))||null;
+}
+function _boardsMoveDropMark(targets,hit){
+  targets.forEach(t=>{if(t.el.classList)t.el.classList.toggle('board-move-drop',t===hit);});
+}
 window.boardsCardDragStart=function(e,cardId){
   e.stopPropagation();
   // A press inside whatever is currently open for editing is the user
@@ -5652,6 +5692,7 @@ window.boardsCardDragStart=function(e,cardId){
   const grip=e.currentTarget;
   const unplaceable=_boardsUnplaceDrag(group);
   const stashable=_boardsStashDrag(group);
+  const moveTargets=_boardsMoveDragTargets(group);
   const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
   // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
@@ -5730,6 +5771,7 @@ window.boardsCardDragStart=function(e,cardId){
     if(unplaceable)_boardsPanelDropTarget(_boardsOverPanel(ev));
     // Held over Unsorted, the drop says so before the pointer comes up.
     if(stashable)_boardsStashDropTarget(_boardsOverStash(ev));
+    if(moveTargets.length)_boardsMoveDropMark(moveTargets,_boardsMoveTargetAt(moveTargets,ev));
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
   function up(ev){
@@ -5747,6 +5789,8 @@ window.boardsCardDragStart=function(e,cardId){
     // Read the hit test BEFORE the zone is taken away — when the tray is
     // shut, the zone IS the target.
     const overStash=pushed&&stashable&&_boardsOverStash(ev);
+    const moveHit=pushed&&ev&&moveTargets.length?_boardsMoveTargetAt(moveTargets,ev):null;
+    _boardsMoveDropMark(moveTargets,null);
     _boardsStashZone(false);
     // `pushed` is set on the first real pointermove, so it is exactly
     // "this was a drag, not a click".
@@ -5771,6 +5815,21 @@ window.boardsCardDragStart=function(e,cardId){
     // Ctrl+Z would restore the cards at the spot they were dropped and
     // need a second press to put them back. _boardsUndo is a plain stack
     // of snapshots, so popping the one this gesture pushed is exact.
+    // Dropped on another board: put the cards back where the gesture
+    // started and discard this drag's undo entry — a moved card is purged
+    // from history anyway, and a failed move must leave nothing behind.
+    if(moveHit){
+      origins.forEach(o=>{
+        o.card.x=o.ox;o.card.y=o.oy;
+        const el=document.getElementById('board-card-'+o.card.id);
+        if(el){el.style.left=o.card.x+'px';el.style.top=o.card.y+'px';}
+        _boardsUpdateConnectorsFor(o.card.id);
+      });
+      _boardsUndo.pop();
+      _boardsSyncHistoryButtons();
+      window.boardsMoveCardsTo(moveHit.id,group.map(c=>c.id));
+      return;
+    }
     if(overStash){
       origins.forEach(o=>{o.card.x=o.ox;o.card.y=o.oy;});
       _boardsUndo.pop();
@@ -7111,6 +7170,27 @@ window.boardsLinkStart=function(e,cardId){
 
 // -- card content --
 window.boardsTitleInput=function(val){if(!_editBoard)return;_editBoard.title=val;_boardsSaveDebounced();};
+// Enter commits the rename and leaves the box; Escape puts back the name it
+// had when the box was entered (GitHub #97, bug 10). Leaving by any route
+// saves now and repaints the breadcrumb tile, whose letter is the title's.
+let _boardsTitleWas=null;
+window.boardsTitleFocus=function(el){_boardsTitleWas=el.value;};
+window.boardsTitleKey=function(e,el){
+  if(e.key==='Enter'){e.preventDefault();el.blur();}
+  else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();
+    if(_boardsTitleWas!=null&&el.value!==_boardsTitleWas){el.value=_boardsTitleWas;window.boardsTitleInput(_boardsTitleWas);}
+    el.blur();}
+};
+window.boardsTitleDone=function(el){
+  if(!_editBoard)return;_boardsTitleWas=null;
+  const t=(el&&el.value||'').trim();
+  if(el&&el.value!==t){el.value=t;_editBoard.title=t;}
+  const mb=typeof moodBoards!=='undefined'&&moodBoards.find(x=>x.id===_editBoard.id);
+  if(mb)mb.title=_editBoard.title;
+  const tile=document.getElementById('board-crumb-tile');
+  if(tile)tile.innerHTML=_boardsTileHTML(_editBoard,22);
+  if(typeof _boardsSaveNow==='function')_boardsSaveNow();
+};
 window.boardsTextInput=function(id,el){
   const c=_editCards.find(x=>x.id===id);if(!c)return;
   c.text=el.textContent;

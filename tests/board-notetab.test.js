@@ -57,11 +57,11 @@ module.exports=async function(){
   // the first line and the placeholder sat under it; with the corner chip
   // and the first-line float, no text rect meets the chip. The probe cannot
   // hover, so the two rules are held here.
-  s.section('the hover strip does not cover a note');
+  s.section('the hover strip does not cover any card');
   const css=require('fs').readFileSync(require('path').join(__dirname,'..','css','main.css'),'utf8');
-  const chip=(css.match(/\.board-card-el\.type-text>\.board-card-head\{[^}]*\}/)||[''])[0];
-  s.ok('a note wears a corner chip, not a full-width strip',/left:auto/.test(chip)&&/right:\d+px/.test(chip),chip);
-  s.ok('the type word is not in it',/\.board-card-el\.type-text>\.board-card-head \.board-card-kind\{display:none\}/.test(css));
+  const chip=(css.match(/\.board-card-el>\.board-card-head\{[^}]*\}/)||[''])[0];
+  s.ok('every card wears a corner chip, not a full-width strip',/left:auto/.test(chip)&&/right:\d+px/.test(chip),chip);
+  s.ok('the type word is not in it',/\.board-card-el>\.board-card-head \.board-card-kind\{display:none\}/.test(css));
   s.ok('the first line keeps room for the chip, at rest as well as on hover',
     /\.board-text-body:not\(:empty\)::before\{content:'';float:right;width:\d+px/.test(css));
   return s;

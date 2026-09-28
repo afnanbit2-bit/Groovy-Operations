@@ -1224,6 +1224,11 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-tray.panel-drop{outline:2px dashed var(--text);outline-offset:-6px}
 .board-tray.panel-drop .board-panel-list,
 .board-tray.panel-drop .board-tray-list{background:var(--hover)}
+/* A card held over another board — a sub-board card or a breadcrumb —
+   moves there on release (#97 bug 2): the same dashed outline, one drop
+   look whichever way a card travels. */
+.board-card-el.board-move-drop,.board-crumb.board-move-drop{outline:2px dashed var(--text);outline-offset:3px}
+.board-crumb.board-move-drop{background:var(--hover)}
 /* The Unsorted peek zone (Sept 2026). Built by _boardsStashZone only
    while a card is being dragged and the tray is SHUT — off Home a closed
    tray is not in the DOM at all, so without this there is nothing to aim
@@ -1350,7 +1355,9 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
 .board-card-head .board-card-kind,.board-card-head .board-card-name,.board-card-head .board-card-del,.board-card-head .board-card-lock{color:#fff}
 .board-card-head .board-card-name:focus{background:rgba(255,255,255,.18);color:#fff;box-shadow:none}
 .board-card-head .board-card-del:hover{color:#fff;opacity:.72}
-/* A NOTE wears a corner chip, not the strip (GitHub #97, bug 6). The
+/* EVERY CARD wears a corner chip, not the strip — a note first (GitHub
+   #97, bug 6), then every other type after Afnan: "all the others have
+   it"; the scrim hid the top of a picture, a to-do, a link, a file. The
    full-width scrim sat on the note's first line and on its placeholder,
    so hovering a note to read it hid what you came to read. On a note the
    strip only ever carried the type word and the ✕ — the name is renamed
@@ -1359,11 +1366,11 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
    that the chip sits in, so no text is ever under it. The float is there
    at rest too: showing it only on hover would reflow the note under the
    pointer. The name still appears while it is being renamed. */
-.board-card-el.type-text>.board-card-head{left:auto;right:14px;top:5px;padding:3px 5px;border-radius:7px;background:rgba(0,0,0,.72)}
-.board-card-el.type-text>.board-card-head .board-card-kind{display:none}
-.board-card-el.type-text>.board-card-head .board-card-kind:has(.board-card-name[contenteditable="true"]),.board-card-el.type-text>.board-card-head .board-card-kind:has(.board-card-lock){display:flex}
-.board-card-el.type-text>.board-card-head .board-card-name:not([contenteditable="true"]){display:none}
-.board-card-el.type-text:hover>.board-cmt-badge.pin,.board-card-el.type-text.selected>.board-cmt-badge.pin{right:48px}
+.board-card-el>.board-card-head{left:auto;right:14px;top:5px;padding:3px 5px;border-radius:7px;background:rgba(0,0,0,.72)}
+.board-card-el>.board-card-head .board-card-kind{display:none}
+.board-card-el>.board-card-head .board-card-kind:has(.board-card-name[contenteditable="true"]),.board-card-el>.board-card-head .board-card-kind:has(.board-card-lock){display:flex}
+.board-card-el>.board-card-head .board-card-name:not([contenteditable="true"]){display:none}
+.board-card-el:hover>.board-cmt-badge.pin,.board-card-el.selected>.board-cmt-badge.pin{right:48px}
 .board-text-body:not(:empty)::before{content:'';float:right;width:40px;height:26px;margin-right:-6px}
 /* THE COLOURED TOP STRIP IS ITS OWN BAR now, not the header's background.
    Milanote draws both: a 4px colour strip at the very top, and (in ours)
@@ -2964,7 +2971,7 @@ body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:71px}
   /* touch targets — these were all sized for a cursor */
   .board-topbar .tool-btn{min-height:32px;padding:6px 10px}
   .board-card-head{padding:8px}
-  .board-card-el.type-text>.board-card-head{padding:2px}
+  .board-card-el>.board-card-head{padding:2px}
   .board-text-body:not(:empty)::before{width:42px;height:34px}
   .board-card-del,.board-todo-del{opacity:1;padding:6px}
   .board-resize-handle{width:34px;height:34px;right:0;bottom:0;padding:13px 0 0 13px}
