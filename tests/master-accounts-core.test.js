@@ -1,0 +1,591 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   js/ma-core.js — Master Accounts, the core (M1, 28 Sept 2026).
+
+   What this holds: the two charts and how the owners' edits merge into
+   them; periods on a July fiscal year; lakh grouping; the settings merge;
+   the tax block both ways; every M1 document kind's POSTINGS, each set
+   balanced, with the labels of §27; historical vs live; the trial balance
+   on a seeded quarter; the holders (pending never counts, a mirrored
+   holder never reads as zero); the ledger's running balance; every
+   validation rule refused AND passed; edits with history, voids and
+   confirmations; terms and rate cards kept with history; the cost
+   register's due days and states; the calendar and an unfunded day; the
+   needs-attention lines; the Unlabelled queue; FIFO allocation; and that
+   the core stays PURE (no DOM, no Firestore, no clock of its own).
+
+   It cannot hold what the pages look like (tests/smoke-layout.js) or what
+   the Console has published (tests/rules-emulator-ma.js runs the rules).
+   ───────────────────────────────────────────────────────────────────────── */
+'use strict';
+const fs=require('fs');
+const path=require('path');
+const harness=require('./harness');
+const {suite,ROOT}=harness;
+const M=require('../js/ma-core.js');
+
+const TODAY='2026-10-20';            // a Tuesday, inside Q2 FY27
+const S=M.maSettings(null);
+const IDX=M.maChartIndex(M.maChart('groovy',[]));
+let seq=0;
+const meta=u=>({by:u||'afnan',byName:(u||'afnan').replace(/^./,c=>c.toUpperCase()),ts:++seq});
+function mk(dt,input,u,extra){
+  const d=M.maBuildDoc(dt,input,Object.assign(meta(u),extra||{}),IDX,S);
+  d.id=dt[0]+seq;d.no=M.maDocNo(dt,d.fy||'FY27',seq);
+  return d;
+}
+const J=(kind,input,u)=>mk('journal',Object.assign({kind},input),u);
+const T=(input,u)=>mk('transfer',input,u);
+const C=(input,book,u)=>mk('count',input,u,{bookBalance:book});
+const sum=(ls,k)=>ls.reduce((t,l)=>t+l[k],0);
+const balanced=ls=>sum(ls,'dr')===sum(ls,'cr');
+const post=d=>M.maPost(d,IDX,S);
+function V(doc,ctx){return M.maValidate(doc,Object.assign({idx:IDX,settings:S,today:TODAY,docs:[],lines:[],parties:[],closes:[],commitments:[]},ctx||{}));}
+const R=r=>r.issues.map(i=>i.level+':'+i.rule).sort().join(',');
+const has=(r,rule)=>r.issues.some(i=>i.rule===rule);
+const lvl=(r,rule)=>(r.issues.find(i=>i.rule===rule)||{}).level||null;
+const NONE={kind:'none',rate:0,amount:0};
+const open1011=J('opening',{date:'2026-07-01',lines:[{account:'1011',side:'dr',amount:500000},{account:'1020',side:'dr',amount:2000000},{account:'1012',side:'dr',amount:300000}]});
+
+module.exports=async function(){
+  const s=suite('master-accounts-core');
+
+  s.section('the charts of accounts (§4.1, §4.5)');
+  {
+    const codes=M.MA_CHART.map(a=>a.code);
+    s.eq('Groovy codes are unique',new Set(codes).size,codes.length);
+    s.ok('every Groovy code is four digits',codes.every(c=>/^[1-9]\d{3}$/.test(c)));
+    s.ok('every type is a known type',M.MA_CHART.every(a=>M.MA_ACCOUNT_TYPES.indexOf(a.type)>=0));
+    ['1170','6120','6130','6140','6150'].forEach(c=>s.ok('v4 account '+c+' is in the chart',codes.indexOf(c)>=0));
+    ['1010','1011','1012','1020','1040','1050','1060'].forEach(c=>s.ok('holder '+c+' is a money account',!!M.maAcc(IDX,c)&&M.maAcc(IDX,c).money===true));
+    s.ok('every money account is an asset with a holder kind',M.MA_CHART.filter(a=>a.money).every(a=>a.type==='asset'&&M.MA_HOLDER_KINDS.indexOf(a.holderKind)>=0));
+    s.eq('the drawer is in Raees\'s hands',M.maAcc(IDX,'1010').person,'raees');
+    s.eq('cash with Afnan is Afnan\'s',M.maAcc(IDX,'1011').person,'afnan');
+    s.eq('holders whose feed comes later ship switched off','1030,1040,1050,1060',
+      M.maChart('groovy',[]).filter(a=>a.money&&!a.active).map(a=>a.code).join(','));
+    s.eq('drawings are debit-normal (a contra of equity)',M.maAcc(IDX,'3020').normal,'dr');
+    s.eq('a discount given is debit-normal (a contra of revenue)',M.maAcc(IDX,'4040').normal,'dr');
+    s.eq('9010 unclassified-in is credit-normal',M.maAcc(IDX,'9010').normal,'cr');
+    s.ok('every expense and cost of goods has a spend group',M.MA_CHART.filter(a=>a.type==='expense'||a.type==='cogs').every(a=>M.MA_SPEND_GROUPS[a.spend]));
+    const sv=M.MA_SV_CHART.map(a=>a.code);
+    s.eq('Savings codes are unique',new Set(sv).size,sv.length);
+    s.ok('every Savings code is S + four digits',sv.every(c=>/^S[1-9]\d{3}$/.test(c)));
+    s.ok('the Savings book carries the loan to Groovy (S1040)',sv.indexOf('S1040')>=0);
+    s.ok('and the Payfast payout account (S1020) is money',M.MA_SV_CHART.find(a=>a.code==='S1020').money===true);
+    // Merging the owners' edits
+    const merged=M.maChartIndex(M.maChart('groovy',[
+      {code:'1020',name:'MCB — current account',type:'expense',money:false,active:true},
+      {code:'1031',name:'JS Bank',type:'asset',money:true,holderKind:'bank'},
+      {code:'6121',name:'Tea',type:'expense',spend:'people'},
+      {code:'77',name:'bad code',type:'asset'},
+      {code:'6122',name:'Bad type',type:'banana'}
+    ]));
+    s.eq('a default account can be renamed',M.maAcc(merged,'1020').name,'MCB — current account');
+    s.eq('but keeps its type',M.maAcc(merged,'1020').type,'asset');
+    s.eq('and stays a holder',M.maAcc(merged,'1020').money,true);
+    s.ok('a new holder can be added',M.maAcc(merged,'1031')&&M.maAcc(merged,'1031').money===true&&M.maAcc(merged,'1031').custom===true);
+    s.eq('a new expense account keeps its spend group',M.maAcc(merged,'6121').spend,'people');
+    s.eq('a malformed code is ignored',M.maAcc(merged,'77'),null);
+    s.eq('an unknown type is ignored',M.maAcc(merged,'6122'),null);
+    s.ok('the chart stays sorted by code',merged.list.map(a=>a.code).join()===merged.list.map(a=>a.code).slice().sort().join());
+    const off=M.maChartIndex(M.maChart('groovy',[{code:'1060',active:true}]));
+    s.eq('a holder that ships off can be switched on',M.maAcc(off,'1060').active,true);
+  }
+
+  s.section('periods on a fiscal year from 1 July (§20, §27)');
+  {
+    s.eq('29 Feb 2026 is not a day',M.maIsDay('2026-02-29'),false);
+    s.eq('29 Feb 2028 is',M.maIsDay('2028-02-29'),true);
+    s.eq('month 13 is not',M.maIsDay('2026-13-01'),false);
+    s.eq('a non-string is not',M.maIsDay(20261001),false);
+    s.eq('adding across a year',M.maDayAdd('2026-12-31',1),'2027-01-01');
+    s.eq('and back across February',M.maDayAdd('2028-03-01',-1),'2028-02-29');
+    s.eq('20 Oct 2026 is a Tuesday',M.maWeekday('2026-10-20'),2);
+    s.eq('days between',M.maDaysBetween('2026-10-01','2026-10-20'),19);
+    [['2026-07-01','FY27','2027-Q1'],['2026-09-30','FY27','2027-Q1'],['2026-10-01','FY27','2027-Q2'],
+     ['2027-01-15','FY27','2027-Q3'],['2027-06-30','FY27','2027-Q4'],['2027-07-01','FY28','2028-Q1']].forEach(([d,fy,q])=>{
+      s.eq(d+' is '+fy,M.maFyOf(d),fy);
+      s.eq(d+' is '+q,M.maQuarterOf(d),q);
+    });
+    s.eq('Q2 FY27 runs October to December 2026',JSON.stringify(M.maQuarterRange('2027-Q2')),JSON.stringify({from:'2026-10-01',to:'2026-12-31'}));
+    s.eq('Q4 FY27 ends on 30 June 2027',M.maQuarterRange('2027-Q4').to,'2027-06-30');
+    s.eq('the label says both',M.maQuarterLabel('2027-Q2'),'Q2 FY27 · Oct–Dec 2026');
+    s.eq('a calendar fiscal year works too',M.maQuarterOf('2026-10-05',1),'2026-Q4');
+    s.eq('month arithmetic across a year',M.maMonthAdd('2026-11',3),'2027-02');
+    s.eq('days in Feb 2027',M.maDaysInMonth('2027-02'),28);
+    s.eq('a day label',M.maDayLabel('2026-10-20'),'Tue 20 Oct');
+  }
+
+  s.section('money in whole rupees, grouped in lac and crore');
+  {
+    [[0,'0'],[999,'999'],[1000,'1,000'],[100000,'1,00,000'],[1500000,'15,00,000'],[15000000,'1,50,00,000']].forEach(([n,g])=>s.eq(n+' groups as '+g,M.maGroup(n),g));
+    s.eq('a negative carries a minus sign',M.maRs(-2500),'−₨2,500');
+    s.eq('₨ with lakh grouping',M.maRs(150000),'₨1,50,000');
+    s.eq('a sentence says lac',M.maRsShort(2130000),'₨21.3 lac');
+    s.eq('and crore',M.maRsShort(21000000),'₨2.1 cr');
+    s.eq('a whole lac drops its .0',M.maRsShort(1500000),'₨15 lac');
+    s.eq('small amounts stay whole',M.maRsShort(45000),'₨45,000');
+    s.eq('a typed ₨1,50,000 reads',M.maParseRupees('₨1,50,000'),150000);
+    s.eq('Rs. 2,000 reads',M.maParseRupees('Rs. 2,000'),2000);
+    s.ok('text does not',Number.isNaN(M.maParseRupees('two thousand')));
+  }
+
+  s.section('settings merge onto the defaults (§4.4)');
+  {
+    s.eq('pay days default to Wednesday and Saturday',S.payDays.join(),'3,6');
+    s.eq('CPR days default to Tuesday and Friday',S.cprDays.join(),'2,5');
+    s.eq('the drawer is mirrored from Store Accounts until M8',S.mirrors['1010'],'store');
+    s.eq('go-live is 1 Oct 2026',S.goLive,'2026-10-01');
+    s.eq('the books start on 1 Jul 2026',S.historyFrom,'2026-07-01');
+    const x=M.maSettings({payDays:[1,9,'x',1],costCentres:['Factory','bad name!','stitch_unit'],defaultCostCentre:'nope',mirrors:{},relockMinutes:5,evidence:{flagAbove:5000,refuseAbove:50000},fiscalYearStart:13});
+    s.eq('a pay day off the week is dropped, repeats folded',x.payDays.join(),'1');
+    s.eq('cost centres are cleaned',x.costCentres.join(),'factory,stitch_unit');
+    s.eq('an unknown default cost centre falls back to the first',x.defaultCostCentre,'factory');
+    s.eq('M8 can switch the mirror off',JSON.stringify(x.mirrors),'{}');
+    s.eq('the re-lock minutes move',x.relockMinutes,5);
+    s.eq('evidence thresholds move',x.evidence.refuseAbove,50000);
+    s.eq('a fiscal start of 13 is refused',x.fiscalYearStart,7);
+    s.eq('an unset tax rate stays blank (the accountant fills it)',M.maSettings({tax:{rates:{sales:18,services:'x'}}}).tax.rates.services,null);
+  }
+
+  s.section('the tax block (§12) — never absent, and consistent');
+  {
+    const inc=M.maTaxCompute(11700,{kind:'sales',rate:17,inclusive:true});
+    s.eq('17% inside ₨11,700 is ₨1,700',inc.amount,1700);
+    s.eq('leaving ₨10,000 net',inc.net,10000);
+    const exc=M.maTaxCompute(10000,{kind:'sales',rate:17,inclusive:false});
+    s.eq('17% on top of ₨10,000 is ₨1,700',exc.amount,1700);
+    s.eq('so ₨11,700 moves',exc.cash,11700);
+    const w=M.maTaxCompute(50000,{kind:'withholding',rate:10});
+    s.eq('10% withheld from ₨50,000',w.amount,5000);
+    s.eq('the payee gets ₨45,000',w.cash,45000);
+    s.eq('no tax moves exactly the amount',M.maTaxCompute(1234,NONE).cash,1234);
+    s.eq('a missing block is refused',M.maTaxIssues(null,100)[0].rule,'tax.missing');
+    s.eq('"No tax" with an amount is refused',M.maTaxIssues({kind:'none',rate:0,amount:5},100)[0].rule,'tax.amount');
+    s.eq('a sales tax with no rate is refused',M.maTaxIssues({kind:'sales',rate:0,amount:0},100)[0].rule,'tax.rate');
+    s.eq('an amount that disagrees with its rate is refused',M.maTaxIssues({kind:'sales',rate:17,amount:1000,inclusive:true},11700)[0].rule,'tax.amount');
+    s.eq('a rupee of rounding is fine',M.maTaxIssues({kind:'sales',rate:17,amount:1701,inclusive:true},11700).length,0);
+    s.eq('a stored block is recomputed from its rate',M.maTaxBlock(11700,{kind:'sales',rate:17,amount:99,inclusive:true}).amount,1700);
+  }
+
+  s.section('every M1 document posts, balanced, with its labels (§7, §27)');
+  {
+    const out=J('money_out',{date:'2026-10-05',holder:'1020',account:'6040',payee:'Landlord',amount:250000,tax:NONE});
+    const ol=post(out);
+    s.eq('rent: two lines',ol.length,2);
+    s.ok('rent balances',balanced(ol));
+    s.eq('rent debits 6040',ol[0].account+':'+ol[0].dr,'6040:250000');
+    s.eq('and credits MCB',ol[1].account+':'+ol[1].cr,'1020:250000');
+    s.eq('the spend line carries its category',ol[0].category,'Rent');
+    s.eq('its spend group',ol[0].spendGroup,'fixed');
+    s.eq('its kind label from the group',ol[0].kind,'fixed');
+    s.eq('the default cost centre',ol[0].costCentre,'factory');
+    s.eq('the money line names its holder',ol[1].holder,'1020');
+    s.eq('both carry the month, quarter and year',[ol[0].month,ol[0].quarter,ol[0].fy].join(' '),'2026-10 2027-Q2 FY27');
+    s.eq('a live document posts as posted',ol[0].status,'posted');
+    s.eq('the source is manual',ol[0].source,'manual');
+    s.eq('the payee rides on every line',ol[1].payee,'Landlord');
+
+    const back=J('money_out',{date:'2026-08-12',holder:'1011',account:'6120',payee:'Tea stall',amount:1800,tax:NONE,costCentre:'office'});
+    s.eq('a document before go-live is historical',back.historical,true);
+    s.eq('and posts with the historical label',post(back)[0].status,'historical');
+    s.eq('a chosen cost centre is kept',post(back)[0].costCentre,'office');
+    s.eq('food is people spend',post(back)[0].kind,'people');
+
+    const claim=J('money_out',{date:'2026-10-06',holder:'1020',account:'5010',payee:'Mill',amount:117000,tax:{kind:'sales',rate:17,inclusive:true,claimable:true}});
+    const cl=post(claim);
+    s.ok('claimable sales tax balances',balanced(cl));
+    s.eq('the tax goes to input tax (1160)',(cl.find(l=>l.account==='1160')||{}).dr,17000);
+    s.eq('the fabric is the net',(cl.find(l=>l.account==='5010')||{}).dr,100000);
+    const noclaim=J('money_out',{date:'2026-10-06',holder:'1020',account:'6030',payee:'LESCO',amount:11700,tax:{kind:'sales',rate:17,inclusive:true}});
+    const nl=post(noclaim);
+    s.eq('unclaimable tax stays in the cost',(nl.find(l=>l.account==='6030')||{}).dr,11700);
+    s.eq('and never touches 1160',nl.some(l=>l.account==='1160'),false);
+    const wht=J('money_out',{date:'2026-10-07',holder:'1020',account:'6140',payee:'The accountant',amount:50000,tax:{kind:'withholding',rate:10}});
+    const wl=post(wht);
+    s.ok('withholding balances',balanced(wl));
+    s.eq('the full fee is the cost',(wl.find(l=>l.account==='6140')||{}).dr,50000);
+    s.eq('the payee gets the rest from the holder',(wl.find(l=>l.account==='1020')||{}).cr,45000);
+    s.eq('and the state is owed the withheld part (2130)',(wl.find(l=>l.account==='2130')||{}).cr,5000);
+    const inx=J('money_in',{date:'2026-10-08',holder:'1011',account:'4030',payee:'Walk-in buyer',amount:20000,tax:{kind:'sales',rate:18,inclusive:false}});
+    const il=post(inx);
+    s.ok('income with tax on top balances',balanced(il));
+    s.eq('the holder receives amount plus tax',(il.find(l=>l.account==='1011')||{}).dr,23600);
+    s.eq('output tax is owed (2120)',(il.find(l=>l.account==='2120')||{}).cr,3600);
+    s.eq('revenue carries its channel',(il.find(l=>l.account==='4030')||{}).channel,'gate');
+    const inw=J('money_in',{date:'2026-10-08',holder:'1020',account:'4090',payee:'A client',amount:100000,tax:{kind:'withholding',rate:4}});
+    const iwl=post(inw);
+    s.ok('income with tax withheld from us balances',balanced(iwl));
+    s.eq('the withheld tax is a credit we hold (1160)',(iwl.find(l=>l.account==='1160')||{}).dr,4000);
+    const cap=J('capital',{date:'2026-10-02',holder:'1020',owner:'ammar',amount:500000});
+    s.eq('Ammar putting money in credits his capital',post(cap).map(l=>l.account+(l.dr?'+':'-')).join(),'1020+,3011-');
+    const drw=J('drawing',{date:'2026-10-02',holder:'1011',owner:'afnan',amount:30000});
+    s.eq('Afnan taking money out debits his drawings',post(drw).map(l=>l.account+(l.dr?'+':'-')).join(),'3020+,1011-');
+    const op=post(open1011);
+    s.ok('an opening balances itself against 3090',balanced(op));
+    s.eq('with one 3090 line for the difference',(op.find(l=>l.account==='3090')||{}).cr,2800000);
+    const opv=J('opening',{date:'2026-07-01',lines:[{account:'2010',side:'cr',amount:150000,party:'p1'}]});
+    const opvl=post(opv);
+    s.eq('an owed opening debits 3090',(opvl.find(l=>l.account==='3090')||{}).dr,150000);
+    s.eq('and the payable line names its party',(opvl.find(l=>l.account==='2010')||{}).party,'p1');
+    const gen=J('general',{date:'2026-10-09',lines:[{account:'6080',dr:350},{account:'1020',cr:350,memo:'SMS alerts'}]});
+    s.ok('a two-sided journal balances',balanced(post(gen)));
+    const tr=T({date:'2026-10-10',from:'1011',to:'1020',amount:100000});
+    s.eq('a deposit into MCB by Afnan posts at once',tr.status,'posted');
+    s.eq('it moves the money',post(tr).map(l=>l.account+(l.dr?'+':'-')).join(),'1020+,1011-');
+    s.eq('and is labelled a transfer',post(tr)[0].kind,'transfer');
+    const trp=T({date:'2026-10-10',from:'1011',to:'1012',amount:40000});
+    s.eq('cash handed to Ammar waits for Ammar',trp.status+':'+trp.confirmBy,'pending:ammar');
+    s.eq('a pending transfer posts NOTHING',post(trp).length,0);
+    const trd=T({date:'2026-10-10',from:'1011',to:'1010',amount:25000});
+    s.eq('cash handed to the drawer posts here (Raees confirms in Store Accounts)',trd.status+':'+trd.confirmVia,'posted:store');
+    const self=T({date:'2026-10-10',from:'1012',to:'1011',amount:5000},'afnan');
+    s.eq('Afnan recording money reaching his own hands needs nobody',self.status,'posted');
+    const cnt=C({date:'2026-10-15',holder:'1011',counted:98000,note:'short'},100000);
+    s.eq('a count keeps the book it was taken against',cnt.bookBalance,100000);
+    s.eq('and its difference',cnt.difference,-2000);
+    s.eq('a short count moves the holder to 9030',post(cnt).map(l=>l.account+(l.dr?'+':'-')).join(),'9030+,1011-');
+    s.eq('an over count the other way',post(C({date:'2026-10-15',holder:'1011',counted:101000,note:'x'},100000)).map(l=>l.account+(l.dr?'+':'-')).join(),'1011+,9030-');
+    s.eq('a count that agrees posts nothing',post(C({date:'2026-10-15',holder:'1011',counted:100000},100000)).length,0);
+    s.eq('a void posts nothing',post(M.maApplyVoid(out,{by:'afnan',at:1,reason:'x'})).length,0);
+    const every=[out,back,claim,noclaim,wht,inx,inw,cap,drw,open1011,opv,gen,tr,trd,cnt];
+    s.ok('every one of them balances on its own',every.every(d=>balanced(post(d))));
+  }
+
+  s.section('the trial balance on a seeded quarter, and the holders');
+  {
+    const docs=[open1011,
+      J('money_out',{date:'2026-10-05',holder:'1020',account:'6040',payee:'Landlord',amount:250000,tax:NONE}),
+      J('money_out',{date:'2026-10-06',holder:'1011',account:'6060',payee:'Petrol',amount:6000,tax:NONE}),
+      T({date:'2026-10-07',from:'1011',to:'1012',amount:40000}),
+      T({date:'2026-10-08',from:'1020',to:'1011',amount:100000}),
+      C({date:'2026-10-09',holder:'1012',counted:299000,note:'counted short'},300000),
+      J('money_in',{date:'2026-10-09',holder:'1011',account:'4090',payee:'Scrap buyer',amount:7000,tax:NONE}),
+      J('general',{date:'2026-10-10',lines:[{account:'6080',dr:500},{account:'1020',cr:500}]})
+    ];
+    const lines=M.maPostAll(docs,IDX,S);
+    const tb=M.maTrialBalance(lines,IDX,{});
+    s.ok('debits equal credits',tb.balanced,tb.dr+' vs '+tb.cr);
+    s.ok('and the net sides agree',tb.debit===tb.credit);
+    s.eq('the total moved',tb.dr,2800000+250000+6000+100000+1000+7000+500);
+    const rows=M.maHolderRows(IDX,lines,docs,{settings:S,mirrorBalances:{'1010':84500}});
+    const h=c=>rows.find(r=>r.code===c)||{};
+    s.eq('Afnan: 5,00,000 − 6,000 + 1,00,000 + 7,000 (the ₨40,000 to Ammar still pending)',h('1011').balance,601000);
+    s.eq('his pending out',h('1011').pendingOut,40000);
+    s.eq('so he can use',h('1011').available,561000);
+    s.eq('Ammar: counted ₨1,000 short, and ₨40,000 waiting for him',h('1012').balance+':'+h('1012').pendingIn,'299000:40000');
+    s.eq('MCB after rent, a withdrawal and a charge',h('1020').balance,2000000-250000-100000-500);
+    s.eq('the drawer reads from Store Accounts',h('1010').balance,84500);
+    s.eq('and says so',h('1010').mirror,'store');
+    s.eq('its own ledger here is separate',h('1010').ledger,0);
+    s.eq('Ammar\'s last count is on the row',h('1012').lastCount&&h('1012').lastCount.difference,-1000);
+    const cih=M.maCashInHand(rows);
+    s.eq('cash in hand adds every active holder',cih.total,601000+299000+1649500+84500);
+    s.eq('and is complete',cih.complete,true);
+    const miss=M.maHolderRows(IDX,lines,docs,{settings:S,mirrorBalances:{}});
+    s.eq('a drawer that could not be read is null, never zero',miss.find(r=>r.code==='1010').balance,null);
+    s.eq('cash in hand then says it is incomplete',M.maCashInHand(miss).complete,false);
+    const wallet=M.maCashInHand([{active:true,holderKind:'wallet',balance:900000},{active:true,holderKind:'cash',balance:100}]);
+    s.eq('money at TCS is not in anybody\'s hand',wallet.total,100);
+    const led=M.maLedger(lines,{holder:'1011',from:'2026-10-06'},IDX);
+    s.eq('Afnan\'s statement opens at his balance before the range',led.opening,500000);
+    s.eq('and closes where his holder stands',led.closing,601000);
+    s.eq('with a running balance on the last row',led.rows[led.rows.length-1].balance,601000);
+    s.eq('a search finds the petrol',M.maLedger(lines,{q:'petrol'},IDX).count,2);
+    s.eq('the ledger says how many sources',M.maLedger(lines,{},IDX).sources,1);
+    const sp=M.maSpendable(rows);
+    s.eq('the calendar funds from cash and bank only',sp.total,601000+299000+1649500+84500);
+  }
+
+  s.section('validation (§6) — refused, flagged, and clean');
+  {
+    const base={date:'2026-10-05',holder:'1020',account:'6040',payee:'Landlord',amount:25000,tax:NONE,attachments:[{id:'a'}]};
+    const clean=J('money_out',base);
+    const lines=M.maPostAll([open1011],IDX,S);
+    s.eq('a clean payment passes with nothing to say',R(V(clean,{lines})),'');
+    s.eq('an unreal day is refused',lvl(V(J('money_out',Object.assign({},base,{date:'2026-02-30'})),{lines}),'date.real'),'refuse');
+    s.eq('tomorrow is refused',lvl(V(J('money_out',Object.assign({},base,{date:'2026-10-21'})),{lines}),'date.future'),'refuse');
+    s.eq('before the books start is refused',lvl(V(J('money_out',Object.assign({},base,{date:'2026-06-30'})),{lines}),'date.before_books'),'refuse');
+    const closes=[{quarter:'2027-Q1',locked:true},{month:'2026-10',soft:true}];
+    s.eq('a closed quarter is refused',lvl(V(J('money_out',Object.assign({},base,{date:'2026-09-10'})),{lines,closes}),'date.closed'),'refuse');
+    s.eq('a reopened quarter is not',has(V(J('money_out',Object.assign({},base,{date:'2026-09-10'})),{lines,closes:[{quarter:'2027-Q1',locked:true,reopenedAt:5}]}),'date.closed'),false);
+    s.eq('a soft-closed month is flagged, not refused',lvl(V(clean,{lines,closes}),'date.soft_month'),'flag');
+    s.eq('a holder that is not money is refused',lvl(V(J('money_out',Object.assign({},base,{holder:'6040'})),{lines}),'holder.money'),'refuse');
+    s.eq('a switched-off holder is refused',lvl(V(J('money_out',Object.assign({},base,{holder:'1060'})),{lines}),'holder.inactive'),'refuse');
+    s.eq('spending from the drawer is refused until M8',lvl(V(J('money_out',Object.assign({},base,{holder:'1010'})),{lines}),'holder.mirror'),'refuse');
+    s.eq('a count of the drawer is refused too',lvl(V(C({date:'2026-10-05',holder:'1010',counted:5,note:'x'},0),{lines}),'holder.mirror'),'refuse');
+    s.eq('a fraction of a rupee is refused',lvl(V(J('money_out',Object.assign({},base,{amount:'12.5'})),{lines}),'amount.whole'),'refuse');
+    s.eq('zero is refused',lvl(V(J('money_out',Object.assign({},base,{amount:0})),{lines}),'amount.whole'),'refuse');
+    s.eq('₨1 billion is a typo',lvl(V(J('money_out',Object.assign({},base,{amount:1000000000})),{lines}),'amount.max'),'refuse');
+    s.eq('nobody paid is refused',lvl(V(J('money_out',Object.assign({},base,{payee:''})),{lines}),'payee.named'),'refuse');
+    s.eq('a party that does not exist is refused',lvl(V(J('money_out',Object.assign({},base,{party:'nope'})),{lines}),'party.exists'),'refuse');
+    const P=[{id:'v1',name:'Al-Karam',kind:'vendor',active:true,vendor:{tax:{regime:'sales'}}},{id:'v2',name:'Old',kind:'vendor',active:false}];
+    s.eq('an inactive party is refused',lvl(V(J('money_out',Object.assign({},base,{party:'v2',payee:''})),{lines,parties:P}),'party.active'),'refuse');
+    s.eq('no tax against a taxed vendor is flagged with the default',lvl(V(J('money_out',Object.assign({},base,{party:'v1',payee:''})),{lines,parties:P}),'tax.default'),'flag');
+    s.eq('money between two holders as "money out" is refused',lvl(V(J('money_out',Object.assign({},base,{account:'1011'})),{lines}),'account.money'),'refuse');
+    const unl=V(J('money_out',Object.assign({},base,{account:'9020'})),{lines});
+    s.eq('"not sure yet" posts, flagged for the Unlabelled queue',R(unl),'flag:unlabelled');
+    s.eq('an unknown cost centre is refused',lvl(V(J('money_out',Object.assign({},base,{costCentre:'moon'})),{lines}),'costCentre.valid'),'refuse');
+    s.eq('a payment for a commitment not in the register is refused',lvl(V(J('money_out',Object.assign({},base,{commitmentId:'c9',commitmentPeriod:'2026-10'})),{lines,commitments:[]}),'commitment.exists'),'refuse');
+    const noev=J('money_out',Object.assign({},base,{attachments:[]}));
+    s.eq('no receipt on ₨25,000 is flagged',lvl(V(noev,{lines}),'evidence.missing'),'flag');
+    s.eq('under ₨2,000 it is not',has(V(J('money_out',Object.assign({},base,{amount:1500,attachments:[]})),{lines}),'evidence.missing'),false);
+    const strict=M.maSettings({evidence:{flagAbove:2000,refuseAbove:20000}});
+    s.eq('a receipt can be made compulsory above a threshold',lvl(M.maValidate(noev,{idx:IDX,settings:strict,today:TODAY,lines,docs:[]}),'evidence.required'),'refuse');
+    const twin=J('money_out',Object.assign({},base,{date:'2026-10-09'}));
+    s.eq('the same payee and amount within 7 days is flagged',lvl(V(twin,{lines,docs:[clean]}),'duplicate'),'flag');
+    s.eq('a void one does not count',has(V(twin,{lines,docs:[M.maApplyVoid(clean,{reason:'x'})]}),'duplicate'),false);
+    // A holder cannot go below zero
+    const big=J('money_out',Object.assign({},base,{holder:'1011',amount:600000}));
+    s.eq('cash cannot go below zero',lvl(V(big,{lines}),'holder.floor'),'refuse');
+    const bank=J('money_out',Object.assign({},base,{amount:2500000}));
+    s.eq('MCB below zero is flagged (the bank\'s overdraft is its own truth)',lvl(V(bank,{lines}),'holder.floor'),'flag');
+    const oldBig=J('money_out',Object.assign({},base,{holder:'1011',amount:600000,date:'2026-08-01'}));
+    s.eq('backfill below zero is flagged, never refused',lvl(V(oldBig,{lines}),'holder.floor'),'flag');
+    const pendOut=T({date:'2026-10-10',from:'1011',to:'1012',amount:450000});
+    const nearly=J('money_out',Object.assign({},base,{holder:'1011',amount:60000}));
+    s.eq('money waiting to be confirmed elsewhere cannot be spent twice',lvl(V(nearly,{lines,docs:[pendOut]}),'holder.floor'),'refuse');
+    s.eq('without it the same payment is fine',has(V(nearly,{lines,docs:[]}),'holder.floor'),false);
+    const floorS=M.maSettings({holderFloor:{'1011':480000}});
+    s.eq('a holder\'s floor is respected',lvl(M.maValidate(nearly,{idx:IDX,settings:floorS,today:TODAY,lines,docs:[]}),'holder.floor'),'refuse');
+    // 500,000 − 30,000 (12th) − 480,000 (15th) = −10,000 on the 15th, back to +40,000 on the 18th:
+    // it ends above zero (no floor refusal) but dips below on the way.
+    const later=M.maPostAll([J('money_out',{date:'2026-10-15',holder:'1011',account:'6060',payee:'x',amount:480000,tax:NONE}),
+      J('money_in',{date:'2026-10-18',holder:'1011',account:'4090',payee:'y',amount:50000,tax:NONE})],IDX,S).concat(lines);
+    const dip=J('money_out',Object.assign({},base,{holder:'1011',amount:30000,date:'2026-10-12'}));
+    s.eq('a backdated payment that dips a holder on the way is flagged',lvl(V(dip,{lines:later}),'holder.dip'),'flag');
+    s.eq('and is not refused, since it ends above zero',has(V(dip,{lines:later}),'holder.floor'),false);
+    // Journals with lines
+    const unb=J('general',{date:'2026-10-09',lines:[{account:'6080',dr:500},{account:'1020',cr:400}]});
+    s.eq('an unbalanced journal is refused',lvl(V(unb,{lines}),'journal.balanced'),'refuse');
+    const both=J('general',{date:'2026-10-09',lines:[{account:'6080',dr:500,cr:500},{account:'1020',cr:500}]});
+    s.eq('a line that is both debit and credit is refused',lvl(V(both,{lines}),'line.side'),'refuse');
+    s.eq('one line is not a journal',lvl(V(J('general',{date:'2026-10-09',lines:[{account:'6080',dr:5}]}),{lines}),'journal.lines'),'refuse');
+    s.eq('a journal naming the mirrored drawer is refused',lvl(V(J('general',{date:'2026-10-09',lines:[{account:'1010',dr:5},{account:'1011',cr:5}]}),{lines}),'holder.mirror'),'refuse');
+    s.eq('suspense with no memo is flagged',lvl(V(J('general',{date:'2026-10-09',lines:[{account:'9020',dr:5},{account:'1011',cr:5}]}),{lines}),'unlabelled'),'flag');
+    s.eq('an opening dated other than 1 July is flagged',lvl(V(J('opening',{date:'2026-07-02',lines:[{account:'1011',side:'dr',amount:5}]}),{lines}),'opening.date'),'flag');
+    s.eq('a clean opening passes',R(V(open1011,{lines:[]})),'');
+    // Transfers
+    s.eq('a transfer to the same holder is refused',lvl(V(T({date:'2026-10-09',from:'1011',to:'1011',amount:5}),{lines}),'transfer.same'),'refuse');
+    s.eq('a handover into the drawer is allowed',R(V(T({date:'2026-10-09',from:'1011',to:'1010',amount:5000}),{lines})),'');
+    s.eq('owner side of taking cash from the drawer is allowed',has(V(T({date:'2026-10-09',from:'1010',to:'1011',amount:5000}),{lines}),'holder.mirror'),false);
+    s.eq('and is not refused on a floor here — the drawer\'s balance lives in Store Accounts',R(V(T({date:'2026-10-09',from:'1010',to:'1011',amount:5000}),{lines})),'');
+    s.eq('a transfer beyond what the sender holds is refused',lvl(V(T({date:'2026-10-09',from:'1012',to:'1011',amount:400000}),{lines}),'holder.floor'),'refuse');
+    // Counts
+    s.eq('a count that differs needs a reason',lvl(V(C({date:'2026-10-09',holder:'1011',counted:490000},500000),{lines}),'count.reason'),'refuse');
+    const cr=V(C({date:'2026-10-09',holder:'1011',counted:490000,note:'not known yet'},500000),{lines});
+    s.eq('with a reason it posts, flagged to be explained',R(cr),'flag:count.difference');
+    s.eq('a negative count is refused',lvl(V(C({date:'2026-10-09',holder:'1011',counted:-5,note:'x'},0),{lines}),'count.value'),'refuse');
+    // Capital and drawing
+    s.eq('a drawing names Afnan or Ammar',lvl(V(J('drawing',{date:'2026-10-09',holder:'1011',owner:'raees',amount:5}),{lines}),'owner.who'),'refuse');
+    // Edits
+    const before=clean;
+    const after=J('money_out',Object.assign({},base,{amount:26000}));
+    s.eq('an edit needs a reason',lvl(V(after,{lines,before}),'edit.reason'),'refuse');
+    s.eq('with one it passes',R(V(after,{lines,before,reason:'the landlord added water'})),'');
+    s.eq('a document cannot change kind',lvl(V(J('money_in',Object.assign({},base,{account:'4090'})),{lines,before,reason:'x'}),'edit.type'),'refuse');
+    s.eq('or party',lvl(V(J('money_out',Object.assign({},base,{party:'v1',payee:''})),{lines,before,reason:'x',parties:P}),'edit.party'),'refuse');
+    s.eq('a void document cannot be edited',lvl(V(after,{lines,before:M.maApplyVoid(before,{reason:'x'}),reason:'x'}),'edit.void'),'refuse');
+    s.eq('a document in a closed quarter cannot be moved out of it',lvl(V(after,{lines,before:Object.assign({},before,{date:'2026-09-01'}),reason:'x',closes}),'edit.closed'),'refuse');
+  }
+
+  s.section('edits keep their history; voids and confirmations (§31)');
+  {
+    const a=J('money_out',{date:'2026-10-05',holder:'1020',account:'6040',payee:'Landlord',amount:25000,tax:NONE,note:'Oct'});
+    const b=Object.assign({},a,{amount:26000,note:'Oct, with water'});
+    const d=M.maEditDiff(a,b);
+    s.eq('the diff names only what changed',d.fields.join(),'amount,note');
+    s.eq('with the before value',d.before.amount,25000);
+    const e=M.maApplyEdit(a,b,{by:'ammar',byName:'Ammar',at:99,reason:'water added'});
+    s.eq('the edit is one more history row',e.edits.length,1);
+    s.eq('naming who and why',e.edits[0].by+':'+e.edits[0].reason,'ammar:water added');
+    s.eq('the revision counts up',e.rev,2);
+    s.eq('identity stays: the number',e.no,a.no);
+    s.eq('and who entered it first',e.by,a.by);
+    s.eq('nothing changed → no edit',M.maApplyEdit(a,Object.assign({},a),{reason:'x'}),null);
+    const e2=M.maApplyEdit(e,Object.assign({},e,{amount:27000}),{by:'afnan',at:100,reason:'again'});
+    s.eq('a second edit adds a second row',e2.edits.length+':'+e2.rev,'2:3');
+    s.eq('a void needs a reason',M.maVoidIssues(a,'',{})[0].rule,'void.reason');
+    s.eq('a void in a closed quarter is refused',M.maVoidIssues(Object.assign({},a,{date:'2026-09-01'}),'x',{closes:[{quarter:'2027-Q1',locked:true}]}).map(x=>x.rule).join(),'void.closed');
+    const v=M.maApplyVoid(a,{by:'afnan',at:5,reason:'entered twice'});
+    s.eq('a void keeps the document, struck through',v.status+':'+v.voidReason,'void:entered twice');
+    s.eq('voiding twice is refused',M.maVoidIssues(v,'x',{})[0].rule,'void.again');
+    const tp=T({date:'2026-10-10',from:'1011',to:'1012',amount:40000});
+    s.eq('Ammar confirms what reached him',M.maConfirmPatch(tp,'ammar',{at:7}).patch.status,'posted');
+    s.eq('Afnan cannot confirm for Ammar',!!M.maConfirmPatch(tp,'afnan',{}).error,true);
+    const toRaees=Object.assign({},tp,{confirmBy:'raees',confirmPaper:true});
+    const paper=M.maConfirmPatch(toRaees,'afnan',{at:8});
+    s.eq('an owner confirms for Raees on paper',paper.patch.confirmVia+':'+paper.patch.confirmedFor,'paper:raees');
+    s.eq('a posted transfer is not confirmed again',!!M.maConfirmPatch(Object.assign({},tp,{status:'posted'}),'ammar',{}).error,true);
+  }
+
+  s.section('parties: terms and rate cards keep their history (§4.2)');
+  {
+    s.eq('credit terms need their days',M.maTermsIssues({mode:'credit'})[0].rule,'terms.days');
+    s.eq('monthly terms need a bill day',M.maTermsIssues({mode:'monthly'})[0].rule,'terms.billDay');
+    s.eq('weekly terms need a weekday',M.maTermsIssues({mode:'weekly',billWeekdays:[]})[0].rule,'terms.billWeekdays');
+    s.eq('clean terms pass',M.maTermsIssues({mode:'credit',creditDays:30,creditLimit:750000,payDays:[3,6]}).length,0);
+    s.eq('terms in words',M.maTermsText({mode:'credit',creditDays:30,creditLimit:750000}),'Credit 30 days · limit ₨7.5 lac');
+    let v={id:'v1',name:'Al-Karam',kind:'vendor',code:'ALKA',vendor:{terms:{mode:'credit',creditDays:30,from:'2026-07-01'}}};
+    v=M.maTermsChange(v,{mode:'credit',creditDays:45},{from:'2026-10-15',by:'afnan',at:1,reason:'agreed in October'});
+    s.eq('the new terms start on their day',v.vendor.terms.from+':'+v.vendor.terms.creditDays,'2026-10-15:45');
+    s.eq('the old ones are kept, closed the day before',v.vendor.termsHistory[0].to+':'+v.vendor.termsHistory[0].creditDays,'2026-10-14:30');
+    s.eq('with who and why',v.vendor.termsHistory[0].reason,'agreed in October');
+    s.eq('a September bill keeps its 30 days',M.maTermsAt(v,'2026-09-20').creditDays,30);
+    s.eq('an October 20 bill gets 45',M.maTermsAt(v,'2026-10-20').creditDays,45);
+    s.eq('credit 30 from 20 Oct is 19 Nov',M.maDueDate({mode:'credit',creditDays:30},'2026-10-20'),'2026-11-19');
+    s.eq('cash is due the same day',M.maDueDate({mode:'cash'},'2026-10-20'),'2026-10-20');
+    s.eq('a monthly bill on the 25th made on the 20th is due the 25th',M.maDueDate({mode:'monthly',billDay:25},'2026-10-20'),'2026-10-25');
+    s.eq('made on the 26th, it is due next month',M.maDueDate({mode:'monthly',billDay:25},'2026-10-26'),'2026-11-25');
+    s.eq('a bill day of 31 lands on 30 Nov',M.maDueDate({mode:'monthly',billDay:31},'2026-11-02'),'2026-11-30');
+    s.eq('weekly on Saturday from Tuesday 20 Oct',M.maDueDate({mode:'weekly',billWeekdays:[6]},'2026-10-20'),'2026-10-24');
+    s.eq('the next pay day after Tuesday is Wednesday',M.maNextPayDay('2026-10-20',[3,6]),'2026-10-21');
+    s.eq('a pay day is its own next pay day',M.maNextPayDay('2026-10-21',[3,6]),'2026-10-21');
+    s.eq('a rate needs a unit',M.maRateIssues({item:'Stitching tee',rate:85})[0].rule,'rate.unit');
+    s.eq('a rate to three decimals is refused',M.maRateIssues({item:'x',unit:'pc',rate:1.234})[0].rule,'rate.value');
+    v=M.maRateChange(v,{item:'Stitching — tee',unit:'piece',rate:85,validFrom:'2026-07-01'},{by:'afnan',at:1});
+    v=M.maRateChange(v,{item:'Stitching — tee',unit:'piece',rate:90,validFrom:'2026-10-01'},{by:'ammar',at:2});
+    s.eq('both rates stay on the card',v.vendor.rateCard.length,2);
+    s.eq('the old one closes the day before the new',v.vendor.rateCard[0].validTo,'2026-09-30');
+    s.eq('a September bill reads ₨85',M.maRateAt(v,'stitching — tee','2026-09-15').rate,85);
+    s.eq('an October bill reads ₨90',M.maRateAt(v,'Stitching — tee','2026-10-02').rate,90);
+    s.eq('an item not on the card reads nothing',M.maRateAt(v,'Washing','2026-10-02'),null);
+    s.eq('a code is suggested from the name',M.maPartyCode('Al-Karam Textiles',[]),'ALKA');
+    s.eq('and made unique',M.maPartyCode('Al-Karam Textiles',['ALKA','alka2']),'ALKA3');
+    const parties=[{id:'a',name:'Al-Karam',kind:'vendor',code:'ALKA'}];
+    s.eq('a taken code is refused',M.maPartyIssues({id:'b',name:'Other',kind:'vendor',code:'ALKA'},{parties}).map(x=>x.rule).join(),'party.code_taken');
+    s.eq('taken is matched without case',M.maPartyIssues({id:'b',name:'Other',kind:'vendor',code:'ALKA'},{parties:[{id:'a',name:'Al-Karam',kind:'vendor',code:'alka'}]}).map(x=>x.rule).join(),'party.code_taken');
+    s.eq('a lowercase code is refused',M.maPartyIssues({id:'b',name:'Other',kind:'vendor',code:'ab'},{parties})[0].rule,'party.code');
+    s.eq('an unknown kind is refused',M.maPartyIssues({id:'b',name:'Other',kind:'friend',code:'OTH'},{parties})[0].rule,'party.kind');
+    s.eq('the same vendor name twice is flagged',M.maPartyIssues({id:'b',name:' al-karam ',kind:'vendor',code:'AK2'},{parties}).map(x=>x.level+':'+x.rule).join(),'flag:party.same_name');
+    s.eq('bad terms on a vendor are refused',M.maPartyIssues({id:'b',name:'Other',kind:'vendor',code:'OTH',vendor:{terms:{mode:'credit'}}},{parties})[0].rule,'terms.days');
+    s.eq('an item needs a unit',M.maItemIssues({name:'Rib',kind:'fabric'},{items:[]})[0].rule,'item.unit');
+    s.eq('two items cannot share a name',M.maItemIssues({id:'2',name:'rib',kind:'fabric',unit:'kg'},{items:[{id:'1',name:'Rib'}]})[0].rule,'item.same');
+  }
+
+  s.section('the cost register (§26) — due days, periods and states');
+  {
+    const rent={id:'c1',name:'Rent — factory',kind:'fixed',cadence:'monthly',dueDay:5,account:'6040',holder:'1020',amountExpected:250000,active:true,from:'2026-10-01'};
+    s.eq('clean',M.maCommitmentIssues(rent,{idx:IDX,settings:S}).length,0);
+    s.eq('a monthly without a due day is refused',M.maCommitmentIssues(Object.assign({},rent,{dueDay:0}),{idx:IDX,settings:S})[0].rule,'commit.dueDay');
+    s.eq('a commitment booked to a holder is refused',M.maCommitmentIssues(Object.assign({},rent,{account:'1020'}),{idx:IDX,settings:S})[0].rule,'commit.account');
+    s.eq('one paid from the drawer is Store Accounts\' until M8',M.maCommitmentIssues(Object.assign({},rent,{holder:'1010'}),{idx:IDX,settings:S})[0].rule,'commit.holder_mirror');
+    s.eq('an end before the start is refused',M.maCommitmentIssues(Object.assign({},rent,{to:'2026-09-01'}),{idx:IDX,settings:S})[0].rule,'commit.to');
+    s.eq('October to December: three rent days',M.maCommitmentDueDays(rent,'2026-10-01','2026-12-31').join(),'2026-10-05,2026-11-05,2026-12-05');
+    s.eq('nothing before it starts',M.maCommitmentDueDays(rent,'2026-09-01','2026-09-30').length,0);
+    s.eq('a 31st lands on the last day of short months',M.maCommitmentDueDays(Object.assign({},rent,{dueDay:31}),'2026-11-01','2027-02-28').join(),'2026-11-30,2026-12-31,2027-01-31,2027-02-28');
+    s.eq('weekly on Saturdays',M.maCommitmentDueDays({cadence:'weekly',dueWeekday:6},'2026-10-01','2026-10-20').join(),'2026-10-03,2026-10-10,2026-10-17');
+    s.eq('quarterly falls in each fiscal quarter\'s first month',M.maCommitmentDueDays({cadence:'quarterly',dueDay:10,dueMonth:1},'2026-07-01','2027-06-30').join(),'2026-07-10,2026-10-10,2027-01-10,2027-04-10');
+    s.eq('yearly once',M.maCommitmentDueDays({cadence:'yearly',dueDay:1,dueMonth:1},'2026-07-01','2027-06-30').join(),'2027-01-01');
+    s.eq('per piece has no calendar day',M.maCommitmentDueDays({cadence:'per_piece'},'2026-07-01','2027-06-30').length,0);
+    s.eq('a monthly period is its month',M.maCommitmentPeriodKey(rent,'2026-10-05'),'2026-10');
+    s.eq('before the 5th it is upcoming',M.maCommitmentStatus(rent,[],'2026-10-03',S).state,'upcoming');
+    s.eq('on the 5th it is due',M.maCommitmentStatus(rent,[],'2026-10-05',S).state,'due');
+    s.eq('three days\' grace',M.maCommitmentStatus(rent,[],'2026-10-08',S).state,'due');
+    s.eq('then overdue',M.maCommitmentStatus(rent,[],'2026-10-09',S).state,'overdue');
+    const pay=J('money_out',{date:'2026-10-06',holder:'1020',account:'6040',payee:'Landlord',amount:250000,tax:NONE,commitmentId:'c1',commitmentPeriod:'2026-10'});
+    pay.commitmentId='c1';pay.commitmentPeriod='2026-10';
+    s.eq('a payment naming it for October makes it paid',M.maCommitmentStatus(rent,[pay],'2026-10-20',S).state,'paid');
+    const part=Object.assign({},pay,{amount:100000});
+    s.eq('part of it is part-paid',M.maCommitmentStatus(rent,[part],'2026-10-20',S).state,'part');
+    s.eq('a void payment does not count',M.maCommitmentStatus(rent,[M.maApplyVoid(pay,{reason:'x'})],'2026-10-20',S).state,'overdue');
+    s.eq('in words',M.maCommitmentText(rent),'Monthly · the 5th');
+  }
+
+  s.section('the calendar (§17) — dues, markers and an unfunded day');
+  {
+    const rent={id:'c1',name:'Rent — factory',kind:'fixed',cadence:'monthly',dueDay:25,account:'6040',holder:'1020',amountExpected:250000,active:true,from:'2026-10-01'};
+    const net={id:'c2',name:'Internet',kind:'fixed',cadence:'monthly',dueDay:10,account:'6030',holder:'1020',amountExpected:9000,active:true,from:'2026-10-01'};
+    const cal=M.maCalendar({today:TODAY,days:30,commitments:[rent,net],docs:[],settings:S,start:200000});
+    s.eq('thirty days from today',cal.days.length+':'+cal.days[0].day+'…'+cal.days[29].day,'30:2026-10-20…2026-11-18');
+    s.eq('the internet was due on the 10th and is still owed — it lands today',cal.days[0].events.map(e=>e.label+(e.late?' (late)':'')).join(),'Internet (late)');
+    s.eq('rent on the 25th',cal.days.find(d=>d.day==='2026-10-25').out,250000);
+    s.eq('next month\'s internet on 10 Nov',cal.days.find(d=>d.day==='2026-11-10').out,9000);
+    s.eq('Wednesday is marked a pay day',cal.days.find(d=>d.day==='2026-10-21').payDay,true);
+    s.eq('Friday a CPR day',cal.days.find(d=>d.day==='2026-10-23').cprDay,true);
+    s.eq('the projection falls with each due',cal.days.find(d=>d.day==='2026-10-25').projected,200000-9000-250000);
+    s.eq('the first day the holders cannot fund is named',cal.unfunded[0],'2026-10-25');
+    const paid=J('money_out',{date:'2026-10-11',holder:'1020',account:'6030',payee:'PTCL',amount:9000,tax:NONE});
+    paid.commitmentId='c2';paid.commitmentPeriod='2026-10';
+    const cal2=M.maCalendar({today:TODAY,days:30,commitments:[rent,net],docs:[paid],settings:S,start:300000});
+    s.eq('a paid commitment is not owed again',cal2.days[0].out,0);
+    s.eq('and with enough cash nothing is unfunded',cal2.unfunded.length,0);
+    const inflow=M.maCalendar({today:TODAY,days:30,commitments:[rent],docs:[],settings:S,start:0,inflows:[{day:'2026-10-23',label:'CPR',amount:900000}]});
+    s.eq('an expected inflow lifts the projection',inflow.days.find(d=>d.day==='2026-10-25').projected,650000);
+  }
+
+  s.section('needs attention — worst first, fine is silent (§16.1, §17)');
+  {
+    const rent={id:'c1',name:'Rent — factory',kind:'fixed',cadence:'monthly',dueDay:5,account:'6040',holder:'1020',amountExpected:250000,active:true,from:'2026-10-01'};
+    const pend=T({date:'2026-10-17',from:'1011',to:'1012',amount:40000});
+    const holders=[{code:'1011',name:'Cash — with Afnan',active:true,holderKind:'cash',balance:120000,floor:0,lastCount:null},
+                   {code:'1010',name:'Cash — store drawer (Raees)',active:true,holderKind:'cash',mirror:'store',mirrorOk:false,balance:null}];
+    const cal=M.maCalendar({today:TODAY,days:30,commitments:[rent],docs:[],settings:S,start:100000});
+    const lines=M.maNeedsAttention({today:TODAY,settings:S,holders,commitments:[rent],docs:[pend],calendar:cal,unlabelled:[{amount:900}],review:[{}],recon:-2000,backup:null,nowMs:0});
+    s.eq('the concerns come before the watches',lines.map(l=>l.state).join(),'concern,concern,watch,watch,watch,watch,watch,watch,watch');
+    s.ok('an unfunded day is a concern',lines.some(l=>l.state==='concern'&&/run .* short/.test(l.sentence)));
+    s.ok('an overdue rent says what, when and how much',lines.some(l=>l.sentence==='Rent — factory — nothing recorded for Oct 2026; ₨2,50,000 was due Mon 5 Oct.'));
+    s.ok('a transfer waiting three days is named',lines.some(l=>/waiting to be confirmed/.test(l.sentence)));
+    s.ok('an uncounted cash holder is named',lines.some(l=>/With Afnan has not been counted/.test(l.sentence)));
+    s.ok('a drawer that could not be read says so',lines.some(l=>/could not be read from Store Accounts/.test(l.sentence)));
+    s.ok('no backup yet says what to switch on',lines.some(l=>/No nightly backup has run yet/.test(l.sentence)));
+    s.ok('every line carries its basis',lines.every(l=>l.basis));
+    s.ok('and an action',lines.every(l=>l.action&&l.action.go));
+    const quiet=M.maNeedsAttention({today:TODAY,settings:S,holders:[{code:'1011',name:'Cash — with Afnan',active:true,holderKind:'cash',balance:0}],commitments:[],docs:[],calendar:M.maCalendar({today:TODAY,commitments:[],settings:S,start:5}),backup:{ok:true,at:1000},nowMs:1000+3600000});
+    s.eq('when all is well there is nothing to say',quiet.length,0);
+    const old=M.maNeedsAttention({today:TODAY,settings:S,holders:[],commitments:[],docs:[],backup:{ok:true,at:0},nowMs:3*86400000});
+    s.eq('a backup three days old is a concern',old.map(l=>l.state+':'+l.sentence).join(),'concern:The last backup ran 3 days ago.');
+    const failed=M.maNeedsAttention({today:TODAY,settings:S,holders:[],commitments:[],docs:[],backup:{ok:false,error:'PERMISSION_DENIED on bucket'},nowMs:1});
+    s.ok('a failed backup names its error',/PERMISSION_DENIED/.test(failed[0].sentence));
+  }
+
+  s.section('the Unlabelled queue and FIFO allocation');
+  {
+    const u=J('money_out',{date:'2026-10-05',holder:'1011',account:'9020',payee:'Someone',amount:1200,tax:NONE});
+    const k=J('money_out',{date:'2026-10-05',holder:'1011',account:'6060',payee:'Petrol',amount:1200,tax:NONE});
+    const q=M.maUnlabelled([u,k,M.maApplyVoid(J('money_out',{date:'2026-10-05',holder:'1011',account:'9020',payee:'v',amount:5,tax:NONE}),{reason:'x'})],IDX,S);
+    s.eq('only the unnamed live entry waits',q.length,1);
+    s.eq('with its amount',q[0].amount,1200);
+    s.eq('once named it leaves the queue',M.maUnlabelled([Object.assign({},u,{account:'6060'})],IDX,S).length,0);
+    const a=M.maAllocateFifo(50000,[{id:'b2',date:'2026-10-02',outstanding:30000},{id:'b1',date:'2026-10-01',outstanding:40000}]);
+    s.eq('the oldest bill is settled first',a.allocations.map(x=>x.id+':'+x.amount).join(),'b1:40000,b2:10000');
+    s.eq('nothing left over',a.remainder,0);
+    s.eq('more than is owed leaves an advance',M.maAllocateFifo(90000,[{id:'b1',date:'2026-10-01',outstanding:40000}]).remainder,50000);
+    s.eq('a settled bill is skipped',M.maAllocateFifo(10,[{id:'b1',date:'2026-10-01',outstanding:0}]).allocations.length,0);
+  }
+
+  s.section('numbering, the audit row, and the words');
+  {
+    s.eq('JV-27-0001',M.maDocNo('journal','FY27',1),'JV-27-0001');
+    s.eq('TR-28-0042',M.maDocNo('transfer','FY28',42),'TR-28-0042');
+    const row=M.maAuditRow('post',{dt:'journal',id:'x',no:'JV-27-0001'},{by:'afnan',byName:'Afnan',at:5,detail:'Rent'});
+    s.eq('an audit row names who, what and the document',row.action+':'+row.by+':'+row.target.no,'post:afnan:JV-27-0001');
+    s.eq('an unknown action is not invented',M.maAuditRow('delete',null,{}).action,'post');
+    s.eq('a transfer\'s title names both holders',M.maDocTitle(T({date:'2026-10-10',from:'1011',to:'1020',amount:5}),IDX),'Transfer with Afnan → MCB current');
+    s.eq('HTML is escaped, quotes included',M.maEsc('<b>"x"&\'y\''),'&lt;b&gt;&quot;x&quot;&amp;&#39;y&#39;');
+  }
+
+  s.section('the core is pure, and is the same in the browser and in node');
+  {
+    const src=fs.readFileSync(path.join(ROOT,'js/ma-core.js'),'utf8');
+    const code=src.replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[^:])\/\/.*$/gm,'$1');
+    [['document.','the DOM'],['window.','window'],['localStorage','browser storage'],['fetch(','the network'],
+     ['getDocs','Firestore'],['setDoc','Firestore'],['runTransaction','Firestore'],['Date.now(','its own clock'],
+     ['Math.random','randomness'],['session','the session']].forEach(([t,what])=>
+      { // 'document.' / 'window.' only count as an API use when an identifier follows (not "Unknown document.")
+        const re=/\.$/.test(t)?new RegExp('\\b'+t.replace(/\./g,'\\.')+'[A-Za-z_$]'):null;
+        const hit=re?re.test(code):code.indexOf(t)>=0;
+        s.ok('it never touches '+what,!hit,hit?t:undefined); });
+    s.ok('the only new Date() is maDay\'s default',(code.match(/new Date\(\)/g)||[]).length===1&&/function maDay\(d\)\{d=d\|\|new Date\(\)/.test(code));
+    const declared=(src.match(/^function (ma[A-Z]\w*)/gm)||[]).map(x=>x.slice(9));
+    const missing=declared.filter(n=>!(n in M));
+    s.eq('every public function is exported for the nightly function',missing.join(','),'');
+    const a=harness.loadApp({files:['js/ma-core.js']});
+    s.eq('as a classic script it defines its globals',a.run('typeof maPost+typeof MA_CHART'),'functionobject');
+    const viaVm=a.run(`JSON.stringify(maPost(maBuildDoc('transfer',{date:'2026-10-10',from:'1011',to:'1020',amount:7},{by:'afnan'},maChartIndex(maChart('groovy',[])),maSettings(null)),maChartIndex(maChart('groovy',[])),maSettings(null)).map(l=>l.account+':'+l.dr+':'+l.cr))`);
+    s.eq('and posts the same lines there',viaVm,JSON.stringify(['1020:7:0','1011:0:7']));
+    s.ok('every name it declares is prefixed ma/MA_ (one shared lexical scope)',
+      (src.match(/^(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/gm)||[]).every(x=>/\s(_?ma[A-Z]|MA_)/.test(x)),
+      (src.match(/^(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/gm)||[]).filter(x=>!/\s(_?ma[A-Z]|MA_)/.test(x)).join(','));
+  }
+  return s;
+};
