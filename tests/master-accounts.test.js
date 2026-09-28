@@ -341,6 +341,99 @@ module.exports=async function(){
     s.ok('the form\'s party select now picks it',/value="p_[^"]+" selected/.test(app.el('ma-f-party').innerHTML));
   }
 
+  s.section('the PDFs — on the right pages, for the right documents (M1.4)');
+  {
+    const {app:b}=mkApp();
+    const m=(t,x)=>Object.assign({by:'afnan',byName:'Afnan',ts:T0+t},x||{});
+    const cap=built(b,'journal',{kind:'capital',date:'2026-07-02',holder:'1011',owner:'afnan',amount:300000,note:'Wages'},m(1),'JV-27-0001');
+    const out=built(b,'journal',{kind:'money_out',date:'2026-07-05',holder:'1011',account:'5030',party:'p1',amount:20000,tax:{kind:'withholding',rate:4},note:'Printing'},m(2),'JV-27-0002');
+    const trf=built(b,'transfer',{date:'2026-07-06',from:'1011',to:'1012',amount:50000,note:'Float'},m(3),'TR-27-0001');
+    const cnt=built(b,'count',{date:'2026-07-07',holder:'1011',counted:229000},m(4,{bookBalance:230000}),'CT-27-0001');
+    const tv=JSON.parse(b.run('JSON.stringify(maApplyVoid('+J(built(b,'transfer',{date:'2026-07-08',from:'1011',to:'1020',amount:1000},m(5),'TR-27-0002'))+',{at:'+(T0+9)+',by:"afnan",byName:"Afnan",reason:"Wrong day"}))'));
+    const seed={ma_journal:{[cap.no]:cap,[out.no]:out},ma_transfer:{[trf.no]:trf,[tv.no]:tv},ma_counts:{[cnt.no]:cnt},
+      ma_parties:{p1:{id:'p1',kind:'vendor',name:'Asghar Printers',code:'ASG',active:true,vendor:{terms:{mode:'credit',creditDays:30,from:'2026-07-01'}}}}};
+    const {app,S}=mkApp({seed});
+    await app.run('maLoad()');
+    const calls=[];
+    app.ctx.printDocument=o=>{calls.push(o);return Promise.resolve({blob:{},filename:o.filename});};
+    const toasts=app.state.toasts;
+    const rail=(dt,id)=>app.run("_maRail={kind:'doc',dt:"+J(dt)+",id:"+J(id)+"};_maPageHTML('ma-ledger')");
+    const btns=h=>['Receipt (PDF)','Voucher (PDF)'].filter(x=>h.indexOf(x)>=0).join(',');
+    s.eq('a transfer\'s rail offers its receipt, and only that',btns(rail('transfer','TR-27-0001')),'Receipt (PDF)');
+    s.ok('…wired to maDocPdf for that transfer',/window\.maDocPdf\('transfer','TR-27-0001'\)/.test(rail('transfer','TR-27-0001')));
+    s.eq('a Money out\'s rail offers its voucher, and only that',btns(rail('journal','JV-27-0002')),'Voucher (PDF)');
+    s.eq('a capital journal offers neither',btns(rail('journal','JV-27-0001')),'');
+    s.eq('a count offers neither',btns(rail('count','CT-27-0001')),'');
+    s.eq('a VOID transfer still offers its receipt — it prints VOID',btns(rail('transfer','TR-27-0002')),'Receipt (PDF)');
+    app.run('_maRail=null');
+
+    await app.run("window.maDocPdf('transfer','TR-27-0001')");
+    const c0=calls[0]||{};
+    s.eq('Receipt → the ma-receipt variant, named Receipt-<no>.pdf',J([c0.type,c0.filename]),J(['ma-receipt','Receipt-TR-27-0001.pdf']));
+    s.ok('…its data is the core\'s receipt for that transfer',c0.data&&c0.data.no==='TR-27-0001'&&c0.data.amount===50000&&c0.data.amountWords==='Rupees Fifty Thousand Only'&&c0.data.state==='pending'&&c0.data.waitingFor==='Ammar',J(c0.data&&[c0.data.state,c0.data.waitingFor]));
+    s.ok('…and never deliver:"blob" — the person gets the tab and the download',!('deliver' in c0));
+    await app.run("window.maDocPdf('journal','JV-27-0002')");
+    const c1=calls[1]||{};
+    s.eq('Voucher → the ma-voucher variant, named Voucher-<no>.pdf',J([c1.type,c1.filename]),J(['ma-voucher','Voucher-JV-27-0002.pdf']));
+    s.ok('…paid to the party, the cash that left, the tax block',c1.data&&c1.data.paidTo.name==='Asghar Printers'&&c1.data.paid===19200&&c1.data.tax&&c1.data.tax.kind==='withholding');
+    await app.run("window.maDocPdf('transfer','TR-27-0002')");
+    const c2=calls[2]||{};
+    s.eq('a void receipt says so in its file name too',c2.filename,'Receipt-TR-27-0002-VOID.pdf');
+    s.eq('…and in its data',c2.data&&c2.data.state,'void');
+    const n=calls.length;
+    await app.run("window.maDocPdf('journal','JV-27-0001')");
+    await app.run("window.maDocPdf('count','CT-27-0001')");
+    s.eq('a capital journal or a count prints nothing',calls.length,n);
+    s.ok('…and says why',toasts.filter(t=>/^Only a transfer \(its receipt\) or a Money out \(its voucher\) has a PDF of its own/.test(t)).length===2,J(toasts));
+    const ex=S.sets.filter(x=>x.col==='ma_audit'&&x.data.action==='export').map(x=>[x.data.detail,x.data.target&&x.data.target.no]);
+    s.eq('each PDF leaves one export row in the audit, naming the file and the document',J(ex),J([['PDF · Receipt-TR-27-0001.pdf','TR-27-0001'],['PDF · Voucher-JV-27-0002.pdf','JV-27-0002'],['PDF · Receipt-TR-27-0002-VOID.pdf','TR-27-0002']]));
+
+    // The page PDFs sit in the ⋯ menu of the pages that are one account's.
+    app.run("_maPeriod='all'");
+    const head=h=>((/<div class="ma-menu" id="ma-menu">([\s\S]*?)<\/div>/.exec(h)||[])[1]||'');
+    s.ok('the Ledger (postings) offers Download PDF',/window\.maPdf\('ledger'\)/.test(head(app.run("_maLedgerTab='postings';_maPageHTML('ma-ledger')"))));
+    s.ok('…its other tabs do not',['documents','unlabelled','review'].every(t=>!/maPdf\(/.test(head(app.run("_maLedgerTab='"+t+"';_maPageHTML('ma-ledger')")))));
+    app.run("_maLedgerTab='postings'");
+    s.ok('a holder page offers it',/window\.maPdf\('holder'\)/.test(head(app.run("_maHolderCode='1011';_maPageHTML('ma-holder')"))));
+    s.ok('a party page offers it',/window\.maPdf\('party'\)/.test(head(app.run("_maPartyId='p1';_maPageHTML('ma-party')"))));
+    ['ma-overview','ma-money','ma-out','ma-parties','ma-close'].forEach(id=>s.ok(id+' has no PDF (no single account to print)',!/maPdf\(/.test(app.run("_maPageHTML('"+id+"')"))));
+
+    const k=calls.length;
+    app.run("window.maPdf('ledger')");
+    s.eq('a ledger PDF of every account is refused',calls.length,k);
+    s.ok('…saying to pick one holder or one account',toasts.some(t=>/Pick one holder or one account/.test(t)));
+    const r=JSON.parse(app.run('JSON.stringify(_maRange(_maCtx()))'));
+    app.run("window.maLedgerFilter('holder','1011')");
+    app.run("window.maPdf('ledger')");
+    const c3=calls[k]||{};
+    s.eq('with a holder picked → ma-ledger, Ledger-<code>-<from>_<to>.pdf',J([c3.type,c3.filename]),J(['ma-ledger','Ledger-1011-'+r.from+'_'+r.to+'.pdf']));
+    s.eq('…one row per posting the page shows',c3.data&&c3.data.rows.length,app.run('_maLedgerFiltered(_maCtx()).led.count'));
+    s.eq('…opening and closing are the page\'s',J(c3.data&&[c3.data.opening,c3.data.closing]),app.run('JSON.stringify((l=>[l.opening,l.closing])(_maLedgerFiltered(_maCtx()).led))'));
+    s.ok('…the waiting transfer and the void one are not on it',c3.data&&!c3.data.rows.some(x=>x.no==='TR-27-0001'||x.no==='TR-27-0002'));
+    app.run("window.maLedgerFilter('account','5030')");
+    app.run("window.maPdf('ledger')");
+    s.eq('an account filter prints that account',(calls[k+1]||{}).filename,'Ledger-5030-'+r.from+'_'+r.to+'.pdf');
+    app.run("_maHolderCode='1011';window.maPdf('holder')");
+    s.eq('holder page → ma-statement-holder, Holder-<code>-…pdf',J([(calls[k+2]||{}).type,(calls[k+2]||{}).filename]),J(['ma-statement-holder','Holder-1011-'+r.from+'_'+r.to+'.pdf']));
+    app.run("_maPartyId='p1';window.maPdf('party')");
+    s.eq('party page → ma-statement-party, Statement-<code>-…pdf',J([(calls[k+3]||{}).type,(calls[k+3]||{}).filename]),J(['ma-statement-party','Statement-ASG-'+r.from+'_'+r.to+'.pdf']));
+
+    // A missing engine, and a failing one, are said out loud.
+    const t0=toasts.length;
+    delete app.ctx.printDocument;
+    s.eq('no print engine → nothing, and false',app.run("window.maDocPdf('transfer','TR-27-0001')"),false);
+    s.ok('…with a toast saying the engine is not loaded',toasts.slice(t0).some(t=>/PDF engine is not loaded/.test(t)));
+    app.ctx.printDocument=()=>Promise.reject(new Error('the font would not load'));
+    app.run("window.maDocPdf('journal','JV-27-0002')");
+    await new Promise(res=>setTimeout(res,0));
+    s.ok('a PDF that fails is said out loud, with the reason',toasts.some(t=>t==='The PDF failed: the font would not load'),J(toasts.slice(t0)));
+    app.run("session={uid:'u-must',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'}");
+    app.ctx.printDocument=o=>{calls.push(o);};
+    const c=calls.length;
+    app.run("window.maDocPdf('transfer','TR-27-0001');window.maPdf('holder')");
+    s.eq('nobody else can print one',calls.length,c);
+  }
+
   s.section('the re-lock');
   {
     const {app}=mkApp({globals:{auth:{currentUser:{uid:'u-afnan',email:'afnan@groovy.op',metadata:{lastSignInTime:new Date(Date.now()-3*3600000).toUTCString()}}}}});

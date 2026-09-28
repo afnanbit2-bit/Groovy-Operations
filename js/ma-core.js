@@ -366,6 +366,34 @@ function maRsShort(n){
   if(a>=1e5)return sign+'₨'+f(a/1e5)+' lac';
   return sign+'₨'+maGroup(a);
 }
+/* In words, the way a cheque or a receipt is written here (§31) — South-
+   Asian grouping, title case: 150000 → "Rupees One Lakh Fifty Thousand
+   Only". Whole rupees ONLY: a fraction, a negative, NaN or anything that is
+   not a number gives '' — a receipt must never print words for an amount
+   that is not the one in its figures. Past 99 crore the crore count is
+   spelled in the same words ("One Thousand Crore"). The arithmetic is done
+   with % and exact subtraction, never a floored float division, so it holds
+   to Number.MAX_SAFE_INTEGER. */
+const _maWordOnes=['Zero','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+const _maWordTens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+function _maWords99(n){return n<20?_maWordOnes[n]:_maWordTens[(n-n%10)/10]+(n%10?' '+_maWordOnes[n%10]:'');}
+function _maWordsOf(n){
+  const out=[];
+  const crore=(n-n%1e7)/1e7;n%=1e7;
+  if(crore)out.push(_maWordsOf(crore)+' Crore');
+  const lakh=(n-n%1e5)/1e5;n%=1e5;
+  if(lakh)out.push(_maWords99(lakh)+' Lakh');
+  const th=(n-n%1000)/1000;n%=1000;
+  if(th)out.push(_maWords99(th)+' Thousand');
+  const h=(n-n%100)/100;n%=100;
+  if(h)out.push(_maWordOnes[h]+' Hundred');
+  if(n)out.push(_maWords99(n));
+  return out.join(' ');
+}
+function maRsWords(n){
+  if(typeof n!=='number'||!Number.isSafeInteger(n)||n<0)return '';
+  return 'Rupees '+(n?_maWordsOf(n):'Zero')+' Only';
+}
 
 /* ── The chart, merged with what the owners changed ──────────────────────── */
 function maCodeOk(code,book){return book==='savings'?/^S[1-9]\d{3}$/.test(code):/^[1-9]\d{3}$/.test(code);}
@@ -1404,18 +1432,203 @@ function maAuditRow(action,target,meta){
     detail:maStr(m.detail,300),by:m.by||null,byName:m.byName||null,at:m.at||0};
 }
 
+/* ── The PDFs (§31, M1.4) — what each one prints is decided HERE ──────────
+   js/print-engine.js draws what these return and never adds, nets or
+   balances anything: every figure on a PDF is computed below from the same
+   postings the pages read (maPostAll → maLedger), so the paper and the
+   screen cannot disagree. Void and pending documents post nothing (maPost),
+   so they never reach a ledger or a statement; the receipt and the voucher
+   of a void document say VOID instead.
+   `x` = {idx, settings, lines, docs, parties, commitments, holders?,
+          people? ({username: display name}), printedOn, printedBy}.
+   Days stay 'YYYY-MM-DD', amounts whole rupees, `at` stamps milliseconds —
+   the engine formats all three, so nothing here reads a clock or a zone. */
+function _maPdfPerson(x,u){
+  if(!u)return '';
+  const p=x&&x.people;
+  return p&&p[u]?String(p[u]):String(u).charAt(0).toUpperCase()+String(u).slice(1);
+}
+function _maPdfParty(x,id){return ((x&&x.parties)||[]).find(p=>p&&p.id===id)||null;}
+function _maPdfAccName(x,code){const a=maAcc(x.idx,code);return a?a.name:String(code||'');}
+function _maPdfIndex(x){
+  const docs={},lines={};
+  (x.docs||[]).forEach(d=>{const id=d&&(d.id||d._id);if(id)docs[id]=d;});
+  (x.lines||[]).forEach(l=>{const id=l.doc&&l.doc.id;if(id)(lines[id]=lines[id]||[]).push(l);});
+  return {docs,lines};
+}
+/* Who a posting was with: the party, the payee, the owner — or, for a
+   handover, the holder on the other side. */
+function _maPdfWho(x,l,d){
+  if(l.party){const p=_maPdfParty(x,l.party);return p?p.name:'Unknown party';}
+  if(l.payee)return l.payee;
+  if(!d)return '';
+  if(d.dt==='transfer')return _maPdfAccName(x,l.account===d.to?d.from:d.to);
+  if(d.dt==='journal'&&(d.kind==='capital'||d.kind==='drawing'))return l.account===d.holder?_maPdfPerson(x,d.owner):_maPdfAccName(x,d.holder);
+  if(d.dt==='count'&&l.account!==d.holder)return _maPdfAccName(x,d.holder);
+  return '';
+}
+/* The ledger's particulars, in two parts: `contra` — the accounts on the
+   other side of the same document — and `note` — the line's memo and the
+   document's note. A handover's other side is already its "who", so a
+   transfer has no contra. */
+function _maPdfContra(x,l,d,docLines){
+  if(d&&d.dt==='transfer')return '';
+  return Array.from(new Set((docLines||[]).filter(o=>l.dr>0?o.cr>0:o.dr>0).map(o=>maAccLabel(x.idx,o.account)))).join(', ');
+}
+function _maPdfRow(x,ix,l){
+  const id=l.doc&&l.doc.id;
+  const d=ix.docs[id]||null;
+  return {date:l.date,no:(l.doc&&l.doc.no)||'',kind:d?maDocTitle(d):'',who:_maPdfWho(x,l,d),
+    contra:_maPdfContra(x,l,d,ix.lines[id]),note:[l.memo,d&&d.note].filter(Boolean).join(' — ')};
+}
+/* "Revised · rev N" (N = edits made), VOID with its reason, who recorded it. */
+function _maPdfMarks(x,d){
+  const edits=Array.isArray(d.edits)?d.edits:[];
+  const last=edits.length?edits[edits.length-1]:null;
+  return {
+    revised:edits.length?{n:edits.length,at:(last&&last.at)||null,by:last?(last.byName||_maPdfPerson(x,last.by)):'',reason:(last&&last.reason)||''}:null,
+    void:d.status==='void'?{reason:d.voidReason||'',by:d.voidedByName||_maPdfPerson(x,d.voidedBy),at:d.voidedAt||null}:null,
+    recorded:{by:d.byName||_maPdfPerson(x,d.by),at:d.ts||null}
+  };
+}
+function _maPdfSide(x,code){
+  const a=maAcc(x.idx,code);
+  return {code:String(code||''),name:a?a.name:String(code||''),person:a&&a.person?_maPdfPerson(x,a.person):''};
+}
+/* ma-ledger — ONE account (a holder or any account) for a range, with the
+   page's own filters: the exact maLedger call the Ledger page paints.
+   `filter` = the maLedger filter plus `label` (the range's name). null when
+   no single account is chosen — a ledger PDF is one account's statement. */
+function maPdfLedgerData(x,filter){
+  const f=filter||{};
+  const code=f.holder||f.account;
+  if(!code)return null;
+  const q={};Object.keys(f).forEach(k=>{if(k!=='label')q[k]=f[k];});
+  const led=maLedger(x.lines,q,x.idx);
+  const a=maAcc(x.idx,code);
+  const ix=_maPdfIndex(x);
+  const filters=[];
+  if(f.party){const p=_maPdfParty(x,f.party);filters.push('Party: '+(p?p.name:'Unknown party'));}
+  if(f.dt)filters.push('Documents: '+(MA_DOC_TYPES[f.dt]?MA_DOC_TYPES[f.dt].label+'s':String(f.dt)));
+  ['category','spendGroup','costCentre','source','kind'].forEach(k=>{if(f[k])filters.push(k.replace(/[A-Z]/g,c=>' '+c.toLowerCase()).replace(/^./,c=>c.toUpperCase())+': '+f[k]);});
+  if(f.q)filters.push('Search: “'+maStr(f.q,60)+'”');
+  return {account:{code:String(code),name:a?a.name:String(code),type:a?a.type:'',normal:a?a.normal:'dr',holder:!!(a&&a.money)},
+    range:{from:f.from||'',to:f.to||'',label:f.label||''},filters,
+    opening:led.opening,closing:led.closing,totals:{dr:led.dr,cr:led.cr,count:led.count},
+    rows:led.rows.map(l=>Object.assign(_maPdfRow(x,ix,l),{dr:l.dr,cr:l.cr,balance:l.balance})),
+    printedOn:x.printedOn||'',printedBy:x.printedBy||''};
+}
+/* ma-statement-holder — one holder for a range: every movement with its
+   running balance (the Money page's statement), the handovers that needed a
+   confirmation (every one still waiting, whatever its date, and those
+   confirmed in the range) and the last count. A holder mirrored from Store
+   Accounts (the drawer) prints its handovers only: its balance is that
+   module's, read or not — never a running balance invented from zero. */
+function maPdfHolderStatementData(x,code,range){
+  const a=maAcc(x.idx,code);
+  if(!a||!a.money)return null;
+  const r=range||{};
+  code=String(code);
+  const h=(x.holders||maHolderRows(x.idx,x.lines,x.docs,{settings:x.settings})).find(y=>y.code===code)||null;
+  const mirror=!!(h?h.mirror:(x.settings&&x.settings.mirrors&&x.settings.mirrors[code]));
+  const led=maLedger(x.lines,{holder:code,from:r.from,to:r.to},x.idx);
+  const ix=_maPdfIndex(x);
+  const conf=(x.docs||[]).filter(d=>d&&d.dt==='transfer'&&(d.from===code||d.to===code)&&
+      (d.status==='pending'||(d.status!=='void'&&d.confirmedBy&&(!r.from||d.date>=r.from)&&(!r.to||d.date<=r.to))))
+    .sort((p,q)=>String(p.date).localeCompare(String(q.date))||String(p.no||'').localeCompare(String(q.no||'')))
+    .map(d=>({date:d.date,no:d.no||'',direction:d.to===code?'in':'out',other:_maPdfAccName(x,d.to===code?d.from:d.to),amount:d.amount,
+      state:d.status==='pending'?'waiting':'confirmed',
+      by:_maPdfPerson(x,d.status==='pending'?d.confirmBy:d.confirmedBy),
+      forWho:d.confirmedFor?_maPdfPerson(x,d.confirmedFor):'',at:d.status==='pending'?null:(d.confirmedAt||null),
+      via:d.confirmVia||null,paper:!!d.confirmPaper}));
+  return {holder:{code,name:a.name,person:a.person?_maPdfPerson(x,a.person):'',kind:a.holderKind||'',mirror},
+    range:{from:r.from||'',to:r.to||'',label:r.label||''},
+    opening:mirror?null:led.opening,closing:mirror?null:led.closing,
+    mirrorBalance:mirror?(h&&Number.isInteger(h.balance)?h.balance:null):null,
+    totals:{in:led.dr,out:led.cr,count:led.count},
+    rows:led.rows.map(l=>Object.assign(_maPdfRow(x,ix,l),{in:l.dr,out:l.cr,balance:mirror?null:l.balance})),
+    waiting:{in:h?h.pendingIn:0,out:h?h.pendingOut:0},confirmations:conf,
+    lastCount:h&&h.lastCount?{date:h.lastCount.date,no:h.lastCount.no||'',counted:h.lastCount.counted,difference:h.lastCount.difference}:null,
+    printedOn:x.printedOn||'',printedBy:x.printedBy||''};
+}
+/* ma-statement-party — the party's account with us (§7 "party ledger":
+   every posting on a control account — payables, receivables, advances,
+   deposits — that names them), with an opening, a running balance and a
+   closing; balance > 0 is a CREDIT (Groovy owes them), < 0 a DEBIT (they
+   owe Groovy). Then, apart, the money paid to or received from them on the
+   spot — documents that touched our holders and never their account — so a
+   cash purchase is on their statement without pretending to move what is
+   owed. Aging needs bills (M3) and is not computed, so it is not printed. */
+function maPdfPartyStatementData(x,partyId,range){
+  const p=_maPdfParty(x,partyId);
+  if(!p)return null;
+  const r=range||{};
+  const control=code=>{const a=maAcc(x.idx,code);return !!(a&&a.control);};
+  const theirs=(x.lines||[]).filter(l=>l.party===p.id);
+  const onAccount=theirs.filter(l=>control(l.account));
+  const led=maLedger(onAccount,{party:p.id,from:r.from,to:r.to},x.idx);
+  let opening=0;
+  if(r.from)onAccount.forEach(l=>{if(l.date<r.from)opening+=l.cr-l.dr;});
+  let run=opening;
+  const ix=_maPdfIndex(x);
+  const rows=led.rows.map(l=>{run+=l.cr-l.dr;return Object.assign(_maPdfRow(x,ix,l),{account:maAccLabel(x.idx,l.account),dr:l.dr,cr:l.cr,balance:run});});
+  const touched=new Set(onAccount.map(l=>l.doc&&l.doc.id));
+  const direct=maLedger(theirs.filter(l=>l.holder&&l.account===l.holder&&!touched.has(l.doc&&l.doc.id)),{from:r.from,to:r.to},x.idx);
+  const v=p.vendor||null;
+  return {party:{id:p.id,name:p.name||'',code:p.code||'',kind:MA_PARTY_KIND_LABELS[p.kind]||p.kind||'',
+      terms:v&&v.terms?maTermsText(v.terms):'',phone:(p.contact&&p.contact.phone)||'',person:(p.contact&&p.contact.person)||''},
+    range:{from:r.from||'',to:r.to||'',label:r.label||''},
+    opening,closing:run,totals:{dr:led.dr,cr:led.cr,count:led.count},rows,
+    direct:{paid:direct.cr,received:direct.dr,count:direct.count,
+      rows:direct.rows.map(l=>Object.assign(_maPdfRow(x,ix,l),{holder:_maPdfAccName(x,l.account),paid:l.cr,received:l.dr}))},
+    printedOn:x.printedOn||'',printedBy:x.printedBy||''};
+}
+/* ma-receipt — a TRANSFER's handover slip, signed by who gave and who got.
+   state: pending (counts in neither holder yet) · confirmed · posted
+   (nobody else had to confirm) · void. */
+function maPdfReceiptData(x,d){
+  if(!d||d.dt!=='transfer')return null;
+  const state=d.status==='void'?'void':d.status==='pending'?'pending':d.confirmedBy?'confirmed':'posted';
+  return Object.assign({no:d.no||'',date:d.date||'',amount:d.amount,amountWords:maRsWords(d.amount),
+    from:_maPdfSide(x,d.from),to:_maPdfSide(x,d.to),note:d.note||'',state,
+    waitingFor:d.status==='pending'?_maPdfPerson(x,d.confirmBy):'',paper:!!d.confirmPaper,
+    confirm:d.confirmedBy?{by:_maPdfPerson(x,d.confirmedBy),at:d.confirmedAt||null,via:d.confirmVia||'app',forWho:d.confirmedFor?_maPdfPerson(x,d.confirmedFor):''}:null,
+    printedOn:x.printedOn||'',printedBy:x.printedBy||''},_maPdfMarks(x,d));
+}
+/* ma-voucher — a MONEY OUT journal's payment voucher. `paid` is the cash
+   that left the holder (maTaxCompute: less withholding, plus tax on top),
+   and its words are of that figure. `tax` is null for "No tax" — the
+   voucher prints the block only when there is a tax to show. */
+function maPdfVoucherData(x,d){
+  if(!d||d.dt!=='journal'||d.kind!=='money_out')return null;
+  const t=maTaxCompute(d.amount,d.tax);
+  const p=d.party?_maPdfParty(x,d.party):null;
+  const a=maAcc(x.idx,d.account);
+  const cm=d.commitmentId?((x.commitments||[]).find(c=>c&&c.id===d.commitmentId)||null):null;
+  return Object.assign({no:d.no||'',date:d.date||'',
+    paidTo:{name:p?(p.name||''):(d.payee||''),code:(p&&p.code)||'',party:!!p},
+    from:_maPdfSide(x,d.holder),account:{code:String(d.account||''),name:a?a.name:String(d.account||'')},
+    amount:d.amount,
+    tax:t.kind==='none'?null:{kind:t.kind,label:MA_TAX_LABELS[t.kind]||t.kind,rate:t.rate,inclusive:t.inclusive,claimable:t.claimable,amount:t.amount,net:t.net,gross:t.gross},
+    paid:t.cash,paidWords:maRsWords(t.cash),
+    note:d.note||'',costCentre:d.costCentre||'',
+    commitment:d.commitmentId?{name:cm?(cm.name||''):'',period:d.commitmentPeriod||''}:null,
+    printedOn:x.printedOn||'',printedBy:x.printedBy||''},_maPdfMarks(x,d));
+}
+
 if(typeof module!=='undefined'&&module.exports){
   module.exports={MA_BOOKS,MA_ACCOUNT_TYPES,MA_HOLDER_KINDS,MA_SPEND_GROUPS,MA_LABEL_KINDS,MA_CHANNELS,MA_SOURCES,
     MA_CHART,MA_SV_CHART,MA_SUSPENSE,MA_UNLABELLED,MA_PARTY_KINDS,MA_VENDOR_ROLES,MA_TERMS_MODES,MA_TAX_KINDS,
     MA_COMMIT_KINDS,MA_CADENCES,MA_OWNERS,MA_DOC_TYPES,MA_JOURNAL_KINDS,MA_EDIT_FIELDS,MA_DEFAULT_SETTINGS,
     maSettings,maEsc,maNorm,maDay,maIsDay,maDayAdd,maDaysBetween,maWeekday,maMonthOf,maMonthAdd,maDaysInMonth,
     maFyEndYear,maFyOf,maQuarterOf,maQuarterRange,maQuarterLabel,maPeriodLabels,maMonthLabel,maDayLabel,
-    maParseRupees,maGroup,maRs,maRsSigned,maRsShort,maChart,maChartIndex,maAcc,maIsMoney,maMoneyAccounts,
+    maParseRupees,maGroup,maRs,maRsSigned,maRsShort,maRsWords,maChart,maChartIndex,maAcc,maIsMoney,maMoneyAccounts,
     maTaxBlank,maTaxCompute,maTaxBlock,maTaxIssues,maDocNo,maTransferConfirm,maBuildDoc,maJournalTotal,
     maPost,maPostAll,maSumLines,maBal,maBalanceOf,maRunningMin,maHolderRows,maCashInHand,maTrialBalance,maLedger,
     maTermsIssues,maTermsText,maTermsAt,maTermsChange,maNextPayDay,maDueDate,maRateAt,maRateIssues,maRateChange,
     maPartyCode,maPartyIssues,maItemIssues,maCommitmentIssues,maCommitmentDueDays,maCommitmentPeriodKey,
     maCommitmentStatus,maCommitmentText,maCalendar,maSpendable,maValidate,maVoidIssues,maEditDiff,maApplyEdit,
     maApplyVoid,maConfirmPatch,maUnlabelled,maReviewQueue,maNeedsAttention,maAllocateFifo,maDocTitle,maDocText,
-    maAuditRow,maPad,maClone,maStr,maIsRupees,maCodeOk,maAccLabel,maSpendGroupOf,maLineText};
+    maAuditRow,maPad,maClone,maStr,maIsRupees,maCodeOk,maAccLabel,maSpendGroupOf,maLineText,
+    maPdfLedgerData,maPdfHolderStatementData,maPdfPartyStatementData,maPdfReceiptData,maPdfVoucherData};
 }

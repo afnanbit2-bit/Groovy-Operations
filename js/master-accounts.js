@@ -419,7 +419,7 @@ function _maHead(title,meta,o){
     <span class="ma-grow"></span>
     <button class="ma-btn primary" onclick="window.maRecord()">Record</button>
     <div class="ma-more"><button class="ma-btn ma-icon" aria-label="More actions" onclick="window.maToggleMenu(event)">⋯</button>
-      <div class="ma-menu" id="ma-menu">${o.excel?`<button onclick="window.maExcel('${_maQ(o.excel)}')">Download Excel</button>`:''}<button onclick="window.maRefresh()">Refresh</button></div></div>
+      <div class="ma-menu" id="ma-menu">${o.excel?`<button onclick="window.maExcel('${_maQ(o.excel)}')">Download Excel</button>`:''}${o.pdf?`<button onclick="window.maPdf('${_maQ(o.pdf)}')">Download PDF</button>`:''}<button onclick="window.maRefresh()">Refresh</button></div></div>
   </div>`;
 }
 window.maToggleMenu=function(e){
@@ -678,7 +678,7 @@ function _maHolderHTML(){
   const total=['Closing','','',maRs(led.dr),maRs(led.cr)];if(!h.mirror)total.push(_maRsCell(led.closing));
   const open=h.mirror?'':`<div class="ma-sub">Opening ${_maE(maDayLabel(r.from,true))} <b>${maRs(led.opening)}</b></div>`;
   const pend=c.docs.filter(d=>d.dt==='transfer'&&d.status==='pending'&&(d.from===h.code||d.to===h.code));
-  return _maHead(h.name,meta,{back:['ma-money','Money'],period:true,excel:'holder'})+banner
+  return _maHead(h.name,meta,{back:['ma-money','Money'],period:true,excel:'holder',pdf:'holder'})+banner
     +_maSec('Statement',_maE(r.label)+' · '+led.count+' movement'+(led.count===1?'':'s'),`${_maLink('Transfer','window.maRecordKind(\'transfer\',{from:\''+_maQ(h.code)+'\'})')}${h.mirror?'':' '+_maLink('Count','window.maRecordKind(\'count\',{holder:\''+_maQ(h.code)+'\'})')}`,
       open+(rows.length?_maTable(cols,rows,{total}):_maEmpty('Nothing moved in '+_maE(r.label)+'.')))
     +(pend.length?_maSec('Waiting to be confirmed','','',_maPendingHTML(c,pend)):'');
@@ -819,7 +819,7 @@ function _maPartyHTML(){
     inR.length?_maDocsTable(c,inR):_maEmpty('Nothing with '+_maE(p.name)+' in '+_maE(r.label)+'.'));
   const led=maLedger(c.lines,{party:p.id,from:r.from,to:r.to},c.idx);
   const ledger=_maSec('Ledger',led.count+' posting'+(led.count===1?'':'s'),'',led.count?_maPostingsTable(c,led,false):_maEmpty('No postings in '+_maE(r.label)+'.'));
-  return _maHead(p.name,meta,{back:['ma-parties','Parties'],period:true,excel:'party'})+stats+details+terms+rates+cm+acts+ledger;
+  return _maHead(p.name,meta,{back:['ma-parties','Parties'],period:true,excel:'party',pdf:'party'})+stats+details+terms+rates+cm+acts+ledger;
 }
 
 /* ═══ Ledger ═════════════════════════════════════════════════════════════ */
@@ -828,11 +828,17 @@ let _maLedgerShown=50;
 function _maLFBlank(){return {holder:'',account:'',party:'',dt:'',q:''};}
 let _maLF=_maLFBlank();
 let _maLQT=null;
-function _maLedgerFiltered(c){
+/* The Ledger page's maLedger filter — ONE definition, read by the page, its
+   Excel and its PDF, so the three cannot disagree. */
+function _maLedgerQuery(c){
   const r=_maRange(c);
   const f=_maLF;
-  const single=f.holder||f.account;
-  return {r,led:maLedger(c.lines,{from:r.from,to:r.to,holder:f.holder||undefined,account:(!f.holder&&f.account)||undefined,party:f.party||undefined,dt:f.dt||undefined,q:f.q||undefined},c.idx),single};
+  return {from:r.from,to:r.to,holder:f.holder||undefined,account:(!f.holder&&f.account)||undefined,party:f.party||undefined,dt:f.dt||undefined,q:f.q||undefined};
+}
+function _maLedgerFiltered(c){
+  const r=_maRange(c);
+  const q=_maLedgerQuery(c);
+  return {r,led:maLedger(c.lines,q,c.idx),single:q.holder||q.account};
 }
 function _maPostingsTable(c,led,single,limitN){
   const cols=[{h:'Date',cls:'ma-date'},{h:'Document'},{h:'Account',l:'Account'},{h:'Description'},{h:'Labels',cls:'ma-src',l:''},{h:'Debit',cls:'ma-num',l:'Debit'},{h:'Credit',cls:'ma-num',l:'Credit'}];
@@ -898,7 +904,7 @@ function _maLedgerHTML(){
     const ds=[['','Every document'],['journal','Journals'],['transfer','Transfers'],['count','Counts']];
     filters=`<div class="ma-filters">${_maLedgerTab==='postings'?_maSelect('ma-lf-holder',hs,_maLF.holder,"window.maLedgerFilter('holder',this.value)",'Holder')+_maSelect('ma-lf-account',as,_maLF.account,"window.maLedgerFilter('account',this.value)",'Account'):''}${_maSelect('ma-lf-party',ps,_maLF.party,"window.maLedgerFilter('party',this.value)",'Party')}${_maSelect('ma-lf-dt',ds,_maLF.dt,"window.maLedgerFilter('dt',this.value)",'Document type')}<input class="ma-in ma-search" id="ma-lf-q" type="search" placeholder="Search" value="${_maE(_maLF.q)}" oninput="window.maLedgerSearch(this.value)">${Object.keys(_maLF).some(k=>_maLF[k])?_maLink('Clear','window.maLedgerClear()'):''}</div>`;
   }
-  return _maHead('Ledger',c.lines.length+' postings · '+c.docs.length+' documents',{period:_maLedgerTab==='postings'||_maLedgerTab==='documents',excel:_maLedgerTab==='documents'?'documents':'ledger'})
+  return _maHead('Ledger',c.lines.length+' postings · '+c.docs.length+' documents',{period:_maLedgerTab==='postings'||_maLedgerTab==='documents',excel:_maLedgerTab==='documents'?'documents':'ledger',pdf:_maLedgerTab==='postings'?'ledger':''})
     +tabs+filters+`<div id="ma-ledger-body">${_maLedgerBodyHTML()}</div>`;
 }
 window.maLedgerTabSet=function(k){_maLedgerTab=['postings','documents','unlabelled','review'].indexOf(k)>=0?k:'postings';_maLedgerShown=50;_maPaint();};
@@ -959,7 +965,7 @@ function _maDocRailHTML(c,d){
     ${flags}<h4>Postings</h4>${postT}
     ${d.dt==='journal'&&(d.lines||[]).length?`<h4>Lines</h4><table class="ma-table ma-mini"><tbody>${d.lines.map(l=>`<tr><td>${_maE(maAccLabel(c.idx,l.account))}${l.memo?`<span class="ma-l2">${_maE(l.memo)}</span>`:''}</td><td class="ma-num">${d.kind==='opening'?(l.side==='cr'?'Cr ':'Dr ')+maRs(l.amount):(l.dr?'Dr '+maRs(l.dr):'Cr '+maRs(l.cr))}</td></tr>`).join('')}</tbody></table>`:''}
     <h4>History</h4>${hist?`<ul class="ma-hist">${hist}</ul>`:_maEmpty('Never edited.')}
-    <div class="ma-rail-acts">${acts.join('')}</div>`;
+    <div class="ma-rail-acts">${acts.join('')}${_maDocPdfButton(d)}</div>`;
 }
 function _maCommitRailHTML(c,x){
   const st=maCommitmentStatus(x,c.docs,c.today,c.s);
@@ -1724,6 +1730,70 @@ async function _maSaveRate(){
     _maInvalidate();window.maCloseModal();_maToast('Rate added — the earlier one is kept.');_maPaint();
   }catch(e){_maShowIssues({refuses:[{message:_maWriteError(e)}],flags:[],ok:false});}finally{_maBusy=false;}
 }
+
+/* ═══ PDF — through js/print-engine.js only (§31, M1.4) ═══════════════════
+   What a PDF says is built by the core (maPdf*Data, js/ma-core.js) from the
+   same postings the page paints; this only picks the variant and the file
+   name and hands them over. A transfer prints its handover receipt, a Money
+   out journal its payment voucher — nothing else has a document PDF of its
+   own, so nothing else is offered one. Every refusal is said out loud. */
+function _maPdfCtx(c){
+  const people={};
+  (typeof USER_DEFS!=='undefined'?USER_DEFS:[]).forEach(u=>{if(u&&u.u)people[u.u]=u.name||u.u;});
+  return {idx:c.idx,settings:c.s,lines:c.lines,docs:c.docs,parties:maData.parties,commitments:maData.commitments,
+    holders:c.holders,people,printedOn:c.today,printedBy:typeof session!=='undefined'&&session?(session.name||session.u||''):''};
+}
+function _maPdfFile(s){return String(s).replace(/[^A-Za-z0-9_.\-]+/g,'-')+'.pdf';}
+function _maPdfPrint(type,build,filename,target){
+  if(typeof printDocument!=='function'){_maToast('The PDF engine is not loaded — reload the app and try again.');return false;}
+  let data=null;
+  try{data=build();}catch(e){_maToast('Could not put the PDF together: '+String(e&&e.message||e));return false;}
+  if(!data){_maToast('There is nothing to put in that PDF.');return false;}
+  _maAuditQuiet('export',target||null,'PDF · '+filename);
+  let p=null;
+  try{p=printDocument({type,data,filename});}catch(e){_maToast('The PDF failed: '+String(e&&e.message||e));return false;}
+  if(p&&typeof p.then==='function')p.then(null,e=>_maToast('The PDF failed: '+String(e&&e.message||e)));
+  return true;
+}
+function _maDocPdfButton(d){
+  if(d.dt==='transfer')return `<button class="ma-btn" onclick="window.maDocPdf('transfer','${_maQ(d.id)}')">Receipt (PDF)</button>`;
+  if(d.dt==='journal'&&d.kind==='money_out')return `<button class="ma-btn" onclick="window.maDocPdf('journal','${_maQ(d.id)}')">Voucher (PDF)</button>`;
+  return '';
+}
+window.maPdf=function(key){
+  if(!maCanSee()){_maToast('Master Accounts is for Afnan and Ammar.');return false;}
+  const c=_maCtx();
+  const r=_maRange(c);
+  const span=r.from+'_'+r.to;
+  if(key==='ledger'){
+    const q=_maLedgerQuery(c);
+    const code=q.holder||q.account;
+    if(!code){_maToast('Pick one holder or one account first — a ledger PDF is one account’s statement.');return false;}
+    return _maPdfPrint('ma-ledger',()=>maPdfLedgerData(_maPdfCtx(c),Object.assign({label:r.label},q)),_maPdfFile('Ledger-'+code+'-'+span));
+  }
+  if(key==='holder'){
+    const code=_maHolderCode;
+    if(!code||!maIsMoney(c.idx,code)){_maToast('That holder is not in the chart.');return false;}
+    return _maPdfPrint('ma-statement-holder',()=>maPdfHolderStatementData(_maPdfCtx(c),code,r),_maPdfFile('Holder-'+code+'-'+span));
+  }
+  if(key==='party'){
+    const p=_maParty(_maPartyId);
+    if(!p){_maToast('That party is not in the master.');return false;}
+    return _maPdfPrint('ma-statement-party',()=>maPdfPartyStatementData(_maPdfCtx(c),p.id,r),_maPdfFile('Statement-'+(p.code||p.id)+'-'+span));
+  }
+  _maToast('This page has no PDF.');return false;
+};
+window.maDocPdf=function(dt,id){
+  if(!maCanSee()){_maToast('Master Accounts is for Afnan and Ammar.');return false;}
+  const d=_maDoc(dt,id);
+  if(!d){_maToast('That document is not loaded — refresh and try again.');return false;}
+  const c=_maCtx();
+  const target={dt:d.dt,id:d.id,no:d.no};
+  const tail=(d.no||d.id)+(d.status==='void'?'-VOID':'');
+  if(d.dt==='transfer')return _maPdfPrint('ma-receipt',()=>maPdfReceiptData(_maPdfCtx(c),d),_maPdfFile('Receipt-'+tail),target);
+  if(d.dt==='journal'&&d.kind==='money_out')return _maPdfPrint('ma-voucher',()=>maPdfVoucherData(_maPdfCtx(c),d),_maPdfFile('Voucher-'+tail),target);
+  _maToast('Only a transfer (its receipt) or a Money out (its voucher) has a PDF of its own — print the ledger instead.');return false;
+};
 
 /* ═══ Excel — every table, the filters in the filename ═══════════════════ */
 function _maXlsx(name,sheets){

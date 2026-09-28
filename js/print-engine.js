@@ -81,6 +81,19 @@ const PRINT_LAYOUT = {
   marginBottom: 36,
   contentWidth: 523  // pageWidth - marginLeft - marginRight
 };
+/* A4 LANDSCAPE, same margins — the page of a document that asks for it
+   (`data.orientation: 'landscape'`, or its type's default below; Master
+   Accounts' ledger, M1.4). Only printDocument ever hands it out, through
+   doc.__groovyPage — see _pageBox(). */
+const PRINT_LAYOUT_LANDSCAPE = {
+  pageWidth: 842,
+  pageHeight: 595,
+  marginLeft: 36,
+  marginRight: 36,
+  marginTop: 36,
+  marginBottom: 36,
+  contentWidth: 770
+};
 
 /* Document-type → human label (footer text + default filename + fallback). */
 const _PRINT_DOC_LABELS = {
@@ -96,6 +109,11 @@ const _PRINT_DOC_LABELS = {
   'mood-board': 'Mood Board',
   'pattern-label': 'Pattern Label',
   'consumable-log': 'Consumable Log',
+  'ma-ledger': 'Ledger',
+  'ma-statement-party': 'Statement of Account',
+  'ma-statement-holder': 'Holder Statement',
+  'ma-receipt': 'Handover Receipt',
+  'ma-voucher': 'Payment Voucher',
   'generic': 'Document'
 };
 
@@ -122,7 +140,36 @@ const _PRINT_URDU_DEFAULTS = {
   'qc-report': 'full',
   'placement-sheet': 'full',
   'pattern-label': 'none',
-  'consumable-log': 'minimal'
+  'consumable-log': 'minimal',
+  'ma-ledger': 'none',
+  'ma-statement-party': 'minimal',
+  'ma-statement-holder': 'none',
+  'ma-receipt': 'full',
+  'ma-voucher': 'full'
+};
+
+/* Page per type, when the caller names none. The two slips a person signs
+   are A5 (420×595 pt — a custom page, so they draw their own layout like the
+   pattern label); the ledger's eight columns want A4 LANDSCAPE. Every other
+   type is A4 portrait exactly as before. `data.page` / `data.orientation`
+   still win when given. */
+const _PRINT_PAGE_DEFAULTS = {
+  'ma-receipt': { w: 420, h: 595 },
+  'ma-voucher': { w: 420, h: 595 }
+};
+const _PRINT_ORIENTATION_DEFAULTS = {
+  'ma-ledger': 'landscape'
+};
+/* Types that lay out off _pageBox(doc) — the shared components only, or
+   their own page-aware drawing — and so may be drawn landscape. Every other
+   variant carries its own A4-portrait geometry and STAYS portrait whatever
+   it is asked (printDocument says so in the console). The generic renderer
+   also serves every known-but-unbuilt type, so it is ready by renderer. */
+const _PRINT_LANDSCAPE_READY = {
+  'generic': 1,
+  'ma-ledger': 1,
+  'ma-statement-party': 1,
+  'ma-statement-holder': 1
 };
 
 /* Urdu footer tail, keyed by the English documentType label so each
@@ -132,7 +179,9 @@ const _PRINT_FOOTER_UR = 'پروڈکشن آرڈر — صرف اندرونی اس
 const _PRINT_FOOTER_UR_BY_TYPE = {
   'Production Order': 'پروڈکشن آرڈر — صرف اندرونی استعمال',
   'Gate Pass': 'گیٹ پاس — صرف اندرونی استعمال',
-  'Payslip': 'پے سلپ — صرف اندرونی استعمال'
+  'Payslip': 'پے سلپ — صرف اندرونی استعمال',
+  'Handover Receipt': 'رسید — صرف اندرونی استعمال',
+  'Payment Voucher': 'واؤچر — صرف اندرونی استعمال'
 };
 function _footerUr(docType) {
   return _PRINT_FOOTER_UR_BY_TYPE[docType] || 'صرف اندرونی استعمال';
@@ -362,6 +411,18 @@ function _setFont(doc, logical, style, size, hexColor) {
   }
 }
 
+/* The page the shared components lay out on. It is PRINT_LAYOUT itself —
+   the same object, so the same numbers — for every A4 portrait document:
+   every existing variant draws exactly as it did. Only a document
+   printDocument made landscape carries doc.__groovyPage
+   (PRINT_LAYOUT_LANDSCAPE), and then the header, the footer, the section
+   band, the tables' page breaks and the generic body all use ITS width and
+   height, never 595/842. A custom page (the pattern label, the A5 slips)
+   gets no box here: those variants draw their whole page themselves. */
+function _pageBox(doc) {
+  return (doc && doc.__groovyPage) || PRINT_LAYOUT;
+}
+
 /* ── PART 3 — Shared internal components ───────────────────────────────────
    NOT exposed globally. Variant builders (added later) compose these. Every
    component returns the Y position just below what it drew and also updates
@@ -380,9 +441,10 @@ function _setFont(doc, logical, style, size, hexColor) {
  */
 function _renderHeader(doc, o) {
   o = o || {};
-  const L = PRINT_LAYOUT.marginLeft;
-  const R = PRINT_LAYOUT.pageWidth - PRINT_LAYOUT.marginRight;
-  let top = PRINT_LAYOUT.marginTop;
+  const P = _pageBox(doc);
+  const L = P.marginLeft;
+  const R = P.pageWidth - P.marginRight;
+  let top = P.marginTop;
 
   _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.hero, PRINT_COLORS.black);
   doc.text('GROOVY', L, top + 16);
@@ -422,9 +484,10 @@ function _renderHeader(doc, o) {
  * @returns {number} the footer baseline Y.
  */
 function _renderFooter(doc, pageNum, totalPages) {
-  const L = PRINT_LAYOUT.marginLeft;
-  const R = PRINT_LAYOUT.pageWidth - PRINT_LAYOUT.marginRight;
-  const y = PRINT_LAYOUT.pageHeight - 36;
+  const P = _pageBox(doc);
+  const L = P.marginLeft;
+  const R = P.pageWidth - P.marginRight;
+  const y = P.pageHeight - 36;
   const dt = doc.__groovyDocType || 'Document';
 
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.footer, PRINT_COLORS.greyAccent);
@@ -460,9 +523,10 @@ function _renderFooter(doc, pageNum, totalPages) {
  */
 function _renderSectionHeader(doc, o) {
   o = o || {};
-  const L = PRINT_LAYOUT.marginLeft;
-  const W = PRINT_LAYOUT.contentWidth;
-  const startY = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 10; // 10pt margin above
+  const P = _pageBox(doc);
+  const L = P.marginLeft;
+  const W = P.contentWidth;
+  const startY = (doc.__groovyY || P.marginTop) + 10; // 10pt margin above
   const pad = 8;
   const bandH = pad + 14 + pad;
 
@@ -505,9 +569,10 @@ function _renderSectionHeader(doc, o) {
 function _renderBilingualLabel(doc, o) {
   o = o || {};
   const fs = o.fontSize || PRINT_SIZES.body;
-  let x = o.x || PRINT_LAYOUT.marginLeft;
+  const P = _pageBox(doc);
+  let x = o.x || P.marginLeft;
   const startX = x;
-  const y = o.y || (doc.__groovyY || PRINT_LAYOUT.marginTop);
+  const y = o.y || (doc.__groovyY || P.marginTop);
 
   _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', fs, PRINT_COLORS.text);
   const en = String(o.en || '');
@@ -544,9 +609,10 @@ function _renderBilingualLabel(doc, o) {
 function _renderInfoTable(doc, o) {
   o = o || {};
   const rows = o.rows || [];
-  const L = PRINT_LAYOUT.marginLeft;
-  const W = PRINT_LAYOUT.contentWidth;
-  let y = o.startY != null ? o.startY : (doc.__groovyY || PRINT_LAYOUT.marginTop);
+  const P = _pageBox(doc);
+  const L = P.marginLeft;
+  const W = P.contentWidth;
+  let y = o.startY != null ? o.startY : (doc.__groovyY || P.marginTop);
   const pad = 6;
   const twoPair = rows.some((r) => r && (r.labelEn2 != null || r.value2 != null));
   const cw = (o.columnWidths && o.columnWidths.length)
@@ -582,9 +648,9 @@ function _renderInfoTable(doc, o) {
   };
 
   rows.forEach((r) => {
-    if (y + rowH > PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 24) {
+    if (y + rowH > P.pageHeight - P.marginBottom - 24) {
       doc.addPage();
-      y = PRINT_LAYOUT.marginTop;
+      y = P.marginTop;
     }
     let x = L;
     cell(x, cw[0], true, r.labelEn, r.labelUr); x += cw[0];
@@ -610,8 +676,9 @@ function _renderInfoTable(doc, o) {
  */
 function _renderSignatureRow(doc, o) {
   o = o || {};
-  const L = PRINT_LAYOUT.marginLeft;
-  const y = (o.startY != null ? o.startY : (doc.__groovyY || PRINT_LAYOUT.marginTop)) + 24;
+  const P = _pageBox(doc);
+  const L = P.marginLeft;
+  const y = (o.startY != null ? o.startY : (doc.__groovyY || P.marginTop)) + 24;
   let x = L;
 
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
@@ -649,9 +716,10 @@ function _renderSignatureRow(doc, o) {
  * @returns {number} Y just below the divider (y + 8 + 8).
  */
 function _renderDivider(doc, y) {
-  const L = PRINT_LAYOUT.marginLeft;
-  const R = PRINT_LAYOUT.pageWidth - PRINT_LAYOUT.marginRight;
-  const ruleY = (y != null ? y : (doc.__groovyY || PRINT_LAYOUT.marginTop)) + 8;
+  const P = _pageBox(doc);
+  const L = P.marginLeft;
+  const R = P.pageWidth - P.marginRight;
+  const ruleY = (y != null ? y : (doc.__groovyY || P.marginTop)) + 8;
   const c = _pc(PRINT_COLORS.greyLine);
   doc.setDrawColor(c[0], c[1], c[2]);
   doc.setLineWidth(0.5);
@@ -671,8 +739,9 @@ function _renderDivider(doc, y) {
  */
 function _renderTitleBlock(doc, o) {
   o = o || {};
-  const L = PRINT_LAYOUT.marginLeft;
-  let y = (o.startY != null ? o.startY : (doc.__groovyY || PRINT_LAYOUT.marginTop)) + 10;
+  const P = _pageBox(doc);
+  const L = P.marginLeft;
+  let y = (o.startY != null ? o.startY : (doc.__groovyY || P.marginTop)) + 10;
 
   _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.hero, PRINT_COLORS.text);
   doc.text(String(o.title || ''), L, y + 18);
@@ -735,23 +804,24 @@ function _renderGeneric(doc, data) {
   }
 
   const body = _stripHtml(data.bodyHtml);
-  let y = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 14;
+  const P = _pageBox(doc);
+  let y = (doc.__groovyY || P.marginTop) + 14;
   if (body) {
     _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-    const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 28;
+    const maxY = P.pageHeight - P.marginBottom - 28;
     const lineH = 16;
     body.split('\n').forEach((para) => {
       if (para.trim() === '') { y += lineH * 0.6; return; }
-      const lines = doc.splitTextToSize(para, PRINT_LAYOUT.contentWidth);
+      const lines = doc.splitTextToSize(para, P.contentWidth);
       lines.forEach((ln) => {
-        if (y > maxY) { doc.addPage(); y = PRINT_LAYOUT.marginTop + 8; }
-        doc.text(ln, PRINT_LAYOUT.marginLeft, y);
+        if (y > maxY) { doc.addPage(); y = P.marginTop + 8; }
+        doc.text(ln, P.marginLeft, y);
         y += lineH;
       });
     });
   } else {
     _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.greyAccent);
-    doc.text('(No body content provided.)', PRINT_LAYOUT.marginLeft, y);
+    doc.text('(No body content provided.)', P.marginLeft, y);
   }
   doc.__groovyY = y;
 }
@@ -1997,22 +2067,788 @@ function _drawQrMatrix(doc, matrix, x, y, size) {
   }
 }
 
+/* ── Master Accounts — five variants (M1.4, MASTER_ACCOUNTS_PLAN.md §31) ──
+     ma-ledger            A4 LANDSCAPE · urdu none    one account, a range
+     ma-statement-party   A4 portrait  · minimal      their account + paid directly
+     ma-statement-holder  A4 portrait  · none         movements, confirmations, count
+     ma-receipt           A5 (420×595) · FULL         a transfer's handover slip
+     ma-voucher           A5 (420×595) · FULL         a money-out payment voucher
+   The three A4 ones use the shared header, section band and footer — page-
+   aware through _pageBox() — plus one table (_prMaTable) whose head repeats
+   on every page. The two slips are a custom page and draw their own layout,
+   like the pattern label, and stamp their own footer.
+   EVERY FIGURE ARRIVES COMPUTED by js/ma-core.js (maPdf*Data): nothing here
+   adds, nets or balances — it formats and draws. Money prints the way the
+   screen prints it (₨1,50,000, −₨2,500), falling back to "Rs " and "-" only
+   when Aptos did not embed: Helvetica has neither glyph. Urdu is drawn only
+   when the JNN font really embedded (_urduOn) — never tofu. Names are
+   `_prMa*` / `_PR_MA_*`: classic scripts share one lexical scope. */
+const _PR_MA_UR = {
+  receipt: 'رقم حوالگی کی رسید',
+  voucher: 'ادائیگی واؤچر',
+  amount: 'رقم',
+  paid: 'ادا شدہ رقم',
+  from: 'منجانب',
+  to: 'بنام',
+  paidTo: 'بنام',
+  paidFrom: 'ادائیگی از',
+  forWhat: 'مد',
+  tax: 'ٹیکس',
+  particulars: 'تفصیل',
+  note: 'نوٹ',
+  centre: 'شعبہ',
+  date: 'تاریخ',
+  number: 'نمبر',
+  state: 'کیفیت',
+  givenBy: 'دینے والا',
+  receivedBy: 'وصول کنندہ',
+  voided: 'منسوخ',
+  revised: 'ترمیم شدہ'
+};
+const _PR_MA_WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const _PR_MA_MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/* ₨ and U+2212 only where the embedded Aptos can draw them. */
+function _prMaGlyphs(doc) {
+  const m = doc && doc.__groovyFonts;
+  const ok = !!(m && m[PRINT_FONTS.bodyRegular] && m[PRINT_FONTS.bodyRegular] !== 'helvetica' &&
+    m[PRINT_FONTS.display] && m[PRINT_FONTS.display] !== 'helvetica');
+  return ok ? { rs: '₨', minus: '−' } : { rs: 'Rs ', minus: '-' };
+}
+/* 1,50,000 — three digits, then twos (maGroup's rule, js/ma-core.js). */
+function _prMaGroup(n) {
+  const s = String(Math.abs(Math.round(Number(n) || 0)));
+  if (s.length <= 3) return s;
+  const last = s.slice(-3); let rest = s.slice(0, -3); const parts = [];
+  while (rest.length > 2) { parts.unshift(rest.slice(-2)); rest = rest.slice(0, -2); }
+  if (rest) parts.unshift(rest);
+  return parts.join(',') + ',' + last;
+}
+/* maRs's shape: −₨2,500. */
+function _prMaRs(doc, n) {
+  const v = Math.round(Number(n) || 0);
+  const g = _prMaGlyphs(doc);
+  return (v < 0 ? g.minus : '') + g.rs + _prMaGroup(v);
+}
+/* A debit or credit cell: blank for nothing, like the screen. */
+function _prMaCell(doc, n) {
+  return Math.round(Number(n) || 0) ? _prMaRs(doc, n) : '';
+}
+/* A party's balance: > 0 is a credit (Groovy owes them), < 0 a debit. */
+function _prMaSide(doc, n) {
+  const v = Math.round(Number(n) || 0);
+  return v ? _prMaRs(doc, Math.abs(v)) + (v > 0 ? ' Cr' : ' Dr') : _prMaRs(doc, 0);
+}
+/* 'YYYY-MM-DD' → 'Tue 20 Oct 2026' (maDayLabel(day, true)'s shape). */
+function _prMaDay(iso) {
+  const s = String(iso == null ? '' : iso);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const y = +s.slice(0, 4), m = +s.slice(5, 7), d = +s.slice(8, 10);
+  return _PR_MA_WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] + ' ' + d + ' ' + _PR_MA_MO[m - 1] + ' ' + y;
+}
+/* A stored millisecond stamp → 'Tue 20 Oct 2026, 14:05' in this device's zone. */
+function _prMaWhen(ms) {
+  if (!Number.isFinite(ms) || !ms) return '';
+  const d = new Date(ms);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return _prMaDay(d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate())) + ', ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+}
+function _prMaRange(r) {
+  r = r || {};
+  const span = r.from && r.to ? _prMaDay(r.from) + ' – ' + _prMaDay(r.to) : (r.to ? 'to ' + _prMaDay(r.to) : '');
+  return [r.label, span].filter(Boolean).join('  ·  ');
+}
+/* Cut to a width with an ellipsis — measured with getTextWidth, never a
+   character guess — for every cell that does not wrap. */
+function _prMaFit(doc, txt, w) {
+  txt = String(txt == null ? '' : txt);
+  if (w <= 0) return '';
+  let tw = 0;
+  try { tw = doc.getTextWidth(txt); } catch (e) { return txt; }
+  if (tw <= w) return txt;
+  let lo = 0, hi = txt.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (doc.getTextWidth(txt.slice(0, mid) + '…') <= w) lo = mid; else hi = mid - 1;
+  }
+  return lo > 0 ? txt.slice(0, lo) + '…' : '';
+}
+function _prMaSplit(doc, txt, w) {
+  txt = String(txt == null ? '' : txt);
+  if (!txt) return [''];
+  try {
+    const out = doc.splitTextToSize(txt, w);
+    return Array.isArray(out) && out.length ? out : [txt];
+  } catch (e) { return [txt]; }
+}
+/* A particulars cell: each non-empty part on a line of its own, so an
+   account name ("Payable — vendors") never runs into a note. */
+function _prMaLines() {
+  return Array.prototype.slice.call(arguments).filter(Boolean).join('\n');
+}
+/* Can the embedded Urdu font draw what jsPDF will actually emit? jsPDF 2.5.1
+   rewrites every Arabic-script letter into a Unicode PRESENTATION FORM
+   before drawing (its arabic plugin runs on every text() call), and the
+   Jameel Noori Nastaleeq TTF carries none of those forms — measured 28 Sept
+   2026: "گیٹ پاس" goes out as six code points and the font has none of
+   them — so Urdu that "embedded" draws NOTHING, here and on the gate pass
+   alike. A slip therefore asks the font itself, for every Urdu string it may
+   draw, and prints clean English when the answer is no: an empty gap under
+   every label reads as broken. A font that does carry the forms passes the
+   same check, and the slip turns bilingual with no code change. */
+function _prMaUrduOk(doc) {
+  if (!_urduOn(doc)) return false;
+  if (doc.__prMaUrduOk !== undefined) return doc.__prMaUrduOk;
+  let ok = false;
+  try {
+    const font = doc.getFont(_resolveFont(doc, PRINT_FONTS.urdu), 'normal');
+    const m = font && font.metadata;
+    if (m && typeof m.characterToGlyph === 'function') {
+      const all = Object.keys(_PR_MA_UR).map(function (k) { return _PR_MA_UR[k]; })
+        .concat([_footerUr(doc.__groovyDocType)]).join(' ');
+      const drawn = typeof doc.processArabic === 'function' ? doc.processArabic(all) : all;
+      ok = Array.from(String(drawn)).every(function (ch) { return /\s/.test(ch) || m.characterToGlyph(ch.codePointAt(0)) > 0; });
+    }
+  } catch (e) { ok = false; }
+  doc.__prMaUrduOk = ok;
+  return ok;
+}
+
+/* ── the three A4 documents: title, figures, notes, sections, the table ── */
+function _prMaBottom(doc) {
+  const P = _pageBox(doc);
+  return P.pageHeight - P.marginBottom - 24;     // clear of the footer at pageHeight − 36
+}
+function _prMaTitle(doc, title, lines) {
+  const P = _pageBox(doc);
+  let y = (doc.__groovyY || P.marginTop) + 6;
+  _setFont(doc, PRINT_FONTS.display, 'bold', 18, PRINT_COLORS.text);
+  doc.text(_prMaFit(doc, title, P.contentWidth), P.marginLeft, y + 16);
+  y += 24;
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 10, PRINT_COLORS.greyAccent);
+  (lines || []).filter(Boolean).forEach(function (s) {
+    _prMaSplit(doc, s, P.contentWidth).forEach(function (ln) { doc.text(ln, P.marginLeft, y + 9); y += 13; });
+  });
+  doc.__groovyY = y + 4;
+  return doc.__groovyY;
+}
+/* A row of figures: [[label, value], …] across the content width. */
+function _prMaFigures(doc, items) {
+  const P = _pageBox(doc);
+  const y = (doc.__groovyY || P.marginTop) + 4;
+  const w = P.contentWidth / items.length;
+  items.forEach(function (it, i) {
+    const x = P.marginLeft + i * w;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
+    doc.text(_prMaFit(doc, it[0], w - 12), x, y + 9);
+    _setFont(doc, PRINT_FONTS.display, 'bold', 15, PRINT_COLORS.text);
+    doc.text(_prMaFit(doc, it[1], w - 12), x, y + 27);
+  });
+  doc.__groovyY = y + 38;
+  return doc.__groovyY;
+}
+/* A small paragraph, breaking to a new page when it has to. */
+function _prMaNote(doc, text, o) {
+  o = o || {};
+  const P = _pageBox(doc);
+  const size = o.size || 9;
+  const lh = size + 3;
+  let y = doc.__groovyY || P.marginTop;
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', size, o.color || PRINT_COLORS.greyAccent);
+  _prMaSplit(doc, text, P.contentWidth).forEach(function (ln) {
+    if (y + lh > _prMaBottom(doc)) {
+      doc.addPage(); y = P.marginTop;
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', size, o.color || PRINT_COLORS.greyAccent);
+    }
+    doc.text(ln, P.marginLeft, y + size);
+    y += lh;
+  });
+  doc.__groovyY = y + 4;
+  return doc.__groovyY;
+}
+/* The shared grey section band — on a fresh page if the band and the first
+   rows under it would not fit. */
+function _prMaSection(doc, title, need) {
+  const P = _pageBox(doc);
+  if ((doc.__groovyY || P.marginTop) + (need || 80) > _prMaBottom(doc)) { doc.addPage(); doc.__groovyY = P.marginTop; }
+  _renderSectionHeader(doc, { titleEn: title });
+  doc.__groovyY += 2;
+  return doc.__groovyY;
+}
+/**
+ * A table that breaks across pages and REPEATS ITS HEAD on every page it
+ * reaches, under a "— continued" line naming what it continues.
+ * o = { cols: [{ h, w (pt) | 'flex', a: 'right', wrap: true }],
+ *       rows: [{ cells: [string], strong, rule }], size, continued }
+ * A `wrap` column wraps — a description is never truncated — and every
+ * other cell is fitted to its width with an ellipsis. The page geometry is
+ * _pageBox(doc): portrait or landscape alike.
+ * @returns {number} Y just below the last row.
+ */
+function _prMaTable(doc, o) {
+  const P = _pageBox(doc);
+  const size = o.size || 9;
+  const lineH = size + 2.5;
+  const pad = 5;
+  const fixed = o.cols.reduce(function (t, c) { return t + (c.w === 'flex' ? 0 : c.w); }, 0);
+  const flexN = o.cols.filter(function (c) { return c.w === 'flex'; }).length || 1;
+  const ws = o.cols.map(function (c) { return c.w === 'flex' ? Math.max(40, (P.contentWidth - fixed) / flexN) : c.w; });
+  const xs = []; let acc = P.marginLeft;
+  ws.forEach(function (w) { xs.push(acc); acc += w; });
+  const R = P.marginLeft + P.contentWidth;
+  const line = _pc(PRINT_COLORS.greyLine), soft = _pc('#E6E6E6'), shade = _pc(PRINT_COLORS.greyShade), ink = _pc(PRINT_COLORS.text);
+  let y = (doc.__groovyY || P.marginTop) + 4;
+  const head = function () {
+    const h = lineH + 9;
+    doc.setFillColor(shade[0], shade[1], shade[2]);
+    doc.rect(P.marginLeft, y, P.contentWidth, h, 'F');
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', size, PRINT_COLORS.greyAccent);
+    o.cols.forEach(function (c, i) {
+      const t = _prMaFit(doc, c.h, ws[i] - pad * 2);
+      if (c.a === 'right') doc.text(t, xs[i] + ws[i] - pad, y + h - 6, { align: 'right' });
+      else doc.text(t, xs[i] + pad, y + h - 6);
+    });
+    doc.setDrawColor(line[0], line[1], line[2]);
+    doc.setLineWidth(0.6);
+    doc.line(P.marginLeft, y + h, R, y + h);
+    y += h;
+  };
+  head();
+  (o.rows || []).forEach(function (r) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, r.strong ? 'bold' : 'normal', size, PRINT_COLORS.text);
+    const cells = o.cols.map(function (c, i) {
+      const v = r.cells[i] == null ? '' : String(r.cells[i]);
+      return c.wrap ? _prMaSplit(doc, v, ws[i] - pad * 2) : [_prMaFit(doc, v, ws[i] - pad * 2)];
+    });
+    const n = cells.reduce(function (m, c) { return Math.max(m, c.length); }, 1);
+    const h = n * lineH + 7;
+    if (y + h > _prMaBottom(doc)) {
+      doc.addPage();
+      y = P.marginTop;
+      if (o.continued) {
+        _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8.5, PRINT_COLORS.greyAccent);
+        doc.text(_prMaFit(doc, o.continued + ' — continued', P.contentWidth), P.marginLeft, y + 9);
+        y += 16;
+      }
+      head();
+      _setFont(doc, PRINT_FONTS.bodyRegular, r.strong ? 'bold' : 'normal', size, PRINT_COLORS.text);
+    }
+    if (r.rule) {
+      doc.setDrawColor(ink[0], ink[1], ink[2]);
+      doc.setLineWidth(0.9);
+      doc.line(P.marginLeft, y, R, y);
+    }
+    cells.forEach(function (ls, i) {
+      if (o.cols[i].a === 'right') doc.text(ls, xs[i] + ws[i] - pad, y + lineH + 1.5, { align: 'right' });
+      else doc.text(ls, xs[i] + pad, y + lineH + 1.5);
+    });
+    y += h;
+    doc.setDrawColor(soft[0], soft[1], soft[2]);
+    doc.setLineWidth(0.3);
+    doc.line(P.marginLeft, y, R, y);
+  });
+  doc.__groovyY = y;
+  return y;
+}
+function _prMaHeader(doc, type, number, data) {
+  _renderHeader(doc, {
+    documentType: type, documentNumber: number || '',
+    issuedDate: _prMaDay(data.printedOn) || '—', issuedBy: data.printedBy || '—'
+  });
+}
+
+/**
+ * ma-ledger — one account for a range: opening, every posting with a
+ * running balance, the period's totals, closing. A4 LANDSCAPE.
+ * data (maPdfLedgerData) = { account:{code,name,normal}, range:{from,to,label},
+ *   filters:[string], opening, closing, totals:{dr,cr,count},
+ *   rows:[{date,no,kind,who,contra,note,dr,cr,balance}], printedOn, printedBy }
+ */
+function _renderMaLedger(doc, data) {
+  data = data || {};
+  const a = data.account || {};
+  const t = data.totals || {};
+  const rows = data.rows || [];
+  const r = data.range || {};
+  const name = (a.code ? a.code + ' · ' : '') + (a.name || 'Account');
+  _prMaHeader(doc, 'Ledger', a.code, data);
+  _prMaTitle(doc, name, [
+    _prMaRange(r),
+    (data.filters && data.filters.length) ? 'Filtered — ' + data.filters.join('  ·  ') : '',
+    (a.normal === 'cr' ? 'Credit' : 'Debit') + '-normal: the balance is in the account’s own sense; a minus sign is a balance on the other side.'
+  ]);
+  _prMaFigures(doc, [['Opening', _prMaRs(doc, data.opening)], ['Debits', _prMaRs(doc, t.dr)],
+    ['Credits', _prMaRs(doc, t.cr)], ['Closing', _prMaRs(doc, data.closing)]]);
+  const body = [{ cells: [_prMaDay(r.from), '', '', '', 'Opening balance', '', '', _prMaRs(doc, data.opening)], strong: true }];
+  rows.forEach(function (x) {
+    body.push({ cells: [_prMaDay(x.date), x.no, x.kind, x.who, _prMaLines(x.contra, x.note),
+      _prMaCell(doc, x.dr), _prMaCell(doc, x.cr), _prMaRs(doc, x.balance)] });
+  });
+  if (!rows.length) body.push({ cells: ['', '', '', '', 'Nothing was posted to this account in the period.', '', '', ''] });
+  body.push({ cells: ['', '', '', '', 'Period totals · ' + (t.count || 0) + ' posting' + (t.count === 1 ? '' : 's'),
+    _prMaRs(doc, t.dr), _prMaRs(doc, t.cr), ''], strong: true, rule: true });
+  body.push({ cells: [_prMaDay(r.to), '', '', '', 'Closing balance', '', '', _prMaRs(doc, data.closing)], strong: true });
+  _prMaTable(doc, {
+    size: 8.5, rows: body, continued: name + '  ·  ' + _prMaRange(r),
+    cols: [{ h: 'Date', w: 80 }, { h: 'No.', w: 62 }, { h: 'Kind', w: 92, wrap: true }, { h: 'Party / holder', w: 118, wrap: true },
+      { h: 'Particulars', w: 'flex', wrap: true }, { h: 'Debit', w: 76, a: 'right' }, { h: 'Credit', w: 76, a: 'right' },
+      { h: 'Balance', w: 84, a: 'right' }]
+  });
+  doc.__groovyY += 8;
+  _prMaNote(doc, 'Void documents post nothing and are not listed. A transfer still waiting to be confirmed counts in neither holder until it is.');
+}
+
+/**
+ * ma-statement-holder — one holder for a range. A4 portrait.
+ * data (maPdfHolderStatementData) = { holder:{code,name,person,mirror},
+ *   range, opening, closing, mirrorBalance, totals:{in,out,count},
+ *   rows:[{date,no,kind,who,contra,note,in,out,balance}], waiting:{in,out},
+ *   confirmations:[{date,no,direction,other,amount,state,by,forWho,at,via,paper}],
+ *   lastCount:{date,no,counted,difference}|null, printedOn, printedBy }
+ * A holder kept in Store Accounts (mirror) prints no opening, closing or
+ * running balance — its balance is that module's.
+ */
+function _renderMaStatementHolder(doc, data) {
+  data = data || {};
+  const h = data.holder || {};
+  const t = data.totals || {};
+  const rows = data.rows || [];
+  const r = data.range || {};
+  const mirror = !!h.mirror;
+  _prMaHeader(doc, 'Holder Statement', h.code, data);
+  _prMaTitle(doc, h.name || 'Holder', [
+    [h.person ? 'Held by ' + h.person : '', _prMaRange(r)].filter(Boolean).join('  ·  '),
+    mirror ? 'Kept in Store Accounts: its balance is that module’s, and only handovers to and from it are listed here.' : ''
+  ]);
+  _prMaFigures(doc, mirror
+    ? [['Money in', _prMaRs(doc, t.in)], ['Money out', _prMaRs(doc, t.out)],
+       ['Balance in Store Accounts', data.mirrorBalance == null ? 'not read' : _prMaRs(doc, data.mirrorBalance)]]
+    : [['Opening', _prMaRs(doc, data.opening)], ['Money in', _prMaRs(doc, t.in)],
+       ['Money out', _prMaRs(doc, t.out)], ['Closing', _prMaRs(doc, data.closing)]]);
+  // Who (and the kind, unless In/Out already says it), the other side, the note.
+  const what = function (x) {
+    const kind = x.kind === 'Money out' || x.kind === 'Money in' ? '' : x.kind;
+    return _prMaLines([kind, x.who].filter(Boolean).join(' · '), x.contra, x.note);
+  };
+  const body = [];
+  if (!mirror) body.push({ cells: [_prMaDay(r.from), '', 'Opening balance', '', '', _prMaRs(doc, data.opening)], strong: true });
+  rows.forEach(function (x) {
+    const c = [_prMaDay(x.date), x.no, what(x), _prMaCell(doc, x.in), _prMaCell(doc, x.out)];
+    if (!mirror) c.push(_prMaRs(doc, x.balance));
+    body.push({ cells: c });
+  });
+  if (!rows.length) body.push({ cells: ['', '', 'Nothing moved in the period.', '', '', ''] });
+  const tot = ['', '', 'Period totals · ' + (t.count || 0) + ' movement' + (t.count === 1 ? '' : 's'), _prMaRs(doc, t.in), _prMaRs(doc, t.out)];
+  if (!mirror) tot.push('');
+  body.push({ cells: tot, strong: true, rule: true });
+  if (!mirror) body.push({ cells: [_prMaDay(r.to), '', 'Closing balance', '', '', _prMaRs(doc, data.closing)], strong: true });
+  const cols = [{ h: 'Date', w: 80 }, { h: 'No.', w: 60 }, { h: 'Particulars', w: 'flex', wrap: true },
+    { h: 'In', w: 70, a: 'right' }, { h: 'Out', w: 70, a: 'right' }];
+  if (!mirror) cols.push({ h: 'Balance', w: 80, a: 'right' });
+  _prMaTable(doc, { size: 9, rows: body, cols: cols, continued: (h.name || 'Holder') + '  ·  ' + _prMaRange(r) });
+
+  const conf = data.confirmations || [];
+  doc.__groovyY += 6;
+  _prMaSection(doc, 'Confirmations');
+  if (conf.length) {
+    _prMaTable(doc, {
+      size: 9, continued: (h.name || 'Holder') + ' — confirmations',
+      cols: [{ h: 'Date', w: 80 }, { h: 'No.', w: 62 }, { h: 'Handover', w: 'flex', wrap: true },
+        { h: 'Amount', w: 80, a: 'right' }, { h: 'State', w: 150, wrap: true }],
+      rows: conf.map(function (x) {
+        const state = x.state === 'waiting'
+          ? 'Waiting for ' + (x.by || 'the receiver') + (x.paper ? ' — a signed receipt, then an owner confirms' : '')
+          : 'Confirmed by ' + (x.by || '—') + (x.forWho ? ' for ' + x.forWho : '') + (x.via === 'paper' ? ', on paper' : '') + (x.at ? ' · ' + _prMaWhen(x.at) : '');
+        return { cells: [_prMaDay(x.date), x.no, (x.direction === 'in' ? 'In from ' : 'Out to ') + (x.other || ''), _prMaRs(doc, x.amount), state] };
+      })
+    });
+    doc.__groovyY += 6;
+  } else {
+    _prMaNote(doc, 'No handover to or from this holder needed a confirmation in the period.');
+  }
+  const w = data.waiting || {};
+  if (w.in || w.out) {
+    const sides = [w.in ? _prMaRs(doc, w.in) + ' in' : '', w.out ? _prMaRs(doc, w.out) + ' out' : ''].filter(Boolean).join(' · ');
+    _prMaNote(doc, 'Waiting now: ' + sides + ' — money waiting to be confirmed counts in neither holder until it is.');
+  }
+  _prMaSection(doc, 'Last count', 50);
+  const lc = data.lastCount;
+  let text;
+  if (lc) {
+    const d = Math.round(Number(lc.difference) || 0);
+    text = 'Counted ' + _prMaRs(doc, lc.counted) + ' on ' + _prMaDay(lc.date) + (lc.no ? ' (' + lc.no + ')' : '') + ' — ' +
+      (d ? _prMaRs(doc, Math.abs(d)) + (d > 0 ? ' over' : ' short') + ' against the book.' : 'it matched the book.');
+  } else {
+    text = mirror ? 'Counted in Store Accounts, not here.' : 'This holder has never been counted.';
+  }
+  _prMaNote(doc, text, { size: 10, color: PRINT_COLORS.text });
+}
+
+/**
+ * ma-statement-party — a party's statement for a range. A4 portrait.
+ * data (maPdfPartyStatementData) = { party:{name,code,kind,terms,phone},
+ *   range, opening, closing, totals:{dr,cr,count},
+ *   rows:[{date,no,kind,account,contra,note,dr,cr,balance}],
+ *   direct:{paid,received,count,rows:[{date,no,kind,holder,contra,note,paid,received}]},
+ *   printedOn, printedBy }
+ * Balance > 0 is a CREDIT (Groovy owes them), < 0 a DEBIT (they owe Groovy).
+ */
+function _renderMaStatementParty(doc, data) {
+  data = data || {};
+  const p = data.party || {};
+  const t = data.totals || {};
+  const rows = data.rows || [];
+  const r = data.range || {};
+  const dir = data.direct || {};
+  const who = p.name || 'this party';
+  _prMaHeader(doc, 'Statement of Account', p.code, data);
+  _prMaTitle(doc, p.name || 'Party', [[p.kind, p.code, p.terms, p.phone].filter(Boolean).join('  ·  '), _prMaRange(r)]);
+  _prMaFigures(doc, [['Opening', _prMaSide(doc, data.opening)], ['Debits', _prMaRs(doc, t.dr)],
+    ['Credits', _prMaRs(doc, t.cr)], ['Closing', _prMaSide(doc, data.closing)]]);
+  _prMaNote(doc, 'Cr — Groovy owes ' + who + '. Dr — ' + who + ' owes Groovy. Their account is every bill, payment, advance and opening balance booked against them.');
+
+  _prMaSection(doc, 'Their account');
+  const body = [{ cells: [_prMaDay(r.from), '', 'Opening balance', '', '', _prMaSide(doc, data.opening)], strong: true }];
+  rows.forEach(function (x) {
+    body.push({ cells: [_prMaDay(x.date), x.no, _prMaLines(x.kind, x.contra, x.note),
+      _prMaCell(doc, x.dr), _prMaCell(doc, x.cr), _prMaSide(doc, x.balance)] });
+  });
+  if (!rows.length) body.push({ cells: ['', '', 'Nothing was booked against ' + who + '’s account in the period.', '', '', ''] });
+  body.push({ cells: ['', '', 'Period totals · ' + (t.count || 0) + ' posting' + (t.count === 1 ? '' : 's'),
+    _prMaRs(doc, t.dr), _prMaRs(doc, t.cr), ''], strong: true, rule: true });
+  body.push({ cells: [_prMaDay(r.to), '', 'Closing balance', '', '', _prMaSide(doc, data.closing)], strong: true });
+  _prMaTable(doc, {
+    size: 9, rows: body, continued: who + ' — their account',
+    cols: [{ h: 'Date', w: 80 }, { h: 'No.', w: 60 }, { h: 'Particulars', w: 'flex', wrap: true },
+      { h: 'Debit', w: 70, a: 'right' }, { h: 'Credit', w: 70, a: 'right' }, { h: 'Balance', w: 86, a: 'right' }]
+  });
+
+  doc.__groovyY += 6;
+  _prMaSection(doc, 'Paid and received directly');
+  _prMaNote(doc, 'Settled on the spot, from or into one of Groovy’s holders — it did not go through their account, so the balance above does not move.');
+  const drows = dir.rows || [];
+  if (drows.length) {
+    const b2 = drows.map(function (x) {
+      return { cells: [_prMaDay(x.date), x.no, _prMaLines([x.kind, x.holder].filter(Boolean).join(' · '), x.contra, x.note),
+        _prMaCell(doc, x.paid), _prMaCell(doc, x.received)] };
+    });
+    b2.push({ cells: ['', '', 'Totals · ' + (dir.count || 0) + ' posting' + (dir.count === 1 ? '' : 's'),
+      _prMaRs(doc, dir.paid), _prMaRs(doc, dir.received)], strong: true, rule: true });
+    _prMaTable(doc, {
+      size: 9, rows: b2, continued: who + ' — paid and received directly',
+      cols: [{ h: 'Date', w: 80 }, { h: 'No.', w: 60 }, { h: 'Particulars', w: 'flex', wrap: true },
+        { h: 'Paid to them', w: 80, a: 'right' }, { h: 'Received', w: 76, a: 'right' }]
+    });
+  } else {
+    _prMaNote(doc, 'Nothing was paid to or received from ' + who + ' directly in the period.');
+  }
+}
+
+/* ── the two A5 slips: their own page, their own footer ─────────────────── */
+function _prMaA5(doc) {
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 24;
+  return { W: W, H: H, M: M, L: M, R: W - M, CW: W - 2 * M };
+}
+/* English label, and — only when JNN really embedded — its Urdu under it.
+   @returns {number} the height used. */
+function _prMaLabel(doc, en, ur, x, y, size) {
+  size = size || 9;
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', size, PRINT_COLORS.greyAccent);
+  doc.text(String(en || ''), x, y);
+  if (ur && _prMaUrduOk(doc)) {
+    _setFont(doc, PRINT_FONTS.urdu, 'normal', size + 1, PRINT_COLORS.greyAccent);
+    doc.text(String(ur), x, y + size + 5);
+    return size * 2 + 7;
+  }
+  return size + 2;
+}
+function _prMaSlipHead(doc, o) {
+  const b = _prMaA5(doc);
+  const top = b.M;
+  _setFont(doc, PRINT_FONTS.display, 'bold', 18, PRINT_COLORS.black);
+  doc.text('GROOVY', b.L, top + 15);
+  _setFont(doc, PRINT_FONTS.display, 'bold', 13, PRINT_COLORS.black);
+  doc.text(_prMaFit(doc, o.number || '', b.CW * 0.5), b.R, top + 13, { align: 'right' });
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 10, PRINT_COLORS.greyAccent);
+  doc.text(String(o.title || ''), b.L, top + 31);
+  doc.text(_prMaFit(doc, o.date || '', b.CW * 0.5), b.R, top + 29, { align: 'right' });
+  let y = top + 31;
+  if (o.titleUr && _prMaUrduOk(doc)) {
+    _setFont(doc, PRINT_FONTS.urdu, 'normal', 12, PRINT_COLORS.greyAccent);
+    doc.text(String(o.titleUr), b.L, y + 17);
+    y += 17;
+  }
+  const c = _pc(PRINT_COLORS.greyLine);
+  doc.setDrawColor(c[0], c[1], c[2]);
+  doc.setLineWidth(0.5);
+  doc.line(b.L, y + 9, b.R, y + 9);
+  return y + 17;
+}
+/* VOID (a red box with who, when and why) and "Revised · rev N". */
+function _prMaStamps(doc, data, y) {
+  const b = _prMaA5(doc);
+  if (data.void) {
+    const v = data.void;
+    const red = _pc(PRINT_COLORS.red);
+    _setFont(doc, PRINT_FONTS.display, 'bold', 26, PRINT_COLORS.red);
+    const tagW = doc.getTextWidth('VOID') + 26;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.red);
+    const why = [].concat(
+      _prMaSplit(doc, 'Voided' + (v.at ? ' ' + _prMaWhen(v.at) : '') + (v.by ? ' by ' + v.by : '') + '.', b.CW - tagW - 10),
+      v.reason ? _prMaSplit(doc, 'Reason: ' + v.reason, b.CW - tagW - 10) : [],
+      _prMaSplit(doc, 'It moves no money.', b.CW - tagW - 10));
+    const h = Math.max(_prMaUrduOk(doc) ? 58 : 46, 12 + why.length * 11);
+    doc.setDrawColor(red[0], red[1], red[2]);
+    doc.setLineWidth(2);
+    doc.rect(b.L, y, b.CW, h, 'S');
+    _setFont(doc, PRINT_FONTS.display, 'bold', 26, PRINT_COLORS.red);
+    doc.text('VOID', b.L + 12, y + 31);
+    if (_prMaUrduOk(doc)) {
+      _setFont(doc, PRINT_FONTS.urdu, 'normal', 12, PRINT_COLORS.red);
+      doc.text(_PR_MA_UR.voided, b.L + 12, y + 49);
+    }
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.red);
+    doc.text(why, b.L + tagW, y + 15);
+    y += h + 10;
+  }
+  if (data.revised) {
+    const rv = data.revised;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 10, PRINT_COLORS.text);
+    const head = 'Revised · rev ' + rv.n;
+    doc.text(head, b.L, y + 10);
+    let x = b.L + doc.getTextWidth(head) + 8;
+    if (_prMaUrduOk(doc)) {
+      _setFont(doc, PRINT_FONTS.urdu, 'normal', 10, PRINT_COLORS.text);
+      doc.text(_PR_MA_UR.revised, b.R, y + 10, { align: 'right' });
+    }
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
+    const tail = [(rv.at ? _prMaWhen(rv.at) : '') + (rv.by ? ' by ' + rv.by : ''), rv.reason].filter(Boolean).join(' — ');
+    const lines = _prMaSplit(doc, tail, b.CW - (x - b.L) - (_prMaUrduOk(doc) ? 60 : 0));
+    doc.text(lines, x, y + 10);
+    y += 8 + lines.length * 11;
+    y += 6;
+  }
+  return y;
+}
+function _prMaAmountBox(doc, y, en, ur, amount, words, isVoid) {
+  const b = _prMaA5(doc);
+  const shade = _pc(PRINT_COLORS.greyShade);
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'italic', 10, PRINT_COLORS.text);
+  const lines = _prMaSplit(doc, String(words || ''), b.CW - 24);
+  const h = 50 + lines.length * 13;
+  doc.setFillColor(shade[0], shade[1], shade[2]);
+  doc.rect(b.L, y, b.CW, h, 'F');
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.greyAccent);
+  doc.text(String(en), b.L + 12, y + 15);
+  if (ur && _prMaUrduOk(doc)) {
+    _setFont(doc, PRINT_FONTS.urdu, 'normal', 11, PRINT_COLORS.greyAccent);
+    doc.text(String(ur), b.R - 12, y + 16, { align: 'right' });
+  }
+  _setFont(doc, PRINT_FONTS.display, 'bold', 24, PRINT_COLORS.black);
+  const fig = _prMaRs(doc, amount);
+  doc.text(fig, b.L + 12, y + 40);
+  if (isVoid) {
+    // Struck through in red: a void slip's figure must never read as live.
+    const red = _pc(PRINT_COLORS.red);
+    doc.setDrawColor(red[0], red[1], red[2]);
+    doc.setLineWidth(2.2);
+    doc.line(b.L + 8, y + 32, b.L + 16 + doc.getTextWidth(fig), y + 32);
+  }
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'italic', 10, PRINT_COLORS.text);
+  doc.text(lines, b.L + 12, y + 56);
+  return y + h + 10;
+}
+/* Label / value rows. rows: [[en, ur, value, strong]] — a blank value is
+   left out. A value wraps; it is never cut. */
+function _prMaSlipRows(doc, y, rows, stopAt) {
+  const b = _prMaA5(doc);
+  const lw = 112;
+  const soft = _pc('#E6E6E6');
+  rows.filter(function (r) { return r && r[2] !== undefined && r[2] !== null && r[2] !== ''; }).forEach(function (r) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, r[3] ? 'bold' : 'normal', 10.5, PRINT_COLORS.text);
+    const vl = _prMaSplit(doc, r[2], b.CW - lw - 4);
+    const lh = _prMaUrduOk(doc) && r[1] ? 27 : 12;
+    const h = Math.max(lh, vl.length * 13) + 9;
+    if (y + h > stopAt) { doc.addPage(); y = b.M; }
+    _prMaLabel(doc, r[0], r[1], b.L, y + 11, 9);
+    _setFont(doc, PRINT_FONTS.bodyRegular, r[3] ? 'bold' : 'normal', 10.5, PRINT_COLORS.text);
+    doc.text(vl, b.L + lw, y + 11);
+    y += h;
+    doc.setDrawColor(soft[0], soft[1], soft[2]);
+    doc.setLineWidth(0.3);
+    doc.line(b.L, y - 3, b.R, y - 3);
+  });
+  return y;
+}
+/* Signature blocks side by side, sitting on the foot of the last page. A
+   single block takes the right half — where a receiver signs. */
+function _prMaSignatures(doc, y, sigs, top) {
+  const b = _prMaA5(doc);
+  if (y > top) { doc.addPage(); }
+  const gap = 24;
+  const w = (b.CW - gap) / 2;
+  const x0 = sigs.length === 1 ? b.L + w + gap : b.L;
+  const ink = _pc(PRINT_COLORS.text);
+  sigs.forEach(function (s, i) {
+    const x = x0 + i * (w + gap);
+    doc.setDrawColor(ink[0], ink[1], ink[2]);
+    doc.setLineWidth(0.7);
+    doc.line(x, top + 28, x + w, top + 28);
+    const used = _prMaLabel(doc, s.en, s.ur, x, top + 40, 9);
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9.5, PRINT_COLORS.text);
+    doc.text(_prMaFit(doc, s.name ? s.name : 'Name: _______________', w), x, top + 40 + used + 3);
+  });
+}
+/* Every page of a slip: who recorded it and who printed it, then the page
+   count, the confidentiality line (+ its Urdu tail) and VOID if it is. */
+function _prMaSlipFooter(doc, data) {
+  const b = _prMaA5(doc);
+  const total = doc.getNumberOfPages();
+  const dt = doc.__groovyDocType || 'Document';
+  const rec = data.recorded || {};
+  const meta = [rec.by ? 'Recorded by ' + rec.by + (rec.at ? ', ' + _prMaWhen(rec.at) : '') : '',
+    data.printedOn ? 'Printed ' + _prMaDay(data.printedOn) + (data.printedBy ? ' by ' + data.printedBy : '') : ''].filter(Boolean).join('  ·  ');
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    const y = b.H - 20;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7.5, PRINT_COLORS.greyAccent);
+    if (meta) doc.text(_prMaFit(doc, meta, b.CW), b.L, y - 12);
+    doc.text('Page ' + p + ' of ' + total, b.L, y);
+    if (data.void) {
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.red);
+      doc.text('VOID', b.L + 58, y);
+    }
+    const latin = 'GROOVY · ' + dt + ' · Internal Use Only';
+    if (_prMaUrduOk(doc)) {
+      const ur = _footerUr(dt);
+      _setFont(doc, PRINT_FONTS.urdu, 'normal', 7.5, PRINT_COLORS.greyAccent);
+      let urW = 0;
+      try { urW = doc.getTextWidth(ur); } catch (e) { urW = 0; }
+      doc.text(ur, b.R, y, { align: 'right' });
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7.5, PRINT_COLORS.greyAccent);
+      doc.text(latin + ' | ', b.R - urW, y, { align: 'right' });
+    } else {
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 7.5, PRINT_COLORS.greyAccent);
+      doc.text(latin, b.R, y, { align: 'right' });
+    }
+  }
+}
+
+/**
+ * ma-receipt — a transfer's handover slip. A5, bilingual.
+ * data (maPdfReceiptData) = { no, date, amount, amountWords,
+ *   from:{code,name,person}, to:{code,name,person}, note,
+ *   state:'pending'|'confirmed'|'posted'|'void', waitingFor, paper,
+ *   confirm:{by,at,via,forWho}|null, revised:{n,at,by,reason}|null,
+ *   void:{reason,by,at}|null, recorded:{by,at}, printedOn, printedBy }
+ */
+function _renderMaReceipt(doc, data) {
+  data = data || {};
+  const b = _prMaA5(doc);
+  const f = data.from || {}, t = data.to || {};
+  let y = _prMaSlipHead(doc, { title: 'Handover receipt', titleUr: _PR_MA_UR.receipt, number: data.no, date: _prMaDay(data.date) });
+  y = _prMaStamps(doc, data, y);
+  y = _prMaAmountBox(doc, y, 'Amount', _PR_MA_UR.amount, data.amount, data.amountWords, !!data.void);
+  let state;
+  if (data.state === 'void') state = 'Void — it moves no money.';
+  else if (data.state === 'pending') {
+    state = 'Waiting for ' + (data.waitingFor || 'the receiver') + ' to confirm' +
+      (data.paper ? ' — sign below on receipt; an owner then confirms it in the app.' : ' in the app.') +
+      ' It counts in neither holder until then.';
+  } else if (data.state === 'confirmed' && data.confirm) {
+    const c = data.confirm;
+    state = 'Confirmed by ' + (c.by || '—') + (c.forWho ? ' for ' + c.forWho : '') + (c.via === 'paper' ? ', on paper' : ' in the app') +
+      (c.at ? ' · ' + _prMaWhen(c.at) : '') + '.';
+  } else state = 'Posted — nobody else had to confirm it.';
+  const sigTop = b.H - 24 - 36 - 72;
+  y = _prMaSlipRows(doc, y, [
+    ['From', _PR_MA_UR.from, [f.name, f.person ? '(' + f.person + ')' : ''].filter(Boolean).join(' '), true],
+    ['To', _PR_MA_UR.to, [t.name, t.person ? '(' + t.person + ')' : ''].filter(Boolean).join(' '), true],
+    ['Date', _PR_MA_UR.date, _prMaDay(data.date)],
+    ['Number', _PR_MA_UR.number, data.no],
+    ['Note', _PR_MA_UR.note, data.note],
+    ['State', _PR_MA_UR.state, state]
+  ], sigTop);
+  _prMaSignatures(doc, y, [
+    { en: 'Given by', ur: _PR_MA_UR.givenBy, name: f.person || '' },
+    { en: 'Received by', ur: _PR_MA_UR.receivedBy, name: t.person || '' }
+  ], sigTop);
+  _prMaSlipFooter(doc, data);
+}
+
+/**
+ * ma-voucher — a money-out payment voucher. A5, bilingual.
+ * data (maPdfVoucherData) = { no, date, paidTo:{name,code,party},
+ *   from:{code,name,person}, account:{code,name}, amount,
+ *   tax:{kind,label,rate,inclusive,claimable,amount,net,gross}|null,
+ *   paid, paidWords, note, costCentre, commitment:{name,period}|null,
+ *   revised, void, recorded, printedOn, printedBy }
+ * `tax` is null for "No tax": the block prints only when there is one.
+ */
+function _renderMaVoucher(doc, data) {
+  data = data || {};
+  const b = _prMaA5(doc);
+  const to = data.paidTo || {}, f = data.from || {}, a = data.account || {}, tx = data.tax;
+  let y = _prMaSlipHead(doc, { title: 'Payment voucher', titleUr: _PR_MA_UR.voucher, number: data.no, date: _prMaDay(data.date) });
+  y = _prMaStamps(doc, data, y);
+  y = _prMaAmountBox(doc, y, 'Amount paid', _PR_MA_UR.paid, data.paid, data.paidWords, !!data.void);
+  let taxText = '';
+  if (tx) {
+    if (tx.kind === 'withholding') {
+      taxText = (tx.label || 'Withholding') + ' ' + tx.rate + '% on ' + _prMaRs(doc, tx.gross) + ': ' + _prMaRs(doc, tx.amount) +
+        ' withheld from the payee — owed to the government.';
+    } else if (tx.inclusive) {
+      taxText = (tx.label || tx.kind) + ' ' + tx.rate + '%, included in ' + _prMaRs(doc, tx.gross) + ': ' + _prMaRs(doc, tx.amount) +
+        (tx.claimable ? ' (claimable).' : '.');
+    } else {
+      taxText = (tx.label || tx.kind) + ' ' + tx.rate + '% on top of ' + _prMaRs(doc, tx.net) + ': ' + _prMaRs(doc, tx.amount) +
+        (tx.claimable ? ' (claimable).' : '.');
+    }
+  }
+  const cm = data.commitment;
+  const sigTop = b.H - 24 - 36 - 72;
+  y = _prMaSlipRows(doc, y, [
+    ['Paid to', _PR_MA_UR.paidTo, [to.name, to.code ? '(' + to.code + ')' : ''].filter(Boolean).join(' '), true],
+    ['Paid from', _PR_MA_UR.paidFrom, [f.name, f.person ? '(' + f.person + ')' : ''].filter(Boolean).join(' ')],
+    ['For', _PR_MA_UR.forWhat, [a.code, a.name].filter(Boolean).join(' · ')],
+    ['Tax', _PR_MA_UR.tax, taxText],
+    ['Particulars', _PR_MA_UR.particulars, data.note],
+    ['Cost centre', _PR_MA_UR.centre, data.costCentre],
+    ['Commitment', null, cm ? [cm.name, cm.period].filter(Boolean).join(' · ') : ''],
+    ['Date', _PR_MA_UR.date, _prMaDay(data.date)],
+    ['Number', _PR_MA_UR.number, data.no]
+  ], sigTop);
+  _prMaSignatures(doc, y, [{ en: 'Received by', ur: _PR_MA_UR.receivedBy, name: to.name || '' }], sigTop);
+  _prMaSlipFooter(doc, data);
+}
+
 /* ── PART 2 — Public API ───────────────────────────────────────────────────
-   The ONLY global this engine exposes. */
+   The ONLY global this engine exposes.
+
+   opts.deliver === 'blob' (Master Accounts M1.4 — a later milestone uploads
+   these bytes for a share link): NO preview tab, NO download, NO toast; the
+   promise RESOLVES {blob, filename}, and a failure REJECTS so the caller can
+   say what went wrong. It sits on `opts` beside type/data/filename because
+   it is about where the PDF goes, not what is on it. Without it every call
+   behaves exactly as it always has. */
 window.printDocument = async function (opts) {
   opts = opts || {};
   const type = opts.type || 'generic';
   const data = opts.data || {};
+  const toBlob = opts.deliver === 'blob';
 
   if (!window.jspdf || !window.jspdf.jsPDF) {
     console.error('[print-engine] jsPDF not loaded.');
+    if (toBlob) throw new Error('PDF library not loaded yet, retry in a moment.');
     if (typeof showToast === 'function') showToast('PDF library not loaded yet, retry in a moment.', true);
     return;
   }
 
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
-    'daily-performance', 'stock-transfer', 'mood-board', 'pattern-label', 'consumable-log', 'generic'];
+    'daily-performance', 'stock-transfer', 'mood-board',
+    'ma-ledger', 'ma-statement-party', 'ma-statement-holder', 'ma-receipt', 'ma-voucher',
+    'pattern-label', 'consumable-log', 'generic'];
   const _VARIANTS = {
     'po': _renderPO,
     'gate-pass': _renderGatePass,
@@ -2021,7 +2857,12 @@ window.printDocument = async function (opts) {
     'stock-transfer': _renderStockTransfer,
     'mood-board': _renderMoodBoard,
     'pattern-label': _renderPatternLabel,
-    'consumable-log': _renderConsumableLog
+    'consumable-log': _renderConsumableLog,
+    'ma-ledger': _renderMaLedger,
+    'ma-statement-party': _renderMaStatementParty,
+    'ma-statement-holder': _renderMaStatementHolder,
+    'ma-receipt': _renderMaReceipt,
+    'ma-voucher': _renderMaVoucher
   };
   const render = _VARIANTS[type] || _renderGeneric;
   if (known.indexOf(type) === -1) {
@@ -2036,8 +2877,10 @@ window.printDocument = async function (opts) {
   // (slow for bilingual) font fetch + subset.
   const _docLabel = data.documentType || _PRINT_DOC_LABELS[type] || 'Document';
   let previewWin = null;
-  try { previewWin = window.open('', '_blank'); } catch (e) { previewWin = null; }
-  _previewLoading(previewWin, _docLabel);
+  if (!toBlob) {
+    try { previewWin = window.open('', '_blank'); } catch (e) { previewWin = null; }
+    _previewLoading(previewWin, _docLabel);
+  }
 
   // Resolve the Urdu policy: explicit data.urduLevel wins, else the per-type
   // default, else 'minimal'. Only 'full' fetches/embeds the heavy JNN TTF.
@@ -2054,11 +2897,24 @@ window.printDocument = async function (opts) {
   // own (data.page = {w,h} in points) — the Pattern Hub's 5×6 in label. The
   // shared components (_renderHeader, _renderFooter, _renderInfoTable, …)
   // are A4 by construction through PRINT_LAYOUT, so a custom-page variant
-  // must draw its own layout and gets no automatic footer.
-  const customPage = _customPage(data);
+  // must draw its own layout and gets no automatic footer. A type may name
+  // its own page (_PRINT_PAGE_DEFAULTS — the A5 slips); data.page wins.
+  const customPage = _customPage(data.page ? data : { page: _PRINT_PAGE_DEFAULTS[type] });
+  // A4 LANDSCAPE when asked (data.orientation, else the type's default) —
+  // only for a renderer that lays out off _pageBox(); any other variant has
+  // its own portrait geometry and stays portrait.
+  const orientation = data.orientation || _PRINT_ORIENTATION_DEFAULTS[type] || 'portrait';
+  let landscape = false;
+  if (!customPage && orientation === 'landscape') {
+    if (render === _renderGeneric || _PRINT_LANDSCAPE_READY[type]) landscape = true;
+    else console.warn('[print-engine] ' + type + ' is laid out for A4 portrait — orientation "landscape" ignored.');
+  }
   const doc = customPage
     ? new jsPDF({ unit: 'pt', format: [customPage.w, customPage.h], orientation: customPage.w > customPage.h ? 'landscape' : 'portrait' })
-    : new jsPDF({ unit: 'pt', format: 'a4' });
+    : landscape
+      ? new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
+      : new jsPDF({ unit: 'pt', format: 'a4' });
+  if (landscape) doc.__groovyPage = PRINT_LAYOUT_LANDSCAPE;
 
   const fontState = await _ensurePrintFonts(embedUrdu);
   doc.__groovyFonts = _registerFonts(doc, fontState);
@@ -2083,6 +2939,7 @@ window.printDocument = async function (opts) {
     if (!customPage) _stampFooters(doc);
   } catch (e) {
     console.error('[print-engine] render failed:', e);
+    if (toBlob) throw e;
     if (typeof showToast === 'function') showToast('PDF generation failed: ' + e.message, true);
     _previewError(previewWin, e.message);
     return;
@@ -2099,6 +2956,7 @@ window.printDocument = async function (opts) {
     blob = doc.output('blob');
   } catch (e) {
     console.error('[print-engine] PDF serialization failed:', e);
+    if (toBlob) throw e;
     if (typeof showToast === 'function') showToast('PDF generation failed: ' + e.message, true);
     _previewError(previewWin, e.message);
     return;
@@ -2107,6 +2965,7 @@ window.printDocument = async function (opts) {
   const sizeKB = Math.max(1, Math.round(blob.size / 1024));
   console.log('[print-engine] Generated ' + type + ' PDF — urduLevel: ' +
     urduLevel + ', size: ~' + sizeKB + 'KB');
+  if (toBlob) return { blob: blob, filename: filename };
 
   let url = null;
   try {

@@ -577,6 +577,148 @@ module.exports=async function(){
     s.eq('HTML is escaped, quotes included',M.maEsc('<b>"x"&\'y\''),'&lt;b&gt;&quot;x&quot;&amp;&#39;y&#39;');
   }
 
+  s.section('maRsWords — thousand, lakh, crore; whole rupees only (§31)');
+  {
+    const W=M.maRsWords;
+    [[1,'One'],[11,'Eleven'],[19,'Nineteen'],[20,'Twenty'],[21,'Twenty One'],[99,'Ninety Nine'],[100,'One Hundred'],
+     [101,'One Hundred One'],[110,'One Hundred Ten'],[999,'Nine Hundred Ninety Nine'],[1000,'One Thousand'],
+     [1001,'One Thousand One'],[10000,'Ten Thousand'],[99999,'Ninety Nine Thousand Nine Hundred Ninety Nine'],
+     [100000,'One Lakh'],[100001,'One Lakh One'],[150000,'One Lakh Fifty Thousand'],
+     [1234567,'Twelve Lakh Thirty Four Thousand Five Hundred Sixty Seven'],
+     [9999999,'Ninety Nine Lakh Ninety Nine Thousand Nine Hundred Ninety Nine'],[10000000,'One Crore'],
+     [999999999,'Ninety Nine Crore Ninety Nine Lakh Ninety Nine Thousand Nine Hundred Ninety Nine'],
+     [1e11,'Ten Thousand Crore']].forEach(([n,w])=>s.eq(n+' in words',W(n),'Rupees '+w+' Only'));
+    s.eq('0 is "Rupees Zero Only"',W(0),'Rupees Zero Only');
+    s.eq('the plan\'s example, exactly',W(150000),'Rupees One Lakh Fifty Thousand Only');
+    [[1.5,'a fraction'],[-5,'a negative'],[-0.5,'a negative fraction'],[NaN,'NaN'],[Infinity,'Infinity'],['100','a string'],
+     [null,'null'],[undefined,'undefined'],[{},'an object'],[2**53,'past the safe integers']].forEach(([v,what])=>s.eq(what+' gives \'\'',W(v),''));
+    s.ok('never million or billion',!/million|billion/i.test([1e6,1e7,1e9,1e11].map(W).join(' ')));
+  }
+
+  s.section('the PDF builders (§31, M1.4) — every figure is maLedger\'s or maHolderRows\'');
+  {
+    const FROM='2026-10-01',TO='2026-12-31',RANGE={from:FROM,to:TO,label:'Q2 FY27'};
+    const party={id:'p_asg',kind:'vendor',name:'Asghar Printers',code:'ASG',active:true,contact:{phone:'0300 1234567'},vendor:{terms:{mode:'credit',creditDays:30,from:'2026-07-01'}}};
+    const quiet={id:'p_q',kind:'vendor',name:'Quiet Traders',code:'QUIE',active:true};
+    const opening=J('opening',{date:'2026-07-01',lines:[{account:'1011',side:'dr',amount:500000},{account:'1020',side:'dr',amount:2000000},
+      {account:'1012',side:'dr',amount:300000},{account:'2010',side:'cr',amount:150000,party:'p_asg',memo:'Owed for September'}]});
+    const cap=J('capital',{date:'2026-10-01',holder:'1011',owner:'afnan',amount:200000,note:'October wages'});
+    const wht=J('money_out',{date:'2026-10-02',holder:'1011',account:'5030',party:'p_asg',amount:100000,tax:{kind:'withholding',rate:4},note:'October printing'});
+    const pay=J('money_out',{date:'2026-10-05',holder:'1020',account:'2010',party:'p_asg',amount:50000,tax:NONE,note:'Part payment'});
+    const payBefore=J('money_out',{date:'2026-09-20',holder:'1020',account:'2010',party:'p_asg',amount:10000,tax:NONE});
+    const trC=T({date:'2026-10-03',from:'1011',to:'1012',amount:25000,note:'Float'});
+    Object.assign(trC,M.maConfirmPatch(trC,'ammar',{at:1791000000000}).patch);
+    const trP=T({date:'2026-10-06',from:'1011',to:'1012',amount:150000});
+    const trOld=T({date:'2026-09-10',from:'1011',to:'1012',amount:1000});   // pending since September
+    const trD=T({date:'2026-10-04',from:'1011',to:'1010',amount:10000});
+    const vOut=M.maApplyVoid(J('money_out',{date:'2026-10-08',holder:'1011',account:'2010',party:'p_asg',amount:40000,tax:NONE}),{at:1791100000000,by:'afnan',byName:'Afnan',reason:'Entered twice'});
+    const vTr=M.maApplyVoid(T({date:'2026-10-09',from:'1011',to:'1012',amount:70000}),{at:1791200000000,by:'ammar',byName:'Ammar',reason:'Wrong day'});
+    const trCV=T({date:'2026-10-10',from:'1011',to:'1012',amount:5000});   // confirmed, then voided
+    Object.assign(trCV,M.maConfirmPatch(trCV,'ammar',{at:1791250000000}).patch);
+    const vTrC=M.maApplyVoid(trCV,{at:1791260000000,by:'afnan',byName:'Afnan',reason:'Never handed over'});
+    const e0=J('money_out',{date:'2026-10-07',holder:'1011',account:'6050',payee:'Bilal',amount:12500,tax:{kind:'services',rate:16,inclusive:false}});
+    const re=(b,amt,reason,by,at)=>M.maApplyEdit(b,M.maBuildDoc('journal',{kind:'money_out',date:'2026-10-07',holder:'1011',account:'6050',payee:'Bilal',amount:amt,tax:{kind:'services',rate:16,inclusive:false}},{by:'afnan'},IDX,S),{at,by,byName:by==='ammar'?'Ammar':'Afnan',reason});
+    const e2=re(re(e0,13000,'The bill said 13,000','afnan',1791300000000),13500,'And the wire','ammar',1791400000000);
+    const docs=[opening,cap,wht,pay,payBefore,trC,trP,trOld,trD,vOut,vTr,vTrC,e2];
+    const lines0=M.maPostAll(docs,IDX,S);
+    const book=M.maBalanceOf(lines0,IDX,'1011','2026-10-15');
+    const cnt=C({date:'2026-10-15',holder:'1011',counted:book-500,note:'Short'},book);
+    docs.push(cnt);
+    const lines=M.maPostAll(docs,IDX,S);
+    const holders=M.maHolderRows(IDX,lines,docs,{settings:S,mirrorBalances:{'1010':45000}});
+    const X={idx:IDX,settings:S,lines,docs,parties:[party,quiet],commitments:[],holders,people:{afnan:'Afnan',ammar:'Ammar',raees:'Raees'},printedOn:'2026-12-31',printedBy:'Afnan'};
+    const ids=a=>a.map(r=>r.no).join(',');
+
+    // ── the ledger
+    const f={from:FROM,to:TO,holder:'1011'};
+    const led=M.maLedger(lines,f,IDX);
+    const L=M.maPdfLedgerData(X,Object.assign({label:'Q2 FY27'},f));
+    s.eq('ledger: one row per maLedger row, in its order',ids(L.rows),led.rows.map(r=>r.doc.no).join(','));
+    s.ok('ledger: every date, debit, credit and running balance is maLedger\'s',L.rows.every((r,i)=>r.date===led.rows[i].date&&r.dr===led.rows[i].dr&&r.cr===led.rows[i].cr&&r.balance===led.rows[i].balance));
+    s.eq('ledger: opening, closing and the totals are maLedger\'s',JSON.stringify([L.opening,L.closing,L.totals]),JSON.stringify([led.opening,led.closing,{dr:led.dr,cr:led.cr,count:led.count}]));
+    s.eq('ledger: closing = opening + debits − credits',L.closing,L.opening+L.totals.dr-L.totals.cr);
+    s.ok('ledger: the voided documents are not on it',!L.rows.some(r=>r.no===vOut.no||r.no===vTr.no));
+    s.ok('ledger: a transfer still waiting to be confirmed is not on it',!L.rows.some(r=>r.no===trP.no||r.no===trOld.no));
+    s.eq('ledger: the account, its range and its normal side',JSON.stringify([L.account.code,L.account.name,L.account.normal,L.range]),JSON.stringify(['1011','Cash — with Afnan','dr',RANGE]));
+    const capRow=L.rows.find(r=>r.no===cap.no);
+    s.eq('ledger: a capital row says who and names the other side',JSON.stringify([capRow&&capRow.kind,capRow&&capRow.who,capRow&&capRow.contra,capRow&&capRow.note]),JSON.stringify(['Owner put money in','Afnan','3010 · Capital — Afnan','October wages']));
+    const trRow=L.rows.find(r=>r.no===trC.no);
+    s.eq('ledger: a handover names the other holder, not a contra account',JSON.stringify([trRow&&trRow.who,trRow&&trRow.contra]),JSON.stringify(['Cash — with Ammar','']));
+    s.eq('ledger: a party\'s line names the party',(L.rows.find(r=>r.no===wht.no)||{}).who,'Asghar Printers');
+    s.eq('ledger: no single account → nothing to print (null)',M.maPdfLedgerData(X,{from:FROM,to:TO}),null);
+    const L2=M.maPdfLedgerData(X,{from:FROM,to:TO,account:'2010',party:'p_asg',dt:'journal',q:'part'});
+    s.ok('ledger: the page\'s filters are named on it',L2.filters.join('|')==='Party: Asghar Printers|Documents: Journals|Search: “part”',L2.filters.join('|'));
+    s.eq('ledger: a filtered ledger is the filtered maLedger',JSON.stringify([L2.opening,L2.closing,L2.totals.count]),JSON.stringify((l=>[l.opening,l.closing,l.count])(M.maLedger(lines,{from:FROM,to:TO,account:'2010',party:'p_asg',dt:'journal',q:'part'},IDX))));
+
+    // ── the holder statement
+    const H=M.maPdfHolderStatementData(X,'1011',RANGE);
+    const hl=M.maLedger(lines,{holder:'1011',from:FROM,to:TO},IDX);
+    s.eq('holder: one row per maLedger(holder) row',ids(H.rows),hl.rows.map(r=>r.doc.no).join(','));
+    s.ok('holder: in/out/balance are the holder ledger\'s',H.rows.every((r,i)=>r.in===hl.rows[i].dr&&r.out===hl.rows[i].cr&&r.balance===hl.rows[i].balance));
+    s.eq('holder: opening/closing and totals',JSON.stringify([H.opening,H.closing,H.totals]),JSON.stringify([hl.opening,hl.closing,{in:hl.dr,out:hl.cr,count:hl.count}]));
+    s.eq('holder: its closing is maBalanceOf on the last day',H.closing,M.maBalanceOf(lines,IDX,'1011',TO));
+    s.eq('holder: who holds it',H.holder.person,'Afnan');
+    s.eq('holder: confirmations — every one still waiting, and those confirmed in the range',H.confirmations.map(c=>c.no+':'+c.state).join(','),[trOld.no+':waiting',trC.no+':confirmed',trP.no+':waiting'].join(','));
+    s.ok('holder: a void handover is never a confirmation — not even one confirmed before it was voided',vTrC.status==='void'&&!!vTrC.confirmedBy&&!H.confirmations.some(c=>c.no===vTr.no||c.no===vTrC.no));
+    s.ok('holder: …nor a movement',!H.rows.some(r=>r.no===vTr.no||r.no===vTrC.no));
+    const cc=H.confirmations.find(c=>c.no===trC.no);
+    s.eq('holder: a confirmation says who, when and which way',JSON.stringify([cc.direction,cc.other,cc.by,cc.at,cc.via]),JSON.stringify(['out','Cash — with Ammar','Ammar',1791000000000,'app']));
+    const h1011=holders.find(h=>h.code==='1011');
+    s.eq('holder: waiting is maHolderRows\'',JSON.stringify(H.waiting),JSON.stringify({in:h1011.pendingIn,out:h1011.pendingOut}));
+    s.eq('holder: the last count is maHolderRows\'',JSON.stringify(H.lastCount),JSON.stringify({date:h1011.lastCount.date,no:h1011.lastCount.no,counted:h1011.lastCount.counted,difference:h1011.lastCount.difference}));
+    s.eq('holder: …500 short',H.lastCount.difference,-500);
+    const D=M.maPdfHolderStatementData(X,'1010',RANGE);
+    s.eq('holder: the drawer (mirrored) prints no opening, closing or running balance',JSON.stringify([D.holder.mirror,D.opening,D.closing,D.rows.every(r=>r.balance===null)]),JSON.stringify([true,null,null,true]));
+    s.eq('holder: …its balance is Store Accounts\' own',D.mirrorBalance,45000);
+    s.eq('holder: …and never a zero when that read failed',M.maPdfHolderStatementData(Object.assign({},X,{holders:M.maHolderRows(IDX,lines,docs,{settings:S})}),'1010',RANGE).mirrorBalance,null);
+    s.eq('holder: a non-money account is not a holder (null)',M.maPdfHolderStatementData(X,'6050',RANGE),null);
+
+    // ── the party statement
+    const P=M.maPdfPartyStatementData(X,'p_asg',RANGE);
+    s.eq('party: the opening is their account before the range (150,000 owed less 10,000 paid in September) — a credit',P.opening,140000);
+    s.eq('party: one row per posting on their account in the range',ids(P.rows),pay.no);
+    s.eq('party: …a payment is a debit that brings the balance down',JSON.stringify([P.rows[0].dr,P.rows[0].balance]),JSON.stringify([50000,90000]));
+    s.eq('party: closing = opening + credits − debits',P.closing,P.opening+P.totals.cr-P.totals.dr);
+    const pl=M.maLedger(lines.filter(l=>l.party==='p_asg'&&M.maAcc(IDX,l.account).control),{party:'p_asg',from:FROM,to:TO},IDX);
+    s.eq('party: the totals are maLedger\'s over their account',JSON.stringify(P.totals),JSON.stringify({dr:pl.dr,cr:pl.cr,count:pl.count}));
+    s.ok('party: a void document never moves it',!P.rows.some(r=>r.no===vOut.no)&&P.closing===90000);
+    s.eq('party: paid directly — the withholding purchase, at the cash that moved',JSON.stringify(P.direct.rows.map(r=>[r.no,r.paid,r.received,r.holder])),JSON.stringify([[wht.no,96000,0,'Cash — with Afnan']]));
+    s.ok('party: …and a payment on their account is not listed twice',!P.direct.rows.some(r=>r.no===pay.no));
+    s.eq('party: name, code, kind, terms, phone',JSON.stringify([P.party.name,P.party.code,P.party.kind,P.party.terms,P.party.phone]),JSON.stringify(['Asghar Printers','ASG','Vendor','Credit 30 days','0300 1234567']));
+    const Q=M.maPdfPartyStatementData(X,'p_q',RANGE);
+    s.eq('party: a party with nothing prints zeros, not an error',JSON.stringify([Q.opening,Q.closing,Q.rows.length,Q.direct.rows.length]),JSON.stringify([0,0,0,0]));
+    s.eq('party: an unknown party builds nothing (null)',M.maPdfPartyStatementData(X,'nobody',RANGE),null);
+
+    // ── the receipt
+    const R=M.maPdfReceiptData(X,trP);
+    s.eq('receipt: the amount and its words',JSON.stringify([R.amount,R.amountWords]),JSON.stringify([150000,'Rupees One Lakh Fifty Thousand Only']));
+    s.eq('receipt: from and to, with whose hands',JSON.stringify([R.from.name,R.from.person,R.to.name,R.to.person]),JSON.stringify(['Cash — with Afnan','Afnan','Cash — with Ammar','Ammar']));
+    s.eq('receipt: pending, and who it waits for',JSON.stringify([R.state,R.waitingFor]),JSON.stringify(['pending','Ammar']));
+    s.eq('receipt: confirmed says by whom and when',JSON.stringify([M.maPdfReceiptData(X,trC).state,M.maPdfReceiptData(X,trC).confirm]),JSON.stringify(['confirmed',{by:'Ammar',at:1791000000000,via:'app',forWho:''}]));
+    s.eq('receipt: a handover nobody had to confirm is simply posted',M.maPdfReceiptData(X,trD).state,'posted');
+    const RV=M.maPdfReceiptData(X,vTr);
+    s.eq('receipt: a void says so, with who, when and why',JSON.stringify([RV.state,RV.void]),JSON.stringify(['void',{reason:'Wrong day',by:'Ammar',at:1791200000000}]));
+    s.eq('receipt: never edited → no revision mark',R.revised,null);
+    s.eq('receipt: a journal is not a receipt (null)',M.maPdfReceiptData(X,cap),null);
+
+    // ── the voucher
+    const V=M.maPdfVoucherData(X,wht);
+    const tw=M.maTaxCompute(100000,wht.tax);
+    s.eq('voucher: paid is the cash that left the holder (less withholding)',JSON.stringify([V.amount,V.paid,V.paidWords]),JSON.stringify([100000,tw.cash,'Rupees Ninety Six Thousand Only']));
+    s.eq('voucher: the tax block is maTaxCompute\'s',JSON.stringify(V.tax),JSON.stringify({kind:'withholding',label:'Withholding',rate:4,inclusive:true,claimable:false,amount:4000,net:100000,gross:100000}));
+    s.eq('voucher: paid to the party, from the holder, for the account',JSON.stringify([V.paidTo,V.from.name,V.account]),JSON.stringify([{name:'Asghar Printers',code:'ASG',party:true},'Cash — with Afnan',{code:'5030',name:'Embellishment'}]));
+    s.eq('voucher: "No tax" → no tax block',M.maPdfVoucherData(X,pay).tax,null);
+    const V2=M.maPdfVoucherData(X,e2);
+    s.eq('voucher: edited twice → revised n = edits.length = 2',V2.revised&&V2.revised.n,e2.edits.length);
+    s.eq('voucher: …with the LAST edit\'s who, when and why',JSON.stringify(V2.revised),JSON.stringify({n:2,at:1791400000000,by:'Ammar',reason:'And the wire'}));
+    s.eq('voucher: …and the payee who is no party',JSON.stringify(V2.paidTo),JSON.stringify({name:'Bilal',code:'',party:false}));
+    s.eq('voucher: services tax on top → paid = amount + tax',V2.paid,13500+Math.round(13500*16/100));
+    s.eq('voucher: a void one says so',M.maPdfVoucherData(X,vOut).void.reason,'Entered twice');
+    s.eq('voucher: a live one does not',V.void,null);
+    s.eq('voucher: only Money out has one (capital → null)',M.maPdfVoucherData(X,cap),null);
+    s.eq('voucher: …a transfer → null',M.maPdfVoucherData(X,trC),null);
+  }
+
   s.section('the core is pure, and is the same in the browser and in node');
   {
     const src=fs.readFileSync(path.join(ROOT,'js/ma-core.js'),'utf8');

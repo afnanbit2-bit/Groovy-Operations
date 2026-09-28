@@ -497,7 +497,17 @@ do not call jsPDF directly for new print features.**
   other one and the engine never learns how a board is drawn. ✅
   **`consumable-log`** (23 Sept 2026 — a metered vendor's daily log for
   one month plus its billing; `_renderConsumableLog`, `urduLevel`
-  `minimal`; see "Store Accounts"). Still not
+  `minimal`; see "Store Accounts"). ✅ **Master Accounts** (M1.4, 28 Sept
+  2026 — every figure is built by `js/ma-core.js`'s `maPdf*Data`; the engine
+  formats and draws, and computes none): `ma-ledger` (one account for a
+  range, **A4 landscape**, its table head redrawn on every page),
+  `ma-statement-party` and `ma-statement-holder` (A4 portrait), and
+  `ma-receipt` (a transfer's handover slip) and `ma-voucher` (a Money-out
+  payment voucher), both **A5 (420×595)** drawing their own layout and
+  footer like `pattern-label`, with VOID and "Revised · rev N" stamps. The
+  two slips are `full`, but draw Urdu only when the embedded font has the
+  glyphs jsPDF actually emits (`_prMaUrduOk`); JNN was measured with none of
+  those presentation forms, so today they print clean English. Still not
   built: `embroidery-vendor`, `sublimation-vendor`, `placement-sheet`,
   `qc-report` — any of those (or an unknown type) logs a `console.warn`
   and renders the generic fallback (header + optional hero title +
@@ -506,6 +516,14 @@ do not call jsPDF directly for new print features.**
   interim page (never a stark `about:blank`) during the font fetch/subset,
   and `_previewError` renders a readable failure page instead of a
   blank/closed tab. Remaining variant builders reuse the components below.
+- **Landscape (M1.4):** `data.orientation:'landscape'` (or the type's default
+  in `_PRINT_ORIENTATION_DEFAULTS`) builds A4 landscape (842×595) for a type
+  in `_PRINT_LANDSCAPE_READY`; the shared components read the page from
+  `_pageBox(doc)`. Every other variant stays A4 portrait, drawn exactly as
+  before, and says so in a `console.warn`.
+- **Blob delivery (M1.4):** `printDocument({…, deliver:'blob'})` opens no
+  tab, downloads nothing and shows no toast; it resolves `{blob, filename}`,
+  and a failure rejects. Without `deliver`, nothing changes.
 - **`_renderPO` — Notes (Sept 2026):** free-text field on the PO, entered in
   `renderPOCreate()` (`js/pos.js`, `#po-notes` textarea) and saved as
   `po.notes`. Rendered on the printed PO traveler right after the order-info
@@ -547,8 +565,9 @@ do not call jsPDF directly for new print features.**
 
   | Default `urduLevel` | Types |
   |---|---|
-  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board` |
-  | `full` | `gate-pass` (forced), `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet` |
+  | `none` | `ma-ledger`, `ma-statement-holder` |
+  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board`, `ma-statement-party` |
+  | `full` | `gate-pass` (forced), `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet`, `ma-receipt`, `ma-voucher` |
 
   Measured (same PO, real JNN): `minimal` ≈ 116 KB / 0 JNN fetch · `full`
   ≈ 552 KB / JNN fetched. jsPDF 2.5.1 subsets embedded TTFs so `full` is far
