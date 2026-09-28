@@ -3653,6 +3653,19 @@ bottom sheet onto it (71px / 83px). The share-into picker uses the same
 list and gets both. Held in `tests/board-move.test.js` (the probe cannot
 type into a search).
 
+**A note's hover strip is a corner chip (#97 bug 6, same day).** The
+full-width dark "NOTE ✕" scrim sat on the first line and the placeholder, so
+hovering a note to read it hid what you came to read. On `.type-text` the
+head is now a small chip in the top-right (the ✕; the lock on a locked
+note; the name only while it is being renamed — it is renamed from the
+rail, F2 or the menu, never by clicking the strip), and the body carries a
+`::before` float on its FIRST LINE (`.board-text-body:not(:empty)`) the chip
+sits in, at rest too, so hovering never reflows the note. A comment pin
+steps left of the chip while it shows. MEASURED in real Chromium: no text
+rect meets the chip on a plain, an empty and a list note; removing either
+rule brings the overlap back. Other card types keep the strip. Held in
+`tests/board-notetab.test.js` (the probe cannot hover).
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

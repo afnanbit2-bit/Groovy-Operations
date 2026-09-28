@@ -1318,6 +1318,21 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
 .board-card-head .board-card-kind,.board-card-head .board-card-name,.board-card-head .board-card-del,.board-card-head .board-card-lock{color:#fff}
 .board-card-head .board-card-name:focus{background:rgba(255,255,255,.18);color:#fff;box-shadow:none}
 .board-card-head .board-card-del:hover{color:#fff;opacity:.72}
+/* A NOTE wears a corner chip, not the strip (GitHub #97, bug 6). The
+   full-width scrim sat on the note's first line and on its placeholder,
+   so hovering a note to read it hid what you came to read. On a note the
+   strip only ever carried the type word and the ✕ — the name is renamed
+   from the rail, F2 or the right-click menu — so it shrinks to the ✕ in
+   the top-right corner, and the body keeps a float on its FIRST LINE
+   that the chip sits in, so no text is ever under it. The float is there
+   at rest too: showing it only on hover would reflow the note under the
+   pointer. The name still appears while it is being renamed. */
+.board-card-el.type-text>.board-card-head{left:auto;right:14px;top:5px;padding:3px 5px;border-radius:7px;background:rgba(0,0,0,.72)}
+.board-card-el.type-text>.board-card-head .board-card-kind{display:none}
+.board-card-el.type-text>.board-card-head .board-card-kind:has(.board-card-name[contenteditable="true"]),.board-card-el.type-text>.board-card-head .board-card-kind:has(.board-card-lock){display:flex}
+.board-card-el.type-text>.board-card-head .board-card-name:not([contenteditable="true"]){display:none}
+.board-card-el.type-text:hover>.board-cmt-badge.pin,.board-card-el.type-text.selected>.board-cmt-badge.pin{right:48px}
+.board-text-body:not(:empty)::before{content:'';float:right;width:40px;height:26px;margin-right:-6px}
 /* THE COLOURED TOP STRIP IS ITS OWN BAR now, not the header's background.
    Milanote draws both: a 4px colour strip at the very top, and (in ours)
    the hover scrim above it. Painting the strip with the header meant a
@@ -2907,6 +2922,8 @@ body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:71px}
   /* touch targets — these were all sized for a cursor */
   .board-topbar .tool-btn{min-height:32px;padding:6px 10px}
   .board-card-head{padding:8px}
+  .board-card-el.type-text>.board-card-head{padding:2px}
+  .board-text-body:not(:empty)::before{width:42px;height:34px}
   .board-card-del,.board-todo-del{opacity:1;padding:6px}
   .board-resize-handle{width:34px;height:34px;right:0;bottom:0;padding:13px 0 0 13px}
   .board-link-handle{opacity:1;width:16px;height:16px}
