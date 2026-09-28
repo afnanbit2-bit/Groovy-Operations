@@ -4588,6 +4588,51 @@ function _boardsHydrateTextCards(){
       });
     }
   });
+  _boardsFitNotes();
+}
+/* A NOTE IS AS TALL AS ITS TEXT (GitHub #97, bug 7). It had a fixed height
+   and an inner scrollbar at ~100px; Milanote's grows. Two halves:
+   - at RENDER the card is only DRAWN taller (its style), never c.h — a
+     write on a read path is what this module refuses, and a note stored
+     short by an older build displays whole without migrating anything. A
+     note inside a COLUMN is left alone here: the column lays its children
+     out from c.h, and a card drawn taller would sit over the next one.
+   - while TYPING c.h itself grows (_boardsFitNote(c,true)), so the stored
+     size, the connectors, frame membership and a column's layout follow.
+   It only ever grows. Resizing clamps at the text (boardsResizeStart), so
+   a note cannot be dragged shorter than what it holds. Reads and writes
+   are done in two passes, so a board of notes costs one layout, not one
+   per note. Capped: a pasted essay scrolls past _BOARDS_NOTE_MAX_H rather
+   than minting a card taller than any screen. */
+const _BOARDS_NOTE_MAX_H=3000;
+function _boardsNoteNeedH(c){
+  if(!c||c.type!=='text')return null;
+  const card=document.getElementById('board-card-'+c.id),body=document.getElementById('board-txt-'+c.id);
+  if(!card||!body)return null;
+  const over=(+body.scrollHeight||0)-(+body.clientHeight||0);
+  if(!(over>1))return null;
+  const need=Math.min(_BOARDS_NOTE_MAX_H,Math.ceil((+card.offsetHeight||0)+over));
+  return need>(+card.offsetHeight||0)?need:null;
+}
+function _boardsFitNotes(){
+  const grow=[];
+  _editCards.forEach(c=>{
+    if(c.type!=='text'||_boardsColumnOf(c))return;
+    const need=_boardsNoteNeedH(c);if(need!=null)grow.push([c.id,need]);
+  });
+  grow.forEach(([id,need])=>{const el=document.getElementById('board-card-'+id);if(el)el.style.height=need+'px';});
+}
+function _boardsFitNote(c,commit){
+  const need=_boardsNoteNeedH(c);if(need==null)return false;
+  if(commit){if(need<=c.h)return false;c.h=need;}
+  const el=document.getElementById('board-card-'+c.id);
+  if(el)el.style.height=need+'px';
+  if(commit){
+    const col=_boardsColumnOf(c);
+    if(col){_boardsLayoutColumns();_boardsPaintColumnGeometry(col);}
+    else _boardsUpdateConnectorsFor(c.id);
+  }
+  return true;
 }
 
 // -- pan/zoom --
@@ -5782,6 +5827,9 @@ window.boardsResizeStart=function(e,cardId){
     }
     const el=document.getElementById('board-card-'+cardId);
     if(el){el.style.width=c.w+'px';el.style.height=c.h+'px';}
+    // A note cannot be dragged shorter than its text (bug 7): measured
+    // after the write, so a narrower width that wraps more lines counts.
+    if(c.type==='text'){const need=_boardsNoteNeedH(c);if(need!=null){c.h=need;if(el)el.style.height=need+'px';}}
     _boardsUpdateConnectorsFor(cardId);
   }
   function up(){
@@ -7069,6 +7117,7 @@ window.boardsTextInput=function(id,el){
   // plain string on the document, exactly as every card did before.
   const rich=_boardsSanitizeRich(el.innerHTML);
   if(rich&&!_boardsRichIsPlain(rich,c.text))c.rich=rich;else delete c.rich;
+  if(c.type==='text')_boardsFitNote(c,true);
   _boardsSaveDebounced();
 };
 window.boardsLinkInput=function(id,field,val){const c=_editCards.find(x=>x.id===id);if(!c)return;c[field]=val;_boardsSaveDebounced();};

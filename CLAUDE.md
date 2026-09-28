@@ -3666,6 +3666,19 @@ rect meets the chip on a plain, an empty and a list note; removing either
 rule brings the overlap back. Other card types keep the strip. Held in
 `tests/board-notetab.test.js` (the probe cannot hover).
 
+**A note grows with its text (#97 bug 7, same day).** It kept a fixed
+height and scrolled inside at ~100px. `_boardsFitNotes` (end of
+`_boardsHydrateTextCards`) DRAWS an overflowing note to its text at render
+without writing `c.h` — no write on a read path, nothing migrates — and
+skips a column child, which the column lays out from `c.h`; typing
+(`boardsTextInput` → `_boardsFitNote(c,true)`) grows `c.h` itself, so the
+connectors, frame membership and the column follow. Grow-only; the resize
+clamps a note at its text; capped at `_BOARDS_NOTE_MAX_H` (3000), past which
+it scrolls. MEASURED in real Chromium: a 100px note holding 200px of text
+is drawn at 200 with `c.h` still 100, and typing grew one to 380;
+removing the render pass puts the 100px of overflow back.
+`tests/board-notegrow.test.js`.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not
