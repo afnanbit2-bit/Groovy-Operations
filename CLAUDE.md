@@ -5793,7 +5793,7 @@ still say Creative Hub where they describe history.
   its label in `aria-label`), and the rail's "Board name" read "Board n…"
   (it is "Title").
 - **Every other native dialog in the app is listed in BOARD-LOG.md as
-  P2** (86, file and line), not changed here.
+  P2** (125 lines, file and line), not changed here.
 
 ### Making it feel instant (Sept 2026 — measured, not guessed)
 

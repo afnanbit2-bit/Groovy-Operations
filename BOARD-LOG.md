@@ -1,4 +1,7 @@
-# The Board — session 2 run log
+# The Board — session 2 and 3 run log
+
+**Session 3 (from 28 Sep 2026) runs on `board-p1`** — see BOARD.md → Testing
+for the branch flow and the tester/reviewer rule. Its entries start at CO1.
 
 Continuous run: P0, then P1, then P2, per the session-2 brief and Ammar's
 decisions of Sat 26 Sep 2026. One commit per item, pushed to
@@ -87,6 +90,24 @@ Lines marked **→ NEEDS YOU** are actions for a human.
 | main-merge-8 | `eadc931` | **`main` moved while main-merge-7 was being checked (`6aec626`, fingerprint without a tick box) and landed at `v223` — the number main-merge-7 had just taken, before it was pushed. Seventh identical-number collision in a row, clean merge.** Bumped past both to **`v224`** with the five `?v=` tags. **Checked against the harness, because this one could have mattered:** `#l-bio` is gone and a password sign-in now sets up a passkey on its own. But the rule is `_fpShouldSetUp(u,keep)` and needs `keep` (Remember me), which the e2e unticks and asserts; `_lockMaybeOffer` is now reached only from `_lockEnableAfterLogin`, behind the same rule; `_loginAutoFinger` needs a key already on the device for the typed user, and the QA profile is fresh each run. The harness never referred to `#l-bio`. So the QA account still never registers a passkey. | v224 | run.js 6,707 · smoke-board 187/192/192 (three users) · smoke-startapp 4/4 · smoke-browser 8/8 · login layout 6/6 · board layout 256 · e2e rehearsal 15/15 |
 | main-merge-9 | `d76d57d` | **`main` moved again (`3da3307` phone sweep + `8fefcf7` smoke-layout retry) and landed at `v224` — the number this branch had held since the last merge. Eighth identical-number collision; `sw.js` merged clean, `index.html` conflicted only on three `?v=` tags beside lines both sides edited (took main's).** Bumped past both to **`v225`** with every `?v=20260927` tag. Checked against this branch: main's new `tests/smoke-app-phone.js` (now in CI) drives a FIXED list of eight personas, not every `USER_DEFS` account, so the QA account is seeded as a profile but never driven — it passes clean. Main's phone rule `.btn-sm,.btn-outline,.filter-chip,.dest-chip{min-height:34px}` also reaches the Board; the Board layout fragments and smoke-board still pass with it. | v225 | run.js 6,707 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 (three users) · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 368 · e2e rehearsal 15/15 |
 | main-merge-10 | (this commit) | **`main` moved again (`2298f39`: a split-screen login on desktop, Chrome's autofill tint covered, the closed phone sheet's shadow no longer bleeding along the bottom of every page) and landed at `v225` — the number this branch already held. Ninth identical-number collision; `sw.js` merged clean, `index.html` conflicted only on the `main.css` tag (both sides had moved it).** Bumped past both to **`v226`**, with every tag this branch had moved going to `?v=20260928v226`. Checked against this branch: the new `<aside class="login-brand">` adds no id, and the harness drives the login only through `login-u`/`login-p`/`login-btn`/the Remember-me box, which are unchanged — the rehearsal signed in through the desktop split screen. The `.mob-sheet` shadow move is shadow-only. | v226 | run.js 6,707 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 (three users) · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 368 · e2e rehearsal 15/15 · check-cache-version v225 → v226 |
+| CO1 | `7f66f64` | **Session 3, change order 1: Creative Hub → Milanote, no browser dialogs, renames in place** (on `board-p1`). **"Creative Hub" reads "Milanote" on every screen** — sidebar, phone More sheet, the hub heading, "← Back to Milanote", the Home board's "← Milanote", the bug tracker's page name (`'creative-hub':'Milanote'`), the HRM dashboard button, the Convert-to-Document text. **Nothing else renamed**: files, functions (`_canSeeCreativeHub`, `renderCreativeHub`), page ids (`creative-hub`), collections. The Board's "Creative Hub link chip" from change order 2 **does not exist yet** (change order 2 was not available), so it was not renamed. **No `prompt()`/`confirm()`/`alert()` in `js/boards.js` or `js/notes.js`**: `_boardsConfirm`/`_boardsAsk` (`_boardsDialog`) are the module's own dialog — a Promise, its own ids, `textContent` only, the OK button says what it does, centred on desktop, docked on a phone; 15 callers are now `async`. **In place** (`_boardsInlineRename`): the board title (no longer saves per keystroke), a card's name on F2, and "Rename the board…" (gallery tile, or the sub-board card's title) — Enter or blur commits, Escape reverts, **empty reverts** (so a card's name can no longer be cleared to nothing: the order's rule), `textContent` in and out. **Decision (logged, not silent):** the label rename, a line's label and a to-do's "Pick a date…" are one-value asks, not titles on screen, so they use `_boardsAsk` (the date one with a real date field) rather than an in-place field. **Every changed line of `js/boards.js`** (old → new, `f312a87` → `882b8b1`, +233 −60): — → 921–927 (F2 name renames in place) · 1354 → 1361, 1358 → 1365 (export: async; "include nested boards?" in the dialog) · 1736 → 1743 (delete forever) · 1856 → 1863 (trash a linked board) · 2142 → 2149 (back label "Milanote") · 2159 → 2166–2169 (phone back button: the arrow) · 2163 → 2173 (title input: `onfocus` rename, no `oninput`) · 2749 → 2759 (card name: no `oninput`) · 3064 → 3074, 3067 → 3077 (erase drawing) · — → 3930–4074 (the dialog, its key handler, `_boardsConfirm`, `_boardsAsk`, `_boardsInlineRename`) · 3969 → 4124, 3977 → 4132, 3983 → 4138 (label rename/remove) · 6003 → 6158 (rail "Title", own icon) · 6534 → 6689, 6536 → 6691 (line label) · — → 6946–6950 (`boardsTitleFocus`) · 6906–6917 → — (`boardsCardName` and its comment removed) · 8263 → 8411, 8281 → 8429, 8287 → 8435 (Make a Document, "Milanote") · 8581 → 8729, 8587 → 8735 (delete column and cards) · 9457 → 9605 (move board to Trash) · 10857–10860 → 11005–11007 (stale comment) · 11414 → 11561, 11417 → 11564 (tray remove) · 12058 → 12205, 12068 → 12215 (trash purge, empty) · 12383 → 12530 (delete comment) · 12573–12578 → 12720–12728 (due date: the date ask) · — → 13819–13831 (`_boardsRenameTarget`) · 13694–13703 → 13857–13876 (`g:rename` in place, panel fallback) · 13737 → 13910 (gallery Move to Trash). **Also touched:** `js/shared.js` (labels), `js/hrm.js` (one button label), `js/notes.js` (label, back button, its delete confirm), `css/main.css`, `index.html` (`?v=`), `sw.js`, `tests/boards.test.js`, `CLAUDE.md`. | v227 | boards 1753/1753 · stub e2e: phone dialog and back button found and fixed before commit |
+| QA-C | `d8485eb` | **Session 3 setup: the harness at both widths and both themes, a stub mode, the two agents.** Ammar chose (28 Sept) to **extend the dependency-free harness, not add Playwright**. `tests/e2e/board.e2e.js` now covers every screen at **1440 and 390, light and dark** and asserts on each: no console error, no uncaught exception or rejection, **painted within 500 ms**, **no leaf text wider than its box** (an ellipsis counts), every avatar a photo or initials, every pill a lane colour. Not-built screens are **named in the report**: the calendar Day view; a list's Calendar/Lanes/Members tabs; Settings (Board owners only — the QA account is not one). **It never touches Winter Drop 2027:** the refused-gate probe needs a visible non-Winter-Drop list (none today — skipped and said; **this narrows QA-B's probe, which ran on a real Winter Drop gate**), and the run ends comparing every real item it can read with a snapshot taken before its first write (the QA account is not a Winter Drop member, so the LIST never loads for it — every real item is the stricter check). On the live site Milanote is read-only (Escape, Cancel). **`--stub`** (`tests/e2e/stub-site.js`): the real shell with smoke-board's in-memory Firestore (it now exports itself when `require`d) and the QA fence imitated behind `__QA_UID`. Agents rewritten in Ammar's words; `docs/BOARD-VISUAL-SPEC.md` written from P0.5–P1.8 with change order 2's items marked open; BOARD.md → **Testing**. `tests/board-inspect.test.js` holds the static half (the password is only ever a call argument — **a mutation that evaluates it fails**, checked). | — | run.js 6,775 (+2 CRLF-only, below) · board-inspect 40/40 · smoke-board 192×3 |
+| R-CO1 | `f2d217f` | **Review fixes from the first reviewer and tester runs.** Reviewer, blocking, all three confirmed in real Chromium and fixed: **(1) the confirm let every key but Enter/Escape through** — Delete behind it deleted the selected card, Ctrl+Z ran undo, Enter answered yes even with Cancel focused; `_boardsDlgKey` now holds every key, Tab cycles inside, Enter answers what has focus. **(2) "Rename…" from Home's boards panel was a dead end** for a board not placed on Home — it renames the panel row in place. **(3) the P2 list promised in CLAUDE.md was missing** — it is below, and CLAUDE.md's count is corrected (86 was an undercount: a `/*` inside a string sent my comment-stripper off; it is **125**). Tester, Milanote items: the F2 name field sat over the note in capitals (solid header, as typed); a sub-board title being edited sat under the card head (raised field); weak scrim; Title and Rename shared an icon; the QA sidebar said "Mood Boards". Harness: real-key dialog checks; below-the-fold shots. | v228 | boards 1761/1761 · stub 152/156 |
+| R-CO1b | `a10d7e8` | From the reviewer's pass on `f2d217f` (pass, with notes): a key during **IME composition** is left alone (Enter no longer submits a half-composed word); **Space presses a focused dialog button** and still never reaches the board; the no-dialog test reads line by line (the stripping flaw again). Harness shots are scrolled viewport shots (the single tall capture painted fixed bars mid-page). | v229 | boards 1761/1761 · stub 152/156 |
+| R-CO1c | `882b8b1` | From the tester's pass on `a10d7e8`: **a destructive confirm opens on Cancel** — with Space now pressing buttons, one stray key after "Move to Trash…" trashed the board. All 12 destructive call sites pass `danger:true` (the reviewer drove each with a real Enter and a real Space: every one answered no and changed nothing); the two non-destructive ones open on OK; the asks on their field. Harness shots overlap by 140 px (the band under the fixed header was never captured). | v230 | boards 1762/1762 · stub 153/157 · smoke-board 192×3 |
+
+
+**The agents' verdicts on this run (session 3, all STUB — `GROOVY_QA_*` are not set on this machine yet):**
+
+| commit | board-reviewer | board-tester (screens in `docs/board-screens/<folder>/`, gitignored) |
+|---|---|---|
+| `7f66f64` + `d8485eb` | **FAIL** — 3 blocking (fixed in `f2d217f`) | FAIL 150/154 — `d8485eb-stub/`: 4 calendar pill titles; 21 visual/Monday items |
+| `f2d217f` | **pass** | FAIL 152/156 — `f2d217f-stub/`: the 4 pill titles; Milanote items confirmed fixed; whole-page capture artefacts (harness, fixed next) |
+| `a10d7e8` | **pass** (Space, IME, Tab, Delete checked with real keys) | FAIL 152/156 — `a10d7e8-stub/`: the 4 pill titles; focus-on-destructive-button and a capture gap (both fixed next) |
+| `882b8b1` | **pass** (all 12 destructive sites driven with real Enter and Space) | FAIL 153/157 — `882b8b1-stub/`: **only the 4 pill titles**; gap closed; Cancel focus confirmed on all four confirm screens |
+
+The tester's remaining FAIL is **not from this work**: The Board's calendar pills clip long titles at 1440 (a 67 px title slot, `span.tb-pilltitle`, ellipsis), in Month and Week. It fails because the assertion is new, not because anything regressed.
+
 ---
 
 ## Rules / index deploys — batched
@@ -118,6 +139,93 @@ rights, Ammar in `isAcctSuper`, warehouse sales and handover).
 What that removes: the P2.3 inbox no longer needs its fallback, so each
 Board user's inbox reads at most 200 of their own Board rows. The lock
 holes found by the emulator are closed on the live project.
+
+## Session 3 — open items
+
+- **→ NEEDS YOU: the QA environment.** Set `GROOVY_QA_URL` (the `board-p1`
+  deploy preview — the URL is in Netlify's comment on the draft PR),
+  `GROOVY_QA_EMAIL`, `GROOVY_QA_PASSWORD` in your shell (BOARD.md →
+  Testing). Until then every tester run is the stub, and says so. The QA
+  rules (QA-A) must be deployed before it signs in for real — see the
+  batched list above.
+- **→ NEEDS YOU: change order 2 and the brief's section 3.** Neither was in
+  the repo or the session. `docs/BOARD-VISUAL-SPEC.md` is written from what
+  shipped and marks change order 2's items open (the grid, avatar photos,
+  default views, "pure black cells", the Day view, a list's
+  Calendar/Lanes/Members). Change order 2 and P1 continue once they arrive.
+- **Pre-existing test failures on a Windows checkout only.** `node
+  tests/run.js` fails 2 assertions on a CRLF working copy, on the parent
+  commit too: "setPersistence is bridged from the Auth SDK"
+  (`tests/login.test.js:178`) and "store data loads for acct-* pages"
+  (`tests/store-accounts.test.js:1614`). Both regexes expect `\n` right
+  after a comma; CI checks out LF. Not a code defect; the tests could use
+  `\r?\n`.
+
+### P2 — every other browser dialog in the app (125 lines)
+
+Change order 1 fixed Milanote's only. Method: `git grep` for a call of
+`alert(`, `confirm(` or `prompt(` (optionally `window.`) in the shipped
+`.js` and `.html`, excluding `assets/`, `tests/`, `scripts/`, `netlify/`,
+`attendance-sync/`, `js/boards.js` and `js/notes.js`, and lines that start
+as comments. One line may hold two calls (`typeof confirm==='function'&&
+!confirm(…)` counts once).
+
+- `color-backfill.html` (3): lines 300, 302, 303
+- `js/embellishments.js` (14): lines 475, 1245, 1279, 2009, 2019, 2028, 2039, 2040, 2929, 2946, 3483, 3701, 3920, 3921
+- `js/fabric.js` (12): lines 1243, 1254, 1290, 1442, 1638, 1938, 1956, 2271, 2284, 2578, 2581, 2732
+- `js/fulfillment.js` (1): lines 1728
+- `js/gatepass.js` (5): lines 1044, 1054, 1152, 1162, 1267
+- `js/hrm.js` (13): lines 574, 783, 784, 1891, 1895, 1993, 2114, 2807, 2829, 2846, 3023, 3170, 3194
+- `js/marketing.js` (10): lines 1255, 1260, 1279, 1295, 1347, 2306, 2731, 2803, 3941, 4111
+- `js/patterns.js` (10): lines 1281, 1837, 2120, 2132, 2134, 2210, 2226, 2576, 2649, 2845
+- `js/pos.js` (7): lines 453, 568, 579, 1239, 1322, 1383, 1390
+- `js/production.js` (2): lines 167, 660
+- `js/shared.js` (5): lines 1869, 1885, 1916, 2184, 2193
+- `js/store-accounts.js` (23): lines 950, 1084, 1200, 1210, 1353, 1544, 1559, 1587, 1695, 1696, 1705, 1827, 1964, 2123, 2140, 2142, 2448, 2452, 2455, 2842, 2867, 2894, 3076
+- `js/store.js` (9): lines 1079, 1091, 1127, 1295, 1297, 1450, 2147, 2399, 2430
+- `js/theboard.js` (4): lines 2013, 2025, 2562, 4076
+- `js/warehouse-sales.js` (4): lines 1058, 1222, 1240, 1265
+- `pantone-importer.html` (3): lines 221, 271, 272
+
+### The tester's findings on The Board (not from this work; P1 / change order 2)
+
+Seen on the stub screens of `d8485eb`–`882b8b1`; none is caused by change
+order 1. Each needs the live site or change order 2 to settle.
+
+1. **Calendar pill titles clip at 1440** (Month and Week, 67 px title
+   slot, ellipsis) — the harness's one failing assertion. Week is meant to
+   show every pill; a two-line clamp there is the obvious candidate.
+2. **Phone calendar:** the Month segment is still offered (the spec says
+   Week only); day rows show "21", "22"… without a weekday; the day card
+   leaves ~75 px empty on the right.
+3. **Two navigation bars on a phone** (the Board strip and the app's bottom
+   bar), in different orders and with different Calendar icons.
+4. **No "?" in the header row at 390**; the phone strip marks nothing
+   active on a list page; the app sidebar marks "The Board" only on the
+   Dashboard.
+5. **Text under 12 px** (from `css/main.css`: `.tb-kind` 11, `.tb-rowmeta
+   .tb-av` 10, `.tb-badge` 11, `.tb-navbadge` 11, `.tb-lock` 11,
+   `.tb-railpill` 10) — the spec says none. The harness has no font-size
+   check yet.
+6. **Lower-case copy against the Title Case rule**: "nothing in your
+   inbox", "add to this list", "+ add", "nothing attached", "no comments
+   yet", the composer's date/assign/list/lane, "none" vs "None".
+7. **Weekend and out-of-month tints** are one RGB level from a weekday in
+   dark (23,23,26 vs 24,25,27) and identical to each other.
+8. **Today's number is white on blue-9**, which P1.1 measured at 3.26:1 and
+   reserved for icons (unmeasured here).
+9. The composer placeholder clips at 390 ("…@afnan #den"); the phone's
+   comment box says "ctrl+enter to post".
+10. **Milanote, pre-existing:** a selected card's dark head strip covers the
+    top of its own title (sub-board cards); on a phone a board opens at the
+    desktop pan, so cards can sit off screen.
+
+### Harness coverage still missing
+
+The item pane's own scroller is not scrolled (below Comments is unseen);
+renames are screenshotted at light 1440 only; no font-size assertion; the
+right-click menus are not driven with real clicks (the renames are started
+through `_boardsCtxRun` and F2).
 
 ## → NEEDS YOU
 
