@@ -233,8 +233,8 @@ function _boardsMintCardId(){
    object literal would read them in the temporal dead zone. */
 function _boardsNewCardSize(type){
   return{
-    w:type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170,
-    h:type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100
+    w:type==='swatch'?_BOARDS_SWATCH_W:type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170,
+    h:type==='swatch'?_BOARDS_SWATCH_H:type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100
   };
 }
 function _boardsNewCard(type){
@@ -257,6 +257,7 @@ function _boardsNewCard(type){
   if(type==='heading')base.text='';
   if(type==='todo')base.items=[{text:'',done:false}];
   if(type==='board'){base.boardId='';base.boardTitle='';}
+  if(type==='swatch')base.hex='#75AE76';
   // Provenance, shown in the right-click menu. Cards created before this
   // shipped simply don't carry it and the menu omits the line.
   if(typeof session!=='undefined'&&session){base.by=session.name||'';base.at=Date.now();}
@@ -859,6 +860,7 @@ function _boardsCardText(c){
   if(c.fileName)parts.push(c.fileName);
   if(c.caption)parts.push(c.caption);
   if(c.boardTitle)parts.push(c.boardTitle);
+  if(c.type==='swatch'){const hx=_boardsValidHex(c.hex);if(hx)parts.push(hx,_boardsSwatchName(hx));}
   if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
   if(Array.isArray(c.rows))c.rows.forEach(r=>{if(Array.isArray(r))r.forEach(v=>{
     const raw=_boardsCellVal(v);if(raw)parts.push(raw);
@@ -1003,6 +1005,10 @@ function _boardsEndEdit(){
   // somewhere else in the same table. Nothing rerenders on a keystroke (the
   // caret has to stay put), so the recompute happens the moment you leave.
   _boardsRepaintFormulas(el);
+  // A note whose whole text is a hex colour BECOMES a colour swatch the
+  // moment you leave it (Milanote's own gesture, read off the recording).
+  if(_boardsSwatchFromNoteEl(el))return;
+  _boardsSwatchAfterEdit(el);
   _boardsSaveDebounced();
   // Leaving a note hands the rail back to whatever mode the selection asks for.
   if(_boardsIsRichField(el)){_boardsFmtTarget=null;_boardsRenderRail();}
@@ -2038,6 +2044,7 @@ function _boardMiniCardHTML(c){
   if(c.type==='link'||c.type==='file')return`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='board')return`<div style="${base};background:var(--soft);border-style:dashed"></div>`;
   if(c.type==='heading')return`<div style="${base};background:var(--dark)"></div>`;
+  if(c.type==='swatch'){const hx=_boardsValidHex(c.hex);return`<div style="${base};background:${hx||'var(--soft)'}"></div>`;}
   return`<div style="${base};background:var(--surface)"></div>`;
 }
 // One place that knows the shape of a board document — used by the plain
@@ -2281,6 +2288,7 @@ async function _boardsOpenCanvas(){
   // reading.
   _editBoard.zoom=_boardsClampZoom(_editBoard.zoom);
   _boardsSetHash(b.id);
+  _boardsPantoneEnsure();
   _editCards=_boardsDecodeCards((b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;}));
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _editUnsorted=(b.unsorted||[]).map(u=>{const uu={...u};delete uu._uploading;return uu;});
@@ -2944,6 +2952,8 @@ function _boardCardHTML(c,canEdit){
       ${child?`<div class="board-subboard-cta"><span>${_BOARDS_OPEN_PHRASE}</span></div>`:''}
       ${open}
     </div>`;
+  }else if(c.type==='swatch'){
+    body=_boardsSwatchBodyHTML(c,canEdit,bodyDrag);
   }else{
     body=`<div class="board-card-body board-text-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Double-click to type…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
@@ -2967,7 +2977,7 @@ function _boardCardHTML(c,canEdit){
     body+=`<div class="board-caption" id="board-cap-${c.id}" contenteditable="false" data-placeholder="Add a caption…" ${canEdit?`onclick="window.boardsBeginEdit(event,'board-cap-${c.id}')" ondblclick="window.boardsBeginEdit(event,'board-cap-${c.id}')"`:''} oninput="window.boardsCaptionInput('${c.id}',this)"></div>`;
   }
   const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='board'?'Board':c.type==='heading'?'Heading':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:''))
-    :c.type==='table'?'Table':c.type==='column'?'Column':c.type==='frame'?'Frame':'Note';
+    :c.type==='table'?'Table':c.type==='column'?'Column':c.type==='frame'?'Frame':c.type==='swatch'?'Colour':'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
   const tint=_boardsCardColorClasses(c);
@@ -3532,7 +3542,7 @@ const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:30,todoTitle:21,t
 // ellipsized line (css/main.css, .board-subboard-meta) - while it wrapped,
 // this number had to cover the NARROWEST card anyone might drag to, which
 // is a different thing from the shortest a card should be allowed to be.
-const _BOARDS_MIN_BODY_H={board:108,image:92,file:100,link:104,todo:80,heading:36,text:52};
+const _BOARDS_MIN_BODY_H={board:108,image:92,file:100,link:104,todo:80,heading:36,text:52,swatch:120};
 // An image card that HAS its picture. An empty one ("Click, or paste an
 // image") and one still uploading keep the ordinary strip: a card whose
 // only chrome shows on hover would be an invisible box until it had
@@ -4580,6 +4590,7 @@ function _boardsHydrateTextCards(){
       const d=document.getElementById('board-linkd-'+c.id);
       if(d)d.textContent=c._linkNoPreview&&!c.linkDesc?'No preview available':(c.linkDesc||'');
     }
+    if(c.type==='swatch')_boardsSwatchPaint(c);
     if(c.type==='text'||c.type==='heading'){
       _boardsSetRichInto(document.getElementById('board-txt-'+c.id),c);
     }else if(c.type==='todo'){
@@ -6395,7 +6406,7 @@ function _boardsRailItems(){
   // key, its right-click entry and the ⋯ entry, and Trash at the foot of
   // the add rail is still where a deleted card goes.
   const have=_boardsRailCounts(sel);
-  if(canEdit)items.push({act:'color-panel',label:'Color',colorTile:true});
+  if(canEdit)items.push(one&&one.type==='swatch'?{act:'sw:pick',label:'Color',swTile:_boardsValidHex(one.hex)}:{act:'color-panel',label:'Color',colorTile:true});
   if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels',count:have.labels});
   if(canEdit)items.push({act:'reactions',label:'Reactions',icon:'reactions',count:have.reactions});
   items.push({act:'card-comment',label:'Comment',icon:'comment',count:have.comments});
@@ -6433,7 +6444,11 @@ function _boardsRailItems(){
     // — _boardsMoreItems derives ⋯ from the right-click list minus whatever
     // the rail carries, so dropping it here puts it in ⋯ on its own, which
     // is the same algebra that already moved Replace and Download there.
-    if(canEdit&&!(one.type==='image'&&one.imageUrl)){
+    if(one.type==='swatch'&&canEdit){
+      items.push({act:'sw:display',label:'Display',glyph:_BOARDS_SWATCH_FMT_LABEL[_boardsSwatchFmt(one)]});
+      items.push({act:'caption',label:'Caption',icon:'caption'});
+    }
+    if(canEdit&&!(one.type==='image'&&one.imageUrl)&&one.type!=='swatch'){
       items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
     }
     if(one.type==='image'&&one.imageUrl&&canEdit){
@@ -6469,6 +6484,9 @@ function _boardsRenderRail(){
       const cls=_boardsColorTileClass(sel),sty=_boardsColorTileStyle(sel);
       return`<button class="rail-btn" data-act="${it.act}" title="Colour — background and top strip"><span class="rail-color-tile ${cls}"${sty?` style="${sty}"`:''}></span><span>${_boardsEsc(it.label)}</span></button>`;
     }
+    // The swatch's Color tile: its own colour, validated before it reaches
+    // the style attribute.
+    if(it.swTile!==undefined)return`<button class="rail-btn" data-act="${it.act}" title="Change the colour"><span class="rail-color-tile"${it.swTile?` style="background:${it.swTile}"`:''}></span><span>${_boardsEsc(it.label)}</span></button>`;
     if(it.fmtSwatches)return`<div class="rail-fmt-row" title="Text colour">${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-act="fmt:color:${c.hex}"></button>`).join('')}</div>`;
     if(it.fmtHilite)return`<div class="rail-fmt-row" title="Highlight">${_BOARDS_HILITE_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="Highlight ${c.label}" data-act="fmt:hilite:${c.hex}"></button>`).join('')}</div>`;
     if(it.grow)return'<div class="rail-grow"></div>';
@@ -9832,7 +9850,7 @@ function _boardsCardNoun(c){
   return t==='text'?'Note':t==='todo'?'To-do':t==='board'?'Board link'
     :t==='frame'?'Frame':t==='column'?'Column':t==='table'?'Table'
     :t==='heading'?'Heading':t==='image'?'Image':t==='file'?'File'
-    :t==='link'?'Link':'Card';
+    :t==='link'?'Link':t==='swatch'?'Colour':'Card';
 }
 function _boardsUndoableToast(what){
   showToast(what+' — Ctrl+Z to undo, or find it in Trash');
@@ -10574,9 +10592,10 @@ function _boardsExportKind(c){
   return c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File'
     :c.type==='board'?'Sub-board':c.type==='todo'?'To-do':c.type==='frame'?'Section'
     :c.type==='column'?'Column':c.type==='table'?'Table'
-    :c.type==='heading'?'Heading':'Note';
+    :c.type==='heading'?'Heading':c.type==='swatch'?'Colour':'Note';
 }
 function _boardsDrawCard(ctx,c,img,P){
+  if(c.type==='swatch'){_boardsDrawSwatchOnCanvas(ctx,c,P);return;}
   const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:(_boardsValidHex(c.color)||P.border);
   if(c.type==='column'){
     ctx.fillStyle=P.soft;
@@ -13437,6 +13456,8 @@ function _boardsCtxRun(act){
     return;
   }
   if(act.indexOf('colortab:')===0){_boardsColorTab=act.slice(9)==='strip'?'strip':'bg';return;}
+  if(act.indexOf('sw:')===0){_boardsSwatchAct(act.slice(3));return;}
+  if(act==='color-panel'||act==='color'){const o=_boardsSelOne();if(o&&o.type==='swatch'){window.boardsSwatchPicker(o.id);return;}}
   if(act==='color-panel'){window.boardsOpenColorPanel();return;}
   if(act.indexOf('todo:')===0){_boardsTodoAct(act.slice(5));return;}
   if(act.indexOf('lbl:')===0){_boardsLabelAct(act.slice(4));return;}
@@ -13657,6 +13678,7 @@ function _boardsCtxRun(act){
       const s=_boardsSelectedCards();
       if(s.length!==1)break;
       const c=s[0];
+      if(c.type==='swatch'){window.boardsBeginEdit(null,'board-swname-'+c.id);break;}
       if(c.type!=='image'&&c.type!=='file'&&c.type!=='table'){
         showToast('Captions are for images, files and tables');break;}
       if(c.caption==null){
@@ -14685,3 +14707,420 @@ document.addEventListener('contextmenu',e=>{
     {act:'g:refresh',label:'Refresh list'}
   ],null);
 });
+
+/* ── The colour swatch (28 Sept 2026) ─────────────────────────────────
+   Milanote's colour card, read off a screen recording: type a hex colour
+   into a note, leave it, and the note BECOMES a swatch — a solid block of
+   the colour with its value in a corner and a dark bar under it carrying
+   the colour's NAME.
+
+   - ONE stored field, c.hex, always a validated #RRGGBB. Everything else
+     (the value string, the name, the ink) is DERIVED at render, so nothing
+     can disagree with the colour it describes and nothing migrates.
+   - The name is the NEAREST entry in a curated list by squared RGB
+     distance, never fetched. A name the person gave it (c.name, via
+     Caption on the bar or Rename in ⋯) wins.
+   - c.fmt stores only the exception: no field means HEX.
+   - Nothing unvalidated reaches a style attribute: every inline colour
+     here has been through _boardsValidHex. */
+const _BOARDS_SWATCH_W=220,_BOARDS_SWATCH_H=230;
+const _BOARDS_SWATCH_FMTS=['hex','rgb','hsl','pantone','off'];
+const _BOARDS_SWATCH_FMT_LABEL={hex:'HEX',rgb:'RGB',hsl:'HSL',pantone:'Pantone',off:'Off'};
+const _BOARDS_COLOR_NAMES=('Black:000000|White:FFFFFF|Red:FF0000|Lime:00FF00|Blue:0000FF|Yellow:FFFF00|Aqua:00FFFF|Magenta:FF00FF|Silver:C0C0C0|Grey:808080|'+
+'Maroon:800000|Olive:808000|Green:008000|Purple:800080|Teal:008080|Navy:000080|Dark Red:8B0000|Brown:A52A2A|Firebrick:B22222|Crimson:DC143C|'+
+'Tomato:FF6347|Coral:FF7F50|Indian Red:CD5C5C|Light Coral:F08080|Dark Salmon:E9967A|Salmon:FA8072|Light Salmon:FFA07A|Orange Red:FF4500|Dark Orange:FF8C00|Orange:FFA500|'+
+'Gold:FFD700|Dark Goldenrod:B8860B|Goldenrod:DAA520|Pale Goldenrod:EEE8AA|Dark Khaki:BDB76B|Khaki:F0E68C|Yellow Green:9ACD32|Dark Olive:556B2F|Olive Drab:6B8E23|Lawn Green:7CFC00|'+
+'Chartreuse:7FFF00|Green Yellow:ADFF2F|Dark Green:006400|Forest:228B22|Lime Green:32CD32|Light Green:90EE90|Pale Green:98FB98|Dark Sea Green:8FBC8F|Medium Spring Green:00FA9A|Spring Green:00FF7F|'+
+'Sea Green:2E8B57|Medium Aquamarine:66CDAA|Medium Sea Green:3CB371|Light Sea Green:20B2AA|Dark Slate Grey:2F4F4F|Dark Cyan:008B8B|Light Cyan:E0FFFF|Dark Turquoise:00CED1|Turquoise:40E0D0|Medium Turquoise:48D1CC|'+
+'Pale Turquoise:AFEEEE|Aquamarine:7FFFD4|Powder Blue:B0E0E6|Cadet Blue:5F9EA0|Steel Blue:4682B4|Cornflower:6495ED|Deep Sky Blue:00BFFF|Dodger Blue:1E90FF|Light Blue:ADD8E6|Sky Blue:87CEEB|'+
+'Light Sky Blue:87CEFA|Midnight Blue:191970|Dark Blue:00008B|Medium Blue:0000CD|Royal Blue:4169E1|Blue Violet:8A2BE2|Indigo:4B0082|Dark Slate Blue:483D8B|Slate Blue:6A5ACD|Medium Slate Blue:7B68EE|'+
+'Medium Purple:9370DB|Dark Magenta:8B008B|Dark Violet:9400D3|Dark Orchid:9932CC|Medium Orchid:BA55D3|Thistle:D8BFD8|Plum:DDA0DD|Violet:EE82EE|Orchid:DA70D6|Medium Violet Red:C71585|'+
+'Pale Violet Red:DB7093|Deep Pink:FF1493|Hot Pink:FF69B4|Light Pink:FFB6C1|Pink:FFC0CB|Antique White:FAEBD7|Beige:F5F5DC|Bisque:FFE4C4|Blanched Almond:FFEBCD|Wheat:F5DEB3|'+
+'Cornsilk:FFF8DC|Lemon Chiffon:FFFACD|Light Goldenrod:FAFAD2|Light Yellow:FFFFE0|Saddle Brown:8B4513|Sienna:A0522D|Chocolate:D2691E|Peru:CD853F|Sandy Brown:F4A460|Burlywood:DEB887|'+
+'Tan:D2B48C|Rosy Brown:BC8F8F|Moccasin:FFE4B5|Navajo White:FFDEAD|Peach Puff:FFDAB9|Misty Rose:FFE4E1|Lavender Blush:FFF0F5|Linen:FAF0E6|Old Lace:FDF5E6|Papaya Whip:FFEFD5|'+
+'Seashell:FFF5EE|Mint Cream:F5FFFA|Slate Grey:708090|Light Slate Grey:778899|Light Steel Blue:B0C4DE|Lavender:E6E6FA|Floral White:FFFAF0|Alice Blue:F0F8FF|Ghost White:F8F8FF|Honeydew:F0FFF0|'+
+'Ivory:FFFFF0|Azure:F0FFFF|Snow:FFFAFA|Dim Grey:696969|Dark Grey:A9A9A9|Light Grey:D3D3D3|Gainsboro:DCDCDC|White Smoke:F5F5F5|Mocha:6F4E37|Aqua Forest:5FA777|'+
+'Outrageous Orange:FF6037|Burnt Orange:CC5500|Terracotta:E2725B|Rust:B7410E|Mustard:FFDB58|Ochre:CC7722|Saffron:F4C430|Amber:FFBF00|Apricot:FBCEB1|Peach:FFE5B4|'+
+'Blush:DE5D83|Rose:FF007F|Raspberry:E30B5C|Cherry:DE3163|Burgundy:800020|Wine:722F37|Claret:7F1734|Oxblood:4A0000|Mulberry:C54B8C|Mauve:E0B0FF|'+
+'Lilac:C8A2C8|Amethyst:9966CC|Eggplant:614051|Plum Wine:673147|Periwinkle:CCCCFF|Denim:1560BD|Cobalt:0047AB|Sapphire:0F52BA|Ultramarine:3F00FF|Cerulean:007BA7|'+
+'Azure Blue:007FFF|Baby Blue:89CFF0|Ice Blue:D6ECEF|Petrol:005F6A|Deep Teal:003333|Jade:00A86B|Emerald:50C878|Mint:3EB489|Sage:BCB88A|Moss:8A9A5B|'+
+'Fern:4F7942|Pine:01796F|Hunter Green:355E3B|Bottle Green:006A4E|Army Green:4B5320|Pistachio:93C572|Avocado:568203|Pear:D1E231|Celadon:ACE1AF|Seafoam:9FE2BF|'+
+'Sand:C2B280|Camel:C19A6B|Taupe:483C32|Khaki Brown:C3B091|Coffee:6F4E37|Espresso:4B3621|Cocoa:875F42|Caramel:AF6E4D|Cinnamon:D2691F|Copper:B87333|'+
+'Bronze:CD7F32|Brass:B5A642|Champagne:F7E7CE|Cream:FFFDD0|Vanilla:F3E5AB|Bone:E3DAC9|Ecru:C2B280|Oatmeal:E0DCC8|Stone:928E85|Pewter:8E8E8E|'+
+'Charcoal:36454F|Graphite:383838|Slate:6D8196|Ash:B2BEB5|Smoke:738276|Gunmetal:2A3439|Jet:343434|Onyx:353839|Ink:1B1B2F|Oyster:DAD4C4').split('|').map(s=>{const i=s.indexOf(':');return{n:s.slice(0,i),h:'#'+s.slice(i+1)};});
+
+// A hex colour typed into a note: #RGB or #RRGGBB, the # required. Returns
+// the 6-digit upper-case form, or '' for anything else.
+function _boardsSwatchHexFrom(text){
+  const t=String(text==null?'':text).trim();
+  const m=/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(t);
+  if(!m)return'';
+  const d=m[1].length===3?m[1].split('').map(x=>x+x).join(''):m[1];
+  return('#'+d).toUpperCase();
+}
+function _boardsHexToRgb(hex){
+  const h=_boardsValidHex(hex);if(!h)return null;
+  return{r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)};
+}
+function _boardsRgbToHex(r,g,b){
+  const f=v=>{v=Math.max(0,Math.min(255,Math.round(Number(v)||0)));return(v<16?'0':'')+v.toString(16);};
+  return('#'+f(r)+f(g)+f(b)).toUpperCase();
+}
+function _boardsRgbToHsl(r,g,b){
+  r/=255;g/=255;b/=255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2;let h=0,s=0;
+  if(mx!==mn){
+    const d=mx-mn;s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+    h=mx===r?(g-b)/d+(g<b?6:0):mx===g?(b-r)/d+2:(r-g)/d+4;h*=60;
+  }
+  return{h:Math.round(h)%360,s:Math.round(s*100),l:Math.round(l*100)};
+}
+function _boardsHslToRgb(h,s,l){
+  h=((Number(h)||0)%360+360)%360;s=Math.max(0,Math.min(100,Number(s)||0))/100;l=Math.max(0,Math.min(100,Number(l)||0))/100;
+  const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;
+  const [r,g,b]=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return{r:Math.round((r+m)*255),g:Math.round((g+m)*255),b:Math.round((b+m)*255)};
+}
+function _boardsRgbToHsv(r,g,b){
+  r/=255;g/=255;b/=255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;let h=0;
+  if(d)h=(mx===r?(g-b)/d+(g<b?6:0):mx===g?(b-r)/d+2:(r-g)/d+4)*60;
+  return{h,s:mx?d/mx:0,v:mx};
+}
+function _boardsHsvToRgb(h,s,v){
+  h=((h%360)+360)%360;
+  const c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c;
+  const [r,g,b]=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return{r:Math.round((r+m)*255),g:Math.round((g+m)*255),b:Math.round((b+m)*255)};
+}
+function _boardsSwatchName(hex){
+  const c=_boardsHexToRgb(hex);if(!c)return'';
+  let best=null,bd=Infinity;
+  for(const e of _BOARDS_COLOR_NAMES){
+    const o=_boardsHexToRgb(e.h);if(!o)continue;
+    const d=(c.r-o.r)*(c.r-o.r)+(c.g-o.g)*(c.g-o.g)+(c.b-o.b)*(c.b-o.b);
+    if(d<bd){bd=d;best=e.n;}
+  }
+  return best||'';
+}
+function _boardsSwatchFmt(c){return c&&_BOARDS_SWATCH_FMTS.indexOf(c.fmt)>0?c.fmt:'hex';}
+function _boardsSwatchValue(hex,fmt,pantone){
+  const h=_boardsValidHex(hex);if(!h||fmt==='off')return'';
+  if(fmt==='pantone'){
+    if(pantone)return pantone;
+    const n=_boardsPantoneNearest(h);
+    return n?'≈ '+n:'No Pantone match';
+  }
+  const c=_boardsHexToRgb(h);
+  if(fmt==='rgb')return c.r+','+c.g+','+c.b;
+  if(fmt==='hsl'){const l=_boardsRgbToHsl(c.r,c.g,c.b);return l.h+','+l.s+'%,'+l.l+'%';}
+  return h;
+}
+function _boardsSwatchLabel(c){return(c&&c.name)||_boardsSwatchName(c&&c.hex)||'Colour';}
+function _boardsSwatchBodyHTML(c,canEdit,bodyDrag){
+  const hx=_boardsValidHex(c.hex)||'#CCCCCC';
+  const val=_boardsSwatchValue(hx,_boardsSwatchFmt(c),c.pantone);
+  return`<div class="board-card-body board-swatch-body"${bodyDrag}>
+    <div class="board-swatch-block" id="board-swblock-${c.id}" style="background:${hx};color:${_boardsInkOn(hx)}" ${canEdit?`onclick="window.boardsSwatchBlockClick(event,'${c.id}')" ondblclick="window.boardsSwatchPicker('${c.id}')"`:''} title="${canEdit?'Click to change the colour':''}">
+      <span class="board-swatch-val" id="board-swval-${c.id}">${_boardsEsc(val)}</span>
+    </div>
+    <div class="board-swatch-name" id="board-swname-${c.id}" contenteditable="false" data-placeholder="Colour" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-swname-${c.id}')"`:''} oninput="window.boardsSwatchNameInput('${c.id}',this)"></div>
+  </div>`;
+}
+// Repaint ONE card's swatch in place — the picker changes it on every
+// pointermove, and a full canvas render per move would redraw every card.
+function _boardsSwatchPaint(c){
+  if(!c||c.type!=='swatch'||typeof document==='undefined')return;
+  const hx=_boardsValidHex(c.hex)||'#CCCCCC';
+  const b=document.getElementById('board-swblock-'+c.id);
+  if(b&&b.style){b.style.background=hx;b.style.color=_boardsInkOn(hx);}
+  const v=document.getElementById('board-swval-'+c.id);
+  if(v)v.textContent=_boardsSwatchValue(hx,_boardsSwatchFmt(c),c.pantone);
+  const n=document.getElementById('board-swname-'+c.id);
+  if(n&&n!==_boardsEditingEl)n.textContent=_boardsSwatchLabel(c);
+}
+window.boardsSwatchNameInput=function(id,el){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c)return;
+  const v=String(el.textContent||'').replace(/\s+/g,' ').trim();
+  if(v&&v!==_boardsSwatchName(c.hex))c.name=v.slice(0,80);else delete c.name;
+  _boardsSaveDebounced();
+};
+// Called from _boardsEndEdit. True when it turned the note into a swatch
+// (and has already rendered and saved).
+function _boardsSwatchFromNoteEl(el){
+  if(!el||!el.id||el.id.indexOf('board-txt-')!==0)return false;
+  const c=_editCards.find(x=>x.id===el.id.slice(10));
+  if(!c||c.type!=='text'||!_boardsCanEdit(_editBoard))return false;
+  const raw=(c.text!=null&&c.text!=='')?c.text:(el.textContent||'');
+  let hx=_boardsSwatchHexFrom(raw),pms='';
+  if(!hx){pms=_boardsPantoneKey(raw);hx=pms?(_boardsPantoneBook()[pms]||''):'';}
+  if(!hx)return false;
+  _boardsPushUndo();
+  c.type='swatch';c.hex=hx;
+  if(pms){c.pantone=pms;c.fmt='pantone';}
+  delete c.text;delete c.rich;delete c.bg;delete c.ink;
+  c.w=_BOARDS_SWATCH_W;c.h=_BOARDS_SWATCH_H;
+  if(_boardsIsRichField(el))_boardsFmtTarget=null;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  return true;
+}
+function _boardsSwatchAfterEdit(el){
+  if(!el||!el.id)return;
+  const m=/^board-(?:swname|name)-(.+)$/.exec(el.id);
+  if(!m)return;
+  const c=_editCards.find(x=>x.id===m[1]);
+  if(c&&c.type==='swatch')_boardsSwatchPaint(c);
+}
+window.boardsSwatchBlockClick=function(e,id){
+  // A click on the block of a swatch that is ALREADY selected opens the
+  // picker; the first click only selects it, like every other card.
+  if(_boardsSelection.has(id)&&_boardsSelection.size===1){
+    if(e&&e.stopPropagation)e.stopPropagation();
+    window.boardsSwatchPicker(id);
+  }
+};
+function _boardsSwatchSetFmt(c,fmt){
+  if(!c||c.type!=='swatch'||_BOARDS_SWATCH_FMTS.indexOf(fmt)<0)return false;
+  if(_boardsSwatchFmt(c)===fmt)return false;
+  _boardsPushUndo();
+  if(fmt==='hex')delete c.fmt;else c.fmt=fmt;
+  _boardsSwatchPaint(c);
+  _boardsSaveDebounced();
+  return true;
+}
+function _boardsSwatchDisplayItems(){
+  const c=_boardsSelOne();
+  if(!c||c.type!=='swatch')return[];
+  const f=_boardsSwatchFmt(c);
+  return[{title:'Show the value as'},{tabs:_BOARDS_SWATCH_FMTS.map(k=>({act:'sw:fmt:'+k,label:_BOARDS_SWATCH_FMT_LABEL[k],on:k===f}))}];
+}
+function _boardsSwatchAct(a){
+  const c=_boardsSelOne();
+  if(a==='pick'){if(c&&c.type==='swatch')window.boardsSwatchPicker(c.id);return;}
+  if(a==='display'){
+    if(!c||c.type!=='swatch'||!_boardsCanEdit(_editBoard))return;
+    const btn=document.querySelector?document.querySelector('.board-rail [data-act="sw:display"]'):null;
+    const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():{right:100,top:120};
+    _boardsOpenCtx(r.right+8,r.top,_boardsSwatchDisplayItems,null,{keep:true});
+    return;
+  }
+  if(a.indexOf('fmt:')===0){
+    if(!c||!_boardsCanEdit(_editBoard))return;
+    if(_boardsSwatchSetFmt(c,a.slice(4)))_boardsRenderRail();
+  }
+}
+// Set the colour. The ONLY writer of c.hex after birth; it refuses anything
+// _boardsValidHex refuses. One undo entry per picker session.
+function _boardsSwatchSetHex(id,hex){
+  const c=_editCards.find(x=>x.id===id);
+  const h=_boardsValidHex(hex);
+  if(!c||c.type!=='swatch'||!h||!_boardsCanEdit(_editBoard))return false;
+  if(h===c.hex)return true;
+  if(!_boardsSwPick||_boardsSwPick.id!==id||!_boardsSwPick.pushed){
+    _boardsPushUndo();
+    if(_boardsSwPick&&_boardsSwPick.id===id)_boardsSwPick.pushed=true;
+  }
+  c.hex=h;
+  _boardsSwatchPaint(c);
+  _boardsSaveDebounced();
+  return true;
+}
+// ── The picker: SV square, hue slider, preview dot, eyedropper, and
+// numeric fields in RGB → HSL → HEX. It is a sheet anchored beside the card
+// (a bottom sheet on a phone), the machinery Labels and Comments use.
+let _boardsSwPick=null;   // {id,pushed,mode,hsv}
+window.boardsSwatchPicker=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='swatch'||!_boardsCanEdit(_editBoard))return;
+  const rgb=_boardsHexToRgb(c.hex)||{r:204,g:204,b:204};
+  _boardsSwPick={id,pushed:false,mode:(_boardsSwPick&&_boardsSwPick.mode)||'rgb',hsv:_boardsRgbToHsv(rgb.r,rgb.g,rgb.b)};
+  const card=document.getElementById('board-card-'+id);
+  const rect=card&&card.getBoundingClientRect?card.getBoundingClientRect():null;
+  _boardsOpenSheet('Colour',_boardsSwPickHTML(),{anchor:rect?{rect}:null,width:264});
+};
+function _boardsSwPickHex(){
+  const p=_boardsSwPick;if(!p)return'';
+  const c=_boardsHsvToRgb(p.hsv.h,p.hsv.s,p.hsv.v);
+  return _boardsRgbToHex(c.r,c.g,c.b);
+}
+function _boardsSwPickFieldsHTML(){
+  const p=_boardsSwPick,hx=_boardsSwPickHex(),c=_boardsHexToRgb(hx);
+  const lab={rgb:'RGB',hsl:'HSL',hex:'HEX'}[p.mode];
+  let f;
+  if(p.mode==='hex')f=`<input class="board-swp-in wide" value="${hx}" maxlength="7" onchange="window.boardsSwpField(0,this.value)" aria-label="Hex">`;
+  else{
+    const v=p.mode==='rgb'?[c.r,c.g,c.b]:(l=>[l.h,l.s,l.l])(_boardsRgbToHsl(c.r,c.g,c.b));
+    const n=p.mode==='rgb'?['R','G','B']:['H','S','L'];
+    f=v.map((x,i)=>`<label class="board-swp-f"><input class="board-swp-in" inputmode="numeric" value="${x}" onchange="window.boardsSwpField(${i},this.value)"><span>${n[i]}</span></label>`).join('');
+  }
+  return`<button class="board-swp-mode" onclick="window.boardsSwpMode()" title="Switch between RGB, HSL and HEX">${lab} ⇅</button>${f}`;
+}
+function _boardsSwPickHTML(){
+  const p=_boardsSwPick,hx=_boardsSwPickHex();
+  const eye=(typeof window!=='undefined'&&window.EyeDropper)?`<button class="board-swp-eye" onclick="window.boardsSwpEye()" title="Pick a colour from the screen">${_boardsIcon('color')}</button>`:'';
+  return`<div class="board-swp">
+    <div class="board-swp-sv" id="board-swp-sv" style="background-color:hsl(${Math.round(p.hsv.h)},100%,50%)" onpointerdown="window.boardsSwpSvDown(event)">
+      <span class="board-swp-ring" id="board-swp-ring" style="left:${(p.hsv.s*100).toFixed(1)}%;top:${((1-p.hsv.v)*100).toFixed(1)}%"></span>
+    </div>
+    <div class="board-swp-row">
+      <span class="board-swp-dot" id="board-swp-dot" style="background:${hx}"></span>
+      <input type="range" class="board-swp-hue" id="board-swp-hue" min="0" max="359" value="${Math.round(p.hsv.h)}" oninput="window.boardsSwpHue(this.value)" aria-label="Hue">
+      ${eye}
+    </div>
+    <div class="board-swp-fields" id="board-swp-fields">${_boardsSwPickFieldsHTML()}</div>
+  </div>`;
+}
+// Repaint the picker's moving parts (never the input being typed into:
+// fields repaint only on a change that did not come from them).
+function _boardsSwPickSync(fields){
+  const p=_boardsSwPick;if(!p)return;
+  const hx=_boardsSwPickHex();
+  const sv=document.getElementById('board-swp-sv');if(sv&&sv.style)sv.style.backgroundColor='hsl('+Math.round(p.hsv.h)+',100%,50%)';
+  const ring=document.getElementById('board-swp-ring');if(ring&&ring.style){ring.style.left=(p.hsv.s*100)+'%';ring.style.top=((1-p.hsv.v)*100)+'%';}
+  const dot=document.getElementById('board-swp-dot');if(dot&&dot.style)dot.style.background=hx;
+  const hue=document.getElementById('board-swp-hue');if(hue&&fields!=='hue')hue.value=Math.round(p.hsv.h);
+  const fl=document.getElementById('board-swp-fields');if(fl&&fields!==false)fl.innerHTML=_boardsSwPickFieldsHTML();
+  _boardsSwatchSetHex(p.id,hx);
+}
+window.boardsSwpHue=function(v){
+  if(!_boardsSwPick)return;
+  _boardsSwPick.hsv.h=Math.max(0,Math.min(359,Number(v)||0));
+  _boardsSwPickSync('hue');
+};
+window.boardsSwpSvDown=function(e){
+  const sv=document.getElementById('board-swp-sv');
+  if(!sv||!_boardsSwPick)return;
+  if(e&&e.preventDefault)e.preventDefault();
+  const at=ev=>{
+    const r=sv.getBoundingClientRect();
+    if(!r.width||!r.height)return;
+    _boardsSwPick.hsv.s=Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width));
+    _boardsSwPick.hsv.v=Math.max(0,Math.min(1,1-(ev.clientY-r.top)/r.height));
+    _boardsSwPickSync();
+  };
+  at(e);
+  const mv=ev=>at(ev);
+  const up=()=>{document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);};
+  document.addEventListener('pointermove',mv);
+  document.addEventListener('pointerup',up);
+  document.addEventListener('pointercancel',up);
+};
+window.boardsSwpMode=function(){
+  if(!_boardsSwPick)return;
+  _boardsSwPick.mode={rgb:'hsl',hsl:'hex',hex:'rgb'}[_boardsSwPick.mode]||'rgb';
+  const fl=document.getElementById('board-swp-fields');if(fl)fl.innerHTML=_boardsSwPickFieldsHTML();
+};
+// A field changed. The whole colour is rebuilt from the current mode's
+// values; a hex that does not validate is refused out loud and changes
+// nothing.
+window.boardsSwpField=function(i,val){
+  const p=_boardsSwPick;if(!p)return false;
+  const cur=_boardsHexToRgb(_boardsSwPickHex());
+  let rgb;
+  if(p.mode==='hex'){
+    const h=_boardsSwatchHexFrom(String(val||'').trim().replace(/^([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/,'#$1'));
+    if(!h){showToast('Use a colour like #75AE76',true);_boardsSwPickSync();return false;}
+    rgb=_boardsHexToRgb(h);
+  }else if(p.mode==='rgb'){
+    const a=[cur.r,cur.g,cur.b];a[i]=Math.max(0,Math.min(255,Math.round(Number(val))||0));
+    rgb={r:a[0],g:a[1],b:a[2]};
+  }else{
+    const l=_boardsRgbToHsl(cur.r,cur.g,cur.b),a=[l.h,l.s,l.l];
+    a[i]=Math.round(Number(val))||0;
+    rgb=_boardsHslToRgb(a[0],a[1],a[2]);
+  }
+  const hsv=_boardsRgbToHsv(rgb.r,rgb.g,rgb.b);
+  // Keep the hue when the new colour is grey — it has none of its own.
+  if(!hsv.s)hsv.h=p.hsv.h;
+  p.hsv=hsv;
+  _boardsSwPickSync();
+  return true;
+};
+window.boardsSwpEye=async function(){
+  if(!_boardsSwPick||typeof window.EyeDropper!=='function')return;
+  try{
+    const r=await new window.EyeDropper().open();
+    const h=_boardsValidHex(r&&r.sRGBHex);
+    if(!h)return;
+    const c=_boardsHexToRgb(h);
+    _boardsSwPick.hsv=_boardsRgbToHsv(c.r,c.g,c.b);
+    _boardsSwPickSync();
+  }catch(e){/* cancelled */}
+};
+// The PNG/PDF export draws the block, the value and the name bar, from the
+// same helpers the card reads.
+function _boardsDrawSwatchOnCanvas(ctx,c,P){
+  const hx=_boardsValidHex(c.hex)||'#CCCCCC';
+  const nameH=Math.min(80,Math.max(30,c.h*0.35));
+  ctx.save();
+  _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,8);ctx.clip();
+  ctx.fillStyle=hx;ctx.fillRect(c.x,c.y,c.w,c.h-nameH);
+  ctx.fillStyle='#1F1F1F';ctx.fillRect(c.x,c.y+c.h-nameH,c.w,nameH);
+  const val=_boardsSwatchValue(hx,_boardsSwatchFmt(c),c.pantone);
+  if(val){ctx.fillStyle=_boardsInkOn(hx);ctx.font='700 13px '+P.font;ctx.fillText(val,c.x+12,c.y+22);}
+  ctx.fillStyle='#FFFFFF';ctx.font='700 15px '+P.font;
+  ctx.fillText((_boardsWrapLines(ctx,_boardsSwatchLabel(c),c.w-24,1)[0])||'',c.x+12,c.y+c.h-nameH/2+5);
+  ctx.restore();
+}
+
+
+/* ── Pantone codes on a swatch (28 Sept 2026) ─────────────────────────
+   Afnan: conversion for the TCX fabric book and the C (coated) book, in
+   the same colour logic. Typing "485 C" or "19-1664 TCX" (Pantone/PMS
+   prefix and spacing optional) into a note turns it into a swatch of that
+   colour, showing the code; the Display menu's Pantone mode shows any
+   swatch's nearest code, marked ≈ when it is not exact.
+
+   THE BOOK IS ONLY WHAT THE APP ALREADY HOLDS: the ~55 C codes built into
+   js/embellishments.js (COLOR_IMPORT_PANTONE_HEX) plus every entry of the
+   embellishments colour library (color_library: pantoneCode + hexApprox).
+   The full Pantone books are licensed and unreachable from the sandbox, so
+   nothing here is invented: an unknown code stays a note. Adding a book
+   later means adding entries to _BOARDS_PANTONE_EXTRA or the library. */
+const _BOARDS_PANTONE_EXTRA={};
+let _boardsPantoneLib=null,_boardsPantoneLoading=false,_boardsPantoneCache=null,_boardsPantoneCacheN=-1;
+function _boardsPantoneKey(text){
+  let t=String(text==null?'':text).trim().toUpperCase().replace(/\s+/g,' ');
+  t=t.replace(/^(PANTONE|PMS)\s*/,'');
+  let m=/^(\d{2})\s*-?\s*(\d{4})\s*(TCX|TPX|TPG)$/.exec(t);
+  if(m)return m[1]+'-'+m[2]+' '+m[3];
+  m=/^(COOL GREY \d{1,2}|WARM GREY \d{1,2}|[A-Z]*\s?\d{1,5}|[A-Z]+(?: [A-Z]+)*)\s*(C|U)$/.exec(t);
+  if(m&&/\d/.test(m[1]))return m[1].trim()+' '+m[2];
+  return'';
+}
+function _boardsPantoneBook(){
+  const lib=_boardsPantoneLib||((typeof allColors!=='undefined'&&Array.isArray(allColors))?allColors:[]);
+  const base=(typeof COLOR_IMPORT_PANTONE_HEX!=='undefined'&&COLOR_IMPORT_PANTONE_HEX)||{};
+  const n=Object.keys(base).length+lib.length+Object.keys(_BOARDS_PANTONE_EXTRA).length;
+  if(_boardsPantoneCache&&_boardsPantoneCacheN===n)return _boardsPantoneCache;
+  const out={};
+  const add=(code,hex)=>{const k=_boardsPantoneKey(code),h=_boardsValidHex(_boardsSwatchHexFrom(hex)||'');if(k&&h&&!out[k])out[k]=h;};
+  Object.keys(_BOARDS_PANTONE_EXTRA).forEach(k=>add(k,_BOARDS_PANTONE_EXTRA[k]));
+  lib.forEach(c=>{if(c&&c.status!=='archived')add(c.pantoneCode,c.hexApprox);});
+  Object.keys(base).forEach(k=>add(k,base[k]));
+  _boardsPantoneCache=out;_boardsPantoneCacheN=n;
+  return out;
+}
+function _boardsPantoneNearest(hex){
+  const c=_boardsHexToRgb(hex);if(!c)return'';
+  const book=_boardsPantoneBook();let best='',bd=Infinity;
+  for(const k in book){
+    const o=_boardsHexToRgb(book[k]);if(!o)continue;
+    const d=(c.r-o.r)*(c.r-o.r)+(c.g-o.g)*(c.g-o.g)+(c.b-o.b)*(c.b-o.b);
+    if(d<bd){bd=d;best=k;}
+  }
+  return best;
+}
+// One read of the colour library per session, so a board opened without
+// ever visiting Embellishments still knows the imported codes. Never rejects.
+async function _boardsPantoneEnsure(){
+  if(_boardsPantoneLib||_boardsPantoneLoading)return;
+  if(typeof allColors!=='undefined'&&Array.isArray(allColors)&&allColors.length){_boardsPantoneLib=allColors;return;}
+  if(typeof getDocs!=='function'||typeof collection!=='function')return;
+  _boardsPantoneLoading=true;
+  try{const snap=await getDocs(collection(db,'color_library'));_boardsPantoneLib=snap.docs.map(d=>d.data());}
+  catch(e){console.warn('[boards] colour library read failed:',e);}
+  _boardsPantoneLoading=false;
+}

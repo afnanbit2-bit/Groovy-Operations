@@ -41,6 +41,7 @@ Read the header of `harness.js` before trusting a green run.
 | `board-hash.test.js` | Mood Boards: the address bar names the open board — `#board=<id>` written by replaceState on open, cleared on leaving the canvas, another module's hash left alone, and read back by the deep-link consumer after a reload (#97 bug 9) |
 | `board-title.test.js` | Mood Boards: Enter saves a board rename, Escape restores it, the breadcrumb tile follows (#97 bug 10) |
 | `board-dragmove.test.js` | Mood Boards: a card dropped on a sub-board card or breadcrumb moves to that board's Unsorted; Home, empty canvas and board links refused (#97 bug 2) |
+| `board-swatch.test.js` | Mood Boards: a note holding only a hex colour becomes a colour swatch on leaving it (undo restores the note); nearest colour name, HEX/RGB/HSL/Off display, the picker's fields, invalid hex refused |
 | `check-cache-version.js` | Not a suite — a CI guard. If a precached file changed, `CACHE_VERSION` in `sw.js` must have changed too, or the update silently never reaches anyone who already opened the app |
 
 ## Adding a test

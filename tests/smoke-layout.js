@@ -1694,6 +1694,34 @@ const FRAGMENTS={
       '<div class="board-stage" style="position:relative;height:460px;width:100%;overflow:hidden">'+
       '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
   },
+  /* The colour swatch (28 Sept 2026): a light and a dark colour in each
+     display format, one with a label, and the picker. The value ink is
+     computed per colour and the name bar is --dark/--on-dark, so both are
+     measured in both themes. Names are filled in here the way the hydrate
+     fills them in the app (textContent). */
+  'boards — colour swatches':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};
+      _editConnectors=[];_boardsCardTrash=[];_boardsConnSel=null;_boardsCellFocus=null;
+      _editCards=[
+        {id:'w1',type:'swatch',hex:'#F5DEB3',x:10,y:10,w:220,h:230},
+        {id:'w2',type:'swatch',hex:'#1B1B2F',fmt:'rgb',x:250,y:10,w:220,h:230},
+        {id:'w3',type:'swatch',hex:'#75AE76',fmt:'hsl',name:'Brand leaf green for the winter drop',x:490,y:10,w:220,h:230},
+        {id:'w4',type:'swatch',hex:'#FFFF00',fmt:'off',labels:[{t:'approved',c:'green'}],x:730,y:10,w:220,h:230}
+      ];
+      _boardsSelection=new Set(['w1']);window.boardsSwatchPicker('w1');`);
+    let cards=app.run(`_boardsRenderOrder().map(c=>_boardCardHTML(c,true)).join('')`)
+      .replace(/(id="board-label-w4-0"[^>]*>)/,'$1approved');
+    ['w1','w2','w3','w4'].forEach(id=>{
+      const nm=app.run(`_boardsSwatchLabel(_editCards.find(c=>c.id==='${id}'))`);
+      cards=cards.replace(new RegExp('(id="board-swname-'+id+'"[^>]*>)'),'$1'+nm);
+    });
+    const picker=app.run(`document.getElementById('board-sheet').innerHTML`);
+    return Promise.resolve({widths:[1900,1280],html:
+      '<div class="board-stage" style="position:relative;height:280px;width:100%;overflow:hidden">'+
+      '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'+
+      '<div class="board-sheet board-pop" style="position:relative;left:auto;top:auto;width:264px;max-height:none;overflow:visible">'+picker+'</div>'});
+  },
   /* Labels, Reactions and Comments as popovers (Sept 2026). The comment
      rows put literal initials on --cat-* tokens with --on-dark ink, in both
      themes — the one place an avatar's ink could go unreadable — and every
