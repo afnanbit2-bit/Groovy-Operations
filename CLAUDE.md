@@ -6983,8 +6983,19 @@ subagent reports, kept as model output in `scratchpad/visual-report.md`
 tall, 82% of its text at 12px or under, 66 bordered boxes, the first chart
 at y=1,183) and `scratchpad/ds-report.md` (Polaris, Carbon and Primer read
 over `raw.githubusercontent.com`).** Where the two disagreed the audit's
-number stands. The specimen is being rebuilt to §16; until it is, the
-published artifact is still v3's.
+number stands. **The specimen was rebuilt to §16 the same day and
+republished at the same URL**, then MEASURED the way the audit measured
+v3 (a probe in headless Chromium, `scratchpad/spec-v4/probe.js` in the
+session scratchpad, not the repo): Today's main column 2,299px against
+2,532; 6 bordered boxes against 66; 0 uppercase labels against 49; 0
+text under 11px against 31; the first chart at y=422 against 1,183; 0
+shadows; no element under 2.2:1 in either theme on any of the ten pages;
+nothing laid out past the right edge at 390px. Text at 12px or under is
+still half of Today's text elements (table heads, meta lines, ticks), down
+from 82%. Every page was looked at in a screenshot at 1440 and the Today,
+Money in and Money out pages at 390, light and dark. **Nobody has seen it
+on a real screen** — Afnan's open is the visual test, as ever. The `₨`
+glyph renders as `Rs` in the sandbox's fonts; the file carries U+20A8.
 
 Verified while planning, and worth knowing before any of it is built (every
 claim carries file:line in the plan's §1): nothing in HRM records HOW a

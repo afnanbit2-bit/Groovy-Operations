@@ -1,7 +1,7 @@
 <title>Master Accounts</title>
 <style>
-/* ── Tokens: the app's own (css/main.css :root), plus the chart series
-   tokens this module would add. Text never wears a series colour. ── */
+/* ── Tokens: the app's own (css/main.css :root) plus the chart series tokens
+   this module adds. Text never wears a series colour. ── */
 :root{
   --bg:#F4F4F4;--surface:#fff;--surface-2:#FAFAFA;--border:#D9D9D9;--line:#000;
   --text:#111111;--muted:#6B6B6B;--soft:#EFEFEF;--hover:#F4F4F6;--dark:#000;--on-dark:#fff;
@@ -9,11 +9,8 @@
   --accent-warning:#B47512;--accent-warning-soft:#FAEEDA;
   --accent-success:#14532D;--accent-success-soft:#E6EFE9;
   --count-accent:#DC2626;--link-accent:#C2410C;
-  --radius-card:14px;--radius-bubble:16px;
-  /* chart series (validated on #fff with the dataviz six checks) */
   --chart-1:#2a78d6;--chart-2:#eb6834;--chart-3:#1baf7a;--chart-4:#eda100;--chart-5:#e87ba4;--chart-6:#4a3aa7;
   --chart-other:#898781;--chart-neg:#e34948;
-  --seq-1:#86b6ef;--seq-2:#3987e5;--seq-3:#1c5cab;--seq-4:#0d366b;
   --grid:#E8E8E8;--axis:#C9C9C9;
   color-scheme:light;
 }
@@ -27,7 +24,6 @@
     --link-accent:#FB923C;
     --chart-1:#3987e5;--chart-2:#d95926;--chart-3:#199e70;--chart-4:#c98500;--chart-5:#d55181;--chart-6:#9085e9;
     --chart-other:#898781;--chart-neg:#e66767;
-    --seq-1:#184f95;--seq-2:#2a78d6;--seq-3:#5598e7;--seq-4:#9ec5f4;
     --grid:#26262B;--axis:#3A3A41;
     color-scheme:dark;
   }
@@ -41,325 +37,360 @@
   --link-accent:#FB923C;
   --chart-1:#3987e5;--chart-2:#d95926;--chart-3:#199e70;--chart-4:#c98500;--chart-5:#d55181;--chart-6:#9085e9;
   --chart-other:#898781;--chart-neg:#e66767;
-  --seq-1:#184f95;--seq-2:#2a78d6;--seq-3:#5598e7;--seq-4:#9ec5f4;
   --grid:#26262B;--axis:#3A3A41;
   color-scheme:dark;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.45;color:var(--text);background:var(--bg);padding-inline:16px;padding-block:16px 48px}
-button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:0;cursor:pointer}
-button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--link-accent);outline-offset:2px}
-h1,h2,h3{text-wrap:balance}
-.wrap{max-width:1180px;margin:0 auto;display:grid;gap:18px}
+html{-webkit-text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.4;color:var(--text);background:var(--bg);padding:16px 16px 48px}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:0;cursor:pointer;line-height:inherit}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--link-accent);outline-offset:2px}
+a{color:var(--link-accent);text-decoration:none}
+.wrap{max-width:1440px;margin:0 auto;display:grid;gap:16px}
 
 /* ── the specimen's own chrome (not part of the app) ── */
-.spec-head{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end;justify-content:space-between}
-.spec-head h1{font-size:22px;font-weight:700}
-.spec-head p{color:var(--muted);font-size:13px;max-width:62ch}
-.spec-controls{display:flex;flex-wrap:wrap;gap:10px 16px}
-.seg{display:inline-flex;border:1px solid var(--border);border-radius:999px;background:var(--surface);padding:2px}
-.seg button{padding:5px 12px;border-radius:999px;font-size:13px;font-weight:600;color:var(--muted);min-height:32px}
+.spec-head{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between}
+.spec-head h1{font-size:22px;font-weight:600;line-height:1.2}
+.spec-head p{color:var(--muted);font-size:13px;max-width:70ch;margin-top:4px}
+.spec-controls{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.seg-label{font-size:12px;font-weight:500;color:var(--muted);margin-right:6px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:999px;background:var(--surface);padding:2px;flex-wrap:wrap}
+.seg button{padding:5px 12px;border-radius:999px;font-size:13px;color:var(--muted);white-space:nowrap}
 .seg button.on{background:var(--dark);color:var(--on-dark)}
-.seg-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;display:block;margin-bottom:4px}
-.note-strip{font-size:13px;color:var(--muted);border-left:3px solid var(--accent-warning);padding:6px 12px;background:var(--surface);border-radius:0 8px 8px 0}
+.note-strip{font-size:13px;color:var(--muted)}
 
-/* ── the app frame: topbar + sidebar + main, or phone ── */
-.frame{container-type:inline-size;container-name:frame;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:0 auto;width:100%;transition:width .25s ease}
-.frame.phone{width:390px;max-width:100%}
-.topbar{background:var(--surface);border-bottom:1px solid var(--line);height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 16px}
-.topbar-logo{font-weight:800;letter-spacing:.14em;font-size:14px}
-.topbar-logo small{font-weight:600;letter-spacing:.1em;color:var(--muted);margin-left:8px;font-size:11px}
+/* ── the app frame ── */
+.frame{container-type:inline-size;container-name:frame;position:relative;border:1px solid var(--border);border-radius:8px;background:var(--bg);overflow:hidden}
+.frame.phone{width:390px;max-width:100%;margin:0 auto}
+.topbar{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+.topbar-logo{font-weight:700;letter-spacing:.06em;font-size:15px}
+.topbar-logo small{font-weight:500;letter-spacing:.08em;font-size:11px;color:var(--muted);margin-left:8px}
 .topbar-user{display:flex;align-items:center;gap:10px;font-size:13px}
-.avatar{width:32px;height:32px;border-radius:50%;background:var(--soft);border:1px solid var(--border);display:grid;place-items:center;font-weight:700;font-size:13px}
-.frame-body{display:flex;min-height:640px}
-#sidebar{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:12px 8px}
-.nav-item{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;font-size:14px;color:var(--text);width:100%;text-align:left;min-height:38px}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--dark);color:var(--on-dark);display:inline-flex;align-items:center;justify-content:center;font-weight:600;font-size:12px}
+.frame-body{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:960px;align-items:stretch}
+#sidebar{border-right:1px solid var(--border);background:var(--surface);padding:12px 8px}
+.nav-item{display:block;width:100%;text-align:left;padding:8px 12px;border-radius:6px;font-size:14px;color:var(--text)}
 .nav-item:hover{background:var(--hover)}
-.nav-item.on{background:var(--dark);color:var(--on-dark);font-weight:600}
-.nav-group{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;padding:12px 12px 4px}
-.nav-sub{padding-left:22px;font-size:13.5px}
-main{flex:1;min-width:0;padding:16px}
-.mobnav{display:none;background:var(--surface);border-top:1px solid var(--border);grid-template-columns:repeat(5,1fr);padding:6px 4px 10px}
-.mobnav button{font-size:11px;font-weight:600;color:var(--muted);display:grid;justify-items:center;gap:3px;padding:6px 2px;min-height:44px}
-.mobnav button.on{color:var(--text)}
-.mobnav i{width:22px;height:22px;border-radius:7px;background:var(--soft);display:block}
-.mobnav button.on i{background:var(--dark)}
+.nav-item.on{background:var(--dark);color:var(--on-dark)}
+.nav-group{font-size:12px;font-weight:500;color:var(--muted);padding:14px 12px 4px}
+main{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;min-width:0}
+main.rail-open{grid-template-columns:minmax(0,1fr) 380px}
+.page{padding:0 32px 48px;max-width:1164px;min-width:0}
 
-/* ── page chrome, lifted from the app's classes ── */
-.page-head{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:baseline;justify-content:space-between;margin-bottom:12px}
-.page-title{font-size:19px;font-weight:700}
-.page-sub{font-size:13px;color:var(--muted)}
-.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
-.chip{border:1px solid var(--border);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);min-height:34px}
-.chip.on{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:14px 16px;margin-bottom:12px;min-width:0}
-.card-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px}
-.card-title .tv{font-size:11px;letter-spacing:.04em;text-transform:none;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 9px;min-height:26px}
-.card-title .tv.on{background:var(--soft);color:var(--text)}
-.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.grid2 .card,.grid3 .card{margin-bottom:0}
-
-/* KPI tiles (the app's .kpi-card, sized for money) */
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
-.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-bubble);padding:12px 14px;min-width:0}
-.kpi-label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
-.kpi-val{font-size:25px;font-weight:700;margin-top:2px;line-height:1.15;letter-spacing:-.01em}
-.kpi-val.hero{font-size:31px}
-.kpi.lead{grid-column:span 2}
-.kpi-sub{font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.delta{font-weight:600}
-.delta.up{color:var(--accent-success)}.delta.down{color:var(--accent-urgent)}
-.spark{display:flex;align-items:flex-end;gap:2px;height:22px;margin-top:8px}
-.spark i{flex:1;background:var(--soft);border-radius:2px 2px 0 0;min-height:2px}
-.spark i.cur{background:var(--chart-1)}
-.kpi.warn{background:var(--accent-warning-soft);border-color:transparent}
-.kpi.bad{background:var(--accent-urgent-soft);border-color:transparent}
-
-/* alerts */
-.alerts{display:grid;gap:6px;margin-bottom:12px}
-.alert{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--border);font-size:13.5px}
-.alert b{font-weight:700}
-.alert .ic{flex-shrink:0;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800}
-.alert.urgent .ic{background:var(--accent-urgent);color:var(--on-dark)}
-.alert.warn .ic{background:var(--accent-warning);color:var(--on-dark)}
-.alert.ok .ic{background:var(--accent-success);color:var(--on-dark)}
-:root[data-theme="dark"] .alert .ic{color:var(--bg)}
-.alert .act{margin-left:auto;font-size:12px;font-weight:600;color:var(--link-accent);white-space:nowrap}
-
-/* ── charts ── */
-.chart{position:relative}
-.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-bottom:10px}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
-.legend i.line{width:14px;height:2px;border-radius:1px}
-.plot{position:relative;height:190px;margin-top:16px}
-.gridline{position:absolute;left:0;right:0;border-top:1px solid var(--grid);pointer-events:none}
-.gridline.base{border-top-color:var(--axis)}
-.ytick{position:absolute;right:calc(100% + 6px);transform:translateY(-50%);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.plot.padl{margin-left:44px}
-.cols{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:space-around;gap:6px}
-.col{flex:1;max-width:60px;height:100%;display:flex;align-items:flex-end;justify-content:center;gap:2px;position:relative}
-.bar{width:100%;max-width:24px;border-radius:4px 4px 0 0;background:var(--chart-1);position:relative;transition:filter .12s}
-.bar.s2{background:var(--chart-2)}.bar.s3{background:var(--chart-3)}.bar.s4{background:var(--chart-4)}.bar.s5{background:var(--chart-5)}.bar.s6{background:var(--chart-6)}.bar.other{background:var(--chart-other)}.bar.neg{background:var(--chart-neg);border-radius:0 0 4px 4px}
-.col:hover .bar,.col:focus-visible .bar{filter:brightness(1.12)}
-.stack{width:100%;max-width:24px;display:flex;flex-direction:column-reverse;gap:2px}
-.stack i{display:block;background:var(--chart-1)}
-.stack i:last-child{border-radius:4px 4px 0 0}
-.stack i.s2{background:var(--chart-2)}.stack i.s3{background:var(--chart-3)}
-.xlab{display:flex;justify-content:space-around;gap:6px;margin-top:6px}
-.xlab span{flex:1;max-width:60px;text-align:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-.plot.padl + .xlab{margin-left:44px}
-.dlabel{position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
-.col:last-child .dlabel{left:auto;right:0;transform:none}
-.col:first-child .dlabel{left:0;transform:none}
-.col.dim .bar{opacity:.55}
-.tip{position:absolute;z-index:5;background:var(--dark);color:var(--on-dark);border-radius:8px;padding:7px 10px;font-size:12px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.18);display:none}
-.tip b{font-size:13px;display:block}
-.tip .k{display:inline-block;width:12px;height:2px;vertical-align:middle;margin-right:6px;border-radius:1px}
-.tip.show{display:block}
-/* line */
-.lineplot{position:relative;height:190px}
-.lineplot svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.lineplot path.l{fill:none;stroke:var(--chart-1);stroke-width:2px;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
-.lineplot path.f{stroke:var(--chart-1);stroke-dasharray:6 5;fill:none;stroke-width:2px;vector-effect:non-scaling-stroke}
-.lineplot path.a{fill:var(--chart-1);opacity:.10;stroke:none}
-.lineplot path.band{fill:var(--chart-1);opacity:.08;stroke:none}
-.lineplot path.l2{fill:none;stroke:var(--chart-2);stroke-width:2px;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
-.dot{position:absolute;width:10px;height:10px;border-radius:50%;background:var(--chart-1);border:2px solid var(--surface);transform:translate(-50%,-50%);pointer-events:none}
-.dot.s2{background:var(--chart-2)}
-.xhair{position:absolute;top:0;bottom:0;border-left:1px solid var(--axis);pointer-events:none;display:none}
-.endlab{position:absolute;transform:translate(6px,-50%);font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;background:var(--surface);padding:0 4px;border-radius:4px;font-variant-numeric:tabular-nums}
-.today{position:absolute;top:0;bottom:0;border-left:1px solid var(--axis);pointer-events:none}
-.today small{position:absolute;top:-2px;left:4px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-/* donut */
-.donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
-.donut{width:150px;height:150px;border-radius:50%;flex-shrink:0;position:relative;display:grid;place-items:center}
-.donut::after{content:"";position:absolute;inset:34px;border-radius:50%;background:var(--surface)}
-.donut b{position:relative;z-index:1;font-size:13px;text-align:center;line-height:1.2;font-weight:700}
-.donut b small{display:block;font-size:11px;font-weight:600;color:var(--muted)}
-.dl{flex:1;min-width:180px;display:grid;gap:5px;font-size:13px}
-.dl div{display:grid;grid-template-columns:10px 1fr auto auto;gap:8px;align-items:center;padding:3px 4px;border-radius:6px}
-.dl div:hover{background:var(--hover)}
-.dl i{width:10px;height:10px;border-radius:2px}
-.dl .v{font-variant-numeric:tabular-nums;font-weight:600}
-.dl .p{font-variant-numeric:tabular-nums;color:var(--muted);width:38px;text-align:right}
-/* horizontal bars */
-.hbars{display:grid;gap:8px}
-.hb{display:grid;grid-template-columns:110px 1fr 74px;gap:10px;align-items:center;font-size:13px}
-.hb .n{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hb .t{height:12px;background:var(--soft);border-radius:0 4px 4px 0;position:relative;overflow:visible}
-.hb .t i{position:absolute;left:0;top:0;bottom:0;background:var(--chart-1);border-radius:0 4px 4px 0}
-.hb .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
-.hb.o1 .t i{background:var(--seq-1)}.hb.o2 .t i{background:var(--seq-2)}.hb.o3 .t i{background:var(--seq-3)}.hb.o4 .t i{background:var(--seq-4)}
-.meter{height:12px;background:var(--soft);border-radius:999px;overflow:hidden;position:relative}
-.meter i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--chart-1)}
-.meter.warn i{background:var(--accent-warning)}.meter.bad i{background:var(--accent-urgent)}
-/* tables */
-.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{border-collapse:collapse;width:100%;font-size:13px}
-th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:8px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
-td{padding:8px 8px;border-bottom:1px solid var(--grid);vertical-align:top}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-td.nw{white-space:nowrap}
-tr.total td{font-weight:700;border-top:2px solid var(--axis)}
-tr.sub td{color:var(--muted)}
-tr.sub td:first-child{padding-left:22px}
-.src{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px;background:var(--soft);color:var(--text);white-space:nowrap}
-.src.void{text-decoration:line-through;color:var(--muted)}
-.tag{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px;white-space:nowrap}
-.tag.ok{background:var(--accent-success-soft);color:var(--accent-success)}
-.tag.warn{background:var(--accent-warning-soft);color:var(--accent-warning)}
-.tag.bad{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
-.tbl-view{margin-top:6px}
-.basis{font-size:12px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)}
-.basis b{color:var(--text);font-weight:600}
-.ins{display:grid;gap:10px}
-.ins .card{margin:0}
-.ins h3{font-size:15px;font-weight:700;margin-bottom:4px}
-.ins p{font-size:13.5px}
-.ins .ic{width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;font-size:12px;font-weight:800;margin-right:8px;vertical-align:middle;color:var(--on-dark)}
-:root[data-theme="dark"] .ins .ic{color:var(--bg)}
-.ic.urgent{background:var(--accent-urgent)}.ic.warn{background:var(--accent-warning)}.ic.ok{background:var(--accent-success)}.ic.info{background:var(--muted)}
-.btn{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:7px 12px;font-size:13px;font-weight:600;min-height:34px}
+/* page header: one sticky row */
+.page-head{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:16px;min-height:56px;background:var(--bg);border-bottom:1px solid var(--border);margin:0 -32px 24px;padding:0 32px}
+.page-title{font-size:22px;font-weight:600;line-height:1.2}
+.page-meta{font-size:13px;color:var(--muted);margin-top:1px}
+.spacer{flex:1}
+.period{display:inline-flex;border:1px solid var(--border);border-radius:999px;background:var(--surface);padding:2px}
+.period button{padding:5px 12px;border-radius:999px;font-size:13px;color:var(--muted);white-space:nowrap}
+.period button.on{background:var(--dark);color:var(--on-dark)}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 14px;border-radius:6px;font-size:14px;font-weight:500;border:1px solid var(--border);background:var(--surface);color:var(--text);white-space:nowrap}
 .btn.primary{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
-.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn.icon{width:36px;padding:0;font-size:18px;line-height:1}
+.rec{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 6px);min-width:220px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px;display:none;z-index:9}
+.menu.open{display:block}
+.menu button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:6px;font-size:14px}
+.menu button:hover{background:var(--hover)}
+.menu .mh{font-size:12px;font-weight:500;color:var(--muted);padding:6px 10px 2px}
 
-/* ── the money speaks: spend map, cash calendar, of every ₨100 ── */
-.smap{display:grid;gap:6px}
-.smap-kind{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-top:4px}
-.smap-kind em{font-style:normal;text-transform:none;letter-spacing:0}
-.smap-row{display:flex;gap:4px;min-height:44px}
-.smap-tile{min-width:58px;border-radius:8px;padding:6px 8px;background:var(--surface-2);border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;cursor:default}
-.smap-tile.watch{background:var(--accent-warning-soft);border-color:transparent}
-.smap-tile.concern{background:var(--accent-urgent-soft);border-color:transparent}
-.smap-tile b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.smap-tile span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
-.smap-tile:hover{filter:brightness(.97)}
-.cal{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
-.cal-d{border:1px solid var(--border);border-radius:8px;padding:5px 6px;min-height:64px;background:var(--surface-2);font-size:11px;min-width:0;overflow:hidden}
-.cal-d small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
-.cal-d b{display:block;font-size:12px;margin-bottom:2px}
-.cal-d .in,.cal-d .out{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-weight:600}
-.cal-d .in{color:var(--accent-success)}
-.cal-d .out{color:var(--text)}
-.cal-d.cal-today{border-color:var(--dark);border-width:2px}
-.cal-d.tight{background:var(--accent-warning-soft);border-color:transparent}
-.cal-d.short{background:var(--accent-urgent-soft);border-color:transparent}
-.cal-d.quiet{opacity:.72}
-.cal-key{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:8px}
-.cal-key i{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--border);vertical-align:-2px;margin-right:5px}
-.r100{display:flex;gap:3px;margin-top:10px}
-.r100 div{min-width:0;text-align:center;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.r100 i{display:block;height:14px;border-radius:4px;margin-bottom:3px}
-.r100 b{color:var(--text);font-variant-numeric:tabular-nums}
-.tgt{display:grid;gap:12px}
-.tgt-row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:baseline}
-.tgt-row h4{font-size:15px;font-weight:700}
-.tgt-row .amt{font-variant-numeric:tabular-nums;font-weight:700}
-.tgt-row .meter{grid-column:1/-1}
-.tgt-row p{grid-column:1/-1;font-size:13px;color:var(--muted)}
-.tgt-row p b{color:var(--text);font-weight:600}
+/* sections */
+section{margin-bottom:32px}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.sec-title{font-size:15px;font-weight:600}
+.sec-meta{font-size:13px;color:var(--muted)}
+.sec-head .spacer{flex:1}
+.link{color:var(--link-accent);font-size:13px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+p.note{font-size:13px;color:var(--muted);margin-top:8px}
 
-/* ── notes below the frame ── */
-.notes{display:grid;gap:14px}
-.notes h2{font-size:17px;font-weight:700;margin-bottom:6px}
-.notes .card{margin:0}
-.notes p,.notes li{font-size:14px;max-width:70ch}
-.notes ul{padding-left:20px;display:grid;gap:4px}
-.pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
-.pg{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface-2)}
-.pg b{display:block;font-size:14px}
-.pg code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted)}
-.pg p{font-size:13px;color:var(--muted);margin-top:4px;max-width:none}
-.pg.later{opacity:.72}
-.swatches{display:flex;flex-wrap:wrap;gap:8px}
-.sw{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
-.sw i{width:16px;height:16px;border-radius:4px;display:inline-block}
+/* stats: at most four, unbordered, divided by a left rule */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-bottom:32px}
+.stats.three{grid-template-columns:repeat(3,1fr)}
+.stat{padding:2px 24px;border-left:1px solid var(--border);min-width:0}
+.stat:first-child{border-left:0;padding-left:0}
+.stat .l{font-size:12px;font-weight:500;color:var(--muted)}
+.stat .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.25;margin-top:2px;white-space:nowrap}
+.stat.hero .v{font-size:28px;letter-spacing:-.01em;line-height:1.15}
+.stat .s{font-size:13px;color:var(--muted);margin-top:2px}
 
-/* ── phone layout inside the frame ── */
+/* concerns are lines */
+.concerns{list-style:none}
+.concerns li{display:flex;gap:10px;align-items:baseline;padding:6px 0;font-size:14px;line-height:1.4}
+.concerns li button.line{text-align:left;flex:1;min-width:0}
+.concerns li button.line:hover{color:var(--text)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;position:relative;top:-1px;display:inline-block}
+.dot.urgent{background:var(--accent-urgent)}
+.dot.warn{background:var(--accent-warning)}
+.dot.fine{background:var(--accent-success)}
+.dot.mute{background:var(--border)}
+.concerns b,.n{font-weight:500}
+.concerns .act{color:var(--link-accent);white-space:nowrap;font-size:13px}
+
+/* tables: 40px rows, on the surface, never in a card */
+.tbl{width:100%;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th{font-size:12px;font-weight:500;color:var(--muted);text-align:left;padding:0 6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child,td:first-child{padding-left:0}
+th:last-child,td:last-child{padding-right:0}
+td{padding:4px 6px;height:40px;border-bottom:1px solid var(--soft);vertical-align:middle}
+tbody tr:hover td{background:var(--hover)}
+tbody tr.rowlink{cursor:pointer}
+th.num,td.num{text-align:right}
+td.num{font-weight:500;white-space:nowrap}
+td.date{white-space:nowrap;width:88px}
+.nw{white-space:nowrap}
+td.src{color:var(--muted);font-size:13px}
+tr.total td{font-weight:600;border-top:1px solid var(--border);border-bottom:0}
+tr.total td.num{font-weight:600}
+tr.sub td{font-size:12px;font-weight:500;color:var(--muted);height:32px;background:var(--surface-2)}
+tbody tr.sub:hover td{background:var(--surface-2)}
+.word{font-size:12px;font-weight:500;white-space:nowrap}
+.word.warn{color:var(--accent-warning)}
+.word.urgent{color:var(--accent-urgent)}
+.word.fine{color:var(--accent-success)}
+.word.mute{color:var(--muted)}
+.pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--muted);text-decoration:line-through}
+.compact td{height:36px}
+.tfoot{font-size:13px;color:var(--muted);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}
+td .l2{display:block;font-size:12px;color:var(--muted);font-weight:400}
+.neg{color:var(--accent-urgent)}
+
+/* two columns */
+.cols2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start}
+.cols2.wide{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}
+
+/* charts: one per section, 240px plot */
+.chartbox{position:relative}
+.plot{position:relative;height:240px;margin-left:56px}
+.gridline{position:absolute;left:0;right:0;border-top:1px solid var(--grid)}
+.gridline.base{border-color:var(--axis)}
+.ytick{position:absolute;right:calc(100% + 8px);top:-7px;font-size:11px;color:var(--muted);white-space:nowrap}
+.colsx{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:space-around}
+.col{display:flex;align-items:flex-end;gap:4px;height:100%}
+.bar{width:32px;background:var(--chart-1);border-radius:2px 2px 0 0}
+.bar.s2{background:var(--chart-2)}
+.xlab{display:flex;justify-content:space-around;margin-left:56px;margin-top:6px;font-size:11px;color:var(--muted)}
+.xlab.ends{justify-content:space-between}
+.lineplot svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+path.l{fill:none;stroke:var(--chart-1);stroke-width:2;vector-effect:non-scaling-stroke}
+path.l2{fill:none;stroke:var(--chart-2);stroke-width:2;vector-effect:non-scaling-stroke}
+path.f{fill:none;stroke:var(--chart-1);stroke-width:2;stroke-dasharray:6 5;vector-effect:non-scaling-stroke}
+path.band{fill:var(--chart-1);opacity:.1}
+.vline{position:absolute;top:0;bottom:0;border-left:1px dashed var(--axis)}
+.vline small{position:absolute;top:-2px;left:6px;font-size:11px;color:var(--muted)}
+.endlab{position:absolute;transform:translate(8px,-50%);font-size:12px;font-weight:500;background:var(--surface);padding:1px 6px;border:1px solid var(--border);border-radius:4px;white-space:nowrap}
+.legend{display:inline-flex;gap:16px;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.legend i.dash{height:0;width:14px;border-top:2px dashed var(--chart-1);vertical-align:2px;border-radius:0}
+.tbl-view{display:none}
+.show-table .tbl-view{display:block}
+.show-table .chartbox{display:none}
+.chart-foot{font-size:13px;color:var(--muted);margin-top:8px;display:flex;gap:16px}
+
+/* the spend list */
+.spend{list-style:none}
+.spend li{display:grid;grid-template-columns:320px 100px minmax(0,1fr) 16px;gap:16px;align-items:center;height:36px;border-bottom:1px solid var(--soft);font-size:14px}
+.spend li.kind{height:32px;font-size:12px;font-weight:500;color:var(--muted);grid-template-columns:1fr;border-bottom:1px solid var(--border);margin-top:8px}
+.spend .amt{text-align:right;font-weight:500;font-variant-numeric:tabular-nums}
+.spend .t{height:8px;background:var(--soft);border-radius:2px;overflow:hidden}
+.spend .t i{display:block;height:100%;background:var(--chart-1);border-radius:2px}
+.spend .cmp{font-size:12px;color:var(--muted);margin-left:8px}
+
+/* the 30 days as a strip */
+.cal-head{display:grid;grid-template-columns:repeat(7,1fr);font-size:12px;color:var(--muted);padding:0 0 6px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.cal .d{background:var(--surface);min-height:66px;padding:6px 8px;font-size:12px;line-height:1.35}
+.cal .d.dim{background:var(--surface-2)}
+.cal .d.dim b,.cal .d.dim .ev{color:var(--muted)}
+.cal .d b{display:block;font-weight:500;color:var(--muted)}
+.cal .d.today b{color:var(--text);font-weight:600}
+.cal .ev{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal .ev.in{color:var(--accent-success)}
+.cal .ev.short{color:var(--accent-urgent)}
+.cal .ev.mute{color:var(--muted);font-weight:400}
+.cal-key{font-size:13px;color:var(--muted);margin-top:8px}
+
+/* tabs under a header */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:24px;overflow-x:auto}
+.tabs button{padding:8px 12px;font-size:14px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tabs button.on{color:var(--text);border-color:var(--dark);font-weight:500}
+
+/* filters: one row */
+.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.sel,.search{height:32px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);padding:0 10px;font-size:13px;font-family:inherit}
+.search{min-width:220px}
+
+/* the rail */
+.rail{position:sticky;top:0;height:calc(100vh - 52px);max-height:960px;overflow:auto;border-left:1px solid var(--border);background:var(--surface);padding:20px 24px 32px;font-size:14px}
+.rail .kicker{font-size:12px;color:var(--muted);font-weight:500}
+.rail h3{font-size:18px;font-weight:600;line-height:1.25;margin:2px 0 12px}
+.rail h4{font-size:13px;font-weight:600;margin:20px 0 8px}
+.rail .close{position:absolute;right:16px;top:14px;width:32px;height:32px;border-radius:6px;font-size:18px;color:var(--muted)}
+.rail .close:hover{background:var(--hover)}
+.rail p{margin-bottom:8px}
+.rail .stats{grid-template-columns:1fr;margin-bottom:8px}
+.rail .stat{border-left:0;padding:6px 0;border-bottom:1px solid var(--soft)}
+.rail .stat .v{font-size:18px}
+.rail table{font-size:13px}
+.rail td{height:34px}
+.rail .mini{display:flex;align-items:flex-end;gap:6px;height:64px;margin:6px 0 2px}
+.rail .mini i{flex:1;background:var(--chart-1);border-radius:2px 2px 0 0;opacity:.55}
+.rail .mini i.cur{opacity:1}
+.rail .mini-x{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+.rail .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.rail dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+.rail dt{color:var(--muted)}
+.rail dd{font-weight:500}
+
+/* checklist and audit */
+.check{list-style:none}
+.check li{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--soft);font-size:14px}
+.check li .st{margin-left:auto;font-size:12px;font-weight:500;white-space:nowrap}
+.check li .st.fine{color:var(--accent-success)}
+.check li .st.warn{color:var(--accent-warning)}
+.check li .st.mute{color:var(--muted)}
+.r100{display:flex;height:40px;border-radius:6px;overflow:hidden;gap:2px;margin-top:8px}
+.r100 i{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:#fff;background:var(--chart-1);min-width:0;overflow:hidden;white-space:nowrap}
+.r100-key{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
+.r100-key i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.meter{height:8px;background:var(--soft);border-radius:2px;overflow:hidden;width:100%}
+.meter i{display:block;height:100%;background:var(--chart-1)}
+.empty{font-size:14px;color:var(--muted);padding:12px 0}
+.skel{height:14px;border-radius:4px;background:linear-gradient(90deg,var(--soft),var(--surface-2),var(--soft));background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+
+/* mobile nav */
+.mobnav{display:none}
+
+/* notes below the frame */
+.notes{display:grid;gap:16px}
+.notes .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 24px}
+.notes h2{font-size:15px;font-weight:600;margin-bottom:10px}
+.notes ul{padding-left:18px;font-size:14px;line-height:1.5}
+.notes li{margin-bottom:4px}
+.pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px 24px;font-size:14px}
+.pg b{display:block;font-weight:600}
+.pg code{font-size:12px;color:var(--muted)}
+.pg p{color:var(--muted);font-size:13px;margin-top:2px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+
+/* ── phone ── */
 @container frame (max-width:600px){
   #sidebar{display:none}
-  .mobnav{display:grid}
-  .frame-body{min-height:560px}
-  main{padding:12px}
-  .grid2,.grid3{grid-template-columns:1fr}
-  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .kpi-val{font-size:21px}.kpi-val.hero{font-size:27px}
-  .plot,.lineplot{height:160px}
-  .hb{grid-template-columns:86px 1fr 64px}
-  .donut-wrap{justify-content:center}
-  .alert .act{display:none}
-  .cal{grid-template-columns:repeat(5,minmax(0,1fr))}
-  .smap-tile{padding:4px 6px}
-  .smap-tile b,.smap-tile span{font-size:11px}
+  .frame-body{grid-template-columns:1fr;min-height:760px}
+  main.rail-open{grid-template-columns:1fr}
+  .page{padding:0 16px 96px}
+  .page-head{margin:0 -16px 16px;padding:8px 16px;flex-wrap:wrap;gap:8px 12px;position:static}
+  .page-head .period{order:3;width:100%;justify-content:space-between}
+  .page-head .period button{padding:5px 8px;flex:1;text-align:center}
+  .page-head .spacer{display:none}
+  .page-head>div:first-child{flex:1 1 180px;min-width:0}
+  .page-head .btn.primary{margin-left:auto}
+  .concerns li{flex-wrap:wrap}
+  .concerns .act{flex-basis:100%;padding-left:18px}
+  .bar{width:14px}
+  .col{gap:3px}
+  .stats{grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:24px}
+  .stats.three{grid-template-columns:1fr 1fr}
+  .stat{border-left:0;padding:0}
+  .stat.hero .v{font-size:24px}
+  .stat .v{font-size:18px}
+  .cols2,.cols2.wide{grid-template-columns:1fr;gap:24px}
+  .plot{height:180px}
+  section{margin-bottom:24px}
+  .spend li{grid-template-columns:minmax(0,1fr) 90px 16px}
+  .spend .t{display:none}
+  .spend li.kind{grid-template-columns:1fr}
+  .cal-head{display:none}
+  .cal{display:block;background:none;border:0;border-radius:0}
+  .cal .d{display:none}
+  .cal .d.has{display:flex;gap:12px;align-items:baseline;min-height:0;padding:8px 0;border-bottom:1px solid var(--soft);background:none}
+  .cal .d.has b{width:72px;flex:none}
+  .cal .d.has .ev{white-space:normal}
+  /* tables as the app's card rows */
+  table.cards,table.cards tbody{display:block}
+  table.cards thead{display:none}
+  table.cards tr{display:flex;flex-wrap:wrap;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--soft)}
+  table.cards tr.sub{background:none;padding:14px 0 4px;border-bottom:0}
+  table.cards td{display:block;height:auto;padding:0;border:0;font-size:13px}
+  table.cards td:first-child{flex:1 1 100%;font-size:14px;font-weight:500}
+  table.cards td.num{margin-left:auto;text-align:right}
+  table.cards td[data-l]:not(:first-child)::before{content:attr(data-l) " ";color:var(--muted);font-weight:400}
+  table.cards td:empty,table.cards td.blank{display:none}
+  table.cards tr.total{border-top:1px solid var(--border);border-bottom:0}
+  table.cards tr.total td:first-child{font-weight:600}
+  tbody tr:hover td{background:none}
+  .rail{position:absolute;left:0;right:0;bottom:0;top:auto;height:auto;max-height:72%;border-left:0;border-top:1px solid var(--border);border-radius:12px 12px 0 0;padding:16px 16px 24px;z-index:20}
+  .mobnav{display:grid;grid-template-columns:repeat(5,1fr);position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:6px 0 10px;z-index:10}
+  .mobnav button{font-size:11px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0}
+  .mobnav button i{width:22px;height:22px;border-radius:6px;background:var(--soft)}
+  .mobnav button.on{color:var(--text);font-weight:500}
+  .mobnav button.on i{background:var(--dark)}
+  .r100 i{font-size:11px}
+  .tabs button{padding:8px 10px}
+  .rail .close{right:8px;top:8px}
 }
-@media (max-width:640px){
-  .spec-head h1{font-size:19px}
-  .frame.phone{width:100%}
+@media (max-width:1200px) and (min-width:601px){
+  main.rail-open{grid-template-columns:minmax(0,1fr)}
+  main.rail-open .rail{position:absolute;right:0;top:52px;bottom:0;width:380px;max-width:90%;height:auto;max-height:none;z-index:20}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
 </style>
 
 <div class="wrap">
   <header class="spec-head">
     <div>
-      <h1>Master Accounts</h1>
-      <p>A specimen of the owners' accounts module for Groovy Ops, drawn in the app's own chrome: cash by holder and the money speaking on the overview, the couriers that bring 90% of it in, purchasing with the checks every bill passes, a vendor's page with terms and rate card, and the owners' Savings book with the loan between the two. Every figure is a sample, not the books. Switch screens, width and theme with the controls.</p>
+      <h1>Master Accounts — specimen v4</h1>
+      <p>The owners' accounts module for Groovy Ops, drawn in the app's own chrome to the page map of the plan (§16): ten pages, one Record button, tables on the surface, at most four figures in a row, concerns as lines, one chart per section, and a right rail for whatever explains. Every figure is a sample, not the books. Switch page, width and theme here; on a page, click a concern, a row or a stat to open its rail.</p>
     </div>
     <div class="spec-controls">
-      <div><span class="seg-label">Screen</span><div class="seg" id="tabs">
-        <button class="on" data-tab="overview" id="tab-overview">Overview</button>
-        <button data-tab="couriers" id="tab-couriers">Couriers</button>
-        <button data-tab="ledger" id="tab-ledger">Ledger</button>
-        <button data-tab="purchasing" id="tab-purchasing">Purchasing</button>
-        <button data-tab="vendors" id="tab-vendors">Vendor</button>
-        <button data-tab="savings" id="tab-savings">Savings</button>
-        <button data-tab="pnl" id="tab-pnl">P&amp;L</button>
-        <button data-tab="insights" id="tab-insights">Insights</button>
+      <div><span class="seg-label">Page</span><div class="seg" id="tabs">
+        <button class="on" data-tab="today">Today</button>
+        <button data-tab="money">Money</button>
+        <button data-tab="in">Money in</button>
+        <button data-tab="out">Money out</button>
+        <button data-tab="parties">Parties</button>
+        <button data-tab="ledger">Ledger</button>
+        <button data-tab="costing">Costing</button>
+        <button data-tab="savings">Savings</button>
+        <button data-tab="reports">Reports</button>
+        <button data-tab="close">Close &amp; audit</button>
       </div></div>
       <div><span class="seg-label">Width</span><div class="seg" id="widths">
-        <button class="on" data-w="desktop" id="w-desktop">Desktop</button>
-        <button data-w="phone" id="w-phone">Phone 390</button>
+        <button class="on" data-w="desktop">Desktop</button>
+        <button data-w="phone">Phone 390</button>
       </div></div>
       <div><span class="seg-label">Theme</span><div class="seg" id="themes">
-        <button data-t="light" id="t-light">Light</button>
-        <button data-t="dark" id="t-dark">Dark</button>
-        <button class="on" data-t="system" id="t-system">System</button>
+        <button data-t="light">Light</button>
+        <button data-t="dark">Dark</button>
+        <button class="on" data-t="system">System</button>
       </div></div>
     </div>
   </header>
-  <div class="note-strip">Sample figures. The point of this page is the shape of each screen, what each chart answers and how the app explains what it has learned. Numbers are invented and rounded.</div>
+  <div class="note-strip">Sample figures, rounded. What this page tests is the shape of each screen and where each thing lives — not the numbers.</div>
 
   <div class="frame" id="frame">
     <div class="topbar">
       <div class="topbar-logo">GROOVY<small>OPERATIONS</small></div>
-      <div class="topbar-user"><span class="topbar-name">Afnan</span><span class="avatar">A</span></div>
+      <div class="topbar-user"><span>Afnan</span><span class="avatar">A</span></div>
     </div>
     <div class="frame-body">
       <nav id="sidebar" aria-label="Sidebar">
         <button class="nav-item">Dashboard</button>
-        <button class="nav-item on" id="nav-ma">Accounts</button>
         <div class="nav-group">Accounts</div>
-        <button class="nav-item nav-sub on" data-nav="overview">Overview</button>
-        <button class="nav-item nav-sub" data-nav="couriers">Couriers</button>
-        <button class="nav-item nav-sub" data-nav="ledger">Ledger</button>
-        <button class="nav-item nav-sub" data-nav="vendors">Parties</button>
-        <button class="nav-item nav-sub" data-nav="purchasing">Purchasing</button>
-        <button class="nav-item nav-sub">Payments</button>
-        <button class="nav-item nav-sub">Money</button>
-        <button class="nav-item nav-sub">Sales</button>
-        <button class="nav-item nav-sub">Costing</button>
-        <button class="nav-item nav-sub">People</button>
-        <button class="nav-item nav-sub" data-nav="savings">Savings</button>
-        <button class="nav-item nav-sub">Loan</button>
-        <button class="nav-item nav-sub" data-nav="pnl">Profit &amp; loss</button>
-        <button class="nav-item nav-sub">Tax</button>
-        <button class="nav-item nav-sub">Reports</button>
-        <button class="nav-item nav-sub">Budgets</button>
-        <button class="nav-item nav-sub" data-nav="insights">Insights</button>
-        <button class="nav-item nav-sub">Close &amp; audit</button>
-        <button class="nav-item nav-sub">Settings</button>
+        <button class="nav-item on" data-nav="today">Today</button>
+        <button class="nav-item" data-nav="money">Money</button>
+        <button class="nav-item" data-nav="in">Money in</button>
+        <button class="nav-item" data-nav="out">Money out</button>
+        <button class="nav-item" data-nav="parties">Parties</button>
+        <button class="nav-item" data-nav="ledger">Ledger</button>
+        <button class="nav-item" data-nav="costing">Costing</button>
+        <button class="nav-item" data-nav="savings">Savings</button>
+        <button class="nav-item" data-nav="reports">Reports</button>
+        <button class="nav-item" data-nav="close">Close &amp; audit</button>
         <div class="nav-group">Everything else</div>
         <button class="nav-item">PO Registry</button>
         <button class="nav-item">Store Accounts</button>
@@ -368,74 +399,55 @@ tr.sub td:first-child{padding-left:22px}
       <main id="main" aria-live="polite"></main>
     </div>
     <div class="mobnav" id="mobnav">
-      <button data-nav="overview" class="on"><i></i>Overview</button>
-      <button data-nav="couriers"><i></i>Couriers</button>
-      <button data-nav="purchasing"><i></i>Purchasing</button>
-      <button data-nav="savings"><i></i>Savings</button>
-      <button><i></i>More</button>
+      <button data-nav="today" class="on"><i></i>Today</button>
+      <button data-nav="in"><i></i>Money in</button>
+      <button data-nav="out"><i></i>Money out</button>
+      <button data-nav="ledger"><i></i>Ledger</button>
+      <button data-nav="more"><i></i>More</button>
     </div>
   </div>
 
   <section class="notes">
     <div class="card">
-      <h2>What each screen is for</h2>
+      <h2>What each page is for — one question each (plan §16.1)</h2>
       <div class="pages">
-        <div class="pg"><b>Overview</b><code>ma-overview</code><p>Cash by holder — the drawer, Afnan, Ammar, MCB, the till, floats, the TCS account — this month in and out, owed to us and by us, runway; the three concerns of the day in plain words, the 30-day cash calendar and the spend map.</p></div>
-        <div class="pg"><b>Couriers &amp; collections</b><code>ma-couriers</code><p>The first mile of money in: PostEx CPRs derived from the parcels, issued Tuesday and Friday, collected in cash by a named holder with the receipt attached; TCS credited at 90 days; Blue-Ex's legacy balance; Bykea via Raees; Payfast's payouts on weekdays, daily, some days skipped.</p></div>
-        <div class="pg"><b>Parties &amp; the vendor page</b><code>ma-parties · ma-party</code><p>Every vendor, customer, courier, employee, owner and bank: what a vendor provides, terms with history, the rate card with history, open orders, the credit/debit ledger with a running balance, statement, aging.</p></div>
-        <div class="pg"><b>Purchasing</b><code>ma-purchasing</code><p>Purchase orders assigned to production POs, receipts from fabric-in and vendor returns, bills matched three ways, and the queue of documents the validation engine flagged.</p></div>
-        <div class="pg"><b>Payments</b><code>ma-payments</code><p>The pay-day list from every vendor's terms, pay runs, allocation of each payment to bills, advances and retention releases.</p></div>
-        <div class="pg"><b>Costing</b><code>ma-costing</code><p>A cost sheet per production PO: fabric at receipt rate, stitching, washing, embellishment and trims per piece; cost per piece by article; margin by channel; a missing leg named, never zero.</p></div>
-        <div class="pg"><b>Ledger</b><code>ma-ledger</code><p>Every posting from every source on one line shape, filterable by date, source and account, each line opening the record it came from.</p></div>
-        <div class="pg"><b>Profit &amp; loss</b><code>ma-pnl</code><p>Revenue by channel, cost of goods, operating expenses by category, month against month and against budget.</p></div>
-        <div class="pg"><b>Balance sheet</b><code>ma-balance</code><p>What the company holds and owes on a day: cash, banks, receivables, stock at cost, payables, loans, capital.</p></div>
-        <div class="pg"><b>Cash flow</b><code>ma-cashflow</code><p>Where cash came from and went, by kind, with the next 30, 60 and 90 days projected from what is already known to be due.</p></div>
-        <div class="pg"><b>Sales &amp; couriers</b><code>ma-sales</code><p>Invoices by channel, collections, courier remittances matched to their receipts, pay-later reminders.</p></div>
-        <div class="pg"><b>Owed &amp; owing</b><code>ma-aging</code><p>Receivables and payables aged into buckets, per customer, courier and vendor, with the pay-day and collection calendar.</p></div>
-        <div class="pg"><b>Money</b><code>ma-money</code><p>One page per holder: statement, running balance, transfers pending the receiver's confirmation, reconciliation against the bank's or the person's own count.</p></div>
-        <div class="pg"><b>Savings</b><code>ma-savings · -targets · -recurring · -networth</code><p>The owners' own book: where the Payfast money sits, spend by category, subscriptions per owner with the annual cost, targets like the marriage and the car with the monthly need and an ETA, assets and liabilities, net worth, reconciliation.</p></div>
-        <div class="pg"><b>Loan</b><code>ma-loan</code><p>The ₨15 lac borrowed from savings: draws and repayments as one document on both books, the outstanding on both overviews, the repayment pace, the Payfast payout rule.</p></div>
-        <div class="pg"><b>Tax</b><code>ma-tax</code><p>Every document carries a tax block (sales, services, withholding, or none — chosen, never absent); the quarter's output tax, input tax and withholding by vendor, for the accountant.</p></div>
-        <div class="pg"><b>Budgets</b><code>ma-budgets</code><p>A monthly budget per category, suggested from the last six months and accepted or overruled by an owner; variance tracked.</p></div>
-        <div class="pg"><b>Insights</b><code>ma-insights</code><p>What the app has learned: baselines, anomalies, forecasts, rate drift and a data-quality score, each with its basis stated.</p></div>
-        <div class="pg later"><b>Close &amp; audit</b><code>ma-close</code><p>Quarter-end (fiscal year from 1 July): reconcile every holder, lock the quarter, export the books; a soft month close where a month matters; the audit trail of every journal and override.</p></div>
-        <div class="pg later"><b>Settings</b><code>ma-settings</code><p>Both charts of accounts, holders, pay days and CPR days, tolerances, tax defaults, the payout rule, fiscal year, go-live.</p></div>
+        <div class="pg"><b>Today</b><code>ma-overview</code><p>Where is the money right now, and what needs me? Cash in hand by holder, three concerns, this week's due-out against expected-in; the 30 days, the spend list and aging below.</p></div>
+        <div class="pg"><b>Money</b><code>ma-money</code><p>What does each holder hold, and is it reconciled? Balances, last counts, pending confirmations; a holder's statement, transfers, the MCB import.</p></div>
+        <div class="pg"><b>Money in</b><code>ma-in</code><p>What is owed to us, and what came in? Couriers (CPRs to collect, TCS, Blue-Ex, Bykea), Online (Payfast payouts), Warehouse &amp; gate, Customers.</p></div>
+        <div class="pg"><b>Money out</b><code>ma-out</code><p>What do we owe, what is due, what did we pay? Pay days, bills, purchase orders, the commitments register (rent, utilities, subscriptions), payroll, petty and floats.</p></div>
+        <div class="pg"><b>Parties</b><code>ma-parties</code><p>Who do we deal with, and where do we stand with each? One list; a party's terms, rate card, ledger, statement and aging in the rail.</p></div>
+        <div class="pg"><b>Ledger</b><code>ma-ledger</code><p>Every posting, one shape, with every label it carries; a document and its edit history in the rail; the Unlabelled queue.</p></div>
+        <div class="pg"><b>Costing</b><code>ma-costing</code><p>What does a piece cost, and what do we make on it? A cost sheet per production PO with a missing leg named, never zero.</p></div>
+        <div class="pg"><b>Savings</b><code>ma-savings</code><p>The owners' book: accounts, the loan to Groovy, targets with an ETA, subscriptions per owner, net worth.</p></div>
+        <div class="pg"><b>Reports</b><code>ma-reports</code><p>The statements: P&amp;L against last period and budget, balance sheet, cash flow, aging, "of every ₨100", tax, budgets, insights.</p></div>
+        <div class="pg"><b>Close &amp; audit</b><code>ma-close</code><p>Is the period done, and who did what? The quarter checklist, the month soft close, backups, the audit trail, Download the books, settings.</p></div>
       </div>
     </div>
     <div class="grid3">
       <div class="card">
-        <h2>How the charts are drawn</h2>
+        <h2>The rules this specimen follows (plan §16.4)</h2>
         <ul>
-          <li>HTML and CSS, the way the Marketing reports draw theirs: bars are boxes, a donut is a conic gradient, a line is an SVG path with every label in HTML. No chart library.</li>
-          <li>Series colours are new tokens, validated for colour-blind separation on the app's light and dark surfaces. Text never wears a series colour; identity comes from the swatch beside it.</li>
-          <li>Every chart has a table twin, one filter row scopes the whole screen, and hovering any mark shows its value.</li>
-          <li>A donut only for a part-to-whole glance with six segments or fewer; rankings and comparisons are bars.</li>
-        </ul>
-        <div class="swatches" style="margin-top:10px">
-          <span class="sw"><i style="background:var(--chart-1)"></i>series 1</span>
-          <span class="sw"><i style="background:var(--chart-2)"></i>series 2</span>
-          <span class="sw"><i style="background:var(--chart-3)"></i>series 3</span>
-          <span class="sw"><i style="background:var(--chart-4)"></i>series 4</span>
-          <span class="sw"><i style="background:var(--chart-5)"></i>series 5</span>
-          <span class="sw"><i style="background:var(--chart-6)"></i>series 6</span>
-          <span class="sw"><i style="background:var(--chart-other)"></i>other</span>
-        </div>
-      </div>
-      <div class="card">
-        <h2>How the money speaks</h2>
-        <ul>
-          <li>Every line of spend — a category, a vendor, a courier's fees, salaries, a subscription — carries a state: fine, watch or concern, from three tests: its own six-month history, its budget, and its terms and commitments. The worst wins.</li>
-          <li>Each state is a sentence with the number and the comparison, its basis, and one action. "This is the drop" is remembered and teaches the baseline.</li>
-          <li>The spend map is sized by rupees and tinted by state; the cash calendar puts Tuesday and Friday CPRs against Wednesday and Saturday pay days and names a day the holders cannot fund.</li>
+          <li>One spacing scale (4 · 8 · 12 · 16 · 24 · 32), a 1100px content column, no card inside a card; sections sit on the surface and only the rail, a form or an error is boxed.</li>
+          <li>Type at the app's sizes: 22/600 page title, 15/600 section title, 14px body and tables, a 28px hero. No uppercase, no letter-spacing, nothing under 11px.</li>
+          <li>At most four figures in a row, unbordered; every other number is a table row. Tables are 40px rows with the money right-aligned in tabular figures.</li>
+          <li>A concern is a dot and a sentence with its action as a link; fine is silent; at most one banner on a page.</li>
+          <li>One chart per section, 240px, with "Show as table" beneath; series colours only inside a plot; semantic colours as dots and words, never fills.</li>
         </ul>
       </div>
       <div class="card">
-        <h2>How the app learns</h2>
+        <h2>Where the detail lives</h2>
         <ul>
-          <li>Nothing is guessed. Every learned number carries its basis: the months it was computed over, the count, the method.</li>
-          <li>Baselines first (medians, seasonality), then anomalies (a figure far outside its own history), then forecasts (cash runway from what is already known to be due), then budget suggestions.</li>
-          <li>Learning is only as good as the entry discipline, so the data-quality score is on the same screen.</li>
-          <li>All of it is computed from rollups the app already writes; no third party sees the books.</li>
+          <li>The page shows the list; the rail (380px, sticky) shows the thing you clicked — a concern's basis and six-month history, a party's terms and rate card, a document and its edit history. Under 1200px it slides over; on the phone it is a bottom sheet.</li>
+          <li>Whatever explains a number lives in the rail or a tooltip, never on the page.</li>
+          <li>The Record button on every page opens the same document picker; the page only prefills.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Where the rules came from (plan §16.5)</h2>
+        <ul>
+          <li>A measured audit of the v3 specimen in headless Chromium: the overview was 2,532px tall, 82% of its text at 12px or under, 66 bordered boxes, the first chart at y = 1,183.</li>
+          <li>The Polaris, Carbon and Primer design systems, read from their repositories: table cell padding 6, 32–40px rows for finance density, tabular numbers, units in the header, wrap not truncate, one banner or none, one primary action, skeletons over spinners.</li>
+          <li>Both are model output, kept in the scratchpad beside this file; the plan says which number won where they disagreed.</li>
         </ul>
       </div>
     </div>
@@ -447,533 +459,294 @@ tr.sub td:first-child{padding-left:22px}
 'use strict';
 /* ── sample data (₨, rounded) ── */
 const D={
-  accounts:[
-    {n:'Store drawer · Raees',v:184300,kind:'cash'},
-    {n:'Cash with Afnan',v:310000,kind:'cash'},
-    {n:'Cash with Ammar',v:45000,kind:'cash'},
-    {n:'MCB current',v:2146900,kind:'bank'},
-    {n:'Warehouse till · Umair',v:96500,kind:'till'},
-    {n:'Runner floats',v:12000,kind:'float'},
-    {n:'TCS account',v:62000,kind:'tcs'},
+  holders:[
+    {n:'Store drawer · Raees',kind:'cash',v:184300,count:'26 Sep · matched',pend:'',last:'today 17:10 · a purchase'},
+    {n:'Cash with Afnan',kind:'cash',v:310000,count:'31 Aug',pend:'₨1,50,000 to MCB · Ammar to confirm',last:'Wed 23 Sep · CPR-118611 collected'},
+    {n:'Cash with Ammar',kind:'cash',v:45000,count:'31 Aug',pend:'',last:'Wed 16 Sep · CPR-118102'},
+    {n:'MCB current',kind:'bank',v:2146900,count:'reconciled to 25 Sep',pend:'',last:'Fri 25 Sep · Al-Karam paid'},
+    {n:'Warehouse till · Umair',kind:'till',v:96500,count:'—',pend:'₨96,500 to the drawer · Raees to confirm',last:'today · SO0341'},
+    {n:'Runner floats',kind:'float',v:12000,count:'—',pend:'',last:'26 Sep · Noman'},
+    {n:'TCS account',kind:'courier',v:62000,count:'statement 8 Sep',pend:'',last:'8 Sep · credited'},
   ],
-  recv:{postex:1418700,cpr:962000,tcs:190000,bluex:235000,payfast:241000,customers:312000,employees:86000},
-  pay:{vendors:974500,salaries:1180000,runners:4200},
-  loan:{outstanding:1140000,opening:1500000,repaidQ:360000,pace:120000},
+  inMonth:6490000,outMonth:5400000,recv:3444700,pay:2158700,
+  concerns:[
+    {id:'c1',s:'urgent',t:'<b>Wednesday\'s pay day needs ₨6.4 lac</b>; the drawer and Afnan\'s cash hold ₨4.9 lac. Friday\'s CPR, about ₨9.6 lac, lands after it.',a:'Move ₨1.5 lac from MCB'},
+    {id:'c2',s:'warn',t:'<b>Fabric is ₨21.3 lac this month</b> against a usual ₨13.9 lac; two Al-Karam bills carry ₨6.1 lac of it.',a:'Open the lines'},
+    {id:'c3',s:'warn',t:'<b>CPR-118842 (₨9.62 lac) is two days uncollected</b>; it usually clears in one.',a:'Record the collection'},
+    {id:'c4',s:'warn',t:'<b>No Payfast payout for 3 weekdays</b>; the usual gap is one.',a:'Check Payfast'},
+    {id:'c5',s:'warn',t:'<b>Rent for October</b> — no bill recorded; usually ₨1.8 lac by the 5th.',a:'Record the bill'},
+  ],
   cprRhythm:{weeks:['18 Aug','25 Aug','1 Sep','8 Sep','15 Sep','22 Sep'],tue:[790,840,710,880,770,810],fri:[960,1020,830,990,900,962]},
-  courierCost:{months:['Apr','May','Jun','Jul','Aug','Sep'],fees:[312,338,296,352,364,392],rev:[41,48,39,57,61,89]},
   cprs:[
-    ['CPR-118842','upfront','Fri 25 Sep','318','11,84,200','1,62,900','59,300','9,62,000','—','<span class="tag warn">waiting · 2 days</span>'],
-    ['CPR-118611','upfront','Tue 22 Sep','276','9,96,400','1,38,100','48,600','8,09,700','Afnan · Wed 23 Sep · cash','<span class="tag ok">reconciled</span>'],
-    ['CPR-118610','reserve','Tue 22 Sep','241','2,41,000','—','—','2,41,000','Afnan · Wed 23 Sep · cash','<span class="tag ok">reconciled</span>'],
-    ['CPR-118377','upfront','Fri 18 Sep','305','11,20,800','1,55,400','61,200','9,04,200','Afnan · Fri 18 Sep · cash','<span class="tag ok">reconciled</span>'],
-    ['CPR-118102','upfront','Tue 15 Sep','262','9,41,600','1,29,900','44,100','7,67,600','Ammar · Wed 16 Sep · MCB','<span class="tag ok">reconciled</span>'],
-    ['CPR-117868','upfront','Fri 11 Sep','297','10,88,300','1,50,200','57,800','8,80,300','Afnan · Sat 12 Sep · cash','<span class="tag warn">₨300 short · reason given</span>'],
-    ['TCS · Sep statement','account','due Thu 8 Oct','188','1,90,000','per statement','—','1,90,000','— (the TCS account)','<span class="tag ok">expected · day 90</span>'],
-    ['BYK-0912','manual','Fri 12 Sep','41','38,400','6,100','—','32,300','Raees · drawer · confirmed','<span class="tag ok">reconciled</span>'],
+    ['CPR-118842','upfront','Fri 25 Sep','318','11,84,200','2,22,200','9,62,000','—','<span class="word warn">waiting · 2 days</span>'],
+    ['CPR-118611','upfront','Tue 22 Sep','276','9,96,400','1,86,700','8,09,700','Afnan · Wed 23 Sep · cash','<span class="word fine">reconciled</span>'],
+    ['CPR-118610','reserve','Tue 22 Sep','241','2,41,000','—','2,41,000','Afnan · Wed 23 Sep · cash','<span class="word fine">reconciled</span>'],
+    ['CPR-118377','upfront','Fri 18 Sep','305','11,20,800','2,16,600','9,04,200','Afnan · Fri 18 Sep · cash','<span class="word fine">reconciled</span>'],
+    ['CPR-118102','upfront','Tue 15 Sep','262','9,41,600','1,74,000','7,67,600','Ammar · Wed 16 Sep · MCB','<span class="word fine">reconciled</span>'],
+    ['CPR-117868','upfront','Fri 11 Sep','297','10,88,300','2,08,000','8,80,300','Afnan · Sat 12 Sep · cash','<span class="word warn">₨300 short · reason given</span>'],
+    ['TCS · Sep statement','account','due Thu 8 Oct','188','1,90,000','per statement','1,90,000','the TCS account','<span class="word mute">expected · day 90</span>'],
+    ['BYK-0912','manual','Fri 12 Sep','41','38,400','6,100','32,300','Raees · drawer · confirmed','<span class="word fine">reconciled</span>'],
+  ],
+  couriers:[
+    ['PostEx','CPRs Tue and Fri, cash collected by hand','₨23.81 lac','CPR-118842 · Fri 25 Sep','<span class="word warn">1 CPR waiting</span>'],
+    ['TCS','credits its account at 90 days','₨1.90 lac','Sep · typed 8 Sep','<span class="word fine">on time</span>'],
+    ['Blue-Ex','legacy — dues against a statement','₨2.35 lac','opening · 30 Jun','<span class="word warn">no movement in 31 days</span>'],
+    ['Bykea','a typed statement, via the drawer','₨0','BYK-0912 · 12 Sep','<span class="word fine">clear</span>'],
+    ['Payfast','pays out on weekdays into savings','₨2.41 lac','Thu 24 Sep · ₨41,200','<span class="word warn">3 weekdays without</span>'],
+  ],
+  payDays:[
+    {day:'Wednesday 30 Sep',need:640000,rows:[['Al-Karam Textile','B-2261 · 30 days','₨3,10,000','<span class="word warn">unpaid</span>'],['Zain Stitching','B-2284 · weekly','₨1,42,000','<span class="word warn">unpaid</span>'],['Prime Embroidery','B-2279 · 30 days','₨98,000','<span class="word mute">partly paid · ₨40,000 left</span>'],['Star Trims','B-2290 · cash on delivery','₨50,000','<span class="word warn">unpaid</span>']]},
+    {day:'Saturday 3 Oct',need:560000,rows:[['Nishat Mills','B-2247 · 30 days','₨2,90,000','<span class="word warn">unpaid</span>'],['Karachi Prints','B-2288 · weekly','₨1,24,000','<span class="word warn">unpaid</span>'],['Rent — factory','commitment · due the 5th','₨1,46,000','<span class="word urgent">no bill yet</span>']]},
+  ],
+  commitments:[
+    ['Rent — factory','the landlord','monthly · 5th','MCB','₨1,46,000','<span class="word urgent">October · no bill yet</span>'],
+    ['Rent — warehouse','the landlord','monthly · 5th','MCB','₨34,000','<span class="word urgent">October · no bill yet</span>'],
+    ['Electricity','K-Electric','monthly · bill date','MCB','₨82,000 · usual','<span class="word fine">September · paid 22 Sep</span>'],
+    ['Gas (metered)','SSGC','daily log → month','drawer','₨18,400 · Sep','<span class="word fine">bill generated · 30 Sep</span>'],
+    ['Internet & phones','PTCL, Zong','monthly · 10th','MCB','₨11,800','<span class="word fine">September · paid</span>'],
+    ['Shopify plan','Shopify','monthly · 14th','card','₨28,900','<span class="word fine">detected · confirmed</span>'],
+    ['Insurance — factory','EFU','yearly · 1 Dec','MCB','₨1,20,000','<span class="word mute">due in 64 days</span>'],
+    ['The accountant','Rizwan & Co','quarterly · after close','MCB','₨45,000','<span class="word mute">Q1 · after the close</span>'],
+    ['Food & refreshments','the kitchen','weekly · learned','drawer','₨14,000 · usual','<span class="word fine">this week · ₨12,600</span>'],
+  ],
+  parties:[
+    ['Al-Karam Textile','vendor · fabric','fabric, denim','credit 30 days','₨6,12,000 we owe','Fri 25 Sep · paid ₨2.0 lac'],
+    ['Al-Hamd Garments','vendor · stitching','CMT, washing','credit 30 days','₨4,21,000 we owe','Wed 23 Sep · gate pass 1418'],
+    ['Nishat Mills','vendor · fabric','fabric','credit 30 days','₨2,90,000 we owe','Sat 19 Sep · B-2247'],
+    ['Asghar · printing','vendor · printing','screen, sublimation','weekly · Wed, Sat','₨1,24,000 we owe','Tue 22 Sep · billing J-0492 approved'],
+    ['PostEx','courier','COD, CPRs Tue/Fri','collected by hand','₨23,81,000 owed to us','Fri 25 Sep · CPR-118842'],
+    ['TCS','courier','COD, 90-day account','credits at day 90','₨1,90,000 owed to us','8 Sep · statement'],
+    ['Payfast','gateway','prepaid orders','weekday payouts','₨2,41,000 owed to us','Thu 24 Sep · payout'],
+    ['Mr Farooq (walk-in)','customer','warehouse, pay-later','due 30 Sep','₨48,000 owed to us','SO0334 · 12 Sep'],
+    ['Noman','employee · runner','floats','—','₨12,000 float out','26 Sep · float'],
+    ['MCB','bank','current account','—','₨21,46,900','reconciled to 25 Sep'],
+  ],
+  ledger:[
+    ['27 Sep','CL-0412 · collection','PostEx','1011 Cash with Afnan','—','9,62,000','','<span class="word mute">pending</span>','manual'],
+    ['27 Sep','PU-3391 · purchase','Star Trims','5040 Trims','Store purchase','','12,400','','store'],
+    ['26 Sep','FL-0088 · float out','Noman','1050 Runner floats','Fuel & transport','12,000','','','store'],
+    ['25 Sep','PY-1188 · payment','Al-Karam Textile','2010 Payable — vendors','—','2,00,000','','','manual'],
+    ['25 Sep','CPR-118842 · issued','PostEx','1121 PostEx — CPRs issued','—','11,84,200','','','postex'],
+    ['25 Sep','CPR-118842 · fees','PostEx','5060 Courier fees & tax','Courier fees','2,22,200','','','postex'],
+    ['24 Sep','PO-0091 · payout','Payfast','1125 Payfast','—','','41,200','','manual'],
+    ['23 Sep','GP-1418 · dispatch','Al-Hamd Garments','1230 Work in progress','Stitching (CMT)','1,26,000','','','gatepass'],
+    ['22 Sep','BL-2261 · bill','Al-Karam Textile','5010 Fabric','Fabric & mills','3,10,000','','<span class="word warn">rate off card · +4%</span>','manual'],
+    ['22 Sep','BL-J0492 · bill','Asghar · printing','5030 Embellishment','Printing','1,24,000','','','printing'],
+  ],
+  costing:[
+    ['PO-0412','Effortless tee · deep blue','1,200','₨3,84,000','₨96,000','₨—','₨1,08,000','₨22,800','₨14,400','₨71,000','₨58,000','₨628','₨1,490','58%'],
+    ['PO-0409','Live In pants · black','800','₨4,16,000','₨1,04,000','₨88,000','₨—','₨19,200','₨9,600','₨47,400','₨38,700','₨904','₨2,490','64%'],
+    ['PO-0405','Winter hoodie · oat','600','₨5,10,000','₨1,14,000','₨—','₨1,50,000','₨16,800','₨7,200','₨35,500','₨29,000','₨1,438','₨3,290','56%'],
+    ['PO-0401','Denim jorts · mid wash','500','₨2,95,000','₨60,000','₨55,000','₨—','₨9,000','₨6,000','₨29,600','₨24,200','₨957','₨2,290','58%'],
+    ['PO-0398','Graphic tee · bone','1,500','₨4,20,000','₨1,05,000','₨—','₨1,35,000','₨27,000','₨18,000','₨88,800','₨72,500','₨444','₨1,290','66%'],
   ],
   sv:{
-    accounts:[['Payfast payout account','Ammar',1462000,'25 Sep · 17 payouts matched'],['Bank · Ammar','Ammar',1218000,'20 Sep'],['Bank · Afnan','Afnan',862000,'25 Sep'],['Cash · Ammar','Ammar',214000,'counted 26 Sep'],['Cash · Afnan','Afnan',104000,'counted 26 Sep']],
-    targets:[
-      {n:'The marriage',who:'Ammar',amt:2500000,saved:1420000,spent:310000,by:'March 2027',need:180000,pace:155000,eta:'April 2027'},
-      {n:'The car',who:'Ammar',amt:4200000,saved:3600000,spent:3600000,by:'',need:0,pace:60000,eta:'Bought and financed: ₨60,000 a month to the finance company, ₨6.0 lac left, clear in June 2027.'},
-    ],
-    subs:[['Adobe Creative Cloud','Ammar',15900,'monthly','4 Oct'],['Domain & hosting','Ammar',18500,'yearly','14 Jan'],['Gym','Ammar',6000,'monthly','1 Oct'],['Canva Pro','Afnan',3200,'monthly','12 Oct'],['iCloud 2 TB','Afnan',2800,'monthly','2 Oct'],['Netflix','joint',2300,'monthly','9 Oct'],['Spotify family','joint',1600,'monthly','16 Oct']],
-    spend:[['The marriage',310000,'watch'],['Household',96000,'fine'],['Family',70000,'fine'],['Car finance',60000,'fine'],['Travel',48000,'fine'],['Subscriptions',31800,'watch'],['Other',22000,'fine']],
-    assets:[['Payfast, banks and cash','money',3860000,'joint'],['Loan to Groovy','loan',1140000,'joint'],['The car','vehicle',4200000,'Ammar'],['Savings certificates','investment',1500000,'Afnan']],
-    liabilities:[['Car finance','vehicle finance',600000,'Ammar'],['Borrowed from family','borrowed',250000,'Ammar']],
-    inflows:[['Payfast payouts · 17 weekdays, 5 with none',708000]],
+    accounts:[['Payfast payout account','Ammar','₨14,62,000','25 Sep · 17 payouts matched'],['Bank · Ammar','Ammar','₨12,18,000','20 Sep'],['Bank · Afnan','Afnan','₨8,62,000','25 Sep'],['Cash · Ammar','Ammar','₨2,14,000','counted 26 Sep'],['Cash · Afnan','Afnan','₨1,04,000','counted 26 Sep']],
+    targets:[{n:'The marriage',who:'Ammar',amt:2500000,saved:1420000,by:'March 2027',need:180000,pace:155000,eta:'April 2027 at this pace'},{n:'The car',who:'Ammar',amt:4200000,saved:3600000,by:'bought',need:60000,pace:60000,eta:'₨6.0 lac left on finance · clear June 2027'}],
+    subs:[['Adobe Creative Cloud','Ammar','₨15,900','monthly','4 Oct'],['Domain & hosting','Ammar','₨18,500','yearly','14 Jan'],['Gym','Ammar','₨6,000','monthly','1 Oct'],['Canva Pro','Afnan','₨3,200','monthly','12 Oct'],['iCloud 2 TB','Afnan','₨2,800','monthly','2 Oct'],['Netflix','joint','₨2,300','monthly','9 Oct'],['Spotify family','joint','₨1,600','monthly','16 Oct']],
   },
-  weeks:[['4 Aug',1240,980],['11 Aug',1580,1130],['18 Aug',910,1420],['25 Aug',1725,1050],['1 Sep',1330,1610],['8 Sep',1490,1120],['15 Sep',2010,1380],['22 Sep',1660,1290]],
-  expense:[['Fabric & mills',2133000],['Salaries',1180000],['Stitching',954000],['Embellishment',505000],['Marketing',337000],['Other',505000]],
-  channels:{months:['Apr','May','Jun','Jul','Aug','Sep'],online:[5120,5880,4310,6920,7480,6210],warehouse:[640,720,590,910,1040,880],other:[120,90,210,160,140,230]},
-  vendors:[['Al-Karam Textile',612000],['Nishat Mills',488000],['Zain Stitching',421000],['Prime Embroidery',288000],['Star Trims',146000],['Karachi Prints',124000]],
-  agingR:[['Current',210],['1–30 days',78],['31–60 days',19],['Over 60',5]],
-  agingP:[['Current',520],['1–30 days',231],['31–60 days',72],['Over 60',23]],
-  pnl:{months:['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep'],
-       rev:[5.9,7.4,8.1,6.2,5.4,6.8,5.9,6.7,5.1,8.0,8.7,7.3],
-       exp:[5.2,6.1,6.6,6.0,5.6,5.9,5.4,5.8,5.5,6.5,6.9,6.2]},
+  spend:[
+    {k:'Cost of goods',rows:[['Fabric & mills',2133000,'warn','usual ₨13.9 lac'],['Stitching (CMT)',954000,'fine','usual ₨9.1 lac'],['Embellishment',505000,'fine','usual ₨4.8 lac'],['Courier fees & reversals',392000,'fine','₨1,232 a parcel'],['Trims & packaging',146000,'fine','usual ₨1.5 lac']]},
+    {k:'People',rows:[['Salaries',1180000,'fine','as accrued'],['Advances given',86000,'fine','4 people'],['Food & refreshments',62000,'fine','usual ₨58,000']]},
+    {k:'Running',rows:[['Fuel & transport',58000,'fine','usual ₨61,000'],['Maintenance & repairs',41000,'warn','a paint job · usual ₨12,000'],['Office & stationery',22000,'fine','usual ₨19,000']]},
+    {k:'Fixed',rows:[['Rent',180000,'urgent','October · no bill yet'],['Utilities',124000,'fine','usual ₨1.2 lac'],['Subscriptions (company)',32000,'fine','3 detected']]},
+  ],
+  aging:{us:[['Current',2380000],['1–30 days',710000],['31–60 days',240000],['Over 60 days',115000]],we:[['Current',1490000],['1–30 days',520000],['31–60 days',110000],['Over 60 days',39000]]},
+  pnl:{months:['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep'],rev:[5.9,7.4,8.1,6.2,5.4,6.8,5.9,6.7,5.1,8.0,8.7,7.3],exp:[5.2,6.1,6.6,6.0,5.6,5.9,5.4,5.8,5.5,6.5,6.9,6.2]},
+  audit:[
+    ['today 18:40','Afnan','opened the accounts pages','—'],['today 17:10','Raees','purchase PU-3391 posted','₨12,400 · Star Trims'],['today 03:31','system','nightly backup · 41 collections · 18 MB','ma_backups/2026-09-27'],['Fri 25 Sep 16:02','Ammar','payment PY-1188 posted from MCB','₨2,00,000 · Al-Karam'],['Fri 25 Sep 11:20','Afnan','bill BL-2261 edited · rate 258 → 265','reason: revised invoice'],['Thu 24 Sep 19:05','Afnan','share link made · statement Al-Hamd Sep','expires 1 Oct'],['Tue 22 Sep 09:14','Afnan','bill BL-2261 posted · flagged rate off card','Al-Karam Textile'],['Mon 21 Sep 08:00','system','August soft-closed by Ammar','checkpoint'],
+  ],
   balance:{hist:[],fcast:[]},
 };
-/* cash balance: 30 days history + 30 days forecast (₨000) */
-(function(){let b=2620;for(let i=0;i<30;i++){b+=Math.round(Math.sin(i/3.1)*95+ (i%7===2?-260:0)+(i%7===5?310:0)+22);D.balance.hist.push(b);} let f=D.balance.hist[29];for(let i=1;i<=30;i++){f+=(i%7===3?-240:0)+(i%7===6?290:0)+(i===12?-1180:0)+38;D.balance.fcast.push({m:f,lo:f-90-i*14,hi:f+90+i*14});}})();
+(function(){let b=2620;for(let i=0;i<30;i++){b+=Math.round(Math.sin(i/3.1)*95+(i%7===2?-260:0)+(i%7===5?310:0)+22);D.balance.hist.push(b);}let f=D.balance.hist[29];for(let i=1;i<=30;i++){f+=(i%7===3?-240:0)+(i%7===6?290:0)+(i===4?-1180:0)+38;D.balance.fcast.push({m:f,lo:f-90-i*14,hi:f+90+i*14});}})();
 
 /* ── helpers ── */
-const money=n=>'₨'+Math.round(n).toLocaleString('en-PK');
-const compact=n=>{const a=Math.abs(n);if(a>=1e7)return '₨'+(n/1e7).toFixed(2)+' cr';if(a>=1e5)return '₨'+(n/1e5).toFixed(2)+' lac';return money(n)};
-const k=n=>n===0?'0':'₨'+n.toLocaleString('en-PK')+'k';
+const grp=n=>{n=Math.round(Math.abs(n));let s=String(n);if(s.length<=3)return s;const last=s.slice(-3);let rest=s.slice(0,-3);rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');return rest+','+last};
+const rs=n=>(n<0?'−':'')+'₨'+grp(n);
+const lac=n=>{const a=Math.abs(n),sg=n<0?'−':'';if(a>=1e7)return sg+'₨'+(a/1e7).toFixed(2)+' cr';if(a>=1e5)return sg+'₨'+(a/1e5).toFixed(2)+' lac';return sg+'₨'+grp(a)};
+const k=n=>n===0?'0':'₨'+n.toLocaleString('en-US')+'k';
 const sum=a=>a.reduce((s,x)=>s+x,0);
-function niceMax(v,step){const s=step||Math.pow(10,Math.floor(Math.log10(v)));const m=v/s;const f=m<=1?1:m<=2?2:m<=2.5?2.5:m<=5?5:10;return f*s}
-function tvBtn(id){return `<button class="tv" data-tv="${id}" aria-pressed="false">Table</button>`}
-function tableFor(head,rows){return `<div class="tbl-wrap tbl-view"><table><thead><tr>${head.map((h,i)=>`<th${i?' class="num"':''}>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((c,i)=>`<td${i?' class="num"':''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function niceMax(v,step){const s=step||Math.pow(10,Math.floor(Math.log10(v)));const m=v/s;const f=[1,1.2,1.5,2,2.5,3,4,5,6,8,10].find(x=>m<=x);return f*s}
+/* head: strings; a leading '#' marks a numeric column. rows: arrays of cell html. */
+function table(head,rows,o){o=o||{};const H=head.map(h=>({t:h.replace(/^#/,''),n:h[0]==='#'}));
+  const tr=(r,cls)=>`<tr${cls?` class="${cls}"`:''}${o.link?` data-rail="${o.link}"`:''}>${r.map((c,i)=>{const h=H[i]||{};const cl=[h.n?'num':'',i===0&&o.date?'date':'',c===''?'blank':''].filter(Boolean).join(' ');return `<td${cl?` class="${cl}"`:''} data-l="${esc(h.t)}">${c}</td>`}).join('')}</tr>`;
+  let body='';rows.forEach(r=>{if(r&&r.sub)body+=`<tr class="sub"><td colspan="${H.length}">${r.sub}</td></tr>`;else body+=tr(r,'')});
+  if(o.total)body+=tr(o.total,'total');
+  return `<div class="tbl"><table class="cards${o.compact?' compact':''}${o.link?' rowlink':''}"><thead><tr>${H.map(h=>`<th${h.n?' class="num"':''}>${h.t}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`}
+function stats(items){return `<div class="stats${items.length===3?' three':''}">${items.map((s,i)=>`<div class="stat${s.hero?' hero':''}"${s.rail?` data-rail="${s.rail}" role="button" tabindex="0"`:''}><div class="l">${s.l}</div><div class="v">${s.v}</div>${s.s?`<div class="s">${s.s}</div>`:''}</div>`).join('')}</div>`}
+function head(title,meta,o){o=o||{};return `<div class="page-head"><div><div class="page-title">${title}</div>${meta?`<div class="page-meta">${meta}</div>`:''}</div><div class="spacer"></div>${o.noPeriod?'':`<div class="period"><button>Today</button><button class="on">This month</button><button>Quarter</button><button>Year</button><button>Range…</button></div>`}<div class="rec"><button class="btn primary" id="rec-btn">Record</button><div class="menu" id="rec-menu"><div class="mh">Money</div><button>Collection</button><button>Transfer between holders</button><button>Payout (Payfast)</button><button>Count a holder</button><div class="mh">Buying</div><button>Bill</button><button>Payment</button><button>Purchase order</button><button>Receipt</button><button>Commitment</button><div class="mh">Other</div><button>Journal</button><button>Loan draw or repayment</button><button>Savings entry</button></div></div><button class="btn icon" title="Excel · PDF · settings">⋯</button></div>`}
+function sec(title,meta,body,o){o=o||{};return `<section>${title?`<div class="sec-head"><span class="sec-title">${title}</span>${meta?`<span class="sec-meta">${meta}</span>`:''}${o.right?`<span class="spacer"></span>${o.right}`:''}</div>`:''}${body}</section>`}
+function concerns(list,n){const show=list.slice(0,n||3);const more=list.length-show.length;
+  return `<ul class="concerns">${show.map(c=>`<li><span class="dot ${c.s}"></span><button class="line" data-rail="${c.id}">${c.t}</button><span class="act">${c.a}</span></li>`).join('')}${more>0?`<li><span class="dot mute"></span><button class="line link" data-rail="concerns">and ${more} more</button></li>`:''}</ul>`}
+function tabs(list,on){return `<div class="tabs">${list.map(t=>`<button${t===on?' class="on"':''}>${t}</button>`).join('')}</div>`}
 function gridlines(max,fmt,steps){steps=steps||4;let h='';for(let i=0;i<=steps;i++){const y=100-(i/steps)*100;h+=`<div class="gridline${i===0?' base':''}" style="top:${y}%"><span class="ytick">${fmt(max*i/steps)}</span></div>`}return h}
+function chartWrap(id,legend,chart,tbl){return `<div class="chart-wrap" id="cw-${id}"><div class="chartbox">${chart}</div>${tbl}<div class="chart-foot">${legend||''}<span class="spacer"></span><button class="link" data-tv="${id}">Show as table</button></div></div>`}
 
-/* ── chart builders ── */
-function groupedBars(){
-  const max=niceMax(Math.max(...D.weeks.map(w=>Math.max(w[1],w[2]))));
-  const cols=D.weeks.map((w,i)=>{const last=i===D.weeks.length-1;return `<div class="col" tabindex="0" data-tip="${w[0]}|${k(w[1])} in|${k(w[2])} out">${last?`<span class="dlabel">${k(w[1])} · ${k(w[2])}</span>`:''}<div class="bar" style="height:${w[1]/max*100}%"></div><div class="bar s2" style="height:${w[2]/max*100}%"></div></div>`}).join('');
-  return `<div class="legend"><span><i style="background:var(--chart-1)"></i>Money in</span><span><i style="background:var(--chart-2)"></i>Money out</span></div>
-  <div class="chart" data-chart="weeks"><div class="plot padl">${gridlines(max,v=>k(v))}<div class="cols">${cols}</div></div><div class="xlab">${D.weeks.map(w=>`<span>${w[0]}</span>`).join('')}</div><div class="tip"></div></div>
-  ${tableFor(['Week','Money in','Money out','Net'],D.weeks.map(w=>[w[0],k(w[1]),k(w[2]),k(w[1]-w[2])]))}`;
-}
-function balanceLine(){
+/* ── charts ── */
+function balanceChart(){
   const all=D.balance.hist.concat(D.balance.fcast.map(f=>f.m));
   const lo=Math.min(...D.balance.hist,...D.balance.fcast.map(f=>f.lo)),hi=Math.max(...all,...D.balance.fcast.map(f=>f.hi));
-  const ymin=Math.floor(lo/500)*500-250,ymax=Math.ceil(hi/500)*500;
-  const n=60,W=1000,H=400;
+  const ymin=Math.floor(lo/500)*500,ymax=Math.ceil(hi/500)*500;const steps=(ymax-ymin)/500;const n=60,W=1000,H=400;
   const X=i=>i/(n-1)*W,Y=v=>H-(v-ymin)/(ymax-ymin)*H;
   const hp=D.balance.hist.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
-  const fp=D.balance.fcast.map((f,i)=>`${i?'L':'M'}${X(29+i+1-1+ (i===0?0:0)).toFixed(1)},${Y(f.m).toFixed(1)}`);
   const fpath='M'+X(29).toFixed(1)+','+Y(D.balance.hist[29]).toFixed(1)+D.balance.fcast.map((f,i)=>`L${X(30+i).toFixed(1)},${Y(f.m).toFixed(1)}`).join('');
   const band='M'+X(29).toFixed(1)+','+Y(D.balance.hist[29]).toFixed(1)+D.balance.fcast.map((f,i)=>`L${X(30+i).toFixed(1)},${Y(f.hi).toFixed(1)}`).join('')+D.balance.fcast.slice().reverse().map((f,i)=>`L${X(59-i).toFixed(1)},${Y(f.lo).toFixed(1)}`).join('')+'Z';
-  const area=hp+`L${X(29).toFixed(1)},${H}L0,${H}Z`;
-  let grid='';for(let i=0;i<=4;i++){const v=ymin+(ymax-ymin)*i/4;grid+=`<div class="gridline${i===0?' base':''}" style="top:${100-i*25}%"><span class="ytick">${k(Math.round(v))}</span></div>`}
-  const endv=D.balance.hist[29];
-  return `<div class="legend"><span><i class="line" style="background:var(--chart-1)"></i>Balance, all accounts</span><span><i class="line" style="background:var(--chart-1);opacity:.55"></i>Projected from what is due</span></div>
-  <div class="chart" data-chart="balance"><div class="lineplot padl plot" style="margin-left:44px">${grid}
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="band" d="${band}"/><path class="a" d="${area}"/><path class="l" d="${hp}"/><path class="f" d="${fpath}"/></svg>
-    <div class="today" style="left:${29/59*100}%"><small>today</small></div>
-    <div class="dot" style="left:${29/59*100}%;top:${(Y(endv)/H*100).toFixed(2)}%"></div>
-    <span class="endlab" style="left:${29/59*100}%;top:${(Y(endv)/H*100).toFixed(2)}%">${k(endv)}</span>
-    <div class="xhair"></div><div class="hover" style="position:absolute;inset:0"></div></div>
-    <div class="xlab" style="margin-left:44px;justify-content:space-between"><span style="text-align:left">28 Aug</span><span>today</span><span style="text-align:right">27 Oct</span></div><div class="tip"></div></div>
-  ${tableFor(['Day','Balance'],[['28 Aug',k(D.balance.hist[0])],['12 Sep',k(D.balance.hist[15])],['27 Sep (today)',k(endv)],['12 Oct (projected)',k(D.balance.fcast[14].m)+' ('+k(D.balance.fcast[14].lo)+' to '+k(D.balance.fcast[14].hi)+')'],['27 Oct (projected)',k(D.balance.fcast[29].m)+' ('+k(D.balance.fcast[29].lo)+' to '+k(D.balance.fcast[29].hi)+')']])}`;
+  let grid='';for(let i=0;i<=steps;i++){const v=ymin+500*i;grid+=`<div class="gridline${i===0?' base':''}" style="top:${(100-i/steps*100).toFixed(2)}%"><span class="ytick">${k(Math.round(v))}</span></div>`}
+  const endv=D.balance.hist[29];const low=D.balance.fcast.reduce((m,f,i)=>f.m<m.v?{v:f.m,i:i}:m,{v:1e9,i:0});
+  const chart=`<div class="lineplot plot">${grid}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="band" d="${band}"/><path class="l" d="${hp}"/><path class="f" d="${fpath}"/></svg><div class="vline" style="left:${29/59*100}%"><small>today</small></div><span class="endlab" style="left:${29/59*100}%;top:${(Y(endv)/H*100).toFixed(2)}%">${k(endv)}</span><span class="endlab" style="left:${(30+low.i)/59*100}%;top:${(Y(low.v)/H*100).toFixed(2)}%;transform:translate(-100%,-50%);color:var(--accent-urgent)">${k(low.v)} · Sat 3 Oct</span></div><div class="xlab ends"><span>28 Aug</span><span>today</span><span>27 Oct</span></div>`;
+  const tbl=table(['Day','#Balance'],[['28 Aug',k(D.balance.hist[0])],['12 Sep',k(D.balance.hist[15])],['27 Sep (today)',k(endv)],['3 Oct (projected low)',k(low.v)],['12 Oct (projected)',k(D.balance.fcast[14].m)],['27 Oct (projected)',k(D.balance.fcast[29].m)+' · '+k(D.balance.fcast[29].lo)+' to '+k(D.balance.fcast[29].hi)]],{compact:true});
+  return chartWrap('balance','<span class="legend"><span><i style="background:var(--chart-1)"></i>All holders</span><span><i class="dash"></i>Projected from what is due</span></span>',chart,`<div class="tbl-view">${tbl}</div>`);
 }
-function donut(){
-  const tot=sum(D.expense.map(e=>e[1]));const cols=['var(--chart-1)','var(--chart-2)','var(--chart-3)','var(--chart-4)','var(--chart-5)','var(--chart-other)'];
-  let acc=0,stops=[];const gap=0.6;
-  D.expense.forEach((e,i)=>{const p=e[1]/tot*100;stops.push(`${cols[i]} ${acc+gap/2}% ${acc+p-gap/2}%`);stops.push(`var(--surface) ${acc+p-gap/2}% ${acc+p+gap/2}%`);acc+=p;});
-  const leg=D.expense.map((e,i)=>`<div><i style="background:${cols[i]}"></i><span>${e[0]}</span><span class="v">${compact(e[1])}</span><span class="p">${(e[1]/tot*100).toFixed(0)}%</span></div>`).join('');
-  return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops.join(',')})" role="img" aria-label="Expense mix, September"><b>${compact(tot)}<small>September</small></b></div><div class="dl">${leg}</div></div>
-  ${tableFor(['Category','Amount','Share'],D.expense.map(e=>[e[0],money(e[1]),(e[1]/tot*100).toFixed(1)+'%']))}`;
+function rhythmChart(){
+  const r=D.cprRhythm;const max=niceMax(Math.max(...r.tue,...r.fri));
+  const cols=r.weeks.map((w,i)=>`<div class="col"><div class="bar" style="height:${r.tue[i]/max*100}%"></div><div class="bar s2" style="height:${r.fri[i]/max*100}%"></div></div>`).join('');
+  const chart=`<div class="plot">${gridlines(max,v=>k(v))}<div class="colsx">${cols}</div></div><div class="xlab">${r.weeks.map(w=>`<span>${w}</span>`).join('')}</div>`;
+  const tbl=table(['Week of','#Tuesday CPR','#Friday CPR','#Week'],r.weeks.map((w,i)=>[w,k(r.tue[i]),k(r.fri[i]),k(r.tue[i]+r.fri[i])]),{compact:true});
+  return chartWrap('rhythm','<span class="legend"><span><i style="background:var(--chart-1)"></i>Tuesday</span><span><i style="background:var(--chart-2)"></i>Friday</span></span>',chart,`<div class="tbl-view">${tbl}</div>`);
 }
-function channels(){
-  const c=D.channels;const totals=c.months.map((m,i)=>c.online[i]+c.warehouse[i]+c.other[i]);const max=niceMax(Math.max(...totals));
-  const cols=c.months.map((m,i)=>{const t=totals[i];return `<div class="col" tabindex="0" data-tip="${m}|${k(c.online[i])} online|${k(c.warehouse[i])} warehouse|${k(c.other[i])} other"><span class="dlabel">${k(t)}</span><div class="stack" style="height:${t/max*100}%"><i style="flex:${c.online[i]}"></i><i class="s2" style="flex:${c.warehouse[i]}"></i><i class="s3" style="flex:${c.other[i]}"></i></div></div>`}).join('');
-  return `<div class="legend"><span><i style="background:var(--chart-1)"></i>Online (Shopify)</span><span><i style="background:var(--chart-2)"></i>Warehouse</span><span><i style="background:var(--chart-3)"></i>Fabric &amp; other</span></div>
-  <div class="chart" data-chart="channels"><div class="plot padl">${gridlines(max,v=>k(v))}<div class="cols">${cols}</div></div><div class="xlab">${c.months.map(m=>`<span>${m}</span>`).join('')}</div><div class="tip"></div></div>
-  ${tableFor(['Month','Online','Warehouse','Fabric & other','Total'],c.months.map((m,i)=>[m,k(c.online[i]),k(c.warehouse[i]),k(c.other[i]),k(totals[i])]))}`;
-}
-function vendorBars(){
-  const max=D.vendors[0][1];
-  return `<div class="hbars">${D.vendors.map(v=>`<div class="hb"><span class="n" title="${v[0]}">${v[0]}</span><span class="t"><i style="width:${v[1]/max*100}%"></i></span><span class="v">${compact(v[1])}</span></div>`).join('')}</div>
-  <div class="basis">Top six of 23 vendors by spend, this month. Rates come from each purchase line, so this is what was actually invoiced.</div>`;
-}
-function aging(rows,label){
-  const max=Math.max(...rows.map(r=>r[1]));const tot=sum(rows.map(r=>r[1]));const over=rows[2][1]+rows[3][1];
-  return `<div class="hbars">${rows.map((r,i)=>`<div class="hb o${i+1}"><span class="n">${r[0]}</span><span class="t"><i style="width:${r[1]/max*100}%"></i></span><span class="v">${k(r[1])}</span></div>`).join('')}</div>
-  <div class="basis"><b>${k(tot)} ${label}</b> · <span class="tag ${over>50?'bad':'warn'}">⚠ ${k(over)} past 30 days</span></div>`;
-}
-function pnlLines(){
-  const p=D.pnl;const n=p.months.length,W=1000,H=400;const max=10,min=4;
-  const X=i=>i/(n-1)*W,Y=v=>H-(v-min)/(max-min)*H;
+function pnlChart(){
+  const p=D.pnl;const n=p.months.length,W=1000,H=400,max=10,min=4;const X=i=>i/(n-1)*W,Y=v=>H-(v-min)/(max-min)*H;
   const path=a=>a.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
   let grid='';for(let i=0;i<=3;i++){const v=min+(max-min)*i/3;grid+=`<div class="gridline${i===0?' base':''}" style="top:${100-i/3*100}%"><span class="ytick">₨${v.toFixed(0)}M</span></div>`}
   const last=n-1;
-  return `<div class="legend"><span><i class="line" style="background:var(--chart-1)"></i>Revenue</span><span><i class="line" style="background:var(--chart-2)"></i>Expenses</span></div>
-  <div class="chart" data-chart="pnl"><div class="lineplot padl plot" style="margin-left:44px">${grid}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="l" d="${path(p.rev)}"/><path class="l2" d="${path(p.exp)}"/></svg>
-  <div class="dot" style="left:100%;top:${(Y(p.rev[last])/H*100).toFixed(2)}%"></div><span class="endlab" style="left:100%;top:${(Y(p.rev[last])/H*100).toFixed(2)}%">₨${p.rev[last]}M</span>
-  <div class="dot s2" style="left:100%;top:${(Y(p.exp[last])/H*100).toFixed(2)}%"></div><span class="endlab" style="left:100%;top:${(Y(p.exp[last])/H*100).toFixed(2)}%">₨${p.exp[last]}M</span>
-  <div class="xhair"></div><div class="hover" style="position:absolute;inset:0"></div></div><div class="xlab" style="margin-left:44px">${p.months.map(m=>`<span>${m}</span>`).join('')}</div><div class="tip"></div></div>
-  ${tableFor(['Month','Revenue','Expenses','Net'],p.months.map((m,i)=>[m,'₨'+p.rev[i].toFixed(1)+'M','₨'+p.exp[i].toFixed(1)+'M','₨'+(p.rev[i]-p.exp[i]).toFixed(1)+'M']))}`;
-}
-function netBars(){
-  const p=D.pnl;const net=p.rev.map((r,i)=>+(r-p.exp[i]).toFixed(1));const max=niceMax(Math.max(...net.map(Math.abs)),0.5);
-  const cols=net.map((v,i)=>`<div class="col" tabindex="0" data-tip="${p.months[i]}|₨${v.toFixed(1)}M net" style="align-items:${v>=0?'flex-end':'flex-start'};height:50%;position:absolute;top:${v>=0?0:50}%;left:${i/net.length*100}%;width:${100/net.length}%"><div class="bar${v<0?' neg':''}" style="height:${Math.abs(v)/max*100}%"></div></div>`).join('');
-  return `<div class="chart" data-chart="net"><div class="plot padl" style="height:150px"><div class="gridline" style="top:0"><span class="ytick">₨${max}M</span></div><div class="gridline base" style="top:50%"><span class="ytick">0</span></div><div class="gridline" style="top:100%"><span class="ytick">−₨${max}M</span></div><div class="cols" style="display:block">${cols}</div></div><div class="xlab">${p.months.map(m=>`<span>${m}</span>`).join('')}</div><div class="tip"></div></div>
-  <div class="basis">Above the line is profit, below is loss. Nothing is smoothed.</div>`;
-}
-function meter(pct,cls){return `<div class="meter ${cls||''}"><i style="width:${pct}%"></i></div>`}
-function sparkline(vals,cur){const max=Math.max(...vals);return `<div class="spark">${vals.map((v,i)=>`<i style="height:${Math.max(8,v/max*100)}%"${i===vals.length-1?' class="cur"':''}></i>`).join('')}</div>`}
-
-/* ── screens ── */
-function overview(){
-  const cash=sum(D.accounts.map(a=>a.v));const recv=Object.values(D.recv).reduce((a,b)=>a+b,0);const pay=D.pay.vendors+D.pay.salaries+D.pay.runners;
-  const thisIn=sum(D.weeks.slice(4).map(w=>w[1]))*1000,thisOut=sum(D.weeks.slice(4).map(w=>w[2]))*1000;
-  const holders=D.accounts.map(a=>`${a.n.split(' · ')[0].replace('Cash with ','')} ${compact(a.v).replace('₨','')}`).join(' · ');
-  return `<div class="page-head"><div><div class="page-title">Accounts</div><div class="page-sub">Sunday 27 September 2026 · Tuesday's CPR, then Wednesday's pay day</div></div>
-  <div class="btn-row"><button class="btn">Collect a CPR</button><button class="btn">Hand cash over</button><button class="btn primary">+ Journal entry</button></div></div>
-  <div class="filters"><span class="chip on">This month</span><span class="chip">Last month</span><span class="chip">Quarter</span><span class="chip">Year</span><span class="chip">Custom…</span></div>
-  <div class="kpi-grid">
-    <div class="kpi lead"><div class="kpi-label">Cash, by holder</div><div class="kpi-val hero">${compact(cash)}</div><div class="kpi-sub">${holders}</div>${sparkline(D.balance.hist.filter((v,i)=>i%3===0),true)}</div>
-    <div class="kpi"><div class="kpi-label">In this month</div><div class="kpi-val">${compact(thisIn)}</div><div class="kpi-sub">9 CPRs collected · warehouse · fabric</div></div>
-    <div class="kpi"><div class="kpi-label">Out this month</div><div class="kpi-val">${compact(thisOut)}</div><div class="kpi-sub"><span class="delta down">▲ 9%</span> vs the 6-month median</div></div>
-    <div class="kpi"><div class="kpi-label">Owed to us</div><div class="kpi-val">${compact(recv)}</div><div class="kpi-sub">in transit ${compact(D.recv.postex)} · CPR to collect ${compact(D.recv.cpr)} · TCS ${compact(D.recv.tcs)} · Blue-Ex ${compact(D.recv.bluex)}</div></div>
-    <div class="kpi warn"><div class="kpi-label">We owe</div><div class="kpi-val">${compact(pay)}</div><div class="kpi-sub">salaries ${compact(D.pay.salaries)} on 1 Oct · vendors ${compact(D.pay.vendors)} · Wed ₨6.4 lac</div></div>
-    <div class="kpi"><div class="kpi-label">Loan from savings</div><div class="kpi-val">${compact(D.loan.outstanding)}</div><div class="kpi-sub">of ${compact(D.loan.opening)} · ${compact(D.loan.pace)} a month back</div></div>
-  </div>
-  <div class="alerts">
-    <div class="alert urgent"><span class="ic">!</span><div><b>Fabric is ₨21.3 lac this month against a usual ₨13.9 lac.</b> Two Al-Karam bills carry ₨6.1 lac of it. If the winter drop is being cut this is expected; say so and the baseline learns it.</div><span class="act">Open the lines →</span></div>
-    <div class="alert warn"><span class="ic">?</span><div><b>Friday's CPR, ₨9.62 lac for 318 parcels, is not collected yet</b> — two days; Afnan usually collects the next day. Wednesday's pay day needs ₨6.4 lac and the drawer plus Afnan's cash hold ₨4.9 lac.</div><span class="act">Record the collection →</span></div>
-    <div class="alert warn"><span class="ic">?</span><div><b>Saturday 3 October is tight:</b> Nishat's ₨18.7 lac bill and the pay day land two days after salaries; the holders dip to about ₨8.5 lac before the weekday Payfast payouts and Tuesday's CPR lift them.</div><span class="act">Move the bill →</span></div>
-    <div class="alert ok"><span class="ic">✓</span><div><b>MCB reconciled to 25 Sept.</b> 41 of 41 bank lines matched a posting. Tuesday's two CPRs reconciled: 517 parcels agree with ₨10.51 lac counted.</div><span class="act">Statements →</span></div>
-  </div>
-  <div class="card"><div class="card-title"><span>The next 30 days — what comes in, what goes out, from what is already known</span>${tvBtn('cal')}</div>${cashCal()}</div>
-  <div class="grid2">
-    <div class="card"><div class="card-title"><span>Cash in and out, by week</span>${tvBtn('weeks')}</div>${groupedBars()}</div>
-    <div class="card"><div class="card-title"><span>Cash balance and the next 30 days</span>${tvBtn('balance')}</div>${balanceLine()}</div>
-  </div>
-  <div class="card" style="margin-top:12px"><div class="card-title"><span>Where the money went this month — and whether to worry</span>${tvBtn('smap')}</div>${spendMap()}</div>
-  <div class="grid2" style="margin-top:12px">
-    <div class="card"><div class="card-title"><span>Revenue by channel, six months</span>${tvBtn('channels')}</div>${channels()}</div>
-    <div class="card"><div class="card-title"><span>Biggest vendors this month</span></div>${vendorBars()}</div>
-  </div>
-  <div class="grid2" style="margin-top:12px">
-    <div class="card"><div class="card-title"><span>Owed to us, by age</span></div>${aging(D.agingR,'receivable')}</div>
-    <div class="card"><div class="card-title"><span>We owe, by age</span></div>${aging(D.agingP,'payable')}</div>
-  </div>`;
-}
-function ledger(){
-  const rows=[
-    ['27 Sep','Store Accounts','Payment · Al-Karam Textile · inv 4471','MCB','','612,000','2,146,900',''],
-    ['27 Sep','Warehouse','SO0361 · Ahmed Traders · cash, confirmed by Raees','Cash drawer','48,500','','184,300',''],
-    ['26 Sep','Shopify','Daily orders · 84 orders, 3 refunds (rollup)','PostEx receivable','1,264,300','','1,418,700','<span class="tag ok">auto</span>'],
-    ['26 Sep','PostEx','Remittance · 21–25 Sep, 312 parcels','MCB','','','','<span class="tag warn">to reconcile</span>'],
-    ['26 Sep','Store Accounts','Float to Abbas · Fuel & transport','Runner floats','','4,000','12,000',''],
-    ['25 Sep','Payroll','September payroll processed · 42 employees','Salaries payable','','1,180,000','',''],
-    ['25 Sep','Manual','Owner capital · Ammar · bank deposit','MCB','500,000','','','<span class="tag ok">journal</span>'],
-    ['24 Sep','Store Accounts','<span class="src void">Purchase · Star Trims</span> voided by Raees: duplicate','Vendor payable','','','','<span class="tag bad">void</span>'],
-    ['24 Sep','Marketing','Paid PR · @aitzazism · approved ₨45,000, paid ₨45,000','MCB','','45,000','',''],
-    ['23 Sep','Store Accounts','Purchase · Karachi Prints · 1,200 pcs @ ₨95 · on credit','Vendor payable','','114,000','846,500',''],
-  ];
-  return `<div class="page-head"><div><div class="page-title">Ledger</div><div class="page-sub">Every posting from every source, newest first. A line opens the record it came from.</div></div><div class="btn-row"><button class="btn">Excel</button><button class="btn">PDF</button></div></div>
-  <div class="filters"><span class="chip on">This month</span><span class="chip">Custom…</span><span style="width:8px"></span><span class="chip on">All sources</span><span class="chip">Store Accounts</span><span class="chip">Warehouse</span><span class="chip">Shopify</span><span class="chip">PostEx</span><span class="chip">Payroll</span><span class="chip">Marketing</span><span class="chip">Manual</span><span style="width:8px"></span><span class="chip">All accounts ▾</span></div>
-  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Source</th><th>What</th><th>Account</th><th class="num">In</th><th class="num">Out</th><th class="num">Balance</th><th></th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td>${r[0]}</td><td><span class="src">${r[1]}</span></td><td>${r[2]}</td><td>${r[3]}</td><td class="num">${r[4]}</td><td class="num">${r[5]}</td><td class="num">${r[6]}</td><td>${r[7]}</td></tr>`).join('')}
-  </tbody></table></div><div class="basis">2,184 postings this month from 6 sources. <b>Nothing here was typed twice</b>: a Store Accounts entry, a warehouse sale, a payslip or a Shopify order is read from where it lives and shown as the posting it implies. Only a <b>journal</b> line is the ledger's own.</div></div>`;
-}
-function pnl(){
-  const cur=[['Online sales (Shopify)',6210000,5880000,6000000],['Warehouse sales',880000,1040000,900000],['Fabric & other',230000,140000,150000]];
-  const cogs=[['Fabric & mills',2133000,1390000,1500000],['Stitching',954000,910000,900000],['Embellishment',505000,470000,480000],['Trims & consumables',312000,290000,300000],['Courier',364000,338000,350000]];
-  const opex=[['Salaries',1180000,1180000,1180000],['Marketing & PR',337000,290000,300000],['Utilities & rent',214000,209000,215000],['Maintenance',86000,31000,40000],['Other',193000,160000,170000]];
-  const t=a=>a.reduce((s,r)=>[s[0]+r[1],s[1]+r[2],s[2]+r[3]],[0,0,0]);
-  const R=t(cur),C=t(cogs),O=t(opex);const gm=[R[0]-C[0],R[1]-C[1],R[2]-C[2]];const net=[gm[0]-O[0],gm[1]-O[1],gm[2]-O[2]];
-  const d=(a,b)=>{const p=b?((a-b)/b*100):0;return `<span class="delta ${p>=0?'up':'down'}">${p>=0?'▲':'▼'} ${Math.abs(p).toFixed(0)}%</span>`};
-  const row=(r,cls)=>`<tr class="${cls||''}"><td>${r[0]}</td><td class="num">${money(r[1])}</td><td class="num">${money(r[2])}</td><td class="num">${d(r[1],r[2])}</td><td class="num">${money(r[3])}</td><td class="num">${d(r[1],r[3])}</td></tr>`;
-  return `<div class="page-head"><div><div class="page-title">Profit &amp; loss</div><div class="page-sub">September 2026 against August and against the budget the app suggested and Afnan accepted.</div></div><div class="btn-row"><button class="btn">Excel</button><button class="btn">PDF</button></div></div>
-  <div class="filters"><span class="chip on">September</span><span class="chip">Quarter</span><span class="chip">Year to date</span><span class="chip">Custom…</span></div>
-  <div class="grid2"><div class="card"><div class="card-title"><span>Revenue and expenses, twelve months</span>${tvBtn('pnl')}</div>${pnlLines()}</div><div class="card"><div class="card-title"><span>Net result by month</span></div>${netBars()}</div></div>
-  <div class="card" style="margin-top:12px"><div class="tbl-wrap"><table><thead><tr><th>September</th><th class="num">This month</th><th class="num">August</th><th class="num">vs Aug</th><th class="num">Budget</th><th class="num">vs budget</th></tr></thead><tbody>
-  ${cur.map(r=>row(r,'sub')).join('')}${row(['Revenue',...R],'total')}
-  ${cogs.map(r=>row(r,'sub')).join('')}${row(['Cost of goods',...C],'total')}
-  ${row(['Gross margin',...gm],'total')}
-  ${opex.map(r=>row(r,'sub')).join('')}${row(['Operating expenses',...O],'total')}
-  ${row(['Net result',...net],'total')}
-  </tbody></table></div><div class="basis">Cost of goods is what was <b>bought and paid for</b> in the month, not the cost of what was sold: stock is not yet valued piece by piece. The balance sheet says how much sits in fabric, trims and finished goods at cost, so the two pages read together.</div></div>`;
-}
-function insights(){
-  return `<div class="page-head"><div><div class="page-title">Insights</div><div class="page-sub">What the app has learned from 7 months of entries. Every figure says how it was worked out.</div></div></div>
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-label">Data quality</div><div class="kpi-val">86<span style="font-size:15px;color:var(--muted)">/100</span></div>${meter(86)}<div class="kpi-sub">3 uncategorised · 5 bills missing · 3 handovers waiting</div></div>
-    <div class="kpi"><div class="kpi-label">Typical week</div><div class="kpi-val">₨14.6 lac</div><div class="kpi-sub">median cash out, 12 weeks (n=12)</div></div>
-    <div class="kpi"><div class="kpi-label">Collection time</div><div class="kpi-val">17 days</div><div class="kpi-sub">median, pay-later bills, 6 months (n=41)</div></div>
-    <div class="kpi"><div class="kpi-label">PostEx cycle</div><div class="kpi-val">9 days</div><div class="kpi-sub">dispatch to remittance, last 8 statements</div></div>
-  </div>
-  <div class="ins">
-    <div class="card"><h3><span class="ic urgent">!</span>Fabric spend is 1.5× its baseline</h3><p>₨21.3 lac posted this month against a median of ₨13.9 lac (Mar–Aug). Two Al-Karam invoices carry ₨6.1 lac of the difference. If a winter drop is being cut, this is expected; if not, look at those two lines.</p><div class="basis"><b>Basis:</b> median and spread of the last 6 months of Fabric &amp; mills purchases in Store Accounts; flagged past 2 standard deviations. First seen 24 Sep.</div><div class="btn-row" style="margin-top:8px"><button class="btn">Expected, it is the drop</button><button class="btn">Open the lines</button></div></div>
-    <div class="card"><h3><span class="ic warn">?</span>Star Trims' rate for cotton thread rose 18% in two purchases</h3><p>₨1,180 per box on 23 Sep against ₨1,000 in July and August. Zain Trims last supplied it at ₨1,020.</p><div class="basis"><b>Basis:</b> the vendor rate card, derived from purchase lines (last, min, max per item per vendor). Compared with every other vendor supplying the same item code.</div></div>
-    <div class="card"><h3><span class="ic ok">✓</span>Cash will cover the next 30 days, with one tight week</h3><p>Projected low point ₨8.5 lac on Saturday 3 October, when Nishat's ₨18.7 lac bill and the pay day land two days after salaries (₨11.8 lac, 1 Oct); the weekday Payfast payouts and Tuesday's CPR lift it again. Nothing due is unfunded.</p><div class="basis"><b>Basis:</b> today's balances by holder, plus what is already known to be due (vendor terms and the Wednesday and Saturday pay days, the payroll date, pay-later due dates, the loan repayment) and the learned Tuesday and Friday CPR medians and the weekday Payfast median for what comes in. A range, not a promise.</div></div>
-    <div class="card"><h3><span class="ic info">≈</span>Suggested budgets for October</h3><p>Marketing &amp; PR ₨3.0 lac (6-month median ₨2.9 lac, rising), Utilities ₨2.2 lac (flat), Maintenance ₨0.4 lac (August's ₨0.3 lac was low, September's ₨0.9 lac carried the studio paint job).</p><div class="basis"><b>Basis:</b> the median of the last 6 months per category, nudged by the trend of the last 3. An owner accepts, edits or ignores each; the app never sets a budget on its own.</div><div class="btn-row" style="margin-top:8px"><button class="btn primary">Accept all three</button><button class="btn">Edit</button></div></div>
-    <div class="card"><h3><span class="ic info">≈</span>Warehouse customers who pay later settle in 17 days; two are slower</h3><p>Ahmed Traders averages 31 days over 6 bills and has ₨78,000 open; Bilal Garments 9 days. Overdue reminders could start at day 21 instead of day 30 for the slower accounts.</p><div class="basis"><b>Basis:</b> collection dates on pay-later warehouse sales, per customer, since April (n=41).</div></div>
-  </div>`;
+  const chart=`<div class="lineplot plot" style="margin-right:72px">${grid}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="l" d="${path(p.rev)}"/><path class="l2" d="${path(p.exp)}"/></svg><span class="endlab" style="left:100%;top:${(Y(p.rev[last])/H*100).toFixed(2)}%">₨${p.rev[last]}M</span><span class="endlab" style="left:100%;top:${(Y(p.exp[last])/H*100).toFixed(2)}%">₨${p.exp[last]}M</span></div><div class="xlab" style="margin-right:72px">${p.months.map(m=>`<span>${m}</span>`).join('')}</div>`;
+  const tbl=table(['Month','#Revenue','#Expenses','#Net'],p.months.map((m,i)=>[m,'₨'+p.rev[i].toFixed(1)+'M','₨'+p.exp[i].toFixed(1)+'M','₨'+(p.rev[i]-p.exp[i]).toFixed(1)+'M']),{compact:true});
+  return chartWrap('pnl','<span class="legend"><span><i style="background:var(--chart-1)"></i>Revenue</span><span><i style="background:var(--chart-2)"></i>Expenses</span></span>',chart,`<div class="tbl-view">${tbl}</div>`);
 }
 
+/* ── pieces ── */
+function holdersTable(o){o=o||{};const tot=sum(D.holders.map(h=>h.v));
+  if(o.full)return table(['Holder','Kind','#Balance','Last count','Pending confirmation','Last movement'],D.holders.map(h=>[`<span class="nw">${h.n}</span>`,h.kind,rs(h.v),h.count,h.pend||'',h.last]),{total:['Total','',rs(tot),'','',''],link:'holder'});
+  return table(['Holder','#Balance','Pending','Last movement'],D.holders.map(h=>[`<span class="nw">${h.n}</span>`,rs(h.v),h.pend?`<span class="word warn">${h.pend}</span>`:'',h.last]),{total:['All holders',rs(tot),'',''],link:'holder'})}
+function spendList(){const max=Math.max(...D.spend.flatMap(g=>g.rows.map(r=>r[1])));
+  return `<ul class="spend">${D.spend.map(g=>`<li class="kind">${g.k}</li>${g.rows.map(r=>`<li data-rail="spend"><span>${r[0]}<span class="cmp">${r[3]}</span></span><span class="amt">${lac(r[1])}</span><span class="t"><i style="width:${(r[1]/max*100).toFixed(1)}%"></i></span><span class="dot ${r[2]==='fine'?'mute':r[2]}" title="${r[2]}"></span></li>`).join('')}`).join('')}</ul>`}
+function calendar(){
+  /* Mon 28 Sep 2026 → Sun 1 Nov: 35 days */
+  const days=[];const start=new Date(2026,8,28);const names=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  for(let i=0;i<35;i++){const d=new Date(start.getFullYear(),start.getMonth(),start.getDate()+i);const wd=d.getDay();const ev=[];
+    if(wd===2)ev.push(['in','+₨9.6 lac CPR']);if(wd===5)ev.push(['in','+₨11.2 lac CPR']);
+    if(wd===3)ev.push(['out','−₨6.4 lac pay day']);if(wd===6)ev.push(['out','−₨5.6 lac pay day']);
+    if(d.getDate()===1&&d.getMonth()===9)ev.push(['out','−₨11.8 lac salaries']);
+    if(d.getDate()===5&&d.getMonth()===9)ev.push(['out','−₨1.8 lac rent']);
+    if(d.getDate()===8&&d.getMonth()===9)ev.push(['in','+₨1.9 lac TCS']);
+    if(d.getDate()===3&&d.getMonth()===9)ev.push(['short','short by ₨1.5 lac']);
+    if(d.getDate()===14&&d.getMonth()===9)ev.push(['out','−₨29k Shopify']);
+    days.push({d,wd,ev,dim:d.getMonth()!==9&&!(d.getMonth()===8),today:i===0});}
+  const cells=days.map((x,i)=>`<div class="d${x.ev.length?' has':''}${x.today?' today':''}${x.d.getMonth()===10?' dim':''}"><b>${x.today?x.d.getDate()+' · today':(x.d.getDate()===1?x.d.toLocaleString('en',{month:'short'})+' ':'')+x.d.getDate()}</b>${x.ev.map(e=>`<span class="ev ${e[0]}">${e[1]}</span>`).join('')}${x.ev.length===0&&x.wd>0&&x.wd<6?'<span class="ev mute">·</span>':''}</div>`).join('');
+  return `<div class="cal-head">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(n=>`<span>${n}</span>`).join('')}</div><div class="cal">${cells}</div><div class="cal-key">Every weekday also expects a Payfast payout of about ₨42,000 (17 of the last 22). Inflows from the learned CPR rhythm, outflows from terms and commitments; <span style="color:var(--accent-urgent)">Sat 3 Oct is the day the holders cannot fund</span> without the MCB transfer.</div>`}
+function agingTables(){const t=r=>table(['Age','#Amount'],r.map(x=>[x[0],lac(x[1])]),{total:['Total',lac(sum(r.map(x=>x[1])))],compact:true});
+  return `<div class="cols2"><div><div class="sec-head"><span class="sec-title">Owed to us</span><span class="sec-meta">${lac(sum(D.aging.us.map(x=>x[1])))} · Blue-Ex is the 31–60 days</span></div>${t(D.aging.us)}</div><div><div class="sec-head"><span class="sec-title">We owe</span><span class="sec-meta">${lac(sum(D.aging.we.map(x=>x[1])))} · next pay day Wednesday</span></div>${t(D.aging.we)}</div></div>`}
 
-function vendors(){
-  const led=[
-    ['27 Sep','Payment #PAY-0412 · from MCB · allocated to BILL-0198, BILL-0203','','325,000','421,000','<span class="tag ok">allocated</span>'],
-    ['24 Sep','Bill #BILL-0211 · inv AH-1188 · stitching GD007 · 1,180 pcs @ ₨260','306,800','','746,000','<span class="tag warn">rate above card +4%</span>'],
-    ['22 Sep','Receipt · GP-142 returned · 1,180 of 1,200 pcs (20 short)','','','','<span class="tag warn">20 short</span>'],
-    ['19 Sep','Bill #BILL-0203 · inv AH-1179 · washing GD007 · 1,200 pcs @ ₨45','54,000','','439,200','<span class="tag ok">matched</span>'],
-    ['15 Sep','Retention 5% held on BILL-0198','','','','<span class="tag ok">₨18,050 held</span>'],
-    ['15 Sep','Bill #BILL-0198 · inv AH-1171 · stitching GST073 · 3,800 pcs @ ₨95','361,000','','385,200','<span class="tag ok">matched</span>'],
-    ['12 Sep','Receipt · GP-137 returned · 3,800 of 3,800 pcs','','','','<span class="tag ok">complete</span>'],
-    ['1 Sep','Opening balance carried from Store Accounts (legacy 7xk2a)','24,200','','24,200',''],
-  ];
-  return `<div class="page-head"><div><div class="page-title">Al-Hamd Garments</div><div class="page-sub">Vendor · stitching, washing · credit 30 days · since 1 Mar 2026 · <span class="tag ok">active</span></div></div>
-  <div class="btn-row"><button class="btn">Statement</button><button class="btn">Edit terms</button><button class="btn">+ Bill</button><button class="btn primary">+ Purchase order</button></div></div>
-  <div class="kpi-grid">
-    <div class="kpi warn"><div class="kpi-label">We owe</div><div class="kpi-val">₨4.21 lac</div><div class="kpi-sub">₨1.10 lac past 30 days · due Wed 1 Oct</div></div>
-    <div class="kpi"><div class="kpi-label">Retention held</div><div class="kpi-val">₨18,050</div><div class="kpi-sub">5% · released when QC clears PO-088</div></div>
-    <div class="kpi"><div class="kpi-label">Open orders</div><div class="kpi-val">2</div><div class="kpi-sub">₨3.9 lac on order · 1 partly received</div></div>
-    <div class="kpi"><div class="kpi-label">Reliability</div><div class="kpi-val">98%</div><div class="kpi-sub">pieces back vs sent, 12 passes · 1.7% short</div></div>
-  </div>
-  <div class="grid2">
-    <div class="card"><div class="card-title"><span>What they provide</span></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Service</th><th>Articles</th><th class="num">Unit</th><th class="num">Current rate</th><th>Since</th></tr></thead><tbody>
-      <tr><td>Stitching</td><td>GST tees, GHZ hoodies</td><td class="num">pc</td><td class="num">₨95 · ₨240</td><td>1 Sep 2026</td></tr>
-      <tr><td>Stitching</td><td>GD denim</td><td class="num">pc</td><td class="num">₨250</td><td>1 Mar 2026</td></tr>
-      <tr><td>Washing</td><td>GD denim · enzyme</td><td class="num">pc</td><td class="num">₨45 · ₨60</td><td>1 Mar 2026</td></tr>
-      </tbody></table></div>
-      <div class="basis">Rate history: GST tee stitching <b>₨90 → ₨95</b> on 1 Sep 2026 (Afnan: "winter volume agreed"). A bill at another rate is flagged against this card and needs a reason.</div></div>
-    <div class="card"><div class="card-title"><span>Terms</span><button class="tv">History</button></div>
-      <div class="tbl-wrap"><table><tbody>
-      <tr><td>How we pay</td><td class="num">Credit · 30 days</td></tr>
-      <tr><td>Credit limit</td><td class="num">₨7,50,000</td></tr>
-      <tr><td>Retention</td><td class="num">5% until QC clears the PO</td></tr>
-      <tr><td>Advance allowed</td><td class="num">No</td></tr>
-      <tr><td>Pay days</td><td class="num">Wednesday · Saturday</td></tr>
-      <tr><td>Withholding</td><td class="num">None recorded</td></tr>
-      </tbody></table></div>
-      <div class="basis">Changed <b>1 Jul 2026</b> by Ammar: credit 15 → 30 days, retention added ("volume agreement"). Bills raised before that keep their 15-day due dates.</div></div>
-  </div>
-  <div class="card" style="margin-top:12px"><div class="card-title"><span>Ledger · credit / debit · running balance</span><button class="tv">Excel</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Document</th><th class="num">Debit (we owe)</th><th class="num">Credit (paid)</th><th class="num">Balance</th><th>State</th></tr></thead><tbody>
-    ${led.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="num">${r[2]}</td><td class="num">${r[3]}</td><td class="num">${r[4]}</td><td>${r[5]}</td></tr>`).join('')}
-    </tbody></table></div>
-    <div class="basis">The balance is derived from the documents above; nothing stores it. Every row opens its document, its attachment and its history.</div></div>
-  <div class="card" style="margin-top:12px"><div class="card-title"><span>Aging</span></div>${aging([['Current',311],['1–30 days',0],['31–60 days',86],['Over 60',24]],'owed')}</div>
-  <div class="grid2" style="grid-template-columns:1fr">
-    <div class="card"><div class="card-title"><span>Open purchase orders</span></div>
-      <div class="tbl-wrap"><table><thead><tr><th>PO</th><th>For</th><th>Lines</th><th class="num">Ordered</th><th class="num">Received</th><th class="num">Billed</th><th>State</th></tr></thead><tbody>
-      <tr><td>PO-V-0231</td><td>PO-091 · GST073 tee</td><td>Stitching</td><td class="num">4,000 pc</td><td class="num">2,400</td><td class="num">0</td><td><span class="tag warn">partly received</span></td></tr>
-      <tr><td>PO-V-0236</td><td>PO-094 · GD012 denim</td><td>Stitching · Washing</td><td class="num">1,500 pc</td><td class="num">0</td><td class="num">0</td><td><span class="tag ok">sent</span></td></tr>
-      </tbody></table></div></div>
-  </div>`;
-}
-function purchasing(){
-  const pos=[
-    ['PO-V-0231','Al-Hamd','PO-091 · GST073','Stitching 4,000 pc @ ₨95','3,80,000','2,400','0','<span class="tag warn">partly received</span>'],
-    ['PO-V-0234','Nishat Mills','PO-094, PO-095','Denim 12 oz · 1,800 kg @ ₨1,040','18,72,000','1,800','1,800','<span class="tag ok">received · billed</span>'],
-    ['PO-V-0236','Al-Hamd','PO-094 · GD012','Stitching 1,500 @ ₨250 · Washing 1,500 @ ₨45','4,42,500','0','0','<span class="tag ok">sent</span>'],
-    ['PO-V-0237','Prime Embroidery','PO-093 · GHZ004','Embroidery front · 2,000 pc @ ₨38','76,000','2,000','2,000','<span class="tag ok">closed</span>'],
-  ];
-  const bills=[
-    ['BILL-0211','Al-Hamd · AH-1188','₨3,06,800','PO-V-0231 · GP-142 return','qty 1,180 = received · rate ₨260 vs card ₨250','<span class="tag warn">rate +4% · reason given</span>','Review'],
-    ['BILL-0214','Star Trims · ST-5521','₨1,41,600','no order','—','<span class="tag warn">no PO</span> <span class="tag warn">rate +18%</span>','Review'],
-    ['BILL-0215','Nishat Mills · NM-88012','₨18,72,000','PO-V-0234 · FAB-118','1,800 kg = received · rate = card','<span class="tag ok">matched 3-way</span>','Post'],
-    ['—','Aqib Sublimation (draft)','₨96,000','PO-V-0229 · job PJ-77','qty 2,400 &gt; 2,200 approved by QC','<span class="tag bad">refused · qty over receipt</span>','Fix'],
-    ['BILL-0209','Karachi Prints · KP-301','₨1,14,000','PO-V-0228','matched','<span class="tag warn">no invoice attached</span>','Attach'],
-  ];
-  return `<div class="page-head"><div><div class="page-title">Purchasing</div><div class="page-sub">Orders, receipts and bills, and what the checks said about each.</div></div>
-  <div class="btn-row"><button class="btn">+ Receipt</button><button class="btn">+ Bill</button><button class="btn primary">+ Purchase order</button></div></div>
-  <div class="filters"><span class="chip on">Needs attention</span><span class="chip">Open orders</span><span class="chip">Awaiting receipt</span><span class="chip">Bills to match</span><span class="chip">All</span></div>
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-label">On order</div><div class="kpi-val">₨27.7 lac</div><div class="kpi-sub">4 orders · 2 vendors waiting</div></div>
-    <div class="kpi"><div class="kpi-label">Received, not billed</div><div class="kpi-val">₨2.28 lac</div><div class="kpi-sub">accrued as a payable already</div></div>
-    <div class="kpi warn"><div class="kpi-label">Flagged</div><div class="kpi-val">4</div><div class="kpi-sub">2 rate · 1 no PO · 1 no invoice</div></div>
-    <div class="kpi bad"><div class="kpi-label">Refused</div><div class="kpi-val">1</div><div class="kpi-sub">qty over what QC approved</div></div>
-  </div>
-  <div class="card"><div class="card-title"><span>Bills and what the checks said</span></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Bill</th><th>Vendor · invoice</th><th class="num">Amount</th><th>Matched against</th><th>Check</th><th>Result</th><th></th></tr></thead><tbody>
-    ${bills.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="num">${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td><td><button class="btn">${r[6]}</button></td></tr>`).join('')}
-    </tbody></table></div>
-    <div class="basis"><b>Refused</b> means it cannot be true (more pieces than came back, a closed month, an allocation over the outstanding) and never posts. <b>Flagged</b> posts and waits for an owner. Everything else is matched three ways: ordered · received · billed.</div></div>
-  <div class="card"><div class="card-title"><span>Purchase orders</span></div>
-    <div class="tbl-wrap"><table><thead><tr><th>PO</th><th>Vendor</th><th>For production PO</th><th>Lines</th><th class="num">Value</th><th class="num">Received</th><th class="num">Billed</th><th>State</th></tr></thead><tbody>
-    ${pos.map(r=>`<tr>${r.map((c,i)=>`<td${i>=4&&i<=6?' class="num"':''}>${c}</td>`).join('')}</tr>`).join('')}
-    </tbody></table></div>
-    <div class="basis">A gate pass to a vendor can raise the order in one tap; the vendor's return on that pass is the receipt; the bill is matched to both, not retyped.</div></div>
-  <div class="card"><div class="card-title"><span>How a document is checked before it posts</span></div>
-    <div class="ins">
-      <div class="card"><h3><span class="ic urgent">!</span>Refuse</h3><p>Wrong party kind · date in a closed month or the future · amount ≠ lines · received &gt; ordered beyond tolerance · returned &gt; sent · billed &gt; received · duplicate invoice number · payment over the outstanding when advances are not allowed · cash drawer going negative · unbalanced journal.</p></div>
-      <div class="card"><h3><span class="ic warn">?</span>Flag for an owner</h3><p>Rate off the card (with the card rate shown) · item not on the vendor's list · no order · no invoice above the threshold · credit limit exceeded · possible duplicate · courier remittance off its receipt · a document edited after posting.</p></div>
-      <div class="card"><h3><span class="ic ok">✓</span>Offer, never change</h3><p>The card rate, the due date from terms, the outstanding to allocate, the last receipt to match. The person accepts or overrides with a reason, and the ledger records which.</p></div>
-    </div></div>`;
-}
+/* ── pages ── */
+const P={};
+P.today=()=>{const cash=sum(D.holders.map(h=>h.v));
+  return head('Accounts','Sun 27 Sep · MCB reconciled to 25 Sep · 41 of 41 postings labelled')
+  +stats([{l:'Cash in hand',v:lac(cash),s:'7 holders · 2 transfers waiting',hero:true,rail:'holder'},{l:'In this month',v:lac(D.inMonth),s:'+12% on August'},{l:'Out this month',v:lac(D.outMonth),s:'fabric is the rise'},{l:'Owed to us, less we owe',v:lac(D.recv-D.pay),s:lac(D.recv)+' owed to us · '+lac(D.pay)+' we owe'}])
+  +sec('Needs attention','3 of 5',concerns(D.concerns,3))
+  +`<div class="cols2 wide">${sec('Cash by holder','tap a holder for its statement',holdersTable())}${sec('Balance, all holders','30 days back, 30 ahead',balanceChart())}</div>`
+  +sec('The next 30 days','from the CPR rhythm, the terms and the commitments',calendar())
+  +sec('Where the money went','September · '+lac(D.outMonth),spendList(),{right:'<button class="link" data-rail="spend">Open the lines</button>'})
+  +agingTables()};
+P.money=()=>head('Money','7 holders · '+lac(sum(D.holders.map(h=>h.v)))+' in hand')
+  +sec('Holders','a click opens the statement',holdersTable({full:true}))
+  +sec('Waiting for confirmation','a transfer counts only once the receiver confirms it',table(['Transfer','From','To','#Amount','Sent','State'],[['TR-0231','Cash with Afnan','MCB current','₨1,50,000','Sat 26 Sep · Afnan','<span class="word warn">Ammar to confirm the deposit</span>'],['TR-0232','Warehouse till · Umair','Store drawer · Raees','₨96,500','today · Umair','<span class="word warn">Raees to confirm</span>']]))
+  +sec('MCB current','reconciled to 25 Sep · 2 lines unmatched',`<p class="small">The last statement import was Fri 25 Sep (114 lines, 112 matched). Two bank charges of ₨230 and ₨1,150 are unmatched and sit in <span class="n">9030 Reconciliation differences</span> until named.</p><p class="note"><a href="#">Import a statement</a> · <a href="#">Open the two lines</a></p>`);
+P.in=()=>head('Money in','September · '+lac(D.recv)+' owed to us')
+  +tabs(['Couriers','Online','Warehouse & gate','Customers'],'Couriers')
+  +stats([{l:'In transit with PostEx',v:lac(1418700),s:'delivered, not yet on a CPR'},{l:'CPRs to collect',v:lac(962000),s:'1 CPR · issued Fri 25 Sep'},{l:'Collected this month',v:lac(4602800),s:'8 collections · ₨300 short once'}])
+  +sec('Needs attention','',concerns([D.concerns[2],D.concerns[3]],2))
+  +sec('CPRs and statements','September · every CPR derived from the parcels',table(['CPR','Kind','Issued','#Parcels','#COD','#Fees & tax','#Net','Collected by','State'],D.cprs,{link:'cpr'}))
+  +sec('The Tuesday and Friday rhythm','₨000 per CPR · last six weeks · a Friday brings ₨9.6 lac at the median (n = 14)',rhythmChart())
+  +sec('Couriers','how each one pays, and where it stands',table(['Courier','How it pays','#Owed to us','Last','State'],D.couriers,{link:'party'}));
+P.out=()=>head('Money out','September · '+lac(D.pay)+' we owe')
+  +tabs(['Pay days','Bills','Purchase orders & receipts','Commitments','Payroll & people','Petty & floats'],'Pay days')
+  +stats([{l:'Due Wednesday 30 Sep',v:lac(640000),s:'4 bills · the terms decide'},{l:'Due Saturday 3 Oct',v:lac(560000),s:'2 bills · 1 commitment'},{l:'The holders can fund',v:lac(494300),s:'drawer + cash with Afnan',rail:'c1'}])
+  +sec('Needs attention','',concerns([D.concerns[0],D.concerns[4]],2))
+  +sec('Pay days','Wednesday and Saturday, from every vendor\'s terms',table(['Vendor','Bill · terms','#Amount','State',''],D.payDays.flatMap(d=>[{sub:`${d.day} · ${lac(d.need)}`}].concat(d.rows.map(r=>r.concat(['<a href="#" class="link">Pay</a>'])))),{link:'bill'}))
+  +sec('Commitments','the cost register · what the factory pays whether or not a piece is cut',table(['Commitment','Payee','Cadence · due','Holder','#Expected','This period'],D.commitments,{link:'commitment'}));
+P.parties=()=>head('Parties','23 vendors · 41 customers · 5 couriers · 16 employees · 2 owners · 1 bank',{noPeriod:true})
+  +`<div class="filters"><select class="sel"><option>All kinds</option><option>Vendors</option><option>Customers</option><option>Couriers</option><option>Employees</option><option>Owners</option><option>Banks</option></select><select class="sel"><option>With a balance</option><option>Everyone</option></select><input class="search" placeholder="Search a party"></div>`
+  +sec('','',table(['Party','Kind','Provides','Terms','#Balance','Last activity'],D.parties,{link:'party'}))
+  +`<p class="note">88 parties · a click opens the party: terms with history, the rate card, open orders, the ledger with a running balance, statement, aging, attachments, share links.</p>`;
+P.ledger=()=>head('Ledger','2,184 postings this quarter · every one labelled or in the Unlabelled queue')
+  +`<div class="filters"><select class="sel"><option>All sources</option><option>manual</option><option>postex</option><option>store</option><option>gatepass</option><option>printing</option><option>hrm</option></select><select class="sel"><option>All accounts</option></select><select class="sel"><option>All holders</option></select><select class="sel"><option>All categories</option></select><input class="search" placeholder="Search a party, document, PO or note"><span class="spacer"></span><a href="#" class="link">Unlabelled · 3</a></div>`
+  +sec('','',table(['Date','Document','Party','Account','Category','#Debit','#Credit','State','Source'],D.ledger.map(r=>r.slice(0,8).concat([`<span class="src">${r[8]}</span>`])),{link:'doc',date:true}))
+  +`<div class="tfoot"><span>2,184 postings · 6 sources · this quarter</span><span>Excel and the ledger PDF (A4 landscape, as filtered) are under ⋯</span></div>`;
+P.costing=()=>head('Costing','5 open production POs · overhead at 9.2% of cost of goods (setting)')
+  +stats([{l:'Cost per piece, this quarter',v:'₨812',s:'weighted across 4,600 pieces'},{l:'Margin on sale price',v:'61%',s:'online 58% · warehouse 66%'},{l:'Legs missing',v:'3',s:'2 wash rates · 1 fabric bill',rail:'leg'}])
+  +sec('Cost sheets','₨ per PO · a missing leg is named, never zero',table(['PO','Article','#Pieces','#Fabric','#CMT','#Wash','#Embellishment','#Trims','#Packaging','#Courier','#Overhead','#Cost / piece','#Sale / piece','#Margin'],D.costing.map(r=>r.map((c,i)=>c==='₨—'?'<span class="word warn">missing</span>':c)),{link:'costsheet',compact:true}))
+  +`<p class="note">Fabric at the receipt rate (FIFO across POs), CMT and wash at the vendor's card rate on the gate-pass return, embellishment at the printer's card rate, trims from the store issue, courier fees per parcel, overhead by the setting. A leg reads <span class="word warn">missing</span> until its document exists.</p>`;
+P.savings=()=>{const a=D.sv.accounts;return head('Savings','the owners\' book · Afnan, Ammar and joint · Payfast pays in on weekdays')
+  +stats([{l:'Saved, all accounts',v:lac(3860000),s:'5 accounts · counted 26 Sep',hero:true},{l:'Loan to Groovy',v:lac(1140000),s:'of ₨15.0 lac · repaid ₨3.6 lac this quarter',rail:'loan'},{l:'In this month',v:lac(708000),s:'17 Payfast payouts · 5 weekdays with none'},{l:'Net worth',v:lac(9950000),s:'assets ₨1.08 cr · liabilities ₨8.5 lac'}])
+  +`<div class="cols2">${sec('Accounts','',table(['Account','Whose','#Balance','Reconciled'],a,{total:['Total','',lac(3860000),''],link:'svaccount'}))}${sec('Targets','',`<ul class="check">${D.sv.targets.map(t=>`<li style="display:block"><div style="display:flex;justify-content:space-between;gap:12px"><span><span class="n">${t.n}</span> <span class="muted small">· ${t.who}</span></span><span class="n">${lac(t.saved)} of ${lac(t.amt)}</span></div><div class="meter" style="margin:8px 0 4px"><i style="width:${(t.saved/t.amt*100).toFixed(0)}%"></i></div><div class="small muted">${t.by==='bought'?t.eta:`${t.by} · needs ${lac(t.need)} a month · saving ${lac(t.pace)} · ${t.eta}`}</div></li>`).join('')}</ul>`)}</div>`
+  +sec('Subscriptions','₨49,800 a month · ₨5.98 lac a year · 2 detected from the statements this month',table(['Subscription','Whose','#Amount','Cadence','Next'],D.sv.subs,{compact:true}))
+  +sec('The loan','one document on both books',`<p class="small">Opening ₨15,00,000 joint on 1 Jul 2026. Every Payfast payout repays first, then draws 50 / 50: ₨3,60,000 repaid this quarter, ₨11,40,000 outstanding, clear in about ten months at this pace. <a href="#" class="link">Open the loan ledger</a></p>`)};
+P.reports=()=>head('Reports','September against August and the budget')
+  +tabs(['Profit & loss','Balance sheet','Cash flow','Aging','Tax','Budgets','Insights'],'Profit & loss')
+  +sec('Revenue and expenses','₨M a month · twelve months',pnlChart())
+  +sec('Profit & loss','September · whole rupees',table(['Line','#September','#August','#Budget','#Against budget'],[{sub:'Revenue'},['Online — COD (PostEx, TCS)','₨62,10,000','₨59,80,000','₨60,00,000','<span class="word fine">+3.5%</span>'],['Online — prepaid (Payfast)','₨7,08,000','₨6,40,000','₨6,50,000','<span class="word fine">+8.9%</span>'],['Warehouse and gate','₨8,80,000','₨10,40,000','₨9,00,000','<span class="word mute">−2.2%</span>'],['Discounts and refunds','−₨2,10,000','−₨1,90,000','−₨2,00,000','<span class="word mute">−5.0%</span>'],{sub:'Cost of goods'},['Fabric','₨21,33,000','₨14,10,000','₨14,50,000','<span class="word warn">+47%</span>'],['Stitching, washing, embellishment','₨14,59,000','₨13,80,000','₨14,00,000','<span class="word mute">+4.2%</span>'],['Trims, packaging, couriers','₨5,38,000','₨5,10,000','₨5,20,000','<span class="word mute">+3.5%</span>'],{sub:'People and running'},['Salaries, advances, food','₨13,28,000','₨13,10,000','₨13,20,000','<span class="word mute">+0.6%</span>'],['Running (fuel, maintenance, office)','₨1,21,000','₨95,000','₨1,00,000','<span class="word warn">+21%</span>'],{sub:'Fixed and financing'},['Rent, utilities, subscriptions, insurance','₨3,36,000','₨3,30,000','₨3,40,000','<span class="word mute">−1.2%</span>'],['Bank and gateway charges, tax','₨64,000','₨58,000','₨60,000','<span class="word mute">+6.7%</span>']],{total:['Net for the month','₨16,09,000','₨22,37,000','₨19,60,000','<span class="word warn">−18%</span>'],compact:true}))
+  +sec('Of every ₨100 that came in','September',`<div class="r100">${[['Fabric',28,'--chart-1'],['Stitching & embellishment',19,'--chart-2'],['Couriers',5,'--chart-3'],['Salaries',15,'--chart-4','#111'],['Fixed',4,'--chart-5'],['Running',2,'--chart-6'],['Kept',27,'--chart-other']].map(s=>`<i style="flex:${s[1]};background:var(${s[2]})${s[3]?';color:'+s[3]:''}">${s[1]}</i>`).join('')}</div><div class="r100-key">${[['Fabric','--chart-1'],['Stitching & embellishment','--chart-2'],['Couriers','--chart-3'],['Salaries','--chart-4'],['Fixed','--chart-5'],['Running','--chart-6'],['Kept','--chart-other']].map(s=>`<span><i style="background:var(${s[1]})"></i>${s[0]}</span>`).join('')}</div>`);
+P.close=()=>head('Close & audit','Q1 (Jul–Sep 2026) is the backfill quarter · August soft-closed',{noPeriod:true})
+  +stats([{l:'Q1 checklist',v:'4 of 7',s:'closes when the owners say so'},{l:'Last backup',v:'today 03:31',s:'41 collections · 18 MB · kept 90 days'},{l:'Point-in-time recovery',v:'on',s:'any minute of the last 7 days'},{l:'Audit rows this week',v:'212',s:'8 edits · 1 void · 3 shares'}])
+  +`<div class="cols2">${sec('The quarter checklist','Q1 · Jul–Sep 2026',`<ul class="check"><li><span class="dot fine"></span>Every holder reconciled to 30 Sep, or an exception acknowledged<span class="st warn">MCB to 25 Sep</span></li><li><span class="dot fine"></span>No transfer waiting for confirmation<span class="st warn">2 waiting</span></li><li><span class="dot fine"></span>Nothing unexplained in 9030<span class="st warn">₨1,380</span></li><li><span class="dot fine"></span>Every flagged document reviewed<span class="st fine">done</span></li><li><span class="dot fine"></span>The Unlabelled queue empty<span class="st warn">3 postings</span></li><li><span class="dot fine"></span>The tax page produced<span class="st mute">rates not set</span></li><li><span class="dot fine"></span>Trial balance zero on both books<span class="st fine">done</span></li></ul><p class="note"><a href="#" class="link">Soft-close September</a> · <a href="#" class="link">Download the books</a> · <a href="#" class="link">Settings</a></p>`)}${sec('Backups','three layers and a drill',table(['Run','What','#Size','State'],[['today 03:31','nightly export · 41 collections','18 MB','<span class="word fine">ok</span>'],['26 Sep 03:31','nightly export','18 MB','<span class="word fine">ok</span>'],['25 Sep 03:30','nightly export','17 MB','<span class="word fine">ok</span>'],['1 Sep','restore drill · trial balance matched','—','<span class="word fine">ok</span>'],['1 Sep','the owners\' copy downloaded · Ammar','64 MB','<span class="word fine">ok</span>']],{compact:true}))}</div>`
+  +sec('Audit trail','every post, edit, void, close, export, share and entry into these pages · append-only',table(['When','Who','What','Detail'],D.audit,{link:'audit',date:true}));
 
+/* ── the rail ── */
+const RAIL={
+  c1:()=>`<div class="kicker">Concern · terms and holders</div><h3>Wednesday's pay day needs ₨6.4 lac; the holders reachable by Wednesday hold ₨4.9 lac.</h3><h4>Basis</h4><dl><dt>Due Wed 30 Sep</dt><dd>4 bills, ₨6,40,000 — from each vendor's terms</dd><dt>Reachable by then</dt><dd>1010 drawer ₨1,84,300 + 1011 cash with Afnan ₨3,10,000 = ₨4,94,300</dd><dt>Next inflow</dt><dd>CPR-118842, ₨9,62,000, expected Fri 2 Oct (median lag 1 day, n = 14)</dd><dt>MCB</dt><dd>₨21,46,900 — a transfer to the drawer clears it</dd></dl><h4>Wednesdays, last six</h4><div class="mini">${[520,610,480,590,640,640].map((v,i)=>`<i style="height:${v/7}%"${i===5?' class="cur"':''}></i>`).join('')}</div><div class="mini-x"><span>26 Aug</span><span>30 Sep</span></div><div class="acts"><button class="btn primary">Transfer ₨1.5 lac from MCB</button><button class="btn">Move a bill to Saturday</button></div><p class="note">Answering "expected" silences this line for the month and teaches the baseline.</p>`,
+  c2:()=>`<div class="kicker">Concern · its own history</div><h3>Fabric is ₨21.3 lac this month against a usual ₨13.9 lac.</h3><h4>Basis</h4><dl><dt>Median, 6 months</dt><dd>₨13,90,000 (MAD ₨1,80,000, n = 6)</dd><dt>This month</dt><dd>₨21,33,000 — median + 4.1 MAD</dd><dt>Carried by</dt><dd>BL-2261 ₨3,10,000 and BL-2247 ₨2,90,000, both Al-Karam, both for PO-0409 and PO-0412</dd></dl><h4>Six months</h4><div class="mini">${[1290,1410,1350,1380,1410,2133].map((v,i)=>`<i style="height:${v/22}%"${i===5?' class="cur"':''}></i>`).join('')}</div><div class="mini-x"><span>Apr</span><span>Sep</span></div><div class="acts"><button class="btn">This is the drop</button><button class="btn">Investigate</button><button class="btn">Open the lines</button></div>`,
+  c3:()=>`<div class="kicker">Concern · terms</div><h3>CPR-118842 is two days uncollected.</h3><dl><dt>Issued</dt><dd>Fri 25 Sep · 318 parcels · net ₨9,62,000</dd><dt>Usual lag</dt><dd>1 day (median of 14 CPRs)</dd><dt>Longest seen</dt><dd>3 days · CPR-116902</dd></dl><div class="acts"><button class="btn primary">Record the collection</button><button class="btn">Mark expected Friday</button></div>`,
+  c4:()=>`<div class="kicker">Concern · the Payfast rhythm</div><h3>No Payfast payout for three weekdays.</h3><dl><dt>Last payout</dt><dd>Thu 24 Sep · ₨41,200</dd><dt>Usual gap</dt><dd>1 weekday · 5 of the last 22 skipped</dd><dt>Longest seen</dt><dd>3 weekdays · August</dd><dt>Watch → concern</dt><dd>at 5 weekdays</dd></dl><div class="acts"><button class="btn">Check Payfast</button><button class="btn">Record a payout</button></div>`,
+  c5:()=>`<div class="kicker">Concern · a commitment</div><h3>Rent for October — no bill recorded.</h3><dl><dt>Commitment</dt><dd>Rent — factory, monthly, due the 5th, from MCB</dd><dt>Usual</dt><dd>₨1,46,000 · last 6 months, unchanged</dd><dt>Last bill</dt><dd>BL-2201 · 4 Sep · paid 5 Sep</dd></dl><div class="acts"><button class="btn primary">Record the bill</button><button class="btn">Post from the commitment</button></div><p class="note">A commitment can post its own bill on the due day, confirmed by the payment.</p>`,
+  concerns:()=>`<div class="kicker">Needs attention</div><h3>Five lines today</h3>${concerns(D.concerns,5)}`,
+  holder:()=>`<div class="kicker">Holder · 1011</div><h3>Cash with Afnan</h3>${stats([{l:'Balance',v:'₨3,10,000'},{l:'Waiting',v:'₨1,50,000 to MCB',s:'Ammar to confirm the deposit'},{l:'Last count',v:'31 Aug · matched'}])}<h4>Statement · September</h4>${table(['Date','What','#In','#Out'],[['27 Sep','CPR-118842 · pending','9,62,000',''],['26 Sep','TR-0231 to MCB · waiting','','1,50,000'],['23 Sep','CPR-118611 collected','8,09,700',''],['23 Sep','CPR-118610 collected','2,41,000',''],['22 Sep','PY-1181 · Zain Stitching','','1,42,000'],['18 Sep','CPR-118377 collected','9,04,200','']],{compact:true})}<div class="acts"><button class="btn primary">Transfer</button><button class="btn">Count</button><button class="btn">Statement PDF</button></div>`,
+  party:()=>`<div class="kicker">Vendor · stitching, washing · credit 30 days · active</div><h3>Al-Hamd Garments</h3>${stats([{l:'We owe',v:'₨4,21,000',s:'₨3,11,000 due Wed 30 Sep'},{l:'Open orders',v:'2',s:'PO-0409 · PO-0412'},{l:'Reliability',v:'94%',s:'on time, last 12 returns'}])}<p class="small muted">Aging: current ₨3,11,000 · 1–30 days ₨86,000 · 31–60 ₨24,000</p><h4>Terms & rates</h4><dl><dt>Terms</dt><dd>credit 30 days · since 1 Jul 2026 (was 15 days)</dd><dt>CMT · tee</dt><dd>₨80 a piece · since 1 Aug (was ₨75)</dd><dt>CMT · pants</dt><dd>₨130 a piece</dd><dt>Wash · enzyme</dt><dd>₨110 a piece</dd><dt>Tax</dt><dd>withholding 4.5% · filer</dd></dl><h4>Ledger</h4>${table(['Date','Document','#Debit','#Credit','#Balance'],[['25 Sep','PY-1188 payment','2,00,000','','4,21,000'],['23 Sep','GP-1418 dispatch · 1,200 pcs','','','4,21,000'],['19 Sep','BL-2279 · CMT PO-0405','','98,000','6,21,000'],['12 Sep','RT-0911 return · 12 short','','−1,560','5,23,000'],['5 Sep','BL-2250 · CMT PO-0398','','1,20,000','5,24,560']],{compact:true})}<div class="acts"><button class="btn primary">Bill</button><button class="btn">Pay</button><button class="btn">Statement PDF</button><button class="btn">Share</button></div>`,
+  cpr:()=>`<div class="kicker">CPR · upfront · PostEx</div><h3>CPR-118842</h3>${stats([{l:'Net',v:'₨9,62,000',s:'318 parcels · COD ₨11,84,200'},{l:'Fees and tax',v:'₨2,22,200',s:'posted to 5060'},{l:'State',v:'waiting · 2 days',s:'issued Fri 25 Sep'}])}<p class="small">Derived nightly from the parcels' <span class="n">cprNumber_1</span>; nothing was typed. The collection form asks for the amount counted, the holder and the receipt; a difference goes to 9030 with a reason.</p><div class="acts"><button class="btn primary">Record the collection</button><button class="btn">Parcels</button><button class="btn">PDF</button></div>`,
+  bill:()=>`<div class="kicker">Bill · BL-2261 · Al-Karam Textile</div><h3>₨3,10,000 · due Wed 30 Sep</h3>${stats([{l:'Matched',v:'PO-0088 · RC-0412',s:'qty within 2% · rate +4% off the card'},{l:'Tax',v:'withholding 4.5% · ₨13,950',s:'filer · to 2130'},{l:'Evidence',v:'invoice AK-7781',s:'attached · signed URL'}])}<h4>History</h4><p class="small">Edited Fri 25 Sep 11:20 by Afnan — rate 258 → 265, reason "revised invoice"; re-validated, re-posted, still flagged.</p><div class="acts"><button class="btn primary">Pay</button><button class="btn">Edit</button><button class="btn">PDF</button><button class="btn">Share</button></div>`,
+  commitment:()=>`<div class="kicker">Commitment · fixed · factory</div><h3>Rent — factory</h3><dl><dt>Payee</dt><dd>the landlord (vendor, role rent)</dd><dt>Cadence</dt><dd>monthly · due the 5th · from MCB</dd><dt>Expected</dt><dd>₨1,46,000 · learned from 6 bills</dd><dt>Evidence</dt><dd>the receipt · required</dd><dt>This period</dt><dd><span class="word urgent">October · no bill yet</span></dd></dl><div class="acts"><button class="btn primary">Record the bill</button><button class="btn">Edit the commitment</button></div>`,
+  doc:()=>`<div class="kicker">Document · bill · Al-Karam Textile</div><h3>BL-2261</h3><p class="small">Labels: groovy · 2026-09 · Q1 FY27 · holder — · 5010 Fabric · Cost of goods → Fabric · factory · variable · PO-0409 · online_cod · manual · by afnan · posted.</p><h4>Postings</h4>${table(['Account','#Debit','#Credit'],[['5010 Fabric','3,10,000',''],['1160 Input tax','',''],['2010 Payable — vendors','','2,96,050'],['2130 Withholding payable','','13,950']],{compact:true})}<h4>History</h4><p class="small">Posted Tue 22 Sep 09:14 by Afnan · edited Fri 25 Sep 11:20 (rate 258 → 265, "revised invoice").</p><div class="acts"><button class="btn">Edit</button><button class="btn">Void</button><button class="btn">PDF</button></div>`,
+  spend:()=>`<div class="kicker">September · cost of goods</div><h3>Fabric & mills · ₨21,33,000</h3><p class="small">Against a usual ₨13,90,000 (median of 6). Two Al-Karam bills carry ₨6,10,000 of it, both for the winter drop.</p><h4>Lines</h4>${table(['Date','Document','#Amount'],[['22 Sep','BL-2261 · Al-Karam','3,10,000'],['19 Sep','BL-2247 · Nishat','2,90,000'],['15 Sep','BL-2239 · Al-Karam','3,00,000'],['9 Sep','BL-2231 · Gul Enterprises','2,64,000'],['4 Sep','BL-2226 · JR Trader','1,98,000']],{compact:true})}<div class="acts"><button class="btn">This is the drop</button><button class="btn">Investigate</button></div>`,
+  leg:()=>`<div class="kicker">Costing</div><h3>Three legs missing</h3><ul class="check"><li><span class="dot warn"></span>PO-0412 · wash — no rate on Al-Hamd's card for enzyme wash on tees<span class="st warn">add the rate</span></li><li><span class="dot warn"></span>PO-0405 · wash — the gate-pass return has no bill yet<span class="st warn">record the bill</span></li><li><span class="dot warn"></span>PO-0401 · fabric — fabric-in FI-0912 carries no rate<span class="st warn">add on fabric-in</span></li></ul>`,
+  costsheet:()=>`<div class="kicker">Cost sheet · PO-0412</div><h3>Effortless tee · deep blue · 1,200 pieces</h3>${table(['Leg','#Amount','#Per piece','From'],[['Fabric','3,84,000','320','RC-0412 · FIFO'],['CMT','96,000','80','GP-1418 return · card rate'],['Wash','<span class="word warn">missing</span>','','no rate on the card'],['Embellishment','1,08,000','90','J-0492 · Asghar'],['Trims','22,800','19','store issue'],['Packaging','14,400','12','store issue'],['Courier','71,000','59','per parcel'],['Overhead','58,000','48','9.2% setting']],{total:['Cost','7,54,200','628','sale ₨1,490 · margin 58%'],compact:true})}<div class="acts"><button class="btn">PDF</button></div>`,
+  loan:()=>`<div class="kicker">The loan · both books</div><h3>₨11,40,000 outstanding</h3><dl><dt>Opening</dt><dd>₨15,00,000 joint · 1 Jul 2026</dd><dt>Repaid</dt><dd>₨3,60,000 · from 17 Payfast payouts</dd><dt>Rule</dt><dd>repay first, then draw 50 / 50</dd><dt>Pace</dt><dd>₨1,20,000 a month · clear in ~10 months</dd></dl><div class="acts"><button class="btn">Repayment</button><button class="btn">Draw</button><button class="btn">Ledger</button></div>`,
+  svaccount:()=>`<div class="kicker">Savings account · Ammar</div><h3>Payfast payout account</h3>${stats([{l:'Balance',v:'₨14,62,000',s:'reconciled 25 Sep'},{l:'This month',v:'+₨7,08,000',s:'17 payouts · 5 weekdays with none'}])}<div class="acts"><button class="btn">Import statement</button><button class="btn">Statement PDF</button></div>`,
+  audit:()=>`<div class="kicker">Audit row</div><h3>Bill BL-2261 edited</h3><dl><dt>When</dt><dd>Fri 25 Sep 11:20</dd><dt>Who</dt><dd>Afnan</dd><dt>Fields</dt><dd>rate: 258 → 265; total: 3,01,800 → 3,10,000</dd><dt>Reason</dt><dd>revised invoice</dd><dt>Effect</dt><dd>re-validated, re-posted under the same key; still flagged (rate off card)</dd></dl>`,
+};
 
-/* ── the money speaks ── */
-const L=n=>(n<0?'−':'')+'₨'+(Math.abs(n)/1e5).toFixed(1)+'L';
-const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-function calendarDays(){
-  const start=new Date(2026,8,27);let bal=sum(D.accounts.map(a=>a.v));const out=[];
-  const cprNet={2:960000,5:1120000};const payDay={3:640000,6:560000};const payfast=42000;   /* weekdays, daily; some days skipped — the learned median */
-  const special={'10-1':{out:1180000,ol:'Salaries'},'10-3':{out:1872000,ol:'Nishat bill'},'10-8':{in:190000,il:'TCS credit'},'10-9':{in:78000,il:'Ahmed Traders'},'10-15':{out:120000,ol:'Loan repayment'},'10-2':{out:41000,ol:'Subscriptions'}};
-  for(let i=0;i<30;i++){const d=new Date(start);d.setDate(start.getDate()+i);const wd=d.getDay();let inn=0,o=0,il=[],ol=[];
-    if(cprNet[wd]){inn+=cprNet[wd];il.push('CPR');} if(wd>=1&&wd<=5){inn+=payfast;il.push('Payfast');} if(payDay[wd]){o+=payDay[wd];ol.push('pay day');}
-    const sp=special[(d.getMonth()+1)+'-'+d.getDate()];if(sp){if(sp.in){inn+=sp.in;il.push(sp.il);} if(sp.out){o+=sp.out;ol.push(sp.ol);}}
-    bal+=inn-o;out.push({d,wd,inn,out:o,il,ol,bal});}
-  return out;
-}
-function cashCal(){
-  const days=calendarDays();const floor=1000000;const low=days.reduce((m,x)=>x.bal<m.bal?x:m,days[0]);
-  const cells=days.map((x,i)=>{const cls=['cal-d',i===0?'cal-today':'',x.bal<0?'short':x.bal<floor?'tight':'',(!x.inn&&!x.out)?'quiet':''].join(' ');
-    return `<div class="${cls}" title="Projected holders' balance ${compact(x.bal)}"><small>${WD[x.wd]}</small><b>${x.d.getDate()} ${['Sep','Oct'][x.d.getMonth()-8]}</b>${x.inn?`<span class="in">+${L(x.inn)} ${x.il.join(', ')}</span>`:''}${x.out?`<span class="out">−${L(x.out)} ${x.ol.join(', ')}</span>`:''}</div>`}).join('');
-  return `<div class="cal">${cells}</div>
-  <div class="cal-key"><span><i style="background:var(--accent-warning-soft);border-color:transparent"></i>the holders dip under the ₨10 lac floor</span><span><i style="background:var(--accent-urgent-soft);border-color:transparent"></i>a day that cannot be funded</span><span><i style="border-color:var(--dark);border-width:2px"></i>today</span></div>
-  <div class="basis"><b>Low point ${compact(low.bal)} on ${WD[low.wd]} ${low.d.getDate()} Oct.</b> Inflows: Tuesday and Friday CPRs at their learned median (₨9.6 lac, ₨11.2 lac over 12 weeks), TCS at day 90, Payfast on every weekday at its learned median (₨42,000 — paid on 17 of the last 22 weekdays, the band widened for the skips), pay-later customers on their due date. Outflows: Wednesday and Saturday pay days from every vendor's terms, salaries on the 1st, the loan repayment on the 15th, subscriptions. A range, not a promise.</div>
-  ${tableFor(['Day','In','Out','Balance'],days.filter(x=>x.inn||x.out).map(x=>[WD[x.wd]+' '+x.d.getDate()+' '+['Sep','Oct'][x.d.getMonth()-8]+(x.il.length?' · '+x.il.join(', '):'')+(x.ol.length?' · '+x.ol.join(', '):''),x.inn?money(x.inn):'',x.out?money(x.out):'',money(x.bal)]))}`;
-}
-const SM=[
-  {kind:'Cost of goods',items:[['Fabric & mills',2133000,'concern','1.5× its usual ₨13.9 lac — two Al-Karam bills'],['Stitching',954000,'fine','as usual'],['Embellishment',505000,'fine','as usual · Asghar ₨1.28 lac at his card'],['Courier fees & reversals',364000,'watch','reversals 8.1% of parcels against a usual 5.4%'],['Trims',312000,'fine','as usual']]},
-  {kind:'People',items:[['Salaries',1180000,'fine','as budgeted · 42 people'],['Runners & floats',16200,'fine','']]},
-  {kind:'Running the business',items:[['Marketing & PR',337000,'fine','₨3.0 lac budget, ₨0.37 lac over — Paid PR approved by Ammar'],['Utilities & rent',214000,'fine','as usual'],['Maintenance',86000,'watch','₨0.9 lac against a usual ₨0.3 lac — the studio paint job'],['Subscriptions',41000,'fine',''],['Other',152000,'fine','']]},
-];
-function spendMap(){
-  const rowTot=SM.map(r=>sum(r.items.map(i=>i[1])));const max=Math.max(...rowTot);
-  const rows=SM.map((r,ri)=>`<div class="smap-kind">${r.kind} · <em>${compact(rowTot[ri])}</em></div><div class="smap-row" style="height:${Math.max(44,Math.round(rowTot[ri]/max*96))}px">${r.items.map(i=>`<div class="smap-tile ${i[2]}" style="flex:${i[1]}" title="${i[3]}"><b>${i[0]}</b><span>${compact(i[1])}${i[2]==='concern'?' · concern':i[2]==='watch'?' · watch':''}</span></div>`).join('')}</div>`).join('');
-  const r100=[['Fabric',29,'var(--chart-1)'],['Stitching',13,'var(--chart-2)'],['Embellishment',7,'var(--chart-3)'],['Couriers',5,'var(--chart-5)'],['Salaries',16,'var(--chart-6)'],['Everything else',15,'var(--chart-other)'],['Kept',15,'var(--accent-success)']];
-  const all=SM.flatMap(r=>r.items);
-  return `<div class="smap">${rows}</div>
-  <div class="cal-key" style="margin-top:10px"><span><i style="background:var(--surface-2)"></i>fine</span><span><i style="background:var(--accent-warning-soft);border-color:transparent"></i>watch — above its history or near its budget</span><span><i style="background:var(--accent-urgent-soft);border-color:transparent"></i>concern — far above its history, over budget, or a term broken</span></div>
-  <div class="smap-kind" style="margin-top:12px">Of every ₨100 that came in this month</div>
-  <div class="r100">${r100.map(x=>`<div style="flex:${x[1]}"><i style="background:${x[2]}"></i><b>${x[1]}</b> ${x[0]}</div>`).join('')}</div>
-  <div class="basis">Area is rupees; the tint is the state from three tests — its own six months (median and spread), its budget, and its terms — the worst wins. Hover a tile for the comparison. <b>"This is the drop"</b> on a concern silences it for the month and teaches the baseline.</div>
-  ${tableFor(['Line','Amount','State','Why'],all.map(i=>[i[0],money(i[1]),i[2],i[3]||'—']))}`;
-}
-function groupedOf(cats,a,b,la,lb,fmt,id){
-  const max=niceMax(Math.max(...a,...b));
-  const cols=cats.map((c,i)=>{const last=i===cats.length-1;return `<div class="col" tabindex="0" data-tip="${c}|${fmt(a[i])} ${la}|${fmt(b[i])} ${lb}">${last?`<span class="dlabel">${fmt(a[i])} · ${fmt(b[i])}</span>`:''}<div class="bar" style="height:${a[i]/max*100}%"></div><div class="bar s2" style="height:${b[i]/max*100}%"></div></div>`}).join('');
-  return `<div class="legend"><span><i style="background:var(--chart-1)"></i>${la}</span><span><i style="background:var(--chart-2)"></i>${lb}</span></div>
-  <div class="chart" data-chart="${id}"><div class="plot padl">${gridlines(max,v=>fmt(v))}<div class="cols">${cols}</div></div><div class="xlab">${cats.map(c=>`<span>${c}</span>`).join('')}</div><div class="tip"></div></div>
-  ${tableFor(['',la,lb],cats.map((c,i)=>[c,fmt(a[i]),fmt(b[i])]))}`;
-}
-function stackedOf(cats,series,fmt,id){
-  const totals=cats.map((c,i)=>sum(series.map(sr=>sr.vals[i])));const max=niceMax(Math.max(...totals));
-  const cols=cats.map((c,i)=>`<div class="col" tabindex="0" data-tip="${c}|${series.map(sr=>fmt(sr.vals[i])+' '+sr.name).join('|')}"><span class="dlabel">${fmt(totals[i])}</span><div class="stack" style="height:${totals[i]/max*100}%">${series.map((sr,si)=>`<i class="${si?'s'+(si+1):''}" style="flex:${sr.vals[i]}"></i>`).join('')}</div></div>`).join('');
-  return `<div class="legend">${series.map((sr,si)=>`<span><i style="background:var(--chart-${si+1})"></i>${sr.name}</span>`).join('')}</div>
-  <div class="chart" data-chart="${id}"><div class="plot padl">${gridlines(max,v=>fmt(v))}<div class="cols">${cols}</div></div><div class="xlab">${cats.map(c=>`<span>${c}</span>`).join('')}</div><div class="tip"></div></div>
-  ${tableFor(['',...series.map(sr=>sr.name),'Total'],cats.map((c,i)=>[c,...series.map(sr=>fmt(sr.vals[i])),fmt(totals[i])]))}`;
-}
-
-/* ── couriers ── */
-function couriers(){
-  const r=D.cprRhythm,c=D.courierCost;
-  return `<div class="page-head"><div><div class="page-title">Couriers &amp; collections</div><div class="page-sub">The first mile of money in. PostEx issues a CPR on Tuesday and Friday; it is collected in cash by a named holder, with the receipt attached.</div></div>
-  <div class="btn-row"><button class="btn">+ Statement (TCS · Bykea · Blue-Ex)</button><button class="btn primary">Collect a CPR</button></div></div>
-  <div class="filters"><span class="chip on">All couriers</span><span class="chip">PostEx</span><span class="chip">TCS</span><span class="chip">Blue-Ex</span><span class="chip">Bykea</span><span class="chip">Payfast</span><span style="width:8px"></span><span class="chip on">September</span><span class="chip">Custom…</span></div>
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-label">In transit with PostEx</div><div class="kpi-val">${compact(D.recv.postex)}</div><div class="kpi-sub">delivered, not yet on a CPR · 412 parcels</div></div>
-    <div class="kpi warn"><div class="kpi-label">CPR to collect</div><div class="kpi-val">${compact(D.recv.cpr)}</div><div class="kpi-sub">Friday 25 Sep · 318 parcels · 2 days</div></div>
-    <div class="kpi"><div class="kpi-label">Collected this month</div><div class="kpi-val">₨78.4 lac</div><div class="kpi-sub">9 CPRs · 8 into cash, 1 into MCB · ₨300 short once</div></div>
-    <div class="kpi"><div class="kpi-label">TCS</div><div class="kpi-val">${compact(D.recv.tcs)}</div><div class="kpi-sub">due Thu 8 Oct (day 90) · TCS account ₨62,000</div></div>
-    <div class="kpi bad"><div class="kpi-label">Blue-Ex still owes</div><div class="kpi-val">${compact(D.recv.bluex)}</div><div class="kpi-sub">legacy · unchanged 41 days</div></div>
-  </div>
-  <div class="alerts">
-    <div class="alert warn"><span class="ic">?</span><div><b>Friday's CPR is not collected.</b> ₨9,62,000 net for 318 parcels; Afnan usually collects the day after. Tuesday's will add about ₨9.6 lac.</div><span class="act">Record the collection →</span></div>
-    <div class="alert urgent"><span class="ic">!</span><div><b>Blue-Ex: ₨2.35 lac unchanged since 17 August.</b> Nothing collected in 41 days against the statement of 30 June.</div><span class="act">Their statement →</span></div>
-    <div class="alert ok"><span class="ic">✓</span><div><b>Tuesday's two CPRs reconciled.</b> 517 parcels' settle flags agree with ₨10,50,700 counted into Afnan's cash on Wednesday.</div><span class="act">CPR-118611 →</span></div>
-  </div>
-  <div class="grid2">
-    <div class="card"><div class="card-title"><span>What a Tuesday and a Friday bring (₨000, net)</span>${tvBtn('rhythm')}</div>${groupedOf(r.weeks,r.tue,r.fri,'Tuesday CPR','Friday CPR',k,'rhythm')}<div class="basis">Median over 12 weeks: Tuesday ₨9.6 lac, Friday ₨11.2 lac — the calendar's expected inflows are learned from this, not typed.</div></div>
-    <div class="card"><div class="card-title"><span>What the couriers cost (₨000)</span>${tvBtn('cost')}</div>${stackedOf(c.months,[{name:'Fees & tax',vals:c.fees},{name:'Reversals',vals:c.rev}],k,'cost')}<div class="basis">Reversal fees are <b>8.1% of parcels in September against a usual 5.4%</b> — the courier line on the spend map is on watch for that.</div></div>
-  </div>
-  <div class="card" style="margin-top:12px"><div class="card-title"><span>CPRs and statements</span><button class="tv">Excel</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>CPR</th><th>Kind</th><th>Day</th><th class="num">Parcels</th><th class="num">COD</th><th class="num">Fees &amp; tax</th><th class="num">Reversals</th><th class="num">Net</th><th>Collected by · when · into</th><th>State</th></tr></thead><tbody>
-    ${D.cprs.map(x=>`<tr><td class="nw">${x[0]}</td><td><span class="src">${x[1]}</span></td><td class="nw">${x[2]}</td><td class="num">${x[3]}</td><td class="num">${x[4]}</td><td class="num">${x[5]}</td><td class="num">${x[6]}</td><td class="num">${x[7]}</td><td class="nw">${x[8]}</td><td class="nw">${x[9]}</td></tr>`).join('')}
-    </tbody></table></div>
-    <div class="basis">A PostEx CPR is <b>derived every night from the parcels</b> (grouped by CPR number; upfront and reserve are two receipts) — never typed. Only the <b>collection</b> is typed: which CPRs, the cash counted, the holder, the receipt. One collection per CPR; a difference from the net needs a reason.</div></div>
-  <div class="grid2">
-    <div class="card"><div class="card-title"><span>PostEx · <span class="tag ok">cpr</span></span></div><div class="tbl-wrap"><table><tbody>
-      <tr><td>CPR days</td><td class="num">Tuesday · Friday</td></tr><tr><td>Usually collected by</td><td class="num">Afnan, the next day, in cash</td></tr><tr><td>Tolerance</td><td class="num">0.5% of net, else a reason</td></tr><tr><td>Fees</td><td class="num">per parcel + tax · reversal fee per return</td></tr><tr><td>Share of money in</td><td class="num">90%</td></tr></tbody></table></div></div>
-    <div class="card"><div class="card-title"><span>TCS · <span class="tag ok">account</span></span></div><div class="tbl-wrap"><table><tbody>
-      <tr><td>Credited</td><td class="num">90 days after delivery, to the TCS account</td></tr><tr><td>Owed inside the 90 days</td><td class="num">₨1,90,000 · 188 parcels</td></tr><tr><td>TCS account</td><td class="num">₨62,000 · drawn to MCB by transfer</td></tr><tr><td>Statement</td><td class="num">typed with attachment · no feed</td></tr></tbody></table></div></div>
-    <div class="card"><div class="card-title"><span>Blue-Ex · <span class="tag bad">legacy</span></span></div><div class="tbl-wrap"><table><tbody>
-      <tr><td>Opening</td><td class="num">₨3,25,000 · statement 30 Jun 2026</td></tr><tr><td>Collected since</td><td class="num">₨90,000 · 17 Aug</td></tr><tr><td>Still owed</td><td class="num">₨2,35,000 · 89 days old</td></tr><tr><td>New orders</td><td class="num">refused — nothing is dispatched to Blue-Ex</td></tr></tbody></table></div></div>
-    <div class="card"><div class="card-title"><span>Bykea · <span class="tag warn">manual</span></span></div><div class="tbl-wrap"><table><tbody>
-      <tr><td>Money reaches</td><td class="num">Raees · the drawer</td></tr><tr><td>Confirmed by</td><td class="num">Raees, before it counts</td></tr><tr><td>Statement</td><td class="num">typed · last 12 Sep · ₨32,300</td></tr><tr><td>Feed</td><td class="num">later — least priority</td></tr></tbody></table></div></div>
-    <div class="card"><div class="card-title"><span>Payfast · <span class="tag ok">weekdays</span></span></div><div class="tbl-wrap"><table><tbody>
-      <tr><td>Pays out</td><td class="num">on weekdays, daily · some days none</td></tr><tr><td>Last payout</td><td class="num">Fri 25 Sep · ₨41,200</td></tr><tr><td>This month</td><td class="num">17 of 22 weekdays · ₨7.08 lac · longest gap 3 days</td></tr><tr><td>Lands in</td><td class="num">the Savings book's payout account</td></tr><tr><td>Alarm</td><td class="num">3 weekdays without one → watch · 5 → concern</td></tr></tbody></table></div></div>
-  </div>`;
-}
-
-/* ── savings: the owners' book ── */
-function savings(){
-  const v=D.sv;const money_=sum(v.accounts.map(a=>a[2]));const assets=sum(v.assets.map(a=>a[2]));const liab=sum(v.liabilities.map(a=>a[2]));const infl=sum(v.inflows.map(x=>x[1]));const spend=sum(v.spend.map(x=>x[1]));
-  const annual=r=>r[3]==='yearly'?r[2]:r[3]==='weekly'?r[2]*52:r[2]*12;
-  const byOwner={};v.subs.forEach(r=>{byOwner[r[1]]=(byOwner[r[1]]||0)+annual(r)});
-  const tg=v.targets.map(t=>{const pct=Math.min(100,Math.round(t.saved/t.amt*100));return `<div class="tgt-row"><h4>${t.n} <span class="src">${t.who}</span></h4><span class="amt">${compact(t.saved)} of ${compact(t.amt)}</span>${meter(pct,pct<50?'warn':'')}<p><b>${pct}% there.</b> ${t.spent?`Spent so far ${compact(t.spent)}. `:''}${t.need?`Needs <b>${compact(t.need)} a month</b> for ${t.by}; the last three months averaged ${compact(t.pace)}, so at this pace ${t.eta}.`:t.eta}</p></div>`}).join('');
-  const smax=Math.max(...v.spend.map(x=>x[1]));
-  return `<div class="page-head"><div><div class="page-title">Savings</div><div class="page-sub">The owners' own book — Afnan, Ammar and joint. Separate from Groovy's ledger; the loan between the two is the only bridge.</div></div>
-  <div class="btn-row"><button class="btn">Statement</button><button class="btn">+ Valuation</button><button class="btn">+ Payfast payout</button><button class="btn primary">+ Entry</button></div></div>
-  <div class="filters"><span class="chip on">All</span><span class="chip">Afnan</span><span class="chip">Ammar</span><span class="chip">Joint</span><span style="width:8px"></span><span class="chip on">September</span><span class="chip">Quarter</span><span class="chip">Custom…</span></div>
-  <div class="kpi-grid">
-    <div class="kpi lead"><div class="kpi-label">Savings — money in hand</div><div class="kpi-val hero">${compact(money_)}</div><div class="kpi-sub">${v.accounts.map(a=>a[0].replace(' account','')+' '+compact(a[2]).replace('₨','')).join(' · ')}</div></div>
-    <div class="kpi"><div class="kpi-label">Net worth</div><div class="kpi-val">${compact(assets-liab)}</div><div class="kpi-sub">assets ${compact(assets)} · owes ${compact(liab)}</div></div>
-    <div class="kpi"><div class="kpi-label">Groovy owes savings</div><div class="kpi-val">${compact(D.loan.outstanding)}</div><div class="kpi-sub">of ${compact(D.loan.opening)} · ${compact(D.loan.repaidQ)} back this quarter</div></div>
-    <div class="kpi"><div class="kpi-label">Saved this month</div><div class="kpi-val">${compact(infl-spend)}</div><div class="kpi-sub">in ${compact(infl)} · spent ${compact(spend)}</div></div>
-  </div>
-  <div class="alerts">
-    <div class="alert warn"><span class="ic">?</span><div><b>The marriage: ₨14.2 lac of ₨25 lac by March 2027.</b> That needs ₨1.8 lac a month; the last three months averaged ₨1.55 lac, which lands in April. ₨25,000 more a month makes March.</div><span class="act">The target →</span></div>
-    <div class="alert warn"><span class="ic">?</span><div><b>Adobe Creative Cloud was paid twice in September</b> — ₨15,900 on 4 Sep and again on 26 Sep from Ammar's bank.</div><span class="act">The two lines →</span></div>
-    <div class="alert ok"><span class="ic">✓</span><div><b>Payfast payout account reconciled to 25 Sept.</b> Seventeen weekday payouts (${compact(infl)}) matched Groovy's Payfast receivable; five weekdays had none, the longest gap three days. ${compact(D.loan.repaidQ)} repaid the loan, the rest was drawn.</div><span class="act">Statement →</span></div>
-  </div>
-  <div class="grid2">
-    <div class="card"><div class="card-title"><span>Saving for</span><button class="tv">+ Target</button></div><div class="tgt">${tg}</div><div class="basis">A target is an envelope — a tag on entries and on assets — not an account; the money stays where it sits. Saved so far is derived, never typed.</div></div>
-    <div class="card"><div class="card-title"><span>The loan to Groovy</span><button class="tv">Ledger</button></div>
-      <div class="tbl-wrap"><table><tbody>
-      <tr><td>Borrowed by Groovy</td><td class="num">${compact(D.loan.opening)} · opening, 1 Oct 2026</td></tr>
-      <tr><td>Repaid</td><td class="num">${compact(D.loan.opening-D.loan.outstanding)}</td></tr>
-      <tr><td>Outstanding</td><td class="num"><b>${compact(D.loan.outstanding)}</b></td></tr>
-      <tr><td>Pace</td><td class="num">${compact(D.loan.pace)} a month · clear by August 2027</td></tr>
-      <tr><td>Payfast rule</td><td class="num">a payout repays the loan first, then is drawn 50 / 50</td></tr>
-      </tbody></table></div>${meter(Math.round((D.loan.opening-D.loan.outstanding)/D.loan.opening*100))}
-      <div class="basis">One document per draw or repayment, posted on <b>both books</b>: a liability on Groovy's, an asset here. The two can never disagree.</div></div>
-  </div>
-  <div class="grid2" style="margin-top:12px">
-    <div class="card"><div class="card-title"><span>Where the money sits</span><button class="tv">Import statement</button></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Account</th><th>Owner</th><th class="num">Balance</th><th>Reconciled to</th></tr></thead><tbody>
-      ${v.accounts.map(a=>`<tr><td>${a[0]}</td><td><span class="src">${a[1]}</span></td><td class="num">${money(a[2])}</td><td>${a[3]}</td></tr>`).join('')}
-      <tr class="total"><td>Money in hand</td><td></td><td class="num">${money(money_)}</td><td></td></tr>
-      </tbody></table></div><div class="basis">Every inflow carries its attachment — the Payfast statement line, the bank line. Cash is counted, and the count is the reconciliation.</div></div>
-    <div class="card"><div class="card-title"><span>Spent this month, and whether to worry</span></div>
-      <div class="hbars">${v.spend.map(x=>`<div class="hb"><span class="n">${x[0]}</span><span class="t"><i style="width:${x[1]/smax*100}%${x[2]==='watch'?';background:var(--accent-warning)':''}"></i></span><span class="v">${compact(x[1])}</span></div>`).join('')}</div>
-      <div class="basis"><b>${compact(spend)} spent</b> · the marriage is on watch against its plan, subscriptions for the double Adobe charge; everything else is inside its usual range.</div></div>
-  </div>
-  <div class="card" style="margin-top:12px"><div class="card-title"><span>Subscriptions — what we are paying for</span><button class="tv">+ Subscription</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Subscription</th><th>Owner</th><th class="num">Amount</th><th>Every</th><th>Next due</th><th class="num">A year</th></tr></thead><tbody>
-    ${v.subs.map(r=>`<tr><td>${r[0]}</td><td><span class="src">${r[1]}</span></td><td class="num">${money(r[2])}</td><td>${r[3].replace('ly','')}</td><td>${r[4]}</td><td class="num">${money(annual(r))}</td></tr>`).join('')}
-    ${Object.keys(byOwner).map(o=>`<tr class="total"><td>${o}</td><td></td><td class="num">${money(Math.round(byOwner[o]/12))} a month</td><td></td><td></td><td class="num">${money(byOwner[o])}</td></tr>`).join('')}
-    </tbody></table></div>
-    <div class="basis">Detected from the statements — the same payee, the same amount, a regular gap — and confirmed by an owner. A subscription paid twice, one not paid on its day, or one whose amount moved shows up on the strip above.</div></div>
-  <div class="card"><div class="card-title"><span>Assets and liabilities — net worth</span><button class="tv">History</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>What</th><th>Kind</th><th>Whose</th><th class="num">Value</th></tr></thead><tbody>
-    ${v.assets.map(a=>`<tr><td>${a[0]}</td><td>${a[1]}</td><td><span class="src">${a[3]}</span></td><td class="num">${money(a[2])}</td></tr>`).join('')}
-    <tr class="total"><td>Assets</td><td></td><td></td><td class="num">${money(assets)}</td></tr>
-    ${v.liabilities.map(a=>`<tr><td>${a[0]}</td><td>${a[1]}</td><td><span class="src">${a[3]}</span></td><td class="num">−${money(a[2])}</td></tr>`).join('')}
-    <tr class="total"><td>Owed</td><td></td><td></td><td class="num">−${money(liab)}</td></tr>
-    <tr class="total"><td>Net worth</td><td></td><td></td><td class="num">${money(assets-liab)}</td></tr>
-    </tbody></table></div>
-    <div class="basis">Money accounts are valued by their ledger; the car, the certificates and the loan to Groovy by their latest valuation or outstanding — a revaluation is a journal here, never income. Per owner and joint on the filter above.</div></div>`;
-}
-
-/* ── wiring ── */
+/* ── state and render ── */
+const NAMES={today:'Today',money:'Money',in:'Money in',out:'Money out',parties:'Parties',ledger:'Ledger',costing:'Costing',savings:'Savings',reports:'Reports',close:'Close & audit'};
+const ALIAS={overview:'today',couriers:'in',vendors:'parties',purchasing:'out',pnl:'reports',insights:'reports'};
+const DEFAULT_RAIL={parties:'party'};
+let state={tab:'today',width:'desktop',theme:'system',rail:null};
 const main=document.getElementById('main');
-const screens={overview,couriers,ledger,vendors,purchasing,savings,pnl,insights};
-let tab='overview';
 function render(){
-  main.innerHTML=screens[tab]();
-  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  document.querySelectorAll('[data-nav]').forEach(b=>b.classList.toggle('on',b.dataset.nav===tab));
-  wire();
+  const rail=state.rail;
+  main.className=rail?'rail-open':'';
+  main.innerHTML=`<div class="page">${P[state.tab]()}</div>${rail?`<aside class="rail"><button class="close" data-close-rail aria-label="Close">×</button>${(RAIL[rail]||RAIL.doc)()}</aside>`:''}`;
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===state.tab));
+  document.querySelectorAll('[data-nav]').forEach(b=>b.classList.toggle('on',b.dataset.nav===state.tab));
+  document.querySelectorAll('#widths button').forEach(b=>b.classList.toggle('on',b.dataset.w===state.width));
+  document.querySelectorAll('#themes button').forEach(b=>b.classList.toggle('on',b.dataset.t===state.theme));
+  document.getElementById('frame').classList.toggle('phone',state.width==='phone');
 }
-function wire(){
-  /* table view toggles */
-  main.querySelectorAll('.tv').forEach(btn=>{const card=btn.closest('.card');const tbl=card.querySelector('.tbl-view');const chart=card.querySelector('.chart, .donut-wrap');if(tbl){tbl.hidden=true;}
-    btn.addEventListener('click',()=>{const on=btn.classList.toggle('on');btn.setAttribute('aria-pressed',on);if(tbl)tbl.hidden=!on;if(chart)chart.hidden=on;card.querySelectorAll('.legend').forEach(l=>l.hidden=on);});});
-  /* bar tooltips */
-  main.querySelectorAll('.chart').forEach(ch=>{const tip=ch.querySelector('.tip');if(!tip)return;
-    ch.querySelectorAll('.col[data-tip]').forEach(col=>{
-      const show=()=>{const parts=col.dataset.tip.split('|');tip.innerHTML='<b>'+parts[0]+'</b>'+parts.slice(1).map((p,i)=>`<span class="k" style="background:var(--chart-${i+1})"></span>${p}`).join('<br>');
-        const r=col.getBoundingClientRect(),cr=ch.getBoundingClientRect();tip.classList.add('show');let left=r.left-cr.left+r.width/2-tip.offsetWidth/2;left=Math.max(0,Math.min(left,cr.width-tip.offsetWidth));tip.style.left=left+'px';tip.style.top=Math.max(0,(r.top-cr.top)-tip.offsetHeight-8)+'px';
-        ch.querySelectorAll('.col').forEach(c=>c.classList.toggle('dim',c!==col));};
-      const hide=()=>{tip.classList.remove('show');ch.querySelectorAll('.col').forEach(c=>c.classList.remove('dim'));};
-      col.addEventListener('pointerenter',show);col.addEventListener('focus',show);col.addEventListener('pointerleave',hide);col.addEventListener('blur',hide);});
-    /* line crosshair */
-    const hov=ch.querySelector('.hover');if(hov){const xh=ch.querySelector('.xhair');const plot=hov.parentElement;
-      const kind=ch.dataset.chart;
-      hov.addEventListener('pointermove',e=>{const r=hov.getBoundingClientRect();const f=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
-        let label='',lines=[];
-        if(kind==='balance'){const i=Math.round(f*59);const x=i/59*100;xh.style.left=x+'%';xh.style.display='block';
-          if(i<=29){label='Day '+(i-29);lines=[`<span class="k" style="background:var(--chart-1)"></span>${k(D.balance.hist[i])} balance`];label=i===29?'Today':(29-i)+' days ago';}
-          else{const fc=D.balance.fcast[i-30];label='In '+(i-29)+' days';lines=[`<span class="k" style="background:var(--chart-1);opacity:.6"></span>${k(fc.m)} projected`,`${k(fc.lo)} to ${k(fc.hi)}`];}
-        }else{const i=Math.round(f*11);const x=i/11*100;xh.style.left=x+'%';xh.style.display='block';label=D.pnl.months[i]+' '+(i<3?'2025':'2026');lines=[`<span class="k" style="background:var(--chart-1)"></span>₨${D.pnl.rev[i].toFixed(1)}M revenue`,`<span class="k" style="background:var(--chart-2)"></span>₨${D.pnl.exp[i].toFixed(1)}M expenses`];}
-        tip.innerHTML='<b>'+label+'</b>'+lines.join('<br>');tip.classList.add('show');
-        const cr=ch.getBoundingClientRect();let left=(e.clientX-cr.left)+12;if(left+tip.offsetWidth>cr.width)left=(e.clientX-cr.left)-tip.offsetWidth-12;tip.style.left=Math.max(0,left)+'px';tip.style.top=(plot.getBoundingClientRect().top-cr.top+8)+'px';});
-      hov.addEventListener('pointerleave',()=>{tip.classList.remove('show');xh.style.display='none';});}
-  });
-}
-document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.tab;render();});
-document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{tab=b.dataset.nav;render();}));
-document.getElementById('widths').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#widths button').forEach(x=>x.classList.toggle('on',x===b));document.getElementById('frame').classList.toggle('phone',b.dataset.w==='phone');});
-document.getElementById('themes').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;document.querySelectorAll('#themes button').forEach(x=>x.classList.toggle('on',x===b));const t=b.dataset.t;if(t==='system')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('ma-spec-theme',t)}catch(err){}});
-/* deep links: #couriers #savings #ledger #pnl #insights #vendors #purchasing #phone #dark #phone-dark */
-(function(){const h=(location.hash||'').slice(1).toLowerCase();if(!h)return;const parts=h.split('-');
-  if(screens[parts[0]])tab=parts[0];
-  if(parts.includes('phone')){document.getElementById('frame').classList.add('phone');document.querySelectorAll('#widths button').forEach(x=>x.classList.toggle('on',x.dataset.w==='phone'));}
-  if(parts.includes('dark')){document.documentElement.setAttribute('data-theme','dark');document.querySelectorAll('#themes button').forEach(x=>x.classList.toggle('on',x.dataset.t==='dark'));}
-})();
-try{const t=localStorage.getItem('ma-spec-theme');if(t&&t!=='system'&&!document.documentElement.hasAttribute('data-theme')){document.documentElement.setAttribute('data-theme',t);document.querySelectorAll('#themes button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));}}catch(err){}
-render();
+function go(tab){tab=ALIAS[tab]||tab;if(!P[tab])return;state.tab=tab;state.rail=DEFAULT_RAIL[tab]||null;render()}
+function setTheme(t){state.theme=t;if(t==='system')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('ma-spec-theme',t)}catch(e){}}
+document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.tab)});
+document.getElementById('widths').addEventListener('click',e=>{const b=e.target.closest('button');if(b){state.width=b.dataset.w;render()}});
+document.getElementById('themes').addEventListener('click',e=>{const b=e.target.closest('button');if(b){setTheme(b.dataset.t);render()}});
+document.addEventListener('click',e=>{
+  const nav=e.target.closest('[data-nav]');if(nav){if(nav.dataset.nav!=='more')go(nav.dataset.nav);return}
+  if(e.target.closest('[data-close-rail]')){state.rail=null;render();return}
+  const rec=e.target.closest('#rec-btn');if(rec){document.getElementById('rec-menu').classList.toggle('open');return}
+  if(!e.target.closest('.rec')){const m=document.getElementById('rec-menu');if(m)m.classList.remove('open')}
+  const tv=e.target.closest('[data-tv]');if(tv){const w=document.getElementById('cw-'+tv.dataset.tv);w.classList.toggle('show-table');tv.textContent=w.classList.contains('show-table')?'Show as chart':'Show as table';return}
+  const r=e.target.closest('[data-rail]');if(r&&!e.target.closest('a')){state.rail=r.dataset.rail;render();return}
+  if(e.target.closest('a[href="#"]'))e.preventDefault();
+});
+/* deep links: #today · #in-phone · #parties-dark · #reports-phone-dark; the v3 names still resolve */
+(function(){const h=(location.hash||'').slice(1).split('-');const t=ALIAS[h[0]]||h[0];if(P[t])state.tab=t;if(h.includes('phone'))state.width='phone';if(h.includes('dark'))state.theme='dark';if(h.includes('light'))state.theme='light';if(h.includes('rail')){state.rail=h[h.indexOf('rail')+1]||null}
+  let saved=null;try{saved=localStorage.getItem('ma-spec-theme')}catch(e){}if(saved&&!h.includes('dark')&&!h.includes('light'))state.theme=saved;
+  setTheme(state.theme);if(state.rail==null)state.rail=DEFAULT_RAIL[state.tab]||null;render()})();
 })();
 </script>

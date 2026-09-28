@@ -865,10 +865,20 @@ scratchpad and both model output, to be read as such:
 
 Where the two disagreed — Carbon's table header at 14/600 against the
 audit's 12/500 muted; the column at 1,100 against v3's 1,180 — the audit's
-number stands, because it was measured against this module. The rebuilt
-specimen is the test of the rules: it is rendered and looked at at 1440px
-and 390px in both themes before the plan claims them, and the numbers
-above are what it is checked against.
+number stands, because it was measured against this module.
+
+**The rebuilt specimen was measured the same way before the plan claimed
+the rules** (headless Chromium, the same kind of probe, 28 Sept 2026;
+v3's figure in brackets): Today's main column **2,299px** (2,532);
+**6** bordered boxes (66); **0** uppercase labels (49); **0** text under
+11px (31); the first chart at **y = 422** (1,183); **0** shadows; no text
+under 2.2:1 in either theme on any of the ten pages; nothing laid out
+past the right edge at 390px. Text at 12px or under is still about half
+of Today's text elements — table heads, meta lines and axis ticks are
+12px by the rules above — down from 82%. Every page was looked at in a
+screenshot at 1440px, and Today, Money in and Money out at 390px, in
+both themes. What that cannot say is how it feels in the hand; Afnan's
+open is the visual test, as ever.
 
 ## 17. The money speaks — the concern logic and the visuals
 
