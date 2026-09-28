@@ -232,6 +232,85 @@ const FRAGMENTS={
     const jv=(app.bodyHtml('ma-modal-back').match(/<div class="ma-modal-body"[^>]*>([\s\S]*)<\/div>\s*<div class="ma-modal-foot">/)||[])[1]||'';
     return Promise.resolve(wrap('Record',pick,'')+wrap('Money out',form,foot)+wrap('Journal',jv,foot));
   },
+  // M1.5b: a bill or receipt on a document, a share link, the backups. A
+  // file NAME is the one thing that says which file it is, so it wraps and
+  // is never ellipsized away — the rail and the form both carry a long one.
+  'master accounts — a document\'s files on the rail':()=>{
+    const app=_maFixture();
+    app.run(`(()=>{const d=maData.journal.find(x=>x.id==='JV-27-0003');const T=Date.UTC(2026,8,20,6);
+      d.attachments=maAttachList([{publicId:'ma/'+'1'.repeat(64),format:'pdf',type:'authenticated',version:1790000001,bytes:2411520,mime:'application/pdf',by:'afnan',at:T,
+          name:'Al-Karam Textiles — tax invoice INV-2026-09-0417, single jersey 180 GSM, 350 kg (scanned on the phone, page 1 of 3).pdf'},
+        {publicId:'ma/'+'2'.repeat(64),format:'jpg',type:'authenticated',version:1790000002,bytes:318000,mime:'image/jpeg',by:'ammar',at:T+60000,name:'delivery-challan.jpg'}]);
+      _maInvalidate();_maRail={kind:'doc',dt:'journal',id:'JV-27-0003'};_maPeriod='quarter';})()`);
+    // heights: the rail is a sticky column 100vh tall that scrolls inside
+    // itself, and this page is ~1,220px; in a 1000px window the file list
+    // could sit in the rail's scrolled-away part, which the probe reads as
+    // covered. A 1400px viewport shows the whole rail. Nothing here keys off
+    // the viewport height except that box.
+    return Promise.resolve({widths:[1900],heights:[1400],html:app.run("_maPageHTML('ma-ledger')")});
+  },
+  'master accounts — the file field on a form':()=>{
+    const app=_maFixture();
+    const wrap=(t,b)=>'<div class="ma-modal wide" style="position:static;max-height:none;margin-bottom:16px"><div class="ma-modal-head"><h2>'+t+'</h2><button class="ma-x" aria-label="Close">×</button></div><div class="ma-modal-body">'+b+'</div></div>';
+    app.run("window.maRecordKind('money_out',{party:'p1'})");
+    app.run(`_maF.atts=maAttachList([{publicId:'ma/'+'3'.repeat(64),format:'pdf',type:'upload',bytes:2411520,mime:'application/pdf',by:'afnan',at:Date.UTC(2026,8,20,6),
+        name:'Al-Karam Textiles — tax invoice INV-2026-09-0417, single jersey 180 GSM, 350 kg (scanned on the phone, page 1 of 3).pdf'},
+      {publicId:'ma/'+'4'.repeat(64),format:'heic',type:'upload',bytes:1843200,mime:'image/heic',by:'afnan',at:Date.UTC(2026,8,20,7),name:'IMG_4471.HEIC'}]);
+      _maF.attErr='quote.docx did not upload: Only images (JPG, PNG, WebP, HEIC) and PDFs can be attached — not .docx files. · big.pdf did not upload: Cloudinary refused the file: File size too large. Got 11000000. Maximum is 10485760.';
+      _maF.attNote=_MA_PUBLIC_NOTE;`);
+    const full=app.run('_maAttFieldHTML()');
+    app.run("_maF.atts=[];_maF.attErr='';_maF.attNote='';_maF.attBusy=2");
+    const busy=app.run('_maAttFieldHTML()');
+    return Promise.resolve(wrap('Money out — two files, two refused, public mode',full)+wrap('Money out — uploading',busy));
+  },
+  'master accounts — the share panel':()=>{
+    const app=_maFixture();
+    const wrap=(t,b,f)=>'<div class="ma-modal wide" style="position:static;max-height:none;margin-bottom:16px"><div class="ma-modal-head"><h2>'+t+'</h2><button class="ma-x" aria-label="Close">×</button></div><div class="ma-modal-body">'+b+'</div>'+(f?'<div class="ma-modal-foot">'+f+'</div>':'')+'</div>';
+    const now=Date.now(),D=86400000,tok=c=>c.repeat(43);
+    app.run(`_maAttachSt={configured:true,mode:'unsigned',missing:['CLOUDINARY_API_KEY','CLOUDINARY_API_SECRET'],maxBytes:26214400,urlSeconds:300};
+      _maShare={spec:_maShareSpec('journal','JV-27-0003'),busy:false,step:'',err:'',
+        made:{token:'${tok('k')}',link:'https://groovyoperations.netlify.app/.netlify/functions/ma-share?t=${tok('k')}',expiresAt:${now+7*D},to:{party:'Al-Karam Textiles',phone:'+923001234567'}},
+        list:{state:'ok',rows:[],err:''}};`);
+    const panel=app.run('_maShareBodyHTML()');
+    const foot='<button class="ma-btn">Close</button><button class="ma-btn primary">Make a link</button>';
+    return Promise.resolve(wrap('Share · Voucher JV-27-0003',panel,foot));
+  },
+  'master accounts — the links already made':()=>{
+    const app=_maFixture();
+    const wrap=(t,b)=>'<div class="ma-modal wide" style="position:static;max-height:none;margin-bottom:16px"><div class="ma-modal-head"><h2>'+t+'</h2></div><div class="ma-modal-body">'+b+'</div></div>';
+    const now=Date.now(),D=86400000,tok=c=>c.repeat(43);
+    const base={docKind:'journal',docId:'JV-27-0003',docNo:'JV-27-0003',format:'pdf',createdBy:'afnan',createdAt:now-2*D,days:7,revoked:false,opens:0,previews:0};
+    const rows=[
+      Object.assign({},base,{token:tok('a'),filename:'Voucher-JV-27-0003 — Al-Karam Textiles, tax invoice INV-2026-09-0417, single jersey 180 GSM.pdf',to:{party:'Al-Karam Textiles (Faisalabad mill, accounts office)',phone:'+923001234567'},expiresAt:now+5*D,opens:12,lastOpenedAt:now-3600000,previews:3,lastPreviewAt:now-7200000}),
+      Object.assign({},base,{token:tok('b'),filename:'Voucher-JV-27-0003.pdf',createdAt:now-20*D,expiresAt:now-13*D,opens:1,lastOpenedAt:now-19*D}),
+      Object.assign({},base,{token:tok('c'),filename:'Voucher-JV-27-0003.pdf',createdBy:'ammar',expiresAt:now+5*D,revoked:true,revokedAt:now-D,revokedBy:'ammar'}),
+      Object.assign({},base,{token:tok('d'),filename:'Voucher-JV-27-0003.pdf',revoked:'no',expiresAt:now+5*D})];
+    app.run(`_maShare={spec:_maShareSpec('journal','JV-27-0003'),busy:false,step:'',err:'',made:null,list:{state:'ok',rows:${JSON.stringify(rows)},err:''}}`);
+    const list=app.run('_maShareListHTML()');
+    app.run("_maShare.list={state:'error',rows:[],err:'Missing or insufficient permissions.'}");
+    const err=app.run('_maShareListHTML()');
+    return Promise.resolve(wrap('Links to this voucher — live, expired, withdrawn, not valid',list)+wrap('Links — a refused read',err));
+  },
+  'master accounts — backups in every state, and the attachment mode':()=>{
+    const app=_maFixture();
+    const now=Date.now(),H=3600000;
+    const runs=[{id:'nightly-2026-09-28',state:'running',ok:null,at:now-30*60000,operationState:'PROCESSING',collections:25},
+      {id:'nightly-2026-09-27',state:'not_configured',ok:false,configured:false,missing:['MA_BACKUP_BUCKET','FIREBASE_SERVICE_ACCOUNT'],error:'Backups are not set up yet — MA_BACKUP_BUCKET and FIREBASE_SERVICE_ACCOUNT are not set in Netlify',at:now-24*H},
+      {id:'nightly-2026-09-26',state:'failed',ok:false,error:'Firestore refused the export (HTTP 403): The caller does not have permission to export groovy-gatepass to gs://groovy-ma-backups/nightly-2026-09-26',at:now-48*H},
+      {id:'nightly-2026-09-25',state:'done',ok:true,collections:25,size:'12.3 MB',documents:123456,at:now-72*H},
+      {id:'nightly-2026-09-24',state:'starting',ok:null,at:now-96*H,lastCheckError:'operations.get answered HTTP 503'},
+      {id:'nightly-2026-09-23',ok:null,at:now-120*H}];
+    app.run('maData.backups='+JSON.stringify(runs)+';_maInvalidate();_maCloseTab="overview"');
+    const close=app.run("_maCloseOverviewHTML(_maCtx())");
+    app.run("_maAttachSt={configured:true,mode:'authenticated',missing:[],maxBytes:26214400,urlSeconds:300}");
+    const priv=app.run("_maSec('Attachments and share links — private','','',_maAttachModeHTML())");
+    app.run("_maAttachSt={configured:true,mode:'unsigned',missing:['CLOUDINARY_API_KEY','CLOUDINARY_API_SECRET'],maxBytes:26214400,urlSeconds:300}");
+    const pub=app.run("_maSec('Attachments and share links — public, the fallback','','',_maAttachModeHTML())");
+    // heights: ~1,410px at 420 wide (1,000 at 1900, measured), and the probe
+    // does not hit-test below the window — a 1600px viewport measures the
+    // whole of it. These pages do not key off the viewport height.
+    return Promise.resolve({heights:[1600],html:close+priv+pub});
+  },
   // The login screen and the app lock, straight out of index.html (the
   // markup lives there, not in a module). Measured with the forgot-password
   // note OPEN, so its text is checked too. The lock's card is taken out of

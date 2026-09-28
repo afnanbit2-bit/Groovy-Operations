@@ -12,7 +12,8 @@
    - the ledger's table head is drawn again on every page it reaches;
    - the engine prints the figures it is handed and computes none of them;
    - a voided or waiting document is never drawn on a ledger or statement;
-   - VOID and "Revised · rev N" are drawn exactly when they are true;
+   - VOID and "Revised · rev N" are drawn exactly when they are true, and
+     N is the rail's own number (maRevOf);
    - Urdu is drawn only by a font that can draw it — never tofu;
    - deliver:'blob' opens no tab, downloads nothing and resolves
      {blob, filename}; a failure rejects;
@@ -340,13 +341,16 @@ module.exports=async function(){
       s.ok(name+' carries no VOID and no red strike',!x.log.text.some(t=>/VOID/.test(t.t))&&!x.log.line.some(l=>l.draw===red));
     }
     const {d:r2}=await print(e,'ma-voucher',V_REV);
-    s.ok('edited twice → "Revised · rev 2"',texts(r2).indexOf('Revised · rev '+e2.edits.length)>=0&&e2.edits.length===2);
+    // rev N is maRevOf (edits + 1) — the number the rail shows. Until M1.5b
+    // the paper printed the edit count, one less than the screen.
+    s.ok('edited twice → "Revised · rev 3", the rail\'s number',texts(r2).indexOf('Revised · rev 3')>=0&&e2.edits.length===2);
+    s.ok('… and never the edit count',texts(r2).indexOf('Revised · rev 2')<0);
     s.ok('…with the last edit\'s who and why',texts(r2).some(t=>/by Ammar — And the wire$/.test(t)));
     const {d:r0}=await print(e,'ma-voucher',V_TAX);
     s.ok('never edited → no revision mark at all',!texts(r0).some(t=>/Revised|rev \d/.test(t)));
     const once=M.maPdfVoucherData(X,re(e0,13000,'Typo','afnan',1791300000000));
     const {d:r1}=await print(e,'ma-voucher',once);
-    s.ok('edited once → "Revised · rev 1" (rev N = the edits it carries)',texts(r1).indexOf('Revised · rev 1')>=0);
+    s.ok('edited once → "Revised · rev 2" (rev N = maRevOf: the edits it carries + 1)',texts(r1).indexOf('Revised · rev 2')>=0&&texts(r1).indexOf('Revised · rev 1')<0);
     const {d:led}=await print(e,'ma-ledger',LEDGER);
     s.ok('a ledger never carries a stamp (void documents are simply not on it)',!led.log.text.some(t=>/VOID|Revised/.test(t.t)));
   }

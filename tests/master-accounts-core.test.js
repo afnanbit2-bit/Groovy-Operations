@@ -298,7 +298,10 @@ module.exports=async function(){
 
   s.section('validation (§6) — refused, flagged, and clean');
   {
-    const base={date:'2026-10-05',holder:'1020',account:'6040',payee:'Landlord',amount:25000,tax:NONE,attachments:[{id:'a'}]};
+    // A real file reference (maAttachClean's shape): M1.5b keeps only a file the
+    // ma-attach function named, so a placeholder like {id:'a'} is no evidence.
+    const ATT={publicId:'ma/'+'a'.repeat(64),format:'pdf',type:'authenticated',name:'rent-oct.pdf',mime:'application/pdf',bytes:120000};
+    const base={date:'2026-10-05',holder:'1020',account:'6040',payee:'Landlord',amount:25000,tax:NONE,attachments:[ATT]};
     const clean=J('money_out',base);
     const lines=M.maPostAll([open1011],IDX,S);
     s.eq('a clean payment passes with nothing to say',R(V(clean,{lines})),'');
@@ -328,6 +331,7 @@ module.exports=async function(){
     s.eq('a payment for a commitment not in the register is refused',lvl(V(J('money_out',Object.assign({},base,{commitmentId:'c9',commitmentPeriod:'2026-10'})),{lines,commitments:[]}),'commitment.exists'),'refuse');
     const noev=J('money_out',Object.assign({},base,{attachments:[]}));
     s.eq('no receipt on ₨25,000 is flagged',lvl(V(noev,{lines}),'evidence.missing'),'flag');
+    s.eq('a placeholder that is not a file this app named is no evidence (M1.5b)',lvl(V(J('money_out',Object.assign({},base,{attachments:[{id:'a'},{url:'https://res.cloudinary.com/x/y.pdf'}]})),{lines}),'evidence.missing'),'flag');
     s.eq('under ₨2,000 it is not',has(V(J('money_out',Object.assign({},base,{amount:1500,attachments:[]})),{lines}),'evidence.missing'),false);
     const strict=M.maSettings({evidence:{flagAbove:2000,refuseAbove:20000}});
     s.eq('a receipt can be made compulsory above a threshold',lvl(M.maValidate(noev,{idx:IDX,settings:strict,today:TODAY,lines,docs:[]}),'evidence.required'),'refuse');
@@ -709,8 +713,11 @@ module.exports=async function(){
     s.eq('voucher: paid to the party, from the holder, for the account',JSON.stringify([V.paidTo,V.from.name,V.account]),JSON.stringify([{name:'Asghar Printers',code:'ASG',party:true},'Cash — with Afnan',{code:'5030',name:'Embellishment'}]));
     s.eq('voucher: "No tax" → no tax block',M.maPdfVoucherData(X,pay).tax,null);
     const V2=M.maPdfVoucherData(X,e2);
-    s.eq('voucher: edited twice → revised n = edits.length = 2',V2.revised&&V2.revised.n,e2.edits.length);
-    s.eq('voucher: …with the LAST edit\'s who, when and why',JSON.stringify(V2.revised),JSON.stringify({n:2,at:1791400000000,by:'Ammar',reason:'And the wire'}));
+    // M1.5b: n is maRevOf — the number the rail shows (edits + 1) — not the
+    // edit count, which printed rev 2 beside a screen that said rev 3.
+    s.eq('voucher: edited twice → revised n = maRevOf = 3, the rail\'s number',V2.revised&&V2.revised.n,3);
+    s.eq('… which is edits + 1',V2.revised&&V2.revised.n,e2.edits.length+1);
+    s.eq('voucher: …with the LAST edit\'s who, when and why',JSON.stringify(V2.revised),JSON.stringify({n:3,at:1791400000000,by:'Ammar',reason:'And the wire'}));
     s.eq('voucher: …and the payee who is no party',JSON.stringify(V2.paidTo),JSON.stringify({name:'Bilal',code:'',party:false}));
     s.eq('voucher: services tax on top → paid = amount + tax',V2.paid,13500+Math.round(13500*16/100));
     s.eq('voucher: a void one says so',M.maPdfVoucherData(X,vOut).void.reason,'Entered twice');

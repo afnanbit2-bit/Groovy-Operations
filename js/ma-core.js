@@ -215,6 +215,84 @@ const MA_EDIT_FIELDS={
   count:['date','counted','note','attachments']
 };
 
+/* ── Attachments (§29) — the bill or receipt on a document ───────────────
+   A file is stored as a REFERENCE to a Cloudinary asset the ma-attach
+   function named (ma/<64 hex>, 32 random bytes), never as a URL. A private
+   (authenticated) file is looked at through a link the function signs on
+   demand and that dies in five minutes, so a stored URL would be dead in
+   five minutes — and in the public fallback it would be the file's only
+   lock, copied into every export and backup. Cloudinary's upload answer
+   carries `secure_url` AND `url`; a spread of it would carry both in, so
+   the stored shape is picked field by field, here, and nowhere else:
+     {publicId, format, resourceType, type, version, bytes, name, mime, by, at}
+   The id patterns are netlify/lib/ma-server.js's (PID_AUTHENTICATED,
+   PID_UPLOAD: a preset may put its own folder in front of a public one). */
+const MA_ATTACH_FORMATS=['jpg','png','webp','heic','heif','pdf'];
+const MA_ATTACH_MAX=20;
+const MA_ATTACH_KEYS=['publicId','format','resourceType','type','version','bytes','name','mime','by','at'];
+function maAttachPidOk(pid,type){
+  if(typeof pid!=='string')return false;
+  return type==='authenticated'?/^ma\/[0-9a-f]{64}$/.test(pid):/^(?:[A-Za-z0-9_-]{1,64}\/){0,3}ma\/[0-9a-f]{64}$/.test(pid);
+}
+function maAttachOk(a){
+  return !!(a&&typeof a==='object'&&(a.type==='authenticated'||a.type==='upload')&&maAttachPidOk(a.publicId,a.type)
+    &&MA_ATTACH_FORMATS.indexOf(a.format)>=0&&(a.resourceType===undefined||a.resourceType===null||a.resourceType==='image'));
+}
+/* The stored shape and nothing else — null when it is not a file this app
+   named. The key order is fixed so two copies of one file compare equal. */
+function maAttachClean(a){
+  if(!maAttachOk(a))return null;
+  return {publicId:a.publicId,format:a.format,resourceType:'image',type:a.type,
+    version:Number.isInteger(a.version)?a.version:null,
+    bytes:Number.isInteger(a.bytes)&&a.bytes>=0?a.bytes:null,
+    name:maStr(a.name,200)||a.publicId.split('/').pop().slice(0,12)+'.'+a.format,
+    mime:maStr(a.mime,60),
+    by:a.by?maStr(a.by,40):null,at:Number.isFinite(a.at)?a.at:null};
+}
+function maAttachList(list){return (Array.isArray(list)?list:[]).map(maAttachClean).filter(Boolean).slice(0,MA_ATTACH_MAX);}
+/* An upload that came back from Cloudinary, checked against what the
+   function signed, turned into the stored shape. → {att} or {error}.
+   `signed` is ma-attach's `sign` answer; `res` is Cloudinary's. A name the
+   function did not give, a raw resource, or a format outside the list is
+   refused: the file is then in Cloudinary but on no document. */
+function maAttachFromUpload(signed,res,meta){
+  const s=signed||{},r=res||{},m=meta||{};
+  const pid=typeof r.public_id==='string'?r.public_id:'';
+  const want=typeof s.publicId==='string'?s.publicId:'';
+  const type=r.type==='authenticated'||r.type==='upload'?r.type:s.type;
+  if(!want||!(pid===want||(type==='upload'&&pid.slice(-want.length-1)==='/'+want)))
+    return {error:'Cloudinary stored the file under a name the server did not give it'+(pid?' ('+maStr(pid,90)+')':'')+' — it was not attached.'};
+  if(r.resource_type&&r.resource_type!=='image')return {error:'Cloudinary stored the file as '+maStr(r.resource_type,20)+', not an image or a PDF — it was not attached.'};
+  const format=String(r.format||'').toLowerCase();
+  if(MA_ATTACH_FORMATS.indexOf(format)<0)return {error:'Cloudinary says the file is '+(format?'a .'+maStr(format,12):'of no known format')+' — only images (JPG, PNG, WebP, HEIC) and PDFs can be attached.'};
+  const att=maAttachClean({publicId:pid,format,type,version:r.version,
+    bytes:Number.isInteger(r.bytes)?r.bytes:s.bytes,name:s.name,mime:s.mime,by:m.by,at:m.at});
+  return att?{att}:{error:'That is not a file this app can keep.'};
+}
+/* What the ma-attach and ma-share functions are handed to find the file. */
+function maAttachRef(a){return {publicId:a.publicId,format:a.format,type:a.type,resourceType:a.resourceType||'image'};}
+/* Adding a file to a document after it was recorded is an EDIT (§31): it
+   goes through edits[] like any other change. These are the refusals that
+   apply to a file; the document's other rules are not re-run for it — a
+   holder gone below its floor since is no reason to refuse the bill. */
+function maAttachIssues(doc,ctx){
+  const c=ctx||{};const s=c.settings||MA_DEFAULT_SETTINGS;
+  if(!doc)return [{rule:'attach.missing',level:'refuse',message:'Nothing to attach it to.'}];
+  const out=[];
+  if(doc.status==='void')out.push({rule:'attach.void',level:'refuse',message:'A void document cannot change — it stays on the record as it was.'});
+  if(maIsDay(doc.date)&&(c.closes||[]).some(x=>x&&x.quarter===maQuarterOf(doc.date,s.fiscalYearStart)&&x.locked===true&&!x.reopenedAt))
+    out.push({rule:'attach.closed',level:'refuse',message:'It sits in a closed quarter and cannot change.'});
+  if(maAttachList(doc.attachments).length+(c.adding||1)>MA_ATTACH_MAX)out.push({rule:'attach.max',level:'refuse',message:'A document carries at most '+MA_ATTACH_MAX+' files.'});
+  return out;
+}
+/* The revision a document is at (§31): 1 until it is edited, one more for
+   every edit it carries. ONE number for the screen (the rail's "rev N") and
+   the paper ("Revised · rev N"), which used to disagree by one — a document
+   edited twice read rev 3 on screen and rev 2 on paper. Read from edits[],
+   the history the rail shows under it; the rules keep `rev` in step with it
+   (rev + 1 exactly when edits grows by one). */
+function maRevOf(d){return (d&&Array.isArray(d.edits)?d.edits.length:0)+1;}
+
 /* ── Settings (§4.4) ────────────────────────────────────────────────────── */
 /* Every threshold the engine or the concern lines read lives here and on
    Close & audit → Settings. `mirrors` names the holders whose balance is
@@ -520,7 +598,7 @@ function maBuildDoc(dt,input,meta,idx,settings){
   const doc={dt,book:'groovy',date,month:labels.month,quarter:labels.quarter,fy:labels.fy,
     historical:maIsDay(date)&&date<s.goLive,
     note:maStr(i.note,1000),tags:Array.isArray(i.tags)?i.tags.map(t=>maStr(t,40)).filter(Boolean).slice(0,12):[],
-    attachments:Array.isArray(i.attachments)?i.attachments.slice(0,20):[],
+    attachments:maAttachList(i.attachments),
     source:MA_SOURCES.indexOf(m.source)>=0?m.source:'manual',
     by:m.by||null,byName:m.byName||null,ts:m.ts||0,rev:1,edits:[],status:'posted'};
   const rupees=v=>{const n=maParseRupees(v);return Number.isFinite(n)?n:NaN;}; // never rounded here: a fraction is kept so maValidate refuses it (amount.whole)
@@ -1276,11 +1354,24 @@ function maVoidIssues(doc,reason,ctx){
 }
 
 /* ── Edits and voids (§31) ─────────────────────────────────────────────── */
+/* A value's JSON with every object's keys sorted, so two copies of one value
+   compare equal whatever order their keys arrived in. firestore.rules decide
+   what an edit changed by VALUE (diff().affectedKeys()) and refuse an edit
+   row that names a field that did not change (k.hasAll(fields)); a diff by
+   plain JSON.stringify would name an unchanged map — a tax block, a file —
+   whenever a read hands its keys back in another order. The emulator was
+   seen to keep insertion order (28 Sept 2026); production was not checked,
+   so the diff no longer depends on it. */
+function _maCanon(v){
+  if(Array.isArray(v))return '['+v.map(_maCanon).join(',')+']';
+  if(v&&typeof v==='object')return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+_maCanon(v[k])).join(',')+'}';
+  return JSON.stringify(v===undefined?null:v);
+}
 function maEditDiff(before,after){
   const fields=MA_EDIT_FIELDS[before&&before.dt]||[];
   const d={fields:[],before:{},after:{}};
   fields.forEach(f=>{
-    const a=JSON.stringify(before[f]===undefined?null:before[f]),b=JSON.stringify(after[f]===undefined?null:after[f]);
+    const a=_maCanon(before[f]===undefined?null:before[f]),b=_maCanon(after[f]===undefined?null:after[f]);
     if(a!==b){d.fields.push(f);d.before[f]=before[f]===undefined?null:maClone(before[f]);d.after[f]=after[f]===undefined?null:maClone(after[f]);}
   });
   return d;
@@ -1335,8 +1426,51 @@ function maUnlabelled(docs,idx,settings){
   });
   return out;
 }
+/* The flags a document still stands by. Flags are stored when it is
+   recorded, and the rules pin them (an edit may not change `flags`). The two
+   that ask for evidence are answered by the document itself: attach the
+   bill and "no bill attached" is no longer true, so it leaves the queue
+   without anybody clearing it — and if the file is removed again, the flag
+   is back. Nothing is rewritten; this only reads. Every other flag is a
+   judgement about the world and waits for an owner's review. */
+const _maAnswered={
+  'evidence.missing':d=>maAttachList(d.attachments).length>0,
+  'transfer.note':d=>maAttachList(d.attachments).length>0||!!maStr(d.note)
+};
+function maLiveFlags(d){
+  return (d&&Array.isArray(d.flags)?d.flags:[]).filter(f=>!(f&&_maAnswered[f.rule]&&_maAnswered[f.rule](d)));
+}
+function maAnsweredFlags(d){
+  return (d&&Array.isArray(d.flags)?d.flags:[]).filter(f=>f&&_maAnswered[f.rule]&&_maAnswered[f.rule](d));
+}
 function maReviewQueue(docs){
-  return (docs||[]).filter(d=>d.status!=='void'&&Array.isArray(d.flags)&&d.flags.length&&!d.reviewedAt);
+  return (docs||[]).filter(d=>d.status!=='void'&&maLiveFlags(d).length&&!d.reviewedAt);
+}
+
+/* ── Backups (§30) — what a row of ma_backups says ───────────────────────
+   netlify/functions/ma-backup.js writes one row a day, and a `state`:
+   not_configured · starting · running · done · failed. A row with no state
+   (written by hand, or before there was one) is read from `ok` — true is
+   done, false is failed, or not set up when `configured` is false — and a
+   row with neither is 'unknown': never "done" just because it is not
+   "failed". */
+const MA_BACKUP_STATES=['not_configured','starting','running','done','failed'];
+function maBackupState(r){
+  if(!r||typeof r!=='object')return 'none';
+  if(MA_BACKUP_STATES.indexOf(r.state)>=0)return r.state;
+  if(r.ok===true)return 'done';
+  if(r.ok===false)return r.configured===false?'not_configured':'failed';
+  return 'unknown';
+}
+/* What a not-set-up run is missing, in words: the reason the function
+   recorded (its error after "Backups are not set up yet — "), else the
+   settings it named, else the bucket. No full stop — the caller adds one. */
+function maBackupMissing(r){
+  const e=String((r&&r.error)||'').trim().replace(/^Backups are not set up yet\s*[—–-]\s*/i,'').replace(/[\s.]+$/,'');
+  if(e)return e;
+  const m=(Array.isArray(r&&r.missing)?r.missing:[]).filter(x=>typeof x==='string'&&x);
+  if(m.length)return m.join(' and ')+' '+(m.length>1?'are':'is')+' not set in Netlify';
+  return 'the backup bucket is not set in Netlify';
 }
 
 /* ── Needs attention (§16.1 Today; §17's rule half) ─────────────────────── */
@@ -1382,15 +1516,22 @@ function maNeedsAttention(o){
   if(o.review&&o.review.length)add('watch',o.review.length+' entr'+(o.review.length>1?'ies were':'y was')+' flagged and '+(o.review.length>1?'wait':'waits')+' for review.','The validation engine’s flags post, and wait for an owner.',{label:'Review',go:'review'},0);
   // 9030 not explained
   if(o.recon&&o.recon!==0)add('watch','Reconciliation differences stand at '+maRs(o.recon)+' — explain them before the quarter closes.','Account 9030.',{label:'Open',go:'account',ref:'9030'},Math.abs(o.recon));
-  // Backups (§30)
+  // Backups (§30). The latest row by `at`, read by its STATE: not set up
+  // is not a failure (it is a concern all the same — no backup is a real
+  // risk); a run still going raises nothing and is never read as done; a
+  // "running" row older than the watch window is not running, it is stuck
+  // (the hourly function would have marked it failed — so it has stopped
+  // waking), and that is said.
   if(o.backup!==undefined){
-    const b=o.backup;
-    if(!b)add('watch','No nightly backup has run yet — the bucket and point-in-time recovery need switching on.','ma_backups has no run.',{label:'How',go:'backups'},0);
-    else if(b.ok===false)add('concern','Last night’s backup failed: '+String(b.error||'no reason given').slice(0,120)+'.','ma_backups, the latest run.',{label:'Open',go:'backups'},9e8);
-    else if(Number.isFinite(o.nowMs)&&Number.isFinite(b.at)&&(o.nowMs-b.at)>s.backupWatchHours*3600000){
-      const days=Math.floor((o.nowMs-b.at)/86400000);
-      add('concern','The last backup ran '+(days>=1?days+' day'+(days>1?'s':''):Math.round((o.nowMs-b.at)/3600000)+' hours')+' ago.','ma_backups, the latest run.',{label:'Open',go:'backups'},9e8);
-    }
+    const b=o.backup,st=maBackupState(b);
+    const age=b&&Number.isFinite(o.nowMs)&&Number.isFinite(b.at)?o.nowMs-b.at:null;
+    const over=age!==null&&age>s.backupWatchHours*3600000;
+    const ago=ms=>{const days=Math.floor(ms/86400000);return days>=1?days+' day'+(days>1?'s':''):Math.round(ms/3600000)+' hours';};
+    if(st==='none')add('watch','No nightly backup has run yet — the bucket and point-in-time recovery need switching on.','ma_backups has no run.',{label:'How',go:'backups'},0);
+    else if(st==='not_configured')add('concern','Backups are not set up yet — '+maBackupMissing(b)+'.','ma_backups, the latest run: the nightly backup had nowhere to write.',{label:'Open',go:'backups'},9e8);
+    else if(st==='failed')add('concern','Last night’s backup failed: '+String(b.error||'no reason given').slice(0,120)+'.','ma_backups, the latest run.',{label:'Open',go:'backups'},9e8);
+    else if(st==='done'){if(over)add('concern','The last backup ran '+ago(age)+' ago.','ma_backups, the latest run.',{label:'Open',go:'backups'},9e8);}
+    else if(over)add('concern','The backup that started '+ago(age)+' ago has not finished.','ma_backups, the latest run: still '+(st==='unknown'?'without a result':st)+' after '+s.backupWatchHours+' hours.',{label:'Open',go:'backups'},9e8);
   }
   out.sort((a,b)=>(a.state===b.state?0:a.state==='concern'?-1:1)||b.weight-a.weight);
   return out;
@@ -1424,7 +1565,7 @@ function maDocText(doc,idx,partyName){
 }
 
 /* ── The audit trail (§29) — one row per thing that happened ────────────── */
-const MA_AUDIT_ACTIONS=['post','edit','void','confirm','review','party','terms','rate','item','commitment','settings','chart','export','share','revoke','enter','relock','attach','download'];
+const MA_AUDIT_ACTIONS=['post','edit','void','confirm','review','party','terms','rate','item','commitment','settings','chart','export','share','revoke','enter','relock','attach','download','backup'];
 function maAuditRow(action,target,meta){
   const m=meta||{};
   return {action:MA_AUDIT_ACTIONS.indexOf(action)>=0?action:'post',
@@ -1481,12 +1622,13 @@ function _maPdfRow(x,ix,l){
   return {date:l.date,no:(l.doc&&l.doc.no)||'',kind:d?maDocTitle(d):'',who:_maPdfWho(x,l,d),
     contra:_maPdfContra(x,l,d,ix.lines[id]),note:[l.memo,d&&d.note].filter(Boolean).join(' — ')};
 }
-/* "Revised · rev N" (N = edits made), VOID with its reason, who recorded it. */
+/* "Revised · rev N" — N is maRevOf, the number the rail shows (a document
+   never edited prints no mark) — VOID with its reason, who recorded it. */
 function _maPdfMarks(x,d){
   const edits=Array.isArray(d.edits)?d.edits:[];
   const last=edits.length?edits[edits.length-1]:null;
   return {
-    revised:edits.length?{n:edits.length,at:(last&&last.at)||null,by:last?(last.byName||_maPdfPerson(x,last.by)):'',reason:(last&&last.reason)||''}:null,
+    revised:edits.length?{n:maRevOf(d),at:(last&&last.at)||null,by:last?(last.byName||_maPdfPerson(x,last.by)):'',reason:(last&&last.reason)||''}:null,
     void:d.status==='void'?{reason:d.voidReason||'',by:d.voidedByName||_maPdfPerson(x,d.voidedBy),at:d.voidedAt||null}:null,
     recorded:{by:d.byName||_maPdfPerson(x,d.by),at:d.ts||null}
   };
@@ -1616,6 +1758,103 @@ function maPdfVoucherData(x,d){
     printedOn:x.printedOn||'',printedBy:x.printedBy||''},_maPdfMarks(x,d));
 }
 
+/* ── Send by link (§31) ─────────────────────────────────────────────────── */
+/* A phone number as wa.me wants it: digits only, the country code first, no
+   + and no leading zero. A Pakistani number is written many ways —
+   0300 1234567, 0300-1234567, +92 300 1234567, 0092 300 1234567,
+   3001234567 — and every one becomes 923001234567. A number that cannot be
+   read with confidence gives '': the link then opens WhatsApp with the
+   message and lets the person choose who, rather than send it to a stranger. */
+function maWaPhone(raw){
+  const d=String(raw===undefined||raw===null?'':raw).trim().replace(/[\s\-().\/]/g,'');
+  let out='';
+  if(/^\+\d+$/.test(d))out=d.slice(1);
+  else if(/^00\d+$/.test(d))out=d.slice(2);
+  else if(/^92\d{10}$/.test(d))out=d;
+  else if(/^0\d{9,10}$/.test(d))out='92'+d.slice(1);
+  else if(/^3\d{9}$/.test(d))out='92'+d;
+  else return '';
+  if(/^920\d{9,10}$/.test(out))out='92'+out.slice(3);   // +92 0300… — the trunk zero written as well
+  return /^[1-9]\d{7,14}$/.test(out)?out:'';
+}
+/* The WhatsApp link: to that number when there is one, else to nobody yet.
+   The message is always URI-encoded — it carries a link with its own ? and
+   &, and a name somebody typed. */
+function maWaLink(phone,text){
+  return 'https://wa.me/'+maWaPhone(phone)+'?text='+encodeURIComponent(String(text===undefined||text===null?'':text));
+}
+/* A share link's state, in the order the ma-share function answers:
+   withdrawn says so even when it has also expired; a record the function
+   would not serve is 'unknown', never "live". */
+function maShareState(sh,nowMs){
+  if(!sh||typeof sh!=='object')return 'unknown';
+  if(sh.revoked===true)return 'revoked';
+  if(sh.revoked!==false||!Number.isFinite(sh.expiresAt))return 'unknown';
+  return Number.isFinite(nowMs)&&nowMs>=sh.expiresAt?'expired':'live';
+}
+
+/* ── Download the books (§30, layer 3) — the owners' own copy ─────────────
+   What the files hold is decided here; the page reads the collections and
+   hands them over. `cols` = {collection: [{id, data}]} for every collection
+   that WAS read; `failed` = [{col, message}] for every one that was not —
+   named in the file itself, never dropped, never an empty list standing in
+   for a collection nobody could read. The JSON is the copy a restore reads
+   (the plan's ma-import, idempotent by document id, so each document keeps
+   its id apart from its fields); the workbook is the same copy for a person:
+   the postings and the trial balance derived from it, then every collection
+   as a sheet. Every ma_* collection the rules let an owner read. */
+const MA_BOOK_COLS=['ma_settings','ma_accounts','ma_sv_accounts','ma_parties','ma_items','ma_commitments','ma_counters',
+  'ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares','ma_feedback'];
+// The postings and the trial balance are built from these; without one of
+// them they are not the whole book, and they say so.
+const _maBookCore=['ma_settings','ma_accounts','ma_journal','ma_transfer','ma_counts'];
+function maBooksJson(o){
+  const cols=o&&o.cols||{},failed=o&&o.failed||[];
+  const out={format:'groovy-master-accounts-books',version:1,exportedAt:o&&o.at||0,exportedBy:o&&o.by||null,
+    complete:!failed.length,failed:failed.map(f=>({collection:String(f.col),error:maStr(f.message,300)})),counts:{},collections:{}};
+  MA_BOOK_COLS.forEach(c=>{if(cols[c]){out.counts[c]=cols[c].length;out.collections[c]=cols[c];}});
+  return out;
+}
+function _maBookCell(v){
+  if(v===undefined||v===null)return '';
+  if(typeof v==='number'||typeof v==='boolean')return v;
+  const s=typeof v==='string'?v:JSON.stringify(v);
+  return s.length>32000?s.slice(0,32000)+'…':s;   // an Excel cell holds 32,767 characters
+}
+function maBooksSheets(o){
+  o=o||{};
+  const cols=o.cols||{},failed=o.failed||[];
+  const when=typeof o.when==='function'?o.when:(ms=>ms);
+  const of=c=>(cols[c]||[]).map(x=>Object.assign({},x.data||{},{id:x.data&&x.data.id!==undefined?x.data.id:x.id}));
+  const main=(cols.ma_settings||[]).find(x=>x.id==='main');
+  const s=maSettings(main?main.data:null);
+  const idx=maChartIndex(maChart('groovy',of('ma_accounts')));
+  const docs=of('ma_journal').map(d=>Object.assign({dt:'journal'},d)).concat(
+    of('ma_transfer').map(d=>Object.assign({dt:'transfer'},d)),of('ma_counts').map(d=>Object.assign({dt:'count'},d)));
+  const lines=maPostAll(docs,idx,s).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.doc&&a.doc.no||'').localeCompare(String(b.doc&&b.doc.no||'')));
+  const parties={};of('ma_parties').forEach(p=>{parties[p.id]=p.name;});
+  const broken=failed.filter(f=>_maBookCore.indexOf(f.col)>=0).map(f=>f.col);
+  const failedBy={};failed.forEach(f=>{failedBy[f.col]=maStr(f.message,200);});
+  const contents=[['GROOVY — Master Accounts: the books'],['Downloaded',when(o.at)],['By',o.byName||o.by||''],[]];
+  if(broken.length)contents.push(['INCOMPLETE — the postings and the trial balance leave out '+broken.join(', ')+', which could not be read.'],[]);
+  else if(failed.length)contents.push(['INCOMPLETE — '+failed.map(f=>f.col).join(', ')+' could not be read; everything else is whole.'],[]);
+  contents.push(['Collection','Documents','Read']);
+  MA_BOOK_COLS.forEach(c=>contents.push([c,cols[c]?cols[c].length:'',cols[c]?'yes':(failedBy[c]!==undefined?'NO — '+failedBy[c]:'not asked for')]));
+  const post=[['Date','Document','Account','Debit','Credit','Holder','Party','Payee','Category','Cost centre','Kind','Channel','Status','Source','By']]
+    .concat(lines.map(l=>[l.date,l.doc&&l.doc.no||'',maAccLabel(idx,l.account),l.dr,l.cr,l.holder||'',l.party?(parties[l.party]||l.party):'',l.payee||'',l.category||'',l.costCentre||'',l.kind||'',l.channel||'',l.status||'',l.source||'',l.by||'']));
+  const tb=maTrialBalance(lines,idx,{book:'groovy'});
+  const tbRows=[['Code','Account','Type','Debits','Credits','Debit balance','Credit balance']]
+    .concat(tb.rows.map(r=>[r.code,r.name,r.type,r.dr,r.cr,r.debit,r.credit]))
+    .concat([['','Total','',tb.dr,tb.cr,tb.debit,tb.credit],['',tb.balanced?'Debits equal credits.':'NOT BALANCED — debits and credits differ.']]);
+  const sheets=[{name:'Contents',rows:contents},{name:'Postings',rows:post},{name:'Trial balance',rows:tbRows}];
+  MA_BOOK_COLS.forEach(c=>{
+    if(!cols[c])return;
+    const keys=[];(cols[c]||[]).forEach(x=>Object.keys(x.data||{}).forEach(k=>{if(k!=='id'&&keys.indexOf(k)<0)keys.push(k);}));
+    sheets.push({name:c,rows:[['id'].concat(keys)].concat((cols[c]||[]).map(x=>[x.id].concat(keys.map(k=>_maBookCell((x.data||{})[k])))))});
+  });
+  return sheets;
+}
+
 if(typeof module!=='undefined'&&module.exports){
   module.exports={MA_BOOKS,MA_ACCOUNT_TYPES,MA_HOLDER_KINDS,MA_SPEND_GROUPS,MA_LABEL_KINDS,MA_CHANNELS,MA_SOURCES,
     MA_CHART,MA_SV_CHART,MA_SUSPENSE,MA_UNLABELLED,MA_PARTY_KINDS,MA_VENDOR_ROLES,MA_TERMS_MODES,MA_TAX_KINDS,
@@ -1630,5 +1869,8 @@ if(typeof module!=='undefined'&&module.exports){
     maCommitmentStatus,maCommitmentText,maCalendar,maSpendable,maValidate,maVoidIssues,maEditDiff,maApplyEdit,
     maApplyVoid,maConfirmPatch,maUnlabelled,maReviewQueue,maNeedsAttention,maAllocateFifo,maDocTitle,maDocText,
     maAuditRow,maPad,maClone,maStr,maIsRupees,maCodeOk,maAccLabel,maSpendGroupOf,maLineText,
-    maPdfLedgerData,maPdfHolderStatementData,maPdfPartyStatementData,maPdfReceiptData,maPdfVoucherData};
+    maPdfLedgerData,maPdfHolderStatementData,maPdfPartyStatementData,maPdfReceiptData,maPdfVoucherData,
+    MA_AUDIT_ACTIONS,MA_ATTACH_FORMATS,MA_ATTACH_MAX,MA_ATTACH_KEYS,MA_BACKUP_STATES,MA_BOOK_COLS,
+    maAttachPidOk,maAttachOk,maAttachClean,maAttachList,maAttachFromUpload,maAttachRef,maAttachIssues,maRevOf,
+    maLiveFlags,maAnsweredFlags,maBackupState,maBackupMissing,maWaPhone,maWaLink,maShareState,maBooksJson,maBooksSheets};
 }

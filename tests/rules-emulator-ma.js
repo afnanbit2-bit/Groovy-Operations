@@ -347,6 +347,59 @@ async function check(name,fn){
     await assertSucceeds(setDoc(doc(as('afnan'),'ma_audit/w1'),row));
   });
 
+  console.log('files on a document (M1.5b): a reference rides in, or arrives later as an edit');
+  // A bill or receipt is a REFERENCE the core cleans (maAttachList) — never
+  // a URL. Recorded with the document it is just a field; added afterwards
+  // it is an EDIT (rev + 1, one row by the caller naming exactly
+  // attachments), which the rules already allow for journal, transfer and
+  // count. The stored flags are pinned by the rules, so the evidence flag
+  // is answered by derivation (maLiveFlags) — the edit must not touch them.
+  const REF={publicId:'ma/'+'ab'.repeat(32),format:'pdf',type:'authenticated',version:1790000001,bytes:204800,name:'mill-bill.pdf',mime:'application/pdf',by:'afnan',at:T,
+    secure_url:'https://res.cloudinary.com/x/image/authenticated/v1/ma/'+'ab'.repeat(32)+'.pdf'};
+  const withBill=build('journal',{kind:'money_out',date:'2026-10-09',holder:'1011',account:'5010',payee:'Mill',amount:15000,attachments:[REF]},meta('afnan'));
+  await check('a journal recorded WITH its bill is created; the reference carries no URL',async()=>{
+    if(!(withBill.attachments.length===1&&!/cloudinary\.com|secure_url/.test(J(withBill.attachments))))throw new Error(J(withBill.attachments));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(withBill)),withBill));
+  });
+  // The rail's writer, exactly (_maRailAttach): the document as it stands,
+  // its files plus the new one, through maApplyEdit and _maEditShape.
+  const railAttach=(cur,added,by,at)=>P('_maEditShape('+J(cur)+',maApplyEdit('+J(cur)+',Object.assign({},_maClean('+J(cur)+'),{attachments:maAttachList('+J(cur.attachments||[])+').concat('+J(added)+')}),'+
+    J({by,byName:by[0].toUpperCase()+by.slice(1),at,reason:'Attached '+added.map(a=>a.name).join(', ')})+'))');
+  const ADD=Object.assign({},REF,{publicId:'ma/'+'cd'.repeat(32),format:'jpg',name:'bill-photo.jpg',mime:'image/jpeg',secure_url:undefined});
+  delete ADD.secure_url;
+  let jfNow=null;
+  await check('attaching a bill to the flagged journal afterwards (the rail\'s edit) passes — flags untouched',async()=>{
+    await env.withSecurityRulesDisabled(async c=>{jfNow=(await getDoc(doc(c.firestore(),pathOf(jf)))).data();});
+    const e=railAttach(jfNow,[ADD],'ammar',T+40);
+    const row=e.edits[e.edits.length-1];
+    if(!(e.rev===jfNow.rev+1&&J(row.fields)===J(['attachments'])&&J(e.flags)===J(jfNow.flags)&&e.attachments.length===1))throw new Error(J({rev:e.rev,row,flags:e.flags}));
+    await assertSucceeds(setDoc(doc(as('ammar'),pathOf(jf)),e));
+    jfNow=e;
+  });
+  await check('the same attach that also clears the stored "no bill" flag is refused (flags are pinned)',async()=>{
+    const e=railAttach(jfNow,[Object.assign({},ADD,{publicId:'ma/'+'ef'.repeat(32),name:'second.jpg'})],'afnan',T+41);
+    await assertFails(setDoc(doc(as('afnan'),pathOf(jf)),Object.assign({},e,{flags:[]})));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(jf)),e));
+    jfNow=e;
+  });
+  await check('taking a file off again is an edit naming attachments too',async()=>{
+    const after=P('Object.assign({},_maClean('+J(jfNow)+'),{attachments:maAttachList('+J(jfNow.attachments)+').slice(1)})');
+    const e=P('_maEditShape('+J(jfNow)+',maApplyEdit('+J(jfNow)+','+J(after)+','+J({by:'afnan',byName:'Afnan',at:T+42,reason:'wrong photo'})+'))');
+    if(J(e.edits[e.edits.length-1].fields)!==J(['attachments']))throw new Error(J(e.edits[e.edits.length-1]));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(jf)),e));
+  });
+  await check('a transfer takes a file afterwards the same way',async()=>{
+    const tf=build('transfer',{date:'2026-10-09',from:'1011',to:'1040',amount:60000,note:'Float'},meta('afnan'));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(tf)),tf));
+    const e=railAttach(tf,[ADD],'afnan',T+43);
+    if(!(e.status===tf.status&&J(e.edits[0].fields)===J(['attachments'])))throw new Error(J({status:e.status,row:e.edits[0]}));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(tf)),e));
+  });
+  await check('Mustafa cannot attach a file to anything',async()=>{
+    const e=railAttach(withBill,[ADD],'mustafa',T+44);
+    await assertFails(setDoc(doc(as('mustafa'),pathOf(withBill)),e));
+  });
+
   console.log('default-deny for anything not named');
   await check('an unlisted ma_ collection (ma_postings) is refused to an owner, read and write',async()=>{
     await seed('ma_postings/p1',{a:1});

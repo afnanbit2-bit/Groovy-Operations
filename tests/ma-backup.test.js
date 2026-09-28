@@ -289,7 +289,11 @@ module.exports=async function(){
     s.eq('the report',rep.start,'not configured: MA_BACKUP_BUCKET is not set in Netlify');
     const told=x.at?said(x,T0+60000):[];
     s.ok('the core never reads it as a backup that worked',told.length===1&&/^concern: /.test(told[0]),J(told));
-    s.eq('… in one sentence, with one full stop',told[0],'concern: Last night’s backup failed: Backups are not set up yet — MA_BACKUP_BUCKET is not set in Netlify.');
+    // M1.5b: the core reads the row's STATE. Not set up is a concern (no
+    // backup is a real risk) but it is not a failure, and it is not worded
+    // as one.
+    s.eq('… worded as what it is, in one sentence with one full stop',told[0],'concern: Backups are not set up yet — MA_BACKUP_BUCKET is not set in Netlify.');
+    s.ok('… and never as a backup that failed',!/failed/.test(told[0]));
     await tryRun(run,T0+H,ENV_NOBUCKET);
     s.eq('one row a day, however many wakes',rows(st).length,1);
     await tryRun(run,T0+2*H,ENV_OK);

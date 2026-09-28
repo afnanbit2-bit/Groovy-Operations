@@ -10,7 +10,7 @@
  * Bump CACHE_VERSION on every deploy that changes a precached file; the
  * activate handler deletes every cache from a prior version.
  */
-const CACHE_VERSION = 'v229';
+const CACHE_VERSION = 'v231';
 const STATIC_CACHE = `groovy-ops-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `groovy-ops-runtime-${CACHE_VERSION}`;
 // Deliberately NOT version-scoped: a Cloudinary delivery URL is immutable
@@ -101,6 +101,20 @@ function isCloudinaryAsset(url) {
   return url.hostname === 'res.cloudinary.com';
 }
 
+// A Master Accounts file is NEVER cached (MASTER_ACCOUNTS_PLAN.md §29).
+// IMAGE_CACHE is not version-scoped, so a bill or a shared PDF put there
+// would stay on the device for good. A private file is fetched through
+// api.cloudinary.com, which is bypassed above; this catches the ones a
+// res.cloudinary.com delivery URL names — by its delivery type
+// (authenticated, private) or by its public id, since every Master
+// Accounts file is ma/<64 hex> (in the public fallback that address is the
+// file's only lock). Such a request is not intercepted at all: it goes
+// straight to the network.
+function isPrivateCloudinary(url) {
+  const seg = url.pathname.split('/');
+  return seg.indexOf('authenticated') >= 0 || seg.indexOf('private') >= 0 || seg.indexOf('ma') >= 0;
+}
+
 function isStaticAsset(url) {
   if (url.origin !== self.location.origin) return false;
   const path = url.pathname;
@@ -161,6 +175,7 @@ async function cacheFirst(request) {
 // board can't grow the cache without bound. Keys come back in insertion
 // order, so trimming from the front drops the oldest.
 async function cacheFirstImage(request) {
+  if (isPrivateCloudinary(new URL(request.url))) return fetch(request);   // never stored — see isPrivateCloudinary
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(request);
   if (cached) return cached;
@@ -198,6 +213,7 @@ self.addEventListener('fetch', event => {
   if (isBypassed(url)) return; // never intercept Firebase/Firestore/Cloudinary
 
   if (isCloudinaryAsset(url)) {
+    if (isPrivateCloudinary(url)) return; // a Master Accounts file: straight to the network, never cached
     event.respondWith(cacheFirstImage(request));
   } else if (isStaticAsset(url)) {
     event.respondWith(cacheFirst(request));

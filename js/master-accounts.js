@@ -249,7 +249,7 @@ function _maEditShape(before,edited){
   Object.keys(out).forEach(k=>{if(!(k in before)&&!allowed.has(k))delete out[k];});
   return out;
 }
-async function _maWriteEdit(before,edited,reason){
+async function _maWriteEdit(before,edited,reason,action){
   const col=MA_DOC_TYPES[before.dt].col;
   await runTransaction(db,async tx=>{
     const ref=_MA_REF[col](before.id);
@@ -259,7 +259,7 @@ async function _maWriteEdit(before,edited,reason){
     if((cur.rev||1)!==(before.rev||1)||cur.status!==before.status)throw new Error('Someone changed this document since it was opened — refresh and try again.');
     tx.set(ref,edited);
     const row=edited.edits[edited.edits.length-1];
-    tx.set(_MA_REF.ma_audit(_maAuditId()),_maClean(maAuditRow('edit',edited,Object.assign(_maMeta(),{detail:'rev '+edited.rev+' · '+row.fields.join(', ')+' — '+reason}))));
+    tx.set(_MA_REF.ma_audit(_maAuditId()),_maClean(maAuditRow(action||'edit',edited,Object.assign(_maMeta(),{detail:'rev '+maRevOf(edited)+' · '+row.fields.join(', ')+' — '+reason}))));
   });
 }
 /* A patch (void, confirm, review): the stored doc is re-read, `check`
@@ -419,7 +419,7 @@ function _maHead(title,meta,o){
     <span class="ma-grow"></span>
     <button class="ma-btn primary" onclick="window.maRecord()">Record</button>
     <div class="ma-more"><button class="ma-btn ma-icon" aria-label="More actions" onclick="window.maToggleMenu(event)">⋯</button>
-      <div class="ma-menu" id="ma-menu">${o.excel?`<button onclick="window.maExcel('${_maQ(o.excel)}')">Download Excel</button>`:''}${o.pdf?`<button onclick="window.maPdf('${_maQ(o.pdf)}')">Download PDF</button>`:''}<button onclick="window.maRefresh()">Refresh</button></div></div>
+      <div class="ma-menu" id="ma-menu">${o.excel?`<button onclick="window.maExcel('${_maQ(o.excel)}')">Download Excel</button>`:''}${o.pdf?`<button onclick="window.maPdf('${_maQ(o.pdf)}')">Download PDF</button><button onclick="window.maShare('${_maQ(o.pdf)}')">Share PDF</button>`:''}<button onclick="window.maRefresh()">Refresh</button></div></div>
   </div>`;
 }
 window.maToggleMenu=function(e){
@@ -860,7 +860,7 @@ function _maDocsTable(c,docs,limitN){
     maDayLabel(d.date),`<button class="ma-doclink" onclick="event.stopPropagation();window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">${_maE(d.no)}</button>`,
     `${_maE(maDocTitle(d))}<span class="ma-l2">${_maE(_maDocDesc(d,c))}</span>`,
     _maE(d.holder?_maShortHolder(c,d.holder):d.from?_maShortHolder(c,d.from):''),
-    maRs(d.amount||0),_maStatusWord(d)+(d.flags&&d.flags.length&&!d.reviewedAt&&d.status!=='void'?' <span class="ma-word warn">flagged</span>':'')],
+    maRs(d.amount||0),_maStatusWord(d)+(maLiveFlags(d).length&&!d.reviewedAt&&d.status!=='void'?' <span class="ma-word warn">flagged</span>':'')],
     click:`window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')`})));
 }
 function _maLedgerBodyHTML(){
@@ -882,7 +882,7 @@ function _maLedgerBodyHTML(){
     const q=maReviewQueue(c.docs);
     if(!q.length)return _maEmpty('Nothing waits for review.');
     return _maTable([{h:'Date',cls:'ma-date'},{h:'Document'},{h:'Flagged because'},{h:'Amount',cls:'ma-num',l:'Amount'},{h:'',cls:'ma-nw'}],
-      q.map(d=>({cells:[maDayLabel(d.date),`${_maE(d.no)}<span class="ma-l2">${_maE(maDocTitle(d))}</span>`,d.flags.map(x=>_maE(x.message)).join('<br>'),maRs(d.amount||0),`<button class="ma-btn sm" onclick="event.stopPropagation();window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`],click:`window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')`})));
+      q.map(d=>({cells:[maDayLabel(d.date),`${_maE(d.no)}<span class="ma-l2">${_maE(maDocTitle(d))}</span>`,maLiveFlags(d).map(x=>_maE(x.message)).join('<br>'),maRs(d.amount||0),`<button class="ma-btn sm" onclick="event.stopPropagation();window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`],click:`window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')`})));
   }
   const {r,led,single}=_maLedgerFiltered(c);
   const head=`<div class="ma-scope">${led.count} posting${led.count===1?'':'s'} · ${led.sources} source${led.sources===1?'':'s'} · ${_maE(r.label)}${single&&led.opening!==null?' · opening '+maRs(led.opening):''}</div>`;
@@ -947,7 +947,10 @@ function _maDocRailHTML(c,d){
   const dl=F.map(([f,l])=>{const v=_maFieldVal(c,d,f);return v?`<dt>${_maE(l)}</dt><dd>${_maE(v)}</dd>`:'';}).join('');
   const posts=maPost(Object.assign({},d,{status:d.status==='void'||d.status==='pending'?'posted':d.status}),c.idx,c.s);
   const postT=posts.length?`<table class="ma-table ma-mini"><thead><tr><th>Account</th><th class="ma-num">Debit</th><th class="ma-num">Credit</th></tr></thead><tbody>${posts.map(l=>`<tr><td>${_maE(maAccLabel(c.idx,l.account))}</td><td class="ma-num">${l.dr?maRs(l.dr):''}</td><td class="ma-num">${l.cr?maRs(l.cr):''}</td></tr>`).join('')}</tbody></table>`:_maEmpty('Posts nothing.');
-  const flags=(d.flags||[]).length?`<h4>Flags</h4><ul class="ma-flaglist">${d.flags.map(x=>`<li><span class="ma-dot warn"></span>${_maE(x.message)}</li>`).join('')}</ul>${d.reviewedAt?`<div class="ma-muted">Reviewed by ${_maE(_maWho(d.reviewedBy))} · ${_maWhen(d.reviewedAt)}</div>`:''}`:'';
+  // A flag the document now answers itself (the bill is attached since) is
+  // shown as answered, not as a flag — it has left the review queue.
+  const live=maLiveFlags(d),answered=maAnsweredFlags(d);
+  const flags=live.length||answered.length?`<h4>Flags</h4><ul class="ma-flaglist">${live.map(x=>`<li><span class="ma-dot warn"></span>${_maE(x.message)}</li>`).join('')}${answered.map(x=>`<li class="ma-answered"><span class="ma-dot fine"></span><span>${_maE(x.message)} <span class="ma-muted">— answered: the document has it now</span></span></li>`).join('')}</ul>${d.reviewedAt?`<div class="ma-muted">Reviewed by ${_maE(_maWho(d.reviewedBy))} · ${_maWhen(d.reviewedAt)}</div>`:''}`:'';
   const hist=(d.edits||[]).slice().reverse().map(e=>`<li><b>${_maE(_maWho(e.by))}</b> · ${_maWhen(e.at)}<div>${_maE(e.reason||'')}</div>${(e.fields||[]).map(f=>`<div class="ma-muted">${_maE(f)}: ${_maE(_maFieldVal(c,e.before||{},f)||'—')} → ${_maE(_maFieldVal(c,e.after||{},f)||'—')}</div>`).join('')}</li>`).join('');
   const voided=d.status==='void'?`<div class="ma-note">Void — ${_maE(d.voidReason||'')} · ${_maE(_maWho(d.voidedBy))} · ${_maWhen(d.voidedAt)}</div>`:'';
   const pending=d.status==='pending'?`<div class="ma-note">Waiting for ${_maE(_maWho(d.confirmBy))} to confirm${d.confirmPaper?' — an owner confirms on paper with the signed receipt':''}. It counts in neither holder until then.</div>`:'';
@@ -955,14 +958,14 @@ function _maDocRailHTML(c,d){
   if(d.status!=='void'){
     acts.push(`<button class="ma-btn" onclick="window.maEditDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Edit</button>`);
     if(d.status==='pending'&&!maConfirmPatch(d,session.u,{at:0}).error)acts.push(`<button class="ma-btn primary" onclick="window.maConfirmDoc('${_maQ(d.id)}')">Confirm</button>`);
-    if((d.flags||[]).length&&!d.reviewedAt)acts.push(`<button class="ma-btn" onclick="window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`);
+    if(live.length&&!d.reviewedAt)acts.push(`<button class="ma-btn" onclick="window.maReviewDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Mark reviewed</button>`);
     acts.push(`<button class="ma-btn danger" onclick="window.maVoidDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">Void</button>`);
   }
-  return `<div class="ma-kicker">${_maE(MA_DOC_TYPES[d.dt].label)} · ${_maE(d.no)} · rev ${d.rev||1}</div>
+  return `<div class="ma-kicker">${_maE(MA_DOC_TYPES[d.dt].label)} · ${_maE(d.no)} · rev ${maRevOf(d)}</div>
     <h3 class="ma-rail-title">${_maE(maDocTitle(d,c.idx))}</h3>${_maStatusWord(d)}
     ${voided}${pending}
     <dl class="ma-dl">${dl}<dt>Recorded</dt><dd>${_maE(_maWho(d.by))} · ${_maWhen(d.ts)}</dd>${d.confirmedBy?`<dt>Confirmed</dt><dd>${_maE(_maWho(d.confirmedBy))} · ${_maWhen(d.confirmedAt)}${d.confirmVia==='paper'?' · on paper':''}</dd>`:''}</dl>
-    ${flags}<h4>Postings</h4>${postT}
+    ${flags}<h4>Bill or receipt</h4><div id="ma-rail-att">${_maRailAttInner(d)}</div><h4>Postings</h4>${postT}
     ${d.dt==='journal'&&(d.lines||[]).length?`<h4>Lines</h4><table class="ma-table ma-mini"><tbody>${d.lines.map(l=>`<tr><td>${_maE(maAccLabel(c.idx,l.account))}${l.memo?`<span class="ma-l2">${_maE(l.memo)}</span>`:''}</td><td class="ma-num">${d.kind==='opening'?(l.side==='cr'?'Cr ':'Dr ')+maRs(l.amount):(l.dr?'Dr '+maRs(l.dr):'Cr '+maRs(l.cr))}</td></tr>`).join('')}</tbody></table>`:''}
     <h4>History</h4>${hist?`<ul class="ma-hist">${hist}</ul>`:_maEmpty('Never edited.')}
     <div class="ma-rail-acts">${acts.join('')}${_maDocPdfButton(d)}</div>`;
@@ -1002,9 +1005,25 @@ function _maCloseOverviewHTML(c){
   });
   const b=_maErr('backups');
   const runs=maData.backups.slice().sort((x,y)=>(y.at||0)-(x.at||0));
-  const backups=b?_maErrorCard([b]):runs.length?_maTable([{h:'When'},{h:'Result',l:'Result'},{h:'Detail',l:'Detail'}],runs.slice(0,10).map(r=>[_maWhen(r.at),r.ok===false?'<span class="ma-word urgent">failed</span>':'<span class="ma-word fine">done</span>',_maE(r.ok===false?(r.error||''):[(r.collections?r.collections+' collections':''),(r.size?r.size:'')].filter(Boolean).join(' · '))])):_maEmpty('No nightly backup has run yet — the bucket and point-in-time recovery are switched on in the Console (M1 checklist); the backup function is the next milestone.');
+  const backups=b?_maErrorCard([b]):runs.length?_maTable([{h:'When'},{h:'Result',l:'Result'},{h:'Detail',l:'Detail'}],runs.slice(0,10).map(r=>{
+    const w=_MA_BACKUP_WORD[maBackupState(r)]||_MA_BACKUP_WORD.unknown;
+    return [_maWhen(r.at),`<span class="ma-word ${w[0]}">${w[1]}</span>`,_maE(_maBackupDetail(r))];
+  })):_maEmpty('No nightly backup has been recorded yet. The nightly run writes its own row here after 03:30 UTC (08:30 PKT); it needs MA_BACKUP_BUCKET set in Netlify and that bucket in Cloud Storage (M1 checklist).');
   return _maSec('Quarters','the quarter lock arrives with M11','',_maTable([{h:'Quarter'},{h:'State',l:'State'},{h:'Documents',cls:'ma-num',l:'Documents'},{h:'History',l:'History'},{h:'Last entered',l:'Last'}],qs))
-    +_maSec('Backups',runs.length?'last '+_maWhen(runs[0].at):'','',backups);
+    +_maSec('Backups',runs.length?'last '+_maWhen(runs[0].at):'','',backups)
+    +_maSec('Your own copy','','',`<p class="ma-hint ma-block">Everything Master Accounts holds, to this computer: a JSON file of every collection — the copy a restore reads — and an Excel workbook with the postings, the trial balance and every collection as a sheet. A collection that cannot be read is named in both files, never left out quietly. The download is recorded in the audit trail.</p>
+      <button class="ma-btn" id="ma-books-btn" onclick="window.maDownloadBooks()">Download the books</button><div class="ma-att-st" id="ma-books-st" role="status"></div>`);
+}
+/* A backup row, read by its state (maBackupState): a run still going is
+   never "done", and a run that was not set up says what is missing. */
+const _MA_BACKUP_WORD={done:['fine','done'],failed:['urgent','failed'],not_configured:['warn','not set up'],starting:['mute','starting'],running:['mute','running'],unknown:['mute','no result']};
+function _maBackupDetail(r){
+  const st=maBackupState(r);
+  if(st==='done')return [(r.collections?r.collections+' collections':''),(r.size?r.size:''),(Number.isFinite(r.documents)?maGroup(r.documents)+' documents':'')].filter(Boolean).join(' · ');
+  if(st==='failed')return String(r.error||'no reason given');
+  if(st==='not_configured'){const m=(Array.isArray(r.missing)?r.missing:[]).filter(x=>typeof x==='string'&&x);return maBackupMissing(r)+(m.length?' · missing: '+m.join(', '):'');}
+  if(st==='starting'||st==='running')return 'started '+_maWhen(r.at)+(r.operationState?' · '+r.operationState:'')+(r.lastCheckError?' · '+r.lastCheckError:'');
+  return 'no result recorded';
 }
 function _maAuditHTML(){
   const e=_maErr('audit');
@@ -1039,6 +1058,8 @@ function _maSettingsHTML(c){
       ${_maNumIn('ma-s-countevery',s.countEveryDays,'Count cash every, days')}
       ${_maNumIn('ma-s-grace',s.commitmentGraceDays,'Commitment grace, days')}
       ${_maNumIn('ma-s-pendwatch',s.pendingWatchDays,'Waiting confirmation watch, days')}</div>`)}
+    ${_maSec('Attachments and share links','','',`<div id="ma-att-mode">${_maAttachModeHTML()}</div>
+      <div class="ma-grid2">${_maNumIn('ma-s-sharedays',s.share.defaultDays,'A share link works for, days',{hint:'1 to 90; each link can say otherwise'})}</div>`)}
     <div class="ma-err" id="ma-s-err"></div>
     <div class="ma-form-acts"><button class="ma-btn primary" onclick="window.maSaveSettings()">Save settings</button></div></div>`;
 }
@@ -1077,7 +1098,12 @@ function _maCloseHTML(){
   const tabs=_maTabs(_maCloseTab,[['overview','Periods & backups'],['audit','Audit trail'],['settings','Settings'],['chart','Chart of accounts'],['items','Items']],'maCloseTabSet');
   let body;
   if(_maCloseTab==='audit')body=_maAuditHTML();
-  else if(_maCloseTab==='settings')body=_maSettingsHTML(c);
+  else if(_maCloseTab==='settings'){
+    body=_maSettingsHTML(c);
+    // Which attachment mode is in force is the server's answer, asked once a
+    // session — after the paint, so the page is never held on the network.
+    if(!_maAttachSt&&!_maAttachStP)setTimeout(()=>{_maAttachStatusLoad();},0);
+  }
   else if(_maCloseTab==='chart')body=_maChartHTML(c);
   else if(_maCloseTab==='items')body=_maItemsHTML(c);
   else body=_maCloseOverviewHTML(c);
@@ -1111,6 +1137,7 @@ window.maSaveSettings=async function(){
       relockMinutes:int('ma-s-relock',1,240,'Re-lock'),duplicateDays:int('ma-s-dup',0,60,'Duplicate window'),
       countEveryDays:int('ma-s-countevery',1,366,'Count every'),commitmentGraceDays:int('ma-s-grace',0,60,'Grace'),
       pendingWatchDays:int('ma-s-pendwatch',0,60,'Waiting watch'),
+      share:{defaultDays:int('ma-s-sharedays',1,90,'Share link days')},
       updatedAt:Date.now(),updatedBy:session.u});
     delete next.id;
     if(next.costCentres.indexOf(next.defaultCostCentre)<0)next.defaultCostCentre=next.costCentres[0];
@@ -1181,7 +1208,7 @@ function _maModal(title,body,foot,wide){
   back.onclick=e=>{if(e&&e.target===back)window.maCloseModal();};
   document.body.appendChild(back);
 }
-window.maCloseModal=function(){const b=document.getElementById('ma-modal-back');if(b&&b.remove)b.remove();_maF=null;};
+window.maCloseModal=function(){const b=document.getElementById('ma-modal-back');if(b&&b.remove)b.remove();_maF=null;_maShare=null;};
 if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('keydown',e=>{if(e&&e.key==='Escape'){const b=document.getElementById('ma-modal-back');if(b&&b.parentNode)window.maCloseModal();}});
 
 const _MA_TILES=[
@@ -1340,7 +1367,10 @@ window.maOwnerPick=function(u){
 function _maOpenDocForm(kind,pre,edit){
   const c=_maCtx();const s=c.s;
   const dt=_MA_KIND_DT[kind];
-  _maF={kind,dt,pre:pre||{},edit:edit||null,ack:false,lines:[]};
+  // atts: the files on the form — uploaded as soon as they are picked, so
+  // the form holds only references (maAttachList); attBusy: uploads in
+  // flight (Record waits for them).
+  _maF={kind,dt,pre:pre||{},edit:edit||null,ack:false,lines:[],atts:maAttachList((pre||{}).attachments),attBusy:0,attErr:'',attNote:''};
   const p=Object.assign({date:c.today},pre||{});
   if(kind==='opening'||kind==='general'){
     _maF.lines=(p.lines||[]).map(l=>({account:l.account||'',side:l.side||'dr',amount:l.amount||'',dr:l.dr||'',cr:l.cr||'',party:l.party||'',memo:l.memo||''}));
@@ -1382,6 +1412,7 @@ function _maOpenDocForm(kind,pre,edit){
     body=`<div class="ma-grid2">${date}<div></div></div>
       <div class="ma-field" id="ma-w-lines"><span class="ma-lbl">Lines</span><div class="ma-lines" id="ma-f-lines">${_maLinesHTML(c)}</div><button type="button" class="ma-link" onclick="window.maLineAdd()">Add a line</button><div class="ma-hint" id="ma-f-linetot"></div><span class="ma-ferr" id="ma-e-lines"></span></div>${note}`;
   }
+  body+=_maAttFieldHTML();
   if(edit)body+=_maFld('reason','Why is this changing?',`<textarea class="ma-in" id="ma-f-reason" rows="2"></textarea>`);
   body=`<div class="ma-issues" id="ma-f-issues"></div>`+body;
   const title=edit?'Edit '+edit.no:(MA_JOURNAL_KINDS[kind]?MA_JOURNAL_KINDS[kind].label:kind==='transfer'?'Transfer':'Count');
@@ -1390,7 +1421,7 @@ function _maOpenDocForm(kind,pre,edit){
 }
 function _maFormRead(){
   const f=_maF,k=f.kind;
-  const input={kind:k,date:_maVal('ma-f-date').trim(),note:_maVal('ma-f-note')};
+  const input={kind:k,date:_maVal('ma-f-date').trim(),note:_maVal('ma-f-note'),attachments:(f.atts||[]).slice()};
   if(k==='money_out'||k==='money_in'){
     Object.assign(input,{holder:_maVal('ma-f-holder'),account:_maVal('ma-f-account'),amount:_maVal('ma-f-amount'),
       party:_maVal('ma-f-party'),payee:_maVal('ma-f-payee'),
@@ -1415,13 +1446,13 @@ function _maFormRead(){
   return input;
 }
 const _MA_FIELDS=['date','amount','holder','account','party','payee','tax','costCentre','labelKind','channel','commitmentId','commitmentPeriod','owner','from','to','counted','note','lines','reason',
-  'name','ckind','cadence','amountExpected','dueDay','dueWeekday','dueMonth','code','npname','item','unit','rate','validFrom'];
+  'name','ckind','cadence','amountExpected','dueDay','dueWeekday','dueMonth','code','npname','item','unit','rate','validFrom','attachments'];
 function _maShowIssues(res){
   _MA_FIELDS.forEach(f=>{const e=document.getElementById('ma-e-'+f);if(e)e.textContent='';});
   const top=[];
   res.refuses.forEach(x=>{
     const e=x.field&&document.getElementById('ma-e-'+x.field);
-    if(e&&x.field!=='attachments'&&_MA_FIELDS.indexOf(x.field)>=0)e.textContent=(e.textContent?e.textContent+' ':'')+x.message;
+    if(e&&_MA_FIELDS.indexOf(x.field)>=0)e.textContent=(e.textContent?e.textContent+' ':'')+x.message;
     else top.push(`<li class="refuse"><span class="ma-dot urgent"></span>${_maE(x.message)}</li>`);
   });
   res.flags.forEach(x=>top.push(`<li><span class="ma-dot warn"></span>${_maE(x.message)}</li>`));
@@ -1434,6 +1465,7 @@ window.maSaveForm=async function(){
   if(f.kind==='party')return _maSaveParty();
   if(f.kind==='terms')return _maSaveTerms();
   if(f.kind==='rate')return _maSaveRate();
+  if(f.attBusy){_maShowIssues({refuses:[{message:'Wait for the upload to finish — the file is not on the document yet.',field:'attachments'}],flags:[],ok:false});return;}
   const c=_maCtx();const s=c.s;
   const input=_maFormRead();
   const meta=f.edit?{by:f.edit.by,byName:f.edit.byName,ts:f.edit.ts,source:f.edit.source}:{by:session.u,byName:session.name||session.u,ts:Date.now(),source:'manual'};
@@ -1460,7 +1492,7 @@ window.maSaveForm=async function(){
       edited=_maEditShape(f.edit,edited);
       await _maWriteEdit(f.edit,edited,reason);
       const key=_MA_DOC_KEY[f.dt];const i=maData[key].findIndex(d=>d.id===f.edit.id);if(i>=0)maData[key][i]=edited;
-      _maInvalidate();window.maCloseModal();_maToast(edited.no+' saved — revision '+edited.rev+'.');
+      _maInvalidate();window.maCloseModal();_maToast(edited.no+' saved — revision '+maRevOf(edited)+'.');
       _maRail={kind:'doc',dt:edited.dt,id:edited.id};_maPaint();
     }else{
       if(res.flags.length)built.flags=res.flags.map(x=>({rule:x.rule,message:x.message,field:x.field||null}));
@@ -1756,8 +1788,8 @@ function _maPdfPrint(type,build,filename,target){
   return true;
 }
 function _maDocPdfButton(d){
-  if(d.dt==='transfer')return `<button class="ma-btn" onclick="window.maDocPdf('transfer','${_maQ(d.id)}')">Receipt (PDF)</button>`;
-  if(d.dt==='journal'&&d.kind==='money_out')return `<button class="ma-btn" onclick="window.maDocPdf('journal','${_maQ(d.id)}')">Voucher (PDF)</button>`;
+  if(d.dt==='transfer')return `<button class="ma-btn" onclick="window.maDocPdf('transfer','${_maQ(d.id)}')">Receipt (PDF)</button><button class="ma-btn" onclick="window.maDocShare('transfer','${_maQ(d.id)}')">Share receipt</button>`;
+  if(d.dt==='journal'&&d.kind==='money_out')return `<button class="ma-btn" onclick="window.maDocPdf('journal','${_maQ(d.id)}')">Voucher (PDF)</button><button class="ma-btn" onclick="window.maDocShare('journal','${_maQ(d.id)}')">Share voucher</button>`;
   return '';
 }
 window.maPdf=function(key){
@@ -1806,8 +1838,8 @@ function _maXlsx(name,sheets){
 }
 window.maExcel=function(key){
   const c=_maCtx();const r=_maRange(c);const rng=r.from+'_to_'+r.to;
-  const docRow=d=>[d.date,d.no,maDocTitle(d,c.idx),_maDocDesc(d,c),d.amount||0,d.status,(d.flags||[]).map(x=>x.message).join('; '),d.note||''];
-  const docHead=['Date','Number','Document','What','Amount','State','Flags','Note'];
+  const docRow=d=>[d.date,d.no,maDocTitle(d,c.idx),_maDocDesc(d,c),d.amount||0,d.status,maLiveFlags(d).map(x=>x.message).join('; '),d.note||'',maAttachList(d.attachments).length];
+  const docHead=['Date','Number','Document','What','Amount','State','Flags','Note','Files'];
   const postRows=led=>[['Date','Document','Account','Description','Cost centre','Kind','Debit','Credit','Balance']].concat(led.rows.map(l=>[l.date,l.doc&&l.doc.no,maAccLabel(c.idx,l.account),[l.party?_maPartyName(l.party):l.payee,l.memo].filter(Boolean).join(' · '),l.costCentre||'',l.kind||'',l.dr,l.cr,l.balance===undefined?'':l.balance]));
   if(key==='ledger'){const {led}=_maLedgerFiltered(c);const f=Object.keys(_maLF).filter(k=>_maLF[k]).map(k=>k+'-'+_maLF[k]).join('_');return _maXlsx('master-accounts_ledger_'+rng+(f?'_'+f:''),[{name:'Postings',rows:postRows(led)}]);}
   if(key==='documents'){const docs=c.docs.filter(d=>d.date>=r.from&&d.date<=r.to).sort((a,b)=>String(a.date).localeCompare(String(b.date)));return _maXlsx('master-accounts_documents_'+rng,[{name:'Documents',rows:[docHead].concat(docs.map(docRow))}]);}
@@ -1824,4 +1856,537 @@ window.maExcel=function(key){
     return _maXlsx('master-accounts_party-'+p.code+'_'+rng,[{name:'Documents',rows:[docHead].concat(docs.map(docRow))},{name:'Ledger',rows:postRows(led)},{name:'Rate card',rows:[['Item','Unit','Rate','From','To']].concat(card)}]);}
   if(key==='commitments'){const rows=[['Commitment','Kind','Schedule','Expected','State','Due','Account','Party','Active']].concat(maData.commitments.map(x=>{const st=maCommitmentStatus(x,c.docs,c.today,c.s);return [x.name,x.kind,maCommitmentText(x),x.amountExpected||0,st.state,st.due||'',maAccLabel(c.idx,x.account),_maPartyName(x.party),x.active===false?'no':'yes'];}));return _maXlsx('master-accounts_commitments_'+c.today,[{name:'Commitments',rows}]);}
   if(key==='audit'){const rows=[['When','Who','Action','Document','Detail']].concat(maData.audit.slice().sort((a,b)=>(b.at||0)-(a.at||0)).map(x=>[new Date(x.at||0).toISOString(),x.byName||x.by,x.action,x.target&&(x.target.no||x.target.id)||'',x.detail||'']));return _maXlsx('master-accounts_audit_'+c.today,[{name:'Audit trail',rows}]);}
+};
+
+/* ═══ Files, links and the owners' copy (M1.5b, 28 Sept 2026) ════════════
+   The client half of M1.5a's three functions (netlify/functions/ma-attach,
+   ma-share, ma-backup; netlify/lib/ma-server.js). MASTER_ACCOUNTS_PLAN.md
+   §29 (attachments), §30 (Download the books), §31 (send by link).
+
+   THE SERVER DECIDES, the client asks. Every call carries the signed-in
+   person's Firebase ID token, which the function verifies itself; nothing
+   this file says about who is asking is trusted. A refusal comes back as
+   {error, code} and is shown AS IT CAME — the function's own sentence,
+   "sign in again" on a 401, "not set up" on a 503 not_configured — and
+   Cloudinary's own refusal (its plan's size cap, say) is shown in its own
+   words. No Cloudinary secret is anywhere near this file.
+
+   A FILE IS A REFERENCE, NEVER A URL (maAttachFromUpload, js/ma-core.js).
+   The upload goes STRAIGHT to Cloudinary with exactly the fields the
+   function signed, and the app's shared image uploader (js/shared.js) is
+   never used here: it is an unsigned upload to a public path, which is the
+   thing §29 exists to stop. To look at a file, the function is asked for a link EVERY time
+   and the link is opened, never kept — a private file's link dies in five
+   minutes. */
+const _MA_FN='/.netlify/functions/';
+const _MA_SHARE_PATH='/.netlify/functions/ma-share?t=';
+const _MA_UPLOAD_URL=/^https:\/\/api\.cloudinary\.com\/v1_1\/[A-Za-z0-9_-]{1,64}\/image\/upload$/;
+let _maAttachSt=null;        // ma-attach `status`: {mode, missing, …} or {error} — asked once a session
+let _maAttachStP=null;       // …the question in flight
+let _maModeSeen=null;        // 'authenticated' | 'unsigned', from any answer that said
+let _maRailAtt=null;         // the rail's uploads: {key, busy, err, note}
+let _maShare=null;           // the open share panel
+let _maBooksBusy=false;
+
+function _maFnErr(status,code,message){const e=new Error(message);e.status=status;e.code=code||'';return e;}
+async function _maFn(name,body){
+  const u=typeof auth!=='undefined'&&auth?auth.currentUser:null;
+  if(!u||typeof u.getIdToken!=='function')throw _maFnErr(401,'auth','Sign in again — you are signed out.');
+  let token='';
+  try{token=await u.getIdToken();}catch(e){throw _maFnErr(401,'auth','Sign in again — your sign-in could not be renewed.');}
+  let r;
+  try{r=await fetch(_MA_FN+name,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body||{})});}
+  catch(e){throw _maFnErr(0,'network','Could not reach the server — check the connection and try again.');}
+  let d=null;try{d=await r.json();}catch(_){d=null;}
+  if(r.ok&&d&&typeof d==='object'&&!d.error)return d;
+  const code=d&&typeof d.code==='string'?d.code:'';
+  let msg=d&&typeof d.error==='string'&&d.error.trim()?d.error.trim():'';
+  if(r.status===401)msg=msg&&/sign in/i.test(msg)?msg:'Sign in again — the server could not check who you are.';
+  else if(code==='not_configured')msg=msg||'The server is not set up for this yet.';
+  else if(!msg)msg=r.status===404?'The '+name+' function is not deployed here (HTTP 404).':'The server answered HTTP '+r.status+' and said nothing more.';
+  throw _maFnErr(r.status,code||(r.status===401?'auth':''),msg);
+}
+function _maNoteMode(m){if(m==='authenticated'||m==='unsigned')_maModeSeen=m;}
+function _maMode(){return (_maAttachSt&&_maAttachSt.mode)||_maModeSeen;}
+
+/* The file goes to Cloudinary with every field the function signed and
+   nothing else — Cloudinary refuses a signed upload whose parameters were
+   changed — plus the file itself. */
+async function _maCloudUpload(signed,file,name){
+  if(typeof FormData==='undefined')throw new Error('This browser cannot upload files.');
+  if(!signed||!_MA_UPLOAD_URL.test(String(signed.uploadUrl||''))||!signed.fields||typeof signed.fields!=='object')
+    throw new Error('The server did not give a Cloudinary upload address — nothing was sent.');
+  const fd=new FormData();
+  Object.keys(signed.fields).forEach(k=>fd.append(k,String(signed.fields[k])));
+  fd.append('file',file,name||signed.name||'file');
+  let r;
+  try{r=await fetch(signed.uploadUrl,{method:'POST',body:fd});}
+  catch(e){throw new Error('Could not reach Cloudinary — check the connection and try again.');}
+  let d=null;try{d=await r.json();}catch(_){d=null;}
+  if(!r.ok||!d||d.error)throw new Error('Cloudinary refused the file: '+(d&&d.error&&d.error.message?String(d.error.message):'it answered HTTP '+r.status));
+  return d;
+}
+/* sign → upload → the stored reference. */
+async function _maUploadFile(file,nameOverride){
+  const name=String(nameOverride||(file&&file.name)||'file');
+  const signed=await _maFn('ma-attach',{action:'sign',file:{name,type:String(file&&file.type||''),size:file&&file.size}});
+  _maNoteMode(signed.mode);
+  const res=await _maCloudUpload(signed,file,signed.name||name);
+  const out=maAttachFromUpload(signed,res,{by:session.u,at:Date.now()});
+  if(out.error)throw new Error(out.error);
+  return out.att;
+}
+function _maBytes(n){return !Number.isFinite(n)?'':n<1024?n+' B':n<1048576?Math.round(n/1024)+' KB':(n/1048576).toFixed(1)+' MB';}
+function _maAttMeta(a){
+  return [a.format==='pdf'?'PDF':String(a.format||'').toUpperCase(),_maBytes(a.bytes),a.by?_maWho(a.by):'',a.at?_maWhen(a.at):''].filter(Boolean).join(' · ');
+}
+const _MA_PUBLIC_NOTE='This file is public in this setup: anyone who has its address can open it. The address is long and random — see Close & audit → Settings.';
+function _maAttListHTML(list,where,removable){
+  if(!list.length)return '';
+  return `<ul class="ma-att-list">${list.map((a,i)=>`<li class="ma-att-item"><span class="ma-att-name">${_maE(a.name)}</span><span class="ma-att-meta">${_maE(_maAttMeta(a))}</span>
+    <span class="ma-att-acts"><button type="button" class="ma-link" onclick="window.maAttachView('${where}',${i})">View</button>${removable
+      ?`<button type="button" class="ma-link" onclick="window.maAttachDrop(${i})">Remove</button>`
+      :`<button type="button" class="ma-link" onclick="window.maAttachView('${where}',${i},true)">Download</button>`}</span></li>`).join('')}</ul>`;
+}
+// Two pickers: a camera (capture) input cannot pick a PDF, so the second
+// takes a photo or a PDF from the device (the warehouse-sales pattern).
+function _maAttPickHTML(where,st){
+  st=st||{};
+  return `<div class="ma-att-pick">
+      <label class="ma-btn sm" for="ma-att-cam-${where}">Take a photo</label><input id="ma-att-cam-${where}" type="file" accept="image/*" capture="environment" hidden onchange="window.maAttachPicked(this,'${where}')">
+      <label class="ma-btn sm" for="ma-att-file-${where}">Choose a photo or PDF</label><input id="ma-att-file-${where}" type="file" accept="image/*,application/pdf,.pdf" multiple hidden onchange="window.maAttachPicked(this,'${where}')">
+    </div>${st.busy?`<div class="ma-att-st" role="status">Uploading ${st.busy} file${st.busy>1?'s':''}…</div>`:''}${st.err?`<div class="ma-err" role="alert">${_maE(st.err)}</div>`:''}${st.note?`<div class="ma-hint ma-block">${_maE(st.note)}</div>`:''}`;
+}
+
+/* ── On the form: files ride in with the document ─────────────────────── */
+function _maAttFieldHTML(){
+  return `<div class="ma-field" id="ma-w-attachments"><span class="ma-lbl">Bill or receipt</span><div id="ma-f-att">${_maAttFormInner()}</div><span class="ma-ferr" id="ma-e-attachments"></span></div>`;
+}
+function _maAttFormInner(){
+  const f=_maF;if(!f)return '';
+  return _maAttListHTML(f.atts||[],'form',true)+_maAttPickHTML('form',{busy:f.attBusy,err:f.attErr,note:f.attNote});
+}
+function _maPaintFormAtt(){const el=document.getElementById('ma-f-att');if(el)el.innerHTML=_maAttFormInner();}
+window.maAttachPicked=async function(inp,where){
+  const files=inp&&inp.files?Array.prototype.slice.call(inp.files):[];
+  try{inp.value='';}catch(_){}
+  if(!files.length||!maCanSee())return false;
+  if(where==='rail')return _maRailAttach(files);
+  const f=_maF;
+  if(!f||!_MA_KIND_DT[f.kind])return false;
+  if((f.atts||[]).length+f.attBusy+files.length>MA_ATTACH_MAX){f.attErr='A document carries at most '+MA_ATTACH_MAX+' files.';_maPaintFormAtt();return false;}
+  if(!_maOnline()){f.attErr='Uploading needs a connection — nothing was sent.';_maPaintFormAtt();return false;}
+  f.attErr='';f.attBusy+=files.length;_maPaintFormAtt();
+  const errs=[];
+  for(const file of files){
+    try{const a=await _maUploadFile(file);f.atts.push(a);}
+    catch(e){errs.push((file&&file.name?file.name+' did not upload: ':'')+String(e&&e.message||e));}
+    f.attBusy--;
+    if(_maF===f)_maPaintFormAtt();
+  }
+  f.attErr=errs.join(' · ');
+  f.attNote=_maMode()==='unsigned'&&f.atts.length?_MA_PUBLIC_NOTE:'';
+  if(_maF===f){_maPaintFormAtt();window.maFormDirty();}
+  return !errs.length;
+};
+// Taking a file off the form before it is saved (or, in an edit, off the
+// document — the edit then names `attachments` and carries its reason).
+// The file itself stays in Cloudinary; the edit history keeps the reference.
+window.maAttachDrop=function(i){
+  const f=_maF;if(!f||!f.atts||!f.atts[i])return;
+  f.atts.splice(i,1);f.attNote='';_maPaintFormAtt();window.maFormDirty();
+};
+
+/* ── On the rail: a file added after the document was recorded ──────────
+   An EDIT, like every other change to a posted document (§31, the rules'
+   maEditOk): rev + 1 and one edits[] row by the caller naming exactly
+   `attachments`. The reason is what happened ("Attached bill.jpg") — a
+   file changes no figure. The stored flags are left alone (the rules pin
+   them); "no bill attached" leaves the review queue because maLiveFlags
+   sees the file, not because anything was rewritten. */
+function _maDocKey(d){return d.dt+'/'+d.id;}
+function _maRailAttInner(d){
+  const st=_maRailAtt&&_maRailAtt.key===_maDocKey(d)?_maRailAtt:{busy:0,err:'',note:''};
+  const list=maAttachList(d.attachments);
+  const blocked=maAttachIssues(d,{settings:_maCtx().s,closes:maData.closes,adding:0}).filter(x=>x.rule==='attach.void'||x.rule==='attach.closed');
+  return (list.length?_maAttListHTML(list,'rail',false):'<div class="ma-empty">No file attached.</div>')
+    +(blocked.length?`<div class="ma-hint ma-block">${_maE(blocked[0].message)}</div>`:_maAttPickHTML('rail',st));
+}
+function _maPaintRailAtt(){
+  const r=_maRail;const d=r&&r.kind==='doc'?_maDoc(r.dt,r.id):null;
+  const el=document.getElementById('ma-rail-att');if(el&&d)el.innerHTML=_maRailAttInner(d);
+}
+async function _maRailAttach(files){
+  const r=_maRail;const d=r&&r.kind==='doc'?_maDoc(r.dt,r.id):null;
+  if(!d)return false;
+  const key=_maDocKey(d);
+  const st=_maRailAtt=_maRailAtt&&_maRailAtt.key===key?_maRailAtt:{key,busy:0,err:'',note:''};
+  const c=_maCtx();
+  const iss=maAttachIssues(d,{settings:c.s,closes:maData.closes,adding:files.length}).filter(x=>x.level==='refuse');
+  if(iss.length){st.err=iss[0].message;_maPaintRailAtt();return false;}
+  if(!_maOnline()){st.err='Attaching needs a connection — nothing was sent.';_maPaintRailAtt();return false;}
+  if(_maBusy||st.busy){st.err='Another save is still running — try again in a moment.';_maPaintRailAtt();return false;}
+  st.err='';st.note='';st.busy=files.length;_maPaintRailAtt();
+  const added=[],errs=[];
+  for(const file of files){
+    try{added.push(await _maUploadFile(file));}
+    catch(e){errs.push((file&&file.name?file.name+': ':'')+String(e&&e.message||e));}
+    st.busy--;_maPaintRailAtt();
+  }
+  if(!added.length){st.err=errs.join(' · ');_maPaintRailAtt();return false;}
+  const cur=_maDoc(d.dt,d.id)||d;
+  const reason='Attached '+added.map(a=>a.name).join(', ');
+  const after=Object.assign({},_maClean(cur),{attachments:maAttachList(cur.attachments).concat(added)});
+  let edited=maApplyEdit(cur,after,Object.assign(_maMeta(),{reason}));
+  if(!edited){st.err='Nothing changed.';_maPaintRailAtt();return false;}
+  edited=_maEditShape(cur,edited);
+  _maBusy=true;
+  try{
+    await _maWriteEdit(cur,edited,reason,'attach');
+    const k=_MA_DOC_KEY[cur.dt];const i=maData[k].findIndex(x=>x.id===cur.id);if(i>=0)maData[k][i]=edited;
+    st.err=errs.length?'Not attached: '+errs.join(' · '):'';
+    st.note=_maMode()==='unsigned'?_MA_PUBLIC_NOTE:'';
+    _maInvalidate();
+    _maToast(cur.no+': '+added.length+' file'+(added.length>1?'s':'')+' attached — revision '+maRevOf(edited)+'.');
+    _maPaint();
+    return !errs.length;
+  }catch(e){
+    st.err=(added.length>1?'The files are':'The file is')+' uploaded but not on '+cur.no+': '+_maWriteError(e);
+    _maPaintRailAtt();return false;
+  }finally{_maBusy=false;}
+}
+
+/* ── Looking at a file: a fresh link every time ─────────────────────────
+   The tab is opened INSIDE the click (a browser blocks one opened after an
+   await) and pointed at the link when it arrives. The link is never kept:
+   a private one is dead in five minutes, and asking again is how you look
+   again. */
+window.maAttachView=function(where,i,download){
+  let a=null;
+  if(where==='form')a=_maF&&_maF.atts?_maF.atts[i]:null;
+  else if(where==='rail'){const r=_maRail;const d=r&&r.kind==='doc'?_maDoc(r.dt,r.id):null;a=d?maAttachList(d.attachments)[i]:null;}
+  if(!a||!maAttachOk(a)){_maToast('That file is not on this document any more.');return Promise.resolve(false);}
+  return _maAttachOpen(a,!!download);
+};
+async function _maAttachOpen(a,download){
+  let w=null;
+  try{w=window.open('','_blank');}catch(_){w=null;}
+  if(w){try{w.opener=null;}catch(_){}try{w.document.title='Opening…';w.document.body.textContent='Opening the file…';}catch(_){}}
+  try{
+    const r=await _maFn('ma-attach',{action:'url',file:maAttachRef(a),download:!!download});
+    const url=r&&typeof r.url==='string'?r.url:'';
+    if(!/^https:\/\/(api|res)\.cloudinary\.com\//.test(url))throw new Error('The server did not give back a link to the file.');
+    if(w&&!w.closed){w.location.href=url;return true;}
+    _maToast('Your browser blocked the new tab — allow pop-ups for this site, then press '+(download?'Download':'View')+' again.');
+    return false;
+  }catch(e){
+    if(w){try{w.close();}catch(_){}}
+    _maToast('Could not open '+(a.name||'the file')+': '+String(e&&e.message||e));
+    return false;
+  }
+}
+
+/* ── Which mode is in force (§29) ───────────────────────────────────────
+   Private (the server holds the Cloudinary key) or the public fallback.
+   Asked of the server, never assumed, once a session; Settings says it. */
+async function _maAttachStatusLoad(force){
+  if(_maAttachStP)return _maAttachStP;
+  if(_maAttachSt&&!force)return _maAttachSt;
+  _maAttachStP=(async()=>{
+    try{
+      const d=await _maFn('ma-attach',{action:'status'});
+      if(d.mode!=='authenticated'&&d.mode!=='unsigned')throw new Error('The server gave an answer this page does not understand.');
+      _maAttachSt=d;_maNoteMode(d.mode);
+    }catch(e){_maAttachSt={error:String(e&&e.message||e),code:e&&e.code||''};}
+    _maAttachStP=null;
+    const el=document.getElementById('ma-att-mode');if(el)el.innerHTML=_maAttachModeHTML();
+    const sn=document.getElementById('ma-sh-mode');if(sn)sn.innerHTML=_maShareModeHTML();
+    return _maAttachSt;
+  })();
+  return _maAttachStP;
+}
+window.maAttachStatusCheck=function(){_maAttachSt=null;const el=document.getElementById('ma-att-mode');if(el)el.innerHTML=_maAttachModeHTML();return _maAttachStatusLoad(true);};
+function _maAttachModeHTML(){
+  const st=_maAttachSt;
+  if(!st)return '<div class="ma-muted">Asking the server which mode is in force…</div>';
+  if(st.error)return `<div class="ma-errcard" role="alert"><b>Could not ask the attachment server.</b> ${_maE(st.error)}<div class="ma-errcard-acts"><button class="ma-btn sm" onclick="window.maAttachStatusCheck()">Check again</button></div></div>`;
+  const mins=Number.isFinite(st.urlSeconds)?Math.round(st.urlSeconds/60):5;
+  const mb=Number.isFinite(st.maxBytes)?Math.round(st.maxBytes/1048576):25;
+  const size=`<dt>Largest file</dt><dd>${mb} MB here — the Cloudinary account’s own plan may allow less, and when it refuses a file its words are shown as they come.</dd>`;
+  if(st.mode==='authenticated')return `<dl class="ma-dl"><dt>Mode</dt><dd><span class="ma-word fine">private</span></dd>
+    <dt>Files</dt><dd>Bills, receipts and shared PDFs are private Cloudinary files. Every look opens a link that stops working after ${mins} minutes.</dd>
+    <dt>Share links</dt><dd>A link stops at its expiry, or at once when it is withdrawn. A PDF somebody already downloaded stays with them — nothing can recall a copy.</dd>${size}</dl>
+    <div class="ma-sec-foot"><button class="ma-link" onclick="window.maAttachStatusCheck()">Check again</button></div>`;
+  const miss=(Array.isArray(st.missing)?st.missing:[]).filter(x=>typeof x==='string'&&x);
+  return `<div class="ma-note"><b>Public — the fallback.</b> ${miss.length?_maE(miss.join(' and '))+(miss.length>1?' are':' is')+' not set in Netlify, so':'The server holds no Cloudinary key, so'} files go up through the app’s unsigned preset and are PUBLIC: each sits at a permanent address that is long and random, so nobody can guess it — but anyone who has it can open the file, for good. Withdrawing or expiring a share link only stops OUR link; it cannot recall the file’s own address, or a copy someone already has. Set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Netlify to make new files private (files already uploaded stay public).</div>
+    <dl class="ma-dl"><dt>Mode</dt><dd><span class="ma-word warn">public</span></dd>${size}</dl>
+    <div class="ma-sec-foot"><button class="ma-link" onclick="window.maAttachStatusCheck()">Check again</button></div>`;
+}
+
+/* ── Send by link (§31) ─────────────────────────────────────────────────
+   Share makes the PDF in the browser (printDocument deliver:'blob' — no
+   tab, no download), uploads it through ma-attach like any file, and asks
+   ma-share for a link: a 32-byte token the function mints, served only
+   while it is live. The link is this site's own origin + the path the
+   function hands back — no host is written here. Withdraw goes THROUGH the
+   function too, so its audit row is written in the same batch. */
+function _maShareSpec(kind,id){
+  const c=_maCtx();const r=_maRange(c);const span=r.from+'_'+r.to;
+  const x=()=>_maPdfCtx(c);
+  if(kind==='transfer'||kind==='journal'){
+    const d=_maDoc(kind,id);
+    if(!d)return {error:'That document is not loaded — refresh and try again.'};
+    const tail=(d.no||d.id)+(d.status==='void'?'-VOID':'');
+    if(kind==='transfer')return {type:'ma-receipt',what:'Receipt '+d.no,filename:_maPdfFile('Receipt-'+tail),build:()=>maPdfReceiptData(x(),d),
+      subject:{type:'transfer',id:d.id,no:d.no},to:null,listOf:'this document'};
+    if(d.kind!=='money_out')return {error:'Only a transfer (its receipt) or a Money out (its voucher) has a PDF of its own — share the ledger instead.'};
+    const p=d.party?_maParty(d.party):null;
+    return {type:'ma-voucher',what:'Voucher '+d.no,filename:_maPdfFile('Voucher-'+tail),build:()=>maPdfVoucherData(x(),d),
+      subject:{type:'journal',id:d.id,no:d.no},to:{party:p?p.name:(d.payee||''),phone:p&&p.contact?p.contact.phone||'':''},listOf:'this document'};
+  }
+  if(kind==='ledger'){
+    const q=_maLedgerQuery(c);const code=q.holder||q.account;
+    if(!code)return {error:'Pick one holder or one account first — a ledger PDF is one account’s statement.'};
+    return {type:'ma-ledger',what:'Ledger '+code+' · '+r.label,filename:_maPdfFile('Ledger-'+code+'-'+span),build:()=>maPdfLedgerData(x(),Object.assign({label:r.label},q)),
+      subject:{type:'ledger',id:String(code),no:'Ledger '+code+' · '+r.label},to:null,listOf:'this account’s ledgers'};
+  }
+  if(kind==='holder'){
+    const code=_maHolderCode;
+    if(!code||!maIsMoney(c.idx,code))return {error:'That holder is not in the chart.'};
+    return {type:'ma-statement-holder',what:_maAccName(c,code)+' · '+r.label,filename:_maPdfFile('Holder-'+code+'-'+span),build:()=>maPdfHolderStatementData(x(),code,r),
+      subject:{type:'holder',id:String(code),no:'Holder '+code+' · '+r.label},to:null,listOf:'this holder’s statements'};
+  }
+  if(kind==='party'){
+    const p=_maParty(_maPartyId);
+    if(!p)return {error:'That party is not in the master.'};
+    return {type:'ma-statement-party',what:'Statement · '+p.name+' · '+r.label,filename:_maPdfFile('Statement-'+(p.code||p.id)+'-'+span),build:()=>maPdfPartyStatementData(x(),p.id,r),
+      subject:{type:'party',id:String(p.id),no:'Statement '+(p.code||'')+' · '+r.label},to:{party:p.name,phone:p.contact&&p.contact.phone||''},listOf:'this party’s statements'};
+  }
+  return {error:'This page has nothing to share.'};
+}
+function _maShareLink(token){return location.origin+_MA_SHARE_PATH+String(token);}
+function _maShareText(title,link,expiresAt){
+  return 'GROOVY — '+String(title||'a document')+'\n'+link+(Number.isFinite(expiresAt)?'\nThe link works until '+_maWhen(expiresAt)+'.':'');
+}
+function _maShareOpen(kind,id){
+  if(!maCanSee()){_maToast('Master Accounts is for Afnan and Ammar.');return false;}
+  const sp=_maShareSpec(kind,id);
+  if(!sp||sp.error){_maToast(sp&&sp.error||'There is nothing to share here.');return false;}
+  _maF=null;
+  _maShare={spec:sp,busy:false,step:'',err:'',made:null,list:{state:'loading',rows:[],err:''}};
+  _maModal('Share · '+sp.what,_maShareBodyHTML(),`<button class="ma-btn" onclick="window.maCloseModal()">Close</button><button class="ma-btn primary" id="ma-sh-go" onclick="window.maShareMake()">Make a link</button>`);
+  _maShareListLoad();
+  if(!_maAttachSt&&!_maAttachStP)_maAttachStatusLoad();
+  return true;
+}
+window.maShare=function(key){return _maShareOpen(key,null);};
+window.maDocShare=function(dt,id){return _maShareOpen(dt,id);};
+function _maShareModeHTML(){
+  const m=_maMode();
+  if(m==='unsigned')return '<div class="ma-note"><b>Files are public in this setup.</b> The PDF itself sits at a permanent address that is long and random. Withdrawing or expiring the link stops our link only — it cannot recall that address, or a copy someone already has.</div>';
+  if(m==='authenticated')return '<div class="ma-hint ma-block">The PDF is stored privately. Withdrawing the link stops it at once; a copy somebody already downloaded stays with them.</div>';
+  return '';
+}
+function _maShareBodyHTML(){
+  const sh=_maShare;if(!sh)return '';
+  const sp=sh.spec,s=_maCtx().s,to=sp.to||{};
+  return `<div class="ma-share">
+    <p class="ma-hint ma-block">A link to this PDF that opens without signing in — for the days below, or until it is withdrawn.</p>
+    <div id="ma-sh-mode">${_maShareModeHTML()}</div>
+    <div class="ma-grid3">${_maFld('shfor','For',_maIn('shfor',to.party||'',{ph:'optional'}))}
+      ${_maFld('shphone','WhatsApp number',_maIn('shphone',to.phone||'',{type:'tel',ph:'0300 1234567'}))}
+      ${_maFld('shdays','Days it works',_maIn('shdays',s.share.defaultDays,{num:true}))}</div>
+    <div class="ma-err" id="ma-sh-err" role="alert">${_maE(sh.err)}</div>
+    <div id="ma-sh-made">${_maShareMadeHTML()}</div>
+    <h3 class="ma-sec-title ma-sh-h">Links to ${_maE(sp.listOf)}</h3>
+    <div id="ma-sh-list">${_maShareListHTML()}</div>
+  </div>`;
+}
+function _maShareActsHTML(key,title,link,phone,expiresAt,withdraw){
+  const text=_maShareText(title,link,expiresAt);
+  const mail='mailto:?subject='+encodeURIComponent('GROOVY — '+String(title||'a document'))+'&body='+encodeURIComponent(text);
+  return `<div class="ma-sh-acts"><button type="button" class="ma-btn sm" onclick="window.maShareCopy('${_maQ(key)}')">Copy link</button><a class="ma-btn sm" href="${_maE(maWaLink(phone,text))}" target="_blank" rel="noopener noreferrer">WhatsApp</a><a class="ma-btn sm" href="${_maE(mail)}">Email</a>${withdraw?`<button type="button" class="ma-btn sm danger" onclick="window.maShareRevoke('${_maQ(key)}')">Withdraw</button>`:''}</div>`;
+}
+function _maShareMadeHTML(){
+  const sh=_maShare;if(!sh)return '';
+  if(sh.busy)return `<div class="ma-att-st" role="status">${_maE(sh.step||'Working…')}</div>`;
+  const m=sh.made;if(!m)return '';
+  const row=sh.list.rows.find(x=>x.token===m.token);
+  if(row&&maShareState(row,Date.now())==='revoked')return '<div class="ma-hint ma-block">The link just made has been withdrawn.</div>';
+  return `<div class="ma-sh-made"><span class="ma-lbl">The link — it works until ${_maE(_maWhen(m.expiresAt))}</span>
+    <input class="ma-in ma-sh-url" id="ma-sh-url" readonly value="${_maE(m.link)}" aria-label="The link" onfocus="this.select()">
+    ${_maShareActsHTML('new',sh.spec.what,m.link,m.to&&m.to.phone,m.expiresAt,false)}</div>`;
+}
+async function _maShareListLoad(){
+  const sh=_maShare;if(!sh)return;
+  sh.list={state:'loading',rows:sh.list.rows||[],err:''};_maSharePaint('list');
+  try{
+    // One field, one clause: the rules let an owner read every ma_shares
+    // document, so this is provable; the kind is filtered here.
+    const snap=await getDocs(query(collection(db,'ma_shares'),where('docId','==',sh.spec.subject.id)));
+    if(_maShare!==sh)return;
+    const got=((snap&&snap.docs)||[]).map(d=>Object.assign({},typeof d.data==='function'?d.data():{},{token:d.id}))
+      .filter(x=>x.docKind===sh.spec.subject.type);
+    const mine=sh.list.rows.filter(r=>!got.some(g=>g.token===r.token));   // one made while the read ran
+    sh.list.rows=mine.concat(got).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    sh.list.state='ok';
+  }catch(e){
+    if(_maShare!==sh)return;
+    sh.list.state='error';sh.list.err=String(e&&e.message||e);
+  }
+  _maSharePaint('list');
+}
+window.maShareListRetry=function(){return _maShareListLoad();};
+function _maShareListHTML(){
+  const sh=_maShare;if(!sh)return '';
+  const L=sh.list;
+  if(L.state==='loading')return '<div class="ma-muted">Reading the links…</div>';
+  if(L.state==='error')return `<div class="ma-errcard" role="alert"><b>Could not read ma_shares.</b> ${_maE(L.err)} The links made before are not listed — that does not mean there are none.<div class="ma-errcard-acts"><button class="ma-btn sm" onclick="window.maShareListRetry()">Retry</button></div></div>`;
+  if(!L.rows.length)return _maEmpty('No links yet.');
+  const now=Date.now();
+  return `<ul class="ma-sh-list">${L.rows.map(x=>_maShareItemHTML(x,now)).join('')}</ul>`;
+}
+const _MA_SHARE_WORD={live:['fine','live'],expired:['mute','expired'],revoked:['urgent','withdrawn'],unknown:['warn','not valid']};
+function _maShareItemHTML(x,now){
+  const st=maShareState(x,now);
+  const w=_MA_SHARE_WORD[st];
+  const to=x.to&&typeof x.to==='object'?[x.to.party,x.to.phone].filter(v=>typeof v==='string'&&v).join(' · '):'';
+  const opens=Number.isFinite(x.opens)?x.opens:0,prev=Number.isFinite(x.previews)?x.previews:0;
+  const lines=['Made by '+_maWho(x.createdBy)+' · '+_maWhen(x.createdAt)+(to?' · for '+to:''),
+    st==='revoked'?'Withdrawn by '+_maWho(x.revokedBy)+' · '+_maWhen(x.revokedAt)
+      :st==='expired'?'Expired '+_maWhen(x.expiresAt)
+      :st==='unknown'?'This record is not one the share server made — the link does not open.'
+      :'Works until '+_maWhen(x.expiresAt),
+    'Opened '+opens+' time'+(opens===1?'':'s')+(x.lastOpenedAt?' · last '+_maWhen(x.lastOpenedAt):'')+(prev?' · '+prev+' link preview'+(prev===1?'':'s')+(x.lastPreviewAt?', last '+_maWhen(x.lastPreviewAt):''):'')];
+  return `<li class="ma-sh-item"><div class="ma-sh-top"><span class="ma-sh-file">${_maE(x.filename||x.docNo||'PDF')}</span><span class="ma-word ${w[0]}">${w[1]}</span></div>
+    ${lines.map(l=>`<div class="ma-sh-meta">${_maE(l)}</div>`).join('')}
+    ${st==='live'?_maShareActsHTML(x.token,x.docNo||x.filename,_maShareLink(x.token),x.to&&x.to.phone,x.expiresAt,true):''}</li>`;
+}
+function _maSharePaint(part){
+  const sh=_maShare;if(!sh)return;
+  const set=(id,h)=>{const el=document.getElementById(id);if(el)el.innerHTML=h;};
+  if(!part||part==='made')set('ma-sh-made',_maShareMadeHTML());
+  if(!part||part==='list')set('ma-sh-list',_maShareListHTML());
+  if(!part){const e=document.getElementById('ma-sh-err');if(e)e.textContent=sh.err||'';}
+}
+window.maShareMake=async function(){
+  const sh=_maShare;if(!sh||sh.busy)return false;
+  const sp=sh.spec;
+  const fail=m=>{sh.err=m;_maSharePaint();return false;};
+  const days=Number(_maVal('ma-f-shdays').trim());
+  if(!Number.isInteger(days)||days<1||days>90)return fail('A link works for a whole number of days, 1 to 90.');
+  const forName=_maVal('ma-f-shfor').trim().slice(0,80),rawPhone=_maVal('ma-f-shphone').trim();
+  const wa=maWaPhone(rawPhone);
+  if(rawPhone&&!wa)return fail('That WhatsApp number could not be read — write it like 0300 1234567 or +92 300 1234567, or leave it empty.');
+  if(typeof printDocument!=='function')return fail('The PDF engine is not loaded — reload the app and try again.');
+  if(!_maOnline())return fail('Making a link needs a connection — nothing was sent.');
+  const to=forName||wa?{party:forName||null,phone:wa?'+'+wa:null}:null;
+  sh.busy=true;sh.err='';sh.made=null;
+  const btn=document.getElementById('ma-sh-go');if(btn)btn.disabled=true;
+  const step=t=>{sh.step=t;if(_maShare===sh)_maSharePaint();};
+  try{
+    step('Making the PDF…');
+    let data;
+    try{data=sp.build();}catch(e){throw new Error('The PDF could not be put together: '+String(e&&e.message||e));}
+    if(!data)throw new Error('There is nothing to put in that PDF.');
+    let pdf;
+    try{pdf=await printDocument({type:sp.type,data,filename:sp.filename,deliver:'blob'});}
+    catch(e){throw new Error('The PDF could not be made: '+String(e&&e.message||e));}
+    if(!pdf||!pdf.blob||!(pdf.blob.size>0))throw new Error('The PDF came back empty.');
+    const filename=pdf.filename||sp.filename;
+    step('Uploading the PDF…');
+    const signed=await _maFn('ma-attach',{action:'sign',file:{name:filename,type:'application/pdf',size:pdf.blob.size}});
+    _maNoteMode(signed.mode);
+    const res=await _maCloudUpload(signed,pdf.blob,signed.name||filename);
+    const up=maAttachFromUpload(signed,res,{by:session.u,at:Date.now()});
+    if(up.error)throw new Error(up.error);
+    step('Saving the link…');
+    const made=await _maFn('ma-share',{action:'create',subject:sp.subject,file:maAttachRef(up.att),filename,days,to});
+    if(typeof made.path!=='string'||made.path.indexOf(_MA_SHARE_PATH)!==0)throw new Error('The server did not give back a link.');
+    sh.made={token:made.token,link:location.origin+made.path,expiresAt:made.expiresAt,to};
+    sh.list.rows=[Object.assign({},made.share||{},{token:made.token})].concat(sh.list.rows.filter(x=>x.token!==made.token));
+    if(sh.list.state==='loading')sh.list.state='ok';
+  }catch(e){sh.err=String(e&&e.message||e);}
+  finally{sh.busy=false;sh.step='';if(btn)btn.disabled=false;}
+  if(_maShare===sh)_maSharePaint();
+  return !!sh.made;
+};
+window.maShareCopy=async function(key){
+  const sh=_maShare;
+  const link=key==='new'?(sh&&sh.made?sh.made.link:''):_maShareLink(key);
+  if(!link)return false;
+  try{await navigator.clipboard.writeText(link);_maToast('Link copied.');return true;}
+  catch(_){
+    try{const inp=key==='new'?document.getElementById('ma-sh-url'):null;if(inp&&inp.select){inp.select();if(document.execCommand&&document.execCommand('copy')){_maToast('Link copied.');return true;}}}catch(_e){}
+    _maToast('Copy did not work here — select the link and copy it.');return false;
+  }
+};
+window.maShareRevoke=async function(token){
+  const sh=_maShare;if(!sh)return false;
+  const x=sh.list.rows.find(r=>r.token===token);if(!x)return false;
+  if(!confirm('Withdraw the link to '+(x.filename||'this PDF')+'?\n\nAnyone who opens it from now on is told it was withdrawn. A copy somebody already downloaded stays with them.'))return false;
+  if(!_maOnline()){_maToast('Withdrawing a link needs a connection.');return false;}
+  try{
+    const r=await _maFn('ma-share',{action:'revoke',token});
+    Object.assign(x,{revoked:true,revokedAt:r.revokedAt||Date.now(),revokedBy:r.revokedBy||session.u});
+    _maToast(r.already?'That link was already withdrawn.':'Link withdrawn.');
+  }catch(e){_maToast('The link was not withdrawn: '+String(e&&e.message||e));return false;}
+  if(_maShare===sh)_maSharePaint();
+  return true;
+};
+
+/* ── Download the books (§30, layer 3) ──────────────────────────────────
+   Every ma_* collection, read fresh and whole (the page's own copy stops at
+   300 audit rows). Each collection settles on its own: one refused read is
+   named in both files and the rest still download — never an empty list
+   for a collection nobody could read (maBooksJson / maBooksSheets decide
+   what the files say). Recorded as an `export` in the audit trail. */
+function _maSaveFile(name,text,type){
+  try{
+    const blob=new Blob([text],{type});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=name;
+    document.body.appendChild(a);a.click();if(a.remove)a.remove();
+    setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_){}},60000);
+    return true;
+  }catch(e){return false;}
+}
+window.maDownloadBooks=async function(){
+  if(!maCanSee()){_maToast('Master Accounts is for Afnan and Ammar.');return false;}
+  if(_maBooksBusy)return false;
+  _maBooksBusy=true;
+  const say=m=>{const el=document.getElementById('ma-books-st');if(el)el.textContent=m;};
+  const btn=document.getElementById('ma-books-btn');if(btn)btn.disabled=true;
+  say('Reading every collection…');
+  try{
+    const res=await Promise.allSettled(MA_BOOK_COLS.map(c=>Promise.resolve().then(()=>getDocs(collection(db,c)))));
+    const cols={},failed=[];
+    res.forEach((r,i)=>{
+      const c=MA_BOOK_COLS[i];
+      if(r.status==='fulfilled')cols[c]=((r.value&&r.value.docs)||[]).map(d=>({id:d.id,data:_maClean(typeof d.data==='function'?d.data():{})}));
+      else{const e=r.reason||{};failed.push({col:c,message:String(e.message||e||'failed')+(e.code?' ('+e.code+')':'')});}
+    });
+    const at=Date.now(),t=new Date(at);
+    const name='groovy-books_'+maDay(t)+'_'+maPad(t.getHours())+maPad(t.getMinutes());
+    const okJson=_maSaveFile(name+'.json',JSON.stringify(maBooksJson({cols,failed,at,by:session.u}),null,1),'application/json');
+    let okXlsx=false;
+    if(typeof XLSX!=='undefined'&&XLSX&&XLSX.utils){
+      try{
+        const wb=XLSX.utils.book_new();
+        maBooksSheets({cols,failed,at,by:session.u,byName:session.name||session.u,when:_maWhen}).forEach(sh=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sh.rows),String(sh.name).slice(0,31)));
+        XLSX.writeFile(wb,name+'.xlsx');okXlsx=true;
+      }catch(e){okXlsx=false;}
+    }
+    const n=Object.keys(cols).reduce((s,c)=>s+cols[c].length,0);
+    const read=Object.keys(cols).length;
+    const miss=failed.length?' Could not read: '+failed.map(f=>f.col+' ('+f.message+')').join('; ')+' — named in both files.':'';
+    const what=[okJson?'JSON':'',okXlsx?'Excel':''].filter(Boolean).join(' and ');
+    _maAuditQuiet('export',{dt:'books',id:name,no:name},'Download the books · '+(what||'nothing saved')+' · '+n+' documents in '+read+' collections'+(failed.length?' · could not read '+failed.map(f=>f.col).join(', '):''));
+    const msg=(what?'The books downloaded ('+what+') — '+maGroup(n)+' documents in '+read+' of '+MA_BOOK_COLS.length+' collections.':'Nothing could be saved to this device.')
+      +(okXlsx||!okJson?'':' Excel is not available in this build.')+miss;
+    say(msg);_maToast(msg);
+    return okJson&&!failed.length;
+  }catch(e){
+    say('The download failed: '+String(e&&e.message||e));return false;
+  }finally{_maBooksBusy=false;const b=document.getElementById('ma-books-btn');if(b)b.disabled=false;}
 };
