@@ -3601,7 +3601,7 @@ module.exports=function(){
     s.ok('⋯ offers nothing the right-click does not',moreActs.every(a=>ctxActs.indexOf(a)>=0));
     s.ok('Convert to Document leads for a note, then Lock, then z-order (Milanote\'s order)',
       /^copytext,todoc,lock,front,back,/.test(moreActs.join(',')),moreActs.join(','));
-    s.ok('the clipboard block comes last',/cut,copy,dup,delete,stash,card-link$/.test(moreActs.join(',')),moreActs.join(','));
+    s.ok('the clipboard block comes last',/cut,copy,dup,delete,stash,movetoboard,card-link$/.test(moreActs.join(',')),moreActs.join(','));
     s.eq('lock reads as Milanote names it',run(`_boardsMoreItems(true).find(i=>i.act==='lock').label`),'Lock position');
     s.ok('the provenance footer closes it',run(`JSON.stringify(_boardsMoreItems(true).slice(-1)[0])`).indexOf('"who":"Afnan"')>=0);
     s.ok('no swatch row rides along — the Color tile is on the rail',!/swatches/.test(run(`JSON.stringify(_boardsMoreItems(true))`)));

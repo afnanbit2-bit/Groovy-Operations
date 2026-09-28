@@ -1615,6 +1615,26 @@ const FRAGMENTS={
       '<div class="board-stage" style="position:relative;height:400px;width:100%;overflow:hidden">'+
       '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'});
   },
+  // The share sheet with a role per person (Sept 2026). The row is a name
+  // beside a fixed control — the shape that crushed every Profile directory
+  // name to 0px — so it is measured with a long name, a disabled picker and
+  // an enabled one, at every width.
+  'boards — the share sheet with roles':()=>{
+    const app=loadApp({files:['js/boards.js']});
+    app.run(`session={uid:'u-mustafa',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'};
+      USER_DEFS=[
+        {u:'mustafa',name:'Mustafa',email:'mustafa@groovy.op'},
+        {u:'daniyal',name:'Daniyal Tufail — Creator & Content Operations Lead',email:'daniyal@groovy.op'},
+        {u:'saim',name:'Saim',email:'saim@groovy.op'},
+        {u:'umair',name:'Umair',email:'umair@groovy.op'},
+        {u:'abbas',name:'Abbas',email:'abbas@groovy.op'}];
+      _editBoard={id:'B',title:'Winter',visibility:'personal',ownerUid:'u-mustafa',
+        sharedWith:['daniyal@groovy.op','saim@groovy.op','umair@groovy.op'],
+        sharedView:['umair@groovy.op'],sharedComment:['saim@groovy.op']};
+      window.boardsOpenShare();`);
+    const box=app.el('board-share-modal').innerHTML;
+    return Promise.resolve('<div class="board-share-modal" style="display:flex;position:relative;min-height:560px">'+box+'</div>');
+  },
   'boards — photo cards':()=>{
     const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
     app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};

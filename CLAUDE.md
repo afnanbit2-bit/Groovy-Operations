@@ -3379,6 +3379,121 @@ checked by breaking the ink, not by reading the fill.**
 **Nobody has seen the panel, the presets or a literal-coloured card on a
 real screen** — the sandbox cannot sign in.
 
+### Mood Boards — phone share: "Share → Groovy Ops" (Sept 2026)
+
+The first gap built from the Milanote gap study (four research agents,
+28 Sept 2026; Milanote itself is unreachable from the sandbox, so a Claude
+in Chrome study was briefed to fill in how it looks and behaves). The
+installed app now appears in the phone's **Share** menu; a shared photo,
+file, link or text lands in the **Unsorted** of a board the person picks.
+
+- **Three halves, one route.** `manifest.json` `share_target` (POST,
+  multipart, file field `files`) → `sw.js` `handleShare` parks the share in
+  Cache Storage (`groovy-share-inbox`: a `/__share/<id>/meta` JSON entry
+  plus one entry per file) and 303s to `/index.html#share=<id>` →
+  `js/boards.js` reads it back through the existing deep-link consumer
+  (`_boardsParseHash` / `_boardsConsumeDeepLink`, same Creative Hub gate).
+- **The bucket is NOT named `groovy-ops-*`** — the activate handler deletes
+  every such cache from a prior version, and a deploy landing between the
+  share and the page reading it must not eat it. Entries older than a day
+  are swept on every share.
+- **A picker, not an inbox board.** Recently opened boards first, search by
+  name; Home (no Unsorted), templates and boards you cannot edit are left
+  out. `_boardsSharePlan` is the one pure decision: Android usually puts
+  the link INSIDE `text`, so a link found there wins; otherwise the text
+  (or title) becomes a note. Files go through `_boardsTrayAddFiles`, so the
+  35 MB limit and the Cloudinary upload are the ones every other route uses.
+- **Forgotten only once delivered.** Closing the picker keeps the share
+  until the sweep, so a mis-tap is not data loss. An account without the
+  hub is told and the share is dropped.
+- Classes are `board-sendto-*` — `board-share-*` already belongs to the
+  board's Share (people) modal.
+- `netlify.toml` 303s a POST to `/share-target` to `/index.html` when no
+  service worker controls the page (first open) — the share is lost there,
+  but the person lands in the app rather than on an error. **Unverified**
+  that Netlify applies a 303 redirect to a POST.
+- `tests/share-target.test.js` (47) runs the real `sw.js` handler against a
+  fake Cache Storage and the real page flow end to end. Verified by
+  reverting the text-link search (5 fail), naming the bucket `groovy-ops-*`
+  (3) and not dropping a refused share (1).
+- **Nobody has shared into the app from a real phone.** Android only offers
+  a share target for an INSTALLED PWA, and may need the app reinstalled (or
+  a while) before the new manifest is picked up. iOS Safari does not
+  support Web Share Target at all — iPhones will not see it.
+
+### Mood Boards — Move to board… (Sept 2026)
+
+The second Milanote gap. **The rule is Milanote's (help centre, search
+summary — not seen in the product): a card moved to another board lands in
+THAT board's Unsorted.** This is the menu half — right-click, ⋯ and the
+phone More sheet, in the clipboard block after Move to Unsorted. **The drag
+half (hold a card over a breadcrumb until that board opens) waits for the
+Claude in Chrome study's measured hover time**; it will call the same
+`window.boardsMoveCardsTo(targetId, ids)`.
+
+- **It is the stash aimed at another board**: `_boardsExpandGroup` (pulled
+  out of `boardsTrayStashCards`, which now calls it too — a column takes its
+  children the same way in both) and `_boardsStashItem` (the whole card,
+  rows encoded; only lines inside one row travel — the Unsorted rule).
+- **The target is written FIRST, in a transaction that appends to the
+  SERVER's `unsorted`**, never this tab's copy; only once it commits are the
+  cards taken off this board. A failed write moves nothing and says so. It
+  needs a connection, like every transaction.
+- **Ctrl+Z must not bring a moved card back** — it now lives on another
+  board, and a restored copy here would be the same card twice.
+  `_boardsPurgeHistory` strips the moved ids from every undo/redo snapshot
+  and keeps the rest of the history; the toast says undo will not return
+  them.
+- Refused: a board link (as in the stash), this board, Home (no Unsorted),
+  templates, boards you cannot edit; locked cards stay and are counted.
+- **Comments on a moved card are not carried** — they are keyed by card id
+  under the source board's `comments` subcollection. **Known race:** someone
+  with the target board open who saves its head before their live listener
+  adopts the new Unsorted would write their older copy over it.
+- Activity `Board cards moved` falls in Monitor's Process bucket (checked).
+- `tests/board-move.test.js` (28). Verified by reverting: appending to this
+  tab's copy of the target, dropping the history purge, dropping the board-
+  link refusal — each fails by name.
+
+### Mood Boards — sharing roles: edit, comment, view (Sept 2026)
+
+The third Milanote gap (help centre, search summary: a board is shared per
+person as edit, comment-only or view-only). **`firestore.rules` CHANGED —
+it needs a republish.**
+
+- **Two lists beside `sharedWith`:** `sharedView` and `sharedComment`. A
+  person on `sharedWith` and on neither list can EDIT — which is what every
+  board shared before this already meant, so nothing migrates.
+  `sharedWith` stays the read list (the `array-contains` query and the read
+  rule are untouched). `_boardsShareRole(b,email)` is the one reader;
+  `_boardsSharePatch(picks)` builds the three fields from the sheet (pure).
+- **`_boardsCanEdit` respects the role**, and every one of its ~116 call
+  sites follows with no edit. `_boardsCanComment` (edit, or the comment
+  role) gates the comment box, Reply and `boardsAddComment`; Resolve stays
+  an editor's. The top bar shows **View only** / **Can comment**.
+- **Roles only mean something on a PRIVATE board** — a TEAM board is
+  editable by everyone (Stage 6), and the share sheet says so.
+- **A HOLE CLOSED:** before this, anyone on `sharedWith` could rewrite
+  `sharedWith` (add anyone) and even `ownerUid`, because the update rule
+  never looked at which fields changed. Sharing fields (`sharedWith`,
+  `sharedView`, `sharedComment`, `ownerUid`) are now the board owner's or an
+  app owner's (`boardSharingUntouched()`); the share sheet opens only for
+  them (`_boardsCanManageShare`). **Visibility is deliberately NOT in that
+  list** — any editor can still flip TEAM/PRIVATE, as before; recorded, not
+  changed.
+- Rules: `boardSharedEditor` / `boardSharedCommenter` / `canEditBoard`;
+  comments and the activity feed accept a commenter (`canCommentParent`),
+  trash and comment updates stay editors'.
+- **Verified in the real emulator** (`tests/rules-emulator-boards.js`,
+  26/26, share payload built by the app): against the PREVIOUS rules 12
+  fail, including the escalation and the ownership takeover. Client half:
+  `tests/board-roles.test.js` (27) — reverted role check (7 fail), compose
+  gate (1), share-sheet gate (1). Layout: `boards — the share sheet with
+  roles`, which caught a long name pushing the @username out of the row
+  (the name wraps now). **It cannot measure the role dropdown's own text**
+  (the probe skips `<option>`) — checked by breaking it.
+- **Nobody has used a role on a real screen** — the sandbox cannot sign in.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
@@ -9614,11 +9729,22 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
+**REPUBLISH OUTSTANDING (28 Sept 2026): Mood Boards sharing roles.**
+`mood_boards` update now requires the editor role and keeps the sharing
+fields to the board's owner; comments/activity accept the comment role.
+Until the Console has it, a view-only person can still edit (the app hides
+the tools, the rules do not stop a direct write) and the old sharedWith
+escalation stays open. Ran 26/26 in the emulator. One paste of the current
+file carries every outstanding entry below as well.
+
 **OUTSTANDING (26 Sept 2026, evening): the QA identity** (`dc98484`,
 `isQa()` / `authed()` / the QA fences — see "The QA identity" in
 `BOARD.md`). `signedIn()` now EXCLUDES `claude@groovy.op`. **Publish it
 before anything signs in as that account** — under the live rules it is an
 ordinary signed-in user. Emulator: Board 100/100, wh_sales/acct 103/103.
+Merged with the sharing roles above on 28 Sept: the QA clauses sit beside
+the role checks (`qaBoardOk` needs an empty `sharedWith`, so a view/comment
+role never applies to a QA board).
 
 **PUBLISHED 26 Sept 2026, was outstanding (session 2): The Board's lock
 rule** (`tbLockOk()`, `board_items` update). The old clause let a member on

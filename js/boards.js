@@ -148,8 +148,53 @@ function _boardsCanEdit(b){
   if(b.ownerUid===session.uid)return true;
   if(session.role==='owner')return true;
   if(b.visibility==='shared')return true;
-  const me=_boardsMyEmail();
-  return!!(me&&Array.isArray(b.sharedWith)&&b.sharedWith.indexOf(me)>-1);
+  return _boardsShareRole(b,_boardsMyEmail())==='edit';
+}
+/* ── Sharing roles (Sept 2026) ──────────────────────────────────────────
+   Milanote shares a board per person as edit, comment-only or view-only
+   (help centre, "Sharing a board"). A person is on `sharedWith` (the read
+   list — it is what the array-contains query and the read rule check) and
+   ALSO on `sharedView` or `sharedComment` when they are restricted. Anyone
+   on sharedWith and on neither list can edit, so every board shared before
+   this keeps exactly the access it had: nothing migrates.
+
+   Roles only mean something on a PRIVATE board. A TEAM board is editable by
+   every signed-in user (Stage 6), so a role there would be a promise the
+   board cannot keep — the share sheet says so rather than offering it.
+
+   Changing who a board is shared with, and how, is the OWNER's (or an app
+   owner's). firestore.rules enforces it: before this, anyone on
+   sharedWith could rewrite sharedWith itself, which would have let a
+   view-only person make themselves an editor. */
+const _BOARDS_SHARE_ROLES=['edit','comment','view'];
+function _boardsShareRole(b,email){
+  const me=String(email||'').toLowerCase();
+  if(!b||!me)return null;
+  const has=f=>Array.isArray(b[f])&&b[f].some(e=>String(e).toLowerCase()===me);
+  if(!has('sharedWith'))return null;
+  if(has('sharedView'))return'view';
+  if(has('sharedComment'))return'comment';
+  return'edit';
+}
+function _boardsCanComment(b){
+  if(_boardsCanEdit(b))return true;
+  return _boardsShareRole(b,_boardsMyEmail())==='comment';
+}
+function _boardsCanManageShare(b){
+  return!!(b&&session&&(b.ownerUid===session.uid||session.role==='owner'));
+}
+// The three fields a share writes, from a {email: role} pick. Pure, so the
+// shape the rules check is assertable without a database.
+function _boardsSharePatch(picks){
+  const w=[],v=[],c=[];
+  Object.keys(picks||{}).forEach(e=>{
+    const em=String(e).trim().toLowerCase(),r=picks[e];
+    if(!em||_BOARDS_SHARE_ROLES.indexOf(r)<0)return;
+    w.push(em);
+    if(r==='view')v.push(em);
+    if(r==='comment')c.push(em);
+  });
+  return{sharedWith:w,sharedView:v,sharedComment:c};
 }
 // A file card with no thumbnail is a name row and two buttons, so it stays
 // compact. A PDF is not: see _boardsFitPdfCard.
@@ -2015,7 +2060,7 @@ async function _boardsOpenCanvas(){
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
-  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[]};
+  _editBoard={id:b.id,title:b.title||'Untitled board',visibility:b.visibility||'personal',ownerUid:b.ownerUid,ownerName:b.ownerName,ownerUsername:b.ownerUsername,zoom:b.zoom||1,panX:b.panX||40,panY:b.panY||30,parentId:b.parentId||null,isTemplate:!!b.isTemplate,isHome:!!b.isHome,sharedWith:Array.isArray(b.sharedWith)?b.sharedWith.slice():[],sharedView:Array.isArray(b.sharedView)?b.sharedView.slice():[],sharedComment:Array.isArray(b.sharedComment)?b.sharedComment.slice():[]};
   // Clamped AFTER the assignment, not inside the literal. The floor is
   // Home-aware now (_boardsZoomFloor reads _editBoard), and inside the
   // literal _editBoard is still the PREVIOUS board — so a Home saved below
@@ -2086,6 +2131,7 @@ async function _boardsOpenCanvas(){
       if(!_boardsIsEditableFocus())_boardsRenderCanvasAndWire();
     }).catch(()=>{});
   }
+  if(_boardsPendingShare&&_boardsPendingShare.target===b.id)_boardsShareDeliver();
   if(_boardsPendingFocusCard){
     const target=_boardsPendingFocusCard;
     _boardsPendingFocusCard=null;
@@ -2162,7 +2208,8 @@ function _renderBoardCanvasHTML(){
           ?(phone?`<span style="font-size:15.5px;font-weight:700">Home</span>`:'')
           :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         ${phone?'':`<span class="pill">${visLabel}</span>`}
-        ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}`}
+        ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
+        ${canEdit?'':`<span class="pill board-role-pill">${_boardsCanComment(b)?'Can comment':'View only'}</span>`}`}
         ${canEdit?`<span class="board-save-status" id="board-save-status"></span>`:''}
         <span class="board-peers" id="board-peers" style="display:none"></span>
       </div>
@@ -2218,7 +2265,7 @@ function _renderBoardCanvasHTML(){
             ${home?'':`<button onclick="window.boardsDuplicateBoard()">Duplicate board</button>`}
             ${canEdit&&!home?`<button onclick="window.boardsToggleTemplate()">${b.isTemplate?'Remove from templates':'Save as template'}</button>`:''}
             ${canEdit?`<button onclick="window.boardsAddChildBoard()">${home?'New board':'Add sub-board'}</button>`:''}
-            ${canEdit&&!home?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
+            ${_boardsCanManageShare(b)&&!home?`<button onclick="window.boardsOpenShare()">Share with people…</button>`:''}
             ${canEdit&&!home?`<button onclick="window.boardsToggleVisibility()">Make ${b.visibility==='shared'?'Private':'Team'}</button>`:''}
             ${canEdit&&!home?`<button class="danger" onclick="window.boardsDelete()">Delete board</button>`:''}
             ${phone&&typeof window.openBugReportModal==='function'?`<div class="board-menu-sep"></div>
@@ -4133,7 +4180,7 @@ window.boardsReactionSearch=function(cardId,el){
 // so the groups are ordered that way: the type's remaining actions first,
 // then Lock, then z-order, then the multi-select arranging, then the
 // clipboard block, and the provenance footer last.
-const _BOARDS_MORE_CLIP=['cut','copy','dup','delete','stash','card-link'];
+const _BOARDS_MORE_CLIP=['cut','copy','dup','delete','stash','movetoboard','card-link'];
 function _boardsMoreItems(canEdit){
   const onRail=new Set(_boardsRailItems().map(i=>i.act).filter(Boolean));
   const src=_boardsCardCtxItems(canEdit).filter(it=>it.act&&!onRail.has(it.act));
@@ -10357,6 +10404,7 @@ function _boardsParseHash(){
     const i=kv.indexOf('=');
     if(i>0){try{p[decodeURIComponent(kv.slice(0,i))]=decodeURIComponent(kv.slice(i+1));}catch(e){}}
   });
+  if(p.share)return{share:p.share};
   if(p.note)return{note:p.note};
   return p.board?{board:p.board,card:p.card||null}:null;
 }
@@ -10368,7 +10416,17 @@ function _boardsConsumeDeepLink(){
   // with every other Creative Hub route (see _canSeeCreativeHub in
   // js/shared.js). Guarded with typeof so a shared.js that failed to parse
   // leaves the side door SHUT rather than open — fail closed.
-  if(typeof _canSeeCreativeHub!=='function'||!_canSeeCreativeHub())return false;
+  if(typeof _canSeeCreativeHub!=='function'||!_canSeeCreativeHub()){
+    if(link.share){
+      _boardsShareClearHash();
+      if(link.share!=='failed')_boardsShareForget(link.share);
+      showToast('Shared items are saved into Mood Boards, which is not open to your account yet',true);
+      return true;
+    }
+    return false;
+  }
+  // A phone share (sw.js parks it and sends the app here).
+  if(link.share){_boardsShareStart(link.share);return true;}
   // A document link (Convert to Document writes these): the Notes page.
   if(link.note){
     if(typeof window.notesOpenPage!=='function')return false;
@@ -10382,6 +10440,246 @@ function _boardsConsumeDeepLink(){
   return true;
 }
 window.addEventListener('hashchange',()=>{_boardsConsumeDeepLink();});
+
+/* ── Phone share (Sept 2026) ────────────────────────────────────────────
+   manifest.json's share_target puts the installed app in the phone's Share
+   menu. sw.js receives the POST, parks it in Cache Storage and sends the
+   app to #share=<id>. Here it is read back, the person picks a board, and
+   it lands in that board's UNSORTED — the holding pen this module already
+   has for "things I collected and have not placed yet", so nothing about
+   a shared item is a new kind of thing.
+
+   Why a board picker rather than a fixed inbox board: an inbox is a second
+   Unsorted nobody opens. Recently opened boards come first, so the usual
+   case is one tap. Home and templates are left out — Home has no Unsorted
+   and a template is not where work goes.
+
+   The share is only FORGOTTEN once delivered (or refused). Closing the
+   picker leaves it in the cache until sw.js sweeps it after a day, so a
+   mis-tap is not data loss — share again, or reload onto the link.
+
+   _boardsSharePlan is the one decision about what the share becomes, and
+   it is pure. Android usually puts a link inside `text` ("Title
+   https://…") rather than `url`, so a link found in the text wins; with
+   no link the text (or the title) becomes a note. Files go through
+   _boardsTrayAddFiles, which already enforces the 35 MB limit and uploads
+   through _boardsUploadAny like every other route in. */
+const _BOARDS_SHARE_CACHE='groovy-share-inbox';
+let _boardsPendingShare=null;
+function _boardsSharePlan(meta){
+  const m=meta||{};
+  const title=String(m.title||'').trim(),text=String(m.text||'').trim();
+  let url=String(m.url||'').trim();
+  if(!/^https?:\/\/\S+$/i.test(url))url='';
+  if(!url){
+    const hit=text.match(/https?:\/\/[^\s<>"]+/i);
+    if(hit)url=hit[0].replace(/[).,;:!?'"]+$/,'');
+  }
+  let note='';
+  if(!url){
+    note=text||title;
+    if(title&&text&&text.indexOf(title)<0)note=title+'\n'+text;
+  }
+  const files=Array.isArray(m.files)?m.files.filter(f=>f&&typeof f.key==='string'):[];
+  return{url,note:note.slice(0,4000),files};
+}
+function _boardsShareSummary(plan,fileObjs){
+  const fl=fileObjs||[];
+  const img=fl.filter(f=>/^image\//.test(f.type||'')).length,other=fl.length-img;
+  const parts=[];
+  if(img)parts.push(img+(img===1?' photo':' photos'));
+  if(other)parts.push(other+(other===1?' file':' files'));
+  if(plan.url)parts.push('a link');
+  else if(plan.note)parts.push('a note');
+  return parts.join(' · ');
+}
+function _boardsShareClearHash(){
+  try{history.replaceState(null,'',location.pathname+location.search);}catch(e){}
+}
+async function _boardsShareRead(id){
+  if(typeof caches==='undefined'||!/^[a-z0-9]+$/i.test(String(id||'')))return null;
+  const c=await caches.open(_BOARDS_SHARE_CACHE);
+  const r=await c.match('/__share/'+id+'/meta');
+  if(!r)return null;
+  const meta=await r.json();
+  const files=[];
+  for(const f of (Array.isArray(meta.files)?meta.files:[])){
+    const fr=await c.match(f.key);
+    if(!fr)continue;
+    const blob=await fr.blob();
+    files.push(new File([blob],f.name||'shared',{type:f.type||blob.type||''}));
+  }
+  return{meta,files};
+}
+async function _boardsShareForget(id){
+  try{
+    if(typeof caches==='undefined')return;
+    const c=await caches.open(_BOARDS_SHARE_CACHE);
+    const keys=await c.keys();
+    await Promise.all(keys.filter(k=>String(k.url||k).indexOf('/__share/'+id+'/')>=0).map(k=>c.delete(k)));
+  }catch(e){}
+}
+function _boardsShareTargets(q,excludeId){
+  const term=String(q||'').trim().toLowerCase();
+  return moodBoards
+    .filter(b=>b&&!b.deletedAt&&!_boardsIsHome(b)&&!b.isTemplate&&_boardsCanEdit(b)&&b.id!==excludeId)
+    .filter(b=>!term||String(b.title||'Untitled board').toLowerCase().indexOf(term)>=0)
+    .sort((a,b)=>(_boardsRecentAt(b.id)-_boardsRecentAt(a.id))||((b.updatedAt||0)-(a.updatedAt||0)));
+}
+async function _boardsShareStart(id){
+  _boardsShareClearHash();
+  if(id==='failed'){showToast('That share could not be received — please share it again',true);return;}
+  let got=null;
+  try{got=await _boardsShareRead(id);}catch(e){console.warn('[boards] share read failed',e);}
+  if(!got){showToast('Nothing to save — that share was already saved, or it expired');return;}
+  const plan=_boardsSharePlan(got.meta);
+  if(!plan.url&&!plan.note&&!got.files.length){_boardsShareForget(id);showToast('That share was empty');return;}
+  _boardsPendingShare={id,url:plan.url,note:plan.note,fileObjs:got.files,summary:_boardsShareSummary(plan,got.files),target:null};
+  if(!boardsLoaded){try{await loadBoardsData();}catch(e){}}
+  _boardsShareOpenPicker();
+}
+function _boardsShareListHTML(q,excludeId,act){
+  const list=_boardsShareTargets(q,excludeId);
+  const fn=act||'boardsShareTo';
+  if(!list.length)return`<div class="board-sendto-empty">${q?'No board matches that.':'There is no board you can add to yet — create one first.'}</div>`;
+  return list.slice(0,40).map(b=>`<button class="board-sendto-row" onclick="window.${fn}('${_boardsEsc(b.id)}')">${_boardsTileHTML(b,34)}<span class="board-sendto-name">${_boardsEsc(b.title||'Untitled board')}</span><span class="board-sendto-vis">${b.visibility==='shared'?'Team':'Private'}</span></button>`).join('');
+}
+function _boardsShareOpenPicker(){
+  const p=_boardsPendingShare;
+  if(!p)return;
+  _boardsOpenSheet('Save to a board',`
+    <div class="board-sendto-what">${_boardsEsc(p.summary)} — goes into the board's Unsorted</div>
+    <input class="board-sendto-search" type="search" placeholder="Search boards" oninput="window.boardsShareFilter(this.value)">
+    <div id="board-sendto-list" class="board-sendto-list">${_boardsShareListHTML('')}</div>`);
+}
+window.boardsShareFilter=function(q){
+  const el=document.querySelector('#board-sendto-list');
+  if(el)el.innerHTML=_boardsShareListHTML(q);
+};
+window.boardsShareTo=function(id){
+  const p=_boardsPendingShare;
+  if(!p){window.boardsCloseSheet();return;}
+  const b=_boardsLiveById()[id];
+  if(!b||!_boardsCanEdit(b)){showToast('You cannot add to that board',true);return;}
+  p.target=id;
+  window.boardsCloseSheet();
+  if(currentPage==='board-canvas'&&_editBoard&&_editBoard.id===id){_boardsShareDeliver();return;}
+  if(currentPage==='board-canvas')_boardsSaveNow();
+  window.boardsOpen(id);
+};
+/* ── Move to another board (Sept 2026) ─────────────────────────────────
+   Milanote's rule (help centre, "Moving content between boards"): a card
+   moved to another board lands in THAT board's Unsorted. The drag gesture
+   (hold over a breadcrumb until it opens) waits for the Claude in Chrome
+   study's measured timing; this is the menu half, and the gesture will
+   call boardsMoveCardsTo too.
+
+   It is the stash, aimed at a different board. The same _boardsExpandGroup
+   (a column takes its children), the same _boardsStashItem (the WHOLE card,
+   rows encoded, lines with both ends going), so a moved card comes out of
+   the other board's Unsorted as whatever it was.
+
+   THE TARGET IS WRITTEN FIRST, in a transaction that APPENDS to the
+   server's `unsorted` array — never this tab's copy of it, which may be
+   stale — and only once that commits are the cards taken off this board.
+   A failed write leaves everything where it was. It needs a connection,
+   like every transaction, and says so.
+
+   Undo cannot bring them back, and must not: they now live on another
+   board, and a restored copy here would be the same card in two places.
+   So the moved ids are PURGED from every undo/redo snapshot — the rest of
+   the history is kept — and the toast says Ctrl+Z will not return them.
+
+   Comments on a moved card stay with THIS board's comment thread (they
+   are keyed by card id under this board) and are not carried across. */
+function _boardsPurgeHistory(ids){
+  const strip=json=>{
+    try{
+      const st=JSON.parse(json);
+      st.cards=(st.cards||[]).filter(c=>!ids.has(c.id));
+      st.connectors=(st.connectors||[]).filter(cn=>!(cn&&(ids.has(cn.from)||ids.has(cn.to))));
+      return JSON.stringify(st);
+    }catch(e){return json;}
+  };
+  _boardsUndo=_boardsUndo.map(strip);
+  _boardsRedo=_boardsRedo.map(strip);
+  _boardsSyncHistoryButtons();
+}
+window.boardsOpenMoveTo=function(){
+  const sel=_boardsSelectedCards();
+  if(!sel.length||!_boardsCanEdit(_editBoard)){showToast('Select the cards to move first');return;}
+  if(sel.some(c=>c.type==='board')){showToast('A board link stays on its board — take it off with its ✕ instead',true);return;}
+  const n=_boardsExpandGroup(sel.map(c=>c.id)).filter(c=>!c.locked).length;
+  _boardsOpenSheet('Move to a board',`
+    <div class="board-sendto-what">${n} card${n===1?'':'s'} — ${n===1?'it lands':'they land'} in that board's Unsorted</div>
+    <input class="board-sendto-search" type="search" placeholder="Search boards" oninput="window.boardsMoveFilter(this.value)">
+    <div id="board-sendto-list" class="board-sendto-list">${_boardsShareListHTML('',_editBoard.id,'boardsMoveCardsTo')}</div>`);
+};
+window.boardsMoveFilter=function(q){
+  const el=document.querySelector('#board-sendto-list');
+  if(el)el.innerHTML=_boardsShareListHTML(q,_editBoard&&_editBoard.id,'boardsMoveCardsTo');
+};
+let _boardsMoving=false;
+window.boardsMoveCardsTo=async function(targetId,ids){
+  window.boardsCloseSheet();
+  if(_boardsMoving)return 0;
+  if(!_editBoard||!_boardsCanEdit(_editBoard))return 0;
+  const target=_boardsLiveById()[targetId];
+  if(!target||targetId===_editBoard.id||_boardsIsHome(target)||!_boardsCanEdit(target)){
+    showToast('You cannot move cards to that board',true);return 0;
+  }
+  const group=_boardsExpandGroup(ids||_boardsSelectedCards().map(c=>c.id));
+  if(group.some(c=>c.type==='board')){showToast('A board link stays on its board — take it off with its ✕ instead',true);return 0;}
+  const locked=group.filter(c=>c.locked).length;
+  const move=group.filter(c=>!c.locked);
+  if(!move.length){showToast(_boardsLockedMsg('move'),true);return 0;}
+  const moveIds=new Set(move.map(c=>c.id));
+  const conns=_editConnectors.filter(cn=>cn&&(moveIds.has(cn.from)||moveIds.has(cn.to)));
+  const items=_boardsStashRoots(move).map(g=>_boardsStashItem(g.cards,conns));
+  const who=(typeof session!=='undefined'&&session&&session.name)||'';
+  _boardsMoving=true;
+  try{
+    await runTransaction(db,async tx=>{
+      const ref=doc(db,'mood_boards',targetId);
+      const snap=await tx.get(ref);
+      if(!snap.exists())throw new Error('that board no longer exists');
+      const cur=Array.isArray(snap.data().unsorted)?snap.data().unsorted:[];
+      tx.update(ref,{unsorted:cur.concat(items),updatedAt:Date.now(),updatedByName:who});
+    });
+  }catch(e){
+    _boardsMoving=false;
+    const off=typeof navigator!=='undefined'&&navigator.onLine===false;
+    showToast('Could not move — '+(off?'moving to another board needs a connection':(e.message||e))+'. Nothing was moved.',true);
+    return 0;
+  }
+  _boardsMoving=false;
+  // Mirror what the server now holds, so the other board shows it at once.
+  target.unsorted=(Array.isArray(target.unsorted)?target.unsorted:[]).concat(items);
+  _editCards=_editCards.filter(c=>!moveIds.has(c.id));
+  _editConnectors=_editConnectors.filter(cn=>!(cn&&(moveIds.has(cn.from)||moveIds.has(cn.to))));
+  move.forEach(c=>_boardsSelection.delete(c.id));
+  _boardsPurgeHistory(moveIds);
+  _boardsLayoutColumns();
+  _boardsRenderCanvasAndWire();
+  _boardsSaveNow();
+  try{logActivity('Board cards moved',move.length+' card'+(move.length===1?'':'s')+' from '+(_editBoard.title||'a board')+' to '+(target.title||'a board'));}catch(e){}
+  let m=(move.length===1?'1 card':move.length+' cards')+' moved to Unsorted in '+(target.title||'that board');
+  if(locked)m+=' · '+locked+' locked card'+(locked===1?'':'s')+' kept here';
+  showToast(m+' — Ctrl+Z will not bring '+(move.length===1?'it':'them')+' back');
+  return items.length;
+};
+function _boardsShareDeliver(){
+  const p=_boardsPendingShare;
+  _boardsPendingShare=null;
+  if(!p||!_editBoard)return;
+  if(!_boardsCanEdit(_editBoard)){showToast('You cannot add to this board',true);return;}
+  _boardsCollectInto();
+  if(p.url||p.note)_boardsTrayAddText(p.url||p.note);
+  if(p.fileObjs&&p.fileObjs.length)_boardsTrayAddFiles(p.fileObjs);
+  _boardsShareForget(p.id);
+  showToast('Saved to Unsorted in '+(_editBoard.title||'this board')+(p.fileObjs&&p.fileObjs.length?' — uploading…':''));
+}
+
 // Wrap startApp rather than editing js/auth.js or js/shared.js — both are
 // cross-track files, and this is the same wrap-the-global pattern
 // __bootApp already uses for showPage.
@@ -11362,6 +11660,23 @@ function _boardsStashToast(items,locked){
   if(locked)m+=' · '+locked+' locked card'+(locked===1?'':'s')+' kept on the board';
   return m+' — Ctrl+Z to undo';
 }
+// The cards `ids` name plus everything riding inside them (a column's
+// children, a frame's contents, recursively). Shared by stashing and by
+// moving to another board, so the two agree about what a container takes.
+function _boardsExpandGroup(ids){
+  const want=new Set((Array.isArray(ids)?ids:[ids]).filter(Boolean));
+  if(!want.size)return[];
+  let grew=true,guard=0;
+  while(grew&&guard++<8){
+    grew=false;
+    _editCards.filter(c=>want.has(c.id)).forEach(c=>{
+      const kids=_boardsIsColumn(c)?_boardsColumnChildren(c)
+        :c.type==='frame'?_boardsCardsInFrame(c):[];
+      kids.forEach(k=>{if(!want.has(k.id)){want.add(k.id);grew=true;}});
+    });
+  }
+  return _editCards.filter(c=>want.has(c.id));
+}
 /* THE one implementation. The card menu's single-card action, the phone
    More sheet and the drag onto the tray all come here, so the toast, the
    undo entry and what a container does with its contents cannot drift
@@ -11372,18 +11687,7 @@ window.boardsTrayStashCards=function(ids){
   // there would be saved on the document and reachable from nowhere —
   // the stray-item state the panel has to apologise for.
   if(_boardsIsHome(_editBoard))return 0;
-  const want=new Set((Array.isArray(ids)?ids:[ids]).filter(Boolean));
-  if(!want.size)return 0;
-  let grew=true,guard=0;
-  while(grew&&guard++<8){
-    grew=false;
-    _editCards.filter(c=>want.has(c.id)).forEach(c=>{
-      const kids=_boardsIsColumn(c)?_boardsColumnChildren(c)
-        :c.type==='frame'?_boardsCardsInFrame(c):[];
-      kids.forEach(k=>{if(!want.has(k.id)){want.add(k.id);grew=true;}});
-    });
-  }
-  const group=_editCards.filter(c=>want.has(c.id));
+  const group=_boardsExpandGroup(ids);
   if(!group.length)return 0;
   // Locked cards stay put and are COUNTED, the bulk-delete rule: silently
   // dropping half an action is worse than doing less and saying so.
@@ -11652,6 +11956,8 @@ function _boardsApplyRemote(data){
   // the server's copy mid-upload would drop the row the upload resolves to.
   if(!_editUnsorted.some(u=>u._uploading))_editUnsorted=(data.unsorted||[]).map(u=>({...u}));
   _editBoard.sharedWith=Array.isArray(data.sharedWith)?data.sharedWith.slice():[];
+  _editBoard.sharedView=Array.isArray(data.sharedView)?data.sharedView.slice():[];
+  _editBoard.sharedComment=Array.isArray(data.sharedComment)?data.sharedComment.slice():[];
   _editBoard.isTemplate=!!data.isTemplate;
   // pan/zoom deliberately NOT taken from the remote document.
   _boardsSelection=new Set(Array.from(_boardsSelection).filter(id=>_editCards.some(c=>c.id===id)));
@@ -12245,7 +12551,7 @@ function _boardsRenderCommentPop(){
   const prev=document.getElementById('board-cmt-input');
   const draft=prev&&prev.value?prev.value:'';
   const rows=_boardsThread(_boardsCardComments(id));
-  const canEdit=_boardsCanEdit(_editBoard);
+  const canEdit=_boardsCanEdit(_editBoard),canComment=_boardsCanComment(_editBoard);
   const me=(typeof session!=='undefined'&&session)||{};
   const replying=_boardsReplyTo?rows.find(c=>c.id===_boardsReplyTo):null;
   // Opening the sheet closes the previous one, and closing forgets the
@@ -12259,13 +12565,13 @@ function _boardsRenderCommentPop(){
           <div class="board-cpop-meta"><strong id="board-cpop-name-${c.id}"></strong><span>${_boardsRelTime(c.ts)}</span></div>
           <div class="board-cmt-text" id="board-cpop-text-${c.id}"></div>
           <div class="board-cmt-actions">
-            ${canEdit&&!c.depth?`<button onclick="window.boardsReplyTo('${c.id}')">Reply</button>`:''}
+            ${canComment&&!c.depth?`<button onclick="window.boardsReplyTo('${c.id}')">Reply</button>`:''}
             ${canEdit?`<button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>`:''}
             ${(me.uid&&(c.byUid===me.uid||me.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
           </div>
         </div>
       </div>`).join(''):'<div class="board-sheet-empty">No comments on this card yet.</div>'}</div>
-    ${canEdit?`${replying?`<div class="board-cpop-replying">Replying to <strong id="board-cpop-replying-name"></strong> <button onclick="window.boardsReplyCancel()">cancel</button></div>`:''}
+    ${canComment?`${replying?`<div class="board-cpop-replying">Replying to <strong id="board-cpop-replying-name"></strong> <button onclick="window.boardsReplyCancel()">cancel</button></div>`:''}
     <div class="board-cpop-compose">
       ${_boardsAvatarHTML(me.name)}
       <input type="text" id="board-cmt-input" placeholder="${replying?'Write a reply…':'Write a comment…'}" maxlength="2000" onkeydown="if(event.key==='Enter'){event.preventDefault();window.boardsAddComment();}">
@@ -12295,7 +12601,7 @@ function _boardsRenderDrawer(){
   if(!_boardsDrawerOpen)return;
   const scoped=_boardsDrawerCard?_boardsCardComments(_boardsDrawerCard):_boardsComments;
   const rows=_boardsDrawerTab==='comments'?_boardsThread(scoped):[];
-  const canEdit=_boardsCanEdit(_editBoard);
+  const canEdit=_boardsCanEdit(_editBoard),canComment=_boardsCanComment(_editBoard);
   const scopeLabel=_boardsDrawerCard?'On one card':'Whole board';
   host.innerHTML=`
     <div class="board-drawer-head">
@@ -12320,13 +12626,13 @@ function _boardsRenderDrawer(){
             </div>
             <div class="board-cmt-text" id="board-cmt-text-${c.id}"></div>
             <div class="board-cmt-actions">
-              ${canEdit&&!c.depth&&c.cardId?`<button onclick="window.boardsOpenComments('${c.cardId}');window.boardsReplyTo('${c.id}')">Reply</button>`:''}
-              <button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>
+              ${canComment&&!c.depth&&c.cardId?`<button onclick="window.boardsOpenComments('${c.cardId}');window.boardsReplyTo('${c.id}')">Reply</button>`:''}
+              ${canEdit?`<button onclick="window.boardsResolveComment('${c.id}',${c.resolved?'false':'true'})">${c.resolved?'Reopen':'Resolve'}</button>`:''}
               ${(session&&(c.byUid===session.uid||session.role==='owner'))?`<button onclick="window.boardsDeleteComment('${c.id}')">Delete</button>`:''}
             </div>
           </div>`).join(''):'<div class="empty">No comments yet.</div>'}
       </div>
-      ${canEdit?`<div class="board-drawer-compose">
+      ${canComment?`<div class="board-drawer-compose">
         <textarea id="board-cmt-input" placeholder="${_boardsDrawerCard?'Comment on this card…':'Comment on this board…'}" onkeydown="window.boardsCommentKey(event)"></textarea>
         <button class="btn-sm" onclick="window.boardsAddComment()">Post</button>
       </div>`:''}
@@ -12360,6 +12666,7 @@ window.boardsAddComment=async function(){
   const input=document.getElementById('board-cmt-input');
   const text=String((input&&input.value)||'').trim();
   if(!text||!_editBoard||!session)return;
+  if(!_boardsCanComment(_editBoard)){showToast('You can view this board but not comment on it',true);return;}
   try{
     await _qAdd(collection(db,'mood_boards',_editBoard.id,'comments'),{
       cardId:_boardsDrawerCard||null,
@@ -12393,25 +12700,34 @@ window.boardsDeleteComment=async function(id){
 // single-field query mapping exactly onto one clause of the read rule,
 // the same discipline loadNotesData/loadBoardsData already follow.
 window.boardsOpenShare=function(){
-  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
+  if(!_editBoard||!_boardsCanManageShare(_editBoard))return;
   _boardsMenuOpen=false;_boardsSyncMenu();
   const host=document.getElementById('board-share-modal');
   if(!host)return;
   const mine=_boardsMyEmail();
   const list=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]).filter(u=>String(u.email||'').toLowerCase()!==mine);
-  const current=(_editBoard.sharedWith||[]).map(e=>String(e).toLowerCase());
+  const team=_editBoard.visibility==='shared';
   host.style.display='flex';
   host.innerHTML=`<div class="board-share-box">
     <div class="board-share-head">
       <div><div style="font-weight:700;font-size:15px">Share this board</div>
-      <div style="font-size:12.5px;color:var(--muted);margin-top:2px">People you pick can open and edit it, even while it stays PRIVATE.</div></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${team
+        ?'This is a TEAM board, so everyone can already open and edit it. The roles below take effect if you make it PRIVATE.'
+        :'Pick who can open this PRIVATE board, and whether they can edit it, only comment, or only view.'}</div></div>
       <button class="tool-btn" onclick="window.boardsCloseShare()">✕</button>
     </div>
     <div class="board-share-list">
-      ${list.map(u=>`<label class="board-share-row">
-        <input type="checkbox" value="${_boardsEsc(String(u.email||'').toLowerCase())}" ${current.indexOf(String(u.email||'').toLowerCase())>-1?'checked':''}>
-        <span><strong>${_boardsEsc(u.name||u.u)}</strong> <span style="color:var(--muted)">@${_boardsEsc(u.u)}</span></span>
-      </label>`).join('')}
+      ${list.map(u=>{
+        const em=String(u.email||'').toLowerCase(),role=_boardsShareRole(_editBoard,em);
+        return`<div class="board-share-row">
+        <label class="board-share-who"><input type="checkbox" value="${_boardsEsc(em)}" ${role?'checked':''} onchange="this.closest('.board-share-row').querySelector('select').disabled=!this.checked">
+        <span><strong>${_boardsEsc(u.name||u.u)}</strong> <span style="color:var(--muted)">@${_boardsEsc(u.u)}</span></span></label>
+        <select class="board-share-role" aria-label="Role for ${_boardsEsc(u.name||u.u)}" ${role?'':'disabled'}>
+          <option value="edit"${role==='edit'||!role?' selected':''}>Can edit</option>
+          <option value="comment"${role==='comment'?' selected':''}>Can comment</option>
+          <option value="view"${role==='view'?' selected':''}>Can view</option>
+        </select>
+      </div>`;}).join('')}
     </div>
     <div class="board-share-foot">
       <button class="btn-sm outline" onclick="window.boardsCloseShare()">Cancel</button>
@@ -12426,12 +12742,19 @@ window.boardsCloseShare=function(){
 window.boardsSaveShare=async function(){
   const host=document.getElementById('board-share-modal');
   if(!host||!_editBoard)return;
-  const picked=Array.from(host.querySelectorAll('input[type=checkbox]')).filter(i=>i.checked).map(i=>i.value);
+  if(!_boardsCanManageShare(_editBoard))return;
+  const picks={};
+  Array.from(host.querySelectorAll('.board-share-row')).forEach(row=>{
+    const cb=row.querySelector('input[type=checkbox]'),sel=row.querySelector('select');
+    if(cb&&cb.checked)picks[cb.value]=(sel&&sel.value)||'edit';
+  });
+  const patch=_boardsSharePatch(picks);
+  const picked=patch.sharedWith;
   try{
-    await _qUpdate(doc(db,'mood_boards',_editBoard.id),{sharedWith:picked,updatedAt:Date.now()});
-    _editBoard.sharedWith=picked;
+    await _qUpdate(doc(db,'mood_boards',_editBoard.id),Object.assign({},patch,{updatedAt:Date.now()}));
+    Object.assign(_editBoard,patch);
     const idx=moodBoards.findIndex(b=>b.id===_editBoard.id);
-    if(idx>-1)moodBoards[idx].sharedWith=picked;
+    if(idx>-1)Object.assign(moodBoards[idx],patch);
     boardsLoaded=false;
     window.boardsCloseShare();
     _boardsRenderCanvasAndWire();
@@ -12625,6 +12948,7 @@ function _boardsCtxRun(act){
     window.boardsTrayStashCards(_boardsSelectedCards().map(c=>c.id));
     return;
   }
+  if(act==='movetoboard'){window.boardsOpenMoveTo();return;}
   switch(act){
     case'file':place();window.boardsPickFiles();break;
     case'line':window.boardsToggleLineMode();break;
@@ -13422,6 +13746,7 @@ function _boardsCardCtxItems(canEdit){
   if(canEdit&&sel.length&&!_boardsIsHome(_editBoard)&&!sel.some(c=>c.type==='board')){
     if(!one)items.push({sep:true});
     items.push({act:'stash',label:one?'Move to Unsorted':'Move '+sel.length+' cards to Unsorted'});
+    items.push({act:'movetoboard',label:one?'Move to board…':'Move '+sel.length+' cards to board…'});
   }
 
   // ── type-specific ──
