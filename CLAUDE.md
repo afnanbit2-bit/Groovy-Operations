@@ -3573,6 +3573,36 @@ controls. The existing preview toggle hides and shows it.
   its height, which is correct).
 - **Nobody has pressed ▶ on a real screen** — the sandbox cannot sign in.
 
+### Mood Boards — audio and map in a link card (Sept 2026)
+
+#94 §13–14, the same idea as video: the link card's preview area becomes the
+provider's player. `_boardsEmbedOf(url)` (pure) is now THE decision —
+video (via `_boardsVideoOf`), audio, map — and `_boardsEmbedSize` the one
+birth size (340 wide; a player's own height + `_BOARDS_EMBED_META_H` 110).
+
+- **Spotify** (track / album / playlist / episode / show / artist, 22-char
+  id, `intl-xx/` prefix allowed) renders its LIVE embed immediately — what
+  Milanote does — 80px for a track, 152 otherwise, `loading="lazy"`.
+  **This deliberately differs from video**, which waits for ▶.
+- **SoundCloud** (`soundcloud.com/<user>/<track>`, system pages refused) is
+  artwork + ▶, then the 145px "visual" player with auto_play.
+- **Google Maps** (`google.com/maps` place / search / `@lat,lng,Nz` /
+  `?q=`, and `maps.google.com`) is a LIVE map; the wheel zooms the map, not
+  the board, because the event goes to the iframe's document (as SEEN).
+  **Milanote uses the Maps Embed API, which needs a key we do not have;
+  ours is the keyless `maps.google.com/maps?q=…&z=…&output=embed` — long-
+  standing but NOT a documented API, unverified.** If maps come up blank,
+  that is the first thing to check (the fix is a key + the Embed API).
+  Short links (`maps.app.goo.gl`) stay ordinary links.
+- **A fixed-height player sets the card's floor** (`_boardsMinCardH`:
+  player + link info), because the layout fragment showed a shorter card
+  pushing the title out; the render grows an old card, nothing migrates.
+- Tests: `tests/board-video.test.js` (45 now); layout fragment `boards —
+  video, audio and map link cards` (1900 only — five 340px cards in a row),
+  which names the title when a Spotify card is squeezed.
+- **Nobody has seen these on a real screen.** Spotify, SoundCloud and Maps
+  are all unreachable from the sandbox.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

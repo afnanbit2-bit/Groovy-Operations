@@ -1398,6 +1398,11 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
 .board-video-play svg{width:22px;height:22px;margin-left:3px}
 @media (hover:hover){.board-video-play:hover{background:rgba(0,0,0,.78)}}
 .board-video-frame{position:absolute;inset:0;width:100%;height:100%;border:0}
+/* Audio and map (#94 §13–14). A map shows Milanote's measured loading grey
+   rgb(102,109,122) until Google's tiles arrive; Spotify draws its own
+   rounded player, so no black box behind it. */
+.board-embed-map{background:rgb(102,109,122)}
+.board-embed-audio{background:transparent}
 .board-link-meta{flex:0 0 auto;display:flex;flex-direction:column;gap:3px;padding:8px 10px 9px;min-width:0}
 /* The URL row: a link glyph, the address, and the show/hide-picture toggle.
    The address is the only thing that flexes, so the glyph and the button

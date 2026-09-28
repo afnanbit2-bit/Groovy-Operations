@@ -2705,9 +2705,9 @@ function _boardCardHTML(c,canEdit){
       // interpolated — the same boundary card text, comments and to-do items
       // hold, and the most obviously third-party strings in the whole file.
       const href=_boardsSafeHref(c.linkUrl);
-      const vid=_boardsVideoOf(c.linkUrl);
+      const vid=_boardsEmbedOf(c.linkUrl);
       const showImg=c.linkImage&&!c.linkPreviewOff&&!vid;
-      body=`<div class="board-card-body board-link-preview${vid?' is-video':''}"${drag}>
+      body=`<div class="board-card-body board-link-preview${vid?' is-video is-'+vid.kind:''}"${drag}>
           ${vid&&!c.linkPreviewOff?_boardsVideoBoxHTML(c,vid):''}
           ${showImg?`<img class="board-link-img" src="${_boardsEsc(_boardsDisplayUrl(c.linkImage,c.w))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`:''}
           <div class="board-link-meta">
@@ -3592,6 +3592,13 @@ function _boardsMinCardH(c){
   // minimum cannot disagree about what a card carries.
   const h=_boardsCardChromeH(c);
   if(c.type==='todo')return h+_boardsTodoMinH(c);
+  // A fixed-height player (Spotify, SoundCloud, a map) plus the link info
+  // under it: smaller than that and the title is pushed out of the card —
+  // measured by the "video, audio and map link cards" layout fragment.
+  if(c.type==='link'&&!c.linkPreviewOff&&c.linkUrl){
+    const e=_boardsEmbedOf(c.linkUrl);
+    if(e&&e.kind!=='video')return h+e.h+_BOARDS_EMBED_META_H;
+  }
   return h+(_BOARDS_MIN_BODY_H[c.type]||48);
 }
 function _boardsGrowForChrome(c){
@@ -8923,7 +8930,8 @@ function _boardsApplyLinkMeta(c,meta,imageUrl){
   if(meta.siteName)c.linkSite=meta.siteName;
   if(imageUrl)c.linkImage=imageUrl;
   if(_boardsLinkCardUnsized(c)){
-    if(_boardsVideoOf(c.linkUrl)){c.w=_BOARDS_VIDEO_W;c.h=_BOARDS_VIDEO_H;}
+    const emb=_boardsEmbedOf(c.linkUrl);
+    if(emb){const z=_boardsEmbedSize(emb);c.w=z.w;c.h=z.h;}
     else{
       c.w=_BOARDS_LINK_PREVIEW_W;
       c.h=imageUrl?_BOARDS_LINK_PREVIEW_H:_BOARDS_LINK_TEXT_H;
@@ -8991,20 +8999,92 @@ function _boardsVideoOf(url){
   return{provider:'youtube',id,thumb:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg',
     embed:'https://www.youtube-nocookie.com/embed/'+id+'?autoplay=1&rel=0&playsinline=1'+(start?'&start='+start:'')};
 }
+/* ── Audio and map in a link card (Sept 2026) ───────────────────────────
+   #94 §13–14, SEEN/MEASURED on Milanote, the same idea as video: the link
+   card's preview area becomes the provider's player.
+
+   - **Spotify** (open.spotify.com track / album / playlist / episode /
+     show / artist) renders its LIVE embed straight away — no click — which
+     is what Milanote does (a 338×85 compact player for a track). That is a
+     deliberate difference from video: a Spotify embed is small and is the
+     whole point of the card. `loading="lazy"` keeps a board of forty from
+     loading forty players it is not showing.
+   - **SoundCloud** is artwork + ▶ like YouTube, then the "visual" player
+     (145px tall in Milanote) with auto_play.
+   - **Google Maps** (google.com/maps place / search / @lat,lng / ?q=) is a
+     LIVE map; the wheel over it zooms the MAP, not the board, because the
+     wheel event goes to the iframe's own document — exactly what the study
+     saw. Milanote uses the Maps Embed API, which needs a key we do not have;
+     ours is the keyless `maps.google.com/maps?q=…&output=embed` form, which
+     is long-standing but NOT a documented API — unverified, and the first
+     thing to check if maps come up blank. Short links (maps.app.goo.gl)
+     cannot be read without following a redirect and stay ordinary links
+     (UNKNOWN in the study too).
+   - The card is dragged by its link info under the player: an iframe takes
+     the pointer, which is also Milanote's rule for maps (HELP). */
+const _BOARDS_EMBED_META_H=110;
+function _boardsEmbedOf(url){
+  const v=_boardsVideoOf(url);
+  if(v)return Object.assign({kind:'video'},v);
+  let u;
+  try{u=new URL(String(url||'').trim());}catch(e){return null;}
+  if(!/^https?:$/.test(u.protocol))return null;
+  const host=u.hostname.toLowerCase().replace(/^(www\.|m\.)/,'');
+  const parts=u.pathname.split('/').filter(Boolean);
+  if(host==='open.spotify.com'){
+    const p=/^intl-[a-z-]+$/i.test(parts[0]||'')?parts.slice(1):parts;
+    const type=p[0],id=p[1]||'';
+    if(['track','album','playlist','episode','show','artist'].indexOf(type)<0||!/^[A-Za-z0-9]{22}$/.test(id))return null;
+    return{kind:'audio',provider:'spotify',id,live:true,h:type==='track'?80:152,thumb:'',
+      embed:'https://open.spotify.com/embed/'+type+'/'+id};
+  }
+  if(host==='soundcloud.com'){
+    if(parts.length<2||!parts.every(x=>/^[A-Za-z0-9_-]{1,100}$/.test(x)))return null;
+    if(['discover','stream','search','you','charts','upload','pages'].indexOf(parts[0])>=0)return null;
+    const canon='https://soundcloud.com/'+parts.join('/');
+    return{kind:'audio',provider:'soundcloud',id:parts.join('/'),live:false,h:145,thumb:'',
+      embed:'https://w.soundcloud.com/player/?url='+encodeURIComponent(canon)+'&visual=true&auto_play=true'};
+  }
+  if((host==='google.com'||host==='maps.google.com')&&(parts[0]==='maps'||host==='maps.google.com')){
+    const p=parts[0]==='maps'?parts.slice(1):parts;
+    let q=u.searchParams.get('q')||'',z=15;
+    const at=/^@(-?\d{1,3}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?),(\d{1,2}(?:\.\d+)?)z$/;
+    const atPart=p.find(x=>at.test(x));
+    const m=atPart&&at.exec(atPart);
+    if(m){z=Math.max(1,Math.min(21,Math.round(+m[3])));}
+    if(!q&&(p[0]==='place'||p[0]==='search')&&p[1])q=decodeURIComponent(p[1]).replace(/\+/g,' ');
+    if(!q&&m)q=m[1]+','+m[2];
+    q=String(q).trim().slice(0,200);
+    if(!q)return null;
+    return{kind:'map',provider:'google-maps',id:q,live:true,h:223,thumb:'',
+      embed:'https://maps.google.com/maps?q='+encodeURIComponent(q)+'&z='+z+'&output=embed'};
+  }
+  return null;
+}
+// The size an embed card is born at: 340 wide (Milanote 338), the player's
+// own height above the link info, or the 16:9 video card.
+function _boardsEmbedSize(e){
+  if(!e)return null;
+  if(e.kind==='video')return{w:_BOARDS_VIDEO_W,h:_BOARDS_VIDEO_H};
+  return{w:_BOARDS_VIDEO_W,h:e.h+_BOARDS_EMBED_META_H};
+}
 function _boardsVideoIframeHTML(vid){
-  return`<iframe class="board-video-frame" src="${_boardsEsc(vid.embed)}" title="${vid.provider==='vimeo'?'Vimeo':'YouTube'} video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+  const label=vid.provider==='vimeo'?'Vimeo video':vid.provider==='spotify'?'Spotify player':vid.provider==='soundcloud'?'SoundCloud player':vid.provider==='google-maps'?'Google map':'YouTube video';
+  return`<iframe class="board-video-frame" src="${_boardsEsc(vid.embed)}" title="${label}"${vid.live?' loading="lazy"':''} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
 }
 function _boardsVideoBoxHTML(c,vid){
-  if(_boardsPlaying.has(c.id))return`<div class="board-video" id="board-vid-${c.id}">${_boardsVideoIframeHTML(vid)}</div>`;
+  const fixed=vid.kind&&vid.kind!=='video'&&vid.h?` style="flex:0 0 ${vid.h}px"`:'';
+  const kindCls=vid.kind&&vid.kind!=='video'?' board-embed-'+vid.kind:'';
+  if(vid.live||_boardsPlaying.has(c.id))return`<div class="board-video${kindCls}" id="board-vid-${c.id}"${fixed}>${_boardsVideoIframeHTML(vid)}</div>`;
   const pic=c.linkImage?_boardsDisplayUrl(c.linkImage,c.w):vid.thumb;
-  return`<div class="board-video" id="board-vid-${c.id}">
+  return`<div class="board-video${kindCls}" id="board-vid-${c.id}"${fixed}>
     ${pic?`<img class="board-video-thumb" src="${_boardsEsc(pic)}" draggable="false" alt="" onerror="this.style.display='none'">`:''}
-    <button class="board-video-play" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsVideoPlay('${c.id}')" title="Play" aria-label="Play video"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4.5v11l9-5.5z" fill="currentColor"/></svg></button>
+    <button class="board-video-play" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();window.boardsVideoPlay('${c.id}')" title="Play" aria-label="Play"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4.5v11l9-5.5z" fill="currentColor"/></svg></button>
   </div>`;
 }
 window.boardsVideoPlay=function(id){
   const c=_editCards.find(x=>x.id===id);
-  const vid=c&&c.type==='link'&&_boardsVideoOf(c.linkUrl);
+  const vid=c&&c.type==='link'&&_boardsEmbedOf(c.linkUrl);
   if(!vid)return;
   _boardsPlaying.add(id);
   const el=document.getElementById('board-vid-'+id);
@@ -9036,7 +9116,8 @@ function _boardsLinkHydrate(cardId){
   const start=_editCards.find(x=>x.id===cardId);
   if(!start||start.type!=='link'||!start.linkUrl)return;
   const boardId=_editBoard&&_editBoard.id,url=start.linkUrl;
-  if(_boardsVideoOf(url)&&_boardsLinkCardUnsized(start)){start.w=_BOARDS_VIDEO_W;start.h=_BOARDS_VIDEO_H;}
+  const emb0=_boardsEmbedOf(url);
+  if(emb0&&_boardsLinkCardUnsized(start)){const z=_boardsEmbedSize(emb0);start.w=z.w;start.h=z.h;}
   start._fetching=true;
   delete start._linkNoPreview;
   _boardsRenderSoon();
