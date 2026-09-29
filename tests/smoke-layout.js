@@ -646,7 +646,7 @@ const FRAGMENTS={
     app.run(`_editUnsorted=[
       {id:'u1',kind:'text',text:'A note with a fairly long first line that has to wrap somewhere'},
       {id:'u2',kind:'file',fileName:'winter-sequence-2026-techpack-final-v3.pdf',fileSize:2400000},
-      {id:'u3',kind:'link',linkUrl:'https://example.test/a',linkTitle:'example.test'},
+      {id:'u3',kind:'link',linkUrl:'https://www.pinterest.com/pin/1234567890123456789/',linkTitle:'Wide leg washed denim with a raw hem, styled for the winter drop lookbook',linkSite:'Pinterest',text:'Saved from a stylist board — the wash and the rise we want for the next run'},
       {id:'u4',kind:'file',fileName:'a.pdf'},
       {id:'u5',kind:'cards',name:'FABRIC & TRIMS FOR WINTER · 12 cards',
         cards:[{id:'c1',type:'column',title:'FABRIC & TRIMS FOR WINTER'}]},

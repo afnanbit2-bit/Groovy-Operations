@@ -3975,6 +3975,37 @@ a column its title and how many cards, a to-do its tasks.
   **Nobody has felt the magnet on a real screen** — the sandbox cannot sign
   in; the previews were rendered and looked at in Chromium, both themes.
 
+### Mood Boards — a link with no picture (29 Sept 2026)
+
+Afnan, with a Pinterest pin in Unsorted as a grey LINK box and the same pin
+on the board as a card titled "pinterest.com" with no picture: *"there
+should be a preview of the link as well in unsorted and on board as well"*.
+
+- **The server tries oEmbed when the page gives no picture**
+  (`netlify/functions/link-preview.js`: `preview`, `oembedEndpoint`,
+  `fromOembed`). Endpoint: a Pinterest `/pin/` URL maps to
+  `https://www.pinterest.com/oembed.json?url=…`; any other page's own
+  `<link type="application/json+oembed">` is used. The call goes through
+  `fetchHtml` (json mode), so the endpoint's host is resolved and checked
+  and every redirect re-validated. A non-JSON answer is ignored, the picture
+  goes through `safeImageUrl`, and a failure leaves the page's answer
+  standing. A page title that is only the host or the provider's own name
+  ("Pinterest") gives way to oEmbed's title; a real title is kept.
+  **The Pinterest part is a hypothesis, not verified:** pinterest.com is
+  unreachable from the sandbox, so neither the empty bot page nor the
+  endpoint's answer has been seen. The first real paste is the test.
+- **A pictureless link in Unsorted previews as the link** (site, title,
+  description, address — `_boardsTrayPreview`'s first branch, hydrated
+  with `textContent`), not a grey box. One with a picture keeps it.
+- **A link dragged out of Unsorted with no picture is fetched again**
+  (`_boardsLinkHydrate` in the tray drag's `up()`); one that brought its
+  picture is not. A card already on a board gets it through right-click →
+  **Refresh preview**, which already existed. No write happens on open.
+- `tests/link-preview.test.js` (+21), `tests/board-trayprev.test.js` (+11);
+  reverting the drag-out re-fetch fails 3, turning off the oEmbed step
+  fails 10, and painting the site line in `--surface` fails the tray layout
+  fragment at 1:1.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
