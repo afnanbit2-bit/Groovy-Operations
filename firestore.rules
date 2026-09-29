@@ -1129,6 +1129,41 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/ma_closes/$(q)).data.get('reopenedAt', null) == null;
     }
     function maText(s) { return s is string && s.trim().size() > 0; }
+    // A holder is a CODE: a string of four digits, the first not 0 — the
+    // chart's own shape (maCodeOk in js/ma-core.js). It was never checked
+    // (V3, 29 Sept 2026): 1010 the NUMBER is in no list of codes, so the
+    // derived confirmation above looked straight past the drawer and a
+    // hand-written transfer out of it posted at once; "1010 " (a trailing
+    // space) is no holder at all, and posted money into MCB from nowhere.
+    function maCodeOk(c) { return c is string && c.matches('^[1-9][0-9]{3}$'); }
+    // What a document moves, in the shape maValidate allows (amount.whole,
+    // count.value). A journal or a transfer moves whole rupees ABOVE zero:
+    // a negative amount posts the other way round — 1012 → 1011 at
+    // −₨5,00,000 put the money INTO Ammar's hands with nobody confirming.
+    // A count is of whole rupees, zero or more, held against a whole-rupee
+    // book; its amount is the size of its difference (maCountOk), so 0 when
+    // the count matches the book — the one amount that may be zero. The
+    // journal kinds that move money through ONE holder name it as a code
+    // (MA_JOURNAL_KINDS' holder kinds — a test holds the list equal); the
+    // kinds with their own lines stay the KNOWN LIMIT below.
+    function maShapeOk(dt, d) {
+      return dt == 'transfer'
+        ? maCodeOk(d.get('from', null)) && maCodeOk(d.get('to', null)) && d.get('amount', null) is int && d.amount > 0
+        : (dt == 'count'
+          ? maCodeOk(d.get('holder', null)) && d.get('counted', null) is int && d.counted >= 0
+            && d.get('bookBalance', null) is int && d.get('amount', null) is int
+          : d.get('amount', null) is int && d.amount > 0
+            && (!(d.get('kind', '') in ['money_out','money_in','capital','drawing']) || maCodeOk(d.get('holder', null))));
+    }
+    // The day the books went live: ma_settings/main's goLive when it is a
+    // day, else the default — maSettings in js/ma-core.js, whose
+    // MA_DEFAULT_SETTINGS.goLive a test holds equal to the one here. A
+    // document dated before it is `historical` (maBuildDoc).
+    function maGoLive() {
+      let p = /databases/$(database)/documents/ma_settings/main;
+      let g = exists(p) ? get(p).data.get('goLive', '') : '';
+      return maDayOk(g) ? g : '2026-10-01';
+    }
 
     // CREATE: by the recorder, at rev 1, with no history, in its own period
     // — and with NO confirmation, review or void (security F2: those keys
@@ -1140,7 +1175,12 @@ service cloud.firestore {
     // language has no loop over a list. A general journal that moves money
     // between two holders (refused), pays out of a holder with no bill or
     // payee (flagged), or opens an account a second time (flagged) is held
-    // by maValidate in the client ONLY (js/ma-core.js, money F12).
+    // by maValidate in the client ONLY (js/ma-core.js, money F12). The same
+    // reach, and the same limit: a Money out or Money in whose `account`
+    // is a holder (the client's account.money), and a tax block's rate
+    // outside 0–100% (tax.rate) — a hand-written one can move money into a
+    // holder, which a journal can already do (journals need no
+    // confirmation). Codes, amounts and signs ARE checked (maShapeOk).
     function maDocCreateOk(dt, docId, statuses) {
       let d = request.resource.data;
       return isMasterAccounts()
@@ -1153,6 +1193,7 @@ service cloud.firestore {
         && !d.keys().hasAny(['confirmedBy','confirmedAt','confirmedFor','confirmVia','reviewedAt','reviewedBy','voidedAt','voidedBy','voidedByName','voidReason'])
         && (dt == 'transfer' ? maTrBornOk(d) : !d.keys().hasAny(['confirmBy','confirmPaper']))
         && (dt != 'count' || maCountOk(d))
+        && maShapeOk(dt, d)
         && maPeriodOk(d)
         && !maLocked(d.quarter);
     }
@@ -1167,6 +1208,14 @@ service cloud.firestore {
     // (security F1). `flags` are the edit's own live flags; the review may
     // only be CLEARED here, and must be when a figure moved (money F8) —
     // maReviewOk alone sets it.
+    // V3 (29 Sept 2026): the edited document keeps the shape a new one must
+    // have (maShapeOk: codes, whole rupees, no negative amount); the row
+    // names only fields an edit may change (maEditDiff never names a
+    // derived one — a row naming only "flags" emptied them with nothing
+    // visible changed); the row is written NOW, within five minutes of the
+    // server's clock like an audit row (the page stamps both in the same
+    // transaction), so it cannot be dated 0; and `historical`, derived from
+    // the date and goLive, may only move to what those two say.
     function maEditOk(dt, editable) {
       let o = resource.data;
       let n = request.resource.data;
@@ -1186,6 +1235,9 @@ service cloud.firestore {
         && n.edits[o.edits.size()].by == maUser()
         && n.edits[o.edits.size()].fields is list
         && n.edits[o.edits.size()].fields.size() > 0
+        && n.edits[o.edits.size()].fields.hasOnly(editable)
+        && n.edits[o.edits.size()].at is number
+        && math.abs(n.edits[o.edits.size()].at - request.time.toMillis()) <= 300000
         && k.hasOnly(editable.concat(derived))
         && k.difference(derived.toSet()).hasOnly(n.edits[o.edits.size()].fields)
         && k.hasAll(n.edits[o.edits.size()].fields)
@@ -1193,6 +1245,8 @@ service cloud.firestore {
         && (!k.hasAny(figures) || n.get('reviewedAt', null) == null)
         && (dt != 'transfer' || maTrEditOk(o, n, k))
         && (dt != 'count' || (maCountOk(n) && (!k.hasAny(['bookBalance']) || k.hasAny(['date','counted']))))
+        && maShapeOk(dt, n)
+        && (!k.hasAny(['historical']) || n.historical == (n.date < maGoLive()))
         && maPeriodOk(n)
         && !maLocked(o.quarter) && !maLocked(n.quarter);
     }

@@ -213,15 +213,38 @@ function _loginSetBusy(on,label){
   const f=document.getElementById('login-finger');
   if(f){const sp=f.querySelector('span');if(sp)sp.textContent=on&&label?label:(f.dataset.label||'Sign in with fingerprint');}
 }
-window.doLogout=async function(){
+// ONE way out per tab (V7, 29 Sept 2026): a second Sign out — or "Use
+// password instead" while a sign-out is running, or the other way round —
+// gets the FIRST one's promise. A second run met a Firestore the first had
+// already stopped, and told the owner the books were KEPT while the first
+// was deleting them.
+// A way out that FAILED (signOut refused, say) is forgotten, so the next
+// press tries again instead of being handed the same failure for ever — and
+// the failure is re-thrown, not handled here, so it still reaches
+// js/diagnostics.js as an unhandled rejection, as it did before.
+let _authLeaving=null;
+function _authLeave(run){
+  if(!_authLeaving)_authLeaving=(async()=>{try{return await run();}catch(e){_authLeaving=null;throw e;}})();
+  return _authLeaving;
+}
+window.doLogout=function(){return _authLeave(async()=>{
   // Master Accounts: an owner's sign-out takes the books off this device
   // first (js/master-accounts.js); while another tab holds them, nothing is
   // signed out and it says so.
-  if(typeof window.maBooksOffDevice==='function'){let r=null;try{r=await window.maBooksOffDevice();}catch(_){}if(r&&r.stay){location.reload();return;}}
+  if(typeof window.maBooksOffDevice==='function'){
+    let r=null;try{r=await window.maBooksOffDevice();}catch(_){}
+    if(r&&r.stay){
+      // Still signed in, so the reload comes back into the app — but if the
+      // fingerprint lock came up while the books were being taken off, it
+      // must come back up: a cold reload asks for it (V1).
+      if(_lockShowing){try{sessionStorage.removeItem('u');}catch(_){}}
+      location.reload();return;
+    }
+  }
   await signOut(auth);session=null;sessionStorage.clear();
   try{sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}   // signing out on purpose: may be switching account
   location.reload();
-};
+});};
 
 
 // The old in-app "first time setup" flow was removed: it shipped every
@@ -1132,11 +1155,14 @@ window.loginFillSaved=async function(){
 let _lockPending=null;   // what to run once unlocked (the cold-start startApp)
 let _lockShowing=false;
 let _lockHiddenAt=0;
+// "Use password instead" is signing this person out: the lock stays on
+// screen, and nothing unlocks it, until the reload (V1, 29 Sept 2026).
+let _lockLeaving=false;
 function _lockShow(def,onUnlock){
   _lockPending=onUnlock||null;
   _lockShowing=true;
   const scr=document.getElementById('scr-lock');
-  if(!scr){_lockDone();return;}   // an old cached index.html: never strand anyone
+  if(!scr){_lockDone(false);return;}   // an old cached index.html: never strand anyone
   const n=document.getElementById('lock-name');
   if(n)n.textContent=((def&&def.name)||'').split(' ')[0]+'.';
   const m=document.getElementById('lock-msg');if(m)m.textContent='';
@@ -1146,21 +1172,26 @@ function _lockShow(def,onUnlock){
   // which is fine — the button is right there.
   setTimeout(()=>{if(_lockShowing)window.lockUnlock(true);},250);
 }
-function _lockDone(){
+// `verified` is TRUE only when a fingerprint (face, PIN) was really checked
+// just now. The app lock's own callback ignores it — a lock whose record is
+// gone has nothing to guard and must never strand anyone — but Master
+// Accounts' unlock (js/master-accounts.js, V9) opens the books on true
+// alone: "nothing to guard" is not a fingerprint.
+function _lockDone(verified){
   _lockShowing=false;
   const scr=document.getElementById('scr-lock');
   if(scr)scr.hidden=true;
   document.documentElement.classList.remove('app-locked');
   const f=_lockPending;_lockPending=null;
-  if(f)f();
+  if(f)f(verified===true);
 }
 let _lockBusy=false;
 window.lockUnlock=async function(auto){
-  if(!_lockShowing||_lockBusy)return;
+  if(!_lockShowing||_lockBusy||_lockLeaving)return;
   const uid=(session&&session.uid)||(auth&&auth.currentUser&&auth.currentUser.uid);
   const rec=_lockFor(uid);
   const m=document.getElementById('lock-msg');
-  if(!rec||!_lockSupported()){_lockDone();return;}   // lock record gone: nothing to guard
+  if(!rec||!_lockSupported()){_lockDone(false);return;}   // lock record gone: nothing to guard
   _lockBusy=true;
   try{
     const res=await navigator.credentials.get({publicKey:{
@@ -1168,7 +1199,7 @@ window.lockUnlock=async function(auto){
       allowCredentials:[{type:'public-key',id:_b64uDec(rec.id),transports:['internal']}],
       userVerification:'required',timeout:60000
     }});
-    if(res&&res.response&&_lockUserVerified(res.response.authenticatorData)){_lockDone();return;}
+    if(res&&res.response&&_lockUserVerified(res.response.authenticatorData)){_lockDone(true);return;}
     if(m)m.textContent='Your fingerprint was not checked. Try again.';
   }catch(e){
     if(m&&!auto)m.textContent=e&&e.name==='NotAllowedError'
@@ -1176,18 +1207,28 @@ window.lockUnlock=async function(auto){
       :'This phone could not check your fingerprint. Use your password instead.';
   }finally{_lockBusy=false;}
 };
-window.lockUsePassword=async function(){
-  _lockPending=null;_lockShowing=false;
-  const scr=document.getElementById('scr-lock');if(scr)scr.hidden=true;
-  document.documentElement.classList.remove('app-locked');
+// "Use password instead" SIGNS OUT, whatever happens to the books (V1,
+// 29 Sept 2026). It used to take the lock down FIRST and, when the books
+// could not come off the device ("stay"), reload WITHOUT signing out —
+// and a same-tab reload is not a cold open, so the lock was never asked
+// for again: whoever held the phone was in the app as its owner. Now:
+// - the lock stays up (nothing unlocks it) until the books are dealt with;
+// - `u` goes from sessionStorage FIRST, so any reload from here is cold
+//   and the lock is asked for again;
+// - every answer signs out: "stay" and "failed" say the copy stayed, the
+//   way "kept" does (js/master-accounts.js phrases it for `leaving`).
+window.lockUsePassword=function(){return _authLeave(async()=>{
+  _lockLeaving=true;_lockPending=null;
+  try{sessionStorage.removeItem('u');}catch(_){}
+  const msg=document.getElementById('lock-msg');if(msg)msg.textContent='Signing out…';
   const u=(session&&session.u)||'';
-  if(typeof window.maBooksOffDevice==='function'){let r=null;try{r=await window.maBooksOffDevice();}catch(_){}if(r&&r.stay){location.reload();return;}}
+  if(typeof window.maBooksOffDevice==='function'){try{await window.maBooksOffDevice({leaving:true});}catch(_){}}
   try{await signOut(auth);}catch(_){}
   session=null;
   try{sessionStorage.clear();sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}
   if(u)_authStore('groovy_remembered_user',u);
   location.reload();
-};
+});};
 // Coming back after a while in the background locks again — the banking
 // app rule. A reload in the same tab does not (sessionStorage says so).
 document.addEventListener('visibilitychange',()=>{

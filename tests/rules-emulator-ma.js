@@ -32,6 +32,13 @@
    its own freshly seeded document, so one landing under the old rules
    cannot spill into the next. Audit rows are stamped NOW: the rules hold
    them to within five minutes of the server's clock.
+
+   V3 (29 Sept 2026) added the checks named "V3: …" — each a write the rules
+   before V3 allowed (a code written as a number or with a space, a negative
+   or fractional amount, a row naming only "flags", a row dated 0, a flipped
+   `historical`) — and "V3 control: …", writes the app makes that must still
+   pass. Since V3 an EDIT row's `at` is held to the server's clock too, so
+   every edit the builders here make is stamped now (nowRow).
    ───────────────────────────────────────────────────────────────────────── */
 const fs=require('fs');
 const path=require('path');
@@ -55,10 +62,15 @@ function build(dt,input,meta){
   d.id=d.no;
   return d;
 }
-const edit=(before,input,meta)=>R('maApplyEdit('+J(before)+',maBuildDoc('+J(before.dt)+','+J(input)+','+J({by:before.by,byName:before.byName,ts:before.ts})+',IDX,S),'+J(meta)+')');
+// An edit row is written NOW (V3, 29 Sept 2026): the rules hold its `at` to
+// the server's clock, like an audit row's. Every edit these builders make is
+// stamped that way, whatever `at` a check passes; the checks named "V3: …"
+// put a stale one back on purpose.
+const nowRow=meta=>Object.assign({},meta,{at:Date.now()});
+const edit=(before,input,meta)=>R('maApplyEdit('+J(before)+',maBuildDoc('+J(before.dt)+','+J(input)+','+J({by:before.by,byName:before.byName,ts:before.ts})+',IDX,S),'+J(nowRow(meta))+')');
 // A count's edit, the way the writer builds it (M1.6a, money F2): the stored
 // book is kept unless the day or the count moved — then it is `bookNow`.
-const editCount=(before,input,bookNow,meta)=>R('maApplyEdit('+J(before)+',maBuildDoc("count",'+J(input)+',Object.assign('+J({by:before.by,byName:before.byName,ts:before.ts})+',{bookBalance:maCountBookOf('+J(before)+','+J(input)+','+J(bookNow)+')}),IDX,S),'+J(meta)+')');
+const editCount=(before,input,bookNow,meta)=>R('maApplyEdit('+J(before)+',maBuildDoc("count",'+J(input)+',Object.assign('+J({by:before.by,byName:before.byName,ts:before.ts})+',{bookBalance:maCountBookOf('+J(before)+','+J(input)+','+J(bookNow)+')}),IDX,S),'+J(nowRow(meta))+')');
 const voided=(d,meta)=>R('maApplyVoid('+J(d)+','+J(meta)+')');
 const confirm=(d,who,meta)=>R('maConfirmPatch('+J(d)+','+J(who)+','+J(meta)+')');
 const audit=(action,target,meta)=>R('maAuditRow('+J(action)+','+J(target)+','+J(meta)+')');
@@ -73,7 +85,7 @@ const NOW=()=>Date.now();   // an audit row's `at` — the rules hold it to the 
 // is actually written through.
 const pages=harness.loadApp({files:['js/ma-core.js','js/master-accounts.js'],session:{uid:U.afnan,u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}});
 const P=expr=>JSON.parse(pages.run('JSON.stringify((()=>{const IDX=maChartIndex(maChart("groovy"));const S=MA_DEFAULT_SETTINGS;return '+expr+';})())'));
-const shaped=(before,input,meta)=>P('_maEditShape('+J(before)+',maApplyEdit('+J(before)+',maBuildDoc('+J(before.dt)+','+J(input)+','+J({by:before.by,byName:before.byName,ts:before.ts})+',IDX,S),'+J(meta)+'))');
+const shaped=(before,input,meta)=>P('_maEditShape('+J(before)+',maApplyEdit('+J(before)+',maBuildDoc('+J(before.dt)+','+J(input)+','+J({by:before.by,byName:before.byName,ts:before.ts})+',IDX,S),'+J(nowRow(meta))+'))');
 
 let passed=0,failed=0;
 async function check(name,fn){
@@ -743,7 +755,7 @@ async function check(name,fn){
     const lg=jv('afnan',{date:'2026-10-08',amount:700,payee:'Tea'});lg.importRef='sheet row 12';
     await seed(pathOf(lg),lg);
     const lgIn={kind:'money_out',date:'2026-10-08',holder:'1011',account:'5010',payee:'Tea',amount:750};
-    const raw=P('maApplyEdit('+J(lg)+',maBuildDoc("journal",'+J(lgIn)+','+J({by:lg.by,byName:lg.byName,ts:lg.ts})+',IDX,S),'+J({by:'afnan',byName:'Afnan',at:T+22,reason:'again'})+')');
+    const raw=P('maApplyEdit('+J(lg)+',maBuildDoc("journal",'+J(lgIn)+','+J({by:lg.by,byName:lg.byName,ts:lg.ts})+',IDX,S),'+J(nowRow({by:'afnan',byName:'Afnan',at:T+22,reason:'again'}))+')');
     if(raw.importRef!==undefined)throw new Error('expected the raw edit to drop importRef');
     await assertFails(setDoc(doc(as('afnan'),pathOf(lg)),raw));
     await assertSucceeds(setDoc(doc(as('afnan'),pathOf(lg)),P('_maEditShape('+J(lg)+','+J(raw)+')')));
@@ -772,7 +784,7 @@ async function check(name,fn){
   // The rail's writer, exactly (_maRailAttach): the document as it stands,
   // its files plus the new one, through maApplyEdit and _maEditShape.
   const railAttach=(cur,added,by,at)=>P('_maEditShape('+J(cur)+',maApplyEdit('+J(cur)+',Object.assign({},_maClean('+J(cur)+'),{attachments:maAttachList('+J(cur.attachments||[])+').concat('+J(added)+')}),'+
-    J({by,byName:by[0].toUpperCase()+by.slice(1),at,reason:'Attached '+added.map(a=>a.name).join(', ')})+'))');
+    J(nowRow({by,byName:by[0].toUpperCase()+by.slice(1),at,reason:'Attached '+added.map(a=>a.name).join(', ')}))+'))');
   const ADD=Object.assign({},REF,{publicId:'ma/'+'cd'.repeat(32),format:'jpg',name:'bill-photo.jpg',mime:'image/jpeg',secure_url:undefined});
   delete ADD.secure_url;
   let jfNow=null;
@@ -792,7 +804,7 @@ async function check(name,fn){
   });
   await check('taking a file off again is an edit naming attachments too',async()=>{
     const after=P('Object.assign({},_maClean('+J(jfNow)+'),{attachments:maAttachList('+J(jfNow.attachments)+').slice(1)})');
-    const e=P('_maEditShape('+J(jfNow)+',maApplyEdit('+J(jfNow)+','+J(after)+','+J({by:'afnan',byName:'Afnan',at:T+42,reason:'wrong photo'})+'))');
+    const e=P('_maEditShape('+J(jfNow)+',maApplyEdit('+J(jfNow)+','+J(after)+','+J(nowRow({by:'afnan',byName:'Afnan',at:T+42,reason:'wrong photo'}))+'))');
     if(J(e.edits[e.edits.length-1].fields)!==J(['attachments']))throw new Error(J(e.edits[e.edits.length-1]));
     await assertSucceeds(setDoc(doc(as('afnan'),pathOf(jf)),e));
   });
@@ -807,6 +819,135 @@ async function check(name,fn){
     const e=railAttach(withBill,[ADD],'mustafa',T+44);
     await assertFails(setDoc(doc(as('mustafa'),pathOf(withBill)),e));
   });
+
+  console.log('V3 (29 Sept 2026): codes are strings, amounts whole rupees above zero, an edit row is honest');
+  // Every document below is built by the app (maBuildDoc / maApplyEdit),
+  // then forged the way the verifier's probe forged it (review-verify
+  // fresh-rules.js, A2–A5, B2, C1–C3, C5). Each "V3:" check is a write the
+  // rules before V3 ALLOWED; each "V3 control:" is a write the app makes,
+  // which must still pass.
+  const vT={date:'2026-10-05'};
+  const tr=(from,to,amount,by)=>build('transfer',Object.assign({},vT,{from,to,amount}),meta(by));
+  const drawerOut=tr('1010','1020',90000,'afnan');
+  await check('(the builder: out of the drawer waits for Raees, on paper)',async()=>{
+    if(!(drawerOut.status==='pending'&&drawerOut.confirmBy==='raees'&&drawerOut.confirmPaper===true))throw new Error(J(drawerOut));
+  });
+  const a2=Object.assign({},drawerOut,{from:1010,status:'posted',confirmBy:null,confirmPaper:false});
+  await check('V3: a transfer out of the drawer with `from` as the NUMBER 1010, posted at once, is refused',()=>assertFails(setDoc(doc(as('afnan'),pathOf(a2)),a2)));
+  const a5src=tr('1010','1020',90000,'afnan');
+  const a5=Object.assign({},a5src,{from:'1010 ',status:'posted',confirmBy:null,confirmPaper:false});
+  await check('V3: …nor with `from` "1010 " (a trailing space: no holder at all, money into MCB from nowhere)',()=>assertFails(setDoc(doc(as('afnan'),pathOf(a5)),a5)));
+  const toAfnan=tr('1012','1011',5000,'afnan');                     // posts at once: Afnan records money reaching him
+  await check('(the builder: Ammar → Afnan recorded by Afnan posts at once)',async()=>{if(!(toAfnan.status==='posted'&&toAfnan.confirmBy===null))throw new Error(J(toAfnan));});
+  const a3=Object.assign({},toAfnan,{amount:-500000});
+  await check('V3: …at −₨5,00,000 it would post INTO Ammar\'s hands, unconfirmed — refused',()=>assertFails(setDoc(doc(as('afnan'),pathOf(a3)),a3)));
+  for(const [label,amount] of [['a STRING "5000"','5000'],['₨0',0],['a fraction (₨5,000.50)',5000.5]]){
+    const x=Object.assign(tr('1011','1020',5000,'afnan'),{amount});
+    await check('V3: a transfer whose amount is '+label+' is refused',()=>assertFails(setDoc(doc(as('afnan'),pathOf(x)),x)));
+  }
+  await check('V3 control: the same transfer at ₨5,000 is created',async()=>{const x=tr('1011','1020',5000,'afnan');await assertSucceeds(setDoc(doc(as('afnan'),pathOf(x)),x));});
+  const b2=tr('1012','1020',3000,'ammar');                           // Ammar's cash into MCB: nobody confirms
+  await check('V3: Afnan editing Ammar\'s posted 1012 → 1020 to −₨3,00,000, the row naming amount, is refused',async()=>{
+    await seed(pathOf(b2),b2);
+    const e=edit(b2,{date:'2026-10-05',from:'1012',to:'1020',amount:-300000},{by:'afnan',byName:'Afnan',reason:'typo'});
+    if(!(e&&J(e.edits[0].fields)===J(['amount'])&&e.amount===-300000))throw new Error(J(e&&e.edits));
+    await assertFails(setDoc(doc(as('afnan'),pathOf(b2)),e));
+  });
+  await check('V3 control: …the same edit to ₨3,500 passes',async()=>{
+    await seed(pathOf(b2),b2);
+    const e=edit(b2,{date:'2026-10-05',from:'1012',to:'1020',amount:3500},{by:'afnan',byName:'Afnan',reason:'the slip'});
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(b2)),e));
+  });
+  const MO={kind:'money_out',date:'2026-10-05',holder:'1011',account:'5010',payee:'Mill',amount:12000};
+  const mo=o=>Object.assign(build('journal',MO,meta('afnan')),o);
+  for(const [label,over] of [['a NEGATIVE amount (−₨12,00,000: money in, not out)',{amount:-1200000}],['a fraction (₨12,000.50)',{amount:12000.5}],
+    ['holder "1011 " (a trailing space)',{holder:'1011 '}],['holder as the NUMBER 1011',{holder:1011}],['no holder at all',{holder:undefined}]]){
+    const x=mo(over);if(over.holder===undefined&&'holder' in over)delete x.holder;
+    await check('V3: a Money out with '+label+' is refused',()=>assertFails(setDoc(doc(as('afnan'),pathOf(x)),x)));
+  }
+  const CAP={kind:'capital',date:'2026-10-05',holder:'1011',owner:'afnan',amount:50000};
+  const capNoHolder=build('journal',CAP,meta('afnan'));delete capNoHolder.holder;
+  const cap=build('journal',CAP,meta('afnan'));   // its own number: an attack landing under older rules cannot turn this create into an update
+  await check('V3: an "Owner put money in" with no holder is refused (a holder kind names its holder)',()=>assertFails(setDoc(doc(as('afnan'),pathOf(capNoHolder)),capNoHolder)));
+  await check('V3 control: …and with its holder it is created',()=>assertSucceeds(setDoc(doc(as('afnan'),pathOf(cap)),cap)));
+  const gen=build('journal',{kind:'general',date:'2026-10-05',lines:[{account:'6040',dr:2500},{account:'2010',cr:2500}]},meta('afnan'));
+  await check('V3 control: a journal with its own lines (no holder) is created',async()=>{
+    if(!(gen.amount===2500&&!('holder' in gen)))throw new Error(J(gen));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(gen)),gen));
+  });
+  const CT={date:'2026-10-07',holder:'1011'};
+  const ct0=build('count',Object.assign({},CT,{counted:41000}),Object.assign(meta('afnan'),{bookBalance:41000}));
+  await check('V3 control: a count that matches the book (amount ₨0) is created — a count\'s amount may be zero',async()=>{
+    if(!(ct0.amount===0&&ct0.difference===0))throw new Error(J(ct0));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(ct0)),ct0));
+  });
+  for(const [label,over] of [['a NEGATIVE count (−₨1,000 counted)',{counted:-1000,difference:-42000,amount:42000}],
+    ['a fraction (₨40,000.50 counted)',{counted:40000.5,difference:-999.5,amount:999.5}],['holder as the NUMBER 1011',{holder:1011}]]){
+    const x=Object.assign(build('count',Object.assign({},CT,{counted:40000}),Object.assign(meta('afnan'),{bookBalance:41000})),over);
+    await check('V3: a count with '+label+' is refused (its difference and amount agree with it)',()=>assertFails(setDoc(doc(as('afnan'),pathOf(x)),x)));
+  }
+  // The edit row (C1–C3). A journal carrying two flags, as the writer stores it.
+  const jflags=[{rule:'evidence.missing',message:'No bill',field:'attachments'},{rule:'duplicate',message:'dup',field:null}];
+  const jf1=mo({flags:jflags});
+  await check('V3: an edit whose row names only "flags" (emptying them, nothing visible changed) is refused',async()=>{
+    await seed(pathOf(jf1),jf1);
+    const x=Object.assign({},jf1,{flags:[],rev:2,edits:[{at:NOW(),by:'ammar',byName:'Ammar',reason:'x',fields:['flags'],before:{flags:jflags},after:{flags:[]}}]});
+    await assertFails(setDoc(doc(as('ammar'),pathOf(jf1)),x));
+  });
+  await check('V3 control: …an edit that names the note, and stores the flags it raised, passes',async()=>{
+    await seed(pathOf(jf1),jf1);
+    const e=edit(jf1,Object.assign({},MO,{note:'invoice 7'}),{by:'ammar',byName:'Ammar',reason:'note',flags:[jflags[0]]});
+    if(!(J(e.edits[0].fields)===J(['note'])&&e.flags.length===1))throw new Error(J(e));
+    await assertSucceeds(setDoc(doc(as('ammar'),pathOf(jf1)),e));
+  });
+  const jd=mo({});
+  for(const [label,at]of[['dated 0',()=>0],['stamped six minutes ago',()=>NOW()-360000],['stamped six minutes ahead',()=>NOW()+360000]]){
+    await check('V3: an edit row '+label+' is refused (the amount really moved, and is named)',async()=>{
+      await seed(pathOf(jd),jd);
+      const e=edit(jd,Object.assign({},MO,{amount:12500}),{by:'afnan',byName:'Afnan',reason:'the bill'});
+      e.edits[e.edits.length-1].at=at();
+      await assertFails(setDoc(doc(as('afnan'),pathOf(jd)),e));
+    });
+  }
+  await check('V3 control: an edit row four minutes either side of the server\'s clock passes — a phone a little out still records',async()=>{
+    for(const off of [-240000,240000]){
+      await seed(pathOf(jd),jd);
+      const e=edit(jd,Object.assign({},MO,{amount:12500}),{by:'afnan',byName:'Afnan',reason:'the bill'});
+      e.edits[e.edits.length-1].at=NOW()+off;
+      await assertSucceeds(setDoc(doc(as('afnan'),pathOf(jd)),e));
+    }
+  });
+  const jh=mo({});
+  await check('V3: `historical` flipped by an edit whose row names only the note is refused',async()=>{
+    await seed(pathOf(jh),jh);
+    const e=edit(jh,Object.assign({},MO,{note:'n'}),{by:'afnan',byName:'Afnan',reason:'note'});
+    if(!(jh.historical===false&&J(e.edits[0].fields)===J(['note'])))throw new Error(J([jh.historical,e.edits[0].fields]));
+    e.historical=true;
+    await assertFails(setDoc(doc(as('afnan'),pathOf(jh)),e));
+  });
+  // goLive is read where maSettings reads it: ma_settings/main, else the
+  // default. With it moved to 10 Oct, a day moved to 6 Oct is history.
+  const LATE=Object.assign({},JSON.parse(app.run('JSON.stringify(MA_DEFAULT_SETTINGS)')),{goLive:'2026-10-10'});
+  const RL=expr=>JSON.parse(app.run('JSON.stringify((()=>{const IDX=maChartIndex(maChart("groovy"));const S='+J(LATE)+';return '+expr+';})())'));
+  const jl=RL('maBuildDoc("journal",'+J(Object.assign({},MO,{date:'2026-10-12'}))+','+J(meta('afnan'))+',IDX,S)');
+  seq++;jl.no=R('maDocNo("journal",'+J(jl.fy)+','+seq+')');jl.id=jl.no;
+  const moveTo6=()=>RL('maApplyEdit('+J(jl)+',maBuildDoc("journal",'+J(Object.assign({},MO,{date:'2026-10-06'}))+','+J({by:jl.by,byName:jl.byName,ts:jl.ts})+',IDX,S),'+J(nowRow({by:'afnan',byName:'Afnan',reason:'day'}))+')');
+  await seed('ma_settings/main',{goLive:'2026-10-10'});
+  await check('V3 control: with goLive moved to 10 Oct in ma_settings/main, a day moved to 6 Oct becomes history, its date named',async()=>{
+    await seed(pathOf(jl),jl);
+    const e=moveTo6();
+    if(!(jl.historical===false&&e.historical===true&&e.edits[0].fields.indexOf('date')>=0))throw new Error(J([jl.historical,e.historical,e.edits[0].fields]));
+    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(jl)),e));
+  });
+  await check('V3: …and a note edit cannot mark a day before goLive live again (historical true → false)',async()=>{
+    const hist=Object.assign({},jl,{date:'2026-10-06',historical:true});   // 6 Oct, as the builder labels it under a 10 Oct goLive
+    await seed(pathOf(jl),hist);
+    const e=RL('maApplyEdit('+J(hist)+',maBuildDoc("journal",'+J(Object.assign({},MO,{date:'2026-10-06',note:'x'}))+','+J({by:hist.by,byName:hist.byName,ts:hist.ts})+',IDX,S),'+J(nowRow({by:'afnan',byName:'Afnan',reason:'note'}))+')');
+    if(!(e.historical===true&&J(e.edits[0].fields)===J(['note'])))throw new Error(J([e.historical,e.edits[0].fields]));
+    e.historical=false;
+    await assertFails(setDoc(doc(as('afnan'),pathOf(jl)),e));
+  });
+  await env.withSecurityRulesDisabled(async c=>{ await deleteDoc(doc(c.firestore(),'ma_settings/main')); });
 
   console.log('default-deny for anything not named');
   await check('an unlisted ma_ collection (ma_postings) is refused to an owner, read and write',async()=>{

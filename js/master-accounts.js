@@ -428,9 +428,23 @@ function _maMayPaint(){
   if(_maNeedsRelock()){_maShowLock();return false;}
   return true;
 }
+/* The Dashboard card (V5, 29 Sept 2026): _maPopulateDashboard reads nothing
+   while the lock is due, but a card painted BEFORE it came due kept its
+   figures on the owner's first screen for as long as the Dashboard stayed
+   open. Every check below that finds the lock due now swaps them for the
+   locked line. true = the card is showing it. */
+const _MA_CARD_LOCKED='Master Accounts is locked — open it to unlock.';
+function _maCardRelock(){
+  if(typeof document==='undefined'||!document.getElementById||!maCanSee())return false;
+  const card=document.getElementById('ma-dash-body');
+  if(!card||!_maNeedsRelock())return false;
+  if(card.textContent!==_MA_CARD_LOCKED){card.innerHTML='';card.textContent=_MA_CARD_LOCKED;}
+  return true;
+}
 /* An open ma-* page, checked from outside a paint (the tab coming back, the
    timer, a tap). true = the lock is on screen. */
 function _maRelockCheck(){
+  _maCardRelock();
   if(typeof currentPage==='undefined'||!String(currentPage).startsWith('ma-')||!maCanSee())return false;
   return !_maMayPaint();
 }
@@ -438,13 +452,14 @@ if(typeof document!=='undefined'&&document.addEventListener){
   // Keep "active" fresh while someone is working on an ma-* page — but a tap
   // or a key while the lock is due (or showing) shows the lock instead.
   const bump=()=>{
-    if(typeof currentPage==='undefined'||!String(currentPage).startsWith('ma-')||!maCanSee())return;
+    if(_maDeadCheck())return;
+    if(typeof currentPage==='undefined'||!String(currentPage).startsWith('ma-')||!maCanSee()){_maCardRelock();return;}
     if(_maRelockCheck())return;
     if(Date.now()-_maLastTouch>15000)_maTouch();
   };
   document.addEventListener('pointerdown',bump,true);
   document.addEventListener('keyup',bump,true);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)_maRelockCheck();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(_maDeadCheck())return;_maRelockCheck();}});
 }
 if(typeof setInterval==='function')setInterval(_maRelockCheck,30000);
 
@@ -454,45 +469,216 @@ if(typeof setInterval==='function')setInterval(_maRelockCheck,30000);
    on a shared computer the next person, or anyone with DevTools, reads it
    from there whatever the owner-only rules say. So an OWNER's sign-out (the
    module's own list) takes it off: writes still queued get up to five
-   seconds to reach the server, then Firestore is terminated and its
-   IndexedDB copy deleted. Two outcomes are said out loud, never assumed:
+   seconds to reach the server, the other Groovy Ops tabs are told to go to
+   the login, then Firestore is terminated and its IndexedDB copy deleted.
+   What is said out loud, never assumed:
    - writes still queued (offline): the copy is KEPT — deleting it would
      lose them — and the owner is told it stays until they sign out online;
-   - the copy is held by another tab (Firestore's failed-precondition, or a
-     delete that does not finish): nothing is signed out, the tab reloads (a
-     terminated Firestore cannot be used again), and the owner is told to
-     close the other Groovy Ops tabs and sign out again.
+   - ANYONE ELSE's writes still queued on this device (V2, 29 Sept 2026):
+     KEPT too. The copy is ONE IndexedDB database holding every account's
+     unsent writes, kept per uid until that person signs in online again,
+     and deleting it deleted theirs — Mustafa's offline write never reached
+     the server after Afnan signed in and out on the same phone (verified
+     with the real SDK 10.12.2). Never delete another person's unsent work:
+     the queue is read first (_maQueuedAny), and when it cannot be read the
+     copy is kept as well — fail safe;
+   - the copy is held by another tab (Firestore's failed-precondition, a
+     delete that does not finish, or a terminate that does not — V11):
+     "stay". Sign out leaves this person signed in, the tab reloads (a
+     terminated Firestore cannot be used again), and they are told to close
+     the other Groovy Ops tabs and sign out again. The lock's "Use password
+     instead" signs out anyway (`leaving`, V1), and is told the copy stayed.
    Called by doLogout and lockUsePassword (js/auth.js) behind typeof; a
    cached index.html without the three bridged functions signs out exactly
-   as before. → {skipped} | {cleared} | {kept} | {stay} | {failed}, with
-   the message said. */
+   as before. → {skipped} | {cleared} | {kept, why} | {stay} | {failed},
+   with the message said. ONE run per tab (V7): a second call gets the
+   first call's promise — the first has stopped Firestore, and a second run
+   on it said "kept" while the first was deleting. */
 let _maOffWait=5000;
+let _maOffP=null;
 function _maSayOff(m){if(typeof alert==='function'){try{alert(m);return;}catch(_){}}_maToast(m);}
-async function _maBooksOffDevice(){
+const _MA_KEPT={
+  queued:'You are signed out — but this device keeps its offline copy of the books. Some changes have not reached the server yet, and removing the copy would lose them. Sign in again when you are online, let them send, then sign out: that removes it.',
+  others:'You are signed out — but this device keeps its offline copy of the books. Someone else who signs in on this device has changes that have not reached the server yet, and removing the copy would lose them. Once they have signed in online and their changes have gone, sign in and sign out again: that removes it.',
+  unchecked:'You are signed out — but this device keeps its offline copy of the books: it could not be checked for changes that have not reached the server yet, and removing it could lose them. Sign in and sign out again to try once more.'
+};
+function _maKept(why){const m=_MA_KEPT[why];_maSayOff(m);return {kept:true,why,message:m};}
+/* "stay": signed in still — unless this is the lock's way out (`leaving`),
+   or another tab has signed this person out meanwhile (the broadcast below,
+   with auth shared between tabs); then it says the copy stayed instead. */
+function _maStay(o,cu){
+  const gone=!!(o&&o.leaving)||(!!cu&&!(typeof auth!=='undefined'&&auth&&auth.currentUser));
+  const m=gone
+    ?'You are signed out — but the books could not be taken off this device: another Groovy Ops tab still has them open. Close the other Groovy Ops tabs, then sign in and sign out again: that removes them.'
+    :'The books could not be taken off this device: another Groovy Ops tab still has them open. Close the other Groovy Ops tabs and sign out again — you are still signed in.';
+  _maSayOff(m);return {stay:true,message:m};
+}
+/* The IndexedDB database Firestore keeps its copy in — read off the SDK
+   10.12.2 build, the version index.html pins (__PRIVATE_indexedDbStoragePrefix
+   + "main"): firestore/<persistence key = the app's name>/<project>[.<db>]/main.
+   Throws when the instance does not carry what that needs. */
+function _maIdbName(fs){
+  const key=fs&&fs._persistenceKey,id=fs&&fs._databaseId;
+  if(typeof key!=='string'||!key||!id||typeof id.projectId!=='string'||!id.projectId)throw new Error('The offline copy cannot be named.');
+  return 'firestore/'+key+'/'+id.projectId+(id.isDefaultDatabase===false?'.'+id.database:'')+'/main';
+}
+/* Whose writes are still waiting in this device's copy — read from
+   Firestore's OWN queue (SDK 10.12.2: store `mutations`, keyPath batchId,
+   each record carrying its userId — the account's uid, '' signed out; store
+   `mutationQueues`, per userId, with lastAcknowledgedBatchId). A batch
+   waits while its batchId is above its user's last acknowledged one.
+   Read AFTER terminate, and the connection is closed before resolving: an
+   open one would block the delete. → {users:[uid,…]} — anyone whose writes
+   wait, `me` included (anything unsent, after a flush that said none is
+   left, is a reason to keep); rejects whenever it cannot tell. A database
+   that is not there is never created: the version-change of a brand-new
+   one is aborted, and nothing on this device means nothing to lose. */
+function _maQueuedAny(fs){
+  return new Promise((resolve,reject)=>{
+    let idb=null;
+    try{idb=typeof indexedDB!=='undefined'?indexedDB:null;}catch(e){reject(e);return;}
+    if(!idb){resolve({users:[],none:true});return;}   // no IndexedDB: no copy can be on this device
+    let name,req,fresh=false;
+    try{name=_maIdbName(fs);req=idb.open(name);}catch(e){reject(e);return;}
+    req.onupgradeneeded=ev=>{
+      fresh=true;
+      try{ev.target.transaction.abort();}catch(_){}
+    };
+    req.onblocked=()=>reject(new Error('The offline copy is held open.'));
+    req.onerror=ev=>{
+      if(fresh){try{ev.preventDefault();}catch(_){}resolve({users:[],none:true});return;}
+      reject(req.error||new Error('The offline copy could not be opened.'));
+    };
+    req.onsuccess=()=>{
+      const d=req.result;
+      const end=(fn,v)=>{try{d.close();}catch(_){}fn(v);};
+      try{
+        const names=d.objectStoreNames;
+        if(!names||!names.contains('mutations')||!names.contains('mutationQueues')){end(reject,new Error('The offline copy is not the shape this app knows.'));return;}
+        const tx=d.transaction(['mutations','mutationQueues'],'readonly');
+        const qs=tx.objectStore('mutationQueues').getAll();
+        const ms=tx.objectStore('mutations').getAll();
+        tx.oncomplete=()=>{
+          const acked={};
+          (qs.result||[]).forEach(q=>{if(q&&typeof q.userId==='string')acked[q.userId]=Number.isFinite(q.lastAcknowledgedBatchId)?q.lastAcknowledgedBatchId:-1;});
+          const users=[];
+          (ms.result||[]).forEach(m=>{
+            if(!m)return;
+            const u=typeof m.userId==='string'?m.userId:'';
+            const last=Object.prototype.hasOwnProperty.call(acked,u)?acked[u]:-1;
+            if(!(Number(m.batchId)>last))return;   // acknowledged: already on the server
+            if(users.indexOf(u)<0)users.push(u);
+          });
+          end(resolve,{users});
+        };
+        tx.onerror=tx.onabort=()=>end(reject,tx.error||new Error('The offline copy could not be read.'));
+      }catch(e){end(reject,e);}
+    };
+  });
+}
+async function _maBooksOffDevice(o){
+  o=o||{};
   const who=typeof session!=='undefined'&&session&&session.u||'';
-  const email=String(typeof auth!=='undefined'&&auth&&auth.currentUser&&auth.currentUser.email||'').toLowerCase();
+  const cu=typeof auth!=='undefined'&&auth&&auth.currentUser||null;
+  const email=String(cu&&cu.email||'').toLowerCase();
   if(!(_MA_USERS.indexOf(who)>-1||_MA_USERS.some(u=>email===u+'@groovy.op')))return {skipped:'not an owner'};
   if(typeof db==='undefined'||!db||typeof terminate!=='function'||typeof clearIndexedDbPersistence!=='function')return {skipped:'no bridge'};
+  const me=String(cu&&cu.uid||(typeof session!=='undefined'&&session&&session.uid)||'');
   let flushed=true;
   if(typeof waitForPendingWrites==='function'){
     try{flushed=await _maWithin(waitForPendingWrites(db),_maOffWait);}catch(_){flushed=false;}
   }
-  if(!flushed){
-    const m='You are signed out — but this device keeps its offline copy of the books. Some changes have not reached the server yet, and removing the copy would lose them. Sign in again when you are online, let them send, then sign out: that removes it.';
-    _maSayOff(m);return {kept:true,message:m};
-  }
-  try{await terminate(db);}catch(_){}
+  // This person's other Groovy Ops tabs go to the login now, before this
+  // tab stops Firestore under them (V8).
+  _maOffTell(me);
+  if(!flushed)return _maKept('queued');
+  // Bounded like the other two steps (V11): a terminate that never settles
+  // left Sign out waiting for ever — and, before V1, the lock already down.
+  let stopped=true;
+  try{stopped=await _maWithin(Promise.resolve().then(()=>terminate(db)),_maOffWait);}catch(_){}   // refused: the delete below decides, as before
+  if(!stopped)return _maStay(o,cu);
+  let q=null,read=false;
+  try{read=await _maWithin(_maQueuedAny(db).then(r=>{q=r;}),_maOffWait);}catch(_){read=false;}
+  if(!read||!q)return _maKept('unchecked');
+  if(q.users.some(u=>u!==me))return _maKept('others');
+  if(q.users.length)return _maKept('queued');
   let done=false,err=null;
   try{done=await _maWithin(Promise.resolve().then(()=>clearIndexedDbPersistence(db)),_maOffWait);}catch(e){err=e;}
   if(done)return {cleared:true};
-  if(!err||err.code==='failed-precondition'){
-    const m='The books could not be taken off this device: another Groovy Ops tab still has them open. Close the other Groovy Ops tabs and sign out again — you are still signed in.';
-    _maSayOff(m);return {stay:true,message:m};
-  }
+  if(!err||err.code==='failed-precondition')return _maStay(o,cu);
   const m='You are signed out — but the books could not be taken off this device ('+String(err&&err.message||err).slice(0,160)+'). Clear this site’s data in the browser’s settings before someone else uses it.';
   _maSayOff(m);return {failed:true,message:m};
 }
-window.maBooksOffDevice=function(){return _maBooksOffDevice();};
+window.maBooksOffDevice=function(o){if(!_maOffP)_maOffP=_maBooksOffDevice(o);return _maOffP;};
+
+/* ── The other tabs (V8, 29 Sept 2026) ────────────────────────────────────
+   One tab's sign-out used to leave every other Groovy Ops tab signed in but
+   BROKEN: deleting the copy terminates their Firestore too (the SDK's
+   database-deleted listener), every read then fails with "The client has
+   already been terminated.", and js/shared.js ignores a signed-out auth
+   while a session is set. Now:
+   - before it stops Firestore, the signing-out tab tells the others
+     (BroadcastChannel, and a localStorage key for a browser without it);
+     a tab signed in as THAT person goes to the login;
+   - a tab whose Firestore has been terminated under it — read off the
+     client's own queue, or seen in an uncaught "client has already been
+     terminated" error — goes to the login too, whoever it belongs to: it
+     cannot read or write anything until it reloads.
+   Going to the login = signed out here, the tab's `u` cleared (a cold
+   start), and a reload. This tab never acts on its own sign-out. */
+const _MA_OFF_KEY='groovy-ma-signout';
+let _maBc=null;
+let _maToLoginP=null;
+function _maOffTell(uid){
+  const m={t:'signout',uid:String(uid||''),at:Date.now(),n:Math.random().toString(36).slice(2,10)};
+  try{if(_maBc)_maBc.postMessage(m);}catch(_){}
+  try{localStorage.setItem(_MA_OFF_KEY,JSON.stringify(m));}catch(_){}
+}
+function _maToLogin(){
+  if(_maToLoginP||_maOffP)return _maToLoginP;
+  _maToLoginP=(async()=>{
+    try{sessionStorage.removeItem('u');sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}
+    try{if(typeof signOut==='function'&&typeof auth!=='undefined'&&auth)await signOut(auth);}catch(_){}
+    try{session=null;}catch(_){}
+    try{location.reload();}catch(_){}
+  })();
+  return _maToLoginP;
+}
+/* Another tab signed a person out. true = this tab is going to the login. */
+function _maOffHeard(m){
+  if(!m||m.t!=='signout'||_maOffP||_maToLoginP)return false;
+  const mine=String(typeof auth!=='undefined'&&auth&&auth.currentUser&&auth.currentUser.uid||typeof session!=='undefined'&&session&&session.uid||'');
+  if(!mine||!m.uid||m.uid!==mine)return false;   // at the login already, or someone else in this tab
+  _maToLogin();return true;
+}
+/* Has this tab's Firestore been terminated under it? The SDK 10.12.2
+   client's queue (the instance's _queue) says so the moment it happens. */
+function _maFsDead(){
+  try{return !!(typeof db!=='undefined'&&db&&db._queue&&db._queue.isShuttingDown===true);}catch(_){return false;}
+}
+function _maTerminatedErr(e){
+  return !!(e&&/failed-precondition/.test(String(e.code||''))&&/client has already been terminated/i.test(String(e.message||'')));
+}
+/* true = this tab is going to the login. `seen` = an error already proved it. */
+function _maDeadCheck(seen){
+  if(_maOffP||_maToLoginP)return false;
+  if(typeof session==='undefined'||!session)return false;
+  if(!seen&&!_maFsDead())return false;
+  _maToLogin();return true;
+}
+try{
+  if(typeof BroadcastChannel==='function'){_maBc=new BroadcastChannel(_MA_OFF_KEY);_maBc.onmessage=e=>{_maOffHeard(e&&e.data);};}
+}catch(_){_maBc=null;}
+if(typeof window!=='undefined'&&window&&typeof window.addEventListener==='function'){
+  window.addEventListener('storage',e=>{
+    if(!e||e.key!==_MA_OFF_KEY||!e.newValue)return;
+    let m=null;try{m=JSON.parse(e.newValue);}catch(_){return;}
+    _maOffHeard(m);
+  });
+  window.addEventListener('unhandledrejection',e=>{if(_maTerminatedErr(e&&e.reason))_maDeadCheck(true);});
+  window.addEventListener('error',e=>{if(_maTerminatedErr(e&&e.error))_maDeadCheck(true);});
+}
+if(typeof setInterval==='function')setInterval(()=>{_maDeadCheck();},30000);
 function _maLockHTML(){
   const mins=Math.round(_maRelockMs()/60000);
   const finger=typeof lockEnabledFor==='function'&&typeof _lockShow==='function'&&lockEnabledFor(session.uid);
@@ -506,8 +692,28 @@ function _maLockHTML(){
     <button class="ma-btn${finger?'':' primary'} ma-lock-btn" onclick="window.maUnlockPassword()">Unlock</button>
   </div></div>`;
 }
+/* The fingerprint opens the books ONLY on a real check (V9, 29 Sept 2026).
+   It borrows the app lock's screen, whose unlock runs its callback when the
+   lock record is gone or WebAuthn is missing — "nothing to guard", right
+   for the app lock, which must never strand anyone — and the books opened
+   on that, audited "Unlocked with fingerprint", with no fingerprint. Now
+   this device must hold the lock record AND be able to ask before the
+   screen comes up, and the callback opens the books only when _lockDone
+   says a fingerprint was verified (js/auth.js). Anything less asks for the
+   password (maUnlockPassword: reauthenticateWithCredential). */
+function _maFingerMiss(msg){
+  const el=document.getElementById('ma-lock-err');if(el)el.textContent=msg;
+  const pw=document.getElementById('ma-lock-pw');if(pw&&typeof pw.focus==='function'){try{pw.focus();}catch(_){}}
+}
 window.maUnlockFinger=function(){
-  try{_lockShow(session,()=>_maUnlocked('fingerprint'));}catch(e){const el=document.getElementById('ma-lock-err');if(el)el.textContent='The fingerprint could not be asked for — use the password.';}
+  const uid=typeof session!=='undefined'&&session&&session.uid;
+  const can=typeof _lockShow==='function'&&typeof lockEnabledFor==='function'&&typeof _lockSupported==='function'
+    &&!!uid&&lockEnabledFor(uid)&&_lockSupported();
+  if(!can){_maFingerMiss('No fingerprint can be checked on this device — type your password.');return false;}
+  try{
+    _lockShow(session,ok=>{if(ok===true)_maUnlocked('fingerprint');else _maFingerMiss('Your fingerprint was not checked — type your password.');});
+    return true;
+  }catch(e){_maFingerMiss('The fingerprint could not be asked for — use the password.');return false;}
 };
 window.maUnlockPassword=async function(){
   const inp=document.getElementById('ma-lock-pw');const err=document.getElementById('ma-lock-err');

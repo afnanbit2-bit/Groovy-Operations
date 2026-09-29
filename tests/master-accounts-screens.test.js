@@ -866,7 +866,10 @@ module.exports=async function(){
     s.eq('Sign out: the books come off first, then the sign-out',J(await drive('doLogout',{cleared:true})),J(['books','signOut','reload']));
     s.eq('…and while another tab holds them, nothing is signed out',J(await drive('doLogout',{stay:true})),J(['books','reload']));
     s.eq('"Use password instead" on the lock does the same',J(await drive('lockUsePassword',{cleared:true})),J(['books','signOut','reload']));
-    s.eq('…and honours "stay" too',J(await drive('lockUsePassword',{stay:true})),J(['books','reload']));
+    // V1 (M1.6c security): "Use password instead" must NEVER reload into a
+    // signed-in app — that walked straight past the lock. On "stay" it still
+    // signs out; the books copy stays on the device and says so.
+    s.eq('…and on "stay" it still signs out — never reloads into a signed-in app (V1)',J(await drive('lockUsePassword',{stay:true})),J(['books','signOut','reload']));
   }
 
   return s;
