@@ -110,11 +110,11 @@ module.exports=async function(){
     s.ok('no orderBy in the scan — ordering happens in memory, so no composite index is needed',fnSrc.length>0&&!/orderBy\s*\(/.test(fnSrc));
   }
 
-  s.section('a parcel with no receipt number yet — asked every run, first, as before');
+  s.section('a parcel with no receipt number yet — asked first, at most once a day');
   {
     const w=world({
       N1:parcel('N1'),
-      N2:parcel('N2',{status:'Returned',statusCategory:'returned',cod:0,cprCheckedAt:T-HOUR}),
+      N2:parcel('N2',{status:'Returned',statusCategory:'returned',cod:0,cprCheckedAt:T-2*DAY}),
       N3:parcel('N3')
     },{
       N1:ok({trackingNumber:'N1',orderRefNumber:'#N1',cpr1:'CPR-7001',cpr1Date:at(T-2*DAY),settle:false}),
@@ -122,7 +122,7 @@ module.exports=async function(){
       // N3: PostEx does not know it — a 404
     });
     const r=await enrich(w);
-    s.eq('all three asked, in the order the query returned them',J(w.api.calls),J(['N1','N2','N3']));
+    s.eq('all three asked, never checked first, then the one stamped 2 days ago',J(w.api.calls),J(['N1','N3','N2']));
     s.eq('with the token it was given',J(w.api.tokens),J(['tok-test','tok-test','tok-test']));
     s.eq('N1 gains its upfront receipt number',P(w,'N1').cprNumber_1,'CPR-7001');
     s.eq('…and its date',P(w,'N1').cpr1Date,at(T-2*DAY));
@@ -133,7 +133,8 @@ module.exports=async function(){
     s.ok('a 404 writes nothing, as before',!('cprCheckedAt' in P(w,'N3')),J(P(w,'N3')));
     s.eq('counted: 3 awaiting a receipt, 3 candidates, 3 processed',J([r.awaitingCpr,r.candidates,r.processed]),J([3,3,3]));
     s.eq('enriched 2, cprFound 1, notFound 1, no re-checks, no errors',J([r.enriched,r.cprFound,r.notFound,r.rechecked,r.errors]),J([2,1,1,0,0]));
-    s.eq('an hour later the two still without a receipt are asked again — no throttle before the first receipt',J(await asks(w,{now:()=>T+HOUR})),J(['N2','N3']));
+    s.eq('an hour later only N3 is asked: N2 was stamped an hour ago, a 404 writes no stamp',J(await asks(w,{now:()=>T+HOUR})),J(['N3']));
+    s.eq('a day later both are asked again',J(await asks(w,{now:()=>T+DAY})),J(['N3','N2']));
   }
 
   s.section('a parcel holding only its upfront receipt is asked again — and gains the reserve receipt and settle');
@@ -305,7 +306,7 @@ module.exports=async function(){
   {
     // The catch-up never starves a parcel waiting for its first receipt.
     const w=world({G1:upfront('G1',{cpr1Date:'2026-05-20T11:00:00',cprCheckedAt:T-90*DAY}),Gn:parcel('Gn')},{Gn:ok({trackingNumber:'Gn',cpr1:'CPR-Gn'}),G1:ok({trackingNumber:'G1'})});
-    s.eq('limit 1: the parcel with no receipt yet goes first, the backlog after',J(await asks(w,{limit:1})),J(['Gn']));
+    s.eq('limit 2: the parcel with no receipt yet and one backlog parcel, both',J(await asks(w,{limit:2})),J(['Gn','G1']));
   }
 
   s.section('priority when the limit is smaller than the list');
@@ -324,7 +325,9 @@ module.exports=async function(){
     for(const limit of [1,3,4,10]){
       const w=world(seed,answerAll(seed));
       const r=await enrich(w,{limit,concurrency:5});
-      s.eq('limit '+limit+': '+order.slice(0,limit).join(', '),J(w.api.calls),J(order.slice(0,limit)));
+      // Limit 1: the quarter kept for re-checks rounds up to the one slot.
+      const want=limit===1?['Pb']:order.slice(0,limit);
+      s.eq('limit '+limit+': '+want.join(', '),J(w.api.calls),J(want));
       if(limit===3)s.eq('limit 3 counted: 6 candidates, 3 processed, 1 of them a re-check, 2 awaiting + 4 due',
         J([r.candidates,r.processed,r.rechecked,r.awaitingCpr,r.recheckDue]),J([6,3,1,2,4]));
     }
@@ -434,6 +437,87 @@ module.exports=async function(){
     const meta=st.docs['postex_sync_meta/payments_run']||{};
     s.eq('?limit=2 on the scheduled handler: 3 candidates, 2 processed',J([meta.candidates,meta.processed]),J([3,2]));
     s.ok('…and it logs its summary',logs.some(l=>/\[postex-payments\] done/.test(l)),J(logs));
+  }
+
+  s.section('starvation: a long queue of parcels with no receipt cannot crowd out the re-checks');
+  {
+    const seed={};
+    for(let i=0;i<600;i++){const id='F'+String(i).padStart(3,'0');seed[id]=parcel(id);}
+    for(let i=0;i<300;i++){const id='D'+String(i).padStart(3,'0');seed[id]=upfront(id);}
+    const w=world(seed,answerAll(seed));
+    const r=await enrich(w,{limit:500,concurrency:5});
+    s.ok('limit 500, 600 with no receipt + 300 due: at least 125 re-checks',r.rechecked>=125,J([r.rechecked,r.processed]));
+    s.eq('exactly the reserved quarter is used, the rest is no-receipt parcels',J([r.reservedForRecheck,r.rechecked,r.processed]),J([125,125,500]));
+    s.eq('the other 375 are parcels with no receipt',w.api.calls.filter(t=>t[0]==='F').length,375);
+  }
+  {
+    const seed={};
+    for(let i=0;i<10;i++){const id='F'+i;seed[id]=parcel(id);}
+    seed.D0=upfront('D0');
+    const w=world(seed,answerAll(seed));
+    const r=await enrich(w,{limit:8});
+    s.eq('a re-check share nobody uses goes back: 1 due of 8 reserves 1, the other 7 slots go to new parcels',J([r.reservedForRecheck,r.rechecked,r.processed]),J([1,1,8]));
+    const w2=world({F1:parcel('F1'),F2:parcel('F2')},answerAll({F1:1,F2:1}));
+    const r2=await enrich(w2,{limit:8});
+    s.eq('nothing due: nothing reserved',J([r2.reservedForRecheck,r2.processed]),J([0,2]));
+    const w3=world({F1:parcel('F1'),F2:parcel('F2'),F3:parcel('F3'),F4:parcel('F4'),F5:parcel('F5'),D0:upfront('D0')},answerAll({F1:1,F2:1,F3:1,F4:1,F5:1,D0:1}));
+    const r3=await enrich(w3,{limit:4});
+    s.eq('reserve is never more than what is due: limit 4 reserves 1, the due parcel is asked',J([r3.reservedForRecheck,w3.api.calls.indexOf('D0')>=0]),J([1,true]));
+  }
+  {
+    // No-receipt parcels: once a day, least recently checked first, never checked first.
+    const seed={
+      A1:parcel('A1',{cprCheckedAt:T-3*DAY}),
+      A2:parcel('A2'),
+      A3:parcel('A3',{cprCheckedAt:T-5*DAY}),
+      A4:parcel('A4',{cprCheckedAt:T-HOUR}),
+      A5:parcel('A5',{cprCheckedAt:T-DAY})
+    };
+    const w=world(seed,{});
+    const r=await enrich(w);
+    s.eq('never checked first, then longest since checked; one checked an hour ago is left out',J(w.api.calls),J(['A2','A3','A1','A5']));
+    s.eq('counted: 4 awaiting, 1 throttled for the day',J([r.awaitingCpr,r.awaitingThrottled]),J([4,1]));
+  }
+
+  s.section('a receipt number is first-wins; a different one is recorded as a conflict');
+  {
+    const seed={K1:upfront('K1'),K2:upfront('K2'),K3:upfront('K3',{cprNumber_1:null,cpr1Date:null,cprNumber_2:'RES-K3',cpr2Date:at(T-2*DAY)})};
+    const w=world(seed,{
+      K1:ok({trackingNumber:'K1',cpr1:'CPR-OTHER',cpr1Date:at(T-9*DAY),cpr2:'RES-K1',cpr2Date:at(T-DAY)}),
+      K2:ok({trackingNumber:'K2',cpr1:'CPR-K2',cpr1Date:at(T-9*DAY)}),
+      K3:ok({trackingNumber:'K3',cpr2:'RES-DIFFERENT'})
+    });
+    const r=await enrich(w);
+    s.eq('a different upfront number: the stored one stays',P(w,'K1').cprNumber_1,'CPR-K1');
+    s.eq('…the conflict is recorded',J(P(w,'K1').cprConflict),J({field:'cprNumber_1',stored:'CPR-K1',received:'CPR-OTHER',at:T}));
+    s.eq('…but a reserve number, a date and the stamp still land',J([P(w,'K1').cprNumber_2,P(w,'K1').cpr1Date,P(w,'K1').cprCheckedAt]),J(['RES-K1',at(T-9*DAY),T]));
+    s.eq('the same number again: no conflict',J([P(w,'K2').cprNumber_1,'cprConflict' in P(w,'K2')]),J(['CPR-K2',false]));
+    s.eq('a different reserve number: stored one stays, conflict names cprNumber_2',J([P(w,'K3').cprNumber_2,P(w,'K3').cprConflict&&P(w,'K3').cprConflict.field]),J(['RES-K3','cprNumber_2']));
+    s.eq('counted: 2 conflicts',r.conflicts,2);
+  }
+
+  s.section('the CPR tab shows the receipt\'s own date');
+  {
+    const {loadApp}=require('./harness');
+    const a=loadApp({files:['js/fulfillment.js'],currentPage:'fulfillment'});
+    const dates=orders=>{
+      a.run('postexOrders='+J(orders)+';1');
+      return a.run('_postexCPRs().cprs.map(c=>[c.cpr,c.date])');
+    };
+    const base={statusCategory:'delivered',cod:100};
+    const rows=dates([
+      Object.assign({},base,{cprNumber_1:'U1',cpr1Date:'2026-08-01',settlementDate:'2026-08-20',cpr2Date:'2026-08-15'}),
+      Object.assign({},base,{cprNumber_2:'R1',cpr2Date:'2026-08-15',cpr1Date:'2026-08-01',settlementDate:'2026-08-20'}),
+      Object.assign({},base,{cprNumber_1:'U2',settlementDate:'2026-08-20',cpr2Date:'2026-08-15'}),
+      Object.assign({},base,{cprNumber_1:'U3',cpr2Date:'2026-08-15'}),
+      Object.assign({},base,{cprNumber_1:'U4',cpr1Date:'2026-08-01'})
+    ]);
+    const m={};rows.forEach(r=>{m[r[0]]=r[1];});
+    s.eq('keyed by the upfront number: cpr1Date, not the later settlement date',m.U1,'2026-08-01');
+    s.eq('keyed by the reserve number: cpr2Date',m.R1,'2026-08-15');
+    s.eq('own date missing: the settlement date',m.U2,'2026-08-20');
+    s.eq('own and settlement missing: the other receipt\'s date',m.U3,'2026-08-15');
+    s.eq('own date only',m.U4,'2026-08-01');
   }
 
   s.section('no run threw');

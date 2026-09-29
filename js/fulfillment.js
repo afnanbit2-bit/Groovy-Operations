@@ -978,7 +978,11 @@ function _postexCPRs(){
     if(delivered)m.delivered++;else if(c==='returned')m.returned++;
     m.gross+=gross;m.net+=net;
     if(o.settle===true)m.settled++;
-    const dt=o.settlementDate||o.cpr1Date||o.cpr2Date||null;
+    // A receipt shows its OWN date: the upfront date for a group keyed by the
+    // upfront number, the reserve date for one keyed by the reserve number.
+    // Only when that is missing: the settlement date, then the other receipt's.
+    const own=o.cprNumber_1?o.cpr1Date:o.cpr2Date, other=o.cprNumber_1?o.cpr2Date:o.cpr1Date;
+    const dt=own||o.settlementDate||other||null;
     if(dt&&(!m.date||String(dt)>String(m.date)))m.date=dt;
   }
   const cprs=Object.values(map).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));

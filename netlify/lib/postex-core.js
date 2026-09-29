@@ -236,6 +236,8 @@ const CPR_GIVE_UP_DAYS = 120;
 // 3 days when the scan three days on starts at 03:00, and every re-check would
 // slide to the fourth day. The hour covers the run's own 15-minute budget.
 const CPR_RECHECK_MS = 3 * DAY_MS - 3600000;
+// When re-checks are due, this share of the per-run limit is kept for them.
+const CPR_RECHECK_SHARE = 0.25;
 
 // A value PostEx actually gave: the `||` test this file has always used
 // (0, "", false, null and undefined are not values), and not a blank string.
@@ -314,20 +316,36 @@ function cprState(d, nowMs) {
 // can add a value or replace it with another, never blank it; settle is only
 // ever written as true. The stamp (cprCheckedAt, and cprRecheckedAt on a
 // re-check) always goes with it.
-function cprUpdate(dist, stamp) {
+//
+// A receipt NUMBER is first-wins: once one is stored, a DIFFERENT non-blank one
+// from PostEx is not written; the disagreement is recorded on the parcel as
+// cprConflict {field, stored, received, at} and the caller counts it. Dates,
+// settle and settlementDate may still move to a newer value.
+function cprUpdate(dist, stamp, stored) {
   const upd = Object.assign({}, stamp);
+  stored = stored || {};
   const put = (field, ...vals) => {
     const v = vals.find(cprHas);
     if (v !== undefined) upd[field] = v;
+  };
+  const putNumber = (field, ...vals) => {
+    const v = vals.find(cprHas);
+    if (v === undefined) return;
+    const was = stored[field];
+    if (cprHas(was) && String(was).trim() !== String(v).trim()) {
+      upd.cprConflict = { field, stored: was, received: v, at: stamp.cprCheckedAt };
+      return;
+    }
+    upd[field] = v;
   };
   if (dist.settle === true) upd.settle = true;
   put("settlementDate", dist.settlementDate);
   // Actual API field names are cpr1 / cpr1Date (not the PDF's
   // cprNumber_1 / upfrontPaymentDate); cpr2 / cpr2Date carry the
   // reserve-payment receipt. Fall back to the PDF names just in case.
-  put("cprNumber_1", dist.cpr1, dist.cprNumber_1);
+  putNumber("cprNumber_1", dist.cpr1, dist.cprNumber_1);
   put("cpr1Date", dist.cpr1Date, dist.upfrontPaymentDate);
-  put("cprNumber_2", dist.cpr2, dist.cprNumber_2);
+  putNumber("cprNumber_2", dist.cpr2, dist.cprNumber_2);
   put("cpr2Date", dist.cpr2Date, dist.reservePaymentDate);
   return upd;
 }
@@ -349,12 +367,22 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5, fetchStatu
       "settle", "cpr1Date", "cpr2Date", "upfrontPaymentDate", "transactionDate", "cprRecheckedAt")
     .get();
   const fresh = [], due = [];
-  let throttled = 0, gaveUp = 0, pastWindowUnchecked = 0;
+  let throttled = 0, gaveUp = 0, pastWindowUnchecked = 0, awaitingThrottled = 0;
   snap.forEach((doc) => {
     const d = doc.data();
-    const c = { id: doc.id, trackingNumber: d.trackingNumber || doc.id, hadReserve: cprHas(d.cprNumber_2) };
+    const c = { id: doc.id, trackingNumber: d.trackingNumber || doc.id, hadReserve: cprHas(d.cprNumber_2),
+      stored: { cprNumber_1: d.cprNumber_1, cprNumber_2: d.cprNumber_2 } };
     const state = cprState(d, start);
-    if (state === "new") { fresh.push(c); return; }
+    if (state === "new") {
+      // Asked at most once a day, least recently checked first (never checked
+      // goes before them all; the query's order breaks ties).
+      const fat = typeof d.cprCheckedAt === "number" && isFinite(d.cprCheckedAt) ? d.cprCheckedAt : null;
+      if (fat !== null && start - fat < DAY_MS) { awaitingThrottled++; return; }
+      c.at = fat;
+      c.n = fresh.length;
+      fresh.push(c);
+      return;
+    }
     if (state === "gaveUp") gaveUp++;
     if (state === "lastCheck") pastWindowUnchecked++;
     if (state !== "waiting" && state !== "lastCheck") return;
@@ -366,14 +394,21 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5, fetchStatu
     due.push(c);
   });
   // Least recently checked first; one never stamped goes before them all.
-  due.sort((a, b) => (a.at === b.at ? a.n - b.n : a.at === null ? -1 : b.at === null ? 1 : a.at - b.at));
-  // No receipt number yet comes first, exactly as before; the re-checks share
-  // whatever the per-run limit leaves.
+  const byAge = (a, b) => (a.at === b.at ? a.n - b.n : a.at === null ? -1 : b.at === null ? 1 : a.at - b.at);
+  due.sort(byAge);
+  fresh.sort(byAge);
+  // Parcels with no receipt number yet come first, but when re-checks are due
+  // at least a quarter of the limit is kept for them, so a long queue of
+  // never-paid parcels cannot starve them; whatever share they do not use goes
+  // back to the parcels with no receipt.
   const candidates = fresh.concat(due);
-  const batch = candidates.slice(0, limit);
+  const reservedForRecheck = due.length ? Math.min(due.length, Math.ceil(limit * CPR_RECHECK_SHARE)) : 0;
+  const freshTake = fresh.slice(0, Math.max(0, limit - reservedForRecheck));
+  const dueTake = due.slice(0, Math.max(0, limit - freshTake.length));
+  const batch = freshTake.concat(dueTake);
   const rechecked = batch.filter((c) => c.recheck).length;
 
-  let enriched = 0, settled = 0, errors = 0, notFound = 0, cprFound = 0, reserveFound = 0;
+  let conflicts = 0, enriched = 0, settled = 0, errors = 0, notFound = 0, cprFound = 0, reserveFound = 0;
   let idx = 0;
   async function worker() {
     while (idx < batch.length) {
@@ -400,7 +435,8 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5, fetchStatu
         }
         const dist = data && data.dist;
         if (dist && (dist.trackingNumber || dist.orderRefNumber)) {
-          const upd = cprUpdate(dist, stamp());
+          const upd = cprUpdate(dist, stamp(), c.stored);
+          if (upd.cprConflict) conflicts++;
           await ref.set(upd, { merge: true });
           enriched++;
           if (dist.settle === true) settled++;
@@ -420,7 +456,10 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5, fetchStatu
     candidates: candidates.length,  // all this run could ask about: awaitingCpr + recheckDue
     processed: batch.length,
     enriched, settled, cprFound, notFound, errors,
-    awaitingCpr: fresh.length,      // no receipt number yet (asked first)
+    awaitingCpr: fresh.length,      // no receipt number yet, not asked in the last day (asked first)
+    awaitingThrottled,              // no receipt number yet, asked in the last day
+    reservedForRecheck,             // of limit, kept for the re-checks when any are due
+    conflicts,                      // a different receipt number came back: the stored one kept
     recheckDue: due.length,         // hold a receipt, not finished, due a re-check
     throttled,                      // hold a receipt, not finished, asked in the last 3 days
     gaveUp,                         // hold a receipt, not finished, past the window, re-checked since

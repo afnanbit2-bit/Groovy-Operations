@@ -103,11 +103,11 @@ module.exports=function(){
     // put("field", …) — settle only as true, and the stamp {cprCheckedAt,
     // cprRecheckedAt}. Read from the source, so a renamed field fails here.
     const upd=slice('function cprUpdate(','\n}\n'),stampLine=slice('c.recheck ?','\n');
-    const enrich=(upd.match(/put\("([A-Za-z_]\w*)"/g)||[]).map(x=>x.slice(5,-1))
+    const enrich=(upd.match(/\b(?:put|putNumber)\("([A-Za-z_]\w*)"/g)||[]).map(x=>x.replace(/^\w+\("|"$/g,''))
       .concat((upd.match(/\bupd\.([A-Za-z_]\w*)\s*=/g)||[]).map(x=>x.replace(/^upd\.|\s*=$/g,'')))
       .concat((stampLine.match(/([A-Za-z_]\w*)\s*:\s*t\b/g)||[]).map(x=>x.replace(/\s*:.*$/,'')));
-    s.eq('cprUpdate writes the receipts, their dates, settle and the two stamps',Array.from(new Set(enrich)).sort().join(','),
-      'cpr1Date,cpr2Date,cprCheckedAt,cprNumber_1,cprNumber_2,cprRecheckedAt,settle,settlementDate');
+    s.eq('cprUpdate writes the receipts, their dates, settle, the two stamps and a conflict note',Array.from(new Set(enrich)).sort().join(','),
+      'cpr1Date,cpr2Date,cprCheckedAt,cprConflict,cprNumber_1,cprNumber_2,cprRecheckedAt,settle,settlementDate');
     const written=new Set(keys(slice('function normalize(order)','\n}\n')).concat(enrich));
     s.ok('postex-core\'s normalize and enrichPayments were found and read',written.has('cod')&&written.has('cprNumber_2')&&written.size>=25,written.size);
     const src=read('js/ma-core.js');
