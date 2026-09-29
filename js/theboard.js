@@ -150,10 +150,12 @@ const _TB_NOTIF_BUCKET_MS=10*60*1000;   // spec §5: dedupe window
 /** Deterministic id: the same actor, type and item inside one 10-minute
  *  bucket is ONE row, so several devices (or a double click) cannot stack
  *  duplicates, and a dismissed notification is never raised again. Pure. */
-function _tbNotifId(type,itemId,fromUid,atMs){
+function _tbNotifId(type,itemId,fromUid,atMs,forUid){
   const bucket=Math.floor(Number(atMs||0)/_TB_NOTIF_BUCKET_MS);
   const clean=s=>String(s==null?'':s).replace(/[^A-Za-z0-9_-]/g,'');
-  return'tb_'+clean(type)+'_'+clean(itemId)+'_'+clean(fromUid)+'_'+bucket;
+  // The RECIPIENT is part of the id: one action that tells three people
+  // must write three rows, not one row three times over.
+  return'tb_'+clean(type)+'_'+clean(itemId)+'_'+clean(fromUid)+(forUid?'_'+clean(forUid):'')+'_'+bucket;
 }
 
 /** The row this module writes into hrm_notifications. Pure — the caller
@@ -339,9 +341,12 @@ function _tbLiveStart(seedMaps,seedBad){
   if(typeof onSnapshot!=='function')return;           // an old cached shell: stay static
   const uid=_tbMe();
   if(!uid)return;
-  if(_tbLive&&_tbLive.uid===uid){
-    // A re-read (Retry, or a refused write) refreshes the maps; the
-    // listeners carry on.
+  // A listener that ERRORED is dead -- Firestore ends it -- so a re-read
+  // (Retry) after a failure must start fresh ones, or the board recovers
+  // once and then never hears a colleague again.
+  const hadFailure=!!(_tbLive&&_tbLive.bad&&Object.keys(_tbLive.bad).length);
+  if(_tbLive&&_tbLive.uid===uid&&!hadFailure){
+    // A re-read (a refused write) refreshes the maps; the listeners carry on.
     Object.assign(_tbLive.maps,seedMaps||{});
     _tbLive.bad=Object.assign({},seedBad||{});
     return;
@@ -535,6 +540,7 @@ function tbItemPatch(item,patch,uid,now,reason){
     if(k==='date'||k==='dueAt')return;             // handled below
     if(JSON.stringify(p[k])!==JSON.stringify(it[k]))out[k]=p[k];
   });
+  if('date' in p && p.date && !tbDateSane(p.date))delete p.date;      // never store a day the board cannot draw
   if('date' in p && (p.date||null)!==(it.date||null)){
     const from=it.date||null,to=p.date||null;
     out.date=to;
@@ -626,6 +632,12 @@ function _tbDayMonth(from,day,mon){
   // gone", further reads as "next year".
   return _tbDaysBetween(same,from)>180?((y+1)+'-'+p(mon+1)+'-'+p(day)):same;
 }
+/** A real calendar day in a range the board can draw. Pure. */
+function tbDateSane(s){
+  if(!_tbValidDay(s))return false;
+  const y=Number(String(s).slice(0,4));
+  return y>=2000&&y<=2100;
+}
 function _tbValidDay(s){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(s||'')))return false;
   const p=String(s).split('-').map(Number);
@@ -685,7 +697,13 @@ function tbParseQuickAdd(text,ctx){
     return m;                       // not on the board → left in the title, verbatim
   });
   // #lane
-  s=s.replace(/(\s)#([a-z0-9-]+)/gi,(m,sp,l)=>{out.lane=String(l).toLowerCase();return sp;});
+  // Only a REAL lane is taken out of the title: "PO #4521" and "issue #12"
+  // are text, and an unknown lane stored on an item matches nothing.
+  s=s.replace(/(\s)#([a-z0-9-]+)/gi,(m,sp,l)=>{
+    const k=String(l).toLowerCase();
+    if(TB_LANES.indexOf(k)<0)return m;
+    out.lane=k;return sp;
+  });
 
   // dates — first match wins, so the order of these tests is the grammar
   const tryDate=(re,fn)=>{
@@ -701,10 +719,15 @@ function tbParseQuickAdd(text,ctx){
   if(today){
     tryDate(/(\s)today(?=\s)/i,()=>today);
     tryDate(/(\s)tomorrow(?=\s)/i,()=>_tbDayAdd(today,1));
-    tryDate(/(\s)(mon|tue|wed|thu|fri|sat|sun)[a-z]*(?=\s)/i,(m,sp,d)=>_tbNextDow(today,_TB_DOW.indexOf(String(d).toLowerCase())));
-    tryDate(/(\s)(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?=\s)/i,
+    // CLOSED alternations: "satin", "monitor", "monthly", "wedding" and
+    // "friend" start with a day or month but are not one, and used to be
+    // eaten from the title and turned into a date.
+    const DOW='(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)';
+    const MON='(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+    tryDate(new RegExp('(\\s)'+DOW+'(?=\\s)','i'),(m,sp,d)=>_tbNextDow(today,_TB_DOW.indexOf(String(d).toLowerCase().slice(0,3))));
+    tryDate(new RegExp('(\\s)'+MON+'\\s+(\\d{1,2})(?=\\s)','i'),
       (m,sp,mon,day)=>_tbDayMonth(today,Number(day),_TB_MONTHS.indexOf(String(mon).toLowerCase().slice(0,3))));
-    tryDate(/(\s)(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?=\s)/i,
+    tryDate(new RegExp('(\\s)(\\d{1,2})\\s+'+MON+'(?=\\s)','i'),
       (m,sp,day,mon)=>_tbDayMonth(today,Number(day),_TB_MONTHS.indexOf(String(mon).toLowerCase().slice(0,3))));
     tryDate(/(\s)(\d{1,2})\/(\d{1,2})(?=\s)/,(m,sp,d,mo)=>_tbDayMonth(today,Number(d),Number(mo)-1));
   }
@@ -791,7 +814,12 @@ function tbNeedsDate(items,uid){
 }
 function tbNext7(items,uid,today){
   const end=_tbDayAdd(today,7);
-  return (items||[]).filter(i=>_tbOpen(i)&&_tbMine(i,uid)&&i.date&&i.date>today&&i.date<=end).sort(_tbByDate);
+  // Like every group above it, not a repeat of one: BOARD.md says the
+  // Dashboard does not double-count, and an item starred into My Day or
+  // assigned to me by someone else used to be drawn twice.
+  const above=new Set(tbOverdue(items,uid,today).concat(tbDueToday(items,uid,today))
+    .concat(tbMyDay(items,uid,today)).concat(tbAssignedToMe(items,uid,today)).map(i=>i.id));
+  return (items||[]).filter(i=>_tbOpen(i)&&_tbMine(i,uid)&&i.date&&i.date>today&&i.date<=end&&!above.has(i.id)).sort(_tbByDate);
 }
 /** "Am I waiting on someone" — mine to have asked, someone else's to do. */
 function tbAssignedByMe(items,uid){
@@ -850,8 +878,13 @@ function tbHandoverPlan(item,fromUid,toUid,note,keepMe,now,toHandle){
   if(a.indexOf(toUid)<0)a.push(toUid);
   if(!keepMe)a=a.filter(u=>u!==fromUid);
   if(!a.length)a=[toUid];
+  // Visibility follows the assignees (tbItemPatch's rule). A handover that
+  // left a bare item PRIVATE handed it to someone who could never read it.
+  const data={assigneeUids:a,commentCount:Number(it.commentCount||0)+1,updatedAt:now,lastActivityAt:now};
+  const vis=tbVisibilityFor(Object.assign({},it,{assigneeUids:a}),typeof tbLists!=='undefined'?tbLists:[]);
+  if(vis!==it.visibility)data.visibility=vis;
   return {
-    data:{assigneeUids:a,updatedAt:now,lastActivityAt:now},
+    data:data,
     activity:{type:'handover',byUid:fromUid,at:now,payload:{toUid:toUid,note:String(note).trim()}},
     comment:{authorUid:fromUid,
              body:'handed over to '+(toHandle?'@['+toHandle+']':'you')+' — '+String(note).trim(),
@@ -1183,7 +1216,9 @@ function _tbHeaderStrip(today){
   const due=tbDueToday(tbItems,me,today).length;
   const over=tbOverdue(tbItems,me,today).length;
   const waiting=tbAssignedByMe(tbItems,me).length;
-  const counts=[due+' due today']
+  // A read that FAILED must never read as "0 due today" -- the Store lesson.
+  const counts=_tbLoadFailed('board_items')?'items could not be read'
+    :[due+' due today']
     .concat(over?[over+' overdue']:[])
     .concat(waiting?[waiting+' waiting on others']:[]).join(' · ');
   return'<div class="tb-strip">'
@@ -1264,7 +1299,7 @@ function _tbListsScreen(){
   const shared=mine.filter(l=>l.kind==='shared');
   const priv=mine.filter(l=>l.kind!=='shared');
   const card=l=>{
-    const open=tbItems.filter(i=>i.listId===l.id&&i.status!=='done').length;
+    const open=_tbLoadFailed('board_items')?'\u2014':tbItems.filter(i=>i.listId===l.id&&i.status!=='done').length;
     return'<button class="tb-listcard" onclick="window.tbOpenList(\''+_tbJs(l.id)+'\')">'
       +'<span class="tb-dot tb-c-'+_tbEsc(TB_COLORS[l.color]?l.color:'slate')+'"></span>'
       +_tbSlot(l.title||'untitled','tb-listname')
@@ -1273,7 +1308,10 @@ function _tbListsScreen(){
   const sec=(t,ls,kind)=>'<div class="tb-sec"><div class="tb-sech">'+_tbEsc(t)
     +'<button class="tb-newlist" onclick="window.tbNewList(\''+_tbJs(kind)+'\')">+ New</button></div>'
     +(ls.length?ls.map(card).join(''):'<div class="tb-cardempty">no '+_tbEsc(String(t).toLowerCase())+' lists yet</div>')+'</div>';
-  return sec('Team',shared,'shared')+sec('Private',priv,'private');
+  return (_tbLoadFailed('board_items')
+      ?'<div class="tb-err">Could not read the items in these lists, so the counts are hidden. '
+        +'<button class="btn-outline" onclick="window.tbRetry()">Retry</button></div>':'')
+    +sec('Team',shared,'shared')+sec('Private',priv,'private');
 }
 
 function _tbListDetail(l){
@@ -1715,6 +1753,7 @@ window.tbQuickKey=function(e){
   if(e.key==='Escape'){
     // Empty: close it. Not empty: clear it first -- losing a half-typed
     // title to one keystroke would be worse than a second press.
+    e._tbHandled=true;                    // this Escape is answered: it must not also close the pane
     if(_tbQaHasContent()){ _tbQaReset(true); const el=document.getElementById('tb-qa'); if(el)el.value=''; }
     else{ _tbQa.open=false; const el=document.getElementById('tb-qa'); if(el&&el.blur)el.blur(); }
     _tbQaPaint();
@@ -1786,7 +1825,13 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
     await b.commit();
     _tbLiveRemember('items_own',ref.id,data);
     _tbUpsert(tbItems,tbDecodeItem(Object.assign({id:ref.id},data)));
-    if(openAfter){ _tbFlushNotes(); _tbOpenItemId=ref.id; }
+    if(openAfter){
+      _tbFlushNotes(); _tbOpenItemId=ref.id;
+      // The pane was opened without tbOpenItem, so nothing loaded its thread
+      // and it said "loading the thread…" until closed and reopened.
+      const openedId=ref.id;
+      loadTbThread(openedId).then(function(){ if(_tbOpenItemId===openedId)_tbLiveRepaint(); });
+    }
     // Ready for the next one: still open, caret back in it.
     if(fromComposer)_tbQaRefocus=true;
     _tbRepaint();
@@ -1801,6 +1846,24 @@ window.tbCreateFromQuick=async function(text,openAfter,fromComposer){
 };
 let _tbQaRefocus=false;
 
+
+// ── One at a time, per item ───────────────────────────────────────────
+// A writer reads the item from memory, awaits the server, and only THEN
+// updates memory. A second action inside that round trip started from the
+// same stale array: two quick steps kept one, two quick assignee chips lost
+// the first, a double-pressed Post wrote two comments. Serialising per item
+// makes the second action start from what the first left behind. It queues
+// rather than drops, so nothing the person did is lost.
+const _tbQueue={};
+function _tbSerialize(fn){
+  return function(){
+    const id=_tbOpenItemId||'*',args=arguments,self=this;
+    const run=(_tbQueue[id]||Promise.resolve()).then(function(){ return fn.apply(self,args); });
+    _tbQueue[id]=run.catch(function(){});
+    return run;
+  };
+}
+
 // ── Edit ──────────────────────────────────────────────────────────────
 window.tbFieldChange=async function(field,value){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
@@ -1808,7 +1871,12 @@ window.tbFieldChange=async function(field,value){
   let v=value;
   if(field==='priority')v=Number(value);
   if(field==='listId'||field==='lane')v=value||null;
-  if(field==='date')v=value||null;
+  if(field==='date'){
+    v=value||null;
+    // Anything the field hands over is checked: "0026-09-26" used to be
+    // written, labelled today, counted overdue and drawn nowhere.
+    if(v&&!tbDateSane(v)){ _tbToast('That is not a valid date.'); _tbRepaint(); return; }
+  }
   if(field==='kind'&&TB_KINDS.indexOf(v)<0)return;
   // The title is a textarea now (P1.4): a pasted line break is not part of
   // a title.
@@ -1828,7 +1896,7 @@ window.tbTitleKey=function(e){
   if(e.key==='Enter'){ if(e.preventDefault)e.preventDefault(); if(e.target&&e.target.blur)e.target.blur(); }
 };
 
-window.tbToggleAssignee=async function(uid){
+window.tbToggleAssignee=_tbSerialize(async function(uid){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
   if(!it||_tbNotOnIt(it))return;
   const cur=(it.assigneeUids||[]).slice();
@@ -1841,7 +1909,7 @@ window.tbToggleAssignee=async function(uid){
     _tbApplyLocal(it.id,plan.data);
     _tbRepaint();
   },'change who is on this');
-};
+});
 
 window.tbToggleLock=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
@@ -1908,27 +1976,46 @@ window.tbStepKey=function(e){
   el.value='';
   window.tbAddStep(t);
 };
-window.tbAddStep=async function(title){
+window.tbAddStep=_tbSerialize(async function(title){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
   if(!it||_tbNotOnIt(it))return;
   if((it.steps||[]).length>=30){ _tbToast('Thirty steps is the limit — this wants to be its own list.'); return; }
   const steps=(it.steps||[]).concat([{id:'s'+_tbNow()+Math.floor(Math.random()*1000),title:String(title).slice(0,140),done:false,doneByUid:null,doneAt:null}]);
   await _tbStepsWrite(it,steps,null);
-};
-window.tbToggleStep=async function(i){
+});
+// A step is addressed by its ID, captured when the button was pressed. The
+// markup carries an index, and by the time a QUEUED action runs the list
+// may have changed under it: removing A then B by index removed A and C.
+function _tbStepId(i){
   const it=tbItems.filter(x=>x.id===_tbOpenItemId)[0];
-  if(!it||!it.steps[i]||_tbNotOnIt(it))return;
+  const st=it&&it.steps&&it.steps[i];
+  return st?(st.id||('#'+i)):null;
+}
+function _tbStepAt(it,sid){
+  const steps=(it&&it.steps)||[];
+  if(sid==null)return -1;
+  if(String(sid).charAt(0)==='#')return Number(String(sid).slice(1));
+  for(let n=0;n<steps.length;n++)if(steps[n].id===sid)return n;
+  return -1;
+}
+const _tbToggleStepQ=_tbSerialize(async function(sid){
+  const it=tbItems.filter(x=>x.id===_tbOpenItemId)[0];
+  const i=_tbStepAt(it,sid);
+  if(!it||i<0||!it.steps[i]||_tbNotOnIt(it))return;
   const steps=it.steps.map((s,n)=>n!==i?s:Object.assign({},s,
     {done:!s.done,doneByUid:!s.done?_tbMe():null,doneAt:!s.done?_tbNow():null}));
   // Completing the LAST step does not complete the item — people want to
   // review first (spec s8.3). The drawer shows a hint instead.
   await _tbStepsWrite(it,steps,steps[i].done?{type:'step_done',byUid:_tbMe(),at:_tbNow(),payload:{title:steps[i].title}}:null);
-};
-window.tbRemoveStep=async function(i){
+});
+window.tbToggleStep=function(i){ return _tbToggleStepQ(_tbStepId(i)); };
+const _tbRemoveStepQ=_tbSerialize(async function(sid){
   const it=tbItems.filter(x=>x.id===_tbOpenItemId)[0];
-  if(!it||!it.steps[i]||_tbNotOnIt(it))return;
+  const i=_tbStepAt(it,sid);
+  if(!it||i<0||!it.steps[i]||_tbNotOnIt(it))return;
   await _tbStepsWrite(it,it.steps.filter((s,n)=>n!==i),null);
-};
+});
+window.tbRemoveStep=function(i){ return _tbRemoveStepQ(_tbStepId(i)); };
 async function _tbStepsWrite(it,steps,activity){
   await _tbTry(async()=>{
     await _tbCommit(it.id,{steps:steps,updatedAt:_tbNow(),lastActivityAt:_tbNow()},activity);
@@ -1938,7 +2025,7 @@ async function _tbStepsWrite(it,steps,activity){
 }
 
 // ── Done, my day, handover, delete ────────────────────────────────────
-window.tbToggleDone=async function(id){
+window.tbToggleDone=_tbSerialize(async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
   if(!it||_tbNotOnIt(it))return;
   const list=tbLists.filter(l=>l.id===it.listId)[0];
@@ -1951,7 +2038,7 @@ window.tbToggleDone=async function(id){
       title:TB_NAME,message:tbUser(_tbMe()).name+' completed “'+(it.title||'')+'”'}));
     _tbRepaint();
   },'mark that done');
-};
+});
 window.tbAddToMyDay=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
   if(!it||_tbNotOnIt(it))return;
@@ -1980,7 +2067,7 @@ window.tbOpenHandover=function(){
     +'<label class="tb-hokeep"><input type="checkbox" id="tb-ho-keep"> keep me on it</label>'
     +'<button class="btn-primary" onclick="window.tbHandOver()">Hand over</button></div>';
 };
-window.tbHandOver=async function(){
+window.tbHandOver=_tbSerialize(async function(){
   const it=tbItems.filter(i=>i.id===_tbOpenItemId)[0];
   if(!it||_tbNotOnIt(it))return;
   const who=document.getElementById('tb-ho-who');
@@ -2006,7 +2093,7 @@ window.tbHandOver=async function(){
     _tbToast('handed to '+tbUser(plan.notifyUid).name);
     _tbRepaint();
   },'hand that over');
-};
+});
 window.tbDeleteItem=async function(id){
   const it=tbItems.filter(i=>i.id===id)[0];
   if(!it)return;
@@ -2063,7 +2150,9 @@ window.tbOpenItem=function(id){
   // Through the live repaint, which waits while someone is typing: the
   // thread arriving used to rebuild the pane under a title or a comment
   // being written (review of d38b96c).
-  if(id)loadTbThread(id).then(function(){ if(_tbOpenItemId===id)_tbLiveRepaint(); });
+  // FORCED: the thread was cached for the whole session, so a colleague's
+  // comment never appeared on reopen while the count said it existed.
+  if(id)loadTbThread(id,true).then(function(){ if(_tbOpenItemId===id)_tbLiveRepaint(); });
 };
 window.tbCloseItem=function(){ _tbFlushNotes(); _tbOpenItemId=null; _tbCloseMentions(); _tbRepaint(); };
 
@@ -2098,7 +2187,7 @@ async function _tbNotify(o){
   const it=(tbItems||[]).filter(x=>x&&x.id===o.itemId)[0];
   o=Object.assign({},o,{message:tbNotifMessageFor(o.message,it,tbUser(o.fromUid).name)});
   const at=_tbNow();
-  const id=_tbNotifId(o.type,o.itemId,o.fromUid,at);
+  const id=_tbNotifId(o.type,o.itemId,o.fromUid,at,o.forUid);
   const row=tbNotifPayload(Object.assign({},o,{forUser:to.handle,at:at}));
   try{ await setDoc(doc(db,'hrm_notifications',id),row); }
   catch(e){ console.warn('[the board] notify failed',e); }   // never blocks the action
@@ -2642,7 +2731,10 @@ window.tbPillDown=function(e,id){
   // SPEC s11: on a phone the drag is replaced by a move-to date picker on
   // long press. A 4px threshold aimed at a ~50px day square is not a
   // gesture a thumb can land, and the tray exists to be moved FROM.
-  if(_tbIsPhone()){
+  // ANY touch, not only a phone-width screen (CAL-DRIVE-07): on a tablet the
+  // browser claims a touch drag for scrolling and cancels the pointer, so a
+  // drag never lands there. Press-and-hold to a date picker works everywhere.
+  if(_tbIsPhone()||e.pointerType==='touch'){
     const hold=setTimeout(function(){
       if(typeof navigator!=='undefined'&&navigator.vibrate)try{navigator.vibrate(8);}catch(err){}
       _tbDragMoved=true;                    // so the release does not open the drawer
@@ -2664,11 +2756,12 @@ window.tbPillDown=function(e,id){
   }
   const startX=e.clientX,startY=e.clientY,pid=e.pointerId;
   const el=e.currentTarget;
-  let captured=false;
+  let captured=false,lastX=e.clientX,lastY=e.clientY;
   _tbDragId=id;_tbDragMoved=false;_tbDragOverDay='';
 
   const move=ev=>{
     if(ev.pointerId!==undefined&&ev.pointerId!==pid)return;   // a 2nd finger is not this drag
+    lastX=ev.clientX;lastY=ev.clientY;
     const dx=ev.clientX-startX,dy=ev.clientY-startY;
     if(!captured){
       if(Math.abs(dx)<_TB_DRAG_PX&&Math.abs(dy)<_TB_DRAG_PX)return;
@@ -2680,21 +2773,50 @@ window.tbPillDown=function(e,id){
     _tbDragGhostMove(ev.clientX,ev.clientY);
     _tbDragHover(ev.clientX,ev.clientY);
   };
-  const up=ev=>{
-    if(ev&&ev.pointerId!==undefined&&ev.pointerId!==pid)return;
+  // ONE way out, with a flag for whether the drop counts. A cancelled
+  // gesture (pointercancel, Escape, the window losing focus) must put
+  // everything back and MOVE NOTHING: the browser cancels a pointer when
+  // it takes the gesture over (a native drag, a scroll), and treating that
+  // as a release silently changed dates on the calendar's main gesture.
+  const finish=(commit)=>{
     document.removeEventListener('pointermove',move,true);
     document.removeEventListener('pointerup',up,true);
-    document.removeEventListener('pointercancel',up,true);
+    document.removeEventListener('pointercancel',cancel,true);
+    document.removeEventListener('keydown',esc,true);
+    document.removeEventListener('dragstart',noNative,true);
+    document.removeEventListener('scroll',rescroll,true);
+    if(typeof window!=='undefined'&&window.removeEventListener)window.removeEventListener('blur',cancel);
     _tbDragGhostHide();
     if(el&&el.classList)el.classList.remove('dragging');
     _tbDayHighlight('');
     const to=_tbDragOverDay;
     _tbDragId=null;_tbDragOverDay='';
-    if(captured&&to)window.tbMoveItem(id,to);
+    // The click that follows a drop is swallowed by tbPillClick; if none
+    // arrives (a non-draggable pill, a cancel) the flag must not outlive
+    // the gesture and eat the NEXT genuine click.
+    setTimeout(function(){ _tbDragMoved=false; },60);
+    if(!commit)_tbDragMoved=false;
+    if(commit&&captured&&to)window.tbMoveItem(id,to);
   };
+  const up=ev=>{
+    if(ev&&ev.pointerId!==undefined&&ev.pointerId!==pid)return;
+    finish(true);
+  };
+  const cancel=ev=>{
+    if(ev&&ev.pointerId!==undefined&&ev.pointerId!==pid)return;
+    finish(false);
+  };
+  const esc=ev=>{ if(ev&&ev.key==='Escape'){ if(ev.preventDefault)ev.preventDefault(); finish(false); } };
+  const noNative=ev=>{ if(ev&&ev.preventDefault)ev.preventDefault(); };
+  // Scrolling moves the squares under a still pointer; re-aim.
+  const rescroll=()=>{ if(captured)_tbDragHover(lastX,lastY); };
   document.addEventListener('pointermove',move,true);
   document.addEventListener('pointerup',up,true);
-  document.addEventListener('pointercancel',up,true);
+  document.addEventListener('pointercancel',cancel,true);
+  document.addEventListener('keydown',esc,true);
+  document.addEventListener('dragstart',noNative,true);
+  document.addEventListener('scroll',rescroll,true);
+  if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('blur',cancel);
 };
 /** Which day square is under the pointer. Extracted because it is the
  *  ONE part of the drag that needs a laid-out page — so a test can
@@ -3228,7 +3350,7 @@ window.tbCompKey=function(e,el){
       _tbMentionIdx=(_tbMentionIdx<=0?_tbMentionList.length:_tbMentionIdx)-1;
       _tbPaintMentions();e.preventDefault();return;
     }
-    if(e.key==='Escape'){ _tbCloseMentions(); e.preventDefault(); return; }
+    if(e.key==='Escape'){ e._tbHandled=true; _tbCloseMentions(); e.preventDefault(); return; }
     if(e.key==='Enter'||e.key==='Tab'){
       const pick=tbMentionAccepts(_tbMentionList,_tbMentionIdx);
       if(pick>=0){ e.preventDefault(); window.tbMentionPick(pick); return; }
@@ -3362,7 +3484,7 @@ window.tbUnstageFile=function(idx){
 };
 
 // ── Posting ───────────────────────────────────────────────────────────
-window.tbPostComment=async function(){
+window.tbPostComment=_tbSerialize(async function(){
   const id=_tbOpenItemId;
   const it=tbItems.filter(x=>x.id===id)[0];
   if(!it)return;
@@ -3376,7 +3498,13 @@ window.tbPostComment=async function(){
   await _tbTry(async function(){
     const b=writeBatch(db);
     b.set(doc(collection(db,'board_items',id,'comments')),plan.comment);
-    b.update(doc(db,'board_items',id),plan.data);
+    // Comments are open to every reader, but the item itself is writable
+    // only by the people on it (board_items update rule). The batch used to
+    // update the item's counters too, so for anyone NOT on it the whole
+    // batch -- comment included -- was refused. A reader's comment goes in
+    // alone; the badge catches up on the next write by someone on the item.
+    const canTouch=_tbCanEditIt(it);
+    if(canTouch)b.update(doc(db,'board_items',id),plan.data);
     // The author's own ranking data rides along. SET-WITH-MERGE, not
     // update: a profile row that does not exist yet would fail an
     // updateDoc and take the comment down with it, and carrying `uid`
@@ -3389,7 +3517,7 @@ window.tbPostComment=async function(){
       b.set(doc(db,'user_profiles',me),
         {uid:me,tbMentionStats:tbMentionBump(_tbMyStats(),plan.mentionUids,_tbNow())},{merge:true});
     await b.commit();
-    _tbApplyLocal(id,plan.data);
+    if(canTouch)_tbApplyLocal(id,plan.data);
     const th=_tbThreads[id]||{comments:[],activity:[],err:false};
     th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
     _tbThreads[id]=th;
@@ -3404,7 +3532,7 @@ window.tbPostComment=async function(){
     _tbCompFocus=true;
     _tbRepaint();
   },'post that comment');
-};
+});
 
 /** A notification snippet is TEXT, not markup — it is capped at 120
  *  characters by tbNotifPayload and escaped there, so the `@[handle]`
@@ -3434,9 +3562,15 @@ window.tbRequestMove=async function(){
   await _tbTry(async function(){
     const b=writeBatch(db);
     b.set(doc(collection(db,'board_items',id,'comments')),plan.comment);
-    b.update(doc(db,'board_items',id),plan.data);
+    // Comments are open to every reader, but the item itself is writable
+    // only by the people on it (board_items update rule). The batch used to
+    // update the item's counters too, so for anyone NOT on it the whole
+    // batch -- comment included -- was refused. A reader's comment goes in
+    // alone; the badge catches up on the next write by someone on the item.
+    const canTouch=_tbCanEditIt(it);
+    if(canTouch)b.update(doc(db,'board_items',id),plan.data);
     await b.commit();
-    _tbApplyLocal(id,plan.data);
+    if(canTouch)_tbApplyLocal(id,plan.data);
     const th=_tbThreads[id]||{comments:[],activity:[],err:false};
     th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
     _tbThreads[id]=th;
@@ -3674,6 +3808,10 @@ function tbWatchNotifs(){
         // A refused read and an empty inbox must never render the same
         // screen -- the Store lesson.
         _tbNotifErr=true;_tbNotifSeeded=true;
+        // Firestore has ended this listener. Forget it, or Retry would
+        // believe one is still running and never start another.
+        try{ if(_tbNotifUnsub)_tbNotifUnsub(); }catch(_){}
+        _tbNotifUnsub=null;
         if(_tbPage==='tb-inbox'&&!_tbOpenItemId)_tbRepaint();
       }
     );
@@ -3706,9 +3844,10 @@ async function loadTbNotifsOnce(){
 
 window.tbRetryInbox=function(){
   _tbNotifErr=false;_tbNotifOnce=false;_tbNotifSeeded=false;
+  try{ if(_tbNotifUnsub)_tbNotifUnsub(); }catch(_){}
+  _tbNotifUnsub=null;
   _tbRepaint();
-  if(_tbNotifUnsub){_tbNotifSeeded=true;_tbRepaint();return;}
-  loadTbNotifsOnce();
+  tbWatchNotifs();          // a fresh listener, or the one-off read when there is none
 };
 window.tbOpenNotif=function(id,itemId){
   const h=_tbHandle();
@@ -3915,6 +4054,10 @@ function _tbSearchBox(){
 function _tbSearchScreen(){
   const today=_tbToday();
   const hits=tbSearchItems(tbItems,_tbQuery,_tbThreads);
+  if(!hits.length&&_tbLoadFailed('board_items')){
+    return'<div class="tb-err">Could not read The Board, so there is nothing to search. '
+      +'<button class="btn-outline" onclick="window.tbRetry()">Retry</button></div>';
+  }
   if(!hits.length){
     return'<div class="tb-empty"><div class="tb-empty-h">nothing matches “'+_tbEsc(_tbQuery)+'”</div>'
       +'<div class="tb-empty-p">search covers titles, notes, steps and lanes. '
@@ -3982,6 +4125,10 @@ function _tbOnKeydown(e){
   // Only while the Board is on screen: `d` must not navigate away from
   // somebody typing a PO number on another page.
   if(String((typeof currentPage!=='undefined'&&currentPage)||'').indexOf('tb-')!==0)return;
+  // A handler that already used this key (Escape closing the @mention
+  // popover, clearing the composer, cancelling a drag) has answered it. One
+  // Escape must not ALSO close the item pane.
+  if(e&&(e.defaultPrevented||e._tbHandled))return;
   // Board settings sits over everything, so Escape closes it before
   // anything underneath -- read before the editable bail, like the rest.
   if(e&&e.key==='Escape'&&_tbSettingsOpen){ if(e.preventDefault)e.preventDefault(); window.tbToggleSettings(); return; }
@@ -4536,6 +4683,11 @@ function _tbMoveSheet(){
 (function(){
   if(typeof document==='undefined'||!document.addEventListener)return;
   document.addEventListener('keydown',_tbOnKeydown);
+  // Notes typed in the last 800ms are only in memory. Hiding the page (a
+  // phone switching apps, a tab closing) is the last chance to write them.
+  const flush=function(){ try{ if(_tbNotesPend)_tbFlushNotes(); }catch(e){} };
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden')flush(); });
+  if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('pagehide',flush);
 })();
 
 // ── Date pickers (session 2, P1.7) ────────────────────────────────────

@@ -3935,7 +3935,9 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
   border-radius:var(--tb-r10);box-shadow:var(--tb-shadow-pane);
   animation:tb-slide var(--tb-dur) var(--tb-ease)}
 @keyframes tb-slide{from{transform:translateX(12px);opacity:.6}to{transform:none;opacity:1}}
-@media(min-width:1024px) and (max-width:1439px){
+/* Collapsed through 1699, not 1439: re-expanding the rail (+184px) and the pane
+   (+20px) at 1440 made the calendar NARROWER at 1440 than at 1439. */
+@media(min-width:1024px) and (max-width:1699px){
   .tb-wrap.has-pane{grid-template-columns:56px minmax(0,960px) 360px;gap:var(--tb-s16)}
   .tb-wrap.has-pane .tb-railbtn{justify-content:center;padding:0;min-height:44px}
   .tb-wrap.has-pane .tb-railbtn .tb-raillabel,.tb-wrap.has-pane .tb-raillists{display:none}
@@ -4150,6 +4152,10 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
   cursor:pointer;overflow:hidden;transition:background var(--tb-dur) var(--tb-ease)}
 .tb-pill:hover{background:var(--tb-n4)}
 .tb-pill.draggable{cursor:grab}
+/* A drag must not smear a text selection over the grid or hand the gesture to
+   a native image/link drag. (Touch does not drag at all: it press-and-holds
+   to a date picker, so the pills stay scrollable.) */
+.tb-pill{-webkit-user-select:none;user-select:none;-webkit-user-drag:none}
 .tb-pill.dragging{opacity:.4}
 .tb-pill:focus-visible{outline:2px solid var(--tb-accent);outline-offset:1px}
 .tb-pillbar{flex:0 0 auto;width:3px;align-self:stretch;min-height:16px;border-radius:2px;background:var(--muted)}
@@ -4517,6 +4523,41 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
 .board-swp-f{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted)}
 .board-swp-in{width:100%;min-width:0;box-sizing:border-box;min-height:34px;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font-size:13px;text-align:center}
 .board-swp-in.wide{flex:1;text-transform:uppercase}
+
+/* CRAWLER ROUND (29 Sept 2026) --------------------------------------
+   VISUAL-01: the tray (34-212px) + rail + pane + app sidebar were all
+   subtracted from one viewport, leaving 12px day cells at 1024 with the
+   pane open. The pane is the thing being read; the tray waits. */
+@media(min-width:1024px){
+  .tb-wrap.tb-page-calendar.has-pane .tb-tray{display:none}
+}
+/* VISUAL-04: in a narrow day cell the pill's lock and colour bar used the
+   whole width and the TITLE was 0px. The grid is a size container, so the
+   pill decorations step aside by the room the cell really has. */
+.tb-calgrid{container-type:inline-size;container-name:tbgrid;min-width:0;width:100%}
+@container tbgrid (max-width:620px){
+  .tb-monthgrid .tb-pilllock,.tb-monthgrid .tb-pillbar{display:none}
+  .tb-monthgrid .tb-pill{padding-left:4px;padding-right:3px}
+}
+/* VISUAL-05: these two selects had outline:none and NO focus style. */
+.tb-calfilters select:focus{outline:2px solid var(--text);outline-offset:1px}
+/* VISUAL-03: the phone's week is one column; its track must not keep the
+   wide layout's minimum width (452px inside a 390px screen). */
+@media(max-width:639px){
+  .tb-weekgrid{grid-template-columns:minmax(0,1fr)}
+  .tb-weekgrid .tb-day,.tb-calgrid,.tb-calbody{min-width:0;max-width:100%}
+}
+/* VISUAL-01, the rest: between 1024 and 1199 a 7-column month cannot share a
+   row with a 360px pane, so on the calendar the pane is the overlay it
+   already is below 1024. */
+@media(min-width:1024px) and (max-width:1199px){
+  .tb-wrap.tb-page-calendar.has-pane{grid-template-columns:56px minmax(0,1fr)}
+  .tb-wrap.tb-page-calendar .tb-drawer{position:fixed;top:0;right:0;z-index:130;width:min(420px,100%);
+    height:100vh;height:100dvh;max-height:none;border-radius:0;border:none;border-left:1px solid var(--tb-line)}
+  .tb-wrap.tb-page-calendar.has-pane .tb-tray{display:block}
+}
+/* VISUAL-06: the month "+" was 14x24 on a phone. */
+@media(max-width:639px){ .tb-dayadd{min-width:32px;min-height:32px} }
 /* Color Library ▸ TCX codes (29 Sept 2026). Tokens only; the chip's own
    background is the reference colour itself, validated #RRGGBB. */
 .tcx-tabs{display:flex;gap:4px;background:var(--soft);border-radius:10px;padding:4px;margin:0 0 12px;width:max-content;max-width:100%}
