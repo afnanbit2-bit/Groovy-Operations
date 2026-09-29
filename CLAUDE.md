@@ -3809,6 +3809,14 @@ stage takes the press, the card drag bails for a mouse), and **removing an
 Unsorted item asks nothing** — it pushes undo, since the snapshot carries
 the tray. Nobody has felt the drag on a real screen.
 
+**A click no longer brings back the last selection box (29 Sept).**
+Afnan's recording: after a marquee, a plain click on the board flashed the
+OLD box. The press showed `#board-marquee` with the previous gesture's
+size and place until the pointer moved. It is zeroed on the press, shown
+only past 3px of movement, reset on release, and a `pointercancel` ends the
+gesture too. Held in `tests/boards.test.js` ("a click does not bring the
+last selection box back") — verified by restoring the old show-on-press.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not

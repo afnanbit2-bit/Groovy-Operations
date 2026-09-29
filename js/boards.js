@@ -5280,9 +5280,17 @@ function _boardsWireStagePan(){
       const rect=stage.getBoundingClientRect();
       const sx=e.clientX,sy=e.clientY;
       stage.setPointerCapture(e.pointerId);
-      if(box)box.style.display='block';
+      // The box is NOT shown on the press: it still carries the previous
+      // marquee's size and place, so showing it here flashed the old
+      // selection on every plain click (Afnan's recording, 29 Sept). It is
+      // zeroed and appears only once the pointer has really moved.
+      if(box){box.style.display='none';box.style.width='0px';box.style.height='0px';}
       function mmove(ev){
         if(!box)return;
+        if(box.style.display!=='block'){
+          if(Math.abs(ev.clientX-sx)<3&&Math.abs(ev.clientY-sy)<3)return;
+          box.style.display='block';
+        }
         const x1=Math.min(sx,ev.clientX)-rect.left,y1=Math.min(sy,ev.clientY)-rect.top;
         box.style.left=x1+'px';box.style.top=y1+'px';
         box.style.width=Math.abs(ev.clientX-sx)+'px';
@@ -5290,7 +5298,9 @@ function _boardsWireStagePan(){
       }
       function mup(ev){
         stage.removeEventListener('pointermove',mmove);stage.removeEventListener('pointerup',mup);
-        if(box)box.style.display='none';
+        stage.removeEventListener('pointercancel',mup);
+        if(box){box.style.display='none';box.style.width='0px';box.style.height='0px';}
+        if(ev.type==='pointercancel')return;
         const a=_boardsScreenToWorld(sx,sy),bb=_boardsScreenToWorld(ev.clientX,ev.clientY);
         const x1=Math.min(a.x,bb.x),x2=Math.max(a.x,bb.x);
         const y1=Math.min(a.y,bb.y),y2=Math.max(a.y,bb.y);
@@ -5301,6 +5311,7 @@ function _boardsWireStagePan(){
       }
       stage.addEventListener('pointermove',mmove);
       stage.addEventListener('pointerup',mup);
+      stage.addEventListener('pointercancel',mup);
       return;
     }
 
