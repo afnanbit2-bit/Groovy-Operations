@@ -3608,6 +3608,13 @@ module.exports=async function(){
       s.eq(label+' releases the drag (live updates resume)',a.run('_tbDragId'),null);
       s.eq(label+' leaves no stale click flag',a.run('_tbDragMoved'),false);
     }
+    // CAL-DRIVE-07: a TOUCH press holds to the date picker at ANY width
+    const tch=mkApp();
+    tch.run('window.tbPillDown({button:0,pointerType:"touch",pointerId:1,clientX:10,clientY:10,currentTarget:__el,preventDefault(){},stopPropagation(){}},"i1")');
+    await new Promise(r=>setTimeout(r,560));
+    s.eq('a touch press-and-hold opens the move sheet on a wide screen',tch.run('_tbMoveId'),'i1');
+    fireDoc(tch,'pointerup');
+    s.eq('and never starts a drag',tch.state.batches.length,0);
     const ok=mkApp();press(ok);fireDoc(ok,'pointerup');await settle();
     s.eq('a real release still commits the move',ok.state.batches.length,1);
 
@@ -3641,6 +3648,41 @@ module.exports=async function(){
       s.eq((onIt?'someone on the item':'a reader not on it')+': one batch',c.state.batches.length,1);
       s.eq((onIt?'someone on the item updates the counters':'a reader not on it leaves the item alone'),touchesItem,onIt);
     }
+  }
+
+
+  s.section('crawler round: S2 fixes (29 Sept 2026)');
+  {
+    const a=loadApp({files:FILES});
+    const P=t=>a.run('tbParseQuickAdd('+J(t)+',{today:"2026-09-26",handles:{}})');
+    // ITEMS-03: only real weekday / month words are dates
+    for(const w of ['order satin fabric','send monthly report','wedding shoot','friend intro','thumbnail edits','monitor stock','sunglasses shoot']){
+      const r=P(w);
+      s.eq('"'+w+'" is not a date',r.date,null);
+      s.eq('and keeps its title',r.title,w);
+    }
+    s.ok('a real weekday still parses',P('call fri').date==='2026-10-02');
+    s.ok('so do the long and abbreviated forms',P('x thurs').date==='2026-10-01'&&P('x monday').date==='2026-09-28'&&P('x tues').date);
+    s.ok('a month and a day still parse',P('ship 5 october').date==='2026-10-05'&&!!P('ship sept 30').date);
+    // ITEMS-04: only a real lane is stripped
+    const po=P('chase PO #4521');
+    s.eq('an order number stays in the title',po.title,'chase PO #4521');
+    s.eq('and is not stored as a lane',po.lane,null);
+    s.eq('a real lane is still a lane',P('x #denim').lane,'denim');
+    // DASH-INBOX-05: Next 7 Days repeats nothing shown above it
+    const items=[
+      {id:'a',status:'open',date:'2026-09-29',ownerUid:'u-ammar',assigneeUids:['u-ammar'],myDay:{'u-ammar':'2026-09-26'}},
+      {id:'b',status:'open',date:'2026-09-30',ownerUid:'u-saim',assigneeUids:['u-ammar']},
+      {id:'c',status:'open',date:'2026-09-30',ownerUid:'u-ammar',assigneeUids:['u-ammar']}];
+    const n7=a.run('tbNext7('+J(items)+',"u-ammar","2026-09-26").map(i=>i.id)');
+    s.eq('a My Day item and an assigned-by-others item are not repeated in Next 7',n7.join(','),'c');
+    // DASH-INBOX-04: a failed read is never "0 due today"
+    const d=loadApp({files:FILES,currentPage:'tb-dashboard'});
+    d.run('session='+J(AMMAR)+';tbItems=[];tbLists=[];tbConfig=null;tbLoaded=true;_tbLoadErrors=["board_items"]');
+    s.ok('the strip does not claim 0 due today',!/0 due today/.test(d.run('_tbHeaderStrip("2026-09-26")')));
+    s.ok('and says the items could not be read',/could not be read/.test(d.run('_tbHeaderStrip("2026-09-26")')));
+    s.ok('search says the read failed, not "nothing matches"',/Could not read/.test(d.run('_tbQuery="abc";_tbSearchScreen()')));
+    s.ok('lists hide their counts and offer Retry',/counts are hidden/.test(d.run('_tbListsScreen()')));
   }
 
   return s;
