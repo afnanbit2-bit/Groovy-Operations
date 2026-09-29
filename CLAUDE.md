@@ -46,7 +46,7 @@ because of two real failures during the PWA work, both avoidable:
 | To check | Use |
 |---|---|
 | Deploy status + the **real** preview URL, **on a PR** | GitHub MCP `pull_request_read`, `method:"get_status"` — returns Netlify's own `target_url` and pass/fail |
-| Whether a push to `main` actually SHIPPED | **Ask the human for the Netlify deploy list.** There are NO commit statuses on direct pushes to this repo — checked against a commit that *was* published, and it has none either, so a clean status API says nothing |
+| Whether a push to `main` actually SHIPPED | **Ask the human for the Netlify deploy list.** There are NO commit statuses on direct pushes to this repo — checked against a commit that *was* published, and it has none either, so a clean status API says nothing. *(29 Sept 2026: what is SERVED can now be read from a session — `curl` `https://groovyoperations.netlify.app/sw.js` and the changed `/js/*.js`, compare `CACHE_VERSION` and `md5sum` with `git show origin/main:<file>`. Verified 29 Sept: `sw.js`, `index.html`, `js/master-accounts.js` and `js/ma-core.js` came back byte-identical to `origin/main`'s. That shows a build with those bytes is live; it does not show the deploy list, a later skipped deploy, or which commit built it.)* |
 | Whether CI passed on a push | `api.github.com/repos/.../commits/<sha>/check-runs` (unauthenticated works; this repo is public) |
 | CI / check-run detail | `pull_request_read`, `method:"get_check_runs"` |
 | Whether something is merged | `git fetch` then `git merge-base --is-ancestor`, or `pull_request_read` `method:"get"` (`merged` field) |
@@ -148,7 +148,10 @@ bypassed). A status from the origin means the proxy let the request through.
 - **A build id can be read from the live site now, which is not the deploy list.**
   `https://groovyoperations.netlify.app/sw.js` returned 200 and
   `CACHE_VERSION = 'v259'` on 29 Sept 2026, the same value as this checkout's `sw.js`. It does
-  not by itself say which commit is live.
+  not by itself say which commit is live. **Re-read at 16:39 UTC (verified: this run's GETs
+  and `md5sum` against `git show origin/main:<file>`):** `sw.js`, `index.html`,
+  `js/master-accounts.js` and `js/ma-core.js` were byte-identical to `origin/main`'s, and the
+  served `index.html` carries the two Master Accounts script tags.
 - **Cloudinary:** its public docs pages answer (above). Reading an ACCOUNT's settings would
   still need a Cloudinary login; none was tried, so that stays the human's.
 - **Node's built-in `fetch` does not read `HTTPS_PROXY`** — verified: `/root/.ccr/README.md`
@@ -168,23 +171,90 @@ Chromium** (`/opt/pw-browsers/*/chrome-linux/chrome`) and verifies every
 classic script executes, every expected global exists, and all three
 libraries actually work. That was impossible before.
 
-**Still not possible: signing in or rendering a page.** The Firebase modular
+~~**Still not possible: signing in or rendering a page.** The Firebase modular
 SDK loads from `gstatic.com`, which is still blocked, so `__bootApp()` never
 runs and the app stops at the login screen's static HTML. **A "verify in a
 browser" step for any UI change is therefore still NOT possible from this
-sandbox** — say so explicitly rather than skip the caveat. Real UI
-verification needs the human, a phone, or Claude in Chrome.
+sandbox** — say so explicitly rather than skip the caveat.~~ **SUPERSEDED 29
+Sept 2026 — see the two paragraphs below; what is still not possible is
+listed after them.** Real UI verification needs the human, a phone, or
+Claude in Chrome.
 
 **29 Sept 2026 — the premise of that paragraph no longer holds.** Verified: `curl`
 fetched all four Firebase SDK files `index.html` imports from `www.gstatic.com` (see
 the re-check above), so "gstatic.com, which is still blocked" is SUPERSEDED.
-**Whether the app now boots (`__bootApp()` runs), signs in, or renders a page from this
+~~**Whether the app now boots (`__bootApp()` runs), signs in, or renders a page from this
 sandbox has NOT been tested** — so "still NOT possible" is neither confirmed nor refuted
-here; read it as untested until a later dated entry says otherwise. The same gstatic
+here; read it as untested until a later dated entry says otherwise.~~ **SUPERSEDED 29 Sept
+2026 (later): it has been tested — next paragraph.** The same gstatic
 premise is repeated, and now marked, in "Vendored libraries" (reason 3), the Mood Boards
-Trash and Dark-mode notes, and the `tests/smoke-browser.js` entry; the many other "the
+Trash and Dark-mode notes, and the `tests/smoke-browser.js` entry; ~~the many other "the
 sandbox cannot sign in" remarks in this file share the untested conclusion and are
-left as written.
+left as written.~~ **SUPERSEDED 29 Sept 2026 (later): every present-tense "the sandbox
+cannot sign in" clause now carries the tag `[29 Sept: a headless QA session can sign in and
+render — see "Sandbox limits"]` right after it (41 tags, inserted by one script and checked:
+removing them gives the previous file byte for byte). Five were rewritten by hand instead: this
+paragraph, the Mood Boards Trash note, the Dark-mode note, the Master Accounts "Nobody has
+opened" bullet and the `tests/smoke-browser.js` entry. The "Nobody has … on a real screen"
+sentences they sit in stay TRUE — no human has looked — only the stated reason changed.**
+
+**VERIFIED FROM A SESSION, 29 Sept 2026 (later) — a headless Chrome in a session signed in
+to the LIVE app as the QA account and rendered the Board page.** Source: `tests/e2e/board.e2e.js`
+run against `https://groovyoperations.netlify.app` (serving `v259`) at checkout `a436e8b`,
+through the real login form — read from that run's own files, `docs/board-screens/a436e8b/
+report.md` and `report.json` (gitignored, not in the repo) and its stdout. Exit 1, **6 of 7
+checks passed**: signed in with the `qa` role; signed in WITHOUT Remember me; writes to `pos`
+and `bug_reports` refused with `permission-denied` (the run's own check that `isQa()` is
+deployed); the Board's sandbox list is private, QA-flagged and has exactly one member, the uid
+pinned in the repo's `isQa()` (compared, not written here); the composer takes the caret.
+**0 page errors, 0 console errors.** The 7th check failed on a permission refusal (analysed under
+"QA debug access"), not on anything in the browser. The Firebase SDK the login needs is imported
+from `www.gstatic.com` (verified: `index.html`), so that host was reached from the session, which
+agrees with the table above.
+- **What that run does NOT show.** It stopped before its screen matrix: `report.json` has
+  `screens: []` and no screenshots were made, and it is the Board's harness, so it drove the
+  Board and no other page. **A walk of the other pages was not part of it and is not recorded
+  here — "the whole app renders cleanly from a session" is NOT claimed.** Nor does it show what a
+  human sees.
+- **It needs** `GROOVY_QA_URL`, `GROOVY_QA_EMAIL` and `GROOVY_QA_PASSWORD` in the environment
+  (verified: set/not-set on 29 Sept; values never printed or written), a Chrome binary, and a
+  Node with a global `WebSocket` (22+) — from the header of `tests/e2e/board.e2e.js`, which also
+  says it exits 0 having done nothing when one is missing.
+- **Environment prerequisite — reported by that run, not re-run here.** Its first attempt
+  (0 of 1, "timed out waiting for the login form", from the session's saved stdout — the
+  scratchpad, not the repo) failed because headless Chrome did not trust the session proxy's CA:
+  the Chrome stderr saved then (same place) shows SSL handshake failures with `net_error -202`
+  (Chrome's `ERR_CERT_AUTHORITY_INVALID` — from Chrome's error list, not from a tool result
+  here). It was fixed by adding the proxy's public CA (`/root/.ccr/agent-proxy-ca.crt`) to
+  Chrome's NSS store (`~/.pki/nssdb`); TLS verification stayed ON. `/root/.ccr/README.md` says the browser NSS store is "already set up",
+  so this is a discrepancy to check first, not to assume: a session that meets
+  `ERR_CERT_AUTHORITY_INVALID` in Chrome should look at that store before anything else.
+
+**STILL not possible or unverified from a session (29 Sept 2026):**
+- **A human's visual judgement** of any page, and every "Nobody has … on a real screen" note in
+  this file — those stay true.
+- **Real-phone behaviour:** the on-screen keyboard, install prompts and the installed PWA,
+  offline use, Share-menu targets, WebAuthn/fingerprint dialogs. No session has driven a phone.
+- **Cloudinary ACCOUNT settings** — plan, upload cap, PDF/ZIP and authenticated delivery,
+  `overwrite=0`. The public hosts answer; an account view needs its login.
+- **The Netlify deploy LIST** (built, skipped or failed, and for which commit). What is SERVED
+  can be read and compared with git (row "Whether a push to `main` actually SHIPPED"); the
+  list is a dashboard/API view that was not tried.
+- **What the Firebase Console has published, as TEXT.** Behaviour can be probed as the QA
+  account (sign-in works; REST lists and creates), which says how the live rules answer those
+  requests, not whether the published file equals the repo's.
+- **Owner-only pages with real data:** the QA account is refused on Master Accounts (`ma_*`)
+  by design and is not on `_MA_USERS`, so a QA session cannot open those pages against live data.
+- **Hosts other than those in the re-check table** — Milanote, Pexels, Openverse, Unsplash,
+  Pinterest, Spotify, SoundCloud, Google Maps and the licensed Pantone books — were NOT
+  re-checked; the remarks elsewhere that call them unreachable are unknown, not verified.
+- **Comments in other files still carry the superseded premise** (a `grep -rn` on 29 Sept found
+  "cannot reach `*.netlify.app` / Cloudinary / gstatic" or "the sandbox cannot sign in" in
+  `BOARD.md`, `BOARD-LOG.md`, `PATTERN_HUB_PLAN.md`, `MASTER_ACCOUNTS_PLAN.md`, `tests/README.md`,
+  `tests/harness.js`, `tests/smoke-layout.js`, `tests/ma-attach.test.js`, `tests/ma-server.test.js`,
+  `tests/e2e/board.e2e.js` (header), `js/boards.js`, `netlify/lib/ma-server.js` and
+  `netlify/functions/image-search.js`) — this change edited only `CLAUDE.md`, `QA_ACCESS.md` and the
+  header comment of `tests/smoke-browser.js`. Read those remarks with this section's correction.
 
 **THE FIRESTORE EMULATOR DOES RUN HERE (verified 25 Sept 2026)**, which
 this file never said and which changes what "the rules are unverifiable"
@@ -549,11 +619,12 @@ this origin. They used to load from `cdnjs.cloudflare.com` and
    Excel export simply failed. They are in `PRECACHE_URLS` now.
 2. **A third-party origin could change or vanish** under a business that
    prints gate passes and payroll from these files.
-3. **Neither CDN is reachable from this sandbox**, so no session could boot
-   the app in a browser to check anything. `tests/smoke-browser.js` can now.
+3. ~~**Neither CDN is reachable from this sandbox**, so no session could boot
+   the app in a browser to check anything.~~ `tests/smoke-browser.js` can now.
    *(SUPERSEDED 29 Sept 2026: `cdnjs.cloudflare.com` and `cdn.jsdelivr.net`
-   both answered from a session — see "Sandbox limits". Whether the app boots
-   from the sandbox is untested.)*
+   both answered from a session, and a headless Chrome in a session has since
+   signed in to the live app and rendered the Board page — see "Sandbox limits".
+   Reason 3 no longer holds; reasons 1 and 2 stand.)*
 
 - **Fetched from `registry.npmjs.org`, not a CDN mirror**, and every
   tarball's sha512 was checked against the registry's own `dist.integrity`
@@ -928,7 +999,7 @@ shape of the fix is its `/` menu and side menu, written from scratch here.
   **It does NOT hold an overlay covering an editable body** — checked: an
   `::after` over every block passed.
 - **Nobody has typed into it on a real screen** — the sandbox cannot sign
-  in. It was rendered and looked at in headless Chromium, both themes.
+  in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]. It was rendered and looked at in headless Chromium, both themes.
 
 **Nav:** "Creative Hub" (plain text, no icon/emoji — deliberate, per
 Afnan) is a `mainItems` entry in `buildNav()` pointing at page id
@@ -1375,8 +1446,10 @@ Getting a board out of the app: PNG, PDF, and deep links to one card.
   `crossOrigin='anonymous'`; one that fails is drawn as an "image
   unavailable" placeholder and counted, so a single un-CORS-able picture
   costs that one card instead of the export. **Cloudinary's CORS headers
-  could not be verified from the build sandbox** (it cannot reach
-  `res.cloudinary.com` at all) — if exports come back with grey boxes
+  could not be verified from the build sandbox** (~~it cannot reach
+  `res.cloudinary.com` at all~~ *SUPERSEDED 29 Sept 2026: `res.cloudinary.com` answers from a
+  session — `/` gave 404 from the origin, `server: Cloudinary`; the headers on a real picture
+  URL were not fetched, so this stays unverified*) — if exports come back with grey boxes
   where photos should be, that is what to check first, not the drawing
   code.
 - **PDF goes through `js/print-engine.js`**, per the standing rule that no
@@ -1894,7 +1967,7 @@ dropping the snooze from the alarm fails "taking it silences the alarm",
 dropping the prune fails with `old,b1`, and putting a near-chip colour into
 the dark ramp fails the new fragment at **1.09:1** naming
 `board-rail-badge fill-3`. **Nobody has seen the shake or the ramp on a real
-screen** — the sandbox cannot sign in.
+screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the rail, sized to Milanote's, and it colours on hover (Sept 2026)
 
@@ -1968,7 +2041,7 @@ pitch.
   must keep its padding/margin pair. Verified by breaking each.
 
 **Nobody has seen the tiles, the colours or the larger rail on a real
-screen** — the sandbox cannot sign in.
+screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the Note round, from the video (Sept 2026)
 
@@ -2064,7 +2137,7 @@ matching in its style stub — `background-color:` used to read as `color:`,
 which the sanitiser tests exposed on their first run.
 
 **Nobody has seen the tip, the ghost, the text rail or the trail on a real
-screen** — the sandbox cannot sign in.
+screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — Background, the Color tile, and Convert to Document (Sept 2026)
 
@@ -2114,7 +2187,7 @@ tile, top strip panel and convert to document."*
 Verified both ways: an off-palette tile name, the note link left unparsed,
 and the conversion leaving the note's text on the link card each fail by
 name. **Nobody has seen the panel, the tile or a converted note on a real
-screen** — the sandbox cannot sign in.
+screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — Labels, Reactions and Comments as Milanote's panels (Sept 2026)
 
@@ -2170,7 +2243,7 @@ comments), frame strips at full resolution.
   assert through `classList.contains`.
 
 **Nobody has seen the three panels on a real screen** — the sandbox cannot
-sign in.
+sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the ⋯ menu and Lock position, like Milanote's (Sept 2026)
 
@@ -2234,7 +2307,7 @@ known from it; ours is built from the name.
   `boardsOpenMore` is still the bottom sheet.
 
 **Nobody has seen the popover or the padlock on a real screen** — the
-sandbox cannot sign in.
+sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — label chips and reactions ON the card, like Milanote's (Sept 2026)
 
@@ -2279,7 +2352,7 @@ from the label's shape, not copied.
 - The exporter draws neither labels nor reactions (checked, not assumed),
   so nothing there moved.
 
-**Nobody has seen the chips on a real screen** — the sandbox cannot sign in.
+**Nobody has seen the chips on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — NO CARD HAS A HEADER (Sept 2026, the second video)
 
@@ -2453,7 +2526,7 @@ field; putting the dot grid back on `.board-stage` fails the invariant;
 painting a tint on the head fails it too; the old three-field link card
 fails five; and a colour panel that always shows tabs fails two.
 **Nobody has seen any of this on a real screen** — the sandbox cannot sign
-in.
+in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the column, rebuilt; and a 35 MB upload limit (Sept 2026)
 
@@ -2473,7 +2546,8 @@ Cloudinary's refusal came back a minute later as a card stuck on
 
 - **It is OUR limit, not Cloudinary's, and the two are different numbers.**
   Cloudinary caps an unsigned upload by PLAN (10 MB on the free tier) and
-  `cloudinary.com` is unreachable from the sandbox **entirely**, so which
+  `cloudinary.com` is ~~unreachable from the sandbox **entirely**~~ *(SUPERSEDED 29 Sept
+  2026: it answers from a session; an account's plan is a setting that needs its login)*, so which
   cap this account carries **cannot be checked from a session and is not
   claimed here**. What the code does is refuse what we already know is too
   big before sending it, and, when Cloudinary refuses something that
@@ -2571,7 +2645,7 @@ viewport, where the wrapper clips it and the hit-test reports its own
 buttons as unreachable — the fragment measuring itself.
 
 **Nobody has dropped a card into a column on a real screen** — the sandbox
-cannot sign in. The geometry, the drop rule and the collapse are measured;
+cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]. The geometry, the drop rule and the collapse are measured;
 the feel is not.
 
 **THE FRAME WEARS THE SAME TITLE BLOCK** (*"now do the frame like the
@@ -2698,7 +2772,7 @@ report each other as covering — the fragment measuring itself, the
 documented false hit. The phone bar is `tests/smoke-phone.js`'s.
 
 **Nobody has seen the counts on a real screen** — the sandbox cannot sign
-in.
+in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — every rail tool carries the card it will place (Sept 2026)
 
@@ -2781,7 +2855,7 @@ and proved nothing about `_boardsGhostBody`'s own refusal, which is
 asserted directly now.
 
 **Nobody has dragged a tool on a real screen** — the sandbox cannot sign
-in. The eight ghosts were rendered in real Chromium and looked at.
+in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]. The eight ghosts were rendered in real Chromium and looked at.
 
 ### Mood Boards — the drag ghost carries the picture (Sept 2026)
 
@@ -2863,7 +2937,7 @@ what left the two orphans found while checking this round. Both other
 probes were checked and clean.
 
 **Nobody has dragged anything on a real screen** — the sandbox cannot sign
-in.
+in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the Unsorted tray: bigger, sorted, and not cropped (Sept 2026)
 
@@ -2959,7 +3033,7 @@ looked at** — rendered in real Chromium with a portrait stand-in, which is
 what shows the whole figure where the old box showed a midsection.
 
 **Nobody has dragged out of it on a real screen** — the sandbox cannot
-sign in.
+sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the Hand tool moves to the rail (Sept 2026)
 
@@ -3026,7 +3100,7 @@ phone assertions catch by name). **And the rail was looked at**, rendered to
 a screenshot in real Chromium with the mode on — the one thing about this
 round that could be seen from a session, since it needs no sign-in.
 
-**Nobody has pressed it on a real screen** — the sandbox cannot sign in.
+**Nobody has pressed it on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — drag anything into Unsorted (Sept 2026)
 
@@ -3155,7 +3229,7 @@ armed, both themes) and the tray fragment grew two stashed rows, one of
 them a column with the longest label the tray produces.
 
 **Nobody has dragged a card into Unsorted on a real screen** — the sandbox
-cannot sign in.
+cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — "to do not moving properly", and the guard that caused it (Sept 2026)
 
@@ -3268,7 +3342,7 @@ at load, and not harmless the moment a GESTURE registers them — a second
 drag in one test would fire the first drag's stale handlers.
 
 **Nobody has dragged a card on a real screen** — the sandbox cannot sign
-in. What IS measured, in a real browser, is that the exact point in Afnan's
+in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]. What IS measured, in a real browser, is that the exact point in Afnan's
 recording now resolves to "the card drags" where it resolved to "BLOCKED by
 .board-todo-text" before.
 
@@ -3347,11 +3421,13 @@ one SVG overlay per card.
   drawing, two renderers, the rule this module holds for connectors.
 
 **EDIT — crop and rotate, and deliberately NOT a Cloudinary transform.**
-`a_90/c_crop,x_…` was the obvious route and it is the wrong one here: the
+`a_90/c_crop,x_…` was the obvious route and it is the wrong one here: ~~the
 sandbox cannot reach `cloudinary.com` AT ALL, so the string could only be
-constructed and hoped for — the one thing this file's ground rule forbids.
-The arithmetic needs no service, no add-on and no network, and it is
-measurable in a browser from a session.
+constructed and hoped for — the one thing this file's ground rule forbids.~~
+*(SUPERSEDED premise, 29 Sept 2026: `cloudinary.com` answers from a session; whether a
+transform string works on this account's delivery URLs was not tried, and the account's add-ons
+need its login — so the reason is "unverified", no longer "unreachable".)* The arithmetic
+needs no service, no add-on and no network, and it is measurable in a browser from a session.
 
 - `c.rotate` ∈ {90,180,270} and `c.crop` = {x,y,w,h} normalized **within
   the ROTATED frame**, so rotating after cropping does not rewrite the
@@ -3443,7 +3519,7 @@ hit-testing it reports the rail itself — a false positive of the same shape
 as a scrolled-away control.
 
 **Nobody has seen the pen, a cropped picture, the editor or a board
-background on a real screen** — the sandbox cannot sign in.
+background on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the image card, like Milanote's (Sept 2026)
 
@@ -3519,7 +3595,7 @@ that fades is caught. Verified both ways: restoring the head cost fails
 "a photo needs no head height" (`got 120, expected 92`); the fading scrim
 fails the fragment at 1:1 in light; dropping the padding fails it naming
 `board-cmt-badge on-photo` as the coverer. **Nobody has seen a photo card
-on a real screen** — the sandbox cannot sign in.
+on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the colour panel, like Milanote's (Sept 2026)
 
@@ -3600,7 +3676,7 @@ the card body at **1:1** as well. **A fragment that hydrates text must be
 checked by breaking the ink, not by reading the fill.**
 
 **Nobody has seen the panel, the presets or a literal-coloured card on a
-real screen** — the sandbox cannot sign in.
+real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — phone share: "Share → Groovy Ops" (Sept 2026)
 
@@ -3715,7 +3791,7 @@ it needs a republish.**
   roles`, which caught a long name pushing the @username out of the row
   (the name wraps now). **It cannot measure the role dropdown's own text**
   (the probe skips `<option>`) — checked by breaking it.
-- **Nobody has used a role on a real screen** — the sandbox cannot sign in.
+- **Nobody has used a role on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — notifications to the bell (Sept 2026)
 
@@ -3794,7 +3870,7 @@ controls. The existing preview toggle hides and shows it.
   card` (over a white stand-in thumbnail): making the play button
   unclickable fails it; shrinking the card does NOT (the video area yields
   its height, which is correct).
-- **Nobody has pressed ▶ on a real screen** — the sandbox cannot sign in.
+- **Nobody has pressed ▶ on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — audio and map in a link card (Sept 2026)
 
@@ -3925,7 +4001,7 @@ is not found; the existing `_boardsConsumeDeepLink` after `startApp` does
 the rest, behind the same Creative Hub gate. **`replaceState`, never a new
 history entry**, so Back is unchanged and no `hashchange` fires to re-run
 the consumer; only a `#board=` hash is ever cleared. `tests/board-hash.test.js`.
-**Not verified end to end** — the sandbox cannot sign in, so a real reload
+**Not verified end to end** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"], so a real reload
 landing back on a board has not been seen.
 
 **Renaming a board in the top bar: Enter saves (#97 bug 10, same day).**
@@ -4052,7 +4128,7 @@ way in, as in Milanote.
   ink set to its own background.
 - **Not built:** Milanote's other routes into a swatch (none were in the
   recording). **Nobody has seen a swatch or the picker on a real screen** —
-  the sandbox cannot sign in; the SV drag and the eyedropper are untested.
+  the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]; the SV drag and the eyedropper are untested.
 
 **Pantone codes on a swatch (same day).** Afnan: TCX (fabric) and C
 (coated) conversion "to the same color logic". A note reading `485 C`,
@@ -4112,7 +4188,7 @@ gives which code it is"*.
   `smoke-layout` fragment `boards — Pick colour and the TCX / C tabs`
   (both tabs and the empty TCX tab) fails at 1:1 with a code's ink broken.
   Looked at in Chromium, both themes. **Nobody has picked a colour off a
-  real photo** — the sandbox cannot sign in, and the CORS answer of the
+  real photo** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"], and the CORS answer of the
   live Cloudinary pictures is the thing to watch.
 - **Shipped at v252, not v251**: Ammar's PR #91 landed on `main` at v251
   while this branch also sat at v251 — the identical-number collision this
@@ -4217,7 +4293,7 @@ a column its title and how many cards, a to-do its tasks.
   and could not be asserted. Verified by undoing: catch radius 0 (a drop
   40px short stops being caught), the pull zeroed, the `.text` fix.
   **Nobody has felt the magnet on a real screen** — the sandbox cannot sign
-  in; the previews were rendered and looked at in Chromium, both themes.
+  in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]; the previews were rendered and looked at in Chromium, both themes.
 
 ### Mood Boards — a link with no picture (29 Sept 2026)
 
@@ -4425,7 +4501,7 @@ change fails "the same size wherever it is minted" (`340x104`). A too-short
 card is caught by the labels/reactions fragment rather than this one — the
 spine card's thumbnails are pictures, and the probe measures text.
 
-**Nobody has seen either on a real screen** — the sandbox cannot sign in.
+**Nobody has seen either on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### Mood Boards — the rail's hover cue (Sept 2026)
 
@@ -5326,10 +5402,12 @@ Four decisions hold it together:
   the selection would be a second Delete pretending to be a safety net.
   That objection is answered now that deleted cards really go somewhere.
 - **`firestore.rules` CHANGED — it needs a republish.**
-- **Nobody has looked at the panel in a browser.** The sandbox still cannot
-  sign in (gstatic blocked), so the visual is unverified as usual.
-  *(29 Sept 2026: the gstatic premise is SUPERSEDED — see "Sandbox limits"; signing
-  in from the sandbox is untested.)*
+- **Nobody has looked at the panel in a browser.** ~~The sandbox still cannot
+  sign in (gstatic blocked), so the visual is unverified as usual.~~
+  *(SUPERSEDED 29 Sept 2026: the gstatic premise is false, and a headless QA session has
+  signed in and rendered the Board page — see "Sandbox limits". That run stopped before it
+  opened this panel (its report lists no screens), so the panel is still unlooked-at by
+  anyone, human or session.)*
 
 ### Mood Boards — the rail is a column (Sept 2026)
 
@@ -6086,8 +6164,10 @@ order.
   it fails, naming `svg.board-resize-handle`.
 
 **CONFIRMED WORKING ON THE LIVE SITE by Afnan, 18 Sept 2026** — a real
-paste, a real page, a real preview. That matters more than usual here: the
-sandbox cannot reach any external site, so the server fetch, the `og:`
+paste, a real page, a real preview. That matters more than usual here: ~~the
+sandbox cannot reach any external site, so~~ *(SUPERSEDED 29 Sept 2026: many external hosts
+answer from a session — "Sandbox limits" table; whether the link-preview function has since
+been run against a real page from a session is not recorded here)* the server fetch, the `og:`
 parsing and the Cloudinary mirror could only ever be exercised against a
 scripted `fetch` from a session. **Do not re-open the fetch path on a
 hunch** — if a preview comes back empty for one site, that is that site
@@ -6134,11 +6214,12 @@ in `js/boards.js` was ever wrong about the URL.
 The tell, worth reusing: **the card's page-1 thumbnail rendered perfectly
 the whole time.** That is Cloudinary rasterising the exact document it was
 refusing to serve, which rules out a bad upload, a bad URL and a broken file
-in one observation. The sandbox cannot reach `cloudinary.com` at all — the
+in one observation. ~~The sandbox cannot reach `cloudinary.com` at all — the
 egress proxy answers `403` to `CONNECT` for the docs and support sites too,
-not just `res.cloudinary.com` — so this was reasoned from screenshots and
-then confirmed by the human, which is the only route available for anything
-Cloudinary-side.
+not just `res.cloudinary.com` —~~ *(SUPERSEDED 29 Sept 2026: `cloudinary.com/documentation`
+200, `support.cloudinary.com` 302 and `res.cloudinary.com` all answer from a session)* so this
+was reasoned from screenshots and then confirmed by the human, which is still the only route
+for the account SETTING itself (it needs the account's login).
 
 On a 401/403 for a PDF the preview still names that setting, so if the
 account is ever changed or a second environment is set up, the app says what
@@ -6174,8 +6255,9 @@ verified.** Let Cloudinary send the file with `Content-Disposition:
 attachment` (`fl_attachment`, already in this file as the last-resort path)
 and navigate to it: the browser streams it and asks immediately. The cost is
 the filename — it becomes Cloudinary's `public_id` unless
-**`fl_attachment:<name>`** works, and the sandbox cannot reach
-`cloudinary.com` to check. **Ask the human to open one such URL before
+**`fl_attachment:<name>`** works, and ~~the sandbox cannot reach
+`cloudinary.com` to check~~ *(SUPERSEDED premise, 29 Sept 2026: `res.cloudinary.com` answers
+from a session; this was not tried, so it is still untested)*. **Ask the human to open one such URL before
 shipping it**; do not guess the syntax.
 
 What shipped instead:
@@ -6537,7 +6619,8 @@ sub-board → Open / Copy link. Shared blocks carry the real shortcuts
   the system clipboard stays the single source of truth (Stage 2's rule).
 - **Download uses Cloudinary's `fl_attachment`** flag, injected into the
   delivery URL; a non-Cloudinary URL opens as-is. Best-effort, and
-  **unverified from the sandbox**, which cannot reach res.cloudinary.com.
+  **unverified from the sandbox** ~~which cannot reach res.cloudinary.com~~ *(SUPERSEDED 29 Sept
+  2026: it answers from a session; the flag's behaviour on a real asset was not tried)*.
 - **Connector lines used to be deleted by a plain left click**, with no
   confirmation and no other interaction. They now carry `data-conn="<i>"`,
   are inert on click, and are deleted from their own right-click menu.
@@ -7108,7 +7191,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   `known`, `_PRINT_DOC_LABELS`, `_VARIANTS`. Verified by reverting: the
   voided-bill check, the head repeat and the entry-detail button each fail
   one assertion by name. **Nobody has opened the PDF** — the engine test
-  is a recording fake jsPDF, and the sandbox cannot sign in.
+  is a recording fake jsPDF, and the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 - **Afnan's correction tools (23 Sept 2026): edit, delete, reopen, reset.**
   Afnan: *"put a button in afnan view only to reset + edit + delete record
   of things."* The module's rule stays **void-never-edit, nothing deleted**
@@ -7179,7 +7262,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     `store accounts — admin tools, edit and reset` (the whole review page,
     never measured before, plus both modals) — fails 6 jobs with the
     card's ink set to `--surface`. **Nobody has pressed any of it on a real
-    screen** — the sandbox cannot sign in.
+    screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 - **A vendor can be paid from OTHER (24 Sept 2026).** Afnan, with the Pay
   a vendor modal open and an empty third slot circled beside Cash / MCB:
   *"OTHER should be here as well but there is no credit debit account of
@@ -7207,7 +7290,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   purchase-form layout fragment now renders the payment form with Other
   selected and its hint shown, and fails 6 jobs with the hint's ink set to
   `--surface`. **Nobody has paid a vendor from Other on a real screen** —
-  the sandbox cannot sign in.
+  the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 - **Categories and runners, each with a log (24 Sept 2026).** Afnan, with
   the Give-a-float form open: *"when a runner is send for a job it can be
   for many purposes such as mantance work … a catagory of fuel … option to
@@ -7271,7 +7354,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     The wide-only `store accounts — ledger, vendor, consumables` layout
     fragment now renders both cards and both pages. **Nobody has given a
     float with a category, or opened a runner's log, on a real screen** —
-    the sandbox cannot sign in.
+    the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
   - **A probe job flaked during this round, and the cause was the
     fragment, not the form.** `store accounts — tiles, alerts and the
     purchase form @ 420px` failed in light, then in dark, then in both (the
@@ -7455,7 +7538,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     edit never reaches the sync — and got a direct assertion). The runner
     select's case-folded match is not held by a test (the harness has no
     `<select>` options). **Nobody has edited an entry on a real screen** —
-    the sandbox cannot sign in.
+    the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 - **`firestore.rules` changed** (`acct_*` blocks + `isStoreAccounts()`; the
   `store_cash_*` blocks became owner-write) — **published by Afnan, 23 Sept
   2026**; see "Firestore rules" below. **Changed AGAIN the same evening
@@ -7463,7 +7546,7 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   below.
 
 **Nobody has recorded a purchase on a real screen** — the sandbox cannot
-sign in. 535 assertions hold the logic; the layout probe holds the shape.
+sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]. 535 assertions hold the logic; the layout probe holds the shape.
 
 ## Store Accounts — level 2: warehouse customer sales (Sept 2026)
 
@@ -7648,7 +7731,7 @@ because this change did not introduce it; Monitor escapes the same field.
 The fix belongs in `js/activity.js`, not in each caller.
 
 **Nobody has recorded a sale on a real screen** — the sandbox cannot sign
-in.
+in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ### The warehouse money reaches Raees (26 Sept 2026)
 
@@ -7792,9 +7875,9 @@ entry is flagged for the owners, who settle it. Emulator: **103/103**; the
 8 new rule cases each FAIL against the previous rules.
 
 **Nobody has confirmed a warehouse payment or marked a bill collected on a
-real screen** — the sandbox cannot sign in.
+real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
-## Master Accounts — M1 built (28 Sept 2026) · on `main` (29 Sept), rules reported published, Netlify build unconfirmed, not yet seen
+## Master Accounts — M1 built (28 Sept 2026) · on `main` and served (29 Sept), rules reported published, deploy list unseen, not yet seen
 
 Afnan, 27 Sept 2026: *"I want accounts but just for me and ammar, in short
 master accounts … plan all the logics of build first so we have a good
@@ -7843,20 +7926,37 @@ first and then to `914b67a` — the docs commit that carried the first version
 of this line (verified: `git ls-remote origin refs/heads/main` read `914b67a…`
 at 16:17 UTC as relayed, and again at 16:24 UTC) — so `main` has no merge
 commit of its own for it. The docs commit that carries this text sits on top
-of `914b67a` and goes to `main` the same way.
+of `914b67a` and goes to `main` the same way. **Verified this run (29 Sept 2026, after a `git
+fetch`):** every commit hash this section names that is a commit in this checkout — 46 of
+them, the M1 commits `bf09235`…`44166f3`, the eleven merges, `22cfd3e`, `c836de2`, `8573391`,
+`a436e8b`, `914b67a` — is an ancestor of `origin/main` (`git merge-base --is-ancestor`, none
+false); `5291a14` and `8f1a1df` (the sources of two cherry-picks) are not in this checkout, and
+the `md5`s named are file hashes, not commits. The Master Accounts files exist on `origin/main`
+(`git ls-tree`: `js/ma-core.js`, `js/master-accounts.js`, `netlify/lib/ma-server.js`,
+`netlify/functions/ma-attach.js`, `ma-share.js` and `ma-backup.js`, the `ma-*` and
+`master-accounts-*` tests, `MASTER_ACCOUNTS_PLAN.md`). `git ls-remote origin refs/heads/main`
+read `fa44f86…`, a docs-only commit two ahead of `a436e8b`; before this branch merged it,
+`origin/main..HEAD` was 1 (the 29 Sept docs commit `f4298a0`) and `HEAD..origin/main` was 2.
 
-- **On `main` since 29 Sept 2026 — whether Netlify built it is
-  unconfirmed.** Netlify builds `main`, and nothing in a session can see
-  its deploy list (`*.netlify.app` is blocked here, and this repo carries
-  no Netlify commit statuses); a skipped deploy looks exactly like a stale
-  cache (see "A DEPLOY CAN BE SILENTLY SKIPPED" near the top of this
-  file). **Only Afnan reading the Netlify deploy list confirms it.** `main`
-  was `914b67a` when checked (`git ls-remote`, 16:24 UTC), and GitHub
-  Actions `tests` on `main` completed with success for both `a436e8b` (run
-  36595973484) and `914b67a` (run 36596441345) — read from the workflow-runs
-  API at about 16:25 UTC; that is CI, not Netlify.
-  `CACHE_VERSION` is v259, past the branch's last version before the QA
-  merges (v257, `69f5c72`) and `main`'s (v256, `1b56a46`).
+- **On `main` since 29 Sept 2026, and SERVED — verified 29 Sept 2026 (16:39 UTC); the Netlify
+  deploy list is still unseen.** ~~Netlify builds `main`, and nothing in a session can see its
+  deploy list (`*.netlify.app` is blocked here, and this repo carries no Netlify commit
+  statuses)~~ **SUPERSEDED: `groovyoperations.netlify.app` answers from a session.** Read this
+  run by unauthenticated GET and compared by `md5sum` with `git show origin/main:<file>`:
+  `sw.js` (`CACHE_VERSION = 'v259'`), `index.html` (it carries the `/js/ma-core.js?v=20260929v257`
+  and `/js/master-accounts.js` script tags), `js/master-accounts.js` and `js/ma-core.js` — **all
+  four byte-identical to `origin/main`'s**, and the served `sw.js` precaches both scripts. The
+  last commit to touch any of the four is `51cf6c3`, so a build containing Master Accounts, at
+  `51cf6c3` or later, is live: for these four files what Netlify serves is the current `main`'s,
+  not an older build (a browser's own service-worker cache is a separate matter). **What this
+  does not show:** the Netlify deploy LIST — whether `a436e8b`, `914b67a` and `fa44f86`
+  (docs-only for those files) were built, skipped or failed, and which commit built the served
+  bytes — or that the three `ma-*` Netlify functions are deployed and configured (none was
+  called). `main` was `914b67a` when first checked (`git ls-remote`, 16:24 UTC) and `fa44f86` in
+  this run, and GitHub Actions `tests` on `main` completed with success for both `a436e8b` (run
+  36595973484) and `914b67a` (run 36596441345) — read from the workflow-runs API at about 16:25
+  UTC; that is CI, not Netlify. `CACHE_VERSION` is v259, past the branch's last version before
+  the QA merges (v257, `69f5c72`) and `main`'s (v256, `1b56a46`).
 - **The rules: a third publish was REPORTED on 29 Sept 2026 (about 16:18
   UTC), and what the Console holds is still NOT known.** Afnan wrote "rules
   updated record", taken to mean he published the rules; **reported, not
@@ -7880,8 +7980,21 @@ of `914b67a` and goes to `main` the same way.
   Accounts block"*, and nothing is lost, because nothing could be written.
   **Which file is live, only the Console's rules history knows.** The test
   from Afnan's side is a Master Accounts page that loads; it needs a build
-  containing Master Accounts to be served, which is the unconfirmed Netlify
-  deploy above. See "Firestore rules — published" before anything else.
+  containing Master Accounts to be served, which ~~is the unconfirmed Netlify
+  deploy above~~ it is (verified above; the deploy list itself is still unseen). See "Firestore rules — published" before anything else.
+  **Live QA probe of the 15 `ma_*` collections (this run, 29 Sept 2026, after the 16:39 UTC
+  reads):** signed in as the QA account (Identity Toolkit HTTP 200; the password came from the
+  environment and was never printed) and made ONE Firestore REST list (`?pageSize=1`) per
+  collection — `ma_accounts`, `ma_sv_accounts`, `ma_parties`, `ma_items`, `ma_settings`,
+  `ma_commitments`, `ma_counters`, `ma_feedback`, `ma_journal`, `ma_transfer`, `ma_counts`,
+  `ma_closes`, `ma_audit`, `ma_backups`, `ma_shares` — **all 15 answered HTTP 403** (status
+  only; bodies discarded, no document content read). The repo's read rule on each is
+  `isMasterAccounts()` alone and `signedIn()` excludes QA (read from `firestore.rules`), so a
+  refusal is what those rules give. **403 is AMBIGUOUS:** the same answer comes from a published
+  file WITH the Master Accounts block and from one with NO `ma_*` block (default deny — e.g.
+  Ammar's reported `7d858a05…`), so it does NOT show the block is live. What it does show: none of
+  the 15 admitted the QA account, so the live rules do not expose the owner's books to it (a 200
+  would have been a leak). Which file the Console holds is still unknown.
 - **Master Accounts stays owner-only, even from the automated QA account
   (`8573391`, 29 Sept 2026).** Main's QA work made every read rule admit
   the QA account `claude@groovy.op` (`isQaRead()`); the 15 `ma_*`
@@ -7923,7 +8036,11 @@ of `914b67a` and goes to `main` the same way.
   the Dashboard card reads "2 need attention" (its author's Chromium run —
   reported).
 - **Nobody has opened a page, a PDF or a share link on a real screen.**
-  The sandbox cannot sign in; every visual claim below is headless Chromium.
+  ~~The sandbox cannot sign in;~~ *(SUPERSEDED 29 Sept 2026: a headless QA session can sign in,
+  but this module is owner-only — the QA account is refused on all 15 `ma_*` collections
+  (probed, above) and is not on `_MA_USERS`, which is `['afnan','ammar']` in
+  `js/master-accounts.js` — so no QA session can open these pages against live data).* Every
+  visual claim below is headless Chromium.
 
 ### The files
 
@@ -8113,8 +8230,8 @@ rules now make exclude it (read from the rules file).
 **Master Accounts is owner-only from the QA account too, and that is a
 NAMED exemption, not an omission (`8573391`, 29 Sept 2026).** Main's QA work
 made every other read rule admit the QA account through `isQaRead()` (91
-read rules, 93 lines in the file). The 15 `ma_*` collections are the one
-family that does not — Afnan's words for the module were "just for me and
+read rules, ~~93~~ 94 lines in the file — corrected 29 Sept 2026). The 15 `ma_*`
+collections are the one family that does not — Afnan's words for the module were "just for me and
 Ammar", and the account used for automated QA must not read the owner's
 books — so their read rules stay `isMasterAccounts()` alone. Verified at the
 tip: no `isQaRead()` and no `isQa()` inside any `ma_` block. Three things
@@ -8633,7 +8750,9 @@ reproductions — this summary is the record.
   `<h1>` with no `<h2>` between — left as it is. None of these suites signs
   in to the real Firebase: every page is rendered against fake data.
   **Outside `tests/run.js` and CI:** `tests/e2e/board.e2e.js` — only its
-  stub mode could run at the tip — 153 / 157 (the merge agent, reported).
+  stub mode could run at the tip — 153 / 157 (the merge agent, reported). *(29 Sept 2026,
+  later: its LIVE mode was run as the QA account against the served site — 6 of 7, see "QA debug
+  access".)*
   The same four checks fail identically on `main`'s own checkout at
   `08b530a` (a calendar pill title is ellipsised at 1440px in that
   harness), so the merges did not cause them.
@@ -8653,8 +8772,9 @@ reproductions — this summary is the record.
 - **Not verifiable from a session, and not done:** anything on a real
   screen or a phone; what the Console has published (see the rules
   record); the Cloudinary account's plan (authenticated delivery, the
-  download API, its upload cap — `cloudinary.com` is unreachable from the
-  sandbox); the backup bucket, the service account's roles and PITR; what
+  download API, its upload cap — ~~`cloudinary.com` is unreachable from the
+  sandbox~~ *SUPERSEDED 29 Sept 2026: the public hosts answer; the plan is an account setting that
+  needs its login*); the backup bucket, the service account's roles and PITR; what
   WhatsApp does with a link. The first real upload, share and 03:30 UTC
   run are the tests, and each writes or shows its own result.
 
@@ -8664,9 +8784,11 @@ One of these is done and verified — the merge into `main`, with Afnan's
 go-ahead (29 Sept 2026; `main` read from git as `914b67a`) — and one thing
 is REPORTED done by Afnan, not checkable: the rules publish (the two rules
 items below, left unticked — a report is not a check). Nothing else is done
-or checked as of that day. The sandbox cannot reach Google Cloud, Netlify's
-settings, Cloudinary or the Firebase Console, so each is Afnan's (the full
-steps are handed to him in chat, not kept here).
+or checked as of that day. ~~The sandbox cannot reach Google Cloud, Netlify's
+settings, Cloudinary or the Firebase Console, so each is Afnan's~~ *(29 Sept 2026,
+corrected: the public hosts answer from a session; the consoles and dashboards themselves —
+Google Cloud, Netlify, Cloudinary's account, the Firebase Console — were not opened, so each
+stays Afnan's)* (the full steps are handed to him in chat, not kept here).
 
 - [ ] **Which rules are live** — **reported done by Afnan, not checkable.**
   He wrote "rules updated" at about 16:18 UTC on 29 Sept 2026 and did not
@@ -8676,7 +8798,8 @@ steps are handed to him in chat, not kept here).
   block) — and `main`'s record adds that the file live before Ammar's paste
   matched no committed version. *Only the Console knows (Firebase Console →
   Firestore → Rules history). A Master Accounts page that says "could not
-  read … republish" means the Master Accounts block is not live.*
+  read … republish" means the Master Accounts block is not live.* The 29 Sept live probe as the
+  QA account (all 15 `ma_*` lists 403) is consistent with either file and does not settle it.
 - [ ] **The backup bucket** (`gs://…`, same location as Firestore, public
   access prevention on, delete after 90 days) — *unverified advice, from
   the plan.*
@@ -8723,8 +8846,14 @@ steps are handed to him in chat, not kept here).
   deploy looks exactly like a stale cache.
 - [ ] **Read the Netlify deploy list for that merge** — was it built, or
   skipped (the 21 Sept credit-usage skip looked exactly like a stale
-  cache)? *Only Afnan can see it: `*.netlify.app` is blocked here and the
-  repo carries no Netlify commit statuses.*
+  cache)? ~~*Only Afnan can see it: `*.netlify.app` is blocked here and the
+  repo carries no Netlify commit statuses.*~~ *(29 Sept 2026, corrected: the site answers from
+  a session and its `sw.js`, `index.html`, `js/master-accounts.js` and `js/ma-core.js` were
+  byte-identical to `origin/main`'s, so a build containing Master Accounts IS live — see the
+  "On `main` since" bullet. The deploy LIST would still say whether the docs commits after
+  `51cf6c3` were skipped, which commit built the served bytes, and whether the `ma-*` functions
+  deployed; the repo carries no Netlify commit statuses, and that view is Afnan's.)* Left
+  unticked: the list itself has not been seen.
 - [ ] **A first look on a real screen** — nobody has.
 
 ### Cross-track
@@ -9853,7 +9982,7 @@ entry points**, so `tests/invariants.test.js` holds the two call sites
 (present, `typeof`-guarded, handing over the payload and the actual cut) —
 verified by deleting the fabric.js site (4 fail) and the pos.js guard (1).
 
-**Nobody has issued fabric on a real screen** — the sandbox cannot sign in.
+**Nobody has issued fabric on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ## Pattern Hub (Sept 2026)
 
@@ -10226,7 +10355,7 @@ XXXS/XXS, numeric waist, none, legacy) and `PO_FLOW_SIZES` covers only one —
 **deliberately left alone**; the hub carries its own sizes per pattern.
 
 **Nothing in this module has been looked at in a browser** — the sandbox
-cannot sign in. Logic and the real-Chromium script load are tested.
+cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]. Logic and the real-Chromium script load are tested.
 
 ## Profiles (Sept 2026)
 
@@ -10479,7 +10608,7 @@ a tight badge or table header).
   caching outside the SW, not load-bearing for the offline cache.
 - **Not verified from here, same as dark mode:** nobody has looked at the
   new sizes on a real phone or in a real browser — the sandbox still
-  cannot sign in. The specimen artifact was published specifically so
+  cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]. The specimen artifact was published specifically so
   Afnan could judge the actual sizes before this shipped, rather than
   trusting a description of pixel counts; the app itself still needs a
   human pass.
@@ -10524,9 +10653,10 @@ theme is about the screen you are looking at, not who you are.
 - **What is verified and what is not.** A headless-Chromium probe confirmed
   every token resolves and the computed colours flip correctly in both
   themes (body, topbar, cards, buttons, the red QC button keeping white
-  text). **Nobody has LOOKED at the app in dark mode** — the sandbox still
-  cannot sign in (gstatic is blocked; *29 Sept 2026: that premise is SUPERSEDED,
-  see "Sandbox limits" — signing in from the sandbox is untested*), so page-by-page visual confirmation
+  text). **Nobody has LOOKED at the app in dark mode** — ~~the sandbox still
+  cannot sign in (gstatic is blocked)~~ *(SUPERSEDED 29 Sept 2026: gstatic answers, and a
+  headless QA session has signed in and rendered the Board page — but it made no screenshots
+  and did not walk the other pages; see "Sandbox limits")*, so page-by-page visual confirmation
   needs the human. Expect leftover light patches in the corners the
   property-qualified sweep could not reach (gradients, `el.style.x='#fff'`
   assignments, chart and badge colours); they are a follow-up pass, best
@@ -11100,7 +11230,7 @@ well, masters other than Alam and Hassan."* The dropdown was two hardcoded
 to two options, making the dedupe case-sensitive, saving `__new`, adding the
 PDF row as a ninth row (`got 2, expected 1` pages) and dropping the search
 field — each fails by name. **Nobody has picked a new master or printed the
-PDF on a real screen** — the sandbox cannot sign in.
+PDF on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
 ## Login, Remember me and the fingerprint lock (26 Sept 2026)
 
@@ -11416,13 +11546,13 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   looked at in Chromium at 1919×941, 1366×768, 1100×700 and 800×900, both
   themes.
 - **Nobody has signed in, saved a password or used the lock on a real
-  phone** — the sandbox cannot sign in. Rendered and measured in headless
+  phone** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"]. Rendered and measured in headless
   Chromium at 390/360px and desktop, both themes.
 
 ## The phone sweep (27 Sept 2026)
 
 Afnan: *"can you debug groovy ops by yourself? Phone UI only."* The sandbox
-cannot sign in, so the app was loaded in headless Chromium at 390px with a
+cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"], so the app was loaded in headless Chromium at 390px with a
 stubbed Firebase and fake data, every page opened for seven roles in both
 themes, screenshotted screen by screen (a full-page capture drags the fixed
 bottom nav and the off-screen sheets into the middle of the picture — use
@@ -11459,7 +11589,7 @@ Observer Tower opens on twelve zero tiles; the bug FAB passes over content
 while scrolling. **Still only a phone can say:** the keyboard, the
 fingerprint dialog and real data volumes.
 
-## QA debug access (29 Sept 2026, branch `qa-access-v2`) — read `QA_ACCESS.md`
+## QA debug access (29 Sept 2026; was branch `qa-access-v2`, now on `main`) — read `QA_ACCESS.md`
 
 Claude Code's login `claude@groovy.op` (role `qa`) is defined once, in `main`'s
 `USER_DEFS`/`QA_ROLE`; the identity and its write fences are in BOARD.md → "The QA
@@ -11477,18 +11607,25 @@ matrix and a regression differential over every path parsed from the rules).
   afnan and ammar, "just for me and Ammar" — and QA is REFUSED there. Its read rules stay
   `isMasterAccounts()` alone; `tests/qa-read-guard.test.js` exempts them by name and holds
   that the exemption stays shut, `tests/rules-emulator-qa.js` part 1b proves the refusal, and
-  `tools/qa-snapshot-lib.js` keeps them out of the default snapshot (`8573391`). **Not held
-  live:** `tools/qa-probe.js` has no `ma_` line. `QA_ACCESS.md` still says QA reads
-  owner-only collections and is not updated for this. See "Master Accounts" → "The gate".
+  `tools/qa-snapshot-lib.js` keeps them out of the default snapshot (`8573391`). **Held
+  live only by a one-off:** `tools/qa-probe.js` still has no `ma_` line, but a REST list of all
+  15 as the QA account on 29 Sept 2026 answered 403 for each (ambiguous between "block not
+  published" and "block published, QA refused" — "Master Accounts" → "On `main` since").
+  `QA_ACCESS.md` said QA reads owner-only collections; corrected 29 Sept 2026 (same change, second
+  commit). See "Master Accounts" → "The gate".
 * **A read no longer proves the QA rules are live** (it reads `pos` either way); the e2e
   harness's gate updates a nonexistent document instead.
 * **Not verified from a session:** what the Console has published, as TEXT (behaviour
-  is a different thing — see the 29 Sept 2026 block below), and the emulator switch
-  inside a signed-in browser. ~~whether the Auth account exists~~ — **SUPERSEDED 29 Sept
-  2026: it exists and can sign in (block below).** ~~(gstatic is blocked)~~ — **SUPERSEDED
-  29 Sept 2026:** that premise no longer holds ("Sandbox limits"); the switch inside a
-  signed-in browser is still untested. (`QA_ACCESS.md` §1 still calls the account's
-  existence "Unknown"; that file was not edited by this change.)
+  is a different thing — see the 29 Sept 2026 blocks below), and the emulator switch
+  inside a signed-in browser (`?env=emulator`, localhost only — the live e2e below did not use
+  it). ~~whether the Auth account exists~~ — **SUPERSEDED 29 Sept
+  2026: it exists and can sign in (blocks below).** ~~(gstatic is blocked)~~ — **SUPERSEDED
+  29 Sept 2026:** that premise is false, and a headless QA session has signed in and rendered the
+  Board page (the e2e block below, "Sandbox limits"). (`QA_ACCESS.md` §1 called the account's
+  existence "Unknown"; corrected 29 Sept 2026, same change, second commit.) **Branch state,
+  verified this run:** no remote branch named `qa-access*` exists (`git branch -r` and `git
+  ls-remote --heads` find none) and `dc98484`, `b680d0b`, `b1872f4` and `08b530a` are ancestors of
+  `origin/main`.
 * **VERIFIED FROM A SESSION, 29 Sept 2026 — the live QA account, one run of
   `tools/qa-probe.js --live --sandbox-writes`.** Source: that tool's own output (exit 0,
   "All as designed."), relayed by the session that ran it to the agent that wrote this entry,
@@ -11511,8 +11648,12 @@ matrix and a regression differential over every path parsed from the rules).
     (verified by the sign-in itself), and the signed-in uid matched the uid pinned in the repo's
     `isQa()` (the probe exits 1 on a mismatch). The uid is deliberately not written here.
   * **27 writes refused:** every one of the probe's 27 create attempts against real collections
-    got HTTP 403 — including `hrm_notifications` with `forUser` afnan, with `forRole` owner, and
-    with `forUser` claude plus `forRole` owner; `user_profiles` with a foreign uid; `board_items`;
+    got HTTP 403 — including the three `hrm_notifications` creates, which `tools/qa-probe.js` lines
+    97–98 (read) define as `{forUser:'afnan',title:'probe'}`, `{forRole:'owner',title:'probe'}`
+    and `{forUser:'claude',forRole:'owner',title:'probe'}` — the last is the row `qaOwnNotice()`
+    exists to refuse (its own bell plus a whole role's); **the probe never sends the ALLOWED
+    shape**, `{forUser:'claude'}` with no `forRole`, so "QA can write its own bell row" is not
+    exercised by it; `user_profiles` with a foreign uid; `board_items`;
     `board_lists`; `mood_boards`; `payslips`; `employees`; `acct_entries`; `wh_sales`.
   * **35 reads open:** all 35 top-level collection lists in the probe's list returned HTTP 200,
     including `employees`, `payslips`, `acct_entries`, `wh_sales`, `acct_vendors`,
@@ -11540,6 +11681,54 @@ matrix and a regression differential over every path parsed from the rules).
     (body "probe") probably survives under the deleted item. The session that ran the probe
     tried to list it as the QA account and was refused (403), so it could not be looked for
     from a session; only someone with Console or Admin access can confirm it.
+* **VERIFIED FROM A SESSION, 29 Sept 2026 (later) — the Board e2e run LIVE as the QA account:
+  6 of 7 checks; the 7th is a permission refusal, reproduced in the emulator.** Source: `tests/e2e/board.e2e.js` against
+  `https://groovyoperations.netlify.app` (serving `v259`) at checkout `a436e8b`, 16:21:05 →
+  16:21:30 UTC, read from the run's own `docs/board-screens/a436e8b/report.md` and `report.json`
+  (both gitignored — `.gitignore` line 26 — so they exist only in that checkout) and its stdout
+  (exit 1). Output goes to `docs/board-screens/<checkout>/`.
+  * **Passed (6):** signed in with the `qa` role · signed in WITHOUT Remember me (no kept session,
+    no saved password) · the rules refused it a write to `pos` (`permission-denied` — the run's own
+    check that `isQa()` is deployed) · the same for `bug_reports` · the sandbox is a private QA
+    list it runs alone · the composer takes the caret. The containment gate held. **0 page
+    errors, 0 console errors.** No screenshots: it aborted before its screen matrix
+    (`screens: []`).
+  * **Failed (1), "the run completed":** *"timed out waiting for the new item — the app said:
+    Refused — this item may be locked, or firestore.rules is not deployed yet. — the composer
+    still holds: e2e a436e8b …"*. The run created a QA-owned `QA Sandbox` `board_lists` document
+    (its id is in the report; not written here — the report records the creation and nothing about
+    removal) and no `board_items` document (the item write was the refused step).
+  * **The cause, reproduced in the local Firestore emulator** (a `demo-` project; it cannot reach
+    live) by the earlier agent and re-run in this session from its scratch script
+    (`qa-batch-repro.js`, scratchpad, not in the repo) against the repo's `firestore.rules`. The app
+    creates an item with ONE `writeBatch`: `board_items/{id}` plus `board_items/{id}/activity/{a}`
+    (`js/theboard.js` `tbCreateFromQuick`, lines 1782–1786, read). The activity `create` rule
+    (`firestore.rules` L1131–1132, read: `… && ( !isQa() || tbOwnsItem(id) )`) judges ownership with
+    `tbOwnsItem`, which reads the parent through `exists()`/`get()` — the state BEFORE the batch, in
+    which the item does not exist yet — so for QA the batch is refused. Emulator results: QA item +
+    activity in one batch → PERMISSION_DENIED (the emulator log names L1131 among its errors); QA
+    item alone → allowed; QA activity row as a separate write afterwards → allowed; the same batch
+    by a simulated ordinary user (`saim`) → allowed; QA writing activity on a real person's
+    item, and QA batching a QA-flagged item into a real list → still refused (the fences intact).
+  * **An untested-in-the-repo candidate fix, NOT applied:** judge ownership on the state after the
+    batch — a `tbOwnsItemAfter()` built on `existsAfter()`/`getAfter()`, used by the activity and
+    comments `create` rules only. On an in-memory copy of the rules, in the same emulator run, it
+    turned the batch from refused to allowed and left the two fence checks refused (the run
+    reported 11 passed, 1 failed — the 1 being the batch against the unchanged repo rules). It is
+    not in the repo, has not been through `tests/rules-emulator-board.js` or
+    `tests/rules-emulator-qa.js`, and would need a republish.
+  * **Hypothesis, unverified: the live Console's `board_items` rules equal the repo's.** The
+    app's message is shown for ANY permission error (`js/theboard.js` 1503–1505, read), so it does
+    not say which rule refused. The probe's sandbox step (reported, above) created an item and then
+    a comment as SEPARATE writes and got 200 for both — consistent with the emulator result and not
+    evidence against a matching Console; a mismatch is not excluded.
+  * **What is therefore FALSE on live today: "the QA account can create a Board item through the
+    app."** Verified by the e2e failure above (the composer's one-batch path). A direct REST create
+    of an item by QA is not affected (the probe's sandbox step, reported), so the limit is on the
+    app's write path, not on the account's fence. Until the rule is fixed and republished, the
+    harness's live run stops at its creation step and produces no screenshots.
+  * **Environment prerequisite:** the proxy CA in Chrome's NSS store — reported by that run, not
+    re-run; see "Sandbox limits".
 
 ## Credentials — never in client code
 
@@ -11676,21 +11865,25 @@ ninth merge of `main` into the Master Accounts branch, v258).
    the repo; the Console's rules history can.
 3. **What it means.** *Hypothesis, unverified:* if he pasted the final file,
    the `ma_*` rules are live (Master Accounts loads for Afnan and Ammar) and
-   so are `main`'s QA-read rules (the file carries `isQaRead()` — 93 lines,
-   verified), and nothing is outstanding. If it was another file — a local
-   copy, or one of the two earlier — the Console may still hold Ammar's (no
+   so are `main`'s QA-read rules (the file carries `isQaRead()` — ~~93~~ 94 lines,
+   verified; corrected 29 Sept 2026, see below), and nothing is outstanding. If it was another
+   file — a local copy, or one of the two earlier — the Console may still hold Ammar's (no
    `ma_*` block: Master Accounts denied to everyone, failing closed) or
    Afnan's earlier merged one (no `isQaRead()`); the entry below says what
    each state refuses.
 4. **The test that can show it worked, from Afnan's side:** a Master Accounts
    page loads for him or Ammar instead of *"Could not read … — republish
    firestore.rules with the Master Accounts block"*. It needs a build with
-   Master Accounts in it to be served, which is the Netlify deploy in 5. A
+   Master Accounts in it to be served, which is the Netlify deploy in 5. ~~A
    live QA probe (`tools/qa-probe.js --live`, which needs the QA account's
-   password) has NOT been run — and **it has no `ma_` line** (verified:
+   password) has NOT been run~~ *(SUPERSEDED 29 Sept 2026, later: one was run and its
+   result relayed — see "QA debug access")* — and **it has no `ma_` line** (verified:
    `grep -n "ma_" tools/qa-probe.js` finds nothing), so it could not show
    that the QA account stays refused on `ma_*`; only the emulator holds that
-   (`tests/rules-emulator-qa.js` part 1b). Nothing checks it live.
+   (`tests/rules-emulator-qa.js` part 1b). ~~Nothing checks it live.~~ *(SUPERSEDED 29 Sept
+   2026, later: a one-off REST list of all 15 `ma_*` collections as the QA account answered 403
+   for each — "Master Accounts" → "On `main` since"; ambiguous between "block not published"
+   and "block published, QA refused", so it does not show the block is live.)*
 5. **`main` and the deploy.** `main` was
    `914b67a22ecf6d59b9d9c73e68f4cd445d36c3e9` when this was written
    (verified: `git ls-remote origin refs/heads/main`, 16:17 UTC as relayed
@@ -11700,7 +11893,9 @@ ninth merge of `main` into the Master Accounts branch, v258).
    `914b67a` (run 36596441345) both completed with conclusion success
    (16:12–16:18 and 16:16–16:22 UTC). That is CI. **Whether Netlify built the
    deploy is UNCONFIRMED:** nobody in a session can see its deploy list
-   (`*.netlify.app` is blocked here, and this repo carries no Netlify commit
+   (~~`*.netlify.app` is blocked here~~ *SUPERSEDED 29 Sept 2026: the site answers, and its
+   Master Accounts files were byte-identical to `origin/main`'s — see "Master Accounts"; the
+   deploy LIST is still unseen*, and this repo carries no Netlify commit
    statuses); only Afnan reading it can say.
 
 This supersedes the "REPUBLISH OUTSTANDING (29 Sept 2026, evening) — the FINAL
@@ -11718,8 +11913,10 @@ replace.
 
 1. **The file to publish** is `firestore.rules` on `main` (this branch's
    tip): LF `md5 9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines, 15 `match
-   /ma_` blocks, 93 lines mentioning `isQaRead()` (its definition, a comment
-   and 91 read rules; none inside an `ma_` block). It is `main`'s own file
+   /ma_` blocks, ~~93~~ 94 lines mentioning `isQaRead()` (its definition, two comment
+   lines and 91 read rules; none inside an `ma_` block — corrected 29 Sept 2026:
+   `grep -c isQaRead firestore.rules` reads 94, and the three lines that are not `allow read`
+   rules are 45, 52 and 499). It is `main`'s own file
    at `1b56a46` (LF md5 `7d858a05ce8ecf6aae585bbd79892960`, 1,142 lines)
    plus the Master Accounts block — **384 added lines, none removed**
    (verified with `diff` against `main`) — and those 384 lines are
@@ -12048,8 +12245,8 @@ rules, role-gated and owner-only included; the credential collections keep
 no match block; `database.rules.json` is unchanged. **And main's
 notification fence had a hole** (`forUser:'claude'` + `forRole:'owner'`
 reached every owner's bell) — `qaOwnNotice()` closes it. The published
-ruleset (`md5 b68fc9fe…`, `430fc28`) has NONE of this, and whether the Auth
-account exists is unknown: see `QA_ACCESS.md` §1 for the Console check and §5
+ruleset (`md5 b68fc9fe…`, `430fc28`) has NONE of this, and ~~whether the Auth
+account exists is unknown~~ *(SUPERSEDED 29 Sept 2026: it exists and signs in — "QA debug access")*: see `QA_ACCESS.md` §1 for the Console check and §5
 for the rollout and rollback. **Publish before anything signs in as that
 account.**
 
@@ -12150,8 +12347,10 @@ So the repo rules already permit this exact write for an owner; a live
 `js/patterns.js`. It matches exactly what a stale/never-fully-published
 ruleset would produce, and is consistent with — not proof of — the
 outstanding-republish note above. **Not verified from this sandbox**: what
-the live Console rules actually contain (`*.firebaseio.com` is
-unreachable here) — only Afnan republishing and retrying can confirm it.
+the live Console rules actually contain (~~`*.firebaseio.com` is
+unreachable here~~ *SUPERSEDED 29 Sept 2026: that host answers — and it is the RTDB host, not the
+Firestore rules; the rules TEXT is still not readable from a session, but the QA account can
+probe how the live rules answer*) — only Afnan republishing and retrying can confirm it.
 If "Missing or insufficient permissions" is reported again on ANY Pattern
 Hub write after a fresh republish, treat that as new evidence and reopen
 the code, not just the rules.
@@ -12294,10 +12493,13 @@ Chrome.
   catches what `node --check` cannot: a load-order break, a top-level `const`
   declared twice across two classic scripts (they share one lexical scope), a
   global that quietly stopped being defined. **Only possible because the
-  libraries are vendored.** It still cannot sign in — gstatic is blocked, so
-  `__bootApp()` never runs *(29 Sept 2026: the gstatic premise is SUPERSEDED, see
-  "Sandbox limits"; this suite still does not sign in, and whether the app boots
-  from the sandbox is untested)*. Skips cleanly with no browser. Note it runs the
+  libraries are vendored.** ~~It still cannot sign in — gstatic is blocked, so
+  `__bootApp()` never runs~~ *(SUPERSEDED 29 Sept 2026: the gstatic premise is false. This
+  suite still does not sign in, and that is by design: it serves a synthetic `/__probe` page that
+  lists the classic scripts — not `index.html`, so no Firebase module is imported and
+  `__bootApp()` never runs — and launches Chrome with `--no-proxy-server`, so it reaches
+  127.0.0.1 only (read from `tests/smoke-browser.js`). Signing in is `tests/e2e/board.e2e.js`'s
+  job, outside `tests/run.js` and CI — see "Sandbox limits")*. Skips cleanly with no browser. Note it runs the
   browser **asynchronously on purpose**: this process is also the web server,
   and a synchronous spawn deadlocks the event loop that has to answer the
   browser's requests — which looks exactly like a browser problem and is not.
