@@ -5642,6 +5642,87 @@ function _boardsStashTargetEl(){
   return document.getElementById('board-stash-zone');
 }
 function _boardsOverStash(ev){return _boardsOverEl(_boardsStashTargetEl(),ev);}
+/* ── THE MAGNET (Sept 2026) ─────────────────────────────────────────────
+   Afnan: dropping a card into Unsorted should have "a magnet like effect,
+   pull and push to grab things". So Unsorted reaches for a card before the
+   pointer is on it:
+
+   - within _BOARDS_MAGNET_PX of the target the held card is PULLED toward
+     it, harder the closer it gets, and the target leans out to meet it
+     (--mag, 0..1, drives its glow);
+   - within _BOARDS_MAGNET_CATCH it is CAUGHT: the card shrinks and centres
+     under the pointer, the target lights up, and a drop there stashes —
+     the pointer no longer has to be exactly on the panel;
+   - pull away and it lets go, springing back (the .lifted transition).
+
+   ONE pure function answers "how strongly, and caught or not", and both
+   the highlight and the drop read it, so what lights up and what a drop
+   does cannot disagree. The pull is VISUAL only (CSS variables on the
+   lifted card): c.x/c.y are never bent, so a card let go on the canvas
+   lands exactly where the pointer put it. */
+const _BOARDS_MAGNET_PX=170,_BOARDS_MAGNET_CATCH=56;
+function _boardsMagnet(r,px,py){
+  if(!r||!(r.right>r.left))return{m:0,caught:false,d:Infinity,vx:0,vy:0};
+  const nx=Math.max(r.left,Math.min(px,r.right)),ny=Math.max(r.top,Math.min(py,r.bottom));
+  const vx=nx-px,vy=ny-py,d=Math.hypot(vx,vy);
+  const m=d>=_BOARDS_MAGNET_PX?0:1-d/_BOARDS_MAGNET_PX;
+  return{m,caught:d<=_BOARDS_MAGNET_CATCH,d,vx,vy};
+}
+function _boardsStashMagnet(ev){
+  const el=_boardsStashTargetEl();
+  if(!el||!el.getBoundingClientRect||!ev)return _boardsMagnet(null);
+  return _boardsMagnet(el.getBoundingClientRect(),ev.clientX,ev.clientY);
+}
+// Writes the pull onto the lifted cards and the target. World px, because
+// the cards live inside the zoomed world.
+function _boardsApplyMagnet(origins,mg,ev,zoom){
+  const z=zoom||1;
+  let pw=null;
+  if(mg.caught&&ev)pw=_boardsScreenToWorld(ev.clientX,ev.clientY);
+  origins.forEach(o=>{
+    const el=document.getElementById('board-card-'+o.card.id);
+    if(!el||!el.style||!el.style.setProperty)return;
+    let mx=0,my=0,ms=1;
+    if(mg.caught&&pw){
+      // Caught: the card gathers under the pointer, small, ready to go in.
+      mx=pw.x-(o.card.x+o.card.w/2);my=pw.y-(o.card.y+o.card.h/2);ms=0.45;
+    }else if(mg.m>0){
+      mx=mg.vx*mg.m*0.5/z;my=mg.vy*mg.m*0.5/z;ms=1-0.18*mg.m;
+    }
+    el.style.setProperty('--mx',mx.toFixed(1)+'px');
+    el.style.setProperty('--my',my.toFixed(1)+'px');
+    el.style.setProperty('--ms',ms.toFixed(3));
+    if(el.classList)el.classList.toggle('magnet-caught',!!mg.caught);
+  });
+  const t=_boardsStashTargetEl();
+  if(t&&t.style&&t.style.setProperty)t.style.setProperty('--mag',(mg.caught?1:mg.m).toFixed(3));
+}
+/* The drop: each card flies from where it was let go into the panel and
+   is gone, and the row it became pops in (_boardsTrayLanded). A CLONE
+   flies, ids stripped, pinned to the body, because the stash re-renders
+   the canvas and the real card is gone the moment it runs. Nothing flies
+   under prefers-reduced-motion. */
+function _boardsFlyInto(shots,target){
+  if(!shots||!shots.length||!target)return;
+  try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;}catch(e){}
+  const tx=target.left+Math.min(80,(target.right-target.left)/2),ty=target.top+120;
+  shots.forEach(sh=>{
+    try{
+      const c=sh.el.cloneNode(true);
+      c.removeAttribute('id');
+      if(c.querySelectorAll)c.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));
+      c.classList.remove('lifted','magnet-caught','selected');
+      c.classList.add('board-fly');
+      const st=c.style;
+      st.position='fixed';st.left=sh.r.left+'px';st.top=sh.r.top+'px';st.margin='0';
+      st.transformOrigin='0 0';st.transform='scale('+sh.z+')';st.zIndex='9997';st.pointerEvents='none';
+      document.body.appendChild(c);
+      const go=()=>{st.transform='translate('+(tx-sh.r.left)+'px,'+(ty-sh.r.top)+'px) scale('+(sh.z*0.12)+')';st.opacity='0';};
+      (window.requestAnimationFrame||setTimeout)(()=>(window.requestAnimationFrame||setTimeout)(go));
+      setTimeout(()=>{try{c.remove();}catch(e){}},420);
+    }catch(e){}
+  });
+}
 // The same dashed outline the Home panel drop uses, deliberately: one
 // drop-target look, whichever direction a card is travelling.
 function _boardsStashDropTarget(on){
@@ -5744,7 +5825,7 @@ window.boardsCardDragStart=function(e,cardId){
   const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
   _boardsVel={x:e.clientX,y:e.clientY,t:Date.now(),v:0};
-  let tilt=0,lastTX=e.clientX,lastTT=Date.now();
+  let tilt=0,lastTX=e.clientX,lastTT=Date.now(),wasCaught=false;
   const liftEls=()=>origins.map(o=>document.getElementById('board-card-'+o.card.id)).filter(Boolean);
   // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
   // This used to call setPointerCapture right here, on the pointerdown.
@@ -5828,8 +5909,15 @@ window.boardsCardDragStart=function(e,cardId){
     // A lone board card held over the panel is a "take it off Home", so the
     // panel says so before the pointer comes up rather than after.
     if(unplaceable)_boardsPanelDropTarget(_boardsOverPanel(ev));
-    // Held over Unsorted, the drop says so before the pointer comes up.
-    if(stashable)_boardsStashDropTarget(_boardsOverStash(ev));
+    // Held near Unsorted, the magnet pulls; caught, the drop says so before
+    // the pointer comes up.
+    if(stashable){
+      const mg=_boardsStashMagnet(ev);
+      if(mg.caught&&!wasCaught&&navigator.vibrate){try{navigator.vibrate(8);}catch(e){}}
+      wasCaught=mg.caught;
+      _boardsApplyMagnet(origins,mg,ev,b.zoom);
+      _boardsStashDropTarget(mg.caught);
+    }
     if(moveTargets.length)_boardsMoveDropMark(moveTargets,_boardsMoveTargetAt(moveTargets,ev));
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
@@ -5839,7 +5927,15 @@ window.boardsCardDragStart=function(e,cardId){
     document.removeEventListener('pointermove',move);
     document.removeEventListener('pointerup',up);
     document.removeEventListener('pointercancel',up);
-    liftEls().forEach(el=>el.classList&&el.classList.remove('lifted'));
+    const stashMg=pushed&&stashable&&ev?_boardsStashMagnet(ev):null;
+    const stashTarget=stashMg&&stashMg.caught&&_boardsStashTargetEl();
+    const shots=stashTarget?liftEls().map(el=>({el,r:el.getBoundingClientRect?el.getBoundingClientRect():null,z:b.zoom})).filter(x=>x.r):[];
+    const flyTo=stashTarget&&stashTarget.getBoundingClientRect?stashTarget.getBoundingClientRect():null;
+    liftEls().forEach(el=>{
+      if(el.classList){el.classList.remove('lifted');el.classList.remove('magnet-caught');}
+      if(el.style&&el.style.removeProperty)['--mx','--my','--ms'].forEach(k=>el.style.removeProperty(k));
+    });
+    {const t=_boardsStashTargetEl();if(t&&t.style&&t.style.removeProperty)t.style.removeProperty('--mag');}
     if(document.body&&document.body.classList)document.body.classList.remove('board-dragging');
     try{if(grip.hasPointerCapture&&grip.hasPointerCapture(ptr))grip.releasePointerCapture(ptr);}catch(err){}
     _boardsHideGuides();
@@ -5848,7 +5944,7 @@ window.boardsCardDragStart=function(e,cardId){
     _boardsStashDropTarget(false);
     // Read the hit test BEFORE the zone is taken away — when the tray is
     // shut, the zone IS the target.
-    const overStash=pushed&&stashable&&_boardsOverStash(ev);
+    const overStash=!!(stashMg&&stashMg.caught);
     const moveHit=pushed&&ev&&moveTargets.length?_boardsMoveTargetAt(moveTargets,ev):null;
     _boardsMoveDropMark(moveTargets,null);
     _boardsStashZone(false);
@@ -5894,6 +5990,7 @@ window.boardsCardDragStart=function(e,cardId){
       origins.forEach(o=>{o.card.x=o.ox;o.card.y=o.oy;});
       _boardsUndo.pop();
       _boardsSyncHistoryButtons();
+      _boardsFlyInto(shots,flyTo);
       window.boardsTrayStashCards(group.map(c=>c.id));
       return;
     }
@@ -11964,6 +12061,10 @@ function _boardsTrayItemHTML(u,i,canEdit){
   let thumb;
   if(u._uploading){
     thumb='<div class="board-tray-thumb board-tray-thumb-empty">Uploading…</div>';
+  }else if(_boardsTrayPreview(u,i)){
+    // A note, a to-do, a column, a colour… drawn as what it IS rather than
+    // a word in a grey box. Text goes in by _boardsTrayHydrate.
+    thumb=_boardsTrayPreview(u,i).html;
   }else{
     // The face is decided ONCE, by _boardsTrayFace, because the drag ghost
     // reads the same answer — see the note there.
@@ -11981,7 +12082,9 @@ function _boardsTrayItemHTML(u,i,canEdit){
   // The label is written in with textContent by _boardsTrayHydrate — it can
   // be a filename or a line of someone's note, and this file never
   // interpolates user text into an HTML string.
-  return`<div class="board-tray-item" data-idx="${i}" title="Drag onto the board to place it"
+  const landed=_boardsTrayLanded.has(u.id);
+  if(landed)_boardsTrayLanded.delete(u.id);   // one-shot, like the panel flash
+  return`<div class="board-tray-item${landed?' landed':''}" data-idx="${i}" title="Drag onto the board to place it"
       ${canEdit?`onpointerdown="window.boardsTrayDragStart(event,${i})"`:''}>
     ${thumb}
     <div class="board-tray-label" id="board-tray-l-${i}"></div>
@@ -12020,8 +12123,94 @@ function _boardsTrayFace(u){
   // heading, a column, a frame. It says WHICH, through the same
   // type-to-word map the delete toast uses, so it can never introduce
   // itself as something it is not.
-  if(Array.isArray(u.cards))return{badge:_boardsStashBadge(u)};
+  if(Array.isArray(u.cards)){
+    const r=u.cards[0];
+    if(r&&r.type==='swatch'&&_boardsValidHex(r.hex))return{badge:String(r.hex).toUpperCase(),color:r.hex};
+    return{badge:_boardsStashBadge(u)};
+  }
   return{badge:'NOTE'};
+}
+/* ── A PREVIEW OF WHAT IS IN THE ROW (Sept 2026) ──────────────────────
+   Afnan: a note, a to-do, a column, a colour should each show a preview
+   in Unsorted, not the word NOTE / TO-DO / COLUMN in a grey box — "column
+   … should show the title and how many content it has, to do show a
+   proper preview of the to do".
+
+   ONE function builds both halves: the markup (structure only, every text
+   slot EMPTY) and the list of strings that go into those slots. The row
+   draws the first; _boardsTrayHydrate writes the second with textContent,
+   the rule every user string in this file follows. Built from the stashed
+   card itself, so nothing new is stored and an old item gets a preview
+   the moment this ships. A photo, a link and a PDF keep the picture
+   _boardsTrayFace already gives them. */
+const _BOARDS_TRAY_PREV_ROWS=4;   // measured: four rows and a two-line title fit 160px
+function _boardsTrayPreview(u,i){
+  if(!u||u._uploading)return null;
+  let root=Array.isArray(u.cards)&&u.cards[0];
+  if(!root&&u.kind==='text'&&u.text)root={type:'text',text:u.text};
+  if(!root)return null;
+  if(typeof _boardsDecodeCard==='function'){try{root=_boardsDecodeCard(root);}catch(e){}}
+  const kids=Array.isArray(u.cards)?u.cards.slice(1):[];
+  const texts=[];
+  const slot=(cls)=>{const k=texts.length;texts.push('');return{k,html:`<span class="${cls}" id="board-tray-p-${i}-${k}"></span>`};};
+  const put=(cls,t)=>{const x=slot(cls);texts[x.k]=String(t==null?'':t);return x.html;};
+  const clean=t=>String(t||'').replace(/\s+/g,' ').trim();
+  const t=root.type;
+  let html='';
+  if(t==='text'){
+    const body=String(root.text||'').split('\n').map(x=>x.trim()).filter(Boolean).slice(0,6).join('\n');
+    if(!body)return null;
+    html=`<div class="board-tray-prev board-tray-prev-note">${put('board-tray-prev-notetext',body)}</div>`;
+  }else if(t==='heading'){
+    html=`<div class="board-tray-prev board-tray-prev-heading">${put('board-tray-prev-headtext',clean(root.text)||'Section title')}</div>`;
+  }else if(t==='todo'){
+    const items=(Array.isArray(root.items)?root.items:[]).filter(Boolean);
+    const done=items.filter(x=>x.done).length;
+    const rows=items.slice(0,_BOARDS_TRAY_PREV_ROWS).map(x=>
+      `<div class="board-tray-prev-task${x.done?' done':''}"><span class="board-tray-prev-box">${x.done?'✓':''}</span>${put('board-tray-prev-tasktext',clean(x.text))}</div>`).join('');
+    const more=items.length-_BOARDS_TRAY_PREV_ROWS;
+    html=`<div class="board-tray-prev board-tray-prev-todo">
+      <div class="board-tray-prev-head">${put('board-tray-prev-title',clean(root.title)||'To-do')}<span class="board-tray-prev-count">${done}/${items.length}</span></div>
+      ${rows||'<div class="board-tray-prev-empty">No tasks yet</div>'}
+      ${more>0?`<div class="board-tray-prev-more">+${more} more</div>`:''}
+    </div>`;
+  }else if(t==='column'||t==='frame'){
+    // In the order the container shows them: a column by its stored y, a
+    // frame top to bottom then left to right.
+    const list=kids.filter(c=>t!=='column'||c.columnId===root.id||c.columnId==null)
+      .slice().sort((a,b)=>(a.y||0)-(b.y||0)||(a.x||0)-(b.x||0));
+    const rows=list.slice(0,3).map(c=>{
+      const pic=c.type==='image'&&c.imageUrl?`<img class="board-tray-prev-kidpic" src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
+        :c.type==='swatch'&&_boardsValidHex(c.hex)?`<span class="board-tray-prev-kidpic" style="background:${c.hex}"></span>`
+        :`<span class="board-tray-prev-kidpic board-tray-prev-kidtag">${_boardsEsc(String(_boardsCardNoun(c)).slice(0,1).toUpperCase())}</span>`;
+      const lab=c.type==='swatch'&&_boardsValidHex(c.hex)?(clean(c.name)||String(c.hex).toUpperCase()):_boardsStashName(c,1);
+      return`<div class="board-tray-prev-kid">${pic}${put('board-tray-prev-kidtext',lab)}</div>`;
+    }).join('');
+    const more=list.length-3;
+    html=`<div class="board-tray-prev board-tray-prev-col">
+      <div class="board-tray-prev-colhead">${put('board-tray-prev-title',clean(root.title||root.name)||(t==='column'?'Column':'Frame'))}
+        <span class="board-tray-prev-count">${list.length} card${list.length===1?'':'s'}</span></div>
+      <div class="board-tray-prev-kids">${rows||'<div class="board-tray-prev-empty">Empty</div>'}
+      ${more>0?`<div class="board-tray-prev-more">+${more} more</div>`:''}</div>
+    </div>`;
+  }else if(t==='swatch'){
+    if(!_boardsValidHex(root.hex))return null;
+    const hex=String(root.hex).toUpperCase();
+    const name=clean(root.name)||(typeof _boardsSwatchName==='function'?_boardsSwatchName(hex):'');
+    html=`<div class="board-tray-prev board-tray-prev-swatch">
+      <div class="board-tray-prev-chip" style="background:${hex};color:${_boardsInkOn(hex)}">${put('board-tray-prev-hex',root.pantone?clean(root.pantone):hex)}</div>
+      <div class="board-tray-prev-name">${put('',name)}</div>
+    </div>`;
+  }else if(t==='table'){
+    const rows=(Array.isArray(root.rows)?root.rows:[]).slice(0,4);
+    if(!rows.length)return null;
+    const val=v=>typeof _boardsCellVal==='function'?_boardsCellVal(v):(v&&typeof v==='object'?v.v:v);
+    html=`<div class="board-tray-prev board-tray-prev-table">${rows.map(r=>
+      `<div class="board-tray-prev-tr">${(Array.isArray(r)?r:[]).slice(0,3).map(v=>put('board-tray-prev-td',clean(val(v)))).join('')}</div>`).join('')}</div>`;
+  }else{
+    return null;
+  }
+  return{html,texts};
 }
 /* ── THE THING THAT FOLLOWS THE POINTER ───────────────────────────────
    It used to be a dark text chip. That said what KIND of thing was in
@@ -12079,6 +12268,11 @@ function _boardsTrayHydrate(){
   _editUnsorted.forEach((u,i)=>{
     const el=document.getElementById('board-tray-l-'+i);
     if(el)el.textContent=_boardsTrayLabel(u);
+    const p=_boardsTrayPreview(u,i);
+    if(p)p.texts.forEach((t,k)=>{
+      const s=document.getElementById('board-tray-p-'+i+'-'+k);
+      if(s)s.textContent=t;
+    });
   });
 }
 
@@ -12218,7 +12412,7 @@ function _boardsStashName(root,n){
   // Deliberately NOT _boardsCardText: that is a lowercased search index of
   // every field at once and reads as gibberish on a row.
   const first=root.name||root.title||root.fileName||root.linkTitle||root.caption||root.text||
-    (Array.isArray(root.items)&&root.items.length&&root.items[0]&&root.items[0].t)||
+    (Array.isArray(root.items)&&root.items.length&&root.items[0]&&(root.items[0].text||root.items[0].t))||
     root.boardTitle||'';
   const line=String(first||'').replace(/\s+/g,' ').trim();
   return line?line.slice(0,60):noun;
@@ -12284,6 +12478,9 @@ function _boardsExpandGroup(ids){
    More sheet and the drag onto the tray all come here, so the toast, the
    undo entry and what a container does with its contents cannot drift
    apart. Returns how many rows it made. */
+/* One-shot: the rows a drop has just made, so they land with a pop
+   instead of simply being there. Consumed by the render that paints them. */
+const _boardsTrayLanded=new Set();
 window.boardsTrayStashCards=function(ids){
   if(!_boardsCanEdit(_editBoard))return 0;
   // Home has no Unsorted (it is the board OF boards), so an item pushed
@@ -12303,7 +12500,7 @@ window.boardsTrayStashCards=function(ids){
   const conns=_editConnectors.filter(cn=>cn&&(moveIds.has(cn.from)||moveIds.has(cn.to)));
   _boardsPushUndo();
   const items=_boardsStashRoots(move).map(g=>_boardsStashItem(g.cards,conns));
-  items.forEach(it=>_editUnsorted.push(it));
+  items.forEach(it=>{_editUnsorted.push(it);_boardsTrayLanded.add(it.id);});
   _editCards=_editCards.filter(c=>!moveIds.has(c.id));
   _editConnectors=_editConnectors.filter(cn=>!(cn&&(moveIds.has(cn.from)||moveIds.has(cn.to))));
   move.forEach(c=>_boardsSelection.delete(c.id));
@@ -12311,6 +12508,7 @@ window.boardsTrayStashCards=function(ids){
   // Collecting must never be invisible — the same helper a paste uses.
   _boardsCollectInto();
   _boardsRenderCanvasAndWire();
+  {const l=document.getElementById('board-tray-list');if(l&&l.scrollHeight)l.scrollTop=l.scrollHeight;}
   _boardsSaveDebounced();
   showToast(_boardsStashToast(items,locked));
   return items.length;

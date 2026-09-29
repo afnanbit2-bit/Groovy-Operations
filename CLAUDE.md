@@ -3996,6 +3996,45 @@ the library holds**, and the full books are licensed and unreachable from
 the sandbox — an unknown code stays a note, nothing is invented. A file from
 Afnan would go into `_BOARDS_PANTONE_EXTRA`. `tests/board-swatch.test.js`.
 
+### Mood Boards — Unsorted previews, and the magnet (29 Sept 2026)
+
+Afnan: dropping a card into Unsorted should have "a magnet like effect,
+pull and push to grab things", and the tray should PREVIEW what it holds —
+a column its title and how many cards, a to-do its tasks.
+
+- **Previews** (`_boardsTrayPreview`, one function for markup AND text):
+  a note shows its lines, a to-do its title, done/total and the first four
+  tasks ticked or not (+N more), a column or frame its title, its card count
+  and the first three cards (a picture, a colour chip or a type letter, then
+  the name), a colour paints itself with its code and name, a heading is a
+  dark banner, a table its first cells. A photo, link and PDF keep the
+  picture `_boardsTrayFace` already gave them. **Every string goes in
+  through `_boardsTrayHydrate` with `textContent`**; a swatch hex is
+  validated before it reaches a `style`. Derived from the stashed card, so
+  nothing is stored and old items preview too. The drag ghost of a colour
+  carries the colour. Fixed in passing: `_boardsStashName` read a to-do's
+  first task from `.t`, but items are `{text,done}`, so a to-do row said
+  "To-do".
+- **160px, measured:** two title lines + four tasks + "+N more" fit;
+  five tasks pushed "+N more" out of the box (the probe named it).
+- **The magnet** (`_boardsMagnet`, pure; `_BOARDS_MAGNET_PX` 170,
+  `_BOARDS_MAGNET_CATCH` 56): within 170px of the open tray or the peek zone
+  the held card is pulled toward it, harder the closer (`--mx/--my/--ms` on
+  `.lifted`, which springs back through the existing transition when pulled
+  away) and the target glows (`--mag`); within 56px it is CAUGHT — shrinks
+  to 45% under the pointer, outlined, a buzz on Android — and a drop there
+  stashes. **The highlight and the drop read the same answer**, and the pull
+  is visual only: `c.x/c.y` are never bent, so a drop on the canvas lands
+  under the pointer. On the drop a clone (ids stripped) flies into the panel
+  and the new row pops in (`_boardsTrayLanded`, one-shot); nothing moves
+  under `prefers-reduced-motion`.
+- `tests/harness.js`'s element `style` gained `setProperty` /
+  `getPropertyValue` / `removeProperty` — without them the pull was skipped
+  and could not be asserted. Verified by undoing: catch radius 0 (a drop
+  40px short stops being caught), the pull zeroed, the `.text` fix.
+  **Nobody has felt the magnet on a real screen** — the sandbox cannot sign
+  in; the previews were rendered and looked at in Chromium, both themes.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then

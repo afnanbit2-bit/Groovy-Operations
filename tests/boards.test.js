@@ -4720,8 +4720,10 @@ module.exports=function(){
     s.eq('no array directly inside an array',nested,0);
     const tbl=JSON.parse(back(0,0,0));
     s.eq('and it decodes back to real rows',JSON.stringify((tbl.cards[0]||{}).rows),'[["Size","Qty"],["M","40"]]');
-    s.eq('the row says TABLE, not NOTE',
-      (run(`_boardsTrayItemHTML(_editUnsorted[0],0,true)`).match(/thumb-empty">([^<]*)/)||[])[1],'TABLE');
+    // It used to say TABLE in a grey box; it previews the table now — and
+    // still never introduces itself as a NOTE.
+    {const h=run(`_boardsTrayItemHTML(_editUnsorted[0],0,true)`);
+     s.ok('the row previews a TABLE, not a NOTE',/board-tray-prev-table/.test(h)&&!/>NOTE</.test(h));}
 
     /* "collum etc" is the whole point: a column parked without its
        children is an empty box, and children left behind are loose cards
@@ -4899,6 +4901,34 @@ module.exports=function(){
       drag(300,300);                         // over the canvas
       s.eq('a drop on the canvas is an ordinary move',r2(`_editCards.length`),1);
       s.eq('and collects nothing',r2(`_editUnsorted.length`),0);
+
+      // THE MAGNET: Unsorted catches a card let go NEAR it, not only on it.
+      s.section('the magnet: Unsorted catches a card let go near it');
+      r2(setup);
+      drag(760,300);                         // 40px short of the tray
+      s.eq('a drop 40px short is caught',r2(`_editUnsorted.length`),1);
+      s.eq('and the row lands with a pop (one-shot)',
+        /board-tray-item landed/.test(r2(`_editUnsorted[0]?_boardsTrayItemHTML(_editUnsorted[0],0,true):'board-tray-item landed'`))
+          ? 'repeat' : 'consumed', 'consumed');
+      r2(setup);
+      drag(640,300);                         // 160px short: pulled, not caught
+      s.eq('a drop 160px short is an ordinary move',r2(`_editUnsorted.length`),0);
+      s.eq('landing exactly under the pointer — the pull is visual only',r2(`_editCards[0].x`),40+640);
+      // Mid-drag: the pull is written onto the card as CSS variables.
+      r2(setup);
+      r2(`(function(){
+        const head=document.getElementById('drag-body');
+        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');})()`);
+      const mv=(x,y)=>(app2.state.listeners.pointermove||[]).slice().forEach(f=>f({type:'pointermove',clientX:x,clientY:y,pointerId:1}));
+      mv(700,300);
+      const card=app2.el('board-card-n1');
+      const mx=parseFloat(card.style.getPropertyValue('--mx'));
+      s.ok('near the tray the card is pulled toward it',mx>0,String(mx));
+      mv(300,300);
+      const mx2=parseFloat(card.style.getPropertyValue('--mx'));
+      s.eq('and let go when it is pulled away',mx2,0);
+      (app2.state.listeners.pointerup||[]).slice().forEach(f=>f({type:'pointerup',clientX:300,clientY:300,pointerId:1}));
 
       // A board link dropped on the tray is a move like any other.
       r2(setup+`_editCards=[{id:'k1',type:'board',boardId:'B',x:40,y:60,w:340,h:136}];
