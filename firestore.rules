@@ -41,7 +41,7 @@ service cloud.firestore {
     // included. Collections with no match block (the token store,
     // the credential collections) stay denied to everyone. WRITES are not
     // touched by this: signedIn() still excludes QA, and its few write
-    // clauses stay fenced. tests/qa-access.test.js fails if a read rule is
+    // clauses stay fenced. tests/qa-read-guard.test.js fails if a read rule is
     // added that does not go through this helper.
     function isQaRead() { return isQa() && request.method in ['get', 'list']; }
     function userEmail() { return request.auth.token.email; }
