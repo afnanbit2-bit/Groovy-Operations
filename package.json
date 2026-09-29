@@ -4,5 +4,8 @@
   "description": "Groovy Operations — Netlify Functions dependencies",
   "dependencies": {
     "firebase-admin": "^13.4.0"
+  },
+  "scripts": {
+    "emulators": "npx --yes firebase-tools@13 emulators:start --only auth,firestore --project demo-groovy-ops"
   }
 }
