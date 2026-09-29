@@ -7726,7 +7726,7 @@ entry is flagged for the owners, who settle it. Emulator: **103/103**; the
 **Nobody has confirmed a warehouse payment or marked a bill collected on a
 real screen** — the sandbox cannot sign in.
 
-## Master Accounts — M1 built (28 Sept 2026) · not on `main`, rules not published, not yet seen
+## Master Accounts — M1 built (28 Sept 2026) · on `main` (29 Sept), final rules still to publish, not yet seen
 
 Afnan, 27 Sept 2026: *"I want accounts but just for me and ammar, in short
 master accounts … plan all the logics of build first so we have a good
@@ -7736,7 +7736,7 @@ or `MA_`. The planning record (v1–v4, the specimen, the two design reports)
 is condensed at the end of this section.
 
 **Where it stands — verified from git, 29 Sept.** Nine M1 commits on
-`claude/master-accounts-planning-udoiw9`, none of them on `main`:
+`claude/master-accounts-planning-udoiw9`, now on `main`:
 `bf09235` M1.1 the core · `1d8b3c5` M1.2 the rules · `06b9256` M1.3 the
 pages · `7b4aa30` M1.4 the PDFs · `6f2e152` M1.5a the server functions ·
 `4057303` M1.5b the client for them · `704056b` M1.6a edits and
@@ -7744,11 +7744,13 @@ confirmations held at the rules · `20260a0` M1.6b the screens, the idle
 re-lock and the device cache · `7735410` M1.6c the server tightening
 (attachments fail closed — decision 5; cherry-picked from the server
 round's `5291a14`, which was built on `704056b`). After M1.6b, `main` was
-merged INTO the branch seven times — `1dc7fa9` (`origin/main` at
+merged INTO the branch eleven times — `1dc7fa9` (`origin/main` at
 `1f6327d`, `CACHE_VERSION` v247), `feca515` (`4c8bfee`, v249), `be22046`
 (`3333584`, v251), `d159f83` (`dc0e609`, v252), `1ae7e71` (`e1f84bf`,
-v254), `5a36efe` (`bac4848`, v255) and `672cf4f` (`d1af808`, v256) — **the
-last `main` commit the branch has taken is `d1af808`**; between the second
+v254), `5a36efe` (`bac4848`, v255), `672cf4f` (`d1af808`, v256), `69f5c72`
+(`5996999`, v257), `ef7eabb` (`08b530a`, v258), `51cf6c3` (`1b56a46`, v259)
+and `a436e8b` (`11bd681`, docs only, v259 unchanged) — **the last `main`
+commit the branch has taken is `11bd681`**; between the second
 and third, `efb75ce` named the nightly backup in the audit trail (v250),
 and after M1.6c, `8e5fe0b` is its client half (v253): Settings says when
 attachments are off. **Then the verification round's two fixes (29 Sept),
@@ -7757,34 +7759,90 @@ V1, V2, V3, V5, V7, V8, V9, V11; its own title calls it "M1.6c
 (security)", which is not the server round above) and `44166f3` (money and
 screens — V4, V6, V10 and the visual QA's F01–F24; cherry-picked from
 `8f1a1df`, author's message and trailers kept). What each changed, and how
-it was checked, is under "The review round" below.
+it was checked, is under "The review round" below. **Then Afnan's three
+calls on the QA's judgement findings (29 Sept):** `22cfd3e` (F26 and F27)
+and `c836de2` (F25). **Then main's QA work came in, in three merges:** the
+eighth, `69f5c72` (`5996999`: the Color Library's TCX codes tab, v257); the
+ninth, `ef7eabb` (`08b530a`: main's QA-account work — `isQaRead()` on every
+read rule and a uid pin in `isQa()` — v258); the tenth, `51cf6c3`
+(`1b56a46`: the Color Library's Pantone C tab and Milanote opening on Mood
+Boards, v259). **`8573391` keeps Master Accounts owner-only against that QA
+work** (see "The gate"). The eleventh merge, `a436e8b`, took `11bd681`,
+main's docs-only record of the QA-read publish. **Then the branch went INTO
+`main`, on 29 Sept 2026, with Afnan's go-ahead** (relayed by the
+coordinator: "Yes, merge into main"): `main` was fast-forwarded to this
+branch's tip — the commit that carries this line — so `main` has no merge
+commit of its own for it.
 
-- **Not deployed.** Netlify builds `main`, and the branch has not been
-  merged into it: `git merge-base --is-ancestor 672cf4f origin/main` is
-  false (checked 29 Sept). The branch is at `CACHE_VERSION` v256, past
-  both its last pushed version before this (v253) and `main`'s at
-  `d1af808` (v253); any later collision with `main`'s numbers is settled
-  when the branch is merged into `main`.
-- **The rules decide whether it works at all, and the two 28 Sept pastes
-  collide** — see "Firestore rules — published" before anything else.
-  Before the merge no branch's `firestore.rules` carried both the Master
-  Accounts blocks and main's Mood Boards sharing roles, so the Console holds
-  one or the other. **The file to publish is the one at this branch's tip**
-  — LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines: main's rules at
-  `e1f84bf` (the Mood Boards sharing roles AND main's own outstanding QA
-  identity, `claude@groovy.op`) plus the Master Accounts block with M1.6a
-  and V3. Verified: 15 `match /ma_` blocks, `boardSharingUntouched()` and
-  `isQa()` all in it.
+- **On `main` since 29 Sept 2026 — whether Netlify built it is
+  unconfirmed.** Netlify builds `main`, and nothing in a session can see
+  its deploy list (`*.netlify.app` is blocked here, and this repo carries
+  no Netlify commit statuses); a skipped deploy looks exactly like a stale
+  cache (see "A DEPLOY CAN BE SILENTLY SKIPPED" near the top of this
+  file). **Only Afnan reading the Netlify deploy list confirms it.**
+  `CACHE_VERSION` is v259, past the branch's last version before the QA
+  merges (v257, `69f5c72`) and `main`'s (v256, `1b56a46`).
+- **The rules are the one open item that stops it working, and what the
+  Console holds is NOT known.** Two publishes were reported on 29 Sept
+  2026; neither can be checked from a session, and **neither is the file
+  now on `main`**. **Afnan's** ("rules published"): the merged file at
+  `dcfef5c` — LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines: main's
+  rules plus the Master Accounts block with M1.6a and V3, and none of main's
+  QA-read rules. **Ammar's**, recorded on `main` (`11bd681`, that evening):
+  main's own file at `08b530a` — LF md5
+  `7d858a05ce8ecf6aae585bbd79892960`, 1,142 lines, with the QA-read rules
+  and **no `ma_*` block** (verified: 0 `match /ma_` in it). If Ammar's is
+  the live one, **every Master Accounts read and write is denied — to
+  Afnan and Ammar too**: it fails closed, each page shows *"Could not read
+  … — republish firestore.rules with the Master Accounts block"*, and
+  nothing is lost, because nothing could be written. Which is live, only
+  the Console's rules history knows; the order is not recorded
+  (hypothesis, unverified: Ammar's was later — his file was committed at
+  11:15 UTC and, with the uid pin, at 13:57 UTC; Afnan's has existed since
+  09:40 UTC). **The file to publish** is the one on `main` now: LF md5
+  `9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines — main's file plus the
+  384-line Master Accounts block, none removed (verified with `diff`). See
+  "Firestore rules — published" before anything else.
+- **Master Accounts stays owner-only, even from the automated QA account
+  (`8573391`, 29 Sept 2026).** Main's QA work made every read rule admit
+  the QA account `claude@groovy.op` (`isQaRead()`); the 15 `ma_*`
+  collections are the one named exemption — Afnan's words for the module
+  were "just for me and Ammar" — so their read rules stay
+  `isMasterAccounts()` alone. Held by `tests/qa-read-guard.test.js` (the
+  exemption, and a section that fails if it ever becomes an opening),
+  `tests/rules-emulator-qa.js` part 1b (QA REFUSED `get` and `list` on
+  every `ma_*` path, with afnan and ammar as the control) and
+  `tools/qa-snapshot-lib.js` (`ma_*` stays out of the default emulator
+  snapshot). See "The gate".
 - **The verification round's two blockers (V1, V2) are fixed** (`0a0df4b`),
-  so they no longer hold the merge into `main` back; that merge is still a
-  Claude session's job, and only with Afnan's go-ahead. What stays open is
-  listed at the end of "The review round".
-- **Afnan's answers to the three QA judgement calls (29 Sept 2026):** F25 —
-  keep the "No opening balance yet" alert, no change; F26 — fold the Record
-  picker's tiles for the kinds that arrive in later milestones; F27 — the
-  slide-over rail up to about 1440px wide. **F26 and F27 are being built in
-  a follow-up commit and are NOT in this push** — nothing on the branch
-  folds the tiles or widens the slide-over yet.
+  which is what let the branch go into `main`. What stays open is listed at
+  the end of "The review round".
+- **Afnan's answers to the three QA judgement calls (29 Sept 2026) — all
+  three BUILT** (`22cfd3e` F26 and F27, `c836de2` F25). **F26** — the
+  Record picker's nine live kinds are unchanged, and the eight that arrive
+  in later milestones fold behind one "Coming later · 8" line, folded again
+  every time the picker opens. **F27** — the rail slides over the page up
+  to 1440px wide (it was 1200px), so below 1441px an open rail no longer
+  narrows the page. **F27's cost:** below 1441px an open rail covers the
+  page header's Record and ⋯ buttons (at 1024px also the period buttons
+  Year and All); the rail's × closes it. **F25 — a correction to this
+  record:** it said "keep the 'No opening balance yet' alert, no change",
+  but **there was no such alert** — the QA had only suggested one. Afnan
+  chose to have it ("yes build the opening balance alert", 29 Sept 2026),
+  and it is built: while the book has no opening balance, Needs attention
+  LEADS with a concern (red), "No opening balance yet — the books start
+  when one is recorded.", whose **Record it** opens the Opening balance
+  form directly (`window.maConcern` → `window.maRecordKind('opening')`).
+  The rule is `maIsOpening(d)` in `js/ma-core.js`, the one definition —
+  `maValidate`'s second-opening check reads it too: the book has an
+  opening when any journal of kind opening is not void (journals are never
+  pending; an opening dated before go-live still counts). It is weighted
+  `Number.MAX_SAFE_INTEGER`, so it leads; `maNeedsAttention` shows it only
+  when it is handed the document list, and a refused `ma_journal` read
+  shows the error card, never the line (read from the code; the page
+  behaviour is driven in `tests/ma-fix-money.test.js`). On an empty book
+  the Dashboard card reads "2 need attention" (its author's Chromium run —
+  reported).
 - **Nobody has opened a page, a PDF or a share link on a real screen.**
   The sandbox cannot sign in; every visual claim below is headless Chromium.
 
@@ -7876,7 +7934,8 @@ it was checked, is under "The review round" below.
   `ma-attach.test.js`, `ma-share.test.js`, `ma-backup.test.js`,
   `ma-fix-sec.test.js` (130, `0a0df4b` — it drives the real `js/auth.js`
   and `js/master-accounts.js` against stubbed bridges and a fake IndexedDB)
-  and `ma-fix-money.test.js` (128, `44166f3`), with
+  and `ma-fix-money.test.js` (128 at `44166f3`; 155 at `22cfd3e`, 180 at
+  `c836de2`), with
   `tests/ma-fake-admin.js` (an in-memory Admin SDK).
   **`tests/rules-emulator-ma.js`** is NOT a `*.test.js` — it needs
   firebase-tools, the emulator and Java; its header has the commands, and
@@ -7972,6 +8031,33 @@ identity (`claude@groovy.op`, merged in with `1ae7e71`) is on none of the
 four lists, and `isMasterAccounts()` is built on `signedIn()`, which main's
 rules now make exclude it (read from the rules file).
 
+**Master Accounts is owner-only from the QA account too, and that is a
+NAMED exemption, not an omission (`8573391`, 29 Sept 2026).** Main's QA work
+made every other read rule admit the QA account through `isQaRead()` (91
+read rules, 93 lines in the file). The 15 `ma_*` collections are the one
+family that does not — Afnan's words for the module were "just for me and
+Ammar", and the account used for automated QA must not read the owner's
+books — so their read rules stay `isMasterAccounts()` alone. Verified at the
+tip: no `isQaRead()` and no `isQa()` inside any `ma_` block. Three things
+hold it, so it cannot turn into an opening (each read from the files):
+`tests/qa-read-guard.test.js` exempts the `ma_*` blocks from three checks
+that hold every other collection, and has a section of its own — every
+`ma_` read rule is exactly `isMasterAccounts()`, no `ma_` block mentions
+`isQa` or `isQaRead`, `isMasterAccounts()` is built on `signedIn()` and
+names no QA account, the exempt family is the literal `ma_` prefix, and all
+15 known collections are found; `tests/rules-emulator-qa.js` part 1b proves
+QA is REFUSED `get` and `list` on every `ma_` path, with afnan and ammar
+succeeding on the same documents as the control (604 / 604 in that suite,
+reported by the merge agent); `tools/qa-snapshot-lib.js` (`OWNER_ONLY_BOOKS`,
+`isOwnerOnlyBooks()`) keeps `ma_*` out of the default emulator snapshot —
+an explicit `--collections ma_…` is still honoured, a deliberate ask by
+someone holding live credentials (the merge agent's call, flagged for
+Afnan). **Not held:** nothing checks LIVE that QA is refused —
+`tools/qa-probe.js` has no `ma_` line (verified with `grep`) — and
+`QA_ACCESS.md` still says QA reads owner-only collections (its lines
+12–13) and "reads everything" (line 78), with no `ma_` exception; that
+file is `main`'s and was not edited here.
+
 ### The decisions that hold it up — with the reasons
 
 1. **One transaction per new document:** read `ma_counters/{type}`, mint
@@ -8006,8 +8092,9 @@ rules now make exclude it (read from the rules file).
    `ma_settings/main`'s `goLive`, else `2026-10-01`, held equal to
    `MA_DEFAULT_SETTINGS.goLive`). Codes must be strings, so a stored
    document with a numeric code would be refused on its next edit; the app's
-   builder writes strings and the branch has never been on `main` (what
-   Netlify deploys), so none is expected (not checked against live data). **Since `44166f3` (V6)** an
+   builder writes strings, and until the merge into `main` (29 Sept) no
+   build of the branch was deployed, so none is expected (not checked
+   against live data). **Since `44166f3` (V6)** an
    edit that raises a flag the document did not carry clears the review too
    (`maNewFlagRules`, compared by rule, so a re-worded message is not new) —
    taking the note off a Money out booked to an income account moves no
@@ -8210,13 +8297,16 @@ rules now make exclude it (read from the rules file).
     block where every selector carries `.ma-` — `.ma-*`, `table.ma-*`,
     `textarea.ma-in`, `a.ma-btn` — the `today` / `cal-today` class
     collision below is why. Checked at `1ae7e71` and again at `672cf4f`:
-    all 275 selector parts in the block carry `.ma-`. **Three of them reach outside the shell, from
+    all 275 selector parts in the block carry `.ma-` (282 since F26's
+    `.ma-fold` and `.ma-soon` rules; re-counted at `a436e8b` with a script
+    written for it, still every one). **Three of them reach outside the shell, from
     `44166f3` (F01/F02, a sticky header and rail):**
     `#main-content:has(>.ma-shell)` (≥601px: `overflow-x:clip;
     overflow-y:visible` — `#main-content` was a scroll container that never
     scrolls, so nothing inside it could stick) and `#scr-app
     #main-content:has(>.ma-shell) .ma-head` / `… .ma-rail` (the 52px under
-    the top bar, the rail's only above 1200px). **Why they are safe:** each
+    the top bar; the rail's only above 1440px since F27, 1200px before).
+    **Why they are safe:** each
     matches only while an `.ma-shell` is `#main-content`'s direct child —
     i.e. only on a Master Accounts page — and the two whose subject is not
     `#main-content` are `.ma-` elements; the offsets carry the same
@@ -8326,11 +8416,30 @@ reproductions — this summary is the record.
     tap targets ≥ 34px. F16 every calendar event is in its cell ("+N more"
     opens the day in the rail). F17 one rule above a phone total. F18 the
     skeleton and the error page sit inside `.ma-shell`. F20 under 1200px
-    the rail stretches between the top bar and the foot and scrolls — at
+    (1440px since F27) the rail stretches between the top bar and the foot
+    and scrolls — at
     1024×768 a tall one had lost Edit, Void, Voucher (PDF) and Share
     voucher off the screen. F21 a due day never breaks. F22 the Parties
     filter is one row on a phone. F23 phone tabs wrap. F24 a section's
     actions wrap as one group.
+- **`22cfd3e` and `c836de2` — Afnan's three calls (29 Sept), built on top
+  of the fixes:** F26 folds the Record picker's eight later kinds behind
+  one "Coming later · 8" button (a real button with `aria-expanded`, opened
+  in place, folded again each time the picker opens, written nowhere); F27
+  holds the slide-over up to 1440px (`@media (max-width:1440px)`, the
+  rail's sticky column from 1441px); F25 is the "No opening balance yet"
+  concern ("Where it stands"). **Checked by their author (reported, not
+  re-run here):** for F26 and F27, 16 new reverts and 4 updated ones, all
+  caught, the 78-entry revert script re-run on the rebased tree, all
+  caught, axe over the picker folded and open in both themes (0
+  violations), and Chromium at 1024–1600px in both themes; for F25, 10
+  reverts, all caught, eleven existing assertions re-fixtured with an
+  opening (none weakened), and a new layout fragment, "master accounts —
+  Today on an empty book". **Re-run here:** the node suite at `22cfd3e`
+  (9,524) and `c836de2` (9,549), `ma-fix-money` (155, then 180), and the
+  fold, the 1440px rule and `maIsOpening` read in the code; the emulator
+  and smoke suites are the merge agent's, on the final tip ("What is
+  verified").
 - **How they were checked.** Each fix was undone once and a named
   assertion failed — 27 reverts for the security fixes and 62 for the
   money and screens — **re-run by the integrator on a scratch copy of
@@ -8366,11 +8475,10 @@ reproductions — this summary is the record.
     (decision 13).
   - **V4 depends on Raees** booking a handover in Store Accounts before an
     owner confirms it here.
-  - **F25–F27, decided by Afnan on 29 Sept 2026:** F25 — keep the "No
-    opening balance yet" alert, no change; F26 — fold the Record picker's
-    tiles for the kinds that arrive in later milestones; F27 — the
-    slide-over rail up to about 1440px wide. **F26 and F27 are being built
-    in a follow-up commit and are NOT in this push.**
+  - **F27's cost, accepted with Afnan's call:** below 1441px an open rail
+    covers the page header's Record and ⋯ buttons (at 1024px also Year and
+    All); the rail's × closes it. F25, F26 and F27 themselves are built
+    (the bullet above "How they were checked").
 
 ### What is verified, and how
 
@@ -8386,18 +8494,32 @@ reproductions — this summary is the record.
   its own — their authors' counts), **9,256 at `44166f3`** (both fixes:
   8,998 + 130 + 128), 9,429 at `1ae7e71` (the fifth merge with main, whose
   own count went 7,030 → 7,203 between the two merges: 9,256 + 173), 9,469
-  at `5a36efe` (the sixth: main 7,203 → 7,243, + 40) and **9,497 at
-  `672cf4f`** (the seventh: main 7,243 → 7,271, + 28).
+  at `5a36efe` (the sixth: main 7,203 → 7,243, + 40), 9,497 at `672cf4f`
+  (the seventh: main 7,243 → 7,271, + 28), 9,524 at `22cfd3e` (F26 and
+  F27, + 27), 9,549 at `c836de2` (F25, + 25), 9,586 at `69f5c72` (the
+  eighth merge, + 37), 9,735 at `8573391` (the ninth merge and the
+  QA-guard adaptation, + 149: the merge agent reports main + 129 and 20
+  new guard and snapshot tests) and **9,753 at `a436e8b`** (the tenth
+  merge, main's Pantone C tab, + 18; the eleventh is docs only, + 0).
+  Every count from 9,524 on was re-run here, all passing; the merge agent
+  reported the same 9,753 at `51cf6c3`.
 - **Rules, in the real Firestore emulator** — against the merged
-  `firestore.rules` at `1ae7e71` (LF md5 `acc9a3a1…`, unchanged by the
-  sixth and seventh merges; every suite below re-run at `672cf4f` with the
-  same results):
+  `firestore.rules` at `51cf6c3` (the FINAL file: LF md5 `9d7ec162…`,
+  1,526 lines; the merge agent ran the suites below on `8573391`'s tree —
+  reported, read from its logs, not re-run here — and the file is
+  byte-identical at the tenth and eleventh merges; the earlier runs of the
+  first four, against `acc9a3a1…`, were at `1ae7e71` and again at
+  `672cf4f`, with the same results):
   `tests/rules-emulator-ma.js` **241 / 241** (209 + V3's 32: 22 "V3:"
   attacks, 8 "V3 control:" writes the app makes, 2 builder checks), and
   main's own suites `rules-emulator.js` 103 / 103,
   `rules-emulator-board.js` **100 / 100** (39 before main's QA fences) and
-  `rules-emulator-boards.js` 26 / 26; the V6 write, from a scratch copy of
-  the money fixer's check stamped with the time the app stamps, 5 / 5. The
+  `rules-emulator-boards.js` 26 / 26, and main's QA suites
+  `rules-emulator-qa.js` 604 / 604 (its part 1b holds that the QA account is
+  REFUSED on every `ma_*` path), `rules-emulator-rtdb.js` 9 / 9,
+  `qa-probe-emulator.js` 5 / 5 and `qa-snapshot-emulator.js` 31 / 31; the
+  V6 write, from a scratch copy of the money fixer's check stamped with the
+  time the app stamps, 5 / 5 (against the earlier file). The
   same Master Accounts file **against earlier rules**: `bef4dc4`'s
   (`8cf1c681…`, the merge before V3) fails exactly the 22 "V3:" attacks;
   `1d8b3c5`'s (the ones reported published) fails **84** — the 55 "M1.6a:"
@@ -8410,14 +8532,17 @@ reproductions — this summary is the record.
   `git archive` of `672cf4f` (and of `5a36efe`, `1ae7e71`, of `44166f3` —
   the two fixes before main came in — and earlier of `1f06da2`, `efb75ce`,
   `be22046` and `d159f83`, with the same results): `smoke-layout` 466 / 466
-  at `672cf4f` (462 before main's new Pick-colour fragment), of which 76
-  are the fourteen `master accounts — …` fragments (every width they
+  at `672cf4f` (462 before main's new Pick-colour fragment). **At the final
+  tip, `51cf6c3`, the merge agent ran them again (reported; read from its
+  logs, not re-run here): `smoke-layout` 484 / 484**, of which 82 jobs are
+  the fifteen `master accounts — …` fragments (counted in that log; every
+  width they
   declare, both themes: contrast, overflow, clipped text and hit-testing;
   since `8e5fe0b` the attachment-mode fragment also renders the
   switched-off card); `smoke-app-phone` clean on all 53 of the owner's pages
   in both themes — the six `ma-*` nav pages among them — and on the pages
   it lists for six other roles; `smoke-phone` 30 / 30; `smoke-board` (187
-  / 192 / 192 checks at `672cf4f`, with main's new ones; 172 / 177 / 177
+  / 192 / 192 checks at `51cf6c3` (reported, above), with main's new ones; 172 / 177 / 177
   before), `smoke-browser` 8 / 8 and `smoke-startapp` (all four read
   conditions) pass. **`smoke-axe` scans the six `ma-*` pages since `1f06da2`** (over a
   small book built by `js/ma-core.js`; before, its list had none): no
@@ -8428,6 +8553,11 @@ reproductions — this summary is the record.
   the document rail's `<h3 class="ma-rail-title">` follows the page's
   `<h1>` with no `<h2>` between — left as it is. None of these suites signs
   in to the real Firebase: every page is rendered against fake data.
+  **Outside `tests/run.js` and CI:** `tests/e2e/board.e2e.js` — only its
+  stub mode could run at the tip — 153 / 157 (the merge agent, reported).
+  The same four checks fail identically on `main`'s own checkout at
+  `08b530a` (a calendar pill title is ellipsised at 1440px in that
+  harness), so the merges did not cause them.
 - **The print engine** — every variant that existed before M1.4 (`generic`,
   the `qc-report` fallback, `stock-transfer`, `consumable-log`,
   `daily-performance`, `payslip`, `gate-pass`, `po`, `mood-board`,
@@ -8451,15 +8581,20 @@ reproductions — this summary is the record.
 
 ### Set-up only a human can do
 
-Not one of these is done or checked as of 29 Sept 2026. The sandbox cannot
+One of these is done — the merge into `main`, with Afnan's go-ahead (29
+Sept 2026) — and nothing else is done or checked as of that day; in
+particular the FINAL rules are not published (below). The sandbox cannot
 reach Google Cloud, Netlify's settings, Cloudinary or the Firebase Console,
 so each is Afnan's (the full steps are handed to him in chat, not kept
 here).
 
 - [ ] **Which rules are live** — Firebase Console → Firestore → Rules
-  history: was the last 28 Sept paste Master Accounts' or main's, and has
-  anything been published since (main's QA identity is itself
-  outstanding)? *Only the Console knows.*
+  history: two publishes were reported on 29 Sept (Afnan's merged file
+  `acc9a3a1…`, and, in `main`'s record, Ammar's `7d858a05…` — no `ma_*`
+  block) and the order is not recorded; `main`'s record adds that the file
+  live before Ammar's paste matched no committed version. *Only the Console
+  knows. A Master Accounts page that says "could not read … republish"
+  means the Master Accounts block is not live.*
 - [ ] **The backup bucket** (`gs://…`, same location as Firestore, public
   access prevention on, delete after 90 days) — *unverified advice, from
   the plan.*
@@ -8479,19 +8614,30 @@ here).
 - [ ] **The Cloudinary plan**: its upload cap (the app allows 25 MB), and
   whether it allows authenticated uploads and the download API —
   *unverifiable from here.*
-- [ ] **Publish the MERGED `firestore.rules`** — the file at this
-  branch's tip: LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines
-  (main's rules with the QA identity, plus Master Accounts with M1.6a and
-  V3; the branch last took `main` at `d1af808`). Never an older branch
-  file, and never `main`'s (at `d1af808`, as at `e1f84bf`: md5
-  `20e3002f5f6cbb142833e173c44388e9`, 1,118 lines, no `ma_*` block). Main's
-  record names the Firebase CLI as the publish route now (`firebase deploy
-  --only firestore:rules`, from Afnan's machine); it deploys the checkout it
-  runs in, so a deploy from `main` would take Master Accounts' rules out
-  again — the Console paste of this file, or the CLI from this branch.
-- [ ] **Merge into `main`** — a Claude session does it, and only with
-  Afnan's go-ahead. The verification blockers (V1, V2) no longer hold it
-  back: both are fixed (`0a0df4b`).
+- [ ] **Publish the FINAL `firestore.rules`** — the file on `main` now: LF
+  md5 `9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines (`main`'s file with the
+  QA-read rules and the uid pin, plus the Master Accounts block with M1.6a
+  and V3). **From the repo file, not a local copy** (`main`'s record: the
+  file live before Ammar's paste came from a local file on Afnan's PC and
+  matched no committed version). Neither reported paste is this file:
+  Afnan's `acc9a3a1…` (1,502 lines) lacks the QA-read rules, and Ammar's
+  `7d858a05…` (1,142 lines) lacks the Master Accounts block — if Ammar's is
+  the live one, Master Accounts is denied for everyone. `main`'s record
+  names the Firebase CLI as a publish route (`firebase deploy --only
+  firestore:rules`, from Afnan's machine); it deploys the checkout it runs
+  in, so from `main` at or after the merge it carries Master Accounts, and
+  from `main` before it, it would take the block out. `main`'s own entry
+  (in "Firestore rules — published", just below the newest one) records the
+  backup and the live probe.
+- [x] **Merge into `main`** — **done on 29 Sept 2026, with Afnan's
+  go-ahead**: `main` was fast-forwarded to this branch's tip, after the
+  eleventh merge of `main` into the branch (`a436e8b`). **Whether Netlify
+  built it is unconfirmed** until Afnan reads the Netlify deploy list — a
+  skipped deploy looks exactly like a stale cache.
+- [ ] **Read the Netlify deploy list for that merge** — was it built, or
+  skipped (the 21 Sept credit-usage skip looked exactly like a stale
+  cache)? *Only Afnan can see it: `*.netlify.app` is blocked here and the
+  repo carries no Netlify commit statuses.*
 - [ ] **A first look on a real screen** — nobody has.
 
 ### Cross-track
@@ -8513,13 +8659,18 @@ script tags after `theboard.js`, `?v` strings, and M1.6b's three Firebase
 bridges: `terminate`, `clearIndexedDbPersistence`, `waitForPendingWrites`),
 `sw.js` (`CACHE_VERSION`, two precache entries, the private-Cloudinary
 exclusion), `netlify.toml` (the backup schedule), `firestore.rules` (the
-Master Accounts block), and two shared probes (`smoke-app-phone.js`,
-`smoke-layout.js`). The exact list, by function name, is a note drafted
+Master Accounts block), two shared probes (`smoke-app-phone.js`,
+`smoke-layout.js`), and, since the ninth merge, `main`'s QA guard and
+snapshot files, edited here to name the `ma_*` exemption (`8573391`):
+`tests/qa-read-guard.test.js`, `tests/rules-emulator-qa.js`,
+`tests/qa-snapshot.test.js`, `tests/qa-snapshot-emulator.js`,
+`tools/qa-snapshot-lib.js` and `tools/qa-snapshot.js`. The exact list, by
+function name, is a note drafted
 for Ammar's session, outside the repo, to reach him through Afnan; whether
 it has is unverified.
 
-**Merging with `main` is a real merge, and it has been done seven
-times.** The branch had not taken `main` since `2298f39`. `1dc7fa9`
+**Merging with `main` is a real merge, and it has been done eleven
+times — then the branch went into `main`.** The branch had not taken `main` since `2298f39`. `1dc7fa9`
 merged `origin/main` at `1f6327d` (v246): conflicts in `index.html`
 (`?v` strings) and `sw.js` (`CACHE_VERSION`), and `firestore.rules`,
 `js/shared.js`, `css/main.css`, `CLAUDE.md`, `netlify.toml` and
@@ -8555,7 +8706,30 @@ the `css/main.css` tag conflicted, `CLAUDE.md`, `css/main.css` and
 took it the same way, at v256. After that the push went out without
 chasing `main` further: keeping the branch current is needed only before
 it is merged INTO `main`, and the branch is not deployed on its own.
-Every future merge: fetch, compare
+**The eighth, `69f5c72`** (`5996999`: the Color Library's TCX codes tab,
+v254), took v257: only `sw.js` and the `?v=` strings conflicted, and
+`CLAUDE.md`, `css/main.css`, `js/embellishments.js` and
+`tests/smoke-layout.js` merged cleanly (checked the same way). **The ninth,
+`ef7eabb`** (`08b530a`, v255: main's QA-account work — `isQaRead()` on
+every read rule, a uid pin in `isQa()`, `js/env.js`, `QA_ACCESS.md`,
+`tools/qa-*.js`, seven new QA test files) took v258. Conflicts: `sw.js`
+(v257 against v255) and `index.html` — the `/js/env.js` script tag beside
+the branch's newer `?v=` tags, and the module import line, hand-combined
+into the union of both sides' names (23: main's emulator switch plus the
+branch's `terminate`, `clearIndexedDbPersistence` and
+`waitForPendingWrites`); `CLAUDE.md` and `firestore.rules` merged cleanly,
+each equal to an independent `git merge-file` (the rules now 1,526 lines).
+**On its own it failed three of `main`'s new QA-guard checks** (its own
+commit message says so) — the 15 `ma_*` read rules are owner-only on
+purpose, so they do not start with `isQaRead()`; `8573391` adapts the guard,
+and the two were pushed together. **The tenth, `51cf6c3`** (`1b56a46`, v256:
+the Color Library's Pantone C tab and Milanote opening on Mood Boards) took
+v259: `sw.js` and the `?v=` strings conflicted; `firestore.rules` and
+`css/main.css` were not changed by main. **The eleventh, `a436e8b`**
+(`11bd681`, docs only, v256) changed `CLAUDE.md` alone (+19 lines,
+byte-identical to an independent `git merge-file`, re-checked here) and took
+no version. **After it `main` was fast-forwarded to the branch tip on 29
+Sept 2026, with Afnan's go-ahead.** Every future merge: fetch, compare
 `CACHE_VERSION` on both sides, not just the conflict list, bump past both,
 and fetch again just before pushing.
 
@@ -11207,9 +11381,17 @@ probe tools, and the emulator proof (`tests/rules-emulator-qa.js`: a read matrix
 matrix and a regression differential over every path parsed from the rules).
 
 * **Never add a second `signedIn()` gate or a `request.auth != null` rule** — a test fails
-  (`tests/qa-read-guard.test.js`). Every new `allow read` starts `isQaRead() ||`; every new
+  (`tests/qa-read-guard.test.js`). Every new `allow read` starts `isQaRead() ||` — except
+  the Master Accounts family `ma_*` (next bullet); every new
   personal-data collection is therefore readable by QA — that is the decision, so decide
   whether the collection should exist, not whether QA may read it.
+* **The exception: Master Accounts (`ma_*`, 15 collections) is owner-only by design** —
+  afnan and ammar, "just for me and Ammar" — and QA is REFUSED there. Its read rules stay
+  `isMasterAccounts()` alone; `tests/qa-read-guard.test.js` exempts them by name and holds
+  that the exemption stays shut, `tests/rules-emulator-qa.js` part 1b proves the refusal, and
+  `tools/qa-snapshot-lib.js` keeps them out of the default snapshot (`8573391`). **Not held
+  live:** `tools/qa-probe.js` has no `ma_` line. `QA_ACCESS.md` still says QA reads
+  owner-only collections and is not updated for this. See "Master Accounts" → "The gate".
 * **A read no longer proves the QA rules are live** (it reads `pos` either way); the e2e
   harness's gate updates a nonexistent document instead.
 * **Not verified from a session:** what the Console has published, whether the Auth
@@ -11322,6 +11504,81 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
+**REPUBLISH OUTSTANDING (29 Sept 2026, evening) — the FINAL file, the one
+now on `main`, is not what the Console reportedly holds, and Master Accounts
+may be denied there.** Read this entry, then `main`'s own entry directly
+below it, which this one does not replace.
+
+1. **The file to publish** is `firestore.rules` on `main` (this branch's
+   tip): LF `md5 9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines, 15 `match
+   /ma_` blocks, 93 lines mentioning `isQaRead()` (its definition, a comment
+   and 91 read rules; none inside an `ma_` block). It is `main`'s own file
+   at `1b56a46` (LF md5 `7d858a05ce8ecf6aae585bbd79892960`, 1,142 lines)
+   plus the Master Accounts block — **384 added lines, none removed**
+   (verified with `diff` against `main`) — and those 384 lines are
+   byte-identical, in order, to the ones in the file Afnan published
+   (verified with `cmp`). Publish it **from the repo file, never from a
+   local copy**: `main`'s entry below records that the file live before
+   Ammar's paste matched none of the committed versions, having been
+   published from a local file on Afnan's PC.
+2. **Two publishes were reported on 29 Sept, and neither is that file.**
+   Neither can be checked from a session.
+   - **Afnan's** ("rules published", reported in-session; not recorded in a
+     commit): the merged file at `dcfef5c` (the same bytes at `1ae7e71`
+     through `69f5c72`), LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502
+     lines — `main`'s rules with the Mood Boards sharing roles and `isQa()`,
+     plus the Master Accounts block with M1.6a and V3. It has **no
+     `isQaRead()`** (verified: 0 uses), so the QA-read rules that `main`'s
+     entry calls live are not in it.
+   - **Ammar's**, in `main`'s entry below (`11bd681`; reported there):
+     `main`'s own file at `08b530a`, LF md5 `7d858a05…`, 1,142 lines — the
+     QA-read rules and the QA account's uid pin, and **no `ma_*` block**
+     (verified: 0 `match /ma_`).
+   **The order is not recorded**; only the Console's rules history (Firebase
+   Console → Firestore → Rules) says which was last. *Hypothesis,
+   unverified:* Ammar's was later — his file was first committed at 11:15
+   UTC (`b680d0b`) and, with the uid pin, at 13:57 UTC (`070c05d`); Afnan's
+   file was committed at 09:40 UTC (`1ae7e71`). **One thing does not fit:**
+   `main`'s entry says the file live before Ammar's paste matched none of 71
+   committed versions, yet `acc9a3a1…` is a committed version; a scan of the
+   70 commits, on any ref this checkout holds, that touch the file finds no
+   match for `main`'s two md5s either. So either Afnan's paste was a
+   different local file, or it came after Ammar's.
+3. **What that means for Master Accounts.**
+   - **If Ammar's file is the live one:** the Console has NO `ma_*` rules,
+     so **every Master Accounts read and write is denied — to Afnan and
+     Ammar too.** It fails closed: each page shows *"Could not read … —
+     republish firestore.rules with the Master Accounts block"* and the
+     dashboard card *"Could not read …"*. Nothing is lost: nothing could be
+     written.
+   - **If Afnan's file is the live one:** Master Accounts works, and the
+     QA-read rules are not live — the reverse of what `main`'s entry says.
+   - **Either way, publishing the final file settles both.**
+4. **What the final file adds over the one Afnan published**
+   (`git diff --stat 69f5c72 HEAD -- firestore.rules`: 122 insertions, 98
+   deletions, from `60e333e`, `2fd62db`, `b680d0b`, `070c05d` and the ninth
+   merge `ef7eabb`): `main`'s QA-read work — `isQaRead()` (the QA account,
+   `get` and `list` only) OR'd first into 91 read rules; the combined
+   `allow read, write` statements split, so a QA read cannot carry a write
+   (38 combined lines in the file Afnan published, none left outside the
+   `ma_*` blocks); `isQa()` also pinning the QA account's Firebase uid
+   beside its email; and a notification fence (a QA `hrm_notifications` row
+   is for the QA account and never carries `forRole`). **It adds nothing to
+   any `ma_*` rule and takes nothing out of one** — Master Accounts is the
+   one exemption from read-everything: the `ma_*` reads stay
+   `isMasterAccounts()` alone (`8573391`, "The gate"), and in the emulator QA
+   is REFUSED `get` and `list` on all 15 (`tests/rules-emulator-qa.js` part
+   1b, 604 / 604 in that suite, reported by the merge agent). **Nothing
+   checks that live:** `tools/qa-probe.js` has no `ma_` line (verified with
+   `grep`).
+5. **After the publish**, a Master Accounts page loads for Afnan or Ammar
+   (the "could not read" cards stop); the QA half is `main`'s own live probe
+   (`tools/qa-probe.js --live`, exit 0, as `main`'s entry describes). A
+   session can do neither. If a Master Accounts read or write is still
+   refused after this, check that the signed-in email is exactly
+   `afnan@groovy.op` or `ammar@groovy.op` and that the device clock is
+   within five minutes of the real time, before reopening the code.
+
 **No republish outstanding as of 29 Sept 2026 (evening) — the QA-read rules
 are LIVE.** Ammar published from the repo file (Console paste, reported
 in-session, not checkable from a session): first `b680d0b` (`isQaRead` on
@@ -11410,9 +11667,12 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
-**REPUBLISH OUTSTANDING (28 Sept 2026, late; still open 29 Sept) — publish
-the MERGED file, and only the merged file.** Three things are waiting, and
-they are one paste.
+**SUPERSEDED 29 Sept 2026 (evening) by the entry at the top — its file
+(`acc9a3a1…`) was reported published by Afnan, then `main`'s own file was
+reported published after it, and what to publish now is the FINAL file.
+Was: REPUBLISH OUTSTANDING (28 Sept 2026, late; still open 29 Sept) —
+publish the MERGED file, and only the merged file.** Three things were
+waiting, and they were one paste.
 
 1. **Master Accounts M1.6a (`704056b`) changed `firestore.rules`** — LF
    `md5 f2f8de5e67a742c709c4d0835c56ecab` (verified: `git show
@@ -11462,28 +11722,35 @@ they are one paste.
    `main` with PR #91 (`e1f84bf`) — so main's file itself changed again
    after the 28 Sept evening paste: at `e1f84bf` it is LF md5
    `20e3002f5f6cbb142833e173c44388e9`, 1,118 lines, with the QA fences and
-   still no `ma_*` block (the same bytes at `bac4848` and at `d1af808`, the
-   last `main` commit this branch has taken).
+   still no `ma_*` block (the same bytes at `bac4848`, `d1af808` and
+   `5996999`; main's file changed after that, in the QA-read work — at
+   `08b530a` it is `7d858a05…`, 1,142 lines).
 
-**Do not paste an older branch file, or main's.** An older branch file
-reopens the Mood Boards hole and lacks the QA fences; main's removes Master
-Accounts. **The file to publish is `firestore.rules` at this branch's tip:
-LF `md5 acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines** — main's 1,118 at
+**Do not paste an older branch file, or a `main` from before the merge.**
+An older branch file reopens the Mood Boards hole and lacks the QA fences;
+`main`'s file before the merge removes Master Accounts. **The file this
+entry named, when it was written, was `firestore.rules` at the branch's tip
+then: LF `md5 acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines — the file
+Afnan reported publishing on 29 Sept, and no longer the file to publish
+(the entry at the top: the final file adds `main`'s QA-read rules)** —
+main's 1,118 at
 `e1f84bf` plus the Master Accounts block with M1.6a and V3. It came from
 the fifth merge of `origin/main` into the branch, `1ae7e71` (29 Sept), which
 merged the rules without a conflict: the file equals an independent `git
 merge-file` of the three versions, and a line-multiset check (merge base
 `dc0e609`'s 1,016 lines + the branch's 384 + main's 102 = 1,502) matches
-every line; neither the docs commit after it nor the sixth merge
-(`5a36efe`) nor the seventh (`672cf4f`) touched the file — `bac4848`'s and
-`d1af808`'s rules equal `e1f84bf`'s. The branch last took `main` at
-`d1af808`. The earlier
+every line; no later commit touched the file until the ninth merge — not
+the docs commits, the F25–F27 follow-up, or the sixth, seventh and eighth
+merges (`5a36efe`, `672cf4f`, `69f5c72`): `bac4848`'s, `d1af808`'s and
+`5996999`'s rules equal `e1f84bf`'s. **The ninth merge (`ef7eabb`, `main` at
+`08b530a`) changed it: main's QA-read work, and the file is now `9d7ec162…`
+(the entry at the top).** The earlier
 merged file (`1dc7fa9`, LF `md5 8cf1c6813fe0becddd620161ba0277f4`, 1,346
 lines) was never the one to publish, and is superseded. Main's record names
 the Firebase CLI as the publish route now: it deploys the checkout it runs
-in, so a `firebase deploy --only firestore:rules` from `main` would take the
-Master Accounts block out again — paste this file, or deploy from this
-branch.
+in. From a checkout of `main` at or after the merge of this branch that is
+the final file, with the Master Accounts block; from a checkout of `main`
+before it, it would take the block out again.
 
 What each state of the Console refuses, so a report can be read against it:
 
@@ -11499,8 +11766,15 @@ What each state of the Console refuses, so a report can be read against it:
   check file at `1ae7e71` run against `1d8b3c5`'s rules fails **84** — 55
   "M1.6a:" attacks, 21 of the 22 "V3:" attacks and 8 of the app's own
   writes (Master Accounts, "What is verified").
-- **Under the final file (`acc9a3a1…`):** 241 / 241 in the emulator, and
-  main's own suites 103 / 103, 100 / 100 and 26 / 26. The app writes an
+- **Under the FINAL file (`9d7ec162…`, the one to publish):** 241 / 241
+  for Master Accounts, 103 / 103, 100 / 100 and 26 / 26 for main's own
+  suites, and 604 / 604 (`rules-emulator-qa.js`), 9 / 9, 5 / 5 and 31 / 31
+  for main's QA suites — the merge agent's runs, read from its logs, on
+  `8573391`'s tree (the file is byte-identical at the tip). Everything the
+  next bullet says about the merged file holds for it too.
+- **Under the merged file Afnan reported publishing (`acc9a3a1…`):** 241 /
+  241 in the emulator, and main's own suites 103 / 103, 100 / 100 and
+  26 / 26. The app writes an
   `ma_audit` row in the same transaction or batch as every change, and the
   rules refuse a row — and, since V3, an edit's own row — more than five
   minutes from the server's clock, so **a device whose clock is more than
@@ -11508,13 +11782,17 @@ What each state of the Console refuses, so a report can be read against it:
   says to check the clock. The rules do not require the audit row beside a
   document write; the pairing is the client's. A stored document with a
   NUMERIC holder code would be refused on its next edit (V3 wants strings);
-  the app writes strings and the branch has never been on `main`.
-- **Under main's rules (no `ma_*` block), at any of its versions:** see
-  above — Master Accounts reads nothing.
+  the app writes strings, and no build of the branch was deployed before the
+  merge into `main` (29 Sept).
+- **Under main's rules (no `ma_*` block), at any of its versions —
+  including `7d858a05…`, the file Ammar reportedly published on 29 Sept
+  evening:** see above — Master Accounts reads nothing. `main`'s file
+  itself became the final file with the merge of this branch.
 
 On the branch today `git log --oneline -1 -- firestore.rules` names
-`1ae7e71`, and `acc9a3a1cec525ee4e1d335da30124fe` is what to check the file
-against.
+`ef7eabb` (the ninth merge), and `9d7ec162b9812b5358d2ce07a400824a` is what
+to check the file against (`acc9a3a1cec525ee4e1d335da30124fe` was the file
+until then).
 
 **Master Accounts rules reported published by Afnan, 28 Sept 2026**
 ("rules updated" — reported in-session; not recorded in any commit, and not
