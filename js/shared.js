@@ -1313,9 +1313,14 @@ window.showPage=async function(id){
   // hence typeof; an unparsed auth.js fails CLOSED to the dashboard).
   if(session&&session.role==='csr_lead'&&_CHROME_PAGES.indexOf(id)<0
      &&!(typeof CSR_LEAD_PAGES!=='undefined'&&CSR_LEAD_PAGES.indexOf(id)>-1))id='dashboard';
+  // Milanote opens straight onto Mood Boards (29 Sept 2026, Afnan): the hub
+  // grid of Notes / SOPs / Storage / Chat is not in use yet, so the nav's
+  // one Milanote entry lands on Home. Notes is reached from Home's menu.
+  if(id==='creative-hub')id='boards';
   currentPage=id;
   document.querySelectorAll('.nav-item,.mob-nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('nav-'+id)?.classList.add('on');
+  if(_CREATIVE_HUB_PAGES.indexOf(id)>-1)document.getElementById('nav-creative-hub')?.classList.add('on');
   document.getElementById('mobnav-'+id)?.classList.add('on');
   if(typeof _updateMobNavActive==='function')_updateMobNavActive(id);
   if(typeof closeMobSheet==='function')window.closeMobSheet();

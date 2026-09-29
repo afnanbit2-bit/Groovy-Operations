@@ -1770,6 +1770,15 @@ const FRAGMENTS={
       _colorLibTab='tcx';_tcxBook=_tcxParse(${JSON.stringify({colors:book.colors.slice(0,40).concat(book.colors.filter(r=>r[0]==='19-1664'))})});_tcxState='ok';_tcxShown=41;`);
     return Promise.resolve('<div id="main-content">'+app.run(`renderColorLibraryPage()`)+'</div>');
   },
+  /* The Pantone C codes tab (29 Sept 2026): the same row as TCX, derived from
+     the app's built-in C list plus the library. */
+  'color library — the Pantone C codes tab':()=>{
+    const app=loadApp({files:['js/shared.js','js/auth.js','js/embellishments.js']});
+    app.run(`session={uid:'u1',u:'ammar',name:'Ammar',role:'owner'};currentPage='color-library';
+      allColors=[{_id:'a',colorName:'An unusually long colour name that must ellipsize, not push',pantoneCode:'PANTONE 438 C',hexApprox:'#5C3317',status:'active'}];
+      _colorLibTab='c';`);
+    return Promise.resolve('<div id="main-content">'+app.run(`renderColorLibraryPage()`)+'</div>');
+  },
   /* Labels, Reactions and Comments as popovers (Sept 2026). The comment
      rows put literal initials on --cat-* tokens with --on-dark ink, in both
      themes — the one place an avatar's ink could go unreadable — and every

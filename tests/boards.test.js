@@ -1861,7 +1861,7 @@ module.exports=function(){
       !/boardsToggleTemplate/.test(hb)&&!/boardsOpenShare/.test(hb)&&!/boardsToggleVisibility/.test(hb));
     s.ok('no rename field — Home is not a title you edit',!/board-title-input/.test(hb));
     s.ok('but All boards is reachable',/boardsShowAll\(\)/.test(hb));
-    s.ok('and back leaves the module, which is called Milanote now',/← Milanote/.test(hb));
+    s.ok('and back leaves the module, to the Dashboard (Milanote opens straight on Home)',/← Dashboard/.test(hb));
     run(`_editBoard={id:'A',ownerUid:'u1',visibility:'shared',title:'Winter Drop',zoom:1,panX:0,panY:0}`);
     const nb=run(`_renderBoardCanvasHTML()`);
     s.ok('an ordinary board keeps all of it',
@@ -5687,7 +5687,7 @@ module.exports=function(){
     {
       const a=fresh();
       a.run(`_editBoard={id:'H',isHome:true,title:'Home',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0}`);
-      s.ok('the Home board\'s back button says Milanote',/← Milanote/.test(a.run(`_renderBoardCanvasHTML()`)));
+      s.ok('the Home board\'s back button leaves to the Dashboard',/← Dashboard/.test(a.run(`_renderBoardCanvasHTML()`)));
       const src=f=>fs.readFileSync(require('path').join(__dirname,'..',f),'utf8');
       const code=f=>src(f).replace(/\/\*[\s\S]*?\*\//g,'').split(/\r?\n/).map(l=>l.replace(/(^|[^:'"`])\/\/.*$/,'$1')).join('\n');
       ['js/shared.js','js/notes.js','js/hrm.js','js/boards.js','js/theboard.js','index.html'].forEach(f=>

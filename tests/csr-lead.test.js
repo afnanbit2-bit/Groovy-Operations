@@ -37,7 +37,7 @@ module.exports=async function(){
     a.run('renderPage=function(id){globalThis.__got=id;}');
     const go=id=>{a.run('globalThis.__got=null');a.run('window.showPage('+J(id)+')');return a.run('__got');};
     ['dashboard','qc-disposition','bstock','fabric-inventory','shopify-intel','creative-hub','notes','note-detail','boards','boards-all','board-canvas','profile','bug-tracker']
-      .forEach(id=>s.eq('reaches '+id,go(id),id));
+      .forEach(id=>s.eq('reaches '+id,go(id),id==='creative-hub'?'boards':id));
     ['users','po-registry','po-create','po-detail','gatepass','hrm-payroll','attendance','store-dashboard','mkt-creators','monitor','activity','packing','fulfillment','pattern-hub']
       .forEach(id=>s.eq('is sent home from '+id,go(id),'dashboard'));
     s.eq('the Creative Hub gate includes sami',a.run('_canSeeCreativeHub()'),true);

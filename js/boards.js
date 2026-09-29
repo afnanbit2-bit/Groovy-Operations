@@ -2263,7 +2263,7 @@ window.boardsBack=function(){
   _boardsSaveNow();
   // Home is the top of the tree, so from Home the only way up is out of the
   // module entirely.
-  if(_boardsIsHome(_editBoard)){window.showPage('creative-hub');return;}
+  if(_boardsIsHome(_editBoard)){window.showPage('dashboard');return;}
   const parent=_editBoard?_boardsParentOf(_editBoard.id):null;
   if(parent){window.boardsOpen(parent.id);return;}
   if(_boardsCameFromAll){_boardsCameFromAll=false;window.showPage('boards-all');return;}
@@ -2419,7 +2419,7 @@ function _renderBoardCanvasHTML(){
   const phone=_boardsIsPhone();
   const chain=home?[]:_boardsAncestors(b.id);
   const parent=chain.length?chain[chain.length-1]:null;
-  const backLabel=home?'Milanote':(parent?(parent.title||'Untitled board'):(_boardsCameFromAll?'All boards':'Home'));
+  const backLabel=home?'Dashboard':(parent?(parent.title||'Untitled board'):(_boardsCameFromAll?'All boards':'Home'));
   // THE TRAIL, Milanote's shape (Sept 2026): a round chip carrying the
   // GROOVY mark, "Home", a slash, then each ancestor and finally the board's
   // own tile and name. On a phone the one-row bar keeps its capped back
@@ -2491,6 +2491,7 @@ function _renderBoardCanvasHTML(){
             <button onclick="window.boardsOpenIconPicker('${b.id}')">Board icon…</button>
             <div class="board-menu-sep"></div>`:''}
             <button onclick="window.boardsShowAll()">All boards${home?'':' (list, templates, trash)'}</button>
+            ${home?`<button onclick="window.showPage('notes')">Notes</button>`:''}
             <div class="board-menu-sep"></div>
             ${home?'':`<button onclick="window.boardsCopyBoardLink()">Copy link to board</button>`}
             <button onclick="window.boardsPresent()">Present this board</button>
