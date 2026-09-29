@@ -3939,8 +3939,9 @@ module.exports=function(){
     run(`_editCards=[{id:'ph',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/v1/a.jpg',x:0,y:0,w:240,h:360,by:'Afnan',at:1},
       {id:'fl',type:'file',fileUrl:'https://res.cloudinary.com/x/raw/upload/v1/a.pdf',fileName:'a.pdf',x:0,y:0,w:240,h:200}];
       _boardsSelection=new Set(['ph']);`);
-    s.eq('Color · Labels · Reactions · Comment · Draw on · Edit · Background · Caption · ⋯',run(`_boardsRailItems().map(i=>i.act).join(',')`),
-      'deselect,color-panel,labels,reactions,card-comment,img:draw,img:edit,img:bg,caption,more');
+    // Milanote's image rail, plus our Pick colour (29 Sept 2026) before Caption.
+    s.eq('Color · Labels · Reactions · Comment · Draw on · Edit · Background · Pick colour · Caption · ⋯',run(`_boardsRailItems().map(i=>i.act).join(',')`),
+      'deselect,color-panel,labels,reactions,card-comment,img:draw,img:edit,img:bg,img:pick,caption,more');
     const imgMore=run(`_boardsMoreItems(true).map(i=>i.act).filter(Boolean).join(',')`);
     s.ok('⋯ carries Replace, Download and Open original for the picture',/replace/.test(imgMore)&&/download/.test(imgMore)&&/openasset/.test(imgMore),imgMore);
     // Rename left the rail, so the derive put it in ⋯ with no other edit —

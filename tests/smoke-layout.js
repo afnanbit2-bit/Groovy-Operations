@@ -1737,6 +1737,26 @@ const FRAGMENTS={
       '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'+
       '<div class="board-sheet board-pop" style="position:relative;left:auto;top:auto;width:264px;max-height:none;overflow:visible">'+picker+'</div>'});
   },
+  /* Pick colour's panel (29 Sept 2026): the sampled colour, the TCX and
+     Pantone C tabs and the closest codes, with their Swatch buttons — both
+     tabs rendered, since the probe cannot click one, plus the TCX tab with
+     nothing loaded, which is what a fresh install shows. */
+  'boards — Pick colour and the TCX / C tabs':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};_editConnectors=[];
+      _editCards=[{id:'ph',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/a.jpg',x:0,y:0,w:200,h:200}];
+      _BOARDS_PANTONE_EXTRA['19-1664 TCX']='#9E2A2B';_BOARDS_PANTONE_EXTRA['18-1662 TCX']='#C3202F';
+      _BOARDS_PANTONE_EXTRA['11-0601 TCX']='#F4F5F0';_BOARDS_PANTONE_EXTRA['485 C']='#DA291C';
+      _BOARDS_PANTONE_EXTRA['Cool Gray 11 C']='#53565A';
+      _boardsPickLast={hex:'#A02A2C',cardId:'ph',rect:{left:10,right:11,top:10,bottom:11,width:1,height:1}};`);
+    const panel=sys=>{app.run(`_boardsPickSys='${sys}';_boardsPickShow();`);
+      return '<div class="board-sheet board-pop" style="position:relative;left:auto;top:auto;width:300px;max-height:none;overflow:visible;margin-bottom:16px">'+
+        app.run(`document.getElementById('board-sheet').innerHTML`)+'</div>';};
+    const a=panel('TCX'),b=panel('C');
+    app.run(`for(const k in _BOARDS_PANTONE_EXTRA)if(/TCX$/.test(k))delete _BOARDS_PANTONE_EXTRA[k];`);
+    const empty=panel('TCX');
+    return Promise.resolve({widths:[1900,420],html:a+b+empty});
+  },
   /* Labels, Reactions and Comments as popovers (Sept 2026). The comment
      rows put literal initials on --cat-* tokens with --on-dark ink, in both
      themes — the one place an avatar's ink could go unreadable — and every

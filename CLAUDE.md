@@ -3887,6 +3887,52 @@ the library holds**, and the full books are licensed and unreachable from
 the sandbox — an unknown code stays a note, nothing is invented. A file from
 Afnan would go into `_BOARDS_PANTONE_EXTRA`. `tests/board-swatch.test.js`.
 
+### Mood Boards — Pick colour, and the TCX / Pantone C tabs (29 Sept 2026)
+
+Afnan: *"a tab for TCX code and pantone code — we click on an image and it
+gives which code it is"*.
+
+- **Pick colour** is on an image card's rail (and its right-click menu, so
+  the phone's More sheet reaches it; ⋯ does not repeat it). With it on
+  (`_boardsPickOn`, a dashed outline and a crosshair), a press on the
+  picture READS instead of dragging: `boardsCardDragStart` hands it to
+  `_boardsPickAt`, which redraws the picture exactly as the card shows it
+  (`_boardsDrawPicture` — the same `_boardsImgGeom` for a crop or turn,
+  else the card's cover/contain fit) into a card-sized canvas and averages a
+  5×5 patch (`_boardsAvgPixels`, transparent pixels skipped — one pixel of
+  a fabric photo is a thread). A picture whose host blocks CORS taints the
+  canvas; that is SAID, never guessed. Off by Escape, by selecting anything
+  else, and on board open. A viewer can read; only an editor gets Swatch.
+- **The panel** (`_boardsPickShow`, a sheet anchored at the click) shows the
+  colour and two tabs, **TCX · fabric** and **Pantone C**, each listing the
+  three closest codes of THAT book only (`_boardsPantoneSys`: TPX/TPG/U are
+  in neither). The tab is per viewer (`groovy-boards-picksys`). A match or
+  "this exact colour" becomes a swatch BESIDE the picture, stacked under
+  any already there, one undo each. **The swatch's own Colour picker got
+  the same tabs** (`_boardsNearHTML(hex,'sw')`), where a match is applied to
+  the swatch. Buttons carry an index into `_boardsNearLast`, never a code.
+- **Closeness is CIEDE2000 on CIELAB** (`_boardsLab`, `_boardsDE2000`),
+  asserted against five published reference pairs (Sharma, Wu & Dalal
+  2005), with words (Exact < 1 · Very close < 3 · Close < 6 · Rough < 12 ·
+  Far off). `_boardsPantoneNearest` (the Display › Pantone "≈") uses the
+  same measure now; it was RGB distance.
+- **An empty book says so**: with no TCX codes loaded the TCX tab says the
+  book has not been added, never a C code under a TCX heading. Today the
+  TCX tab only knows TCX codes in the Color Library — the full book is the
+  2,310-colour file, waiting on Afnan and its licence.
+- Fixed with it: **"Cool Gray" never matched** — `_boardsPantoneKey` only
+  read GREY, while Pantone's books write GRAY; both reduce to GRAY now. And
+  **a recoloured swatch kept its old code**: `_boardsSwatchSetHex` drops
+  `c.pantone` unless the new colour is that code's own.
+- `tests/board-colourpick.test.js` (40) drives the pick through a stub
+  canvas; verified by undoing the book filter, the press intercept, the
+  stale-code fix and ΔE2000 (swapped for Lab distance) — each fails by name.
+  `smoke-layout` fragment `boards — Pick colour and the TCX / C tabs`
+  (both tabs and the empty TCX tab) fails at 1:1 with a code's ink broken.
+  Looked at in Chromium, both themes. **Nobody has picked a colour off a
+  real photo** — the sandbox cannot sign in, and the CORS answer of the
+  live Cloudinary pictures is the thing to watch.
+
 ### Mood Boards — Unsorted previews, and the magnet (29 Sept 2026)
 
 Afnan: dropping a card into Unsorted should have "a magnet like effect,
