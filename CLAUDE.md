@@ -76,7 +76,12 @@ Trigger deploy on the newest commit.
   work is on `origin/main`. A stale service worker and an unbuilt deploy
   produce the identical symptom from the browser's side.
 - **The check is the Netlify deploy list, and only the human can see it** —
-  `*.netlify.app` is blocked here (re-verified, not inherited), and this
+  ~~`*.netlify.app` is blocked here (re-verified, not inherited)~~
+  **SUPERSEDED 29 Sept 2026: `groovyoperations.netlify.app` answers from a
+  session** (HTTP 200, `server: Netlify` — see the re-check under "Sandbox
+  limits"), so a served page can be read. The deploy LIST is a view in
+  Netlify's dashboard/API, not a page on the site, and that route was not
+  tried on 29 Sept, so it is still the human's to read. And this
   repo carries no Netlify commit statuses at all.
 - **Do not diagnose this from the code.** Nothing in `js/boards.js` or
   `css/main.css` was ever wrong; both were verified against `origin/main`
@@ -85,28 +90,75 @@ Trigger deploy on the newest commit.
 
 ### Sandbox limits (verified, reproducible)
 
-The Claude sandbox **cannot reach `*.netlify.app`** — the egress proxy
+~~The Claude sandbox **cannot reach `*.netlify.app`** — the egress proxy
 answers `403` to `CONNECT` (`connect_rejected`). The deployed site can
-therefore never be opened from a session. Check deploys via the GitHub
+therefore never be opened from a session.~~ **SUPERSEDED 29 Sept 2026 — see
+the re-check below.** Check deploys via the GitHub
 status API above, and depend on the human for anything needing a real
 browser: install prompts, offline behaviour, visual confirmation.
 
-The sandbox **also cannot reach `*.firebaseio.com`** (same `connect_rejected`
+~~The sandbox **also cannot reach `*.firebaseio.com`** (same `connect_rejected`
 403), so live Realtime Database rules can never be verified by curling the
 REST endpoint from here — despite `firestore.googleapis.com` itself being
-reachable. To verify RTDB rules actually took effect, use Firebase Console
+reachable.~~ **SUPERSEDED 29 Sept 2026: the app's RTDB host answers from a
+session (re-check below).** To verify RTDB rules actually took effect, use Firebase Console
 → Realtime Database → Rules → **Rules playground** (simulate an
 unauthenticated read) and have the human report the result.
 `api.github.com` and `firestore.googleapis.com` **are** reachable.
 
-**Blocked: `www.gstatic.com`, `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`,
+~~**Blocked: `www.gstatic.com`, `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`,
 `unpkg.com`, and `cloudinary.com` ENTIRELY** — not just
 `res.cloudinary.com`; `cloudinary.com/documentation` and
 `support.cloudinary.com` answer `403` to `CONNECT` as well (verified Sept
 2026 via `curl` and a headless Chromium launch). So nothing about a
 Cloudinary account, its settings or its docs can be checked from a session —
-that always needs the human. **Reachable: `api.github.com`,
+that always needs the human.~~ **SUPERSEDED 29 Sept 2026 — every one of
+those hosts answered; see the re-check below.** **Reachable: `api.github.com`,
 `firestore.googleapis.com`, `registry.npmjs.org`, `raw.githubusercontent.com`.**
+
+**RE-CHECKED 29 Sept 2026 — EVERY HOST NAMED ABOVE ANSWERS, and the "blocked"
+wording above is SUPERSEDED.** Verified: `curl -sS -o /dev/null -m 20 -w
+"%{http_code}" https://HOST/` run from a session through its own proxy
+(`HTTPS_PROXY`, CA bundle `/root/.ccr/ca-bundle.crt`; no `-k`, the proxy not
+bypassed). A status from the origin means the proxy let the request through.
+`curl` exited 0 for every host, and the proxy's own status endpoint
+(`/__agentproxy/status`) listed no host from this table among its
+`recentRelayFailures`.
+
+| Host | Result |
+|---|---|
+| `groovyoperations.netlify.app` | `/` 200, `server: Netlify` |
+| `www.gstatic.com` | `/` 404 from the origin (`server: sffe`); the four Firebase SDK files `index.html` imports, `/firebasejs/10.12.2/firebase-{app,firestore,auth,database}.js`, each 200 (101,721 / 436,574 / 150,996 / 186,299 bytes) |
+| `cdnjs.cloudflare.com` | `/` 200; `/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js` 200 (364,463 bytes) |
+| `cdn.jsdelivr.net`, `unpkg.com` | `/` 301, 200 |
+| `cloudinary.com` | `/` 200; `/documentation` 200; `support.cloudinary.com/` 302 |
+| `res.cloudinary.com` | `/` 404 from the origin (`server: Cloudinary`) |
+| `api.github.com`, `raw.githubusercontent.com`, `registry.npmjs.org` | 200, 301, 200 |
+| `firestore.googleapis.com`, `identitytoolkit.googleapis.com`, `securetoken.googleapis.com` | `/` 404 from the origin, each |
+| `groovy-gatepass-default-rtdb.firebaseio.com` (the `databaseURL` in `index.html`) | GET `/` 301; an unauthenticated GET of `/attendance.json?shallow=true` **401** (status read, body discarded) |
+| `storage.googleapis.com` (named in the emulator paragraph below) | `/` 400 from the origin |
+
+- **What the RTDB row does and does not show.** The host is reachable, and one
+  unauthenticated read of one path was refused — consistent with `database.rules.json`'s
+  `attendance` `.read: auth != null`. It shows nothing about the rules TEXT, about a
+  signed-in read, or about writes; the Rules playground sentence above still stands for those.
+- **Only one `*.netlify.app` host and one `*.firebaseio.com` host were tried**, the app's
+  own; the wildcards in the old wording were not tested beyond those. A 404/400 on `/` from an
+  API host is a reachability result, not a refusal.
+- **A build id can be read from the live site now, which is not the deploy list.**
+  `https://groovyoperations.netlify.app/sw.js` returned 200 and
+  `CACHE_VERSION = 'v259'` on 29 Sept 2026, the same value as this checkout's `sw.js`. It does
+  not by itself say which commit is live.
+- **Cloudinary:** its public docs pages answer (above). Reading an ACCOUNT's settings would
+  still need a Cloudinary login; none was tried, so that stays the human's.
+- **Node's built-in `fetch` does not read `HTTPS_PROXY`** — verified: `/root/.ccr/README.md`
+  ("Tool ignores the proxy entirely") says so and says to run that command with
+  `NODE_USE_ENV_PROXY=1` on Node >= 22.21; `node --version` here is v22.22.2. What was
+  actually observed on 29 Sept: `fetch` from Node to `identitytoolkit.googleapis.com` and
+  `firestore.googleapis.com` returned the origin's 404 both with and without the variable, so
+  for those two hosts it was not needed; an unproxied `fetch` to `api.github.com` was answered
+  by GitHub itself (403, its unauthenticated rate-limit message) while the proxied one got 200.
+  Keep the variable in Node commands anyway, as the README says.
 
 **What changed in Sept 2026:** jsPDF/SheetJS/JsBarcode are no longer loaded
 from a CDN — they are vendored under `/assets/vendor` (see "Vendored
@@ -122,6 +174,17 @@ runs and the app stops at the login screen's static HTML. **A "verify in a
 browser" step for any UI change is therefore still NOT possible from this
 sandbox** — say so explicitly rather than skip the caveat. Real UI
 verification needs the human, a phone, or Claude in Chrome.
+
+**29 Sept 2026 — the premise of that paragraph no longer holds.** Verified: `curl`
+fetched all four Firebase SDK files `index.html` imports from `www.gstatic.com` (see
+the re-check above), so "gstatic.com, which is still blocked" is SUPERSEDED.
+**Whether the app now boots (`__bootApp()` runs), signs in, or renders a page from this
+sandbox has NOT been tested** — so "still NOT possible" is neither confirmed nor refuted
+here; read it as untested until a later dated entry says otherwise. The same gstatic
+premise is repeated, and now marked, in "Vendored libraries" (reason 3), the Mood Boards
+Trash and Dark-mode notes, and the `tests/smoke-browser.js` entry; the many other "the
+sandbox cannot sign in" remarks in this file share the untested conclusion and are
+left as written.
 
 **THE FIRESTORE EMULATOR DOES RUN HERE (verified 25 Sept 2026)**, which
 this file never said and which changes what "the rules are unverifiable"
@@ -488,6 +551,9 @@ this origin. They used to load from `cdnjs.cloudflare.com` and
    prints gate passes and payroll from these files.
 3. **Neither CDN is reachable from this sandbox**, so no session could boot
    the app in a browser to check anything. `tests/smoke-browser.js` can now.
+   *(SUPERSEDED 29 Sept 2026: `cdnjs.cloudflare.com` and `cdn.jsdelivr.net`
+   both answered from a session — see "Sandbox limits". Whether the app boots
+   from the sandbox is untested.)*
 
 - **Fetched from `registry.npmjs.org`, not a CDN mirror**, and every
   tarball's sha512 was checked against the registry's own `dist.integrity`
@@ -5262,6 +5328,8 @@ Four decisions hold it together:
 - **`firestore.rules` CHANGED — it needs a republish.**
 - **Nobody has looked at the panel in a browser.** The sandbox still cannot
   sign in (gstatic blocked), so the visual is unverified as usual.
+  *(29 Sept 2026: the gstatic premise is SUPERSEDED — see "Sandbox limits"; signing
+  in from the sandbox is untested.)*
 
 ### Mood Boards — the rail is a column (Sept 2026)
 
@@ -10264,7 +10332,8 @@ theme is about the screen you are looking at, not who you are.
   every token resolves and the computed colours flip correctly in both
   themes (body, topbar, cards, buttons, the red QC button keeping white
   text). **Nobody has LOOKED at the app in dark mode** — the sandbox still
-  cannot sign in (gstatic is blocked), so page-by-page visual confirmation
+  cannot sign in (gstatic is blocked; *29 Sept 2026: that premise is SUPERSEDED,
+  see "Sandbox limits" — signing in from the sandbox is untested*), so page-by-page visual confirmation
   needs the human. Expect leftover light patches in the corners the
   property-qualified sweep could not reach (gradients, `el.style.x='#fff'`
   assignments, chart and badge colours); they are a follow-up pass, best
@@ -11212,8 +11281,64 @@ matrix and a regression differential over every path parsed from the rules).
   whether the collection should exist, not whether QA may read it.
 * **A read no longer proves the QA rules are live** (it reads `pos` either way); the e2e
   harness's gate updates a nonexistent document instead.
-* **Not verified from a session:** what the Console has published, whether the Auth
-  account exists, and the emulator switch inside a signed-in browser (gstatic is blocked).
+* **Not verified from a session:** what the Console has published, as TEXT (behaviour
+  is a different thing — see the 29 Sept 2026 block below), and the emulator switch
+  inside a signed-in browser. ~~whether the Auth account exists~~ — **SUPERSEDED 29 Sept
+  2026: it exists and can sign in (block below).** ~~(gstatic is blocked)~~ — **SUPERSEDED
+  29 Sept 2026:** that premise no longer holds ("Sandbox limits"); the switch inside a
+  signed-in browser is still untested. (`QA_ACCESS.md` §1 still calls the account's
+  existence "Unknown"; that file was not edited by this change.)
+* **VERIFIED FROM A SESSION, 29 Sept 2026 — the live QA account, one run of
+  `tools/qa-probe.js --live --sandbox-writes`.** Source: that tool's own output (exit 0,
+  "All as designed."), relayed by the session that ran it to the agent that wrote this entry,
+  which did not re-run it (a re-run creates and deletes documents in the live project). The
+  "Firestore rules — published" section also mentions a live probe, reported there; whether
+  that is this same run is not known.
+  * **Environment:** `GROOVY_QA_URL`, `GROOVY_QA_EMAIL` and `GROOVY_QA_PASSWORD` are set in the
+    session environment (verified: a set/not-set check on 29 Sept; values never printed and
+    never written here).
+  * **The working command** is `QA_PASSWORD="$GROOVY_QA_PASSWORD" NODE_USE_ENV_PROXY=1 node
+    tools/qa-probe.js --live --sandbox-writes`. Verified by reading `tools/qa-probe.js`: with
+    `--live` it reads only `QA_PASSWORD` from the environment (`QA_PROJECT` and
+    `FIRESTORE_EMULATOR_HOST` matter only to `--emulator`; it reads none of `GROOVY_QA_PASSWORD`,
+    `GROOVY_QA_EMAIL`, `GROOVY_QA_URL`), the email is hardcoded as `claude@groovy.op`, and it
+    calls Node's built-in `fetch`, hence `NODE_USE_ENV_PROXY=1` per the README. A run of the
+    probe without that variable was not tried; a plain `fetch` to the roots of
+    `identitytoolkit.googleapis.com` and `firestore.googleapis.com` reached them (see "Sandbox
+    limits").
+  * **Sign-in:** it signed in as the QA account, so the Auth account exists and is enabled
+    (verified by the sign-in itself), and the signed-in uid matched the uid pinned in the repo's
+    `isQa()` (the probe exits 1 on a mismatch). The uid is deliberately not written here.
+  * **27 writes refused:** every one of the probe's 27 create attempts against real collections
+    got HTTP 403 — including `hrm_notifications` with `forUser` afnan, with `forRole` owner, and
+    with `forUser` claude plus `forRole` owner; `user_profiles` with a foreign uid; `board_items`;
+    `board_lists`; `mood_boards`; `payslips`; `employees`; `acct_entries`; `wh_sales`.
+  * **35 reads open:** all 35 top-level collection lists in the probe's list returned HTTP 200,
+    including `employees`, `payslips`, `acct_entries`, `wh_sales`, `acct_vendors`,
+    `payroll_runs`, `mood_boards`, `board_lists`, `board_items`. `integration_secrets`,
+    `passkeys` and `passkey_challenges` returned 403.
+  * **The sandbox step:** a QA-only board list, one item assigned only to itself and a comment
+    were created (200 each); the same list and item with a second person added were refused (403);
+    the item and the list were then deleted. A read-only before/after listing of QA-owned
+    documents (`board_lists`, `board_items` and `mood_boards` owned by QA, QA's
+    `hrm_notifications`, QA's `user_profiles` row) showed no difference.
+  * **What this shows about the live Console — behaviour only.** For those requests, the live
+    project behaves as the repo's QA rules describe: role-gated reads open to QA, writes
+    fenced. It does NOT show the Console's rules text, and it does not show that the published
+    file equals the repo file.
+  * **Limits of the probe** (verified: a read of `tools/qa-probe.js`): reads are top-level
+    `?pageSize=1` lists only, so subcollections (`mood_boards/*/comments`,
+    `board_items/*/comments`, …) are not read, and a 200 means the list was allowed, not that the
+    collection holds data. Refusals are tested for CREATES of fresh documents only — never for
+    an update or a delete of an existing document.
+  * **Hypothesis, unverified:** the probe's sandbox step creates a comment under
+    `board_items/<id>/comments` and then deletes only the item and the list. Read from the
+    source (lines 139–145): the comment's id is generated inline and not kept, and no delete is
+    issued for it, although the file's header says everything is "deleted straight after".
+    Firestore does not delete a subcollection with its parent document, so one test comment
+    (body "probe") probably survives under the deleted item. The session that ran the probe
+    tried to list it as the QA account and was refused (403), so it could not be looked for
+    from a session; only someone with Console or Admin access can confirm it.
 
 ## Credentials — never in client code
 
@@ -11810,7 +11935,9 @@ Chrome.
   declared twice across two classic scripts (they share one lexical scope), a
   global that quietly stopped being defined. **Only possible because the
   libraries are vendored.** It still cannot sign in — gstatic is blocked, so
-  `__bootApp()` never runs. Skips cleanly with no browser. Note it runs the
+  `__bootApp()` never runs *(29 Sept 2026: the gstatic premise is SUPERSEDED, see
+  "Sandbox limits"; this suite still does not sign in, and whether the app boots
+  from the sandbox is untested)*. Skips cleanly with no browser. Note it runs the
   browser **asynchronously on purpose**: this process is also the web server,
   and a synchronous spawn deadlocks the event loop that has to answer the
   browser's requests — which looks exactly like a browser problem and is not.
