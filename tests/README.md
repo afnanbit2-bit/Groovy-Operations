@@ -41,6 +41,7 @@ Read the header of `harness.js` before trusting a green run.
 | `board-hash.test.js` | Mood Boards: the address bar names the open board — `#board=<id>` written by replaceState on open, cleared on leaving the canvas, another module's hash left alone, and read back by the deep-link consumer after a reload (#97 bug 9) |
 | `board-title.test.js` | Mood Boards: Enter saves a board rename, Escape restores it, the breadcrumb tile follows (#97 bug 10) |
 | `board-trayprev.test.js` | Mood Boards: Unsorted previews a note, to-do, column, colour, heading and table as what they are (text only through `textContent`); the magnet maths; a link with no picture previews as its site, title and address, and is fetched again when dragged out |
+| `color-tcx.test.js` | Color Library ▸ TCX codes: the real 2,800-colour book file, search by code/name/hex, "In library" (archived excluded), + Add prefilling the Add Color form, bad rows dropped |
 | `link-preview.test.js` | The link-preview function: SSRF refusals (private, metadata, redirect into the network), parsing, and the oEmbed fallback (Pinterest pins, discovery links, the endpoint's host checked like any other) |
 | `board-colourpick.test.js` | Mood Boards: Pick colour on a picture, the TCX / Pantone C tabs, CIEDE2000 against the published reference pairs, a recoloured swatch dropping its stale code |
 | `board-dragmove.test.js` | Mood Boards: a card dropped on a sub-board card or breadcrumb moves to that board's Unsorted; Home, empty canvas and board links refused (#97 bug 2) |

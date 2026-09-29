@@ -52,7 +52,10 @@ module.exports=async function(){
   s.section('an empty book says so');
   run(`delete _BOARDS_PANTONE_EXTRA['19-1664 TCX'];delete _BOARDS_PANTONE_EXTRA['18-1662 TCX'];delete _BOARDS_PANTONE_EXTRA['11-0601 TCX'];_boardsPickSys='TCX'`);
   const none=run(`_boardsNearHTML('#A02A2C','pick')`);
-  s.ok('no TCX loaded is said, not faked with a C code',/No TCX \(fabric\) codes are loaded/.test(none)&&!/485 C/.test(none),none.slice(0,200));
+  s.ok('no TCX loaded is said, not faked with a C code',/Loading the TCX book/.test(none)&&!/485 C/.test(none),none.slice(0,200));
+  run(`_boardsTcxState='failed'`);
+  s.ok('a failed read says so',/could not be loaded/.test(run(`_boardsNearHTML('#A02A2C','pick')`)));
+  run(`_boardsTcxState=''`);
   run(`_BOARDS_PANTONE_EXTRA['19-1664 TCX']='#9E2A2B';_BOARDS_PANTONE_EXTRA['18-1662 TCX']='#C3202F'`);
   const withTcx=run(`_boardsNearHTML('#A02A2C','pick')`);
   s.ok('buttons carry an index, never the code',/boardsNearUse\('pick',0\)/.test(withTcx)&&!/boardsNearUse\([^)]*TCX/.test(withTcx));
@@ -119,6 +122,36 @@ module.exports=async function(){
   s.eq('the old code is gone',run(`_editCards.find(c=>c.id==='sw1').pantone||'none'`),'none');
   run(`_editCards.find(c=>c.id==='sw1').pantone='19-1664 TCX';_boardsSwatchSetHex('sw1','#9E2A2B')`);
   s.eq('set to the code\'s own colour, the code stays',run(`_editCards.find(c=>c.id==='sw1').pantone||'none'`),'19-1664 TCX');
+
+  s.section('the TCX book file');
+  {
+    const fs=require('fs');
+    const d=JSON.parse(fs.readFileSync(require('path').join(__dirname,'..','assets','data','pantone-tcx.json'),'utf8'));
+    s.eq('2,800 colours shipped',d.colors.length,2800);
+    s.ok('every row is a code, a name and a #RRGGBB',d.colors.every(r=>/^\d{2}-\d{4}$/.test(r[0])&&typeof r[1]==='string'&&/^#[0-9A-F]{6}$/.test(r[2])));
+    s.eq('no code twice',new Set(d.colors.map(r=>r[0])).size,2800);
+    const a=loadApp({files:['js/boards.js']});
+    const n=a.run(`_boardsTcxApply(${JSON.stringify({colors:[['19-1664','True Red','#9E2A2B'],['bad','x','#FFFFFF'],['11-0601','Bright White','red;x'],['18-1662','Flame Scarlet','#c3202f']]})})`);
+    s.eq('only valid rows join the book',n,2);
+    s.eq('keyed as the swatch code reads it',a.run(`_BOARDS_PANTONE_EXTRA['19-1664 TCX']+','+_BOARDS_PANTONE_EXTRA['18-1662 TCX']`),'#9E2A2B,#C3202F');
+    s.eq('its name comes along',a.run(`_boardsTcxNames['19-1664 TCX']`),'True Red');
+    s.ok('the TCX tab lists it with its name',/True Red/.test(a.run(`_boardsPickSys='TCX';_editBoard={id:'B',ownerUid:'u1'};session={uid:'u1',u:'afnan',role:'owner'};_boardsNearHTML('#A02A2C','pick')`)));
+    s.eq('and a note typed as the code becomes that swatch',a.run(`_boardsPantoneBook()[_boardsPantoneKey('19-1664 TCX')]`),'#9E2A2B');
+  }
+
+  s.section('a made swatch is not hidden under the panel');
+  {
+    run(`window.__closed=0;var __c=window.boardsCloseSheet;window.boardsCloseSheet=function(){window.__closed++;};_boardsPickLast={hex:'#A02A2C',cardId:'ph'};_boardsPickOn='ph';`);
+    const before=run(`_editCards.length`);
+    run(`window.boardsPickExact()`);
+    s.eq('a swatch is made',run(`_editCards.length`),before+1);
+    s.ok('the panel over it is closed',run(`window.__closed`)>=1);
+    s.eq('pick mode stays on, so the next click reads again',run(`_boardsPickOn`),'ph');
+    run(`_editBoard.panX=0;_editBoard.panY=0;_editBoard.zoom=1;document.getElementById('board-stage').getBoundingClientRect=function(){return{left:0,top:0,width:600,height:400,right:600,bottom:400};};_boardsRevealCard({id:'zz',x:900,y:100,w:220,h:230})`);
+    s.eq('an off-screen swatch is panned into view',run(`_editBoard.panX`),600-24-1120);
+    run(`_editBoard.panX=0;_boardsRevealCard({id:'zz',x:100,y:100,w:100,h:100})`);
+    s.eq('one already in view moves nothing',run(`_editBoard.panX+','+_editBoard.panY`),'0,0');
+  }
 
   return s;
 };
