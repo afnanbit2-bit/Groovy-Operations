@@ -2294,7 +2294,11 @@ async function _maFn(name,body){
   if(r.status===401)msg=msg&&/sign in/i.test(msg)?msg:'Sign in again — the server could not check who you are.';
   else if(code==='not_configured')msg=msg||'The server is not set up for this yet.';
   else if(!msg)msg=r.status===404?'The '+name+' function is not deployed here (HTTP 404).':'The server answered HTTP '+r.status+' and said nothing more.';
-  throw _maFnErr(r.status,code||(r.status===401?'auth':''),msg);
+  // The refusal's own body rides on the error (M1.6c): ma-attach's `status`
+  // answers 503 with the whole status in it — `state` included — and only
+  // that tells "attachments are switched off" from "the server is not set up
+  // at all", which carries the same code.
+  throw Object.assign(_maFnErr(r.status,code||(r.status===401?'auth':''),msg),{body:d&&typeof d==='object'?d:null});
 }
 function _maNoteMode(m){if(m==='authenticated'||m==='unsigned')_maModeSeen=m;}
 function _maMode(){return (_maAttachSt&&_maAttachSt.mode)||_maModeSeen;}
@@ -2488,7 +2492,8 @@ async function _maAttachStatusLoad(force){
       const d=await _maFn('ma-attach',{action:'status'});
       if(d.mode!=='authenticated'&&d.mode!=='unsigned')throw new Error('The server gave an answer this page does not understand.');
       _maAttachSt=d;_maNoteMode(d.mode);
-    }catch(e){_maAttachSt={error:String(e&&e.message||e),code:e&&e.code||''};}
+    }catch(e){_maAttachSt={error:String(e&&e.message||e),code:e&&e.code||'',
+      state:e&&e.body&&typeof e.body.state==='string'?e.body.state:null};}
     _maAttachStP=null;
     const el=document.getElementById('ma-att-mode');if(el)el.innerHTML=_maAttachModeHTML();
     const sn=document.getElementById('ma-sh-mode');if(sn)sn.innerHTML=_maShareModeHTML();
@@ -2500,6 +2505,11 @@ window.maAttachStatusCheck=function(){_maAttachSt=null;const el=document.getElem
 function _maAttachModeHTML(){
   const st=_maAttachSt;
   if(!st)return '<div class="ma-muted">Asking the server which mode is in force…</div>';
+  // Switched off (M1.6c): no Cloudinary key and no public opt-in. Keyed on
+  // the status body's `state`, NEVER on `code` — the generic 503 a server
+  // sends before it knows who is asking carries code 'not_configured' too,
+  // and that one is a server that cannot start, not attachments turned off.
+  if(st.error&&st.state==='not_configured')return `<div class="ma-errcard" role="alert"><b>Attachments are off — not set up.</b> ${_maE(st.error)}<div class="ma-errcard-acts"><button class="ma-btn sm" onclick="window.maAttachStatusCheck()">Check again</button></div></div>`;
   if(st.error)return `<div class="ma-errcard" role="alert"><b>Could not ask the attachment server.</b> ${_maE(st.error)}<div class="ma-errcard-acts"><button class="ma-btn sm" onclick="window.maAttachStatusCheck()">Check again</button></div></div>`;
   const mins=Number.isFinite(st.urlSeconds)?Math.round(st.urlSeconds/60):5;
   const mb=Number.isFinite(st.maxBytes)?Math.round(st.maxBytes/1048576):25;
@@ -2508,8 +2518,13 @@ function _maAttachModeHTML(){
     <dt>Files</dt><dd>Bills, receipts and shared PDFs are private Cloudinary files. Every look opens a link that stops working after ${mins} minutes.</dd>
     <dt>Share links</dt><dd>A link stops at its expiry, or at once when it is withdrawn. A PDF somebody already downloaded stays with them — nothing can recall a copy.</dd>${size}</dl>
     <div class="ma-sec-foot"><button class="ma-link" onclick="window.maAttachStatusCheck()">Check again</button></div>`;
-  const miss=(Array.isArray(st.missing)?st.missing:[]).filter(x=>typeof x==='string'&&x);
-  return `<div class="ma-note"><b>Public — the fallback.</b> ${miss.length?_maE(miss.join(' and '))+(miss.length>1?' are':' is')+' not set in Netlify, so':'The server holds no Cloudinary key, so'} files go up through the app’s unsigned preset and are PUBLIC: each sits at a permanent address that is long and random, so nobody can guess it — but anyone who has it can open the file, for good. Withdrawing or expiring a share link only stops OUR link; it cannot recall the file’s own address, or a copy someone already has. Set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Netlify to make new files private (files already uploaded stay public).</div>
+  const names=k=>(Array.isArray(st[k])?st[k]:[]).filter(x=>typeof x==='string'&&x);
+  const miss=names('missing'),inv=names('invalid');
+  // Public only on purpose since M1.6c: the server takes the fallback only
+  // when MA_ALLOW_PUBLIC_ATTACH is exactly 1 (its `note` says the same).
+  const why=(miss.length?', and '+_maE(miss.join(' and '))+(miss.length>1?' are':' is')+' not set there':'')
+    +(inv.length?', and '+_maE(inv.join(' and '))+(inv.length>1?' hold':' holds')+' a space or a line break, so '+(inv.length>1?'they are not keys':'it is not a key'):'');
+  return `<div class="ma-note"><b>Public — on purpose.</b> MA_ALLOW_PUBLIC_ATTACH is set to 1 in Netlify${why}, so files go up through the app’s unsigned preset and are PUBLIC: each sits at a permanent address that is long and random, so nobody can guess it — but anyone who has it can open the file, for good. Withdrawing or expiring a share link only stops OUR link; it cannot recall the file’s own address, or a copy someone already has. Set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Netlify to make new files private (files already uploaded stay public).</div>
     <dl class="ma-dl"><dt>Mode</dt><dd><span class="ma-word warn">public</span></dd>${size}</dl>
     <div class="ma-sec-foot"><button class="ma-link" onclick="window.maAttachStatusCheck()">Check again</button></div>`;
 }

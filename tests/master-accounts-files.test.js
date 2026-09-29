@@ -35,6 +35,11 @@ const SECRET='test-secret-not-real-9Kq';
 const KEY='123450987612345';
 const SIGNED_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:KEY,CLOUDINARY_API_SECRET:SECRET,CLOUDINARY_CLOUD_NAME:undefined};
 const UNSIGNED_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:undefined,CLOUDINARY_API_SECRET:undefined,CLOUDINARY_CLOUD_NAME:undefined,MA_ALLOW_PUBLIC_ATTACH:'1'};
+// M1.6c: no key and no opt-in — attachments are switched off.
+const NOKEY_ENV={FIREBASE_SERVICE_ACCOUNT:FAKE_SA,CLOUDINARY_API_KEY:undefined,CLOUDINARY_API_SECRET:undefined,CLOUDINARY_CLOUD_NAME:undefined,MA_ALLOW_PUBLIC_ATTACH:undefined};
+// …and a server that cannot start at all: the generic 503 carries the same
+// code, not_configured, but no status body.
+const NOSA_ENV={FIREBASE_SERVICE_ACCOUNT:undefined,CLOUDINARY_API_KEY:KEY,CLOUDINARY_API_SECRET:SECRET,CLOUDINARY_CLOUD_NAME:undefined,MA_ALLOW_PUBLIC_ATTACH:undefined};
 const AFNAN={uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'};
 const PID='ma/'+'0123456789abcdef'.repeat(4);
 
@@ -406,8 +411,10 @@ module.exports=async function(){
       app.run("_maCloseTab='settings';_maPageHTML('ma-close')");
       await tick(20);
       const html=app.el('ma-att-mode').innerHTML;
-      s.ok('Settings: public, the fallback',/Public — the fallback\./.test(html)&&/<span class="ma-word warn">public<\/span>/.test(html));
-      s.ok('… naming what is missing in Netlify',/CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET are not set in Netlify/.test(html));
+      s.ok('Settings: public, on purpose',/Public — on purpose\./.test(html)&&/<span class="ma-word warn">public<\/span>/.test(html));
+      s.ok('… because MA_ALLOW_PUBLIC_ATTACH is 1 (M1.6c: public only by the owners\' choice)',/MA_ALLOW_PUBLIC_ATTACH is set to 1 in Netlify/.test(html));
+      s.ok('… naming what is missing in Netlify',/CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET are not set there/.test(html));
+      s.ok('… and no longer calling it the automatic fallback',!/Public — the fallback\./.test(html)&&!/The server holds no Cloudinary key, so/.test(html));
       s.ok('… a permanent, unguessable address',/permanent address that is long and random/.test(html)&&/nobody can guess it/.test(html));
       s.ok('… and that withdrawing or expiring a share only stops our link',/only stops OUR link; it cannot recall the file’s own address, or a copy someone already has/.test(html));
       app.run("window.maRecordKind('money_out')");
@@ -427,6 +434,54 @@ module.exports=async function(){
       app.run("_maRail={kind:'doc',dt:'journal',id:'JV-27-0004'}");
       await app.run("window.maAttachView('rail',0)");
       s.ok('503 not configured — the function\'s sentence',W.toasts.some(t=>/This file is private and the server has no Cloudinary key to open it with — set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Netlify\./.test(t)));
+    }
+  });
+
+  await withEnv(NOKEY_ENV,async()=>{
+    s.section('M1.6c: no key and no opt-in — attachments are OFF, and Settings says so');
+    {
+      const W=mkWorld();const app=W.app;
+      await app.run('maLoad()');
+      // (a) the refusal's body rides on the error
+      const err=JSON.parse(await app.run("_maFn('ma-attach',{action:'status'}).then(()=>'null',e=>JSON.stringify({status:e.status,code:e.code,body:e.body||null}))"));
+      s.eq('status → 503 not_configured, the body kept on the error',J([err.status,err.code,err.body&&err.body.state]),J([503,'not_configured','not_configured']));
+      s.eq('… the whole status body, not just its code',J(err.body&&err.body.missing),J(['CLOUDINARY_API_KEY','CLOUDINARY_API_SECRET']));
+      app.run("_maAttachSt=null;_maCloseTab='settings';_maPageHTML('ma-close')");
+      await tick(20);
+      // (b) the status loader carries the state
+      const st=JSON.parse(app.run('JSON.stringify(_maAttachSt)'));
+      s.eq('the loader keeps state: not_configured beside the code',J([st&&st.state,st&&st.code]),J(['not_configured','not_configured']));
+      // (c) the card, keyed on state
+      const html=app.el('ma-att-mode').innerHTML;
+      s.ok('Settings: "Attachments are off — not set up."',/<b>Attachments are off — not set up\.<\/b>/.test(html));
+      s.ok('… then the server\'s own sentence, naming what is missing',/Attachments are not set up: CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET are not set in Netlify\./.test(html));
+      s.ok('… both ways out, the opt-in named',/set MA_ALLOW_PUBLIC_ATTACH to 1 to allow public files on purpose/.test(html));
+      s.ok('… and a Check again button',/<button class="ma-btn sm" onclick="window\.maAttachStatusCheck\(\)">Check again<\/button>/.test(html));
+      s.ok('… never "could not ask the server" — the server answered',!/Could not ask the attachment server/.test(html));
+      s.ok('… and never private or public',!/ma-word fine|ma-word warn/.test(html));
+      // An upload in this state is refused by the server, and nothing goes to Cloudinary.
+      app.run("window.maRecordKind('money_out')");
+      await W.pick([W.file('receipt.jpeg','image/jpeg',9000)],'form');
+      s.eq('an upload sends nothing to Cloudinary',W.uploads.length,0);
+      s.ok('… and says why, in the server\'s words',/Attachments are not set up: CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET are not set in Netlify/.test(app.el('ma-f-att').innerHTML));
+      app.run('window.maCloseModal()');
+    }
+  });
+
+  await withEnv(NOSA_ENV,async()=>{
+    s.section('M1.6c: a server that cannot start says so — the same code, but NOT "attachments are off"');
+    {
+      const W=mkWorld();const app=W.app;
+      await app.run('maLoad()');
+      const err=JSON.parse(await app.run("_maFn('ma-attach',{action:'status'}).then(()=>'null',e=>JSON.stringify({status:e.status,code:e.code,body:e.body||null}))"));
+      s.eq('status → the generic 503: code not_configured, no state in its body',J([err.status,err.code,err.body&&err.body.state]),J([503,'not_configured',undefined]));
+      app.run("_maAttachSt=null;_maCloseTab='settings';_maPageHTML('ma-close')");
+      await tick(20);
+      const st=JSON.parse(app.run('JSON.stringify(_maAttachSt)'));
+      s.eq('the loader: the code, and state null',J([st&&st.code,st&&st.state]),J(['not_configured',null]));
+      const html=app.el('ma-att-mode').innerHTML;
+      s.ok('Settings: "Could not ask the attachment server." with the server\'s sentence',/Could not ask the attachment server\.<\/b> The server is not set up yet — the reason is in the Netlify function log\./.test(html));
+      s.ok('… NOT "Attachments are off" — the card is keyed on state, never on code',!/Attachments are off/.test(html));
     }
   });
 

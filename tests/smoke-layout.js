@@ -350,12 +350,17 @@ const FRAGMENTS={
     const close=app.run("_maCloseOverviewHTML(_maCtx())");
     app.run("_maAttachSt={configured:true,mode:'authenticated',missing:[],maxBytes:26214400,urlSeconds:300}");
     const priv=app.run("_maSec('Attachments and share links — private','','',_maAttachModeHTML())");
-    app.run("_maAttachSt={configured:true,mode:'unsigned',missing:['CLOUDINARY_API_KEY','CLOUDINARY_API_SECRET'],maxBytes:26214400,urlSeconds:300}");
-    const pub=app.run("_maSec('Attachments and share links — public, the fallback','','',_maAttachModeHTML())");
-    // heights: ~1,410px at 420 wide (1,000 at 1900, measured), and the probe
-    // does not hit-test below the window — a 1600px viewport measures the
-    // whole of it. These pages do not key off the viewport height.
-    return Promise.resolve({heights:[1600],html:close+priv+pub});
+    app.run("_maAttachSt={configured:false,state:'public',publicOptIn:true,mode:'unsigned',missing:['CLOUDINARY_API_KEY','CLOUDINARY_API_SECRET'],maxBytes:26214400,urlSeconds:300}");
+    const pub=app.run("_maSec('Attachments and share links — public, on purpose','','',_maAttachModeHTML())");
+    // M1.6c: no key and no opt-in — the server's 503 status, as the loader
+    // keeps it (its sentence is attachNotSetUp's, word for word).
+    app.run("_maAttachSt={error:'Attachments are not set up: CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET are not set in Netlify. Without the key a file would go up public — open, for good, to anyone who has its link — so nothing is uploaded. Set CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Netlify to keep files private, or set MA_ALLOW_PUBLIC_ATTACH to 1 to allow public files on purpose.',code:'not_configured',state:'not_configured'}");
+    const off=app.run("_maSec('Attachments and share links — off, not set up','','',_maAttachModeHTML())");
+    // heights: the probe does not hit-test below the window, so the viewport
+    // must hold the whole of it at 420 wide (it was ~1,410px there before the
+    // switched-off card was added; 1,000 at 1900). These pages do not key off
+    // the viewport height.
+    return Promise.resolve({heights:[1900],html:close+priv+pub+off});
   },
   // The login screen and the app lock, straight out of index.html (the
   // markup lives there, not in a module). Measured with the forgot-password
