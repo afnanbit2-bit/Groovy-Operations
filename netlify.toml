@@ -64,6 +64,12 @@
 [functions."ma-backup"]
   schedule = "30 * * * *"
 
+# 3:45am UTC = 8:45am PKT — Master Accounts courier rollup: PostEx parcels into
+# the couriers' documents (see netlify/functions/ma-rollup-background.js), after
+# the 03:00 UTC PostEx payments run. A background function, like the PostEx syncs.
+[functions."ma-rollup-background"]
+  schedule = "45 3 * * *"
+
 # ── Cache control ──────────────────────────────────────────────
 # index.html must always be revalidated so a new deploy's bumped
 # ?v= query strings on the JS/CSS reach the browser immediately.

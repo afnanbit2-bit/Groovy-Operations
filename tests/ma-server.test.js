@@ -249,7 +249,7 @@ module.exports=async function(){
     s.eq('a backup row is exactly maAuditRow(\'backup\', …) — the core lists \'backup\' too',J(b),J(core.maAuditRow('backup',bt,bm)));
     s.eq('… so it keeps action \'backup\'',b.action,'backup');
     s.eq('… with the core\'s fields',J(Object.keys(b).sort()),J(Object.keys(core.maAuditRow('post',null,{})).sort()));
-    s.eq('the actions the server writes are share, revoke and backup',J(lib.SERVER_AUDIT_ACTIONS),J(['share','revoke','backup']));
+    s.eq('the actions the server writes are share, revoke, backup and rollup',J(lib.SERVER_AUDIT_ACTIONS),J(['share','revoke','backup','rollup']));
     s.ok('… every one of them in the core\'s MA_AUDIT_ACTIONS (nothing is relabelled \'post\')',lib.SERVER_AUDIT_ACTIONS.every(a=>core.MA_AUDIT_ACTIONS.indexOf(a)>=0));
     // The backup writes by:'ma-backup'. A client row must say by == maUser(),
     // an owner's username, so no page can write a row that claims to be the

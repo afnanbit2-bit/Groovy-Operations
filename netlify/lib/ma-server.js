@@ -309,7 +309,7 @@ function deliveryUrl(cfg, ref, nowMs, opts) {
 // maAuditRow keeps each as it is; the assignment below only pins it, so a
 // core list that ever lost one would not quietly relabel a server row as
 // the core's 'post' fallback. Anything else is refused. ─────────────────────
-const SERVER_AUDIT_ACTIONS = ['share', 'revoke', 'backup'];
+const SERVER_AUDIT_ACTIONS = ['share', 'revoke', 'backup', 'rollup'];
 function auditRow(action, target, meta) {
   if (SERVER_AUDIT_ACTIONS.indexOf(action) < 0) throw new Error('not a server audit action: ' + action);
   const row = core.maAuditRow(action, target, meta);
