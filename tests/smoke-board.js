@@ -164,6 +164,33 @@ function STUB(){
     rtdbGet:function(){return Promise.resolve({val:function(){return null;},exists:function(){return false;}});},
     rtdbChild:function(){return{};},rtdbOnValue:function(){},rtdbOff:function(){}
   };
+  // tests/e2e/board.e2e.js --stub sets __QA_UID: the QA account's rules
+  // (firestore.rules isQa()), imitated closely enough for its containment
+  // gate and its fenced writes to mean something. Unset, nothing changes.
+  if(window.__QA_UID){
+    var QA=window.__QA_UID;
+    var deny=function(){var e=new Error('Missing or insufficient permissions.');e.code='permission-denied';return Promise.reject(e);};
+    var top=function(p){return String(p||'').split('/')[0];};
+    var NO_READ=['pos','bug_reports','activity'];
+    var canWrite=function(ref,d,del){
+      var c=ref.col,prev=col(c)[ref.id],next=del?null:Object.assign({},prev||{},d||{});
+      var t=top(c),parts=String(c).split('/');
+      if(t==='board_lists')return !!(prev?prev.qa===true&&prev.adminUid===QA:next.qa===true&&next.adminUid===QA);
+      if(c==='board_items')return !!(prev?prev.qa===true:(next.qa===true&&JSON.stringify(next.assigneeUids)===JSON.stringify([QA])));
+      if(t==='board_items')return !!(col('board_items')[parts[1]]||{}).qa;
+      if(t==='hrm_notifications')return !!(next||prev)&&(next||prev).forUser==='claude';
+      if(c==='user_profiles')return ref.id===QA;
+      if(c==='mood_boards'){var b=prev||next;return !!b&&b.ownerUid===QA&&(b.visibility||'personal')==='personal'&&!(b.sharedWith||[]).length;}
+      if(t==='mood_boards')return (col('mood_boards')[parts[1]]||{}).ownerUid===QA;
+      return false;
+    };
+    var r0=api.getDoc,rq=api.getDocs,w1=api.setDoc,w2=api.updateDoc,w3=api.deleteDoc;
+    api.getDoc=function(ref){return NO_READ.indexOf(top(ref.col))>-1?deny():r0(ref);};
+    api.getDocs=function(q){return NO_READ.indexOf(top(q.path))>-1?deny():rq(q);};
+    api.setDoc=function(ref,d,o){return canWrite(ref,d)?w1(ref,d,o):deny();};
+    api.updateDoc=function(ref,d){return canWrite(ref,d)?w2(ref,d):deny();};
+    api.deleteDoc=function(ref){return canWrite(ref,null,true)?w3(ref):deny();};
+  }
   Object.assign(window,api);
   // No service worker in a test: a registered one would serve its own
   // precache over the files under test.
@@ -423,6 +450,47 @@ function DRIVE(){
         await wait(100);
         L(!_tbCalFilters.person,'and again shows everyone');
       }
+      // ── Placement (change order, 26 Sept 2026): "Samad onboarding" was
+      // seeded on Sun 27 Sep and reported on Mon 28. Sunday is the LAST
+      // column of a Monday-first grid, so a week-boundary slip would look
+      // exactly like that. Every drawn cell must sit under its own weekday
+      // and print its own number, and every pill must be in the cell of
+      // its own date -- in the month AND the week, checked by geometry,
+      // not by reading the markup back.
+      async function placement(view){
+        // One act per control: the instrument allows one repaint per action.
+        act('clear',function(){window.tbCalClear();});
+        act('scope all',function(){window.tbCalScope('all');});
+        act('by person off',function(){window.tbCalRows(false);});
+        act('view '+view,function(){window.tbCalView(view);});
+        act('today',function(){window.tbCalToday();});
+        await wait(200);
+        var heads=[].slice.call(document.querySelectorAll('.tb-dowrow .tb-dow'));
+        var cells=[].slice.call(document.querySelectorAll('.tb-monthgrid .tb-day,.tb-weekgrid .tb-day'));
+        var bad=[],pills=0;
+        cells.forEach(function(c,ix){
+          var d=c.getAttribute('data-day'),col=(_tbDow(d)+6)%7;
+          if(ix%7!==col)bad.push(d+' drawn in column '+(ix%7)+', belongs in '+col);
+          var num=c.querySelector('.tb-daynum');
+          if(num&&Number(num.textContent.trim())!==Number(d.slice(8)))bad.push(d+' prints '+num.textContent.trim());
+          var r=c.getBoundingClientRect(),h=heads[col]&&heads[col].getBoundingClientRect();
+          if(h&&Math.abs((r.left+r.width/2)-(h.left+h.width/2))>2)bad.push(d+' is not under '+heads[col].textContent.trim());
+          c.querySelectorAll('.tb-pill').forEach(function(p){
+            pills++;
+            var it=tbItems.filter(function(x){return x.id===p.getAttribute('data-id');})[0];
+            if(!it||it.date!==d)bad.push((it?it.title.slice(0,24)+' ('+it.date+')':'?')+' drawn on '+d);
+          });
+        });
+        L(cells.length>=7&&pills>0&&!bad.length,view+': '+cells.length+' cells and '+pills+' pills each sit on their own date and weekday'+(bad.length?' — '+bad.slice(0,4).join('; '):''));
+        var sam=tbItems.filter(function(x){return /^Samad onboarding/.test(x.title||'');})[0];
+        var sp=sam&&document.querySelector('.tb-pill[data-id="'+sam.id+'"]');
+        var sc=sp&&sp.closest('.tb-day');
+        L(!!sc&&sc.getAttribute('data-day')==='2026-09-27'&&(_tbDow('2026-09-27')===0),
+          view+': the Samad onboarding pill is in the Sunday 27 Sep cell ('+(sc?sc.getAttribute('data-day'):'not drawn')+')');
+      }
+      await placement('month');
+      await placement('week');
+      act('back to me',function(){window.tbCalClear();window.tbCalScope('me');});
       // ── "+N more": four on one day, and the month shows two and the rest ──
       for(var k=0;k<4;k++){await window.tbCreateOn('smoke more '+k,'2026-09-30');}
       act('scope me, month',function(){window.tbCalClear();window.tbCalView('month');window.tbCalToday();});
@@ -653,7 +721,9 @@ function poison(){
   return s+' '.repeat(Math.max(0,1400000-s.length));
 }
 const MODES=[
-  {id:'ammar',label:'Ammar (Board owner), desktop',user:'ammar'},
+  // Asia/Karachi is where the Board is used; the others keep the runner's
+  // own zone (UTC on CI), so a date that only goes wrong in one shows up.
+  {id:'ammar',label:'Ammar (Board owner), desktop, Asia/Karachi',user:'ammar',tz:'Asia/Karachi'},
   {id:'saim',label:'Saim (designer), desktop',user:'saim'},
   {id:'poisoned',label:'Ammar, with the freeze’s 1.36 MB junk filter in localStorage',user:'ammar',poison:true}
 ];
@@ -673,6 +743,9 @@ function pageFor(mode){
     .replace('</body>','<pre id="__out">running</pre><script>('+DRIVE.toString()+')();</script></body>');
 }
 
+// Required rather than run (tests/e2e/stub-site.js): hand over the stub and
+// the seed, start nothing.
+if(require.main!==module){module.exports={STUB,CLOCK,seedCols,USERS,TYPES,uidOf};return;}
 const browser=findBrowser();
 if(!browser){
   console.log('smoke-board: no Chrome/Chromium found — SKIPPING. This test must pass locally before a Board change is pushed.');
@@ -706,7 +779,8 @@ function runMode(port,mode){
     '--metrics-recording-only','--mute-audio','--no-proxy-server','--window-size=1440,900',
     '--user-data-dir='+profile+'-'+mode.id,'--virtual-time-budget=60000','--dump-dom',
     'http://127.0.0.1:'+port+'/__board/'+mode.id],
-    {encoding:'utf8',maxBuffer:64*1024*1024,timeout:150000},
+    {encoding:'utf8',maxBuffer:64*1024*1024,timeout:150000,
+     env:Object.assign({},process.env,mode.tz?{TZ:mode.tz}:{})},
     (err,stdout)=>report(mode,err,stdout||''));
 }
 
