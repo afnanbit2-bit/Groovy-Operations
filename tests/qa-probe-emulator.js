@@ -70,8 +70,14 @@ const strays=async()=>{let n=0;for(const c of ['counters','pos','bug_reports','h
     const r=probe();
     expect(r.code===1,'exit '+r.code+'\n'+r.out.slice(-500));
     expect(/FAIL employees/.test(r.out)&&/FAIL payslips/.test(r.out),'the blocked reads were not reported');
-    expect(!/THESE WRITES LANDED/.test(r.out),'writes landed under main\'s rules');
-    expect(await strays()===0,'probe documents were left behind');
+    // main's notification fence checked forUser alone, so the probe's
+    // {forUser:'claude',forRole:'owner'} row lands there — and ONLY that row.
+    const landed=(r.out.match(/^   ([a-z_]+)\/qa-probe-/mg)||[]).map(x=>x.trim().split('/')[0]);
+    expect(landed.length===1&&landed[0]==='hrm_notifications','expected exactly the forRole notification to land under main, got ['+landed+']');
+    // QA cannot delete it either (delete is signedIn(), which excludes QA), so the
+    // probe cannot clean it up itself — an owner would have to. Clear it here.
+    expect(await strays()===1,'expected the one undeletable notification to remain');
+    await env3.clearFirestore();
     await env3.cleanup();
   });
   await env.cleanup();
