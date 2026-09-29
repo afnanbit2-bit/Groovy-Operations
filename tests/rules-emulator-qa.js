@@ -241,6 +241,24 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
   });
   await check('QA can still write a row for itself alone',()=>assertSucceeds(setDoc(doc(ctx(envN,QA),'hrm_notifications/k7'),{forUser:'claude',title:'x'})));
 
+  // The e2e harness's containment gate (tests/e2e/board.e2e.js) can no longer
+  // use a read (QA reads everything). It updates a document that does NOT
+  // exist: judged by the rules first, so it tells a fenced QA account from an
+  // unfenced one and creates nothing either way. Proved against the ruleset
+  // that is PUBLISHED today (no isQa()) and against this one.
+  console.log('the containment gate (update of a nonexistent doc)');
+  {
+    const PUBLISHED=execSync('git show '+(process.env.PUBLISHED_REF||'430fc28')+':firestore.rules',{cwd:REPO,encoding:'utf8',maxBuffer:1<<26});
+    const envP=await mk('demo-qa-pub',PUBLISHED); envP._id='P';
+    const code=async(env,col)=>{ try{ await updateDoc(doc(ctx(env,QA),col+'/qa-gate-probe'),{a:1}); return 'ok'; }catch(e){ return e&&e.code||String(e); } };
+    for(const c of ['pos','bug_reports']){
+      await check('fenced (this ruleset): update of nonexistent '+c+' is permission-denied',async()=>{ const r=await code(envN,c); if(r!=='permission-denied') throw new Error(r); });
+      await check('unfenced (published today): the same update is NOT permission-denied → gate would fire',async()=>{ const r=await code(envP,c); if(r==='permission-denied'||r==='ok') throw new Error(r); });
+    }
+    await check('and nothing was created by the gate',async()=>{ await raw(envP,async db=>{ const s=await getDoc(doc(db,'pos/qa-gate-probe')); if(s.exists()) throw new Error('created'); }); });
+    await envP.cleanup();
+  }
+
   // ═══ 4 · DIFFERENTIAL ═══
   console.log('4 · DIFFERENTIAL — origin/main vs this ruleset, every non-QA persona, every path');
   const who=personas.filter(p=>p.u!==QA).map(p=>p.u).concat(['__anon','__stranger']);

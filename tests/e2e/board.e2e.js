@@ -37,9 +37,11 @@
 
    SAFETY, IN ORDER:
      1. It checks it is signed in with the `qa` ROLE, or stops.
-     2. THE CONTAINMENT GATE: before IT writes anything it asks for `pos`
-        and `bug_reports`, which the QA rules refuse. If either read is
-        ALLOWED, the rules carrying isQa() are not deployed -- the account
+     2. THE CONTAINMENT GATE: before IT writes anything it tries an update
+        of a document that does not exist in `pos` and `bug_reports` (the rules
+        judge it first: refused when fenced, not-found when not -- nothing is
+        created either way). If either is NOT refused, the rules carrying
+        isQa() are not deployed -- the account
         is an ordinary signed-in user -- and it signs out and exits 2
         without writing or screenshotting anything else. (The APP's own
         sign-in has already run by then: doLogin logs a "Claude (QA) signed
@@ -378,10 +380,16 @@ function NAV_TIMED(id,boardPage){
     if(role!=='qa'){ exit=2; throw new Error('not the QA role -- stopping before the harness writes anything (the sign-in itself has already logged a Login row)'); }
 
     // ── THE CONTAINMENT GATE ──────────────────────────────────────────
-    const pos=await probe('await getDocs(query(collection(db,"pos"),limit(1)))');
-    const bugs=await probe('await getDoc(doc(db,"bug_reports","__qa_probe__"))');
-    check('the rules refuse it pos (isQa() is deployed)',pos==='permission-denied',pos);
-    check('the rules refuse it bug_reports',bugs==='permission-denied',bugs);
+    // The QA account READS everything since 29 Sept 2026, so a read no longer
+    // tells confined from unconfined. A WRITE does, and it can be asked without
+    // writing: an update of a document that does not exist is judged by the
+    // rules FIRST -- refused (permission-denied) when the account is fenced,
+    // not-found when it is an ordinary signed-in user -- and creates nothing
+    // either way.
+    const pos=await probe('await updateDoc(doc(db,"pos","qa-gate-probe"),{a:1})');
+    const bugs=await probe('await updateDoc(doc(db,"bug_reports","qa-gate-probe"),{a:1})');
+    check('the rules refuse it a write to pos (isQa() is deployed)',pos==='permission-denied',pos);
+    check('the rules refuse it a write to bug_reports',bugs==='permission-denied',bugs);
     if(pos!=='permission-denied'||bugs!=='permission-denied'){
       exit=2; report.notes.push('GATE: the QA rules are not live. Nothing was written. Deploy firestore.rules first.');
       throw new Error('the QA rules are not deployed -- stopped before the harness writes anything (the sign-in itself has already logged a Login row)');
