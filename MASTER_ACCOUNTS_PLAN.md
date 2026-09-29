@@ -1035,9 +1035,10 @@ M1.6c the server tightening (attachments fail closed), whose client half
 is `8e5fe0b`. Then the verification round's two fixes (29 Sept):
 `0a0df4b` (security — V1, V2, V3, V5, V7, V8, V9, V11) and `44166f3`
 (money and screens — V4, V6, V10 and the visual QA's F01–F24). `main` has
-been merged into the branch six times (`1dc7fa9`, `feca515`, `be22046`,
-`d159f83`, `1ae7e71`, `5a36efe`), and `efb75ce` names the nightly backup in
-the audit trail.
+been merged into the branch seven times (`1dc7fa9`, `feca515`,
+`be22046`, `d159f83`, `1ae7e71`, `5a36efe`, `672cf4f` — the last `main`
+commit taken is `d1af808`), and `efb75ce` names the nightly backup in the
+audit trail.
 CLAUDE.md "Master Accounts" is the engineering record; this section is the
 plan's side of it.
 
