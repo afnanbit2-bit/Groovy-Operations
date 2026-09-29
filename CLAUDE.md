@@ -223,12 +223,23 @@ PUBLISHED** — that is still a question only the human can answer.
                      `boards` is HOME — itself a board, Milanote-style;
                      `boards-all` is the flat list (templates, trash,
                      search). Loaded after notes.js. Shared/cross-track.
+/js/ma-core.js       Master Accounts' pure core (M1, Sept 2026): charts,
+                     documents, validation, postings, balances, calendar,
+                     PDF data. No DOM, no Firestore; node-requireable.
+                     Loaded after theboard.js, before master-accounts.js.
+/js/master-accounts.js Master Accounts' pages (ma-*), Afnan and Ammar
+                     only. Loaded LAST. See "Master Accounts".
+/netlify/lib/ma-server.js  shared server code for ma-attach / ma-share /
+                     ma-backup (bundled, not an endpoint).
 ```
 
 Load order is fixed in `index.html`:
-`shared → print-engine → auth → pos → embellishments → hrm → store →
-gatepass → notes → boards → profile → activity → marketing`, then the
-bootstrap module. All
+`diagnostics → shared → print-engine → auth → pos → embellishments → hrm →
+store → store-accounts → gatepass → fabric → production → shopify →
+fulfillment → warehouse-sales → notes → boards → profile → activity →
+marketing → patterns → theboard → ma-core → master-accounts`, then the
+bootstrap module (read from `index.html`, 29 Sept 2026 — this list had gone
+stale, missing nine files). All
 `/js/*.js` are **plain global classic
 scripts — no `import`/`export`**. They share one global lexical scope, so
 top-level `let/const` are visible across files (declared exactly once);
@@ -358,10 +369,47 @@ Three places, or it breaks offline:
   include the jsPDF / SheetJS / JsBarcode CDN scripts, which is exactly why
   PDF and Excel export silently failed offline; they are vendored now and
   precached like any other asset.
-- **Never intercepted** — Firebase (Firestore, RTDB, Auth, the gstatic SDK)
-  and Cloudinary. These are matched by hostname in `BYPASS_HOSTS` and pass
-  straight to the network. **Do not add Firebase or Cloudinary URLs to any
-  cache** — stale auth tokens and half-cached writes are the result.
+- **Never intercepted** — Firebase and Cloudinary's API host, matched by
+  hostname in `BYPASS_HOSTS` (`firestore.googleapis.com`, `firebaseio.com`,
+  `firebaseapp.com`, `googleapis.com` — so every `*.googleapis.com` —
+  `google.com`, `gstatic.com`, `api.cloudinary.com`) and passed straight to
+  the network. **Do not add a Firebase or `api.cloudinary.com` URL to any
+  cache** — stale auth tokens and half-cached writes are the result. Only a
+  GET is ever intercepted, with ONE exception handled before that check: a
+  POST to `/share-target` (the phone's Share menu, see "Mood Boards — phone
+  share") is answered by `handleShare()`, which parks the shared files and
+  text in the `groovy-share-inbox` cache — deliberately not named
+  `groovy-ops-*`, which the activate handler deletes on every deploy — and
+  303s to `/index.html#share=<id>`.
+- **Cache-first, images** — a `res.cloudinary.com` delivery URL
+  (`isCloudinaryAsset`) is served by `cacheFirstImage()` from
+  `groovy-ops-images` (`IMAGE_CACHE`), **deliberately NOT version-scoped**:
+  a delivery URL is immutable, so photos survive deploys. Trimmed to 300
+  entries, oldest first; an opaque response is never stored. (This bullet
+  used to say Cloudinary was never intercepted — stale since the Mood
+  Boards "Making it feel instant" round.)
+- **Never cached: a private Cloudinary file — a Master Accounts bill,
+  receipt or shared PDF** (M1.5b, `4057303`). `isPrivateCloudinary(url)` in
+  `sw.js` is true when the URL's path has a segment that is exactly
+  `authenticated`, `private` or `ma`; such a `res.cloudinary.com` request is
+  not intercepted at all (the fetch listener returns before `respondWith`),
+  and `cacheFirstImage()` checks again and plain-`fetch`es one that reaches
+  it. **Why:** `IMAGE_CACHE` survives deploys, so the books' files put there
+  would stay on the device for good. The `ma` segment is what catches the
+  public fallback: every Master Accounts file is named `ma/<64 hex>` by the
+  `ma-attach` function, and in that mode the long random address is the
+  file's only lock. A private file is normally fetched through a 5-minute
+  signed link on `api.cloudinary.com` (`…/<resource type>/download?…`), which
+  `BYPASS_HOSTS` already covers — this check is for the `res.cloudinary.com`
+  addresses. The match is by path segment, so it applies to ANY
+  `res.cloudinary.com` URL carrying such a segment, whoever uploaded it.
+  Not covered, and not needing to be: the share link itself
+  (`/.netlify/functions/ma-share?t=…`, same-origin, network-first) — a
+  navigation is fetched with `redirect:'manual'`, so its 302 comes back as
+  an opaque redirect that is not `ok`, and its 404/410/503 pages are not
+  `ok` either, so `networkFirst()` stores none of them (read from the code,
+  as the security review did; not run in a browser). Download the books is
+  a blob and never touches the network.
 
 ### Firestore offline persistence
 
@@ -473,9 +521,39 @@ do not call jsPDF directly for new print features.**
   stub (bold-Urdu source unavailable). Validation is per-file, so the engine
   embeds all real fonts and falls back to Helvetica only for that one stub
   (nothing breaks); screen uses the CSS fallback stack. See
-  `/assets/fonts/FONT_INSTALL.md`. Known jsPDF limit: Urdu is drawn unshaped
-  even with the JNN TTF embedded; also the ~10 MB JNN Regular is base64'd
-  into every Urdu PDF, so those PDFs are large.
+  `/assets/fonts/FONT_INSTALL.md`. **Urdu is NOT DRAWN in any PDF — this
+  line said "drawn unshaped" until 29 Sept 2026 (found 28 Sept), and that
+  was wrong.**
+  jsPDF 2.5.1's arabic plugin runs on every `text()` call (it subscribes to
+  `preProcessText`) and rewrites each Arabic-script letter into a Unicode
+  PRESENTATION FORM (U+FB50–FDFF, U+FE70–FEFF). The committed Jameel Noori
+  Nastaleeq Regular maps **0** code points in U+FE70–FEFF and **4** in
+  U+FB50–FDFF (U+FD3E, U+FD3F, U+FDF2, U+FDFA — two ornate brackets and two
+  ligatures, no letter). A code point the font lacks becomes glyph 0
+  (jsPDF's `characterToGlyph` returns `codeMap[c] || 0`), and JNN's glyph 0
+  has an EMPTY outline (0 bytes in `glyf`, advance 1024 of 2048 units). So
+  every Urdu letter is laid out and printed as blank space: "گیٹ پاس" goes
+  out as six code points, none of them in the font. Of the 484 non-space
+  code points in the engine's 51 Urdu string literals after that rewrite,
+  the 44 that reach a real glyph are all Latin letters and punctuation
+  (dashes, underscores, brackets) — no Arabic-script letter. What jsPDF
+  leaves alone does draw: Urdu digits (U+06F0–06F9), the Urdu full stop
+  (U+06D4) and, in a wider sample, one letter it has no form for (U+06C3).
+  **Verified** by reading the committed TTF's `cmap`, `loca` and `glyf` and
+  calling the vendored jsPDF's `processArabic` from node (reproducible from
+  a session; re-run 29 Sept). A real gate pass rendered through pdf.js in
+  headless Chromium showed the blank slots (**reported** from the M1.4
+  session, not re-run). **Not seen on a device or a printer.**
+  What a `full` document still costs: JNN is fetched (~10 MB) and embedded
+  as a subset — the same PO measured ~552 KB at `full` against ~116 KB at
+  `minimal` — for text nobody can see. Master Accounts' `ma-receipt` and
+  `ma-voucher` ask the font first (`_prMaUrduOk`: every Urdu string they
+  may draw, after `processArabic`, must map to a real glyph) and print
+  clean English when it cannot; a font that carries the forms turns them
+  bilingual with no code change. **The gate pass, the PO and every other
+  `full` variant do not ask, and print the gaps.** A task to fix their Urdu
+  was queued in that session (reported; its state is not in the repo).
+  Screen text (`@font-face`, the browser's own shaping) is unaffected.
 - **Public API (only global):**
   `window.printDocument({ type, data, filename })` where `type` ∈
   `po | embroidery-vendor | sublimation-vendor | gate-pass |
@@ -484,7 +562,8 @@ do not call jsPDF directly for new print features.**
   (verified from the `_VARIANTS` registry in `printDocument`,
   `js/print-engine.js` — this list was stale here before, said only
   `gate-pass` shipped): ✅ `po` (`_renderPO`), ✅ `gate-pass`
-  (`_renderGatePass`, single-page bilingual transit document), ✅
+  (`_renderGatePass`, single-page transit document laid out in English and
+  Urdu — its Urdu half prints as blank space today, see **Fonts**), ✅
   `payslip` (`_renderPayslip`), ✅ `daily-performance`
   (`_renderDailyPerformance`), ✅ `stock-transfer`
   (`_renderStockTransfer`), ✅ **`pattern-label`** (Sept 2026 — the Pattern
@@ -543,8 +622,9 @@ do not call jsPDF directly for new print features.**
   523pt content width) — declared at the top of `print-engine.js`.
 - **Conditional Urdu embedding (`data.urduLevel`):** per-document flag
   `'none' | 'minimal' | 'full'` controlling whether the ~10 MB Jameel Noori
-  Nastaleeq TTF is fetched + embedded. `'full'` fetches/embeds JNN and
-  renders full bilingual output; `'minimal'`/`'none'` never download or
+  Nastaleeq TTF is fetched + embedded. `'full'` fetches and embeds JNN —
+  its Urdu letters are not drawn today (see **Fonts** above);
+  `'minimal'`/`'none'` never download or
   embed JNN — the footer is English-only (`GROOVY · {documentType} ·
   Internal Use Only · Confidential`) and every bilingual component
   (`_renderFooter`, `_renderSectionHeader`, `_renderBilingualLabel`,
@@ -558,15 +638,16 @@ do not call jsPDF directly for new print features.**
   Production Order → `پروڈکشن آرڈر …`, else generic `صرف اندرونی استعمال`).
   Resolution sets `doc.__groovyUrdu` (the `_urduOn(doc)` flag components
   read) — a `'full'` request with JNN unavailable degrades to clean
-  English-only, never tofu. Font fetch is split (`_fontCacheCore` always,
+  English-only, never tofu; WITH JNN available the Urdu side prints as blank
+  space, not tofu (see **Fonts**). Font fetch is split (`_fontCacheCore` always,
   `_fontCacheUrdu` lazily only on the first `'full'`). Per-render the engine
   serializes the PDF once and logs `[print-engine] Generated {type} PDF —
   urduLevel: {level}, size: ~{X}KB`.
 
   | Default `urduLevel` | Types |
   |---|---|
-  | `none` | `ma-ledger`, `ma-statement-holder` |
-  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board`, `ma-statement-party` |
+  | `none` | `pattern-label`, `ma-ledger`, `ma-statement-holder` |
+  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board`, `consumable-log`, `ma-statement-party` |
   | `full` | `gate-pass` (forced), `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet`, `ma-receipt`, `ma-voucher` |
 
   Measured (same PO, real JNN): `minimal` ≈ 116 KB / 0 JNN fetch · `full`
@@ -7413,144 +7494,578 @@ entry is flagged for the owners, who settle it. Emulator: **103/103**; the
 **Nobody has confirmed a warehouse payment or marked a bill collected on a
 real screen** — the sandbox cannot sign in.
 
-## Master Accounts — PLANNED, NOTHING BUILT (27 Sept 2026)
+## Master Accounts — M1 built (28 Sept 2026) · not on `main`, rules not published, not yet seen
 
-Afnan: *"I want accounts but just for me and ammar, in short master
-accounts … plan all the logics of build first so we have a good foundation
-… plan the UI … our charts, pie chart, how the app will learn with the
-data … we are just planning at this stage."*
+Afnan, 27 Sept 2026: *"I want accounts but just for me and ammar, in short
+master accounts … plan all the logics of build first so we have a good
+foundation."* The plan is **`MASTER_ACCOUNTS_PLAN.md`** (v4, with an M1
+status section, §21a) — read it before touching anything named `ma-`, `ma_`
+or `MA_`. The planning record (v1–v4, the specimen, the two design reports)
+is condensed at the end of this section.
 
-**`MASTER_ACCOUNTS_PLAN.md` is the plan (v3); read it before touching
-anything named `ma-` / `ma_` / `js/ma-core.js` / `js/master-accounts.js` —
-none of which exist yet.** The UI specimen (Overview with the concern
-strip, the 30-day cash calendar and the spend map; Couriers; Ledger;
-Purchasing; a Vendor page; Savings; P&L; Insights — desktop and phone, both
-themes, sample figures) is `scratchpad/master-accounts-specimen.html`,
-published at https://claude.ai/artifact/9bmhjEuaZMisWLb2TiQNyZ (private to
-its owner until shared).
+**Where it stands — verified from git, 29 Sept.** Eight M1 commits on
+`claude/master-accounts-planning-udoiw9`, none of them on `main`:
+`bf09235` M1.1 the core · `1d8b3c5` M1.2 the rules · `06b9256` M1.3 the
+pages · `7b4aa30` M1.4 the PDFs · `6f2e152` M1.5a the server functions ·
+`4057303` M1.5b the client for them · `704056b` M1.6a edits and
+confirmations held at the rules · `20260a0` M1.6b the screens, the idle
+re-lock and the device cache · [[M1.6c-server: hash — the server tightening]].
+After them, `main` was merged INTO the branch three times — `1dc7fa9`
+(`origin/main` at `1f6327d`, `CACHE_VERSION` v247), `feca515` (`4c8bfee`,
+v249) and `be22046` (`3333584`, v251) — and between the second and third,
+`efb75ce` named the nightly backup in the audit trail (v250).
 
-**Three versions in one day, and the third is the one that stands.** v1
-was a reporting layer over other modules' entries (*"you thought like baby
-accounts"*). v2 made it the system of record: a chart of accounts; ONE
-party master (vendor, customer, courier, employee, owner, bank) with what a
-vendor provides, terms with history and a rate card with history; documents
-with a lifecycle (purchase order → receipt → bill matched three ways →
-payment allocated to bills); a validation engine that REFUSES what cannot
-be true and FLAGS the rest for the owners; per-party credit/debit ledgers
-with running balances; costing per production PO. **v3 folds in how the
-money actually moves, as Afnan stated it** (the plan's §0a — an owner's
-account, not code-verified): 90% of the cash arrives as PostEx CPRs on
-Tuesday and Friday and is collected BY HAND, so money is modelled by HOLDER
-(the drawer, cash with Afnan, cash with Ammar, MCB, the warehouse till,
-runner floats, the TCS account — a holder cannot go below zero, and a
-transfer into another person's hands is pending until they confirm) and
-the couriers are built BEFORE purchasing (a CPR is DERIVED nightly from
-`postex_orders`, where upfront and reserve are two receipts per parcel;
-only the collection is typed: which CPRs, the cash counted, the holder,
-the receipt). TCS credits its own account at 90 days; Blue-Ex is a legacy
-receivable; Bykea lands with Raees. Payfast money goes to the owners'
-savings, so there is a SECOND BOOK — the Savings book: accounts, spend by
-category, a subscriptions register per owner, targets like the marriage
-and the car (saved so far, monthly need, ETA), assets and liabilities, net
-worth, reconciliation — and the ~₨15 lac Groovy borrowed from it is ONE
-document posting on both books, with a Payfast payout repaying it first.
-Payfast pays out on WEEKDAYS, daily, with some days skipped (Afnan, later
-the same day — read as the Payfast payouts), so a payout is one document
-per payout day, a skipped weekday is a normal state, and the calendar and
-the concern logic learn the rhythm: a gap past the usual is a watch, then
-a concern.
-Asghar is a printing vendor like any other, with agreed terms and a rate
-card (Afnan, later the same day, overruling the plan's first "affiliate"
-idea: *"treat him the same, no special demand for Asghar"*); every document carries a tax block ("no tax" is a choice, never an
-absence; the rates are blank until the accountant fills them); the books
-close by the QUARTER on a fiscal year from 1 July, with a soft month close
-where a month matters; the 3–4 months of payroll on Excel are imported;
-history back to 1 July 2026 stays enterable at Afnan's own pace until the
-owners close Q1; and **"the money speaks"** — every line of spend carries
-fine / watch / concern from three tests (its own six months, its budget,
-its terms) with a sentence and its basis, a spend map sized by rupees and
-tinted by state, and a cash calendar that puts Tue/Fri CPRs against Wed/Sat
-pay days and names a day the holders cannot fund. Store Accounts and
-warehouse sales are absorbed in M8. Fifteen open questions are tabled in
-§23 with the default each takes until answered (the Payfast payout
-account, the loan's split per lender, what the TCS account is, Blue-Ex's
-balance, the subscriptions list, the targets' amounts, the tax regime, the
-payroll sheet).
+- **Not deployed.** Netlify builds `main`, and the branch has not been
+  merged into it: `git merge-base --is-ancestor be22046 origin/main` is
+  false (checked 29 Sept). The branch is at `CACHE_VERSION` v251.
+- **The rules decide whether it works at all, and the two 28 Sept pastes
+  collide** — see "Firestore rules — published" before anything else.
+  Before the merge no branch's `firestore.rules` carried both the Master
+  Accounts blocks and main's Mood Boards sharing roles, so the Console holds
+  one or the other. The merged file on this branch carries both (15
+  `match /ma_` blocks and `boardSharingUntouched()`, verified), but it is
+  **not the file to publish yet**: the fixes for the verification round
+  below change it.
+- **The verification round found two blockers in M1.6b's sign-out work**
+  (V1, V2 below). They are being fixed; until they land the branch is not
+  ready to merge into `main`. [[phase2: V1–V11 and QA F01–F19 — what the
+  fixes changed, their commits, and what is still open]]
+- **Nobody has opened a page, a PDF or a share link on a real screen.**
+  The sandbox cannot sign in; every visual claim below is headless Chromium.
 
-**v4 (28 Sept 2026) — the brief escalated, three messages in one day:**
-the specimen was *"too bulky, not clean"* and had to map *"what goes
-where"* for a tab used *"80% on desktop"*, with outside design help;
-*"all the questions you are asking should not be questions but logics"*,
-the data *"secure … backed up"*, *"PDF logic wherever it is a must …
-print ledger, edit them, send them by link"*; and *"this is not a plain
-old accounting module, it is a whole world of my money … you're 5% there …
-study what Groovy Ops can actually do > where actual money sits > label
-money with everything > calculate this whole Groovy factory > fixed costs
-> rent > food > vendor > petty > transport > advances … if something is
-broken or not in the phase to collect money data we plan it inside the
-build."* The plan's §0b holds the brief and where each sentence went.
-What v4 added, each a section: **§25 the money map** — every flow the
-code holds today, with file:line, in four states (live · partial ·
-missing · broken; fabric and vendor processing are *broken* — the two
-biggest costs carry no rate anywhere); **§26 the cost register** —
-`ma_commitments`, every line the factory spends on (fixed, people,
-variable, running, financing, one-off, tax) with what captures it today
-and what the build adds, and four new accounts (6120 food, 6130 welfare,
-6140 licences, 6150 insurance; 1170 deposits); **§27 labels** — the
-dimensions every posting carries or it goes to suspense and the
-Unlabelled queue; **§28 the coverage register** — 28 rows, each gap a
-build item with its entry surface and milestone; **§23 rewritten** — the
-sixteen former questions are rules with a default and a path for the other
-case, nothing waits on an answer; **§29 security** (the app's first
-owner-only READ rules, writes bound to the caller, no client delete ever,
-authenticated attachments through `ma-attach`, a 15-minute re-lock, an
-append-only `ma_audit`); **§30 backup** (a nightly `exportDocuments` to a
-bucket, PITR, *Download the books*, a quarterly restore drill — a missed
-backup is a concern line); **§31 print, edit, share** (a print-engine
-variant per document, A4 landscape for the ledger, A5 receipts and
-vouchers in full Urdu; edits with history that re-validate and re-post;
-share links `ma_shares/{token}` served by `ma-share`, expiring, revocable,
-to WhatsApp); and **§16 remapped desktop-first** — ten pages (Today ·
-Money · Money in · Money out · Parties · Ledger · Costing · Savings ·
-Reports · Close & audit), one **Record** button, a page map of what each
-tab reads and writes, and the visual rules. **Those rules came from two
-subagent reports, committed as model output in `scratchpad/master-accounts-visual-audit.md`
-(the v3 specimen MEASURED in headless Chromium: the overview 2,532px
-tall, 82% of its text at 12px or under, 66 bordered boxes, the first chart
-at y=1,183) and `scratchpad/master-accounts-design-systems.md` (Polaris, Carbon and Primer read
-over `raw.githubusercontent.com`).** Where the two disagreed the audit's
-number stands. **The specimen was rebuilt to §16 the same day and
-republished at the same URL**, then MEASURED the way the audit measured
-v3 (a probe in headless Chromium, `scratchpad/spec-v4/probe.js` in the
-session scratchpad, not the repo): Today's main column 2,299px against
-2,532; 6 bordered boxes against 66; 0 uppercase labels against 49; 0
-text under 11px against 31; the first chart at y=422 against 1,183; 0
-shadows; no element under 2.2:1 in either theme on any of the ten pages;
-nothing laid out past the right edge at 390px. Text at 12px or under is
-still half of Today's text elements (table heads, meta lines, ticks), down
-from 82%. Every page was looked at in a screenshot at 1440 and the Today,
-Money in and Money out pages at 390, light and dark. **Nobody has seen it
-on a real screen** — Afnan's open is the visual test, as ever. The `₨`
-glyph renders as `Rs` in the sandbox's fonts; the file carries U+20A8.
+### The files
 
-Verified while planning, and worth knowing before any of it is built (every
-claim carries file:line in the plan's §1): nothing in HRM records HOW a
-salary was paid; a Shopify order is written once, never updated, and
-carries NO gateway field, so COD and Payfast orders cannot be told apart;
-PostEx is the only remittance data in the app, nothing posts it, and
-nothing records that a CPR's cash was ever collected; `printing_billing` is
-a PAYABLE with no payee field; "payfast" appears nowhere in `js/`,
-`netlify/` or `index.html`; no cost of goods exists anywhere (no fabric
-rate, no CMT rate); and Reset Store Accounts deletes the very ledger the
-master would feed from.
+- **`js/ma-core.js`** (2,210 lines at `efb75ce`) — **PURE**: no DOM, no
+  Firestore, no session, no clock unless a caller passes `today`; a guarded
+  `module.exports` at the foot, which is how the functions and the node
+  tests `require` it. Every decision the books make lives here once: both
+  charts of accounts (`MA_CHART` for Groovy, `MA_SV_CHART` for the Savings
+  book — seeded, its pages are M4), the settings and their defaults
+  (`MA_DEFAULT_SETTINGS`, `maSettings`), July fiscal periods, whole-rupee
+  money grouped in lakh/crore and spelled out (`maRsWords`), the tax block,
+  the three document types (`MA_DOC_TYPES`: journal `JV`, transfer `TR`,
+  count `CT`) and the six journal kinds, **`maBuildDoc` → `maValidate`
+  (refuse / flag; 57 named rules, 55 before M1.6b) → `maPost`** (lines
+  carrying the plan's §27 labels), balances, holders, the trial balance,
+  the ledger with a running balance, edits / voids / confirmations, parties
+  with terms and rate cards kept with history, items, the cost register,
+  the rule-based 30-day calendar and "needs attention" lines, the
+  Unlabelled and review queues, FIFO allocation (unused until M3),
+  attachments as references, WhatsApp and share helpers, the PDF data
+  builders (`maPdf*Data`) and Download the books.
+- **`js/master-accounts.js`** (2,807 lines at `efb75ce`) — the pages. It
+  reads Firestore, paints, and writes exactly what the core built: the
+  writer, the loader, the re-lock, files, links, the owners' copy and the
+  device cache at sign-out.
+- **`netlify/lib/ma-server.js`** — code the three functions share, kept
+  OUTSIDE `netlify/functions` so it is bundled rather than deployed as an
+  endpoint (the postex-core precedent): the owner check (a verified ID
+  token, `checkRevoked` on, so a revoked session or a disabled account is
+  refused at once), Cloudinary's signature hand-rolled on node `crypto`
+  (checked against golden values from the Cloudinary Node SDK 2.11.0 —
+  **never against the live API**), server-minted file names `ma/<64 hex>`,
+  and audit rows in the core's own shape.
+- **`netlify/functions/ma-attach.js`** — POST, owners only. `status` (which
+  mode is in force), `sign` (the exact fields for a browser-to-Cloudinary
+  upload as `type:'authenticated'`, under a name minted here; the file never
+  passes through Netlify and the secret never leaves it), `url` (a signed
+  download link that dies in 5 minutes — asking again is how you look
+  again). 25 MB cap and an image/PDF allow-list are checked here.
+- **`netlify/functions/ma-share.js`** — `GET ?t=<token>` is **the one public
+  door into the books** and opens exactly one PDF: a 32-byte token, 404 for
+  an unknown or malformed one, 410 for a withdrawn or expired one, else a
+  302 to a Cloudinary link that dies in 5 minutes (to the file's permanent
+  public address in the fallback — decision 5), with `no-store`,
+  `no-referrer`, `noindex` and a `default-src 'none'` CSP on the plain
+  pages. POST `create` / `revoke` for the owners, each in the same batch as
+  its audit row. Link-preview fetches (WhatsApp building the preview, among
+  a named list of bots) are counted in `previews`, not `opens`, so "opened
+  once" means a person. A link lives `share.defaultDays` (7), capped at 90.
+- **`netlify/functions/ma-backup.js`** — scheduled `30 * * * *`
+  (`netlify.toml`). Each wake resolves any export still running (done, or
+  failed with Google's own words) and, at the first wake at or after
+  **03:30 UTC (08:30 PKT)**, starts ONE Firestore managed export of every
+  `ma_*` collection plus the feeders (`postex_orders`, `wh_sales`,
+  `acct_*`, `payroll_runs`, `payslips`, `shopify_orders`) to
+  `gs://$MA_BACKUP_BUCKET/ma-backups/<UTC stamp>`, under a day id claimed
+  in a transaction so two wakes never start two exports. **Why hourly, when
+  the plan said daily:** an export takes minutes and a scheduled function
+  gets seconds, and the Today page reads only the LATEST row — resolved
+  once a day, last night's failure would be buried by tonight's fresh row
+  the moment it was found. "Not set up" is written as a failed,
+  `not_configured` row, never as a backup that worked. Its audit rows carry
+  `by:'ma-backup'`, which the trail shows as "Nightly backup" (`efb75ce`).
+  It cannot be opened by URL (Netlify answers 403 to a scheduled function);
+  the first run after 03:30 UTC is the test, and it writes its own result.
+- **Tests:** `tests/master-accounts-core.test.js`, `master-accounts.test.js`,
+  `master-accounts-pdf.test.js`, `master-accounts-files.test.js`,
+  `master-accounts-screens.test.js` (M1.6b), `ma-server.test.js`,
+  `ma-attach.test.js`, `ma-share.test.js`, `ma-backup.test.js`, with
+  `tests/ma-fake-admin.js` (an in-memory Admin SDK).
+  **`tests/rules-emulator-ma.js`** is NOT a `*.test.js` — it needs
+  firebase-tools, the emulator and Java; its header has the commands, and
+  it builds every document with the app's own `js/ma-core.js`. Fourteen
+  `master accounts — …` `smoke-layout` fragments; the six nav pages in
+  `smoke-app-phone.js`.
 
-The specimen's first render caught a class collision worth carrying into
-the build: its calendar cell wore `today`, a class the same stylesheet
-already used for the balance chart's `position:absolute` marker, and the
-cell painted as a full-height stripe down the page. It is `cal-today` now.
-**Every `.ma-` rule the module adds to `css/main.css` has to be checked
-against the 259 `.board-*` and every other class already there** — the
-`tb` lesson from The Board, in CSS.
+### The pages, and the one Record button
+
+Eight page ids through ONE `renderPage` line (`id.startsWith('ma-')` →
+`maRenderPage`): **Today** `ma-overview` (cash in hand as the hero, in and
+out this month, owed to us less we owe, Needs attention, cash by holder,
+the next 30 days and a day-by-day strip) · **Money** `ma-money` (holders,
+pending transfers, counts; a holder's statement is `ma-holder`) · **Money
+out** `ma-out` (in M1 the cost register only — commitments with their
+state, and *Record payment* prefilling a Money out) · **Parties**
+`ma-parties` (a party is `ma-party`: terms and rate card with history,
+documents, ledger) · **Ledger** `ma-ledger` (postings, documents, the
+Unlabelled and review queues, and a document rail with its edit history,
+edit / void / confirm / review, files, PDF and share) · **Close & audit**
+`ma-close` (the quarters and their state — no screen closes a quarter yet,
+see decision 7 — backups, Download the books, the audit trail, settings,
+the chart, items). The plan's other four (Money in, Costing, Savings,
+Reports) arrive with later milestones.
+
+**Record** in every page header opens one picker: nine live kinds (Money
+out · Money in · Transfer · Count · Owner put money in · Owner took money
+out · Opening balance · Journal · Commitment) and eight named with the
+milestone they arrive in (Collection M2; Bill, Payment, Purchase order,
+Receipt M3; Payout, Loan, Savings entry M4). Nav: a collapsible **"Master
+Accounts ▸"** sidebar section (not "Accounts", which the Store section
+already carries), **"Master Accounts ›"** in the owner's phone More sheet,
+and an owner dashboard card (cash in hand · how many need attention).
+
+### The collections — all owner-only, read AND write
+
+Masters: `ma_accounts`, `ma_sv_accounts`, `ma_parties`, `ma_items`,
+`ma_settings`, `ma_commitments`, `ma_counters`, `ma_feedback`. Documents:
+`ma_journal`, `ma_transfer`, `ma_counts` — **the id IS the number**
+(`JV-27-0001`: kind, fiscal year, sequence). Then `ma_closes`, `ma_audit`
+(append-only), and `ma_backups` / `ma_shares` (written by the functions
+only). An `ma_*` collection not named in the rules is default-deny, even to
+an owner.
+
+**There is no `ma_postings`.** The plan's §7 and §16.2 name one; M1 stores
+none. Postings are computed in the browser from the documents on every
+render (`maPostAll`), balances are never stored (the plan's §2), and the
+emulator checks by name that an owner is refused `ma_postings`. M1's volume
+is small enough to read every document whole; `js/master-accounts.js`'s
+header records the plan once a quarter is locked (read from the last close
+onward, page the rest).
+
+**The one balance read from elsewhere is the store drawer (1010):** Store
+Accounts' `_acctBalances().cash`, through `loadAccountsData()`. Since M1.6b
+it is read fresh with a 12-second bound, says "as of", and is read again
+after five minutes. A failed read is never a zero — cash in hand says
+"drawer not read — incomplete". Nothing in Master Accounts may spend from
+the drawer (`holder.mirror`); a handover to or from it is a transfer, and
+waits (below).
+
+### The gate — four lists, one test
+
+`_MA_USERS` (client, by username) · `MA_OWNERS` (the core) ·
+`isMasterAccounts()` (rules, by email) · `MA_OWNER_EMAILS` (the functions).
+`tests/ma-server.test.js` holds all four equal — widening one alone fails
+there. Afnan and Ammar only, and by name, never by role: no third owner and
+no Mustafa. Raees and Umair appear only as the people whose hands a holder
+is in — they confirm on paper, through an owner — until M8 carries their own
+entry surfaces over.
+
+**This is the app's first owner-only READ.** Every other collection is
+readable by some wider group. The committed emulator test refuses a read of
+every `ma_*` collection to Mustafa (a manager), Raees and a signed-out
+caller (re-run against the merged rules at `1dc7fa9`: 209 / 209); the
+security review extended that to Umair, Daniyal, Sami, Arfat, an email-less
+token and an upper-case email (reported, from its own scratch probe). The
+`js/shared.js` entry points are `typeof`-guarded and fail CLOSED.
+
+### The decisions that hold it up — with the reasons
+
+1. **One transaction per new document:** read `ma_counters/{type}`, mint
+   the number for the document's fiscal year, write the counter, the
+   document and an `ma_audit` row. A refused write spends no number (the
+   Pattern Hub lesson). A transaction needs a connection — offline, the
+   page says so and writes nothing.
+2. **A document changes in exactly four shapes, and the rules hold each:**
+   EDIT (rev + 1; `edits[]` grows by ONE row by the caller that names
+   exactly the fields that changed), VOID (a transition with a reason,
+   never a rewrite), CONFIRM (a pending transfer), REVIEW (the two review
+   fields, in the reviewer's own name). **No client delete on any `ma_*`
+   collection, ever.** Since M1.6a an edit also: never moves the status, a
+   confirmation, a review or a void; **names `amount` and `tax`** (they are
+   what posts — before M1.6a the rules let an edit move them unnamed);
+   keeps `month`, `quarter` and `fy` bound to its date; stores its own live
+   flags, and **clears the review when a figure moved** (an owner reviewed
+   the old figures, not the new ones). A count keeps the book it was held
+   against unless its day or count moves, and which holder was counted
+   cannot change. The JS lists (`MA_EDIT_FIELDS`, `MA_EDIT_DERIVED`,
+   `MA_FIGURE_FIELDS`) and the rules' lists are held equal by a test.
+3. **Who confirms a transfer is ONE map, never the form's choice.**
+   `MA_HANDS` / `MA_DRAWERS` (`js/ma-core.js`, read off the seeded chart)
+   and `maHands()` / `maDrawers()` (rules) — a test holds them equal. The
+   person whose hands the money reaches confirms: an owner in the app,
+   anyone else "on paper" (an owner holding the signed receipt, recorded as
+   `confirmVia:'paper'`). Pending counts in neither holder. Driven through
+   `maTransferConfirm` at `704056b`:
+
+   | Route | Waits for | How |
+   |---|---|---|
+   | MCB → the owner who records it · an owner's cash → MCB | nobody | posts at once |
+   | MCB → the other owner · one owner's cash → the other's | that owner | in the app |
+   | anything → the drawer (1010) | Raees | on paper |
+   | the drawer → MCB (a holder nobody holds) | Raees | on paper |
+   | the drawer → Afnan or Ammar | that owner — **even when they recorded it themselves** | in the app, after *"Has Raees recorded it?"* |
+   | anything → the warehouse till (1040) | Umair | on paper — and refused today: 1040 is switched off until M5 (`holder.inactive`) |
+
+   **This REVERSES M1.3's "a transfer into the mirrored drawer posts at
+   once."** The drawer's balance is read from Raees's Store Accounts, so a
+   handover posted here before he books it there is counted twice or not at
+   all (money review F9) — the drawer is therefore his hands in BOTH
+   directions, and confirming asks first whether he has recorded it. A
+   transfer that waits for, or was confirmed by, someone keeps its from,
+   to, amount and date: void it and record it again (money F6 — before
+   M1.6a a note-only edit of a confirmed transfer sent it back to pending
+   and moved two balances behind a row that said "note"). A create may carry
+   no `confirmed*`, `reviewed*` or `voided*` key, and its status,
+   `confirmBy` and `confirmPaper` must be the map's answer (security F2).
+   **F9 is only partly closed** (the verification round, against
+   `20260a0`): while a drawer handover waits, the Today hero and the 30-day
+   panel still disagree about it (V4).
+4. **Journals cannot do what the other kinds refuse — in the client only.**
+   A general journal that moves money between two holders is refused
+   (record a transfer: it waits for the receiver); one that pays out of a
+   holder with no file or no named payee is flagged; a second opening for
+   an account is flagged (money F12). **The rules language cannot loop over
+   a list**, so none of this is held at the rules — the one known gap the
+   rules comment names.
+5. **A file is a REFERENCE, never a URL.** `{publicId, format, type, …}`,
+   picked field by field (`maAttachClean`): a private link is dead in five
+   minutes anyway, and in the public fallback the URL is the file's only
+   lock, which a stored copy would carry into every export and backup —
+   Cloudinary's answer holds both `secure_url` and `url`, so a spread of it
+   would have stored them.
+   Adding a file later is an edit with history; the "no bill" flag is
+   answered by derivation (`maLiveFlags`), not by rewriting stored flags.
+   **The fallback, as the branch stands:** without `CLOUDINARY_API_KEY` /
+   `CLOUDINARY_API_SECRET`, `sign` hands out the app's unsigned `groovy-ops`
+   preset under the same random name — the file is PUBLIC and its address
+   opens it for good, and files uploaded in that mode STAY public after the
+   keys are set. Settings (Close & audit) asks the server and says which
+   mode is in force. [[M1.6c-server: what changed — the security review
+   asked for a refusal unless an explicit opt-in env var is set, and for
+   `overwrite:false` among the signed fields]]
+6. **The audit trail is written NOW and shows who from `by`.** Since M1.6a
+   the rules refuse an `ma_audit` row whose `at` is more than five minutes
+   from the server's clock, and the trail and its Excel print the name
+   derived from `by` (the field the rules bind to the signed-in person),
+   never the stored `byName` — and "Nightly backup" for the backup
+   function's own rows (`efb75ce`; no client can write that `by`).
+   **The client writes every document, edit, void, confirm, review and
+   master change in ONE transaction or batch with its audit row, so once
+   these rules are published a device whose clock is more than five minutes
+   off has every Master Accounts write refused** — the error says to check
+   the clock. The rules do not themselves require an audit row beside a
+   document write (only the quarter re-lock checks for one); the pairing is
+   the client's. The "opened" and "unlocked" rows are written quietly and
+   fail silently.
+7. **Quarters:** a close is born LOCKED and a reopened quarter goes back
+   through an audited re-lock (`maCloseRelock`, the rules' `maRelockOk` —
+   the audit row must be created in the same batch), security F3b. **No
+   M1 screen writes `ma_closes`** — "the quarter lock arrives with M11",
+   and a test asserts the page never writes one — so the lock rules and
+   the "quarter closed" refusals on confirm and review are ready but
+   unreachable from the app today.
+8. **Loaders never reject.** `maLoad` settles all eleven reads on their
+   own; a refused one is an error card naming the collection ("… republish
+   firestore.rules with the Master Accounts block"), never an empty list or
+   a zero — the Store lesson.
+9. **The PDFs compute nothing.** Five `js/print-engine.js` variants, every
+   figure from `maPdf*Data`: `ma-ledger` (one account, A4 LANDSCAPE, its
+   head redrawn on every page), `ma-statement-party`, `ma-statement-holder`
+   (A4), `ma-receipt` (a transfer's handover slip — the plan's collection
+   receipt needs M2's collections) and `ma-voucher` (a Money-out voucher —
+   bills and allocation are M3), both A5 with VOID and "Revised · rev N"
+   stamps, N being `maRevOf` — ONE revision number for the rail and the
+   paper, which M1.5b found disagreeing by one. Since M1.6b the ledger
+   draws no opening, closing or Balance column under a narrowing filter or
+   for the mirrored drawer (`balanceHidden`), and says why. **The slips are
+   `full` but print English:** the embedded Urdu font cannot draw what
+   jsPDF emits (see "Print design system"), and `_prMaUrduOk` asks the font
+   before drawing a word of Urdu. A slip in waiting never prints a
+   confirmation.
+10. **Download the books** (Close & audit): a JSON of every `ma_*`
+    collection — the copy a restore would read, shaped for the plan's
+    `ma-import`, which is NOT built — and one Excel workbook (the
+    postings, the trial balance, every collection as a sheet). A
+    collection that could not be read is named in both files, the share
+    tokens are withheld (M1.6b), and the download writes an `export` audit
+    row.
+11. **The idle re-lock (§29)** asks again after `relockMinutes` (15): the
+    fingerprint where this device has the app lock (`_lockShow`), else the
+    password (`reauthenticateWithCredential`). The clock is a per-uid
+    `localStorage` timestamp (`groovy-ma-active`) — a curtain, not a
+    boundary; a sign-in inside the window counts as activity. **Since M1.6b
+    the lock is asked everywhere, not only on navigation** (security F5: a
+    page left open showed the books until someone touched it, and that one
+    touch reset the clock): a tap or a key on an `ma-*` page while the lock
+    is due SHOWS the lock and never touches the clock; every repaint asks
+    first; coming back to the tab and a 30-second check swap an open page
+    for the lock; an open form or share panel closes with it; the idle lock
+    writes no audit row (unlocking writes a quiet "entered" row), so the
+    word "relock" stays the quarter's. **F5 is only partly closed**: a
+    Dashboard card painted BEFORE the lock came due keeps its figures
+    (the verification round's V5).
+12. **An owner's sign-out takes the books off the device (M1.6b, security
+    F6).** `doLogout` and `lockUsePassword` (`js/auth.js`) first call
+    `window.maBooksOffDevice()` behind `typeof`; `index.html` bridges
+    `terminate`, `clearIndexedDbPersistence` and `waitForPendingWrites` for
+    it. For an owner it waits up to 5 s for pending writes — if they have
+    not reached the server, it signs out but KEEPS the offline copy and
+    says so; otherwise it terminates Firestore and clears the IndexedDB
+    cache (5 s bound). If another Groovy Ops tab holds the cache, it does
+    NOT sign out (`stay`: the page reloads, still signed in) and says to
+    close the other tabs. A cached `index.html` without the bridges signs
+    out exactly as before. **The verification round found two BLOCKERS
+    here** (V1: after "Use password instead" a `stay` reloads into the app
+    with no fingerprint lock; V2: on a shared device the clear deletes
+    OTHER people's unsent offline writes) — their fixes are recorded under
+    the review round below.
+13. **Classic-script hygiene:** every global is `ma`/`_ma`/`MA_`-prefixed
+    (one lexical scope with every other file), no `window.X=` names a
+    top-level function (the Board calendar freeze), and the CSS is one
+    block where every selector is `.ma-*`, `table.ma-*`, `textarea.ma-in`
+    or `a.ma-btn` (checked against the diff) — the `today` / `cal-today`
+    class collision below is why.
+
+### The review round (28 Sept, against `4057303`), and the verification after it
+
+Two adversarial reviews, each finding reproduced by a script or a probe.
+Their reports (`review-money/findings.md`, `review-sec/findings.md`), and
+the verification round's, lived in the session scratchpad and are
+deliberately not committed: this repo is public and they carry step-by-step
+reproductions — this summary is the record.
+
+- **Money and data integrity:** thirteen F-numbered findings — nine
+  labelled major (F9 "design — numbers reproduced, process not
+  verifiable"), four minor — plus minors M1–M4, nits N1–N3 and two
+  suspected, not reproduced. **The posting engine held:** 20,000 fuzzed
+  documents through `maBuildDoc → maValidate → maPost` all balanced, and a
+  trial balance over 46,407 lines was zero (reported, not re-run).
+- **Security and privacy:** the boundary against non-owners held. Four
+  major — an edit could move money without naming it (F1), a transfer's
+  confirmation was enforced only by the form (F2), the idle re-lock never
+  fires on an open page (F5), and **the books stay in the browser's
+  IndexedDB after sign-out** (F6: reproduced with a newer SDK than the
+  app's pinned 10.12.2 — a non-owner on the same browser profile read an
+  owner's journal from the offline cache while the server refused him) —
+  plus minors F3, F3b, F4, F7 and nits.
+- **M1.6a (`704056b`) closed the rules-side items:** security F1, F2, F3,
+  F3b, F4; money F2, F6 and its receipt addendum, F7, F8, F9, F11, F12,
+  M4 — each as recorded in decisions 2–7.
+- **M1.6b (`20260a0`) closed the screens' items — per the verification
+  round, which re-checked every finding against `20260a0`:** money F1, F3,
+  F4, F5, F10, F13, M1, M2, N1–N3 FIXED; security F6 FIXED "with two new
+  problems" (V1, V2). **Still partly open** by the same round: money F9
+  (V4) and M3 (voiding withdraws live share links and the list says when a
+  document changed since its link, but an edited document's link still
+  serves the old PDF); security F2 (a hand-written transfer with a
+  non-string code or a negative amount still skips the derived
+  confirmation — V3, a rules change) and F5 (V5). **Not fixed at
+  `20260a0`:** security F7 (the attachment fallback fails open) and the
+  server nits — the server round. [[M1.6c-server: which it closed — the
+  server tightening]]
+- **The verification round's own new findings, V1–V12** (two blockers,
+  V1 and V2, both in the sign-out work of decision 12). V1–V11 and the
+  visual QA's F01–F19 are being fixed now, per the coordinator of that
+  round; V12, a nit about a pattern the rules already had
+  (`isMasterAccounts()` reads `token.email` without `email_verified`), is
+  not in that list. [[phase2: which V and QA findings the fixes closed,
+  and anything left open]]
+
+### What is verified, and how
+
+- **Node suite** — re-run on a clean `git archive` of each commit: 6,612
+  (`930c2df`, before M1) → 6,979 (M1.1) → 7,122 (M1.3) → 7,434 (M1.4) →
+  7,778 (M1.5a) → 8,011 (M1.5b) → 8,201 (`704056b`) → **8,408
+  (`20260a0`)**, all passing. Since then (three merges with `main` and
+  one fix): 8,723 (`1dc7fa9`), 8,788 (`feca515`), 8,794 (`efb75ce`), 8,797
+  (`be22046`).
+  [[M1.6c-server: its totals]]
+- **Rules, in the real Firestore emulator** — **209 / 209** against the
+  merged `firestore.rules` at `1dc7fa9` (unchanged at `feca515` and
+  `be22046`); M1.6b did not change the rules. Against `1d8b3c5`'s rules (the ones reported
+  published) the same file fails 62: all 55 checks labelled "M1.6a:" plus
+  7 that exercise permissions M1.6a added (an edit storing its flags, an
+  edit clearing a review, the re-lock). That is what makes the republish
+  necessary rather than cosmetic. The merged file also passes main's own
+  suites: `rules-emulator.js` 103 / 103, `rules-emulator-board.js` 39 / 39,
+  `rules-emulator-boards.js` 26 / 26.
+- **Layout and the smoke suites** — re-run by the integrator on a clean
+  `git archive` of `be22046` (and of `efb75ce` before it, with the same
+  result): `smoke-layout` 462 / 462, of which 76 are the fourteen `master
+  accounts — …` fragments (every width they declare, both themes: contrast,
+  overflow, clipped text and hit-testing); `smoke-app-phone` clean on all
+  53 of the owner's pages in both themes — the six `ma-*` nav pages among
+  them — and on the pages it lists for six other roles; `smoke-phone`
+  30 / 30;
+  `smoke-board`, `smoke-browser` 8 / 8 and `smoke-startapp` (all four read
+  conditions) pass; `smoke-axe` finds no rule/page pair beyond
+  `tests/axe-baseline.json` — but its page list has no `ma-*` page (the
+  owner's Dashboard, which carries the Master Accounts card, is on it), so
+  axe has not looked at the module's own pages. None of these suites signs
+  in to the real Firebase: every page is rendered against fake data.
+- **The print engine** — every variant that existed before M1.4 (`generic`,
+  the `qc-report` fallback, `stock-transfer`, `consumable-log`,
+  `daily-performance`, `payslip`, `gate-pass`, `po`, `mood-board`,
+  `pattern-label`) makes the same jsPDF calls, in the same order, at
+  `704056b` as at `930c2df`, with and without a landscape request
+  (re-run with a recording fake jsPDF on the Helvetica path — the
+  embedded-font path was not exercised); M1.6b changed `_renderMaLedger`
+  only. The one new behaviour: `generic` asked for landscape now builds
+  landscape; no caller outside Master Accounts passes `orientation` or
+  `deliver` (checked by grep).
+- **The five Master Accounts PDFs** were rendered through pdf.js in
+  headless Chromium and looked at, page by page, for M1.4 (the test
+  file's header says so; not re-done here).
+- **Not verifiable from a session, and not done:** anything on a real
+  screen or a phone; what the Console has published (see the rules
+  record); the Cloudinary account's plan (authenticated delivery, the
+  download API, its upload cap — `cloudinary.com` is unreachable from the
+  sandbox); the backup bucket, the service account's roles and PITR; what
+  WhatsApp does with a link. The first real upload, share and 03:30 UTC
+  run are the tests, and each writes or shows its own result.
+
+### Set-up only a human can do
+
+Not one of these is done or checked as of 29 Sept 2026. The sandbox cannot
+reach Google Cloud, Netlify's settings, Cloudinary or the Firebase Console,
+so each is Afnan's (the full steps are handed to him in chat, not kept
+here).
+
+- [ ] **Which rules are live** — Firebase Console → Firestore → Rules
+  history: was the last 28 Sept paste Master Accounts' or main's? *Only the
+  Console knows.*
+- [ ] **The backup bucket** (`gs://…`, same location as Firestore, public
+  access prevention on, delete after 90 days) — *unverified advice, from
+  the plan.*
+- [ ] **The service account's roles**: Cloud Datastore Import Export Admin
+  on the project, Storage Object Admin on the bucket — *the first backup
+  run is the test; a failure writes Google's own words into its row.*
+- [ ] **Point-in-time recovery**, 7 days — *nothing in the app can see it.*
+- [ ] **Netlify env vars, then a redeploy:** `MA_BACKUP_BUCKET`,
+  `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`. **As the branch stands,
+  without the two Cloudinary keys attachments go up PUBLIC** and stay
+  public after the keys are set — set them before anyone attaches a real
+  bill. [[M1.6c-server: once the server tightening lands, without the keys
+  attachments and share links are OFF instead, and MA_ALLOW_PUBLIC_ATTACH=1
+  is the only way to public files]]
+- [ ] **The Cloudinary plan**: its upload cap (the app allows 25 MB), and
+  whether it allows authenticated uploads and the download API —
+  *unverifiable from here.*
+- [ ] **Publish the MERGED `firestore.rules`** — [[phase2: final merged
+  rules md5]]; never this branch's file alone, never `main`'s.
+- [ ] **Merge into `main`** — a Claude session does it; not before the two
+  verification blockers (V1, V2) are fixed.
+- [ ] **A first look on a real screen** — nobody has.
+
+### Cross-track
+
+`js/embellishments.js` (one `typeof`-guarded dashboard widget call),
+`js/print-engine.js` (additive — landscape, blob delivery, five variants,
+`_prMaUrduOk`, and `balanceHidden` on the ledger since M1.6b),
+`js/shared.js` (the nav section, the More sheet, one `ma-*` `renderPage`
+line, the dashboard `setTimeout`, the phone `groups` map, `BUG_PAGE_NAMES`,
+the sub-nav expand in `showPage`), `js/auth.js` (M1.6b: `doLogout` and
+`lockUsePassword` call `window.maBooksOffDevice()` behind `typeof`),
+`css/main.css` (one `.ma-` block, after The Board's rules — since the 29
+Sept merge main's Mood Boards swatch block follows it), `index.html` (two
+script tags after `theboard.js`, `?v` strings, and M1.6b's three Firebase
+bridges: `terminate`, `clearIndexedDbPersistence`, `waitForPendingWrites`),
+`sw.js` (`CACHE_VERSION`, two precache entries, the private-Cloudinary
+exclusion), `netlify.toml` (the backup schedule), `firestore.rules` (the
+Master Accounts block), and two shared probes (`smoke-app-phone.js`,
+`smoke-layout.js`). The exact list, by function name, is a note drafted
+for Ammar's session, outside the repo, to reach him through Afnan; whether
+it has is unverified.
+
+**Merging with `main` is a real merge, and it has been done three times.** The
+branch had not taken `main` since `2298f39`. `1dc7fa9` merged `origin/main`
+at `1f6327d` (v246): conflicts in `index.html` (`?v` strings) and `sw.js`
+(`CACHE_VERSION`), and `firestore.rules`, `js/shared.js`, `css/main.css`,
+`CLAUDE.md`, `netlify.toml` and `tests/smoke-layout.js` merged cleanly and
+were checked line by line to carry both sides. **Then the dangerous shape
+happened for real, twice:** `main` moved to `4eea411`, which took **v247** —
+the number `1dc7fa9` had just taken — for different bytes, and `4c8bfee`
+(v248). Nothing had been pushed yet, so `feca515` merged again and went to
+v249, past both; its conflicts were `index.html`, `sw.js` and, this time,
+`css/main.css` (both sides appended a block at the end of the file — both
+kept, `.ma-` first). Then `main`'s `3333584` took **v249** — `feca515`'s
+number — for different bytes. The branch had moved on to v250 (`efb75ce`),
+so this time the two lines differed and git raised the conflict; `be22046`
+went to v251. Every future merge: fetch, compare `CACHE_VERSION` on both
+sides, not just the conflict list, and bump past both.
+
+### The planning record (27–28 Sept 2026), condensed
+
+**Four versions in two days; v4 is what M1 was built from.** v1 was a
+reporting layer over other modules' entries (*"you thought like baby
+accounts"*). v2 made the master ledger the system of record: one chart of
+accounts, ONE party master (vendor, customer, courier, gateway, employee,
+owner, bank) with terms and a rate card kept with history, documents with
+a lifecycle, a validation engine that REFUSES what cannot be true and FLAGS
+the rest, per-party ledgers, costing per production PO. **v3 put the cash
+under it, as Afnan stated it** (the plan's §0a — an owner's account, not
+code-verified): 90% of the money arrives as PostEx CPRs on Tuesday and
+Friday and is collected BY HAND, so money is modelled by HOLDER and the
+couriers are built before purchasing (a CPR is derived nightly from
+`postex_orders`, only the collection is typed); TCS credits its own account
+at 90 days, Blue-Ex is a legacy receivable, Bykea lands with Raees; Payfast
+pays out on weekdays, daily, some days skipped, into the owners' savings —
+a SECOND BOOK — and the ~₨15 lac Groovy borrowed from it is ONE document
+posting on both books; Asghar is a vendor like any other (Afnan, overruling
+the plan's first "affiliate" idea); every document carries a tax block
+("no tax" is a choice, never an absence); the books close by the quarter on
+a fiscal year from 1 July; and "the money speaks" (fine / watch / concern
+on every line of spend, a spend map, a cash calendar). **v4 (28 Sept)**
+answered *"a whole world of my money … you're 5% there"*: the money map of
+what the code holds today (§25), the cost register (§26), labels on every
+posting (§27), the coverage register (§28), the former open questions
+turned into rules with defaults (§23), security, backup, print and share as
+foundations (§29–§31), and ten pages mapped desktop-first (§16).
+
+**The specimen and the two design reports.** The UI specimen is
+`scratchpad/master-accounts-specimen.html`, published at
+https://claude.ai/artifact/9bmhjEuaZMisWLb2TiQNyZ (private to its owner
+until shared), rebuilt to §16 on 28 Sept. The visual rules came from two
+subagent reports committed as model output —
+`scratchpad/master-accounts-visual-audit.md` (the v3 specimen MEASURED in
+headless Chromium: the overview 2,532px tall, 82% of its text at 12px or
+under, 66 bordered boxes, the first chart at y=1,183) and
+`scratchpad/master-accounts-design-systems.md` (Polaris, Carbon and Primer
+read over `raw.githubusercontent.com`); where they disagreed, the audit's
+number stood. The rebuilt specimen measured Today's main column at 2,299px,
+6 bordered boxes, 0 uppercase labels, 0 text under 11px, the first chart at
+y=422, nothing under 2.2:1 in either theme. The module inside the app was
+built to the same rules — the `.ma-` block's header in `css/main.css`
+lists them (the 4·8·12·16·24·32 spacing steps, a 22/600 title, 14px body,
+tabular figures, no uppercase, nothing under 12px, no shadows, tokens
+only).
+
+**Verified while planning, still true of M1** (file:line in the plan's
+§1): nothing in HRM records HOW a salary was paid; a Shopify order is
+written once, never updated, and carries NO gateway field, so COD and
+Payfast orders cannot be told apart; PostEx is the only remittance data in
+the app and nothing records that a CPR's cash was collected;
+`printing_billing` is a payable with no payee field; no cost of goods
+exists anywhere (no fabric rate, no CMT rate); and Reset Store Accounts
+deletes the very ledger the drawer mirror reads (retired at M8).
+
+**The class collision, carried into the build.** The specimen's calendar
+cell wore `today`, a class the same stylesheet already used for a
+`position:absolute` marker, and it painted as a full-height stripe down the
+page; it became `cal-today`. **Every rule added to `css/main.css` for this
+module is `.ma-`-scoped for that reason** — the `tb` lesson from The Board,
+in CSS.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 
@@ -9530,6 +10045,13 @@ etc.) live in `js/hrm.js`; the printing/role helpers (`isObserver`,
   he's Ecom Manager). Nav-only, same shape as the Notes staged-rollout gate —
   no `firestore.rules` mirror needed since `shopify_*` collections are
   already `read: if signedIn()` for every role.
+- `maCanSee()` (`js/master-accounts.js`, `_MA_USERS`) → **afnan + ammar by
+  username** — every `ma-*` page, the nav section, the More-sheet entry and
+  the dashboard card. Mirrored four ways (`MA_OWNERS` in `js/ma-core.js`,
+  `isMasterAccounts()` in `firestore.rules` by email, `MA_OWNER_EMAILS` in
+  `netlify/lib/ma-server.js`); `tests/ma-server.test.js` holds them equal.
+  The rules make it a READ boundary too — the first in the app. See
+  "Master Accounts".
 
 **Sept 2026 grants share one pattern, worth knowing before touching any of
 them:** each is scoped to Mustafa **by username**, not by `role==='manager'`
@@ -9624,9 +10146,11 @@ injected into the owner's home Dashboard. Follows the exact existing
 activity.js — same reason the HRM one is guarded too), populated
 asynchronously by `_monitorPopulateDashboard()`, hooked into the
 `id==='dashboard'` dispatch in `js/shared.js` via `setTimeout(...,0)`
-alongside `_hrmPopulateDashboard` / `_fulfillDashboardInject`. Adding a
-fourth dashboard widget later means adding a fourth `typeof` guard in
-`renderDashboard()` and a fourth `setTimeout` in that same dispatch line —
+alongside `_hrmPopulateDashboard` / `_fulfillDashboardInject`. There are
+five such widgets now — HRM, Monitor, Marketing, Pattern Hub and Master
+Accounts (verified 29 Sept 2026; the dispatch line also carries
+`_fulfillDashboardInject`). Adding a sixth means a sixth `typeof` guard in
+`renderDashboard()` and its own `setTimeout` in that same dispatch line —
 do not skip either half, or the placeholder renders and never populates
 (or worse, never renders and the populate function's `getElementById`
 silently no-ops).
@@ -10269,6 +10793,111 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**REPUBLISH OUTSTANDING (28 Sept 2026, late; still open 29 Sept) — publish
+the MERGED file, and only the merged file.** Two things are waiting, and
+they are one paste.
+
+1. **Master Accounts M1.6a (`704056b`) changed `firestore.rules`** — LF
+   `md5 f2f8de5e67a742c709c4d0835c56ecab` (verified: `git show
+   704056b:firestore.rules | md5sum`; M1.6b, `20260a0`, left it untouched).
+   Edits and confirmations are held at the rules now: a transfer's
+   confirmation comes from one holder-to-person map (`maHands()` /
+   `maDrawers()`), a create may carry no `confirmed*`, `reviewed*` or
+   `voided*` key, an edit never moves a status or a confirmation and names
+   `amount` and `tax` when it moves them, `month` and `fy` are bound to the
+   date, only real months and days pass, an edit stores its own flags and
+   clears the review when a figure moved, confirm and review are refused in
+   a locked quarter, a close is born locked with an audited re-lock, an
+   `ma_audit` row must be stamped within five minutes of the server's clock,
+   and `ma_shares` takes no client write. See "Master Accounts" for why each.
+2. **The two pastes of 28 Sept cannot both be live.** Afnan reported
+   publishing the Master Accounts rules (`1d8b3c5`, entry below) — and
+   main's record (`bb836a4`, "No republish outstanding as of 28 Sept 2026
+   (evening …)", two entries down) has him publishing main's file
+   (`430fc28`, Mood Boards sharing roles, `md5
+   b68fc9febc14ec90ad3d29f860147702`) at ~10:10 pm PKT (17:10 UTC) the same
+   day. **Before the merge, neither file carried the other's change:**
+   checked across every local branch and remote ref, none held a
+   `firestore.rules` with both `isMasterAccounts()` and
+   `boardSharingUntouched()` (re-checked 29 Sept: today only the merge
+   `1dc7fa9` and the commits built on it do). The Console keeps whichever
+   was pasted LAST, and only its rules history (Firebase Console →
+   Firestore → Rules) can say which. The Master Accounts publish is
+   recorded nowhere with a time, so the order is not known from here. The
+   session that built M1.6a (committed 16:45 UTC) reported it as already
+   done — reported, not recorded — which, if right, puts main's paste
+   second.
+   - **If main's paste was last:** the Console has NO `ma_*` rules, so
+     every Master Accounts read and write is default-denied — to Afnan and
+     Ammar too. Each page shows *"Could not read … — republish
+     firestore.rules with the Master Accounts block"* and the dashboard card
+     *"Could not read …"*. Nothing is lost: nothing could be written.
+   - **If the Master Accounts paste was last:** main's sharing roles are
+     gone again — a view-only person on a board can edit it, and anyone on
+     `sharedWith` can rewrite `sharedWith` (main's entry "REPUBLISH
+     OUTSTANDING (28 Sept 2026): Mood Boards sharing roles").
+
+**Do not paste `704056b`'s file, or main's.** The first reopens the Mood
+Boards hole; the second removes Master Accounts. The file to paste is
+`firestore.rules` from the merge of the Master Accounts branch with
+`origin/main`. The real merge, `1dc7fa9` (28 Sept, 21:55 UTC; `origin/main`
+at `1f6327d`), merged the rules without a conflict to LF `md5
+8cf1c6813fe0becddd620161ba0277f4` — 1,346 lines, exactly the merge base's
+994 plus the branch's 330 plus main's 22, and an independent `git
+merge-file` of the three gives the same bytes; the later merges `feca515`
+and `be22046` did not touch it. **That md5 is NOT the file to publish:**
+the fixes for the Master Accounts verification round change
+`firestore.rules` again. The file to publish is [[phase2: final merged
+rules md5]].
+
+What each state of the Console refuses, so a report can be read against it:
+
+- **Under `1d8b3c5`'s rules**, two kinds of edit the app now makes are
+  refused: **an edit whose stored flags change**, and **an edit that clears
+  a review** (the old `maEditOk` lists neither `flags` nor `reviewedAt` /
+  `reviewedBy`). The re-lock of a reopened quarter is refused too, but no
+  M1 screen offers it. And the old rules still ALLOW what M1.6a closed — a
+  forged transfer born confirmed, an edit that moves money unnamed, a
+  client-written share link, a back-dated audit row; until the publish,
+  those hold in the app only. Verified in the emulator: the `704056b` check
+  file run against `1d8b3c5`'s rules fails 62 — all 55 labelled "M1.6a:",
+  plus 7 permissions M1.6a added (an edit storing its flags, an edit
+  clearing a review, the re-lock).
+- **Under `704056b`'s rules, or the merged file at `1dc7fa9`:** 209 / 209
+  in the emulator (re-run; the merged file also passes main's own suites,
+  103 / 103, 39 / 39 and 26 / 26). The app writes an `ma_audit` row in the
+  same transaction or batch as every change, and the rules refuse a row
+  more than five minutes from the server's clock — so **a device whose
+  clock is more than five minutes off has every Master Accounts write
+  refused**, and the error says to check the clock. The rules do not require
+  the audit row beside a document write; the pairing is the client's.
+- **Under main's rules (no `ma_*` block):** see above — Master Accounts
+  reads nothing.
+
+On the branch today `git log --oneline -1 -- firestore.rules` names
+`1dc7fa9`; once the phase-2 fixes land it will name the commit that carries
+the final file, and the md5 recorded here is what to check it against.
+
+**Master Accounts rules reported published by Afnan, 28 Sept 2026**
+("rules updated" — reported in-session; not recorded in any commit, and not
+checkable from here) from the branch file at `md5
+d7480d88469878d082d841ba995f3960` (`1d8b3c5`, LF — verified: `git show
+1d8b3c5:firestore.rules | md5sum`; unchanged through `4057303`). The app's
+first owner-only reads: `isMasterAccounts()` = `afnan@groovy.op`,
+`ammar@groovy.op` guards every `ma_*` collection — reads included — with
+writes bound to the caller, no client delete, edits that grow `edits[]` by
+one row naming the changed fields, voids and confirmations as transitions,
+the quarter lock read from `ma_closes`, an append-only `ma_audit`, and
+server-only `ma_backups`. Run in the emulator before the paste (105 checks,
+per the commit message). If the whole file was pasted — Afnan's standing
+preference — it also carried every entry below still marked REPUBLISH
+OUTSTANDING (The Board's lock rule, the warehouse handover and its review
+round, Raees's edit rights, Ammar's `isAcctSuper()`): all of them are in
+that file (verified: their commits are ancestors of `1d8b3c5`, and the file
+holds `tbLockOk`, `whConfValid`, `acctOwnEdit` and an `isAcctSuper()` that
+names `ammar@groovy.op`). Main's own entry claims the same for its paste.
+**SUPERSEDED the same day** — by M1.6a, and by the collision above.
 
 **No republish outstanding as of 28 Sept 2026 (evening, ~10:10 pm
 PKT).** Afnan published ("done", after a reload showed the new version and

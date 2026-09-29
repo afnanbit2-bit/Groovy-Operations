@@ -1,6 +1,11 @@
 # Master Accounts — Master Plan v4 (cash first · terms are the key · every rupee labelled · the money speaks)
 
-> Status: **PLANNING ONLY — nothing built.** Afnan, 27 Sept 2026: *"I want
+> Status (29 Sept 2026): **M1 BUILT, on the branch
+> `claude/master-accounts-planning-udoiw9` — not merged into `main`, so not
+> deployed, and its rules not yet published as a merged file; nobody has
+> seen it on a real screen.** §21a says what M1 delivered against §21, what
+> it changed in this plan, and what is still open. Everything from §22 on is
+> still the plan. Afnan, 27 Sept 2026: *"I want
 > accounts but just for me and ammar, in short master accounts … plan all
 > the logics of build first so we have a good foundation … plan the UI … our
 > charts, pie chart, how the app will learn with the data."* On v1: *"you
@@ -1017,6 +1022,199 @@ the backfill quarter and closes when the owners say so, not on 30 September.
 
 Every milestone ends with the standing caveat: nobody can look at it in a
 browser from a session; Afnan's first open is the visual test.
+
+## 21a. M1 as built (28–29 Sept 2026)
+
+Eight commits: `bf09235` M1.1 the core (`js/ma-core.js`) · `1d8b3c5` M1.2
+the rules · `06b9256` M1.3 the pages (`js/master-accounts.js`) · `7b4aa30`
+M1.4 the PDFs · `6f2e152` M1.5a the functions (`ma-attach`, `ma-share`,
+`ma-backup`, `netlify/lib/ma-server.js`) · `4057303` M1.5b their client ·
+`704056b` M1.6a edits and confirmations held at the rules · `20260a0`
+M1.6b the screens, the idle re-lock and the device cache ·
+[[M1.6c-server: hash — the server tightening]]. `main` has since been
+merged into the branch three times (`1dc7fa9`, `feca515`, `be22046`), and
+`efb75ce` names the nightly backup in the audit trail. CLAUDE.md "Master
+Accounts" is the engineering record; this section is the plan's side of
+it.
+
+### What §21's M1 row asked for, and what exists
+
+The table is a snapshot at `704056b` (M1.6a); what M1.6b changed is in
+its cells and in refinements 13 and 15 below.
+
+| §21 M1 item | At `704056b` | Where, and how it differs |
+|---|---|---|
+| Both charts (§4.1 with 1170, 6120–6150; §4.5) | built | `MA_CHART`, `MA_SV_CHART`. The Savings chart is seeded; its pages are M4. Holders whose feed comes later ship switched off (1030; 1040 M5; 1050 M8; 1060 M2). |
+| Holders | built | a money account IS a holder. The drawer (1010) is Store Accounts' balance until M8 (`mirrors`). |
+| Party master, terms, rate cards, history | built | `ma_parties`; terms and rates changed only through `maTermsChange` / `maRateChange`, which keep history. |
+| Items | built | `ma_items`, on Close & audit. |
+| `ma_commitments` at go-live (§26) | built | Money out is the cost register in M1; *Record payment* prefills a Money out. |
+| `ma_counts` | built | a count's book is fixed when it is recorded (M1.6a). |
+| `js/ma-core.js` — postings with the §27 labels, validation, allocation, balances, trial balance, tax block, Unlabelled queue | built | `maValidate`: 55 named rules (78 across all the core's checks). FIFO allocation exists; nothing uses it until M3. |
+| Journals | built | six kinds: money out, money in, capital, drawing, opening, general. |
+| Transfers between holders with confirmation | built | changed in M1.6a — refinement 1 below. |
+| The calendar (rule-based) | built | Today's 30 days, from the commitments and the pay days; CPR inflows arrive with M2. |
+| The Record picker (§16.1) | built | nine live kinds; Collection (M2), Bill, Payment, PO, Receipt (M3), Payout, Loan, Savings entry (M4) shown as coming. |
+| Pages Today, Money, Parties, Ledger, Close & audit | built, plus Money out | eight page ids: `ma-overview`, `ma-money`, `ma-holder`, `ma-out`, `ma-parties`, `ma-party`, `ma-ledger`, `ma-close`. |
+| First owner-only reads, every block in the emulator | built | `tests/rules-emulator-ma.js`, 209 checks at `704056b`. |
+| The audit trail | built | a client row with every write; server rows for share, revoke and backup. |
+| `ma-backup` nightly + PITR + Download the books | code built; the bucket and PITR are not (Console steps) | refinements 4 and 11. |
+| `ma-attach`, `ma-share`, the re-lock | built | the re-lock had an open finding (security F5): M1.6b asks for the lock everywhere on an `ma-*` page, not only on navigation, but a Dashboard card painted before the lock came due still keeps its figures (V5). The public fallback fails open — [[M1.6c-server: the server tightening]]. |
+| The first print variants | built | all five; refinement 10 (the Urdu). |
+| Excel on every table | from each page's ⋯ menu | Today, holders, a holder, parties, a party, commitments, ledger, documents, audit. |
+| The dashboard widget | built | owners only: cash in hand, how many need attention. |
+| Cross-track | done, with differences | no `:root` tokens were added (the `.ma-` block uses the existing ones); `js/shared.js` took several touch points (the nav section, the More sheet, the `renderPage` line, the dashboard `setTimeout`, the phone `groups` map, `BUG_PAGE_NAMES`, the sub-nav in `showPage`), not "nav + one line"; `index.html` has no Firebase-bridge change as of `704056b`; M1.6b (`20260a0`) bridges three (`terminate`, `clearIndexedDbPersistence`, `waitForPendingWrites`), and `js/auth.js`'s `doLogout` and `lockUsePassword` call `window.maBooksOffDevice()` behind `typeof`. |
+
+### Where the build changed the plan — each with its reason
+
+1. **§3 #3 and §5 (transfers), REFINED — and M1.3 REVERSED by M1.6a.**
+   M1.3 posted a transfer into the drawer at once (`via:'store'`). M1.6a
+   makes the drawer Raees's hands in BOTH directions: into the drawer waits
+   for Raees; out of it, the receiver confirms if the receiver is a person
+   (an owner in the app — even one who recorded it — Umair on paper), and
+   Raees confirms if the receiver is a holder nobody holds (MCB). Raees and
+   Umair cannot sign in to the books, so "on paper" means an owner holding
+   the signed receipt. Confirming a drawer handover asks first whether
+   Raees has recorded it in Store Accounts. *Reason:* the drawer's balance
+   is read from Store Accounts until M8, so a handover posted here before
+   he books it there counts the money twice, or not at all (money review
+   F9). A transfer that waits for or was confirmed by someone keeps its
+   route, amount and date — void and record again (money F6).
+2. **§7 and §16.2 (`ma_postings`), NOT BUILT, deliberately.** Postings are
+   computed in the browser from the documents on every render; no
+   collection holds them, and the rules refuse `ma_postings` even to an
+   owner. *Reason:* §2's "balances derived, never stored", and M1's volume
+   is small enough to read every document whole. The nightly rollup (M2)
+   may bring a rebuildable cache; `js/master-accounts.js` records the plan
+   to read from the last close onward once quarters lock.
+3. **§31 (edit) and §29 (writes bound to the caller), TIGHTENED.** An edit
+   never moves a status, a confirmation, a review or a void; it names
+   `amount` and `tax` when it moves them; `month` and `fy` stay bound to
+   its date; it stores its own live flags and clears the review when a
+   figure moved; a count keeps its book unless its day or count moves, and
+   its holder cannot change. *Reason:* the security review (F1) moved
+   money through the rules behind an edit row that said "note", and the
+   money review (F2, F6, F8) moved balances and dropped flags the same
+   way.
+4. **§30 (backup) — the schedule.** `ma-backup` wakes every hour at :30
+   and starts ONE export a day at the first wake at or after 03:30 UTC.
+   *Reason:* an export takes minutes and a scheduled function gets
+   seconds, and Today reads only the latest `ma_backups` row — resolved
+   once a day, a failure would be buried by the next night's row the
+   moment it was found. "Not set up" is its own state and its own concern.
+5. **§19 (`ma_shares` owner read/write), NARROWED.** Owners read; only the
+   `ma-share` function writes. *Reason:* an owner writing one directly
+   could pick the token and skip the audit row (security F3).
+6. **§19 (`ma_closes` "append, reopen by owners"), EXTENDED.** A close is
+   born locked; a reopened quarter is re-locked through an audited path
+   (`maCloseRelock`, rules `maRelockOk`). *Reason:* a close born unlocked,
+   or reopened, could otherwise never be locked again (security F3b). **No
+   M1 screen writes `ma_closes`** — the quarter lock is M11 — so this is
+   ready but unused.
+7. **§29 (audit) — bound to time and to `by`.** An audit row must be
+   stamped within five minutes of the server's clock, and the trail shows
+   the name derived from `by`, never the stored `byName` (security F3). The
+   app writes one with every change, so a device clock more than five
+   minutes off blocks every write once the rules are published.
+8. **§6 (journals) — the controls other kinds enforce, now on journals
+   too, in the client only.** A general journal between two holders is
+   refused (record a transfer); a journal payout with no file or no payee
+   is flagged; a second opening for an account is flagged (money F12). The
+   rules language cannot loop over a document's lines, so the rules do not
+   hold this.
+9. **§29 (attachments)** — built as planned (`type:'authenticated'`,
+   5-minute signed links, a server-minted `ma/<64 hex>` name, Settings says
+   which mode is in force), with one finding against the fallback: without
+   the Cloudinary key it goes public silently, and a file uploaded that way
+   stays public after the key is set. [[M1.6c-server: the opt-in env var
+   for the public fallback, and `overwrite:false` in the signed fields, if
+   that is what landed]]
+10. **§31 (print variants) — the slips, and the Urdu.** `ma-receipt` is a
+    transfer's handover slip (the plan's collection receipt needs M2's
+    collections); `ma-voucher` is a Money-out voucher (bills and
+    allocation are M3). Both were planned in full Urdu; **the embedded
+    Urdu font cannot draw what jsPDF emits** (measured: CLAUDE.md "Print
+    design system"), so they ask the font first (`_prMaUrduOk`) and print
+    English. `ma-ledger` is A4 landscape as planned — the engine gained
+    `data.orientation` for it, and `deliver:'blob'` for sending a PDF by
+    link; every earlier variant draws exactly as before (verified call for
+    call, on the Helvetica path).
+11. **§30 (Download the books) — narrower.** A JSON of every `ma_*`
+    collection and one Excel workbook (the postings, the trial balance,
+    every collection as a sheet); a failed collection is named in both;
+    the download is an audit row. It does not bundle per-statement
+    workbooks or the PDF pack (the ledger, a holder and a party each have
+    their own Excel on their page; the P&L, balance sheet, aging and tax
+    are M9's), and `ma-import` is NOT built — the JSON is shaped for it
+    (idempotent by document id).
+12. **§31 (send by link)** — as planned, plus: link-preview fetches are
+    counted apart (`previews`), so "opened" means a person; a link's life
+    is capped at 90 days (the setting's range); the client puts its own
+    origin in front of the path the function returns.
+13. **§29 (re-lock) — by device capability, not by form factor.** The
+    fingerprint where this device has the app lock, else the password —
+    not "a phone asks for the fingerprint, a computer for the password".
+    Since M1.6b the lock is asked everywhere, not only on navigation: a
+    tap or a key on an `ma-*` page while it is due shows the lock without
+    resetting the clock, every repaint asks first, and coming back to the
+    tab or a 30-second check swaps an open page for it (security F5; the
+    verification round's V5 is what remains).
+14. **§16.3 (the phone) and §23 #13 (the nav label).** The phone has no
+    five-button Master Accounts bar: its pages sit behind "Master Accounts
+    ›" in the owner's More sheet. The label is "Master Accounts", not
+    "Accounts" — the Store section already carries an "Accounts" item.
+15. **§29 (the device) — an owner's sign-out takes the books off it**
+    (M1.6b, security F6, which reproduced — with a newer SDK than the
+    app's pinned 10.12.2 — a non-owner on the same browser profile reading
+    an owner's journal from the offline cache). The app
+    waits up to 5 seconds for pending writes, then terminates Firestore and
+    clears its IndexedDB cache; if writes are still pending it signs out
+    but KEEPS the copy and says so, and while another Groovy Ops tab holds
+    the cache it does not sign out at all. The verification round found
+    two blockers in this (V1, V2), being fixed. The ledger also stopped
+    printing a running balance where it would not be the account's — under
+    a narrowing filter, or for the drawer (money F4, F5).
+
+### Moved on, or not built in M1
+
+- Pages: Money in (M2, M5), Costing (M7), Savings (M4), Reports (M9) —
+  their tiles in the Record picker name the milestone.
+- The quarter close and its checklist (M11): the rules and the core's
+  re-lock are ready; no screen closes a quarter.
+- `ma-import` and the restore drill (`tests/ma-restore.js`), the PDF pack
+  and the quarter pack — §30's layers 3 and 4 beyond the JSON and one
+  workbook.
+- `ma-rollup` and `ma_cpr` (M2).
+
+### The review round, and what is still open
+
+Two adversarial reviews ran against `4057303` — money and data integrity,
+security and privacy — each finding reproduced by a script or a probe
+(their reports are session scratch files, not in the repo). The posting
+engine held: 20,000 fuzzed documents balanced (reported). The boundary
+against non-owners held. M1.6a closed the rules-side findings (security
+F1, F2, F3, F3b, F4; money F2, F6, F7, F8, F9, F11, F12, M4). Still open at
+`704056b`, read from the code at that commit: money F1, F3, F4, F5, F10,
+F13 and M1–M3 (the screens), security F5 (the idle re-lock), F6 (the books
+left in IndexedDB after sign-out) and F7 (the attachment fallback).
+**M1.6b (`20260a0`) closed**, per a verification round that re-checked
+every finding against that commit: money F1, F3, F4, F5, F10, F13, M1, M2
+and N1–N3, and security F6 — "with two new problems", V1 and V2. Still
+partly open by the same round: money F9 (V4) and M3, security F2 (V3) and
+F5 (V5). Security F7 and the server nits are the server round's.
+[[M1.6c-server: closed → …]] The verification round's own findings,
+V1–V12 (V1 and V2 blockers), and the visual QA's F01–F19: V1–V11 and
+F01–F19 are being fixed now. [[phase2: which were closed, and what is
+left open]]
+
+### What only the humans can do before this is live
+
+The backup bucket and the service account's roles on it, PITR, three
+Netlify env vars and a redeploy, a check of the Cloudinary plan's upload
+cap, a publish of the MERGED `firestore.rules`, the merge into `main`, and a
+first look on a real screen — each listed, with what is verified and what
+is not, in CLAUDE.md "Master Accounts" → "Set-up only a human can do"; the
+full steps are handed to Afnan in chat.
 
 ## 22. Tests
 

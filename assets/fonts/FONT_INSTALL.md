@@ -82,10 +82,17 @@ While any placeholder remains, for that specific file:
 
 ## Notes / known limitation
 
-`jsPDF` does **not** perform complex-script shaping. Even with the real
-Jameel Noori Nastaleeq TTF embedded, Urdu (Nastaleeq) glyphs are drawn
-unshaped/left-to-right by jsPDF 2.5.1. The font will render correct letterforms
-but not full Nastaleeq ligature shaping. This is a jsPDF limitation, not a
-configuration issue — treat the Urdu output as a labelling aid, not
-typeset Urdu. (Screen rendering via `@font-face` is unaffected and shapes
-correctly.)
+**Embedded Urdu prints as BLANK SPACE** (measured 28 Sept 2026, re-run
+29 Sept; this note used to say the glyphs are "drawn unshaped", which was
+wrong). `jsPDF` does not shape Arabic script, and what it does instead
+defeats this font: its arabic plugin rewrites every Urdu letter into a
+Unicode presentation form (U+FB50–FDFF, U+FE70–FEFF) before drawing, and
+Jameel Noori Nastaleeq carries none of those forms (0 in FE70–FEFF; 4 in
+FB50–FDFF, none of them a letter). A missing code point becomes glyph 0,
+which is empty in this font. Urdu digits (U+06F0–06F9), the Urdu full
+stop (U+06D4) and one letter jsPDF has no form for (U+06C3) still draw,
+because jsPDF leaves them alone. A font that
+carries the presentation forms would draw the letters in their positional
+forms — joined, but without Nastaleeq's ligatures (reasoned from what jsPDF
+emits, not measured). Screen rendering via `@font-face` is unaffected and
+shapes correctly. See CLAUDE.md, "Print design system", **Fonts**.
