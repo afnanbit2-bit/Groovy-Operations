@@ -196,10 +196,17 @@ async function debugFirstChunk({ token, fromDate, toDate }) {
 
 // ── Payment / CPR enrichment (section 3.14 Payment Status API) ──────
 // One call per tracking number — there is no bulk CPR endpoint — so enrich
-// incrementally: only delivered/returned parcels, only until they are settled,
-// rate-limited via a small concurrency pool. Each call returns the CPR numbers
-// (cprNumber_1 = upfront receipt, cprNumber_2 = reserve receipt), the settle
-// flag and dates, which we merge onto the parcel doc.
+// incrementally: only delivered/returned parcels, rate-limited via a small
+// concurrency pool. Each call returns the CPR numbers (cprNumber_1 = upfront
+// receipt, cprNumber_2 = reserve receipt), the settle flag and dates, which we
+// merge onto the parcel doc.
+//
+// A parcel used to be skipped for good the moment it held EITHER receipt
+// number, so its reserve receipt, cpr2Date, settle and settlementDate never
+// arrived. It is now asked about until it is FINISHED (cprState), and a later
+// answer can add or replace a value but never blank one (cprUpdate). Every
+// answered re-check also stamps cprRecheckedAt, which is what lets the
+// give-up window close on a parcel at all (cprRechecked).
 const POSTEX_PAYMENT_BASE = "https://api.postex.pk/services/integration/api/order/v1/payment-status/";
 
 async function fetchPaymentStatus(token, trackingNumber) {
@@ -214,52 +221,193 @@ async function fetchPaymentStatus(token, trackingNumber) {
   }
 }
 
-async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
-  const start = Date.now();
+const DAY_MS = 86400000;
+// The give-up window: a parcel holding a receipt number stops being asked
+// about CPR_GIVE_UP_DAYS after its first receipt — and only once it has been
+// asked again at least once since that receipt appeared (cprRechecked).
+// 120 is an ASSUMPTION: how long a reserve receipt takes to follow the upfront
+// one is not known from here. The books start on 1 July 2026, and a window
+// that closed on a parcel before anyone asked for its reserve would lose the
+// very receipts the books need.
+const CPR_GIVE_UP_DAYS = 120;
+// It is asked again at most once every 3 days, less an hour. The daily run
+// scans at about 03:00 UTC and stamps cprCheckedAt as it goes, minutes later;
+// measured exactly, a parcel stamped at 03:04 is still 4 minutes short of
+// 3 days when the scan three days on starts at 03:00, and every re-check would
+// slide to the fourth day. The hour covers the run's own 15-minute budget.
+const CPR_RECHECK_MS = 3 * DAY_MS - 3600000;
+
+// A value PostEx actually gave: the `||` test this file has always used
+// (0, "", false, null and undefined are not values), and not a blank string.
+function cprHas(v) {
+  return !!v && !(typeof v === "string" && !v.trim());
+}
+
+// A stored date, read as the app reads these fields (js/fulfillment.js takes
+// the first ten characters as YYYY-MM-DD): the start of that day, UTC, in ms;
+// null when there is no such day (2026-02-30 is not one).
+function cprDayMs(v) {
+  const m = typeof v === "string" && /^(\d{4})-(\d{2})-(\d{2})/.exec(v.trim());
+  if (!m) return null;
+  const ms = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  return new Date(ms).toISOString().slice(0, 10) === m[0] ? ms : null;
+}
+
+// When the give-up window opens: the parcel's FIRST receipt, from the first
+// of these fields that holds a readable day.
+//   cpr1Date           the upfront receipt's own date;
+//   upfrontPaymentDate the same upfront payment as the order sync stored it
+//                      (normalize) — and what this function has always written
+//                      into cpr1Date itself when cpr1Date was missing;
+//   cpr2Date           a parcel with no upfront date at all (a return paid on
+//                      one receipt) opens from the receipt it has;
+//   transactionDate    the booking, earlier than any receipt: it can only close
+//                      the window sooner, never keep a parcel open forever.
+// A parcel with none of the four readable has no window: it finishes only
+// when settled, or — not a return — when both numbers are in.
+const CPR_WINDOW_FROM = ["cpr1Date", "upfrontPaymentDate", "cpr2Date", "transactionDate"];
+function cprWindowStart(d) {
+  for (const f of CPR_WINDOW_FROM) {
+    const ms = cprDayMs(d[f]);
+    if (ms !== null) return ms;
+  }
+  return null;
+}
+
+// Whether the parcel has been asked about again since it first held a receipt
+// number. cprRecheckedAt is written only by such a re-check, so the check that
+// FOUND the receipt does not count — and no parcel enriched before this field
+// existed has one. An unreadable value counts as none: the cost of that
+// mistake is one more request, never a lost receipt.
+function cprRechecked(d) {
+  return typeof d.cprRecheckedAt === "number" && isFinite(d.cprRecheckedAt);
+}
+
+// What a scanned parcel is to this run:
+//   "new"      no receipt number yet: asked every run, first, in the order the
+//              query returns it — exactly as before this change, even when
+//              PostEx has already said settle:true;
+//   "finished" settled; or both receipt numbers in — except a RETURN, which
+//              PostEx may issue only one receipt, so a return holding a
+//              receipt finishes only when settled or past the window;
+//   "gaveUp"   holds a receipt, not finished, CPR_GIVE_UP_DAYS past its first
+//              receipt, and asked again at least once since that receipt
+//              appeared;
+//   "lastCheck" the same, but never asked again since its receipt appeared —
+//              every parcel enriched before cprRecheckedAt existed. Asked once
+//              more, exactly like "waiting" (the same throttle, the same
+//              queue), and given up after that;
+//   "waiting"  holds a receipt and is not finished: asked again, at most once
+//              every CPR_RECHECK_MS, least recently checked first.
+function cprState(d, nowMs) {
+  const has1 = cprHas(d.cprNumber_1), has2 = cprHas(d.cprNumber_2);
+  if (!has1 && !has2) return "new";
+  if (d.settle === true) return "finished";
+  if (has1 && has2 && d.statusCategory !== "returned") return "finished";
+  const from = cprWindowStart(d);
+  if (from !== null && nowMs - from >= CPR_GIVE_UP_DAYS * DAY_MS) return cprRechecked(d) ? "gaveUp" : "lastCheck";
+  return "waiting";
+}
+
+// The write for one answered parcel. Only a value PostEx actually gave is
+// written, so an answer that omits a receipt number, a date or the settle flag
+// can add a value or replace it with another, never blank it; settle is only
+// ever written as true. The stamp (cprCheckedAt, and cprRecheckedAt on a
+// re-check) always goes with it.
+function cprUpdate(dist, stamp) {
+  const upd = Object.assign({}, stamp);
+  const put = (field, ...vals) => {
+    const v = vals.find(cprHas);
+    if (v !== undefined) upd[field] = v;
+  };
+  if (dist.settle === true) upd.settle = true;
+  put("settlementDate", dist.settlementDate);
+  // Actual API field names are cpr1 / cpr1Date (not the PDF's
+  // cprNumber_1 / upfrontPaymentDate); cpr2 / cpr2Date carry the
+  // reserve-payment receipt. Fall back to the PDF names just in case.
+  put("cprNumber_1", dist.cpr1, dist.cprNumber_1);
+  put("cpr1Date", dist.cpr1Date, dist.upfrontPaymentDate);
+  put("cprNumber_2", dist.cpr2, dist.cprNumber_2);
+  put("cpr2Date", dist.cpr2Date, dist.reservePaymentDate);
+  return upd;
+}
+
+// `fetchStatus` and `now` are seams for tests/postex-core.test.js; production
+// passes neither, so the real Payment Status API and the real clock are used.
+async function enrichPayments({ token, limit = 1000, concurrency = 5, fetchStatus = fetchPaymentStatus, now = Date.now }) {
+  const start = now();
   const db = getDb();
-  // Candidates: delivered/returned parcels not yet marked settled. Project only
-  // the fields we need so the scan stays cheap even at tens of thousands of docs.
+  // ONE query, as before: delivered/returned parcels, projected to the fields
+  // the decision reads so the scan stays cheap even at tens of thousands of
+  // docs. No orderBy — the ordering happens below, in memory, so no composite
+  // index is needed. Returns ARE part of CPRs too (they collect 0 COD but still
+  // carry shipping+GST, and their receipt lands once the return settles), so
+  // they are asked about like deliveries.
   const snap = await db.collection("postex_orders")
     .where("statusCategory", "in", ["delivered", "returned"])
-    .select("trackingNumber", "statusCategory", "cprNumber_1", "cprNumber_2", "cprCheckedAt")
+    .select("trackingNumber", "statusCategory", "cprNumber_1", "cprNumber_2", "cprCheckedAt",
+      "settle", "cpr1Date", "cpr2Date", "upfrontPaymentDate", "transactionDate", "cprRecheckedAt")
     .get();
-  const candidates = [];
+  const fresh = [], due = [];
+  let throttled = 0, gaveUp = 0, pastWindowUnchecked = 0;
   snap.forEach((doc) => {
     const d = doc.data();
-    // Done once we have a CPR number in either field. Returns ARE part of CPRs
-    // too (they collect 0 COD but still carry shipping+GST), so keep fetching
-    // returns until they have a CPR — their receipt lands once the return
-    // settles, which can be days after the delivery attempt.
-    if (d.cprNumber_1 || d.cprNumber_2) return;    // already has its CPR — done
-    candidates.push({ id: doc.id, trackingNumber: d.trackingNumber || doc.id });
+    const c = { id: doc.id, trackingNumber: d.trackingNumber || doc.id, hadReserve: cprHas(d.cprNumber_2) };
+    const state = cprState(d, start);
+    if (state === "new") { fresh.push(c); return; }
+    if (state === "gaveUp") gaveUp++;
+    if (state === "lastCheck") pastWindowUnchecked++;
+    if (state !== "waiting" && state !== "lastCheck") return;
+    const at = typeof d.cprCheckedAt === "number" && isFinite(d.cprCheckedAt) ? d.cprCheckedAt : null;
+    if (at !== null && start - at < CPR_RECHECK_MS) { throttled++; return; }
+    c.recheck = true;
+    c.at = at;
+    c.n = due.length;
+    due.push(c);
   });
+  // Least recently checked first; one never stamped goes before them all.
+  due.sort((a, b) => (a.at === b.at ? a.n - b.n : a.at === null ? -1 : b.at === null ? 1 : a.at - b.at));
+  // No receipt number yet comes first, exactly as before; the re-checks share
+  // whatever the per-run limit leaves.
+  const candidates = fresh.concat(due);
   const batch = candidates.slice(0, limit);
+  const rechecked = batch.filter((c) => c.recheck).length;
 
-  let enriched = 0, settled = 0, errors = 0, notFound = 0, cprFound = 0;
+  let enriched = 0, settled = 0, errors = 0, notFound = 0, cprFound = 0, reserveFound = 0;
   let idx = 0;
   async function worker() {
     while (idx < batch.length) {
       const c = batch[idx++];
       try {
-        const { httpStatus, data } = await fetchPaymentStatus(token, c.trackingNumber);
-        if (httpStatus === 404) { notFound++; continue; }
+        const { httpStatus, data } = await fetchStatus(token, c.trackingNumber);
+        const ref = db.collection("postex_orders").doc(c.id);
+        // A re-check's cprCheckedAt IS its throttle clock, so it moves whenever
+        // PostEx answered, found or not — or a parcel PostEx no longer knows
+        // would be asked about every run — and cprRecheckedAt moves with it,
+        // since the give-up window closes only on a parcel that has had one.
+        // A failed request (an error status, a timeout) moves nothing and is
+        // asked again next run. A parcel with no receipt number is stamped
+        // only on a real answer, as before, and never with cprRecheckedAt.
+        const stamp = () => {
+          const t = now();
+          return c.recheck ? { cprCheckedAt: t, cprRecheckedAt: t } : { cprCheckedAt: t };
+        };
+        const markChecked = () => ref.set(stamp(), { merge: true });
+        if (httpStatus === 404) {
+          notFound++;
+          if (c.recheck) await markChecked();
+          continue;
+        }
         const dist = data && data.dist;
         if (dist && (dist.trackingNumber || dist.orderRefNumber)) {
-          // Actual API field names are cpr1 / cpr1Date (not the PDF's
-          // cprNumber_1 / upfrontPaymentDate); cpr2 / cpr2Date carry the
-          // reserve-payment receipt. Fall back to the PDF names just in case.
-          await db.collection("postex_orders").doc(c.id).set({
-            settle: dist.settle === true,
-            settlementDate: dist.settlementDate || null,
-            cprNumber_1: dist.cpr1 || dist.cprNumber_1 || null,
-            cpr1Date: dist.cpr1Date || dist.upfrontPaymentDate || null,
-            cprNumber_2: dist.cpr2 || dist.cprNumber_2 || null,
-            cpr2Date: dist.cpr2Date || dist.reservePaymentDate || null,
-            cprCheckedAt: Date.now(),
-          }, { merge: true });
+          const upd = cprUpdate(dist, stamp());
+          await ref.set(upd, { merge: true });
           enriched++;
           if (dist.settle === true) settled++;
           if (dist.cpr1 || dist.cpr2 || dist.cprNumber_1 || dist.cprNumber_2) cprFound++;
+          if (upd.cprNumber_2 !== undefined && !c.hadReserve) reserveFound++;
+        } else if (c.recheck && httpStatus >= 200 && httpStatus < 300) {
+          await markChecked();
         }
       } catch (e) { errors++; }
     }
@@ -267,12 +415,19 @@ async function enrichPayments({ token, limit = 1000, concurrency = 5 }) {
   await Promise.all(Array.from({ length: Math.min(concurrency, batch.length || 1) }, () => worker()));
 
   const summary = {
-    lastRun: Date.now(),
+    lastRun: now(),
     scope: "payments",
-    candidates: candidates.length,
+    candidates: candidates.length,  // all this run could ask about: awaitingCpr + recheckDue
     processed: batch.length,
     enriched, settled, cprFound, notFound, errors,
-    durationMs: Date.now() - start,
+    awaitingCpr: fresh.length,      // no receipt number yet (asked first)
+    recheckDue: due.length,         // hold a receipt, not finished, due a re-check
+    throttled,                      // hold a receipt, not finished, asked in the last 3 days
+    gaveUp,                         // hold a receipt, not finished, past the window, re-checked since
+    pastWindowUnchecked,            // the same, never re-checked since the receipt: asked once more
+    rechecked,                      // of processed, the re-checks
+    reserveFound,                   // gained a reserve receipt number this run
+    durationMs: now() - start,
   };
   await db.collection("postex_sync_meta").doc("payments_run").set(summary, { merge: true });
   return summary;

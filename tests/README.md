@@ -46,6 +46,7 @@ Read the header of `harness.js` before trusting a green run.
 | `board-colourpick.test.js` | Mood Boards: Pick colour on a picture, the TCX / Pantone C tabs, CIEDE2000 against the published reference pairs, a recoloured swatch dropping its stale code |
 | `board-dragmove.test.js` | Mood Boards: a card dropped on a sub-board card or breadcrumb moves to that board's Unsorted; Home, empty canvas and board links refused (#97 bug 2) |
 | `board-swatch.test.js` | Mood Boards: a note holding only a hex colour becomes a colour swatch on leaving it (undo restores the note); nearest colour name, HEX/RGB/HSL/Off display, the picker's fields, invalid hex refused |
+| `postex-core.test.js` | PostEx CPR enrichment (`enrichPayments`): a parcel holding one receipt is asked again for its reserve receipt and settle until finished; the 3-day throttle; the 120-day give-up window that closes only after one re-check; new parcels first, then least recently checked; a later answer never blanks a stored value; one query, no new index |
 | `check-cache-version.js` | Not a suite — a CI guard. If a precached file changed, `CACHE_VERSION` in `sw.js` must have changed too, or the update silently never reaches anyone who already opened the app |
 
 ## Adding a test

@@ -1,6 +1,7 @@
 /* ─────────────────────────────────────────────────────────────────────────
    A stand-in for firebase-admin, for the Master Accounts function suites
-   (ma-server, ma-attach, ma-share, ma-backup). Not a *.test.js — a helper.
+   (ma-server, ma-attach, ma-share, ma-backup) and the PostEx enrichment
+   suite (postex-core). Not a *.test.js — a helper.
 
    CI installs nothing, so the real SDK is never loaded: `firebase-admin` is
    replaced through Module._load (the marketing-codes / passkey pattern) with
@@ -14,7 +15,16 @@
      the body resolves, and re-run the body when a document they read was
      written meanwhile (optimistic, like the real one); every batch and
      transaction is recorded in order;
-   - verifyIdToken records whether checkRevoked was asked for.
+   - verifyIdToken records whether checkRevoked was asked for;
+   - a query's select(...) is a real projection: its documents carry only
+     the selected top-level fields, so code that reads a field its scan did
+     not select sees it missing here exactly as it would in production; a
+     query result has forEach, like the real QuerySnapshot; every query run
+     is recorded in `state.queries` ({collection, filters, fields});
+   - set(data, {merge:true}) — on a ref, a batch or a transaction — writes
+     the fields given (a map merged into a map) and leaves every other field
+     alone; without it, set replaces the document as before. Every ref.set
+     is recorded in `state.sets` ({path, data, merge}).
    `state.failRead` / `state.failWrite` make the next reads or commits throw;
    `state.reads` counts every read (a get, a query, a transaction's get);
    `state.initError` makes the Admin SDK fail to START (no app yet, and
@@ -52,14 +62,34 @@ function makeAdmin(state){
       else target[k]=clone(v);
     }
   };
+  // set(..., {merge:true}): the fields given are written (a map merged into a
+  // map, as the real SDK does), every other field is left alone.
+  const mergeInto=(target,data)=>{
+    for(const [k,v] of Object.entries(data)){
+      if(v&&v.__op==='inc')target[k]=(Number(target[k])||0)+v.n;
+      else if(v&&typeof v==='object'&&!Array.isArray(v)&&target[k]&&typeof target[k]==='object'&&!Array.isArray(target[k]))mergeInto(target[k],v);
+      else target[k]=clone(v);
+    }
+  };
   const key=(c,id)=>c+'/'+id;
-  const snap=(c,id)=>{const d=state.docs[key(c,id)];return{id,exists:d!==undefined,ref:ref(c,id),data:()=>clone(d)};};
+  // A query's select() keeps only those top-level fields; without one the
+  // whole document comes back.
+  const pick=(d,fields)=>{
+    if(d===undefined||!fields)return clone(d);
+    const o={};fields.forEach(f=>{if(Object.prototype.hasOwnProperty.call(d,f))o[f]=clone(d[f]);});return o;
+  };
+  const snap=(c,id,fields)=>{const d=state.docs[key(c,id)];return{id,exists:d!==undefined,ref:ref(c,id),data:()=>pick(d,fields)};};
   const readFail=()=>{state.reads=(state.reads||0)+1;if(state.failRead){const e=state.failRead;if(!state.failReadSticky)state.failRead=null;throw typeof e==='string'?new Error(e):e;}};
   const writeFail=()=>{if(state.failWrite){const e=state.failWrite;if(!state.failWriteSticky)state.failWrite=null;throw typeof e==='string'?new Error(e):e;}};
   state.ver=state.ver||{};
   const bump=k=>{state.ver[k]=(state.ver[k]||0)+1;};
   const ops={
-    set:(c,id,d)=>{guard(d,'set '+key(c,id));state.docs[key(c,id)]=clone(d);bump(key(c,id));},
+    set:(c,id,d,o)=>{
+      guard(d,'set '+key(c,id));
+      if(o&&o.merge){const t=state.docs[key(c,id)]!==undefined?clone(state.docs[key(c,id)]):{};mergeInto(t,d);state.docs[key(c,id)]=t;}
+      else state.docs[key(c,id)]=clone(d);
+      bump(key(c,id));
+    },
     create:(c,id,d)=>{guard(d,'create '+key(c,id));if(state.docs[key(c,id)]!==undefined)throw Object.assign(new Error('ALREADY_EXISTS: '+key(c,id)),{code:6});state.docs[key(c,id)]=clone(d);bump(key(c,id));},
     update:(c,id,d)=>{guard(d,'update '+key(c,id));const t=state.docs[key(c,id)];if(t===undefined)throw Object.assign(new Error('NOT_FOUND: '+key(c,id)),{code:5});apply(t,d);bump(key(c,id));}
   };
@@ -67,7 +97,7 @@ function makeAdmin(state){
     return{
       id,path:key(c,id),
       async get(){readFail();return snap(c,id);},
-      async set(d){writeFail();ops.set(c,id,d);},
+      async set(d,o){writeFail();state.sets=(state.sets||[]);state.sets.push({path:key(c,id),data:clone(d),merge:!!(o&&o.merge)});ops.set(c,id,d,o);},
       async create(d){writeFail();ops.create(c,id,d);},
       async update(d){writeFail();state.updates=(state.updates||[]);state.updates.push({path:key(c,id),data:clone(d)});ops.update(c,id,d);}
     };
@@ -79,14 +109,18 @@ function makeAdmin(state){
   };
   const db={
     collection(c){
-      const q=filters=>({
-        where(f,op,v){return q(filters.concat([[f,op,v]]));},
+      const q=(filters,fields)=>({
+        where(f,op,v){return q(filters.concat([[f,op,v]]),fields);},
+        select(...fs){return q(filters,fs);},
         async get(){
           readFail();
+          state.queries=(state.queries||[]);
+          state.queries.push({collection:c,filters:clone(filters),fields:fields?fields.slice():null});
           const ids=Object.keys(state.docs).filter(k=>k.indexOf(c+'/')===0&&k.slice(c.length+1).indexOf('/')<0)
             .map(k=>k.slice(c.length+1))
             .filter(id=>filters.every(([f,op,v])=>matches(state.docs[key(c,id)],f,op,v)));
-          return{docs:ids.map(id=>snap(c,id)),size:ids.length,empty:!ids.length};
+          const docs=ids.map(id=>snap(c,id,fields));
+          return{docs,size:ids.length,empty:!ids.length,forEach:cb=>docs.forEach(cb)};
         }
       });
       return Object.assign(q([]),{doc:id=>ref(c,id)});
@@ -94,7 +128,7 @@ function makeAdmin(state){
     batch(){
       const w=[];
       const b={
-        set(r,d){w.push(['set',r,clone(d),d]);return b;},
+        set(r,d,o){w.push(['set',r,clone(d),d,o]);return b;},
         create(r,d){w.push(['create',r,clone(d),d]);return b;},
         update(r,d){w.push(['update',r,d,d]);return b;},
         async commit(){
@@ -102,7 +136,7 @@ function makeAdmin(state){
           w.forEach(([op,,,raw])=>guard(raw,'batch '+op));
           // all-or-nothing, like the real commit
           const before=clone(state.docs);
-          try{for(const [op,r,d] of w){const [c,id]=r.path.split('/');ops[op](c,id,d);}}
+          try{for(const [op,r,d,,o] of w){const [c,id]=r.path.split('/');ops[op](c,id,d,o);}}
           catch(e){state.docs=before;throw e;}
           state.batches.push(w.map(([op,r,d])=>({op,path:r.path,data:op==='update'?d:clone(d)})));
         }
@@ -116,7 +150,7 @@ function makeAdmin(state){
         const w=[];const seen={};
         const tx={
           get:async r=>{readFail();seen[r.path]=state.ver[r.path]||0;const [c,id]=r.path.split('/');return snap(c,id);},
-          set:(r,d)=>{w.push(['set',r,d]);return tx;},
+          set:(r,d,o)=>{w.push(['set',r,d,o]);return tx;},
           create:(r,d)=>{w.push(['create',r,d]);return tx;},
           update:(r,d)=>{w.push(['update',r,d]);return tx;}
         };
@@ -124,7 +158,7 @@ function makeAdmin(state){
         if(Object.keys(seen).some(k=>(state.ver[k]||0)!==seen[k])){state.txRetries=(state.txRetries||0)+1;continue;}
         writeFail();
         const before=clone(state.docs);
-        try{for(const [op,r,d] of w){const [c,id]=r.path.split('/');ops[op](c,id,d);}}
+        try{for(const [op,r,d,o] of w){const [c,id]=r.path.split('/');ops[op](c,id,d,o);}}
         catch(e){state.docs=before;throw e;}
         state.txs.push(w.map(([op,r,d])=>({op,path:r.path,data:op==='update'?d:clone(d)})));
         return out;
