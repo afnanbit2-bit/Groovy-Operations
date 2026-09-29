@@ -3959,9 +3959,10 @@ way in, as in Milanote.
 - **The name bar is `var(--dark)` / `var(--on-dark)`** — the pair inverts
   together, so it reads in both themes.
 - **Rail: Color · Labels · Reactions · Comment · Display · Caption · ⋯.**
-  Display is a `.board-ctx` of four tabs with `{keep:true}`. Color (and a
-  click on the block of an already-selected swatch, or a double-click)
-  opens the picker: an SV square, a hue slider, a preview dot, an
+  Display is a `.board-ctx` of four tabs with `{keep:true}`. Color on the
+  rail, or a DOUBLE-click on the block, opens the picker (29 Sept 2026 —
+  it used to open on a click of an already-selected swatch, and since the
+  card's own pointerdown selects it, a single click opened it): an SV square, a hue slider, a preview dot, an
   eyedropper (`window.EyeDropper`, hidden where absent — Chrome/Edge only)
   and fields cycling RGB → HSL → HEX. It is `_boardsOpenSheet` anchored to
   the card (a bottom sheet on a phone). **One undo entry per picker
@@ -4044,6 +4045,43 @@ gives which code it is"*.
 - **Shipped at v252, not v251**: Ammar's PR #91 landed on `main` at v251
   while this branch also sat at v251 — the identical-number collision this
   file warns about. Merged, bumped past both.
+
+### Color Library ▸ TCX codes, and Pick colour's Swatch (29 Sept 2026)
+
+Afnan supplied `Pantone_TCX_Color_Collection.xlsx` (2,800 colours: code,
+name, hex) — the TCX book the Pick colour tab was waiting on.
+
+- **It ships as a static file, `assets/data/pantone-tcx.json`** (`{source,
+  count, colors:[[code,name,hex],…]}`, ~99 KB, in `PRECACHE_URLS`), converted
+  with the vendored SheetJS; every row validated (code `NN-NNNN`, hex
+  `#RRGGBB`, unique). **Not copied into `color_library`** — 2,800 documents
+  nobody edits would be writes and a rules change for a reference book. No
+  `firestore.rules` change. **Licence: supplied by Afnan for this use.**
+- **Color Library has two tabs**, Library | TCX codes (`_colorLibTab`, per
+  viewer in `localStorage`, `js/embellishments.js` — Ammar's file, tell him).
+  The TCX tab (`_tcxLoad`, `_tcxParse`, `_tcxMatches`, `_tcxListHTML`)
+  searches code (with or without the dash), name, or a `#hex` (a leading
+  `#` is colour-only), shows 120 rows then Show more, marks a code already
+  in the library (archived ones do not count), and **+ Add** opens the
+  ordinary Add Color form prefilled with name, `NN-NNNN TCX` and hex. Names
+  escaped; a failed read says so with Retry.
+- **Mood Boards reads the same file** (`_boardsTcxEnsure`/`_boardsTcxApply`,
+  once per session, into `_BOARDS_PANTONE_EXTRA` as `NN-NNNN TCX`, names in
+  `_boardsTcxNames`), so the Pick colour TCX tab and a note typed as a TCX
+  code both know all 2,800. An empty TCX tab now says Loading / could not
+  load, never "not added".
+- **"Swatch / Make a swatch of this exact colour" did work — under the
+  panel.** Reproduced in real Chromium on the stub site: the swatch was made
+  beside the picture, exactly where the popover sits, and the popover stayed
+  open. It now closes the panel, pans the least distance to bring the swatch
+  on screen (`_boardsRevealCard`) and flashes it; pick mode stays on.
+- **A swatch opens its picker on double-click only** — see the swatch
+  section above.
+- Tests: `tests/color-tcx.test.js` (20, the real file), +14 in
+  `tests/board-colourpick.test.js`, +2 in `tests/board-swatch.test.js`; layout
+  fragment `color library — the TCX codes tab` (fails 6 jobs with the code
+  ink broken). Undone to check: the panel close (fails by name), the archived
+  filter (fails by name). **Nobody has used the tab on a real screen.**
 
 ### Mood Boards — Unsorted previews, and the magnet (29 Sept 2026)
 

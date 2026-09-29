@@ -118,5 +118,12 @@ module.exports=async function(){
   s.eq('showing the code',run(`_boardsSwatchValue(_editCards[0].hex,_boardsSwatchFmt(_editCards[0]),_editCards[0].pantone)`),'485 C');
   s.eq('an unknown code stays a note — nothing is guessed',run(`_editCards[1].type`),'text');
   s.eq('any swatch shows its nearest code, marked approximate',run(`_boardsSwatchValue('#D82A1F','pantone')`),'≈ 485 C');
+  s.section('the picker opens on a double-click only');
+  {
+    const h=run(`_boardCardHTML({id:'dz',type:'swatch',hex:'#C0392B',x:0,y:0,w:220,h:230},true)`);
+    const blk=(/<div class="board-swatch-block"[^>]*>/.exec(h)||[''])[0];
+    s.ok('the colour block opens it on dblclick',/ondblclick="window\.boardsSwatchPicker\('dz'\)"/.test(blk),blk);
+    s.ok('and has no single-click route to it',!/onclick=/.test(blk.replace(/ondblclick=/g,'')),blk);
+  }
   return s;
 };

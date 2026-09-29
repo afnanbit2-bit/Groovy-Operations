@@ -15239,7 +15239,7 @@ function _boardsSwatchBodyHTML(c,canEdit,bodyDrag){
   const hx=_boardsValidHex(c.hex)||'#CCCCCC';
   const val=_boardsSwatchValue(hx,_boardsSwatchFmt(c),c.pantone);
   return`<div class="board-card-body board-swatch-body"${bodyDrag}>
-    <div class="board-swatch-block" id="board-swblock-${c.id}" style="background:${hx};color:${_boardsInkOn(hx)}" ${canEdit?`onclick="window.boardsSwatchBlockClick(event,'${c.id}')" ondblclick="window.boardsSwatchPicker('${c.id}')"`:''} title="${canEdit?'Click to change the colour':''}">
+    <div class="board-swatch-block" id="board-swblock-${c.id}" style="background:${hx};color:${_boardsInkOn(hx)}" ${canEdit?`ondblclick="window.boardsSwatchPicker('${c.id}')"`:''} title="${canEdit?'Double-click to change the colour':''}">
       <span class="board-swatch-val" id="board-swval-${c.id}">${_boardsEsc(val)}</span>
     </div>
     <div class="board-swatch-name" id="board-swname-${c.id}" contenteditable="false" data-placeholder="Colour" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-swname-${c.id}')"`:''} oninput="window.boardsSwatchNameInput('${c.id}',this)"></div>
@@ -15291,14 +15291,11 @@ function _boardsSwatchAfterEdit(el){
   const c=_editCards.find(x=>x.id===m[1]);
   if(c&&c.type==='swatch')_boardsSwatchPaint(c);
 }
-window.boardsSwatchBlockClick=function(e,id){
-  // A click on the block of a swatch that is ALREADY selected opens the
-  // picker; the first click only selects it, like every other card.
-  if(_boardsSelection.has(id)&&_boardsSelection.size===1){
-    if(e&&e.stopPropagation)e.stopPropagation();
-    window.boardsSwatchPicker(id);
-  }
-};
+/* A swatch opens its picker on a DOUBLE-click only (Afnan, 29 Sept 2026).
+   It used to open on a click once the swatch was selected — but the card's
+   own pointerdown selects it, so the click of that same press already found
+   it selected and a single click opened the picker. One click selects and
+   drags, like every other card; Color on the rail still opens it too. */
 function _boardsSwatchSetFmt(c,fmt){
   if(!c||c.type!=='swatch'||_BOARDS_SWATCH_FMTS.indexOf(fmt)<0)return false;
   if(_boardsSwatchFmt(c)===fmt)return false;
@@ -15538,7 +15535,40 @@ function _boardsPantoneNearest(hex){
 }
 // One read of the colour library per session, so a board opened without
 // ever visiting Embellishments still knows the imported codes. Never rejects.
+/* The TCX book (29 Sept 2026): Afnan supplied the 2,800-colour Pantone TCX
+   collection, shipped as /assets/data/pantone-tcx.json (precached) and read
+   once per session. Every entry is validated before it joins the book — a
+   code must look like NN-NNNN and a colour like #RRGGBB, or it is dropped.
+   Never rejects: a failed read leaves the book as it was. */
+let _boardsTcxState='';   // '' | 'loading' | 'ok' | 'failed'
+function _boardsTcxApply(d){
+  const rows=d&&Array.isArray(d.colors)?d.colors:[];
+  let n=0;
+  rows.forEach(r=>{
+    if(!Array.isArray(r))return;
+    const code=String(r[0]||''),hex=String(r[2]||'').toUpperCase();
+    if(!/^\d{2}-\d{4}$/.test(code)||!/^#[0-9A-F]{6}$/.test(hex))return;
+    const k=code+' TCX';
+    if(!_BOARDS_PANTONE_EXTRA[k]){_BOARDS_PANTONE_EXTRA[k]=hex;n++;}
+    const nm=String(r[1]||'').trim().slice(0,60);
+    if(nm)_boardsTcxNames[k]=nm;
+  });
+  return n;
+}
+const _boardsTcxNames={};
+async function _boardsTcxEnsure(){
+  if(_boardsTcxState==='ok'||_boardsTcxState==='loading')return;
+  if(typeof fetch!=='function')return;
+  _boardsTcxState='loading';
+  try{
+    const r=await fetch('/assets/data/pantone-tcx.json');
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    _boardsTcxApply(await r.json());
+    _boardsTcxState='ok';
+  }catch(e){_boardsTcxState='failed';console.warn('[boards] TCX book read failed:',e);}
+}
 async function _boardsPantoneEnsure(){
+  _boardsTcxEnsure();
   if(_boardsPantoneLib||_boardsPantoneLoading)return;
   if(typeof allColors!=='undefined'&&Array.isArray(allColors)&&allColors.length){_boardsPantoneLib=allColors;return;}
   if(typeof getDocs!=='function'||typeof collection!=='function')return;
@@ -15646,12 +15676,12 @@ function _boardsNearHTML(hex,where){
   const act=where==='sw'?'Use':'Swatch';
   const rows=m.map((x,i)=>`<div class="board-near-row">
       <span class="board-near-chip" style="background:${_boardsValidHex(x.hex)}"></span>
-      <span class="board-near-code">${_boardsEsc(x.code)}</span>
+      <span class="board-near-code">${_boardsEsc(x.code)}${_boardsTcxNames[x.code]?`<span class="board-near-name">${_boardsEsc(_boardsTcxNames[x.code])}</span>`:''}</span>
       <span class="board-near-de" title="Colour difference ΔE ${x.de.toFixed(1)}">${_boardsDeWord(x.de)} · ${x.de.toFixed(1)}</span>
       ${canEdit?`<button class="board-near-act" onclick="window.boardsNearUse('${where}',${i})">${act}</button>`:''}
     </div>`).join('');
   const none=sys==='TCX'
-    ?'No TCX (fabric) codes are loaded in the app yet — only ones in your Embellishments Color Library count. The full TCX book has not been added.'
+    ?(_boardsTcxState!=='failed'?'Loading the TCX book…':'The TCX book could not be loaded — check the connection and pick again.')
     :'No Pantone C codes are loaded.';
   return`<div class="board-near-tabs">${tab('TCX','TCX · fabric')}${tab('C','Pantone C')}</div>
     <div class="board-near-list">${rows||`<div class="board-near-none">${none}</div>`}</div>
@@ -15745,6 +15775,12 @@ function _boardsPickAt(e,id){
 }
 function _boardsPickShow(){
   const L=_boardsPickLast;if(!L)return;
+  if(_boardsTcxState!=='ok'&&_boardsTcxState!=='failed'){
+    const was=L;
+    Promise.resolve(_boardsTcxEnsure()).then(()=>{
+      if(_boardsTcxState==='ok'&&_boardsPickLast===was&&document.querySelector&&document.querySelector('#board-sheet .board-pick'))_boardsPickShow();
+    });
+  }
   const c=_boardsHexToRgb(L.hex);
   const html=`<div class="board-pick">
       <div class="board-pick-head">
@@ -15771,8 +15807,36 @@ function _boardsPickMakeSwatch(hex,code){
     while(_editCards.some(o=>o.id!==n.id&&o.x<n.x+n.w&&o.x+o.w>n.x&&o.y<n.y+n.h&&o.y+o.h>n.y))n.y+=n.h+16;
   }else{const p=_boardsPlacementPoint();n.x=p.x;n.y=p.y;}
   _editCards.push(n);
+  // The panel sits beside the click, which is exactly where the new swatch
+  // lands (Afnan: "this function is not working" — it was, under the
+  // panel). Close it, bring the swatch on screen and flash it. Pick mode
+  // stays on, so the next click reads another colour.
+  window.boardsCloseSheet();
   _boardsRenderCanvasAndWire();
+  _boardsRevealCard(n);
   _boardsSaveDebounced();
   showToast((code||h)+' swatch added beside the picture');
   return n;
+}
+// Pan the least distance that puts a card inside the stage (zoom unchanged),
+// then flash it. Nothing moves when it is already in view.
+function _boardsRevealCard(c){
+  const b=_editBoard,stage=document.getElementById('board-stage');
+  if(!b||!c)return;
+  const r=stage&&stage.getBoundingClientRect?stage.getBoundingClientRect():null;
+  if(r&&r.width&&r.height){
+    const z=b.zoom||1,pad=24;
+    const x0=b.panX+c.x*z,x1=x0+c.w*z,y0=b.panY+c.y*z,y1=y0+c.h*z;
+    let dx=0,dy=0;
+    if(x1>r.width-pad)dx=r.width-pad-x1;
+    if(x0+dx<pad)dx=pad-x0;
+    if(y1>r.height-pad)dy=r.height-pad-y1;
+    if(y0+dy<pad)dy=pad-y0;
+    if(dx||dy){b.panX+=dx;b.panY+=dy;_boardsApplyTransform();}
+  }
+  const el=document.getElementById('board-card-'+c.id);
+  if(el&&el.classList){
+    el.classList.add('linked');
+    setTimeout(()=>{try{el.classList.remove('linked');}catch(e){}},2600);
+  }
 }

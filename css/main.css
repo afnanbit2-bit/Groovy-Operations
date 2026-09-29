@@ -1101,8 +1101,9 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-near-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .board-near-row{display:flex;align-items:center;gap:8px;min-width:0}
 .board-near-chip{width:26px;height:26px;border-radius:6px;flex-shrink:0;border:1px solid var(--border)}
-.board-near-code{font-weight:700;font-size:13px;color:var(--text);flex-shrink:0}
-.board-near-de{flex:1;min-width:0;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-near-code{font-weight:700;font-size:13px;color:var(--text);flex:1;min-width:0;display:flex;flex-direction:column}
+.board-near-name{font-weight:500;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-near-de{flex-shrink:0;max-width:40%;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .board-near-act{flex-shrink:0;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;
   padding:4px 9px;min-height:28px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
 .board-near-act:hover{background:var(--hover)}
@@ -4876,3 +4877,22 @@ a.ma-btn{text-decoration:none}
 .board-swp-f{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted)}
 .board-swp-in{width:100%;min-width:0;box-sizing:border-box;min-height:34px;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font-size:13px;text-align:center}
 .board-swp-in.wide{flex:1;text-transform:uppercase}
+/* Color Library ▸ TCX codes (29 Sept 2026). Tokens only; the chip's own
+   background is the reference colour itself, validated #RRGGBB. */
+.tcx-tabs{display:flex;gap:4px;background:var(--soft);border-radius:10px;padding:4px;margin:0 0 12px;width:max-content;max-width:100%}
+.tcx-tab{border:none;background:transparent;color:var(--text);border-radius:7px;padding:7px 14px;min-height:34px;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.tcx-tab span{font-weight:500;color:var(--muted);margin-left:4px}
+.tcx-tab.on{background:var(--dark);color:var(--on-dark)}
+.tcx-tab.on span{color:var(--on-dark);opacity:.7}
+.tcx-search{width:100%;max-width:520px;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-family:inherit;font-size:14px;margin-bottom:10px}
+.tcx-count{font-size:12px;color:var(--muted);margin-bottom:8px}
+.tcx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.tcx-row{display:flex;align-items:center;gap:10px;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+.tcx-chip{width:48px;height:48px;border-radius:8px;flex-shrink:0;border:1px solid var(--border)}
+.tcx-info{flex:1;min-width:0}
+.tcx-code{font-weight:700;font-size:13.5px;color:var(--text);white-space:nowrap}
+.tcx-name{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tcx-hex{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tcx-have{font-size:11.5px;font-weight:600;color:var(--accent-success);flex-shrink:0}
+.tcx-add{flex-shrink:0;padding:5px 10px}
+.tcx-more{margin-top:12px}
