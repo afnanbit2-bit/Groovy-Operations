@@ -352,11 +352,121 @@ function _ptDetailChipHTML(p){
 // COLOR LIBRARY PAGE
 // ════════════════════════════════════════════
 
+/* ── TCX codes (29 Sept 2026) ─────────────────────────────────────────
+   Afnan supplied the 2,800-colour Pantone TCX collection. It is shipped as
+   a static file (/assets/data/pantone-tcx.json, precached for offline) and
+   READ-ONLY here: a second tab beside the Library, searchable, with
+   "+ Add to library" prefilling the ordinary Add Color form. It is not
+   copied into color_library — 2,800 documents nobody edits would be a
+   write bill and a rules change for a reference book. Mood Boards reads
+   the same file for its Pick colour TCX tab. Every row is validated
+   before it is shown (code NN-NNNN, colour #RRGGBB); names are escaped. */
+var _tcxBook=null,_tcxState='',_tcxQuery='',_tcxShown=120,_tcxSearchT=null;
+var _colorLibTab=(function(){try{return localStorage.getItem('groovy-colorlib-tab')==='tcx'?'tcx':'library';}catch(e){return'library';}})();
+function _tcxEsc(t){return String(t==null?'':t).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function _tcxParse(d){
+  var rows=d&&Array.isArray(d.colors)?d.colors:[],out=[],seen={};
+  rows.forEach(function(r){
+    if(!Array.isArray(r))return;
+    var code=String(r[0]||''),hex=String(r[2]||'').toUpperCase(),name=String(r[1]||'').trim().slice(0,60);
+    if(!/^\d{2}-\d{4}$/.test(code)||!/^#[0-9A-F]{6}$/.test(hex)||seen[code])return;
+    seen[code]=1;out.push({code:code,name:name,hex:hex});
+  });
+  return out;
+}
+function _tcxLoad(){
+  if(_tcxState==='ok'||_tcxState==='loading')return Promise.resolve();
+  _tcxState='loading';
+  return fetch('/assets/data/pantone-tcx.json').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+    .then(function(d){_tcxBook=_tcxParse(d);_tcxState='ok';})
+    .catch(function(e){_tcxState='failed';console.warn('[color-library] TCX book read failed:',e);});
+}
+// The library's own codes, normalised, so a TCX row can say it is already in.
+function _tcxInLibrary(){
+  var m={};
+  (allColors||[]).forEach(function(c){
+    if(!c||c.status==='archived')return;
+    var k=/(\d{2})\s*-?\s*(\d{4})\s*TCX/i.exec(String(c.pantoneCode||''));
+    if(k)m[k[1]+'-'+k[2]]=1;
+  });
+  return m;
+}
+function _tcxMatches(q){
+  var list=_tcxBook||[];
+  q=String(q||'').trim().toLowerCase();
+  if(!q)return list;
+  var digits=q.replace(/[^0-9]/g,''),hexq=q.replace(/^#/,'');
+  // A leading # is a colour, never a code: "#BF1932" must not also match
+  // every code starting 19.
+  if(q.charAt(0)==='#')return list.filter(function(t){return /^[0-9a-f]{1,6}$/.test(hexq)&&t.hex.slice(1).toLowerCase().indexOf(hexq)===0;});
+  return list.filter(function(t){
+    if(t.name.toLowerCase().indexOf(q)>-1)return true;
+    if(digits.length>=2&&t.code.replace('-','').indexOf(digits)===0)return true;
+    if(/^[0-9a-f]{3,6}$/.test(hexq)&&t.hex.slice(1).toLowerCase().indexOf(hexq)===0)return true;
+    return false;
+  });
+}
+function _tcxListHTML(){
+  if(_tcxState!=='ok'){
+    if(_tcxState==='failed')return'<div class="empty">The TCX book could not be loaded. <button class="btn-outline" onclick="window.tcxRetry()">Retry</button></div>';
+    return'<div class="empty">Loading the TCX book…</div>';
+  }
+  var hits=_tcxMatches(_tcxQuery),inLib=_tcxInLibrary(),canEdit=canManageRecipes();
+  if(!hits.length)return'<div class="empty">No TCX code matches “'+_tcxEsc(_tcxQuery)+'”.</div>';
+  var rows=hits.slice(0,_tcxShown).map(function(t){
+    var have=!!inLib[t.code];
+    return'<div class="tcx-row">'+
+      '<span class="tcx-chip" style="background:'+t.hex+'"></span>'+
+      '<div class="tcx-info"><div class="tcx-code">'+t.code+' TCX</div><div class="tcx-name">'+_tcxEsc(t.name)+'</div><div class="tcx-hex">'+t.hex+'</div></div>'+
+      (have?'<span class="tcx-have">In library</span>':(canEdit?'<button class="btn-outline tcx-add" onclick="window.tcxAddToLibrary(\''+t.code+'\')">+ Add</button>':''))+
+    '</div>';
+  }).join('');
+  var more=hits.length-_tcxShown;
+  return'<div class="tcx-count">'+hits.length.toLocaleString()+' of '+(_tcxBook.length).toLocaleString()+' codes'+(_tcxQuery?' match':'')+'</div>'+
+    '<div class="tcx-grid">'+rows+'</div>'+
+    (more>0?'<button class="btn-outline tcx-more" onclick="window.tcxShowMore()">Show '+Math.min(more,240)+' more ('+more.toLocaleString()+' left)</button>':'');
+}
+function _tcxTabHTML(){
+  if(_tcxState!=='ok'&&_tcxState!=='loading'&&_tcxState!=='failed'){
+    _tcxLoad().then(function(){if(typeof currentPage!=='undefined'&&currentPage==='color-library'&&_colorLibTab==='tcx')_tcxRepaint();});
+  }
+  return'<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Pantone TCX (cotton / fabric) reference book. Search by code, name or hex. <b>+ Add</b> opens the Add Color form filled in.</div>'+
+    '<input id="tcx-search" class="tcx-search" type="search" placeholder="Search e.g. 19-1664, True Red, #9E2A2B" value="'+_tcxEsc(_tcxQuery)+'" oninput="window.tcxSearch(this.value)">'+
+    '<div id="tcx-list">'+_tcxListHTML()+'</div>';
+}
+function _tcxRepaint(){var el=document.getElementById('tcx-list');if(el)el.innerHTML=_tcxListHTML();else{var mc=document.getElementById('main-content');if(mc)mc.innerHTML=renderColorLibraryPage();}}
+window.tcxSearch=function(v){
+  clearTimeout(_tcxSearchT);
+  _tcxSearchT=setTimeout(function(){_tcxQuery=String(v||'').slice(0,60);_tcxShown=120;_tcxRepaint();},160);
+};
+window.tcxShowMore=function(){_tcxShown+=240;_tcxRepaint();};
+window.tcxRetry=function(){_tcxState='';_tcxLoad().then(_tcxRepaint);};
+window.colorLibTab=function(t){
+  _colorLibTab=t==='tcx'?'tcx':'library';
+  try{localStorage.setItem('groovy-colorlib-tab',_colorLibTab);}catch(e){}
+  var mc=document.getElementById('main-content');if(mc)mc.innerHTML=renderColorLibraryPage();
+};
+window.tcxAddToLibrary=function(code){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  var t=(_tcxBook||[]).find(function(x){return x.code===code;});
+  if(!t)return;
+  window.openColorModal(null);
+  var set=function(id,v){var el=document.getElementById(id);if(el)el.value=v;};
+  set('cm-name',t.name);set('cm-pantone',t.code+' TCX');set('cm-hex',t.hex);
+  if(typeof window._updateSwatchPreview==='function')window._updateSwatchPreview();
+};
+
 function renderColorLibraryPage(){
   if(!canSeePrinting()){return'<div class="empty">Not authorized.</div>';}
   var active=allColors.filter(function(c){return c.status!=='archived';});
   var archived=allColors.filter(function(c){return c.status==='archived';});
   var canEdit=canManageRecipes();
+  var tabs='<div class="tcx-tabs"><button class="tcx-tab'+(_colorLibTab==='library'?' on':'')+'" onclick="window.colorLibTab(\'library\')">Library <span>'+active.length+'</span></button>'+
+    '<button class="tcx-tab'+(_colorLibTab==='tcx'?' on':'')+'" onclick="window.colorLibTab(\'tcx\')">TCX codes'+(_tcxBook?' <span>'+_tcxBook.length.toLocaleString()+'</span>':'')+'</button></div>';
+  if(_colorLibTab==='tcx'){
+    return'<div class="page-head"><div class="page-title">Color Library</div><div class="page-sub">'+active.length+' active color'+(active.length!==1?'s':'')+' · '+archived.length+' archived</div></div>'+
+      tabs+_tcxTabHTML()+'<div id="color-modal-container"></div>';
+  }
   return'<div class="page-head">'+
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">'+
       '<div><div class="page-title">Color Library</div><div class="page-sub">'+active.length+' active color'+(active.length!==1?'s':'')+' · '+archived.length+' archived</div></div>'+
@@ -365,7 +475,7 @@ function renderColorLibraryPage(){
         '<button class="btn-primary" style="width:auto;padding:8px 16px" onclick="window.openColorModal(null)">+ Add Color</button>'+
       '</div>':'')+
     '</div>'+
-  '</div>'+
+  '</div>'+tabs+
   '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:var(--accent-warning-soft);border-radius:8px;border:1px solid var(--accent-warning)">Digital swatches are for reference only. Final approval must match physical Pantone / ink sample.</div>'+
   (canEdit?_renderColorImporterBlock():'')+
   (active.length?'<div style="display:grid;gap:8px;margin-bottom:12px">'+active.map(function(c){return _colorCardFull(c);}).join('')+'</div>':'<div class="empty" style="margin-bottom:12px">No colors in library yet. Add colors or seed starter set.</div>')+

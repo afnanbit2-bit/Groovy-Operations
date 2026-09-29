@@ -3850,9 +3850,10 @@ way in, as in Milanote.
 - **The name bar is `var(--dark)` / `var(--on-dark)`** — the pair inverts
   together, so it reads in both themes.
 - **Rail: Color · Labels · Reactions · Comment · Display · Caption · ⋯.**
-  Display is a `.board-ctx` of four tabs with `{keep:true}`. Color (and a
-  click on the block of an already-selected swatch, or a double-click)
-  opens the picker: an SV square, a hue slider, a preview dot, an
+  Display is a `.board-ctx` of four tabs with `{keep:true}`. Color on the
+  rail, or a DOUBLE-click on the block, opens the picker (29 Sept 2026 —
+  it used to open on a click of an already-selected swatch, and since the
+  card's own pointerdown selects it, a single click opened it): an SV square, a hue slider, a preview dot, an
   eyedropper (`window.EyeDropper`, hidden where absent — Chrome/Edge only)
   and fields cycling RGB → HSL → HEX. It is `_boardsOpenSheet` anchored to
   the card (a bottom sheet on a phone). **One undo entry per picker
@@ -3886,6 +3887,92 @@ archived and invalid entries skipped), read once per session on board open
 the library holds**, and the full books are licensed and unreachable from
 the sandbox — an unknown code stays a note, nothing is invented. A file from
 Afnan would go into `_BOARDS_PANTONE_EXTRA`. `tests/board-swatch.test.js`.
+
+### Mood Boards — Pick colour, and the TCX / Pantone C tabs (29 Sept 2026)
+
+Afnan: *"a tab for TCX code and pantone code — we click on an image and it
+gives which code it is"*.
+
+- **Pick colour** is on an image card's rail (and its right-click menu, so
+  the phone's More sheet reaches it; ⋯ does not repeat it). With it on
+  (`_boardsPickOn`, a dashed outline and a crosshair), a press on the
+  picture READS instead of dragging: `boardsCardDragStart` hands it to
+  `_boardsPickAt`, which redraws the picture exactly as the card shows it
+  (`_boardsDrawPicture` — the same `_boardsImgGeom` for a crop or turn,
+  else the card's cover/contain fit) into a card-sized canvas and averages a
+  5×5 patch (`_boardsAvgPixels`, transparent pixels skipped — one pixel of
+  a fabric photo is a thread). A picture whose host blocks CORS taints the
+  canvas; that is SAID, never guessed. Off by Escape, by selecting anything
+  else, and on board open. A viewer can read; only an editor gets Swatch.
+- **The panel** (`_boardsPickShow`, a sheet anchored at the click) shows the
+  colour and two tabs, **TCX · fabric** and **Pantone C**, each listing the
+  three closest codes of THAT book only (`_boardsPantoneSys`: TPX/TPG/U are
+  in neither). The tab is per viewer (`groovy-boards-picksys`). A match or
+  "this exact colour" becomes a swatch BESIDE the picture, stacked under
+  any already there, one undo each. **The swatch's own Colour picker got
+  the same tabs** (`_boardsNearHTML(hex,'sw')`), where a match is applied to
+  the swatch. Buttons carry an index into `_boardsNearLast`, never a code.
+- **Closeness is CIEDE2000 on CIELAB** (`_boardsLab`, `_boardsDE2000`),
+  asserted against five published reference pairs (Sharma, Wu & Dalal
+  2005), with words (Exact < 1 · Very close < 3 · Close < 6 · Rough < 12 ·
+  Far off). `_boardsPantoneNearest` (the Display › Pantone "≈") uses the
+  same measure now; it was RGB distance.
+- **An empty book says so**: with no TCX codes loaded the TCX tab says the
+  book has not been added, never a C code under a TCX heading. Today the
+  TCX tab only knows TCX codes in the Color Library — the full book is the
+  2,310-colour file, waiting on Afnan and its licence.
+- Fixed with it: **"Cool Gray" never matched** — `_boardsPantoneKey` only
+  read GREY, while Pantone's books write GRAY; both reduce to GRAY now. And
+  **a recoloured swatch kept its old code**: `_boardsSwatchSetHex` drops
+  `c.pantone` unless the new colour is that code's own.
+- `tests/board-colourpick.test.js` (40) drives the pick through a stub
+  canvas; verified by undoing the book filter, the press intercept, the
+  stale-code fix and ΔE2000 (swapped for Lab distance) — each fails by name.
+  `smoke-layout` fragment `boards — Pick colour and the TCX / C tabs`
+  (both tabs and the empty TCX tab) fails at 1:1 with a code's ink broken.
+  Looked at in Chromium, both themes. **Nobody has picked a colour off a
+  real photo** — the sandbox cannot sign in, and the CORS answer of the
+  live Cloudinary pictures is the thing to watch.
+- **Shipped at v252, not v251**: Ammar's PR #91 landed on `main` at v251
+  while this branch also sat at v251 — the identical-number collision this
+  file warns about. Merged, bumped past both.
+
+### Color Library ▸ TCX codes, and Pick colour's Swatch (29 Sept 2026)
+
+Afnan supplied `Pantone_TCX_Color_Collection.xlsx` (2,800 colours: code,
+name, hex) — the TCX book the Pick colour tab was waiting on.
+
+- **It ships as a static file, `assets/data/pantone-tcx.json`** (`{source,
+  count, colors:[[code,name,hex],…]}`, ~99 KB, in `PRECACHE_URLS`), converted
+  with the vendored SheetJS; every row validated (code `NN-NNNN`, hex
+  `#RRGGBB`, unique). **Not copied into `color_library`** — 2,800 documents
+  nobody edits would be writes and a rules change for a reference book. No
+  `firestore.rules` change. **Licence: supplied by Afnan for this use.**
+- **Color Library has two tabs**, Library | TCX codes (`_colorLibTab`, per
+  viewer in `localStorage`, `js/embellishments.js` — Ammar's file, tell him).
+  The TCX tab (`_tcxLoad`, `_tcxParse`, `_tcxMatches`, `_tcxListHTML`)
+  searches code (with or without the dash), name, or a `#hex` (a leading
+  `#` is colour-only), shows 120 rows then Show more, marks a code already
+  in the library (archived ones do not count), and **+ Add** opens the
+  ordinary Add Color form prefilled with name, `NN-NNNN TCX` and hex. Names
+  escaped; a failed read says so with Retry.
+- **Mood Boards reads the same file** (`_boardsTcxEnsure`/`_boardsTcxApply`,
+  once per session, into `_BOARDS_PANTONE_EXTRA` as `NN-NNNN TCX`, names in
+  `_boardsTcxNames`), so the Pick colour TCX tab and a note typed as a TCX
+  code both know all 2,800. An empty TCX tab now says Loading / could not
+  load, never "not added".
+- **"Swatch / Make a swatch of this exact colour" did work — under the
+  panel.** Reproduced in real Chromium on the stub site: the swatch was made
+  beside the picture, exactly where the popover sits, and the popover stayed
+  open. It now closes the panel, pans the least distance to bring the swatch
+  on screen (`_boardsRevealCard`) and flashes it; pick mode stays on.
+- **A swatch opens its picker on double-click only** — see the swatch
+  section above.
+- Tests: `tests/color-tcx.test.js` (20, the real file), +14 in
+  `tests/board-colourpick.test.js`, +2 in `tests/board-swatch.test.js`; layout
+  fragment `color library — the TCX codes tab` (fails 6 jobs with the code
+  ink broken). Undone to check: the panel close (fails by name), the archived
+  filter (fails by name). **Nobody has used the tab on a real screen.**
 
 ### Mood Boards — Unsorted previews, and the magnet (29 Sept 2026)
 
@@ -3925,6 +4012,37 @@ a column its title and how many cards, a to-do its tasks.
   40px short stops being caught), the pull zeroed, the `.text` fix.
   **Nobody has felt the magnet on a real screen** — the sandbox cannot sign
   in; the previews were rendered and looked at in Chromium, both themes.
+
+### Mood Boards — a link with no picture (29 Sept 2026)
+
+Afnan, with a Pinterest pin in Unsorted as a grey LINK box and the same pin
+on the board as a card titled "pinterest.com" with no picture: *"there
+should be a preview of the link as well in unsorted and on board as well"*.
+
+- **The server tries oEmbed when the page gives no picture**
+  (`netlify/functions/link-preview.js`: `preview`, `oembedEndpoint`,
+  `fromOembed`). Endpoint: a Pinterest `/pin/` URL maps to
+  `https://www.pinterest.com/oembed.json?url=…`; any other page's own
+  `<link type="application/json+oembed">` is used. The call goes through
+  `fetchHtml` (json mode), so the endpoint's host is resolved and checked
+  and every redirect re-validated. A non-JSON answer is ignored, the picture
+  goes through `safeImageUrl`, and a failure leaves the page's answer
+  standing. A page title that is only the host or the provider's own name
+  ("Pinterest") gives way to oEmbed's title; a real title is kept.
+  **The Pinterest part is a hypothesis, not verified:** pinterest.com is
+  unreachable from the sandbox, so neither the empty bot page nor the
+  endpoint's answer has been seen. The first real paste is the test.
+- **A pictureless link in Unsorted previews as the link** (site, title,
+  description, address — `_boardsTrayPreview`'s first branch, hydrated
+  with `textContent`), not a grey box. One with a picture keeps it.
+- **A link dragged out of Unsorted with no picture is fetched again**
+  (`_boardsLinkHydrate` in the tray drag's `up()`); one that brought its
+  picture is not. A card already on a board gets it through right-click →
+  **Refresh preview**, which already existed. No write happens on open.
+- `tests/link-preview.test.js` (+21), `tests/board-trayprev.test.js` (+11);
+  reverting the drag-out re-fetch fails 3, turning off the oEmbed step
+  fails 10, and painting the site line in `--surface` fails the tray layout
+  fragment at 1:1.
 
 ### Mood Boards — the phone audit (Sept 2026)
 

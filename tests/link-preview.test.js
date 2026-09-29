@@ -167,5 +167,63 @@ module.exports=async function(){
   s.eq('the page HTML is not part of the result',
     Object.keys(meta).sort().join(','),'description,host,image,siteName,title,url');
 
+  s.section('oEmbed, when the page gives no picture');
+  {
+    const R=(status,headers,body)=>({status,ok:status>=200&&status<300,headers:{get:k=>headers[k.toLowerCase()]||null},text:async()=>body||'',body:null});
+    const L=dnsFor(Object.assign({'www.pinterest.com':['151.101.0.84'],'pin.it':['151.101.0.84']},PUBLIC));
+    s.eq('a Pinterest pin maps to its oEmbed endpoint',
+      fn.oembedEndpoint('https://www.pinterest.com/pin/12345/',''),
+      'https://www.pinterest.com/oembed.json?url='+encodeURIComponent('https://www.pinterest.com/pin/12345/'));
+    s.eq('a Pinterest board is not a pin',fn.oembedEndpoint('https://www.pinterest.com/afnan/denim/',''),'');
+    s.eq('a discovery link is used',fn.oembedEndpoint('https://example.com/p',
+      '<link rel="alternate" type="application/json+oembed" href="/oembed?u=1&amp;f=json">'),'https://example.com/oembed?u=1&f=json');
+    s.eq('an xml discovery link is not',fn.oembedEndpoint('https://example.com/p',
+      '<link rel="alternate" type="text/xml+oembed" href="/oe.xml">'),'');
+    s.eq('a javascript: discovery link is not',fn.oembedEndpoint('https://example.com/p',
+      '<link type="application/json+oembed" href="javascript:alert(1)">'),'');
+
+    const seen=[];
+    const f=async(url)=>{seen.push(url);
+      if(url.indexOf('/oembed.json')>-1)return R(200,{'content-type':'application/json'},
+        JSON.stringify({type:'rich',title:'Wide leg denim',provider_name:'Pinterest',thumbnail_url:'https://i.pinimg.com/236x/a.jpg'}));
+      return R(200,{'content-type':'text/html'},'<title>Pinterest</title>');};
+    const L2=dnsFor(Object.assign({'i.pinimg.com':['151.101.0.84']},{'www.pinterest.com':['151.101.0.84']}));
+    const got=await fn.preview('https://www.pinterest.com/pin/12345/',{fetch:f,lookup:L2});
+    s.eq('the picture comes from oEmbed',got.image,'https://i.pinimg.com/236x/a.jpg');
+    s.eq('a title that is only the site\'s own name gives way',got.title,'Wide leg denim');
+    s.eq('two requests: the page, then oEmbed',seen.length,2);
+
+    const f2=async(url)=>{
+      if(url.indexOf('/oembed')>-1)return R(200,{'content-type':'application/json'},JSON.stringify({title:'From oEmbed',thumbnail_url:'https://example.com/t.jpg'}));
+      return R(200,{'content-type':'text/html'},'<link type="application/json+oembed" href="https://example.com/oembed?x">');};
+    const g2=await fn.preview('https://example.com/p',{fetch:f2,lookup:L});
+    s.eq('a page with no title takes oEmbed\'s',g2.title,'From oEmbed');
+    s.eq('and its picture',g2.image,'https://example.com/t.jpg');
+
+    let n=0;
+    const f3=async(url)=>{n++;return R(200,{'content-type':'text/html'},'<meta property="og:image" content="https://example.com/og.jpg"><link type="application/json+oembed" href="https://example.com/oembed">');};
+    const g3=await fn.preview('https://example.com/p',{fetch:f3,lookup:L});
+    s.ok('a page WITH a picture makes no oEmbed call',n===1&&g3.image==='https://example.com/og.jpg',String(n));
+
+    const hit=[];
+    const f4=async(url)=>{hit.push(url);return R(200,{'content-type':'text/html'},'<title>Page</title><link type="application/json+oembed" href="https://inside.test/oembed">');};
+    const g4=await fn.preview('https://example.com/p',{fetch:f4,lookup:L});
+    s.ok('an oEmbed endpoint inside the network is never requested',!hit.some(u=>u.indexOf('inside.test')>-1),hit.join());
+    s.eq('and the page answer stands',g4.title+'|'+g4.image,'Page|');
+    const g7=fn.fromOembed({title:'X'},'https://example.com/',{title:'A real title',host:'example.com',siteName:'example.com'});
+    s.eq('a real page title is kept',g7.title,'A real title');
+
+    const f5=async(url)=>url.indexOf('/oembed')>-1?R(200,{'content-type':'text/html'},'<b>not json</b>')
+      :R(200,{'content-type':'text/html'},'<title>Page</title><link type="application/json+oembed" href="https://example.com/oembed">');
+    const g5=await fn.preview('https://example.com/p',{fetch:f5,lookup:L});
+    s.eq('a non-JSON oEmbed answer is ignored',g5.title+'|'+g5.image,'Page|');
+
+    const f6=async(url)=>url.indexOf('/oembed')>-1?R(200,{'content-type':'application/json'},JSON.stringify({thumbnail_url:'javascript:alert(1)'}))
+      :R(200,{'content-type':'text/html'},'<title>Page</title><link type="application/json+oembed" href="https://example.com/oembed">');
+    const g6=await fn.preview('https://example.com/p',{fetch:f6,lookup:L});
+    s.eq('an oEmbed picture goes through the same image check',g6.image,'');
+    s.eq('the result still carries only the six fields',Object.keys(g2).sort().join(','),'description,host,image,siteName,title,url');
+  }
+
   return s;
 };

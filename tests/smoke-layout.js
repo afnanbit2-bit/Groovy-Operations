@@ -646,7 +646,7 @@ const FRAGMENTS={
     app.run(`_editUnsorted=[
       {id:'u1',kind:'text',text:'A note with a fairly long first line that has to wrap somewhere'},
       {id:'u2',kind:'file',fileName:'winter-sequence-2026-techpack-final-v3.pdf',fileSize:2400000},
-      {id:'u3',kind:'link',linkUrl:'https://example.test/a',linkTitle:'example.test'},
+      {id:'u3',kind:'link',linkUrl:'https://www.pinterest.com/pin/1234567890123456789/',linkTitle:'Wide leg washed denim with a raw hem, styled for the winter drop lookbook',linkSite:'Pinterest',text:'Saved from a stylist board — the wash and the rise we want for the next run'},
       {id:'u4',kind:'file',fileName:'a.pdf'},
       {id:'u5',kind:'cards',name:'FABRIC & TRIMS FOR WINTER · 12 cards',
         cards:[{id:'c1',type:'column',title:'FABRIC & TRIMS FOR WINTER'}]},
@@ -1736,6 +1736,39 @@ const FRAGMENTS={
       '<div class="board-stage" style="position:relative;height:280px;width:100%;overflow:hidden">'+
       '<div class="board-world" data-lod="near" style="position:absolute;left:0;top:0">'+cards+'</div></div>'+
       '<div class="board-sheet board-pop" style="position:relative;left:auto;top:auto;width:264px;max-height:none;overflow:visible">'+picker+'</div>'});
+  },
+  /* Pick colour's panel (29 Sept 2026): the sampled colour, the TCX and
+     Pantone C tabs and the closest codes, with their Swatch buttons — both
+     tabs rendered, since the probe cannot click one, plus the TCX tab with
+     nothing loaded, which is what a fresh install shows. */
+  'boards — Pick colour and the TCX / C tabs':()=>{
+    const app=loadApp({files:['js/boards.js'],session:{u:'afnan',name:'Afnan',role:'owner',uid:'u1'}});
+    app.run(`_editBoard={id:'b1',title:'T',ownerUid:'u1',visibility:'personal'};_editConnectors=[];
+      _editCards=[{id:'ph',type:'image',imageUrl:'https://res.cloudinary.com/x/image/upload/a.jpg',x:0,y:0,w:200,h:200}];
+      _BOARDS_PANTONE_EXTRA['19-1664 TCX']='#9E2A2B';_BOARDS_PANTONE_EXTRA['18-1662 TCX']='#C3202F';
+      _BOARDS_PANTONE_EXTRA['11-0601 TCX']='#F4F5F0';_BOARDS_PANTONE_EXTRA['485 C']='#DA291C';
+      _BOARDS_PANTONE_EXTRA['Cool Gray 11 C']='#53565A';
+      _boardsTcxNames['19-1664 TCX']='True Red';_boardsTcxNames['18-1662 TCX']='Flame Scarlet with a longer name than fits';
+      _boardsPickLast={hex:'#A02A2C',cardId:'ph',rect:{left:10,right:11,top:10,bottom:11,width:1,height:1}};`);
+    const panel=sys=>{app.run(`_boardsPickSys='${sys}';_boardsPickShow();`);
+      return '<div class="board-sheet board-pop" style="position:relative;left:auto;top:auto;width:300px;max-height:none;overflow:visible;margin-bottom:16px">'+
+        app.run(`document.getElementById('board-sheet').innerHTML`)+'</div>';};
+    const a=panel('TCX'),b=panel('C');
+    app.run(`for(const k in _BOARDS_PANTONE_EXTRA)if(/TCX$/.test(k))delete _BOARDS_PANTONE_EXTRA[k];`);
+    const empty=panel('TCX');
+    return Promise.resolve({widths:[1900,420],html:a+b+empty});
+  },
+  /* Color Library ▸ TCX codes (29 Sept 2026): the tabs, the search box and
+     the grid of reference rows, one of them already in the library and one
+     with a name too long for its row. The real book file is parsed. */
+  'color library — the TCX codes tab':()=>{
+    const app=loadApp({files:['js/shared.js','js/auth.js','js/embellishments.js']});
+    const book=JSON.parse(require('fs').readFileSync(require('path').join(__dirname,'..','assets','data','pantone-tcx.json'),'utf8'));
+    book.colors.unshift(['99-9999','An unusually long colour name that must ellipsize, not push','#123456']);
+    app.run(`session={uid:'u1',u:'ammar',name:'Ammar',role:'owner'};currentPage='color-library';
+      allColors=[{_id:'a',colorName:'True Red',pantoneCode:'19-1664 TCX',hexApprox:'#BF1932',status:'active'}];
+      _colorLibTab='tcx';_tcxBook=_tcxParse(${JSON.stringify({colors:book.colors.slice(0,40).concat(book.colors.filter(r=>r[0]==='19-1664'))})});_tcxState='ok';_tcxShown=41;`);
+    return Promise.resolve('<div id="main-content">'+app.run(`renderColorLibraryPage()`)+'</div>');
   },
   /* Labels, Reactions and Comments as popovers (Sept 2026). The comment
      rows put literal initials on --cat-* tokens with --on-dark ink, in both

@@ -103,7 +103,9 @@ module.exports=async function(){
   s.eq('a C code is read',key('485 c'),'485 C');
   s.eq('a Pantone prefix is ignored',key('Pantone 485 C'),'485 C');
   s.eq('a TCX code is read, dash optional',key('19 1664 tcx'),'19-1664 TCX');
-  s.eq('Cool Grey keeps its name',key('cool grey 10 c'),'COOL GREY 10 C');
+  // Pantone's books write GRAY; people type GREY. Both reach one key, or
+  // every Cool Gray code in a real book drops out (29 Sept 2026).
+  s.eq('Cool Grey and Cool Gray are one code',key('cool grey 10 c')+'|'+key('Cool Gray 10 C'),'COOL GRAY 10 C|COOL GRAY 10 C');
   s.eq('plain text is not a code',key('red'),'');
   const book=run(`JSON.stringify(_boardsPantoneBook())`);
   s.ok('the built-in C codes are in the book',/"485 C":"#DA291C"/.test(book),book);
@@ -116,5 +118,12 @@ module.exports=async function(){
   s.eq('showing the code',run(`_boardsSwatchValue(_editCards[0].hex,_boardsSwatchFmt(_editCards[0]),_editCards[0].pantone)`),'485 C');
   s.eq('an unknown code stays a note — nothing is guessed',run(`_editCards[1].type`),'text');
   s.eq('any swatch shows its nearest code, marked approximate',run(`_boardsSwatchValue('#D82A1F','pantone')`),'≈ 485 C');
+  s.section('the picker opens on a double-click only');
+  {
+    const h=run(`_boardCardHTML({id:'dz',type:'swatch',hex:'#C0392B',x:0,y:0,w:220,h:230},true)`);
+    const blk=(/<div class="board-swatch-block"[^>]*>/.exec(h)||[''])[0];
+    s.ok('the colour block opens it on dblclick',/ondblclick="window\.boardsSwatchPicker\('dz'\)"/.test(blk),blk);
+    s.ok('and has no single-click route to it',!/onclick=/.test(blk.replace(/ondblclick=/g,'')),blk);
+  }
   return s;
 };
