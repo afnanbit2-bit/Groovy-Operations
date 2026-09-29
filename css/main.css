@@ -2640,6 +2640,27 @@ body.board-fullscreen #bug-report-fab{display:none!important}
 .board-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;font-size:15px;font-weight:700;position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border)}
 .board-sheet-done{background:none;border:none;color:var(--accent-urgent);font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer;padding:4px 2px}
 .board-sheet-body{padding:10px 14px 16px}
+/* Milanote's own confirm and one-value ask (_boardsDialog) — centred, and
+   above any sheet it was raised from. Bottom-docked on a phone like a sheet. */
+.board-sheet-back.board-confirm-back{z-index:429;background:rgba(0,0,0,.5)}
+/* An in-place rename reads as typed, on a surface nothing shows through
+   (the board-tester's first run: the card head is a see-through overlay and
+   uppercases its label, so a typed name sat over the note's first line in
+   capitals; a sub-board title being edited sat under the card's head). */
+.board-card-head:has(.board-card-name[contenteditable="true"]){background:#111114}
+.board-card-name[contenteditable="true"]{text-transform:none;letter-spacing:0;text-overflow:clip}
+.board-subboard-title[contenteditable="true"]{position:relative;z-index:5;display:block;-webkit-line-clamp:unset;
+  background:var(--surface);color:var(--text);outline:2px solid var(--text);outline-offset:2px;border-radius:4px;cursor:text}
+.board-sheet.board-confirm{z-index:430;top:50%;bottom:auto;transform:translate(-50%,-50%);width:360px;padding:18px 18px 14px;border-radius:14px;display:flex;flex-direction:column;gap:14px}
+.board-confirm-msg{font-size:14.5px;line-height:1.45;white-space:pre-line;color:var(--text);overflow-wrap:anywhere}
+.board-confirm-field{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);min-width:0}
+.board-confirm-btns{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.board-confirm-ok{padding:8px 14px;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;background:var(--dark);color:var(--on-dark)}
+.board-confirm-ok.danger{background:var(--accent-urgent);color:var(--on-dark)}
+.board-confirm button:focus-visible,.board-confirm-field:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+/* On a phone it docks to the bottom edge like every other sheet there
+   (the .board-sheet phone rule further down), above the tool dock. */
+@media (max-width:560px){.board-sheet.board-confirm{top:auto;left:0;right:0;bottom:0;width:auto;max-width:none;transform:none;border-radius:16px 16px 0 0;border-left:none;border-right:none;border-bottom:none;padding-bottom:calc(14px + env(safe-area-inset-bottom))}}
 /* Phone share: the "Save to a board" picker (js/boards.js _boardsShareOpenPicker).
    A row is the board's tile, its whole name (the Profile-directory rule: the
    name never shares its row with a button, it IS the button) and a state word. */
@@ -2952,7 +2973,7 @@ body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:71px}
   .board-topbar>div{flex-wrap:nowrap!important}
   .board-topbar>div:first-child{flex:1 1 auto;min-width:0}
   .board-topbar>div:last-child{flex:0 0 auto}
-  .board-topbar .back-btn{max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;line-height:32px}
+  .board-topbar .back-btn{max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;line-height:32px;flex:0 0 auto}
   .board-topbar #board-title-input{flex:1 1 auto;min-width:48px;width:auto}
   .board-topbar .board-save-status,.board-topbar .board-peers{flex-shrink:0}
   .board-topbar .tool-btn{padding:6px 8px;white-space:nowrap}
