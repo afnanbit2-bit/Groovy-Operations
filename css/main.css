@@ -1039,7 +1039,7 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
    picture the text block is removed outright so the picture fills the card
    (Milanote's cards at 27% are just the pictures); with no picture it goes
    invisible but keeps its space, like a note body. */
-.board-world[data-lod="far"] .board-link-img+.board-link-meta{display:none!important}
+.board-world[data-lod="far"] .board-link-img+.board-link-meta,.board-world[data-lod="far"] .board-video+.board-link-meta{display:none!important}
 .board-world[data-lod="far"] .board-link-meta,
 .board-world[data-lod="far"] .board-link-loading{visibility:hidden}
 
@@ -1318,6 +1318,21 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
 .board-card-head .board-card-kind,.board-card-head .board-card-name,.board-card-head .board-card-del,.board-card-head .board-card-lock{color:#fff}
 .board-card-head .board-card-name:focus{background:rgba(255,255,255,.18);color:#fff;box-shadow:none}
 .board-card-head .board-card-del:hover{color:#fff;opacity:.72}
+/* A NOTE wears a corner chip, not the strip (GitHub #97, bug 6). The
+   full-width scrim sat on the note's first line and on its placeholder,
+   so hovering a note to read it hid what you came to read. On a note the
+   strip only ever carried the type word and the ✕ — the name is renamed
+   from the rail, F2 or the right-click menu — so it shrinks to the ✕ in
+   the top-right corner, and the body keeps a float on its FIRST LINE
+   that the chip sits in, so no text is ever under it. The float is there
+   at rest too: showing it only on hover would reflow the note under the
+   pointer. The name still appears while it is being renamed. */
+.board-card-el.type-text>.board-card-head{left:auto;right:14px;top:5px;padding:3px 5px;border-radius:7px;background:rgba(0,0,0,.72)}
+.board-card-el.type-text>.board-card-head .board-card-kind{display:none}
+.board-card-el.type-text>.board-card-head .board-card-kind:has(.board-card-name[contenteditable="true"]),.board-card-el.type-text>.board-card-head .board-card-kind:has(.board-card-lock){display:flex}
+.board-card-el.type-text>.board-card-head .board-card-name:not([contenteditable="true"]){display:none}
+.board-card-el.type-text:hover>.board-cmt-badge.pin,.board-card-el.type-text.selected>.board-cmt-badge.pin{right:48px}
+.board-text-body:not(:empty)::before{content:'';float:right;width:40px;height:26px;margin-right:-6px}
 /* THE COLOURED TOP STRIP IS ITS OWN BAR now, not the header's background.
    Milanote draws both: a 4px colour strip at the very top, and (in ours)
    the hover scrim above it. Painting the strip with the header meant a
@@ -1388,6 +1403,21 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
    CARD. Both text rows clamp instead of pushing anything out of the box. */
 .board-link-preview{display:flex;flex-direction:column;padding:0;min-height:0;overflow:hidden;position:relative}
 .board-link-img{display:block;width:100%;flex:1 1 auto;min-height:0;object-fit:cover;background:var(--soft);-webkit-user-drag:none}
+/* Video in a link card (#94 §12, MEASURED on Milanote): black 16:9 area, a
+   56px rgba(0,0,0,.6) circle with a white play glyph, centred. The area takes
+   whatever the card gives it above the link info, like the picture does. A
+   literal white glyph is right: the circle under it is literal too. */
+.board-video{position:relative;width:100%;flex:1 1 auto;min-height:0;background:#000;overflow:hidden}
+.board-video-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;-webkit-user-drag:none}
+.board-video-play{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.board-video-play svg{width:22px;height:22px;margin-left:3px}
+@media (hover:hover){.board-video-play:hover{background:rgba(0,0,0,.78)}}
+.board-video-frame{position:absolute;inset:0;width:100%;height:100%;border:0}
+/* Audio and map (#94 §13–14). A map shows Milanote's measured loading grey
+   rgb(102,109,122) until Google's tiles arrive; Spotify draws its own
+   rounded player, so no black box behind it. */
+.board-embed-map{background:rgb(102,109,122)}
+.board-embed-audio{background:transparent}
 .board-link-meta{flex:0 0 auto;display:flex;flex-direction:column;gap:3px;padding:8px 10px 9px;min-width:0}
 /* The URL row: a link glyph, the address, and the show/hide-picture toggle.
    The address is the only thing that flexes, so the glyph and the button
@@ -1456,6 +1486,18 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .bp-sub{font-size:clamp(22px,4vw,44px);line-height:1.15;margin:0;font-weight:700;color:var(--text)}
 .bp-body{font-size:clamp(18px,2.8vw,34px);line-height:1.45;color:var(--text);
   max-width:22em;white-space:pre-wrap}
+/* A formatted note on a slide: its own block structure carries the lines,
+   so pre-wrap would double them. Sizes are em, off the slide's body size. */
+.bp-body.rich{white-space:normal;text-align:left}
+.bp-body.rich ul{list-style:disc;padding-left:1.2em;margin:.2em 0}
+.bp-body.rich ol{list-style:decimal;padding-left:1.4em;margin:.2em 0}
+.bp-body.rich h2{font-size:1.5em;font-weight:800;line-height:1.2;margin:.2em 0}
+.bp-body.rich h3{font-size:1.2em;font-weight:700;line-height:1.25;margin:.2em 0}
+.bp-body.rich h6{font-size:.75em;font-weight:400;color:var(--muted);margin:.1em 0}
+.bp-body.rich pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.7em;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:.4em .6em;
+  margin:.2em 0;white-space:pre-wrap;word-break:break-word}
+.bp-body.rich blockquote{border-left:3px solid var(--border);margin:.2em 0;padding:0 .5em;color:var(--muted)}
 .bp-cap{font-size:clamp(12px,1.6vw,17px);color:var(--muted);max-width:34em}
 .bp-img{max-width:100%;max-height:72vh;object-fit:contain;border-radius:10px}
 .bp-list{list-style:none;padding:0;margin:0;text-align:left;
@@ -2278,6 +2320,21 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 
 /* Find within a board */
 .board-find{position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 8px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.1);z-index:28;max-width:calc(100% - 28px);flex-wrap:wrap}
+/* The bug FAB is hidden while the canvas has the screen, at EVERY width;
+   "Report a bug" is in the board's ⋯ menu instead. On a phone it was
+   painted over the rail's last tool and the Boards panel; on desktop it
+   sat on the comment drawer's Post button (GitHub #97, bug 8). */
+body.board-fullscreen #bug-report-fab{display:none!important}
+/* Find opened BEHIND an open side panel (#97 bug 8): it lives in the
+   stage at z 28 and the comment drawer (z 32, 320px), the card trash and
+   the Unsorted tray (z 130, 380px) are its siblings on the right. It steps
+   left of whichever is open. Not on Home, whose panel insets the stage
+   instead of covering it, and not on a phone, where Find spans the width
+   and every panel is a full-width sheet. */
+@media (min-width:561px){
+  .board-below:has(>.board-drawer[style*="flex"]) .board-find{right:calc(min(320px,88vw) + 14px)}
+  .board-below:not(.with-panel):has(>.board-tray:not(.collapsed)) .board-find{right:394px}
+}
 .board-find input{border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:13.5px;font-family:inherit;min-width:140px;background:var(--surface);color:var(--text)}
 .board-find-count{font-size:12px;color:var(--muted);min-width:52px;text-align:center}
 .board-card-el.found,.board-frame.found{outline:2px solid var(--accent-warning);outline-offset:1px}
@@ -2489,6 +2546,28 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 /* On a phone it docks to the bottom edge like every other sheet there
    (the .board-sheet phone rule further down), above the tool dock. */
 @media (max-width:560px){.board-sheet.board-confirm{top:auto;left:0;right:0;bottom:0;width:auto;max-width:none;transform:none;border-radius:16px 16px 0 0;border-left:none;border-right:none;border-bottom:none;padding-bottom:calc(14px + env(safe-area-inset-bottom))}}
+/* Phone share: the "Save to a board" picker (js/boards.js _boardsShareOpenPicker).
+   A row is the board's tile, its whole name (the Profile-directory rule: the
+   name never shares its row with a button, it IS the button) and a state word. */
+/* The "new version" banner (js/shared.js, fixed, bottom:0, z-index 2000,
+   53px measured at desktop widths) sat on the foot of every bottom sheet
+   (#97, bug 5). While it is up, a sheet stands on top of it instead. */
+body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:71px}
+.board-sendto-what{font-size:13px;color:var(--muted);margin:2px 0 10px}
+.board-sendto-search{width:100%;box-sizing:border-box;min-height:40px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:15px;margin-bottom:8px}
+/* A FIXED height, not a max (GitHub #97, bug 5). The sheet is anchored to
+   the BOTTOM of the screen and sized to its content, so a search that
+   shortened the list shrank the sheet and dropped its top edge — it read
+   as the panel jumping down after every keystroke. The list keeps its
+   height while you type; the rows inside it change. */
+.board-sendto-list{display:flex;flex-direction:column;gap:4px;height:min(52vh,420px);overflow-y:auto}
+.board-sendto-row{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 8px;border:none;border-radius:10px;background:transparent;color:var(--text);text-align:left;cursor:pointer;font:inherit}
+.board-sendto-row:active{background:var(--hover)}
+@media (hover:hover){.board-sendto-row:hover{background:var(--hover)}}
+.board-sendto-name{flex:1;min-width:0;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-sendto-vis{flex-shrink:0;font-size:12px;color:var(--muted)}
+.board-sendto-empty{font-size:14px;color:var(--muted);padding:16px 4px}
+
 .board-sheet-label{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:10px 0 6px}
 .board-sheet-empty{font-size:13px;color:var(--muted)}
 .board-sheet-row{display:flex;flex-wrap:wrap;gap:5px}
@@ -2633,6 +2712,14 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
 .board-share-list{flex:1;min-height:0;overflow:auto;padding:6px 14px}
 .board-share-row{display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13.5px;border-bottom:1px solid var(--border);cursor:pointer}
 .board-share-row:last-child{border-bottom:none}
+/* Per-person role (Sept 2026): the name is the flexing column, the role
+   picker a fixed one beside it — the name never gets crushed to 0px. */
+.board-share-who{flex:1;min-width:0;display:flex;align-items:center;gap:9px;cursor:pointer}
+/* Wraps rather than ellipsizing: a long name must not push the @username —
+   the one thing that says WHICH person this is — off the row. */
+.board-share-who>span{min-width:0;overflow-wrap:anywhere}
+.board-share-role{flex-shrink:0;min-height:32px;padding:4px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit;font-size:13px}
+.board-share-role:disabled{opacity:.45}
 .board-share-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 14px;border-top:1px solid var(--border)}
 
 /* ── Card trash panel (Sept 2026) ──────────────────────────────────────
@@ -2814,11 +2901,6 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   .board-stage{-webkit-touch-callout:none}
   .board-tray.collapsed{left:10px;right:10px;width:auto;height:44px;top:auto;bottom:calc(96px + env(safe-area-inset-bottom,0px));border:1px solid var(--border);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12)}
   .board-tray.collapsed .board-tray-reopen{border-radius:12px}
-  /* The bug FAB is hidden while the canvas has the screen; "Report a bug"
-     is in the ⋯ sheet instead. It was painted over the rail's last tool and
-     over the open Boards panel — the same collision that retired the
-     minimap. */
-  body.board-fullscreen #bug-report-fab{display:none!important}
   /* The Open pill on a sub-board card sat exactly over the 34px resize
      grip in the same corner — the pill is phone-only, so this was a
      phone-only bug. Hit-tested: the grip resolved to the pill. */
@@ -2860,6 +2942,8 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   /* A menu anchored to a pointer makes no sense on a touch screen — both
      the long-press menu and the rail's More button dock as a sheet. */
   .board-sheet{left:0;right:0;bottom:0;width:auto;max-width:none;transform:none;border-radius:16px 16px 0 0;border-left:none;border-right:none;border-bottom:none;max-height:78%;padding-bottom:env(safe-area-inset-bottom)}
+  /* The update banner wraps to two lines here: 83px measured at 360. */
+  body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:83px}
   .board-sheet-item{padding:15px 2px}
   .board-emoji-grid{grid-template-columns:repeat(7,1fr)}
   .board-emoji{font-size:27px;padding:9px 0}
@@ -2869,6 +2953,8 @@ html[data-theme="light"] .prof-ink{color:var(--ink)}
   /* touch targets — these were all sized for a cursor */
   .board-topbar .tool-btn{min-height:32px;padding:6px 10px}
   .board-card-head{padding:8px}
+  .board-card-el.type-text>.board-card-head{padding:2px}
+  .board-text-body:not(:empty)::before{width:42px;height:34px}
   .board-card-del,.board-todo-del{opacity:1;padding:6px}
   .board-resize-handle{width:34px;height:34px;right:0;bottom:0;padding:13px 0 0 13px}
   .board-link-handle{opacity:1;width:16px;height:16px}

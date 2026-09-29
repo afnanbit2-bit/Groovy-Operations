@@ -3379,6 +3379,325 @@ checked by breaking the ink, not by reading the fill.**
 **Nobody has seen the panel, the presets or a literal-coloured card on a
 real screen** — the sandbox cannot sign in.
 
+### Mood Boards — phone share: "Share → Groovy Ops" (Sept 2026)
+
+The first gap built from the Milanote gap study (four research agents,
+28 Sept 2026; Milanote itself is unreachable from the sandbox, so a Claude
+in Chrome study was briefed to fill in how it looks and behaves). The
+installed app now appears in the phone's **Share** menu; a shared photo,
+file, link or text lands in the **Unsorted** of a board the person picks.
+
+- **Three halves, one route.** `manifest.json` `share_target` (POST,
+  multipart, file field `files`) → `sw.js` `handleShare` parks the share in
+  Cache Storage (`groovy-share-inbox`: a `/__share/<id>/meta` JSON entry
+  plus one entry per file) and 303s to `/index.html#share=<id>` →
+  `js/boards.js` reads it back through the existing deep-link consumer
+  (`_boardsParseHash` / `_boardsConsumeDeepLink`, same Creative Hub gate).
+- **The bucket is NOT named `groovy-ops-*`** — the activate handler deletes
+  every such cache from a prior version, and a deploy landing between the
+  share and the page reading it must not eat it. Entries older than a day
+  are swept on every share.
+- **A picker, not an inbox board.** Recently opened boards first, search by
+  name; Home (no Unsorted), templates and boards you cannot edit are left
+  out. `_boardsSharePlan` is the one pure decision: Android usually puts
+  the link INSIDE `text`, so a link found there wins; otherwise the text
+  (or title) becomes a note. Files go through `_boardsTrayAddFiles`, so the
+  35 MB limit and the Cloudinary upload are the ones every other route uses.
+- **Forgotten only once delivered.** Closing the picker keeps the share
+  until the sweep, so a mis-tap is not data loss. An account without the
+  hub is told and the share is dropped.
+- Classes are `board-sendto-*` — `board-share-*` already belongs to the
+  board's Share (people) modal.
+- `netlify.toml` 303s a POST to `/share-target` to `/index.html` when no
+  service worker controls the page (first open) — the share is lost there,
+  but the person lands in the app rather than on an error. **Unverified**
+  that Netlify applies a 303 redirect to a POST.
+- `tests/share-target.test.js` (47) runs the real `sw.js` handler against a
+  fake Cache Storage and the real page flow end to end. Verified by
+  reverting the text-link search (5 fail), naming the bucket `groovy-ops-*`
+  (3) and not dropping a refused share (1).
+- **Nobody has shared into the app from a real phone.** Android only offers
+  a share target for an INSTALLED PWA, and may need the app reinstalled (or
+  a while) before the new manifest is picked up. iOS Safari does not
+  support Web Share Target at all — iPhones will not see it.
+
+### Mood Boards — Move to board… (Sept 2026)
+
+The second Milanote gap. **The rule is Milanote's (help centre, search
+summary — not seen in the product): a card moved to another board lands in
+THAT board's Unsorted.** This is the menu half — right-click, ⋯ and the
+phone More sheet, in the clipboard block after Move to Unsorted. **The drag
+half (hold a card over a breadcrumb until that board opens) waits for the
+Claude in Chrome study's measured hover time**; it will call the same
+`window.boardsMoveCardsTo(targetId, ids)`.
+
+- **It is the stash aimed at another board**: `_boardsExpandGroup` (pulled
+  out of `boardsTrayStashCards`, which now calls it too — a column takes its
+  children the same way in both) and `_boardsStashItem` (the whole card,
+  rows encoded; only lines inside one row travel — the Unsorted rule).
+- **The target is written FIRST, in a transaction that appends to the
+  SERVER's `unsorted`**, never this tab's copy; only once it commits are the
+  cards taken off this board. A failed write moves nothing and says so. It
+  needs a connection, like every transaction.
+- **Ctrl+Z must not bring a moved card back** — it now lives on another
+  board, and a restored copy here would be the same card twice.
+  `_boardsPurgeHistory` strips the moved ids from every undo/redo snapshot
+  and keeps the rest of the history; the toast says undo will not return
+  them.
+- Refused: a board link (as in the stash), this board, Home (no Unsorted),
+  templates, boards you cannot edit; locked cards stay and are counted.
+- **Comments on a moved card are not carried** — they are keyed by card id
+  under the source board's `comments` subcollection. **Known race:** someone
+  with the target board open who saves its head before their live listener
+  adopts the new Unsorted would write their older copy over it.
+- Activity `Board cards moved` falls in Monitor's Process bucket (checked).
+- `tests/board-move.test.js` (28). Verified by reverting: appending to this
+  tab's copy of the target, dropping the history purge, dropping the board-
+  link refusal — each fails by name.
+
+### Mood Boards — sharing roles: edit, comment, view (Sept 2026)
+
+The third Milanote gap (help centre, search summary: a board is shared per
+person as edit, comment-only or view-only). **`firestore.rules` CHANGED —
+it needs a republish.**
+
+- **Two lists beside `sharedWith`:** `sharedView` and `sharedComment`. A
+  person on `sharedWith` and on neither list can EDIT — which is what every
+  board shared before this already meant, so nothing migrates.
+  `sharedWith` stays the read list (the `array-contains` query and the read
+  rule are untouched). `_boardsShareRole(b,email)` is the one reader;
+  `_boardsSharePatch(picks)` builds the three fields from the sheet (pure).
+- **`_boardsCanEdit` respects the role**, and every one of its ~116 call
+  sites follows with no edit. `_boardsCanComment` (edit, or the comment
+  role) gates the comment box, Reply and `boardsAddComment`; Resolve stays
+  an editor's. The top bar shows **View only** / **Can comment**.
+- **Roles only mean something on a PRIVATE board** — a TEAM board is
+  editable by everyone (Stage 6), and the share sheet says so.
+- **A HOLE CLOSED:** before this, anyone on `sharedWith` could rewrite
+  `sharedWith` (add anyone) and even `ownerUid`, because the update rule
+  never looked at which fields changed. Sharing fields (`sharedWith`,
+  `sharedView`, `sharedComment`, `ownerUid`) are now the board owner's or an
+  app owner's (`boardSharingUntouched()`); the share sheet opens only for
+  them (`_boardsCanManageShare`). **Visibility is deliberately NOT in that
+  list** — any editor can still flip TEAM/PRIVATE, as before; recorded, not
+  changed.
+- Rules: `boardSharedEditor` / `boardSharedCommenter` / `canEditBoard`;
+  comments and the activity feed accept a commenter (`canCommentParent`),
+  trash and comment updates stay editors'.
+- **Verified in the real emulator** (`tests/rules-emulator-boards.js`,
+  26/26, share payload built by the app): against the PREVIOUS rules 12
+  fail, including the escalation and the ownership takeover. Client half:
+  `tests/board-roles.test.js` (27) — reverted role check (7 fail), compose
+  gate (1), share-sheet gate (1). Layout: `boards — the share sheet with
+  roles`, which caught a long name pushing the @username out of the row
+  (the name wraps now). **It cannot measure the role dropdown's own text**
+  (the probe skips `<option>`) — checked by breaking it.
+- **Nobody has used a role on a real screen** — the sandbox cannot sign in.
+
+### Mood Boards — notifications to the bell (Sept 2026)
+
+The fourth Milanote gap (help centre, search summaries). Board events go to
+the **same bell** as everything else — `hrm_notifications`, `forUser` =
+USERNAME, deterministic ids, `source:'moodboards'` — so no new panel, badge
+or rules change. The Board's inbox filters on its own `source` client-side
+too, so these never appear there.
+
+- **A comment** tells the board's owner, everyone who already wrote in that
+  thread (a card's, or the whole-board one) and the author being replied to
+  (as "X replied to you"). Never the writer. **Only people who can READ the
+  board** (`_boardsCanReadAs`, the read rule from the client) — a private
+  board's comment text must not land in someone else's bell. App owners are
+  NOT readers of a private board ("private means private"), so they are not
+  told. Recipients: `_boardsCommentRecipients` (pure). Comments now store
+  `byU` (the username); older ones are traced by display name.
+- **Assigning a task** tells the assignee (not yourself, not someone who
+  cannot open the board, not a re-assignment to the same person). The
+  assignee is a USER_DEFS NAME (`it.who`), mapped to a username.
+- **Due reminders** (today or overdue, not done) are raised by the
+  ASSIGNEE's own device once a day when the board list loads
+  (`_boardsRaiseDueReminders`, the Marketing M5 pattern), written only if
+  absent so a dismissed one stays dismissed that day. **Nothing fires while
+  nobody opens Mood Boards**, and the bell itself is read on HRM load, not
+  live — both pre-existing shapes, not changed here.
+- **The bell renders title and message RAW**, so `_boardsNotifRow` escapes
+  both. **"View" opens the board on the card**: `actionUrl` is a
+  `#board=…&card=…` deep link; `js/shared.js` `_hrmNotifAction` (cross-track,
+  one additive branch) hands a `#…` url to `location.hash`. Ids are cut to
+  `[A-Za-z0-9_-]` because the url is interpolated into an onclick.
+- A notification that fails to write never fails the comment or assignment.
+- **Not built:** @mentions (their own gap), email, "changed since your last
+  visit". `tests/board-notify.test.js` (27): reverting the reader filter
+  (2 fail), the escaping (2) and the only-if-absent check (1).
+
+### Mood Boards — video in a link card (Sept 2026)
+
+The first gap built from the **Claude in Chrome study** — five GitHub issues
+filed 28 Sept 2026 (#92 getting content in, #93 moving and copying, #94 new
+card types, #95 trash and templates, #96 sharing and notifications), each
+fact labelled SEEN / MEASURED / HELP / UNKNOWN. **Read the matching issue
+before building any remaining Milanote gap.** The study's own limits: it
+could only do atomic drags (so no hover-to-open timings or drop cues), had
+no second user, phone or extension, and attached no screenshots.
+
+From #94 §12: **a YouTube link is not a separate card type — it is the link
+card with its preview turned into a player.** A 16:9 black area, the
+thumbnail, a centred 56px `rgba(0,0,0,.6)` ▶ circle; clicking ▶ swaps in the
+provider's iframe with autoplay and it plays INLINE with the provider's
+controls. The existing preview toggle hides and shows it.
+
+- **`_boardsVideoOf(url)` is the one decision, pure:** youtube.com (www./m.)
+  watch / shorts / embed / live, youtu.be, vimeo.com/<digits>[/<hash>], a
+  `t=`/`start=` time carried. The HOST is matched exactly
+  (`youtube.com.evil.test` is not YouTube) and the id is re-validated
+  against the provider's shape before it goes into a URL.
+- **Nothing loads from YouTube until ▶** — no player and no tracker per
+  video on open — and the embed is `youtube-nocookie.com`. The thumbnail is
+  the fetched (Cloudinary-mirrored) preview picture, else YouTube's own
+  `i.ytimg.com` still; Vimeo has no id-based still and shows black until
+  the preview fetch lands.
+- **▶ swaps ONE element** (`window.boardsVideoPlay`). Playing is per viewer
+  and per visit (`_boardsPlaying`, reset on board open), never stored.
+  **KNOWN LIMIT: a full re-render restarts a playing video** — Milanote keeps
+  its iframe mounted; moving an iframe in the DOM reloads it, so matching
+  that would mean never rebuilding the card.
+- A video card is born **340 × 300** (`_BOARDS_VIDEO_W/H`; Milanote 338 wide
+  with a 338×189 media area), sized immediately rather than after the fetch,
+  and only while still at its birth size.
+- **Not built:** uploaded video files (autoplay/loop are for uploads only in
+  Milanote — HELP), the separate "Link info" toggle, and audio / map cards
+  (their own gaps, specified in #94 §13–14). **Vimeo is unverified** — the
+  study did not try it; built from the documented embed URL.
+- `tests/board-video.test.js` (27). Layout fragment `boards — a video link
+  card` (over a white stand-in thumbnail): making the play button
+  unclickable fails it; shrinking the card does NOT (the video area yields
+  its height, which is correct).
+- **Nobody has pressed ▶ on a real screen** — the sandbox cannot sign in.
+
+### Mood Boards — audio and map in a link card (Sept 2026)
+
+#94 §13–14, the same idea as video: the link card's preview area becomes the
+provider's player. `_boardsEmbedOf(url)` (pure) is now THE decision —
+video (via `_boardsVideoOf`), audio, map — and `_boardsEmbedSize` the one
+birth size (340 wide; a player's own height + `_BOARDS_EMBED_META_H` 110).
+
+- **Spotify** (track / album / playlist / episode / show / artist, 22-char
+  id, `intl-xx/` prefix allowed) renders its LIVE embed immediately — what
+  Milanote does — 80px for a track, 152 otherwise, `loading="lazy"`.
+  **This deliberately differs from video**, which waits for ▶.
+- **SoundCloud** (`soundcloud.com/<user>/<track>`, system pages refused) is
+  artwork + ▶, then the 145px "visual" player with auto_play.
+- **Google Maps** (`google.com/maps` place / search / `@lat,lng,Nz` /
+  `?q=`, and `maps.google.com`) is a LIVE map; the wheel zooms the map, not
+  the board, because the event goes to the iframe's document (as SEEN).
+  **Milanote uses the Maps Embed API, which needs a key we do not have;
+  ours is the keyless `maps.google.com/maps?q=…&z=…&output=embed` — long-
+  standing but NOT a documented API, unverified.** If maps come up blank,
+  that is the first thing to check (the fix is a key + the Embed API).
+  Short links (`maps.app.goo.gl`) stay ordinary links.
+- **A fixed-height player sets the card's floor** (`_boardsMinCardH`:
+  player + link info), because the layout fragment showed a shorter card
+  pushing the title out; the render grows an old card, nothing migrates.
+- Tests: `tests/board-video.test.js` (45 now); layout fragment `boards —
+  video, audio and map link cards` (1900 only — five 340px cards in a row),
+  which names the title when a Spotify card is squeezed.
+- **Nobody has seen these on a real screen.** Spotify, SoundCloud and Maps
+  are all unreachable from the sandbox.
+
+### Mood Boards — Tab stays in the note (28 Sept 2026)
+
+GitHub #97 (Afnan's own side-by-side test against Milanote), bug 1:
+**Tab in a note moved focus out of the card and whatever was typed next
+was lost** (or fired a board shortcut). A note body had no key handling at
+all, so the browser did its default. `_boardsNoteTab` is read in
+`_boardsOnKeydown` BEFORE the editable bail (the note IS the editable),
+only while `_boardsEditingEl` is a `board-txt-*` field and never with
+Ctrl/Cmd/Alt: in a list item it runs the browser's `indent`/`outdent`
+(a nested `<ul>`/`<ol>`, which the sanitiser already keeps); anywhere
+else Tab inserts four no-break spaces (a `\t` collapses — the body is not
+`white-space:pre`, and making it so would change how every existing note
+renders); in a heading it is simply kept. A to-do keeps its own Tab
+(indent a task). `tests/board-notetab.test.js`. **Nobody has pressed Tab
+in a note on a real screen yet.**
+
+**Present kept a note's structure (#97 bug 3, same day).** A note slide
+drew `c.text` — the note with every line, list and colour stripped — so it
+read "test- bullet one1. numbered…". A note carrying `c.rich` now draws it
+as `.bp-body.rich`, through **`_boardsSanitizeRich`, the same boundary the
+canvas uses** before stored markup touches the live DOM (never `c.rich`
+raw), with em-sized list/heading/code/quote rules so it scales with the
+slide. Checked in real Chromium: nested lists and a colour survive, an
+`<img onerror>` and a `<script>` are stripped and do not run.
+`tests/board-present.test.js`. **Known edge, not changed:** a note whose
+only line breaks are Shift+Enter `<br>`s counts as "plain", so it is
+stored as `c.text` alone and loses those breaks on the canvas too.
+
+**A board tile counts its Unsorted (#97 bug 4, same day).** After "Move to
+board…", LAB A's tile still read "0 cards" — true of its canvas, but the
+card had landed in its Unsorted, so the move looked like it had failed.
+The sub-board card and the Home panel row now add "· N in Unsorted"
+(`_boardsUnsortedCount`: tray ITEMS, one per row, however many cards a
+stashed column carries). The move already mirrors the target's `unsorted`
+into `moodBoards`, so the tile updates the moment the move lands. Guarded
+in `tests/board-move.test.js`.
+
+**The board picker stopped jumping (#97 bug 5, same day).** `.board-sheet`
+is bottom-anchored and sized to its content, so a search that shortened the
+"Move to a board" list shrank the sheet and dropped its top edge — MEASURED
+in real Chromium at **182 → 499** after one search. `.board-sendto-list`
+has a FIXED `height:min(52vh,420px)` now (was `max-height`): 182 → 182,
+and 218 → 218 on a 360px phone. The same report had it "partly under the
+new-version banner": that banner (`js/shared.js`, fixed, bottom:0,
+z-index 2000) measures **53px** on desktop and **83px** at 360 (it wraps),
+so `body:has(#sw-update-banner) .board-sheet:not(.board-pop)` lifts every
+bottom sheet onto it (71px / 83px). The share-into picker uses the same
+list and gets both. Held in `tests/board-move.test.js` (the probe cannot
+type into a search).
+
+**A note's hover strip is a corner chip (#97 bug 6, same day).** The
+full-width dark "NOTE ✕" scrim sat on the first line and the placeholder, so
+hovering a note to read it hid what you came to read. On `.type-text` the
+head is now a small chip in the top-right (the ✕; the lock on a locked
+note; the name only while it is being renamed — it is renamed from the
+rail, F2 or the menu, never by clicking the strip), and the body carries a
+`::before` float on its FIRST LINE (`.board-text-body:not(:empty)`) the chip
+sits in, at rest too, so hovering never reflows the note. A comment pin
+steps left of the chip while it shows. MEASURED in real Chromium: no text
+rect meets the chip on a plain, an empty and a list note; removing either
+rule brings the overlap back. Other card types keep the strip. Held in
+`tests/board-notetab.test.js` (the probe cannot hover).
+
+**A note grows with its text (#97 bug 7, same day).** It kept a fixed
+height and scrolled inside at ~100px. `_boardsFitNotes` (end of
+`_boardsHydrateTextCards`) DRAWS an overflowing note to its text at render
+without writing `c.h` — no write on a read path, nothing migrates — and
+skips a column child, which the column lays out from `c.h`; typing
+(`boardsTextInput` → `_boardsFitNote(c,true)`) grows `c.h` itself, so the
+connectors, frame membership and the column follow. Grow-only; the resize
+clamps a note at its text; capped at `_BOARDS_NOTE_MAX_H` (3000), past which
+it scrolls. MEASURED in real Chromium: a 100px note holding 200px of text
+is drawn at 200 with `c.h` still 100, and typing grew one to 380;
+removing the render pass puts the 100px of overflow back.
+`tests/board-notegrow.test.js`.
+
+**The Report Bug button left the board, and Find clears the side panels
+(#97 bug 8, same day).** On desktop the fixed `#bug-report-fab` (z 500)
+sat on the comment drawer's Post button. It is now hidden while
+`body.board-fullscreen` at EVERY width (it was phone-only), and the ⋯
+menu offers "Report a bug" at every width. Find lives in the stage at z 28
+while the comment drawer (z 32, 320px) and the Unsorted tray (z 130,
+380px) are its right-hand siblings, so it opened behind them; on desktop
+it now steps left of whichever is open (`.board-below:has(...)`, not on
+Home, whose panel insets the stage). MEASURED in real Chromium: Find at
+right 334 with the drawer open and 394 with the tray, hit-testable both
+times; with the rules removed it sits at 14 and is covered. The old
+assertion "desktop has no Report a bug" in `tests/boards.test.js` was
+reversed, not deleted.
+
+**#97 also reports things `main` already has** (Draw on, body drag, a
+YouTube player), so that test may have run on an older build — the
+Netlify deploy list or the diagnostics build id settles it; do not
+re-diagnose those from the code.
+
 ### Mood Boards — the phone audit (Sept 2026)
 
 Afnan: *"Study phone ui as a whole and find bugs in them go all in"*, then
@@ -9658,11 +9977,22 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
+**REPUBLISH OUTSTANDING (28 Sept 2026): Mood Boards sharing roles.**
+`mood_boards` update now requires the editor role and keeps the sharing
+fields to the board's owner; comments/activity accept the comment role.
+Until the Console has it, a view-only person can still edit (the app hides
+the tools, the rules do not stop a direct write) and the old sharedWith
+escalation stays open. Ran 26/26 in the emulator. One paste of the current
+file carries every outstanding entry below as well.
+
 **OUTSTANDING (26 Sept 2026, evening): the QA identity** (`dc98484`,
 `isQa()` / `authed()` / the QA fences — see "The QA identity" in
 `BOARD.md`). `signedIn()` now EXCLUDES `claude@groovy.op`. **Publish it
 before anything signs in as that account** — under the live rules it is an
 ordinary signed-in user. Emulator: Board 100/100, wh_sales/acct 103/103.
+Merged with the sharing roles above on 28 Sept: the QA clauses sit beside
+the role checks (`qaBoardOk` needs an empty `sharedWith`, so a view/comment
+role never applies to a QA board).
 
 **PUBLISHED 26 Sept 2026, was outstanding (session 2): The Board's lock
 rule** (`tbLockOk()`, `board_items` update). The old clause let a member on

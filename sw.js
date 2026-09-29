@@ -10,7 +10,7 @@
  * Bump CACHE_VERSION on every deploy that changes a precached file; the
  * activate handler deletes every cache from a prior version.
  */
-const CACHE_VERSION = 'v230';
+const CACHE_VERSION = 'v239';
 const STATIC_CACHE = `groovy-ops-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `groovy-ops-runtime-${CACHE_VERSION}`;
 // Deliberately NOT version-scoped: a Cloudinary delivery URL is immutable
@@ -188,8 +188,73 @@ async function networkFirst(request) {
   }
 }
 
+/* ── Share target (Sept 2026) ──────────────────────────────────────────
+   manifest.json's share_target makes the installed app appear in the
+   phone's Share menu. Android POSTs the shared photo / link / text here as
+   multipart form data. A service worker cannot hand a File to a page
+   directly, so the share is parked in its own Cache Storage bucket — one
+   JSON "meta" entry plus one entry per file — and the page is sent to
+   /index.html#share=<id>, where js/boards.js reads it back, asks which
+   board it belongs on and files it into that board's Unsorted.
+
+   The bucket is deliberately NOT named groovy-ops-*: the activate handler
+   deletes every groovy-ops-* cache from a previous version, and a deploy
+   landing between the share and the page picking it up must not eat it.
+   Entries older than a day are dropped on every share, so an abandoned
+   share cannot pile up. Nothing here touches Firebase or Cloudinary — the
+   upload happens in the page, as the signed-in person, like any other. */
+const SHARE_CACHE = 'groovy-share-inbox';
+const SHARE_PATH = '/share-target';
+const SHARE_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function shareSweep(cache, now) {
+  const keys = await cache.keys();
+  const dead = new Set();
+  for (const req of keys) {
+    const m = new URL(req.url).pathname.match(/^\/__share\/([^/]+)\/meta$/);
+    if (!m) continue;
+    try {
+      const meta = await (await cache.match(req)).json();
+      if (!(now - (meta.at || 0) < SHARE_TTL_MS)) dead.add(m[1]);
+    } catch (e) { dead.add(m[1]); }
+  }
+  await Promise.all(keys
+    .filter(req => { const m = new URL(req.url).pathname.match(/^\/__share\/([^/]+)\//); return m && dead.has(m[1]); })
+    .map(req => cache.delete(req)));
+}
+
+async function handleShare(request) {
+  try {
+    const form = await request.formData();
+    const now = Date.now();
+    const id = now.toString(36) + Math.random().toString(36).slice(2, 8);
+    const cache = await caches.open(SHARE_CACHE);
+    await shareSweep(cache, now);
+    const files = [];
+    const all = form.getAll('files');
+    for (let i = 0; i < all.length; i++) {
+      const f = all[i];
+      if (!f || typeof f === 'string' || !f.size) continue;
+      const key = `/__share/${id}/f${i}`;
+      await cache.put(key, new Response(f, { headers: { 'Content-Type': f.type || 'application/octet-stream' } }));
+      files.push({ key, name: f.name || ('shared-' + i), type: f.type || '', size: f.size });
+    }
+    const str = k => { const v = form.get(k); return typeof v === 'string' ? v.slice(0, 4000) : ''; };
+    const meta = { id, at: now, title: str('title'), text: str('text'), url: str('url'), files };
+    await cache.put(`/__share/${id}/meta`, new Response(JSON.stringify(meta), { headers: { 'Content-Type': 'application/json' } }));
+    return Response.redirect(`/index.html#share=${id}`, 303);
+  } catch (err) {
+    console.warn('[sw] share failed', err);
+    return Response.redirect('/index.html#share=failed', 303);
+  }
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
+  if (request.method === 'POST' && new URL(request.url).pathname === SHARE_PATH) {
+    event.respondWith(handleShare(request));
+    return;
+  }
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
