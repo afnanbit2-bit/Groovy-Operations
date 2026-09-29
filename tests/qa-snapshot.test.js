@@ -39,6 +39,25 @@ module.exports=async function(){
     // every secret collection really is one the rules give no match block
     s.ok('and none of them has a match block in firestore.rules (default deny)',L.SECRET_COLLECTIONS.every(c=>!new RegExp('match\\s+/'+c+'/').test(stripped)));
 
+    // The owner's books (Master Accounts, ma_*): afnan + ammar only, and NOT the
+    // QA account either, so the snapshot must not carry them into an emulator
+    // by default. The family is defined once, in the lib (OWNER_ONLY_BOOKS).
+    const ruleColls=[...stripped.matchAll(/match\s+\/([A-Za-z0-9_]+)\/\{/g)].map(m=>m[1]).filter(c=>c!=='databases');
+    const books=[...new Set(ruleColls.filter(c=>/^ma_/.test(c)))];
+    const rest=[...new Set(ruleColls.filter(c=>!/^ma_/.test(c)))];
+    s.ok('firestore.rules names the Master Accounts collections ('+books.length+')',books.length>=15&&['ma_accounts','ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares'].every(c=>books.indexOf(c)>-1));
+    s.ok('every collection the rules name ma_… is an owner-only book',books.every(L.isOwnerOnlyBooks));
+    s.ok('and no other collection is (the family is exactly ma_…)',rest.length>50&&rest.every(c=>!L.isOwnerOnlyBooks(c)));
+    s.ok('`ma_` alone, an upper-case name, ma, marketing_settings and mail_log are not owner-only books',!['ma_','MA_journal','ma','marketing_settings','mail_log'].some(L.isOwnerOnlyBooks));
+    const dflt=L.defaultCollections(rest.concat(books),false), dfltPii=L.defaultCollections(rest.concat(books),true);
+    s.ok('the default copy leaves every owner-only book out',dflt.length>0&&books.every(c=>dflt.indexOf(c)<0));
+    s.ok('… and --include-pii does not bring them back',books.every(c=>dfltPii.indexOf(c)<0));
+    s.ok('everything else is copied as before: every non-personal collection is in the default set',rest.filter(c=>L.PII_COLLECTIONS.indexOf(c)<0).every(c=>dflt.indexOf(c)>-1));
+    s.ok('the personal-data collections come in only with --include-pii',L.PII_COLLECTIONS.every(c=>dflt.indexOf(c)<0)&&L.PII_COLLECTIONS.filter(c=>rest.indexOf(c)>-1).every(c=>dfltPii.indexOf(c)>-1));
+    s.eq('for example: pos stays; employees and ma_journal go',J(L.defaultCollections(['pos','employees','ma_journal'],false)),J(['pos']));
+    s.eq('with --include-pii: pos and employees stay, ma_journal still goes',J(L.defaultCollections(['pos','employees','ma_journal'],true)),J(['pos','employees']));
+    s.ok('tools/qa-snapshot.js takes its default set from defaultCollections() (not an inline filter)',/a\.collections\|\|lib\.defaultCollections\(all,a\.includePii\)/.test(read('tools/qa-snapshot.js')));
+
     const fakeKey='AIza'+'x'.repeat(35);
     s.ok('a Google API key value is caught, at any depth',/Google API key/.test(L.secretScan({a:{b:[{c:fakeKey}]}})||''));
     s.ok('a credential-named field is caught',/apiKey/.test(L.secretScan({apiKey:'v'})||''));

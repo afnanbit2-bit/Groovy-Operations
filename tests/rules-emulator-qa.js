@@ -14,9 +14,21 @@
    owner-only included; a path with no match block stays denied to everyone;
    its WRITES are fenced to a short, declared list.
 
+   THE ONE EXCEPTION is the owner's books. Master Accounts (ma_*) is afnan +
+   ammar only ("just for me and Ammar") and the account used for automated QA
+   must not be able to read it, so there the QA account is REFUSED (part 1b,
+   with the two owners as the control). Parts 1 and 4 skip those paths — part
+   4 because its baseline (main before the QA work) predates Master Accounts,
+   so afnan and ammar's access to ma_* would read as a difference that is not
+   the QA work; every persona's access to ma_* is tests/rules-emulator-ma.js.
+   The family is defined once: OWNER_ONLY_BOOKS in tools/qa-snapshot-lib.js.
+
    The path list is PARSED FROM THE RULES FILE, not typed here, so a
    collection added later is in the matrix the day it is added. Four parts:
-     1 READ    every path with a read rule: get and list succeed for QA
+     1 READ    every path with a read rule (except ma_*, see 1b): get and list
+               succeed for QA
+     1b BOOKS  every ma_* path: get and list are REFUSED for QA, and succeed
+               for afnan and ammar (the control)
      2 NONE    a path with no match block (the credential collections, and an
                invented one) is denied to QA, and to a real owner too
      3 WRITE   junk create / update / delete is refused on every path; a
@@ -30,6 +42,7 @@ const fs=require('fs');
 const path=require('path');
 const {execSync}=require('child_process');
 const REPO=path.join(__dirname,'..');
+const QAL=require(path.join(REPO,'tools','qa-snapshot-lib.js'));   // OWNER_ONLY_BOOKS: the one definition of ma_*
 const dep=p=>require(require.resolve(p,{paths:[process.env.EMU_DEPS,process.cwd()].filter(Boolean)}));
 const {initializeTestEnvironment,assertSucceeds,assertFails}=dep('@firebase/rules-unit-testing');
 const {doc,setDoc,updateDoc,getDoc,deleteDoc,getDocs,collection}=dep('firebase/firestore');
@@ -66,6 +79,8 @@ const hasRead=l=>l.allow.some(k=>k==='read'||k==='get'||k==='list');
 // '/board_items/{id}/comments/{c}' → ['board_items','comments'] (collection names)
 const colls=l=>l.full.split('/').filter(Boolean).filter(s=>!/^\{/.test(s));
 const isRecursive=l=>/=\*\*/.test(l.full);
+// The owner's books (Master Accounts, ma_*): the one family QA must NOT read.
+const isBooks=l=>QAL.isOwnerOnlyBooks(colls(l)[0]);
 const U={};
 const authJs=fs.readFileSync(path.join(REPO,'js/auth.js'),'utf8');
 const userDefs=[...authJs.matchAll(/\{u:'([a-z0-9_]+)',\s*email:'([^']+)'/g)].map(m=>({u:m[1],email:m[2]}));
@@ -127,7 +142,8 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
 
   console.log('the path list, parsed from firestore.rules');
   const readable=leaves.filter(hasRead);
-  const readableS=readable.filter(inScope);
+  const books=readable.filter(isBooks);                                  // Master Accounts: QA is REFUSED (part 1b)
+  const readableS=readable.filter(l=>!isBooks(l)).filter(inScope);       // everything QA must read (part 1)
   await check('parser found the paths ('+leaves.length+' with rules, '+readable.length+' readable)',async()=>{
     if(leaves.length<85||readable.length<85) throw new Error('parsed too few: '+leaves.length+'/'+readable.length);
     for(const must of ['/pos/{doc}','/employees/{doc}','/payslips/{doc}','/acct_entries/{doc}']){
@@ -161,6 +177,29 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
     const dp=docPath(l,'d1'), cp=collPath(l);
     await check('QA get  '+l.full,()=>assertSucceeds(getDoc(doc(ctx(envN,QA),dp))));
     await check('QA list '+l.full,()=>assertSucceeds(getDocs(collection(ctx(envN,QA),cp))));
+  }
+
+  // ═══ 1b · THE OWNER'S BOOKS ═══
+  // Master Accounts (ma_*) is afnan + ammar only — "just for me and Ammar" — and
+  // the account used for automated QA must not be able to read the owner's
+  // books. So this is the OPPOSITE of part 1: QA is REFUSED. The control (an
+  // owner reads the very same seeded document and collection) proves the
+  // refusal is the rule, and not a broken path or an empty seed.
+  console.log('1b · THE OWNER\'S BOOKS — Master Accounts (ma_*): QA is REFUSED, the two owners are not');
+  await check('the parser found the Master Accounts paths ('+books.length+')',async()=>{
+    if(books.length<15) throw new Error('parsed too few: '+books.length);
+    for(const c of ['ma_accounts','ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares'])
+      if(!books.find(l=>colls(l)[0]===c)) throw new Error('missing '+c);
+  });
+  for(const l of books.filter(inScope)){
+    const dp=docPath(l,'d1'), cp=collPath(l);
+    await check('QA get  '+l.full+' is REFUSED',()=>assertFails(getDoc(doc(ctx(envN,QA),dp))));
+    await check('QA list '+l.full+' is REFUSED',()=>assertFails(getDocs(collection(ctx(envN,QA),cp))));
+    for(const o of ['afnan','ammar'])
+      await check('control: '+o+' gets and lists '+l.full,async()=>{
+        await assertSucceeds(getDoc(doc(ctx(envN,o),dp)));
+        await assertSucceeds(getDocs(collection(ctx(envN,o),cp)));
+      });
   }
 
   // ═══ 2 · NO MATCH BLOCK ═══
@@ -260,7 +299,12 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
   }
 
   // ═══ 4 · DIFFERENTIAL ═══
-  console.log('4 · DIFFERENTIAL — origin/main vs this ruleset, every non-QA persona, every path');
+  console.log('4 · DIFFERENTIAL — origin/main vs this ruleset, every non-QA persona, every path (except ma_*)');
+  // ma_* is left out, and only because of the baseline: OLD_RULES is main before
+  // the QA work, which predates Master Accounts, so it denies ma_* to everyone
+  // while this ruleset admits afnan and ammar — a difference that is the Master
+  // Accounts block, not the QA work. Those paths are held elsewhere: QA is
+  // refused in part 1b, and every persona's access is tests/rules-emulator-ma.js.
   const who=personas.filter(p=>p.u!==QA).map(p=>p.u).concat(['__anon','__stranger']);
   const payload=u=>{ const id=u.startsWith('__')?'u-stranger':uidOf(u); return rich(id,u.replace('__','')); };
   const outcome=async fn=>{ try{ await fn(); return 'ok'; }catch(e){ return 'no'; } };
@@ -269,7 +313,7 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
     const segs=docPath(l,'d1').split('/');
     for(let i=2;i<=segs.length;i+=2) await setDoc(doc(db,segs.slice(0,i).join('/')),Object.assign(rich(uidOf('afnan'),'afnan'),{__seed:1}));
   });
-  for(const l of leaves.filter(inScope)){
+  for(const l of leaves.filter(inScope).filter(l=>!isBooks(l))){
     const dp=docPath(l,'d1'),np=docPath(l,'new1'),cp=collPath(l);
     for(const u of who){
       const res={};

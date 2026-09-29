@@ -32,7 +32,9 @@
    Options
      --collections a,b,c     top-level collections (default: every collection in
                              firestore.rules, minus secrets, minus PII collections
-                             unless --include-pii)
+                             unless --include-pii, minus the owner's books —
+                             Master Accounts, ma_*, which the QA account is not
+                             allowed to read either; naming one here still copies it)
      --exclude a,b           skip these
      --mask-pii              mask personal data (required unless the flag below)
      --i-accept-unmasked-pii copy personal data as it is (the human's call)
@@ -147,7 +149,11 @@ async function main(){
 
   const {Firestore}=dep('@google-cloud/firestore');
   const all=rulesCollections();
-  let colls=(a.collections||all.filter(c=>a.includePii||lib.PII_COLLECTIONS.indexOf(c)<0));
+  // The default set leaves out the personal-data collections (unless --include-pii)
+  // and the owner's books (ma_*, Master Accounts: afnan + ammar only, and the QA
+  // account is refused them too — see OWNER_ONLY_BOOKS in the lib). --collections
+  // is a deliberate ask by someone holding live credentials, so it is honoured.
+  let colls=(a.collections||lib.defaultCollections(all,a.includePii));
   colls=colls.filter(c=>a.exclude.indexOf(c)<0);
 
   console.log('QA snapshot');

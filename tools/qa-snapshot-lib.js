@@ -110,6 +110,32 @@ const NAME_IN={employees:['name','fullName'],creators:['name'],user_profiles:[],
 // and always masked.
 const PII_COLLECTIONS=['employees','payslips','advance_requests','loans','wh_sales','creators','paid_pr_requests','dispatches','acct_vendors','hrm_notifications','user_profiles'];
 
+// The owner's books. Master Accounts (js/ma-core.js, js/master-accounts.js) is
+// readable by afnan and ammar ONLY (isMasterAccounts() in firestore.rules) and
+// deliberately NOT by the QA account: Afnan's rule, "just for me and Ammar",
+// which is why every other collection admits QA through isQaRead() and these
+// do not. All of its collections are named ma_<something>.
+//
+// THIS is the one definition of that family, for everything QA-shaped:
+//   · tests/qa-read-guard.test.js exempts exactly these collections from
+//     "every read rule admits QA" — and asserts that they still do NOT
+//   · tests/rules-emulator-qa.js expects the QA account to be REFUSED on them
+//   · defaultCollections() below leaves them out of the snapshot
+// Naming one explicitly (--collections ma_journal) is still honoured: that is
+// a person with live credentials asking, the same as --include-pii for the
+// personal-data collections. Nothing else is exempt, and the pattern needs at
+// least one character after the prefix, so `ma_` alone and names such as
+// `marketing_settings` are not caught.
+const OWNER_ONLY_BOOKS=/^ma_[a-z0-9_]+$/;
+function isOwnerOnlyBooks(name){return OWNER_ONLY_BOOKS.test(String(name));}
+
+// What a run copies when --collections is not given: every collection the
+// rules name, minus the personal-data collections (unless --include-pii),
+// minus the owner's books. Pure, so CI can hold it without an emulator.
+function defaultCollections(all,includePii){
+  return all.filter(c=>(includePii||PII_COLLECTIONS.indexOf(c)<0)&&!isOwnerOnlyBooks(c));
+}
+
 function makeMasker(salt){
   const key=String(salt==null?'groovy-qa-mask-v1':salt);
   const h=(kind,v)=>crypto.createHmac('sha256',key).update(kind+'\u0000'+String(v)).digest('hex');
@@ -204,4 +230,4 @@ function checkPii(a){
   return {errs,wantsPii};
 }
 
-module.exports={checkTarget,checkSource,isLoopback,SECRET_COLLECTIONS,isSecretCollection,secretScan,makeMasker,PII_COLLECTIONS,parseArgs,checkPii};
+module.exports={checkTarget,checkSource,isLoopback,SECRET_COLLECTIONS,isSecretCollection,secretScan,makeMasker,PII_COLLECTIONS,OWNER_ONLY_BOOKS,isOwnerOnlyBooks,defaultCollections,parseArgs,checkPii};

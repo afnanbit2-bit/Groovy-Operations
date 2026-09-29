@@ -63,6 +63,9 @@ function tool(args,env){
     await setDoc(doc(db,'mood_boards','B1'),{title:'Board',visibility:'shared'});
     await setDoc(doc(db,'mood_boards','B1','presence','u1'),{at:1});
     await setDoc(doc(db,'mood_boards','B1','comments','c1'),{text:'hi',byUid:'u1'});
+    // the owner's books (Master Accounts, ma_*): afnan + ammar only, and the QA account is refused them too
+    await setDoc(doc(db,'ma_journal','JV-27-0001'),{kind:'money_out',amount:150000,status:'posted',note:'FAKE — an owner-only book entry'});
+    await setDoc(doc(db,'ma_accounts','1010'),{code:'1010',name:'Cash in hand'});
   });
   const dump=async(path_)=>D(async db=>(await getDocs(collection(db,...path_))).docs.map(d=>({id:d.id,...d.data()})));
   const has=async(path_)=>D(async db=>(await getDoc(doc(db,...path_))).exists());
@@ -171,6 +174,18 @@ function tool(args,env){
     // default set reads collections named in firestore.rules; the fake source has employees/wh_sales in it
     expect((await dump(['employees'])).length===0&&(await dump(['wh_sales'])).length===0,'a PII collection was copied without --include-pii');
     expect((await dump(['pos'])).length===2,'default set did not copy pos: '+(await dump(['pos'])).length);
+  });
+  await t('the owner\'s books (ma_*, Master Accounts) are NOT copied by default — not even with --include-pii — and the rest still is',async()=>{
+    const r=tool(BASE.concat(['--mask-pii','--include-pii','--clear-target']));   // default collection set, PII allowed
+    expect(r.code===0,'exit '+r.code+' :: '+r.out.slice(-200));
+    expect((await dump(['ma_journal'])).length===0&&(await dump(['ma_accounts'])).length===0,'an owner-only book was copied by default');
+    expect(!/ma_journal|ma_accounts/.test(r.stdout),'the run listed an owner-only book among its collections');
+    expect((await dump(['pos'])).length===2&&(await dump(['store_items'])).length>0,'the default set stopped copying ordinary collections');
+  });
+  await t('… but naming one with --collections is a deliberate ask, and is honoured',async()=>{
+    const r=tool(BASE.concat(['--mask-pii','--clear-target','--collections','ma_journal']));
+    expect(r.code===0,'exit '+r.code+' :: '+r.out.slice(-200));
+    expect((await dump(['ma_journal'])).length===1,'an explicitly named ma_ collection was not copied');
   });
   await t('--dry-run reads and counts but writes nothing',async()=>{
     await dst.clearFirestore();
