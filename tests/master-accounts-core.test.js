@@ -543,7 +543,9 @@ module.exports=async function(){
     const holders=[{code:'1011',name:'Cash — with Afnan',active:true,holderKind:'cash',balance:120000,floor:0,lastCount:null},
                    {code:'1010',name:'Cash — store drawer (Raees)',active:true,holderKind:'cash',mirror:'store',mirrorOk:false,balance:null}];
     const cal=M.maCalendar({today:TODAY,days:30,commitments:[rent],docs:[],settings:S,start:100000});
-    const lines=M.maNeedsAttention({today:TODAY,settings:S,holders,commitments:[rent],docs:[pend],calendar:cal,unlabelled:[{amount:900}],review:[{}],recon:-2000,backup:null,nowMs:0});
+    // Every book here has its opening (open1011): without one, "No opening
+    // balance yet" leads the list (QA F25, asserted in ma-fix-money).
+    const lines=M.maNeedsAttention({today:TODAY,settings:S,holders,commitments:[rent],docs:[open1011,pend],calendar:cal,unlabelled:[{amount:900}],review:[{}],recon:-2000,backup:null,nowMs:0});
     s.eq('the concerns come before the watches',lines.map(l=>l.state).join(),'concern,concern,watch,watch,watch,watch,watch,watch,watch');
     s.ok('an unfunded day is a concern',lines.some(l=>l.state==='concern'&&/run .* short/.test(l.sentence)));
     s.ok('an overdue rent says what, when and how much',lines.some(l=>l.sentence==='Rent — factory — nothing recorded for Oct 2026; ₨2,50,000 was due Mon 5 Oct.'));
@@ -553,11 +555,11 @@ module.exports=async function(){
     s.ok('no backup yet says what to switch on',lines.some(l=>/No nightly backup has run yet/.test(l.sentence)));
     s.ok('every line carries its basis',lines.every(l=>l.basis));
     s.ok('and an action',lines.every(l=>l.action&&l.action.go));
-    const quiet=M.maNeedsAttention({today:TODAY,settings:S,holders:[{code:'1011',name:'Cash — with Afnan',active:true,holderKind:'cash',balance:0}],commitments:[],docs:[],calendar:M.maCalendar({today:TODAY,commitments:[],settings:S,start:5}),backup:{ok:true,at:1000},nowMs:1000+3600000});
+    const quiet=M.maNeedsAttention({today:TODAY,settings:S,holders:[{code:'1011',name:'Cash — with Afnan',active:true,holderKind:'cash',balance:0}],commitments:[],docs:[open1011],calendar:M.maCalendar({today:TODAY,commitments:[],settings:S,start:5}),backup:{ok:true,at:1000},nowMs:1000+3600000});
     s.eq('when all is well there is nothing to say',quiet.length,0);
-    const old=M.maNeedsAttention({today:TODAY,settings:S,holders:[],commitments:[],docs:[],backup:{ok:true,at:0},nowMs:3*86400000});
+    const old=M.maNeedsAttention({today:TODAY,settings:S,holders:[],commitments:[],docs:[open1011],backup:{ok:true,at:0},nowMs:3*86400000});
     s.eq('a backup three days old is a concern',old.map(l=>l.state+':'+l.sentence).join(),'concern:The last backup ran 3 days ago.');
-    const failed=M.maNeedsAttention({today:TODAY,settings:S,holders:[],commitments:[],docs:[],backup:{ok:false,error:'PERMISSION_DENIED on bucket'},nowMs:1});
+    const failed=M.maNeedsAttention({today:TODAY,settings:S,holders:[],commitments:[],docs:[open1011],backup:{ok:false,error:'PERMISSION_DENIED on bucket'},nowMs:1});
     s.ok('a failed backup names its error',/PERMISSION_DENIED/.test(failed[0].sentence));
   }
 

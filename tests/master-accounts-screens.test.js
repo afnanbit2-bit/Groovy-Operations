@@ -230,7 +230,10 @@ module.exports=async function(){
   {
     // Core: the concern is replaced only when the calendar is incomplete.
     const {app}=mkApp();
-    const na=c=>JSON.parse(app.run('JSON.stringify(maNeedsAttention({today:"2026-10-20",settings:MA_DEFAULT_SETTINGS,holders:[],commitments:[],docs:[],calendar:maCalendar({today:"2026-10-20",commitments:['+J(Object.assign({},rent2,{dueDay:25}))+'],settings:MA_DEFAULT_SETTINGS,start:1000,complete:'+c+'})}).map(x=>x.state+":"+x.sentence))'));
+    // The book has its opening, so "No opening balance yet" (QA F25) is not
+    // on the list this asserts in full.
+    const op='maBuildDoc("journal",{kind:"opening",date:"2026-07-01",lines:[{account:"1020",side:"dr",amount:1000}]},{by:"afnan"},maChartIndex(maChart("groovy")),MA_DEFAULT_SETTINGS)';
+    const na=c=>JSON.parse(app.run('JSON.stringify(maNeedsAttention({today:"2026-10-20",settings:MA_DEFAULT_SETTINGS,holders:[],commitments:[],docs:['+op+'],calendar:maCalendar({today:"2026-10-20",commitments:['+J(Object.assign({},rent2,{dueDay:25}))+'],settings:MA_DEFAULT_SETTINGS,start:1000,complete:'+c+'})}).map(x=>x.state+":"+x.sentence))'));
     s.ok('complete and short: the concern names the day',na(true).some(x=>/^concern:On .* run .* short/.test(x)),J(na(true)));
     s.ok('incomplete and short: a watch that says it cannot judge',J(na(false))===J(['watch:Can’t judge the next 30 days — the drawer’s balance could not be read.']),J(na(false)));
   }

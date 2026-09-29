@@ -201,6 +201,16 @@ const FRAGMENTS={
     const app=_maFixture();
     return Promise.resolve(app.run("_maPageHTML('ma-overview')"));
   },
+  // QA F25: a book with NO opening balance — every other fragment opens on
+  // the fixture's, so this is the one that renders an empty book. Needs
+  // attention leads with "No opening balance yet" and its Record it button,
+  // over the watch that no backup has run.
+  'master accounts — Today on an empty book':()=>{
+    const app=loadApp({files:['js/ma-core.js','js/master-accounts.js'],currentPage:'ma-overview',
+      session:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run("_maMirror={ok:true,cash:0,why:'',at:Date.now()};maLoaded=true;_maLoadErrs=[];_maInvalidate();_maTouch();1");
+    return Promise.resolve(app.run("_maPageHTML('ma-overview')"));
+  },
   'master accounts — Money and a holder':()=>{
     const app=_maFixture();
     const money=app.run("_maPageHTML('ma-money')");

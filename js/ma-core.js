@@ -769,6 +769,13 @@ function maJournalTotal(doc){
   }
   return doc.lines.reduce((t,l)=>t+(Number(l.dr)||0),0);
 }
+/* An opening balance on the books (QA F25): a journal of kind 'opening'
+   that is not void. A journal never waits — only a transfer is ever
+   pending (maBuildDoc) — so "not void" is "live"; and one dated before
+   go-live (historical) counts, since it is still where the books start.
+   ONE definition: Needs attention's "No opening balance yet" and
+   maValidate's second-opening check both read it. */
+function maIsOpening(d){return !!d&&d.dt==='journal'&&d.kind==='opening'&&d.status!=='void';}
 
 /* ── Posting (§7) — a document's lines, labelled per §27 ─────────────────── */
 /* Every line is {account, dr, cr} plus the labels. A void or a pending
@@ -1594,7 +1601,7 @@ function maValidate(doc,ctx){
       }
       // A second opening for an account doubles its starting balance.
       if(k==='opening'&&!bad){
-        const prior=(c.docs||[]).filter(d=>d&&d.dt==='journal'&&d.kind==='opening'&&d.status!=='void'&&d.id!==doc.id&&(!c.before||d.id!==c.before.id));
+        const prior=(c.docs||[]).filter(d=>maIsOpening(d)&&d.id!==doc.id&&(!c.before||d.id!==c.before.id));
         const seen={};
         lines.forEach((l,i)=>{
           if(seen[l.account])return;
@@ -1833,6 +1840,21 @@ function maNeedsAttention(o){
   const today=o.today;
   const out=[];
   const add=(state,sentence,basis,action,weight)=>out.push({state,sentence,basis,action:action||null,weight:weight||0});
+  // No opening balance yet (QA F25; Afnan: "keep opening balance alert").
+  // The rule is maIsOpening: the book has an opening when any journal of
+  // kind 'opening' is not void — so the line goes the moment one is
+  // recorded, and comes back if the only one is voided. Until then every
+  // balance on these pages (cash in hand, the holders, the 30 days) counts
+  // from ₨0: the figures are not the books' own. That is why it is a
+  // CONCERN, the red dot, and not a watch — a watch is "keep an eye on
+  // this"; this is "every number here is wrong" — and why it carries the
+  // largest weight: concerns sort before watches, so on a fresh install it
+  // still leads the list over "Backups are not set up yet". It is raised
+  // only when the caller hands the documents over (`docs` an array): with
+  // none passed, whether there is an opening is not known and nothing is
+  // said. The pages never reach it on a failed read — ma_journal is a core
+  // collection, and a refused core read paints the error card instead.
+  if(Array.isArray(o.docs)&&!o.docs.some(maIsOpening))add('concern','No opening balance yet — the books start when one is recorded.','The journal holds no opening balance that is not void, so every balance here counts from ₨0.',{label:'Record it',go:'record',kind:'opening'},Number.MAX_SAFE_INTEGER);
   // A holder below zero or its floor
   (o.holders||[]).forEach(h=>{
     if(!h.active||h.balance===null||h.mirror)return;
@@ -2287,7 +2309,7 @@ if(typeof module!=='undefined'&&module.exports){
     maSettings,maEsc,maNorm,maDay,maIsDay,maDayAdd,maDaysBetween,maWeekday,maMonthOf,maMonthAdd,maDaysInMonth,
     maFyEndYear,maFyOf,maQuarterOf,maQuarterRange,maQuarterLabel,maPeriodLabels,maMonthLabel,maDayLabel,
     maParseRupees,maRupeesDotted,maGroup,maRs,maRsSigned,maRsShort,maRsWords,maChart,maChartIndex,maAcc,maIsMoney,maMoneyAccounts,
-    maTaxBlank,maTaxCompute,maTaxBlock,maTaxIssues,maDocNo,maTransferConfirm,maBuildDoc,maJournalTotal,
+    maTaxBlank,maTaxCompute,maTaxBlock,maTaxIssues,maDocNo,maTransferConfirm,maBuildDoc,maJournalTotal,maIsOpening,
     maPost,maPostAll,maSumLines,maBal,maBalanceOf,maRunningMin,maHolderRows,maHolderCash,maCashInHand,maTrialBalance,maLedger,
     maTermsIssues,maTermsText,maTermsAt,maTermsChange,maNextPayDay,maDueDate,maRateAt,maRateIssues,maRateChange,
     maPartyCode,maPartyIssues,maItemIssues,maCommitmentIssues,maCommitmentDueDays,maCommitmentPeriodKey,

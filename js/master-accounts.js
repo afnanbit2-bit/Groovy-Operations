@@ -934,6 +934,9 @@ window.maConcern=function(i){
   else if(a.go==='pay_commitment')window.maPayCommitment(a.ref,a.period);
   else if(a.go==='doc')window.maOpenDoc(a.dt||'transfer',a.ref);
   else if(a.go==='count')window.maRecordKind('count',{holder:a.ref});
+  // "No opening balance yet" (QA F25): straight to the Opening balance form,
+  // the same call the picker's tile makes.
+  else if(a.go==='record')window.maRecordKind(a.kind);
   else if(a.go==='unlabelled'){_maLedgerTab='unlabelled';window.showPage('ma-ledger');}
   else if(a.go==='review'){_maLedgerTab='review';window.showPage('ma-ledger');}
   else if(a.go==='account'){_maLedgerTab='postings';_maLF=Object.assign(_maLFBlank(),{account:a.ref});_maPeriod='all';window.showPage('ma-ledger');}

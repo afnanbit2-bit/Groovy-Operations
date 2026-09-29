@@ -23,6 +23,9 @@
    - F20–F24 (the second QA pass): the slide-over rail stretches under the
      top bar, Money out's dates do not break, the Parties filter is one row
      and the tabs wrap on a phone, a section's actions wrap as one group.
+   - F25–F27 (Afnan's calls): "No opening balance yet" leads Needs attention
+     until one is recorded; the picker folds the later kinds; the rail
+     slides over the page up to 1440px.
 
    Every check here was made to fail once by undoing its fix. What only a
    browser can show — the sticky header and rail (F01/F02), the phone's
@@ -286,18 +289,21 @@ module.exports=async function(){
     s.ok('a weekly period is a day, not "2026-10-03"',na.some(x=>x.sentence==='Security guard — nothing recorded for Sat 3 Oct; ₨7,000 was due Sat 3 Oct.'),J(na.map(x=>x.sentence)));
     const elec={id:'e',name:'Electricity — K-Electric',kind:'running',cadence:'monthly',dueDay:3,amountExpected:62000,account:'6030',active:true};
     const part=Object.assign({},M.maBuildDoc('journal',{kind:'money_out',date:'2026-10-07',holder:'1020',account:'6030',amount:30000,payee:'K-Electric',tax:{kind:'none'}},m(1),M.maChartIndex(M.maChart('groovy')),S0),{commitmentId:'e',commitmentPeriod:'2026-10'});
-    const late=M.maNeedsAttention({today:'2026-10-08',settings:S0,holders:[],commitments:[elec],docs:[part]});
+    // Every book in this section has its opening (OPEN): without one, "No
+    // opening balance yet" leads the list (QA F25, asserted below).
+    const OPEN=M.maBuildDoc('journal',{kind:'opening',date:'2026-07-01',lines:[{account:'1020',side:'dr',amount:1000000}]},m(0),M.maChartIndex(M.maChart('groovy')),S0);
+    const late=M.maNeedsAttention({today:'2026-10-08',settings:S0,holders:[],commitments:[elec],docs:[OPEN,part]});
     s.eq('a part payment past its grace is a concern, in the past tense',J(late.map(x=>[x.state,x.sentence])),J([['concern','Electricity — K-Electric — ₨32,000 still to pay for Oct 2026; it was due Sat 3 Oct.']]));
-    const within=M.maNeedsAttention({today:'2026-10-05',settings:S0,holders:[],commitments:[elec],docs:[part]});
+    const within=M.maNeedsAttention({today:'2026-10-05',settings:S0,holders:[],commitments:[elec],docs:[OPEN,part]});
     s.eq('…within its grace a watch — "was due", not "is due"',J(within.map(x=>x.sentence)),J(['Electricity — K-Electric was due Sat 3 Oct — ₨32,000 still to pay.']));
-    const today=M.maNeedsAttention({today:'2026-10-03',settings:S0,holders:[],commitments:[elec],docs:[]});
+    const today=M.maNeedsAttention({today:'2026-10-03',settings:S0,holders:[],commitments:[elec],docs:[OPEN]});
     s.eq('…and on the day, "is due today"',J(today.map(x=>x.sentence)),J(['Electricity — K-Electric is due today — ₨62,000.']));
     const tr=M.maBuildDoc('transfer',{date:'2026-10-01',from:'1011',to:'1012',amount:25000},m(2),M.maChartIndex(M.maChart('groovy')),S0);
     tr.id='TR-27-0004';tr.no='TR-27-0004';
-    const as=who=>M.maNeedsAttention({today:'2026-10-08',settings:S0,holders:[],commitments:[],docs:[tr],viewer:who,closes:[]})[0];
+    const as=who=>M.maNeedsAttention({today:'2026-10-08',settings:S0,holders:[],commitments:[],docs:[OPEN,tr],viewer:who,closes:[]})[0];
     s.eq('to Ammar, the one who confirms it: "by you", and Confirm',J([as('ammar').sentence,as('ammar').action.label]),J(['₨25,000 handed over on Thu 1 Oct is waiting to be confirmed by you.','Confirm']));
     s.eq('to Afnan, who cannot confirm it: "by Ammar", and Open',J([as('afnan').sentence,as('afnan').action.label]),J(['₨25,000 handed over on Thu 1 Oct is waiting to be confirmed by Ammar.','Open']));
-    const lockedQ=M.maNeedsAttention({today:'2026-10-08',settings:S0,holders:[],commitments:[],docs:[Object.assign({},tr,{date:'2026-09-20',quarter:'2027-Q1'})],viewer:'ammar',closes:[{quarter:'2027-Q1',locked:true}]})[0];
+    const lockedQ=M.maNeedsAttention({today:'2026-10-08',settings:S0,holders:[],commitments:[],docs:[OPEN,Object.assign({},tr,{date:'2026-09-20',quarter:'2027-Q1'})],viewer:'ammar',closes:[{quarter:'2027-Q1',locked:true}]})[0];
     s.eq('in a closed quarter even the confirmer gets Open — it cannot be confirmed',lockedQ.action.label,'Open');
     const {app}=mkApp();
     s.ok('the page hands Needs attention the viewer and the closes',/viewer:typeof session!=='undefined'&&session\?session\.u:null,closes:maData\.closes/.test(read('js/master-accounts.js')));
@@ -473,9 +479,74 @@ module.exports=async function(){
     s.ok('F24 — …and a section with no actions carries no empty group',!/<span class="ma-sec-acts ma-nw"><\/span>/.test(hold));
   }
 
-  /* ── F26 and F27, Afnan's calls on the judgement findings ─────────── */
-  // "fold the tiles, slide-over up to 1440". F25 ("keep opening balance
-  // alert") was answered as no change and is not touched here.
+  /* ── F25, F26 and F27, Afnan's calls on the judgement findings ────── */
+  // "keep opening balance alert, fold the tiles, slide-over up to 1440".
+  // There was no opening-balance alert to keep — the QA had SUGGESTED one —
+  // so F25 builds it.
+  s.section('F25 — while the book has no opening balance, Needs attention leads with it');
+  {
+    const idx=M.maChartIndex(M.maChart('groovy'));
+    const bd=(input,t,no)=>Object.assign(M.maBuildDoc('journal',input,m(t),idx,S0),{id:no,no});
+    const OP=bd({kind:'opening',date:'2026-07-01',lines:[{account:'1020',side:'dr',amount:500000}]},1,'JV-27-0001');
+    const OP2=bd({kind:'opening',date:'2026-07-02',lines:[{account:'1011',side:'dr',amount:20000}]},2,'JV-27-0005');
+    const VOID=M.maApplyVoid(OP,{reason:'wrong figures',by:'afnan',at:5});
+    const MI=bd({kind:'money_in',date:'2026-10-02',holder:'1020',account:'4010',amount:9000,payee:'Walk-in',tax:{kind:'none'}},3,'JV-27-0002');
+    const TR=Object.assign(M.maBuildDoc('transfer',{date:'2026-10-02',from:'1020',to:'1011',amount:1000},m(4),idx,S0),{id:'TR-27-0001',no:'TR-27-0001'});
+    const na=(docs,x)=>M.maNeedsAttention(Object.assign({today:'2026-10-08',settings:S0,holders:[],commitments:[],docs},x||{}));
+    const isIt=l=>/^No opening balance yet/.test(l.sentence);
+    const e0=na([])[0]||{};
+    s.eq('an empty book: it is the FIRST line',e0.sentence,'No opening balance yet — the books start when one is recorded.');
+    s.eq('…a concern (the red dot), not a watch',e0.state,'concern');
+    s.eq('…with one action: Record it, straight to the Opening balance form',J(e0.action),J({label:'Record it',go:'record',kind:'opening'}));
+    s.ok('…and a basis that says why every figure is off',/counts from ₨0/.test(e0.basis||''),e0.basis);
+    s.eq('one opening: the line is gone',na([OP]).filter(isIt).length,0);
+    s.eq('the only opening voided: the line is back',na([VOID]).filter(isIt).length,1);
+    s.eq('a void opening beside a live one: the live one counts',na([VOID,OP2]).filter(isIt).length,0);
+    s.eq('an opening dated before go-live (historical) is still where the books start',J([OP.historical,na([OP]).filter(isIt).length]),J([true,0]));
+    s.eq('a book of other documents but no opening still says it — it is the opening that counts, not how many documents there are',na([MI,TR]).filter(isIt).length,1);
+    s.eq('no documents handed over at all: not known, and nothing is said',M.maNeedsAttention({today:'2026-10-08',settings:S0}).filter(isIt).length,0);
+    const deep=[{code:'1011',name:'Cash — with Afnan',active:true,holderKind:'cash',balance:-99999999999,floor:0}];
+    const heavy=na([],{holders:deep,backup:{state:'not_configured',missing:['MA_BACKUP_BUCKET'],at:1},nowMs:2});
+    s.eq('it leads the heaviest concerns there are — a holder ₨9,99,99,99,999 short, backups not set up',J(heavy.slice(0,3).map(l=>l.state+':'+(isIt(l)?'opening':/is at/.test(l.sentence)?'holder':/Backups are not set up/.test(l.sentence)?'backups':l.sentence))),J(['concern:opening','concern:holder','concern:backups']));
+    s.ok('…and every watch comes after it',heavy.slice(3).every(l=>l.state==='watch'),J(heavy.slice(3).map(l=>l.state)));
+    s.eq('maIsOpening — the one rule, and only a live opening journal',J([OP,VOID,MI,TR,null,Object.assign({},OP,{dt:'transfer'})].map(d=>M.maIsOpening(d))),J([true,false,false,false,false,false]));
+    // The page: Today, the Dashboard card, the button, recording, voiding.
+    const {app}=mkApp({globals:store(0)});
+    await app.run('maLoad()');
+    const h=app.run("_maPageHTML('ma-overview')");
+    const first=(/<ul class="ma-concerns"><li>([\s\S]*?)<\/li>/.exec(h)||[])[1]||'';
+    s.ok('Today on an empty book: Needs attention opens on it, with the red dot',/^<span class="ma-dot urgent"><\/span><span class="ma-line"[^>]*>No opening balance yet — the books start when one is recorded\.<\/span>/.test(first),first);
+    s.ok('…and its button reads Record it and calls this line',/<button class="ma-act" onclick="window\.maConcern\(0\)">Record it<\/button>$/.test(first),first);
+    const n0=app.run('_maAttention(_maCtx()).length');
+    const card=async()=>{app.el('ma-dash-body').innerHTML='';await app.run('_maPopulateDashboard()');return app.el('ma-dash-body').innerHTML;};
+    const c0=await card();
+    s.ok('the Dashboard card counts it: the same list, not a second one',new RegExp('<b>'+n0+'</b> need'+(n0===1?'s':'')+' attention').test(c0)&&n0>=1,c0);
+    app.run('window.maConcern(0)');
+    s.eq('Record it opens the Opening balance form directly — no picker in between',app.run('_maF&&_maF.kind'),'opening');
+    s.ok('…the form titled Opening balance',/<h2[^>]*>Opening balance<\/h2>/.test(app.bodyHtml('ma-modal-back')));
+    untouched(app);
+    app.run("window.maLineSet(0,'account','1020');window.maLineSet(0,'amount','500000')");
+    await app.run('window.maSaveForm()');
+    if(app.run('!!_maF'))await app.run('window.maSaveForm()');   // "Record anyway" answers a flag, if one was raised
+    const no=app.run('(maData.journal.find(d=>d.kind==="opening")||{}).no||""');
+    s.ok('the opening is recorded',!!no,app.bodyHtml('ma-modal-back').slice(0,300));
+    const h1=app.run("_maPageHTML('ma-overview')");
+    s.ok('…and the line is gone from Today at once',!/No opening balance yet/.test(h1));
+    const c1=await card();
+    s.ok('…and from the Dashboard card\'s count (one fewer)',n0-1===0?/nothing to worry about/.test(c1):new RegExp('<b>'+(n0-1)+'</b> need'+(n0-1===1?'s':'')+' attention').test(c1),c1);
+    await app.run("window.maVoidDoc('journal','"+no+"')");
+    s.eq('voided, it is void',app.run('(maData.journal.find(d=>d.no==="'+no+'")||{}).status'),'void');
+    s.ok('…and the line is back, first',/<ul class="ma-concerns"><li><span class="ma-dot urgent"><\/span><span class="ma-line"[^>]*>No opening balance yet/.test(app.run("_maPageHTML('ma-overview')")));
+    // A journal that could not be read is not an empty journal: the page
+    // paints the error card, and never claims there is no opening.
+    const {app:f}=mkApp({seed:{ma_journal:{[OP.no]:OP}},fail:['ma_journal'],globals:store(0)});
+    await f.run('maLoad()');
+    const fh=f.run("_maPageHTML('ma-overview')");
+    s.ok('a refused journal read: the error card, and no "No opening balance yet"',/Could not read/.test(fh)&&!/No opening balance yet/.test(fh),txt(fh).slice(0,200));
+    f.el('ma-dash-body').innerHTML='';await f.run('_maPopulateDashboard()');
+    s.ok('…nor a count on the Dashboard card',/Could not read ma_journal/.test(f.el('ma-dash-body').textContent||f.el('ma-dash-body').innerHTML)&&!/attention/.test(f.el('ma-dash-body').innerHTML),f.el('ma-dash-body').textContent||f.el('ma-dash-body').innerHTML);
+  }
+
   s.section('F26 — the picker folds the later kinds behind one button');
   {
     const ls=memLS();
