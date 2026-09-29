@@ -650,7 +650,15 @@ const FRAGMENTS={
       {id:'u4',kind:'file',fileName:'a.pdf'},
       {id:'u5',kind:'cards',name:'FABRIC & TRIMS FOR WINTER · 12 cards',
         cards:[{id:'c1',type:'column',title:'FABRIC & TRIMS FOR WINTER'}]},
-      {id:'u6',kind:'cards',name:'Table',cards:[{id:'c2',type:'table'}]}
+      {id:'u6',kind:'cards',name:'Table',cards:[{id:'c2',type:'table'}]},
+      {id:'u7',kind:'cards',name:'Launch checklist',cards:[{id:'t1',type:'todo',title:'Launch checklist for the winter drop',
+        items:[{text:'Trace the pattern for every size in the bundle',done:true},{text:'Cut'},{text:'Bundle'},{text:'Print'},{text:'Stitch'},{text:'QC'}]}]},
+      {id:'u8',kind:'cards',name:'Colour',cards:[{id:'w1',type:'swatch',hex:'#F2E6C9'}]},
+      {id:'u9',kind:'cards',name:'Denim · 3 cards',cards:[{id:'k',type:'column',title:'Denim washes and trims for the drop'},
+        {id:'k1',type:'text',text:'Stone wash, medium blue',columnId:'k',y:10},
+        {id:'k2',type:'swatch',hex:'#1F3A5F',columnId:'k',y:20},
+        {id:'k3',type:'todo',items:[{text:'order rivets'}],columnId:'k',y:30},
+        {id:'k4',type:'text',text:'Acid wash test',columnId:'k',y:40}]}
     ]`);
     let html=app.run('_boardsTrayHTML(true)');
     app.run('_boardsTrayHydrate()');
@@ -658,12 +666,19 @@ const FRAGMENTS={
     // the labels are written in here for the measurement.
     ['A note with a fairly long first line that has to wrap somewhere',
      'winter-sequence-2026-techpack-final-v3.pdf','example.test','a.pdf',
-     'FABRIC & TRIMS FOR WINTER · 12 cards','Table'].forEach((t,i)=>{
+     'FABRIC & TRIMS FOR WINTER · 12 cards','Table','Launch checklist','Colour','Denim · 3 cards'].forEach((t,i)=>{
       html=html.replace(new RegExp('(id="board-tray-l-'+i+'"[^>]*>)'),'$1'+t);
     });
+    // The previews' text slots, filled the same way (the builder says what
+    // goes where, so this cannot drift from the hydrate).
+    JSON.parse(app.run('JSON.stringify(_editUnsorted.map((u,i)=>{const p=_boardsTrayPreview(u,i);return p?p.texts:[];}))'))
+      .forEach((texts,i)=>texts.forEach((t,k)=>{
+        const esc=String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        html=html.replace(new RegExp('(id="board-tray-p-'+i+'-'+k+'"[^>]*>)'),'$1'+esc);
+      }));
     // The tray is position:absolute against the canvas wrap; give it one.
     return Promise.resolve(
-      '<div style="position:relative;height:600px;width:100%">'+html+'</div>');
+      '<div style="position:relative;height:1400px;width:100%">'+html+'</div>');
   },
   /* ── THE UNSORTED PEEK ZONE ──────────────────────────────────────────
      Built by _boardsStashZone only while a card is being dragged and the

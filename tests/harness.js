@@ -43,7 +43,10 @@ function makeDom(state){
   const nodes={};
   function el(id){
     const node={
-      id,tagName:'DIV',style:{},dataset:{},
+      id,tagName:'DIV',dataset:{},
+      // CSS custom properties land in the same bag, readable back.
+      style:{setProperty(k,v){this[k]=String(v);},getPropertyValue(k){return this[k]==null?'':this[k];},
+        removeProperty(k){delete this[k];}},
       innerHTML:'',textContent:'',value:'',files:null,
       isContentEditable:true,children:[],childNodes:[],
       classList:{
