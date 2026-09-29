@@ -137,14 +137,18 @@ refused on someone else's locked item.
 has a case that must be refused and every path the harness needs has one
 that must succeed):
 
-- `signedIn()` **excludes** it (`isQa()`), so every collection opened to
+- `signedIn()` **excludes** it (`isQa()`), so every WRITE this file opens to
   "any signed-in user" — POs, gate passes, HRM, the store, bug reports,
   notes — stays shut with no clause each. `authed()` is "anyone, QA
-  included", used only where it must read: `user_profiles`, `mood_boards`,
-  and the Board's collections through `isBoardUser()`.
-- **Reads:** what a member reads on the Board (shared items, its own, the
-  markers, lists it is on), the profile directory, TEAM mood boards, and
-  notifications addressed to `claude`.
+  included", used where the Board's own paths must admit it.
+- **Reads (changed 29 Sept 2026, Afnan's decision): it READS EVERYTHING** any
+  rule lets any role read — employees, payslips, `acct_*`, `bug_reports` and
+  the rest, role-gated and owner-only included — through one helper,
+  `isQaRead()` (`isQa()` and method get/list), OR'd into every `allow read`.
+  A path with no match block (the token store, `passkeys`,
+  `passkey_challenges`) stays denied to everyone. `tests/qa-read-guard.test.js`
+  fails the build if a read rule is added that does not admit it. See
+  `QA_ACCESS.md`.
 - **Lists:** it creates and edits only lists it admins ALONE
   (`memberUids == [its uid]`) carrying `qa: true`. `qa` is set at create,
   never changes (not even for a Board owner), and **nobody but QA may set
@@ -153,10 +157,12 @@ that must succeed):
   admins, assigned to nobody but itself (`assigneeUids == [its uid]`),
   flagged `qa: true`. The lock rule is untouched.
 - **Comments / activity:** only on items it owns.
-- **Notifications:** create, read and mark-read only rows where
-  `forUser == 'claude'` (`forUser` holds a USERNAME, not a uid — the brief
-  said uid; the field says otherwise). The bell's unfiltered read is
-  refused it and caught.
+- **Notifications:** it may WRITE and mark-read only rows where
+  `forUser == 'claude'` **and no `forRole`** (`qaOwnNotice`; `forUser` holds a
+  USERNAME, not a uid). The bell shows a row to a whole role when `forRole` is
+  set, so the first version of this fence — `forUser` alone — let a row
+  `{forUser:'claude', forRole:'owner'}` land in every owner's bell; found by
+  the QA emulator matrix (29 Sept 2026) and closed. Reading is open (above).
 - **Mood Boards:** reads TEAM boards; writes only its own PRIVATE boards,
   shared with nobody; presence and comments only there.
 - `board_config`: read only.
@@ -184,7 +190,10 @@ backstop patterns (not a blanket `*.json`).
 
 **Deploy before the first sign-in.** Until the rules carrying `isQa()`
 are published, the live `signedIn()` still includes this account, i.e. it
-can read and write most of the app.
+can read and write most of the app. As of 29 Sept 2026 the published
+ruleset (`md5 b68fc9fe…`, `430fc28`) has no `isQa()`; whether the Auth
+account already exists is not recorded anywhere in the repo — see
+`QA_ACCESS.md` §1 for the Console check.
 
 ### Running the harness (Part B)
 
@@ -200,8 +209,10 @@ when it is not set up. Neither is in `tests/run.js`; CI runs neither.
 `GROOVY_QA_EMAIL` / `GROOVY_QA_PASSWORD`, optional `CHROME_BIN`. It signs
 in through the real form (the password is a DevTools call argument, never
 inside an evaluated expression), checks the role is `qa`, and then **the
-containment gate**: if `pos` or `bug_reports` can be read, the QA rules are
-not live and it signs out and exits 2 before writing anything. Then: the
+containment gate**: an update of a document that does not exist in `pos` and
+`bug_reports` (judged by the rules first — refused when the QA rules are live;
+a read cannot tell any more, QA reads everything). Not refused: it signs out
+and exits 2 before writing anything. Then: the
 Dashboard, a PRIVATE "QA Sandbox" list made through the app's own + New on
 first run (private, so the RULES hide its items from everyone — not just
 the client, which an old cached build would not have), an item typed into
@@ -790,7 +801,9 @@ With no environment and no `--stub` it **skips with a message** (exit 0).
 
 It signs in through the real form (Remember me unticked, the password a
 DevTools call argument), checks the `qa` role, then **the containment
-gate** (exit 2 if the QA rules are not deployed), then drives, at **1440
+gate** (an update of a document that does not exist in `pos` and `bug_reports`:
+refused when the QA rules are deployed, not-found when they are not; exit 2
+if not refused — a READ can no longer tell, because QA reads everything), then drives, at **1440
 and 390 wide, light and dark**: the Dashboard, the calendar (Month, Week),
 the QA Sandbox list, the item pane, the Inbox, Settings (owners only — the
 QA account is not one, so it is named as not reachable), and Milanote (a
