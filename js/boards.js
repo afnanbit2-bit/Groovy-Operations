@@ -5273,6 +5273,8 @@ function _boardsWireStagePan(){
     //   3. space + drag, the convention in every design tool
     //   4. the Hand toggle in the toolbar, and middle-button drag
     // Shift+drag still marquees too, so nobody's muscle memory breaks.
+    // A right-click is the menu: it neither draws a box nor pans.
+    if(e.button===2)return;
     const wantPan=(e.pointerType==='touch')||e.button===1||_boardsSpaceDown||_boardsPanMode;
     if(e.button===1)e.preventDefault();   // stop Chrome's middle-click autoscroll
     if(canEdit&&!wantPan){
@@ -5287,6 +5289,10 @@ function _boardsWireStagePan(){
       if(box){box.style.display='none';box.style.width='0px';box.style.height='0px';}
       function mmove(ev){
         if(!box)return;
+        // No button held: the release was lost (it happened off the window,
+        // or over something that ate it). Without this the box kept
+        // following a plain hover from the OLD start point.
+        if(ev.buttons===0){mup({type:'pointercancel'});return;}
         if(box.style.display!=='block'){
           if(Math.abs(ev.clientX-sx)<3&&Math.abs(ev.clientY-sy)<3)return;
           box.style.display='block';

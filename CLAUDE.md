@@ -3843,7 +3843,13 @@ OLD box. The press showed `#board-marquee` with the previous gesture's
 size and place until the pointer moved. It is zeroed on the press, shown
 only past 3px of movement, reset on release, and a `pointercancel` ends the
 gesture too. Held in `tests/boards.test.js` ("a click does not bring the
-last selection box back") — verified by restoring the old show-on-press.
+last selection box back") — verified by restoring the old show-on-press. **Hardened again the same day** after
+Afnan said it still happened: a `pointermove` with no button held
+(`ev.buttons===0`, i.e. the release was lost off the window) now ends the
+gesture instead of drawing the box from the old start point, and a
+right-click (`e.button===2`) starts neither a box nor a pan. Both held in the
+same test section, and both fail by name when undone. **If it is reported
+again, first check the build is v249+** — v248 had only just deployed.
 
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
