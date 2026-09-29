@@ -436,5 +436,30 @@ module.exports=function(){
     s.ok('a collection is found by the CPRs it covers',M.maDocText(cl2,IDX).indexOf('jul-1')>=0);
   }
 
+  s.section('M2.4: before the courier pages exist — nothing courier-related shows on Today or the dashboard');
+  {
+    // js/master-accounts.js does not load ma_cpr, ma_collection or ma_runs
+    // yet, and passes no `run`, `missing`, `inflows` or `couriers` — exactly
+    // what _maAttention, _maCalendarOf and the loader hand over today. With the
+    // books' own documents only (an opening, so that concern is not the one
+    // raised), no courier line may appear anywhere a page reads.
+    const open=mk('journal',{kind:'opening',date:'2026-07-01',lines:[{account:'1011',side:'dr',amount:50000},{account:'3010',side:'cr',amount:50000}]});
+    const docs=[open];
+    const lines=M.maPostAll(docs,IDX,S);
+    const rows=M.maHolderRows(IDX,lines,docs,{settings:S,mirrorBalances:{'1010':1000}});
+    s.ok('the TCS account (1060) is not a holder row while the couriers are not loaded',!rows.some(r=>r.code==='1060'),J(rows.map(r=>r.code)));
+    s.ok('…and the four M1 holders still are',['1010','1011','1012','1020'].every(c=>rows.some(r=>r.code===c)));
+    s.ok('once the couriers are loaded (opts.couriers), it is listed',M.maHolderRows(IDX,lines,docs,{settings:S,couriers:true}).some(r=>r.code==='1060'));
+    const tcsLines=lines.concat([{account:'1060',dr:500,cr:0,date:'2026-10-01',book:'groovy'}]);
+    s.ok('…and with money through it, it is listed whatever the page loaded',M.maHolderRows(IDX,tcsLines,docs,{settings:S}).some(r=>r.code==='1060'));
+    const cal=M.maCalendar({settings:S,today:TODAY,commitments:[],docs,start:M.maSpendable(rows).total,complete:true});
+    s.ok('the 30 days carry no courier inflow',!cal.days.some(d=>d.events.some(e=>e.dir==='in')),J(cal.in));
+    const na=M.maNeedsAttention({settings:S,today:TODAY,holders:rows,calendar:cal,commitments:[],docs,unlabelled:[],review:[],recon:0,nowMs:Date.parse(TODAY)});
+    const courierWords=/courier|CPR|PostEx|TCS|Bykea|Blue-Ex|rollup|collection|ma_cpr|ma_runs/i;
+    s.eq('Needs attention says nothing courier-related — no "rollup has not run", no stale rollup, no unread collections',na.filter(x=>courierWords.test(x.sentence)).map(x=>x.sentence).join(' | '),'');
+    s.eq('maCourierConcerns alone, with no run passed, is empty',M.maCourierConcerns({settings:S,today:TODAY,docs}).length,0);
+    s.ok('…while a page that passes `run: null` (the rollup never ran) does get the line',M.maCourierConcerns({settings:S,today:TODAY,docs,run:null}).some(x=>/has not run yet/.test(x.sentence)));
+  }
+
   return s;
 };

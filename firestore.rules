@@ -1172,6 +1172,13 @@ service cloud.firestore {
     //   - ma_audit is append-only and written NOW (its `at` within five
     //     minutes of the server's clock); ma_backups and ma_shares are
     //     server-only (Admin SDK).
+    //   - M2.4: the couriers. ma_cpr holds PostEx's DERIVED documents (the
+    //     nightly rollup's, Admin SDK — an owner may only review or dispute
+    //     one) and the owners' TYPED TCS / Bykea statements; ma_collection
+    //     is the cash counted against them, confirmed through the same
+    //     holder map as a transfer; ma_runs is server-only. What needs a
+    //     loop — one live collection per CPR, the covers' sum, a statement's
+    //     lines — stays the client's and the nightly rollup's.
     // Run in the emulator: tests/rules-emulator-ma.js. Mirror of
     // MA_OWNERS in js/ma-core.js.
     // ═══════════════════════════════════════════════════════════════════
@@ -1278,8 +1285,113 @@ service cloud.firestore {
         : (dt == 'count'
           ? maCodeOk(d.get('holder', null)) && d.get('counted', null) is int && d.counted >= 0
             && d.get('bookBalance', null) is int && d.get('amount', null) is int
-          : d.get('amount', null) is int && d.amount > 0
-            && (!(d.get('kind', '') in ['money_out','money_in','capital','drawing']) || maCodeOk(d.get('holder', null))));
+          : (dt == 'cpr'
+            ? maStatementShapeOk(d)
+            : (dt == 'collection'
+              ? maCollectionShapeOk(d)
+              : d.get('amount', null) is int && d.amount > 0
+                && (!(d.get('kind', '') in ['money_out','money_in','capital','drawing']) || maCodeOk(d.get('holder', null))))));
+    }
+    // ── M2.4: the couriers in the books (ma_cpr, ma_collection, ma_runs) ──
+    // Mirrors js/ma-core.js — MA_COURIER_IDS, MA_STATEMENT_COURIERS,
+    // MA_ST_MAX_LINES, MA_CL_MAX_COVERS, MA_DISPUTE_STATES — held equal by
+    // tests/master-accounts.test.js.
+    function maCouriers() { return ['postex','tcs','bluex','bykea']; }
+    // A TYPED courier statement (TCS, Bykea): COD delivered in whole rupees
+    // above zero, 1 to 200 lines, at least one parcel. KNOWN LIMIT (the
+    // rules cannot loop): each line's day, its quarter's lock, and that the
+    // totals are the sum of the lines are the client's (maValidate).
+    function maStatementShapeOk(d) {
+      return d.get('amount', null) is int && d.amount > 0
+        && d.get('lines', null) is list && d.lines.size() >= 1 && d.lines.size() <= 200
+        && d.get('parcels', null) is int && d.parcels >= 1;
+    }
+    // A collection: a holder CODE; cash counted in whole rupees above zero,
+    // against `expected` (the net of what it covers, whole rupees); the
+    // difference is the one the builder derives; one of the four couriers;
+    // at most 40 statements named, each with its snapshot; and TCS's credit
+    // lands in the TCS account (1060) — and only TCS's does.
+    // KNOWN LIMIT (the rules cannot loop): "one live collection per CPR",
+    // that the covers are those CPRs' own nets, and that `expected` is their
+    // sum are held by the client (maValidate) and checked nightly (the
+    // rollup, and Needs attention's "collected twice") — not here.
+    function maCollectionShapeOk(d) {
+      return maCodeOk(d.get('holder', null))
+        && d.get('amount', null) is int && d.amount > 0
+        && d.get('expected', null) is int
+        && d.get('difference', null) is int && d.difference == d.amount - d.expected
+        && d.get('courier', null) in maCouriers()
+        && d.get('refs', null) is map && d.refs.get('cprNos', null) is list && d.refs.cprNos.size() <= 40
+        && d.get('covers', null) is list && d.covers.size() == d.refs.cprNos.size()
+        && (d.courier == 'tcs') == (d.holder == '1060');
+    }
+    // Who confirms a collection (maCollectionConfirm): the transfer's map
+    // with no "from" — the person whose hands the holder is (maHands()). The
+    // recorder who IS that person has confirmed by recording, except into
+    // the drawer (maDrawers()): there Raees records the cash in Store
+    // Accounts first. A holder in nobody's hands (MCB, the TCS account)
+    // posts at once.
+    function maClWho(holder, by) {
+      let h = maHands();
+      let w = holder in h ? h[holder] : null;
+      return (w == null || (w == by && !(holder in maDrawers()))) ? null : w;
+    }
+    function maClBornOk(d) {
+      let w = maClWho(d.get('holder', ''), d.by);
+      return d.get('confirmBy', null) == w
+        && d.status == (w == null ? 'posted' : 'pending')
+        && d.get('confirmPaper', false) == (w != null && !(w in ['afnan','ammar']));
+    }
+    // A collection that waits for — or was confirmed by — someone keeps its
+    // holder, amount and day (MA_CL_LOCKED); one nobody had to confirm may
+    // move only to a holder where nobody has to: an edit cannot start a
+    // confirmation (the transfer's maTrEditOk).
+    function maClEditOk(o, n, k) {
+      return (o.get('confirmBy', null) != null || maClWho(o.get('holder', ''), o.by) != null)
+        ? !k.hasAny(['holder','amount','date'])
+        : maClWho(n.get('holder', ''), n.by) == null;
+    }
+    // A statement is TYPED — never one the nightly rollup derives: kind
+    // 'statement', TCS or Bykea, derived false, numbered CS-27-0001.
+    function maStatementCreateOk(docId) {
+      let d = request.resource.data;
+      return maDocCreateOk('cpr', docId, ['posted'])
+        && docId.matches('^CS-[0-9]{2}-[0-9]{4,}$')
+        && d.get('kind', null) == 'statement'
+        && d.get('courier', null) in ['tcs','bykea']
+        && d.get('derived', null) == false;
+    }
+    // A DERIVED document (PostEx's days, opening and receipts) is the
+    // nightly rollup's (Admin SDK): an owner may only review it or open /
+    // resolve a dispute on it — never its figures, status, sig, edits or
+    // flags, and never void it (the rollup voids one PostEx stops reporting).
+    // A dispute: `dispute` is the only key that moves; opened by the caller
+    // with a reason and stamped NOW (within five minutes of the server's
+    // clock); resolved by the caller, stamped now, the opening kept as it
+    // was; never inside a locked quarter, never on a void document.
+    function maDisputeOk() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let x = n.get('dispute', null);
+      return isMasterAccounts()
+        && o.get('derived', false) == true
+        && o.status != 'void'
+        && n.diff(o).affectedKeys().hasOnly(['dispute'])
+        && x is map
+        && x.get('state', null) in ['open','resolved']
+        && maText(x.get('reason', null))
+        && (x.state == 'open'
+          ? x.keys().hasOnly(['state','reason','by','at'])
+            && x.get('by', null) == maUser()
+            && x.get('at', null) is number && math.abs(x.at - request.time.toMillis()) <= 300000
+          : o.get('dispute', null) is map && o.dispute.get('state', null) == 'open'
+            && x.keys().hasOnly(['state','reason','by','at','resolvedBy','resolvedAt','note'])
+            && x.get('by', null) == o.dispute.get('by', null)
+            && x.get('at', null) == o.dispute.get('at', null)
+            && x.reason == o.dispute.get('reason', null)
+            && x.get('resolvedBy', null) == maUser()
+            && x.get('resolvedAt', null) is number && math.abs(x.resolvedAt - request.time.toMillis()) <= 300000)
+        && !maLocked(o.quarter);
     }
     // The day the books went live: ma_settings/main's goLive when it is a
     // day, else the default — maSettings in js/ma-core.js, whose
@@ -1317,7 +1429,7 @@ service cloud.firestore {
         && d.edits is list && d.edits.size() == 0
         && d.no == docId
         && !d.keys().hasAny(['confirmedBy','confirmedAt','confirmedFor','confirmVia','reviewedAt','reviewedBy','voidedAt','voidedBy','voidedByName','voidReason'])
-        && (dt == 'transfer' ? maTrBornOk(d) : !d.keys().hasAny(['confirmBy','confirmPaper']))
+        && (dt == 'transfer' ? maTrBornOk(d) : (dt == 'collection' ? maClBornOk(d) : !d.keys().hasAny(['confirmBy','confirmPaper'])))
         && (dt != 'count' || maCountOk(d))
         && maShapeOk(dt, d)
         && maPeriodOk(d)
@@ -1346,7 +1458,7 @@ service cloud.firestore {
       let o = resource.data;
       let n = request.resource.data;
       let derived = ['rev','edits','month','quarter','fy','historical','difference','bookBalance','flags','reviewedAt','reviewedBy'];
-      let figures = ['date','amount','tax','party','account','holder','from','to','owner','lines','counted'];
+      let figures = ['date','amount','tax','party','account','holder','from','to','owner','lines','counted','net'];
       let k = n.diff(o).affectedKeys();
       return isMasterAccounts()
         && o.status != 'void'
@@ -1370,6 +1482,8 @@ service cloud.firestore {
         && (!k.hasAny(['reviewedAt','reviewedBy']) || (n.get('reviewedAt', null) == null && n.get('reviewedBy', null) == null))
         && (!k.hasAny(figures) || n.get('reviewedAt', null) == null)
         && (dt != 'transfer' || maTrEditOk(o, n, k))
+        && (dt != 'collection' || maClEditOk(o, n, k))
+        && (dt != 'cpr' || (o.get('derived', null) == false && n.get('derived', null) == false))
         && (dt != 'count' || (maCountOk(n) && (!k.hasAny(['bookBalance']) || k.hasAny(['date','counted']))))
         && maShapeOk(dt, n)
         && (!k.hasAny(['historical']) || n.historical == (n.date < maGoLive()))
@@ -1480,6 +1594,35 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // M2.4 — courier statements. Two families in one collection: DERIVED
+    // (PostEx's days, opening, receipts — written ONLY by the nightly rollup,
+    // Admin SDK) and TYPED (TCS, Bykea: CS-27-0001, an owner's). An owner
+    // creates a typed one only (maStatementCreateOk); on a derived one an
+    // owner may review or dispute, nothing else; a typed one is edited,
+    // voided and reviewed like any document, and stays typed. KNOWN LIMIT:
+    // "not while a live collection covers it" (void.collected, edit.collected)
+    // needs a query the rules cannot make — the client's (maVoidIssues,
+    // maValidate).
+    match /ma_cpr/{docId} {
+      allow read:   if isMasterAccounts();
+      allow create: if maStatementCreateOk(docId);
+      allow update: if resource.data.get('derived', null) == false
+                      ? (maEditOk('cpr', ['date','ref','lines','amount','net','grossCod','fees','taxes','tax','parcels','note','tags','attachments'])
+                         || maVoidOk() || maReviewOk())
+                      : (resource.data.get('derived', false) == true && (maReviewOk() || maDisputeOk()));
+      allow delete: if false;
+    }
+    // A collection: the cash counted against one or several statements
+    // (CL-27-0001), born with the holder map's answer (maClBornOk), confirmed
+    // like a transfer (maConfirmOk).
+    match /ma_collection/{docId} {
+      allow read:   if isMasterAccounts();
+      allow create: if maDocCreateOk('collection', docId, ['posted','pending']) && docId.matches('^CL-[0-9]{2}-[0-9]{4,}$');
+      allow update: if maEditOk('collection', ['date','holder','amount','collectedBy','note','tags','attachments'])
+                    || maVoidOk() || maConfirmOk() || maReviewOk();
+      allow delete: if false;
+    }
+
     // Quarter closes: born LOCKED (a close born unlocked could never be
     // locked — security F3b), reopened by an owner with a reason, re-locked
     // by an owner in the same batch as the audit row that says so. Never
@@ -1511,6 +1654,12 @@ service cloud.firestore {
     }
     // One row per nightly backup, written by ma-backup (Admin SDK) only.
     match /ma_backups/{id} {
+      allow read: if isMasterAccounts();
+      allow create, update, delete: if false;
+    }
+    // The nightly courier rollup's run record (ma_runs/rollup), written by
+    // the ma-rollup function (Admin SDK) only — the ma_backups shape.
+    match /ma_runs/{id} {
       allow read: if isMasterAccounts();
       allow create, update, delete: if false;
     }

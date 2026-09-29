@@ -706,7 +706,8 @@ module.exports=async function(){
     s.ok('Close & audit offers it',/window\.maDownloadBooks\(\)/.test(html)&&/Download the books/.test(html));
     const ok=await app.run('window.maDownloadBooks()');
     s.eq('with every collection read, it succeeds',ok,true);
-    s.eq('it read every ma_* collection the rules let an owner read',M.MA_BOOK_COLS.length,15);
+    s.eq('it read every ma_* collection the rules let an owner read',M.MA_BOOK_COLS.length,18);
+    s.ok('…the couriers\' three among them (M2.4)',['ma_cpr','ma_collection','ma_runs'].every(c=>M.MA_BOOK_COLS.indexOf(c)>=0));
     const json=JSON.parse(await W.saved[0].text());
     s.eq('the JSON: the books\' own format, whole',J([json.format,json.version,json.complete,json.exportedBy]),J(['groovy-master-accounts-books',1,true,'afnan']));
     s.eq('… every document keeps its id apart from its fields',J(json.collections.ma_journal.map(d=>d.id).sort()),J(['JV-27-0001','JV-27-0002','JV-27-0003','JV-27-0004']));
@@ -717,7 +718,7 @@ module.exports=async function(){
     const tb=wb.sheets.find(x=>x.name==='Trial balance');
     s.ok('… its trial balance balances',tb&&tb.rows.some(r=>r[1]==='Debits equal credits.'));
     const au=W.sets.find(x=>x.col==='ma_audit'&&x.data.action==='export');
-    s.ok('an export row is written to the audit trail',!!au&&/Download the books · JSON and Excel · \d+ documents in 15 collections/.test(au.data.detail),au&&au.data.detail);
+    s.ok('an export row is written to the audit trail',!!au&&/Download the books · JSON and Excel · \d+ documents in 18 collections/.test(au.data.detail),au&&au.data.detail);
     const F=mkWorld({failCols:['ma_shares','ma_journal']});
     await F.app.run('maLoad()').catch(()=>{});
     const ok2=await F.app.run('window.maDownloadBooks()');

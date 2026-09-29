@@ -694,7 +694,7 @@ module.exports=async function(){
     s.eq('maEditOk\'s derived list is MA_EDIT_DERIVED',sorted(letList('derived')),sorted(core('MA_EDIT_DERIVED')));
     s.eq('…and its figures list is MA_FIGURE_FIELDS',sorted(letList('figures')),sorted(core('MA_FIGURE_FIELDS')));
     s.ok('…and neither lets amount or tax go unnamed',['amount','tax'].every(k=>(letList('derived')||['amount']).indexOf(k)<0));
-    [['ma_journal','journal'],['ma_transfer','transfer'],['ma_counts','count']].forEach(([col,dt])=>{
+    [['ma_journal','journal'],['ma_transfer','transfer'],['ma_counts','count'],['ma_cpr','cpr'],['ma_collection','collection']].forEach(([col,dt])=>{
       const m=new RegExp('match /'+col+'/\\{docId\\}[\\s\\S]*?maEditOk\\(\''+dt+'\', \\[([^\\]]*)\\]').exec(rules);
       s.eq(col+'\'s editable list is MA_EDIT_FIELDS.'+dt,sorted(m&&list(m[1])),sorted(core('MA_EDIT_FIELDS.'+dt)));
     });
@@ -707,13 +707,27 @@ module.exports=async function(){
     const forbidden=confirmKeys.concat(voidKeys,['reviewedAt','reviewedBy']);
     s.eq('a create may carry none of what confirm, void and review set',sorted(cm&&list(cm[1])),sorted(forbidden));
     s.ok('…and MA_CONFIRM_KEYS is those four plus the two the map decides',J(core('MA_CONFIRM_KEYS').slice().sort())===J(confirmKeys.concat(['confirmBy','confirmPaper']).sort()));
-    s.ok('a transfer is born with the map\'s answer; anything else with no confirmation at all',/\(dt == 'transfer' \? maTrBornOk\(d\) : !d\.keys\(\)\.hasAny\(\['confirmBy','confirmPaper'\]\)\)/.test(rules));
+    s.ok('a transfer and a collection are born with the map\'s answer; anything else with no confirmation at all',/\(dt == 'transfer' \? maTrBornOk\(d\) : \(dt == 'collection' \? maClBornOk\(d\) : !d\.keys\(\)\.hasAny\(\['confirmBy','confirmPaper'\]\)\)\)/.test(rules));
     s.ok('ma_shares: no client create, update or delete — the ma-share function writes them',/match \/ma_shares\/\{token\} \{\s*allow read: if isMasterAccounts\(\);\s*allow create, update, delete: if false;/.test(rules));
     s.ok('…and the page never writes one, nor a close',!/ma_shares:\s*id=>|doc\(db,\s*'ma_shares'|ma_closes:\s*id=>|doc\(db,\s*'ma_closes'/.test(read('js/master-accounts.js')));
     s.ok('ma_audit: a row is written now — within five minutes of the server\'s clock',/match \/ma_audit\/\{id\}[\s\S]*?math\.abs\(request\.resource\.data\.at - request\.time\.toMillis\(\)\) <= 300000;/.test(rules));
     s.ok('ma_closes: a close is born locked',/match \/ma_closes\/\{q\}[\s\S]*?allow create:[\s\S]*?request\.resource\.data\.locked == true[\s\S]*?allow update: if maReopenOk\(\) \|\| maRelockOk\(q\);/.test(rules));
     s.ok('a date is a real month and day in the rules',/function maDayOk\(d\) \{ return d is string && d\.matches\('\^\[0-9\]\{4\}-\(0\[1-9\]\|1\[0-2\]\)-\(0\[1-9\]\|\[12\]\[0-9\]\|3\[01\]\)\$'\); \}/.test(rules));
     s.ok('review refuses a locked quarter',/function maReviewOk\(\)[\s\S]*?&& !maLocked\(resource\.data\.quarter\);/.test(rules));
+    // M2.4 — the couriers: the rules' lists and numbers are the core's.
+    s.eq('maCouriers() is MA_COURIER_IDS',sorted(list(fn('maCouriers'))),sorted(core('MA_COURIER_IDS')));
+    const stc=/function maStatementCreateOk\([^)]*\)\s*\{[\s\S]*?d\.get\('courier', null\) in \[([^\]]*)\]/.exec(rules);
+    s.eq('a typed statement\'s couriers are MA_STATEMENT_COURIERS',sorted(stc&&list(stc[1])),sorted(core('MA_STATEMENT_COURIERS')));
+    s.ok('a statement holds at most MA_ST_MAX_LINES lines',new RegExp('d\\.lines\\.size\\(\\) <= '+core('MA_ST_MAX_LINES')+'\\b').test(rules));
+    s.ok('a collection names at most MA_CL_MAX_COVERS statements',new RegExp('d\\.refs\\.cprNos\\.size\\(\\) <= '+core('MA_CL_MAX_COVERS')+'\\b').test(rules));
+    const dsp=/function maDisputeOk\(\)[\s\S]*?x\.get\('state', null\) in \[([^\]]*)\]/.exec(rules);
+    s.eq('a dispute\'s states are MA_DISPUTE_STATES',sorted(dsp&&list(dsp[1])),sorted(core('MA_DISPUTE_STATES')));
+    const der=/function maDisputeOk\(\)[\s\S]*?affectedKeys\(\)\.hasOnly\(\[([^\]]*)\]\)/.exec(rules);
+    s.eq('on a derived document an owner moves only the review (maReviewOk) or the dispute: MA_DERIVED_OWNER_FIELDS',sorted((der?list(der[1]):[]).concat(['reviewedAt','reviewedBy'])),sorted(core('MA_DERIVED_OWNER_FIELDS')));
+    s.ok('ma_cpr: a derived document takes only review or dispute; a typed one edit, void or review',/match \/ma_cpr\/\{docId\}[\s\S]*?allow update: if resource\.data\.get\('derived', null\) == false[\s\S]*?\|\| maVoidOk\(\) \|\| maReviewOk\(\)\)[\s\S]*?: \(resource\.data\.get\('derived', false\) == true && \(maReviewOk\(\) \|\| maDisputeOk\(\)\)\);\s*allow delete: if false;/.test(rules));
+    s.ok('ma_runs: no client create, update or delete — the ma-rollup function writes it',/match \/ma_runs\/\{id\} \{\s*allow read: if isMasterAccounts\(\);\s*allow create, update, delete: if false;/.test(rules));
+    s.ok('…and the page never writes a run',!/doc\(db,\s*'ma_runs'/.test(read('js/master-accounts.js')));
+    s.ok('TCS lands in the TCS account — the rules\' 1060 is MA_COURIERS.tcs\'s wallet',/\(d\.courier == 'tcs'\) == \(d\.holder == '1060'\)/.test(rules)&&core('MA_COURIERS.tcs.accounts.wallet')==='1060');
   }
 
   s.section('the re-lock');

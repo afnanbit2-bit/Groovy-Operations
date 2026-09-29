@@ -114,7 +114,8 @@ const PII_COLLECTIONS=['employees','payslips','advance_requests','loans','wh_sal
 // readable by afnan and ammar ONLY (isMasterAccounts() in firestore.rules) and
 // deliberately NOT by the QA account: Afnan's rule, "just for me and Ammar",
 // which is why every other collection admits QA through isQaRead() and these
-// do not. All of its collections are named ma_<something>.
+// do not. All of its collections are named ma_<something> — the couriers'
+// ma_cpr, ma_collection and ma_runs (M2.4) included, by the same pattern.
 //
 // THIS is the one definition of that family, for everything QA-shaped:
 //   · tests/qa-read-guard.test.js exempts exactly these collections from

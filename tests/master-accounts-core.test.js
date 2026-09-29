@@ -849,7 +849,7 @@ module.exports=async function(){
     const kept=M.maApplyEdit(Object.assign({},small,{flags:[{rule:'duplicate',message:'Looks like JV-1'}]}),M.maBuildDoc('journal',Object.assign({kind:'money_out'},base,{amount:1000,note:'x'}),{by:small.by},IDX,S),{by:'afnan',at:9,reason:'x',flags:[]});
     s.eq('a flag the edit no longer raises is cleared (an empty list, stored)',JSON.stringify(kept.flags),'[]');
     s.ok('without the edit\'s own flags (a file attached from the rail) the stored ones are not touched',!('flags' in M.maApplyEdit(small,big,{by:'afnan',at:9,reason:'x'})));
-    s.eq('which fields are figures',M.MA_FIGURE_FIELDS.join(),'date,amount,tax,party,account,holder,from,to,owner,lines,counted');
+    s.eq('which fields are figures',M.MA_FIGURE_FIELDS.join(),'date,amount,tax,party,account,holder,from,to,owner,lines,counted,net');
     s.eq('a figure clears the review; a label or a note does not',[['amount'],['note'],['costCentre','tags'],['date'],['lines']].map(f=>M.maEditClearsReview(f)).join(),'true,false,false,true,true');
     s.eq('a never-reviewed document gains no review fields',('reviewedAt' in M.maApplyEdit(J('money_out',Object.assign({},base,{amount:1000})),big,{by:'afnan',at:9,reason:'x'})),false);
   }

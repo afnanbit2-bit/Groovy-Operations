@@ -223,8 +223,10 @@ const MA_EDIT_FIELDS={
   transfer:['date','from','to','amount','note','attachments'],
   count:['date','counted','amount','note','attachments'],
   // A typed statement (kind 'statement'): its totals are named with its
-  // lines, so an edit that moves money says so. Courier and kind are identity.
-  cpr:['date','ref','lines','amount','net','grossCod','fees','taxes','parcels','note','tags','attachments'],
+  // lines, so an edit that moves money says so — its tax block too, rebuilt
+  // from `taxes` (M2.4: unnamed, the rules refused every edit that moved the
+  // tax). Courier and kind are identity.
+  cpr:['date','ref','lines','amount','net','grossCod','fees','taxes','tax','parcels','note','tags','attachments'],
   // A collection: what it covers (refs, covers, expected) and its courier are
   // identity — void it and record it again.
   collection:['date','holder','amount','collectedBy','note','tags','attachments']
@@ -241,8 +243,9 @@ const MA_EDIT_DERIVED=['rev','edits','month','quarter','fy','historical','differ
 /* The fields that move what a document POSTS. An edit that changes one
    clears the review (money F8): an owner reviewed the old figures, not the
    new ones, so a still-flagged document is back in the review queue. The
-   rules hold the same list (maEditOk's `figures`). */
-const MA_FIGURE_FIELDS=['date','amount','tax','party','account','holder','from','to','owner','lines','counted'];
+   rules hold the same list (maEditOk's `figures`). `net` joined with the
+   courier statements (M2.4): it is what a collection is counted against. */
+const MA_FIGURE_FIELDS=['date','amount','tax','party','account','holder','from','to','owner','lines','counted','net'];
 /* A transfer's confirmation: decided when it is recorded (maTransferConfirm,
    the rules' maTrBornOk), set by maConfirmPatch, and NEVER touched by an
    edit (money F6). */
@@ -961,7 +964,14 @@ function maHolderRows(idx,lines,docs,opts){
   const into=(p,code)=>p.dt==='collection'?p.holder===code:p.to===code;
   const counts=(docs||[]).filter(d=>d.dt==='count'&&d.status!=='void');
   const lastMove={};(lines||[]).forEach(l=>{if(l.holder&&l.account===l.holder&&(!lastMove[l.holder]||l.date>lastMove[l.holder]))lastMove[l.holder]=l.date;});
-  return maMoneyAccounts(idx,{all:true}).filter(a=>a.active||sums[a.code]||pend.some(p=>p.from===a.code||into(p,a.code))).map(a=>{
+  // A courier's own holder (the TCS account, 1060 — switched on for M2) is
+  // listed only once the couriers' documents were loaded (`opts.couriers`),
+  // or when something has already moved through it. A build whose pages do
+  // not read ma_cpr / ma_collection yet shows no ₨0 courier row on Today or
+  // Money for a feature nobody can use.
+  const wallets=Object.keys(MA_COURIERS).map(k=>MA_COURIERS[k].accounts.wallet).filter(Boolean);
+  const shown=a=>a.active&&(opts.couriers===true||wallets.indexOf(a.code)<0);
+  return maMoneyAccounts(idx,{all:true}).filter(a=>shown(a)||sums[a.code]||pend.some(p=>p.from===a.code||into(p,a.code))).map(a=>{
     const ledger=maBal(a,sums[a.code]);
     const mirror=s.mirrors&&s.mirrors[a.code]?s.mirrors[a.code]:null;
     const mb=opts.mirrorBalances||{};
@@ -2334,14 +2344,14 @@ function maShareState(sh,nowMs){
    the postings and the trial balance derived from it, then every collection
    as a sheet. Every ma_* collection the rules let an owner read. */
 const MA_BOOK_COLS=['ma_settings','ma_accounts','ma_sv_accounts','ma_parties','ma_items','ma_commitments','ma_counters',
-  'ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares','ma_feedback'];
-// ma_cpr, ma_collection and ma_runs (M2.3) join this list with the rules
-// piece that lets an owner read them: until those rules are published a read
-// of them is refused, and ma_cpr/ma_collection would then mark every
-// download incomplete.
+  'ma_journal','ma_transfer','ma_counts','ma_cpr','ma_collection','ma_closes','ma_audit','ma_backups','ma_runs','ma_shares','ma_feedback'];
+// ma_cpr, ma_collection and ma_runs joined with the rules that let an owner
+// read them (M2.4). Until those rules are PUBLISHED a read of them is
+// refused, and the download says so by name — ma_cpr and ma_collection
+// post, so it then says the postings leave them out.
 // The postings and the trial balance are built from these; without one of
 // them they are not the whole book, and they say so.
-const _maBookCore=['ma_settings','ma_accounts','ma_journal','ma_transfer','ma_counts'];
+const _maBookCore=['ma_settings','ma_accounts','ma_journal','ma_transfer','ma_counts','ma_cpr','ma_collection'];
 /* A share link's token IS its document id, and whoever holds it can open
    the PDF while it is live: the books carry the link's state in its place,
    never the token (M1.6b). */

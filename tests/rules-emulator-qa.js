@@ -187,8 +187,8 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
   // refusal is the rule, and not a broken path or an empty seed.
   console.log('1b · THE OWNER\'S BOOKS — Master Accounts (ma_*): QA is REFUSED, the two owners are not');
   await check('the parser found the Master Accounts paths ('+books.length+')',async()=>{
-    if(books.length<15) throw new Error('parsed too few: '+books.length);
-    for(const c of ['ma_accounts','ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares'])
+    if(books.length<18) throw new Error('parsed too few: '+books.length);
+    for(const c of ['ma_accounts','ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares','ma_cpr','ma_collection','ma_runs'])
       if(!books.find(l=>colls(l)[0]===c)) throw new Error('missing '+c);
   });
   for(const l of books.filter(inScope)){
