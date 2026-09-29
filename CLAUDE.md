@@ -11322,6 +11322,25 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
+**No republish outstanding as of 29 Sept 2026 (evening) — the QA-read rules
+are LIVE.** Ammar published from the repo file (Console paste, reported
+in-session, not checkable from a session): first `b680d0b` (`isQaRead` on
+every read rule, `qaOwnNotice`), then a small edit of `isQa()` to pin the QA
+account's uid beside its email (`08b530a`, whole file `md5
+7d858a05ce8ecf6aae585bbd79892960`, LF). **The ruleset that was live BEFORE
+this was NOT the one this file recorded** (`430fc28`, `b68fc9fe…`): the
+Console held a file with `isQa()` in it whose LF-normalised md5 was
+`e0d971e48776918a669a1c89f6ee3211` (`62646c6b…` with a trailing newline) and
+which matches none of the 71 committed versions of `firestore.rules` — it was
+published from a local file on Afnan's PC. Its text is saved at
+`C:\gv-backup\published-rules-before.txt` on the PC used for the rollout;
+**that file, not `430fc28`, is the rollback target**. Live probe
+(`tools/qa-probe.js --live --sandbox-writes`, new password, exit 0) passed
+after the pin, and it exits 1 if the account's live uid differs from the pinned
+one. Anything that publishes `firestore.rules` must start from the repo file,
+not from a local copy. `RESTORE` = paste the backup, or `git show 430fc28:`
+only if the backup is lost (it drops the QA fence entirely).
+
 **No republish outstanding as of 26 Sept 2026 (session 2) — rules AND
 indexes.** Afnan deployed with the Firebase CLI from `main` at `f18536c`
 (the PR #88 merge), `firebase use` → `groovy-gatepass`, from the repo file
