@@ -306,7 +306,8 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
     await check('pinned uid, no email: CANNOT write pos (signedIn() excludes it)',()=>assertFails(setDoc(doc(noEmail,'pos/pinned2'),{a:1})));
     await check('pinned uid, no email: CANNOT write employees',()=>assertFails(setDoc(doc(noEmail,'employees/pinned2'),{a:1})));
     await check('pinned uid, no email: CANNOT notify a role',()=>assertFails(setDoc(doc(noEmail,'hrm_notifications/pinned3'),{forUser:'claude',forRole:'owner'})));
-    await check('an ordinary uid with no email claim reads nothing (not QA, not signed in)',()=>assertFails(getDoc(doc(other,'pos/pinned1'))));
+    await check('an ordinary uid with no email claim is NOT caught by the pin: it still writes pos like any signed-in user',()=>assertSucceeds(setDoc(doc(other,'pos/pinned4'),{a:1})));
+    await check('… and it still reads employees, as any signed-in user does (unchanged)',()=>assertSucceeds(getDoc(doc(other,'employees/pinned1'))));
   }
 
   await envN.cleanup(); await envO.cleanup();
