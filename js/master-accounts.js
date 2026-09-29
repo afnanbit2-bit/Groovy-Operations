@@ -1760,16 +1760,34 @@ function _maPagePrefill(){
   if(_maPage==='ma-holder'&&_maHolderCode)return c.s.mirrors&&c.s.mirrors[_maHolderCode]?{from:_maHolderCode}:{holder:_maHolderCode,from:_maHolderCode};
   return {};
 }
+/* The kinds that arrive with a later milestone sit behind ONE folded line
+   (QA F26; Afnan: "fold the tiles"). The picker opens on the nine things
+   that can be recorded today; the rest are still named, each with its
+   milestone, and still not buttons — one click away. The line is a real
+   <button> with aria-expanded, and it opens the list IN PLACE: the toggle
+   flips attributes on the two elements the picker drew, so focus stays on
+   the button. It is folded every time the picker opens. The state lives in
+   this variable for one opening and is written nowhere — not Firestore, not
+   the device. */
+let _maSoonOpen=false;
 function _maPickerHTML(){
   const live=_MA_TILES.filter(t=>!t.coming),soon=_MA_TILES.filter(t=>t.coming);
+  const open=!!_maSoonOpen;
   return `<div class="ma-tiles">${live.map(t=>`<button class="ma-tile" onclick="window.maRecordKind('${t.k}')"><b>${_maE(t.t)}</b><span>${_maE(t.s)}</span></button>`).join('')}</div>
-    <div class="ma-lbl ma-tiles-h">Coming</div>
-    <div class="ma-tiles">${soon.map(t=>`<div class="ma-tile off" aria-disabled="true"><b>${_maE(t.t)}</b><span>arrives with ${_maE(t.coming)}</span></div>`).join('')}</div>`;
+    <button type="button" class="ma-fold" id="ma-soon-fold" aria-expanded="${open?'true':'false'}" aria-controls="ma-soon" onclick="window.maToggleSoon()">Coming later · ${soon.length}</button>
+    <div class="ma-tiles ma-soon" id="ma-soon"${open?'':' hidden'}>${soon.map(t=>`<div class="ma-tile off" aria-disabled="true"><b>${_maE(t.t)}</b><span>arrives with ${_maE(t.coming)}</span></div>`).join('')}</div>`;
 }
+window.maToggleSoon=function(){
+  _maSoonOpen=!_maSoonOpen;
+  const b=document.getElementById('ma-soon-fold'),l=document.getElementById('ma-soon');
+  if(b&&b.setAttribute)b.setAttribute('aria-expanded',_maSoonOpen?'true':'false');
+  if(l){if(_maSoonOpen){if(l.removeAttribute)l.removeAttribute('hidden');}else if(l.setAttribute)l.setAttribute('hidden','');}
+};
 window.maRecord=function(pre){
   if(!maCanSee()||!maLoaded||_maCoreErrs().length){_maToast('Master Accounts has not loaded — nothing can be recorded yet.');return;}
   _maPre=Object.assign({},_maPagePrefill(),pre||{});
   _maF=null;
+  _maSoonOpen=false;
   _maModal('Record',_maPickerHTML(),'',true);
 };
 window.maRecordKind=function(kind,pre){

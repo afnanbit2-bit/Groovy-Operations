@@ -418,7 +418,7 @@ module.exports=async function(){
     // own tabs — smoke-layout named Postings / Documents / Review as covered.
     s.ok('F02 — the header sticks (at 0 where there is no top bar)',/\n\.ma-head\{position:sticky;top:0;/.test(css));
     s.ok('F02 — …and below the 52px top bar in the app',/@media \(min-width:601px\)\{#scr-app #main-content:has\(>\.ma-shell\) \.ma-head\{top:52px\}\}/.test(css));
-    s.ok('F01 — and so does the rail',/\n\.ma-rail\{position:sticky;top:0;/.test(css)&&/@media \(min-width:1201px\)\{#scr-app #main-content:has\(>\.ma-shell\) \.ma-rail\{top:52px\}\}/.test(css));
+    s.ok('F01 — and so does the rail (a grid column only above 1440px since F27)',/\n\.ma-rail\{position:sticky;top:0;/.test(css)&&/@media \(min-width:1441px\)\{#scr-app #main-content:has\(>\.ma-shell\) \.ma-rail\{top:52px\}\}/.test(css));
     s.ok('F01 — the rail\'s 52px is the wide grid\'s only: an id rule must not out-rank the slide-over or the phone sheet',!/\n#scr-app[^{\n]*\.ma-rail\{/.test(css));
     // A browser without :has() drops the rule that stops #main-content
     // scrolling. An offset left without it pushed the header 70px down over
@@ -447,12 +447,13 @@ module.exports=async function(){
   {
     const css=read('css/main.css');
     const phone=(()=>{const i=css.indexOf('/* the phone: the same order, stacked */');return i<0?'':css.slice(i,css.indexOf('\n}\n',i));})();
-    const slide=(/@media \(max-width:1200px\)\{\s*\.ma-shell\.rail-open\{[^}]*\}\s*\.ma-rail\{([^}]*)\}/.exec(css)||[])[1]||'';
+    const slide=(/@media \(max-width:1440px\)\{\s*\.ma-shell\.rail-open\{[^}]*\}\s*\.ma-rail\{([^}]*)\}/.exec(css)||[])[1]||'';
     // F20 was MEASURED in real Chromium (1024×768, 1180×720, both themes):
     // JV-27-0013's rail at 0–883 in a 768px screen, over the top bar, its
     // Edit / Void / Voucher (PDF) / Share voucher unreachable; fixed, 52–768
-    // and scrolling. This holds the rule that did it.
-    s.ok('F20 — under 1200px the rail STRETCHES between the top bar and the foot (a fixed box obeys align-self)',/align-self:stretch/.test(slide)&&/top:52px/.test(slide)&&/bottom:0/.test(slide),slide);
+    // and scrolling. This holds the rule that did it — at the slide-over's
+    // breakpoint, which F27 moved from 1200 to 1440.
+    s.ok('F20 — up to 1440px the rail STRETCHES between the top bar and the foot (a fixed box obeys align-self)',/align-self:stretch/.test(slide)&&/top:52px/.test(slide)&&/bottom:0/.test(slide),slide);
     s.ok('F20 — …and the fix stays in the slide-over: the wide grid\'s rail rule is unchanged',/\n\.ma-rail\{position:sticky;top:0;align-self:start;/.test(css));
     s.ok('F22 — on a phone the Parties kind filter is one row the full width',/\.ma-filters \.ma-period\{width:100%;flex-wrap:nowrap;overflow-x:auto\}/.test(phone));
     s.ok('F23 — on a phone tabs wrap rather than run off the screen',/\.ma-tabs\{flex-wrap:wrap\}/.test(phone));
@@ -470,6 +471,74 @@ module.exports=async function(){
     const head=(/<h2 class="ma-sec-title">Statement<\/h2>[\s\S]*?<\/div>/.exec(hold)||[''])[0];
     s.ok('F24 — a section\'s actions are ONE group that wraps as a unit (Transfer and Count together)',/<span class="ma-sec-acts ma-nw"><button class="ma-link"[^>]*>Transfer<\/button> <button class="ma-link"[^>]*>Count<\/button><\/span>/.test(head),head);
     s.ok('F24 — …and a section with no actions carries no empty group',!/<span class="ma-sec-acts ma-nw"><\/span>/.test(hold));
+  }
+
+  /* ── F26 and F27, Afnan's calls on the judgement findings ─────────── */
+  // "fold the tiles, slide-over up to 1440". F25 ("keep opening balance
+  // alert") was answered as no change and is not touched here.
+  s.section('F26 — the picker folds the later kinds behind one button');
+  {
+    const ls=memLS();
+    const {app,S}=mkApp({globals:Object.assign(store(0),{localStorage:ls})});
+    await app.run('maLoad()');
+    app.run('window.maRecord()');
+    const pick=app.bodyHtml('ma-modal-back');
+    const LIVE=['Money out','Money in','Transfer','Count','Owner put money in','Owner took money out','Opening balance','Journal','Commitment'];
+    const SOON=[['Collection','M2'],['Bill','M3'],['Payment','M3'],['Purchase order','M3'],['Receipt','M3'],['Payout','M4'],['Loan','M4'],['Savings entry','M4']];
+    const liveGrid=(/<div class="ma-tiles">([\s\S]*?)<\/div>\s*<button type="button" class="ma-fold"/.exec(pick)||[])[1]||'';
+    const liveNames=(liveGrid.match(/<button class="ma-tile" onclick="window\.maRecordKind\('[a-z_]+'\)"><b>[^<]*<\/b>/g)||[]).map(x=>/<b>([^<]*)<\/b>/.exec(x)[1]);
+    s.eq('the nine live kinds are exactly as they were — nine buttons, in order, first on the picker',J(liveNames),J(LIVE));
+    s.ok('…and none of the later kinds sits among them',!/ma-tile off/.test(liveGrid),liveGrid.slice(0,120));
+    const fold=(/<button type="button" class="ma-fold"[^>]*>[^<]*<\/button>/.exec(pick)||[''])[0];
+    s.ok('the fold is a real button (type="button")',/^<button type="button" class="ma-fold" id="ma-soon-fold"/.test(fold),fold);
+    s.ok('…folded by default: aria-expanded="false"',/ aria-expanded="false"/.test(fold),fold);
+    s.ok('…and it names the list it opens (aria-controls)',/ aria-controls="ma-soon"/.test(fold)&&/<div class="ma-tiles ma-soon" id="ma-soon"/.test(pick),fold);
+    s.ok('…and says how many kinds wait behind it',/>Coming later · 8<\/button>$/.test(fold),fold);
+    s.ok('the list is hidden while folded',/<div class="ma-tiles ma-soon" id="ma-soon" hidden>/.test(pick));
+    // Everything from the list on: the eight tiles, then only closing tags.
+    const soonPart=pick.slice(Math.max(0,pick.indexOf('<div class="ma-tiles ma-soon"')));
+    const soonTiles=(soonPart.match(/<div class="ma-tile off" aria-disabled="true"><b>[^<]*<\/b><span>arrives with M\d<\/span><\/div>/g)||[]).map(x=>{const r=/<b>([^<]*)<\/b><span>arrives with (M\d)<\/span>/.exec(x);return [r[1],r[2]];});
+    s.eq('behind it, the eight later kinds, each still named with its milestone, in order',J(soonTiles),J(SOON));
+    s.ok('…and still not clickable: no button and no handler among them',pick.indexOf('<div class="ma-tiles ma-soon"')>0&&!/<button|onclick/.test(soonPart),soonPart.slice(0,160));
+    s.ok('the old "Coming" label is gone (the button is the heading now)',!/ma-tiles-h/.test(pick));
+    // The count is DERIVED from the tiles: a ninth later kind says 9.
+    app.run("_MA_TILES.push({k:'x_test',t:'Test kind',coming:'M9'})");
+    s.ok('the count is derived from the list, not written into the label',/>Coming later · 9<\/button>/.test(app.run('_maPickerHTML()')));
+    app.run('_MA_TILES.pop()');
+    // Toggling flips the two elements the picker drew, IN PLACE: a browser
+    // keeps focus on the button. The harness's elements stand in for them,
+    // carrying what the markup gave them.
+    const lsBefore=J(ls._m),writes=J([S.tx.length,S.batches.length,S.sets.length]),bodies=app.bodyCount('ma-modal-back'),html0=app.bodyHtml('ma-modal-back');
+    app.el('ma-soon-fold').setAttribute('aria-expanded','false');app.el('ma-soon').setAttribute('hidden','');
+    app.run('window.maToggleSoon()');
+    s.eq('a click opens it: aria-expanded="true"',app.el('ma-soon-fold').getAttribute('aria-expanded'),'true');
+    s.eq('…and the list is shown (hidden removed)',app.el('ma-soon').getAttribute('hidden'),null);
+    s.ok('…and a re-render would draw it open too',/aria-expanded="true"/.test(app.run('_maPickerHTML()'))&&!/id="ma-soon" hidden/.test(app.run('_maPickerHTML()')));
+    s.ok('…in place: the modal is not rebuilt (the button keeps focus)',app.bodyCount('ma-modal-back')===bodies&&app.bodyHtml('ma-modal-back')===html0);
+    app.run('window.maToggleSoon()');
+    s.ok('a second click folds it again',app.el('ma-soon-fold').getAttribute('aria-expanded')==='false'&&app.el('ma-soon').getAttribute('hidden')==='');
+    app.run('window.maToggleSoon()');
+    app.run('window.maCloseModal();window.maRecord()');
+    s.ok('opened again, the picker is folded again (nothing is remembered)',/aria-expanded="false"/.test(app.bodyHtml('ma-modal-back'))&&/id="ma-soon" hidden>/.test(app.bodyHtml('ma-modal-back')));
+    s.eq('the fold is written nowhere: not the device…',J(ls._m),lsBefore);
+    s.eq('…and not Firestore',J([S.tx.length,S.batches.length,S.sets.length]),writes);
+    const css=read('css/main.css');
+    const foldCss=(/\n\.ma-fold\{([^}]*)\}/.exec(css)||[])[1]||'';
+    s.ok('CSS — the folded list hides itself (.ma-tiles is display:grid, which beats the browser\'s own [hidden])',/\n\.ma-soon\[hidden\]\{display:none\}/.test(css));
+    s.ok('CSS — the fold is at least 34px tall at every width (a base rule, not a desktop one)',/min-height:36px/.test(foldCss),foldCss);
+    s.ok('CSS — the fold line itself is unbordered: it adds no box to the modal',/border:0/.test(foldCss)&&!/border:1px/.test(foldCss),foldCss);
+    s.ok('CSS — tokens only: no literal colour on the fold',!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test((css.match(/\n\.ma-fold[^{]*\{[^}]*\}/g)||[]).join('')));
+  }
+
+  s.section('F27 — the rail slides over the page up to 1440px, and sits beside it only above');
+  {
+    const css=read('css/main.css');
+    const over=(/@media \(max-width:(\d+)px\)\{\s*\.ma-shell\.rail-open\{grid-template-columns:minmax\(0,1fr\)\}\s*\.ma-rail\{position:fixed;/.exec(css)||[])[1];
+    const beside=(/@media \(min-width:(\d+)px\)\{#scr-app #main-content:has\(>\.ma-shell\) \.ma-rail\{top:52px\}\}/.exec(css)||[])[1];
+    s.eq('the slide-over reaches 1440px',over,'1440');
+    s.eq('the grid column (and its sticky offset) starts at 1441px',beside,'1441');
+    s.ok('the two meet exactly: no width is both, none is neither',Number(over)+1===Number(beside),over+' / '+beside);
+    s.ok('no other width still switches the rail (the old 1200/1201 are gone)',!/@media \((?:max|min)-width:120[01]px\)\{[^@]*\.ma-rail/.test(css));
   }
 
   return s;

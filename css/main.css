@@ -4522,11 +4522,11 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
    sticky, as before, instead of 70px down over the tabs: inside a
    #main-content that still scrolls, sticky counts the 52px from that
    box's padding. Measured by deleting the :has() rules in Chromium.
-   The rail's offset is for the wide grid only. Under 1200px the rail is a
+   The rail's offset is for the wide grid only. Up to 1440px the rail is a
    fixed slide-over with its own top:52px; on a phone it is a bottom sheet
    with top:auto. An id selector here would out-rank both. */
 @media (min-width:601px){#scr-app #main-content:has(>.ma-shell) .ma-head{top:52px}}
-@media (min-width:1201px){#scr-app #main-content:has(>.ma-shell) .ma-rail{top:52px}}
+@media (min-width:1441px){#scr-app #main-content:has(>.ma-shell) .ma-rail{top:52px}}
 .ma-shell.rail-open{grid-template-columns:minmax(0,1fr) 380px}
 .ma-page{padding:0 32px 48px;max-width:1164px;min-width:0}
 .ma-head{position:sticky;top:0;z-index:5;display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;min-height:56px;background:var(--bg);border-bottom:1px solid var(--border);margin:0 -32px 24px;padding:8px 32px}
@@ -4705,7 +4705,20 @@ textarea.ma-in{height:auto;padding:8px 10px;resize:vertical;line-height:1.4}
 .ma-tile.off{cursor:default;background:var(--surface-2)}
 .ma-tile.off:hover{background:var(--surface-2)}
 .ma-tile.off b{color:var(--muted);font-weight:500}
-.ma-tiles-h{margin:16px 0 8px}
+/* The later kinds fold behind one line (QA F26). The line is a real button
+   (aria-expanded), as wide as the tiles and at least 36px tall at every
+   width, its chevron drawn in the text's own colour and turned when open.
+   .ma-tiles is display:grid, which out-ranks the browser's own [hidden]
+   rule, so the folded list hides itself: .ma-modal [hidden] covers it
+   inside the modal, this covers it anywhere else it is drawn. */
+.ma-fold{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;margin:12px 0 0;padding:4px 0;background:none;border:0;color:var(--muted);font-size:13px;font-weight:500;font-family:inherit;text-align:left;cursor:pointer}
+.ma-fold::before{content:'';flex:none;width:6px;height:6px;margin-left:3px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s ease}
+.ma-fold[aria-expanded="true"]::before{transform:rotate(45deg)}
+.ma-fold:hover{color:var(--text)}
+.ma-fold:focus-visible{outline:2px solid var(--text);outline-offset:2px;border-radius:4px}
+.ma-soon{margin-top:8px}
+.ma-soon[hidden]{display:none}
+@media (prefers-reduced-motion:reduce){.ma-fold::before{transition:none}}
 .ma-form-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 24px;margin-bottom:24px;color:var(--text)}
 .ma-form-card .ma-sec{margin-bottom:24px}
 .ma-form-acts{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
@@ -4744,17 +4757,21 @@ a.ma-btn{text-decoration:none}
 .ma-sh-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
 .ma-sh-file{font-size:14px;font-weight:500;color:var(--text);overflow-wrap:anywhere;min-width:0}
 .ma-sh-meta{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
-/* under 1200px the rail is a slide-over. `align-self:stretch` is what makes
-   it one (QA F20): the base rule's `align-self:start` is written for the
-   grid column, but Chromium applies align-self to a FIXED box too, and with
-   `start` it sized the rail to its content instead of between top:52px and
-   bottom:0 — a tall rail
+/* Up to 1440px the rail is a slide-over over the page, and beside it only
+   above that (QA F27; Afnan: "slide-over up to 1440"). As a 380px grid
+   column at 1280 it squeezed the page's tables to 616px — the Ledger's
+   Description to 88px. Over the page, the tables keep their width and the
+   rail covers the page's right edge until its × closes it.
+   `align-self:stretch` is what makes it a slide-over (QA F20): the base
+   rule's `align-self:start` is written for the grid column, but Chromium
+   applies align-self to a FIXED box too, and with `start` it sized the rail
+   to its content instead of between top:52px and bottom:0 — a tall rail
    slid up over the top bar (avatar, Change password, Sign out) and its
    actions fell below the screen with no scroll to reach them (1024×768:
    JV-27-0013 lost Edit, Void, Voucher (PDF) and Share voucher). Stretched,
    it is the height of the screen under the bar and its overflow:auto
    scrolls. */
-@media (max-width:1200px){
+@media (max-width:1440px){
   .ma-shell.rail-open{grid-template-columns:minmax(0,1fr)}
   .ma-rail{position:fixed;right:0;top:52px;bottom:0;width:380px;max-width:92vw;height:auto;z-index:150;align-self:stretch}
 }

@@ -194,7 +194,7 @@ function _maFixture(){
 const FRAGMENTS={
   // Master Accounts (MASTER_ACCOUNTS_PLAN.md §16.4): Today, Money and a
   // holder, the Ledger with the review queue, a party page, and the Record
-  // picker with a form. The rail is NOT opened here: under 1200px it is a
+  // picker with a form. The rail is NOT opened here: up to 1440px it is a
   // fixed slide-over that would sit on the page's own controls (the
   // documented false hit); its own fragment runs at 1900 only.
   'master accounts — Today':()=>{
@@ -229,12 +229,18 @@ const FRAGMENTS={
     const app=_maFixture();
     const wrap=(t,b,f)=>'<div class="ma-modal wide" style="position:static;max-height:none;margin-bottom:16px"><div class="ma-modal-head"><h2>'+t+'</h2><button class="ma-x" aria-label="Close">×</button></div><div class="ma-modal-body">'+b+'</div>'+(f?'<div class="ma-modal-foot">'+f+'</div>':'')+'</div>';
     const pick=app.run('_maPickerHTML()');
+    // The later kinds UNFOLDED as well (QA F26), so the eight named tiles
+    // are measured, not only the folded line. Its own ids, so nothing in
+    // the page is named twice.
+    app.run('_maSoonOpen=true');
+    const open=app.run('_maPickerHTML()').replace('id="ma-soon-fold"','id="ma-soon-fold-2"').replace('aria-controls="ma-soon"','aria-controls="ma-soon-2"').replace('id="ma-soon"','id="ma-soon-2"');
+    app.run('_maSoonOpen=false');
     app.run("window.maRecordKind('money_out',{party:'p1',commitmentId:'c2',tax:{kind:'sales',rate:18,inclusive:true}})");
     const form=(app.bodyHtml('ma-modal-back').match(/<div class="ma-modal-body"[^>]*>([\s\S]*)<\/div>\s*<div class="ma-modal-foot">/)||[])[1]||'';
     const foot='<button class="ma-btn">Cancel</button><button class="ma-btn primary">Record</button>';
     app.run("window.maRecordKind('general')");
     const jv=(app.bodyHtml('ma-modal-back').match(/<div class="ma-modal-body"[^>]*>([\s\S]*)<\/div>\s*<div class="ma-modal-foot">/)||[])[1]||'';
-    return Promise.resolve(wrap('Record',pick,'')+wrap('Money out',form,foot)+wrap('Journal',jv,foot));
+    return Promise.resolve(wrap('Record',pick,'')+wrap('Record — later kinds open',open,'')+wrap('Money out',form,foot)+wrap('Journal',jv,foot));
   },
   // M1.5b: a bill or receipt on a document, a share link, the backups. A
   // file NAME is the one thing that says which file it is, so it wraps and
