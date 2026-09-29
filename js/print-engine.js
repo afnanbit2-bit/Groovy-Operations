@@ -114,6 +114,7 @@ const _PRINT_DOC_LABELS = {
   'ma-statement-holder': 'Holder Statement',
   'ma-receipt': 'Handover Receipt',
   'ma-voucher': 'Payment Voucher',
+  'ma-collection': 'Collection Receipt',
   'generic': 'Document'
 };
 
@@ -145,7 +146,8 @@ const _PRINT_URDU_DEFAULTS = {
   'ma-statement-party': 'minimal',
   'ma-statement-holder': 'none',
   'ma-receipt': 'full',
-  'ma-voucher': 'full'
+  'ma-voucher': 'full',
+  'ma-collection': 'full'
 };
 
 /* Page per type, when the caller names none. The two slips a person signs
@@ -155,7 +157,8 @@ const _PRINT_URDU_DEFAULTS = {
    still win when given. */
 const _PRINT_PAGE_DEFAULTS = {
   'ma-receipt': { w: 420, h: 595 },
-  'ma-voucher': { w: 420, h: 595 }
+  'ma-voucher': { w: 420, h: 595 },
+  'ma-collection': { w: 420, h: 595 }
 };
 const _PRINT_ORIENTATION_DEFAULTS = {
   'ma-ledger': 'landscape'
@@ -181,7 +184,8 @@ const _PRINT_FOOTER_UR_BY_TYPE = {
   'Gate Pass': 'گیٹ پاس — صرف اندرونی استعمال',
   'Payslip': 'پے سلپ — صرف اندرونی استعمال',
   'Handover Receipt': 'رسید — صرف اندرونی استعمال',
-  'Payment Voucher': 'واؤچر — صرف اندرونی استعمال'
+  'Payment Voucher': 'واؤچر — صرف اندرونی استعمال',
+  'Collection Receipt': 'وصولی رسید — صرف اندرونی استعمال'
 };
 function _footerUr(docType) {
   return _PRINT_FOOTER_UR_BY_TYPE[docType] || 'صرف اندرونی استعمال';
@@ -2073,6 +2077,7 @@ function _drawQrMatrix(doc, matrix, x, y, size) {
      ma-statement-holder  A4 portrait  · none         movements, confirmations, count
      ma-receipt           A5 (420×595) · FULL         a transfer's handover slip
      ma-voucher           A5 (420×595) · FULL         a money-out payment voucher
+     ma-collection        A5 (420×595) · FULL         a courier collection's receipt (M2)
    The three A4 ones use the shared header, section band and footer — page-
    aware through _pageBox() — plus one table (_prMaTable) whose head repeats
    on every page. The two slips are a custom page and draw their own layout,
@@ -2104,6 +2109,20 @@ const _PR_MA_UR = {
   receivedBy: 'وصول کنندہ',
   voided: 'منسوخ',
   revised: 'ترمیم شدہ'
+};
+/* The collection receipt's own words. Kept apart from _PR_MA_UR so that
+   _prMaUrduOk asks the font about these ONLY for a collection receipt — the
+   receipt and the voucher are asked exactly what they always were. */
+const _PR_MA_UR_COL = {
+  title: 'وصولی کی رسید',
+  amount: 'وصول شدہ رقم',
+  courier: 'کوریئر',
+  holder: 'ہولڈر',
+  collectedBy: 'وصول کرنے والا',
+  covers: 'رسیدیں',
+  expected: 'متوقع',
+  counted: 'گنتی',
+  difference: 'فرق'
 };
 const _PR_MA_WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const _PR_MA_MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2205,6 +2224,8 @@ function _prMaUrduOk(doc) {
     const m = font && font.metadata;
     if (m && typeof m.characterToGlyph === 'function') {
       const all = Object.keys(_PR_MA_UR).map(function (k) { return _PR_MA_UR[k]; })
+        .concat(doc.__groovyDocType === 'Collection Receipt'
+          ? Object.keys(_PR_MA_UR_COL).map(function (k) { return _PR_MA_UR_COL[k]; }) : [])
         .concat([_footerUr(doc.__groovyDocType)]).join(' ');
       const drawn = typeof doc.processArabic === 'function' ? doc.processArabic(all) : all;
       ok = Array.from(String(drawn)).every(function (ch) { return /\s/.test(ch) || m.characterToGlyph(ch.codePointAt(0)) > 0; });
@@ -2841,6 +2862,100 @@ function _renderMaVoucher(doc, data) {
   _prMaSlipFooter(doc, data);
 }
 
+/**
+ * ma-collection — the receipt for cash collected from a courier. A5, bilingual.
+ * data (maPdfCollectionData) = { no, date, amount, amountWords,
+ *   courier:{key,name}, holder:{code,name,person}, collectedBy,
+ *   covers:[{no,date,net}], expected, difference:int|null, note,
+ *   state:'pending'|'confirmed'|'posted'|'void', waitingFor, paper,
+ *   confirm:{by,at,via,forWho}|null, revised, void, recorded, printedOn, printedBy }
+ * The covered receipts are listed one per line; a long list CONTINUES onto
+ * further pages with its head redrawn, and the reconciliation and the
+ * signatures follow the last row. Plain text only — every string is drawn
+ * with doc.text, never parsed.
+ */
+function _renderMaCollection(doc, data) {
+  data = data || {};
+  const b = _prMaA5(doc);
+  const h = data.holder || {}, cr = data.courier || {};
+  const covers = data.covers || [];
+  let y = _prMaSlipHead(doc, { title: 'Collection receipt', titleUr: _PR_MA_UR_COL.title, number: data.no, date: _prMaDay(data.date) });
+  y = _prMaStamps(doc, data, y);
+  y = _prMaAmountBox(doc, y, 'Amount collected', _PR_MA_UR_COL.amount, data.amount, data.amountWords, !!data.void);
+  let state;
+  if (data.state === 'void') state = 'Void — it moves no money.';
+  else if (data.state === 'pending') {
+    state = 'Waiting for ' + (data.waitingFor || 'the receiver') + ' to confirm' +
+      (data.paper ? ' — sign below on receipt; an owner then confirms it in the app.' : ' in the app.') +
+      ' It counts in no holder until then.';
+  } else if (data.state === 'confirmed' && data.confirm) {
+    const c = data.confirm;
+    state = 'Confirmed by ' + (c.by || '—') + (c.forWho ? ' for ' + c.forWho : '') + (c.via === 'paper' ? ', on paper' : ' in the app') +
+      (c.at ? ' · ' + _prMaWhen(c.at) : '') + '.';
+  } else state = 'Posted — nobody else had to confirm it.';
+  const sigTop = b.H - 24 - 36 - 72;
+  y = _prMaSlipRows(doc, y, [
+    ['Courier', _PR_MA_UR_COL.courier, cr.name, true],
+    ['Into', _PR_MA_UR_COL.holder, [h.name, h.person ? '(' + h.person + ')' : ''].filter(Boolean).join(' '), true],
+    ['Collected by', _PR_MA_UR_COL.collectedBy, data.collectedBy],
+    ['Date', _PR_MA_UR.date, _prMaDay(data.date)],
+    ['Number', _PR_MA_UR.number, data.no],
+    ['Note', _PR_MA_UR.note, data.note],
+    ['State', _PR_MA_UR.state, state]
+  ], sigTop);
+
+  // The receipts this collection covers: number · date · net, one per line.
+  const RH = 12.5, colDate = b.L + 150, colNet = b.R;
+  const soft = _pc('#E6E6E6');
+  const head = function (cont) {
+    _prMaLabel(doc, cont ? 'Receipts covered — continued' : 'Receipts covered', cont ? null : _PR_MA_UR_COL.covers, b.L, y + 10, 9);
+    y += _prMaUrduOk(doc) && !cont ? 24 : 14;
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8.5, PRINT_COLORS.greyAccent);
+    doc.text('Receipt', b.L, y + 8);
+    doc.text('Date', colDate, y + 8);
+    doc.text('Net', colNet, y + 8, { align: 'right' });
+    doc.setDrawColor(soft[0], soft[1], soft[2]);
+    doc.setLineWidth(0.5);
+    doc.line(b.L, y + 12, b.R, y + 12);
+    y += 15;
+  };
+  y += 4;
+  if (y + 60 > sigTop) { doc.addPage(); y = b.M; }
+  head(false);
+  if (!covers.length) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'italic', 9, PRINT_COLORS.greyAccent);
+    doc.text('No receipts are listed — entered as the amount collected.', b.L, y + 9);
+    y += RH + 2;
+  }
+  covers.forEach(function (c) {
+    c = c || {};
+    if (y + RH > sigTop - 4) { doc.addPage(); y = b.M; head(true); }
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.text);
+    doc.text(_prMaFit(doc, c.no || '', 140), b.L, y + 9);
+    doc.text(c.date ? _prMaDay(c.date) : '', colDate, y + 9);
+    doc.text(_prMaRs(doc, c.net), colNet, y + 9, { align: 'right' });
+    y += RH;
+  });
+
+  // Reconciliation: expected · counted · difference, as handed over.
+  const d = data.difference == null ? null : Math.round(Number(data.difference) || 0);
+  const recon = [
+    ['Expected', _PR_MA_UR_COL.expected, _prMaRs(doc, data.expected)],
+    ['Counted', _PR_MA_UR_COL.counted, _prMaRs(doc, data.amount)],
+    ['Difference', _PR_MA_UR_COL.difference, d === null ? '—' : d === 0 ? 'Matches — nothing over or short.' :
+      _prMaRs(doc, Math.abs(d)) + (d > 0 ? ' over' : ' short')]
+  ];
+  const need = recon.length * (_prMaUrduOk(doc) ? 36 : 21) + 6;
+  y += 10;
+  if (y + need > sigTop) { doc.addPage(); y = b.M; }
+  y = _prMaSlipRows(doc, y, recon.map(function (r, i) { return [r[0], r[1], r[2], i === 2]; }), sigTop);
+  _prMaSignatures(doc, y, [
+    { en: 'Given by', ur: _PR_MA_UR.givenBy, name: data.collectedBy || '' },
+    { en: 'Received by', ur: _PR_MA_UR.receivedBy, name: h.person || '' }
+  ], sigTop);
+  _prMaSlipFooter(doc, data);
+}
+
 /* ── PART 2 — Public API ───────────────────────────────────────────────────
    The ONLY global this engine exposes.
 
@@ -2866,7 +2981,7 @@ window.printDocument = async function (opts) {
   const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
     'daily-performance', 'stock-transfer', 'mood-board',
-    'ma-ledger', 'ma-statement-party', 'ma-statement-holder', 'ma-receipt', 'ma-voucher',
+    'ma-ledger', 'ma-statement-party', 'ma-statement-holder', 'ma-receipt', 'ma-voucher', 'ma-collection',
     'pattern-label', 'consumable-log', 'generic'];
   const _VARIANTS = {
     'po': _renderPO,
@@ -2881,7 +2996,8 @@ window.printDocument = async function (opts) {
     'ma-statement-party': _renderMaStatementParty,
     'ma-statement-holder': _renderMaStatementHolder,
     'ma-receipt': _renderMaReceipt,
-    'ma-voucher': _renderMaVoucher
+    'ma-voucher': _renderMaVoucher,
+    'ma-collection': _renderMaCollection
   };
   const render = _VARIANTS[type] || _renderGeneric;
   if (known.indexOf(type) === -1) {

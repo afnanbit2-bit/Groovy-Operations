@@ -2264,6 +2264,31 @@ function maPdfReceiptData(x,d){
     confirm:d.status!=='pending'&&d.confirmedBy?{by:_maPdfPerson(x,d.confirmedBy),at:d.confirmedAt||null,via:d.confirmVia||'app',forWho:d.confirmedFor?_maPdfPerson(x,d.confirmedFor):''}:null,
     printedOn:x.printedOn||'',printedBy:x.printedBy||''},_maPdfMarks(x,d));
 }
+/* ma-collection — a COLLECTION's receipt: the cash collected from a courier,
+   the receipts (CPRs) it covers, what was expected, counted and the
+   difference. Every figure is the document's own — `covers` is the snapshot
+   taken when it was recorded, never re-read from today's receipts — so the
+   paper cannot disagree with the books. state: pending · confirmed · posted
+   (its recorder is the holder — nobody else had to confirm) · void. A
+   courier with no CPRs (Blue-Ex, Bykea) has an empty `covers` and `legacy`
+   or manual entry: the page then says so instead of printing an empty table. */
+function maPdfCollectionData(x,d){
+  if(!d||d.dt!=='collection')return null;
+  const state=d.status==='void'?'void':d.status==='pending'?'pending':d.confirmedBy?'confirmed':'posted';
+  const cr=MA_COURIERS[d.courier]||null;
+  const covers=(Array.isArray(d.covers)?d.covers:[]).filter(c=>c&&typeof c==='object').map(c=>({
+    no:String(c.no||c.id||''),date:String(c.date||''),net:Number.isInteger(c.net)?c.net:0}));
+  return Object.assign({no:d.no||'',date:d.date||'',amount:d.amount,amountWords:maRsWords(d.amount),
+    courier:{key:String(d.courier||''),name:cr?cr.name:String(d.courier||'')},
+    holder:_maPdfSide(x,d.holder),collectedBy:String(d.collectedBy||''),
+    covers,expected:Number.isInteger(d.expected)?d.expected:0,
+    difference:Number.isInteger(d.difference)?d.difference:null,
+    note:d.note||'',state,
+    waitingFor:d.status==='pending'?_maPdfPerson(x,d.confirmBy):'',paper:!!d.confirmPaper,
+    // As the receipt: a slip that says "pending" never also prints a confirmation.
+    confirm:d.status!=='pending'&&d.confirmedBy?{by:_maPdfPerson(x,d.confirmedBy),at:d.confirmedAt||null,via:d.confirmVia||'app',forWho:d.confirmedFor?_maPdfPerson(x,d.confirmedFor):''}:null,
+    printedOn:x.printedOn||'',printedBy:x.printedBy||''},_maPdfMarks(x,d));
+}
 /* ma-voucher — a MONEY OUT journal's payment voucher. `paid` is the cash
    that left the holder (maTaxCompute: less withholding, plus tax on top),
    and its words are of that figure. `tax` is null for "No tax" — the
@@ -3393,7 +3418,7 @@ if(typeof module!=='undefined'&&module.exports){
     maCommitmentStatus,maCommitmentText,maCalendar,maSpendable,maValidate,maVoidIssues,maEditDiff,maApplyEdit,
     maApplyVoid,maConfirmPatch,maUnlabelled,maReviewQueue,maNeedsAttention,maAllocateFifo,maDocTitle,maDocText,
     maAuditRow,maPad,maClone,maStr,maIsRupees,maCodeOk,maAccLabel,maSpendGroupOf,maLineText,
-    maPdfLedgerData,maPdfHolderStatementData,maPdfPartyStatementData,maPdfReceiptData,maPdfVoucherData,
+    maPdfLedgerData,maPdfHolderStatementData,maPdfPartyStatementData,maPdfReceiptData,maPdfVoucherData,maPdfCollectionData,
     MA_AUDIT_ACTIONS,MA_ATTACH_FORMATS,MA_ATTACH_MAX,MA_ATTACH_KEYS,MA_BACKUP_STATES,MA_BOOK_COLS,
     maAttachPidOk,maAttachOk,maAttachClean,maAttachList,maAttachFromUpload,maAttachRef,maAttachIssues,maRevOf,
     maLiveFlags,maAnsweredFlags,maBackupState,maBackupMissing,maWaPhone,maWaLink,maShareState,MA_SHARE_MAX_DAYS,MA_SHARE_SKEW_MS,maBooksNoTokens,maBooksJson,maBooksSheets,

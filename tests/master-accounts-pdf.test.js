@@ -146,6 +146,24 @@ const V_NONE=M.maPdfVoucherData(X,pay);
 const V_REV=M.maPdfVoucherData(X,e2);
 const V_VOID=M.maPdfVoucherData(X,vOut);
 
+
+/* ── M2: collections, for the ma-collection receipt ────────────────────── */
+const CPRS=Array.from({length:12},(_,i)=>({id:'postex-C'+(i+1),no:'C-'+(1000+i),date:'2026-10-'+String(1+i).padStart(2,'0'),net:10000+i*1234,status:'posted'}));
+const colDoc=(input,u,cprs)=>mk('collection',Object.assign({courier:'postex',holder:'1011',date:'2026-10-20',collectedBy:'Noman'},input),u||'afnan',{cprs:cprs||CPRS});
+const NET=n=>CPRS.slice(0,n).reduce((t,c)=>t+c.net,0);
+const c3=colDoc({amount:NET(3)-500,cprNos:CPRS.slice(0,3).map(c=>c.id),note:'Handed over at the gate'},'afnan');       // recorder is the holder → posted
+const cP=colDoc({amount:NET(2),cprNos:CPRS.slice(0,2).map(c=>c.id)},'ammar');                                          // into Afnan's hands → waits for Afnan, in the app
+const cPaper=colDoc({courier:'bykea',holder:'1010',amount:6000,cprNos:[CPRS[0].id]},'afnan');                          // the drawer → waits for Raees, on paper
+const cConf=colDoc({courier:'bykea',holder:'1010',amount:6000,cprNos:[CPRS[0].id]},'afnan');
+Object.assign(cConf,M.maConfirmPatch(cConf,'afnan',{at:1791500000000}).patch);                                          // paper confirm: an owner for Raees
+const cAppConf=colDoc({amount:NET(2),cprNos:CPRS.slice(0,2).map(c=>c.id)},'ammar');
+Object.assign(cAppConf,M.maConfirmPatch(cAppConf,'afnan',{at:1791510000000}).patch);
+const c12=colDoc({amount:NET(12)+300,cprNos:CPRS.map(c=>c.id),note:'All twelve receipts',collectedBy:'Noman'},'afnan');
+const cVoid=M.maApplyVoid(colDoc({amount:NET(1),cprNos:[CPRS[0].id]},'afnan'),{at:1791600000000,by:'ammar',byName:'Ammar',reason:'Counted twice'});
+const cBlue=colDoc({courier:'bluex',holder:'1020',amount:4000},'afnan',[]);
+const cRev=M.maApplyEdit(c3,M.maBuildDoc('collection',{courier:'postex',holder:'1011',date:'2026-10-20',collectedBy:'Noman',amount:NET(3)-400,cprNos:CPRS.slice(0,3).map(c=>c.id)},{by:'afnan',covers:c3.covers,cprs:CPRS},IDX,S),{at:1791700000000,by:'afnan',byName:'Afnan',reason:'Miscounted by 100'});
+const CL=d=>M.maPdfCollectionData(X,d);
+
 /* Every variant that existed before M1.4, with enough data to draw. */
 const OLD={
   'generic':{title:'A title',subtitle:'sub',bodyHtml:'<p>Hello</p><p>'+'Long line of body text. '.repeat(300)+'</p>',documentNumber:'X-1',issuedDate:'01/10/2026',issuedBy:'Afnan'},
@@ -443,6 +461,186 @@ module.exports=async function(){
     const n=toasts.length;
     const r3=await e2x.run('window.printDocument({type:"ma-ledger",data:{}})');
     s.ok('…while the old path still toasts and resolves',r3===undefined&&toasts.length===n+1);
+  }
+
+  s.section('M2 — ma-collection: the data builder (every figure is the document\'s own)');
+  {
+    const D=CL(c3);
+    s.eq('a non-collection is not a collection receipt (null)',J([M.maPdfCollectionData(X,trP),M.maPdfCollectionData(X,wht),M.maPdfCollectionData(X,null)]),J([null,null,null]));
+    s.eq('number, date, courier, holder and who collected',J([D.no,D.date,D.courier,D.holder.code,D.holder.name,D.collectedBy]),J([c3.no,'2026-10-20',{key:'postex',name:'PostEx'},'1011','Cash — with Afnan','Noman']));
+    s.eq('the covered receipts are the SNAPSHOT: number, date, net — in order',J(D.covers),J(c3.covers.map(c=>({no:c.no,date:c.date,net:c.net}))));
+    s.eq('expected, counted and the difference are the document\'s',J([D.expected,D.amount,D.difference]),J([c3.expected,c3.amount,-500]));
+    s.eq('…and expected is the receipts\' net, not a figure of the builder\'s',D.expected,NET(3));
+    s.eq('the amount in words',D.amountWords,M.maRsWords(c3.amount));
+    s.eq('a collection its recorder holds is posted — nobody else had to confirm',J([D.state,D.confirm,D.waitingFor]),J(['posted',null,'']));
+    const P=CL(cP);
+    s.eq('into another owner\'s hands: pending, waiting for them, in the app',J([P.state,P.waitingFor,P.paper,P.confirm]),J(['pending','Afnan',false,null]));
+    const PP=CL(cPaper);
+    s.eq('into the drawer: pending, waiting for Raees, on paper',J([PP.state,PP.waitingFor,PP.paper,PP.confirm]),J(['pending','Raees',true,null]));
+    const PC=CL(cConf);
+    s.eq('confirmed on paper says by whom, when and for whom',J([PC.state,PC.confirm]),J(['confirmed',{by:'Afnan',at:1791500000000,via:'paper',forWho:'Raees'}]));
+    s.eq('confirmed in the app',J(CL(cAppConf).confirm),J({by:'Afnan',at:1791510000000,via:'app',forWho:''}));
+    const stale=Object.assign(clone(cAppConf),{status:'pending'});
+    s.eq('a slip that says "pending" never also prints a confirmation',J([CL(stale).state,CL(stale).confirm]),J(['pending',null]));
+    const V=CL(cVoid);
+    s.eq('void: the state, the reason, who',J([V.state,V.void&&V.void.reason,V.void&&V.void.by]),J(['void','Counted twice','Ammar']));
+    s.eq('a live one carries no void mark and no revision mark',J([D.void,D.revised]),J([null,null]));
+    const RV=CL(cRev);
+    s.eq('revised: rev N is maRevOf (the rail\'s number), with the last edit\'s who and why',J([RV.revised&&RV.revised.n,RV.revised&&RV.revised.by,RV.revised&&RV.revised.reason,M.maRevOf(cRev)]),J([2,'Afnan','Miscounted by 100',2]));
+    s.eq('…and an edit keeps the snapshot',J(RV.covers),J(D.covers));
+    const B=CL(cBlue);
+    s.eq('a courier with no receipts: no covers, expected is the amount collected, difference 0',J([B.covers,B.expected,B.difference,B.courier.name]),J([[],4000,0,'Blue-Ex']));
+    s.eq('an unknown courier key prints as typed, and a missing difference is null (never a made-up 0)',J([CL(Object.assign(clone(c3),{courier:'zz',difference:undefined})).courier,CL(Object.assign(clone(c3),{difference:undefined})).difference]),J([{key:'zz',name:'zz'},null]));
+    s.eq('recorded-by and printed-by ride along, as on the other slips',J([D.recorded.by,D.printedOn,D.printedBy]),J(['Afnan','2026-12-31','Afnan']));
+    const leaves=(v,o=[])=>{if(v&&typeof v==='object')Object.keys(v).forEach(k=>leaves(v[k],o));else o.push(v);return o;};
+    s.ok('the data is plain values only — strings, numbers, booleans, null; no function, no undefined',leaves(D).every(v=>v===null||['string','number','boolean'].indexOf(typeof v)>=0));
+    s.ok('every covered line is three plain values',D.covers.every(c=>typeof c.no==='string'&&typeof c.date==='string'&&Number.isInteger(c.net)));
+    s.ok('the builder reads no clock and no session (source)',!/Date\.now|new Date|session\./.test(read('js/ma-core.js').split('function maPdfCollectionData')[1].split('/* ma-voucher')[0]));
+  }
+
+  s.section('M2 — ma-collection: registered everywhere a variant must be, A5 with its own footer');
+  {
+    const src=read('js/print-engine.js');
+    const known=(/const known = \[([\s\S]*?)\];/.exec(src)||[])[1]||'';
+    s.ok('it is in known',known.indexOf("'ma-collection'")>=0);
+    s.ok('it maps to its own renderer in _VARIANTS',/'ma-collection': _renderMaCollection\b/.test(src)&&e.run('typeof _renderMaCollection')==='function');
+    s.eq('it has a label, the plan\'s Urdu level (full) and the A5 page',J([e.run('_PRINT_DOC_LABELS["ma-collection"]'),e.run('_PRINT_URDU_DEFAULTS["ma-collection"]'),e.run('_PRINT_PAGE_DEFAULTS["ma-collection"]')]),J(['Collection Receipt','full',{w:420,h:595}]));
+    s.ok('the footer\'s Urdu tail is its own, not the generic one',e.run('_footerUr("Collection Receipt")')!==e.run('_footerUr("Nothing")'));
+    const p=await print(e,'ma-collection',CL(c3));
+    s.ok('it draws as itself — no "falling back to generic"',!p.warns.some(w=>/falling back/.test(w)),p.warns.join(' | '));
+    s.eq('A5 (420 × 595)',J(p.made),J({unit:'pt',format:[420,595],orientation:'portrait'}));
+    s.ok('every word inside the page',p.d.log.text.every(x=>x.x>=0&&x.x<=420&&x.y>=0&&x.y<=595));
+    s.ok('no A4 footer; its own: the page count and the Internal Use line at y = 575',!p.d.log.text.some(x=>x.y===806||/Confidential/.test(x.t))&&p.d.log.text.some(x=>x.t==='Page 1 of 1'&&x.y===575)&&p.d.log.text.some(x=>x.t==='GROOVY · Collection Receipt · Internal Use Only'&&x.y===575&&x.align==='right'));
+    const L2=await print(e,'ma-collection',Object.assign({},CL(c3),{orientation:'landscape'}));
+    s.eq('asked for landscape it is still A5 portrait',J(L2.made),J({unit:'pt',format:[420,595],orientation:'portrait'}));
+    s.eq('resolves its Urdu level to full',p.d.__groovyUrduLevel,'full');
+  }
+
+  s.section('M2 — ma-collection: what is drawn');
+  {
+    const D=CL(c3);
+    const {d}=await print(e,'ma-collection',D);
+    const T=texts(d);
+    s.ok('title, number and date',T.indexOf('Collection receipt')>=0&&T.indexOf(c3.no)>=0&&T.indexOf(day(c3.date))>=0);
+    s.ok('the amount collected in figures and in words',T.indexOf(rs(D.amount))>=0&&T.indexOf(D.amountWords)>=0);
+    s.ok('courier, holder (with whose hands) and who collected',T.indexOf('PostEx')>=0&&T.indexOf('Cash — with Afnan (Afnan)')>=0&&T.indexOf('Noman')>=0);
+    s.ok('each covered receipt once: number, date, net (right-aligned)',D.covers.every(c=>count(d,c.no)===1&&d.log.text.some(t=>t.t===day(c.date))&&d.log.text.some(t=>t.t===rs(c.net)&&t.align==='right')));
+    s.ok('expected, counted and the difference — as handed over',T.indexOf(rs(D.expected))>=0&&T.indexOf(rs(D.amount))>=0&&T.indexOf(rs(500)+' short')>=0);
+    s.ok('the note',T.indexOf('Handed over at the gate')>=0);
+    s.ok('posted: it says nobody else had to confirm it',T.some(t=>/^Posted — nobody else had to confirm it\./.test(t)));
+    s.ok('two signature blocks — given by the collector, received by the holder\'s person',T.indexOf('Given by')>=0&&T.indexOf('Received by')>=0&&T.indexOf('Noman')>=0&&d.log.line.filter(l=>l.y1===l.y2&&l.y1===595-24-36-72+28).length===2);
+    s.ok('no VOID and no revision mark on a live, unedited one',!T.some(t=>/VOID|Revised/.test(t)));
+    const over=await print(e,'ma-collection',CL(colDoc({amount:NET(2)+250,cprNos:CPRS.slice(0,2).map(c=>c.id)},'afnan')));
+    s.ok('over the receipts → "over"; equal → "Matches"',texts(over.d).indexOf(rs(250)+' over')>=0&&texts((await print(e,'ma-collection',CL(colDoc({amount:NET(2),cprNos:CPRS.slice(0,2).map(c=>c.id)},'afnan')))).d).some(t=>/^Matches/.test(t)));
+    const lie=Object.assign(clone(D),{expected:7,difference:9});
+    s.ok('it computes nothing: expected and difference print as handed over',texts((await print(e,'ma-collection',lie)).d).indexOf(rs(7))>=0&&texts((await print(e,'ma-collection',lie)).d).indexOf(rs(9)+' over')>=0);
+    s.ok('a missing difference prints a dash, never a made-up figure',texts((await print(e,'ma-collection',Object.assign(clone(D),{difference:null}))).d).indexOf('—')>=0);
+    const tp=prose((await print(e,'ma-collection',CL(cP))).d);
+    s.ok('pending: who it waits for, and that it counts in no holder yet',tp.indexOf('Waiting for Afnan to confirm in the app. It counts in no holder until then.')>=0);
+    const pp=prose((await print(e,'ma-collection',CL(cPaper))).d);
+    s.ok('pending on paper: sign below, an owner then confirms it in the app',pp.indexOf('Waiting for Raees to confirm — sign below on receipt; an owner then confirms it in the app.')>=0);
+    s.ok('confirmed: by whom, for whom, how and when',texts((await print(e,'ma-collection',CL(cConf))).d).some(t=>/^Confirmed by Afnan for Raees, on paper · /.test(t)));
+    const bl=await print(e,'ma-collection',CL(cBlue));
+    s.ok('a courier with no receipts says so instead of an empty table',texts(bl.d).indexOf('No receipts are listed — entered as the amount collected.')>=0);
+  }
+
+  s.section('M2 — ma-collection: a 12-receipt collection continues sensibly on A5');
+  {
+    const D=CL(c12);
+    s.eq('(twelve receipts, the difference 300 over)',J([D.covers.length,D.difference]),J([12,300]));
+    const {d}=await print(e,'ma-collection',D);
+    const np=d.log.pages;
+    s.ok('it runs onto '+np+' pages, none blank',np>=2&&Array.from({length:np},(_,i)=>i+1).every(p=>d.log.text.some(t=>t.page===p&&!/^(Page \d|GROOVY ·)/.test(t.t))));
+    s.ok('every receipt is drawn exactly once, with its date and net',D.covers.every(c=>count(d,c.no)===1&&d.log.text.some(t=>t.t===rs(c.net))));
+    const rowPages=pagesWith(d,t=>D.covers.some(c=>c.no===t.t));
+    s.ok('the head is drawn on every page that carries rows, and the later ones say "continued"',rowPages.every(p=>['Receipt','Date','Net'].every(h=>d.log.text.some(t=>t.page===p&&t.t===h)))&&(rowPages.length<2||d.log.text.some(t=>t.page===rowPages[1]&&t.t==='Receipts covered — continued')));
+    s.ok('every page\'s words are inside 420 × 595 and above the footer band (y ≤ 563) except the footer itself',d.log.text.every(t=>t.x>=0&&t.x<=420&&t.y>=0&&t.y<=595&&(t.y<=563||/^(Page \d|GROOVY ·|Recorded by|Printed )/.test(t.t)||t.y>=563)));
+    const sigLine=d.log.line.filter(l=>l.y1===l.y2&&l.y1===595-24-36-72+28);
+    const sigPage=sigLine.length?sigLine[0].page:0;
+    s.ok('the signatures sit once, on the LAST page, both of them',sigLine.length===2&&sigLine.every(l=>l.page===np)&&np===sigPage);
+    const lastRowY=Math.max(...d.log.text.filter(t=>t.page===sigPage&&t.align!=='right'&&D.covers.some(c=>c.no===t.t)).map(t=>t.y),0);
+    const reconY=d.log.text.filter(t=>t.page===sigPage&&(t.t==='Expected'||t.t==='Counted'||t.t==='Difference')).map(t=>t.y);
+    s.ok('the reconciliation (expected · counted · difference) is drawn once, above the signature lines',reconY.length===3&&reconY.every(y=>y<595-24-36-72+28));
+    s.ok('a page carrying rows never has a row overlap the signature band',D.covers.every(c=>{const t=d.log.text.find(x=>x.t===c.no);return t&&(t.page<sigPage||t.y<595-24-36-72);}));
+    s.ok('the footer (page count) is on every page: Page 1 of N … Page N of N',Array.from({length:np},(_,i)=>i+1).every(p=>d.log.text.some(t=>t.page===p&&t.t==='Page '+p+' of '+np&&t.y===575)));
+    void lastRowY;
+    // Fifty: three pages, the head on each, no row ever near the footer band.
+    const BIG=Array.from({length:50},(_,i)=>({id:'postex-B'+(i+1),no:'B-'+(2000+i),date:'2026-10-'+String(1+(i%28)).padStart(2,'0'),net:5000+i,status:'posted'}));
+    const c50=colDoc({amount:BIG.reduce((t,c)=>t+c.net,0),cprNos:BIG.map(c=>c.id)},'afnan',BIG);
+    const {d:d50}=await print(e,'ma-collection',CL(c50));
+    const rp50=pagesWith(d50,t=>/^B-20\d\d$/.test(t.t));
+    s.ok('fifty receipts: '+d50.log.pages+' pages, each drawn once, the head redrawn on every page that has rows',d50.log.pages>=3&&CL(c50).covers.every(c=>count(d50,c.no)===1)&&rp50.every(p=>['Receipt','Date','Net'].every(h=>d50.log.text.some(t=>t.page===p&&t.t===h))));
+    s.ok('…no receipt row is drawn below y = 459 (clear of the signature band and the footer)',d50.log.text.filter(t=>/^B-20\d\d$/.test(t.t)).every(t=>t.y<=459));
+    const {d:d1}=await print(e,'ma-collection',CL(colDoc({amount:NET(3),cprNos:CPRS.slice(0,3).map(c=>c.id)},'afnan')));
+    s.eq('a short one is a single page',d1.log.pages,1);
+  }
+
+  s.section('M2 — ma-collection: VOID and "Revised · rev N"');
+  {
+    const red=e.run('_pc(PRINT_COLORS.red).join(",")');
+    const {d:v}=await print(e,'ma-collection',CL(cVoid));
+    const T=texts(v);
+    s.ok('a void collection carries VOID in its stamp and on its footer',count(v,'VOID')>=2&&v.log.text.some(t=>t.t==='VOID'&&t.size===26));
+    s.ok('…with who, when and why, and that it moves no money',T.some(t=>/^Voided .* by Ammar\.$/.test(t))&&T.indexOf('Reason: Counted twice')>=0&&T.indexOf('It moves no money.')>=0);
+    const amt=v.log.text.find(t=>t.t===rs(CL(cVoid).amount)&&t.size===24);
+    s.ok('…inside a red box, its figure struck through in red',v.log.rect.some(r=>r.st==='S'&&r.draw===red)&&!!amt&&v.log.line.some(l=>l.draw===red&&l.y1===l.y2&&l.y1<amt.y&&l.y1>amt.y-20&&l.x1<=amt.x&&l.x2>amt.x));
+    s.ok('the state line says void',T.indexOf('Void — it moves no money.')>=0);
+    const {d:r}=await print(e,'ma-collection',CL(cRev));
+    s.ok('edited once → "Revised · rev 2", the rail\'s number, with who and why',texts(r).indexOf('Revised · rev 2')>=0&&texts(r).some(t=>/by Afnan — Miscounted by 100$/.test(t))&&texts(r).indexOf('Revised · rev 1')<0);
+    const {d:l}=await print(e,'ma-collection',CL(c3));
+    s.ok('never edited, never void → neither mark, no red line',!texts(l).some(t=>/VOID|Revised/.test(t))&&!l.log.line.some(x=>x.draw===red));
+  }
+
+  s.section('M2 — ma-collection: Urdu only from a font that can draw it; plain text only');
+  {
+    const {d}=await print(e,'ma-collection',CL(c3));
+    s.ok('no Urdu font in node → clean English, no Arabic-script glyph',d.__groovyUrduLevel==='full'&&d.__groovyUrdu===false&&!d.log.text.some(t=>ARABIC.test(t.t)));
+    const slip=(glyph,data)=>{
+      e.run(`__slip=new FakePDF({unit:'pt',format:[420,595],orientation:'portrait'});
+        __slip.__groovyUrdu=true;__slip.__groovyUrduLevel='full';
+        __slip.__groovyFonts={[PRINT_FONTS.bodyRegular]:'helvetica',[PRINT_FONTS.display]:'helvetica',[PRINT_FONTS.urdu]:'JNN'};
+        __slip.getFont=()=>({metadata:{characterToGlyph:()=>${glyph}}});
+        __slip.processArabic=s=>s;__slip.__groovyDocType='Collection Receipt';_renderMaCollection(__slip,${J(data)})`);
+      return e.run('__slip');
+    };
+    const ok=slip(7,CL(c3)),ur=ok.log.text.filter(t=>ARABIC.test(t.t));
+    s.ok('a font with the glyphs → bilingual: title, labels, signatures, footer tail',['وصولی کی رسید','وصول شدہ رقم','کوریئر','رسیدیں','متوقع','گنتی','فرق','دینے والا','وصول کنندہ','وصولی رسید — صرف اندرونی استعمال'].every(w=>ur.some(t=>t.t===w)));
+    s.ok('…every Urdu word in the Urdu font, never Helvetica',ur.every(t=>t.font==='JNN'));
+    const okV=slip(7,CL(c12));
+    s.ok('…and the 12-receipt one still holds every word inside the page',okV.log.text.every(t=>t.x>=0&&t.x<=420&&t.y>=0&&t.y<=595)&&CL(c12).covers.every(c=>okV.log.text.filter(t=>t.t===c.no).length===1));
+    const no=slip(0,CL(c3));
+    s.ok('a font that embedded but lacks the glyphs → no Urdu at all, the English all there',!no.log.text.some(t=>ARABIC.test(t.t))&&['Collection receipt','Amount collected','Courier','Expected','Counted','Difference','Given by','Received by'].every(w=>no.log.text.some(t=>t.t===w)));
+    // The receipt and voucher are asked exactly what they were: a Urdu word that
+    // only the collection uses cannot make them fall back to English.
+    const only=e.run(`(function(){const rc=Object.keys(_PR_MA_UR).map(k=>_PR_MA_UR[k]).concat([_footerUr('Handover Receipt')]).join('');
+      const col=Object.keys(_PR_MA_UR_COL).map(k=>_PR_MA_UR_COL[k]).concat([_footerUr('Collection Receipt')]).join('');
+      return Array.from(col).filter(ch=>!/\\s/.test(ch)&&rc.indexOf(ch)<0).map(ch=>ch.codePointAt(0));})()`);
+    s.ok('(the collection uses letters the receipt does not: '+only.length+')',only.length>0);
+    e.run(`__r=new FakePDF({unit:'pt',format:[420,595],orientation:'portrait'});__r.__groovyUrdu=true;__r.__groovyUrduLevel='full';
+      __r.__groovyFonts={[PRINT_FONTS.urdu]:'JNN'};__r.__groovyDocType='Handover Receipt';
+      __r.getFont=()=>({metadata:{characterToGlyph:c=>${J(only)}.indexOf(c)>=0?0:7}});__r.processArabic=s=>s;`);
+    e.run("__c=new FakePDF({unit:'pt',format:[420,595],orientation:'portrait'});__c.__groovyUrdu=true;__c.__groovyUrduLevel='full';__c.__groovyFonts={[PRINT_FONTS.urdu]:'JNN'};__c.__groovyDocType='Collection Receipt';__c.getFont=__r.getFont;__c.processArabic=s=>s;");
+    s.ok('…and a font lacking only those makes the collection English, as it must',e.run('_prMaUrduOk(__c)')===false);
+    s.ok('a glyph only the collection\'s words use does not switch the handover receipt to English',e.run('_prMaUrduOk(__r)')===true);
+    // Plain text only: markup in a stored string is drawn as the characters it is.
+    const evil=Object.assign(clone(CL(c3)),{collectedBy:'<img src=x onerror=alert(1)>',note:'<script>alert(1)</script> & "quotes"',
+      covers:[{no:'<b>C-1</b>',date:'2026-10-01',net:100}],courier:{key:'x',name:'<i>PostEx</i>'}});
+    const {d:ev}=await print(e,'ma-collection',evil);
+    const TE=texts(ev);
+    s.ok('markup is drawn as the characters it is — never parsed',TE.indexOf('<img src=x onerror=alert(1)>')>=0&&TE.some(t=>t==='<script>alert(1)</script> & "quotes"')&&TE.indexOf('<b>C-1</b>')>=0&&TE.indexOf('<i>PostEx</i>')>=0);
+    const fn=read('js/print-engine.js').split('function _renderMaCollection')[1].split('/* ── PART 2')[0];
+    s.ok('the renderer has no HTML sink (source): no innerHTML, write, insertAdjacentHTML or document.createElement',!/innerHTML|document\.write|insertAdjacentHTML|createElement/.test(fn));
+    s.ok('a covered line with no number falls back to nothing, and never throws on a sparse document',await(async()=>{try{await print(e,'ma-collection',{no:'CL-1'});await print(e,'ma-collection',{covers:[null,{}],holder:null,courier:null});return true;}catch(x){return false;}})());
+  }
+
+  s.section('M2 — ma-collection: deliver:"blob"');
+  {
+    const e2x=engine({URL:{createObjectURL:()=>'blob:groovy/1',revokeObjectURL(){}}});
+    const r=await e2x.run('window.printDocument({type:"ma-collection",data:'+J(CL(c3))+',filename:"Collection-CL.pdf",deliver:"blob"})');
+    s.ok('it resolves {blob, filename}, opens no tab, downloads nothing',J(Object.keys(r||{}).sort())===J(['blob','filename'])&&r.filename==='Collection-CL.pdf'&&e2x.run('__open')===0&&e2x.run('__clicks.length')===0&&e2x.state.toasts.length===0);
+    e2x.run('__throwOn="Rupees"');
+    let err=null;try{await e2x.run('window.printDocument({type:"ma-collection",data:'+J(CL(c3))+',deliver:"blob"})');}catch(x){err=x;}
+    s.ok('a render that fails rejects with the reason',!!err&&/drawing failed/.test(String(err.message)));
   }
 
   s.section('money and dates are drawn the way the screen shows them');
