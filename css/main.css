@@ -4758,6 +4758,38 @@ a.ma-btn{text-decoration:none}
 .ma-sh-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
 .ma-sh-file{font-size:14px;font-weight:500;color:var(--text);overflow-wrap:anywhere;min-width:0}
 .ma-sh-meta{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+/* Money in ▸ Couriers and the Collection form (M2). Same rules as the block
+   above: every selector carries .ma-, tokens only, nothing under 12px. */
+/* A courier's actions wrap among themselves on a phone rather than run past
+   the gutter: the section head's group is nowrap (QA F24), and Tick all, Run
+   now and "Record collection · 3 ticked · ₨1,23,456" together are wider than
+   a phone's 388px. */
+.ma-cr-acts{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px 12px;white-space:normal}
+.ma-cr-acts .ma-btn{white-space:nowrap}
+.ma-sum{font-size:14px;color:var(--text);margin:0 0 12px;line-height:1.45}
+.ma-sum b{font-variant-numeric:tabular-nums}
+.ma-h4{font-size:13px;font-weight:600;color:var(--muted);margin:16px 0 8px}
+.ma-table th.ma-chkcol,.ma-table td.ma-chkcol{width:36px;padding-right:0}
+.ma-table td.ma-chkcol input{width:18px;height:18px;margin:0;cursor:pointer}
+.ma-doc{font-weight:500}
+.ma-parcels td:first-child{overflow-wrap:anywhere;min-width:0}
+/* A courier statement's lines: one grid per line, the memo on a row of its
+   own so the numbers keep their width at every viewport. */
+.ma-st-lines{display:flex;flex-direction:column;gap:10px}
+.ma-st-row{display:grid;grid-template-columns:132px 76px auto minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px;grid-template-areas:"d p r c f t x" "m m m m m m m";gap:6px;align-items:center;padding-bottom:10px;border-bottom:1px solid var(--soft)}
+.ma-st-d{grid-area:d}.ma-st-p{grid-area:p}.ma-st-r{grid-area:r}.ma-st-c{grid-area:c}.ma-st-f{grid-area:f}.ma-st-t{grid-area:t}.ma-st-m{grid-area:m}.ma-st-x{grid-area:x}
+@media (max-width:600px){
+  .ma-st-row{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"d d x" "p r c" "f t t" "m m m"}
+}
+.ma-parcels th.ma-num{white-space:normal}
+.ma-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.ma-prev{font-size:13px;color:var(--text);background:var(--surface-2);border-left:3px solid var(--border);border-radius:0 6px 6px 0;padding:8px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:4px}
+.ma-prev:empty{display:none}
+.ma-cover-list{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:6px;max-height:220px;overflow:auto}
+.ma-cover{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:6px 10px;border-bottom:1px solid var(--soft);min-height:36px}
+.ma-cover:last-child{border-bottom:0}
+.ma-cover input{margin:0;align-self:center}
+.ma-cover .ma-muted{font-size:13px;min-width:0;overflow-wrap:anywhere}
 /* Up to 1440px the rail is a slide-over over the page, and beside it only
    above that (QA F27; Afnan: "slide-over up to 1440"). As a 380px grid
    column at 1280 it squeezed the page's tables to 616px — the Ledger's

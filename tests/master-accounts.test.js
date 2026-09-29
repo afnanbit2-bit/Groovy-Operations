@@ -105,7 +105,7 @@ module.exports=async function(){
     };
     const af=nav('afnan'),am=nav('ammar'),mu=nav('mustafa'),ar=nav('arfat'),ra=nav('raees');
     s.ok('Afnan\'s sidebar carries the Master Accounts section',/nav-ma-toggle/.test(af)&&/showPage\('ma-overview'\)/.test(af));
-    s.ok('and every M1 page',['ma-overview','ma-money','ma-out','ma-parties','ma-ledger','ma-close'].every(id=>af.indexOf("showPage('"+id+"')")>=0));
+    s.ok('and every M1 page',['ma-overview','ma-money','ma-in','ma-out','ma-parties','ma-ledger','ma-close'].every(id=>af.indexOf("showPage('"+id+"')")>=0));
     s.ok('Ammar\'s does too',/nav-ma-toggle/.test(am));
     s.ok('Mustafa\'s does not',!/nav-ma-toggle|ma-overview/.test(mu));
     s.ok('Arfat\'s does not',!/nav-ma-toggle/.test(ar));
@@ -314,7 +314,7 @@ module.exports=async function(){
     s.ok('Today escapes a commitment named in a concern',today.indexOf('<u>factory')<0);
     s.ok('Today carries the four figures',['Cash in hand','In this month','Out this month','Owed to us less we owe'].every(x=>today.indexOf(x)>=0));
     s.ok('and never an uppercase transform or letter-spacing in the module CSS',!/\.ma-[^{]*\{[^}]*(text-transform:uppercase|letter-spacing:\.0[5-9]|letter-spacing:[1-9])/.test(read('css/main.css')));
-    ['ma-overview','ma-money','ma-out','ma-parties','ma-ledger','ma-close'].forEach(id=>{
+    ['ma-overview','ma-money','ma-in','ma-out','ma-parties','ma-ledger','ma-close'].forEach(id=>{
       let h='';try{h=app.run("_maPageHTML('"+id+"')");}catch(e){h='THREW '+e.message;}
       s.ok(id+' paints, with the Record button',/maRecord\(\)/.test(h),h.slice(0,80));
     });
@@ -324,7 +324,7 @@ module.exports=async function(){
     app.run("window.maRecord()");
     const pick=app.bodyHtml('ma-modal-back');
     s.ok('the Record picker offers the live kinds',['Money out','Money in','Transfer','Count','Owner put money in','Owner took money out','Opening balance','Journal','Commitment'].every(x=>pick.indexOf('>'+x+'<')>=0));
-    s.ok('and names the coming ones with their milestone',/Collection<\/b><span>arrives with M2/.test(pick)&&/Bill<\/b><span>arrives with M3/.test(pick)&&/Savings entry<\/b><span>arrives with M4/.test(pick));
+    s.ok('and names the coming ones with their milestone',/Collection<\/b><span>Cash collected from a courier/.test(pick)&&!/Collection<\/b><span>arrives/.test(pick)&&/Bill<\/b><span>arrives with M3/.test(pick)&&/Savings entry<\/b><span>arrives with M4/.test(pick));
     s.ok('a coming tile is not a button',!/<button[^>]*maRecordKind\('bill'\)/.test(pick));
     // From a party page the form comes prefilled with the party.
     app.run("_maPage='ma-party';_maPartyId='p1';window.maRecordKind('money_out')");
@@ -393,7 +393,7 @@ module.exports=async function(){
     await app.run("window.maDocPdf('journal','JV-27-0001')");
     await app.run("window.maDocPdf('count','CT-27-0001')");
     s.eq('a capital journal or a count prints nothing',calls.length,n);
-    s.ok('…and says why',toasts.filter(t=>/^Only a transfer \(its receipt\) or a Money out \(its voucher\) has a PDF of its own/.test(t)).length===2,J(toasts));
+    s.ok('…and says why',toasts.filter(t=>/^Only a transfer or a collection \(its receipt\) or a Money out \(its voucher\) has a PDF of its own/.test(t)).length===2,J(toasts));
     const ex=S.sets.filter(x=>x.col==='ma_audit'&&x.data.action==='export').map(x=>[x.data.detail,x.data.target&&x.data.target.no]);
     s.eq('each PDF leaves one export row in the audit, naming the file and the document',J(ex),J([['PDF · Receipt-TR-27-0001.pdf','TR-27-0001'],['PDF · Voucher-JV-27-0002.pdf','JV-27-0002'],['PDF · Receipt-TR-27-0002-VOID.pdf','TR-27-0002']]));
 

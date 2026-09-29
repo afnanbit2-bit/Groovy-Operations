@@ -72,6 +72,19 @@ function seed(){
     'JV-27-0001':mk('journal',{kind:'capital',date:'2026-09-02',holder:'1011',owner:'afnan',amount:300000},'JV-27-0001'),
     'JV-27-0002':mk('journal',{kind:'money_out',date:'2026-09-05',holder:'1011',account:'5030',party:'p1',partyKind:'vendor',amount:20000,tax:{kind:'none'},costCentre:'factory',note:'Printing'},'JV-27-0002')};
   cols.ma_transfer={'TR-27-0001':mk('transfer',{date:'2026-09-07',from:'1011',to:'1012',amount:50000,note:'Float'},'TR-27-0001')};
+  // M2: a CPR to collect, one already collected (a collection with a
+  // difference), and the rollup's last run — so Money in draws real rows.
+  (()=>{
+    const px=o=>Object.assign({trackingNumber:'PXA',status:'Delivered',statusCategory:'delivered',dispatched:true,transactionDate:'2026-09-01T10:00:00',
+      orderPickupDate:'2026-09-02T09:00:00',orderDeliveryDate:'2026-09-03T16:00:00',cod:3000,transactionFee:180,transactionTax:28.8,reversalFee:0,reversalTax:0,
+      upfrontPayment:0,reservePayment:0,balancePayment:0,syncedAt:1790000000000,cprCheckedAt:1790100000000},o);
+    const der=MA.maCprDerive([px({cprNumber_1:'CPR-1',cpr1Date:'2026-09-08',upfrontPayment:2400}),px({trackingNumber:'PXB',cprNumber_1:'CPR-2',cpr1Date:'2026-09-15',upfrontPayment:2400})],{from:'2026-07-01',today:'2026-09-25'});
+    const docs=MA.maCourierDocs(der,S);
+    cols.ma_cpr={};docs.forEach(d=>{cols.ma_cpr[d.id]=d;});
+    const c=MA.maBuildDoc('collection',{courier:'postex',holder:'1011',amount:2700,date:'2026-09-09',cprNos:['postex-CPR-1'],collectedBy:'Noman',note:'Kept 50'},{by:'afnan',byName:'Afnan',ts:now,cprs:docs},IDX,S);
+    c.no='CL-27-0001';c.id=c.no;cols.ma_collection={[c.no]:c};
+    cols.ma_runs={rollup:{id:'rollup',state:'done',ok:true,at:now,day:'2026-09-26',parcels:2,created:4,updated:0,voided:0,transit:der.transit,issueCount:0,issues:[],checks:{}}};
+  })();
   return cols;
 }
 
@@ -82,7 +95,7 @@ const OWNER_PAGES=['dashboard','po-create','po-registry','gatepass','fabric-inve
   'color-library','shopify-intel','hrm-employees','attendance','hrm-payroll','hrm-advances','hrm-loans',
   'mkt-creators','mkt-dispatches','mkt-paid-pr','mkt-reports','pattern-hub','pattern-blocks',
   'tb-dash','tb-calendar','tb-lists','tb-inbox','me',
-  'ma-overview','ma-money','ma-out','ma-parties','ma-ledger','ma-close'];
+  'ma-overview','ma-money','ma-in','ma-out','ma-parties','ma-ledger','ma-close'];
 const JOBS=[
   {id:'owner-light',user:'afnan',theme:'light',pages:OWNER_PAGES},
   {id:'owner-dark',user:'afnan',theme:'dark',pages:['','dashboard','po-registry','notes','boards-all']},

@@ -554,27 +554,27 @@ module.exports=async function(){
     await app.run('maLoad()');
     app.run('window.maRecord()');
     const pick=app.bodyHtml('ma-modal-back');
-    const LIVE=['Money out','Money in','Transfer','Count','Owner put money in','Owner took money out','Opening balance','Journal','Commitment'];
-    const SOON=[['Collection','M2'],['Bill','M3'],['Payment','M3'],['Purchase order','M3'],['Receipt','M3'],['Payout','M4'],['Loan','M4'],['Savings entry','M4']];
+    const LIVE=['Money out','Money in','Transfer','Count','Owner put money in','Owner took money out','Opening balance','Journal','Commitment','Collection','Courier statement'];
+    const SOON=[['Bill','M3'],['Payment','M3'],['Purchase order','M3'],['Receipt','M3'],['Payout','M4'],['Loan','M4'],['Savings entry','M4']];
     const liveGrid=(/<div class="ma-tiles">([\s\S]*?)<\/div>\s*<button type="button" class="ma-fold"/.exec(pick)||[])[1]||'';
     const liveNames=(liveGrid.match(/<button class="ma-tile" onclick="window\.maRecordKind\('[a-z_]+'\)"><b>[^<]*<\/b>/g)||[]).map(x=>/<b>([^<]*)<\/b>/.exec(x)[1]);
-    s.eq('the nine live kinds are exactly as they were — nine buttons, in order, first on the picker',J(liveNames),J(LIVE));
+    s.eq('the eleven live kinds — the nine there were, then Collection and Courier statement (M2) — eleven buttons, in order, first on the picker',J(liveNames),J(LIVE));
     s.ok('…and none of the later kinds sits among them',!/ma-tile off/.test(liveGrid),liveGrid.slice(0,120));
     const fold=(/<button type="button" class="ma-fold"[^>]*>[^<]*<\/button>/.exec(pick)||[''])[0];
     s.ok('the fold is a real button (type="button")',/^<button type="button" class="ma-fold" id="ma-soon-fold"/.test(fold),fold);
     s.ok('…folded by default: aria-expanded="false"',/ aria-expanded="false"/.test(fold),fold);
     s.ok('…and it names the list it opens (aria-controls)',/ aria-controls="ma-soon"/.test(fold)&&/<div class="ma-tiles ma-soon" id="ma-soon"/.test(pick),fold);
-    s.ok('…and says how many kinds wait behind it',/>Coming later · 8<\/button>$/.test(fold),fold);
+    s.ok('…and says how many kinds wait behind it',/>Coming later · 7<\/button>$/.test(fold),fold);
     s.ok('the list is hidden while folded',/<div class="ma-tiles ma-soon" id="ma-soon" hidden>/.test(pick));
-    // Everything from the list on: the eight tiles, then only closing tags.
+    // Everything from the list on: the seven tiles, then only closing tags.
     const soonPart=pick.slice(Math.max(0,pick.indexOf('<div class="ma-tiles ma-soon"')));
     const soonTiles=(soonPart.match(/<div class="ma-tile off" aria-disabled="true"><b>[^<]*<\/b><span>arrives with M\d<\/span><\/div>/g)||[]).map(x=>{const r=/<b>([^<]*)<\/b><span>arrives with (M\d)<\/span>/.exec(x);return [r[1],r[2]];});
-    s.eq('behind it, the eight later kinds, each still named with its milestone, in order',J(soonTiles),J(SOON));
+    s.eq('behind it, the seven later kinds, each still named with its milestone, in order',J(soonTiles),J(SOON));
     s.ok('…and still not clickable: no button and no handler among them',pick.indexOf('<div class="ma-tiles ma-soon"')>0&&!/<button|onclick/.test(soonPart),soonPart.slice(0,160));
     s.ok('the old "Coming" label is gone (the button is the heading now)',!/ma-tiles-h/.test(pick));
-    // The count is DERIVED from the tiles: a ninth later kind says 9.
+    // The count is DERIVED from the tiles: an eighth later kind says 8.
     app.run("_MA_TILES.push({k:'x_test',t:'Test kind',coming:'M9'})");
-    s.ok('the count is derived from the list, not written into the label',/>Coming later · 9<\/button>/.test(app.run('_maPickerHTML()')));
+    s.ok('the count is derived from the list, not written into the label',/>Coming later · 8<\/button>/.test(app.run('_maPickerHTML()')));
     app.run('_MA_TILES.pop()');
     // Toggling flips the two elements the picker drew, IN PLACE: a browser
     // keeps focus on the button. The harness's elements stand in for them,

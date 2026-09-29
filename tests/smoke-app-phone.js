@@ -87,7 +87,7 @@ const OWNER_PAGES=['dashboard','po-create','po-registry','gatepass','fabric-inve
   'color-library','shopify-intel','hrm-employees','attendance','hrm-payroll','hrm-advances','hrm-loans',
   'mkt-creators','mkt-dispatches','mkt-paid-pr','mkt-reports','pattern-hub','pattern-blocks',
   'tb-dash','tb-calendar','tb-lists','tb-inbox','me',
-  'ma-overview','ma-money','ma-out','ma-parties','ma-ledger','ma-close'];
+  'ma-overview','ma-money','ma-in','ma-out','ma-parties','ma-ledger','ma-close'];
 const JOBS=[
   {id:'owner-light',user:'afnan',theme:'light',pages:OWNER_PAGES},
   {id:'owner-dark',user:'afnan',theme:'dark',pages:OWNER_PAGES},

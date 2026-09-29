@@ -1094,7 +1094,7 @@ function _updateMobNavActive(pageId){
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','acct-ledger':'more','acct-vendors':'more','acct-vendor':'more','acct-category':'more','acct-runner':'more','acct-consumables':'more','acct-review':'more',
     'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more','pattern-reconcile':'more','pattern-blocks':'more','pattern-block':'more','pattern-unassigned':'more','pattern-poms':'more','pattern-notices':'more',
     'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more','mkt-reports':'more','mkt-import':'more',
-    'ma-overview':'more','ma-money':'more','ma-holder':'more','ma-out':'more','ma-parties':'more','ma-party':'more','ma-ledger':'more','ma-close':'more',
+    'ma-overview':'more','ma-money':'more','ma-holder':'more','ma-in':'more','ma-out':'more','ma-parties':'more','ma-party':'more','ma-ledger':'more','ma-close':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
     // The Board: on the owner/manager phone nav it lives behind More; the
     // designer has direct buttons, which _updateMobNavActive matches first.
@@ -1554,6 +1554,7 @@ const BUG_PAGE_NAMES={
   'ma-overview':'Master Accounts · Today',
   'ma-money':'Master Accounts · Money',
   'ma-holder':'Master Accounts · Holder',
+  'ma-in':'Master Accounts · Money in',
   'ma-out':'Master Accounts · Money out',
   'ma-parties':'Master Accounts · Parties',
   'ma-party':'Master Accounts · Party',

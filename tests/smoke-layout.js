@@ -191,6 +191,42 @@ function _maFixture(){
   return app;
 }
 
+// Master Accounts M2 — the courier book on top of _maFixture(): PostEx's
+// derived receipts (one flagged, one late, one from before the books), a TCS
+// statement, a Bykea one, a collection that differs and has no receipt, one
+// that waits for Raees on paper, one voided, and the rollup's last run.
+function _maCourierFixture(){
+  const app=_maFixture();
+  const MAC=require('../js/ma-core.js');
+  const S=MAC.maSettings(null),IDX=MAC.maChartIndex(MAC.maChart('groovy',[]));
+  let n=0;
+  const px=o=>{n++;return Object.assign({trackingNumber:'PX'+String(n).padStart(5,'0'),status:'Delivered',statusCategory:'delivered',dispatched:true,
+    transactionDate:'2026-07-08T10:00:00',orderPickupDate:'2026-07-09T09:00:00',orderDeliveryDate:'2026-07-10T16:00:00',cod:3000,transactionFee:180,transactionTax:28.8,
+    reversalFee:0,reversalTax:0,upfrontPayment:0,reservePayment:0,balancePayment:0,syncedAt:1790000000000,cprCheckedAt:1790100000000},o);};
+  const parcels=[
+    px({trackingNumber:'PA',cod:3000,cprNumber_1:'CPR-2026-00417',cpr1Date:'2026-09-08',upfrontPayment:2400,orderDeliveryDate:'2026-09-03T12:00:00'}),
+    px({trackingNumber:'PB',cod:2000,cprNumber_1:'CPR-2026-00417',cpr1Date:'2026-09-08',upfrontPayment:1500,cprNumber_2:'CPR-2026-00431',cpr2Date:'2026-09-15',reservePayment:200,orderDeliveryDate:'2026-09-04T12:00:00'}),
+    px({trackingNumber:'PC',cod:1000,transactionFee:100,transactionTax:16,cprNumber_1:'CPR-2026-00452',cpr1Date:'2026-09-25',upfrontPayment:800,orderDeliveryDate:'2026-09-22T12:00:00'}),
+    px({trackingNumber:'PD',status:'En-Route',statusCategory:'in_transit',orderDeliveryDate:null,cod:1800,transactionDate:'2026-09-27T10:00:00',orderPickupDate:'2026-09-28T09:00:00'})];
+  const der=MAC.maCprDerive(parcels,{from:'2026-07-01',today:'2026-09-29'});
+  const docs=MAC.maCourierDocs(der,S);
+  docs.forEach(d=>{if(d.id==='postex-CPR-2026-00452')d.flags=[{rule:'cpr.split_mismatch',message:'PostEx paid ₨800 on it where its parcels come to ₨884.',field:null}];});
+  const ATT={publicId:'ma/'+'a'.repeat(64),format:'jpg',type:'authenticated',resourceType:'image'};
+  const tcs=MAC.maBuildDoc('cpr',{courier:'tcs',date:'2026-07-31',ref:'TCS-JUL-2026-STATEMENT-OF-ACCOUNT',attachments:[ATT],lines:[{date:'2026-07-10',parcels:12,cod:35000,fee:1750,tax:280}]},{by:'afnan',byName:'Afnan',ts:1790000000000},IDX,S);
+  tcs.id='CS-27-0001';tcs.no='CS-27-0001';
+  const byk=MAC.maBuildDoc('cpr',{courier:'bykea',date:'2026-09-20',ref:'BY-0920',attachments:[ATT],lines:[{date:'2026-09-19',parcels:3,cod:9000,fee:450,tax:72}]},{by:'afnan',byName:'Afnan',ts:1790000000000},IDX,S);
+  byk.id='CS-27-0002';byk.no='CS-27-0002';
+  const all=docs.concat([tcs,byk]);
+  const col=(inp,by,no,x)=>{const d=MAC.maBuildDoc('collection',inp,{by:by||'afnan',byName:by==='ammar'?'Ammar':'Afnan',ts:1790000000000,cprs:all},IDX,S);d.no=no;d.id=no;return Object.assign(d,x||{});};
+  const cl=[
+    col({courier:'postex',holder:'1011',amount:3850,date:'2026-09-09',cprNos:['postex-CPR-2026-00417'],collectedBy:'Noman (rider) and a very long second name to see it wrap',note:'Rider kept 50 for fuel',attachments:[]},'afnan','CL-27-0001'),
+    col({courier:'postex',holder:'1010',amount:200,date:'2026-09-16',cprNos:['postex-CPR-2026-00431'],attachments:[ATT]},'afnan','CL-27-0002'),
+    col({courier:'postex',holder:'1011',amount:100,date:'2026-09-16',cprNos:[],attachments:[]},'afnan','CL-27-0003',{status:'void',voidedAt:1790000000000,voidedBy:'afnan',voidedByName:'Afnan',voidReason:'Entered twice'})];
+  cl[2].refs={cprNos:[]};
+  app.run('(()=>{maData.cpr='+JSON.stringify(all)+';maData.collection='+JSON.stringify(cl)+';maData.runs=[{id:"rollup",state:"done",ok:true,at:Date.UTC(2026,8,29,3,45),day:"2026-09-29",parcels:4,created:6,updated:1,voided:0,transit:'+JSON.stringify(der.transit)+',issueCount:1,issues:[{rule:"cpr.split_mismatch",message:"PostEx paid ₨800 on CPR-2026-00452 where its parcels come to ₨884."}],checks:{}}];_maInvalidate();return 1;})()');
+  return app;
+}
+
 const FRAGMENTS={
   // Master Accounts (MASTER_ACCOUNTS_PLAN.md §16.4): Today, Money and a
   // holder, the Ledger with the review queue, a party page, and the Record
@@ -210,6 +246,75 @@ const FRAGMENTS={
       session:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
     app.run("_maMirror={ok:true,cash:0,why:'',at:Date.now()};maLoaded=true;_maLoadErrs=[];_maInvalidate();_maTouch();1");
     return Promise.resolve(app.run("_maPageHTML('ma-overview')"));
+  },
+  // M2 — Money in ▸ Couriers: four sections with their summary lines, the
+  // transit block, the tick table (a flagged, a late and a from-before-the-
+  // books receipt), the recent collections (a difference, no receipt, a
+  // waiting one, a void) and Run now. The same page again with a filter on
+  // and with the collections unreadable (the incomplete banner).
+  'master accounts — Money in, Couriers':()=>{
+    const app=_maCourierFixture();
+    app.run("window.maCourierTick('postex','postex-CPR-2026-00452',true)");
+    const a=app.run("_maPageHTML('ma-in')");
+    app.run("_maCourierFilter='noreceipt'");
+    const b=app.run("_maPageHTML('ma-in')");
+    app.run("_maCourierFilter='';_maLoadErrs=[{key:'collection',col:'ma_collection',core:false,message:'Missing or insufficient permissions.',code:'permission-denied'},{key:'runs',col:'ma_runs',core:false,message:'Missing or insufficient permissions.',code:'permission-denied'}];_maInvalidate()");
+    const c=app.run("_maPageHTML('ma-in')");
+    return Promise.resolve(a+b+c);
+  },
+  // The rail beside a CPR (1900 only: up to 1440 it is a slide-over that
+  // would sit on the page's own controls — the documented false hit). Its
+  // parcels are what the rail reads on demand; one with a very long number.
+  'master accounts — a CPR on the rail':()=>{
+    const app=_maCourierFixture();
+    app.run(`_maParcels={'postex-CPR-2026-00417':{state:'done',rows:[{_id:'a',trackingNumber:'PX12345678901234567890123456',statusCategory:'delivered',orderDeliveryDate:'2026-09-03',cod:3000,cprNumber_1:'CPR-2026-00417',upfrontPayment:2400},{_id:'b',trackingNumber:'PX2',statusCategory:'delivered',orderDeliveryDate:'2026-09-04',cod:2000,cprNumber_1:'CPR-2026-00417',cprNumber_2:'CPR-2026-00431',upfrontPayment:1500,reservePayment:200}]}};_maRail={kind:'doc',dt:'cpr',id:'postex-CPR-2026-00417'}`);
+    return Promise.resolve({widths:[1900],html:app.run("_maPageHTML('ma-in')")});
+  },
+  // A typed statement on the rail: its lines, its reference (long on
+  // purpose), the file it was recorded from, Edit and Void.
+  'master accounts — a courier statement on the rail':()=>{
+    const app=_maCourierFixture();
+    app.run("_maRail={kind:'doc',dt:'cpr',id:'CS-27-0001'}");
+    return Promise.resolve({widths:[1900],html:app.run("_maPageHTML('ma-in')")});
+  },
+  'master accounts — a collection on the rail':()=>{
+    const app=_maCourierFixture();
+    app.run("_maRail={kind:'doc',dt:'collection',id:'CL-27-0002'}");
+    return Promise.resolve({widths:[1900],html:app.run("_maPageHTML('ma-in')")});
+  },
+  // The Collection form: the tick list with a receipt already collected, the
+  // preview (a difference above tolerance, and who confirms), the drawer as
+  // the holder; and the same form for TCS (its own account) and for Blue-Ex
+  // (no statements).
+  // The Courier statement form: the lines (one returned, one with a long
+  // memo), the totals and TCS's credit day; and a recorded statement opened
+  // to be edited.
+  'master accounts — the Courier statement form':()=>{
+    const app=_maCourierFixture();
+    const wrap=(t,b,f)=>'<div class="ma-modal wide" style="position:static;max-height:none;margin-bottom:16px"><div class="ma-modal-head"><h2>'+t+'</h2><button class="ma-x" aria-label="Close">×</button></div><div class="ma-modal-body">'+b+'</div>'+(f?'<div class="ma-modal-foot">'+f+'</div>':'')+'</div>';
+    const foot='<button class="ma-btn">Cancel</button><button class="ma-btn primary">Record</button>';
+    const body=()=>(app.bodyHtml('ma-modal-back').match(/<div class="ma-modal-body"[^>]*>([\s\S]*)<\/div>\s*<div class="ma-modal-foot">/)||[])[1]||'';
+    app.run("window.maRecordKind('statement',{courier:'tcs',ref:'TCS-SEP-2026-STATEMENT-OF-ACCOUNT',lines:[{date:'2026-09-10',parcels:12,cod:35000,fee:1750,tax:280,memo:'A long memo about the first week, the manual adjustment TCS made and why'},{date:'2026-09-12',parcels:2,returned:true,cod:0,fee:200,tax:30},{}]})");
+    const one=body();
+    app.run("window.maCloseModal();window.maEditDoc('cpr','CS-27-0001')");
+    const two=body().replace(/id="ma-/g,'id="ma-b-').replace(/for="ma-/g,'for="ma-b-');
+    return Promise.resolve(wrap('Record a courier statement',one,foot)+wrap('Edit CS-27-0001',two,foot));
+  },
+  'master accounts — the Collection form':()=>{
+    const app=_maCourierFixture();
+    const wrap=(t,b,f)=>'<div class="ma-modal wide" style="position:static;max-height:none;margin-bottom:16px"><div class="ma-modal-head"><h2>'+t+'</h2><button class="ma-x" aria-label="Close">×</button></div><div class="ma-modal-body">'+b+'</div>'+(f?'<div class="ma-modal-foot">'+f+'</div>':'')+'</div>';
+    const foot='<button class="ma-btn">Cancel</button><button class="ma-btn primary">Record</button>';
+    const body=()=>(app.bodyHtml('ma-modal-back').match(/<div class="ma-modal-body"[^>]*>([\s\S]*)<\/div>\s*<div class="ma-modal-foot">/)||[])[1]||'';
+    app.run("window.maRecordKind('collection',{courier:'postex',cprNos:['postex-CPR-2026-00452','postex-CPR-2026-00417'],holder:'1010',amount:'900',note:'The rider kept some for fuel'})");
+    // The preview is written into the live element; carry its text over.
+    const prev=app.el('ma-f-prev').innerHTML;
+    const one=body().replace('<div class="ma-prev" id="ma-f-prev" role="status"></div>','<div class="ma-prev" role="status">'+prev+'</div>');
+    app.run("window.maCloseModal();window.maRecordKind('collection',{courier:'tcs',cprNos:['CS-27-0001']})");
+    const prev2=app.el('ma-f-prev').innerHTML;
+    const two=body().replace('<div class="ma-prev" id="ma-f-prev" role="status"></div>','<div class="ma-prev" role="status">'+prev2+'</div>').replace(/id="ma-/g,'id="ma-b-').replace(/for="ma-/g,'for="ma-b-');
+    app.run("window.maCloseModal();window.maRecordKind('collection',{courier:'bluex'})");
+    const three=body().replace('<div class="ma-prev" id="ma-f-prev" role="status"></div>','<div class="ma-prev" role="status">'+app.el('ma-f-prev').innerHTML+'</div>').replace(/id="ma-/g,'id="ma-c-').replace(/for="ma-/g,'for="ma-c-');
+    return Promise.resolve(wrap('Record a collection',one,foot)+wrap('Record a collection — TCS',two,foot)+wrap('Record a collection — Blue-Ex',three,foot));
   },
   'master accounts — Money and a holder':()=>{
     const app=_maFixture();
