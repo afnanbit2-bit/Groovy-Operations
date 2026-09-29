@@ -35,6 +35,15 @@ service cloud.firestore {
     }
     function signedIn() { return request.auth != null && !isQa(); }
     function authed() { return request.auth != null; }
+    // QA READS EVERYTHING (29 Sept 2026, Afnan's decision). Every read rule
+    // below is 'isQaRead() || <its own condition>', so the harness can read
+    // any document a rule lets ANY role read, role-gated and owner-only
+    // included. Collections with no match block (the token store,
+    // the credential collections) stay denied to everyone. WRITES are not
+    // touched by this: signedIn() still excludes QA, and its few write
+    // clauses stay fenced. tests/qa-access.test.js fails if a read rule is
+    // added that does not go through this helper.
+    function isQaRead() { return isQa() && request.method in ['get', 'list']; }
     function userEmail() { return request.auth.token.email; }
     function isOwner() {
       return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op'];
@@ -140,10 +149,10 @@ service cloud.firestore {
     function isWhSales() { return isOwner() || (signedIn() && userEmail() == 'umair@groovy.op'); }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
-    match /pos/{doc}                  { allow read, write: if signedIn(); }
-    match /bundles/{doc}              { allow read, write: if signedIn(); }
-    match /gatepasses/{doc}           { allow read, write: if signedIn(); }
-    match /returns/{doc}              { allow read, write: if signedIn(); }
+    match /pos/{doc}                  { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /bundles/{doc}              { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /gatepasses/{doc}           { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /returns/{doc}              { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
     // Fabric: any signed-in user may read, add (receipts) and update (QC,
     // issue/return adjust inventory + movements). DELETE is OWNERS + Mustafa
     // by name (Sept 2026 grant) — no other manager, no worker, so no other
@@ -151,12 +160,12 @@ service cloud.firestore {
     // records. Everyone else still requests deletion via the in-app
     // approval flow, approved by an owner.
     match /fabricin/{doc} {
-      allow read:           if signedIn();
+      allow read:           if isQaRead() || (signedIn());
       allow create, update: if signedIn();
       allow delete:         if isOwner() || isMustafa();
     }
     match /fabric_inventory/{doc} {
-      allow read:           if signedIn();
+      allow read:           if isQaRead() || (signedIn());
       allow create, update: if signedIn();
       allow delete:         if isOwner() || isMustafa();
     }
@@ -164,52 +173,52 @@ service cloud.firestore {
     // user may APPEND a movement, but no one (not even owners) may edit or
     // delete one — the record can never be altered or removed.
     match /fabric_movements/{doc} {
-      allow read:   if signedIn();
+      allow read:   if isQaRead() || (signedIn());
       allow create: if signedIn();
       allow update, delete: if false;
     }
     // Drawstrings: lightweight per-color meter balances + their movement log.
-    match /fabric_drawstrings/{doc} { allow read, write: if signedIn(); }
-    match /drawstring_moves/{doc}   { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if false; }
+    match /fabric_drawstrings/{doc} { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /drawstring_moves/{doc}   { allow read: if isQaRead() || (signedIn()); allow create: if signedIn(); allow update, delete: if false; }
     // Edit/delete approval requests for gatepasses/returns/fabricin.
     // Any signed-in user can read (so they can see their own pending state)
     // and create requests; approval/rejection is gated to OM at the app layer.
-    match /gatepass_edit_requests/{doc} { allow read, write: if signedIn(); }
-    match /activity/{doc}             { allow read, write: if signedIn(); }
-    match /counters/{doc}             { allow read, write: if signedIn(); }
+    match /gatepass_edit_requests/{doc} { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /activity/{doc}             { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /counters/{doc}             { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
     // Custom products added from the New PO form (name + assigned code),
     // merged with the static PRODUCT_CATALOG at runtime. Any signed-in user
     // may read and create; edits/deletes are open (managed at the app layer).
-    match /products/{doc}             { allow read, write: if signedIn(); }
+    match /products/{doc}             { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
     // Daily fulfilment performance (dispatch & returns) — one doc per day.
-    match /fulfillment_reports/{doc}  { allow read, write: if signedIn(); }
+    match /fulfillment_reports/{doc}  { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
     // PostEx courier sync — written only by the Netlify function (Admin SDK);
     // clients read-only.
-    match /postex_orders/{doc}        { allow read: if signedIn(); allow write: if false; }
-    match /postex_sync_meta/{doc}     { allow read: if signedIn(); allow write: if false; }
+    match /postex_orders/{doc}        { allow read: if isQaRead() || (signedIn()); allow write: if false; }
+    match /postex_sync_meta/{doc}     { allow read: if isQaRead() || (signedIn()); allow write: if false; }
 
     // ── PO production flow (reserve → cutting → packing → QC → transfer) ──
     // See PO_PRODUCTION_FLOW_PLAN.md. B-stock (seconds) carton inventory and
     // booked stock-transfer receipts. Any signed-in user reads/writes; the app
     // layer gates who does what (Faizan books transfers, Haris dispositions,
     // managers view B-stock).
-    match /bstock_items/{doc}         { allow read, write: if signedIn(); }
-    match /bstock_cartons/{doc}       { allow read, write: if signedIn(); }
-    match /stock_transfers/{doc}      { allow read, write: if signedIn(); }
+    match /bstock_items/{doc}         { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /bstock_cartons/{doc}       { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /stock_transfers/{doc}      { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
 
     // ── Store ──
-    match /store_items/{doc}          { allow read, write: if signedIn(); }
-    match /store_transactions/{doc}   { allow read, write: if signedIn(); }
-    match /store_notifications/{doc}  { allow read, write: if signedIn(); }
-    match /store_categories/{doc}     { allow read, write: if signedIn(); }
-    match /store_requests/{doc}       { allow read, write: if signedIn(); }
-    match /trim_templates/{doc}       { allow read, write: if signedIn(); }
+    match /store_items/{doc}          { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /store_transactions/{doc}   { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /store_notifications/{doc}  { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /store_categories/{doc}     { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /store_requests/{doc}       { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /trim_templates/{doc}       { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
     // PO issue/edit workflow + shortfall tracking, read by the Store
     // dashboard + PO Issue Requests page. Missing rules here caused 403s
     // on every store dashboard load.
-    match /po_issue_requests/{doc}    { allow read, write: if signedIn(); }
-    match /po_edit_requests/{doc}     { allow read, write: if signedIn(); }
-    match /po_shortfalls/{doc}        { allow read, write: if signedIn(); }
+    match /po_issue_requests/{doc}    { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /po_edit_requests/{doc}     { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /po_shortfalls/{doc}        { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
 
     // ── Store Accounts (Sept 2026 — replaces the Store Cash Ledger) ──
     // Entry is Raees (the store role) + owners; everyone signed in reads.
@@ -301,24 +310,24 @@ service cloud.firestore {
         && (d.amount == d.whSaleTotal || d.needsReview == true);
     }
     match /acct_entries/{doc} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow create: if isStoreAccounts()
         && (request.resource.data.get('src', '') != 'wh' || whConfValid(doc));
       allow update: if isAcctSuper() || acctControl() || acctReview() || acctOwnEdit();
       allow delete: if isAcctSuper();
     }
-    match /acct_vendors/{doc}     { allow read: if signedIn(); allow create, update: if isStoreAccounts(); allow delete: if isAcctSuper(); }
-    match /acct_meter_logs/{doc}  { allow read: if signedIn(); allow write: if isStoreAccounts(); }
+    match /acct_vendors/{doc}     { allow read: if isQaRead() || (signedIn()); allow create, update: if isStoreAccounts(); allow delete: if isAcctSuper(); }
+    match /acct_meter_logs/{doc}  { allow read: if isQaRead() || (signedIn()); allow write: if isStoreAccounts(); }
     // Owners set everything. Raees may add a CATEGORY from the purchase form
     // and nothing else — the review limits on his own entries stay owner-only.
     // The three fields mirror _ACCT_CAT_FIELDS in js/store-accounts.js.
     match /acct_settings/{doc} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow create: if isOwner() || (isStoreAccounts() && request.resource.data.keys().hasOnly(['categories','updatedAt','updatedBy']));
       allow update: if isOwner() || (isStoreAccounts() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['categories','updatedAt','updatedBy']));
       allow delete: if isOwner();
     }
-    match /acct_closes/{doc}      { allow read: if signedIn(); allow create: if isOwner(); allow update: if false; allow delete: if isAcctSuper(); }
+    match /acct_closes/{doc}      { allow read: if isQaRead() || (signedIn()); allow create: if isOwner(); allow update: if false; allow delete: if isAcctSuper(); }
     // ── Warehouse sales (Sept 2026) — js/warehouse-sales.js ──
     // One document per ERP order, and the document id IS the order number,
     // so a second entry of the same bill is not a second sale: writing to an
@@ -365,7 +374,7 @@ service cloud.firestore {
         && (d.terms == 'paid' || d.dueDate is string);
     }
     match /wh_sales/{orderNo} {
-      allow read: if isWhSales() || isStoreAccounts();
+      allow read: if isQaRead() || (isWhSales() || isStoreAccounts());
       allow create: if isWhSales()
         && orderNo.matches('^[A-Z0-9][A-Z0-9._-]{1,39}$')
         && whSaleValid(request.resource.data, orderNo);
@@ -402,30 +411,30 @@ service cloud.firestore {
     }
     // Legacy Store Cash Ledger — read-only history. Kept so the owner-only
     // one-time import in js/store-accounts.js can read it.
-    match /store_cash_ledger/{doc}    { allow read: if signedIn(); allow write: if isOwner(); }
-    match /store_cash_accounts/{doc}  { allow read: if signedIn(); allow write: if isOwner(); }
-    match /store_cash_floats/{doc}    { allow read: if signedIn(); allow write: if isOwner(); }
-    match /store_cash_categories/{doc}{ allow read: if signedIn(); allow write: if isOwner(); }
-    match /store_cash_vendors/{doc}   { allow read: if signedIn(); allow write: if isOwner(); }
-    match /store_cash_snapshots/{doc} { allow read: if signedIn(); allow write: if isOwner(); }
+    match /store_cash_ledger/{doc}    { allow read: if isQaRead() || (signedIn()); allow write: if isOwner(); }
+    match /store_cash_accounts/{doc}  { allow read: if isQaRead() || (signedIn()); allow write: if isOwner(); }
+    match /store_cash_floats/{doc}    { allow read: if isQaRead() || (signedIn()); allow write: if isOwner(); }
+    match /store_cash_categories/{doc}{ allow read: if isQaRead() || (signedIn()); allow write: if isOwner(); }
+    match /store_cash_vendors/{doc}   { allow read: if isQaRead() || (signedIn()); allow write: if isOwner(); }
+    match /store_cash_snapshots/{doc} { allow read: if isQaRead() || (signedIn()); allow write: if isOwner(); }
 
     // ── Embellishments / printing ──
-    match /article_recipes/{doc}      { allow read, write: if signedIn(); }
-    match /printing_jobs/{doc}        { allow read, write: if signedIn(); }
-    match /qc_reports/{doc}           { allow read, write: if signedIn(); }
-    match /printing_billing/{doc}     { allow read, write: if signedIn(); }
-    match /sla_events/{doc}           { allow read, write: if signedIn(); }
-    match /communication_notes/{doc}  { allow read, write: if signedIn(); }
-    match /color_library/{doc}        { allow read, write: if signedIn(); }
+    match /article_recipes/{doc}      { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /printing_jobs/{doc}        { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /qc_reports/{doc}           { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /printing_billing/{doc}     { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /sla_events/{doc}           { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /communication_notes/{doc}  { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /color_library/{doc}        { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
 
     // ── HRM core ──
     // Policies + increment logs are owner+manager territory.
     match /hrm_policies/{doc} {
-      allow read:  if isOM();
+      allow read:  if isQaRead() || (isOM());
       allow write: if isOM();
     }
     match /increment_logs/{doc} {
-      allow read:  if isOM();
+      allow read:  if isQaRead() || (isOM());
       allow write: if isOwner();   // only owners record increments
     }
 
@@ -435,7 +444,7 @@ service cloud.firestore {
     // loanBalance / updatedAt; this is allowed because _canProcessPayroll
     // is owner-only at the app level, and the rule allows OM writes.
     match /employees/{doc} {
-      allow read:  if signedIn();
+      allow read:  if isQaRead() || (signedIn());
       allow write: if isOM();
     }
 
@@ -450,11 +459,11 @@ service cloud.firestore {
     // dashboard "Last month payslip" cue works. Tighten to per-employee
     // self-read once we denormalise auth email onto each payslip.
     match /payroll_runs/{doc} {
-      allow read:  if isOM();
+      allow read:  if isQaRead() || (isOM());
       allow write: if isOwner();
     }
     match /payslips/{doc} {
-      allow read:  if signedIn();
+      allow read:  if isQaRead() || (signedIn());
       allow write: if isOwner() || isMustafa();
     }
 
@@ -463,7 +472,7 @@ service cloud.firestore {
     // change status (approve / reject / mark paid) — enforced at the
     // app layer; rules keep write open to OM here so Mustafa can submit.
     match /advance_requests/{doc} {
-      allow read:  if isOM();
+      allow read:  if isQaRead() || (isOM());
       allow write: if isOM();
     }
     // Loans have no separate pending→approved step (loanSubmit in js/hrm.js
@@ -471,23 +480,24 @@ service cloud.firestore {
     // create/pause/resume. Owners + Mustafa (Sept 2026 grant, matches
     // _canManageLoans). Not Arfat, despite also being role='manager'.
     match /loans/{doc} {
-      allow read:  if isOM();
+      allow read:  if isQaRead() || (isOM());
       allow write: if isOwner() || isMustafa();
     }
     match /policy_change_log/{doc} {
-      allow read:  if isOM();
+      allow read:  if isQaRead() || (isOM());
       allow write: if isOwner();   // only owners log changes
     }
     // Notifications: any signed-in user reads (so workers see their
     // own and dismiss them). Writes any signed-in (notifications are
     // produced by many flows; integrity is enforced by the app).
-    // THE QA HARNESS reads and writes only rows addressed to itself --
+    // THE QA HARNESS may READ any row (isQaRead, 29 Sept 2026), but writes
+    // and marks read only rows addressed to itself --
     // `forUser` holds a USERNAME, and its username is `claude` -- so
     // nothing it does can ever reach a real person's bell. The bell's own
     // unfiltered read is refused it (and caught); the Board's inbox asks
     // with where('forUser','==',…), which this clause proves.
     match /hrm_notifications/{doc} {
-      allow read:   if signedIn() || (isQa() && resource.data.get('forUser', '') == 'claude');
+      allow read:   if isQaRead() || signedIn();
       allow create: if signedIn() || (isQa() && request.resource.data.get('forUser', '') == 'claude');
       allow update: if signedIn() || (isQa() && resource.data.get('forUser', '') == 'claude'
                                      && request.resource.data.get('forUser', '') == 'claude');
@@ -500,7 +510,7 @@ service cloud.firestore {
     // (status, assign, comments, upvotes) also open to signed-in users
     // since the actions are gated at the app layer.
     match /bug_reports/{doc} {
-      allow read, write: if signedIn();
+      allow read: if isQaRead() || signedIn(); allow write: if signedIn();
     }
 
     // ── Notes / Wiki (Phase 1 of the Notion+Milanote module, Sept 2026) ──
@@ -515,7 +525,7 @@ service cloud.firestore {
     // query is provably safe under these rules without needing a composite
     // index or a broader query Firestore would reject.
     match /notes_pages/{doc} {
-      allow read:   if signedIn() && (resource.data.visibility=='shared' || resource.data.ownerUid==request.auth.uid);
+      allow read:   if isQaRead() || (signedIn() && (resource.data.visibility=='shared' || resource.data.ownerUid==request.auth.uid));
       allow create: if signedIn() && request.resource.data.ownerUid==request.auth.uid;
       allow update, delete: if signedIn() && (resource.data.ownerUid==request.auth.uid || isOwner());
     }
@@ -549,7 +559,7 @@ service cloud.firestore {
     // every avatar and name from it) and keeps its OWN row -- the admin
     // half below is owners/Mustafa only, and signedIn() excludes QA.
     match /user_profiles/{uid} {
-      allow read:   if authed();
+      allow read:   if isQaRead() || (authed());
       allow create: if authed() && uid == request.auth.uid
                     && request.resource.data.uid == request.auth.uid;
       allow update: if authed()
@@ -623,7 +633,7 @@ service cloud.firestore {
                .hasAny(['sharedWith', 'sharedView', 'sharedComment', 'ownerUid']);
     }
     match /mood_boards/{doc} {
-      allow read:   if authed() && canReadBoard(resource.data);
+      allow read:   if isQaRead() || (authed() && canReadBoard(resource.data));
       allow create: if (signedIn() && request.resource.data.ownerUid==request.auth.uid)
                     || (isQa() && qaBoardOk(request.resource.data));
       allow update: if (signedIn() && canEditBoard(resource.data)
@@ -659,7 +669,7 @@ service cloud.firestore {
       // what actually decides presence, so a crashed tab that never
       // deletes its row simply goes stale.
       match /presence/{uid} {
-        allow read:  if canSeeParent();
+        allow read:  if isQaRead() || (canSeeParent());
         allow write: if uid==request.auth.uid
                      && ((signedIn() && canSeeParent()) || qaOwnsParent());
       }
@@ -667,7 +677,7 @@ service cloud.firestore {
       // an app owner) may delete; resolve/reopen is open to any editor,
       // since resolving is a shared housekeeping action, not authorship.
       match /comments/{cdoc} {
-        allow read:   if canSeeParent();
+        allow read:   if isQaRead() || (canSeeParent());
         allow create: if canCommentParent() && request.resource.data.byUid==request.auth.uid;
         allow update: if canEditParent();
         allow delete: if (signedIn() && (resource.data.byUid==request.auth.uid || isOwner()))
@@ -682,7 +692,7 @@ service cloud.firestore {
       // own entry, the board's owner clearing up, or an app owner —
       // mirrored by _boardsTrashCanPurge() in js/boards.js.
       match /trash/{tdoc} {
-        allow read:   if canSeeParent();
+        allow read:   if isQaRead() || (canSeeParent());
         allow create: if canEditParent() && request.resource.data.byUid==request.auth.uid;
         allow update: if false;
         allow delete: if (signedIn() && (resource.data.byUid==request.auth.uid
@@ -693,7 +703,7 @@ service cloud.firestore {
       // Per-board activity feed — append-only, like fabric_movements:
       // a record nobody can quietly rewrite, not even an owner.
       match /activity/{adoc} {
-        allow read:   if canSeeParent();
+        allow read:   if isQaRead() || (canSeeParent());
         // A commenter's "commented on a card" line belongs in the feed too.
         allow create: if canCommentParent() && request.resource.data.byUid==request.auth.uid;
         allow update, delete: if false;
@@ -706,27 +716,27 @@ service cloud.firestore {
     // isn't world-readable. Write is denied to client SDKs — only the
     // Admin SDK (Netlify Functions with service account) bypasses rules.
     match /shopify_products/{doc} {
-      allow read:  if signedIn();
+      allow read:  if isQaRead() || (signedIn());
       allow write: if false;
     }
     match /shopify_orders/{doc} {
-      allow read:  if signedIn();
+      allow read:  if isQaRead() || (signedIn());
       allow write: if false;
     }
     match /shopify_line_items/{doc} {
-      allow read:  if signedIn();
+      allow read:  if isQaRead() || (signedIn());
       allow write: if false;
     }
     match /shopify_inventory_snapshots/{doc} {
-      allow read:  if signedIn();
+      allow read:  if isQaRead() || (signedIn());
       allow write: if false;
     }
     match /shopify_weekly_closes/{doc} {
-      allow read:  if signedIn();
+      allow read:  if isQaRead() || (signedIn());
       allow write: if false;
     }
     match /shopify_sync_meta/{doc} {
-      allow read:  if signedIn();
+      allow read:  if isQaRead() || (signedIn());
       allow write: if false;
     }
 
@@ -763,7 +773,7 @@ service cloud.firestore {
     // uniqueness a server-side guarantee rather than a form check. The
     // client writes the lock and the creator in one transaction.
     match /creators/{id} {
-      allow read: if isMarketing();
+      allow read: if isQaRead() || (isMarketing());
       allow create, update: if isMarketing()
         && request.resource.data.ig_handle is string
         && request.resource.data.status in ['active','do_not_use','blacklisted']
@@ -777,7 +787,7 @@ service cloud.firestore {
     // once its creator no longer carries that handle (a rename) or no
     // longer exists.
     match /creator_handles/{handle} {
-      allow read: if isMarketing();
+      allow read: if isQaRead() || (isMarketing());
       allow create: if isMarketing()
         && request.resource.data.handle == handle
         && request.resource.data.creatorId is string;
@@ -795,7 +805,7 @@ service cloud.firestore {
     // the creator's rollups are computed per creator, so a moved dispatch
     // would leave two creators wrong.
     match /dispatches/{id} {
-      allow read: if isMarketing();
+      allow read: if isQaRead() || (isMarketing());
       // Organic: any Marketing account. Paid PR: only the approver, and only
       // as part of approving the request it belongs to — the request must
       // be approved and name this dispatch once the batch lands.
@@ -844,7 +854,7 @@ service cloud.firestore {
     // decided one is the record of a spending decision and the dispatch,
     // the rollups and any discount code are built on it.
     match /paid_pr_requests/{id} {
-      allow read: if isMarketing();
+      allow read: if isQaRead() || (isMarketing());
       allow create: if isMarketing()
         && request.resource.data.status == 'pending'
         && request.resource.data.requested_by_user_id == request.auth.uid
@@ -887,7 +897,7 @@ service cloud.firestore {
     // secret lives there, and a redemption count is not something a browser
     // should be able to write. Marketing reads them.
     match /discount_codes/{id} {
-      allow read: if isMarketing();
+      allow read: if isQaRead() || (isMarketing());
       allow write: if false;
     }
     // Marketing's own settings. Today one document, niche_tags, holding
@@ -895,13 +905,13 @@ service cloud.firestore {
     // edits it: it is the Content Ops lead's vocabulary, not a permission
     // boundary, and a tag is only ever a label on a creator record.
     match /marketing_settings/{doc} {
-      allow read: if isMarketing();
+      allow read: if isQaRead() || (isMarketing());
       allow write: if isMarketing();
     }
     // The scoring bands and tier thresholds — one settings document,
     // edited in the app by the scoring admin only.
     match /scoring_config/{doc} {
-      allow read: if isMarketing();
+      allow read: if isQaRead() || (isMarketing());
       allow write: if isScoringAdmin();
     }
     // ── Pattern Hub — M0: the article registry (PATTERN_HUB_PLAN.md) ──
@@ -912,11 +922,11 @@ service cloud.firestore {
     // anyone signed in (a PO screen will look codes up); written only by the
     // pattern admins. Delete stays owner-only, the fabricin/loans pattern.
     match /tac_categories/{prefix} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow write: if isPatternAdmin();
     }
     match /articles/{code} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow create: if isPatternAdmin()
         && request.resource.data.code == code
         && request.resource.data.category is string
@@ -931,7 +941,7 @@ service cloud.firestore {
     // with the Admin SDK — ~336 docs instead of ~1,500 variants. Clients
     // read only, like every other shopify_* collection.
     match /shopify_articles/{code} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow write: if false;
     }
     // ── Pattern Hub — M2: blocks and the hook rack ──
@@ -939,7 +949,7 @@ service cloud.firestore {
     // block link lives on articles/{code}.patternId, never here. Code and
     // creation fields are immutable once written.
     match /patterns/{id} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow create: if isPatternAdmin()
         && request.resource.data.code is string
         && request.resource.data.name is string
@@ -953,7 +963,7 @@ service cloud.firestore {
       // like fabric_movements and the board activity feed — the history
       // cutting acted on must not be editable after the fact.
       match /revisions/{n} {
-        allow read: if signedIn();
+        allow read: if isQaRead() || (signedIn());
         allow create: if isPatternAdmin();
         allow update, delete: if false;
       }
@@ -963,7 +973,7 @@ service cloud.firestore {
     // cutting or an admin may change them — the Marketing M3 shape. The
     // JS list _PTN_ACK_FIELDS is asserted equal to this hasOnly list.
     match /pattern_notices/{id} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow create: if isPatternAdmin();
       allow update: if (isPatternAdmin() || isPatternCutting())
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -975,7 +985,7 @@ service cloud.firestore {
     // written in the same transaction as the block's hook/slot, so two
     // blocks can never share one. Exactly 50 possible ids.
     match /pattern_slots/{key} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow write: if isPatternAdmin()
         && key.matches('^([1-9]|10)-[1-5]$');
     }
@@ -984,7 +994,7 @@ service cloud.firestore {
     // here never touches a block's recorded numbers — those live on
     // patterns/{id}.grid and are cleared there, on purpose.
     match /pom_templates/{id} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow write: if isPatternAdmin();
     }
     // settings/{doc}: small app-level switches. Today only
@@ -992,7 +1002,7 @@ service cloud.firestore {
     // pattern code and hook. Everyone reads it (a PO page asks); an OWNER
     // alone flips it, since it changes what every PO prints.
     match /settings/{doc} {
-      allow read: if signedIn();
+      allow read: if isQaRead() || (signedIn());
       allow write: if isOwner();
     }
 
@@ -1010,7 +1020,7 @@ service cloud.firestore {
     // board_config/{doc}: the launch markers the calendar draws. Read by
     // every Board user, written by a Board owner.
     match /board_config/{doc} {
-      allow read:  if isBoardUser();
+      allow read:  if isQaRead() || (isBoardUser());
       allow write: if isBoardOwner();
     }
 
@@ -1018,9 +1028,9 @@ service cloud.firestore {
     // list has only its admin. Query as: kind=='shared' + memberUids
     // array-contains uid, OR adminUid == uid.
     match /board_lists/{id} {
-      allow read: if isBoardUser()
+      allow read: if isQaRead() || (isBoardUser()
         && ( (resource.data.kind == 'shared' && request.auth.uid in resource.data.memberUids)
-             || request.auth.uid == resource.data.adminUid );
+             || request.auth.uid == resource.data.adminUid ));
       allow create: if isBoardUser()
         && request.resource.data.adminUid == request.auth.uid
         && ( isQa()
@@ -1042,8 +1052,8 @@ service cloud.firestore {
     // board_items/{id}: the whole product. Query as: visibility=='shared',
     // OR ownerUid == uid.
     match /board_items/{id} {
-      allow read: if isBoardUser()
-        && (resource.data.visibility == 'shared' || request.auth.uid == resource.data.ownerUid);
+      allow read: if isQaRead() || (isBoardUser()
+        && (resource.data.visibility == 'shared' || request.auth.uid == resource.data.ownerUid));
 
       // The creator owns it and is on it. Both halves matter: an item
       // nobody is assigned to would never appear on any calendar.
@@ -1089,7 +1099,7 @@ service cloud.firestore {
       // deleting are your own only; a Board owner may delete one for
       // moderation, matching the fabricin/loans pattern elsewhere here.
       match /comments/{c} {
-        allow read:   if isBoardUser() && tbCanReadItem(id);
+        allow read:   if isQaRead() || (isBoardUser() && tbCanReadItem(id));
         allow create: if isBoardUser() && request.resource.data.authorUid == request.auth.uid
                       && ( !isQa() || tbOwnsItem(id) );
         allow update: if isBoardUser() && resource.data.authorUid == request.auth.uid
@@ -1103,7 +1113,7 @@ service cloud.firestore {
       // a log, and "ammar overrode a lock" has to survive whoever it
       // inconveniences.
       match /activity/{a} {
-        allow read:   if isBoardUser() && tbCanReadItem(id);
+        allow read:   if isQaRead() || (isBoardUser() && tbCanReadItem(id));
         allow create: if isBoardUser() && request.resource.data.byUid == request.auth.uid
                       && ( !isQa() || tbOwnsItem(id) );
         allow update, delete: if false;

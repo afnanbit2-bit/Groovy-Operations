@@ -415,7 +415,7 @@ module.exports=async function(){
     s.ok('only isWhSales may void, and only from active to void',/isWhSales\(\)\s*&& resource\.data\.status == 'active' && request\.resource\.data\.status == 'void'/.test(block));
     s.ok('only an owner may clear a review flag',/\|\| \(isOwner\(\)\s*&& request\.resource\.data\.diff/.test(block));
     s.ok('delete is the correction pair',/allow delete: if isAcctSuper\(\);/.test(block));
-    s.ok('read is the audience, plus Store Accounts (Raees confirms the handover)',/allow read: if isWhSales\(\) \|\| isStoreAccounts\(\);/.test(block));
+    s.ok('read is the audience, plus Store Accounts (Raees confirms the handover)',/allow read: if isQaRead\(\) \|\| \(isWhSales\(\) \|\| isStoreAccounts\(\)\);/.test(block));
     s.ok('… and Store Accounts never WRITES a sale',!/allow (create|update|delete)[^;]*isStoreAccounts/.test(block));
     // One definition of a valid sale, used by the create AND by recording a
     // bill again over a void — a re-record is held to every create check.

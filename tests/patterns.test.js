@@ -316,7 +316,7 @@ module.exports=async function(){
     s.ok('Arfat is not a pattern admin in rules',!/isPatternAdmin[^}]*arfat/.test(rules));
     s.ok('articles create requires the payload code to equal the doc id',/match \/articles\/\{code\}[\s\S]*?request\.resource\.data\.code == code/.test(rules));
     s.ok('articles update cannot change code or category',/request\.resource\.data\.category == resource\.data\.category/.test(rules));
-    s.ok('tac_categories is readable when signed in and written by admins only',/match \/tac_categories\/\{prefix\}\s*\{\s*allow read: if signedIn\(\);\s*allow write: if isPatternAdmin\(\);/.test(rules));
+    s.ok('tac_categories is readable when signed in and written by admins only',/match \/tac_categories\/\{prefix\}\s*\{\s*allow read: if isQaRead\(\) \|\| \(signedIn\(\)\);\s*allow write: if isPatternAdmin\(\);/.test(rules));
   }
   {
     const shared=read('js/shared.js');
@@ -844,7 +844,7 @@ module.exports=async function(){
     a.run("_ptnGridDraft={M:{hip:'20'}}");a.run("_ptnGridDirty=true");
     await a.run("window.ptnSaveGrid('ptn_0007')");await a.run("window.ptnSeedPoms()");
     s.eq('…and writes nothing',(meta.updates||0)+(meta.batches||0)+(meta.sets||0),0);
-    s.ok('rules: pom_templates readable when signed in, written by admins only',/match \/pom_templates\/\{id\}\s*\{\s*allow read: if signedIn\(\);\s*allow write: if isPatternAdmin\(\);/.test(read('firestore.rules')));
+    s.ok('rules: pom_templates readable when signed in, written by admins only',/match \/pom_templates\/\{id\}\s*\{\s*allow read: if isQaRead\(\) \|\| \(signedIn\(\)\);\s*allow write: if isPatternAdmin\(\);/.test(read('firestore.rules')));
     s.ok('the router knows pattern-poms',/id==='pattern-poms'/.test(read('js/patterns.js'))&&/'pattern-poms'/.test(read('js/shared.js')));
   }
 
@@ -1251,7 +1251,7 @@ module.exports=async function(){
     s.ok('the free-text pattern box is still written verbatim',/pattern:document\.getElementById\('po-pattern'\)\?\.value\.trim\(\)\|\|''/.test(pos));
     s.ok('the traveler falls back to it',/ptnPoTravelerPattern\(po\):''\)\|\|po\.pattern\|\|''/.test(pos));
     s.ok('the banner is on the PO detail AND the cutting screen',(pos.match(/ptnPoBannerSlot\(po\)/g)||[]).length===2);
-    s.ok('rules: settings readable by all, written by an owner',/match \/settings\/\{doc\}\s*\{\s*allow read: if signedIn\(\);\s*allow write: if isOwner\(\);/.test(read('firestore.rules')));
+    s.ok('rules: settings readable by all, written by an owner',/match \/settings\/\{doc\}\s*\{\s*allow read: if isQaRead\(\) \|\| \(signedIn\(\)\);\s*allow write: if isOwner\(\);/.test(read('firestore.rules')));
   }
 
 

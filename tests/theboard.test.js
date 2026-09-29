@@ -444,7 +444,7 @@ module.exports=async function(){
     s.ok('the creator owns what they create and is on it',
       /request\.resource\.data\.ownerUid == request\.auth\.uid[\s\S]*?in request\.resource\.data\.assigneeUids/.test(items));
     s.ok('activity is append-only',/match \/activity\/\{a\} \{[\s\S]*?allow update, delete: if false;/.test(items));
-    s.ok('a comment is no more readable than its item',/allow read:\s+if isBoardUser\(\) && tbCanReadItem\(id\)/.test(items));
+    s.ok('a comment is no more readable than its item',/allow read:\s+if isQaRead\(\) \|\| \(isBoardUser\(\) && tbCanReadItem\(id\)\)/.test(items));
     s.ok('board_lists is gated on membership',
       /match \/board_lists\/\{id\} \{[\s\S]*?in resource\.data\.memberUids/.test(rules));
     s.ok('board_config is owner-written',

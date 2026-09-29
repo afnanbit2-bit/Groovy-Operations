@@ -266,7 +266,7 @@ module.exports=async function(){
       const toml=read('netlify.toml');
       s.ok('the rollup is scheduled',/\[functions\."marketing-code-rollup"\]\s*schedule = "30 1 \* \* \*"/.test(toml));
       const rules=read('firestore.rules');
-      s.ok('no browser writes a discount code',/match \/discount_codes\/\{id\} \{\s*allow read: if isMarketing\(\);\s*allow write: if false;/.test(rules));
+      s.ok('no browser writes a discount code',/match \/discount_codes\/\{id\} \{\s*allow read: if isQaRead\(\) \|\| \(isMarketing\(\)\);\s*allow write: if false;/.test(rules));
       const blk=(rules.match(/match \/dispatches\/\{id\} \{[\s\S]*?\n    \}/)||[''])[0];
       s.ok('nor attaches one to a dispatch',/has_discount_code', false\) == resource\.data\.get\('has_discount_code', false\)/.test(blk)
         &&/discount_code_id', null\) == resource\.data\.get\('discount_code_id', null\)/.test(blk)

@@ -1488,7 +1488,7 @@ module.exports=async function(){
     const rules=read('firestore.rules');
     const admins=(/function isScoringAdmin\(\)\s*\{[^}]*\[([^\]]*)\]/.exec(rules)||['',''])[1].match(/'([^']+)'/g)||[];
     s.eq('isScoringAdmin() lists exactly the flagged accounts',J(admins.map(x=>x.replace(/'/g,'')).sort()),J(defs.filter(d=>d.canEditScoring===true).map(d=>d.email).sort()));
-    s.ok('the rules let only the admin write the settings',/match \/scoring_config\/\{doc\} \{\s*allow read: if isMarketing\(\);\s*allow write: if isScoringAdmin\(\);/.test(rules));
+    s.ok('the rules let only the admin write the settings',/match \/scoring_config\/\{doc\} \{\s*allow read: if isQaRead\(\) \|\| \(isMarketing\(\)\);\s*allow write: if isScoringAdmin\(\);/.test(rules));
     s.eq('the lead can still score a creator (the bands are read, not written)',lead.run("mktScore({follower_count:10000,avg_likes:100,avg_comments:0},null).score"),25);
   }
 
@@ -1766,7 +1766,7 @@ module.exports=async function(){
     const rules=read('firestore.rules');
     const blk=(rules.match(/match \/marketing_settings\/\{doc\} \{[\s\S]*?\n    \}/)||[''])[0];
     s.ok('marketing_settings has a rule at all',!!blk);
-    s.ok('read by Marketing',/allow read: if isMarketing\(\);/.test(blk));
+    s.ok('read by Marketing',/allow read: if isQaRead\(\) \|\| \(isMarketing\(\)\);/.test(blk));
     s.ok('and written by Marketing',/allow write: if isMarketing\(\);/.test(blk));
   }
 
