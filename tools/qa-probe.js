@@ -82,7 +82,9 @@ function report(ok,label,extra){console.log((ok?'  ok   ':'  FAIL ')+label+(extr
 (async()=>{
   console.log('QA probe — '+(live?'LIVE project '+project:'EMULATOR '+project)+' — signing in as '+EMAIL);
   await signIn();
-  console.log('  signed in; uid '+uid+'  (put this in qaUid() in firestore.rules if it is still the placeholder)');
+  const pinned=(/request\.auth\.uid == '([A-Za-z0-9]{20,40})'/.exec(fs.readFileSync(path.join(__dirname,'..','firestore.rules'),'utf8'))||[])[1];
+  if(live&&pinned&&uid!==pinned){console.error('UID MISMATCH: signed in as '+uid+' but firestore.rules pins '+pinned+' — do not rely on the UID pin');process.exit(1);}
+  console.log('  signed in; uid '+uid+(pinned?(uid===pinned?'  (matches the uid pinned in isQa())':'  (emulator uid; live uid is pinned in isQa())'):''));
 
   console.log('\nwrites that MUST be refused (each is a create of a unique probe document):');
   const attempts=[

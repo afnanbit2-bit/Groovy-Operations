@@ -30,8 +30,14 @@ service cloud.firestore {
     //     Boards only its own PRIVATE boards, shared with nobody.
     // Mirror: USER_DEFS / BOARD_USERS / QA_ROLE in js/auth.js;
     // tests/rules-emulator-board.js runs every fence in the emulator.
+    // Pinned by BOTH identifiers (29 Sept 2026): the account's email AND its
+    // Firebase uid, so either one confines it. A sign-in whose token lacks
+    // the email claim (a custom-token / passkey sign-in may) is still QA by
+    // uid. Mirror: QA_UID in tools/qa-probe.js checks the two agree.
     function isQa() {
-      return request.auth != null && request.auth.token.get('email', '') == 'claude@groovy.op';
+      return request.auth != null
+        && (request.auth.token.get('email', '') == 'claude@groovy.op'
+            || request.auth.uid == '8TKOO3GKhBb0NSEEK15LFTIAshI2');
     }
     function signedIn() { return request.auth != null && !isQa(); }
     function authed() { return request.auth != null; }

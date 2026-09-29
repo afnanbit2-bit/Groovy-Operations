@@ -293,6 +293,22 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
     if(cellsDiff.length) throw new Error(cellsDiff.length+' differ: '+cellsDiff.slice(0,5).join(' ;; '));
   });
 
+  // ── the UID pin: QA is confined by uid even when the token has NO email claim ──
+  console.log('\nthe uid pin (a sign-in whose token lacks the email claim)');
+  {
+    const PIN=(/request\.auth\.uid == '([A-Za-z0-9]{20,40})'/.exec(NEW_RULES)||[])[1];
+    await check('firestore.rules pins a uid in isQa()',async()=>{ if(!PIN) throw new Error('no uid pinned'); });
+    const noEmail=envN.authenticatedContext(PIN||'x',{}).firestore();
+    const other=envN.authenticatedContext('someone-else-uid',{}).firestore();
+    await raw(envN,async d=>{ await setDoc(doc(d,'pos/pinned1'),{a:1}); await setDoc(doc(d,'employees/pinned1'),{a:1}); });
+    await check('pinned uid, no email: READS pos (it is QA)',()=>assertSucceeds(getDoc(doc(noEmail,'pos/pinned1'))));
+    await check('pinned uid, no email: READS employees (read-everything applies)',()=>assertSucceeds(getDoc(doc(noEmail,'employees/pinned1'))));
+    await check('pinned uid, no email: CANNOT write pos (signedIn() excludes it)',()=>assertFails(setDoc(doc(noEmail,'pos/pinned2'),{a:1})));
+    await check('pinned uid, no email: CANNOT write employees',()=>assertFails(setDoc(doc(noEmail,'employees/pinned2'),{a:1})));
+    await check('pinned uid, no email: CANNOT notify a role',()=>assertFails(setDoc(doc(noEmail,'hrm_notifications/pinned3'),{forUser:'claude',forRole:'owner'})));
+    await check('an ordinary uid with no email claim reads nothing (not QA, not signed in)',()=>assertFails(getDoc(doc(other,'pos/pinned1'))));
+  }
+
   await envN.cleanup(); await envO.cleanup();
   console.log('\n'+passed+' passed, '+failed+' failed');
   process.exit(failed?1:0);
