@@ -11,16 +11,26 @@
    and JsBarcode loaded from cdnjs/jsdelivr, which the build sandbox cannot
    reach, so the page never got past its static HTML. Served from this
    origin, it runs.
+   (Corrected 29 Sept 2026: cdnjs.cloudflare.com and cdn.jsdelivr.net both
+   answered from a session that day - see CLAUDE.md "Sandbox limits". Serving
+   the libraries from this origin still stands on its other reasons there.)
 
    What it catches that `node --check` cannot: a load-order break, a
    top-level `const` declared twice across two classic scripts (they share
    one lexical scope), a global that quietly stopped being defined, and a
    vendored library that is present but broken.
 
-   What it still does NOT do: sign in or render a page. The Firebase modular
-   SDK loads from gstatic, which this sandbox cannot reach, so
-   `__bootApp()` never runs. That part still needs a human or Claude in
-   Chrome.
+   What it does NOT do, by design: sign in or render a page. It serves a
+   synthetic /__probe page that lists the classic scripts - not index.html -
+   so the Firebase modular SDK (which index.html imports from
+   www.gstatic.com) is never loaded and `__bootApp()` never runs; and it
+   launches Chrome with --no-proxy-server, so Chrome reaches 127.0.0.1 only.
+   (Corrected 29 Sept 2026: this used to say gstatic "cannot be reached from
+   this sandbox". The four Firebase SDK files answered from a session, and a
+   headless Chrome in a session signed in to the live app as the QA account -
+   see CLAUDE.md "Sandbox limits". Signing in is tests/e2e/board.e2e.js's
+   job, outside tests/run.js and CI. What a person sees on a screen or a
+   phone still needs a human.)
 
    Skips cleanly (exit 0) when no browser is available.
    ───────────────────────────────────────────────────────────────────────── */

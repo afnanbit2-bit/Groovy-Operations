@@ -1,9 +1,17 @@
 # QA / debugging access — the decision, the limits, the rollout
 
-**Status (29 Sept 2026, branch `qa-access-v2`, local, nothing pushed, nothing deployed).**
+~~**Status (29 Sept 2026, branch `qa-access-v2`, local, nothing pushed, nothing deployed).**~~
+**SUPERSEDED 29 Sept 2026 (later) — verified this run:** no remote branch named `qa-access*` exists
+(`git branch -r`, `git ls-remote --heads`); `dc98484`, `b680d0b`, `b1872f4` (the only commit that
+touched this file on `main`) and `08b530a` are ancestors of `origin/main`; and `origin/main`'s `firestore.rules` carries
+`isQa()`, `isQaRead()` (94 lines, 91 of them read rules) and `qaOwnNotice()`. **Live behaviour, not
+the Console's text:** the account exists and signs in; the live rules refused it the writes tried
+(the Board e2e's `pos` and `bug_reports`; the relayed probe's 27 creates); a live Board e2e ran 6 of
+7 and failed at item creation (§4, "Added 29 Sept 2026"). Detail and sources: `CLAUDE.md` → "QA
+debug access". What follows is kept as written unless struck through.
 `claude@groovy.op` is the account Claude Code's test harness signs in as. It is not
 a person. Its identity, role, Board membership and write fences already exist on
-`main` (BOARD.md → "The QA identity"); this branch adds **the read scope, the
+`main` (BOARD.md → "The QA identity"); ~~this branch adds~~ *(now on `main` too)* **the read scope, the
 emulator workflow and the proof**. Read that BOARD.md section first — this file
 does not repeat it.
 
@@ -12,8 +20,16 @@ does not repeat it.
 > QA gets **read** access to every collection and path in Firestore and RTDB that any
 > rule can read, including role-gated and owner-only collections. **Writes stay fenced.**
 
+*(29 Sept 2026, `8573391`: narrowed for the 15 Master Accounts `ma_*` collections — "just for me and
+Ammar" — which QA cannot read. The quote above is the decision as first given.)*
+
 * **Reads:** one helper, `isQaRead()` (`isQa()` and `request.method in ['get','list']`),
-  OR'd into every `allow read` in `firestore.rules` (91 of them). There is **no second
+  OR'd into ~~every `allow read` in `firestore.rules` (91 of them)~~ **91 of the 106 `allow read` lines in
+  `firestore.rules`** (*SUPERSEDED 29 Sept 2026, `8573391`: the other 15 are the owner-only Master
+  Accounts `ma_*` reads, which stay `isMasterAccounts()` alone — the QA account is refused there by
+  design; verified this run: those are the only `allow read` lines without `isQaRead()`, and a REST
+  list of all 15 as the QA account answered 403 each, which is ambiguous between "block not
+  published" and "block published, QA refused"*). There is **no second
   `signedIn()` gate** — `signedIn()` is still `request.auth != null && !isQa()`, which is
   what keeps QA out of every write.
 * **No match block** for `integration_secrets`, `passkeys`, `passkey_challenges`. They have
@@ -32,9 +48,9 @@ does not repeat it.
 
 | Question | Answer | Source |
 |---|---|---|
-| Are `main`'s `isQa()`/`authed()` rules published? | **No.** The last publish (28 Sept 2026, ~10:10 pm PKT, reported by Afnan) was the file at `md5 b68fc9febc14ec90ad3d29f860147702` = commit `430fc28`, and **that file contains zero `isQa()`** (checked: `git show 430fc28:firestore.rules \| grep -c isQa` → 0). `dc98484` (the QA rules) is not an ancestor of `430fc28`. Only `dc98484` and a merge have touched `firestore.rules` since. | `CLAUDE.md` "Firestore rules — published" (28 Sept entry) and "OUTSTANDING (26 Sept 2026, evening): the QA identity"; `BOARD-LOG.md` "OUTSTANDING (26 Sept 2026, evening)" |
-| Does `claude@groovy.op` exist in live Firebase Auth? | **Unknown.** The docs only say Ammar creates it and sets its password in his shell (`BOARD.md` "The QA account and its environment"; `BOARD-LOG.md` "QA identity — Ammar's side"). Nothing records that it was done. | — |
-| What can it do today, if it exists? | Everything an ordinary signed-in user can: `signedIn()` in the published rules has no `isQa()`, so it reads **and writes** most of the app. `BOARD.md` says so ("Deploy before the first sign-in"). | published rules = `430fc28` |
+| Are `main`'s `isQa()`/`authed()` rules published? | ~~**No.** The last publish (28 Sept 2026, ~10:10 pm PKT, reported by Afnan) was the file at `md5 b68fc9febc14ec90ad3d29f860147702` = commit `430fc28`, and **that file contains zero `isQa()`** (checked: `git show 430fc28:firestore.rules \| grep -c isQa` → 0). `dc98484` (the QA rules) is not an ancestor of `430fc28`. Only `dc98484` and a merge have touched `firestore.rules` since.~~ **SUPERSEDED 29 Sept 2026 — behaviour now says yes; the Console TEXT is still unknown.** Verified this run: the Board e2e (live, as QA) — writes to `pos` and `bug_reports` refused `permission-denied`, its own check for `isQa()` being deployed; the relayed `tools/qa-probe.js --live` run — 27 creates refused (incl. `board_items`, `board_lists`, `mood_boards`) and the QA-read lists open. An unconfined account would have written those, so this is consistent with the QA rules being published. **Not known:** whether the Console's text equals the repo file (only its rules history says); `CLAUDE.md` "Firestore rules — published" records that the ruleset live before Ammar's 29 Sept publish was not `430fc28` either. | `CLAUDE.md` "Firestore rules — published" (28 Sept entry) and "OUTSTANDING (26 Sept 2026, evening): the QA identity"; `BOARD-LOG.md` "OUTSTANDING (26 Sept 2026, evening)" |
+| Does `claude@groovy.op` exist in live Firebase Auth? | ~~**Unknown.** The docs only say Ammar creates it and sets its password in his shell (`BOARD.md` "The QA account and its environment"; `BOARD-LOG.md` "QA identity — Ammar's side"). Nothing records that it was done.~~ **SUPERSEDED 29 Sept 2026: it exists, is enabled and signs in.** Verified this run: Identity Toolkit `signInWithPassword` answered HTTP 200 (the public web key from `index.html`; the password came from the environment and was never printed) and the Board e2e signed in through the real login form with role `qa`. Who created it, and when, is not recorded. | — |
+| What can it do today, if it exists? | ~~Everything an ordinary signed-in user can: `signedIn()` in the published rules has no `isQa()`, so it reads **and writes** most of the app. `BOARD.md` says so ("Deploy before the first sign-in").~~ **SUPERSEDED 29 Sept 2026:** it is confined for the writes tried (row 1) and reads what the QA-read rules give it (91 read rules; not the 15 `ma_*`). What it CANNOT do is create a Board item through the app: `CLAUDE.md` "QA debug access" and "Added 29 Sept 2026" under §4. | published rules = `430fc28` |
 
 **Console checks (a human, ~2 minutes):**
 1. Firebase Console → Authentication → Users → search `claude@groovy.op`. Exists? Enabled?
@@ -42,6 +58,9 @@ does not repeat it.
    new publish). Absent = the account is unconfined **today**.
 3. If the account exists and the rules are not yet published: **disable it now**
    (Users → ⋮ → Disable account) and leave it disabled until step 3 of §5.
+
+*(29 Sept 2026: step 1 is answered by the sign-in above. Steps 2 and 3 only the Console can answer;
+behaviour suggests the QA rules are published, which is not the same as reading them.)*
 
 ## 2. Audit answers (from `origin/main`, then what this branch changed)
 
@@ -75,7 +94,7 @@ still works) and, with the fence reverted, 3 fail by name.
 ## 3. Debug workflow
 
 ```
-1  inspect   live, read-only      the QA account (reads everything now) or a Viewer-role key
+1  inspect   live, read-only      the QA account (reads everything now, except the owner-only `ma_*` books) or a Viewer-role key
 2  snapshot  live -> emulator     node tools/qa-snapshot.js --mask-pii --clear-target --seed-auth …
 3  reproduce in the emulator      http://localhost:8000/?env=emulator   (sign in as any role)
 4  fix       in the repo
@@ -112,7 +131,40 @@ python3 -m http.server 8000                         # then http://localhost:8000
 | 5 | Rules cannot hide fields | With read-everything, personal data in every allowed collection is readable | mask snapshots; protect the QA password like an owner's |
 | 6 | Custom-token `email` claim | see #1 | verify with `getIdTokenResult()` |
 
-## 5. Rollout checklist (hand-run, in order). Nothing below has been done.
+**Added 29 Sept 2026 — not a gap the rules cannot close but a defect in them, found by the live Board
+e2e.** `tests/e2e/board.e2e.js`, run live as QA (6 of 7 checks, exit 1; `docs/board-screens/a436e8b/
+report.md`, gitignored), failed at "the run completed": *"timed out waiting for the new item — the app
+said: Refused — this item may be locked, or firestore.rules is not deployed yet."* **So "the QA account
+can create a Board item through the app" is FALSE on live today** (verified by that failure).
+* **Cause, reproduced in the local emulator and re-run in this session** (against the repo's
+  `firestore.rules`): the app creates an item with ONE `writeBatch` — `board_items/{id}` plus
+  `board_items/{id}/activity/{a}` (`js/theboard.js` `tbCreateFromQuick`, ~1782–1786). The activity
+  `create` rule (`firestore.rules` L1131–1132) allows QA only if `tbOwnsItem(id)`, which reads the parent
+  with `exists()`/`get()` — the state BEFORE the batch, when the item does not exist yet. Same batch by
+  a simulated ordinary user: allowed. QA item alone: allowed. QA activity row as a separate write
+  afterwards: allowed. QA activity on a real person's item, and a QA item batched into a real list:
+  still refused. The comments `create` rule has the same shape (L1117–1118).
+* **Candidate fix — NOT applied, not in the repo:** a `tbOwnsItemAfter()` on `existsAfter()`/`getAfter()`
+  used by the activity and comments `create` rules only. On an in-memory copy of the rules it turned the
+  batch from refused to allowed and left the two fences refused. It has not been through
+  `tests/rules-emulator-board.js` or `tests/rules-emulator-qa.js`, and would need a republish.
+* **Hypothesis, unverified: the live Console's `board_items` rules equal the repo's.** The app's toast is
+  shown for ANY permission error (`js/theboard.js` ~1503–1505), so it does not say which rule refused.
+* The run left a QA-owned `QA Sandbox` `board_lists` document (private, QA the only member) and created no
+  item; the harness's live run cannot get past item creation, so it made no screenshots.
+
+## 5. Rollout checklist (hand-run, in order). ~~Nothing below has been done.~~
+**SUPERSEDED 29 Sept 2026 — where each step stands** (verified this run unless marked *reported*; a
+report is not a check): **0** the account exists and signs in (§1); the Console text is unknown.
+**1** the rollback target: `CLAUDE.md` "Firestore rules — published" *reports* that the ruleset live before
+Ammar's publish was not `430fc28` (it matched no committed version) and that its text was saved — so
+step 1's `git show 430fc28…` is not the rollback target; use the saved file. **2** done: the merge is on
+`origin/main` (`dc98484`, `b680d0b`, `08b530a`, `b1872f4` are ancestors); the branch's `CACHE_VERSION`
+`v255` is stale — the live site serves `v259`. **3** *reported* by Ammar (`CLAUDE.md`); behaviour is
+consistent (§1) and later publishes were also reported — which file the Console holds is unknown. **4**
+done (sign-in). **5** *reported* run of `tools/qa-probe.js --live --sandbox-writes`, exit 0 (`CLAUDE.md`);
+it has no `ma_` line and never sends the allowed own-notification shape. **6** run live: 6 of 7, stops at
+item creation (above). **7** no record that the kill switch was exercised. The steps below are kept as written.
 
 0. **Establish the live state** (§1 Console checks). If `claude@groovy.op` exists and the
    published rules lack `isQa`, **disable the account first.**
@@ -147,7 +199,7 @@ python3 -m http.server 8000                         # then http://localhost:8000
 | `tests/rules-emulator-board.js`, `-boards.js`, `rules-emulator.js` | emulator | `main`'s suites; 6 QA read-refusal cases in the Board suite became allows |
 | `tests/rules-emulator-rtdb.js` | RTDB emulator | `database.rules.json` unchanged; QA reads attendance, writes nothing |
 | `tests/qa-snapshot-emulator.js`, `tests/qa-probe-emulator.js` | emulator | the snapshot tool end to end; the probe against the new rules, today's published rules, and `main`'s |
-| `tests/e2e/board.e2e.js --stub` | headless Chrome | same 153/157 on `origin/main` and here (4 pre-existing pill-ellipsis failures) |
+| `tests/e2e/board.e2e.js --stub` | headless Chrome | same 153/157 on `origin/main` and here (4 pre-existing pill-ellipsis failures). *(29 Sept 2026: the LIVE mode ran as QA — 6 of 7, failing at item creation; §4, "Added 29 Sept 2026".)* |
 
 **Declared QA write set** (everything else refused): `board_lists`, `board_items` (+ `comments`,
 `activity`), `hrm_notifications` (its own, no role), `user_profiles` (its own row), `mood_boards`
