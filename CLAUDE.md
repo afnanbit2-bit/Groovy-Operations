@@ -3837,10 +3837,77 @@ stage takes the press, the card drag bails for a mouse), and **removing an
 Unsorted item asks nothing** — it pushes undo, since the snapshot carries
 the tray. Nobody has felt the drag on a real screen.
 
+**A click no longer brings back the last selection box (29 Sept).**
+Afnan's recording: after a marquee, a plain click on the board flashed the
+OLD box. The press showed `#board-marquee` with the previous gesture's
+size and place until the pointer moved. It is zeroed on the press, shown
+only past 3px of movement, reset on release, and a `pointercancel` ends the
+gesture too. Held in `tests/boards.test.js` ("a click does not bring the
+last selection box back") — verified by restoring the old show-on-press.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not
 re-diagnose those from the code.
+
+### Mood Boards — the colour swatch (28 Sept 2026)
+
+Milanote's colour card, built from what a screen recording showed. **Type
+a hex colour (`#RGB` or `#RRGGBB`, `#` required, nothing else in the note)
+and leave the note: it BECOMES a swatch** in place (`type:'swatch'`,
+`hex` normalised to 6-digit upper case, 220×230), through
+`_boardsSwatchFromNoteEl` in `_boardsEndEdit`, which pushes undo first —
+Ctrl+Z gives the note back. The add rail is unchanged; the note is the only
+way in, as in Milanote.
+
+- **One stored field, `c.hex`, always through `_boardsValidHex`.** The value
+  string, the ink on the block (`_boardsInkOn` — a literal ink on a literal
+  colour) and the NAME are derived at render. `c.fmt` stores only the
+  exception (`rgb`/`hsl`/`off`; no field = HEX), the Marketing-style rule.
+- **The name is the nearest of ~250 curated names** (`_BOARDS_COLOR_NAMES`:
+  the CSS set plus textile words — Mocha, Aqua Forest, Outrageous Orange…)
+  by squared RGB distance. Nothing fetched. `c.name` (Caption edits the name
+  bar in place; Rename in ⋯ writes the same field) wins over it; typing the
+  auto name back clears the field.
+- **The name bar is `var(--dark)` / `var(--on-dark)`** — the pair inverts
+  together, so it reads in both themes.
+- **Rail: Color · Labels · Reactions · Comment · Display · Caption · ⋯.**
+  Display is a `.board-ctx` of four tabs with `{keep:true}`. Color (and a
+  click on the block of an already-selected swatch, or a double-click)
+  opens the picker: an SV square, a hue slider, a preview dot, an
+  eyedropper (`window.EyeDropper`, hidden where absent — Chrome/Edge only)
+  and fields cycling RGB → HSL → HEX. It is `_boardsOpenSheet` anchored to
+  the card (a bottom sheet on a phone). **One undo entry per picker
+  session** (`_boardsSwPick.pushed`); every change repaints the one card
+  (`_boardsSwatchPaint`), never the canvas. `_boardsSwatchSetHex` is the only
+  writer after birth and refuses what `_boardsValidHex` refuses. The picker
+  is new code, not the board tile's HSV sliders — those have no SV square.
+- The export draws the block, the value and a literal dark name bar; search
+  finds the hex and the name; the noun and header label say Colour.
+- `tests/board-swatch.test.js` (49) drives the end-edit conversion, undo,
+  names, formats, the Display switch, the rail, the picker's fields and the
+  escaping. Verified by reverting: the undo push (3 fail), the setter's
+  validation (4), the one-undo-per-session flag (1). The layout fragment
+  `boards — colour swatches` (both themes) fails 4 jobs with the name bar's
+  ink set to its own background.
+- **Not built:** Milanote's other routes into a swatch (none were in the
+  recording). **Nobody has seen a swatch or the picker on a real screen** —
+  the sandbox cannot sign in; the SV drag and the eyedropper are untested.
+
+**Pantone codes on a swatch (same day).** Afnan: TCX (fabric) and C
+(coated) conversion "to the same color logic". A note reading `485 C`,
+`Pantone 485 C` or `19-1664 TCX` (dash, spacing and a Pantone/PMS prefix
+optional; TPX/TPG/U read too) becomes a swatch of that colour showing the
+code (`c.pantone`, `fmt:'pantone'`). The Display menu gained a Pantone mode:
+any swatch shows its nearest code, marked `≈` when not exact.
+**The book is only what the app holds** (`_boardsPantoneBook`): the ~55 C
+codes built into `js/embellishments.js` (`COLOR_IMPORT_PANTONE_HEX`) plus the
+embellishments colour library (`color_library`: `pantoneCode` + `hexApprox`,
+archived and invalid entries skipped), read once per session on board open
+(`_boardsPantoneEnsure`, never rejects). **There is no TCX data except what
+the library holds**, and the full books are licensed and unreachable from
+the sandbox — an unknown code stays a note, nothing is invented. A file from
+Afnan would go into `_BOARDS_PANTONE_EXTRA`. `tests/board-swatch.test.js`.
 
 ### Mood Boards — the phone audit (Sept 2026)
 

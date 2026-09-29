@@ -866,9 +866,16 @@ module.exports=function(){
       app.fire(el,'pointerdown',Object.assign({target:el,currentTarget:el,
         pointerId:1,button:0,pointerType:'mouse',clientX:10,clientY:10},down));
       const panBefore=run(`_editBoard.panX`);
-      const marqueed=app.el('board-marquee').style.display==='block';
+      // The box is shown once the pointer MOVES, never on the press (it
+      // used to flash the previous marquee on every click) — so read it
+      // after the move.
       ((el._ls&&el._ls.pointermove)||[]).forEach(l=>l.fn({clientX:300,clientY:300,target:el}));
-      return{panned:run(`_editBoard.panX`)!==panBefore,marqueed};
+      const marqueed=app.el('board-marquee').style.display==='block';
+      const panned=run(`_editBoard.panX`)!==panBefore;
+      // End the gesture, or its move listener stays on the stage and paints
+      // the box during the NEXT gesture's move.
+      ((el._ls&&el._ls.pointerup)||[]).slice().forEach(l=>l.fn({clientX:300,clientY:300,target:el,type:'pointerup'}));
+      return{panned,marqueed};
     }
 
     s.section('a plain mouse drag on empty canvas selects');
@@ -897,6 +904,18 @@ module.exports=function(){
     const before=run(`_editBoard.panY`);
     app.fire(el3,'wheel',{deltaY:120});
     s.ok('and the wheel pans without any modifier at all',run(`_editBoard.panY`)!==before);
+
+    s.section('a click does not bring the last selection box back');
+    {
+      gesture({});   // a real drag, ended; the box was 290x290
+      const el5=app.el(stage());
+      app.fire(el5,'pointerdown',{target:el5,currentTarget:el5,pointerId:2,button:0,pointerType:'mouse',clientX:600,clientY:600});
+      const box=app.el('board-marquee');
+      s.ok('the press shows no box',box.style.display!=='block',box.style.display);
+      s.eq('and the old size is gone',box.style.width,'0px');
+      ((el5._ls&&el5._ls.pointermove)||[]).forEach(l=>l.fn({clientX:601,clientY:601,target:el5}));
+      s.ok('a twitch under 3px still shows none',box.style.display!=='block');
+    }
 
     s.section('Shift+drag still marquees, so nothing unlearns');
     g=gesture({shiftKey:true});
