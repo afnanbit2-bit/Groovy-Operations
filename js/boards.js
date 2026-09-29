@@ -1190,6 +1190,9 @@ function _boardsOnKeydown(e){
   if(_boardsDrawOn&&(e.key==='Escape'||e.key==='Esc')){
     e.preventDefault();window.boardsDrawEnd();return;
   }
+  if(_boardsPickOn&&(e.key==='Escape'||e.key==='Esc')){
+    e.preventDefault();_boardsPickOn=null;_boardsRenderCanvasAndWire();return;
+  }
   if((_boardsEditingEl||_boardsCellFocus)&&(e.key==='Escape'||e.key==='Esc')){
     e.preventDefault();
     const hadCell=!!_boardsCellFocus;
@@ -2326,6 +2329,7 @@ async function _boardsOpenCanvas(){
   // Drawing is a mode, like line mode, and a mode that survived leaving the
   // board is exactly the bug the QA round found in _boardsLineMode.
   _boardsDrawOn=null;
+  _boardsPickOn=null;
   _boardsConnBase=JSON.stringify(_editConnectors);
   _boardsPeers=[];_boardsComments=[];_boardsBoardActivity=[];
   _boardsCardTrash=[];_boardsCardTrashOpen=false;_boardsCardTrashTab='mine';
@@ -3031,7 +3035,7 @@ function _boardCardHTML(c,canEdit){
   // "the drag handle is right there" in review. The drag comes from the
   // BODY underneath, which the press falls through to. Only the delete ✕
   // takes pointer events back (css/main.css).
-  return`<div class="board-card-el type-${c.type}${photo?' photo':''}${canEdit&&_boardsDrawOn===c.id?' drawing':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
+  return`<div class="board-card-el type-${c.type}${photo?' photo':''}${canEdit&&_boardsDrawOn===c.id?' drawing':''}${_boardsPickOn===c.id?' picking':''}${sel}${lock}${tint}" id="board-card-${c.id}" data-id="${c.id}" style="${_boardsCardColorStyle(c)}left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${drawH}px" onclick="window.boardsSelectCard('${c.id}',event)">
     <div class="board-card-head">
       <span class="board-card-kind">
         <span class="board-card-name" id="board-name-${c.id}" contenteditable="false" data-placeholder="${_boardsEsc(kind)}" onpointerdown="event.stopPropagation()"></span>${c.locked?`<span class="board-card-lock" title="Position locked — unlock it from the ⋯ menu">${_boardsIcon('lock')}</span>`:''}</span>
@@ -5944,6 +5948,9 @@ window.boardsCardDragStart=function(e,cardId){
   // which pans. Mouse only — a finger still drags the card it touches.
   if((_boardsSpaceDown||_boardsPanMode)&&e.pointerType!=='touch')return;
   e.stopPropagation();
+  // Pick colour is on for this picture: the press READS the colour under it
+  // and moves nothing.
+  if(_boardsPickOn&&_boardsPickOn===cardId){_boardsPickAt(e,cardId);return;}
   // A press inside whatever is currently open for editing is the user
   // selecting text, not grabbing the card. stopPropagation still applies,
   // or the stage would start panning under the selection.
@@ -6239,6 +6246,7 @@ function _boardsSetSelection(ids){
   // Drawing belongs to ONE card. Selecting anything else ends it, so the
   // rail can never offer the drawing tools for a card you are not on.
   if(_boardsDrawOn&&!_boardsSelection.has(_boardsDrawOn))_boardsDrawOn=null;
+  if(_boardsPickOn&&!_boardsSelection.has(_boardsPickOn))_boardsPickOn=null;
   // A focused cell belongs to a selected table. Clicking empty canvas
   // clears the selection through here, and leaving the focus behind left
   // the ring and the cell rail up with no way out but the Done button.
@@ -6302,6 +6310,7 @@ const _BOARDS_ICONS={
   assign:'<circle cx="8" cy="5.6" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 13.4a5 5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.4"/>',
   indent:'<path d="M6 3.2h8v1.5H6zM6 7.3h8v1.5H6zM6 11.3h8v1.5H6z"/><path d="M1.8 5.2L4.3 8l-2.5 2.8z"/>',
   outdent:'<path d="M6 3.2h8v1.5H6zM6 7.3h8v1.5H6zM6 11.3h8v1.5H6z"/><path d="M4.3 5.2L1.8 8l2.5 2.8z"/>',
+  pick:'<path d="M10.2 2.4l3.4 3.4-1.6 1.6-3.4-3.4z"/><path d="M9.2 5.2L3 11.4 2.4 13.6 4.6 13l6.2-6.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
   drawon:'<path d="M2.6 13.4l.7-2.6 7-7 1.9 1.9-7 7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M11 2.8l1.2-1.2 1.9 1.9L12.9 4.7z"/>',
   crop:'<path d="M4.2 1.6v10.2h10.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1.6 4.2h10.2v10.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
   // Background: the dashed frame around a picture, read off the rail at 82s.
@@ -6725,6 +6734,8 @@ function _boardsRailItems(){
       items.push({act:'img:edit',label:'Edit',icon:'crop',on:_boardsImgEdited(one)});
       items.push({act:'img:bg',label:'Background',icon:'nobg',on:!!one.nobg});
     }
+    // Reading a colour off a picture changes nothing, so a viewer gets it too.
+    if(one.type==='image'&&one.imageUrl)items.push({act:'img:pick',label:'Pick colour',icon:'pick',on:_boardsPickOn===one.id});
     if(one.type==='image'&&canEdit)items.push({act:'caption',label:'Caption',icon:'caption'});
   }
   // ⋯ is on the rail whether or not you can edit: Copy, Copy link and the
@@ -13827,6 +13838,7 @@ function _boardsCtxRun(act){
   // reach the same implementation — the rule the rail and the old
   // selection bar broke before they were merged.
   if(act==='img:draw'){const o=_boardsSelectedCards()[0];if(o)window.boardsDrawMode(o.id);return;}
+  if(act==='img:pick'){const o=_boardsSelectedCards()[0];if(o)window.boardsPickMode(o.id);return;}
   if(act==='img:edit'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgEditOpen(o.id);return;}
   if(act==='img:bg'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgBgMenu(o.id);return;}
   if(act==='img:nobg'){const o=_boardsSelectedCards()[0];if(o)window.boardsImgNoBg(o.id);return;}
@@ -14726,6 +14738,7 @@ function _boardsCardCtxItems(canEdit){
       // _boardsMoreItems (the right-click list MINUS the rail) keeps its
       // algebra: nothing the menu offers is lost, and nothing repeats.
       if(canEdit)typed.push({act:'img:draw',label:_boardsStrokes(one).length?'Draw on the picture':'Draw on the picture…'});
+      if(one.imageUrl)typed.push({act:'img:pick',label:'Pick a colour from the picture'});
       if(canEdit)typed.push({act:'img:edit',label:_boardsImgEdited(one)?'Edit — crop and rotate…':'Crop or rotate…'});
       if(canEdit)typed.push({act:'img:bg',label:'Background…'});
       typed.push({act:'openasset',label:'Open original'});
@@ -15309,6 +15322,10 @@ function _boardsSwatchSetHex(id,hex){
     if(_boardsSwPick&&_boardsSwPick.id===id)_boardsSwPick.pushed=true;
   }
   c.hex=h;
+  // A stored code describes the OLD colour. Keep it only if the new colour
+  // is that code's own colour; otherwise the card would name a code it no
+  // longer is.
+  if(c.pantone&&_boardsPantoneBook()[c.pantone]!==h)delete c.pantone;
   _boardsSwatchPaint(c);
   _boardsSaveDebounced();
   return true;
@@ -15356,6 +15373,7 @@ function _boardsSwPickHTML(){
       ${eye}
     </div>
     <div class="board-swp-fields" id="board-swp-fields">${_boardsSwPickFieldsHTML()}</div>
+    <div class="board-swp-near" id="board-swp-near">${_boardsNearHTML(hx,'sw')}</div>
   </div>`;
 }
 // Repaint the picker's moving parts (never the input being typed into:
@@ -15369,6 +15387,7 @@ function _boardsSwPickSync(fields){
   const hue=document.getElementById('board-swp-hue');if(hue&&fields!=='hue')hue.value=Math.round(p.hsv.h);
   const fl=document.getElementById('board-swp-fields');if(fl&&fields!==false)fl.innerHTML=_boardsSwPickFieldsHTML();
   _boardsSwatchSetHex(p.id,hx);
+  const nr=document.getElementById('board-swp-near');if(nr)nr.innerHTML=_boardsNearHTML(hx,'sw');
 }
 window.boardsSwpHue=function(v){
   if(!_boardsSwPick)return;
@@ -15470,9 +15489,12 @@ let _boardsPantoneLib=null,_boardsPantoneLoading=false,_boardsPantoneCache=null,
 function _boardsPantoneKey(text){
   let t=String(text==null?'':text).trim().toUpperCase().replace(/\s+/g,' ');
   t=t.replace(/^(PANTONE|PMS)\s*/,'');
+  // Pantone's own books spell it GRAY; people type GREY. One spelling, or
+  // every Cool Gray and Warm Gray code drops out of the book.
+  t=t.replace(/\bGREY\b/g,'GRAY');
   let m=/^(\d{2})\s*-?\s*(\d{4})\s*(TCX|TPX|TPG)$/.exec(t);
   if(m)return m[1]+'-'+m[2]+' '+m[3];
-  m=/^(COOL GREY \d{1,2}|WARM GREY \d{1,2}|[A-Z]*\s?\d{1,5}|[A-Z]+(?: [A-Z]+)*)\s*(C|U)$/.exec(t);
+  m=/^(COOL GRAY \d{1,2}|WARM GRAY \d{1,2}|[A-Z]*\s?\d{1,5}|[A-Z]+(?: [A-Z]+)*)\s*(C|U)$/.exec(t);
   if(m&&/\d/.test(m[1]))return m[1].trim()+' '+m[2];
   return'';
 }
@@ -15489,15 +15511,11 @@ function _boardsPantoneBook(){
   _boardsPantoneCache=out;_boardsPantoneCacheN=n;
   return out;
 }
+// The closest code in any book, by the same eye-based measure the Pick
+// colour panel uses (_boardsPantoneMatches), so the two cannot disagree.
 function _boardsPantoneNearest(hex){
-  const c=_boardsHexToRgb(hex);if(!c)return'';
-  const book=_boardsPantoneBook();let best='',bd=Infinity;
-  for(const k in book){
-    const o=_boardsHexToRgb(book[k]);if(!o)continue;
-    const d=(c.r-o.r)*(c.r-o.r)+(c.g-o.g)*(c.g-o.g)+(c.b-o.b)*(c.b-o.b);
-    if(d<bd){bd=d;best=k;}
-  }
-  return best;
+  const m=_boardsPantoneMatches(hex,null,1)[0];
+  return m?m.code:'';
 }
 // One read of the colour library per session, so a board opened without
 // ever visiting Embellishments still knows the imported codes. Never rejects.
@@ -15509,4 +15527,233 @@ async function _boardsPantoneEnsure(){
   try{const snap=await getDocs(collection(db,'color_library'));_boardsPantoneLib=snap.docs.map(d=>d.data());}
   catch(e){console.warn('[boards] colour library read failed:',e);}
   _boardsPantoneLoading=false;
+}
+
+/* ── Nearest codes, TCX and C, and Pick colour on a picture (29 Sept 2026)
+   Afnan: "a tab for TCX code and pantone code — we click on an image and
+   it gives which code it is".
+
+   CLOSENESS IS MEASURED THE WAY A EYE SEES IT (CIEDE2000 on CIELAB), not by
+   RGB distance: two RGB colours the same number apart can look nothing
+   alike, and a fabric match is judged by eye. ΔE < 1 is indistinguishable,
+   ~2-3 is a close match, past ~10 is a different colour; the words beside
+   each match say which, because a bare number means nothing on a shop floor.
+
+   THE BOOK IS STILL ONLY WHAT THE APP HOLDS (see above). Split by system
+   (_boardsPantoneSys): a TCX tab with no TCX codes loaded SAYS so, rather
+   than handing over the nearest C code under a TCX heading. */
+function _boardsLab(hex){
+  const c=_boardsHexToRgb(hex);if(!c)return null;
+  const lin=v=>{v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);};
+  const r=lin(c.r),g=lin(c.g),b=lin(c.b);
+  const X=(r*0.4124564+g*0.3575761+b*0.1804375)/0.95047;
+  const Y=(r*0.2126729+g*0.7151522+b*0.0721750);
+  const Z=(r*0.0193339+g*0.1191920+b*0.9503041)/1.08883;
+  const f=t=>t>216/24389?Math.cbrt(t):(24389/27*t+16)/116;
+  const fx=f(X),fy=f(Y),fz=f(Z);
+  return{L:116*fy-16,a:500*(fx-fy),b:200*(fy-fz)};
+}
+// CIEDE2000 (Sharma, Wu, Dalal 2005), kL=kC=kH=1.
+function _boardsDE2000(p,q){
+  const rad=Math.PI/180,deg=180/Math.PI;
+  const C1=Math.hypot(p.a,p.b),C2=Math.hypot(q.a,q.b),Cb=(C1+C2)/2;
+  const G=0.5*(1-Math.sqrt(Math.pow(Cb,7)/(Math.pow(Cb,7)+Math.pow(25,7))));
+  const a1=(1+G)*p.a,a2=(1+G)*q.a;
+  const c1=Math.hypot(a1,p.b),c2=Math.hypot(a2,q.b);
+  const hp=(bb,aa)=>{if(!bb&&!aa)return 0;const h=Math.atan2(bb,aa)*deg;return h<0?h+360:h;};
+  const h1=hp(p.b,a1),h2=hp(q.b,a2);
+  const dL=q.L-p.L,dC=c2-c1;
+  let dh=0;if(c1*c2){dh=h2-h1;if(dh>180)dh-=360;else if(dh<-180)dh+=360;}
+  const dH=2*Math.sqrt(c1*c2)*Math.sin(dh/2*rad);
+  const Lb=(p.L+q.L)/2,cb=(c1+c2)/2;
+  let hb=h1+h2;
+  if(c1*c2){if(Math.abs(h1-h2)>180)hb=(h1+h2<360)?(h1+h2+360)/2:(h1+h2-360)/2;else hb=(h1+h2)/2;}
+  const T=1-0.17*Math.cos((hb-30)*rad)+0.24*Math.cos(2*hb*rad)+0.32*Math.cos((3*hb+6)*rad)-0.20*Math.cos((4*hb-63)*rad);
+  const dTh=30*Math.exp(-Math.pow((hb-275)/25,2));
+  const Rc=2*Math.sqrt(Math.pow(cb,7)/(Math.pow(cb,7)+Math.pow(25,7)));
+  const Sl=1+(0.015*Math.pow(Lb-50,2))/Math.sqrt(20+Math.pow(Lb-50,2));
+  const Sc=1+0.045*cb,Sh=1+0.015*cb*T;
+  const Rt=-Math.sin(2*dTh*rad)*Rc;
+  return Math.sqrt(Math.pow(dL/Sl,2)+Math.pow(dC/Sc,2)+Math.pow(dH/Sh,2)+Rt*(dC/Sc)*(dH/Sh));
+}
+// Which book a normalised code belongs to: 'TCX' (fabric) or 'C' (coated).
+// TPX/TPG (paper) and U (uncoated) belong to neither tab.
+function _boardsPantoneSys(code){
+  const k=String(code||'');
+  if(/ TCX$/.test(k))return'TCX';
+  if(/ C$/.test(k))return'C';
+  return'';
+}
+function _boardsPantoneCount(sys){
+  const book=_boardsPantoneBook();let n=0;
+  for(const k in book)if(_boardsPantoneSys(k)===sys)n++;
+  return n;
+}
+// The n closest codes of one book, closest first: [{code,hex,de}].
+function _boardsPantoneMatches(hex,sys,n){
+  const q=_boardsLab(hex);if(!q)return[];
+  const book=_boardsPantoneBook(),out=[];
+  for(const k in book){
+    if(sys&&_boardsPantoneSys(k)!==sys)continue;
+    const o=_boardsLab(book[k]);if(!o)continue;
+    out.push({code:k,hex:book[k],de:_boardsDE2000(q,o)});
+  }
+  out.sort((x,y)=>x.de-y.de||(x.code<y.code?-1:1));
+  return out.slice(0,n||3);
+}
+function _boardsDeWord(de){
+  return de<1?'Exact':de<3?'Very close':de<6?'Close':de<12?'Rough':'Far off';
+}
+// Which tab is open is this person's, on this device.
+const _BOARDS_PICKSYS_KEY='groovy-boards-picksys';
+let _boardsPickSys=(()=>{try{const v=localStorage.getItem(_BOARDS_PICKSYS_KEY);return v==='C'?'C':'TCX';}catch(e){return'TCX';}})();
+window.boardsPickSys=function(sys,where){
+  _boardsPickSys=sys==='C'?'C':'TCX';
+  try{localStorage.setItem(_BOARDS_PICKSYS_KEY,_boardsPickSys);}catch(e){}
+  if(where==='sw'){const nr=document.getElementById('board-swp-near');if(nr)nr.innerHTML=_boardsNearHTML(_boardsSwPickHex(),'sw');}
+  else _boardsPickShow();
+};
+/* The tabs and the closest codes. `where` is 'pick' (a colour read off a
+   picture: each match can become a swatch) or 'sw' (the swatch's own
+   picker: a match is applied to the swatch). The matches are kept in
+   _boardsNearLast and the buttons carry only an INDEX into it, so no code
+   string is ever interpolated into an onclick. */
+let _boardsNearLast={pick:[],sw:[]};
+function _boardsNearHTML(hex,where){
+  const sys=_boardsPickSys,canEdit=_boardsCanEdit(_editBoard);
+  const tab=(k,l)=>`<button class="board-near-tab${sys===k?' on':''}" onclick="window.boardsPickSys('${k}','${where}')">${l}</button>`;
+  const m=_boardsValidHex(hex)?_boardsPantoneMatches(hex,sys,3):[];
+  _boardsNearLast[where]=m;
+  const act=where==='sw'?'Use':'Swatch';
+  const rows=m.map((x,i)=>`<div class="board-near-row">
+      <span class="board-near-chip" style="background:${_boardsValidHex(x.hex)}"></span>
+      <span class="board-near-code">${_boardsEsc(x.code)}</span>
+      <span class="board-near-de" title="Colour difference ΔE ${x.de.toFixed(1)}">${_boardsDeWord(x.de)} · ${x.de.toFixed(1)}</span>
+      ${canEdit?`<button class="board-near-act" onclick="window.boardsNearUse('${where}',${i})">${act}</button>`:''}
+    </div>`).join('');
+  const none=sys==='TCX'
+    ?'No TCX (fabric) codes are loaded in the app yet — only ones in your Embellishments Color Library count. The full TCX book has not been added.'
+    :'No Pantone C codes are loaded.';
+  return`<div class="board-near-tabs">${tab('TCX','TCX · fabric')}${tab('C','Pantone C')}</div>
+    <div class="board-near-list">${rows||`<div class="board-near-none">${none}</div>`}</div>
+    <div class="board-near-foot">${_boardsPantoneCount(sys)} ${sys} codes in the app · the number is ΔE: under 1 looks identical, under 3 very close</div>`;
+}
+window.boardsNearUse=function(where,i){
+  const m=(_boardsNearLast[where]||[])[i];
+  if(!m||!_boardsCanEdit(_editBoard))return;
+  if(where==='sw'){
+    const p=_boardsSwPick;if(!p)return;
+    const c=_editCards.find(x=>x.id===p.id);if(!c)return;
+    const rgb=_boardsHexToRgb(m.hex);
+    p.hsv=_boardsRgbToHsv(rgb.r,rgb.g,rgb.b);
+    _boardsSwPickSync();                 // sets the hex, one undo entry
+    c.pantone=m.code;c.fmt='pantone';
+    _boardsSwatchPaint(c);_boardsSaveDebounced();
+    showToast(m.code+' applied');
+    return;
+  }
+  _boardsPickMakeSwatch(m.hex,m.code);
+};
+
+// ── Pick colour: click a picture, read the colour under the pointer ──
+let _boardsPickOn=null;          // the image card id in pick mode, or null
+let _boardsPickLast=null;        // {hex, cardId, rect}
+window.boardsPickMode=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!c.imageUrl)return;
+  _boardsPickOn=_boardsPickOn===id?null:id;
+  _boardsRenderCanvasAndWire();
+  if(_boardsPickOn)showToast('Click anywhere on the picture to read its colour');
+};
+// Where the picture is, drawn exactly as the card shows it: the same
+// _boardsImgGeom the render and the exporter read for a crop or a turn,
+// otherwise the card's own cover or contain fit.
+function _boardsDrawPicture(ctx,img,c,bx,by,bw,bh){
+  const nw=img.naturalWidth||img.width,nh=img.naturalHeight||img.height;
+  if(!nw||!nh)return;
+  const ebox=_boardsCardBodyBox(c);
+  const g=_boardsImgGeom(c,ebox.w,ebox.h);
+  if(g){
+    ctx.save();ctx.beginPath();ctx.rect(bx,by,bw,ebox.h);ctx.clip();
+    ctx.translate(bx+g.cx,by+g.cy);ctx.rotate(g.rot*Math.PI/180);
+    ctx.drawImage(img,-g.w/2,-g.h/2,g.w,g.h);
+    ctx.restore();return;
+  }
+  const ar=nw/nh,br=bw/(bh||1);
+  if(c.fit==='contain'){
+    const w=ar>br?bw:bh*ar,h=ar>br?bw/ar:bh;
+    ctx.drawImage(img,bx+(bw-w)/2,by+(bh-h)/2,w,h);return;
+  }
+  let sw,sh,sx,sy;
+  if(ar>br){sh=nh;sw=sh*br;sx=(nw-sw)/2;sy=0;}
+  else{sw=nw;sh=sw/br;sx=0;sy=(nh-sh)/2;}
+  ctx.drawImage(img,sx,sy,sw,sh,bx,by,bw,bh);
+}
+// Mean of the opaque pixels in an RGBA run — a 5×5 patch, because a
+// single pixel of a fabric photo is a thread, not the colour.
+function _boardsAvgPixels(d){
+  let r=0,g=0,b=0,n=0;
+  for(let i=0;i+3<d.length;i+=4){if(d[i+3]<128)continue;r+=d[i];g+=d[i+1];b+=d[i+2];n++;}
+  return n?_boardsRgbToHex(Math.round(r/n),Math.round(g/n),Math.round(b/n)):'';
+}
+function _boardsPickAt(e,id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='image'||!c.imageUrl)return;
+  const card=document.getElementById('board-card-'+id);
+  const body=card&&card.querySelector&&card.querySelector('.board-card-body');
+  const img=body&&body.querySelector&&body.querySelector('img');
+  if(!img||!(img.naturalWidth||img.width)){showToast('The picture has not loaded yet',true);return;}
+  const r=body.getBoundingClientRect(),box=_boardsCardBodyBox(c);
+  const k=r.width/(box.w||1);if(!(k>0))return;
+  const lx=(e.clientX-r.left)/k,ly=(e.clientY-r.top)/k;
+  if(lx<0||ly<0||lx>box.w||ly>box.h)return;
+  let hex='';
+  try{
+    const W=Math.max(1,Math.round(box.w)),H=Math.max(1,Math.round(box.h));
+    const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+    const ctx=cv.getContext('2d',{willReadFrequently:true});
+    _boardsDrawPicture(ctx,img,c,0,0,W,H);
+    const x=Math.max(0,Math.min(W-5,Math.round(lx)-2)),y=Math.max(0,Math.min(H-5,Math.round(ly)-2));
+    hex=_boardsAvgPixels(ctx.getImageData(x,y,Math.min(5,W),Math.min(5,H)).data);
+  }catch(err){
+    // A picture whose host sends no CORS header taints the canvas and the
+    // browser refuses to let us read it — say so rather than guess.
+    showToast('This picture cannot be read — its host does not allow it',true);return;
+  }
+  if(!hex){showToast('Nothing there to read — that spot is transparent',true);return;}
+  _boardsPickLast={hex,cardId:id,rect:{left:e.clientX,right:e.clientX+1,top:e.clientY,bottom:e.clientY+1,width:1,height:1}};
+  _boardsPickShow();
+}
+function _boardsPickShow(){
+  const L=_boardsPickLast;if(!L)return;
+  const c=_boardsHexToRgb(L.hex);
+  const html=`<div class="board-pick">
+      <div class="board-pick-head">
+        <span class="board-pick-chip" style="background:${L.hex}"></span>
+        <div><div class="board-pick-hex">${L.hex}</div><div class="board-pick-sub">RGB ${c.r}, ${c.g}, ${c.b} · ${_boardsEsc(_boardsSwatchName(L.hex))}</div></div>
+      </div>
+      ${_boardsNearHTML(L.hex,'pick')}
+      ${_boardsCanEdit(_editBoard)?`<button class="board-pick-exact" onclick="window.boardsPickExact()">Make a swatch of this exact colour</button>`:''}
+    </div>`;
+  _boardsOpenSheet('Colour from the picture',html,{anchor:{rect:L.rect},width:300});
+}
+window.boardsPickExact=function(){const L=_boardsPickLast;if(L)_boardsPickMakeSwatch(L.hex,'');};
+// A swatch beside the picture, stacked under any already made there.
+function _boardsPickMakeSwatch(hex,code){
+  const L=_boardsPickLast,src=L&&_editCards.find(x=>x.id===L.cardId);
+  const h=_boardsValidHex(hex);
+  if(!h||!_boardsCanEdit(_editBoard))return null;
+  _boardsPushUndo();
+  const n=_boardsNewCard('swatch');
+  n.hex=h;
+  if(code){n.pantone=code;n.fmt='pantone';}
+  if(src){
+    n.x=src.x+src.w+24;n.y=src.y;
+    while(_editCards.some(o=>o.id!==n.id&&o.x<n.x+n.w&&o.x+o.w>n.x&&o.y<n.y+n.h&&o.y+o.h>n.y))n.y+=n.h+16;
+  }else{const p=_boardsPlacementPoint();n.x=p.x;n.y=p.y;}
+  _editCards.push(n);
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  showToast((code||h)+' swatch added beside the picture');
+  return n;
 }

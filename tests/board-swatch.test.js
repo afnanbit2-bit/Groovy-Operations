@@ -103,7 +103,9 @@ module.exports=async function(){
   s.eq('a C code is read',key('485 c'),'485 C');
   s.eq('a Pantone prefix is ignored',key('Pantone 485 C'),'485 C');
   s.eq('a TCX code is read, dash optional',key('19 1664 tcx'),'19-1664 TCX');
-  s.eq('Cool Grey keeps its name',key('cool grey 10 c'),'COOL GREY 10 C');
+  // Pantone's books write GRAY; people type GREY. Both reach one key, or
+  // every Cool Gray code in a real book drops out (29 Sept 2026).
+  s.eq('Cool Grey and Cool Gray are one code',key('cool grey 10 c')+'|'+key('Cool Gray 10 C'),'COOL GRAY 10 C|COOL GRAY 10 C');
   s.eq('plain text is not a code',key('red'),'');
   const book=run(`JSON.stringify(_boardsPantoneBook())`);
   s.ok('the built-in C codes are in the book',/"485 C":"#DA291C"/.test(book),book);
