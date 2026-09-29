@@ -7726,7 +7726,7 @@ entry is flagged for the owners, who settle it. Emulator: **103/103**; the
 **Nobody has confirmed a warehouse payment or marked a bill collected on a
 real screen** — the sandbox cannot sign in.
 
-## Master Accounts — M1 built (28 Sept 2026) · on `main` (29 Sept), final rules still to publish, not yet seen
+## Master Accounts — M1 built (28 Sept 2026) · on `main` (29 Sept), rules reported published, Netlify build unconfirmed, not yet seen
 
 Afnan, 27 Sept 2026: *"I want accounts but just for me and ammar, in short
 master accounts … plan all the logics of build first so we have a good
@@ -7770,39 +7770,50 @@ Boards, v259). **`8573391` keeps Master Accounts owner-only against that QA
 work** (see "The gate"). The eleventh merge, `a436e8b`, took `11bd681`,
 main's docs-only record of the QA-read publish. **Then the branch went INTO
 `main`, on 29 Sept 2026, with Afnan's go-ahead** (relayed by the
-coordinator: "Yes, merge into main"): `main` was fast-forwarded to this
-branch's tip — the commit that carries this line — so `main` has no merge
-commit of its own for it.
+coordinator: "Yes, merge into main"): `main` was fast-forwarded to `a436e8b`
+first and then to `914b67a` — the docs commit that carried the first version
+of this line (verified: `git ls-remote origin refs/heads/main` read `914b67a…`
+at 16:17 UTC as relayed, and again at 16:24 UTC) — so `main` has no merge
+commit of its own for it. The docs commit that carries this text sits on top
+of `914b67a` and goes to `main` the same way.
 
 - **On `main` since 29 Sept 2026 — whether Netlify built it is
   unconfirmed.** Netlify builds `main`, and nothing in a session can see
   its deploy list (`*.netlify.app` is blocked here, and this repo carries
   no Netlify commit statuses); a skipped deploy looks exactly like a stale
   cache (see "A DEPLOY CAN BE SILENTLY SKIPPED" near the top of this
-  file). **Only Afnan reading the Netlify deploy list confirms it.**
+  file). **Only Afnan reading the Netlify deploy list confirms it.** `main`
+  was `914b67a` when checked (`git ls-remote`, 16:24 UTC), and GitHub
+  Actions `tests` on `main` completed with success for both `a436e8b` (run
+  36595973484) and `914b67a` (run 36596441345) — read from the workflow-runs
+  API at about 16:25 UTC; that is CI, not Netlify.
   `CACHE_VERSION` is v259, past the branch's last version before the QA
   merges (v257, `69f5c72`) and `main`'s (v256, `1b56a46`).
-- **The rules are the one open item that stops it working, and what the
-  Console holds is NOT known.** Two publishes were reported on 29 Sept
-  2026; neither can be checked from a session, and **neither is the file
-  now on `main`**. **Afnan's** ("rules published"): the merged file at
-  `dcfef5c` — LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines: main's
-  rules plus the Master Accounts block with M1.6a and V3, and none of main's
-  QA-read rules. **Ammar's**, recorded on `main` (`11bd681`, that evening):
-  main's own file at `08b530a` — LF md5
-  `7d858a05ce8ecf6aae585bbd79892960`, 1,142 lines, with the QA-read rules
-  and **no `ma_*` block** (verified: 0 `match /ma_` in it). If Ammar's is
-  the live one, **every Master Accounts read and write is denied — to
-  Afnan and Ammar too**: it fails closed, each page shows *"Could not read
-  … — republish firestore.rules with the Master Accounts block"*, and
-  nothing is lost, because nothing could be written. Which is live, only
-  the Console's rules history knows; the order is not recorded
-  (hypothesis, unverified: Ammar's was later — his file was committed at
-  11:15 UTC and, with the uid pin, at 13:57 UTC; Afnan's has existed since
-  09:40 UTC). **The file to publish** is the one on `main` now: LF md5
-  `9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines — main's file plus the
-  384-line Master Accounts block, none removed (verified with `diff`). See
-  "Firestore rules — published" before anything else.
+- **The rules: a third publish was REPORTED on 29 Sept 2026 (about 16:18
+  UTC), and what the Console holds is still NOT known.** Afnan wrote "rules
+  updated record", taken to mean he published the rules; **reported, not
+  checkable from a session, and his message did not name the file.** The
+  file he had been sent ten minutes before (as relayed) is the FINAL one, on
+  `main` now: LF md5 `9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines —
+  main's file plus the 384-line Master Accounts block, none removed
+  (verified: `git diff --numstat 11bd681 914b67a -- firestore.rules` reads
+  `384 0`). **Hypothesis, unverified: that is what he pasted** — if so, the
+  `ma_*` rules and main's QA-read rules are both live. Two publishes were
+  reported earlier that day, and **neither was that file**: **Afnan's**
+  ("rules published"), the merged file at `dcfef5c` — LF md5
+  `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines: main's rules plus the
+  Master Accounts block with M1.6a and V3, and none of main's QA-read rules;
+  **Ammar's**, recorded on `main` (`11bd681`, that evening): main's own file
+  at `08b530a` — LF md5 `7d858a05ce8ecf6aae585bbd79892960`, 1,142 lines, with
+  the QA-read rules and **no `ma_*` block** (verified: 0 `match /ma_` in
+  it). If the Console still held Ammar's, **every Master Accounts read and
+  write is denied — to Afnan and Ammar too**: it fails closed, each page
+  shows *"Could not read … — republish firestore.rules with the Master
+  Accounts block"*, and nothing is lost, because nothing could be written.
+  **Which file is live, only the Console's rules history knows.** The test
+  from Afnan's side is a Master Accounts page that loads; it needs a build
+  containing Master Accounts to be served, which is the unconfirmed Netlify
+  deploy above. See "Firestore rules — published" before anything else.
 - **Master Accounts stays owner-only, even from the automated QA account
   (`8573391`, 29 Sept 2026).** Main's QA work made every read rule admit
   the QA account `claude@groovy.op` (`isQaRead()`); the 15 `ma_*`
@@ -8581,20 +8592,23 @@ reproductions — this summary is the record.
 
 ### Set-up only a human can do
 
-One of these is done — the merge into `main`, with Afnan's go-ahead (29
-Sept 2026) — and nothing else is done or checked as of that day; in
-particular the FINAL rules are not published (below). The sandbox cannot
-reach Google Cloud, Netlify's settings, Cloudinary or the Firebase Console,
-so each is Afnan's (the full steps are handed to him in chat, not kept
-here).
+One of these is done and verified — the merge into `main`, with Afnan's
+go-ahead (29 Sept 2026; `main` read from git as `914b67a`) — and one thing
+is REPORTED done by Afnan, not checkable: the rules publish (the two rules
+items below, left unticked — a report is not a check). Nothing else is done
+or checked as of that day. The sandbox cannot reach Google Cloud, Netlify's
+settings, Cloudinary or the Firebase Console, so each is Afnan's (the full
+steps are handed to him in chat, not kept here).
 
-- [ ] **Which rules are live** — Firebase Console → Firestore → Rules
-  history: two publishes were reported on 29 Sept (Afnan's merged file
-  `acc9a3a1…`, and, in `main`'s record, Ammar's `7d858a05…` — no `ma_*`
-  block) and the order is not recorded; `main`'s record adds that the file
-  live before Ammar's paste matched no committed version. *Only the Console
-  knows. A Master Accounts page that says "could not read … republish"
-  means the Master Accounts block is not live.*
+- [ ] **Which rules are live** — **reported done by Afnan, not checkable.**
+  He wrote "rules updated" at about 16:18 UTC on 29 Sept 2026 and did not
+  name the file (hypothesis, unverified: the FINAL `9d7ec162…`). Two
+  publishes had been reported earlier that day — Afnan's merged file
+  `acc9a3a1…` and, in `main`'s record, Ammar's `7d858a05…` (no `ma_*`
+  block) — and `main`'s record adds that the file live before Ammar's paste
+  matched no committed version. *Only the Console knows (Firebase Console →
+  Firestore → Rules history). A Master Accounts page that says "could not
+  read … republish" means the Master Accounts block is not live.*
 - [ ] **The backup bucket** (`gs://…`, same location as Firestore, public
   access prevention on, delete after 90 days) — *unverified advice, from
   the plan.*
@@ -8614,26 +8628,31 @@ here).
 - [ ] **The Cloudinary plan**: its upload cap (the app allows 25 MB), and
   whether it allows authenticated uploads and the download API —
   *unverifiable from here.*
-- [ ] **Publish the FINAL `firestore.rules`** — the file on `main` now: LF
-  md5 `9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines (`main`'s file with the
-  QA-read rules and the uid pin, plus the Master Accounts block with M1.6a
-  and V3). **From the repo file, not a local copy** (`main`'s record: the
-  file live before Ammar's paste came from a local file on Afnan's PC and
-  matched no committed version). Neither reported paste is this file:
-  Afnan's `acc9a3a1…` (1,502 lines) lacks the QA-read rules, and Ammar's
-  `7d858a05…` (1,142 lines) lacks the Master Accounts block — if Ammar's is
-  the live one, Master Accounts is denied for everyone. `main`'s record
-  names the Firebase CLI as a publish route (`firebase deploy --only
-  firestore:rules`, from Afnan's machine); it deploys the checkout it runs
-  in, so from `main` at or after the merge it carries Master Accounts, and
-  from `main` before it, it would take the block out. `main`'s own entry
-  (in "Firestore rules — published", just below the newest one) records the
-  backup and the live probe.
+- [ ] **Publish the FINAL `firestore.rules`** — **reported done by Afnan
+  (about 16:18 UTC, 29 Sept 2026), not checkable** — the file on `main` now:
+  LF md5 `9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines (`main`'s file with
+  the QA-read rules and the uid pin, plus the Master Accounts block with
+  M1.6a and V3); that it is what he pasted is a hypothesis, unverified.
+  **From the repo file, not a local copy** (`main`'s record: the file live
+  before Ammar's paste came from a local file on Afnan's PC and matched no
+  committed version). Neither of the two earlier reported pastes was this
+  file: Afnan's `acc9a3a1…` (1,502 lines) lacks the QA-read rules, and
+  Ammar's `7d858a05…` (1,142 lines) lacks the Master Accounts block — if
+  Ammar's were still the live one, Master Accounts is denied for everyone.
+  `main`'s record names the Firebase CLI as a publish route (`firebase
+  deploy --only firestore:rules`, from Afnan's machine); it deploys the
+  checkout it runs in, so from `main` at or after the merge it carries
+  Master Accounts, and from `main` before it, it would take the block out.
+  `main`'s own entry (in "Firestore rules — published", just below the
+  FINAL-file entry) records the backup and the live probe.
 - [x] **Merge into `main`** — **done on 29 Sept 2026, with Afnan's
-  go-ahead**: `main` was fast-forwarded to this branch's tip, after the
-  eleventh merge of `main` into the branch (`a436e8b`). **Whether Netlify
-  built it is unconfirmed** until Afnan reads the Netlify deploy list — a
-  skipped deploy looks exactly like a stale cache.
+  go-ahead** (verified: `git ls-remote origin refs/heads/main` read
+  `914b67a…` at 16:24 UTC): `main` was fast-forwarded to `a436e8b` and then
+  to `914b67a` (the branch's tip then), after the eleventh merge of `main`
+  into the branch (`a436e8b`). GitHub Actions `tests` on `main` completed
+  with success for both (read at about 16:25 UTC). **Whether Netlify built
+  it is unconfirmed** until Afnan reads the Netlify deploy list — a skipped
+  deploy looks exactly like a stale cache.
 - [ ] **Read the Netlify deploy list for that merge** — was it built, or
   skipped (the 21 Sept credit-usage skip looked exactly like a stale
   cache)? *Only Afnan can see it: `*.netlify.app` is blocked here and the
@@ -11504,10 +11523,73 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
-**REPUBLISH OUTSTANDING (29 Sept 2026, evening) — the FINAL file, the one
-now on `main`, is not what the Console reportedly holds, and Master Accounts
-may be denied there.** Read this entry, then `main`'s own entry directly
-below it, which this one does not replace.
+**No republish outstanding as of 29 Sept 2026 (~16:18 UTC), if he pasted the
+final file — reported by Afnan, not checkable.** Afnan wrote "rules updated
+record" in-session at about 16:18 UTC (as relayed to this session), taken to
+mean that he published the Firestore rules in the Firebase Console and wants
+it recorded. **That is a report and nothing more: nobody in a session can
+read the Console**, so nothing below is checked against it — only its rules
+history can say what it holds. His message did not name the file, or say how
+he published it. `git log --oneline -1 -- firestore.rules` is `ef7eabb` (the
+ninth merge of `main` into the Master Accounts branch, v258).
+
+1. **The file he had been sent.** Ten minutes earlier (16:10 UTC, as relayed)
+   he was sent the complete FINAL file: `firestore.rules` at `914b67a`
+   (byte-identical at `a436e8b`) — LF md5 `9d7ec162b9812b5358d2ce07a400824a`,
+   1,526 lines, 15 `match /ma_` blocks (verified this session with `git show
+   914b67a:firestore.rules | md5sum`, `wc -l` and `grep -c`); against `main`'s
+   rules at `11bd681` it adds 384 lines and removes none (`git diff --numstat
+   11bd681 914b67a -- firestore.rules` reads `384 0`). **That it is THIS file
+   he pasted is a hypothesis, unverified.**
+2. **The three publishes reported on 29 Sept, in the order reported** (all
+   reported, none checkable): (1) Afnan's merged Master Accounts file
+   `acc9a3a1…` (LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines, no
+   `isQaRead()`); (2) Ammar's — `main`'s own file `7d858a05…` (LF md5
+   `7d858a05ce8ecf6aae585bbd79892960`, 1,142 lines: the QA-read rules and no
+   `ma_*` block), recorded in `main`'s entry below (`11bd681`); (3) this one,
+   Afnan's "rules updated". The entry below could not order (1) and (2) from
+   the repo; the Console's rules history can.
+3. **What it means.** *Hypothesis, unverified:* if he pasted the final file,
+   the `ma_*` rules are live (Master Accounts loads for Afnan and Ammar) and
+   so are `main`'s QA-read rules (the file carries `isQaRead()` — 93 lines,
+   verified), and nothing is outstanding. If it was another file — a local
+   copy, or one of the two earlier — the Console may still hold Ammar's (no
+   `ma_*` block: Master Accounts denied to everyone, failing closed) or
+   Afnan's earlier merged one (no `isQaRead()`); the entry below says what
+   each state refuses.
+4. **The test that can show it worked, from Afnan's side:** a Master Accounts
+   page loads for him or Ammar instead of *"Could not read … — republish
+   firestore.rules with the Master Accounts block"*. It needs a build with
+   Master Accounts in it to be served, which is the Netlify deploy in 5. A
+   live QA probe (`tools/qa-probe.js --live`, which needs the QA account's
+   password) has NOT been run — and **it has no `ma_` line** (verified:
+   `grep -n "ma_" tools/qa-probe.js` finds nothing), so it could not show
+   that the QA account stays refused on `ma_*`; only the emulator holds that
+   (`tests/rules-emulator-qa.js` part 1b). Nothing checks it live.
+5. **`main` and the deploy.** `main` was
+   `914b67a22ecf6d59b9d9c73e68f4cd445d36c3e9` when this was written
+   (verified: `git ls-remote origin refs/heads/main`, 16:17 UTC as relayed
+   and again at 16:24 UTC here; it was fast-forwarded to `a436e8b` first, then
+   to `914b67a`). GitHub Actions `tests` on `main`, read from the check-runs
+   and workflow-runs APIs at about 16:25 UTC: `a436e8b` (run 36595973484) and
+   `914b67a` (run 36596441345) both completed with conclusion success
+   (16:12–16:18 and 16:16–16:22 UTC). That is CI. **Whether Netlify built the
+   deploy is UNCONFIRMED:** nobody in a session can see its deploy list
+   (`*.netlify.app` is blocked here, and this repo carries no Netlify commit
+   statuses); only Afnan reading it can say.
+
+This supersedes the "REPUBLISH OUTSTANDING (29 Sept 2026, evening) — the FINAL
+file" entry directly below **if** the hypothesis in 1 holds; that entry stays
+for its detail, and `main`'s own entry below it is unchanged.
+
+**SUPERSEDED 29 Sept 2026 (~16:18 UTC) by the entry above, which records
+Afnan's report that he then published the rules (file not named — hypothesis,
+unverified: the FINAL file this entry describes; not checkable). Kept for its
+detail: what the final file adds, and what each Console state refuses. Was: REPUBLISH OUTSTANDING (29
+Sept 2026, evening) — the FINAL file, the one now on `main`, is not what the
+Console reportedly holds, and Master Accounts may be denied there.** Read this
+entry, then `main`'s own entry directly below it, which this one does not
+replace.
 
 1. **The file to publish** is `firestore.rules` on `main` (this branch's
    tip): LF `md5 9d7ec162b9812b5358d2ce07a400824a`, 1,526 lines, 15 `match
@@ -11667,7 +11749,7 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
-**SUPERSEDED 29 Sept 2026 (evening) by the entry at the top — its file
+**SUPERSEDED 29 Sept 2026 (evening) by the FINAL-file entry near the top — its file
 (`acc9a3a1…`) was reported published by Afnan, then `main`'s own file was
 reported published after it, and what to publish now is the FINAL file.
 Was: REPUBLISH OUTSTANDING (28 Sept 2026, late; still open 29 Sept) —
@@ -11732,7 +11814,7 @@ An older branch file reopens the Mood Boards hole and lacks the QA fences;
 entry named, when it was written, was `firestore.rules` at the branch's tip
 then: LF `md5 acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines — the file
 Afnan reported publishing on 29 Sept, and no longer the file to publish
-(the entry at the top: the final file adds `main`'s QA-read rules)** —
+(the FINAL-file entry near the top: the final file adds `main`'s QA-read rules)** —
 main's 1,118 at
 `e1f84bf` plus the Master Accounts block with M1.6a and V3. It came from
 the fifth merge of `origin/main` into the branch, `1ae7e71` (29 Sept), which
@@ -11744,7 +11826,7 @@ the docs commits, the F25–F27 follow-up, or the sixth, seventh and eighth
 merges (`5a36efe`, `672cf4f`, `69f5c72`): `bac4848`'s, `d1af808`'s and
 `5996999`'s rules equal `e1f84bf`'s. **The ninth merge (`ef7eabb`, `main` at
 `08b530a`) changed it: main's QA-read work, and the file is now `9d7ec162…`
-(the entry at the top).** The earlier
+(the FINAL-file entry near the top).** The earlier
 merged file (`1dc7fa9`, LF `md5 8cf1c6813fe0becddd620161ba0277f4`, 1,346
 lines) was never the one to publish, and is superseded. Main's record names
 the Firebase CLI as the publish route now: it deploys the checkout it runs

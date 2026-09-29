@@ -2,9 +2,11 @@
 
 > Status (29 Sept 2026): **M1 BUILT, and merged into `main` from the branch
 > `claude/master-accounts-planning-udoiw9` (Afnan's go-ahead, 29 Sept 2026;
-> whether Netlify built it is unconfirmed until its deploy list is read); its
-> FINAL rules are not yet published — two other publishes were reported that
-> day and the Console's state is unknown; nobody has seen it on a real
+> `main` read from git as `914b67a`; whether Netlify built it is unconfirmed
+> until its deploy list is read); Afnan REPORTED publishing the rules at
+> about 16:18 UTC that day ("rules updated" — he did not name the file;
+> hypothesis, unverified: the FINAL one), and what the Console holds cannot
+> be checked from a session; nobody has seen it on a real
 > screen.** §21a says what M1 delivered against §21, what
 > it changed in this plan, and what is still open. Everything from §22 on is
 > still the plan. Afnan, 27 Sept 2026: *"I want
@@ -1258,13 +1260,18 @@ when one is recorded.", and Record it opens the Opening balance form.
 
 The backup bucket and the service account's roles on it, PITR, three
 Netlify env vars and a redeploy, a check of the Cloudinary plan's upload
-cap, a publish of the FINAL `firestore.rules`, and a
+cap, a publish of the FINAL `firestore.rules` (reported done, below), and a
 first look on a real screen — each listed, with what is verified and what
 is not, in CLAUDE.md "Master Accounts" → "Set-up only a human can do"; the
 full steps are handed to Afnan in chat. The merge into `main` is done
-(29 Sept 2026, with his go-ahead; the Netlify deploy is unconfirmed). The
-publish is NOT: two publishes were reported that day, neither is the final
-file, and the Console's state is unknown.
+(29 Sept 2026, with his go-ahead; `main` read from git as `914b67a`; the
+Netlify deploy is unconfirmed). The publish is REPORTED done, not verified:
+Afnan wrote "rules updated" at about 16:18 UTC that day and did not name the
+file (hypothesis, unverified: the final one, LF md5 `9d7ec162…`); two
+earlier publishes had been reported that day, neither of them that file,
+and only the Console's rules history says which is live. A Master Accounts
+page that loads, instead of "could not read … republish", is the test from
+his side.
 
 ## 22. Tests
 
