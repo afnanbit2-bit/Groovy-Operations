@@ -137,8 +137,9 @@ async function readCapped(res) {
   return Buffer.concat(chunks).slice(0, MAX_BYTES).toString("utf8");
 }
 
-async function fetchHtml(startUrl, deps) {
+async function fetchHtml(startUrl, deps, opts) {
   const d = deps || {};
+  const wantJson = !!(opts && opts.json);
   const doFetch = d.fetch || fetch;
   let url = startUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
@@ -150,7 +151,7 @@ async function fetchHtml(startUrl, deps) {
       r = await doFetch(u.href, {
         redirect: "manual",
         signal: ac.signal,
-        headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml", "Accept-Language": "en" },
+        headers: { "User-Agent": UA, Accept: wantJson ? "application/json" : "text/html,application/xhtml+xml", "Accept-Language": "en" },
       });
     } catch (e) {
       throw new Error(e && e.name === "AbortError" ? "That site took too long to answer." : "Could not reach that site.");
@@ -166,6 +167,12 @@ async function fetchHtml(startUrl, deps) {
     }
     if (!r.ok) throw new Error("That site answered " + r.status + ".");
     const ct = String(r.headers.get("content-type") || "").toLowerCase();
+    // An oEmbed answer is JSON, read under the same cap. Anything else asked
+    // for as JSON is not read at all.
+    if (wantJson) {
+      if (!/json|javascript/.test(ct)) throw new Error("That site did not answer with JSON.");
+      return { finalUrl: u.href, html: await readCapped(r), contentType: ct };
+    }
     // A PDF or an image is a perfectly good link; it just has no og: tags.
     if (ct && !/text\/html|application\/xhtml\+xml/.test(ct)) return { finalUrl: u.href, html: "", contentType: ct };
     return { finalUrl: u.href, html: await readCapped(r), contentType: ct };
@@ -235,6 +242,71 @@ function extract(html, finalUrl) {
   };
 }
 
+/* ── oEmbed, when a page carries no preview picture (29 Sept 2026) ──────
+   Some sites (Pinterest is the one reported) send an automated fetch a page
+   with no og: tags. oEmbed is the route those sites publish for exactly
+   this: a JSON answer carrying a title and a thumbnail. Tried ONLY when the
+   page gave no picture, and every hop goes through fetchHtml — so the
+   endpoint's host is resolved and checked like any other, redirects
+   included. The endpoint comes from:
+     1. a known provider, by the page's own host (Pinterest pins), or
+     2. the page's own <link rel="alternate" type="application/json+oembed">.
+   The Pinterest endpoint is written from its documented form and has NOT
+   been exercised from the build sandbox, which cannot reach pinterest.com. */
+function oembedEndpoint(pageUrl, html) {
+  let u;
+  try { u = new URL(pageUrl); } catch { return ""; }
+  const host = u.hostname.toLowerCase();
+  if (/(^|\.)pinterest\.[a-z.]+$/.test(host) && /^\/pin\//.test(u.pathname)) {
+    return "https://www.pinterest.com/oembed.json?url=" + encodeURIComponent("https://www.pinterest.com" + u.pathname);
+  }
+  const src = String(html || "");
+  const re = /<link\b[^>]*>/gi;
+  let m;
+  while ((m = re.exec(src))) {
+    const tag = m[0];
+    if (!/type\s*=\s*["']application\/json\+oembed["']/i.test(tag)) continue;
+    const h = /href\s*=\s*"([^"]*)"/i.exec(tag) || /href\s*=\s*'([^']*)'/i.exec(tag);
+    if (!h) continue;
+    try {
+      const e = new URL(decodeEntities(h[1]), pageUrl);
+      if (e.protocol === "http:" || e.protocol === "https:") return e.href.slice(0, MAX_URL);
+    } catch { /* not a URL */ }
+  }
+  return "";
+}
+/** What an oEmbed answer adds to a preview: a picture, and a title only if the page had none. Pure. */
+function fromOembed(obj, base, meta) {
+  const o = obj && typeof obj === "object" ? obj : {};
+  const out = Object.assign({}, meta);
+  const pic = safeImageUrl(typeof o.thumbnail_url === "string" ? o.thumbnail_url
+    : (o.type === "photo" && typeof o.url === "string" ? o.url : ""), base);
+  if (pic) out.image = pic;
+  const t = typeof o.title === "string" ? o.title.trim() : "";
+  // A bot-facing page often titles itself just "Pinterest" — the provider's
+  // own name is no more a title than the host is.
+  const pn = typeof o.provider_name === "string" ? o.provider_name.trim().toLowerCase() : "";
+  const cur = String(out.title || "").trim().toLowerCase();
+  if (t && (!cur || cur === String(out.host || "").toLowerCase() || (pn && cur === pn))) out.title = t.slice(0, MAX_TITLE);
+  if (typeof o.provider_name === "string" && o.provider_name.trim() && out.siteName === out.host) out.siteName = o.provider_name.trim().slice(0, MAX_TITLE);
+  return out;
+}
+/** The whole preview for one URL: the page, then oEmbed if it gave no picture. Never throws for oEmbed. */
+async function preview(url, deps) {
+  const got = await fetchHtml(String(url || ""), deps);
+  let meta = extract(got.html, got.finalUrl);
+  if (!meta.image) {
+    const ep = oembedEndpoint(got.finalUrl, got.html);
+    if (ep) {
+      try {
+        const j = await fetchHtml(ep, deps, { json: true });
+        meta = fromOembed(JSON.parse(j.html), got.finalUrl, meta);
+      } catch { /* the page's own answer stands */ }
+    }
+  }
+  return meta;
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod !== "POST") return json(405, { error: "POST only" });
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) return json(500, { error: "Missing env var: FIREBASE_SERVICE_ACCOUNT" });
@@ -251,8 +323,7 @@ exports.handler = async function (event) {
   catch { return json(401, { error: "Could not verify who you are — sign in again and retry." }); }
 
   try {
-    const got = await fetchHtml(String(body.url || ""));
-    return json(200, Object.assign({ ok: true }, extract(got.html, got.finalUrl)));
+    return json(200, Object.assign({ ok: true }, await preview(String(body.url || ""))));
   } catch (e) {
     // A site that will not be read is a normal outcome, not a server fault:
     // the card still exists, it just shows the bare URL.
@@ -262,5 +333,5 @@ exports.handler = async function (event) {
 
 Object.assign(exports, {
   isBlockedIp, assertSafeUrl, decodeEntities, metaContent, safeImageUrl, extract, fetchHtml,
-  MAX_BYTES, MAX_REDIRECTS, BLOCKED,
+  MAX_BYTES, MAX_REDIRECTS, BLOCKED, oembedEndpoint, fromOembed, preview,
 });

@@ -12302,6 +12302,21 @@ function _boardsTrayFace(u){
 const _BOARDS_TRAY_PREV_ROWS=4;   // measured: four rows and a two-line title fit 160px
 function _boardsTrayPreview(u,i){
   if(!u||u._uploading)return null;
+  // A link whose page gave no picture reads as the link it is — site,
+  // title, address — rather than a grey LINK box (Afnan, 29 Sept: a
+  // Pinterest link sat in Unsorted as just the word).
+  if(u.kind==='link'&&!u.linkImage&&u.linkUrl){
+    const lt=[],lput=(cls,v)=>{const k=lt.length;lt.push(String(v==null?'':v));return`<span class="${cls}" id="board-tray-p-${i}-${k}"></span>`;};
+    const host=_boardsLinkHost(u.linkUrl);
+    const title=String(u.linkTitle||'').trim();
+    const html=`<div class="board-tray-prev board-tray-prev-link">
+      ${lput('board-tray-prev-site',u._fetching?'Loading preview…':(String(u.linkSite||'').trim()||host))}
+      ${title&&title!==host?lput('board-tray-prev-ltitle',title):''}
+      ${String(u.text||'').trim()?lput('board-tray-prev-ldesc',String(u.text).trim()):''}
+      ${lput('board-tray-prev-lurl',String(u.linkUrl).replace(/^https?:\/\//i,''))}
+    </div>`;
+    return{html,texts:lt};
+  }
   let root=Array.isArray(u.cards)&&u.cards[0];
   if(!root&&u.kind==='text'&&u.text)root={type:'text',text:u.text};
   if(!root)return null;
@@ -12827,6 +12842,10 @@ window.boardsTrayDragStart=function(e,i){
     _boardsSetSelection([made.cards[0].id]);
     _boardsRenderCanvasAndWire();
     _boardsSaveDebounced();
+    // A link that came out with no picture asks again — the page may have
+    // one now, or the server may reach it another way (oEmbed). One that
+    // already carries its picture is never fetched a second time.
+    made.cards.forEach(c=>{if(c.type==='link'&&c.linkUrl&&!c.linkImage)_boardsLinkHydrate(c.id);});
   }
   host.addEventListener('pointermove',move);
   host.addEventListener('pointerup',up);

@@ -87,5 +87,41 @@ module.exports=async function(){
   s.section('the stash name reads a to-do\'s first task');
   s.eq('not the empty old field',run(`_boardsStashName({type:'todo',items:[{text:'cut fabric'}]},1)`),'cut fabric');
 
+  s.section('a link with no picture shows the link, not a grey box');
+  {
+    const p=P({id:'u',kind:'link',linkUrl:'https://www.pinterest.com/pin/123/',linkTitle:'Wide leg denim',linkSite:'Pinterest',text:'A pin'});
+    s.ok('it is a link preview',!!p&&/board-tray-prev-link/.test(p.html));
+    s.ok('site, title, description and address are in the text slots',
+      p.texts.join('|')==='Pinterest|Wide leg denim|A pin|www.pinterest.com/pin/123/',p.texts.join('|'));
+    s.ok('none of it is in the markup',!/Wide leg|Pinterest/.test(p.html));
+    const bare=P({id:'u',kind:'link',linkUrl:'https://pinterest.com/pin/9/',linkTitle:'pinterest.com'});
+    s.eq('a title that is only the host is not repeated',bare.texts.join('|'),'pinterest.com|pinterest.com/pin/9/');
+    const busy=P({id:'u',kind:'link',linkUrl:'https://a.test/',_fetching:true});
+    s.eq('while it fetches it says so',busy.texts[0],'Loading preview…');
+    s.eq('a link WITH a picture keeps its picture',P({id:'u',kind:'link',linkUrl:'https://a.test/',linkImage:'https://res.cloudinary.com/x/a.jpg'}),null);
+    const evil=P({id:'u',kind:'link',linkUrl:'https://a.test/',linkTitle:'<img src=x onerror=alert(1)>'});
+    s.ok('a hostile title never reaches the markup',!/onerror/.test(evil.html));
+  }
+
+  s.section('a link dragged out with no picture asks again');
+  {
+    run(`window.__hyd=[];_boardsLinkHydrate=function(id){window.__hyd.push(id);};
+      _editCards=[];_editConnectors=[];_boardsSelection=new Set();_boardsTrayOpen=true;
+      _editUnsorted=[{id:'a',kind:'link',linkUrl:'https://www.pinterest.com/pin/1/',linkTitle:'pinterest.com'},
+                     {id:'b',kind:'link',linkUrl:'https://b.test/',linkTitle:'B',linkImage:'https://res.cloudinary.com/x/b.jpg'}];
+      document.getElementById('board-stage').getBoundingClientRect=function(){return{left:0,top:0,right:1200,bottom:800};};`);
+    const drag=i=>{
+      run(`window.boardsTrayDragStart({currentTarget:document.getElementById('tray-row'),clientX:0,clientY:0,pointerId:1,stopPropagation(){}},${i})`);
+      app.fire('tray-row','pointermove',{clientX:60,clientY:60,pointerId:1});
+      app.fire('tray-row','pointerup',{clientX:400,clientY:300,pointerId:1});
+    };
+    drag(0);
+    s.eq('the pictureless link is fetched again',run(`window.__hyd.length`),1);
+    s.eq('for the card that landed',run(`window.__hyd[0]===_editCards[0].id`),true);
+    drag(0);
+    s.eq('one that brought its picture is not',run(`window.__hyd.length`),1);
+    s.eq('and it kept that picture',run(`_editCards[1].linkImage`),'https://res.cloudinary.com/x/b.jpg');
+  }
+
   return s;
 };
