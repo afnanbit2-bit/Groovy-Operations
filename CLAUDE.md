@@ -7595,34 +7595,48 @@ confirmations held at the rules · `20260a0` M1.6b the screens, the idle
 re-lock and the device cache · `7735410` M1.6c the server tightening
 (attachments fail closed — decision 5; cherry-picked from the server
 round's `5291a14`, which was built on `704056b`). After M1.6b, `main` was
-merged INTO the branch four times — `1dc7fa9` (`origin/main` at `1f6327d`,
+merged INTO the branch five times — `1dc7fa9` (`origin/main` at `1f6327d`,
 `CACHE_VERSION` v247), `feca515` (`4c8bfee`, v249), `be22046` (`3333584`,
-v251) and `d159f83` (`dc0e609`, v252); between the second and third,
-`efb75ce` named the nightly backup in the audit trail (v250), and after
-M1.6c, `8e5fe0b` is its client half (v253): Settings says when attachments
-are off.
+v251), `d159f83` (`dc0e609`, v252) and `1ae7e71` (`e1f84bf`, v254);
+between the second and third, `efb75ce` named the nightly backup in the
+audit trail (v250), and after M1.6c, `8e5fe0b` is its client half (v253):
+Settings says when attachments are off. **Then the verification round's two
+fixes (29 Sept), built side by side on `bef4dc4` and combined here:**
+`0a0df4b` (security — V1, V2, V3, V5, V7, V8, V9, V11; its own title calls
+it "M1.6c (security)", which is not the server round above) and `44166f3`
+(money and screens — V4, V6, V10 and the visual QA's F01–F24;
+cherry-picked from `8f1a1df`, author's message and trailers kept). What each
+changed, and how it was checked, is under "The review round" below.
 
 - **Not deployed.** Netlify builds `main`, and the branch has not been
-  merged into it: `git merge-base --is-ancestor 8e5fe0b origin/main` is
-  false (checked 29 Sept). The branch is at `CACHE_VERSION` v253.
+  merged into it: `git merge-base --is-ancestor 1ae7e71 origin/main` is
+  false (checked 29 Sept). The branch is at `CACHE_VERSION` v254.
 - **The rules decide whether it works at all, and the two 28 Sept pastes
   collide** — see "Firestore rules — published" before anything else.
   Before the merge no branch's `firestore.rules` carried both the Master
   Accounts blocks and main's Mood Boards sharing roles, so the Console holds
-  one or the other. The merged file on this branch carries both (15
-  `match /ma_` blocks and `boardSharingUntouched()`, verified), but it is
-  **not the file to publish yet**: the fixes for the verification round
-  below change it.
-- **The verification round found two blockers in M1.6b's sign-out work**
-  (V1, V2 below). They are being fixed; until they land the branch is not
-  ready to merge into `main`. [[phase2: V1–V11 and QA F01–F19 — what the
-  fixes changed, their commits, and what is still open]]
+  one or the other. **The file to publish is the one at this branch's tip**
+  — LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines: main's rules at
+  `e1f84bf` (the Mood Boards sharing roles AND main's own outstanding QA
+  identity, `claude@groovy.op`) plus the Master Accounts block with M1.6a
+  and V3. Verified: 15 `match /ma_` blocks, `boardSharingUntouched()` and
+  `isQa()` all in it.
+- **The verification round's two blockers (V1, V2) are fixed** (`0a0df4b`),
+  so they no longer hold the merge into `main` back; that merge is still a
+  Claude session's job, and only with Afnan's go-ahead. What stays open is
+  listed at the end of "The review round".
+- **Afnan's answers to the three QA judgement calls (29 Sept 2026):** F25 —
+  keep the "No opening balance yet" alert, no change; F26 — fold the Record
+  picker's tiles for the kinds that arrive in later milestones; F27 — the
+  slide-over rail up to about 1440px wide. **F26 and F27 are being built in
+  a follow-up commit and are NOT in this push** — nothing on the branch
+  folds the tiles or widens the slide-over yet.
 - **Nobody has opened a page, a PDF or a share link on a real screen.**
   The sandbox cannot sign in; every visual claim below is headless Chromium.
 
 ### The files
 
-- **`js/ma-core.js`** (2,210 lines at `efb75ce`) — **PURE**: no DOM, no
+- **`js/ma-core.js`** (2,304 lines at `1ae7e71`) — **PURE**: no DOM, no
   Firestore, no session, no clock unless a caller passes `today`; a guarded
   `module.exports` at the foot, which is how the functions and the node
   tests `require` it. Every decision the books make lives here once: both
@@ -7640,11 +7654,16 @@ are off.
   the rule-based 30-day calendar and "needs attention" lines, the
   Unlabelled and review queues, FIFO allocation (unused until M3),
   attachments as references, WhatsApp and share helpers, the PDF data
-  builders (`maPdf*Data`) and Download the books.
-- **`js/master-accounts.js`** (2,822 lines at `8e5fe0b`) — the pages. It
+  builders (`maPdf*Data`) and Download the books. Since `44166f3` it also
+  holds the ONE cash rule every total reads (`maHolderCash`, V4), the check
+  that an edit raised a new flag (`maNewFlagRules`, V6), a period in words
+  (`maPeriodLabel`) and a rate grouped the lakh way (`maRsRate`).
+- **`js/master-accounts.js`** (3,113 lines at `1ae7e71`) — the pages. It
   reads Firestore, paints, and writes exactly what the core built: the
   writer, the loader, the re-lock, files, links, the owners' copy and the
-  device cache at sign-out.
+  device cache at sign-out (which since `0a0df4b` reads Firestore's own
+  queue before it deletes anything, and tells this person's other tabs —
+  decision 12).
 - **`netlify/lib/ma-server.js`** — code the three functions share, kept
   OUTSIDE `netlify/functions` so it is bundled rather than deployed as an
   endpoint (the postex-core precedent): the owner check (a verified ID
@@ -7700,7 +7719,10 @@ are off.
 - **Tests:** `tests/master-accounts-core.test.js`, `master-accounts.test.js`,
   `master-accounts-pdf.test.js`, `master-accounts-files.test.js`,
   `master-accounts-screens.test.js` (M1.6b), `ma-server.test.js`,
-  `ma-attach.test.js`, `ma-share.test.js`, `ma-backup.test.js`, with
+  `ma-attach.test.js`, `ma-share.test.js`, `ma-backup.test.js`,
+  `ma-fix-sec.test.js` (130, `0a0df4b` — it drives the real `js/auth.js`
+  and `js/master-accounts.js` against stubbed bridges and a fake IndexedDB)
+  and `ma-fix-money.test.js` (128, `44166f3`), with
   `tests/ma-fake-admin.js` (an in-memory Admin SDK).
   **`tests/rules-emulator-ma.js`** is NOT a `*.test.js` — it needs
   firebase-tools, the emulator and Java; its header has the commands, and
@@ -7761,6 +7783,20 @@ after five minutes. A failed read is never a zero — cash in hand says
 the drawer (`holder.mirror`); a handover to or from it is a transfer, and
 waits (below).
 
+**Every cash total reads ONE rule, `maHolderCash` (V4, `44166f3`).** A
+handover waiting to go INTO the drawer is taken out of the drawer's figure,
+because Store Accounts' balance moves when Raees records the handover —
+before an owner confirms it here. Before the fix only the 30-day panel took
+it out, so the Today hero counted it twice. The hero, both holders tables'
+totals, the Dashboard card and the 30-day start all go through it now, and
+each says what it leaves out: under the hero, on a "Less: handed into the
+drawer, not confirmed yet" line above a holders table's total, and on the
+Dashboard card. **The trade-off, stated rather than hidden:** until Raees
+records the handover in Store Accounts, every total is short by it, and says
+so beside the figure. Neither way can a total read more than is there.
+Whether Raees in practice records a handover before an owner confirms it is
+not verifiable from a session.
+
 ### The gate — four lists, one test
 
 `_MA_USERS` (client, by username) · `MA_OWNERS` (the core) ·
@@ -7774,10 +7810,13 @@ entry surfaces over.
 **This is the app's first owner-only READ.** Every other collection is
 readable by some wider group. The committed emulator test refuses a read of
 every `ma_*` collection to Mustafa (a manager), Raees and a signed-out
-caller (re-run against the merged rules at `1dc7fa9`: 209 / 209); the
+caller (re-run against the merged rules at `1ae7e71`: 241 / 241); the
 security review extended that to Umair, Daniyal, Sami, Arfat, an email-less
 token and an upper-case email (reported, from its own scratch probe). The
-`js/shared.js` entry points are `typeof`-guarded and fail CLOSED.
+`js/shared.js` entry points are `typeof`-guarded and fail CLOSED. Main's QA
+identity (`claude@groovy.op`, merged in with `1ae7e71`) is on none of the
+four lists, and `isMasterAccounts()` is built on `signedIn()`, which main's
+rules now make exclude it (read from the rules file).
 
 ### The decisions that hold it up — with the reasons
 
@@ -7800,6 +7839,31 @@ token and an upper-case email (reported, from its own scratch probe). The
    against unless its day or count moves, and which holder was counted
    cannot change. The JS lists (`MA_EDIT_FIELDS`, `MA_EDIT_DERIVED`,
    `MA_FIGURE_FIELDS`) and the rules' lists are held equal by a test.
+   **Since `0a0df4b` (V3) the rules also check SHAPES** on every
+   `ma_journal` / `ma_transfer` / `ma_counts` create and edit (`maShapeOk`):
+   a holder code is a STRING of four digits, the first not 0 (`maCodeOk` —
+   the number `1010` and `"1010 "` are no code); an amount is whole rupees
+   above zero (a count: counted and book whole and ≥ 0); the journal kinds
+   that move money through one holder (money out, money in, capital,
+   drawing — held equal to the core's list by a test) name that holder as a
+   code; an edit's new row names only fields an edit may change and is
+   stamped within five minutes of the server's clock; and `historical` may
+   move only to what the date and `goLive` say (`maGoLive()`:
+   `ma_settings/main`'s `goLive`, else `2026-10-01`, held equal to
+   `MA_DEFAULT_SETTINGS.goLive`). Codes must be strings, so a stored
+   document with a numeric code would be refused on its next edit; the app's
+   builder writes strings and the branch has never been on `main` (what
+   Netlify deploys), so none is expected (not checked against live data). **Since `44166f3` (V6)** an
+   edit that raises a flag the document did not carry clears the review too
+   (`maNewFlagRules`, compared by rule, so a re-worded message is not new) —
+   taking the note off a Money out booked to an income account moves no
+   figure but makes a claim no owner has seen. The rules already allowed
+   that write (checked against the combined rules in the emulator, 5 / 5).
+   **Still not held at the rules, and owner-forgery only:** an edit that
+   names a real field can store whatever `flags` it likes (C1, partly
+   closed — the rules cannot re-derive `maLiveFlags`), and an edit row's
+   `before` / `after` values are not bound to the document (C2, partly
+   closed — its date and its field list are).
 3. **Who confirms a transfer is ONE map, never the form's choice.**
    `MA_HANDS` / `MA_DRAWERS` (`js/ma-core.js`, read off the seeded chart)
    and `maHands()` / `maDrawers()` (rules) — a test holds them equal. The
@@ -7828,9 +7892,14 @@ token and an upper-case email (reported, from its own scratch probe). The
    and moved two balances behind a row that said "note"). A create may carry
    no `confirmed*`, `reviewed*` or `voided*` key, and its status,
    `confirmBy` and `confirmPaper` must be the map's answer (security F2).
-   **F9 is only partly closed** (the verification round, against
-   `20260a0`): while a drawer handover waits, the Today hero and the 30-day
-   panel still disagree about it (V4).
+   The F2 residual the verification round found — a hand-written transfer
+   with a non-string code or a negative amount skipping the derived
+   confirmation — is closed at the rules by V3 (`0a0df4b`, decision 2).
+   **F9 on the screens is closed by V4** (`44166f3`): the Today hero, the
+   holders tables, the Dashboard card and the 30-day panel all take a
+   waiting drawer handover out through `maHolderCash` ("The one balance read
+   from elsewhere" above). It still rests on Raees booking a handover in
+   Store Accounts before an owner confirms it here — unverified.
 4. **Journals cannot do what the other kinds refuse — in the client only.**
    A general journal that moves money between two holders is refused
    (record a transfer: it waits for the receiver); one that pays out of a
@@ -7884,7 +7953,10 @@ token and an upper-case email (reported, from its own scratch probe). The
    the clock. The rules do not themselves require an audit row beside a
    document write (only the quarter re-lock checks for one); the pairing is
    the client's. The "opened" and "unlocked" rows are written quietly and
-   fail silently.
+   fail silently. Since `0a0df4b` (V3) an edit's own row in `edits[]` is
+   held to the same five minutes, which adds no new clock failure: every
+   edit already goes out beside an audit row (both page call sites stamp
+   `Date.now()`, and a test fails if a new call site does not).
 7. **Quarters:** a close is born LOCKED and a reopened quarter goes back
    through an audited re-lock (`maCloseRelock`, the rules' `maRelockOk` —
    the audit row must be created in the same batch), security F3b. **No
@@ -7929,30 +8001,81 @@ token and an upper-case email (reported, from its own scratch probe). The
     first; coming back to the tab and a 30-second check swap an open page
     for the lock; an open form or share panel closes with it; the idle lock
     writes no audit row (unlocking writes a quiet "entered" row), so the
-    word "relock" stays the quarter's. **F5 is only partly closed**: a
-    Dashboard card painted BEFORE the lock came due keeps its figures
-    (the verification round's V5).
+    word "relock" stays the quarter's. **F5 is closed since `0a0df4b`
+    (V5):** every relock check — the tab coming back, the 30-second timer,
+    a tap anywhere — also swaps the Dashboard card's figures for "Master
+    Accounts is locked — open it to unlock." (`_maCardRelock`), so a card
+    painted before the lock came due no longer keeps them. (Read from the
+    code, not reproduced: `_maPopulateDashboard` checks the lock once,
+    before its reads, so a lock that falls due while they run is painted
+    over until the next check — at most 30 seconds.) **And the fingerprint
+    opens the books only on a real check (V9):** `_lockDone(verified)`
+    (`js/auth.js`) passes true only when the authenticator's UV bit was set;
+    "nothing to guard" — no lock record, no WebAuthn, an old cached
+    `index.html` — passes false, which the app lock's own callback ignores
+    (it must never strand anyone) and Master Accounts' unlock treats as "ask
+    for the password".
 12. **An owner's sign-out takes the books off the device (M1.6b, security
-    F6).** `doLogout` and `lockUsePassword` (`js/auth.js`) first call
-    `window.maBooksOffDevice()` behind `typeof`; `index.html` bridges
-    `terminate`, `clearIndexedDbPersistence` and `waitForPendingWrites` for
-    it. For an owner it waits up to 5 s for pending writes — if they have
-    not reached the server, it signs out but KEEPS the offline copy and
-    says so; otherwise it terminates Firestore and clears the IndexedDB
-    cache (5 s bound). If another Groovy Ops tab holds the cache, it does
-    NOT sign out (`stay`: the page reloads, still signed in) and says to
-    close the other tabs. A cached `index.html` without the bridges signs
-    out exactly as before. **The verification round found two BLOCKERS
-    here** (V1: after "Use password instead" a `stay` reloads into the app
-    with no fingerprint lock; V2: on a shared device the clear deletes
-    OTHER people's unsent offline writes) — their fixes are recorded under
-    the review round below.
+    F6; rewritten by `0a0df4b`).** `doLogout` and `lockUsePassword`
+    (`js/auth.js`) first call `window.maBooksOffDevice()` behind `typeof`;
+    `index.html` bridges `terminate`, `clearIndexedDbPersistence` and
+    `waitForPendingWrites` for it. For an owner, in this order (read from
+    `_maBooksOffDevice` at `1ae7e71`): wait for pending writes (≤ 5 s) →
+    tell this person's other Groovy Ops tabs to go to the login
+    (BroadcastChannel `groovy-ma-signout`, with a localStorage key for a
+    browser without it — V8) → terminate Firestore (≤ 5 s; a terminate
+    that never settles is `stay` — V11) → read Firestore's OWN mutation
+    queue (≤ 5 s, `_maQueuedAny`, the SDK 10.12.2 IndexedDB layout:
+    `mutations` and `mutationQueues`) → delete the copy (≤ 5 s). **The copy
+    is KEPT, and the owner told why, whenever anything is waiting** — this
+    person's writes (`queued`) or ANYONE ELSE's on this device (`others`,
+    V2: one database holds every account's unsent writes, and deleting it
+    had deleted theirs) — **or when the queue cannot be read** (`unchecked`,
+    fail safe). A delete refused because another tab holds the copy, or one
+    that does not finish, is `stay`: Sign out then reloads still signed in
+    (and cold, so the lock is asked again, if the lock came up meanwhile),
+    while **the lock's "Use password instead" ALWAYS signs out** (V1): the
+    lock stays on screen and nothing unlocks it (`_lockLeaving`) until it
+    has, `u` leaves sessionStorage first, and it says the copy stayed. **One
+    way out per tab** (V7): a second Sign out, or one of each, gets the
+    first one's promise (`_authLeave`); one that failed is forgotten and its
+    error re-thrown, and `maBooksOffDevice` itself runs once per tab. A tab
+    whose Firestore was terminated under it goes to the login too (V8). A
+    cached `index.html` without the bridges signs out exactly as before.
+    **Checked by its author with the real SDK 10.12.2 in Chromium against
+    the emulator (reported, not re-run here):** Mustafa's queued write was
+    lost to Afnan's sign-out before the fix (the admin read answered 404)
+    and reaches the server after (200). **What it cannot promise:** a
+    changed SDK layout reads as `unchecked` and KEEPS the copy (safe, but it
+    then never clears until this code learns the layout); a kept copy stays
+    on a shared device until the other person has signed in online and the
+    owner signs in and out again — the message says exactly that.
 13. **Classic-script hygiene:** every global is `ma`/`_ma`/`MA_`-prefixed
     (one lexical scope with every other file), no `window.X=` names a
     top-level function (the Board calendar freeze), and the CSS is one
-    block where every selector is `.ma-*`, `table.ma-*`, `textarea.ma-in`
-    or `a.ma-btn` (checked against the diff) — the `today` / `cal-today`
-    class collision below is why.
+    block where every selector carries `.ma-` — `.ma-*`, `table.ma-*`,
+    `textarea.ma-in`, `a.ma-btn` — the `today` / `cal-today` class
+    collision below is why. Checked at `1ae7e71`: all 275 selector parts in
+    the block carry `.ma-`. **Three of them reach outside the shell, from
+    `44166f3` (F01/F02, a sticky header and rail):**
+    `#main-content:has(>.ma-shell)` (≥601px: `overflow-x:clip;
+    overflow-y:visible` — `#main-content` was a scroll container that never
+    scrolls, so nothing inside it could stick) and `#scr-app
+    #main-content:has(>.ma-shell) .ma-head` / `… .ma-rail` (the 52px under
+    the top bar, the rail's only above 1200px). **Why they are safe:** each
+    matches only while an `.ma-shell` is `#main-content`'s direct child —
+    i.e. only on a Master Accounts page — and the two whose subject is not
+    `#main-content` are `.ma-` elements; the offsets carry the same
+    `:has(>.ma-shell)` as the rule they depend on, so a browser without
+    `:has()` drops all three together and the header stays in the flow as
+    it was before (the fixer measured that in Chromium by deleting the
+    `:has()` rules — reported; with the offset left alone it had pushed the
+    header 70px down over the tabs). `#scr-app` scopes the 52px to the real
+    shell, because the layout probe's fragments have no top bar.
+    **Unverified on real devices:** `:has()` (Chrome 105, Safari 15.4,
+    Firefox 121) and `overflow:clip` (Chrome 90, Safari 16) — Safari
+    15.4–15.6 has the first and not the second, which drops the `clip` and
+    leaves both axes `visible`; not seen, not measured.
 
 ### The review round (28 Sept, against `4057303`), and the verification after it
 
@@ -8002,43 +8125,142 @@ reproductions — this summary is the record.
   is `8e5fe0b`, whose four changes were each reverted once and caught by
   name.
 - **The verification round's own new findings, V1–V12** (two blockers,
-  V1 and V2, both in the sign-out work of decision 12). V1–V11 and the
-  visual QA's F01–F19 are being fixed now, per the coordinator of that
-  round; V12, a nit about a pattern the rules already had
-  (`isMasterAccounts()` reads `token.email` without `email_verified`), is
-  not in that list. [[phase2: which V and QA findings the fixes closed,
-  and anything left open]]
+  V1 and V2, both in the sign-out work of decision 12), and a visual QA of
+  the pages (F01–F27, 24 of them fixes and three judgement calls). V1–V11
+  and F01–F24 are fixed in the two commits below; V12 is recorded only.
+- **`0a0df4b` — the security fixes (29 Sept):**
+  - **V1 (blocker)** "Use password instead" reopened the app with no
+    fingerprint lock when the books could not come off the device. It now
+    always signs out, the lock stays up until it has, and any reload is a
+    cold start (decision 12).
+  - **V2 (blocker)** an owner's sign-out deleted OTHER people's unsent
+    offline writes. The queue is read first, and anything waiting — or a
+    queue that cannot be read — keeps the copy (decision 12).
+  - **V3** the rules never type- or sign-checked codes and amounts; now
+    `maShapeOk` / `maCodeOk`, the edit row's clock window and field list,
+    and `historical` against `goLive` (decision 2). By its author's
+    account this closes V3's notes C3 and C5, and C1 and C2 only partly.
+  - **V5** a Dashboard card kept its figures after the lock fell due
+    (decision 11). **V7** a second Sign out said the books were KEPT
+    while the first was deleting them — one way out per tab now. **V8**
+    another open tab was left signed in but broken — it goes to the login.
+    **V9** Master Accounts' fingerprint unlock opened the books with no
+    fingerprint — `_lockDone(verified)`. **V11** `terminate` had no bound.
+- **`44166f3` — the money and screen fixes (29 Sept, cherry-picked from
+  `8f1a1df`):**
+  - **V4 / F04** one rule for every cash total, `maHolderCash` ("The one
+    balance read from elsewhere"). **V6** a new flag clears the review
+    (decision 2). **V10** `maRsShort` picks its unit from the ROUNDED
+    figure: ₨99,99,999 is "₨1 cr", never "₨100 lac".
+  - **F03** a yearly bill opened before its first due day is upcoming, not
+    overdue (`maCommitmentStatus` never looks back past `historyFrom`).
+    **F05** Needs attention reads a period in words, uses the past tense
+    for a day gone by, makes a part payment past its grace a concern, says
+    "by you" to the one who confirms, and offers Confirm only to someone who
+    can. **F19** a commitment whose amount varies is never ₨0: it adds
+    nothing to the projection and every surface says "amount varies"
+    (the Excel says "varies"). **F15** a rate is grouped the lakh way
+    (`maRsRate`).
+  - **The screens:** F01/F02 the header and the rail stick below the top
+    bar (decision 13). F06 a holder's waiting transfers in date order, the
+    whole row opens the transfer. F07 kinds, channels, periods and days in
+    words. F08 "in October 2026" / "since Wed 1 Jul 2026", never "in Since
+    …". F09 a switched-off commitment reads "off". F10 the audit trail's
+    Document column does not wrap. F11 the word "void" is not struck out,
+    the row's description and amount are. F12 "Would have posted" / "Posts
+    once confirmed". F13 a phone form's select is full width. F14 phone
+    tap targets ≥ 34px. F16 every calendar event is in its cell ("+N more"
+    opens the day in the rail). F17 one rule above a phone total. F18 the
+    skeleton and the error page sit inside `.ma-shell`. F20 under 1200px
+    the rail stretches between the top bar and the foot and scrolls — at
+    1024×768 a tall one had lost Edit, Void, Voucher (PDF) and Share
+    voucher off the screen. F21 a due day never breaks. F22 the Parties
+    filter is one row on a phone. F23 phone tabs wrap. F24 a section's
+    actions wrap as one group.
+- **How they were checked.** Each fix was undone once and a named
+  assertion failed — 27 reverts for the security fixes and 62 for the
+  money and screens — **re-run by the integrator on a scratch copy of
+  `1ae7e71`: all 89 caught, the security ones with exactly the failing
+  counts their author reported.** The rules: see "What is verified". The
+  real-SDK sign-out probe and the Chromium measurements behind F01/F02,
+  F13/F14, F16, F20–F24 and the no-`:has()` fallback are the authors'
+  (reported, not re-run). **No suite holds those behaviours** — the probes
+  do not scroll, open a rail at 1024px or measure those controls — only
+  the CSS or markup they rest on.
+- **Still open, deliberately:**
+  - **C1 and C2, partly** (decision 2): an edit can still store forged
+    `flags`, and an edit row's `before` / `after` are not bound to the
+    document. Owner-forgery only.
+  - **C4 and V12, recorded only.** `byName` is free text, but the trail and
+    its Excel print the name from `by` (decision 6). `isMasterAccounts()`
+    trusts `token.email` without `email_verified` — adding the check would
+    refuse Afnan and Ammar unless an admin marks both Auth accounts
+    verified first (`@groovy.op` inboxes are not real), which is unknown
+    from here; the whole rules file has the same shape.
+  - **The period lock covers documents only**: `ma_accounts`,
+    `ma_settings` (and so `goLive`) and `ma_parties` can still change after
+    a close. No M1 screen closes a quarter (decision 7).
+  - **Races reasoned about, not reproduced:** a write made in another tab
+    between the queue read and the delete; a Sign out that ends in `stay`
+    has already told this person's other tabs to go to the login (with
+    Remember me, one shared sign-in, that signs this tab out too); a tab
+    sent to the login that re-opens the database before the delete
+    finishes; the Dashboard card's 30-second window (decision 11).
+  - **iOS is unverified:** a frozen or restricted Safari tab hears the
+    sign-out broadcast late, and its first tap then goes to the login.
+    `:has()` and `overflow:clip` are unverified on real devices
+    (decision 13).
+  - **V4 depends on Raees** booking a handover in Store Accounts before an
+    owner confirms it here.
+  - **F25–F27, decided by Afnan on 29 Sept 2026:** F25 — keep the "No
+    opening balance yet" alert, no change; F26 — fold the Record picker's
+    tiles for the kinds that arrive in later milestones; F27 — the
+    slide-over rail up to about 1440px wide. **F26 and F27 are being built
+    in a follow-up commit and are NOT in this push.**
 
 ### What is verified, and how
 
 - **Node suite** — re-run on a clean `git archive` of each commit: 6,612
   (`930c2df`, before M1) → 6,979 (M1.1) → 7,122 (M1.3) → 7,434 (M1.4) →
   7,778 (M1.5a) → 8,011 (M1.5b) → 8,201 (`704056b`) → **8,408
-  (`20260a0`)**, all passing. Since then (four merges with `main` and one
-  fix): 8,723 (`1dc7fa9`), 8,788 (`feca515`), 8,794 (`efb75ce`), 8,797
-  (`be22046`), 8,832 (`d159f83`), 8,980 (`7735410` — `ma-server` 78 → 142,
-  `ma-attach` 74 → 114, `ma-share` 107 → 151, each re-run here), 8,997
-  (`8e5fe0b`), 8,998 (`f6125f8`).
-- **Rules, in the real Firestore emulator** — **209 / 209** against the
-  merged `firestore.rules` at `1dc7fa9` (unchanged by the three merges after
-  it); M1.6b did not change the rules. Against `1d8b3c5`'s rules (the ones
-  reported published) the same file fails 62: all 55 checks labelled
-  "M1.6a:" plus 7 that exercise permissions M1.6a added (an edit storing its
-  flags, an edit clearing a review, the re-lock). That is what makes the
-  republish necessary rather than cosmetic. The merged file also passes
-  main's own suites: `rules-emulator.js` 103 / 103,
-  `rules-emulator-board.js` 39 / 39, `rules-emulator-boards.js` 26 / 26.
+  (`20260a0`)**, all passing. Since then (the merges with `main`, the
+  server round and the two verification-round fixes): 8,723 (`1dc7fa9`),
+  8,788 (`feca515`), 8,794 (`efb75ce`), 8,797 (`be22046`), 8,832
+  (`d159f83`), 8,980 (`7735410` — `ma-server` 78 → 142, `ma-attach` 74 →
+  114, `ma-share` 107 → 151, each re-run here), 8,997 (`8e5fe0b`), 8,998
+  (`f6125f8`); then 9,128 at `0a0df4b` and 9,126 at `8f1a1df` (each fix on
+  its own — their authors' counts), **9,256 at `44166f3`** (both fixes:
+  8,998 + 130 + 128) and **9,429 at `1ae7e71`** (the merge with main, whose
+  own count went 7,030 → 7,203 between the two merges: 9,256 + 173).
+- **Rules, in the real Firestore emulator** — against the merged
+  `firestore.rules` at `1ae7e71` (LF md5 `acc9a3a1…`):
+  `tests/rules-emulator-ma.js` **241 / 241** (209 + V3's 32: 22 "V3:"
+  attacks, 8 "V3 control:" writes the app makes, 2 builder checks), and
+  main's own suites `rules-emulator.js` 103 / 103,
+  `rules-emulator-board.js` **100 / 100** (39 before main's QA fences) and
+  `rules-emulator-boards.js` 26 / 26; the V6 write, from a scratch copy of
+  the money fixer's check stamped with the time the app stamps, 5 / 5. The
+  same Master Accounts file **against earlier rules**: `bef4dc4`'s
+  (`8cf1c681…`, the merge before V3) fails exactly the 22 "V3:" attacks;
+  `1d8b3c5`'s (the ones reported published) fails **84** — the 55 "M1.6a:"
+  attacks, 21 of the 22 "V3:" attacks (the 22nd, an edit row naming only
+  `flags`, those rules refuse anyway: their `maEditOk` lists no `flags`)
+  and 8 writes the app makes that they refuse (an edit storing the flags it
+  raised, three ways; an edit that clears a review; four re-lock cases).
+  That is what makes the republish necessary rather than cosmetic.
 - **Layout and the smoke suites** — re-run by the integrator on a clean
-  `git archive` of `1f06da2` (and of `efb75ce`, `be22046` and `d159f83`
-  before it, with the same results): `smoke-layout` 462 / 462, of which 76
+  `git archive` of `1ae7e71` (and of `44166f3`, the two fixes before main
+  came in, and earlier of `1f06da2`, `efb75ce`, `be22046` and `d159f83`,
+  with the same results): `smoke-layout` 462 / 462, of which 76
   are the fourteen `master accounts — …` fragments (every width they
   declare, both themes: contrast, overflow, clipped text and hit-testing;
   since `8e5fe0b` the attachment-mode fragment also renders the
   switched-off card); `smoke-app-phone` clean on all 53 of the owner's pages
   in both themes — the six `ma-*` nav pages among them — and on the pages
-  it lists for six other roles; `smoke-phone` 30 / 30; `smoke-board`,
-  `smoke-browser` 8 / 8 and `smoke-startapp` (all four read conditions)
-  pass. **`smoke-axe` scans the six `ma-*` pages since `1f06da2`** (over a
+  it lists for six other roles; `smoke-phone` 30 / 30; `smoke-board` (187
+  / 192 / 192 checks at `1ae7e71`, with main's new ones; 172 / 177 / 177
+  before), `smoke-browser` 8 / 8 and `smoke-startapp` (all four read
+  conditions) pass. **`smoke-axe` scans the six `ma-*` pages since `1f06da2`** (over a
   small book built by `js/ma-core.js`; before, its list had none): no
   violation on any of them, and no rule/page pair beyond
   `tests/axe-baseline.json`. Its list does not open the Record picker, the
@@ -8076,8 +8298,9 @@ so each is Afnan's (the full steps are handed to him in chat, not kept
 here).
 
 - [ ] **Which rules are live** — Firebase Console → Firestore → Rules
-  history: was the last 28 Sept paste Master Accounts' or main's? *Only the
-  Console knows.*
+  history: was the last 28 Sept paste Master Accounts' or main's, and has
+  anything been published since (main's QA identity is itself
+  outstanding)? *Only the Console knows.*
 - [ ] **The backup bucket** (`gs://…`, same location as Firestore, public
   access prevention on, delete after 90 days) — *unverified advice, from
   the plan.*
@@ -8097,11 +8320,18 @@ here).
 - [ ] **The Cloudinary plan**: its upload cap (the app allows 25 MB), and
   whether it allows authenticated uploads and the download API —
   *unverifiable from here.*
-- [ ] **Publish the MERGED `firestore.rules`** —
-  [[phase2: final merged rules md5]]; never this branch's file alone, never
-  `main`'s.
-- [ ] **Merge into `main`** — a Claude session does it; not before the two
-  verification blockers (V1, V2) are fixed.
+- [ ] **Publish the MERGED `firestore.rules`** — the file at this
+  branch's tip: LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines
+  (main's rules with the QA identity, plus Master Accounts with M1.6a and
+  V3). Never an older branch file, and never `main`'s (at `e1f84bf`: md5
+  `20e3002f5f6cbb142833e173c44388e9`, 1,118 lines, no `ma_*` block). Main's
+  record names the Firebase CLI as the publish route now (`firebase deploy
+  --only firestore:rules`, from Afnan's machine); it deploys the checkout it
+  runs in, so a deploy from `main` would take Master Accounts' rules out
+  again — the Console paste of this file, or the CLI from this branch.
+- [ ] **Merge into `main`** — a Claude session does it, and only with
+  Afnan's go-ahead. The verification blockers (V1, V2) no longer hold it
+  back: both are fixed (`0a0df4b`).
 - [ ] **A first look on a real screen** — nobody has.
 
 ### Cross-track
@@ -8112,9 +8342,13 @@ here).
 `js/shared.js` (the nav section, the More sheet, one `ma-*` `renderPage`
 line, the dashboard `setTimeout`, the phone `groups` map, `BUG_PAGE_NAMES`,
 the sub-nav expand in `showPage`), `js/auth.js` (M1.6b: `doLogout` and
-`lockUsePassword` call `window.maBooksOffDevice()` behind `typeof`),
+`lockUsePassword` call `window.maBooksOffDevice()` behind `typeof`; since
+`0a0df4b`: `_authLeave` — one way out per tab — `_lockLeaving`, a
+`lockUsePassword` that always signs out, a `doLogout` that reloads cold
+when the lock came up meanwhile, and `_lockDone(verified)`),
 `css/main.css` (one `.ma-` block, after The Board's rules — since the 29
-Sept merge main's Mood Boards swatch block follows it), `index.html` (two
+Sept merge main's Mood Boards swatch block follows it; since `44166f3` it
+carries the three `:has(>.ma-shell)` selectors of decision 13), `index.html` (two
 script tags after `theboard.js`, `?v` strings, and M1.6b's three Firebase
 bridges: `terminate`, `clearIndexedDbPersistence`, `waitForPendingWrites`),
 `sw.js` (`CACHE_VERSION`, two precache entries, the private-Cloudinary
@@ -8124,7 +8358,7 @@ Master Accounts block), and two shared probes (`smoke-app-phone.js`,
 for Ammar's session, outside the repo, to reach him through Afnan; whether
 it has is unverified.
 
-**Merging with `main` is a real merge, and it has been done four
+**Merging with `main` is a real merge, and it has been done five
 times.** The branch had not taken `main` since `2298f39`. `1dc7fa9`
 merged `origin/main` at `1f6327d` (v246): conflicts in `index.html`
 (`?v` strings) and `sw.js` (`CACHE_VERSION`), and `firestore.rules`,
@@ -8143,9 +8377,17 @@ time the two lines differed and git raised the conflict; `be22046` went
 to v251. And while the docs were being written, `main`'s `dc0e609` took
 **v250** — `efb75ce`'s number — and `d159f83` went to v252 (`main` took
 four commits between 21:43 and 07:26 UTC, the last two 27 minutes
-apart). Every future merge: fetch, compare `CACHE_VERSION` on both
-sides, not just the conflict list, bump past both, and fetch again just
-before pushing.
+apart). **The fifth time, 29 Sept, while the verification round's fixes
+were being combined:** `main` merged PR #91 (`e1f84bf` — the QA identity,
+Creative Hub renamed Milanote, no browser dialogs in Mood Boards) at
+**v251**, `be22046`'s number, for different bytes; the branch was at v253,
+so git raised the conflict, and `1ae7e71` went to v254. Its only
+conflicts were `sw.js` and the `?v=` strings; `CLAUDE.md`,
+`css/main.css`, `firestore.rules`, `js/auth.js` and `js/shared.js` merged
+cleanly, and each equals an independent `git merge-file` of the three
+versions and passes a line-multiset check. Every future merge: fetch,
+compare `CACHE_VERSION` on both sides, not just the conflict list, bump
+past both, and fetch again just before pushing.
 
 ### The planning record (27–28 Sept 2026), condensed
 
@@ -10462,7 +10704,13 @@ fragment `login — the sign-in screen and the fingerprint lock`.
   background. It opens only when the authenticator data's **UV bit** is set
   (presence alone is refused). It **never strands anyone**: no record, no
   WebAuthn, or an old cached `index.html` with no `#scr-lock` → straight
-  in; "Use password instead" signs out to the login. Offered once per
+  in; "Use password instead" signs out to the login — **always, since
+  `0a0df4b` on the Master Accounts branch (V1):** for an owner whose books
+  could not come off the device it used to reload into the app, unlocked;
+  now the lock stays up until the sign-out is done. `_lockDone(verified)`
+  says whether a fingerprint was really checked; the app lock ignores it
+  (so "straight in" above still holds) and only Master Accounts' own unlock
+  acts on it (V9). Offered once per
   person per device after a Remember-me sign-in; switched in **Profile →
   Fingerprint lock**. It guards an unattended phone; it is not a login on a
   new device. **Passkey sign-in (fingerprint INSTEAD of the password) was
@@ -10956,13 +11204,16 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
 
 **REPUBLISH OUTSTANDING (28 Sept 2026, late; still open 29 Sept) — publish
-the MERGED file, and only the merged file.** Two things are waiting, and
+the MERGED file, and only the merged file.** Three things are waiting, and
 they are one paste.
 
 1. **Master Accounts M1.6a (`704056b`) changed `firestore.rules`** — LF
    `md5 f2f8de5e67a742c709c4d0835c56ecab` (verified: `git show
    704056b:firestore.rules | md5sum`; M1.6b, `20260a0`, left it untouched,
-   and so did M1.6c's `7735410` and `8e5fe0b`).
+   and so did M1.6c's `7735410` and `8e5fe0b`) — **and V3 (`0a0df4b`, 29
+   Sept) changed it again:** codes, amounts, a count's shape, the edit
+   row's clock window and field list, and `historical` against `goLive`
+   are checked at the rules now (Master Accounts, decision 2).
    Edits and confirmations are held at the rules now: a transfer's
    confirmation comes from one holder-to-person map (`maHands()` /
    `maDrawers()`), a create may carry no `confirmed*`, `reviewed*` or
@@ -10999,47 +11250,60 @@ they are one paste.
      gone again — a view-only person on a board can edit it, and anyone on
      `sharedWith` can rewrite `sharedWith` (main's entry "REPUBLISH
      OUTSTANDING (28 Sept 2026): Mood Boards sharing roles").
+3. **Main's QA identity is outstanding too** (main's own entry below,
+   "OUTSTANDING (26 Sept 2026, evening): the QA identity") and arrived on
+   `main` with PR #91 (`e1f84bf`) — so main's file itself changed again
+   after the 28 Sept evening paste: at `e1f84bf` it is LF md5
+   `20e3002f5f6cbb142833e173c44388e9`, 1,118 lines, with the QA fences and
+   still no `ma_*` block.
 
-**Do not paste `704056b`'s file, or main's.** The first reopens the Mood
-Boards hole; the second removes Master Accounts. The file to paste is
-`firestore.rules` from the merge of the Master Accounts branch with
-`origin/main`. The real merge, `1dc7fa9` (28 Sept, 21:55 UTC; `origin/main`
-at `1f6327d`), merged the rules without a conflict to LF
-`md5 8cf1c6813fe0becddd620161ba0277f4` — 1,346 lines, exactly the merge
-base's 994 plus the branch's 330 plus main's 22, and an independent
-`git merge-file` of the three gives the same bytes; the three later merges
-(`feca515`, `be22046`, `d159f83`) did not touch it. **That md5 is NOT the
-file to publish:** the fixes for the Master Accounts verification round
-change `firestore.rules` again. The file to publish is
-[[phase2: final merged rules md5]].
+**Do not paste an older branch file, or main's.** An older branch file
+reopens the Mood Boards hole and lacks the QA fences; main's removes Master
+Accounts. **The file to publish is `firestore.rules` at this branch's tip:
+LF `md5 acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines** — main's 1,118 at
+`e1f84bf` plus the Master Accounts block with M1.6a and V3. It came from
+the fifth merge of `origin/main` into the branch, `1ae7e71` (29 Sept), which
+merged the rules without a conflict: the file equals an independent `git
+merge-file` of the three versions, and a line-multiset check (merge base
+`dc0e609`'s 1,016 lines + the branch's 384 + main's 102 = 1,502) matches
+every line; the docs commit after it did not touch the file. The earlier
+merged file (`1dc7fa9`, LF `md5 8cf1c6813fe0becddd620161ba0277f4`, 1,346
+lines) was never the one to publish, and is superseded. Main's record names
+the Firebase CLI as the publish route now: it deploys the checkout it runs
+in, so a `firebase deploy --only firestore:rules` from `main` would take the
+Master Accounts block out again — paste this file, or deploy from this
+branch.
 
 What each state of the Console refuses, so a report can be read against it:
 
-- **Under `1d8b3c5`'s rules**, two kinds of edit the app now makes are
-  refused: **an edit whose stored flags change**, and **an edit that clears
-  a review** (the old `maEditOk` lists neither `flags` nor `reviewedAt` /
-  `reviewedBy`). The re-lock of a reopened quarter is refused too, but no
-  M1 screen offers it. And the old rules still ALLOW what M1.6a closed — a
-  forged transfer born confirmed, an edit that moves money unnamed, a
-  client-written share link, a back-dated audit row; until the publish,
-  those hold in the app only. Verified in the emulator: the `704056b` check
-  file run against `1d8b3c5`'s rules fails 62 — all 55 labelled "M1.6a:",
-  plus 7 permissions M1.6a added (an edit storing its flags, an edit
-  clearing a review, the re-lock).
-- **Under `704056b`'s rules, or the merged file at `1dc7fa9`:** 209 / 209
-  in the emulator (re-run; the merged file also passes main's own suites,
-  103 / 103, 39 / 39 and 26 / 26). The app writes an `ma_audit` row in the
-  same transaction or batch as every change, and the rules refuse a row
-  more than five minutes from the server's clock — so **a device whose
-  clock is more than five minutes off has every Master Accounts write
-  refused**, and the error says to check the clock. The rules do not require
-  the audit row beside a document write; the pairing is the client's.
-- **Under main's rules (no `ma_*` block):** see above — Master Accounts
-  reads nothing.
+- **Under `1d8b3c5`'s rules** (the Master Accounts paste reported on 28
+  Sept), the app's own writes that are refused: **an edit that stores the
+  flags it raised** and **an edit that clears a review** (the old
+  `maEditOk` lists neither `flags` nor `reviewedAt` / `reviewedBy`), and
+  the re-lock of a reopened quarter, which no M1 screen offers. And those
+  rules still ALLOW what M1.6a and V3 closed — a forged transfer born
+  confirmed, an edit that moves money unnamed, a client-written share link,
+  a back-dated audit row, a code that is a number, a negative amount; until
+  the publish, those hold in the app only. Verified in the emulator: the
+  check file at `1ae7e71` run against `1d8b3c5`'s rules fails **84** — 55
+  "M1.6a:" attacks, 21 of the 22 "V3:" attacks and 8 of the app's own
+  writes (Master Accounts, "What is verified").
+- **Under the final file (`acc9a3a1…`):** 241 / 241 in the emulator, and
+  main's own suites 103 / 103, 100 / 100 and 26 / 26. The app writes an
+  `ma_audit` row in the same transaction or batch as every change, and the
+  rules refuse a row — and, since V3, an edit's own row — more than five
+  minutes from the server's clock, so **a device whose clock is more than
+  five minutes off has every Master Accounts write refused**, and the error
+  says to check the clock. The rules do not require the audit row beside a
+  document write; the pairing is the client's. A stored document with a
+  NUMERIC holder code would be refused on its next edit (V3 wants strings);
+  the app writes strings and the branch has never been on `main`.
+- **Under main's rules (no `ma_*` block), at any of its versions:** see
+  above — Master Accounts reads nothing.
 
 On the branch today `git log --oneline -1 -- firestore.rules` names
-`1dc7fa9`; once the phase-2 fixes land it will name the commit that carries
-the final file, and the md5 recorded here is what to check it against.
+`1ae7e71`, and `acc9a3a1cec525ee4e1d335da30124fe` is what to check the file
+against.
 
 **Master Accounts rules reported published by Afnan, 28 Sept 2026**
 ("rules updated" — reported in-session; not recorded in any commit, and not

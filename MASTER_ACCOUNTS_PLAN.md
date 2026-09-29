@@ -1032,9 +1032,12 @@ M1.4 the PDFs · `6f2e152` M1.5a the functions (`ma-attach`, `ma-share`,
 `704056b` M1.6a edits and confirmations held at the rules · `20260a0`
 M1.6b the screens, the idle re-lock and the device cache · `7735410`
 M1.6c the server tightening (attachments fail closed), whose client half
-is `8e5fe0b`. `main` has been merged into the branch four times
-(`1dc7fa9`, `feca515`, `be22046`, `d159f83`), and `efb75ce` names the
-nightly backup in the audit trail.
+is `8e5fe0b`. Then the verification round's two fixes (29 Sept):
+`0a0df4b` (security — V1, V2, V3, V5, V7, V8, V9, V11) and `44166f3`
+(money and screens — V4, V6, V10 and the visual QA's F01–F24). `main` has
+been merged into the branch five times (`1dc7fa9`, `feca515`, `be22046`,
+`d159f83`, `1ae7e71`), and `efb75ce` names the nightly backup in the audit
+trail.
 CLAUDE.md "Master Accounts" is the engineering record; this section is the
 plan's side of it.
 
@@ -1057,10 +1060,10 @@ its cells and in refinements 13 and 15 below.
 | The calendar (rule-based) | built | Today's 30 days, from the commitments and the pay days; CPR inflows arrive with M2. |
 | The Record picker (§16.1) | built | nine live kinds; Collection (M2), Bill, Payment, PO, Receipt (M3), Payout, Loan, Savings entry (M4) shown as coming. |
 | Pages Today, Money, Parties, Ledger, Close & audit | built, plus Money out | eight page ids: `ma-overview`, `ma-money`, `ma-holder`, `ma-out`, `ma-parties`, `ma-party`, `ma-ledger`, `ma-close`. |
-| First owner-only reads, every block in the emulator | built | `tests/rules-emulator-ma.js`, 209 checks at `704056b`. |
+| First owner-only reads, every block in the emulator | built | `tests/rules-emulator-ma.js`, 209 checks at `704056b`; 241 at `1ae7e71`, with V3's shape checks. |
 | The audit trail | built | a client row with every write; server rows for share, revoke and backup. |
 | `ma-backup` nightly + PITR + Download the books | code built; the bucket and PITR are not (Console steps) | refinements 4 and 11. |
-| `ma-attach`, `ma-share`, the re-lock | built | the re-lock had an open finding (security F5): M1.6b asks for the lock everywhere on an `ma-*` page, not only on navigation, but a Dashboard card painted before the lock came due still keeps its figures (V5). The public fallback failed open; M1.6c (`7735410`, `8e5fe0b`) makes attachments fail closed — refinement 9. |
+| `ma-attach`, `ma-share`, the re-lock | built | the re-lock had an open finding (security F5): M1.6b asks for the lock everywhere on an `ma-*` page, not only on navigation, and `0a0df4b` (V5) swaps a Dashboard card's figures for the locked line on every relock check. The public fallback failed open; M1.6c (`7735410`, `8e5fe0b`) makes attachments fail closed — refinement 9. |
 | The first print variants | built | all five; refinement 10 (the Urdu). |
 | Excel on every table | from each page's ⋯ menu | Today, holders, a holder, parties, a party, commitments, ledger, documents, audit. |
 | The dashboard widget | built | owners only: cash in hand, how many need attention. |
@@ -1080,7 +1083,10 @@ its cells and in refinements 13 and 15 below.
    is read from Store Accounts until M8, so a handover posted here before
    he books it there counts the money twice, or not at all (money review
    F9). A transfer that waits for or was confirmed by someone keeps its
-   route, amount and date — void and record again (money F6).
+   route, amount and date — void and record again (money F6). Since
+   `44166f3` every cash total takes a handover waiting to go INTO the
+   drawer out of the drawer's figure, through one rule (`maHolderCash`,
+   V4), and says so beside the total.
 2. **§7 and §16.2 (`ma_postings`), NOT BUILT, deliberately.** Postings are
    computed in the browser from the documents on every render; no
    collection holds them, and the rules refuse `ma_postings` even to an
@@ -1166,8 +1172,10 @@ its cells and in refinements 13 and 15 below.
     Since M1.6b the lock is asked everywhere, not only on navigation: a
     tap or a key on an `ma-*` page while it is due shows the lock without
     resetting the clock, every repaint asks first, and coming back to the
-    tab or a 30-second check swaps an open page for it (security F5; the
-    verification round's V5 is what remains).
+    tab or a 30-second check swaps an open page for it (security F5); since
+    `0a0df4b` the same checks swap a Dashboard card's figures for the
+    locked line (V5), and the fingerprint opens the books only when one
+    was really checked (V9).
 14. **§16.3 (the phone) and §23 #13 (the nav label).** The phone has no
     five-button Master Accounts bar: its pages sit behind "Master Accounts
     ›" in the owner's More sheet. The label is "Master Accounts", not
@@ -1180,7 +1188,11 @@ its cells and in refinements 13 and 15 below.
     clears its IndexedDB cache; if writes are still pending it signs out
     but KEEPS the copy and says so, and while another Groovy Ops tab holds
     the cache it does not sign out at all. The verification round found
-    two blockers in this (V1, V2), being fixed. The ledger also stopped
+    two blockers in this, both fixed at `0a0df4b`: the lock's "Use
+    password instead" now always signs out, and the lock stays up until it
+    has (V1); and the copy is kept whenever anyone's writes are still
+    waiting in Firestore's own queue — another person's included — or the
+    queue cannot be read (V2). The ledger also stopped
     printing a running balance where it would not be the account's — under
     a narrowing filter, or for the drawer (money F4, F5).
 
@@ -1213,9 +1225,21 @@ partly open by the same round: money F9 (V4) and M3, security F2 (V3) and
 F5 (V5). Security F7 and the server nits were the server round's:
 **M1.6c (`7735410`) closed F7** (refinement 9) and, by its author's
 account, the server nits. The verification round's own findings,
-V1–V12 (V1 and V2 blockers), and the visual QA's F01–F19: V1–V11 and
-F01–F19 are being fixed now. [[phase2: which were closed, and what is
-left open]]
+V1–V12 (V1 and V2 blockers), and the visual QA's F01–F27: **V1, V2, V3,
+V5, V7, V8, V9 and V11 are fixed at `0a0df4b`; V4, V6, V10 and F01–F24 at
+`44166f3`** (CLAUDE.md "The review round" has what each changed). Each fix
+was undone once and caught by a named assertion — 27 and 62 reverts,
+re-run on the combined tree. **Still open:** an edit can still store forged
+flags, and an edit row's before/after values are not bound to the document
+(C1, C2 — owner-forgery only); V12 and C4 are recorded only; the period
+lock still covers documents only; a few races are reasoned about, not
+reproduced; iOS, `:has()` and `overflow:clip` are unverified on real
+devices; V4 rests on Raees booking a handover before an owner confirms it.
+**Afnan decided the three judgement calls on 29 Sept 2026:** F25 — keep
+the "No opening balance yet" alert, no change; F26 — fold the Record
+picker's tiles for the kinds that arrive in later milestones; F27 — the
+slide-over rail up to about 1440px wide. **F26 and F27 are being built in a
+follow-up commit and are NOT in this push.**
 
 ### What only the humans can do before this is live
 
