@@ -138,7 +138,9 @@ module.exports=async function(){
     const {app}=mkApp({globals:{loadAccountsData:async()=>{},_acctBalances:()=>({cash:12345.4}),_acctLoadErr:null}});
     await app.run('maLoad()');
     s.eq('mirrorOk, the drawer\'s cash from _acctBalances',app.run("_maCtx().holders.find(h=>h.code==='1010').balance"),12345);
-    s.eq('cash in hand includes it and is complete',app.run("JSON.stringify(maCashInHand(_maCtx().holders))"),J({total:12345,complete:true,holders:4}));
+    // `waiting` joined the shape with review V4 (what the total leaves out
+    // while a handover waits to go into the drawer) — none here.
+    s.eq('cash in hand includes it and is complete',app.run("JSON.stringify(maCashInHand(_maCtx().holders))"),J({total:12345,complete:true,holders:4,waiting:0}));
     const {app:b}=mkApp({globals:{loadAccountsData:async()=>{},_acctBalances:()=>({cash:999}),_acctLoadErr:{cols:['acct_entries']}}});
     await b.run('maLoad()');
     s.eq('a failed Store read → mirrorOk false, balance null',b.run("JSON.stringify(_maCtx().holders.find(h=>h.code==='1010'))").indexOf('"balance":null')>=0,true);

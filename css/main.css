@@ -4447,7 +4447,30 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
    under its section title; a card only for a form, the rail or an error.
    Every class is .ma- so none can collide with the 259 .board-* or any
    other module's. */
-.ma-shell{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;margin:-18px -16px 0}
+.ma-shell{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;margin:-18px -16px -18px}
+/* The page's header and rail are sticky (QA F01/F02) — but #main-content
+   is overflow-y:auto and never scrolls (it grows; the DOCUMENT scrolls),
+   and a sticky box inside a container that never scrolls never sticks.
+   While a Master Accounts page is shown it stops being a scroll
+   container: clip, not visible, so nothing can widen the page sideways,
+   and min-width:0, which a scroll container had for free. Both stick
+   below the 52px top bar. The shell's -18px foot lets the rail reach the
+   page's bottom, or at the end of a long page it would ride up under the
+   top bar. The phone keeps its own layout (a static head, a sheet rail). */
+@media (min-width:601px){#main-content:has(>.ma-shell){overflow-x:clip;overflow-y:visible;min-width:0}}
+/* The 52px is the APP's top bar, so it is set only where that bar exists.
+   A page drawn without it (the layout probe's fragments) sticks at 0;
+   otherwise its header would sit 52px down over its own tabs.
+   Each offset also carries the rule above's :has(>.ma-shell). A browser
+   without :has() then drops both. Its header stays in the flow, not
+   sticky, as before, instead of 70px down over the tabs: inside a
+   #main-content that still scrolls, sticky counts the 52px from that
+   box's padding. Measured by deleting the :has() rules in Chromium.
+   The rail's offset is for the wide grid only. Under 1200px the rail is a
+   fixed slide-over with its own top:52px; on a phone it is a bottom sheet
+   with top:auto. An id selector here would out-rank both. */
+@media (min-width:601px){#scr-app #main-content:has(>.ma-shell) .ma-head{top:52px}}
+@media (min-width:1201px){#scr-app #main-content:has(>.ma-shell) .ma-rail{top:52px}}
 .ma-shell.rail-open{grid-template-columns:minmax(0,1fr) 380px}
 .ma-page{padding:0 32px 48px;max-width:1164px;min-width:0}
 .ma-head{position:sticky;top:0;z-index:5;display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;min-height:56px;background:var(--bg);border-bottom:1px solid var(--border);margin:0 -32px 24px;padding:8px 32px}
@@ -4519,14 +4542,19 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
 .ma-l2{display:block;font-size:12px;color:var(--muted);font-weight:400}
 .ma-table tr.ma-old td{color:var(--muted)}
 .ma-table tr.ma-void td{color:var(--muted)}
-.ma-table tr.ma-void td:nth-child(3){text-decoration:line-through}
+.ma-table tr.ma-void td:nth-child(3),.ma-table tr.ma-void td.ma-num{text-decoration:line-through}
+/* The "less" line under a holders table: arithmetic, not a record. */
+.ma-table tr.ma-less td{border-bottom:0;height:32px}
+.ma-table tr.ma-less:hover td{background:none}
 .ma-table.ma-mini td{height:32px;font-size:13px}
 .ma-word{font-size:12px;font-weight:500;white-space:nowrap}
 .ma-word.warn{color:var(--accent-warning)}
 .ma-word.urgent{color:var(--accent-urgent)}
 .ma-word.fine{color:var(--accent-success)}
 .ma-word.mute{color:var(--muted)}
-.ma-pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--muted);text-decoration:line-through}
+/* The word "void" is never itself struck out — a crossed-out "void" reads
+   as "not void" (QA F11); the row's description and its amount are. */
+.ma-pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--muted)}
 .ma-doclink{color:var(--link-accent);background:none;border:0;padding:0;font:inherit;cursor:pointer;white-space:nowrap}
 .ma-scope{font-size:13px;color:var(--muted);margin-bottom:8px}
 .ma-sub{font-size:13px;color:var(--muted);margin-bottom:6px}
@@ -4551,6 +4579,12 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
 .ma-ev.in{color:var(--accent-success)}
 .ma-ev.late,.ma-ev.short{color:var(--accent-urgent)}
 .ma-ev.mute{color:var(--muted);font-weight:400}
+/* A bill whose amount varies says so, never ₨0 (QA F19). */
+.ma-ev-v{font-weight:400}
+/* Past two events a desktop day opens in the rail (QA F16); the phone's
+   list shows every one and needs no "more". */
+.ma-ev-x{display:none}
+.ma-ev.ma-ev-more{background:none;border:0;padding:0;font:inherit;font-weight:500;text-align:left;cursor:pointer;color:var(--link-accent)}
 /* tabs and filters */
 .ma-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:24px;overflow-x:auto}
 .ma-tabs button{padding:8px 12px;font-size:14px;color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;cursor:pointer;font-family:inherit;min-height:36px}
@@ -4654,10 +4688,19 @@ a.ma-btn{text-decoration:none}
 .ma-sh-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
 .ma-sh-file{font-size:14px;font-weight:500;color:var(--text);overflow-wrap:anywhere;min-width:0}
 .ma-sh-meta{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
-/* under 1200px the rail is a slide-over */
+/* under 1200px the rail is a slide-over. `align-self:stretch` is what makes
+   it one (QA F20): the base rule's `align-self:start` is written for the
+   grid column, but Chromium applies align-self to a FIXED box too, and with
+   `start` it sized the rail to its content instead of between top:52px and
+   bottom:0 — a tall rail
+   slid up over the top bar (avatar, Change password, Sign out) and its
+   actions fell below the screen with no scroll to reach them (1024×768:
+   JV-27-0013 lost Edit, Void, Voucher (PDF) and Share voucher). Stretched,
+   it is the height of the screen under the bar and its overflow:auto
+   scrolls. */
 @media (max-width:1200px){
   .ma-shell.rail-open{grid-template-columns:minmax(0,1fr)}
-  .ma-rail{position:fixed;right:0;top:52px;bottom:0;width:380px;max-width:92vw;height:auto;z-index:150}
+  .ma-rail{position:fixed;right:0;top:52px;bottom:0;width:380px;max-width:92vw;height:auto;z-index:150;align-self:stretch}
 }
 /* the phone: the same order, stacked */
 @media (max-width:600px){
@@ -4667,6 +4710,16 @@ a.ma-btn{text-decoration:none}
   .ma-head-t{flex:1 1 170px}
   .ma-head .ma-period{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto}
   .ma-head .ma-period button{flex:1;padding:5px 8px}
+  /* Every segment, not only the header's (QA F22): the Parties kind filter
+     wrapped into a two-row pill with "Employees" alone under it. One row
+     the full width, the header's tighter buttons, scrolling sideways only
+     if a book ever holds more kinds than fit. */
+  .ma-filters .ma-period{width:100%;flex-wrap:nowrap;overflow-x:auto}
+  .ma-filters .ma-period button{flex:1 0 auto;padding:5px 8px}
+  /* Tabs wrap rather than run off the screen (QA F23): Close & audit's five
+     left "Chart of accounts" and "Items" past the right edge with nothing
+     to say they were there. */
+  .ma-tabs{flex-wrap:wrap}
   .ma-stats{grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:24px}
   .ma-stat{border-left:0;padding:0}
   .ma-stat.hero .ma-stat-v{font-size:24px}
@@ -4674,7 +4727,15 @@ a.ma-btn{text-decoration:none}
   .ma-cols2{grid-template-columns:1fr;gap:0}
   .ma-sec{margin-bottom:24px}
   .ma-concerns li{flex-wrap:wrap}
-  .ma-concerns .ma-act{flex-basis:100%;padding-left:18px;min-height:28px;text-align:left}
+  .ma-concerns .ma-act{flex-basis:100%;padding-left:18px;min-height:34px;text-align:left}
+  /* Tap targets at least 34px, the app's phone rule (QA F14) — the ⋯
+     menu's rows too (Download Excel, Refresh: 32px). */
+  .ma-period button,.ma-back,.ma-link,.ma-chk,.ma-menu button{min-height:34px}
+  /* A document number in a table row needs nothing: the row opens it. In
+     a commitment rail's "Paid by" list it is the only way to the payment
+     (15px before). */
+  .ma-hist .ma-doclink{min-height:34px}
+  .ma-chip{height:34px}
   .ma-btn.sm{height:34px}
   table.ma-cards,table.ma-cards tbody{display:block}
   table.ma-cards thead{display:none}
@@ -4685,6 +4746,10 @@ a.ma-btn{text-decoration:none}
   table.ma-cards td:not(:first-child)[data-l]:not([data-l=""])::before{content:attr(data-l) " ";color:var(--muted);font-weight:400}
   table.ma-cards td:empty{display:none}
   table.ma-cards tr.ma-total{border-top:1px solid var(--border);border-bottom:0}
+  /* One rule above a total, not two (QA F17): the desktop cell border
+     outranks table.ma-cards td{border:0}. */
+  table.ma-cards tr.ma-total td{border-top:0}
+  table.ma-cards tr.ma-less{border-bottom:0}
   table.ma-cards tbody tr:hover td{background:none}
   .ma-table td.ma-date{width:auto}
   .ma-cal-head{display:none}
@@ -4692,6 +4757,8 @@ a.ma-btn{text-decoration:none}
   .ma-cd{display:none}
   .ma-cd.has{display:flex;flex-wrap:wrap;gap:2px 12px;min-height:0;padding:8px 0;border-bottom:1px solid var(--soft);background:none}
   .ma-cd.has b{width:72px;flex:none}
+  .ma-ev-x{display:block}
+  .ma-ev.ma-ev-more{display:none}
   .ma-rail{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;height:auto;max-height:75vh;border-left:0;border-top:1px solid var(--border);border-radius:12px 12px 0 0;z-index:1000;padding:16px 16px calc(24px + env(safe-area-inset-bottom,0px))}
   .ma-modal-back{padding:0;align-items:flex-end}
   .ma-modal,.ma-modal.wide{max-width:none;border-radius:12px 12px 0 0;max-height:92vh;max-height:92dvh}
@@ -4701,7 +4768,12 @@ a.ma-btn{text-decoration:none}
   .ma-line-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 36px;padding-bottom:8px;border-bottom:1px solid var(--soft)}
   .ma-line-row>select:first-child{grid-column:1/-1}
   .ma-search{min-width:0;flex:1 1 100%}
-  .ma-sel{max-width:none;flex:1 1 45%}
+  /* The filter row's selects share a row; a select in a form field is the
+     field's full width — flex:1 1 45% in a field (a flex COLUMN) set
+     its HEIGHT, 19px (QA F13). */
+  .ma-filters .ma-sel{max-width:none;flex:1 1 45%}
+  .ma-field .ma-sel{max-width:none;width:100%}
+  .ma-sel,.ma-search{height:36px}
   .ma-form-card{padding:16px}
 }
 

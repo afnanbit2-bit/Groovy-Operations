@@ -748,7 +748,8 @@ async function _maPopulateDashboard(){
     const c=_maCtx();
     const cih=maCashInHand(c.holders);
     const na=_maAttention(c);
-    body.innerHTML=`<span class="ma-dash-num">${maRs(cih.total)}</span> cash in hand${cih.complete?'':' <span class="ma-word warn">incomplete — the drawer was not read</span>'} · `
+    // The hero's number, and what it leaves out (review V4).
+    body.innerHTML=`<span class="ma-dash-num">${maRs(cih.total)}</span> cash in hand${cih.complete?'':' <span class="ma-word warn">incomplete — the drawer was not read</span>'}${cih.waiting?' ('+maRs(cih.waiting)+' waiting to go into the drawer)':''} · `
       +(na.length?`<b>${na.length}</b> need${na.length===1?'s':''} attention`:'nothing to worry about')
       +(_maErr('backups')?' · <span class="ma-word urgent">the backups could not be read</span>':'');
   };
@@ -766,13 +767,17 @@ async function _maPopulateDashboard(){
 /* ── Periods (the header segment) ──────────────────────────────────────── */
 const _MA_PERIODS=[['month','This month'],['last','Last month'],['quarter','Quarter'],['year','Year'],['all','All']];
 let _maPeriod='month';
+/* `label` heads a section ("October 2026", "Since Wed 1 Jul 2026");
+   `span` is the same period inside a sentence — "in October 2026", "since
+   Wed 1 Jul 2026" — never "in Since …" (QA F08). */
 function _maRange(c){
   const t=c.today,s=c.s;
-  if(_maPeriod==='last'){const m=maMonthAdd(maMonthOf(t),-1);return {from:m+'-01',to:m+'-'+maPad(maDaysInMonth(m)),label:maMonthLabel(m,true)};}
-  if(_maPeriod==='quarter'){const q=maQuarterOf(t,s.fiscalYearStart);const r=maQuarterRange(q,s.fiscalYearStart);return {from:r.from,to:t,label:maQuarterLabel(q,s.fiscalYearStart)};}
-  if(_maPeriod==='year'){const fs=s.fiscalYearStart;const y=maFyEndYear(t,fs)-(fs===1?0:1);return {from:y+'-'+maPad(fs)+'-01',to:t,label:maFyOf(t,fs)};}
-  if(_maPeriod==='all')return {from:s.historyFrom,to:t,label:'Since '+maDayLabel(s.historyFrom,true)};
-  return {from:maMonthOf(t)+'-01',to:t,label:maMonthLabel(maMonthOf(t),true)};
+  const r=(from,to,label)=>({from,to,label,span:'in '+label});
+  if(_maPeriod==='last'){const m=maMonthAdd(maMonthOf(t),-1);return r(m+'-01',m+'-'+maPad(maDaysInMonth(m)),maMonthLabel(m,true));}
+  if(_maPeriod==='quarter'){const q=maQuarterOf(t,s.fiscalYearStart);const qr=maQuarterRange(q,s.fiscalYearStart);return r(qr.from,t,maQuarterLabel(q,s.fiscalYearStart));}
+  if(_maPeriod==='year'){const fs=s.fiscalYearStart;const y=maFyEndYear(t,fs)-(fs===1?0:1);return r(y+'-'+maPad(fs)+'-01',t,maFyOf(t,fs));}
+  if(_maPeriod==='all')return {from:s.historyFrom,to:t,label:'Since '+maDayLabel(s.historyFrom,true),span:'since '+maDayLabel(s.historyFrom,true)};
+  return r(maMonthOf(t)+'-01',t,maMonthLabel(maMonthOf(t),true));
 }
 function _maPeriodSeg(){
   return `<div class="ma-period" role="group" aria-label="Period">${_MA_PERIODS.map(([k,l])=>`<button class="${_maPeriod===k?'on':''}" onclick="window.maSetPeriod('${k}')">${l}</button>`).join('')}</div>`;
@@ -796,8 +801,11 @@ window.maToggleMenu=function(e){
   const m=document.getElementById('ma-menu');if(m)m.classList.toggle('open');
 };
 if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('click',()=>{const m=document.getElementById('ma-menu');if(m&&m.classList&&m.classList.contains('open'))m.classList.remove('open');});
+/* A section. Its actions (`right`) are ONE group that wraps as a unit
+   (QA F24): as separate flex items a narrow row left "Count" alone on a
+   line of its own under "Transfer". Every caller passes a link or two. */
 function _maSec(title,meta,right,body,id){
-  return `<section class="ma-sec"${id?` id="${id}"`:''}><div class="ma-sec-head"><h2 class="ma-sec-title">${_maE(title)}</h2>${meta?`<span class="ma-sec-meta">${meta}</span>`:''}<span class="ma-grow"></span>${right||''}</div>${body}</section>`;
+  return `<section class="ma-sec"${id?` id="${id}"`:''}><div class="ma-sec-head"><h2 class="ma-sec-title">${_maE(title)}</h2>${meta?`<span class="ma-sec-meta">${meta}</span>`:''}<span class="ma-grow"></span>${right?`<span class="ma-sec-acts ma-nw">${right}</span>`:''}</div>${body}</section>`;
 }
 function _maTabs(cur,list,handler){
   return `<div class="ma-tabs" role="tablist">${list.map(([k,l])=>`<button role="tab" class="${cur===k?'on':''}" onclick="window.${handler}('${k}')">${l}</button>`).join('')}</div>`;
@@ -810,7 +818,9 @@ function _maTable(cols,rows,o){
   const head=`<thead><tr>${cols.map(c=>`<th class="${c.cls||''}">${_maE(c.h)}</th>`).join('')}</tr></thead>`;
   const body=rows.map(r=>{
     const cells=r.cells||r;
-    return `<tr class="${r.cls||''}${r.click?' ma-rowlink':''}"${r.click?` onclick="${r.click}"`:''}>${cells.map((v,i)=>`<td class="${cols[i]&&cols[i].cls||''}" data-l="${_maE(cols[i]&&cols[i].l||'')}">${v===undefined||v===null?'':v}</td>`).join('')}</tr>`;
+    // `nolab`: a line that is not a record (the "less" line under a holders
+    // table) carries no phone labels, like the total.
+    return `<tr class="${r.cls||''}${r.click?' ma-rowlink':''}"${r.click?` onclick="${r.click}"`:''}>${cells.map((v,i)=>`<td class="${cols[i]&&cols[i].cls||''}" data-l="${r.nolab?'':_maE(cols[i]&&cols[i].l||'')}">${v===undefined||v===null?'':v}</td>`).join('')}</tr>`;
   }).join('');
   const foot=o.total?`<tr class="ma-total">${o.total.map((v,i)=>`<td class="${cols[i]&&cols[i].cls||''}">${v||''}</td>`).join('')}</tr>`:'';
   return `<div class="ma-tbl"><table class="ma-table ma-cards">${head}<tbody>${body}${foot}</tbody></table></div>`;
@@ -822,9 +832,10 @@ function _maErrorCard(errs){
     <div class="ma-errcard-acts"><button class="ma-btn" onclick="window.maRetry()">Retry</button></div></div>`;
 }
 function _maSkeleton(){
-  return `<div class="ma-page"><div class="ma-head"><div class="ma-head-t"><div class="gv-skel" style="height:22px;width:180px"></div></div></div>
+  // The shell too, so the page does not jump 16px when it lands (QA F18).
+  return `<div class="ma-shell"><div class="ma-page"><div class="ma-head"><div class="ma-head-t"><div class="gv-skel" style="height:22px;width:180px"></div></div></div>
     <div class="ma-stats">${'<div class="ma-stat"><div class="gv-skel" style="height:12px;width:60%"></div><div class="gv-skel" style="height:24px;width:80%;margin-top:8px"></div></div>'.repeat(4)}</div>
-    ${'<div class="gv-skel" style="height:40px;margin-bottom:8px"></div>'.repeat(5)}</div>`;
+    ${'<div class="gv-skel" style="height:40px;margin-bottom:8px"></div>'.repeat(5)}</div></div>`;
 }
 
 /* ── Rendering ─────────────────────────────────────────────────────────── */
@@ -860,7 +871,9 @@ function _maPageHTML(id){
   const errs=_maCoreErrs();
   if(errs.length){
     const t=(MA_PAGES.find(p=>p.id===id)||{label:'Master Accounts'}).label;
-    return `<div class="ma-page">${_maHead(t,'')}${_maErrorCard(errs)}</div>`;
+    // In the same shell as every other page, or it sits 16px right and 18px
+    // lower (QA F18) — the shell is what cancels #main-content's padding.
+    return `<div class="ma-shell"><div class="ma-page">${_maHead(t,'')}${_maErrorCard(errs)}</div></div>`;
   }
   let main;
   if(id==='ma-money')main=_maMoneyHTML();
@@ -895,7 +908,10 @@ function _maAttention(c){
   if(c._na)return c._na;
   const cal=_maCalendarOf(c);
   c._cal=cal;
+  // viewer + closes: a waiting transfer says "by you" to the one who
+  // confirms it, and offers Confirm only to someone who can (QA F05).
   c._na=maNeedsAttention({settings:c.s,today:c.today,holders:c.holders,calendar:cal,commitments:maData.commitments,docs:c.docs,
+    viewer:typeof session!=='undefined'&&session?session.u:null,closes:maData.closes,
     unlabelled:maUnlabelled(c.docs,c.idx,c.s),review:maReviewQueue(c.docs),recon:maBalanceOf(c.lines,c.idx,'9030'),
     backup:_maLatestBackup(),backupUnread:!!_maErr('backups'),nowMs:Date.now()});
   return c._na;
@@ -948,13 +964,20 @@ function _maOwed(c){
 function _maStat(label,value,sub,hero){
   return `<div class="ma-stat${hero?' hero':''}"><div class="ma-stat-l">${_maE(label)}</div><div class="ma-stat-v">${value}</div>${sub?`<div class="ma-stat-s">${sub}</div>`:''}</div>`;
 }
+/* What a cash total leaves out while a handover waits to go into the drawer
+   (review V4) — the sub-line under the hero, the line under a holders table
+   and the Dashboard card all say it. The title says why, true whether or not
+   Raees has recorded it yet. */
+const _MA_WAITING_WHY='A handover into the drawer counts where it came from until it is confirmed: it is taken out of the drawer’s Store Accounts figure, which moves when Raees records it. Until he has, this total is short by it.';
 function _maHolderRowsHTML(c,rows,o){
   o=o||{};
   const cols=[{h:'Holder'},{h:'Balance',cls:'ma-num',l:'Balance'},{h:'Waiting',cls:'ma-num',l:'Waiting'},{h:'Last count',cls:'ma-nw',l:'Last count'}];
   if(o.full)cols.splice(3,0,{h:'Can pay',cls:'ma-num',l:'Can pay'});
-  let total=0,complete=true;
+  // The total is the hero's — maCashInHand, one rule for every cash total
+  // (review V4) — so a handover waiting to go into the drawer is a line of
+  // its own above it, and the rows still add up to it.
+  const cih=maCashInHand(rows);
   const trs=rows.map(h=>{
-    if(h.balance===null)complete=false;else if(h.active&&h.holderKind!=='wallet')total+=h.balance;
     const bal=h.balance===null?'<span class="ma-word warn">not read</span>':_maRsCell(h.balance);
     const wait=(h.pendingIn?'+'+maRs(h.pendingIn):'')+(h.pendingIn&&h.pendingOut?' · ':'')+(h.pendingOut?'−'+maRs(h.pendingOut):'');
     const lc=h.mirror?'<span class="ma-muted">in Store Accounts'+(h.balance!==null&&_maMirrorAsOf()?' · '+_maMirrorAsOf():'')+'</span>':(h.lastCount?maDayLabel(h.lastCount.date)+(h.lastCount.difference?` <span class="ma-word warn">${maRsSigned(h.lastCount.difference)}</span>`:''):'<span class="ma-muted">never</span>');
@@ -963,10 +986,18 @@ function _maHolderRowsHTML(c,rows,o){
     if(o.full)cells.splice(3,0,h.available===null?'':_maRsCell(h.available));
     return {cells,click:`window.maOpenHolder('${_maQ(h.code)}')`};
   });
-  const tot=['Cash in hand',`${maRs(total)}${complete?'':' <span class="ma-word warn">incomplete</span>'}`,'',''];
+  if(cih.waiting){
+    const less=[`<span class="ma-muted" title="${_maE(_MA_WAITING_WHY)}">Less: handed into the drawer, not confirmed yet</span>`,`<span class="ma-muted">−${maRs(cih.waiting)}</span>`,'',''];
+    if(o.full)less.splice(3,0,'');
+    trs.push({cells:less,cls:'ma-less',nolab:true});
+  }
+  const tot=['Cash in hand',`${maRs(cih.total)}${cih.complete?'':' <span class="ma-word warn">incomplete</span>'}`,'',''];
   if(o.full)tot.splice(3,0,'');
   return _maTable(cols,trs,{total:tot});
 }
+/* One calendar event in words: its amount, or "amount varies" for a bill
+   whose size is not known (QA F19) — never ₨0. */
+function _maCalEvText(e){return _maE(e.label)+' '+(e.varies?'<span class="ma-ev-v">amount varies</span>':maRsShort(e.amount));}
 function _maCalHTML(cal){
   const lead=(maWeekday(cal.days[0].day)+6)%7;
   const cells=[];
@@ -974,8 +1005,11 @@ function _maCalHTML(cal){
   cal.days.forEach((d,i)=>{
     const dn=+d.day.slice(8,10);
     const lab=(i===0?'Today':MA_WEEKDAYS[d.weekday]+' '+dn)+(dn===1&&i?' '+MA_MONTHS[+d.day.slice(5,7)-1]:'');
-    const ev=d.events.slice(0,2).map(e=>`<span class="ma-ev ${e.dir==='in'?'in':''}${e.late?' late':''}">${_maE(e.label)} ${maRsShort(e.amount)}</span>`).join('')
-      +(d.events.length>2?`<span class="ma-ev mute">+${d.events.length-2} more</span>`:'');
+    // Every event is in the cell (QA F16): the desktop grid shows two and
+    // opens the day in the rail for the rest; the phone's list shows them
+    // all, with no "more" that goes nowhere.
+    const ev=d.events.map((e,k)=>`<span class="ma-ev${e.dir==='in'?' in':''}${e.late?' late':''}${k>1?' ma-ev-x':''}">${_maCalEvText(e)}</span>`).join('')
+      +(d.events.length>2?`<button class="ma-ev mute ma-ev-more" onclick="window.maOpenDay('${_maQ(d.day)}')">+${d.events.length-2} more</button>`:'');
     const marks=[d.payDay?'pay day':'',d.cprDay?'CPR day':''].filter(Boolean).join(' · ');
     const has=d.events.length||d.payDay||d.cprDay;
     // A day is "short" only when every holder was read: without the drawer
@@ -983,7 +1017,30 @@ function _maCalHTML(cal){
     const short=cal.complete!==false&&d.projected<0;
     cells.push(`<div class="ma-cd${i===0?' today':''}${has?' has':''}${short?' short':''}"><b>${_maE(lab)}</b>${ev}${marks?`<span class="ma-ev mute">${marks}</span>`:''}${d.events.length?`<span class="ma-ev ${short?'short':'mute'}">leaves ${maRsShort(d.projected)}</span>`:''}</div>`);
   });
+  // The last week is filled out with blank days, like the first: the grid's
+  // gaps are the border colour and an empty slot showed as a grey slab (F16).
+  while(cells.length%7)cells.push('<div class="ma-cd blank" aria-hidden="true"></div>');
   return `<div class="ma-cal-head" aria-hidden="true">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(x=>`<span>${x}</span>`).join('')}</div><div class="ma-cal">${cells.join('')}</div>`;
+}
+/* A day of the calendar, in the rail (§16.4 — the rail opens on a row, a
+   stat, a day): every event on it, each opening its commitment. */
+window.maOpenDay=function(day){_maRail={kind:'day',day:String(day)};_maPaint();};
+function _maDayRailHTML(c,day){
+  const cal=c._cal||_maCalendarOf(c);
+  const d=cal.days.find(x=>x.day===day);
+  if(!d)return '';
+  const rows=d.events.map(e=>{
+    const late=e.late&&e.due?`<span class="ma-l2">was due ${_maE(maDayLabel(e.due,e.due.slice(0,4)!==c.today.slice(0,4)))}</span>`:'';
+    const amt=e.varies?'<span class="ma-muted">amount varies</span>':(e.dir==='in'?'+':'−')+maRs(e.amount);
+    const open=e.commitment?` class="ma-rowlink" onclick="window.maOpenCommitment('${_maQ(e.commitment)}')"`:'';
+    return `<tr${open}><td>${_maE(e.label)}${late}</td><td class="ma-num">${amt}</td></tr>`;
+  }).join('');
+  const marks=[d.payDay?'a pay day':'',d.cprDay?'a CPR day':''].filter(Boolean).join(' and ');
+  return `<div class="ma-kicker">${day===c.today?'Today':'Day'}</div><h3 class="ma-rail-title">${_maE(maDayLabel(day,true))}</h3>
+    ${marks?`<div class="ma-muted">${_maE(marks.charAt(0).toUpperCase()+marks.slice(1))}</div>`:''}
+    <h4>${d.events.length} due${d.varies?' — '+d.varies+' of unknown size':''}</h4>
+    ${d.events.length?`<table class="ma-table ma-mini"><tbody>${rows}</tbody></table>`:_maEmpty('Nothing falls due.')}
+    <dl class="ma-dl"><dt>Due out</dt><dd>${maRs(d.out)}${d.varies?' <span class="ma-muted">+ '+d.varies+' that varies</span>':''}</dd><dt>Leaves</dt><dd>${_maRsCell(d.projected)}${cal.complete===false?' <span class="ma-word warn">incomplete</span>':''}</dd></dl>`;
 }
 function _maTodayHTML(){
   const c=_maCtx();
@@ -993,8 +1050,12 @@ function _maTodayHTML(){
   const na=_maAttention(c);
   const cal=c._cal||_maCalendarOf(c);
   const net=ow.owedTo-ow.weOwe;
+  // The hero is one rule with the 30 days' start (review V4); what it leaves
+  // out while a handover waits to go into the drawer is said under it.
+  const cihSub=(cih.complete?cih.holders+' holders':'drawer not read — incomplete')
+    +(cih.waiting?` · <span title="${_maE(_MA_WAITING_WHY)}">${maRs(cih.waiting)} waiting to go into the drawer</span>`:'');
   const stats=`<div class="ma-stats">
-    ${_maStat('Cash in hand',maRs(cih.total),cih.complete?cih.holders+' holders':'drawer not read — incomplete',true)}
+    ${_maStat('Cash in hand',maRs(cih.total),cihSub,true)}
     ${_maStat('In this month',maRs(f.inM),'into the holders')}
     ${_maStat('Out this month',maRs(f.outM),'from the holders')}
     ${_maStat('Owed to us less we owe',_maRsCell(net),ow.owedTo||ow.weOwe?maRs(ow.owedTo)+' to us · '+maRs(ow.weOwe)+' we owe':'nothing on credit yet')}
@@ -1011,9 +1072,9 @@ function _maTodayHTML(){
     `<dl class="ma-dl">
       <dt>Cash and bank today</dt><dd>${maRs(cal.start)}${incW}</dd>
       ${cal.waiting?`<dt>Handovers waiting</dt><dd>${maRs(cal.waiting)} <span class="ma-muted">into the drawer — counted where they came from until confirmed</span></dd>`:''}
-      <dt>Due out</dt><dd>${maRs(cal.out)}</dd>
+      <dt>Due out</dt><dd>${maRs(cal.out)}${cal.varies?` <span class="ma-muted">+ ${cal.varies} bill${cal.varies>1?'s':''} whose amount varies</span>`:''}</dd>
       <dt>Expected in</dt><dd>${cal.in?maRs(cal.in):'<span class="ma-muted">none yet — CPRs arrive with M2</span>'}</dd>
-      <dt>Leaves</dt><dd>${_maRsCell(cal.end)}${incW}</dd>
+      <dt>Leaves</dt><dd>${_maRsCell(cal.end)}${incW}${cal.varies?` <span class="ma-muted">before ${cal.varies>1?'those '+cal.varies+' bills':'that bill'}</span>`:''}</dd>
       <dt>First short day</dt><dd>${inc?(first?'<span class="ma-word warn">can’t judge — the drawer’s balance could not be read</span>':'<span class="ma-muted">none, even without the drawer</span>'):first?`<span class="ma-word urgent">${maDayLabel(first)}</span>`:'<span class="ma-muted">none</span>'}</dd>
     </dl>`);
   const strip=_maSec('Day by day',inc?'the drawer’s balance could not be read — these leave it out':'the cost register’s dues against cash and bank','',_maCalHTML(cal),'ma-cal');
@@ -1033,7 +1094,10 @@ function _maPendingHTML(c,list){
     const can=!locked&&!maConfirmPatch(d,session.u,{at:0}).error;
     return {cells:[maDayLabel(d.date),`<button class="ma-doclink" onclick="event.stopPropagation();window.maOpenDoc('transfer','${_maQ(d.id)}')">${_maE(d.no)}</button> ${_maE(_maDocDesc(d,c))}`,maRs(d.amount),
       _maE(_maWho(d.confirmBy))+(d.confirmPaper?' <span class="ma-muted">on paper</span>':''),
-      can?`<button class="ma-btn sm" onclick="event.stopPropagation();window.maConfirmDoc('${_maQ(d.id)}')">Confirm</button>`:`<span class="ma-muted">${locked?'quarter closed':'theirs'}</span>`]};
+      can?`<button class="ma-btn sm" onclick="event.stopPropagation();window.maConfirmDoc('${_maQ(d.id)}')">Confirm</button>`:`<span class="ma-muted">${locked?'quarter closed':'theirs'}</span>`],
+      // The whole row opens the transfer, like every other table (QA F14):
+      // the number alone was a 15px target on a phone.
+      click:`window.maOpenDoc('transfer','${_maQ(d.id)}')`};
   });
   return _maTable(cols,rows);
 }
@@ -1070,10 +1134,11 @@ function _maHolderHTML(){
   });
   const total=['Closing','','',maRs(led.dr),maRs(led.cr)];if(!h.mirror)total.push(_maRsCell(led.closing));
   const open=h.mirror?'':`<div class="ma-sub">Opening ${_maE(maDayLabel(r.from,true))} <b>${maRs(led.opening)}</b></div>`;
-  const pend=c.docs.filter(d=>d.dt==='transfer'&&d.status==='pending'&&(d.from===h.code||d.to===h.code));
+  // In date order, as Money lists the same transfers (QA F06).
+  const pend=c.docs.filter(d=>d.dt==='transfer'&&d.status==='pending'&&(d.from===h.code||d.to===h.code)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   return _maHead(h.name,meta,{back:['ma-money','Money'],period:true,excel:'holder',pdf:'holder'})+banner
     +_maSec('Statement',_maE(r.label)+' · '+led.count+' movement'+(led.count===1?'':'s'),`${_maLink('Transfer','window.maRecordKind(\'transfer\',{from:\''+_maQ(h.code)+'\'})')}${h.mirror?'':' '+_maLink('Count','window.maRecordKind(\'count\',{holder:\''+_maQ(h.code)+'\'})')}`,
-      open+(rows.length?_maTable(cols,rows,{total}):_maEmpty('Nothing moved in '+_maE(r.label)+'.')))
+      open+(rows.length?_maTable(cols,rows,{total}):_maEmpty('Nothing moved '+_maE(r.span)+'.')))
     +(pend.length?_maSec('Waiting to be confirmed','','',_maPendingHTML(c,pend)):'');
 }
 /* Confirm (§3 #3). Refused in a closed quarter, naming it (money F7). A
@@ -1098,19 +1163,30 @@ window.maConfirmDoc=async function(id){
 };
 
 /* ═══ Money out — the cost register (§26) ═══════════════════════════════ */
-const _MA_STATE_WORD={paid:['fine','paid'],part:['warn','part paid'],due:['warn','due'],overdue:['urgent','overdue'],upcoming:['mute','upcoming'],none:['mute','no calendar day']};
+const _MA_STATE_WORD={paid:['fine','paid'],part:['warn','part paid'],due:['warn','due'],overdue:['urgent','overdue'],upcoming:['mute','upcoming'],none:['mute','no calendar day'],off:['mute','off']};
+/* A commitment's state word: a switched-off one is "off", never "no
+   calendar day" (QA F09) — maCommitmentStatus says `none` for both. */
+function _maCommitWord(x,st){return x&&x.active===false?_MA_STATE_WORD.off:(_MA_STATE_WORD[st.state]||_MA_STATE_WORD.none);}
+/* A kind in words — the Money out table's, the commitment rail's and the
+   document rail's one reading (QA F07): a spend group's label, else the key
+   with its underscore ("one-off"). */
+function _maKindLabel(k){return (MA_SPEND_GROUPS[k]||{label:String(k||'').replace(/_/g,'-')}).label||String(k||'');}
+/* A day with its year when it is not this year's (QA F03). */
+function _maDayY(c,d){return maDayLabel(d,String(d).slice(0,4)!==String(c.today).slice(0,4));}
 function _maCommitRows(c,list){
   return list.map(x=>{
     const st=maCommitmentStatus(x,c.docs,c.today,c.s);
-    const w=_MA_STATE_WORD[st.state]||_MA_STATE_WORD.none;
-    const when=st.due?(st.state==='upcoming'?maDayLabel(st.due):maDayLabel(st.due)):'';
+    const w=_maCommitWord(x,st);
+    const when=st.due?_maDayY(c,st.due):'';
     const who=x.party?_maPartyName(x.party):'';
     return {cells:[
       `${_maE(x.name)}${who?`<span class="ma-l2">${_maE(who)}</span>`:''}`,
-      _maE((MA_SPEND_GROUPS[x.kind]||{label:String(x.kind||'').replace('_','-')}).label||x.kind),
+      _maE(_maKindLabel(x.kind)),
       _maE(maCommitmentText(x)),
       x.amountExpected?maRs(x.amountExpected):'<span class="ma-muted">varies</span>',
-      `<span class="ma-word ${w[0]}">${w[1]}</span>${when?` <span class="ma-muted">${when}</span>`:''}`,
+      // The day never breaks across two lines (QA F21, §16.4); the state
+      // word and the day may still sit on two.
+      `<span class="ma-word ${w[0]}">${w[1]}</span>${when?` <span class="ma-muted ma-nw">${when}</span>`:''}`,
       _maE(_maAccName(c,x.account)),
       x.active===false?'<span class="ma-muted">off</span>':`<button class="ma-btn sm" onclick="event.stopPropagation();window.maPayCommitment('${_maQ(x.id)}','')">Record payment</button>`
     ],click:`window.maOpenCommitment('${_maQ(x.id)}')`};
@@ -1216,16 +1292,16 @@ function _maPartyHTML(){
     const card=(v&&v.rateCard||[]).slice().sort((a,b)=>String(a.item).localeCompare(String(b.item))||String(b.validFrom||'').localeCompare(String(a.validFrom||'')));
     rates=_maSec('Rate card',card.filter(x=>!x.validTo).length+' current','',
       (card.length?_maTable([{h:'Item'},{h:'Unit',l:'Unit'},{h:'Rate',cls:'ma-num',l:'Rate'},{h:'From',cls:'ma-date',l:'From'},{h:'To',cls:'ma-date',l:'To'},{h:'By',l:'By'}],
-        card.map(x=>({cls:x.validTo?'ma-old':'',cells:[_maE(x.item)+(x.note?`<span class="ma-l2">${_maE(x.note)}</span>`:''),_maE(x.unit),'₨'+_maE(Number(x.rate).toLocaleString('en-US',{maximumFractionDigits:2})),x.validFrom?maDayLabel(x.validFrom,true):'—',x.validTo?maDayLabel(x.validTo,true):'<span class="ma-word fine">current</span>',_maE(_maWho(x.by))]}))):_maEmpty('No rates yet.'))
+        card.map(x=>({cls:x.validTo?'ma-old':'',cells:[_maE(x.item)+(x.note?`<span class="ma-l2">${_maE(x.note)}</span>`:''),_maE(x.unit),_maE(maRsRate(x.rate)),x.validFrom?maDayLabel(x.validFrom,true):'—',x.validTo?maDayLabel(x.validTo,true):'<span class="ma-word fine">current</span>',_maE(_maWho(x.by))]}))):_maEmpty('No rates yet.'))
       +`<div class="ma-sec-foot">${_maLink('Add a rate','window.maRateForm(\''+_maQ(p.id)+'\')')}</div>`);
   }
   const commits=maData.commitments.filter(x=>x.party===p.id);
   const cm=commits.length?_maSec('Commitments','','',_maTable([{h:'Commitment'},{h:'Kind',l:'Kind'},{h:'Schedule',l:'Schedule'},{h:'Expected',cls:'ma-num',l:'Expected'},{h:'This period',l:'State'},{h:'Booked to',l:'Account'},{h:'',cls:'ma-nw'}],_maCommitRows(c,commits))):'';
   const inR=docs.filter(d=>d.date>=r.from&&d.date<=r.to);
   const acts=_maSec('Activity',_maE(r.label)+' · '+inR.length+' document'+(inR.length===1?'':'s'),'',
-    inR.length?_maDocsTable(c,inR):_maEmpty('Nothing with '+_maE(p.name)+' in '+_maE(r.label)+'.'));
+    inR.length?_maDocsTable(c,inR):_maEmpty('Nothing with '+_maE(p.name)+' '+_maE(r.span)+'.'));
   const led=maLedger(c.lines,{party:p.id,from:r.from,to:r.to},c.idx);
-  const ledger=_maSec('Ledger',led.count+' posting'+(led.count===1?'':'s'),'',led.count?_maPostingsTable(c,led,false):_maEmpty('No postings in '+_maE(r.label)+'.'));
+  const ledger=_maSec('Ledger',led.count+' posting'+(led.count===1?'':'s'),'',led.count?_maPostingsTable(c,led,false):_maEmpty('No postings '+_maE(r.span)+'.'));
   return _maHead(p.name,meta,{back:['ma-parties','Parties'],period:true,excel:'party',pdf:'party'})+stats+details+terms+rates+cm+acts+ledger;
 }
 
@@ -1265,7 +1341,8 @@ function _maPostingsTable(c,led,single,limitN){
   if(single)cols.push({h:'Balance',cls:'ma-num',l:'Balance'});
   const rows=(limitN?led.rows.slice(0,limitN):led.rows).map(l=>{
     const desc=[l.party?_maPartyName(l.party):l.payee,l.memo].filter(Boolean).join(' · ');
-    const labels=[l.costCentre,l.kind,l.channel,l.status==='historical'?'history':''].filter(Boolean).join(' · ');
+    // In words, as the form offers them (QA F07): "one-off", "online cod".
+    const labels=[l.costCentre,l.kind&&String(l.kind).replace(/_/g,'-'),l.channel&&String(l.channel).replace(/_/g,' '),l.status==='historical'?'history':''].filter(Boolean).join(' · ');
     const cells=[maDayLabel(l.date),`<button class="ma-doclink" onclick="event.stopPropagation();window.maOpenDoc('${_maQ(l.doc&&l.doc.dt)}','${_maQ(l.doc&&l.doc.id)}')">${_maE(l.doc&&l.doc.no||'')}</button>`,
       _maE(maAccLabel(c.idx,l.account)),_maE(desc),_maE(labels),l.dr?maRs(l.dr):'',l.cr?maRs(l.cr):''];
     if(single)cells.push(_maRsCell(l.balance));
@@ -1290,7 +1367,7 @@ function _maLedgerBodyHTML(){
     const docs=c.docs.filter(d=>d.date>=r.from&&d.date<=r.to&&(!_maLF.dt||d.dt===_maLF.dt)&&(!_maLF.party||d.party===_maLF.party)&&(!q||maDocText(d,c.idx,_maPartyName(d.party)).indexOf(q)>=0))
       .sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.no).localeCompare(String(a.no)));
     return `<div class="ma-scope">${docs.length} document${docs.length===1?'':'s'} · ${_maE(r.label)}</div>`
-      +(docs.length?_maDocsTable(c,docs,_maLedgerShown)+(docs.length>_maLedgerShown?`<div class="ma-sec-foot">${_maLink('Show 50 more','window.maLedgerMore()')}</div>`:''):_maEmpty('No documents in '+_maE(r.label)+'.'));
+      +(docs.length?_maDocsTable(c,docs,_maLedgerShown)+(docs.length>_maLedgerShown?`<div class="ma-sec-foot">${_maLink('Show 50 more','window.maLedgerMore()')}</div>`:''):_maEmpty('No documents '+_maE(r.span)+'.'));
   }
   if(_maLedgerTab==='unlabelled'){
     const u=maUnlabelled(c.docs,c.idx,c.s);
@@ -1348,11 +1425,17 @@ function _maRailHTML(){
   let body='';
   if(_maRail.kind==='doc'){const d=_maDoc(_maRail.dt,_maRail.id);if(!d){_maRail=null;return '';}body=_maDocRailHTML(c,d);}
   else if(_maRail.kind==='commitment'){const x=_maCommit(_maRail.id);if(!x){_maRail=null;return '';}body=_maCommitRailHTML(c,x);}
+  else if(_maRail.kind==='day'){body=_maDayRailHTML(c,_maRail.day);if(!body){_maRail=null;return '';}}
   return `<aside class="ma-rail" aria-label="Detail"><button class="ma-rail-x" aria-label="Close" onclick="window.maCloseRail()">×</button>${body}</aside>`;
 }
 function _maFieldVal(c,d,f){
   const v=d[f];
   if(v===undefined||v===null||v==='')return '';
+  // Read the way the tables read it (QA F07), never the stored key.
+  if(f==='date')return maIsDay(v)?maDayLabel(v,true):String(v);
+  if(f==='commitmentPeriod')return maPeriodLabel(v,c.s.fiscalYearStart,c.today);
+  if(f==='labelKind')return String(v).replace(/_/g,'-');
+  if(f==='channel')return String(v).replace(/_/g,' ');
   if(f==='holder'||f==='from'||f==='to'||f==='account')return maAccLabel(c.idx,v);
   if(f==='amount'||f==='counted'||f==='bookBalance'||f==='difference')return maRs(v);
   if(f==='party')return _maPartyName(v);
@@ -1388,22 +1471,23 @@ function _maDocRailHTML(c,d){
     <h3 class="ma-rail-title">${_maE(maDocTitle(d,c.idx))}</h3>${_maStatusWord(d)}
     ${voided}${pending}
     <dl class="ma-dl">${dl}<dt>Recorded</dt><dd>${_maE(_maWho(d.by))} · ${_maWhen(d.ts)}</dd>${d.confirmedBy?`<dt>Confirmed</dt><dd>${_maE(_maWho(d.confirmedBy))} · ${_maWhen(d.confirmedAt)}${d.confirmVia==='paper'?' · on paper':''}</dd>`:''}</dl>
-    ${flags}<h4>Bill or receipt</h4><div id="ma-rail-att">${_maRailAttInner(d)}</div><h4>Postings</h4>${postT}
+    ${flags}<h4>Bill or receipt</h4><div id="ma-rail-att">${_maRailAttInner(d)}</div><h4>${d.status==='void'?'Would have posted':d.status==='pending'?'Posts once confirmed':'Postings'}</h4>${postT}
     ${d.dt==='journal'&&(d.lines||[]).length?`<h4>Lines</h4><table class="ma-table ma-mini"><tbody>${d.lines.map(l=>`<tr><td>${_maE(maAccLabel(c.idx,l.account))}${l.memo?`<span class="ma-l2">${_maE(l.memo)}</span>`:''}</td><td class="ma-num">${d.kind==='opening'?(l.side==='cr'?'Cr ':'Dr ')+maRs(l.amount):(l.dr?'Dr '+maRs(l.dr):'Cr '+maRs(l.cr))}</td></tr>`).join('')}</tbody></table>`:''}
     <h4>History</h4>${hist?`<ul class="ma-hist">${hist}</ul>`:_maEmpty('Never edited.')}
     <div class="ma-rail-acts">${acts.join('')}${_maDocPdfButton(d)}</div>`;
 }
 function _maCommitRailHTML(c,x){
   const st=maCommitmentStatus(x,c.docs,c.today,c.s);
-  const w=_MA_STATE_WORD[st.state]||_MA_STATE_WORD.none;
+  const w=_maCommitWord(x,st);
+  const per=p=>maPeriodLabel(p,c.s.fiscalYearStart,c.today);
   const paid=c.docs.filter(d=>d.commitmentId===x.id&&d.status!=='void').sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   const hist=(x.history||[]).slice().reverse().slice(0,10);
   return `<div class="ma-kicker">Commitment</div><h3 class="ma-rail-title">${_maE(x.name)}</h3><span class="ma-word ${w[0]}">${w[1]}</span>
-    <dl class="ma-dl"><dt>Kind</dt><dd>${_maE(x.kind)}</dd><dt>Schedule</dt><dd>${_maE(maCommitmentText(x))}</dd><dt>Expected</dt><dd>${x.amountExpected?maRs(x.amountExpected):'varies'}</dd>
+    <dl class="ma-dl"><dt>Kind</dt><dd>${_maE(_maKindLabel(x.kind))}</dd><dt>Schedule</dt><dd>${_maE(maCommitmentText(x))}</dd><dt>Expected</dt><dd>${x.amountExpected?maRs(x.amountExpected):'varies'}</dd>
       <dt>Booked to</dt><dd>${_maE(maAccLabel(c.idx,x.account))}</dd>${x.holder?`<dt>Paid from</dt><dd>${_maE(maAccLabel(c.idx,x.holder))}</dd>`:''}${x.party?`<dt>Party</dt><dd>${_maE(_maPartyName(x.party))}</dd>`:''}
-      <dt>Cost centre</dt><dd>${_maE(x.costCentre||c.s.defaultCostCentre)}</dd>${st.due?`<dt>This period</dt><dd>${_maE(st.period)} · due ${maDayLabel(st.due)} · paid ${maRs(st.amountPaid||0)}</dd>`:''}${st.next?`<dt>Next</dt><dd>${maDayLabel(st.next,true)}</dd>`:''}
+      <dt>Cost centre</dt><dd>${_maE(x.costCentre||c.s.defaultCostCentre)}</dd>${st.due?`<dt>This period</dt><dd>${_maE(per(st.period))} · due ${_maDayY(c,st.due)} · paid ${maRs(st.amountPaid||0)}</dd>`:''}${st.next?`<dt>Next</dt><dd>${maDayLabel(st.next,true)}</dd>`:''}
       ${x.from?`<dt>From</dt><dd>${maDayLabel(x.from,true)}</dd>`:''}${x.to?`<dt>Until</dt><dd>${maDayLabel(x.to,true)}</dd>`:''}${x.note?`<dt>Note</dt><dd>${_maE(x.note)}</dd>`:''}</dl>
-    <h4>Paid by</h4>${paid.length?`<ul class="ma-hist">${paid.slice(0,12).map(d=>`<li><button class="ma-doclink" onclick="window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">${_maE(d.no)}</button> · ${maDayLabel(d.date)} · ${maRs(d.amount)} · ${_maE(d.commitmentPeriod||'')}</li>`).join('')}</ul>`:_maEmpty('Nothing recorded against it yet.')}
+    <h4>Paid by</h4>${paid.length?`<ul class="ma-hist">${paid.slice(0,12).map(d=>`<li><button class="ma-doclink" onclick="window.maOpenDoc('${_maQ(d.dt)}','${_maQ(d.id)}')">${_maE(d.no)}</button> · ${maDayLabel(d.date)} · ${maRs(d.amount)} · ${_maE(d.commitmentPeriod?per(d.commitmentPeriod):'')}</li>`).join('')}</ul>`:_maEmpty('Nothing recorded against it yet.')}
     ${hist.length?`<h4>Changes</h4><ul class="ma-hist">${hist.map(h=>`<li>${_maE(_maWho(h.by))} · ${_maWhen(h.at)}<div class="ma-muted">${_maE((h.fields||[]).join(', '))}</div></li>`).join('')}</ul>`:''}
     <div class="ma-rail-acts">${x.active!==false?`<button class="ma-btn primary" onclick="window.maPayCommitment('${_maQ(x.id)}','')">Record payment</button>`:''}<button class="ma-btn" onclick="window.maRecordKind('commitment',{id:'${_maQ(x.id)}'})">Edit</button><button class="ma-btn" onclick="window.maCommitToggle('${_maQ(x.id)}')">${x.active===false?'Switch on':'Switch off'}</button></div>`;
 }
@@ -1455,7 +1539,7 @@ function _maAuditHTML(){
   if(!rows.length)return _maEmpty('Nothing recorded yet.');
   // WHO is derived from `by` — the one field the rules bind to the signed-in
   // person — never the stored byName, which any owner could write as anyone.
-  return `<div class="ma-scope">${rows.length} most recent</div>`+_maTable([{h:'When',cls:'ma-nw'},{h:'Who',l:'Who'},{h:'Action',l:'Action'},{h:'Document',l:'Document'},{h:'Detail'}],
+  return `<div class="ma-scope">${rows.length} most recent</div>`+_maTable([{h:'When',cls:'ma-nw'},{h:'Who',l:'Who'},{h:'Action',l:'Action'},{h:'Document',cls:'ma-nw',l:'Document'},{h:'Detail'}],
     rows.map(r=>[_maWhen(r.at),_maE(_maWho(r.by)),_maE(r.action),_maE(r.target&&(r.target.no||r.target.id)||''),_maE(r.detail||'')]));
 }
 function _maNumIn(id,v,label,o){o=o||{};return `<label class="ma-field${o.small?' sm':''}"><span class="ma-lbl">${_maE(label)}</span><input class="ma-in" id="${id}" inputmode="numeric" value="${_maE(v===null||v===undefined?'':v)}">${o.hint?`<span class="ma-hint">${_maE(o.hint)}</span>`:''}</label>`;}
@@ -2126,7 +2210,8 @@ window.maReviewDoc=async function(dt,id){
   const patch={reviewedAt:Date.now(),reviewedBy:session.u};
   _maBusy=true;
   try{
-    await _maWritePatch(d,patch,'review',(d.flags||[]).map(x=>x.rule).join(', '),null);
+    // What was reviewed, in the words the owner read (QA F07) — not rule ids.
+    await _maWritePatch(d,patch,'review',maLiveFlags(d).map(x=>x.message||x.rule).join('; '),null);
     Object.assign(d,patch);_maInvalidate();_maToast(d.no+' reviewed.');_maPaint();
   }catch(e){_maToast(_maWriteError(e));}finally{_maBusy=false;}
 };
@@ -2320,7 +2405,7 @@ async function _maSaveTerms(){
   next.updatedAt=Date.now();next.updatedBy=session.u;
   _maBusy=true;
   try{
-    await _maWriteMasters([{col:'ma_parties',id:p.id,data:next}],'terms',{dt:'party',id:p.id,no:p.code},maTermsText(t)+' from '+from+' — '+reason);
+    await _maWriteMasters([{col:'ma_parties',id:p.id,data:next}],'terms',{dt:'party',id:p.id,no:p.code},maTermsText(t)+' from '+maDayLabel(from,true)+' — '+reason);
     const i=maData.parties.findIndex(x=>x.id===p.id);if(i>=0)maData.parties[i]=next;
     _maInvalidate();window.maCloseModal();_maToast('Terms changed — the old ones are kept.');_maPaint();
   }catch(e){_maFormFail(f,'the new terms for '+p.name,e);}finally{_maBusy=false;}
@@ -2345,7 +2430,7 @@ async function _maSaveRate(){
   next.updatedAt=Date.now();next.updatedBy=session.u;
   _maBusy=true;
   try{
-    await _maWriteMasters([{col:'ma_parties',id:p.id,data:next}],'rate',{dt:'party',id:p.id,no:p.code},entry.item+' ₨'+entry.rate+'/'+entry.unit+' from '+entry.validFrom);
+    await _maWriteMasters([{col:'ma_parties',id:p.id,data:next}],'rate',{dt:'party',id:p.id,no:p.code},entry.item+' '+maRsRate(entry.rate)+'/'+entry.unit+' from '+maDayLabel(entry.validFrom,true));
     const i=maData.parties.findIndex(x=>x.id===p.id);if(i>=0)maData.parties[i]=next;
     _maInvalidate();window.maCloseModal();_maToast('Rate added — the earlier one is kept.');_maPaint();
   }catch(e){_maFormFail(f,'the rate for '+(entry.item||'—')+' ('+p.name+')',e);}finally{_maBusy=false;}
@@ -2450,7 +2535,7 @@ window.maExcel=function(key){
   if(key==='party'){const p=_maParty(_maPartyId);if(!p)return;const docs=c.docs.filter(d=>d.party===p.id&&d.date>=r.from&&d.date<=r.to);const led=maLedger(c.lines,{party:p.id,from:r.from,to:r.to},c.idx);
     const card=(p.vendor&&p.vendor.rateCard||[]).map(x=>[x.item,x.unit,x.rate,x.validFrom||'',x.validTo||'']);
     return _maXlsx('master-accounts_party-'+p.code+'_'+rng,[{name:'Documents',rows:[docHead].concat(docs.map(docRow))},{name:'Ledger',rows:postRows(led)},{name:'Rate card',rows:[['Item','Unit','Rate','From','To']].concat(card)}]);}
-  if(key==='commitments'){const rows=[['Commitment','Kind','Schedule','Expected','State','Due','Account','Party','Active']].concat(maData.commitments.map(x=>{const st=maCommitmentStatus(x,c.docs,c.today,c.s);return [x.name,x.kind,maCommitmentText(x),x.amountExpected||0,st.state,st.due||'',maAccLabel(c.idx,x.account),_maPartyName(x.party),x.active===false?'no':'yes'];}));return _maXlsx('master-accounts_commitments_'+c.today,[{name:'Commitments',rows}]);}
+  if(key==='commitments'){const rows=[['Commitment','Kind','Schedule','Expected','State','Due','Account','Party','Active']].concat(maData.commitments.map(x=>{const st=maCommitmentStatus(x,c.docs,c.today,c.s);return [x.name,x.kind,maCommitmentText(x),x.amountExpected||'varies',st.state,st.due||'',maAccLabel(c.idx,x.account),_maPartyName(x.party),x.active===false?'no':'yes'];}));return _maXlsx('master-accounts_commitments_'+c.today,[{name:'Commitments',rows}]);}
   if(key==='audit'){const rows=[['When','Who','Action','Document','Detail']].concat(maData.audit.slice().sort((a,b)=>(b.at||0)-(a.at||0)).map(x=>[new Date(x.at||0).toISOString(),_maWho(x.by),x.action,x.target&&(x.target.no||x.target.id)||'',x.detail||'']));return _maXlsx('master-accounts_audit_'+c.today,[{name:'Audit trail',rows}]);}
 };
 

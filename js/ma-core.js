@@ -486,13 +486,28 @@ function maGroup(n){
 }
 function maRs(n){const v=Math.round(Number(n)||0);return (v<0?'−':'')+'₨'+maGroup(v);}
 function maRsSigned(n){const v=Math.round(Number(n)||0);return v===0?maRs(0):(v>0?'+':'−')+'₨'+maGroup(v);}
-/* ₨8.4 lac · ₨2.1 cr — for sentences, never for a column. */
+/* ₨8.4 lac · ₨2.1 cr — for sentences, never for a column. The unit is
+   chosen by the ROUNDED figure (review V10): ₨99,99,999 is a hundred lac
+   to one decimal, which is "₨1 cr", never "₨100 lac". Rounding is done in
+   whole tenths of the unit (a/1e4 tenths of a lac, a/1e6 of a crore), so a
+   figure on the half rounds up the same way on every browser. */
 function maRsShort(n){
   const v=Math.round(Number(n)||0),a=Math.abs(v),sign=v<0?'−':'';
-  const f=x=>(Math.round(x*10)/10).toFixed(1).replace(/\.0$/,'');
-  if(a>=1e7)return sign+'₨'+f(a/1e7)+' cr';
-  if(a>=1e5)return sign+'₨'+f(a/1e5)+' lac';
+  const tenths=t=>t%10?(t/10).toFixed(1):String(t/10);
+  const lac=Math.round(a/1e4);
+  if(a>=1e7||lac>=1000)return sign+'₨'+tenths(Math.round(a/1e6))+' cr';
+  if(a>=1e5)return sign+'₨'+tenths(lac)+' lac';
   return sign+'₨'+maGroup(a);
+}
+/* A RATE — ₨1,612.5 a kilo, ₨1,50,000 a month: grouped the way every other
+   figure is (QA F15; a rate card printed ₨150,000 beside ₨1,50,000), with
+   up to two decimals, since a rate need not be whole rupees. '' for
+   something that is not a number. */
+function maRsRate(n){
+  const v=Number(n);
+  if(n===null||n===undefined||n===''||!Number.isFinite(v))return '';
+  const c=Math.round(Math.abs(v)*100),whole=Math.floor(c/100),frac=c%100;
+  return (v<0&&c?'−':'')+'₨'+maGroup(whole)+(frac?'.'+String(frac).padStart(2,'0').replace(/0$/,''):'');
 }
 /* In words, the way a cheque or a receipt is written here (§31) — South-
    Asian grouping, title case: 150000 → "Rupees One Lakh Fifty Thousand
@@ -898,18 +913,46 @@ function maHolderRows(idx,lines,docs,opts){
       lastMove:lastMove[a.code]||null};
   });
 }
-/* Cash in hand, the hero number: every active holder but the TCS account
-   (money that sits at TCS is not in anybody's hand until it is drawn).
-   `complete:false` when a mirrored holder could not be read — the page
-   says so instead of showing a smaller number as if it were whole. */
-function maCashInHand(rows){
-  let total=0,complete=true,n=0;
+/* What ONE holder adds to a cash total — the one rule every cash figure on
+   every page reads (review V4, QA F04): the hero, the holders tables' total,
+   the Dashboard card and the 30-day start. They used to disagree by any
+   handover waiting to go into the drawer, because only the 30 days took it
+   out: the hero counted it twice in the window the confirm warning asks
+   for (Raees records it in Store Accounts, THEN an owner confirms).
+   A waiting transfer posts nothing, so the holder it left still holds it
+   and the one it goes to does not — true of every holder kept here. The
+   drawer is Store Accounts' figure, which moves when Raees records the
+   handover, and he records it BEFORE an owner confirms it (M1.6a). So a
+   handover waiting to go INTO a mirrored holder is taken out of that
+   holder's figure (`waiting`): it is counted where it came from, never
+   twice. Until Raees records it the figure never had it, and a total is
+   short by it — which is why every page that shows a total says what is
+   waiting beside it. One waiting to come OUT of the drawer is left as Store
+   Accounts has it: adding it back would count money Raees may no longer
+   hold. Neither way can a total be more than what is really there.
+   null when the holder could not be read. */
+function maHolderCash(r){
+  if(!r||r.balance===null||r.balance===undefined)return null;
+  const waiting=r.mirror&&r.pendingIn?r.pendingIn:0;
+  return {amount:r.balance-waiting,waiting};
+}
+/* A cash total over the holders `take` keeps, each through maHolderCash.
+   `complete:false` when a holder it keeps could not be read — the page says
+   so instead of showing a smaller number as if it were whole. */
+function _maCashTotal(rows,take){
+  let total=0,complete=true,n=0,waiting=0;
   (rows||[]).forEach(r=>{
-    if(!r.active||r.holderKind==='wallet')return;
-    if(r.balance===null){complete=false;return;}
-    total+=r.balance;n++;
+    if(!r||!r.active||!take(r))return;
+    const x=maHolderCash(r);
+    if(!x){complete=false;return;}
+    total+=x.amount;waiting+=x.waiting;n++;
   });
-  return {total,complete,holders:n};
+  return {total,complete,holders:n,waiting};
+}
+/* Cash in hand, the hero number: every active holder but the TCS account
+   (money that sits at TCS is not in anybody's hand until it is drawn). */
+function maCashInHand(rows){
+  return _maCashTotal(rows,r=>r.holderKind!=='wallet');
 }
 /* The trial balance: every account's debit and credit totals and its net
    on one side. Debits equal credits or the books are wrong — a test
@@ -1211,7 +1254,14 @@ function maCommitmentStatus(c,docs,today,settings){
   const s=settings||MA_DEFAULT_SETTINGS;
   if(!c||c.active===false||MA_CADENCES.slice(0,4).indexOf(c.cadence)<0)return {state:'none'};
   const back=c.cadence==='weekly'?7:c.cadence==='monthly'?31:c.cadence==='quarterly'?92:366;
-  const past=maCommitmentDueDays(c,maDayAdd(today,-back),today,s.fiscalYearStart);
+  // Never looks back past the day the books begin (QA F03) — the floor
+  // maCommitmentOpenPeriod keeps: a period before settings.historyFrom is
+  // one the books never tracked, not one left unpaid. A yearly insurance due
+  // every 15 Nov, opened in October with no `from`, is upcoming — it used to
+  // report last November as overdue. (maCommitmentDueDays keeps c.from.)
+  const lo=maDayAdd(today,-back);
+  const floor=maIsDay(s.historyFrom)&&s.historyFrom>lo?s.historyFrom:lo;
+  const past=maCommitmentDueDays(c,floor,today,s.fiscalYearStart);
   const next=maCommitmentDueDays(c,maDayAdd(today,1),maDayAdd(today,back+1),s.fiscalYearStart);
   const due=past.length?past[past.length-1]:(next.length?next[0]:null);
   if(!due)return {state:'none'};
@@ -1271,6 +1321,18 @@ function maCommitmentPeriodOk(c,p){
   if(c.cadence==='yearly')return /^\d{4}$/.test(v);
   return maIsDay(v);
 }
+/* A commitment period the way a person reads it (QA F05, F07), never the
+   stored key: Sep 2026 (monthly), Q1 FY27 · Jul–Sep 2026 (quarterly), 2026
+   (yearly), and a day for a weekly period or a cadence without a calendar
+   day — with its year only when that is not this year's. Anything else is
+   given back as it came. */
+function maPeriodLabel(p,fyStart,today){
+  const v=String(p===undefined||p===null?'':p);
+  if(/^\d{4}-(0[1-9]|1[0-2])$/.test(v))return maMonthLabel(v);
+  if(/^\d{4}-Q[1-4]$/.test(v))return maQuarterLabel(v,fyStart);
+  if(maIsDay(v))return maDayLabel(v,!maIsDay(today)||v.slice(0,4)!==today.slice(0,4));
+  return v;
+}
 function maCommitmentText(c){
   if(!c)return '';
   if(c.cadence==='monthly')return 'Monthly · the '+c.dueDay+_maOrd(c.dueDay);
@@ -1286,28 +1348,42 @@ function maCommitmentText(c){
    the Payfast weekdays), the pay days and CPR days marked, and the
    projected balance of the holders that can pay (cash and bank). A day the
    holders cannot fund is named. An unpaid commitment already past due
-   lands on today, because that is when the money is still owed. */
+   lands on today, because that is when the money is still owed.
+   A commitment whose amount VARIES (amountExpected 0) is never a zero
+   (QA F19): its due is an event marked `varies` with no amount, it adds
+   nothing to `out` or the projection, and the day and the whole window
+   count it (`varies`) so every page can say a bill of unknown size falls
+   due — and that the projection leaves it out. Paid (any payment naming the
+   period) it is done, as maCommitmentStatus already says. */
 function maCalendar(o){
   const s=o.settings||MA_DEFAULT_SETTINGS;
   const today=o.today,n=o.days||30;
   const to=maDayAdd(today,n-1);
   const days=[];const byDay={};
   for(let i=0;i<n;i++){const d=maDayAdd(today,i);const w=maWeekday(d);
-    const cell={day:d,weekday:w,in:0,out:0,events:[],payDay:s.payDays.indexOf(w)>=0,cprDay:s.cprDays.indexOf(w)>=0};
+    const cell={day:d,weekday:w,in:0,out:0,varies:0,events:[],payDay:s.payDays.indexOf(w)>=0,cprDay:s.cprDays.indexOf(w)>=0};
     days.push(cell);byDay[d]=cell;}
   (o.commitments||[]).filter(c=>c&&c.active!==false).forEach(c=>{
+    const varies=!c.amountExpected;
     const st=maCommitmentStatus(c,o.docs,today,s);
     if((st.state==='due'||st.state==='overdue'||st.state==='part')&&st.due<=today){
-      const left=Math.max(0,(c.amountExpected||0)-(st.amountPaid||0));
-      byDay[today].events.push({dir:'out',label:c.name,amount:left,commitment:c.id,period:st.period,late:true,due:st.due});
+      const left=varies?0:Math.max(0,c.amountExpected-(st.amountPaid||0));
+      byDay[today].events.push({dir:'out',label:c.name,amount:left,commitment:c.id,period:st.period,late:true,due:st.due,varies});
       byDay[today].out+=left;
+      if(varies)byDay[today].varies++;
     }
     maCommitmentDueDays(c,maDayAdd(today,1),to,s.fiscalYearStart).forEach(d=>{
       const period=maCommitmentPeriodKey(c,d,s.fiscalYearStart);
-      const paid=(o.docs||[]).filter(x=>x.status!=='void'&&x.commitmentId===c.id&&x.commitmentPeriod===period).reduce((t,x)=>t+(x.amount||0),0);
-      const left=Math.max(0,(c.amountExpected||0)-paid);
+      const mine=(o.docs||[]).filter(x=>x.status!=='void'&&x.commitmentId===c.id&&x.commitmentPeriod===period);
+      if(varies){
+        if(mine.length)return;
+        byDay[d].events.push({dir:'out',label:c.name,amount:0,commitment:c.id,period,varies:true});
+        byDay[d].varies++;
+        return;
+      }
+      const left=Math.max(0,c.amountExpected-mine.reduce((t,x)=>t+(x.amount||0),0));
       if(!left)return;
-      byDay[d].events.push({dir:'out',label:c.name,amount:left,commitment:c.id,period});
+      byDay[d].events.push({dir:'out',label:c.name,amount:left,commitment:c.id,period,varies:false});
       byDay[d].out+=left;
     });
   });
@@ -1318,28 +1394,18 @@ function maCalendar(o){
   // (the drawer): every figure here is then short by what it holds, and a
   // "short" day is a question, not an answer (M1.6b, money F3).
   return {start:Math.round(o.start||0),complete:o.complete!==false,waiting:Math.round(o.waiting||0),
-    days,unfunded,out:days.reduce((t,c)=>t+c.out,0),in:days.reduce((t,c)=>t+c.in,0),end:bal};
+    days,unfunded,out:days.reduce((t,c)=>t+c.out,0),in:days.reduce((t,c)=>t+c.in,0),
+    varies:days.reduce((t,c)=>t+c.varies,0),end:bal};
 }
 /* What the calendar funds from: the cash and bank holders, as they stand
-   with every handover still waiting NOT MOVED (M1.6b). A waiting transfer
-   posts nothing, so the holder it left still holds it and the one it goes
-   to does not — true of every holder kept here. The drawer is Store
-   Accounts' figure, which moves when Raees records the handover, and he
-   records it BEFORE an owner confirms it (M1.6a). So a handover waiting to
-   go INTO the drawer is taken out of the drawer's figure (`waiting`): it is
-   counted where it came from, and never twice. One waiting to come OUT of
-   the drawer is left as Store Accounts has it — adding it back would count
-   money Raees may no longer hold. Neither way can the start be more than
-   what is really there. `complete:false` when a holder could not be read. */
+   with every handover still waiting NOT MOVED (M1.6b) — through the same
+   maHolderCash the hero reads (review V4), so the two cannot disagree about
+   one holder. Only the set differs: a till or a runner float is in somebody's
+   hand but does not pay the cost register. `complete:false` when a holder
+   could not be read. */
 function maSpendable(rows){
-  let t=0,ok=true,waiting=0;
-  (rows||[]).forEach(r=>{
-    if(!r.active||(r.holderKind!=='cash'&&r.holderKind!=='bank'))return;
-    if(r.balance===null){ok=false;return;}
-    t+=r.balance;
-    if(r.mirror&&r.pendingIn){t-=r.pendingIn;waiting+=r.pendingIn;}
-  });
-  return {total:t,complete:ok,waiting};
+  const x=_maCashTotal(rows,r=>r.holderKind==='cash'||r.holderKind==='bank');
+  return {total:x.total,complete:x.complete,waiting:x.waiting};
 }
 
 /* ── Validation (§6) ────────────────────────────────────────────────────── */
@@ -1638,7 +1704,11 @@ function maEditDiff(before,after){
    asked. `meta.flags` are the edit's own live flags (maValidate's, money
    F8); without them the stored ones stay (the writer's _maEditShape — a
    file attached from the rail changes no figure). A figure that moved
-   clears the review: an owner reviewed the old figures, not these. */
+   clears the review: an owner reviewed the old figures, not these. So does
+   a flag the document did not carry before (review V6): taking the note off
+   a Money out booked to an income account moves no figure, but it makes a
+   new claim ("booked to an income account") that no owner has looked at —
+   left under the old review it would never reach the review queue. */
 function maApplyEdit(before,after,meta){
   const d=maEditDiff(before,after);
   if(!d.fields.length)return null;
@@ -1651,11 +1721,20 @@ function maApplyEdit(before,after,meta){
     edits:(before.edits||[]).concat([{at:m.at||0,by:m.by||null,byName:m.byName||null,reason:maStr(m.reason,500),fields:d.fields,before:d.before,after:d.after}])
   });
   MA_CONFIRM_KEYS.forEach(k=>{if(before[k]!==undefined)out[k]=maClone(before[k]);else delete out[k];});
+  let newFlag=false;
   if(Array.isArray(m.flags)){
     const f=maFlagRows(m.flags);
     if(f.length||Array.isArray(before.flags))out.flags=f;
+    newFlag=maNewFlagRules(before.flags,f).length>0;
   }
-  if(maEditClearsReview(d.fields)&&(before.reviewedAt!==undefined||before.reviewedBy!==undefined)){out.reviewedAt=null;out.reviewedBy=null;}
+  if((maEditClearsReview(d.fields)||newFlag)&&(before.reviewedAt!==undefined||before.reviewedBy!==undefined)){out.reviewedAt=null;out.reviewedBy=null;}
+  return out;
+}
+/* The flag rules in `after` that `before` did not carry — by rule, so a
+   flag re-worded by a later build is not "new". */
+function maNewFlagRules(before,after){
+  const had={};(Array.isArray(before)?before:[]).forEach(x=>{if(x&&x.rule)had[x.rule]=1;});
+  const out=[];(Array.isArray(after)?after:[]).forEach(x=>{if(x&&x.rule&&!had[x.rule]&&out.indexOf(x.rule)<0)out.push(x.rule);});
   return out;
 }
 /* Does an edit naming these fields clear the review? Yes when one of them
@@ -1770,20 +1849,35 @@ function maNeedsAttention(o){
     if(o.calendar.complete===false)add('watch','Can’t judge the next 30 days — the drawer’s balance could not be read.','Without the drawer, cash and bank would fall short on '+maDayLabel(d)+'; with it they may not.',{label:'Retry',go:'reload'},6e8);
     else add('concern','On '+maDayLabel(d)+' the cash and bank holders run '+maRs(cell?cell.projected:0)+' short of what falls due.','Cash and bank today, less the cost register’s dues day by day.',{label:'See the days',go:'calendar'},1e9);
   }
-  // Commitments overdue and due
+  // Commitments overdue and due (QA F05): the period in words, never its
+  // stored key; a due day past today in the past tense; a part payment past
+  // its grace is as late as nothing paid; a day outside this year carries
+  // its year.
+  const dayL=d=>maDayLabel(d,!maIsDay(today)||String(d).slice(0,4)!==today.slice(0,4));
   (o.commitments||[]).forEach(c=>{
     if(c.active===false)return;
     const st=maCommitmentStatus(c,o.docs,today,s);
     const left=Math.max(0,(c.amountExpected||0)-(st.amountPaid||0));
-    if(st.state==='overdue')add('concern',c.name+' — nothing recorded for '+(st.period.length===7?maMonthLabel(st.period):st.period)+'; '+(left?maRs(left)+' ':'')+'was due '+maDayLabel(st.due)+'.','The cost register: due on '+maCommitmentText(c).toLowerCase()+', with '+s.commitmentGraceDays+' days’ grace.',{label:'Record it',go:'pay_commitment',ref:c.id,period:st.period},left+5e8);
-    else if(st.state==='due'||st.state==='part')add('watch',c.name+' is due '+(st.due===today?'today':maDayLabel(st.due))+(left?' — '+maRs(left)+(st.state==='part'?' still to pay':''):'')+'.','The cost register.',{label:'Record it',go:'pay_commitment',ref:c.id,period:st.period},left);
+    const per=st.period?maPeriodLabel(st.period,s.fiscalYearStart,today):'';
+    const late=st.due&&st.due<today&&maDaysBetween(st.due,today)>s.commitmentGraceDays;
+    const act={label:'Record it',go:'pay_commitment',ref:c.id,period:st.period};
+    if(st.state==='overdue')add('concern',c.name+' — nothing recorded for '+per+'; '+(left?maRs(left)+' ':'')+'was due '+dayL(st.due)+'.','The cost register: due on '+maCommitmentText(c).toLowerCase()+', with '+s.commitmentGraceDays+' days’ grace.',act,left+5e8);
+    else if(st.state==='part'&&late)add('concern',c.name+' — '+maRs(left)+' still to pay for '+per+'; it was due '+dayL(st.due)+'.','The cost register: part paid, and past '+s.commitmentGraceDays+' days’ grace.',act,left+5e8);
+    else if(st.state==='due'||st.state==='part'){
+      const when=st.due===today?'is due today':st.due<today?'was due '+dayL(st.due):'is due '+dayL(st.due);
+      add('watch',c.name+' '+when+(left?' — '+maRs(left)+(st.state==='part'?' still to pay':''):'')+'.','The cost register.',act,left);
+    }
   });
-  // Transfers waiting to be confirmed
+  // Transfers waiting to be confirmed — "by you" to the one who confirms
+  // it, and the action says Confirm only to someone who can (QA F05): for
+  // anyone else it opens the transfer, which is all it ever did.
   (o.docs||[]).filter(d=>d.dt==='transfer'&&d.status==='pending').forEach(d=>{
     const age=maIsDay(d.date)?maDaysBetween(d.date,today):0;
+    const mine=!!o.viewer&&d.confirmBy===o.viewer;
+    const can=!!o.viewer&&!maConfirmPatch(d,o.viewer,{at:0},{closes:o.closes||[],settings:s}).error;
     // "handed over", not "handed to": out of the drawer to the bank, Raees
     // confirms money that LEFT his hands (maTransferConfirm).
-    if(age>=s.pendingWatchDays)add('watch',maRs(d.amount)+' handed over on '+maDayLabel(d.date)+' is waiting to be confirmed by '+_maCap(d.confirmBy)+'.','Pending never counts: it is in neither holder until confirmed.',{label:'Confirm',go:'doc',ref:d.id,dt:'transfer'},d.amount);
+    if(age>=s.pendingWatchDays)add('watch',maRs(d.amount)+' handed over on '+dayL(d.date)+' is waiting to be confirmed by '+(mine?'you':_maCap(d.confirmBy))+'.','Pending never counts: it is in neither holder until confirmed.',{label:can?'Confirm':'Open',go:'doc',ref:d.id,dt:'transfer'},d.amount);
   });
   // Cash holders nobody has counted lately
   const stale=(o.holders||[]).filter(h=>h.active&&!h.mirror&&h.holderKind==='cash'&&h.balance&&(!h.lastCount||maDaysBetween(h.lastCount.date,today)>s.countEveryDays));
@@ -2194,7 +2288,7 @@ if(typeof module!=='undefined'&&module.exports){
     maFyEndYear,maFyOf,maQuarterOf,maQuarterRange,maQuarterLabel,maPeriodLabels,maMonthLabel,maDayLabel,
     maParseRupees,maRupeesDotted,maGroup,maRs,maRsSigned,maRsShort,maRsWords,maChart,maChartIndex,maAcc,maIsMoney,maMoneyAccounts,
     maTaxBlank,maTaxCompute,maTaxBlock,maTaxIssues,maDocNo,maTransferConfirm,maBuildDoc,maJournalTotal,
-    maPost,maPostAll,maSumLines,maBal,maBalanceOf,maRunningMin,maHolderRows,maCashInHand,maTrialBalance,maLedger,
+    maPost,maPostAll,maSumLines,maBal,maBalanceOf,maRunningMin,maHolderRows,maHolderCash,maCashInHand,maTrialBalance,maLedger,
     maTermsIssues,maTermsText,maTermsAt,maTermsChange,maNextPayDay,maDueDate,maRateAt,maRateIssues,maRateChange,
     maPartyCode,maPartyIssues,maItemIssues,maCommitmentIssues,maCommitmentDueDays,maCommitmentPeriodKey,
     maCommitmentStatus,maCommitmentText,maCalendar,maSpendable,maValidate,maVoidIssues,maEditDiff,maApplyEdit,
@@ -2206,5 +2300,5 @@ if(typeof module!=='undefined'&&module.exports){
     maLiveFlags,maAnsweredFlags,maBackupState,maBackupMissing,maWaPhone,maWaLink,maShareState,MA_SHARE_MAX_DAYS,MA_SHARE_SKEW_MS,maBooksNoTokens,maBooksJson,maBooksSheets,
     MA_EDIT_DERIVED,MA_FIGURE_FIELDS,MA_CONFIRM_KEYS,MA_HANDS,MA_DRAWERS,maHandsOf,maIsDrawer,maTransferNeedsConfirm,
     maConfirmWarning,maCountBookOf,maQuarterLocked,maEditClearsReview,maFlagRows,maCloseRelock,
-    MA_LEDGER_NARROW,maLedgerBalanceHidden,maLedgerHiddenWhy,maCommitmentOpenPeriod,maCommitmentPeriodOk};
+    MA_LEDGER_NARROW,maLedgerBalanceHidden,maLedgerHiddenWhy,maCommitmentOpenPeriod,maCommitmentPeriodOk,maPeriodLabel,maNewFlagRules,maRsRate};
 }
