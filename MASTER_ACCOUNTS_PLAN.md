@@ -1,9 +1,13 @@
 # Master Accounts — Master Plan v4 (cash first · terms are the key · every rupee labelled · the money speaks)
 
-> Status (29 Sept 2026): **M1 BUILT, on the branch
-> `claude/master-accounts-planning-udoiw9` — not merged into `main`, so not
-> deployed, and its rules not yet published as a merged file; nobody has
-> seen it on a real screen.** §21a says what M1 delivered against §21, what
+> Status (29 Sept 2026): **M1 BUILT, and merged into `main` from the branch
+> `claude/master-accounts-planning-udoiw9` (Afnan's go-ahead, 29 Sept 2026;
+> `main` read from git as `914b67a`; whether Netlify built it is unconfirmed
+> until its deploy list is read); Afnan REPORTED publishing the rules at
+> about 16:18 UTC that day ("rules updated" — he did not name the file;
+> hypothesis, unverified: the FINAL one), and what the Console holds cannot
+> be checked from a session; nobody has seen it on a real
+> screen.** §21a says what M1 delivered against §21, what
 > it changed in this plan, and what is still open. Everything from §22 on is
 > still the plan. Afnan, 27 Sept 2026: *"I want
 > accounts but just for me and ammar, in short master accounts … plan all
@@ -828,7 +832,8 @@ settings, the calendar grid (a list on the phone).
   row, a stat, a day or a spend line and holds the detail — the basis
   text, six-month bars, terms history, the receipt. Whatever explains
   lives there or in a tooltip, never on the page. Under 1200px a
-  slide-over; on the phone a bottom sheet.
+  slide-over (built up to 1440px — F27, 29 Sept 2026); on the phone a
+  bottom sheet.
 - **Empty, loading, failed**: loading is the app's `.gv-skel` shimmer in
   the section's shape, never a spinner; empty is one 14px muted line with
   the action as a link (*No CPR waiting · the next lands Tuesday*); a
@@ -1034,11 +1039,15 @@ M1.6b the screens, the idle re-lock and the device cache · `7735410`
 M1.6c the server tightening (attachments fail closed), whose client half
 is `8e5fe0b`. Then the verification round's two fixes (29 Sept):
 `0a0df4b` (security — V1, V2, V3, V5, V7, V8, V9, V11) and `44166f3`
-(money and screens — V4, V6, V10 and the visual QA's F01–F24). `main` has
-been merged into the branch seven times (`1dc7fa9`, `feca515`,
-`be22046`, `d159f83`, `1ae7e71`, `5a36efe`, `672cf4f` — the last `main`
-commit taken is `d1af808`), and `efb75ce` names the nightly backup in the
-audit trail.
+(money and screens — V4, V6, V10 and the visual QA's F01–F24), then
+`22cfd3e` and `c836de2` (Afnan's three calls: F26 and F27, F25). `main` has
+been merged into the branch eleven times (`1dc7fa9`, `feca515`, `be22046`,
+`d159f83`, `1ae7e71`, `5a36efe`, `672cf4f`, `69f5c72`, `ef7eabb`, `51cf6c3`,
+`a436e8b` — the last `main` commit taken is `11bd681`); `8573391` keeps the
+`ma_*` collections owner-only against main's QA-read work, which made every
+other read rule admit the QA account. On 29 Sept 2026 the branch was merged
+into `main` as a fast-forward, with Afnan's go-ahead. `efb75ce` names the
+nightly backup in the audit trail.
 CLAUDE.md "Master Accounts" is the engineering record; this section is the
 plan's side of it.
 
@@ -1236,20 +1245,33 @@ flags, and an edit row's before/after values are not bound to the document
 lock still covers documents only; a few races are reasoned about, not
 reproduced; iOS, `:has()` and `overflow:clip` are unverified on real
 devices; V4 rests on Raees booking a handover before an owner confirms it.
-**Afnan decided the three judgement calls on 29 Sept 2026:** F25 — keep
-the "No opening balance yet" alert, no change; F26 — fold the Record
-picker's tiles for the kinds that arrive in later milestones; F27 — the
-slide-over rail up to about 1440px wide. **F26 and F27 are being built in a
-follow-up commit and are NOT in this push.**
+**Afnan decided the three judgement calls on 29 Sept 2026, and all three
+are built** (`22cfd3e`, `c836de2`): F26 folds the Record picker's later
+kinds behind one "Coming later · 8" line; F27 keeps the rail a slide-over
+up to 1440px (below 1441px an open rail covers the header's Record and ⋯,
+and Year and All at 1024px; its × closes it); F25 — this plan had recorded
+"keep the alert, no change", but there was no such alert, only the QA's
+suggestion. Afnan chose to have it: while the book has no opening balance
+(`maIsOpening`: any journal of kind opening that is not void), Needs
+attention leads with the concern "No opening balance yet — the books start
+when one is recorded.", and Record it opens the Opening balance form.
 
 ### What only the humans can do before this is live
 
 The backup bucket and the service account's roles on it, PITR, three
 Netlify env vars and a redeploy, a check of the Cloudinary plan's upload
-cap, a publish of the MERGED `firestore.rules`, the merge into `main`, and a
+cap, a publish of the FINAL `firestore.rules` (reported done, below), and a
 first look on a real screen — each listed, with what is verified and what
 is not, in CLAUDE.md "Master Accounts" → "Set-up only a human can do"; the
-full steps are handed to Afnan in chat.
+full steps are handed to Afnan in chat. The merge into `main` is done
+(29 Sept 2026, with his go-ahead; `main` read from git as `914b67a`; the
+Netlify deploy is unconfirmed). The publish is REPORTED done, not verified:
+Afnan wrote "rules updated" at about 16:18 UTC that day and did not name the
+file (hypothesis, unverified: the final one, LF md5 `9d7ec162…`); two
+earlier publishes had been reported that day, neither of them that file,
+and only the Console's rules history says which is live. A Master Accounts
+page that loads, instead of "could not read … republish", is the test from
+his side.
 
 ## 22. Tests
 
