@@ -516,6 +516,7 @@ module.exports=async function(){
       s.eq('the function wrote ONE share',sh.length,1);
       const tok=sh[0].token;
       s.eq('… live, for the voucher, by afnan',J([sh[0].revoked,sh[0].docKind,sh[0].docId,sh[0].createdBy,sh[0].days]),J([false,'journal','JV-27-0002','afnan',7]));
+      s.eq('… and it keeps the revision the client sent, as docRev (M1.6c)',sh[0].docRev,1);
       s.ok('… and its own audit row, "share"',serverAudit(W.st).some(a=>a.action==='share'&&a.target&&a.target.id==='JV-27-0002'));
       const link='https://groovyoperations.netlify.app/.netlify/functions/ma-share?t='+tok;
       const made=app.el('ma-sh-made').innerHTML;
