@@ -68,7 +68,10 @@ module.exports=async function(){
     // Every write clause that names QA is one of the declared few.
     const quals=[...src.matchAll(/allow\s+(create|update|delete|write)\s*[^;]*isQa\(\)[^;]*;/g)].length;
     s.ok('write clauses naming isQa() exist only where the fence lives ('+quals+')',quals>0&&quals<40);
-    s.ok('hrm_notifications: QA still writes only rows addressed to itself',/match \/hrm_notifications\/\{doc\}\s*\{[\s\S]*?allow create: if signedIn\(\) \|\| \(isQa\(\) && request\.resource\.data\.get\('forUser', ''\) == 'claude'\);/.test(src));
+    const q=/function qaOwnNotice\(d\)\s*\{([^}]*)\}/.exec(src);
+    s.ok('hrm_notifications: QA writes only rows addressed to itself, and to no role',!!q&&/forUser', ''\) == 'claude'/.test(q[1])&&/forRole', ''\) == ''/.test(q[1]));
+    s.ok('… on create',/allow create: if signedIn\(\) \|\| \(isQa\(\) && qaOwnNotice\(request\.resource\.data\)\);/.test(src));
+    s.ok('… and on update, before AND after',/allow update: if signedIn\(\) \|\| \(isQa\(\) && qaOwnNotice\(resource\.data\) && qaOwnNotice\(request\.resource\.data\)\);/.test(src));
     s.ok('board_items: QA assigns nobody but itself',/request\.resource\.data\.assigneeUids == \[request\.auth\.uid\]/.test(src));
     s.ok('board_lists: QA admins alone (memberUids == [its uid])',/request\.resource\.data\.get\('memberUids', \[\]\) == \[request\.auth\.uid\]/.test(src));
   }

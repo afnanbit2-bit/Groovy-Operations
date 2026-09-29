@@ -496,11 +496,19 @@ service cloud.firestore {
     // nothing it does can ever reach a real person's bell. The bell's own
     // unfiltered read is refused it (and caught); the Board's inbox asks
     // with where('forUser','==',…), which this clause proves.
+    // A notification QA may write reaches ONLY the QA account's own bell.
+    // The bell (js/hrm.js) shows a row to whoever `forUser` names AND to a
+    // whole role when `forRole` is set ('owner', 'all', ...), so a row that
+    // named itself and also carried forRole:'owner' would land in every
+    // owner's bell. Found by the QA emulator matrix, 29 Sept 2026: main's
+    // fence checked forUser alone. forRole must be absent or empty.
+    function qaOwnNotice(d) {
+      return d.get('forUser', '') == 'claude' && d.get('forRole', '') == '';
+    }
     match /hrm_notifications/{doc} {
       allow read:   if isQaRead() || signedIn();
-      allow create: if signedIn() || (isQa() && request.resource.data.get('forUser', '') == 'claude');
-      allow update: if signedIn() || (isQa() && resource.data.get('forUser', '') == 'claude'
-                                     && request.resource.data.get('forUser', '') == 'claude');
+      allow create: if signedIn() || (isQa() && qaOwnNotice(request.resource.data));
+      allow update: if signedIn() || (isQa() && qaOwnNotice(resource.data) && qaOwnNotice(request.resource.data));
       allow delete: if signedIn();
     }
 
