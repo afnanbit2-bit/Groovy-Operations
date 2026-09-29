@@ -915,6 +915,15 @@ module.exports=function(){
       s.eq('and the old size is gone',box.style.width,'0px');
       ((el5._ls&&el5._ls.pointermove)||[]).forEach(l=>l.fn({clientX:601,clientY:601,target:el5}));
       s.ok('a twitch under 3px still shows none',box.style.display!=='block');
+      // The release is lost (let go outside the window): the next move
+      // arrives with no button held and must end the gesture, not draw.
+      ((el5._ls&&el5._ls.pointermove)||[]).forEach(l=>l.fn({clientX:900,clientY:900,buttons:0,target:el5}));
+      s.ok('a hover after a lost release draws no box',box.style.display!=='block',box.style.display);
+      ((el5._ls&&el5._ls.pointermove)||[]).forEach(l=>l.fn({clientX:950,clientY:950,buttons:0,target:el5}));
+      s.ok('and the gesture has ended — it stays hidden',box.style.display!=='block'&&box.style.width==='0px');
+      const n0=((el5._ls&&el5._ls.pointermove)||[]).length;
+      app.fire(el5,'pointerdown',{target:el5,currentTarget:el5,pointerId:3,button:2,pointerType:'mouse',clientX:500,clientY:500});
+      s.eq('a right-click starts no box and no pan',((el5._ls&&el5._ls.pointermove)||[]).length,n0);
     }
 
     s.section('Shift+drag still marquees, so nothing unlearns');
