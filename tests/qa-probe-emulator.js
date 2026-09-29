@@ -65,7 +65,7 @@ const strays=async()=>{let n=0;for(const c of ['counters','pos','bug_reports','h
 
   console.log('\nagainst main\'s narrower rules (QA blocked from role-gated reads)');
   await t('fails on the read block: the probe checks the read-everything decision',async()=>{
-    const main=cp.execSync('git show origin/main:firestore.rules',{cwd:REPO,encoding:'utf8',maxBuffer:1<<26});
+    const main=cp.execSync('git show '+(process.env.BASE_REF||'5996999')+':firestore.rules',{cwd:REPO,encoding:'utf8',maxBuffer:1<<26});
     const env3=await initializeTestEnvironment({projectId:PROJECT,firestore:{rules:main,host:FH,port:Number(FP)}});
     const r=probe();
     expect(r.code===1,'exit '+r.code+'\n'+r.out.slice(-500));

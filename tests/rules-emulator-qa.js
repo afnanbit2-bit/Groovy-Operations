@@ -37,7 +37,7 @@ const {doc,setDoc,updateDoc,getDoc,deleteDoc,getDocs,collection}=dep('firebase/f
 const NEW_RULES=fs.readFileSync(path.join(REPO,'firestore.rules'),'utf8');
 const OLD_RULES=process.env.OLD_RULES_FILE
   ? fs.readFileSync(process.env.OLD_RULES_FILE,'utf8')
-  : execSync('git show origin/main:firestore.rules',{cwd:REPO,encoding:'utf8',maxBuffer:1<<26});
+  : execSync('git show '+(process.env.BASE_REF||'5996999')+':firestore.rules',{cwd:REPO,encoding:'utf8',maxBuffer:1<<26}); // 5996999 = main before the QA-read work (origin/main moved when it was pushed)
 
 /* ── the path list, parsed from the rules ─────────────────────────────── */
 function parsePaths(rules){
