@@ -720,7 +720,7 @@ function _salesTeamNavHTML(groups){
 
    To roll out to everyone: return true. This is a NAV-ONLY gate —
    firestore.rules already lets any signed-in user create and read pages. */
-const _CREATIVE_HUB_USERS=['afnan','ammar','sami','mustafa','abbas','daniyal'];
+const _CREATIVE_HUB_USERS=['afnan','ammar','sami','mustafa','abbas','daniyal','claude'];
 function _canSeeCreativeHub(){
   return !!(typeof session!=='undefined'&&session&&_CREATIVE_HUB_USERS.indexOf(session.u)>-1);
 }
@@ -760,7 +760,7 @@ function buildNav(){
     const tbTop=_canSeeTheBoard()?_tbNavItemHTML(String(currentPage||'').startsWith('tb-'))+'<div class="nav-divider"></div>':'';
     if(sb)sb.innerHTML=tbTop+_salesTeamNavHTML(_salesTeamGroups()).replace(/^\s*<div class="nav-divider"><\/div>/,'')
       +`<div class="nav-divider"></div><div class="nav-item" id="nav-shopify-intel" onclick="window.showPage('shopify-intel')">Inventory Intel</div>`
-      +(_canSeeCreativeHub()?`<div class="nav-item" id="nav-creative-hub" onclick="window.showPage('creative-hub')">Creative Hub</div>`:'');
+      +(_canSeeCreativeHub()?`<div class="nav-item" id="nav-creative-hub" onclick="window.showPage('creative-hub')">Milanote</div>`:'');
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -770,7 +770,7 @@ function buildNav(){
     const item=(id,label)=>`<div class="nav-item${id==='dashboard'?' on':''}" id="nav-${id}" onclick="window.showPage('${id}')">${label}</div>`;
     if(sb)sb.innerHTML=item('dashboard','Dashboard')+item('qc-disposition','QC Disposition')+item('bstock','B-Stock')
       +item('fabric-inventory','Fabric Inventory')+item('shopify-intel','Inventory Intel')
-      +(_canSeeCreativeHub()?item('creative-hub','Creative Hub'):'');
+      +(_canSeeCreativeHub()?item('creative-hub','Milanote'):'');
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -781,6 +781,17 @@ function buildNav(){
     const sb=document.getElementById('sidebar');
     if(sb)sb.innerHTML=_canSeeTheBoard()?_tbNavItemHTML(true)
       :'<div class="nav-item on">no pages</div>';
+    _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
+    return;
+  }
+  // QA harness (claude@groovy.op) — the designer's nav plus Mood Boards,
+  // the one other module it is here to exercise. Scoped in showPage too.
+  // Mood Boards is reached as `boards` (Home), never through the Creative
+  // Hub grid: the grid's Notes tile opens a collection the rules refuse it.
+  if(session.role==='qa'){
+    const sb=document.getElementById('sidebar');
+    if(sb)sb.innerHTML=(_canSeeTheBoard()?_tbNavItemHTML(String(currentPage||'').startsWith('tb-')):'')
+      +'<div class="nav-item" id="nav-boards" onclick="window.showPage(\'boards\')">Milanote</div>';
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -821,7 +832,7 @@ function buildNav(){
   if(om)mainItems.push({id:'bstock',label:'B-Stock'});
   if(!isStore)mainItems.push({id:'gatepass',label:'Gate Pass'});
   // No icon — deliberate, per Afnan's ask. Audience: _CREATIVE_HUB_USERS.
-  if(_canSeeCreativeHub())mainItems.push({id:'creative-hub',label:'Creative Hub'});
+  if(_canSeeCreativeHub())mainItems.push({id:'creative-hub',label:'Milanote'});
   // Pattern Hub (Sept 2026, test phase: afnan/ammar/mustafa by username). The
   // gate lives in js/patterns.js, which loads AFTER this file — hence the
   // typeof guard, which fails CLOSED. See PATTERN_HUB_PLAN.md.
@@ -994,8 +1005,10 @@ function _renderMobNav(ctx){
     _updateMobNavActive(currentPage);
     return;
   }
-  if(session&&session.role==='designer'){
+  if(session&&(session.role==='designer'||session.role==='qa')){
     // Spec s7: on a phone the Board's four screens ARE the bottom tab bar.
+    // The QA harness gets the same bar as Saim (its Mood Boards entry is
+    // the sidebar's; the phone run exercises the Board).
     // For everyone else those four live in the in-page .tb-rail, which docks
     // as a horizontal scroller at phone width -- the app's own #mob-nav
     // already carries their other modules and cannot give up a slot.
@@ -1117,7 +1130,7 @@ window.toggleHRMNav=function(){
 // ── Mobile bottom-sheet menu ──
 window.openCsrMoreSheet=function(){
   const items=[{iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'}];
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'});
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'});
   window.openMobSheet('More',items);
 };
 window.openMobSheet=function(title,items){
@@ -1170,7 +1183,7 @@ window.openHRMSheet=function(){
 window.openMktMoreSheet=function(){
   const items=[{iconName:'shop',label:'Inventory Intel',pageId:'shopify-intel'}];
   if(_canSeeTheBoard())items.unshift({label:_tbNavLabel(),pageId:_tbNavHome()});
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // no icon — see buildNav()
   window.openMobSheet('More',items);
 };
 
@@ -1184,7 +1197,7 @@ window.openMoreSheet=function(){
   if(session.canPO)items.push({iconName:'plus',label:'New PO',pageId:'po-create'});
   items.push({iconName:'po',label:'PO Registry',pageId:'po-registry'});
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   if(typeof _canSeePatternHub==='function'&&_canSeePatternHub())items.push({label:'Pattern Hub',pageId:'pattern-hub'}); // test phase — see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
   if(_salesTeamGroups().length)items.push({iconName:'people',label:'The Sales Team ›',onClick:'window.openSalesSheet()'});
@@ -1221,7 +1234,7 @@ window.openStoreSubSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   window.openMobSheet('Store',items);
 };
 
@@ -1235,7 +1248,7 @@ window.openStoreMoreSheet=function(){
     {iconName:'tray',label:'PO Issue Requests',pageId:'po-issue-list'}
   );
   if(typeof _canApproveEdits==='function'&&_canApproveEdits())items.push({iconName:'list',label:'Edit Inbox',pageId:'po-edit-inbox'});
-  if(_canSeeCreativeHub())items.push({label:'Creative Hub',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
+  if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   window.openMobSheet('More',items);
 };
 
@@ -1288,6 +1301,14 @@ window.showPage=async function(id){
   // Designer (Saim): the board and the chrome pages, nothing else. Same
   // rewrite-the-id shape as the scopes above.
   if(session&&session.role==='designer'&&!String(id).startsWith('tb-')&&_CHROME_PAGES.indexOf(id)<0)id='tb-dash';
+  // QA harness: the Board, Mood Boards (QA_PAGES, js/auth.js -- typeof, so
+  // an unparsed auth.js fails CLOSED to the Board) and its own Profile. NOT
+  // the bug tracker, although it is a chrome page: the rules refuse this
+  // account bug_reports. The Creative Hub's own ids land on Mood Boards'
+  // Home, which is where "Back" from Home sends everyone.
+  if(session&&session.role==='qa'&&!String(id).startsWith('tb-')&&id!=='profile'
+     &&!(typeof QA_PAGES!=='undefined'&&QA_PAGES.indexOf(id)>-1))
+    id=(typeof QA_PAGES!=='undefined'&&_CREATIVE_HUB_PAGES.indexOf(id)>-1)?'boards':'tb-dash';
   // CSR Team Lead: CSR_LEAD_PAGES (js/auth.js, which loads after this file —
   // hence typeof; an unparsed auth.js fails CLOSED to the dashboard).
   if(session&&session.role==='csr_lead'&&_CHROME_PAGES.indexOf(id)<0
@@ -1489,7 +1510,7 @@ const BUG_PAGE_NAMES={
   'mkt-paid-pr':'Marketing — Paid PR Approvals',
   'mkt-reports':'Marketing — Reports',
   'mkt-import':'Marketing — Sheet import',
-  'creative-hub':'Creative Hub',
+  'creative-hub':'Milanote',
   'notes':'Notes',
   'note-detail':'Note Detail',
   'tb-dash':'The Board — Dashboard',

@@ -247,7 +247,7 @@ function renderMePage(){
   const sublink=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
     <button class="btn-outline" onclick="window.showPage('my-work')" style="font-size:13px">← My Work</button>
     <button class="btn-outline" onclick="window.showPage('gatepass')" style="font-size:13px">Gate Pass</button>
-    ${(typeof _canSeeCreativeHub==='function'&&_canSeeCreativeHub())?`<button class="btn-outline" onclick="window.showPage('creative-hub')" style="font-size:13px">Creative Hub</button>`:''}
+    ${(typeof _canSeeCreativeHub==='function'&&_canSeeCreativeHub())?`<button class="btn-outline" onclick="window.showPage('creative-hub')" style="font-size:13px">Milanote</button>`:''}
     ${(typeof _canSeePatternHub==='function'&&_canSeePatternHub())?`<button class="btn-outline" onclick="window.showPage('pattern-notices')" style="font-size:13px">Pattern updates${typeof _ptnNoticeBadge==='function'?_ptnNoticeBadge():''}</button>`:''}
   </div>`;
   return widget+sublink;

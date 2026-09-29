@@ -5512,9 +5512,9 @@ Four real gaps were left:
   PLACE it on the way to renaming it, and the row's drag would start under
   the caret. Enter or blur saves; Escape restores the name captured
   **before** the field opened, so a cancel cannot write back something
-  half-typed. The gallery keeps its `prompt()`: a gallery card is also a
-  click-to-open target and would fight an inline editor, which a panel row
-  is not.
+  half-typed. **The gallery renames in place too since 28 Sept 2026**
+  (`_boardsInlineRename`, which stops the tile's click while the title is
+  being edited — see "Milanote: no browser dialogs" below).
 - **The left rail and the card menu carry Picture and Board name** for a
   selected board card, routed to the same sheet and the same gallery
   router — the rail and the menus cannot offer different things.
@@ -6294,9 +6294,53 @@ opening a board and clicking its title, which is how a gallery full of
 - Permissions follow `_boardsCanEdit` (so anyone can rename a TEAM board,
   per Stage 6) while **Move to Trash stays owner-only**, matching
   `firestore.rules`.
-- Rename uses `prompt()` — `confirm()` is already the app's idiom here, and
-  an inline editor on a card that is also a click-to-open target would
-  fight itself.
+- Rename is **in place** (28 Sept 2026): the tile's title becomes the field
+  and the tile's own click is stopped while it is edited. It used to be a
+  `prompt()`; see "Milanote: no browser dialogs" below.
+
+### Milanote: no browser dialogs, renames in place (28 Sept 2026)
+
+Change order 1 of the Board session-3 run. **"Creative Hub" is called
+Milanote on every screen** — sidebar, phone More sheet, the hub's heading,
+"← Back to Milanote", the Home board's back button, the page name the bug
+tracker records (`'creative-hub':'Milanote'` in `js/shared.js`), the HRM
+dashboard button and the Convert-to-Document text. **Nothing else was
+renamed**: files, functions (`_canSeeCreativeHub`, `renderCreativeHub`),
+page ids (`creative-hub`) and collections keep their names, and comments
+still say Creative Hub where they describe history.
+
+- **No `prompt()`, `confirm()` or `alert()` anywhere in `js/boards.js`
+  or `js/notes.js`.** `_boardsConfirm(msg,{ok,no,danger})` and
+  `_boardsAsk(msg,value,{field:'text'|'date'})` are the module's own
+  dialog (`_boardsDialog`): a Promise, its own ids (`#board-confirm`, not
+  `#board-sheet` — a confirm raised from inside a sheet must not close
+  it), every string set with `textContent`, Enter = yes, Escape and the
+  backdrop = no, and no key reaches the board while it is open. The OK
+  button says what it does ("Move to Trash", "Delete forever"). Centred
+  on desktop, docked to the bottom on a phone. **Every caller now awaits
+  it, so those functions are async** — a test that calls one must await it
+  in its own app (the `_pending` hazard in `tests/boards.test.js`).
+  `js/notes.js` uses it through a `typeof` guard and deletes nothing
+  without it.
+- **`_boardsInlineRename(el,{value,commit,cancel})`** is the one in-place
+  rename: Enter or leaving the field commits, Escape puts the old text
+  back, **an empty field reverts** (never saves a blank), text read and
+  written with `textContent` (`.value` for an input), and while it is
+  edited a press, click or double-click on it goes no further — these
+  titles sit on things that drag or open on a click. Used by the open
+  board's title (`boardsTitleFocus` — it no longer saves per keystroke),
+  a card's name (F2, through `boardsBeginEdit`; **clearing a name now
+  reverts it** rather than removing it — the order said "empty reverts"),
+  and "Rename the board…" (`g:rename`: the gallery tile's title, or the
+  sub-board card's title on the open canvas, via `_boardsRenameTarget`).
+  The label rename, a line's label and a to-do's "Pick a date…" use
+  `_boardsAsk` (the date one with a real date field).
+- Found by the e2e harness's first stub run and fixed with it: the phone
+  board's back button read "← A…" (it is the arrow alone on a phone now,
+  its label in `aria-label`), and the rail's "Board name" read "Board n…"
+  (it is "Title").
+- **Every other native dialog in the app is listed in BOARD-LOG.md as
+  P2** (125 lines, file and line), not changed here.
 
 ### Making it feel instant (Sept 2026 — measured, not guessed)
 
@@ -7059,8 +7103,8 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
     it, but **the emulator refused one on an UNCHANGED entry** ("base
     version (0)") and that could not be checked against live Firestore — a
     Clear that always fails is worse, so it was left out.
-  - **Rules (`firestore.rules`, `acct_entries` update) — CHANGED, needs a
-    republish.** Four clauses: `isAcctSuper()`; `acctControl()` — status
+  - **Rules (`firestore.rules`, `acct_entries` update) — CHANGED;
+    published 26 Sept 2026.** Four clauses: `isAcctSuper()`; `acctControl()` — status
     and stock fields only, a real transition (no un-voiding), a void bound
     to the caller, refused in a closed month, **the void fields move only
     with the status**, and **an entry an owner reviewed is voided by an
@@ -7337,7 +7381,7 @@ land in MCB. Decisions tabled in `ACCOUNTS_PLAN.md` §5a.
 - **Load order:** `store-accounts.js` loads BEFORE `warehouse-sales.js`, so
   every call across is at RUNTIME behind `typeof` (`_acctWhOn()`); a build
   without warehouse sales shows nothing.
-- **Rules (`firestore.rules`, `wh_sales`) — CHANGED, needs a republish:**
+- **Rules (`firestore.rules`, `wh_sales`) — CHANGED; published 26 Sept 2026:**
   read widened to `isStoreAccounts()`; one new update clause lets
   `isWhSales()` set (or clear, for undo) EXACTLY the five collection fields
   (`_WHS_COLLECT_FIELDS`, asserted equal) on an active pay-later sale, bound
@@ -10092,6 +10136,25 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
+**No republish outstanding as of 26 Sept 2026 (session 2) — rules AND
+indexes.** Afnan deployed with the Firebase CLI from `main` at `f18536c`
+(the PR #88 merge), `firebase use` → `groovy-gatepass`, from the repo file
+at `md5 95273f84be02ebf8f0a54bae9f814dae` (LF) — `git log --oneline -1 --
+firestore.rules` is `801bcfd`. `firebase deploy --only firestore:indexes`
+("deployed indexes in firestore.indexes.json successfully for (default)
+database"; no prompt to delete an index, no `--force`) then `firebase
+deploy --only firestore:rules` ("released rules firestore.rules to
+cloud.firestore"). All **13** composite indexes reported **Enabled**, none
+in Error. The CLI output was pasted into the session; the Console's own
+state was reported by the human and cannot be checked from a session.
+**That one file carries every entry below still headed "was outstanding"**
+— the Board's lock rule and its phase-1 `board_*` rules, the warehouse
+handover and its review round, Raees's edit rights, and Ammar in
+`isAcctSuper()` — so this supersedes all of them. **The CLI is the publish
+route from now on** (`firebase.json` + `.firebaserc`, on Afnan's machine);
+the Console paste still works. If a write in any of those areas is still
+refused after this, that is new evidence — reopen the code, not the rules.
+
 **No republish outstanding as of 14 Sept 2026.** Afnan republished at
 1:38 pm that day (confirmed from the Console's own rules history), from the
 repo file at `md5 e922310a963b373ba41d6dd434d276b8` — the version carrying
@@ -10123,7 +10186,7 @@ firestore.rules` is the PR #71 commit (`creators` delete widened from
 creators). **No republish is outstanding as of that commit**; this
 supersedes the entries below.
 
-**REPUBLISH OUTSTANDING (18 Sept 2026):** two rounds, both waiting.
+**PUBLISHED 18 Sept 2026, was outstanding (18 Sept 2026):** two rounds, both waiting.
 The field round — `dispatches` gained `'on_hold_stock'` on create and
 update, `paid_pr_requests` delete now allows the requester as well as an
 owner (still pending-only), and `marketing_settings` is a new collection.
@@ -10160,7 +10223,16 @@ the tools, the rules do not stop a direct write) and the old sharedWith
 escalation stays open. Ran 26/26 in the emulator. One paste of the current
 file carries every outstanding entry below as well.
 
-**REPUBLISH OUTSTANDING (26 Sept 2026, session 2): The Board's lock
+**OUTSTANDING (26 Sept 2026, evening): the QA identity** (`dc98484`,
+`isQa()` / `authed()` / the QA fences — see "The QA identity" in
+`BOARD.md`). `signedIn()` now EXCLUDES `claude@groovy.op`. **Publish it
+before anything signs in as that account** — under the live rules it is an
+ordinary signed-in user. Emulator: Board 100/100, wh_sales/acct 103/103.
+Merged with the sharing roles above on 28 Sept: the QA clauses sit beside
+the role checks (`qaBoardOk` needs an empty `sharedWith`, so a view/comment
+role never applies to a QA board).
+
+**PUBLISHED 26 Sept 2026, was outstanding (session 2): The Board's lock
 rule** (`tbLockOk()`, `board_items` update). The old clause let a member on
 a locked item re-point `lockedBy` at themselves (or set `locked:false`) and
 then move the date, and refused a non-owner locker their own unlock --
@@ -10171,7 +10243,7 @@ paste of the current file carries this AND every outstanding entry below.
 never published, the Board shows "could not read" to all five of its
 users, and it is their landing page.**
 
-**REPUBLISH OUTSTANDING (26 Sept 2026, later): the warehouse handover,
+**PUBLISHED 26 Sept 2026, was outstanding (later): the warehouse handover,
 and its review round.** `wh_sales` read now includes `isStoreAccounts()`,
 and a new update clause lets Umair mark a pay-later bill collected. Until
 the Console has it, Raees's ledger shows "Warehouse sales could not be
@@ -10181,7 +10253,7 @@ on an uncollected bill, `whConfValid` on `acct_entries` create) — publish
 the NEWEST file; an older paste is missing those. **The same paste carries Raees's edit rights below
 if that one was not published yet.**
 
-**REPUBLISH OUTSTANDING (26 Sept 2026): Raees's edit rights.**
+**PUBLISHED 26 Sept 2026, was outstanding: Raees's edit rights.**
 `acct_entries` update now splits into `acctControl()` / `acctReview()` /
 `acctOwnEdit()` (see Store Accounts, "Raees can EDIT his own entries").
 Until the Console has it, Raees's **Edit…** is refused with "Missing or
@@ -10189,7 +10261,7 @@ insufficient permissions" — and the old ruleset still lets him clear a
 review flag through the control list. Ran 77/77 in the emulator. **If the
 25 Sept republish below was never done, this one paste carries it too.**
 
-**REPUBLISH OUTSTANDING (25 Sept 2026):** `isAcctSuper()` now lists
+**PUBLISHED 26 Sept 2026, was outstanding (25 Sept 2026):** `isAcctSuper()` now lists
 `afnan@groovy.op` AND `ammar@groovy.op` (it was Afnan alone). Until the
 Console has it, Ammar sees the Store Accounts admin buttons (Edit / Delete
 an entry, Delete vendor, Reopen, Reset) but every one of their writes is
