@@ -362,7 +362,7 @@ function _ptDetailChipHTML(p){
    the same file for its Pick colour TCX tab. Every row is validated
    before it is shown (code NN-NNNN, colour #RRGGBB); names are escaped. */
 var _tcxBook=null,_tcxState='',_tcxQuery='',_tcxShown=120,_tcxSearchT=null;
-var _colorLibTab=(function(){try{return localStorage.getItem('groovy-colorlib-tab')==='tcx'?'tcx':'library';}catch(e){return'library';}})();
+var _colorLibTab=(function(){try{var t=localStorage.getItem('groovy-colorlib-tab');return t==='tcx'||t==='c'?t:'library';}catch(e){return'library';}})();
 function _tcxEsc(t){return String(t==null?'':t).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function _tcxParse(d){
   var rows=d&&Array.isArray(d.colors)?d.colors:[],out=[],seen={};
@@ -442,7 +442,7 @@ window.tcxSearch=function(v){
 window.tcxShowMore=function(){_tcxShown+=240;_tcxRepaint();};
 window.tcxRetry=function(){_tcxState='';_tcxLoad().then(_tcxRepaint);};
 window.colorLibTab=function(t){
-  _colorLibTab=t==='tcx'?'tcx':'library';
+  _colorLibTab=t==='tcx'||t==='c'?t:'library';
   try{localStorage.setItem('groovy-colorlib-tab',_colorLibTab);}catch(e){}
   var mc=document.getElementById('main-content');if(mc)mc.innerHTML=renderColorLibraryPage();
 };
@@ -456,13 +456,78 @@ window.tcxAddToLibrary=function(code){
   if(typeof window._updateSwatchPreview==='function')window._updateSwatchPreview();
 };
 
+/* Pantone C codes (29 Sept 2026). There is NO C book file yet, so this tab
+   is DERIVED, never stored: the C codes the app already holds (the importer's
+   COLOR_IMPORT_PANTONE_HEX, ~55) plus every active library colour carrying a
+   C code. It says so on screen. A full C book dropped in later as a file like
+   the TCX one would replace the first half. */
+var _pcQuery='',_pcSearchT=null;
+function _pcKey(code){return String(code||'').toUpperCase().replace(/^PANTONE\s+/,'').replace(/GRAY/g,'GREY').replace(/\s+/g,' ').trim();}
+function _pcBook(){
+  var out=[],seen={};
+  var add=function(code,name,hex,lib){
+    hex=String(hex||'').toUpperCase();
+    var k=_pcKey(code);
+    if(!/ C$/.test(k)||!/^#[0-9A-F]{6}$/.test(hex))return;
+    if(seen[k]){if(lib)seen[k].lib=true;return;}
+    seen[k]={code:code.replace(/^pantone\s+(?!red\b)/i,'').replace(/\s+/g,' ').trim(),name:String(name||'').trim().slice(0,60),hex:hex,lib:!!lib};
+    out.push(seen[k]);
+  };
+  Object.keys(COLOR_IMPORT_PANTONE_HEX).forEach(function(k){add(k,COLOR_IMPORT_PANTONE_NAMES[k]||'',COLOR_IMPORT_PANTONE_HEX[k],false);});
+  (allColors||[]).forEach(function(c){if(c&&c.status!=='archived')add(String(c.pantoneCode||''),c.colorName,c.hexApprox,true);});
+  // Plain numbers first, in order; the named ones (Cool Grey, Pantone Red) after.
+  var num=function(t){var m=/^(\d+) C$/.exec(t.code);return m?+m[1]:1e9;};
+  return out.sort(function(a,b){return num(a)-num(b)||a.code.localeCompare(b.code);});
+}
+function _pcMatches(q){
+  var list=_pcBook();q=String(q||'').trim().toLowerCase();
+  if(!q)return list;
+  var hexq=q.replace(/^#/,'');
+  if(q.charAt(0)==='#')return list.filter(function(t){return /^[0-9a-f]{1,6}$/.test(hexq)&&t.hex.slice(1).toLowerCase().indexOf(hexq)===0;});
+  return list.filter(function(t){return t.code.toLowerCase().indexOf(q)>-1||t.name.toLowerCase().indexOf(q)>-1;});
+}
+function _pcListHTML(){
+  var all=_pcBook(),hits=_pcMatches(_pcQuery),canEdit=canManageRecipes();
+  if(!hits.length)return'<div class="empty">No Pantone C code matches “'+_tcxEsc(_pcQuery)+'”.</div>';
+  return'<div class="tcx-count">'+hits.length+' of '+all.length+' codes'+(_pcQuery?' match':'')+'</div><div class="tcx-grid">'+
+    hits.map(function(t,i){
+      return'<div class="tcx-row"><span class="tcx-chip" style="background:'+t.hex+'"></span>'+
+        '<div class="tcx-info"><div class="tcx-code">'+_tcxEsc(t.code)+'</div><div class="tcx-name">'+_tcxEsc(t.name||'—')+'</div><div class="tcx-hex">'+t.hex+'</div></div>'+
+        (t.lib?'<span class="tcx-have">In library</span>':(canEdit?'<button class="btn-outline tcx-add" onclick="window.pcAddToLibrary('+i+')">+ Add</button>':''))+
+      '</div>';
+    }).join('')+'</div>';
+}
+function _pcTabHTML(){
+  return'<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Pantone C (coated) codes the app knows: the importer\'s built-in list plus the C codes already in the library. The full C book is not loaded yet. <b>+ Add</b> opens the Add Color form filled in.</div>'+
+    '<input id="pc-search" class="tcx-search" type="search" placeholder="Search e.g. 485 C, Cool Grey, #DA291C" value="'+_tcxEsc(_pcQuery)+'" oninput="window.pcSearch(this.value)">'+
+    '<div id="pc-list">'+_pcListHTML()+'</div>';
+}
+window.pcSearch=function(v){
+  clearTimeout(_pcSearchT);
+  _pcSearchT=setTimeout(function(){_pcQuery=String(v||'').slice(0,60);var el=document.getElementById('pc-list');if(el)el.innerHTML=_pcListHTML();},160);
+};
+// By index into the CURRENT filtered list, never a code in an onclick.
+window.pcAddToLibrary=function(i){
+  if(!canManageRecipes()){showToast('Not authorized.',true);return;}
+  var t=_pcMatches(_pcQuery)[i];if(!t||t.lib)return;
+  window.openColorModal(null);
+  var set=function(id,v){var el=document.getElementById(id);if(el)el.value=v;};
+  set('cm-name',t.name||('Pantone '+t.code));set('cm-pantone',t.code);set('cm-hex',t.hex);
+  if(typeof window._updateSwatchPreview==='function')window._updateSwatchPreview();
+};
+
 function renderColorLibraryPage(){
   if(!canSeePrinting()){return'<div class="empty">Not authorized.</div>';}
   var active=allColors.filter(function(c){return c.status!=='archived';});
   var archived=allColors.filter(function(c){return c.status==='archived';});
   var canEdit=canManageRecipes();
   var tabs='<div class="tcx-tabs"><button class="tcx-tab'+(_colorLibTab==='library'?' on':'')+'" onclick="window.colorLibTab(\'library\')">Library <span>'+active.length+'</span></button>'+
-    '<button class="tcx-tab'+(_colorLibTab==='tcx'?' on':'')+'" onclick="window.colorLibTab(\'tcx\')">TCX codes'+(_tcxBook?' <span>'+_tcxBook.length.toLocaleString()+'</span>':'')+'</button></div>';
+    '<button class="tcx-tab'+(_colorLibTab==='tcx'?' on':'')+'" onclick="window.colorLibTab(\'tcx\')">TCX codes'+(_tcxBook?' <span>'+_tcxBook.length.toLocaleString()+'</span>':'')+'</button>'+
+    '<button class="tcx-tab'+(_colorLibTab==='c'?' on':'')+'" onclick="window.colorLibTab(\'c\')">Pantone C codes <span>'+_pcBook().length+'</span></button></div>';
+  if(_colorLibTab==='c'){
+    return'<div class="page-head"><div class="page-title">Color Library</div><div class="page-sub">'+active.length+' active color'+(active.length!==1?'s':'')+' · '+archived.length+' archived</div></div>'+
+      tabs+_pcTabHTML()+'<div id="color-modal-container"></div>';
+  }
   if(_colorLibTab==='tcx'){
     return'<div class="page-head"><div class="page-title">Color Library</div><div class="page-sub">'+active.length+' active color'+(active.length!==1?'s':'')+' · '+archived.length+' archived</div></div>'+
       tabs+_tcxTabHTML()+'<div id="color-modal-container"></div>';

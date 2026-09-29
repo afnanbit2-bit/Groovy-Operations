@@ -4089,6 +4089,31 @@ name, hex) — the TCX book the Pick colour tab was waiting on.
   ink broken). Undone to check: the panel close (fails by name), the archived
   filter (fails by name). **Nobody has used the tab on a real screen.**
 
+### Color Library ▸ Pantone C codes; Milanote opens on Mood Boards (29 Sept 2026)
+
+- **A third tab, Pantone C codes**, beside Library | TCX codes
+  (`_colorLibTab` `'c'`, `_pcBook`/`_pcMatches`/`_pcListHTML`,
+  `js/embellishments.js` — Ammar's file, tell him). **There is no C book
+  file**, so the list is DERIVED on every render: the importer's built-in
+  `COLOR_IMPORT_PANTONE_HEX` (~55 C codes; White/Black/Base left out) plus
+  every ACTIVE library colour whose code ends in " C" (GRAY read as GREY,
+  deduped). It says on screen that the full book is not loaded. Plain
+  numbers sort first, named ones after. **+ Add** carries an index into the
+  filtered list, never a code, in its onclick. A full C book sent as a file
+  (like the TCX xlsx) would go in `assets/data/pantone-c.json` and replace
+  the built-in half. `tests/color-tcx.test.js` (+19), layout fragment
+  `color library — the Pantone C codes tab`.
+- **Milanote opens straight on Mood Boards** (Afnan: Notes, SOPs, Storage
+  and Chat are not in use). `showPage` (`js/shared.js`, cross-track, one
+  line) rewrites `creative-hub` to `boards` AFTER the role scopes, and
+  lights `nav-creative-hub` for every Milanote page — so all eleven routes
+  and every role grant still work, unchanged. The hub page and
+  `renderCreativeHub` still exist, unreachable. Home's back button leaves
+  to the **Dashboard** (it went to the hub, which would now loop back to
+  Home); **Notes** is on Home's ⋯ menu, and its back button returns to
+  Mood Boards. Four tests that expected the hub were updated to the new
+  answer.
+
 ### Mood Boards — Unsorted previews, and the magnet (29 Sept 2026)
 
 Afnan: dropping a card into Unsorted should have "a magnet like effect,

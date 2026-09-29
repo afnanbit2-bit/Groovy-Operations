@@ -344,7 +344,7 @@ module.exports=async function(){
     // a board would be the partial rollout the one-list gate exists to stop.
     const HUB=['creative-hub','notes','note-detail','boards','boards-all','board-canvas'];
     const h=go(lead,HUB);
-    HUB.forEach(id=>s.eq('the lead reaches '+id,h[id],id));
+    HUB.forEach(id=>s.eq('the lead reaches '+id,h[id],id==='creative-hub'?'boards':id));
     s.eq('the page list is the one the router keeps',J(full.run('_CREATIVE_HUB_PAGES')),J(HUB));
     // The exemption follows the LIST, not the role: the same role for
     // somebody who is not on _CREATIVE_HUB_USERS is still scoped away.

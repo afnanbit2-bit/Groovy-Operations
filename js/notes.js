@@ -157,7 +157,7 @@ window.onHubTileClick=function(id){
 // once, since "segregated" was the explicit ask, not "filtered".
 function renderNotesPage(){
   return`
-  <button class="back-btn" onclick="window.showPage('creative-hub')">← Back to Milanote</button>
+  <button class="back-btn" onclick="window.showPage('boards')">← Back to Mood Boards</button>
   <div class="page-head" style="margin-bottom:10px">
     <div><h2 style="margin:0">Notes</h2><div style="color:var(--muted);font-size:13px;margin-top:2px">Team Wiki, private notes</div></div>
   </div>
