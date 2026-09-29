@@ -1,4 +1,7 @@
-# The Board — session 2 run log
+# The Board — session 2 and 3 run log
+
+**Session 3 (from 28 Sep 2026) runs on `board-p1`** — see BOARD.md → Testing
+for the branch flow and the tester/reviewer rule. Its entries start at CO1.
 
 Continuous run: P0, then P1, then P2, per the session-2 brief and Ammar's
 decisions of Sat 26 Sep 2026. One commit per item, pushed to
@@ -71,32 +74,250 @@ Lines marked **→ NEEDS YOU** are actions for a human.
 | P2.3 | `e194b03` | **The inbox reads only the Board's rows, newest first, capped.** It listened to **every** notification addressed to the person (HRM ones too) with no limit, and P2.1 now adds rows every morning, so its reads grew without bound. The query is now `forUser` + `source=='tb'` + `orderBy createdAt desc` + `limit 200`. That needs a composite index, added to `firestore.indexes.json` and listed in **the batched deploy list below**. **Until the index is deployed, nothing breaks:** the refusal is *failed-precondition*, and the listener lets go and re-listens on the old wide query, so the inbox is only slower. A real **refusal** (permission) is not mistaken for a missing index; it still says "could not read your inbox". The one-off read (a shell without `onSnapshot`) falls back the same way. Reverted each: always wide (2 failures), no fallback (3), any error treated as a missing index (2). | v203 | run.js 6,387/6,387 · smoke-board 3/3 · smoke-browser 8/8 · smoke-startapp 4/4 |
 | P2.4 | `4ed7e5f` | **Memoised lookups: measured, and deliberately NOT built.** Before adding caches I timed the render functions in the node harness, with a directory of 65 profiles and every item shared with two people. Render time is the string only; the browser's own parse and layout come on top and are not measured here. The call counts come from wrappers on `tbUser`, `tbUserColors`, `tbPeople` and `_tbCanEditIt`. **Dashboard: 6.0 ms at 42 items (the real launch size), 11.8 ms at 300, 19.9 ms at 1,000. List detail: 1.4 / 11.9 / 23.5 ms. Calendar month: ≤ 2.6 ms at every size** (it caps pills per day). `tbUser` and `tbUserColors` are called once per row (about 2,500 calls at 1,000 items), each a scan of the directory. **Why no cache:** a cache that is checked on every call costs about as much as the scan it replaces. A cache reset once per render goes stale, because `profile.js` edits the directory **in place** (`userProfiles[i]=row`, same array, same length), and the partial repaints (chips, inbox, badges) do not go through one render entry. So the trade is a few milliseconds against names that stop updating. **Revisit when** a real board passes about 1,000 items, and start from the browser's layout cost, not these lookups. The measuring script is in the session scratchpad, not the repo. | v204 | no code change |
 | P2.5 | `39532f3` | **Acceptance prep.** `BOARD.md` → *Session 2 acceptance*: fifteen ordered steps for the first morning, **S1–S15**, run by two people in two browsers (Ammar, a Board owner, and Saim, who is on few items). Each step says what "pass" looks like and has a column for the result. They cover the landing, the seed (first run, re-run, a deleted milestone), live updates, the read-only pane, the composer's double Enter, the list default, pins, markers, notes going to the right item, the tablet pane, the dark date picker, the inbox after the index, and the 08:00 reminder. Two wordings were checked against the code before being written in (the quick-add grammar parses `tomorrow`; the re-run summary's exact text). The stale step-15 paragraph (5,227 assertions, the old list of files touched) is corrected from `git diff --name-only origin/main...HEAD`: **`firestore.rules` is unchanged on this branch.** **Not run:** nothing here can be run from a session, which cannot sign in. | v205 | no code change |
-| R-lock | *(this commit)* | **The lock rule had two holes and one wrong refusal, found by running it in the Firestore emulator for the first time.** The Board's rules had only ever been checked as TEXT; `tests/rules-emulator-board.js` (new, hand-run like `tests/rules-emulator.js`: CI installs nothing) drives them in the real emulator with items built by the app's own `tbNewItem`/`tbItemPatch`/`tbDonePlan`/`tbHandoverPlan`. Against the old rule, 3 of its cases failed: (1) **a member on a locked item could take the lock over** (set `lockedBy` to themselves: the clause meant to stop that allowed exactly that) and then move the date; (2) **a member could set `locked:false`** and leave the name, then move it; (3) **a locker who is not a Board owner could not unlock their own lock** (a gate Saim made could never be unlocked by Saim). `tbLockOk()` replaces the clause: on a locked item only the locker or a Board owner may touch `date`, `dueAt`, `locked` or `lockedBy`; on an unlocked item, locking it names the caller. **The app never wrote (1) or (2)** (the lock button refuses a non-locker), so those were raw-write holes; (3) was a live bug in the button. The two text assertions in `tests/theboard.test.js` that claimed "lockedBy cannot be re-pointed" were matching the old rule's text while it allowed it; replaced with checks on the helper, which fail 4 ways against the old file. **`firestore.rules` changed: in the batched list below.** | v206 | emulator: Board 39/39 (old rule: 3 fail) · wh_sales/acct 103/103 · run.js 6,389 · theboard 1,131 |
+| R-lock | `801bcfd` | **The lock rule had two holes and one wrong refusal, found by running it in the Firestore emulator for the first time.** The Board's rules had only ever been checked as TEXT; `tests/rules-emulator-board.js` (new, hand-run like `tests/rules-emulator.js`: CI installs nothing) drives them in the real emulator with items built by the app's own `tbNewItem`/`tbItemPatch`/`tbDonePlan`/`tbHandoverPlan`. Against the old rule, 3 of its cases failed: (1) **a member on a locked item could take the lock over** (set `lockedBy` to themselves: the clause meant to stop that allowed exactly that) and then move the date; (2) **a member could set `locked:false`** and leave the name, then move it; (3) **a locker who is not a Board owner could not unlock their own lock** (a gate Saim made could never be unlocked by Saim). `tbLockOk()` replaces the clause: on a locked item only the locker or a Board owner may touch `date`, `dueAt`, `locked` or `lockedBy`; on an unlocked item, locking it names the caller. **The app never wrote (1) or (2)** (the lock button refuses a non-locker), so those were raw-write holes; (3) was a live bug in the button. The two text assertions in `tests/theboard.test.js` that claimed "lockedBy cannot be re-pointed" were matching the old rule's text while it allowed it; replaced with checks on the helper, which fail 4 ways against the old file. **`firestore.rules` changed: in the batched list below.** | v206 | emulator: Board 39/39 (old rule: 3 fail) · wh_sales/acct 103/103 · run.js 6,389 · theboard 1,131 |
+| CO-5 | `3f70748` | **Change order §5, the two checks — done first, because the second could have been a P0.** **(a) Samad onboarding on Mon 28 instead of Sun 27: NOT the grid.** 27 Sep 2026 is a Sunday, the LAST column of a Monday-first grid, so a week-boundary slip would look exactly like the report — which is why it was checked rather than reasoned away. The seed has written `2026-09-27` for it in every version (`git log -S`). `tests/smoke-board.js` now checks placement in real Chromium by GEOMETRY: every drawn cell sits under its own weekday header and prints its own number, and every pill is in the cell of its own date, in the month AND the week, with the Samad pill asserted in the Sunday 27 cell. The Ammar mode now runs in **Asia/Karachi** (the others in the runner's zone, UTC on CI), so a date that only slips in one zone shows. All pass: 35 cells / 14 pills (month), 7 / 7 (week). **Verified by breaking it:** starting the week on Sunday fails naming `2026-08-30 drawn in column 0, belongs in 6` and the Samad pill missing from the week. Every other date the app prints is split from the string (`tbDayLabel`); nothing parses an item date through UTC. **So the live document most likely carries `date: 2026-09-28`, i.e. it was moved** — `board_items/tb_edits_samad-onboarding-meeting-brief-grade-references`, fields `date` and `dateHistory` (each move is `{from,to,byUid,at,reason}`); the Dashboard's Activity card lists every move from `dateHistory` too. **→ NEEDS YOU** to read which. **(b) Winter Drop 2027 shows 39, the seed wrote 42: every list counter counts OPEN items only** (`status !== 'done'` — the rail, the list card, My Lists, the project row). The seed has 42 rows, 42 distinct ids, none a duplicate, none skipped for want of a login (no row's only person is someone without an account). So the 3 are, in some mix: **done** (they are in the list page's Completed group, which shows its own count), **made private by their owner** (a private item is not loaded for anyone else), **deleted since**, or **not written**. The sandbox cannot read the live board, so it cannot name them; two screens do: the list's **Completed** count, and **Settings → Preview**, which reads every seeded document server-side whatever its visibility and prints "N already on the board", "deleted since: …" and "skipped …". 42 already on the board + Completed 3 = done. 42 + Completed < 3 = the rest are private. Fewer than 42 = the Preview names them. **→ NEEDS YOU.** No precached file changed, so no cache bump. | v206 | smoke-board 192×3 in real Chromium (Asia/Karachi + UTC) · run.js |
+
+| QA-A | `dc98484` | **The QA identity: `claude@groovy.op`, a harness account fenced by the rules.** The brief's priority item, so subagents can debug the real platform. Handle `claude`, "Claude (QA)", role `qa`, in `USER_DEFS` and `BOARD_USERS` (never `BOARD_OWNERS`). **The fence is `firestore.rules`:** `signedIn()` now excludes it (`isQa()`), so every collection opened to "any signed-in user" stays shut with no clause each; `authed()` gives it back only what it must read (`user_profiles`, `mood_boards`, the Board through `isBoardUser()`). Writes: lists it admins **alone** carrying `qa:true` (set at create, immutable even for a Board owner, and **no one else may set it**); items only in those lists, assigned only to itself, flagged `qa:true`; comments/activity only on its own items; notifications only where `forUser=='claude'` (a USERNAME: the brief said uid, the field is a username); Mood Boards only its own PRIVATE boards shared with nobody, presence and comments only there; no `board_config` write. **Client** (`js/theboard.js`): `qa` lists and items hidden from real sessions where `tbItems`/`tbLists` are set (load and live listener); real people never address or notify the harness, it addresses and notifies only itself; Team Today is the real five for everyone; a harness create lands in its sandbox (`_tbQaFenceListId`) or is refused. Pages `tb-*`, Mood Boards and its Profile; no `loadData`, no bug FAB. `.gitignore` gains **targeted** credential patterns (a blanket `*.json` would drop `manifest.json`, `firebase.json` and the indexes file). Reverted each: `signedIn()` including QA, the item-create fence and the notification fence fail 16 emulator cases by name; the loader hiding and the notify guard fail 4 client assertions. **`firestore.rules` changed: in the batched list below, and it must be deployed before the harness signs in.** | v207 | emulator: Board **100/100** (61 new) · wh_sales/acct 103/103 · run.js 6,443 · smoke-board 192×3 |
+| QA-B | `aec9d9d` | **The harness uses the QA identity: `tests/e2e/board.e2e.js`, `scripts/board-inspect.js`, two agents.** **e2e:** real Chrome over the DevTools protocol (Node 22's WebSocket, no dependency) signs in at `GROOVY_QA_URL` through the real login form. The password is a DevTools call argument, never inside an evaluated expression, and a search of both reports found none. It checks the role is `qa`, then **the containment gate**: if `pos` or `bug_reports` can be read, the QA rules are not live, and it signs out and exits 2 before any write of its own. (The APP's sign-in has already logged a "signed in" `activity` row, refused by the QA rules and accepted by the old ones.) It then covers: the Dashboard; a **PRIVATE** QA Sandbox made through the app's + New (private so the RULES hide its items, not just the client, which an old cached build lacks); an item typed into the composer; the calendar, list, pane and inbox; a refused write on a real locked gate, written to its **current** date so a wrong rule still changes nothing; a refused notification for a real person; Mood Boards; the phone at 390px; and deleting its item. Output goes to `docs/board-screens/<commit>/` (PNGs, `report.json`, `report.md` with the site's `CACHE_VERSION`). **That folder is gitignored: the repo is public and the screens show the live drop plan.** **Rehearsed** on the real shell with an in-memory Firestore: 14/14 with the QA rules imitated, and stopped at the gate (exit 2, no screens) without them. Two harness bugs were found by running it (headless gives no focus, so the typed login landed nowhere; an SDK blocked by the network was blamed on `USER_DEFS`). **board-inspect:** Admin SDK reads over ADC + `GOOGLE_CLOUD_PROJECT`: `counts`, `items`, `item` (fields, `dateHistory`, activity), `notifications`, `markers`, `seed-check`. **Read-only by construction:** an `update()` of a random nonexistent doc must come back `PERMISSION_DENIED`, or it exits 3. **Driven against the emulator**, which caught two bugs. (1) The first probe id `__inspect_probe__` is RESERVED, so every credential got `INVALID_ARGUMENT` and the script could never have run live. (2) A private item counted as open for everyone. On a fixture with one deleted, one done and one private milestone it reports **39 of 42 counted open** and names all three. `tests/board-inspect.test.js` (31) holds the pure decisions; reverting the private rule or the probe id fails 5. **Agents:** `.claude/agents/board-tester.md` and `board-reviewer.md`, each told to run `board-inspect` when a screen needs a data explanation. **Assumption:** none existed in the repo; if Ammar has user-level agents of those names, they need the same line. | v207 | run.js 6,474 · board-inspect 31 · e2e rehearsal 14/14 + gate stop · emulator seed-check |
+| R-vis | `e39e5c1` | **From the review run that was killed (`wf_83e2d9b9-2d3`: it reached its find phase and verified nothing; its journal is the source).** Two of its three "major" findings were checked by hand against HEAD and **confirmed**. **(1) An edit could make an item private.** `tbItemPatch` recomputed visibility on EVERY patch from `tbLists`, which holds only the lists the editor can read. So a Board owner pinning, renaming or noting a one-person item in a shared list they are not a member of found no list, read it as private and wrote `visibility:'private'`: the item vanished for everyone else. Visibility is now recomputed only when the assignees or the list change, and an unseen list can make an item shared but never private. **(2) Private titles in bell rows.** The 08:00 reminder and the client's `_tbNotify` copied item titles and comment text into `hrm_notifications`, which **every signed-in account can read**. A private item's row now says only that there is one (`tbNotifMessageFor`; an item with no visibility field is treated as private). **Not fixed here, and raised below: the same is true of SHARED items**, whose titles and comment text reach every signed-in account through the bell's collection. Reverting each fix fails 4 assertions by name. The run's other 12 findings are **unverified**; they are listed below so they are not lost. | v208 | run.js 6,483 · smoke-board 192×3 |
+| main-merge | `14f7c94` | **`main` moved under the PR (`d7bc59e`, the login round: phone redesign, Remember me that actually keeps you signed in, the fingerprint app lock) and landed at `v208` — the SAME number as this branch, different bytes.** The merge was clean and `sw.js` was not in it at all: both sides had written the identical line, the dangerous collision CLAUDE.md records. Bumped past both to **`v209`** (and the `?v=` tags on the three merged/changed scripts). **One knock-on for the harness, fixed:** the login is a real `<form>` now and **Remember me is ticked by default**, so a QA sign-in would have kept its session, offered the QA password to the browser's password manager, and could have raised the fingerprint-lock offer card (z-index 600) over the pages the e2e screenshots. `tests/e2e/board.e2e.js` unticks it before submitting and **checks `groovy-keep-signed-in` is not `1`** afterwards. Rehearsed on the merged shell: **15/15**; with the untick removed the new check FAILS by name (`groovy-keep-signed-in is 1`). `startApp`'s QA branch and the login's `gv-login` class merged side by side; smoke-board 192×3, smoke-startapp 4/4, smoke-browser 8/8, the login layout fragment 6/6. | v209 | run.js 6,542 · smoke-board 192×3 · e2e rehearsal 15/15 + mutation |
+| main-merge-2 | `53ae104` | **`main` moved again (`208d4c6`, the login round, second half: passkey sign-in through `netlify/functions/passkey.js`, a fingerprint choice ON the login screen, pull-to-refresh, the warm-white icon) to `v217` while this branch sat at `v209`.** A real conflict this time, the benign shape: `sw.js` and the `auth.js` query tag both differed. Resolved past both to **`v218`**, and the `?v=` tags on the merged `auth.js`/`shared.js`/`theboard.js`. `startApp`'s QA branch and the login's new `_loginLeave` fade merged side by side. **The harness is unaffected, and its untick now matters twice:** the new fingerprint row registers a passkey only when Remember me is ticked (`bio && keep`), so the e2e's untick also keeps a passkey from ever being registered for the QA account. The login ids it drives (`l-user`, `l-pass`, `l-remember`, `login-btn`) are unchanged. Rehearsed on the merged shell: **15/15** deployed, **exit 2 at the gate** undeployed. The gate's two messages said "before writing anything", which the app's own Login row makes untrue; they say "before the harness writes anything" now, matching the header. **One open question, logged below rather than fixed:** `passkey.js` signs a passkey session in with `createCustomToken(uid)`, and `isQa()` keys on the token's EMAIL claim. | v218 | run.js 6,666 · smoke-board 192×3 · smoke-startapp 4/4 · smoke-browser 8/8 · login layout 6/6 · e2e rehearsal 15/15 + gate stop |
+| main-merge-3 | `b11a5a1` | **`main` moved a third time (`699dcc0`, the login's own "Choose an account" sheet with profile pictures) and landed at `v218` — the SAME number this branch had just taken, different bytes.** Clean merge, `sw.js` untouched by it: the dangerous shape again, caught by comparing both sides' `CACHE_VERSION` before pushing rather than by the conflict list. Bumped past both to **`v219`**, with the `?v=` tags on `shared.js`, `auth.js`, `profile.js` and `theboard.js`. **The harness is unaffected:** the new sheet's account list is written only when Remember me is kept (`auth.js` `if(keep){…_loginRememberAccount…}`, and `profile.js` only for an account already known), and the e2e unticks it in a fresh browser profile, so the QA account never lands on anyone's list. The login ids it drives are unchanged. | v219 | run.js 6,678 · smoke-board 192×3 · smoke-startapp 4/4 · smoke-browser 8/8 · login layout 6/6 · e2e rehearsal 15/15 |
+| main-merge-4 | `2d2f65e` | **`main` moved again within minutes (`b250b0b`, swipe a login sheet down to close it) and landed at `v219` — the number this branch had just taken. Third identical-number collision in a row, clean merge, `sw.js` untouched.** Bumped past both to **`v220`** with the four `?v=` tags. The harness never opens a sheet, so the swipe changes nothing it drives. | v220 | run.js 6,682 · smoke-board · smoke-startapp 4/4 · smoke-browser 8/8 · login layout 6/6 · e2e rehearsal 15/15 |
+| main-merge-5 | `101c7f5` | **`main` moved again (`49c907c`, no "Saving..." on start-up, Board skeleton) and landed at `v220` — the number this branch had just taken. Fourth identical-number collision in a row, clean merge, `sw.js` untouched.** Bumped past both to **`v221`** with the five `?v=` tags. The harness waits on no "loading…" text, so the Board's new skeleton changes nothing it drives. | v221 | run.js 6,687 · smoke-board 192 · smoke-startapp 4/4 · smoke-browser 8/8 · login layout 6/6 · board layout 256 · e2e rehearsal 15/15 |
+| main-merge-6 | `76d6f1a` | **`main` moved again (`c9387ab`, no long-press menus, selection or image drags on the app frame) and landed at `v221` — the number this branch had just taken. Fifth identical-number collision in a row, clean merge, `sw.js` untouched.** Bumped past both to **`v222`** with the five `?v=` tags. The new guard is scoped to the frame (`#scr-login`, `.topbar`, `#sidebar`, sheets) and spares fields; The Board uses no `contextmenu`, and the harness only types into fields and clicks buttons. | v222 | run.js 6,693 · smoke-board 192 · smoke-startapp 4/4 · smoke-browser 8/8 · login layout 6/6 · board layout 256 · e2e rehearsal 15/15 |
+| main-merge-7 | `5f5e002` | **`main` moved again (`65eb0ee`, fingerprint sign-in set-up can be retried and follows the typed account) and landed at `v222` — the number this branch had just taken. Sixth identical-number collision in a row, clean merge, `sw.js` untouched.** Bumped past both to **`v223`** with the five `?v=` tags. Checked against the harness: the new `doLogin` branch keys on `passkeyFor(u)`, but `bio` still needs Remember me, which the e2e unticks, so no passkey set-up is ever attempted for `claude`; the `lockDisable({quiet:true})` branch needs a lock or key the QA account never holds. The new `input` listener on `#l-user` only repaints the fingerprint row. | v223 | run.js 6,709 · smoke-board 187/192/192 (three users) · smoke-startapp 4/4 · smoke-browser 8/8 · login layout 6/6 · board layout 256 · e2e rehearsal 15/15 |
+| main-merge-8 | `eadc931` | **`main` moved while main-merge-7 was being checked (`6aec626`, fingerprint without a tick box) and landed at `v223` — the number main-merge-7 had just taken, before it was pushed. Seventh identical-number collision in a row, clean merge.** Bumped past both to **`v224`** with the five `?v=` tags. **Checked against the harness, because this one could have mattered:** `#l-bio` is gone and a password sign-in now sets up a passkey on its own. But the rule is `_fpShouldSetUp(u,keep)` and needs `keep` (Remember me), which the e2e unticks and asserts; `_lockMaybeOffer` is now reached only from `_lockEnableAfterLogin`, behind the same rule; `_loginAutoFinger` needs a key already on the device for the typed user, and the QA profile is fresh each run. The harness never referred to `#l-bio`. So the QA account still never registers a passkey. | v224 | run.js 6,707 · smoke-board 187/192/192 (three users) · smoke-startapp 4/4 · smoke-browser 8/8 · login layout 6/6 · board layout 256 · e2e rehearsal 15/15 |
+| main-merge-9 | `d76d57d` | **`main` moved again (`3da3307` phone sweep + `8fefcf7` smoke-layout retry) and landed at `v224` — the number this branch had held since the last merge. Eighth identical-number collision; `sw.js` merged clean, `index.html` conflicted only on three `?v=` tags beside lines both sides edited (took main's).** Bumped past both to **`v225`** with every `?v=20260927` tag. Checked against this branch: main's new `tests/smoke-app-phone.js` (now in CI) drives a FIXED list of eight personas, not every `USER_DEFS` account, so the QA account is seeded as a profile but never driven — it passes clean. Main's phone rule `.btn-sm,.btn-outline,.filter-chip,.dest-chip{min-height:34px}` also reaches the Board; the Board layout fragments and smoke-board still pass with it. | v225 | run.js 6,707 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 (three users) · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 368 · e2e rehearsal 15/15 |
+| main-merge-10 | `f312a87` | **`main` moved again (`2298f39`: a split-screen login on desktop, Chrome's autofill tint covered, the closed phone sheet's shadow no longer bleeding along the bottom of every page) and landed at `v225` — the number this branch already held. Ninth identical-number collision; `sw.js` merged clean, `index.html` conflicted only on the `main.css` tag (both sides had moved it).** Bumped past both to **`v226`**, with every tag this branch had moved going to `?v=20260928v226`. Checked against this branch: the new `<aside class="login-brand">` adds no id, and the harness drives the login only through `login-u`/`login-p`/`login-btn`/the Remember-me box, which are unchanged — the rehearsal signed in through the desktop split screen. The `.mob-sheet` shadow move is shadow-only. | v226 | run.js 6,707 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 (three users) · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 368 · e2e rehearsal 15/15 · check-cache-version v225 → v226 |
+| main-merge-11 | `8d3f34d` | **`main` moved again (`7bfc2bf` share from the phone into Unsorted, `c1effc4` Move to board…, `430fc28` per-person sharing roles) and landed at `v228` while this branch sat at `v226` — the benign, DIFFERENT-number shape, so git raised real conflicts: `sw.js`, `index.html` (two tag lines), `CLAUDE.md` (the rules-status entries) and `firestore.rules`.** Bumped past both to **`v229`**. **The rules conflict was the one that mattered:** main rewrote the `mood_boards` update clause and the sub-collection helpers for the roles, and this branch had rewritten the same clauses for the QA fence. Resolved by keeping BOTH: reads stay `authed()`, the signed-in branch now goes through main's `canEditBoard` + `boardSharingUntouched`, `canEditParent` = `signedIn() && canEditBoard(parent)` `||` `qaOwnsParent()`, and `canCommentParent` builds on that, so a QA board (which `qaBoardOk` holds to an empty `sharedWith`) is never subject to a view/comment role. **Found while checking, NOT fixed here:** the Mood Boards share picker (`boardsOpenShare`) and the to-do assignee list (`_boardsAssignees`) read `USER_DEFS` unfiltered, so both have offered **"Claude (QA)"** since QA-A added the account — this branch never touched `js/boards.js`. A real person could share a private board with the QA account, and the rules would let it read that board (`canReadBoard` → `boardShared`). Proposed fix: filter `role==='qa'` out of both lists (client), and drop `boardShared` from QA's read (rules). It is a visible change, so it waits for the real-platform test rule rather than riding a merge. | v229 | run.js 6,809 · emulator: Mood Boards roles 26/26 · Board + QA 100/100 · wh_sales/acct 103/103 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 374 · e2e rehearsal 15/15 · check-cache-version v228 → v229 |
+| main-merge-12 | `2ac1fcb` | **`main` moved again (`0f795cf`: Mood Boards comments, replies, task assignments and due tasks now write to the bell, `hrm_notifications` with `source:'moodboards'`) and landed at `v229` — the number this branch already held. Tenth identical-number collision; `sw.js` merged clean, `index.html` conflicted on the `shared.js`, `boards.js` and `profile.js` tags.** Bumped past both to **`v230`**, every tag this branch had moved going to `?v=20260928v230`. Checked against this branch: The Board's inbox already filters `hrm_notifications` on its own `source` (`js/theboard.js`, both the live query and the in-memory filter), so Mood Boards rows cannot appear in it; `_hrmNotifAction`'s new `#…` branch is additive and returns before the page routing the Board's rows use. **Adds to the open QA-in-the-pickers finding, still NOT fixed here:** with bell notifications, a real person who assigns a to-do to "Claude (QA)" or comments on a board shared with it now also writes a bell row addressed to `forUser:'claude'`. Harmless (nobody reads it but the QA account, and the QA account cannot write the bell under `signedIn()`), but it is one more reason for the same client filter. | v230 | run.js 6,836 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 374 · e2e rehearsal 15/15 · check-cache-version v229 → v230 |
+| main-merge-13 | `aeb5b41` | **`main` moved again (`13dd3b1`: YouTube and Vimeo links play inline in the Mood Boards link card) and landed at `v230` — the number this branch had taken twenty minutes earlier. Eleventh identical-number collision, and this time the `main.css` tag was the IDENTICAL STRING too (`?v=20260928v230` on both sides, different bytes), so git merged that line silently; `index.html` conflicted only on the `boards.js`/`profile.js` pair.** Bumped past both to **`v231`**, every tag this branch had moved going to `?v=20260928v231`, including the stylesheet. This branch never touched `js/boards.js`; the new link-card code and its `smoke-layout` fragment came through untouched. | v231 | run.js 6,863 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 378 · e2e rehearsal 15/15 · check-cache-version v230 → v231 |
+| main-merge-14 | `71b4e1a` | **`main` moved five commits (`5ade97b`…`c52fc3f`: Spotify, SoundCloud and Google Maps links become players in the Mood Boards link card, plus four fixes from issue #97 — Tab stays in a note, Present keeps a formatted note's lines and lists, a board tile counts its Unsorted, the board picker keeps its place while you search) and landed at `v235`. The benign shape this time: the numbers DIFFERED (`v231` here), so git raised a real conflict in `sw.js` and on the `main.css` and `boards.js`/`profile.js` tags in `index.html`.** Bumped past both to **`v236`**, every tag this branch had moved going to `?v=20260928v236` (11 tags). No `firestore.rules` change on main's side. This branch never touched `js/boards.js`; checked that main's changes leave `_boardsAssignees` and `boardsOpenShare` as they were, so the open QA-in-the-pickers finding is unchanged. **`smoke-layout` 378 → 376 is main's own change:** its video fragment grew to five cards and dropped the 1280px width, removing that fragment's two 1280 jobs. | v236 | run.js 6,904 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 376 · e2e rehearsal 15/15 · check-cache-version v235 → v236 |
+| main-merge-15 | (this commit) | **`main` moved three commits (`6198b19`…`e07f2bf`: #97 bugs 6–8 — a note's hover strip becomes a corner chip, a note grows with its text instead of scrolling, the bug button no longer covers Post and Find clears the side panels) and landed at `v238` against this branch's `v236`. Different numbers, so git raised a real conflict in `sw.js` and on the `main.css` and `boards.js`/`profile.js` tags.** Bumped past both to **`v239`**, every tag this branch had moved going to `?v=20260928v239` (11 tags). No `firestore.rules` change on main's side; this branch never touched `js/boards.js` and main's changes leave `_boardsAssignees` and `boardsOpenShare` as they were. | v239 | run.js 6,921 · smoke-app-phone all 8 personas clean · smoke-board 187/192/192 · smoke-startapp 4/4 · smoke-browser 8/8 · full smoke-layout 376 · e2e rehearsal 15/15 · check-cache-version v238 → v239 |
+| CO1 | `7f66f64` | **Session 3, change order 1: Creative Hub → Milanote, no browser dialogs, renames in place** (on `board-p1`). **"Creative Hub" reads "Milanote" on every screen** — sidebar, phone More sheet, the hub heading, "← Back to Milanote", the Home board's "← Milanote", the bug tracker's page name (`'creative-hub':'Milanote'`), the HRM dashboard button, the Convert-to-Document text. **Nothing else renamed**: files, functions (`_canSeeCreativeHub`, `renderCreativeHub`), page ids (`creative-hub`), collections. The Board's "Creative Hub link chip" from change order 2 **does not exist yet** (change order 2 was not available), so it was not renamed. **No `prompt()`/`confirm()`/`alert()` in `js/boards.js` or `js/notes.js`**: `_boardsConfirm`/`_boardsAsk` (`_boardsDialog`) are the module's own dialog — a Promise, its own ids, `textContent` only, the OK button says what it does, centred on desktop, docked on a phone; 15 callers are now `async`. **In place** (`_boardsInlineRename`): the board title (no longer saves per keystroke), a card's name on F2, and "Rename the board…" (gallery tile, or the sub-board card's title) — Enter or blur commits, Escape reverts, **empty reverts** (so a card's name can no longer be cleared to nothing: the order's rule), `textContent` in and out. **Decision (logged, not silent):** the label rename, a line's label and a to-do's "Pick a date…" are one-value asks, not titles on screen, so they use `_boardsAsk` (the date one with a real date field) rather than an in-place field. **Every changed line of `js/boards.js`** (old → new, `f312a87` → `882b8b1`, +233 −60): — → 921–927 (F2 name renames in place) · 1354 → 1361, 1358 → 1365 (export: async; "include nested boards?" in the dialog) · 1736 → 1743 (delete forever) · 1856 → 1863 (trash a linked board) · 2142 → 2149 (back label "Milanote") · 2159 → 2166–2169 (phone back button: the arrow) · 2163 → 2173 (title input: `onfocus` rename, no `oninput`) · 2749 → 2759 (card name: no `oninput`) · 3064 → 3074, 3067 → 3077 (erase drawing) · — → 3930–4074 (the dialog, its key handler, `_boardsConfirm`, `_boardsAsk`, `_boardsInlineRename`) · 3969 → 4124, 3977 → 4132, 3983 → 4138 (label rename/remove) · 6003 → 6158 (rail "Title", own icon) · 6534 → 6689, 6536 → 6691 (line label) · — → 6946–6950 (`boardsTitleFocus`) · 6906–6917 → — (`boardsCardName` and its comment removed) · 8263 → 8411, 8281 → 8429, 8287 → 8435 (Make a Document, "Milanote") · 8581 → 8729, 8587 → 8735 (delete column and cards) · 9457 → 9605 (move board to Trash) · 10857–10860 → 11005–11007 (stale comment) · 11414 → 11561, 11417 → 11564 (tray remove) · 12058 → 12205, 12068 → 12215 (trash purge, empty) · 12383 → 12530 (delete comment) · 12573–12578 → 12720–12728 (due date: the date ask) · — → 13819–13831 (`_boardsRenameTarget`) · 13694–13703 → 13857–13876 (`g:rename` in place, panel fallback) · 13737 → 13910 (gallery Move to Trash). **Also touched:** `js/shared.js` (labels), `js/hrm.js` (one button label), `js/notes.js` (label, back button, its delete confirm), `css/main.css`, `index.html` (`?v=`), `sw.js`, `tests/boards.test.js`, `CLAUDE.md`. | v227 | boards 1753/1753 · stub e2e: phone dialog and back button found and fixed before commit |
+| QA-C | `d8485eb` | **Session 3 setup: the harness at both widths and both themes, a stub mode, the two agents.** Ammar chose (28 Sept) to **extend the dependency-free harness, not add Playwright**. `tests/e2e/board.e2e.js` now covers every screen at **1440 and 390, light and dark** and asserts on each: no console error, no uncaught exception or rejection, **painted within 500 ms**, **no leaf text wider than its box** (an ellipsis counts), every avatar a photo or initials, every pill a lane colour. Not-built screens are **named in the report**: the calendar Day view; a list's Calendar/Lanes/Members tabs; Settings (Board owners only — the QA account is not one). **It never touches Winter Drop 2027:** the refused-gate probe needs a visible non-Winter-Drop list (none today — skipped and said; **this narrows QA-B's probe, which ran on a real Winter Drop gate**), and the run ends comparing every real item it can read with a snapshot taken before its first write (the QA account is not a Winter Drop member, so the LIST never loads for it — every real item is the stricter check). On the live site Milanote is read-only (Escape, Cancel). **`--stub`** (`tests/e2e/stub-site.js`): the real shell with smoke-board's in-memory Firestore (it now exports itself when `require`d) and the QA fence imitated behind `__QA_UID`. Agents rewritten in Ammar's words; `docs/BOARD-VISUAL-SPEC.md` written from P0.5–P1.8 with change order 2's items marked open; BOARD.md → **Testing**. `tests/board-inspect.test.js` holds the static half (the password is only ever a call argument — **a mutation that evaluates it fails**, checked). | — | run.js 6,775 (+2 CRLF-only, below) · board-inspect 40/40 · smoke-board 192×3 |
+| R-CO1 | `f2d217f` | **Review fixes from the first reviewer and tester runs.** Reviewer, blocking, all three confirmed in real Chromium and fixed: **(1) the confirm let every key but Enter/Escape through** — Delete behind it deleted the selected card, Ctrl+Z ran undo, Enter answered yes even with Cancel focused; `_boardsDlgKey` now holds every key, Tab cycles inside, Enter answers what has focus. **(2) "Rename…" from Home's boards panel was a dead end** for a board not placed on Home — it renames the panel row in place. **(3) the P2 list promised in CLAUDE.md was missing** — it is below, and CLAUDE.md's count is corrected (86 was an undercount: a `/*` inside a string sent my comment-stripper off; it is **125**). Tester, Milanote items: the F2 name field sat over the note in capitals (solid header, as typed); a sub-board title being edited sat under the card head (raised field); weak scrim; Title and Rename shared an icon; the QA sidebar said "Mood Boards". Harness: real-key dialog checks; below-the-fold shots. | v228 | boards 1761/1761 · stub 152/156 |
+| R-CO1b | `a10d7e8` | From the reviewer's pass on `f2d217f` (pass, with notes): a key during **IME composition** is left alone (Enter no longer submits a half-composed word); **Space presses a focused dialog button** and still never reaches the board; the no-dialog test reads line by line (the stripping flaw again). Harness shots are scrolled viewport shots (the single tall capture painted fixed bars mid-page). | v229 | boards 1761/1761 · stub 152/156 |
+| R-CO1c | `882b8b1` | From the tester's pass on `a10d7e8`: **a destructive confirm opens on Cancel** — with Space now pressing buttons, one stray key after "Move to Trash…" trashed the board. All 12 destructive call sites pass `danger:true` (the reviewer drove each with a real Enter and a real Space: every one answered no and changed nothing); the two non-destructive ones open on OK; the asks on their field. Harness shots overlap by 140 px (the band under the fixed header was never captured). | v230 | boards 1762/1762 · stub 153/157 · smoke-board 192×3 |
+| merge-p1 | (this commit) | **Merged #90's head (`6f6287a`, v239) and `main` (`dc0e609`, v250: #97's Mood Boards fixes, the Unsorted preview) into `board-p1`, to merge #91.** Three code conflicts, each with #97's Mood Boards track, resolved toward `main`: **(1) the board title** keeps #97 bug 10's handling (live `oninput`, Enter leaves, Escape restores, leaving saves and repaints the crumb tile) — CO1's `boardsTitleFocus` rename is dropped, and CO1's **empty-reverts** is added to `boardsTitleDone`; **(2) removing from Unsorted asks nothing** (Afnan, 28 Sept; Ctrl+Z brings it back), so it is no longer one of CO1's `danger` confirms (11 remain); **(3) the tests** follow both. CSS and log rows kept from both sides. `CACHE_VERSION` past both to **v251**, `?v=` moved on the seven changed precached files. | v251 | run.js 7,201 (+2 CRLF-only: #97's FAB-rule regex and store-accounts) · smoke-board 3/3 · stub e2e 153/157 (the 4 calendar pill titles) |
+
+
+**The agents' verdicts on this run (session 3, all STUB — `GROOVY_QA_*` are not set on this machine yet):**
+
+| commit | board-reviewer | board-tester (screens in `docs/board-screens/<folder>/`, gitignored) |
+|---|---|---|
+| `7f66f64` + `d8485eb` | **FAIL** — 3 blocking (fixed in `f2d217f`) | FAIL 150/154 — `d8485eb-stub/`: 4 calendar pill titles; 21 visual/Monday items |
+| `f2d217f` | **pass** | FAIL 152/156 — `f2d217f-stub/`: the 4 pill titles; Milanote items confirmed fixed; whole-page capture artefacts (harness, fixed next) |
+| `a10d7e8` | **pass** (Space, IME, Tab, Delete checked with real keys) | FAIL 152/156 — `a10d7e8-stub/`: the 4 pill titles; focus-on-destructive-button and a capture gap (both fixed next) |
+| `882b8b1` | **pass** (all 12 destructive sites driven with real Enter and Space) | FAIL 153/157 — `882b8b1-stub/`: **only the 4 pill titles**; gap closed; Cancel focus confirmed on all four confirm screens |
+
+The tester's remaining FAIL is **not from this work**: The Board's calendar pills clip long titles at 1440 (a 67 px title slot, `span.tb-pilltitle`, ellipsis), in Month and Week. It fails because the assertion is new, not because anything regressed.
 
 ---
 
 ## Rules / index deploys — batched
 
-**`firestore.rules` CHANGED (R-lock): republish the whole file.** The
-Board's lock rule (`tbLockOk()`). It carries every other outstanding rules
-change with it (Board phase 1, Store Accounts edit rights, Ammar in
-`isAcctSuper`, warehouse sales and handover), since the Console takes the
-whole file. Verified in the emulator before handing over: Board 39/39,
-wh_sales/acct 103/103.
+**OUTSTANDING (26 Sept 2026, evening): QA-A (`dc98484`) changed
+`firestore.rules`** — `isQa()`, `signedIn()` excluding it, `authed()`, and
+the QA fences on `board_lists`, `board_items` (+ comments, activity),
+`hrm_notifications`, `user_profiles` and `mood_boards` (+ presence,
+comments, trash). **Deploy it BEFORE anything signs in as
+`claude@groovy.op`:** until then the live `signedIn()` includes that
+account, i.e. it can read and write most of the app. No index change.
+`firebase deploy --only firestore:rules` from the branch head (or `main`
+once merged). Everything below was already deployed.
 
-One index:
+**DEPLOYED 26 Sept 2026 — nothing in this list was outstanding then.** Afnan
+ran `firebase deploy --only firestore:indexes` then `firebase deploy --only
+firestore:rules` from `main` at `f18536c` (the PR #88 merge), `firebase use`
+→ `groovy-gatepass`, rules file `md5 95273f84be02ebf8f0a54bae9f814dae`.
+The CLI answered "deployed indexes in firestore.indexes.json successfully
+for (default) database" and "released rules firestore.rules to
+cloud.firestore", with no prompt to delete an index and no `--force`. All
+13 composite indexes reported Enabled, none in Error; the new ones, as
+Afnan listed them: `hrm_notifications` (forUser, source, createdAt desc)
+for the P2.3 inbox, `board_lists` (kind, memberUids array-contains) and
+five on `board_items`. The rules file carried the R-lock `tbLockOk()`
+and every other outstanding change (Board phase 1, Store Accounts edit
+rights, Ammar in `isAcctSuper`, warehouse sales and handover).
 
-1. **`hrm_notifications`: `forUser` ASC, `source` ASC, `createdAt` DESC**
-   (P2.3, the Board inbox's narrowed query). It is in
-   `firestore.indexes.json`, so `firebase deploy --only firestore:indexes`
-   creates it; or Firebase Console → Firestore → Indexes → Composite → Add
-   with those three fields. **Nothing breaks before it exists**: until then
-   the inbox is refused with *failed-precondition* and falls back to the
-   old query, which is only slower. Once it is built (a few minutes), each
-   Board user's inbox reads at most 200 of their own Board rows instead of
-   every notification ever addressed to them.
+What that removes: the P2.3 inbox no longer needs its fallback, so each
+Board user's inbox reads at most 200 of their own Board rows. The lock
+holes found by the emulator are closed on the live project.
+
+## Session 3 — open items
+
+- **→ NEEDS YOU: the QA environment.** Set `GROOVY_QA_URL` (the `board-p1`
+  deploy preview — the URL is in Netlify's comment on the draft PR),
+  `GROOVY_QA_EMAIL`, `GROOVY_QA_PASSWORD` in your shell (BOARD.md →
+  Testing). Until then every tester run is the stub, and says so. The QA
+  rules (QA-A) must be deployed before it signs in for real — see the
+  batched list above.
+- **→ NEEDS YOU: change order 2 and the brief's section 3.** Neither was in
+  the repo or the session. `docs/BOARD-VISUAL-SPEC.md` is written from what
+  shipped and marks change order 2's items open (the grid, avatar photos,
+  default views, "pure black cells", the Day view, a list's
+  Calendar/Lanes/Members). Change order 2 and P1 continue once they arrive.
+- **Pre-existing test failures on a Windows checkout only.** `node
+  tests/run.js` fails 2 assertions on a CRLF working copy, on the parent
+  commit too: "setPersistence is bridged from the Auth SDK"
+  (`tests/login.test.js:178`) and "store data loads for acct-* pages"
+  (`tests/store-accounts.test.js:1614`). Both regexes expect `\n` right
+  after a comma; CI checks out LF. Not a code defect; the tests could use
+  `\r?\n`.
+
+### P2 — every other browser dialog in the app (125 lines)
+
+Change order 1 fixed Milanote's only. Method: `git grep` for a call of
+`alert(`, `confirm(` or `prompt(` (optionally `window.`) in the shipped
+`.js` and `.html`, excluding `assets/`, `tests/`, `scripts/`, `netlify/`,
+`attendance-sync/`, `js/boards.js` and `js/notes.js`, and lines that start
+as comments. One line may hold two calls (`typeof confirm==='function'&&
+!confirm(…)` counts once).
+
+- `color-backfill.html` (3): lines 300, 302, 303
+- `js/embellishments.js` (14): lines 475, 1245, 1279, 2009, 2019, 2028, 2039, 2040, 2929, 2946, 3483, 3701, 3920, 3921
+- `js/fabric.js` (12): lines 1243, 1254, 1290, 1442, 1638, 1938, 1956, 2271, 2284, 2578, 2581, 2732
+- `js/fulfillment.js` (1): lines 1728
+- `js/gatepass.js` (5): lines 1044, 1054, 1152, 1162, 1267
+- `js/hrm.js` (13): lines 574, 783, 784, 1891, 1895, 1993, 2114, 2807, 2829, 2846, 3023, 3170, 3194
+- `js/marketing.js` (10): lines 1255, 1260, 1279, 1295, 1347, 2306, 2731, 2803, 3941, 4111
+- `js/patterns.js` (10): lines 1281, 1837, 2120, 2132, 2134, 2210, 2226, 2576, 2649, 2845
+- `js/pos.js` (7): lines 453, 568, 579, 1239, 1322, 1383, 1390
+- `js/production.js` (2): lines 167, 660
+- `js/shared.js` (5): lines 1869, 1885, 1916, 2184, 2193
+- `js/store-accounts.js` (23): lines 950, 1084, 1200, 1210, 1353, 1544, 1559, 1587, 1695, 1696, 1705, 1827, 1964, 2123, 2140, 2142, 2448, 2452, 2455, 2842, 2867, 2894, 3076
+- `js/store.js` (9): lines 1079, 1091, 1127, 1295, 1297, 1450, 2147, 2399, 2430
+- `js/theboard.js` (4): lines 2013, 2025, 2562, 4076
+- `js/warehouse-sales.js` (4): lines 1058, 1222, 1240, 1265
+- `pantone-importer.html` (3): lines 221, 271, 272
+
+### The tester's findings on The Board (not from this work; P1 / change order 2)
+
+Seen on the stub screens of `d8485eb`–`882b8b1`; none is caused by change
+order 1. Each needs the live site or change order 2 to settle.
+
+1. **Calendar pill titles clip at 1440** (Month and Week, 67 px title
+   slot, ellipsis) — the harness's one failing assertion. Week is meant to
+   show every pill; a two-line clamp there is the obvious candidate.
+2. **Phone calendar:** the Month segment is still offered (the spec says
+   Week only); day rows show "21", "22"… without a weekday; the day card
+   leaves ~75 px empty on the right.
+3. **Two navigation bars on a phone** (the Board strip and the app's bottom
+   bar), in different orders and with different Calendar icons.
+4. **No "?" in the header row at 390**; the phone strip marks nothing
+   active on a list page; the app sidebar marks "The Board" only on the
+   Dashboard.
+5. **Text under 12 px** (from `css/main.css`: `.tb-kind` 11, `.tb-rowmeta
+   .tb-av` 10, `.tb-badge` 11, `.tb-navbadge` 11, `.tb-lock` 11,
+   `.tb-railpill` 10) — the spec says none. The harness has no font-size
+   check yet.
+6. **Lower-case copy against the Title Case rule**: "nothing in your
+   inbox", "add to this list", "+ add", "nothing attached", "no comments
+   yet", the composer's date/assign/list/lane, "none" vs "None".
+7. **Weekend and out-of-month tints** are one RGB level from a weekday in
+   dark (23,23,26 vs 24,25,27) and identical to each other.
+8. **Today's number is white on blue-9**, which P1.1 measured at 3.26:1 and
+   reserved for icons (unmeasured here).
+9. The composer placeholder clips at 390 ("…@afnan #den"); the phone's
+   comment box says "ctrl+enter to post".
+10. **Milanote, pre-existing:** a selected card's dark head strip covers the
+    top of its own title (sub-board cards); on a phone a board opens at the
+    desktop pan, so cards can sit off screen.
+
+### Harness coverage still missing
+
+The item pane's own scroller is not scrolled (below Comments is unseen);
+renames are screenshotted at light 1440 only; no font-size assertion; the
+right-click menus are not driven with real clicks (the renames are started
+through `_boardsCtxRun` and F2).
 
 ## → NEEDS YOU
+
+- **Passkey sign-in and the QA fence (Afnan's track, a proposal — not changed here).** `netlify/functions/passkey.js` mints `createCustomToken(uid)` with no claims, and every email-keyed rule — `isQa()`, but also `isOwner()` and the rest — reads `request.auth.token.email`. Whether an ID token minted from a custom token carries the user record's email **cannot be verified from this sandbox** (hypothesis, unverified: it does). If it does not, owner rules break for every passkey sign-in, which Afnan's own phone test would show at once; for the QA account it would drop the fence, since `signedIn()` is `!isQa()`. The QA account can only get a passkey if someone holding its password turns on Profile → Fingerprint lock (the harness unticks Remember me, so it never does). **Proposed one-line guard, for Afnan to take or leave:** `register-options`/`register` refuse `claude@groovy.op` (the harness never needs a passkey). Checkable on the live site by signing in with a passkey and reading `auth.currentUser.getIdTokenResult()` → `claims.email`.
+
+- **A decision (Afnan's track, since it is the HRM bell): Board text in a
+  collection everyone reads.** `hrm_notifications` is `read: if
+  signedIn()`, and the bell (`js/hrm.js`) reads the WHOLE collection and
+  filters by user in the browser. The Board writes its notifications there
+  (a phase-1 decision, to inherit the bell), so every signed-in account
+  (workers, the store, fulfilment) can read every Board notification:
+  shared item titles, comment excerpts, handover notes. R-vis stopped it
+  for PRIVATE items only. **Proposed fix:** the rule becomes "your own
+  rows", `resource.data.forUser + '@groovy.op' == userEmail()` (every
+  account is `username@groovy.op`), plus whatever role-addressed HRM rows
+  need. The bell then queries `where('forUser','==',u)` instead of the
+  whole collection, since the rules are not a query filter and the current
+  unfiltered read would be refused. That changes `js/hrm.js` and the rules
+  for every notification in the app, so it is **proposed, not made**.
+
+- **Twelve unverified findings from the killed run**, recorded so they are
+  not lost. None has been verified; each needs checking before any fix.
+  - `afa7056` tests: "a malformed date is left alone" passes with the
+    format check removed; the run-level test cannot see `runReminder`'s own
+    owner fallback.
+  - `0e6f33e`: overdue reminders pile up (a new row per overdue day,
+    per person, never superseded); Escape on a marker's date picker also
+    closes Settings and drops unsaved markers; only the UI stops a
+    non-owner assignee writing `pinned:true` (no rules check).
+  - `e194b03` tests: the Settings layout fragment never hit-tests its
+    controls; where the markers are saved is never asserted (the stub drops
+    the ref); "a row can be removed" checks only the count; only one of four
+    member guards is tested.
+  - `e194b03`/`e91c819`: after falling back to the wide inbox query,
+    `_tbNotifSeeded` can stay true and toast old unread rows as new (moot
+    while the index is deployed); the `!_tbInboxWide` guard is untested.
+  - `e91c819`: a board seeded BEFORE the seed record existed is adopted
+    from what is on it, so a milestone deleted before the first record is
+    recreated by the next Run seed. **`board-inspect seed-check` shows
+    whether the live record exists**; run it before pressing Run seed again.
+
+- **QA identity — Ammar's side (the console and his shell).** Recorded
+  as sent. **Do not run the harness until QA-A's rules are deployed**
+  (above). The password, the URL and any credential stay in Ammar's
+  shell: nothing under the repo, in this log or in a commit message.
+  1. Create `~/.groovy-qa.env` with exactly these lines:
+     ```
+     export GROOVY_QA_URL="https://groovyoperations.netlify.app"
+     export GROOVY_QA_EMAIL="claude@groovy.op"
+     export GROOVY_QA_PASSWORD="<the password Ammar set>"
+     export GOOGLE_CLOUD_PROJECT="groovy-gatepass"
+     ```
+     Service account JSON keys are blocked by org policy — ADC instead; no
+     `GROOVY_FIRESTORE_RO_KEY` line.
+  2. `chmod 600 ~/.groovy-qa.env`
+  3. Add `source ~/.groovy-qa.env` to `~/.zshrc` if it isn't there.
+  4. `source ~/.groovy-qa.env` in the current shell.
+  5. `echo $GROOVY_QA_EMAIL` — should print `claude@groovy.op`.
+  6. `gcloud version` — if not found, `brew install google-cloud-sdk`.
+  7. `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/datastore`
+     (browser; the Google account that owns the Firebase project).
+  8. `ls -la ~/.config/gcloud/application_default_credentials.json`.
+
+  **Then (Part C, once the rules are deployed and step 8 lands):**
+  `node scripts/board-inspect.js seed-check` answers 39 vs 42 with titles;
+  `node scripts/board-inspect.js item tb_edits_samad-onboarding-meeting-brief-grade-references`
+  gives the Samad date and its `dateHistory`; `node tests/e2e/board.e2e.js`
+  runs the harness (point `GROOVY_QA_URL` at
+  `https://deploy-preview-90--groovyoperations.netlify.app` — the URL from
+  Netlify's own comment on the PR — until this branch is on `main`, since
+  production does not know the `claude` username yet). Paste the outputs
+  back; screenshots stay on the Mac.
+
+  **Two things to decide before step 7 (Claude's review, not in the
+  steps as sent):** (a) ADC from the project owner's own account is an
+  OWNER credential, read AND write — the `datastore` scope does not make
+  it read-only. The brief has `scripts/board-inspect.js` refuse any key
+  that can write (a no-op write probe); with this ADC the probe will
+  refuse, correctly. The fix that keeps "no JSON keys": a service account
+  with only `roles/datastore.viewer`, Ammar granted
+  `roles/iam.serviceAccountTokenCreator` on it, and step 7 run with
+  `--impersonate-service-account=<that account>`. Whether the org policy
+  allows impersonation is not known from here. (b) Steps 1–8 run on
+  Ammar's Mac; a session in the cloud cannot run them, and the harness
+  (`tests/e2e/board.e2e.js`) cannot reach `*.netlify.app` or `gstatic`
+  from the sandbox, so it runs on Ammar's machine.
 
 - **P2.1 — nothing to press; one thing to look at.** The 08:00 PKT reminder
   runs by itself on the published production deploy (it uses the same
