@@ -64,5 +64,21 @@ module.exports=async function(){
     s.ok('and no client file other than env.js and store.js hard-codes the live Firestore host',!fs.readdirSync(path.join(ROOT,'js')).some(f=>f.endsWith('.js')&&f!=='store.js'&&f!=='env.js'&&/firestore\.googleapis\.com/.test(read('js/'+f))));
   }
 
+
+  s.section('hygiene');
+  {
+    const gi=read('.gitignore').split('\n').map(x=>x.trim());
+    for(const p of ['.env','.env.*','*.pem','*.key','firestore-debug.log','ui-debug.log','firebase-debug.log'])
+      s.ok('.gitignore lists '+p,gi.indexOf(p)>-1);
+    s.eq('and lists nothing twice',gi.filter(x=>x&&x[0]!=='#').length,new Set(gi.filter(x=>x&&x[0]!=='#')).size);
+    const tracked=require('child_process').execSync('git ls-files',{cwd:ROOT,encoding:'utf8'}).split('\n');
+    s.ok('firestore-debug.log is no longer tracked',tracked.indexOf('firestore-debug.log')===-1);
+    s.ok('no tracked file looks like a service-account key or a private key',!tracked.some(f=>/adminsdk|serviceaccount|\.pem$|\.key$|(^|\/)\.env/i.test(f)));
+    const fj=JSON.parse(read('firebase.json'));
+    s.ok('firebase.json has emulators for auth and firestore',fj.emulators&&fj.emulators.firestore&&fj.emulators.auth);
+    s.ok('and still no hosting or storage block (a deploy cannot touch Netlify or Storage)',!fj.hosting&&!fj.storage&&!fj.database);
+    s.ok('the emulators npm script names a demo- project',/emulators:start[^"]*--project demo-/.test(read('package.json')));
+    s.ok('USER_DEFS holds exactly ONE claude entry and QA_ROLE is declared once',(read('js/auth.js').match(/\{u:'claude'/g)||[]).length===1&&(read('js/auth.js').match(/const QA_ROLE=/g)||[]).length===1);
+  }
   return s;
 };

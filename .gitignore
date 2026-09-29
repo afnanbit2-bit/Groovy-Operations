@@ -24,3 +24,11 @@ groovy-gatepass-*.json
 # The e2e harness's screenshots of the LIVE Board (tests/e2e/board.e2e.js).
 # This repo is public and they show the drop plan: kept local, never pushed.
 docs/board-screens/
+
+# Emulator logs (firestore-debug.log used to be tracked). Also a Firebase
+# Admin SDK key by its default file name.
+firestore-debug.log
+firebase-debug.log
+ui-debug.log
+database-debug.log
+*-firebase-adminsdk-*.json
