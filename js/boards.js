@@ -233,8 +233,8 @@ function _boardsMintCardId(){
    object literal would read them in the temporal dead zone. */
 function _boardsNewCardSize(type){
   return{
-    w:type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170,
-    h:type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100
+    w:type==='swatch'?_BOARDS_SWATCH_W:type==='frame'?440:type==='column'?280:type==='table'?360:type==='heading'?440:type==='text'?_BOARDS_NOTE_W:type==='todo'?240:type==='file'?_BOARDS_FILE_W:type==='board'?_BOARDS_BOARD_W:type==='image'?_BOARDS_IMG_W:type==='link'?_BOARDS_LINK_W:170,
+    h:type==='swatch'?_BOARDS_SWATCH_H:type==='frame'?320:type==='column'?160:type==='table'?200:type==='heading'?58:type==='image'?_BOARDS_IMG_H:type==='link'?_BOARDS_LINK_H:type==='file'?_BOARDS_FILE_H:type==='todo'?170:type==='board'?_BOARDS_BOARD_H:100
   };
 }
 function _boardsNewCard(type){
@@ -257,6 +257,7 @@ function _boardsNewCard(type){
   if(type==='heading')base.text='';
   if(type==='todo')base.items=[{text:'',done:false}];
   if(type==='board'){base.boardId='';base.boardTitle='';}
+  if(type==='swatch')base.hex='#75AE76';
   // Provenance, shown in the right-click menu. Cards created before this
   // shipped simply don't carry it and the menu omits the line.
   if(typeof session!=='undefined'&&session){base.by=session.name||'';base.at=Date.now();}
@@ -859,6 +860,7 @@ function _boardsCardText(c){
   if(c.fileName)parts.push(c.fileName);
   if(c.caption)parts.push(c.caption);
   if(c.boardTitle)parts.push(c.boardTitle);
+  if(c.type==='swatch'){const hx=_boardsValidHex(c.hex);if(hx)parts.push(hx,_boardsSwatchName(hx));}
   if(Array.isArray(c.items))c.items.forEach(i=>{if(i&&i.text)parts.push(i.text);});
   if(Array.isArray(c.rows))c.rows.forEach(r=>{if(Array.isArray(r))r.forEach(v=>{
     const raw=_boardsCellVal(v);if(raw)parts.push(raw);
@@ -1010,6 +1012,10 @@ function _boardsEndEdit(){
   // somewhere else in the same table. Nothing rerenders on a keystroke (the
   // caret has to stay put), so the recompute happens the moment you leave.
   _boardsRepaintFormulas(el);
+  // A note whose whole text is a hex colour BECOMES a colour swatch the
+  // moment you leave it (Milanote's own gesture, read off the recording).
+  if(_boardsSwatchFromNoteEl(el))return;
+  _boardsSwatchAfterEdit(el);
   _boardsSaveDebounced();
   // Leaving a note hands the rail back to whatever mode the selection asks for.
   if(_boardsIsRichField(el)){_boardsFmtTarget=null;_boardsRenderRail();}
@@ -2045,6 +2051,7 @@ function _boardMiniCardHTML(c){
   if(c.type==='link'||c.type==='file')return`<div style="${base};background:var(--soft)"></div>`;
   if(c.type==='board')return`<div style="${base};background:var(--soft);border-style:dashed"></div>`;
   if(c.type==='heading')return`<div style="${base};background:var(--dark)"></div>`;
+  if(c.type==='swatch'){const hx=_boardsValidHex(c.hex);return`<div style="${base};background:${hx||'var(--soft)'}"></div>`;}
   return`<div style="${base};background:var(--surface)"></div>`;
 }
 // One place that knows the shape of a board document — used by the plain
@@ -2276,7 +2283,7 @@ async function _boardsOpenCanvas(){
     m.innerHTML=gvSkeleton(4);
     try{
       const snap=await getDoc(doc(db,'mood_boards',_boardsViewingId));
-      if(!snap.exists()){m.innerHTML='<div class="empty">Board not found.</div>';return;}
+      if(!snap.exists()){_boardsSetHash(null);m.innerHTML='<div class="empty">Board not found.</div>';return;}
       b={id:snap.id,...snap.data()};
     }catch(e){m.innerHTML='<div class="empty">Could not load board: '+(e.message||e)+'</div>';return;}
   }
@@ -2287,6 +2294,8 @@ async function _boardsOpenCanvas(){
   // 40% came back at the ordinary 25% floor. Found by the test, not by
   // reading.
   _editBoard.zoom=_boardsClampZoom(_editBoard.zoom);
+  _boardsSetHash(b.id);
+  _boardsPantoneEnsure();
   _editCards=_boardsDecodeCards((b.cards||[]).map(c=>{const cc={...c};delete cc._uploading;return cc;}));
   _editConnectors=(b.connectors||[]).map(cn=>({...cn}));
   _editUnsorted=(b.unsorted||[]).map(u=>{const uu={...u};delete uu._uploading;return uu;});
@@ -2417,8 +2426,8 @@ function _renderBoardCanvasHTML(){
       ${home?'<span class="board-crumb board-crumb-home">Home</span>'
         :`<button class="board-crumb board-crumb-home" onclick="window.boardsGotoGallery()">Home</button>
       ${_boardsCameFromAll&&!chain.length?`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsShowAll()">All boards</button>`:''}
-      ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
-      <span class="board-crumb-slash">/</span>${_boardsTileHTML(b,22)}`}
+      ${chain.map(a=>`<span class="board-crumb-slash">/</span><button class="board-crumb" data-board-drop="${_boardsEsc(a.id)}" onclick="window.boardsGoto('${a.id}')">${_boardsEsc(a.title||'Untitled board')}</button>`).join('')}
+      <span class="board-crumb-slash">/</span><span id="board-crumb-tile">${_boardsTileHTML(b,22)}</span>`}
     </div>`:'';
   return`<div class="board-canvas-wrap">
     <div class="board-topbar">
@@ -2430,7 +2439,7 @@ function _renderBoardCanvasHTML(){
         ${crumbs}
         ${home
           ?(phone?`<span style="font-size:15.5px;font-weight:700">Home</span>`:'')
-          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?`onfocus="window.boardsTitleFocus(this)"`:'readonly'} placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
+          :`<input type="text" id="board-title-input" value="${_boardsEsc(b.title)}" ${canEdit?'':'readonly'} oninput="window.boardsTitleInput(this.value)" onfocus="window.boardsTitleFocus(this)" onkeydown="window.boardsTitleKey(event,this)" onblur="window.boardsTitleDone(this)" placeholder="Untitled board" title="Click to rename this board" style="font-size:15.5px;font-weight:700;outline:none;font-family:inherit;background:transparent;max-width:240px">
         ${phone?'':`<span class="pill">${visLabel}</span>`}
         ${b.isTemplate?'<span class="pill">TEMPLATE</span>':''}
         ${canEdit?'':`<span class="pill board-role-pill">${_boardsCanComment(b)?'Can comment':'View only'}</span>`}`}
@@ -2953,6 +2962,8 @@ function _boardCardHTML(c,canEdit){
       ${child?`<div class="board-subboard-cta"><span>${_BOARDS_OPEN_PHRASE}</span></div>`:''}
       ${open}
     </div>`;
+  }else if(c.type==='swatch'){
+    body=_boardsSwatchBodyHTML(c,canEdit,bodyDrag);
   }else{
     body=`<div class="board-card-body board-text-body"${bodyDrag} contenteditable="false" id="board-txt-${c.id}" data-placeholder="Double-click to type…" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-txt-${c.id}')"`:''} oninput="window.boardsTextInput('${c.id}',this)"></div>`;
   }
@@ -2976,7 +2987,7 @@ function _boardCardHTML(c,canEdit){
     body+=`<div class="board-caption" id="board-cap-${c.id}" contenteditable="false" data-placeholder="Add a caption…" ${canEdit?`onclick="window.boardsBeginEdit(event,'board-cap-${c.id}')" ondblclick="window.boardsBeginEdit(event,'board-cap-${c.id}')"`:''} oninput="window.boardsCaptionInput('${c.id}',this)"></div>`;
   }
   const kind=c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File':c.type==='board'?'Board':c.type==='heading'?'Heading':c.type==='todo'?('To-do'+(c._todoProgress?' · '+c._todoProgress:''))
-    :c.type==='table'?'Table':c.type==='column'?'Column':c.type==='frame'?'Frame':'Note';
+    :c.type==='table'?'Table':c.type==='column'?'Column':c.type==='frame'?'Frame':c.type==='swatch'?'Colour':'Note';
   const sel=_boardsSelection.has(c.id)?' selected':'';
   const lock=c.locked?' locked':'';
   const tint=_boardsCardColorClasses(c);
@@ -3541,7 +3552,7 @@ const _BOARDS_CHROME_H={head:28,labels:31,reactions:31,caption:30,todoTitle:21,t
 // ellipsized line (css/main.css, .board-subboard-meta) - while it wrapped,
 // this number had to cover the NARROWEST card anyone might drag to, which
 // is a different thing from the shortest a card should be allowed to be.
-const _BOARDS_MIN_BODY_H={board:108,image:92,file:100,link:104,todo:80,heading:36,text:52};
+const _BOARDS_MIN_BODY_H={board:108,image:92,file:100,link:104,todo:80,heading:36,text:52,swatch:120};
 // An image card that HAS its picture. An empty one ("Click, or paste an
 // image") and one still uploading keep the ordinary strip: a card whose
 // only chrome shows on hover would be an invisible box until it had
@@ -4734,6 +4745,7 @@ function _boardsHydrateTextCards(){
       const d=document.getElementById('board-linkd-'+c.id);
       if(d)d.textContent=c._linkNoPreview&&!c.linkDesc?'No preview available':(c.linkDesc||'');
     }
+    if(c.type==='swatch')_boardsSwatchPaint(c);
     if(c.type==='text'||c.type==='heading'){
       _boardsSetRichInto(document.getElementById('board-txt-'+c.id),c);
     }else if(c.type==='todo'){
@@ -5362,13 +5374,15 @@ function _boardsWireStagePan(){
   _boardsWireContextMenu(stage);
 
   stage.addEventListener('pointerdown',e=>{
-    if(e.target!==stage&&e.target.id!=='board-world')return;
+    // Space or the Hand pans from ANYWHERE, a picture included — a card
+    // under the pointer must not be grabbed while the hand is up.
+    if(e.target!==stage&&e.target.id!=='board-world'&&!_boardsSpaceDown&&!_boardsPanMode)return;
     const b=_editBoard;
 
     // Line mode: drag anywhere empty to draw a freeform arrow. A mode
     // rather than a modifier because it's a deliberate "now I'm annotating"
     // action, and it leaves Shift free for marquee.
-    if(_boardsLineMode&&canEdit){
+    if(_boardsLineMode&&canEdit&&!_boardsSpaceDown&&!_boardsPanMode){
       const svg=document.getElementById('board-conn-layer');
       const start=_boardsScreenToWorld(e.clientX,e.clientY);
       const temp=document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -5414,6 +5428,8 @@ function _boardsWireStagePan(){
     //   3. space + drag, the convention in every design tool
     //   4. the Hand toggle in the toolbar, and middle-button drag
     // Shift+drag still marquees too, so nobody's muscle memory breaks.
+    // A right-click is the menu: it neither draws a box nor pans.
+    if(e.button===2)return;
     const wantPan=(e.pointerType==='touch')||e.button===1||_boardsSpaceDown||_boardsPanMode;
     if(e.button===1)e.preventDefault();   // stop Chrome's middle-click autoscroll
     if(canEdit&&!wantPan){
@@ -5421,9 +5437,21 @@ function _boardsWireStagePan(){
       const rect=stage.getBoundingClientRect();
       const sx=e.clientX,sy=e.clientY;
       stage.setPointerCapture(e.pointerId);
-      if(box)box.style.display='block';
+      // The box is NOT shown on the press: it still carries the previous
+      // marquee's size and place, so showing it here flashed the old
+      // selection on every plain click (Afnan's recording, 29 Sept). It is
+      // zeroed and appears only once the pointer has really moved.
+      if(box){box.style.display='none';box.style.width='0px';box.style.height='0px';}
       function mmove(ev){
         if(!box)return;
+        // No button held: the release was lost (it happened off the window,
+        // or over something that ate it). Without this the box kept
+        // following a plain hover from the OLD start point.
+        if(ev.buttons===0){mup({type:'pointercancel'});return;}
+        if(box.style.display!=='block'){
+          if(Math.abs(ev.clientX-sx)<3&&Math.abs(ev.clientY-sy)<3)return;
+          box.style.display='block';
+        }
         const x1=Math.min(sx,ev.clientX)-rect.left,y1=Math.min(sy,ev.clientY)-rect.top;
         box.style.left=x1+'px';box.style.top=y1+'px';
         box.style.width=Math.abs(ev.clientX-sx)+'px';
@@ -5431,7 +5459,9 @@ function _boardsWireStagePan(){
       }
       function mup(ev){
         stage.removeEventListener('pointermove',mmove);stage.removeEventListener('pointerup',mup);
-        if(box)box.style.display='none';
+        stage.removeEventListener('pointercancel',mup);
+        if(box){box.style.display='none';box.style.width='0px';box.style.height='0px';}
+        if(ev.type==='pointercancel')return;
         const a=_boardsScreenToWorld(sx,sy),bb=_boardsScreenToWorld(ev.clientX,ev.clientY);
         const x1=Math.min(a.x,bb.x),x2=Math.max(a.x,bb.x);
         const y1=Math.min(a.y,bb.y),y2=Math.max(a.y,bb.y);
@@ -5442,6 +5472,7 @@ function _boardsWireStagePan(){
       }
       stage.addEventListener('pointermove',mmove);
       stage.addEventListener('pointerup',mup);
+      stage.addEventListener('pointercancel',mup);
       return;
     }
 
@@ -5766,13 +5797,152 @@ function _boardsStashTargetEl(){
   return document.getElementById('board-stash-zone');
 }
 function _boardsOverStash(ev){return _boardsOverEl(_boardsStashTargetEl(),ev);}
+/* ── THE MAGNET (Sept 2026) ─────────────────────────────────────────────
+   Afnan: dropping a card into Unsorted should have "a magnet like effect,
+   pull and push to grab things". So Unsorted reaches for a card before the
+   pointer is on it:
+
+   - within _BOARDS_MAGNET_PX of the target the held card is PULLED toward
+     it, harder the closer it gets, and the target leans out to meet it
+     (--mag, 0..1, drives its glow);
+   - within _BOARDS_MAGNET_CATCH it is CAUGHT: the card shrinks and centres
+     under the pointer, the target lights up, and a drop there stashes —
+     the pointer no longer has to be exactly on the panel;
+   - pull away and it lets go, springing back (the .lifted transition).
+
+   ONE pure function answers "how strongly, and caught or not", and both
+   the highlight and the drop read it, so what lights up and what a drop
+   does cannot disagree. The pull is VISUAL only (CSS variables on the
+   lifted card): c.x/c.y are never bent, so a card let go on the canvas
+   lands exactly where the pointer put it. */
+const _BOARDS_MAGNET_PX=170,_BOARDS_MAGNET_CATCH=56;
+function _boardsMagnet(r,px,py){
+  if(!r||!(r.right>r.left))return{m:0,caught:false,d:Infinity,vx:0,vy:0};
+  const nx=Math.max(r.left,Math.min(px,r.right)),ny=Math.max(r.top,Math.min(py,r.bottom));
+  const vx=nx-px,vy=ny-py,d=Math.hypot(vx,vy);
+  const m=d>=_BOARDS_MAGNET_PX?0:1-d/_BOARDS_MAGNET_PX;
+  return{m,caught:d<=_BOARDS_MAGNET_CATCH,d,vx,vy};
+}
+function _boardsStashMagnet(ev){
+  const el=_boardsStashTargetEl();
+  if(!el||!el.getBoundingClientRect||!ev)return _boardsMagnet(null);
+  return _boardsMagnet(el.getBoundingClientRect(),ev.clientX,ev.clientY);
+}
+// Writes the pull onto the lifted cards and the target. World px, because
+// the cards live inside the zoomed world.
+function _boardsApplyMagnet(origins,mg,ev,zoom){
+  const z=zoom||1;
+  let pw=null;
+  if(mg.caught&&ev)pw=_boardsScreenToWorld(ev.clientX,ev.clientY);
+  origins.forEach(o=>{
+    const el=document.getElementById('board-card-'+o.card.id);
+    if(!el||!el.style||!el.style.setProperty)return;
+    let mx=0,my=0,ms=1;
+    if(mg.caught&&pw){
+      // Caught: the card gathers under the pointer, small, ready to go in.
+      mx=pw.x-(o.card.x+o.card.w/2);my=pw.y-(o.card.y+o.card.h/2);ms=0.45;
+    }else if(mg.m>0){
+      mx=mg.vx*mg.m*0.5/z;my=mg.vy*mg.m*0.5/z;ms=1-0.18*mg.m;
+    }
+    el.style.setProperty('--mx',mx.toFixed(1)+'px');
+    el.style.setProperty('--my',my.toFixed(1)+'px');
+    el.style.setProperty('--ms',ms.toFixed(3));
+    if(el.classList)el.classList.toggle('magnet-caught',!!mg.caught);
+  });
+  const t=_boardsStashTargetEl();
+  if(t&&t.style&&t.style.setProperty)t.style.setProperty('--mag',(mg.caught?1:mg.m).toFixed(3));
+}
+/* The drop: each card flies from where it was let go into the panel and
+   is gone, and the row it became pops in (_boardsTrayLanded). A CLONE
+   flies, ids stripped, pinned to the body, because the stash re-renders
+   the canvas and the real card is gone the moment it runs. Nothing flies
+   under prefers-reduced-motion. */
+function _boardsFlyInto(shots,target){
+  if(!shots||!shots.length||!target)return;
+  try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;}catch(e){}
+  const tx=target.left+Math.min(80,(target.right-target.left)/2),ty=target.top+120;
+  shots.forEach(sh=>{
+    try{
+      const c=sh.el.cloneNode(true);
+      c.removeAttribute('id');
+      if(c.querySelectorAll)c.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));
+      c.classList.remove('lifted','magnet-caught','selected');
+      c.classList.add('board-fly');
+      const st=c.style;
+      st.position='fixed';st.left=sh.r.left+'px';st.top=sh.r.top+'px';st.margin='0';
+      st.transformOrigin='0 0';st.transform='scale('+sh.z+')';st.zIndex='9997';st.pointerEvents='none';
+      document.body.appendChild(c);
+      const go=()=>{st.transform='translate('+(tx-sh.r.left)+'px,'+(ty-sh.r.top)+'px) scale('+(sh.z*0.12)+')';st.opacity='0';};
+      (window.requestAnimationFrame||setTimeout)(()=>(window.requestAnimationFrame||setTimeout)(go));
+      setTimeout(()=>{try{c.remove();}catch(e){}},420);
+    }catch(e){}
+  });
+}
 // The same dashed outline the Home panel drop uses, deliberately: one
 // drop-target look, whichever direction a card is travelling.
 function _boardsStashDropTarget(on){
   const el=_boardsStashTargetEl();
   if(el&&el.classList)el.classList.toggle('panel-drop',!!on);
 }
+/* ── Dragging a card ONTO another board (GitHub #97, bug 2) ─────────────
+   Drop a card on a sub-board card, or on a breadcrumb above this board,
+   and it moves there — into that board's Unsorted, Milanote's rule —
+   through window.boardsMoveCardsTo, the SAME implementation the menu's
+   "Move to board…" calls, so the refusals, the transaction and the toast
+   cannot drift. The target lights up while the pointer is over it, so a
+   refusal is visible before the pointer comes up. Hover-to-open (holding a
+   card over a board until it opens) is not built: nobody measured the
+   delay, and a drop already reaches the board in one move.
+
+   Targets are decided at grab time: every sub-board card not travelling
+   with the drag, and every breadcrumb carrying data-board-drop, whose board
+   is live, editable, not Home and not this board. A group holding a board
+   link is refused whole, like the stash. */
+function _boardsMoveTargetOk(id){
+  const t=id&&_boardsLiveById()[id];
+  return!!t&&!!_editBoard&&id!==_editBoard.id&&!_boardsIsHome(t)&&_boardsCanEdit(t);
+}
+function _boardsMoveDragTargets(group){
+  if(!group||!group.length||!_editBoard||!_boardsCanEdit(_editBoard)||_boardsIsHome(_editBoard))return[];
+  if(group.some(c=>c.type==='board'))return[];
+  const inGroup=new Set(group.map(c=>c.id)),out=[];
+  _editCards.forEach(c=>{
+    if(c.type!=='board'||inGroup.has(c.id)||!_boardsMoveTargetOk(c.boardId))return;
+    const el=document.getElementById('board-card-'+c.id);
+    if(el)out.push({el,id:c.boardId});
+  });
+  const crumbs=document.querySelectorAll?document.querySelectorAll('[data-board-drop]'):[];
+  Array.prototype.forEach.call(crumbs||[],el=>{
+    const id=el.getAttribute&&el.getAttribute('data-board-drop');
+    if(_boardsMoveTargetOk(id))out.push({el,id});
+  });
+  return out;
+}
+function _boardsMoveTargetAt(targets,ev){
+  return targets.find(t=>_boardsOverEl(t.el,ev))||null;
+}
+function _boardsMoveDropMark(targets,hit){
+  targets.forEach(t=>{if(t.el.classList)t.el.classList.toggle('board-move-drop',t===hit);});
+}
+/* Screen-pixel speed of the drag, smoothed, and the alignment pull it
+   allows: full below _BOARDS_ALIGN_SLOW px/ms, nothing above
+   _BOARDS_ALIGN_FAST, a straight fade between. */
+const _BOARDS_ALIGN_SLOW=0.12,_BOARDS_ALIGN_FAST=0.6;
+let _boardsVel=null;
+function _boardsAlignPull(ev){
+  const now=Date.now(),v=_boardsVel;
+  if(!v)return 1;
+  const dt=Math.max(1,now-v.t);
+  const inst=Math.hypot(ev.clientX-v.x,ev.clientY-v.y)/dt;
+  v.v=v.v*0.6+inst*0.4;v.x=ev.clientX;v.y=ev.clientY;v.t=now;
+  if(v.v<=_BOARDS_ALIGN_SLOW)return 1;
+  if(v.v>=_BOARDS_ALIGN_FAST)return 0;
+  return 1-(v.v-_BOARDS_ALIGN_SLOW)/(_BOARDS_ALIGN_FAST-_BOARDS_ALIGN_SLOW);
+}
 window.boardsCardDragStart=function(e,cardId){
+  // Hand up (Space held or the Hand tool): leave the press to the stage,
+  // which pans. Mouse only — a finger still drags the card it touches.
+  if((_boardsSpaceDown||_boardsPanMode)&&e.pointerType!=='touch')return;
   e.stopPropagation();
   // A press inside whatever is currently open for editing is the user
   // selecting text, not grabbing the card. stopPropagation still applies,
@@ -5806,8 +5976,12 @@ window.boardsCardDragStart=function(e,cardId){
   const grip=e.currentTarget;
   const unplaceable=_boardsUnplaceDrag(group);
   const stashable=_boardsStashDrag(group);
+  const moveTargets=_boardsMoveDragTargets(group);
   const startX=e.clientX,startY=e.clientY,ptr=e.pointerId;
   let pushed=false;
+  _boardsVel={x:e.clientX,y:e.clientY,t:Date.now(),v:0};
+  let tilt=0,lastTX=e.clientX,lastTT=Date.now(),wasCaught=false;
+  const liftEls=()=>origins.map(o=>document.getElementById('board-card-'+o.card.id)).filter(Boolean);
   // ── THE CAPTURE IS LAZY, AND THAT IS THE LOAD-BEARING PART ───────────
   // This used to call setPointerCapture right here, on the pointerdown.
   // A captured pointer RETARGETS the click and dblclick that follow to the
@@ -5854,7 +6028,13 @@ window.boardsCardDragStart=function(e,cardId){
       // Only when there is no target already — an OPEN tray is the target
       // and a zone beside it would be a second one.
       if(stashable&&!_boardsStashTargetEl())_boardsStashZone(true);
+      liftEls().forEach(el=>el.classList&&el.classList.add('lifted'));
     }
+    // Tilt toward the direction of travel: horizontal speed, eased and
+    // capped at 5 degrees, so a quick flick leans and a slow move stays flat.
+    {const now=Date.now(),vx=(ev.clientX-lastTX)/Math.max(1,now-lastTT);lastTX=ev.clientX;lastTT=now;
+     tilt+=(Math.max(-5,Math.min(5,vx*4))-tilt)*0.25;
+     liftEls().forEach(el=>el.style&&el.style.setProperty&&el.style.setProperty('--tilt',tilt.toFixed(2)+'deg'));}
     let dx=(ev.clientX-startX)/b.zoom;
     let dy=(ev.clientY-startY)/b.zoom;
     if(_boardsSnapGrid){
@@ -5867,9 +6047,11 @@ window.boardsCardDragStart=function(e,cardId){
       // Alt suspends snapping for fine placement.
       const lead=origins[0];
       const probe={x:lead.ox+dx,y:lead.oy+dy,w:lead.card.w,h:lead.card.h};
-      const a=_boardsAlignDelta(probe,others,b.zoom);
-      dx+=a.dx;dy+=a.dy;
-      _boardsShowGuides(a.vx,a.hy);
+      // FREE MOTION (Afnan, 28 Sept 2026, with Milanote's drag beside
+      // ours): a card follows the pointer exactly. No guide lines and no
+      // pull toward neighbours — the card never tries to align itself.
+      // Snap-to-grid is still there for anyone who switches it on.
+      _boardsHideGuides();
     }else{
       _boardsHideGuides();
     }
@@ -5882,8 +6064,16 @@ window.boardsCardDragStart=function(e,cardId){
     // A lone board card held over the panel is a "take it off Home", so the
     // panel says so before the pointer comes up rather than after.
     if(unplaceable)_boardsPanelDropTarget(_boardsOverPanel(ev));
-    // Held over Unsorted, the drop says so before the pointer comes up.
-    if(stashable)_boardsStashDropTarget(_boardsOverStash(ev));
+    // Held near Unsorted, the magnet pulls; caught, the drop says so before
+    // the pointer comes up.
+    if(stashable){
+      const mg=_boardsStashMagnet(ev);
+      if(mg.caught&&!wasCaught&&navigator.vibrate){try{navigator.vibrate(8);}catch(e){}}
+      wasCaught=mg.caught;
+      _boardsApplyMagnet(origins,mg,ev,b.zoom);
+      _boardsStashDropTarget(mg.caught);
+    }
+    if(moveTargets.length)_boardsMoveDropMark(moveTargets,_boardsMoveTargetAt(moveTargets,ev));
     _boardsShowColumnDrop(_boardsDropTargets(group,movingCols));
   }
   function up(ev){
@@ -5892,6 +6082,15 @@ window.boardsCardDragStart=function(e,cardId){
     document.removeEventListener('pointermove',move);
     document.removeEventListener('pointerup',up);
     document.removeEventListener('pointercancel',up);
+    const stashMg=pushed&&stashable&&ev?_boardsStashMagnet(ev):null;
+    const stashTarget=stashMg&&stashMg.caught&&_boardsStashTargetEl();
+    const shots=stashTarget?liftEls().map(el=>({el,r:el.getBoundingClientRect?el.getBoundingClientRect():null,z:b.zoom})).filter(x=>x.r):[];
+    const flyTo=stashTarget&&stashTarget.getBoundingClientRect?stashTarget.getBoundingClientRect():null;
+    liftEls().forEach(el=>{
+      if(el.classList){el.classList.remove('lifted');el.classList.remove('magnet-caught');}
+      if(el.style&&el.style.removeProperty)['--mx','--my','--ms'].forEach(k=>el.style.removeProperty(k));
+    });
+    {const t=_boardsStashTargetEl();if(t&&t.style&&t.style.removeProperty)t.style.removeProperty('--mag');}
     if(document.body&&document.body.classList)document.body.classList.remove('board-dragging');
     try{if(grip.hasPointerCapture&&grip.hasPointerCapture(ptr))grip.releasePointerCapture(ptr);}catch(err){}
     _boardsHideGuides();
@@ -5900,7 +6099,9 @@ window.boardsCardDragStart=function(e,cardId){
     _boardsStashDropTarget(false);
     // Read the hit test BEFORE the zone is taken away — when the tray is
     // shut, the zone IS the target.
-    const overStash=pushed&&stashable&&_boardsOverStash(ev);
+    const overStash=!!(stashMg&&stashMg.caught);
+    const moveHit=pushed&&ev&&moveTargets.length?_boardsMoveTargetAt(moveTargets,ev):null;
+    _boardsMoveDropMark(moveTargets,null);
     _boardsStashZone(false);
     // `pushed` is set on the first real pointermove, so it is exactly
     // "this was a drag, not a click".
@@ -5925,10 +6126,26 @@ window.boardsCardDragStart=function(e,cardId){
     // Ctrl+Z would restore the cards at the spot they were dropped and
     // need a second press to put them back. _boardsUndo is a plain stack
     // of snapshots, so popping the one this gesture pushed is exact.
+    // Dropped on another board: put the cards back where the gesture
+    // started and discard this drag's undo entry — a moved card is purged
+    // from history anyway, and a failed move must leave nothing behind.
+    if(moveHit){
+      origins.forEach(o=>{
+        o.card.x=o.ox;o.card.y=o.oy;
+        const el=document.getElementById('board-card-'+o.card.id);
+        if(el){el.style.left=o.card.x+'px';el.style.top=o.card.y+'px';}
+        _boardsUpdateConnectorsFor(o.card.id);
+      });
+      _boardsUndo.pop();
+      _boardsSyncHistoryButtons();
+      window.boardsMoveCardsTo(moveHit.id,group.map(c=>c.id));
+      return;
+    }
     if(overStash){
       origins.forEach(o=>{o.card.x=o.ox;o.card.y=o.oy;});
       _boardsUndo.pop();
       _boardsSyncHistoryButtons();
+      _boardsFlyInto(shots,flyTo);
       window.boardsTrayStashCards(group.map(c=>c.id));
       return;
     }
@@ -6458,7 +6675,7 @@ function _boardsRailItems(){
   // key, its right-click entry and the ⋯ entry, and Trash at the foot of
   // the add rail is still where a deleted card goes.
   const have=_boardsRailCounts(sel);
-  if(canEdit)items.push({act:'color-panel',label:'Color',colorTile:true});
+  if(canEdit)items.push(one&&one.type==='swatch'?{act:'sw:pick',label:'Color',swTile:_boardsValidHex(one.hex)}:{act:'color-panel',label:'Color',colorTile:true});
   if(canEdit)items.push({act:'labels',label:'Labels',icon:'labels',count:have.labels});
   if(canEdit)items.push({act:'reactions',label:'Reactions',icon:'reactions',count:have.reactions});
   items.push({act:'card-comment',label:'Comment',icon:'comment',count:have.comments});
@@ -6496,7 +6713,11 @@ function _boardsRailItems(){
     // — _boardsMoreItems derives ⋯ from the right-click list minus whatever
     // the rail carries, so dropping it here puts it in ⋯ on its own, which
     // is the same algebra that already moved Replace and Download there.
-    if(canEdit&&!(one.type==='image'&&one.imageUrl)){
+    if(one.type==='swatch'&&canEdit){
+      items.push({act:'sw:display',label:'Display',glyph:_BOARDS_SWATCH_FMT_LABEL[_boardsSwatchFmt(one)]});
+      items.push({act:'caption',label:'Caption',icon:'caption'});
+    }
+    if(canEdit&&!(one.type==='image'&&one.imageUrl)&&one.type!=='swatch'){
       items.push({act:one.type==='heading'?'renameheading':'rename',label:'Rename',icon:'rename'});
     }
     if(one.type==='image'&&one.imageUrl&&canEdit){
@@ -6532,6 +6753,9 @@ function _boardsRenderRail(){
       const cls=_boardsColorTileClass(sel),sty=_boardsColorTileStyle(sel);
       return`<button class="rail-btn" data-act="${it.act}" title="Colour — background and top strip"><span class="rail-color-tile ${cls}"${sty?` style="${sty}"`:''}></span><span>${_boardsEsc(it.label)}</span></button>`;
     }
+    // The swatch's Color tile: its own colour, validated before it reaches
+    // the style attribute.
+    if(it.swTile!==undefined)return`<button class="rail-btn" data-act="${it.act}" title="Change the colour"><span class="rail-color-tile"${it.swTile?` style="background:${it.swTile}"`:''}></span><span>${_boardsEsc(it.label)}</span></button>`;
     if(it.fmtSwatches)return`<div class="rail-fmt-row" title="Text colour">${_BOARDS_TEXT_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="${c.label}" data-act="fmt:color:${c.hex}"></button>`).join('')}</div>`;
     if(it.fmtHilite)return`<div class="rail-fmt-row" title="Highlight">${_BOARDS_HILITE_COLORS.map(c=>`<button class="board-fmt-sw" style="background:${c.hex}" title="Highlight ${c.label}" data-act="fmt:hilite:${c.hex}"></button>`).join('')}</div>`;
     if(it.grow)return'<div class="rail-grow"></div>';
@@ -7265,10 +7489,29 @@ window.boardsLinkStart=function(e,cardId){
 
 // -- card content --
 window.boardsTitleInput=function(val){if(!_editBoard)return;_editBoard.title=val;_boardsSaveDebounced();};
-// The top bar's title saves on Enter or on leaving it, not per keystroke.
-window.boardsTitleFocus=function(el){
-  if(!_editBoard||!_boardsCanEdit(_editBoard))return;
-  _boardsInlineRename(el,{value:_editBoard.title||'',commit:v=>window.boardsTitleInput(v.slice(0,120))});
+// Enter commits the rename and leaves the box; Escape puts back the name it
+// had when the box was entered (GitHub #97, bug 10). Leaving by any route
+// saves now and repaints the breadcrumb tile, whose letter is the title's.
+let _boardsTitleWas=null;
+window.boardsTitleFocus=function(el){_boardsTitleWas=el.value;};
+window.boardsTitleKey=function(e,el){
+  if(e.key==='Enter'){e.preventDefault();el.blur();}
+  else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();
+    if(_boardsTitleWas!=null&&el.value!==_boardsTitleWas){el.value=_boardsTitleWas;window.boardsTitleInput(_boardsTitleWas);}
+    el.blur();}
+};
+window.boardsTitleDone=function(el){
+  if(!_editBoard)return;
+  const was=_boardsTitleWas;_boardsTitleWas=null;
+  let t=(el&&el.value||'').trim();
+  // Change order 1: an emptied title reverts rather than saving a blank.
+  if(!t&&was){t=was.trim();if(el)el.value=t;window.boardsTitleInput(t);}
+  if(el&&el.value!==t){el.value=t;_editBoard.title=t;}
+  const mb=typeof moodBoards!=='undefined'&&moodBoards.find(x=>x.id===_editBoard.id);
+  if(mb)mb.title=_editBoard.title;
+  const tile=document.getElementById('board-crumb-tile');
+  if(tile)tile.innerHTML=_boardsTileHTML(_editBoard,22);
+  if(typeof _boardsSaveNow==='function')_boardsSaveNow();
 };
 window.boardsTextInput=function(id,el){
   const c=_editCards.find(x=>x.id===id);if(!c)return;
@@ -9867,7 +10110,7 @@ function _boardsCardNoun(c){
   return t==='text'?'Note':t==='todo'?'To-do':t==='board'?'Board link'
     :t==='frame'?'Frame':t==='column'?'Column':t==='table'?'Table'
     :t==='heading'?'Heading':t==='image'?'Image':t==='file'?'File'
-    :t==='link'?'Link':'Card';
+    :t==='link'?'Link':t==='swatch'?'Colour':'Card';
 }
 function _boardsUndoableToast(what){
   showToast(what+' — Ctrl+Z to undo, or find it in Trash');
@@ -10609,9 +10852,10 @@ function _boardsExportKind(c){
   return c.type==='image'?'Image':c.type==='link'?'Link':c.type==='file'?'File'
     :c.type==='board'?'Sub-board':c.type==='todo'?'To-do':c.type==='frame'?'Section'
     :c.type==='column'?'Column':c.type==='table'?'Table'
-    :c.type==='heading'?'Heading':'Note';
+    :c.type==='heading'?'Heading':c.type==='swatch'?'Colour':'Note';
 }
 function _boardsDrawCard(ctx,c,img,P){
+  if(c.type==='swatch'){_boardsDrawSwatchOnCanvas(ctx,c,P);return;}
   const stroke=c.color&&P.tint[c.color]?P.tint[c.color]:(_boardsValidHex(c.color)||P.border);
   if(c.type==='column'){
     ctx.fillStyle=P.soft;
@@ -10990,6 +11234,24 @@ function _boardsParseHash(){
   if(p.share)return{share:p.share};
   if(p.note)return{note:p.note};
   return p.board?{board:p.board,card:p.card||null}:null;
+}
+/* The address bar names the open board (GitHub #97, bug 9). A reload —
+   the new-version banner's "Refresh now" among them — used to land on the
+   app's first page, because nothing but a pasted link ever put the board in
+   the URL. Now opening a board writes #board=<id> and leaving the canvas
+   clears it, so a reload walks straight back in through the deep link above
+   (same Creative Hub gate). replaceState, never a new history entry: Back
+   keeps meaning what it meant, and replaceState fires no hashchange, so this
+   cannot re-trigger the consumer. Only OUR hash is ever cleared — #pattern=,
+   #share= and #note= belong to their own consumers. */
+function _boardsSetHash(id){
+  try{
+    const cur=String(location.hash||''),base=location.pathname+(location.search||'');
+    if(id){
+      const want='#board='+encodeURIComponent(id);
+      if(cur!==want)history.replaceState(null,'',base+want);
+    }else if(/^#board=/.test(cur))history.replaceState(null,'',base);
+  }catch(e){}
 }
 function _boardsConsumeDeepLink(){
   const link=_boardsParseHash();
@@ -11944,6 +12206,10 @@ function _boardsTrayItemHTML(u,i,canEdit){
   let thumb;
   if(u._uploading){
     thumb='<div class="board-tray-thumb board-tray-thumb-empty">Uploading…</div>';
+  }else if(_boardsTrayPreview(u,i)){
+    // A note, a to-do, a column, a colour… drawn as what it IS rather than
+    // a word in a grey box. Text goes in by _boardsTrayHydrate.
+    thumb=_boardsTrayPreview(u,i).html;
   }else{
     // The face is decided ONCE, by _boardsTrayFace, because the drag ghost
     // reads the same answer — see the note there.
@@ -11961,7 +12227,9 @@ function _boardsTrayItemHTML(u,i,canEdit){
   // The label is written in with textContent by _boardsTrayHydrate — it can
   // be a filename or a line of someone's note, and this file never
   // interpolates user text into an HTML string.
-  return`<div class="board-tray-item" data-idx="${i}" title="Drag onto the board to place it"
+  const landed=_boardsTrayLanded.has(u.id);
+  if(landed)_boardsTrayLanded.delete(u.id);   // one-shot, like the panel flash
+  return`<div class="board-tray-item${landed?' landed':''}" data-idx="${i}" title="Drag onto the board to place it"
       ${canEdit?`onpointerdown="window.boardsTrayDragStart(event,${i})"`:''}>
     ${thumb}
     <div class="board-tray-label" id="board-tray-l-${i}"></div>
@@ -12000,8 +12268,94 @@ function _boardsTrayFace(u){
   // heading, a column, a frame. It says WHICH, through the same
   // type-to-word map the delete toast uses, so it can never introduce
   // itself as something it is not.
-  if(Array.isArray(u.cards))return{badge:_boardsStashBadge(u)};
+  if(Array.isArray(u.cards)){
+    const r=u.cards[0];
+    if(r&&r.type==='swatch'&&_boardsValidHex(r.hex))return{badge:String(r.hex).toUpperCase(),color:r.hex};
+    return{badge:_boardsStashBadge(u)};
+  }
   return{badge:'NOTE'};
+}
+/* ── A PREVIEW OF WHAT IS IN THE ROW (Sept 2026) ──────────────────────
+   Afnan: a note, a to-do, a column, a colour should each show a preview
+   in Unsorted, not the word NOTE / TO-DO / COLUMN in a grey box — "column
+   … should show the title and how many content it has, to do show a
+   proper preview of the to do".
+
+   ONE function builds both halves: the markup (structure only, every text
+   slot EMPTY) and the list of strings that go into those slots. The row
+   draws the first; _boardsTrayHydrate writes the second with textContent,
+   the rule every user string in this file follows. Built from the stashed
+   card itself, so nothing new is stored and an old item gets a preview
+   the moment this ships. A photo, a link and a PDF keep the picture
+   _boardsTrayFace already gives them. */
+const _BOARDS_TRAY_PREV_ROWS=4;   // measured: four rows and a two-line title fit 160px
+function _boardsTrayPreview(u,i){
+  if(!u||u._uploading)return null;
+  let root=Array.isArray(u.cards)&&u.cards[0];
+  if(!root&&u.kind==='text'&&u.text)root={type:'text',text:u.text};
+  if(!root)return null;
+  if(typeof _boardsDecodeCard==='function'){try{root=_boardsDecodeCard(root);}catch(e){}}
+  const kids=Array.isArray(u.cards)?u.cards.slice(1):[];
+  const texts=[];
+  const slot=(cls)=>{const k=texts.length;texts.push('');return{k,html:`<span class="${cls}" id="board-tray-p-${i}-${k}"></span>`};};
+  const put=(cls,t)=>{const x=slot(cls);texts[x.k]=String(t==null?'':t);return x.html;};
+  const clean=t=>String(t||'').replace(/\s+/g,' ').trim();
+  const t=root.type;
+  let html='';
+  if(t==='text'){
+    const body=String(root.text||'').split('\n').map(x=>x.trim()).filter(Boolean).slice(0,6).join('\n');
+    if(!body)return null;
+    html=`<div class="board-tray-prev board-tray-prev-note">${put('board-tray-prev-notetext',body)}</div>`;
+  }else if(t==='heading'){
+    html=`<div class="board-tray-prev board-tray-prev-heading">${put('board-tray-prev-headtext',clean(root.text)||'Section title')}</div>`;
+  }else if(t==='todo'){
+    const items=(Array.isArray(root.items)?root.items:[]).filter(Boolean);
+    const done=items.filter(x=>x.done).length;
+    const rows=items.slice(0,_BOARDS_TRAY_PREV_ROWS).map(x=>
+      `<div class="board-tray-prev-task${x.done?' done':''}"><span class="board-tray-prev-box">${x.done?'✓':''}</span>${put('board-tray-prev-tasktext',clean(x.text))}</div>`).join('');
+    const more=items.length-_BOARDS_TRAY_PREV_ROWS;
+    html=`<div class="board-tray-prev board-tray-prev-todo">
+      <div class="board-tray-prev-head">${put('board-tray-prev-title',clean(root.title)||'To-do')}<span class="board-tray-prev-count">${done}/${items.length}</span></div>
+      ${rows||'<div class="board-tray-prev-empty">No tasks yet</div>'}
+      ${more>0?`<div class="board-tray-prev-more">+${more} more</div>`:''}
+    </div>`;
+  }else if(t==='column'||t==='frame'){
+    // In the order the container shows them: a column by its stored y, a
+    // frame top to bottom then left to right.
+    const list=kids.filter(c=>t!=='column'||c.columnId===root.id||c.columnId==null)
+      .slice().sort((a,b)=>(a.y||0)-(b.y||0)||(a.x||0)-(b.x||0));
+    const rows=list.slice(0,3).map(c=>{
+      const pic=c.type==='image'&&c.imageUrl?`<img class="board-tray-prev-kidpic" src="${_boardsEsc(_boardsDisplayUrl(c.imageUrl,400))}" crossorigin="anonymous" draggable="false" onerror="window.boardsImgFallback(this)" alt="">`
+        :c.type==='swatch'&&_boardsValidHex(c.hex)?`<span class="board-tray-prev-kidpic" style="background:${c.hex}"></span>`
+        :`<span class="board-tray-prev-kidpic board-tray-prev-kidtag">${_boardsEsc(String(_boardsCardNoun(c)).slice(0,1).toUpperCase())}</span>`;
+      const lab=c.type==='swatch'&&_boardsValidHex(c.hex)?(clean(c.name)||String(c.hex).toUpperCase()):_boardsStashName(c,1);
+      return`<div class="board-tray-prev-kid">${pic}${put('board-tray-prev-kidtext',lab)}</div>`;
+    }).join('');
+    const more=list.length-3;
+    html=`<div class="board-tray-prev board-tray-prev-col">
+      <div class="board-tray-prev-colhead">${put('board-tray-prev-title',clean(root.title||root.name)||(t==='column'?'Column':'Frame'))}
+        <span class="board-tray-prev-count">${list.length} card${list.length===1?'':'s'}</span></div>
+      <div class="board-tray-prev-kids">${rows||'<div class="board-tray-prev-empty">Empty</div>'}
+      ${more>0?`<div class="board-tray-prev-more">+${more} more</div>`:''}</div>
+    </div>`;
+  }else if(t==='swatch'){
+    if(!_boardsValidHex(root.hex))return null;
+    const hex=String(root.hex).toUpperCase();
+    const name=clean(root.name)||(typeof _boardsSwatchName==='function'?_boardsSwatchName(hex):'');
+    html=`<div class="board-tray-prev board-tray-prev-swatch">
+      <div class="board-tray-prev-chip" style="background:${hex};color:${_boardsInkOn(hex)}">${put('board-tray-prev-hex',root.pantone?clean(root.pantone):hex)}</div>
+      <div class="board-tray-prev-name">${put('',name)}</div>
+    </div>`;
+  }else if(t==='table'){
+    const rows=(Array.isArray(root.rows)?root.rows:[]).slice(0,4);
+    if(!rows.length)return null;
+    const val=v=>typeof _boardsCellVal==='function'?_boardsCellVal(v):(v&&typeof v==='object'?v.v:v);
+    html=`<div class="board-tray-prev board-tray-prev-table">${rows.map(r=>
+      `<div class="board-tray-prev-tr">${(Array.isArray(r)?r:[]).slice(0,3).map(v=>put('board-tray-prev-td',clean(val(v)))).join('')}</div>`).join('')}</div>`;
+  }else{
+    return null;
+  }
+  return{html,texts};
 }
 /* ── THE THING THAT FOLLOWS THE POINTER ───────────────────────────────
    It used to be a dark text chip. That said what KIND of thing was in
@@ -12059,6 +12413,11 @@ function _boardsTrayHydrate(){
   _editUnsorted.forEach((u,i)=>{
     const el=document.getElementById('board-tray-l-'+i);
     if(el)el.textContent=_boardsTrayLabel(u);
+    const p=_boardsTrayPreview(u,i);
+    if(p)p.texts.forEach((t,k)=>{
+      const s=document.getElementById('board-tray-p-'+i+'-'+k);
+      if(s)s.textContent=t;
+    });
   });
 }
 
@@ -12198,7 +12557,7 @@ function _boardsStashName(root,n){
   // Deliberately NOT _boardsCardText: that is a lowercased search index of
   // every field at once and reads as gibberish on a row.
   const first=root.name||root.title||root.fileName||root.linkTitle||root.caption||root.text||
-    (Array.isArray(root.items)&&root.items.length&&root.items[0]&&root.items[0].t)||
+    (Array.isArray(root.items)&&root.items.length&&root.items[0]&&(root.items[0].text||root.items[0].t))||
     root.boardTitle||'';
   const line=String(first||'').replace(/\s+/g,' ').trim();
   return line?line.slice(0,60):noun;
@@ -12264,6 +12623,9 @@ function _boardsExpandGroup(ids){
    More sheet and the drag onto the tray all come here, so the toast, the
    undo entry and what a container does with its contents cannot drift
    apart. Returns how many rows it made. */
+/* One-shot: the rows a drop has just made, so they land with a pop
+   instead of simply being there. Consumed by the render that paints them. */
+const _boardsTrayLanded=new Set();
 window.boardsTrayStashCards=function(ids){
   if(!_boardsCanEdit(_editBoard))return 0;
   // Home has no Unsorted (it is the board OF boards), so an item pushed
@@ -12283,7 +12645,7 @@ window.boardsTrayStashCards=function(ids){
   const conns=_editConnectors.filter(cn=>cn&&(moveIds.has(cn.from)||moveIds.has(cn.to)));
   _boardsPushUndo();
   const items=_boardsStashRoots(move).map(g=>_boardsStashItem(g.cards,conns));
-  items.forEach(it=>_editUnsorted.push(it));
+  items.forEach(it=>{_editUnsorted.push(it);_boardsTrayLanded.add(it.id);});
   _editCards=_editCards.filter(c=>!moveIds.has(c.id));
   _editConnectors=_editConnectors.filter(cn=>!(cn&&(moveIds.has(cn.from)||moveIds.has(cn.to))));
   move.forEach(c=>_boardsSelection.delete(c.id));
@@ -12291,6 +12653,7 @@ window.boardsTrayStashCards=function(ids){
   // Collecting must never be invisible — the same helper a paste uses.
   _boardsCollectInto();
   _boardsRenderCanvasAndWire();
+  {const l=document.getElementById('board-tray-list');if(l&&l.scrollHeight)l.scrollTop=l.scrollHeight;}
   _boardsSaveDebounced();
   showToast(_boardsStashToast(items,locked));
   return items.length;
@@ -12301,8 +12664,10 @@ window.boardsTrayStash=function(cardId){return window.boardsTrayStashCards([card
 window.boardsTrayRemove=async function(i){
   const u=_editUnsorted[i];
   if(!u||!_boardsCanEdit(_editBoard))return;
-  if(!await _boardsConfirm('Remove “'+_boardsTrayLabel(u)+'” from Unsorted? This cannot be undone.',{ok:'Remove',danger:true}))return;
+  // No confirm: the undo snapshot carries the tray, so Ctrl+Z brings it back.
+  _boardsPushUndo();
   _editUnsorted.splice(i,1);
+  showToast('Removed from Unsorted — Ctrl+Z to undo');
   _boardsRenderCanvasAndWire();
   _boardsSaveDebounced();
 };
@@ -13002,7 +13367,7 @@ function _boardsTeardown(){
 const _boardsOrigShowPage=window.showPage;
 if(typeof _boardsOrigShowPage==='function'){
   window.showPage=async function(id){
-    if(currentPage==='board-canvas'&&id!=='board-canvas'){try{_boardsTeardown();}catch(e){console.warn('[boards] teardown failed:',e);}}
+    if(currentPage==='board-canvas'&&id!=='board-canvas'){try{_boardsTeardown();}catch(e){console.warn('[boards] teardown failed:',e);}_boardsSetHash(null);}
     return _boardsOrigShowPage.apply(this,arguments);
   };
 }
@@ -13451,6 +13816,8 @@ function _boardsCtxRun(act){
     return;
   }
   if(act.indexOf('colortab:')===0){_boardsColorTab=act.slice(9)==='strip'?'strip':'bg';return;}
+  if(act.indexOf('sw:')===0){_boardsSwatchAct(act.slice(3));return;}
+  if(act==='color-panel'||act==='color'){const o=_boardsSelOne();if(o&&o.type==='swatch'){window.boardsSwatchPicker(o.id);return;}}
   if(act==='color-panel'){window.boardsOpenColorPanel();return;}
   if(act.indexOf('todo:')===0){_boardsTodoAct(act.slice(5));return;}
   if(act.indexOf('lbl:')===0){_boardsLabelAct(act.slice(4));return;}
@@ -13674,6 +14041,7 @@ function _boardsCtxRun(act){
       const s=_boardsSelectedCards();
       if(s.length!==1)break;
       const c=s[0];
+      if(c.type==='swatch'){window.boardsBeginEdit(null,'board-swname-'+c.id);break;}
       if(c.type!=='image'&&c.type!=='file'&&c.type!=='table'){
         showToast('Captions are for images, files and tables');break;}
       if(c.caption==null){
@@ -14725,3 +15093,420 @@ document.addEventListener('contextmenu',e=>{
     {act:'g:refresh',label:'Refresh list'}
   ],null);
 });
+
+/* ── The colour swatch (28 Sept 2026) ─────────────────────────────────
+   Milanote's colour card, read off a screen recording: type a hex colour
+   into a note, leave it, and the note BECOMES a swatch — a solid block of
+   the colour with its value in a corner and a dark bar under it carrying
+   the colour's NAME.
+
+   - ONE stored field, c.hex, always a validated #RRGGBB. Everything else
+     (the value string, the name, the ink) is DERIVED at render, so nothing
+     can disagree with the colour it describes and nothing migrates.
+   - The name is the NEAREST entry in a curated list by squared RGB
+     distance, never fetched. A name the person gave it (c.name, via
+     Caption on the bar or Rename in ⋯) wins.
+   - c.fmt stores only the exception: no field means HEX.
+   - Nothing unvalidated reaches a style attribute: every inline colour
+     here has been through _boardsValidHex. */
+const _BOARDS_SWATCH_W=220,_BOARDS_SWATCH_H=230;
+const _BOARDS_SWATCH_FMTS=['hex','rgb','hsl','pantone','off'];
+const _BOARDS_SWATCH_FMT_LABEL={hex:'HEX',rgb:'RGB',hsl:'HSL',pantone:'Pantone',off:'Off'};
+const _BOARDS_COLOR_NAMES=('Black:000000|White:FFFFFF|Red:FF0000|Lime:00FF00|Blue:0000FF|Yellow:FFFF00|Aqua:00FFFF|Magenta:FF00FF|Silver:C0C0C0|Grey:808080|'+
+'Maroon:800000|Olive:808000|Green:008000|Purple:800080|Teal:008080|Navy:000080|Dark Red:8B0000|Brown:A52A2A|Firebrick:B22222|Crimson:DC143C|'+
+'Tomato:FF6347|Coral:FF7F50|Indian Red:CD5C5C|Light Coral:F08080|Dark Salmon:E9967A|Salmon:FA8072|Light Salmon:FFA07A|Orange Red:FF4500|Dark Orange:FF8C00|Orange:FFA500|'+
+'Gold:FFD700|Dark Goldenrod:B8860B|Goldenrod:DAA520|Pale Goldenrod:EEE8AA|Dark Khaki:BDB76B|Khaki:F0E68C|Yellow Green:9ACD32|Dark Olive:556B2F|Olive Drab:6B8E23|Lawn Green:7CFC00|'+
+'Chartreuse:7FFF00|Green Yellow:ADFF2F|Dark Green:006400|Forest:228B22|Lime Green:32CD32|Light Green:90EE90|Pale Green:98FB98|Dark Sea Green:8FBC8F|Medium Spring Green:00FA9A|Spring Green:00FF7F|'+
+'Sea Green:2E8B57|Medium Aquamarine:66CDAA|Medium Sea Green:3CB371|Light Sea Green:20B2AA|Dark Slate Grey:2F4F4F|Dark Cyan:008B8B|Light Cyan:E0FFFF|Dark Turquoise:00CED1|Turquoise:40E0D0|Medium Turquoise:48D1CC|'+
+'Pale Turquoise:AFEEEE|Aquamarine:7FFFD4|Powder Blue:B0E0E6|Cadet Blue:5F9EA0|Steel Blue:4682B4|Cornflower:6495ED|Deep Sky Blue:00BFFF|Dodger Blue:1E90FF|Light Blue:ADD8E6|Sky Blue:87CEEB|'+
+'Light Sky Blue:87CEFA|Midnight Blue:191970|Dark Blue:00008B|Medium Blue:0000CD|Royal Blue:4169E1|Blue Violet:8A2BE2|Indigo:4B0082|Dark Slate Blue:483D8B|Slate Blue:6A5ACD|Medium Slate Blue:7B68EE|'+
+'Medium Purple:9370DB|Dark Magenta:8B008B|Dark Violet:9400D3|Dark Orchid:9932CC|Medium Orchid:BA55D3|Thistle:D8BFD8|Plum:DDA0DD|Violet:EE82EE|Orchid:DA70D6|Medium Violet Red:C71585|'+
+'Pale Violet Red:DB7093|Deep Pink:FF1493|Hot Pink:FF69B4|Light Pink:FFB6C1|Pink:FFC0CB|Antique White:FAEBD7|Beige:F5F5DC|Bisque:FFE4C4|Blanched Almond:FFEBCD|Wheat:F5DEB3|'+
+'Cornsilk:FFF8DC|Lemon Chiffon:FFFACD|Light Goldenrod:FAFAD2|Light Yellow:FFFFE0|Saddle Brown:8B4513|Sienna:A0522D|Chocolate:D2691E|Peru:CD853F|Sandy Brown:F4A460|Burlywood:DEB887|'+
+'Tan:D2B48C|Rosy Brown:BC8F8F|Moccasin:FFE4B5|Navajo White:FFDEAD|Peach Puff:FFDAB9|Misty Rose:FFE4E1|Lavender Blush:FFF0F5|Linen:FAF0E6|Old Lace:FDF5E6|Papaya Whip:FFEFD5|'+
+'Seashell:FFF5EE|Mint Cream:F5FFFA|Slate Grey:708090|Light Slate Grey:778899|Light Steel Blue:B0C4DE|Lavender:E6E6FA|Floral White:FFFAF0|Alice Blue:F0F8FF|Ghost White:F8F8FF|Honeydew:F0FFF0|'+
+'Ivory:FFFFF0|Azure:F0FFFF|Snow:FFFAFA|Dim Grey:696969|Dark Grey:A9A9A9|Light Grey:D3D3D3|Gainsboro:DCDCDC|White Smoke:F5F5F5|Mocha:6F4E37|Aqua Forest:5FA777|'+
+'Outrageous Orange:FF6037|Burnt Orange:CC5500|Terracotta:E2725B|Rust:B7410E|Mustard:FFDB58|Ochre:CC7722|Saffron:F4C430|Amber:FFBF00|Apricot:FBCEB1|Peach:FFE5B4|'+
+'Blush:DE5D83|Rose:FF007F|Raspberry:E30B5C|Cherry:DE3163|Burgundy:800020|Wine:722F37|Claret:7F1734|Oxblood:4A0000|Mulberry:C54B8C|Mauve:E0B0FF|'+
+'Lilac:C8A2C8|Amethyst:9966CC|Eggplant:614051|Plum Wine:673147|Periwinkle:CCCCFF|Denim:1560BD|Cobalt:0047AB|Sapphire:0F52BA|Ultramarine:3F00FF|Cerulean:007BA7|'+
+'Azure Blue:007FFF|Baby Blue:89CFF0|Ice Blue:D6ECEF|Petrol:005F6A|Deep Teal:003333|Jade:00A86B|Emerald:50C878|Mint:3EB489|Sage:BCB88A|Moss:8A9A5B|'+
+'Fern:4F7942|Pine:01796F|Hunter Green:355E3B|Bottle Green:006A4E|Army Green:4B5320|Pistachio:93C572|Avocado:568203|Pear:D1E231|Celadon:ACE1AF|Seafoam:9FE2BF|'+
+'Sand:C2B280|Camel:C19A6B|Taupe:483C32|Khaki Brown:C3B091|Coffee:6F4E37|Espresso:4B3621|Cocoa:875F42|Caramel:AF6E4D|Cinnamon:D2691F|Copper:B87333|'+
+'Bronze:CD7F32|Brass:B5A642|Champagne:F7E7CE|Cream:FFFDD0|Vanilla:F3E5AB|Bone:E3DAC9|Ecru:C2B280|Oatmeal:E0DCC8|Stone:928E85|Pewter:8E8E8E|'+
+'Charcoal:36454F|Graphite:383838|Slate:6D8196|Ash:B2BEB5|Smoke:738276|Gunmetal:2A3439|Jet:343434|Onyx:353839|Ink:1B1B2F|Oyster:DAD4C4').split('|').map(s=>{const i=s.indexOf(':');return{n:s.slice(0,i),h:'#'+s.slice(i+1)};});
+
+// A hex colour typed into a note: #RGB or #RRGGBB, the # required. Returns
+// the 6-digit upper-case form, or '' for anything else.
+function _boardsSwatchHexFrom(text){
+  const t=String(text==null?'':text).trim();
+  const m=/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(t);
+  if(!m)return'';
+  const d=m[1].length===3?m[1].split('').map(x=>x+x).join(''):m[1];
+  return('#'+d).toUpperCase();
+}
+function _boardsHexToRgb(hex){
+  const h=_boardsValidHex(hex);if(!h)return null;
+  return{r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)};
+}
+function _boardsRgbToHex(r,g,b){
+  const f=v=>{v=Math.max(0,Math.min(255,Math.round(Number(v)||0)));return(v<16?'0':'')+v.toString(16);};
+  return('#'+f(r)+f(g)+f(b)).toUpperCase();
+}
+function _boardsRgbToHsl(r,g,b){
+  r/=255;g/=255;b/=255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2;let h=0,s=0;
+  if(mx!==mn){
+    const d=mx-mn;s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+    h=mx===r?(g-b)/d+(g<b?6:0):mx===g?(b-r)/d+2:(r-g)/d+4;h*=60;
+  }
+  return{h:Math.round(h)%360,s:Math.round(s*100),l:Math.round(l*100)};
+}
+function _boardsHslToRgb(h,s,l){
+  h=((Number(h)||0)%360+360)%360;s=Math.max(0,Math.min(100,Number(s)||0))/100;l=Math.max(0,Math.min(100,Number(l)||0))/100;
+  const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;
+  const [r,g,b]=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return{r:Math.round((r+m)*255),g:Math.round((g+m)*255),b:Math.round((b+m)*255)};
+}
+function _boardsRgbToHsv(r,g,b){
+  r/=255;g/=255;b/=255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;let h=0;
+  if(d)h=(mx===r?(g-b)/d+(g<b?6:0):mx===g?(b-r)/d+2:(r-g)/d+4)*60;
+  return{h,s:mx?d/mx:0,v:mx};
+}
+function _boardsHsvToRgb(h,s,v){
+  h=((h%360)+360)%360;
+  const c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c;
+  const [r,g,b]=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return{r:Math.round((r+m)*255),g:Math.round((g+m)*255),b:Math.round((b+m)*255)};
+}
+function _boardsSwatchName(hex){
+  const c=_boardsHexToRgb(hex);if(!c)return'';
+  let best=null,bd=Infinity;
+  for(const e of _BOARDS_COLOR_NAMES){
+    const o=_boardsHexToRgb(e.h);if(!o)continue;
+    const d=(c.r-o.r)*(c.r-o.r)+(c.g-o.g)*(c.g-o.g)+(c.b-o.b)*(c.b-o.b);
+    if(d<bd){bd=d;best=e.n;}
+  }
+  return best||'';
+}
+function _boardsSwatchFmt(c){return c&&_BOARDS_SWATCH_FMTS.indexOf(c.fmt)>0?c.fmt:'hex';}
+function _boardsSwatchValue(hex,fmt,pantone){
+  const h=_boardsValidHex(hex);if(!h||fmt==='off')return'';
+  if(fmt==='pantone'){
+    if(pantone)return pantone;
+    const n=_boardsPantoneNearest(h);
+    return n?'≈ '+n:'No Pantone match';
+  }
+  const c=_boardsHexToRgb(h);
+  if(fmt==='rgb')return c.r+','+c.g+','+c.b;
+  if(fmt==='hsl'){const l=_boardsRgbToHsl(c.r,c.g,c.b);return l.h+','+l.s+'%,'+l.l+'%';}
+  return h;
+}
+function _boardsSwatchLabel(c){return(c&&c.name)||_boardsSwatchName(c&&c.hex)||'Colour';}
+function _boardsSwatchBodyHTML(c,canEdit,bodyDrag){
+  const hx=_boardsValidHex(c.hex)||'#CCCCCC';
+  const val=_boardsSwatchValue(hx,_boardsSwatchFmt(c),c.pantone);
+  return`<div class="board-card-body board-swatch-body"${bodyDrag}>
+    <div class="board-swatch-block" id="board-swblock-${c.id}" style="background:${hx};color:${_boardsInkOn(hx)}" ${canEdit?`onclick="window.boardsSwatchBlockClick(event,'${c.id}')" ondblclick="window.boardsSwatchPicker('${c.id}')"`:''} title="${canEdit?'Click to change the colour':''}">
+      <span class="board-swatch-val" id="board-swval-${c.id}">${_boardsEsc(val)}</span>
+    </div>
+    <div class="board-swatch-name" id="board-swname-${c.id}" contenteditable="false" data-placeholder="Colour" ${canEdit?`ondblclick="window.boardsBeginEdit(event,'board-swname-${c.id}')"`:''} oninput="window.boardsSwatchNameInput('${c.id}',this)"></div>
+  </div>`;
+}
+// Repaint ONE card's swatch in place — the picker changes it on every
+// pointermove, and a full canvas render per move would redraw every card.
+function _boardsSwatchPaint(c){
+  if(!c||c.type!=='swatch'||typeof document==='undefined')return;
+  const hx=_boardsValidHex(c.hex)||'#CCCCCC';
+  const b=document.getElementById('board-swblock-'+c.id);
+  if(b&&b.style){b.style.background=hx;b.style.color=_boardsInkOn(hx);}
+  const v=document.getElementById('board-swval-'+c.id);
+  if(v)v.textContent=_boardsSwatchValue(hx,_boardsSwatchFmt(c),c.pantone);
+  const n=document.getElementById('board-swname-'+c.id);
+  if(n&&n!==_boardsEditingEl)n.textContent=_boardsSwatchLabel(c);
+}
+window.boardsSwatchNameInput=function(id,el){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c)return;
+  const v=String(el.textContent||'').replace(/\s+/g,' ').trim();
+  if(v&&v!==_boardsSwatchName(c.hex))c.name=v.slice(0,80);else delete c.name;
+  _boardsSaveDebounced();
+};
+// Called from _boardsEndEdit. True when it turned the note into a swatch
+// (and has already rendered and saved).
+function _boardsSwatchFromNoteEl(el){
+  if(!el||!el.id||el.id.indexOf('board-txt-')!==0)return false;
+  const c=_editCards.find(x=>x.id===el.id.slice(10));
+  if(!c||c.type!=='text'||!_boardsCanEdit(_editBoard))return false;
+  const raw=(c.text!=null&&c.text!=='')?c.text:(el.textContent||'');
+  let hx=_boardsSwatchHexFrom(raw),pms='';
+  if(!hx){pms=_boardsPantoneKey(raw);hx=pms?(_boardsPantoneBook()[pms]||''):'';}
+  if(!hx)return false;
+  _boardsPushUndo();
+  c.type='swatch';c.hex=hx;
+  if(pms){c.pantone=pms;c.fmt='pantone';}
+  delete c.text;delete c.rich;delete c.bg;delete c.ink;
+  c.w=_BOARDS_SWATCH_W;c.h=_BOARDS_SWATCH_H;
+  if(_boardsIsRichField(el))_boardsFmtTarget=null;
+  _boardsRenderCanvasAndWire();
+  _boardsSaveDebounced();
+  return true;
+}
+function _boardsSwatchAfterEdit(el){
+  if(!el||!el.id)return;
+  const m=/^board-(?:swname|name)-(.+)$/.exec(el.id);
+  if(!m)return;
+  const c=_editCards.find(x=>x.id===m[1]);
+  if(c&&c.type==='swatch')_boardsSwatchPaint(c);
+}
+window.boardsSwatchBlockClick=function(e,id){
+  // A click on the block of a swatch that is ALREADY selected opens the
+  // picker; the first click only selects it, like every other card.
+  if(_boardsSelection.has(id)&&_boardsSelection.size===1){
+    if(e&&e.stopPropagation)e.stopPropagation();
+    window.boardsSwatchPicker(id);
+  }
+};
+function _boardsSwatchSetFmt(c,fmt){
+  if(!c||c.type!=='swatch'||_BOARDS_SWATCH_FMTS.indexOf(fmt)<0)return false;
+  if(_boardsSwatchFmt(c)===fmt)return false;
+  _boardsPushUndo();
+  if(fmt==='hex')delete c.fmt;else c.fmt=fmt;
+  _boardsSwatchPaint(c);
+  _boardsSaveDebounced();
+  return true;
+}
+function _boardsSwatchDisplayItems(){
+  const c=_boardsSelOne();
+  if(!c||c.type!=='swatch')return[];
+  const f=_boardsSwatchFmt(c);
+  return[{title:'Show the value as'},{tabs:_BOARDS_SWATCH_FMTS.map(k=>({act:'sw:fmt:'+k,label:_BOARDS_SWATCH_FMT_LABEL[k],on:k===f}))}];
+}
+function _boardsSwatchAct(a){
+  const c=_boardsSelOne();
+  if(a==='pick'){if(c&&c.type==='swatch')window.boardsSwatchPicker(c.id);return;}
+  if(a==='display'){
+    if(!c||c.type!=='swatch'||!_boardsCanEdit(_editBoard))return;
+    const btn=document.querySelector?document.querySelector('.board-rail [data-act="sw:display"]'):null;
+    const r=btn&&btn.getBoundingClientRect?btn.getBoundingClientRect():{right:100,top:120};
+    _boardsOpenCtx(r.right+8,r.top,_boardsSwatchDisplayItems,null,{keep:true});
+    return;
+  }
+  if(a.indexOf('fmt:')===0){
+    if(!c||!_boardsCanEdit(_editBoard))return;
+    if(_boardsSwatchSetFmt(c,a.slice(4)))_boardsRenderRail();
+  }
+}
+// Set the colour. The ONLY writer of c.hex after birth; it refuses anything
+// _boardsValidHex refuses. One undo entry per picker session.
+function _boardsSwatchSetHex(id,hex){
+  const c=_editCards.find(x=>x.id===id);
+  const h=_boardsValidHex(hex);
+  if(!c||c.type!=='swatch'||!h||!_boardsCanEdit(_editBoard))return false;
+  if(h===c.hex)return true;
+  if(!_boardsSwPick||_boardsSwPick.id!==id||!_boardsSwPick.pushed){
+    _boardsPushUndo();
+    if(_boardsSwPick&&_boardsSwPick.id===id)_boardsSwPick.pushed=true;
+  }
+  c.hex=h;
+  _boardsSwatchPaint(c);
+  _boardsSaveDebounced();
+  return true;
+}
+// ── The picker: SV square, hue slider, preview dot, eyedropper, and
+// numeric fields in RGB → HSL → HEX. It is a sheet anchored beside the card
+// (a bottom sheet on a phone), the machinery Labels and Comments use.
+let _boardsSwPick=null;   // {id,pushed,mode,hsv}
+window.boardsSwatchPicker=function(id){
+  const c=_editCards.find(x=>x.id===id);
+  if(!c||c.type!=='swatch'||!_boardsCanEdit(_editBoard))return;
+  const rgb=_boardsHexToRgb(c.hex)||{r:204,g:204,b:204};
+  _boardsSwPick={id,pushed:false,mode:(_boardsSwPick&&_boardsSwPick.mode)||'rgb',hsv:_boardsRgbToHsv(rgb.r,rgb.g,rgb.b)};
+  const card=document.getElementById('board-card-'+id);
+  const rect=card&&card.getBoundingClientRect?card.getBoundingClientRect():null;
+  _boardsOpenSheet('Colour',_boardsSwPickHTML(),{anchor:rect?{rect}:null,width:264});
+};
+function _boardsSwPickHex(){
+  const p=_boardsSwPick;if(!p)return'';
+  const c=_boardsHsvToRgb(p.hsv.h,p.hsv.s,p.hsv.v);
+  return _boardsRgbToHex(c.r,c.g,c.b);
+}
+function _boardsSwPickFieldsHTML(){
+  const p=_boardsSwPick,hx=_boardsSwPickHex(),c=_boardsHexToRgb(hx);
+  const lab={rgb:'RGB',hsl:'HSL',hex:'HEX'}[p.mode];
+  let f;
+  if(p.mode==='hex')f=`<input class="board-swp-in wide" value="${hx}" maxlength="7" onchange="window.boardsSwpField(0,this.value)" aria-label="Hex">`;
+  else{
+    const v=p.mode==='rgb'?[c.r,c.g,c.b]:(l=>[l.h,l.s,l.l])(_boardsRgbToHsl(c.r,c.g,c.b));
+    const n=p.mode==='rgb'?['R','G','B']:['H','S','L'];
+    f=v.map((x,i)=>`<label class="board-swp-f"><input class="board-swp-in" inputmode="numeric" value="${x}" onchange="window.boardsSwpField(${i},this.value)"><span>${n[i]}</span></label>`).join('');
+  }
+  return`<button class="board-swp-mode" onclick="window.boardsSwpMode()" title="Switch between RGB, HSL and HEX">${lab} ⇅</button>${f}`;
+}
+function _boardsSwPickHTML(){
+  const p=_boardsSwPick,hx=_boardsSwPickHex();
+  const eye=(typeof window!=='undefined'&&window.EyeDropper)?`<button class="board-swp-eye" onclick="window.boardsSwpEye()" title="Pick a colour from the screen">${_boardsIcon('color')}</button>`:'';
+  return`<div class="board-swp">
+    <div class="board-swp-sv" id="board-swp-sv" style="background-color:hsl(${Math.round(p.hsv.h)},100%,50%)" onpointerdown="window.boardsSwpSvDown(event)">
+      <span class="board-swp-ring" id="board-swp-ring" style="left:${(p.hsv.s*100).toFixed(1)}%;top:${((1-p.hsv.v)*100).toFixed(1)}%"></span>
+    </div>
+    <div class="board-swp-row">
+      <span class="board-swp-dot" id="board-swp-dot" style="background:${hx}"></span>
+      <input type="range" class="board-swp-hue" id="board-swp-hue" min="0" max="359" value="${Math.round(p.hsv.h)}" oninput="window.boardsSwpHue(this.value)" aria-label="Hue">
+      ${eye}
+    </div>
+    <div class="board-swp-fields" id="board-swp-fields">${_boardsSwPickFieldsHTML()}</div>
+  </div>`;
+}
+// Repaint the picker's moving parts (never the input being typed into:
+// fields repaint only on a change that did not come from them).
+function _boardsSwPickSync(fields){
+  const p=_boardsSwPick;if(!p)return;
+  const hx=_boardsSwPickHex();
+  const sv=document.getElementById('board-swp-sv');if(sv&&sv.style)sv.style.backgroundColor='hsl('+Math.round(p.hsv.h)+',100%,50%)';
+  const ring=document.getElementById('board-swp-ring');if(ring&&ring.style){ring.style.left=(p.hsv.s*100)+'%';ring.style.top=((1-p.hsv.v)*100)+'%';}
+  const dot=document.getElementById('board-swp-dot');if(dot&&dot.style)dot.style.background=hx;
+  const hue=document.getElementById('board-swp-hue');if(hue&&fields!=='hue')hue.value=Math.round(p.hsv.h);
+  const fl=document.getElementById('board-swp-fields');if(fl&&fields!==false)fl.innerHTML=_boardsSwPickFieldsHTML();
+  _boardsSwatchSetHex(p.id,hx);
+}
+window.boardsSwpHue=function(v){
+  if(!_boardsSwPick)return;
+  _boardsSwPick.hsv.h=Math.max(0,Math.min(359,Number(v)||0));
+  _boardsSwPickSync('hue');
+};
+window.boardsSwpSvDown=function(e){
+  const sv=document.getElementById('board-swp-sv');
+  if(!sv||!_boardsSwPick)return;
+  if(e&&e.preventDefault)e.preventDefault();
+  const at=ev=>{
+    const r=sv.getBoundingClientRect();
+    if(!r.width||!r.height)return;
+    _boardsSwPick.hsv.s=Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width));
+    _boardsSwPick.hsv.v=Math.max(0,Math.min(1,1-(ev.clientY-r.top)/r.height));
+    _boardsSwPickSync();
+  };
+  at(e);
+  const mv=ev=>at(ev);
+  const up=()=>{document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);};
+  document.addEventListener('pointermove',mv);
+  document.addEventListener('pointerup',up);
+  document.addEventListener('pointercancel',up);
+};
+window.boardsSwpMode=function(){
+  if(!_boardsSwPick)return;
+  _boardsSwPick.mode={rgb:'hsl',hsl:'hex',hex:'rgb'}[_boardsSwPick.mode]||'rgb';
+  const fl=document.getElementById('board-swp-fields');if(fl)fl.innerHTML=_boardsSwPickFieldsHTML();
+};
+// A field changed. The whole colour is rebuilt from the current mode's
+// values; a hex that does not validate is refused out loud and changes
+// nothing.
+window.boardsSwpField=function(i,val){
+  const p=_boardsSwPick;if(!p)return false;
+  const cur=_boardsHexToRgb(_boardsSwPickHex());
+  let rgb;
+  if(p.mode==='hex'){
+    const h=_boardsSwatchHexFrom(String(val||'').trim().replace(/^([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/,'#$1'));
+    if(!h){showToast('Use a colour like #75AE76',true);_boardsSwPickSync();return false;}
+    rgb=_boardsHexToRgb(h);
+  }else if(p.mode==='rgb'){
+    const a=[cur.r,cur.g,cur.b];a[i]=Math.max(0,Math.min(255,Math.round(Number(val))||0));
+    rgb={r:a[0],g:a[1],b:a[2]};
+  }else{
+    const l=_boardsRgbToHsl(cur.r,cur.g,cur.b),a=[l.h,l.s,l.l];
+    a[i]=Math.round(Number(val))||0;
+    rgb=_boardsHslToRgb(a[0],a[1],a[2]);
+  }
+  const hsv=_boardsRgbToHsv(rgb.r,rgb.g,rgb.b);
+  // Keep the hue when the new colour is grey — it has none of its own.
+  if(!hsv.s)hsv.h=p.hsv.h;
+  p.hsv=hsv;
+  _boardsSwPickSync();
+  return true;
+};
+window.boardsSwpEye=async function(){
+  if(!_boardsSwPick||typeof window.EyeDropper!=='function')return;
+  try{
+    const r=await new window.EyeDropper().open();
+    const h=_boardsValidHex(r&&r.sRGBHex);
+    if(!h)return;
+    const c=_boardsHexToRgb(h);
+    _boardsSwPick.hsv=_boardsRgbToHsv(c.r,c.g,c.b);
+    _boardsSwPickSync();
+  }catch(e){/* cancelled */}
+};
+// The PNG/PDF export draws the block, the value and the name bar, from the
+// same helpers the card reads.
+function _boardsDrawSwatchOnCanvas(ctx,c,P){
+  const hx=_boardsValidHex(c.hex)||'#CCCCCC';
+  const nameH=Math.min(80,Math.max(30,c.h*0.35));
+  ctx.save();
+  _boardsRoundRect(ctx,c.x,c.y,c.w,c.h,8);ctx.clip();
+  ctx.fillStyle=hx;ctx.fillRect(c.x,c.y,c.w,c.h-nameH);
+  ctx.fillStyle='#1F1F1F';ctx.fillRect(c.x,c.y+c.h-nameH,c.w,nameH);
+  const val=_boardsSwatchValue(hx,_boardsSwatchFmt(c),c.pantone);
+  if(val){ctx.fillStyle=_boardsInkOn(hx);ctx.font='700 13px '+P.font;ctx.fillText(val,c.x+12,c.y+22);}
+  ctx.fillStyle='#FFFFFF';ctx.font='700 15px '+P.font;
+  ctx.fillText((_boardsWrapLines(ctx,_boardsSwatchLabel(c),c.w-24,1)[0])||'',c.x+12,c.y+c.h-nameH/2+5);
+  ctx.restore();
+}
+
+
+/* ── Pantone codes on a swatch (28 Sept 2026) ─────────────────────────
+   Afnan: conversion for the TCX fabric book and the C (coated) book, in
+   the same colour logic. Typing "485 C" or "19-1664 TCX" (Pantone/PMS
+   prefix and spacing optional) into a note turns it into a swatch of that
+   colour, showing the code; the Display menu's Pantone mode shows any
+   swatch's nearest code, marked ≈ when it is not exact.
+
+   THE BOOK IS ONLY WHAT THE APP ALREADY HOLDS: the ~55 C codes built into
+   js/embellishments.js (COLOR_IMPORT_PANTONE_HEX) plus every entry of the
+   embellishments colour library (color_library: pantoneCode + hexApprox).
+   The full Pantone books are licensed and unreachable from the sandbox, so
+   nothing here is invented: an unknown code stays a note. Adding a book
+   later means adding entries to _BOARDS_PANTONE_EXTRA or the library. */
+const _BOARDS_PANTONE_EXTRA={};
+let _boardsPantoneLib=null,_boardsPantoneLoading=false,_boardsPantoneCache=null,_boardsPantoneCacheN=-1;
+function _boardsPantoneKey(text){
+  let t=String(text==null?'':text).trim().toUpperCase().replace(/\s+/g,' ');
+  t=t.replace(/^(PANTONE|PMS)\s*/,'');
+  let m=/^(\d{2})\s*-?\s*(\d{4})\s*(TCX|TPX|TPG)$/.exec(t);
+  if(m)return m[1]+'-'+m[2]+' '+m[3];
+  m=/^(COOL GREY \d{1,2}|WARM GREY \d{1,2}|[A-Z]*\s?\d{1,5}|[A-Z]+(?: [A-Z]+)*)\s*(C|U)$/.exec(t);
+  if(m&&/\d/.test(m[1]))return m[1].trim()+' '+m[2];
+  return'';
+}
+function _boardsPantoneBook(){
+  const lib=_boardsPantoneLib||((typeof allColors!=='undefined'&&Array.isArray(allColors))?allColors:[]);
+  const base=(typeof COLOR_IMPORT_PANTONE_HEX!=='undefined'&&COLOR_IMPORT_PANTONE_HEX)||{};
+  const n=Object.keys(base).length+lib.length+Object.keys(_BOARDS_PANTONE_EXTRA).length;
+  if(_boardsPantoneCache&&_boardsPantoneCacheN===n)return _boardsPantoneCache;
+  const out={};
+  const add=(code,hex)=>{const k=_boardsPantoneKey(code),h=_boardsValidHex(_boardsSwatchHexFrom(hex)||'');if(k&&h&&!out[k])out[k]=h;};
+  Object.keys(_BOARDS_PANTONE_EXTRA).forEach(k=>add(k,_BOARDS_PANTONE_EXTRA[k]));
+  lib.forEach(c=>{if(c&&c.status!=='archived')add(c.pantoneCode,c.hexApprox);});
+  Object.keys(base).forEach(k=>add(k,base[k]));
+  _boardsPantoneCache=out;_boardsPantoneCacheN=n;
+  return out;
+}
+function _boardsPantoneNearest(hex){
+  const c=_boardsHexToRgb(hex);if(!c)return'';
+  const book=_boardsPantoneBook();let best='',bd=Infinity;
+  for(const k in book){
+    const o=_boardsHexToRgb(book[k]);if(!o)continue;
+    const d=(c.r-o.r)*(c.r-o.r)+(c.g-o.g)*(c.g-o.g)+(c.b-o.b)*(c.b-o.b);
+    if(d<bd){bd=d;best=k;}
+  }
+  return best;
+}
+// One read of the colour library per session, so a board opened without
+// ever visiting Embellishments still knows the imported codes. Never rejects.
+async function _boardsPantoneEnsure(){
+  if(_boardsPantoneLib||_boardsPantoneLoading)return;
+  if(typeof allColors!=='undefined'&&Array.isArray(allColors)&&allColors.length){_boardsPantoneLib=allColors;return;}
+  if(typeof getDocs!=='function'||typeof collection!=='function')return;
+  _boardsPantoneLoading=true;
+  try{const snap=await getDocs(collection(db,'color_library'));_boardsPantoneLib=snap.docs.map(d=>d.data());}
+  catch(e){console.warn('[boards] colour library read failed:',e);}
+  _boardsPantoneLoading=false;
+}

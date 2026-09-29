@@ -918,17 +918,49 @@ html[data-theme="dark"] .kpi-card.red{background:var(--accent-urgent-soft)}
 .notes-section{margin-bottom:24px}
 .notes-section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .notes-section-head h3{margin:0;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.note-block{margin-bottom:6px}
-.note-block-toolbar{opacity:0}
-.note-block:hover .note-block-toolbar,.note-block:focus-within .note-block-toolbar{opacity:1}
-.note-block-body{min-height:22px;line-height:1.6;font-size:15px;outline:none}
-.note-block-body:empty:before{content:attr(data-placeholder);color:var(--muted);pointer-events:none}
-.note-type-h1{font-size:23px;font-weight:700;margin:6px 0}
-.note-type-h2{font-size:18px;font-weight:700;margin:4px 0}
-.note-type-quote{border-left:3px solid var(--border);padding-left:10px;color:var(--muted);font-style:italic}
-.note-bullet{margin-right:8px;flex-shrink:0;color:var(--muted);font-size:14px;line-height:1.7}
+.notes-title{font-size:28px;font-weight:700;line-height:1.25;border:none;outline:none;font-family:inherit;flex:1;min-width:180px;background:transparent;color:var(--text);padding:0}
+.notes-title::placeholder{color:var(--muted);opacity:1}
+/* The gutter sits in the 44px of padding left of the blocks, so the text
+   column does not shift when it fades in. */
+.notes-doc{position:relative;padding-left:44px}
+.note-block{position:relative;margin-bottom:2px}
+.note-gutter{position:absolute;left:-44px;top:0;display:flex;opacity:0;transition:opacity .12s}
+.note-block:hover .note-gutter,.note-block:focus-within .note-gutter,.note-gutter:focus-within{opacity:1}
+.note-gbtn{width:22px;height:28px;padding:0;border:none;border-radius:5px;background:none;color:var(--muted);font:inherit;font-size:17px;line-height:1;cursor:pointer}
+.note-gbtn:hover{background:var(--hover);color:var(--text)}
+.note-gbtn:focus-visible{outline:2px solid var(--text);outline-offset:-2px}
+.note-block-body{min-height:26px;line-height:1.65;font-size:16px;outline:none}
+/* A placeholder is a cue for the block you are in, not a label on every block:
+   shown on the focused empty block, on a lone empty page, and on headings. */
+.note-block-body:empty:before{content:attr(data-placeholder);color:var(--muted);pointer-events:none;opacity:0}
+.note-block-body:empty:focus:before,.note-block-body.note-only:empty:before,.note-type-h1:empty:before,.note-type-h2:empty:before{opacity:1}
+.note-row{display:flex}
+.note-row .note-block-body{flex:1;min-width:0}
+.note-type-h1{font-size:26px;font-weight:700;line-height:1.3;margin:14px 0 4px}
+.note-type-h2{font-size:20px;font-weight:700;line-height:1.35;margin:10px 0 2px}
+.note-type-quote{border-left:3px solid var(--text);padding-left:12px;color:var(--muted)}
+.note-bullet{margin-right:8px;flex-shrink:0;color:var(--muted);font-size:15px;line-height:1.75;min-width:16px}
+.note-check{margin:6px 8px 0 0;flex-shrink:0}
+.note-done{text-decoration:line-through;color:var(--muted)}
+.note-divider{border:none;border-top:1px solid var(--border);margin:14px 0}
+.note-image{max-width:100%;border-radius:8px;display:block;margin-bottom:6px}
+.note-image-input{font-size:13px;margin-bottom:4px}
+.note-caption{font-size:13px;color:var(--muted)}
+.notes-add{margin-top:8px;padding:6px 8px;border:none;border-radius:6px;background:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.notes-add:hover{background:var(--hover);color:var(--text)}
+.notes-pop{display:none;position:fixed;z-index:210;min-width:240px;max-width:min(320px,calc(100vw - 16px));max-height:min(400px,60vh);overflow-y:auto;box-sizing:border-box;padding:4px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18)}
+.notes-pop.open{display:block}
+.notes-pop-row{display:flex;align-items:baseline;gap:12px;min-height:36px;box-sizing:border-box;padding:8px 10px;border-radius:6px;cursor:pointer}
+.notes-pop-row.sel,.notes-pop-row:hover{background:var(--hover)}
+.notes-pop-label{font-size:14px;font-weight:600;color:var(--text)}
+.notes-pop-row.danger .notes-pop-label{color:var(--accent-urgent)}
+.notes-pop-hint{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
 @media (max-width:600px){
-  .note-block-toolbar{flex-wrap:wrap}
+  /* No hover on a phone: the gutter moves to the right edge and stays visible. */
+  .notes-doc{padding-left:0;padding-right:60px}
+  .note-gutter{left:auto;right:-60px;opacity:.7}
+  .note-gbtn{width:30px;height:34px}
+  .notes-title{font-size:24px}
 }
 
 /* ── Mood Boards gallery ────────────────────────────────────── */
@@ -968,9 +1000,9 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-stage{position:relative;flex:1;overflow:hidden;cursor:crosshair;background-size:22px 22px;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none}
 /* The dot grid is a PLACEMENT CUE, not the canvas background — measured off
    Milanote's own (see _boardsFlashGrid). At rest the canvas is plain. */
-.board-stage.grid-on{background-image:radial-gradient(#00000014 1px,transparent 1px)}
-:root[data-theme="dark"] .board-stage.grid-on{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .board-stage.grid-on{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}}
+.board-stage{background-image:radial-gradient(#00000014 1px,transparent 1px)}
+:root[data-theme="dark"] .board-stage{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .board-stage{background-image:radial-gradient(#ffffff1f 1px,transparent 1px)}}
 .board-stage.panning{cursor:grabbing}
 .board-world{position:absolute;left:0;top:0;transform-origin:0 0}
 .board-conn-layer{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
@@ -1017,21 +1049,20 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 .board-world[data-lod="far"] .board-card-foot,
 .board-world[data-lod="far"] .board-labels,
 .board-world[data-lod="far"] .board-reactions,
-.board-world[data-lod="far"] .board-caption,
 .board-world[data-lod="far"] .board-subboard-open{display:none!important}
 /* The strip survives as a grab target; only its look goes. */
 .board-world[data-lod="far"] .board-card-head{padding:0!important;min-height:10px;height:10px;background:transparent!important;border-bottom:none!important}
 .board-world[data-lod="far"] .board-card-el{box-shadow:none;border-radius:4px}
-/* Text at this zoom is under 5px. Hidden beats painted-but-unreadable —
+/* SUPERSEDED 28 Sept 2026 (Afnan, with a screenshot of blank white cards
+   at far zoom: "some content is not visible … as you zoom in it gets
+   visible"): note, to-do, link text, captions and a sub-board's meta and
+   thumbnails now STAY painted at far zoom. Only the chrome goes. The old
+   reasoning follows. Text at this zoom is under 5px. Hidden beats painted-but-unreadable —
    the picture cards are what carry a board at 22%, which is exactly what
    Milanote's own board looks like at 27%. */
-.board-world[data-lod="far"] .board-text-body,
-.board-world[data-lod="far"] .board-todo-body,
 /* At this zoom the spine's colour (or its cover) is what tells the boards
    apart, and the name is the only text still worth painting. The meta line
    is 13px * 0.25 = 3px, and a 30x22 thumbnail is 7x5 — noise, both. */
-.board-world[data-lod="far"] .board-subboard-meta,
-.board-world[data-lod="far"] .board-subboard-thumbs,
 /* `.board-link-desc` used to be named here and has NEVER existed — the
    class is `.link-desc`, inside `.board-link-meta`. A dead selector in a
    pure-CSS feature has no symptom at all, which is why the far-zoom probe
@@ -1040,10 +1071,18 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
    (Milanote's cards at 27% are just the pictures); with no picture it goes
    invisible but keeps its space, like a note body. */
 .board-world[data-lod="far"] .board-link-img+.board-link-meta,.board-world[data-lod="far"] .board-video+.board-link-meta{display:none!important}
-.board-world[data-lod="far"] .board-link-meta,
 .board-world[data-lod="far"] .board-link-loading{visibility:hidden}
 
 .board-card-el{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden}
+/* Milanote's drag, read off its recording: the held card LIFTS (a deeper
+   shadow, a hair larger) and TILTS toward where it is going, then settles
+   flat on release. --tilt is written by the drag from the pointer speed. */
+.board-card-el{transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s}
+.board-card-el.lifted{transform:translate(var(--mx,0px),var(--my,0px)) rotate(var(--tilt,0deg)) scale(calc(1.03 * var(--ms,1)));transform-origin:50% 50%;box-shadow:0 10px 28px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.12);transition:transform .12s ease-out,box-shadow .12s;z-index:60}
+@media (prefers-reduced-motion:reduce){.board-card-el.lifted{transform:none}.board-card-el{transition:none}}
+/* The magnet into Unsorted (js/boards.js _boardsApplyMagnet). */
+.board-card-el.lifted.magnet-caught{box-shadow:0 0 0 2px var(--text),0 14px 34px rgba(0,0,0,.28);transition:transform .16s cubic-bezier(.2,1.3,.4,1),box-shadow .12s}
+.board-fly{transition:transform .34s cubic-bezier(.5,0,.75,.2),opacity .34s ease-in}
 .board-card-el.selected{outline:2px solid var(--text);outline-offset:1px}
 /* No native HTML5 drag anywhere inside a card. A dragged <img> or <a> both
    cancels the pointer stream our own card drag runs on AND is advertised to
@@ -1190,8 +1229,55 @@ html.board-fullscreen{overflow:hidden;overscroll-behavior:none}
 
    Everything here is suppressed under prefers-reduced-motion, below. */
 .board-tray.panel-drop{outline:2px dashed var(--text);outline-offset:-6px}
+/* The target reaches for a card as it comes near (--mag 0..1). */
+.board-tray[style*="--mag"],.board-stash-zone[style*="--mag"]{
+  box-shadow:inset calc(var(--mag,0) * 6px) 0 0 0 var(--text),-14px 0 calc(var(--mag,0) * 34px) calc(var(--mag,0) * -4px) rgba(0,0,0,calc(var(--mag,0) * .28));
+  transition:box-shadow .12s}
+.board-tray-item.landed{animation:boardTrayLand .46s cubic-bezier(.2,1.5,.4,1)}
+@keyframes boardTrayLand{0%{transform:scale(.55);opacity:.1}60%{opacity:1}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.board-tray-item.landed{animation:none}.board-card-el.lifted.magnet-caught{transition:none}}
+/* Previews of what a row holds (js/boards.js _boardsTrayPreview). Same
+   160px height as a picture, so the grid does not jump. */
+.board-tray-prev{height:160px;box-sizing:border-box;overflow:hidden;background:var(--surface);
+  padding:9px 10px;display:flex;flex-direction:column;gap:4px;color:var(--text);font-size:12px;line-height:1.35}
+.board-tray-prev-note{background:var(--surface)}
+.board-tray-prev-notetext{white-space:pre-line;display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;
+  overflow:hidden;word-break:break-word;font-size:12.5px}
+.board-tray-prev-heading{background:var(--dark);color:var(--on-dark);justify-content:center;align-items:center;text-align:center}
+.board-tray-prev-headtext{font-weight:800;font-size:14px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.board-tray-prev-head,.board-tray-prev-colhead{display:flex;align-items:flex-start;gap:6px;min-width:0;flex-shrink:0}
+.board-tray-prev-title{flex:1;font-weight:800;font-size:12.5px;line-height:1.25;min-width:0;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.board-tray-prev-count{flex-shrink:0;margin-top:1px;font-size:11px;font-weight:700;color:var(--muted)}
+.board-tray-prev-task{display:flex;align-items:flex-start;gap:6px;min-width:0}
+.board-tray-prev-box{flex-shrink:0;width:12px;height:12px;margin-top:1px;border:1.5px solid var(--muted);border-radius:3px;
+  font-size:11px;line-height:10px;text-align:center;font-weight:800;color:var(--on-dark)}
+.board-tray-prev-task.done .board-tray-prev-box{background:var(--text);border-color:var(--text)}
+.board-tray-prev-tasktext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-tray-prev-task.done .board-tray-prev-tasktext{text-decoration:line-through;color:var(--muted)}
+.board-tray-prev-more,.board-tray-prev-empty{font-size:11px;color:var(--muted);font-weight:600}
+.board-tray-prev-col{background:var(--surface-2)}
+.board-tray-prev-colhead{padding-bottom:5px;border-bottom:1px solid var(--border)}
+.board-tray-prev-kids{display:flex;flex-direction:column;gap:4px;min-height:0;padding-top:1px}
+.board-tray-prev-kid{display:flex;align-items:center;gap:6px;min-width:0;background:var(--surface);
+  border:1px solid var(--border);border-radius:6px;padding:1px 5px 1px 1px}
+.board-tray-prev-kidpic{flex-shrink:0;width:18px;height:18px;border-radius:4px;object-fit:cover;background:var(--soft);display:block}
+.board-tray-prev-kidtag{font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.board-tray-prev-kidtext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
+.board-tray-prev-swatch{padding:0;gap:0}
+.board-tray-prev-chip{flex:1;display:flex;align-items:flex-end;padding:8px 9px;font-weight:800;font-size:13px;letter-spacing:.02em}
+.board-tray-prev-name{background:var(--dark);color:var(--on-dark);padding:6px 9px;font-size:12px;font-weight:700;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-tray-prev-table{gap:0;padding:6px}
+.board-tray-prev-tr{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--border)}
+.board-tray-prev-td{padding:4px 4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;border-right:1px solid var(--border)}
 .board-tray.panel-drop .board-panel-list,
 .board-tray.panel-drop .board-tray-list{background:var(--hover)}
+/* A card held over another board — a sub-board card or a breadcrumb —
+   moves there on release (#97 bug 2): the same dashed outline, one drop
+   look whichever way a card travels. */
+.board-card-el.board-move-drop,.board-crumb.board-move-drop{outline:2px dashed var(--text);outline-offset:3px}
+.board-crumb.board-move-drop{background:var(--hover)}
 /* The Unsorted peek zone (Sept 2026). Built by _boardsStashZone only
    while a card is being dragged and the tray is SHUT — off Home a closed
    tray is not in the DOM at all, so without this there is nothing to aim
@@ -1318,7 +1404,9 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
 .board-card-head .board-card-kind,.board-card-head .board-card-name,.board-card-head .board-card-del,.board-card-head .board-card-lock{color:#fff}
 .board-card-head .board-card-name:focus{background:rgba(255,255,255,.18);color:#fff;box-shadow:none}
 .board-card-head .board-card-del:hover{color:#fff;opacity:.72}
-/* A NOTE wears a corner chip, not the strip (GitHub #97, bug 6). The
+/* EVERY CARD wears a corner chip, not the strip — a note first (GitHub
+   #97, bug 6), then every other type after Afnan: "all the others have
+   it"; the scrim hid the top of a picture, a to-do, a link, a file. The
    full-width scrim sat on the note's first line and on its placeholder,
    so hovering a note to read it hid what you came to read. On a note the
    strip only ever carried the type word and the ✕ — the name is renamed
@@ -1327,11 +1415,11 @@ body.board-dragging .board-world{-webkit-user-select:none;user-select:none}
    that the chip sits in, so no text is ever under it. The float is there
    at rest too: showing it only on hover would reflow the note under the
    pointer. The name still appears while it is being renamed. */
-.board-card-el.type-text>.board-card-head{left:auto;right:14px;top:5px;padding:3px 5px;border-radius:7px;background:rgba(0,0,0,.72)}
-.board-card-el.type-text>.board-card-head .board-card-kind{display:none}
-.board-card-el.type-text>.board-card-head .board-card-kind:has(.board-card-name[contenteditable="true"]),.board-card-el.type-text>.board-card-head .board-card-kind:has(.board-card-lock){display:flex}
-.board-card-el.type-text>.board-card-head .board-card-name:not([contenteditable="true"]){display:none}
-.board-card-el.type-text:hover>.board-cmt-badge.pin,.board-card-el.type-text.selected>.board-cmt-badge.pin{right:48px}
+.board-card-el>.board-card-head{left:auto;right:14px;top:5px;padding:3px 5px;border-radius:7px;background:rgba(0,0,0,.72)}
+.board-card-el>.board-card-head .board-card-kind{display:none}
+.board-card-el>.board-card-head .board-card-kind:has(.board-card-name[contenteditable="true"]),.board-card-el>.board-card-head .board-card-kind:has(.board-card-lock){display:flex}
+.board-card-el>.board-card-head .board-card-name:not([contenteditable="true"]){display:none}
+.board-card-el:hover>.board-cmt-badge.pin,.board-card-el.selected>.board-cmt-badge.pin{right:48px}
 .board-text-body:not(:empty)::before{content:'';float:right;width:40px;height:26px;margin-right:-6px}
 /* THE COLOURED TOP STRIP IS ITS OWN BAR now, not the header's background.
    Milanote draws both: a 4px colour strip at the very top, and (in ours)
@@ -2953,7 +3041,7 @@ body:has(#sw-update-banner) .board-sheet:not(.board-pop){bottom:71px}
   /* touch targets — these were all sized for a cursor */
   .board-topbar .tool-btn{min-height:32px;padding:6px 10px}
   .board-card-head{padding:8px}
-  .board-card-el.type-text>.board-card-head{padding:2px}
+  .board-card-el>.board-card-head{padding:2px}
   .board-text-body:not(:empty)::before{width:42px;height:34px}
   .board-card-del,.board-todo-del{opacity:1;padding:6px}
   .board-resize-handle{width:34px;height:34px;right:0;bottom:0;padding:13px 0 0 13px}
@@ -4366,3 +4454,30 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
 @media(prefers-reduced-motion:reduce){
   .tb-tray,.tb-search,.tb-helpbtn{transition:none}
 }
+
+/* ── Mood Boards — the colour swatch (28 Sept 2026) ──────────────────
+   A solid block of the colour (its value in the top-left corner, ink
+   computed by _boardsInkOn so a LITERAL ink sits on a LITERAL colour) over
+   a dark name bar. The bar is var(--dark) with var(--on-dark) ink — the
+   pair inverts together, so it reads in both themes. */
+.board-card-el.type-swatch{border:none}
+.board-swatch-body{padding:0!important;display:flex;flex-direction:column;overflow:hidden;height:100%}
+.board-swatch-block{flex:1 1 auto;min-height:40px;position:relative;cursor:pointer}
+.board-swatch-val{position:absolute;left:12px;top:10px;font-size:14px;font-weight:700;letter-spacing:.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.board-swatch-name{flex:0 0 80px;box-sizing:border-box;padding:12px;background:var(--dark);color:var(--on-dark);font-size:16px;font-weight:700;line-height:1.3;overflow:hidden;outline:none;display:flex;align-items:center}
+.board-swatch-name[contenteditable="true"]{cursor:text;-webkit-user-select:text;user-select:text}
+.board-swatch-name:empty::before{content:attr(data-placeholder);opacity:.6}
+.board-world[data-lod="far"] .board-swatch-val{display:none}
+.board-world[data-lod="far"] .board-swatch-name{display:flex!important;visibility:visible!important}
+.board-swp{display:flex;flex-direction:column;gap:12px}
+.board-swp-sv{position:relative;height:160px;border-radius:8px;cursor:crosshair;touch-action:none;background-image:linear-gradient(to top,#000,rgba(0,0,0,0)),linear-gradient(to right,#fff,rgba(255,255,255,0))}
+.board-swp-ring{position:absolute;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.5);pointer-events:none}
+.board-swp-row{display:flex;align-items:center;gap:10px}
+.board-swp-dot{flex:0 0 28px;height:28px;border-radius:50%;border:1px solid var(--border)}
+.board-swp-hue{flex:1;min-width:0;height:14px;-webkit-appearance:none;appearance:none;border-radius:7px;background:linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+.board-swp-eye{flex:0 0 34px;height:34px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.board-swp-fields{display:flex;gap:6px;align-items:flex-start}
+.board-swp-mode{flex:0 0 auto;min-height:34px;padding:0 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font-size:12px;font-weight:700;cursor:pointer}
+.board-swp-f{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted)}
+.board-swp-in{width:100%;min-width:0;box-sizing:border-box;min-height:34px;padding:4px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font-size:13px;text-align:center}
+.board-swp-in.wide{flex:1;text-transform:uppercase}

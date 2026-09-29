@@ -31,16 +31,24 @@ let _notesSearchTimer=null;
 let _notesBlockSeq=0;
 
 const _NOTES_BLOCK_TYPES=[
-  {type:'paragraph',label:'Text'},
-  {type:'h1',label:'Heading 1'},
-  {type:'h2',label:'Heading 2'},
-  {type:'bullet',label:'Bulleted list'},
-  {type:'numbered',label:'Numbered list'},
-  {type:'checklist',label:'Checklist'},
-  {type:'quote',label:'Quote'},
-  {type:'divider',label:'Divider'},
-  {type:'image',label:'Image'}
+  {type:'paragraph',label:'Text',hint:'Plain paragraph',keys:['paragraph','plain','text','p']},
+  {type:'h1',label:'Heading 1',hint:'# ',keys:['heading','title','h1','large']},
+  {type:'h2',label:'Heading 2',hint:'## ',keys:['heading','subtitle','h2','medium']},
+  {type:'bullet',label:'Bulleted list',hint:'- ',keys:['bullet','list','ul','unordered']},
+  {type:'numbered',label:'Numbered list',hint:'1. ',keys:['number','list','ol','ordered']},
+  {type:'checklist',label:'Checklist',hint:'[] ',keys:['todo','to-do','task','check','checkbox']},
+  {type:'quote',label:'Quote',hint:'> ',keys:['quote','callout','blockquote']},
+  {type:'divider',label:'Divider',hint:'---',keys:['divider','line','rule','separator','hr']},
+  {type:'image',label:'Image',hint:'Upload',keys:['image','photo','picture','upload']}
 ];
+
+// ── Slash menu + block menu state ──
+// _notesSlash: null, or {idx,query,sel,mode,items}. mode 'slash' = typed "/"
+// at the start of a block (the typed text is cleared on choose); 'insert' =
+// the + button, on a fresh empty block; 'turn' = the block menu's "Turn
+// into", which keeps the block's text.
+let _notesSlash=null;
+let _notesPopState=null;      // {rows,sel} of whatever the popover shows
 
 function _notesEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
@@ -214,7 +222,7 @@ window.notesCreatePage=async function(visibility){
 
 window.notesOpenPage=function(id){_notesViewingId=id;window.showPage('note-detail');};
 
-window.notesBack=function(){_notesSaveNow();window.showPage('notes');};
+window.notesBack=function(){_notesPopClose();_notesSaveNow();window.showPage('notes');};
 
 // ── Detail view ──
 async function _notesOpenDetail(){
@@ -236,6 +244,7 @@ async function _notesOpenDetail(){
 function _notesRenderDetailAndHydrate(){
   const m=document.getElementById('main-content');
   if(!m)return;
+  _notesPopClose();
   m.innerHTML=renderNoteDetailPage();
   _notesHydrateBlocks();
 }
@@ -250,20 +259,22 @@ function renderNoteDetailPage(){
   <button class="back-btn" onclick="window.notesBack()">← Back to Notes</button>
   <div class="card" style="padding:20px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-      <input type="text" id="notes-title-input" value="${_notesEsc(p.title)}" ${canEdit?'':'readonly'} oninput="window.notesTitleInput(this.value)" placeholder="Untitled" style="font-size:25px;font-weight:700;border:none;outline:none;font-family:inherit;flex:1;min-width:180px;background:transparent">
+      <input type="text" id="notes-title-input" value="${_notesEsc(p.title)}" ${canEdit?'':'readonly'} oninput="window.notesTitleInput(this.value)" placeholder="Untitled" aria-label="Page title" class="notes-title">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         ${canEdit?`<button class="btn-sm" onclick="window.notesToggleVisibility()">${visLabel} — change</button>`:`<span style="font-size:12px;color:var(--muted)">${visLabel}</span>`}
         ${canEdit?`<button class="btn-sm" style="background:var(--accent-urgent)" onclick="window.notesDeletePage()">Delete</button>`:''}
       </div>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:16px">${p.ownerName?('by '+_notesEsc(p.ownerName)+' · '):''}${updated?('updated '+updated):''}${!canEdit?' · read-only':''}${canEdit?' · <span class="note-save-status" id="note-save-status">Saved</span>':''}</div>
-    <div id="notes-blocks">${_notesRenderBlocksHTML(_notesEditBlocks,canEdit)}</div>
-    ${canEdit?`<button class="btn-sm" onclick="window.notesAddBlock()" style="margin-top:10px;background:none;border:1px dashed var(--border);color:var(--muted)">+ Add block</button>`:''}
+    <div class="notes-doc">
+      <div id="notes-blocks">${_notesRenderBlocksHTML(_notesEditBlocks,canEdit)}</div>
+      ${canEdit?`<button type="button" class="notes-add" onclick="window.notesAddBlock()">+ Add a block</button>`:''}
+    </div>
   </div>`;
 }
 
 function _notesPlaceholder(type){
-  return{paragraph:"Start typing… ('# ' heading, '- ' bullet, '[] ' checklist, '> ' quote)",
+  return{paragraph:"Type '/' for commands",
     h1:'Heading 1',h2:'Heading 2',bullet:'List item',numbered:'List item',
     checklist:'To-do',quote:'Quote'}[type]||'';
 }
@@ -278,38 +289,39 @@ function _notesRenderBlocksHTML(blocks,canEdit){
   let numCounter=0;
   return blocks.map((b,i)=>{
     numCounter=b.type==='numbered'?numCounter+1:0;
-    return _notesBlockWrapperHTML(b,i,canEdit,numCounter);
+    return _notesBlockWrapperHTML(b,i,canEdit,numCounter,blocks.length===1);
   }).join('');
 }
 
-function _notesBlockWrapperHTML(b,i,canEdit,numCounter){
-  const typeSelect=canEdit?`<select onchange="window.notesChangeBlockType(${i},this.value)" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:2px 4px;font-family:inherit">${_NOTES_BLOCK_TYPES.map(t=>`<option value="${t.type}"${t.type===b.type?' selected':''}>${t.label}</option>`).join('')}</select>`:'';
-  const toolbar=canEdit?`<div class="note-block-toolbar" style="opacity:0;transition:opacity .12s;display:flex;gap:6px;align-items:center;margin-bottom:2px">
-    ${typeSelect}
-    <button type="button" onclick="window.notesMoveBlock(${i},-1)" title="Move up" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--muted)">↑</button>
-    <button type="button" onclick="window.notesMoveBlock(${i},1)" title="Move down" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--muted)">↓</button>
-    <button type="button" onclick="window.notesDeleteBlock(${i})" title="Delete block" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--accent-urgent)">✕</button>
-  </div>`:'';
+function _notesBlockWrapperHTML(b,i,canEdit,numCounter,only){
+  // A gutter beside the block replaces the old always-present type select +
+  // arrows: "+" adds a block below (and opens the / menu), the dots open a
+  // small menu (Turn into, Move, Duplicate, Delete). Nothing is drawn for a
+  // read-only viewer.
+  const gutter=canEdit?`<div class="note-gutter"><button type="button" class="note-gbtn" aria-label="Add a block below" title="Add a block below" onclick="window.notesAddBelow(${i},this)">+</button><button type="button" class="note-gbtn" aria-label="Block options" title="Block options" onclick="window.notesOpenBlockMenu(${i},this)">&#8942;</button></div>`:'';
+  const solo=only&&!b.text?' note-only':'';
+  const tb=_NOTES_BLOCK_TYPES.find(t=>t.type===b.type);
+  const aria=`role="textbox" aria-multiline="true" aria-label="${_notesEsc(tb?tb.label:'Text')}"`;
 
   let bodyHTML;
   if(b.type==='divider'){
-    bodyHTML='<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">';
+    bodyHTML='<hr class="note-divider">';
   }else if(b.type==='image'){
     bodyHTML=`<div class="note-image-block">
-      ${b.imageUrl?`<img src="${_notesEsc(b.imageUrl)}" style="max-width:100%;border-radius:8px;display:block;margin-bottom:6px">`:''}
-      ${canEdit?`<input type="file" accept="image/*" onchange="window.notesUploadBlockImage(${i},this)" style="font-size:12px;margin-bottom:4px">`:''}
-      <div id="nb-${i}" contenteditable="${!!canEdit}" data-placeholder="Caption (optional)" class="note-block-body" style="font-size:13px;color:var(--muted)" oninput="window.notesBlockInput(${i},this)" onkeydown="window.notesBlockKeydown(event,${i})"></div>
+      ${b.imageUrl?`<img src="${_notesEsc(b.imageUrl)}" alt="" class="note-image">`:''}
+      ${canEdit?`<input type="file" accept="image/*" aria-label="Upload image" onchange="window.notesUploadBlockImage(${i},this)" class="note-image-input">`:''}
+      <div id="nb-${i}" contenteditable="${!!canEdit}" ${aria} data-placeholder="Caption (optional)" class="note-block-body note-caption${solo}" oninput="window.notesBlockInput(${i},this)" onkeydown="window.notesBlockKeydown(event,${i})"></div>
     </div>`;
   }else{
     const align=b.type==='checklist'?'flex-start':'baseline';
     const prefix=b.type==='bullet'?'<span class="note-bullet">•</span>'
       :b.type==='numbered'?`<span class="note-bullet">${numCounter}.</span>`
-      :b.type==='checklist'?`<input type="checkbox" ${b.checked?'checked':''} ${canEdit?'':'disabled'} onchange="window.notesToggleCheck(${i},this.checked)" style="margin-right:6px;margin-top:4px">`
+      :b.type==='checklist'?`<input type="checkbox" aria-label="Done" ${b.checked?'checked':''} ${canEdit?'':'disabled'} onchange="window.notesToggleCheck(${i},this.checked)" class="note-check">`
       :'';
-    const strike=b.type==='checklist'&&b.checked?'text-decoration:line-through;color:var(--muted)':'';
-    bodyHTML=`<div style="display:flex;align-items:${align}">${prefix}<div id="nb-${i}" contenteditable="${!!canEdit}" data-placeholder="${_notesEsc(_notesPlaceholder(b.type))}" class="note-block-body note-type-${b.type}" oninput="window.notesBlockInput(${i},this)" onkeydown="window.notesBlockKeydown(event,${i})" style="flex:1;${strike}"></div></div>`;
+    const strike=b.type==='checklist'&&b.checked?' note-done':'';
+    bodyHTML=`<div class="note-row" style="align-items:${align}">${prefix}<div id="nb-${i}" contenteditable="${!!canEdit}" ${aria} data-placeholder="${_notesEsc(_notesPlaceholder(b.type))}" class="note-block-body note-type-${b.type}${strike}${solo}" oninput="window.notesBlockInput(${i},this)" onkeydown="window.notesBlockKeydown(event,${i})"></div></div>`;
   }
-  return`<div class="note-block" data-idx="${i}">${toolbar}${bodyHTML}</div>`;
+  return`<div class="note-block" data-idx="${i}">${gutter}${bodyHTML}</div>`;
 }
 
 function _notesHydrateBlocks(){
@@ -322,6 +334,7 @@ function _notesHydrateBlocks(){
 function _notesRerenderBlocks(){
   const c=document.getElementById('notes-blocks');
   if(!c)return;
+  _notesPopClose();
   c.innerHTML=_notesRenderBlocksHTML(_notesEditBlocks,_notesCanEdit(_notesEditPage));
   _notesHydrateBlocks();
 }
@@ -356,6 +369,7 @@ window.notesBlockInput=function(i,el){
   if(!_notesEditBlocks[i])return;
   _notesEditBlocks[i].text=el.textContent;
   _notesCheckMarkdownShortcut(i,el);
+  _notesSlashFromInput(i,el);
   _notesSaveDebounced();
 };
 
@@ -386,6 +400,7 @@ function _notesCheckMarkdownShortcut(i,el){
 }
 
 window.notesBlockKeydown=function(ev,i){
+  if(_notesSlashKey(ev,i))return;
   if(ev.key==='Enter'&&!ev.shiftKey){
     ev.preventDefault();
     const b=_notesEditBlocks[i];
@@ -404,6 +419,212 @@ window.notesBlockKeydown=function(ev,i){
       _notesSaveDebounced();
     }
   }
+};
+
+// ── The "/" menu ──────────────────────────────────────────────────────
+// Typing "/" at the start of a block lists the block types; more typing
+// narrows the list (matched on the label and a few aliases: "todo" finds
+// Checklist). Arrow keys move, Enter or Tab picks, Escape closes and leaves
+// what was typed. It replaces the per-block type <select>.
+
+// The query when a block's whole text is "/" plus non-space characters, else
+// null. Only the START of a block opens it: a slash in the middle of a
+// sentence ("and/or") is a slash.
+function _notesSlashMatch(text){
+  const m=/^\/(\S*)$/.exec(String(text==null?'':text));
+  return m?m[1].toLowerCase():null;
+}
+
+// Types matching a query: label prefix first, then any label/alias containing
+// it. `hasText` (Turn into on a block that already has words) hides Divider,
+// which would silently throw those words away.
+function _notesSlashItems(query,opts){
+  const q=String(query||'').toLowerCase().trim();
+  const hasText=!!(opts&&opts.hasText);
+  const pool=_NOTES_BLOCK_TYPES.filter(t=>!(hasText&&t.type==='divider'));
+  if(!q)return pool.slice();
+  const score=t=>{
+    const label=t.label.toLowerCase();
+    if(label.startsWith(q))return 0;
+    if(t.keys.some(k=>k.startsWith(q)))return 1;
+    if(label.includes(q)||t.keys.some(k=>k.includes(q)))return 2;
+    return -1;
+  };
+  return pool.map(t=>({t,s:score(t)})).filter(x=>x.s>=0).sort((a,b)=>a.s-b.s).map(x=>x.t);
+}
+
+function _notesSlashFromInput(i,el){
+  const b=_notesEditBlocks[i];
+  if(!b||b.type==='image'||b.type==='divider'||!_notesCanEdit(_notesEditPage))return;
+  const q=_notesSlashMatch(el.textContent);
+  if(q===null){if(_notesSlash&&_notesSlash.mode==='slash')_notesPopClose();return;}
+  _notesSlashOpen(i,q,'slash');
+}
+
+function _notesSlashOpen(idx,query,mode,anchorEl){
+  const b=_notesEditBlocks[idx];
+  const items=_notesSlashItems(query,{hasText:mode==='turn'&&!!(b&&b.text)});
+  if(!items.length){_notesPopClose();return;}
+  const keep=_notesSlash&&_notesSlash.idx===idx&&_notesSlash.query===query?_notesSlash.sel:0;
+  _notesSlash={idx,query,sel:Math.min(keep,items.length-1),mode,items,anchor:anchorEl||null};
+  _notesSlashPaint();
+}
+
+function _notesSlashPaint(){
+  const s=_notesSlash;if(!s)return;
+  const anchor=s.anchor||document.getElementById('nb-'+s.idx);
+  _notesPopShow(anchor,s.items.map(t=>({label:t.label,hint:t.hint,run:()=>_notesSlashChoose(t.type)})),s.sel);
+}
+
+// Returns true when the key belonged to the menu.
+function _notesSlashKey(ev,i){
+  const s=_notesSlash;
+  if(!s||s.idx!==i||!s.items.length)return false;
+  const n=s.items.length;
+  if(ev.key==='ArrowDown'||ev.key==='ArrowUp'){
+    ev.preventDefault();
+    s.sel=(s.sel+(ev.key==='ArrowDown'?1:n-1))%n;
+    _notesSlashPaint();
+    return true;
+  }
+  if(ev.key==='Enter'||ev.key==='Tab'){
+    ev.preventDefault();
+    _notesSlashChoose(s.items[s.sel].type);
+    return true;
+  }
+  if(ev.key==='Escape'){
+    ev.preventDefault();
+    _notesPopClose();
+    return true;
+  }
+  return false;
+}
+
+function _notesSlashChoose(type){
+  const s=_notesSlash;
+  _notesPopClose();
+  if(!s)return;
+  const b=_notesEditBlocks[s.idx];
+  if(!b)return;
+  if(s.mode==='slash')b.text='';        // the typed "/query" is not content
+  b.type=type;
+  if(type==='checklist'&&typeof b.checked!=='boolean')b.checked=false;
+  if(type==='divider'){
+    b.text='';
+    _notesEditBlocks.splice(s.idx+1,0,_notesNewBlock('paragraph'));
+    _notesRerenderBlocks();
+    _notesFocusBlock(s.idx+1,false);
+  }else{
+    _notesRerenderBlocks();
+    _notesFocusBlock(s.idx,true);
+  }
+  _notesSaveDebounced();
+}
+
+// ── One popover, shared by the / menu and the block menu ──
+// Built with createElement + textContent (labels are constants today, but a
+// menu that interpolated strings is one edit from being an XSS hole).
+function _notesPop(){
+  let p=document.getElementById('notes-pop');
+  if(!p){
+    p=document.createElement('div');
+    p.id='notes-pop';
+    p.className='notes-pop';
+    document.body.appendChild(p);
+  }
+  return p;
+}
+
+function _notesPopShow(anchor,rows,sel){
+  _notesPopState={rows,sel:sel||0};
+  const p=_notesPop();
+  p.innerHTML='';
+  p.setAttribute('role','listbox');
+  rows.forEach((r,k)=>{
+    const d=document.createElement('div');
+    d.className='notes-pop-row'+(k===_notesPopState.sel?' sel':'')+(r.danger?' danger':'');
+    d.setAttribute('role','option');
+    d.setAttribute('aria-selected',k===_notesPopState.sel?'true':'false');
+    const l=document.createElement('span');l.className='notes-pop-label';l.textContent=r.label;d.appendChild(l);
+    if(r.hint){const h=document.createElement('span');h.className='notes-pop-hint';h.textContent=r.hint;d.appendChild(h);}
+    // mousedown must not steal focus from the block being typed in.
+    d.addEventListener('mousedown',e=>e.preventDefault());
+    d.addEventListener('click',()=>r.run());
+    p.appendChild(d);
+  });
+  p.classList.add('open');
+  try{
+    const a=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():null;
+    if(a){
+      const w=p.offsetWidth||240,h=p.offsetHeight||0;
+      let top=a.bottom+4;
+      if(h&&top+h>innerHeight-8&&a.top-h-4>8)top=a.top-h-4;
+      p.style.top=Math.max(8,top)+'px';
+      p.style.left=Math.max(8,Math.min(a.left,innerWidth-w-8))+'px';
+    }
+    const cur=p.querySelector&&p.querySelector('.sel');
+    if(cur&&cur.scrollIntoView)cur.scrollIntoView({block:'nearest'});
+  }catch(e){}
+}
+
+function _notesPopClose(){
+  _notesSlash=null;
+  _notesPopState=null;
+  const p=document.getElementById('notes-pop');
+  if(p)p.classList.remove('open');
+}
+
+// Registered once at load — a listener added per render would pile up.
+if(!window.__notesPopWired&&typeof document.addEventListener==='function'){
+  window.__notesPopWired=true;
+  document.addEventListener('mousedown',e=>{
+    if(!_notesPopState)return;
+    const t=e.target;
+    if(t&&t.closest&&(t.closest('#notes-pop')||t.closest('.note-gbtn')))return;
+    _notesPopClose();
+  },true);
+  document.addEventListener('keydown',e=>{
+    // Escape from a block is handled by _notesSlashKey; this is for the
+    // block menu, whose focus is on a button.
+    if(e.key==='Escape'&&_notesPopState)_notesPopClose();
+  },true);
+}
+
+window.notesAddBelow=function(i,btn){
+  if(!_notesCanEdit(_notesEditPage))return;
+  const cur=_notesEditBlocks[i];
+  let at=i;
+  if(!(cur&&cur.type==='paragraph'&&!cur.text)){
+    _notesEditBlocks.splice(i+1,0,_notesNewBlock('paragraph'));
+    at=i+1;
+  }
+  _notesRerenderBlocks();
+  _notesFocusBlock(at,false);
+  _notesSlashOpen(at,'','insert');
+  _notesSaveDebounced();
+};
+
+window.notesOpenBlockMenu=function(i,btn){
+  if(!_notesCanEdit(_notesEditPage)||!_notesEditBlocks[i])return;
+  const last=_notesEditBlocks.length-1;
+  const rows=[{label:'Turn into…',run:()=>_notesSlashOpen(i,'','turn',btn)}];
+  if(i>0)rows.push({label:'Move up',run:()=>{_notesPopClose();window.notesMoveBlock(i,-1);}});
+  if(i<last)rows.push({label:'Move down',run:()=>{_notesPopClose();window.notesMoveBlock(i,1);}});
+  rows.push({label:'Duplicate',run:()=>{_notesPopClose();window.notesDuplicateBlock(i);}});
+  if(last>0)rows.push({label:'Delete',danger:true,run:()=>{_notesPopClose();window.notesDeleteBlock(i);}});
+  _notesSlash=null;
+  _notesPopShow(btn,rows,0);
+};
+
+window.notesDuplicateBlock=function(i){
+  const b=_notesEditBlocks[i];
+  if(!b||!_notesCanEdit(_notesEditPage))return;
+  const c=JSON.parse(JSON.stringify(b));
+  c.id='b'+(++_notesBlockSeq)+'_'+Date.now();
+  _notesEditBlocks.splice(i+1,0,c);
+  _notesRerenderBlocks();
+  _notesFocusBlock(i+1,true);
+  _notesSaveDebounced();
 };
 
 window.notesChangeBlockType=function(i,type){

@@ -866,9 +866,16 @@ module.exports=function(){
       app.fire(el,'pointerdown',Object.assign({target:el,currentTarget:el,
         pointerId:1,button:0,pointerType:'mouse',clientX:10,clientY:10},down));
       const panBefore=run(`_editBoard.panX`);
-      const marqueed=app.el('board-marquee').style.display==='block';
+      // The box is shown once the pointer MOVES, never on the press (it
+      // used to flash the previous marquee on every click) — so read it
+      // after the move.
       ((el._ls&&el._ls.pointermove)||[]).forEach(l=>l.fn({clientX:300,clientY:300,target:el}));
-      return{panned:run(`_editBoard.panX`)!==panBefore,marqueed};
+      const marqueed=app.el('board-marquee').style.display==='block';
+      const panned=run(`_editBoard.panX`)!==panBefore;
+      // End the gesture, or its move listener stays on the stage and paints
+      // the box during the NEXT gesture's move.
+      ((el._ls&&el._ls.pointerup)||[]).slice().forEach(l=>l.fn({clientX:300,clientY:300,target:el,type:'pointerup'}));
+      return{panned,marqueed};
     }
 
     s.section('a plain mouse drag on empty canvas selects');
@@ -897,6 +904,27 @@ module.exports=function(){
     const before=run(`_editBoard.panY`);
     app.fire(el3,'wheel',{deltaY:120});
     s.ok('and the wheel pans without any modifier at all',run(`_editBoard.panY`)!==before);
+
+    s.section('a click does not bring the last selection box back');
+    {
+      gesture({});   // a real drag, ended; the box was 290x290
+      const el5=app.el(stage());
+      app.fire(el5,'pointerdown',{target:el5,currentTarget:el5,pointerId:2,button:0,pointerType:'mouse',clientX:600,clientY:600});
+      const box=app.el('board-marquee');
+      s.ok('the press shows no box',box.style.display!=='block',box.style.display);
+      s.eq('and the old size is gone',box.style.width,'0px');
+      ((el5._ls&&el5._ls.pointermove)||[]).forEach(l=>l.fn({clientX:601,clientY:601,target:el5}));
+      s.ok('a twitch under 3px still shows none',box.style.display!=='block');
+      // The release is lost (let go outside the window): the next move
+      // arrives with no button held and must end the gesture, not draw.
+      ((el5._ls&&el5._ls.pointermove)||[]).forEach(l=>l.fn({clientX:900,clientY:900,buttons:0,target:el5}));
+      s.ok('a hover after a lost release draws no box',box.style.display!=='block',box.style.display);
+      ((el5._ls&&el5._ls.pointermove)||[]).forEach(l=>l.fn({clientX:950,clientY:950,buttons:0,target:el5}));
+      s.ok('and the gesture has ended — it stays hidden',box.style.display!=='block'&&box.style.width==='0px');
+      const n0=((el5._ls&&el5._ls.pointermove)||[]).length;
+      app.fire(el5,'pointerdown',{target:el5,currentTarget:el5,pointerId:3,button:2,pointerType:'mouse',clientX:500,clientY:500});
+      s.eq('a right-click starts no box and no pan',((el5._ls&&el5._ls.pointermove)||[]).length,n0);
+    }
 
     s.section('Shift+drag still marquees, so nothing unlearns');
     g=gesture({shiftKey:true});
@@ -1841,7 +1869,7 @@ module.exports=function(){
     // The trail replaced the "← Home" text (Sept 2026, Milanote's shape):
     // a round chip with the GROOVY mark, then Home, both pointing at Home.
     s.ok('and its trail starts at Home',/board-home-chip[^>]*onclick="window\.boardsGotoGallery\(\)"/.test(nb)&&/board-crumb-home[^>]*onclick="window\.boardsGotoGallery\(\)">Home</.test(nb));
-    s.ok('with the board\'s own tile before its name',/board-crumb-slash">\/<\/span><span class="board-tile/.test(nb));
+    s.ok('with the board\'s own tile before its name',/board-crumb-slash">\/<\/span><span id="board-crumb-tile"><span class="board-tile/.test(nb));
     s.ok('and no "← Home" text button beside it',!/← Home/.test(nb));
   }
 
@@ -3578,17 +3606,19 @@ module.exports=function(){
       const q1=t.run(`__asked.join(' | ')`);
       s.ok('the question names Ctrl+Z',/Ctrl\+Z/.test(q1),q1);
 
-      // _boardsPushUndo snapshots cards and connectors only — the Unsorted
-      // tray is saved in head and is genuinely not recoverable. The confirm
-      // says exactly that, and must keep saying it.
-      t.run(setUp+`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
-      await t.run(`window.boardsTrayRemove(0)`);
-      s.section('the tray is honest that it is NOT undoable');
-      const q2=t.run(`__asked.join(' | ')`);
-      s.ok('it says it cannot be undone',/cannot be undone/i.test(q2),q2);
-      s.ok('and does not promise Ctrl+Z',!/Ctrl\+Z/.test(q2));
-      s.eq('the item really is gone',t.run(`_editUnsorted.length`),0);
     })());
+
+    s.section('removing from the tray asks nothing and is undoable');
+    // REVERSED 28 Sept 2026 (Afnan: the popup should not appear). The undo
+    // snapshot carries the tray, so Ctrl+Z brings the item back.
+    boot();
+    run(`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
+    state.confirms.length=0;
+    run(`window.boardsTrayRemove(0)`);
+    s.eq('no confirm',state.confirms.length,0);
+    s.eq('the item really is gone',run(`_editUnsorted.length`),0);
+    run(`window.boardsUndoAction()`);
+    s.eq('Ctrl+Z brings it back',run(`_editUnsorted.length`),1);
 
     s.section('provenance says "you" for your own card');
     boot();
@@ -4720,8 +4750,10 @@ module.exports=function(){
     s.eq('no array directly inside an array',nested,0);
     const tbl=JSON.parse(back(0,0,0));
     s.eq('and it decodes back to real rows',JSON.stringify((tbl.cards[0]||{}).rows),'[["Size","Qty"],["M","40"]]');
-    s.eq('the row says TABLE, not NOTE',
-      (run(`_boardsTrayItemHTML(_editUnsorted[0],0,true)`).match(/thumb-empty">([^<]*)/)||[])[1],'TABLE');
+    // It used to say TABLE in a grey box; it previews the table now — and
+    // still never introduces itself as a NOTE.
+    {const h=run(`_boardsTrayItemHTML(_editUnsorted[0],0,true)`);
+     s.ok('the row previews a TABLE, not a NOTE',/board-tray-prev-table/.test(h)&&!/>NOTE</.test(h));}
 
     /* "collum etc" is the whole point: a column parked without its
        children is an empty box, and children left behind are loose cards
@@ -4899,6 +4931,34 @@ module.exports=function(){
       drag(300,300);                         // over the canvas
       s.eq('a drop on the canvas is an ordinary move',r2(`_editCards.length`),1);
       s.eq('and collects nothing',r2(`_editUnsorted.length`),0);
+
+      // THE MAGNET: Unsorted catches a card let go NEAR it, not only on it.
+      s.section('the magnet: Unsorted catches a card let go near it');
+      r2(setup);
+      drag(760,300);                         // 40px short of the tray
+      s.eq('a drop 40px short is caught',r2(`_editUnsorted.length`),1);
+      s.eq('and the row lands with a pop (one-shot)',
+        /board-tray-item landed/.test(r2(`_editUnsorted[0]?_boardsTrayItemHTML(_editUnsorted[0],0,true):'board-tray-item landed'`))
+          ? 'repeat' : 'consumed', 'consumed');
+      r2(setup);
+      drag(640,300);                         // 160px short: pulled, not caught
+      s.eq('a drop 160px short is an ordinary move',r2(`_editUnsorted.length`),0);
+      s.eq('landing exactly under the pointer — the pull is visual only',r2(`_editCards[0].x`),40+640);
+      // Mid-drag: the pull is written onto the card as CSS variables.
+      r2(setup);
+      r2(`(function(){
+        const head=document.getElementById('drag-body');
+        window.boardsCardDragStart({currentTarget:head,target:head,clientX:0,clientY:0,pointerId:1,
+          stopPropagation(){},shiftKey:false,ctrlKey:false,metaKey:false},'n1');})()`);
+      const mv=(x,y)=>(app2.state.listeners.pointermove||[]).slice().forEach(f=>f({type:'pointermove',clientX:x,clientY:y,pointerId:1}));
+      mv(700,300);
+      const card=app2.el('board-card-n1');
+      const mx=parseFloat(card.style.getPropertyValue('--mx'));
+      s.ok('near the tray the card is pulled toward it',mx>0,String(mx));
+      mv(300,300);
+      const mx2=parseFloat(card.style.getPropertyValue('--mx'));
+      s.eq('and let go when it is pulled away',mx2,0);
+      (app2.state.listeners.pointerup||[]).slice().forEach(f=>f({type:'pointerup',clientX:300,clientY:300,pointerId:1}));
 
       // A board link dropped on the tray is a move like any other.
       r2(setup+`_editCards=[{id:'k1',type:'board',boardId:'B',x:40,y:60,w:340,h:136}];
@@ -5468,16 +5528,18 @@ module.exports=function(){
 
     s.section('every destructive action waits for the answer');
     {
+      // Erasing a drawing (the tray removal it used to use asks nothing
+      // since main's 28 Sept change: Ctrl+Z brings a tray item back).
       const a=fresh();
-      a.run(`_editUnsorted=[{id:'u1',kind:'text',text:'x'}]`);
-      const pr=a.run(`window.boardsTrayRemove(0)`);
+      a.run(`_editCards=[{id:'p',type:'image',imageUrl:'x',strokes:[{pts:[[0,0],[5,5]]}],x:0,y:0,w:100,h:100}]`);
+      const pr=a.run(`window.boardsDrawClear('p')`);
       await tick();
-      s.eq('nothing is removed while the question is open',a.run(`_editUnsorted.length`),1);
+      s.eq('nothing is erased while the question is open',a.run(`!!_editCards[0].strokes`),true);
       a.run(`window.boardsDlgAnswer(false)`);await pr;
-      s.eq('and Cancel keeps it',a.run(`_editUnsorted.length`),1);
-      const pr2=a.run(`window.boardsTrayRemove(0)`);
+      s.eq('and Cancel keeps it',a.run(`!!_editCards[0].strokes`),true);
+      const pr2=a.run(`window.boardsDrawClear('p')`);
       a.run(`window.boardsDlgAnswer(true)`);await pr2;
-      s.eq('yes removes it',a.run(`_editUnsorted.length`),0);
+      s.eq('yes erases it',a.run(`!!_editCards[0].strokes`),false);
     }
 
     s.section('in-place rename: Enter, Escape, empty, leaving');
@@ -5514,28 +5576,30 @@ module.exports=function(){
       s.eq('and only once',a.run(`__got.length`),1);
     }
 
-    s.section('the board title saves on Enter, not per keystroke');
+    s.section('the board title: Enter leaves it, Escape restores, empty reverts');
     {
+      // main's 28 Sept title handling (#97 bug 10) plus change order 1's
+      // empty-reverts, merged 29 Sept.
       const a=fresh();
-      const html=a.run(`_renderBoardCanvasHTML()`);
-      const tag=(/<input[^>]*id="board-title-input"[^>]*>/.exec(html)||[''])[0];
-      s.ok('the title field has no per-keystroke save',!/oninput=/.test(tag),tag.slice(0,160));
-      s.ok('it arms the in-place rename when focused',/onfocus="window\.boardsTitleFocus\(this\)"/.test(tag));
       const el=a.el('board-title-input');el.tagName='INPUT';el.value='Winter Drop';
       a.run(`window.boardsTitleFocus(document.getElementById('board-title-input'))`);
-      el.value='Winter Drop 2027';
-      key(a,el,'Escape');
-      s.eq('Escape leaves the title as it was',a.run(`_editBoard.title`),'Winter Drop');
-      s.eq('and puts it back in the field',el.value,'Winter Drop');
+      el.value='Winter Drop 2027';a.run(`window.boardsTitleInput('Winter Drop 2027')`);
+      const e={key:'Escape',preventDefault(){},stopPropagation(){}};
+      a.ctx.__e=e;a.run(`window.boardsTitleKey(__e,document.getElementById('board-title-input'))`);
+      s.eq('Escape puts the old title back',a.run(`_editBoard.title`),'Winter Drop');
+      s.eq('in the field too',el.value,'Winter Drop');
       a.run(`window.boardsTitleFocus(document.getElementById('board-title-input'))`);
-      el.value='';key(a,el,'Enter');
-      s.eq('an empty title reverts',a.run(`_editBoard.title`),'Winter Drop');
+      el.value='   ';a.run(`window.boardsTitleInput('   ')`);
+      a.run(`window.boardsTitleDone(document.getElementById('board-title-input'))`);
+      s.eq('leaving an emptied title reverts it',a.run(`_editBoard.title`),'Winter Drop');
+      s.eq('and shows it again',el.value,'Winter Drop');
       a.run(`window.boardsTitleFocus(document.getElementById('board-title-input'))`);
-      el.value='Winter Drop 2027';key(a,el,'Enter');
-      s.eq('Enter saves it',a.run(`_editBoard.title`),'Winter Drop 2027');
+      el.value='Winter Drop 2027';a.run(`window.boardsTitleInput('Winter Drop 2027')`);
+      a.run(`window.boardsTitleDone(document.getElementById('board-title-input'))`);
+      s.eq('a real name is saved',a.run(`_editBoard.title`),'Winter Drop 2027');
       const ro=fresh();ro.run(`session={u:'saim',name:'Saim',role:'worker',uid:'u9'}`);
       const rtag=(/<input[^>]*id="board-title-input"[^>]*>/.exec(ro.run(`_renderBoardCanvasHTML()`))||[''])[0];
-      s.ok('someone who cannot edit gets a read-only title with nothing armed',/readonly/.test(rtag)&&!/onfocus/.test(rtag),rtag.slice(0,160));
+      s.ok('someone who cannot edit gets a read-only title',/readonly/.test(rtag),rtag.slice(0,160));
     }
 
     s.section('a card name (F2) renames in place');
@@ -5965,7 +6029,7 @@ module.exports=function(){
       r(`_boardsCameFromAll=false;_editBoard={id:'b1',title:'Winter',ownerUid:'u1',visibility:'personal',zoom:1,panX:0,panY:0,color:'#7C3AED'}`);
       const bar=r(`_renderBoardCanvasHTML()`);
       s.ok('the chip carries the app icon and goes Home',/board-home-chip[^>]*boardsGotoGallery[^>]*>\s*<img src="\/assets\/icons\/icon-192\.png"/.test(bar));
-      s.ok('Home, then a slash, then the board\'s tile',/board-crumb-home[^>]*>Home<\/button>[\s\S]*board-crumb-slash">\/<\/span><span class="board-tile"[^>]*background:#7C3AED/.test(bar));
+      s.ok('Home, then a slash, then the board\'s tile',/board-crumb-home[^>]*>Home<\/button>[\s\S]*board-crumb-slash">\/<\/span><span id="board-crumb-tile"><span class="board-tile"[^>]*background:#7C3AED/.test(bar));
       r(`_boardsCameFromAll=true`);
       s.ok('opened from All boards, that is a crumb too',/board-crumb-slash">\/<\/span><button class="board-crumb" onclick="window\.boardsShowAll\(\)">All boards<\/button>/.test(r(`_renderBoardCanvasHTML()`)));
       r(`_boardsCameFromAll=false`);

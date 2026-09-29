@@ -305,10 +305,9 @@ module.exports=function(){
     s.ok('the colour strip is not the head background',
       /\.board-card-el::before\{content:''/.test(css)&&!/\.board-card-el\.tint-[a-z]+ \.board-card-head\{/.test(css));
     // The dot grid is a placement cue, not the canvas background.
-    s.ok('the dot grid is scoped to .grid-on',
-      /\.board-stage\.grid-on\{background-image:radial-gradient/.test(css));
-    const stage=(css.match(/\n\.board-stage\{[^}]*\}/)||[''])[0];
-    s.ok('and the stage carries none at rest',!/background-image/.test(stage),stage.slice(0,120));
+    // REVERSED 28 Sept 2026 at Afnan's ask: the dot grid is always on.
+    s.ok('the dot grid is always painted on the stage',
+      /\.board-stage\{background-image:radial-gradient/.test(css));
   }
 
   s.section('card-internal text holds a 13px floor');

@@ -707,6 +707,48 @@ deliberate actions where the normal blocking feedback is still correct.
 If a future module adds its own frequent autosave, use this same pair
 rather than re-deriving another opt-out.
 
+### Notes — the "/" menu and the block gutter (28 Sept 2026)
+
+Afnan had called the block editor "too child-like, not professional". The
+pattern reference was BlockNote (MPL-2.0, read-only, nothing copied); the
+shape of the fix is its `/` menu and side menu, written from scratch here.
+
+- **`/` at the START of a block opens the type list** (`_notesSlashMatch`,
+  pure: `/` plus non-space characters is the whole rule, so "and/or" is
+  text). Typing narrows it by label prefix, then alias (`todo` finds
+  Checklist), then substring (`_notesSlashItems`, pure). Arrow keys move,
+  Enter/Tab pick, Escape closes and leaves the typing. **A menu with nothing
+  matching closes itself and Enter is an ordinary Enter.** It replaces the
+  per-block type `<select>`.
+- **Three modes, one menu:** `slash` (typed; the typed `/query` is cleared on
+  choose), `insert` (the + button, on a fresh empty block) and `turn` (the ⋮
+  menu's "Turn into…", which keeps the block's words and therefore hides
+  Divider, which would throw them away).
+- **The gutter replaces the always-there toolbar:** `+` adds a block below
+  (reusing an empty paragraph rather than stacking one) and ⋮ opens
+  Turn into / Move up / Move down / Duplicate / Delete, each offered only
+  where it applies. **There is no drag-to-reorder yet** — the menu's Move is
+  the route; do not describe the ⋮ as a drag handle.
+- **Placeholders are a cue, not a label:** shown on the focused empty block,
+  on a lone empty page (`.note-only`) and on headings. Before, every empty
+  block carried one.
+- **One popover** (`#notes-pop`, `_notesPopShow`) serves both menus, built
+  with `createElement` + `textContent`. Its document listeners are registered
+  once at load (`__notesPopWired`). `#notes-pop` sits at z-index 210.
+- **The XSS boundary is unchanged:** block structure renders with empty
+  bodies and `_notesHydrateBlocks` fills text with `textContent`. The data
+  model, `firestore.rules` and stored blocks did not change — no migration.
+- **On a phone the gutter moves to the right edge and stays visible** (no
+  hover). Held by `max-width:600px`, the module's own breakpoint.
+- `tests/notes.test.js` (65) drives the real handlers; verified by
+  reverting the key routing, the clear-on-choose and the Divider rule.
+  `smoke-layout` fragment `notes — the page, the / menu and the block menu`
+  holds contrast and overflow (breaking the hint ink fails it by name).
+  **It does NOT hold an overlay covering an editable body** — checked: an
+  `::after` over every block passed.
+- **Nobody has typed into it on a real screen** — the sandbox cannot sign
+  in. It was rendered and looked at in headless Chromium, both themes.
+
 **Nav:** "Creative Hub" (plain text, no icon/emoji — deliberate, per
 Afnan) is a `mainItems` entry in `buildNav()` pointing at page id
 `creative-hub`, in the mobile "More" sheet for owner/manager
@@ -3693,10 +3735,196 @@ times; with the rules removed it sits at 14 and is covered. The old
 assertion "desktop has no Report a bug" in `tests/boards.test.js` was
 reversed, not deleted.
 
+**A reload comes back to the board (#97 bug 9, same day).** Nothing but
+a pasted link ever put a board in the URL, so "Refresh now" landed on the
+app's first page. `_boardsSetHash` writes `#board=<id>` when
+`_boardsOpenCanvas` opens a board (Home too — it opens through the same
+path) and clears it when the `showPage` wrap leaves the canvas or the board
+is not found; the existing `_boardsConsumeDeepLink` after `startApp` does
+the rest, behind the same Creative Hub gate. **`replaceState`, never a new
+history entry**, so Back is unchanged and no `hashchange` fires to re-run
+the consumer; only a `#board=` hash is ever cleared. `tests/board-hash.test.js`.
+**Not verified end to end** — the sandbox cannot sign in, so a real reload
+landing back on a board has not been seen.
+
+**Renaming a board in the top bar: Enter saves (#97 bug 10, same day).**
+Enter did nothing — the rename sat in the 900ms debounce with the caret still
+in the box — and the breadcrumb tile kept the old name's first letter. The
+title input now has `onkeydown` (`boardsTitleKey`: Enter blurs, Escape puts
+back the name it had on focus), and `onblur` (`boardsTitleDone`) trims, saves
+at once, mirrors `moodBoards` and repaints `#board-crumb-tile`.
+`tests/board-title.test.js`.
+
+**Drag a card onto another board to move it (#97 bug 2, same day).**
+Dropping a card on a sub-board card, or on a breadcrumb above this board,
+moves it into that board's Unsorted through `window.boardsMoveCardsTo` —
+the menu's own implementation, so its refusals and transaction are shared.
+Targets are fixed at grab time (`_boardsMoveDragTargets`: live, editable,
+not Home, not this board; breadcrumbs carry `data-board-drop`) and light up
+with `.board-move-drop` while held. The cards go back to where the gesture
+started and the drag's undo entry is popped before the move. A group
+holding a board link is refused whole. **Hover-to-open is NOT built** — no
+measured delay, and the drop already reaches the board.
+`tests/board-dragmove.test.js`. Nobody has dragged onto a board on a real
+screen.
+
+**EVERY card wears the corner chip now, not only a note (same day).**
+Afnan: the black hover strip was still on images, to-dos and "everything"
+else. The bug-6 rules dropped `.type-text` and apply to `.board-card-el>
+.board-card-head`: a small ✕ chip top-right, the type word hidden, the name
+only while being renamed. Only a note keeps the first-line float. Board
+layout probe 152/152 and phone probe 30/30 pass; nobody has hovered one on
+a real screen.
+
+**Zoomed out, a card's content stays visible (same day).** Afnan, with a
+screenshot of blank white cards at far zoom. The far level of detail used to
+hide note, to-do and link text, captions and a sub-board's meta and
+thumbnails; they stay painted now and only the chrome goes. The far-zoom
+probe's chrome list dropped `.board-caption` to match.
+
+**Alignment is motion-driven, and the guide lines are gone (same day).**
+Afnan, with a screen recording: the snap lines "are shit". A card drag no
+longer draws guides; `_boardsAlignPull` scales the pull toward a
+neighbour's edge by the smoothed pointer speed — full below 0.12 px/ms,
+none above 0.6, a straight fade between — so a fast drag follows the finger
+exactly and a slow settle aligns. Snap-to-grid and Alt are unchanged.
+Nobody has felt it on a real screen.
+
+**The dot grid is always on, and alignment eases (same day).** At
+Afnan's ask the dots paint on `.board-stage` at rest (REVERSES the second-
+video "placement cue only" rule; `_boardsFlashGrid` still toggles
+`grid-on`, which now changes nothing). The alignment offset glides 30% of
+the way to its target on each move instead of jumping.
+
+**The drag is Milanote's now — lift and tilt, no alignment (same day).**
+Afnan sent Milanote's drag beside ours. Read off its frames (contact sheet,
+cv2): the held card LIFTS (deeper shadow, slightly larger) and TILTS a few
+degrees toward where it is moving, then settles flat; no guide lines, no
+snapping. Ours: `.board-card-el.lifted` with `--tilt` written by the drag
+from eased horizontal speed (capped ±5°), and **no pull toward neighbours
+at all** (the velocity-gated pull above is gone from the drag;
+`_boardsAlignPull` is left unused). Grid snap still works when switched on.
+Also: **Space or the Hand pans over a card** instead of grabbing it (the
+stage takes the press, the card drag bails for a mouse), and **removing an
+Unsorted item asks nothing** — it pushes undo, since the snapshot carries
+the tray. Nobody has felt the drag on a real screen.
+
+**A click no longer brings back the last selection box (29 Sept).**
+Afnan's recording: after a marquee, a plain click on the board flashed the
+OLD box. The press showed `#board-marquee` with the previous gesture's
+size and place until the pointer moved. It is zeroed on the press, shown
+only past 3px of movement, reset on release, and a `pointercancel` ends the
+gesture too. Held in `tests/boards.test.js` ("a click does not bring the
+last selection box back") — verified by restoring the old show-on-press. **Hardened again the same day** after
+Afnan said it still happened: a `pointermove` with no button held
+(`ev.buttons===0`, i.e. the release was lost off the window) now ends the
+gesture instead of drawing the box from the old start point, and a
+right-click (`e.button===2`) starts neither a box nor a pan. Both held in the
+same test section, and both fail by name when undone. **If it is reported
+again, first check the build is v249+** — v248 had only just deployed.
+
 **#97 also reports things `main` already has** (Draw on, body drag, a
 YouTube player), so that test may have run on an older build — the
 Netlify deploy list or the diagnostics build id settles it; do not
 re-diagnose those from the code.
+
+### Mood Boards — the colour swatch (28 Sept 2026)
+
+Milanote's colour card, built from what a screen recording showed. **Type
+a hex colour (`#RGB` or `#RRGGBB`, `#` required, nothing else in the note)
+and leave the note: it BECOMES a swatch** in place (`type:'swatch'`,
+`hex` normalised to 6-digit upper case, 220×230), through
+`_boardsSwatchFromNoteEl` in `_boardsEndEdit`, which pushes undo first —
+Ctrl+Z gives the note back. The add rail is unchanged; the note is the only
+way in, as in Milanote.
+
+- **One stored field, `c.hex`, always through `_boardsValidHex`.** The value
+  string, the ink on the block (`_boardsInkOn` — a literal ink on a literal
+  colour) and the NAME are derived at render. `c.fmt` stores only the
+  exception (`rgb`/`hsl`/`off`; no field = HEX), the Marketing-style rule.
+- **The name is the nearest of ~250 curated names** (`_BOARDS_COLOR_NAMES`:
+  the CSS set plus textile words — Mocha, Aqua Forest, Outrageous Orange…)
+  by squared RGB distance. Nothing fetched. `c.name` (Caption edits the name
+  bar in place; Rename in ⋯ writes the same field) wins over it; typing the
+  auto name back clears the field.
+- **The name bar is `var(--dark)` / `var(--on-dark)`** — the pair inverts
+  together, so it reads in both themes.
+- **Rail: Color · Labels · Reactions · Comment · Display · Caption · ⋯.**
+  Display is a `.board-ctx` of four tabs with `{keep:true}`. Color (and a
+  click on the block of an already-selected swatch, or a double-click)
+  opens the picker: an SV square, a hue slider, a preview dot, an
+  eyedropper (`window.EyeDropper`, hidden where absent — Chrome/Edge only)
+  and fields cycling RGB → HSL → HEX. It is `_boardsOpenSheet` anchored to
+  the card (a bottom sheet on a phone). **One undo entry per picker
+  session** (`_boardsSwPick.pushed`); every change repaints the one card
+  (`_boardsSwatchPaint`), never the canvas. `_boardsSwatchSetHex` is the only
+  writer after birth and refuses what `_boardsValidHex` refuses. The picker
+  is new code, not the board tile's HSV sliders — those have no SV square.
+- The export draws the block, the value and a literal dark name bar; search
+  finds the hex and the name; the noun and header label say Colour.
+- `tests/board-swatch.test.js` (49) drives the end-edit conversion, undo,
+  names, formats, the Display switch, the rail, the picker's fields and the
+  escaping. Verified by reverting: the undo push (3 fail), the setter's
+  validation (4), the one-undo-per-session flag (1). The layout fragment
+  `boards — colour swatches` (both themes) fails 4 jobs with the name bar's
+  ink set to its own background.
+- **Not built:** Milanote's other routes into a swatch (none were in the
+  recording). **Nobody has seen a swatch or the picker on a real screen** —
+  the sandbox cannot sign in; the SV drag and the eyedropper are untested.
+
+**Pantone codes on a swatch (same day).** Afnan: TCX (fabric) and C
+(coated) conversion "to the same color logic". A note reading `485 C`,
+`Pantone 485 C` or `19-1664 TCX` (dash, spacing and a Pantone/PMS prefix
+optional; TPX/TPG/U read too) becomes a swatch of that colour showing the
+code (`c.pantone`, `fmt:'pantone'`). The Display menu gained a Pantone mode:
+any swatch shows its nearest code, marked `≈` when not exact.
+**The book is only what the app holds** (`_boardsPantoneBook`): the ~55 C
+codes built into `js/embellishments.js` (`COLOR_IMPORT_PANTONE_HEX`) plus the
+embellishments colour library (`color_library`: `pantoneCode` + `hexApprox`,
+archived and invalid entries skipped), read once per session on board open
+(`_boardsPantoneEnsure`, never rejects). **There is no TCX data except what
+the library holds**, and the full books are licensed and unreachable from
+the sandbox — an unknown code stays a note, nothing is invented. A file from
+Afnan would go into `_BOARDS_PANTONE_EXTRA`. `tests/board-swatch.test.js`.
+
+### Mood Boards — Unsorted previews, and the magnet (29 Sept 2026)
+
+Afnan: dropping a card into Unsorted should have "a magnet like effect,
+pull and push to grab things", and the tray should PREVIEW what it holds —
+a column its title and how many cards, a to-do its tasks.
+
+- **Previews** (`_boardsTrayPreview`, one function for markup AND text):
+  a note shows its lines, a to-do its title, done/total and the first four
+  tasks ticked or not (+N more), a column or frame its title, its card count
+  and the first three cards (a picture, a colour chip or a type letter, then
+  the name), a colour paints itself with its code and name, a heading is a
+  dark banner, a table its first cells. A photo, link and PDF keep the
+  picture `_boardsTrayFace` already gave them. **Every string goes in
+  through `_boardsTrayHydrate` with `textContent`**; a swatch hex is
+  validated before it reaches a `style`. Derived from the stashed card, so
+  nothing is stored and old items preview too. The drag ghost of a colour
+  carries the colour. Fixed in passing: `_boardsStashName` read a to-do's
+  first task from `.t`, but items are `{text,done}`, so a to-do row said
+  "To-do".
+- **160px, measured:** two title lines + four tasks + "+N more" fit;
+  five tasks pushed "+N more" out of the box (the probe named it).
+- **The magnet** (`_boardsMagnet`, pure; `_BOARDS_MAGNET_PX` 170,
+  `_BOARDS_MAGNET_CATCH` 56): within 170px of the open tray or the peek zone
+  the held card is pulled toward it, harder the closer (`--mx/--my/--ms` on
+  `.lifted`, which springs back through the existing transition when pulled
+  away) and the target glows (`--mag`); within 56px it is CAUGHT — shrinks
+  to 45% under the pointer, outlined, a buzz on Android — and a drop there
+  stashes. **The highlight and the drop read the same answer**, and the pull
+  is visual only: `c.x/c.y` are never bent, so a drop on the canvas lands
+  under the pointer. On the drop a clone (ids stripped) flies into the panel
+  and the new row pops in (`_boardsTrayLanded`, one-shot); nothing moves
+  under `prefers-reduced-motion`.
+- `tests/harness.js`'s element `style` gained `setProperty` /
+  `getPropertyValue` / `removeProperty` — without them the pull was skipped
+  and could not be asserted. Verified by undoing: catch radius 0 (a drop
+  40px short stops being caught), the pull zeroed, the `.text` fix.
+  **Nobody has felt the magnet on a real screen** — the sandbox cannot sign
+  in; the previews were rendered and looked at in Chromium, both themes.
 
 ### Mood Boards — the phone audit (Sept 2026)
 
@@ -9976,6 +10204,16 @@ once: Pattern Hub M3+M5+M6 (`pom_templates`, `patterns/{id}/revisions`,
 `pattern_notices`, `isPatternCutting()`, `settings`), Mood Boards Trash
 (`mood_boards/{id}/trash`), and the Marketing blocks. Check `git log
 --oneline -1 -- firestore.rules` against that md5 before assuming either way.
+
+**No republish outstanding as of 28 Sept 2026 (evening, ~10:10 pm
+PKT).** Afnan published ("done", after a reload showed the new version and
+`boardSharingUntouched` in the live editor — reported in-session, not
+checked from here) from the repo file at `md5
+b68fc9febc14ec90ad3d29f860147702`, `git log --oneline -1 -- firestore.rules`
+= `430fc28`. That one paste carried EVERY outstanding entry below: the Mood
+Boards sharing roles, The Board's lock rule (`tbLockOk`), the warehouse
+handover and its review round, Raees's edit rights, and Ammar's
+`isAcctSuper()`. The entries below are history now.
 
 **REPUBLISH OUTSTANDING (28 Sept 2026): Mood Boards sharing roles.**
 `mood_boards` update now requires the editor role and keeps the sharing
