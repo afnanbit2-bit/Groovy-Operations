@@ -7644,13 +7644,14 @@ confirmations held at the rules · `20260a0` M1.6b the screens, the idle
 re-lock and the device cache · `7735410` M1.6c the server tightening
 (attachments fail closed — decision 5; cherry-picked from the server
 round's `5291a14`, which was built on `704056b`). After M1.6b, `main` was
-merged INTO the branch five times — `1dc7fa9` (`origin/main` at `1f6327d`,
+merged INTO the branch six times — `1dc7fa9` (`origin/main` at `1f6327d`,
 `CACHE_VERSION` v247), `feca515` (`4c8bfee`, v249), `be22046` (`3333584`,
-v251), `d159f83` (`dc0e609`, v252) and `1ae7e71` (`e1f84bf`, v254);
-between the second and third, `efb75ce` named the nightly backup in the
-audit trail (v250), and after M1.6c, `8e5fe0b` is its client half (v253):
-Settings says when attachments are off. **Then the verification round's two
-fixes (29 Sept), built side by side on `bef4dc4` and combined here:**
+v251), `d159f83` (`dc0e609`, v252), `1ae7e71` (`e1f84bf`, v254) and
+`5a36efe` (`bac4848`, v255); between the second and third, `efb75ce` named
+the nightly backup in the audit trail (v250), and after M1.6c, `8e5fe0b` is
+its client half (v253): Settings says when attachments are off. **Then the
+verification round's two fixes (29 Sept), built side by side on `bef4dc4`
+and combined here:**
 `0a0df4b` (security — V1, V2, V3, V5, V7, V8, V9, V11; its own title calls
 it "M1.6c (security)", which is not the server round above) and `44166f3`
 (money and screens — V4, V6, V10 and the visual QA's F01–F24;
@@ -7658,8 +7659,8 @@ cherry-picked from `8f1a1df`, author's message and trailers kept). What each
 changed, and how it was checked, is under "The review round" below.
 
 - **Not deployed.** Netlify builds `main`, and the branch has not been
-  merged into it: `git merge-base --is-ancestor 1ae7e71 origin/main` is
-  false (checked 29 Sept). The branch is at `CACHE_VERSION` v254.
+  merged into it: `git merge-base --is-ancestor 5a36efe origin/main` is
+  false (checked 29 Sept). The branch is at `CACHE_VERSION` v255.
 - **The rules decide whether it works at all, and the two 28 Sept pastes
   collide** — see "Firestore rules — published" before anything else.
   Before the merge no branch's `firestore.rules` carried both the Master
@@ -8104,8 +8105,8 @@ rules now make exclude it (read from the rules file).
     top-level function (the Board calendar freeze), and the CSS is one
     block where every selector carries `.ma-` — `.ma-*`, `table.ma-*`,
     `textarea.ma-in`, `a.ma-btn` — the `today` / `cal-today` class
-    collision below is why. Checked at `1ae7e71`: all 275 selector parts in
-    the block carry `.ma-`. **Three of them reach outside the shell, from
+    collision below is why. Checked at `1ae7e71` and again at `5a36efe`:
+    all 275 selector parts in the block carry `.ma-`. **Three of them reach outside the shell, from
     `44166f3` (F01/F02, a sticky header and rail):**
     `#main-content:has(>.ma-shell)` (≥601px: `overflow-x:clip;
     overflow-y:visible` — `#main-content` was a scroll container that never
@@ -8279,10 +8280,12 @@ reproductions — this summary is the record.
   114, `ma-share` 107 → 151, each re-run here), 8,997 (`8e5fe0b`), 8,998
   (`f6125f8`); then 9,128 at `0a0df4b` and 9,126 at `8f1a1df` (each fix on
   its own — their authors' counts), **9,256 at `44166f3`** (both fixes:
-  8,998 + 130 + 128) and **9,429 at `1ae7e71`** (the merge with main, whose
-  own count went 7,030 → 7,203 between the two merges: 9,256 + 173).
+  8,998 + 130 + 128), 9,429 at `1ae7e71` (the fifth merge with main, whose
+  own count went 7,030 → 7,203 between the two merges: 9,256 + 173) and
+  **9,469 at `5a36efe`** (the sixth: main 7,203 → 7,243, + 40).
 - **Rules, in the real Firestore emulator** — against the merged
-  `firestore.rules` at `1ae7e71` (LF md5 `acc9a3a1…`):
+  `firestore.rules` at `1ae7e71` (LF md5 `acc9a3a1…`, unchanged by
+  `5a36efe`; every suite below re-run there with the same results):
   `tests/rules-emulator-ma.js` **241 / 241** (209 + V3's 32: 22 "V3:"
   attacks, 8 "V3 control:" writes the app makes, 2 builder checks), and
   main's own suites `rules-emulator.js` 103 / 103,
@@ -8298,16 +8301,17 @@ reproductions — this summary is the record.
   raised, three ways; an edit that clears a review; four re-lock cases).
   That is what makes the republish necessary rather than cosmetic.
 - **Layout and the smoke suites** — re-run by the integrator on a clean
-  `git archive` of `1ae7e71` (and of `44166f3`, the two fixes before main
-  came in, and earlier of `1f06da2`, `efb75ce`, `be22046` and `d159f83`,
-  with the same results): `smoke-layout` 462 / 462, of which 76
+  `git archive` of `5a36efe` (and of `1ae7e71`, of `44166f3` — the two
+  fixes before main came in — and earlier of `1f06da2`, `efb75ce`,
+  `be22046` and `d159f83`, with the same results): `smoke-layout` 466 / 466
+  at `5a36efe` (462 before main's new Pick-colour fragment), of which 76
   are the fourteen `master accounts — …` fragments (every width they
   declare, both themes: contrast, overflow, clipped text and hit-testing;
   since `8e5fe0b` the attachment-mode fragment also renders the
   switched-off card); `smoke-app-phone` clean on all 53 of the owner's pages
   in both themes — the six `ma-*` nav pages among them — and on the pages
   it lists for six other roles; `smoke-phone` 30 / 30; `smoke-board` (187
-  / 192 / 192 checks at `1ae7e71`, with main's new ones; 172 / 177 / 177
+  / 192 / 192 checks at `5a36efe`, with main's new ones; 172 / 177 / 177
   before), `smoke-browser` 8 / 8 and `smoke-startapp` (all four read
   conditions) pass. **`smoke-axe` scans the six `ma-*` pages since `1f06da2`** (over a
   small book built by `js/ma-core.js`; before, its list had none): no
@@ -8372,8 +8376,9 @@ here).
 - [ ] **Publish the MERGED `firestore.rules`** — the file at this
   branch's tip: LF md5 `acc9a3a1cec525ee4e1d335da30124fe`, 1,502 lines
   (main's rules with the QA identity, plus Master Accounts with M1.6a and
-  V3). Never an older branch file, and never `main`'s (at `e1f84bf`: md5
-  `20e3002f5f6cbb142833e173c44388e9`, 1,118 lines, no `ma_*` block). Main's
+  V3). Never an older branch file, and never `main`'s (at `bac4848`, as at
+  `e1f84bf`: md5 `20e3002f5f6cbb142833e173c44388e9`, 1,118 lines, no `ma_*`
+  block). Main's
   record names the Firebase CLI as the publish route now (`firebase deploy
   --only firestore:rules`, from Afnan's machine); it deploys the checkout it
   runs in, so a deploy from `main` would take Master Accounts' rules out
@@ -8407,7 +8412,7 @@ Master Accounts block), and two shared probes (`smoke-app-phone.js`,
 for Ammar's session, outside the repo, to reach him through Afnan; whether
 it has is unverified.
 
-**Merging with `main` is a real merge, and it has been done five
+**Merging with `main` is a real merge, and it has been done six
 times.** The branch had not taken `main` since `2298f39`. `1dc7fa9`
 merged `origin/main` at `1f6327d` (v246): conflicts in `index.html`
 (`?v` strings) and `sw.js` (`CACHE_VERSION`), and `firestore.rules`,
@@ -8434,9 +8439,14 @@ so git raised the conflict, and `1ae7e71` went to v254. Its only
 conflicts were `sw.js` and the `?v=` strings; `CLAUDE.md`,
 `css/main.css`, `firestore.rules`, `js/auth.js` and `js/shared.js` merged
 cleanly, and each equals an independent `git merge-file` of the three
-versions and passes a line-multiset check. Every future merge: fetch,
-compare `CACHE_VERSION` on both sides, not just the conflict list, bump
-past both, and fetch again just before pushing.
+versions and passes a line-multiset check. **And the fetch just before
+pushing found `main` had moved again** — `bac4848` (Mood Boards' Pick
+colour, v252) — so `5a36efe` merged it too and took v255: `sw.js` and
+the `css/main.css` tag conflicted, `CLAUDE.md`, `css/main.css` and
+`tests/smoke-layout.js` merged cleanly (checked the same way), and
+`firestore.rules` did not change. Every future merge: fetch, compare
+`CACHE_VERSION` on both sides, not just the conflict list, bump past both,
+and fetch again just before pushing.
 
 ### The planning record (27–28 Sept 2026), condensed
 
@@ -11304,7 +11314,8 @@ they are one paste.
    `main` with PR #91 (`e1f84bf`) — so main's file itself changed again
    after the 28 Sept evening paste: at `e1f84bf` it is LF md5
    `20e3002f5f6cbb142833e173c44388e9`, 1,118 lines, with the QA fences and
-   still no `ma_*` block.
+   still no `ma_*` block (the same bytes at `bac4848`, main's tip when this
+   was written).
 
 **Do not paste an older branch file, or main's.** An older branch file
 reopens the Mood Boards hole and lacks the QA fences; main's removes Master
@@ -11315,7 +11326,8 @@ the fifth merge of `origin/main` into the branch, `1ae7e71` (29 Sept), which
 merged the rules without a conflict: the file equals an independent `git
 merge-file` of the three versions, and a line-multiset check (merge base
 `dc0e609`'s 1,016 lines + the branch's 384 + main's 102 = 1,502) matches
-every line; the docs commit after it did not touch the file. The earlier
+every line; neither the docs commit after it nor the sixth merge
+(`5a36efe`, `bac4848`, whose rules equal `e1f84bf`'s) touched the file. The earlier
 merged file (`1dc7fa9`, LF `md5 8cf1c6813fe0becddd620161ba0277f4`, 1,346
 lines) was never the one to publish, and is superseded. Main's record names
 the Firebase CLI as the publish route now: it deploys the checkout it runs
