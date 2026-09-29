@@ -4093,6 +4093,11 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
   cursor:pointer;overflow:hidden;transition:background var(--tb-dur) var(--tb-ease)}
 .tb-pill:hover{background:var(--tb-n4)}
 .tb-pill.draggable{cursor:grab}
+/* A drag must not smear a text selection over the grid or hand the gesture to
+   a native image/link drag; and from 640px up a touch on a pill is a drag,
+   not a scroll (below that the phone uses press-and-hold instead). */
+.tb-pill{-webkit-user-select:none;user-select:none;-webkit-user-drag:none}
+@media (min-width:640px){.tb-pill.draggable{touch-action:none}}
 .tb-pill.dragging{opacity:.4}
 .tb-pill:focus-visible{outline:2px solid var(--tb-accent);outline-offset:1px}
 .tb-pillbar{flex:0 0 auto;width:3px;align-self:stretch;min-height:16px;border-radius:2px;background:var(--muted)}

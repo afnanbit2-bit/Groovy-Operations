@@ -3567,5 +3567,81 @@ module.exports=async function(){
     a.run('tbItems[0].assigneeUids='+onBefore);
   }
 
+
+  s.section('crawler round: the S1s (28 Sept 2026)');
+  {
+    // ── CAL-DRIVE-03: a cancelled pointer must not commit a drop ──
+    const mkApp=()=>{
+      const a=catchToasts(loadApp({files:FILES,currentPage:'tb-calendar'}));
+      a.run('session='+J(AMMAR));
+      a.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"}]');
+      a.run('tbLists=[];tbConfig=null;tbLoaded=true;_tbLoadErrors=[]');
+      a.run('tbItems=[tbDecodeItem({id:"i1",title:"pricing",date:"2026-10-17",datePlanned:"2026-10-17",'
+        +'status:"open",ownerUid:"u-ammar",assigneeUids:["u-ammar"],visibility:"private"})]');
+      a.run('globalThis.__drop="2026-10-19";_tbDayFromPoint=function(){return __drop;};'
+        +'globalThis.__el={classList:{add(){},remove(){}},setPointerCapture(){}};');
+      return a;
+    };
+    const fireDoc=(a,type,ev)=>{
+      const e=Object.assign({type:type,pointerId:1,clientX:0,clientY:0,preventDefault(){},stopPropagation(){}},ev||{});
+      ((a.state.listeners&&a.state.listeners[type])||[]).slice().forEach(fn=>fn(e));
+    };
+    const press=a=>{a.run('window.tbPillDown({button:0,pointerId:1,clientX:10,clientY:10,currentTarget:__el,preventDefault(){},stopPropagation(){}},"i1")');
+      fireDoc(a,'pointermove',{clientX:60,clientY:60});};
+    const settle=()=>new Promise(r=>setTimeout(r,0));
+    for(const [label,cancelIt] of [
+      ['pointercancel',a=>fireDoc(a,'pointercancel')],
+      ['Escape',a=>fireDoc(a,'keydown',{key:'Escape'})],
+      ['native dragstart is refused, not a drop',a=>{}]]){
+      const a=mkApp();
+      press(a);
+      if(label.indexOf('native')===0){
+        let prevented=false;
+        fireDoc(a,'dragstart',{preventDefault(){prevented=true;}});
+        s.ok('a native dragstart mid-drag is cancelled',prevented);
+        fireDoc(a,'pointerup');await settle();
+        continue;
+      }
+      cancelIt(a);await settle();
+      s.eq(label+' moves nothing',a.run('tbItems[0].date'),'2026-10-17');
+      s.eq(label+' writes nothing',a.state.writes.length+a.state.batches.length,0);
+      s.eq(label+' releases the drag (live updates resume)',a.run('_tbDragId'),null);
+      s.eq(label+' leaves no stale click flag',a.run('_tbDragMoved'),false);
+    }
+    const ok=mkApp();press(ok);fireDoc(ok,'pointerup');await settle();
+    s.eq('a real release still commits the move',ok.state.batches.length,1);
+
+    // ── ITEMS-02: handing over a private item shares it ──
+    const a=loadApp({files:FILES});a.run('tbLists=[]');
+    const ho=a.run('tbHandoverPlan({id:"i1",assigneeUids:["u-ammar"],ownerUid:"u-ammar",visibility:"private"},"u-ammar","u-saim","check this",false,5,"saim")');
+    s.eq('a handover of a private item makes it shared',ho.data.visibility,'shared');
+    const ho2=a.run('tbHandoverPlan({id:"i1",assigneeUids:["u-ammar"],ownerUid:"u-ammar",visibility:"shared"},"u-ammar","u-saim","x",true,5,"saim")');
+    s.ok('an already-shared item writes no visibility change',!('visibility' in ho2.data));
+
+    // ── DASH-INBOX-01: one action, three people, three rows ──
+    const id=who=>a.run('_tbNotifId("comment","i1","u-ammar",1000,'+J(who)+')');
+    s.ok('the id carries the recipient',id('u-saim')!==id('u-dani'));
+    s.eq('and is stable for the same recipient',id('u-saim'),id('u-saim'));
+    s.eq('the four-argument form is unchanged',a.run('_tbNotifId("comment","i1","u-ammar",1000)'),
+      a.run('_tbNotifId("comment","i1","u-ammar",1000,"")'));
+
+    // ── ITEMS-01: a reader not on the item comments WITHOUT touching it ──
+    for(const [who,onIt] of [[DANIYAL,false],[AMMAR,true]]){
+      const c=catchToasts(loadApp({files:FILES,currentPage:'tb-calendar'}));
+      c.run('session='+J(who));
+      c.run('userProfiles=[{uid:"u-ammar",username:"ammar",displayName:"Ammar"},{uid:"u-dani",username:"daniyal",displayName:"Daniyal"}]');
+      c.run('tbLists=[];tbConfig=null;tbLoaded=true;_tbLoadErrors=[]');
+      c.run('tbItems=[tbDecodeItem({id:"i1",title:"pricing",date:"2026-10-17",status:"open",ownerUid:"u-saim",assigneeUids:["u-saim"],visibility:"shared"})]');
+      if(onIt)c.run('tbItems[0].assigneeUids=["u-saim","u-ammar"]');
+      c.run('_tbOpenItemId="i1";_tbCompDraft={i1:"looks good"};document.getElementById=function(){return null;};');
+      await c.run('window.tbPostComment()');
+      const b=c.state.batches[0]||[];
+      const touchesItem=b.some(w=>/board_items\/i1$/.test(String(w.path||w.ref||'')))
+        ||JSON.stringify(b).indexOf('commentCount')>-1;
+      s.eq((onIt?'someone on the item':'a reader not on it')+': one batch',c.state.batches.length,1);
+      s.eq((onIt?'someone on the item updates the counters':'a reader not on it leaves the item alone'),touchesItem,onIt);
+    }
+  }
+
   return s;
 };

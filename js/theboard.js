@@ -150,10 +150,12 @@ const _TB_NOTIF_BUCKET_MS=10*60*1000;   // spec §5: dedupe window
 /** Deterministic id: the same actor, type and item inside one 10-minute
  *  bucket is ONE row, so several devices (or a double click) cannot stack
  *  duplicates, and a dismissed notification is never raised again. Pure. */
-function _tbNotifId(type,itemId,fromUid,atMs){
+function _tbNotifId(type,itemId,fromUid,atMs,forUid){
   const bucket=Math.floor(Number(atMs||0)/_TB_NOTIF_BUCKET_MS);
   const clean=s=>String(s==null?'':s).replace(/[^A-Za-z0-9_-]/g,'');
-  return'tb_'+clean(type)+'_'+clean(itemId)+'_'+clean(fromUid)+'_'+bucket;
+  // The RECIPIENT is part of the id: one action that tells three people
+  // must write three rows, not one row three times over.
+  return'tb_'+clean(type)+'_'+clean(itemId)+'_'+clean(fromUid)+(forUid?'_'+clean(forUid):'')+'_'+bucket;
 }
 
 /** The row this module writes into hrm_notifications. Pure — the caller
@@ -833,8 +835,13 @@ function tbHandoverPlan(item,fromUid,toUid,note,keepMe,now,toHandle){
   if(a.indexOf(toUid)<0)a.push(toUid);
   if(!keepMe)a=a.filter(u=>u!==fromUid);
   if(!a.length)a=[toUid];
+  // Visibility follows the assignees (tbItemPatch's rule). A handover that
+  // left a bare item PRIVATE handed it to someone who could never read it.
+  const data={assigneeUids:a,updatedAt:now,lastActivityAt:now};
+  const vis=tbVisibilityFor(Object.assign({},it,{assigneeUids:a}),typeof tbLists!=='undefined'?tbLists:[]);
+  if(vis!==it.visibility)data.visibility=vis;
   return {
-    data:{assigneeUids:a,updatedAt:now,lastActivityAt:now},
+    data:data,
     activity:{type:'handover',byUid:fromUid,at:now,payload:{toUid:toUid,note:String(note).trim()}},
     comment:{authorUid:fromUid,
              body:'handed over to '+(toHandle?'@['+toHandle+']':'you')+' — '+String(note).trim(),
@@ -2007,7 +2014,7 @@ async function _tbNotify(o){
   const to=tbUser(o.forUid);
   if(!to.handle)return;                       // no username, no bell row
   const at=_tbNow();
-  const id=_tbNotifId(o.type,o.itemId,o.fromUid,at);
+  const id=_tbNotifId(o.type,o.itemId,o.fromUid,at,o.forUid);
   const row=tbNotifPayload(Object.assign({},o,{forUser:to.handle,at:at}));
   try{ await setDoc(doc(db,'hrm_notifications',id),row); }
   catch(e){ console.warn('[the board] notify failed',e); }   // never blocks the action
@@ -2570,11 +2577,12 @@ window.tbPillDown=function(e,id){
   }
   const startX=e.clientX,startY=e.clientY,pid=e.pointerId;
   const el=e.currentTarget;
-  let captured=false;
+  let captured=false,lastX=e.clientX,lastY=e.clientY;
   _tbDragId=id;_tbDragMoved=false;_tbDragOverDay='';
 
   const move=ev=>{
     if(ev.pointerId!==undefined&&ev.pointerId!==pid)return;   // a 2nd finger is not this drag
+    lastX=ev.clientX;lastY=ev.clientY;
     const dx=ev.clientX-startX,dy=ev.clientY-startY;
     if(!captured){
       if(Math.abs(dx)<_TB_DRAG_PX&&Math.abs(dy)<_TB_DRAG_PX)return;
@@ -2586,21 +2594,50 @@ window.tbPillDown=function(e,id){
     _tbDragGhostMove(ev.clientX,ev.clientY);
     _tbDragHover(ev.clientX,ev.clientY);
   };
-  const up=ev=>{
-    if(ev&&ev.pointerId!==undefined&&ev.pointerId!==pid)return;
+  // ONE way out, with a flag for whether the drop counts. A cancelled
+  // gesture (pointercancel, Escape, the window losing focus) must put
+  // everything back and MOVE NOTHING: the browser cancels a pointer when
+  // it takes the gesture over (a native drag, a scroll), and treating that
+  // as a release silently changed dates on the calendar's main gesture.
+  const finish=(commit)=>{
     document.removeEventListener('pointermove',move,true);
     document.removeEventListener('pointerup',up,true);
-    document.removeEventListener('pointercancel',up,true);
+    document.removeEventListener('pointercancel',cancel,true);
+    document.removeEventListener('keydown',esc,true);
+    document.removeEventListener('dragstart',noNative,true);
+    document.removeEventListener('scroll',rescroll,true);
+    if(typeof window!=='undefined'&&window.removeEventListener)window.removeEventListener('blur',cancel);
     _tbDragGhostHide();
     if(el&&el.classList)el.classList.remove('dragging');
     _tbDayHighlight('');
     const to=_tbDragOverDay;
     _tbDragId=null;_tbDragOverDay='';
-    if(captured&&to)window.tbMoveItem(id,to);
+    // The click that follows a drop is swallowed by tbPillClick; if none
+    // arrives (a non-draggable pill, a cancel) the flag must not outlive
+    // the gesture and eat the NEXT genuine click.
+    setTimeout(function(){ _tbDragMoved=false; },60);
+    if(!commit)_tbDragMoved=false;
+    if(commit&&captured&&to)window.tbMoveItem(id,to);
   };
+  const up=ev=>{
+    if(ev&&ev.pointerId!==undefined&&ev.pointerId!==pid)return;
+    finish(true);
+  };
+  const cancel=ev=>{
+    if(ev&&ev.pointerId!==undefined&&ev.pointerId!==pid)return;
+    finish(false);
+  };
+  const esc=ev=>{ if(ev&&ev.key==='Escape'){ if(ev.preventDefault)ev.preventDefault(); finish(false); } };
+  const noNative=ev=>{ if(ev&&ev.preventDefault)ev.preventDefault(); };
+  // Scrolling moves the squares under a still pointer; re-aim.
+  const rescroll=()=>{ if(captured)_tbDragHover(lastX,lastY); };
   document.addEventListener('pointermove',move,true);
   document.addEventListener('pointerup',up,true);
-  document.addEventListener('pointercancel',up,true);
+  document.addEventListener('pointercancel',cancel,true);
+  document.addEventListener('keydown',esc,true);
+  document.addEventListener('dragstart',noNative,true);
+  document.addEventListener('scroll',rescroll,true);
+  if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('blur',cancel);
 };
 /** Which day square is under the pointer. Extracted because it is the
  *  ONE part of the drag that needs a laid-out page — so a test can
@@ -3282,7 +3319,13 @@ window.tbPostComment=async function(){
   await _tbTry(async function(){
     const b=writeBatch(db);
     b.set(doc(collection(db,'board_items',id,'comments')),plan.comment);
-    b.update(doc(db,'board_items',id),plan.data);
+    // Comments are open to every reader, but the item itself is writable
+    // only by the people on it (board_items update rule). The batch used to
+    // update the item's counters too, so for anyone NOT on it the whole
+    // batch -- comment included -- was refused. A reader's comment goes in
+    // alone; the badge catches up on the next write by someone on the item.
+    const canTouch=_tbCanEditIt(it);
+    if(canTouch)b.update(doc(db,'board_items',id),plan.data);
     // The author's own ranking data rides along. SET-WITH-MERGE, not
     // update: a profile row that does not exist yet would fail an
     // updateDoc and take the comment down with it, and carrying `uid`
@@ -3295,7 +3338,7 @@ window.tbPostComment=async function(){
       b.set(doc(db,'user_profiles',me),
         {uid:me,tbMentionStats:tbMentionBump(_tbMyStats(),plan.mentionUids,_tbNow())},{merge:true});
     await b.commit();
-    _tbApplyLocal(id,plan.data);
+    if(canTouch)_tbApplyLocal(id,plan.data);
     const th=_tbThreads[id]||{comments:[],activity:[],err:false};
     th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
     _tbThreads[id]=th;
@@ -3340,9 +3383,15 @@ window.tbRequestMove=async function(){
   await _tbTry(async function(){
     const b=writeBatch(db);
     b.set(doc(collection(db,'board_items',id,'comments')),plan.comment);
-    b.update(doc(db,'board_items',id),plan.data);
+    // Comments are open to every reader, but the item itself is writable
+    // only by the people on it (board_items update rule). The batch used to
+    // update the item's counters too, so for anyone NOT on it the whole
+    // batch -- comment included -- was refused. A reader's comment goes in
+    // alone; the badge catches up on the next write by someone on the item.
+    const canTouch=_tbCanEditIt(it);
+    if(canTouch)b.update(doc(db,'board_items',id),plan.data);
     await b.commit();
-    _tbApplyLocal(id,plan.data);
+    if(canTouch)_tbApplyLocal(id,plan.data);
     const th=_tbThreads[id]||{comments:[],activity:[],err:false};
     th.comments=th.comments.concat([Object.assign({_id:'local'+_tbNow()},plan.comment)]);
     _tbThreads[id]=th;
