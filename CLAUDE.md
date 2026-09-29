@@ -204,6 +204,12 @@ PUBLISHED** — that is still a question only the human can answer.
                      error, watches for a stalled render, and shows an
                      on-screen panel with a cache-reset button. Loaded FIRST,
                      before shared.js. See "Diagnostics" below.
+/js/env.js           which Firebase the page talks to: live, or (localhost only,
+                     ?env=emulator) the local emulator on a demo- project. Loaded
+                     second, right after diagnostics.js. See QA_ACCESS.md.
+/tools/              qa-snapshot.js (live -> emulator, read-only source, masked,
+                     secrets skipped), qa-probe.js (prove what the QA account can
+                     and cannot do), qa-snapshot-lib.js (the pure half, tested in CI).
 /js/activity.js      activity log loader.
 /js/marketing.js     The Sales Team ▸ Marketing (Sept 2026, replaces the
                      Content Tracker 2026 sheet). M1: Creator Database +
@@ -11166,6 +11172,24 @@ Observer Tower opens on twelve zero tiles; the bug FAB passes over content
 while scrolling. **Still only a phone can say:** the keyboard, the
 fingerprint dialog and real data volumes.
 
+## QA debug access (29 Sept 2026, branch `qa-access-v2`) — read `QA_ACCESS.md`
+
+Claude Code's login `claude@groovy.op` (role `qa`) is defined once, in `main`'s
+`USER_DEFS`/`QA_ROLE`; the identity and its write fences are in BOARD.md → "The QA
+identity". What this adds, not repeated here: the read-everything decision
+(`isQaRead()`), `js/env.js` (the emulator switch, **localhost only**), the snapshot and
+probe tools, and the emulator proof (`tests/rules-emulator-qa.js`: a read matrix, a write
+matrix and a regression differential over every path parsed from the rules).
+
+* **Never add a second `signedIn()` gate or a `request.auth != null` rule** — a test fails
+  (`tests/qa-read-guard.test.js`). Every new `allow read` starts `isQaRead() ||`; every new
+  personal-data collection is therefore readable by QA — that is the decision, so decide
+  whether the collection should exist, not whether QA may read it.
+* **A read no longer proves the QA rules are live** (it reads `pos` either way); the e2e
+  harness's gate updates a nonexistent document instead.
+* **Not verified from a session:** what the Console has published, whether the Auth
+  account exists, and the emulator switch inside a signed-in browser (gstatic is blocked).
+
 ## Credentials — never in client code
 
 `js/*.js`, `css/*` and every `*.html` are **public static assets**, served
@@ -11486,14 +11510,19 @@ the tools, the rules do not stop a direct write) and the old sharedWith
 escalation stays open. Ran 26/26 in the emulator. One paste of the current
 file carries every outstanding entry below as well.
 
-**OUTSTANDING (26 Sept 2026, evening): the QA identity** (`dc98484`,
-`isQa()` / `authed()` / the QA fences — see "The QA identity" in
-`BOARD.md`). `signedIn()` now EXCLUDES `claude@groovy.op`. **Publish it
-before anything signs in as that account** — under the live rules it is an
-ordinary signed-in user. Emulator: Board 100/100, wh_sales/acct 103/103.
-Merged with the sharing roles above on 28 Sept: the QA clauses sit beside
-the role checks (`qaBoardOk` needs an empty `sharedWith`, so a view/comment
-role never applies to a QA board).
+**OUTSTANDING (26 Sept 2026, evening; extended 29 Sept 2026): the QA identity**
+(`dc98484`, `isQa()` / `authed()` / the QA fences — see "The QA identity" in
+`BOARD.md`, and `QA_ACCESS.md` for the rest). `signedIn()` EXCLUDES
+`claude@groovy.op` for writes. **29 Sept 2026 (branch `qa-access-v2`,
+unmerged): QA READS EVERYTHING** — `isQaRead()` is OR'd into all 91 read
+rules, role-gated and owner-only included; the credential collections keep
+no match block; `database.rules.json` is unchanged. **And main's
+notification fence had a hole** (`forUser:'claude'` + `forRole:'owner'`
+reached every owner's bell) — `qaOwnNotice()` closes it. The published
+ruleset (`md5 b68fc9fe…`, `430fc28`) has NONE of this, and whether the Auth
+account exists is unknown: see `QA_ACCESS.md` §1 for the Console check and §5
+for the rollout and rollback. **Publish before anything signs in as that
+account.**
 
 **PUBLISHED 26 Sept 2026, was outstanding (session 2): The Board's lock
 rule** (`tbLockOk()`, `board_items` update). The old clause let a member on

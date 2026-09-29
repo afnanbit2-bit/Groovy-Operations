@@ -226,6 +226,7 @@ window.__vendorFallback=function(url){
 <script src="/assets/vendor/qrcode-generator-2.0.4.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js')"></script>
 <script src="/assets/vendor/flatpickr-4.6.13.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js')"></script>
 <script src="/js/diagnostics.js?v=20260917type"></script>
+<script src="/js/env.js?v=20260929qa"></script>
 <script src="/js/shared.js?v=20260929v254"></script>
 <script src="/js/print-engine.js?v=20260928v247"></script>
 <script src="/js/auth.js?v=20260929v254"></script>
@@ -251,24 +252,44 @@ window.__vendorFallback=function(url){
 <script src="/js/master-accounts.js?v=20260929v257"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot,terminate,clearIndexedDbPersistence,waitForPendingWrites}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import{getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,updatePassword,reauthenticateWithCredential,EmailAuthProvider,setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import{getDatabase,ref as rtdbRef,get as rtdbGet,child as rtdbChild,onValue as rtdbOnValue,off as rtdbOff}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-const app=initializeApp({apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'});
+import{initializeFirestore,connectFirestoreEmulator,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot,terminate,clearIndexedDbPersistence,waitForPendingWrites}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import{getAuth,connectAuthEmulator,signInWithEmailAndPassword,signOut,onAuthStateChanged,updatePassword,reauthenticateWithCredential,EmailAuthProvider,setPersistence,browserLocalPersistence,browserSessionPersistence,signInWithCustomToken}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import{getDatabase,connectDatabaseEmulator,ref as rtdbRef,get as rtdbGet,child as rtdbChild,onValue as rtdbOnValue,off as rtdbOff}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+// Which Firebase? js/env.js decides (live unless ?env=emulator on a LOCAL
+// host). Emulator mode uses a demo- project and a fake key: nothing in it can
+// reach groovy-gatepass. See "QA debug access" in CLAUDE.md.
+const GVENV=window.__GV_ENV||{mode:'live'};
+const EMU=GVENV.mode==='emulator';
+const app=initializeApp(EMU
+  ?{apiKey:'demo-emulator-key',authDomain:'localhost',projectId:GVENV.projectId,appId:'1:0:web:demo',databaseURL:'http://'+GVENV.rtdb.host+':'+GVENV.rtdb.port+'?ns='+GVENV.projectId}
+  :{apiKey:'AIzaSyAcIrudpSPLbZMmoWMyTM1l8Z7GnxwelFw',authDomain:'groovy-gatepass.firebaseapp.com',projectId:'groovy-gatepass',storageBucket:'groovy-gatepass.appspot.com',messagingSenderId:'986200726255',appId:'1:986200726255:web:3a263cea3e7456d73c591a',databaseURL:'https://groovy-gatepass-default-rtdb.firebaseio.com'});
 // Persistent local cache (IndexedDB) so reads work offline; multi-tab manager
 // lets several open tabs share one cache instead of fighting over the lock.
 // If persistence can't start (private browsing, unsupported browser, a
 // same-origin tab already holding an incompatible single-tab lock, …) fall
 // back to the default in-memory Firestore instance rather than breaking login.
 let firestoreDb;
+if(EMU){
+  // In-memory cache on purpose: a persistent one would keep documents from a
+  // previous emulator run alive across a reset and make bugs look real.
+  firestoreDb=getFirestore(app);
+  connectFirestoreEmulator(firestoreDb,GVENV.firestore.host,GVENV.firestore.port);
+}else{
 try{
   firestoreDb=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});
 }catch(e){
   console.warn('[firestore] persistent cache unavailable, falling back to in-memory cache:',e&&e.code||e);
   firestoreDb=getFirestore(app);
 }
+}
+const authInst=getAuth(app);
+const rtdbInst=getDatabase(app);
+if(EMU){
+  connectAuthEmulator(authInst,GVENV.auth.url,{disableWarnings:true});
+  connectDatabaseEmulator(rtdbInst,GVENV.rtdb.host,GVENV.rtdb.port);
+}
 Object.assign(window,{
-  db:firestoreDb, auth:getAuth(app), rtdb:getDatabase(app),
+  db:firestoreDb, auth:authInst, rtdb:rtdbInst,
   collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot,
   terminate,clearIndexedDbPersistence,waitForPendingWrites,
   signInWithEmailAndPassword,signOut,onAuthStateChanged,

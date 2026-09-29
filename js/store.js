@@ -1469,7 +1469,8 @@ window._applyReconstruction=async function(){
 };
 
 // ══════════════════════════════════════════
-const _FS_BASE=`https://firestore.googleapis.com/v1/projects/groovy-gatepass/databases/(default)/documents`;
+// js/env.js picks live or the local emulator; without it (an old cached page) it is live.
+const _FS_BASE=(typeof window!=='undefined'&&window.__GV_ENV&&window.__GV_ENV.restBase)||`https://firestore.googleapis.com/v1/projects/groovy-gatepass/databases/(default)/documents`;
 // The bare RESOURCE NAME, which is what a runQuery __name__ cursor takes —
 // `projects/…/documents/…`, never the https:// endpoint _FS_BASE is.
 const _FS_DOCS=_FS_BASE.replace(/^https:\/\/firestore\.googleapis\.com\/v1\//,'');

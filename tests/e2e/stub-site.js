@@ -6,7 +6,7 @@
    seeded with the Winter Drop 2027 milestones, the five Board people, the
    QA account `claude` and one private Milanote board of its own. The QA
    rules are imitated (smoke-board's STUB, __QA_UID): pos, bug_reports and
-   activity are refused; writes are allowed only where firestore.rules'
+   activity are READ-able (QA reads everything since 29 Sept 2026) but every write to them is refused; writes are allowed only where firestore.rules'
    isQa() fence allows them. So the harness's containment gate and its
    refused-write probes mean something here too.
 

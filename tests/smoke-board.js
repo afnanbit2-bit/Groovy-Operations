@@ -171,14 +171,14 @@ function STUB(){
     var QA=window.__QA_UID;
     var deny=function(){var e=new Error('Missing or insufficient permissions.');e.code='permission-denied';return Promise.reject(e);};
     var top=function(p){return String(p||'').split('/')[0];};
-    var NO_READ=['pos','bug_reports','activity'];
+    var NO_READ=[]; // QA reads everything since 29 Sept 2026 (isQaRead); only its writes are fenced
     var canWrite=function(ref,d,del){
       var c=ref.col,prev=col(c)[ref.id],next=del?null:Object.assign({},prev||{},d||{});
       var t=top(c),parts=String(c).split('/');
       if(t==='board_lists')return !!(prev?prev.qa===true&&prev.adminUid===QA:next.qa===true&&next.adminUid===QA);
       if(c==='board_items')return !!(prev?prev.qa===true:(next.qa===true&&JSON.stringify(next.assigneeUids)===JSON.stringify([QA])));
       if(t==='board_items')return !!(col('board_items')[parts[1]]||{}).qa;
-      if(t==='hrm_notifications')return !!(next||prev)&&(next||prev).forUser==='claude';
+      if(t==='hrm_notifications')return !!(next||prev)&&(next||prev).forUser==='claude'&&!(next||prev).forRole;
       if(c==='user_profiles')return ref.id===QA;
       if(c==='mood_boards'){var b=prev||next;return !!b&&b.ownerUid===QA&&(b.visibility||'personal')==='personal'&&!(b.sharedWith||[]).length;}
       if(t==='mood_boards')return (col('mood_boards')[parts[1]]||{}).ownerUid===QA;

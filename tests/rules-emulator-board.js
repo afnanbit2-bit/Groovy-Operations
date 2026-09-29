@@ -176,10 +176,10 @@ async function check(name,fn){
   await seed('bug_reports/b1',{title:'x'});
   await seed('notes_pages/n1',{visibility:'shared',ownerUid:U.ammar,title:'SOP'});
   await check('a real signed-in user still reads pos (the control)',()=>assertSucceeds(getDoc(doc(as('saim'),'pos/p1'))));
-  await check('QA cannot read pos',()=>assertFails(getDoc(doc(as('claude'),'pos/p1'))));
+  await check('QA reads pos (isQaRead, 29 Sept 2026)',()=>assertSucceeds(getDoc(doc(as('claude'),'pos/p1'))));
   await check('QA cannot write a gate pass',()=>assertFails(setDoc(doc(as('claude'),'gatepasses/g1'),{x:1})));
-  await check('QA cannot read bug_reports',()=>assertFails(getDoc(doc(as('claude'),'bug_reports/b1'))));
-  await check('QA cannot read a TEAM note',()=>assertFails(getDoc(doc(as('claude'),'notes_pages/n1'))));
+  await check('QA reads bug_reports',()=>assertSucceeds(getDoc(doc(as('claude'),'bug_reports/b1'))));
+  await check('QA reads a TEAM note',()=>assertSucceeds(getDoc(doc(as('claude'),'notes_pages/n1'))));
 
   console.log('the QA harness: lists');
   const qaList={title:'QA Sandbox',kind:'shared',adminUid:U.claude,memberUids:[U.claude],color:'slate',emoji:null,
@@ -217,7 +217,7 @@ async function check(name,fn){
     await seed('board_items/realShared',newItem({title:'Shoot',assigneeUids:[U.saim]},U.ammar));
     await assertSucceeds(getDoc(doc(as('claude'),'board_items/realShared')));
   });
-  await check('QA cannot read a real private item',()=>assertFails(getDoc(doc(as('claude'),'board_items/priv'))));
+  await check('QA reads a real private item',()=>assertSucceeds(getDoc(doc(as('claude'),'board_items/priv'))));
   await check('QA cannot edit a real item even when (somehow) assigned to it',async()=>{
     await seed('board_items/realOnQa',newItem({title:'Odd',assigneeUids:[U.ammar,U.claude]},U.ammar));
     const it=await read('board_items/realOnQa');
@@ -244,9 +244,9 @@ async function check(name,fn){
   await check('QA cannot write a notification for anyone else',()=>assertFails(setDoc(doc(as('claude'),'hrm_notifications/q2'),{forUser:'ammar',title:'x',createdAt:NOW})));
   await check('QA reads its own inbox, as the Board queries it',()=>assertSucceeds(getDocs(query(collection(as('claude'),'hrm_notifications'),where('forUser','==','claude')))));
   await check('QA marks its own row read',()=>assertSucceeds(updateDoc(doc(as('claude'),'hrm_notifications/q1'),{readBy:['claude']})));
-  await check('QA cannot read a real person\'s notification',()=>assertFails(getDoc(doc(as('claude'),'hrm_notifications/real1'))));
+  await check('QA reads a real person\'s notification (read-only)',()=>assertSucceeds(getDoc(doc(as('claude'),'hrm_notifications/real1'))));
   await check('QA cannot mark a real person\'s row read',()=>assertFails(updateDoc(doc(as('claude'),'hrm_notifications/real1'),{readBy:['claude']})));
-  await check('the bell\'s unfiltered read is refused it',()=>assertFails(getDocs(collection(as('claude'),'hrm_notifications'))));
+  await check('the bell\'s unfiltered read is allowed it',()=>assertSucceeds(getDocs(collection(as('claude'),'hrm_notifications'))));
 
   console.log('the QA harness: profiles');
   await seed('user_profiles/'+U.saim,{uid:U.saim,username:'saim'});
