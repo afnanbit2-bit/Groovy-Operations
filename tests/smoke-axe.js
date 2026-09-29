@@ -21,6 +21,9 @@ const http=require('http');
 const os=require('os');
 const {execFile}=require('child_process');
 const ROOT=path.join(__dirname,'..');
+// Master Accounts' pure core — the small book below is built by it, so every
+// document has the shape the pages read.
+const MA=require('../js/ma-core.js');
 
 function findBrowser(){
   if(process.env.CHROME_BIN&&fs.existsSync(process.env.CHROME_BIN))return process.env.CHROME_BIN;
@@ -59,6 +62,16 @@ function seed(){
     status:'open',page:'gatepass',ts:now,createdAt:now};
   cols.notes_pages.n1={title:'Cutting room SOP',visibility:'shared',ownerUid:'u-afnan',ownerName:'Afnan',
     blocks:[{type:'paragraph',text:'Relax the fabric 24 hours before cutting.'}],updatedAt:now,createdAt:now};
+  // Master Accounts: a party, money in, money out and a transfer waiting for
+  // its receiver, so the ma-* pages draw their tables with rows, not empty.
+  const S=MA.maSettings(null),IDX=MA.maChartIndex(MA.maChart('groovy',[]));
+  const mk=(dt,input,no)=>{const d=MA.maBuildDoc(dt,input,{by:'afnan',byName:'Afnan',ts:now},IDX,S);d.no=no;d.id=no;return d;};
+  cols.ma_parties={p1:{id:'p1',kind:'vendor',name:'Asghar Printers',code:'ASG',active:true,contact:{person:'Asghar',phone:'0300-1234567'},
+    vendor:{roles:['printing'],tax:{regime:'none'},terms:{mode:'cash',from:'2026-07-01'},termsHistory:[],rateCard:[]}}};
+  cols.ma_journal={
+    'JV-27-0001':mk('journal',{kind:'capital',date:'2026-09-02',holder:'1011',owner:'afnan',amount:300000},'JV-27-0001'),
+    'JV-27-0002':mk('journal',{kind:'money_out',date:'2026-09-05',holder:'1011',account:'5030',party:'p1',partyKind:'vendor',amount:20000,tax:{kind:'none'},costCentre:'factory',note:'Printing'},'JV-27-0002')};
+  cols.ma_transfer={'TR-27-0001':mk('transfer',{date:'2026-09-07',from:'1011',to:'1012',amount:50000,note:'Float'},'TR-27-0001')};
   return cols;
 }
 
@@ -68,7 +81,8 @@ const OWNER_PAGES=['dashboard','po-create','po-registry','gatepass','fabric-inve
   'store-analytics','acct-ledger','po-issue-list','recipe-directory','printing-jobs','observer-tower',
   'color-library','shopify-intel','hrm-employees','attendance','hrm-payroll','hrm-advances','hrm-loans',
   'mkt-creators','mkt-dispatches','mkt-paid-pr','mkt-reports','pattern-hub','pattern-blocks',
-  'tb-dash','tb-calendar','tb-lists','tb-inbox','me'];
+  'tb-dash','tb-calendar','tb-lists','tb-inbox','me',
+  'ma-overview','ma-money','ma-out','ma-parties','ma-ledger','ma-close'];
 const JOBS=[
   {id:'owner-light',user:'afnan',theme:'light',pages:OWNER_PAGES},
   {id:'owner-dark',user:'afnan',theme:'dark',pages:['','dashboard','po-registry','notes','boards-all']},
@@ -108,6 +122,9 @@ function appPage(job){
     +';window.__EMAIL='+JSON.stringify(def.email)+';window.__SESSION='+JSON.stringify(sess)
     +';window.__PAGES='+JSON.stringify(job.pages)+';try{localStorage.setItem("groovy-theme","'+job.theme+'")}catch(e){}'
     +'</script><script>('+CLOCK+')();('+STUB+')();'
+    // Master Accounts re-locks after idle; the owner was "here a moment ago"
+    // so its pages are scanned, not the lock screen (as smoke-app-phone does).
+    +'try{var __a={};__a[window.__UID]=Date.now();localStorage.setItem("groovy-ma-active",JSON.stringify(__a))}catch(e){}'
     // js/store.js is the one REST module: answer it with an empty collection.
     +'window.fetch=function(u){var s=String(u),b=s.indexOf("firestore.googleapis")>-1?(s.indexOf(":runQuery")>-1?[]:{documents:[]}):{};'
     +'return Promise.resolve({ok:true,status:200,headers:{get:function(){return null}},json:function(){return Promise.resolve(b)},text:function(){return Promise.resolve(JSON.stringify(b))}});};'
