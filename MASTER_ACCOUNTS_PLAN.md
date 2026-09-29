@@ -1032,10 +1032,10 @@ M1.4 the PDFs · `6f2e152` M1.5a the functions (`ma-attach`, `ma-share`,
 `704056b` M1.6a edits and confirmations held at the rules · `20260a0`
 M1.6b the screens, the idle re-lock and the device cache ·
 [[M1.6c-server: hash — the server tightening]]. `main` has since been
-merged into the branch three times (`1dc7fa9`, `feca515`, `be22046`), and
-`efb75ce` names the nightly backup in the audit trail. CLAUDE.md "Master
-Accounts" is the engineering record; this section is the plan's side of
-it.
+merged into the branch four times (`1dc7fa9`, `feca515`, `be22046`,
+`d159f83`), and `efb75ce` names the nightly backup in the audit trail.
+CLAUDE.md "Master Accounts" is the engineering record; this section is the
+plan's side of it.
 
 ### What §21's M1 row asked for, and what exists
 
@@ -1050,7 +1050,7 @@ its cells and in refinements 13 and 15 below.
 | Items | built | `ma_items`, on Close & audit. |
 | `ma_commitments` at go-live (§26) | built | Money out is the cost register in M1; *Record payment* prefills a Money out. |
 | `ma_counts` | built | a count's book is fixed when it is recorded (M1.6a). |
-| `js/ma-core.js` — postings with the §27 labels, validation, allocation, balances, trial balance, tax block, Unlabelled queue | built | `maValidate`: 55 named rules (78 across all the core's checks). FIFO allocation exists; nothing uses it until M3. |
+| `js/ma-core.js` — postings with the §27 labels, validation, allocation, balances, trial balance, tax block, Unlabelled queue | built | `maValidate`: 56 distinct rule names (counting the unknown-document guard; M1.6b added `commitment.period` and `commitment.period_shape`). FIFO allocation exists; nothing uses it until M3. |
 | Journals | built | six kinds: money out, money in, capital, drawing, opening, general. |
 | Transfers between holders with confirmation | built | changed in M1.6a — refinement 1 below. |
 | The calendar (rule-based) | built | Today's 30 days, from the commitments and the pay days; CPR inflows arrive with M2. |

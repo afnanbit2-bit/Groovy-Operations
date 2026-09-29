@@ -7549,14 +7549,15 @@ pages · `7b4aa30` M1.4 the PDFs · `6f2e152` M1.5a the server functions ·
 `4057303` M1.5b the client for them · `704056b` M1.6a edits and
 confirmations held at the rules · `20260a0` M1.6b the screens, the idle
 re-lock and the device cache · [[M1.6c-server: hash — the server tightening]].
-After them, `main` was merged INTO the branch three times — `1dc7fa9`
+After them, `main` was merged INTO the branch four times — `1dc7fa9`
 (`origin/main` at `1f6327d`, `CACHE_VERSION` v247), `feca515` (`4c8bfee`,
-v249) and `be22046` (`3333584`, v251) — and between the second and third,
-`efb75ce` named the nightly backup in the audit trail (v250).
+v249), `be22046` (`3333584`, v251) and `d159f83` (`dc0e609`, v252) — and
+between the second and third, `efb75ce` named the nightly backup in the
+audit trail (v250).
 
 - **Not deployed.** Netlify builds `main`, and the branch has not been
-  merged into it: `git merge-base --is-ancestor be22046 origin/main` is
-  false (checked 29 Sept). The branch is at `CACHE_VERSION` v251.
+  merged into it: `git merge-base --is-ancestor d159f83 origin/main` is
+  false (checked 29 Sept). The branch is at `CACHE_VERSION` v252.
 - **The rules decide whether it works at all, and the two 28 Sept pastes
   collide** — see "Firestore rules — published" before anything else.
   Before the merge no branch's `firestore.rules` carried both the Master
@@ -7584,7 +7585,8 @@ v249) and `be22046` (`3333584`, v251) — and between the second and third,
   money grouped in lakh/crore and spelled out (`maRsWords`), the tax block,
   the three document types (`MA_DOC_TYPES`: journal `JV`, transfer `TR`,
   count `CT`) and the six journal kinds, **`maBuildDoc` → `maValidate`
-  (refuse / flag; 57 named rules, 55 before M1.6b) → `maPost`** (lines
+  (refuse / flag; 58 distinct rule names, 56 before M1.6b, counting
+  the unknown-document guard) → `maPost`** (lines
   carrying the plan's §27 labels), balances, holders, the trial balance,
   the ledger with a running balance, edits / voids / confirmations, parties
   with terms and rate cards kept with history, items, the cost register,
@@ -7926,29 +7928,28 @@ reproductions — this summary is the record.
 - **Node suite** — re-run on a clean `git archive` of each commit: 6,612
   (`930c2df`, before M1) → 6,979 (M1.1) → 7,122 (M1.3) → 7,434 (M1.4) →
   7,778 (M1.5a) → 8,011 (M1.5b) → 8,201 (`704056b`) → **8,408
-  (`20260a0`)**, all passing. Since then (three merges with `main` and
-  one fix): 8,723 (`1dc7fa9`), 8,788 (`feca515`), 8,794 (`efb75ce`), 8,797
-  (`be22046`).
+  (`20260a0`)**, all passing. Since then (four merges with `main` and one
+  fix): 8,723 (`1dc7fa9`), 8,788 (`feca515`), 8,794 (`efb75ce`), 8,797
+  (`be22046`), 8,832 (`d159f83`).
   [[M1.6c-server: its totals]]
 - **Rules, in the real Firestore emulator** — **209 / 209** against the
-  merged `firestore.rules` at `1dc7fa9` (unchanged at `feca515` and
-  `be22046`); M1.6b did not change the rules. Against `1d8b3c5`'s rules (the ones reported
-  published) the same file fails 62: all 55 checks labelled "M1.6a:" plus
-  7 that exercise permissions M1.6a added (an edit storing its flags, an
-  edit clearing a review, the re-lock). That is what makes the republish
-  necessary rather than cosmetic. The merged file also passes main's own
-  suites: `rules-emulator.js` 103 / 103, `rules-emulator-board.js` 39 / 39,
-  `rules-emulator-boards.js` 26 / 26.
+  merged `firestore.rules` at `1dc7fa9` (unchanged by the three merges after
+  it); M1.6b did not change the rules. Against `1d8b3c5`'s rules (the ones
+  reported published) the same file fails 62: all 55 checks labelled
+  "M1.6a:" plus 7 that exercise permissions M1.6a added (an edit storing its
+  flags, an edit clearing a review, the re-lock). That is what makes the
+  republish necessary rather than cosmetic. The merged file also passes
+  main's own suites: `rules-emulator.js` 103 / 103,
+  `rules-emulator-board.js` 39 / 39, `rules-emulator-boards.js` 26 / 26.
 - **Layout and the smoke suites** — re-run by the integrator on a clean
-  `git archive` of `be22046` (and of `efb75ce` before it, with the same
-  result): `smoke-layout` 462 / 462, of which 76 are the fourteen `master
-  accounts — …` fragments (every width they declare, both themes: contrast,
-  overflow, clipped text and hit-testing); `smoke-app-phone` clean on all
-  53 of the owner's pages in both themes — the six `ma-*` nav pages among
-  them — and on the pages it lists for six other roles; `smoke-phone`
-  30 / 30;
-  `smoke-board`, `smoke-browser` 8 / 8 and `smoke-startapp` (all four read
-  conditions) pass; `smoke-axe` finds no rule/page pair beyond
+  `git archive` of `d159f83` (and of `efb75ce` and `be22046` before it, with the
+  same results): `smoke-layout` 462 / 462, of which 76 are the fourteen
+  `master accounts — …` fragments (every width they declare, both themes:
+  contrast, overflow, clipped text and hit-testing); `smoke-app-phone` clean
+  on all 53 of the owner's pages in both themes — the six `ma-*` nav pages
+  among them — and on the pages it lists for six other roles; `smoke-phone`
+  30 / 30; `smoke-board`, `smoke-browser` 8 / 8 and `smoke-startapp` (all
+  four read conditions) pass; `smoke-axe` finds no rule/page pair beyond
   `tests/axe-baseline.json` — but its page list has no `ma-*` page (the
   owner's Dashboard, which carries the Master Accounts card, is on it), so
   axe has not looked at the module's own pages. None of these suites signs
@@ -8001,8 +8002,9 @@ here).
 - [ ] **The Cloudinary plan**: its upload cap (the app allows 25 MB), and
   whether it allows authenticated uploads and the download API —
   *unverifiable from here.*
-- [ ] **Publish the MERGED `firestore.rules`** — [[phase2: final merged
-  rules md5]]; never this branch's file alone, never `main`'s.
+- [ ] **Publish the MERGED `firestore.rules`** —
+  [[phase2: final merged rules md5]]; never this branch's file alone, never
+  `main`'s.
 - [ ] **Merge into `main`** — a Claude session does it; not before the two
   verification blockers (V1, V2) are fixed.
 - [ ] **A first look on a real screen** — nobody has.
@@ -8027,22 +8029,28 @@ Master Accounts block), and two shared probes (`smoke-app-phone.js`,
 for Ammar's session, outside the repo, to reach him through Afnan; whether
 it has is unverified.
 
-**Merging with `main` is a real merge, and it has been done three times.** The
-branch had not taken `main` since `2298f39`. `1dc7fa9` merged `origin/main`
-at `1f6327d` (v246): conflicts in `index.html` (`?v` strings) and `sw.js`
-(`CACHE_VERSION`), and `firestore.rules`, `js/shared.js`, `css/main.css`,
-`CLAUDE.md`, `netlify.toml` and `tests/smoke-layout.js` merged cleanly and
-were checked line by line to carry both sides. **Then the dangerous shape
-happened for real, twice:** `main` moved to `4eea411`, which took **v247** —
-the number `1dc7fa9` had just taken — for different bytes, and `4c8bfee`
-(v248). Nothing had been pushed yet, so `feca515` merged again and went to
-v249, past both; its conflicts were `index.html`, `sw.js` and, this time,
-`css/main.css` (both sides appended a block at the end of the file — both
-kept, `.ma-` first). Then `main`'s `3333584` took **v249** — `feca515`'s
-number — for different bytes. The branch had moved on to v250 (`efb75ce`),
-so this time the two lines differed and git raised the conflict; `be22046`
-went to v251. Every future merge: fetch, compare `CACHE_VERSION` on both
-sides, not just the conflict list, and bump past both.
+**Merging with `main` is a real merge, and it has been done four
+times.** The branch had not taken `main` since `2298f39`. `1dc7fa9`
+merged `origin/main` at `1f6327d` (v246): conflicts in `index.html`
+(`?v` strings) and `sw.js` (`CACHE_VERSION`), and `firestore.rules`,
+`js/shared.js`, `css/main.css`, `CLAUDE.md`, `netlify.toml` and
+`tests/smoke-layout.js` merged cleanly and were checked line by line to
+carry both sides. **Then the dangerous shape happened for real, three
+times:**
+`main` moved to `4eea411`, which took **v247** — the number `1dc7fa9`
+had just taken — for different bytes, and `4c8bfee` (v248). Nothing had
+been pushed yet, so `feca515` merged again and went to v249, past both;
+its conflicts were `index.html`, `sw.js` and, this time, `css/main.css`
+(both sides appended a block at the end of the file — both kept, `.ma-`
+first). Then `main`'s `3333584` took **v249** — `feca515`'s number — for
+different bytes. The branch had moved on to v250 (`efb75ce`), so this
+time the two lines differed and git raised the conflict; `be22046` went
+to v251. And while the docs were being written, `main`'s `dc0e609` took
+**v250** — `efb75ce`'s number — and `d159f83` went to v252 (`main` took
+four commits between 21:43 and 07:26 UTC, the last two 27 minutes
+apart). Every future merge: fetch, compare `CACHE_VERSION` on both
+sides, not just the conflict list, bump past both, and fetch again just
+before pushing.
 
 ### The planning record (27–28 Sept 2026), condensed
 
@@ -10881,14 +10889,14 @@ they are one paste.
 Boards hole; the second removes Master Accounts. The file to paste is
 `firestore.rules` from the merge of the Master Accounts branch with
 `origin/main`. The real merge, `1dc7fa9` (28 Sept, 21:55 UTC; `origin/main`
-at `1f6327d`), merged the rules without a conflict to LF `md5
-8cf1c6813fe0becddd620161ba0277f4` — 1,346 lines, exactly the merge base's
-994 plus the branch's 330 plus main's 22, and an independent `git
-merge-file` of the three gives the same bytes; the later merges `feca515`
-and `be22046` did not touch it. **That md5 is NOT the file to publish:**
-the fixes for the Master Accounts verification round change
-`firestore.rules` again. The file to publish is [[phase2: final merged
-rules md5]].
+at `1f6327d`), merged the rules without a conflict to LF
+`md5 8cf1c6813fe0becddd620161ba0277f4` — 1,346 lines, exactly the merge
+base's 994 plus the branch's 330 plus main's 22, and an independent
+`git merge-file` of the three gives the same bytes; the three later merges
+(`feca515`, `be22046`, `d159f83`) did not touch it. **That md5 is NOT the
+file to publish:** the fixes for the Master Accounts verification round
+change `firestore.rules` again. The file to publish is
+[[phase2: final merged rules md5]].
 
 What each state of the Console refuses, so a report can be read against it:
 
