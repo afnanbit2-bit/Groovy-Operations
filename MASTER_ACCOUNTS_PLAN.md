@@ -1025,15 +1025,16 @@ browser from a session; Afnan's first open is the visual test.
 
 ## 21a. M1 as built (28–29 Sept 2026)
 
-Eight commits: `bf09235` M1.1 the core (`js/ma-core.js`) · `1d8b3c5` M1.2
+Nine commits: `bf09235` M1.1 the core (`js/ma-core.js`) · `1d8b3c5` M1.2
 the rules · `06b9256` M1.3 the pages (`js/master-accounts.js`) · `7b4aa30`
 M1.4 the PDFs · `6f2e152` M1.5a the functions (`ma-attach`, `ma-share`,
 `ma-backup`, `netlify/lib/ma-server.js`) · `4057303` M1.5b their client ·
 `704056b` M1.6a edits and confirmations held at the rules · `20260a0`
-M1.6b the screens, the idle re-lock and the device cache ·
-[[M1.6c-server: hash — the server tightening]]. `main` has since been
-merged into the branch four times (`1dc7fa9`, `feca515`, `be22046`,
-`d159f83`), and `efb75ce` names the nightly backup in the audit trail.
+M1.6b the screens, the idle re-lock and the device cache · `7735410`
+M1.6c the server tightening (attachments fail closed), whose client half
+is `8e5fe0b`. `main` has been merged into the branch four times
+(`1dc7fa9`, `feca515`, `be22046`, `d159f83`), and `efb75ce` names the
+nightly backup in the audit trail.
 CLAUDE.md "Master Accounts" is the engineering record; this section is the
 plan's side of it.
 
@@ -1059,7 +1060,7 @@ its cells and in refinements 13 and 15 below.
 | First owner-only reads, every block in the emulator | built | `tests/rules-emulator-ma.js`, 209 checks at `704056b`. |
 | The audit trail | built | a client row with every write; server rows for share, revoke and backup. |
 | `ma-backup` nightly + PITR + Download the books | code built; the bucket and PITR are not (Console steps) | refinements 4 and 11. |
-| `ma-attach`, `ma-share`, the re-lock | built | the re-lock had an open finding (security F5): M1.6b asks for the lock everywhere on an `ma-*` page, not only on navigation, but a Dashboard card painted before the lock came due still keeps its figures (V5). The public fallback fails open — [[M1.6c-server: the server tightening]]. |
+| `ma-attach`, `ma-share`, the re-lock | built | the re-lock had an open finding (security F5): M1.6b asks for the lock everywhere on an `ma-*` page, not only on navigation, but a Dashboard card painted before the lock came due still keeps its figures (V5). The public fallback failed open; M1.6c (`7735410`, `8e5fe0b`) makes attachments fail closed — refinement 9. |
 | The first print variants | built | all five; refinement 10 (the Urdu). |
 | Excel on every table | from each page's ⋯ menu | Today, holders, a holder, parties, a party, commitments, ledger, documents, audit. |
 | The dashboard widget | built | owners only: cash in hand, how many need attention. |
@@ -1125,10 +1126,18 @@ its cells and in refinements 13 and 15 below.
 9. **§29 (attachments)** — built as planned (`type:'authenticated'`,
    5-minute signed links, a server-minted `ma/<64 hex>` name, Settings says
    which mode is in force), with one finding against the fallback: without
-   the Cloudinary key it goes public silently, and a file uploaded that way
-   stays public after the key is set. [[M1.6c-server: the opt-in env var
-   for the public fallback, and `overwrite:false` in the signed fields, if
-   that is what landed]]
+   the Cloudinary key it went public silently, and a file uploaded that way
+   stays public after the key is set (security F7). **M1.6c closed it:**
+   attachments FAIL CLOSED. Without both keys, attachments and share links
+   are OFF (`sign` and share creation answer 503 not_configured, saying
+   what is missing and both ways out), and the public fallback is taken
+   only when the owners set `MA_ALLOW_PUBLIC_ATTACH` to exactly 1. Signed
+   uploads carry `overwrite:0` inside the signature (the Cloudinary Node
+   SDK 2.11.0's form of `overwrite:false`). Settings says "Attachments are
+   off — not set up." when that is the state. *Reason:* a file that is
+   public by accident cannot be made private again. Whether the live
+   account accepts `overwrite=0` on authenticated uploads is unverifiable
+   from a session — the first real upload is the test.
 10. **§31 (print variants) — the slips, and the Urdu.** `ma-receipt` is a
     transfer's handover slip (the plan's collection receipt needs M2's
     collections); `ma-voucher` is a Money-out voucher (bills and
@@ -1201,8 +1210,9 @@ left in IndexedDB after sign-out) and F7 (the attachment fallback).
 every finding against that commit: money F1, F3, F4, F5, F10, F13, M1, M2
 and N1–N3, and security F6 — "with two new problems", V1 and V2. Still
 partly open by the same round: money F9 (V4) and M3, security F2 (V3) and
-F5 (V5). Security F7 and the server nits are the server round's.
-[[M1.6c-server: closed → …]] The verification round's own findings,
+F5 (V5). Security F7 and the server nits were the server round's:
+**M1.6c (`7735410`) closed F7** (refinement 9) and, by its author's
+account, the server nits. The verification round's own findings,
 V1–V12 (V1 and V2 blockers), and the visual QA's F01–F19: V1–V11 and
 F01–F19 are being fixed now. [[phase2: which were closed, and what is
 left open]]

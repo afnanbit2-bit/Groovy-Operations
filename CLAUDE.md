@@ -7542,22 +7542,25 @@ status section, §21a) — read it before touching anything named `ma-`, `ma_`
 or `MA_`. The planning record (v1–v4, the specimen, the two design reports)
 is condensed at the end of this section.
 
-**Where it stands — verified from git, 29 Sept.** Eight M1 commits on
+**Where it stands — verified from git, 29 Sept.** Nine M1 commits on
 `claude/master-accounts-planning-udoiw9`, none of them on `main`:
 `bf09235` M1.1 the core · `1d8b3c5` M1.2 the rules · `06b9256` M1.3 the
 pages · `7b4aa30` M1.4 the PDFs · `6f2e152` M1.5a the server functions ·
 `4057303` M1.5b the client for them · `704056b` M1.6a edits and
 confirmations held at the rules · `20260a0` M1.6b the screens, the idle
-re-lock and the device cache · [[M1.6c-server: hash — the server tightening]].
-After them, `main` was merged INTO the branch four times — `1dc7fa9`
-(`origin/main` at `1f6327d`, `CACHE_VERSION` v247), `feca515` (`4c8bfee`,
-v249), `be22046` (`3333584`, v251) and `d159f83` (`dc0e609`, v252) — and
-between the second and third, `efb75ce` named the nightly backup in the
-audit trail (v250).
+re-lock and the device cache · `7735410` M1.6c the server tightening
+(attachments fail closed — decision 5; cherry-picked from the server
+round's `5291a14`, which was built on `704056b`). After M1.6b, `main` was
+merged INTO the branch four times — `1dc7fa9` (`origin/main` at `1f6327d`,
+`CACHE_VERSION` v247), `feca515` (`4c8bfee`, v249), `be22046` (`3333584`,
+v251) and `d159f83` (`dc0e609`, v252); between the second and third,
+`efb75ce` named the nightly backup in the audit trail (v250), and after
+M1.6c, `8e5fe0b` is its client half (v253): Settings says when attachments
+are off.
 
 - **Not deployed.** Netlify builds `main`, and the branch has not been
-  merged into it: `git merge-base --is-ancestor d159f83 origin/main` is
-  false (checked 29 Sept). The branch is at `CACHE_VERSION` v252.
+  merged into it: `git merge-base --is-ancestor 8e5fe0b origin/main` is
+  false (checked 29 Sept). The branch is at `CACHE_VERSION` v253.
 - **The rules decide whether it works at all, and the two 28 Sept pastes
   collide** — see "Firestore rules — published" before anything else.
   Before the merge no branch's `firestore.rules` carried both the Master
@@ -7594,7 +7597,7 @@ audit trail (v250).
   Unlabelled and review queues, FIFO allocation (unused until M3),
   attachments as references, WhatsApp and share helpers, the PDF data
   builders (`maPdf*Data`) and Download the books.
-- **`js/master-accounts.js`** (2,807 lines at `efb75ce`) — the pages. It
+- **`js/master-accounts.js`** (2,822 lines at `8e5fe0b`) — the pages. It
   reads Firestore, paints, and writes exactly what the core built: the
   writer, the loader, the re-lock, files, links, the owners' copy and the
   device cache at sign-out.
@@ -7602,13 +7605,21 @@ audit trail (v250).
   OUTSIDE `netlify/functions` so it is bundled rather than deployed as an
   endpoint (the postex-core precedent): the owner check (a verified ID
   token, `checkRevoked` on, so a revoked session or a disabled account is
-  refused at once), Cloudinary's signature hand-rolled on node `crypto`
-  (checked against golden values from the Cloudinary Node SDK 2.11.0 —
-  **never against the live API**), server-minted file names `ma/<64 hex>`,
-  and audit rows in the core's own shape.
+  refused at once; the email compared EXACTLY, as the rules compare it, so
+  `Ammar@groovy.op` is refused — M1.6c), `startAdmin(tag)` (a function that
+  cannot start answers a generic 503 before it knows the caller, "The server
+  is not set up yet — the reason is in the Netlify function log.", and logs
+  the reason as `[ma-attach]` / `[ma-share] refused before the caller was
+  known: …` — M1.6c), `cloudinaryConfig` (decision 5), Cloudinary's
+  signature hand-rolled on node `crypto` (checked against golden values from
+  the Cloudinary Node SDK 2.11.0 — **never against the live API**),
+  server-minted file names `ma/<64 hex>`, and audit rows in the core's own
+  shape.
 - **`netlify/functions/ma-attach.js`** — POST, owners only. `status` (which
-  mode is in force), `sign` (the exact fields for a browser-to-Cloudinary
-  upload as `type:'authenticated'`, under a name minted here; the file never
+  of three states is in force — decision 5; `not_configured` answers 503
+  with the whole status in the body), `sign` (the exact fields for a
+  browser-to-Cloudinary upload as `type:'authenticated'`, under a name
+  minted here, with `overwrite:0` inside the signature; the file never
   passes through Netlify and the secret never leaves it), `url` (a signed
   download link that dies in 5 minutes — asking again is how you look
   again). 25 MB cap and an image/PDF allow-list are checked here.
@@ -7619,7 +7630,11 @@ audit trail (v250).
   public address in the fallback — decision 5), with `no-store`,
   `no-referrer`, `noindex` and a `default-src 'none'` CSP on the plain
   pages. POST `create` / `revoke` for the owners, each in the same batch as
-  its audit row. Link-preview fetches (WhatsApp building the preview, among
+  its audit row; since M1.6c `create` keeps the document's revision the PDF
+  was made at (`subject.rev` → `docRev`: a whole number ≥ 1, absent when not
+  sent, `400 subject` for anything else), returned at the top of the answer
+  and inside `share`, and the share panel says when a live link is of an
+  older revision. Link-preview fetches (WhatsApp building the preview, among
   a named list of bots) are counted in `previews`, not `opens`, so "opened
   once" means a person. A link lives `share.defaultDays` (7), capped at 90.
 - **`netlify/functions/ma-backup.js`** — scheduled `30 * * * *`
@@ -7787,14 +7802,31 @@ token and an upper-case email (reported, from its own scratch probe). The
    would have stored them.
    Adding a file later is an edit with history; the "no bill" flag is
    answered by derivation (`maLiveFlags`), not by rewriting stored flags.
-   **The fallback, as the branch stands:** without `CLOUDINARY_API_KEY` /
-   `CLOUDINARY_API_SECRET`, `sign` hands out the app's unsigned `groovy-ops`
-   preset under the same random name — the file is PUBLIC and its address
-   opens it for good, and files uploaded in that mode STAY public after the
-   keys are set. Settings (Close & audit) asks the server and says which
-   mode is in force. [[M1.6c-server: what changed — the security review
-   asked for a refusal unless an explicit opt-in env var is set, and for
-   `overwrite:false` among the signed fields]]
+   **Attachments FAIL CLOSED (M1.6c, `7735410`; security F7).**
+   `cloudinaryConfig` answers one of three states: `signed` (both keys set
+   — private files, links that expire), `public` (no usable key AND
+   `MA_ALLOW_PUBLIC_ATTACH` exactly "1", spaces trimmed — the app's unsigned
+   `groovy-ops` preset under the same random name: the file is PUBLIC, its
+   address opens it for good, and files uploaded in that mode STAY public
+   after the keys are set), or `not_configured` (neither — nothing is
+   uploaded and no link is made). A key holding whitespace is not a key.
+   Before M1.6c the public fallback was what a missing key silently meant;
+   now it is only ever chosen. When not configured, `sign` and share
+   creation answer `503 not_configured` with one plain sentence — what is
+   missing (never its value) and both ways out — and `status` answers 503
+   with the state; `url` and the share GET are unchanged, so a file that is
+   already public keeps opening. Signed uploads carry `overwrite:0` inside
+   the signature: that is how Cloudinary's Node SDK 2.11.0 sends
+   `overwrite:false`, and the signature is pinned to the SDK's own output.
+   Settings (Close & audit) asks the server and says which state is in
+   force — "Attachments are off — not set up." with the server's sentence
+   (`8e5fe0b`, keyed on the body's `state`, never on `code`: the generic
+   503 a function sends before it knows the caller carries
+   `not_configured` too), private, or public because the opt-in is 1.
+   **Unverifiable from a session, and the first real upload is the test:**
+   whether the live Cloudinary account accepts `overwrite=0` on
+   authenticated uploads, what it does with a replayed upload, and the
+   plan's size limits.
 6. **The audit trail is written NOW and shows who from `by`.** Since M1.6a
    the rules refuse an `ma_audit` row whose `at` is more than five minutes
    from the server's clock, and the trail and its Excel print the name
@@ -7913,8 +7945,18 @@ reproductions — this summary is the record.
   non-string code or a negative amount still skips the derived
   confirmation — V3, a rules change) and F5 (V5). **Not fixed at
   `20260a0`:** security F7 (the attachment fallback fails open) and the
-  server nits — the server round. [[M1.6c-server: which it closed — the
-  server tightening]]
+  server nits — the server round.
+- **M1.6c (`7735410`, the server round) closed F7 and, by its author's
+  account, the server nits:** attachments fail closed (decision 5),
+  `overwrite:0` is signed, nothing internal leaks before the owner check
+  (`startAdmin`), the owner email is compared exactly as the rules do, stale
+  comments in `ma-server.js` and `ma-backup.js` were corrected, and share
+  links record the document's revision (`docRev`), so the share panel can
+  say a live link is of an older revision (money M3 — the link still serves
+  the PDF it was made from). Its author verified it with 22 deliberate
+  breaks, each caught by name (reported, not re-run here); its client half
+  is `8e5fe0b`, whose four changes were each reverted once and caught by
+  name.
 - **The verification round's own new findings, V1–V12** (two blockers,
   V1 and V2, both in the sign-out work of decision 12). V1–V11 and the
   visual QA's F01–F19 are being fixed now, per the coordinator of that
@@ -7930,8 +7972,9 @@ reproductions — this summary is the record.
   7,778 (M1.5a) → 8,011 (M1.5b) → 8,201 (`704056b`) → **8,408
   (`20260a0`)**, all passing. Since then (four merges with `main` and one
   fix): 8,723 (`1dc7fa9`), 8,788 (`feca515`), 8,794 (`efb75ce`), 8,797
-  (`be22046`), 8,832 (`d159f83`).
-  [[M1.6c-server: its totals]]
+  (`be22046`), 8,832 (`d159f83`), 8,980 (`7735410` — `ma-server` 78 → 142,
+  `ma-attach` 74 → 114, `ma-share` 107 → 151, each re-run here), 8,997
+  (`8e5fe0b`), 8,998 (`f6125f8`).
 - **Rules, in the real Firestore emulator** — **209 / 209** against the
   merged `firestore.rules` at `1dc7fa9` (unchanged by the three merges after
   it); M1.6b did not change the rules. Against `1d8b3c5`'s rules (the ones
@@ -7942,17 +7985,23 @@ reproductions — this summary is the record.
   main's own suites: `rules-emulator.js` 103 / 103,
   `rules-emulator-board.js` 39 / 39, `rules-emulator-boards.js` 26 / 26.
 - **Layout and the smoke suites** — re-run by the integrator on a clean
-  `git archive` of `d159f83` (and of `efb75ce` and `be22046` before it, with the
-  same results): `smoke-layout` 462 / 462, of which 76 are the fourteen
-  `master accounts — …` fragments (every width they declare, both themes:
-  contrast, overflow, clipped text and hit-testing); `smoke-app-phone` clean
-  on all 53 of the owner's pages in both themes — the six `ma-*` nav pages
-  among them — and on the pages it lists for six other roles; `smoke-phone`
-  30 / 30; `smoke-board`, `smoke-browser` 8 / 8 and `smoke-startapp` (all
-  four read conditions) pass; `smoke-axe` finds no rule/page pair beyond
-  `tests/axe-baseline.json` — but its page list has no `ma-*` page (the
-  owner's Dashboard, which carries the Master Accounts card, is on it), so
-  axe has not looked at the module's own pages. None of these suites signs
+  `git archive` of `1f06da2` (and of `efb75ce`, `be22046` and `d159f83`
+  before it, with the same results): `smoke-layout` 462 / 462, of which 76
+  are the fourteen `master accounts — …` fragments (every width they
+  declare, both themes: contrast, overflow, clipped text and hit-testing;
+  since `8e5fe0b` the attachment-mode fragment also renders the
+  switched-off card); `smoke-app-phone` clean on all 53 of the owner's pages
+  in both themes — the six `ma-*` nav pages among them — and on the pages
+  it lists for six other roles; `smoke-phone` 30 / 30; `smoke-board`,
+  `smoke-browser` 8 / 8 and `smoke-startapp` (all four read conditions)
+  pass. **`smoke-axe` scans the six `ma-*` pages since `1f06da2`** (over a
+  small book built by `js/ma-core.js`; before, its list had none): no
+  violation on any of them, and no rule/page pair beyond
+  `tests/axe-baseline.json`. Its list does not open the Record picker, the
+  forms, the document rail or the share panel; scanned once from a scratch
+  copy of its driver, those showed one moderate `heading-order` finding —
+  the document rail's `<h3 class="ma-rail-title">` follows the page's
+  `<h1>` with no `<h2>` between — left as it is. None of these suites signs
   in to the real Firebase: every page is rendered against fake data.
 - **The print engine** — every variant that existed before M1.4 (`generic`,
   the `qc-report` fallback, `stock-transfer`, `consumable-log`,
@@ -7993,12 +8042,14 @@ here).
   run is the test; a failure writes Google's own words into its row.*
 - [ ] **Point-in-time recovery**, 7 days — *nothing in the app can see it.*
 - [ ] **Netlify env vars, then a redeploy:** `MA_BACKUP_BUCKET`,
-  `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`. **As the branch stands,
-  without the two Cloudinary keys attachments go up PUBLIC** and stay
-  public after the keys are set — set them before anyone attaches a real
-  bill. [[M1.6c-server: once the server tightening lands, without the keys
-  attachments and share links are OFF instead, and MA_ALLOW_PUBLIC_ATTACH=1
-  is the only way to public files]]
+  `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`. **Until the two
+  Cloudinary keys are set, attachments and share links are OFF** (M1.6c) —
+  Close & audit → Settings says "Attachments are off — not set up."
+  `MA_ALLOW_PUBLIC_ATTACH=1` only for deliberate public files: they then go
+  up public and stay public after the keys are set. *Unverifiable from
+  here: whether the account accepts `overwrite=0` on authenticated uploads,
+  what it does with a replayed upload — the first real upload is the
+  test.*
 - [ ] **The Cloudinary plan**: its upload cap (the app allows 25 MB), and
   whether it allows authenticated uploads and the download API —
   *unverifiable from here.*
@@ -10847,7 +10898,8 @@ they are one paste.
 
 1. **Master Accounts M1.6a (`704056b`) changed `firestore.rules`** — LF
    `md5 f2f8de5e67a742c709c4d0835c56ecab` (verified: `git show
-   704056b:firestore.rules | md5sum`; M1.6b, `20260a0`, left it untouched).
+   704056b:firestore.rules | md5sum`; M1.6b, `20260a0`, left it untouched,
+   and so did M1.6c's `7735410` and `8e5fe0b`).
    Edits and confirmations are held at the rules now: a transfer's
    confirmation comes from one holder-to-person map (`maHands()` /
    `maDrawers()`), a create may carry no `confirmed*`, `reviewed*` or
