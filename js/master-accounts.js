@@ -206,6 +206,11 @@ function _maClean(o){return JSON.parse(JSON.stringify(o===undefined?null:o));}
 function _maToast(m){if(typeof showToast==='function')showToast(m);}
 function _maWho(u){
   if(!u)return '—';
+  // The nightly backup writes its own audit rows (netlify/functions/
+  // ma-backup.js, by:'ma-backup'): name the job, never its id. No client can
+  // write that `by` — the ma_audit create rule binds it to the caller's own
+  // login (maUser()), and only Afnan and Ammar pass isMasterAccounts().
+  if(u==='ma-backup')return 'Nightly backup';
   const d=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]).find(x=>x.u===u);
   return d?d.name:u;
 }

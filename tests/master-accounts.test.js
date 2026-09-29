@@ -652,6 +652,30 @@ module.exports=async function(){
     s.eq('…and so does its Excel',J(got[0]&&got[0][1]&&got[0][1][1]),J('Afnan'));
   }
 
+  s.section('The nightly backup\'s audit rows name the job, not its id');
+  {
+    // netlify/functions/ma-backup.js writes its own audit rows with
+    // by:'ma-backup' (byName 'Nightly backup'). The trail shows the name
+    // derived from `by` — so without this, Close & audit and its Excel read
+    // the raw id "ma-backup". No client can write that `by`: the ma_audit
+    // create rule binds it to the caller's own login (maUser()).
+    const UD=[{u:'afnan',name:'Afnan'},{u:'ammar',name:'Ammar'}];
+    const {app:a}=mkApp({seed:{ma_audit:{
+      b1:{id:'b1',by:'ma-backup',byName:'Nightly backup',action:'backup',at:T0+9,target:{dt:'backup',id:'2026-09-28',no:'2026-09-28'},detail:'done'},
+      r1:{id:'r1',by:'afnan',byName:'Afnan',action:'void',at:T0+5,target:{dt:'journal',id:'JV-27-0001',no:'JV-27-0001'},detail:'wrong'}}},globals:{USER_DEFS:UD}});
+    await a.run('maLoad()');
+    s.eq('_maWho names the nightly backup',a.run("_maWho('ma-backup')"),'Nightly backup');
+    s.eq('…and still resolves a person the same way',a.run("_maWho('ammar')"),'Ammar');
+    s.eq('…and still returns an unknown id as it is',a.run("_maWho('zz-nobody')"),'zz-nobody');
+    const h=a.run("_maCloseTab='audit';_maPageHTML('ma-close')");
+    s.ok('the trail says "Nightly backup" for a backup row',/data-l="Who">Nightly backup<\/td>/.test(h),h.slice(h.indexOf('<tbody>'),h.indexOf('<tbody>')+200));
+    s.ok('…and never shows the raw id "ma-backup" as a name',!/data-l="Who">ma-backup</.test(h));
+    const got=[];a.ctx.XLSX={utils:{book_new:()=>({}),aoa_to_sheet:r=>{got.push(r);return {};},book_append_sheet(){}},writeFile(){}};
+    a.run("window.maExcel('audit')");
+    const rows=(got[0]||[]).slice(1);
+    s.eq('its Excel names the job in the Who column',J(rows.map(r=>r[1])),J(['Nightly backup','Afnan']));
+  }
+
   s.section('M1.6a — the rules hold the lists the core holds (one decision, two places)');
   {
     const rules=read('firestore.rules');
