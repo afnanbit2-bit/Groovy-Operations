@@ -60,7 +60,9 @@ module.exports=async function(){
     s.ok('every money account is an asset with a holder kind',M.MA_CHART.filter(a=>a.money).every(a=>a.type==='asset'&&M.MA_HOLDER_KINDS.indexOf(a.holderKind)>=0));
     s.eq('the drawer is in Raees\'s hands',M.maAcc(IDX,'1010').person,'raees');
     s.eq('cash with Afnan is Afnan\'s',M.maAcc(IDX,'1011').person,'afnan');
-    s.eq('holders whose feed comes later ship switched off','1030,1040,1050,1060',
+    // M2.3: the TCS account (1060) is switched on — TCS's credits are
+    // collected into it now; the other three still wait for their feeds.
+    s.eq('holders whose feed comes later ship switched off','1030,1040,1050',
       M.maChart('groovy',[]).filter(a=>a.money&&!a.active).map(a=>a.code).join(','));
     s.eq('drawings are debit-normal (a contra of equity)',M.maAcc(IDX,'3020').normal,'dr');
     s.eq('a discount given is debit-normal (a contra of revenue)',M.maAcc(IDX,'4040').normal,'dr');
@@ -87,8 +89,8 @@ module.exports=async function(){
     s.eq('a malformed code is ignored',M.maAcc(merged,'77'),null);
     s.eq('an unknown type is ignored',M.maAcc(merged,'6122'),null);
     s.ok('the chart stays sorted by code',merged.list.map(a=>a.code).join()===merged.list.map(a=>a.code).slice().sort().join());
-    const off=M.maChartIndex(M.maChart('groovy',[{code:'1060',active:true}]));
-    s.eq('a holder that ships off can be switched on',M.maAcc(off,'1060').active,true);
+    const off=M.maChartIndex(M.maChart('groovy',[{code:'1030',active:true}]));
+    s.eq('a holder that ships off can be switched on',M.maAcc(off,'1030').active,true);
   }
 
   s.section('periods on a fiscal year from 1 July (§20, §27)');
@@ -319,7 +321,7 @@ module.exports=async function(){
     s.eq('a reopened quarter is not',has(V(J('money_out',Object.assign({},base,{date:'2026-09-10'})),{lines,closes:[{quarter:'2027-Q1',locked:true,reopenedAt:5}]}),'date.closed'),false);
     s.eq('a soft-closed month is flagged, not refused',lvl(V(clean,{lines,closes}),'date.soft_month'),'flag');
     s.eq('a holder that is not money is refused',lvl(V(J('money_out',Object.assign({},base,{holder:'6040'})),{lines}),'holder.money'),'refuse');
-    s.eq('a switched-off holder is refused',lvl(V(J('money_out',Object.assign({},base,{holder:'1060'})),{lines}),'holder.inactive'),'refuse');
+    s.eq('a switched-off holder is refused',lvl(V(J('money_out',Object.assign({},base,{holder:'1030'})),{lines}),'holder.inactive'),'refuse');
     s.eq('spending from the drawer is refused until M8',lvl(V(J('money_out',Object.assign({},base,{holder:'1010'})),{lines}),'holder.mirror'),'refuse');
     s.eq('a count of the drawer is refused too',lvl(V(C({date:'2026-10-05',holder:'1010',counted:5,note:'x'},0),{lines}),'holder.mirror'),'refuse');
     s.eq('a fraction of a rupee is refused',lvl(V(J('money_out',Object.assign({},base,{amount:'12.5'})),{lines}),'amount.whole'),'refuse');

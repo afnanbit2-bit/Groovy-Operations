@@ -111,7 +111,9 @@ module.exports=function(){
     const written=new Set(keys(slice('function normalize(order)','\n}\n')).concat(enrich));
     s.ok('postex-core\'s normalize and enrichPayments were found and read',written.has('cod')&&written.has('cprNumber_2')&&written.size>=25,written.size);
     const src=read('js/ma-core.js');
-    const sec=src.slice(src.indexOf('/* ── PostEx: parcels into CPRs'),src.indexOf('if(typeof module'));
+    // The derivation ends where M2.3's documents begin (they read documents,
+    // not parcels).
+    const sec=src.slice(src.indexOf('/* ── PostEx: parcels into CPRs'),src.indexOf('/* ── Couriers in the books (M2.3)'));
     const fields=new Set((sec.match(/\bp\.([A-Za-z_]\w*)/g)||[]).map(x=>x.slice(2))
       .concat((sec.match(/'([a-z][A-Za-z0-9]*(?:_\d)?)'/g)||[]).map(x=>x.slice(1,-1)).filter(x=>/[A-Z]|_\d/.test(x))));
     const unknown=Array.from(fields).filter(f=>!written.has(f));

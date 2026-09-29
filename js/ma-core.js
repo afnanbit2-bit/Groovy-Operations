@@ -61,7 +61,7 @@ const MA_CHART=[
   {code:'1030',name:'Other bank or wallet',type:'asset',money:true,holderKind:'bank',active:false},
   {code:'1040',name:'Warehouse till (Umair)',type:'asset',money:true,holderKind:'till',person:'umair',active:false,arrives:'M5'},
   {code:'1050',name:'Runner floats',type:'asset',money:true,holderKind:'float',active:false,arrives:'M8'},
-  {code:'1060',name:'TCS account',type:'asset',money:true,holderKind:'wallet',active:false,arrives:'M2'},
+  {code:'1060',name:'TCS account',type:'asset',money:true,holderKind:'wallet'},   // on since M2: TCS credits land here
   // Receivables
   {code:'1110',name:'Customers — pay-later',type:'asset',control:'customer'},
   {code:'1120',name:'PostEx — delivered, not on a CPR',type:'asset',control:'courier'},
@@ -195,7 +195,12 @@ const MA_MONTHS_LONG=['January','February','March','April','May','June','July','
 const MA_DOC_TYPES={
   journal:{col:'ma_journal',prefix:'JV',label:'Journal'},
   transfer:{col:'ma_transfer',prefix:'TR',label:'Transfer'},
-  count:{col:'ma_counts',prefix:'CT',label:'Count'}
+  count:{col:'ma_counts',prefix:'CT',label:'Count'},
+  // M2: a courier statement — PostEx's receipts and days DERIVED by the
+  // nightly rollup (ids of their own, no counter), TCS and Bykea TYPED
+  // (CS-27-0001) — and the collection of one or several of them (CL-27-0001).
+  cpr:{col:'ma_cpr',prefix:'CS',label:'Courier statement'},
+  collection:{col:'ma_collection',prefix:'CL',label:'Collection'}
 };
 /* The journal's kinds, in plain words (§5 "Journal"). `holder` kinds move
    money through one holder; `lines` kinds carry their own lines. */
@@ -216,7 +221,13 @@ const MA_JOURNAL_KINDS={
 const MA_EDIT_FIELDS={
   journal:['date','holder','account','payee','amount','tax','costCentre','labelKind','channel','po','article','commitmentId','commitmentPeriod','owner','lines','note','tags','attachments'],
   transfer:['date','from','to','amount','note','attachments'],
-  count:['date','counted','amount','note','attachments']
+  count:['date','counted','amount','note','attachments'],
+  // A typed statement (kind 'statement'): its totals are named with its
+  // lines, so an edit that moves money says so. Courier and kind are identity.
+  cpr:['date','ref','lines','amount','net','grossCod','fees','taxes','parcels','note','tags','attachments'],
+  // A collection: what it covers (refs, covers, expected) and its courier are
+  // identity — void it and record it again.
+  collection:['date','holder','amount','collectedBy','note','tags','attachments']
 };
 /* What an edit may change WITHOUT naming it in its row, because the builder
    derives it again — maEditOk's `derived` in firestore.rules, held equal by
@@ -357,7 +368,19 @@ const MA_DEFAULT_SETTINGS={
   backupWatchHours:36,
   share:{defaultDays:7},
   tax:{rates:{sales:null,services:null,withholding:null}},
-  assetThreshold:50000
+  assetThreshold:50000,
+  // M2 — the couriers. `from` is the day the nightly rollup derives PostEx's
+  // days and receipts from: the books' start unless PostEx's parcels are not
+  // complete from then (never before historyFrom). Per courier: how many days
+  // after a statement the cash is usually collected, how many days an
+  // uncollected one waits before Needs attention names it, whether its GST
+  // is claimable (1160) or a cost (not, until the accountant says), and how
+  // far back before `from` a receipt is still offered for a collection.
+  couriers:{from:'2026-07-01',runWatchHours:36,
+    postex:{collectLagDays:1,uncollectedDays:3,taxClaimable:false,beforeWindowDays:31},
+    tcs:{collectLagDays:0,uncollectedDays:7,taxClaimable:false,beforeWindowDays:0},
+    bluex:{collectLagDays:0,uncollectedDays:0,taxClaimable:false,beforeWindowDays:0},
+    bykea:{collectLagDays:2,uncollectedDays:7,taxClaimable:false,beforeWindowDays:0}}
 };
 function maSettings(stored){
   const s=JSON.parse(JSON.stringify(MA_DEFAULT_SETTINGS));
@@ -389,6 +412,19 @@ function maSettings(stored){
   if(stored.share&&num(stored.share.defaultDays,1,90))s.share.defaultDays=Math.round(stored.share.defaultDays);
   if(stored.tax&&stored.tax.rates&&typeof stored.tax.rates==='object')
     ['sales','services','withholding'].forEach(k=>{const v=stored.tax.rates[k];s.tax.rates[k]=num(v,0,100)?v:null;});
+  const c=stored.couriers;
+  if(c&&typeof c==='object'){
+    if(maIsDay(c.from))s.couriers.from=c.from;
+    if(num(c.runWatchHours,1,720))s.couriers.runWatchHours=c.runWatchHours;
+    Object.keys(s.couriers).forEach(k=>{
+      const d=s.couriers[k],v=c[k];
+      if(!d||typeof d!=='object'||!v||typeof v!=='object')return;
+      ['collectLagDays','uncollectedDays','beforeWindowDays'].forEach(f=>{if(Number.isInteger(v[f])&&v[f]>=0&&v[f]<=366)d[f]=v[f];});
+      if(typeof v.taxClaimable==='boolean')d.taxClaimable=v.taxClaimable;
+    });
+  }
+  // The rollup never derives income before the books start.
+  if(s.couriers.from<s.historyFrom)s.couriers.from=s.historyFrom;
   return s;
 }
 
@@ -675,6 +711,9 @@ function maTransferNeedsConfirm(d){
    touches the drawer is confirmed only once Raees has recorded it in Store
    Accounts. '' for every other transfer. */
 function maConfirmWarning(d){
+  // A collection into the drawer (Bykea's, M2): Raees records it as a cash
+  // in in Store Accounts first, for the same reason.
+  if(d&&d.dt==='collection'&&maIsDrawer(d.holder))return 'Confirm '+(d.no||'this collection')+' only once Raees has recorded this '+maRs(d.amount)+' as a cash in in Store Accounts. The drawer’s balance is read from there — confirming before he records it counts the money twice, or not at all.';
   if(!d||d.dt!=='transfer'||!(maIsDrawer(d.from)||maIsDrawer(d.to)))return '';
   return 'Confirm '+(d.no||'this transfer')+' only once Raees has recorded this '+maRs(d.amount)+' in Store Accounts. The drawer’s balance is read from there — confirming before he records it counts the money twice, or not at all.';
 }
@@ -737,6 +776,12 @@ function maBuildDoc(dt,input,meta,idx,settings){
     doc.difference=Number.isInteger(doc.counted)?doc.counted-doc.bookBalance:NaN;
     doc.amount=Number.isInteger(doc.difference)?Math.abs(doc.difference):0;
     doc.tax=maTaxBlank();
+  }else if(dt==='cpr'){
+    // A TYPED statement (TCS, Bykea): PostEx's receipts and days are derived
+    // by the rollup (maCourierDocs) and never built here.
+    _maBuildStatement(doc,i,s,rupees);
+  }else if(dt==='collection'){
+    _maBuildCollection(doc,i,m,s,rupees);
   }
   return doc;
 }
@@ -782,7 +827,10 @@ function maIsOpening(d){return !!d&&d.dt==='journal'&&d.kind==='opening'&&d.stat
    document posts NOTHING — "pending never counts" (§6). */
 function maPost(doc,idx,settings){
   const s=settings||MA_DEFAULT_SETTINGS;
-  if(!doc||doc.status==='void'||doc.status==='pending')return [];
+  // `before` (a PostEx receipt dated before the books start, kept only so a
+  // collection can name it) and `undated` (a receipt PostEx gave no date)
+  // post nothing either (M2).
+  if(!doc||doc.status==='void'||doc.status==='pending'||doc.status==='before'||doc.status==='undated')return [];
   const out=[];
   const base={
     book:doc.book||'groovy',
@@ -791,7 +839,8 @@ function maPost(doc,idx,settings){
     status:doc.historical?'historical':'posted',
     source:doc.source||'manual',by:doc.by||null,
     evidence:(doc.attachments||[]).length,tags:doc.tags||[],
-    party:doc.party||null,partyKind:doc.partyKind||null,payee:doc.payee||''
+    party:doc.party||null,partyKind:doc.partyKind||null,payee:doc.payee||'',
+    courier:doc.courier||null
   };
   const push=(code,dr,cr,extra)=>{
     dr=Math.round(dr||0);cr=Math.round(cr||0);
@@ -851,6 +900,10 @@ function maPost(doc,idx,settings){
     const d=Math.round(doc.difference||0);
     if(d>0){push(doc.holder,d,0);push('9030',0,d);}
     else if(d<0){push('9030',-d,0);push(doc.holder,0,-d);}
+  }else if(doc.dt==='cpr'){
+    _maPostCpr(doc,push,s);
+  }else if(doc.dt==='collection'){
+    _maPostCollection(doc,push,s);
   }
   return out;
 }
@@ -901,16 +954,20 @@ function maHolderRows(idx,lines,docs,opts){
   opts=opts||{};
   const s=opts.settings||MA_DEFAULT_SETTINGS;
   const sums=maSumLines(lines,l=>(!opts.asOf||l.date<=opts.asOf)&&l.book!=='savings');
-  const pend=(docs||[]).filter(d=>d.dt==='transfer'&&d.status==='pending');
+  // A collection waiting for its receiver counts like a transfer waiting to
+  // arrive (M2): pendingIn of its holder — so the V4 rule in maHolderCash
+  // takes one into the drawer out of the drawer's Store Accounts figure.
+  const pend=(docs||[]).filter(d=>(d.dt==='transfer'||d.dt==='collection')&&d.status==='pending');
+  const into=(p,code)=>p.dt==='collection'?p.holder===code:p.to===code;
   const counts=(docs||[]).filter(d=>d.dt==='count'&&d.status!=='void');
   const lastMove={};(lines||[]).forEach(l=>{if(l.holder&&l.account===l.holder&&(!lastMove[l.holder]||l.date>lastMove[l.holder]))lastMove[l.holder]=l.date;});
-  return maMoneyAccounts(idx,{all:true}).filter(a=>a.active||sums[a.code]||pend.some(p=>p.from===a.code||p.to===a.code)).map(a=>{
+  return maMoneyAccounts(idx,{all:true}).filter(a=>a.active||sums[a.code]||pend.some(p=>p.from===a.code||into(p,a.code))).map(a=>{
     const ledger=maBal(a,sums[a.code]);
     const mirror=s.mirrors&&s.mirrors[a.code]?s.mirrors[a.code]:null;
     const mb=opts.mirrorBalances||{};
     const mirrorOk=!mirror||Number.isInteger(mb[a.code]);
     const balance=mirror?(mirrorOk?mb[a.code]:null):ledger;
-    const pendingIn=pend.filter(p=>p.to===a.code).reduce((t,p)=>t+(p.amount||0),0);
+    const pendingIn=pend.filter(p=>into(p,a.code)).reduce((t,p)=>t+(p.amount||0),0);
     const pendingOut=pend.filter(p=>p.from===a.code).reduce((t,p)=>t+(p.amount||0),0);
     const lc=counts.filter(c=>c.holder===a.code).sort((x,y)=>x.date<y.date?1:x.date>y.date?-1:(y.ts||0)-(x.ts||0))[0]||null;
     return {code:a.code,name:a.name,person:a.person||null,holderKind:a.holderKind,active:a.active,mirror,mirrorOk,
@@ -1394,7 +1451,10 @@ function maCalendar(o){
       byDay[d].out+=left;
     });
   });
-  (o.inflows||[]).forEach(x=>{if(byDay[x.day]){byDay[x.day].events.push(Object.assign({dir:'in'},x));byDay[x.day].in+=x.amount||0;}});
+  // An inflow `spendable:false` (a TCS credit: into the TCS account, not
+  // spendable until moved to MCB — M2) is shown on its day and never added
+  // to what the holders can pay with.
+  (o.inflows||[]).forEach(x=>{if(byDay[x.day]){byDay[x.day].events.push(Object.assign({dir:'in'},x));if(x.spendable!==false)byDay[x.day].in+=x.amount||0;}});
   let bal=Math.round(o.start||0);const unfunded=[];
   days.forEach(c=>{bal+=c.in-c.out;c.projected=bal;if(bal<0)unfunded.push(c.day);});
   // `complete:false` — the start left out a holder that could not be read
@@ -1513,6 +1573,8 @@ function maValidate(doc,ctx){
         else if(MA_UNLABELLED.indexOf(a.code)>=0)flag('unlabelled','Not named yet — it waits in the Unlabelled queue until it is.','account');
         else if(k==='money_out'&&a.type==='revenue'&&!doc.note)flag('account.side','Money out booked to an income account — a refund? Say so in the note.','account');
         else if(k==='money_in'&&(a.type==='expense'||a.type==='cogs')&&!doc.note)flag('account.side','Money in booked to a cost — a refund from a vendor? Say so in the note.','account');
+        // Online COD income is booked from the couriers' own records (M2).
+        if(k==='money_in'&&a&&a.code==='4010')flag('account.derived','Online — COD is booked from the couriers’ records (PostEx’s days, TCS and Bykea statements) — this adds to it.','account');
       }
       if(def.payee){
         const p=partyOk();
@@ -1565,6 +1627,10 @@ function maValidate(doc,ctx){
           if(!Number.isInteger(l.amount)||l.amount<=0){refuse('line.amount','Line '+(i+1)+': whole rupees above zero.','lines');bad=true;return;}
           if(l.side==='cr')cr+=l.amount;else dr+=l.amount;
           if(a.code==='3090')flag('opening.self','Line '+(i+1)+': 3090 balances the opening by itself — no need to name it.','lines');
+          // PostEx opens from its own parcels (the rollup's PX-OPEN, M2): a
+          // line here on 1120 or 1121 adds to it. Blue-Ex's 1123 is typed
+          // here on purpose — it has no feed — so it is never flagged.
+          if(MA_OPENING_DERIVED.indexOf(a.code)>=0)flag('opening.derived','Line '+(i+1)+': '+a.name+' opens from PostEx’s own parcels (the nightly rollup) — a line here adds to it.','lines');
         }else{
           const d=l.dr||0,x=l.cr||0;
           if(!Number.isInteger(d)||!Number.isInteger(x)||d<0||x<0||(d>0)===(x>0)){refuse('line.side','Line '+(i+1)+': a debit OR a credit, whole rupees.','lines');bad=true;return;}
@@ -1630,6 +1696,10 @@ function maValidate(doc,ctx){
         if(doc.difference<0)floorCheck();
       }
     }
+  }else if(doc.dt==='cpr'){
+    _maValidateStatement(doc,c,s,{refuse,flag,lockedQ});
+  }else if(doc.dt==='collection'){
+    _maValidateCollection(doc,c,s,{refuse,flag,lockedQ,holderOk,amountOk,acc});
   }
   // Editing: a reason, and identity never changes (§31, §6)
   if(c.before){
@@ -1656,6 +1726,8 @@ function maValidate(doc,ctx){
       }else if(same('to')&&maTransferConfirm(doc.from,doc.to,null,c.before.by).pending)
         refuse('edit.route','That route waits to be confirmed, and an edit cannot start a confirmation — void it and record it again.','from');
     }
+    if(c.before.dt==='collection'&&doc.dt==='collection')_maCollectionEditIssues(c.before,doc,{refuse});
+    if(c.before.dt==='cpr'&&doc.dt==='cpr')_maStatementEditIssues(c.before,doc,c,{refuse});
     // A count is of one holder: that is what it IS (money M4).
     if(c.before.dt==='count'&&(c.before.holder||null)!==(doc.holder||null))refuse('edit.holder','A count cannot change which holder was counted — void it and count again.','holder');
   }
@@ -1675,6 +1747,8 @@ function maVoidIssues(doc,reason,ctx){
   const closes=c.closes||[];
   if(maIsDay(doc.date)&&closes.some(x=>x&&x.quarter===maQuarterOf(doc.date,s.fiscalYearStart)&&x.locked===true&&!x.reopenedAt))
     out.push({rule:'void.closed',level:'refuse',message:'It sits in a closed quarter.'});
+  if(doc.dt==='cpr'&&doc.derived)out.push({rule:'void.derived',level:'refuse',message:'PostEx’s receipts and days are the nightly rollup’s — it voids one when PostEx no longer reports it. Dispute it instead.'});
+  else if(doc.dt==='cpr'){const by=maCollectionsOf(c.docs,doc.id);if(by.length)out.push({rule:'void.collected',level:'refuse',message:by.map(x=>x.no||x.id).join(', ')+' collected it — void '+(by.length>1?'those':'that')+' first.'});}
   if(doc.dt==='count'&&(c.docs||[]).some(d=>d.dt==='count'&&d.holder===doc.holder&&d.status!=='void'&&d.id!==doc.id&&(d.date>doc.date||(d.date===doc.date&&(d.ts||0)>(doc.ts||0)))))
     out.push({rule:'void.count_later',level:'flag',message:'A later count of this holder was taken against a book that included this one.'});
   return out;
@@ -1762,9 +1836,9 @@ function maApplyVoid(doc,meta){
    person can act on. */
 function maConfirmPatch(doc,who,meta,ctx){
   const m=meta||{};
-  if(!doc||doc.status!=='pending')return {error:'Only a pending transfer is confirmed.'};
+  if(!doc||doc.status!=='pending')return {error:'Only a pending transfer or collection is confirmed.'};
   const locked=maQuarterLocked(doc,ctx);
-  if(locked)return {error:locked+' is closed — a transfer dated in it cannot be confirmed until an owner reopens the quarter.'};
+  if(locked)return {error:locked+' is closed — a '+(doc.dt==='collection'?'collection':'transfer')+' dated in it cannot be confirmed until an owner reopens the quarter.'};
   if(who===doc.confirmBy)return {patch:{status:'posted',confirmedBy:who,confirmedAt:m.at||0,confirmVia:'app'}};
   if(doc.confirmPaper&&MA_OWNERS.indexOf(who)>=0)return {patch:{status:'posted',confirmedBy:who,confirmedAt:m.at||0,confirmedFor:doc.confirmBy,confirmVia:'paper'}};
   return {error:'Only '+(doc.confirmBy||'the receiver')+' can confirm this.'};
@@ -1794,7 +1868,11 @@ function maUnlabelled(docs,idx,settings){
    is a judgement about the world and waits for an owner's review. */
 const _maAnswered={
   'evidence.missing':d=>maAttachList(d.attachments).length>0,
-  'transfer.note':d=>maAttachList(d.attachments).length>0||!!maStr(d.note)
+  'transfer.note':d=>maAttachList(d.attachments).length>0||!!maStr(d.note),
+  // M2, decision 3: a collection or statement saved without its receipt
+  // while attachments were off is answered by attaching it.
+  'collection.receipt':d=>maAttachList(d.attachments).length>0,
+  'statement.attach':d=>maAttachList(d.attachments).length>0
 };
 function maLiveFlags(d){
   return (d&&Array.isArray(d.flags)?d.flags:[]).filter(f=>!(f&&_maAnswered[f.rule]&&_maAnswered[f.rule](d)));
@@ -1893,13 +1971,14 @@ function maNeedsAttention(o){
   // Transfers waiting to be confirmed — "by you" to the one who confirms
   // it, and the action says Confirm only to someone who can (QA F05): for
   // anyone else it opens the transfer, which is all it ever did.
-  (o.docs||[]).filter(d=>d.dt==='transfer'&&d.status==='pending').forEach(d=>{
+  (o.docs||[]).filter(d=>(d.dt==='transfer'||d.dt==='collection')&&d.status==='pending').forEach(d=>{
     const age=maIsDay(d.date)?maDaysBetween(d.date,today):0;
     const mine=!!o.viewer&&d.confirmBy===o.viewer;
     const can=!!o.viewer&&!maConfirmPatch(d,o.viewer,{at:0},{closes:o.closes||[],settings:s}).error;
     // "handed over", not "handed to": out of the drawer to the bank, Raees
     // confirms money that LEFT his hands (maTransferConfirm).
-    if(age>=s.pendingWatchDays)add('watch',maRs(d.amount)+' handed over on '+dayL(d.date)+' is waiting to be confirmed by '+(mine?'you':_maCap(d.confirmBy))+'.','Pending never counts: it is in neither holder until confirmed.',{label:can?'Confirm':'Open',go:'doc',ref:d.id,dt:'transfer'},d.amount);
+    const what=d.dt==='collection'?maRs(d.amount)+' collected from '+((MA_COURIERS[d.courier]||{}).name||'a courier')+' on '+dayL(d.date):maRs(d.amount)+' handed over on '+dayL(d.date);
+    if(age>=s.pendingWatchDays)add('watch',what+' is waiting to be confirmed by '+(mine?'you':_maCap(d.confirmBy))+'.','Pending never counts: it is in neither holder until confirmed.',{label:can?'Confirm':'Open',go:'doc',ref:d.id,dt:d.dt},d.amount);
   });
   // Cash holders nobody has counted lately
   const stale=(o.holders||[]).filter(h=>h.active&&!h.mirror&&h.holderKind==='cash'&&h.balance&&(!h.lastCount||maDaysBetween(h.lastCount.date,today)>s.countEveryDays));
@@ -1929,6 +2008,9 @@ function maNeedsAttention(o){
     else if(st==='done'){if(over)add('concern','The last backup ran '+ago(age)+' ago.','ma_backups, the latest run.',{label:'Open',go:'backups'},9e8);}
     else if(over)add('concern','The backup that started '+ago(age)+' ago has not finished.','ma_backups, the latest run: still '+(st==='unknown'?'without a result':st)+' after '+s.backupWatchHours+' hours.',{label:'Open',go:'backups'},9e8);
   }
+  // The couriers (M2): uncollected statements, collections without a
+  // receipt or off their CPRs, the nightly rollup, unread collections.
+  maCourierConcerns(o).forEach(x=>out.push(x));
   out.sort((a,b)=>(a.state===b.state?0:a.state==='concern'?-1:1)||b.weight-a.weight);
   return out;
 }
@@ -1952,16 +2034,25 @@ function maDocTitle(doc,idx){
   if(doc.dt==='journal'){const k=MA_JOURNAL_KINDS[doc.kind];return k?k.label:'Journal';}
   if(doc.dt==='transfer')return 'Transfer'+(idx?' '+(maAcc(idx,doc.from)||{name:doc.from}).name.replace(/^Cash — /,'')+' → '+(maAcc(idx,doc.to)||{name:doc.to}).name.replace(/^Cash — /,''):'');
   if(doc.dt==='count')return 'Count'+(idx?' · '+(maAcc(idx,doc.holder)||{name:doc.holder}).name:'');
+  if(doc.dt==='cpr'){
+    const c=(MA_COURIERS[doc.courier]||{name:doc.courier||'Courier'}).name;
+    if(doc.kind==='statement')return c+' statement'+(doc.ref?' '+doc.ref:'');
+    if(doc.kind==='day')return c+' · delivered '+(maIsDay(doc.date)?maDayLabel(doc.date):'');
+    if(doc.kind==='opening')return c+' · owed when the books started';
+    return c+' CPR '+(doc.ref||doc.no||'');
+  }
+  if(doc.dt==='collection')return 'Collection · '+(MA_COURIERS[doc.courier]||{name:doc.courier||'courier'}).name;
   return doc.dt;
 }
 function maDocText(doc,idx,partyName){
   return maNorm([doc.no,maDocTitle(doc,idx),partyName,doc.payee,doc.note,doc.date,
     doc.account&&maAccLabel(idx,doc.account),doc.holder&&maAccLabel(idx,doc.holder),
-    doc.from&&maAccLabel(idx,doc.from),doc.to&&maAccLabel(idx,doc.to),(doc.tags||[]).join(' ')].join(' '));
+    doc.from&&maAccLabel(idx,doc.from),doc.to&&maAccLabel(idx,doc.to),doc.ref,doc.collectedBy,
+    doc.refs&&Array.isArray(doc.refs.cprNos)?(doc.covers||[]).map(c=>c&&c.no).join(' '):'',(doc.tags||[]).join(' ')].join(' '));
 }
 
 /* ── The audit trail (§29) — one row per thing that happened ────────────── */
-const MA_AUDIT_ACTIONS=['post','edit','void','confirm','review','party','terms','rate','item','commitment','settings','chart','export','share','revoke','enter','relock','attach','download','backup'];
+const MA_AUDIT_ACTIONS=['post','edit','void','confirm','review','party','terms','rate','item','commitment','settings','chart','export','share','revoke','enter','relock','attach','download','backup','dispute','rollup'];
 function maAuditRow(action,target,meta){
   const m=meta||{};
   return {action:MA_AUDIT_ACTIONS.indexOf(action)>=0?action:'post',
@@ -2244,6 +2335,10 @@ function maShareState(sh,nowMs){
    as a sheet. Every ma_* collection the rules let an owner read. */
 const MA_BOOK_COLS=['ma_settings','ma_accounts','ma_sv_accounts','ma_parties','ma_items','ma_commitments','ma_counters',
   'ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares','ma_feedback'];
+// ma_cpr, ma_collection and ma_runs (M2.3) join this list with the rules
+// piece that lets an owner read them: until those rules are published a read
+// of them is refused, and ma_cpr/ma_collection would then mark every
+// download incomplete.
 // The postings and the trial balance are built from these; without one of
 // them they are not the whole book, and they say so.
 const _maBookCore=['ma_settings','ma_accounts','ma_journal','ma_transfer','ma_counts'];
@@ -2277,7 +2372,8 @@ function maBooksSheets(o){
   const s=maSettings(main?main.data:null);
   const idx=maChartIndex(maChart('groovy',of('ma_accounts')));
   const docs=of('ma_journal').map(d=>Object.assign({dt:'journal'},d)).concat(
-    of('ma_transfer').map(d=>Object.assign({dt:'transfer'},d)),of('ma_counts').map(d=>Object.assign({dt:'count'},d)));
+    of('ma_transfer').map(d=>Object.assign({dt:'transfer'},d)),of('ma_counts').map(d=>Object.assign({dt:'count'},d)),
+    of('ma_cpr').map(d=>Object.assign({dt:'cpr'},d)),of('ma_collection').map(d=>Object.assign({dt:'collection'},d)));
   const lines=maPostAll(docs,idx,s).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.doc&&a.doc.no||'').localeCompare(String(b.doc&&b.doc.no||'')));
   const parties={};of('ma_parties').forEach(p=>{parties[p.id]=p.name;});
   const broken=failed.filter(f=>_maBookCore.indexOf(f.col)>=0).map(f=>f.col);
@@ -2800,6 +2896,479 @@ function maCprDerive(parcels,opts){
   return out;
 }
 
+/* ── Couriers in the books (M2.3) — statements, collections, postings ─────
+   What the rollup derives (maCprDerive, above) becomes documents here, and
+   those documents — and the owners' typed statements and collections — post.
+   MASTER_ACCOUNTS_PLAN.md §5, §6, §8, and the owners' decisions of 29 Sept
+   2026: PostEx income is booked on the day PostEx marks a parcel delivered,
+   its delivery fee and tax as costs; a return's reversal fee and tax are
+   costs (5070, the plan's account); the books start on `couriers.from`.
+
+   ma_cpr holds two families. DERIVED (derived:true, written only by the
+   nightly rollup): a PostEx `day`, the PostEx `opening`, and one document
+   per PostEx receipt (upfront | reserve | mixed) — status posted, or
+   `before` (dated before the books start, kept only so a collection can
+   name it: 30 June 2026 was a Tuesday, a CPR day) or `undated`. TYPED
+   (kind 'statement', CS-27-0001): a TCS or Bykea statement, income booked
+   on each line's own day. ma_collection holds the cash counted against one
+   or several of them (CL-27-0001), with a SNAPSHOT of what it covered, so a
+   collection posts from itself alone and a receipt that changes after it
+   was collected is seen, never silently absorbed. */
+const MA_OPENING_DERIVED=['1120','1121'];          // PostEx opens from its parcels; Blue-Ex's 1123 is typed on the opening journal
+const MA_COURIER_IDS=Object.keys(MA_COURIERS);
+const MA_STATEMENT_COURIERS=['tcs','bykea'];      // PostEx is never typed (§3 #5); Blue-Ex opens on the opening journal
+const MA_CPR_RECEIPT_KINDS=['upfront','reserve','mixed'];
+const MA_CPR_KINDS=['day','opening','upfront','reserve','mixed','statement'];
+const MA_CL_MAX_COVERS=40;
+const MA_ST_MAX_LINES=200;
+/* A collection that waits for — or was confirmed by — someone keeps what
+   was confirmed (the transfer's F6 rule): its holder, amount and day. */
+const MA_CL_LOCKED=['holder','amount','date'];
+/* All an owner may change on a DERIVED document; firestore.rules mirrors it. */
+const MA_DERIVED_OWNER_FIELDS=['reviewedAt','reviewedBy','dispute'];
+const MA_DISPUTE_STATES=['open','resolved'];
+const MA_ROLLUP_BY='ma-rollup';
+const MA_ROLLUP_NAME='Nightly courier rollup';
+const MA_CPR_HISTORY_MAX=50;
+/* A derived document's fields that move what it posts: a change clears an
+   owner's review (they reviewed the old figures). */
+const MA_CPR_FIGURES=['date','status','kind','amount','net','parts','delivered','returned','grossCod','deliveryFee','deliveryTax','reversalFee','reversalTax','tax','openAt'];
+/* Kept by the rollup across a rewrite, never compared. */
+const _maCprKeep=['id','sig','rev','edits','ts','reviewedAt','reviewedBy','dispute'];
+
+function maCourierAcc(courier){const c=MA_COURIERS[courier];return c?c.accounts:null;}
+/* The account a collection of this courier credits: PostEx's issued CPRs
+   (1121), every other courier's receivable. */
+function maCollectReceivable(courier){const a=maCourierAcc(courier);return a?(a.statement||a.receivable):null;}
+/* Tax the courier charged, as its own figure (no rate to check it by). */
+function _maGivenTax(amount,claimable){return {kind:amount?'services':'none',rate:null,inclusive:false,claimable:!!claimable,amount:Math.round(amount||0)};}
+function _maPeriodOf(day,s){
+  if(!maIsDay(day))return {month:'',quarter:'',fy:'',historical:false};
+  const p=maPeriodLabels(day,s.fiscalYearStart);return {month:p.month,quarter:p.quarter,fy:p.fy,historical:day<s.goLive};
+}
+/* A posting line dated on another day than its document (a statement line,
+   a collection's opening pair). */
+function _maAt(day,s){const p=_maPeriodOf(day,s);return {date:day,month:p.month,quarter:p.quarter,fy:p.fy,status:p.historical?'historical':'posted'};}
+function maCprCollectable(d){
+  return !!d&&d.dt==='cpr'&&(d.status==='posted'||d.status==='before')&&(MA_CPR_RECEIPT_KINDS.indexOf(d.kind)>=0||d.kind==='statement');
+}
+/* The live collections that cover a CPR or statement. */
+function maCollectionsOf(docs,cprId){
+  return (docs||[]).filter(d=>d&&d.dt==='collection'&&d.status!=='void'&&d.refs&&Array.isArray(d.refs.cprNos)&&d.refs.cprNos.indexOf(cprId)>=0);
+}
+/* Who confirms a collection: the person whose hands its holder is (MA_HANDS)
+   — the transfer rule with no "from". The recorder who IS that person has
+   confirmed by recording, except into the drawer: there Raees records the
+   cash in in Store Accounts first, and an owner confirms on paper. */
+function maCollectionConfirm(holder,recorder){
+  const who=maHandsOf(holder);
+  if(!who||(who===recorder&&!maIsDrawer(holder)))return {pending:false,confirmBy:null,paper:false};
+  return {pending:true,confirmBy:who,paper:MA_OWNERS.indexOf(who)<0};
+}
+function maCollectionNeedsConfirm(d){
+  return !!(d&&d.dt==='collection'&&(d.confirmBy||maCollectionConfirm(d.holder,d.by).pending));
+}
+
+/* ── Building ─────────────────────────────────────────────────────────── */
+function _maBuildStatement(doc,i,s,rupees){
+  doc.kind='statement';doc.derived=false;
+  doc.courier=maStr(i.courier,20);doc.ref=maStr(i.ref,60);
+  doc.costCentre='online';doc.channel='online_cod';doc.party=null;
+  const num=v=>{const n=typeof v==='number'?v:Number(String(v===undefined||v===null||v===''?'NaN':v).trim());return Number.isFinite(n)?n:NaN;};
+  doc.lines=(Array.isArray(i.lines)?i.lines:[]).slice(0,MA_ST_MAX_LINES+1).map(l=>{
+    const x=l||{};const o={date:maStr(x.date,10),ref:maStr(x.ref,60),parcels:num(x.parcels),returned:!!x.returned,
+      cod:x.returned?0:rupees(x.cod||0),fee:rupees(x.fee||0),tax:rupees(x.tax||0)};
+    if(maStr(x.memo,200))o.memo=maStr(x.memo,200);
+    return o;
+  });
+  const sum=f=>doc.lines.reduce((t,l)=>t+(Number.isFinite(l[f])?l[f]:0),0);
+  doc.parcels=sum('parcels');doc.grossCod=sum('cod');doc.fees=sum('fee');doc.taxes=sum('tax');
+  doc.net=doc.grossCod-doc.fees-doc.taxes;doc.amount=doc.grossCod;
+  const cs=(s.couriers&&s.couriers[doc.courier])||{};
+  doc.tax=_maGivenTax(doc.taxes,cs.taxClaimable);
+}
+function _maBuildCollection(doc,i,m,s,rupees){
+  doc.courier=maStr(i.courier,20);doc.holder=maStr(i.holder,8);doc.amount=rupees(i.amount);
+  doc.collectedBy=maStr(i.collectedBy,60);doc.party=null;doc.tax=maTaxBlank();
+  const ids=[];(Array.isArray(i.cprNos)?i.cprNos:[]).forEach(x=>{const v=maStr(x,200);if(v&&ids.indexOf(v)<0)ids.push(v);});
+  doc.refs={cprNos:ids};
+  // The snapshot: kept as it is on an edit (meta.covers), else read off the
+  // documents named — never re-read from today's figures behind an edit.
+  if(Array.isArray(m.covers))doc.covers=maClone(m.covers);
+  else doc.covers=ids.map(id=>{
+    const d=(m.cprs||[]).find(x=>x&&x.id===id)||null;
+    const c={id,no:d?String(d.no||''):'',date:d?String(d.date||''):'',net:d&&Number.isInteger(d.net)?d.net:0};
+    if(d&&d.status==='before'&&maIsDay(d.openAt))c.openAt=d.openAt;
+    return c;
+  });
+  const legacy=(MA_COURIERS[doc.courier]||{}).cycle==='legacy';
+  doc.expected=legacy?(Number.isInteger(doc.amount)?doc.amount:0):doc.covers.reduce((t,c)=>t+(Number.isInteger(c.net)?c.net:0),0);
+  doc.difference=Number.isInteger(doc.amount)?doc.amount-doc.expected:NaN;
+  const cf=maCollectionConfirm(doc.holder,m.by);
+  doc.status=cf.pending?'pending':'posted';doc.confirmBy=cf.confirmBy;doc.confirmPaper=cf.paper;
+}
+
+/* ── Posting ──────────────────────────────────────────────────────────── */
+function _maPostCpr(doc,push,s){
+  const A=maCourierAcc(doc.courier);if(!A)return;
+  const claim=!!(doc.tax&&doc.tax.claimable);
+  const charge=(costAcc,fee,tax,ex)=>{
+    push(costAcc,fee,0,ex);
+    push(claim?'1160':costAcc,tax,0,Object.assign({taxKind:'services'},ex||{}));
+    push(A.receivable,0,(fee||0)+(tax||0),ex);
+  };
+  const r=v=>Math.round(Number(v)||0);
+  if(doc.kind==='day'){
+    const d=doc.delivered||{},x=doc.returned||{};
+    push(A.receivable,r(d.cod),0);push(A.revenue,0,r(d.cod));
+    charge(A.fees,r(d.fee),r(d.tax));
+    charge(A.reversals,r(x.fee),r(x.tax));
+  }else if(doc.kind==='opening'){
+    push(A.receivable,r(doc.amount),0);push('3090',0,r(doc.amount));
+  }else if(MA_CPR_RECEIPT_KINDS.indexOf(doc.kind)>=0){
+    push(A.statement||A.receivable,r(doc.net),0);push(A.receivable,0,r(doc.net));
+  }else if(doc.kind==='statement'){
+    (doc.lines||[]).forEach(l=>{
+      if(!maIsDay(l.date))return;
+      const ex=Object.assign(_maAt(l.date,s),l.memo?{memo:l.memo}:{});
+      if(!l.returned){push(A.receivable,r(l.cod),0,ex);push(A.revenue,0,r(l.cod),ex);charge(A.fees,r(l.fee),r(l.tax),ex);}
+      else charge(A.reversals,r(l.fee),r(l.tax),ex);
+    });
+  }
+}
+function _maPostCollection(doc,push,s){
+  const R=maCollectReceivable(doc.courier);if(!R)return;
+  const a=Math.round(doc.amount||0),e=Math.round(doc.expected||0);
+  push(doc.holder,a,0);push(R,0,e);
+  if(a<e)push('9030',e-a,0);else if(a>e)push('9030',0,a-e);
+  // A receipt dated before the books start, collected after they did, was
+  // still to collect on the first day: its opening pair, on that day.
+  (doc.covers||[]).forEach(c=>{
+    if(!c||!maIsDay(c.openAt))return;
+    const ex=Object.assign(_maAt(c.openAt,s),{memo:'Still to collect when the books started — '+(c.no||c.id)});
+    push(R,Math.round(c.net||0),0,ex);push('3090',0,Math.round(c.net||0),ex);
+  });
+}
+
+/* ── Validating ───────────────────────────────────────────────────────── */
+/* Decision 3 (29 Sept 2026): refused once attachments are on (ma-attach's
+   state 'signed' or 'public'); saved and flagged while they are off or the
+   state could not be asked — it waits on Needs attention until attached. */
+function _maAttachRule(doc,c,rule,what,h){
+  if(maAttachList(doc.attachments).length)return;
+  if(c.attach==='signed'||c.attach==='public')h.refuse(rule,'Attach '+what+' — attachments are on, so it is required.','attachments');
+  else h.flag(rule,'No '+what+' attached — '+(c.attach==='not_configured'?'attachments are off (not set up)':'whether attachments are on could not be checked')+'. It waits on Needs attention until one is.','attachments');
+}
+function _maValidateStatement(doc,c,s,h){
+  if(doc.derived||doc.kind!=='statement'){h.refuse('cpr.derived','PostEx’s receipts and days are derived by the nightly rollup — they are never typed.');return;}
+  if(MA_STATEMENT_COURIERS.indexOf(doc.courier)<0){h.refuse('statement.courier','A typed statement is TCS’s or Bykea’s — PostEx’s come from its parcels, Blue-Ex opens on the opening balance.','courier');return;}
+  const L=doc.lines||[];
+  if(!L.length)h.refuse('statement.lines','Add the statement’s lines — one per parcel, or per day.','lines');
+  else if(L.length>MA_ST_MAX_LINES)h.refuse('statement.lines','A statement holds at most '+MA_ST_MAX_LINES+' lines — record it in two.','lines');
+  L.slice(0,MA_ST_MAX_LINES).forEach((l,k)=>{
+    const n='Line '+(k+1)+': ';
+    if(!maIsDay(l.date))h.refuse('statement.lines',n+'pick the day it was delivered or returned.','lines');
+    else{
+      if(l.date<s.historyFrom)h.refuse('statement.lines',n+'the books start on '+maDayLabel(s.historyFrom,true)+'.','lines');
+      if(maIsDay(doc.date)&&l.date>doc.date)h.refuse('statement.lines',n+'it is after the statement’s own date.','lines');
+      if(h.lockedQ(maQuarterOf(l.date,s.fiscalYearStart)))h.refuse('statement.lines',n+maQuarterLabel(maQuarterOf(l.date,s.fiscalYearStart),s.fiscalYearStart)+' is closed.','lines');
+    }
+    if(!(Number.isInteger(l.parcels)&&l.parcels>=1))h.refuse('statement.parcels',n+'give its parcel count.','lines');
+    if(['cod','fee','tax'].some(f=>!Number.isInteger(l[f])||l[f]<0))h.refuse('statement.lines',n+'COD, fee and tax are whole rupees, zero or more.','lines');
+    if(l.returned&&l.cod)h.refuse('statement.lines',n+'a returned parcel carries no COD.','lines');
+  });
+  if(!(Number.isInteger(doc.amount)&&doc.amount>0))h.refuse('statement.amount','A statement with no COD delivered posts only costs — record it as a Money out.','lines');
+  _maAttachRule(doc,c,'statement.attach','the courier’s statement',h);
+  if(doc.ref){
+    const dup=(c.docs||[]).find(d=>d&&d.dt==='cpr'&&d.kind==='statement'&&d.courier===doc.courier&&d.status!=='void'&&d.id!==doc.id&&(!c.before||d.id!==c.before.id)&&maNorm(d.ref)===maNorm(doc.ref));
+    if(dup)h.flag('statement.ref_dup','Statement '+doc.ref+' is already recorded as '+(dup.no||dup.id)+'.','ref');
+  }
+}
+function _maValidateCollection(doc,c,s,h){
+  const C=MA_COURIERS[doc.courier];
+  if(!C){h.refuse('collection.courier','Which courier is this from?','courier');return;}
+  const legacy=C.cycle==='legacy',ids=(doc.refs&&doc.refs.cprNos)||[];
+  if(legacy&&ids.length)h.refuse('collection.covers','Blue-Ex has no statements here — its collection is against the balance it opened with.','covers');
+  if(!legacy&&!ids.length)h.refuse('collection.covers','Name the CPR'+(doc.courier==='postex'?'':' or statement')+' this cash is for.','covers');
+  if(ids.length>MA_CL_MAX_COVERS)h.refuse('collection.covers','A collection covers at most '+MA_CL_MAX_COVERS+' statements — record it in two.','covers');
+  const docs=c.docs||[];
+  const self=d=>d.id===doc.id||(c.before&&d.id===c.before.id);
+  ids.forEach(id=>{
+    const d=docs.find(x=>x&&x.dt==='cpr'&&x.id===id);
+    if(!d||!maCprCollectable(d)){h.refuse('collection.cpr_exists',(d?(d.no||id)+' cannot be collected':'That statement is not in the books ('+id+')')+' — a CPR, a receipt from before the books, or a typed statement.','covers');return;}
+    if(d.courier!==doc.courier){h.refuse('collection.mixed',(d.no||id)+' is '+((MA_COURIERS[d.courier]||{}).name||d.courier)+'’s — one collection is one courier’s cash.','covers');return;}
+    const other=maCollectionsOf(docs,id).filter(x=>!self(x));
+    if(other.length)h.refuse('collection.once',(d.no||id)+' is already collected by '+other.map(x=>x.no||x.id).join(', ')+' — void that first.','covers');
+    if(maIsDay(doc.date)&&maIsDay(d.date)&&doc.date<d.date)h.refuse('collection.date','Collected before '+(d.no||id)+' was issued ('+maDayLabel(d.date,true)+').','date');
+    if(d.status==='before'&&maIsDay(d.openAt)&&h.lockedQ(maQuarterOf(d.openAt,s.fiscalYearStart)))
+      h.refuse('collection.before_closed',(d.no||id)+' is from before the books; its quarter is closed, so it cannot join the opening now.','covers');
+  });
+  const hOk=h.holderOk(doc.holder,'holder',{dir:'arrived in',allowMirror:true});
+  if(hOk&&(doc.courier==='tcs')!==(doc.holder===C.accounts.wallet||doc.holder==='1060'))
+    h.refuse('collection.holder',doc.courier==='tcs'?'TCS credits the TCS account (1060) — moving it to MCB is a Transfer.':'Only TCS’s credits go into the TCS account.','holder');
+  const aOk=h.amountOk(doc.amount);
+  if(!legacy&&ids.length&&!(Number.isInteger(doc.expected)&&doc.expected>0))h.refuse('collection.nothing','Those statements come to '+maRs(doc.expected||0)+' — nothing to collect.','covers');
+  _maAttachRule(doc,c,'collection.receipt','the receipt',h);
+  if(aOk&&!legacy&&Number.isInteger(doc.difference)&&doc.difference){
+    const tol=Math.abs(doc.expected)*(s.courierTolerancePct||0)/100;
+    if(Math.abs(doc.difference)>tol){
+      h.flag('collection.difference','Counted '+maRs(Math.abs(doc.difference))+' '+(doc.difference<0?'less':'more')+' than '+(ids.length>1?'their':'its')+' net of '+maRs(doc.expected)+' — it waits in 9030 until explained.','amount');
+      if(!maStr(doc.note))h.refuse('collection.reason','Say why the cash differs from the net by '+maRs(doc.difference)+' (or “not known yet”).','note');
+    }
+  }
+  if(legacy&&aOk){
+    const opened=docs.some(d=>maIsOpening(d)&&(d.lines||[]).some(l=>l&&l.account===C.accounts.receivable));
+    if(!opened)h.flag('collection.bluex_opening','Recovered before Blue-Ex’s opening — record its last statement as a line on the opening balance.','amount');
+    else if(h.acc&&c.idx){const bal=maBalanceOf(c.lines||[],c.idx,C.accounts.receivable);if(doc.amount>bal)h.flag('collection.bluex_over','More than Blue-Ex still owes ('+maRs(bal)+') — check its opening.','amount');}
+    if(maIsDay(doc.date)){
+      const dup=docs.find(d=>d&&d.dt==='collection'&&d.courier===doc.courier&&d.status!=='void'&&!self(d)&&d.amount===doc.amount&&maIsDay(d.date)&&Math.abs(maDaysBetween(d.date,doc.date))<=s.duplicateDays);
+      if(dup)h.flag('duplicate','Looks like '+(dup.no||'another collection')+' — '+maRs(dup.amount)+' on '+maDayLabel(dup.date)+'.');
+    }
+  }
+  if(doc.courier==='tcs'&&maIsDay(doc.date)){
+    let first='';ids.forEach(id=>{const d=docs.find(x=>x&&x.id===id);(d&&d.lines||[]).forEach(l=>{if(maIsDay(l.date)&&(!first||l.date<first))first=l.date;});});
+    if(first&&doc.date<maDayAdd(first,(s.tcsCreditDays||0)-7))h.flag('collection.tcs_early','Credited earlier than the '+s.tcsCreditDays+' days TCS takes — its first parcel was delivered '+maDayLabel(first,true)+'.','date');
+  }
+}
+function _maCollectionEditIssues(b,d,h){
+  const ids=x=>JSON.stringify(((x.refs&&x.refs.cprNos)||[]).slice());
+  if(b.courier!==d.courier||ids(b)!==ids(d)||_maCanon(b.covers||[])!==_maCanon(d.covers||[]))
+    h.refuse('edit.covers','What a collection covers cannot change — void it and record it again.','covers');
+  if(maCollectionNeedsConfirm(b)){
+    const moved=MA_CL_LOCKED.filter(f=>_maCanon(b[f]===undefined?null:b[f])!==_maCanon(d[f]===undefined?null:d[f]));
+    if(moved.length)h.refuse('edit.confirmed',(b.status==='pending'?'It waits for '+_maCap(b.confirmBy)+' to confirm':'It was confirmed as it stands')+' — its '+moved.join(', ')+' cannot change: void it and record it again.',moved[0]);
+  }else if(b.holder!==d.holder&&maCollectionConfirm(d.holder,b.by).pending)
+    h.refuse('edit.route','That holder waits for a confirmation, and an edit cannot start one — void it and record it again.','holder');
+}
+function _maStatementEditIssues(b,d,c,h){
+  if(b.courier!==d.courier||!!b.derived!==!!d.derived)h.refuse('edit.courier','A statement cannot change its courier — void it and record the right one.','courier');
+  const by=maCollectionsOf(c.docs,b.id);
+  if(by.length&&['date','lines','amount','net'].some(f=>_maCanon(b[f]===undefined?null:b[f])!==_maCanon(d[f]===undefined?null:d[f])))
+    h.refuse('edit.collected',by.map(x=>x.no||x.id).join(', ')+' collected it as it stands — void '+(by.length>1?'those':'that')+' first.','lines');
+}
+
+/* ── The derived documents (the rollup's half) ─────────────────────────── */
+function _maYmd(day){return day.slice(2,4)+day.slice(5,7)+day.slice(8,10);}
+function _maCprFlags(issues,number){
+  return (issues||[]).filter(i=>i&&i.refs&&(i.refs.receipts||[]).indexOf(number)>=0).map(i=>({rule:i.rule,message:i.message,field:null}));
+}
+/* From maCprDerive's answer to the documents the rollup writes — PURE, so
+   the rollup, the tests and anything else build the same thing. */
+function maCourierDocs(der,settings){
+  const s=settings||MA_DEFAULT_SETTINGS,from=s.couriers.from,pe=s.couriers.postex,claim=!!pe.taxClaimable;
+  const d0=der||{},out=[];
+  const base=(id,no,kind,date,status)=>Object.assign({id,no,dt:'cpr',book:'groovy',kind,courier:'postex',derived:true,source:'postex',
+    by:MA_ROLLUP_BY,byName:MA_ROLLUP_NAME,ts:0,date:date||'',status,rev:1,edits:[],flags:[],note:'',tags:[],attachments:[],
+    costCentre:'online',channel:'online_cod',party:null},_maPeriodOf(date,s));
+  const sig=o=>'v1:'+_maHash(_maCanon(o));
+  (d0.days||[]).filter(r=>r&&maIsDay(r.day)&&r.day>=from).forEach(r=>{
+    const d=base('postex-day-'+r.day,'PX-'+_maYmd(r.day),'day',r.day,'posted');
+    d.delivered={parcels:r.delivered||0,cod:r.grossCod||0,fee:r.deliveryFee||0,tax:r.deliveryTax||0};
+    d.returned={parcels:r.returned||0,fee:r.reversalFee||0,tax:r.reversalTax||0};
+    d.amount=d.delivered.cod;
+    d.net=d.delivered.cod-d.delivered.fee-d.delivered.tax-d.returned.fee-d.returned.tax;
+    d.tax=_maGivenTax(d.delivered.tax+d.returned.tax,claim);
+    d.sig=sig([d.date,d.delivered,d.returned,d.tax]);
+    out.push(d);
+  });
+  if(d0.opening&&maIsDay(from)){
+    const o=d0.opening,d=base('postex-opening','PX-OPEN','opening',from,'posted');
+    d.amount=Math.round(o.owed||0);d.net=d.amount;d.tax=maTaxBlank();
+    d.owedParts={awaitingUpfront:o.awaitingUpfront||null,awaitingReserve:o.awaitingReserve||null};
+    d.sig=sig([d.date,d.amount]);
+    out.push(d);
+  }
+  const receipt=(c,status,extra)=>{
+    const d=base(c.id,String(c.number||''),c.kind,c.date,status);
+    d.ref=String(c.number||'');d.parts=maClone(c.parts);d.net=c.net;d.amount=c.net;d.tax=maTaxBlank();
+    ['grossCod','deliveryFee','deliveryTax','reversalFee','reversalTax','delivered','returned','settled'].forEach(k=>{if(c[k]!==undefined)d[k]=c[k];});
+    d.flags=_maCprFlags(d0.issues,c.number);
+    Object.assign(d,extra||{});
+    d.sig=sig([c.sig||[c.date,c.kind,c.parts,c.net],status,d.openAt||'',d.flags.map(f=>f.rule+':'+f.message)]);
+    return d;
+  };
+  (d0.cprs||[]).forEach(c=>{if(c&&c.id)out.push(receipt(c,maIsDay(c.date)?'posted':'undated'));});
+  const edge=maIsDay(from)?maDayAdd(from,-(pe.beforeWindowDays||0)):'';
+  ((d0.excluded&&d0.excluded.list)||[]).forEach(c=>{if(c&&c.id&&maIsDay(c.date)&&c.date>=edge&&c.date<from)out.push(receipt(c,'before',{openAt:from}));});
+  return out;
+}
+/* One stored derived document against the rollup's new one → what to do.
+   `meta` = {at, locked(quarter) → bool}. Owner fields survive a rewrite: a
+   dispute always; a review unless a figure moved. Nothing is ever written
+   into a locked quarter, and a document an owner typed at the same id is
+   never touched. → {action: none|create|update|skip, doc?, fields?, why?} */
+function maCourierMerge(stored,next,meta){
+  const m=meta||{},locked=typeof m.locked==='function'?m.locked:()=>false;
+  if(!next)return {action:'none'};
+  if(!stored){
+    if(next.quarter&&locked(next.quarter))return {action:'skip',why:'locked',quarter:next.quarter};
+    return {action:'create',doc:Object.assign({},maClone(next),{ts:m.at||0})};
+  }
+  if(!stored.derived)return {action:'skip',why:'typed'};
+  if(stored.sig===next.sig&&stored.status!=='void')return {action:'none'};
+  const lq=[stored.quarter,next.quarter].find(q=>q&&locked(q));
+  if(lq)return {action:'skip',why:'locked',quarter:lq};
+  const keys=Array.from(new Set(Object.keys(stored).concat(Object.keys(next)))).filter(k=>_maCprKeep.indexOf(k)<0).sort();
+  const fields=keys.filter(k=>_maCanon(stored[k]===undefined?null:stored[k])!==_maCanon(next[k]===undefined?null:next[k]));
+  const out=Object.assign({},maClone(next),{ts:stored.ts||0,rev:(stored.rev||1)+1});
+  const before={},after={};fields.forEach(f=>{before[f]=stored[f]===undefined?null:maClone(stored[f]);after[f]=next[f]===undefined?null:maClone(next[f]);});
+  out.edits=(Array.isArray(stored.edits)?stored.edits:[]).concat([{at:m.at||0,by:MA_ROLLUP_BY,byName:MA_ROLLUP_NAME,reason:'PostEx records changed',fields,before,after}]).slice(-MA_CPR_HISTORY_MAX);
+  if(stored.dispute!==undefined)out.dispute=maClone(stored.dispute);
+  const figure=fields.some(f=>MA_CPR_FIGURES.indexOf(f)>=0);
+  if(!figure){['reviewedAt','reviewedBy'].forEach(k=>{if(stored[k]!==undefined)out[k]=stored[k];});}
+  else if(stored.reviewedAt!==undefined||stored.reviewedBy!==undefined){out.reviewedAt=null;out.reviewedBy=null;}
+  return {action:'update',doc:out,fields};
+}
+/* A stored derived document the data no longer produces: voided, never
+   deleted — unless a live collection covers it or its quarter is locked,
+   when it stays and is named. `meta` = {at, locked, docs}. */
+function maCourierGone(stored,meta){
+  const m=meta||{},locked=typeof m.locked==='function'?m.locked:()=>false;
+  if(!stored||!stored.derived||stored.status==='void')return {action:'none'};
+  if(maCollectionsOf(m.docs,stored.id).length)return {action:'skip',why:'collected'};
+  if(stored.quarter&&locked(stored.quarter))return {action:'skip',why:'locked',quarter:stored.quarter};
+  return {action:'void',doc:Object.assign({},maClone(stored),{status:'void',voidedAt:m.at||0,voidedBy:MA_ROLLUP_BY,voidedByName:MA_ROLLUP_NAME,
+    voidReason:'PostEx no longer reports it',sig:'void'})};
+}
+/* Every derived document stored against every one derived now → the run's
+   writes. `stored` may hold typed statements too; they are left alone. */
+function maCourierPlan(stored,next,meta){
+  const by={};(stored||[]).forEach(d=>{if(d&&d.id)by[d.id]=d;});
+  const seen={},plan={writes:[],skipped:[],unchanged:0,created:0,updated:0,voided:0};
+  (next||[]).forEach(n=>{
+    seen[n.id]=1;
+    const r=maCourierMerge(by[n.id]||null,n,meta);
+    if(r.action==='none')plan.unchanged++;
+    else if(r.action==='skip')plan.skipped.push({id:n.id,why:r.why,quarter:r.quarter||null});
+    else{plan.writes.push({id:n.id,action:r.action,doc:r.doc,fields:r.fields||null});plan[r.action==='create'?'created':'updated']++;}
+  });
+  Object.keys(by).forEach(id=>{
+    if(seen[id]||!by[id].derived)return;
+    const r=maCourierGone(by[id],meta);
+    if(r.action==='void'){plan.writes.push({id,action:'void',doc:r.doc});plan.voided++;}
+    else if(r.action==='skip')plan.skipped.push({id,why:r.why,quarter:r.quarter||null});
+  });
+  return plan;
+}
+/* 1120 as the books have it against what the parcels say PostEx owes now. */
+function maCourier1120Check(lines,idx,der){
+  const ledger=maBalanceOf(lines,idx,'1120');
+  const transit=der&&der.transit&&Number.isInteger(der.transit.owed)?der.transit.owed:null;
+  return {ledger1120:ledger,transit1120:transit,diff:transit===null?null:ledger-transit};
+}
+/* An owner opens or resolves a dispute on a derived document — the one
+   thing besides the review an owner may change there. */
+function maDisputePatch(doc,who,input,meta){
+  const i=input||{},m=meta||{};
+  if(!doc||doc.dt!=='cpr'||!doc.derived)return {error:'Only a PostEx receipt or day is disputed — a typed document is edited.'};
+  if(doc.status==='void')return {error:'A void document cannot be disputed.'};
+  if(MA_OWNERS.indexOf(who)<0)return {error:'Only Afnan or Ammar can dispute it.'};
+  const cur=doc.dispute||null;
+  if(i.state==='open'){
+    if(!maStr(i.reason))return {error:'Say what is wrong with it.'};
+    return {patch:{dispute:{state:'open',reason:maStr(i.reason,500),by:who,at:m.at||0}}};
+  }
+  if(i.state==='resolved'){
+    if(!cur||cur.state!=='open')return {error:'There is no open dispute to resolve.'};
+    return {patch:{dispute:Object.assign({},cur,{state:'resolved',resolvedBy:who,resolvedAt:m.at||0,note:maStr(i.note,500)})}};
+  }
+  return {error:'A dispute is opened or resolved.'};
+}
+
+/* ── What is still to collect: the calendar and Needs attention ─────────── */
+/* When the cash for a statement is expected, and whether it can be spent:
+   PostEx and Bykea at their date + the courier's collectLagDays; TCS at its
+   last line + tcsCreditDays, into the TCS account — never spendable. */
+function _maDueOf(d,s){
+  const cs=(s.couriers&&s.couriers[d.courier])||{};
+  if(d.courier==='tcs'){
+    const last=(d.lines||[]).reduce((m,l)=>maIsDay(l.date)&&l.date>m?l.date:m,'');
+    return last?{due:maDayAdd(last,s.tcsCreditDays||0),at:maDayAdd(last,s.tcsCreditDays||0),spendable:false}:null;
+  }
+  if(!maIsDay(d.date))return null;
+  return {due:d.date,at:maDayAdd(d.date,cs.collectLagDays||0),spendable:true};
+}
+function maUncollected(docs,settings){
+  const s=settings||MA_DEFAULT_SETTINGS;
+  return (docs||[]).filter(d=>d&&d.dt==='cpr'&&d.status==='posted'&&(MA_CPR_RECEIPT_KINDS.indexOf(d.kind)>=0||d.kind==='statement')
+    &&(Number(d.net)||0)>0&&!maCollectionsOf(docs,d.id).length).map(d=>Object.assign({doc:d},_maDueOf(d,s)||{})).filter(x=>x.due);
+}
+/* The calendar's courier inflows (§17): every statement not collected at
+   its expected day (a day past lands on today, late), and what PostEx owes
+   on parcels delivered and not yet on a CPR — only the UPFRONT part it will
+   pay on the next CPR day, from the rollup's transit, marked an estimate. */
+function maCourierInflows(o){
+  const s=o.settings||MA_DEFAULT_SETTINGS,today=o.today,out=[];
+  maUncollected(o.docs,s).forEach(x=>{
+    const d=x.doc,late=x.at<today;
+    out.push({day:late?today:x.at,amount:d.net,label:(MA_COURIERS[d.courier]||{name:d.courier}).name+' '+(d.kind==='statement'?'statement '+(d.no||''):'CPR '+(d.ref||d.no||'')),
+      late,due:x.at,courier:d.courier,cpr:d.id,spendable:x.spendable,wallet:!x.spendable});
+  });
+  const t=o.run&&o.run.transit&&o.run.transit.awaitingUpfront;
+  if(t&&Number.isInteger(t.amount)&&t.amount>0&&maIsDay(today)){
+    const cpr=maNextPayDay(today,s.cprDays);
+    out.push({day:maDayAdd(cpr,(s.couriers.postex||{}).collectLagDays||0),amount:t.amount,label:'PostEx — delivered, not yet on a CPR (about)',
+      estimate:true,courier:'postex',spendable:true,cprDay:cpr});
+  }
+  return out;
+}
+function _maCourierName(c){return (MA_COURIERS[c]||{name:c||'A courier'}).name;}
+/* Needs attention's courier lines (maNeedsAttention calls this). `o` adds
+   {run: ma_runs/rollup or null, missing: [collections that could not be
+   read], nowMs}. Many uncollected statements are ONE line per courier and
+   month, with a count and a total. */
+function maCourierConcerns(o){
+  const s=o.settings||MA_DEFAULT_SETTINGS,today=o.today,docs=o.docs||[],out=[];
+  const add=(state,sentence,basis,action,weight)=>out.push({state,sentence,basis,action:action||null,weight:weight||0});
+  const missing=Array.isArray(o.missing)?o.missing:[];
+  ['ma_cpr','ma_collection'].forEach(col=>{if(missing.indexOf(col)>=0)add('watch',col+' could not be read — the couriers’ figures here leave it out.','A refused or failed read is never shown as zero.',{label:'Retry',go:'reload'},5e8);});
+  if(!maIsDay(today))return out;
+  // Uncollected, grouped per courier and month.
+  const groups={};
+  maUncollected(docs,s).forEach(x=>{
+    const cs=(s.couriers&&s.couriers[x.doc.courier])||{};
+    const age=maDaysBetween(x.due,today);
+    if(age<(cs.uncollectedDays||0))return;
+    const k=x.doc.courier+'|'+maMonthOf(x.due);(groups[k]=groups[k]||[]).push(Object.assign({age},x));
+  });
+  Object.keys(groups).sort().forEach(k=>{
+    const g=groups[k].sort((a,b)=>_maCmp(a.due,b.due)),c=g[0].doc.courier,tot=g.reduce((t,x)=>t+x.doc.net,0);
+    const noun=c==='postex'?'CPR':c==='tcs'?'TCS credit':'statement';
+    const act={label:'Open',go:'couriers',courier:c,month:maMonthOf(g[0].due)};
+    if(g.length===1){const d=g[0].doc;add('watch',(c==='postex'?'CPR '+(d.ref||d.no):_maCourierName(c)+' '+noun+' '+(d.no||''))+' ('+maDayLabel(g[0].due)+') — '+maRs(d.net)+' not collected, '+_maPl(g[0].age,'day')+'.','Nothing collected against it in the books.',act,d.net);}
+    else add('watch',_maCourierName(c)+' — '+g.length+' '+noun+'s from '+maMonthLabel(maMonthOf(g[0].due),true)+' not collected: '+maRsShort(tot)+', the oldest '+maDayLabel(g[0].due)+'.','Nothing collected against them in the books.',act,tot);
+  });
+  const live=docs.filter(d=>d&&d.dt==='collection'&&d.status!=='void');
+  const noRc=live.filter(d=>!maAttachList(d.attachments).length);
+  if(noRc.length)add('watch',_maPl(noRc.length,'collection')+' '+(noRc.length>1?'have':'has')+' no receipt attached — '+maRs(noRc.reduce((t,d)=>t+(d.amount||0),0))+'.','A collection is proved by its receipt (§6).',{label:'Attach',go:'couriers',filter:'noreceipt'},0);
+  const off=live.filter(d=>Number.isInteger(d.difference)&&d.difference!==0);
+  if(off.length)add('watch',_maPl(off.length,'collection')+' '+(off.length>1?'differ':'differs')+' from '+(off.length>1?'their':'its')+' CPRs’ net — '+maRs(off.reduce((t,d)=>t+Math.abs(d.difference),0))+' in all, in 9030.','The cash counted against the net PostEx’s records give.',{label:'Open',go:'couriers',filter:'difference'},0);
+  // A statement that changed (or went) after it was collected.
+  const moved=[];let movedBy=0;
+  live.forEach(d=>(d.covers||[]).forEach(cv=>{const x=docs.find(y=>y&&y.dt==='cpr'&&y.id===cv.id);if(x&&(x.status==='void'||x.net!==cv.net)){moved.push(d);movedBy+=(x.status==='void'?0:x.net)-cv.net;}}));
+  if(moved.length)add('watch',_maPl(moved.length,'collected statement')+' changed after '+(moved.length>1?'they were':'it was')+' collected ('+maRsSigned(movedBy)+') — it sits in 1121.','The collection keeps what it covered; the statement moved since.',{label:'Open',go:'couriers',filter:'changed'},Math.abs(movedBy));
+  const cnt={};live.forEach(d=>((d.refs&&d.refs.cprNos)||[]).forEach(id=>{(cnt[id]=cnt[id]||[]).push(d);}));
+  Object.keys(cnt).sort().forEach(id=>{if(cnt[id].length<2)return;const x=docs.find(y=>y&&y.id===id);
+    add('concern',(x?(x.no||id):id)+' is collected twice — '+cnt[id].map(d=>d.no||d.id).join(' and ')+'.','One live collection per CPR (§6).',{label:'Open',go:'doc',ref:cnt[id][1].id,dt:'collection'},9e8);});
+  // The nightly rollup.
+  if(missing.indexOf('ma_runs')>=0)add('watch','The courier rollup’s last run could not be read.','ma_runs: the read was refused or failed.',{label:'Retry',go:'reload'},5e8);
+  else if(o.run!==undefined){
+    const r=o.run;
+    if(!r)add('watch','The courier rollup has not run yet — PostEx’s receipts and days arrive with it.','ma_runs has no run.',{label:'Open',go:'couriers'},0);
+    else{
+      const age=Number.isFinite(o.nowMs)&&Number.isFinite(r.at)?o.nowMs-r.at:null;
+      if(r.state==='failed')add('concern','The courier rollup failed: '+String(r.error||'no reason given').slice(0,120)+'.','ma_runs/rollup, the last run.',{label:'Open',go:'couriers'},9e8);
+      else if(age!==null&&age>(s.couriers.runWatchHours||36)*3600000)add('concern','The courier rollup last ran '+Math.floor(age/3600000)+' hours ago.','ma_runs/rollup, the last run.',{label:'Open',go:'couriers'},9e8);
+      const ck=r.checks||{};
+      if(Number.isInteger(ck.ledger1120)&&Number.isInteger(ck.transit1120)&&ck.ledger1120!==ck.transit1120)
+        add('concern','The books say PostEx owes '+maRs(ck.ledger1120)+' on delivered parcels; the parcels say '+maRs(ck.transit1120)+'.','1120 against the rollup’s transit.',{label:'Open',go:'couriers'},9e8);
+      const n=Number.isInteger(r.issueCount)?r.issueCount:(r.issues||[]).length;
+      if(n)add('watch','PostEx data: '+_maPl(n,'issue')+' — '+((r.issues||[]).slice(0,2).map(i=>String(i.message||i.rule).slice(0,90)).join(' · ')||'see the last run')+'.','The nightly rollup’s checks.',{label:'Open',go:'couriers',filter:'issues'},0);
+    }
+  }
+  return out;
+}
+
 if(typeof module!=='undefined'&&module.exports){
   module.exports={MA_BOOKS,MA_ACCOUNT_TYPES,MA_HOLDER_KINDS,MA_SPEND_GROUPS,MA_LABEL_KINDS,MA_CHANNELS,MA_SOURCES,
     MA_CHART,MA_SV_CHART,MA_SUSPENSE,MA_UNLABELLED,MA_PARTY_KINDS,MA_VENDOR_ROLES,MA_TERMS_MODES,MA_TAX_KINDS,
@@ -2821,5 +3390,9 @@ if(typeof module!=='undefined'&&module.exports){
     MA_EDIT_DERIVED,MA_FIGURE_FIELDS,MA_CONFIRM_KEYS,MA_HANDS,MA_DRAWERS,maHandsOf,maIsDrawer,maTransferNeedsConfirm,
     maConfirmWarning,maCountBookOf,maQuarterLocked,maEditClearsReview,maFlagRows,maCloseRelock,
     MA_LEDGER_NARROW,maLedgerBalanceHidden,maLedgerHiddenWhy,maCommitmentOpenPeriod,maCommitmentPeriodOk,maPeriodLabel,maNewFlagRules,maRsRate,
-    MA_COURIER_CYCLES,MA_COURIERS,MA_CPR_NUMBER_MAX,MA_POSTEX_SYNC_DAYS,MA_CPR_ISSUE_RULES,maIdSafe,maCprId,maCprSplit,maCprNet,maCprDerive};
+    MA_COURIER_CYCLES,MA_COURIERS,MA_CPR_NUMBER_MAX,MA_POSTEX_SYNC_DAYS,MA_CPR_ISSUE_RULES,maIdSafe,maCprId,maCprSplit,maCprNet,maCprDerive,
+    MA_OPENING_DERIVED,MA_COURIER_IDS,MA_STATEMENT_COURIERS,MA_CPR_RECEIPT_KINDS,MA_CPR_KINDS,MA_CL_MAX_COVERS,MA_ST_MAX_LINES,
+    MA_CL_LOCKED,MA_DERIVED_OWNER_FIELDS,MA_DISPUTE_STATES,MA_ROLLUP_BY,MA_ROLLUP_NAME,MA_CPR_FIGURES,
+    maCourierAcc,maCollectReceivable,maCprCollectable,maCollectionsOf,maCollectionConfirm,maCollectionNeedsConfirm,
+    maCourierDocs,maCourierMerge,maCourierGone,maCourierPlan,maCourier1120Check,maDisputePatch,maUncollected,maCourierInflows,maCourierConcerns};
 }
