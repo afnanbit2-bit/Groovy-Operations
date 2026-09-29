@@ -2302,6 +2302,504 @@ function maBooksSheets(o){
   return sheets;
 }
 
+/* ── Couriers (§4.2 `courier`, §8) — M2 ──────────────────────────────────
+   Each courier's cycle (one of MA_COURIER_CYCLES) and the accounts its money
+   moves through. Every code is one MA_CHART already has, and
+   tests/ma-couriers.test.js fails if one is missing or is not the type its
+   role needs:
+     receivable   delivered parcels no statement covers yet — PostEx 1120 ·
+                  TCS 1122 · Blue-Ex 1123 · Bykea 1124
+     statement    a statement issued and not yet collected: PostEx's CPRs, 1121
+     wallet       money that is ours and sits at the courier: TCS, 1060 (a
+                  holder, shipped switched off until M2)
+     collectInto  the holder a collection reaches when no owner takes it:
+                  Bykea's reaches the drawer, 1010, and waits for Raees (§3 #8)
+                  — who confirms is MA_HANDS', not a field here
+     revenue      4010 Online — COD. §4.1 gives it "sub-accounts per courier";
+                  MA_CHART has none, so until the owners add them a courier's
+                  revenue is told apart by its postings' party label (§27)
+     fees         5060 Courier fees & tax · reversals 5070 Reversals & returns
+     difference   9030 Reconciliation differences: a collection that is not
+                  its statement's net (§8)
+   The numbers a cycle runs on stay in the settings (cprDays, tcsCreditDays),
+   where the owners change them. Nothing here posts. */
+const MA_COURIERS=(o=>{Object.keys(o).forEach(k=>{Object.freeze(o[k].accounts);Object.freeze(o[k]);});return Object.freeze(o);})({
+  postex:{key:'postex',name:'PostEx',cycle:'cpr',feed:'postex_orders',
+    accounts:{receivable:'1120',statement:'1121',revenue:'4010',fees:'5060',reversals:'5070',difference:'9030'}},
+  tcs:{key:'tcs',name:'TCS',cycle:'account',
+    accounts:{receivable:'1122',wallet:'1060',revenue:'4010',fees:'5060',reversals:'5070',difference:'9030'}},
+  bluex:{key:'bluex',name:'Blue-Ex',cycle:'legacy',
+    accounts:{receivable:'1123',revenue:'4010',fees:'5060',reversals:'5070',difference:'9030'}},
+  bykea:{key:'bykea',name:'Bykea',cycle:'manual',
+    accounts:{receivable:'1124',collectInto:'1010',revenue:'4010',fees:'5060',reversals:'5070',difference:'9030'}}
+});
+
+/* ── PostEx: parcels into CPRs, days, and what is still owed (§8) — M2 ────
+   `postex_orders` holds one record per parcel (netlify/lib/postex-core.js
+   `normalize`), refreshed every 4 hours for 14 days after booking, and —
+   once PostEx has paid for it — the numbers of the two receipts it was paid
+   on (`enrichPayments`): cprNumber_1 the UPFRONT receipt, dated cpr1Date,
+   and cprNumber_2 the RESERVE receipt, dated cpr2Date. A CPR is DERIVED from
+   them and never typed (§3 #5): one per receipt NUMBER, whichever part of
+   whichever parcels it pays. Derivation only — nothing here posts. The
+   owners decided on 29 Sept 2026 that PostEx income is booked on the day
+   PostEx marks a parcel delivered; the postings that follow from it, fed by
+   `days` below, are the next piece of M2.
+
+   What a parcel is worth to its receipts is decided ONCE, in
+   _maCprSplitPaisa, and read by maCprNet, the transit snapshot and the
+   opening alike — §8's one definition, ending the two nets of
+   js/fulfillment.js (§1). UNVERIFIED until one CPR PDF is held against it
+   (§24):
+     share    delivered: cod − transactionFee − transactionTax; returned:
+              −(reversalFee + reversalTax). DECIDED FROM THE FIELDS, not from a
+              PDF: postex-core writes a return's charge in two fields of its
+              own (reversalFee, reversalTax) beside the forward ones, the COD
+              tab (_postexCOD) charges a return exactly those, and a returned
+              parcel collects no COD for a forward charge to come out of. The
+              CPR tab (js/fulfillment.js _postexCPRs) nets a return by its
+              forward transactionFee + transactionTax instead; that is not
+              followed here. If a real CPR PDF shows PostEx deducts the
+              forward charge on a return, the one place to change is the
+              charge figures below — `days` reads the same figures.
+     charges  what the share deducts, per parcel, and ONLY that: a delivered
+              parcel's transactionFee + transactionTax, a returned parcel's
+              reversalFee + reversalTax. `days` books exactly these, so when
+              every receipt is in and PostEx's own part figures agree with the
+              share, the days' COD less charges equals the receipts' nets and
+              the PostEx receivable (1120) clears to zero.
+     upfront  its upfrontPayment: what the upfront receipt paid for it.
+     reserve  its reservePayment: what the reserve receipt paid. Not
+              balancePayment — postex-core reads the reserve receipt's date as
+              cpr2Date || reservePaymentDate (PostEx's documentation names the
+              second receipt after the reserve payment), and nothing in the
+              code pairs balancePayment with a receipt or a date.
+   A figure PostEx did not send falls back to the share, less what the other
+   part carries, so no parcel is counted twice; with neither figure the whole
+   share goes on its first receipt (the upfront, else the reserve). When
+   PostEx sent BOTH figures and they do not add up to the share, the receipts
+   carry PostEx's figures and the difference is named (cpr.split_mismatch) —
+   it is exactly what would stop 1120 clearing, so it is never absorbed.
+   A returned parcel may be paid on ONE receipt (postex-core finishes a return
+   once PostEx marks it settled): its whole share is on that receipt, so it is
+   owed nothing more and waits for no second one. A parcel PostEx marks
+   settled (settle === true; a missing settle means not settled) waits for
+   nothing either — unless the split still expects money on a receipt it
+   does not carry, which stays owed: a settle never excuses an amount. On a
+   receipt a 0 is what PostEx paid. BEFORE its receipt a 0 is read as not
+   sent yet: postex-core stores an amount PostEx did not send as 0 (`num`),
+   and an expected ₨0 on a delivered parcel would hide what PostEx owes.
+   Money is added up to the paisa and rounded once, to whole rupees, with
+   Math.round — as maPost rounds every amount it posts. */
+/* A receipt number longer than this is not one: an id escaped from it could
+   pass Firestore's 1,500 bytes, and no receipt is numbered like that. */
+const MA_CPR_NUMBER_MAX=100;
+/* How long after booking the scheduled sync keeps refreshing a parcel —
+   netlify/functions/postex-sync-background.js's LOOKBACK_DAYS, held equal by
+   tests/ma-couriers.test.js. A parcel still on the road past it may be stale. */
+const MA_POSTEX_SYNC_DAYS=14;
+/* Every data issue the derivation raises, by its stable name. */
+const MA_CPR_ISSUE_RULES=['derive.opts','parcel.no_tracking','parcel.duplicate','parcel.status_unknown',
+  'parcel.date_fallback','parcel.date_missing','parcel.future_date','parcel.long_on_road','parcel.paid_before_books',
+  'cpr.number_bad','cpr.field_missing','cpr.zero_part','cpr.date_disagree','cpr.date_fallback','cpr.date_missing',
+  'cpr.not_final','cpr.return_paid','cpr.reserve_before_upfront','cpr.reserve_without_upfront','cpr.split_mismatch'];
+const _maPxStatuses=['pending','in_transit','delivered','returned','cancelled'];   // what postex-core's statusCategory writes
+
+function _maCmp(a,b){return a<b?-1:a>b?1:0;}
+function _maPl(n,word){return n+' '+word+(n===1?'':'s');}
+/* A number PostEx sent, or null: a finite number, or a string holding one. */
+function _maPxNum(v){
+  if(typeof v==='number')return Number.isFinite(v)?v:null;
+  return typeof v==='string'&&/^\s*-?\d+(\.\d+)?\s*$/.test(v)?Number(v):null;
+}
+function _maPaisa(v){const n=_maPxNum(v);return n===null?0:Math.round(n*100);}
+function _maWhole(paisa){const r=Math.round(paisa/100);return r===0?0:r;}   // whole rupees, never −0
+/* A day from a PostEx date string ("2026-07-16T…"): its first ten
+   characters, read as the local day the way js/fulfillment.js reads them;
+   '' for anything else. */
+function _maPxDay(v){if(typeof v!=='string')return '';const d=v.trim().slice(0,10);return maIsDay(d)?d:'';}
+/* A tracking or receipt number: text, trimmed; '' for none. */
+function _maPxStr(v){return typeof v==='string'?v.trim():typeof v==='number'&&Number.isFinite(v)?String(v):'';}
+function _maCprNo(v){const s=_maPxStr(v);return s.length<=MA_CPR_NUMBER_MAX?s:'';}
+/* A short fingerprint of a string — two 32-bit FNV-style passes — for
+   noticing a change, never for security. */
+function _maHash(s){
+  let a=0x811c9dc5,b=0x9e3779b9;
+  for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,0x01000193);b=Math.imul(b^c,0x85ebca6b);b^=b>>>13;}
+  return (a>>>0).toString(36)+'.'+(b>>>0).toString(36);
+}
+function _maCprIssue(rule,message,receipts,parcels){
+  const u=l=>Array.from(new Set((l||[]).map(String))).sort(_maCmp);
+  return {rule,message,refs:{receipts:u(receipts),parcels:u(parcels)}};
+}
+
+/* One part of a Firestore document id, from any text: [A-Za-z0-9-] kept,
+   every other UTF-16 unit (`_` included) written as `_` and four hex digits,
+   and the empty text as a lone `_`. Every escape is exactly five characters
+   and `_` only ever opens one, so an id reads back to ONE text: two different
+   receipt numbers never share an id (a plain strip would make "CPR 1/2" and
+   "CPR-12" one receipt). No `.`, no `__`, never empty — none of Firestore's
+   forbidden ids can come out of it. */
+function maIdSafe(s){
+  const t=String(s===undefined||s===null?'':s);
+  if(!t)return '_';
+  let out='';
+  for(let i=0;i<t.length;i++){
+    const c=t.charAt(i);
+    out+=/[A-Za-z0-9-]/.test(c)?c:'_'+('000'+t.charCodeAt(i).toString(16)).slice(-4);
+  }
+  return out;
+}
+/* The id of a courier's receipt: 'postex-CPR-118842'. A courier key is
+   letters only (MA_COURIERS), so the first `-` always ends it. */
+function maCprId(courier,number){return maIdSafe(courier)+'-'+maIdSafe(number);}
+
+/* What one parcel is worth and how it splits between its two receipts, in
+   PAISA (the header above says why each figure is what it is). `fieldU` /
+   `fieldR`: the part is PostEx's own figure, not the fallback. */
+function _maCprSplitPaisa(p){
+  p=p||{};
+  const st=p.statusCategory,del=st==='delivered',ret=st==='returned';
+  // The figures the share is made of — the ONLY charges it deducts (header).
+  const cod=del?_maPaisa(p.cod):0,fee=del?_maPaisa(p.transactionFee):0,tax=del?_maPaisa(p.transactionTax):0;
+  const rfee=ret?_maPaisa(p.reversalFee):0,rtax=ret?_maPaisa(p.reversalTax):0;
+  const share=(cod-fee-tax-rfee-rtax)||0;
+  const paidU=!!_maCprNo(p.cprNumber_1),paidR=!!_maCprNo(p.cprNumber_2);
+  const known=(v,paid)=>{const n=_maPxNum(v);return n===null||(n===0&&!paid)?null:Math.round(n*100);};
+  const u=known(p.upfrontPayment,paidU),r=known(p.reservePayment,paidR);
+  const first=paidU||!paidR;
+  return {cod,fee,tax,rfee,rtax,share,paidU,paidR,fieldU:u!==null,fieldR:r!==null,
+    upfront:(u!==null?u:r!==null?share-r:first?share:0)||0,
+    reserve:(r!==null?r:u!==null?share-u:first?0:share)||0};
+}
+/* The same in rupees — to the paisa: a parcel is an input, not a figure of
+   the books — with where each part came from: 'field' (PostEx's own figure)
+   or 'computed' (the share, less the other part). */
+function maCprSplit(p){
+  const s=_maCprSplitPaisa(p);
+  return {share:s.share/100,upfront:s.upfront/100,reserve:s.reserve/100,
+    basis:{upfront:s.fieldU?'field':'computed',reserve:s.fieldR?'field':'computed'}};
+}
+/* One record per tracking number (§6: a parcel is never doubled). A number
+   the input holds twice keeps ONE copy — the one checked for its receipts
+   most recently (cprCheckedAt), then synced most recently (syncedAt), then
+   the larger by content — so the copy kept never depends on the order the
+   records came in. → {list:[{t,p}] by tracking number, dups:{t:[copies]},
+   untracked:how many records carry no tracking number} */
+function _maPxUnique(parcels){
+  const by=Object.create(null);let untracked=0;
+  (Array.isArray(parcels)?parcels:[]).forEach(p=>{
+    const t=p&&typeof p==='object'?_maPxStr(p.trackingNumber):'';
+    if(!t){untracked++;return;}
+    (by[t]||(by[t]=[])).push(p);
+  });
+  const dups=Object.create(null);
+  const when=(p,k)=>{const n=_maPxNum(p[k]);return n===null?-1:n;};
+  const list=Object.keys(by).sort(_maCmp).map(t=>{
+    const c=by[t];
+    if(c.length===1)return {t,p:c[0]};
+    dups[t]=c;
+    return {t,p:c.slice().sort((a,b)=>when(b,'cprCheckedAt')-when(a,'cprCheckedAt')||when(b,'syncedAt')-when(a,'syncedAt')||_maCmp(_maCanon(b),_maCanon(a)))[0]};
+  });
+  return {list,dups,untracked};
+}
+
+/* What ONE receipt is worth (§8) — THE definition: maCprDerive nets every
+   CPR through it, and so must anything else that ever nets one. `cpr` =
+   {number, parcels}: the parcels may be all of them — the ones naming
+   `number` as their upfront or reserve receipt are its parcels, each part the
+   sum of their split, rounded to whole rupees; net is the two parts.
+   → {number, net, parts:{upfront:{parcels,amount}, reserve:{parcels,amount}},
+   issues}. UNVERIFIED against a real CPR PDF (§24). */
+function maCprNet(cpr){
+  const c=cpr||{},number=_maCprNo(c.number);
+  const out={number,net:0,parts:{upfront:{parcels:[],amount:0},reserve:{parcels:[],amount:0}},issues:[]};
+  if(!number)return out;
+  const acc={upfront:{sum:0,share:0,zero:true,miss:[],missSum:0},reserve:{sum:0,share:0,zero:true,miss:[],missSum:0}};
+  _maPxUnique(c.parcels).list.forEach(x=>{
+    const p=x.p,s=_maCprSplitPaisa(p);
+    [['upfront',p.cprNumber_1,s.upfront,s.fieldU],['reserve',p.cprNumber_2,s.reserve,s.fieldR]].forEach(([k,no,amt,field])=>{
+      if(_maCprNo(no)!==number)return;
+      const a=acc[k];
+      out.parts[k].parcels.push(x.t);
+      a.sum+=amt;a.share+=s.share;
+      if(!field){a.miss.push(x.t);a.missSum+=amt;}
+      if(!field||amt!==0)a.zero=false;
+    });
+  });
+  ['upfront','reserve'].forEach(k=>{
+    const a=acc[k],part=out.parts[k],n=a.miss.length,field=k==='upfront'?'upfrontPayment':'reservePayment';
+    part.amount=_maWhole(a.sum);
+    if(n)out.issues.push(_maCprIssue('cpr.field_missing',_maPl(n,'parcel')+' on PostEx receipt '+number+' '+(n===1?'has':'have')+' no '+k+' payment on record ('+field+') — '+(n===1?'it is':'each is')+' counted at what '+(n===1?'its':'their')+' COD and PostEx’s charges make '+(n===1?'it':'them')+' worth, less anything '+(n===1?'its':'their')+' other receipt carries: '+maRs(_maWhole(a.missSum))+' in all. Check it against the receipt’s PDF.',[number],a.miss));
+    if(part.parcels.length&&a.zero&&_maWhole(a.share)!==0)
+      out.issues.push(_maCprIssue('cpr.zero_part','Every parcel on the '+k+' side of PostEx receipt '+number+' shows ₨0 ('+field+'), though '+(part.parcels.length===1?'its':'their')+' COD and charges come to '+maRs(_maWhole(a.share))+'. If PostEx paid '+(part.parcels.length===1?'it':'them')+' on this receipt, the amount never reached the sync — it stores an amount PostEx did not send as 0, and stops refreshing a parcel '+MA_POSTEX_SYNC_DAYS+' days after booking. The receipt counts ₨0 until it arrives.',[number],part.parcels));
+  });
+  out.net=out.parts.upfront.amount+out.parts.reserve.amount;
+  return out;
+}
+
+/* The day a parcel reached its end — delivered, or back with us — and the
+   field that said so. Delivered: orderDeliveryDate, else the day it was
+   picked up, else booked. Returned: orderDeliveryDate too — an ASSUMPTION
+   (PostEx is taken to date a parcel's last event there, a return as much as
+   a delivery; no real return was checked) — else the day PostEx charged it
+   on a receipt (the earlier of its two), else pickup, else booking.
+   → {day, basis}, both '' when there is none. */
+function _maPxFinalDay(p){
+  const st=p.statusCategory;
+  if(st!=='delivered'&&st!=='returned')return {day:'',basis:''};
+  const c1=_maPxDay(p.cpr1Date),c2=_maPxDay(p.cpr2Date);
+  const tries=[['orderDeliveryDate',_maPxDay(p.orderDeliveryDate)]]
+    .concat(st==='returned'?[['receipt',c1&&c2?(c1<c2?c1:c2):c1||c2]]:[])
+    .concat([['orderPickupDate',_maPxDay(p.orderPickupDate)],['transactionDate',_maPxDay(p.transactionDate)]]);
+  for(let i=0;i<tries.length;i++)if(tries[i][1])return {day:tries[i][1],basis:tries[i][0]};
+  return {day:'',basis:''};
+}
+/* A receipt's date, from its parcels: the day most of them carry for it
+   (cpr1Date on its upfront side, cpr2Date on its reserve side); on a tie the
+   later. With none of those, upfrontPaymentDate and settlementDate stand in
+   (`fallback`). → {date, votes:{day:n}} */
+function _maCprDate(e){
+  const tally=(v,list,key)=>{list.forEach(x=>{const d=_maPxDay(x.p[key]);if(d)v[d]=(v[d]||0)+1;});return v;};
+  let votes=tally(tally(Object.create(null),e.u,'cpr1Date'),e.r,'cpr2Date'),fallback=false;
+  if(!Object.keys(votes).length){votes=tally(tally(Object.create(null),e.u,'upfrontPaymentDate'),e.r,'settlementDate');fallback=true;}
+  let date='';
+  Object.keys(votes).sort(_maCmp).forEach(d=>{if(!date||votes[d]>=votes[date])date=d;});
+  return {date,votes,fallback:fallback&&!!date};
+}
+/* The receipt's figures as one string: the same parcels in any order give
+   the same sig, and a figure that changes changes it — so the nightly rollup
+   writes only the receipts that moved. Which parcels each part covers is in
+   it as a fingerprint of the list, so a swap that leaves every figure equal
+   still reads as a change. */
+function _maCprSig(c){
+  const u=c.parts.upfront,r=c.parts.reserve;
+  return JSON.stringify(['v1',c.number,c.date,c.kind,u.parcels.length,u.amount,_maHash(JSON.stringify(u.parcels)),
+    r.parcels.length,r.amount,_maHash(JSON.stringify(r.parcels)),c.grossCod,c.deliveryFee,c.deliveryTax,
+    c.reversalFee,c.reversalTax,c.delivered,c.returned,c.net,c.settled?1:0]);
+}
+function _maPxBuckets(){return {road:{n:0,cod:0},up:{n:0,ret:0,amt:0,after:0},res:{n:0,ret:0,amt:0}};}
+function _maPxBucketsOut(b,asOf){
+  const onRoad={parcels:b.road.n,cod:_maWhole(b.road.cod)};
+  const awaitingUpfront={parcels:b.up.n,returned:b.up.ret,amount:_maWhole(b.up.amt),reserveAfter:_maWhole(b.up.after)};
+  const awaitingReserve={parcels:b.res.n,returned:b.res.ret,amount:_maWhole(b.res.amt)};
+  return {asOf,onRoad,awaitingUpfront,awaitingReserve,owed:awaitingUpfront.amount+awaitingUpfront.reserveAfter+awaitingReserve.amount};
+}
+
+/* Every PostEx receipt, every day, and what PostEx still owes — derived from
+   the parcels alone. PURE: `opts.from` (the day the books start) and
+   `opts.today` are 'YYYY-MM-DD' strings the caller supplies; nothing here
+   reads a clock. → {cprs, days, transit, opening, excluded, issues}:
+     cprs      one per receipt NUMBER dated on or after `from`, or with no
+               date (it cannot be placed before the books): {id, courier,
+               number, date, kind: upfront|reserve|mixed, parts, grossCod,
+               deliveryFee, deliveryTax, reversalFee, reversalTax, delivered,
+               returned, net, settled, sig}. The COD, fees, reversals and
+               counts DESCRIBE the receipt's parcels, to check it against
+               PostEx's PDF, so a parcel paid on two receipts is described on
+               both: never add them up across receipts. Money is `net` (each
+               parcel's part once), and the P&L's figures are `days`.
+     days      from `from` to `today`, one row per day a parcel ended on:
+               how many were delivered and returned, delivered parcels' COD,
+               fee and tax by delivery day, returned parcels' reversal fee and
+               tax by their best date (_maPxFinalDay) — each parcel once, and
+               charged exactly what its share deducts (the header), so the
+               days' COD less charges and the receipts' nets are one sum.
+               Income is booked on the day PostEx marks a parcel delivered
+               (the owners' decision, 29 Sept 2026), so these rows are what
+               the income and courier-cost postings will be made from.
+     transit   as the parcels stand NOW (a status cannot be rewound), `asOf`
+               today: onRoad (dispatched, not delivered or returned: count,
+               COD) · awaitingUpfront (delivered or returned with no upfront
+               receipt: count, the upfront expected, and the reserve those
+               parcels will still bring after it) · awaitingReserve (upfront
+               received, reserve not: count, the reserve expected) · owed,
+               the three amounts together. A parcel on a receipt with nothing
+               left to come waits for nothing when PostEx marks it settled or
+               it is a return.
+     opening   the same buckets at the START of `from` — what PostEx owed
+               when the books start: with from '2026-07-01', the PostEx part
+               of the 1 July 2026 opening balance. Parcels delivered or
+               returned before `from`, a part counted owed unless its receipt
+               is dated before `from`. onRoad here is COD that was on the road
+               that morning (sent before `from`, not ended before it) — its
+               income falls inside the books, so it is information, not owed.
+               Money a receipt dated before `from` already paid on such a
+               parcel is not netted here: it is named (parcel.paid_before_books).
+     excluded  the receipts dated before `from`: how many, their parcels,
+               their net, the first and last day, their numbers — and `list`,
+               each one on its own ({id, number, date, net, kind, parts}, by
+               date then number), so a receipt dated just before the books
+               start (30 June 2026 was a Tuesday, a CPR day) can still be
+               collected against the opening.
+     issues    [{rule, message, refs:{receipts, parcels}}] — the rules are
+               MA_CPR_ISSUE_RULES.
+   Every list is sorted, so the same parcels in any order give the same
+   answer, `sig` and all. */
+function maCprDerive(parcels,opts){
+  const o=opts||{},from=o.from,today=o.today;
+  const out={cprs:[],days:[],transit:null,opening:null,
+    excluded:{receipts:0,parcels:0,net:0,first:'',last:'',numbers:[],list:[]},issues:[]};
+  const issue=(rule,message,receipts,ps)=>out.issues.push(_maCprIssue(rule,message,receipts,ps));
+  const pl=(n,one,many)=>n===1?one:many;
+  if(!maIsDay(from)||!maIsDay(today)||from>today){
+    issue('derive.opts','PostEx receipts are derived between two real days — the day the books start (from) and today — and from cannot be after today.');
+    out.transit=_maPxBucketsOut(_maPxBuckets(),maIsDay(today)?today:'');
+    out.opening=_maPxBucketsOut(_maPxBuckets(),maIsDay(from)?from:'');
+    return out;
+  }
+  const u=_maPxUnique(parcels);
+  if(u.untracked)issue('parcel.no_tracking',_maPl(u.untracked,'record')+' in postex_orders '+pl(u.untracked,'carries','carry')+' no tracking number — '+pl(u.untracked,'it','they')+' cannot be told apart from any other parcel, so '+pl(u.untracked,'it is','they are')+' in no figure.');
+  Object.keys(u.dups).sort(_maCmp).forEach(t=>{
+    const copies=u.dups[t],nos=[],pairs=[];
+    copies.forEach(p=>{
+      const a=_maCprNo(p.cprNumber_1),b=_maCprNo(p.cprNumber_2),k=a+' / '+b;
+      if(pairs.indexOf(k)<0)pairs.push(k);
+      [a,b].forEach(n=>{if(n&&nos.indexOf(n)<0)nos.push(n);});
+    });
+    issue('parcel.duplicate','Tracking number '+t+' is in postex_orders '+copies.length+' times. One copy is counted — the one checked for its receipts most recently.'+(pairs.length>1?' The copies name different receipts ('+pairs.sort(_maCmp).map(k=>k.replace(/^ \/ | \/ $/g,'')||'none').join('; ')+') — check which is right.':''),nos,[t]);
+  });
+
+  // Each parcel once, with what every figure below needs.
+  const P=u.list.map(x=>{
+    const p=x.p,r1=_maPxStr(p.cprNumber_1),r2=_maPxStr(p.cprNumber_2),st=p.statusCategory;
+    return {t:x.t,p,st,final:st==='delivered'||st==='returned',
+      n1:r1.length<=MA_CPR_NUMBER_MAX?r1:'',n2:r2.length<=MA_CPR_NUMBER_MAX?r2:'',
+      bad:[r1,r2].filter(r=>r.length>MA_CPR_NUMBER_MAX),
+      s:_maCprSplitPaisa(p),f:_maPxFinalDay(p),
+      sent:_maPxDay(p.orderPickupDate)||_maPxDay(p.transactionDate),
+      booked:_maPxDay(p.transactionDate)||_maPxDay(p.orderPickupDate)};
+  });
+  const odd=P.filter(x=>_maPxStatuses.indexOf(x.st)<0);
+  if(odd.length)issue('parcel.status_unknown',_maPl(odd.length,'parcel')+' '+pl(odd.length,'carries','carry')+' a status the sync does not write ('+Array.from(new Set(odd.map(x=>String(x.st)))).sort(_maCmp).join(', ')+') — '+pl(odd.length,'it counts','they count')+' as neither delivered nor returned.',[],odd.map(x=>x.t));
+  const badBy=Object.create(null);
+  P.forEach(x=>x.bad.forEach(r=>{(badBy[r]||(badBy[r]=[])).push(x.t);}));
+  Object.keys(badBy).sort(_maCmp).forEach(r=>{const n=new Set(badBy[r]).size;
+    issue('cpr.number_bad','A receipt number '+r.length+' characters long (“'+r.slice(0,40)+'…”) is not one — the '+_maPl(n,'parcel')+' naming it '+pl(n,'counts','count')+' as not yet on that receipt.',[],badBy[r]);});
+
+  // The receipts: one per number, netted by maCprNet.
+  const R=Object.create(null);
+  const rec=n=>R[n]||(R[n]={u:[],r:[]});
+  P.forEach(x=>{if(x.n1)rec(x.n1).u.push(x);if(x.n2)rec(x.n2).r.push(x);});
+  const all=Object.keys(R).sort(_maCmp).map(n=>{
+    const e=R[n],seen=Object.create(null),union=[];
+    e.u.concat(e.r).forEach(x=>{if(!seen[x.t]){seen[x.t]=1;union.push(x);}});
+    union.sort((a,b)=>_maCmp(a.t,b.t));
+    const net=maCprNet({number:n,parcels:union.map(x=>x.p)});
+    net.issues.forEach(i=>out.issues.push(i));
+    const d=_maCprDate(e),days=Object.keys(d.votes).sort(_maCmp);
+    if(days.length>1)issue('cpr.date_disagree','The '+_maPl(union.length,'parcel')+' on PostEx receipt '+n+' name '+days.length+' dates for it — '+days.map(x=>maDayLabel(x,true)+' ('+d.votes[x]+')').join(', ')+'. It is dated '+maDayLabel(d.date,true)+', the date most of them carry (on a tie, the later).',[n],union.map(x=>x.t));
+    if(d.fallback)issue('cpr.date_fallback','No parcel on PostEx receipt '+n+' carries its date (cpr1Date, cpr2Date) — it is dated '+maDayLabel(d.date,true)+' from their payment dates (upfrontPaymentDate, settlementDate).',[n],union.map(x=>x.t));
+    if(!d.date)issue('cpr.date_missing','PostEx receipt '+n+' has no date on any of its parcels — it is counted, but it cannot be placed before or after the day the books start.',[n],union.map(x=>x.t));
+    const tot={cod:0,fee:0,tax:0,rfee:0,rtax:0,del:0,ret:0};
+    union.forEach(x=>{const s=x.s;
+      if(x.st==='delivered')tot.del++;else if(x.st==='returned')tot.ret++;
+      tot.cod+=s.cod;tot.fee+=s.fee;tot.tax+=s.tax;tot.rfee+=s.rfee;tot.rtax+=s.rtax;
+    });
+    const early=union.filter(x=>!x.final);
+    if(early.length)issue('cpr.not_final',_maPl(early.length,'parcel')+' on PostEx receipt '+n+' '+pl(early.length,'is','are')+' neither delivered nor returned ('+Array.from(new Set(early.map(x=>String(x.st)))).sort(_maCmp).join(', ')+') — PostEx paid for '+pl(early.length,'it before it','them before they')+' arrived, or '+pl(early.length,'its','their')+' status went back since.',[n],early.map(x=>x.t));
+    let back=0;const backT=[];
+    union.forEach(x=>{if(x.st!=='returned')return;const a=(x.n1===n?x.s.upfront:0)+(x.n2===n?x.s.reserve:0);if(a>0){back+=a;backT.push(x.t);}});
+    if(backT.length)issue('cpr.return_paid',_maPl(backT.length,'returned parcel')+' on PostEx receipt '+n+' '+pl(backT.length,'was','were')+' paid '+maRs(_maWhole(back))+' on it as if delivered — COD nobody collected. Expect PostEx to take it back on a later receipt.',[n],backT);
+    const up=net.parts.upfront,rs=net.parts.reserve;
+    const c={id:maCprId('postex',n),courier:'postex',number:n,date:d.date,
+      kind:up.parcels.length&&rs.parcels.length?'mixed':up.parcels.length?'upfront':'reserve',
+      parts:net.parts,grossCod:_maWhole(tot.cod),deliveryFee:_maWhole(tot.fee),deliveryTax:_maWhole(tot.tax),
+      reversalFee:_maWhole(tot.rfee),reversalTax:_maWhole(tot.rtax),delivered:tot.del,returned:tot.ret,
+      net:net.net,settled:union.every(x=>x.p.settle===true),sig:''};
+    c.sig=_maCprSig(c);
+    return c;
+  });
+  const dateOf=Object.create(null),before=Object.create(null),excl=[];
+  all.forEach(c=>{dateOf[c.number]=c.date;if(c.date&&c.date<from){before[c.number]=1;excl.push(c);}else out.cprs.push(c);});
+  out.cprs.sort((a,b)=>_maCmp(a.date||'~',b.date||'~')||_maCmp(a.number,b.number));
+  if(excl.length){
+    const seen=Object.create(null);let n=0;
+    excl.forEach(c=>[c.parts.upfront.parcels,c.parts.reserve.parcels].forEach(l=>l.forEach(t=>{if(!seen[t]){seen[t]=1;n++;}})));
+    const ds=excl.map(c=>c.date).sort(_maCmp);
+    const list=excl.slice().sort((a,b)=>_maCmp(a.date,b.date)||_maCmp(a.number,b.number))
+      .map(c=>({id:c.id,number:c.number,date:c.date,net:c.net,kind:c.kind,parts:c.parts}));
+    out.excluded={receipts:excl.length,parcels:n,net:excl.reduce((t,c)=>t+c.net,0),first:ds[0],last:ds[ds.length-1],
+      numbers:excl.map(c=>c.number).sort(_maCmp),list};
+  }
+  const pairs=Object.create(null);
+  P.forEach(x=>{
+    if(!x.n1||!x.n2||x.n1===x.n2)return;
+    const du=dateOf[x.n1],dr=dateOf[x.n2];
+    if(du&&dr&&dr<du){const k=JSON.stringify([x.n1,x.n2]);(pairs[k]||(pairs[k]=[])).push(x.t);}
+  });
+  Object.keys(pairs).sort(_maCmp).forEach(k=>{const ab=JSON.parse(k),a=ab[0],b=ab[1];
+    issue('cpr.reserve_before_upfront','PostEx reserve receipt '+b+' ('+maDayLabel(dateOf[b],true)+') is dated before upfront receipt '+a+' ('+maDayLabel(dateOf[a],true)+') for '+_maPl(pairs[k].length,'parcel')+' — a reserve is released after its upfront, so one of the two dates looks wrong.',[a,b],pairs[k]);});
+  const onlyR=P.filter(x=>x.n2&&!x.n1&&x.st!=='returned');   // a return may be paid on one receipt (header)
+  if(onlyR.length)issue('cpr.reserve_without_upfront',_maPl(onlyR.length,'parcel')+' '+pl(onlyR.length,'was','were')+' paid on a reserve receipt with no upfront receipt — '+pl(onlyR.length,'its','their')+' upfront part counts under “no upfront receipt yet” ('+maRs(_maWhole(onlyR.reduce((t,x)=>t+x.s.upfront,0)))+' expected).',onlyR.map(x=>x.n2),onlyR.map(x=>x.t));
+
+  // PostEx's own two part figures against the share they should add up to.
+  const mis=P.filter(x=>x.s.fieldU&&x.s.fieldR&&x.s.upfront+x.s.reserve!==x.s.share);
+  if(mis.length){
+    const diff=mis.reduce((t,x)=>t+x.s.upfront+x.s.reserve-x.s.share,0),nos=[];
+    mis.forEach(x=>[x.n1,x.n2].forEach(n=>{if(n&&nos.indexOf(n)<0)nos.push(n);}));
+    issue('cpr.split_mismatch',_maPl(mis.length,'parcel')+' '+pl(mis.length,'carries','carry')+' PostEx upfront and reserve payments (upfrontPayment, reservePayment) that do not add up to '+pl(mis.length,'its','their')+' COD less charges — '+maRsSigned(_maWhole(diff))+' in all. The receipts count PostEx’s figures, so the PostEx receivable will not clear by that much until the difference is found. Check it against the receipts’ PDFs.',nos,mis.map(x=>x.t));
+  }
+
+  // The days: every delivered or returned parcel once, on the day it ended.
+  const D=Object.create(null),fell=Object.create(null),none=[],late=[];
+  P.forEach(x=>{
+    if(!x.final)return;
+    const p=x.p,f=x.f;
+    if(!f.day){none.push(x.t);return;}
+    if(f.basis!=='orderDeliveryDate'){const k=x.st+'|'+f.basis;(fell[k]||(fell[k]=[])).push(x.t);}
+    if(f.day>today){late.push(x.t);return;}
+    if(f.day<from)return;
+    const r=D[f.day]||(D[f.day]={del:0,cod:0,fee:0,tax:0,ret:0,rfee:0,rtax:0}),s=x.s;
+    if(x.st==='delivered')r.del++;else r.ret++;
+    r.cod+=s.cod;r.fee+=s.fee;r.tax+=s.tax;r.rfee+=s.rfee;r.rtax+=s.rtax;   // exactly what the share deducts
+  });
+  out.days=Object.keys(D).sort(_maCmp).map(d=>{const r=D[d];
+    return {day:d,delivered:r.del,grossCod:_maWhole(r.cod),deliveryFee:_maWhole(r.fee),deliveryTax:_maWhole(r.tax),
+      returned:r.ret,reversalFee:_maWhole(r.rfee),reversalTax:_maWhole(r.rtax)};});
+  const by={orderPickupDate:['it was picked up','they were picked up','orderPickupDate'],transactionDate:['it was booked','they were booked','transactionDate'],
+    receipt:['PostEx charged it on a receipt','PostEx charged them on a receipt','cpr1Date, cpr2Date']};
+  Object.keys(fell).sort(_maCmp).forEach(k=>{const st=k.split('|')[0],b=by[k.split('|')[1]],n=fell[k].length;
+    issue('parcel.date_fallback',_maPl(n,st+' parcel')+' '+pl(n,'carries','carry')+' no delivery date (orderDeliveryDate) — '+pl(n,'its','their')+(st==='delivered'?' COD, fee and tax are':' reversal fee and tax are')+' dated by the day '+pl(n,b[0],b[1])+' ('+b[2]+').',[],fell[k]);});
+  if(none.length)issue('parcel.date_missing',_maPl(none.length,'delivered or returned parcel')+' '+pl(none.length,'carries','carry')+' no readable date at all — '+pl(none.length,'it is','they are')+' in no day and not in the opening.',[],none);
+  if(late.length)issue('parcel.future_date',_maPl(late.length,'parcel')+' '+pl(late.length,'is','are')+' dated after today — '+pl(late.length,'it is','they are')+' in no day until then.',[],late);
+
+  // What PostEx still owes: now (transit), and at the start of `from` (opening).
+  const T=_maPxBuckets(),O=_maPxBuckets(),long=[],pre=[];let longCod=0,prePaid=0;
+  P.forEach(x=>{
+    const p=x.p,s=x.s,ret=x.st==='returned'?1:0;
+    if(p.dispatched===true&&!x.final){
+      T.road.n++;T.road.cod+=_maPaisa(p.cod);
+      if(x.booked&&maDaysBetween(x.booked,today)>MA_POSTEX_SYNC_DAYS){long.push(x.t);longCod+=_maPaisa(p.cod);}
+    }
+    // Waits for nothing more (header): on a receipt, nothing left to come, and
+    // PostEx says settled or it is a return. A settled parcel still expecting
+    // money stays owed — a settle is never taken to excuse an amount.
+    const done=!!(x.n1||x.n2)&&(x.n1?0:s.upfront)+(x.n2?0:s.reserve)===0&&(p.settle===true||x.st==='returned');
+    if(x.final&&!done){
+      if(!x.n1){T.up.n++;T.up.ret+=ret;T.up.amt+=s.upfront;if(!x.n2)T.up.after+=s.reserve;}
+      else if(!x.n2){T.res.n++;T.res.ret+=ret;T.res.amt+=s.reserve;}
+    }
+    const fd=x.f.day,u0=!!(x.n1&&before[x.n1]),r0=!!(x.n2&&before[x.n2]);
+    if(x.final&&!fd)return;               // no date: in no day and not in the opening (parcel.date_missing)
+    if(x.final&&fd<from){
+      if(x.st==='returned'&&(u0||r0)&&(u0?0:s.upfront)+(r0?0:s.reserve)===0)return;   // its one receipt was paid before the books start
+      if(!u0){O.up.n++;O.up.ret+=ret;O.up.amt+=s.upfront;if(!r0)O.up.after+=s.reserve;}
+      else if(!r0){O.res.n++;O.res.ret+=ret;O.res.amt+=s.reserve;}
+      return;
+    }
+    if(p.dispatched===true&&x.sent&&x.sent<from){O.road.n++;O.road.cod+=_maPaisa(p.cod);}
+    // Paid on a receipt dated before the books start, for a parcel whose end falls inside them.
+    if(u0||r0){pre.push(x.t);prePaid+=(u0?s.upfront:0)+(r0?s.reserve:0);}
+  });
+  if(pre.length)issue('parcel.paid_before_books',_maPl(pre.length,'parcel')+' that did not end before '+maDayLabel(from,true)+' '+pl(pre.length,'was','were')+' paid '+maRs(_maWhole(prePaid))+' on receipts dated before it — money PostEx paid before the books start, for parcels whose income falls inside them. The opening does not net it.',[],pre);
+  if(long.length)issue('parcel.long_on_road',_maPl(long.length,'parcel')+' on the road '+pl(long.length,'was','were')+' booked more than '+MA_POSTEX_SYNC_DAYS+' days ago — the sync stops refreshing a parcel’s status '+MA_POSTEX_SYNC_DAYS+' days after booking, so '+pl(long.length,'its status','theirs')+' may be out of date ('+maRs(_maWhole(longCod))+' of COD).',[],long);
+  out.transit=_maPxBucketsOut(T,today);
+  out.opening=_maPxBucketsOut(O,from);
+  out.issues.sort((a,b)=>_maCmp(a.rule,b.rule)||_maCmp(JSON.stringify(a.refs),JSON.stringify(b.refs))||_maCmp(a.message,b.message));
+  return out;
+}
+
 if(typeof module!=='undefined'&&module.exports){
   module.exports={MA_BOOKS,MA_ACCOUNT_TYPES,MA_HOLDER_KINDS,MA_SPEND_GROUPS,MA_LABEL_KINDS,MA_CHANNELS,MA_SOURCES,
     MA_CHART,MA_SV_CHART,MA_SUSPENSE,MA_UNLABELLED,MA_PARTY_KINDS,MA_VENDOR_ROLES,MA_TERMS_MODES,MA_TAX_KINDS,
@@ -2322,5 +2820,6 @@ if(typeof module!=='undefined'&&module.exports){
     maLiveFlags,maAnsweredFlags,maBackupState,maBackupMissing,maWaPhone,maWaLink,maShareState,MA_SHARE_MAX_DAYS,MA_SHARE_SKEW_MS,maBooksNoTokens,maBooksJson,maBooksSheets,
     MA_EDIT_DERIVED,MA_FIGURE_FIELDS,MA_CONFIRM_KEYS,MA_HANDS,MA_DRAWERS,maHandsOf,maIsDrawer,maTransferNeedsConfirm,
     maConfirmWarning,maCountBookOf,maQuarterLocked,maEditClearsReview,maFlagRows,maCloseRelock,
-    MA_LEDGER_NARROW,maLedgerBalanceHidden,maLedgerHiddenWhy,maCommitmentOpenPeriod,maCommitmentPeriodOk,maPeriodLabel,maNewFlagRules,maRsRate};
+    MA_LEDGER_NARROW,maLedgerBalanceHidden,maLedgerHiddenWhy,maCommitmentOpenPeriod,maCommitmentPeriodOk,maPeriodLabel,maNewFlagRules,maRsRate,
+    MA_COURIER_CYCLES,MA_COURIERS,MA_CPR_NUMBER_MAX,MA_POSTEX_SYNC_DAYS,MA_CPR_ISSUE_RULES,maIdSafe,maCprId,maCprSplit,maCprNet,maCprDerive};
 }
