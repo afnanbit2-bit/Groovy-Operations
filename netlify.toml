@@ -26,6 +26,13 @@
 [functions."shopify-order-sync"]
   schedule = "0 */4 * * *"
 
+# Every 4 hours at :20 (offset from the order sync above) — status refresh of
+# orders already held: later refunds and cancellations (updated_at_min window,
+# 48h overlap, resumable). See netlify/lib/shopify-order-refresh.js. The
+# owners' on-demand twin is shopify-order-refresh-now-background (no schedule).
+[functions."shopify-order-refresh-background"]
+  schedule = "20 */4 * * *"
+
 # Every 4 hours — read-only PostEx COD sync (14-day rolling lookback).
 # Background function (15-min budget); the PostEx API is too slow for a 10s
 # synchronous function. Check results via /.netlify/functions/postex-status.
