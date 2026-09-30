@@ -958,6 +958,22 @@ service cloud.firestore {
       allow read: if isQaRead() || (signedIn());
       allow write: if false;
     }
+    // Inventory Intel article rollup (plan 10, P0): per-article daily arrays,
+    // one compact summary list and the run's status, all written by
+    // netlify/functions/shopify-article-rollup-background.js with the Admin
+    // SDK. Clients read only, like every other shopify_* collection.
+    match /shopify_article_daily/{id} {
+      allow read: if isQaRead() || (signedIn());
+      allow write: if false;
+    }
+    match /shopify_article_summary/{id} {
+      allow read: if isQaRead() || (signedIn());
+      allow write: if false;
+    }
+    match /shopify_rollup_meta/{id} {
+      allow read: if isQaRead() || (signedIn());
+      allow write: if false;
+    }
     // ── Pattern Hub — M2: blocks and the hook rack ──
     // patterns/{id}: one physical block (all sizes bundled). The article→
     // block link lives on articles/{code}.patternId, never here. Code and
