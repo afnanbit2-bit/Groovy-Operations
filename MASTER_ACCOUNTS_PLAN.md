@@ -8,13 +8,15 @@
 > file; hypothesis, unverified: the FINAL M1 one). **M2 (couriers and
 > collections) is on `main` at `6410744` (verified: `git ls-remote`, 30 Sept).
 > Its rules file — LF md5 `85ac93b1…`, 1,748 lines — was sent to Afnan on 30
-> Sept (as relayed) and is NOT reported published, so until it is, no file
-> reported published holds a rule for the four courier collections and their
-> reads and writes are refused (default deny). Whether Netlify built M2 is
-> unconfirmed until its deploy list is read, what the Console holds cannot be
-> checked from a session, and nobody has seen M2, or run its nightly rollup,
-> on a real screen.** §21a says what M1 delivered against §21 and §21b what
-> M2 did; each says what it changed in this plan and what is still open.
+> Sept (as relayed), and he REPORTED publishing the rules at about 12:23 UTC
+> that day ("done rules updated" — he did not name the file; hypothesis,
+> unverified: the M2 one). If it was, the four courier collections are no
+> longer default-denied; if it was another file they may still be. Whether
+> Netlify built M2 is unconfirmed until its deploy list is read, what the
+> Console holds cannot be checked from a session, and nobody has seen M2, or
+> run its nightly rollup, on a real screen.** §21a says what M1 delivered
+> against §21 and §21b what M2 did; each says what it changed in this plan
+> and what is still open.
 > Everything from §22 on is still the plan. Afnan, 27 Sept 2026: *"I want
 > accounts but just for me and ammar, in short master accounts … plan all
 > the logics of build first so we have a good foundation … plan the UI … our
@@ -1515,24 +1517,28 @@ during a void, not the collections query).
 
 ### What only the humans can do before this is live
 
-Publish `firestore.rules` from the repo file (LF md5 `85ac93b1…`, 1,748
-lines) — sent to Afnan on 30 Sept (as relayed), **not reported published**;
-an earlier M2 file (`d56929aa…`, 1,675 lines) was sent on 29 Sept, never
-reported published, and is superseded. Until the M2 file is published no
-file reported published has a rule for `ma_cpr`, `ma_collection`,
-`ma_claims` or `ma_runs`, so those reads and writes are refused (default
-deny, owners included) and Money in says "incomplete — <collection> could
-not be read"; Master Accounts otherwise carries on. Then: read the Netlify
-deploy list (was `6410744`, `v269`, built or skipped — and are
-`ma-rollup-background` and `ma-rollup-now-background` in the function list,
-scheduled?); run the first rollup (Run now, or wait for 03:45 UTC — it
-writes `ma_runs/rollup` and an audit row with its own result); hold one real
-CPR PDF against a derived receipt's net, and a TCS, a Bykea and a Blue-Ex
-statement against the form; set the Cloudinary keys so a receipt can be
-attached; and a first look on a real screen. The test from his side: Money
-in ▸ Couriers loads without "incomplete — … could not be read", and Run now
-ends "Done at …". The full list, with what is verified and what is not, is
-in CLAUDE.md "Master Accounts — M2 built" → "Set-up only a human can do".
+The rules file (LF md5 `85ac93b1…`, 1,748 lines) was sent to Afnan on 30
+Sept (as relayed), to be published from the repo file, and he **REPORTED
+publishing the rules at about 12:23 UTC that day** ("done rules updated" — he
+did not name the file; hypothesis, unverified: this one; the Console cannot
+be read from a session, so this stays a report). An earlier M2 file
+(`d56929aa…`, 1,675 lines) was sent on 29 Sept, never reported published, and
+is superseded. If the Console holds the M2 file, `ma_cpr`, `ma_collection`,
+`ma_claims` and `ma_runs` are no longer default-denied and Money in should
+load without "incomplete — <collection> could not be read"; if it holds a
+file without those blocks (the FINAL M1 file, say), those reads and writes
+are refused (default deny, owners included) and Money in says so; Master
+Accounts otherwise carries on. Still to do: read the Netlify deploy list (was
+`6410744`, `v269`, built or skipped — and are `ma-rollup-background` and
+`ma-rollup-now-background` in the function list, scheduled?); run the first
+rollup (Run now, or wait for 03:45 UTC — it writes `ma_runs/rollup` and an
+audit row with its own result); hold one real CPR PDF against a derived
+receipt's net, and a TCS, a Bykea and a Blue-Ex statement against the form;
+set the Cloudinary keys so a receipt can be attached; and a first look on a
+real screen. The test from his side: Money in ▸ Couriers loads without
+"incomplete — … could not be read", and Run now ends "Done at …". The full
+list, with what is verified and what is not, is in CLAUDE.md "Master
+Accounts — M2 built" → "Set-up only a human can do".
 
 ## 22. Tests
 

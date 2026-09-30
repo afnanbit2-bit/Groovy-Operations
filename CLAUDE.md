@@ -7908,10 +7908,11 @@ is condensed at the end of this section.
 **M2 (couriers and collections, 30 Sept 2026) is built on top of this and has
 its own section below, "Master Accounts — M2 built".** This section is M1 as it
 stood on 29 Sept 2026, status statements included: the heading's "rules reported
-published" is M1's rules file, not M2's (M2's is a different, newer file, sent and
-NOT reported published); and where it counts what M2 changed — 15 `ma_*`
-collections, eight `ma-*` page ids, nine live Record kinds, "Coming later · 8" —
-the M2 section has the new numbers (19, nine, eleven, 7).
+published" is M1's rules file, not M2's (M2's is a different, newer file, sent
+and, on 30 Sept, reported published — not checkable; the M2 section has it); and
+where it counts what M2 changed — 15 `ma_*` collections, eight `ma-*` page ids,
+nine live Record kinds, "Coming later · 8" — the M2 section has the new numbers
+(19, nine, eleven, 7).
 
 **Where it stands — verified from git, 29 Sept.** Nine M1 commits on
 `claude/master-accounts-planning-udoiw9`, now on `main`:
@@ -9058,7 +9059,7 @@ page; it became `cal-today`. **Every rule added to `css/main.css` for this
 module is `.ma-`-scoped for that reason** — the `tb` lesson from The Board,
 in CSS.
 
-## Master Accounts — M2 built (30 Sept 2026) · couriers and collections · on `main` at `6410744`, rules sent but NOT reported published, not yet seen
+## Master Accounts — M2 built (30 Sept 2026) · couriers and collections · on `main` at `6410744`, rules reported published (30 Sept), not yet seen
 
 Afnan, 29 Sept 2026 (as relayed to the session that built it): after the
 foundation, the money that actually arrives — PostEx's receipts (CPRs)
@@ -9088,17 +9089,26 @@ on A, Sonnet 5.5 on B and C (read from the 13 non-merge commits).
   and C both started at v265, B took v266, C then v267 and A's proof v268 (`sw.js`
   read at each commit), and the last merge — conflicts in `index.html`,
   `js/master-accounts.js` and `sw.js`, by its own message — went past all of them.
-- **The rules: sent, not reported published.** `firestore.rules` at `6410744`: LF
-  md5 `85ac93b115c0c75ba0213d7371cc6958`, 1,748 lines (verified). Sent to Afnan
-  on 30 Sept (as relayed); **not reported published**. An earlier M2 file — md5
+- **The rules: sent 30 Sept, REPORTED published 30 Sept — not checkable.**
+  `firestore.rules` at `6410744`: LF md5 `85ac93b115c0c75ba0213d7371cc6958`, 1,748
+  lines, and the same bytes at `ca325c1` (verified). Sent to Afnan on 30 Sept
+  from `main` at `ca325c1` (as relayed); he wrote "done rules updated" at about
+  12:23 UTC that day (as relayed) — a report: his message did not name the file,
+  and nobody in a session can read the Console. **Hypothesis, unverified: the
+  file he published is this one.** An earlier M2 file — md5
   `d56929aa04f40928de3e0ea14a449442`, 1,675 lines, the file at `0a5b6d6`
   (verified) — was sent on 29 Sept, never reported published, and is superseded
-  (it has no `ma_claims` block and no dispute-history rule). **Until the M2 file
-  is published**, no file reported published holds a rule for `ma_cpr`,
+  (it has no `ma_claims` block and no dispute-history rule). ~~**Until the M2
+  file is published**, no file reported published holds a rule for `ma_cpr`,
   `ma_collection`, `ma_claims` or `ma_runs`, so those reads are default-denied,
-  owners included: dependent figures say "incomplete — <collection> could not be
-  read" and the rest of Master Accounts carries on, and **collection, claim,
-  dispute and courier-statement writes are refused**. See "Firestore rules —
+  owners included: dependent figures say "incomplete — <collection> could not
+  be read" and the rest of Master Accounts carries on, and **collection, claim,
+  dispute and courier-statement writes are refused**.~~ *(SUPERSEDED 30 Sept
+  2026, ~12:23 UTC, by the report above — hypothesis, unverified: if he
+  published the M2 file, those reads and writes are no longer refused and
+  "incomplete — <collection> could not be read" should clear; if it was another
+  file, the Console may still hold the FINAL M1 file, which has no rule for the
+  four collections, and all of that stands.)* See "Firestore rules —
   published".
 - **Served? Not known.** This session's `curl` to `groovyoperations.netlify.app`
   failed ("CONNECT tunnel failed, response 403"). PR #100's 29 Sept read of the
@@ -9361,9 +9371,11 @@ name. Each fix was undone once and a named assertion failed — B 31 undos, A 22
 ### Set-up only a human can do
 
 - [ ] **Publish `firestore.rules` `85ac93b1…`** (1,748 lines) **from the repo
-  file, not a local copy** — sent 30 Sept (as relayed), **not reported
-  published.** His test: Money in ▸ Couriers loads without "incomplete — … could
-  not be read", and **Run now** ends "Done at …".
+  file, not a local copy** — sent 30 Sept (as relayed); **reported done by
+  Afnan (about 12:23 UTC, 30 Sept 2026: "done rules updated", file not named),
+  not checkable** — that it is this file is a hypothesis, unverified, so the box
+  stays unticked. His test: Money in ▸ Couriers loads without "incomplete — …
+  could not be read", and **Run now** ends "Done at …".
 - [ ] **Read the Netlify deploy list:** was `6410744` (`v269`) built or skipped
   (the 21 Sept credit skip looked like a stale cache)? Are `ma-rollup-background`
   (`45 3 * * *`) and `ma-rollup-now-background` in the function list?
@@ -12201,9 +12213,64 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
-**REPUBLISH OUTSTANDING (30 Sept 2026) — Master Accounts M2: the couriers'
-rules. Sent to Afnan, NOT reported published.** Read this before the "No
-republish outstanding" entries below, which are dated to the days they name.
+**No republish outstanding as of 30 Sept 2026 (~12:23 UTC) — Master Accounts M2
+rules reported published, if he published the M2 file: reported by Afnan, not
+checkable.** Afnan wrote "done rules updated" in-session at about 12:23 UTC on
+30 Sept 2026 (as relayed to this session), taken to mean that he published the
+Firestore rules. **That is a report and nothing more: nobody in a session can
+read the Console**, so nothing below is checked against it — only its rules
+history can say what it holds. His message did not name the file.
+
+1. **The file he had been sent** (as relayed): the complete M2 file,
+   `firestore.rules` on `main` at `ca325c1` — LF md5
+   `85ac93b115c0c75ba0213d7371cc6958`, 1,748 lines, 19 `match /ma_` blocks
+   (verified this session: `git show ca325c1:firestore.rules | tr -d '\r' |
+   md5sum`, `wc -l` and `grep -c`), the same bytes as at `6410744` (verified: the
+   same `md5sum`). He was also given a raw GitHub link pinned to that commit (as
+   relayed). The session that sent it reported that the bytes it fetched
+   matched the md5 (as relayed), and a fetch of `firestore.rules` at that pinned
+   sha here agreed (verified: HTTP 200, 103,308 bytes, LF md5 `85ac93b1…`, 1,748
+   lines) — so the bytes behind the link are the repo file's, not a local copy's;
+   the 29 Sept evening entry below says why that matters. **That the file he
+   published is THIS one is a hypothesis, unverified.**
+2. **What the file adds** over the FINAL M1 file (`9d7ec162…`, 1,526 lines, 15
+   `ma_*` blocks — verified at `914b67a`): the `ma_cpr`, `ma_collection`,
+   `ma_claims` and `ma_runs` blocks (lines 1672, 1684, 1693 and 1735 of the file
+   — verified) and the rules that hold a dispute (`maDisputeOk`: one open at a
+   time, `disputes` append-only — S7) and a claim (`maClaimOk`, `maClClaimedOk`:
+   one live collection per receipt — S2). `git diff --numstat 914b67a ca325c1
+   -- firestore.rules` reads +226 −4 (verified); the helper list and the four M1
+   lines it changes are in item 1 of the superseded entry below.
+3. **What should clear, if he published it** (hypothesis, unverified): the
+   courier pages' "incomplete — <collection> could not be read" (Money in ▸
+   Couriers and Today) and the refused collection, claim, dispute and
+   courier-statement writes — item 3 of the superseded entry below says why they
+   were refused. **The test from Afnan's side:** Money in ▸ Couriers loads
+   without the "incomplete" notice. It needs the M2 build served, and whether
+   Netlify built `6410744` is still unconfirmed (the M2 section: the deploy list
+   was not read). A session cannot run it: the pages are owner-only and the QA
+   account is refused on `ma_*` by design.
+4. **If it was another file,** the Console may still hold the FINAL M1 file and
+   everything in item 3 still applies; only the Console's rules history
+   (Firebase Console → Firestore → Rules) says which is live. If a courier read
+   or write is still refused after the publish, that is new evidence: item 5 of
+   the superseded entry below has the two things to check (the signed-in email,
+   the device clock) before reopening the code. `git log --oneline -1 --
+   firestore.rules` is `53ba832` (verified); a newer commit there is a change he
+   has not been sent.
+
+This supersedes the "REPUBLISH OUTSTANDING (30 Sept 2026)" entry directly below
+**if** the hypothesis in 1 holds; that entry stays for its detail, and the
+29 Sept entries below it are unchanged.
+
+**SUPERSEDED 30 Sept 2026 (~12:23 UTC) by the entry above, which records
+Afnan's report that he then published the rules (file not named — hypothesis,
+unverified: the M2 file this entry describes; not checkable). Kept for its
+detail: what the M2 file adds, and what each Console state refuses. Was:
+REPUBLISH OUTSTANDING (30 Sept 2026) — Master Accounts M2: the couriers'
+rules. Sent to Afnan, NOT reported published.** ~~Read this before the "No
+republish outstanding" entries below, which are dated to the days they name.~~
+*(SUPERSEDED 30 Sept 2026: read the entry above first; this one is its detail.)*
 
 1. **The file to publish** is `firestore.rules` on `main` at `6410744`: LF
    `md5 85ac93b115c0c75ba0213d7371cc6958`, 1,748 lines, 19 `match /ma_` blocks
