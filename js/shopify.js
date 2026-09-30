@@ -320,7 +320,8 @@ function _siComputeSkuTable(){
       garmentType:_siGetCustomTypes()[sku]||'',
       onHand,prevOnHand,weeklyDelta,s7,s30,dailyRate,daysLeft,sellThrough,
       firstSold:fs,lastSold:ls,daysSinceLastSale,refunds,totalSold:totalSoldMap[sku]||0,
-      price:prod.price||0,reorderPoint,suggestedQty,created_at:prod.created_at||''
+      price:prod.price||0,reorderPoint,suggestedQty,created_at:prod.created_at||'',
+      liveAt:prod.published_at||prod.created_at||''
     });
   });
 
@@ -718,7 +719,7 @@ function _siSkuHeadCells(){
     {key:'title',label:'Product'},{key:'color',label:'Color'},{key:'productType',label:'Category'},
   ];
   const rest=[
-    {key:'onHand',label:'On Hand'},{key:'s7',label:'Sold 7d'},{key:'s30',label:'Sold 30d'},
+    {key:'onHand',label:'On Hand'},{key:'s7',label:'Sold 7d'},{key:'s30',label:'Sold 30d'},{key:'totalSold',label:'Sold since live'},
     {key:'daysLeft',label:'Days Left'},{key:'sellThrough',label:'Sell-Thru'},
     {key:'reorderPoint',label:'Reorder Pt'},{key:'suggestedQty',label:'Suggested'},
   ];
@@ -805,6 +806,25 @@ function _siSizeChips(variants){
   }).join(' ');
 }
 
+// "Sold since live": lifetime units (non-refunded line items, same rule as
+// Sold 7d/30d) with how long the product has been live underneath. Live age
+// is "—" when the catalog carries no date; it is never invented.
+function _siGroupLiveAt(variants){
+  let best='';
+  variants.forEach(v=>{if(v.liveAt&&(!best||v.liveAt<best))best=v.liveAt;});
+  return best;
+}
+function _siSoldSinceLiveCell(units,liveAt){
+  const d=liveAt?_siDaysAgo(liveAt):null;
+  const age=d!==null&&!isNaN(d)&&d>=0?'live '+d+'d':'live —';
+  return`<span style="font-weight:600">${units||0}</span><div style="font-size:11px;color:var(--muted);white-space:nowrap">${age}</div>`;
+}
+function _siEarliestOrderDate(){
+  let m='';
+  _siLineItems.forEach(li=>{const t=li.order_created_at;if(t&&(!m||t<m))m=t;});
+  return m?String(m).slice(0,10):'';
+}
+
 function _siGroupedBodyHtml(filteredRows){
   const groups=_siGroupRows(filteredRows);
   const dir=_siSkuDir;const key=_siSkuSort;
@@ -812,7 +832,7 @@ function _siGroupedBodyHtml(filteredRows){
     const tot=f=>g.variants.reduce((s,r)=>s+(r[f]||0),0);
     const minDays=Math.min(...g.variants.filter(r=>r.dailyRate>0.05).map(r=>r.daysLeft).concat([9999]));
     const m={title:g.title,color:g.color,productType:g.productType,
-      onHand:tot('onHand'),s7:tot('s7'),s30:tot('s30'),daysLeft:minDays};
+      onHand:tot('onHand'),s7:tot('s7'),s30:tot('s30'),totalSold:tot('totalSold'),daysLeft:minDays};
     return m[key]!==undefined?m[key]:tot('onHand');
   };
   const page=Object.entries(groups).sort((a,b)=>{
@@ -845,6 +865,7 @@ function _siGroupedBodyHtml(filteredRows){
       <td style="font-weight:700;color:${totColor}">${tot}</td>
       <td style="font-weight:600">${totS7}</td>
       <td>${totS30}</td>
+      <td>${_siSoldSinceLiveCell(g.variants.reduce((s,r)=>s+(r.totalSold||0),0),_siGroupLiveAt(g.variants))}</td>
       <td>${minDaysStr}</td>
       <td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td>
     </tr>`;
@@ -859,6 +880,7 @@ function _siGroupedBodyHtml(filteredRows){
         <td style="font-weight:700;font-size:13px">${_siEsc(r.size||'?')}</td>
         <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'var(--accent-urgent)':'inherit'}">${r.onHand}</td>
         <td>${r.s7}</td><td>${r.s30}</td>
+        <td>${_siSoldSinceLiveCell(r.totalSold||0,r.liveAt)}</td>
         <td style="${daysClass}">${daysStr}</td>
         <td style="font-size:12px">${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
         <td style="font-size:12px">${r.reorderPoint||'—'}</td>
@@ -931,9 +953,10 @@ function _siSkuTableSection(rows){
     <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="si-sku-count">${countStr}</span>
   </div>
   <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Click a row to expand sizes. ☀ = Summer · ❄ = Winter · <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">TOP</span> / <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
-  <div style="overflow-x:auto"><table class="cut-table" style="min-width:950px">
+  <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sold since live counts non-refunded orders synced from ${_siEsc(_siEarliestOrderDate()||'—')} onward, so it understates products that launched earlier. "live Nd" comes from the catalog's published/created date ("—" until the catalog sync has stored it).</div>
+  <div style="overflow-x:auto"><table class="cut-table" style="min-width:1040px">
     <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
-    <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:14px">No products match your filters</td></tr>`:'')}</tbody>
+    <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--muted);font-size:14px">No products match your filters</td></tr>`:'')}</tbody>
   </table></div>
   <div id="si-sku-more" style="margin-top:10px;text-align:center">${moreHtml}</div>`;
 }
@@ -1065,7 +1088,7 @@ function _siRefreshSkuBody(){
   const totalGroups=Object.keys(groups).length;
   const tb=document.getElementById('si-sku-tbody');
   if(tb){
-    tb.innerHTML=_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="12" style="text-align:center;padding:32px;color:var(--muted);font-size:14px">No products match your filters</td></tr>`:'');
+    tb.innerHTML=_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--muted);font-size:14px">No products match your filters</td></tr>`:'');
     _siFixIndeterminate();
   }
   const cnt=document.getElementById('si-sku-count');

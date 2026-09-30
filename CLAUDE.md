@@ -11242,6 +11242,20 @@ client-side.
   - `shopify-order-backfill.js` — resumable historical order backfill
     (BulkWriter, time-budgeted to dodge 502s); `shopify-inventory.js` —
     connection test. (Schedules live in `netlify.toml`.)
+- **SKU table ▸ "Sold since live" (30 Sept 2026).** A column after Sold 30d:
+  lifetime units per variant (`totalSold`, non-refunded line items, the same
+  rule as 7d/30d; a group row sums its variants) with "live Nd" underneath.
+  The live date is `published_at`, falling back to `created_at`, earliest
+  across a group; "live —" when neither is stored, never a guess. The sort
+  key is `totalSold`. **`shopify-catalog-sync.js` now also writes
+  `published_at`; it fills in only after the next catalog sync run** (until
+  then `created_at`, already stored, is used). **Coverage limit, read from
+  code:** `shopify_line_items` holds only what the order sync (4h lookback)
+  and `shopify-order-backfill.js` (`BACKFILL_DAYS = 90`) wrote, so the number
+  understates products launched earlier; a caption under the legend names the
+  earliest synced order date. Whether the live collection was ever backfilled
+  further is unknown. `tests/shopify-sold-since-live.test.js` (20), each
+  assertion verified by breaking it. Nobody has seen it on a real screen.
 - **Collections:** `shopify_products` (per-variant catalog), `shopify_orders`,
   `shopify_line_items` (keep historical `product_type` by design),
   `shopify_inventory_snapshots`, `shopify_weekly_closes`, `shopify_sync_meta`.

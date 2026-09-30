@@ -182,6 +182,7 @@ exports.handler = async function () {
             .filter(Boolean),
           status: product.status || "",
           created_at: product.created_at || "",
+          published_at: product.published_at || "",
           last_synced_at: now,
           needs_review: needsReview,
         });
