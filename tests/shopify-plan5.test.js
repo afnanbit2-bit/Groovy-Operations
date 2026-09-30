@@ -138,7 +138,7 @@ function classChecks(src,store){
   o['overview shows four tiles with their counts']=['Reorder now','Stock-out risk','Stuck / stop','Winners'].every(t=>ov.indexOf('<span class="l">'+t+'</span>')>0)&&/<span class="n">11<\/span>/.test(ov)&&/<span class="n">12<\/span>/.test(ov);
   o['the list is capped at 10 rows with a Show all button']=(ov.match(/class="si-ov-row"/g)||[]).length===10&&/Show all 11/.test(ov);
   o['the most urgent first: Q has none left (cover -1 sort key), then P40 (2.3 weeks)']=ov.indexOf('Art Q')>0&&ov.indexOf('Art Q')<ov.indexOf('Art P40')&&ov.indexOf('Art P40')<ov.indexOf('Art P39');
-  o['every row has Open and + Compare and an action sentence']=(ov.match(/onclick="window\._siAxOpen\(/g)||[]).length===10&&(ov.match(/_siAxOvCompare\(/g)||[]).length===10&&/less than the 21-day lead time/.test(ov);
+  o['every row has Open and + Compare and an action sentence']=(ov.match(/onclick="window\._siAxOpen\(/g)||[]).length===10&&(ov.match(/_siAxOvCompare\(/g)||[]).length===10&&/against a 21-day lead time/.test(ov);
   R('window._siAxOpen("P40")');
   o['Open goes to that article in Search']=R('_siAxModeSel')==='search'&&R('_siAxSel')==='P40';
   const pg=R('_siAxSearchBody()');
@@ -152,6 +152,11 @@ function classChecks(src,store){
   R('window.matchMedia=function(){return{matches:false};};_siAxCmp=[]');
   o['desktop: Compare holds 5']=['P1','P2','P3','P4','P5','P6'].map(c=>R('_siAxTryAdd("'+c+'")').ok).join()==='true,true,true,true,true,false';
   o._p30=A('P30').k;o._p40=A('P40').k;
+  // a dormant article: sold 20 on 08-02 (in stock to 08-11, 10 in-stock days, D = 2.0 above the median), nothing since 08-04, 0 on hand now. Not Stock-constrained, never Reorder now.
+  R('_siProducts.push('+J(prod('ZO'))+');_siLineItems.push('+J(li('ZO-M',20,'2026-08-02'))+')');
+  R('_siHist=_siAxBuildHistory('+J(snaps.map(x=>({date:x.date,items:Object.assign({},x.items,{z:{sku:'ZO-M',available:x.date<='2026-08-11'?20:0}})})))+');_siSnapshot={items:Object.assign({},'+J(snaps[30].items)+',{z:{sku:"ZO-M",available:0}})};_siAxCache=null');
+  o['out of stock with no sale in 28 days is not Stock-constrained']=C('ZO').c!=='constrained';
+  o['and its action says so instead of Reorder now']=A('ZO').k==='watch'&&A('ZO').label==='Out of stock, no recent sales';
   return o;
 }
 module.exports=async function(){
@@ -192,6 +197,8 @@ module.exports=async function(){
   cbrk('most urgent not first','cov(x)-cov(y)||(y.m.units-x.m.units)','(y.m.units-x.m.units)',['the most urgent first: Q has none left (cover -1 sort key), then P40 (2.3 weeks)']);
   cbrk('verdict after the tiles','  ${verdictHtml}\n  <div class="si-ax-kpis si-ax-head6">','  <div class="si-ax-kpis si-ax-head6">',['verdict first: badge, action, why; then six tiles, chart, sizes; detail collapsed']);
   cbrk('phone cap removed','return 3;}','return _SI_AX_MAX;}',['phone: Compare holds 3 articles and says why the 4th is refused']);
+  cbrk('constrained without recent sales','m.units28>0&&aboveP(T.constrainedPct','aboveP(T.constrainedPct',['out of stock with no sale in 28 days is not Stock-constrained']);
+  cbrk('dormant gets reorder','c.cls!==\'dead\'&&m.units28===0&&a.hasStock&&a.onHand===0','false',['and its action says so instead of Reorder now']);
   cbrk('winner percentile 0.5','winnerPct:0.90','winnerPct:0.50',['winners are exactly P38, P39, P40 (p >= 90%)']);
   cbrk('winner without unit floor is invisible here; floor raised to 39 units','winnerUnits:30','winnerUnits:39',['winners are exactly P38, P39, P40 (p >= 90%)']);
   cbrk('constrained ignores in-stock rate','m.inRate!=null&&m.inRate<T.constrainedInStock&&','m.inRate!=null&&',['winners are exactly P38, P39, P40 (p >= 90%)']);

@@ -2024,7 +2024,7 @@ function _siAxClassify(a){
     return out('dead','no sale in the last '+m.pace28Days+' counted days with '+a.onHand+' on hand.',ex);
   if(!a.hasStock)skipped.push('sales in the last 28 days');
   // stock-constrained
-  if(m.inRate!=null&&m.inRate<T.constrainedInStock&&aboveP(T.constrainedPct,T.absSolid))
+  if(m.inRate!=null&&m.inRate<T.constrainedInStock&&m.units28>0&&aboveP(T.constrainedPct,T.absSolid))
     return out('constrained',inTxt+' (below '+pc(T.constrainedInStock)+') while demand beat the median: '+rankTxt+'.',Object.assign({near:'Returns to a normal class when it is in stock on '+pc(T.constrainedInStock)+' of days.'},ex));
   // winner
   const winTop=aboveP(T.winnerPct,T.absWinner);
@@ -2052,6 +2052,8 @@ function _siAxActionOf(a){
   const R=(key,label,text)=>({key,label,text,lead:lt});
   if(c.cls==='early'||c.cls==='unrated')return R('watch','Watch',c.cls==='early'?'Not classed yet: too few counted days.':'Not classed: stock or pace data is missing.');
   if(c.cls==='dead')return R('stuck','Stop / clear','Nothing sold in '+m.pace28Days+' days with '+a.onHand+' on hand: do not reorder; bundle, discount or clear.');
+  // nothing sold in 28 days and nothing on hand: no current demand to restock for
+  if(c.cls!=='dead'&&m.units28===0&&a.hasStock&&a.onHand===0)return R('watch','Out of stock, no recent sales','Sold nothing in the last '+m.pace28Days+' counted days and none is left: reorder only if you plan a re-run.');
   if(c.cls==='constrained')return R('reorder','Reorder now','Out of stock on '+_siAxPct(1-(m.inRate==null?1:m.inRate))+' of measured days while demand beat the median; '+ltTxt+'.');
   if(c.cls==='slow'){
     if(conf.lvl===0)return R('watch','Review: little data',m.units+' units so far: too little to decide.');
@@ -2060,7 +2062,7 @@ function _siAxActionOf(a){
     return R('watch','Watch','Slow but stock is low ('+covTxt+' of cover).');
   }
   // winner, solid, steady
-  if(cov!=null&&cov<ltw&&conf.lvl>0)return R('reorder','Reorder now',covTxt+' of cover is less than the '+lt.days+'-day lead time — a batch started today arrives after it is gone ('+(lt.custom?'your lead time':'default lead time, unconfirmed')+').');
+  if(cov!=null&&cov<ltw&&conf.lvl>0)return R('reorder','Reorder now',(cov===0?'Nothing left in stock':covTxt+' of cover')+' against a '+lt.days+'-day lead time: a batch started today arrives after the stock is gone ('+(lt.custom?'your lead time':'default lead time, unconfirmed')+').');
   if((cov!=null&&cov<ltw+T.riskWeeks)||sizes)return R('risk','Stock-out risk',(sizes?'Size'+(m.risk.length===1?'':'s')+' '+sizes+' out and selling. ':'')+(cov!=null?covTxt+' of cover against a '+lt.days+'-day lead time.':'')+' Plan the next batch; '+ltTxt+'.');
   if(cov!=null&&cov>T.overCoverWeeks)return R('hold','Hold, do not reorder',covTxt+' of cover: enough for now.');
   return R('ok','No action',cov==null?'Cover unknown.':covTxt+' of cover, above the '+lt.days+'-day lead time.');
@@ -2629,7 +2631,7 @@ function _siAxSearchBody(){
     <div class="si-vd-text">${_siEsc(va.text)}</div>
     <div class="si-ax-note" style="margin:4px 0 0">${_siEsc(vc.rule)}${vc.near?' '+_siEsc(vc.near):''}${vc.unverified?' (partly unverified)':''}</div></div>`;
   return`<div class="card"><div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
-    <div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:700">${_siEsc(a.name)}</div><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${cat} · ${a.skus.size} SKU${a.skus.size===1?'':'s'}</div></div>
+    <div style="flex:1 1 220px;min-width:0"><div style="font-size:18px;font-weight:700">${_siEsc(a.name)}</div><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${cat} · ${a.skus.size} SKU${a.skus.size===1?'':'s'}</div></div>
     <button class="si-ax-btn" data-code="${_siEsc(a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button><button class="si-ax-btn" onclick="window._siAxSetMode('overview')">Overview</button><button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button></div></div>
   ${verdictHtml}
   <div class="si-ax-kpis si-ax-head6">${kpi('Units per week',_siAxNum(m.paceHead),m.paceHead!=null?(m.paceHeadBasis==='in stock'?'while in stock — sold out '+m.outDays+' of '+m.measured+' days, so real demand is higher (plain rate '+_siAxNum(m.rateWeek)+')':_siEsc(win)):'needs 7+ counted days','rate')}
