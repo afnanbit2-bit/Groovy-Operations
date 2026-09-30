@@ -227,6 +227,26 @@ function _maCourierFixture(){
   return app;
 }
 
+
+// Seeds the Article Explorer fragments: five articles with weekly sales over ~40 weeks.
+function _axSeed(app){
+  const arts=[['GST073','Effortless Tee','Deep Blue','Tees',280],['GD007','Denim Jort With A Very Long Name Indeed','Indigo','Jorts',400],
+    ['GHW001','Trucker Cap','Black','Caps',120],['GJ014','Zip Hoodie','Charcoal','Hoodies',200],['GCO001','Co-ord Set','Sand','Sets',90]];
+  const prods=[],lis=[];
+  arts.forEach(([code,title,color,cat,live],ai)=>{
+    ['S','M','L'].forEach((sz,k)=>prods.push({_id:code+sz,sku:code+'-'+sz,product_title:title,color,size:sz,product_type:cat,status:'active',published_at:new Date(Date.now()-live*86400000).toISOString()}));
+    for(let w=0;w<40;w++){
+      const ago=w*7+1;if(ago>live)continue;
+      const q=Math.max(0,Math.round(6+5*Math.sin((w+ai*3)/4)+ai*2-(w>30?4:0)));
+      if(q)lis.push({sku:code+'-'+['S','M','L'][w%3],quantity:q,price:1800+ai*400,order_created_at:new Date(Date.now()-ago*86400000).toISOString(),financial_status:'paid'});
+    }
+  });
+  app.run('_siProducts='+JSON.stringify(prods));
+  app.run('_siLineItems='+JSON.stringify(lis));
+  app.run('_siSnapshot={items:{a:{sku:"GST073-S",available:12},b:{sku:"GST073-M",available:0},c:{sku:"GST073-L",available:5}}}');
+  app.run('_siWeeklyCloses=[{week_ending:"2026-09-26",week_starting:"2026-09-20",top_sku:{sku:"GST073-S",quantity:11}}]');
+}
+
 const FRAGMENTS={
   // Master Accounts (MASTER_ACCOUNTS_PLAN.md §16.4): Today, Money and a
   // holder, the Ledger with the review queue, a party page, and the Record
@@ -2679,6 +2699,24 @@ const FRAGMENTS={
     app.run("_siSkuExpanded.add('Live in Pants|||Cool Grey')");
     const html=app.run('_siSkuTableSection('+JSON.stringify(rows)+')');
     return Promise.resolve('<div class="card">'+html+'</div>');
+  },
+  // Inventory Intel ▸ Article Explorer: one article's page, and Compare with the
+  // maximum five series. The chart's text is HTML; its lines are tokens
+  // (--si-s0..4) that must read on --surface in both themes. Data is built
+  // relative to today so the weekly axis always has a shape.
+  'inventory intel — Article Explorer search':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="search";_siAxSel="GST073";_siAxQuery=""');
+    return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
+  },
+  'inventory intel — Article Explorer compare':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="compare";_siAxQuery="";_siAxCmp=["GST073","GD007","GHW001","GJ014","GCO001"];_siAxMetric="units_week";_siAxBasis="calendar"');
+    return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
   },
   // The other shape of the same bug, and the one that hid longest: a label
   // whose ink is a literal white-alpha sitting on a `background:var(--dark)`

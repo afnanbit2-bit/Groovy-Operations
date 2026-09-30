@@ -11272,6 +11272,18 @@ client-side.
   All are `read: if signedIn(); write: if false;` in `firestore.rules` —
   only the Admin SDK (Functions) writes; clients read-only.
 
+### Inventory Intel ▸ Article Explorer (30 Sept 2026)
+
+Tab after "SKU Table" (`_siSection==='explorer'`, `_siArticleExplorerSection()` in `js/shopify.js`, styles `.si-ax-*` and tokens `--si-s0..s4` in `css/main.css`). Sub-tabs **Search** (one article) and **Compare** (2–5). **No new Firestore reads** — it uses `_siLineItems`, `_siProducts`, `_siSnapshot`, `_siWeeklyCloses` already loaded (`tests/shopify-article-explorer.test.js` counts reads: 0).
+
+- **An "article" is the SKU prefix** (`GST073-S` → `GST073`), indexed once per data load (`_siAxIndex`, cached on array identity; weekly/monthly buckets cached per article). Search = every word must appear in code / title / colour / category / SKUs; debounced 150ms, only the result list repaints. Ignores the season filter (says so on screen).
+- **Same rules as Sold since live:** refunded line items excluded; coverage caption "Data counted from <earliest synced order>" on every view, plus a per-article warning when its live date is earlier. Days are the first 10 chars of the offset timestamp, calendar maths on UTC day numbers (`_siAxDayNum`), weeks start Monday. Null = not live / before coverage, never a zero.
+- **Metrics offered (verified: line items carry `price` and `quantity`, `netlify/functions/shopify-order-sync.js`):** units per week, per month, revenue per week, per month (unit price × qty, before discounts), cumulative units. **Stock over time is NOT offered:** the client reads only two snapshot documents (today, a week ago), not a history; offering it would need a new multi-read.
+- **Since launch** aligns by live date (catalog `published_at||created_at`), falling back to the first counted sale (noted on screen); orders dated before the live day fall into week 0. Weeks before the first synced order are gaps.
+- **Chart:** HTML text, SVG holds only `<path>`s (no `<text>`/`<title>`), monotone cubic curve (`_siAxCurve`, never overshoots), axis ported from `mktAxisScale`, each series has a colour token, a dash and a numbered badge. Tooltip via `_siAxHover`. A table always sits under the chart. Five-article cap refused with a message (`_siAxTryAdd`).
+- Weekly close: only shown where the article is a close's `top_sku` (closes store nothing more per article).
+- **Not seen on a real screen**; rendered in headless Chromium only. Hover/tap tooltip is untested in a browser.
+
 ## Shared touchpoints — coordinate before changing
 
 These functions/blocks are edited by both tracks. Check the other branch

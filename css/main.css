@@ -34,6 +34,8 @@
      preset ink under its paper by the layout probe. */
   --sw-grey:#4F565F;--sw-grey-soft:#E7E9ED;
   --sw-teal:#0E6B64;--sw-teal-soft:#D6F0EC;
+  /* Article Explorer series palette: measured >=5.0:1 vs --surface (#fff) and --surface-2 */
+  --si-s0:#2563EB;--si-s1:#C2410C;--si-s2:#15803D;--si-s3:#7E22CE;--si-s4:#BE185D;
   --sw-tan:#7A4A1F;--sw-tan-soft:#F1E3D4;
   --sw-yellow:#7A5D00;--sw-yellow-soft:#FAEFC0;
   --sw-pink:#9B2A69;--sw-pink-soft:#FADFEC;
@@ -106,6 +108,7 @@ html[data-theme="dark"]{
   --cat-notes-soft:#1F2A3D;--cat-boards-soft:#2E2233;
   --sw-grey:#C3C8D0;--sw-grey-soft:#2A2E35;
   --sw-teal:#79D6C9;--sw-teal-soft:#11332F;
+  --si-s0:#6EA8FE;--si-s1:#FB923C;--si-s2:#4ADE80;--si-s3:#C084FC;--si-s4:#F472B6;
   --sw-tan:#DDB08A;--sw-tan-soft:#33261A;
   --sw-yellow:#E8CF6A;--sw-yellow-soft:#383014;
   --sw-pink:#F0A3CB;--sw-pink-soft:#3A1F30;
@@ -4959,3 +4962,59 @@ a.ma-btn{text-decoration:none}
 .tcx-have{font-size:11.5px;font-weight:600;color:var(--accent-success);flex-shrink:0}
 .tcx-add{flex-shrink:0;padding:5px 10px}
 .tcx-more{margin-top:12px}
+
+/* ── Inventory Intel ▸ Article Explorer ─────────────────────────────────
+   Chart text is HTML (see "Marketing — charts"); the SVG holds only paths.
+   Colours are --si-s0..s4 tokens; every series also has its own dash and a
+   numbered badge, so colour is never the only signal. */
+.si-ax-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.si-ax-btn{min-height:34px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-weight:600;font-size:13px;line-height:1.2;font-family:inherit;cursor:pointer}
+.si-ax-btn.on{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
+.si-ax-input{flex:1;min-width:200px;min-height:38px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);outline:none;font-family:inherit}
+.si-ax-select{min-height:34px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit}
+.si-ax-lab{font-size:12px;font-weight:600;color:var(--muted)}
+.si-ax-hit{display:flex;align-items:center;gap:10px;width:100%;text-align:left;min-height:44px;padding:8px 10px;border:0;border-bottom:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer}
+.si-ax-hit:hover{background:var(--hover)}
+.si-ax-hit .t{flex:1;min-width:0;font-size:14px;font-weight:600}
+.si-ax-hit .m{font-size:12px;color:var(--muted);font-weight:400}
+.si-ax-hit .n{font-size:13px;font-weight:700;white-space:nowrap}
+.si-ax-results{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px;max-height:320px;overflow-y:auto}
+.si-ax-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.si-ax-chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:4px 6px 4px 8px;border:1px solid var(--border);border-radius:999px;background:var(--surface);font-size:13px;font-weight:600;color:var(--text)}
+.si-ax-chip button{min-width:26px;min-height:26px;border:0;border-radius:50%;background:var(--soft);color:var(--text);cursor:pointer;font-size:14px;line-height:1}
+.si-ax-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:11px;font-weight:700;color:var(--surface);flex:0 0 auto}
+.si-ax-b0{background:var(--si-s0)}.si-ax-b1{background:var(--si-s1)}.si-ax-b2{background:var(--si-s2)}.si-ax-b3{background:var(--si-s3)}.si-ax-b4{background:var(--si-s4)}
+.si-ax-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:8px;font-size:13px;color:var(--text)}
+.si-ax-legend span{display:inline-flex;align-items:center;gap:6px}
+.si-ax-legend svg{width:26px;height:8px;overflow:visible}
+.si-ax-legend line{stroke-width:2.5;stroke-linecap:round}
+.si-ax-wrap{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:6px;margin-bottom:6px}
+.si-ax-yaxis{position:relative;min-width:30px}
+.si-ax-tick{position:absolute;right:0;transform:translateY(50%);font-size:12px;color:var(--muted);white-space:nowrap;line-height:1}
+.si-ax-plot{position:relative;height:260px;margin-right:16px;touch-action:pan-y;cursor:crosshair}
+.si-ax-grid{position:absolute;left:0;right:0;height:1px;background:var(--border);opacity:.7}
+.si-ax-plot svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.si-ax-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.si-ax-line.s0{stroke:var(--si-s0)}.si-ax-line.s1{stroke:var(--si-s1)}.si-ax-line.s2{stroke:var(--si-s2)}.si-ax-line.s3{stroke:var(--si-s3)}.si-ax-line.s4{stroke:var(--si-s4)}
+.si-ax-end{position:absolute;transform:translate(-50%,50%);pointer-events:none}
+.si-ax-cursor{position:absolute;top:0;bottom:0;width:1px;background:var(--muted);opacity:.6;display:none;pointer-events:none}
+.si-ax-tip{position:absolute;z-index:3;top:4px;display:none;min-width:150px;max-width:260px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;line-height:1.5;box-shadow:0 2px 10px #0003;pointer-events:none}
+.si-ax-tip b{display:block;margin-bottom:2px}
+.si-ax-tip .r{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.si-ax-xaxis{position:relative;grid-column:2;height:18px;margin-right:16px;margin-top:4px}
+.si-ax-xtick{position:absolute;font-size:12px;color:var(--muted);white-space:nowrap;transform:translateX(-50%)}
+.si-ax-xtick.first{transform:none}.si-ax-xtick.last{transform:translateX(-100%)}
+.si-ax-empty{padding:28px 12px;text-align:center;color:var(--muted);font-size:14px;border:1px dashed var(--border);border-radius:8px;margin-bottom:10px}
+.si-ax-note{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5}
+.si-ax-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.si-ax-kpi{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface)}
+.si-ax-kpi .l{font-size:12px;color:var(--muted);font-weight:600}
+.si-ax-kpi .v{font-size:21px;font-weight:700;line-height:1.3}
+.si-ax-kpi .s{font-size:12px;color:var(--muted)}
+.si-ax-mix{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}
+.si-ax-mix .sz{width:44px;font-weight:700}
+.si-ax-mix .bar{flex:1;height:10px;border-radius:5px;background:var(--soft);overflow:hidden}
+.si-ax-mix .bar i{display:block;height:100%;background:var(--si-s0)}
+.si-ax-mix .q{width:84px;text-align:right;color:var(--muted);white-space:nowrap}
+@media (max-width:600px){.si-ax-plot{height:200px}.si-ax-input{min-width:0}}
+@media (prefers-reduced-motion:no-preference){.si-ax-tip{transition:opacity .1s}}
