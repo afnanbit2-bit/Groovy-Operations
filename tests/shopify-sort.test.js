@@ -58,15 +58,16 @@ function checks(a){
   // Explorer UI
   seed(a);
   R('_siAxModeSel="compare";_siAxCmp=["GST073","GD007","GHW001"];_siSortState={}');
-  const codes=()=>(R('_siAxCompareBody()').match(/margin:0">(GST073|GD007|GHW001)</g)||[]).map(x=>x.replace(/.*">|</g,'')).join(',');
-  const body0=R('_siAxCompareBody()');
+  const only=b=>{const i=b.indexOf('data-sort-note="ax-compare"');const j=b.indexOf('data-sort-note=',i+10);return b.slice(i,j<0?undefined:j);};
+  const codes=()=>(only(R('_siAxCompareBody()')).match(/margin:0">(GST073|GD007|GHW001)</g)||[]).map(x=>x.replace(/.*">|</g,'')).join(',');
+  const body0=only(R('_siAxCompareBody()'));
   out['compare default = order added, stated on screen']=codes()==='GST073,GD007,GHW001'&&/Sorted by <strong>#<\/strong>, ascending — the order you added them/.test(body0);
   out['headers carry aria-sort (one ascending, rest none)']=(body0.match(/aria-sort="ascending"/g)||[]).length===1&&(body0.match(/aria-sort="none"/g)||[]).length===7;
   R('window._siSortClick("ax-compare","rev")');
-  const b1=R('_siAxCompareBody()');
+  const b1=only(R('_siAxCompareBody()'));
   out['click sorts numbers descending first, with ▼ and aria-sort']=codes()==='GST073,GD007,GHW001'&&/aria-sort="descending"[^>]*><button[^>]*data-key="rev"[^>]*>[^<]*<span[^>]*>▼/.test(b1);
   R('window._siSortClick("ax-compare","rev")');
-  out['second click flips to ascending (▲)']=codes()==='GHW001,GD007,GST073'&&/data-key="rev"[^>]*>[^<]*<span[^>]*>▲/.test(R('_siAxCompareBody()'));
+  out['second click flips to ascending (▲)']=codes()==='GHW001,GD007,GST073'&&/data-key="rev"[^>]*>[^<]*<span[^>]*>▲/.test(only(R('_siAxCompareBody()')));
   R('_siSortState={};window._siSortClick("ax-compare","live");window._siSortClick("ax-compare","live");');
   out['date column: no live date stays last when ascending']=codes()==='GD007,GST073,GHW001';
   R('window._siSortClick("ax-compare","live");');
@@ -110,7 +111,7 @@ module.exports=async function(){
   brk('classes alphabetical','return i<0?_SI_SORT_CLASSES.length:i;','return String(c).charCodeAt(0);',['classes in fixed order']);
   brk('XXXS dropped from garment order',"['XXXS','XXS','XS'","['XXS','XS'",['sizes: garment, then waist, then rest','SKU variants: XXXS before XS before S']);
   brk('categories without name tie-break','||_siSortNat(a[0],b[0]);}\n// Articles','||0;}\n// Articles',['categories: units desc then name']);
-  brk('no aria-sort on headers','aria-sort="${aria}" ','',['headers carry aria-sort (one ascending, rest none)']);
+  brk('no aria-sort on headers','aria-sort="${aria}"','',['headers carry aria-sort (one ascending, rest none)']);
   brk('SKU grouped sell-through key removed','sellThrough:oh+s7>0?s7/(oh+s7):null,reorderPoint:tot(\'reorderPoint\'),suggestedQty:tot(\'suggestedQty\')}','reorderPoint:0}',['SKU grouped: Sell-Thru column sorts by sell-through','SKU grouped: Suggested column sorts by suggested']);
   brk('SKU grouped no-rate group first on desc','daysLeft:minDays<9999?minDays:null','daysLeft:minDays',['SKU grouped: Days Left descending keeps no-rate group last']);
   return s;
