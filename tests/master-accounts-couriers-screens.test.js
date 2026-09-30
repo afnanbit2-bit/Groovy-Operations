@@ -308,7 +308,9 @@ module.exports=async function(){
     await app.run('window.maSaveForm()');
     s.eq('recorded: one transaction',S.tx.length,1);
     const ops=S.tx[0];
-    s.eq('…counter, document and audit row together',J(ops.map(x=>x.col).sort()),J(['ma_audit','ma_collection','ma_counters']));
+    s.eq('…counter, document, audit row and the claim of what it covers together (review S2)',J(ops.map(x=>x.col).sort()),J(['ma_audit','ma_claims','ma_collection','ma_counters']));
+    const cl=ops.find(x=>x.col==='ma_claims')||{data:{}};
+    s.ok('…the claim is the CPR\'s, naming the new collection, by Afnan, now',cl.id==='postex-JUL-1'&&cl.data.doc==='postex-JUL-1'&&cl.data.collection==='CL-27-0001'&&cl.data.by==='afnan'&&Number.isFinite(cl.data.at)&&!('releasedAt' in cl.data),J(cl));
     const stored=db.ma_collection[Object.keys(db.ma_collection)[0]];
     s.ok('the document holds the courier, the covers, the holder, who collected and the difference',stored.courier==='postex'&&J(stored.refs.cprNos)===J(['postex-JUL-1'])&&stored.holder==='1011'&&stored.collectedBy==='Noman'&&stored.difference===-100&&stored.expected===net,J(stored));
     s.ok('…posted (Afnan holds it himself), flagged for review',stored.status==='posted'&&(stored.flags||[]).some(x=>x.rule==='collection.difference'),J([stored.status,stored.flags]));

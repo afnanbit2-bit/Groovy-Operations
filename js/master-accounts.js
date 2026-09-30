@@ -67,7 +67,10 @@ const _MA_REF={
   // M2: the couriers' documents. ma_runs is only ever READ (the nightly
   // rollup writes it), so it has no reference here — the page never writes one.
   ma_cpr:id=>doc(db,'ma_cpr',id),
-  ma_collection:id=>doc(db,'ma_collection',id)
+  ma_collection:id=>doc(db,'ma_collection',id),
+  // Review S2: a statement's claim — which collection covers it. Read and
+  // written only inside the transaction that records or voids a collection.
+  ma_claims:id=>doc(db,'ma_claims',id)
 };
 const _MA_LOADS=[
   {key:'parties',col:'ma_parties',core:true,q:()=>collection(db,'ma_parties')},
@@ -299,13 +302,18 @@ function _maDocWhat(f,d){
   return [label,d&&Number.isInteger(d.amount)&&d.amount?maRs(d.amount):'',d&&maIsDay(d.date)?maDayLabel(d.date):''].filter(Boolean).join(' · ');
 }
 /* A new document: counter + document + audit, one transaction. Returns the
-   stored document (with its number) or throws. */
-async function _maPostNew(built){
+   stored document (with its number) or throws. `hook` (a collection's
+   claims, review S2): {read(tx) → what it read — before any write, as a
+   transaction requires; it throws to refuse — and write(tx, stored, read)}.
+   A transaction that commits second finds what it read changed and runs
+   again, so the hook's check always sees what is stored now. */
+async function _maPostNew(built,hook){
   const dt=built.dt,t=MA_DOC_TYPES[dt];
   if(!t)throw new Error('Unknown document type.');
   const fy=built.fy;
   let stored=null;
   await runTransaction(db,async tx=>{
+    const pre=hook&&hook.read?await hook.read(tx):null;
     const cref=_MA_REF.ma_counters(dt);
     const cs=await tx.get(cref);
     const cur=cs&&typeof cs.exists==='function'&&cs.exists()?(cs.data()||{}):{};
@@ -322,6 +330,7 @@ async function _maPostNew(built){
     const next=Object.assign({},_maClean(cur));next[fy]=seq;next.updatedAt=Date.now();
     tx.set(cref,next);
     tx.set(_MA_REF[t.col](no),d);
+    if(hook&&hook.write)hook.write(tx,d,pre);
     const m=_maMeta();
     tx.set(_MA_REF.ma_audit(_maAuditId()),_maClean(maAuditRow('post',d,Object.assign({},m,{detail:maDocTitle(d)+' '+maRs(d.amount||0)+(d.flags&&d.flags.length?' · '+d.flags.length+' flag'+(d.flags.length>1?'s':''):'')}))));
     stored=d;
@@ -352,8 +361,10 @@ async function _maWriteEdit(before,edited,reason,action){
   });
 }
 /* A patch (void, confirm, review): the stored doc is re-read, `check`
-   decides whether the patch still applies. */
-async function _maWritePatch(d,patch,action,detail,check){
+   decides whether the patch still applies. `hook` — {read(tx, cur) before
+   any write, write(tx, read)} — is how a collection's void releases its
+   claims in the same write (review S2). */
+async function _maWritePatch(d,patch,action,detail,check,hook){
   const col=MA_DOC_TYPES[d.dt].col;
   await runTransaction(db,async tx=>{
     const ref=_MA_REF[col](d.id);
@@ -361,9 +372,64 @@ async function _maWritePatch(d,patch,action,detail,check){
     if(!(snap&&snap.exists()))throw new Error('This document is no longer there.');
     const cur=snap.data()||{};
     if(check){const why=check(cur);if(why)throw new Error(why);}
+    const pre=hook&&hook.read?await hook.read(tx,cur):null;
     tx.update(ref,patch);
+    if(hook&&hook.write)hook.write(tx,pre);
     tx.set(_MA_REF.ma_audit(_maAuditId()),_maClean(maAuditRow(action,d,Object.assign(_maMeta(),{detail}))));
   });
+}
+/* Review S2 — a new collection's claims, inside its own transaction: every
+   covered statement's claim and the statement itself are re-read, with each
+   collection a claim names. Refused — before anything is written — if a
+   claim names a live collection, or a statement moved since the form was
+   opened (the screens review's stale net: its net, its state, or which side
+   of the books' start it is dated). What was read rides on the error
+   (maFresh), so the form can show it as stored. Otherwise a claim naming
+   the new collection is written beside it. */
+function _maClaimsHook(built){
+  const ids=((built.refs&&built.refs.cprNos)||[]).slice();
+  return {
+    read:async tx=>{
+      const snap=async ref=>{const x=await tx.get(ref);return x&&typeof x.exists==='function'&&x.exists()?(x.data()||{}):null;};
+      const claims={},fresh={},named={};
+      await Promise.all(ids.map(async id=>{
+        const [c,d]=await Promise.all([snap(_MA_REF.ma_claims(id)),snap(_MA_REF.ma_cpr(id))]);
+        claims[id]=c;fresh[id]=d?Object.assign({dt:'cpr'},d,{id}):null;
+      }));
+      const cols=[];ids.forEach(id=>{const c=claims[id]&&typeof claims[id].collection==='string'?claims[id].collection:'';if(c&&cols.indexOf(c)<0)cols.push(c);});
+      await Promise.all(cols.map(async c=>{const x=await snap(_MA_REF.ma_collection(c));named[c]=x?Object.assign({dt:'collection'},x,{id:c}):null;}));
+      const why=maCollectionCoverCheck(built.covers,fresh,claims,named);
+      if(why){
+        const e=new Error(why);
+        e.maFresh={cprs:ids.map(id=>fresh[id]).filter(Boolean),collections:Object.keys(named).map(k=>named[k]).filter(Boolean)};
+        throw e;
+      }
+      return {ids};
+    },
+    write:(tx,stored,pre)=>{
+      const m=_maMeta();
+      (pre&&pre.ids||[]).forEach(id=>tx.set(_MA_REF.ma_claims(id),_maClean(maClaimFor(id,stored.id,m.by,m.at))));
+    }
+  };
+}
+/* …and its void releases every claim that names it, in the same write.
+   A claim naming another collection, or none, is left alone. */
+function _maReleaseHook(d){
+  return {
+    read:async(tx,cur)=>{
+      const ids=((cur.refs&&cur.refs.cprNos)||(d.refs&&d.refs.cprNos)||[]).slice();
+      const got=await Promise.all(ids.map(async id=>{
+        const x=await tx.get(_MA_REF.ma_claims(id));
+        const c=x&&typeof x.exists==='function'&&x.exists()?(x.data()||{}):null;
+        return c&&c.collection===d.id?Object.assign({},c,{doc:id}):null;
+      }));
+      return got.filter(Boolean);
+    },
+    write:(tx,mine)=>{
+      const m=_maMeta();
+      (mine||[]).forEach(c=>tx.set(_MA_REF.ma_claims(c.doc),_maClean(maClaimRelease(c,m.by,m.at))));
+    }
+  };
 }
 /* A master (party, commitment, item, settings, an account): one batch with
    its audit row. Refused offline — a batch would sit unacknowledged. */
@@ -1076,7 +1142,9 @@ function _maDayRailHTML(c,day){
   if(!d)return '';
   const rows=d.events.map(e=>{
     const late=e.late&&e.due?`<span class="ma-l2">was due ${_maE(maDayLabel(e.due,e.due.slice(0,4)!==c.today.slice(0,4)))}</span>`:'';
-    const amt=e.varies?'<span class="ma-muted">amount varies</span>':(e.dir==='in'?'+':'−')+maRs(e.amount);
+    // An inflow can be negative since review S5 — a receipt that pays back a
+    // return's charge — so it carries its own sign rather than a forced "+".
+    const amt=e.varies?'<span class="ma-muted">amount varies</span>':(e.dir==='in'?maRsSigned(e.amount):'−'+maRs(e.amount));
     const open=e.commitment?` class="ma-rowlink" onclick="window.maOpenCommitment('${_maQ(e.commitment)}')"`:'';
     return `<tr${open}><td>${_maE(e.label)}${late}</td><td class="ma-num">${amt}</td></tr>`;
   }).join('');
@@ -1256,13 +1324,20 @@ function _maCourierOwed(c,k){
   return [A.receivable,A.statement].filter(Boolean).reduce((t,code)=>t+maBalanceOf(c.lines,c.idx,code),0);
 }
 /* Statements and receipts that can be collected and are not yet — the
-   collectable ones with something to collect and no live collection over
+   collectable ones with something on them and no live collection over
    them. `at` is the day the cash is expected (maUncollected) — empty for a
-   receipt from before the books, which has no such day. */
+   receipt from before the books, which has no such day. A NEGATIVE net is
+   listed too (review S5): a receipt that only pays back a return's charge
+   is ticked beside the ones it is deducted from. With ma_collection
+   unreadable NOTHING is offered (the screens review): which statements are
+   already collected is not known, and listing them all as free would invite
+   collecting one twice. */
+function _maCollUnread(){return _maMissing().indexOf('ma_collection')>=0;}
 function _maCollectable(c,k){
+  if(_maCollUnread())return [];
   const docs=c.docs;
   const un={};maUncollected(docs,c.s).forEach(x=>{un[x.doc.id]=x;});
-  return docs.filter(d=>d.dt==='cpr'&&d.courier===k&&maCprCollectable(d)&&(Number(d.net)||0)>0&&!maCollectionsOf(docs,d.id).length)
+  return docs.filter(d=>d.dt==='cpr'&&d.courier===k&&maCprCollectable(d)&&(Number(d.net)||0)!==0&&!maCollectionsOf(docs,d.id).length)
     .map(d=>({doc:d,at:un[d.id]?un[d.id].at:'',due:un[d.id]?un[d.id].due:''}))
     .sort((a,b)=>String(a.doc.date).localeCompare(String(b.doc.date))||String(a.doc.no).localeCompare(String(b.doc.no)));
 }
@@ -1305,7 +1380,14 @@ function _maCourierSummary(c,k,list,blocked){
   const inc=blocked.length?` <span class="ma-word warn">${_maE(_maMissingSay(blocked))}</span>`:'';
   let s;
   if(k==='bluex')s=`Blue-Ex (legacy) owes <b>${maRs(owed)}</b> — it has no statements here; a collection is against the balance it opened with.`;
-  else if(k==='postex')s=`PostEx owes <b>${maRs(owed)}</b>${blocked.length?'':`; <b>${maRs(un)}</b> of it is on ${_maPl(list.length,'CPR')} not yet collected.`}`;
+  else if(k==='postex'){
+    // Review note 3: a receipt from before the books is collectable but NOT
+    // in what the books say PostEx owes — its collection brings it in with
+    // the opening. Counted on its own, so the two sentences never disagree.
+    const inB=list.filter(x=>x.doc.status!=='before'),pre=list.filter(x=>x.doc.status==='before');
+    const sum=l=>l.reduce((t,x)=>t+(Number(x.doc.net)||0),0);
+    s=`PostEx owes <b>${maRs(owed)}</b>${blocked.length?'':`; <b>${maRs(sum(inB))}</b> of it is on ${_maPl(inB.length,'CPR')} not yet collected.`+(pre.length?` Besides that, <b>${maRs(sum(pre))}</b> is on ${_maPl(pre.length,'CPR')} from before the books started — collectable, and not in what the books say it owes until it is collected.`:'')}`;
+  }
   else if(k==='tcs')s=`TCS owes <b>${maRs(owed)}</b> inside its ${c.s.tcsCreditDays} days${blocked.length?'.':`; <b>${maRs(un)}</b> in ${_maPl(list.length,'statement')} not yet credited.`}${_maTcsHeld(c,C.accounts.wallet)}`;
   else s=`Bykea owes <b>${maRs(owed)}</b>${blocked.length?'':`; <b>${maRs(un)}</b> in ${_maPl(list.length,'statement')} not yet collected.`}`;
   return `<p class="ma-sum">${s}${inc}</p>`;
@@ -1314,8 +1396,10 @@ function _maCollFiltered(c,k){
   let list=c.docs.filter(d=>d.dt==='collection'&&d.courier===k).sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0));
   const f=_maCourierFilter;
   if(f==='noreceipt')list=list.filter(d=>d.status!=='void'&&!maAttachList(d.attachments).length);
-  else if(f==='difference')list=list.filter(d=>d.status!=='void'&&Number.isInteger(d.difference)&&d.difference!==0);
-  else if(f==='changed')list=list.filter(d=>d.status!=='void'&&(d.covers||[]).some(cv=>{const x=c.docs.find(y=>y&&y.id===cv.id);return x&&(x.status==='void'||x.net!==cv.net);}));
+  // The same collections Needs attention counts (maCollectionOff, review
+  // note 1) and the same test of "changed" (maCoverMoved, review S4).
+  else if(f==='difference')list=list.filter(d=>maCollectionOff(d,c.s));
+  else if(f==='changed')list=list.filter(d=>d.status!=='void'&&(d.covers||[]).some(cv=>maCoverMoved(cv,c.docs.find(y=>y&&y.dt==='cpr'&&y.id===cv.id))));
   return {list,all:f===''||['noreceipt','difference','changed'].indexOf(f)<0};
 }
 function _maCollTable(c,list){
@@ -1356,7 +1440,7 @@ function _maCourierSection(c,k,blocked){
   }
   const f=_maCollFiltered(c,k);
   const shown=f.all?f.list.slice(0,_MA_RECENT_COLL):f.list;
-  const filt=f.all?'':`<div class="ma-scope">Showing only collections ${_maE({noreceipt:'with no receipt',difference:'that differ from their net',changed:'whose statement changed after'}[_maCourierFilter])} · ${_maLink('Show all','window.maCourierFilter(\'\')')}</div>`;
+  const filt=f.all?'':`<div class="ma-scope">Showing only collections ${_maE({noreceipt:'with no receipt',difference:'that differ from their net past the tolerance, not yet reviewed',changed:'whose statement changed after'}[_maCourierFilter])} · ${_maLink('Show all','window.maCourierFilter(\'\')')}</div>`;
   body+=`<h3 class="ma-h4">Recent collections</h3>${filt}`+(blocked.indexOf('ma_collection')>=0?`<div class="ma-hint">${_maE(_maMissingSay(['ma_collection']))}.</div>`:shown.length?_maCollTable(c,shown):_maEmpty(f.all?'No collection recorded yet.':'None of '+C.name+'’s collections match.'));
   const ticks=list.length?`${_maLink('Tick all','window.maCourierTickAll(\''+k+'\',true)')} ${Object.keys(pk).length?_maLink('Clear','window.maCourierTickAll(\''+k+'\',false)'):''} `:'';
   const run=k==='postex'&&_maCanRun()?`<button class="ma-btn sm" id="ma-run-btn" onclick="window.maRunNow()"${_maRunBusy?' disabled':''}>${_maRunBusy?'Running…':'Run now'}</button> `:'';
@@ -1500,9 +1584,9 @@ function _maCollectionCoversHTML(c,d){
   const cv=d.covers||[];
   if(!cv.length)return '';
   return `<h4>Covers</h4><ul class="ma-hist">${cv.map(x=>{
-    const cur=c.docs.find(y=>y&&y.id===x.id);
-    const moved=cur&&(cur.status==='void'||cur.net!==x.net);
-    return `<li>${cur?`<button class="ma-doclink" onclick="window.maOpenDoc('cpr','${_maQ(x.id)}')">${_maE(x.no||x.id)}</button>`:_maE(x.no||x.id)} · ${x.date?_maE(maDayLabel(x.date,true)):''} · ${maRs(x.net)}${x.openAt?' <span class="ma-muted">from before the books</span>':''}${moved?` <span class="ma-word warn">${cur.status==='void'?'void since':'now '+maRs(cur.net)}</span>`:''}</li>`;}).join('')}</ul>`;
+    const cur=c.docs.find(y=>y&&y.dt==='cpr'&&y.id===x.id);
+    const moved=maCoverMoved(x,cur);
+    return `<li>${cur?`<button class="ma-doclink" onclick="window.maOpenDoc('cpr','${_maQ(x.id)}')">${_maE(x.no||x.id)}</button>`:_maE(x.no||x.id)} · ${x.date?_maE(maDayLabel(x.date,true)):''} · ${maRs(x.net)}${x.openAt?' <span class="ma-muted">from before the books</span>':''}${moved?` <span class="ma-word warn">${_maE(maCoverMovedText(moved,cur))}</span>`:''}</li>`;}).join('')}</ul>`;
 }
 function _maCprRailHTML(c,d){
   const cn=_maCourierName(d.courier);
@@ -1523,27 +1607,39 @@ function _maCprRailHTML(c,d){
   }
   if(d.status==='before')rows.push(['Books','Dated before the books started — it can be collected against the opening balance']);
   const dl=rows.map(([l,v])=>`<dt>${_maE(l)}</dt><dd>${_maE(v)}</dd>`).join('');
-  const collected=by.length?`<dt>Collected by</dt><dd>${by.map(x=>`<button class="ma-doclink" onclick="window.maOpenDoc('collection','${_maQ(x.id)}')">${_maE(x.no||x.id)}</button>`).join(' ')}</dd>`:(maCprCollectable(d)?'<dt>Collected</dt><dd class="ma-muted">not yet</dd>':'');
+  // With ma_collection unreadable whether it is collected is NOT known — never
+  // "not yet" (the screens review), and it offers no collection below.
+  const unread=_maCollUnread();
+  const collected=unread?(maCprCollectable(d)?`<dt>Collected</dt><dd><span class="ma-word warn">not known — ${_maE(_maMissingSay(['ma_collection']))}</span></dd>`:'')
+    :by.length?`<dt>Collected by</dt><dd>${by.map(x=>`<button class="ma-doclink" onclick="window.maOpenDoc('collection','${_maQ(x.id)}')">${_maE(x.no||x.id)}</button>`).join(' ')}</dd>`:(maCprCollectable(d)?'<dt>Collected</dt><dd class="ma-muted">not yet</dd>':'');
   const live=maLiveFlags(d);
   const flags=live.length?`<h4>Flags</h4><ul class="ma-flaglist">${live.map(x=>`<li><span class="ma-dot warn"></span>${_maE(x.message)}</li>`).join('')}</ul>${d.reviewedAt?`<div class="ma-muted">Reviewed by ${_maE(_maWho(d.reviewedBy))} · ${_maWhen(d.reviewedAt)}</div>`:''}`:'';
   const posts=maPost(Object.assign({},d,{status:d.status==='void'?'posted':d.status}),c.idx,c.s);
   const postT=posts.length?`<table class="ma-table ma-mini"><thead><tr><th>Account</th><th class="ma-num">Debit</th><th class="ma-num">Credit</th></tr></thead><tbody>${posts.map(l=>`<tr><td>${_maE(maAccLabel(c.idx,l.account))}</td><td class="ma-num">${l.dr?maRs(l.dr):''}</td><td class="ma-num">${l.cr?maRs(l.cr):''}</td></tr>`).join('')}</tbody></table>`:_maEmpty(d.status==='before'?'Posts nothing until a collection names it.':'Posts nothing.');
   const hist=(d.edits||[]).slice().reverse().slice(0,10).map(e=>`<li><b>${_maE(_maWho(e.by))}</b> · ${_maWhen(e.at)}<div>${_maE(e.reason||'')}</div><div class="ma-muted">${_maE((e.fields||[]).join(', '))}</div></li>`).join('');
+  // Review S7: the dispute as it stands, and every open and resolve after it.
+  const dsp=d.dispute&&typeof d.dispute==='object'?d.dispute:null;
+  const dRows=(Array.isArray(d.disputes)?d.disputes:[]).slice().reverse().slice(0,10).map(r=>`<li><b>${_maE(_maWho(r.by))}</b> · ${_maWhen(r.at)} · ${r.state==='open'?'opened':'resolved'}<div>${_maE(r.state==='open'?(r.reason||''):(r.note||''))}</div></li>`).join('');
+  const dispHTML=dsp||dRows?`<h4>Dispute</h4>${dsp?`<div class="ma-note">${dsp.state==='open'?'<span class="ma-word warn">open</span>':'<span class="ma-word fine">resolved</span>'} ${_maE(dsp.reason||'')} · ${_maE(_maWho(dsp.by))} · ${_maWhen(dsp.at)}${dsp.state==='resolved'?` — resolved by ${_maE(_maWho(dsp.resolvedBy))} · ${_maWhen(dsp.resolvedAt)}${dsp.note?' · '+_maE(dsp.note):''}`:''}</div>`:''}${dRows?`<ul class="ma-hist">${dRows}</ul>`:''}`:'';
   const acts=[];
   // A typed statement is edited and voided like any document; PostEx's derived
   // ones never are (they are disputed and reviewed).
   if(!d.derived&&d.status!=='void'){
     acts.push(`<button class="ma-btn" onclick="window.maEditDoc('cpr','${_maQ(d.id)}')">Edit</button>`);
   }
-  if(d.status!=='void'&&maCprCollectable(d)&&!by.length&&(Number(d.net)||0)>0)acts.push(`<button class="ma-btn primary" onclick="window.maRecordKind('collection',{courier:'${_maQ(d.courier)}',cprNos:['${_maQ(d.id)}']})">Record its collection</button>`);
+  if(!unread&&d.status!=='void'&&maCprCollectable(d)&&!by.length&&(Number(d.net)||0)!==0)acts.push(`<button class="ma-btn primary" onclick="window.maRecordKind('collection',{courier:'${_maQ(d.courier)}',cprNos:['${_maQ(d.id)}']})">Record its collection</button>`);
   const locked=maQuarterLocked(d,{closes:maData.closes,settings:c.s});
   if(d.status!=='void'&&live.length&&!d.reviewedAt&&!locked)acts.push(`<button class="ma-btn" onclick="window.maReviewDoc('cpr','${_maQ(d.id)}')">Mark reviewed</button>`);
+  // An owner disputes a derived document — never edits it (review S7).
+  if(d.derived&&d.status!=='void'&&!locked&&_maCanRun())acts.push(dsp&&dsp.state==='open'
+    ?`<button class="ma-btn" onclick="window.maDisputeDoc('${_maQ(d.id)}','resolved')">Resolve dispute</button>`
+    :`<button class="ma-btn" onclick="window.maDisputeDoc('${_maQ(d.id)}','open')">Open dispute</button>`);
   if(!d.derived&&d.status!=='void')acts.push(`<button class="ma-btn danger" onclick="window.maVoidDoc('cpr','${_maQ(d.id)}')">Void</button>`);
   const parcels=d.derived&&MA_CPR_RECEIPT_KINDS.indexOf(d.kind)>=0&&d.ref?`<h4>Its parcels</h4><div id="ma-rail-parcels">${_maCprParcelsHTML(d)}</div>`:'';
   return `<div class="ma-kicker">${_maE(cn)} · ${_maE(d.no||d.id)}${d.derived?' · from PostEx':''}</div>
     <h3 class="ma-rail-title">${_maE(maDocTitle(d,c.idx))}</h3>${_maStatusWord(d)}
     ${d.derived?'<div class="ma-note">Derived by the nightly rollup from PostEx’s parcels — it is never typed or edited here.</div>':''}${d.status==='void'?`<div class="ma-note">Void — ${_maE(d.voidReason||'')} · ${_maE(_maWho(d.voidedBy))} · ${_maWhen(d.voidedAt)}</div>`:''}
-    <dl class="ma-dl">${dl}${collected}</dl>${d.kind==='statement'?_maStatementLinesHTML(d):''}${flags}${parcels}
+    <dl class="ma-dl">${dl}${collected}</dl>${d.kind==='statement'?_maStatementLinesHTML(d):''}${flags}${dispHTML}${parcels}
     ${d.derived?'':`<h4>The statement</h4><div id="ma-rail-att">${_maRailAttInner(d)}</div>`}
     <h4>Postings</h4>${postT}
     <h4>History</h4>${hist?`<ul class="ma-hist">${hist}</ul>`:_maEmpty('Never changed.')}
@@ -1575,6 +1671,7 @@ function _maCollHolderOpts(c,courier,cur){
 }
 function _maCollRows(c,f){
   const k=f.courier;
+  if(_maCollUnread())return [];
   const list=k&&k!=='bluex'?_maCollectable(c,k):[];
   const ids=list.map(x=>x.doc.id);
   const extra=f.picks.filter(id=>ids.indexOf(id)<0).map(id=>({doc:c.docs.find(d=>d.id===id)||{id,no:id,date:'',net:0},gone:true}));
@@ -1588,6 +1685,9 @@ function _maCollCoversInner(c,f){
   const k=f.courier;
   if(!k)return '<div class="ma-hint">Choose the courier first.</div>';
   if(k==='bluex')return '<div class="ma-hint">Blue-Ex has no statements here — the collection is against the balance it opened with.</div>';
+  // The screens review: never a list of "free" statements when which ones
+  // are already collected cannot be read.
+  if(_maCollUnread())return `<div class="ma-hint"><span class="ma-word warn">${_maE(_maMissingSay(['ma_collection']))}</span> — which statements are already collected is not known, so none can be picked. <button type="button" class="ma-link" onclick="window.maRetry()">Retry</button></div>`;
   const rows=_maCollRows(c,f);
   if(!rows.length)return '<div class="ma-hint">Nothing is waiting to be collected from '+_maE(_maCourierName(k))+'.'+(MA_STATEMENT_COURIERS.indexOf(k)>=0?' Record its statement first — a collection is counted against it.':'')+'</div>';
   return `<div class="ma-cover-list">${rows.map(x=>{
@@ -1616,7 +1716,7 @@ function _maCollectionForm(pre,edit){
   const body=`<div class="ma-issues" id="ma-f-issues"></div>${lock?`<div class="ma-note">${_maE(why)}</div>`:''}
     <div class="ma-grid2">${_maFld('courier','Courier',courierSel,edit?'A collection cannot change its courier — void it and record the right one.':'')}${_maFld('date','Collected on',_maIn('date',p.date,{type:'date',min:s.historyFrom,max:c.today,dis:lock,on:'window.maCollPreview()'}))}</div>
     <div class="ma-field" id="ma-w-covers"><span class="ma-lbl">What it covers</span><div id="ma-f-covers">${_maCollCoversInner(c,_maF)}</div><span class="ma-ferr" id="ma-e-covers"></span></div>
-    <div class="ma-grid2">${_maFld('holder','Reached',_maSel('holder',_maCollHolderOpts(c,p.courier,p.holder),p.holder,{on:'window.maCollPreview()'}),_maE(_MA_COLL_DRAWER_LINE))}
+    <div class="ma-grid2">${_maFld('holder','Reached',_maSel('holder',_maCollHolderOpts(c,p.courier,p.holder),p.holder,{dis:lock,on:'window.maCollPreview()'}),_maE(_MA_COLL_DRAWER_LINE))}
       ${_maFld('amount','Counted, ₨',_maIn('amount',amount0,{num:true,ph:'0',dis:lock,on:'window.maCollAmount()'}))}</div>
     <div class="ma-prev" id="ma-f-prev" role="status"></div>
     ${_maFld('collectedBy','Who collected it',_maIn('collectedBy',p.collectedBy||'',{ph:'The rider or person who brought it'}))}
@@ -1632,8 +1732,11 @@ function _maCollExpected(c,f){
 }
 function _maCollRead(f){
   const lock=_maCollLocked(f),e=f.edit;
+  // A collection that waits for (or was confirmed by) someone keeps its
+  // holder, amount and day — MA_CL_LOCKED, the core's lock. The holder was
+  // left open here (the screens review); it is read from the stored one.
   return {date:lock?e.date:_maVal('ma-f-date').trim(),courier:e?e.courier:(_maVal('ma-f-courier')||f.courier),
-    holder:_maVal('ma-f-holder'),amount:lock?e.amount:_maVal('ma-f-amount'),collectedBy:_maVal('ma-f-collectedBy').trim(),
+    holder:lock?e.holder:_maVal('ma-f-holder'),amount:lock?e.amount:_maVal('ma-f-amount'),collectedBy:_maVal('ma-f-collectedBy').trim(),
     note:_maVal('ma-f-note'),attachments:(f.atts||[]).slice(),tags:e&&Array.isArray(e.tags)?e.tags.slice():[],
     cprNos:e?((e.refs&&e.refs.cprNos)||[]).slice():f.picks.slice()};
 }
@@ -1696,9 +1799,18 @@ async function _maFreshCollections(){
   const snap=await getDocs(collection(db,'ma_collection'));
   return ((snap&&snap.docs)||[]).map(d=>{const x=Object.assign({},typeof d.data==='function'?d.data():{});if(!x.id)x.id=d.id;if(!x.dt)x.dt='collection';return x;});
 }
+/* A second press while the first is still on its way is dropped (the
+   screens review: both presses awaited the attachment state BEFORE _maBusy
+   was set, so both went on to write — two collections, or two statements).
+   `f.saving` is set before the first await and cleared however it ends. */
 async function _maSaveCollection(){
-  const f=_maF;if(!f||f.kind!=='collection'||_maBusy)return;
+  const f=_maF;if(!f||f.kind!=='collection'||_maBusy||f.saving)return;
+  f.saving=true;
+  try{await _maSaveCollectionRun(f);}finally{f.saving=false;}
+}
+async function _maSaveCollectionRun(f){
   if(f.attBusy){_maShowIssues({refuses:[{message:'Wait for the upload to finish — the file is not on the document yet.',field:'attachments'}],flags:[],ok:false});return;}
+  if(!f.edit&&_maCollUnread()){_maShowIssues({refuses:[{message:'ma_collection could not be read, so which statements are already collected is not known — nothing was saved. Retry once it can be read.'}],flags:[],ok:false});return;}
   const c=_maCtx(),s=c.s;
   const dotted=_maDottedIssue(_maVal('ma-f-amount'),'amount','The amount');
   if(dotted&&!_maCollLocked(f)){_maShowIssues({refuses:[dotted],flags:[],ok:false});return;}
@@ -1748,7 +1860,9 @@ async function _maSaveCollection(){
       _maRail={kind:'doc',dt:'collection',id:edited.id};_maPaint();
     }else{
       if(second.res.flags.length)built.flags=maFlagRows(second.res.flags);
-      const stored=await _maPostNew(built);
+      // Its claims, and a re-read of what it covers, in its own transaction
+      // (review S2 and the screens review's stale net).
+      const stored=await _maPostNew(built,_maClaimsHook(built));
       maData.collection=fresh;maData.collection.push(stored);
       _maCourierPick[stored.courier]={};
       _maInvalidate();window.maCloseModal();
@@ -1756,8 +1870,17 @@ async function _maSaveCollection(){
       _maRail={kind:'doc',dt:'collection',id:stored.id};_maPaint();
     }
   }catch(e){
+    // What the transaction read when it refused (a claim, a statement that
+    // moved): the page takes it, so the form shows what is stored now.
+    const fr=e&&e.maFresh;
+    if(fr){
+      const put=(key,d)=>{const i=maData[key].findIndex(x=>x.id===d.id);if(i>=0)maData[key][i]=d;else maData[key].push(d);};
+      (fr.cprs||[]).forEach(d=>put('cpr',d));(fr.collections||[]).forEach(d=>put('collection',d));
+      f.ack=false;_maInvalidate();
+      if(_maF===f){_maCollRepaintCovers();const b=document.getElementById('ma-f-save');if(b)b.textContent='Record';}
+    }
     const box=_maF===f?document.getElementById('ma-f-issues'):null;
-    if(box)box.innerHTML=`<ul class="ma-flaglist"><li class="refuse"><span class="ma-dot urgent"></span>${_maE(_maWriteError(e))} Nothing was saved.</li></ul>`;
+    if(box)box.innerHTML=`<ul class="ma-flaglist"><li class="refuse"><span class="ma-dot urgent"></span>${_maE(_maWriteError(e))} Nothing was saved.${fr?' The form now shows it as stored — check it and record again.':''}</li></ul>`;
     else _maToast('Not saved: '+_maDocWhat(f,built)+' — '+_maWriteError(e)+(f.edit?'':' Record it again.'));
   }finally{_maBusy=false;const b=_maF===f&&document.getElementById('ma-f-save');if(b)b.disabled=false;}
 }
@@ -1841,7 +1964,11 @@ function _maStRepaintLines(){const f=_maF,el=document.getElementById('ma-f-lines
 window.maStLineAdd=function(){const f=_maF;if(!f||f.kind!=='statement'||_maStLocked(f))return;if(f.stLines.length>=MA_ST_MAX_LINES){_maToast('A statement holds at most '+MA_ST_MAX_LINES+' lines — record it in two.');return;}f.stLines.push(_maStEmptyLine());_maStRepaintLines();};
 window.maStLineDrop=function(i){const f=_maF;if(!f||f.kind!=='statement'||_maStLocked(f)||!f.stLines[i])return;f.stLines.splice(i,1);if(!f.stLines.length)f.stLines.push(_maStEmptyLine());_maStRepaintLines();window.maFormDirty();};
 async function _maSaveStatement(){
-  const f=_maF;if(!f||f.kind!=='statement'||_maBusy)return;
+  const f=_maF;if(!f||f.kind!=='statement'||_maBusy||f.saving)return;
+  f.saving=true;
+  try{await _maSaveStatementRun(f);}finally{f.saving=false;}
+}
+async function _maSaveStatementRun(f){
   if(f.attBusy){_maShowIssues({refuses:[{message:'Wait for the upload to finish — the file is not on the document yet.',field:'attachments'}],flags:[],ok:false});return;}
   const c=_maCtx(),s=c.s;
   const input=_maStRead(f);
@@ -2946,7 +3073,8 @@ window.maVoidDoc=async function(dt,id){
   const patch={status:'void',voidedAt:v.voidedAt,voidedBy:v.voidedBy,voidedByName:v.voidedByName,voidReason:v.voidReason};
   _maBusy=true;
   try{
-    await _maWritePatch(d,patch,'void',reason.trim(),cur=>cur.status==='void'?'It is already void.':null);
+    // A collection's void releases its claims in the same write (review S2).
+    await _maWritePatch(d,patch,'void',reason.trim(),cur=>cur.status==='void'?'It is already void.':null,d.dt==='collection'?_maReleaseHook(d):null);
     Object.assign(d,patch);_maInvalidate();
     const links=await _maWithdrawLinks(d);
     _maToast(d.no+' voided — it stays on the record, struck through.'+links);_maPaint();
@@ -2983,6 +3111,31 @@ window.maReviewDoc=async function(dt,id){
     // What was reviewed, in the words the owner read (QA F07) — not rule ids.
     await _maWritePatch(d,patch,'review',maLiveFlags(d).map(x=>x.message||x.rule).join('; '),null);
     Object.assign(d,patch);_maInvalidate();_maToast(d.no+' reviewed.');_maPaint();
+  }catch(e){_maToast(_maWriteError(e));}finally{_maBusy=false;}
+};
+
+/* Review S7 — an owner opens or resolves a dispute on one of PostEx's
+   derived documents. The core builds the patch (maDisputePatch: one open at
+   a time, the opener kept, one history row per change); it is written only
+   while the stored dispute still stands as this screen showed it, and the
+   rules (maDisputeOk) hold the same. */
+window.maDisputeDoc=async function(id,state){
+  const d=_maDoc('cpr',id);if(!d||_maBusy)return;
+  if(!_maCanRun()){_maToast('Only Afnan or Ammar can dispute it.');return;}
+  const locked=maQuarterLocked(d,{closes:maData.closes,settings:_maCtx().s});
+  if(locked){_maToast(locked+' is closed — a document dated in it cannot be disputed until an owner reopens the quarter.');return;}
+  const open=state!=='resolved',no=d.no||d.ref||d.id;
+  const text=prompt(open?'What is wrong with '+no+'? The dispute stays on it until an owner resolves it.':'How was the dispute on '+no+' settled? (optional)','');
+  if(text===null)return;
+  const r=maDisputePatch(d,session.u,open?{state:'open',reason:text}:{state:'resolved',note:text},{at:Date.now()});
+  if(r.error){_maToast(r.error);return;}
+  if(_maNeedsNet())return;
+  const was=(d.dispute&&d.dispute.state)||null,n=(Array.isArray(d.disputes)?d.disputes:[]).length;
+  _maBusy=true;
+  try{
+    await _maWritePatch(d,r.patch,'dispute',(open?'Opened: ':'Resolved: ')+String(text).trim().slice(0,200),
+      cur=>cur.status==='void'?'It is void now.':(((cur.dispute&&cur.dispute.state)||null)!==was||(Array.isArray(cur.disputes)?cur.disputes:[]).length!==n)?'Its dispute changed since this screen was opened — refresh and check it.':null);
+    Object.assign(d,r.patch);_maInvalidate();_maToast(no+(open?' is disputed.':' — the dispute is resolved.'));_maPaint();
   }catch(e){_maToast(_maWriteError(e));}finally{_maBusy=false;}
 };
 

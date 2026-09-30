@@ -801,7 +801,12 @@ function maCountBookOf(before,input,bookNow){
 /* The locked quarter a document sits in, as its label — '' when it is open
    (security F3b, money F7). One reading of ma_closes for the confirm, the
    review and anything else that must refuse in a closed quarter with words
-   that name it, rather than leave the rules to refuse with none. */
+   that name it, rather than leave the rules to refuse with none.
+   KNOWN GAP (review S6): an M2 document POSTS ON OTHER DAYS than its own —
+   a typed statement's lines on their delivery days, a collection's opening
+   pair on the books' first day — so this, and the rules' maLocked(quarter),
+   read one quarter where the lock must cover every quarter a document posts
+   into. No screen closes a quarter yet (M11); the lock must before one does. */
 function maQuarterLocked(doc,ctx){
   const c=ctx||{};const s=c.settings||MA_DEFAULT_SETTINGS;
   if(!doc||!maIsDay(doc.date))return '';
@@ -1638,9 +1643,13 @@ function maValidate(doc,ctx){
           if(l.side==='cr')cr+=l.amount;else dr+=l.amount;
           if(a.code==='3090')flag('opening.self','Line '+(i+1)+': 3090 balances the opening by itself — no need to name it.','lines');
           // PostEx opens from its own parcels (the rollup's PX-OPEN, M2): a
-          // line here on 1120 or 1121 adds to it. Blue-Ex's 1123 is typed
-          // here on purpose — it has no feed — so it is never flagged.
-          if(MA_OPENING_DERIVED.indexOf(a.code)>=0)flag('opening.derived','Line '+(i+1)+': '+a.name+' opens from PostEx’s own parcels (the nightly rollup) — a line here adds to it.','lines');
+          // line here on 1120 or 1121 would open PostEx a SECOND time, so it
+          // is refused (review B1 — it was only flagged, and an M1 opening
+          // carrying one double-counted with nothing on screen). An edit of
+          // such an opening saves only once the line is gone; a stored one is
+          // named on Needs attention (maCourierConcerns). Blue-Ex's 1123 is
+          // typed here on purpose — it has no feed — so it is never refused.
+          if(MA_OPENING_DERIVED.indexOf(a.code)>=0)refuse('opening.derived','Line '+(i+1)+': '+a.name+' — PostEx’s opening comes from its parcels (the nightly rollup’s PX-OPEN), so a line here would count it twice. Remove it.','lines');
         }else{
           const d=l.dr||0,x=l.cr||0;
           if(!Number.isInteger(d)||!Number.isInteger(x)||d<0||x<0||(d>0)===(x>0)){refuse('line.side','Line '+(i+1)+': a debit OR a credit, whole rupees.','lines');bad=true;return;}
@@ -2369,11 +2378,13 @@ function maShareState(sh,nowMs){
    the postings and the trial balance derived from it, then every collection
    as a sheet. Every ma_* collection the rules let an owner read. */
 const MA_BOOK_COLS=['ma_settings','ma_accounts','ma_sv_accounts','ma_parties','ma_items','ma_commitments','ma_counters',
-  'ma_journal','ma_transfer','ma_counts','ma_cpr','ma_collection','ma_closes','ma_audit','ma_backups','ma_runs','ma_shares','ma_feedback'];
+  'ma_journal','ma_transfer','ma_counts','ma_cpr','ma_collection','ma_claims','ma_closes','ma_audit','ma_backups','ma_runs','ma_shares','ma_feedback'];
 // ma_cpr, ma_collection and ma_runs joined with the rules that let an owner
 // read them (M2.4). Until those rules are PUBLISHED a read of them is
 // refused, and the download says so by name — ma_cpr and ma_collection
-// post, so it then says the postings leave them out.
+// post, so it then says the postings leave them out. ma_claims (review S2)
+// posts nothing: it is the lock that keeps one live collection per CPR, and
+// a restore needs it beside the collections it names.
 // The postings and the trial balance are built from these; without one of
 // them they are not the whole book, and they say so.
 const _maBookCore=['ma_settings','ma_accounts','ma_journal','ma_transfer','ma_counts','ma_cpr','ma_collection'];
@@ -2520,8 +2531,19 @@ const MA_COURIERS=(o=>{Object.keys(o).forEach(k=>{Object.freeze(o[k].accounts);O
    receipt a 0 is what PostEx paid. BEFORE its receipt a 0 is read as not
    sent yet: postex-core stores an amount PostEx did not send as 0 (`num`),
    and an expected ₨0 on a delivered parcel would hide what PostEx owes.
-   Money is added up to the paisa and rounded once, to whole rupees, with
-   Math.round — as maPost rounds every amount it posts. */
+   ROUNDED ONCE, ON THE PARCEL (review S1, 29 Sept 2026): each parcel's COD,
+   charges and parts are whole rupees (Math.round, as maPost rounds what it
+   posts) before anything is added up, and a part PostEx did not send is the
+   whole-rupee share less the other part. A day, a receipt and the transit
+   group the same parcels differently; rounding each GROUP's sum — as this
+   did before — let them disagree by a rupee (a 16% tax of ₨28.80 on four
+   parcels: the day booked ₨115, the receipts carried 4 × ₨2,791), and the
+   1120 check stayed red for ever. Summing the parcels' own whole rupees,
+   every grouping adds up to the same figure and 1120 clears exactly. The
+   cost, stated: a figure is off by at most half a rupee per parcel (that
+   ₨28.80 is booked ₨29), and a CPR's net can differ from PostEx's own
+   paisa-exact total by that much per parcel — which a collection then
+   counts, inside the 1% tolerance, as its difference. */
 /* A receipt number longer than this is not one: an id escaped from it could
    pass Firestore's 1,500 bytes, and no receipt is numbered like that. */
 const MA_CPR_NUMBER_MAX=100;
@@ -2585,27 +2607,44 @@ function maIdSafe(s){
    letters only (MA_COURIERS), so the first `-` always ends it. */
 function maCprId(courier,number){return maIdSafe(courier)+'-'+maIdSafe(number);}
 
+/* Paisa rounded to whole rupees, and still in paisa: every figure a parcel
+   carries is then a whole number of rupees × 100, so any sum of them is
+   exact and _maWhole never has to round again (review S1). Never −0. */
+function _maRupeeP(paisa){return (Math.round(paisa/100)*100)||0;}
 /* What one parcel is worth and how it splits between its two receipts, in
-   PAISA (the header above says why each figure is what it is). `fieldU` /
-   `fieldR`: the part is PostEx's own figure, not the fallback. */
+   PAISA that are WHOLE RUPEES (the header above says why each figure is what
+   it is, and why each is rounded here, once). `fieldU` / `fieldR`: the part
+   is PostEx's own figure, not the fallback. When PostEx sent both parts and
+   they add up to the share to the paisa, the reserve is the whole-rupee
+   share less the whole-rupee upfront — so the two parts always add up to
+   the share the day books; when they do not add up (cpr.split_mismatch),
+   each part is PostEx's own figure, rounded, and the difference is named. */
 function _maCprSplitPaisa(p){
   p=p||{};
   const st=p.statusCategory,del=st==='delivered',ret=st==='returned';
+  const W=v=>_maRupeeP(_maPaisa(v));
   // The figures the share is made of — the ONLY charges it deducts (header).
-  const cod=del?_maPaisa(p.cod):0,fee=del?_maPaisa(p.transactionFee):0,tax=del?_maPaisa(p.transactionTax):0;
-  const rfee=ret?_maPaisa(p.reversalFee):0,rtax=ret?_maPaisa(p.reversalTax):0;
+  const cod=del?W(p.cod):0,fee=del?W(p.transactionFee):0,tax=del?W(p.transactionTax):0;
+  const rfee=ret?W(p.reversalFee):0,rtax=ret?W(p.reversalTax):0;
   const share=(cod-fee-tax-rfee-rtax)||0;
+  // The share to the paisa — only to tell whether PostEx's two parts agree.
+  const exact=del?_maPaisa(p.cod)-_maPaisa(p.transactionFee)-_maPaisa(p.transactionTax):ret?-_maPaisa(p.reversalFee)-_maPaisa(p.reversalTax):0;
   const paidU=!!_maCprNo(p.cprNumber_1),paidR=!!_maCprNo(p.cprNumber_2);
   const known=(v,paid)=>{const n=_maPxNum(v);return n===null||(n===0&&!paid)?null:Math.round(n*100);};
   const u=known(p.upfrontPayment,paidU),r=known(p.reservePayment,paidR);
   const first=paidU||!paidR;
-  return {cod,fee,tax,rfee,rtax,share,paidU,paidR,fieldU:u!==null,fieldR:r!==null,
-    upfront:(u!==null?u:r!==null?share-r:first?share:0)||0,
-    reserve:(r!==null?r:u!==null?share-u:first?0:share)||0};
+  let up,res;
+  if(u!==null&&r!==null){up=_maRupeeP(u);res=u+r===exact?share-up:_maRupeeP(r);}
+  else if(u!==null){up=_maRupeeP(u);res=share-up;}
+  else if(r!==null){res=_maRupeeP(r);up=share-res;}
+  else if(first){up=share;res=0;}
+  else{up=0;res=share;}
+  return {cod,fee,tax,rfee,rtax,share,paidU,paidR,fieldU:u!==null,fieldR:r!==null,upfront:up||0,reserve:res||0};
 }
-/* The same in rupees — to the paisa: a parcel is an input, not a figure of
-   the books — with where each part came from: 'field' (PostEx's own figure)
-   or 'computed' (the share, less the other part). */
+/* The same in rupees — whole rupees since review S1: a parcel's figures are
+   rounded once, here, so that every sum of them agrees — with where each
+   part came from: 'field' (PostEx's own figure) or 'computed' (the share,
+   less the other part). */
 function maCprSplit(p){
   const s=_maCprSplitPaisa(p);
   return {share:s.share/100,upfront:s.upfront/100,reserve:s.reserve/100,
@@ -2959,8 +2998,10 @@ const MA_ST_MAX_LINES=200;
 /* A collection that waits for — or was confirmed by — someone keeps what
    was confirmed (the transfer's F6 rule): its holder, amount and day. */
 const MA_CL_LOCKED=['holder','amount','date'];
-/* All an owner may change on a DERIVED document; firestore.rules mirrors it. */
-const MA_DERIVED_OWNER_FIELDS=['reviewedAt','reviewedBy','dispute'];
+/* All an owner may change on a DERIVED document; firestore.rules mirrors it.
+   `disputes` is the dispute's history (review S7): one row appended per open
+   and per resolve, never rewritten — the edits[] rule. */
+const MA_DERIVED_OWNER_FIELDS=['reviewedAt','reviewedBy','dispute','disputes'];
 const MA_DISPUTE_STATES=['open','resolved'];
 const MA_ROLLUP_BY='ma-rollup';
 const MA_ROLLUP_NAME='Nightly courier rollup';
@@ -2969,7 +3010,7 @@ const MA_CPR_HISTORY_MAX=50;
    owner's review (they reviewed the old figures). */
 const MA_CPR_FIGURES=['date','status','kind','amount','net','parts','delivered','returned','grossCod','deliveryFee','deliveryTax','reversalFee','reversalTax','tax','openAt'];
 /* Kept by the rollup across a rewrite, never compared. */
-const _maCprKeep=['id','sig','rev','edits','ts','reviewedAt','reviewedBy','dispute'];
+const _maCprKeep=['id','sig','rev','edits','ts','reviewedAt','reviewedBy','dispute','disputes'];
 
 function maCourierAcc(courier){const c=MA_COURIERS[courier];return c?c.accounts:null;}
 /* The account a collection of this courier credits: PostEx's issued CPRs
@@ -2990,6 +3031,71 @@ function maCprCollectable(d){
 /* The live collections that cover a CPR or statement. */
 function maCollectionsOf(docs,cprId){
   return (docs||[]).filter(d=>d&&d.dt==='collection'&&d.status!=='void'&&d.refs&&Array.isArray(d.refs.cprNos)&&d.refs.cprNos.indexOf(cprId)>=0);
+}
+/* ── Claims: one live collection per CPR, held at the rules (review S2) ──
+   ma_claims/{the covered document's id} = {doc, collection, at, by,
+   releasedAt?}. A new collection reads the claim of every statement it
+   covers INSIDE its own transaction, is refused if one names a live
+   collection, and writes a claim naming itself; voiding a collection
+   releases its claims in the same write (collection:null, releasedAt).
+   Nothing is ever deleted. Two tabs recording the same CPR at once both
+   read the claim; the transaction that commits second finds it changed,
+   runs again, and is refused — the check that used to run outside the
+   transaction (the fresh read of ma_collection) could not do that.
+   A claim NAMES A LIVE COLLECTION when `collection` is set and that
+   collection exists and is not void — the one definition the page and
+   firestore.rules (maClaimSetOk) share. Collections recorded before claims
+   existed carry none; the page's fresh read of ma_collection still guards
+   them. `collections` = {id → the stored collection}. */
+function maClaimLive(claim,collections){
+  const id=claim&&typeof claim.collection==='string'&&claim.collection?claim.collection:null;
+  if(!id)return null;
+  const c=collections&&Object.prototype.hasOwnProperty.call(collections,id)?collections[id]:null;
+  return c&&c.status!=='void'?id:null;
+}
+function maClaimFor(docId,collectionId,who,at){return {doc:String(docId),collection:String(collectionId),at:at||0,by:who||null};}
+function maClaimRelease(claim,who,at){return {doc:String((claim&&claim.doc)||''),collection:null,at:at||0,by:who||null,releasedAt:at||0};}
+/* Has a statement moved since a collection's snapshot of it (`cv`, one of
+   its covers) was taken? → '' when not, else how: 'void', 'status' (no
+   longer collectable — undated, say), 'net', or 'books' — it crossed the
+   books' start: collected as a receipt from before the books (the snapshot
+   carries openAt) and now inside them, or the other way round (review S4:
+   the net alone missed it, and the collection's opening pair then posted
+   against a receipt that no longer needs it, or failed to). */
+function maCoverMoved(cv,d){
+  if(!cv||!d)return '';
+  if(d.status==='void')return 'void';
+  if(d.status!=='posted'&&d.status!=='before')return 'status';
+  if(d.net!==cv.net)return 'net';
+  const was=maIsDay(cv.openAt)?cv.openAt:'',now=d.status==='before'?String(d.openAt||''):'';
+  return was!==now?'books':'';
+}
+function maCoverMovedText(kind,d){
+  if(kind==='void')return 'void since';
+  if(kind==='status')return 'no longer collectable ('+String(d&&d.status||'?')+')';
+  if(kind==='net')return 'now '+maRs(d&&d.net||0);
+  if(kind==='books')return d&&d.status==='before'?'now dated before the books started':'now dated inside the books';
+  return '';
+}
+/* A new collection's covers against what is stored NOW — read inside its
+   transaction (review S2, and the screens review's stale net): `covers` is
+   the built document's snapshot, i.e. what the form showed; `fresh` = {id →
+   the stored statement, or null}; `claims` = {id → its claim, or null};
+   `collections` = {id → the stored collection} for every collection a claim
+   names. → '' when it may be recorded, else why not. */
+function maCollectionCoverCheck(covers,fresh,claims,collections){
+  const out=[];
+  (covers||[]).forEach(cv=>{
+    const id=cv&&cv.id;if(!id)return;
+    const name=cv.no||id;
+    const live=maClaimLive(claims&&claims[id],collections);
+    if(live){out.push(name+' is already collected by '+live+' — void that first.');return;}
+    const d=fresh&&fresh[id];
+    if(!d){out.push(name+' is no longer in the books.');return;}
+    const k=maCoverMoved(cv,d);
+    if(k)out.push(name+' changed since this form was opened — '+maCoverMovedText(k,d)+'.');
+  });
+  return out.join(' ');
 }
 /* Who confirms a collection: the person whose hands its holder is (MA_HANDS)
    — the transfer rule with no "from". The recorder who IS that person has
@@ -3089,10 +3195,13 @@ function _maPostCollection(doc,push,s){
 /* Decision 3 (29 Sept 2026): refused once attachments are on (ma-attach's
    state 'signed' or 'public'); saved and flagged while they are off or the
    state could not be asked — it waits on Needs attention until attached. */
-function _maAttachRule(doc,c,rule,what,h){
+/* `noun` is the thing, with no article ('receipt', 'courier’s statement'):
+   the sentences put their own ("Attach the receipt", "No receipt attached")
+   — the screens review found "No the receipt attached" stored in flags. */
+function _maAttachRule(doc,c,rule,noun,h){
   if(maAttachList(doc.attachments).length)return;
-  if(c.attach==='signed'||c.attach==='public')h.refuse(rule,'Attach '+what+' — attachments are on, so it is required.','attachments');
-  else h.flag(rule,'No '+what+' attached — '+(c.attach==='not_configured'?'attachments are off (not set up)':'whether attachments are on could not be checked')+'. It waits on Needs attention until one is.','attachments');
+  if(c.attach==='signed'||c.attach==='public')h.refuse(rule,'Attach the '+noun+' — attachments are on, so it is required.','attachments');
+  else h.flag(rule,'No '+noun+' attached — '+(c.attach==='not_configured'?'attachments are off (not set up)':'whether attachments are on could not be checked')+'. It waits on Needs attention until one is.','attachments');
 }
 function _maValidateStatement(doc,c,s,h){
   if(doc.derived||doc.kind!=='statement'){h.refuse('cpr.derived','PostEx’s receipts and days are derived by the nightly rollup — they are never typed.');return;}
@@ -3113,7 +3222,7 @@ function _maValidateStatement(doc,c,s,h){
     if(l.returned&&l.cod)h.refuse('statement.lines',n+'a returned parcel carries no COD.','lines');
   });
   if(!(Number.isInteger(doc.amount)&&doc.amount>0))h.refuse('statement.amount','A statement with no COD delivered posts only costs — record it as a Money out.','lines');
-  _maAttachRule(doc,c,'statement.attach','the courier’s statement',h);
+  _maAttachRule(doc,c,'statement.attach','courier’s statement',h);
   if(doc.ref){
     const dup=(c.docs||[]).find(d=>d&&d.dt==='cpr'&&d.kind==='statement'&&d.courier===doc.courier&&d.status!=='void'&&d.id!==doc.id&&(!c.before||d.id!==c.before.id)&&maNorm(d.ref)===maNorm(doc.ref));
     if(dup)h.flag('statement.ref_dup','Statement '+doc.ref+' is already recorded as '+(dup.no||dup.id)+'.','ref');
@@ -3143,7 +3252,7 @@ function _maValidateCollection(doc,c,s,h){
     h.refuse('collection.holder',doc.courier==='tcs'?'TCS credits the TCS account (1060) — moving it to MCB is a Transfer.':'Only TCS’s credits go into the TCS account.','holder');
   const aOk=h.amountOk(doc.amount);
   if(!legacy&&ids.length&&!(Number.isInteger(doc.expected)&&doc.expected>0))h.refuse('collection.nothing','Those statements come to '+maRs(doc.expected||0)+' — nothing to collect.','covers');
-  _maAttachRule(doc,c,'collection.receipt','the receipt',h);
+  _maAttachRule(doc,c,'collection.receipt','receipt',h);
   if(aOk&&!legacy&&Number.isInteger(doc.difference)&&doc.difference){
     const tol=Math.abs(doc.expected)*(s.courierTolerancePct||0)/100;
     if(Math.abs(doc.difference)>tol){
@@ -3228,10 +3337,22 @@ function maCourierDocs(der,settings){
   return out;
 }
 /* One stored derived document against the rollup's new one → what to do.
-   `meta` = {at, locked(quarter) → bool}. Owner fields survive a rewrite: a
-   dispute always; a review unless a figure moved. Nothing is ever written
-   into a locked quarter, and a document an owner typed at the same id is
-   never touched. → {action: none|create|update|skip, doc?, fields?, why?} */
+   `meta` = {at, locked(quarter) → bool, docs: the collections}. Owner fields
+   survive a rewrite: a dispute and its history always; a review unless a
+   figure moved or a NEW flag arrived (review note 2, maNewFlagRules — the
+   rule an owner's own edit follows: a claim nobody has looked at must reach
+   the review queue). Nothing is ever written into a locked quarter, and a
+   document an owner typed at the same id is never touched.
+   A receipt a live collection covers is never moved across the books'
+   start (review S4): the collection's snapshot says whether it was
+   collected from before the books (its opening pair), and moving the
+   receipt from under it double-counts 1121 and 3090 — or leaves 1121 short
+   — with nothing on screen. It is skipped with a message the run carries
+   (maCourierPlan → ma_runs/rollup.skipped → Needs attention). What still
+   moves that night is the PX-OPEN opening, so the 1120 check shows the
+   difference until the collection is voided and recorded again.
+   → {action: none|create|update|skip, doc?, fields?, why?, rule?, message?} */
+function _maBooksSide(d){return d&&d.status==='before'?'before '+String(d.openAt||''):'books';}
 function maCourierMerge(stored,next,meta){
   const m=meta||{},locked=typeof m.locked==='function'?m.locked:()=>false;
   if(!next)return {action:'none'};
@@ -3243,14 +3364,25 @@ function maCourierMerge(stored,next,meta){
   if(stored.sig===next.sig&&stored.status!=='void')return {action:'none'};
   const lq=[stored.quarter,next.quarter].find(q=>q&&locked(q));
   if(lq)return {action:'skip',why:'locked',quarter:lq};
+  if(stored.status!=='void'&&_maBooksSide(stored)!==_maBooksSide(next)){
+    const by=maCollectionsOf(m.docs,stored.id);
+    if(by.length){
+      const cl=by.map(x=>x.no||x.id).join(', '),no=stored.no||stored.ref||stored.id;
+      return {action:'skip',why:'collected',rule:'cpr.collected_moved',
+        message:'PostEx now '+(maIsDay(next.date)?'dates '+no+' '+maDayLabel(next.date,true)+(next.status==='before'?', before the books started':', inside the books'):'gives '+no+' no day')
+          +', but '+cl+' collected it as a receipt '+(stored.status==='before'?'from before the books':'dated inside the books')+'. It is left as it was: void '+cl+' and record it again — the next run then moves it.'};
+    }
+  }
   const keys=Array.from(new Set(Object.keys(stored).concat(Object.keys(next)))).filter(k=>_maCprKeep.indexOf(k)<0).sort();
   const fields=keys.filter(k=>_maCanon(stored[k]===undefined?null:stored[k])!==_maCanon(next[k]===undefined?null:next[k]));
   const out=Object.assign({},maClone(next),{ts:stored.ts||0,rev:(stored.rev||1)+1});
   const before={},after={};fields.forEach(f=>{before[f]=stored[f]===undefined?null:maClone(stored[f]);after[f]=next[f]===undefined?null:maClone(next[f]);});
   out.edits=(Array.isArray(stored.edits)?stored.edits:[]).concat([{at:m.at||0,by:MA_ROLLUP_BY,byName:MA_ROLLUP_NAME,reason:'PostEx records changed',fields,before,after}]).slice(-MA_CPR_HISTORY_MAX);
   if(stored.dispute!==undefined)out.dispute=maClone(stored.dispute);
+  if(stored.disputes!==undefined)out.disputes=maClone(stored.disputes);
   const figure=fields.some(f=>MA_CPR_FIGURES.indexOf(f)>=0);
-  if(!figure){['reviewedAt','reviewedBy'].forEach(k=>{if(stored[k]!==undefined)out[k]=stored[k];});}
+  const newFlag=maNewFlagRules(stored.flags,next.flags).length>0;
+  if(!figure&&!newFlag){['reviewedAt','reviewedBy'].forEach(k=>{if(stored[k]!==undefined)out[k]=stored[k];});}
   else if(stored.reviewedAt!==undefined||stored.reviewedBy!==undefined){out.reviewedAt=null;out.reviewedBy=null;}
   return {action:'update',doc:out,fields};
 }
@@ -3274,7 +3406,7 @@ function maCourierPlan(stored,next,meta){
     seen[n.id]=1;
     const r=maCourierMerge(by[n.id]||null,n,meta);
     if(r.action==='none')plan.unchanged++;
-    else if(r.action==='skip')plan.skipped.push({id:n.id,why:r.why,quarter:r.quarter||null});
+    else if(r.action==='skip')plan.skipped.push(Object.assign({id:n.id,why:r.why,quarter:r.quarter||null},r.message?{rule:r.rule,message:r.message}:{}));
     else{plan.writes.push({id:n.id,action:r.action,doc:r.doc,fields:r.fields||null});plan[r.action==='create'?'created':'updated']++;}
   });
   Object.keys(by).forEach(id=>{
@@ -3283,6 +3415,8 @@ function maCourierPlan(stored,next,meta){
     if(r.action==='void'){plan.writes.push({id,action:'void',doc:r.doc});plan.voided++;}
     else if(r.action==='skip')plan.skipped.push({id,why:r.why,quarter:r.quarter||null});
   });
+  // A skip that says something first: the run keeps only the first hundred.
+  plan.skipped=plan.skipped.filter(x=>x.message).concat(plan.skipped.filter(x=>!x.message));
   return plan;
 }
 /* 1120 as the books have it against what the parcels say PostEx owes now. */
@@ -3292,20 +3426,29 @@ function maCourier1120Check(lines,idx,der){
   return {ledger1120:ledger,transit1120:transit,diff:transit===null?null:ledger-transit};
 }
 /* An owner opens or resolves a dispute on a derived document — the one
-   thing besides the review an owner may change there. */
+   thing besides the review an owner may change there. One dispute is open
+   at a time (review S7: an open one could be replaced, and a resolved one
+   overwritten, by a fresh "open" — the opener and the resolution gone), a
+   resolution keeps who opened it, when and why, and every open and every
+   resolve appends ONE row to `disputes` — the history, never rewritten, as
+   edits[] is. firestore.rules (maDisputeOk) holds all three. */
 function maDisputePatch(doc,who,input,meta){
   const i=input||{},m=meta||{};
   if(!doc||doc.dt!=='cpr'||!doc.derived)return {error:'Only a PostEx receipt or day is disputed — a typed document is edited.'};
   if(doc.status==='void')return {error:'A void document cannot be disputed.'};
   if(MA_OWNERS.indexOf(who)<0)return {error:'Only Afnan or Ammar can dispute it.'};
-  const cur=doc.dispute||null;
+  const cur=doc.dispute||null,hist=Array.isArray(doc.disputes)?maClone(doc.disputes):[];
+  const at=m.at||0;
   if(i.state==='open'){
+    if(cur&&cur.state==='open')return {error:'A dispute is already open on it — resolve that one first.'};
     if(!maStr(i.reason))return {error:'Say what is wrong with it.'};
-    return {patch:{dispute:{state:'open',reason:maStr(i.reason,500),by:who,at:m.at||0}}};
+    const reason=maStr(i.reason,500);
+    return {patch:{dispute:{state:'open',reason,by:who,at},disputes:hist.concat([{state:'open',reason,by:who,at}])}};
   }
   if(i.state==='resolved'){
     if(!cur||cur.state!=='open')return {error:'There is no open dispute to resolve.'};
-    return {patch:{dispute:Object.assign({},cur,{state:'resolved',resolvedBy:who,resolvedAt:m.at||0,note:maStr(i.note,500)})}};
+    const note=maStr(i.note,500);
+    return {patch:{dispute:Object.assign({},cur,{state:'resolved',resolvedBy:who,resolvedAt:at,note}),disputes:hist.concat([{state:'resolved',note,by:who,at}])}};
   }
   return {error:'A dispute is opened or resolved.'};
 }
@@ -3323,10 +3466,26 @@ function _maDueOf(d,s){
   if(!maIsDay(d.date))return null;
   return {due:d.date,at:maDayAdd(d.date,cs.collectLagDays||0),spendable:true};
 }
+/* Every receipt or statement with something on it — a NEGATIVE net too
+   (review S5): a receipt that only pays a return's charge is PostEx taking
+   money back, and it is settled by collecting it beside the receipts it is
+   deducted from; left out, it sat in 1121 for ever. */
 function maUncollected(docs,settings){
   const s=settings||MA_DEFAULT_SETTINGS;
   return (docs||[]).filter(d=>d&&d.dt==='cpr'&&d.status==='posted'&&(MA_CPR_RECEIPT_KINDS.indexOf(d.kind)>=0||d.kind==='statement')
-    &&(Number(d.net)||0)>0&&!maCollectionsOf(docs,d.id).length).map(d=>Object.assign({doc:d},_maDueOf(d,s)||{})).filter(x=>x.due);
+    &&(Number(d.net)||0)!==0&&!maCollectionsOf(docs,d.id).length).map(d=>Object.assign({doc:d},_maDueOf(d,s)||{})).filter(x=>x.due);
+}
+/* A collection whose cash differs from its net PAST the tolerance and that
+   no owner has reviewed: Needs attention's "differs" line and the Money in
+   filter behind it (review note 1). Inside the tolerance it is no line at
+   all — maValidate neither flags it nor asks a reason there, so a line
+   would be one nobody could ever clear; past it the collection is flagged,
+   and reviewing it ends the line. 9030 keeps its own line either way. */
+function maCollectionOff(d,settings){
+  const s=settings||MA_DEFAULT_SETTINGS;
+  if(!d||d.status==='void'||d.reviewedAt)return false;
+  if(!Number.isInteger(d.difference)||!d.difference)return false;
+  return Math.abs(d.difference)>Math.abs(Number(d.expected)||0)*(s.courierTolerancePct||0)/100;
 }
 /* The calendar's courier inflows (§17): every statement not collected at
    its expected day (a day past lands on today, late), and what PostEx owes
@@ -3357,6 +3516,19 @@ function maCourierConcerns(o){
   const add=(state,sentence,basis,action,weight)=>out.push({state,sentence,basis,action:action||null,weight:weight||0});
   const missing=Array.isArray(o.missing)?o.missing:[];
   ['ma_cpr','ma_collection'].forEach(col=>{if(missing.indexOf(col)>=0)add('watch',col+' could not be read — the couriers’ figures here leave it out.','A refused or failed read is never shown as zero.',{label:'Retry',go:'reload'},5e8);});
+  // Review B1: an opening balance carrying a line on PostEx's own accounts
+  // (1120, 1121) — recorded under M1, before the rollup opened PostEx from
+  // its parcels (PX-OPEN) — opens PostEx twice. maValidate refuses a new one;
+  // a stored one is named here, every day, until those lines are gone.
+  docs.filter(maIsOpening).forEach(j=>{
+    const hit=(j.lines||[]).filter(l=>l&&MA_OPENING_DERIVED.indexOf(l.account)>=0);
+    if(!hit.length)return;
+    const amt=hit.reduce((t,l)=>t+Math.round(Number(l.amount)||0)*(l.side==='cr'?-1:1),0);
+    const accs=Array.from(new Set(hit.map(l=>l.account))).sort();
+    const no=j.no||j.id||'An opening balance';
+    add('concern',no+' opens PostEx a second time — '+maRs(amt)+' on '+accs.join(' and ')+', which the nightly rollup already opens from PostEx’s own parcels (PX-OPEN). Void those lines: edit '+(j.no||'it')+' without them, or void it and record the opening again.',
+      'The opening balance and the rollup’s PX-OPEN both put what PostEx owed when the books started into 1120 and 1121 (review B1).',{label:'Open',go:'doc',ref:j.id,dt:'journal'},9.5e8+Math.abs(amt));
+  });
   if(!maIsDay(today))return out;
   // Uncollected, grouped per courier and month.
   const groups={};
@@ -3376,12 +3548,21 @@ function maCourierConcerns(o){
   const live=docs.filter(d=>d&&d.dt==='collection'&&d.status!=='void');
   const noRc=live.filter(d=>!maAttachList(d.attachments).length);
   if(noRc.length)add('watch',_maPl(noRc.length,'collection')+' '+(noRc.length>1?'have':'has')+' no receipt attached — '+maRs(noRc.reduce((t,d)=>t+(d.amount||0),0))+'.','A collection is proved by its receipt (§6).',{label:'Attach',go:'couriers',filter:'noreceipt'},0);
-  const off=live.filter(d=>Number.isInteger(d.difference)&&d.difference!==0);
-  if(off.length)add('watch',_maPl(off.length,'collection')+' '+(off.length>1?'differ':'differs')+' from '+(off.length>1?'their':'its')+' CPRs’ net — '+maRs(off.reduce((t,d)=>t+Math.abs(d.difference),0))+' in all, in 9030.','The cash counted against the net PostEx’s records give.',{label:'Open',go:'couriers',filter:'difference'},0);
-  // A statement that changed (or went) after it was collected.
-  const moved=[];let movedBy=0;
-  live.forEach(d=>(d.covers||[]).forEach(cv=>{const x=docs.find(y=>y&&y.dt==='cpr'&&y.id===cv.id);if(x&&(x.status==='void'||x.net!==cv.net)){moved.push(d);movedBy+=(x.status==='void'?0:x.net)-cv.net;}}));
-  if(moved.length)add('watch',_maPl(moved.length,'collected statement')+' changed after '+(moved.length>1?'they were':'it was')+' collected ('+maRsSigned(movedBy)+') — it sits in 1121.','The collection keeps what it covered; the statement moved since.',{label:'Open',go:'couriers',filter:'changed'},Math.abs(movedBy));
+  const off=live.filter(d=>maCollectionOff(d,s));
+  if(off.length)add('watch',_maPl(off.length,'collection')+' '+(off.length>1?'differ':'differs')+' from '+(off.length>1?'their':'its')+' CPRs’ net past the '+(s.courierTolerancePct||0)+'% tolerance — '+maRs(off.reduce((t,d)=>t+Math.abs(d.difference),0))+' in all, in 9030. Reviewing a collection ends its line.','The cash counted against the net PostEx’s records give.',{label:'Open',go:'couriers',filter:'difference'},0);
+  // A statement that changed (or went) after it was collected — its net, its
+  // state, or which side of the books' start it is dated (review S4).
+  const moved=[];let movedBy=0,crossed=0;
+  live.forEach(d=>(d.covers||[]).forEach(cv=>{
+    const x=docs.find(y=>y&&y.dt==='cpr'&&y.id===cv.id),k=maCoverMoved(cv,x);
+    if(!k)return;
+    moved.push(d);
+    if(k==='books')crossed++;
+    else movedBy+=(k==='void'||k==='status'?0:x.net)-cv.net;
+  }));
+  if(moved.length)add('watch',_maPl(moved.length,'collected statement')+' changed after '+(moved.length>1?'they were':'it was')+' collected'+(movedBy?' ('+maRsSigned(movedBy)+')':'')
+    +(crossed?(crossed===moved.length?' — now dated on the other side of the books’ start':' — '+crossed+' now dated on the other side of the books’ start'):'')
+    +'. 1121 is off until the collection is voided and recorded again.','The collection keeps what it covered; the statement moved since.',{label:'Open',go:'couriers',filter:'changed'},Math.abs(movedBy));
   const cnt={};live.forEach(d=>((d.refs&&d.refs.cprNos)||[]).forEach(id=>{(cnt[id]=cnt[id]||[]).push(d);}));
   Object.keys(cnt).sort().forEach(id=>{if(cnt[id].length<2)return;const x=docs.find(y=>y&&y.id===id);
     add('concern',(x?(x.no||id):id)+' is collected twice — '+cnt[id].map(d=>d.no||d.id).join(' and ')+'.','One live collection per CPR (§6).',{label:'Open',go:'doc',ref:cnt[id][1].id,dt:'collection'},9e8);});
@@ -3399,6 +3580,11 @@ function maCourierConcerns(o){
         add('concern','The books say PostEx owes '+maRs(ck.ledger1120)+' on delivered parcels; the parcels say '+maRs(ck.transit1120)+'.','1120 against the rollup’s transit.',{label:'Open',go:'couriers'},9e8);
       const n=Number.isInteger(r.issueCount)?r.issueCount:(r.issues||[]).length;
       if(n)add('watch','PostEx data: '+_maPl(n,'issue')+' — '+((r.issues||[]).slice(0,2).map(i=>String(i.message||i.rule).slice(0,90)).join(' · ')||'see the last run')+'.','The nightly rollup’s checks.',{label:'Open',go:'couriers',filter:'issues'},0);
+      // What the rollup would not write, when it says why (review S4: a
+      // collected receipt PostEx now dates across the books' start).
+      (Array.isArray(r.skipped)?r.skipped:[]).filter(x=>x&&x.message).forEach(x=>{
+        add('concern',String(x.message).slice(0,400),'The nightly rollup left it as it was — the last run.',x.id?{label:'Open',go:'doc',ref:String(x.id),dt:'cpr'}:{label:'Open',go:'couriers'},9e8);
+      });
     }
   }
   return out;
@@ -3429,5 +3615,6 @@ if(typeof module!=='undefined'&&module.exports){
     MA_OPENING_DERIVED,MA_COURIER_IDS,MA_STATEMENT_COURIERS,MA_CPR_RECEIPT_KINDS,MA_CPR_KINDS,MA_CL_MAX_COVERS,MA_ST_MAX_LINES,
     MA_CL_LOCKED,MA_DERIVED_OWNER_FIELDS,MA_DISPUTE_STATES,MA_ROLLUP_BY,MA_ROLLUP_NAME,MA_CPR_FIGURES,
     maCourierAcc,maCollectReceivable,maCprCollectable,maCollectionsOf,maCollectionConfirm,maCollectionNeedsConfirm,
-    maCourierDocs,maCourierMerge,maCourierGone,maCourierPlan,maCourier1120Check,maDisputePatch,maUncollected,maCourierInflows,maCourierConcerns};
+    maCourierDocs,maCourierMerge,maCourierGone,maCourierPlan,maCourier1120Check,maDisputePatch,maUncollected,maCourierInflows,maCourierConcerns,
+    maClaimLive,maClaimFor,maClaimRelease,maCoverMoved,maCoverMovedText,maCollectionCoverCheck,maCollectionOff};
 }

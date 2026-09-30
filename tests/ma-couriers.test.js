@@ -153,27 +153,35 @@ module.exports=function(){
 
   s.section('one parcel: what it is worth and how it splits (maCprSplit)');
   {
+    // Review S1 (29 Sept 2026): every figure of a parcel is WHOLE RUPEES,
+    // rounded once, here — a tax of 28.80 is booked 29 — so a day, a receipt
+    // and transit, which group the same parcels differently, add up to the
+    // same rupees and the 1120 check can clear exactly.
     const d=M.maCprSplit(px({cod:3000,transactionFee:180,transactionTax:28.8}));
-    s.eq('delivered: its share is COD less the delivery fee and tax',d.share,2791.2);
-    s.eq('no receipt yet and ₨0 on record: the whole share is expected on the upfront — never ₨0',J([d.upfront,d.reserve]),J([2791.2,0]));
+    s.eq('delivered: its share is COD less the delivery fee and tax — whole rupees (3,000 − 180 − 29)',d.share,2791);
+    s.eq('no receipt yet and ₨0 on record: the whole share is expected on the upfront — never ₨0',J([d.upfront,d.reserve]),J([2791,0]));
     s.eq('… both parts computed, not PostEx\'s figures',J(d.basis),J({upfront:'computed',reserve:'computed'}));
     const r=M.maCprSplit(returned({reversalFee:120,reversalTax:19.2}));
-    s.eq('returned: its share is minus the reversal fee and tax (the COD tab\'s charges)',r.share,-139.2);
+    s.eq('returned: its share is minus the reversal fee and tax (the COD tab\'s charges) — −120 − 19',r.share,-139);
     const b=M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:2000,cprNumber_2:'R',reservePayment:791.2}));
-    s.eq('both paid: PostEx\'s own figures, whatever the share says',J([b.upfront,b.reserve,b.basis.upfront,b.basis.reserve]),J([2000,791.2,'field','field']));
+    s.eq('both paid: PostEx\'s own figures — and when they add up to the share, the reserve is the whole-rupee share less the upfront, so the two always add up to what the day books',J([b.upfront,b.reserve,b.basis.upfront,b.basis.reserve]),J([2000,791,'field','field']));
     const w=M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:2000}));
-    s.eq('upfront paid, reserve not yet: the reserve expected is the share less the upfront',w.reserve,791.2);
+    s.eq('upfront paid, reserve not yet: the reserve expected is the share less the upfront',w.reserve,791);
     const z=M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:0}));
-    s.eq('on a receipt a 0 is what PostEx paid — it is kept, and the rest is expected on the reserve',J([z.upfront,z.reserve,z.basis.upfront]),J([0,2791.2,'field']));
+    s.eq('on a receipt a 0 is what PostEx paid — it is kept, and the rest is expected on the reserve',J([z.upfront,z.reserve,z.basis.upfront]),J([0,2791,'field']));
     const planned=M.maCprSplit(paid({upfrontPayment:1500}));
-    s.eq('before its receipt, a figure PostEx did send is its own',J([planned.upfront,planned.reserve,planned.basis.upfront]),J([1500,1291.2,'field']));
+    s.eq('before its receipt, a figure PostEx did send is its own',J([planned.upfront,planned.reserve,planned.basis.upfront]),J([1500,1291,'field']));
     const m=M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:null,cprNumber_2:'R',reservePayment:600}));
-    s.eq('a paid part PostEx sent no figure for falls back to the share less the other part',J([m.upfront,m.basis.upfront]),J([2191.2,'computed']));
+    s.eq('a paid part PostEx sent no figure for falls back to the share less the other part',J([m.upfront,m.basis.upfront]),J([2191,'computed']));
     const n=M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:null,cprNumber_2:'R',reservePayment:undefined}));
-    s.eq('neither figure, both paid: the whole share on the first receipt — counted once',J([n.upfront,n.reserve]),J([2791.2,0]));
+    s.eq('neither figure, both paid: the whole share on the first receipt — counted once',J([n.upfront,n.reserve]),J([2791,0]));
     const o=M.maCprSplit(returned({cprNumber_2:'R',reservePayment:null}));
-    s.eq('neither figure, only the reserve paid: the whole share on the reserve',J([o.upfront,o.reserve]),J([0,-139.2]));
-    s.eq('a string holding a number is read; anything else is not a figure',M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:'1999.5'})).upfront,1999.5);
+    s.eq('neither figure, only the reserve paid: the whole share on the reserve',J([o.upfront,o.reserve]),J([0,-139]));
+    s.eq('a string holding a number is read (1999.5, rounded to ₨2,000); anything else is not a figure',M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:'1999.5'})).upfront,2000);
+    const both=M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:1000.4,cprNumber_2:'R',reservePayment:1790.8}));
+    s.eq('PostEx\'s two parts that add up to the share (1,000.40 + 1,790.80 = 2,791.20): each whole, and they still add up to the whole share',J([both.upfront,both.reserve,both.upfront+both.reserve===both.share]),J([1000,1791,true]));
+    const off=M.maCprSplit(paid({cprNumber_1:'U',upfrontPayment:1000.4,cprNumber_2:'R',reservePayment:1700}));
+    s.eq('…and two that do not (a split mismatch): each is PostEx\'s own figure, rounded — the difference stays for cpr.split_mismatch to name',J([off.upfront,off.reserve]),J([1000,1700]));
     s.eq('in transit: worth nothing yet',M.maCprSplit(onRoad({})).share,0);
   }
 
@@ -226,7 +234,7 @@ module.exports=function(){
     const r=seen(derive(all));
     const off=r.cprs.filter(c=>{const n=M.maCprNet({number:c.number,parcels:all});return n.net!==c.net||J(n.parts)!==J(c.parts);});
     s.eq('for every receipt, maCprNet over ALL the parcels gives the same parts and net',off.map(c=>c.number).join(','),'');
-    s.eq('X1: its upfront side 1,234.4 + N2\'s computed 2,791.2 → 4,026, its reserve side −139.2 → −139',J([cprOf(r,'X1').kind,cprOf(r,'X1').parts.upfront.amount,cprOf(r,'X1').parts.reserve.amount,cprOf(r,'X1').net]),J(['mixed',4026,-139,3887]));
+    s.eq('X1: its upfront side 1,234.4 → 1,234 + N2\'s computed 2,791 = 4,025 (each parcel whole rupees, review S1), its reserve side −139.2 → −139',J([cprOf(r,'X1').kind,cprOf(r,'X1').parts.upfront.amount,cprOf(r,'X1').parts.reserve.amount,cprOf(r,'X1').net]),J(['mixed',4025,-139,3886]));
     s.eq('maCprNet picks a receipt\'s parcels out of all of them by number',M.maCprNet({number:'R200',parcels:all}).parts.reserve.parcels.join(','),'A1,A3');
     s.eq('a number with nothing on it is worth nothing',J(M.maCprNet({number:'NOPE',parcels:all}).parts),J({upfront:{parcels:[],amount:0},reserve:{parcels:[],amount:0}}));
     s.eq('duplicates handed to maCprNet are counted once',M.maCprNet({number:'U100',parcels:AS.concat([Object.assign({},A2)])}).net,4200);
@@ -403,9 +411,15 @@ module.exports=function(){
       paid({trackingNumber:'W4',cprNumber_1:'RND-2',cpr1Date:'2026-09-05',upfrontPayment:100.4}),
       paid({trackingNumber:'W5',cprNumber_1:'RND-2',cpr1Date:'2026-09-05',upfrontPayment:100.4}),
       returned({trackingNumber:'W6',cprNumber_2:'RND-3',cpr2Date:'2026-09-05',reservePayment:-12.5}),
-      returned({trackingNumber:'W7',cprNumber_2:'RND-4',cpr2Date:'2026-09-05',reservePayment:-0.4})]));
-    s.eq('a half rupee rounds up: 100.25 + 100.25 = 201',cprOf(r,'RND-1').net,201);
-    s.eq('summed to the paisa, then rounded once: 3 × 100.4 = 301 (rounding each would give 300)',cprOf(r,'RND-2').net,301);
+      returned({trackingNumber:'W7',cprNumber_2:'RND-4',cpr2Date:'2026-09-05',reservePayment:-0.4}),
+      paid({trackingNumber:'W8',cprNumber_1:'RND-5',cpr1Date:'2026-09-05',upfrontPayment:100.5})]));
+    // REVERSES "summed to the paisa, then rounded once" (review S1): each
+    // PARCEL is rounded once, before anything is added — a day and the
+    // receipts that pay it group the same parcels differently, and rounding
+    // each group's sum let them disagree by a rupee, for ever.
+    s.eq('each parcel is rounded once, before anything is added: 100.25 + 100.25 → 100 + 100 = 200',cprOf(r,'RND-1').net,200);
+    s.eq('3 × 100.4 → 3 × 100 = 300 — what the parcels\' own whole rupees add up to, whatever groups them',cprOf(r,'RND-2').net,300);
+    s.eq('a half rupee on a parcel rounds up: 100.5 → 101',cprOf(r,'RND-5').net,101);
     s.eq('a negative half rounds as Math.round does: −12.5 → −12',cprOf(r,'RND-3').net,-12);
     s.ok('never −0: −0.4 is 0',Object.is(cprOf(r,'RND-4').net,0)&&Object.is(cprOf(r,'RND-4').parts.reserve.amount,0));
     s.ok('every figure is a whole number',r.cprs.every(c=>[c.net,c.parts.upfront.amount,c.parts.reserve.amount,c.grossCod,c.deliveryFee,c.deliveryTax,c.reversalFee,c.reversalTax].every(Number.isInteger)));

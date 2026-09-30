@@ -103,7 +103,8 @@ module.exports=async function(){
     // above: none of these rules may admit the QA account.
     const KNOWN=['ma_accounts','ma_sv_accounts','ma_parties','ma_items','ma_settings','ma_commitments','ma_counters','ma_feedback',
       'ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares',
-      'ma_cpr','ma_collection','ma_runs'];   // M2.4: the couriers (18)
+      'ma_cpr','ma_collection','ma_runs',   // M2.4: the couriers
+      'ma_claims'];                          // review S2: one live collection per CPR (19)
     const named=books.map(b=>b.name);
     s.ok('the parser found every Master Accounts collection ('+books.length+' blocks)',KNOWN.every(c=>named.indexOf(c)>-1));
     // The family is the lib's pattern; restated here as the literal prefix so a

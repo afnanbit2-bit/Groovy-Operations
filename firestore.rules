@@ -1177,8 +1177,9 @@ service cloud.firestore {
     //     one) and the owners' TYPED TCS / Bykea statements; ma_collection
     //     is the cash counted against them, confirmed through the same
     //     holder map as a transfer; ma_runs is server-only. What needs a
-    //     loop — one live collection per CPR, the covers' sum, a statement's
-    //     lines — stays the client's and the nightly rollup's.
+    //     loop — the covers' sum, a statement's lines — stays the client's
+    //     and the nightly rollup's. One live collection per CPR is held by
+    //     ma_claims (review S2, maClaimOk).
     // Run in the emulator: tests/rules-emulator-ma.js. Mirror of
     // MA_OWNERS in js/ma-core.js.
     // ═══════════════════════════════════════════════════════════════════
@@ -1256,6 +1257,10 @@ service cloud.firestore {
     }
     // A missing close doc is "not locked" — guarded by exists() so get()
     // is never called on a document that is not there.
+    // KNOWN GAP (review S6): an M2 document posts on OTHER days than its own
+    // (a statement's lines, a collection's opening pair), so maLocked of its
+    // own quarter does not cover every quarter it posts into — the lock must
+    // before a screen closes a quarter (M11).
     function maLocked(q) {
       return exists(/databases/$(database)/documents/ma_closes/$(q))
         && get(/databases/$(database)/documents/ma_closes/$(q)).data.get('locked', false) == true
@@ -1311,10 +1316,10 @@ service cloud.firestore {
     // difference is the one the builder derives; one of the four couriers;
     // at most 40 statements named, each with its snapshot; and TCS's credit
     // lands in the TCS account (1060) — and only TCS's does.
-    // KNOWN LIMIT (the rules cannot loop): "one live collection per CPR",
-    // that the covers are those CPRs' own nets, and that `expected` is their
-    // sum are held by the client (maValidate) and checked nightly (the
-    // rollup, and Needs attention's "collected twice") — not here.
+    // KNOWN LIMIT (the rules cannot loop): that the covers are those CPRs'
+    // own nets and that `expected` is their sum are held by the client
+    // (maValidate, and the page's re-read inside the transaction) — not
+    // here. "One live collection per CPR" is ma_claims' (maClaimOk).
     function maCollectionShapeOk(d) {
       return maCodeOk(d.get('holder', null))
         && d.get('amount', null) is int && d.amount > 0
@@ -1365,33 +1370,94 @@ service cloud.firestore {
     // nightly rollup's (Admin SDK): an owner may only review it or open /
     // resolve a dispute on it — never its figures, status, sig, edits or
     // flags, and never void it (the rollup voids one PostEx stops reporting).
-    // A dispute: `dispute` is the only key that moves; opened by the caller
-    // with a reason and stamped NOW (within five minutes of the server's
-    // clock); resolved by the caller, stamped now, the opening kept as it
-    // was; never inside a locked quarter, never on a void document.
+    // A dispute: `dispute` and its history `disputes` are the only keys that
+    // move; opened by the caller with a reason and stamped NOW (within five
+    // minutes of the server's clock) — and ONLY when none is open (review
+    // S7: a fresh "open" could replace the open one, or overwrite a
+    // resolution); resolved by the caller, stamped now, the opening kept as
+    // it was. Each open and each resolve appends exactly ONE row to
+    // `disputes` — by the caller, carrying the same stamp and the same words
+    // — with every earlier row untouched (the edits[] rule). Never inside a
+    // locked quarter, never on a void document. maDisputePatch in
+    // js/ma-core.js builds exactly this.
     function maDisputeOk() {
       let o = resource.data;
       let n = request.resource.data;
       let x = n.get('dispute', null);
+      let h = o.get('disputes', []);
+      let row = n.get('disputes', []) is list && n.get('disputes', []).size() == h.size() + 1 ? n.disputes[h.size()] : null;
       return isMasterAccounts()
         && o.get('derived', false) == true
         && o.status != 'void'
-        && n.diff(o).affectedKeys().hasOnly(['dispute'])
+        && n.diff(o).affectedKeys().hasOnly(['dispute','disputes'])
         && x is map
         && x.get('state', null) in ['open','resolved']
         && maText(x.get('reason', null))
+        && h is list
+        && (h.size() == 0 || n.disputes[0:h.size()] == h)
+        && row is map
+        && row.keys().hasOnly(['state','reason','note','by','at'])
+        && row.get('state', null) == x.state
+        && row.get('by', null) == maUser()
         && (x.state == 'open'
-          ? x.keys().hasOnly(['state','reason','by','at'])
+          ? !(o.get('dispute', null) is map && o.dispute.get('state', null) == 'open')
+            && x.keys().hasOnly(['state','reason','by','at'])
             && x.get('by', null) == maUser()
             && x.get('at', null) is number && math.abs(x.at - request.time.toMillis()) <= 300000
+            && row.get('at', null) == x.at && row.get('reason', null) == x.reason
           : o.get('dispute', null) is map && o.dispute.get('state', null) == 'open'
             && x.keys().hasOnly(['state','reason','by','at','resolvedBy','resolvedAt','note'])
             && x.get('by', null) == o.dispute.get('by', null)
             && x.get('at', null) == o.dispute.get('at', null)
             && x.reason == o.dispute.get('reason', null)
             && x.get('resolvedBy', null) == maUser()
-            && x.get('resolvedAt', null) is number && math.abs(x.resolvedAt - request.time.toMillis()) <= 300000)
+            && x.get('resolvedAt', null) is number && math.abs(x.resolvedAt - request.time.toMillis()) <= 300000
+            && row.get('at', null) == x.resolvedAt && row.get('note', '') == x.get('note', ''))
         && !maLocked(o.quarter);
+    }
+    // CLAIMS (review S2): one live collection per CPR, held HERE and not only
+    // in the page — two tabs could each record the same CPR, because the
+    // page's check read ma_collection outside its own transaction. The claim's
+    // id IS the covered document's id; it names the collection that covers it
+    // (a CL number), or null once that collection is void. Claiming for X
+    // needs X to name this document among what it covers AFTER the write
+    // (getAfter: the same transaction writes both) and to be live, and the
+    // claim it replaces to name no LIVE collection — absent, released, or
+    // one that is void after this write. Releasing needs the named
+    // collection to be void after the write (the void writes both). Always
+    // by the caller, stamped now; never deleted. Every claim a collection
+    // writes reads the same collection document, so 40 CPRs cost one read.
+    // maClaimFor / maClaimRelease / maClaimLive in js/ma-core.js.
+    function maClaimOk(docId) {
+      let n = request.resource.data;
+      let c = n.get('collection', null);
+      let was = resource == null ? null : resource.data.get('collection', null);
+      return isMasterAccounts()
+        && n.keys().hasOnly(['doc','collection','at','by','releasedAt'])
+        && n.get('doc', null) == docId
+        && n.get('by', null) == maUser()
+        && n.get('at', null) is number && math.abs(n.at - request.time.toMillis()) <= 300000
+        && (c == null
+          ? was is string
+            && n.get('releasedAt', null) == n.at
+            && getAfter(/databases/$(database)/documents/ma_collection/$(was)).data.get('status', null) == 'void'
+          : c is string && c.matches('^CL-[0-9]{2}-[0-9]{4,}$')
+            && !n.keys().hasAny(['releasedAt'])
+            && getAfter(/databases/$(database)/documents/ma_collection/$(c)).data.get('status', null) in ['posted','pending']
+            && docId in getAfter(/databases/$(database)/documents/ma_collection/$(c)).data.refs.cprNos
+            && (was == null
+              || getAfter(/databases/$(database)/documents/ma_collection/$(was)).data.get('status', null) == 'void'));
+    }
+    // A new collection claims what it covers in the same write: its FIRST
+    // statement's claim must name it after the write. So a page from before
+    // claims (a cached build) cannot record a collection at all and must
+    // refresh; the rest of its claims are the page's (the rules cannot
+    // loop, and one read per statement would cost 40).
+    function maClClaimedOk(docId) {
+      let ids = request.resource.data.refs.cprNos;
+      return ids.size() == 0
+        || (existsAfter(/databases/$(database)/documents/ma_claims/$(ids[0]))
+          && getAfter(/databases/$(database)/documents/ma_claims/$(ids[0])).data.get('collection', null) == docId);
     }
     // The day the books went live: ma_settings/main's goLive when it is a
     // day, else the default — maSettings in js/ma-core.js, whose
@@ -1617,9 +1683,16 @@ service cloud.firestore {
     // like a transfer (maConfirmOk).
     match /ma_collection/{docId} {
       allow read:   if isMasterAccounts();
-      allow create: if maDocCreateOk('collection', docId, ['posted','pending']) && docId.matches('^CL-[0-9]{2}-[0-9]{4,}$');
+      allow create: if maDocCreateOk('collection', docId, ['posted','pending']) && docId.matches('^CL-[0-9]{2}-[0-9]{4,}$')
+                    && maClClaimedOk(docId);
       allow update: if maEditOk('collection', ['date','holder','amount','collectedBy','note','tags','attachments'])
                     || maVoidOk() || maConfirmOk() || maReviewOk();
+      allow delete: if false;
+    }
+    // A statement's claim — the collection that covers it (review S2).
+    match /ma_claims/{docId} {
+      allow read: if isMasterAccounts();
+      allow create, update: if maClaimOk(docId);
       allow delete: if false;
     }
 

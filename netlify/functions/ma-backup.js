@@ -60,7 +60,7 @@ const lib = require('../lib/ma-server.js');
 const MA_BACKUP_COLLECTIONS = [
   'ma_accounts', 'ma_sv_accounts', 'ma_parties', 'ma_items', 'ma_settings', 'ma_commitments',
   'ma_counters', 'ma_feedback', 'ma_journal', 'ma_transfer', 'ma_counts', 'ma_closes',
-  'ma_audit', 'ma_backups', 'ma_shares', 'ma_cpr', 'ma_collection', 'ma_runs',
+  'ma_audit', 'ma_backups', 'ma_shares', 'ma_cpr', 'ma_collection', 'ma_claims', 'ma_runs',
   'postex_orders', 'wh_sales', 'acct_entries', 'acct_vendors', 'acct_meter_logs',
   'acct_settings', 'acct_closes', 'payroll_runs', 'payslips', 'shopify_orders'
 ];
