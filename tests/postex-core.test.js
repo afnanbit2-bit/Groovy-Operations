@@ -481,19 +481,60 @@ module.exports=async function(){
 
   s.section('a receipt number is first-wins; a different one is recorded as a conflict');
   {
-    const seed={K1:upfront('K1'),K2:upfront('K2'),K3:upfront('K3',{cprNumber_1:null,cpr1Date:null,cprNumber_2:'RES-K3',cpr2Date:at(T-2*DAY)})};
+    const seed={K1:upfront('K1'),K2:upfront('K2'),K3:upfront('K3',{cprNumber_1:null,cpr1Date:null,cprNumber_2:'RES-K3',cpr2Date:at(T-2*DAY)}),
+      K4:upfront('K4')};
     const w=world(seed,{
-      K1:ok({trackingNumber:'K1',cpr1:'CPR-OTHER',cpr1Date:at(T-9*DAY),cpr2:'RES-K1',cpr2Date:at(T-DAY)}),
+      K1:ok({trackingNumber:'K1',cpr1:'CPR-OTHER',cpr1Date:at(T-9*DAY),cpr2:'RES-K1',cpr2Date:at(T-DAY),settle:true,settlementDate:at(T-3*DAY)}),
       K2:ok({trackingNumber:'K2',cpr1:'CPR-K2',cpr1Date:at(T-9*DAY)}),
-      K3:ok({trackingNumber:'K3',cpr2:'RES-DIFFERENT'})
+      K3:ok({trackingNumber:'K3',cpr2:'RES-DIFFERENT',cpr2Date:at(T-DAY)}),
+      // the PDF's own field names, which the code falls back to
+      K4:ok({trackingNumber:'K4',cprNumber_1:'CPR-OTHER-4',upfrontPaymentDate:at(T-8*DAY)})
     });
     const r=await enrich(w);
     s.eq('a different upfront number: the stored one stays',P(w,'K1').cprNumber_1,'CPR-K1');
     s.eq('…the conflict is recorded',J(P(w,'K1').cprConflict),J({field:'cprNumber_1',stored:'CPR-K1',received:'CPR-OTHER',at:T}));
-    s.eq('…but a reserve number, a date and the stamp still land',J([P(w,'K1').cprNumber_2,P(w,'K1').cpr1Date,P(w,'K1').cprCheckedAt]),J(['RES-K1',at(T-9*DAY),T]));
+    // S8 (Master Accounts M2 review): the new receipt's DATE was written under the OLD number, moving
+    // CPR-K1 to the day PostEx gave CPR-OTHER — and Master Accounts dates a receipt by its parcels' dates.
+    s.eq('…and the OTHER receipt\'s date is NOT written under the stored number: cpr1Date stays as it was',P(w,'K1').cpr1Date,at(T-10*DAY));
+    s.ok('…(not the day PostEx gave the other receipt)',P(w,'K1').cpr1Date!==at(T-9*DAY),P(w,'K1').cpr1Date);
+    s.eq('…but a reserve number, its date and the stamp still land',J([P(w,'K1').cprNumber_2,P(w,'K1').cpr2Date,P(w,'K1').cprCheckedAt]),J(['RES-K1',at(T-DAY),T]));
+    s.eq('…and settle and settlementDate belong to the parcel, so they still land',J([P(w,'K1').settle,P(w,'K1').settlementDate]),J([true,at(T-3*DAY)]));
     s.eq('the same number again: no conflict',J([P(w,'K2').cprNumber_1,'cprConflict' in P(w,'K2')]),J(['CPR-K2',false]));
+    s.eq('…and its date still moves to the newer value (only a REFUSED number withholds its date)',P(w,'K2').cpr1Date,at(T-9*DAY));
     s.eq('a different reserve number: stored one stays, conflict names cprNumber_2',J([P(w,'K3').cprNumber_2,P(w,'K3').cprConflict&&P(w,'K3').cprConflict.field]),J(['RES-K3','cprNumber_2']));
-    s.eq('counted: 2 conflicts',r.conflicts,2);
+    s.eq('…and the reserve date is withheld the same way',P(w,'K3').cpr2Date,at(T-2*DAY));
+    s.eq('the PDF\'s field names take the same path: the number stays, the date is withheld',J([P(w,'K4').cprNumber_1,P(w,'K4').cpr1Date,P(w,'K4').cprConflict&&P(w,'K4').cprConflict.received]),J(['CPR-K4',at(T-10*DAY),'CPR-OTHER-4']));
+    s.eq('counted: 3 conflicts',r.conflicts,3);
+  }
+  {
+    // A first number for a parcel that holds none is not a conflict, and brings its date.
+    const w=world({F1:parcel('F1')},{F1:ok({trackingNumber:'F1',cpr1:'CPR-F1',cpr1Date:at(T-2*DAY)})});
+    await enrich(w);
+    s.eq('a first receipt number writes its number and its date',J([P(w,'F1').cprNumber_1,P(w,'F1').cpr1Date,'cprConflict' in P(w,'F1')]),J(['CPR-F1',at(T-2*DAY),false]));
+  }
+
+  s.section('what Master Accounts derives after a receipt conflict (the round trip the reviewer ran)');
+  {
+    // Three parcels on receipt A (14 Sept). PostEx now says parcel P3 was paid on receipt B (21 Sept).
+    const core=require('../js/ma-core.js');
+    const D14='2026-09-14T00:00:00',D21='2026-09-21T00:00:00';
+    const mkp=tn=>({trackingNumber:tn,statusCategory:'delivered',dispatched:true,transactionDate:'2026-09-10T10:00:00',
+      orderDeliveryDate:'2026-09-12T10:00:00',cod:2500,transactionFee:0,transactionTax:0,upfrontPayment:2000,
+      cprNumber_1:'CPR-A',cpr1Date:D14,cprCheckedAt:T-4*DAY});
+    const seed={P1:mkp('P1'),P2:mkp('P2'),P3:mkp('P3')};
+    const w=world(seed,{P1:ok({trackingNumber:'P1',cpr1:'CPR-A',cpr1Date:D14}),P2:ok({trackingNumber:'P2',cpr1:'CPR-A',cpr1Date:D14}),
+      P3:ok({trackingNumber:'P3',cpr1:'CPR-B',cpr1Date:D21})});
+    const sum=await enrich(w);
+    s.eq('the run counts the one conflict',sum.conflicts,1);
+    const derived=core.maCprDerive(['P1','P2','P3'].map(k=>P(w,k)),{from:'2026-07-01',today:'2026-10-05'});
+    const rA=derived.cprs.find(c=>c.number==='CPR-A');
+    s.eq('receipt A is still dated 14 Sept (before the fix it read 21 Sept)',rA&&rA.date,'2026-09-14');
+    s.ok('the parcels\' dates no longer disagree with each other',!derived.issues.some(i=>i.rule==='cpr.date_disagree'),J(derived.issues.map(i=>i.rule)));
+    const iss=derived.issues.find(i=>i.rule==='cpr.number_conflict');
+    s.ok('the conflict is named as its own issue',!!iss,J(derived.issues.map(i=>i.rule)));
+    s.eq('…on the stored receipt, for that parcel',J([iss&&iss.refs.receipts,iss&&iss.refs.parcels]),J([['CPR-A'],['P3']]));
+    s.ok('…and the message names the parcel and BOTH numbers',!!iss&&/P3/.test(iss.message)&&/CPR-A/.test(iss.message)&&/CPR-B/.test(iss.message),iss&&iss.message);
+    s.ok('receipt B is not invented from the refused number',!derived.cprs.some(c=>c.number==='CPR-B'),J(derived.cprs.map(c=>c.number)));
   }
 
   s.section('the CPR tab shows the receipt\'s own date');

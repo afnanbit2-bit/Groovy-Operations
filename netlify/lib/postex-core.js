@@ -319,8 +319,12 @@ function cprState(d, nowMs) {
 //
 // A receipt NUMBER is first-wins: once one is stored, a DIFFERENT non-blank one
 // from PostEx is not written; the disagreement is recorded on the parcel as
-// cprConflict {field, stored, received, at} and the caller counts it. Dates,
-// settle and settlementDate may still move to a newer value.
+// cprConflict {field, stored, received, at} and the caller counts it. A receipt
+// date belongs to the receipt it was sent with, so when its number is refused
+// its date is refused with it: written under the stored number it would move
+// that receipt to a day PostEx gave the OTHER one (Master Accounts dates a
+// receipt by the dates its parcels carry). settle and settlementDate belong
+// to the parcel, not to a receipt, and may still move to a newer value.
 function cprUpdate(dist, stamp, stored) {
   const upd = Object.assign({}, stamp);
   stored = stored || {};
@@ -328,25 +332,26 @@ function cprUpdate(dist, stamp, stored) {
     const v = vals.find(cprHas);
     if (v !== undefined) upd[field] = v;
   };
+  // → false when the number was refused (a conflict), true otherwise — the
+  // caller writes the receipt's date only on true.
   const putNumber = (field, ...vals) => {
     const v = vals.find(cprHas);
-    if (v === undefined) return;
+    if (v === undefined) return true;
     const was = stored[field];
     if (cprHas(was) && String(was).trim() !== String(v).trim()) {
       upd.cprConflict = { field, stored: was, received: v, at: stamp.cprCheckedAt };
-      return;
+      return false;
     }
     upd[field] = v;
+    return true;
   };
   if (dist.settle === true) upd.settle = true;
   put("settlementDate", dist.settlementDate);
   // Actual API field names are cpr1 / cpr1Date (not the PDF's
   // cprNumber_1 / upfrontPaymentDate); cpr2 / cpr2Date carry the
   // reserve-payment receipt. Fall back to the PDF names just in case.
-  putNumber("cprNumber_1", dist.cpr1, dist.cprNumber_1);
-  put("cpr1Date", dist.cpr1Date, dist.upfrontPaymentDate);
-  putNumber("cprNumber_2", dist.cpr2, dist.cprNumber_2);
-  put("cpr2Date", dist.cpr2Date, dist.reservePaymentDate);
+  if (putNumber("cprNumber_1", dist.cpr1, dist.cprNumber_1)) put("cpr1Date", dist.cpr1Date, dist.upfrontPaymentDate);
+  if (putNumber("cprNumber_2", dist.cpr2, dist.cprNumber_2)) put("cpr2Date", dist.cpr2Date, dist.reservePaymentDate);
   return upd;
 }
 
