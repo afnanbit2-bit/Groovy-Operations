@@ -1297,8 +1297,7 @@ let _siAxCache=null,_siAxHov=null;
 
 // Refunded AND voided orders are left out of every Explorer figure. (Other Inventory Intel
 // tables exclude refunded only, so totals can differ from them by the voided orders.)
-function _siAxExcluded(li){const f=String(li&&li.financial_status||'').toLowerCase();return f==='refunded'||f==='voided';}
-function _siAxCode(sku){const s=String(sku||'').trim().toUpperCase();if(!s||s==='NO-SKU')return'';return s.split('-')[0];}
+function _siAxCode(sku){return _siCleanCode(_siCleanSku(sku));} // one SKU/code rule: the _siClean one
 function _siAxDayOf(iso){const s=String(iso||'').slice(0,10);return/^\d{4}-\d{2}-\d{2}$/.test(s)?s:'';}
 function _siAxDayNum(day){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(day||'');return m?Math.floor(Date.UTC(+m[1],+m[2]-1,+m[3])/86400000):null;}
 function _siAxDayStr(n){const d=new Date(n*86400000);return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');}

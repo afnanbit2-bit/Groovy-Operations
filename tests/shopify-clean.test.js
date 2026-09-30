@@ -103,7 +103,7 @@ module.exports=async function(){
   s.ok('voided discrepancy is stated',/still count the 2 voided/.test(R('_siCleanQualityHtml(_siAxIndex().quality)')));
   eq('existing 7d/30d helper is unchanged: still counts voided',R('_siLineItems.filter(l=>l.financial_status!=="refunded").length'),10);
   eq('input arrays are not mutated',R('_siProducts[1].sku'),' gst073-m ');
-  eq('cleaning reads nothing',reads,0);
+  eq('no new reads: only the builder\'s single stock-history read happens',reads,1);
   eq('empty input is safe',R('_siClean({}).quality.lineItems.total'),0);
   return s;
 };
