@@ -1,4 +1,5 @@
 const admin = require("firebase-admin");
+const status = require("../lib/shopify-order-status.js");
 
 const SHOPIFY_API_VERSION = "2026-04";
 const PAGE_SIZE = 50;
@@ -136,9 +137,8 @@ exports.handler = async function () {
               created_at: order.created_at,
               currency: order.currency,
               total_price: parseFloat(order.total_price) || 0,
-              financial_status: order.financial_status || "",
+              ...status.orderStatusFields(order),
               fulfillment_status: order.fulfillment_status || null,
-              cancelled_at: order.cancelled_at || null,
               // Codes used on the order, upper-cased — read by the Marketing
               // redemption rollup (marketing-code-rollup.js) with an
               // array-contains query.
@@ -150,6 +150,7 @@ exports.handler = async function () {
             }
           );
 
+          const byLine = status.refundsByLine(order);
           for (const li of order.line_items || []) {
             const product = productMap.get(String(li.variant_id));
 
@@ -169,7 +170,7 @@ exports.handler = async function () {
                 quantity: li.quantity || 0,
                 price: parseFloat(li.price) || 0,
                 order_created_at: order.created_at,
-                financial_status: order.financial_status || "",
+                ...status.lineStatusFields(order, li, byLine),
                 synced_at: now,
               }
             );
