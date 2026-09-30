@@ -485,6 +485,22 @@ module.exports=function(){
     {const x=I([paid({trackingNumber:'NB1',cprNumber_1:'X'.repeat(101),cpr1Date:'2026-09-05',upfrontPayment:500})],'cpr.number_bad');
      s.ok('cpr.number_bad: a receipt number over '+M.MA_CPR_NUMBER_MAX+' characters is not one — named, no CPR made',!!x.i&&x.i.refs.parcels.join()==='NB1'&&!x.r.cprs.length);
      s.eq('… its parcel counts as not yet on that receipt',x.r.transit.awaitingUpfront.parcels,1);}
+    // cpr.number_conflict — PostEx named another receipt for a parcel that already holds one (postex-core's
+    // cprConflict {field,stored,received,at}: the stored number stays, the new one and its date were not written).
+    {const at0=1790100000000;
+     const A=paid({trackingNumber:'NC1',cprNumber_1:'NC-A',cpr1Date:'2026-09-05',upfrontPayment:500,cprConflict:{field:'cprNumber_1',stored:'NC-A',received:'NC-B',at:at0}});
+     const B=paid({trackingNumber:'NC2',cprNumber_1:'NC-A',cpr1Date:'2026-09-05',upfrontPayment:500});
+     const x=I([A,B],'cpr.number_conflict');
+     s.ok('cpr.number_conflict: a refused receipt number is named, on the STORED receipt, for its parcel',!!x.i&&J(x.i.refs)===J({receipts:['NC-A'],parcels:['NC1']}),x.i&&J(x.i.refs));
+     s.ok('… the message names the parcel and BOTH numbers',!!x.i&&/NC1/.test(x.i.message)&&/NC-A/.test(x.i.message)&&/NC-B/.test(x.i.message)&&/upfront/.test(x.i.message),x.i&&x.i.message);
+     s.eq('… only the stored receipt exists — the refused number makes no receipt of its own',x.r.cprs.map(c=>c.number).join(),'NC-A');
+     const doc=M.maCourierDocs(x.r,M.maSettings(null)).find(d=>d.id==='postex-NC-A');
+     s.ok('… and the doubt is a flag on that receipt\'s document, so an owner meets it where the money is',!!doc&&doc.flags.some(f=>f.rule==='cpr.number_conflict'),J(doc&&doc.flags));
+     const R=I([paid({trackingNumber:'NC3',cprNumber_2:'NC-R',cpr2Date:'2026-09-20',reservePayment:300,cprConflict:{field:'cprNumber_2',stored:'NC-R',received:'NC-S',at:at0}})],'cpr.number_conflict');
+     s.ok('… a refused RESERVE number says reserve',!!R.i&&/reserve/.test(R.i.message)&&J(R.i.refs)===J({receipts:['NC-R'],parcels:['NC3']}),R.i&&R.i.message);
+     const quiet=[{cprConflict:null},{cprConflict:'junk'},{cprConflict:{field:'cprNumber_1',stored:'NC-A',received:'NC-A',at:1}},{cprConflict:{field:'cprNumber_1',stored:'',received:'NC-B',at:1}}]
+       .map(o=>rulesOf(derive([paid(Object.assign({trackingNumber:'NC4',cprNumber_1:'NC-A',cpr1Date:'2026-09-05',upfrontPayment:500},o))])).indexOf('cpr.number_conflict'));
+     s.eq('not raised for a missing or malformed record, or one whose two numbers are the same',J(quiet),J([-1,-1,-1,-1]));}
     // cpr.field_missing
     {const x=I([paid({trackingNumber:'FM1',cprNumber_1:'FM-1',cpr1Date:'2026-09-05',upfrontPayment:null}),
        paid({trackingNumber:'FM2',cprNumber_1:'FM-0',cpr1Date:'2026-09-01',upfrontPayment:2000,cprNumber_2:'FM-1',cpr2Date:'2026-09-05'})].map(p=>{if(p.trackingNumber==='FM2')delete p.reservePayment;return p;}),'cpr.field_missing');
