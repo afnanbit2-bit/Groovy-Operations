@@ -108,7 +108,7 @@ function _siByNormDim(items,dim){
     if(!k||!k.trim())k='Unknown';
     map[k]=(map[k]||0)+(li.quantity||0);
   });
-  return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  return Object.entries(map).sort(_siSortEntries);
 }
 
 // ── Data loader ─────────────────────────────────────────────────────
@@ -347,7 +347,7 @@ function _siByDimension(items,dim){
     if(!k.trim())k='Unknown';
     map[k]=(map[k]||0)+(li.quantity||0);
   });
-  return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  return Object.entries(map).sort(_siSortEntries);
 }
 
 // ── By category, resolved against the CURRENT catalog ───────────────
@@ -364,7 +364,7 @@ function _siByCategoryLive(items){
     if(typeof k!=='string'||!k.trim())k='Unknown';
     map[k]=(map[k]||0)+(li.quantity||0);
   });
-  return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  return Object.entries(map).sort(_siSortEntries);
 }
 
 // ── Bar chart (pure CSS) ────────────────────────────────────────────
@@ -787,13 +787,7 @@ function _siGroupRows(rows){
     groups[key].variants.push(r);
   });
   Object.values(groups).forEach(g=>{
-    g.variants.sort((a,b)=>{
-      const ai=_SI_SIZE_ORDER.indexOf((a.size||'').toUpperCase());
-      const bi=_SI_SIZE_ORDER.indexOf((b.size||'').toUpperCase());
-      if(ai>=0&&bi>=0)return ai-bi;
-      if(ai>=0)return-1;if(bi>=0)return 1;
-      return(a.size||'').localeCompare(b.size||'');
-    });
+    g.variants.sort((a,b)=>_siSortCmpSize(a.size,b.size));
   });
   return groups;
 }
@@ -833,15 +827,13 @@ function _siGroupedBodyHtml(filteredRows){
   const getGroupVal=g=>{
     const tot=f=>g.variants.reduce((s,r)=>s+(r[f]||0),0);
     const minDays=Math.min(...g.variants.filter(r=>r.dailyRate>0.05).map(r=>r.daysLeft).concat([9999]));
+    const oh=tot('onHand'),s7=tot('s7');
     const m={title:g.title,color:g.color,productType:g.productType,
-      onHand:tot('onHand'),s7:tot('s7'),s30:tot('s30'),totalSold:tot('totalSold'),daysLeft:minDays};
+      onHand:oh,s7,s30:tot('s30'),totalSold:tot('totalSold'),daysLeft:minDays<9999?minDays:null,
+      sellThrough:oh+s7>0?s7/(oh+s7):null,reorderPoint:tot('reorderPoint'),suggestedQty:tot('suggestedQty')};
     return m[key]!==undefined?m[key]:tot('onHand');
   };
-  const page=Object.entries(groups).sort((a,b)=>{
-    const va=getGroupVal(a[1]),vb=getGroupVal(b[1]);
-    if(typeof va==='string')return dir*va.localeCompare(vb||'');
-    return dir*((va||0)-(vb||0));
-  }).slice(0,_siSkuLimit);
+  const page=_siSortRows(Object.entries(groups),[{key,type:(key==='title'||key==='color'||key==='productType')?'text':'num',get:e=>getGroupVal(e[1])}],key,dir).slice(0,_siSkuLimit);
   return page.map(([gkey,g])=>{
     const expanded=_siSkuExpanded.has(gkey);
     const tot=g.variants.reduce((s,r)=>s+(r.onHand||0),0);
@@ -1125,7 +1117,7 @@ function _siWeeklySection(){
       </div>
       ${wc.top_sku?`<div style="font-size:13px;margin-bottom:4px">Top SKU: <strong>${wc.top_sku.sku}</strong>${_siGetProd(wc.top_sku.sku).product_title?` — ${_siGetProd(wc.top_sku.sku).product_title}`:''} (${wc.top_sku.quantity} units)</div>`:''}
       ${wc.top_category?`<div style="font-size:13px;margin-bottom:8px">Top Category: <strong>${wc.top_category.category}</strong> (${wc.top_category.quantity} units)</div>`:''}
-      ${wc.by_category?`<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">By Category</div>${_siBarChart(Object.entries(wc.by_category).sort((a,b)=>b[1]-a[1]),8)}</div>`:''}
+      ${wc.by_category?`<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">By Category</div>${_siBarChart(Object.entries(wc.by_category).sort(_siSortEntries),8)}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -1324,9 +1316,7 @@ function _siAxSizeOf(sku,li){
   return s?s.toUpperCase():'Unknown';
 }
 function _siAxSizeSort(a,b){
-  const ai=_SI_SIZE_ORDER.indexOf(a),bi=_SI_SIZE_ORDER.indexOf(b);
-  if(ai>=0&&bi>=0)return ai-bi;if(ai>=0)return-1;if(bi>=0)return 1;
-  return String(a).localeCompare(String(b),undefined,{numeric:true});
+  return _siSortCmpSize(a,b);
 }
 
 // ═══ _siClean — Article Explorer data cleaning (one block; pure; run once per data load) ═══
@@ -1496,7 +1486,7 @@ function _siAxIndex(){
     a.name=a.title||a.code;
     a.text=[a.code,a.title,a.color,a.category,[...a.skus].join(' ')].join(' ').toLowerCase();
   });
-  list.sort((x,y)=>(y.units-x.units)||String(x.name).localeCompare(String(y.name)));
+  list.sort(_siSortArticles);
   _siAxCache={li:_siLineItems,n:_siLineItems.length,pr:_siProducts,sn:_siSnapshot,pv:_siPrevSnapshot,hv:_siHist,list,map:arts,catUnits,cov:_siEarliestOrderDate(),quality:cl.quality};
   return _siAxCache;
 }
@@ -2049,7 +2039,7 @@ function _siAxResultsHtml(){
   const r=_siAxSearch(q,q?12:8);
   if(!r.hits.length)return`<div class="si-ax-empty">No article matches “${_siEsc(q)}”.</div>`;
   const add=_siAxModeSel==='compare';
-  return`<div class="si-ax-note" style="margin-bottom:4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'}</div>
+  return`<div class="si-ax-note" style="margin-bottom:4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'} · ordered by units sold, then name, then code</div>
   <div class="si-ax-results">${r.hits.map(a=>`<button class="si-ax-hit" data-code="${_siEsc(a.code)}" onclick="window._siAx${add?'Add':'Pick'}(this.dataset.code)"><span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div></span><span class="n">${a.units} sold</span>${add?'<span class="si-ax-btn" style="pointer-events:none">+ Add</span>':''}</button>`).join('')}</div>`;
 }
 window._siAxSetMode=function(m){_siAxModeSel=m==='compare'?'compare':'search';_siAxQuery='';_siAxMsg='';_siAxRepaintAll();};
@@ -2141,7 +2131,18 @@ function _siAxScorecardHtml(arts){
    :`<div class="si-ax-empty">No article here has both an in-stock pace and a sell-through yet (${_siEsc(_siAxHistWhy(rows[0].m))}), so there is nothing to plot.</div>`;
   const notPlot=unplotted.length?`<div class="si-ax-note">Not plotted: ${unplotted.map(u=>_siEsc((u.i+1)+'. '+_siAxLabel(u.r.a)+' — '+u.why)).join('; ')}.</div>`:'';
   const shapeChip=c=>`<span class="si-pc-chip cls-${c.cls}"><i class="si-pc-key cls-${c.cls}"></i>${_siEsc(c.label)}</span>`;
-  const tbl=`<div style="overflow-x:auto"><table class="cut-table" style="min-width:780px"><thead><tr><th>#</th><th>Article</th><th>Class</th><th>Net units</th><th>Per live week</th><th>Sell-through</th><th>In-stock</th><th>Cover</th><th>Rule that matched</th><th>Use it for</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td><i class="si-ax-badge si-ax-b${i}">${i+1}</i></td><td style="font-weight:600">${_siEsc(_siAxLabel(r.a))}<div class="si-ax-note" style="margin:0">${_siEsc(r.a.code)}</div></td><td>${shapeChip(r.c)}${r.c.unverified?'<div class="si-ax-note" style="margin:0">partly unverified</div>':''}</td><td>${r.m.units==null?'—':r.m.units}</td><td>${_siAxNum(r.m.rateWeek)}</td><td>${_siAxPct(r.m.st&&r.m.st.value)}</td><td>${_siAxPct(r.m.inRate)}</td><td>${r.m.cover!=null?_siAxNum(r.m.cover)+'w':'—'}</td><td style="min-width:200px">${_siEsc(r.c.rule)}</td><td style="min-width:160px">${_siEsc(r.c.act)}</td></tr>`).join('')}</tbody></table></div>`;
+  const tbl=_siSortTable('ax-score',[
+    {key:'n',label:'#',type:'num',first:'asc',get:r=>rows.indexOf(r),cell:r=>`<td><i class="si-ax-badge si-ax-b${rows.indexOf(r)}">${rows.indexOf(r)+1}</i></td>`},
+    {key:'art',label:'Article',type:'text',get:r=>_siAxLabel(r.a),cell:r=>`<td style="font-weight:600">${_siEsc(_siAxLabel(r.a))}<div class="si-ax-note" style="margin:0">${_siEsc(r.a.code)}</div></td>`},
+    {key:'cls',label:'Class',type:'cls',get:r=>r.c.label,cell:r=>`<td>${shapeChip(r.c)}${r.c.unverified?'<div class="si-ax-note" style="margin:0">partly unverified</div>':''}</td>`},
+    {key:'units',label:'Net units',type:'num',get:r=>r.m.units,cell:r=>`<td>${r.m.units==null?'—':r.m.units}</td>`},
+    {key:'rate',label:'Per live week',type:'num',get:r=>r.m.rateWeek,cell:r=>`<td>${_siAxNum(r.m.rateWeek)}</td>`},
+    {key:'st',label:'Sell-through',type:'num',get:r=>r.m.st&&r.m.st.value,cell:r=>`<td>${_siAxPct(r.m.st&&r.m.st.value)}</td>`},
+    {key:'inr',label:'In-stock',type:'num',get:r=>r.m.inRate,cell:r=>`<td>${_siAxPct(r.m.inRate)}</td>`},
+    {key:'cover',label:'Cover',type:'num',first:'asc',get:r=>r.m.cover,cell:r=>`<td>${r.m.cover!=null?_siAxNum(r.m.cover)+'w':'—'}</td>`},
+    {key:'rule',label:'Rule that matched',type:'text',get:r=>r.c.rule,cell:r=>`<td style="min-width:200px">${_siEsc(r.c.rule)}</td>`},
+    {key:'act',label:'Use it for',type:'text',get:r=>r.c.act,cell:r=>`<td style="min-width:160px">${_siEsc(r.c.act)}</td>`}
+  ],rows,{def:{key:'cls',dir:1},defText:'class order: Winner, Healthy, Stock-constrained, Slow, Dead stock, Too early, Not rated',minWidth:780,ties:[{get:r=>r.m.units,type:'num',dir:-1},{get:r=>r.a.code,type:'code',dir:1}]});
   const read=rows.map(r=>`<li>${_siEsc(_siAxReadClass(r.a,r.c))}</li>`).join('');
   const thr=`<details class="si-ax-defs"><summary class="si-ax-lab" style="cursor:pointer">Default thresholds — defaults, not facts</summary>
    <div class="si-ax-note">Derived from this store’s own distributions (about 18 weeks of stock history); editable constants in <em>js/shopify.js</em>. First match wins, in this order.</div>
@@ -2184,15 +2185,29 @@ function _siAxSearchBody(){
   const sizes=[...new Set(Object.keys(a.sizes).concat(Object.keys(a.stock)))].sort(_siAxSizeSort);
   const tot=a.units||0,maxQ=Math.max(1,...sizes.map(s=>a.sizes[s]||0));
   const mix=sizes.length?sizes.map(s=>{const q=a.sizes[s]||0;return`<div class="si-ax-mix"><span class="sz">${_siEsc(s)}</span><span class="bar"><i style="width:${(q/maxQ*100).toFixed(1)}%"></i></span><span class="q">${q} sold${tot?' · '+Math.round(q/tot*100)+'%':''}</span></div>`;}).join(''):'<div class="si-ax-note">No sizes recorded.</div>';
-  const stockRows=m.sizeRows.map(r=>`<tr><td>${_siEsc(r.size)}${r.risk?' <span class="si-ax-flag" title="Out of stock now, sold in the last 28 days">at risk</span>':''}</td><td>${r.sold}</td><td>${r.stock!=null?r.stock:'—'}</td><td>${r.prev!=null?r.prev:'—'}</td><td>${_siAxPct(r.sellThrough)}</td></tr>`).join('');
+  const sizeTable=_siSortTable('ax-sizes',[
+    {key:'s',label:'Size',type:'size',get:r=>r.size,cell:r=>`<td>${_siEsc(r.size)}${r.risk?' <span class="si-ax-flag" title="Out of stock now, sold in the last 28 days">at risk</span>':''}</td>`},
+    {key:'sold',label:'Sold (counted)',type:'num',get:r=>r.sold,cell:r=>`<td>${r.sold}</td>`},
+    {key:'oh',label:'On hand',type:'num',get:r=>r.stock,cell:r=>`<td>${r.stock!=null?r.stock:'—'}</td>`},
+    {key:'prev',label:'A week ago',type:'num',get:r=>r.prev,cell:r=>`<td>${r.prev!=null?r.prev:'—'}</td>`},
+    {key:'st',label:'Sell-through',title:'sold ÷ (sold + on hand)',type:'num',get:r=>r.sellThrough,cell:r=>`<td>${_siAxPct(r.sellThrough)}</td>`}
+  ],m.sizeRows,{def:{key:'s',dir:1},defText:'garment order: XXXS → XXXL, then waist sizes, then others'});
   // weekly close
   const closes=_siWeeklyCloses.filter(wc=>wc.top_sku&&_siAxCode(wc.top_sku.sku)===a.code);
-  const closeHtml=closes.length?`<table class="cut-table" style="min-width:320px"><thead><tr><th>Week ending</th><th>Top SKU</th><th>Units</th></tr></thead><tbody>${closes.map(wc=>`<tr><td>${_siEsc(wc.week_ending)}</td><td>${_siEsc(wc.top_sku.sku)}</td><td>${_siEsc(wc.top_sku.quantity)}</td></tr>`).join('')}</tbody></table>`
+  const closeHtml=closes.length?_siSortTable('ax-closes',[
+    {key:'w',label:'Week ending',type:'date',first:'desc',get:wc=>String(wc.week_ending||'').slice(0,10),cell:wc=>`<td>${_siEsc(wc.week_ending)}</td>`},
+    {key:'sku',label:'Top SKU',type:'code',get:wc=>wc.top_sku.sku,cell:wc=>`<td>${_siEsc(wc.top_sku.sku)}</td>`},
+    {key:'q',label:'Units',type:'num',get:wc=>Number(wc.top_sku.quantity),cell:wc=>`<td>${_siEsc(wc.top_sku.quantity)}</td>`}
+  ],closes,{def:{key:'w',dir:-1},defText:'newest first'})
     :`<div class="si-ax-note">No weekly close lists this article as its top SKU. (A weekly close stores only its top SKU, top category and category totals, so nothing more per article exists to show.)</div>`;
   // per-bucket table
   const bk=_siAxBuckets(a,_siAxBucket);
-  const rows=[...bk.entries()].sort((x,y)=>y[0].localeCompare(x[0]));
-  const bucketTable=rows.length?`<div style="max-height:260px;overflow:auto"><table class="cut-table" style="min-width:320px"><thead><tr><th>${_siAxBucket==='month'?'Month':'Week starting'}</th><th>Units</th><th>Revenue</th></tr></thead><tbody>${rows.map(([b,x])=>`<tr><td>${_siEsc(_siAxFmtBucket(b,_siAxBucket,false))}</td><td>${x.u}</td><td>${a.hasPrice?_siEsc(_siPKR(Math.round(x.r))):'—'}</td></tr>`).join('')}</tbody></table></div>`:'';
+  const rows=[...bk.entries()];
+  const bucketTable=rows.length?`<div style="max-height:320px;overflow:auto">`+_siSortTable('ax-bucket-'+_siAxBucket,[
+    {key:'b',label:_siAxBucket==='month'?'Month':'Week starting',type:'date',first:'desc',get:r=>r[0],cell:r=>`<td>${_siEsc(_siAxFmtBucket(r[0],_siAxBucket,false))}</td>`},
+    {key:'u',label:'Units',type:'num',get:r=>r[1].u,cell:r=>`<td>${r[1].u}</td>`},
+    {key:'r',label:'Revenue',type:'num',get:r=>a.hasPrice?r[1].r:null,cell:r=>`<td>${a.hasPrice?_siEsc(_siPKR(Math.round(r[1].r))):'—'}</td>`}
+  ],rows,{def:{key:'b',dir:-1},defText:'newest first',ties:[{get:r=>r[1].u,type:'num',dir:-1}]})+`</div>`:'';
   const cat=_siEsc(a.category||'no category');
   return`<div class="card"><div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:700">${_siEsc(a.name)}</div><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${cat} · ${a.skus.size} SKU${a.skus.size===1?'':'s'}</div></div>
@@ -2227,7 +2242,8 @@ function _siAxSearchBody(){
     <div class="si-ax-note">Latest ${_siAxBucket} is still running. ${_siEsc(ser.notes.join(' '))}</div>
     ${bucketTable}</div>
   <div class="card"><div class="card-title">Size mix (units sold) and stock</div>${mix}
-    <div style="overflow-x:auto;margin-top:8px"><table class="cut-table" style="min-width:320px"><thead><tr><th>Size</th><th>Sold (counted)</th><th>On hand</th><th>A week ago</th><th title="sold ÷ (sold + on hand)">Sell-through</th></tr></thead><tbody>${stockRows}</tbody></table></div>\n    <div class="si-ax-note" style="margin-top:8px">${_siAxNeedsHistoryNote()}</div></div>
+    <div style="margin-top:8px">${sizeTable}</div>
+    <div class="si-ax-note" style="margin-top:8px">${_siAxNeedsHistoryNote()}</div></div>
   ${_siAxDefsHtml()}
   <div class="card"><div class="card-title">Weekly close</div>${closeHtml}</div>`;
 }
@@ -2249,7 +2265,7 @@ function _siAxCompareData(){
     vals.forEach((v,k)=>{if(v==null)return;if(!M.cum&&!M.kind)total+=v;if(peak===null||v>peak){peak=v;peakAt=k;}latest=v;});
     if(M.cum){for(let k=vals.length-1;k>=0;k--)if(vals[k]!=null){total=vals[k];break;}}
     if(M.kind)total=latest;
-    return{art:a,total,peak,peakLabel:peakAt>=0?ser.xLabels[peakAt]:'',u7:_siAxUnitsSince(a,7).u,u30:_siAxUnitsSince(a,30).u,m:_siAxStats(a)};
+    return{i,art:a,total,peak,peakLabel:peakAt>=0?ser.xLabels[peakAt]:'',u7:_siAxUnitsSince(a,7).u,u30:_siAxUnitsSince(a,30).u,m:_siAxStats(a)};
   });
   return{arts,ser,rows,M};
 }
@@ -2291,12 +2307,38 @@ function _siAxCompareBody(){
   const chart=_siAxChartHtml({series:d.ser.series,xLabels:d.ser.xLabels,xTicks:d.ser.xTicks,integer:!d.M.money&&!d.M.kind,money:!!d.M.money,fmt:d.M.kind?fmtv:undefined,empty:'None of the selected articles has sales in the synced data for this view, so there is no line to draw.',aria:d.M.label+' — '+d.ser.basis+' basis'});
   const cell=v=>v==null?'—':_siEsc(fmtv(v));
   const totalHead=d.M.cum?'Cumulative at end':(d.M.kind?'Latest':d.M.label+' — total');
-  const tbl=`<div style="overflow-x:auto"><table class="cut-table" style="min-width:720px"><thead><tr><th>#</th><th>Article</th><th>Live</th><th>Units (counted)</th><th>Revenue (counted)</th><th>7d / 30d</th><th>${_siEsc(totalHead)}</th><th>Peak</th></tr></thead><tbody>${d.rows.map((r,i)=>`<tr><td><i class="si-ax-badge si-ax-b${i}">${i+1}</i></td><td style="font-weight:600">${_siEsc(_siAxLabel(r.art))}<div class="si-ax-note" style="margin:0">${_siEsc(r.art.code)}</div></td><td>${_siEsc(_siAxLiveText(r.art))}<div class="si-ax-note" style="margin:0">${_siEsc(_siAxAgeText(r.art))}</div></td><td>${r.art.units}</td><td>${r.art.hasPrice?_siEsc(_siPKR(Math.round(r.art.rev))):'—'}</td><td>${r.u7} / ${r.u30}</td><td>${cell(r.total)}</td><td>${cell(r.peak)} <span class="si-ax-note">${_siEsc(r.peakLabel)}</span></td></tr>`).join('')}</tbody></table></div>`;
-  const th=(l,k)=>`<th title="${_siAxTip(k)}">${_siEsc(l)}</th>`;
-  const badge=(i,r)=>`<td><i class="si-ax-badge si-ax-b${i}">${i+1}</i></td><td style="font-weight:600">${_siEsc(_siAxLabel(r.art))}<div class="si-ax-note" style="margin:0">${_siEsc(r.art.code)}</div></td>`;
+  const art=[{key:'n',label:'#',type:'num',first:'asc',get:r=>r.i,cell:r=>`<td><i class="si-ax-badge si-ax-b${r.i}">${r.i+1}</i></td>`},
+    {key:'art',label:'Article',type:'text',get:r=>_siAxLabel(r.art),cell:r=>`<td style="font-weight:600">${_siEsc(_siAxLabel(r.art))}<div class="si-ax-note" style="margin:0">${_siEsc(r.art.code)}</div></td>`}];
+  const ties=[{get:r=>r.art.units,type:'num',dir:-1},{get:r=>r.art.code,type:'code',dir:1}];
+  const dnote=(v,t)=>v==null?'':`<div class="si-ax-note" style="margin:0">${_siEsc(t)}</div>`;
+  const tbl=_siSortTable('ax-compare',art.concat([
+    {key:'live',label:'Live',type:'date',first:'desc',get:r=>r.art.liveDay,cell:r=>`<td>${_siEsc(_siAxLiveText(r.art))}<div class="si-ax-note" style="margin:0">${_siEsc(_siAxAgeText(r.art))}</div></td>`},
+    {key:'units',label:'Units (counted)',type:'num',get:r=>r.art.units,cell:r=>`<td>${r.art.units}</td>`},
+    {key:'rev',label:'Revenue (counted)',type:'num',get:r=>r.art.hasPrice?r.art.rev:null,cell:r=>`<td>${r.art.hasPrice?_siEsc(_siPKR(Math.round(r.art.rev))):'—'}</td>`},
+    {key:'u30',label:'7d / 30d',type:'num',get:r=>r.u30,cell:r=>`<td>${r.u7} / ${r.u30}</td>`},
+    {key:'total',label:totalHead,type:'num',get:r=>r.total,cell:r=>`<td>${cell(r.total)}</td>`},
+    {key:'peak',label:'Peak',type:'num',get:r=>r.peak,cell:r=>`<td>${cell(r.peak)} <span class="si-ax-note">${_siEsc(r.peakLabel)}</span></td>`}
+  ]),d.rows,{def:{key:'n',dir:1},defText:'the order you added them',minWidth:720,ties});
   const dash=v=>v==null?'—':_siEsc(String(v));
-  const pace=`<div style="overflow-x:auto"><table class="cut-table" style="min-width:980px"><thead><tr><th>#</th><th>Article</th><th title="Counted days: from the later of the live date and the first synced order, to today">Counted days</th>${th('Units / live week','rate')}${th('Last 28 d / week','pace')}${th('Momentum','mom')}${th('Weeks of cover','cover')}${th('Sell-through','st')}${th('In-stock rate','inrate')}${th('Units / in-stock day','perday')}${th('Stock-out days','out')}${th('Sizes in stock','avl')}</tr></thead><tbody>${d.rows.map((r,i)=>{const m=r.m;return`<tr>${badge(i,r)}<td>${dash(m.days)}${m.partial?'<div class="si-ax-note" style="margin:0">from first order</div>':''}</td><td>${_siAxNum(m.rateWeek)}</td><td>${_siAxNum(m.pace28)}</td><td>${_siAxPct(m.momentum,true)}</td><td>${m.cover!=null?_siAxNum(m.cover)+'w':'—'}${m.cover!=null?'<div class="si-ax-note" style="margin:0">'+_siEsc(m.coverBasis)+'</div>':''}</td><td>${_siAxPct(m.st&&m.st.value)}${m.st?'<div class="si-ax-note" style="margin:0">'+_siEsc(_siAxFmtDay(m.st.from,true)+' – '+_siAxFmtDay(m.st.to,true))+'</div>':''}</td><td>${_siAxPct(m.inRate)}</td><td>${_siAxNum(m.perInDay,2)}</td><td>${m.outDays!=null?m.outDays+'<div class="si-ax-note" style="margin:0">of '+m.measured+'</div>':'—'}</td><td>${m.sizesNow?m.sizesNow.n+' of '+m.sizesNow.of:'—'}${m.risk.length?'<div class="si-ax-note" style="margin:0"><span class="si-ax-flag">at risk</span> '+_siEsc(m.risk.map(x=>x.size).join(', '))+'</div>':''}</td></tr>`;}).join('')}</tbody></table></div>`;
-  const shape=`<div style="overflow-x:auto"><table class="cut-table" style="min-width:640px"><thead><tr><th>#</th><th>Article</th>${th('Selling weeks','sell')}${th('Peak week','peak')}${th('First 4 weeks','first4')}${th('Share of category','share')}${th('Avg unit price','asp')}</tr></thead><tbody>${d.rows.map((r,i)=>{const m=r.m;return`<tr>${badge(i,r)}<td>${m.sellingWeeks!=null?m.sellingWeeks+' of '+m.blocks:'—'}</td><td>${m.peak?m.peak.u+' units<div class="si-ax-note" style="margin:0">'+_siEsc(_siAxFmtDay(m.peak.start,true))+'</div>':'—'}</td><td>${dash(m.first4)}${m.first4==null&&r.art.liveDay&&m.partial?'<div class="si-ax-note" style="margin:0">launch before data</div>':''}</td><td>${_siAxPct(m.catShare)}</td><td>${m.asp!=null?_siEsc(_siPKR(Math.round(m.asp))):'—'}</td></tr>`;}).join('')}</tbody></table></div>`;
+  const pace=_siSortTable('ax-pace',art.concat([
+    {key:'days',label:'Counted days',title:'Counted days: from the later of the live date and the first synced order, to today',type:'num',get:r=>r.m.days,cell:r=>`<td>${dash(r.m.days)}${r.m.partial?'<div class="si-ax-note" style="margin:0">from first order</div>':''}</td>`},
+    {key:'rate',label:'Units / live week',title:_siAxTip('rate'),type:'num',get:r=>r.m.rateWeek,cell:r=>`<td>${_siAxNum(r.m.rateWeek)}</td>`},
+    {key:'pace',label:'Last 28 d / week',title:_siAxTip('pace'),type:'num',get:r=>r.m.pace28,cell:r=>`<td>${_siAxNum(r.m.pace28)}</td>`},
+    {key:'mom',label:'Momentum',title:_siAxTip('mom'),type:'num',get:r=>r.m.momentum,cell:r=>`<td>${_siAxPct(r.m.momentum,true)}</td>`},
+    {key:'cover',label:'Weeks of cover',title:_siAxTip('cover'),type:'num',first:'asc',get:r=>r.m.cover,cell:r=>`<td>${r.m.cover!=null?_siAxNum(r.m.cover)+'w':'—'}${r.m.cover!=null?'<div class="si-ax-note" style="margin:0">'+_siEsc(r.m.coverBasis)+'</div>':''}</td>`},
+    {key:'st',label:'Sell-through',title:_siAxTip('st'),type:'num',get:r=>r.m.st&&r.m.st.value,cell:r=>`<td>${_siAxPct(r.m.st&&r.m.st.value)}${r.m.st?'<div class="si-ax-note" style="margin:0">'+_siEsc(_siAxFmtDay(r.m.st.from,true)+' – '+_siAxFmtDay(r.m.st.to,true))+'</div>':''}</td>`},
+    {key:'inr',label:'In-stock rate',title:_siAxTip('inrate'),type:'num',get:r=>r.m.inRate,cell:r=>`<td>${_siAxPct(r.m.inRate)}</td>`},
+    {key:'pid',label:'Units / in-stock day',title:_siAxTip('perday'),type:'num',get:r=>r.m.perInDay,cell:r=>`<td>${_siAxNum(r.m.perInDay,2)}</td>`},
+    {key:'out',label:'Stock-out days',title:_siAxTip('out'),type:'num',get:r=>r.m.outDays,cell:r=>`<td>${r.m.outDays!=null?r.m.outDays+'<div class="si-ax-note" style="margin:0">of '+r.m.measured+'</div>':'—'}</td>`},
+    {key:'avl',label:'Sizes in stock',title:_siAxTip('avl'),type:'num',get:r=>r.m.sizesNow&&r.m.sizesNow.n,cell:r=>`<td>${r.m.sizesNow?r.m.sizesNow.n+' of '+r.m.sizesNow.of:'—'}${r.m.risk.length?'<div class="si-ax-note" style="margin:0"><span class="si-ax-flag">at risk</span> '+_siEsc(r.m.risk.map(x=>x.size).join(', '))+'</div>':''}</td>`}
+  ]),d.rows,{def:{key:'n',dir:1},defText:'the order you added them',minWidth:980,ties});
+  const shape=_siSortTable('ax-shape',art.concat([
+    {key:'sell',label:'Selling weeks',title:_siAxTip('sell'),type:'num',get:r=>r.m.sellingWeeks,cell:r=>`<td>${r.m.sellingWeeks!=null?r.m.sellingWeeks+' of '+r.m.blocks:'—'}</td>`},
+    {key:'peak',label:'Peak week',title:_siAxTip('peak'),type:'num',get:r=>r.m.peak&&r.m.peak.u,cell:r=>`<td>${r.m.peak?r.m.peak.u+' units<div class="si-ax-note" style="margin:0">'+_siEsc(_siAxFmtDay(r.m.peak.start,true))+'</div>':'—'}</td>`},
+    {key:'f4',label:'First 4 weeks',title:_siAxTip('first4'),type:'num',get:r=>r.m.first4,cell:r=>`<td>${dash(r.m.first4)}${r.m.first4==null&&r.art.liveDay&&r.m.partial?'<div class="si-ax-note" style="margin:0">launch before data</div>':''}</td>`},
+    {key:'share',label:'Share of category',title:_siAxTip('share'),type:'num',get:r=>r.m.catShare,cell:r=>`<td>${_siAxPct(r.m.catShare)}</td>`},
+    {key:'asp',label:'Avg unit price',title:_siAxTip('asp'),type:'num',get:r=>r.m.asp,cell:r=>`<td>${r.m.asp!=null?_siEsc(_siPKR(Math.round(r.m.asp))):'—'}</td>`}
+  ]),d.rows,{def:{key:'n',dir:1},defText:'the order you added them',minWidth:640,ties});
   const read=_siAxReadThis(d.rows);
   const readHtml=read.length?`<div class="card"><div class="card-title">Read this — pace, cover and momentum</div><ul class="si-ax-read">${read.map(t=>`<li>${_siEsc(t)}</li>`).join('')}</ul><div class="si-ax-note">Every sentence is computed from the tables below; it is left out when its inputs are missing.</div></div>`:'';
   const basisNote=d.ser.basis==='launch'?'Since launch: x-axis is weeks (or months) since each article\'s live date, so products from different years line up at the same age.':'Calendar: the same dates on the x-axis; a line starts when the article went live.';
@@ -2306,3 +2348,104 @@ function _siAxCompareBody(){
   <div class="card"><div class="card-title">Shape and context</div>${shape}</div>
   ${_siAxDefsHtml()}`;
 }
+
+// ═══ _siSort BEGIN — one pure comparator module + sortable-table helper ═══
+// Rules (every sorted list in the Article Explorer goes through this):
+//  • article codes are natural/numeric aware (GST073 < GST100, GST9 < GST10)
+//  • sorts are stable; ties break on the caller's list (default: units desc, then code asc)
+//  • a missing value (null / '' / '—' / NaN) is ALWAYS last, ascending or descending
+//  • categories: units desc, then name · classes: fixed order · sizes: garment order,
+//    then numeric waist ascending, then the rest · dates/weeks: chronological (ISO keys)
+const _SI_SORT_CLASSES=['Winner','Healthy','Stock-constrained','Slow','Dead stock','Too early','Not rated'];
+const _SI_SORT_GARMENT=['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','4XL','5XL'];
+const _SI_SORT_ALIAS={'2XL':'XXL','3XL':'XXXL'};
+let _siSortState={},_siSortReg={};
+
+function _siSortMissing(v){return v==null||v===''||v==='—'||(typeof v==='number'&&!isFinite(v));}
+// natural compare: digit runs compare as numbers, everything else case-insensitively
+function _siSortNat(a,b){
+  const x=String(a).toLowerCase().match(/\d+|\D+/g)||[],y=String(b).toLowerCase().match(/\d+|\D+/g)||[];
+  for(let i=0;i<x.length&&i<y.length;i++){
+    const p=x[i],q=y[i],pd=/^\d/.test(p),qd=/^\d/.test(q);
+    if(pd&&qd){
+      const pn=p.replace(/^0+(?=\d)/,''),qn=q.replace(/^0+(?=\d)/,'');
+      if(pn.length!==qn.length)return pn.length<qn.length?-1:1;
+      if(pn!==qn)return pn<qn?-1:1;
+      if(p.length!==q.length)return p.length<q.length?-1:1;
+    }else if(p!==q)return p<q?-1:1;
+  }
+  return x.length-y.length;
+}
+function _siSortSizeKey(s){
+  const t=String(s==null?'':s).trim().toUpperCase(),g=_SI_SORT_ALIAS[t]||t;
+  const gi=_SI_SORT_GARMENT.indexOf(g);
+  if(gi>=0)return[0,gi,''];
+  if(/^\d+(\.\d+)?$/.test(t))return[1,parseFloat(t),''];
+  if(!t||t==='UNKNOWN')return[3,0,''];
+  return[2,0,t];
+}
+function _siSortCmpSize(a,b){
+  const x=_siSortSizeKey(a),y=_siSortSizeKey(b);
+  return(x[0]-y[0])||(x[1]-y[1])||_siSortNat(x[2],y[2]);
+}
+function _siSortClassRank(c){const i=_SI_SORT_CLASSES.findIndex(n=>n.toLowerCase()===String(c==null?'':c).trim().toLowerCase());return i<0?_SI_SORT_CLASSES.length:i;}
+const _SI_SORT_TYPES={
+  num:(a,b)=>a-b,
+  text:_siSortNat,
+  code:_siSortNat,
+  date:(a,b)=>a<b?-1:a>b?1:0, // ISO YYYY-MM-DD keys sort chronologically as strings
+  size:_siSortCmpSize,
+  cls:(a,b)=>_siSortClassRank(a)-_siSortClassRank(b)
+};
+// One comparison of two values of a type, honouring direction. Missing is last in BOTH directions.
+function _siSortCmp(a,b,type,dir){
+  const ma=_siSortMissing(a),mb=_siSortMissing(b);
+  if(ma||mb)return ma&&mb?0:ma?1:-1;
+  return(dir<0?-1:1)*(_SI_SORT_TYPES[type]||_SI_SORT_TYPES.text)(a,b);
+}
+// Stable sort of rows (never mutates). cols = [{key,type,get}], ties = [{get,type,dir}] applied in order.
+function _siSortRows(rows,cols,key,dir,ties){
+  const col=cols.find(c=>c.key===key)||cols[0];
+  const get=col.get||(r=>r[col.key]);
+  const d=dir<0?-1:1,tl=ties||[];
+  return rows.map((r,i)=>({r,i})).sort((p,q)=>{
+    let c=_siSortCmp(get(p.r),get(q.r),col.type||'text',d);
+    if(c)return c;
+    for(const t of tl){c=_siSortCmp(t.get(p.r),t.get(q.r),t.type||'text',t.dir||1);if(c)return c;}
+    return p.i-q.i;
+  }).map(o=>o.r);
+}
+// Category / dimension entries [name,units]: units desc, then name
+function _siSortEntries(a,b){return((b[1]||0)-(a[1]||0))||_siSortNat(a[0],b[0]);}
+// Articles: units desc, then name, then code
+function _siSortArticles(x,y){return((y.units||0)-(x.units||0))||_siSortNat(x.name||'',y.name||'')||_siSortNat(x.code||'',y.code||'');}
+
+// ── sortable table ──
+function _siSortSpec(id,def){
+  const s=_siSortState[id];return s&&s.key?s:{key:def.key,dir:def.dir};
+}
+function _siSortFirstDir(col){return col.first?(col.first==='desc'?-1:1):(col.type==='num'?-1:1);}
+window._siSortClick=function(id,key){
+  const reg=_siSortReg[id];if(!reg)return;
+  const col=reg.cols.find(c=>c.key===key);if(!col)return;
+  const cur=_siSortSpec(id,reg.def);
+  _siSortState[id]=cur.key===key?{key,dir:-cur.dir}:{key,dir:_siSortFirstDir(col)};
+  if(typeof _siAxRepaintBody==='function')_siAxRepaintBody();
+};
+function _siSortTh(id,col,spec){
+  const on=spec.key===col.key;
+  const aria=on?(spec.dir>0?'ascending':'descending'):'none';
+  const mark=on?(spec.dir>0?'▲':'▼'):'↕';
+  return`<th scope="col" aria-sort="${aria}"${col.title?` title="${_siEsc(col.title)}"`:''} class="si-sort-th${on?' on':''}"><button type="button" class="si-sort-btn" data-key="${_siEsc(col.key)}" onclick="window._siSortClick('${id}',this.dataset.key)">${_siEsc(col.label)}<span class="si-sort-mark" aria-hidden="true">${mark}</span></button></th>`;
+}
+// cols: [{key,label,type,get,first?,cell(row,i)}]; opts: {def:{key,dir},ties,minWidth,defText}
+function _siSortTable(id,cols,rows,opts){
+  opts=opts||{};
+  _siSortReg[id]={cols,def:opts.def};
+  const spec=_siSortSpec(id,opts.def),col=cols.find(c=>c.key===spec.key)||cols[0];
+  const sorted=_siSortRows(rows,cols,col.key,spec.dir,opts.ties);
+  const isDef=spec.key===opts.def.key&&spec.dir===opts.def.dir;
+  const note=`<div class="si-ax-note" data-sort-note="${id}">Sorted by <strong>${_siEsc(col.label)}</strong>, ${spec.dir>0?'ascending':'descending'}${isDef&&opts.defText?' — '+_siEsc(opts.defText):''}. Click a column heading to re-sort; blank values (—) always stay last.</div>`;
+  return note+`<div style="overflow-x:auto"><table class="cut-table si-sort-table" style="min-width:${opts.minWidth||320}px"><thead><tr>${cols.map(c=>_siSortTh(id,c,spec)).join('')}</tr></thead><tbody>${sorted.map((r,i)=>`<tr>${cols.map(c=>c.cell(r,i)).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+// ═══ _siSort END ═══

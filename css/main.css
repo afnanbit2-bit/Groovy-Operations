@@ -5005,6 +5005,12 @@ a.ma-btn{text-decoration:none}
 .si-ax-xtick{position:absolute;font-size:12px;color:var(--muted);white-space:nowrap;transform:translateX(-50%)}
 .si-ax-xtick.first{transform:none}.si-ax-xtick.last{transform:translateX(-100%)}
 .si-ax-empty{padding:28px 12px;text-align:center;color:var(--muted);font-size:14px;border:1px dashed var(--border);border-radius:8px;margin-bottom:10px}
+.si-sort-th{padding:0!important}
+.si-sort-btn{display:inline-flex;align-items:center;gap:6px;min-height:34px;width:100%;padding:8px 10px;border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;text-align:left;cursor:pointer;white-space:nowrap}
+.si-sort-mark{font-size:11px;line-height:1;opacity:.6}
+.si-sort-th.on .si-sort-mark{opacity:1}
+.si-sort-th.on .si-sort-btn{font-weight:700}
+.si-sort-btn:focus-visible{outline:2px solid currentColor;outline-offset:-2px}
 .si-ax-note{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5}
 .si-ax-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
 .si-ax-kpi{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface)}
