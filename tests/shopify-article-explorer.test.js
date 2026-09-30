@@ -209,6 +209,15 @@ module.exports=async function(){
   const css=require('fs').readFileSync(require('path').join(harness.ROOT,'css/main.css'),'utf8');
   s.ok('five series tokens exist in light and dark',[0,1,2,3,4].every(i=>(css.match(new RegExp('--si-s'+i+':','g'))||[]).length===2));
 
+  s.section('phone ergonomics (UI QA 30 Sept)');
+  s.ok('a touch that lifts does not hide the tooltip (pointerleave fires on touch end)',(()=>{const el={style:{},querySelector:c=>c==='.si-ax-tip'?tipEl:curEl};const tipEl={style:{display:'block'}},curEl={style:{display:'block'}};
+    R('window._siAxLeave')(el,{pointerType:'touch'});return tipEl.style.display==='block';})());
+  s.ok('a mouse leaving still hides it',(()=>{const tipEl={style:{display:'block'}},curEl={style:{display:'block'}};const el={querySelector:c=>c==='.si-ax-tip'?tipEl:curEl};
+    R('window._siAxLeave')(el,{pointerType:'mouse'});return tipEl.style.display==='none';})());
+  s.ok('the chart wires the event into the leave handler',/_siAxLeave\(this,event\)/.test(R('_siAxChartHtml({series:[{values:[1,2],name:"a"}],xLabels:["a","b"],xTicks:[{i:0,label:"a"}],integer:true})')));
+  s.ok('chip remove button is a 34px target',/\.si-ax-chip button\{min-width:34px;min-height:34px/.test(require('fs').readFileSync(require('path').join(harness.ROOT,'css/main.css'),'utf8')));
+  s.ok('size-mix quantity column may grow (no clipped "154 sold · 24%")',/\.si-ax-mix \.q\{min-width:84px/.test(require('fs').readFileSync(require('path').join(harness.ROOT,'css/main.css'),'utf8')));
+
   s.section('escaping');
   R('_siAxSel="";_siAxQuery="";_siAxModeSel="search"');
   const res=R('_siAxSearch("onerror",5).hits.length');

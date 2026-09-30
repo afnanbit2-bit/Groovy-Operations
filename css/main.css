@@ -4981,7 +4981,7 @@ a.ma-btn{text-decoration:none}
 .si-ax-results{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px;max-height:320px;overflow-y:auto}
 .si-ax-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .si-ax-chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:4px 6px 4px 8px;border:1px solid var(--border);border-radius:999px;background:var(--surface);font-size:13px;font-weight:600;color:var(--text)}
-.si-ax-chip button{min-width:26px;min-height:26px;border:0;border-radius:50%;background:var(--soft);color:var(--text);cursor:pointer;font-size:14px;line-height:1}
+.si-ax-chip button{min-width:34px;min-height:34px;border:0;border-radius:50%;background:var(--soft);color:var(--text);cursor:pointer;font-size:14px;line-height:1}
 .si-ax-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:11px;font-weight:700;color:var(--surface);flex:0 0 auto}
 .si-ax-b0{background:var(--si-s0)}.si-ax-b1{background:var(--si-s1)}.si-ax-b2{background:var(--si-s2)}.si-ax-b3{background:var(--si-s3)}.si-ax-b4{background:var(--si-s4)}
 .si-ax-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:8px;font-size:13px;color:var(--text)}
@@ -5021,7 +5021,7 @@ a.ma-btn{text-decoration:none}
 .si-ax-mix .sz{width:44px;font-weight:700}
 .si-ax-mix .bar{flex:1;height:10px;border-radius:5px;background:var(--soft);overflow:hidden}
 .si-ax-mix .bar i{display:block;height:100%;background:var(--si-s0)}
-.si-ax-mix .q{width:84px;text-align:right;color:var(--muted);white-space:nowrap}
+.si-ax-mix .q{min-width:84px;text-align:right;color:var(--muted);white-space:nowrap}
 @media (max-width:600px){.si-ax-plot{height:200px}.si-ax-input{min-width:0}}
 @media (prefers-reduced-motion:no-preference){.si-ax-tip{transition:opacity .1s}}
 /* Article Explorer — metric hints, flags and the plain-words list (tokens only) */

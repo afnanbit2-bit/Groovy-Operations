@@ -1972,7 +1972,7 @@ function _siAxChartHtml(cfg){
   return`<div class="si-ax-legend">${legend}</div>
   <div class="si-ax-wrap">
     <div class="si-ax-yaxis">${yl}</div>
-    <div class="si-ax-plot" role="img" aria-label="${_siEsc(cfg.aria||'Line chart')}" onpointermove="window._siAxHover(event,this)" onpointerdown="window._siAxHover(event,this)" onpointerleave="window._siAxLeave(this)">
+    <div class="si-ax-plot" role="img" aria-label="${_siEsc(cfg.aria||'Line chart')}" onpointermove="window._siAxHover(event,this)" onpointerdown="window._siAxHover(event,this)" onpointerleave="window._siAxLeave(this,event)">
       ${gl}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${paths}</svg>${dots}${ends}
       <div class="si-ax-cursor"></div><div class="si-ax-tip"></div>
     </div>
@@ -1997,7 +1997,7 @@ window._siAxHover=function(ev,el){
     if(pct>55){tip.style.left='auto';tip.style.right=(100-pct+1)+'%';}else{tip.style.right='auto';tip.style.left=(pct+1)+'%';}
   }
 };
-window._siAxLeave=function(el){
+window._siAxLeave=function(el,ev){if(ev&&ev.pointerType==="touch")return;
   const cur=el.querySelector('.si-ax-cursor'),tip=el.querySelector('.si-ax-tip');
   if(cur)cur.style.display='none';if(tip)tip.style.display='none';
 };
