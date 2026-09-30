@@ -77,6 +77,14 @@
 [functions."ma-rollup-background"]
   schedule = "45 3 * * *"
 
+# 6:15am UTC = 11:15am PKT — Inventory Intel article rollup (plan 10, P0):
+# shopify_line_items + shopify_products + shopify_inventory_snapshots into
+# shopify_article_daily / shopify_article_summary / shopify_rollup_meta (see
+# netlify/functions/shopify-article-rollup-background.js). After the 04:00 UTC
+# catalog sync and the 05:00 UTC snapshot. A background function (15-min budget).
+[functions."shopify-article-rollup-background"]
+  schedule = "15 6 * * *"
+
 # ── Cache control ──────────────────────────────────────────────
 # index.html must always be revalidated so a new deploy's bumped
 # ?v= query strings on the JS/CSS reach the browser immediately.
