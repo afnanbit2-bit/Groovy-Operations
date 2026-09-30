@@ -1319,7 +1319,7 @@ function _siAxFmtBucket(start,bucket,tick){
   return _siAxFmtDay(start,tick);
 }
 function _siAxSizeOf(sku,li){
-  const p=_siGetProd(sku);let s=(p.size||'').trim();const c=(p.color||'').trim();
+  const p=_siCleanProd(sku);let s=(p.size||'').trim();const c=(p.color||'').trim();
   if(_SI_KNOWN_SIZES.has(c.toUpperCase()))s=c; // options swapped on some products
   if(!s&&li&&li.size)s=String(li.size).trim();
   return s?s.toUpperCase():'Unknown';
@@ -1330,54 +1330,164 @@ function _siAxSizeSort(a,b){
   return String(a).localeCompare(String(b),undefined,{numeric:true});
 }
 
+// ═══ _siClean — Article Explorer data cleaning (one block; pure; run once per data load) ═══
+// Takes the already-loaded arrays (NO new reads) and returns the rows the Explorer
+// should count plus a `quality` object of counts per rule, so nothing is dropped silently.
+// It never mutates its input and never changes the 7D/30D/season columns elsewhere in this file.
+let _siCleanLast=null;
+function _siCleanSku(s){const v=String(s==null?'':s).replace(/\s+/g,'').toUpperCase();return v==='NO-SKU'?'':v;}
+function _siCleanCode(nsku){return nsku?nsku.split('-')[0]:'';}
+function _siCleanCatKey(t){return String(t==null?'':t).replace(/\s+/g,' ').trim().toLowerCase();}
+function _siCleanCatText(t){return String(t==null?'':t).replace(/\s+/g,' ').trim();}
+// Category groups: case/whitespace-insensitive key -> most common spelling (ties: A-Z). Blank -> 'Unknown'.
+function _siCleanCategories(rows){
+  const tally=new Map();
+  rows.forEach(t=>{const k=_siCleanCatKey(t);if(!k)return;let m=tally.get(k);if(!m){m=new Map();tally.set(k,m);}const sp=_siCleanCatText(t);m.set(sp,(m.get(sp)||0)+1);});
+  const label=new Map();let merged=0;
+  tally.forEach((m,k)=>{const best=[...m.entries()].sort((a,b)=>(b[1]-a[1])||(a[0]<b[0]?-1:1))[0][0];label.set(k,best);merged+=m.size-1;});
+  return{label,merged,groups:tally.size};
+}
+function _siCleanIsRefunded(li){return String(li&&li.financial_status||'').trim().toLowerCase()==='refunded';}
+// Voided: Shopify's financial_status 'voided' on the line item (copied from the order at sync time),
+// or the order's own cancelled_at (joined via order_id; line items carry no cancelled_at themselves).
+function _siCleanIsVoided(li){return String(li&&li.financial_status||'').trim().toLowerCase()==='voided';}
+function _siClean(src){
+  const products=(src&&src.products)||[],lineItems=(src&&src.lineItems)||[],orders=(src&&src.orders)||[],snap=src&&src.snapshot;
+  const q={
+    lineItems:{total:lineItems.length,used:0,refunded:0,voided:0,cancelledOrder:0,noSku:0,badDate:0,duplicateId:0,voidedStillInExisting7d30d:0},
+    products:{total:products.length,noSku:0,duplicateSkuRows:0,used:0},
+    snapshot:{entries:0,noSku:0,negativeClamped:0,duplicateSkus:0,duplicateEntries:0,used:0},
+    skuNormalised:0,
+    categories:{groups:0,spellingsMerged:0,blankProducts:0}
+  };
+  const normCount=raw=>{if(raw!=null&&String(raw)!==''&&_siCleanSku(raw)!==String(raw))q.skuNormalised++;};
+  // categories (products + line items share one vocabulary)
+  const cats=_siCleanCategories(products.map(p=>p.product_type).concat(lineItems.map(l=>l.product_type)));
+  q.categories.groups=cats.groups;q.categories.spellingsMerged=cats.merged;
+  const catOf=t=>{const k=_siCleanCatKey(t);return k?cats.label.get(k):'Unknown';};
+  // products
+  const prodBySku=new Map(),prods=[];
+  products.forEach(p=>{
+    if(_siCleanCatKey(p.product_type)==='')q.categories.blankProducts++;
+    const n=_siCleanSku(p.sku);
+    if(!n){q.products.noSku++;return;}
+    normCount(p.sku);
+    if(prodBySku.has(n)){q.products.duplicateSkuRows++;return;}
+    const r=Object.assign({},p,{_nsku:n,_code:_siCleanCode(n),_cat:catOf(p.product_type)});
+    prodBySku.set(n,r);prods.push(r);q.products.used++;
+  });
+  // line items
+  const cancelled=new Set();orders.forEach(o=>{if(o&&o.cancelled_at)cancelled.add(String(o._id!=null?o._id:o.order_id));});
+  const seen=new Set(),lis=[];
+  lineItems.forEach(li=>{
+    if(_siCleanIsRefunded(li)){q.lineItems.refunded++;return;}
+    if(_siCleanIsVoided(li)){q.lineItems.voided++;q.lineItems.voidedStillInExisting7d30d++;return;}
+    if(li.order_id!=null&&cancelled.has(String(li.order_id))){q.lineItems.cancelledOrder++;return;}
+    if(li.order_id!=null&&li.line_item_id!=null){
+      const k=li.order_id+'_'+li.line_item_id;
+      if(seen.has(k)){q.lineItems.duplicateId++;return;}
+      seen.add(k);
+    }
+    const n=_siCleanSku(li.sku);
+    if(!n){q.lineItems.noSku++;return;}
+    normCount(li.sku);
+    const day=String(li.order_created_at||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day)){q.lineItems.badDate++;return;}
+    const qty=Number(li.quantity),pr=Number(li.price);
+    lis.push({li,nsku:n,code:_siCleanCode(n),day,qty:isFinite(qty)?qty:0,price:isFinite(pr)?pr:0,cat:catOf(li.product_type)});
+    q.lineItems.used++;
+  });
+  // stock: clamp negatives to 0, skip no-SKU, sum duplicate SKUs
+  const stockBy=new Map();
+  if(snap&&snap.items){
+    for(const id in snap.items){
+      const it=snap.items[id]||{};q.snapshot.entries++;
+      const n=_siCleanSku(it.sku);
+      if(!n){q.snapshot.noSku++;continue;}
+      normCount(it.sku);
+      let av=Number(it.available);if(!isFinite(av))av=0;
+      if(av<0){q.snapshot.negativeClamped++;av=0;}
+      const s=stockBy.get(n);
+      if(s){if(s.entries===1)q.snapshot.duplicateSkus++;s.entries++;q.snapshot.duplicateEntries++;s.available+=av;}
+      else stockBy.set(n,{nsku:n,code:_siCleanCode(n),sku:it.sku,available:av,entries:1});
+    }
+  }
+  q.snapshot.used=stockBy.size;
+  return{products:prods,prodBySku,lineItems:lis,stock:[...stockBy.values()],quality:q};
+}
+function _siCleanProd(sku){const m=_siCleanLast&&_siCleanLast.prodBySku;return(m&&m.get(_siCleanSku(sku)))||_siGetProd(sku);}
+function _siCleanQualityHtml(q){
+  if(!q)return'';
+  const L=q.lineItems,P=q.products,S=q.snapshot;
+  const skipped=L.refunded+L.voided+L.cancelledOrder+L.noSku+L.badDate+L.duplicateId;
+  const row=(n,t)=>n?`<li><strong>${n}</strong> ${t}</li>`:'';
+  const items=[
+    row(L.refunded,'refunded line items left out'),
+    row(L.voided,'voided line items left out'),
+    row(L.cancelledOrder,'line items of cancelled orders left out'),
+    row(L.noSku,'line items with no SKU skipped'),
+    row(L.badDate,'line items with no usable date skipped'),
+    row(L.duplicateId,'repeated line items (same order + line id) counted once'),
+    row(P.noSku,'catalog products with an empty SKU skipped'),
+    row(P.duplicateSkuRows,'catalog rows repeating a SKU ignored (first kept)'),
+    row(S.noSku,'stock entries with no SKU skipped'),
+    row(S.negativeClamped,'negative stock figures counted as 0'),
+    row(S.duplicateSkus,'SKUs listed more than once in the stock snapshot, summed ('+S.duplicateEntries+' extra entries)'),
+    row(q.skuNormalised,'SKUs tidied (case / spaces)'),
+    row(q.categories.spellingsMerged,'category spellings merged into one label')
+  ].join('');
+  const warn=L.voidedStillInExisting7d30d?`<div style="margin-top:4px">Note: the Sold 7d / 30d columns elsewhere on this page still count the ${L.voidedStillInExisting7d30d} voided line items; this tab leaves them out.</div>`:'';
+  return`<details class="si-ax-note" id="si-ax-quality"><summary>Data quality — ${L.used} of ${L.total} line items counted, ${skipped} left out</summary><ul style="margin:4px 0 0 18px;padding:0">${items||'<li>Nothing needed cleaning.</li>'}</ul>${warn}</details>`;
+}
+// ═══ end _siClean ═══
+
 // Per-article index, built once per data load (keyed on the loaded arrays).
 function _siAxIndex(){
   const c=_siAxCache;
   if(c&&c.li===_siLineItems&&c.n===_siLineItems.length&&c.pr===_siProducts&&c.sn===_siSnapshot&&c.pv===_siPrevSnapshot&&c.hv===_siHist)return c;
+  const cl=_siClean({products:_siProducts,lineItems:_siLineItems,orders:_siOrders,snapshot:_siSnapshot});
+  _siCleanLast=cl;
   const arts=new Map();
   const get=code=>{
     let a=arts.get(code);
     if(!a){a={code,title:'',color:'',category:'',skus:new Set(),liveAt:'',daily:new Map(),sizes:{},units:0,rev:0,hasPrice:false,firstDay:'',lastDay:'',stock:{},onHand:0,hasStock:false,prevStock:{},prevOnHand:0,hasPrev:false,sdaily:{}};arts.set(code,a);}
     return a;
   };
-  _siProducts.forEach(p=>{
-    const code=_siAxCode(p.sku);if(!code)return;
-    const a=get(code);a.skus.add(p.sku);
+  cl.products.forEach(p=>{
+    const a=get(p._code);a.skus.add(p._nsku);
     if(!a.title&&p.product_title)a.title=p.product_title;
     if(!a.color){const rc=(p.color||'').trim();a.color=_SI_KNOWN_SIZES.has(rc.toUpperCase())?(p.size||'').trim():rc;}
-    if(!a.category&&p.product_type)a.category=p.product_type;
+    if(!a.category&&p._cat&&p._cat!=='Unknown')a.category=p._cat;
     // Publish date only. created_at is Shopify's creation date (2021+), not a launch date, so it is never used as one.
     const live=p.published_at||'';
     if(live&&(!a.liveAt||live<a.liveAt))a.liveAt=live;
   });
-  _siLineItems.forEach(li=>{
-    if(_siAxExcluded(li))return;
-    const code=_siAxCode(li.sku);if(!code)return;
-    const day=_siAxDayOf(li.order_created_at);if(!day)return;
-    const a=get(code);a.skus.add(li.sku);
+  cl.lineItems.forEach(r=>{
+    const li=r.li,day=r.day;
+    const a=get(r.code);a.skus.add(r.nsku);
     if(!a.title&&li.product_title)a.title=li.product_title;
     if(!a.color&&li.color)a.color=li.color;
-    const q=li.quantity||0,pr=(li.quantity||0)*(li.price||0);
+    const q=r.qty,pr=r.qty*r.price;
     let d=a.daily.get(day);if(!d){d={u:0,r:0};a.daily.set(day,d);}
-    d.u+=q;d.r+=pr;a.units+=q;a.rev+=pr;if(li.price)a.hasPrice=true;
+    d.u+=q;d.r+=pr;a.units+=q;a.rev+=pr;if(r.price)a.hasPrice=true;
     const sz=_siAxSizeOf(li.sku,li);a.sizes[sz]=(a.sizes[sz]||0)+q;
     const sd=a.sdaily[sz]||(a.sdaily[sz]=new Map());sd.set(day,(sd.get(day)||0)+q);
     if(!a.firstDay||day<a.firstDay)a.firstDay=day;
     if(!a.lastDay||day>a.lastDay)a.lastDay=day;
+    if(!a.category&&r.cat&&r.cat!=='Unknown')a.category=r.cat;
   });
-  if(_siSnapshot&&_siSnapshot.items){
-    for(const id in _siSnapshot.items){
-      const it=_siSnapshot.items[id];const code=_siAxCode(it.sku);if(!code||!arts.has(code))continue;
-      const a=arts.get(code),av=Math.max(0,it.available||0),sz=_siAxSizeOf(it.sku,null); // negative stock is clamped to 0
-      a.stock[sz]=(a.stock[sz]||0)+av;a.onHand+=av;a.hasStock=true;
-    }
-  }
+  cl.stock.forEach(it=>{
+    if(!arts.has(it.code))return;
+    const a=arts.get(it.code),av=it.available,sz=_siAxSizeOf(it.sku,null);
+    a.stock[sz]=(a.stock[sz]||0)+av;a.onHand+=av;a.hasStock=true;
+  });
   if(_siPrevSnapshot&&_siPrevSnapshot.items){
-    for(const id in _siPrevSnapshot.items){
-      const it=_siPrevSnapshot.items[id];const code=_siAxCode(it.sku);if(!code||!arts.has(code))continue;
-      const a=arts.get(code),av=Math.max(0,it.available||0),sz=_siAxSizeOf(it.sku,null);
+    // same cleaning rules as today's stock (one implementation); its counts are not reported
+    _siClean({snapshot:_siPrevSnapshot}).stock.forEach(it=>{
+      if(!arts.has(it.code))return;
+      const a=arts.get(it.code),av=it.available,sz=_siAxSizeOf(it.sku,null);
       a.prevStock[sz]=(a.prevStock[sz]||0)+av;a.prevOnHand+=av;a.hasPrev=true;
-    }
+    });
   }
   const list=[...arts.values()];
   const catUnits=new Map();
@@ -1388,7 +1498,7 @@ function _siAxIndex(){
     a.text=[a.code,a.title,a.color,a.category,[...a.skus].join(' ')].join(' ').toLowerCase();
   });
   list.sort((x,y)=>(y.units-x.units)||String(x.name).localeCompare(String(y.name)));
-  _siAxCache={li:_siLineItems,n:_siLineItems.length,pr:_siProducts,sn:_siSnapshot,pv:_siPrevSnapshot,hv:_siHist,list,map:arts,catUnits,cov:_siEarliestOrderDate()};
+  _siAxCache={li:_siLineItems,n:_siLineItems.length,pr:_siProducts,sn:_siSnapshot,pv:_siPrevSnapshot,hv:_siHist,list,map:arts,catUnits,cov:_siEarliestOrderDate(),quality:cl.quality};
   return _siAxCache;
 }
 function _siAxLabel(a){return a.name+(a.color?' — '+a.color:'');}
@@ -1932,7 +2042,7 @@ function _siArticleExplorerSection(){
     <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles · ignores the season filter</span></div>
   <div class="si-ax-bar"><input id="si-ax-input" class="si-ax-input" autocomplete="off" placeholder="${_siAxModeSel==='compare'?'Add an article to compare — title, colour, code (GST073), category…':'Search any article — title, colour, code (GST073), category…'}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)"></div>
   <div id="si-ax-results">${_siAxResultsHtml()}</div>
-  <div id="si-ax-body">${_siAxModeSel==='compare'?_siAxCompareBody():_siAxSearchBody()}</div>`;
+  <div id="si-ax-body">${_siAxModeSel==='compare'?_siAxCompareBody():_siAxSearchBody()}</div>${_siCleanQualityHtml(idx.quality)}`;
 }
 function _siAxResultsHtml(){
   const q=_siAxQuery.trim();
