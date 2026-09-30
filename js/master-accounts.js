@@ -139,7 +139,30 @@ function _maErr(key){return _maLoadErrs.find(e=>e.key===key)||null;}
    depends on one says "incomplete — <collection> could not be read". */
 const _MA_COURIER_COLS=['ma_cpr','ma_collection','ma_runs'];
 function _maMissing(){return _MA_COURIER_COLS.filter(col=>_maLoadErrs.some(e=>e.col===col));}
-function _maMissingSay(cols){return cols.length?'incomplete — '+cols.join(' and ')+' could not be read':'';}
+/* Names in a sentence: "a", "a and b", "a, b and c" — never "a and b and c". */
+function _maList(names){
+  const a=(names||[]).map(String);
+  return a.length<2?a.join(''):a.slice(0,-1).join(', ')+' and '+a[a.length-1];
+}
+function _maMissingSay(cols){return cols.length?'incomplete — '+_maList(cols)+' could not be read':'';}
+/* WHICH read a figure depends on (review, M2 screens #4). The collections
+   (ma_collection) are money in to a holder, so every cash figure — the
+   holders' balances, cash in hand, the month's flows, the ledger's postings —
+   is short by what an unreadable one held. The statements (ma_cpr) are
+   accruals (a receivable): they move no cash, so a cash figure is NOT
+   incomplete for want of them. What is owed, and what is expected in, needs
+   both. */
+function _maCollMissing(){return _maMissing().indexOf('ma_collection')>=0;}
+function _maCollSay(){return _maCollMissing()?_maMissingSay(['ma_collection']):'';}
+/* Why a CASH total is short, for its title and the Dashboard card: the
+   drawer when a holder could not be read (maCashInHand's `complete`) and the
+   collections when they could not be — '' when neither. One text, so a total
+   is never marked twice for one cause. */
+function _maCashWhy(cih){
+  return [cih&&cih.complete===false?'the drawer was not read':'',_maCollMissing()?'ma_collection could not be read':''].filter(Boolean).join(' and ');
+}
+/* The two reads that feed postings: the ledger's count needs both. */
+function _maFeedMissing(){return _maMissing().filter(x=>x!=='ma_runs');}
 /* ma_runs/rollup: the nightly rollup's last run; null when it has none,
    undefined when it could not be read. */
 function _maRun(){return _maMissing().indexOf('ma_runs')>=0?undefined:(maData.runs.find(r=>r&&r.id==='rollup')||null);}
@@ -770,8 +793,13 @@ async function _maPopulateDashboard(){
     const c=_maCtx();
     const cih=maCashInHand(c.holders);
     const na=_maAttention(c);
-    // The hero's number, and what it leaves out (review V4).
-    body.innerHTML=`<span class="ma-dash-num">${maRs(cih.total)}</span> cash in hand${cih.complete?'':' <span class="ma-word warn">incomplete — the drawer was not read</span>'}${cih.waiting?' ('+maRs(cih.waiting)+' waiting to go into the drawer)':''} · `
+    // The hero's number, and what it leaves out (review V4): the drawer when
+    // it could not be read, and the collections when THEY could not be —
+    // each is money in a holder, so cash is short by what it held. One
+    // marker for both (_maCashWhy), so the card does not say "incomplete —"
+    // twice.
+    const why=_maCashWhy(cih);
+    body.innerHTML=`<span class="ma-dash-num">${maRs(cih.total)}</span> cash in hand${why?` <span class="ma-word warn">incomplete — ${_maE(why)}</span>`:''}${cih.waiting?' ('+maRs(cih.waiting)+' waiting to go into the drawer)':''} · `
       +(na.length?`<b>${na.length}</b> need${na.length===1?'s':''} attention`:'nothing to worry about')
       +(_maErr('backups')?' · <span class="ma-word urgent">the backups could not be read</span>':'');
   };
@@ -834,18 +862,23 @@ function _maTabs(cur,list,handler){
 }
 function _maEmpty(text,link){return `<div class="ma-empty">${text}${link?' · '+link:''}</div>`;}
 function _maLink(label,js){return `<button class="ma-link" onclick="${js}">${_maE(label)}</button>`;}
-/* A table: cols [{h, cls, l (phone label)}], rows as arrays of cell HTML. */
+/* A table: cols [{h, cls, l (phone label)}], rows as arrays of cell HTML.
+   `o.total` is the last row's figures; `o.tail` are rows AFTER it, for what
+   is shown beside a total without being part of it (the TCS account under
+   Cash in hand — review, M2 screens #5). */
 function _maTable(cols,rows,o){
   o=o||{};
   const head=`<thead><tr>${cols.map(c=>`<th class="${c.cls||''}">${c.raw||_maE(c.h)}</th>`).join('')}</tr></thead>`;
-  const body=rows.map(r=>{
+  const rowHTML=r=>{
     const cells=r.cells||r;
     // `nolab`: a line that is not a record (the "less" line under a holders
     // table) carries no phone labels, like the total.
     return `<tr class="${r.cls||''}${r.click?' ma-rowlink':''}"${r.click?` onclick="${r.click}"`:''}>${cells.map((v,i)=>`<td class="${cols[i]&&cols[i].cls||''}" data-l="${r.nolab?'':_maE(cols[i]&&cols[i].l||'')}">${v===undefined||v===null?'':v}</td>`).join('')}</tr>`;
-  }).join('');
+  };
+  const body=rows.map(rowHTML).join('');
   const foot=o.total?`<tr class="ma-total">${o.total.map((v,i)=>`<td class="${cols[i]&&cols[i].cls||''}">${v||''}</td>`).join('')}</tr>`:'';
-  return `<div class="ma-tbl"><table class="ma-table ma-cards">${head}<tbody>${body}${foot}</tbody></table></div>`;
+  const tail=(o.tail||[]).map(rowHTML).join('');
+  return `<div class="ma-tbl"><table class="ma-table ma-cards">${head}<tbody>${body}${foot}${tail}</tbody></table></div>`;
 }
 function _maErrorCard(errs){
   const cols=errs.map(e=>e.col);
@@ -986,15 +1019,23 @@ window.maConcern=function(i){
    what moved on the holders: money moved from one holder to another — a
    transfer, or a journal whose lines only move it between holders — nets
    to nothing, and an opening balance is where the books start, not money
-   that came in (money N3). A count is a difference, not a movement. */
+   that came in (money N3). A count is a difference, not a movement.
+   Only holders whose money is IN somebody's hand count (review, M2 screens
+   #5): the TCS account is a wallet — money that sits at TCS, which cash in
+   hand leaves out (maCashInHand) — so a TCS credit into it is not money in
+   this month, and the month's figures then agree with the cash total beside
+   them. A transfer is read for the same reason: drawing money from the
+   wallet into a bank IS money reaching a hand, while a transfer between two
+   hands still nets to nothing. */
 function _maMonthFlows(c){
   const month=maMonthOf(c.today);let inM=0,outM=0;
   const net={};
+  const inHand=code=>{const a=maAcc(c.idx,code);return !a||a.holderKind!=='wallet';};
   c.lines.forEach(l=>{
-    if(l.month!==month||!l.holder||l.account!==l.holder||!l.doc)return;
+    if(l.month!==month||!l.holder||l.account!==l.holder||!l.doc||!inHand(l.holder))return;
     // A courier collection is money in (M2): it lands in a holder and moves
     // nothing else that is one.
-    if((l.doc.dt!=='journal'&&l.doc.dt!=='collection')||l.doc.kind==='opening')return;
+    if((l.doc.dt!=='journal'&&l.doc.dt!=='collection'&&l.doc.dt!=='transfer')||l.doc.kind==='opening')return;
     const k=l.doc.dt+'/'+l.doc.id;net[k]=(net[k]||0)+(l.dr||0)-(l.cr||0);
   });
   Object.keys(net).forEach(k=>{if(net[k]>0)inM+=net[k];else outM-=net[k];});
@@ -1014,6 +1055,16 @@ function _maStat(label,value,sub,hero){
    and the Dashboard card all say it. The title says why, true whether or not
    Raees has recorded it yet. */
 const _MA_WAITING_WHY='A handover into the drawer counts where it came from until it is confirmed: it is taken out of the drawer’s Store Accounts figure, which moves when Raees records it. Until he has, this total is short by it.';
+/* A wallet — money that is OURS but sits at a courier (the TCS account) — is
+   listed under the cash it is NOT part of, on a line of its own that says so
+   (review, M2 screens #5). Mixed in among the holders it read as a cash row
+   above a total that left it out, and its "Can pay" was money nobody can pay
+   from. The courier is named from the chart's own list of wallets. */
+function _maIsWallet(h){return !!h&&h.holderKind==='wallet';}
+function _maWalletCourier(code){
+  const k=Object.keys(MA_COURIERS).find(x=>MA_COURIERS[x].accounts.wallet===code);
+  return k?MA_COURIERS[k].name:'';
+}
 function _maHolderRowsHTML(c,rows,o){
   o=o||{};
   const cols=[{h:'Holder'},{h:'Balance',cls:'ma-num',l:'Balance'},{h:'Waiting',cls:'ma-num',l:'Waiting'},{h:'Last count',cls:'ma-nw',l:'Last count'}];
@@ -1022,12 +1073,14 @@ function _maHolderRowsHTML(c,rows,o){
   // (review V4) — so a handover waiting to go into the drawer is a line of
   // its own above it, and the rows still add up to it.
   const cih=maCashInHand(rows);
-  const trs=rows.map(h=>{
+  const wait=h=>(h.pendingIn?'+'+maRs(h.pendingIn):'')+(h.pendingIn&&h.pendingOut?' · ':'')+(h.pendingOut?'−'+maRs(h.pendingOut):'');
+  const hands=rows.filter(h=>!_maIsWallet(h)),held=rows.filter(_maIsWallet);
+  const trs=hands.map(h=>{
     const bal=h.balance===null?'<span class="ma-word warn">not read</span>':_maRsCell(h.balance);
-    const wait=(h.pendingIn?'+'+maRs(h.pendingIn):'')+(h.pendingIn&&h.pendingOut?' · ':'')+(h.pendingOut?'−'+maRs(h.pendingOut):'');
+    const w=wait(h);
     const lc=h.mirror?'<span class="ma-muted">in Store Accounts'+(h.balance!==null&&_maMirrorAsOf()?' · '+_maMirrorAsOf():'')+'</span>':(h.lastCount?maDayLabel(h.lastCount.date)+(h.lastCount.difference?` <span class="ma-word warn">${maRsSigned(h.lastCount.difference)}</span>`:''):'<span class="ma-muted">never</span>');
     const name=`${_maE(h.name)}${h.active?'':' <span class="ma-muted">off</span>'}`;
-    const cells=[name,bal,wait?`<span class="ma-muted">${wait}</span>`:'',lc];
+    const cells=[name,bal,w?`<span class="ma-muted">${w}</span>`:'',lc];
     if(o.full)cells.splice(3,0,h.available===null?'':_maRsCell(h.available));
     return {cells,click:`window.maOpenHolder('${_maQ(h.code)}')`};
   });
@@ -1036,9 +1089,21 @@ function _maHolderRowsHTML(c,rows,o){
     if(o.full)less.splice(3,0,'');
     trs.push({cells:less,cls:'ma-less',nolab:true});
   }
-  const tot=['Cash in hand',`${maRs(cih.total)}${cih.complete?'':' <span class="ma-word warn">incomplete</span>'}`,'',''];
+  // Incomplete for the drawer (a holder that could not be read) AND for the
+  // collections: each is money in a holder, so the total is short by what an
+  // unreadable one held (review, M2 screens #4).
+  const why=_maCashWhy(cih);
+  const tot=['Cash in hand',`${maRs(cih.total)}${why?` <span class="ma-word warn" title="${_maE(why)}">incomplete</span>`:''}`,'',''];
   if(o.full)tot.splice(3,0,'');
-  return _maTable(cols,trs,{total:tot});
+  const tail=held.map(h=>{
+    const at=_maWalletCourier(h.code)||h.name;
+    const bal=h.balance===null?'<span class="ma-word warn">not read</span>':_maRsCell(h.balance);
+    const w=wait(h);
+    const cells=[`Held at ${_maE(at)} — not counted`,bal,w?`<span class="ma-muted">${w}</span>`:'',''];
+    if(o.full)cells.splice(3,0,'');
+    return {cells,cls:'ma-held',nolab:true,click:`window.maOpenHolder('${_maQ(h.code)}')`};
+  });
+  return _maTable(cols,trs,{total:tot,tail});
 }
 /* One calendar event in words: its amount, or "amount varies" for a bill
    whose size is not known (QA F19) — never ₨0. */
@@ -1097,15 +1162,19 @@ function _maTodayHTML(){
   const net=ow.owedTo-ow.weOwe;
   // The hero is one rule with the 30 days' start (review V4); what it leaves
   // out while a handover waits to go into the drawer is said under it.
-  // A courier collection that could not be read moves cash here too, so the
-  // hero says so (M2) — the M1 pattern for a drawer that cannot be read.
-  const miss=_maMissing().filter(x=>x!=='ma_runs'),missSay=_maMissingSay(miss);
+  // A courier COLLECTION that could not be read moves cash here (M2), so the
+  // hero and the month's "in" say so — the M1 pattern for a drawer that cannot
+  // be read. A STATEMENT (ma_cpr) is an accrual and moves no cash, so an
+  // unreadable ma_cpr never marks a cash figure (review, M2 screens #4). What
+  // is OWED needs both reads; what is EXPECTED IN needs the rollup as well.
+  const collSay=_maCollSay();
+  const missSay=_maMissingSay(_maFeedMissing());
   const cihSub=(cih.complete?cih.holders+' holders':'drawer not read — incomplete')
-    +(missSay?` · <span class="ma-word warn">${_maE(missSay)}</span>`:'')
+    +(collSay?` · <span class="ma-word warn">${_maE(collSay)}</span>`:'')
     +(cih.waiting?` · <span title="${_maE(_MA_WAITING_WHY)}">${maRs(cih.waiting)} waiting to go into the drawer</span>`:'');
   const stats=`<div class="ma-stats">
     ${_maStat('Cash in hand',maRs(cih.total),cihSub,true)}
-    ${_maStat('In this month',maRs(f.inM),'into the holders')}
+    ${_maStat('In this month',maRs(f.inM),'into the holders'+(collSay?` · <span class="ma-word warn" title="${_maE(collSay)}">incomplete</span>`:''))}
     ${_maStat('Out this month',maRs(f.outM),'from the holders')}
     ${_maStat('Owed to us less we owe',_maRsCell(net),(ow.owedTo||ow.weOwe?maRs(ow.owedTo)+' to us · '+maRs(ow.weOwe)+' we owe':(missSay?'':'nothing on credit yet'))+(missSay?`${ow.owedTo||ow.weOwe?' · ':''}<span class="ma-word warn">${_maE(missSay)}</span>`:''))}
   </div>`;
@@ -1122,7 +1191,7 @@ function _maTodayHTML(){
       <dt>Cash and bank today</dt><dd>${maRs(cal.start)}${incW}</dd>
       ${cal.waiting?`<dt>Handovers waiting</dt><dd>${maRs(cal.waiting)} <span class="ma-muted">into the drawer — counted where they came from until confirmed</span></dd>`:''}
       <dt>Due out</dt><dd>${maRs(cal.out)}${cal.varies?` <span class="ma-muted">+ ${cal.varies} bill${cal.varies>1?'s':''} whose amount varies</span>`:''}</dd>
-      <dt>Expected in</dt><dd>${cal.in?maRs(cal.in):'<span class="ma-muted">none expected</span>'}${miss.length?` <span class="ma-word warn">${_maE(_maMissingSay(miss))}</span>`:''}</dd>
+      <dt>Expected in</dt><dd>${cal.in?maRs(cal.in):'<span class="ma-muted">none expected</span>'}${_maMissing().length?` <span class="ma-word warn">${_maE(_maMissingSay(_maMissing()))}</span>`:''}</dd>
       <dt>Leaves</dt><dd>${_maRsCell(cal.end)}${incW}${cal.varies?` <span class="ma-muted">before ${cal.varies>1?'those '+cal.varies+' bills':'that bill'}</span>`:''}</dd>
       <dt>First short day</dt><dd>${inc?(first?'<span class="ma-word warn">can’t judge — the drawer’s balance could not be read</span>':'<span class="ma-muted">none, even without the drawer</span>'):first?`<span class="ma-word urgent">${maDayLabel(first)}</span>`:'<span class="ma-muted">none</span>'}</dd>
     </dl>`);
@@ -1156,7 +1225,11 @@ function _maMoneyHTML(){
   const counts=c.docs.filter(d=>d.dt==='count'&&d.status!=='void').sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0)).slice(0,10);
   const mirrorLine=c.holders.some(h=>h.mirror)?(_maMirror.ok?['drawer read from Store Accounts',_maMirrorAsOf()].filter(Boolean).join(' '):'drawer not read — '+_maE(_maMirror.why)):'';
   const countRows=counts.map(d=>({cells:[maDayLabel(d.date),`<button class="ma-doclink" onclick="event.stopPropagation();window.maOpenDoc('count','${_maQ(d.id)}')">${_maE(d.no)}</button>`,_maE(_maAccName(c,d.holder)),maRs(d.counted),d.difference?`<span class="ma-word warn">${maRsSigned(d.difference)}</span>`:'<span class="ma-word fine">agrees</span>'],click:`window.maOpenDoc('count','${_maQ(d.id)}')`}));
-  return _maHead('Money',c.holders.length+' holders'+(mirrorLine?' · '+mirrorLine:''),{excel:'holders'})
+  // The holders' balances are short by what an unreadable ma_collection held —
+  // said once, on the page's meta line; the total row below carries the short
+  // word (review, M2 screens #4).
+  const collSay=_maCollSay();
+  return _maHead('Money',c.holders.length+' holders'+(mirrorLine?' · '+mirrorLine:'')+(collSay?' · <span class="ma-word warn">'+_maE(collSay)+'</span>':''),{excel:'holders'})
     +_maSec('Holders','',`${_maLink('Transfer','window.maRecordKind(\'transfer\')')} ${_maLink('Count','window.maRecordKind(\'count\')')}`,_maHolderRowsHTML(c,c.holders,{full:true}))
     +_maSec('Waiting to be confirmed',pend.length?String(pend.length):'','',_maPendingHTML(c,pend))
     +_maSec('Recent counts','','',counts.length?_maTable([{h:'Date',cls:'ma-date'},{h:'Count'},{h:'Holder',l:'Holder'},{h:'Counted',cls:'ma-num',l:'Counted'},{h:'Against the book',l:'Book'}],countRows):_maEmpty('No holder has been counted yet.',_maLink('Count one','window.maRecordKind(\'count\')')));
@@ -1170,7 +1243,11 @@ function _maHolderHTML(){
   const h=c.holders.find(x=>x.code===_maHolderCode);
   if(!h)return _maHead('Holder','',{back:['ma-money','Money']})+_maEmpty('That holder is not in the chart.',_maLink('Back to Money','window.showPage(\'ma-money\')'));
   const {r,led}=_maHolderStatement(c,h.code);
-  const meta=(h.balance===null?'balance not read':'balance '+maRs(h.balance))+(h.person?' · with '+_maE(_maWho(h.person)):'')+(h.lastCount?' · counted '+maDayLabel(h.lastCount.date):'');
+  // A balance is short by an unreadable ma_collection — said once. A drawer's
+  // balance is Raees's, read from Store Accounts, so it is the STATEMENT that
+  // is short there (a collection into the drawer would be one of its lines).
+  const collSay=_maCollSay(),collW=collSay?' · <span class="ma-word warn">'+_maE(collSay)+'</span>':'';
+  const meta=(h.balance===null?'balance not read':'balance '+maRs(h.balance))+(h.person?' · with '+_maE(_maWho(h.person)):'')+(h.lastCount?' · counted '+maDayLabel(h.lastCount.date):'')+(h.mirror?'':collW);
   const banner=h.mirror?`<div class="ma-note">Raees’s drawer is his book in Store Accounts until M8 — the balance is read from there${_maMirror.ok?' ('+[maRs(_maMirror.cash),_maMirrorAsOf()].filter(Boolean).join(', ')+')':', and the read failed ('+_maE(_maMirror.why)+')'}. Only handovers to and from it are recorded here.</div>`:'';
   const cols=[{h:'Date',cls:'ma-date'},{h:'Document'},{h:'What'},{h:'In',cls:'ma-num',l:'In'},{h:'Out',cls:'ma-num',l:'Out'}];
   if(!h.mirror)cols.push({h:'Balance',cls:'ma-num',l:'Balance'});
@@ -1186,7 +1263,7 @@ function _maHolderHTML(){
   // In date order, as Money lists the same transfers (QA F06).
   const pend=c.docs.filter(d=>((d.dt==='transfer'&&(d.from===h.code||d.to===h.code))||(d.dt==='collection'&&d.holder===h.code))&&d.status==='pending').sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   return _maHead(h.name,meta,{back:['ma-money','Money'],period:true,excel:'holder',pdf:'holder'})+banner
-    +_maSec('Statement',_maE(r.label)+' · '+led.count+' movement'+(led.count===1?'':'s'),`${_maLink('Transfer','window.maRecordKind(\'transfer\',{from:\''+_maQ(h.code)+'\'})')}${h.mirror?'':' '+_maLink('Count','window.maRecordKind(\'count\',{holder:\''+_maQ(h.code)+'\'})')}`,
+    +_maSec('Statement',_maE(r.label)+' · '+led.count+' movement'+(led.count===1?'':'s')+(h.mirror?collW:''),`${_maLink('Transfer','window.maRecordKind(\'transfer\',{from:\''+_maQ(h.code)+'\'})')}${h.mirror?'':' '+_maLink('Count','window.maRecordKind(\'count\',{holder:\''+_maQ(h.code)+'\'})')}`,
       open+(rows.length?_maTable(cols,rows,{total}):_maEmpty('Nothing moved '+_maE(r.span)+'.')))
     +(pend.length?_maSec('Waiting to be confirmed','','',_maPendingHTML(c,pend)):'');
 }
@@ -1275,7 +1352,10 @@ function _maRecLabel(k,list){
   return pk.length?'Record collection · '+pk.length+' ticked · '+maRs(pk.reduce((t,x)=>t+(Number(x.doc.net)||0),0)):'Record collection';
 }
 function _maRunLine(c){
-  if(_maMissing().indexOf('ma_runs')>=0)return '<span class="ma-word warn">incomplete — ma_runs could not be read</span>';
+  // The banner above has already said which collections could not be read, and
+  // the courier sections carry their own marker: this line says what THIS
+  // read feeds, not "incomplete —" a fifth time (review, M2 screens #3).
+  if(_maMissing().indexOf('ma_runs')>=0)return '<span class="ma-word warn">The last rollup could not be read (ma_runs) — its time and the parcels in transit are left out.</span>';
   const r=_maRun();
   if(!r)return 'The nightly rollup has not run yet — PostEx’s receipts and days arrive with it.';
   if(r.state==='failed')return `<span class="ma-word urgent">The last run failed</span> ${_maE(String(r.error||'no reason given').slice(0,160))} · ${_maE(_maWhen(r.at))}`;
@@ -1329,6 +1409,11 @@ function _maCollTable(c,list){
   });
   return _maTable(cols,rows);
 }
+/* The reads a courier's section depends on (review, M2 screens #4): Blue-Ex
+   has no statements — a collection is against the balance it opened with — so
+   it needs ma_collection alone; the others need the statements too. A refused
+   read a courier does not use never marks its section. */
+function _maCourierNeeds(k){return k==='bluex'?['ma_collection']:['ma_cpr','ma_collection'];}
 function _maCourierSection(c,k,blocked){
   const C=MA_COURIERS[k];
   const list=blocked.length?[]:(k==='bluex'?[]:_maCollectable(c,k));
@@ -1348,7 +1433,10 @@ function _maCourierSection(c,k,blocked){
       const d=x.doc;
       const late=x.at&&x.at<c.today?` <span class="ma-word warn">${_maE(_maPl(maDaysBetween(x.at,c.today),'day'))} late</span>`:'';
       const exp=x.at?_maE(maDayLabel(x.at,String(x.at).slice(0,4)!==c.today.slice(0,4)))+late:'<span class="ma-muted">from before the books</span>';
-      return {cells:[`<input type="checkbox" aria-label="Collect ${_maE(d.no||d.id)}"${pk[d.id]?' checked':''} onclick="event.stopPropagation();window.maCourierTick('${k}','${_maQ(d.id)}',this.checked)">`,
+      // The tick is the whole 44px cell, not the 18px box (review, M2 screens
+      // #5): a label fills the cell and toggles the box, and neither the label's
+      // click nor the box's own reaches the row, whose click opens the sheet.
+      return {cells:[`<label class="ma-tick" onclick="event.stopPropagation()"><input type="checkbox" aria-label="Collect ${_maE(d.no||d.id)}"${pk[d.id]?' checked':''} onclick="event.stopPropagation();window.maCourierTick('${k}','${_maQ(d.id)}',this.checked)"></label>`,
         `<span class="ma-doc">${_maE(d.no||d.ref||d.id)}</span>${d.status==='before'?' <span class="ma-muted">before the books</span>':''}${maLiveFlags(d).length?' <span class="ma-word warn">flagged</span>':''}`,
         maDayLabel(d.date),maRs(d.net),exp],click:`window.maOpenDoc('cpr','${_maQ(d.id)}')`};
     });
@@ -1357,7 +1445,7 @@ function _maCourierSection(c,k,blocked){
   const f=_maCollFiltered(c,k);
   const shown=f.all?f.list.slice(0,_MA_RECENT_COLL):f.list;
   const filt=f.all?'':`<div class="ma-scope">Showing only collections ${_maE({noreceipt:'with no receipt',difference:'that differ from their net',changed:'whose statement changed after'}[_maCourierFilter])} · ${_maLink('Show all','window.maCourierFilter(\'\')')}</div>`;
-  body+=`<h3 class="ma-h4">Recent collections</h3>${filt}`+(blocked.indexOf('ma_collection')>=0?`<div class="ma-hint">${_maE(_maMissingSay(['ma_collection']))}.</div>`:shown.length?_maCollTable(c,shown):_maEmpty(f.all?'No collection recorded yet.':'None of '+C.name+'’s collections match.'));
+  body+=`<h3 class="ma-h4">Recent collections</h3>${filt}`+(blocked.indexOf('ma_collection')>=0?'<div class="ma-hint">Not shown — ma_collection could not be read.</div>':shown.length?_maCollTable(c,shown):_maEmpty(f.all?'No collection recorded yet.':'None of '+C.name+'’s collections match.'));
   const ticks=list.length?`${_maLink('Tick all','window.maCourierTickAll(\''+k+'\',true)')} ${Object.keys(pk).length?_maLink('Clear','window.maCourierTickAll(\''+k+'\',false)'):''} `:'';
   const run=k==='postex'&&_maCanRun()?`<button class="ma-btn sm" id="ma-run-btn" onclick="window.maRunNow()"${_maRunBusy?' disabled':''}>${_maRunBusy?'Running…':'Run now'}</button> `:'';
   const stm=!blocked.length&&MA_STATEMENT_COURIERS.indexOf(k)>=0?`<button class="ma-btn sm" onclick="window.maRecordKind('statement',{courier:'${k}'})">Record statement</button> `:'';
@@ -1368,10 +1456,10 @@ function _maInHTML(){
   const c=_maCtx();
   const miss=_maMissing(),blocked=miss.filter(x=>x!=='ma_runs');
   const run=_maRun();
-  const meta=run?'rollup as of '+_maE(_maWhen(run.at)):(miss.indexOf('ma_runs')>=0?'incomplete — ma_runs could not be read':'the rollup has not run yet');
+  const meta=run?'rollup as of '+_maE(_maWhen(run.at)):(miss.indexOf('ma_runs')>=0?'rollup not read':'the rollup has not run yet');
   const banner=miss.length?`<div class="ma-note" role="status"><b>${_maE(_maMissingSay(miss))}.</b> The Firestore rules for the couriers may not be published yet — republish firestore.rules. The figures that depend on ${miss.length>1?'them':'it'} are marked incomplete, and nothing else on Master Accounts is affected. <button class="ma-link" onclick="window.maRetry()">Retry</button></div>`:'';
   return _maHead('Money in',meta,{})+_maTabs(_maInTab,[['couriers','Couriers']],'maInTabSet')+banner
-    +_MA_COURIER_ORDER.map(k=>_maCourierSection(c,k,blocked)).join('');
+    +_MA_COURIER_ORDER.map(k=>_maCourierSection(c,k,blocked.filter(x=>_maCourierNeeds(k).indexOf(x)>=0))).join('');
 }
 window.maCourierFilter=function(f){_maCourierFilter=String(f||'');_maPaint();};
 /* A tick on a row: the state moves, the page is not repainted — only the
@@ -1418,11 +1506,31 @@ function _maRunSay(m,busy){
   const b=document.getElementById('ma-run-btn');if(b){b.disabled=!!busy;b.textContent=busy?'Running…':'Run now';}
 }
 function _maSleep(ms){return new Promise(r=>setTimeout(r,ms));}
+/* A repaint that lands after a long wait must not replace whatever page the
+   owner has gone to since: _maPaint writes into #main-content without asking
+   which page is showing. It runs only while a Master Accounts page is the one
+   on screen (review, M2 screens #3a). */
+function _maOnMaPage(){return typeof currentPage==='undefined'||String(currentPage).indexOf('ma-')===0;}
+function _maPaintIfHere(){if(_maOnMaPage())_maPaint();}
+/* ma_runs/rollup as it is NOW: null when there is no such document, a throw
+   when the read is refused or fails. */
+async function _maReadRollup(){
+  const snap=await getDocs(collection(db,'ma_runs'));
+  const d=((snap&&snap.docs)||[]).find(x=>x.id==='rollup');
+  return d?Object.assign({id:'rollup'},typeof d.data==='function'?d.data():{}):null;
+}
+let _MA_RUN_FAILS=3;            // …and how many reads in a row may fail before it says so
 window.maRunNow=async function(){
   if(!_maCanRun()||_maRunBusy)return;
   if(_maNeedsNet())return;
-  const before=Number((_maRun()||{}).at)||0;
+  // Busy first, so a second press while the read below is out is refused.
   _maRunSay('Starting the rollup…',true);
+  // The run to beat is the one on the server NOW, not the copy this page loaded
+  // (review, M2 screens #3c): a run that finished since would read as "done" at
+  // the first poll, before this one has written anything. If that read cannot
+  // be made the page's own copy stands — the poll below says when reads fail.
+  let before=Number((_maRun()||{}).at)||0;
+  try{const now=await _maReadRollup();before=Number(now&&now.at)||0;}catch(e){}
   try{
     const token=await _maIdToken();
     const r=await fetch(_MA_FN+'ma-rollup-now-background',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:'{}'});
@@ -1432,25 +1540,33 @@ window.maRunNow=async function(){
   }catch(e){_maRunSay('The rollup could not be started — '+String(e&&e.message||e),false);return;}
   _maRunSay('Running — this can take a few minutes. It reads PostEx’s parcels and writes what changed.',true);
   const t0=Date.now();
+  let polls=0,failed=0,inARow=0;
   while(Date.now()-t0<_MA_RUN_WAIT){
     await _maSleep(_MA_RUN_POLL);
     let run=null;
-    try{
-      const snap=await getDocs(collection(db,'ma_runs'));
-      const d=((snap&&snap.docs)||[]).find(x=>x.id==='rollup');
-      run=d?Object.assign({id:'rollup'},typeof d.data==='function'?d.data():{}):null;
-    }catch(e){continue;}
+    polls++;
+    try{run=await _maReadRollup();inARow=0;}
+    catch(e){
+      // Every poll of a refused collection throws (rules not published): count
+      // them, and after a few in a row with nothing ever read, say so instead of
+      // waiting out four minutes to say "has not answered" (review #3b).
+      failed++;inARow++;
+      if(inARow>=_MA_RUN_FAILS&&failed===polls){
+        _maRunSay('Could not read ma_runs — publish the rules (firestore.rules). The rollup was started and may still be running; refresh this page in a little while.',false);return;
+      }
+      continue;
+    }
     if(run&&Number(run.at)>before){
       const i=maData.runs.findIndex(x=>x.id==='rollup');
       if(i>=0)maData.runs[i]=run;else maData.runs.push(run);
-      if(run.state==='failed'){_maInvalidate();_maRunSay('The rollup failed: '+String(run.error||'no reason given').slice(0,200),false);_maPaint();return;}
+      if(run.state==='failed'){_maInvalidate();_maRunSay('The rollup failed: '+String(run.error||'no reason given').slice(0,200),false);_maPaintIfHere();return;}
       _maRunSay('Done — reading what it wrote…',true);
       await maLoad(true);
-      _maRunSay('Done at '+_maWhen(run.at)+'.',false);_maPaint();
+      _maRunSay('Done at '+_maWhen(run.at)+'.',false);_maPaintIfHere();
       return;
     }
   }
-  _maRunSay('The rollup has not answered in '+(_MA_RUN_WAIT>=60000?Math.round(_MA_RUN_WAIT/60000)+' minutes':Math.round(_MA_RUN_WAIT/1000)+' seconds')+' — it may still be running. Refresh this page in a little while.',false);
+  _maRunSay('The rollup has not answered in '+(_MA_RUN_WAIT>=60000?Math.round(_MA_RUN_WAIT/60000)+' minutes':Math.round(_MA_RUN_WAIT/1000)+' seconds')+' — it may still be running'+(failed?' ('+failed+' of '+polls+' reads of ma_runs failed)':'')+'. Refresh this page in a little while.',false);
 };
 
 /* ── A CPR or statement on the rail ─────────────────────────────────────
@@ -1463,7 +1579,8 @@ function _maCprParcelsHTML(d){
   const st=_maParcels[d.id];
   if(!st||st.state==='loading')return '<div class="ma-muted">Reading its parcels…</div>';
   if(st.state==='error')return `<div class="ma-errcard" role="alert"><b>Could not read its parcels.</b> ${_maE(st.msg)}<div class="ma-errcard-acts"><button class="ma-btn sm" onclick="window.maCprParcelsRetry('${_maQ(d.id)}')">Try again</button></div></div>`;
-  if(!st.rows.length)return _maEmpty('No parcel carries this receipt number.');
+  const partWarn=st.partial?`<div class="ma-errcard" role="alert"><b>Only part of this list could be read.</b> ${st.partial.bad} of ${st.partial.of} reads failed (${_maE(st.partial.msg)}) — a parcel may be missing below.<div class="ma-errcard-acts"><button class="ma-btn sm" onclick="window.maCprParcelsRetry('${_maQ(d.id)}')">Try again</button></div></div>`:'';
+  if(!st.rows.length)return partWarn+(st.partial?_maEmpty('None was found in the reads that succeeded.'):_maEmpty('No parcel carries this receipt number.'));
   const no=String(d.ref);
   const rows=st.rows.slice(0,200).map(p=>{
     const up=String(p.cprNumber_1)===no,rs=String(p.cprNumber_2)===no;
@@ -1471,7 +1588,7 @@ function _maCprParcelsHTML(d){
     // Two columns, not three: a parcel number is long, and a rail is 380px.
     return `<tr><td>${_maE(p.trackingNumber||p._id||'')}<span class="ma-l2">${_maE(p.statusCategory||'')}${p.orderDeliveryDate?' · '+_maE(String(p.orderDeliveryDate).slice(0,10)):''}</span></td><td class="ma-num">${maRs(p.cod||0)}<span class="ma-l2">${_maE(part)}</span></td></tr>`;
   }).join('');
-  return `<table class="ma-table ma-mini ma-parcels"><thead><tr><th>Parcel</th><th class="ma-num">COD · paid on this receipt</th></tr></thead><tbody>${rows}</tbody></table>${st.rows.length>200?`<div class="ma-hint">and ${st.rows.length-200} more — the first 200 are shown.</div>`:''}`;
+  return partWarn+`<table class="ma-table ma-mini ma-parcels"><thead><tr><th>Parcel</th><th class="ma-num">COD · paid on this receipt</th></tr></thead><tbody>${rows}</tbody></table>${st.rows.length>200?`<div class="ma-hint">and ${st.rows.length-200} more — the first 200 are shown.</div>`:''}`;
 }
 window.maCprParcelsRetry=function(id){delete _maParcels[String(id)];_maRailParcelsLoad();const d=_maDoc('cpr',id),el=document.getElementById('ma-rail-parcels');if(d&&el)el.innerHTML=_maCprParcelsHTML(d);};
 function _maRailParcelsLoad(){
@@ -1490,8 +1607,12 @@ function _maRailParcelsLoad(){
       ok++;
       ((r.value&&r.value.docs)||[]).forEach(x=>{by[x.id]=Object.assign({_id:x.id},typeof x.data==='function'?x.data():{});});
     });
+    // One of the (up to four) reads that failed is NOT a complete list: the
+    // rows that did arrive are shown WITH a warning and a Try again, never as
+    // if they were all there (review, M2 screens #5).
+    const bad=res.length-ok;
     if(!ok)_maParcels[d.id]={state:'error',msg};
-    else _maParcels[d.id]={state:'done',rows:Object.keys(by).sort().map(k=>by[k])};
+    else _maParcels[d.id]={state:'done',rows:Object.keys(by).sort().map(k=>by[k]),partial:bad>0?{bad,of:res.length,msg}:null};
     const el=document.getElementById('ma-rail-parcels');
     if(el&&_maRail&&_maRail.id===d.id)el.innerHTML=_maCprParcelsHTML(d);
   });
@@ -1779,16 +1900,25 @@ function _maStFromDoc(l){
 /* A statement a live collection covers keeps its day and its lines (the
    core refuses the same: edit.collected). */
 function _maStLocked(f){return !!f.edit&&maCollectionsOf(_maCtx().docs,f.edit.id).length>0;}
+/* One caption a field, visible (review, M2 screens #5): a line was five bare
+   inputs whose placeholders vanish on the first key, so "12 / 35000 / 1750 /
+   280" had no labels. Each input sits in a label with its caption above it —
+   the caption is aria-hidden because the input's own aria-label names the line
+   as well ("Line 2 fee"), which a screen reader needs and a caption cannot say.
+   The "returned" box carries its own word and the × its own aria-label. */
+function _maStCell(cls,caption,input){
+  return `<label class="ma-st-cell ${cls}"><span class="ma-st-l" aria-hidden="true">${caption}</span>${input}</label>`;
+}
 function _maStLinesHTML(f,today){
   const dis=_maStLocked(f)?' disabled':'';
   return f.stLines.map((l,i)=>`<div class="ma-st-row">
-    <input class="ma-in ma-st-d" type="date" max="${_maE(today)}" aria-label="Line ${i+1} day" value="${_maE(l.date)}"${dis} oninput="window.maStLineSet(${i},'date',this.value)">
-    <input class="ma-in ma-in-num ma-st-p" inputmode="numeric" aria-label="Line ${i+1} parcels" placeholder="Parcels" value="${_maE(l.parcels)}"${dis} oninput="window.maStLineSet(${i},'parcels',this.value)">
+    ${_maStCell('ma-sc-d','Day',`<input class="ma-in ma-st-d" type="date" max="${_maE(today)}" aria-label="Line ${i+1} day" value="${_maE(l.date)}"${dis} oninput="window.maStLineSet(${i},'date',this.value)">`)}
+    ${_maStCell('ma-sc-p','Parcels',`<input class="ma-in ma-in-num ma-st-p" inputmode="numeric" aria-label="Line ${i+1} parcels" value="${_maE(l.parcels)}"${dis} oninput="window.maStLineSet(${i},'parcels',this.value)">`)}
     <label class="ma-chk ma-st-r"><input type="checkbox"${l.returned?' checked':''}${dis} aria-label="Line ${i+1} is a return" onchange="window.maStLineSet(${i},'returned',this.checked)"> returned</label>
-    <input class="ma-in ma-in-num ma-st-c" id="ma-st-cod-${i}" inputmode="numeric" aria-label="Line ${i+1} COD" placeholder="COD" value="${_maE(l.returned?'':l.cod)}"${l.returned?' disabled':dis} oninput="window.maStLineSet(${i},'cod',this.value)">
-    <input class="ma-in ma-in-num ma-st-f" inputmode="numeric" aria-label="Line ${i+1} fee" placeholder="Fee" value="${_maE(l.fee)}"${dis} oninput="window.maStLineSet(${i},'fee',this.value)">
-    <input class="ma-in ma-in-num ma-st-t" inputmode="numeric" aria-label="Line ${i+1} tax" placeholder="Tax" value="${_maE(l.tax)}"${dis} oninput="window.maStLineSet(${i},'tax',this.value)">
-    <input class="ma-in ma-st-m" aria-label="Line ${i+1} memo" placeholder="Memo — optional" value="${_maE(l.memo)}"${dis} oninput="window.maStLineSet(${i},'memo',this.value)">
+    ${_maStCell('ma-sc-c','COD',`<input class="ma-in ma-in-num ma-st-c" id="ma-st-cod-${i}" inputmode="numeric" aria-label="Line ${i+1} COD" value="${_maE(l.returned?'':l.cod)}"${l.returned?' disabled':dis} oninput="window.maStLineSet(${i},'cod',this.value)">`)}
+    ${_maStCell('ma-sc-f','Fee',`<input class="ma-in ma-in-num ma-st-f" inputmode="numeric" aria-label="Line ${i+1} fee" value="${_maE(l.fee)}"${dis} oninput="window.maStLineSet(${i},'fee',this.value)">`)}
+    ${_maStCell('ma-sc-t','Tax',`<input class="ma-in ma-in-num ma-st-t" inputmode="numeric" aria-label="Line ${i+1} tax" value="${_maE(l.tax)}"${dis} oninput="window.maStLineSet(${i},'tax',this.value)">`)}
+    ${_maStCell('ma-sc-m','Memo (optional)',`<input class="ma-in ma-st-m" aria-label="Line ${i+1} memo" value="${_maE(l.memo)}"${dis} oninput="window.maStLineSet(${i},'memo',this.value)">`)}
     <button type="button" class="ma-x sm ma-st-x" aria-label="Remove line ${i+1}"${dis} onclick="window.maStLineDrop(${i})">×</button></div>`).join('');
 }
 function _maStatementForm(pre,edit){
@@ -2137,7 +2267,10 @@ function _maLedgerHTML(){
     const ds=[['','Every document'],['journal','Journals'],['transfer','Transfers'],['count','Counts'],['cpr','Courier statements'],['collection','Collections']];
     filters=`<div class="ma-filters">${_maLedgerTab==='postings'?_maSelect('ma-lf-holder',hs,_maLF.holder,"window.maLedgerFilter('holder',this.value)",'Holder')+_maSelect('ma-lf-account',as,_maLF.account,"window.maLedgerFilter('account',this.value)",'Account'):''}${_maSelect('ma-lf-party',ps,_maLF.party,"window.maLedgerFilter('party',this.value)",'Party')}${_maSelect('ma-lf-dt',ds,_maLF.dt,"window.maLedgerFilter('dt',this.value)",'Document type')}<input class="ma-in ma-search" id="ma-lf-q" type="search" placeholder="Search" value="${_maE(_maLF.q)}" oninput="window.maLedgerSearch(this.value)">${Object.keys(_maLF).some(k=>_maLF[k])?_maLink('Clear','window.maLedgerClear()'):''}</div>`;
   }
-  return _maHead('Ledger',c.lines.length+' postings · '+c.docs.length+' documents',{period:_maLedgerTab==='postings'||_maLedgerTab==='documents',excel:_maLedgerTab==='documents'?'documents':'ledger',pdf:_maLedgerTab==='postings'?'ledger':''})
+  // The posting count is short by an unreadable statement or collection (both
+  // post lines) — said once, on the meta line (review, M2 screens #4).
+  const feedSay=_maMissingSay(_maFeedMissing());
+  return _maHead('Ledger',c.lines.length+' postings · '+c.docs.length+' documents'+(feedSay?' · <span class="ma-word warn">'+_maE(feedSay)+'</span>':''),{period:_maLedgerTab==='postings'||_maLedgerTab==='documents',excel:_maLedgerTab==='documents'?'documents':'ledger',pdf:_maLedgerTab==='postings'?'ledger':''})
     +tabs+filters+`<div id="ma-ledger-body">${_maLedgerBodyHTML()}</div>`;
 }
 window.maLedgerTabSet=function(k){_maLedgerTab=['postings','documents','unlabelled','review'].indexOf(k)>=0?k:'postings';_maLedgerShown=50;_maPaint();};

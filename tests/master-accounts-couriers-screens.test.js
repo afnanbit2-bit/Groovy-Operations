@@ -26,6 +26,25 @@
      `at`, times out out loud;
    - the rail reads a CPR's parcels on demand, and says when it could not;
    - every stored string is escaped.
+
+   "M2 fixes C" (30 Sept 2026, the reviewer's display findings) — sections
+   near the end of this file:
+   - the words: "a, b and c", and "incomplete —" said once per section;
+   - the marker sits on every figure a refused ma_collection shortens (the
+     holders' total, Money's meta, a holder page, the Ledger's posting count,
+     the Dashboard card, In this month) and on nothing it does not (a refused
+     ma_cpr alone does not touch the cash hero; Blue-Ex needs ma_collection
+     only);
+   - the TCS account (1060) is a wallet: not counted in cash in hand, in the
+     month's flows or in Can pay, and shown on its own "Held at TCS — not
+     counted" line;
+   - "Run now": the closing repaint stays on the page it started on, a
+     refused ma_runs is said as such (not "has not answered"), and the run
+     to beat is read fresh just before the POST;
+   - the tick cell is the target (18px box in a 44px cell, toggles without
+     opening the sheet) and a statement line carries visible captions;
+   - a parcel list read by only some of its queries says so and offers Try
+     again.
    ───────────────────────────────────────────────────────────────────────── */
 'use strict';
 const fs=require('fs');
@@ -52,7 +71,7 @@ function mkApp(o){
     where:(field,op,value)=>({field,op,value}),
     getDocs:async q=>{
       S.reads.push(q.col);
-      if((o.fail||[]).indexOf(q.col)>=0)throw Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
+      if((o.fail||[]).indexOf(q.col)>=0||(o.failIf&&o.failIf(q.col)))throw Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
       let ids=Object.keys(col(q.col));
       (q.where||[]).forEach(w=>{ids=ids.filter(id=>col(q.col)[id][w.field]===w.value);});
       return {docs:ids.map(id=>({id,data:()=>clone(col(q.col)[id])}))};
@@ -149,7 +168,7 @@ module.exports=async function(){
     const today=app.run("_maPageHTML('ma-overview')");
     s.ok('Today still paints — no error card',/Cash in hand/.test(today)&&!/ma-errcard/.test(today.replace(/ma-errcard-acts/g,'')),txt(today).slice(0,160));
     const hero=(/<div class="ma-stat hero">[\s\S]*?<\/div><\/div>/.exec(today)||[''])[0];
-    s.ok('the hero — cash in hand — says it is incomplete, naming the collections',/incomplete — ma_cpr and ma_collection could not be read/.test(txt(hero)),txt(hero));
+    s.ok('the hero — cash in hand — says it is incomplete, naming the collection it depends on and no other (statements move no cash)',/incomplete — ma_collection could not be read/.test(txt(hero))&&!/ma_cpr/.test(txt(hero)),txt(hero));
     s.ok('…and so does what is owed to us, and what is expected in',/incomplete/.test(txt((/Owed to us less we owe[\s\S]*?<\/div><\/div>/.exec(today)||[''])[0]))&&/Expected in[^A-Z]*none expected\s*incomplete — ma_cpr/.test(txt(today)),txt(today).slice(0,600));
     const na=JSON.parse(app.run('JSON.stringify(_maAttention(_maCtx()).map(x=>x.sentence))'));
     s.ok('Needs attention names each unreadable collection and the rollup, and no line claims a CPR is "not collected" (the collections are unreadable)',na.some(x=>/ma_cpr could not be read/.test(x))&&na.some(x=>/ma_collection could not be read/.test(x))&&na.some(x=>/rollup.*could not be read/.test(x))&&!na.some(x=>/not collected/.test(x)),J(na));
@@ -160,7 +179,7 @@ module.exports=async function(){
     const inn=app.run("_maPageHTML('ma-in')");
     s.ok('Money in says incomplete, naming what could not be read',/incomplete — ma_cpr and ma_collection could not be read/.test(txt(inn)),txt(inn).slice(0,300));
     s.ok('…and offers no tick and no Record collection it could not stand behind',!/type="checkbox"/.test(inn)&&!/maRecordCollection/.test(inn));
-    s.ok('…and the ma_runs line says so too',/incomplete — ma_runs could not be read/.test(txt(inn)));
+    s.ok('…and the rollup line says it could not be read, in its own words (once — the banner names it)',/The last rollup could not be read \(ma_runs\)/.test(txt(inn)),txt(inn).slice(0,700));
     const dash=app.run('renderMasterAccountsDashboardWidget()');
     app.el('ma-dash-body').innerHTML='';
     await app.run('_maPopulateDashboard()');
@@ -622,7 +641,7 @@ module.exports=async function(){
     const r=mkApp({seed:seedBase(),fetch:async()=>({ok:false,status:403,json:async()=>({})})});
     await r.app.run('maLoad()');
     await r.app.run('window.maRunNow()');
-    s.ok('a refusal is said with its status, and no polling follows',/HTTP 403/.test(r.app.run('_maRunMsg'))&&r.S.reads.filter(x=>x==='ma_runs').length===1);
+    s.ok('a refusal is said with its status, and no polling follows (the load, and the one fresh read before the POST — nothing after)',/HTTP 403/.test(r.app.run('_maRunMsg'))&&r.S.reads.filter(x=>x==='ma_runs').length===2,J(r.S.reads));
     // A failed run
     const fl=mkApp({seed:seedBase(),fetch:async(u,i,db)=>{db.ma_runs.rollup=Object.assign({},db.ma_runs.rollup,{at:db.ma_runs.rollup.at+5,state:'failed',error:'PostEx returned nothing'});return {ok:true,status:202,json:async()=>({})};}});
     await fl.app.run('maLoad()');fl.app.run('_MA_RUN_POLL=1;_MA_RUN_WAIT=500');
@@ -647,7 +666,7 @@ module.exports=async function(){
     const {app}=mkApp({seed:seedBase(),page:'ma-overview'});
     await app.run('maLoad()');
     const h0=app.run("_maPageHTML('ma-overview')");
-    s.ok('Today lists no TCS-account row while nothing has moved through it',!/TCS account/.test(h0));
+    s.ok('Today lists no TCS-account row while nothing has moved through it',!/TCS account/.test(h0)&&!/Held at TCS/.test(h0));
     const today=JSON.parse(app.run('JSON.stringify(maDay())'));
     const c=coll({courier:'postex',holder:'1011',amount:NET('postex-JUL-1'),date:today,cprNos:['postex-JUL-1'],attachments:[ATT]},{},'CL-27-0001');
     const w=mkApp({seed:seedBase({ma_collection:{[c.no]:c}}),page:'ma-overview'});
@@ -664,7 +683,7 @@ module.exports=async function(){
     const tc=coll({courier:'tcs',holder:'1060',amount:4710,date:'2026-10-15',cprNos:['cs-t'],attachments:[ATT]},{cprs:[tcs]},'CL-27-0002');
     const z=mkApp({seed:seedBase({ma_cpr:Object.assign(clone(CPR_DB),{'cs-t':tcs}),ma_collection:{[tc.no]:tc}}),page:'ma-overview'});
     await z.app.run('maLoad()');
-    s.ok('money that moved through the TCS account shows its row on Today',/TCS account/.test(z.app.run("_maPageHTML('ma-overview')")));
+    s.ok('money that moved through the TCS account shows its row on Today — on a line of its own that says it is not counted',/Held at TCS — not counted/.test(txt(z.app.run("_maPageHTML('ma-overview')"))));
   }
 
   s.section('every stored string is escaped');
@@ -693,6 +712,337 @@ module.exports=async function(){
     M2.app.run("window.maOpenDoc('cpr','postex-JUL-1')");
     await new Promise(r=>setTimeout(r,20));
     s.ok('the parcels the rail reads are escaped too',M2.app.el('ma-rail-parcels').innerHTML.indexOf('<img src=x')<0&&M2.app.el('ma-rail-parcels').innerHTML.indexOf('&lt;img')>=0);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     M2 fixes C — the screens' DISPLAY findings (the review of 7e41206).
+     Each section below names the finding it holds: "#3", "#4", "#5" are the
+     reviewer's numbered findings (Run now · the "incomplete" wording · the TCS
+     account) and "note" is one of its smaller notes. Each guard was undone
+     once and a named assertion failed (the pairs are in the commit message).
+     ══════════════════════════════════════════════════════════════════════════ */
+  const OPENJ=lines=>{const d=M.maBuildDoc('journal',{kind:'opening',date:'2026-07-01',lines},{by:'afnan',byName:'Afnan',ts:1790000000000},IDX,SET);d.no='JV-27-0001';d.id='JV-27-0001';return d;};
+  const BOOK_CASH=100000;
+  /* A book with ₨1,00,000 in Afnan's hands and ONE PostEx collection of its
+     net into them TODAY (so it is in this month) — every cash figure that
+     reads ma_collection therefore differs when it cannot be read. */
+  async function figures(o){
+    o=o||{};
+    const op=OPENJ([{account:'1011',side:'dr',amount:BOOK_CASH}]);
+    const pc=coll({courier:'postex',holder:'1011',amount:NET('postex-JUL-1'),date:M.maDay(),cprNos:['postex-JUL-1'],attachments:[ATT]},{},'CL-27-0001');
+    const r=mkApp({seed:seedBase({ma_journal:{[op.no]:op},ma_collection:{[pc.no]:pc}}),fail:o.fail||[],globals:o.globals,page:'ma-overview'});
+    await r.app.run('maLoad()');
+    return r.app;
+  }
+  const cutOf=(re,h)=>txt((re.exec(h)||[''])[0]);
+  const headOf=h=>txt((/<div class="ma-head-t">[\s\S]*?<\/div>/.exec(h)||[''])[0]);
+  /* Every figure that can carry the marker, as the words a person reads. */
+  function words(app){
+    const today=app.run("_maPageHTML('ma-overview')");
+    const cbh=(/Cash by holder[\s\S]*?The next 30 days/.exec(today)||[''])[0];
+    const money=app.run("_maPageHTML('ma-money')");
+    app.run("_maHolderCode='1011'");const h1=app.run("_maPageHTML('ma-holder')");
+    app.run("_maHolderCode='1010'");const h0=app.run("_maPageHTML('ma-holder')");
+    const led=app.run("_maPageHTML('ma-ledger')");
+    return {
+      hero:cutOf(/<div class="ma-stat hero">[\s\S]*?<\/div><\/div>/,today),
+      inMonth:cutOf(/<div class="ma-stat-l">In this month<\/div>[\s\S]*?<\/div><\/div>/,today),
+      owed:cutOf(/Owed to us less we owe[\s\S]*?<\/div><\/div>/,today),
+      todayTotal:cutOf(/<tr class="ma-total">[\s\S]*?<\/tr>/,cbh),
+      expected:cutOf(/<dt>Expected in<\/dt><dd>[\s\S]*?<\/dd>/,today),
+      moneyMeta:headOf(money),moneyTotal:cutOf(/<tr class="ma-total">[\s\S]*?<\/tr>/,money),
+      holderMeta:headOf(h1),drawerMeta:headOf(h0),drawerStatement:cutOf(/Statement[\s\S]{0,400}/,h0).slice(0,150),
+      ledger:headOf(led)
+    };
+  }
+  async function dashboardOf(app){
+    app.el('ma-dash-body').innerHTML='';
+    await app.run('_maPopulateDashboard()');
+    return txt(app.el('ma-dash-body').innerHTML);
+  }
+  const COLLSAY='incomplete — ma_collection could not be read';
+
+  s.section('the words: a list joins naturally, and one text says why a cash total is short');
+  {
+    const a=mkApp({seed:seedBase()}).app;
+    const L=arr=>a.run('_maList('+J(arr)+')');
+    s.eq('no names → nothing',L([]),'');
+    s.eq('one → the name',L(['ma_cpr']),'ma_cpr');
+    s.eq('two → "a and b"',L(['ma_cpr','ma_collection']),'ma_cpr and ma_collection');
+    s.eq('three → "a, b and c" — never "a and b and c"',L(['ma_cpr','ma_collection','ma_runs']),'ma_cpr, ma_collection and ma_runs');
+    s.eq('the marker is the list, once',a.run("_maMissingSay(['ma_cpr','ma_collection','ma_runs'])"),'incomplete — ma_cpr, ma_collection and ma_runs could not be read');
+    s.eq('…and empty when nothing is missing',a.run('_maMissingSay([])'),'');
+    const why=(cih,errs)=>{a.run('_maLoadErrs='+J(errs));return a.run('_maCashWhy('+J(cih)+')');};
+    s.eq('a cash total is short for neither reason → no words',why({complete:true},[]),'');
+    s.eq('…for the drawer',why({complete:false},[]),'the drawer was not read');
+    s.eq('…for the collections',why({complete:true},[{key:'collection',col:'ma_collection',core:false}]),'ma_collection could not be read');
+    s.eq('…for both, in ONE text (a total is never marked twice for one cause)',why({complete:false},[{key:'collection',col:'ma_collection',core:false}]),'the drawer was not read and ma_collection could not be read');
+    s.eq('an unreadable statement is NOT a reason: statements move no cash',why({complete:true},[{key:'cpr',col:'ma_cpr',core:false}]),'');
+  }
+
+  s.section('#4 — the marker sits on every figure that reads the unreadable collection, and on none that does not');
+  {
+    const clean=words(await figures());
+    s.ok('nothing refused: not one figure says incomplete',!Object.keys(clean).some(k=>/incomplete/.test(clean[k])),J(clean));
+    s.ok('(the fixture holds the money the markers are about: Afnan ₨1,03,900 with the collection, ₨1,00,000 without)',/₨1,03,900/.test(clean.hero)&&M.maRs(BOOK_CASH+NET('postex-JUL-1'))==='₨1,03,900',clean.hero);
+
+    // ma_collection refused — every CASH figure is short by what a collection held.
+    const C=await figures({fail:['ma_collection']});
+    const c=words(C);
+    s.ok('collection refused — the hero says so, in one marker, and shows what it could add up (₨1,00,000 — the collection is missing)',/₨1,00,000/.test(c.hero)&&c.hero.indexOf(COLLSAY)>=0&&(c.hero.match(/incomplete/g)||[]).length===1,c.hero);
+    s.ok('…"In this month" is marked (its ₨0 is not a fact)',/incomplete/.test(c.inMonth),c.inMonth);
+    s.ok('…the Cash by holder total is marked',/incomplete/.test(c.todayTotal),c.todayTotal);
+    s.ok('…so are Money\'s page meta and its holders total',c.moneyMeta.indexOf(COLLSAY)>=0&&/incomplete/.test(c.moneyTotal),c.moneyMeta+' | '+c.moneyTotal);
+    s.ok('…a holder\'s own page (Afnan\'s cash) in its header',c.holderMeta.indexOf(COLLSAY)>=0,c.holderMeta);
+    s.ok('…the drawer\'s page carries it on the STATEMENT (its balance is Raees\'s, read from Store Accounts — the collection is one of that statement\'s lines), not on the balance',c.drawerStatement.indexOf(COLLSAY)>=0&&c.drawerMeta.indexOf('incomplete')<0,c.drawerStatement+' | '+c.drawerMeta);
+    s.ok('…the Ledger\'s posting count',c.ledger.indexOf(COLLSAY)>=0,c.ledger);
+    s.ok('…what is owed and what is expected in',c.owed.indexOf(COLLSAY)>=0&&c.expected.indexOf(COLLSAY)>=0,c.owed+' | '+c.expected);
+    s.eq('…and the Dashboard card, in its own line',/₨1,00,000 cash in hand incomplete — ma_collection could not be read/.test(await dashboardOf(C)),true);
+
+    // ma_cpr refused — statements are accruals: no cash figure is short.
+    const P=await figures({fail:['ma_cpr']});
+    const p=words(P);
+    s.ok('statements refused — no CASH figure is marked (they move no cash): hero, this month, the totals, Money, a holder, the drawer',['hero','inMonth','todayTotal','moneyMeta','moneyTotal','holderMeta','drawerMeta','drawerStatement'].every(k=>!/incomplete/.test(p[k])),J(p));
+    s.ok('…what is owed, what is expected in and the ledger\'s postings (a statement posts lines) ARE, naming ma_cpr and no other',/incomplete — ma_cpr could not be read/.test(p.owed)&&/incomplete — ma_cpr could not be read/.test(p.expected)&&/incomplete — ma_cpr could not be read/.test(p.ledger)&&!/ma_collection/.test(p.owed+p.expected+p.ledger),J([p.owed,p.expected,p.ledger]));
+    s.ok('…and the Dashboard card says nothing (its number is right)',!/incomplete/.test(await dashboardOf(P)));
+
+    // ma_runs refused — feeds the rollup line, the transit block and the calendar.
+    const R=await figures({fail:['ma_runs']});
+    const r=words(R);
+    s.ok('the rollup refused — only "expected in" is marked (the calendar\'s inflows); no cash figure, no owed, no ledger count',/incomplete — ma_runs could not be read/.test(r.expected)&&['hero','inMonth','owed','todayTotal','moneyMeta','moneyTotal','holderMeta','drawerMeta','drawerStatement','ledger'].every(k=>!/incomplete/.test(r[k])),J(r));
+    s.ok('…and the Dashboard card says nothing',!/incomplete/.test(await dashboardOf(R)));
+
+    // All three: each read is named only where it matters, in a natural list.
+    const A=await figures({fail:['ma_cpr','ma_collection','ma_runs']});
+    const a=words(A);
+    s.ok('all three refused — the hero names ma_collection only',a.hero.indexOf(COLLSAY)>=0&&!/ma_cpr|ma_runs/.test(a.hero),a.hero);
+    s.ok('…owed names the two that feed it; the ledger the two that post',/incomplete — ma_cpr and ma_collection could not be read/.test(a.owed)&&/incomplete — ma_cpr and ma_collection could not be read/.test(a.ledger),a.owed+' | '+a.ledger);
+    s.ok('…expected in names all three, "a, b and c"',/incomplete — ma_cpr, ma_collection and ma_runs could not be read/.test(a.expected)&&!/and ma_collection and/.test(a.expected),a.expected);
+
+    // The drawer and the collections together: ONE marker, not two.
+    const D=await figures({fail:['ma_collection'],globals:{_acctLoadErr:{cols:['acct_entries']}}});
+    const dash=await dashboardOf(D);
+    s.ok('the drawer unread AND the collection unreadable: the card says both reasons in one marker',/incomplete — the drawer was not read and ma_collection could not be read/.test(dash)&&(dash.match(/incomplete —/g)||[]).length===1,dash);
+    s.ok('…the Today total carries one word, not two',(words(D).todayTotal.match(/incomplete/g)||[]).length===1,words(D).todayTotal);
+    const D2=await figures({globals:{_acctLoadErr:{cols:['acct_entries']}}});
+    s.ok('the drawer unread alone: the card names the drawer, not a collection',/incomplete — the drawer was not read/.test(await dashboardOf(D2))&&!/ma_collection/.test(await dashboardOf(D2)));
+  }
+
+  s.section('#4 — Money in: "incomplete —" once per section, and a courier is marked only for the reads it uses');
+  {
+    const inn=async fail=>{
+      const {app}=mkApp({seed:seedBase(),fail,page:'ma-in'});
+      await app.run('maLoad()');
+      const h=app.run("_maPageHTML('ma-in')");
+      const sec=k=>(new RegExp('<section[^>]*id="ma-cr-'+k+'"[\\s\\S]*?</section>').exec(h)||[''])[0];
+      const sum=k=>cutOf(/<p class="ma-sum">[\s\S]*?<\/p>/,sec(k));
+      return {h,t:txt(h),n:(txt(h).match(/incomplete —/g)||[]).length,sum,sec,banner:cutOf(/<div class="ma-note"[\s\S]*?<\/div>/,h)};
+    };
+    const all=await inn(['ma_cpr','ma_collection','ma_runs']);
+    s.eq('all three refused: five markers — the banner and one per courier section (it was up to eleven)',all.n,5);
+    s.ok('…the banner names all three, "a, b and c"',/^\s*incomplete — ma_cpr, ma_collection and ma_runs could not be read\./.test(all.banner),all.banner);
+    s.ok('…PostEx, TCS and Bykea name the two they use',['postex','tcs','bykea'].every(k=>/incomplete — ma_cpr and ma_collection could not be read/.test(all.sum(k))),J(['postex','tcs','bykea'].map(all.sum)));
+    s.ok('…Blue-Ex has no statements, so it names ma_collection alone — never ma_cpr',/incomplete — ma_collection could not be read/.test(all.sum('bluex'))&&!/ma_cpr/.test(all.sum('bluex')),all.sum('bluex'));
+    s.ok('…and the run line says what the rollup feeds, without a fifth "incomplete —"',/The last rollup could not be read \(ma_runs\)/.test(all.t)&&(all.sec('postex').match(/incomplete —/g)||[]).length===1,all.sum('postex'));
+    s.ok('…the hint under Recent collections says why it is empty',/Not shown — ma_collection could not be read\./.test(all.sec('postex')));
+
+    const cpr=await inn(['ma_cpr']);
+    s.eq('statements refused: four markers (banner, PostEx, TCS, Bykea)',cpr.n,4);
+    s.ok('…Blue-Ex is NOT marked: a collection there is against the opening balance, no statement is read',!/incomplete/.test(cpr.sum('bluex')),cpr.sum('bluex'));
+    s.ok('…and no section claims the collections are unreadable',!/ma_collection/.test(cpr.t),cpr.t.slice(0,300));
+
+    const col=await inn(['ma_collection']);
+    s.eq('collections refused: five markers, Blue-Ex among them',col.n,5);
+    s.ok('…Blue-Ex cites ma_collection, the only read it uses',/incomplete — ma_collection could not be read/.test(col.sum('bluex')),col.sum('bluex'));
+
+    const runs=await inn(['ma_runs']);
+    s.eq('the rollup refused: one marker (the banner) — no courier section is marked, and PostEx still offers its ticks',runs.n,1);
+    s.ok('…the ticks stand (the collections and statements are readable)',(runs.sec('postex').match(/type="checkbox"/g)||[]).length===3);
+  }
+
+
+  s.section('#5 — the TCS account is a wallet: held, not counted — and the month\'s flows agree with the cash total');
+  {
+    const today=M.maDay();
+    const tcs=M.maBuildDoc('cpr',{courier:'tcs',date:'2026-07-31',ref:'TCS-JUL',attachments:[ATT],lines:[{date:'2026-07-10',parcels:2,cod:5000,fee:250,tax:40}]},{by:'afnan',byName:'Afnan',ts:1},IDX,SET);
+    tcs.id='cs-t';tcs.no='CS-27-0001';
+    const op=OPENJ([{account:'1011',side:'dr',amount:BOOK_CASH}]);
+    const tc=coll({courier:'tcs',holder:'1060',amount:tcs.net,date:today,cprNos:['cs-t'],attachments:[ATT]},{cprs:[tcs]},'CL-27-0002');
+    const pc=coll({courier:'postex',holder:'1011',amount:NET('postex-JUL-1'),date:today,cprNos:['postex-JUL-1'],attachments:[ATT]},{},'CL-27-0001');
+    const tr=M.maBuildDoc('transfer',{from:'1060',to:'1020',amount:1000,date:today},{by:'afnan',byName:'Afnan',ts:1790000000001},IDX,SET);
+    tr.no='TR-27-0001';tr.id='TR-27-0001';
+    const tr2=M.maBuildDoc('transfer',{from:'1020',to:'1011',amount:500,date:today},{by:'afnan',byName:'Afnan',ts:1790000000002},IDX,SET);   // MCB into Afnan's hands: two hands, nets to nothing
+    tr2.no='TR-27-0002';tr2.id='TR-27-0002';
+    const book=(withTransfer)=>mkApp({seed:seedBase({ma_journal:{[op.no]:op},ma_cpr:Object.assign(clone(CPR_DB),{'cs-t':tcs}),ma_collection:{[tc.no]:tc,[pc.no]:pc},ma_transfer:withTransfer?{[tr.no]:tr,[tr2.no]:tr2}:{}}),page:'ma-overview'});
+    const z=book(false);
+    await z.app.run('maLoad()');
+    const post=NET('postex-JUL-1');
+    s.ok('(the fixture: a ₨4,710 credit into the TCS account and a cash collection into Afnan\'s hands, both today)',tcs.net===4710&&post>0,J([tcs.net,post]));
+    const f=JSON.parse(z.app.run('JSON.stringify(_maMonthFlows(_maCtx()))'));
+    s.eq('In this month counts the CASH collection and not the credit into the wallet — that money stays at TCS',f.inM,post);
+    const cih=JSON.parse(z.app.run('JSON.stringify(maCashInHand(_maCtx().holders))'));
+    const rows=JSON.parse(z.app.run("JSON.stringify(_maCtx().holders.filter(h=>h.holderKind!=='wallet'&&(h.active||h.balance)).map(h=>h.balance))"));
+    s.eq('the rows above the total add up to it (the wallet is not among them)',rows.reduce((t,x)=>t+(x||0),0),cih.total);
+    s.eq('…and the total is what the hero says',cih.total,BOOK_CASH+post);
+    const t=txt(z.app.run("_maPageHTML('ma-overview')"));
+    s.ok('Today: "In this month" is the cash figure, not the cash plus the wallet',t.indexOf('In this month '+M.maRs(post)+' into the holders')>=0&&t.indexOf(M.maRs(post+tcs.net))<0,t.slice(0,300));
+    s.ok('…the wallet is on a line of its own UNDER the total, saying it is not in it',t.indexOf('Cash in hand '+M.maRs(cih.total)+' Held at TCS — not counted '+M.maRs(tcs.net))>=0,t.slice(300,900));
+    s.eq('…once',(t.match(/Held at TCS/g)||[]).length,1);
+    const money=z.app.run("_maPageHTML('ma-money')");
+    const row=(/<tr[^>]*ma-held[^>]*>[\s\S]*?<\/tr>/.exec(money)||[''])[0];
+    const cells=[...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(m=>txt(m[1]).trim());
+    s.eq('Money: the wallet has ONE row, the held line',(money.match(/maOpenHolder\('1060'\)/g)||[]).length,1);
+    s.ok('…it names the courier and carries its balance once',cells[0]==='Held at TCS — not counted'&&cells[1]===M.maRs(tcs.net),J(cells));
+    s.ok('…and its "Can pay" is BLANK (nobody can pay from money at TCS) — waiting and last count too',cells[2]===''&&cells[3]===''&&cells[4]==='',J(cells));
+    const afnan=[...(/<tr[^>]*maOpenHolder\('1011'\)[^>]*>[\s\S]*?<\/tr>/.exec(money)||[''])[0].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(m=>txt(m[1]).trim());
+    s.eq('(a hand\'s row does carry Can pay — so the blank above is the wallet\'s doing)',afnan[3],M.maRs(BOOK_CASH+post));
+    z.app.run("_maHolderCode='1060'");
+    s.ok('the wallet\'s own page still opens, with its balance',txt(z.app.run("_maPageHTML('ma-holder')")).indexOf('balance '+M.maRs(tcs.net))>=0);
+
+    // Drawing money out of the wallet into a bank IS money reaching a hand.
+    const w=book(true);
+    await w.app.run('maLoad()');
+    const g=JSON.parse(w.app.run('JSON.stringify(_maMonthFlows(_maCtx()))'));
+    const cw=JSON.parse(w.app.run('JSON.stringify(maCashInHand(_maCtx().holders))'));
+    s.eq('a transfer from the wallet into MCB is money in (it reached a hand) — a transfer between two hands (MCB into Afnan\'s) nets to nothing beside it',J([g.inM,g.outM]),J([post+1000,0]));
+    s.eq('…and the cash total agrees: the ₨1,000 that left the wallet, and nothing for the move between two hands',cw.total,BOOK_CASH+post+1000);
+  }
+
+
+  s.section('#3 — Run now: the closing repaint stays on a Master Accounts page, an unreadable ma_runs is said, and the run to beat is read fresh');
+  {
+    const ok202=()=>({ok:true,status:202,json:async()=>({})});
+    // (a) the owner has gone to the Dashboard while the run was going: the repaint must not replace it.
+    let A;
+    A=mkApp({seed:seedBase(),fetch:async(url,init,db)=>{
+      db.ma_runs.rollup=Object.assign({},db.ma_runs.rollup,{at:db.ma_runs.rollup.at+60000,created:1});
+      A.app.run("currentPage='dashboard'");   // …left for the Dashboard, mid-run
+      return ok202();}});
+    await A.app.run('maLoad()');
+    A.app.run('_maPage=\'ma-in\';_MA_RUN_POLL=1;_MA_RUN_WAIT=2000');
+    A.app.el('main-content').innerHTML='THE DASHBOARD';
+    await A.app.run('window.maRunNow()');
+    s.ok('(a) the run finished ("Done at…") …',/^Done at/.test(A.app.run('_maRunMsg')),A.app.run('_maRunMsg'));
+    s.eq('…and the page the owner went to is still there — not replaced by Money in',A.app.el('main-content').innerHTML,'THE DASHBOARD');
+    // …and a failed run behaves the same
+    let F;
+    F=mkApp({seed:seedBase(),fetch:async(u,i,db)=>{db.ma_runs.rollup=Object.assign({},db.ma_runs.rollup,{at:db.ma_runs.rollup.at+5,state:'failed',error:'PostEx returned nothing'});F.app.run("currentPage='dashboard'");return ok202();}});
+    await F.app.run('maLoad()');
+    F.app.run('_maPage=\'ma-in\';_MA_RUN_POLL=1;_MA_RUN_WAIT=2000');
+    F.app.el('main-content').innerHTML='THE DASHBOARD';
+    await F.app.run('window.maRunNow()');
+    s.ok('…a FAILED run says so and leaves the Dashboard alone too',/The rollup failed: PostEx returned nothing/.test(F.app.run('_maRunMsg'))&&F.app.el('main-content').innerHTML==='THE DASHBOARD',F.app.run('_maRunMsg'));
+    // control: still on Money in, it repaints
+    const K=mkApp({seed:seedBase(),fetch:async(url,init,db)=>{db.ma_runs.rollup=Object.assign({},db.ma_runs.rollup,{at:db.ma_runs.rollup.at+60000,created:1});return ok202();}});
+    await K.app.run('maLoad()');
+    K.app.run('_maPage=\'ma-in\';_MA_RUN_POLL=1;_MA_RUN_WAIT=2000');
+    K.app.el('main-content').innerHTML='STALE';
+    await K.app.run('window.maRunNow()');
+    s.ok('(control) still on Money in, the closing repaint happens — so the assertion above is not vacuous',/Money in/.test(K.app.el('main-content').innerHTML)&&/Done at/.test(K.app.run('_maRunMsg')),K.app.el('main-content').innerHTML.slice(0,60));
+    // busy first: two presses at once is one POST
+    const B=mkApp({seed:seedBase(),fetch:async(url,init,db)=>{db.ma_runs.rollup=Object.assign({},db.ma_runs.rollup,{at:db.ma_runs.rollup.at+60000});return ok202();}});
+    await B.app.run('maLoad()');
+    B.app.run('_MA_RUN_POLL=1;_MA_RUN_WAIT=2000');
+    const p1=B.app.run('window.maRunNow()'),p2=B.app.run('window.maRunNow()');
+    await p1;await p2;
+    s.eq('a second press while the fresh read is out is refused: one POST (the button is busy before that read)',B.S.fetches.length,1);
+
+    // (b) ma_runs refused — the rules-unpublished state, with the button still shown
+    const R=mkApp({seed:seedBase(),fail:['ma_runs']});
+    await R.app.run('maLoad()');
+    s.ok('(b) with ma_runs refused the button is still there (the POST does not need it)',/Run now/.test(R.app.run('_maInHTML()')));
+    R.app.run('_MA_RUN_POLL=1;_MA_RUN_WAIT=2000');
+    await R.app.run('window.maRunNow()');
+    const rm=R.app.run('_maRunMsg');
+    s.ok('…it says it could not read ma_runs and to publish the rules — never "has not answered"',/Could not read ma_runs — publish the rules/.test(rm)&&!/has not answered/.test(rm)&&R.app.run('_maRunBusy')===false,rm);
+    s.ok('…and that the rollup was started and may still be running',R.S.fetches.length===1&&/started and may still be running/.test(rm),rm);
+    s.eq('…after three failed polls, not four minutes: the load, the fresh read and three polls are the five reads of ma_runs',R.S.reads.filter(x=>x==='ma_runs').length,5);
+    // a flaky read: some succeed, so the wait runs out — and says how many failed
+    let n=0;
+    const X=mkApp({seed:seedBase(),failIf:col=>col==='ma_runs'&&(++n)%2===0});
+    await X.app.run('maLoad()');
+    X.app.run('_MA_RUN_POLL=5;_MA_RUN_WAIT=120');
+    await X.app.run('window.maRunNow()');
+    s.ok('a flaky ma_runs (every other read fails) waits out its time and says how many reads failed',/has not answered in \d+ seconds — it may still be running \(\d+ of \d+ reads of ma_runs failed\)\./.test(X.app.run('_maRunMsg')),X.app.run('_maRunMsg'));
+    const Y=mkApp({seed:seedBase()});
+    await Y.app.run('maLoad()');
+    Y.app.run('_MA_RUN_POLL=2;_MA_RUN_WAIT=30');
+    await Y.app.run('window.maRunNow()');
+    s.ok('a clean timeout says nothing about failed reads (none failed)',/has not answered/.test(Y.app.run('_maRunMsg'))&&!/reads of ma_runs failed/.test(Y.app.run('_maRunMsg')),Y.app.run('_maRunMsg'));
+
+    // (c) the run to beat is the one on the server NOW
+    const C1=mkApp({seed:seedBase()});
+    await C1.app.run('maLoad()');
+    C1.app.run('_MA_RUN_POLL=2;_MA_RUN_WAIT=60');
+    const t0=C1.app.run('_maRun().at');
+    C1.db.ma_runs.rollup=Object.assign({},C1.db.ma_runs.rollup,{at:t0+1000});   // a run finished AFTER this page loaded
+    await C1.app.run('window.maRunNow()');
+    s.ok('(c) a run that finished after the page loaded is not this run: with nothing written by the POST it does NOT say Done',!/^Done/.test(C1.app.run('_maRunMsg'))&&/has not answered/.test(C1.app.run('_maRunMsg')),C1.app.run('_maRunMsg'));
+    const C2=mkApp({seed:seedBase(),fetch:async(url,init,db)=>{db.ma_runs.rollup=Object.assign({},db.ma_runs.rollup,{at:t0+2000,created:1});return ok202();}});
+    await C2.app.run('maLoad()');
+    C2.app.run('_MA_RUN_POLL=1;_MA_RUN_WAIT=2000');
+    C2.db.ma_runs.rollup=Object.assign({},C2.db.ma_runs.rollup,{at:t0+1000});
+    await C2.app.run('window.maRunNow()');
+    s.ok('…and the run this press started is the one it reports (the manual run wrote at +2000)',/^Done at/.test(C2.app.run('_maRunMsg'))&&C2.app.run('_maRun().at')===t0+2000,C2.app.run('_maRunMsg'));
+    s.ok('the fresh read comes before the POST: the load, then the fresh read, then polling',C2.S.reads.filter(x=>x==='ma_runs').length>=3,J(C2.S.reads));
+  }
+
+  s.section('note — the tick cell is the target, and a statement line carries visible captions');
+  {
+    // The tick: the whole cell is a label that stops the row's click — markup here, geometry in smoke-layout.
+    const {app}=mkApp({seed:seedBase()});
+    await app.run('maLoad()');
+    const h=app.run("_maPageHTML('ma-in')");
+    const cells=h.match(/<td class="ma-chkcol"[^>]*>[\s\S]*?<\/td>/g)||[];
+    const ticks=cells.filter(x=>/type="checkbox"/.test(x));
+    s.eq('one tick cell per uncollected CPR',ticks.length,CPRS.length);
+    s.ok('each is a label that stops the click, holding the box that names its receipt',ticks.every(x=>/<label class="ma-tick" onclick="event\.stopPropagation\(\)"><input type="checkbox" aria-label="Collect [^"]+"/.test(x)),ticks[0]);
+    s.ok('…and the box stops its own click too (a label click reaches the input, whose click bubbles to the row)',ticks.every(x=>/<input type="checkbox"[^>]*onclick="event\.stopPropagation\(\);window\.maCourierTick\('postex','[^']+',this\.checked\)"/.test(x)),ticks[0]);
+    s.ok('…so a tap in the cell ticks the box and does not open the sheet: the row\'s own click is on the <tr>, the cell is inside the label',cells.every(x=>!/maOpenDoc/.test(x))&&/<tr class=" ma-rowlink" onclick="window\.maOpenDoc\('cpr'/.test(h),h.slice(h.indexOf('<tbody>'),h.indexOf('<tbody>')+200));
+    const css=read('css/main.css');
+    s.ok('the cell is 44px, the label fills it and centres the 18px box',/\.ma-table th\.ma-chkcol,\.ma-table td\.ma-chkcol\{width:44px;padding:0\}/.test(css)&&/\.ma-table td\.ma-chkcol \.ma-tick\{display:flex;align-items:center;justify-content:center;width:44px;height:44px/.test(css)&&/\.ma-table td\.ma-chkcol input\{width:18px;height:18px/.test(css));
+    s.ok('on a phone the cell sits BESIDE the receipt number: 44px, and the number takes the rest of the line',/table\.ma-cards td\.ma-chkcol\{flex:0 0 44px/.test(css)&&/table\.ma-cards td\.ma-chkcol\+td\{flex:1 1 calc\(100% - 57px\)/.test(css));
+    s.ok('the sentence a courier read puts in a stat tile, a list or a line may wrap there — and the short word stays one line',/\.ma-stat-s \.ma-word,\.ma-dl dd>\.ma-word,\.ma-sum \.ma-word,\.ma-sub \.ma-word,\.ma-meta \.ma-word,\.ma-sec-meta \.ma-word,\.ma-dash-body \.ma-word\{white-space:normal\}/.test(css)&&/\.ma-word\{[^}]*white-space:nowrap/.test(css));
+    s.ok('the layout probe holds all three: the Today fragment with the reads refused (text past its box), the tick cell (nine points to a label) and the TCS fragment',(()=>{const L=read('tests/smoke-layout.js');return /master accounts — Today with the courier reads refused/.test(L)&&/data-ma-past-edge/.test(L)&&/a tap in a tick cell would open the sheet, not tick the box/.test(L)&&/master accounts — the TCS account is held, not counted/.test(L);})());
+
+    // Statement lines: visible captions
+    app.run("window.maRecordKind('statement',{courier:'tcs'})");
+    app.run("window.maStLineAdd()");
+    const form=app.el('ma-f-lines').innerHTML;   // what the page repainted into the lines box after the add: two lines
+    const cap=[...form.matchAll(/<span class="ma-st-l" aria-hidden="true">([^<]*)<\/span>/g)].map(m=>m[1]);
+    s.eq('a line has a visible caption on each field, twice for two lines',J(cap),J(['Day','Parcels','COD','Fee','Tax','Memo (optional)','Day','Parcels','COD','Fee','Tax','Memo (optional)']));
+    s.ok('…each caption sits in the label of the input it names (a click on it focuses the input)',/<label class="ma-st-cell ma-sc-d"><span class="ma-st-l" aria-hidden="true">Day<\/span><input[^>]*type="date"/.test(form)&&/<label class="ma-st-cell ma-sc-f"><span class="ma-st-l" aria-hidden="true">Fee<\/span><input/.test(form));
+    s.ok('…and the accessible names are kept: "Line 1 day", "Line 2 fee", "Line 1 is a return", "Remove line 2"',['Line 1 day','Line 1 parcels','Line 1 COD','Line 1 fee','Line 1 tax','Line 1 memo','Line 2 fee','Line 1 is a return','Remove line 2'].every(l=>form.indexOf('aria-label="'+l+'"')>=0),J(form.match(/aria-label="Line [^"]*"/g)));
+    s.ok('…no placeholder is left to stand in for a caption (it vanishes on the first key)',!/class="ma-in[^"]*ma-st-[^"]*"[^>]*placeholder=/.test(form)&&!/placeholder="(Day|Parcels|COD|Fee|Tax|Memo)/.test(form));
+    s.ok('…the returned box carries its own word',/<label class="ma-chk ma-st-r"><input type="checkbox"[^>]*> returned<\/label>/.test(form));
+    s.ok('…the CSS puts the captions above the inputs, bottom-aligned, and the areas belong to the labels',/\.ma-st-cell\{display:flex;flex-direction:column/.test(css)&&/\.ma-st-l\{font-size:12px/.test(css)&&/\.ma-sc-d\{grid-area:d\}\.ma-sc-p\{grid-area:p\}/.test(css)&&/\.ma-st-row\{display:grid;[^}]*align-items:end/.test(css));
+  }
+
+  s.section('note — a parcel list read by only some of its queries is a partial list, said as one, with Try again');
+  {
+    const wait=()=>new Promise(r=>setTimeout(r,25));
+    for(const which of [1,2]){
+      let n=0;
+      const {app}=mkApp({seed:seedBase(),failIf:col=>col==='postex_orders'&&(++n)===which});
+      await app.run('maLoad()');
+      app.run("window.maOpenDoc('cpr','postex-JUL-1')");
+      await wait();
+      const el=app.el('ma-rail-parcels').innerHTML;
+      s.ok('read '+which+' of 2 failed: the rail says only part of the list could be read, how many reads failed, and offers Try again',/Only part of this list could be read/.test(el)&&/1 of 2 reads failed/.test(txt(el))&&/maCprParcelsRetry\('postex-JUL-1'\)/.test(el),txt(el).slice(0,220));
+      s.ok('…and never says "No parcel carries this receipt number" of a list it only half read',!/No parcel carries this receipt number/.test(el),txt(el).slice(0,220));
+      if(which===2)s.ok('…the parcels the read that worked brought are still shown (JUL-1 is on PA and PB)',/>PA</.test(el)&&/>PB</.test(el),txt(el).slice(0,220));
+      else s.ok('…and when the read that worked found nothing, it says so of THOSE reads — not of the receipt',/None was found in the reads that succeeded/.test(el),txt(el).slice(0,220));
+      app.run("window.maCprParcelsRetry('postex-JUL-1')");
+      await wait();
+      const el2=app.el('ma-rail-parcels').innerHTML;
+      s.ok('Try again reads them again: the warning is gone and both parcels are there',!/Only part of this list/.test(el2)&&/>PA</.test(el2)&&/>PB</.test(el2),txt(el2).slice(0,220));
+    }
+    // every read failing is still the old, whole-list error
+    const w=mkApp({seed:seedBase(),fail:['postex_orders']});
+    await w.app.run('maLoad()');
+    w.app.run("window.maOpenDoc('cpr','postex-JUL-1')");
+    await wait();
+    s.ok('every read failing is still "Could not read its parcels" (not a partial list)',/Could not read its parcels/.test(w.app.el('ma-rail-parcels').innerHTML)&&!/Only part/.test(w.app.el('ma-rail-parcels').innerHTML));
   }
 
   s.section('housekeeping — registration and the ground rules');

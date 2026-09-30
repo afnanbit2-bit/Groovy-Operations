@@ -4603,12 +4603,24 @@ html[data-theme="dark"]{--tb-pal-moss:#6fae84;--tb-pal-ink:#b9b9a6;--tb-pal-clay
 /* The "less" line under a holders table: arithmetic, not a record. */
 .ma-table tr.ma-less td{border-bottom:0;height:32px}
 .ma-table tr.ma-less:hover td{background:none}
+/* Money that is OURS but sits at a courier (the TCS account) is listed under a
+   holders table's total, on a line of its own that says it is not in it. */
+.ma-table tr.ma-held td{border-bottom:0;height:32px;font-size:13px;color:var(--muted)}
 .ma-table.ma-mini td{height:32px;font-size:13px}
 .ma-word{font-size:12px;font-weight:500;white-space:nowrap}
 .ma-word.warn{color:var(--accent-warning)}
 .ma-word.urgent{color:var(--accent-urgent)}
 .ma-word.fine{color:var(--accent-success)}
 .ma-word.mute{color:var(--muted)}
+/* A word is one line (nowrap) — the short ones: "incomplete", "agrees", "off".
+   The SENTENCE the couriers' reads put in one — "incomplete — ma_cpr and
+   ma_collection could not be read", 313px — is not, and in a stat tile, a
+   definition list or a summary line it ran 126px past a 390px screen and,
+   at 1280, across the next tile's divider (M2 screens review, finding 1).
+   In those holders a word may wrap — the two meta lines (a page's and a
+   section's) as well, which carry the same sentence on Money and the ledger,
+   and the Dashboard card, whose one line names the drawer and the collection. */
+.ma-stat-s .ma-word,.ma-dl dd>.ma-word,.ma-sum .ma-word,.ma-sub .ma-word,.ma-meta .ma-word,.ma-sec-meta .ma-word,.ma-dash-body .ma-word{white-space:normal}
 /* The word "void" is never itself struck out — a crossed-out "void" reads
    as "not void" (QA F11); the row's description and its amount are. */
 .ma-pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--muted)}
@@ -4769,15 +4781,25 @@ a.ma-btn{text-decoration:none}
 .ma-sum{font-size:14px;color:var(--text);margin:0 0 12px;line-height:1.45}
 .ma-sum b{font-variant-numeric:tabular-nums}
 .ma-h4{font-size:13px;font-weight:600;color:var(--muted);margin:16px 0 8px}
-.ma-table th.ma-chkcol,.ma-table td.ma-chkcol{width:36px;padding-right:0}
+/* The tick cell is the target: a 44px square (WCAG 2.5.5 / the touch guides),
+   the label filling it, the 18px box centred in it. A tap anywhere in the cell
+   toggles the box and does not open the sheet — the label stops the row's click. */
+.ma-table th.ma-chkcol,.ma-table td.ma-chkcol{width:44px;padding:0}
+.ma-table td.ma-chkcol .ma-tick{display:flex;align-items:center;justify-content:center;width:44px;height:44px;margin:0;cursor:pointer}
 .ma-table td.ma-chkcol input{width:18px;height:18px;margin:0;cursor:pointer}
 .ma-doc{font-weight:500}
 .ma-parcels td:first-child{overflow-wrap:anywhere;min-width:0}
 /* A courier statement's lines: one grid per line, the memo on a row of its
    own so the numbers keep their width at every viewport. */
 .ma-st-lines{display:flex;flex-direction:column;gap:10px}
-.ma-st-row{display:grid;grid-template-columns:132px 76px auto minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px;grid-template-areas:"d p r c f t x" "m m m m m m m";gap:6px;align-items:center;padding-bottom:10px;border-bottom:1px solid var(--soft)}
-.ma-st-d{grid-area:d}.ma-st-p{grid-area:p}.ma-st-r{grid-area:r}.ma-st-c{grid-area:c}.ma-st-f{grid-area:f}.ma-st-t{grid-area:t}.ma-st-m{grid-area:m}.ma-st-x{grid-area:x}
+/* Each field sits in a label with its caption above (review, M2 screens #5),
+   so the grid areas belong to the LABELS (.ma-sc-*); the returned box and the
+   remove button are still grid items themselves. Bottom-aligned: the box and
+   the button have no caption and stand level with the inputs. */
+.ma-st-row{display:grid;grid-template-columns:132px 76px auto minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px;grid-template-areas:"d p r c f t x" "m m m m m m m";gap:6px;align-items:end;padding-bottom:10px;border-bottom:1px solid var(--soft)}
+.ma-st-cell{display:flex;flex-direction:column;gap:2px;min-width:0;margin:0}
+.ma-st-l{font-size:12px;font-weight:500;color:var(--muted);line-height:1.25}
+.ma-sc-d{grid-area:d}.ma-sc-p{grid-area:p}.ma-st-r{grid-area:r}.ma-sc-c{grid-area:c}.ma-sc-f{grid-area:f}.ma-sc-t{grid-area:t}.ma-sc-m{grid-area:m}.ma-st-x{grid-area:x}
 @media (max-width:600px){
   .ma-st-row{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"d d x" "p r c" "f t t" "m m m"}
 }
@@ -4848,6 +4870,13 @@ a.ma-btn{text-decoration:none}
   table.ma-cards tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--soft)}
   table.ma-cards td{display:block;height:auto;padding:0;border:0;font-size:13px}
   table.ma-cards td:first-child{flex:1 1 100%;font-size:14px;font-weight:500}
+  /* The tick cell sits BESIDE the receipt's number, not on a line of its own:
+     44px for the target, the number takes the rest of the line, and the date,
+     the net and the cash expected wrap under them as before. 57 = 44 + the
+     12px gap + 1px of slack, so a fractional width cannot push the number
+     onto its own line. */
+  table.ma-cards td.ma-chkcol{flex:0 0 44px;align-self:center}
+  table.ma-cards td.ma-chkcol+td{flex:1 1 calc(100% - 57px);min-width:0;align-self:center;font-size:14px;font-weight:500}
   table.ma-cards td.ma-num{margin-left:auto;text-align:right}
   table.ma-cards td:not(:first-child)[data-l]:not([data-l=""])::before{content:attr(data-l) " ";color:var(--muted);font-weight:400}
   table.ma-cards td:empty{display:none}
@@ -4856,6 +4885,8 @@ a.ma-btn{text-decoration:none}
      outranks table.ma-cards td{border:0}. */
   table.ma-cards tr.ma-total td{border-top:0}
   table.ma-cards tr.ma-less{border-bottom:0}
+  table.ma-cards tr.ma-held{border-bottom:0}
+  table.ma-cards tr.ma-held td:first-child{font-size:13px;font-weight:400}
   table.ma-cards tbody tr:hover td{background:none}
   .ma-table td.ma-date{width:auto}
   .ma-cal-head{display:none}

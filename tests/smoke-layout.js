@@ -262,6 +262,35 @@ const FRAGMENTS={
     const c=app.run("_maPageHTML('ma-in')");
     return Promise.resolve(a+b+c);
   },
+  // M2 screens review, finding 1: Today (and Money in) in the state the owners
+  // see while the courier rules are NOT published — every one of the three
+  // reads refused, so "incomplete — ma_cpr and ma_collection could not be
+  // read" is on the page in its real words, in the narrow stat tiles and the
+  // definition list. It was nowrap: 313px of text in a ~170px tile, running
+  // 126px past a 390px screen. The check named in the probe as
+  // data-ma-past-edge makes this fragment FAIL on that CSS (the stock checks
+  // did not: the overflow lands inside #main-content, which scrolls).
+  'master accounts — Today with the courier reads refused':()=>{
+    const app=_maCourierFixture();
+    app.run("_maLoadErrs=['cpr','collection','runs'].map(k=>({key:k,col:'ma_'+(k==='runs'?'runs':k),core:false,message:'Missing or insufficient permissions.',code:'permission-denied'}));_maInvalidate()");
+    const a=app.run("_maPageHTML('ma-overview')"),b=app.run("_maPageHTML('ma-in')");
+    return Promise.resolve('<i data-ma-past-edge="1" hidden></i>'+a+b);
+  },
+  // Finding 5: the TCS account (1060) is a WALLET — money that sits at TCS —
+  // so after a TCS credit it is listed under Cash in hand on a line of its own
+  // that says it is not counted, with no "Can pay", and it is not "in this
+  // month". Today, Money (the holders table with Can pay) and the wallet's
+  // own page.
+  'master accounts — the TCS account is held, not counted':()=>{
+    const app=_maCourierFixture();
+    app.run(`(()=>{const IDX=maChartIndex(maChart('groovy',[])),S=maSettings(null);
+      const t=maData.cpr.find(d=>d.id==='CS-27-0001');
+      const d=maBuildDoc('collection',{courier:'tcs',holder:'1060',amount:t.net,date:'2026-09-10',cprNos:['CS-27-0001'],attachments:[]},{by:'afnan',byName:'Afnan',ts:1790000000000,cprs:maData.cpr},IDX,S);
+      d.no='CL-27-0004';d.id='CL-27-0004';maData.collection.push(d);_maInvalidate();return 1;})()`);
+    const a=app.run("_maPageHTML('ma-overview')"),b=app.run("_maPageHTML('ma-money')");
+    app.run("_maHolderCode='1060';_maPeriod='quarter'");
+    return Promise.resolve(a+b+app.run("_maPageHTML('ma-holder')"));
+  },
   // The rail beside a CPR (1900 only: up to 1440 it is a slide-over that
   // would sit on the page's own controls — the documented false hit). Its
   // parcels are what the rail reads on demand; one with a very long number.
@@ -2911,10 +2940,61 @@ document.querySelectorAll('#main-content .card, #main-content [class*="-row"], #
       scroll:el.scrollWidth,client:el.clientWidth});
   }
 });
+// OPT-IN (a fragment marks itself with data-ma-past-edge): text that runs
+// OUT OF THE BOX THAT HOLDS IT. The stock checks above cannot see it on a
+// Master Accounts page: #main-content there is the scroll container (auto on
+// a phone, clip from 601px up), so text pushed 126px past a 390px screen
+// lengthens #main-content's own scroll area and never the document's, and a
+// stat tile does not match [class*="-tile"]. This walks every text leaf to
+// the block that holds it (the nearest ancestor that is not an inline box)
+// and fails when the text's right edge is past that block's - or, for text
+// held straight by #main-content, past the window's. A holder that scrolls
+// or clips on purpose (a table wrapper, an ellipsis) keeps what it holds.
+if(document.querySelector('[data-ma-past-edge]')){
+  document.querySelectorAll('#main-content *').forEach(el=>{
+    if(el.children.length||!textOfOwn(el)||hiddenEl(el))return;
+    const r=el.getBoundingClientRect();
+    if(r.width<1)return;
+    let h=el.parentElement;
+    while(h&&h.id!=='main-content'&&getComputedStyle(h).display.indexOf('inline')===0)h=h.parentElement;
+    if(!h)return;
+    const top=h.id==='main-content';
+    if(!top&&getComputedStyle(h).overflowX!=='visible')return;
+    const limit=top?innerWidth:h.getBoundingClientRect().right;
+    if(r.right>limit+1){
+      bad.push({why:'text runs out of the box that holds it',
+        text:textOfOwn(el).slice(0,60),cls:clsOf(el,40),holder:clsOf(h,40)||h.tagName,
+        past:Math.round(r.right-limit)});
+    }
+  });
+}
 if(document.documentElement.scrollWidth>innerWidth+2){
   bad.push({why:'the page scrolls sideways',
     scroll:document.documentElement.scrollWidth,viewport:innerWidth});
 }
+// A tick cell (a courier's uncollected receipts) IS the target, not the 18px
+// box in it (M2 screens review, finding 5): every point of the cell must land
+// on its own label - which ticks the box and stops the click - and never on the
+// cell itself or the row, whose click opens the sheet. Nine points, the corners
+// included; a cell below the window is a layout question, checked above.
+document.querySelectorAll('td.ma-chkcol').forEach(td=>{
+  if(!td.querySelector('input')||hiddenEl(td))return;   // the total row's cell in that column holds no box
+  const r=td.getBoundingClientRect();
+  if(r.width<1||r.height<1||r.bottom<0||r.top>=innerHeight)return;
+  let miss=0,n=0,at=null;
+  for(let i=0;i<3;i++)for(let j=0;j<3;j++){
+    const x=r.left+1+(r.width-2)*i/2,y=r.top+1+(r.height-2)*j/2;
+    if(y<0||y>=innerHeight)continue;
+    n++;
+    const e=document.elementFromPoint(x,y);
+    if(!e||!e.closest||!e.closest('label.ma-tick')){miss++;if(!at)at=e?(e.tagName+'.'+clsOf(e,30)):'nothing';}
+  }
+  const lab=td.querySelector('label.ma-tick'),lr=lab?lab.getBoundingClientRect():null;
+  if(miss)bad.push({why:'a tap in a tick cell would open the sheet, not tick the box',
+    cell:Math.round(r.width)+'x'+Math.round(r.height),miss:miss+' of '+n,hit:at,
+    label:lab?(Math.round(lr.width)+'x'+Math.round(lr.height)+' '+getComputedStyle(lab).display):'none'});
+  if(r.width<43||r.height<43)bad.push({why:'a tick cell is under 44px',cell:Math.round(r.width)+'x'+Math.round(r.height)});
+});
 // A control that exists but cannot be clicked. This is the shape of nearly
 // every UI bug this app has had: the board's whole top bar behind a wrong
 // z-index, the delete X retargeted by a pointer capture, the profile photo
