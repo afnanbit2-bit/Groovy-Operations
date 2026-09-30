@@ -19,6 +19,10 @@ the median item count is dropped as truncated (none seen: counts only ever rose 
 
 **Cost of the history:** `_siAxEnsureHistory` does ONE `getDocs(query(orderBy('date','desc'), limit(150)))` when the Explorer opens, cached for
 the session, never rejects (named error state + Retry). Today that is 128 document reads per session (each ~2k items; payload size is a hypothesis, not measured).
+Non-merchandise (every priced sale under Rs 1, e.g. TIPQUIK-TG Tip/Gratuity: 11,000 units at Rs 0.01) is left out of the Explorer and reported in the Data quality expander.
+
+**Voided and refunded units** (per article, counted window): `voided` = units on voided orders, `refunded` = units on orders refunded when synced, `void rate` = voided ÷ (net + voided + refunded). Use it for: a high void rate points at a payment, fraud or cancellation problem to investigate. They never enter net units, pace, sell-through or cover. Limit: financial_status is read at sync time, so later voids/refunds are not seen and both understate.
+
 Other Inventory Intel tables still exclude `refunded` only, so their totals differ from the Explorer by the voided orders.
 
 ## 2. The ten metrics (each: formula, use, how to read, limit)

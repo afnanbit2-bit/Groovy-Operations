@@ -1343,7 +1343,8 @@ function _siCleanIsVoided(li){return String(li&&li.financial_status||'').trim().
 function _siClean(src){
   const products=(src&&src.products)||[],lineItems=(src&&src.lineItems)||[],orders=(src&&src.orders)||[],snap=src&&src.snapshot;
   const q={
-    lineItems:{total:lineItems.length,used:0,refunded:0,voided:0,cancelledOrder:0,noSku:0,badDate:0,duplicateId:0,voidedStillInExisting7d30d:0},
+    lineItems:{total:lineItems.length,used:0,refunded:0,voided:0,cancelledOrder:0,noSku:0,badDate:0,duplicateId:0,nonMerch:0,voidedStillInExisting7d30d:0},
+    nonMerch:{articles:0,examples:[]},
     products:{total:products.length,noSku:0,duplicateSkuRows:0,used:0},
     snapshot:{entries:0,noSku:0,negativeClamped:0,duplicateSkus:0,duplicateEntries:0,used:0},
     skuNormalised:0,
@@ -1367,10 +1368,16 @@ function _siClean(src){
   });
   // line items
   const cancelled=new Set();orders.forEach(o=>{if(o&&o.cancelled_at)cancelled.add(String(o._id!=null?o._id:o.order_id));});
-  const seen=new Set(),lis=[];
+  const seen=new Set(),lis=[],out=[];
   lineItems.forEach(li=>{
-    if(_siCleanIsRefunded(li)){q.lineItems.refunded++;return;}
-    if(_siCleanIsVoided(li)){q.lineItems.voided++;q.lineItems.voidedStillInExisting7d30d++;return;}
+    const ref=_siCleanIsRefunded(li),voi=!ref&&_siCleanIsVoided(li);
+    if(ref||voi){
+      // kept aside (never counted as sold) so the Explorer can report voided / refunded units per article
+      const xn=_siCleanSku(li.sku),xd=String(li.order_created_at||'').slice(0,10),xq=Number(li.quantity);
+      if(xn&&/^\d{4}-\d{2}-\d{2}$/.test(xd)&&isFinite(xq))out.push({code:_siCleanCode(xn),day:xd,qty:xq,kind:ref?'refunded':'voided'});
+      if(ref){q.lineItems.refunded++;return;}
+      q.lineItems.voided++;q.lineItems.voidedStillInExisting7d30d++;return;
+    }
     if(li.order_id!=null&&cancelled.has(String(li.order_id))){q.lineItems.cancelledOrder++;return;}
     if(li.order_id!=null&&li.line_item_id!=null){
       const k=li.order_id+'_'+li.line_item_id;
@@ -1386,6 +1393,22 @@ function _siClean(src){
     lis.push({li,nsku:n,code:_siCleanCode(n),day,qty:isFinite(qty)?qty:0,price:isFinite(pr)?pr:0,cat:catOf(li.product_type)});
     q.lineItems.used++;
   });
+  // non-merchandise: a code whose every counted sale (and catalog price) is under Rs 1 is not a garment
+  // (seen in the data: TIPQUIK-TG "Tip/Gratuity", one line of 11,000 units at Rs 0.01). Decided by the data, not by name.
+  const maxPrice=new Map(),catPrices=new Map();
+  lis.forEach(r=>{if(r.li.price==null||r.li.price===''||!isFinite(Number(r.li.price)))return; // unknown price is not evidence
+    const v=maxPrice.get(r.code);if(v==null||r.price>v)maxPrice.set(r.code,r.price);});
+  prods.forEach(p=>{const n=Number(p.price);if(!catPrices.has(p._code))catPrices.set(p._code,[]);catPrices.get(p._code).push(isFinite(n)&&p.price!=null&&p.price!==''?n:NaN);});
+  const nonMerch=new Set();
+  maxPrice.forEach((v,c)=>{if(v<1)nonMerch.add(c);});
+  catPrices.forEach((a,c)=>{if(!maxPrice.has(c)&&a.length&&a.every(v=>v<1))nonMerch.add(c);});
+  let lisKept=lis;
+  if(nonMerch.size){
+    const ex=new Map();
+    lisKept=lis.filter(r=>{if(!nonMerch.has(r.code))return true;q.lineItems.nonMerch++;q.lineItems.used--;if(r.li.product_title)ex.set(r.code,r.li.product_title);return false;});
+    prods.forEach(p=>{if(nonMerch.has(p._code)&&!ex.has(p._code)&&p.product_title)ex.set(p._code,p.product_title);});
+    q.nonMerch.articles=nonMerch.size;q.nonMerch.examples=[...ex.values()].slice(0,3);
+  }
   // stock: clamp negatives to 0, skip no-SKU, sum duplicate SKUs
   const stockBy=new Map();
   if(snap&&snap.items){
@@ -1402,19 +1425,21 @@ function _siClean(src){
     }
   }
   q.snapshot.used=stockBy.size;
-  return{products:prods,prodBySku,lineItems:lis,stock:[...stockBy.values()],quality:q};
+  const stockKept=[...stockBy.values()].filter(x=>!nonMerch.has(x.code));
+  return{products:prods.filter(p=>!nonMerch.has(p._code)),prodBySku,lineItems:lisKept,stock:stockKept,excluded:out.filter(x=>!nonMerch.has(x.code)),quality:q};
 }
 function _siCleanProd(sku){const m=_siCleanLast&&_siCleanLast.prodBySku;return(m&&m.get(_siCleanSku(sku)))||_siGetProd(sku);}
 function _siCleanQualityHtml(q){
   if(!q)return'';
   const L=q.lineItems,P=q.products,S=q.snapshot;
-  const skipped=L.refunded+L.voided+L.cancelledOrder+L.noSku+L.badDate+L.duplicateId;
+  const skipped=L.refunded+L.voided+L.cancelledOrder+L.noSku+L.badDate+L.duplicateId+L.nonMerch;
   const row=(n,t)=>n?`<li><strong>${n}</strong> ${t}</li>`:'';
   const items=[
     row(L.refunded,'refunded line items left out'),
     row(L.voided,'voided line items left out'),
     row(L.cancelledOrder,'line items of cancelled orders left out'),
     row(L.noSku,'line items with no SKU skipped'),
+    row(L.nonMerch,'non-merchandise line items left out (every sale priced under Rs 1; '+q.nonMerch.articles+' code'+(q.nonMerch.articles===1?'':'s')+(q.nonMerch.examples.length?', e.g. '+q.nonMerch.examples.map(_siEsc).join(', '):'')+')'),
     row(L.badDate,'line items with no usable date skipped'),
     row(L.duplicateId,'repeated line items (same order + line id) counted once'),
     row(P.noSku,'catalog products with an empty SKU skipped'),
@@ -1464,6 +1489,11 @@ function _siAxIndex(){
     if(!a.firstDay||day<a.firstDay)a.firstDay=day;
     if(!a.lastDay||day>a.lastDay)a.lastDay=day;
     if(!a.category&&r.cat&&r.cat!=='Unknown')a.category=r.cat;
+  });
+  cl.excluded.forEach(x=>{
+    const a=arts.get(x.code);if(!a)return; // only articles that have a catalog row or counted sales
+    const m=a.xdaily||(a.xdaily=new Map());let d=m.get(x.day);if(!d){d={v:0,r:0};m.set(x.day,d);}
+    if(x.kind==='voided')d.v+=x.qty;else d.r+=x.qty;
   });
   cl.stock.forEach(it=>{
     if(!arts.has(it.code))return;
@@ -1624,12 +1654,16 @@ function _siAxStatsCalc(a,idx){
   const o={E,today,cov,noLive:!a.liveDay,partial:!!(a.liveDay&&cov&&a.liveDay<cov),days:null,units:null,units28:null,
     rateWeek:null,pace28:null,pace28Days:null,momentum:null,cover:null,coverDays:null,coverBasis:'',
     sellingWeeks:null,blocks:0,peak:null,first4:null,catShare:null,catUnits:null,asp:null,
-    st:null,received:null,sizesNow:null,sizesPrev:null,risk:[],sizeRows:[],
+    st:null,received:null,sizesNow:null,sizesPrev:null,risk:[],sizeRows:[],voided:null,refunded:null,voidRate:null,refundRate:null,
     inRate:null,inDays:null,outDays:null,measured:null,perInDay:null,histState:_siHistState};
   const Tn=_siAxDayNum(today),En=E?_siAxDayNum(E):null;
   if(En!=null&&En<=Tn){
     const days=Tn-En+1;o.days=days;
     const u=_siAxUnitsBetween(a,E,today);o.units=u;
+    // voided / refunded units in the same counted window; they never enter net units, rates, sell-through or cover
+    let vu=0,ru=0;if(a.xdaily)a.xdaily.forEach((d,day)=>{if(day>=E&&day<=today){vu+=d.v;ru+=d.r;}});
+    o.voided=vu;o.refunded=ru;
+    if(u+vu+ru>0){o.voidRate=vu/(u+vu+ru);o.refundRate=ru/(u+vu+ru);}
     if(days>=7)o.rateWeek=u/days*7;
     const s28=Math.max(En,Tn-27),d28=Tn-s28+1;o.pace28Days=d28;
     o.units28=_siAxUnitsBetween(a,_siAxDayStr(s28),today);
@@ -1780,7 +1814,9 @@ function _siAxClassCounts(){
 // measured" list and docs/UNITS_METRICS.md. Keys 'net'..'curve' are the ten headline
 // metrics; the rest are supporting figures.
 const _SI_AX_DEFS=[
-  {k:'net',label:'Net units',how:'units on non-refunded lines in the counted window',use:'Volume: what actually moved. Always read it with the counted days beside it.',read:'Low can simply mean few live days; high can simply mean long exposure.',cav:'Orders refunded when synced are left out; later refunds and cancellations are not seen.'},
+  {k:'net',label:'Net units',how:'units on lines that were neither refunded nor voided, in the counted window',use:'Volume: what actually moved. Always read it with the counted days beside it.',read:'Low can simply mean few live days; high can simply mean long exposure.',cav:'Orders refunded when synced are left out; later refunds and cancellations are not seen.'},
+  {k:'void',label:'Voided units / void rate',how:'units on voided orders in the counted window; void rate = voided ÷ (net + voided + refunded units)',use:'A high rate points to a payment, fraud or cancellation problem on this article: investigate the orders. Voided units are kept out of net units, sell-through and pace.',read:'High: many orders were started and never paid or were cancelled. Near 0: normal.',cav:'financial_status is read when the order is synced, so later voids are not seen and the rate may understate.'},
+  {k:'refund',label:'Refunded units',how:'units on orders that were already refunded when synced, in the counted window',use:'Returns review: a product that comes back often (quality, fit, sizing).',read:'High against net units: a return problem.',cav:'Later refunds are not synced, so this understates; partial refunds are not seen.'},
   {k:'rate',label:'Units per live week',how:'net units ÷ counted days × 7',use:'Compare products of different ages; decide what to reorder or stop.',read:'Low: slow or under-exposed. High: strong demand. Compare to the peer lines, not to zero.',cav:'Counted window only (later of live date and first synced order). Needs 7+ counted days.'},
   {k:'st',label:'Sell-through %',how:'units sold ÷ (opening stock + estimated received) over the measured span',use:'Reorder or mark down: how much of what was available has gone.',read:'Low: stock is not moving (markdown, stop). High: nearly everything gone (restock, or you were short).',cav:'Span shown on screen. “Received” is inferred from stock changes plus sales, not recorded; needs 7+ contiguous snapshot days.'},
   {k:'inrate',label:'In-stock rate',how:'days in stock ÷ measured days (a day is out only when stock was 0 at the end of the day before and of that day)',use:'Separate “not selling” from “not available”.',read:'Low: sales are capped by availability, so velocity is understated. High: velocity is fair.',cav:'Only days with two snapshots are measured; article level (any size in stock counts).'},
@@ -2034,7 +2070,7 @@ function _siArticleExplorerSection(){
   const modeBtn=(id,l)=>`<button class="si-ax-btn${_siAxModeSel===id?' on':''}" onclick="window._siAxSetMode('${id}')">${l}</button>`;
   return`<div class="si-ax-bar">${modeBtn('search','Search')}${modeBtn('compare','Compare')}
     <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles · ignores the season filter</span></div>
-  <div class="si-ax-bar"><input id="si-ax-input" class="si-ax-input" autocomplete="off" placeholder="${_siAxModeSel==='compare'?'Add an article to compare — title, colour, code (GST073), category…':'Search any article — title, colour, code (GST073), category…'}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)"></div>
+  <div class="si-ax-bar"><input id="si-ax-input" class="si-ax-input" autocomplete="off" placeholder="${_siAxModeSel==='compare'?'Add an article to compare — title, colour, code (GST073), category…':'Search any article — title, colour, code (GST073), category…'}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)" onkeydown="window._siAxKey(event)"></div>
   <div id="si-ax-results">${_siAxResultsHtml()}</div>
   <div id="si-ax-body">${_siAxModeSel==='compare'?_siAxCompareBody():_siAxSearchBody()}</div>${_siCleanQualityHtml(idx.quality)}`;
 }
@@ -2063,7 +2099,16 @@ function _siAxRepaintBody(){
   if(r)r.innerHTML=_siAxResultsHtml();
   if(b)b.innerHTML=_siAxModeSel==='compare'?_siAxCompareBody():_siAxSearchBody();
 }
-window._siAxPick=function(code){_siAxSel=code;_siAxQuery='';_siAxRepaintBody();};
+window._siAxPick=function(code){_siAxSel=code;_siAxQuery='';_siAxRepaintBody();const i=document.getElementById('si-ax-input');if(i)i.focus();};
+// Enter picks (Search) or adds (Compare) the top match, like a scanner-style entry box; nothing typed or no match does nothing.
+window._siAxKey=function(ev){
+  if(!ev||ev.key!=='Enter')return;
+  const q=_siAxQuery.trim();if(!q)return;
+  if(ev.preventDefault)ev.preventDefault();
+  clearTimeout(window._siAxDebounce);
+  const h=_siAxSearch(q,1).hits[0];if(!h)return;
+  if(_siAxModeSel==='compare')window._siAxAdd(h.code);else window._siAxPick(h.code);
+};
 // Returns {ok,msg} so callers and tests see why an add was refused.
 function _siAxTryAdd(code){
   code=String(code||'').toUpperCase();
@@ -2223,6 +2268,8 @@ function _siAxSearchBody(){
     ${kpi('Live',_siEsc(_siAxLiveText(a)),_siEsc(_siAxAgeText(a)))}
     ${kpi('Sold since live',a.units,'counted from '+_siEsc(idx.cov?_siAxFmtDay(idx.cov):'—'))}
     ${kpi('Sold 7d / 30d / 90d',s7.u+' / '+s30.u+' / '+s90.u,'')}
+    ${kpi('Voided units',m.voided!=null?m.voided:'—',m.voidRate!=null?'void rate '+_siAxPct(m.voidRate)+' of '+(m.units+m.voided+m.refunded)+' ordered':'no counted days','void')}
+    ${kpi('Refunded units',m.refunded!=null?m.refunded:'—',m.refundRate!=null?'refund rate '+_siAxPct(m.refundRate)+' · later refunds not synced':'no counted days','refund')}
     ${kpi('Revenue (counted)',a.hasPrice?_siEsc(_siPKR(Math.round(a.rev))):'—','30d: '+(a.hasPrice?_siEsc(_siPKR(Math.round(s30.r))):'—'))}
     ${kpi('On hand',a.hasStock?a.onHand:'—',a.hasStock?'today\'s snapshot':'not in snapshot')}
     ${kpi('Units per live week',_siAxNum(m.rateWeek),m.rateWeek!=null?_siEsc(win):'needs 7+ counted days','rate')}
@@ -2342,8 +2389,11 @@ function _siAxCompareBody(){
     {key:'peak',label:'Peak week',title:_siAxTip('peak'),type:'num',get:r=>r.m.peak&&r.m.peak.u,cell:r=>`<td>${r.m.peak?r.m.peak.u+' units<div class="si-ax-note" style="margin:0">'+_siEsc(_siAxFmtDay(r.m.peak.start,true))+'</div>':'—'}</td>`},
     {key:'f4',label:'First 4 weeks',title:_siAxTip('first4'),type:'num',get:r=>r.m.first4,cell:r=>`<td>${dash(r.m.first4)}${r.m.first4==null&&r.art.liveDay&&r.m.partial?'<div class="si-ax-note" style="margin:0">launch before data</div>':''}</td>`},
     {key:'share',label:'Share of category',title:_siAxTip('share'),type:'num',get:r=>r.m.catShare,cell:r=>`<td>${_siAxPct(r.m.catShare)}</td>`},
+    {key:'void',label:'Voided units',title:_siAxTip('void'),type:'num',get:r=>r.m.voided,cell:r=>`<td>${r.m.voided!=null?r.m.voided:'—'}</td>`},
+    {key:'vrate',label:'Void rate',title:_siAxTip('void'),type:'num',get:r=>r.m.voidRate,cell:r=>`<td>${_siAxPct(r.m.voidRate)}</td>`},
+    {key:'refund',label:'Refunded units',title:_siAxTip('refund'),type:'num',get:r=>r.m.refunded,cell:r=>`<td>${r.m.refunded!=null?r.m.refunded:'—'}</td>`},
     {key:'asp',label:'Avg unit price',title:_siAxTip('asp'),type:'num',get:r=>r.m.asp,cell:r=>`<td>${r.m.asp!=null?_siEsc(_siPKR(Math.round(r.m.asp))):'—'}</td>`}
-  ]),d.rows,{def:{key:'n',dir:1},defText:'the order you added them',minWidth:640,ties});
+  ]),d.rows,{def:{key:'n',dir:1},defText:'the order you added them',minWidth:900,ties});
   const read=_siAxReadThis(d.rows);
   const readHtml=read.length?`<div class="card"><div class="card-title">Read this — pace, cover and momentum</div><ul class="si-ax-read">${read.map(t=>`<li>${_siEsc(t)}</li>`).join('')}</ul><div class="si-ax-note">Every sentence is computed from the tables below; it is left out when its inputs are missing.</div></div>`:'';
   const basisNote=d.ser.basis==='launch'?'Since launch: x-axis is weeks (or months) since each article\'s live date, so products from different years line up at the same age.':'Calendar: the same dates on the x-axis; a line starts when the article went live.';
