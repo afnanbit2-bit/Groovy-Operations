@@ -42,7 +42,7 @@ function checks(a){
   out['no tie list keeps input order (stable)']=order([{c:'x',v:1},{c:'y',v:1},{c:'z',v:1}],{key:'v',type:'num'},1)==='x,y,z';
   out['sorting never mutates its input']=R(`(()=>{const r=[{c:'b',v:2},{c:'a',v:1}];_siSortRows(r,[{key:'v',type:'num'}],'v',1);return r[0].c})()`)==='b';
   out['categories: units desc then name']=R(`${J([['Tees',10],['Jorts',10],['Caps',30],['Denim',2]])}.sort(_siSortEntries).map(e=>e[0]).join(",")`)==='Caps,Jorts,Tees,Denim';
-  out['classes in fixed order']=R(`${J(['Slow','Too early','Winner','Dead stock','Healthy','Stock-constrained'])}.sort((a,b)=>_siSortClassRank(a)-_siSortClassRank(b)).join(",")`)==='Winner,Healthy,Stock-constrained,Slow,Dead stock,Too early';
+  out['classes in fixed order']=R(`${J(['Slow','Too early','Winner','Dead stock','Solid','Steady','Stock-constrained'])}.sort((a,b)=>_siSortClassRank(a)-_siSortClassRank(b)).join(",")`)==='Winner,Solid,Steady,Stock-constrained,Slow,Dead stock,Too early';
   out['sizes: garment, then waist, then rest']=sz(['L','30','S','XXXS','28','XL','Unknown','OS','3XL','XXL','2XL','XS','M','XXS','32'])==='XXXS,XXS,XS,S,M,L,XL,XXL,2XL,3XL,28,30,32,OS,Unknown';
   out['dates are chronological']=order([{c:'b',v:'2026-09-28'},{c:'a',v:'2026-10-05'},{c:'c',v:'2026-09-07'}],{key:'v',type:'date'},-1)==='a,b,c';
   out['articles: units desc, name, code']=R(`${J([{code:'B2',name:'Tee',units:5},{code:'B10',name:'Tee',units:5},{code:'A1',name:'Zed',units:9}])}.sort(_siSortArticles).map(x=>x.code).join(",")`)==='A1,B2,B10';

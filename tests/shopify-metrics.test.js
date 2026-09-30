@@ -178,19 +178,19 @@ module.exports=async function(){
 
   s.section('classes: first match wins; thresholds are named defaults');
   const cl=c=>R('(()=>{const r=_siAxClassify(_siAxIndex().map.get("'+c+'"));return{c:r.cls,u:r.unverified,rule:r.rule};})()');
-  eq('GA sell-through 30% is Healthy',cl('GA').c,'healthy');
-  s.ok('its rule is computed text naming the value',/sell-through 30%/.test(cl('GA').rule)&&/weeks of cover/.test(cl('GA').rule));
+  eq('GA: 0.5 units per in-stock day meets the fixed Solid band (pool under 30 articles) but not Winner 2.7: Solid',cl('GA').c,'solid');
+  s.ok('its rule is computed text naming the value and the fixed bands',/0\.5 units per in-stock day/.test(cl('GA').rule)&&/fewer than 30 articles/.test(cl('GA').rule));
   eq('GB is in stock on 43.3% of days (below 60%) at 0.69 a day: Stock-constrained',cl('GB').c,'constrained');
   eq('GC has no stock rows: Not rated, not a guess',cl('GC').c,'unrated');
   eq('GE has 4 counted days: Too early, no class',cl('GE').c,'early');
   eq('GG: 6 on hand and no sale in the last 28 days: Dead stock',cl('GG').c,'dead');
-  s.ok('no class reads a dash as a pass: GC reports nothing matched',!/\b(winner|healthy)\b/i.test(cl('GC').rule));
+  s.ok('no class reads a dash as a pass: GC reports nothing matched',!/\b(winner|solid)\b/i.test(cl('GC').rule));
   const T=R('_SI_AX_SCORE');
-  eq('the documented default lines',[T.minDays,T.deadSellThrough,T.constrainedInStock,T.constrainedPerDay,T.winnerSellThrough,T.winnerInStock,T.healthySellThrough,T.overCoverWeeks],[28,0.05,0.6,0.55,0.6,0.8,0.2,26]);
+  eq('the documented default lines',[T.minDays,T.winnerPct,T.winnerInStock,T.winnerUnits,T.constrainedInStock,T.solidPct,T.steadyPct,T.overCoverWeeks],[28,0.9,0.7,30,0.7,0.5,0.2,26]);
   // a high-sell-through, always-in-stock article is a Winner
-  R('_siProducts.push({_id:"w",sku:"GW-M",product_title:"Win",product_type:"Tees",published_at:"2026-06-01T10:00:00+05:00"});_siLineItems.push({sku:"GW-M",quantity:45,price:1,order_created_at:"2026-08-15T12:00:00+05:00",financial_status:"paid"});_siAxCache=null;'+
+  R('_siProducts.push({_id:"w",sku:"GW-M",product_title:"Win",product_type:"Tees",published_at:"2026-06-01T10:00:00+05:00"});_siLineItems.push({sku:"GW-M",quantity:90,price:1,order_created_at:"2026-08-15T12:00:00+05:00",financial_status:"paid"});_siAxCache=null;'+
     '_siHist=_siAxBuildHistory('+J(snaps.map(x=>({date:x.date,items:Object.assign({},x.items,{w:{sku:'GW-M',available:x.date<'2026-08-15'?60:(x.date===dayStr(base+14)?15:15)}})})))+');_siAxCache=null');
-  eq('sold 45 of 60 opening, never out of stock: Winner (sell-through 75%)',cl('GW').c,'winner');
+  eq('90 units on in-stock days over 30 in-stock days = 3.0 a day (fixed band 2.7), 90 units, never out of stock, Medium confidence: Winner',cl('GW').c,'winner');
   // skipped clause: the in-stock rate is unknown (history too short), sell-through alone
   R('_siHist=_siAxBuildHistory('+J(snaps.slice(24))+');_siAxCache=null');
   s.ok('with fewer than 7 measured days the in-stock clause is skipped and the row says so',(()=>{const r=cl('GW');return r.u===true||r.c==='unrated';})());
@@ -227,7 +227,7 @@ module.exports=async function(){
   eq('exactly one Read this block (the old second panel is gone)',[(cmp.match(/>Read this</g)||[]).length,/Read this — pace, cover and momentum/.test(cmp)],[1,false]);
   eq('one card per selected article',(cmp.match(/class="si-rd-card"/g)||[]).length,4);
   const pos=n=>cmp.indexOf('class="si-rd-name">'+n.replace(/&/g,'&amp;'));
-  s.ok('cards follow class order: Healthy (GA), Stock-constrained (GB), Too early (GE), Not rated (GC)',pos(nmA)>0&&pos(nmA)<pos(nmB)&&pos(nmB)<pos(nmE)&&pos(nmE)<pos(nmC));
+  s.ok('cards follow class order: Solid (GA), Stock-constrained (GB), Too early (GE), Not rated (GC)',pos(nmA)>0&&pos(nmA)<pos(nmB)&&pos(nmB)<pos(nmE)&&pos(nmE)<pos(nmC));
   eq('an article name appears once in its card head (no repeated bullets)',(cmp.split('class="si-rd-name">'+nmA).length-1),1);
   const fa=R('_siAxReadFacts(_siAxIndex().map.get("GA"),_siAxStats(_siAxIndex().map.get("GA")),_siAxClassify(_siAxIndex().map.get("GA")))');
   eq('GA facts: 40 units / 92 days / 3 a week; 30% = 15 of 50; in stock every measured day at 3.5 a week; 6-19 weeks cover; Steady (15 vs 10 units is within chance)',
@@ -258,7 +258,7 @@ module.exports=async function(){
   s.ok('three crowded points: every pair at least 30 px apart, all within 22 px of where they were',[[0,1],[0,2],[1,2]].every(([i,j])=>dist(o,i,j,P3)>=30)&&o.every(q=>Math.hypot(q.dx,q.dy)<=22.01));
   eq('deterministic: the same input gives the same offsets',R('_siAxSpread('+J(P3)+')'),o);
   const sc2=R('_siAxScorecardHtml([_siAxIndex().map.get("GA"),_siAxIndex().map.get("GB")])');
-  s.ok('points are 32 px buttons with aria-labels that state the class and the values',/class="si-pc-pt cls-healthy"[^>]*aria-label="1\. [^"]*Healthy, [\d.]+ units per in-stock week, sell-through 30%"/.test(sc2));
+  s.ok('points are 32 px buttons with aria-labels that state the class and the values',/class="si-pc-pt cls-solid"[^>]*aria-label="1\. [^"]*Solid, [\d.]+ units per in-stock week, sell-through 30%"/.test(sc2));
   s.ok('the plot has headroom: a 100% point is not on the top edge (y axis runs to 112%)',/class="si-pc-gy top" style="bottom:(\d+\.\d+)%"/.test(sc2)&&parseFloat(/class="si-pc-gy top" style="bottom:(\d+\.\d+)%"/.exec(sc2)[1])<95);
   return s;
 };

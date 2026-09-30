@@ -5057,12 +5057,14 @@ a.ma-btn{text-decoration:none}
 .si-pc-pt{position:absolute;width:32px;height:32px;padding:0;margin:0 0 -16px -16px;border:0;background:transparent;cursor:pointer;font-family:inherit}
 .si-pc-pt i,.si-pc-key{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-style:normal;font-size:12px;font-weight:700;color:var(--surface)}
 .si-pc-pt.cls-winner i,.si-pc-key.cls-winner{background:var(--accent-success)}
-.si-pc-pt.cls-healthy i,.si-pc-key.cls-healthy{background:var(--si-s0)}
+.si-pc-pt.cls-solid i,.si-pc-key.cls-solid{background:var(--si-s0)}
+.si-pc-pt.cls-steady i,.si-pc-key.cls-steady{background:var(--muted)}
 .si-pc-pt.cls-constrained i,.si-pc-key.cls-constrained{background:var(--accent-warning)}
 .si-pc-pt.cls-slow i,.si-pc-key.cls-slow{background:var(--cat-boards)}
 .si-pc-pt.cls-dead i,.si-pc-key.cls-dead{background:var(--accent-urgent)}
 .si-pc-pt.cls-winner i,.si-pc-key.cls-winner{clip-path:polygon(50% 3%,67% 30%,98% 38%,78% 62%,79% 93%,50% 82%,21% 93%,22% 62%,2% 38%,33% 30%)}
-.si-pc-pt.cls-healthy i,.si-pc-key.cls-healthy{border-radius:50%}
+.si-pc-pt.cls-solid i,.si-pc-key.cls-solid{border-radius:50%}
+.si-pc-pt.cls-steady i,.si-pc-key.cls-steady{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
 .si-pc-pt.cls-constrained i,.si-pc-key.cls-constrained{clip-path:polygon(50% 4%,100% 96%,0 96%);align-items:flex-end;padding-bottom:2px}
 .si-pc-pt.cls-slow i,.si-pc-key.cls-slow{border-radius:3px}
 .si-pc-pt.cls-dead i,.si-pc-key.cls-dead{clip-path:polygon(35% 0,65% 0,65% 35%,100% 35%,100% 65%,65% 65%,65% 100%,35% 100%,35% 65%,0 65%,0 35%,35% 35%)}
@@ -5081,3 +5083,7 @@ a.ma-btn{text-decoration:none}
 .si-conf .si-dots{display:inline-flex;gap:2px}
 .si-conf .si-dots i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--text);display:inline-block;box-sizing:border-box}
 .si-conf .si-dots i.on{background:var(--text)}
+.si-lt{margin-top:12px}
+.si-lt-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0;font-size:14px}
+.si-lt-row>span:first-child{flex:1 1 200px;min-width:0}
+.si-lt-row input{width:76px;min-height:36px;padding:4px 8px;font:inherit;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px}

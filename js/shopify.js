@@ -1897,7 +1897,7 @@ function _siAxConfidence(a){
   let lvl=(m.days==null||units<C.lowUnits||days<C.lowDays)?0:((units>=C.highUnits&&days>=C.highDays)?2:1);
   const caps=[];
   if(!ret.synced)caps.push('later returns are not synced yet');
-  if(!C.leadTimeSet)caps.push('the supplier lead time is a default');
+  if(!C.leadTimeSet&&!_siAxLtAnyCustom())caps.push('the supplier lead time is a default');
   const capped=lvl===2&&caps.length>0;if(capped)lvl=1;
   const name=['Low','Medium','High'][lvl];
   const why=[units+' unit'+(units===1?'':'s')+' over '+days+' counted day'+(days===1?'':'s')];
@@ -1923,71 +1923,152 @@ function _siAxTrustBanner(){
 // DEFAULT thresholds — conventions for a first read derived from this store's own
 // distributions (docs/UNITS_METRICS.md), NOT facts about the business. They are printed on
 // screen beside the chart. First matching rule wins, in this order:
-// Too early · Dead stock · Stock-constrained · Winner · Healthy · Slow.
-const _SI_AX_SCORE={minDays:28,deadNoSaleDays:28,deadSellThrough:0.05,constrainedInStock:0.60,constrainedPerDay:0.55,winnerSellThrough:0.60,winnerInStock:0.80,healthySellThrough:0.20,overCoverWeeks:26};
+// Too early · Not rated · Dead stock · Stock-constrained · Winner · Solid · Steady · Slow.  First match wins.
+// Demand D = units per in-stock day (exposure-adjusted), ranked against the other classed articles of the same age band
+// (percentile, mid-rank). Plan: docs/UNITS_METRICS.md "Classes v2".
+const _SI_AX_SCORE={minDays:28,deadNoSaleDays:28,
+  winnerPct:0.90,winnerInStock:0.70,winnerUnits:30,        // Winner: top 10% demand, in stock 70%+ of days, 30+ units, confidence not Low
+  constrainedInStock:0.70,constrainedPct:0.50,             // Stock-constrained: in stock under 70% of days AND demand above the median
+  solidPct:0.50,steadyPct:0.20,                            // Solid: at or above the median; Steady: at or above p20; else Slow
+  poolMin:30,ageBands:[28,56,112],                         // a pool under 30 articles uses the fixed bands below
+  absWinner:2.7,absSolid:0.5,absSteady:0.2,                // units per in-stock day
+  overCoverWeeks:26,markdownCoverWeeks:12,stopMinAgeDays:90,riskWeeks:2};
 const _SI_AX_CLASSES={
   early:{label:'Too early',act:'Not classed: wait for more counted days.'},
-  unrated:{label:'Not rated',act:'Not classed: stock data is missing.'},
-  dead:{label:'Dead stock',act:'Markdown, bundle or clear; do not reorder or re-cut.',shape:'cross'},
-  constrained:{label:'Stock-constrained',act:'Demand is ahead of supply: restock or re-cut.',shape:'tri'},
+  unrated:{label:'Not rated',act:'Not classed: stock or pace data is missing.'},
+  dead:{label:'Dead stock',act:'Stop production; bundle, discount or clear. Do not reorder or re-cut.',shape:'cross'},
+  constrained:{label:'Stock-constrained',act:'Demand beat the median while it was out of stock: restock or re-cut.',shape:'tri'},
   winner:{label:'Winner',act:'Protect stock, reorder early, consider more colourways.',shape:'star'},
-  healthy:{label:'Healthy',act:'Hold and watch cover.',shape:'circle'},
+  solid:{label:'Solid',act:'Keep stocked; reorder when cover gets shorter than the lead time.',shape:'circle'},
+  steady:{label:'Steady',act:'Hold and watch cover.',shape:'diamond'},
   slow:{label:'Slow',act:'Review price or promotion; do not reorder; consider stopping production.',shape:'square'}
 };
-// Returns {cls,label,act,rule,unverified,skipped}. The rule is built from computed values only.
-// A clause whose metric is "—" is skipped, never passed by default; if any clause was skipped
-// while deciding, the row is flagged unverified.
+// ── Lead time: editable defaults, per viewer (localStorage), never facts ─────────────────
+const _SI_LT_KEY='groovy-si-leadtimes';
+const _SI_LT_DEFAULT={tops:21,heavy:35,other:28};
+const _SI_LT_LABEL={tops:'Tees and tops',heavy:'Hoodies, jackets, denim and bottoms',other:'Everything else'};
+function _siAxLtGroup(cat){
+  const s=String(cat||'').toLowerCase();
+  if(/hood|jacket|coat|denim|jean|jort|pant|trouser|bottom|jogger|short|cargo|sweat|fleece|zip/.test(s))return'heavy';
+  if(/tee|top|shirt|polo|tank|singlet/.test(s))return'tops';
+  return'other';
+}
+function _siAxLtStored(){try{const v=JSON.parse(localStorage.getItem(_SI_LT_KEY)||'{}');return v&&typeof v==='object'?v:{};}catch(_){return{};}}
+function _siAxLeadTime(a){
+  const g=_siAxLtGroup(a&&a.category),st=_siAxLtStored(),v=Number(st[g]);
+  const custom=isFinite(v)&&v>=1&&v<=365;
+  return{group:g,days:custom?Math.round(v):_SI_LT_DEFAULT[g],custom,label:_SI_LT_LABEL[g]};
+}
+function _siAxLtAnyCustom(){const st=_siAxLtStored();return Object.keys(_SI_LT_DEFAULT).some(g=>{const v=Number(st[g]);return isFinite(v)&&v>=1&&v<=365;});}
+window._siAxSetLt=function(g,val){
+  if(!_SI_LT_DEFAULT[g])return;
+  const st=_siAxLtStored(),n=Math.round(Number(val));
+  if(val===''||!isFinite(n)||n<1||n>365)delete st[g];else st[g]=n;
+  try{localStorage.setItem(_SI_LT_KEY,JSON.stringify(st));}catch(_){}
+  if(typeof _siAxRepaintAll==='function')_siAxRepaintAll();
+};
+window._siAxResetLt=function(){try{localStorage.removeItem(_SI_LT_KEY);}catch(_){}if(typeof _siAxRepaintAll==='function')_siAxRepaintAll();};
+// ── Demand pools: a percentile among articles of the same age band ───────────────────────
+function _siAxDemandOf(m){
+  if(m.perInDay!=null)return{D:m.perInDay,fb:false};
+  if(m.rateWeek!=null)return{D:m.rateWeek/7,fb:true};
+  return null;
+}
+function _siAxDemand(){
+  const idx=_siAxIndex();if(idx.demand)return idx.demand;
+  const T=_SI_AX_SCORE,out=new Map(),groups=T.ageBands.map(()=>[]);
+  idx.list.forEach(a=>{
+    const m=_siAxStats(a);
+    if(m.days==null||m.days<T.minDays||(!a.hasStock&&!m.st))return;
+    const d=_siAxDemandOf(m);if(!d)return;
+    let b=0;T.ageBands.forEach((f,i)=>{if(m.days>=f)b=i;});
+    groups[b].push({code:a.code,D:d.D,fb:d.fb,band:b});
+  });
+  // a band with fewer than poolMin articles is merged into the next one up
+  for(let i=0;i<groups.length-1;i++)if(groups[i].length&&groups[i].length<T.poolMin){groups[i+1]=groups[i+1].concat(groups[i]);groups[i]=[];}
+  groups.forEach(g=>{
+    const n=g.length;if(!n)return;
+    const sorted=g.map(x=>x.D).sort((p,q)=>p-q);
+    const q=pct=>sorted[Math.min(n-1,Math.max(0,Math.ceil(pct*n)-1))];
+    const abs=n<T.poolMin;
+    g.forEach(x=>{
+      let below=0,eq=0,above=0;sorted.forEach(v=>{if(v<x.D)below++;else if(v===x.D)eq++;else above++;});
+      const pD=(below+0.5*eq)/n;
+      out.set(x.code,{D:x.D,fb:x.fb,n,abs,pD:abs?null:pD,p:abs?null:Math.round(pD*100),rank:above+1,
+        winAt:abs?T.absWinner:q(T.winnerPct),solidAt:abs?T.absSolid:q(T.solidPct),steadyAt:abs?T.absSteady:q(T.steadyPct)});
+    });
+  });
+  idx.demand=out;return out;
+}
+// Returns {cls,label,act,rule,near,unverified,skipped,D,rank,n,p,abs}. The rule is built from computed values only.
+// A clause whose metric is "—" is skipped, never passed by default; a row that skipped one is "partly unverified".
 function _siAxClassify(a){
   const m=_siAxStats(a),T=_SI_AX_SCORE,f=v=>_siAxNum(v),pc=v=>_siAxPct(v);
   const skipped=[];
-  const out=(cls,rule)=>({cls,label:_SI_AX_CLASSES[cls].label,act:_SI_AX_CLASSES[cls].act,rule,unverified:skipped.length>0,skipped:skipped.slice()});
+  const out=(cls,rule,extra)=>Object.assign({cls,label:_SI_AX_CLASSES[cls].label,act:_SI_AX_CLASSES[cls].act,rule,near:'',unverified:skipped.length>0,skipped:skipped.slice()},extra||{});
   if(m.days==null||m.days<T.minDays)return out('early','Only '+(m.days==null?0:m.days)+' counted day'+(m.days===1?'':'s')+'; classes start at '+T.minDays+'.');
   if(!a.hasStock&&!m.st)return out('unrated','No stock data for this article in the snapshots.');
-  // clause: {name, val, test(val), say(val)}  — val null = unknown
-  const evalRule=(clauses)=>{
-    const ok=[],bad=[],miss=[];
-    clauses.forEach(c=>{
-      if(c.val==null){miss.push(c.name);return;}
-      (c.test(c.val)?ok:bad).push(c.say(c.val));
-    });
-    return{ok,bad,miss};
-  };
-  const tryRule=(cls,clauses,any)=>{
-    const r=evalRule(clauses);
-    const hit=any?r.ok.length>0:(r.bad.length===0&&r.ok.length>0);
-    if(!hit){r.miss.forEach(n=>{if(!skipped.includes(n))skipped.push(n);});return null;}
-    const res=out(cls,r.ok.join(any?' or ':' and ')+'.');
-    r.miss.forEach(n=>{if(!res.skipped.includes(n))res.skipped.push(n);});
-    res.unverified=res.skipped.length>0;
-    if(res.unverified)res.rule=res.rule.replace(/\.$/,'')+' ('+res.skipped.join(', ')+' unknown, clause skipped).';
-    return res;
-  };
-  const noSale=a.hasStock&&m.pace28Days>=T.deadNoSaleDays?(m.units28===0&&a.onHand>0?0:1):null;
-  let r=tryRule('dead',[
-    {name:'sales in the last 28 days',val:noSale,test:v=>v===0,say:()=>'no sale in the last '+m.pace28Days+' counted days with '+a.onHand+' on hand'},
-    {name:'sell-through',val:m.st?m.st.value:null,test:v=>v<T.deadSellThrough,say:v=>'sell-through '+pc(v)+' is below '+pc(T.deadSellThrough)}
-  ],true);
-  if(r)return r;
-  r=tryRule('constrained',[
-    {name:'in-stock rate',val:m.inRate,test:v=>v<T.constrainedInStock,say:v=>'in stock on '+pc(v)+' of '+m.measured+' measured days (below '+pc(T.constrainedInStock)+')'},
-    {name:'units per in-stock day',val:m.perInDay,test:v=>v>=T.constrainedPerDay,say:v=>f(v)+' units per in-stock day (at least '+T.constrainedPerDay+')'}
-  ]);
-  if(r)return r;
-  r=tryRule('winner',[
-    {name:'sell-through',val:m.st?m.st.value:null,test:v=>v>=T.winnerSellThrough,say:v=>'sell-through '+pc(v)+' (at least '+pc(T.winnerSellThrough)+')'},
-    {name:'in-stock rate',val:m.inRate,test:v=>v>=T.winnerInStock,say:v=>'in stock on '+pc(v)+' of measured days (at least '+pc(T.winnerInStock)+')'}
-  ]);
-  if(r)return r;
-  r=tryRule('healthy',[
-    {name:'sell-through',val:m.st?m.st.value:null,test:v=>v>=T.healthySellThrough,say:v=>'sell-through '+pc(v)+' (at least '+pc(T.healthySellThrough)+')'},
-    {name:'weeks of cover',val:m.cover,test:v=>v<=T.overCoverWeeks,say:v=>f(v)+' weeks of cover (at most '+T.overCoverWeeks+')'}
-  ]);
-  if(r)return r;
+  const dm=_siAxDemand().get(a.code);
+  if(!dm)return out('unrated','No units per in-stock day yet (needs 7+ in-stock days of stock history, or a counted rate).');
+  const conf=_siAxConfidence(a);
+  if(dm.fb)skipped.push('in-stock demand (the plain counted rate is used)');
+  if(m.inRate==null)skipped.push('in-stock rate');
+  const ex={D:dm.D,rank:dm.rank,n:dm.n,p:dm.p,abs:dm.abs};
+  const rankTxt=dm.abs?f(dm.D)+' units per in-stock day (fewer than '+T.poolMin+' articles of this age, so fixed bands: Winner '+T.absWinner+', Solid '+T.absSolid+', Steady '+T.absSteady+')'
+    :f(dm.D)+' units per in-stock day, rank '+dm.rank+' of '+dm.n+' (p'+dm.p+') among articles of similar age';
+  const inTxt=m.inRate==null?'':'in stock on '+pc(m.inRate)+' of '+m.measured+' measured days';
+  const aboveP=(pct,absV)=>dm.abs?dm.D>=absV:dm.pD>=pct;
+  const thr=(pctKey,absKey,val)=>dm.abs?f(T[absKey])+'/day':'p'+Math.round(T[pctKey]*100)+' ('+f(val)+'/day)';
+  // dead
+  if(a.hasStock&&m.pace28Days>=T.deadNoSaleDays&&m.units28===0&&a.onHand>0)
+    return out('dead','no sale in the last '+m.pace28Days+' counted days with '+a.onHand+' on hand.',ex);
+  if(!a.hasStock)skipped.push('sales in the last 28 days');
+  // stock-constrained
+  if(m.inRate!=null&&m.inRate<T.constrainedInStock&&aboveP(T.constrainedPct,T.absSolid))
+    return out('constrained',inTxt+' (below '+pc(T.constrainedInStock)+') while demand beat the median: '+rankTxt+'.',Object.assign({near:'Returns to a normal class when it is in stock on '+pc(T.constrainedInStock)+' of days.'},ex));
+  // winner
+  const winTop=aboveP(T.winnerPct,T.absWinner);
+  if(winTop&&(m.inRate==null||m.inRate>=T.winnerInStock)&&m.units>=T.winnerUnits&&conf.lvl>0){
+    const r=out('winner',rankTxt+(inTxt?'; '+inTxt:'')+'; '+m.units+' units; '+conf.name+' confidence.',Object.assign({near:'Drops to Solid below '+thr('winnerPct','absWinner',dm.winAt)+'.'},ex));
+    return r;
+  }
   const why=[];
-  if(m.st)why.push('sell-through '+pc(m.st.value));
-  if(m.cover!=null&&m.cover>T.overCoverWeeks)why.push(f(m.cover)+' weeks of cover is above '+T.overCoverWeeks);
-  const res=out('slow',(why.length?why.join(' and ')+': none of the earlier rules matched':'none of the earlier rules matched')+'.');
-  return res;
+  if(winTop){ // top demand but one of the floors failed: say which
+    if(m.inRate!=null&&m.inRate<T.winnerInStock)why.push('not a Winner: in stock on '+pc(m.inRate)+' of days, Winner needs '+pc(T.winnerInStock));
+    if(m.units<T.winnerUnits)why.push('not a Winner: '+m.units+' units, Winner needs '+T.winnerUnits);
+    if(conf.lvl===0)why.push('not a Winner: Low confidence');
+  }
+  const extra=why.length?'; '+why.join('; '):'';
+  if(aboveP(T.solidPct,T.absSolid))return out('solid',rankTxt+(inTxt?'; '+inTxt:'')+extra+'.',Object.assign({near:winTop?'':'Winner from '+thr('winnerPct','absWinner',dm.winAt)+' with '+T.winnerUnits+'+ units and '+pc(T.winnerInStock)+'+ in stock.'},ex));
+  if(aboveP(T.steadyPct,T.absSteady))return out('steady',rankTxt+(inTxt?'; '+inTxt:'')+'.',Object.assign({near:'Solid from '+thr('solidPct','absSolid',dm.solidAt)+'.'},ex));
+  return out('slow',rankTxt+(inTxt?'; '+inTxt:'')+'.',Object.assign({near:'Steady from '+thr('steadyPct','absSteady',dm.steadyAt)+'.',review:m.units<15&&(m.cover==null||m.cover>T.overCoverWeeks)},ex));
+}
+// What to do, from the class and the cover against the lead time. {key,label,text,lead} — key: reorder | risk | stuck | hold | markdown | watch | ok
+function _siAxActionOf(a){
+  const c=_siAxClassify(a),m=_siAxStats(a),T=_SI_AX_SCORE,conf=_siAxConfidence(a),lt=_siAxLeadTime(a),ltw=lt.days/7;
+  const ltTxt='lead time '+lt.days+' days ('+(lt.custom?'your setting':'default, unconfirmed')+')';
+  const cov=m.cover,covTxt=_siAxCoverText(m);
+  const sizes=m.risk&&m.risk.length?m.risk.map(x=>x.size).join(', '):'';
+  const R=(key,label,text)=>({key,label,text,lead:lt});
+  if(c.cls==='early'||c.cls==='unrated')return R('watch','Watch',c.cls==='early'?'Not classed yet: too few counted days.':'Not classed: stock or pace data is missing.');
+  if(c.cls==='dead')return R('stuck','Stop / clear','Nothing sold in '+m.pace28Days+' days with '+a.onHand+' on hand: do not reorder; bundle, discount or clear.');
+  if(c.cls==='constrained')return R('reorder','Reorder now','Out of stock on '+_siAxPct(1-(m.inRate==null?1:m.inRate))+' of measured days while demand beat the median; '+ltTxt+'.');
+  if(c.cls==='slow'){
+    if(conf.lvl===0)return R('watch','Review: little data',m.units+' units so far: too little to decide.');
+    if(m.days>=T.stopMinAgeDays&&(cov==null||cov>T.markdownCoverWeeks))return R('stuck','Stuck: markdown or stop',(cov==null?'No pace to divide stock by':covTxt+' of cover')+' after '+m.days+' counted days: mark down, then stop production if it does not move.');
+    if(cov==null||cov>T.markdownCoverWeeks)return R('markdown','Mark down',(cov==null?'No recent pace':covTxt+' of cover')+' at a slow rate: discount or promote; do not reorder.');
+    return R('watch','Watch','Slow but stock is low ('+covTxt+' of cover).');
+  }
+  // winner, solid, steady
+  if(cov!=null&&cov<ltw&&conf.lvl>0)return R('reorder','Reorder now',covTxt+' of cover is less than the '+lt.days+'-day lead time — a batch started today arrives after it is gone ('+(lt.custom?'your lead time':'default lead time, unconfirmed')+').');
+  if((cov!=null&&cov<ltw+T.riskWeeks)||sizes)return R('risk','Stock-out risk',(sizes?'Size'+(m.risk.length===1?'':'s')+' '+sizes+' out and selling. ':'')+(cov!=null?covTxt+' of cover against a '+lt.days+'-day lead time.':'')+' Plan the next batch; '+ltTxt+'.');
+  if(cov!=null&&cov>T.overCoverWeeks)return R('hold','Hold, do not reorder',covTxt+' of cover: enough for now.');
+  return R('ok','No action',cov==null?'Cover unknown.':covTxt+' of cover, above the '+lt.days+'-day lead time.');
+}
+function _siAxLtHtml(){
+  const st=_siAxLtStored();
+  const row=g=>{const v=Number(st[g]),cu=isFinite(v)&&v>=1&&v<=365;return`<label class="si-lt-row"><span>${_siEsc(_SI_LT_LABEL[g])}</span><input type="number" min="1" max="365" inputmode="numeric" value="${cu?v:_SI_LT_DEFAULT[g]}" onchange="window._siAxSetLt('${g}',this.value)" aria-label="Lead time in days, ${_siEsc(_SI_LT_LABEL[g])}"><span class="si-ax-note" style="margin:0">days · ${cu?'your setting':'default, unconfirmed'}</span></label>`;};
+  return`<div class="si-lt"><div class="si-ax-lab">Lead time (days from deciding to make it to having it in stock)</div>${['tops','heavy','other'].map(row).join('')}<div class="si-ax-note">These are starting guesses, kept on this device only. “Reorder now” means the cover is shorter than the lead time. <button class="si-ax-btn" onclick="window._siAxResetLt()">Reset to defaults</button></div></div>`;
 }
 function _siAxClassCounts(){
   const idx=_siAxIndex();if(idx.classCounts)return idx.classCounts;
@@ -2392,7 +2473,7 @@ function _siAxReadAcross(rows){
   add('Momentum',mol);
   return out;
 }
-// The one block. Cards follow class order (Winner, Healthy, Stock-constrained, Slow, Dead stock, Too early, Not rated), then units.
+// The one block. Cards follow class order (Winner, Solid, Steady, Stock-constrained, Slow, Dead stock, Too early, Not rated), then units.
 function _siAxReadBlock(arts){
   const rows=(arts||[]).map((a,i)=>({a,i,m:_siAxStats(a),c:_siAxClassify(a)}));
   if(!rows.length)return'';
@@ -2433,7 +2514,7 @@ function _siAxScorecardHtml(arts){
     pts.push({r,i,x,y:Math.min(1,y)});
   });
   const maxX=pts.length?Math.max(...pts.map(p=>p.x)):0;
-  const xs=_siAxScaleRaw([Math.max(maxX*1.08,T.constrainedPerDay*7*1.6)],false);
+  const xs=_siAxScaleRaw([Math.max(maxX*1.08,T.absSolid*7*1.6)],false);
   // y axis: 0% to 100% with headroom, so a 100% point (sell-through cannot exceed 100%) sits inside the plot
   // instead of half outside its top edge; same at the bottom for 0%.
   const Y0=-0.04,Y1=1.12;
@@ -2442,17 +2523,16 @@ function _siAxScorecardHtml(arts){
   const off=_siAxSpread(pts.map(p=>({px:X(p.x)/100*_SI_PC_W,py:Y(p.y)/100*_SI_PC_H})));
   const dot=(p,k)=>`<button class="si-pc-pt cls-${p.r.c.cls}" style="left:calc(${X(p.x).toFixed(2)}% + ${off[k].dx}px);bottom:calc(${Y(p.y).toFixed(2)}% + ${off[k].dy}px)" aria-label="${_siEsc((p.i+1)+'. '+_siAxLabel(p.r.a)+': '+p.r.c.label+', '+_siAxNum(p.x)+' units per in-stock week, sell-through '+_siAxPct(p.y))}" title="${_siEsc(_siAxLabel(p.r.a)+' — '+p.r.c.label+' · '+_siAxNum(p.x)+'/in-stock wk · sell-through '+_siAxPct(p.y))}"><i>${p.i+1}</i></button>`;
   const dots=pts.map((p,k)=>dot(p,k)).join('');
-  const gy=[{v:1,l:'100%'},{v:T.winnerSellThrough,l:'Winner '+_siAxPct(T.winnerSellThrough)},{v:T.healthySellThrough,l:'Healthy '+_siAxPct(T.healthySellThrough)},{v:T.deadSellThrough,l:'Dead <'+_siAxPct(T.deadSellThrough)}];
-  const guides=gy.map(g=>`<i class="si-pc-gy${g.v===1?' top':''}" style="bottom:${Y(g.v).toFixed(2)}%"><span>${_siEsc(g.l)}</span></i>`).join('')
-    +`<i class="si-pc-gx" style="left:${X(T.constrainedPerDay*7).toFixed(2)}%"><span>${_siEsc(_siAxNum(T.constrainedPerDay*7))}/wk</span></i>`;
+  const gy=[{v:1,l:'100%'}];
+  const guides=gy.map(g=>`<i class="si-pc-gy${g.v===1?' top':''}" style="bottom:${Y(g.v).toFixed(2)}%"><span>${_siEsc(g.l)}</span></i>`).join('');
   const yt=[0,0.25,0.5,0.75,1].map(v=>`<span class="si-ax-tick" style="bottom:${Y(v).toFixed(2)}%">${Math.round(v*100)}%</span>`).join('');
   const xt=[];for(let i=0;i<=xs.count;i++)xt.push(`<span class="si-ax-xtick${i===0?' first':(i===xs.count?' last':'')}" style="left:${(i/xs.count*100).toFixed(2)}%">${_siEsc(_siAxTick(xs.step*i))}</span>`);
-  const legend=['winner','healthy','constrained','slow','dead'].map(k=>`<span><i class="si-pc-key cls-${k}"></i>${_siEsc(_SI_AX_CLASSES[k].label)}</span>`).join('');
+  const legend=['winner','solid','steady','constrained','slow','dead'].map(k=>`<span><i class="si-pc-key cls-${k}"></i>${_siEsc(_SI_AX_CLASSES[k].label)}</span>`).join('');
   const chart=pts.length?`<div class="si-ax-legend">${legend}</div>
    <div class="si-pc-wrap"><div class="si-ax-yaxis">${yt}</div>
     <div class="si-pc-plot" role="group" aria-label="Performance scorecard: sell-through against units per in-stock week">${guides}${dots}</div>
     <div class="si-ax-xaxis" style="grid-column:2">${xt.join('')}</div></div>
-   <div class="si-ax-note" style="text-align:center">x: units per in-stock week · y: sell-through · dashed lines are the default class thresholds${off.some(q=>q.dx||q.dy)?' · overlapping points are nudged apart by up to '+_SI_PC_NUDGE+' px':''}</div>`
+   <div class="si-ax-note" style="text-align:center">x: units per in-stock week · y: sell-through · the class is decided by units per in-stock day against similar-age articles (x axis), not by sell-through${off.some(q=>q.dx||q.dy)?' · overlapping points are nudged apart by up to '+_SI_PC_NUDGE+' px':''}</div>`
    :`<div class="si-ax-empty">No article here has both an in-stock pace and a sell-through yet (${_siEsc(_siAxHistWhy(rows[0].m))}), so there is nothing to plot.</div>`;
   const notPlot=unplotted.length?`<div class="si-ax-note">Not plotted: ${unplotted.map(u=>_siEsc((u.i+1)+'. '+_siAxLabel(u.r.a)+' — '+u.why)).join('; ')}.</div>`:'';
   const shapeChip=c=>`<span class="si-pc-chip cls-${c.cls}"><i class="si-pc-key cls-${c.cls}"></i>${_siEsc(c.label)}</span>`;
@@ -2468,19 +2548,22 @@ function _siAxScorecardHtml(arts){
     {key:'cover',label:'Cover',type:'num',first:'asc',get:r=>r.m.cover,cell:r=>`<td>${_siEsc(_siAxCoverText(r.m))}</td>`},
     {key:'rule',label:'Rule that matched',type:'text',get:r=>r.c.rule,cell:r=>`<td style="min-width:200px">${_siEsc(r.c.rule)}</td>`},
     {key:'act',label:'Use it for',type:'text',get:r=>r.c.act,cell:r=>`<td style="min-width:160px">${_siEsc(r.c.act)}</td>`}
-  ],rows,{def:{key:'cls',dir:1},defText:'class order: Winner, Healthy, Stock-constrained, Slow, Dead stock, Too early, Not rated',minWidth:780,ties:[{get:r=>r.m.units,type:'num',dir:-1},{get:r=>r.a.code,type:'code',dir:1}]});
+  ],rows,{def:{key:'cls',dir:1},defText:'class order: Winner, Solid, Steady, Stock-constrained, Slow, Dead stock, Too early, Not rated',minWidth:780,ties:[{get:r=>r.m.units,type:'num',dir:-1},{get:r=>r.a.code,type:'code',dir:1}]});
   const thr=`<details class="si-ax-defs"><summary class="si-ax-lab" style="cursor:pointer">Default thresholds — defaults, not facts</summary>
    <div class="si-ax-note">Derived from this store’s own distributions (about 18 weeks of stock history); editable constants in <em>js/shopify.js</em>. First match wins, in this order.</div>
    <table class="cut-table" style="min-width:420px"><tbody>
    <tr><td>Too early</td><td>fewer than ${T.minDays} counted days — not classed</td></tr>
-   <tr><td>Dead stock</td><td>no sale in the last ${T.deadNoSaleDays} counted days while stock is on hand, or sell-through below ${_siAxPct(T.deadSellThrough)}</td></tr>
-   <tr><td>Stock-constrained</td><td>in stock on less than ${_siAxPct(T.constrainedInStock)} of measured days and at least ${T.constrainedPerDay} units per in-stock day</td></tr>
-   <tr><td>Winner</td><td>sell-through at least ${_siAxPct(T.winnerSellThrough)} and in stock on at least ${_siAxPct(T.winnerInStock)} of measured days</td></tr>
-   <tr><td>Healthy</td><td>sell-through at least ${_siAxPct(T.healthySellThrough)} and weeks of cover at most ${T.overCoverWeeks}</td></tr>
-   <tr><td>Slow</td><td>any other classed article (sell-through ${_siAxPct(T.deadSellThrough)}–${_siAxPct(T.healthySellThrough)}, or cover above ${T.overCoverWeeks} weeks)</td></tr></tbody></table>
+   <tr><td>Dead stock</td><td>no sale in the last ${T.deadNoSaleDays} counted days while stock is on hand</td></tr>
+   <tr><td>Stock-constrained</td><td>in stock on less than ${_siAxPct(T.constrainedInStock)} of measured days and demand above the median (units per in-stock day, p${Math.round(T.constrainedPct*100)})</td></tr>
+   <tr><td>Winner</td><td>top ${Math.round((1-T.winnerPct)*100)}% demand (p${Math.round(T.winnerPct*100)}), in stock on at least ${_siAxPct(T.winnerInStock)} of days, at least ${T.winnerUnits} units, and confidence not Low</td></tr>
+   <tr><td>Solid</td><td>demand at or above the median (p${Math.round(T.solidPct*100)})</td></tr>
+   <tr><td>Steady</td><td>demand at or above p${Math.round(T.steadyPct*100)}</td></tr>
+   <tr><td>Slow</td><td>below p${Math.round(T.steadyPct*100)}; “Review: little data” when confidence is Low</td></tr></tbody></table>
+   <div class="si-ax-note">Percentiles are taken among classed articles of similar age (bands from ${T.ageBands.join(', ')} counted days; a band under ${T.poolMin} articles merges into the next). A pool under ${T.poolMin} uses fixed bands: Winner ${T.absWinner}, Solid ${T.absSolid}, Steady ${T.absSteady} units per in-stock day.</div>
+   ${_siAxLtHtml()}
    <div class="si-ax-note">A clause whose metric is “—” is skipped (never passed) and the row says “partly unverified”. These are vendor-style conventions, not validated with the business. Merchandise units per month are flat (the August spike in raw data was the sub-Rs-1 tip SKU, which is left out).</div></details>`;
   let counts='';
-  if(_siHistState==='ok'){const c=_siAxClassCounts();counts=`<div class="si-ax-note">All ${Object.keys(c).reduce((t,k)=>t+c[k],0)} articles with sales or stock: ${['winner','healthy','constrained','slow','dead','early','unrated'].filter(k=>c[k]).map(k=>c[k]+' '+_SI_AX_CLASSES[k].label).join(' · ')}.</div>`;}
+  if(_siHistState==='ok'){const c=_siAxClassCounts();counts=`<div class="si-ax-note">All ${Object.keys(c).reduce((t,k)=>t+c[k],0)} articles with sales or stock: ${['winner','solid','steady','constrained','slow','dead','early','unrated'].filter(k=>c[k]).map(k=>c[k]+' '+_SI_AX_CLASSES[k].label).join(' · ')}.</div>`;}
   return`<div class="card"><div class="card-title">Performance scorecard <span class="si-ax-note">(default thresholds — not facts)</span></div>
    ${chart}${notPlot}${tbl}${counts}${thr}</div>`;
 }
@@ -2661,7 +2744,7 @@ function _siAxCompareBody(){
 //  • a missing value (null / '' / '—' / NaN) is ALWAYS last, ascending or descending
 //  • categories: units desc, then name · classes: fixed order · sizes: garment order,
 //    then numeric waist ascending, then the rest · dates/weeks: chronological (ISO keys)
-const _SI_SORT_CLASSES=['Winner','Healthy','Stock-constrained','Slow','Dead stock','Too early','Not rated'];
+const _SI_SORT_CLASSES=['Winner','Solid','Steady','Stock-constrained','Slow','Dead stock','Too early','Not rated'];
 const _SI_SORT_GARMENT=['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','4XL','5XL'];
 const _SI_SORT_ALIAS={'2XL':'XXL','3XL':'XXXL'};
 let _siSortState={},_siSortReg={};

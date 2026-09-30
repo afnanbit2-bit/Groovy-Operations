@@ -56,6 +56,6 @@ module.exports=async function(){
   eq('today on hand = 5 + 0 (clamped) + 2',R('_siAxIndex().map.get("GA").onHand'),7);
   eq('a week ago = 4 + 0 (clamped) + 1, no-SKU skipped',R('_siAxIndex().map.get("GA").prevOnHand'),5);
   const sc=R('_siAxScorecardHtml([_siAxIndex().map.get("GA"),_siAxIndex().map.get("GN")])');
-  s.ok('scorecard table defaults to class order and says so',/data-sort-note="ax-score"[^>]*>Sorted by <strong>Class<\/strong>, ascending — class order: Winner, Healthy, Stock-constrained, Slow, Dead stock, Too early, Not rated/.test(sc));
+  s.ok('scorecard table defaults to class order and says so',/data-sort-note="ax-score"[^>]*>Sorted by <strong>Class<\/strong>, ascending — class order: Winner, Solid, Steady, Stock-constrained, Slow, Dead stock, Too early, Not rated/.test(sc));
   return s;
 };
