@@ -5018,3 +5018,35 @@ a.ma-btn{text-decoration:none}
 .si-ax-mix .q{width:84px;text-align:right;color:var(--muted);white-space:nowrap}
 @media (max-width:600px){.si-ax-plot{height:200px}.si-ax-input{min-width:0}}
 @media (prefers-reduced-motion:no-preference){.si-ax-tip{transition:opacity .1s}}
+/* Article Explorer — metric hints, flags and the plain-words list (tokens only) */
+.si-ax-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:2px;border:1px solid var(--muted);border-radius:50%;font-size:11px;font-weight:700;font-style:normal;line-height:1;color:var(--muted);cursor:help}
+.si-ax-flag{display:inline-block;padding:0 6px;border-radius:999px;background:var(--accent-urgent-soft);color:var(--accent-urgent);font-size:11px;font-weight:700;line-height:1.6;white-space:nowrap}
+.si-ax-read{margin:0 0 8px;padding-left:20px;font-size:14px;line-height:1.6}
+.si-ax-def{font-size:13px;line-height:1.5;margin:0 0 8px}
+.si-ax-defs summary{list-style:revert}
+.si-ax-kpi .u{margin-top:4px;font-size:12px;line-height:1.4;color:var(--muted)}
+.si-ax-kpi .u b{color:var(--text);font-weight:600}
+/* Performance scorecard: HTML boxes only; class = colour token + shape + label */
+.si-pc-wrap{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:6px;margin-bottom:6px}
+.si-pc-plot{position:relative;height:340px;margin-right:16px;border-left:1px solid var(--border);border-bottom:1px solid var(--border)}
+.si-pc-gy{position:absolute;left:0;right:0;height:0;border-top:1px dashed var(--muted);opacity:.85}
+.si-pc-gy span{position:absolute;right:4px;top:-16px;font-size:12px;color:var(--muted);background:var(--surface);padding:0 3px;white-space:nowrap}
+.si-pc-gx{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed var(--muted);opacity:.85}
+.si-pc-gx span{position:absolute;left:4px;top:2px;font-size:12px;color:var(--muted);background:var(--surface);padding:0 3px;white-space:nowrap}
+.si-pc-pt{position:absolute;width:32px;height:32px;padding:0;margin:0 0 -16px -16px;border:0;background:transparent;cursor:pointer;font-family:inherit}
+.si-pc-pt i,.si-pc-key{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-style:normal;font-size:12px;font-weight:700;color:var(--surface)}
+.si-pc-pt.cls-winner i,.si-pc-key.cls-winner{background:var(--accent-success)}
+.si-pc-pt.cls-healthy i,.si-pc-key.cls-healthy{background:var(--si-s0)}
+.si-pc-pt.cls-constrained i,.si-pc-key.cls-constrained{background:var(--accent-warning)}
+.si-pc-pt.cls-slow i,.si-pc-key.cls-slow{background:var(--cat-boards)}
+.si-pc-pt.cls-dead i,.si-pc-key.cls-dead{background:var(--accent-urgent)}
+.si-pc-pt.cls-winner i,.si-pc-key.cls-winner{clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
+.si-pc-pt.cls-healthy i,.si-pc-key.cls-healthy{border-radius:50%}
+.si-pc-pt.cls-constrained i,.si-pc-key.cls-constrained{clip-path:polygon(50% 4%,100% 96%,0 96%);align-items:flex-end;padding-bottom:2px}
+.si-pc-pt.cls-slow i,.si-pc-key.cls-slow{border-radius:3px}
+.si-pc-pt.cls-dead i,.si-pc-key.cls-dead{clip-path:polygon(35% 0,65% 0,65% 35%,100% 35%,100% 65%,65% 65%,65% 100%,35% 100%,35% 65%,0 65%,0 35%,35% 35%)}
+.si-pc-pt:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.si-pc-key{display:inline-block;width:14px;height:14px;vertical-align:-2px;margin-right:4px;font-size:0}
+.si-pc-chip{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:600;white-space:nowrap}
+.si-pc-chip .si-pc-key{margin:0}
+@media (max-width:600px){.si-pc-plot{height:280px}.si-pc-gy span,.si-pc-gx span{font-size:11px}}

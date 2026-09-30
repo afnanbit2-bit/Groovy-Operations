@@ -244,6 +244,12 @@ function _axSeed(app){
   app.run('_siProducts='+JSON.stringify(prods));
   app.run('_siLineItems='+JSON.stringify(lis));
   app.run('_siSnapshot={items:{a:{sku:"GST073-S",available:12},b:{sku:"GST073-M",available:0},c:{sku:"GST073-L",available:5}}}');
+  // 70 daily snapshots (the exposure metrics and the scorecard read them). Five stock shapes:
+  // steady, runs out 20 days ago, always low, plenty and never selling, no stock rows at all (GCO001).
+  app.run('(()=>{const t=_siAxDayNum(_siPktDate(0)),docs=[];for(let k=69;k>=0;k--){const date=_siAxDayStr(t-k),it={};'+
+    'it.a={sku:"GST073-S",available:40+(k%9)};it.b={sku:"GST073-M",available:k<20?0:30};it.c={sku:"GST073-L",available:8};'+
+    'it.d={sku:"GD007-28",available:k<20?0:25};it.e={sku:"GHW001",available:k%13};it.f={sku:"GJ014-S",available:300};it.g={sku:"GJ014-M",available:200};'+
+    'docs.push({date,items:it});}_siHist=_siAxBuildHistory(docs);_siHistState="ok";_siAxCache=null;})()');
   app.run('_siWeeklyCloses=[{week_ending:"2026-09-26",week_starting:"2026-09-20",top_sku:{sku:"GST073-S",quantity:11}}]');
 }
 

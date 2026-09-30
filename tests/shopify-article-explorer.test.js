@@ -37,7 +37,9 @@ module.exports=async function(){
 
   s.section('no new Firestore reads');
   R('_siArticleExplorerSection()');R('_siAxSearchBody()');
-  eq('rendering the tab reads nothing',reads,0);
+  eq('opening the tab starts exactly ONE read (the bounded stock history), nothing else',reads,1);
+  R('_siArticleExplorerSection()');R('_siAxSearchBody()');
+  eq('rendering again reads nothing more',reads,1);
 
   s.section('search matching');
   const n=(q)=>R('_siAxSearch('+J(q)+',50).hits.map(x=>x.code)');
@@ -88,7 +90,7 @@ module.exports=async function(){
   s.ok('cumulative never decreases',cv.every((v,i)=>i===0||v>=cv[i-1]));
   eq('unknown metric falls back, never throws',R('_siAxSeries([_siAxIndex().map.get("GST073")],"stock_over_time","calendar").metric'),'stock_over_time');
   s.ok('stock over time is NOT an offered metric',!R('Object.keys(_SI_AX_METRICS)').some(k=>/stock|on_hand/i.test(k)));
-  eq('offered metrics',R('Object.keys(_SI_AX_METRICS)'),['units_week','units_month','revenue_week','revenue_month','cum_week']);
+  eq('offered metrics',R('Object.keys(_SI_AX_METRICS)'),['units_week','units_month','revenue_week','revenue_month','cum_week','rate_day','roll4','st_build']);
 
   s.section('since-launch alignment');
   // GST073 live 100d ago, first sale 99d ago; GD007 live 400d ago, first sale 399d ago.
@@ -133,7 +135,7 @@ module.exports=async function(){
   s.section('compare view and metric switching');
   R('_siAxMode="compare";_siAxModeSel="compare";_siAxMsg=""');
   let html=R('_siAxCompareBody()');
-  s.ok('always shows the comparison table under the chart',html.indexOf('<table')>html.indexOf('si-ax-wrap')&&/Comparison table/.test(html));
+  s.ok('always shows the comparison table under the chart',html.indexOf('Comparison table')>html.indexOf('si-ax-wrap')&&html.indexOf('<table',html.indexOf('Comparison table'))>0);
   s.ok('one chip per article with a remove button',(html.match(/class="si-ax-chip"/g)||[]).length===4);
   s.ok('legend carries numbers (not colour alone)',(html.match(/class="si-ax-badge si-ax-b\d">\d</g)||[]).length>=4);
   s.ok('every series has its own dash',new Set([...html.matchAll(/stroke-dasharray:([^"]+)"/g)].map(m=>m[1])).size>=2);
