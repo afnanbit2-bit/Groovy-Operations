@@ -1284,7 +1284,7 @@ const _SI_AX_METRICS={
   roll4:{label:'4-week rolling rate — units per week',bucket:'week',kind:'roll',dec:1},
   st_build:{label:'Sell-through build — cumulative units ÷ (units + on hand now)',bucket:'week',kind:'st',pct:true}
 };
-let _siAxModeSel='search',_siAxQuery='',_siAxSel='',_siAxCmp=[],_siAxMetric='units_week',_siAxBasis='calendar',_siAxBucket='week',_siAxMsg='';
+let _siAxModeSel='overview',_siAxOvTile='reorder',_siAxOvCat='',_siAxOvAll=false,_siAxQuery='',_siAxSel='',_siAxCmp=[],_siAxMetric='units_week',_siAxBasis='calendar',_siAxBucket='week',_siAxMsg='';
 let _siAxCache=null,_siAxHov=null;
 
 // Refunded AND voided orders are left out of every Explorer figure. (Other Inventory Intel
@@ -2330,16 +2330,22 @@ function _siAxLiveText(a){
 }
 
 // ── Section shell ───────────────────────────────────────────────────
+function _siAxMaxCmp(){
+  try{if(typeof window!=='undefined'&&window.matchMedia&&window.matchMedia('(max-width:600px)').matches)return 3;}catch(_){}
+  return _SI_AX_MAX;
+}
+function _siAxBodyHtml(){return _siAxModeSel==='compare'?_siAxCompareBody():(_siAxModeSel==='overview'?_siAxOverviewBody():_siAxSearchBody());}
 function _siArticleExplorerSection(){
   _siAxEnsureHistory(); // one bounded read per session; repaints the body when it lands
   const idx=_siAxIndex();
   const modeBtn=(id,l)=>`<button class="si-ax-btn${_siAxModeSel===id?' on':''}" onclick="window._siAxSetMode('${id}')">${l}</button>`;
-  return`<div class="si-ax-bar">${modeBtn('search','Search')}${modeBtn('compare','Compare')}
+  const ov=_siAxModeSel==='overview';
+  return`<div class="si-ax-bar">${modeBtn('overview','Overview')}${modeBtn('search','Search')}${modeBtn('compare','Compare')}
     <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles · ignores the season filter</span></div>
-  <div class="si-ax-bar"><input id="si-ax-input" class="si-ax-input" autocomplete="off" placeholder="${_siAxModeSel==='compare'?'Add an article to compare — title, colour, code (GST073), category…':'Search any article — title, colour, code (GST073), category…'}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)" onkeydown="window._siAxKey(event)"></div>
-  <div id="si-ax-results">${_siAxResultsHtml()}</div>
+  ${ov?'':`<div class="si-ax-bar"><input id="si-ax-input" class="si-ax-input" autocomplete="off" placeholder="${_siAxModeSel==='compare'?'Add an article to compare — title, colour, code (GST073), category…':'Search any article — title, colour, code (GST073), category…'}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)" onkeydown="window._siAxKey(event)"></div>
+  <div id="si-ax-results">${_siAxResultsHtml()}</div>`}
   ${_siAxTrustBanner()}
-  <div id="si-ax-body">${_siAxModeSel==='compare'?_siAxCompareBody():_siAxSearchBody()}</div>${_siCleanQualityHtml(idx.quality)}`;
+  <div id="si-ax-body">${_siAxBodyHtml()}</div>${_siCleanQualityHtml(idx.quality)}`;
 }
 function _siAxResultsHtml(){
   const q=_siAxQuery.trim();
@@ -2350,7 +2356,7 @@ function _siAxResultsHtml(){
   return`<div class="si-ax-note" style="margin-bottom:4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'} · ordered by units sold, then name, then code</div>
   <div class="si-ax-results">${r.hits.map(a=>`<button class="si-ax-hit" data-code="${_siEsc(a.code)}" onclick="window._siAx${add?'Add':'Pick'}(this.dataset.code)"><span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div></span><span class="n">${a.units} sold</span>${add?'<span class="si-ax-btn" style="pointer-events:none">+ Add</span>':''}</button>`).join('')}</div>`;
 }
-window._siAxSetMode=function(m){_siAxModeSel=m==='compare'?'compare':'search';_siAxQuery='';_siAxMsg='';_siAxRepaintAll();};
+window._siAxSetMode=function(m){_siAxModeSel=m==='compare'?'compare':(m==='overview'?'overview':'search');_siAxQuery='';_siAxMsg='';_siAxRepaintAll();};
 window._siAxOnInput=function(v){
   _siAxQuery=v;
   clearTimeout(window._siAxDebounce);
@@ -2364,7 +2370,7 @@ function _siAxRepaintBody(){
   const r=document.getElementById('si-ax-results'),b=document.getElementById('si-ax-body'),i=document.getElementById('si-ax-input');
   if(i)i.value=_siAxQuery;
   if(r)r.innerHTML=_siAxResultsHtml();
-  if(b)b.innerHTML=_siAxModeSel==='compare'?_siAxCompareBody():_siAxSearchBody();
+  if(b)b.innerHTML=_siAxBodyHtml();
 }
 window._siAxPick=function(code){_siAxSel=code;_siAxQuery='';_siAxRepaintBody();const i=document.getElementById('si-ax-input');if(i)i.focus();};
 // Enter picks (Search) or adds (Compare) the top match, like a scanner-style entry box; nothing typed or no match does nothing.
@@ -2381,7 +2387,8 @@ function _siAxTryAdd(code){
   code=String(code||'').toUpperCase();
   if(!_siAxIndex().map.has(code))return{ok:false,msg:'Unknown article.'};
   if(_siAxCmp.includes(code))return{ok:false,msg:'That article is already in the comparison.'};
-  if(_siAxCmp.length>=_SI_AX_MAX)return{ok:false,msg:'You can compare at most '+_SI_AX_MAX+' articles — remove one first.'};
+  const mx=_siAxMaxCmp();
+  if(_siAxCmp.length>=mx)return{ok:false,msg:'You can compare at most '+mx+' articles'+(mx<_SI_AX_MAX?' on a phone':'')+' — remove one first.'};
   _siAxCmp.push(code);return{ok:true,msg:''};
 }
 window._siAxAdd=function(code){
@@ -2617,12 +2624,31 @@ function _siAxSearchBody(){
     {key:'r',label:'Revenue',type:'num',get:r=>a.hasPrice?r[1].r:null,cell:r=>`<td>${a.hasPrice?_siEsc(_siPKR(Math.round(r[1].r))):'—'}</td>`}
   ],rows,{def:{key:'b',dir:-1},defText:'newest first',ties:[{get:r=>r[1].u,type:'num',dir:-1}]})+`</div>`:'';
   const cat=_siEsc(a.category||'no category');
+  const vc=_siAxClassify(a),va=_siAxActionOf(a),vconf=_siAxConfidence(a);
+  const verdictHtml=`<div class="card si-verdict act-${va.key}"><div class="si-vd-top"><span class="si-vd-act">${_siEsc(va.label)}</span><span class="si-pc-chip cls-${vc.cls}"><i class="si-pc-key cls-${vc.cls}"></i>${_siEsc(vc.label)}</span>${_siAxConfChip(vconf)}</div>
+    <div class="si-vd-text">${_siEsc(va.text)}</div>
+    <div class="si-ax-note" style="margin:4px 0 0">${_siEsc(vc.rule)}${vc.near?' '+_siEsc(vc.near):''}${vc.unverified?' (partly unverified)':''}</div></div>`;
   return`<div class="card"><div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:700">${_siEsc(a.name)}</div><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${cat} · ${a.skus.size} SKU${a.skus.size===1?'':'s'}</div></div>
-    <button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button></div></div>
+    <button class="si-ax-btn" data-code="${_siEsc(a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button><button class="si-ax-btn" onclick="window._siAxSetMode('overview')">Overview</button><button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button></div></div>
+  ${verdictHtml}
+  <div class="si-ax-kpis si-ax-head6">${kpi('Units per week',_siAxNum(m.paceHead),m.paceHead!=null?(m.paceHeadBasis==='in stock'?'while in stock — sold out '+m.outDays+' of '+m.measured+' days, so real demand is higher (plain rate '+_siAxNum(m.rateWeek)+')':_siEsc(win)):'needs 7+ counted days','rate')}
+    ${kpi('Stock lasts',_siEsc(_siAxCoverText(m)),m.cover!=null?_siEsc(_siAxCoverNote(m)):(!a.hasStock?'no stock data':'no pace to divide by'),'cover')}
+    ${kpi('On hand',a.hasStock?a.onHand:'—',a.hasStock?'today\'s snapshot':'not in snapshot')}
+    ${kpi('In-stock rate',_siAxPct(m.inRate),m.inRate!=null?m.inDays+' of '+m.measured+' measured days in stock':_siEsc(why),'inrate')}
+    ${kpi('Momentum',_siEsc(_siAxMomText(m)),m.momWord&&m.momentum!=null?(m.momentum>=0?'up ':'down ')+_siAxPct(Math.abs(m.momentum))+' · last 28 d vs the 28 d before':'last 28 d vs the 28 d before','mom')}
+    ${kpi('Sold 7d / 30d / 90d',s7.u+' / '+s30.u+' / '+s90.u,'')}</div>
   ${_siAxCoverage([a])}${_siAxHistBanner()}
+  <div class="card"><div class="card-title">Sales over time</div>
+    <div class="si-ax-bar">${toggle}</div>${chart}
+    <div class="si-ax-note">Latest ${_siAxBucket} is still running. ${_siEsc(ser.notes.join(' '))}</div></div>
+  <div class="card"><div class="card-title">Size mix (units sold) and stock</div>${mix}
+    <div style="margin-top:8px">${sizeTable}</div>
+    <div class="si-ax-note" style="margin-top:8px">${_siAxNeedsHistoryNote()}</div></div>
+  <details class="card si-ax-defs"><summary class="card-title" style="cursor:pointer">Why this verdict</summary>
   ${_siAxScorecardHtml([a])}
-  ${_siAxReadBlock([a])}
+  ${_siAxReadBlock([a])}</details>
+  <details class="card si-ax-defs"><summary class="card-title" style="cursor:pointer">All measures for this article</summary>
   <div class="si-ax-kpis">
     ${kpi('Live',_siEsc(_siAxLiveText(a)),_siEsc(_siAxAgeText(a)))}
     ${kpi('Sold since live',a.units,'counted from '+_siEsc(idx.cov?_siAxFmtDay(idx.cov):'—'))}
@@ -2648,15 +2674,9 @@ function _siAxSearchBody(){
     ${kpi('Peak week',m.peak?m.peak.u+' units':'—',m.peak?'week of '+_siEsc(_siAxFmtDay(m.peak.start)):'','peak')}
     ${kpi('Average unit price',m.asp!=null?_siEsc(_siPKR(Math.round(m.asp))):'—','before discounts','asp')}
   </div>
-  <div class="card"><div class="card-title">Sales over time</div>
-    <div class="si-ax-bar">${toggle}</div>${chart}
-    <div class="si-ax-note">Latest ${_siAxBucket} is still running. ${_siEsc(ser.notes.join(' '))}</div>
-    ${bucketTable}</div>
-  <div class="card"><div class="card-title">Size mix (units sold) and stock</div>${mix}
-    <div style="margin-top:8px">${sizeTable}</div>
-    <div class="si-ax-note" style="margin-top:8px">${_siAxNeedsHistoryNote()}</div></div>
+  <div class="card-title" style="margin-top:8px">Units per ${_siAxBucket}</div>${bucketTable}</details>
   ${_siAxDefsHtml()}
-  <div class="card"><div class="card-title">Weekly close</div>${closeHtml}</div>`;
+  <details class="card si-ax-defs"><summary class="card-title" style="cursor:pointer">Weekly close</summary>${closeHtml}</details>`;
 }
 
 // ── Compare mode ────────────────────────────────────────────────────
@@ -2680,6 +2700,69 @@ function _siAxCompareData(){
   });
   return{arts,ser,rows,M};
 }
+
+// ── Overview: four questions, no typing ─────────────────────────────────────
+const _SI_OV_TILES=[
+  {k:'reorder',l:'Reorder now',sub:'cover shorter than the lead time, or out of stock while in demand'},
+  {k:'risk',l:'Stock-out risk',sub:'a size is out and selling, or cover is within 2 weeks of the lead time'},
+  {k:'stuck',l:'Stuck / stop',sub:'no sale in 28 days, or slow with a lot of cover'},
+  {k:'winner',l:'Winners',sub:'top demand, in stock, 30+ units: protect these'}
+];
+function _siAxOvRows(){
+  const idx=_siAxIndex();
+  return idx.list.filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat||(a.category||'Unknown')===_siAxOvCat)).map(a=>{
+    const m=_siAxStats(a),c=_siAxClassify(a),act=_siAxActionOf(a);
+    return{a,m,c,act};
+  });
+}
+function _siAxOvIn(r,k){
+  if(k==='reorder')return r.act.key==='reorder';
+  if(k==='risk')return r.c.cls!=='dead'&&r.c.cls!=='early'&&r.c.cls!=='unrated'&&(r.act.key==='risk'||(r.m.risk&&r.m.risk.length>0&&r.act.key!=='reorder'));
+  if(k==='stuck')return r.act.key==='stuck'||r.act.key==='markdown';
+  if(k==='winner')return r.c.cls==='winner';
+  return false;
+}
+function _siAxOvSort(k){
+  const cov=r=>r.m.cover==null?(r.a.hasStock&&r.a.onHand===0?-1:1e9):r.m.cover;
+  if(k==='reorder')return(x,y)=>cov(x)-cov(y)||(y.m.units-x.m.units);
+  if(k==='risk')return(x,y)=>(y.m.risk?y.m.risk.length:0)-(x.m.risk?x.m.risk.length:0)||cov(x)-cov(y);
+  if(k==='stuck')return(x,y)=>(y.a.onHand||0)-(x.a.onHand||0);
+  return(x,y)=>(y.m.paceHead||0)-(x.m.paceHead||0);
+}
+function _siAxOverviewBody(){
+  const idx=_siAxIndex();
+  if(_siHistState!=='ok'&&_siHistState!=='error')return`<div class="si-ax-empty">Reading the stock history…</div>`+_siAxHistBanner();
+  const rows=_siAxOvRows();
+  const cats=[...new Set(idx.list.filter(a=>a.units>0||a.hasStock).map(a=>a.category||'Unknown'))].sort(_siSortNat);
+  const tile=t=>{const n=rows.filter(r=>_siAxOvIn(r,t.k)).length;return`<button class="si-ov-tile${_siAxOvTile===t.k?' on':''}" aria-pressed="${_siAxOvTile===t.k}" onclick="window._siAxOvTile('${t.k}')"><span class="l">${_siEsc(t.l)}</span><span class="n">${n}</span><span class="s">${_siEsc(t.sub)}</span></button>`;};
+  const cur=_SI_OV_TILES.find(t=>t.k===_siAxOvTile)||_SI_OV_TILES[0];
+  const list=rows.filter(r=>_siAxOvIn(r,cur.k)).sort(_siAxOvSort(cur.k));
+  const show=_siAxOvAll?list:list.slice(0,10);
+  const row=r=>`<div class="si-ov-row"><div class="nm"><strong>${_siEsc(_siAxLabel(r.a))}</strong><div class="si-ax-note" style="margin:0">${_siEsc(r.a.code)} · ${_siEsc(r.c.label)}</div></div>
+    <div class="fg"><div class="k">Stock lasts</div><div class="v">${_siEsc(_siAxCoverText(r.m))}</div></div>
+    <div class="fg"><div class="k">Selling / week</div><div class="v">${_siEsc(_siAxNum(r.m.paceHead))}</div></div>
+    <div class="fg"><div class="k">Sizes out</div><div class="v">${r.m.risk&&r.m.risk.length?_siEsc(r.m.risk.map(x=>x.size).join(', ')):'—'}</div></div>
+    <div class="act">${_siEsc(r.act.text)}</div>
+    <div class="btns"><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOpen(this.dataset.code)">Open</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button></div></div>`;
+  const cnt={};rows.forEach(r=>{cnt[r.c.cls]=(cnt[r.c.cls]||0)+1;});
+  const classLine=['winner','solid','steady','constrained','slow','dead','early','unrated'].filter(k=>cnt[k]).map(k=>cnt[k]+' '+_SI_AX_CLASSES[k].label).join(' · ');
+  return`<div class="card"><div class="si-ax-bar"><label class="si-ax-lab" for="si-ov-cat">Category</label><select id="si-ov-cat" class="si-ax-select" onchange="window._siAxOvCat(this.value)"><option value="">All categories</option>${cats.map(c=>`<option value="${_siEsc(c)}"${c===_siAxOvCat?' selected':''}>${_siEsc(c)}</option>`).join('')}</select></div>
+    <div class="si-ov-tiles">${_SI_OV_TILES.map(tile).join('')}</div>
+    <div class="si-ax-lab" style="margin:12px 0 4px">${_siEsc(cur.l)} — ${list.length} article${list.length===1?'':'s'}${list.length>show.length?' (showing '+show.length+')':''}</div>
+    ${show.length?show.map(row).join(''):`<div class="si-ax-empty">Nothing here right now.</div>`}
+    ${list.length>10?`<button class="si-ax-btn" onclick="window._siAxOvAll()">${_siAxOvAll?'Show the first 10':'Show all '+list.length}</button>`:''}
+    <div class="si-ax-note" style="margin-top:10px">${_siEsc(classLine)}. Articles with fewer than ${_SI_AX_SCORE.minDays} counted days or no stock data are not classed. Lead times are editable defaults, not facts (Lead time section below).</div></div>
+  ${_siAxHistBanner()}
+  <details class="card si-ax-defs"><summary class="card-title" style="cursor:pointer">Lead times (editable defaults)</summary>${_siAxLtHtml()}</details>`;
+}
+window._siAxOvTile=function(k){_siAxOvTile=k;_siAxOvAll=false;_siAxRepaintBody();};
+window._siAxOvCat=function(v){_siAxOvCat=v||'';_siAxOvAll=false;_siAxRepaintBody();};
+window._siAxOvAll=function(){_siAxOvAll=!_siAxOvAll;_siAxRepaintBody();};
+window._siAxOpen=function(code){_siAxModeSel='search';_siAxSel=String(code||'').toUpperCase();_siAxQuery='';_siAxMsg='';_siAxRepaintAll();if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}};
+window._siAxOvCompare=function(code){
+  const r=_siAxTryAdd(code);
+  if(typeof showToast==='function')showToast(r.ok?'Added to Compare ('+_siAxCmp.length+').':r.msg,!r.ok);
+};
 function _siAxCompareBody(){
   const chips=_siAxCmp.map((c,i)=>{const a=_siAxIndex().map.get(c);return a?`<span class="si-ax-chip"><i class="si-ax-badge si-ax-b${i}">${i+1}</i>${_siEsc(_siAxLabel(a))}<button aria-label="Remove ${_siEsc(_siAxLabel(a))}" data-code="${_siEsc(c)}" onclick="window._siAxRemove(this.dataset.code)">×</button></span>`:'';}).join('');
   const sel=`<div class="si-ax-bar"><span class="si-ax-lab">Metric</span><select class="si-ax-select" onchange="window._siAxSetMetric(this.value)">${Object.keys(_SI_AX_METRICS).map(k=>`<option value="${k}"${_siAxMetric===k?' selected':''}>${_siEsc(_SI_AX_METRICS[k].label)}</option>`).join('')}</select>
@@ -2687,7 +2770,7 @@ function _siAxCompareBody(){
     <button class="si-ax-btn${_siAxBasis==='calendar'?' on':''}" onclick="window._siAxSetBasis('calendar')">Calendar</button>
     <button class="si-ax-btn${_siAxBasis==='launch'?' on':''}" onclick="window._siAxSetBasis('launch')">Since launch</button>
     <button class="si-ax-btn" title="${_siAxTip('curve')}" onclick="window._siAxCurvePreset()">Age-normalised curve</button></div>`;
-  const head=`<div class="si-ax-chips">${chips||'<span class="si-ax-note">Add 2–5 articles with the search box above.</span>'}</div>${_siAxMsg?`<div class="si-ax-note" style="color:var(--accent-urgent);font-weight:600" role="alert">${_siEsc(_siAxMsg)}</div>`:''}<div class="si-ax-note">${_siAxCmp.length} of ${_SI_AX_MAX} articles.</div>`;
+  const head=`<div class="si-ax-chips">${chips||'<span class="si-ax-note">Add 2–'+_siAxMaxCmp()+' articles with the search box above.</span>'}</div>${_siAxMsg?`<div class="si-ax-note" style="color:var(--accent-urgent);font-weight:600" role="alert">${_siEsc(_siAxMsg)}</div>`:''}<div class="si-ax-note">${_siAxCmp.length} of ${_siAxMaxCmp()} articles.</div>`;
   if(!_siAxCmp.length)return head+sel+_siAxCoverage([])+`<div class="si-ax-empty">Nothing to compare yet.</div>`;
   const d=_siAxCompareData();
   const fmtv=_siAxMetricFmt(d.M);

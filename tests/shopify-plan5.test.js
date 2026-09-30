@@ -126,6 +126,31 @@ function classChecks(src,store){
   o['lead-time groups: tees/tops, hoodies/jackets/denim/bottoms, other']=g('Tees')==='tops'&&g('Tops')==='tops'&&g('Hoodies')==='heavy'&&g('Jackets')==='heavy'&&g('Denim')==='heavy'&&g('Jorts')==='heavy'&&g('Pants')==='heavy'&&g('Caps')==='other'&&g('')==='other';
   o['defaults are 21 / 35 / 28 days']=R('JSON.stringify(_SI_LT_DEFAULT)')==='{"tops":21,"heavy":35,"other":28}';
   o['lead time of a hoodie is 35 and a cap 28, labelled default']=R('(()=>{const t=_siAxLeadTime({category:"Hoodies"}),c=_siAxLeadTime({category:"Caps"});return[t.days,t.custom,c.days,c.custom].join();})()')==='35,false,28,false';
+  // ── Overview, verdict-first page, phone compare cap (same 42-article fixture) ──
+  o['the explorer opens on the Overview']=R('_siAxModeSel')==='overview';
+  const ovn=k=>R('_siAxOvRows().filter(r=>_siAxOvIn(r,"'+k+'")).length');
+  //  Reorder now: cover 92.9/k weeks under the 3-week tees lead time -> k >= 31 (P31..P40 = 10) + Q (constrained) = 11
+  //  Stock-out risk: cover in [3,5) weeks -> k 19..30 = 12 (Q is reorder, Dd is dead, both excluded)
+  //  Stuck / stop: Dd = 1 (P1..P7 are Low confidence: watch) | Winners: P38..P40 = 3
+  o['overview counts: reorder 11, risk 12, stuck 1, winners 3']=ovn('reorder')===11&&ovn('risk')===12&&ovn('stuck')===1&&ovn('winner')===3;
+  R('_siAxModeSel="overview";_siAxOvTile="reorder";_siAxOvAll=false;_siAxOvCat=""');
+  const ov=R('_siAxOverviewBody()');
+  o['overview shows four tiles with their counts']=['Reorder now','Stock-out risk','Stuck / stop','Winners'].every(t=>ov.indexOf('<span class="l">'+t+'</span>')>0)&&/<span class="n">11<\/span>/.test(ov)&&/<span class="n">12<\/span>/.test(ov);
+  o['the list is capped at 10 rows with a Show all button']=(ov.match(/class="si-ov-row"/g)||[]).length===10&&/Show all 11/.test(ov);
+  o['the most urgent first: Q has none left (cover -1 sort key), then P40 (2.3 weeks)']=ov.indexOf('Art Q')>0&&ov.indexOf('Art Q')<ov.indexOf('Art P40')&&ov.indexOf('Art P40')<ov.indexOf('Art P39');
+  o['every row has Open and + Compare and an action sentence']=(ov.match(/onclick="window\._siAxOpen\(/g)||[]).length===10&&(ov.match(/_siAxOvCompare\(/g)||[]).length===10&&/less than the 21-day lead time/.test(ov);
+  R('window._siAxOpen("P40")');
+  o['Open goes to that article in Search']=R('_siAxModeSel')==='search'&&R('_siAxSel')==='P40';
+  const pg=R('_siAxSearchBody()');
+  const ix=t=>pg.indexOf(t);
+  o['verdict first: badge, action, why; then six tiles, chart, sizes; detail collapsed']=ix('si-verdict act-reorder')>0&&ix('si-verdict')<ix('si-ax-head6')&&ix('si-ax-head6')<ix('Sales over time')&&ix('Sales over time')<ix('Size mix')&&ix('Size mix')<ix('Why this verdict')&&ix('Why this verdict')<ix('All measures for this article')&&!/<details[^>]*\bopen\b/.test(pg);
+  o['exactly six headline tiles before the chart']=(pg.slice(ix('si-ax-head6'),ix('Sales over time')).match(/class="si-ax-kpi"/g)||[]).length===6;
+  o['verdict says Reorder now with the lead time default labelled unconfirmed']=/si-vd-act">Reorder now</.test(pg)&&/default lead time, unconfirmed/.test(pg);
+  R('window.matchMedia=function(){return{matches:true};};_siAxCmp=[]');
+  const adds=['P1','P2','P3','P4'].map(c=>R('_siAxTryAdd("'+c+'")'));
+  o['phone: Compare holds 3 articles and says why the 4th is refused']=adds[2].ok===true&&adds[3].ok===false&&/at most 3 articles on a phone/.test(adds[3].msg);
+  R('window.matchMedia=function(){return{matches:false};};_siAxCmp=[]');
+  o['desktop: Compare holds 5']=['P1','P2','P3','P4','P5','P6'].map(c=>R('_siAxTryAdd("'+c+'")').ok).join()==='true,true,true,true,true,false';
   o._p30=A('P30').k;o._p40=A('P40').k;
   return o;
 }
@@ -161,6 +186,12 @@ module.exports=async function(){
     let r;try{r=classChecks(SRC.split(from).join(to));}catch(e){r={};failing.forEach(f=>r[f]=false);}
     failing.forEach(f=>s.ok('break "'+label+'" fails "'+f+'"',r[f]!==true));
   };
+  cbrk('explorer opens on search','_siAxModeSel=\'overview\',','_siAxModeSel=\'search\',',['the explorer opens on the Overview']);
+  cbrk('reorder tile counts risk too','if(k===\'reorder\')return r.act.key===\'reorder\';','if(k===\'reorder\')return r.act.key===\'reorder\'||r.act.key===\'risk\';',['overview counts: reorder 11, risk 12, stuck 1, winners 3']);
+  cbrk('list not capped','list.slice(0,10)','list',['the list is capped at 10 rows with a Show all button']);
+  cbrk('most urgent not first','cov(x)-cov(y)||(y.m.units-x.m.units)','(y.m.units-x.m.units)',['the most urgent first: Q has none left (cover -1 sort key), then P40 (2.3 weeks)']);
+  cbrk('verdict after the tiles','  ${verdictHtml}\n  <div class="si-ax-kpis si-ax-head6">','  <div class="si-ax-kpis si-ax-head6">',['verdict first: badge, action, why; then six tiles, chart, sizes; detail collapsed']);
+  cbrk('phone cap removed','return 3;}','return _SI_AX_MAX;}',['phone: Compare holds 3 articles and says why the 4th is refused']);
   cbrk('winner percentile 0.5','winnerPct:0.90','winnerPct:0.50',['winners are exactly P38, P39, P40 (p >= 90%)']);
   cbrk('winner without unit floor is invisible here; floor raised to 39 units','winnerUnits:30','winnerUnits:39',['winners are exactly P38, P39, P40 (p >= 90%)']);
   cbrk('constrained ignores in-stock rate','m.inRate!=null&&m.inRate<T.constrainedInStock&&','m.inRate!=null&&',['winners are exactly P38, P39, P40 (p >= 90%)']);
