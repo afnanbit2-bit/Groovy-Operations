@@ -25,6 +25,21 @@
      the fields given (a map merged into a map) and leaves every other field
      alone; without it, set replaces the document as before. Every ref.set
      is recorded in `state.sets` ({path, data, merge}).
+   - a query's where() takes ==, in and array-contains, on a top-level field or
+     a dotted path ("refs.cprNos"); a query may be read INSIDE a transaction
+     (tx.get(query), the Admin SDK's own shape): the transaction remembers
+     which documents it returned and re-runs its body when that set — or one
+     of them — changed before the commit, a phantom included;
+   - opt-in `state.strictTx`: a transaction that reads after it has written
+     fails the way Firestore's does ("all reads … before all writes");
+   - test hooks, all optional and all left to the test to switch off again:
+     `state.txBefore({n})` runs before a transaction's body starts,
+     `state.txAfterBody({n,attempt,writes,paths})` after the body resolved and before
+     the commit is validated (a write made there is a write that landed
+     between the body's reads and its commit), `state.batchBefore({n})` before
+     a batch is committed; `state.poke(path,doc|null)` replaces (or removes) a
+     document and `state.patch(path,fields)` merges fields into one, both the
+     way a concurrent writer would — bumping the version a transaction checks.
    `state.failRead` / `state.failWrite` make the next reads or commits throw;
    `state.reads` counts every read (a get, a query, a transaction's get);
    `state.initError` makes the Admin SDK fail to START (no app yet, and
@@ -102,28 +117,47 @@ function makeAdmin(state){
       async update(d){writeFail();state.updates=(state.updates||[]);state.updates.push({path:key(c,id),data:clone(d)});ops.update(c,id,d);}
     };
   }
+  const getPath=(d,f)=>String(f).split('.').reduce((o,k)=>o!==null&&typeof o==='object'?o[k]:undefined,d);
   const matches=(d,f,op,v)=>{
-    if(op==='==')return d[f]===v;
-    if(op==='in')return Array.isArray(v)&&v.indexOf(d[f])>=0;
-    throw new Error('the fake supports == and in, not '+op);
+    const x=getPath(d,f);
+    if(op==='==')return x===v;
+    if(op==='in')return Array.isArray(v)&&v.indexOf(x)>=0;
+    if(op==='array-contains')return Array.isArray(x)&&x.indexOf(v)>=0;
+    throw new Error('the fake supports ==, in and array-contains, not '+op);
   };
+  // One run of a query, with no recording — the caller records what it wants.
+  const runQ=(c,filters,fields)=>{
+    const ids=Object.keys(state.docs).filter(k=>k.indexOf(c+'/')===0&&k.slice(c.length+1).indexOf('/')<0)
+      .map(k=>k.slice(c.length+1))
+      .filter(id=>filters.every(([f,op,v])=>matches(state.docs[key(c,id)],f,op,v)));
+    const docs=ids.map(id=>snap(c,id,fields));
+    return{docs,size:ids.length,empty:!ids.length,forEach:cb=>docs.forEach(cb)};
+  };
+  const recordQ=(c,filters,fields,tx)=>{
+    state.queries=(state.queries||[]);
+    const e={collection:c,filters:clone(filters),fields:fields?fields.slice():null};
+    if(tx)e.tx=true;
+    state.queries.push(e);
+  };
+  // What a transaction saw of a query: every returned document and its version.
+  const sigOfQ=(c,filters)=>runQ(c,filters,null).docs.map(d=>d.id+'@'+(state.ver[key(c,d.id)]||0)).join('|');
   const db={
     collection(c){
       const q=(filters,fields)=>({
+        _q:{c,filters,fields},
         where(f,op,v){return q(filters.concat([[f,op,v]]),fields);},
         select(...fs){return q(filters,fs);},
         async get(){
           readFail();
-          state.queries=(state.queries||[]);
-          state.queries.push({collection:c,filters:clone(filters),fields:fields?fields.slice():null});
-          const ids=Object.keys(state.docs).filter(k=>k.indexOf(c+'/')===0&&k.slice(c.length+1).indexOf('/')<0)
-            .map(k=>k.slice(c.length+1))
-            .filter(id=>filters.every(([f,op,v])=>matches(state.docs[key(c,id)],f,op,v)));
-          const docs=ids.map(id=>snap(c,id,fields));
-          return{docs,size:ids.length,empty:!ids.length,forEach:cb=>docs.forEach(cb)};
+          recordQ(c,filters,fields,false);
+          return runQ(c,filters,fields);
         }
       });
-      return Object.assign(q([]),{doc:id=>ref(c,id)});
+      // The real client refuses a document path with the wrong number of segments (a slash in an id makes a
+      // sub-path): calling doc('a/b') on a collection throws before anything is sent.
+      return Object.assign(q([]),{doc:id=>{
+        if(typeof id!=='string'||!id||id.indexOf('/')>=0)throw new Error('Value for argument "documentPath" must point to a document, but was "'+id+'". Your path does not contain an even number of components.');
+        return ref(c,id);}});
     },
     batch(){
       const w=[];
@@ -132,6 +166,8 @@ function makeAdmin(state){
         create(r,d){w.push(['create',r,clone(d),d]);return b;},
         update(r,d){w.push(['update',r,d,d]);return b;},
         async commit(){
+          state.batchCount=(state.batchCount||0)+1;
+          if(typeof state.batchBefore==='function')state.batchBefore({n:state.batchCount});
           writeFail();
           w.forEach(([op,,,raw])=>guard(raw,'batch '+op));
           // all-or-nothing, like the real commit
@@ -146,16 +182,31 @@ function makeAdmin(state){
     // Optimistic, like the real one: a document read in the transaction and
     // written by someone else before it commits makes the body run again.
     async runTransaction(fn){
+      state.txCount=(state.txCount||0)+1;
+      const n=state.txCount;
+      if(typeof state.txBefore==='function')state.txBefore({n});
       for(let attempt=0;attempt<5;attempt++){
-        const w=[];const seen={};
+        const w=[];const seen={};const qseen=[];
         const tx={
-          get:async r=>{readFail();seen[r.path]=state.ver[r.path]||0;const [c,id]=r.path.split('/');return snap(c,id);},
+          get:async r=>{
+            if(state.strictTx&&w.length)throw new Error('Firestore transactions require all reads to be executed before all writes.');
+            readFail();
+            if(r&&r._q){                                   // a query, read inside the transaction
+              const {c,filters,fields}=r._q;
+              recordQ(c,filters,fields,true);
+              qseen.push({c,filters,sig:sigOfQ(c,filters)});
+              return runQ(c,filters,fields);
+            }
+            if(seen[r.path]===undefined)seen[r.path]=state.ver[r.path]||0;
+            const [c,id]=r.path.split('/');return snap(c,id);
+          },
           set:(r,d,o)=>{w.push(['set',r,d,o]);return tx;},
           create:(r,d)=>{w.push(['create',r,d]);return tx;},
           update:(r,d)=>{w.push(['update',r,d]);return tx;}
         };
         const out=await fn(tx);
-        if(Object.keys(seen).some(k=>(state.ver[k]||0)!==seen[k])){state.txRetries=(state.txRetries||0)+1;continue;}
+        if(typeof state.txAfterBody==='function')state.txAfterBody({n,attempt,writes:w.length,paths:w.map(x=>x[1].path)});
+        if(Object.keys(seen).some(k=>(state.ver[k]||0)!==seen[k])||qseen.some(x=>sigOfQ(x.c,x.filters)!==x.sig)){state.txRetries=(state.txRetries||0)+1;continue;}
         writeFail();
         const before=clone(state.docs);
         try{for(const [op,r,d,o] of w){const [c,id]=r.path.split('/');ops[op](c,id,d,o);}}
@@ -166,6 +217,14 @@ function makeAdmin(state){
       throw new Error('ABORTED: too much contention');
     }
   };
+  // A concurrent writer, for the tests: replace (or, given null, remove) a
+  // document, or merge fields into it — either way the version moves.
+  state.poke=(p,d)=>{
+    const [c,id]=p.split('/');
+    if(d===null||d===undefined){delete state.docs[p];bump(p);}
+    else ops.set(c,id,d);
+  };
+  state.patch=(p,d)=>{const [c,id]=p.split('/');ops.set(c,id,d,{merge:true});};
   const firestore=Object.assign(()=>db,{FieldValue:{increment:INC}});
   return{
     apps:state.initError?[]:[1],initializeApp(){state.inits=(state.inits||0)+1;},

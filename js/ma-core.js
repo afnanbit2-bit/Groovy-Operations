@@ -2532,7 +2532,7 @@ const MA_POSTEX_SYNC_DAYS=14;
 /* Every data issue the derivation raises, by its stable name. */
 const MA_CPR_ISSUE_RULES=['derive.opts','parcel.no_tracking','parcel.duplicate','parcel.status_unknown',
   'parcel.date_fallback','parcel.date_missing','parcel.future_date','parcel.long_on_road','parcel.paid_before_books',
-  'cpr.number_bad','cpr.field_missing','cpr.zero_part','cpr.date_disagree','cpr.date_fallback','cpr.date_missing',
+  'cpr.number_bad','cpr.number_conflict','cpr.field_missing','cpr.zero_part','cpr.date_disagree','cpr.date_fallback','cpr.date_missing',
   'cpr.not_final','cpr.return_paid','cpr.reserve_before_upfront','cpr.reserve_without_upfront','cpr.split_mismatch'];
 const _maPxStatuses=['pending','in_transit','delivered','returned','cancelled'];   // what postex-core's statusCategory writes
 
@@ -2807,6 +2807,17 @@ function maCprDerive(parcels,opts){
   P.forEach(x=>x.bad.forEach(r=>{(badBy[r]||(badBy[r]=[])).push(x.t);}));
   Object.keys(badBy).sort(_maCmp).forEach(r=>{const n=new Set(badBy[r]).size;
     issue('cpr.number_bad','A receipt number '+r.length+' characters long (“'+r.slice(0,40)+'…”) is not one — the '+_maPl(n,'parcel')+' naming it '+pl(n,'counts','count')+' as not yet on that receipt.',[],badBy[r]);});
+  // PostEx named another receipt for a parcel that already holds one: the
+  // first number stays, the new number (and its date) were not written
+  // (netlify/lib/postex-core.js cprUpdate, cprConflict). The stored receipt is
+  // the one counted, and the doubt is named on it.
+  P.forEach(x=>{
+    const k=x.p.cprConflict;
+    if(!k||typeof k!=='object')return;
+    const a=_maPxStr(k.stored),b=_maPxStr(k.received);
+    if(!a||!b||a===b)return;
+    issue('cpr.number_conflict','PostEx now names receipt '+b+' for parcel '+x.t+' ('+(k.field==='cprNumber_2'?'reserve':'upfront')+' payment), which is already on receipt '+a+'. The stored receipt is the one counted; PostEx’s new number and its date are not used. Check with PostEx which is right.',[a],[x.t]);
+  });
 
   // The receipts: one per number, netted by maCprNet.
   const R=Object.create(null);
