@@ -1913,7 +1913,7 @@ function _siAxSeries(arts,metric,basis){
   if(M.kind)notes.push('Counted window only: each bucket is divided by the live days counted in it, and days before the first synced order are left out (gaps, not zeros).');
   const n=xLabels.length,ticks=[];
   if(n){
-    const maxT=(typeof window!=='undefined'&&window.innerWidth&&window.innerWidth<600)?4:6;
+    const maxT=(typeof window!=='undefined'&&window.innerWidth&&window.innerWidth<600)?3:6;
     const want=Math.min(n,n>maxT?maxT:n);
     const seen=new Set();
     for(let t=0;t<want;t++){const i=want===1?0:Math.round(t*(n-1)/(want-1));if(!seen.has(i)){seen.add(i);ticks.push(i);}}

@@ -4971,7 +4971,7 @@ a.ma-btn{text-decoration:none}
 .si-ax-btn{min-height:34px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-weight:600;font-size:13px;line-height:1.2;font-family:inherit;cursor:pointer}
 .si-ax-btn.on{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
 .si-ax-input{flex:1;min-width:200px;min-height:38px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);outline:none;font-family:inherit}
-.si-ax-select{min-height:34px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit}
+.si-ax-select{max-width:100%;min-height:34px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit}
 .si-ax-lab{font-size:12px;font-weight:600;color:var(--muted)}
 .si-ax-hit{display:flex;align-items:center;gap:10px;width:100%;text-align:left;min-height:44px;padding:8px 10px;border:0;border-bottom:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer}
 .si-ax-hit:hover{background:var(--hover)}
