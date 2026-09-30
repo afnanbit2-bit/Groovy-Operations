@@ -88,17 +88,43 @@ module.exports=async function(){
   close('GB units per in-stock day = 9 / 13 (sales on out days are excluded)',m.perInDay,9/13);
   eq('GC has no snapshot rows at all: in-stock figures are dashes, not 100%',[M('GC').inRate,M('GC').outDays,M('GC').perInDay],[null,null,null]);
 
-  s.section('sell-through of available units, received (noise floor)');
+  s.section('sell-through = sold / (sold + stock left); received is supporting only');
   m=M('GA');
-  eq('GA span Aug 2..31, opening 20 (Aug 1), received 30 (Aug 25), sold 15',[m.st.from,m.st.to,m.st.opening,m.st.received,m.st.sold,m.st.src],['2026-08-02','2026-08-31',20,30,15,'history']);
-  close('GA sell-through = 15 / (20 + 30)',m.st.value,0.3);
+  eq('GA span Aug 2..31, opening 20 (Aug 1), received 30 (Aug 25), sold 15, 35 left',[m.st.from,m.st.to,m.st.opening,m.st.received,m.st.sold,m.st.closing,m.st.src],['2026-08-02','2026-08-31',20,30,15,35,'history']);
+  close('GA sell-through = 15 / (15 + 35) (same as 15 / (20 + 30): closing = opening + received - sold)',m.st.value,0.3);
   eq('received is inferred and labelled',m.received,30);
   m=M('GB');
-  close('GB sell-through = 9 / (10 + 0); the -1 stock drop is not a receipt',m.st.value,0.9);
+  close('GB sell-through = 9 / (9 + 0): nothing left; the -1 stock drop with no sale counts as sold (documented limit)',m.st.value,1);
   R('_siHistState="ok"');
   // noise floor: +2 on an opening of 50 is noise (floor is max(5, 10%))
   const noise=R('(()=>{const h=_siAxBuildHistory('+J([0,1,2,3,4,5,6,7,8].map(k=>({date:dayStr(base+k),items:{a:{sku:'GN-M',available:k===4?52:50}}})))+');_siHist=h;_siAxCache=null;_siProducts.push({_id:"n",sku:"GN-M",product_title:"Noise",product_type:"Tees",published_at:"2026-07-01T10:00:00+05:00"});_siLineItems.push({sku:"GN-M",quantity:1,price:1,order_created_at:"2026-07-02T12:00:00+05:00",financial_status:"paid"});_siAxCache=null;const st=_siAxStats(_siAxIndex().map.get("GN"));const r=st.st;_siProducts=_siProducts.filter(p=>p.sku!=="GN-M");_siLineItems=_siLineItems.filter(l=>l.sku!=="GN-M");_siHist=_siAxBuildHistory('+J(snaps)+');_siAxCache=null;return r;})()');
   eq('a +2 rise on 50 in stock is noise: nothing received, opening 50',[noise.received,noise.opening],[0,50]);
+
+  // REGRESSION (30 Sept 2026): sell-through above 100%. Stock 10 on Aug 1, then every day sells 3 and gets 2 back
+  // (a restocked return): the +2 is under the noise floor max(5, 10% of 10) = 5, so the old formula saw opening 10,
+  // received 0 and sold 27 = 270%. Hand-computed: Aug 2..10 = 9 measured days, sold 9 x 3 = 27, stock 10,9,...,1, so 1 is left
+  // and sell-through = 27 / (27 + 1) = 0.9643, never above 1.
+  const rg=(sku,days,stockAt,soldAt,pub)=>{
+    R('_siProducts.push({_id:"'+sku+'",sku:"'+sku+'-M",product_title:"Reg '+sku+'",product_type:"Tees",published_at:"'+(pub||'2026-07-01')+'T10:00:00+05:00"})');
+    for(let k=1;k<days;k++){const q=soldAt(k);if(q)R('_siLineItems.push({sku:"'+sku+'-M",quantity:'+q+',price:1000,order_created_at:"'+dayStr(base+k)+'T12:00:00+05:00",financial_status:"paid"})');}
+    R('_siHist=_siAxBuildHistory('+J(Array.from({length:days},(_,k)=>({date:dayStr(base+k),items:{a:{sku:sku+'-M',available:stockAt(k)}}})))+');_siAxCache=null');
+    const st=R('_siAxStats(_siAxIndex().map.get("'+sku+'")).st');
+    R('_siProducts=_siProducts.filter(p=>p.sku!=="'+sku+'-M");_siLineItems=_siLineItems.filter(l=>l.sku!=="'+sku+'-M");_siHist=_siAxBuildHistory('+J(snaps)+');_siAxCache=null');
+    return st;
+  };
+  const r1=rg('GR',10,k=>10-k,()=>3);
+  eq('regression: 9 measured days, sold 27, 1 left, received 0 (+2 a day is under the floor)',[r1.days,r1.sold,r1.closing,r1.opening,r1.received],[9,27,1,10,0]);
+  close('regression: sell-through = 27 / (27 + 1), not 27 / 10 = 270%',r1.value,27/28);
+  // bound: random stock paths (stock never negative) never give a sell-through above 1 or below 0
+  let seed=7;const rnd=()=>{seed=(seed*1103515245+12345)%2147483648;return seed/2147483648;};
+  let worst=0,low=1,n=0;
+  for(let t=0;t<120;t++){
+    const days=8+Math.floor(rnd()*20);let stock=Math.floor(rnd()*40);const stocks=[stock],sold=[0];
+    for(let k=1;k<days;k++){const sell=Math.min(stock,Math.floor(rnd()*6));const add=rnd()<0.3?Math.floor(rnd()*30):(rnd()<0.5?Math.floor(rnd()*3):0);const loss=rnd()<0.1&&stock-sell>0?1:0;stock=stock-sell+add-loss;stocks.push(stock);sold.push(sell);}
+    const st=rg('GZ',days,k=>stocks[k],k=>sold[k]);
+    if(st){n++;worst=Math.max(worst,st.value);low=Math.min(low,st.value);}
+  }
+  s.ok('120 random stock paths: '+n+' sell-throughs, all within 0..1 (max '+worst.toFixed(3)+')',n>60&&worst<=1&&low>=0);
 
   s.section('weeks of cover');
   m=M('GA');close('GA 35 on hand / 3.75 a week (in-stock pace)',m.cover,35/3.75);eq('basis is named',m.coverBasis,'in-stock pace');
@@ -185,12 +211,46 @@ module.exports=async function(){
   R('_siAxModeSel="compare";_siAxCmp=["GA","GB","GC","GE"];_siAxMetric="units_week";_siAxBasis="calendar"');
   const cmp=R('_siAxCompareBody()');
   s.ok('the scorecard lists thresholds as defaults, not facts',/defaults, not facts/.test(cmp)&&/not facts/.test(cmp));
-  s.ok('the Read this list is built from computed values',/GA[^<]*is classed Healthy: sold 40 over a counted window of 92 days/.test(cmp)||/Alpha Tee[^<]*is classed Healthy: sold 40 over a counted window of 92 days/.test(cmp));
+  const nmA=R('_siAxLabel(_siAxIndex().map.get("GA"))'),nmB=R('_siAxLabel(_siAxIndex().map.get("GB"))'),nmC=R('_siAxLabel(_siAxIndex().map.get("GC"))'),nmE=R('_siAxLabel(_siAxIndex().map.get("GE"))');
   s.ok('the too-early article is named and not plotted',/Not plotted:[^<]*Echo Cap[^<]*too early/.test(cmp));
   s.ok('no literal colour, no SVG text in the scorecard',!/#[0-9a-f]{3,8}\b/i.test(cmp.slice(cmp.indexOf('Performance scorecard'),cmp.indexOf('Comparison table')))&&!/<text/.test(cmp));
-  const sentence=R('_siAxReadThis(_siAxCompareData().rows)');
-  s.ok('a faster-than sentence carries both rates (computed, not free-form)',sentence.some(t=>/sells [\d.]+× faster per live week than/.test(t)&&/units a week, counted window/.test(t)));
+
+  s.section('Read this: one block, a card per article, then Across these articles');
+  eq('exactly one Read this block (the old second panel is gone)',[(cmp.match(/>Read this</g)||[]).length,/Read this — pace, cover and momentum/.test(cmp)],[1,false]);
+  eq('one card per selected article',(cmp.match(/class="si-rd-card"/g)||[]).length,4);
+  const pos=n=>cmp.indexOf('class="si-rd-name">'+n.replace(/&/g,'&amp;'));
+  s.ok('cards follow class order: Healthy (GA), Stock-constrained (GB), Too early (GE), Not rated (GC)',pos(nmA)>0&&pos(nmA)<pos(nmB)&&pos(nmB)<pos(nmE)&&pos(nmE)<pos(nmC));
+  eq('an article name appears once in its card head (no repeated bullets)',(cmp.split('class="si-rd-name">'+nmA).length-1),1);
+  const fa=R('_siAxReadFacts(_siAxIndex().map.get("GA"),_siAxStats(_siAxIndex().map.get("GA")),_siAxClassify(_siAxIndex().map.get("GA")))');
+  eq('GA facts: 40 units / 92 days / 3 a week; 30% = 15 of 50; in stock every measured day at 3.5 a week; 9.3 weeks cover; up 50%',
+    fa.map(f=>[f.k,f.v,f.sub]),[['Sold','40 units','92 counted days · 3 a week'],['Sell-through','30%','15 of 50'],['In stock','Every measured day','3.5 a week while in stock'],['Cover','9.3 weeks','in-stock pace'],['Momentum','Up 50%','last 4 weeks vs the 4 before']]);
+  const fb=R('_siAxReadFacts(_siAxIndex().map.get("GB"),_siAxStats(_siAxIndex().map.get("GB")),_siAxClassify(_siAxIndex().map.get("GB")))');
+  eq('GB in stock: out 17 of 30 days, not "about 43% of 30 days (17 out)"',fb.find(f=>f.k==='In stock').v,'Out 17 of 30 days');
+  s.ok('GB sizes-out warning: size M, sold 9 in that size in 28 days',/Out of stock in size M; sold 9 in that size in the last 28 days/.test(cmp));
+  s.ok('the early article says so instead of showing facts',new RegExp('class="si-rd-name">'+nmE+'[\\s\\S]*?Only 4 counted days; classes start at 28').test(cmp));
+  const ac=R('_siAxReadAcross(_siAxCompareData().arts.map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)})))');
+  eq('topics, not articles, group the comparison',ac.map(g=>g.topic),['Pace','Sell-through','Cover','Momentum']);
+  eq('pace: GA is 8x GC (40 vs 5 units over the same 92 days: 3 vs 0.4 a week); windows differ is stated',ac[0].lines,[nmA+' sells 8× faster per live week than '+nmC+' (3 vs 0.4 units a week, counted window).','Counted windows differ ('+nmA+' 92 days, '+nmB+' 57 days, '+nmC+' 92 days); rates are per live week so they stay comparable.']);
+  eq('sell-through: highest GB 100% (9 of 9), lowest GA 30%',ac[1].lines,['Highest sell-through: '+nmB+' (100%); lowest: '+nmA+' (30%).']);
+  eq('cover: least GB 0 weeks, most GA 9.3 weeks',ac[2].lines,['Least cover: '+nmB+' (0 weeks); most: '+nmA+' (9.3 weeks).']);
+  eq('momentum: GA +50%, GB +125% (9 / 4 - 1) are both rising',ac[3].lines,['Rising: '+nmA+' +50%, '+nmB+' +125% (last 4 weeks vs the 4 before).']);
   R('_siAxCmp=["GE"]');
-  eq('one article with no rate: no comparison sentence at all',R('_siAxReadThis(_siAxCompareData().rows)').filter(t=>/faster/.test(t)),[]);
+  eq('one article: no Across section at all',R('_siAxReadAcross(_siAxCompareData().arts.map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)})))'),[]);
+  eq('missing inputs: GE has no rate, so no pace sentence',R('_siAxReadBlock(_siAxCompareData().arts)').includes('faster'),false);
+  R('_siAxCmp=["GA","GB","GC","GE"]');
+
+  s.section('scorecard scatter: overlapping points are spread apart, bounded');
+  const dist=(o,i,j,p)=>Math.hypot((p[j].px+o[j].dx)-(p[i].px+o[i].dx),(p[j].py+o[j].dy)-(p[i].py+o[i].dy));
+  const P1=[{px:100,py:200},{px:100,py:200}];let o=R('_siAxSpread('+J(P1)+')');
+  s.ok('two points on the same spot end at least 34 px apart (a 32 px button each)',dist(o,0,1,P1)>=33.5);
+  s.ok('no point moves more than 22 px',o.every(q=>Math.hypot(q.dx,q.dy)<=22.01));
+  const P2=[{px:40,py:50},{px:200,py:250}];
+  eq('points that do not overlap do not move at all',R('_siAxSpread('+J(P2)+')'),[{dx:0,dy:0},{dx:0,dy:0}]);
+  const P3=[{px:100,py:200},{px:104,py:203},{px:99,py:206}];o=R('_siAxSpread('+J(P3)+')');
+  s.ok('three crowded points: every pair at least 30 px apart, all within 22 px of where they were',[[0,1],[0,2],[1,2]].every(([i,j])=>dist(o,i,j,P3)>=30)&&o.every(q=>Math.hypot(q.dx,q.dy)<=22.01));
+  eq('deterministic: the same input gives the same offsets',R('_siAxSpread('+J(P3)+')'),o);
+  const sc2=R('_siAxScorecardHtml([_siAxIndex().map.get("GA"),_siAxIndex().map.get("GB")])');
+  s.ok('points are 32 px buttons with aria-labels that state the class and the values',/class="si-pc-pt cls-healthy"[^>]*aria-label="1\. [^"]*Healthy, [\d.]+ units per in-stock week, sell-through 30%"/.test(sc2));
+  s.ok('the plot has headroom: a 100% point is not on the top edge (y axis runs to 112%)',/class="si-pc-gy top" style="bottom:(\d+\.\d+)%"/.test(sc2)&&parseFloat(/class="si-pc-gy top" style="bottom:(\d+\.\d+)%"/.exec(sc2)[1])<95);
   return s;
 };
