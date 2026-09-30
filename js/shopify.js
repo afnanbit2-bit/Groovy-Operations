@@ -1487,9 +1487,14 @@ function _siAxIndex(){
     a.text=[a.code,a.title,a.color,a.category,[...a.skus].join(' ')].join(' ').toLowerCase();
   });
   list.sort(_siSortArticles);
+  // A comparison can hold codes the reloaded data no longer has; they must not count toward the cap.
+  _siAxCmp=_siAxCmp.filter(c=>arts.has(c));
   _siAxCache={li:_siLineItems,n:_siLineItems.length,pr:_siProducts,sn:_siSnapshot,pv:_siPrevSnapshot,hv:_siHist,list,map:arts,catUnits,cov:_siEarliestOrderDate(),quality:cl.quality};
   return _siAxCache;
 }
+// The catalog live date, unless a counted sale predates it (published_at can be
+// reset after launch): such sales must stay on the calendar chart, not be nulled.
+function _siAxLiveDay(a){return a.liveDay&&a.firstDay&&a.firstDay<a.liveDay?a.firstDay:a.liveDay;}
 function _siAxLabel(a){return a.name+(a.color?' — '+a.color:'');}
 
 // Search: every word must appear in code / title / colour / category / SKUs.
@@ -1852,13 +1857,13 @@ function _siAxSeries(arts,metric,basis){
   }else{
     const curStart=_siAxBucketStart(today,bucket),covB=_siAxBucketStart(cov,bucket);
     let start='';
-    arts.forEach(a=>{const L=a.liveDay&&a.liveDay>cov?a.liveDay:(a.firstDay||a.liveDay);if(!L)return;let b=_siAxBucketStart(L,bucket);if(b<covB)b=covB;if(!start||b<start)start=b;});
+    arts.forEach(a=>{const Lv=_siAxLiveDay(a);const L=Lv&&Lv>cov?Lv:(a.firstDay||Lv);if(!L)return;let b=_siAxBucketStart(L,bucket);if(b<covB)b=covB;if(!start||b<start)start=b;});
     const keys=[];
     if(start){for(let b=start,g=0;b&&b<=curStart&&g<1200;b=_siAxBucketNext(b,bucket),g++)keys.push(b);}
     calKeys=keys;
     xLabels=keys.map(b=>_siAxFmtBucket(b,bucket,false));
     series=arts.map(a=>{
-      const L=a.liveDay||a.firstDay||'';
+      const L=_siAxLiveDay(a)||a.firstDay||'';
       const vals=keys.map(b=>{
         if(!L)return null;
         if(_siAxBucketEnd(b,bucket)<L)return null; // not live yet

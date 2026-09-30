@@ -226,5 +226,24 @@ module.exports=async function(){
   s.ok('it is escaped in the result list',!/<img src=x/.test(rh)&&/&lt;img/.test(rh));
   R('_siAxSel="X1"');
   s.ok('and on the article page',!/<img src=x/.test(R('_siAxSearchBody()')));
+
+  s.section('sales dated before the catalog live date stay on the calendar chart');
+  // published_at can be reset after launch: 7 units sold 20 days ago, 2 units 3 days ago, published 10 days ago.
+  a.run('_siProducts='+J([prod('9','CCC003-S','Late Publish','Red','S','Tees',10),prod('10','ZZZ-S','Anchor','Red','S','Tees',70)]));
+  a.run('_siLineItems='+J([li('CCC003-S',7,20),li('CCC003-S',2,3),li('ZZZ-S',1,60)]));
+  const sumOf=(metric,basis)=>R('_siAxSeries([_siAxIndex().map.get("CCC003")],"'+metric+'","'+basis+'").series[0].values.reduce((x,v)=>x+(v||0),0)');
+  eq('calendar weekly chart carries all 9 counted units',sumOf('units_week','calendar'),9);
+  eq('calendar monthly chart carries all 9 counted units',sumOf('units_month','calendar'),9);
+  eq('since-launch chart carries all 9 counted units',sumOf('units_week','launch'),9);
+
+  s.section('a comparison does not keep codes the reloaded data lacks');
+  a.run('_siProducts='+J(['CCC003','ZZZ','AA1','AA2','AA3'].map((c,i)=>prod('2'+i,c+'-S',c,'Red','S','Tees',5))));
+  a.run('_siLineItems='+J(['CCC003','ZZZ','AA1','AA2','AA3'].map(c=>li(c+'-S',1,1))));
+  R('_siAxCmp=[];["CCC003","ZZZ","AA1","AA2","AA3"].forEach(c=>_siAxTryAdd(c))');
+  eq('five articles are selected (the cap)',R('_siAxCmp.length'),5);
+  a.run('_siProducts='+J([prod('30','ZZZ-S','Z','Red','S','Tees',5),prod('31','QQQ1-S','Q','Red','S','Tees',5)]));
+  a.run('_siLineItems='+J([li('ZZZ-S',1,1),li('QQQ1-S',1,1)]));
+  eq('the vanished article is dropped from the selection',R('(_siAxIndex(),_siAxCmp)'),['ZZZ']);
+  eq('so it no longer counts toward the cap of five',R('_siAxTryAdd("QQQ1").ok'),true);
   return s;
 };
