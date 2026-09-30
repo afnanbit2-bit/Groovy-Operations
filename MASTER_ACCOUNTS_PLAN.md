@@ -1,15 +1,21 @@
 # Master Accounts — Master Plan v4 (cash first · terms are the key · every rupee labelled · the money speaks)
 
-> Status (29 Sept 2026): **M1 BUILT, and merged into `main` from the branch
-> `claude/master-accounts-planning-udoiw9` (Afnan's go-ahead, 29 Sept 2026;
-> `main` read from git as `914b67a`; whether Netlify built it is unconfirmed
-> until its deploy list is read); Afnan REPORTED publishing the rules at
-> about 16:18 UTC that day ("rules updated" — he did not name the file;
-> hypothesis, unverified: the FINAL one), and what the Console holds cannot
-> be checked from a session; nobody has seen it on a real
-> screen.** §21a says what M1 delivered against §21, what
-> it changed in this plan, and what is still open. Everything from §22 on is
-> still the plan. Afnan, 27 Sept 2026: *"I want
+> Status (30 Sept 2026): **M1 and M2 BUILT — 2 of the 11 build milestones
+> (M1–M11), about 18%.** M1 was merged into `main` from the branch
+> `claude/master-accounts-planning-udoiw9` on 29 Sept 2026 (Afnan's
+> go-ahead; `main` read from git as `914b67a`); Afnan REPORTED publishing the
+> rules at about 16:18 UTC that day ("rules updated" — he did not name the
+> file; hypothesis, unverified: the FINAL M1 one). **M2 (couriers and
+> collections) is on `main` at `6410744` (verified: `git ls-remote`, 30 Sept).
+> Its rules file — LF md5 `85ac93b1…`, 1,748 lines — was sent to Afnan on 30
+> Sept (as relayed) and is NOT reported published, so until it is, no file
+> reported published holds a rule for the four courier collections and their
+> reads and writes are refused (default deny). Whether Netlify built M2 is
+> unconfirmed until its deploy list is read, what the Console holds cannot be
+> checked from a session, and nobody has seen M2, or run its nightly rollup,
+> on a real screen.** §21a says what M1 delivered against §21 and §21b what
+> M2 did; each says what it changed in this plan and what is still open.
+> Everything from §22 on is still the plan. Afnan, 27 Sept 2026: *"I want
 > accounts but just for me and ammar, in short master accounts … plan all
 > the logics of build first so we have a good foundation … plan the UI … our
 > charts, pie chart, how the app will learn with the data."* On v1: *"you
@@ -1017,7 +1023,7 @@ the backfill quarter and closes when the owners say so, not on 30 September.
 | **M2 Couriers & collections** | `ma_cpr` derived from `postex_orders` (the rollup), manual statements for TCS, Blue-Ex and Bykea, collections with holder, attachment and the receipt PDF, COD in transit, the TCS account and its 90-day expectation, Blue-Ex's opening, Bykea pending Raees, **Money in → Couriers**, the Tue/Fri calendar entries, courier fees and reversals in the P&L | `netlify.toml` (the rollup schedule) |
 | **M3 Procurement, terms, pay days & the bank** | **Money out**: purchase orders (assignable to production POs), receipts from fabric-in and vendor returns, bills matched three ways with tax, printing bills from approved `printing_billing` (Asghar's and every external printer's, each at its own card rate), **the commitments' bills** (rent, utilities, subscriptions, insurance — a commitment posting its own bill on its due day, confirmed by the payment), the review queue; payments with allocation from a holder, the Wed/Sat pay-day list, retention, credit limits; **the MCB import** with rules, charges posted, reconciliation and **subscription detection**; **the concern logic's rule-based half**; the rates on fabric-in, the gate pass and the Store receive | `js/gatepass.js` (party pick, rate), `js/fabric.js` (party pick, rate, poRef), `js/store.js` (rate on receive); the printing rate master read from `js/embellishments.js` |
 | **M4 Savings & the loan** | the Savings book: accounts, entries, statement import and reconciliation, spend by category, the subscriptions register with detection, targets, assets and liabilities, net worth; `ma_loan`, `ma_payout` with the repay-then-draw rule; **Savings** (one page, the loan on it); the loan on both overviews | — |
-| **M5 Sales** | invoices from Shopify orders by gateway, warehouse sales (adapter) and gate sales; the Payfast receivable; refunds; customer ledgers; **Money in → Online, Warehouse & gate, Customers**; revenue by channel and gateway on Reports | proposal to Ammar (`gateway`, a 14-day refresh) |
+| **M5 Sales** | invoices from Shopify orders by gateway, warehouse sales (adapter) and gate sales; the Payfast receivable; refunds; customer ledgers; **Money in → Online, Warehouse & gate, Customers**; revenue by channel and gateway on Reports. **M2 already books PostEx COD as income at delivery (§21b), so an invoice from a Shopify order must not book a PostEx-delivered order a second time** | proposal to Ammar (`gateway`, a 14-day refresh) |
 | **M6 People** | the payroll Excel importer, accrual and payment documents naming the holder, payslip adjustments (overtime, bonus, festival money), `wages` documents, employee ledgers (advances, loans with schedules); **Money out → Payroll & people** | proposal on `paidVia` |
 | **M7 Costing** | **Costing**: cost sheets per PO with the missing legs named, WIP and finished goods at cost, COGS on sale, margin by article and channel, creators' product at cost; `ma-cost-sheet` | — |
 | **M8 Absorb Store Accounts & warehouse sales** | migration (idempotent by `legacyId`), forms re-pointed, Raees's and Umair's rules carried over (own entries, edits with history, review, confirmations), the meter logic intact, the Reset retired | `js/store-accounts.js`, `js/warehouse-sales.js` |
@@ -1049,7 +1055,11 @@ other read rule admit the QA account. On 29 Sept 2026 the branch was merged
 into `main` as a fast-forward, with Afnan's go-ahead. `efb75ce` names the
 nightly backup in the audit trail.
 CLAUDE.md "Master Accounts" is the engineering record; this section is the
-plan's side of it.
+plan's side of it. M2 has its own section, §21b, below. Where this section
+says the picker has nine live kinds with Collection "coming" and a "Coming
+later · 8" line, the pages are eight ids, 1060 is switched off until M2, the
+calendar's CPR inflows "arrive with M2", or `ma-rollup` and `ma_cpr` are "M2",
+it is describing M1 as it stood on 29 Sept 2026; §21b has what M2 changed.
 
 ### What §21's M1 row asked for, and what exists
 
@@ -1272,6 +1282,257 @@ earlier publishes had been reported that day, neither of them that file,
 and only the Console's rules history says which is live. A Master Accounts
 page that loads, instead of "could not read … republish", is the test from
 his side.
+
+## 21b. M2 as built (29–30 Sept 2026)
+
+Nineteen commits on `main` after `fa44f86` (the 29 Sept docs commit that
+recorded Afnan's "rules updated"; the five PR #100 docs commits in that
+range are not M2's), read from git on 30 Sept: `1fda9dd` the PostEx
+enrichment (fixed by `e2827dd`) · `9c29bd7` receipts and days derived from
+the parcels · `90a98a9` the core (statements, collections, the rollup's
+documents) · `138aa9c` the nightly rollup · `0a5b6d6` the rules ·
+`7f6f0af` the collection receipt PDF · `7e41206` the screens. Then the
+review round, three fixers built side by side from `7e41206`: `565eecc`
+(B: the rollup and PostEx), `53ba832` (A: the page, the core and the
+rules, with its emulator proof `74abf80`) and `a1cbb32` (C: the screens'
+display). The rest are six merges (`0adad4e`, `c1506d2`, `7dbc513`,
+`33d87a1`, `ad9f39e`, `6410744`) and `0c91285`, which re-numbers the cache:
+`CACHE_VERSION` is `v269`. **Progress: 2 of the 11 build milestones
+(M1–M11), about 18%.** CLAUDE.md "Master Accounts — M2 built" is the
+engineering record; this section is the plan's side of it. Calls marked
+*Afnan* were his on 29 Sept 2026, relayed to the session that built M2 (they
+are not in the repo); the rest are the main session's, tabled here to be
+overruled.
+
+### What §21's M2 row asked for, and what exists
+
+The table is a snapshot at `6410744`.
+
+| §21 M2 item | State | Where, and how it differs |
+|---|---|---|
+| `ma_cpr` derived from `postex_orders` (the rollup) | built | `maCprDerive` (`js/ma-core.js`, pure) reads the parcels; `ma-rollup-background` writes `ma_cpr`: one document per receipt NUMBER (a parcel on two receipts is two parts, never doubled), one per delivery day (`postex-day-<day>`, `PX-YYMMDD`) and one opening (`PX-OPEN`). Refinements 1, 6, 8. |
+| Manual statements for TCS, Blue-Ex and Bykea | TCS and Bykea only | typed `cpr` documents (`CS-27-0001`), one line per parcel or day; Blue-Ex has none — refinement 3. |
+| Collections with holder, attachment and the receipt PDF | built | `ma_collection` (`CL-27-0001`) covers up to 40 receipts or statements and keeps a snapshot of each; `ma_claims` holds one live collection per receipt; the PDF is `ma-collection` (A5). Refinements 4, 7. |
+| COD in transit | built | 1120; Money in shows PostEx's transit and the rollup's "as of". |
+| The TCS account and its 90-day expectation | built | 1060 is switched on as a wallet and the credit is a collection into it — refinement 2. |
+| Blue-Ex's opening | built differently | a line on the one opening journal — refinement 3. |
+| Bykea pending Raees | built | a Bykea collection reaches the drawer (1010) and waits for Raees; an owner confirms on paper (`MA_HANDS`, M1). |
+| Money in → Couriers | built | page `ma-in`, one section per courier; Online, Warehouse & gate and Customers stay M5's — refinement 9. |
+| The Tue/Fri calendar entries | built, narrower | refinement 10. |
+| Courier fees and reversals in the P&L | built, at another moment | 5060 and 5070, at delivery — refinement 1. |
+| Cross-track: `netlify.toml` (the rollup schedule) | done, and more | `netlify.toml` (`[functions."ma-rollup-background"]`, `45 3 * * *`); not in the plan: `netlify/lib/postex-core.js` (refinement 6), `js/fulfillment.js`, `js/print-engine.js`, `js/shared.js` (two lines), `netlify/functions/ma-backup.js`, `netlify/lib/ma-server.js`, `css/main.css` (`.ma-` only), `index.html`, `sw.js` (`CACHE_VERSION` only). |
+
+### Where the build changed the plan — each with its reason
+
+1. **§8, §26.3, §28 row 1 — income and cost are booked at DELIVERY, not at
+   the CPR.** *Afnan:* a PostEx sale is income the day PostEx marks the
+   parcel delivered — not at the CPR, not at the cash. A delivery day is ONE
+   derived document: COD Dr 1120 / Cr 4010, PostEx's fee and tax to 5060 and
+   a return's reversal fee and tax to 5070 (each Cr 1120). A receipt then
+   only moves its net 1120 → 1121; a collection moves the cash in (Dr the
+   holder / Cr 1121, the difference to 9030). §26.3 had the fees "posted per
+   CPR to 5060 / 5070". *Reason:* one definition of what a parcel costs, so
+   that with every receipt in, the days' COD less their charges equals the
+   receipts' nets and 1120 clears — held on fixtures, **not against a real
+   PostEx receipt** (§24 asked for one CPR PDF before M2; none is in the
+   repo). Courier GST is a cost unless `settings.couriers.<courier>.
+   taxClaimable` (false for all four; true posts it to 1160).
+2. **§3 #6, §8, §23 #4 — TCS is a typed statement plus a collection into
+   1060, not an `ma_cpr` of kind `account`.** A TCS statement posts each of
+   its lines on its delivery day (Dr 1122 / Cr 4010, fees to 5060, a
+   return's charge to 5070); the credit at TCS is then a collection whose
+   holder is 1060 (Dr 1060 / Cr 1122), so a collection is one form for every
+   courier. 1060 is a WALLET (`holderKind:'wallet'`; §23 #4 said
+   `courier_wallet`): not in cash in hand, the month's flows or Can pay, and
+   Today carries its own "Held at TCS — not counted" line. The 90 days stay
+   `tcsCreditDays`. A Bykea statement has the same shape and its collection
+   reaches the drawer; MCB and the TCS account post a collection at once.
+   Who confirms is M1's `MA_HANDS` map, not a field. *Reason:* money sitting
+   at TCS must not read as cash you can spend (the screens review).
+3. **§8 Blue-Ex, §23 #5 — Blue-Ex's opening is a LINE on the one opening
+   journal (1123), not an opening-statement document.** Blue-Ex has no
+   statements ("its collection is against the balance it opened with") and
+   a collection posts Dr the holder / Cr 1123. §23 #5's flag IS built: a
+   collection recorded before any 1123 opening line is flagged
+   ("Recovered before Blue-Ex's opening — record its last statement as a
+   line on the opening balance"), and one above what Blue-Ex still owes is
+   flagged too. Not built: the opening statement's own attachment and date,
+   and aging Blue-Ex from that date (§8) — `maCourierConcerns` has no
+   Blue-Ex line. *Reason:* §3 #7 says nothing is dispatched to Blue-Ex, so
+   it has a balance to run down and no feed of statements.
+4. **§6, §29 (attachments) — a collection with no receipt photo is saved and
+   flagged while attachments are off, and refused once they are on.**
+   *Afnan.* "Off" is M1.6c's not-configured state, or an answer that could
+   not be had; a typed statement follows the same rule (the main session's
+   call). The flag waits on Needs attention until a file is attached. Until
+   the two Cloudinary keys are set (M1's checklist) every collection is
+   saved "No receipt attached". A collection's difference from its net
+   always posts to 9030; past `courierTolerancePct` (1%) it is also flagged
+   and needs a reason ("not known yet" will do), where §8 asked for a
+   reason on any difference.
+5. **§4.2 — courier terms live in `ma_settings` (`settings.couriers`), not
+   on the party record, and there is no fee card.** `MA_COURIERS` (four
+   couriers, their cycles and accounts) is code; `cprDays`, `tcsCreditDays`
+   and `courierTolerancePct` were M1's settings; the new block holds `from`
+   (`2026-07-01`), `runWatchHours` (36) and, per courier, `collectLagDays`,
+   `uncollectedDays`, `taxClaimable` and `beforeWindowDays` (PostEx 1 / 3 /
+   false / 31; TCS 0 / 7; Blue-Ex 0 / 0; Bykea 2 / 7). Of §4.2's fields,
+   `cycle` is `MA_COURIERS`, and `collectBy`, `confirmBy`, `feeCard` and
+   `openingStatement` are not built (grep finds none): a parcel carries its
+   own fee and tax, and who confirms is `MA_HANDS`. **No screen edits
+   `settings.couriers`**; the Settings save keeps it, and the party form has
+   no courier fields. *Reason:* the terms are few and fixed per courier, and
+   M1 already kept its numbers in settings.
+6. **§1, §3 #5 — the PostEx sync itself had to change.** The plan says the
+   app already holds every parcel's CPR number. `enrichPayments`
+   (`netlify/lib/postex-core.js`) skipped a parcel for good once it held
+   EITHER receipt number and wrote `x || null` with merge, blanking stored
+   values (from `1fda9dd`'s message, read against the code), so a parcel
+   with its upfront receipt never got its reserve one. Now a parcel is asked
+   until FINISHED (settled; both numbers in — a RETURN only when settled; or
+   given up); `cprRecheckedAt` is stamped by every answered re-check; a
+   parcel holding a receipt is re-asked at most every 3 days less an hour
+   and one with none once a day; 25% of a run's limit is kept for re-checks;
+   only values PostEx gave are written; receipt numbers are first-wins, a
+   different one is recorded as `cprConflict` and not written (and moves no
+   date, since `565eecc`); and the CPR tab (`js/fulfillment.js`) dates a
+   receipt by its OWN date. **The give-up window (120 days from the first
+   receipt) is an assumption, and how long PostEx takes to send a reserve
+   receipt — or whether it always does — is not known.**
+7. **§19 — two more collections, and the rules.** `ma_claims/{receipt}` (one
+   live collection per receipt, written in the collection's own
+   transaction) and `ma_runs/rollup` (the last run; server write only)
+   are not in the plan: the first is what review S2 needed to stop two tabs
+   recording one receipt twice, the second is how the page knows when the
+   rollup last ran and what it wrote. The rules now hold 19 `ma_*`
+   collections (15 before), none client-deletable, every read
+   `isMasterAccounts()` alone — the QA account is refused on all 19. An
+   owner types only a statement (`maStatementCreateOk`) and may only review
+   or dispute a derived document (`maDisputeOk`, an append-only
+   `disputes[]`); a collection is `maCollectionShapeOk` / `maClBornOk`; a
+   claim is `maClaimOk` / `maClClaimedOk`. Three M1 rules were widened (four
+   lines replaced: `maShapeOk` gains `cpr` and `collection`, the create
+   rule's per-type branch gains `collection`, and the figures that clear a
+   review gain `net`) and two clauses joined the edit rule (a collection's
+   `maClEditOk`; an edit reaches only a typed statement); against the FINAL
+   M1 file the rules gain 226 lines and lose 4.
+8. **§19 — the rollup is `ma-rollup-background`, and it does less.** A
+   scheduled background function (`45 3 * * *` UTC = 08:45 PKT, after the
+   03:00 UTC PostEx payments run — the plan's 03:45), plus an on-demand
+   wrapper, `ma-rollup-now-background`, behind the owner's ID token
+   (`verifyOwner`, 202 at once; the page polls `ma_runs/rollup`) — Netlify
+   answers a scheduled function's URL with 403, hence the wrapper. It
+   writes `ma_cpr` documents, the run record and one `ma_audit` row
+   (`by:'ma-rollup'`), and **nothing else: it recomputes no trial balance
+   and writes no learned inflow** (§19 had both), because balances are never
+   stored (§2) and nothing is learned before M10; no `ma_daily`,
+   `ma_month` or `ma_quarter` exists. Each update or void is its own
+   transaction over the document as it then is, and a receipt a live
+   collection covers is never voided (review S3).
+9. **§16.1, §16.4 — page `ma-in`, no stat tiles.** §8 names the page
+   `ma-couriers` and sketches five tiles; §16.1 has it `ma-in` and §16.4
+   allows tiles only on Today and a party page, which is what was built: a
+   section per courier (a summary line, PostEx's transit and the rollup's
+   "as of", what is not yet collected with a tick each, Record collection,
+   recent collections) and an owner-only Run now. The Record picker has
+   eleven live kinds (Collection and Courier statement added) and its folded
+   line reads "Coming later · 7" (Bill, Payment, Purchase order, Receipt —
+   M3; Payout, Loan, Savings entry — M4).
+10. **§8, §17 — the calendar places only the expected UPFRONT share.** Of
+    what PostEx owes on parcels delivered and not yet on a CPR, only the
+    upfront part is placed, on the next CPR day + `collectLagDays`, marked
+    an estimate (`maCourierInflows`); an uncollected statement sits on its
+    expected day and TCS's on its last line + `tcsCreditDays`, never
+    spendable. *Reason:* the reserve part is paid on a later receipt and
+    nothing in the app says when, so placing it on the next Tuesday or
+    Friday would overstate that day's cash.
+
+### Moved on, or not built in M2
+
+- **S6 — the quarter lock reads only a document's own date — is deferred to
+  M11.** An M2 document posts on other days: a statement's lines on their
+  delivery days, a collection's opening pair on the books' first day. No
+  screen closes a quarter yet, so nothing is exposed today; M11 must make
+  the lock (`maQuarterLocked`, the rules' `maLocked`) cover every quarter a
+  document posts into before one does. Both carry a KNOWN GAP comment.
+- **M5 must not post PostEx COD a second time.** The delivery days already
+  book each delivered parcel's COD on 4010. §3 #20 has M5 invoice every
+  Shopify order "with the gateway deciding the receivable (COD → the
+  courier)"; built as written that books it twice. Written down, not built.
+- The other three Money in tabs (Online, Warehouse & gate, Customers — M5);
+  the concern logic's learned half and the learned inflows (M10); an editor
+  for `settings.couriers`; the fee card and the courier party fields of
+  §4.2; Blue-Ex's opening-statement document and its aging (refinement 3).
+
+### The review round, and what is still open
+
+Two reviews ran against `7e41206` — money and security (B1, S1–S8, notes
+1–3) and screens (#1–#6); their reports are session scratch, not in the
+repo, so the findings are those the commits, comments and
+`tests/master-accounts-m2-review.test.js` name. B: S3 (the rollup overwrote
+owners' work) and S8 (a refused receipt number moved another receipt's
+date). A: B1 (an opening balance with a line on 1120 or 1121 counted PostEx
+twice — refused now, and a stored one is a Needs attention concern), S1
+(each parcel rounded once, so a receipt is at most half a rupee a parcel
+from PostEx's paisa-exact total), S2 (one live collection per receipt, held
+at the rules, `ma_claims`), S4 (a collected receipt is not moved across the
+books' start), S5 (a negative-net receipt is listed and tickable), S7 (one
+open dispute, history kept), notes 1–3 and the double press. C: the screens'
+display findings — #1 Today clipped its own warning, #3 Run now, #4 an
+unreadable collection or receipt list must shorten every figure and say so
+— and the TCS wallet. Each fix was undone once and a named assertion failed
+— B 31, A 22 and 8 (rules), C 32 — **reported by their authors, not
+re-run**.
+
+**Verified in a session on 30 Sept 2026:** the node suite, 11,007
+assertions (9,753 before M2); `smoke-layout` filtered to the Master
+Accounts fragments, 118 checks over 23 fragments (8 new); the owner's 54
+phone screens clean in both themes; `smoke-axe` exit 0 with no `ma-*` page;
+and, in the real Firestore emulator, `tests/rules-emulator-ma.js` 364 of
+364 against the M2 file (it fails 40 against the FINAL M1 file and 27
+against the 29 Sept M2 file — measured on a copy of the tree with that
+older file swapped in), `tests/rules-emulator-qa.js` 632 (QA refused on all
+19) and `tests/rollup-emulator.js` 26, the rollup's real write path. CI was
+not read for this record.
+
+**Still open:** S6 (above); M5's COD; **the two nets** — `maCprNet` is THE
+net inside Master Accounts, but the CPR tab (`js/fulfillment.js`) still nets
+a parcel whole to one receipt by its forward fee and tax, where `maCprNet`
+splits it and charges a return `reversalFee + reversalTax`, so the two
+screens can show different nets for one number; Blue-Ex is not aged; the
+audit trail names a rollup row `ma-rollup` where it names the backup
+"Nightly backup" (`_maWho` knows only `ma-backup`); `QA_ACCESS.md` (`main`'s
+file) still counts 15 `ma_*` collections and "91 of the 106" read lines —
+19 and 110 now. **Unverifiable from a session:** what a real CPR PDF nets
+(the parcels' upfront and reserve amounts are PostEx's own fields —
+`upfrontPayment`, `reservePayment` — else the share less the other), whether
+PostEx later sends the reserve receipt, how long the rollup takes on real
+data (a 15-minute budget; the parcels are read whole), a return's final day
+(taken as `orderDeliveryDate`), and how production Firestore orders two
+transactions (the SDK documents its lock as "on all returned documents": the
+receipt and its claim carry the guarantee against a collection recorded
+during a void, not the collections query).
+
+### What only the humans can do before this is live
+
+Publish `firestore.rules` from the repo file (LF md5 `85ac93b1…`, 1,748
+lines) — sent to Afnan on 30 Sept (as relayed), **not reported published**;
+an earlier M2 file (`d56929aa…`, 1,675 lines) was sent on 29 Sept, never
+reported published, and is superseded. Until the M2 file is published no
+file reported published has a rule for `ma_cpr`, `ma_collection`,
+`ma_claims` or `ma_runs`, so those reads and writes are refused (default
+deny, owners included) and Money in says "incomplete — <collection> could
+not be read"; Master Accounts otherwise carries on. Then: read the Netlify
+deploy list (was `6410744`, `v269`, built or skipped — and are
+`ma-rollup-background` and `ma-rollup-now-background` in the function list,
+scheduled?); run the first rollup (Run now, or wait for 03:45 UTC — it
+writes `ma_runs/rollup` and an audit row with its own result); hold one real
+CPR PDF against a derived receipt's net, and a TCS, a Bykea and a Blue-Ex
+statement against the form; set the Cloudinary keys so a receipt can be
+attached; and a first look on a real screen. The test from his side: Money
+in ▸ Couriers loads without "incomplete — … could not be read", and Run now
+ends "Done at …". The full list, with what is verified and what is not, is
+in CLAUDE.md "Master Accounts — M2 built" → "Set-up only a human can do".
 
 ## 22. Tests
 

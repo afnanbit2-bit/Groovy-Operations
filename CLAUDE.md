@@ -327,7 +327,9 @@ PUBLISHED** — that is still a question only the human can answer.
                      one doc per day (id = YYYY-MM-DD). Owners/managers +
                      the scoped `fulfillment` role (Umair). Per-day PDF via
                      the print engine `daily-performance` variant
-                     (window.fulfillPdf).
+                     (window.fulfillPdf). The PostEx tab's CPR list dates a
+                     receipt by its OWN date (30 Sept 2026, Master Accounts
+                     M2 — see "The PostEx enrichment").
 /js/profile.js       Profile — one page per signed-in person (photo, chosen
                      display name, job title, department, about) plus a team
                      directory. Firestore `user_profiles/{uid}`. Reached from
@@ -364,12 +366,29 @@ PUBLISHED** — that is still a question only the human can answer.
                      search). Loaded after notes.js. Shared/cross-track.
 /js/ma-core.js       Master Accounts' pure core (M1, Sept 2026): charts,
                      documents, validation, postings, balances, calendar,
-                     PDF data. No DOM, no Firestore; node-requireable.
-                     Loaded after theboard.js, before master-accounts.js.
+                     PDF data; M2 (30 Sept) added the couriers' receipts,
+                     statements, collections, claims and disputes. No DOM,
+                     no Firestore; node-requireable. Loaded after
+                     theboard.js, before master-accounts.js.
 /js/master-accounts.js Master Accounts' pages (ma-*), Afnan and Ammar
-                     only. Loaded LAST. See "Master Accounts".
+                     only (M2 added Money in ▸ Couriers, `ma-in`). Loaded
+                     LAST. See "Master Accounts" and "Master Accounts — M2".
 /netlify/lib/ma-server.js  shared server code for ma-attach / ma-share /
-                     ma-backup (bundled, not an endpoint).
+                     ma-backup and the rollup (bundled, not an endpoint).
+/netlify/functions/ma-rollup-background.js  Master Accounts' nightly courier
+                     rollup (M2, `45 3 * * *` UTC): PostEx parcels → `ma_cpr`
+                     documents. Decides nothing — every figure comes from
+                     js/ma-core.js; writes `ma_cpr`, `ma_runs/rollup` and one
+                     `ma_audit` row. Admin SDK.
+/netlify/functions/ma-rollup-now-background.js  the owners' "run it now" for
+                     it (ID token → `verifyOwner` → 202; the page polls
+                     `ma_runs/rollup`).
+/netlify/lib/postex-core.js  shared PostEx logic (bundled into
+                     postex-sync-background, postex-payments-background and
+                     postex-status, not an endpoint): the parcel sync into
+                     `postex_orders` and `enrichPayments`, which since M2
+                     (30 Sept 2026) asks a parcel until it is FINISHED — see
+                     "Master Accounts — M2 built", "The PostEx enrichment".
 ```
 
 Load order is fixed in `index.html`:
@@ -7886,6 +7905,14 @@ status section, §21a) — read it before touching anything named `ma-`, `ma_`
 or `MA_`. The planning record (v1–v4, the specimen, the two design reports)
 is condensed at the end of this section.
 
+**M2 (couriers and collections, 30 Sept 2026) is built on top of this and has
+its own section below, "Master Accounts — M2 built".** This section is M1 as it
+stood on 29 Sept 2026, status statements included: the heading's "rules reported
+published" is M1's rules file, not M2's (M2's is a different, newer file, sent and
+NOT reported published); and where it counts what M2 changed — 15 `ma_*`
+collections, eight `ma-*` page ids, nine live Record kinds, "Coming later · 8" —
+the M2 section has the new numbers (19, nine, eleven, 7).
+
 **Where it stands — verified from git, 29 Sept.** Nine M1 commits on
 `claude/master-accounts-planning-udoiw9`, now on `main`:
 `bf09235` M1.1 the core · `1d8b3c5` M1.2 the rules · `06b9256` M1.3 the
@@ -8248,11 +8275,20 @@ reported by the merge agent); `tools/qa-snapshot-lib.js` (`OWNER_ONLY_BOOKS`,
 `isOwnerOnlyBooks()`) keeps `ma_*` out of the default emulator snapshot —
 an explicit `--collections ma_…` is still honoured, a deliberate ask by
 someone holding live credentials (the merge agent's call, flagged for
-Afnan). **Not held:** nothing checks LIVE that QA is refused —
-`tools/qa-probe.js` has no `ma_` line (verified with `grep`) — and
-`QA_ACCESS.md` still says QA reads owner-only collections (its lines
-12–13) and "reads everything" (line 78), with no `ma_` exception; that
-file is `main`'s and was not edited here.
+Afnan). **Not held by any committed check:** nothing in the repo checks LIVE
+that QA is refused — `tools/qa-probe.js` has no `ma_` line (`grep -c ma_
+tools/qa-probe.js` reads 0, re-read 30 Sept 2026) — ~~and `QA_ACCESS.md` still
+says QA reads owner-only collections (its lines 12–13) and "reads everything"
+(line 78), with no `ma_` exception; that file is `main`'s and was not edited
+here.~~ *(SUPERSEDED 29 Sept 2026, PR #100 `e1a767b`: `QA_ACCESS.md` now names the
+`ma_*` exception — verified 30 Sept: `grep -n ma_ QA_ACCESS.md` hits its lines 23,
+29, 53, 97 and 166.)* **Held live only by a one-off:** a REST list of all 15
+`ma_*` collections as the QA account on 29 Sept 2026 answered HTTP 403 for each —
+ambiguous between "block not published" and "block published, QA refused" (see
+"On `main` since" above). It predates M2's four collections (19 now; their read
+rules are `isMasterAccounts()` alone too — verified), which no live probe has
+touched; in the emulator QA is REFUSED on all 19 (`tests/rules-emulator-qa.js`,
+re-run 30 Sept: 632 passed).
 
 ### The decisions that hold it up — with the reasons
 
@@ -8783,8 +8819,14 @@ reproductions — this summary is the record.
 One of these is done and verified — the merge into `main`, with Afnan's
 go-ahead (29 Sept 2026; `main` read from git as `914b67a`) — and one thing
 is REPORTED done by Afnan, not checkable: the rules publish (the two rules
-items below, left unticked — a report is not a check). Nothing else is done
-or checked as of that day. ~~The sandbox cannot reach Google Cloud, Netlify's
+items below, left unticked — a report is not a check). ~~Nothing else is done
+or checked as of that day.~~ *(30 Sept 2026: one more thing is REPORTED, not
+re-run — PR #100, merged into `main` on 29 Sept 2026, records that `sw.js`,
+`index.html`, `js/master-accounts.js` and `js/ma-core.js` served by
+`groovyoperations.netlify.app` at 16:39 UTC that day were byte-identical to
+`origin/main`'s, read by another session; this session's `curl` to that host
+failed on 30 Sept, "CONNECT tunnel failed, response 403". The Netlify deploy LIST
+is still unseen, and nothing else here is done or checked.)* ~~The sandbox cannot reach Google Cloud, Netlify's
 settings, Cloudinary or the Firebase Console, so each is Afnan's~~ *(29 Sept 2026,
 corrected: the public hosts answer from a session; the consoles and dashboards themselves —
 Google Cloud, Netlify, Cloudinary's account, the Firebase Console — were not opened, so each
@@ -8841,9 +8883,14 @@ stays Afnan's)* (the full steps are handed to him in chat, not kept here).
   `914b67a…` at 16:24 UTC): `main` was fast-forwarded to `a436e8b` and then
   to `914b67a` (the branch's tip then), after the eleventh merge of `main`
   into the branch (`a436e8b`). GitHub Actions `tests` on `main` completed
-  with success for both (read at about 16:25 UTC). **Whether Netlify built
+  with success for both (read at about 16:25 UTC). ~~**Whether Netlify built
   it is unconfirmed** until Afnan reads the Netlify deploy list — a skipped
-  deploy looks exactly like a stale cache.
+  deploy looks exactly like a stale cache.~~ *(30 Sept 2026: PR #100 REPORTS that
+  the served `sw.js`, `index.html`, `js/master-accounts.js` and `js/ma-core.js`
+  were byte-identical to `origin/main`'s at 16:39 UTC on 29 Sept, so a build
+  containing Master Accounts was live — reported here, read by another session,
+  not re-run: this session's `curl` failed. The deploy LIST is still unseen, and
+  a skipped deploy looks exactly like a stale cache.)*
 - [ ] **Read the Netlify deploy list for that merge** — was it built, or
   skipped (the 21 Sept credit-usage skip looked exactly like a stale
   cache)? ~~*Only Afnan can see it: `*.netlify.app` is blocked here and the
@@ -9010,6 +9057,323 @@ cell wore `today`, a class the same stylesheet already used for a
 page; it became `cal-today`. **Every rule added to `css/main.css` for this
 module is `.ma-`-scoped for that reason** — the `tb` lesson from The Board,
 in CSS.
+
+## Master Accounts — M2 built (30 Sept 2026) · couriers and collections · on `main` at `6410744`, rules sent but NOT reported published, not yet seen
+
+Afnan, 29 Sept 2026 (as relayed to the session that built it): after the
+foundation, the money that actually arrives — PostEx's receipts (CPRs)
+collected by hand, and TCS, Blue-Ex and Bykea. That is §21's **M2 "Couriers &
+collections"**; **`MASTER_ACCOUNTS_PLAN.md` §21b** says where the build differs
+from the plan. **Progress: 2 of the 11 build milestones (M1–M11), about 18%.**
+Where the M1 section above says 15 `ma_*` collections, eight `ma-*` page ids,
+nine live Record kinds or a picker folding "Coming later · 8", M2 made them
+**19, nine, eleven and 7** (verified: `grep -c 'match /ma_' firestore.rules`,
+`MA_PAGES`, `_MA_TILES`).
+
+**Where it stands — verified from git, 30 Sept.** Nineteen commits since
+`fa44f86` (the five PR #100 docs commits in that range are not M2's), every one
+an ancestor of `origin/main` (`git merge-base --is-ancestor`); `git ls-remote
+origin refs/heads/main` read `64107447b8c46e2a77e48c0d9d5d031de3241102` on 30
+Sept, the branch tip. In order: the PostEx enrichment `1fda9dd` (`0adad4e` merges
+PR #100 into it), fixed by `e2827dd`; the derivation `9c29bd7`; the core `90a98a9`
+(`c1506d2`); the nightly rollup `138aa9c`; the rules `0a5b6d6` (`7dbc513`); the
+receipt PDF `7f6f0af`; the screens `7e41206`. Then the review round, three
+fixers built side by side from `7e41206`: **B** `565eecc` (rollup, PostEx); **A**
+`53ba832` (page, core, rules — `33d87a1` merges B, `74abf80` is its emulator
+proof); **C** `a1cbb32` (display — `ad9f39e` merges B, `0c91285` re-numbers the
+cache, `6410744` merges A's proof). The trailers name Opus 5.5 on the build and
+on A, Sonnet 5.5 on B and C (read from the 13 non-merge commits).
+
+- **On `main`; the deploy list was not read.** **`CACHE_VERSION` is `v269`:** A
+  and C both started at v265, B took v266, C then v267 and A's proof v268 (`sw.js`
+  read at each commit), and the last merge — conflicts in `index.html`,
+  `js/master-accounts.js` and `sw.js`, by its own message — went past all of them.
+- **The rules: sent, not reported published.** `firestore.rules` at `6410744`: LF
+  md5 `85ac93b115c0c75ba0213d7371cc6958`, 1,748 lines (verified). Sent to Afnan
+  on 30 Sept (as relayed); **not reported published**. An earlier M2 file — md5
+  `d56929aa04f40928de3e0ea14a449442`, 1,675 lines, the file at `0a5b6d6`
+  (verified) — was sent on 29 Sept, never reported published, and is superseded
+  (it has no `ma_claims` block and no dispute-history rule). **Until the M2 file
+  is published**, no file reported published holds a rule for `ma_cpr`,
+  `ma_collection`, `ma_claims` or `ma_runs`, so those reads are default-denied,
+  owners included: dependent figures say "incomplete — <collection> could not be
+  read" and the rest of Master Accounts carries on, and **collection, claim,
+  dispute and courier-statement writes are refused**. See "Firestore rules —
+  published".
+- **Served? Not known.** This session's `curl` to `groovyoperations.netlify.app`
+  failed ("CONNECT tunnel failed, response 403"). PR #100's 29 Sept read of the
+  served bytes was of M1's build (`v259`), is *reported* here and not re-run, and
+  says nothing of `v269`.
+- **Nobody has seen M2 on a screen or run the rollup for real.** The pages are
+  owner-only and the QA account is refused on `ma_*` by design ("The gate"), so
+  no session can open them on live data. Every visual claim below is headless
+  Chromium.
+
+### What is where
+
+- **`js/ma-core.js`** (3,631 lines; 2,326 before), pure: `MA_COURIERS` (four
+  couriers, their cycles and accounts), `maCprDerive` (parcels → receipts, days,
+  transit, opening, data issues; nothing posts), `maCprNet` (THE net of one
+  receipt), `maCourierDocs` / `Merge` / `Gone` / `Plan` (what the rollup writes),
+  typed statements and collections (document types `cpr`, `CS-27-0001`, and
+  `collection`, `CL-27-0001`), claims, disputes, `maCourierInflows`,
+  `maCourierConcerns`, `maPdfCollectionData`.
+- **`js/master-accounts.js`** (4,179; 3,134 before): **Money in ▸ Couriers, page
+  `ma-in`** (one section per courier: a summary, PostEx's transit and the
+  rollup's "as of", what is not yet collected with a tick each, **Record
+  collection**, recent collections, an owner-only **Run now**), the rail for a
+  receipt, statement or collection, both forms, and three NON-core reads (a
+  refused one never reaches the error card). The Record picker has 11 live kinds.
+- **New:** `netlify/functions/ma-rollup-background.js` (382 lines) and
+  `ma-rollup-now-background.js` (32). **Changed:** `netlify/lib/postex-core.js`
+  (+234 −35), `js/print-engine.js` (+121 −5: the **`ma-collection`** PDF, A5),
+  `js/fulfillment.js` (+5 −1), `js/shared.js` (+2 −1: `ma-in` in the phone groups
+  map and `BUG_PAGE_NAMES`), `css/main.css` (+63, all `.ma-`), `netlify.toml`
+  (+6), `ma-backup.js` (exports the four new collections), `ma-server.js`
+  (`rollup` is a server audit action), `index.html` (`?v=` strings), `sw.js`
+  (`CACHE_VERSION` only; no `PRECACHE_URLS` change). No index change; no new env
+  var (`FIREBASE_SERVICE_ACCOUNT`, as the other functions).
+- **Collections** (owner-only read, none deletable; each read rule is
+  `isMasterAccounts()` alone, so QA is refused): **`ma_cpr`** (PostEx's derived
+  days, opening and receipts — written only by the rollup — and TCS / Bykea
+  statements typed by an owner), **`ma_collection`**, **`ma_claims`** (one live
+  collection per receipt), **`ma_runs`** (`ma_runs/rollup`, the last run;
+  server-write only). The rollup also writes one `ma_audit` row a run
+  (`by:'ma-rollup'`). The TCS account, 1060, is switched on (it was
+  `active:false, arrives:'M2'`). The file now has 110 `allow read` lines: 91 with
+  `isQaRead()` and 19 without, all `ma_*` (verified: `grep`).
+
+### The decisions that hold it up — with the reasons
+
+**Afnan, 29 Sept 2026 (as relayed; not in the repo):**
+
+1. **A PostEx sale is income the day PostEx marks the parcel delivered** — not at
+   the CPR, not at the cash (also in `maCprDerive`'s header). A delivery day is
+   one derived document (`postex-day-<day>`, `PX-YYMMDD`): COD Dr 1120 / Cr 4010,
+   PostEx's fee and tax as costs. A receipt only moves its net 1120 → 1121; a
+   collection moves the cash in (Dr the holder / Cr 1121 — the courier's own
+   receivable for the other three — the difference to 9030).
+2. **The books start on 1 July 2026**: the opening balance is dated then and
+   July–September is back-entered (plan §3 #15 says the same; `historyFrom` and
+   `couriers.from` are `2026-07-01`). PostEx's part of the opening is DERIVED
+   (`PX-OPEN`, what it owed at the start), never typed (B1).
+3. **A collection with no receipt photo is saved and flagged while attachments
+   are off, refused once they are on** ("Decision 3", `_maAttachRule`); "off" is
+   M1.6c's not-configured state or an answer that could not be had.
+4. Process: each piece goes to `main` as it passes its tests; each agent's model
+   is chosen by the task.
+
+**The main session's calls (tabled to be overruled, §21b):**
+
+5. A courier statement follows decision 3 too.
+6. **The calendar places only the expected UPFRONT share** of PostEx's
+   delivered-not-on-a-CPR money, on the next CPR day + `collectLagDays`, marked
+   an estimate (`maCourierInflows`); an uncollected statement on its expected
+   day, TCS's at its last line + `tcsCreditDays`, never spendable.
+7. **Blue-Ex's opening is a line on the ONE opening journal** (1123); it has no
+   statements, and a collection is against that balance.
+8. **No stat tiles on Money in** (plan §16.4). Returns' reversal fee and tax post
+   to **5070**, a delivery's fee and tax to 5060. **Fees are posted at delivery,
+   not per CPR** — one definition of a parcel's cost, so with every receipt in
+   the days' COD less charges equals the receipts' nets and 1120 clears (held on
+   fixtures, not against a PostEx receipt). **Courier GST is a cost** unless
+   `settings.couriers.<courier>.taxClaimable` (false for all four; true posts to
+   1160).
+9. **The rollup is a scheduled background function** (`ma-rollup-background`,
+   `45 3 * * *` UTC = 08:45 PKT, after the 03:00 UTC PostEx payments run) **plus
+   an on-demand wrapper** (`ma-rollup-now-background`: the owner's ID token,
+   `verifyOwner`, 202 at once; the page polls `ma_runs/rollup`). Netlify answers a
+   scheduled function's URL with 403 — hence the wrapper. It writes `ma_cpr`
+   documents, the run and an audit row, and nothing else: no balance is stored
+   and nothing is learned (§19 had it recompute the trial balance and write
+   learned inflows).
+10. **M5 must not post PostEx COD a second time.** The days already book each
+    delivered parcel's COD on 4010; plan §3 #20 has M5 invoice each Shopify order
+    "with the gateway deciding the receivable (COD → the courier)", which built
+    as written books it twice. Written down, not built.
+11. **S6 (the quarter lock reads only a document's own date) is deferred to
+    M11.** An M2 document posts on other days — a statement's lines on their
+    delivery days, a collection's opening pair on the books' first day. No screen
+    closes a quarter yet; the lock must cover every quarter a document posts into
+    before one does (KNOWN GAP comments in `maQuarterLocked` and the rules'
+    `maLocked`).
+12. **Courier terms live in `settings.couriers`, not on party records — unlike
+    the plan** (§4.2: `cycle`, `collectBy`, `collectLagDays`, `creditDays`,
+    `tolerancePct`, `feeCard`, `openingStatement`). `MA_COURIERS` is code; `cprDays`,
+    `tcsCreditDays`, `courierTolerancePct` are M1's settings; the new block holds
+    `from`, `runWatchHours` (36) and per courier `collectLagDays`,
+    `uncollectedDays`, `taxClaimable`, `beforeWindowDays` (PostEx 1 / 3 / false /
+    31; TCS 0 / 7; Blue-Ex 0 / 0; Bykea 2 / 7). **No screen edits it** (the pages
+    only read it; the Settings save keeps keys it does not know); the party form
+    has no courier fields; there is no fee card.
+
+**From the design.** A receipt is derived per receipt NUMBER (a parcel on two is
+two parts, never doubled); `maCprNet` is THE net, each figure a whole rupee
+rounded ONCE per parcel (S1: at most half a rupee a parcel off PostEx's
+paisa-exact total); a return is charged `reversalFee + reversalTax`; the upfront
+and reserve parts are PostEx's own `upfrontPayment` / `reservePayment` (else the
+share less the other) — **unverified against a real CPR PDF**. A collection is
+cash counted against up to 40 receipts or statements with a SNAPSHOT of what it
+covered, so a later change is seen, never absorbed; a difference posts to 9030
+and needs a reason past 1%; a receipt dated up to `beforeWindowDays` (31 for
+PostEx) before the books stays collectable against the opening. Who confirms is
+M1's `MA_HANDS` map: a recorder who IS the holder's person has confirmed by
+recording — except into the drawer, which waits for Raees (an owner confirms on
+paper); MCB and the TCS account post at once. Statements are typed for TCS and
+Bykea only; a derived document is the rollup's — an owner may only review or
+dispute it; nothing is deleted.
+
+### The PostEx enrichment (`netlify/lib/postex-core.js`, `js/fulfillment.js`)
+
+M2 needs each parcel's reserve receipt (`cprNumber_2`, `cpr2Date`), `settle` and
+`settlementDate`. `enrichPayments` skipped a parcel for good once it held EITHER
+receipt number and wrote `x || null` with merge, blanking stored values (`1fda9dd`'s
+message, read against the code). It runs daily at 03:00 UTC
+(`postex-payments-background`; the on-demand `?limit=` takes up to 9,000). Now:
+
+- **A parcel is asked until FINISHED:** settled; both numbers in (a RETURN only
+  when settled); or given up. One query as before (eleven fields projected, no
+  index); the `payments_run` summary keeps its keys and adds ten counters
+  (`awaitingCpr`, `reservedForRecheck`, `conflicts`, `gaveUp`, …).
+- **`cprRecheckedAt`** is stamped by every ANSWERED re-check, never by the check
+  that finds a receipt (a failed request moves nothing), so every parcel enriched
+  earlier gets one more ask. **The give-up window is 120 days** from the first
+  receipt (`cpr1Date`, `upfrontPaymentDate`, `cpr2Date`, `transactionDate`),
+  closing only on a parcel re-checked since — **120 is an assumption; how long a
+  reserve receipt takes is not known.**
+- **Throttles and a floor:** a parcel holding a receipt is re-asked at most every
+  3 days less an hour, one with none at most once a day, and when re-checks are
+  due **25% of the per-run limit is kept for them** (`ceil(limit × 0.25)`, capped
+  at how many are due; what they do not use goes back to the parcels with no
+  receipt). The scheduled default limit is 500.
+- **Only values PostEx gave are written**, `settle` only ever as true. **Receipt
+  numbers are first-wins:** a DIFFERENT non-blank number is not written;
+  `cprConflict {field, stored, received, at}` records it and the run counts it.
+  Since `565eecc` (S8) the receipt's DATE goes with its number only — before, a
+  conflict wrote the new receipt's date under the old number.
+- **The CPR tab shows a receipt's OWN date** (upfront date for the upfront
+  number, reserve date for the reserve number; else settlement, else the other's
+  — was `settlementDate || cpr1Date || cpr2Date`). **Only the date changed:** the
+  tab still nets a parcel whole to one receipt by its forward fee and tax, where
+  `maCprNet` splits it and charges a return `reversalFee + reversalTax` — the two
+  screens can show different nets for one number (read from both).
+
+### The review round (29–30 Sept)
+
+Two reviews ran against `7e41206`: money / security (B1, S1–S8, notes 1–3) and
+screens (#1–#6). **Their reports are session scratch, not in the repo**; the
+findings are those the commits, comments and `tests/master-accounts-m2-review.test.js`
+name. Each fix was undone once and a named assertion failed — B 31 undos, A 22
+(page, core) and 8 (rules), C 32 — **reported, not re-run**.
+
+- **S3 (B) — the rollup overwrote owners' work.** It planned from one read, then
+  overwrote whole documents: a receipt collected mid-run was voided anyway (1121
+  short), a dispute or review opened mid-run was erased. Now each update and void
+  is its own transaction over the document as it is then; owners' fields come
+  from that read; **a receipt a live collection or claim covers is never voided**
+  (`skipped`, run issue `rollup.collected`); creates are batch `create()` (a
+  clash falls back to the merge); a quarter closed mid-run is not written into;
+  **a failed run says what it wrote** (`written`, `inDoubt`). **S8** is above,
+  with issue `cpr.number_conflict`.
+- **B1 (A)** — an opening balance with a line on 1120 / 1121 counted PostEx twice
+  (the rollup opens it as `PX-OPEN`): a new one is refused (`opening.derived`), a
+  stored one is a Needs attention concern naming the journal. **S2 — one live
+  collection per receipt, held at the rules:** `ma_claims/{receipt}` = `{doc,
+  collection, at, by, releasedAt?}` written inside the collection's transaction
+  with a fresh read of each covered receipt; a void releases in the same write.
+  Before, the check read outside the transaction, so two tabs could record one
+  receipt twice. The rules (`maClaimOk`, `maClClaimedOk`) hold the FIRST covered
+  statement's claim; the rest are the page's (they cannot loop — their own
+  comment). **The stale net:** the transaction also refuses a receipt whose net,
+  status or books side moved since the form opened.
+- **S4 (A)** — "changed after collection" also compares the books side, and the
+  merge leaves a collected receipt where it is (skipped, with a message to Needs
+  attention) rather than move it across the books' start. **S5** — a
+  NEGATIVE-net receipt (PostEx taking a return's charge back) is listed and
+  tickable; it sat in 1121 for ever. **S7** — one dispute open at a time, the
+  opener kept, `disputes[]` append-only (`maDisputePatch`, `maDisputeOk`).
+  **Notes 1–3** — a difference inside the tolerance is no line; a new rollup flag
+  clears a review; Money in states receipts from before the books apart. **The
+  double press** — two presses each awaited the attachment state before the busy
+  flag and both wrote; one save a press now, and nothing is offered to collect
+  while `ma_collection` is unreadable. `ma_claims` joined the backup, Download
+  the books and the QA guards.
+- **C — display.** #1 Today clipped its own warning ("incomplete — ma_cpr and
+  ma_collection could not be read", 126px past a 390px screen): short words stay
+  on a line, the sentence wraps, the layout probe learned a check
+  (`data-ma-past-edge`). #3 Run now stays on its page, says an unreadable
+  `ma_runs` after three failed polls, reads the run to beat fresh. #4 An
+  unreadable `ma_collection` shortens EVERY cash figure and says so; an
+  unreadable `ma_cpr` (accruals) marks neither the cash hero nor Blue-Ex. **The
+  TCS account (1060) is a wallet** — not in cash in hand, the month's flows or
+  Can pay; its own "Held at TCS — not counted" line. Also captions on statement
+  fields, a tick that is an 18px box in a 44px cell, a half-read parcel list
+  that says so.
+- **Not fixed: S6** (decision 11).
+
+### What is verified, and how
+
+- **Node suite — re-run here at `6410744`: 11,007 assertions, all pass.** A clean
+  `git archive` of `fa44f86` gave 9,714, with one suite (`qa-access`) failing only
+  for want of a `.git`; alone in a throwaway repo it is 39 — **9,753 before M2,
+  11,007 after: 1,254 more.** The six new suites, run singly: `ma-couriers` 200,
+  `master-accounts-couriers` 189, `master-accounts-couriers-screens` 267,
+  `ma-rollup` 239, `postex-core` 142, `master-accounts-m2-review` 120 (1,157).
+- **Layout — re-run here:** `SMOKE_LAYOUT_ONLY="master accounts" node
+  tests/smoke-layout.js`: 23 fragments (8 new), **118 checks passed**.
+  `smoke-app-phone`: the owner's **54 of 54 screens clean in both themes**
+  (`ma-in` among them), every other role clean. `smoke-axe` against its baseline:
+  exit 0, 22 pairs (the baseline's), none on an `ma-*` page.
+- **Rules, in the real emulator — re-run here** (firebase-tools 13, Java, a
+  scratch directory; not `*.test.js`, CI runs none): `tests/rules-emulator-ma.js`
+  **364 passed, 0 failed** on `85ac93b1…`. The suite reads `firestore.rules` from
+  its own tree, so the older-rules runs used a copy of `6410744`'s tree with the
+  older file swapped in (a first attempt that only pointed the emulator at it
+  proved nothing and was discarded): the same 364 checks **fail 40 on the M1 final
+  file (`9d7ec162…`)** — every courier read and every statement, collection, claim
+  and dispute write — and **27 on the 29 Sept file (`d56929aa…`)**, all the claims
+  (S2) and dispute history (S7). `tests/rules-emulator-qa.js` **632 passed**
+  (QA REFUSED on all 19 `ma_*`). `tests/rollup-emulator.js` — the rollup's real
+  write path, `firebase-admin` 13.10.0 against the emulator, rules off — **26
+  passed**.
+- **Reported, not re-run:** fixer C's `smoke-browser` 8/8 and its Chromium
+  rendering at 390 and 1280px in both themes; the undo counts above. CI was not
+  read for this record.
+- **Not verified, not done:** the Console's rules; the Netlify deploy list and
+  whether the functions are deployed and scheduled; anything on a real screen;
+  the Cloudinary keys (until set, collections are saved "No receipt attached");
+  **what a real CPR PDF nets** (§24 asked for one before M2; no CPR PDF or
+  courier statement is in the repo — `git ls-files`); **whether PostEx later sends
+  the reserve receipt** (`cpr2`); **how long the rollup takes on real data** (a
+  15-minute budget; parcels read whole); **production Firestore's ordering of two
+  transactions** (the SDK documents its lock as "on all returned documents": the
+  receipt and its claim carry the guarantee against a collection recorded during
+  a void, not the collections query); a return's final day (taken as
+  `orderDeliveryDate`) and the 120-day window are assumptions.
+- **Still open:** S6; M5's COD; the two nets; no editor for `settings.couriers`;
+  Blue-Ex is not aged from its opening date as §8 planned (no Blue-Ex line in
+  `maCourierConcerns` — read from the code); the audit trail shows a rollup row
+  as `ma-rollup` where it shows the backup as "Nightly backup" (`_maWho` knows
+  only `ma-backup` — read, not run); `QA_ACCESS.md` (`main`'s file, not edited
+  here) still counts 15 `ma_*` collections and "91 of the 106" `allow read` lines,
+  now 19 and 110.
+
+### Set-up only a human can do
+
+- [ ] **Publish `firestore.rules` `85ac93b1…`** (1,748 lines) **from the repo
+  file, not a local copy** — sent 30 Sept (as relayed), **not reported
+  published.** His test: Money in ▸ Couriers loads without "incomplete — … could
+  not be read", and **Run now** ends "Done at …".
+- [ ] **Read the Netlify deploy list:** was `6410744` (`v269`) built or skipped
+  (the 21 Sept credit skip looked like a stale cache)? Are `ma-rollup-background`
+  (`45 3 * * *`) and `ma-rollup-now-background` in the function list?
+- [ ] **The first rollup:** Run now, or wait for 03:45 UTC; it writes
+  `ma_runs/rollup` and an audit row with its own result. Read the PostEx data
+  issues and the 1120 check on Today.
+- [ ] **Hold one real CPR PDF against a derived receipt's net**, and a TCS, a
+  Bykea and a Blue-Ex statement against the form.
+- [ ] **The Cloudinary keys** (M1's checklist), so a receipt can be attached.
+- [ ] **A first look on a real screen** — nobody has.
 
 ## The Sales Team ▸ Marketing (Sept 2026)
 
@@ -11837,6 +12201,58 @@ the whole thing into the Firebase Console in one paste. Read the live file
 fresh each time rather than reconstructing it from memory or from an older
 turn in the conversation.
 
+**REPUBLISH OUTSTANDING (30 Sept 2026) — Master Accounts M2: the couriers'
+rules. Sent to Afnan, NOT reported published.** Read this before the "No
+republish outstanding" entries below, which are dated to the days they name.
+
+1. **The file to publish** is `firestore.rules` on `main` at `6410744`: LF
+   `md5 85ac93b115c0c75ba0213d7371cc6958`, 1,748 lines, 19 `match /ma_` blocks
+   (verified 30 Sept: `tr -d '\r' < firestore.rules | md5sum`, `wc -l`, `grep
+   -c`). Against the FINAL M1 file (`9d7ec162…`, 1,526 lines, the entry below;
+   `git diff --numstat 914b67a 6410744` reads +226 −4) it adds the blocks
+   `ma_cpr`, `ma_collection`, `ma_claims` and `ma_runs` and their helpers
+   (`maStatementCreateOk`, `maCollectionShapeOk`, `maClaimOk`,
+   `maClClaimedOk`, `maDisputeOk`, …), and changes three M1 rules for the new
+   document types — four lines replaced, read from that diff: `maShapeOk` gains
+   `cpr` (`maStatementShapeOk`) and `collection` (`maCollectionShapeOk`), the
+   create rule's per-type branch gains `collection` (`maClBornOk`), and the
+   figure fields that clear a review gain `net`; two clauses also join the edit
+   rule (`maClEditOk` for a collection, and an edit reaches only a typed
+   statement, never a derived one). Publish it **from the repo file, not a
+   local copy** — the lesson of the 29 Sept evening entry below.
+2. **Sent 30 Sept (as relayed); not reported published.** An earlier M2 file —
+   LF md5 `d56929aa04f40928de3e0ea14a449442`, 1,675 lines, the file at
+   `0a5b6d6` (verified) — was sent on 29 Sept, never reported published, and is
+   superseded: it has the three courier blocks but no `ma_claims` and no
+   dispute history (S2, S7).
+3. **Until it is published** the Console most likely holds (hypothesis,
+   unverified) the FINAL M1 file, which Afnan reported publishing at about
+   16:18 UTC on 29 Sept without naming it. That file has no rule for the four
+   collections, so they are default-denied, owners included: **the courier
+   reads are refused** — Money in ▸ Couriers and Today say "incomplete —
+   <collection> could not be read" for what depends on them and the rest of
+   Master Accounts carries on — and **collection, claim, dispute and
+   courier-statement writes are refused**. The rollup writes with the Admin
+   SDK, which bypasses the rules, so it can run; its output cannot be read
+   until they are published.
+4. **What each state of the Console refuses,** measured in the real emulator
+   with `tests/rules-emulator-ma.js` (364 checks) run against a copy of
+   `6410744`'s tree with the older file swapped in — the suite reads
+   `firestore.rules` from its own tree, so pointing the emulator at another
+   file proves nothing (a first attempt did exactly that and was discarded):
+   the M1 final file fails **40** (every courier read and every statement,
+   collection, claim and dispute write); the 29 Sept file fails **27** (the
+   claims and the dispute history); `85ac93b1…` fails none — **364 passed**
+   (re-run 30 Sept). That is what makes the republish necessary rather than
+   cosmetic.
+5. **His test:** Money in ▸ Couriers loads without "incomplete — … could not be
+   read", and **Run now** ends "Done at …". A session cannot run it: the pages
+   are owner-only and the QA account is refused on `ma_*` by design. If a
+   courier read or write is still refused after the publish, check that the
+   signed-in email is exactly `afnan@groovy.op` or `ammar@groovy.op` and that
+   the device clock is within five minutes of the real time (M1's audit rule)
+   before reopening the code.
+
 **No republish outstanding as of 29 Sept 2026 (~16:18 UTC), if he pasted the
 final file — reported by Afnan, not checkable.** Afnan wrote "rules updated
 record" in-session at about 16:18 UTC (as relayed to this session), taken to
@@ -11972,13 +12388,21 @@ replace.
    one exemption from read-everything: the `ma_*` reads stay
    `isMasterAccounts()` alone (`8573391`, "The gate"), and in the emulator QA
    is REFUSED `get` and `list` on all 15 (`tests/rules-emulator-qa.js` part
-   1b, 604 / 604 in that suite, reported by the merge agent). **Nothing
+   1b, 604 / 604 in that suite, reported by the merge agent). ~~**Nothing
    checks that live:** `tools/qa-probe.js` has no `ma_` line (verified with
-   `grep`).
+   `grep`).~~ *(SUPERSEDED in part 30 Sept 2026: `tools/qa-probe.js` still has no
+   `ma_` line (`grep -c` reads 0), but a one-off REST list of all 15 `ma_*`
+   collections as the QA account on 29 Sept answered 403 for each — ambiguous
+   between "block not published" and "block published, QA refused"; "Master
+   Accounts" → "On `main` since".)*
 5. **After the publish**, a Master Accounts page loads for Afnan or Ammar
    (the "could not read" cards stop); the QA half is `main`'s own live probe
-   (`tools/qa-probe.js --live`, exit 0, as `main`'s entry describes). A
-   session can do neither. If a Master Accounts read or write is still
+   (`tools/qa-probe.js --live`, exit 0, as `main`'s entry describes). ~~A
+   session can do neither.~~ *(SUPERSEDED 29 Sept 2026, later: a session can run
+   the probe when the QA account's password is in its environment — one ran
+   `tools/qa-probe.js --live --sandbox-writes` as the QA account and relayed its
+   output, exit 0 ("QA debug access"); the Master Accounts page test is still
+   Afnan's.)* If a Master Accounts read or write is still
    refused after this, check that the signed-in email is exactly
    `afnan@groovy.op` or `ammar@groovy.op` and that the device clock is
    within five minutes of the real time, before reopening the code.
@@ -12235,6 +12659,16 @@ Until the Console has it, a view-only person can still edit (the app hides
 the tools, the rules do not stop a direct write) and the old sharedWith
 escalation stays open. Ran 26/26 in the emulator. One paste of the current
 file carries every outstanding entry below as well.
+
+**SUPERSEDED 29 Sept 2026 (evening) by "No republish outstanding as of 29 Sept
+2026 (evening) — the QA-read rules are LIVE" above; the text below is kept as it
+was.** Ammar reportedly published `isQaRead()` and the uid pin from the repo file
+(reported, not checkable from a session); the live probe of 29 Sept behaves as
+those rules describe (behaviour only — "QA debug access"); the Auth account
+exists and signs in (same section); and the branch is no longer unmerged —
+verified 30 Sept: `dc98484`, `b680d0b`, `b1872f4` and `08b530a` are ancestors of
+`origin/main`, and no `qa-access*` remote branch exists (`git ls-remote --heads
+origin 'qa-access*'`, `git branch -r`). *Was:*
 
 **OUTSTANDING (26 Sept 2026, evening; extended 29 Sept 2026): the QA identity**
 (`dc98484`, `isQa()` / `authed()` / the QA fences — see "The QA identity" in
