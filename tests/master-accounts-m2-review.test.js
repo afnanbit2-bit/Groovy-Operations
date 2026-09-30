@@ -524,9 +524,14 @@ module.exports=async function(){
     await app.run('maLoad()');
     app.run("window.maRecordKind('collection',{courier:'postex',cprNos:['postex-JUL-3']})");
     untouched(app);set(app,'ma-f-holder','1011');set(app,'ma-f-amount',String(NET('postex-JUL-3')));app.run("_maF.atts="+J(ATT));
+    const r0=S.reads.filter(c=>c==='ma_collection').length;
     const a=app.run('window.maSaveForm()');await sleep(5);const b=app.run('window.maSaveForm()');
     await Promise.all([a,b]);
     s.eq('a collection pressed twice while the attachment state is still asked for: one transaction, one collection',J([S.tx.length,Object.keys(db.ma_collection||{}).length]),J([1,1]));
+    // The claims (S2) would also stop a second collection inside its own
+    // transaction, so the count above holds either way; what only the guard
+    // does is drop the second press before it reads or writes anything.
+    s.eq('…and the second press did nothing: ma_collection was read fresh once, not twice',S.reads.filter(c=>c==='ma_collection').length-r0,1);
     app.run("window.maRecordKind('statement',{courier:'tcs'})");
     untouched(app);set(app,'ma-f-date','2026-09-14');set(app,'ma-f-ref','TCS-SEP-1');
     app.run("_maF.stLines=[{date:'2026-09-10',parcels:'12',returned:false,cod:'35000',fee:'1750',tax:'280',memo:''}];_maF.atts="+J(ATT));

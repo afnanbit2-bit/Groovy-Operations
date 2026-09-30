@@ -48,6 +48,18 @@
    documents are built by maCourierDocs and seeded as the rollup (Admin SDK,
    rules off) would write them; collections carry the snapshot of what they
    cover (meta.cprs on create, meta.covers on an edit), as the writer will.
+
+   The M2 review (30 Sept 2026) added the checks named "S2: …" (ma_claims:
+   one live collection per statement, held at the rules) and "S7: …" (one
+   open dispute at a time, the opener kept, `disputes` append-only), and
+   their "… control: …" twins — writes the app makes that must pass. Since
+   S2 a collection is created in ONE write with a claim for each statement
+   it covers (js/master-accounts.js _maClaimsHook), so every collection this
+   file creates is written that way (withClaims); a refused one is tried
+   WITH its claims, so what refuses it is the reason its name gives, and the
+   claims it touched are put back as they were (refusedWithClaims). Since S7
+   a dispute patch carries its history row, so the refused dispute shapes
+   carry a valid one (openRaw) — its control passes.
    ───────────────────────────────────────────────────────────────────────── */
 const fs=require('fs');
 const path=require('path');
@@ -983,6 +995,26 @@ async function check(name,fn){
   const editCl=(before,input,m)=>R('maApplyEdit('+J(before)+',maBuildDoc("collection",'+J(input)+','+J({by:before.by,byName:before.byName,ts:before.ts,covers:before.covers})+',IDX,S),'+J(nowRow(m))+')');
   const CLIN=d=>({date:d.date,courier:d.courier,holder:d.holder,amount:d.amount,cprNos:d.refs.cprNos,collectedBy:d.collectedBy,note:d.note});
   const reviewAs=(u,p)=>updateDoc(doc(as(u),p),{reviewedAt:NOW(),reviewedBy:u});
+  // Review S2: a statement's claim, built by the app (maClaimFor / maClaimRelease), stamped now.
+  const clPath=id=>'ma_claims/'+id;
+  const claimFor=(id,cid,who,at)=>R('maClaimFor('+J(id)+','+J(cid)+','+J(who)+','+J(at===undefined?NOW():at)+')');
+  const claimRel=(c,who)=>R('maClaimRelease('+J(c)+','+J(who)+','+J(NOW())+')');
+  const unseed=async p=>env.withSecurityRulesDisabled(async c=>{ await deleteDoc(doc(c.firestore(),p)); });
+  // What the page writes for a new collection: the collection and a claim for
+  // every statement it covers, in ONE write (_maPostNew + _maClaimsHook).
+  const withClaims=(u,x,ids)=>{const fs=as(u),b=writeBatch(fs);b.set(doc(fs,pathOf(x)),x);
+    (ids||x.refs.cprNos).forEach(id=>b.set(doc(fs,clPath(id)),claimFor(id,x.id,u)));return b.commit();};
+  // A refused collection is tried WITH its claims (so the reason in the check's
+  // name is what refuses it), on statements holding no claim, and the claims it
+  // touched are put back as they were — a write wrongly let through cannot
+  // spill into the next check.
+  const refusedWithClaims=async(u,x,ids)=>{
+    const list=(ids||(x.refs&&Array.isArray(x.refs.cprNos)?x.refs.cprNos:[])).slice(0,40);
+    const had={};for(const id of list)had[id]=await stored(clPath(id));
+    for(const id of list)await unseed(clPath(id));
+    try{await assertFails(withClaims(u,x,list));}
+    finally{for(const id of list){if(had[id])await seed(clPath(id),had[id]);else await unseed(clPath(id));}}
+  };
 
   // ── the derived half: the rollup's, never an owner's
   await check('M2: an owner reads a derived PostEx day and lists ma_cpr',async()=>{
@@ -1029,15 +1061,23 @@ async function check(name,fn){
     if(!r.patch)throw new Error(J(r));
     await assertSucceeds(updateDoc(doc(as('ammar'),cprPath(pxDay)),r.patch));
   });
+  // A dispute patch by hand, with the history row the rules ask for (review
+  // S7): the refused shapes below differ from a good one in the named field only.
+  const openRow=(who,reason,t)=>({state:'open',reason,by:who,at:t});
+  const openRaw=(who,reason,t,hist)=>({dispute:{state:'open',reason,by:who,at:t},disputes:(hist||[]).concat([openRow(who,reason,t)])});
+  await check('S7 control: a hand-built open (dispute + its history row) is allowed — the shapes below differ only where named',async()=>{
+    await seed(cprPath(pxDay),pxDay);
+    await assertSucceeds(updateDoc(doc(as('afnan'),cprPath(pxDay)),openRaw('afnan','x',NOW())));
+  });
   for(const [label,mk] of [
-    ['stamped six minutes ago',()=>{const x=dispute(pxDay,'afnan',{state:'open',reason:'x'}).patch;x.dispute.at=NOW()-360000;return x;}],
-    ['dated 0',()=>{const x=dispute(pxDay,'afnan',{state:'open',reason:'x'}).patch;x.dispute.at=0;return x;}],
-    ['with no reason',()=>({dispute:{state:'open',reason:'',by:'afnan',at:NOW()}})],
-    ['with a blank reason',()=>({dispute:{state:'open',reason:'   ',by:'afnan',at:NOW()}})],
-    ['opened in Ammar\'s name by Afnan',()=>({dispute:{state:'open',reason:'x',by:'ammar',at:NOW()}})],
-    ['in a state not on the list',()=>({dispute:{state:'closed',reason:'x',by:'afnan',at:NOW()}})],
+    ['stamped six minutes ago',()=>openRaw('afnan','x',NOW()-360000)],
+    ['dated 0',()=>openRaw('afnan','x',0)],
+    ['with no reason',()=>openRaw('afnan','',NOW())],
+    ['with a blank reason',()=>openRaw('afnan','   ',NOW())],
+    ['opened in Ammar\'s name by Afnan',()=>openRaw('ammar','x',NOW())],
+    ['in a state not on the list',()=>{const t=NOW();return {dispute:{state:'closed',reason:'x',by:'afnan',at:t},disputes:[{state:'closed',reason:'x',by:'afnan',at:t}]};}],
     ['carrying a figure with it',()=>Object.assign({amount:1},dispute(pxDay,'afnan',{state:'open',reason:'x'}).patch)],
-    ['"resolved" with no dispute open',()=>({dispute:{state:'resolved',reason:'x',by:'afnan',at:NOW(),resolvedBy:'afnan',resolvedAt:NOW(),note:''}})]]){
+    ['"resolved" with no dispute open',()=>{const t=NOW();return {dispute:{state:'resolved',reason:'x',by:'afnan',at:t,resolvedBy:'afnan',resolvedAt:t,note:''},disputes:[{state:'resolved',note:'',by:'afnan',at:t}]};}]]){
     await check('M2: a dispute '+label+' is refused',async()=>{
       await seed(cprPath(pxDay),pxDay);
       await assertFails(updateDoc(doc(as('afnan'),cprPath(pxDay)),mk()));
@@ -1046,16 +1086,70 @@ async function check(name,fn){
   await check('M2: a dispute on a void derived document is refused',async()=>{
     const r=Object.assign({},rc('postex-CPR1004'),{status:'void',voidedAt:T,voidedBy:'ma-rollup',voidReason:'PostEx no longer reports it',sig:'void'});
     await seed(cprPath(r),r);
-    await assertFails(updateDoc(doc(as('afnan'),cprPath(r)),{dispute:{state:'open',reason:'x',by:'afnan',at:NOW()}}));
+    await assertFails(updateDoc(doc(as('afnan'),cprPath(r)),openRaw('afnan','x',NOW())));
   });
-  await check('M2: a resolution that rewrites who opened it, or its reason, is refused',async()=>{
+  await check('M2/S7: a resolution that rewrites who opened it, when, or why — or names someone else as resolving — is refused',async()=>{
     const opened=Object.assign({},pxDay,dispute(pxDay,'afnan',{state:'open',reason:'r1'}).patch);
     await seed(cprPath(pxDay),opened);
     const r=dispute(opened,'ammar',{state:'resolved',note:'n'}).patch;
-    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),{dispute:Object.assign({},r.dispute,{by:'ammar'})}));
-    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),{dispute:Object.assign({},r.dispute,{reason:'something else'})}));
-    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),{dispute:Object.assign({},r.dispute,{resolvedBy:'afnan'})}));
+    if(!(r&&r.dispute&&Array.isArray(r.disputes)&&r.disputes.length===2))throw new Error(J(r));
+    const bent=o=>Object.assign({},r,{dispute:Object.assign({},r.dispute,o)});
+    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),bent({by:'ammar'})));
+    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),bent({at:r.dispute.at+1})));
+    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),bent({reason:'something else'})));
+    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),bent({resolvedBy:'afnan'})));
+    await assertSucceeds(updateDoc(doc(as('ammar'),cprPath(pxDay)),r));                   // the app's own resolve: allowed
   });
+  await check('S7: a dispute opened over an OPEN one is refused — by the other owner, and by the same one',async()=>{
+    const opened=Object.assign({},pxDay,dispute(pxDay,'afnan',{state:'open',reason:'r1'}).patch);
+    await seed(cprPath(pxDay),opened);
+    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),openRaw('ammar','r2',NOW(),opened.disputes)));
+    await assertFails(updateDoc(doc(as('afnan'),cprPath(pxDay)),openRaw('afnan','r2',NOW(),opened.disputes)));
+    // …and in the shape the rules before the review let through (the dispute alone): the open one replaced.
+    await assertFails(updateDoc(doc(as('ammar'),cprPath(pxDay)),{dispute:{state:'open',reason:'r2',by:'ammar',at:NOW()}}));
+    const still=await stored(cprPath(pxDay));if(!(still.dispute.reason==='r1'&&still.dispute.by==='afnan'))throw new Error(J(still.dispute));
+  });
+  await check('S7 control: open → resolve → open again is allowed, three rows of history',async()=>{
+    await seed(cprPath(pxDay),pxDay);
+    const o1=dispute(pxDay,'afnan',{state:'open',reason:'r1'}).patch;await assertSucceeds(updateDoc(doc(as('afnan'),cprPath(pxDay)),o1));
+    const d1=Object.assign({},pxDay,o1);
+    const r1=dispute(d1,'ammar',{state:'resolved',note:'fixed'}).patch;await assertSucceeds(updateDoc(doc(as('ammar'),cprPath(pxDay)),r1));
+    const d2=Object.assign({},d1,r1);
+    const o2=dispute(d2,'ammar',{state:'open',reason:'r2'}).patch;await assertSucceeds(updateDoc(doc(as('ammar'),cprPath(pxDay)),o2));
+    const got=await stored(cprPath(pxDay));
+    if(!(got.disputes.length===3&&got.disputes.map(x=>x.state).join()==='open,resolved,open'&&got.dispute.state==='open'&&got.dispute.by==='ammar'))throw new Error(J(got.disputes));
+  });
+  // The history is append-only: one row per change, by the caller, saying
+  // what the dispute says; every earlier row untouched.
+  {
+    const d1=Object.assign({},pxDay,dispute(pxDay,'afnan',{state:'open',reason:'r1'}).patch);
+    const d2=Object.assign({},d1,dispute(d1,'ammar',{state:'resolved',note:'fixed'}).patch);   // two rows, resolved
+    const good=()=>dispute(d2,'afnan',{state:'open',reason:'again'}).patch;                  // a third row
+    await check('S7 control: a new dispute after a resolution appends one row (the app\'s patch) — allowed',async()=>{
+      await seed(cprPath(pxDay),d2);
+      await assertSucceeds(updateDoc(doc(as('afnan'),cprPath(pxDay)),good()));
+    });
+    for(const [label,mk] of [
+      ['rewriting an earlier row',()=>{const x=good();x.disputes[0]=Object.assign({},x.disputes[0],{reason:'rewritten'});return x;}],
+      ['dropping the earlier rows',()=>{const x=good();x.disputes=x.disputes.slice(-1);return x;}],
+      ['leaving the history out (no new row)',()=>{const x=good();delete x.disputes;return x;}],
+      ['appending TWO rows',()=>{const x=good();x.disputes=x.disputes.concat([Object.assign({},x.disputes[x.disputes.length-1])]);return x;}],
+      ['with its new row in Ammar\'s name',()=>{const x=good();x.disputes[x.disputes.length-1].by='ammar';return x;}],
+      ['with its new row saying another reason',()=>{const x=good();x.disputes[x.disputes.length-1].reason='not what the dispute says';return x;}],
+      ['with its new row at another stamp',()=>{const x=good();x.disputes[x.disputes.length-1].at+=1;return x;}],
+      ['with its new row carrying an extra field',()=>{const x=good();x.disputes[x.disputes.length-1].amount=1;return x;}],
+      ['with its new row in another state',()=>{const x=good();x.disputes[x.disputes.length-1].state='resolved';return x;}]]){
+      await check('S7: disputes[] is append-only — '+label+' is refused',async()=>{
+        await seed(cprPath(pxDay),d2);
+        await assertFails(updateDoc(doc(as('afnan'),cprPath(pxDay)),mk()));
+      });
+    }
+    await check('S7: a review cannot touch the dispute or its history',async()=>{
+      await seed(cprPath(pxDay),d2);
+      await assertFails(updateDoc(doc(as('afnan'),cprPath(pxDay)),{reviewedAt:NOW(),reviewedBy:'afnan',disputes:[]}));
+      await assertFails(updateDoc(doc(as('afnan'),cprPath(pxDay)),{reviewedAt:NOW(),reviewedBy:'afnan',dispute:null}));
+    });
+  }
 
   // ── the typed half: an owner's TCS / Bykea statement
   const st1=stmt();
@@ -1118,19 +1212,19 @@ async function check(name,fn){
     if(!(c1.status==='posted'&&c1.confirmBy===null&&c1.expected===8000&&c1.difference===0&&c1.covers.length===1&&/^CL-27-\d{4}$/.test(c1.no)
       &&cAm.status==='pending'&&cAm.confirmBy==='ammar'&&cAm.confirmPaper===false))throw new Error(J({c1,cAm}));
   });
-  await check('M2: allowed — Afnan creates a collection into his cash; Ammar reads it',async()=>{
-    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(c1)),c1));
+  await check('M2: allowed — Afnan creates a collection into his cash (with its claim, S2); Ammar reads it',async()=>{
+    await assertSucceeds(withClaims('afnan',c1));
     await assertSucceeds(getDoc(doc(as('ammar'),pathOf(c1))));
   });
   await check('M2: allowed — Afnan creates one into Ammar\'s hands, pending; Ammar confirms it in the app',async()=>{
-    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(cAm)),cAm));
+    await assertSucceeds(withClaims('afnan',cAm));
     const p=confirm(cAm,'ammar',{at:T});if(!p.patch)throw new Error(J(p));
     await assertFails(updateDoc(doc(as('afnan'),pathOf(cAm)),confirm(cAm,'ammar',{at:T}).patch));   // not Afnan's to confirm
     await assertSucceeds(updateDoc(doc(as('ammar'),pathOf(cAm)),p.patch));
   });
   await check('M2: a collection into Ammar\'s hands, recorded by Afnan and born POSTED, is refused',async()=>{
     const x=Object.assign(cl({holder:'1012',cprNos:['postex-CPR1003'],amount:4000}),{status:'posted',confirmBy:null,confirmPaper:false});
-    await assertFails(setDoc(doc(as('afnan'),pathOf(x)),x));
+    await refusedWithClaims('afnan',x);
   });
   const drw=cl({holder:'1010',cprNos:['postex-CPR1003'],amount:4000},'ammar');
   await check('M2: (the builder: into the drawer waits for Raees, on paper — even Ammar\'s own entry)',async()=>{
@@ -1138,12 +1232,12 @@ async function check(name,fn){
   });
   await check('M2: a drawer collection born posted is refused',async()=>{
     const x=Object.assign({},drw,{status:'posted',confirmBy:null,confirmPaper:false});
-    await assertFails(setDoc(doc(as('ammar'),pathOf(x)),x));
+    await refusedWithClaims('ammar',x);
     const y=Object.assign({},drw,{confirmPaper:false});                                  // …or waiting "in the app" for Raees
-    await assertFails(setDoc(doc(as('ammar'),pathOf(y)),y));
+    await refusedWithClaims('ammar',y);
   });
   await check('M2: allowed — the drawer collection is created pending, and confirmed on paper by Afnan for Raees',async()=>{
-    await assertSucceeds(setDoc(doc(as('ammar'),pathOf(drw)),drw));
+    await assertSucceeds(withClaims('ammar',drw));
     await assertFails(updateDoc(doc(as('raees'),pathOf(drw)),{status:'posted',confirmedBy:'raees',confirmedAt:T,confirmVia:'app'}));
     const p=confirm(drw,'afnan',{at:T});if(!(p.patch&&p.patch.confirmVia==='paper'))throw new Error(J(p));
     await assertSucceeds(updateDoc(doc(as('afnan'),pathOf(drw)),p.patch));
@@ -1156,15 +1250,38 @@ async function check(name,fn){
     ['born reviewed',{reviewedAt:T,reviewedBy:'ammar'}],['at rev 2',{rev:2}]]){
     await check('M2: a collection with '+label+' is refused',async()=>{
       const x=Object.assign(cl({cprNos:['postex-CPR1004'],amount:3000}),{amount:8000,expected:8000,difference:0},over);
-      await assertFails(setDoc(doc(as('afnan'),pathOf(x)),x));
+      await refusedWithClaims('afnan',x);
     });
   }
   await check('M2: allowed — a collection covering 40 CPRs (the most) is created and edited',async()=>{
     const many=Array.from({length:40},(_,i)=>Object.assign({},rc('postex-CPR1004'),{id:'postex-M'+i,no:'M'+i,ref:'M'+i,net:100,amount:100}));
     const x=cl({cprNos:many.map(m=>m.id),amount:4000},'afnan',many);
     if(!(x.covers.length===40&&x.expected===4000&&x.difference===0))throw new Error(J([x.covers.length,x.expected]));
-    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(x)),x));
+    await assertSucceeds(withClaims('afnan',x));                                         // and its 40 claims, in the one write
     await assertSucceeds(setDoc(doc(as('afnan'),pathOf(x)),editCl(x,Object.assign(CLIN(x),{amount:3900,note:'short'}),{by:'afnan',byName:'Afnan',reason:'recount'})));
+  });
+  // The page's OWN writes at the most (review S2): a new collection is ONE
+  // transaction — the counter, the collection, one claim per statement and
+  // the audit row — and its void is one too: the void, a release per claim
+  // and the audit row. 40 statements is the cap (MA_CL_MAX_COVERS), so this
+  // is the largest write either makes; every claim reads the same collection.
+  await check('S2 control: the page\'s own writes at the most — 40 statements: counter + collection + 40 claims + audit row in ONE write, then its void + 40 releases + audit row in ONE write',async()=>{
+    const many=Array.from({length:40},(_,i)=>Object.assign({},rc('postex-CPR1004'),{id:'postex-N'+i,no:'N'+i,ref:'N'+i,net:100,amount:100}));
+    const x=cl({cprNos:many.map(m=>m.id),amount:4000},'afnan',many);
+    const fs=as('afnan'),b=writeBatch(fs);
+    b.set(doc(fs,'ma_counters/collection'),{[x.fy]:900,updatedAt:NOW()});
+    b.set(doc(fs,pathOf(x)),x);
+    many.forEach(m=>b.set(doc(fs,clPath(m.id)),claimFor(m.id,x.id,'afnan')));
+    b.set(doc(fs,'ma_audit/s2-post-'+x.id),audit('post',x,{by:'afnan',byName:'Afnan',at:NOW(),detail:'40 statements'}));
+    await assertSucceeds(b.commit());
+    const cur=await stored(pathOf(x));
+    const v=voided(cur,{at:T,by:'afnan',byName:'Afnan',reason:'wrong statements'});
+    const b2=writeBatch(fs);
+    b2.update(doc(fs,pathOf(x)),{status:v.status,voidedAt:v.voidedAt,voidedBy:v.voidedBy,voidedByName:v.voidedByName,voidReason:v.voidReason});
+    for(const m of many){const c=await stored(clPath(m.id));b2.set(doc(fs,clPath(m.id)),claimRel(c,'afnan'));}
+    b2.set(doc(fs,'ma_audit/s2-void-'+x.id),audit('void',x,{by:'afnan',byName:'Afnan',at:NOW(),detail:'wrong statements'}));
+    await assertSucceeds(b2.commit());
+    const last=await stored(clPath('postex-N39'));if(!(last&&last.collection===null))throw new Error(J(last));
   });
   await check('M2: a collection filed at an id that is not a CL number is refused',async()=>{
     const x=cl({cprNos:['postex-CPR1004'],amount:3000});x.no='JV-27-0999';x.id=x.no;await assertFails(setDoc(doc(as('afnan'),'ma_collection/JV-27-0999'),x));
@@ -1173,16 +1290,16 @@ async function check(name,fn){
   const tcsIn=(holder)=>cl({courier:'tcs',holder,cprNos:[stT.id],amount:stT.net},'afnan',[stT]);
   await check('M2: TCS\'s credit into Afnan\'s cash (1011) is refused — TCS credits the TCS account',async()=>{
     const x=tcsIn('1011');if(!(x.courier==='tcs'&&x.holder==='1011'))throw new Error(J(x));
-    await assertFails(setDoc(doc(as('afnan'),pathOf(x)),x));
+    await refusedWithClaims('afnan',x);
   });
   await check('M2: …into MCB (1020) is refused too; and Bykea\'s cash into the TCS account (1060) is refused',async()=>{
-    const x=tcsIn('1020');await assertFails(setDoc(doc(as('afnan'),pathOf(x)),x));
-    const y=cl({courier:'bykea',holder:'1060',cprNos:[stT.id],amount:100},'afnan',[stT]);await assertFails(setDoc(doc(as('afnan'),pathOf(y)),y));
+    const x=tcsIn('1020');await refusedWithClaims('afnan',x);
+    const y=cl({courier:'bykea',holder:'1060',cprNos:[stT.id],amount:100},'afnan',[stT]);await refusedWithClaims('afnan',y);
   });
   const tcsOk=tcsIn('1060');
   await check('M2: allowed — TCS\'s credit into the TCS account (1060) posts at once (nobody holds it)',async()=>{
     if(!(tcsOk.status==='posted'&&tcsOk.confirmBy===null))throw new Error(J(tcsOk));
-    await assertSucceeds(setDoc(doc(as('afnan'),pathOf(tcsOk)),tcsOk));
+    await assertSucceeds(withClaims('afnan',tcsOk));
   });
   // Edits
   await check('M2: allowed — Afnan edits his posted collection\'s amount (named; the difference derived) and note',async()=>{
@@ -1234,6 +1351,103 @@ async function check(name,fn){
   });
   await check('M2: an owner cannot delete a collection',()=>assertFails(deleteDoc(doc(as('afnan'),pathOf(c1)))));
 
+  // ── review S2: one live collection per statement, held HERE (ma_claims)
+  console.log('M2 review: S2 — ma_claims, one live collection per statement');
+  const R2=['postex-CPR2001','postex-CPR2002','postex-CPR2003','postex-CPR2004'].map((id,i)=>Object.assign({},rc('postex-CPR1005'),{id,no:id.slice(7),ref:id.slice(7),net:1000+i*100,amount:1000+i*100}));
+  for(const d of R2)await seed(cprPath(d),d);
+  const c2=(o,by)=>cl(Object.assign({amount:1000,cprNos:['postex-CPR2001']},o||{}),by||'afnan',R2);
+  const cA=c2();
+  await check('S2: a collection written WITHOUT its claim is refused (what a build from before claims writes)',async()=>{
+    await assertFails(setDoc(doc(as('afnan'),pathOf(cA)),cA));
+  });
+  await check('S2 control: the same collection with its claim, in one write, is allowed; the claim names it',async()=>{
+    await assertSucceeds(withClaims('afnan',cA));
+    const x=await stored(clPath('postex-CPR2001'));
+    if(!(x&&x.collection===cA.id&&x.doc==='postex-CPR2001'&&x.by==='afnan'&&!('releasedAt' in x)))throw new Error(J(x));
+  });
+  await check('S2: a SECOND collection of the same statement is refused — with its claim, and without',async()=>{
+    const y=c2({},'ammar');
+    await assertFails(withClaims('ammar',y));
+    await assertFails(setDoc(doc(as('ammar'),pathOf(y)),y));
+    const z=c2({cprNos:['postex-CPR2002','postex-CPR2001'],amount:2100});                // not its first statement
+    await assertFails(withClaims('afnan',z));
+    const x=await stored(clPath('postex-CPR2001'));if(!(x&&x.collection===cA.id))throw new Error(J(x));
+  });
+  await check('S2: two tabs record the same statement at the same moment — exactly ONE collection lands',async()=>{
+    const a=c2({cprNos:['postex-CPR2004'],amount:1300}),b=c2({cprNos:['postex-CPR2004'],amount:1300},'ammar');
+    const res=await Promise.allSettled([withClaims('afnan',a),withClaims('ammar',b)]);
+    const ok=res.filter(r=>r.status==='fulfilled').length;
+    const x=await stored(clPath('postex-CPR2004'));
+    const la=await stored(pathOf(a)),lb=await stored(pathOf(b));
+    if(!(ok===1&&x&&[a.id,b.id].indexOf(x.collection)>=0&&(!!la)!==(!!lb)))throw new Error(J({ok,claim:x,a:!!la,b:!!lb}));
+  });
+  await check('S2: a claim naming a collection that does NOT cover the statement is refused',async()=>{
+    await assertFails(setDoc(doc(as('afnan'),clPath('postex-CPR2003')),claimFor('postex-CPR2003',cA.id,'afnan')));
+  });
+  await check('S2: a claim naming a collection that does not exist is refused',async()=>{
+    await assertFails(setDoc(doc(as('afnan'),clPath('postex-CPR2003')),claimFor('postex-CPR2003','CL-27-9999','afnan')));
+  });
+  await check('S2: a claim naming a VOID collection is refused',async()=>{
+    const v=Object.assign({},c2({cprNos:['postex-CPR2003'],amount:1200}),{status:'void',voidedAt:T,voidedBy:'afnan',voidReason:'x'});
+    await seed(pathOf(v),v);
+    await assertFails(setDoc(doc(as('afnan'),clPath('postex-CPR2003')),claimFor('postex-CPR2003',v.id,'afnan')));
+  });
+  for(const [label,mk] of [
+    ['whose doc is not its id',()=>Object.assign(claimFor('postex-CPR2003','CL-27-0001','afnan'),{doc:'postex-CPR2002'})],
+    ['written in Ammar\'s name by Afnan',()=>claimFor('postex-CPR2003','CL-27-0001','ammar')],
+    ['stamped six minutes ago',()=>claimFor('postex-CPR2003','CL-27-0001','afnan',NOW()-360000)],
+    ['carrying an extra field',()=>Object.assign(claimFor('postex-CPR2003','CL-27-0001','afnan'),{net:1})],
+    ['naming an id that is not a CL number',()=>claimFor('postex-CPR2003','JV-27-0001','afnan')],
+    ['born released',()=>Object.assign(claimFor('postex-CPR2003','CL-27-0001','afnan'),{releasedAt:NOW()})]]){
+    await check('S2: a claim '+label+' is refused',async()=>{
+      // A live collection that DOES cover CPR2003, so only the named field can refuse it.
+      const ok=c2({cprNos:['postex-CPR2003'],amount:1200});ok.no='CL-27-0001';ok.id=ok.no;
+      await seed(pathOf(ok),ok);await unseed(clPath('postex-CPR2003'));
+      const good=claimFor('postex-CPR2003','CL-27-0001','afnan');
+      const bad=mk();
+      await assertFails(setDoc(doc(as('afnan'),clPath('postex-CPR2003')),bad));
+      await assertSucceeds(setDoc(doc(as('afnan'),clPath('postex-CPR2003')),good));  // the same claim, done right
+      await unseed(clPath('postex-CPR2003'));await unseed(pathOf(ok));
+    });
+  }
+  await check('S2: a RELEASE while the collection is still live is refused',async()=>{
+    const c=await stored(clPath('postex-CPR2001'));
+    await assertFails(setDoc(doc(as('afnan'),clPath('postex-CPR2001')),claimRel(c,'afnan')));
+  });
+  await check('S2 control: the void and the release in ONE write are allowed (the page\'s void of a collection)',async()=>{
+    const cur=await stored(pathOf(cA)),c=await stored(clPath('postex-CPR2001'));
+    const v=voided(cur,{at:T,by:'afnan',byName:'Afnan',reason:'wrong statement'});
+    const fs=as('afnan'),b=writeBatch(fs);
+    b.update(doc(fs,pathOf(cA)),{status:v.status,voidedAt:v.voidedAt,voidedBy:v.voidedBy,voidedByName:v.voidedByName,voidReason:v.voidReason});
+    b.set(doc(fs,clPath('postex-CPR2001')),claimRel(c,'afnan'));
+    await assertSucceeds(b.commit());
+    const x=await stored(clPath('postex-CPR2001'));
+    if(!(x&&x.collection===null&&x.releasedAt===x.at))throw new Error(J(x));
+  });
+  await check('S2 control: once released, the statement is collected again — a new collection and its claim',async()=>{
+    const cB=c2({},'ammar');
+    await assertSucceeds(withClaims('ammar',cB));
+    const x=await stored(clPath('postex-CPR2001'));if(!(x&&x.collection===cB.id&&!('releasedAt' in x)))throw new Error(J(x));
+  });
+  await check('S2 control: a claim left naming a VOID collection (voided by a build without claims) does not block',async()=>{
+    const old=Object.assign({},c2({cprNos:['postex-CPR2002'],amount:1100}),{status:'void',voidedAt:T,voidedBy:'ammar',voidReason:'x'});
+    await seed(pathOf(old),old);await seed(clPath('postex-CPR2002'),{doc:'postex-CPR2002',collection:old.id,at:T,by:'ammar'});
+    const n=c2({cprNos:['postex-CPR2002'],amount:1100});
+    await assertSucceeds(withClaims('afnan',n));
+  });
+  await check('S2: an owner cannot delete a claim',()=>assertFails(deleteDoc(doc(as('afnan'),clPath('postex-CPR2001')))));
+  await check('S2: ma_claims — Mustafa, Raees, Umair, the QA account and signed-out are refused a read, a list and a write; an owner reads it',async()=>{
+    for(const u of ['mustafa','raees','umair','claude']){
+      await assertFails(getDoc(doc(as(u),clPath('postex-CPR2001'))));
+      await assertFails(getDocs(collection(as(u),'ma_claims')));
+      await assertFails(setDoc(doc(as(u),clPath('postex-CPR2003')),claimFor('postex-CPR2003','CL-27-0001',u)));
+    }
+    await assertFails(getDoc(doc(anon(),clPath('postex-CPR2001'))));
+    await assertFails(getDocs(collection(anon(),'ma_claims')));
+    await assertSucceeds(getDoc(doc(as('ammar'),clPath('postex-CPR2001'))));
+    await assertSucceeds(getDocs(collection(as('afnan'),'ma_claims')));
+  });
+
   // ── reads: owners only, and never the QA account
   await seed('ma_runs/rollup',{state:'done',at:T});
   for(const p of [cprPath(pxDay),pathOf(st1),pathOf(tcsOk),'ma_runs/rollup']){
@@ -1251,7 +1465,7 @@ async function check(name,fn){
   }
   await check('M2: Mustafa and Raees cannot create a statement or a collection',async()=>{
     const x=stmt({},'mustafa');await assertFails(setDoc(doc(as('mustafa'),pathOf(x)),x));
-    const y=cl({cprNos:['postex-CPR1004'],amount:3000},'raees');await assertFails(setDoc(doc(as('raees'),pathOf(y)),y));
+    const y=cl({cprNos:['postex-CPR1004'],amount:3000},'raees');await refusedWithClaims('raees',y);
   });
   await check('M2: ma_runs takes no client write — an owner is refused create, update and delete',async()=>{
     await assertFails(setDoc(doc(as('afnan'),'ma_runs/rollup2'),{state:'done',at:NOW()}));
