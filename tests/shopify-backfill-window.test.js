@@ -2,7 +2,9 @@
    In-memory Firestore + scripted Shopify (catalog-sync.test.js pattern).
    Proves: validation, default stays 90 days, a larger window requests the
    earlier date, a finished backfill is re-opened only by an explicit earlier
-   window and then fetches only the older slice, existing docs are skipped. */
+   window and then fetches only the older slice, existing docs are skipped.
+   Also the owner gate: no token 401, bad token 401, non-owner 403, owner runs,
+   GET 405; nothing is fetched or written for a refused caller. */
 'use strict';
 const path=require('path');
 const Module=require('module');
@@ -21,7 +23,13 @@ function makeAdmin(state){
     async getAll(...refs){return Promise.all(refs.map(r=>r.get()));},
     bulkWriter(){return{set(r,d){r.set(d);},async close(){}};}
   };
-  return{apps:[1],initializeApp(){},credential:{cert:()=>({})},firestore:Object.assign(()=>db,{FieldValue:{serverTimestamp:()=>'TS'}})};
+  const auth=()=>({async verifyIdToken(t){
+    if(t==='owner-afnan')return{email:'afnan@groovy.op'};
+    if(t==='owner-ammar')return{email:'Ammar@Groovy.op'};
+    if(t==='mustafa')return{email:'mustafa@groovy.op'};
+    if(t==='noemail')return{uid:'x'};
+    throw new Error('bad token');}});
+  return{apps:[1],initializeApp(){},auth,credential:{cert:()=>({})},firestore:Object.assign(()=>db,{FieldValue:{serverTimestamp:()=>'TS'}})};
 }
 function loadFn(state){
   const admin=makeAdmin(state);const orig=Module._load;
@@ -45,7 +53,7 @@ module.exports=async function(){
     if(/oauth/.test(url))return{ok:true,status:200,json:async()=>({access_token:'t'})};
     return{ok:true,status:200,headers:{get:()=>null},json:async()=>({orders})};
   };
-  const run=async q=>{state.calls.length=0;const r=await fn.handler({queryStringParameters:q});return{code:r.statusCode,body:JSON.parse(r.body)};};
+  const run=async(q,tok)=>{state.calls.length=0;const r=await fn.handler({httpMethod:'POST',headers:{authorization:'Bearer '+(tok===undefined?'owner-afnan':tok)},body:'',queryStringParameters:q});return{code:r.statusCode,body:JSON.parse(r.body)};};
   const ordersUrl=()=>state.calls.find(c=>/orders\.json/.test(c))||'';
   const minOf=u=>{const m=/created_at_min=([^&]+)/.exec(u);return m?new Date(decodeURIComponent(m[1])).getTime():0;};
   try{
@@ -87,6 +95,28 @@ module.exports=async function(){
     r=await run({since:'2020-01-01'});
     s.eq('200',r.code,200);
     s.ok('min is 2020-01-01',/created_at_min=2020-01-01T00/.test(decodeURIComponent(ordersUrl())));
+
+    s.section('owner gate — a refused caller fetches and writes nothing');
+    {
+      const stored=()=>Object.keys(state.docs).length;
+      const n0=stored();
+      const ev={httpMethod:'POST',queryStringParameters:{days:'5'}};
+      let r=await fn.handler(ev);
+      s.eq('no token: 401',r.statusCode,401);
+      s.eq('bad token: 401',(await run({days:'5'},'garbage')).code,401);
+      s.eq('token with no email: 403',(await run({days:'5'},'noemail')).code,403);
+      s.eq('non-owner (mustafa): 403',(await run({days:'5'},'mustafa')).code,403);
+      s.eq('nothing fetched and nothing written for any of them',J([state.calls.length,stored()]),J([0,n0]));
+      r=await fn.handler({httpMethod:'GET',headers:{authorization:'Bearer owner-afnan'},queryStringParameters:{days:'5'}});
+      s.eq('GET: 405 even with an owner token',r.statusCode,405);
+      r=await fn.handler({httpMethod:'POST',headers:{},body:JSON.stringify({idToken:'owner-afnan',since:'2019-01-01'}),queryStringParameters:null});
+      s.eq('owner token in the body, since in the body: 200',r.statusCode,200);
+      s.ok('the body since reached Shopify',/created_at_min=2019-01-01T00/.test(decodeURIComponent(ordersUrl())));
+      s.eq('owner (ammar, email case-insensitive) runs',(await run({days:'5'},'owner-ammar')).code,200);
+      const bad=await fn.handler({httpMethod:'POST',headers:{},body:'{not json',queryStringParameters:null});
+      s.eq('malformed body: 400',bad.statusCode,400);
+    }
+
   }finally{global.fetch=savedFetch;keys.forEach(k=>{if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];});}
   return s;
 };

@@ -97,9 +97,77 @@ function parseWindow(event, nowMs) {
   return { minISO: minDate.toISOString(), label: `${days} days` };
 }
 
+// ── Owner gate ──────────────────────────────────────────────────
+// This endpoint rewrites order history and spends Shopify API budget, and it
+// used to be open to anyone with the URL. It now needs a Firebase ID token,
+// verified server-side (never a client-asserted role), from an owner.
+const OWNER_EMAILS = ["afnan@groovy.op", "ammar@groovy.op"]; // mirrors firestore.rules isOwner()
+
+const json = (statusCode, obj) => ({
+  statusCode,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(obj),
+});
+
+function parseBody(event) {
+  try {
+    const b = JSON.parse((event && event.body) || "{}");
+    return b && typeof b === "object" ? b : {};
+  } catch {
+    return null;
+  }
+}
+
+function bearer(event) {
+  const h = (event && event.headers) || {};
+  const v = h.authorization || h.Authorization || "";
+  const m = /^Bearer\s+(.+)$/i.exec(String(v));
+  return m ? m[1].trim() : "";
+}
+
+// Returns {email} for a verified owner, else {response} to send back.
+async function requireOwner(event, body) {
+  const idToken = (body && body.idToken) || bearer(event);
+  if (!idToken) return { response: json(401, { error: "Sign in required: send an owner's Firebase ID token." }) };
+  let caller;
+  try {
+    getDb(); // initialises the Admin app
+    caller = await admin.auth().verifyIdToken(idToken);
+  } catch {
+    return { response: json(401, { error: "Could not verify the ID token - sign in again and retry." }) };
+  }
+  const email = String((caller && caller.email) || "").toLowerCase();
+  if (!OWNER_EMAILS.includes(email)) {
+    return { response: json(403, { error: "Only an owner can run the order backfill." }) };
+  }
+  return { email };
+}
+
 // ── Handler ─────────────────────────────────────────────────────
-exports.handler = async function (event) {
+// Intended use (owner, POST, ID token):
+//   POST /.netlify/functions/shopify-order-backfill
+//   Authorization: Bearer <owner ID token>   (or {"idToken": "..."} in the body)
+//   body {"since": "2025-01-01"}             (or ?since= / ?days=N, 1..3650)
+exports.handler = async function (rawEvent) {
   const start = Date.now();
+  if (rawEvent && rawEvent.httpMethod && rawEvent.httpMethod !== "POST") {
+    return json(405, { error: "POST only" });
+  }
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+    return json(500, { error: "Missing env var FIREBASE_SERVICE_ACCOUNT" });
+  }
+  const body = parseBody(rawEvent);
+  if (body === null) return json(400, { error: "Invalid JSON body" });
+  const gate = await requireOwner(rawEvent, body);
+  if (gate.response) return gate.response;
+
+  // The window may come from the query string or the body (query wins).
+  const params = {};
+  for (const k of ["days", "since"]) {
+    if (body[k] !== undefined && body[k] !== null) params[k] = String(body[k]);
+  }
+  Object.assign(params, (rawEvent && rawEvent.queryStringParameters) || {});
+  const event = { queryStringParameters: params };
   const win = parseWindow(event, start);
   if (win.error) {
     return {
