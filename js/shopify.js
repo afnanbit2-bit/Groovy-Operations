@@ -1348,8 +1348,12 @@ function _siClean(src){
     products:{total:products.length,noSku:0,duplicateSkuRows:0,used:0},
     snapshot:{entries:0,noSku:0,negativeClamped:0,duplicateSkus:0,duplicateEntries:0,used:0},
     skuNormalised:0,
-    categories:{groups:0,spellingsMerged:0,blankProducts:0}
+    categories:{groups:0,spellingsMerged:0,blankProducts:0},
+    // Later returns: per-line refunded_quantity / status_synced_at exist only once the returns sync has run.
+    // A line without them is UNSYNCED (never assumed clean). synced = 95%+ of the last 60 days' lines carry the stamp.
+    returns:{stamped:0,recentTotal:0,recentStamped:0,units:0,lines:0,synced:false}
   };
+  const retCut=_siPktDate(-60);
   const normCount=raw=>{if(raw!=null&&String(raw)!==''&&_siCleanSku(raw)!==String(raw))q.skuNormalised++;};
   // categories (products + line items share one vocabulary)
   const cats=_siCleanCategories(products.map(p=>p.product_type).concat(lineItems.map(l=>l.product_type)));
@@ -1389,7 +1393,17 @@ function _siClean(src){
     normCount(li.sku);
     const day=String(li.order_created_at||'').slice(0,10);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(day)){q.lineItems.badDate++;return;}
-    const qty=Number(li.quantity),pr=Number(li.price);
+    let qty=Number(li.quantity);const pr=Number(li.price);
+    const stamped=!!li.status_synced_at;
+    if(stamped)q.returns.stamped++;
+    if(day>=retCut){q.returns.recentTotal++;if(stamped)q.returns.recentStamped++;}
+    const rq=Number(li.refunded_quantity);
+    if(isFinite(qty)&&isFinite(rq)&&rq>0){
+      // units already returned after the sale: taken off net units, counted as refunded
+      const cut=Math.min(rq,qty);qty-=cut;q.returns.units+=cut;
+      out.push({code:_siCleanCode(n),day,qty:cut,kind:'refunded'});
+      if(qty<=0){q.returns.lines++;q.lineItems.refunded++;return;}
+    }
     lis.push({li,nsku:n,code:_siCleanCode(n),day,qty:isFinite(qty)?qty:0,price:isFinite(pr)?pr:0,cat:catOf(li.product_type)});
     q.lineItems.used++;
   });
@@ -1425,6 +1439,7 @@ function _siClean(src){
     }
   }
   q.snapshot.used=stockBy.size;
+  q.returns.synced=q.returns.recentTotal>0&&q.returns.recentStamped/q.returns.recentTotal>=_SI_AX_CFG.returnsSyncedShare;
   const stockKept=[...stockBy.values()].filter(x=>!nonMerch.has(x.code));
   return{products:prods.filter(p=>!nonMerch.has(p._code)),prodBySku,lineItems:lisKept,stock:stockKept,excluded:out.filter(x=>!nonMerch.has(x.code)),quality:q};
 }
@@ -1740,6 +1755,64 @@ function _siAxHistWhy(m){
   if(_siHistState==='error')return'stock history could not be read';
   if(m.days==null)return'no counted days';
   return'needs 7+ measured days of stock history';
+}
+
+// ── Explorer v2 settings: ONE documented object. Every number here is a labelled DEFAULT (conventions for a
+// first read, derived from this store's own distributions; not validated with the business), editable later.
+const _SI_AX_CFG={
+  // confidence (per article): units and counted days
+  lowUnits:10,lowDays:28,highUnits:30,highDays:56,
+  leadTimeSet:false,          // no supplier lead time is stored anywhere yet: while false, confidence is capped at Medium
+  returnsSyncedShare:0.95,    // returns count as synced when this share of the last 60 days' line items carry status_synced_at
+  // demand, classes, actions (steps 2-3)
+  ewmaWeeks:12,ewmaHalfLife:4,
+  coverCapWeeks:26,
+  momentumMinUnits:20,momentumZ:1.96,
+  snapshotDayCutoffHour:18,   // a snapshot taken before 18:00 PKT is the close of the PREVIOUS day
+  bandMin:30,                 // an age band with fewer articles than this is merged into the next one up
+  ageBands:[28,56,112],       // counted-day floors of the age bands
+  winnerPct:0.90,winnerInStock:0.70,winnerUnits:30,
+  constrainedInStock:0.70,constrainedPct:0.50,
+  solidPct:0.50,steadyPct:0.20,
+  deadNoSaleDays:28,
+  abcA:0.80,abcB:0.95,xyzX:0.5,xyzY:1.0,xyzMinWeeks:8,xyzMinMean:1,
+  reorderCoverWeeks:4,holdCoverWeeks:26,markdownCoverWeeks:12,stopMinAgeDays:90
+};
+// Poisson 95% interval for an observed count (Byar's approximation). Used only to print ranges in words.
+function _siAxPoisson(n){
+  n=Math.max(0,Math.round(Number(n)||0));const z=1.96;
+  const lo=n===0?0:n*Math.pow(1-1/(9*n)-z/(3*Math.sqrt(n)),3);
+  const n1=n+1,hi=n1*Math.pow(1-1/(9*n1)+z/(3*Math.sqrt(n1)),3);
+  return{lo:Math.max(0,lo),hi:hi};
+}
+// Confidence chip. Low: fewer than 10 units or fewer than 28 counted days. High: 30+ units AND 56+ days. Medium between.
+// A default lead time or returns that are not synced yet cap the level at Medium (High is not honest until both are real).
+function _siAxConfidence(a){
+  const m=_siAxStats(a),C=_SI_AX_CFG,ret=_siAxIndex().quality.returns;
+  const units=m.units==null?0:m.units,days=m.days==null?0:m.days;
+  let lvl=(m.days==null||units<C.lowUnits||days<C.lowDays)?0:((units>=C.highUnits&&days>=C.highDays)?2:1);
+  const caps=[];
+  if(!ret.synced)caps.push('later returns are not synced yet');
+  if(!C.leadTimeSet)caps.push('the supplier lead time is a default');
+  const capped=lvl===2&&caps.length>0;if(capped)lvl=1;
+  const name=['Low','Medium','High'][lvl];
+  const why=[units+' unit'+(units===1?'':'s')+' over '+days+' counted day'+(days===1?'':'s')];
+  if(capped)why.push('capped at Medium because '+caps.join(' and '));
+  let range='';
+  if(lvl===0&&days>=7){
+    const pz=_siAxPoisson(units),lo=Math.round(pz.lo/days*7),hi=Math.max(lo,Math.round(pz.hi/days*7));
+    range='could be anywhere from '+lo+' to '+hi+' a week';
+  }
+  return{level:['low','medium','high'][lvl],lvl,name,dots:lvl+1,why,caps:capped?caps:[],range,units,days};
+}
+function _siAxConfChip(c){
+  return`<span class="si-conf lvl-${c.level}" title="${_siEsc('Confidence '+c.name+': '+c.why.join('; '))}"><span class="si-dots" aria-hidden="true">${[0,1,2].map(i=>`<i${i<c.dots?' class="on"':''}></i>`).join('')}</span>${_siEsc(c.name)} confidence</span>`;
+}
+// Trust banner: later returns and cancellations are not in these units until the returns sync has stamped the lines.
+function _siAxTrustBanner(){
+  const q=_siAxIndex().quality.returns;
+  if(q.synced)return`<div class="si-ax-trust ok" role="note">Returns are synced: ${q.units} unit${q.units===1?'':'s'} already returned or cancelled are taken off the totals.</div>`;
+  return`<div class="si-ax-trust" role="note"><strong>Recent sales are before later returns and cancellations.</strong> Orders are read when they are placed; returns and cancellations that come afterwards are not in these units yet, so recent units and revenue can read about a fifth above Shopify’s own net figure (September: 7,895 here against 6,466 net at Shopify, checked 30 Sept 2026). Use the numbers as an upper limit.${q.stamped?' A few lines already carry return data ('+q.units+' unit'+(q.units===1?'':'s')+' taken off).':''}</div>`;
 }
 
 // ── Scorecard ───────────────────────────────────────────────────────
@@ -2080,6 +2153,7 @@ function _siArticleExplorerSection(){
     <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles · ignores the season filter</span></div>
   <div class="si-ax-bar"><input id="si-ax-input" class="si-ax-input" autocomplete="off" placeholder="${_siAxModeSel==='compare'?'Add an article to compare — title, colour, code (GST073), category…':'Search any article — title, colour, code (GST073), category…'}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)" onkeydown="window._siAxKey(event)"></div>
   <div id="si-ax-results">${_siAxResultsHtml()}</div>
+  ${_siAxTrustBanner()}
   <div id="si-ax-body">${_siAxModeSel==='compare'?_siAxCompareBody():_siAxSearchBody()}</div>${_siCleanQualityHtml(idx.quality)}`;
 }
 function _siAxResultsHtml(){
@@ -2172,7 +2246,9 @@ function _siAxReadCard(r,n){
     const warn=m.risk.length?`<div class="si-rd-warn"><span class="si-ax-flag">sizes out</span> Out of stock in size${m.risk.length===1?'':'s'} ${_siEsc(m.risk.map(x=>x.size).join(', '))}; sold ${m.risk.reduce((t,x)=>t+x.units,0)} in ${m.risk.length===1?'that size':'those sizes'} in the last 28 days.</div>`:'';
     body=(facts?`<div class="si-rd-facts">${facts}</div>`:'')+warn+(c.unverified?`<div class="si-ax-note" style="margin:4px 0 0">Partly unverified: ${_siEsc(c.skipped.join(', '))} unknown.</div>`:'');
   }
-  return`<div class="si-rd-card"><div class="si-rd-head"><i class="si-ax-badge si-ax-b${n}">${n+1}</i><span class="si-rd-name">${_siEsc(_siAxLabel(a))}</span>${chip}</div>${body}</div>`;
+  const conf=_siAxConfidence(a);
+  const lowLine=conf.lvl===0&&c.cls!=='early'?`<div class="si-ax-note" style="margin:0 0 4px"><strong>Too early to tell.</strong> ${_siEsc(conf.range||'Too few counted days for a pace.')}</div>`:'';
+  return`<div class="si-rd-card"><div class="si-rd-head"><i class="si-ax-badge si-ax-b${n}">${n+1}</i><span class="si-rd-name">${_siEsc(_siAxLabel(a))}</span>${chip}${_siAxConfChip(conf)}</div>${lowLine}${body}</div>`;
 }
 // Cross-article sentences grouped by topic: [{topic, lines:[text]}]. Nothing for fewer than two articles.
 function _siAxReadAcross(rows){
@@ -2279,6 +2355,7 @@ function _siAxScorecardHtml(arts){
     {key:'n',label:'#',type:'num',first:'asc',get:r=>rows.indexOf(r),cell:r=>`<td><i class="si-ax-badge si-ax-b${rows.indexOf(r)}">${rows.indexOf(r)+1}</i></td>`},
     {key:'art',label:'Article',type:'text',get:r=>_siAxLabel(r.a),cell:r=>`<td style="font-weight:600">${_siEsc(_siAxLabel(r.a))}<div class="si-ax-note" style="margin:0">${_siEsc(r.a.code)}</div></td>`},
     {key:'cls',label:'Class',type:'cls',get:r=>r.c.label,cell:r=>`<td>${shapeChip(r.c)}${r.c.unverified?'<div class="si-ax-note" style="margin:0">partly unverified</div>':''}</td>`},
+    {key:'conf',label:'Confidence',type:'num',first:'desc',get:r=>_siAxConfidence(r.a).lvl,cell:r=>`<td>${_siAxConfChip(_siAxConfidence(r.a))}</td>`},
     {key:'units',label:'Net units',type:'num',get:r=>r.m.units,cell:r=>`<td>${r.m.units==null?'—':r.m.units}</td>`},
     {key:'rate',label:'Per live week',type:'num',get:r=>r.m.rateWeek,cell:r=>`<td>${_siAxNum(r.m.rateWeek)}</td>`},
     {key:'st',label:'Sell-through',type:'num',get:r=>r.m.st&&r.m.st.value,cell:r=>`<td>${_siAxPct(r.m.st&&r.m.st.value)}</td>`},

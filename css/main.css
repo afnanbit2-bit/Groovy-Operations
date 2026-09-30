@@ -5073,3 +5073,11 @@ a.ma-btn{text-decoration:none}
 .si-pc-wrap .si-ax-yaxis{margin-top:18px}
 .si-pc-wrap .si-ax-xaxis{margin-right:84px}
 @media (max-width:600px){.si-pc-plot{height:300px;margin-right:66px}.si-pc-wrap .si-ax-xaxis{margin-right:66px}}
+
+/* Article Explorer v2 — trust banner and confidence chip (tokens only, dark-safe; shape + word, never colour alone) */
+.si-ax-trust{border:1px solid var(--accent-warning);background:var(--accent-warning-soft);color:var(--text);border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:13px;line-height:1.45}
+.si-ax-trust.ok{border-color:var(--accent-success);background:var(--accent-success-soft)}
+.si-conf{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--text);border:1px solid var(--border);border-radius:999px;padding:1px 8px;white-space:nowrap}
+.si-conf .si-dots{display:inline-flex;gap:2px}
+.si-conf .si-dots i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--text);display:inline-block;box-sizing:border-box}
+.si-conf .si-dots i.on{background:var(--text)}
