@@ -127,7 +127,15 @@ module.exports=async function(){
   s.ok('120 random stock paths: '+n+' sell-throughs, all within 0..1 (max '+worst.toFixed(3)+')',n>60&&worst<=1&&low>=0);
 
   s.section('weeks of cover');
-  m=M('GA');close('GA 35 on hand / 3.75 a week (in-stock pace)',m.cover,35/3.75);eq('basis is named',m.coverBasis,'in-stock pace');
+  // GA: snapshots 08-01..08-31, stock never 0, so every measurable day (08-02..08-31) is in stock. 7-day windows newest first:
+  //   k0 08-25..31 units 0 days 7 | k1 08-18..24 units 9 (08-20) days 7 | k2 08-11..17 units 0 days 7 | k3 08-04..10 units 6 (08-10) days 7
+  //   | k4 07-28..08-03 units 0 days 2 (only 08-02, 08-03 measurable). Weights 0.5^(k/4).
+  //   pace = (9*0.5^(1/4) + 6*0.5^(3/4)) / (7*(1+0.5^(1/4)+0.5^(1/2)+0.5^(3/4)) + 2*0.5) * 7 = 11.135688/22.998249*7 = 3.389381
+  const gaPace=(9*Math.pow(.5,.25)+6*Math.pow(.5,.75))/(7*(1+Math.pow(.5,.25)+Math.pow(.5,.5)+Math.pow(.5,.75))+2*.5)*7;
+  m=M('GA');close('GA 35 on hand / recency-weighted in-stock pace 3.3894 a week = 10.33 weeks',m.cover,35/gaPace);eq('basis is named',m.coverBasis,'recent in-stock pace');
+  close('the pace itself is 3.389381',gaPace,3.389381);
+  eq('GA range: Poisson(15 units) 8.39..24.74 -> 35/(3.3893*24.74/15) = 6.26 .. 35/(3.3893*8.389/15) = 18.46',[Math.round(m.coverRange.lo*100)/100,Math.round(m.coverRange.hi*100)/100],[6.26,18.46]);
+  eq('as words: 6–19 weeks',R('_siAxCoverText(_siAxStats(_siAxIndex().map.get("GA")))'),'6–19 weeks');
   eq('GB has nothing on hand: 0 weeks of cover, not a dash',M('GB').cover,0);
   eq('GG has stock but no pace: no cover figure (division by zero avoided)',M('GG').cover,null);
   eq('GC has no stock data: no cover',M('GC').cover,null);
@@ -222,18 +230,18 @@ module.exports=async function(){
   s.ok('cards follow class order: Healthy (GA), Stock-constrained (GB), Too early (GE), Not rated (GC)',pos(nmA)>0&&pos(nmA)<pos(nmB)&&pos(nmB)<pos(nmE)&&pos(nmE)<pos(nmC));
   eq('an article name appears once in its card head (no repeated bullets)',(cmp.split('class="si-rd-name">'+nmA).length-1),1);
   const fa=R('_siAxReadFacts(_siAxIndex().map.get("GA"),_siAxStats(_siAxIndex().map.get("GA")),_siAxClassify(_siAxIndex().map.get("GA")))');
-  eq('GA facts: 40 units / 92 days / 3 a week; 30% = 15 of 50; in stock every measured day at 3.5 a week; 9.3 weeks cover; up 50%',
-    fa.map(f=>[f.k,f.v,f.sub]),[['Sold','40 units','92 counted days · 3 a week'],['Sell-through','30%','15 of 50'],['In stock','Every measured day','3.5 a week while in stock'],['Cover','9.3 weeks','in-stock pace'],['Momentum','Up 50%','last 4 weeks vs the 4 before']]);
+  eq('GA facts: 40 units / 92 days / 3 a week; 30% = 15 of 50; in stock every measured day at 3.5 a week; 6-19 weeks cover; Steady (15 vs 10 units is within chance)',
+    fa.map(f=>[f.k,f.v,f.sub]),[['Sold','40 units','92 counted days · 3 a week'],['Sell-through','30%','15 of 50'],['In stock','Every measured day','3.5 a week while in stock'],['Cover','6–19 weeks','recent in-stock pace'],['Momentum','Steady','up 50% · last 4 weeks vs the 4 before']]);
   const fb=R('_siAxReadFacts(_siAxIndex().map.get("GB"),_siAxStats(_siAxIndex().map.get("GB")),_siAxClassify(_siAxIndex().map.get("GB")))');
   eq('GB in stock: out 17 of 30 days, not "about 43% of 30 days (17 out)"',fb.find(f=>f.k==='In stock').v,'Out 17 of 30 days');
   s.ok('GB sizes-out warning: size M, sold 9 in that size in 28 days',/Out of stock in size M; sold 9 in that size in the last 28 days/.test(cmp));
   s.ok('the early article says so instead of showing facts',new RegExp('class="si-rd-name">'+nmE+'[\\s\\S]*?Only 4 counted days; classes start at 28').test(cmp));
   const ac=R('_siAxReadAcross(_siAxCompareData().arts.map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)})))');
-  eq('topics, not articles, group the comparison',ac.map(g=>g.topic),['Pace','Sell-through','Cover','Momentum']);
+  eq('topics, not articles, group the comparison',ac.map(g=>g.topic),['Pace','Sell-through','Cover']);
   eq('pace: GA is 8x GC (40 vs 5 units over the same 92 days: 3 vs 0.4 a week); windows differ is stated',ac[0].lines,[nmA+' sells 8× faster per live week than '+nmC+' (3 vs 0.4 units a week, counted window).','Counted windows differ ('+nmA+' 92 days, '+nmB+' 57 days, '+nmC+' 92 days); rates are per live week so they stay comparable.']);
   eq('sell-through: highest GB 100% (9 of 9), lowest GA 30%',ac[1].lines,['Highest sell-through: '+nmB+' (100%); lowest: '+nmA+' (30%).']);
-  eq('cover: least GB 0 weeks, most GA 9.3 weeks',ac[2].lines,['Least cover: '+nmB+' (0 weeks); most: '+nmA+' (9.3 weeks).']);
-  eq('momentum: GA +50%, GB +125% (9 / 4 - 1) are both rising',ac[3].lines,['Rising: '+nmA+' +50%, '+nmB+' +125% (last 4 weeks vs the 4 before).']);
+  eq('cover: least GB none left, most GA 6-19 weeks',ac[2].lines,['Least cover: '+nmB+' (none left); most: '+nmA+' (6–19 weeks).']);
+  eq('momentum: GA (15 vs 10) and GB (9 vs 4) are under 20 units or within chance, so neither is called rising or fading',ac.length,3);
   R('_siAxCmp=["GE"]');
   eq('one article: no Across section at all',R('_siAxReadAcross(_siAxCompareData().arts.map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)})))'),[]);
   eq('missing inputs: GE has no rate, so no pace sentence',R('_siAxReadBlock(_siAxCompareData().arts)').includes('faster'),false);

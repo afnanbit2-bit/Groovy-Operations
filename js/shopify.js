@@ -1526,6 +1526,8 @@ function _siAxIndex(){
   const list=[...arts.values()];
   const catUnits=new Map();
   list.forEach(a=>{if(a.category)catUnits.set(a.category,(catUnits.get(a.category)||0)+a.units);});
+  const catUnits28=new Map();
+  list.forEach(a=>{if(a.category)catUnits28.set(a.category,(catUnits28.get(a.category)||0)+_siAxUnitsSince(a,27).u);});
   list.forEach(a=>{
     a.liveDay=_siAxDayOf(a.liveAt);
     a.name=a.title||a.code;
@@ -1534,7 +1536,7 @@ function _siAxIndex(){
   list.sort(_siSortArticles);
   // A comparison can hold codes the reloaded data no longer has; they must not count toward the cap.
   _siAxCmp=_siAxCmp.filter(c=>arts.has(c));
-  _siAxCache={li:_siLineItems,n:_siLineItems.length,pr:_siProducts,sn:_siSnapshot,pv:_siPrevSnapshot,hv:_siHist,list,map:arts,catUnits,cov:_siEarliestOrderDate(),quality:cl.quality};
+  _siAxCache={li:_siLineItems,n:_siLineItems.length,pr:_siProducts,sn:_siSnapshot,pv:_siPrevSnapshot,hv:_siHist,list,map:arts,catUnits,catUnits28,cov:_siEarliestOrderDate(),quality:cl.quality};
   return _siAxCache;
 }
 // The catalog live date, unless a counted sale predates it (published_at can be
@@ -1575,22 +1577,46 @@ const _SI_HIST_MIN_SHARE=0.8;    // a snapshot below 80% of the median item coun
 const _SI_HIST_TIMEOUT=90000;
 const _SI_RECV_MIN=5,_SI_RECV_SHARE=0.10; // a receipt counts only when the unexplained increase is at least max(5, 10% of the opening stock)
 let _siHist=null,_siHistState='idle',_siHistError='',_siHistPromise=null;
+// Snapshot time in ms from whatever the read gave back: ISO string, Date, Firestore Timestamp or {seconds}.
+function _siAxSnapMs(v){
+  if(v==null||v==='')return null;
+  if(typeof v==='string'){const t=Date.parse(v);return isNaN(t)?null:t;}
+  if(v instanceof Date)return isNaN(v.getTime())?null:v.getTime();
+  if(typeof v.toDate==='function'){try{return _siAxSnapMs(v.toDate());}catch(_){return null;}}
+  const sec=v.seconds!=null?v.seconds:v._seconds;if(sec!=null&&isFinite(sec))return Number(sec)*1000;
+  return null;
+}
+// The store-local day a snapshot is the CLOSE of. A snapshot taken before 18:00 PKT is still the previous day's
+// close (the 22:00 run is the real close; the old 06:00 and the 10:00 runs are not). Without a usable snapshot_at
+// the document's own date is used unchanged.
+function _siAxSnapKey(d){
+  const ms=_siAxSnapMs(d&&d.snapshot_at);
+  if(ms==null)return String(d.date);
+  const p=new Date(ms+5*3600000),day=_siAxDayNum(p.getUTCFullYear()+'-'+String(p.getUTCMonth()+1).padStart(2,'0')+'-'+String(p.getUTCDate()).padStart(2,'0'));
+  return _siAxDayStr(p.getUTCHours()<_SI_AX_CFG.snapshotDayCutoffHour?day-1:day);
+}
 function _siAxBuildHistory(docs){
   const good=(docs||[]).filter(d=>d&&d.date&&d.items&&typeof d.items==='object'&&/^\d{4}-\d{2}-\d{2}$/.test(String(d.date)));
   const counts=good.map(d=>Object.keys(d.items).length).sort((x,y)=>x-y);
   const med=counts.length?counts[Math.floor(counts.length/2)]:0;
-  const byCode=new Map(),dates=[],dropped=[];
-  good.sort((x,y)=>String(x.date).localeCompare(String(y.date)));
+  const byCode=new Map(),dates=[],dropped=[],rekeyed=[];
+  // one document per closing day: two documents that map to the same day keep the EARLIER snapshot (the one closer to that day's end)
+  const byKey=new Map();
   good.forEach(d=>{
     const n=Object.keys(d.items).length;
     if(med&&n<med*_SI_HIST_MIN_SHARE){dropped.push(d.date);return;}
-    if(dates.length&&dates[dates.length-1]===d.date)return;
-    dates.push(d.date);
+    const key=_siAxSnapKey(d);if(key!==String(d.date))rekeyed.push(d.date);
+    const prev=byKey.get(key);
+    if(!prev||(_siAxSnapMs(d.snapshot_at)||0)<(_siAxSnapMs(prev.snapshot_at)||0))byKey.set(key,d);
+  });
+  [...byKey.keys()].sort().forEach(key=>{
+    const d=byKey.get(key);
+    dates.push(key);
     const sums=new Map();
     for(const id in d.items){const it=d.items[id];const code=_siAxCode(it&&it.sku);if(!code)continue;sums.set(code,(sums.get(code)||0)+Math.max(0,it.available||0));}
-    sums.forEach((v,code)=>{let m=byCode.get(code);if(!m){m=new Map();byCode.set(code,m);}m.set(d.date,v);});
+    sums.forEach((v,code)=>{let m=byCode.get(code);if(!m){m=new Map();byCode.set(code,m);}m.set(key,v);});
   });
-  return{dates,byCode,dropped,from:dates[0]||'',to:dates[dates.length-1]||'',docs:good.length};
+  return{dates,byCode,dropped,rekeyed,from:dates[0]||'',to:dates[dates.length-1]||'',docs:good.length};
 }
 function _siAxEnsureHistory(force){
   if(_siHistPromise)return _siHistPromise;
@@ -1642,20 +1668,80 @@ function _siAxExposure(a,from,to){
   if(!H||!H.byCode)return r;
   const h=H.byCode.get(a.code);if(!h)return r;
   const fn=_siAxDayNum(from),tn=_siAxDayNum(to);if(fn==null||tn==null)return r;
-  let run=null;
+  // The sell-through run may step over ONE missing snapshot day (re-keying by snapshot_at leaves a single-day gap where the
+  // schedule changed): sales of the missing day(s) are added to the span, nothing else is invented.
+  let run=null,prevVal=h.get(_siAxDayStr(fn-1)),gap=0,gapSold=0;
   for(let k=fn;k<=tn;k++){
     const D=_siAxDayStr(k),P=_siAxDayStr(k-1);
     const x=h.get(D),y=h.get(P);
-    if(x==null||y==null){run=null;continue;}
     const sold=(a.daily.get(D)||{u:0}).u;
-    r.measured++;
-    if(x>0||y>0){r.inStock++;r.unitsIn+=sold;}else r.out++;
-    if(!run)run={from:D,opening:y,sold:0,received:0,days:0};
-    const resid=x-y+sold;run.sold+=sold;if(resid>=Math.max(_SI_RECV_MIN,_SI_RECV_SHARE*y))run.received+=resid; // small residuals are noise, not receipts
-    run.days++;run.to=D;run.closing=x;
-    r.run=run.days>=(r.run?r.run.days:0)?Object.assign({},run):r.run; // keep the contiguous run that reaches furthest
+    if(x==null){
+      if(prevVal!=null){gap++;gapSold+=sold;if(gap>_SI_AX_CFG.snapshotBridgeDays){run=null;prevVal=null;gap=0;gapSold=0;}}
+      continue;
+    }
+    if(y!=null){
+      r.measured++;
+      if(x>0||y>0){r.inStock++;r.unitsIn+=sold;}else r.out++;
+    }
+    if(prevVal!=null){
+      const sd=sold+gapSold;
+      if(!run)run={from:D,opening:prevVal,sold:0,received:0,days:0};
+      const resid=x-prevVal+sd;run.sold+=sd;if(resid>=Math.max(_SI_RECV_MIN,_SI_RECV_SHARE*prevVal))run.received+=resid; // small residuals are noise, not receipts
+      run.days+=1+gap;run.to=D;run.closing=x;
+      r.run=run.days>=(r.run?r.run.days:0)?Object.assign({},run):r.run; // keep the contiguous run that reaches furthest
+    }
+    prevVal=x;gap=0;gapSold=0;
   }
   return r;
+}
+// Recent demand while the article could be bought: per 7-day window (newest first, up to 12), units sold on in-stock days
+// and the in-stock days behind them, weighted 0.5^(age in weeks / half-life 4). pace = weighted units / weighted in-stock
+// days x 7, so a week the article was out of stock adds no days and cannot drag the pace down, and old weeks count less.
+// Returns null when fewer than 7 in-stock days exist in the window (the caller falls back to the plain 28-day pace).
+function _siAxPaceEwma(a,E,today){
+  const C=_SI_AX_CFG,Tn=_siAxDayNum(today),En=_siAxDayNum(E);
+  if(Tn==null||En==null)return null;
+  let num=0,den=0,units=0,days=0;
+  for(let k=0;k<C.ewmaWeeks;k++){
+    const to=Tn-7*k,from=Math.max(En,to-6);if(to<En)break;
+    const ex=_siAxExposure(a,_siAxDayStr(from),_siAxDayStr(to));
+    if(!ex.inStock)continue;
+    const w=Math.pow(0.5,k/C.ewmaHalfLife);
+    num+=w*ex.unitsIn;den+=w*ex.inStock;units+=ex.unitsIn;days+=ex.inStock;
+  }
+  if(days<7||den<=0)return null;
+  return{pace:num/den*7,units,days};
+}
+// Weeks of cover as a range: point = on hand / pace; the range scales the pace by the 95% Poisson interval of the units behind it.
+// Top end capped at coverCapWeeks. Returns {point,lo,hi,over}: over = even the low end is above the cap ("more than 26 weeks").
+function _siAxCoverRange(onHand,pace,units){
+  if(onHand==null||pace==null||!(pace>0))return null;
+  const C=_SI_AX_CFG,point=onHand/pace;
+  let lo=point,hi=point;
+  if(units>0){const pz=_siAxPoisson(units);lo=onHand/(pace*pz.hi/units);hi=pz.lo>0?onHand/(pace*pz.lo/units):Infinity;}
+  return{point,lo:Math.min(lo,point),hi:Math.max(hi,point),over:lo>C.coverCapWeeks,fewUnits:units<C.lowUnits};
+}
+// Cover in words: "9–19 weeks", "9–26+ weeks", "more than 26 weeks"; with few sales behind it the text says so.
+function _siAxCoverText(m){
+  if(!m||m.cover==null)return'—';
+  const C=_SI_AX_CFG,r=m.coverRange;
+  if(m.cover===0)return'none left';
+  if(!r)return _siAxNum(m.cover)+' weeks';
+  if(r.over)return'more than '+C.coverCapWeeks+' weeks';
+  if(r.hi<=2){const lo=Math.max(1,Math.floor(r.lo*7)),hi=Math.max(1,Math.ceil(r.hi*7));return lo===hi?'about '+hi+' day'+(hi===1?'':'s'):lo+'–'+hi+' days';}
+  const lo=Math.max(0,Math.floor(r.lo)),hi=r.hi>C.coverCapWeeks?C.coverCapWeeks+'+':String(Math.ceil(r.hi));
+  return(String(lo)===hi?hi:lo+'–'+hi)+' weeks';
+}
+function _siAxCoverNote(m){
+  if(!m||m.cover==null)return'';
+  const r=m.coverRange;
+  return(r&&r.fewUnits?'few sales behind it, so rough · ':'')+m.coverBasis;
+}
+// Momentum in words. Never a bare percentage: the percentage is a detail line, and only when the words are earned.
+function _siAxMomText(m){
+  if(!m||m.days==null||m.days<56)return'needs 56 counted days';
+  if(m.momWord)return m.momWord;
+  return m.momNote||'too few sales to tell';
 }
 // Sell-through = sold ÷ (sold + stock left at the end of the span): the standard retail definition. It needs no
 // receipt inference and cannot exceed 100% (stock is never negative). Equivalent to sold ÷ (opening + everything
@@ -1678,7 +1764,8 @@ function _siAxStatsCalc(a,idx){
     rateWeek:null,pace28:null,pace28Days:null,momentum:null,cover:null,coverDays:null,coverBasis:'',
     sellingWeeks:null,blocks:0,peak:null,first4:null,catShare:null,catUnits:null,asp:null,
     st:null,received:null,sizesNow:null,sizesPrev:null,risk:[],sizeRows:[],voided:null,refunded:null,voidRate:null,refundRate:null,
-    inRate:null,inDays:null,outDays:null,measured:null,perInDay:null,histState:_siHistState};
+    inRate:null,inDays:null,outDays:null,measured:null,perInDay:null,histState:_siHistState,
+    paceHead:null,paceHeadBasis:'',coverRange:null,coverUnits:null,momWord:null,momNote:'',momUnits:null,catShare28:null,catUnits28:null,units28Share:null,histState2:''};
   const Tn=_siAxDayNum(today),En=E?_siAxDayNum(E):null;
   if(En!=null&&En<=Tn){
     const days=Tn-En+1;o.days=days;
@@ -1694,6 +1781,14 @@ function _siAxStatsCalc(a,idx){
     if(days>=56){
       const last=_siAxUnitsBetween(a,_siAxDayStr(Tn-27),today),prev=_siAxUnitsBetween(a,_siAxDayStr(Tn-55),_siAxDayStr(Tn-28));
       if(prev>0)o.momentum=last/prev-1;
+      // Rising / Steady / Fading only with 20+ units across both periods AND a gap bigger than chance (two-sided, 95%):
+      // conditional binomial, z = (|last - prev| - 1) / sqrt(last + prev). Otherwise: too few sales to tell.
+      const N=last+prev;o.momUnits=N;
+      if(N<_SI_AX_CFG.momentumMinUnits)o.momNote='too few sales to tell';
+      else{
+        const z=(Math.abs(last-prev)-1)/Math.sqrt(N);
+        if(z>_SI_AX_CFG.momentumZ){o.momWord=last>prev?'Rising':'Fading';}else o.momWord='Steady';
+      }
     }
     const nB=Math.floor(days/7);o.blocks=nB;
     if(nB>=1){
@@ -1715,19 +1810,27 @@ function _siAxStatsCalc(a,idx){
       o.measured=ex.measured;o.inDays=ex.inStock;o.outDays=ex.out;o.inRate=ex.inStock/ex.measured;
       if(ex.inStock>=7)o.perInDay=ex.unitsIn/ex.inStock;
     }
+    // headline pace: the plain counted-window rate, or (when the article was out of stock more than 10% of measured days)
+    // the in-stock pace, with its plain footnote
+    if(o.rateWeek!=null)o.paceHead=o.rateWeek;
+    if(o.paceHead!=null)o.paceHeadBasis='counted days';
+    if(o.inRate!=null&&o.inRate<0.90&&o.perInDay!=null){o.paceHead=o.perInDay*7;o.paceHeadBasis='in stock';}
     if(ex.run&&ex.run.days>=7&&(ex.run.sold+ex.run.closing)>0){
       o.st=_siAxStMake(ex.run.sold,ex.run.closing,ex.run.opening,ex.run.received,ex.run.from,ex.run.to,ex.run.days,'history');
       o.received=ex.run.received;
     }
-    // weeks of cover: in-stock pace of the last 28 days when measured, else the plain 28-day pace
+    // weeks of cover: recency-weighted in-stock pace over up to 12 weeks (see _siAxPaceEwma); when there are fewer than 7
+    // in-stock days, the plain 28-day pace. Shown as a range, capped at "more than 26 weeks".
     if(a.hasStock){
-      const ex28=_siAxExposure(a,_siAxDayStr(s28),today);
-      if(ex28.inStock>=7){const p=ex28.unitsIn/ex28.inStock*7;if(p>0){o.cover=a.onHand/p;o.coverBasis='in-stock pace';}}
-      else if(o.pace28!=null&&o.pace28>0){o.cover=a.onHand/o.pace28;o.coverBasis='28-day pace';}
+      const ew=_siAxPaceEwma(a,E,today);
+      if(ew&&ew.pace>0){o.cover=a.onHand/ew.pace;o.coverBasis='recent in-stock pace';o.coverRange=_siAxCoverRange(a.onHand,ew.pace,ew.units);o.coverUnits=ew.units;}
+      else if(!ew&&o.pace28!=null&&o.pace28>0){o.cover=a.onHand/o.pace28;o.coverBasis='28-day pace';o.coverRange=_siAxCoverRange(a.onHand,o.pace28,o.units28);o.coverUnits=o.units28;}
       if(o.cover!=null)o.coverDays=o.cover*7;
     }
   }
-  if(a.category){const cu=idx.catUnits.get(a.category)||0;o.catUnits=cu;if(cu>0)o.catShare=a.units/cu;}
+  if(a.category){const cu=idx.catUnits.get(a.category)||0;o.catUnits=cu;if(cu>0)o.catShare=a.units/cu;
+    // share of the category over the LAST 28 days (same window for everyone), so a new article is not diluted by its age
+    const c28=idx.catUnits28.get(a.category)||0;o.catUnits28=c28;if(c28>0)o.catShare28=_siAxUnitsSince(a,27).u/c28;}
   // two loaded snapshots (today's and a week ago) — the fallback when history is not loaded
   const curDate=(_siSnapshot&&_siSnapshot.date)||today,prevDate=_siPrevSnapshot&&_siPrevSnapshot.date;
   if(!o.st&&a.hasStock&&a.hasPrev&&prevDate&&_siAxDayNum(prevDate)!=null&&_siAxDayNum(prevDate)<_siAxDayNum(curDate)){
@@ -1769,6 +1872,7 @@ const _SI_AX_CFG={
   coverCapWeeks:26,
   momentumMinUnits:20,momentumZ:1.96,
   snapshotDayCutoffHour:18,   // a snapshot taken before 18:00 PKT is the close of the PREVIOUS day
+  snapshotBridgeDays:1,       // the sell-through span may step over this many consecutive missing snapshot days
   bandMin:30,                 // an age band with fewer articles than this is merged into the next one up
   ageBands:[28,56,112],       // counted-day floors of the age bands
   winnerPct:0.90,winnerInStock:0.70,winnerUnits:30,
@@ -1898,14 +2002,14 @@ const _SI_AX_DEFS=[
   {k:'net',label:'Net units',how:'units on lines that were neither refunded nor voided, in the counted window',use:'Volume: what actually moved. Always read it with the counted days beside it.',read:'Low can simply mean few live days; high can simply mean long exposure.',cav:'Orders refunded when synced are left out; later refunds and cancellations are not seen.'},
   {k:'void',label:'Voided units / void rate',how:'units on voided orders in the counted window; void rate = voided ÷ (net + voided + refunded units)',use:'A high rate points to a payment, fraud or cancellation problem on this article: investigate the orders. Voided units are kept out of net units, sell-through and pace.',read:'High: many orders were started and never paid or were cancelled. Near 0: normal.',cav:'financial_status is read when the order is synced, so later voids are not seen and the rate may understate.'},
   {k:'refund',label:'Refunded units',how:'units on orders that were already refunded when synced, in the counted window',use:'Returns review: a product that comes back often (quality, fit, sizing).',read:'High against net units: a return problem.',cav:'Later refunds are not synced, so this understates; partial refunds are not seen.'},
-  {k:'rate',label:'Units per live week',how:'net units ÷ counted days × 7',use:'Compare products of different ages; decide what to reorder or stop.',read:'Low: slow or under-exposed. High: strong demand. Compare to the peer lines, not to zero.',cav:'Counted window only (later of live date and first synced order). Needs 7+ counted days.'},
+  {k:'rate',label:'Units per week (live week rate)',how:'net units ÷ counted days × 7; when the article was out of stock on more than 10% of measured days, the headline figure is the in-stock pace (units on in-stock days ÷ in-stock days × 7) and the plain rate is printed beside it',use:'Compare products of different ages; decide what to reorder or stop.',read:'Low: slow or under-exposed. High: strong demand. Compare to the peer lines, not to zero.',cav:'Counted window only (later of live date and first synced order). Needs 7+ counted days.'},
   {k:'st',label:'Sell-through %',how:'units sold ÷ (units sold + stock left at the end of the span)',use:'Reorder or mark down: how much of what was available has gone.',read:'Low: stock is not moving (markdown, stop). High: nearly everything gone (restock, or you were short).',cav:'Never above 100%. Span shown on screen; needs 7+ contiguous snapshot days. Stock lost without a sale (shrinkage, transfers) counts as sold; returns restocked count as unsold.'},
   {k:'inrate',label:'In-stock rate',how:'days in stock ÷ measured days (a day is out only when stock was 0 at the end of the day before and of that day)',use:'Separate “not selling” from “not available”.',read:'Low: sales are capped by availability, so velocity is understated. High: velocity is fair.',cav:'Only days with two snapshots are measured; article level (any size in stock counts).'},
   {k:'perday',label:'Units per in-stock day',how:'units sold on in-stock days ÷ in-stock days',use:'True demand rate; compare launches and size up a reorder.',read:'Well above units per live week: the article was often out of stock.',cav:'Needs 7+ in-stock measured days. Sales on out-of-stock days are excluded.'},
   {k:'out',label:'Stock-out days',how:'measured days with no stock (of measured days)',use:'Restock decisions and lost-sales review.',read:'High: availability, not demand, is the limit.',cav:'A count of measured days, never extrapolated to unmeasured ones.'},
-  {k:'cover',label:'Weeks of cover',how:'on hand now ÷ weekly pace (in-stock pace of the last 28 days when measured, else the 28-day pace)',use:'When to reorder, and what is overstocked.',read:'Below ~2 weeks: reorder now. Above ~26 weeks: overstock, markdown or hold.',cav:'Assumes the pace continues; basis is printed beside the figure. August is not a peak once the sub-Rs-1 tip SKU is left out (merchandise units per month are flat).'},
-  {k:'mom',label:'Momentum',how:'last 28 days’ pace ÷ the 28 days before − 1',use:'Is demand rising or fading: scale up, hold or exit.',read:'Negative: fading (watch before reordering). Positive: building.',cav:'Needs 56 counted days and sales in the earlier period. Merchandise units per month are flat; August only looked 2× because of the sub-Rs-1 tip SKU, which is left out.'},
-  {k:'share',label:'Share of category',how:'net units ÷ all counted units of the same product type',use:'Range planning: which products carry a category.',read:'High: a pillar of the category. Low: a niche or a newcomer.',cav:'Mixes products of different ages; new articles start low.'},
+  {k:'cover',label:'Weeks of cover (stock lasts)',how:'on hand now ÷ weekly pace, where the pace is the in-stock pace of the last 12 weeks with recent weeks counting more (half-life 4 weeks); when fewer than 7 in-stock days exist, the plain 28-day pace. Shown as a range from the number of sales behind it, and as “more than 26 weeks” beyond that',use:'When to reorder, and what is overstocked.',read:'Under 4 weeks: reorder now. Above 26 weeks: overstock, markdown or hold (4 and 26 are labelled defaults).',cav:'Assumes the pace continues; a range, not a promise. With fewer than 10 sales behind it the range is wide and marked “rough”. Merchandise units per month are flat (the August spike was the sub-Rs-1 tip SKU, now left out).'},
+  {k:'mom',label:'Momentum',how:'last 28 days’ units against the 28 days before; shown as Rising or Fading only when the two periods together hold 20+ units and the gap is bigger than chance (95%), as Steady when they do and it is not, and as “too few sales to tell” otherwise',use:'Is demand rising or fading: scale up, hold or exit.',read:'Fading: watch before reordering. Rising: building.',cav:'Needs 56 counted days. The percentage is a detail, shown only beside a Rising or Fading word.'},
+  {k:'share',label:'Share of category (last 28 days)',how:'the article’s units in the last 28 days ÷ all units of the same product type in the last 28 days',use:'Range planning: which products carry a category right now.',read:'High: a pillar of the category. Low: a niche.',cav:'The window is the same for every article, so a newcomer is not diluted by its age. The all-time share is shown beside it.'},
   {k:'curve',label:'Age-normalised curve',how:'cumulative units by weeks since each article’s live date (Compare ▸ Since launch ▸ Cumulative units), plus units in the first 28 days',use:'Compare launches fairly and set the opening buy for the next one.',read:'Steeper early curve: a stronger launch. Flattening: demand decaying.',cav:'Only weeks after the first synced order are drawn; the first-28-days figure needs the launch inside the data.'},
   {k:'pace',label:'Last 28 days / week',how:'units in the last 28 counted days ÷ those days × 7',use:'Current pace for reorder quantity.',read:'Compare with units per live week: higher means speeding up.',cav:'Needs 7+ counted days.'},
   {k:'recv',label:'Received (est.)',how:'sum over the span of max(0, stock change + units sold) per day',use:'Checks restocks and returns landing.',read:'Zero while stock rose little: nothing was received.',cav:'Net of returns, adjustments and transfers.'},
@@ -2231,9 +2335,9 @@ function _siAxReadFacts(a,m,c){
   if(m.units!=null)f.push({k:'Sold',v:m.units+' units',sub:m.days+' counted days'+(m.rateWeek!=null?' · '+_siAxNum(m.rateWeek)+' a week':'')});
   if(m.st)f.push({k:'Sell-through',v:_siAxPct(m.st.value),sub:m.st.sold+' of '+(m.st.sold+m.st.closing)});
   if(m.inRate!=null)f.push({k:'In stock',v:m.outDays===0?'Every measured day':'Out '+m.outDays+' of '+m.measured+' days',sub:m.perInDay!=null?_siAxNum(m.perInDay*7)+' a week while in stock':''});
-  if(m.cover!=null)f.push({k:'Cover',v:_siAxNum(m.cover)+' weeks',sub:m.coverBasis});
+  if(m.cover!=null)f.push({k:'Cover',v:_siAxCoverText(m),sub:_siAxCoverNote(m)});
   else if(a.hasStock&&a.onHand===0&&m.pace28!=null&&m.pace28>0)f.push({k:'Cover',v:'None left',sub:'was selling '+_siAxNum(m.pace28)+' a week'});
-  if(m.momentum!=null)f.push({k:'Momentum',v:(m.momentum>=0?'Up ':'Down ')+_siAxPct(Math.abs(m.momentum)),sub:'last 4 weeks vs the 4 before'});
+  if(m.days!=null&&m.days>=56&&(m.momWord||m.momNote))f.push({k:'Momentum',v:_siAxMomText(m),sub:m.momWord&&m.momentum!=null?(m.momentum>=0?'up ':'down ')+_siAxPct(Math.abs(m.momentum))+' · last 4 weeks vs the 4 before':'last 4 weeks vs the 4 before'});
   return f;
 }
 function _siAxReadCard(r,n){
@@ -2274,13 +2378,14 @@ function _siAxReadAcross(rows){
   const cv=rows.filter(r=>r.m.cover!=null),cvl=[];
   if(cv.length>=2){
     const lo=cv.reduce((x,y)=>y.m.cover<x.m.cover?y:x),hi=cv.reduce((x,y)=>y.m.cover>x.m.cover?y:x);
-    if(lo!==hi)cvl.push('Least cover: '+nm(lo)+' ('+_siAxNum(lo.m.cover)+' weeks); most: '+nm(hi)+' ('+_siAxNum(hi.m.cover)+' weeks).');
+    if(lo!==hi)cvl.push('Least cover: '+nm(lo)+' ('+_siAxCoverText(lo.m)+'); most: '+nm(hi)+' ('+_siAxCoverText(hi.m)+').');
   }
   rows.filter(r=>r.m.cover==null&&r.a.hasStock&&r.a.onHand===0&&r.m.pace28!=null&&r.m.pace28>0).forEach(r=>cvl.push(nm(r)+' has no stock left and was selling '+_siAxNum(r.m.pace28)+' a week.'));
   add('Cover',cvl);
-  const mo=rows.filter(r=>r.m.momentum!=null),mol=[];
+  // only articles whose momentum is earned (20+ units and a gap bigger than chance) are called rising or fading
+  const mo=rows.filter(r=>r.m.momWord==='Rising'||r.m.momWord==='Fading'),mol=[];
   if(mo.length>=2){
-    const up=mo.filter(r=>r.m.momentum>=0),dn=mo.filter(r=>r.m.momentum<0);
+    const up=mo.filter(r=>r.m.momWord==='Rising'),dn=mo.filter(r=>r.m.momWord==='Fading');
     if(up.length)mol.push('Rising: '+up.map(r=>nm(r)+' '+_siAxPct(r.m.momentum,true)).join(', ')+' (last 4 weeks vs the 4 before).');
     if(dn.length)mol.push('Fading: '+dn.map(r=>nm(r)+' '+_siAxPct(r.m.momentum)).join(', ')+' (last 4 weeks vs the 4 before).');
   }
@@ -2360,7 +2465,7 @@ function _siAxScorecardHtml(arts){
     {key:'rate',label:'Per live week',type:'num',get:r=>r.m.rateWeek,cell:r=>`<td>${_siAxNum(r.m.rateWeek)}</td>`},
     {key:'st',label:'Sell-through',type:'num',get:r=>r.m.st&&r.m.st.value,cell:r=>`<td>${_siAxPct(r.m.st&&r.m.st.value)}</td>`},
     {key:'inr',label:'In-stock',type:'num',get:r=>r.m.inRate,cell:r=>`<td>${_siAxPct(r.m.inRate)}</td>`},
-    {key:'cover',label:'Cover',type:'num',first:'asc',get:r=>r.m.cover,cell:r=>`<td>${r.m.cover!=null?_siAxNum(r.m.cover)+'w':'—'}</td>`},
+    {key:'cover',label:'Cover',type:'num',first:'asc',get:r=>r.m.cover,cell:r=>`<td>${_siEsc(_siAxCoverText(r.m))}</td>`},
     {key:'rule',label:'Rule that matched',type:'text',get:r=>r.c.rule,cell:r=>`<td style="min-width:200px">${_siEsc(r.c.rule)}</td>`},
     {key:'act',label:'Use it for',type:'text',get:r=>r.c.act,cell:r=>`<td style="min-width:160px">${_siEsc(r.c.act)}</td>`}
   ],rows,{def:{key:'cls',dir:1},defText:'class order: Winner, Healthy, Stock-constrained, Slow, Dead stock, Too early, Not rated',minWidth:780,ties:[{get:r=>r.m.units,type:'num',dir:-1},{get:r=>r.a.code,type:'code',dir:1}]});
@@ -2443,14 +2548,14 @@ function _siAxSearchBody(){
     ${kpi('Refunded units',m.refunded!=null?m.refunded:'—',m.refundRate!=null?'refund rate '+_siAxPct(m.refundRate)+' · later refunds not synced':'no counted days','refund')}
     ${kpi('Revenue (counted)',a.hasPrice?_siEsc(_siPKR(Math.round(a.rev))):'—','30d: '+(a.hasPrice?_siEsc(_siPKR(Math.round(s30.r))):'—'))}
     ${kpi('On hand',a.hasStock?a.onHand:'—',a.hasStock?'today\'s snapshot':'not in snapshot')}
-    ${kpi('Units per live week',_siAxNum(m.rateWeek),m.rateWeek!=null?_siEsc(win):'needs 7+ counted days','rate')}
+    ${kpi('Units per week',_siAxNum(m.paceHead),m.paceHead!=null?(m.paceHeadBasis==='in stock'?'while in stock — sold out '+m.outDays+' of '+m.measured+' days, so real demand is higher (plain rate '+_siAxNum(m.rateWeek)+')':_siEsc(win)):'needs 7+ counted days','rate')}
     ${kpi('Sell-through %',m.st?_siAxPct(m.st.value):'—',m.st?'sold '+m.st.sold+' of '+(m.st.sold+m.st.closing)+' (sold + '+m.st.closing+' left) · '+_siEsc(_siAxFmtDay(m.st.from,true))+' to '+_siEsc(_siAxFmtDay(m.st.to,true))+(m.st.src==='two snapshots'?' (two snapshots)':''):_siEsc(why),'st')}
     ${kpi('In-stock rate',_siAxPct(m.inRate),m.inRate!=null?m.inDays+' of '+m.measured+' measured days in stock':_siEsc(why),'inrate')}
     ${kpi('Units per in-stock day',_siAxNum(m.perInDay,2),m.perInDay!=null?'vs '+_siAxNum(m.rateWeek!=null?m.rateWeek/7:null,2)+' per live day':_siEsc(why),'perday')}
     ${kpi('Stock-out days',m.outDays!=null?m.outDays:'—',m.outDays!=null?'of '+m.measured+' measured days':_siEsc(why),'out')}
-    ${kpi('Weeks of cover',m.cover!=null?_siAxNum(m.cover)+'w':'—',m.cover!=null?'≈ '+Math.round(m.coverDays)+' days · '+_siEsc(m.coverBasis):(!a.hasStock?'no stock data':'no pace to divide by'),'cover')}
-    ${kpi('Momentum',_siAxPct(m.momentum,true),m.momentum!=null?'last 28 d vs the 28 d before':'needs 56 counted days','mom')}
-    ${kpi('Share of category',_siAxPct(m.catShare),a.category?'of '+_siEsc(a.category)+' units (counted)':'no category','share')}
+    ${kpi('Stock lasts',_siEsc(_siAxCoverText(m)),m.cover!=null?_siEsc(_siAxCoverNote(m)):(!a.hasStock?'no stock data':'no pace to divide by'),'cover')}
+    ${kpi('Momentum',_siEsc(_siAxMomText(m)),m.momWord&&m.momentum!=null?(m.momentum>=0?'up ':'down ')+_siAxPct(Math.abs(m.momentum))+' · last 28 d vs the 28 d before':'last 28 d vs the 28 d before','mom')}
+    ${kpi('Share of category',_siAxPct(m.catShare28),a.category?'of '+_siEsc(a.category)+' units, last 28 days (all time '+_siAxPct(m.catShare)+')':'no category','share')}
     ${kpi('First 4 weeks',m.first4!=null?m.first4:'—',m.first4!=null?'units, first 28 days live':'launch not in counted data','first4')}
     ${kpi('Last 28 days / week',_siAxNum(m.pace28),m.pace28!=null?'last '+m.pace28Days+' counted days':'needs 7+ counted days','pace')}
     ${kpi('Received (est.)',m.received!=null?'~'+m.received:'—',m.st?'inferred over the same span':_siEsc(why),'recv')}
@@ -2523,8 +2628,8 @@ function _siAxCompareBody(){
     {key:'days',label:'Counted days',title:'Counted days: from the later of the live date and the first synced order, to today',type:'num',get:r=>r.m.days,cell:r=>`<td>${dash(r.m.days)}${r.m.partial?'<div class="si-ax-note" style="margin:0">from first order</div>':''}</td>`},
     {key:'rate',label:'Units / live week',title:_siAxTip('rate'),type:'num',get:r=>r.m.rateWeek,cell:r=>`<td>${_siAxNum(r.m.rateWeek)}</td>`},
     {key:'pace',label:'Last 28 d / week',title:_siAxTip('pace'),type:'num',get:r=>r.m.pace28,cell:r=>`<td>${_siAxNum(r.m.pace28)}</td>`},
-    {key:'mom',label:'Momentum',title:_siAxTip('mom'),type:'num',get:r=>r.m.momentum,cell:r=>`<td>${_siAxPct(r.m.momentum,true)}</td>`},
-    {key:'cover',label:'Weeks of cover',title:_siAxTip('cover'),type:'num',first:'asc',get:r=>r.m.cover,cell:r=>`<td>${r.m.cover!=null?_siAxNum(r.m.cover)+'w':'—'}${r.m.cover!=null?'<div class="si-ax-note" style="margin:0">'+_siEsc(r.m.coverBasis)+'</div>':''}</td>`},
+    {key:'mom',label:'Momentum',title:_siAxTip('mom'),type:'text',get:r=>r.m.momWord,cell:r=>`<td>${_siEsc(_siAxMomText(r.m))}</td>`},
+    {key:'cover',label:'Weeks of cover',title:_siAxTip('cover'),type:'num',first:'asc',get:r=>r.m.cover,cell:r=>`<td>${_siEsc(_siAxCoverText(r.m))}${r.m.cover!=null?'<div class="si-ax-note" style="margin:0">'+_siEsc(_siAxCoverNote(r.m))+'</div>':''}</td>`},
     {key:'st',label:'Sell-through',title:_siAxTip('st'),type:'num',get:r=>r.m.st&&r.m.st.value,cell:r=>`<td>${_siAxPct(r.m.st&&r.m.st.value)}${r.m.st?'<div class="si-ax-note" style="margin:0">'+_siEsc(_siAxFmtDay(r.m.st.from,true)+' – '+_siAxFmtDay(r.m.st.to,true))+'</div>':''}</td>`},
     {key:'inr',label:'In-stock rate',title:_siAxTip('inrate'),type:'num',get:r=>r.m.inRate,cell:r=>`<td>${_siAxPct(r.m.inRate)}</td>`},
     {key:'pid',label:'Units / in-stock day',title:_siAxTip('perday'),type:'num',get:r=>r.m.perInDay,cell:r=>`<td>${_siAxNum(r.m.perInDay,2)}</td>`},
@@ -2535,7 +2640,7 @@ function _siAxCompareBody(){
     {key:'sell',label:'Selling weeks',title:_siAxTip('sell'),type:'num',get:r=>r.m.sellingWeeks,cell:r=>`<td>${r.m.sellingWeeks!=null?r.m.sellingWeeks+' of '+r.m.blocks:'—'}</td>`},
     {key:'peak',label:'Peak week',title:_siAxTip('peak'),type:'num',get:r=>r.m.peak&&r.m.peak.u,cell:r=>`<td>${r.m.peak?r.m.peak.u+' units<div class="si-ax-note" style="margin:0">'+_siEsc(_siAxFmtDay(r.m.peak.start,true))+'</div>':'—'}</td>`},
     {key:'f4',label:'First 4 weeks',title:_siAxTip('first4'),type:'num',get:r=>r.m.first4,cell:r=>`<td>${dash(r.m.first4)}${r.m.first4==null&&r.art.liveDay&&r.m.partial?'<div class="si-ax-note" style="margin:0">launch before data</div>':''}</td>`},
-    {key:'share',label:'Share of category',title:_siAxTip('share'),type:'num',get:r=>r.m.catShare,cell:r=>`<td>${_siAxPct(r.m.catShare)}</td>`},
+    {key:'share',label:'Share of category (28 d)',title:_siAxTip('share'),type:'num',get:r=>r.m.catShare28,cell:r=>`<td>${_siAxPct(r.m.catShare28)}</td>`},
     {key:'void',label:'Voided units',title:_siAxTip('void'),type:'num',get:r=>r.m.voided,cell:r=>`<td>${r.m.voided!=null?r.m.voided:'—'}</td>`},
     {key:'vrate',label:'Void rate',title:_siAxTip('void'),type:'num',get:r=>r.m.voidRate,cell:r=>`<td>${_siAxPct(r.m.voidRate)}</td>`},
     {key:'refund',label:'Refunded units',title:_siAxTip('refund'),type:'num',get:r=>r.m.refunded,cell:r=>`<td>${r.m.refunded!=null?r.m.refunded:'—'}</td>`},
