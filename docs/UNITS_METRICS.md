@@ -40,9 +40,9 @@ a **stock-out day** if both were 0.
 | 4 | In-stock rate | in-stock days ÷ measurable days | separate "not selling" from "not available" | low: sales capped by supply | needs 7+ measurable days |
 | 5 | Units per in-stock day | units on in-stock days ÷ in-stock days | true demand; size a reorder | well above per live day: often out | needs 7+ in-stock days |
 | 6 | Stock-out days | measurable days with no stock | restock review; lost-sales risk | high: availability limits sales | counted, never extrapolated |
-| 7 | Weeks of cover | on hand ÷ weekly pace (in-stock pace of last 28 d, else 28-day pace) | when to reorder, overstock | < ~2 reorder, > ~26 overstock | assumes pace continues; none specific: merchandise units per month are flat (the August spike in raw data was the sub-Rs-1 tip SKU, now left out: 11,166 of August's 19,119 non-refunded units) |
-| 8 | Momentum | last 28 d pace ÷ previous 28 d − 1 | rising or fading | negative fading | needs 56 counted days and prior sales |
-| 9 | Share of category | units ÷ counted units of same product_type | range planning | new articles start low | mixes ages |
+| 7 | Weeks of cover | on hand ÷ weekly pace (recency-weighted in-stock pace over up to 12 weeks, half-life 4 weeks; else 28-day pace); shown as a range (95% Poisson on the units behind it), top end capped: "more than 26 weeks" | when to reorder, overstock | < ~2 reorder, > ~26 overstock | assumes pace continues; none specific: merchandise units per month are flat (the August spike in raw data was the sub-Rs-1 tip SKU, now left out: 11,166 of August's 19,119 non-refunded units) |
+| 8 | Momentum | last 28 d units against the 28 before; Rising/Fading only with 20+ units across both and a gap bigger than chance (z = (\|last − prev\| − 1) / √N > 1.96), Steady when 20+ and within chance, else "too few sales to tell" | rising or fading | never a bare percentage | needs 56 counted days |
+| 9 | Share of category | the article's units in the last 28 days ÷ all units of the same product_type in the last 28 days | range planning | new articles start low | mixes ages |
 | 10 | Age-normalised curve | cumulative units by weeks since launch (Compare ▸ Since launch) + first-28-days units | compare launches | steeper early = stronger | launch proxy is first sale until `published_at` exists |
 
 **Received stock is inferred**, not recorded, and is a SUPPORTING figure only (it is not in sell-through): per day max(0, stock change + units sold), counted only when ≥ max(5, 10% of opening). Live data: most residuals are ±1–2 units (noise).
@@ -54,10 +54,18 @@ Supporting figures: last-28-day pace, sizes in stock, lost-sales risk (0-stock s
 order (oracle: live date); in-stock day = stock > 0 at either end of the day (oracle: end of day); 7-day minimum for rates and stock figures (oracle computes from 4–6 days); momentum uses rolling 28-day windows and needs 56 counted days
 (oracle: complete Monday weeks); weeks of cover uses the in-stock pace; receipt noise floor. Net units, category share, age curve, weekly counts agree exactly.
 
-## 3. Scorecard (defaults, not facts)
-Order: Too early (< 28 counted days, no class) · Dead stock (no sale in 28 d with stock on hand, or sell-through < 5%) · Stock-constrained (in stock < 60% of days and ≥ 0.55 units per in-stock day) ·
-Winner (sell-through ≥ 60% and in stock ≥ 80%) · Healthy (sell-through ≥ 20% and cover ≤ 26 w) · Slow (other). Constants `_SI_AX_SCORE`, derived from this store's own distributions, not validated with the business.
-A clause whose metric is "—" is skipped and the row says "partly unverified". Not classed: no stock data ("Not rated"). Sell-through is never above 100%, so no class rule needs an over-100% exception.
+## 3. Scorecard — classes v2 (30 Sept 2026; defaults, not facts)
+Demand D = units per in-stock day (exposure-adjusted; falls back to the plain rate ÷ 7 and says "partly unverified" when stock history is too short). pD = mid-rank percentile of D, (below + 0.5 × equal) ÷ n, among classed articles of **similar age** (bands by counted days 28–55, 56–111, 112+; a band under 30 articles merges into the next one up). A pool still under 30 uses fixed bands: Winner 2.7, Solid 0.5, Steady 0.2 units per in-stock day. First match wins:
+1. **Too early**: < 28 counted days (no class). **Not rated**: no stock data, or no demand figure.
+2. **Dead stock**: no sale in the last 28 counted days with stock on hand.
+3. **Stock-constrained**: in stock on < 70% of measured days AND demand above the median (pD ≥ 0.50).
+4. **Winner**: pD ≥ 0.90 AND in stock ≥ 70% of days AND ≥ 30 units AND confidence not Low. A top-decile article that fails a floor is Solid and the row says which floor.
+5. **Solid**: pD ≥ 0.50. 6. **Steady**: pD ≥ 0.20. 7. **Slow**: below.
+Each row shows why (rank "7 of 284 (p97)", floors) and the nearest boundary ("Drops to Solid below p90 (1.2/day)"). Sell-through is no longer used to classify (it measures "was replenished", not demand).
+**Actions** (`_siAxActionOf`, per row with its trigger): Reorder now = Stock-constrained, or Winner/Solid/Steady whose cover is shorter than the lead time (confidence not Low); Stock-out risk = cover within 2 weeks of the lead time, or a size out that sold in 28 days; Hold = cover > 26 weeks; Stop / clear = Dead; Stuck = Slow, 90+ counted days, cover > 12 weeks or unknown; Mark down = Slow with cover > 12 weeks; "Review: little data" = Slow with Low confidence.
+**Lead times** are editable defaults, kept per device (`localStorage['groovy-si-leadtimes']`), never facts: tees and tops 21 days; hoodies, jackets, denim, bottoms 35; everything else 28. The screen labels them "default, unconfirmed" until edited; confidence stays capped at Medium until one is.
+Constants `_SI_AX_SCORE`; none validated with the business, no backtest yet. A clause whose metric is "—" is skipped and the row says "partly unverified".
+**Overview** (the tab opens on it): four tiles, Reorder now · Stock-out risk · Stuck / stop · Winners, each a count and a list of up to 10 rows (Show all), with Open and + Compare. No new Firestore reads.
 
 ## 4. NOT offered
 Refund/return rate (later refunds never synced, it would read as zero); discount depth (no discount fields); margin; true receipts (no receipt log); per-size in-stock rate (article level only).

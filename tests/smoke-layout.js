@@ -2717,6 +2717,13 @@ const FRAGMENTS={
     app.run('_siAxModeSel="search";_siAxSel="GST073";_siAxQuery=""');
     return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
   },
+  'inventory intel — Article Explorer overview':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="overview";_siAxOvTile="reorder";_siAxOvAll=false;_siAxOvCat="";_siAxQuery=""');
+    return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
+  },
   'inventory intel — Article Explorer compare':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
