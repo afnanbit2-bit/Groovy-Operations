@@ -2,6 +2,7 @@ const admin = require("firebase-admin");
 
 const SHOPIFY_API_VERSION = "2026-04";
 const BACKFILL_DAYS = 90;
+const MAX_DAYS = 3650;
 const PAGE_SIZE = 50;
 const DEADLINE_MS = 9000;
 const PAGE_RESERVE_MS = 3000;
@@ -61,9 +62,56 @@ async function loadProductMap(db) {
   return map;
 }
 
+// ── Window parameter: ?days=N (1..3650) or ?since=YYYY-MM-DD ─────
+// Returns {minISO, label} or {error}. No parameter => the original 90 days.
+function parseWindow(event, nowMs) {
+  const q = (event && event.queryStringParameters) || {};
+  const hasDays = q.days !== undefined && q.days !== "";
+  const hasSince = q.since !== undefined && q.since !== "";
+  if (hasDays && hasSince) return { error: "Pass days OR since, not both." };
+  if (hasSince) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(q.since));
+    const d = m && new Date(`${q.since}T00:00:00.000Z`);
+    if (!d || isNaN(d) || d.toISOString().slice(0, 10) !== q.since) {
+      return { error: "since must be a real date, YYYY-MM-DD." };
+    }
+    if (d.getTime() > nowMs) return { error: "since cannot be in the future." };
+    if (nowMs - d.getTime() > MAX_DAYS * 86400000) {
+      return { error: `since is more than ${MAX_DAYS} days ago.` };
+    }
+    return { minISO: d.toISOString(), label: `since ${q.since}` };
+  }
+  let days = BACKFILL_DAYS;
+  if (hasDays) {
+    if (!/^\d+$/.test(String(q.days))) {
+      return { error: `days must be a whole number 1..${MAX_DAYS}.` };
+    }
+    days = parseInt(q.days, 10);
+    if (days < 1 || days > MAX_DAYS) {
+      return { error: `days must be a whole number 1..${MAX_DAYS}.` };
+    }
+  }
+  const minDate = new Date(nowMs);
+  minDate.setDate(minDate.getDate() - days);
+  return { minISO: minDate.toISOString(), label: `${days} days` };
+}
+
 // ── Handler ─────────────────────────────────────────────────────
-exports.handler = async function () {
+exports.handler = async function (event) {
   const start = Date.now();
+  const win = parseWindow(event, start);
+  if (win.error) {
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: win.error }),
+    };
+  }
+  const explicitWindow = !!(
+    event &&
+    event.queryStringParameters &&
+    (event.queryStringParameters.days || event.queryStringParameters.since)
+  );
   const elapsed = () => Date.now() - start;
   const timings = {};
 
@@ -89,7 +137,21 @@ exports.handler = async function () {
     const state = syncSnap.exists ? syncSnap.data() : {};
     timings.sync_read_ms = elapsed();
 
-    if (state.complete) {
+    // A finished backfill is only re-opened by an EXPLICIT window reaching
+    // further back than the one it covered; it then fetches just the older
+    // slice (created_at_max = the old minimum). Existing orders are skipped
+    // by id as always, so nothing already written is touched.
+    let extendFrom = null;
+    if (
+      state.complete &&
+      explicitWindow &&
+      state.created_at_min &&
+      win.minISO < state.created_at_min
+    ) {
+      extendFrom = state.created_at_min;
+    }
+
+    if (state.complete && !extendFrom) {
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json" },
@@ -99,6 +161,8 @@ exports.handler = async function () {
           orders_processed: state.orders_processed,
           line_items_written: state.line_items_written,
           complete: true,
+          created_at_min: state.created_at_min || null,
+          hint: "To go further back, call again with ?days=N (max 3650) or ?since=YYYY-MM-DD earlier than created_at_min.",
         }),
       };
     }
@@ -114,22 +178,32 @@ exports.handler = async function () {
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     let url;
-    if (state.next_url) {
-      url = state.next_url;
+    let windowMin = state.created_at_min || null;
+    if (state.next_url && !extendFrom) {
+      url = state.next_url; // resume: the stored window wins over any parameter
     } else {
-      const minDate = new Date();
-      minDate.setDate(minDate.getDate() - BACKFILL_DAYS);
-      const minISO = minDate.toISOString();
-      url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=${PAGE_SIZE}&status=any&created_at_min=${minISO}`;
+      const minISO = win.minISO;
+      windowMin = minISO;
+      const maxPart = extendFrom ? `&created_at_max=${extendFrom}` : "";
+      url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=${PAGE_SIZE}&status=any&created_at_min=${minISO}${maxPart}`;
+      state.next_url = null;
+      state.oldest_fetched = null;
+      state.orders_processed = 0;
+      state.line_items_written = 0;
+      state.skipped_orders = 0;
+      state.unmatched_variants = 0;
       await syncRef.set(
         {
           created_at_min: minISO,
           complete: false,
+          next_url: null,
+          oldest_fetched: null,
           orders_processed: 0,
           line_items_written: 0,
           skipped_orders: 0,
           started_at: now,
           last_status: "in_progress",
+          ...(extendFrom ? { extended_from: extendFrom } : {}),
         },
         { merge: true }
       );
@@ -155,7 +229,7 @@ exports.handler = async function () {
         const text = await res.text();
         if (res.status === 429) break;
         if (res.status === 400 && state.next_url && oldestFetched) {
-          url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=${PAGE_SIZE}&status=any&created_at_min=${state.created_at_min}&created_at_max=${oldestFetched}`;
+          url = `https://${store}/admin/api/${SHOPIFY_API_VERSION}/orders.json?limit=${PAGE_SIZE}&status=any&created_at_min=${windowMin}&created_at_max=${oldestFetched}`;
           await syncRef.set({ next_url: null }, { merge: true });
           continue;
         }
@@ -285,6 +359,7 @@ exports.handler = async function () {
         oldest_fetched: oldestFetched,
         pages_this_run: pagesThisRun,
         complete,
+        window: windowMin,
         duration_ms: elapsed(),
         timings,
         message: complete

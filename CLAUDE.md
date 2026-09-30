@@ -11237,6 +11237,16 @@ client-side.
     aren't `Color`/`Size` (`needs_review:true`); informational only. Writes
     a run summary to `shopify_sync_meta/catalog_sync`.
   - `shopify-inventory-snapshot.js` — scheduled daily (`0 1 * * *`).
+  - `shopify-order-backfill.js` window (30 Sept 2026). No schedule and no auth
+    gate (plain GET/POST to `/.netlify/functions/shopify-order-backfill`, ~9s
+    budget per call, resumes from `shopify_sync_meta/order_backfill`). Default
+    is still 90 days. `?days=N` (1..3650) or `?since=YYYY-MM-DD` sets the window;
+    bad values get a 400 before any work. A FINISHED backfill is re-opened only
+    by an explicit window reaching earlier than its stored `created_at_min`, and
+    then fetches just the older slice (`created_at_max` = old minimum); orders
+    already in `shopify_orders` are skipped by id, never rewritten. A run in
+    progress resumes with its stored window and ignores the parameter.
+    `tests/shopify-backfill-window.test.js`. Unverified against live Shopify.
   - `shopify-order-sync.js` — scheduled every 4h (`0 */4 * * *`).
   - `shopify-weekly-close.js` — scheduled Sat (`0 2 * * 6`).
   - `shopify-order-backfill.js` — resumable historical order backfill
