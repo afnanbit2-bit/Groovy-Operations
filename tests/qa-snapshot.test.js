@@ -45,7 +45,7 @@ module.exports=async function(){
     const ruleColls=[...stripped.matchAll(/match\s+\/([A-Za-z0-9_]+)\/\{/g)].map(m=>m[1]).filter(c=>c!=='databases');
     const books=[...new Set(ruleColls.filter(c=>/^ma_/.test(c)))];
     const rest=[...new Set(ruleColls.filter(c=>!/^ma_/.test(c)))];
-    s.ok('firestore.rules names the Master Accounts collections ('+books.length+')',books.length>=18&&['ma_accounts','ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares','ma_cpr','ma_collection','ma_runs'].every(c=>books.indexOf(c)>-1));
+    s.ok('firestore.rules names the Master Accounts collections ('+books.length+')',books.length>=19&&['ma_accounts','ma_journal','ma_transfer','ma_counts','ma_closes','ma_audit','ma_backups','ma_shares','ma_cpr','ma_collection','ma_runs','ma_claims'].every(c=>books.indexOf(c)>-1));
     s.ok('every collection the rules name ma_… is an owner-only book',books.every(L.isOwnerOnlyBooks));
     s.ok('and no other collection is (the family is exactly ma_…)',rest.length>50&&rest.every(c=>!L.isOwnerOnlyBooks(c)));
     s.ok('`ma_` alone, an upper-case name, ma, marketing_settings and mail_log are not owner-only books',!['ma_','MA_journal','ma','marketing_settings','mail_log'].some(L.isOwnerOnlyBooks));

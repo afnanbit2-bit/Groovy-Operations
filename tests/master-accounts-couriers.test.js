@@ -284,9 +284,11 @@ module.exports=function(){
   s.section('the opening balance and money in: what the rollup already books');
   {
     const oj=l=>mk('journal',{kind:'opening',date:'2026-07-01',lines:l});
-    s.eq('a 1120 line on the opening: flagged — PostEx opens from its parcels',lvl(V(oj([{account:'1120',side:'dr',amount:500}])),'opening.derived'),'flag');
-    s.eq('… so is 1121',lvl(V(oj([{account:'1121',side:'dr',amount:500}])),'opening.derived'),'flag');
-    s.eq('Blue-Ex\'s 1123 is typed there: never flagged',lvl(V(oj([{account:'1123',side:'dr',amount:500}])),'opening.derived'),null);
+    // Review B1: REFUSED, no longer only flagged — the rollup's PX-OPEN opens
+    // PostEx from its parcels, so a line here opens it a second time.
+    s.eq('a 1120 line on the opening: refused — PostEx opens from its parcels',lvl(V(oj([{account:'1120',side:'dr',amount:500}])),'opening.derived'),'refuse');
+    s.eq('… so is 1121',lvl(V(oj([{account:'1121',side:'dr',amount:500}])),'opening.derived'),'refuse');
+    s.eq('Blue-Ex\'s 1123 is typed there: never refused',lvl(V(oj([{account:'1123',side:'dr',amount:500}])),'opening.derived'),null);
     s.eq('a Money in to 4010 (online COD): flagged',lvl(V(mk('journal',{kind:'money_in',date:'2026-10-05',holder:'1020',account:'4010',amount:100,note:'x'})),'account.derived'),'flag');
     s.eq('TCS\'s account (1060) is switched on',M.maAcc(IDX,'1060').active,true);
   }
@@ -326,7 +328,7 @@ module.exports=function(){
     const open=Object.assign({},d,{dispute:{state:'open',reason:'x',by:'afnan',at:1}});
     s.eq('resolved by the other owner, the reason kept',J((M.maDisputePatch(open,'ammar',{state:'resolved',note:'paid'},{at:9}).patch||{}).dispute),J({state:'resolved',reason:'x',by:'afnan',at:1,resolvedBy:'ammar',resolvedAt:9,note:'paid'}));
     s.ok('nothing open, nothing to resolve',!!M.maDisputePatch(d,'ammar',{state:'resolved'}).error);
-    s.eq('the owner fields are the review and the dispute',M.MA_DERIVED_OWNER_FIELDS.join(),'reviewedAt,reviewedBy,dispute');
+    s.eq('the owner fields are the review, the dispute and its history',M.MA_DERIVED_OWNER_FIELDS.join(),'reviewedAt,reviewedBy,dispute,disputes');
   }
 
   s.section('the rollup\'s merge: stored against new');
@@ -337,10 +339,12 @@ module.exports=function(){
     s.eq('… not into a locked quarter',J(M.maCourierMerge(null,n,{at:5,locked})),J({action:'skip',why:'locked',quarter:n.quarter}));
     const stored=Object.assign({},n,{ts:4,reviewedAt:9,reviewedBy:'ammar',dispute:{state:'open',reason:'x'}});
     s.eq('the same sig: no write at all',M.maCourierMerge(stored,n,{at:5}).action,'none');
-    const flagOnly=Object.assign({},n,{flags:[{rule:'parcel.duplicate',message:'twice',field:null}],sig:'v1:other'});
-    const f=M.maCourierMerge(stored,flagOnly,{at:6});
+    // A flag re-worded under the same rule is no new claim: the review stays.
+    const flagged=Object.assign({},stored,{flags:[{rule:'parcel.duplicate',message:'twice',field:null}]});
+    const flagOnly=Object.assign({},n,{flags:[{rule:'parcel.duplicate',message:'three times',field:null}],sig:'v1:other'});
+    const f=M.maCourierMerge(flagged,flagOnly,{at:6});
     s.eq('a changed flag: an update …',J([f.action,f.fields]),J(['update',['flags']]));
-    s.eq('… that keeps the review (no figure moved) and the dispute',J([f.doc.reviewedAt,f.doc.reviewedBy,f.doc.dispute]),J([9,'ammar',{state:'open',reason:'x'}]));
+    s.eq('… that keeps the review (no figure moved, no new rule) and the dispute',J([f.doc.reviewedAt,f.doc.reviewedBy,f.doc.dispute]),J([9,'ammar',{state:'open',reason:'x'}]));
     s.eq('… one more revision, created when it was',J([f.doc.rev,f.doc.ts]),J([2,4]));
     const e=(f.doc.edits||[]).slice(-1)[0]||{};
     s.eq('… with an edit row by the nightly rollup',J([e.by,e.byName,e.at,e.fields]),J(['ma-rollup','Nightly courier rollup',6,['flags']]));
