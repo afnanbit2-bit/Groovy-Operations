@@ -1897,7 +1897,7 @@ function _siAxConfidence(a){
   let lvl=(m.days==null||units<C.lowUnits||days<C.lowDays)?0:((units>=C.highUnits&&days>=C.highDays)?2:1);
   const caps=[];
   if(!ret.synced)caps.push('later returns are not synced yet');
-  if(!C.leadTimeSet&&!_siAxLtAnyCustom())caps.push('the supplier lead time is a default');
+  if(!C.leadTimeSet&&!_siAxLtAnyCustom()&&_siAxLtArtDays(a&&a.code)==null)caps.push('the supplier lead time is a default');
   const capped=lvl===2&&caps.length>0;if(capped)lvl=1;
   const name=['Low','Medium','High'][lvl];
   const why=[units+' unit'+(units===1?'':'s')+' over '+days+' counted day'+(days===1?'':'s')];
@@ -1954,10 +1954,30 @@ function _siAxLtGroup(cat){
   return'other';
 }
 function _siAxLtStored(){try{const v=JSON.parse(localStorage.getItem(_SI_LT_KEY)||'{}');return v&&typeof v==='object'?v:{};}catch(_){return{};}}
+// Per-article override (Sept 2026): CODE -> whole days, per device like the category defaults. No Firestore, no rules.
+// One reader, three steps: article override -> category default -> the global fallback (_SI_LT_DEFAULT.other).
+const _SI_LT_ART_KEY='groovy-si-leadtimes-article';
+function _siAxLtDays(v){const n=Number(v);return(v!==''&&v!=null&&typeof v!=='boolean'&&isFinite(n)&&n>=1&&n<=365)?Math.round(n):null;}
+function _siAxLtCode(c){const k=String(c==null?'':c).trim().toUpperCase();return(k&&k.length<=60&&k!=='__PROTO__')?k:'';}
+// Only own, valid entries of a plain object survive; corrupt JSON, arrays and junk values are ignored.
+function _siAxLtArtStored(){
+  const out=Object.create(null);
+  try{
+    const v=JSON.parse(localStorage.getItem(_SI_LT_ART_KEY)||'{}');
+    if(v&&typeof v==='object'&&!Array.isArray(v))Object.keys(v).forEach(k=>{const c=_siAxLtCode(k),d=_siAxLtDays(v[k]);if(c&&d!=null)out[c]=d;});
+  }catch(_){}
+  return out;
+}
+function _siAxLtArtDays(code){const c=_siAxLtCode(code);if(!c)return null;const d=_siAxLtArtStored()[c];return d==null?null:d;}
 function _siAxLeadTime(a){
   const g=_siAxLtGroup(a&&a.category),st=_siAxLtStored(),v=Number(st[g]);
-  const custom=isFinite(v)&&v>=1&&v<=365;
-  return{group:g,days:custom?Math.round(v):_SI_LT_DEFAULT[g],custom,label:_SI_LT_LABEL[g]};
+  const cat=isFinite(v)&&v>=1&&v<=365;
+  const ad=_siAxLtArtDays(a&&a.code),article=ad!=null;
+  const days=article?ad:(cat?Math.round(v):(_SI_LT_DEFAULT[g]||_SI_LT_DEFAULT.other));
+  // source says which step applied; text is the wording used next to the number
+  const source=article?'article':(cat?'category':'default');
+  const text=article?'your lead time for this article':(cat?'your lead time':'default lead time, unconfirmed');
+  return{group:g,days,custom:article||cat,article,source,text,label:_SI_LT_LABEL[g]};
 }
 function _siAxLtAnyCustom(){const st=_siAxLtStored();return Object.keys(_SI_LT_DEFAULT).some(g=>{const v=Number(st[g]);return isFinite(v)&&v>=1&&v<=365;});}
 window._siAxSetLt=function(g,val){
@@ -1968,6 +1988,58 @@ window._siAxSetLt=function(g,val){
   if(typeof _siAxRepaintAll==='function')_siAxRepaintAll();
 };
 window._siAxResetLt=function(){try{localStorage.removeItem(_SI_LT_KEY);}catch(_){}if(typeof _siAxRepaintAll==='function')_siAxRepaintAll();};
+let _siAxLtEdit=null,_siAxLtErr='';   // the article code whose lead-time editor is open (one at a time), and its message
+function _siAxLtWrite(map){try{if(Object.keys(map).length)localStorage.setItem(_SI_LT_ART_KEY,JSON.stringify(map));else localStorage.removeItem(_SI_LT_ART_KEY);}catch(_){}}
+// Repaints the explorer body only (no fetch), keeps the scroll position and puts focus back on the row's Edit button.
+function _siAxLtRepaint(focusCode,focusInput){
+  const sy=(typeof window!=='undefined'&&window.scrollY)||0;
+  if(document.getElementById('si-ax-body'))_siAxRepaintBody();else if(typeof _siAxRepaintAll==='function')_siAxRepaintAll();
+  try{
+    let t=null;
+    if(focusInput)t=document.querySelector('input[data-lt-input]');
+    else if(focusCode){const all=document.querySelectorAll('[data-lt-edit]');for(let i=0;i<all.length;i++)if(all[i].dataset&&all[i].dataset.code===focusCode){t=all[i];break;}}
+    if(t){t.focus({preventScroll:true});if(focusInput&&t.select)t.select();}
+  }catch(_){}
+  try{window.scrollTo(0,sy);}catch(_){}
+}
+window._siAxLtEdit=function(code){_siAxLtEdit=_siAxLtCode(code)||null;_siAxLtErr='';_siAxLtRepaint(null,true);};
+window._siAxLtCancel=function(code){_siAxLtEdit=null;_siAxLtErr='';_siAxLtRepaint(_siAxLtCode(code));};
+window._siAxSetLtArt=function(code,val){
+  const c=_siAxLtCode(code);if(!c)return false;
+  const map=_siAxLtArtStored();
+  if(val===''||val==null){delete map[c];}
+  else{const d=_siAxLtDays(val);if(d==null){_siAxLtEdit=c;_siAxLtErr='Enter a whole number of days from 1 to 365.';_siAxLtRepaint(null,true);return false;}map[c]=d;}
+  _siAxLtWrite(map);_siAxLtEdit=null;_siAxLtErr='';_siAxLtRepaint(c);return true;
+};
+window._siAxResetLtArt=function(code){
+  const c=_siAxLtCode(code);if(!c)return;
+  const map=_siAxLtArtStored();delete map[c];_siAxLtWrite(map);
+  if(_siAxLtEdit===c){_siAxLtEdit=null;_siAxLtErr='';}
+  _siAxLtRepaint(c);
+};
+window._siAxLtSave=function(el){
+  if(!el||!el.dataset)return;
+  const i=el.parentNode&&el.parentNode.querySelector?el.parentNode.querySelector('input[data-lt-input]'):null;
+  window._siAxSetLtArt(el.dataset.code,i?i.value:'');
+};
+window._siAxLtKey=function(ev,el){
+  if(!ev||!el)return;
+  if(ev.key==='Enter'){if(ev.preventDefault)ev.preventDefault();window._siAxSetLtArt(el.dataset.code,el.value);}
+  else if(ev.key==='Escape'){if(ev.preventDefault)ev.preventDefault();window._siAxLtCancel(el.dataset.code);}
+};
+// The "Lead time: 35 days · Edit" control. Every string is escaped; the code travels in a data attribute, never in a handler string.
+function _siAxLtCtlHtml(a){
+  const lt=_siAxLeadTime(a),code=_siAxLtCode(a&&a.code),ec=_siEsc(code);
+  if(!code)return'';
+  if(_siAxLtEdit===code){
+    return`<div class="si-lt-ctl editing"><label class="si-lt-l">Lead time <input type="number" min="1" max="365" step="1" inputmode="numeric" value="${lt.days}" data-lt-input="1" data-code="${ec}" onkeydown="window._siAxLtKey(event,this)" aria-label="Lead time in days for ${_siEsc(_siAxLabel(a))}"> days</label>
+      <button class="si-ax-btn" data-code="${ec}" onclick="window._siAxLtSave(this)">Save</button>
+      ${lt.article?`<button class="si-ax-btn" data-code="${ec}" onclick="window._siAxResetLtArt(this.dataset.code)">Reset to default</button>`:''}
+      <button class="si-ax-btn" data-code="${ec}" onclick="window._siAxLtCancel(this.dataset.code)">Cancel</button>
+      ${_siAxLtErr?`<div class="si-ax-note si-lt-err" role="alert" style="margin:0;flex-basis:100%">${_siEsc(_siAxLtErr)}</div>`:''}</div>`;
+  }
+  return`<div class="si-lt-ctl"><span class="si-lt-l" title="${_siEsc(lt.text)}">Lead time: ${lt.days} days</span>${lt.article?'<span class="si-lt-chip">custom</span>':''}<span class="si-ax-note" style="margin:0">· <button class="si-ax-btn si-lt-edit" data-lt-edit="1" data-code="${ec}" onclick="window._siAxLtEdit(this.dataset.code)">Edit</button></span></div>`;
+}
 // ── Demand pools: a percentile among articles of the same age band ───────────────────────
 function _siAxDemandOf(m){
   if(m.perInDay!=null)return{D:m.perInDay,fb:false};
@@ -2046,7 +2118,7 @@ function _siAxClassify(a){
 // What to do, from the class and the cover against the lead time. {key,label,text,lead} — key: reorder | risk | stuck | hold | markdown | watch | ok
 function _siAxActionOf(a){
   const c=_siAxClassify(a),m=_siAxStats(a),T=_SI_AX_SCORE,conf=_siAxConfidence(a),lt=_siAxLeadTime(a),ltw=lt.days/7;
-  const ltTxt='lead time '+lt.days+' days ('+(lt.custom?'your setting':'default, unconfirmed')+')';
+  const ltTxt='lead time '+lt.days+' days ('+(lt.article?lt.text:(lt.custom?'your setting':'default, unconfirmed'))+')';
   const cov=m.cover,covTxt=_siAxCoverText(m);
   const sizes=m.risk&&m.risk.length?m.risk.map(x=>x.size).join(', '):'';
   const R=(key,label,text)=>({key,label,text,lead:lt});
@@ -2062,15 +2134,21 @@ function _siAxActionOf(a){
     return R('watch','Watch','Slow but stock is low ('+covTxt+' of cover).');
   }
   // winner, solid, steady
-  if(cov!=null&&cov<ltw&&conf.lvl>0)return R('reorder','Reorder now',(cov===0?'Nothing left in stock':covTxt+' of cover')+' against a '+lt.days+'-day lead time: a batch started today arrives after the stock is gone ('+(lt.custom?'your lead time':'default lead time, unconfirmed')+').');
+  if(cov!=null&&cov<ltw&&conf.lvl>0)return R('reorder','Reorder now',(cov===0?'Nothing left in stock':covTxt+' of cover')+' against a '+lt.days+'-day lead time: a batch started today arrives after the stock is gone ('+lt.text+').');
   if((cov!=null&&cov<ltw+T.riskWeeks)||sizes)return R('risk','Stock-out risk',(sizes?'Size'+(m.risk.length===1?'':'s')+' '+sizes+' out and selling. ':'')+(cov!=null?covTxt+' of cover against a '+lt.days+'-day lead time.':'')+' Plan the next batch; '+ltTxt+'.');
   if(cov!=null&&cov>T.overCoverWeeks)return R('hold','Hold, do not reorder',covTxt+' of cover: enough for now.');
   return R('ok','No action',cov==null?'Cover unknown.':covTxt+' of cover, above the '+lt.days+'-day lead time.');
 }
+function _siAxLtArtListHtml(){
+  const m=_siAxLtArtStored(),codes=Object.keys(m).sort(_siSortNat);
+  let idx=null;try{idx=_siAxIndex();}catch(_){}
+  const rows=codes.map(c=>{const a=idx&&idx.map&&idx.map.get(c),nm=a?_siAxLabel(a):'';return`<div class="si-lt-row"><span>${nm?'<strong>'+_siEsc(nm)+'</strong> · ':''}${_siEsc(c)}</span><span class="si-ax-note" style="margin:0">${m[c]} days</span><button class="si-ax-btn" data-code="${_siEsc(c)}" onclick="window._siAxResetLtArt(this.dataset.code)">Reset</button></div>`;}).join('');
+  return`<div class="si-ax-lab" style="margin-top:12px">Articles with their own lead time (${codes.length})</div>${rows||'<div class="si-ax-note">None. Use Edit next to an article\u2019s lead time to set one; it is kept on this device only.</div>'}`;
+}
 function _siAxLtHtml(){
   const st=_siAxLtStored();
   const row=g=>{const v=Number(st[g]),cu=isFinite(v)&&v>=1&&v<=365;return`<label class="si-lt-row"><span>${_siEsc(_SI_LT_LABEL[g])}</span><input type="number" min="1" max="365" inputmode="numeric" value="${cu?v:_SI_LT_DEFAULT[g]}" onchange="window._siAxSetLt('${g}',this.value)" aria-label="Lead time in days, ${_siEsc(_SI_LT_LABEL[g])}"><span class="si-ax-note" style="margin:0">days · ${cu?'your setting':'default, unconfirmed'}</span></label>`;};
-  return`<div class="si-lt"><div class="si-ax-lab">Lead time (days from deciding to make it to having it in stock)</div>${['tops','heavy','other'].map(row).join('')}<div class="si-ax-note">These are starting guesses, kept on this device only. “Reorder now” means the cover is shorter than the lead time. <button class="si-ax-btn" onclick="window._siAxResetLt()">Reset to defaults</button></div></div>`;
+  return`<div class="si-lt"><div class="si-ax-lab">Lead time (days from deciding to make it to having it in stock)</div>${['tops','heavy','other'].map(row).join('')}<div class="si-ax-note">These are starting guesses, kept on this device only. “Reorder now” means the cover is shorter than the lead time. <button class="si-ax-btn" onclick="window._siAxResetLt()">Reset to defaults</button></div>${_siAxLtArtListHtml()}</div>`;
 }
 function _siAxClassCounts(){
   const idx=_siAxIndex();if(idx.classCounts)return idx.classCounts;
@@ -2629,6 +2707,7 @@ function _siAxSearchBody(){
   const vc=_siAxClassify(a),va=_siAxActionOf(a),vconf=_siAxConfidence(a);
   const verdictHtml=`<div class="card si-verdict act-${va.key}"><div class="si-vd-top"><span class="si-vd-act">${_siEsc(va.label)}</span><span class="si-pc-chip cls-${vc.cls}"><i class="si-pc-key cls-${vc.cls}"></i>${_siEsc(vc.label)}</span>${_siAxConfChip(vconf)}</div>
     <div class="si-vd-text">${_siEsc(va.text)}</div>
+    <div class="si-vd-lt">${_siAxLtCtlHtml(a)}</div>
     <div class="si-ax-note" style="margin:4px 0 0">${_siEsc(vc.rule)}${vc.near?' '+_siEsc(vc.near):''}${vc.unverified?' (partly unverified)':''}</div></div>`;
   return`<div class="card"><div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:1 1 220px;min-width:0"><div style="font-size:18px;font-weight:700">${_siEsc(a.name)}</div><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${cat} · ${a.skus.size} SKU${a.skus.size===1?'':'s'}</div></div>
@@ -2745,6 +2824,7 @@ function _siAxOverviewBody(){
     <div class="fg"><div class="k">Selling / week</div><div class="v">${_siEsc(_siAxNum(r.m.paceHead))}</div></div>
     <div class="fg"><div class="k">Sizes out</div><div class="v">${r.m.risk&&r.m.risk.length?_siEsc(r.m.risk.map(x=>x.size).join(', ')):'—'}</div></div>
     <div class="act">${_siEsc(r.act.text)}</div>
+    <div class="lt">${_siAxLtCtlHtml(r.a)}</div>
     <div class="btns"><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOpen(this.dataset.code)">Open</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button></div></div>`;
   const cnt={};rows.forEach(r=>{cnt[r.c.cls]=(cnt[r.c.cls]||0)+1;});
   const classLine=['winner','solid','steady','constrained','slow','dead','early','unrated'].filter(k=>cnt[k]).map(k=>cnt[k]+' '+_SI_AX_CLASSES[k].label).join(' · ');
