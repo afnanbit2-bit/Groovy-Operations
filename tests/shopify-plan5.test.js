@@ -183,7 +183,7 @@ module.exports=async function(){
   brk('cover top not marked','hi=r.hi>C.coverCapWeeks?C.coverCapWeeks+\'+\':String(Math.ceil(r.hi))','hi=String(Math.ceil(r.hi))',['cover top end above 26 shows 26+']);
   brk('cutoff hour removed','p.getUTCHours()<_SI_AX_CFG.snapshotDayCutoffHour?day-1:day','day',['10:00 PKT on Aug 5 is the close of Aug 4']);
   brk('cutoff at 10','snapshotDayCutoffHour:18','snapshotDayCutoffHour:10',['10:00 PKT on Aug 5 is the close of Aug 4']);
-  brk('later snapshot wins','<(_siAxSnapMs(prev.snapshot_at)||0)','>(_siAxSnapMs(prev.snapshot_at)||0)',['two documents for one closing day keep the earlier one (7, not 9)']);
+  brk('later snapshot wins','(f.sms||0)<(prev.sms||0)','(f.sms||0)>(prev.sms||0)',['two documents for one closing day keep the earlier one (7, not 9)']);
   brk('missing shown as 0','function _siAxNum(v,dec){if(v==null||!isFinite(v))return\'—\'','function _siAxNum(v,dec){if(v==null||!isFinite(v))return\'0\'',['missing input shows a dash, never 0']);
   const cbrk=(label,from,to,failing)=>{
     const n=SRC.split(from).length-1;

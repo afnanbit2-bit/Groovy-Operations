@@ -2808,6 +2808,16 @@ const FRAGMENTS={
     const failed=app.run('_siNaSectionHtml()');
     return Promise.resolve('<div id="si-content">'+empty+failed+'</div>');
   },
+  // Stock history pending and failed (load-time stage 1): the quiet "Stock history: loading…" line over the two Overview tiles that show …, and the failed line with its Retry.
+  'inventory intel — stock history pending and failed':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siProducts=[];_siLineItems=[];_siOrders=[];_siLoaded=true;_siHist=null;_siHistState="loading";_siSnapshot={date:_siPktDate(0),snapshot_at:new Date().toISOString(),items:{}};_siAxCache=null;_siNaMemo=null;_siSyncMeta={orderSync:{last_status:"success",last_success_at:new Date().toISOString()},inventory:{}}');
+    const pending=app.run('_siOverviewAttnTiles()');
+    app.run('_siHistState="error";_siHistError="snapshot read refused by the server (permission-denied)";_siHist=null;_siAxCache=null;_siNaMemo=null');
+    const failed=app.run('_siHistStrip()');
+    return Promise.resolve('<div id="si-content">'+pending+'<div style="height:16px"></div>'+failed+'</div>');
+  },
   // The loader (Oct 2026): the card over the page skeleton mid-way, the stalled countdown, and the final error card. Tokens only; every
   // control must be reachable (hit-tested) and every line readable in both themes. Verified by painting the stage line in --surface.
   'inventory intel — loading mid-way':()=>{
