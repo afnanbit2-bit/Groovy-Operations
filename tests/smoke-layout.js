@@ -2801,6 +2801,18 @@ const FRAGMENTS={
     app.run('_siAxTlRes="day";_siAxTlRange="90"');
     return Promise.resolve('<div id="si-content">'+a+b+c+'</div>');
   },
+  // The Sizes card: the sales-vs-stock bars, every status chip (out, thin, fine, over, no sales, no stock data), the readout and the
+  // suggested split, for a seeded article and for a synthetic run covering every chip and a long hostile-length size label.
+  'inventory intel — Article Explorer sizes card':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    const real=app.run('_siAxSizesCardHtml(_siAxIndex().map.get("GST073"))');
+    const syn=app.run('(()=>{const keep=[_siAxStats,_siAxActionOf];_siAxStats=()=>({sizeRows:[{size:"S",sold:60,stock:3,prev:4,recent:12},{size:"M",sold:80,stock:5,prev:9,recent:16},{size:"L",sold:50,stock:60,prev:60,recent:2},'+
+      '{size:"XL",sold:20,stock:30,prev:30,recent:0},{size:"XXL",sold:30,stock:0,prev:6,recent:8},{size:"28",sold:9,stock:null,prev:null,recent:1},{size:"VERYLONGSIZELABELTHATKEEPSGOINGANDGOING",sold:4,stock:50,prev:50,recent:4}]});'+
+      '_siAxActionOf=()=>({key:"reorder",label:"Reorder now"});const h=_siAxSizesCardHtml({hasStock:true,onHand:148,code:"SYN",category:"Tees"});[_siAxStats,_siAxActionOf]=keep;return h;})()');
+    return Promise.resolve('<div id="si-content">'+real+syn+'</div>');
+  },
   'inventory intel — Article Explorer overview':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});

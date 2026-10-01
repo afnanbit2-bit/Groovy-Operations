@@ -5310,3 +5310,47 @@ a.ma-btn{text-decoration:none}
 .si-ax-chip .si-th-c{display:none}
 .si-na-dtop{display:flex;gap:12px;align-items:center}
 .si-na-dtx{min-width:0}
+/* Article Explorer — Sizes card. Bars are HTML boxes (no SVG); every status is a glyph plus a word; tokens only. */
+.si-sz-read{font-size:14px;line-height:1.5;margin:0 0 10px}
+.si-tl-legend .k.szs{background:var(--si-s0)}
+.si-tl-legend .k.szk{background:repeating-linear-gradient(135deg,var(--si-s1) 0 2px,var(--surface) 2px 5px);border:1px solid var(--si-s1)}
+.si-sz-wrap{overflow-x:auto;margin:6px 0 12px}
+.si-sz-tbl{min-width:640px}
+.si-sz-tbl td,.si-sz-tbl th{white-space:nowrap;vertical-align:middle}
+.si-sz-mix{min-width:210px}
+.si-sz-line{display:flex;align-items:center;gap:6px;margin:2px 0}
+.si-sz-bar{display:block;flex:1 1 80px;min-width:80px;height:9px;border-radius:5px;background:var(--soft);overflow:hidden}
+.si-sz-bar i{display:block;height:100%}
+.si-sz-bar.s i{background:var(--si-s0)}
+.si-sz-bar.k i{background:repeating-linear-gradient(135deg,var(--si-s1) 0 2px,var(--surface) 2px 5px);outline:1px solid var(--si-s1);outline-offset:-1px}
+.si-sz-n{font-size:12px;color:var(--muted);min-width:68px;text-align:right}
+.si-sz-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.5;border:1px solid transparent}
+.si-sz-chip i{font-style:normal;font-size:11px}
+.si-sz-chip.out{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
+.si-sz-chip.thin{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.si-sz-chip.fine{background:var(--accent-success-soft);color:var(--accent-success)}
+.si-sz-chip.over{background:var(--surface-2);color:var(--text);border-color:var(--si-s0)}
+.si-sz-chip.none,.si-sz-chip.nodata{background:var(--soft);color:var(--muted);border-color:var(--border)}
+.si-sz-split{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0 0 10px;background:var(--surface)}
+.si-sz-sh{font-size:14px;font-weight:700;margin-bottom:6px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.si-sz-tag{font-size:12px;font-weight:600;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:0 8px}
+.si-sz-sps{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.si-sz-sp{display:inline-block;padding:4px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;min-height:34px;box-sizing:border-box}
+@media (max-width:600px){.si-sz-sp{min-height:40px;display:inline-flex;align-items:center}}
+@media (prefers-reduced-motion:reduce){.si-sz *{transition:none!important;animation:none!important}}
+.si-sz-sp b{margin-right:4px}
+/* phone: each size is a small card (the table stays a table in the markup; its head is hidden, every cell carries its own label) */
+@media (max-width:600px){
+  .si-sz-wrap{overflow:visible}
+  .si-sz-tbl{min-width:0;display:block}
+  .si-sz-tbl thead{display:none}
+  .si-sz-tbl tbody{display:block}
+  .si-sz-tbl tr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 8px;padding:10px 2px;border-bottom:1px solid var(--border)}
+  .si-sz-tbl td{display:block;padding:0;border:0;white-space:normal;min-width:0;font-size:14px}
+  .si-sz-tbl td::before{content:attr(data-l);display:block;font-size:11px;font-weight:600;color:var(--muted)}
+  .si-sz-tbl td.si-sz-h{grid-column:1/-1;font-size:16px}
+  .si-sz-tbl td.si-sz-h::before{content:none}
+  .si-sz-tbl td.si-sz-mix{grid-column:1/-1;min-width:0}
+  .si-sz-tbl td[data-l="Status"]{grid-column:1/-1}
+  .si-sz-tbl td[data-l="Cover"]{grid-column:span 2}
+}
