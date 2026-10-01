@@ -87,29 +87,6 @@ function _siSaveCustomTypes(){localStorage.setItem('_siCustomTypes',JSON.stringi
 // ── Size/color normalization (fixes products with swapped option1/option2) ──
 const _SI_KNOWN_SIZES=new Set(['XXS','XXXS','XS','S','M','L','XL','2XL','XXL','3XL','XXXL','4XL','5XL','ONE SIZE','OS','FREE SIZE','ONESIZE']);
 function _siEsc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function _siNormSize(li){
-  const s=(li.size||'').trim().toUpperCase();
-  const c=(li.color||'').trim().toUpperCase();
-  if(s&&_SI_KNOWN_SIZES.has(s))return li.size.trim();
-  if(c&&_SI_KNOWN_SIZES.has(c))return li.color.trim(); // options were swapped — color field actually has the size
-  return li.size||'Unknown';
-}
-function _siNormColor(li){
-  const s=(li.size||'').trim().toUpperCase();
-  const c=(li.color||'').trim().toUpperCase();
-  if(c&&!_SI_KNOWN_SIZES.has(c))return li.color.trim()||'Unknown';
-  if(s&&!_SI_KNOWN_SIZES.has(s))return li.size.trim()||'Unknown'; // size field actually has the color
-  return li.color||'Unknown';
-}
-function _siByNormDim(items,dim){
-  const map={};
-  items.forEach(li=>{
-    let k=dim==='size'?_siNormSize(li):_siNormColor(li);
-    if(!k||!k.trim())k='Unknown';
-    map[k]=(map[k]||0)+(li.quantity||0);
-  });
-  return Object.entries(map).sort(_siSortEntries);
-}
 
 // ── Data loader ─────────────────────────────────────────────────────
 async function loadShopifyData(){
@@ -162,6 +139,11 @@ async function loadShopifyData(){
     const s2=await getDoc(doc(db,'shopify_sync_meta','order_backfill'));
     const s3=await getDoc(doc(db,'shopify_sync_meta','inventory_sync'));
     _siSyncMeta={catalog:s1.exists()?s1.data():{},orders:s2.exists()?s2.data():{},inventory:s3.exists()?s3.data():{}};
+  }catch(_){}
+  // the 4-hourly order sync's own status doc (the 'orders' entry above is the backfill's); never fatal, and missing = "unknown" on screen
+  try{
+    const s4=await getDoc(doc(db,'shopify_sync_meta','order_sync'));
+    _siSyncMeta.orderSync=s4.exists()?s4.data():null;
   }catch(_){}
 
   _siLoaded=true; // only when collections loaded AND snapshot present
@@ -330,43 +312,6 @@ function _siComputeSkuTable(){
   return rows.filter(r=>_siMatchSeason(r.season));
 }
 
-// ── Needs Attention cards ───────────────────────────────────────────
-function _siNeedsAttention(rows){
-  const lowStock=rows.filter(r=>r.onHand>0&&r.daysLeft<=14&&r.daysLeft>0&&r.dailyRate>0.1).sort((a,b)=>a.daysLeft-b.daysLeft).slice(0,8);
-  const deadStock=rows.filter(r=>r.onHand>5&&(r.daysSinceLastSale===null||r.daysSinceLastSale>60)).sort((a,b)=>(b.onHand*b.price)-(a.onHand*a.price)).slice(0,8);
-  const highSellThrough=rows.filter(r=>r.sellThrough!==null&&r.sellThrough>0.4&&r.s7>=3).sort((a,b)=>b.sellThrough-a.sellThrough).slice(0,8);
-  const promote=rows.filter(r=>r.onHand>20&&r.s7===0&&r.s30>0&&r.price>0).sort((a,b)=>(b.onHand*b.price)-(a.onHand*a.price)).slice(0,8);
-  return{lowStock,deadStock,highSellThrough,promote};
-}
-
-// ── Selling pattern aggregators ─────────────────────────────────────
-function _siByDimension(items,dim){
-  const map={};
-  items.forEach(li=>{
-    let k=li[dim]||'Unknown';
-    if(!k.trim())k='Unknown';
-    map[k]=(map[k]||0)+(li.quantity||0);
-  });
-  return Object.entries(map).sort(_siSortEntries);
-}
-
-// ── By category, resolved against the CURRENT catalog ───────────────
-// Line items store a product_type snapshot frozen at order-sync time, so
-// historical sales collapse into 'Unknown'. Re-resolve each line item's
-// category from the live catalog by SKU (fallback: the frozen line-item
-// value, then 'Unknown'). Pure read — no data is mutated.
-function _siByCategoryLive(items){
-  const skuType={};
-  _siProducts.forEach(p=>{ if(p.sku && skuType[p.sku]===undefined) skuType[p.sku]=p.product_type||''; });
-  const map={};
-  items.forEach(li=>{
-    let k=(li.sku&&skuType[li.sku])||li.product_type||'Unknown';
-    if(typeof k!=='string'||!k.trim())k='Unknown';
-    map[k]=(map[k]||0)+(li.quantity||0);
-  });
-  return Object.entries(map).sort(_siSortEntries);
-}
-
 // ── Bar chart (pure CSS) ────────────────────────────────────────────
 function _siBarChart(data,maxBars){
   const d=data.slice(0,maxBars||15);
@@ -380,38 +325,6 @@ function _siBarChart(data,maxBars){
         <div style="height:100%;width:${pct}%;background:var(--text);border-radius:4px;transition:width .3s"></div>
       </div>
       <div style="width:45px;font-size:12px;font-weight:600;text-align:right">${_siFmt(val)}</div>
-    </div>`;
-  }).join('');
-}
-
-// ── Size curve per style ────────────────────────────────────────────
-function _siSizeCurve(rows){
-  const styles={};
-  rows.forEach(r=>{
-    if(!r.title||r.needsReview)return;
-    const base=r.title.replace(/\s*[\|\/\-]\s*.*/,'').trim();
-    if(!base)return;
-    if(!styles[base])styles[base]={sizes:{},total:0};
-    styles[base].sizes[r.size||'?']=(styles[base].sizes[r.size||'?']||0)+r.s7;
-    styles[base].total+=r.s7;
-  });
-  const sorted=Object.entries(styles).filter(([_,v])=>v.total>0).sort((a,b)=>b[1].total-a[1].total).slice(0,10);
-  if(!sorted.length)return'<div class="empty">No size-curve data yet</div>';
-  return sorted.map(([style,data])=>{
-    const max=Math.max(...Object.values(data.sizes),1);
-    const bars=Object.entries(data.sizes).sort((a,b)=>b[1]-a[1]).map(([sz,qty])=>{
-      const pct=Math.round(qty/max*100);
-      return`<span style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;min-width:32px">
-        <span style="height:40px;width:20px;background:var(--soft);border-radius:3px;position:relative;display:flex;align-items:flex-end">
-          <span style="width:100%;height:${pct}%;background:var(--text);border-radius:3px"></span>
-        </span>
-        <span style="font-size:11px;color:var(--muted)">${sz}</span>
-        <span style="font-size:11px;font-weight:600">${qty}</span>
-      </span>`;
-    }).join('');
-    return`<div style="margin-bottom:12px">
-      <div style="font-size:13px;font-weight:600;margin-bottom:4px">${style} <span style="color:var(--muted);font-weight:400">(${data.total} sold)</span></div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">${bars}</div>
     </div>`;
   }).join('');
 }
@@ -462,10 +375,11 @@ function renderShopifyDashboard(){
   if(_siLoadError)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="empty">⚠ Could not load inventory data: '+_siLoadError+'<br><button class="btn-primary" onclick="window._siRetry()" style="margin-top:10px">Retry</button></div>';
   if(!_siLoaded)return'<div class="empty">Loading Shopify data...</div>';
 
+  _siSection=_siSecId(_siSection);   // a stale or removed section id lands on Overview, never a blank page
+  // the stock history feeds the Needs Attention counts (tab pill, Overview tiles): one bounded read, repaints when it lands
+  if(_siHistState==='idle'&&typeof getDocs==='function')_siAxEnsureHistory();
   const m=_siComputeMetrics();
   const skuRows=_siComputeSkuTable();
-  const attn=_siNeedsAttention(skuRows);
-  const items7=_siRecentItems(7);
 
   return`<div class="page-head">
     <div class="page-title">Inventory Intelligence</div>
@@ -474,7 +388,7 @@ function renderShopifyDashboard(){
 
   ${_siSeasonBar()}
   ${_siTabBar()}
-  <div id="si-content">${_siRenderSection(m,skuRows,attn,items7)}</div>
+  <div id="si-content">${_siRenderSection(m,skuRows)}</div>
   <div style="height:80px"></div>`;
 }
 
@@ -501,51 +415,47 @@ window._siRetry=function(){
   if(typeof window.showPage==='function')window.showPage('shopify-intel');
 };
 
+const _SI_SECTIONS=['overview','attention','skutable','explorer','weekly','advanced'];
+function _siSecId(id){return _SI_SECTIONS.indexOf(id)>=0?id:'overview';}
 function _siTabBar(){
   const tabs=[
     {id:'overview',label:'Overview'},
-    {id:'attention',label:'Needs Attention'},
-    {id:'patterns',label:'Selling Patterns'},
+    {id:'attention',label:'Needs Attention',badge:true},
     {id:'skutable',label:'SKU Table'},
     {id:'explorer',label:'Article Explorer'},
     {id:'weekly',label:'Weekly Close'},
     {id:'advanced',label:'Advanced'},
   ];
+  const n=_siNaBadge();
   return`<div class="gp-tabs" id="si-tab-bar" style="margin-bottom:14px">${tabs.map(t=>
-    `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}</button>`
+    `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}${t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:''}</button>`
   ).join('')}</div>`;
 }
 
 window._siSwitchTab=function(id){
+  id=_siSecId(id);
+  if(id!=='attention')_siNaSel='';   // leaving the tab closes an open situation; the list's own state (filter, expanded bands) is kept
   _siSection=id;
   const m=_siComputeMetrics();
   const skuRows=_siComputeSkuTable();
-  const attn=_siNeedsAttention(skuRows);
-  const items7=_siRecentItems(7);
   const bar=document.getElementById('si-tab-bar');
   if(bar)bar.outerHTML=_siTabBar();
   const el=document.getElementById('si-content');
-  if(el)el.innerHTML=_siRenderSection(m,skuRows,attn,items7);
+  if(el)el.innerHTML=_siRenderSection(m,skuRows);
   if(id==='skutable'&&_siSkuReturnY>0){const y=_siSkuReturnY;_siSkuReturnY=0;if(typeof window.scrollTo==='function')try{window.scrollTo(0,y);}catch(_){}}
 };
 
-function _siRenderSection(m,skuRows,attn,items7){
-  if(_siSection==='overview')return _siOverview(m,skuRows);
-  if(_siSection==='attention')return _siAttentionSection(attn,skuRows);
-  if(_siSection==='patterns')return _siPatternsSection(items7,skuRows);
+function _siRenderSection(m,skuRows){
+  if(_siSection==='attention')return _siNaSectionHtml();
   if(_siSection==='skutable')return _siSkuTableSection(skuRows);
   if(_siSection==='explorer')return _siArticleExplorerSection();
   if(_siSection==='weekly')return _siWeeklySection();
   if(_siSection==='advanced')return _siAdvancedSection(skuRows);
-  return'';
+  return _siOverview(m);
 }
 
 // ── Overview ────────────────────────────────────────────────────────
-function _siOverview(m,skuRows){
-  const attn=_siNeedsAttention(skuRows);
-  const lowCount=attn.lowStock.length;
-  const deadCount=attn.deadStock.length;
-
+function _siOverview(m){
   return`<div class="stats-row">
     <div class="stat-card">
       <div class="stat-label">Inventory Value</div>
@@ -566,18 +476,7 @@ function _siOverview(m,skuRows){
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-    <div class="card${lowCount?' style="border-left:3px solid var(--accent-urgent)"':''}">
-      <div class="card-title">Low Stock Alert</div>
-      <div style="font-size:29px;font-weight:700;${lowCount?'color:var(--accent-urgent)':''}">${lowCount}</div>
-      <div style="font-size:12px;color:var(--muted)">SKUs with &lt; 14 days left</div>
-    </div>
-    <div class="card${deadCount?' style="border-left:3px solid var(--accent-warning)"':''}">
-      <div class="card-title">Dead / Slow Stock</div>
-      <div style="font-size:29px;font-weight:700;${deadCount?'color:var(--accent-warning)':''}">${deadCount}</div>
-      <div style="font-size:12px;color:var(--muted)">No sale in 60+ days</div>
-    </div>
-  </div>
+  ${_siOverviewAttnTiles()}
 
   <div class="card">
     <div class="card-title">Daily Movement (14 days)</div>
@@ -595,6 +494,18 @@ function _siOverview(m,skuRows){
   </div>`;
 }
 
+// The two Overview tiles read the SAME article-level counts as the Needs Attention tab (one computation, uncapped).
+function _siOverviewAttnTiles(){
+  const n=_siNaBadge();
+  if(n==null)return`<div class="si-na-tiles"><div class="card si-na-tile"><div class="card-title">Needs attention</div><div class="num">…</div><div class="sub">reading the stock history</div></div><div class="card si-na-tile"><div class="card-title">Overstocked / dead stock</div><div class="num">…</div><div class="sub">reading the stock history</div></div></div>`;
+  const c=_siNaState().counts;
+  const cashSub=c.byGroup.cash?(c.cashValue?_siPKR(Math.round(c.cashValue))+' at selling price'+(c.cashNoValue?' (+'+c.cashNoValue+' with no price)':''):'no price to value it at'):'nothing stuck';
+  return`<div class="si-na-tiles">
+    <button type="button" class="card si-na-tile${c.action?' hot':''}" onclick="window._siNaGo('all')"><div class="card-title">Needs attention</div><div class="num">${c.action}</div><div class="sub">${c.critical} critical · ${c.act} this week · ${c.watch} to watch (articles)</div></button>
+    <button type="button" class="card si-na-tile${c.byGroup.cash?' warm':''}" onclick="window._siNaGo('cash')"><div class="card-title">Overstocked / dead stock</div><div class="num">${c.byGroup.cash}</div><div class="sub">${_siEsc(cashSub)}</div></button>
+  </div>`;
+}
+
 function _siDailyMovementTable(){
   const days=_siDailyMovement();
   if(!days.length)return'<div class="empty">No movement data</div>';
@@ -609,105 +520,6 @@ function _siDailyMovementTable(){
   </table></div>`;
 }
 
-// ── Needs Attention ─────────────────────────────────────────────────
-function _siAttentionSection(attn,skuRows){
-  const md=_siMarkdownCandidates(skuRows);
-  return`
-  <div class="card" style="border-left:3px solid var(--accent-urgent)">
-    <div class="card-title">Low Stock / About to Sell Out</div>
-    ${attn.lowStock.length?attn.lowStock.map(r=>`<div class="info-row">
-      <div>
-        <div style="font-weight:600;font-size:13px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
-        <div style="font-size:12px;color:var(--muted)">${r.color} / ${r.size}</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-weight:700;color:var(--accent-urgent)">${r.daysLeft}d left</div>
-        <div style="font-size:11px;color:var(--muted)">est. · ${r.onHand} on hand · ${r.s7} sold/7d</div>
-      </div>
-    </div>`).join(''):'<div class="empty">Nothing critically low</div>'}
-  </div>
-
-  <div class="card" style="border-left:3px solid var(--accent-warning)">
-    <div class="card-title">High Sell-Through (Committed Pressure)</div>
-    ${attn.highSellThrough.length?attn.highSellThrough.map(r=>`<div class="info-row">
-      <div>
-        <div style="font-weight:600;font-size:13px">${r.sku}</div>
-        <div style="font-size:12px;color:var(--muted)">${r.color} / ${r.size}</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-weight:700">${_siPct(r.sellThrough)}</div>
-        <div style="font-size:11px;color:var(--muted)">sell-through 7d est.</div>
-      </div>
-    </div>`).join(''):'<div class="empty">No pressure</div>'}
-  </div>
-
-  <div class="card">
-    <div class="card-title">Dead / Slow Stock (60+ days no sale)</div>
-    ${attn.deadStock.length?attn.deadStock.map(r=>`<div class="info-row">
-      <div>
-        <div style="font-weight:600;font-size:13px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
-        <div style="font-size:12px;color:var(--muted)">${r.daysSinceLastSale!=null?r.daysSinceLastSale+'d since last sale':'Never sold'} · ${r.onHand} on hand</div>
-      </div>
-      <div style="text-align:right;font-size:13px;font-weight:600">${_siPKR(r.onHand*r.price)}</div>
-    </div>`).join(''):'<div class="empty">No dead stock</div>'}
-  </div>
-
-  <div class="card">
-    <div class="card-title">Promote / Restock Candidates</div>
-    ${attn.promote.length?attn.promote.map(r=>`<div class="info-row">
-      <div>
-        <div style="font-weight:600;font-size:13px">${r.sku} <span style="color:var(--muted);font-weight:400">${r.title}</span></div>
-        <div style="font-size:12px;color:var(--muted)">${r.onHand} on hand · ${r.s30} sold last 30d · zero this week</div>
-      </div>
-      <div style="text-align:right;font-size:13px;font-weight:600">${_siPKR(r.onHand*r.price)}</div>
-    </div>`).join(''):'<div class="empty">None</div>'}
-  </div>
-
-  ${md.length?`<div class="card">
-    <div class="card-title">Markdown Candidates (cash-freed estimate)</div>
-    ${md.map(r=>`<div class="info-row">
-      <div>
-        <div style="font-weight:600;font-size:13px">${r.sku}</div>
-        <div style="font-size:12px;color:var(--muted)">${r.daysSinceLastSale}d no sale · ${r.onHand} units</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-weight:700">${_siPKR(r.cashTied)}</div>
-        <div style="font-size:11px;color:var(--muted)">tied up at retail</div>
-      </div>
-    </div>`).join('')}
-  </div>`:''}`;
-}
-
-// ── Selling Patterns ────────────────────────────────────────────────
-function _siPatternsSection(items7,skuRows){
-  const bySize=_siByNormDim(items7,'size');
-  const byColor=_siByNormDim(items7,'color');
-  const byCat=_siByCategoryLive(items7);
-
-  return`
-  <div class="card">
-    <div class="card-title">By Category (7d) <span style="font-size:12px;font-weight:400;color:var(--muted)">— current catalog</span></div>
-    ${_siBarChart(byCat,12)}
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" class="no-stack">
-    <div class="card">
-      <div class="card-title">By Size (7d)</div>
-      ${_siBarChart(bySize,10)}
-    </div>
-    <div class="card">
-      <div class="card-title">By Color (7d)</div>
-      ${_siBarChart(byColor,10)}
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-title">Size Curve per Style (7d sales)</div>
-    ${_siSizeCurve(skuRows)}
-  </div>`;
-}
-
-// ── SKU Table ───────────────────────────────────────────────────────
-// Shared column definitions + head builder so the sort handler can rebuild
-// the <thead> arrows without repainting (and thus recreating) the search input.
 const _SI_SKU_COLS=[
   {key:'sku',label:'SKU'},{key:'title',label:'Product'},{key:'color',label:'Color'},{key:'size',label:'Size'},
   {key:'productType',label:'Category'},
@@ -1102,10 +914,8 @@ window._siToggleGroupSel=function(key,checked){
 function _siRefreshContent(){
   const m=_siComputeMetrics();
   const skuRows=_siComputeSkuTable();
-  const attn=_siNeedsAttention(skuRows);
-  const items7=_siRecentItems(7);
   const el=document.getElementById('si-content');
-  if(el)el.innerHTML=_siRenderSection(m,skuRows,attn,items7);
+  if(el)el.innerHTML=_siRenderSection(m,skuRows);
 }
 
 // Repaint ONLY the SKU table body + count + load-more — never the search input.
@@ -1161,7 +971,6 @@ function _siAdvancedSection(skuRows){
   const wos=_siWeeksOfSupply(skuRows);
   const md=_siMarkdownCandidates(skuRows);
   const stockouts=skuRows.filter(r=>r.onHand<=0&&r.s30>0).sort((a,b)=>b.s30-a.s30).slice(0,15);
-  const items7=_siRecentItems(7);
   const dropPerf=_siDropPerformance(skuRows);
 
   return`
@@ -1687,10 +1496,11 @@ function _siAxEnsureHistory(force){
     const docs=[];snap.forEach(d=>docs.push(d.data()));
     return _siAxBuildHistory(docs);
   })();
-  const to=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timed out after '+(_SI_HIST_TIMEOUT/1000)+'s')),_SI_HIST_TIMEOUT));
+  let tmr=null;const to=new Promise((_,rej)=>{tmr=setTimeout(()=>rej(new Error('timed out after '+(_SI_HIST_TIMEOUT/1000)+'s')),_SI_HIST_TIMEOUT);});
   _siHistPromise=Promise.race([rd,to]).then(h=>{_siHist=h;_siHistState='ok';}).catch(e=>{_siHist=null;_siHistState='error';_siHistError=(e&&e.message)||String(e);}).then(()=>{
-    _siHistPromise=null;_siAxCache=null;
+    clearTimeout(tmr);_siHistPromise=null;_siAxCache=null;
     if(typeof document!=='undefined'&&document.getElementById&&document.getElementById('si-ax-body'))_siAxRepaintBody();
+    if(typeof _siNaOnHistory==='function')_siNaOnHistory();
   });
   return _siHistPromise;
 }
@@ -3115,6 +2925,557 @@ function _siAxCompareBody(){
   <div class="card"><div class="card-title">Shape and context</div>${shape}</div>
   ${_siAxDefsHtml()}`;
 }
+
+// ── Needs Attention (Oct 2026) ──────────────────────────────────────
+// ONE flat ranked list of ARTICLES (never variants), built on the Article Explorer's own helpers (_siAxStats, _siAxClassify,
+// _siAxActionOf, _siAxLeadTime, _siAxConfidence, momentum, sizeRows) so this tab and the Explorer cannot disagree.
+// Three pure layers: _siNaDetect (rules, one article -> issues), _siNaBuild (rank, bands, uncapped counts) and
+// _siNaPlaybook (situation, why, actions, avoid, confidence). Rendering escapes every string once, at the boundary.
+// Every number is a labelled DEFAULT (docs/UNITS_METRICS.md "Needs Attention"); missing data is "—", never 0.
+const _SI_NA={
+  capCritical:5,capAct:8,capWatch:5,
+  minUnits28:10,minPerInDay:1,                       // evidence floor: 10+ units in 28 days or 1+ unit per in-stock day (and confidence above Low)
+  critGapFrac:0.5,                                   // critical when cover is under half the lead time
+  sizeShare:0.15,sizeOutUnits:3,sizeThinUnits:4,sizeThinDays:14,sizeBigShare:0.20,sizeBigUnits:10,minArticleUnits28:8,
+  deadMinStock:5,deadMinAge:56,
+  overCoverWeeks:26,overMinValue:100000,bigValue:500000,bigCoverWeeks:52,
+  risePastLeadDays:28,fadeBigDrop:0.4,
+  suddenBase:5,suddenZ:-2.5,suddenInStockDays:5,
+  discPrice:0.85,discShare:0.5,discUnits:10,
+  voidRate:0.10,voidUnits:5,
+  qtyBand:0.25,pack:12,coverTarget:28,coverTargetWinner:35,
+  staleSnapHours:26,staleOrderHours:8,gapDays:14,
+  seasonFrom:'0915',seasonTo:'1130'
+};
+const _SI_NA_GROUP={stockout:'stock',runout:'stock',sizehole:'stock',overstock:'cash',dead:'cash',rising:'demand',demanddrop:'demand',datatrust:'data'};
+const _SI_NA_REASON={stockout:'Out of stock',runout:'Runs out before restock',sizehole:'Size hole',overstock:'Overstocked',dead:'Dead stock',rising:'Demand rising, thin stock',demanddrop:'Demand dropped',datatrust:'Check the numbers'};
+const _SI_NA_BANDS=[{k:'critical',l:'Critical',cap:'capCritical',sub:'act today'},{k:'act',l:'Act this week',cap:'capAct',sub:'decide this week'},{k:'watch',l:'Watch',cap:'capWatch',sub:'plan, no action yet'}];
+const _SI_NA_FILTERS=[{k:'all',l:'All'},{k:'stock',l:'Stock'},{k:'cash',l:'Cash tied up'},{k:'demand',l:'Demand'},{k:'data',l:'Data'}];
+let _siNaSel='',_siNaFilter='all',_siNaShow={critical:false,act:false,watch:false},_siNaWatchOpen=false,_siNaReturnY=0,_siNaMemo=null,_siNaKeyWired=false,_siNaNowMs=null;
+
+function _siNaNow(){return _siNaNowMs!=null?_siNaNowMs:Date.now();}
+function _siNaIsPhone(){try{return typeof window!=='undefined'&&typeof window.matchMedia==='function'&&!!window.matchMedia('(max-width:600px)').matches;}catch(_){return false;}}
+function _siNaPerDay(m){
+  if(m.perInDay!=null)return m.perInDay;
+  if(m.paceHead!=null)return m.paceHead/7;
+  if(m.pace28!=null)return m.pace28/7;
+  return null;
+}
+// Enough sales to speak: confidence above Low AND (10+ units in 28 days OR 1+ unit per in-stock day).
+function _siNaEvidence(r){
+  const m=r.m,C=_SI_NA;
+  return r.conf.lvl>0&&((m.units28!=null&&m.units28>=C.minUnits28)||(m.perInDay!=null&&m.perInDay>=C.minPerInDay));
+}
+// Units that were sold below 85% of the article's usual price (the unit-weighted median of the daily average price over the 56 days before
+// the last 7). A proxy: line items carry no discount field. Returns null without 10+ units in the last 7 days or without prices.
+function _siNaDiscount(a,today){
+  const C=_SI_NA;if(!a||!a.daily||!a.hasPrice)return null;
+  const Tn=_siAxDayNum(today);if(Tn==null)return null;
+  const s7=_siAxDayStr(Tn-6),b0=_siAxDayStr(Tn-62);let U7=0;const pts=[];
+  a.daily.forEach((d,day)=>{
+    if(!d.u)return;
+    if(day>=s7&&day<=today)U7+=d.u;
+    else if(day>=b0&&day<s7)pts.push([d.r/d.u,d.u]);
+  });
+  if(U7<C.discUnits||!pts.length)return null;
+  pts.sort((x,y)=>x[0]-y[0]);let tot=0;pts.forEach(p=>{tot+=p[1];});
+  let acc=0,base=pts[0][0];for(const p of pts){acc+=p[1];if(acc>=tot/2){base=p[0];break;}}
+  if(!(base>0))return null;
+  let D=0;a.daily.forEach((d,day)=>{if(d.u&&day>=s7&&day<=today&&d.r/d.u<C.discPrice*base)D+=d.u;});
+  return{units7:U7,disc:D,share:D/U7,base};
+}
+// Last 7 days against the mean of the 4 weeks before: base 5+ a week, Poisson z below -2.5, and in stock on 5+ of the 7 days (so a stock-out
+// is never blamed on demand). Without stock history the in-stock check cannot pass, so nothing is said.
+function _siNaSudden(a,m,today){
+  const C=_SI_NA,Tn=_siAxDayNum(today);
+  if(Tn==null||m.days==null||m.days<35)return null;
+  const last=_siAxUnitsBetween(a,_siAxDayStr(Tn-6),today),prior=_siAxUnitsBetween(a,_siAxDayStr(Tn-34),_siAxDayStr(Tn-7)),base=prior/4;
+  if(base<C.suddenBase)return null;
+  const z=(last-base)/Math.sqrt(base);if(!(z<C.suddenZ))return null;
+  const ex=_siAxExposure(a,_siAxDayStr(Tn-6),today);if(ex.inStock<C.suddenInStockDays)return null;
+  return{last,base,z};
+}
+// Winter stock is not "dead" while winter is starting (15 Sept to 30 Nov): hoodies, zippers, jackets, or anything tagged season:winter.
+function _siNaWinter(a,today){
+  const md=String(today||'').slice(5).replace('-','');
+  if(md<_SI_NA.seasonFrom||md>_SI_NA.seasonTo)return false;
+  if(/hood|zip|jacket|coat|fleece|sweat/i.test(a&&a.category||''))return true;
+  try{const sm=_siSeasonMap();for(const s of (a&&a.skus)||[]){if(sm[s]==='winter')return true;}}catch(_){}
+  return false;
+}
+// Reorder size guide: demand per day x (lead time + cover target) minus what is on hand, as a range (pace +/- 25%, because returns
+// are not synced and read the pace high), rounded UP to a pack of 12. null when even the top of the range needs nothing.
+function _siNaQty(perDay,lead,onHand,cls){
+  const C=_SI_NA;if(perDay==null||!(perDay>0)||lead==null)return null;
+  const tgt=cls==='winner'?C.coverTargetWinner:C.coverTarget,span=lead+tgt;
+  const up=v=>Math.max(0,Math.ceil(v/C.pack)*C.pack);
+  const lo=up(perDay*(1-C.qtyBand)*span-(onHand||0)),hi=up(perDay*(1+C.qtyBand)*span-(onHand||0));
+  if(hi<=0)return null;
+  return{lo,hi,target:tgt};
+}
+function _siNaRow(a){return{a,m:_siAxStats(a),c:_siAxClassify(a),act:_siAxActionOf(a),lt:_siAxLeadTime(a),conf:_siAxConfidence(a)};}
+function _siNaSizeRows(m,lead){
+  return(m.sizeRows||[]).filter(s=>s.stock!=null||s.sold>0).map(s=>{
+    const cd=(s.stock!=null&&s.recent>0)?s.stock/(s.recent/28):null;
+    let st='ok';
+    if(s.stock==null)st='—';
+    else if(s.stock===0)st=s.recent>0?'out':'out, no recent sales';
+    else if(cd!=null&&cd<_SI_NA.sizeThinDays&&s.recent>=_SI_NA.sizeThinUnits)st='thin';
+    else if((s.recent===0&&s.stock>=8)||(cd!=null&&cd>_SI_NA.overCoverWeeks*7))st='deep';
+    return{size:s.size,stock:s.stock,units28:s.recent,sold:s.sold,coverDays:cd,state:st};
+  });
+}
+// One article -> its issues (strongest first). Pure given the row {a,m,c,act,lt,conf} and ctx {today,disc(a),sudden(a,m),winter(a)}.
+function _siNaDetect(r,ctx){
+  const a=r.a,m=r.m,c=r.c,lt=r.lt,C=_SI_NA,cls=c.cls,out=[];
+  if(cls==='early'||cls==='unrated')return out;
+  const ev=_siNaEvidence(r),pd=_siNaPerDay(m),lead=lt.days,cd=m.coverDays,asp=m.asp;
+  const sellers=cls==='winner'||cls==='solid'||cls==='steady'||cls==='constrained';
+  const disc=ctx&&ctx.disc?ctx.disc(a):null;
+  const rising=m.momWord==='Rising';
+  const money=u=>(asp!=null&&u!=null)?u*asp:null;
+  const mk=(type,band,extra)=>Object.assign({
+    type,group:_SI_NA_GROUP[type],code:a.code,label:_siAxLabel?_siAxLabel(a):(a.name||a.code),cls,clsLabel:c.label,band,reason:_SI_NA_REASON[type],
+    at:null,atKind:'',lost:null,also:[],seasonal:false,rising:false,conf:r.conf.level,
+    n:{onHand:a.hasStock?a.onHand:null,coverDays:cd,cover:m.cover,coverText:_siAxCoverText(m),leadDays:lead,leadSrc:lt.source,leadText:lt.text,units28:m.units28,
+      prev28:(m.momUnits!=null&&m.units28!=null)?m.momUnits-m.units28:null,perDay:pd,perInDay:m.perInDay,inRate:m.inRate,outDays:m.outDays,measured:m.measured,asp,
+      momentum:m.momentum,momWord:m.momWord,voidRate:m.voidRate,voided:m.voided,days:m.days,units:m.units,pace28Days:m.pace28Days,
+      confName:r.conf.name,confWhy:r.conf.why.slice(),confCaps:r.conf.caps.slice(),sizes:_siNaSizeRows(m,lead),valueTied:null,disc:disc||null,
+      qty:null,gapDays:null,missed:null,holes:[],sudden:null,returnsSynced:ctx?ctx.returnsSynced:null,actKey:r.act&&r.act.key,actText:r.act&&r.act.text}
+  },extra||{});
+  // 1. out of stock while it is a proven seller
+  if(a.hasStock&&a.onHand===0&&(cls==='winner'||cls==='solid'||cls==='constrained')&&m.units28>0&&ev){   // units28>0: the Explorer calls a zero-stock article with no recent sales "Out of stock, no recent sales" (watch), not a reorder
+    const lostU=pd!=null?pd*lead:null;
+    const x=mk('stockout','critical',{lost:lostU,at:money(lostU),atKind:'lost sales over one lead time'});
+    x.n.missed=(m.perInDay!=null&&m.outDays!=null)?Math.round(m.perInDay*m.outDays):null;x.n.gapDays=lead;
+    x.n.qty=_siNaQty(pd,lead,0,cls);x.rising=rising;out.push(x);
+  }
+  // 2. will run out before a batch can land (cover shorter than the lead time)
+  if(a.hasStock&&a.onHand>0&&sellers&&cd!=null&&cd<lead&&ev){
+    const gap=lead-cd,lostU=pd!=null?pd*gap:null;
+    const x=mk('runout',cd<lead*C.critGapFrac?'critical':'act',{lost:lostU,at:money(lostU),atKind:'lost sales in the gap'});
+    x.n.gapDays=gap;x.n.qty=_siNaQty(pd,lead,a.onHand,cls);x.rising=rising;out.push(x);
+  }
+  // 3. size holes: the article is fine overall but a size that carries 15%+ of its sales is out or thin
+  if(a.hasStock&&a.onHand>0&&sellers&&m.units28!=null&&m.units28>=C.minArticleUnits28&&r.conf.lvl>0&&(cd==null||cd>=lead)){
+    const holes=[];
+    (m.sizeRows||[]).forEach(s=>{
+      if(s.size==='Unknown'||s.stock==null||!(m.units28>0))return;
+      const share=s.recent/m.units28;if(share<C.sizeShare)return;
+      if(s.stock===0&&s.recent>=C.sizeOutUnits)holes.push({size:s.size,kind:'out',units28:s.recent,share,stock:0});
+      else if(s.stock>0&&s.recent>=C.sizeThinUnits&&s.stock/(s.recent/28)<C.sizeThinDays)holes.push({size:s.size,kind:'thin',units28:s.recent,share,stock:s.stock});
+    });
+    if(holes.length){
+      const lostU=holes.reduce((t,h)=>t+h.units28,0);
+      const big=holes.some(h=>h.kind==='out'&&(h.share>=C.sizeBigShare||h.units28>=C.sizeBigUnits));
+      const x=mk('sizehole',big?'act':'watch',{lost:lostU,at:money(lostU),atKind:'28-day sales of the size'});
+      x.n.holes=holes;out.push(x);
+    }
+  }
+  // 4. demand rising while stock is thin but not yet behind the lead time (behind it, it is a run-out with a rising chip)
+  if(a.hasStock&&a.onHand>0&&sellers&&rising&&cd!=null&&cd>=lead&&cd<lead+C.risePastLeadDays&&ev&&!(disc&&disc.share>C.discShare)){
+    const x=mk('rising','act',{lost:null,at:money(m.units28),atKind:'28-day sales'});x.rising=true;
+    x.n.qty=_siNaQty(pd,lead,a.onHand,cls);out.push(x);
+  }
+  // 5. demand fell: a winner or solid article, in stock most days (so stock-outs do not explain it), and a gap bigger than chance
+  if((cls==='winner'||cls==='solid')&&m.momWord==='Fading'&&(m.inRate==null||m.inRate>=0.7)){
+    const drop=m.momentum!=null?m.momentum:null,prev=(m.momUnits!=null&&m.units28!=null)?m.momUnits-m.units28:null;
+    const x=mk('demanddrop',(drop!=null&&drop<=-C.fadeBigDrop)?'act':'watch',{lost:prev!=null?prev-m.units28:null,at:money(prev!=null?prev-m.units28:null),atKind:'28-day sales lost'});
+    out.push(x);
+  }else if(a.hasStock&&sellers&&ctx&&ctx.sudden){
+    const sd=ctx.sudden(a,m);
+    if(sd){const x=mk('demanddrop','watch',{lost:sd.base-sd.last,at:money(sd.base-sd.last),atKind:'one week of sales lost'});x.n.sudden=sd;out.push(x);}
+  }
+  // 6. cash: dead and overstocked stock at article level, value at SELLING price (no cost is stored)
+  if(a.hasStock&&a.onHand>0){
+    const val=asp!=null?a.onHand*asp:null,winter=!!(ctx&&ctx.winter&&ctx.winter(a));
+    const wk=m.cover;
+    if(cls==='dead'&&a.onHand>=C.deadMinStock&&m.days>=C.deadMinAge){
+      const x=mk('dead',(val!=null&&val>=C.overMinValue)?'act':'watch',{at:val,atKind:'tied up at selling price'});
+      x.n.valueTied=val;
+      if(winter){x.band='watch';x.seasonal=true;}
+      out.push(x);
+    }else if(cls!=='dead'&&((cls==='slow'&&r.act&&(r.act.key==='stuck'||r.act.key==='markdown'))||(wk!=null&&wk>=C.overCoverWeeks&&val!=null&&val>=C.overMinValue))){
+      const big=(wk!=null&&wk>=C.bigCoverWeeks)||(val!=null&&val>=C.bigValue);
+      const x=mk('overstock',big?'act':'watch',{at:val,atKind:'tied up at selling price'});
+      x.n.valueTied=val;
+      if(winter){x.band='watch';x.seasonal=true;}
+      out.push(x);
+    }
+  }
+  // 7. the numbers themselves: many of its units were voided
+  if(m.voidRate!=null&&m.voidRate>=C.voidRate&&m.voided>=C.voidUnits){
+    out.push(mk('datatrust','watch',{atKind:''}));
+  }
+  return out;
+}
+const _SI_NA_BAND_RANK={critical:0,act:1,watch:2};
+function _siNaCmp(x,y){
+  const ba=_SI_NA_BAND_RANK[x.band]-_SI_NA_BAND_RANK[y.band];if(ba)return ba;
+  const ax=x.at==null?-1:x.at,ay=y.at==null?-1:y.at;if(ax!==ay)return ay-ax;
+  const lx=x.lost==null?-1:x.lost,ly=y.lost==null?-1:y.lost;if(lx!==ly)return ly-lx;
+  return(_siSortClassRank(x.clsLabel)-_siSortClassRank(y.clsLabel))||_siSortNat(x.code,y.code);
+}
+// Rows -> {issues (ranked, one per article), counts (UNCAPPED)}. One primary issue per article; the others ride along as `also`.
+function _siNaBuild(rows,ctx){
+  const issues=[];
+  rows.forEach(r=>{
+    const all=_siNaDetect(r,ctx);if(!all.length)return;
+    const p=all[0];p.also=all.slice(1).map(x=>x.type);issues.push(p);
+  });
+  issues.sort(_siNaCmp);
+  const counts={critical:0,act:0,watch:0,byGroup:{stock:0,cash:0,demand:0,data:0},cashValue:0,cashNoValue:0};
+  issues.forEach(i=>{
+    counts[i.band]++;counts.byGroup[i.group]++;
+    if(i.group==='cash'){if(i.n.valueTied==null)counts.cashNoValue++;else counts.cashValue+=i.n.valueTied;}
+  });
+  counts.action=counts.critical+counts.act;counts.total=counts.action+counts.watch;
+  return{issues,counts};
+}
+function _siNaCtx(){
+  const today=_siPktDate(0);
+  let rs=null;try{rs=_siAxIndex().quality.returns.synced;}catch(_){}
+  return{today,returnsSynced:rs,disc:a=>_siNaDiscount(a,today),sudden:(a,m)=>_siNaSudden(a,m,today),winter:a=>_siNaWinter(a,today)};
+}
+// The ranked issues for the loaded data. Memoised on the index object, today and the lead-time settings (the only inputs that change without
+// a data reload), so the tab pill, the Overview tiles and the list read ONE computation.
+function _siNaState(){
+  const idx=_siAxIndex();
+  let lt='';try{lt=(localStorage.getItem(_SI_LT_KEY)||'')+'|'+(localStorage.getItem(_SI_LT_ART_KEY)||'');}catch(_){}
+  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState;
+  if(_siNaMemo&&_siNaMemo.idx===idx&&_siNaMemo.sig===sig)return _siNaMemo.res;
+  const rows=idx.list.filter(a=>a.units>0||a.hasStock).map(_siNaRow);
+  const res=_siNaBuild(rows,_siNaCtx());
+  res.rows=rows.length;
+  res.skipped=rows.filter(r=>r.c.cls==='early'||r.c.cls==='unrated').length;
+  res.closest=_siNaClosest(rows);
+  _siNaMemo={idx,sig,res};return res;
+}
+// The in-stock seller nearest the line, for the all-clear sentence: smallest (cover days - lead days) among those with evidence.
+function _siNaClosest(rows){
+  let best=null;
+  rows.forEach(r=>{
+    const m=r.m,cls=r.c.cls;
+    if(!(r.a.hasStock&&r.a.onHand>0)||!(cls==='winner'||cls==='solid'||cls==='steady'||cls==='constrained')||m.coverDays==null||!_siNaEvidence(r))return;
+    const gap=m.coverDays-r.lt.days;
+    if(!best||gap<best.gap)best={code:r.a.code,label:_siAxLabel(r.a),gap,coverDays:m.coverDays,lead:r.lt.days};
+  });
+  return best;
+}
+// The pill on the tab and the count the Overview shows: critical + act (the things that need an action). Watch is shown, not counted.
+function _siNaBadge(){
+  if(_siHistState!=='ok'&&_siHistState!=='error')return null;
+  try{return _siNaState().counts.action;}catch(_){return null;}
+}
+
+// ── Data trust ──────────────────────────────────────────────────────
+function _siNaAge(ms){
+  const h=ms/3600000;
+  if(h<1)return Math.max(1,Math.round(ms/60000))+' minutes';
+  if(h<48)return Math.round(h)+' hours';
+  return Math.round(h/24)+' days';
+}
+// What makes the lists below wrong (red), what is worth knowing (amber), what is background (quiet), what is simply not known (unknown).
+// Pure given ctx {now,today,snapshot,meta,hist,histState,histError,quality}. Missing meta is "unknown", never "fine".
+function _siNaTrustOf(ctx){
+  const C=_SI_NA,red=[],amber=[],quiet=[],unknown=[];
+  const snap=ctx.snapshot,meta=ctx.meta||{},q=ctx.quality;
+  const lastErr=m=>m&&m.last_error?' Last error: '+String(m.last_error)+'.':'';
+  if(ctx.histState==='error')red.push({id:'history',title:'Stock history could not be read',text:'Cover, classes and the in-stock rate fall back to rougher figures'+(ctx.histError?' ('+ctx.histError+')':'')+'.',action:'Retry. If it keeps failing, check the Firestore rules for shopify_inventory_snapshots.',retry:true});
+  if(!snap){red.push({id:'snapshot',title:'No stock snapshot loaded',text:'Stock numbers are missing.',action:'Raees or Afnan: check the Netlify function log for shopify-inventory-snapshot.'});}
+  else{
+    const ms=_siAxSnapMs(snap.snapshot_at);
+    let stale=false,age='';
+    if(ms!=null){const ageMs=ctx.now-ms;if(ageMs>C.staleSnapHours*3600000){stale=true;age=_siNaAge(ageMs);}}
+    else if(snap.date&&ctx.today){const d=_siAxDayNum(ctx.today)-_siAxDayNum(snap.date);if(d>1){stale=true;age=d+' days';}}
+    if(stale)red.push({id:'snapshot_stale',title:'The stock snapshot is '+age+' old',text:'Cover, size holes and out-of-stock lists are for stock as it was, not as it is.'+lastErr(meta.inventory),action:'Raees or Afnan: check the Netlify function log for shopify-inventory-snapshot and run it again.'});
+    else if(meta.inventory&&meta.inventory.last_status==='error')red.push({id:'snapshot_failed',title:'The last stock snapshot run failed',text:'The snapshot shown is the previous good one.'+lastErr(meta.inventory),action:'Raees or Afnan: check the Netlify function log for shopify-inventory-snapshot.'});
+    const dropped=ctx.hist&&ctx.hist.dropped&&snap.date&&ctx.hist.dropped.indexOf(String(snap.date))>=0;
+    if(snap.complete===false||dropped)red.push({id:'snapshot_truncated',title:'Today’s stock snapshot looks incomplete',text:'It holds far fewer items than usual, so items can read as sold out when they are not.',action:'Re-run the snapshot. Do not reorder from these lists until it is fixed.'});
+  }
+  const os=meta.orderSync;
+  if(!os||(!os.last_status&&!os.last_success_at))unknown.push('Order sync status is not available, so how fresh the sales are is not known.');
+  else{
+    const sm=_siAxSnapMs(os.last_success_at);
+    if(os.last_status==='error')red.push({id:'orders_failed',title:'The last order sync failed',text:'Recent sales may be missing, so pace and cover read low.'+lastErr(os),action:'Check the Netlify deploy list first (a skipped deploy looks like this), then the function log for shopify-order-sync.'});
+    else if(sm!=null&&ctx.now-sm>C.staleOrderHours*3600000)red.push({id:'orders_stale',title:'Orders were last synced '+_siNaAge(ctx.now-sm)+' ago',text:'Recent sales may be missing, so pace and cover read low.',action:'Check the Netlify deploy list first, then the function log for shopify-order-sync.'});
+  }
+  if(ctx.hist&&ctx.hist.dates&&ctx.today){
+    const Tn=_siAxDayNum(ctx.today);let miss=0;const set=new Set(ctx.hist.dates);
+    for(let k=1;k<=C.gapDays;k++)if(!set.has(_siAxDayStr(Tn-k)))miss++;
+    if(miss)amber.push({id:'gap',title:miss+' day'+(miss===1?'':'s')+' missing from the stock history in the last '+C.gapDays,text:'Cover and the in-stock rate count only the days that were measured.'});
+  }
+  if(q&&q.returns&&!q.returns.synced)amber.push({id:'returns',title:'Returns are not synced',text:'Units run about a fifth above Shopify’s net figure (September: 7,895 here against 6,466 net, checked 30 Sept 2026), so pace is optimistic and reorder sizes should be trimmed. Stock is exact.'});
+  if(q){
+    if(q.snapshot&&q.snapshot.negativeClamped)quiet.push(q.snapshot.negativeClamped+' negative stock entr'+(q.snapshot.negativeClamped===1?'y':'ies')+' counted as 0 (fix the count in Shopify).');
+    if(q.snapshot&&q.snapshot.duplicateSkus)quiet.push(q.snapshot.duplicateSkus+' SKU'+(q.snapshot.duplicateSkus===1?'':'s')+' appear more than once in the snapshot and are summed.');
+    const ns=((q.lineItems&&q.lineItems.noSku)||0)+((q.snapshot&&q.snapshot.noSku)||0);
+    if(ns)quiet.push(ns+' row'+(ns===1?'':'s')+' with no SKU skipped.');
+    if(q.nonMerch&&q.nonMerch.articles)quiet.push(q.nonMerch.articles+' non-merchandise code'+(q.nonMerch.articles===1?'':'s')+' left out.');
+  }
+  if(!_siAxLtAnyCustom())quiet.push('Lead times are defaults (21, 28 or 35 days by category) unless you set your own in the Article Explorer.');
+  return{red,amber,quiet,unknown};
+}
+function _siNaTrust(){
+  const idx=_siAxIndex();
+  return _siNaTrustOf({now:_siNaNow(),today:_siPktDate(0),snapshot:_siSnapshot,meta:_siSyncMeta,hist:_siHist,histState:_siHistState,histError:_siHistError,quality:idx.quality});
+}
+function _siNaTrustHtml(t){
+  const red=t.red.map(x=>`<div class="si-na-trust red" role="alert"><strong>${_siEsc(x.title)}.</strong> ${_siEsc(x.text)} ${x.action?`<span class="act">${_siEsc(x.action)}</span>`:''}${x.retry?` <button class="si-ax-btn" onclick="window._siNaRetry()">Retry</button>`:''}</div>`).join('');
+  const amber=t.amber.map(x=>`<div class="si-na-trust amber" role="note"><strong>${_siEsc(x.title)}.</strong> ${_siEsc(x.text)}</div>`).join('');
+  const notes=t.quiet.concat(t.unknown);
+  const quiet=notes.length?`<details class="si-na-checks"><summary>Data checks: ${t.red.length+t.amber.length===0?'all clear, ':''}${notes.length} note${notes.length===1?'':'s'}</summary><ul>${notes.map(x=>`<li>${_siEsc(x)}</li>`).join('')}</ul></details>`:'';
+  return red+amber+quiet;
+}
+
+// ── Playbook: situation, why, how to tackle, what not to do, how sure ───
+// Pure: issue -> strings only. Owners are role suggestions, not assignments: Raees buys and cuts, Mustafa runs the store and prices,
+// Daniyal runs ads and creators, Saim designs. The renderer escapes every string once.
+function _siNaPlaybook(i){
+  const n=i.n||{},P=(v,d)=>_siAxNum(v,d),R=v=>v==null||!isFinite(v)?'—':String(Math.round(v)),lab=i.label;
+  const money=v=>v==null?'—':_siPKR(Math.round(v));
+  const leadWhy=n.leadSrc==='default'?'the default, unconfirmed':(n.leadSrc==='article'?'your setting for this article':'your setting');
+  const leadTxt=n.leadDays+' days ('+leadWhy+')';
+  const qtyTxt=n.qty?'about '+n.qty.lo+'–'+n.qty.hi+' units (demand over the lead time plus '+n.qty.target+' days of cover, pace ±25%, rounded up to a pack of 12)':'';
+  const inPct=n.inRate!=null?Math.round(n.inRate*100)+'%':'—';
+  const rt=n.returnsSynced===true?'':' Later returns are not synced, so pace may read about a fifth high (stock is exact).';
+  let situation='',why='',actions=[],avoid=[];
+  const confBits=[n.confName+' confidence: '+(n.confWhy&&n.confWhy[0]?n.confWhy[0]:'—')+'.'];
+  if(n.confCaps&&n.confCaps.length)confBits.push('Capped at Medium because '+n.confCaps.join(' and ')+'.');
+  if(i.type==='stockout'||i.type==='runout'||i.type==='sizehole'||i.type==='rising')confBits.push('Lead time: '+leadTxt+'.'+rt);
+  const holesTxt=(n.holes||[]).map(h=>h.size+(h.kind==='out'?' (out)':' ('+h.stock+' left)')).join(', ');
+  switch(i.type){
+    case'stockout':
+      situation=lab+' has no stock left.'+(n.outDays!=null&&n.measured!=null?' It has been out on '+n.outDays+' of '+n.measured+' measured days and sold '+P(n.perInDay)+' a day while it was in stock'+(n.missed!=null?', so about '+n.missed+' units of demand were turned away':'')+'.':' It sells about '+P(n.perDay)+' a day when it is in stock.')+(i.rising?' Demand is also rising.':'');
+      why='Every day out is sales lost on a proven seller, and ads and codes still send people to a page that cannot sell.';
+      actions=[{owner:'Raees',text:'Reorder or re-cut now'+(qtyTxt?': '+qtyTxt:'')+'. A batch takes '+leadTxt+'; confirm that with the supplier or cutting master.'},
+        {owner:'Daniyal',text:'Pause ads, creator posts and discount codes that point at it until stock lands; brief a restock post for the day it does.'},
+        {owner:'Mustafa',text:'Switch on a back-in-stock notice on the product page and do not run a sale on it.'}];
+      avoid=['Do not discount it: it already sells.','Do not wait for the weekly review.'];break;
+    case'runout':
+      situation=R(n.onHand)+' left, selling about '+P(n.perDay)+' a day: empty in about '+_siNaDays(n.coverDays)+'. A batch takes '+leadTxt+', so there is a gap of about '+_siNaDays(n.gapDays)+(i.lost!=null?' (roughly '+R(i.lost)+' units of sales)':'')+'.'+(i.rising?' Demand is also rising ('+(n.units28)+' units in 28 days against '+(n.prev28==null?'—':n.prev28)+' before).':'');
+      why='A batch started today still lands after the stock is gone.';
+      actions=[{owner:'Raees',text:'Confirm the lead time'+(n.leadSrc==='default'?' (it is only the default)':'')+', then order today'+(qtyTxt?': '+qtyTxt:'')+'.'},
+        {owner:'Mustafa',text:'Slow the burn: hold promotions and keep the last units for full-price web orders.'},
+        {owner:'Daniyal',text:'Stop any paid push to it until the batch is in sight.'}];
+      avoid=['Do not reorder every size equally.','Do not run a sale on it.'];break;
+    case'sizehole':
+      situation=((n.holes||[]).length===1?'Size ':'Sizes ')+holesTxt+' sold '+R((n.holes||[]).reduce((t,h)=>t+h.units28,0))+' of '+n.units28+' units in the last 28 days ('+Math.round(100*(n.holes||[]).reduce((t,h)=>t+h.share,0))+'%), yet the rest of the run is in stock ('+n.coverText+' of cover overall). At least that much is being turned away: a size that is out shows low sales because it was out.';
+      why='A broken size run loses the buyers who need exactly those sizes, while the article looks healthy in total.';
+      actions=[{owner:'Raees',text:'Cut a size run weighted by the 28-day sales in the size table below, not a full re-order of the article.'},
+        {owner:'Mustafa',text:'Mark the out sizes clearly as sold out and keep the product live; do not hide it.'}];
+      avoid=['Do not reorder the whole article.','Do not read a size at 0 with low recent sales as "no demand".'];break;
+    case'overstock':
+      if(i.seasonal){
+        situation=R(n.onHand)+' units on hand ('+money(n.valueTied)+' at selling price): '+n.coverText+' of cover, but it is winter stock and the season is starting.';
+        why='Judging it now would be unfair: there is no winter sales history in the data yet (it starts 26 March 2026).';
+        actions=[{owner:'Raees',text:'Hold: no reorder and no re-cut.'},{owner:'Daniyal',text:'Plan winter creative and creator seeding for it now.'},{owner:'Mustafa',text:'Check it again on 15 November; if it still moves slowly, move to the markdown steps.'}];
+        avoid=['Do not mark it down before the season has had a chance.','Do not reorder.'];
+      }else{
+        situation=R(n.onHand)+' units on hand'+(n.valueTied!=null?' ('+money(n.valueTied)+' at selling price, cost is not recorded)':'')+': '+n.coverText+' of cover at about '+P(n.perDay)+' a day.';
+        why='Cash and shelf space are tied up, and the value falls with each season.';
+        actions=[{owner:'Raees',text:'Do not reorder or re-cut it.'}];
+        if(n.cover==null||n.cover<52)actions.push({owner:'Mustafa',text:'Promote it or bundle it with a winner; Daniyal can push it through creators and stories.'});
+        else actions.push({owner:'Mustafa',text:'Mark down in steps: 15%, then 30% after two weeks without movement. Set the steps against your cost, which the app does not hold; Afnan or Ammar approve. Then B-stock, outlet or warehouse customer sales.'});
+        avoid=['No new production.','No deep discount before one promotion attempt.'];
+      }
+      break;
+    case'dead':
+      situation='Nothing sold in the last '+(n.pace28Days==null?'—':n.pace28Days)+' counted days with '+R(n.onHand)+' on hand'+(n.valueTied!=null?' ('+money(n.valueTied)+' at selling price)':'')+'.';
+      why='There is no demand signal at all, and the stock is not getting cheaper to hold.';
+      if(i.seasonal){actions=[{owner:'Raees',text:'Hold: no reorder.'},{owner:'Mustafa',text:'It is winter stock and winter is starting: check the listing is live and priced right, then look again on 15 November.'}];avoid=['Do not clear it yet.'];}
+      else{actions=[{owner:'Mustafa',text:'First check the listing is live, priced right and in its collection.'},{owner:'Mustafa',text:'Then bundle or discount it to clear.'},{owner:'Raees',text:'Do not reorder.'},{owner:'Saim',text:'Note it for design: do not re-run this style.'}];avoid=['Do not reorder.'];}
+      break;
+    case'rising':
+      situation='Selling faster: '+n.units28+' units in the last 28 days against '+(n.prev28==null?'—':n.prev28)+' before ('+_siAxPct(n.momentum,true)+', a gap bigger than chance). '+R(n.onHand)+' on hand is about '+_siNaDays(n.coverDays)+'; a batch takes '+leadTxt+'.'+(n.disc?' '+Math.round(n.disc.share*100)+'% of the last week’s '+n.disc.units7+' units were at a reduced price, so part of this is the sale.':'');
+      why='At this pace the stock will drop below the lead time soon, and the article is the one people want.';
+      actions=[{owner:'Raees',text:'Confirm the lead time and plan a reorder'+(qtyTxt?': '+qtyTxt:'')+', sized to the full-price pace.'},{owner:'Daniyal',text:'Hold extra paid push until stock is covered.'},{owner:'Mustafa',text:'Mark out sizes as sold out as they go.'}];
+      avoid=['Do not cut the price further on a seller that is already rising.'];break;
+    case'demanddrop':
+      if(n.sudden){
+        situation='Last 7 days: '+n.sudden.last+' units against about '+P(n.sudden.base)+' a week over the 4 weeks before, a drop beyond chance, while it was in stock on 5 or more of the 7 days.';
+        why='A sudden drop on a seller is usually a listing, price or ad problem, not demand.';
+        actions=[{owner:'Mustafa',text:'Check the listing is live, every size has stock and the price did not change.'},{owner:'Daniyal',text:'Then check ad spend and creator content for it.'},{owner:'Raees',text:'Hold any reorder for one week.'}];
+        avoid=['Do not act on one week alone: look again next week.'];
+      }else{
+        situation='Last 28 days: '+n.units28+' units against '+(n.prev28==null?'—':n.prev28)+' in the 28 before ('+_siAxPct(n.momentum,true)+', a gap bigger than chance). It was in stock on '+inPct+' of days, so a stock-out does not explain it.';
+        why='An early warning: a seller that slows becomes overstock if nobody looks.';
+        actions=[{owner:'Mustafa',text:'Check price, the listing and which sizes ran out.'},{owner:'Daniyal',text:'Test fresh creator content for it.'},{owner:'Raees',text:'Hold the reorder for one cycle.'}];
+        avoid=['Do not cut the price on one week’s drop.','Do not reorder to chase it.'];
+      }
+      break;
+    default:
+      situation='Numbers for '+lab+' may be off: '+(n.voidRate!=null?Math.round(n.voidRate*100)+'% of its units were voided ('+n.voided+' units).':'data check.');
+      why='Acting on bad numbers is worse than waiting.';
+      actions=[{owner:'Raees',text:'Count the shelf for it.'},{owner:'Mustafa',text:'Compare Shopify inventory and the voided orders with what is on the shelf.'}];
+      avoid=['Do not reorder or mark down on this figure until it is checked.'];
+  }
+  return{situation,why,actions,avoid,confidence:confBits.join(' ')};
+}
+
+// ── Rendering ───────────────────────────────────────────────────────
+function _siNaDays(v){if(v==null||!isFinite(v))return'—';const d=Math.round(v);return d+' day'+(d===1?'':'s');}
+function _siNaRowLine(i){
+  const n=i.n,P=v=>_siAxNum(v);
+  let s='';
+  switch(i.type){
+    case'stockout':s='Out of stock · '+(n.units28==null?'—':n.units28)+' sold in 28 days · lead time '+n.leadDays+'d ('+(n.leadSrc==='default'?'default':'set')+')';break;
+    case'runout':s=n.onHand+' left · empty in about '+_siNaDays(n.coverDays)+' · lead time '+n.leadDays+'d ('+(n.leadSrc==='default'?'default':'set')+')'+(i.rising?' · demand rising':'');break;
+    case'sizehole':s=(n.holes.length===1?'Size ':'Sizes ')+n.holes.map(h=>h.size).join(', ')+' '+(n.holes.some(h=>h.kind==='out')?'out':'thin')+' · '+Math.round(100*n.holes.reduce((t,h)=>t+h.share,0))+'% of 28-day sales';break;
+    case'overstock':s=(i.seasonal?'Winter stock, wait · ':'')+n.onHand+' on hand · '+n.coverText+' of cover';break;
+    case'dead':s=(i.seasonal?'Winter stock, wait · ':'')+n.onHand+' on hand · nothing sold in '+(n.pace28Days==null?'—':n.pace28Days)+' days';break;
+    case'rising':s='Rising: '+n.units28+' vs '+(n.prev28==null?'—':n.prev28)+' units · '+n.onHand+' left, about '+_siNaDays(n.coverDays);break;
+    case'demanddrop':s=n.sudden?'Last 7 days: '+n.sudden.last+' vs about '+Math.round(n.sudden.base)+' a week':'Last 28 days: '+n.units28+' vs '+(n.prev28==null?'—':n.prev28)+' units';break;
+    default:s=n.voided+' units voided ('+Math.round((n.voidRate||0)*100)+'%)';
+  }
+  return s;
+}
+function _siNaAtText(i){
+  if(i.group==='cash')return i.n.valueTied==null?'—':_siPKR(Math.round(i.n.valueTied))+' at selling price';
+  if(i.at==null)return'';
+  return'~'+_siPKR(Math.round(i.at))+' '+(i.atKind||'');
+}
+function _siNaRowHtml(i,trustRed){
+  return`<button type="button" class="si-na-row ${i.band}" data-code="${_siEsc(i.code)}" onclick="window._siNaOpen(this.dataset.code)" aria-label="${_siEsc(i.label+': '+i.reason+'. Open the situation.')}">
+    <span class="rs"><span class="si-na-reason ${i.band}">${_siEsc(i.reason)}</span>${i.seasonal?'<span class="si-na-reason soft">Seasonal wait</span>':''}${i.also&&i.also.length?`<span class="si-na-reason soft">also ${_siEsc(i.also.map(t=>_SI_NA_REASON[t].toLowerCase()).join(', '))}</span>`:''}${trustRed?'<span class="si-na-reason soft">numbers may be off</span>':''}</span>
+    <span class="nm"><strong>${_siEsc(i.label)}</strong><span class="cd">${_siEsc(i.code)} · ${_siEsc(i.clsLabel)}</span></span>
+    <span class="ln">${_siEsc(_siNaRowLine(i))}</span>
+    <span class="at">${_siEsc(_siNaAtText(i))}</span>
+    <span class="ch" aria-hidden="true">›</span></button>`;
+}
+function _siNaFiltered(res){
+  return _siNaFilter==='all'?res.issues:res.issues.filter(i=>i.group===_siNaFilter);
+}
+function _siNaHeadHtml(res){
+  const c=res.counts;
+  return`<div class="si-na-head"><div class="si-na-big"><span class="num">${c.action}</span> article${c.action===1?'':'s'} need action</div>
+    <div class="si-na-chips"><span class="si-na-chip crit"><b>${c.critical}</b> critical</span><span class="si-na-chip act"><b>${c.act}</b> this week</span><span class="si-na-chip watch"><b>${c.watch}</b> to watch</span></div>
+    <div class="si-ax-note" style="margin:6px 0 0">Articles, not sizes. Counted from ${res.rows} articles with sales or stock${res.skipped?'; '+res.skipped+' too new or unrated to judge':''}. The season filter does not apply here.</div></div>`;
+}
+function _siNaFilterHtml(res){
+  return`<div class="si-na-filters" role="group" aria-label="Filter by kind">${_SI_NA_FILTERS.map(f=>{
+    const n=f.k==='all'?res.counts.total:res.counts.byGroup[f.k];
+    return`<button type="button" class="si-na-fchip${_siNaFilter===f.k?' on':''}" aria-pressed="${_siNaFilter===f.k}" onclick="window._siNaSetFilter('${f.k}')">${_siEsc(f.l)} <b>${n}</b></button>`;}).join('')}</div>`;
+}
+function _siNaBandHtml(b,list,trustRed){
+  if(!list.length)return'';
+  const cap=_SI_NA[b.cap],all=_siNaShow[b.k],show=all?list:list.slice(0,cap);
+  const watchShut=b.k==='watch'&&!_siNaWatchOpen;
+  const head=b.k==='watch'?`<button type="button" class="si-na-bh toggle" aria-expanded="${!watchShut}" onclick="window._siNaToggleWatch()"><span class="t">${_siEsc(b.l)}</span><span class="s">${_siEsc(b.sub)}</span><span class="n">${list.length}</span><span class="car" aria-hidden="true">${watchShut?'▸':'▾'}</span></button>`
+    :`<div class="si-na-bh"><span class="t">${_siEsc(b.l)}</span><span class="s">${_siEsc(b.sub)}</span><span class="n">${list.length}</span></div>`;
+  const body=watchShut?'':show.map(i=>_siNaRowHtml(i,trustRed)).join('')+(list.length>cap?`<button type="button" class="si-ax-btn si-na-more" onclick="window._siNaShowAll('${b.k}')">${all?'Show the first '+cap:'Show all '+list.length}</button>`:'');
+  return`<section class="si-na-band ${b.k}" aria-label="${_siEsc(b.l)}">${head}${body}</section>`;
+}
+function _siNaEmptyHtml(res,trust){
+  const snapDate=_siSnapshot&&_siSnapshot.date||'—',cov=(_siAxIndex().cov)||'—';
+  if(trust.red.length)return`<div class="si-ax-empty">Nothing is flagged, but this is <strong>not an all-clear</strong>: the data above is stale or incomplete, so the lists cannot be trusted yet.</div>`;
+  const cl=res.closest?` Closest to the line: ${res.closest.label} (cover ${Math.round(res.closest.coverDays)} days against a lead time of ${res.closest.lead}).`:'';
+  return`<div class="si-ax-empty">Nothing needs attention${_siNaFilter==='all'?'':' in this view'}. Checked ${res.rows} articles against stock as of ${_siEsc(snapDate)} and sales since ${_siEsc(cov)}.${_siEsc(cl)}${res.skipped?' '+res.skipped+' article'+(res.skipped===1?'':'s')+' skipped: too new or not rated.':''}</div>`;
+}
+function _siNaListHtml(){
+  const res=_siNaState(),trust=_siNaTrust(),trustRed=trust.red.length>0;
+  const list=_siNaFiltered(res);
+  const bands=_SI_NA_BANDS.map(b=>_siNaBandHtml(b,list.filter(i=>i.band===b.k),trustRed)).join('');
+  return`<div class="si-na">${_siNaTrustHtml(trust)}${_siNaHeadHtml(res)}${_siNaFilterHtml(res)}${bands||_siNaEmptyHtml(res,trust)}</div>`;
+}
+function _siNaFactsHtml(i){
+  const n=i.n,P=v=>_siAxNum(v),F=[];
+  F.push(['On hand',n.onHand==null?'—':String(n.onHand)]);
+  F.push(['Lasts',n.coverText||'—']);
+  F.push(['Sold, last 28 days',n.units28==null?'—':String(n.units28)]);
+  F.push(['Per in-stock day',P(n.perInDay)]);
+  F.push(['In stock',n.inRate==null?'—':Math.round(n.inRate*100)+'% of '+n.measured+' days']);
+  F.push(['Lead time',n.leadDays+' days ('+(n.leadSrc==='default'?'default, unconfirmed':'set')+')']);
+  if(n.valueTied!=null)F.push(['At selling price',_siPKR(Math.round(n.valueTied))]);
+  if(n.qty)F.push(['Reorder guide',n.qty.lo+'–'+n.qty.hi+' units']);
+  if(n.disc)F.push(['Sold at a reduced price (last 7 days)',Math.round(n.disc.share*100)+'% of '+n.disc.units7]);
+  return`<dl class="si-na-facts">${F.map(f=>`<div><dt>${_siEsc(f[0])}</dt><dd>${_siEsc(f[1])}</dd></div>`).join('')}</dl>`;
+}
+function _siNaSizeTableHtml(i){
+  const rows=i.n.sizes||[];if(rows.length<2)return'';
+  return`<div class="si-na-tw"><table class="cut-table si-na-sizes"><thead><tr><th>Size</th><th>On hand</th><th>Sold, 28 days</th><th>Cover</th><th>State</th></tr></thead><tbody>${rows.map(s=>`<tr class="${s.state==='out'||s.state==='thin'?'bad':''}"><td><strong>${_siEsc(s.size)}</strong></td><td>${s.stock==null?'—':s.stock}</td><td>${s.units28}</td><td>${s.coverDays==null?'—':Math.round(s.coverDays)+' days'}</td><td>${_siEsc(s.state)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function _siNaDetailHtml(i){
+  const pb=_siNaPlaybook(i),bandL=(_SI_NA_BANDS.find(b=>b.k===i.band)||{}).l||'';
+  const order=_siNaFiltered(_siNaState()),pos=order.findIndex(x=>x.code===i.code);
+  const shut=_siNaIsPhone()?'':' open';
+  const fold=(t,body)=>`<details class="si-na-fold"${shut}><summary>${_siEsc(t)}</summary>${body}</details>`;
+  return`<div class="si-na-detail ${i.band}">
+    <div class="si-na-dbar"><button type="button" class="si-ax-btn si-na-back" onclick="window._siNaBack()">‹ Needs Attention</button>
+      <span class="si-na-pn">${pos>=0?`<button type="button" class="si-ax-btn" ${pos<=0?'disabled':''} onclick="window._siNaStep(-1)" aria-label="Previous article">‹ Prev</button><span class="si-ax-note" style="margin:0">${pos+1} of ${order.length}</span><button type="button" class="si-ax-btn" ${pos>=order.length-1?'disabled':''} onclick="window._siNaStep(1)" aria-label="Next article">Next ›</button>`:''}</span>
+      <span class="si-na-btns"><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaToExplorer(this.dataset.code)">Open in Article Explorer</button><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaCompare(this.dataset.code)">+ Compare</button></span></div>
+    <div class="si-na-dhead"><span class="si-na-reason ${i.band} big">${_siEsc(bandL)}</span><h2>${_siEsc(i.label)}</h2><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(i.code)} · ${_siEsc(i.clsLabel)} · ${_siEsc(i.reason)}${i.also&&i.also.length?' · also '+_siEsc(i.also.map(t=>_SI_NA_REASON[t].toLowerCase()).join(', ')):''}</div></div>
+    <section class="si-na-sit"><h3>Situation</h3><p>${_siEsc(pb.situation)}</p></section>
+    <section class="si-na-how"><h3>How to tackle</h3><ol class="si-na-acts">${pb.actions.map(a=>`<li><span class="si-na-own">${_siEsc(a.owner)}</span><span>${_siEsc(a.text)}</span></li>`).join('')}</ol><div class="si-ax-note">Owners are suggestions, not assignments.</div></section>
+    ${fold('Why it matters','<p>'+_siEsc(pb.why)+'</p>')}
+    ${fold('What not to do','<ul class="si-na-avoid">'+pb.avoid.map(x=>'<li>'+_siEsc(x)+'</li>').join('')+'</ul>')}
+    ${fold('Key numbers',_siNaFactsHtml(i)+_siNaSizeTableHtml(i))}
+    ${fold('How sure are we','<p>'+_siEsc(pb.confidence)+'</p>')}
+  </div>`;
+}
+// The section: the list, or one article's situation when one is open. History is read once (the Explorer's own bounded read).
+function _siNaSectionHtml(){
+  if(_siHistState==='idle'||_siHistState==='loading'){
+    if(_siHistState==='idle')_siAxEnsureHistory();
+    return`<div class="si-ax-empty">Reading the stock history…</div>`;
+  }
+  if(_siNaSel){
+    const i=_siNaState().issues.find(x=>x.code===_siNaSel);
+    if(i)return _siNaDetailHtml(i);
+    _siNaSel='';
+  }
+  return _siNaListHtml();
+}
+window._siNaRetry=function(){_siAxEnsureHistory(true);window._siNaRepaint();};
+window._siNaRepaint=function(){
+  const el=document.getElementById('si-content');if(el&&_siSection==='attention')el.innerHTML=_siNaSectionHtml();
+};
+function _siNaOnHistory(){
+  try{
+    const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
+    if(_siSection==='attention')window._siNaRepaint();
+    else if(_siSection==='overview'){const el=document.getElementById('si-content');if(el)el.innerHTML=_siOverview(_siComputeMetrics());}
+  }catch(_){}
+}
+function _siNaWireKeys(){
+  if(_siNaKeyWired||typeof document==='undefined'||!document.addEventListener)return;
+  _siNaKeyWired=true;
+  document.addEventListener('keydown',e=>{
+    if(!_siNaSel||_siSection!=='attention')return;
+    if(e&&e.key==='Escape'){window._siNaBack();}
+  });
+}
+window._siNaOpen=function(code){
+  code=String(code||'').toUpperCase();
+  if(!_siNaState().issues.some(x=>x.code===code))return false;
+  _siNaReturnY=(typeof window.scrollY==='number'?window.scrollY:0)||0;
+  _siNaSel=code;_siNaWireKeys();window._siNaRepaint();_siAxEnter();
+  if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
+  return true;
+};
+window._siNaBack=function(){
+  _siNaSel='';window._siNaRepaint();_siAxEnter();
+  const y=_siNaReturnY;if(y>0&&typeof window.scrollTo==='function')try{window.scrollTo(0,y);}catch(_){}
+};
+window._siNaStep=function(d){
+  const order=_siNaFiltered(_siNaState()),pos=order.findIndex(x=>x.code===_siNaSel),n=order[pos+d];
+  if(!n)return false;
+  _siNaSel=n.code;window._siNaRepaint();
+  if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
+  return true;
+};
+window._siNaSetFilter=function(f){if(!_SI_NA_FILTERS.some(x=>x.k===f))return;_siNaFilter=f;window._siNaRepaint();};
+window._siNaShowAll=function(b){if(!(b in _siNaShow))return;_siNaShow[b]=!_siNaShow[b];window._siNaRepaint();};
+window._siNaToggleWatch=function(){_siNaWatchOpen=!_siNaWatchOpen;window._siNaRepaint();};
+window._siNaToExplorer=function(code){
+  code=String(code||'').toUpperCase();
+  _siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';_siNaSel='';
+  window._siSwitchTab('explorer');_siAxEnter();
+  if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
+};
+window._siNaCompare=function(code){window._siAxOvCompare(code);};
+// Overview tile -> this tab (optionally on one filter)
+window._siNaGo=function(filter){_siNaFilter=_SI_NA_FILTERS.some(x=>x.k===filter)?filter:'all';_siNaSel='';window._siSwitchTab('attention');_siAxEnter();};
 
 // ═══ _siSort BEGIN — one pure comparator module + sortable-table helper ═══
 // Rules (every sorted list in the Article Explorer goes through this):
