@@ -5099,6 +5099,13 @@ a.ma-btn{text-decoration:none}
 .si-ov-row .fg .v{font-size:14px;font-weight:600}
 .si-ov-row .act{grid-column:1/-1;font-size:14px}
 .si-ov-row .btns{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+.si-ov-row .lt{grid-column:1/-1}
+.si-lt-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:14px;margin-top:6px}
+.si-lt-ctl .si-lt-l{color:var(--text)}
+.si-lt-ctl input{width:84px;min-height:36px;padding:4px 8px;font:inherit;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px}
+.si-lt-ctl .si-ax-btn{min-height:36px}
+.si-lt-chip{display:inline-block;padding:1px 8px;border:1px solid var(--border);border-radius:999px;background:var(--surface-2);color:var(--text);font-size:12px;font-weight:600}
+.si-lt-err{color:var(--text)}
 .si-verdict{border-left:4px solid var(--muted)}
 .si-verdict.act-reorder{border-left-color:var(--accent-urgent)}
 .si-verdict.act-risk{border-left-color:var(--accent-warning)}

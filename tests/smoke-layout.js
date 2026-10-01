@@ -2724,6 +2724,26 @@ const FRAGMENTS={
     app.run('_siAxModeSel="overview";_siAxOvTile="reorder";_siAxOvAll=false;_siAxOvCat="";_siAxQuery=""');
     return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
   },
+  'inventory intel — Article Explorer overview lead time editor':()=>{
+    // one row with its own (custom) lead time, one row with the inline editor open, and the article page verdict
+    const store={'groovy-si-leadtimes-article':'{"GST073":35}'};
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:k=>store[k]==null?null:store[k],setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="overview";_siAxOvTile="reorder";_siAxOvAll=true;_siAxOvCat="";_siAxQuery=""');
+    const codes=app.run('_siAxOvRows().filter(r=>_siAxOvIn(r,"reorder")||_siAxOvIn(r,"risk")).map(r=>r.a.code)');
+    app.run('_siAxOvTile=_siAxOvRows().some(r=>_siAxOvIn(r,"reorder"))?"reorder":"risk";_siAxLtEdit='+JSON.stringify(codes[0]||'GST073')+';_siAxLtErr="Enter a whole number of days from 1 to 365."');
+    const ov=app.run('_siArticleExplorerSection()');
+    return Promise.resolve('<div id="si-content">'+ov+'</div>');
+  },
+  'inventory intel — Article Explorer verdict lead time editor':()=>{
+    const store={'groovy-si-leadtimes-article':'{"GST073":35}'};
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:k=>store[k]==null?null:store[k],setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="search";_siAxSel="GST073";_siAxQuery="";_siAxLtEdit=null;_siAxLtErr=""');
+    return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
+  },
   'inventory intel — Article Explorer compare':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
