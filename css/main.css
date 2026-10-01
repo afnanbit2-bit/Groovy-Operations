@@ -5069,6 +5069,9 @@ a.ma-btn{text-decoration:none}
 .si-sort-th.on .si-sort-btn{font-weight:700}
 .si-sort-btn:focus-visible{outline:2px solid currentColor;outline-offset:-2px}
 .si-ax-note{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5}
+.si-hist-pend{font-size:13px;color:var(--muted);margin:0 0 10px;line-height:1.5}
+.si-hist-pend span{font-weight:400}
+.si-hist-pend.err{color:var(--accent-urgent);font-weight:600}
 .si-ax-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
 .si-ax-kpi{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface)}
 .si-ax-kpi .l{font-size:12px;color:var(--muted);font-weight:600}

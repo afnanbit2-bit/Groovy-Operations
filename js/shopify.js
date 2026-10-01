@@ -489,6 +489,10 @@ async function loadShopifyData(){
   siLoadBegin();
   const C=_siRetryCtl;
   const ids=_SI_STAGES.filter(s=>s.id!=='build'&&(C.running[s.id]||_siStageNeeds(s.id))).map(s=>s.id);
+  // A warm per-device history cache makes the stock-history read tiny (the newest days only), so it starts WITH the load and is
+  // usually landed by the first paint. A cold one is a full read of up to 150 snapshots: it starts after the first paint as
+  // before, so it does not compete with the line items for bandwidth. Either way it stays outside the percentage.
+  if(_siHistState==='idle'&&typeof getDocs==='function'&&_siHistCacheRead())_siAxEnsureHistory();
   if(ids.length)_siLoadRunStages(ids);else _siLoadSettle();
   return _siLoad.promise;
 }
@@ -841,12 +845,20 @@ function _siOverview(m){
 }
 
 // The two Overview tiles read the SAME article-level counts as the Needs Attention tab (one computation, uncapped).
+// The quiet "Stock history: loading…" line (and, on a failed read, its Retry). Empty once the history has landed.
+function _siHistStrip(){
+  if(_siHistState==='loading'||_siHistState==='idle')return'<div class="si-hist-pend" id="si-hist-pend" role="status">Stock history: loading…<span> the counts below show … until it lands</span></div>';
+  if(_siHistState==='error')return`<div class="si-hist-pend err" id="si-hist-pend" role="alert">Stock history could not be read (${_siEsc(_siHistError)}); the counts below are rougher without it. <button type="button" class="si-ax-btn" onclick="window._siHistRetry()">Retry</button></div>`;
+  return'';
+}
+window._siHistRetry=function(){_siAxEnsureHistory(true);if(typeof _siNaOnHistory==='function')_siNaOnHistory();};
 function _siOverviewAttnTiles(){
   const n=_siNaBadge();
-  if(n==null)return`<div class="si-na-tiles"><div class="card si-na-tile"><div class="card-title">Needs attention</div><div class="num">…</div><div class="sub">reading the stock history</div></div><div class="card si-na-tile"><div class="card-title">Overstocked / dead stock</div><div class="num">…</div><div class="sub">reading the stock history</div></div></div>`;
+  if(n==null)return _siHistStrip()+`<div class="si-na-tiles"><div class="card si-na-tile"><div class="card-title">Needs attention</div><div class="num">…</div><div class="sub">reading the stock history</div></div><div class="card si-na-tile"><div class="card-title">Overstocked / dead stock</div><div class="num">…</div><div class="sub">reading the stock history</div></div></div>`;
   const c=_siNaState().counts;
+  const strip=_siHistStrip();
   const cashSub=c.byGroup.cash?(c.cashValue?_siPKR(Math.round(c.cashValue))+' at selling price'+(c.cashNoValue?' (+'+c.cashNoValue+' with no price)':''):'no price to value it at'):'nothing stuck';
-  return`<div class="si-na-tiles">
+  return strip+`<div class="si-na-tiles">
     <button type="button" class="card si-na-tile${c.action?' hot':''}" onclick="window._siNaGo('all')"><div class="card-title">Needs attention</div><div class="num">${c.action}</div><div class="sub">${c.critical} critical · ${c.act} this week · ${c.watch} to watch (articles)</div></button>
     <button type="button" class="card si-na-tile${c.byGroup.cash?' warm':''}" onclick="window._siNaGo('cash')"><div class="card-title">Overstocked / dead stock</div><div class="num">${c.byGroup.cash}</div><div class="sub">${_siEsc(cashSub)}</div></button>
   </div>`;
@@ -1828,49 +1840,104 @@ function _siAxSnapMs(v){
 // The store-local day a snapshot is the CLOSE of. A snapshot taken before 18:00 PKT is still the previous day's
 // close (the 22:00 run is the real close; the old 06:00 and the 10:00 runs are not). Without a usable snapshot_at
 // the document's own date is used unchanged.
-function _siAxSnapKey(d){
-  const ms=_siAxSnapMs(d&&d.snapshot_at);
-  if(ms==null)return String(d.date);
+function _siAxSnapKeyOf(date,ms){
+  if(ms==null)return String(date);
   const p=new Date(ms+5*3600000),day=_siAxDayNum(p.getUTCFullYear()+'-'+String(p.getUTCMonth()+1).padStart(2,'0')+'-'+String(p.getUTCDate()).padStart(2,'0'));
   return _siAxDayStr(p.getUTCHours()<_SI_AX_CFG.snapshotDayCutoffHour?day-1:day);
 }
-function _siAxBuildHistory(docs){
-  const good=(docs||[]).filter(d=>d&&d.date&&d.items&&typeof d.items==='object'&&/^\d{4}-\d{2}-\d{2}$/.test(String(d.date)));
-  const counts=good.map(d=>Object.keys(d.items).length).sort((x,y)=>x-y);
+function _siAxSnapKey(d){return _siAxSnapKeyOf(d.date,_siAxSnapMs(d&&d.snapshot_at));}
+// One snapshot document folded to what the history needs and nothing else: its date, snapshot time (ms), item count, locations
+// seen, per-code stock sums (negatives counted as 0) and per-code oversold counts. This small record is what is cached between
+// visits (see _siAxReadFolds); _siAxHistoryFromFolds is the ONLY thing that turns folds into the history, so a cached fold and a
+// freshly read one cannot give different figures.
+function _siAxFoldDoc(d){
+  if(!(d&&d.date&&d.items&&typeof d.items==='object'&&/^\d{4}-\d{2}-\d{2}$/.test(String(d.date))))return null;
+  const sums=new Map(),neg=new Map();let n=0;
+  for(const id in d.items){n++;const it=d.items[id];const code=_siAxCode(it&&it.sku);if(!code)continue;sums.set(code,(sums.get(code)||0)+Math.max(0,it.available||0));
+    if((it.available||0)<0)neg.set(code,(neg.get(code)||0)+1);}
+  // locations_seen is written only by snapshots taken after stock was summed across every location; older ones lack it
+  const ls=Number(d.locations_seen);
+  return{date:d.date,sms:_siAxSnapMs(d.snapshot_at),n,loc:(d.locations_seen!=null&&d.locations_seen!==''&&isFinite(ls))?ls:null,sums:[...sums],neg:[...neg]};
+}
+function _siAxHistoryFromFolds(folds){
+  const good=(folds||[]).filter(Boolean);
+  const counts=good.map(f=>f.n).sort((x,y)=>x-y);
   const med=counts.length?counts[Math.floor(counts.length/2)]:0;
   const byCode=new Map(),dates=[],dropped=[],rekeyed=[],neg=new Map(),locs=new Map();
   // one document per closing day: two documents that map to the same day keep the EARLIER snapshot (the one closer to that day's end)
   const byKey=new Map();
-  good.forEach(d=>{
-    const n=Object.keys(d.items).length;
-    if(med&&n<med*_SI_HIST_MIN_SHARE){dropped.push(d.date);return;}
-    const key=_siAxSnapKey(d);if(key!==String(d.date))rekeyed.push(d.date);
+  good.forEach(f=>{
+    if(med&&f.n<med*_SI_HIST_MIN_SHARE){dropped.push(f.date);return;}
+    const key=_siAxSnapKeyOf(f.date,f.sms);if(key!==String(f.date))rekeyed.push(f.date);
     const prev=byKey.get(key);
-    if(!prev||(_siAxSnapMs(d.snapshot_at)||0)<(_siAxSnapMs(prev.snapshot_at)||0))byKey.set(key,d);
+    if(!prev||(f.sms||0)<(prev.sms||0))byKey.set(key,f);
   });
   [...byKey.keys()].sort().forEach(key=>{
-    const d=byKey.get(key);
+    const f=byKey.get(key);
     dates.push(key);
-    const sums=new Map();
-    // locations_seen is written only by snapshots taken after stock was summed across every location; older ones lack it
-    const ls=Number(d.locations_seen);locs.set(key,(d.locations_seen!=null&&d.locations_seen!==''&&isFinite(ls))?ls:null);
+    locs.set(key,f.loc);
     // oversold variants are counted as 0 in the sum and kept only as a per-day count
-    for(const id in d.items){const it=d.items[id];const code=_siAxCode(it&&it.sku);if(!code)continue;sums.set(code,(sums.get(code)||0)+Math.max(0,it.available||0));
-      if((it.available||0)<0){let nm=neg.get(code);if(!nm){nm=new Map();neg.set(code,nm);}nm.set(key,(nm.get(key)||0)+1);}}
-    sums.forEach((v,code)=>{let m=byCode.get(code);if(!m){m=new Map();byCode.set(code,m);}m.set(key,v);});
+    f.neg.forEach(([code,c])=>{let nm=neg.get(code);if(!nm){nm=new Map();neg.set(code,nm);}nm.set(key,c);});
+    f.sums.forEach(([code,v])=>{let m=byCode.get(code);if(!m){m=new Map();byCode.set(code,m);}m.set(key,v);});
   });
   const locVals=[...locs.values()].filter(v=>v!=null);
   const loc={max:locVals.length?Math.max.apply(null,locVals):null,missing:[...locs.values()].filter(v=>v==null).length,firstSeen:[...locs.keys()].sort().find(k=>locs.get(k)!=null)||''};
   return{dates,byCode,dropped,rekeyed,neg,loc,from:dates[0]||'',to:dates[dates.length-1]||'',docs:good.length};
 }
+function _siAxBuildHistory(docs){return _siAxHistoryFromFolds((docs||[]).map(_siAxFoldDoc));}
+// ── The read, and the per-device cache of folded days ──
+// A snapshot day is FINAL once that day is over (the 22:00 run overwrites the 10:00 one, nothing writes an older day), so folds
+// of days up to two days ago are kept in localStorage. A warm visit reads only the days newer than the newest cached one (about
+// 3 documents instead of up to 150) and rebuilds the SAME history from cached + new folds. The cache is dropped after 7 days
+// (a full read again, which bounds how long a retroactively edited old snapshot could go unseen), on Retry, on a different
+// format version, or if anything in it is unreadable. localStorage missing or full means a full read every visit (the old behaviour).
+const _SI_HIST_CACHE_KEY='groovy-si-histfold',_SI_HIST_CACHE_VER=1,_SI_HIST_CACHE_MAX_DAYS=7,_SI_HIST_FINAL_LAG=2;
+function _siHistCacheRead(){
+  try{
+    const raw=localStorage.getItem(_SI_HIST_CACHE_KEY);if(!raw)return null;
+    const c=JSON.parse(raw);
+    if(!c||c.v!==_SI_HIST_CACHE_VER||!Array.isArray(c.folds)||!c.folds.length||!(Date.now()-c.full<_SI_HIST_CACHE_MAX_DAYS*86400000))return null;
+    for(const f of c.folds){if(!f||typeof f.date!=='string'||!Array.isArray(f.sums)||!Array.isArray(f.neg)||typeof f.n!=='number')return null;}
+    return c;
+  }catch(_){return null;}
+}
+function _siHistCacheWrite(folds,fullAt){
+  try{
+    const lim=_siPktDate(-_SI_HIST_FINAL_LAG);
+    const keep=folds.filter(f=>String(f.date)<=lim);
+    if(!keep.length){localStorage.removeItem(_SI_HIST_CACHE_KEY);return;}
+    localStorage.setItem(_SI_HIST_CACHE_KEY,JSON.stringify({v:_SI_HIST_CACHE_VER,full:fullAt,folds:keep}));
+  }catch(_){}
+}
+function _siHistCacheClear(){try{localStorage.removeItem(_SI_HIST_CACHE_KEY);}catch(_){}}
+// Returns the folds of the newest _SI_HIST_MAX days: from the cache plus only the newer documents when the cache is warm.
+async function _siAxReadFolds(force){
+  const col=collection(db,'shopify_inventory_snapshots');
+  const cache=force?null:_siHistCacheRead();
+  let last='';if(cache)cache.folds.forEach(f=>{if(String(f.date)>last)last=String(f.date);});
+  const q=cache?query(col,where('date','>',last),orderBy('date','desc'),limit(_SI_HIST_MAX)):query(col,orderBy('date','desc'),limit(_SI_HIST_MAX));
+  const snap=await getDocs(q);
+  const fresh=[];snap.forEach(d=>{const f=_siAxFoldDoc(d.data());if(f)fresh.push(f);});
+  let all=fresh;
+  if(cache){
+    const m=new Map();cache.folds.forEach(f=>m.set(String(f.date),f));fresh.forEach(f=>m.set(String(f.date),f)); // a re-read day replaces its cached copy
+    all=[...m.values()];
+  }
+  all.sort((x,y)=>String(y.date)<String(x.date)?-1:String(y.date)>String(x.date)?1:0);
+  all=all.slice(0,_SI_HIST_MAX);
+  return{folds:all,fullAt:cache?cache.full:Date.now(),read:fresh.length,warm:!!cache};
+}
+let _siHistLast=null; // what the last read did: {read, warm} (documents read, cache used) — for the page note and the tests
 function _siAxEnsureHistory(force){
   if(_siHistPromise)return _siHistPromise;
   if(!force&&(_siHistState==='ok'||_siHistState==='error'))return Promise.resolve();
   _siHistState='loading';_siHistError='';
   const rd=(async()=>{
-    const snap=await getDocs(query(collection(db,'shopify_inventory_snapshots'),orderBy('date','desc'),limit(_SI_HIST_MAX)));
-    const docs=[];snap.forEach(d=>docs.push(d.data()));
-    return _siAxBuildHistory(docs);
+    const r=await _siAxReadFolds(!!force);
+    const h=_siAxHistoryFromFolds(r.folds);
+    _siHistLast={read:r.read,warm:r.warm};
+    _siHistCacheWrite(r.folds,r.fullAt);
+    return h;
   })();
   let tmr=null;const to=new Promise((_,rej)=>{tmr=setTimeout(()=>rej(new Error('timed out after '+(_SI_HIST_TIMEOUT/1000)+'s')),_SI_HIST_TIMEOUT);});
   _siHistPromise=Promise.race([rd,to]).then(h=>{_siHist=h;_siHistState='ok';}).catch(e=>{_siHist=null;_siHistState='error';_siHistError=(e&&e.message)||String(e);}).then(()=>{
@@ -2840,7 +2907,7 @@ window._siAxSetBucket=function(v){_siAxBucket=v==='month'?'month':'week';_siAxRe
 
 function _siAxHistBanner(){
   const st=_siHistState;
-  if(st==='loading'||st==='idle')return`<div class="si-ax-note" role="status">Loading stock history — one read of up to ${_SI_HIST_MAX} daily snapshots, kept for this session. In-stock figures show “—” until it lands.</div>`;
+  if(st==='loading'||st==='idle')return`<div class="si-ax-note" role="status">Stock history: loading… In-stock figures show “—” until it lands (read once, kept for this session${_siHistCacheRead()?'; only the newest days are fetched on this device':''}).</div>`;
   if(st==='error')return`<div class="si-ax-note" role="alert" style="color:var(--accent-urgent);font-weight:600">Stock history could not be read (${_siEsc(_siHistError)}). In-stock rate, stock-out days, units per in-stock day and sell-through show “—”. <button class="si-ax-btn" onclick="window._siAxRetryHistory()">Retry</button></div>`;
   const H=_siHist,cov=_siAxIndex().cov;
   const short=H.dates.length<8?` <strong>Only ${H.dates.length} snapshot day${H.dates.length===1?'':'s'} exist, too few for in-stock figures (they need 7+ measured days).</strong>`:'';
