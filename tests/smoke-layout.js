@@ -234,7 +234,7 @@ function _axSeed(app){
     ['GHW001','Trucker Cap','Black','Caps',120],['GJ014','Zip Hoodie','Charcoal','Hoodies',200],['GCO001','Co-ord Set','Sand','Sets',90]];
   const prods=[],lis=[];
   arts.forEach(([code,title,color,cat,live],ai)=>{
-    ['S','M','L'].forEach((sz,k)=>prods.push({_id:code+sz,sku:code+'-'+sz,product_title:title,color,size:sz,product_type:cat,status:'active',published_at:new Date(Date.now()-live*86400000).toISOString()}));
+    ['S','M','L'].forEach((sz,k)=>prods.push({_id:code+sz,sku:code+'-'+sz,product_title:title,color,size:sz,product_type:cat,status:'active',published_at:new Date(Date.now()-live*86400000).toISOString(),image_url:ai===2?'':'https://cdn.shopify.com/s/files/1/0001/files/'+code+'.jpg?v=1'}));
     for(let w=0;w<40;w++){
       const ago=w*7+1;if(ago>live)continue;
       const q=Math.max(0,Math.round(6+5*Math.sin((w+ai*3)/4)+ai*2-(w>30?4:0)));
@@ -260,7 +260,7 @@ function _naSeed(app,opts){
   const prods=[],lis=[],defs=[];
   const mk=(code,title,cat,sizes,daily,stock)=>{
     Object.keys(sizes).forEach(sz=>{
-      prods.push({_id:code+sz,sku:code+'-'+sz,product_title:title,color:'Black',size:sz,product_type:cat,status:'active',published_at:new Date(Date.now()-400*86400000).toISOString()});
+      prods.push({_id:code+sz,sku:code+'-'+sz,product_title:title,color:'Black',size:sz,product_type:cat,status:'active',published_at:new Date(Date.now()-400*86400000).toISOString(),image_url:/(2|5)$/.test(code)?'':'https://cdn.shopify.com/s/files/1/0001/files/'+code+'.jpg?v=1'});
       for(let k=0;k<90;k++){const q=daily(k,sz);if(q>0)lis.push({sku:code+'-'+sz,quantity:q,price:2400,order_created_at:new Date(Date.now()-k*86400000).toISOString(),financial_status:'paid'});}
       defs.push([code+'-'+sz,stock]);
     });
@@ -3304,6 +3304,9 @@ document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
   for(const [name,build] of Object.entries(FRAGMENTS)){
     if(only&&name.toLowerCase().indexOf(only)<0)continue;
     const built=await build();
+    // The probe has no network: a real picture URL (Shopify's CDN) is swapped for a solid stand-in picture so the thumbnails are measured at their real size.
+    const _stand=h=>typeof h==='string'?h.replace(/https:\/\/cdn\.shopify\.com\/[^"]*/g,'data:image/svg+xml;utf8,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27100%27 height=%27100%27%3E%3Crect width=%27100%27 height=%27100%27 fill=%27%23888%27/%3E%3C/svg%3E'):h;
+    if(built&&typeof built==='object')built.html=_stand(built.html);
     // A builder may return {html,widths} to opt out of a width. The board
     // TOP BAR fragments do: they render the DESKTOP markup (seven controls),
     // and at 420px the phone CSS lays the bar out as ONE non-wrapping row
@@ -3311,7 +3314,7 @@ document.querySelectorAll('#main-content .board-card-el').forEach(card=>{
     // _boardsIsPhone() is true. The phone bar is measured, comprehensively,
     // by tests/smoke-phone.js instead.
     if(built&&typeof built==='object')cases.push({name,html:built.html,widths:built.widths,heights:built.heights});
-    else cases.push({name,html:built});
+    else cases.push({name,html:_stand(built)});
   }
 
   const server=http.createServer((req,res)=>{
