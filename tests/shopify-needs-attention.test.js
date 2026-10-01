@@ -230,7 +230,7 @@ async function checks(src){
   o['Overview tiles say they are reading while the history loads, never a 0']=(()=>{R('_siHistState="loading"');const h=R('_siOverview(_siComputeMetrics())');R('_siHistState="ok"');return/<div class="num">…<\/div>/.test(h)&&!/<div class="num">0<\/div>/.test(h.split('si-na-tiles')[1]||'');})();
   o['Overview tile click goes to the tab (all) or the cash filter']=/_siNaGo\('all'\)/.test(ovh)&&/_siNaGo\('cash'\)/.test(ovh);
   R('window._siNaGo("cash")');
-  o['Overview cash tile opens Needs Attention filtered to cash only']=R('_siSection')==='attention'&&R('_siNaFilter')==='cash'&&(a.el('si-content').innerHTML.match(/class="si-na-row /g)||[]).length===2;
+  o['Overview cash tile opens Needs Attention filtered to cash only']=R('_siSection')==='attention'&&R('_siNaFilter')==='cash'&&(a.el('si-content').innerHTML.match(/class="si-na-row /g)||[]).length===3;   // V1 + D1 + D2: a reason filter opens the watch band
   R('window._siNaGo("all")');
   const html=()=>a.el('si-content').innerHTML;
   const rows=()=>(html().match(/class="si-na-row /g)||[]).length;
@@ -243,10 +243,10 @@ async function checks(src){
   R('window._siNaToggleWatch()');
   o['every row is a button naming the article, its reason and its class (not colour alone)']=/<button type="button" class="si-na-row critical" data-code="R10"[\s\S]*?Runs out before restock[\s\S]*?Art R10/.test(html())&&/aria-label="Art R10[^"]*Runs out before restock/.test(html());
   o['rows are articles: no variant size appears as a row title (H once, not S/M/L)']=(html().match(/data-code="H"/g)||[]).length===1&&!/data-code="H-/.test(html());
-  R('window._siNaSetFilter("data")');
-  o['filter: Data shows T1 only (watch is collapsed so 0 visible rows, headline unchanged)']=R('_siNaFilter')==='data'&&/<span class="num">16<\/span>/.test(html())&&/Data <b>1<\/b>/.test(html());
+  R('window._siNaSetFilter("dead")');
+  o['filter: Dead stock shows D1 and D2 (the watch band opens under a reason, headline unchanged)']=R('_siNaFilter')==='dead'&&/<span class="num">16<\/span>/.test(html())&&/Dead stock <b>2<\/b>/.test(html())&&rows()===2;
   R('window._siNaSetFilter("bogus")');
-  o['filter: an unknown filter is ignored']=R('_siNaFilter')==='data';
+  o['filter: an unknown filter is ignored']=R('_siNaFilter')==='dead';
   R('window._siNaSetFilter("all")');
   // click-through
   const keyBefore=(a.state.listeners.keydown||[]).length;
@@ -376,7 +376,7 @@ module.exports=async function(){
   await brk('pack rounding to nearest','Math.ceil(v/C.pack)*C.pack','Math.round(v/C.pack)*C.pack',['stock-out: reorder guide 3.8 x 0.75 x 49 = 139.65 -> 144 and 3.8 x 1.25 x 49 = 232.75 -> 240 (packs of 12)']);
   await brk('quantity band 50%','qtyBand:0.25,','qtyBand:0.5,',['playbook run-out: reorder guide 276\u2013468 (8/day: 6 x 49 - 28 = 266 -> 276; 10 x 49 - 28 = 462 -> 468), owner Raees first']);
   await brk('overstock ladder never marks down','if(n.cover==null||n.cover<52)','if(true)',['playbook overstock: the ladder changes at 52 weeks (30: promote or bundle, 60: markdown steps)']);
-  await brk('one row per article dropped','p.also=all.slice(1).map(x=>x.type);issues.push(p);','all.forEach(x=>issues.push(x));',['one primary issue per article: a run-out that is also 20% voided keeps the data check as "also", not a second row']);
+  await brk('one row per article dropped','p.also=all.slice(1).map(x=>x.type);p.alts=all.slice(1);issues.push(p);','all.forEach(x=>issues.push(x));',['one primary issue per article: a run-out that is also 20% voided keeps the data check as "also", not a second row']);
   await brk('title not escaped in the situation view','<h2>${_siEsc(i.label)}</h2>','<h2>${i.label}</h2>',['escaping: the situation view has no raw tag from a hostile name or code']);
   await brk('code not escaped in the row','data-code="${_siEsc(i.code)}" onclick="window._siNaOpen','data-code="${i.code}" onclick="window._siNaOpen',['escaping: the row has no raw tag and the code in data-code is escaped']);
   await brk('stale snapshot line at 40 hours','staleSnapHours:26,','staleSnapHours:40,',['trust: a snapshot 30 hours old is red and says so ("30 hours old")']);

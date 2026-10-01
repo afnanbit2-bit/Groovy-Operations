@@ -2766,6 +2766,39 @@ const FRAGMENTS={
     const out=['runout','sizehole','overstock'].map(t=>{const c=pick(t);if(!c)return'';app.run('_siNaSel='+JSON.stringify(c));return'<div class="si-na-frag">'+app.run('_siNaSectionHtml()')+'</div>';}).join('');
     return Promise.resolve('<div id="si-content">'+out+'</div>');
   },
+  // Reason chips (with the returns-waiting chip), the isolated band and its flash, a reason's list, and the clickable Overview tiles.
+  'inventory intel — Needs Attention reason chips and isolated band':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siSection="attention";_siNaSel="";_siNaWatchOpen=false;_siNaShow={critical:false,act:false,watch:false}');
+    const one=(f,b,flash)=>{app.run('_siNaFilter='+JSON.stringify(f)+';_siNaBand='+JSON.stringify(b)+';_siNaFlash='+JSON.stringify(flash||''));return'<div class="si-na-frag">'+app.run('_siNaListHtml()')+'</div>';};
+    return Promise.resolve('<div id="si-content">'+one('all','')+one('all','critical','critical')+one('urgent','')+one('returns','')+one('saleloss','')+'</div>');
+  },
+  'inventory intel — Needs Attention new situation views':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siSection="attention";_siNaFilter="all"');
+    const code=app.run('_siNaState().issues[0].code');
+    const mk=(type,band,extra)=>app.run('(()=>{const a=_siAxIndex().map.get('+JSON.stringify(code)+');const r=_siNaRow(a);const x=_siNaMk(r,_siNaCtx(),"'+type+'","'+band+'",{at:240000,atKind:"x"});'+extra+';return _siNaDetailHtml(x,{order:[{code:x.code}]});})()');
+    const out=[
+      mk('returns','act','x.n.ret={ref:50,gross:180,rate:50/180,median:0.02,days:90,z:9,eligible:40}'),
+      mk('saleloss','act','x.n.sales={lo:19,hi:38,mid:28,days:10,pace:2.85,price:1000,ongoing:true,notEstimated:1,windowDays:90}'),
+      mk('winner','watch','')
+    ].map(h=>'<div class="si-na-frag">'+h+'</div>').join('');
+    return Promise.resolve('<div id="si-content">'+out+'</div>');
+  },
+  'inventory intel — Article Explorer overview situation view':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="overview";_siAxOvTile="reorder";_siAxOvAll=false;_siAxOvCat="";_siAxQuery="";_siAxOvSit=""');
+    const code=app.run('(()=>{const r=_siAxOvRows().filter(r=>_siAxOvIn(r,"reorder"))[0];return r?r.a.code:"";})()');
+    let sit='';
+    if(code){app.run('_siAxOvSit='+JSON.stringify(code));sit=app.run('_siAxOverviewBody()');}
+    return Promise.resolve('<div id="si-content">'+sit+'</div>');
+  },
   'inventory intel — Needs Attention empty and failed states':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});

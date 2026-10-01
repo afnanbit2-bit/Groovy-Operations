@@ -5196,6 +5196,8 @@ a.ma-btn{text-decoration:none}
 .si-ov-tile .l{font-size:13px;font-weight:600;color:var(--muted)}
 .si-ov-tile .n{font-size:26px;font-weight:700;line-height:1.2}
 .si-ov-tile .s{font-size:12px;color:var(--muted)}
+.si-ov-tile .w{font-size:13px;line-height:1.4;color:var(--text);margin:2px 0 4px}
+.si-ov-row .btns .si-ov-sit{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
 .si-ov-row{display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(70px,1fr));gap:4px 12px;align-items:start;padding:10px 0;border-top:1px solid var(--border)}
 .si-ov-row .nm{min-width:0;overflow-wrap:anywhere;display:flex;gap:10px;align-items:center}
 .si-ov-row .nm .tx{min-width:0;display:flex;flex-direction:column}
@@ -5290,6 +5292,18 @@ a.ma-btn{text-decoration:none}
 .si-na-chip{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:2px 10px;border-radius:999px;font-size:13px;border:1px solid var(--muted);background:var(--surface);color:var(--text)}
 .si-na-chip.crit{background:var(--count-accent);border-color:var(--count-accent);color:#fff}
 .si-na-chip.act{border-color:var(--accent-urgent);color:var(--accent-urgent)}
+.si-na-head button.si-na-chip{min-height:34px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
+.si-na-chip.on{outline:2px solid var(--text);outline-offset:2px}
+.si-na-chip:focus-visible,.si-na-fchip:focus-visible,.si-ov-tile:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.si-na-band.flash{animation:siNaFlash 1.4s ease-out}
+@keyframes siNaFlash{from{box-shadow:0 0 0 3px var(--accent-urgent);background:var(--accent-urgent-soft)}to{box-shadow:0 0 0 0 transparent;background:transparent}}
+@media (prefers-reduced-motion:reduce){.si-na-band.flash{animation:none;outline:2px solid var(--accent-urgent);outline-offset:4px}}
+.si-na-fchip b{margin-left:2px}
+.si-na-fchip.zero{color:var(--muted)}
+.si-na-fchip.wait{border-style:dashed;color:var(--muted)}
+.si-na-fchip.on.zero,.si-na-fchip.on.wait{color:var(--on-dark)}
+.si-na-why{margin:-4px 0 12px;padding:8px 12px;border:1px solid var(--border);border-left:4px solid var(--accent-urgent);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;line-height:1.5}
+.si-na-waitbox{text-align:left;line-height:1.55;color:var(--text)}
 .si-na-filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
 .si-na-fchip{min-height:34px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .si-na-fchip.on{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}

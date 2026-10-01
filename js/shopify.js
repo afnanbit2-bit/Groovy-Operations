@@ -779,7 +779,8 @@ function _siTabBar(){
 
 window._siSwitchTab=function(id){
   id=_siSecId(id);
-  if(id!=='attention')_siNaSel='';   // leaving the tab closes an open situation; the list's own state (filter, expanded bands) is kept
+  if(id!=='attention')_siNaSel='';
+  if(id!=='explorer')_siAxOvSit='';   // leaving the tab closes an open situation; the list's own state (filter, expanded bands) is kept
   _siSection=id;
   const m=_siComputeMetrics();
   const skuRows=_siComputeSkuTable();
@@ -3706,10 +3707,10 @@ function _siAxMonthsHtml(arts,M){
 
 // ── Overview: four questions, no typing ─────────────────────────────────────
 const _SI_OV_TILES=[
-  {k:'reorder',l:'Reorder now',sub:'cover shorter than the lead time, or out of stock while in demand'},
-  {k:'risk',l:'Stock-out risk',sub:'a size is out and selling, or cover is within 2 weeks of the lead time'},
-  {k:'stuck',l:'Stuck / stop',sub:'no sale in 28 days, or slow with a lot of cover'},
-  {k:'winner',l:'Winners',sub:'top demand, in stock, 30+ units: protect these'}
+  {k:'reorder',l:'Reorder now',sub:'cover shorter than the lead time, or out of stock while in demand',what:'These will sell out before a new batch can arrive. Order or re-cut them today.'},
+  {k:'risk',l:'Stock-out risk',sub:'a size is out and selling, or cover is within 2 weeks of the lead time',what:'A size is out or cover is close to the lead time. Cut the missing sizes before they stall.'},
+  {k:'stuck',l:'Stuck / stop',sub:'no sale in 28 days, or slow with a lot of cover',what:'Stock that is not selling. Stop reordering; promote, bundle or mark down.'},
+  {k:'winner',l:'Winners',sub:'top demand, in stock, 30+ units: protect these',what:'Your best sellers. Keep them in stock and keep the push on them.'}
 ];
 function _siAxOvRows(){
   const idx=_siAxIndex();
@@ -3735,9 +3736,10 @@ function _siAxOvSort(k){
 function _siAxOverviewBody(){
   const idx=_siAxIndex();
   if(_siHistState!=='ok'&&_siHistState!=='error')return`<div class="si-ax-empty">Reading the stock history…</div>`+_siAxHistBanner();
+  if(_siAxOvSit){const h=_siAxOvSitHtml();if(h)return h;}
   const rows=_siAxOvRows();
   const cats=[...new Set(idx.list.filter(a=>a.units>0||a.hasStock).map(a=>a.category||'Unknown'))].sort(_siSortNat);
-  const tile=t=>{const n=rows.filter(r=>_siAxOvIn(r,t.k)).length;return`<button class="si-ov-tile${_siAxOvTile===t.k?' on':''}" aria-pressed="${_siAxOvTile===t.k}" onclick="window._siAxOvTile('${t.k}')"><span class="l">${_siEsc(t.l)}</span><span class="n">${n}</span><span class="s">${_siEsc(t.sub)}</span></button>`;};
+  const tile=t=>{const n=rows.filter(r=>_siAxOvIn(r,t.k)).length;return`<button class="si-ov-tile${_siAxOvTile===t.k?' on':''}" aria-pressed="${_siAxOvTile===t.k}" onclick="window._siAxOvTile('${t.k}')"><span class="l">${_siEsc(t.l)}</span><span class="n">${n}</span><span class="w">${_siEsc(t.what)}</span><span class="s">${_siEsc(t.sub)}</span></button>`;};
   const cur=_SI_OV_TILES.find(t=>t.k===_siAxOvTile)||_SI_OV_TILES[0];
   const list=rows.filter(r=>_siAxOvIn(r,cur.k)).sort(_siAxOvSort(cur.k));
   const show=_siAxOvAll?list:list.slice(0,10);
@@ -3747,7 +3749,7 @@ function _siAxOverviewBody(){
     <div class="fg"><div class="k">Sizes out</div><div class="v">${r.m.risk&&r.m.risk.length?_siEsc(r.m.risk.map(x=>x.size).join(', ')):'—'}</div></div>
     <div class="act">${_siEsc(r.act.text)}</div>
     <div class="lt">${_siAxLtCtlHtml(r.a)}</div>
-    <div class="btns"><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOpen(this.dataset.code)">Open</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button></div></div>`;
+    <div class="btns"><button class="si-ax-btn si-ov-sit" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvSituation(this.dataset.code)">Situation</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOpen(this.dataset.code)">Open</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button></div></div>`;
   const cnt={};rows.forEach(r=>{cnt[r.c.cls]=(cnt[r.c.cls]||0)+1;});
   const classLine=['winner','solid','steady','constrained','slow','dead','early','unrated'].filter(k=>cnt[k]).map(k=>cnt[k]+' '+_SI_AX_CLASSES[k].label).join(' · ');
   return`<div class="card"><div class="si-ax-bar"><label class="si-ax-lab" for="si-ov-cat">Category</label><select id="si-ov-cat" class="si-ax-select" onchange="window._siAxOvCat(this.value)"><option value="">All categories</option>${cats.map(c=>`<option value="${_siEsc(c)}"${c===_siAxOvCat?' selected':''}>${_siEsc(c)}</option>`).join('')}</select></div>
@@ -3759,8 +3761,8 @@ function _siAxOverviewBody(){
   ${_siAxHistBanner()}
   <details class="card si-ax-defs"><summary class="card-title" style="cursor:pointer">Lead times (editable defaults)</summary>${_siAxLtHtml()}</details>`;
 }
-window._siAxOvTile=function(k){_siAxOvTile=k;_siAxOvAll=false;_siAxRepaintBody();};
-window._siAxOvCat=function(v){_siAxOvCat=v||'';_siAxOvAll=false;_siAxRepaintBody();};
+window._siAxOvTile=function(k){_siAxOvTile=k;_siAxOvAll=false;_siAxOvSit='';_siAxRepaintBody();};
+window._siAxOvCat=function(v){_siAxOvCat=v||'';_siAxOvAll=false;_siAxOvSit='';_siAxRepaintBody();};
 window._siAxOvAll=function(){_siAxOvAll=!_siAxOvAll;_siAxRepaintBody();};
 window._siAxOpen=function(code){_siAxModeSel='search';_siAxSel=String(code||'').toUpperCase();_siAxQuery='';_siAxMsg='';_siAxRepaintAll();if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}};
 window._siAxOvCompare=function(code){
@@ -4139,13 +4141,26 @@ const _SI_NA={
   voidRate:0.10,voidUnits:5,
   qtyBand:0.25,pack:12,coverTarget:28,coverTargetWinner:35,
   staleSnapHours:26,staleOrderHours:8,gapDays:14,
-  seasonFrom:'0915',seasonTo:'1130'
+  seasonFrom:'0915',seasonTo:'1130',
+  saleMinUnits:5,                                    // Sales loss: an estimated 5+ units lost to stock-outs in the last 90 days (the Portfolio's own estimate)
+  retDays:90,retMinUnits:20,retRate:0.15,retMult:2,retZ:1.645,retFloor:0.02,retActRate:0.25   // High return rate, see UNITS_METRICS 3b
 };
-const _SI_NA_GROUP={stockout:'stock',runout:'stock',sizehole:'stock',overstock:'cash',dead:'cash',rising:'demand',demanddrop:'demand',datatrust:'data'};
-const _SI_NA_REASON={stockout:'Out of stock',runout:'Runs out before restock',sizehole:'Size hole',overstock:'Overstocked',dead:'Dead stock',rising:'Demand rising, thin stock',demanddrop:'Demand dropped',datatrust:'Check the numbers'};
+const _SI_NA_GROUP={stockout:'stock',runout:'stock',sizehole:'stock',overstock:'cash',dead:'cash',rising:'demand',demanddrop:'demand',datatrust:'data',saleloss:'stock',returns:'demand',winner:'demand'};
+const _SI_NA_REASON={stockout:'Out of stock',runout:'Runs out before restock',sizehole:'Size hole',overstock:'Overstocked',dead:'Dead stock',rising:'Demand rising, thin stock',demanddrop:'Demand dropped',datatrust:'Check the numbers',saleloss:'Sales loss',returns:'High return rate',winner:'Top seller'};
 const _SI_NA_BANDS=[{k:'critical',l:'Critical',cap:'capCritical',sub:'act today'},{k:'act',l:'Act this week',cap:'capAct',sub:'decide this week'},{k:'watch',l:'Watch',cap:'capWatch',sub:'plan, no action yet'}];
-const _SI_NA_FILTERS=[{k:'all',l:'All'},{k:'stock',l:'Stock'},{k:'cash',l:'Cash tied up'},{k:'demand',l:'Demand'},{k:'data',l:'Data'}];
-let _siNaSel='',_siNaFilter='all',_siNaShow={critical:false,act:false,watch:false},_siNaWatchOpen=false,_siNaReturnY=0,_siNaMemo=null,_siNaKeyWired=false,_siNaNowMs=null;
+// Reason chips, ordered by severity: act today, money already lost, a quality signal, cash tied up, no demand signal, demand moving.
+// An article can sit under several (a size hole is also lost sales); each list is a set of ARTICLES and its count is the list's length.
+// 'Cash tied up' is not a chip any more (it was exactly Overstocked + Dead stock); 'cash' is still accepted by _siNaGo for the Overview tile.
+const _SI_NA_REASONS=[
+  {k:'urgent',l:'Urgent restocks',types:['stockout','runout','sizehole'],what:'Out of a proven seller, will run out before a new batch can land, or a best-selling size is out. Reorder or cut the missing sizes first.'},
+  {k:'saleloss',l:'Sales loss',what:'Stock-outs in the last 90 days that cost sales. The figures are estimates from the stock-vs-sales timeline (the Portfolio sums the same ones), not counts.'},
+  {k:'returns',l:'High return rate',what:'Units come back far more than for the rest of the catalogue. Check size chart, photos and fabric before reordering.'},
+  {k:'overstock',l:'Overstocked',types:['overstock'],what:'More stock than will sell for months. Stop reordering, promote or bundle, then mark down in steps.'},
+  {k:'dead',l:'Dead stock',types:['dead'],what:'Stock on hand and nothing sold. Check the listing, then bundle or clear it.'},
+  {k:'demand',l:'Demand shifts',types:['rising','demanddrop'],what:'Selling faster with thin stock, or a seller that has slowed. Find out why before ordering or discounting.'}
+];
+const _SI_NA_FILTER_KEYS=['all','cash'].concat(_SI_NA_REASONS.map(x=>x.k));
+let _siNaSel='',_siNaFilter='all',_siNaBand='',_siNaFlash='',_siAxOvSit='',_siNaShow={critical:false,act:false,watch:false},_siNaWatchOpen=false,_siNaReturnY=0,_siNaMemo=null,_siNaKeyWired=false,_siNaNowMs=null;
 
 function _siNaNow(){return _siNaNowMs!=null?_siNaNowMs:Date.now();}
 function _siNaIsPhone(){try{return typeof window!=='undefined'&&typeof window.matchMedia==='function'&&!!window.matchMedia('(max-width:600px)').matches;}catch(_){return false;}}
@@ -4219,6 +4234,20 @@ function _siNaSizeRows(m,lead){
     return{size:s.size,stock:s.stock,units28:s.recent,sold:s.sold,coverDays:cd,state:st};
   });
 }
+// One issue object for an article (also used for the reason views and the Overview's situation view). Pure given row {a,m,c,act,lt,conf} and ctx.
+function _siNaMk(r,ctx,type,band,extra){
+  const a=r.a,m=r.m,c=r.c,lt=r.lt,cls=c.cls,pd=_siNaPerDay(m),lead=lt.days,cd=m.coverDays,asp=m.asp;
+  const disc=ctx&&ctx.disc?ctx.disc(a):null;
+  return Object.assign({
+    type,group:_SI_NA_GROUP[type],code:a.code,label:_siAxLabel?_siAxLabel(a):(a.name||a.code),cls,clsLabel:c.label,band,reason:_SI_NA_REASON[type],
+    at:null,atKind:'',lost:null,also:[],seasonal:false,rising:false,conf:r.conf.level,
+    n:{onHand:a.hasStock?a.onHand:null,coverDays:cd,cover:m.cover,coverText:_siAxCoverText(m),leadDays:lead,leadSrc:lt.source,leadText:lt.text,units28:m.units28,
+      prev28:(m.momUnits!=null&&m.units28!=null)?m.momUnits-m.units28:null,perDay:pd,perInDay:m.perInDay,inRate:m.inRate,outDays:m.outDays,measured:m.measured,asp,
+      momentum:m.momentum,momWord:m.momWord,voidRate:m.voidRate,voided:m.voided,days:m.days,units:m.units,pace28Days:m.pace28Days,
+      confName:r.conf.name,confWhy:r.conf.why.slice(),confCaps:r.conf.caps.slice(),sizes:_siNaSizeRows(m,lead),valueTied:null,disc:disc||null,
+      qty:null,gapDays:null,missed:null,holes:[],sudden:null,returnsSynced:ctx?ctx.returnsSynced:null,actKey:r.act&&r.act.key,actText:r.act&&r.act.text}
+  },extra||{});
+}
 // One article -> its issues (strongest first). Pure given the row {a,m,c,act,lt,conf} and ctx {today,disc(a),sudden(a,m),winter(a)}.
 function _siNaDetect(r,ctx){
   const a=r.a,m=r.m,c=r.c,lt=r.lt,C=_SI_NA,cls=c.cls,out=[];
@@ -4228,15 +4257,7 @@ function _siNaDetect(r,ctx){
   const disc=ctx&&ctx.disc?ctx.disc(a):null;
   const rising=m.momWord==='Rising';
   const money=u=>(asp!=null&&u!=null)?u*asp:null;
-  const mk=(type,band,extra)=>Object.assign({
-    type,group:_SI_NA_GROUP[type],code:a.code,label:_siAxLabel?_siAxLabel(a):(a.name||a.code),cls,clsLabel:c.label,band,reason:_SI_NA_REASON[type],
-    at:null,atKind:'',lost:null,also:[],seasonal:false,rising:false,conf:r.conf.level,
-    n:{onHand:a.hasStock?a.onHand:null,coverDays:cd,cover:m.cover,coverText:_siAxCoverText(m),leadDays:lead,leadSrc:lt.source,leadText:lt.text,units28:m.units28,
-      prev28:(m.momUnits!=null&&m.units28!=null)?m.momUnits-m.units28:null,perDay:pd,perInDay:m.perInDay,inRate:m.inRate,outDays:m.outDays,measured:m.measured,asp,
-      momentum:m.momentum,momWord:m.momWord,voidRate:m.voidRate,voided:m.voided,days:m.days,units:m.units,pace28Days:m.pace28Days,
-      confName:r.conf.name,confWhy:r.conf.why.slice(),confCaps:r.conf.caps.slice(),sizes:_siNaSizeRows(m,lead),valueTied:null,disc:disc||null,
-      qty:null,gapDays:null,missed:null,holes:[],sudden:null,returnsSynced:ctx?ctx.returnsSynced:null,actKey:r.act&&r.act.key,actText:r.act&&r.act.text}
-  },extra||{});
+  const mk=(type,band,extra)=>_siNaMk(r,ctx,type,band,extra);
   // 1. out of stock while it is a proven seller
   if(a.hasStock&&a.onHand===0&&(cls==='winner'||cls==='solid'||cls==='constrained')&&m.units28>0&&ev){   // units28>0: the Explorer calls a zero-stock article with no recent sales "Out of stock, no recent sales" (watch), not a reorder
     const lostU=pd!=null?pd*lead:null;
@@ -4310,26 +4331,79 @@ function _siNaCmp(x,y){
   const lx=x.lost==null?-1:x.lost,ly=y.lost==null?-1:y.lost;if(lx!==ly)return ly-lx;
   return(_siSortClassRank(x.clsLabel)-_siSortClassRank(y.clsLabel))||_siSortNat(x.code,y.code);
 }
-// Rows -> {issues (ranked, one per article), counts (UNCAPPED)}. One primary issue per article; the others ride along as `also`.
+// Units sold, returned and the return rate over the last 90 counted days (never before the article's counted start).
+// gross = net units + refunded units (voided units are not sales); rate = refunded / gross. null when nothing is counted.
+function _siNaRet90(a,m,today){
+  const C=_SI_NA;
+  if(!a||!m||!m.E)return null;
+  const Tn=_siAxDayNum(today),En=_siAxDayNum(m.E);if(Tn==null||En==null||En>Tn)return null;
+  const Sn=Math.max(En,Tn-(C.retDays-1)),s0=_siAxDayStr(Sn);
+  const units=_siAxUnitsBetween(a,s0,today);let ref=0;
+  if(a.xdaily)a.xdaily.forEach((d,day)=>{if(day>=s0&&day<=today)ref+=d.r;});
+  const gross=units+ref;
+  return{units,ref,gross,rate:gross>0?ref/gross:null,days:Tn-Sn+1};
+}
+// Which articles come back too often. Only when returns are synced (otherwise the answer is "waiting", never a guess). Guards: 20+ units
+// sold in 90 days; a rate of 15%+ AND at least twice the median rate of articles that pass the 20-unit floor; and a gap bigger than chance
+// (one-sided z >= 1.645 against the median, floored at 2%, so a handful of returns on a small article is not an alert).
+function _siNaReturnsPlan(rows,ctx){
+  const C=_SI_NA,out={synced:!!(ctx&&ctx.returnsSynced===true),eligible:0,median:null,floorP:null,flag:new Map()};
+  if(!out.synced||!ctx.ret)return out;
+  const el=[];rows.forEach(r=>{const x=ctx.ret(r.a,r.m);if(x&&x.rate!=null&&x.gross>=C.retMinUnits){r.ret=x;el.push(r);}});
+  out.eligible=el.length;if(!el.length)return out;
+  const rates=el.map(r=>r.ret.rate).sort((x,y)=>x-y),mid=rates.length>>1;
+  out.median=rates.length%2?rates[mid]:(rates[mid-1]+rates[mid])/2;
+  out.floorP=Math.max(out.median,C.retFloor);
+  el.forEach(r=>{
+    const g=r.ret.gross,k=r.ret.ref,rate=r.ret.rate;
+    if(rate<C.retRate||rate<C.retMult*out.median)return;
+    const z=(k-g*out.floorP-0.5)/Math.sqrt(g*out.floorP*(1-out.floorP));
+    if(z<C.retZ)return;
+    out.flag.set(r.a.code,{z});
+  });
+  return out;
+}
+// Rows -> {issues (ranked, one per article), counts (UNCAPPED), reasons (one list of ARTICLES per chip)}. One primary issue per article; the
+// others ride along as `also` (types) and `alts` (the issue objects). A reason list holds the article's issue of that reason; its length IS the chip count.
 function _siNaBuild(rows,ctx){
-  const issues=[];
+  const C=_SI_NA,issues=[],reasons={};_SI_NA_REASONS.forEach(x=>{reasons[x.k]=[];});
+  const plan=_siNaReturnsPlan(rows,ctx);
   rows.forEach(r=>{
-    const all=_siNaDetect(r,ctx);if(!all.length)return;
-    const p=all[0];p.also=all.slice(1).map(x=>x.type);issues.push(p);
+    const all=_siNaDetect(r,ctx);
+    if(all.length){const p=all[0];p.also=all.slice(1).map(x=>x.type);p.alts=all.slice(1);issues.push(p);}
+    _SI_NA_REASONS.forEach(x=>{if(!x.types)return;const hit=all.find(d=>x.types.indexOf(d.type)>=0);if(hit)reasons[x.k].push(hit);});
+    if(ctx&&ctx.lost&&r.c.cls!=='early'&&r.c.cls!=='unrated'){
+      const s=ctx.lost(r.a);
+      if(s&&s.lost&&s.lost.mid>=C.saleMinUnits){
+        const base=all.find(d=>d.type==='stockout'||d.type==='runout'||d.type==='sizehole');
+        const rs=s.price!=null?s.lost.mid*s.price:null;
+        const x=_siNaMk(r,ctx,'saleloss',base?base.band:'watch',{lost:s.lost.mid,at:rs,atKind:'estimated sales lost to stock-outs in the last '+(ctx.lostDays||90)+' days'});
+        x.n.sales={lo:s.lost.lo,hi:s.lost.hi,mid:s.lost.mid,days:s.lost.days,pace:s.lost.pace,price:s.price,ongoing:!!s.ongoing,notEstimated:s.notEstimated||0,windowDays:ctx.lostDays||90};
+        reasons.saleloss.push(x);
+      }
+    }
+    const fl=plan.flag.get(r.a.code);
+    if(fl&&r.ret){
+      const asp=r.m.asp,x=_siNaMk(r,ctx,'returns',r.ret.rate>=C.retActRate?'act':'watch',{lost:r.ret.ref,at:asp!=null?r.ret.ref*asp:null,atKind:'returned at selling price, last '+C.retDays+' days'});
+      x.n.ret={ref:r.ret.ref,gross:r.ret.gross,rate:r.ret.rate,median:plan.median,days:r.ret.days,z:fl.z,eligible:plan.eligible};
+      reasons.returns.push(x);
+    }
   });
   issues.sort(_siNaCmp);
+  Object.keys(reasons).forEach(k=>reasons[k].sort(_siNaCmp));
   const counts={critical:0,act:0,watch:0,byGroup:{stock:0,cash:0,demand:0,data:0},cashValue:0,cashNoValue:0};
   issues.forEach(i=>{
     counts[i.band]++;counts.byGroup[i.group]++;
     if(i.group==='cash'){if(i.n.valueTied==null)counts.cashNoValue++;else counts.cashValue+=i.n.valueTied;}
   });
   counts.action=counts.critical+counts.act;counts.total=counts.action+counts.watch;
-  return{issues,counts};
+  return{issues,counts,reasons,unavailable:{saleloss:!(ctx&&ctx.lost),returns:!plan.synced},returnsInfo:{synced:plan.synced,median:plan.median,eligible:plan.eligible}};
 }
 function _siNaCtx(){
   const today=_siPktDate(0);
   let rs=null;try{rs=_siAxIndex().quality.returns.synced;}catch(_){}
-  return{today,returnsSynced:rs,disc:a=>_siNaDiscount(a,today),sudden:(a,m)=>_siNaSudden(a,m,today),winter:a=>_siNaWinter(a,today)};
+  return{today,returnsSynced:rs,disc:a=>_siNaDiscount(a,today),sudden:(a,m)=>_siNaSudden(a,m,today),winter:a=>_siNaWinter(a,today),ret:(a,m)=>_siNaRet90(a,m,today),
+    lost:_siHistState==='ok'?_siAxPfLostOf:null,lostDays:_SI_PF.lostDays};
 }
 // The ranked issues for the loaded data. Memoised on the index object, today and the lead-time settings (the only inputs that change without
 // a data reload), so the tab pill, the Overview tiles and the list read ONE computation.
@@ -4436,7 +4510,7 @@ function _siNaPlaybook(i){
   let situation='',why='',actions=[],avoid=[];
   const confBits=[n.confName+' confidence: '+(n.confWhy&&n.confWhy[0]?n.confWhy[0]:'—')+'.'];
   if(n.confCaps&&n.confCaps.length)confBits.push('Capped at Medium because '+n.confCaps.join(' and ')+'.');
-  if(i.type==='stockout'||i.type==='runout'||i.type==='sizehole'||i.type==='rising')confBits.push('Lead time: '+leadTxt+'.'+rt);
+  if(i.type==='stockout'||i.type==='runout'||i.type==='sizehole'||i.type==='rising'||i.type==='saleloss'||i.type==='winner')confBits.push('Lead time: '+leadTxt+'.'+rt);
   const holesTxt=(n.holes||[]).map(h=>h.size+(h.kind==='out'?' (out)':' ('+h.stock+' left)')).join(', ');
   switch(i.type){
     case'stockout':
@@ -4498,6 +4572,31 @@ function _siNaPlaybook(i){
         avoid=['Do not cut the price on one week’s drop.','Do not reorder to chase it.'];
       }
       break;
+    case'saleloss':{
+      const S=n.sales||{},same=S.lo===S.hi,rs=S.price!=null&&S.mid!=null?S.mid*S.price:null;
+      situation=lab+' was out of stock often enough in the last '+(S.windowDays||90)+' days that sales were likely lost: an estimated '+(same?'about '+R(S.lo):R(S.lo)+'–'+R(S.hi))+' units'+(rs!=null?' (about '+money(rs)+' at its average price, before discounts)':'')+' over '+R(S.days)+' out-of-stock days, from its own in-stock pace of '+P(S.pace)+' a day. This is an estimate from the stock-vs-sales timeline, not a count.'+(S.ongoing?' It is still out of stock now.':'')+(S.notEstimated?' '+S.notEstimated+' out-of-stock stretch'+(S.notEstimated===1?' was':'es were')+' left out because there was no reliable in-stock baseline.':'');
+      why='A day without stock sells nothing, and the loss repeats at the next restock if the batch lands late again.';
+      actions=[{owner:'Raees',text:(S.ongoing?'Reorder now'+(qtyTxt?': '+qtyTxt:'')+'. ':'')+'Set the reorder point so a batch is started while cover is still longer than the lead time ('+leadTxt+'), not after the shelf is empty.'},
+        {owner:'Mustafa',text:'Keep the product live with a back-in-stock notice and mark sizes that are out as sold out; do not run a sale on it.'},
+        {owner:'Daniyal',text:'Time ads and creator posts to the days stock is in, and pause them while it is out.'}];
+      avoid=['Do not read it as weak demand: it could not sell while out.','Do not quote the figure as a count: it is an estimate.'];break;}
+    case'returns':{
+      const T=n.ret||{},pct=v=>v==null?'—':(Math.round(v*1000)/10)+'%';
+      situation=R(T.ref)+' of '+R(T.gross)+' units sold in the last '+(T.days||_SI_NA.retDays)+' days came back ('+pct(T.rate)+'), against a catalogue median of '+pct(T.median)+'. An alert needs '+Math.round(_SI_NA.retRate*100)+'% or more, at least twice the median, and a gap bigger than chance'+(i.at!=null?'. About '+money(i.at)+' at selling price came back':'')+'.';
+      why='Every return costs the sale, shipping both ways and handling, and a high rate on one article usually means the size chart, photos, fabric or description set the wrong expectation.';
+      actions=[{owner:'Mustafa',text:'Read the return reasons on the Shopify orders for this article; check the size chart, photos and description against the real garment.'},
+        {owner:'Saim',text:'Check fit and fabric against the measurements in the Pattern Hub and say if the pattern or the sample needs a fix.'},
+        {owner:'Raees',text:'Hold any reorder until the cause is known; add a QC check on the next batch.'},
+        {owner:'Daniyal',text:'Pause paid push and creator posts that may oversell the fit until it is fixed.'}];
+      avoid=['Do not discount it: returns would follow the discount.','Do not reorder to chase it.','Do not judge on fewer than '+_SI_NA.retMinUnits+' units.'];break;}
+    case'winner':
+      situation=lab+' is one of the top sellers: about '+P(n.perInDay)+' a day when in stock, '+R(n.units28)+' units in the last 28 days, in stock on '+inPct+' of measured days, with '+n.coverText+' of cover against a lead time of '+leadTxt+'.';
+      why='Winners carry the month. Running out of one costs the most, and they are where repeat colourways and creators pay back.';
+      actions=[{owner:'Raees',text:'Keep cover above the lead time plus '+_SI_NA.coverTargetWinner+' days'+(qtyTxt?': '+qtyTxt:'')+'; confirm the lead time'+(n.leadSrc==='default'?' (it is only the default)':'')+'.'},
+        {owner:'Daniyal',text:'Keep creator content and ads on it while stock lasts.'},
+        {owner:'Mustafa',text:'Do not discount it; keep every size live and mark sold-out sizes clearly.'},
+        {owner:'Saim',text:'Brief a sibling or a new colourway while the demand is there.'}];
+      avoid=['Do not discount a winner.','Do not let cover fall under the lead time.'];break;
     default:
       situation='Numbers for '+lab+' may be off: '+(n.voidRate!=null?Math.round(n.voidRate*100)+'% of its units were voided ('+n.voided+' units).':'data check.');
       why='Acting on bad numbers is worse than waiting.';
@@ -4520,6 +4619,9 @@ function _siNaRowLine(i){
     case'dead':s=(i.seasonal?'Winter stock, wait · ':'')+n.onHand+' on hand · nothing sold in '+(n.pace28Days==null?'—':n.pace28Days)+' days';break;
     case'rising':s='Rising: '+n.units28+' vs '+(n.prev28==null?'—':n.prev28)+' units · '+n.onHand+' left, about '+_siNaDays(n.coverDays);break;
     case'demanddrop':s=n.sudden?'Last 7 days: '+n.sudden.last+' vs about '+Math.round(n.sudden.base)+' a week':'Last 28 days: '+n.units28+' vs '+(n.prev28==null?'—':n.prev28)+' units';break;
+    case'saleloss':{const S=n.sales||{};s='Est. '+(S.lo===S.hi?'~'+S.lo:S.lo+'–'+S.hi)+' units lost over '+S.days+' days out'+(S.ongoing?' · out now':'')+' · estimate';break;}
+    case'returns':{const T=n.ret||{};s=T.ref+' of '+T.gross+' units returned ('+(Math.round(T.rate*1000)/10)+'%) · median '+(Math.round((T.median||0)*1000)/10)+'%';break;}
+    case'winner':s=P(n.perInDay)+' a day in stock · '+n.coverText+' of cover';break;
     default:s=n.voided+' units voided ('+Math.round((n.voidRate||0)*100)+'%)';
   }
   return s;
@@ -4537,40 +4639,72 @@ function _siNaRowHtml(i,trustRed){
     <span class="at">${_siEsc(_siNaAtText(i))}</span>
     <span class="ch" aria-hidden="true">›</span></button>`;
 }
+// The list the screen shows: a reason's articles (or all issues), narrowed to one band when a band chip is pressed. ONE function: the chip counts,
+// the list, Prev/Next and the situation view all read it.
+function _siNaReasonList(res,f){
+  if(f==='all')return res.issues;
+  if(f==='cash')return res.reasons.overstock.concat(res.reasons.dead).sort(_siNaCmp);
+  return res.reasons[f]||res.issues;
+}
 function _siNaFiltered(res){
-  return _siNaFilter==='all'?res.issues:res.issues.filter(i=>i.group===_siNaFilter);
+  const l=_siNaReasonList(res,_siNaFilter);
+  return _siNaBand?l.filter(i=>i.band===_siNaBand):l;
+}
+// Chip count: the list's length, or null when the reason cannot be answered yet (never 0 for "not known").
+function _siNaReasonCount(res,k){
+  if(k==='all')return res.counts.total;
+  if(res.unavailable&&res.unavailable[k])return null;
+  return _siNaReasonList(res,k).length;
+}
+function _siNaBandBtn(res,b,cls,txt){
+  const on=_siNaBand===b;
+  return`<button type="button" class="si-na-chip ${cls}${on?' on':''}" aria-pressed="${on}" data-band="${b}" onclick="window._siNaBandSet('${b}')"><b>${res.counts[b]}</b> ${txt}</button>`;
 }
 function _siNaHeadHtml(res){
-  const c=res.counts;
+  const c=res.counts,bl=(_SI_NA_BANDS.find(b=>b.k===_siNaBand)||{}).l;
   return`<div class="si-na-head"><div class="si-na-big"><span class="num">${c.action}</span> article${c.action===1?'':'s'} need action</div>
-    <div class="si-na-chips"><span class="si-na-chip crit"><b>${c.critical}</b> critical</span><span class="si-na-chip act"><b>${c.act}</b> this week</span><span class="si-na-chip watch"><b>${c.watch}</b> to watch</span></div>
+    <div class="si-na-chips" role="group" aria-label="Show one band">${_siNaBandBtn(res,'critical','crit','critical')}${_siNaBandBtn(res,'act','act','this week')}${_siNaBandBtn(res,'watch','watch','to watch')}</div>
+    ${_siNaBand?`<div class="si-ax-note" style="margin:6px 0 0">Showing only “${_siEsc(bl)}”. Press it again to see everything.</div>`:''}
     <div class="si-ax-note" style="margin:6px 0 0">Articles, not sizes. Counted from ${res.rows} articles with sales or stock${res.skipped?'; '+res.skipped+' too new or unrated to judge':''}. The season filter does not apply here.</div></div>`;
 }
 function _siNaFilterHtml(res){
-  return`<div class="si-na-filters" role="group" aria-label="Filter by kind">${_SI_NA_FILTERS.map(f=>{
-    const n=f.k==='all'?res.counts.total:res.counts.byGroup[f.k];
-    return`<button type="button" class="si-na-fchip${_siNaFilter===f.k?' on':''}" aria-pressed="${_siNaFilter===f.k}" onclick="window._siNaSetFilter('${f.k}')">${_siEsc(f.l)} <b>${n}</b></button>`;}).join('')}</div>`;
+  const chip=(k,l,what)=>{
+    const n=_siNaReasonCount(res,k),on=_siNaFilter===k;
+    const lab=(k==='returns'&&n==null)?'Return rate: waiting for returns sync':l;
+    return`<button type="button" class="si-na-fchip${on?' on':''}${n===0?' zero':''}${n==null?' wait':''}" data-reason="${k}" aria-pressed="${on}" title="${_siEsc(what||'')}" onclick="window._siNaSetFilter('${k}')">${_siEsc(lab)} <b>${n==null?'—':n}</b></button>`;
+  };
+  const cur=_SI_NA_REASONS.find(x=>x.k===_siNaFilter);
+  const ex=_siNaFilter==='all'?'':`<div class="si-na-why" role="note"><strong>${_siEsc(cur?cur.l:'Cash tied up')}.</strong> ${_siEsc(cur?cur.what:'Overstocked and dead stock together: money sitting on the shelf, valued at selling price.')}</div>`;
+  return`<div class="si-na-filters" role="group" aria-label="Filter by reason">${chip('all','All')}${_SI_NA_REASONS.map(x=>chip(x.k,x.l,x.what)).join('')}</div>${ex}`;
 }
 function _siNaBandHtml(b,list,trustRed){
   if(!list.length)return'';
-  const cap=_SI_NA[b.cap],all=_siNaShow[b.k],show=all?list:list.slice(0,cap);
-  const watchShut=b.k==='watch'&&!_siNaWatchOpen;
-  const head=b.k==='watch'?`<button type="button" class="si-na-bh toggle" aria-expanded="${!watchShut}" onclick="window._siNaToggleWatch()"><span class="t">${_siEsc(b.l)}</span><span class="s">${_siEsc(b.sub)}</span><span class="n">${list.length}</span><span class="car" aria-hidden="true">${watchShut?'▸':'▾'}</span></button>`
+  const iso=_siNaBand===b.k,cap=_SI_NA[b.cap],all=_siNaShow[b.k]||iso||_siNaFilter!=='all',show=all?list:list.slice(0,cap);
+  const fold=b.k==='watch'&&!iso&&_siNaFilter==='all',watchShut=fold&&!_siNaWatchOpen;
+  const head=fold?`<button type="button" class="si-na-bh toggle" aria-expanded="${!watchShut}" onclick="window._siNaToggleWatch()"><span class="t">${_siEsc(b.l)}</span><span class="s">${_siEsc(b.sub)}</span><span class="n">${list.length}</span><span class="car" aria-hidden="true">${watchShut?'▸':'▾'}</span></button>`
     :`<div class="si-na-bh"><span class="t">${_siEsc(b.l)}</span><span class="s">${_siEsc(b.sub)}</span><span class="n">${list.length}</span></div>`;
-  const body=watchShut?'':show.map(i=>_siNaRowHtml(i,trustRed)).join('')+(list.length>cap?`<button type="button" class="si-ax-btn si-na-more" onclick="window._siNaShowAll('${b.k}')">${all?'Show the first '+cap:'Show all '+list.length}</button>`:'');
-  return`<section class="si-na-band ${b.k}" aria-label="${_siEsc(b.l)}">${head}${body}</section>`;
+  const more=(list.length>cap&&!iso&&_siNaFilter==='all')?`<button type="button" class="si-ax-btn si-na-more" onclick="window._siNaShowAll('${b.k}')">${_siNaShow[b.k]?'Show the first '+cap:'Show all '+list.length}</button>`:'';
+  const body=watchShut?'':show.map(i=>_siNaRowHtml(i,trustRed)).join('')+more;
+  return`<section class="si-na-band ${b.k}${_siNaFlash===b.k?' flash':''}" id="si-na-band-${b.k}" aria-label="${_siEsc(b.l)}">${head}${body}</section>`;
+}
+// What a reason chip says while it cannot list anything: how it will light up, never a zero.
+function _siNaWaitHtml(k){
+  if(k==='returns')return`<div class="si-ax-empty si-na-waitbox" role="note"><strong>Return rate is waiting for the returns sync.</strong> Shopify refunds reach this app only when the order refresh stamps each line item with its refunded quantity (shopify-order-refresh). Until about 95% of the last 60 days’ lines carry that stamp, a rate would be a guess, so nothing is listed and no count is shown. Once it is synced this chip lists the articles that sold ${_SI_NA.retMinUnits}+ units in ${_SI_NA.retDays} days, with a return rate of ${Math.round(_SI_NA.retRate*100)}% or more, at least ${_SI_NA.retMult}× the catalogue median, and a gap bigger than chance. Defaults, not facts.</div>`;
+  return`<div class="si-ax-empty si-na-waitbox" role="note"><strong>Sales loss needs the stock history.</strong> It could not be read, so no estimate is shown. Retry the history from the notice above.</div>`;
 }
 function _siNaEmptyHtml(res,trust){
   const snapDate=_siSnapshot&&_siSnapshot.date||'—',cov=(_siAxIndex().cov)||'—';
   if(trust.red.length)return`<div class="si-ax-empty">Nothing is flagged, but this is <strong>not an all-clear</strong>: the data above is stale or incomplete, so the lists cannot be trusted yet.</div>`;
   const cl=res.closest?` Closest to the line: ${res.closest.label} (cover ${Math.round(res.closest.coverDays)} days against a lead time of ${res.closest.lead}).`:'';
-  return`<div class="si-ax-empty">Nothing needs attention${_siNaFilter==='all'?'':' in this view'}. Checked ${res.rows} articles against stock as of ${_siEsc(snapDate)} and sales since ${_siEsc(cov)}.${_siEsc(cl)}${res.skipped?' '+res.skipped+' article'+(res.skipped===1?'':'s')+' skipped: too new or not rated.':''}</div>`;
+  return`<div class="si-ax-empty">Nothing needs attention${_siNaFilter==='all'&&!_siNaBand?'':' in this view'}. Checked ${res.rows} articles against stock as of ${_siEsc(snapDate)} and sales since ${_siEsc(cov)}.${_siEsc(cl)}${res.skipped?' '+res.skipped+' article'+(res.skipped===1?'':'s')+' skipped: too new or not rated.':''}</div>`;
 }
 function _siNaListHtml(){
   const res=_siNaState(),trust=_siNaTrust(),trustRed=trust.red.length>0;
   const list=_siNaFiltered(res);
   const bands=_SI_NA_BANDS.map(b=>_siNaBandHtml(b,list.filter(i=>i.band===b.k),trustRed)).join('');
-  return`<div class="si-na">${_siNaTrustHtml(trust)}${_siNaHeadHtml(res)}${_siNaFilterHtml(res)}${bands||_siNaEmptyHtml(res,trust)}</div>`;
+  _siNaFlash='';   // the highlight is one-shot: painted once, then gone
+  const waiting=_siNaFilter!=='all'&&_siNaFilter!=='cash'&&res.unavailable&&res.unavailable[_siNaFilter];
+  return`<div class="si-na">${_siNaTrustHtml(trust)}${_siNaHeadHtml(res)}${_siNaFilterHtml(res)}${waiting?_siNaWaitHtml(_siNaFilter):(bands||_siNaEmptyHtml(res,trust))}</div>`;
 }
 function _siNaFactsHtml(i){
   const n=i.n,P=v=>_siAxNum(v),F=[];
@@ -4589,14 +4723,16 @@ function _siNaSizeTableHtml(i){
   const rows=i.n.sizes||[];if(rows.length<2)return'';
   return`<div class="si-na-tw"><table class="cut-table si-na-sizes"><thead><tr><th>Size</th><th>On hand</th><th>Sold, 28 days</th><th>Cover</th><th>State</th></tr></thead><tbody>${rows.map(s=>`<tr class="${s.state==='out'||s.state==='thin'?'bad':''}"><td><strong>${_siEsc(s.size)}</strong></td><td>${s.stock==null?'—':s.stock}</td><td>${s.units28}</td><td>${s.coverDays==null?'—':Math.round(s.coverDays)+' days'}</td><td>${_siEsc(s.state)}</td></tr>`).join('')}</tbody></table></div>`;
 }
-function _siNaDetailHtml(i){
+function _siNaDetailHtml(i,o){
+  o=o||{};
   const pb=_siNaPlaybook(i),bandL=(_SI_NA_BANDS.find(b=>b.k===i.band)||{}).l||'';
-  const order=_siNaFiltered(_siNaState()),pos=order.findIndex(x=>x.code===i.code);
+  const order=o.order||_siNaFiltered(_siNaState()),pos=order.findIndex(x=>x.code===i.code);
+  const backFn=o.backFn||'window._siNaBack()',stepFn=o.stepFn||'window._siNaStep';
   const shut=_siNaIsPhone()?'':' open';
   const fold=(t,body)=>`<details class="si-na-fold"${shut}><summary>${_siEsc(t)}</summary>${body}</details>`;
   return`<div class="si-na-detail ${i.band}">
-    <div class="si-na-dbar"><button type="button" class="si-ax-btn si-na-back" onclick="window._siNaBack()">‹ Needs Attention</button>
-      <span class="si-na-pn">${pos>=0?`<button type="button" class="si-ax-btn" ${pos<=0?'disabled':''} onclick="window._siNaStep(-1)" aria-label="Previous article">‹ Prev</button><span class="si-ax-note" style="margin:0">${pos+1} of ${order.length}</span><button type="button" class="si-ax-btn" ${pos>=order.length-1?'disabled':''} onclick="window._siNaStep(1)" aria-label="Next article">Next ›</button>`:''}</span>
+    <div class="si-na-dbar"><button type="button" class="si-ax-btn si-na-back" onclick="${backFn}">${_siEsc(o.backLabel||'‹ Needs Attention')}</button>
+      <span class="si-na-pn">${pos>=0?`<button type="button" class="si-ax-btn" ${pos<=0?'disabled':''} onclick="${stepFn}(-1)" aria-label="Previous article">‹ Prev</button><span class="si-ax-note" style="margin:0">${pos+1} of ${order.length}</span><button type="button" class="si-ax-btn" ${pos>=order.length-1?'disabled':''} onclick="${stepFn}(1)" aria-label="Next article">Next ›</button>`:''}</span>
       <span class="si-na-btns"><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaToExplorer(this.dataset.code)">Open in Article Explorer</button><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaCompare(this.dataset.code)">+ Compare</button></span></div>
     <div class="si-na-dhead"><div class="si-na-dtop">${_siAxThumb(i.code,64,i.label)}<div class="si-na-dtx"><span class="si-na-reason ${i.band} big">${_siEsc(bandL)}</span><h2>${_siEsc(i.label)}</h2><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(i.code)} · ${_siEsc(i.clsLabel)} · ${_siEsc(i.reason)}${i.also&&i.also.length?' · also '+_siEsc(i.also.map(t=>_SI_NA_REASON[t].toLowerCase()).join(', ')):''}</div></div></div></div>
     <section class="si-na-sit"><h3>Situation</h3><p>${_siEsc(pb.situation)}</p></section>
@@ -4614,7 +4750,7 @@ function _siNaSectionHtml(){
     return`<div class="si-ax-empty">Reading the stock history…</div>`;
   }
   if(_siNaSel){
-    const i=_siNaState().issues.find(x=>x.code===_siNaSel);
+    const i=_siNaFind(_siNaSel);
     if(i)return _siNaDetailHtml(i);
     _siNaSel='';
   }
@@ -4635,13 +4771,14 @@ function _siNaWireKeys(){
   if(_siNaKeyWired||typeof document==='undefined'||!document.addEventListener)return;
   _siNaKeyWired=true;
   document.addEventListener('keydown',e=>{
+    if(e&&e.key==='Escape'&&_siAxOvSit&&_siSection==='explorer'){window._siAxOvBack();return;}
     if(!_siNaSel||_siSection!=='attention')return;
     if(e&&e.key==='Escape'){window._siNaBack();}
   });
 }
 window._siNaOpen=function(code){
   code=String(code||'').toUpperCase();
-  if(!_siNaState().issues.some(x=>x.code===code))return false;
+  if(!_siNaFind(code))return false;
   _siNaReturnY=(typeof window.scrollY==='number'?window.scrollY:0)||0;
   _siNaSel=code;_siNaWireKeys();window._siNaRepaint();_siAxEnter();
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
@@ -4658,18 +4795,86 @@ window._siNaStep=function(d){
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
   return true;
 };
-window._siNaSetFilter=function(f){if(!_SI_NA_FILTERS.some(x=>x.k===f))return;_siNaFilter=f;window._siNaRepaint();};
+// The article's issue as the CURRENT list shows it (so a chip's row opens that reason's situation), else its main issue.
+function _siNaFind(code){
+  const res=_siNaState();
+  return _siNaFiltered(res).find(x=>x.code===code)||_siNaReasonList(res,_siNaFilter).find(x=>x.code===code)||res.issues.find(x=>x.code===code)||null;
+}
+// A reason chip: pressing the active one again returns to All (they are mutually exclusive with All and with each other).
+window._siNaSetFilter=function(f){
+  if(_SI_NA_FILTER_KEYS.indexOf(f)<0)return;
+  _siNaFilter=(f===_siNaFilter&&f!=='all')?'all':f;_siNaSel='';window._siNaRepaint();
+};
+// A band chip in the headline: isolates that band (every row, none folded) and flashes it once; again returns to all.
+window._siNaBandSet=function(b){
+  if(!_SI_NA_BANDS.some(x=>x.k===b))return;
+  _siNaBand=(_siNaBand===b)?'':b;_siNaFlash=_siNaBand;_siNaSel='';
+  window._siNaRepaint();
+  try{
+    const el=document.getElementById(_siNaBand?'si-na-band-'+_siNaBand:'si-content');
+    const rm=typeof window.matchMedia==='function'&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(el&&el.scrollIntoView)el.scrollIntoView({block:'start',behavior:rm?'auto':'smooth'});
+  }catch(_){}
+};
 window._siNaShowAll=function(b){if(!(b in _siNaShow))return;_siNaShow[b]=!_siNaShow[b];window._siNaRepaint();};
 window._siNaToggleWatch=function(){_siNaWatchOpen=!_siNaWatchOpen;window._siNaRepaint();};
 window._siNaToExplorer=function(code){
   code=String(code||'').toUpperCase();
-  _siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';_siNaSel='';
+  _siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';_siNaSel='';_siAxOvSit='';
   window._siSwitchTab('explorer');_siAxEnter();
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
 };
 window._siNaCompare=function(code){window._siAxOvCompare(code);};
 // Overview tile -> this tab (optionally on one filter)
-window._siNaGo=function(filter){_siNaFilter=_SI_NA_FILTERS.some(x=>x.k===filter)?filter:'all';_siNaSel='';window._siSwitchTab('attention');_siAxEnter();};
+window._siNaGo=function(filter){_siNaFilter=_SI_NA_FILTER_KEYS.indexOf(filter)>=0?filter:'all';_siNaBand='';_siNaSel='';window._siSwitchTab('attention');_siAxEnter();};
+// ── Overview tile -> the same situation view ────────────────────────────────
+// The tile's action names the closest playbook type; the article's own detected issue of that type is used when there is one, so the text and
+// the numbers are Needs Attention's. An article the tile counts but the detector does not flag (looser thresholds) gets the same issue object
+// built from the same helpers (_siNaMk, _siNaQty): no second calculator.
+const _SI_OV_PLAY={reorder:['stockout','runout'],risk:['sizehole','runout','stockout'],stuck:['overstock','dead'],winner:['winner']};
+function _siNaViewFor(a,tile){
+  const r=_siNaRow(a),ctx=_siNaCtx(),all=_siNaDetect(r,ctx);
+  let want=(_SI_OV_PLAY[tile]||['runout']).slice();
+  if(tile==='reorder'&&a.hasStock&&a.onHand===0)want=['stockout','runout'];else if(tile==='reorder')want=['runout','stockout'];
+  if(tile==='stuck'&&r.c.cls==='dead')want=['dead','overstock'];
+  for(const t of want){const hit=all.find(d=>d.type===t);if(hit)return hit;}
+  const m=r.m,type=want[0],pd=_siNaPerDay(m),lead=r.lt.days;
+  const x=_siNaMk(r,ctx,type,'watch',{});
+  const val=(m.asp!=null&&a.hasStock)?a.onHand*m.asp:null;
+  if(type==='stockout'||type==='runout'){
+    x.n.gapDays=type==='runout'&&m.coverDays!=null?Math.max(0,lead-m.coverDays):lead;
+    x.n.qty=_siNaQty(pd,lead,a.hasStock?a.onHand:0,r.c.cls);
+    x.lost=pd!=null?pd*x.n.gapDays:null;
+    x.n.missed=(m.perInDay!=null&&m.outDays!=null)?Math.round(m.perInDay*m.outDays):null;
+  }else if(type==='sizehole'){
+    x.n.holes=(m.risk||[]).map(k=>({size:k.size,kind:'out',units28:k.units,share:m.units28>0?k.units/m.units28:0,stock:0}));
+  }else if(type==='overstock'||type==='dead'){x.n.valueTied=val;x.at=val;}
+  return x;
+}
+function _siAxOvList(){
+  const cur=_SI_OV_TILES.find(t=>t.k===_siAxOvTile)||_SI_OV_TILES[0];
+  return{cur,list:_siAxOvRows().filter(r=>_siAxOvIn(r,cur.k)).sort(_siAxOvSort(cur.k))};
+}
+function _siAxOvSitHtml(){
+  const L=_siAxOvList(),r=L.list.find(x=>x.a.code===_siAxOvSit);
+  if(!r){_siAxOvSit='';return'';}
+  const view=_siNaViewFor(r.a,L.cur.k);
+  return _siNaDetailHtml(view,{order:L.list.map(x=>({code:x.a.code})),backFn:'window._siAxOvBack()',stepFn:'window._siAxOvStep',backLabel:'‹ '+L.cur.l});
+}
+window._siAxOvSituation=function(code){
+  code=String(code||'').toUpperCase();
+  if(!_siAxOvList().list.some(r=>r.a.code===code))return false;
+  _siAxOvSit=code;_siNaWireKeys();_siAxRepaintBody();
+  if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
+  return true;
+};
+window._siAxOvBack=function(){_siAxOvSit='';_siAxRepaintBody();};
+window._siAxOvStep=function(d){
+  const L=_siAxOvList().list,pos=L.findIndex(r=>r.a.code===_siAxOvSit),n=L[pos+d];
+  if(!n)return false;_siAxOvSit=n.a.code;_siAxRepaintBody();
+  if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
+  return true;
+};
 
 // ═══ _siSort BEGIN — one pure comparator module + sortable-table helper ═══
 // Rules (every sorted list in the Article Explorer goes through this):
