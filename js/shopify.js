@@ -2376,23 +2376,52 @@ function _siArticleExplorerSection(){
   _siAxEnsureHistory(); // one bounded read per session; repaints the body when it lands
   const idx=_siAxIndex();
   const modeBtn=_siAxModeBtnHtml;
-  const ov=_siAxModeSel==='overview'||_siAxModeSel==='portfolio';
+  _siAxWireSlash();
   return`<div class="si-ax-bar" id="si-ax-modebar">${modeBtn('overview','Overview')}${modeBtn('portfolio','Portfolio')}${modeBtn('search','Search')}${modeBtn('compare','Compare')}
     <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles · ignores the season filter</span></div>
-  ${ov?'':`<div class="si-ax-bar"><input id="si-ax-input" class="si-ax-input" autocomplete="off" placeholder="${_siAxModeSel==='compare'?'Add an article to compare — title, colour, code (GST073), category…':'Search any article — title, colour, code (GST073), category…'}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)" onkeydown="window._siAxKey(event)"></div>
-  <div id="si-ax-results">${_siAxResultsHtml()}</div>`}
+  ${_siAxSearchBarHtml()}
   ${_siAxTrustBanner()}
   <div id="si-ax-live" class="si-ax-live" role="status" aria-live="polite"></div>
   <div id="si-ax-body">${_siAxBodyHtml()}</div>${_siCleanQualityHtml(idx.quality)}`;
 }
+// The search box is navigation, so it is the same large, sticky box on every sub-tab (Overview, Portfolio, Search, Compare).
+// ONE builder; the results below it are the one _siAxResultsHtml. The magnifier is an SVG path only (no text in SVG).
+function _siAxSearchPlaceholder(){return _siAxModeSel==='compare'?'Find an article to compare — name, colour or code':'Find an article — name, colour or code';}
+function _siAxSearchBarHtml(){
+  return`<div class="si-ax-sticky" id="si-ax-sticky"><label class="si-ax-sbox" for="si-ax-input"><svg class="si-ax-mag" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M10.5 3a7.5 7.5 0 1 0 4.6 13.4l4.5 4.5 1.4-1.4-4.5-4.5A7.5 7.5 0 0 0 10.5 3zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11z"/></svg><input id="si-ax-input" class="si-ax-input" type="search" autocomplete="off" aria-label="Find an article" placeholder="${_siAxSearchPlaceholder()}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)" onkeydown="window._siAxKey(event)"><kbd class="si-ax-kbd" aria-hidden="true" title="Press / to search">/</kbd></label><div id="si-ax-results">${_siAxResultsHtml()}</div></div>`;
+}
+// "/" focuses the box when nothing is being typed anywhere. Registered once; ignored unless the Explorer's box is on screen.
+function _siAxSlashOk(e){
+  if(!e||e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey)return false;
+  const t=e.target;
+  if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||'')||t.isContentEditable))return false;
+  if(typeof _siSection==='undefined'||_siSection!=='explorer')return false;
+  return !!document.getElementById('si-ax-input');
+}
+let _siAxSlashWired=false;
+function _siAxWireSlash(){
+  if(_siAxSlashWired||typeof document==='undefined'||!document.addEventListener)return;
+  _siAxSlashWired=true;
+  document.addEventListener('keydown',e=>{
+    if(!_siAxSlashOk(e))return;
+    const i=document.getElementById('si-ax-input');if(!i)return;
+    if(e.preventDefault)e.preventDefault();
+    i.focus();try{i.select();}catch(_){}
+  });
+}
 function _siAxResultsHtml(){
-  const q=_siAxQuery.trim();
-  if(!q&&(_siAxSel||(_siAxModeSel==='compare'&&_siAxCmp.length)))return'';
+  const q=_siAxQuery.trim(),mode=_siAxModeSel;
+  if(!q&&(mode==='overview'||mode==='portfolio'||_siAxSel||(mode==='compare'&&_siAxCmp.length)))return'';
   const r=_siAxSearch(q,q?12:8);
   if(!r.hits.length)return`<div class="si-ax-empty">No article matches “${_siEsc(q)}”.</div>`;
-  const add=_siAxModeSel==='compare';
-  return`<div class="si-ax-note" style="margin-bottom:4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'} · ordered by units sold, then name, then code</div>
-  <div class="si-ax-results">${r.hits.map(a=>`<button class="si-ax-hit" data-code="${_siEsc(a.code)}" onclick="window._siAx${add?'Add':'Pick'}(this.dataset.code)"><span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div></span><span class="n">${a.units} sold</span>${add?'<span class="si-ax-btn" style="pointer-events:none">+ Add</span>':''}</button>`).join('')}</div>`;
+  const add=mode==='compare',fn=add?'Add':(mode==='search'?'Pick':'Open');
+  const hit=a=>{
+    const on=add&&_siAxCmp.includes(a.code);
+    const tail=add?(on?'<span class="si-ax-added" aria-hidden="true">✓ Added</span>':'<span class="si-ax-plus" aria-hidden="true">+ Add</span>'):'';
+    return`<button class="si-ax-hit${on?' is-added':''}" data-code="${_siEsc(a.code)}"${add?` aria-pressed="${on}"`:''} onclick="window._siAx${fn}(this.dataset.code)">${_siAxThumb(a.code,40,a.name)}<span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div></span><span class="n">${a.units} sold</span>${tail}</button>`;
+  };
+  return`<div class="si-ax-note" style="margin:6px 0 4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'} · ordered by units sold, then name, then code</div>
+  <div class="si-ax-results">${r.hits.map(hit).join('')}</div>`;
 }
 window._siAxSetMode=function(m){
   _siAxModeSel=m==='compare'?'compare':(m==='overview'?'overview':(m==='portfolio'?'portfolio':'search'));_siAxQuery='';_siAxMsg='';
@@ -2423,7 +2452,7 @@ window._siAxKey=function(ev){
   if(ev.preventDefault)ev.preventDefault();
   clearTimeout(window._siAxDebounce);
   const h=_siAxSearch(q,1).hits[0];if(!h)return;
-  if(_siAxModeSel==='compare')window._siAxAdd(h.code);else window._siAxPick(h.code);
+  if(_siAxModeSel==='compare')window._siAxAdd(h.code);else if(_siAxModeSel==='search')window._siAxPick(h.code);else window._siAxOpen(h.code);
 };
 // Returns {ok,msg} so callers and tests see why an add was refused.
 function _siAxTryAdd(code){
@@ -3662,14 +3691,35 @@ window._siAxPfSet=function(kind,v){
 };
 window._siAxPfAll=function(){_siAxPfAll=!_siAxPfAll;_siAxRepaintBody();};
 window._siAxPfConc=function(){_siAxPfConcAll=!_siAxPfConcAll;_siAxRepaintBody();};
+// The Selected tray: one picture card per chosen article, always visible in Compare. With two or more chosen a primary
+// "Compare →" button goes forward to the comparison; with one, the existing badge and alert ask for another.
+function _siAxCardHtml(code,i){
+  const a=_siAxIndex().map.get(code);if(!a)return'';
+  let chip='';try{chip=_siAxPfChip(_siAxClassify(a).cls);}catch(_){}
+  return`<div class="si-ax-card"><i class="si-ax-badge si-ax-b${i}">${i+1}</i>${_siAxThumb(a.code,64,a.name)}<div class="tx"><strong>${_siEsc(_siAxLabel(a))}</strong><div class="si-ax-note" style="margin:0">${_siEsc(a.code)}</div>${chip}</div><button class="si-ax-x" aria-label="Remove ${_siEsc(_siAxLabel(a))}" data-code="${_siEsc(code)}" onclick="window._siAxRemove(this.dataset.code)">×</button></div>`;
+}
+function _siAxTrayHtml(){
+  const n=_siAxCmp.length,mx=_siAxMaxCmp();
+  const go=n>=2?`<button class="si-ax-go" id="si-ax-go" onclick="window._siAxGo()">Compare →</button>`:'';
+  const body=n?`<div class="si-ax-cards">${_siAxCmp.map(_siAxCardHtml).join('')}</div>`:`<div class="si-ax-note" style="margin:0">Search above and press + on an article to add it. Add 2–${mx} articles.</div>`;
+  return`<div class="si-ax-tray" id="si-ax-tray"><div class="si-ax-trayhead"><strong>Selected (${n} of ${mx})</strong>${go}</div>${body}${_siAxMsg?`<div class="si-ax-note" style="color:var(--accent-urgent);font-weight:600" role="alert">${_siEsc(_siAxMsg)}</div>`:''}</div>`;
+}
+// Goes forward: brings the comparison into view and gives it a brief outline (a still ring under reduced motion).
+window._siAxGo=function(){
+  const c=document.getElementById('si-ax-result');if(!c)return false;
+  let calm=false;try{calm=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(_){}
+  if(typeof c.scrollIntoView==='function')try{c.scrollIntoView({behavior:calm?'auto':'smooth',block:'start'});}catch(_){}
+  if(typeof c.focus==='function')try{c.focus({preventScroll:true});}catch(_){}
+  c.classList.add('si-ax-pop');setTimeout(()=>{try{c.classList.remove('si-ax-pop');}catch(_){}},1100);
+  return true;
+};
 function _siAxCompareBody(){
-  const chips=_siAxCmp.map((c,i)=>{const a=_siAxIndex().map.get(c);return a?`<span class="si-ax-chip"><i class="si-ax-badge si-ax-b${i}">${i+1}</i>${_siAxThumb(a.code,24,a.name)}${_siEsc(_siAxLabel(a))}<button aria-label="Remove ${_siEsc(_siAxLabel(a))}" data-code="${_siEsc(c)}" onclick="window._siAxRemove(this.dataset.code)">×</button></span>`:'';}).join('');
+  const head=_siAxTrayHtml();
   const sel=`<div class="si-ax-bar"><span class="si-ax-lab">Metric</span><select class="si-ax-select" onchange="window._siAxSetMetric(this.value)">${Object.keys(_SI_AX_METRICS).map(k=>`<option value="${k}"${_siAxMetric===k?' selected':''}>${_siEsc(_SI_AX_METRICS[k].label)}</option>`).join('')}</select>
     <span class="si-ax-lab" style="margin-left:8px">Time basis</span>
     <button class="si-ax-btn${_siAxBasis==='calendar'?' on':''}" aria-pressed="${_siAxBasis==='calendar'}" onclick="window._siAxSetBasis('calendar')">Calendar</button>
     <button class="si-ax-btn${_siAxBasis==='launch'?' on':''}" aria-pressed="${_siAxBasis==='launch'}" onclick="window._siAxSetBasis('launch')">Since launch</button>
     <button class="si-ax-btn" title="${_siAxTip('curve')}" onclick="window._siAxCurvePreset()">Age-normalised curve</button></div>${_siAxBasis==='calendar'?_siAxCalOptsHtml():''}`;
-  const head=`<div class="si-ax-chips">${chips||'<span class="si-ax-note">Add 2–'+_siAxMaxCmp()+' articles with the search box above.</span>'}</div>${_siAxMsg?`<div class="si-ax-note" style="color:var(--accent-urgent);font-weight:600" role="alert">${_siEsc(_siAxMsg)}</div>`:''}<div class="si-ax-note">${_siAxCmp.length} of ${_siAxMaxCmp()} articles.</div>`;
   if(!_siAxCmp.length)return head+sel+_siAxCoverage([])+`<div class="si-ax-empty">Nothing to compare yet.</div>`;
   const d=_siAxCompareData();
   const fmtv=_siAxMetricFmt(d.M);
@@ -3717,11 +3767,11 @@ function _siAxCompareBody(){
   // The chart comes first, right under the controls: it used to sit below the scorecard and the "Read this" block, so a click on
   // Calendar / Since launch changed nothing anyone could see without scrolling past them.
   const chartCard=`<div class="card${_siAxBasis==='calendar'&&_siAxWin!=='all'?' si-ax-frost':''}" id="si-ax-chartcard"><div class="card-title">${_siEsc(monthsView?d.M.label.replace(/ per (week|month)$/,'')+' — month by month':d.M.label)}</div>${chart}${_siAxPrevNote(d)}<div class="si-ax-note">${_siEsc(basisNote)}${_siEsc(winNote)} The latest bucket is still running. ${_siEsc(d.ser.notes.join(' '))}</div></div>`;
-  return head+sel+chartCard+_siAxCoverage(d.arts)+_siAxHistBanner()+_siAxScorecardHtml(d.arts)+_siAxReadBlock(d.arts)+`
+  return head+`<div id="si-ax-result" class="si-ax-resultwrap" tabindex="-1">`+sel+chartCard+_siAxCoverage(d.arts)+_siAxHistBanner()+_siAxScorecardHtml(d.arts)+_siAxReadBlock(d.arts)+`
   <div class="card"><div class="card-title">Comparison table</div>${tbl}</div>
   <div class="card"><div class="card-title">Pace and stock <span class="si-ax-note">(counted window; in-stock figures: snapshot window)</span></div>${pace}<div class="si-ax-note" style="margin-top:8px">${_siAxNeedsHistoryNote()}</div></div>
   <div class="card"><div class="card-title">Shape and context</div>${shape}</div>
-  ${_siAxDefsHtml()}`;
+  ${_siAxDefsHtml()}</div>`;
 }
 
 // ── Needs Attention (Oct 2026) ──────────────────────────────────────

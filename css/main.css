@@ -4973,7 +4973,7 @@ a.ma-btn{text-decoration:none}
 .si-ax-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .si-ax-btn{min-height:34px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-weight:600;font-size:13px;line-height:1.2;font-family:inherit;cursor:pointer}
 .si-ax-btn.on{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
-.si-ax-input{flex:1;min-width:200px;min-height:38px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);outline:none;font-family:inherit}
+.si-ax-input{flex:1;min-width:0;min-height:44px;padding:9px 6px;border:0;border-radius:8px;font-size:16px;background:transparent;color:var(--text);outline:none;font-family:inherit}
 .si-ax-select{max-width:100%;min-height:34px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit}
 .si-ax-lab{font-size:12px;font-weight:600;color:var(--muted)}
 .si-ax-hit{display:flex;align-items:center;gap:10px;width:100%;text-align:left;min-height:44px;padding:8px 10px;border:0;border-bottom:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer}
@@ -5402,3 +5402,32 @@ a.ma-btn{text-decoration:none}
   .si-pf .si-ax-select{min-height:40px}
 }
 @media (prefers-reduced-motion:reduce){.si-pf *{transition:none!important;animation:none!important}.si-pf-dot:hover{transform:none}}
+
+/* Article Explorer: the search box is navigation (large, labelled, sticky) and Compare keeps a Selected tray of picture cards.
+   #main-content is the scroll box, so top:0 sits under the fixed app bar (z 100); the sticky wrap is z 20 and opaque. */
+.si-ax-sticky{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 6px;margin:0 0 8px}
+.si-ax-sbox{display:flex;align-items:center;gap:10px;min-height:52px;padding:2px 12px;border:2px solid var(--text);border-radius:12px;background:var(--surface);color:var(--text);cursor:text}
+.si-ax-sbox:focus-within{outline:3px solid var(--cat-notes);outline-offset:2px}
+.si-ax-input:focus{outline:none}
+.si-ax-input::placeholder{color:var(--muted);opacity:1}
+.si-ax-mag{flex:0 0 auto;fill:currentColor}
+.si-ax-kbd{flex:0 0 auto;min-width:24px;padding:2px 7px;border:1px solid var(--border);border-radius:6px;background:var(--soft);color:var(--muted);font-size:13px;font-weight:700;text-align:center;font-family:inherit}
+.si-ax-sticky .si-ax-results{background:var(--surface);margin-bottom:0;max-height:min(340px,48vh);box-shadow:0 6px 18px rgba(0,0,0,.14)}
+.si-ax-hit .si-th{pointer-events:none}
+.si-ax-plus,.si-ax-added{flex:0 0 auto;display:inline-flex;align-items:center;min-height:34px;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:700;line-height:1.2}
+.si-ax-plus{border:1px solid var(--border);background:var(--surface);color:var(--text)}
+.si-ax-added{border:1px solid var(--accent-success);background:var(--accent-success-soft);color:var(--accent-success)}
+.si-ax-hit.is-added{background:var(--soft)}
+.si-ax-tray{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:12px;margin-bottom:12px}
+.si-ax-trayhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:15px}
+.si-ax-go{min-height:44px;padding:10px 20px;border:0;border-radius:10px;background:var(--dark);color:var(--on-dark);font-weight:700;font-size:15px;font-family:inherit;cursor:pointer}
+.si-ax-go:focus-visible{outline:3px solid var(--cat-notes);outline-offset:2px}
+.si-ax-cards{display:flex;gap:10px;flex-wrap:wrap}
+.si-ax-card{position:relative;display:flex;align-items:center;gap:10px;flex:1 1 220px;max-width:340px;min-width:0;padding:8px 8px 8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2,var(--surface))}
+.si-ax-card .tx{flex:1;min-width:0;font-size:14px}
+.si-ax-card .tx strong{display:block;overflow-wrap:anywhere}
+.si-ax-card .si-ax-badge{position:absolute;top:-6px;left:-6px}
+.si-ax-x{flex:0 0 auto;min-width:40px;min-height:40px;border:0;border-radius:50%;background:var(--soft);color:var(--text);cursor:pointer;font-size:18px;line-height:1}
+.si-ax-resultwrap{scroll-margin-top:84px;outline:none}
+@media (max-width:600px){.si-ax-card{max-width:none;flex-basis:100%}.si-ax-kbd{display:none}.si-ax-sticky .si-ax-results{max-height:min(300px,38vh)}}
+@media (prefers-reduced-motion:reduce){.si-ax-sbox{transition:none}}

@@ -128,7 +128,7 @@ function checks(src){
   o['a stale sub-view value renders without throwing and shows no Portfolio markup']=typeof fb==='string'&&!/si-pf/.test(fb);
   R('_siAxModeSel="portfolio"');
   const sec=R('_siArticleExplorerSection()');
-  o['the section has the Portfolio tab, marked on, and hides the search box']=/id="si-ax-tab-portfolio" class="si-ax-btn on"/.test(sec)&&!/id="si-ax-input"/.test(sec);
+  o['the section has the Portfolio tab, marked on, and carries the navigation search box']=/id="si-ax-tab-portfolio" class="si-ax-btn on"/.test(sec)&&/id="si-ax-input"/.test(sec);
   o['in Portfolio mode the section renders the portfolio body']=/id="si-pf-read"/.test(sec);
   o['the tabs run Overview, Portfolio, Search, Compare']=sec.indexOf('si-ax-tab-overview')<sec.indexOf('si-ax-tab-portfolio')&&sec.indexOf('si-ax-tab-portfolio')<sec.indexOf('si-ax-tab-search')&&sec.indexOf('si-ax-tab-search')<sec.indexOf('si-ax-tab-compare');
   R('_siAxPfCls="";_siAxPfCat="";_siAxPfSeason="";_siAxPfSort="demand";_siAxPfAll=false;_siAxPfConcAll=false');

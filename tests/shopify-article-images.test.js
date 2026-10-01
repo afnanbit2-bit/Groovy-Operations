@@ -47,7 +47,7 @@ function checks(src){
   o['article page header: a 64px thumb for AAA, rendered']=(()=>{R('_siAxModeSel="search";_siAxSel="AAA"');const h=R('_siAxSearchBody()');return /<span class="si-th" style="width:64px;height:64px" data-th="AAA"><img/.test(h);})();
   o['overview rows: every row carries a 48px thumb, rendered']=(()=>{R('_siAxOvIn=function(){return true;};_siAxModeSel="overview";_siAxOvTile="winner";_siAxOvAll=true');const h=R('_siAxOverviewBody()');const rows=(h.match(/class="si-ov-row"/g)||[]).length,th=(h.match(/class="si-ov-row"><div class="nm"><span class="si-th" style="width:48px;height:48px"/g)||[]).length;return rows>0&&rows===th;})();
   o['Needs Attention: the list row and the situation header carry the thumb, rendered']=(()=>{const st=R('_siNaState().issues.map(i=>i.code)');if(!st.length)return /_siAxThumb\(i\.code,44,i\.label\)/.test(src)&&/_siAxThumb\(i\.code,64,i\.label\)/.test(src);const c=st[0];const row=R('_siNaRowHtml(_siNaState().issues[0],false)'),det=R('_siNaDetailHtml(_siNaState().issues[0])');return /class="si-na-row[^>]*data-code="[^"]+"[^>]*>[^]*?<span class="si-th" style="width:44px;height:44px" data-th=/.test(row)&&(row.match(/data-code=/g)||[]).length===1&&/class="si-na-dtop"><span class="si-th" style="width:64px;height:64px"/.test(det);})();
-  o['rendered Compare chip carries the picture and the remove button still works']=(()=>{R('_siAxModeSel="compare";_siAxCmp=["AAA"];_siAxBasis="calendar"');const h=R('_siAxCompareBody()');return /<span class="si-ax-chip">[^]*?<span class="si-th"[^>]*data-th="AAA"[^>]*><img[^>]*src="https:\/\/cdn\.shopify\.com/.test(h)&&/onclick="window\._siAxRemove\(this\.dataset\.code\)"/.test(h);})();
+  o['rendered Compare card carries the picture and the remove button still works']=(()=>{R('_siAxModeSel="compare";_siAxCmp=["AAA"];_siAxBasis="calendar"');const h=R('_siAxCompareBody()');return /<div class="si-ax-card">[^]*?<span class="si-th"[^>]*data-th="AAA"[^>]*><img[^>]*src="https:\/\/cdn\.shopify\.com/.test(h)&&/onclick="window\._siAxRemove\(this\.dataset\.code\)"/.test(h);})();
   o['picture span is data-th, not data-code (a row must have ONE data-code)']=/data-th="\$\{_siEsc\(code\)\}"/.test(src)&&!/si-th"[^`]*data-code/.test(src);
   // CSS
   const css=(CSS.match(/\.si-th[^{]*\{[^}]*\}/g)||[]).join('');
@@ -81,6 +81,6 @@ module.exports=async function(){
   brk('no code tile when no picture','<b class="si-th-c">${_siEsc(code)}</b>`;','`;',['thumb: an article with no usable picture renders the code tile, no <img>']);
   brk('constructed resized URL','src="${_siEsc(u)}"','src="${_siEsc(u)}&width=96"',['thumb: the src is exactly the stored URL (no constructed or resized URL)']);
   brk('thumb takes data-code','data-th="${_siEsc(code)}">${inner}','data-code="${_siEsc(code)}">${inner}',['picture span is data-th, not data-code (a row must have ONE data-code)']);
-  brk('compare chip without picture','${_siAxThumb(a.code,24,a.name)}','',['rendered Compare chip carries the picture and the remove button still works']);
+  brk('compare card without picture','${_siAxThumb(a.code,64,a.name)}','',['rendered Compare card carries the picture and the remove button still works']);
   return s;
 };
