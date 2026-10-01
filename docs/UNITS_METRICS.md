@@ -132,5 +132,9 @@ A sub-view beside Overview, Search and Compare (`_siAxPortfolioBody`, pure core 
 - The trust banner and a Portfolio caveat (returns not synced, discounts, selling price not cost) are carried over.
 - Not built (plan 09 P2): category treemap, cannibalisation clusters, margin, weekly catalogue trend.
 
+## 3f. Compare flow and search (1 Oct 2026, cache v285)
+
+Interface only, no metric changed. Reading of the request: "+" selects an article and shows it as a picture card in a Selected tray; keep adding (up to 5, 3 on a phone); two or more chosen enables **Compare →**, which scrolls to the comparison. The search box is the same large sticky box on all four sub-tabs and "/" focuses it. Limits: results already chosen are marked, not toggled; the tray's class chip is the Explorer's own class.
+
 ## 4. NOT offered
 Refund/return rate (later refunds never synced, it would read as zero); discount depth (no discount fields); margin; true receipts (no receipt log); per-size in-stock rate (article level only).

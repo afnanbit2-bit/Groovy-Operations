@@ -136,7 +136,7 @@ module.exports=async function(){
   R('_siAxMode="compare";_siAxModeSel="compare";_siAxMsg=""');
   let html=R('_siAxCompareBody()');
   s.ok('always shows the comparison table under the chart',html.indexOf('Comparison table')>html.indexOf('si-ax-wrap')&&html.indexOf('<table',html.indexOf('Comparison table'))>0);
-  s.ok('one chip per article with a remove button',(html.match(/class="si-ax-chip"/g)||[]).length===4);
+  s.ok('one card per article with a remove button',(html.match(/class="si-ax-card"/g)||[]).length===4&&(html.match(/class="si-ax-x"/g)||[]).length===4);
   s.ok('legend carries numbers (not colour alone)',(html.match(/class="si-ax-badge si-ax-b\d">\d</g)||[]).length>=4);
   s.ok('every series has its own dash',new Set([...html.matchAll(/stroke-dasharray:([^"]+)"/g)].map(m=>m[1])).size>=2);
   R('window._siAxSetMetric("revenue_week")');
@@ -215,7 +215,7 @@ module.exports=async function(){
   s.ok('a mouse leaving still hides it',(()=>{const tipEl={style:{display:'block'}},curEl={style:{display:'block'}};const el={querySelector:c=>c==='.si-ax-tip'?tipEl:curEl};
     R('window._siAxLeave')(el,{pointerType:'mouse'});return tipEl.style.display==='none';})());
   s.ok('the chart wires the event into the leave handler',/_siAxLeave\(this,event\)/.test(R('_siAxChartHtml({series:[{values:[1,2],name:"a"}],xLabels:["a","b"],xTicks:[{i:0,label:"a"}],integer:true})')));
-  s.ok('chip remove button is a 34px target',/\.si-ax-chip button\{min-width:34px;min-height:34px/.test(require('fs').readFileSync(require('path').join(harness.ROOT,'css/main.css'),'utf8')));
+  s.ok('card remove button is a 40px target',/\.si-ax-x\{[^}]*min-width:40px;min-height:40px/.test(require('fs').readFileSync(require('path').join(harness.ROOT,'css/main.css'),'utf8')));
   s.ok('size-mix quantity column may grow (no clipped "154 sold · 24%")',/\.si-ax-mix \.q\{min-width:84px/.test(require('fs').readFileSync(require('path').join(harness.ROOT,'css/main.css'),'utf8')));
 
   s.section('escaping');

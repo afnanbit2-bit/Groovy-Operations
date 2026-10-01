@@ -2847,6 +2847,22 @@ const FRAGMENTS={
     app.run('_siAxModeSel="search";_siAxSel="GST073";_siAxQuery="";_siAxLtEdit=null;_siAxLtErr=""');
     return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
   },
+  // The Compare flow: the sticky navigation search box with its results (one already chosen, shown as Added), and the
+  // Selected tray of picture cards with the Compare button. A long title proves the card wraps rather than overflows.
+  'inventory intel — Article Explorer compare tray and search':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="compare";_siAxQuery="G";_siAxCmp=["GST073","GD007"];_siAxMetric="units_week";_siAxBasis="calendar"');
+    return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
+  },
+  'inventory intel — Article Explorer compare tray at the maximum':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="compare";_siAxQuery="";_siAxCmp=["GST073","GD007","GHW001","GJ014","GCO001"];_siAxMsg="You can compare at most 5 articles - remove one first.";_siAxMetric="units_week";_siAxBasis="calendar"');
+    return Promise.resolve('<div id="si-content">'+app.run('_siAxTrayHtml()')+'</div>');
+  },
   'inventory intel — Article Explorer compare':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
