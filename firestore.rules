@@ -974,6 +974,41 @@ service cloud.firestore {
       allow read: if isQaRead() || (signedIn());
       allow write: if false;
     }
+    // inventory_article_meta/{CODE} (Inventory Intel, sub-phase 1: Ignore).
+    // Per-article notes shared by everyone who opens Inventory Intel. Today
+    // only the ignore fields are written; type and season are reserved for
+    // the data-fill sub-phase and are validated now so that phase needs no
+    // second republish. The doc id IS the article code (upper-case SKU
+    // prefix). ANY signed-in user may write (Afnan's decision) - signedIn()
+    // excludes the QA account, so QA reads (isQaRead) and never writes.
+    // Restore is an update that clears the ignore fields, so nothing is
+    // ever deleted. ignoredUntil is a plain YYYY-MM-DD day (the PKT day the
+    // article returns) compared by the client at read time; nothing is
+    // written when it expires. Mirror: _SI_META_FIELDS in js/shopify.js
+    // (held equal by tests/shopify-ignore.test.js).
+    match /inventory_article_meta/{code} {
+      allow read: if isQaRead() || signedIn();
+      allow create, update: if signedIn()
+        && code.matches('^[A-Z0-9][A-Z0-9._-]{1,39}$')
+        && request.resource.data.keys().hasOnly(['code','type','season','ignoredUntil','ignoreForever','ignoredAt','ignoredBy','updatedAt','updatedBy'])
+        && request.resource.data.keys().hasAll(['code','updatedAt','updatedBy'])
+        && request.resource.data.code == code
+        && request.resource.data.updatedBy == userEmail().split('@')[0]
+        && request.resource.data.updatedAt is number
+        && (request.resource.data.get('ignoredBy', null) == null
+            || request.resource.data.ignoredBy == userEmail().split('@')[0])
+        && (request.resource.data.get('ignoredAt', null) == null
+            || request.resource.data.ignoredAt is number)
+        && request.resource.data.get('ignoreForever', false) is bool
+        && (request.resource.data.get('ignoredUntil', null) == null
+            || (request.resource.data.ignoredUntil is string
+                && request.resource.data.ignoredUntil.matches('^20[0-9][0-9]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')))
+        && (request.resource.data.get('type', null) == null
+            || request.resource.data.type in ['top','bottom','other'])
+        && (request.resource.data.get('season', null) == null
+            || request.resource.data.season in ['winter','summer','all']);
+      allow delete: if false;
+    }
     // ── Pattern Hub — M2: blocks and the hook rack ──
     // patterns/{id}: one physical block (all sizes bundled). The article→
     // block link lives on articles/{code}.patternId, never here. Code and
