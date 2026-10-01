@@ -55,11 +55,11 @@ function checks(a){
   const R=c=>a.run(c),out={};
   // ── 1. Trust banner
   seed1(a);
-  out['banner shown while returns are unsynced']=/Recent sales are before later returns/.test(R('_siAxTrustBanner()'));
-  out['banner states the verified gap']=/7,895/.test(R('_siAxTrustBanner()'))&&/6,466/.test(R('_siAxTrustBanner()'));
+  out['no banner while returns are unsynced (owner request)']=R('_siAxTrustBanner()')===''&&!/Recent sales are before later returns|class="si-ax-trust/.test(R('_siArticleExplorerSection()'));
+  out['quiet grey note in Data quality, not an amber box']=(()=>{const h=R('_siCleanQualityHtml(_siAxIndex().quality)');return /Returns not yet synced/.test(h)&&!/si-ax-trust|amber|<strong>Recent sales/.test(h);})();
   out['unsynced by default (missing fields = unsynced)']=R('_siAxIndex().quality.returns.synced')===false;
   seed1(a,{synced:true});
-  out['banner disappears once lines are stamped']=!/Recent sales are before later returns/.test(R('_siAxTrustBanner()'))&&/Returns are synced/.test(R('_siAxTrustBanner()'));
+  out['synced: the ok note shows and the quiet note is gone']=/Returns are synced/.test(R('_siAxTrustBanner()'))&&!/Returns not yet synced/.test(R('_siCleanQualityHtml(_siAxIndex().quality)'));
   out['stamped lines count as synced']=R('_siAxIndex().quality.returns.synced')===true;
   // 95% of the last 60 days: 20 recent lines, 19 stamped -> synced; 18 stamped -> not
   const share=k=>{const {L}=mk(a);const ls=[];for(let i=0;i<20;i++)ls.push(L('GZ',1,5+i,i<k?{status_synced_at:'x'}:{}));a.run('_siProducts=[];_siOrders=[];_siWeeklyCloses=[];_siSnapshot={items:{}};_siLineItems='+J(ls));return R('_siAxIndex().quality.returns.synced');};
@@ -117,14 +117,15 @@ module.exports=async function(){
     let r;try{r=checks(load(SRC.split(from).join(to)));}catch(e){r={};failing.forEach(f=>r[f]=false);}
     failing.forEach(f=>s.ok('break "'+label+'" fails "'+f+'"',r[f]!==true));
   };
-  brk('returns never count as synced','q.returns.recentStamped/q.returns.recentTotal>=_SI_AX_CFG.returnsSyncedShare','false',['banner disappears once lines are stamped','stamped lines count as synced']);
+  brk('returns never count as synced','q.returns.recentStamped/q.returns.recentTotal>=_SI_AX_CFG.returnsSyncedShare','false',['synced: the ok note shows and the quiet note is gone','stamped lines count as synced']);
   brk('synced share 50%','_SI_AX_CFG.returnsSyncedShare;','0.5;',['18 of 20 recent lines stamped = not synced']);
   brk('refunded_quantity ignored','if(isFinite(qty)&&isFinite(rq)&&rq>0){','if(false){',['net units = 1 + (5-2) = 4','refunded units = 2 + 2 + 4 = 8']);
   brk('return not capped at the line quantity','const cut=Math.min(rq,qty);','const cut=rq;',['refunded units = 2 + 2 + 4 = 8']);
   brk('High without the caps','const capped=lvl===2&&caps.length>0;','const capped=false;',['30 units / 100 days unsynced is capped at Medium with 2 reasons','synced returns but default lead time still caps High at Medium']);
   brk('Low boundary on units','units<C.lowUnits','units<=C.lowUnits',['10 units / 28 days = Medium (boundary)']);
   brk('High ignores the 56-day floor','units>=C.highUnits&&days>=C.highDays','units>=C.highUnits',['30 units but only 40 days is Medium even uncapped']);
-  brk('banner hides the verified gap','(September: 7,895 here against 6,466 net at Shopify, checked 30 Sept 2026)','',['banner states the verified gap']);
+  brk('banner restored','return\'\';// owner\'s call (1 Oct 2026)','return\'<div class="si-ax-trust">Recent sales are before later returns</div>\';//',['no banner while returns are unsynced (owner request)']);
+  brk('quiet note dropped','(q.returns&&!q.returns.synced)?','false&&',['quiet grey note in Data quality, not an amber box']);
   brk('only last 60 days: all lines count','if(day>=retCut){q.returns.recentTotal++','if(true){q.returns.recentTotal++',['only the last 60 days decide']);
   return s;
 };

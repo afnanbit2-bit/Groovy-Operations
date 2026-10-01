@@ -13185,3 +13185,5 @@ The Firebase config in `index.html` points at the live `groovy-gatepass`
 project, so any local writes hit the same Firestore as production. Read-only smoke tests are safe; destructive
 flows (process payroll, mark paid, approve advances, mark bug fixed)
 are NOT — they mutate live data.
+
+- **Returns banner removed (1 Oct 2026, v286, branch `claude/affectionate-volta-1dtjzy`):** at Afnan's request ("this is not required") the amber returns-gap banner on the Article Explorer and the Needs Attention amber "Returns are not synced" item are gone. Detection, the Medium confidence cap and all figures are unchanged; a quiet grey "Returns not yet synced" note sits in Data quality / Data checks. The figures are still upper limits until the returns refresh has run. Stale-snapshot and other trust banners are untouched.
