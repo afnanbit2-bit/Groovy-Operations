@@ -727,6 +727,60 @@ img{-webkit-user-drag:none}
 .si-skel{background:var(--soft);border-radius:6px;position:relative;overflow:hidden;flex-shrink:0}
 .si-skel::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(128,128,128,.28) 50%,transparent 100%);background-size:200% 100%;animation:si-shimmer 1.5s ease-in-out infinite}
 @keyframes si-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* ── Inventory Intel loader (Oct 2026): a clothing rail, an honest percentage, a retry that re-reads only what failed ──
+   Tokens only; the garments animate transform/opacity; no fixed positioning (the overlay sits INSIDE the page, so the sidebar and Back stay clickable).
+   --dark inverts in dark mode and nothing painted on it carries text except the Retry button, whose ink is --on-dark. */
+.si-ld-wrap{position:relative}
+#si-load-host{position:absolute;left:0;right:0;top:44px;z-index:5;display:flex;justify-content:center;padding:0 8px;pointer-events:none}
+.si-ld-card{width:100%;max-width:560px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px 22px 20px;text-align:center;pointer-events:auto}
+.si-ld-card.flow{margin:16px auto}
+.si-ld-lede{font-size:16px;font-weight:600;text-align:center;margin:14px 0 0;color:var(--text)}
+.si-ld-stage{height:130px;position:relative}
+.si-ld-stage svg{width:100%;height:100%;display:block;overflow:visible}
+.si-ld-card .rail{stroke:var(--text);stroke-width:3;stroke-linecap:round;fill:none}
+.si-ld-card .hk{stroke:var(--muted);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.si-ld-card .gm path.b{fill:var(--soft);stroke:var(--text);stroke-width:2;stroke-linejoin:round}
+.si-ld-card .gm{animation:si-ld-in 6s cubic-bezier(.3,.7,.2,1) infinite;animation-delay:calc(var(--i)*.45s - 3.2s);opacity:0}
+.si-ld-card .gm.hot path.b{fill:var(--dark)}
+@keyframes si-ld-in{0%{transform:translateX(-90px);opacity:0}9%{transform:translateX(0);opacity:1}80%{transform:translateX(0);opacity:1}92%,100%{transform:translateX(0);opacity:0}}
+.si-ld-num{font-size:52px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1;margin-top:8px;color:var(--text)}
+.si-ld-num small{font-size:24px;color:var(--muted);font-weight:600}
+.si-ld-stg{margin-top:10px;font-size:16px;font-weight:600;min-height:24px;color:var(--text)}
+.si-ld-sub{font-size:13px;color:var(--muted);min-height:20px;margin-top:2px;font-variant-numeric:tabular-nums}
+.si-ld-bar{height:4px;background:var(--soft);border-radius:2px;margin-top:16px;overflow:hidden}
+.si-ld-bar i{display:block;height:100%;background:var(--dark);transform-origin:0 50%;transform:scaleX(var(--p,0));transition:transform .3s linear}
+.si-ld-err{display:none;margin-top:14px}
+.si-ld-card.fail .si-ld-err{display:block}
+.si-ld-card.fail .gm{animation-play-state:paused}
+.si-ld-card.fail .gm.late{animation:none;opacity:1;transform:none}
+.si-ld-card.fail .gm.gap{animation:none;opacity:1;transform:none}
+.si-ld-card.fail .gm.gap path.b{fill:none;stroke:var(--muted);stroke-dasharray:4 4}
+.si-ld-card.fail .si-ld-bar i{background:var(--muted);transition:none}
+.si-ld-cd{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;min-height:0}
+.si-ld-cdb{height:2px;background:var(--soft);margin:6px auto 0;max-width:200px;overflow:hidden}
+.si-ld-cdb i{display:block;height:100%;background:var(--muted);transform-origin:0 50%;transform:scaleX(1);animation:si-ld-cd 8s linear forwards}
+@keyframes si-ld-cd{to{transform:scaleX(0)}}
+.si-ld-detail{font-size:13px;color:var(--text);white-space:pre-line;word-break:break-word;margin-top:10px;text-align:left}
+.si-ld-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px}
+.si-ld-rt,.si-ld-alt{font:inherit;font-size:14px;font-weight:600;border-radius:8px;min-height:40px;padding:0 20px;cursor:pointer;transition:transform .12s ease-out}
+.si-ld-rt{background:var(--dark);color:var(--on-dark);border:0}
+.si-ld-alt{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.si-ld-rt:active,.si-ld-alt:active{transform:scale(.95)}
+.si-ld-live{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.si-ld-card.done .gm{animation:none;opacity:1;transform:none}
+.si-ld-card.done .si-ld-stage{animation:si-ld-settle .24s ease-out}
+.si-ld-card.done{animation:si-ld-out .16s .24s ease-in forwards}
+@keyframes si-ld-settle{50%{transform:translateY(3px)}}
+@keyframes si-ld-out{to{opacity:0}}
+@media (max-width:480px){.si-ld-card{padding:18px 14px 16px}.si-ld-num{font-size:42px}.si-ld-stage{height:112px}#si-load-host{top:24px}}
+@media (prefers-reduced-motion:reduce){
+  .si-ld-card .gm{animation:none;opacity:1;transform:none}
+  .si-ld-bar i{transition:none}
+  .si-ld-card.done,.si-ld-card.done .si-ld-stage{animation:none}
+  .si-ld-cdb i{animation:none;transform:scaleX(.5)}
+  .si-ld-rt,.si-ld-alt{transition:none}
+  .si-ld-rt:active,.si-ld-alt:active{transform:none;outline:2px solid var(--text);outline-offset:2px}
+}
 /* ── Global loading system (buffer overlay · top progress bar · skeleton) ── */
 #gv-progress{position:fixed;top:0;left:0;right:0;height:3px;z-index:100000;pointer-events:none;overflow:hidden;opacity:0;transition:opacity .2s}
 #gv-progress.on{opacity:1}
