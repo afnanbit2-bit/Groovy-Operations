@@ -835,7 +835,7 @@ module.exports=async function(){
     s.eq('closing row totals',cash[cash.length-1][7],300);
     const all=a.xlsx[0].sheets[3][1];
     s.eq('All entries has every row in range',all.length-1,3);
-    a.run("window.acctExportVendor('v')");
+    a.run("window.acctExportVendor('v',undefined,'"+MONTH+"-28')"); // explicit end: the default is today, and the fixture dates days 2-3 of the month
     s.eq('a vendor workbook has profile, statement, lines and rate card',a.xlsx[1].sheets.map(x=>x[0]).join('|'),'Profile|Statement|Purchase lines|Rate card');
     const st=a.xlsx[1].sheets[1][1];
     s.eq('the vendor statement runs the owed balance',st[st.length-1][6],800);
@@ -1092,7 +1092,12 @@ module.exports=async function(){
     // the log — what happened on each day, plus the total billing.
     const a=app({session:RAEES});
     const gas=V('gas',{name:'Amin Gas',kind:'consumable',meter:{type:'weighed',unit:'kg',rate:350},terms:{mode:'monthly',billDay:1}});
-    const m=a.run('_acctThisMonth()');const today=a.run('_acctToday()');
+    const today=a.run('_acctToday()');
+    // A COMPLETED month, derived from today: the logged days (1 and 2) and the
+    // "row 3 is an empty day" check need the month to be at least 3 days old.
+    // Using this month made the suite throw on the 1st and 2nd of every month.
+    const cur=a.run('_acctThisMonth()');const cy=+cur.slice(0,4),cm=+cur.slice(5,7);
+    const m=cm===1?(cy-1)+'-12':cy+'-'+String(cm-1).padStart(2,'0');
     const d=n=>m+'-'+String(n).padStart(2,'0');
     const logs=[{date:d(1),vendorId:'gas',month:m,qty:20,residual:5,byName:'Raees',note:'first cylinder'},{date:d(2),vendorId:'gas',month:m,qty:10,residual:0,rate:400,byName:'Raees',note:''}];
     a.seed([],[gas]);
@@ -1100,7 +1105,8 @@ module.exports=async function(){
     s.eq('weighed: net = delivered − returned, day 1',data.rows[0].net,15);
     s.eq('a per-log rate wins over the meter rate, day 2',data.rows[1].amount,4000);
     s.eq('the month total is the sum of the logged days',J([data.totalQty,data.totalAmount,data.daysLogged]),J([25,5250+4000,2]));
-    s.ok('every day up to today is a row, logged or not',data.rows.length===parseInt(today.slice(8))&&data.rows[2].qty===null);
+    s.ok('every day of a finished month is a row, logged or not',data.rows.length===a.run(`_acctDaysInMonth('${m}')`)&&data.rows[2].qty===null);
+    s.ok('the current month stops at today',a.run(`_acctConsPdfData(_acctVendor('gas'),'${cur}',[])`).rows.length===parseInt(today.slice(8)));
     s.ok('a row names its day and weekday',data.rows[0].day===1&&/^[A-Z][a-z]{2}$/.test(data.rows[0].weekday));
     s.eq('no bill yet → null, and the PDF says so',data.bill,null);
     s.ok('English-only, and the vendor kind is carried',data.urduLevel==='none'&&data.weighed===true&&data.unit==='kg'&&data.rate===350);
