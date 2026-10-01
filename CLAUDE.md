@@ -11237,8 +11237,8 @@ client-side.
     aren't `Color`/`Size` (`needs_review:true`); informational only. Writes
     a run summary to `shopify_sync_meta/catalog_sync`.
   - `shopify-inventory-snapshot.js` — scheduled daily (`0 1 * * *`).
-  - `shopify-order-backfill.js` window (30 Sept 2026). No schedule and no auth
-    gate (plain GET/POST to `/.netlify/functions/shopify-order-backfill`, ~9s
+  - `shopify-order-backfill.js` window (30 Sept 2026). No schedule. **Since the backend phase it requires a verified owner ID token
+    (POST only, afnan/ammar)**; the old "no auth gate, plain GET" wording is superseded (`/.netlify/functions/shopify-order-backfill`, ~9s
     budget per call, resumes from `shopify_sync_meta/order_backfill`). Default
     is still 90 days. `?days=N` (1..3650) or `?since=YYYY-MM-DD` sets the window;
     bad values get a 400 before any work. A FINISHED backfill is re-opened only

@@ -126,7 +126,7 @@ python3 -m http.server 8000                         # then http://localhost:8000
 |---|---|---|---|
 | 1 | `passkey.js` register/remove accept any valid ID token | QA can create/delete its own passkey documents (Admin SDK). It cannot mint a token for anyone else. **Also:** `BOARD-LOG.md` l.238 — whether a token minted from a custom token carries the `email` claim is unverified; `isQa()` and every owner rule read it, so a QA passkey sign-in could drop the fence. The harness never uses one. | 403 for `claude@groovy.op` in `register-options`/`register` (server deploy) |
 | 2 | `link-preview.js` accepts any signed-in user | An SSRF-guarded outbound GET. No writes. | allow-list |
-| 3 | Unauthenticated endpoints: `iclock`, `postex-status`, `image-search`, `shopify-order-backfill`, `shopify-inventory` | Reachable by anyone, QA included. Unrelated to the QA account. | separate hardening |
+| 3 | Unauthenticated endpoints: `iclock`, `postex-status`, `image-search`, `shopify-inventory` (`shopify-order-backfill` now requires a verified owner ID token, POST only, afnan/ammar) | Reachable by anyone, QA included. Unrelated to the QA account. | separate hardening |
 | 4 | `board-reminder` bypasses rules | §2 residual | discipline / a `qa` skip |
 | 5 | Rules cannot hide fields | With read-everything, personal data in every allowed collection is readable | mask snapshots; protect the QA password like an owner's |
 | 6 | Custom-token `email` claim | see #1 | verify with `getIdTokenResult()` |
