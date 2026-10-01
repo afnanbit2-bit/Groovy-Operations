@@ -213,7 +213,7 @@ async function checks(src){
   // the real page: tab bar, sections, handlers
   R('window.scrollY=420;window.__sc=[];window.scrollTo=function(x,y){window.__sc.push(y);};');
   const bar=R('_siTabBar()');
-  o['tab bar: six tabs, no Selling Patterns, Needs Attention carries a red pill with the count 16']=(bar.match(/class="gp-tab[ "]/g)||[]).length===6&&!/Selling Patterns/.test(bar)&&/Needs Attention<span class="si-na-pill"[^>]*>16</.test(bar);
+  o['tab bar: seven tabs (Ignored added), no Selling Patterns, Needs Attention carries a red pill with the count 16']=(bar.match(/class="gp-tab[ "]/g)||[]).length===7&&!/Selling Patterns/.test(bar)&&/Needs Attention<span class="si-na-pill"[^>]*>16</.test(bar);
   o['tab bar: the pill is hidden while the stock history is still being read']=(()=>{R('_siHistState="loading"');const b=R('_siTabBar()');R('_siHistState="ok"');return!/si-na-pill/.test(b)&&/Needs Attention<\/button>/.test(b);})();
   o['tab bar: a count over 99 reads 99+']=R('(()=>{const g=_siNaBadge;_siNaBadge=()=>150;const b=_siTabBar();_siNaBadge=g;return /si-na-pill[^>]*>99\\+</.test(b);})()');
   o['Selling Patterns is gone from the source: tab, section, helpers and the old attention rule']=!/Selling Patterns/.test(src)&&!/_siPatternsSection|_siByNormDim|_siByCategoryLive|_siSizeCurve|_siNeedsAttention|_siAttentionSection/.test(src)&&!/id:'patterns'|=== ?'patterns'/.test(src);
@@ -242,7 +242,7 @@ async function checks(src){
   o['the watch band opens on its header: D1 and T1 appear']=(html().match(/class="si-na-row watch/g)||[]).length===2&&/aria-expanded="true"/.test(html());
   R('window._siNaToggleWatch()');
   o['every row is a button naming the article, its reason and its class (not colour alone)']=/<button type="button" class="si-na-row critical" data-code="R10"[\s\S]*?Runs out before restock[\s\S]*?Art R10/.test(html())&&/aria-label="Art R10[^"]*Runs out before restock/.test(html());
-  o['rows are articles: no variant size appears as a row title (H once, not S/M/L)']=(html().match(/data-code="H"/g)||[]).length===1&&!/data-code="H-/.test(html());
+  o['rows are articles: no variant size appears as a row title (H once, not S/M/L)']=(html().match(/class="si-na-row [^"]*" data-code="H"/g)||[]).length===1&&!/data-code="H-/.test(html());
   R('window._siNaSetFilter("dead")');
   o['filter: Dead stock shows D1 and D2 (the watch band opens under a reason, headline unchanged)']=R('_siNaFilter')==='dead'&&/<span class="num">16<\/span>/.test(html())&&/Dead stock <b>2<\/b>/.test(html())&&rows()===2;
   R('window._siNaSetFilter("bogus")');
@@ -386,7 +386,7 @@ module.exports=async function(){
   await brk('Overview shows the critical count only','<div class="num">${c.action}</div>','<div class="num">${c.critical}</div>',['Overview tiles read the Needs Attention counts: 16 need action (more than the old cap of 8) and 3 cash piles']);
   await brk('Overview style back inside class','class="card si-na-tile${c.action?\' hot\':\'\'}"','class="card si-na-tile${c.action?\' style=&quot;border-left:3px solid var(--accent-urgent)&quot;\':\'\'}"',['Overview red border: the style is a class now, never a style attribute inside class="..."']);
   await brk('section ids not normalised','function _siSecId(id){return _SI_SECTIONS.indexOf(id)>=0?id:\'overview\';}','function _siSecId(id){return id;}',['a stale "patterns" section lands on Overview, not a blank page','switching to an unknown id is Overview']);
-  await brk('Selling Patterns tab back','{id:\'skutable\',label:\'SKU Table\'},','{id:\'skutable\',label:\'SKU Table\'},{id:\'patterns\',label:\'Selling Patterns\'},',['tab bar: six tabs, no Selling Patterns, Needs Attention carries a red pill with the count 16']);
+  await brk('Selling Patterns tab back','{id:\'skutable\',label:\'SKU Table\'},','{id:\'skutable\',label:\'SKU Table\'},{id:\'patterns\',label:\'Selling Patterns\'},',['tab bar: seven tabs (Ignored added), no Selling Patterns, Needs Attention carries a red pill with the count 16']);
   await brk('back forgets the scroll position','const y=_siNaReturnY;if(y>0','const y=0;if(y>0',['back: returns to the list, keeps the expanded band (11 critical rows), restores the scroll position 420']);
   await brk('back collapses the bands','_siNaSel=\'\';window._siNaRepaint();_siAxEnter();\n  const y','_siNaSel=\'\';_siNaShow={critical:false,act:false,watch:false};window._siNaRepaint();_siAxEnter();\n  const y',['back: returns to the list, keeps the expanded band (11 critical rows), restores the scroll position 420']);
   await brk('Escape does nothing','if(e&&e.key===\'Escape\'){window._siNaBack();}','if(false){window._siNaBack();}',['Escape closes the situation and returns to the list']);

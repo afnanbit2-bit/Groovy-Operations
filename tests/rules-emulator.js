@@ -325,6 +325,55 @@ async function t(name,fn){
     await a.run("window.acctAdminSave('p1')");const d=await readAcct('acct_entries','p1');
     expect(d.amount===900&&d.edits&&d.edits.length===1&&d.edits[0].admin===true&&d.edits[0].reason==='bank said 900','doc '+JSON.stringify(d));});
 
+  // ── inventory_article_meta (Inventory Intel Ignore, Oct 2026): the document is BUILT BY THE APP (_siIgApply / _siIgRestore capture their own setDoc) ──
+  {
+    const vm=require('vm');
+    const cap=(who)=>{const a=harness.loadApp({files:[],session:{uid:who.uid,u:who.u,name:who.name,role:'owner'},globals:{localStorage:LS}});
+      vm.runInContext(fs.readFileSync(path.join(REPO,'js/shopify.js'),'utf8'),a.ctx,{filename:'shopify.js'});
+      const calls=[];a.run('doc=function(d,c,id){return{c,id}};');a.ctx.setDoc=(ref,data,o)=>{calls.push({id:ref.id,data:JSON.parse(JSON.stringify(data)),o});return Promise.resolve();};
+      return {a,calls};};
+    const QA={uid:'8TKOO3GKhBb0NSEEK15LFTIAshI2',email:'claude@groovy.op',u:'claude',name:'Claude'};
+    const RAEES2={uid:'u-raees',email:'raees@groovy.op',u:'raees',name:'Raees'};
+    const put=async(who,id,data,merge)=>setDoc(doc(as(who),'inventory_article_meta',id),data,merge?{merge:true}:undefined);
+    const built=async(who,code,choice)=>{const c=cap(who);await c.a.run('window._siIgApply('+JSON.stringify(code)+','+JSON.stringify(choice)+')');return c.calls[0].data;};
+    const seedMeta=async(id,d)=>env.withSecurityRulesDisabled(async ctx=>{await setDoc(doc(ctx.firestore(),'inventory_article_meta',id),d);});
+    await t('meta: any signed-in user can ignore an article (the document the app builds: a week, a month, forever)',async()=>{await reset();
+      for(const [who,k] of [[AFNAN,'1w'],[RAEES2,'1m'],[UMAIR,'never']]){const d=await built(who,'GST073',k);await assertSucceeds(put(who,'GST073',d,true));}
+      const d=await built(MUSTAFA,'GD007','6m');await assertSucceeds(put(MUSTAFA,'GD007',d,true));});
+    await t('meta: Restore (the app\'s own payload) is an update that clears the ignore fields',async()=>{await reset();
+      const c=cap(AFNAN);await c.a.run('window._siIgRestore("GST073")');
+      await assertSucceeds(put(AFNAN,'GST073',c.calls[0].data,true));});
+    await t('meta: anyone signed in reads; a signed-out caller does not',async()=>{await reset();await seedMeta('GST073',{code:'GST073',ignoreForever:true,updatedAt:1,updatedBy:'afnan'});
+      await assertSucceeds(getDoc(doc(as(RAEES2),'inventory_article_meta','GST073')));
+      await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(),'inventory_article_meta','GST073')));});
+    await t('meta: the QA account READS but is refused every write (create and update)',async()=>{await reset();await seedMeta('GST073',{code:'GST073',ignoreForever:true,updatedAt:1,updatedBy:'afnan'});
+      await assertSucceeds(getDoc(doc(as(QA),'inventory_article_meta','GST073')));
+      await assertSucceeds(getDocs(collection(as(QA),'inventory_article_meta')));
+      const d=await built(AFNAN,'GST074','1w');d.updatedBy='claude';delete d.ignoredBy;
+      await assertFails(put(QA,'GST074',d,true));
+      await assertFails(updateDoc(doc(as(QA),'inventory_article_meta','GST073'),{ignoreForever:false,updatedBy:'claude',updatedAt:2}));});
+    await t('meta: a foreign updatedBy or ignoredBy is refused (bound to the caller\'s email)',async()=>{await reset();
+      const d=await built(AFNAN,'GST073','1w');
+      await assertFails(put(RAEES2,'GST073',d,true));
+      const e=Object.assign({},d,{updatedBy:'raees'});await assertFails(put(RAEES2,'GST073',e,true));
+      const rc=cap(AFNAN);await rc.a.run('window._siIgRestore("GST073")');await assertFails(put(RAEES2,'GST073',rc.calls[0].data,true)); // a restore payload (no ignoredBy) naming Afnan as updatedBy, sent by Raees
+      const f=Object.assign({},e,{ignoredBy:'afnan'});await assertFails(put(RAEES2,'GST073',f,true));});
+    await t('meta: a code that is not the doc id, an id outside the pattern, or an extra field is refused',async()=>{await reset();
+      const d=await built(AFNAN,'GST073','1w');
+      await assertFails(put(AFNAN,'GST074',d,true));
+      const bad=await built(AFNAN,'GST073','1w');bad.code='gst 073';await assertFails(put(AFNAN,'gst 073',bad,true));
+      await assertFails(put(AFNAN,'GST073',Object.assign({},d,{reason:'x'}),true));});
+    await t('meta: bad shapes are refused (day not YYYY-MM-DD, forever not a bool, timestamp not a number, unknown type or season)',async()=>{await reset();
+      const d=await built(AFNAN,'GST073','1w');
+      for(const patch of [{ignoredUntil:'tomorrow'},{ignoredUntil:'2026-13-01'},{ignoredUntil:20261001},{ignoreForever:'yes'},{ignoredAt:'now'},{updatedAt:'now'},{type:'hat'},{season:'monsoon'}])
+        await assertFails(put(AFNAN,'GST073',Object.assign({},d,patch),true));
+      await assertSucceeds(put(AFNAN,'GST073',Object.assign({},d,{type:'top',season:'winter'}),true));
+      await assertSucceeds(put(AFNAN,'GST073',Object.assign({},d,{type:null,season:null}),true));});
+    await t('meta: nobody deletes (owner included); Restore is the update above',async()=>{await reset();await seedMeta('GST073',{code:'GST073',ignoreForever:true,updatedAt:1,updatedBy:'afnan'});
+      await assertFails(deleteDoc(doc(as(AFNAN),'inventory_article_meta','GST073')));
+      await assertFails(deleteDoc(doc(as(RAEES2),'inventory_article_meta','GST073')));});
+  }
+
   fs.unlinkSync(tmpStore);
   await env.cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

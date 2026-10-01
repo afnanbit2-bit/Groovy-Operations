@@ -2799,6 +2799,21 @@ const FRAGMENTS={
     if(code){app.run('_siAxOvSit='+JSON.stringify(code));sit=app.run('_siAxOverviewBody()');}
     return Promise.resolve('<div id="si-content">'+sit+'</div>');
   },
+  // Inventory Intel ▸ Ignore (shared list): the tab bar with the Ignored count, a Needs Attention list whose rows each carry an Ignore button,
+  // the Ignored tab (a long hostile-ish name, a dated ignore and a "never"), an ignored article's search row with its chip, the article page
+  // header with Restore, and the "Remind me in…" dialog (rendered flat, not fixed, so the probe can hit-test it).
+  'inventory intel — Ignore: tab, rows, Ignored tab, chip and dialog':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siMetaState="ok";_siMeta=new Map([["GNA02",_siMetaClean("GNA02",{ignoredUntil:"2099-01-31",ignoredAt:1790000000000,ignoredBy:"ammar"})],["GNA04",_siMetaClean("GNA04",{ignoreForever:true,ignoredAt:1790000000000,ignoredBy:"afnan"})]]);_siIgVer++;_siSection="attention";_siNaSel="";_siNaFilter="all";_siNaWatchOpen=true;_siNaShow={critical:true,act:true,watch:true}');
+    const tabs=app.run('_siTabBar()'),na=app.run('_siNaSectionHtml()');
+    app.run('_siSection="ignored"');const tab=app.run('_siIgnoredSectionHtml()');
+    app.run('_siAxModeSel="search";_siAxQuery="GNA0";_siAxSel=""');const hits=app.run('_siAxResultsHtml()');
+    app.run('_siAxSel="GNA02"');const page=app.run('_siAxSearchBody()');
+    const dlg=app.run('_siIgDlgHtml("GNA02","Denim Jort With A Very Long Name Indeed Because Titles Wrap Onto Several Lines")');
+    return Promise.resolve('<div id="si-content">'+tabs+'<div class="si-frag">'+na+'</div><div class="si-frag">'+tab+'</div><div class="si-frag">'+hits+'</div><div class="si-frag">'+page+'</div><div class="si-frag" style="position:relative;height:420px"><div class="si-ig-ov" style="position:absolute">'+dlg+'</div></div></div>');
+  },
   'inventory intel — Needs Attention empty and failed states':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});

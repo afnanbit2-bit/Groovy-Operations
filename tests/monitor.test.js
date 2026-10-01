@@ -85,6 +85,11 @@ module.exports=async function(){
     s.eq('capturing performance is a create',cat('Dispatch performance captured'),'create');
     s.eq('a creator edit is an edit',cat('Creator updated'),'edit');
     s.eq('so is a profile one',cat('Profile updated'),'edit');
+    // Inventory Intel Ignore (Oct 2026): both verbs fell into Process; they are edits. The category check was run over every logActivity
+    // string in js/*.js before and after: only these two moved, and 'Mood board restored' stays where it was.
+    s.eq('an ignore is an edit',cat('Article ignored'),'edit');
+    s.eq('so is a restore of one',cat('Article restored'),'edit');
+    s.eq('another module\'s restore is untouched',cat('Mood board restored'),'other');
     s.eq('and a bulk Instagram fetch',cat('Creators fetched from Instagram'),'edit');
     // Genuinely process-shaped actions stay in the fallback — the bucket is
     // not a bug, and widening the verbs must not swallow them.
