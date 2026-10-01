@@ -5143,7 +5143,8 @@ a.ma-btn{text-decoration:none}
 .si-ov-tile .n{font-size:26px;font-weight:700;line-height:1.2}
 .si-ov-tile .s{font-size:12px;color:var(--muted)}
 .si-ov-row{display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(70px,1fr));gap:4px 12px;align-items:start;padding:10px 0;border-top:1px solid var(--border)}
-.si-ov-row .nm{min-width:0;overflow-wrap:anywhere}
+.si-ov-row .nm{min-width:0;overflow-wrap:anywhere;display:flex;gap:10px;align-items:center}
+.si-ov-row .nm .tx{min-width:0;display:flex;flex-direction:column}
 .si-ov-row .fg .k{font-size:12px;color:var(--muted)}
 .si-ov-row .fg .v{font-size:14px;font-weight:600}
 .si-ov-row .act{grid-column:1/-1;font-size:14px}
@@ -5250,7 +5251,8 @@ a.ma-btn{text-decoration:none}
 .si-na-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.6fr) minmax(0,1fr) 20px;grid-template-areas:"rs rs rs rs" "nm ln at ch";gap:4px 12px;align-items:center;width:100%;min-height:56px;margin:0 0 6px;padding:10px 12px;border:1px solid var(--border);border-left-width:3px;border-radius:10px;background:var(--surface);color:var(--text);font:inherit;text-align:left;cursor:pointer;transition:background-color .15s}
 .si-na-row:hover{background:var(--hover)}
 .si-na-row .rs{grid-area:rs;display:flex;gap:6px;flex-wrap:wrap}
-.si-na-row .nm{grid-area:nm;display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+.si-na-row .nm{grid-area:nm;display:flex;flex-direction:row;gap:10px;align-items:center;min-width:0;overflow-wrap:anywhere}
+.si-na-row .nm .tx{display:flex;flex-direction:column;min-width:0}
 .si-na-row .nm strong{font-size:15px}
 .si-na-row .cd{font-size:12px;color:var(--muted)}
 .si-na-row .ln{grid-area:ln;font-size:13px;color:var(--text);min-width:0;overflow-wrap:anywhere}
@@ -5299,3 +5301,12 @@ a.ma-btn{text-decoration:none}
   .si-na-dhead h2{font-size:19px}
 }
 @media (prefers-reduced-motion:reduce){.si-na-row{transition:none}}
+
+/* Article pictures: a fixed square so a picture never moves a row; the code tile shows when there is none or it fails. */
+.si-th{pointer-events:none;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px;border:1px solid var(--border);background:var(--soft);color:var(--muted);vertical-align:middle}
+.si-th img{display:block;width:100%;height:100%;object-fit:cover}
+.si-th-c{font-size:11px;font-weight:700;line-height:1.1;text-align:center;word-break:break-all;padding:0 1px}
+.si-ax-chip .si-th{border-radius:6px}
+.si-ax-chip .si-th-c{display:none}
+.si-na-dtop{display:flex;gap:12px;align-items:center}
+.si-na-dtx{min-width:0}

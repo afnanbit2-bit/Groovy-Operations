@@ -204,16 +204,29 @@ function checks(src){
   const mh=RB('_siAxMonthsHtml(_siAxCompareData().arts,_siAxCompareData().M)');
   const tiles=mh.match(/<div class="si-ax-mtile[^"]*" data-month="[^"]+"/g)||[];
   const frost=tiles.filter(t=>/ frost"/.test(t)).map(t=>/data-month="([^"]+)"/.exec(t)[1]);
-  o['month tiles: twelve tiles, October first, ending the September after']=tiles.length===12&&/data-month="2026-10"/.test(tiles[0])&&/data-month="2027-09"/.test(tiles[11]);
-  o['month tiles: the frost class is on EXACTLY the five winter months (Oct, Nov, Dec, Jan, Feb)']=frost.join(',')==='2026-10,2026-11,2026-12,2027-01,2027-02';
+  o['month tiles: a rolling window of twelve ending at the CURRENT month (Jan–Dec 2026 on 15 Dec 2026), oldest first']=tiles.length===12&&/data-month="2026-01"/.test(tiles[0])&&/data-month="2026-12"/.test(tiles[11]);
+  o['month tiles: the frost class is on exactly the winter months inside the window (Jan, Feb, Oct, Nov, Dec 2026)']=frost.join(',')==='2026-01,2026-02,2026-10,2026-11,2026-12';
   o['month tiles: values 15 / 25 / 35 for AAA in Oct–Dec 2026 and "last year" 10 / 20 / 30; BBB last year "no data"']=/data-month="2026-11"[^]*?<strong>25<\/strong>[^]*?last year 20/.test(mh)&&/last year no data/.test(mh);
-  o['month tiles: a month still ahead says "no data — not yet", never 0']=/data-month="2027-04"[^]*?no data — not yet/.test(mh);
+  o['month tiles: no future month is drawn at all (nothing after the current month, no "not yet" tile)']=!/data-month="2027-/.test(mh)&&!/not yet/.test(mh);
+  o['month tiles: the current month says "so far"']=/data-month="2026-12"[^]*?so far/.test(mh);
+  o['month tiles: with 15 months of history only 12 show and the stepper offers earlier months']=/aria-label="Earlier months"/.test(RB('_siAxCalOptsHtml()'))&&!/aria-label="Earlier months" disabled/.test(RB('_siAxCalOptsHtml()'))&&/aria-label="Later months" disabled/.test(RB('_siAxCalOptsHtml()'));
+  RB('window._siAxMonStep(-1);window._siAxMonStep(-1);window._siAxMonStep(-1);window._siAxMonStep(-1)');
+  const mhB=RB('_siAxMonthsHtml(_siAxCompareData().arts,_siAxCompareData().M)');
+  const tB=mhB.match(/<div class="si-ax-mtile[^"]*" data-month="[^"]+"/g)||[];
+  o['month stepper: stops at the first synced month (Oct 2025 – Sep 2026), 12 tiles, frost on Oct–Dec 2025 and Jan–Feb 2026']=tB.length===12&&/data-month="2025-10"/.test(tB[0])&&/data-month="2026-09"/.test(tB[11])&&tB.filter(x=>/ frost"/.test(x)).map(x=>/data-month="([^"]+)"/.exec(x)[1]).join(',')==='2025-10,2025-11,2025-12,2026-01,2026-02';
+  o['month stepper: Later months works back to the current month, and cannot go past it']=(()=>{RB('window._siAxMonStep(1);window._siAxMonStep(1);window._siAxMonStep(1);window._siAxMonStep(1);window._siAxMonStep(1);window._siAxMonStep(1)');return RB('_siAxMonthList().shift')===0&&/data-month="2026-12"/.test(RB('_siAxMonthsHtml(_siAxCompareData().arts,_siAxCompareData().M)'));})();
+  RB('_siAxMonShift=0');
   o['month tiles: the winter tiles say so in words as well as colour']=(mh.match(/<span class="w">/g)||[]).length===5;
   o['month tiles: a winter window card is frosted too, the all-data card is not']=(()=>{RB('_siAxWin="winter"');const w=RB('_siAxCompareBody()');RB('_siAxWin="all"');const n=RB('_siAxCompareBody()');return/class="card si-ax-frost" id="si-ax-chartcard"/.test(w)&&!/si-ax-frost/.test(n);})();
-  // month before the data begins
-  const ma=load(src);fixA(ma);ma.run('_siAxModeSel="compare";_siAxCmp=["AAA"];_siAxBasis="calendar";_siAxWin="months";_siAxWinYear=2025;_siAxPrev=false');
+  // fixture A: data from 2 Apr 2026, today 1 Oct 2026 -> Apr..Oct, seven tiles, no empty future, no stepper
+  const ma=load(src);fixA(ma);ma.run('_siAxModeSel="compare";_siAxCmp=["AAA"];_siAxBasis="calendar";_siAxWin="months";_siAxMonShift=0;_siAxPrev=false');
   const mh2=ma.run('_siAxMonthsHtml(_siAxCompareData().arts,_siAxCompareData().M)');
-  o['month tiles: a winter before the synced orders reads "no data — before the synced orders"']=/data-month="2025-10"[^]*?no data — before the synced orders/.test(mh2)&&!/<strong>0<\/strong>/.test(mh2.split('data-month="2026-04"')[0]);
+  const tA=mh2.match(/<div class="si-ax-mtile[^"]*" data-month="[^"]+"/g)||[];
+  o['month tiles: from the first synced month to the current one — Apr..Oct 2026 is seven tiles, none before the data, none after today']=tA.length===7&&/data-month="2026-04"/.test(tA[0])&&/data-month="2026-10"/.test(tA[6]);
+  o['month tiles: the first month says it starts from the first synced order, the last says so far; frost only on Oct']=/data-month="2026-04"[^]*?from 2 Apr/.test(mh2)&&/data-month="2026-10"[^]*?so far/.test(mh2)&&tA.filter(x=>/ frost"/.test(x)).length===1;
+  o['month tiles: nothing is zero-filled before the article was live or before the data (no <strong>0</strong> ahead of its first sale month)']=!/<strong>0<\/strong>/.test(mh2.split('data-month="2026-04"')[1].split('data-month="2026-05"')[0]);
+  o['month tiles: under twelve months there is no stepper']=!/Earlier months/.test(ma.run('_siAxCalOptsHtml()'));
+  o['month tiles: the caption describes the rolling window (no "twelve months from October")']=/every month from the first synced orders up to the current one/.test(ma.run('_siAxCompareBody()'))&&!/twelve months from October/.test(ma.run('_siAxCompareBody()'));
 
   // ── CSS: tokens only, a dark partner, contrast floor, reduced motion ──
   const root=CSS.slice(0,CSS.indexOf('html[data-theme="dark"]{'));
@@ -261,6 +274,10 @@ module.exports=async function(){
   brk('winter months wrong (Mar in, Feb out)','const _SI_AX_WINTER_MONTHS=[10,11,12,1,2];','const _SI_AX_WINTER_MONTHS=[10,11,12,1,3];',['winter months are exactly Oct, Nov, Dec, Jan, Feb','month tiles: the frost class is on EXACTLY the five winter months (Oct, Nov, Dec, Jan, Feb)']);
   brk('previous year zero-filled','if(!pb||pb<cov||!L||_siAxBucketEnd(pb,bucket)<L)return null;','if(!pb)return null;',['previous year: BBB was not live a year earlier, so its twin is "no data" (all null), not zeros','previous year (data from 2 Apr 2026): nothing is plotted, nothing is zero, and the page says when it can first exist']);
   brk('previous year off by 52 weeks+1','_siAxDayStr(_siAxDayNum(b)-364)','_siAxDayStr(_siAxDayNum(b)-365)',['weekly previous year: 52 weeks back lands on the matching Monday (12 Oct 2026 -> 13 Oct 2025) and reads its sales (10)']);
+  brk('window starts in October again','const first=cov.slice(0,7)+\'-01\';','const first=today.slice(0,4)+\'-10-01\';',['month tiles: from the first synced month to the current one — Apr..Oct 2026 is seven tiles, none before the data, none after today']);
+  brk('window runs into the future','if(m>last)break;','if(m>_siAxAddMonths(last,5))break;',['month tiles: no future month is drawn at all (nothing after the current month, no "not yet" tile)','month tiles: from the first synced month to the current one — Apr..Oct 2026 is seven tiles, none before the data, none after today']);
+  brk('more than twelve shown','const endIdx=all.length-1-shift,startIdx=Math.max(0,endIdx-(_SI_AX_MONTHS_MAX-1));','const endIdx=all.length-1-shift,startIdx=0;',['month tiles: a rolling window of twelve ending at the CURRENT month (Jan–Dec 2026 on 15 Dec 2026), oldest first']);
+  brk('stepper can pass the data start','const maxShift=Math.max(0,all.length-_SI_AX_MONTHS_MAX);','const maxShift=Math.max(0,all.length-_SI_AX_MONTHS_MAX+3);',['month stepper: stops at the first synced month (Oct 2025 – Sep 2026), 12 tiles, frost on Oct–Dec 2025 and Jan–Feb 2026']);
   brk('future months zero-filled','if(win&&b>today)return null;','',['winter window: months not yet reached are empty (null), never 0']);
   brk('winter window ends in January','to:e+\'-02-\'+String(_siAxMonthLen(e,2)).padStart(2,\'0\')','to:e+\'-01-31\'',['winter window: 2026 = 1 Oct 2026 to 28 Feb 2027, labelled']);
   brk('frost on every tile','frost:_siAxIsWinterMonth(mm)','frost:true',['month tiles: the frost class is on EXACTLY the five winter months (Oct, Nov, Dec, Jan, Feb)']);
