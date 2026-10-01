@@ -253,6 +253,37 @@ function _axSeed(app){
   app.run('_siWeeklyCloses=[{week_ending:"2026-09-26",week_starting:"2026-09-20",top_sku:{sku:"GST073-S",quantity:11}}]');
 }
 
+// Needs Attention seed (Oct 2026): ~14 articles over the last 90 days (relative to today, so the weekly shapes always exist), with every
+// issue type: run-outs (critical and act), a stock-out, a size hole, an overstock, dead stock, a fading seller and a voided-unit data check.
+function _naSeed(app,opts){
+  opts=opts||{};
+  const prods=[],lis=[],defs=[];
+  const mk=(code,title,cat,sizes,daily,stock)=>{
+    Object.keys(sizes).forEach(sz=>{
+      prods.push({_id:code+sz,sku:code+'-'+sz,product_title:title,color:'Black',size:sz,product_type:cat,status:'active',published_at:new Date(Date.now()-400*86400000).toISOString()});
+      for(let k=0;k<90;k++){const q=daily(k,sz);if(q>0)lis.push({sku:code+'-'+sz,quantity:q,price:2400,order_created_at:new Date(Date.now()-k*86400000).toISOString(),financial_status:'paid'});}
+      defs.push([code+'-'+sz,stock]);
+    });
+  };
+  const M={M:1};
+  ['Effortless Tee','Denim Jort With A Very Long Name Indeed Because Titles Wrap','Zip Hoodie Charcoal','Baggy Trousers Slate Blue','Superman Full Sleeves Tee Frost','Core Tee Raglan'].forEach((t,i)=>mk('GNA0'+(i+1),t,i===1?'Jorts':(i===2?'Hoodies':'Tees'),M,()=>4+i,(k)=>i<4?26:60));
+  mk('GNO001','Classic Cap Stone','Caps',M,k=>k>=10?3:0,k=>k>=9?30:0);
+  mk('GNH001','Live In Pants Arctyc White','Pants',{S:1,M:1,L:1},(k,sz)=>sz==='S'?2:1,(k,sz)=>sz==='S'?0:100);
+  mk('GNV001','Mint Chalk Cargo','Cargo',M,k=>k%2===0?1:0,()=>400);
+  mk('GND001','Electric Blue Raglan Tee','Tees',M,k=>k===60?10:0,()=>120);
+  mk('GNF001','Allstars Basketball Jersey','Tees',M,k=>k<28?2:6,()=>300);
+  mk('GNT001','Voided Heavy Tee','Tees',M,()=>1,()=>100);
+  lis.push({sku:'GNT001-M',quantity:12,price:2400,order_created_at:new Date(Date.now()-30*86400000).toISOString(),financial_status:'voided'});
+  app.run('_siProducts='+JSON.stringify(prods)+';_siLineItems='+JSON.stringify(lis)+';_siOrders=[];_siLoaded=true');
+  app.run('(()=>{const t=_siAxDayNum(_siPktDate(0)),defs='+JSON.stringify(defs.map(d=>d[0]))+',docs=[];const stk={};'+
+    'for(let k=69;k>=0;k--){const date=_siAxDayStr(t-k),it={};defs.forEach((sku,i)=>{it["i"+i]={sku,available:0};});docs.push({date,items:it,k});}'+
+    'window.__docs=docs;})()');
+  // stock per size per day from the definitions (functions cannot cross JSON, so evaluate here)
+  const docs=app.run('window.__docs'),byKey={};defs.forEach((d,i)=>{byKey['i'+i]=d;});
+  const rebuilt=docs.map(d=>{const it={};Object.keys(byKey).forEach(key=>{const sku=byKey[key][0],fn=byKey[key][1];const sz=sku.split('-').pop();it[key]={sku,available:fn(d.k,sz)};});return{date:d.date,items:it};});
+  app.run('(()=>{const docs='+JSON.stringify(rebuilt)+';_siHist=_siAxBuildHistory(docs);_siHistState="ok";_siSnapshot=Object.assign({},docs[docs.length-1],{snapshot_at:'+JSON.stringify(opts.snapAt||new Date().toISOString())+'});_siPrevSnapshot=docs[docs.length-8];_siAxCache=null;_siNaMemo=null;_siSyncMeta={orderSync:{last_status:"success",last_success_at:new Date().toISOString()},inventory:{last_status:"success"}};})()');
+}
+
 const FRAGMENTS={
   // Master Accounts (MASTER_ACCOUNTS_PLAN.md §16.4): Today, Money and a
   // holder, the Ledger with the review queue, a party page, and the Record
@@ -2710,6 +2741,40 @@ const FRAGMENTS={
   // maximum five series. The chart's text is HTML; its lines are tokens
   // (--si-s0..4) that must read on --surface in both themes. Data is built
   // relative to today so the weekly axis always has a shape.
+  // Inventory Intel ▸ Needs Attention (Oct 2026): the red list with a stale-snapshot banner, the returns line, all three bands (watch opened),
+  // the tab bar with its red pill, and the two Overview tiles. Red ink on the soft red panel, white on the count accent, in both themes.
+  'inventory intel — Needs Attention list':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app,{snapAt:new Date(Date.now()-40*3600000).toISOString()});
+    app.run('_siSection="attention";_siNaSel="";_siNaFilter="all";_siNaWatchOpen=true;_siNaShow={critical:false,act:false,watch:false}');
+    return Promise.resolve('<div id="si-content">'+app.run('_siTabBar()')+app.run('_siOverviewAttnTiles()')+app.run('_siNaSectionHtml()')+'</div>');
+  },
+  'inventory intel — Needs Attention list expanded':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siSection="attention";_siNaSel="";_siNaFilter="all";_siNaWatchOpen=true;_siNaShow={critical:true,act:true,watch:true}');
+    return Promise.resolve('<div id="si-content">'+app.run('_siNaSectionHtml()')+'</div>');
+  },
+  'inventory intel — Needs Attention situation view':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siSection="attention";_siNaFilter="all"');
+    const pick=t=>app.run('(()=>{const i=_siNaState().issues.find(x=>x.type==="'+t+'");return i?i.code:"";})()');
+    const out=['runout','sizehole','overstock'].map(t=>{const c=pick(t);if(!c)return'';app.run('_siNaSel='+JSON.stringify(c));return'<div class="si-na-frag">'+app.run('_siNaSectionHtml()')+'</div>';}).join('');
+    return Promise.resolve('<div id="si-content">'+out+'</div>');
+  },
+  'inventory intel — Needs Attention empty and failed states':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siProducts=[];_siLineItems=[];_siOrders=[];_siLoaded=true;_siHist=_siAxBuildHistory([]);_siHistState="ok";_siSnapshot={date:_siPktDate(0),snapshot_at:new Date().toISOString(),items:{}};_siAxCache=null;_siNaMemo=null;_siSyncMeta={orderSync:{last_status:"success",last_success_at:new Date().toISOString()},inventory:{}};_siSection="attention";_siNaSel=""');
+    const empty=app.run('_siNaSectionHtml()');
+    app.run('_siHistState="error";_siHistError="timed out after 90s";_siNaMemo=null;_siSyncMeta={orderSync:{last_status:"error",last_error:"HTTP 429 from Shopify"},inventory:{last_status:"error",last_error:"Inventory paging incomplete"}}');
+    const failed=app.run('_siNaSectionHtml()');
+    return Promise.resolve('<div id="si-content">'+empty+failed+'</div>');
+  },
   'inventory intel — Article Explorer search':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
