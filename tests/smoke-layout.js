@@ -2782,6 +2782,25 @@ const FRAGMENTS={
     app.run('_siAxModeSel="search";_siAxSel="GST073";_siAxQuery=""');
     return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
   },
+  // The stock vs sales timeline card: a stock-out stretch (labelled), a restock marker, a missing snapshot, days before the
+  // stock history (hatched), the lead-time marker, the read-out, the stretches table. Shown daily and weekly, and over 30 days
+  // (where the stretch is wide enough to carry its "Out N d" label).
+  'inventory intel — Article Explorer stock vs sales timeline':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('(()=>{const t=_siAxDayNum(_siPktDate(0)),docs=[];for(let k=59;k>=0;k--){if(k===20)continue;const date=_siAxDayStr(t-k),it={};'+
+      'const s=k>=45?30:(k>=25?0:(k===24?90:90-(24-k)*3));it.a={sku:"GST073-M",available:s};it.b={sku:"GST073-L",available:k===50?-2:0};'+
+      'docs.push({date,items:it,locations_seen:k<30?2:undefined});}_siHist=_siAxBuildHistory(docs);_siHistState="ok";_siAxCache=null;})()');
+    app.run('_siAxModeSel="search";_siAxSel="GST073";_siAxQuery="";_siAxTlRes="day";_siAxTlRange="all"');
+    const a=app.run('_siAxTlCardHtml(_siAxIndex().map.get("GST073"))');
+    app.run('_siAxTlRange="30"');
+    const b=app.run('_siAxTlCardHtml(_siAxIndex().map.get("GST073"))');
+    app.run('_siAxTlRes="week";_siAxTlRange="all"');
+    const c=app.run('_siAxTlCardHtml(_siAxIndex().map.get("GST073"))');
+    app.run('_siAxTlRes="day";_siAxTlRange="90"');
+    return Promise.resolve('<div id="si-content">'+a+b+c+'</div>');
+  },
   'inventory intel — Article Explorer overview':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});

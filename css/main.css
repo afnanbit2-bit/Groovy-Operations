@@ -5027,6 +5027,52 @@ a.ma-btn{text-decoration:none}
 .si-ax-mix .q{min-width:84px;text-align:right;color:var(--muted);white-space:nowrap}
 @media (max-width:600px){.si-ax-plot{height:200px}.si-ax-input{min-width:0}}
 @media (prefers-reduced-motion:no-preference){.si-ax-tip{transition:opacity .1s}}
+/* Stock vs sales timeline (Article Explorer). Two panels share one x axis; every label is HTML (SVG holds paths only);
+   colours are tokens; out of stock is a hatch + a word, never colour alone. */
+.si-tl-bar2{align-items:center}
+.si-tl-sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
+.si-tl-read{margin:0 0 10px;padding-left:18px;font-size:14px;line-height:1.5}
+.si-tl-read li{margin:3px 0}
+.si-tl-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 10px;font-size:12px;color:var(--muted)}
+.si-tl-legend span{display:inline-flex;align-items:center;gap:6px}
+.si-tl-legend .k{display:inline-block;width:14px;height:10px;border-radius:2px;flex:none}
+.si-tl-legend .k.stock{background:var(--si-s0);opacity:.55}
+.si-tl-legend .k.out{background:repeating-linear-gradient(135deg,var(--accent-urgent) 0 2px,var(--surface) 2px 5px);border:1px solid var(--accent-urgent)}
+.si-tl-legend .k.bar{background:var(--si-s1)}
+.si-tl-legend .k.zero{background:repeating-linear-gradient(0deg,var(--accent-urgent) 0 2px,var(--surface) 2px 4px);border:1px solid var(--accent-urgent)}
+.si-tl-legend .k.rs{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid var(--si-s2);border-radius:0;background:none}
+.si-tl-legend .k.lt{width:0;height:12px;border-left:2px dashed var(--text);border-radius:0;background:none}
+.si-tl-grid{display:grid;grid-template-columns:auto 1fr;column-gap:6px;margin-bottom:6px}
+.si-tl-cap{grid-column:2;font-size:12px;font-weight:600;color:var(--muted);margin:6px 0 4px}
+.si-tl-ya{min-width:30px}
+.si-tl-ya.stock{height:120px}.si-tl-ya.sales{height:70px}
+.si-tl-panel{position:relative;margin-right:16px;touch-action:pan-y;cursor:crosshair;background:var(--surface-2);border-radius:4px}
+.si-tl-panel.stock{height:120px}.si-tl-panel.sales{height:70px}
+.si-tl-panel.none{display:flex;align-items:center;justify-content:center;cursor:default}
+.si-tl-nostock{font-size:13px;color:var(--muted);padding:8px;text-align:center}
+.si-tl-panel svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.si-tl-area{fill:var(--si-s0);fill-opacity:.2;stroke:none}
+.si-tl-line{fill:none;stroke:var(--si-s0);stroke-width:2;vector-effect:non-scaling-stroke}
+.si-tl-band{position:absolute;top:0;bottom:0;pointer-events:none}
+.si-tl-band::before{content:"";position:absolute;inset:0;opacity:.5}
+.si-tl-band.out::before{background:repeating-linear-gradient(135deg,var(--accent-urgent) 0 2px,transparent 2px 6px)}
+.si-tl-band.nodata::before{background:repeating-linear-gradient(45deg,var(--muted) 0 1px,transparent 1px 6px);opacity:.35}
+.si-tl-band b{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;line-height:1.2;padding:1px 6px;border-radius:4px;background:var(--surface);white-space:nowrap}
+.si-tl-band.out b{color:var(--accent-urgent)}.si-tl-band.nodata b{color:var(--muted)}
+.si-tl-bar{position:absolute;bottom:0;background:var(--si-s1);min-width:1px;pointer-events:none}
+.si-tl-bar.zero{background:repeating-linear-gradient(0deg,var(--accent-urgent) 0 2px,var(--surface) 2px 4px);outline:1px solid var(--accent-urgent);outline-offset:-1px}
+.si-tl-rs{position:absolute;width:0;height:0;transform:translate(-50%,0);border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid var(--si-s2);pointer-events:none}
+.si-tl-rs.weak{border-bottom-color:var(--si-s2);opacity:.55}
+.si-tl-rl{position:absolute;transform:translate(9px,0);font-size:12px;font-weight:700;line-height:1;color:var(--text);background:var(--surface);padding:1px 3px;border-radius:3px;pointer-events:none;white-space:nowrap}
+.si-tl-rl.l{transform:translate(calc(-100% - 9px),0)}
+.si-tl-lt{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed var(--text);opacity:.7;pointer-events:none}
+.si-tl-ltl{position:absolute;top:2px;font-size:12px;line-height:1.2;color:var(--text);background:var(--surface);padding:1px 5px;border-radius:4px;pointer-events:none;white-space:nowrap}
+.si-tl-xa{grid-column:2;margin-top:8px}
+.si-tl-tbl{overflow-x:auto;margin:10px 0}
+.si-tl-data summary{cursor:pointer;font-size:13px;font-weight:600;min-height:34px;display:flex;align-items:center}
+.si-tl-cov div{margin:2px 0}
+@media (max-width:600px){.si-tl-panel.stock,.si-tl-ya.stock{height:100px}.si-tl-panel.sales,.si-tl-ya.sales{height:60px}.si-tl-bar2 .si-ax-btn{min-height:40px}.si-tl-data summary{min-height:40px}}
+@media (prefers-reduced-motion:reduce){.si-tl-panel *{transition:none!important;animation:none!important}}
 /* Article Explorer — metric hints, flags and the plain-words list (tokens only) */
 .si-ax-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:2px;border:1px solid var(--muted);border-radius:50%;font-size:11px;font-weight:700;font-style:normal;line-height:1;color:var(--muted);cursor:help}
 .si-ax-flag{display:inline-block;padding:0 6px;border-radius:999px;background:var(--accent-urgent-soft);color:var(--accent-urgent);font-size:11px;font-weight:700;line-height:1.6;white-space:nowrap}

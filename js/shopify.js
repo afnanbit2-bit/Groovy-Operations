@@ -1468,7 +1468,7 @@ function _siAxBuildHistory(docs){
   const good=(docs||[]).filter(d=>d&&d.date&&d.items&&typeof d.items==='object'&&/^\d{4}-\d{2}-\d{2}$/.test(String(d.date)));
   const counts=good.map(d=>Object.keys(d.items).length).sort((x,y)=>x-y);
   const med=counts.length?counts[Math.floor(counts.length/2)]:0;
-  const byCode=new Map(),dates=[],dropped=[],rekeyed=[];
+  const byCode=new Map(),dates=[],dropped=[],rekeyed=[],neg=new Map(),locs=new Map();
   // one document per closing day: two documents that map to the same day keep the EARLIER snapshot (the one closer to that day's end)
   const byKey=new Map();
   good.forEach(d=>{
@@ -1482,10 +1482,16 @@ function _siAxBuildHistory(docs){
     const d=byKey.get(key);
     dates.push(key);
     const sums=new Map();
-    for(const id in d.items){const it=d.items[id];const code=_siAxCode(it&&it.sku);if(!code)continue;sums.set(code,(sums.get(code)||0)+Math.max(0,it.available||0));}
+    // locations_seen is written only by snapshots taken after stock was summed across every location; older ones lack it
+    const ls=Number(d.locations_seen);locs.set(key,(d.locations_seen!=null&&d.locations_seen!==''&&isFinite(ls))?ls:null);
+    // oversold variants are counted as 0 in the sum and kept only as a per-day count
+    for(const id in d.items){const it=d.items[id];const code=_siAxCode(it&&it.sku);if(!code)continue;sums.set(code,(sums.get(code)||0)+Math.max(0,it.available||0));
+      if((it.available||0)<0){let nm=neg.get(code);if(!nm){nm=new Map();neg.set(code,nm);}nm.set(key,(nm.get(key)||0)+1);}}
     sums.forEach((v,code)=>{let m=byCode.get(code);if(!m){m=new Map();byCode.set(code,m);}m.set(key,v);});
   });
-  return{dates,byCode,dropped,rekeyed,from:dates[0]||'',to:dates[dates.length-1]||'',docs:good.length};
+  const locVals=[...locs.values()].filter(v=>v!=null);
+  const loc={max:locVals.length?Math.max.apply(null,locVals):null,missing:[...locs.values()].filter(v=>v==null).length,firstSeen:[...locs.keys()].sort().find(k=>locs.get(k)!=null)||''};
+  return{dates,byCode,dropped,rekeyed,neg,loc,from:dates[0]||'',to:dates[dates.length-1]||'',docs:good.length};
 }
 function _siAxEnsureHistory(force){
   if(_siHistPromise)return _siHistPromise;
@@ -2609,6 +2615,369 @@ function _siAxDefsHtml(){
 }
 
 // ── Search mode: one article ────────────────────────────────────────
+// ── Stock vs sales timeline (one article) ───────────────────────────
+// Everything here reads data already in memory: the cleaned daily sales on the article (a.daily), the per-article
+// on-hand map of the bounded snapshot read (_siHist.byCode) and the lead time. No Firestore read. Every decision is a
+// pure function (_siAxTimeline, _siAxTlWindow, _siAxTlSummary, _siAxTlReadout, _siAxTlCoverage, _siAxTlColumns) so
+// the chart, the readout and the tables cannot disagree. Rules: docs/UNITS_METRICS.md §3c.
+const _SI_TL={
+  baseDays:28,minBaseDays:14,minBaseUnits:5,   // a baseline needs 14+ in-stock days and 5+ units, from up to 28 in-stock days
+  skipAfter:3,                                  // the first 3 days after a restock are left out of the "after" baseline (launch burst)
+  bridgeDays:2,                                 // a stretch continues over up to 2 'no data' days when stock read 0 on both sides
+  maxRun:42,                                    // a stretch longer than this is probably discontinued: not estimated
+  oneSide:0.5,                                  // only one side has a baseline: range is [0.5 x b, b] (an assumption, said on screen)
+  strongResid:20,strongShare:0.25,              // a restock marker is solid when the jump is 20+ units and 25%+ of the stock before
+  weekOutDays:4,                                // a week is shaded out when 4+ of its 7 days were out of stock
+  maxDays:400
+};
+let _siAxTlRes='day',_siAxTlRange='90',_siAxTlHov=null;
+const _SI_TL_RANGES=[['30','30 days'],['90','90 days'],['all','All']];
+
+// Per-day series for one article. Day state follows the existing stock-out rule (_siAxExposure): a day is out of stock
+// when stock read zero at BOTH the previous and this close; it is in stock when either was above zero; with either
+// close missing it is 'nodata' (a gap, never a zero). Sales are the cleaned, non-voided, non-refunded units.
+function _siAxTimeline(a,H,opts){
+  opts=opts||{};
+  const to=opts.to||(H&&H.to)||'',tn=_siAxDayNum(to);
+  const r={ok:false,from:'',to,days:[],runs:[],events:[],hasStock:false,gapDays:0,negDays:0,price:null,stockFrom:H&&H.from||'',stockTo:H&&H.to||''};
+  if(!a||tn==null)return r;
+  let from=opts.from||(H&&H.from)||'';
+  let fn=_siAxDayNum(from);if(fn==null)return r;
+  if(tn-fn+1>_SI_TL.maxDays)fn=tn-_SI_TL.maxDays+1;
+  if(fn>tn)return r;
+  const h=H&&H.byCode?H.byCode.get(a.code):null;
+  const negm=H&&H.neg?H.neg.get(a.code):null;
+  r.hasStock=!!h;r.from=_siAxDayStr(fn);
+  if(a.hasPrice&&a.units>0)r.price=a.rev/a.units;
+  for(let k=fn;k<=tn;k++){
+    const D=_siAxDayStr(k);
+    const sv=h?h.get(D):null,pv=h?h.get(_siAxDayStr(k-1)):null;
+    const stock=sv==null?null:sv,prev=pv==null?null:pv;
+    const sold=(a.daily.get(D)||{u:0}).u;
+    const state=(stock!=null&&prev!=null)?((stock>0||prev>0)?'in':'out'):'nodata';
+    const neg=negm?(negm.get(D)||0):0;
+    r.days.push({d:D,i:k-fn,stock,prev,sold,state,neg});
+    if(neg>0)r.negDays++;
+  }
+  r.ok=true;
+  if(h){
+    // snapshot gaps inside the stock history (left blank)
+    r.days.forEach(x=>{if(x.stock==null&&x.d>=r.stockFrom&&x.d<=r.stockTo)r.gapDays++;});
+  }
+  const days=r.days;
+  // stock-out stretches
+  const inIdx=[];days.forEach(x=>{if(x.state==='in')inIdx.push(x.i);});
+  for(let i=0;i<days.length;i++){
+    if(days[i].state!=='out')continue;
+    let j=i;
+    for(;;){
+      while(j+1<days.length&&days[j+1].state==='out')j++;
+      // one missing snapshot leaves up to two 'no data' days (the day itself, and the day after whose previous close is unknown):
+      // stock read 0 on both sides of it, so the stretch continues. The gap days stay 'no data' and are not counted as out days.
+      let g=0;while(j+1+g<days.length&&days[j+1+g].state==='nodata'&&g<=_SI_TL.bridgeDays)g++;
+      if(g>0&&g<=_SI_TL.bridgeDays&&j+1+g<days.length&&days[j+1+g].state==='out')j=j+g;else break;
+    }
+    const run={from:days[i].d,to:days[j].d,i0:i,i1:j,days:j-i+1,outDays:0,sold:0,open:j===days.length-1,leftCensored:i===0||days[i-1].state==='nodata',est:null,why:''};
+    for(let k=i;k<=j;k++)if(days[k].state==='out'){run.outDays++;run.sold+=days[k].sold;}
+    const base=(idxs)=>{const u=idxs.reduce((s,k)=>s+days[k].sold,0);return idxs.length>=_SI_TL.minBaseDays&&u>=_SI_TL.minBaseUnits?u/idxs.length:null;};
+    const pre=inIdx.filter(k=>k<i).slice(-_SI_TL.baseDays);
+    const post=inIdx.filter(k=>k>j+_SI_TL.skipAfter).slice(0,_SI_TL.baseDays);
+    const bp=base(pre),bq=base(post);
+    if(run.days>_SI_TL.maxRun){run.why='longer than '+_SI_TL.maxRun+' days: probably discontinued or not relaunched, so not estimated';}
+    else if(bp==null&&bq==null){run.why='not enough in-stock selling before or after it to set a pace (needs '+_SI_TL.minBaseDays+'+ in-stock days and '+_SI_TL.minBaseUnits+'+ units)';}
+    else{
+      let lo,hi,basis;
+      if(bp!=null&&bq!=null){lo=Math.min(bp,bq);hi=Math.max(bp,bq);basis='before and after';}
+      else{const b=bp!=null?bp:bq;lo=b*_SI_TL.oneSide;hi=b;basis=bp!=null?'before only':'after only';}
+      run.est={lo,hi,mid:(lo+hi)/2,basis,pre:bp,post:bq};
+    }
+    r.runs.push(run);i=j;
+  }
+  // inferred restocks: same rule as the received figure (_siAxExposure), per day
+  for(let i=0;i<days.length;i++){
+    const x=days[i];if(x.stock==null||x.prev==null)continue;
+    const resid=x.stock-x.prev+x.sold;
+    if(resid>=Math.max(_SI_RECV_MIN,_SI_RECV_SHARE*x.prev))r.events.push({d:x.d,i,resid,prev:x.prev,stock:x.stock,sold:x.sold,strong:resid>=_SI_TL.strongResid&&resid>=_SI_TL.strongShare*x.prev});
+  }
+  return r;
+}
+// The visible slice of the series: the last N days, or everything.
+function _siAxTlWindow(tl,range){
+  const n=tl&&tl.days?tl.days.length:0;
+  const N=range==='all'?n:Math.min(n,Math.max(1,parseInt(range,10)||90));
+  return{i0:n-N,i1:n-1,n:N};
+}
+// Numbers for the read-out and the table, for the visible window. Lost sales use ONLY the in-stock pace.
+function _siAxTlSummary(tl,range,lt){
+  const w=_siAxTlWindow(tl,range),o={win:w,measured:0,out:0,inDays:0,sold:0,soldAtZero:0,runs:[],lost:null,notEstimated:0,
+    ongoing:null,restocks:{n:0,units:0,strong:0},lt:null,negDays:0,price:tl?tl.price:null};
+  if(!tl||!tl.ok||w.n<=0)return o;
+  for(let i=w.i0;i<=w.i1;i++){
+    const x=tl.days[i];o.sold+=x.sold;if(x.neg>0)o.negDays++;
+    if(x.state!=='nodata')o.measured++;
+    if(x.state==='out'){o.out++;o.soldAtZero+=x.sold;}else if(x.state==='in')o.inDays++;
+  }
+  let lo=0,hi=0,mid=0,nEst=0;
+  tl.runs.forEach(run=>{
+    let nWin=0,soldWin=0;for(let i=Math.max(run.i0,w.i0);i<=Math.min(run.i1,w.i1);i++)if(tl.days[i].state==='out'){nWin++;soldWin+=tl.days[i].sold;}
+    if(!nWin)return;
+    const row={from:run.from,to:run.to,days:run.outDays,span:run.days,nWin,sold:soldWin,est:run.est,why:run.why,open:run.open,leftCensored:run.leftCensored};
+    if(run.est){lo+=nWin*run.est.lo;hi+=nWin*run.est.hi;mid+=nWin*run.est.mid;nEst+=nWin;}else o.notEstimated++;
+    o.runs.push(row);
+  });
+  if(nEst>0)o.lost={lo:Math.round(lo),hi:Math.round(hi),mid:Math.round(mid),days:nEst,pace:mid/nEst};
+  const last=tl.runs[tl.runs.length-1];
+  if(last&&last.open)o.ongoing={from:last.from,days:last.days};
+  tl.events.forEach(e=>{if(e.i>=w.i0&&e.i<=w.i1){o.restocks.n++;o.restocks.units+=e.resid;if(e.strong)o.restocks.strong++;}});
+  if(lt&&lt.days>0&&tl.to){
+    const tn=_siAxDayNum(tl.to);
+    o.lt={days:lt.days,text:lt.text,placed:_siAxDayStr(tn-lt.days),lands:tl.to,
+      latest:o.runs.length?{from:o.runs[o.runs.length-1].from,orderBy:_siAxDayStr(_siAxDayNum(o.runs[o.runs.length-1].from)-lt.days)}:null};
+  }
+  return o;
+}
+// The plain-language read-out. Short sentences, each only when its inputs exist.
+function _siAxTlReadout(sum,hasStock){
+  const L=[];
+  if(!sum||!sum.win||sum.win.n<=0)return L;
+  const f=d=>_siAxFmtDay(d);
+  if(!hasStock){L.push('No stock history for this article, so only sales are drawn. '+sum.sold+' unit'+(sum.sold===1?'':'s')+' sold in this view.');return L;}
+  if(!sum.measured){L.push('No stock readings fall in this view, so availability cannot be judged. '+sum.sold+' unit'+(sum.sold===1?'':'s')+' sold.');return L;}
+  const pct=Math.round(sum.out/sum.measured*100);
+  L.push('Out of stock '+sum.out+' of the '+sum.measured+' day'+(sum.measured===1?'':'s')+' measured in this view ('+pct+'%).');
+  if(sum.out>0){
+    if(sum.lost){
+      const same=sum.lost.lo===sum.lost.hi;
+      const rs=sum.price!=null&&sum.price>0?', about '+(same?_siPKR(Math.round(sum.lost.mid*sum.price)):_siPKR(Math.round(sum.lost.lo*sum.price))+'–'+_siPKR(Math.round(sum.lost.hi*sum.price)))+' at the average price before discounts':'';
+      L.push('Estimate, not a count: about '+(same?'~'+sum.lost.lo:sum.lost.lo+'–'+sum.lost.hi)+' unit'+(sum.lost.hi===1?'':'s')+' of sales were likely lost while out of stock'+rs+'. It uses only the in-stock pace (about '+_siAxNum(sum.lost.pace,1)+' a day) times the days out, and ignores customers who bought another size or colour.');
+    }
+    if(sum.notEstimated>0){
+      const r=sum.runs.find(x=>!x.est);
+      L.push((sum.lost?sum.notEstimated+' stretch'+(sum.notEstimated===1?'':'es')+' left out of that estimate':'No loss estimate')+': '+(r&&r.why?r.why:'no baseline')+'.');
+    }
+    if(sum.soldAtZero>0)L.push(sum.soldAtZero+' unit'+(sum.soldAtZero===1?'':'s')+' sold on days stock read zero at both closes (a late restock, an order before the snapshot, or overselling). Drawn as striped bars.');
+  }
+  if(sum.ongoing)L.push('Out of stock now: since '+f(sum.ongoing.from)+' ('+sum.ongoing.days+' day'+(sum.ongoing.days===1?'':'s')+').');
+  if(sum.restocks.n>0)L.push(sum.restocks.n+' restock'+(sum.restocks.n===1?'':'s')+' inferred from stock jumps (about '+sum.restocks.units+' units in total). Inferred from stock minus sales, not from receipts.');
+  else L.push('No restock detected in this view.');
+  if(sum.lt){
+    let t='Lead time '+sum.lt.days+' days ('+sum.lt.text+'): an order placed on '+f(sum.lt.placed)+' would land today.';
+    if(sum.lt.latest)t+=' The latest out-of-stock stretch began '+f(sum.lt.latest.from)+'; to land by then an order had to be placed by '+f(sum.lt.latest.orderBy)+'.';
+    L.push(t);
+  }
+  return L;
+}
+// Honest coverage: what the stock history spans, what is blank, what was re-dated or clamped.
+function _siAxTlCoverage(tl,H,cov,range){
+  const L=[],f=d=>_siAxFmtDay(d);
+  if(!tl||!tl.ok)return L;
+  if(!H||!tl.hasStock){L.push('Sales are counted from '+(cov?f(cov):'—')+'. This article has no stock history in the snapshots, so there is no stock line.');return L;}
+  const w=_siAxTlWindow(tl,range);
+  L.push('Stock history: '+f(H.from)+' to '+f(H.to)+' ('+H.dates.length+' daily snapshots from one bounded read). Sales are counted from '+(cov?f(cov):'—')+'.');
+  const first=tl.days[w.i0];
+  if(first&&H.from&&first.d<H.from)L.push('Days before '+f(H.from)+' have no stock data (hatched grey): that is a gap, not zero stock.');
+  let gaps=0;for(let i=w.i0;i<=w.i1;i++){const x=tl.days[i];if(x.stock==null&&x.d>=H.from&&x.d<=H.to)gaps++;}
+  if(gaps>0)L.push(gaps+' day'+(gaps===1?' inside the stock history has':'s inside the stock history have')+' no snapshot and '+(gaps===1?'is':'are')+' left blank, never drawn as zero.');
+  const today=tl.days[tl.days.length-1];
+  if(today&&today.stock==null&&today.d>H.to)L.push('The newest close ('+f(H.to)+') is the last snapshot; days after it have no stock reading yet.');
+  let neg=0;for(let i=w.i0;i<=w.i1;i++)if(tl.days[i].neg>0)neg++;
+  L.push('Negative stock counts as 0'+(neg?' ('+neg+' day'+(neg===1?'':'s')+' in this view had an oversold variant)':'')+'. A day is out of stock when stock was 0 at both the previous and that day\'s close.');
+  if(H.rekeyed&&H.rekeyed.length)L.push(H.rekeyed.length+' early-run snapshot'+(H.rekeyed.length===1?' is':'s are')+' shown on the day it closes (a snapshot before 18:00 PKT is the previous day\'s close).');
+  const lc=H.loc;
+  if(lc){
+    if(lc.max!=null&&lc.max>1&&lc.missing>0)L.push('Snapshots from '+f(lc.firstSeen)+' sum all '+lc.max+' locations; the '+lc.missing+' before that did not record their locations (they read the first location only), so stock before then can be understated.');
+    else if(lc.max!=null&&lc.max>1)L.push('Stock is summed across '+lc.max+' locations in every snapshot.');
+    else if(lc.max==null)L.push('The snapshots do not record how many locations they summed, so stock may cover the first location only.');
+  }
+  return L;
+}
+// The columns drawn: one per day, or one per Monday-start week (stock = the last close of the week,
+// shaded out when 4+ days were out). Gaps stay null.
+function _siAxTlColumns(tl,res,range){
+  const w=_siAxTlWindow(tl,range),cols=[];
+  if(!tl||!tl.ok||w.n<=0)return cols;
+  const days=tl.days.slice(w.i0,w.i1+1);
+  if(res!=='week'){
+    days.forEach(x=>{
+      const ev=tl.events.find(e=>e.i===x.i);
+      cols.push({label:_siAxFmtDay(x.d),short:_siAxFmtDay(x.d,true),d:x.d,stock:x.stock,sold:x.sold,state:x.state,outDays:x.state==='out'?1:0,measured:x.state==='nodata'?0:1,
+        n:1,neg:x.neg,rs:ev||null,rsUnits:ev?ev.resid:0,rsStrong:!!(ev&&ev.strong)});
+    });
+    return cols;
+  }
+  const m=new Map();
+  days.forEach(x=>{
+    const b=_siAxBucketStart(x.d,'week');let c=m.get(b);
+    if(!c){c={d:b,start:b,days:[]};m.set(b,c);cols.push(c);}
+    c.days.push(x);
+  });
+  return cols.map(c=>{
+    let sold=0,out=0,meas=0,stock=null,neg=0,ru=0,rsStrong=false,rsn=0;
+    c.days.forEach(x=>{sold+=x.sold;if(x.state==='out')out++;if(x.state!=='nodata')meas++;if(x.stock!=null)stock=x.stock;if(x.neg>0)neg++;
+      const ev=tl.events.find(e=>e.i===x.i);if(ev){ru+=ev.resid;rsn++;if(ev.strong)rsStrong=true;}});
+    const n=c.days.length;
+    const state=meas===0?'nodata':(out>0&&out>=Math.min(_SI_TL.weekOutDays,n)?'out':'in');
+    return{label:'Week of '+_siAxFmtDay(c.start),short:_siAxFmtDay(c.start,true),d:c.start,stock,sold,state,outDays:out,measured:meas,n,neg,rs:rsn?{resid:ru}:null,rsUnits:ru,rsStrong};
+  });
+}
+// ── drawing (HTML text, SVG paths only) ──
+function _siAxTlTipText(c,res){
+  const rows=[];
+  rows.push(['Stock on hand',c.stock==null?'no stock data':String(c.stock)]);
+  rows.push([res==='week'?'Sold that week':'Sold',String(c.sold)]);
+  if(res==='week'){rows.push(['Out of stock',c.measured?c.outDays+' of '+c.measured+' measured days':'—']);}
+  else rows.push(['State',c.state==='out'?'out of stock':(c.state==='in'?'in stock':'no data (gap)')]);
+  if(c.rsUnits)rows.push(['Restock (inferred)','+'+c.rsUnits]);
+  if(c.neg)rows.push(['Oversold',c.neg+' variant'+(c.neg===1?'':'s')+' below 0 (counted as 0)']);
+  if(c.state==='out'&&c.sold>0&&res!=='week')rows.push(['Note','sold while stock read 0']);
+  return{title:c.label,rows};
+}
+function _siAxTlChartHtml(tl,res,range,lt){
+  const cols=_siAxTlColumns(tl,res,range),n=cols.length;
+  if(!n)return'';
+  const W=1000,H=100,f=v=>Math.round(v*100)/100;
+  const stockVals=cols.map(c=>c.stock).filter(v=>v!=null);
+  const soldVals=cols.map(c=>c.sold);
+  const scS=_siAxScale(stockVals,true),scD=_siAxScale(soldVals,true);
+  const hasStock=tl.hasStock&&stockVals.length>0;
+  const X=i=>i/n*100;
+  // bands (consecutive columns in the same state)
+  const bands=[];
+  cols.forEach((c,i)=>{
+    const k=c.state==='out'?'out':(c.state==='nodata'?'nodata':'');
+    if(!k)return;
+    const b=bands[bands.length-1];
+    if(b&&b.k===k&&b.i1===i-1){b.i1=i;b.days+=(k==='out'?c.outDays:0);}else bands.push({k,i0:i,i1:i,days:k==='out'?c.outDays:0});
+  });
+  const bandHtml=bands.filter(b=>hasStock||b.k==='out').map(b=>{
+    const wpc=(b.i1-b.i0+1)/n*100,lab=b.k==='out'?'Out '+b.days+' d':'no stock data';
+    return`<i class="si-tl-band ${b.k}" style="left:${X(b.i0).toFixed(2)}%;width:${wpc.toFixed(2)}%">${wpc>=(b.k==='out'?12:22)?`<b>${_siEsc(lab)}</b>`:''}</i>`;
+  }).join('');
+  // stock: stepped area + line, broken at gaps
+  let area='',line='';
+  if(hasStock){
+    const Y=v=>f(H-(v/scS.max)*H);
+    let i=0;
+    while(i<n){
+      if(cols[i].stock==null){i++;continue;}
+      let j=i;while(j+1<n&&cols[j+1].stock!=null)j++;
+      const x0=f(i/n*W);
+      let l='M'+x0+' '+Y(cols[i].stock),ar='M'+x0+' '+H+'L'+x0+' '+Y(cols[i].stock);
+      for(let k=i;k<=j;k++){
+        if(k>i){l+='V'+Y(cols[k].stock);ar+='V'+Y(cols[k].stock);}
+        const x1=f((k+1)/n*W);l+='H'+x1;ar+='H'+x1;
+      }
+      ar+='V'+H+'Z';area+=ar;line+=l;i=j+1;
+    }
+  }
+  // restock markers
+  let rsHtml='';
+  if(hasStock){
+    const strong=cols.map((c,i)=>({c,i})).filter(o=>o.c.rs&&o.c.stock!=null);
+    const labelled=new Set(strong.filter(o=>o.c.rsStrong).sort((p,q)=>q.c.rsUnits-p.c.rsUnits).slice(0,6).map(o=>o.i));
+    rsHtml=strong.map(o=>{
+      const left=((o.i+0.5)/n*100).toFixed(2),bot=(o.c.stock/scS.max*100).toFixed(2);
+      return`<i class="si-tl-rs ${o.c.rsStrong?'strong':'weak'}" style="left:${left}%;bottom:${bot}%"></i>`+(labelled.has(o.i)&&n<=130?`<span class="si-tl-rl${(o.i+0.5)/n>0.8?' l':''}" style="left:${left}%;bottom:${bot}%">+${o.c.rsUnits}</span>`:'');
+    }).join('');
+  }
+  // lead-time marker: where an order placed (today - lead time) would land today
+  let ltHtml='';
+  if(hasStock&&lt&&lt.days>0){
+    const placed=_siAxDayStr(_siAxDayNum(tl.to)-lt.days);
+    let idx=-1;
+    if(res==='week'){const b=_siAxBucketStart(placed,'week');idx=cols.findIndex(c=>c.d===b);}else idx=cols.findIndex(c=>c.d===placed);
+    if(idx>=0){
+      const left=((idx+0.5)/n*100).toFixed(2),flip=(idx+0.5)/n>0.5;
+      ltHtml=`<i class="si-tl-lt" style="left:${left}%"></i><span class="si-tl-ltl${flip?' flip':''}" style="${flip?'right:'+(100-(idx+0.5)/n*100+0.8).toFixed(2):'left:'+((idx+0.5)/n*100+0.8).toFixed(2)}%">order here lands today</span>`;
+    }
+  }
+  // sales bars
+  const bars=cols.map((c,i)=>{
+    if(!c.sold)return'';
+    const hh=(c.sold/scD.max*100).toFixed(2);
+    return`<i class="si-tl-bar${c.state==='out'&&res!=='week'?' zero':''}" style="left:${(X(i)+100/n*0.1).toFixed(3)}%;width:${(100/n*0.8).toFixed(3)}%;height:${hh}%"></i>`;
+  }).join('');
+  const grid=sc=>{let g='',t='';for(let i=0;i<=sc.count;i++){const p=i/sc.count*100;g+=`<i class="si-ax-grid" style="bottom:${p}%"></i>`;t+=`<span class="si-ax-tick" style="bottom:${p}%">${_siEsc(_siAxTick(sc.step*i))}</span>`;}return{g,t};};
+  const gS=grid(scS),gD=grid(scD);
+  const nT=Math.min(5,n),xt=[];
+  for(let j=0;j<nT;j++){const i=nT===1?0:Math.round(j*(n-1)/(nT-1));xt.push({i,label:cols[i].short});}
+  const xl=xt.map((t,k)=>`<span class="si-ax-xtick${xt.length>1&&k===0?' first':(k===xt.length-1&&xt.length>1?' last':'')}" style="left:${((t.i+0.5)/n*100).toFixed(2)}%">${_siEsc(t.label)}</span>`).join('');
+  _siAxTlHov={n,res,cols:cols.map(c=>_siAxTlTipText(c,res))};
+  const ev=`onpointermove="window._siAxTlHover(event,this)" onpointerdown="window._siAxTlHover(event,this)" onpointerleave="window._siAxTlLeave(this,event)"`;
+  const stockPanel=hasStock?`<div class="si-tl-panel stock" role="img" aria-label="Stock on hand per ${res==='week'?'week':'day'}, out-of-stock stretches shaded" ${ev}>${gS.g}${bandHtml}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="si-tl-area" d="${area}"/><path class="si-tl-line" d="${line}"/></svg>${rsHtml}${ltHtml}<div class="si-ax-cursor"></div><div class="si-ax-tip"></div></div>`
+    :`<div class="si-tl-panel stock none"><div class="si-tl-nostock">No stock readings for this article in this view.</div></div>`;
+  const salesPanel=`<div class="si-tl-panel sales" role="img" aria-label="Units sold per ${res==='week'?'week':'day'}" ${ev}>${gD.g}${hasStock?bandHtml.replace(/<b>[^<]*<\/b>/g,''):''}${bars}<div class="si-ax-cursor"></div></div>`;
+  return`<div class="si-tl-grid">
+    <div class="si-tl-cap">Stock on hand (units${res==='week'?', end of week':''})</div>
+    <div class="si-ax-yaxis si-tl-ya stock">${hasStock?gS.t:''}</div>${stockPanel}
+    <div class="si-tl-cap">Units sold per ${res==='week'?'week':'day'}</div>
+    <div class="si-ax-yaxis si-tl-ya sales">${gD.t}</div>${salesPanel}
+    <div class="si-ax-xaxis si-tl-xa">${xl}</div></div>`;
+}
+window._siAxTlHover=function(ev,el){
+  const h=_siAxTlHov;if(!h||!h.n)return;
+  const r=el.getBoundingClientRect();if(!r.width)return;
+  const fr=Math.min(0.999999,Math.max(0,(ev.clientX-r.left)/r.width));
+  const i=Math.min(h.n-1,Math.floor(fr*h.n)),pct=(i+0.5)/h.n*100;
+  const root=el.closest?el.closest('.si-tl'):null;if(!root)return;
+  root.querySelectorAll('.si-ax-cursor').forEach(c=>{c.style.display='block';c.style.left=pct+'%';});
+  const tip=root.querySelector('.si-tl-panel.stock .si-ax-tip')||root.querySelector('.si-ax-tip');
+  if(tip){
+    const t=h.cols[i];
+    tip.innerHTML=`<b>${_siEsc(t.title)}</b>`+t.rows.map(x=>`<div class="r"><span>${_siEsc(x[0])}</span><strong>${_siEsc(x[1])}</strong></div>`).join('');
+    tip.style.display='block';
+    if(pct>55){tip.style.left='auto';tip.style.right=(100-pct+1)+'%';}else{tip.style.right='auto';tip.style.left=(pct+1)+'%';}
+  }
+};
+window._siAxTlLeave=function(el,ev){
+  if(ev&&ev.pointerType==='touch')return;
+  const root=el.closest?el.closest('.si-tl'):null;if(!root)return;
+  root.querySelectorAll('.si-ax-cursor').forEach(c=>{c.style.display='none';});
+  root.querySelectorAll('.si-ax-tip').forEach(t=>{t.style.display='none';});
+};
+window._siAxTlSet=function(kind,val){
+  if(kind==='res'&&(val==='day'||val==='week'))_siAxTlRes=val;
+  else if(kind==='range'&&_SI_TL_RANGES.some(r=>r[0]===val))_siAxTlRange=val;
+  else return;
+  const a=_siAxIndex().map.get(_siAxSel),el=document.getElementById('si-tl');
+  if(a&&el)el.outerHTML=_siAxTlCardHtml(a);
+};
+function _siAxTlRunsTable(sum){
+  if(!sum.runs.length)return'';
+  const f=d=>_siEsc(_siAxFmtDay(d,true));
+  const rows=sum.runs.map(r=>{
+    const lost=r.est?(r.est.lo===r.est.hi?'~'+Math.round(r.nWin*r.est.lo):Math.round(r.nWin*r.est.lo)+'–'+Math.round(r.nWin*r.est.hi)):'—';
+    return`<tr><td>${f(r.from)}${r.leftCensored?' <span class="si-ax-flag" title="Began before the stock history starts or at a gap, so the true start is unknown">or earlier</span>':''}</td><td>${r.open?'still out':f(r.to)}</td><td>${r.days}${r.nWin<r.days?` <span class="si-ax-note" style="display:inline;margin:0">(${r.nWin} in this view)</span>`:''}</td><td>${r.sold}</td><td>${_siEsc(lost)}${r.est?'':` <span class="si-ax-flag" title="${_siEsc(r.why)}">not estimated</span>`}</td><td>${sum.lt?f(_siAxDayStr(_siAxDayNum(r.from)-sum.lt.days)):'—'}</td></tr>`;
+  }).join('');
+  return`<div class="si-tl-tbl"><table class="cut-table"><thead><tr><th>Out from</th><th>Back on</th><th>Days out</th><th>Sold at zero stock</th><th>Est. lost units</th><th>Order by${sum.lt?' ('+sum.lt.days+' d lead)':''}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function _siAxTlDataTable(tl,res,range){
+  const cols=_siAxTlColumns(tl,res,range);
+  if(!cols.length)return'';
+  const rows=cols.slice().reverse().map(c=>`<tr><td>${_siEsc(res==='week'?c.label:c.label)}</td><td>${c.stock==null?'—':c.stock}</td><td>${c.sold}</td><td>${c.state==='out'?(res==='week'?'out '+c.outDays+' of '+c.measured+' d':'out of stock'):(c.state==='in'?(res==='week'&&c.outDays?'in stock, out '+c.outDays+' d':'in stock'):'no data')}${c.rsUnits?' · restock +'+c.rsUnits+' (inferred)':''}</td></tr>`).join('');
+  return`<details class="si-tl-data"><summary>Table of the numbers in this chart</summary><div class="si-tl-tbl" style="max-height:300px;overflow:auto"><table class="cut-table"><thead><tr><th>${res==='week'?'Week':'Day'}</th><th>Stock (close)</th><th>Sold</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+}
+function _siAxTlCardHtml(a){
+  const idx=_siAxIndex(),H=_siHist&&_siHist.byCode?_siHist:null;
+  const cov=idx.cov||'';
+  const lt=_siAxLeadTime(a);
+  const tl=_siAxTimeline(a,H,{from:cov||(H&&H.from)||'',to:_siPktDate(0)});
+  const res=_siAxTlRes,range=_siAxTlRange;
+  const btn=(kind,v,l,cur)=>`<button class="si-ax-btn${cur===v?' on':''}" aria-pressed="${cur===v}" onclick="window._siAxTlSet('${kind}','${v}')">${_siEsc(l)}</button>`;
+  const bar=`<div class="si-ax-bar si-tl-bar2">${btn('res','day','Day',res)}${btn('res','week','Week',res)}<span class="si-tl-sep"></span>${_SI_TL_RANGES.map(r=>btn('range',r[0],r[1],range)).join('')}</div>`;
+  if(!tl.ok)return`<div class="card si-tl" id="si-tl"><div class="card-title">Stock vs sales</div><div class="si-ax-empty">No days to draw yet.</div></div>`;
+  const sum=_siAxTlSummary(tl,range,lt);
+  const state=_siHistState;
+  const pre=(state==='loading'||state==='idle')?`<div class="si-ax-note" role="status">Stock history is still loading, so only sales are drawn for now.</div>`:(state==='error'?`<div class="si-ax-note" role="alert" style="color:var(--accent-urgent);font-weight:600">Stock history could not be read, so only sales are drawn. <button class="si-ax-btn" onclick="window._siAxRetryHistory()">Retry</button></div>`:'');
+  const read=_siAxTlReadout(sum,tl.hasStock).map(t=>`<li>${_siEsc(t)}</li>`).join('');
+  const cap=_siAxTlCoverage(tl,H,cov,range).map(t=>`<div>${_siEsc(t)}</div>`).join('');
+  const legend=`<div class="si-tl-legend"><span><i class="k stock"></i>Stock on hand</span><span><i class="k out"></i>Out of stock</span><span><i class="k bar"></i>Units sold</span><span><i class="k zero"></i>Sold at zero stock</span><span><i class="k rs"></i>Restock (inferred; hollow = small)</span><span><i class="k lt"></i>Lead time</span></div>`;
+  return`<div class="card si-tl" id="si-tl"><div class="card-title">Stock vs sales</div>${bar}${pre}
+    <ul class="si-tl-read">${read}</ul>${legend}${_siAxTlChartHtml(tl,res,range,lt)}
+    ${_siAxTlRunsTable(sum)}${_siAxTlDataTable(tl,res,range)}
+    <div class="si-ax-note si-tl-cov">${cap}</div></div>`;
+}
+
 function _siAxSearchBody(){
   const idx=_siAxIndex(),a=idx.map.get(_siAxSel);
   if(!a)return`<div class="si-ax-empty">Pick an article above to see its sales, stock, size mix and trend.</div>`+_siAxCoverage([]);
@@ -2666,6 +3035,7 @@ function _siAxSearchBody(){
     ${kpi('Momentum',_siEsc(_siAxMomText(m)),m.momWord&&m.momentum!=null?(m.momentum>=0?'up ':'down ')+_siAxPct(Math.abs(m.momentum))+' · last 28 d vs the 28 d before':'last 28 d vs the 28 d before','mom')}
     ${kpi('Sold 7d / 30d / 90d',s7.u+' / '+s30.u+' / '+s90.u,'')}</div>
   ${_siAxCoverage([a])}${_siAxHistBanner()}
+  ${_siAxTlCardHtml(a)}
   <div class="card"><div class="card-title">Sales over time</div>
     <div class="si-ax-bar">${toggle}</div>${chart}
     <div class="si-ax-note">Latest ${_siAxBucket} is still running. ${_siEsc(ser.notes.join(' '))}</div></div>
