@@ -138,3 +138,8 @@ Interface only, no metric changed. Reading of the request: "+" selects an articl
 
 ## 4. NOT offered
 Refund/return rate (later refunds never synced, it would read as zero); discount depth (no discount fields); margin; true receipts (no receipt log); per-size in-stock rate (article level only).
+
+
+## Returns banner removed (1 Oct 2026)
+
+The amber "Recent sales are before later returns and cancellations" banner (Article Explorer, all tabs) and the Needs Attention amber "Returns are not synced" item were removed at the owner's request ("this is not required"). The detection (`quality.returns.synced`), the confidence cap and every calculation are unchanged. A quiet grey note, "Returns not yet synced", remains in the collapsed Data quality list and the Data checks list (not counted in the pill or trust strip). Until the returns refresh has run, recent units and revenue are still an upper limit.

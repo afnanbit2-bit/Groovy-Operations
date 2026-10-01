@@ -1320,6 +1320,7 @@ function _siCleanQualityHtml(q){
   const skipped=L.refunded+L.voided+L.cancelledOrder+L.noSku+L.badDate+L.duplicateId+L.nonMerch;
   const row=(n,t)=>n?`<li><strong>${n}</strong> ${t}</li>`:'';
   const items=[
+    (q.returns&&!q.returns.synced)?'<li class="si-ax-quiet">Returns not yet synced: recent units and revenue are before later returns and cancellations, so treat them as an upper limit.</li>':'',
     row(L.refunded,'refunded line items left out'),
     row(L.voided,'voided line items left out'),
     row(L.cancelledOrder,'line items of cancelled orders left out'),
@@ -1811,11 +1812,11 @@ function _siAxConfidence(a){
 function _siAxConfChip(c){
   return`<span class="si-conf lvl-${c.level}" title="${_siEsc('Confidence '+c.name+': '+c.why.join('; '))}"><span class="si-dots" aria-hidden="true">${[0,1,2].map(i=>`<i${i<c.dots?' class="on"':''}></i>`).join('')}</span>${_siEsc(c.name)} confidence</span>`;
 }
-// Trust banner: later returns and cancellations are not in these units until the returns sync has stamped the lines.
+// Trust note: later returns and cancellations are not in these units until the returns sync has stamped the lines.
 function _siAxTrustBanner(){
   const q=_siAxIndex().quality.returns;
   if(q.synced)return`<div class="si-ax-trust ok" role="note">Returns are synced: ${q.units} unit${q.units===1?'':'s'} already returned or cancelled are taken off the totals.</div>`;
-  return`<div class="si-ax-trust" role="note"><strong>Recent sales are before later returns and cancellations.</strong> Orders are read when they are placed; returns and cancellations that come afterwards are not in these units yet, so recent units and revenue can read about a fifth above Shopify’s own net figure (September: 7,895 here against 6,466 net at Shopify, checked 30 Sept 2026). Use the numbers as an upper limit.${q.stamped?' A few lines already carry return data ('+q.units+' unit'+(q.units===1?'':'s')+' taken off).':''}</div>`;
+  return'';// owner's call (1 Oct 2026): no banner while returns are unsynced; the quiet note sits in Data quality and Data checks
 }
 
 // ── Scorecard ───────────────────────────────────────────────────────
@@ -4053,7 +4054,7 @@ function _siNaTrustOf(ctx){
     for(let k=1;k<=C.gapDays;k++)if(!set.has(_siAxDayStr(Tn-k)))miss++;
     if(miss)amber.push({id:'gap',title:miss+' day'+(miss===1?'':'s')+' missing from the stock history in the last '+C.gapDays,text:'Cover and the in-stock rate count only the days that were measured.'});
   }
-  if(q&&q.returns&&!q.returns.synced)amber.push({id:'returns',title:'Returns are not synced',text:'Units run about a fifth above Shopify’s net figure (September: 7,895 here against 6,466 net, checked 30 Sept 2026), so pace is optimistic and reorder sizes should be trimmed. Stock is exact.'});
+  if(q&&q.returns&&!q.returns.synced)quiet.push('Returns not yet synced: recent units and revenue are before later returns and cancellations, so pace reads high and they are an upper limit (stock is exact).');
   if(q){
     if(q.snapshot&&q.snapshot.negativeClamped)quiet.push(q.snapshot.negativeClamped+' negative stock entr'+(q.snapshot.negativeClamped===1?'y':'ies')+' counted as 0 (fix the count in Shopify).');
     if(q.snapshot&&q.snapshot.duplicateSkus)quiet.push(q.snapshot.duplicateSkus+' SKU'+(q.snapshot.duplicateSkus===1?'':'s')+' appear more than once in the snapshot and are summed.');
