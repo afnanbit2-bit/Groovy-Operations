@@ -3001,6 +3001,127 @@ function _siAxTlCardHtml(a){
     <div class="si-ax-note si-tl-cov">${cap}</div></div>`;
 }
 
+// ── Sizes card (one article): the size panel ────────────────────────
+// Per size: stock now and a week ago, units sold (28 days, counted window), the size's share of the article's SALES (the sales
+// curve) against its share of the article's STOCK (the stock curve), weeks of cover at the size's 28-day pace and a status chip.
+// Rows come from _siAxStats(a).sizeRows and the states from _siNaSizeRows, so this card and the Needs Attention tab agree. No read.
+// Per-size stock HISTORY is not loaded (history is per article), so there is no per-size in-stock pace: cover uses the 28-day pace of
+// the size and is "at most" when the size was out for part of the window. Missing is never 0 ("—").
+const _SI_SZ={shrinkK:6,floor:0.03,floorMinSold:3,minTotal:30,gapShare:0.10,overMinStock:8,overMix:2,overCoverWeeks:12};
+const _SI_SZ_CHIPS={out:{l:'Out and selling',g:'▲'},thin:{l:'Thin',g:'▼'},fine:{l:'Fine',g:'●'},over:{l:'Over-stocked vs demand',g:'■'},none:{l:'No sales',g:'○'},nodata:{l:'No stock data',g:'–'}};
+function _siAxSizeJoin(a){return a.length<=1?(a[0]||''):a.slice(0,-1).join(', ')+' and '+a[a.length-1];}
+// shares (sum 1) -> integers summing to `total` by largest remainder (ties: earlier index)
+function _siAxRoundShares(sh,total){
+  const raw=sh.map(x=>Math.max(0,x)*total),fl=raw.map(Math.floor);let left=total-fl.reduce((s,v)=>s+v,0);
+  raw.map((v,i)=>[v-fl[i],i]).sort((p,q)=>(q[0]-p[0])||(p[1]-q[1])).forEach(p=>{if(left>0){fl[p[1]]++;left--;}});
+  return fl;
+}
+// The sales curve: last 28 days blended with lifetime. A size with few recent units leans on its lifetime share
+// (weight recent/(recent+K), K=6), then the blend is renormalised to 100%. null with no sales at all.
+function _siAxSizeCurve(rows){
+  const L=rows.reduce((s,r)=>s+(r.sold||0),0),R=rows.reduce((s,r)=>s+(r.recent||0),0);
+  if(L<=0&&R<=0)return null;
+  const K=_SI_SZ.shrinkK;
+  const raw=rows.map(r=>{
+    const l=L>0?(r.sold||0)/L:0,rc=R>0?(r.recent||0)/R:0,w=R>0?(r.recent||0)/((r.recent||0)+K):0;
+    return L>0?w*rc+(1-w)*l:rc;
+  });
+  const t=raw.reduce((s,v)=>s+v,0);
+  return{shares:raw.map(v=>t>0?v/t:0),basis:R>0?'last 28 days blended with lifetime':'lifetime'};
+}
+// Size chips from the Needs Attention size states, plus the stock-mix rule and "No sales".
+function _siAxSizeStatus(r,st,salesShare,stockShare){
+  if(r.stock==null)return'nodata';
+  if(st==='out')return'out';
+  if(!(r.recent>0))return'none';                       // out or in stock, nothing sold in 28 days
+  if(st==='thin')return'thin';
+  if(st==='deep')return'over';
+  const cw=r.coverDays!=null?r.coverDays/7:null;
+  if(r.stock>=_SI_SZ.overMinStock&&salesShare!=null&&stockShare!=null&&stockShare>=_SI_SZ.overMix*salesShare&&cw!=null&&cw>_SI_SZ.overCoverWeeks)return'over';
+  return'fine';
+}
+// Pure: sizeRows (+ the Needs Attention states) -> table rows, curves, the readout and the status of every size.
+function _siAxSizePanelCalc(sizeRows,naRows,leadDays){
+  const na={};(naRows||[]).forEach(x=>{na[x.size]=x;});
+  const rows=(sizeRows||[]).filter(s=>s.stock!=null||s.sold>0).sort((x,y)=>_siSortCmpSize(x.size,y.size));
+  const sc=_siAxSizeCurve(rows);
+  const stockTot=rows.reduce((s,r)=>s+(r.stock||0),0),hasStock=rows.some(r=>r.stock!=null);
+  const out=rows.map((r,i)=>{
+    const n=na[r.size]||{};
+    const salesShare=sc?sc.shares[i]:null,stockShare=(hasStock&&stockTot>0&&r.stock!=null)?r.stock/stockTot:null;
+    const key=_siAxSizeStatus({stock:r.stock,recent:r.recent,coverDays:n.coverDays},n.state,salesShare,stockShare);
+    return{size:r.size,stock:r.stock,prev:r.prev,recent:r.recent,sold:r.sold,coverWeeks:n.coverDays!=null?n.coverDays/7:null,salesShare,stockShare,key,label:_SI_SZ_CHIPS[key].l,glyph:_SI_SZ_CHIPS[key].g};
+  });
+  return{rows:out,basis:sc?sc.basis:null,hasStock,stockTot,readout:_siAxSizeReadout(out,hasStock,stockTot)};
+}
+// One sentence: the sizes that carry far more of the sales than of the stock, and the sizes sitting on far more stock than sales.
+function _siAxSizeReadout(rows,hasStock,stockTot){
+  if(rows.length<2||(rows.length===2&&rows.every(r=>/^unknown$/i.test(r.size))))return'Only one size is recorded for this article, so there is no size mix to compare.';
+  if(!rows.some(r=>r.salesShare!=null))return'No sales are counted for this article, so there is no sales curve yet.';
+  if(!hasStock)return'There is no stock data for this article, so only the sales curve is shown.';
+  if(!(stockTot>0))return'Nothing is in stock, so there is no stock mix to compare with the sales mix.';
+  const G=_SI_SZ.gapShare,pct=v=>Math.round(v*100)+'%';
+  const under=rows.filter(r=>r.salesShare!=null&&r.stockShare!=null&&r.salesShare-r.stockShare>=G);
+  const over=rows.filter(r=>r.salesShare!=null&&r.stockShare!=null&&r.stockShare-r.salesShare>=G);
+  const sum=(a,k)=>a.reduce((s,r)=>s+r[k],0),part=[];
+  if(under.length)part.push(_siAxSizeJoin(under.map(r=>r.size))+(under.length>1?' carry ':' carries ')+pct(sum(under,'salesShare'))+' of sales but only '+pct(sum(under,'stockShare'))+' of stock');
+  if(over.length)part.push(_siAxSizeJoin(over.map(r=>r.size))+(over.length>1?' are ':' is ')+pct(sum(over,'stockShare'))+' of stock and '+pct(sum(over,'salesShare'))+' of sales');
+  if(!part.length){const g=Math.max(...rows.filter(r=>r.salesShare!=null&&r.stockShare!=null).map(r=>Math.abs(r.salesShare-r.stockShare)));return'The stock mix is close to the sales mix (no size is more than '+Math.round(G*100)+' points off; the largest gap is '+Math.round(g*100)+' points).';}
+  const s=part.join('; ');return s.charAt(0).toUpperCase()+s.slice(1)+'.';
+}
+// Suggested size split of the NEXT batch, proportional to the sales curve (real sizes only). A size that sold 3+ units gets at
+// least 3%; a size with no sales gets 0. Refused under 30 counted units or with fewer than two sizes that sold. Percent and units
+// both sum exactly (largest remainder). total (units) is optional: the Explorer's reorder guide, never invented here.
+function _siAxSizeSplit(sizeRows,total){
+  const el=(sizeRows||[]).filter(s=>!/^unknown$/i.test(s.size)&&(s.sold||0)>0).sort((x,y)=>_siSortCmpSize(x.size,y.size));
+  const L=el.reduce((s,r)=>s+r.sold,0);
+  if(el.length<2)return{ok:false,why:'Fewer than two sizes have sold, so there is no size split to suggest.'};
+  if(L<_SI_SZ.minTotal)return{ok:false,why:'Only '+L+' units are counted for this article (the split needs '+_SI_SZ.minTotal+'+), so a split would be guesswork.'};
+  let sh=_siAxSizeCurve(el).shares;
+  const floored=new Array(el.length).fill(false);
+  for(let it=0;it<6;it++){
+    let fl=0;const need=[];
+    el.forEach((r,i)=>{if(r.sold>=_SI_SZ.floorMinSold&&(floored[i]||sh[i]<_SI_SZ.floor)){floored[i]=true;fl++;}});
+    const rest=1-fl*_SI_SZ.floor,other=sh.reduce((s,v,i)=>s+(floored[i]?0:v),0);
+    const nx=sh.map((v,i)=>floored[i]?_SI_SZ.floor:(other>0?v/other*rest:0));
+    const same=nx.every((v,i)=>Math.abs(v-sh[i])<1e-12);sh=nx;if(same)break;
+  }
+  const pct=_siAxRoundShares(sh,100),units=(total!=null&&total>0)?_siAxRoundShares(sh,total):null;
+  return{ok:true,rows:el.map((r,i)=>({size:r.size,share:sh[i],pct:pct[i],units:units?units[i]:null})),total:total!=null&&total>0?total:null,sold:L};
+}
+function _siAxSizeGuide(a,m){
+  const lt=_siAxLeadTime(a),c=_siAxClassify(a),act=_siAxActionOf(a);
+  const pd=_siNaPerDay(m),qty=a.hasStock&&pd!=null?_siNaQty(pd,lt.days,a.onHand,c.cls):null;
+  return{qty,lt,cls:c.cls,act};
+}
+function _siAxSizesCardHtml(a){
+  const m=_siAxStats(a),g=_siAxSizeGuide(a,m);
+  const calc=_siAxSizePanelCalc(m.sizeRows,_siNaSizeRows(m,g.lt.days),g.lt.days);
+  if(!calc.rows.length)return`<div class="card si-sz" id="si-sz"><div class="card-title">Sizes</div><div class="si-ax-empty">No sizes are recorded for this article yet.</div></div>`;
+  const mx=Math.max(0.0001,...calc.rows.map(r=>Math.max(r.salesShare||0,r.stockShare||0)));
+  const p=v=>v==null?'—':Math.round(v*100)+'%';
+  const bar=(cls,v)=>`<span class="si-sz-line"><span class="si-sz-bar ${cls}" aria-hidden="true"><i style="width:${v==null?0:(v/mx*100).toFixed(1)}%"></i></span><span class="si-sz-n">${cls==='s'?'sales ':'stock '}${p(v)}</span></span>`;
+  const body=calc.rows.map(r=>`<tr><td class="si-sz-h"><b>${_siEsc(r.size)}</b></td><td data-l="On hand">${r.stock!=null?r.stock:'—'}</td><td data-l="A week ago">${r.prev!=null?r.prev:'—'}</td><td data-l="Sold 28 d">${r.recent}</td><td data-l="Sold (counted)">${r.sold}</td>
+    <td class="si-sz-mix" data-l="Sales vs stock share">${bar('s',r.salesShare)}${bar('k',r.stockShare)}</td>
+    <td data-l="Cover">${r.coverWeeks==null?'—':_siEsc(_siAxNum(r.coverWeeks,1))+' wk'}</td>
+    <td data-l="Status"><span class="si-sz-chip ${r.key}"><i aria-hidden="true">${r.glyph}</i>${_siEsc(r.label)}</span></td></tr>`).join('');
+  const table=`<div class="si-sz-wrap"><table class="cut-table si-sz-tbl"><thead><tr><th>Size</th><th>On hand</th><th>A week ago</th><th>Sold 28 d</th><th>Sold (counted)</th><th>Sales vs stock share</th><th title="on hand ÷ the size's 28-day weekly pace">Cover</th><th>Status</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  const legend=`<div class="si-tl-legend"><span><i class="k szs"></i>Sales curve${calc.basis?' ('+_siEsc(calc.basis)+')':''}</span><span><i class="k szk"></i>Stock curve (today)</span></div>`;
+  const sp=_siAxSizeSplit(m.sizeRows,g.qty?g.qty.hi:null);
+  let split;
+  if(!sp.ok)split=`<div class="si-sz-split"><div class="si-sz-sh">Suggested split for the next batch</div><div class="si-ax-note">${_siEsc(sp.why)}</div></div>`;
+  else{
+    const items=sp.rows.map(r=>`<span class="si-sz-sp"><b>${_siEsc(r.size)}</b> ${r.pct}%${r.units!=null?' · '+r.units+' units':''}</span>`).join('');
+    const tot=sp.total?`Reorder guide for the whole batch: ${g.qty.lo}–${g.qty.hi} units (this article's Needs Attention figure: demand over the lead time plus ${g.qty.target} days of cover, rounded up to a pack of 12). The units above split the high end, ${g.qty.hi}.`:'Set the total in your PO: no reorder size guide applies to this article right now.';
+    const warn=(g.act&&(g.act.key==='stuck'||g.act.key==='hold'||g.act.key==='markdown'))?` The verdict above says do not reorder now (${_siEsc(g.act.label)}); this split only matters if you do cut it.`:'';
+    split=`<div class="si-sz-split"><div class="si-sz-sh">Suggested split for the next batch <span class="si-sz-tag">suggestion, not an order</span></div><div class="si-sz-sps">${items}</div>
+      <div class="si-ax-note">${_siEsc(tot)}${warn}</div>
+      <div class="si-ax-note">How it is worked out: each size's share of the sales curve (last 28 days blended with lifetime; a size with few recent units leans on its lifetime share), at least ${Math.round(_SI_SZ.floor*100)}% for a size that sold ${_SI_SZ.floorMinSold}+ units, none for a size that sold nothing. Stock on hand is not netted off. Sizes that are out are probably under-counted, because nothing can be sold at zero stock. Based on ${sp.sold} counted units.</div></div>`;
+  }
+  return`<div class="card si-sz" id="si-sz"><div class="card-title">Sizes</div><div class="si-sz-read" role="status">${_siEsc(calc.readout)}</div>${legend}${table}${split}
+    <div class="si-ax-note">Status: Out and selling = none left, sold in the last 28 days. Thin = under ${_SI_NA.sizeThinDays} days of cover with ${_SI_NA.sizeThinUnits}+ units sold in 28 days (the same rule as Needs Attention). Over-stocked vs demand = more than ${_SI_NA.overCoverWeeks} weeks of cover, or ${_SI_SZ.overMix}× its sales share in stock with ${_SI_SZ.overMinStock}+ units and over ${_SI_SZ.overCoverWeeks} weeks of cover. Cover is on hand ÷ the size's 28-day weekly pace (the stock history is per article, so a size's own in-stock pace is not known: cover is an at-most figure for a size that was out part of the window). Returns are not synced, so sales run a little high. Colour is not split: an article here is one colour.</div></div>`;
+}
+
 function _siAxSearchBody(){
   const idx=_siAxIndex(),a=idx.map.get(_siAxSel);
   if(!a)return`<div class="si-ax-empty">Pick an article above to see its sales, stock, size mix and trend.</div>`+_siAxCoverage([]);
@@ -3059,6 +3180,7 @@ function _siAxSearchBody(){
     ${kpi('Sold 7d / 30d / 90d',s7.u+' / '+s30.u+' / '+s90.u,'')}</div>
   ${_siAxCoverage([a])}${_siAxHistBanner()}
   ${_siAxTlCardHtml(a)}
+  ${_siAxSizesCardHtml(a)}
   <div class="card"><div class="card-title">Sales over time</div>
     <div class="si-ax-bar">${toggle}</div>${chart}
     <div class="si-ax-note">Latest ${_siAxBucket} is still running. ${_siEsc(ser.notes.join(' '))}</div></div>
