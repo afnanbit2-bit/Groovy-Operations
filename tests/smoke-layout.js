@@ -2751,6 +2751,36 @@ const FRAGMENTS={
     app.run('_siAxModeSel="compare";_siAxQuery="";_siAxCmp=["GST073","GD007","GHW001","GJ014","GCO001"];_siAxMetric="units_week";_siAxBasis="calendar"');
     return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
   },
+  // Calendar window states: the winter frame with the previous-year overlay, and the twelve month tiles
+  // (October first) where the five winter months carry the frost. Frost text must read on its gradient in both themes.
+  'inventory intel — Article Explorer winter window and frosted months':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="compare";_siAxQuery="";_siAxCmp=["GST073","GD007"];_siAxMetric="units_month";_siAxBasis="calendar";_siAxWin="winter";_siAxWinYear=null;_siAxPrev=true');
+    const a=app.run('_siArticleExplorerSection()');
+    app.run('_siAxWin="months"');
+    const b=app.run('_siAxCompareBody()');
+    return Promise.resolve('<div id="si-content">'+a+'</div><div id="si-content-2">'+b+'</div>');
+  },
+  // One article chosen: the red "1" on the Compare tab and the transient alert (host + alert, as the app inserts it).
+  'inventory intel — Article Explorer one chosen (badge, alert)':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="compare";_siAxQuery="";_siAxCmp=["GST073"];_siAxMetric="units_week";_siAxBasis="calendar"');
+    const bar='<div class="si-ax-bar" id="si-ax-modebar">'+app.run('_siAxModeBtnHtml("overview","Overview")+_siAxModeBtnHtml("search","Search")+_siAxModeBtnHtml("compare","Compare")')+'</div>';
+    const alert='<div class="si-ax-live" role="status" aria-live="polite"><div class="si-ax-flash">Choose another product to compare — add up to 5</div></div>';
+    return Promise.resolve('<div id="si-content">'+bar+'<div style="height:60px">'+alert+'</div><div class="card">after the alert</div></div>');
+  },
+  // The article page with the attention pulse on "+ Compare" and the Compare tab (class present; the animation is CSS).
+  'inventory intel — Article Explorer article page hint':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('_siAxModeSel="search";_siAxSel="GST073";_siAxQuery="";_siAxCmpSeen=false;_siAxCmp=[]');
+    return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
+  },
   // The other shape of the same bug, and the one that hid longest: a label
   // whose ink is a literal white-alpha sitting on a `background:var(--dark)`
   // panel. --dark is the app's "strong contrast chip" and inverts, so these

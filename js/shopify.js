@@ -526,6 +526,7 @@ window._siSwitchTab=function(id){
   if(bar)bar.outerHTML=_siTabBar();
   const el=document.getElementById('si-content');
   if(el)el.innerHTML=_siRenderSection(m,skuRows,attn,items7);
+  if(id==='skutable'&&_siSkuReturnY>0){const y=_siSkuReturnY;_siSkuReturnY=0;if(typeof window.scrollTo==='function')try{window.scrollTo(0,y);}catch(_){}}
 };
 
 function _siRenderSection(m,skuRows,attn,items7){
@@ -850,9 +851,10 @@ function _siGroupedBodyHtml(filteredRows){
     const gType=g.variants.find(v=>v.garmentType)?.garmentType||'';
     const seasonIcon=gSeason==='summer'?'<span title="Summer" style="font-size:12px;margin-right:3px">☀</span>':gSeason==='winter'?'<span title="Winter" style="font-size:12px;margin-right:3px">❄</span>':'';
     const typeChip=gType?`<span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 5px;font-size:11px;font-weight:700;margin-left:5px;vertical-align:middle">${_siEsc(gType.toUpperCase())}</span>`:'';
-    const parent=`<tr style="cursor:pointer" data-gkey="${gkeyEsc}" onclick="window._siToggleGroup(this.dataset.gkey)">
+    const gcode=_siSkuArticleCode(g.variants);
+    const parent=`<tr class="si-sku-open" style="cursor:pointer" data-gkey="${gkeyEsc}" data-code="${_siEsc(gcode)}" title="Open ${_siEsc(g.title)} in the Article Explorer" onclick="window._siSkuOpen(this.dataset.code)">
       <td style="padding:4px 8px" onclick="event.stopPropagation()"><input type="checkbox" ${groupAllSel?'checked':''} data-gkey="${gkeyEsc}" onchange="window._siToggleGroupSel(this.dataset.gkey,this.checked)" onclick="event.stopPropagation()"></td>
-      <td style="font-weight:600;font-size:13px;padding:10px 8px;white-space:nowrap"><span style="display:inline-block;width:14px;font-size:11px;color:var(--muted)">${expanded?'▼':'▶'}</span>${seasonIcon}${_siEsc(g.title)}${typeChip}</td>
+      <td style="font-weight:600;font-size:13px;padding:10px 8px;white-space:nowrap"><button type="button" class="si-sku-chev" aria-expanded="${expanded}" aria-label="${expanded?'Hide':'Show'} sizes of ${_siEsc(g.title)}" data-gkey="${gkeyEsc}" onclick="event.stopPropagation();window._siToggleGroup(this.dataset.gkey)">${expanded?'▼':'▶'}</button>${seasonIcon}${_siEsc(g.title)}${typeChip}</td>
       <td style="font-size:12px;color:var(--muted)">${_siEsc(g.color)}</td>
       <td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_siEsc(g.productType||'')}">${_siEsc(g.productType)||'—'}</td>
       <td style="white-space:nowrap">${_siSizeChips(g.variants)}</td>
@@ -867,8 +869,8 @@ function _siGroupedBodyHtml(filteredRows){
       const soldOut=r.onHand<=0;
       const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:var(--accent-urgent);font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
       const daysStr=r.daysLeft===999?'∞':r.daysLeft===0?'—':`${r.daysLeft}d`;
-      return`<tr style="background:var(--surface-2)">
-        <td style="padding:4px 8px"><input type="checkbox" ${_siSkuSelected.has(r.sku)?'checked':''} data-sku="${_siEsc(r.sku)}" onchange="window._siToggleSku(this.dataset.sku,this.checked)"></td>
+      return`<tr class="si-sku-open" style="background:var(--surface-2);cursor:pointer" data-code="${_siEsc(_siAxCode(r.sku))}" onclick="window._siSkuOpen(this.dataset.code)">
+        <td style="padding:4px 8px" onclick="event.stopPropagation()"><input type="checkbox" ${_siSkuSelected.has(r.sku)?'checked':''} data-sku="${_siEsc(r.sku)}" onchange="window._siToggleSku(this.dataset.sku,this.checked)"></td>
         <td style="font-size:11px;color:var(--muted);padding:7px 8px 7px 22px">${_siEsc(r.sku)}</td>
         <td></td><td></td>
         <td style="font-weight:700;font-size:13px">${_siEsc(r.size||'?')}</td>
@@ -946,7 +948,7 @@ function _siSkuTableSection(rows){
     <button class="gp-tab${typeTab('bottom')?' active':''}" onclick="window._siFilterType('bottom')">Bottom</button>
     <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="si-sku-count">${countStr}</span>
   </div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Click a row to expand sizes. ☀ = Summer · ❄ = Winter · <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">TOP</span> / <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Click a product to open it in the Article Explorer; the ▶ arrow shows its sizes. ☀ = Summer · ❄ = Winter · <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">TOP</span> / <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
   <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sold since live counts non-refunded orders synced from ${_siEsc(_siEarliestOrderDate()||'—')} onward, so it understates products that launched earlier. "live Nd" comes from the catalog's published/created date ("—" until the catalog sync has stored it).</div>
   <div style="overflow-x:auto"><table class="cut-table" style="min-width:1040px">
     <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
@@ -1047,6 +1049,38 @@ window._siExportSelectedCsv=function(){
   URL.revokeObjectURL(url);
   showToast(`Exported ${sel.length} SKU${sel.length>1?'s':''} to CSV ✓`);
 };
+// ── SKU table → Article Explorer ────────────────────────────────────
+// The article code of a table row: the ONE SKU-prefix rule (_siAxCode, the same one the Explorer indexes by),
+// taken from the first variant that has one.
+function _siSkuArticleCode(variants){
+  for(const v of (variants||[])){const c=_siAxCode(v&&v.sku);if(c)return c;}
+  return'';
+}
+let _siSkuReturnY=0;
+// Opens the article page in the Explorer with a short fade-and-rise of the content. The SKU table's own state
+// (search, category, type, sort, expanded groups, page size) lives in module variables, so coming back restores it.
+window._siSkuOpen=function(code){
+  code=String(code||'').toUpperCase();
+  if(!code||!_siAxIndex().map.has(code)){
+    if(typeof showToast==='function')showToast(code?code+' has no sales or stock rows, so the Article Explorer has nothing to show for it.':'This row has no article code.',true);
+    return false;
+  }
+  _siSkuReturnY=(typeof window.scrollY==='number'?window.scrollY:0)||0;
+  _siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';
+  window._siSwitchTab('explorer');
+  _siAxEnter();
+  if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
+  return true;
+};
+// The 250ms entrance: a class on the content host that CSS animates; under reduced motion CSS makes it a no-op.
+function _siAxEnter(){
+  const el=document.getElementById('si-content');if(!el)return false;
+  el.classList.add('si-ax-enter');
+  const done=()=>{try{el.classList.remove('si-ax-enter');}catch(_){}};
+  el.addEventListener&&el.addEventListener('animationend',done,{once:true});
+  setTimeout(done,420);
+  return true;
+}
 window._siToggleGroup=function(key){
   if(_siSkuExpanded.has(key))_siSkuExpanded.delete(key);else _siSkuExpanded.add(key);
   const rows=_siComputeSkuTable();
@@ -1285,6 +1319,9 @@ const _SI_AX_METRICS={
   st_build:{label:'Sell-through build — cumulative units ÷ (units + on hand now)',bucket:'week',kind:'st',pct:true}
 };
 let _siAxModeSel='overview',_siAxOvTile='reorder',_siAxOvCat='',_siAxOvAll=false,_siAxQuery='',_siAxSel='',_siAxCmp=[],_siAxMetric='units_week',_siAxBasis='calendar',_siAxBucket='week',_siAxMsg='';
+// Compare-tab extras: calendar window ('all' | 'winter' | 'months'), the chosen winter (start year, null = latest), the previous-year overlay,
+// and whether Compare was opened yet in this visit (the attention pulse stops once it has).
+let _siAxWin='all',_siAxWinYear=null,_siAxPrev=false,_siAxCmpSeen=false;
 let _siAxCache=null,_siAxHov=null;
 
 // Refunded AND voided orders are left out of every Explorer figure. (Other Inventory Intel
@@ -1308,6 +1345,29 @@ function _siAxFmtBucket(start,bucket,tick){
   const m=/^(\d{4})-(\d{2})/.exec(start||'');if(!m)return'—';
   if(bucket==='month')return _SI_AX_MONTHS[+m[2]-1]+' '+(tick?m[1].slice(2):m[1]);
   return _siAxFmtDay(start,tick);
+}
+// ── Calendar helpers: months, years, winters (pure) ─────────────────
+// Winter = October to the end of February. It straddles New Year, so a winter is named by the year its October falls in.
+const _SI_AX_WINTER_MONTHS=[10,11,12,1,2];
+function _siAxIsWinterMonth(m){return _SI_AX_WINTER_MONTHS.indexOf(+m)>=0;}
+function _siAxLeap(y){return(y%4===0&&y%100!==0)||y%400===0;}
+function _siAxMonthLen(y,m){return[31,_siAxLeap(y)?29:28,31,30,31,30,31,31,30,31,30,31][m-1];}
+// day string + n months, the day of month kept or clipped to the month's length (Mar 31 + 1 month = Apr 30).
+function _siAxAddMonths(day,n){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(day||'');if(!m)return'';
+  const t=(+m[1])*12+(+m[2]-1)+n,y=Math.floor(t/12),mo=t%12+1,d=Math.min(+m[3],_siAxMonthLen(y,mo));
+  return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+}
+function _siAxAddYears(day,n){return _siAxAddMonths(day,12*n);} // Feb 29 + 1 year = Feb 28
+// The winter that starts in October of startYear: Oct 1 .. last day of February (28 or 29).
+function _siAxWinterWindow(startYear){
+  const y=+startYear,e=y+1;
+  return{startYear:y,from:y+'-10-01',to:e+'-02-'+String(_siAxMonthLen(e,2)).padStart(2,'0'),label:'Winter '+y+'–'+String(e).slice(2)};
+}
+// The winter a day belongs to; a day from March to September has no winter of its own, so the LATEST one that has ended.
+function _siAxWinterOf(day){
+  const m=/^(\d{4})-(\d{2})/.exec(day||'');if(!m)return null;
+  return(+m[2]>=10)?+m[1]:+m[1]-1;
 }
 function _siAxSizeOf(sku,li){
   const p=_siCleanProd(sku);let s=(p.size||'').trim();const c=(p.color||'').trim();
@@ -2188,7 +2248,8 @@ function _siAxPct(v,signed){if(v==null||!isFinite(v))return'—';const r=Math.ro
 
 // The series for a set of articles. Returns {xLabels,xTicks,series:[{code,values}],notes}.
 // A null value means "not live yet / not in the synced data" — never a zero.
-function _siAxSeries(arts,metric,basis){
+function _siAxSeries(arts,metric,basis,opts){
+  opts=opts||{};
   const M=_SI_AX_METRICS[metric]||_SI_AX_METRICS.units_week;
   const bucket=M.bucket,idx=_siAxIndex(),today=_siPktDate(0);
   const cov=idx.cov||today,notes=[];
@@ -2204,7 +2265,7 @@ function _siAxSeries(arts,metric,basis){
     if(M.kind==='st'){if(!a.hasStock)return null;const den=_siAxUnitsBetween(a,E,today)+a.onHand;return den>0?_siAxUnitsBetween(a,E,ce)/den:null;}
     return null;
   };
-  let xLabels=[],series=[],calKeys=[];
+  let xLabels=[],series=[],calKeys=[],prev=null;
   if(basis==='launch'){
     let maxK=-1;
     const per=arts.map(a=>{
@@ -2238,22 +2299,41 @@ function _siAxSeries(arts,metric,basis){
     if(per.some(p=>p.vals.some(v=>v===null)&&p.vals.length))notes.push('Gaps at the start of a line are weeks before the first synced order — unknown, not zero.');
   }else{
     const curStart=_siAxBucketStart(today,bucket),covB=_siAxBucketStart(cov,bucket);
+    const win=opts.win&&opts.win.from&&opts.win.to?opts.win:null;
     let start='';
     arts.forEach(a=>{const Lv=_siAxLiveDay(a);const L=Lv&&Lv>cov?Lv:(a.firstDay||Lv);if(!L)return;let b=_siAxBucketStart(L,bucket);if(b<covB)b=covB;if(!start||b<start)start=b;});
-    const keys=[];
-    if(start){for(let b=start,g=0;b&&b<=curStart&&g<1200;b=_siAxBucketNext(b,bucket),g++)keys.push(b);}
+    let keys=[];
+    if(win){
+      // A season frame: the whole window is the axis, so the future part of it is an empty frame (null, never 0).
+      const wEnd=_siAxBucketStart(win.to,bucket);
+      for(let b=_siAxBucketStart(win.from,bucket),g=0;b&&b<=wEnd&&g<1200;b=_siAxBucketNext(b,bucket),g++)keys.push(b);
+    }else if(start){for(let b=start,g=0;b&&b<=curStart&&g<1200;b=_siAxBucketNext(b,bucket),g++)keys.push(b);}
     calKeys=keys;
     xLabels=keys.map(b=>_siAxFmtBucket(b,bucket,false));
-    series=arts.map(a=>{
+    const cell=(a,b)=>{
       const L=_siAxLiveDay(a)||a.firstDay||'';
-      const vals=keys.map(b=>{
-        if(!L)return null;
-        if(_siAxBucketEnd(b,bucket)<L)return null; // not live yet
-        if(M.kind)return kv(a,b,_siAxBucketEnd(b,bucket));
-        return val(a,b);
+      if(!L)return null;
+      if(_siAxBucketEnd(b,bucket)<L)return null; // not live yet
+      if(win&&b>today)return null;               // later than today: not happened yet
+      if(M.kind)return kv(a,b,_siAxBucketEnd(b,bucket));
+      return val(a,b);
+    };
+    series=arts.map(a=>({code:a.code,values:fin(keys.map(b=>cell(a,b)))}));
+    if(opts.prev){
+      // The same buckets one year earlier (months: same month; weeks: 52 weeks back, so Monday stays Monday).
+      // A bucket counts only when it lies wholly inside the synced data and the article was live then.
+      const back=b=>bucket==='month'?_siAxAddMonths(b,-12):_siAxDayStr(_siAxDayNum(b)-364);
+      prev=arts.map(a=>{
+        const L=_siAxLiveDay(a)||a.firstDay||'';
+        const vals=keys.map(b=>{
+          const pb=back(b);
+          if(!pb||pb<cov||!L||_siAxBucketEnd(pb,bucket)<L)return null;
+          if(M.kind)return kv(a,pb,_siAxBucketEnd(pb,bucket));
+          return val(a,pb);
+        });
+        return{code:a.code,values:fin(vals),any:vals.some(v=>v!=null)};
       });
-      return{code:a.code,values:fin(vals)};
-    });
+    }
     if(keys.length&&keys[0]===covB&&cov>covB&&!M.kind)notes.push('The first bucket starts before the first synced order, so it may be understated.');
   }
   if(M.kind)notes.push('Counted window only: each bucket is divided by the live days counted in it, and days before the first synced order are left out (gaps, not zeros).');
@@ -2265,7 +2345,7 @@ function _siAxSeries(arts,metric,basis){
     for(let t=0;t<want;t++){const i=want===1?0:Math.round(t*(n-1)/(want-1));if(!seen.has(i)){seen.add(i);ticks.push(i);}}
   }
   const tickLabel=i=>basis==='launch'?xLabels[i]:_siAxFmtBucket(calKeys[i],bucket,true);
-  return{xLabels,xTicks:ticks.map(i=>({i,label:tickLabel(i)})),series,notes,bucket,metric,basis,metricDef:M};
+  return{xLabels,xTicks:ticks.map(i=>({i,label:tickLabel(i)})),series,prev,notes,bucket,metric,basis,metricDef:M,calKeys,win:opts.win||null};
 }
 // ── Chart math ──────────────────────────────────────────────────────
 // Axis: ported from mktChartScale/mktAxisScale (js/marketing.js) so this tab
@@ -2330,11 +2410,12 @@ function _siAxChartHtml(cfg){
   const n=cfg.xLabels.length;
   const X=i=>n<=1?W/2:i/(n-1)*W,Y=v=>H-(v/sc.max)*H;
   let paths='',ends='',dots='';
-  cfg.series.forEach((s,si)=>{
+  cfg.series.forEach((s0,si0)=>{
+    const si=s0.ci!=null?s0.ci:si0,s=s0;
     let seg=[],lastIdx=-1;
     const flush=()=>{
-      if(seg.length>=2)paths+=`<path class="si-ax-line s${si}" style="stroke-dasharray:${_SI_AX_DASH[si%5]}" d="${_siAxCurve(seg)}"/>`;
-      else if(seg.length===1)dots+=`<i class="si-ax-end si-ax-badge si-ax-b${si}" style="left:${(seg[0].x/W*100).toFixed(2)}%;bottom:${(100-seg[0].y/H*100).toFixed(2)}%;width:8px;height:8px"></i>`;
+      if(seg.length>=2)paths+=`<path class="si-ax-line s${si}${s.prev?' prev':''}" style="stroke-dasharray:${s.prev?'2 5':_SI_AX_DASH[si%5]}" d="${_siAxCurve(seg)}"/>`;
+      else if(seg.length===1)dots+=`<i class="si-ax-end si-ax-badge si-ax-b${si}${s.prev?' prev':''}" style="left:${(seg[0].x/W*100).toFixed(2)}%;bottom:${(100-seg[0].y/H*100).toFixed(2)}%;width:${s.prev?6:10}px;height:${s.prev?6:10}px"></i>`;
       seg=[];
     };
     s.values.forEach((v,i)=>{
@@ -2342,7 +2423,7 @@ function _siAxChartHtml(cfg){
       seg.push({x:X(i),y:Y(v)});lastIdx=i;
     });
     flush();
-    if(lastIdx>=0){
+    if(lastIdx>=0&&!s.prev){
       const v=s.values[lastIdx];
       ends+=`<span class="si-ax-end si-ax-badge si-ax-b${si}" style="left:${(X(lastIdx)/W*100).toFixed(2)}%;bottom:${(100-Y(v)/H*100).toFixed(2)}%">${si+1}</span>`;
     }
@@ -2354,7 +2435,10 @@ function _siAxChartHtml(cfg){
     const cls=cfg.xTicks.length>1&&k===0?' first':(k===cfg.xTicks.length-1&&cfg.xTicks.length>1?' last':'');
     return`<span class="si-ax-xtick${cls}" style="left:${(X(t.i)/W*100).toFixed(2)}%">${_siEsc(t.label)}</span>`;
   }).join('');
-  const legend=cfg.series.map((s,si)=>`<span><svg viewBox="0 0 26 8" aria-hidden="true"><line x1="1" y1="4" x2="25" y2="4" stroke="var(--si-s${si})" stroke-dasharray="${_SI_AX_DASH[si%5]}"/></svg><i class="si-ax-badge si-ax-b${si}">${si+1}</i>${_siEsc(s.name||s.code)}</span>`).join('');
+  const legend=cfg.series.map((s,si0)=>{const si=s.ci!=null?s.ci:si0;return`<span><svg viewBox="0 0 26 8" aria-hidden="true"><line x1="1" y1="4" x2="25" y2="4" stroke="var(--si-s${si})" stroke-dasharray="${s.prev?'2 5':_SI_AX_DASH[si%5]}"/></svg><i class="si-ax-badge si-ax-b${si}">${si+1}</i>${_siEsc(s.name||s.code)}</span>`;}).join('');
+  // One lone point per line is drawn as a dot; say so, or a young article looks like "nothing plotted".
+  const live=cfg.series.filter(s=>!s.prev),pts=s=>s.values.filter(v=>v!=null&&isFinite(v)).length;
+  const sparse=live.length&&live.every(s=>pts(s)<=1)?`<div class="si-ax-note" data-sparse="1">Only one point so far for each line, so there is no line to join — shown as a dot. A second ${cfg.bucketWord||'period'} of sales will draw it.</div>`:'';
   _siAxHov={labels:cfg.xLabels,series:cfg.series,money:!!cfg.money,fmt:cfg.fmt||null,n};
   return`<div class="si-ax-legend">${legend}</div>
   <div class="si-ax-wrap">
@@ -2364,7 +2448,7 @@ function _siAxChartHtml(cfg){
       <div class="si-ax-cursor"></div><div class="si-ax-tip"></div>
     </div>
     <div class="si-ax-xaxis">${xl}</div>
-  </div>`;
+  </div>${sparse}`;
 }
 window._siAxHover=function(ev,el){
   const h=_siAxHov;if(!h||!h.n)return;
@@ -2375,8 +2459,8 @@ window._siAxHover=function(ev,el){
   const cur=el.querySelector('.si-ax-cursor'),tip=el.querySelector('.si-ax-tip');
   if(cur){cur.style.display='block';cur.style.left=pct+'%';}
   if(tip){
-    tip.innerHTML=`<b>${_siEsc(h.labels[i]||'')}</b>`+h.series.map((s,si)=>{
-      const v=s.values[i];
+    tip.innerHTML=`<b>${_siEsc(h.labels[i]||'')}</b>`+h.series.map((s,si0)=>{
+      const si=s.ci!=null?s.ci:si0;const v=s.values[i];
       const t=v==null?'—':(h.fmt?h.fmt(v):(h.money?_siPKR(Math.round(v)):String(Math.round(v*10)/10)));
       return`<div class="r"><span><i class="si-ax-badge si-ax-b${si}">${si+1}</i> ${_siEsc(s.name||s.code)}</span><strong>${_siEsc(t)}</strong></div>`;
     }).join('');
@@ -2414,17 +2498,52 @@ function _siAxMaxCmp(){
   try{if(typeof window!=='undefined'&&window.matchMedia&&window.matchMedia('(max-width:600px)').matches)return 3;}catch(_){}
   return _SI_AX_MAX;
 }
+// ── Attention cues: the Compare hint pulse, the "1" badge and the transient alert ──────────
+// The hint is a CSS class (a few cycles, then still); it is on while the article page is showing and
+// Compare has not been opened in this visit. The badge is on the Compare tab whenever exactly one article is chosen.
+function _siAxHintOn(){return !_siAxCmpSeen&&_siAxModeSel==='search'&&!!_siAxSel;}
+function _siAxModeBtnHtml(id,l){
+  const on=_siAxModeSel===id?' on':'';
+  if(id!=='compare')return`<button id="si-ax-tab-${id}" class="si-ax-btn${on}" onclick="window._siAxSetMode('${id}')">${l}</button>`;
+  const one=_siAxCmp.length===1;
+  return`<button id="si-ax-tab-compare" class="si-ax-btn${on}${_siAxHintOn()?' si-ax-hint':''}"${one?' aria-label="Compare — 1 article chosen, choose another"':''} onclick="window._siAxSetMode('compare')">${l}${one?'<span class="si-ax-cbadge" aria-hidden="true">1</span>':''}</button>`;
+}
+function _siAxSyncTab(){const b=document.getElementById('si-ax-tab-compare');if(b)b.outerHTML=_siAxModeBtnHtml('compare','Compare');}
+const _SI_AX_FLASH_MS=1500,_SI_AX_FADE_MS=250;
+let _siAxFlashT1=null,_siAxFlashT2=null,_siAxFlashState=''; // '' | 'in' | 'out'
+function _siAxFlashClear(){
+  clearTimeout(_siAxFlashT1);clearTimeout(_siAxFlashT2);_siAxFlashT1=_siAxFlashT2=null;
+  _siAxFlashState='';
+  const h=document.getElementById('si-ax-live');
+  if(h)h.innerHTML='';
+}
+// Shown at once (no delay), kept 1.5 s, then faded and removed. One at a time: a repeat replaces it, so nothing stacks.
+// It never takes focus (no focus() call, not focusable).
+function _siAxFlash(){
+  _siAxFlashClear();
+  const h=document.getElementById('si-ax-live');if(!h||_siAxCmp.length!==1)return false;
+  // The text is a constant plus a number, never stored or typed text, so it is safe as markup.
+  h.innerHTML='<div class="si-ax-flash">Choose another product to compare — add up to '+_siAxMaxCmp()+'</div>';
+  _siAxFlashState='in';
+  _siAxFlashT1=setTimeout(()=>{
+    _siAxFlashState='out';
+    const f=h.querySelector&&h.querySelector('.si-ax-flash');if(f)f.classList.add('out');
+    _siAxFlashT2=setTimeout(_siAxFlashClear,_SI_AX_FADE_MS);
+  },_SI_AX_FLASH_MS);
+  return true;
+}
 function _siAxBodyHtml(){return _siAxModeSel==='compare'?_siAxCompareBody():(_siAxModeSel==='overview'?_siAxOverviewBody():_siAxSearchBody());}
 function _siArticleExplorerSection(){
   _siAxEnsureHistory(); // one bounded read per session; repaints the body when it lands
   const idx=_siAxIndex();
-  const modeBtn=(id,l)=>`<button class="si-ax-btn${_siAxModeSel===id?' on':''}" onclick="window._siAxSetMode('${id}')">${l}</button>`;
+  const modeBtn=_siAxModeBtnHtml;
   const ov=_siAxModeSel==='overview';
-  return`<div class="si-ax-bar">${modeBtn('overview','Overview')}${modeBtn('search','Search')}${modeBtn('compare','Compare')}
+  return`<div class="si-ax-bar" id="si-ax-modebar">${modeBtn('overview','Overview')}${modeBtn('search','Search')}${modeBtn('compare','Compare')}
     <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles · ignores the season filter</span></div>
   ${ov?'':`<div class="si-ax-bar"><input id="si-ax-input" class="si-ax-input" autocomplete="off" placeholder="${_siAxModeSel==='compare'?'Add an article to compare — title, colour, code (GST073), category…':'Search any article — title, colour, code (GST073), category…'}" value="${_siEsc(_siAxQuery)}" oninput="window._siAxOnInput(this.value)" onkeydown="window._siAxKey(event)"></div>
   <div id="si-ax-results">${_siAxResultsHtml()}</div>`}
   ${_siAxTrustBanner()}
+  <div id="si-ax-live" class="si-ax-live" role="status" aria-live="polite"></div>
   <div id="si-ax-body">${_siAxBodyHtml()}</div>${_siCleanQualityHtml(idx.quality)}`;
 }
 function _siAxResultsHtml(){
@@ -2436,7 +2555,12 @@ function _siAxResultsHtml(){
   return`<div class="si-ax-note" style="margin-bottom:4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'} · ordered by units sold, then name, then code</div>
   <div class="si-ax-results">${r.hits.map(a=>`<button class="si-ax-hit" data-code="${_siEsc(a.code)}" onclick="window._siAx${add?'Add':'Pick'}(this.dataset.code)"><span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div></span><span class="n">${a.units} sold</span>${add?'<span class="si-ax-btn" style="pointer-events:none">+ Add</span>':''}</button>`).join('')}</div>`;
 }
-window._siAxSetMode=function(m){_siAxModeSel=m==='compare'?'compare':(m==='overview'?'overview':'search');_siAxQuery='';_siAxMsg='';_siAxRepaintAll();};
+window._siAxSetMode=function(m){
+  _siAxModeSel=m==='compare'?'compare':(m==='overview'?'overview':'search');_siAxQuery='';_siAxMsg='';
+  if(_siAxModeSel==='compare')_siAxCmpSeen=true; // the hint has done its job
+  _siAxRepaintAll();
+  if(_siAxModeSel==='compare'&&_siAxCmp.length===1)_siAxFlash();
+};
 window._siAxOnInput=function(v){
   _siAxQuery=v;
   clearTimeout(window._siAxDebounce);
@@ -2476,13 +2600,25 @@ window._siAxAdd=function(code){
   if(!r.ok&&typeof showToast==='function')showToast(r.msg,true);
   if(r.ok)_siAxQuery='';
   _siAxRepaintBody();
-  if(r.ok){const i=document.getElementById('si-ax-input');if(i)i.focus();}
+  if(r.ok){const i=document.getElementById('si-ax-input');if(i)i.focus();_siAxSyncTab();if(_siAxCmp.length===1)_siAxFlash();else _siAxFlashClear();}
 };
-window._siAxRemove=function(code){_siAxCmp=_siAxCmp.filter(c=>c!==code);_siAxMsg='';_siAxRepaintBody();};
+window._siAxRemove=function(code){
+  _siAxCmp=_siAxCmp.filter(c=>c!==code);_siAxMsg='';_siAxRepaintBody();_siAxSyncTab();
+  if(_siAxCmp.length===1)_siAxFlash();else _siAxFlashClear();
+};
 window._siAxClear=function(){_siAxSel='';_siAxQuery='';_siAxRepaintBody();};
 window._siAxSetMetric=function(v){if(_SI_AX_METRICS[v])_siAxMetric=v;_siAxRepaintBody();};
-window._siAxCurvePreset=function(){_siAxMetric='cum_week';_siAxBasis='launch';_siAxRepaintBody();};
-window._siAxSetBasis=function(v){_siAxBasis=v==='launch'?'launch':'calendar';_siAxRepaintBody();};
+window._siAxCurvePreset=function(){_siAxMetric='cum_week';_siAxBasis='launch';_siAxRepaintBody();_siAxRevealChart();};
+window._siAxSetBasis=function(v){_siAxBasis=v==='launch'?'launch':'calendar';_siAxRepaintBody();_siAxRevealChart();};
+// Calendar is the default time basis, so pressing it can change nothing visible; bring the chart into view and
+// give it a brief outline so the press is acknowledged (a still ring under reduced motion).
+function _siAxRevealChart(){
+  const c=document.getElementById('si-ax-chartcard');if(!c)return false;
+  let calm=false;try{calm=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(_){}
+  if(typeof c.scrollIntoView==='function')try{c.scrollIntoView({behavior:calm?'auto':'smooth',block:'nearest'});}catch(_){}
+  c.classList.add('si-ax-pop');setTimeout(()=>{try{c.classList.remove('si-ax-pop');}catch(_){}},1100);
+  return true;
+}
 window._siAxSetBucket=function(v){_siAxBucket=v==='month'?'month':'week';_siAxRepaintBody();};
 
 
@@ -2711,7 +2847,7 @@ function _siAxSearchBody(){
     <div class="si-ax-note" style="margin:4px 0 0">${_siEsc(vc.rule)}${vc.near?' '+_siEsc(vc.near):''}${vc.unverified?' (partly unverified)':''}</div></div>`;
   return`<div class="card"><div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:1 1 220px;min-width:0"><div style="font-size:18px;font-weight:700">${_siEsc(a.name)}</div><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${cat} · ${a.skus.size} SKU${a.skus.size===1?'':'s'}</div></div>
-    <button class="si-ax-btn" data-code="${_siEsc(a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button><button class="si-ax-btn" onclick="window._siAxSetMode('overview')">Overview</button><button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button></div></div>
+    <button class="si-ax-btn${_siAxHintOn()?' si-ax-hint':''}" data-code="${_siEsc(a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button><button class="si-ax-btn" onclick="window._siAxSetMode('overview')">Overview</button><button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button></div></div>
   ${verdictHtml}
   <div class="si-ax-kpis si-ax-head6">${kpi('Units per week',_siAxNum(m.paceHead),m.paceHead!=null?(m.paceHeadBasis==='in stock'?'while in stock — sold out '+m.outDays+' of '+m.measured+' days, so real demand is higher (plain rate '+_siAxNum(m.rateWeek)+')':_siEsc(win)):'needs 7+ counted days','rate')}
     ${kpi('Stock lasts',_siEsc(_siAxCoverText(m)),m.cover!=null?_siEsc(_siAxCoverNote(m)):(!a.hasStock?'no stock data':'no pace to divide by'),'cover')}
@@ -2769,8 +2905,16 @@ function _siAxMetricFmt(M){
 function _siAxCompareData(){
   const idx=_siAxIndex();
   const arts=_siAxCmp.map(c=>idx.map.get(c)).filter(Boolean);
-  const ser=_siAxSeries(arts,_siAxMetric,_siAxBasis);
+  const cal=_siAxBasis==='calendar';
+  const ser=_siAxSeries(arts,_siAxMetric,_siAxBasis,cal?{win:_siAxWinObj(),prev:_siAxPrev}:{});
   ser.series.forEach((s,i)=>{s.name=_siAxLabel(arts[i]);});
+  // What the chart draws: each line, then (calendar only) its previous-year twin in the same colour.
+  // A twin with no data is NOT drawn and NOT zero-filled; it is listed in noPrev instead.
+  const chartSeries=ser.series.slice(),noPrev=[];
+  if(ser.prev)ser.prev.forEach((p,i)=>{
+    if(p.any)chartSeries.push({code:p.code,values:p.values,name:_siAxLabel(arts[i])+' — previous year',prev:true,ci:i});
+    else noPrev.push(_siAxLabel(arts[i]));
+  });
   const M=ser.metricDef;
   const rows=arts.map((a,i)=>{
     const vals=ser.series[i].values;let total=0,peak=null,peakAt=-1,latest=null;
@@ -2779,7 +2923,71 @@ function _siAxCompareData(){
     if(M.kind)total=latest;
     return{i,art:a,total,peak,peakLabel:peakAt>=0?ser.xLabels[peakAt]:'',u7:_siAxUnitsSince(a,7).u,u30:_siAxUnitsSince(a,30).u,m:_siAxStats(a)};
   });
-  return{arts,ser,rows,M};
+  return{arts,ser,rows,M,chartSeries,noPrev};
+}
+// ── Calendar window: all data / a winter (Oct–Feb) / month by month ──────────
+function _siAxLatestWinter(){return _siAxWinterOf(_siPktDate(0));}
+function _siAxWinYearNow(){
+  const latest=_siAxLatestWinter(),first=Math.min(latest,_siAxWinterOf(_siAxIndex().cov||_siPktDate(0)));
+  const y=_siAxWinYear==null?latest:_siAxWinYear;
+  return Math.max(first,Math.min(latest,y));
+}
+function _siAxWinObj(){return _siAxWin==='winter'?_siAxWinterWindow(_siAxWinYearNow()):null;}
+window._siAxSetWin=function(w){_siAxWin=(w==='winter'||w==='months')?w:'all';_siAxRepaintBody();};
+window._siAxWinStep=function(d){
+  const latest=_siAxLatestWinter(),first=Math.min(latest,_siAxWinterOf(_siAxIndex().cov||_siPktDate(0)));
+  _siAxWinYear=Math.max(first,Math.min(latest,_siAxWinYearNow()+(d<0?-1:1)));
+  _siAxRepaintBody();
+};
+window._siAxTogglePrev=function(){_siAxPrev=!_siAxPrev;_siAxRepaintBody();};
+// The year-earlier line first exists a year after the synced data begins.
+function _siAxPrevNote(d){
+  if(!_siAxPrev||_siAxBasis!=='calendar')return'';
+  const cov=_siAxIndex().cov;
+  const why='synced orders start '+_siEsc(cov?_siAxFmtDay(cov):'—')+(cov?', so a year-earlier line can first exist from '+_siEsc(_siAxFmtDay(_siAxAddYears(cov,1))):'');
+  if(d.noPrev.length===d.arts.length)return`<div class="si-ax-note" data-prev-note="all">Previous year: no data a year earlier for the period shown — ${why}. Nothing is drawn (never zero).</div>`;
+  if(d.noPrev.length)return`<div class="si-ax-note" data-prev-note="some">Previous year: no data a year earlier for ${d.noPrev.map(_siEsc).join(', ')} (${why}).</div>`;
+  return'';
+}
+function _siAxCalOptsHtml(){
+  const b=(id,l)=>`<button class="si-ax-btn${_siAxWin===id?' on':''}" aria-pressed="${_siAxWin===id}" onclick="window._siAxSetWin('${id}')">${l}</button>`;
+  const nav=_siAxWin==='all'?'':(()=>{const w=_siAxWinterWindow(_siAxWinYearNow());return`<span class="si-ax-lab" style="margin-left:8px">Which winter</span><button class="si-ax-btn" aria-label="Earlier winter" onclick="window._siAxWinStep(-1)">‹</button><span class="si-ax-lab" style="color:var(--text)">${_siEsc(w.label)}</span><button class="si-ax-btn" aria-label="Later winter" onclick="window._siAxWinStep(1)">›</button>`;})();
+  return`<div class="si-ax-bar" id="si-ax-calopts"><span class="si-ax-lab">Window</span>${b('all','All data')}${b('winter','Winter (Oct–Feb)')}${b('months','Month by month')}${nav}
+    <button class="si-ax-btn${_siAxPrev?' on':''}" aria-pressed="${_siAxPrev}" style="margin-left:8px" onclick="window._siAxTogglePrev()">Compare with previous year</button></div>`;
+}
+// Twelve month tiles, October first, so the winter months (Oct Nov Dec Jan Feb) lead and carry the frost.
+// Value = the month's total for the chosen metric family (revenue for revenue metrics, units otherwise).
+// A month before the synced data, in the future, or before the article was live is "no data" — never 0.
+function _siAxMonthTiles(arts,M,startYear){
+  const cov=_siAxIndex().cov||'',today=_siPktDate(0),field=(M.kind||M.cum||M.pct)?'u':M.field;
+  const out=[];
+  for(let k=0;k<12;k++){
+    const start=_siAxAddMonths(startYear+'-10-01',k),end=_siAxBucketEnd(start,'month'),mm=+start.slice(5,7);
+    const cells=arts.map(a=>{
+      const L=_siAxLiveDay(a)||a.firstDay||'';
+      const one=(st,en,needFull)=>{
+        if(!L||en<L)return null;                      // not live yet
+        if(en<cov||(needFull&&st<cov))return null;    // before the synced data (a year-earlier month must lie wholly inside it)
+        if(st>today)return null;                      // has not happened yet
+        const x=_siAxBuckets(a,'month').get(st);return x?x[field]:0;
+      };
+      const pst=_siAxAddMonths(start,-12);
+      return{v:one(start,end,false),p:_siAxPrev?one(pst,_siAxBucketEnd(pst,'month'),true):null};
+    });
+    const partial=start<cov&&end>=cov?'from '+_siAxFmtDay(cov,true):(start<=today&&today<=end?'so far':'');
+    out.push({start,month:mm,frost:_siAxIsWinterMonth(mm),cells,partial,future:start>today,beforeData:end<cov});
+  }
+  return{tiles:out,field};
+}
+function _siAxMonthsHtml(arts,M){
+  const y=_siAxWinYearNow(),mt=_siAxMonthTiles(arts,M,y),fv=v=>mt.field==='r'?_siPKR(Math.round(v)):String(v);
+  let mx=0;mt.tiles.forEach(t=>t.cells.forEach(c=>{if(c.v!=null&&c.v>mx)mx=c.v;if(c.p!=null&&c.p>mx)mx=c.p;}));
+  const tile=t=>{
+    const has=t.cells.some(c=>c.v!=null);
+    const rows=has?t.cells.map((c,i)=>`<div class="mr"><i class="si-ax-badge si-ax-b${i}">${i+1}</i><span class="bar"><i class="si-ax-b${i}" style="width:${c.v!=null&&mx?Math.max(c.v>0?3:0,Math.round(c.v/mx*100)):0}%"></i></span><strong>${c.v==null?'—':_siEsc(fv(c.v))}</strong></div>${_siAxPrev?`<div class="mp">last year ${c.p==null?'no data':_siEsc(fv(c.p))}</div>`:''}`).join(''):`<div class="mn">no data${t.beforeData?' — before the synced orders':(t.future?' — not yet':'')}</div>`;
+    return`<div class="si-ax-mtile${t.frost?' frost':''}" data-month="${_siEsc(t.start.slice(0,7))}"><div class="mh"><b>${_siEsc(_siAxFmtBucket(t.start,'month',false))}</b>${t.frost?'<span class="w"><span aria-hidden="true">❄</span> winter</span>':''}</div>${rows}${t.partial&&has?`<div class="mp">${_siEsc(t.partial)}</div>`:''}</div>`;
+  };
+  return`<div class="si-ax-months">${mt.tiles.map(tile).join('')}</div>`;
 }
 
 // ── Overview: four questions, no typing ─────────────────────────────────────
@@ -2843,20 +3051,22 @@ window._siAxOvAll=function(){_siAxOvAll=!_siAxOvAll;_siAxRepaintBody();};
 window._siAxOpen=function(code){_siAxModeSel='search';_siAxSel=String(code||'').toUpperCase();_siAxQuery='';_siAxMsg='';_siAxRepaintAll();if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}};
 window._siAxOvCompare=function(code){
   const r=_siAxTryAdd(code);
+  if(r.ok)_siAxSyncTab();
   if(typeof showToast==='function')showToast(r.ok?'Added to Compare ('+_siAxCmp.length+').':r.msg,!r.ok);
 };
 function _siAxCompareBody(){
   const chips=_siAxCmp.map((c,i)=>{const a=_siAxIndex().map.get(c);return a?`<span class="si-ax-chip"><i class="si-ax-badge si-ax-b${i}">${i+1}</i>${_siEsc(_siAxLabel(a))}<button aria-label="Remove ${_siEsc(_siAxLabel(a))}" data-code="${_siEsc(c)}" onclick="window._siAxRemove(this.dataset.code)">×</button></span>`:'';}).join('');
   const sel=`<div class="si-ax-bar"><span class="si-ax-lab">Metric</span><select class="si-ax-select" onchange="window._siAxSetMetric(this.value)">${Object.keys(_SI_AX_METRICS).map(k=>`<option value="${k}"${_siAxMetric===k?' selected':''}>${_siEsc(_SI_AX_METRICS[k].label)}</option>`).join('')}</select>
     <span class="si-ax-lab" style="margin-left:8px">Time basis</span>
-    <button class="si-ax-btn${_siAxBasis==='calendar'?' on':''}" onclick="window._siAxSetBasis('calendar')">Calendar</button>
-    <button class="si-ax-btn${_siAxBasis==='launch'?' on':''}" onclick="window._siAxSetBasis('launch')">Since launch</button>
-    <button class="si-ax-btn" title="${_siAxTip('curve')}" onclick="window._siAxCurvePreset()">Age-normalised curve</button></div>`;
+    <button class="si-ax-btn${_siAxBasis==='calendar'?' on':''}" aria-pressed="${_siAxBasis==='calendar'}" onclick="window._siAxSetBasis('calendar')">Calendar</button>
+    <button class="si-ax-btn${_siAxBasis==='launch'?' on':''}" aria-pressed="${_siAxBasis==='launch'}" onclick="window._siAxSetBasis('launch')">Since launch</button>
+    <button class="si-ax-btn" title="${_siAxTip('curve')}" onclick="window._siAxCurvePreset()">Age-normalised curve</button></div>${_siAxBasis==='calendar'?_siAxCalOptsHtml():''}`;
   const head=`<div class="si-ax-chips">${chips||'<span class="si-ax-note">Add 2–'+_siAxMaxCmp()+' articles with the search box above.</span>'}</div>${_siAxMsg?`<div class="si-ax-note" style="color:var(--accent-urgent);font-weight:600" role="alert">${_siEsc(_siAxMsg)}</div>`:''}<div class="si-ax-note">${_siAxCmp.length} of ${_siAxMaxCmp()} articles.</div>`;
   if(!_siAxCmp.length)return head+sel+_siAxCoverage([])+`<div class="si-ax-empty">Nothing to compare yet.</div>`;
   const d=_siAxCompareData();
   const fmtv=_siAxMetricFmt(d.M);
-  const chart=_siAxChartHtml({series:d.ser.series,xLabels:d.ser.xLabels,xTicks:d.ser.xTicks,integer:!d.M.money&&!d.M.kind,money:!!d.M.money,fmt:d.M.kind?fmtv:undefined,empty:'None of the selected articles has sales in the synced data for this view, so there is no line to draw.',aria:d.M.label+' — '+d.ser.basis+' basis'});
+  const monthsView=_siAxBasis==='calendar'&&_siAxWin==='months';
+  const chart=monthsView?_siAxMonthsHtml(d.arts,d.M):_siAxChartHtml({bucketWord:d.ser.bucket==='month'?'month':'week',series:d.chartSeries,xLabels:d.ser.xLabels,xTicks:d.ser.xTicks,integer:!d.M.money&&!d.M.kind,money:!!d.M.money,fmt:d.M.kind?fmtv:undefined,empty:'None of the selected articles has sales in the synced data for this view, so there is no line to draw.',aria:d.M.label+' — '+d.ser.basis+' basis'});
   const cell=v=>v==null?'—':_siEsc(fmtv(v));
   const totalHead=d.M.cum?'Cumulative at end':(d.M.kind?'Latest':d.M.label+' — total');
   const art=[{key:'n',label:'#',type:'num',first:'asc',get:r=>r.i,cell:r=>`<td><i class="si-ax-badge si-ax-b${r.i}">${r.i+1}</i></td>`},
@@ -2894,8 +3104,12 @@ function _siAxCompareBody(){
     {key:'refund',label:'Refunded units',title:_siAxTip('refund'),type:'num',get:r=>r.m.refunded,cell:r=>`<td>${r.m.refunded!=null?r.m.refunded:'—'}</td>`},
     {key:'asp',label:'Avg unit price',title:_siAxTip('asp'),type:'num',get:r=>r.m.asp,cell:r=>`<td>${r.m.asp!=null?_siEsc(_siPKR(Math.round(r.m.asp))):'—'}</td>`}
   ]),d.rows,{def:{key:'n',dir:1},defText:'the order you added them',minWidth:900,ties});
+  const winNote=_siAxBasis!=='calendar'?'':(_siAxWin==='winter'?' Winter window: '+_siAxFmtDay(d.ser.win.from)+' to '+_siAxFmtDay(d.ser.win.to)+' (October to the end of February); part of the window that has not happened yet is left empty, not zero.':(monthsView?' Month by month: twelve months from October of '+_siAxWinYearNow()+', winter months frosted; units (or revenue) per month, "no data" where the month is before the synced orders, in the future, or before the article was live.':''));
   const basisNote=d.ser.basis==='launch'?'Since launch: x-axis is weeks (or months) since each article\'s live date, so products from different years line up at the same age.':'Calendar: the same dates on the x-axis; a line starts when the article went live.';
-  return head+sel+_siAxCoverage(d.arts)+_siAxHistBanner()+_siAxScorecardHtml(d.arts)+_siAxReadBlock(d.arts)+`<div class="card"><div class="card-title">${_siEsc(d.M.label)}</div>${chart}<div class="si-ax-note">${_siEsc(basisNote)} The latest bucket is still running. ${_siEsc(d.ser.notes.join(' '))}</div></div>
+  // The chart comes first, right under the controls: it used to sit below the scorecard and the "Read this" block, so a click on
+  // Calendar / Since launch changed nothing anyone could see without scrolling past them.
+  const chartCard=`<div class="card${_siAxBasis==='calendar'&&_siAxWin!=='all'?' si-ax-frost':''}" id="si-ax-chartcard"><div class="card-title">${_siEsc(monthsView?d.M.label.replace(/ per (week|month)$/,'')+' — month by month':d.M.label)}</div>${chart}${_siAxPrevNote(d)}<div class="si-ax-note">${_siEsc(basisNote)}${_siEsc(winNote)} The latest bucket is still running. ${_siEsc(d.ser.notes.join(' '))}</div></div>`;
+  return head+sel+chartCard+_siAxCoverage(d.arts)+_siAxHistBanner()+_siAxScorecardHtml(d.arts)+_siAxReadBlock(d.arts)+`
   <div class="card"><div class="card-title">Comparison table</div>${tbl}</div>
   <div class="card"><div class="card-title">Pace and stock <span class="si-ax-note">(counted window; in-stock figures: snapshot window)</span></div>${pace}<div class="si-ax-note" style="margin-top:8px">${_siAxNeedsHistoryNote()}</div></div>
   <div class="card"><div class="card-title">Shape and context</div>${shape}</div>
