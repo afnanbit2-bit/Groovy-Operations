@@ -38,6 +38,7 @@ function _siLoadingSkeleton(){
     <div class="page-title">Inventory Intelligence</div>
     <div class="page-sub">Shopify sales + inventory — read-only, updated every 4 hours</div>
   </div>
+  <div class="si-ld-wrap"><div id="si-load-host"></div>
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <div class="si-skel" style="width:50px;height:14px"></div>
     <div class="si-skel" style="width:218px;height:34px;border-radius:10px"></div>
@@ -58,7 +59,7 @@ function _siLoadingSkeleton(){
   <div class="card">
     <div class="si-skel" style="height:11px;width:20%;margin-bottom:12px"></div>
     <div class="si-skel" style="height:13px;width:76%"></div>
-  </div>`;
+  </div></div>`;
 }
 
 // ── Product lookup ───────────────────────────────────────────────────
@@ -88,65 +89,408 @@ function _siSaveCustomTypes(){localStorage.setItem('_siCustomTypes',JSON.stringi
 const _SI_KNOWN_SIZES=new Set(['XXS','XXXS','XS','S','M','L','XL','2XL','XXL','3XL','XXXL','4XL','5XL','ONE SIZE','OS','FREE SIZE','ONESIZE']);
 function _siEsc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
-// ── Data loader ─────────────────────────────────────────────────────
-async function loadShopifyData(){
-  _siLoadError=null;
-  // Critical collection reads — fetch once, then skip on snapshot-only retries.
-  if(!_siCollectionsLoaded){
-    try{
-      const [pSnap,oSnap,liSnap,wcSnap]=await Promise.all([
-        getDocs(collection(db,'shopify_products')),
-        getDocs(collection(db,'shopify_orders')),
-        getDocs(collection(db,'shopify_line_items')),
-        getDocs(query(collection(db,'shopify_weekly_closes'),orderBy('week_ending','desc'))),
-      ]);
-      _siProducts=[];pSnap.forEach(d=>{const o=d.data();o._id=d.id;_siProducts.push(o);});
-      _siOrders=[];oSnap.forEach(d=>{const o=d.data();o._id=d.id;_siOrders.push(o);});
-      _siLineItems=[];liSnap.forEach(d=>{const o=d.data();o._id=d.id;_siLineItems.push(o);});
-      _siWeeklyCloses=[];wcSnap.forEach(d=>{const o=d.data();o._id=d.id;_siWeeklyCloses.push(o);});
-      _siSeasonMapCache=null; // catalog changed → rebuild SKU→season map lazily
-      _siProdMapCache=null;   // catalog changed → rebuild product lookup lazily
-      _siCollectionsLoaded=true;
-    }catch(err){
-      _siLoadError=(err.message||String(err));
-      return; // do NOT set _siLoaded — next visit retries
-    }
-  }
-
-  const today=_siPktDate(0);
-  const yesterday=_siPktDate(-1);
-  const lastWeek=_siPktDate(-7);
-  try{
+// ═══ Loading, honest percentage and retry (Oct 2026) ═══════════════════════
+// The page's first read is ~55k documents and used to be a shimmer with no number and ONE button that re-read all of
+// it. Now: seven stages with fixed weights (a stage counts only when its read really returned — no timer, no creep, never
+// past 99 until _siLoaded), an overlay INSIDE the page (never position:fixed, so the sidebar and Back stay clickable) that
+// appears only if the load is still running at 300ms and stays at least 500ms once shown, and a retry that re-reads ONLY
+// the stages that failed. Every read is its own promise (an allSettled shape), so one refusal no longer throws away the rest.
+// Weights are the share of bytes/work (a hypothesis from the dump sizes — retune from real timings).
+const _SI_STAGES=[
+  {id:'products',w:4, critical:true, label:'Catalog',        verb:'Reading the catalog',     noun:'reading the catalog'},
+  {id:'orders',  w:10,critical:true, label:'Orders',         verb:'Reading orders',          noun:'reading orders'},
+  {id:'lines',   w:50,critical:true, label:'Line items',     verb:'Reading line items',      noun:'reading line items'},
+  {id:'closes',  w:1, critical:true, label:'Weekly closes',  verb:'Reading weekly closes',   noun:'reading weekly closes'},
+  {id:'snap',    w:14,critical:true, label:'Stock snapshot', verb:'Checking stock',          noun:'checking stock'},
+  {id:'meta',    w:3, critical:false,label:'Sync status',    verb:'Checking sync status',    noun:'checking sync status'},
+  {id:'build',   w:18,critical:false,label:'Counting the stock',verb:'Counting the stock',   noun:'counting the stock'},
+];
+const _SI_LOAD_SHOW_MS=300,_SI_LOAD_MIN_MS=500,_SI_LOAD_SLOW_MS=20000,_SI_LOAD_TIMEOUT_MS=90000,_SI_LOAD_SETTLE_MS=400,_SI_LOAD_MAX_ATTEMPTS=3,_SI_QUOTA_WAIT_MS=10000;
+const _siColl={products:false,orders:false,lines:false,closes:false}; // which collections were read OK (kept across retries)
+// Pure: the percentage of a state map. Capped at 99 — 100 belongs to _siLoaded alone.
+function siProgress(stages,state){
+  let w=0,t=0;
+  for(const s of stages){t+=s.w;if(state[s.id]==='done')w+=s.w;}
+  return t?Math.min(99,Math.floor(100*w/t)):0;
+}
+function siProgressNext(prev,raw){return Math.max(prev,raw);} // never backwards, even if a stage finishes out of order or a retry re-marks
+function _siNow(){return Date.now();}
+function _siRand(){return Math.random();}
+let _siLoad=_siLoadFresh();
+const _siRetryCtl={timer:null,tick:null,timer2:null,running:{},proms:{},gen:0};
+function _siLoadFresh(){
+  return{state:{},pct:0,startedAt:0,shownAt:0,shown:false,slow:false,final:false,finishing:false,done:false,resolved:false,resume:false,
+    complete:false,attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
+}
+// siMark(id,state): the ONE place progress moves.
+function siMark(id,st,now){
+  const L=_siLoad;L.state[id]=st;
+  L.pct=siProgressNext(L.pct,siProgress(_SI_STAGES,L.state));
+  siPaintLoad(now);
+}
+function _siStage(id){return _SI_STAGES.find(s=>s.id===id)||{id,label:id,verb:id,noun:id,w:0};}
+function _siLoadAlive(){return typeof currentPage==='undefined'||currentPage==='shopify-intel';}
+function _siHave(id){return _siCollectionsLoaded||!!_siColl[id];}
+function _siFmtN(n){return Number(n).toLocaleString('en-US');}
+// Classify a failure: permission (never retried), quota (one slow retry), timeout (never auto-retried), network/other.
+function _siLoadErr(e){
+  const msg=String((e&&e.message)||e||'Unknown error'),code=String((e&&e.code)||'');
+  let cls='other';
+  if(/permission-denied/i.test(code)||/insufficient permissions|permission[- ]denied/i.test(msg))cls='permission';
+  else if((e&&e.quota)||/resource-exhausted/i.test(code)||/\b429\b|quota/i.test(msg))cls='quota';
+  else if(/unavailable|network|offline|failed to fetch/i.test(code+' '+msg))cls='network';
+  return{msg,code,cls,at:_siNow()};
+}
+// ── The reads. Each assigns its own result the moment it returns, so a later failure keeps it. ──
+function _siColRunner(id,col,q){
+  return async function(){
+    const s=await getDocs(q?q():collection(db,col));
+    const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
+    if(id==='products'){_siProducts=a;_siSeasonMapCache=null;_siProdMapCache=null;}
+    else if(id==='orders')_siOrders=a;
+    else if(id==='lines')_siLineItems=a;
+    else _siWeeklyCloses=a;
+    _siColl[id]=true;
+    if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
+  };
+}
+const _siRunners={
+  products:_siColRunner('products','shopify_products'),
+  orders:_siColRunner('orders','shopify_orders'),
+  lines:_siColRunner('lines','shopify_line_items'),
+  closes:_siColRunner('closes','shopify_weekly_closes',()=>query(collection(db,'shopify_weekly_closes'),orderBy('week_ending','desc'))),
+  snap:async function(){
+    const today=_siPktDate(0),yesterday=_siPktDate(-1);
     let snap=await getDoc(doc(db,'shopify_inventory_snapshots',today));
     if(!snap.exists())snap=await getDoc(doc(db,'shopify_inventory_snapshots',yesterday));
     if(snap.exists())_siSnapshot=snap.data();
-  }catch(err){
-    _siLoadError=(err.message||String(err));
-    return; // snapshot read threw → surface error, retry next visit
+    if(!_siSnapshot)throw new Error('Inventory snapshot unavailable (no snapshot for today or yesterday).');
+  },
+  meta:async function(){ // never fatal: the page says "unknown" for what is missing
+    try{const snap=await getDoc(doc(db,'shopify_inventory_snapshots',_siPktDate(-7)));if(snap.exists())_siPrevSnapshot=snap.data();}catch(_){}
+    try{
+      const r=await Promise.all([getDoc(doc(db,'shopify_sync_meta','catalog_sync')),getDoc(doc(db,'shopify_sync_meta','order_backfill')),getDoc(doc(db,'shopify_sync_meta','inventory_sync'))]);
+      _siSyncMeta={catalog:r[0].exists()?r[0].data():{},orders:r[1].exists()?r[1].data():{},inventory:r[2].exists()?r[2].data():{}};
+    }catch(_){}
+    // the 4-hourly order sync's own status doc (the 'orders' entry above is the backfill's); missing = "unknown" on screen
+    try{const s4=await getDoc(doc(db,'shopify_sync_meta','order_sync'));_siSyncMeta.orderSync=s4.exists()?s4.data():null;}catch(_){}
+  },
+  build:async function(){ // the first index over the loaded rows — real CPU the first render would otherwise pay for after the bar said 100
+    if(_siLoad.shown)await new Promise(r=>setTimeout(r,16)); // let the "Counting the stock" paint before the thread is busy
+    try{if(typeof _siAxIndex==='function')_siAxIndex();}catch(_){}
+  },
+};
+function _siStageNeeds(id){
+  if(id==='snap')return!_siSnapshot;
+  if(id==='meta')return true;
+  if(id==='build')return false; // runs after the critical stages, from _siLoadSettle
+  return!_siHave(id);
+}
+// ── The controller ──
+function siRetryClearTimers(){
+  const C=_siRetryCtl;
+  if(C.timer){clearTimeout(C.timer);C.timer=null;}
+  if(C.tick){clearInterval(C.tick);C.tick=null;}
+  if(C.timer2){clearTimeout(C.timer2);C.timer2=null;}
+}
+function siRetryCancel(){siRetryClearTimers();_siRetryCtl.gen++;}
+function _siLoadClearWatch(){
+  const L=_siLoad;
+  [ 'showT','slowT','toT' ].forEach(k=>{if(L[k]){clearTimeout(L[k]);L[k]=null;}});
+}
+function _siLoadResolveOnce(){const L=_siLoad;if(!L.resolved&&L.resolve){L.resolved=true;L.resolve();}}
+// Leaving the page: nothing may keep running that could write to a page nobody is on.
+function _siLoadLeave(){
+  const L=_siLoad;
+  siRetryCancel();_siLoadClearWatch();
+  if(L.finishing){L.finishing=false;L.final=true;L.done=false;_siLoadResolveOnce();return;}
+  if(!L.final&&L.promise&&!L.resolved){
+    L.wait=null;L.final=true;
+    const f=_siLoadFailedIds();
+    _siLoadError=f.length?_siLoadErrorText(f):null;
+    _siLoadResolveOnce();
   }
-  try{
-    const snap=await getDoc(doc(db,'shopify_inventory_snapshots',lastWeek));
-    if(snap.exists())_siPrevSnapshot=snap.data();
-  }catch(_){}
-
-  if(!_siSnapshot){
-    _siLoadError='Inventory snapshot unavailable (no snapshot for today or yesterday).';
-    return; // do NOT set _siLoaded — next visit retries
+}
+function _siLoadFailedIds(){return _SI_STAGES.filter(s=>s.critical&&_siLoad.state[s.id]==='failed'&&_siLoad.fails[s.id]).map(s=>s.id);}
+function _siLoadErrorText(ids){return ids.map(id=>_siStage(id).label+': '+_siLoad.fails[id].msg).join('; ');}
+function siLoadBegin(){
+  const L0=_siLoad,C=_siRetryCtl;
+  siRetryCancel();_siLoadClearWatch();
+  const L=_siLoad=_siLoadFresh();
+  // keep the stages already running or held; everything else restarts for this visit
+  _SI_STAGES.forEach(s=>{
+    const held=s.id==='snap'?!!_siSnapshot:s.id==='meta'||s.id==='build'?false:_siHave(s.id);
+    L.state[s.id]=C.running[s.id]?'active':held?'done':'pending';
+    L.attempts[s.id]=C.running[s.id]?(L0.attempts[s.id]||1):0;
+    L.tok[s.id]=L0.tok[s.id]||0;
+  });
+  L.pct=siProgress(_SI_STAGES,L.state);
+  L.promise=new Promise(r=>{L.resolve=r;});
+  if(L0.resolve&&!L0.resolved){L0.resolved=true;L0.resolve(L.promise);} // a page left mid-load: its waiter follows this load
+  L.startedAt=_siNow();
+  if(_siLoadAlive())L.showT=setTimeout(()=>{L.showT=null;if(!L.final&&!L.shown&&_siLoad===L)_siLoadShow();},_SI_LOAD_SHOW_MS);
+  _siLoadArmWatch();
+}
+function _siLoadArmWatch(){
+  const L=_siLoad;
+  if(L.slowT)clearTimeout(L.slowT);if(L.toT)clearTimeout(L.toT);
+  L.slow=false;
+  L.slowT=setTimeout(()=>{L.slowT=null;L.slow=true;siPaintLoad();},_SI_LOAD_SLOW_MS);
+  L.toT=setTimeout(()=>{L.toT=null;_siLoadTimeout();},_SI_LOAD_TIMEOUT_MS);
+}
+function _siLoadTimeout(){
+  const L=_siLoad,C=_siRetryCtl;
+  const act=_SI_STAGES.filter(s=>L.state[s.id]==='active');
+  if(!act.length)return;
+  act.forEach(s=>{L.tok[s.id]++;C.running[s.id]=false;L.fails[s.id]={msg:'Timed out after '+(_SI_LOAD_TIMEOUT_MS/1000)+'s while '+s.noun,code:'timeout',cls:'timeout',at:_siNow()};siMark(s.id,'failed');});
+  _siLoadSettle();
+}
+function _siLoadShow(force){
+  const L=_siLoad;
+  if(!_siLoadAlive()||typeof document==='undefined'||!document.getElementById)return;
+  if(L.shown&&!force)return;
+  const host=document.getElementById('si-load-host');
+  if(host&&String(host.innerHTML||'').indexOf('id="si-load"')<0)host.innerHTML=_siLoaderHTML(true);
+  if(!L.shown){L.shown=true;L.shownAt=_siNow();}
+  siPaintLoad();
+}
+function _siLoadRunStages(ids){
+  const L=_siLoad,C=_siRetryCtl,gen=C.gen;
+  ids.forEach(id=>{
+    const after=()=>{if(C.gen===gen)_siLoadSettle();};
+    if(C.running[id]){if(C.proms[id])C.proms[id].then(after);return;} // already in flight (page re-entered): follow it, never read twice
+    C.running[id]=true;
+    L.attempts[id]=(L.attempts[id]||0)+1;
+    const tok=L.tok[id]=(L.tok[id]||0)+1;
+    siMark(id,'active');
+    let p;try{p=Promise.resolve(_siRunners[id]());}catch(e){p=Promise.reject(e);}
+    C.proms[id]=p.then(()=>{
+      if(L.tok[id]===tok)C.running[id]=false;
+      if(L.state[id]!=='done'){delete L.fails[id];siMark(id,'done');} // a late success after a timeout still counts
+    },e=>{
+      if(L.tok[id]===tok){C.running[id]=false;if(L.state[id]!=='done'){L.fails[id]=_siLoadErr(e);siMark(id,'failed');}}
+    });
+    C.proms[id].then(after);
+  });
+  _siLoadArmWatch();
+}
+function _siLoadAutoPlan(failedIds){
+  const L=_siLoad;let delay=0,k=0;
+  for(const id of failedIds){
+    const f=L.fails[id],n=L.attempts[id]||1;
+    if(!f||f.cls==='permission'||f.cls==='timeout'||n>=_SI_LOAD_MAX_ATTEMPTS)return null;
+    if(f.cls==='quota'&&(L.quotaRetried[id]||0)>=1)return null; // a quota problem gets ONE slow retry, then the button
+    const base=f.cls==='quota'?_SI_QUOTA_WAIT_MS:(n===1?2000:5000);
+    delay=Math.max(delay,base*(f.cls==='quota'?1+0.2*_siRand():0.8+0.4*_siRand()));
+    k=Math.max(k,n+1);
   }
+  return failedIds.length?{ids:failedIds.slice(),delay:Math.round(delay),k}:null;
+}
+function _siLoadWait(plan){
+  const L=_siLoad,C=_siRetryCtl,gen=C.gen;
+  siRetryClearTimers();
+  L.wait={until:_siNow()+plan.delay,total:plan.delay,ids:plan.ids,k:plan.k};
+  _siLoadShow(true);
+  C.timer=setTimeout(()=>{
+    C.timer=null;if(C.tick){clearInterval(C.tick);C.tick=null;}
+    if(C.gen!==gen)return;
+    _siLoadGoRetry(plan.ids);
+  },plan.delay);
+  C.tick=setInterval(()=>{if(C.gen!==gen)return;if(!_siLoadAlive()){_siLoadLeave();return;}siPaintLoad();},1000);
+  siPaintLoad();
+}
+function _siLoadGoRetry(ids){
+  const L=_siLoad;
+  L.wait=null;L.resume=true;L.final=false;
+  ids.forEach(id=>{const f=L.fails[id];if(f&&f.cls==='quota')L.quotaRetried[id]=(L.quotaRetried[id]||0)+1;});
+  _siLoadRunStages(ids);
+}
+function _siLoadSettle(){
+  const L=_siLoad,C=_siRetryCtl,st=id=>L.state[id];
+  if(L.finishing||L.complete||C.timer)return;
+  if(_SI_STAGES.some(s=>st(s.id)==='active'))return;
+  const crit=_SI_STAGES.filter(s=>s.critical);
+  const failed=crit.filter(s=>st(s.id)==='failed').map(s=>s.id);
+  if(failed.length){
+    if(L.final)return;
+    if(_siLoadAlive()){const plan=_siLoadAutoPlan(failed);if(plan){_siLoadWait(plan);return;}}
+    _siLoadFinalFail();return;
+  }
+  if(crit.some(s=>st(s.id)!=='done'))return;
+  if(st('build')!=='done'){if(!C.running.build)_siLoadRunStages(['build']);return;}
+  _siLoadSucceed();
+}
+function _siLoadFinalFail(){
+  const L=_siLoad;
+  L.final=true;L.wait=null;_siLoadClearWatch();siRetryClearTimers();
+  const ids=_siLoadFailedIds();
+  _siLoadError=_siLoadErrorText(ids)||'Load failed';
+  if(L.resolved)siPaintLoad();else{_siLoadShow(true);_siLoadResolveOnce();}
+}
+function _siLoadReduced(){try{return!!(typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(_){return false;}}
+function _siLoadSucceed(){
+  const L=_siLoad,C=_siRetryCtl,gen=C.gen;
+  _siLoaded=true;_siLoadError=null;L.wait=null;_siLoadClearWatch();siRetryClearTimers();
+  const late=L.resolved; // the page's waiter already resolved: a retry in place, so we repaint the page ourselves
+  const finish=()=>{
+    L.finishing=false;L.final=true;L.complete=true;
+    if(late){if(_siLoadAlive()&&typeof document!=='undefined'&&document.getElementById){const m=document.getElementById('main-content');if(m)m.innerHTML=renderShopifyDashboard();}}
+    else _siLoadResolveOnce();
+  };
+  if(!L.shown){finish();return;}
+  L.finishing=true;siPaintLoad(); // the view reads 100 once _siLoaded is true
+  const hold=Math.max(0,L.shownAt+_SI_LOAD_MIN_MS-_siNow());
+  C.timer2=setTimeout(()=>{
+    C.timer2=null;if(C.gen!==gen)return;
+    L.done=true;siPaintLoad();
+    C.timer2=setTimeout(()=>{C.timer2=null;if(C.gen!==gen)return;finish();},_siLoadReduced()?0:_SI_LOAD_SETTLE_MS);
+  },hold);
+}
+// ── Retry actions (single controller; a busy stage ignores a second press) ──
+window._siRetryStage=function(id){
+  const L=_siLoad,C=_siRetryCtl;
+  if(!_SI_STAGES.some(s=>s.id===id)||C.running[id]||L.state[id]!=='failed'||!_siLoadAlive())return;
+  siRetryClearTimers();L.wait=null;
+  L.attempts[id]=0;L.quotaRetried[id]=0;_siLoadError=null;L.final=false;L.resume=true;
+  const f=L.fails[id];
+  if(f&&f.cls==='quota'){const rem=f.at+_SI_QUOTA_WAIT_MS-_siNow();if(rem>0){_siLoadWait({ids:[id],delay:rem,k:1});return;}}
+  _siLoadShow(true);
+  _siLoadRunStages([id]);
+};
+window._siRetryNow=function(){ // skip the countdown
+  const L=_siLoad;
+  if(!L.wait||!_siLoadAlive())return;
+  const ids=L.wait.ids;siRetryClearTimers();_siLoadGoRetry(ids);
+};
+window._siRetryAll=function(){
+  const L=_siLoad;
+  const ids=_siLoadFailedIds().filter(id=>!_siRetryCtl.running[id]);
+  if(!ids.length||!_siLoadAlive())return;
+  siRetryCancel();L.wait=null;L.final=false;L.resume=true;_siLoadError=null;
+  ids.forEach(id=>{L.attempts[id]=0;L.quotaRetried[id]=0;});
+  _siLoadShow(true);
+  _siLoadRunStages(ids);
+};
+window._siLdRetry=function(id){if(_siLoad.wait)window._siRetryNow();else window._siRetryStage(id);};
+function _siLoadDetailsText(){
+  const L=_siLoad,lines=['Inventory Intelligence load details'];
+  lines.push('Time: '+new Date(_siNow()).toISOString());
+  lines.push('Online: '+(typeof navigator!=='undefined'&&navigator.onLine===false?'no':'yes'));
+  let b='unknown';try{const s=document.querySelector('script[src*="shopify.js"]');if(s&&s.getAttribute)b=(s.getAttribute('src')||'').split('?v=')[1]||'unknown';}catch(_){}
+  lines.push('Build: '+b);
+  lines.push('Percent when stopped: '+_siLoadView().pct);
+  const ids=_SI_STAGES.filter(s=>L.fails[s.id]).map(s=>s.id);
+  if(!ids.length)lines.push('No failed stage recorded'+(_siLoadError?' ('+_siLoadError+')':''));
+  ids.forEach(id=>{const f=L.fails[id];lines.push('Stage: '+_siStage(id).label+' ('+id+')','  Code: '+(f.code||'none'),'  Message: '+f.msg,'  Attempts: '+(L.attempts[id]||0)+' of '+_SI_LOAD_MAX_ATTEMPTS);});
+  return lines.join('\n');
+}
+window._siCopyDetails=function(btn){
+  const txt=_siLoadDetailsText();
+  const fb=()=>{try{const ta=document.createElement('textarea');ta.value=txt;ta.setAttribute('style','position:fixed;left:-9999px');document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();if(btn)btn.textContent='Copied';}catch(e){if(btn)btn.textContent='Could not copy';}};
+  try{navigator.clipboard.writeText(txt).then(()=>{if(btn)btn.textContent='Copied';},fb);}catch(e){fb();}
+  return txt;
+};
+// ── The view (pure of the DOM) ──
+function _siLoadView(){
+  const L=_siLoad,fails=_siLoadFailedIds();
+  const act=_SI_STAGES.filter(s=>L.state[s.id]==='active').sort((a,b)=>b.w-a.w);
+  const pct=_siLoaded?100:Math.min(99,L.pct);
+  let mode='load';
+  if(L.done)mode='done';else if(L.wait)mode='wait';else if((fails.length||_siLoadError)&&!act.length)mode='fail';
+  const failed=mode==='wait'?L.wait.ids:fails;
+  let stage,detail='',cd='';
+  if(mode==='done')stage='Ready';
+  else if(mode==='load'){
+    const a=act[0];
+    stage=a?(L.slow?'Still '+a.noun+' — slow connection':a.verb+'…'):'Starting…';
+    if(!a&&L.state.build==='done')stage='Finishing…';
+  }else{
+    stage='Stopped while '+(failed.length===1?_siStage(failed[0]).noun:failed.length?'loading '+failed.map(id=>_siStage(id).label.toLowerCase()).join(' and '):'loading');
+    detail=failed.map(id=>{const f=L.fails[id];if(!f)return'';return _siStage(id).label+': '+f.msg+' — attempt '+(L.attempts[id]||1)+' of '+_SI_LOAD_MAX_ATTEMPTS+(f.cls==='quota'?'\nThis is a Firestore read quota problem, not a bug here — check Firebase Console → Usage.':f.cls==='permission'?'\nPermission refused: firestore.rules may need republishing.':'');}).filter(Boolean).join('\n');
+    if(!detail&&_siLoadError)detail=String(_siLoadError);
+    if(mode==='wait'){
+      const s=Math.max(0,Math.ceil((L.wait.until-_siNow())/1000));
+      cd=failed.map(id=>_siStage(id).label).join(' and ')+' failed — retrying in '+s+'s… (attempt '+L.wait.k+' of '+_SI_LOAD_MAX_ATTEMPTS+')';
+    }
+  }
+  const parts=[];
+  if(_siColl.products||_siCollectionsLoaded)parts.push(_siFmtN(_siProducts.length)+' catalog entries');
+  if(_siColl.lines||_siCollectionsLoaded)parts.push(_siFmtN(_siLineItems.length)+' line items');
+  const retryable=mode==='fail'?fails:[];
+  return{pct,mode,stage,sub:parts.join(' · '),detail,cd,failed,retryable,
+    bucket:Math.floor(pct/25),text:stage+', '+pct+' percent',frac:pct/100,
+    total:L.wait?L.wait.total:0,multi:fails.length>=2};
+}
+const _SI_GARMENTS=[
+  'M-9 10L-30 24L-26 52L-16 50L-14 34V74H14V34L16 50L26 52L30 24L9 10Q0 24-9 10Z',
+  'M-8 10L-28 20L-22 32L-14 28V72H14V28L22 32L28 20L8 10Q0 17-8 10Z',
+  'M-14 10H14L17 76H4L0 36L-4 76H-17Z'];
+function _siLoaderHTML(overlay){
+  const v=_siLoadView();
+  let g='';
+  for(let i=0;i<8;i++){
+    const x=40+i*45,k=i%3,cls=(i===3?' hot':'')+(i===5?' gap':i>5?' late':'');
+    g+='<g transform="translate('+x+' 0)"><g class="gm'+cls+'" style="--i:'+i+'"><path class="hk" d="M0 10V5a4 4 0 1 0-4-4"/><path class="b" d="'+_SI_GARMENTS[k]+'"/></g></g>';
+  }
+  const fail=v.mode==='wait'||v.mode==='fail';
+  return'<div class="si-ld-card'+(overlay?' over':' flow')+(fail?' fail':'')+(_siLoadReduced()?' rm':'')+'" id="si-load" data-mode="'+v.mode+'">'
+   +'<div class="si-ld-stage"><svg viewBox="0 -8 400 96" aria-hidden="true"><path class="rail" d="M10 0H390"/>'+g+'</svg></div>'
+   +'<div class="si-ld-prog" role="progressbar" aria-label="Loading inventory data" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+v.pct+'" aria-valuetext="'+_siEsc(v.text)+'">'
+   +'<div class="si-ld-num"><span id="si-ld-n">'+v.pct+'</span><small>%</small></div>'
+   +'<div class="si-ld-stg" id="si-ld-stg">'+_siEsc(v.stage)+'</div>'
+   +'<div class="si-ld-sub" id="si-ld-sub">'+_siEsc(v.sub)+'</div>'
+   +'<div class="si-ld-bar"><i id="si-ld-bar" style="--p:'+v.frac+'"></i></div></div>'
+   +'<div class="si-ld-err"><div class="si-ld-cd" id="si-ld-cd" role="timer">'+_siEsc(v.cd)+'</div><div class="si-ld-cdb" id="si-ld-cdb">'+(v.mode==='wait'?'<i style="animation-duration:'+v.total+'ms"></i>':'')+'</div>'
+   +'<div class="si-ld-detail" id="si-ld-detail" role="alert">'+_siEsc(v.detail)+'</div>'
+   +'<div class="si-ld-btns" id="si-ld-btns">'+_siLoaderBtns(v)+'</div></div>'
+   +'<div class="si-ld-live" id="si-ld-live" aria-live="polite"></div></div>';
+}
+function _siLoaderBtns(v){
+  if(v.mode==='wait')return'<button type="button" class="si-ld-rt" onclick="window._siLdRetry()">Retry now</button>';
+  if(v.mode!=='fail')return'';
+  let h=v.retryable.length?'':'<button type="button" class="si-ld-rt" onclick="window._siRetry()">Retry</button>';
+  h+=v.retryable.map(id=>'<button type="button" class="si-ld-rt" onclick="window._siRetryStage(\''+id+'\')">'+(v.retryable.length>1?'Retry '+_siEsc(_siStage(id).label.toLowerCase()):'Retry this stage')+'</button>').join('');
+  if(v.multi)h+='<button type="button" class="si-ld-alt" onclick="window._siRetryAll()">Retry everything</button>';
+  return h+'<button type="button" class="si-ld-alt" onclick="window._siCopyDetails(this)">Copy details</button>';
+}
+let _siLdPainted={mode:'',bucket:-1,stage:''};
+function siPaintLoad(){
+  if(typeof document==='undefined'||!document.getElementById)return;
+  const card=document.getElementById('si-load');if(!card)return;
+  const v=_siLoadView(),L=_siLoad,set=(id,t)=>{const e=document.getElementById(id);if(e&&e.textContent!==t)e.textContent=t;};
+  const cls=(e,n,on)=>{if(e&&e.classList){if(on)e.classList.add(n);else e.classList.remove(n);}};
+  const fail=v.mode==='wait'||v.mode==='fail';
+  cls(card,'fail',fail);cls(card,'done',v.mode==='done');cls(card,'resume',!!L.resume&&!fail);
+  if(card.setAttribute)card.setAttribute('data-mode',v.mode);
+  set('si-ld-n',String(v.pct));set('si-ld-stg',v.stage);set('si-ld-sub',v.sub);set('si-ld-cd',v.cd);set('si-ld-detail',v.detail);
+  const bar=document.getElementById('si-ld-bar');if(bar&&bar.style&&bar.style.setProperty)bar.style.setProperty('--p',String(v.frac));
+  const pg=card.querySelector&&card.querySelector('.si-ld-prog');
+  if(pg&&pg.setAttribute){pg.setAttribute('aria-valuenow',String(v.pct));pg.setAttribute('aria-valuetext',v.text);}
+  if(_siLdPainted.mode!==v.mode||_siLdPainted.bucket!==v.bucket||_siLdPainted.stage!==v.stage&&v.mode!=='load'){
+    // the live region speaks on a quarter-bucket or a mode change only — a screen reader hears a handful of messages, not a hundred
+    const live=document.getElementById('si-ld-live');if(live)live.textContent=v.text;
+  }
+  _siLdPainted={mode:v.mode,bucket:v.bucket,stage:v.stage};
+  const btns=document.getElementById('si-ld-btns');if(btns){const h=_siLoaderBtns(v);if(btns._h!==h){btns.innerHTML=h;btns._h=h;}}
+  const cdb=document.getElementById('si-ld-cdb');if(cdb){const h=v.mode==='wait'?'<i style="animation-duration:'+v.total+'ms"></i>':'';if(cdb._h!==h){cdb.innerHTML=h;cdb._h=h;}}
+}
+(function(){ // leaving the page cancels every timer and pending retry
+  if(typeof window!=='undefined'&&typeof window.showPage==='function'&&!window.showPage.__si){
+    const o=window.showPage;
+    const w=function(id){if(id!=='shopify-intel')_siLoadLeave();return o.apply(this,arguments);};
+    w.__si=true;window.showPage=w;
+  }
+})();
 
-  try{
-    const s1=await getDoc(doc(db,'shopify_sync_meta','catalog_sync'));
-    const s2=await getDoc(doc(db,'shopify_sync_meta','order_backfill'));
-    const s3=await getDoc(doc(db,'shopify_sync_meta','inventory_sync'));
-    _siSyncMeta={catalog:s1.exists()?s1.data():{},orders:s2.exists()?s2.data():{},inventory:s3.exists()?s3.data():{}};
-  }catch(_){}
-  // the 4-hourly order sync's own status doc (the 'orders' entry above is the backfill's); never fatal, and missing = "unknown" on screen
-  try{
-    const s4=await getDoc(doc(db,'shopify_sync_meta','order_sync'));
-    _siSyncMeta.orderSync=s4.exists()?s4.data():null;
-  }catch(_){}
-
-  _siLoaded=true; // only when collections loaded AND snapshot present
+// ── Data loader ─────────────────────────────────────────────────────
+// Resolves when the load has SETTLED (loaded, or failed for good after its automatic retries); _siLoaded says which.
+async function loadShopifyData(){
+  _siLoadError=null;
+  siLoadBegin();
+  const C=_siRetryCtl;
+  const ids=_SI_STAGES.filter(s=>s.id!=='build'&&(C.running[s.id]||_siStageNeeds(s.id))).map(s=>s.id);
+  if(ids.length)_siLoadRunStages(ids);else _siLoadSettle();
+  return _siLoad.promise;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -372,8 +716,8 @@ function _siDailyMovement(){
 // RENDER
 // ═══════════════════════════════════════════════════════════════════
 function renderShopifyDashboard(){
-  if(_siLoadError)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="empty">⚠ Could not load inventory data: '+_siLoadError+'<br><button class="btn-primary" onclick="window._siRetry()" style="margin-top:10px">Retry</button></div>';
-  if(!_siLoaded)return'<div class="empty">Loading Shopify data...</div>';
+  if(_siLoadError)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="si-ld-lede">⚠ Could not load inventory data</div>'+_siLoaderHTML(false);
+  if(!_siLoaded)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div>'+_siLoaderHTML(false);
 
   _siSection=_siSecId(_siSection);   // a stale or removed section id lands on Overview, never a blank page
   // the stock history feeds the Needs Attention counts (tab pill, Overview tiles): one bounded read, repaints when it lands
@@ -410,6 +754,7 @@ window._siSetSeason=function(s){
   _siRefreshContent();
 };
 
+// The old whole-page Retry: the stage flags keep what loaded, so loadShopifyData (re-entered through showPage) re-reads ONLY what is missing.
 window._siRetry=function(){
   _siLoaded=false;_siLoadError=null;
   if(typeof window.showPage==='function')window.showPage('shopify-intel');

@@ -2775,6 +2775,23 @@ const FRAGMENTS={
     const failed=app.run('_siNaSectionHtml()');
     return Promise.resolve('<div id="si-content">'+empty+failed+'</div>');
   },
+  // The loader (Oct 2026): the card over the page skeleton mid-way, the stalled countdown, and the final error card. Tokens only; every
+  // control must be reachable (hit-tested) and every line readable in both themes. Verified by painting the stage line in --surface.
+  'inventory intel — loading mid-way':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siProducts=new Array(2126).fill({});_siColl.products=true;_siLoad=_siLoadFresh();["products","orders","closes","snap","meta"].forEach(i=>_siLoad.state[i]="done");_siLoad.state.lines="active";_siLoad.pct=32;_siLoad.shown=true;_siLoaded=false');
+    return Promise.resolve(app.run('_siLoadingSkeleton().replace(\'<div id="si-load-host"></div>\',\'<div id="si-load-host">\'+_siLoaderHTML(true)+\'</div>\')'));
+  },
+  'inventory intel — loading failed, counting down':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siLoad=_siLoadFresh();["products","orders","closes","snap","meta"].forEach(i=>_siLoad.state[i]="done");_siLoad.state.lines="failed";_siLoad.fails.lines={msg:"network lost",code:"unavailable",cls:"network",at:0};_siLoad.attempts.lines=1;_siLoad.pct=32;_siLoad.shown=true;_siLoad.wait={until:_siNow()+5000,total:5000,ids:["lines"],k:2};_siLoaded=false');
+    return Promise.resolve(app.run('_siLoadingSkeleton().replace(\'<div id="si-load-host"></div>\',\'<div id="si-load-host">\'+_siLoaderHTML(true)+\'</div>\')'));
+  },
+  'inventory intel — loading error card':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siLoad=_siLoadFresh();["products","closes","snap","meta"].forEach(i=>_siLoad.state[i]="done");["orders","lines"].forEach(i=>{_siLoad.state[i]="failed";_siLoad.fails[i]={msg:i==="lines"?"HTTP 429 quota exceeded":"Missing or insufficient permissions.",code:i==="lines"?"resource-exhausted":"permission-denied",cls:i==="lines"?"quota":"permission",at:0};_siLoad.attempts[i]=i==="lines"?2:1;});_siLoad.pct=19;_siLoad.shown=true;_siLoad.final=true;_siLoaded=false;_siLoadError="Orders: Missing or insufficient permissions.; Line items: HTTP 429 quota exceeded"');
+    return Promise.resolve(app.run('renderShopifyDashboard()'));
+  },
   'inventory intel — Article Explorer search':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
