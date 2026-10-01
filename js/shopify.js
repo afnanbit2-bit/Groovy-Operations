@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    Shopify Inventory Intelligence — client-side dashboard
-   Read-only: queries shopify_* Firestore collections, never writes.
+   Reads shopify_* Firestore collections. The ONLY write is the shared Ignore list (inventory_article_meta, see the Ignore block).
    ═══════════════════════════════════════════════════════════════════════ */
 
 let _siLoaded=false;
@@ -19,6 +19,7 @@ let _siCustomSeasons=null;      // lazy-loaded from localStorage: { sku → 'win
 let _siCustomTypes=null;        // lazy-loaded from localStorage: { sku → 'top'|'bottom' }
 let _siProdMapCache=null;       // sku → product doc map, rebuilt lazily, cleared on catalog reload
 let _siSkuExpanded=new Set();   // group keys currently expanded in the SKU table
+let _siMeta=new Map(),_siMetaState='idle',_siMetaPromise=null,_siIgVer=0; // shared Ignore list: code → doc (see the Ignore block)
 
 // ── Skeleton loader ──────────────────────────────────────────────────
 function _siLoadingSkeleton(){
@@ -493,6 +494,7 @@ async function loadShopifyData(){
   // usually landed by the first paint. A cold one is a full read of up to 150 snapshots: it starts after the first paint as
   // before, so it does not compete with the line items for bandwidth. Either way it stays outside the percentage.
   if(_siHistState==='idle'&&typeof getDocs==='function'&&_siHistCacheRead())_siAxEnsureHistory();
+  if(_siMetaState==='idle')_siMetaLoad(); // the shared ignore list: tiny, in parallel, outside the percentage; a failed read hides nothing
   if(ids.length)_siLoadRunStages(ids);else _siLoadSettle();
   return _siLoad.promise;
 }
@@ -503,6 +505,220 @@ function _siFmt(n){if(n==null)return'—';if(n>=1e6)return(n/1e6).toFixed(1)+'M'
 function _siPKR(n){if(n==null)return'—';return'PKR '+n.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});}
 function _siPct(n){if(n==null||isNaN(n))return'—';return(n*100).toFixed(1)+'%';}
 function _siDaysAgo(iso){if(!iso)return null;const d=new Date(iso);const now=new Date();return Math.floor((now-d)/86400000);}
+
+
+// ═══ Ignore — a SHARED per-article list (inventory_article_meta/{CODE}) ═══
+// Anyone who can open Inventory Intel may ignore an article for a chosen time, or for good, and everyone sees the same lists.
+// ONE predicate (_siIgnored) decides; every list, count, pill and rollup reads _siAxLive() (the articles that are NOT ignored).
+// Search, Compare and the Ignored tab read the full index, so an ignored article can always be found and restored.
+// Expiry is derived on read (ignoredUntil is a PKT day, ignored through the END of it); nothing is written when it passes.
+const _SI_META_COL='inventory_article_meta';
+const _SI_META_FIELDS=['code','type','season','ignoredUntil','ignoreForever','ignoredAt','ignoredBy','updatedAt','updatedBy']; // = the rules' allow-list
+const _SI_IG_PERIODS=[{k:'1w',l:'1 week'},{k:'2w',l:'2 weeks'},{k:'1m',l:'1 month'},{k:'3m',l:'3 months'},{k:'6m',l:'6 months'}];
+const _SI_IG_DAY=/^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const _SI_IG_CODE=/^[A-Z0-9][A-Z0-9._-]{1,39}$/;
+// today (YYYY-MM-DD, PKT) + a period → the LAST day the article stays ignored. Months clamp to the month end (31 Jan + 1 month = 28/29 Feb).
+function _siIgUntil(today,k){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(today));if(!m)return null;
+  const y=+m[1],mo=+m[2]-1,d=+m[3],pad=n=>String(n).padStart(2,'0');
+  const fmt=t=>t.getUTCFullYear()+'-'+pad(t.getUTCMonth()+1)+'-'+pad(t.getUTCDate());
+  if(k==='1w'||k==='2w')return fmt(new Date(Date.UTC(y,mo,d+(k==='1w'?7:14))));
+  const add={'1m':1,'3m':3,'6m':6}[k];if(!add)return null;
+  const tm=mo+add,ty=y+Math.floor(tm/12),tmo=((tm%12)+12)%12,last=new Date(Date.UTC(ty,tmo+1,0)).getUTCDate();
+  return ty+'-'+pad(tmo+1)+'-'+pad(Math.min(d,last));
+}
+function _siIgNextDay(day){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day));if(!m)return'';const t=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]+1)),p=n=>String(n).padStart(2,'0');return t.getUTCFullYear()+'-'+p(t.getUTCMonth()+1)+'-'+p(t.getUTCDate());}
+function _siIgEnd(day){return Date.parse(day+'T23:59:59.999+05:00');}
+// THE predicate. Forever, or still inside the last ignored PKT day (client clock).
+function _siIgnored(code){
+  const m=_siMeta.get(code);if(!m)return false;
+  if(m.ignoreForever===true)return true;
+  if(typeof m.ignoredUntil==='string'&&_SI_IG_DAY.test(m.ignoredUntil))return _siNow()<=_siIgEnd(m.ignoredUntil);
+  return false;
+}
+function _siIgKey(){return _siIgVer+'|'+_siPktDate(0);} // changes on every ignore/restore and at each PKT midnight (an expiry)
+// The articles that are NOT ignored: what every list, count, pill and rollup reads. Search/Compare/the Ignored tab use idx.list.
+function _siAxLive(){
+  const idx=_siAxIndex(),k=_siIgKey();
+  if(idx._lvK!==k){idx._lv=idx.list.filter(a=>!_siIgnored(a.code));idx._lvK=k;idx.classCounts=null;}
+  return idx._lv;
+}
+function _siIgUntilText(code){
+  const m=_siMeta.get(code);if(!m)return'';
+  if(m.ignoreForever===true)return'never';
+  return typeof m.ignoredUntil==='string'?_siIgNextDay(m.ignoredUntil):'';
+}
+function _siIgChipText(code){
+  const m=_siMeta.get(code);
+  return m&&m.ignoreForever===true?'Ignored for good':'Ignored until '+_siAxFmtDay(m.ignoredUntil);
+}
+function _siIgChipHtml(code){return _siIgnored(code)?`<span class="si-ig-chip">${_siEsc(_siIgChipText(code))}</span>`:'';}
+function _siIgBtnHtml(code,cls){
+  const on=_siIgnored(code);
+  return`<button type="button" class="si-ax-btn si-ig-btn${cls?' '+cls:''}" data-code="${_siEsc(code)}" onclick="window.${on?'_siIgRestore':'_siIgOpen'}(this.dataset.code)">${on?'Restore':'Ignore'}</button>`;
+}
+function _siIgList(){ // active ignores, soonest return first, "never" last
+  const out=[];
+  _siMeta.forEach((m,code)=>{if(_siIgnored(code))out.push({code,m});});
+  out.sort((x,y)=>{
+    const fx=x.m.ignoreForever===true,fy=y.m.ignoreForever===true;
+    if(fx!==fy)return fx?1:-1;
+    const dx=fx?'':x.m.ignoredUntil,dy=fy?'':y.m.ignoredUntil;
+    return dx<dy?-1:dx>dy?1:(x.code<y.code?-1:x.code>y.code?1:0);
+  });
+  return out;
+}
+// A stored document is read field by field: only well-formed values survive (it is somebody else's data).
+function _siMetaClean(id,d){
+  d=d&&typeof d==='object'?d:{};
+  return{code:id,
+    ignoreForever:d.ignoreForever===true,
+    ignoredUntil:typeof d.ignoredUntil==='string'&&_SI_IG_DAY.test(d.ignoredUntil)?d.ignoredUntil:null,
+    ignoredAt:typeof d.ignoredAt==='number'?d.ignoredAt:null,
+    ignoredBy:typeof d.ignoredBy==='string'?d.ignoredBy.slice(0,40):null,
+    type:['top','bottom','other'].includes(d.type)?d.type:null,
+    season:['winter','summer','all'].includes(d.season)?d.season:null,
+    updatedAt:typeof d.updatedAt==='number'?d.updatedAt:null,updatedBy:typeof d.updatedBy==='string'?d.updatedBy.slice(0,40):null};
+}
+// ONE bounded read per page load. Never rejects, never blocks the loader or its percentage, never hides what it could not read.
+function _siMetaLoad(force){
+  if(_siMetaPromise&&!force)return _siMetaPromise;
+  if(typeof getDocs!=='function'||typeof collection!=='function'){_siMetaState='error';return Promise.resolve();}
+  _siMetaState='loading';
+  _siMetaPromise=(async()=>{
+    try{
+      const s=await getDocs(collection(db,_SI_META_COL));
+      const m=new Map();s.forEach(d=>{if(_SI_IG_CODE.test(d.id))m.set(d.id,_siMetaClean(d.id,d.data()));});
+      _siMeta=m;_siMetaState='ok';
+    }catch(_){_siMetaState='error';}
+    _siIgVer++;_siIgRepaint();
+  })();
+  return _siMetaPromise;
+}
+function _siMetaNote(){ // quiet, and only when the read failed
+  return _siMetaState==='error'?`<div class="si-hist-pend err" id="si-meta-note" role="status">Ignore list could not be read — every article is shown. <button type="button" class="si-ax-btn" onclick="window._siMetaRetry()">Retry</button></div>`:'';
+}
+window._siMetaRetry=function(){_siMetaLoad(true);};
+// Repaint whatever is on screen after the list changed (a write, a restore, the read landing). Closes an open situation whose article just left.
+function _siIgRepaint(){
+  try{
+    if(typeof document==='undefined'||!document.getElementById||!_siLoaded||!_siLoadAlive())return;
+    if(_siNaSel&&_siIgnored(_siNaSel))_siNaSel='';
+    if(_siAxOvSit&&_siIgnored(_siAxOvSit))_siAxOvSit='';
+    const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
+    if(_siSection==='attention'&&typeof window._siNaRepaint==='function')window._siNaRepaint();
+    else if(_siSection==='explorer')_siAxRepaintAll();
+    else _siRefreshContent();
+  }catch(_){}
+}
+function _siIgUser(){return typeof session!=='undefined'&&session&&session.u?String(session.u):'';}
+// The ONE writer. Optimistic: memory first, then a merge write of the allowed fields only; a refusal puts memory back and says so.
+async function _siIgWrite(code,fields,okMsg,verb){
+  if(!_SI_IG_CODE.test(code)){if(typeof showToast==='function')showToast('This article code cannot be saved to the ignore list.',true);return false;}
+  const u=_siIgUser();
+  if(!u){if(typeof showToast==='function')showToast('Sign in again to change the ignore list.',true);return false;}
+  const now=_siNow(),prev=_siMeta.get(code),had=_siMeta.has(code);
+  const doc0=Object.assign({code,updatedAt:now,updatedBy:u},fields);
+  const next=_siMetaClean(code,Object.assign({},prev||{},doc0));
+  _siMeta.set(code,next);_siIgVer++;_siIgRepaint();
+  let stop=()=>{};
+  if(typeof window!=='undefined'&&typeof window._gvSilentSaveStart==='function'){window._gvSilentSaveStart();let done=false;const t=setTimeout(()=>fin(),4000);const fin=()=>{if(done)return;done=true;clearTimeout(t);window._gvSilentSaveStop();};stop=fin;}
+  try{
+    const p=setDoc(doc(db,_SI_META_COL,code),doc0,{merge:true});
+    if(typeof navigator!=='undefined'&&navigator.onLine===false&&typeof showToast==='function')showToast('Saved on this device — will sync when you are back online.');
+    else if(okMsg&&typeof showToast==='function')showToast(okMsg);
+    await p;stop();
+    if(typeof logActivity==='function')logActivity(verb,code+(fields.ignoreForever?' — never remind':fields.ignoredUntil?' — until '+fields.ignoredUntil:''));
+    return true;
+  }catch(e){
+    stop();
+    if(had)_siMeta.set(code,prev);else _siMeta.delete(code);
+    _siIgVer++;_siIgRepaint();
+    if(typeof showToast==='function')showToast('Could not save the ignore list — nothing was changed.'+(e&&/permission/i.test(String(e.code||e.message))?' (firestore.rules may not be published yet.)':''),true);
+    return false;
+  }
+}
+// What each choice writes (pure): a period → the last ignored PKT day; "never" → forever; Restore clears every ignore field.
+function _siIgFields(choice,today,by,now){
+  if(choice==='restore')return{ignoredUntil:null,ignoreForever:false,ignoredAt:null,ignoredBy:null};
+  if(choice==='never')return{ignoredUntil:null,ignoreForever:true,ignoredAt:now,ignoredBy:by};
+  const until=_siIgUntil(today,choice);
+  return until?{ignoredUntil:until,ignoreForever:false,ignoredAt:now,ignoredBy:by}:null;
+}
+window._siIgApply=function(code,choice){
+  code=String(code||'').toUpperCase();
+  const f=_siIgFields(choice,_siPktDate(0),_siIgUser(),_siNow());
+  if(!f)return Promise.resolve(false);
+  return _siIgWrite(code,f,choice==='never'?'Ignored — you will not be reminded.':'Ignored until '+_siAxFmtDay(f.ignoredUntil)+'.','Article ignored');
+};
+window._siIgRestore=function(code){
+  code=String(code||'').toUpperCase();
+  return _siIgWrite(code,_siIgFields('restore'),'Restored — it is back in the lists.','Article restored');
+};
+// The one question, in a small dialog. Markup is a string with every dynamic value escaped (an article name is somebody's text).
+let _siIgDlg=null;
+function _siIgClose(){if(_siIgDlg&&_siIgDlg.parentNode)_siIgDlg.parentNode.removeChild(_siIgDlg);_siIgDlg=null;}
+function _siIgDlgHtml(code,name){
+  return`<div class="si-ig-box"><div class="si-ig-h" id="si-ig-h">Ignore ${_siEsc(name||code)}</div>
+    <div class="si-ig-sub">It leaves the lists and counts for everyone until the time is up.</div>
+    <div class="si-ig-q">Remind me in…</div>
+    <div class="si-ig-opts" id="si-ig-opts" role="radiogroup" aria-label="Remind me in">${_SI_IG_PERIODS.map(pd=>`<label class="si-ig-opt"><input type="radio" name="si-ig-p" value="${pd.k}"${pd.k==='1m'?' checked':''}><span>${_siEsc(pd.l)}</span></label>`).join('')}</div>
+    <label class="si-ig-never"><input type="checkbox" id="si-ig-never" onchange="window._siIgNever(this.checked)"><span>Never remind me</span></label>
+    <div class="si-ig-btns"><button type="button" class="si-ax-btn" onclick="window._siIgCancel()">Cancel</button><button type="button" class="si-ax-btn si-ig-ok" data-code="${_siEsc(code)}" onclick="window._siIgGo(this.dataset.code)">Ignore</button></div></div>`;
+}
+window._siIgCancel=_siIgClose;
+window._siIgNever=function(on){
+  const g=document.getElementById('si-ig-opts');if(!g)return;
+  if(g.classList)g.classList.toggle('off',!!on);
+  if(g.querySelectorAll)g.querySelectorAll('input').forEach(i=>{i.disabled=!!on;});
+};
+window._siIgGo=function(code){
+  const nv=document.getElementById('si-ig-never'),sel=document.querySelector&&document.querySelector('input[name="si-ig-p"]:checked');
+  const choice=nv&&nv.checked?'never':((sel&&sel.value)||'1m');
+  _siIgClose();return window._siIgApply(code,choice);
+};
+window._siIgOpen=function(code){
+  code=String(code||'').toUpperCase();
+  if(typeof document==='undefined'||!document.createElement)return false;
+  _siIgClose();
+  let a=null;try{a=_siAxIndex().map.get(code)||null;}catch(_){}
+  const ov=document.createElement('div');ov.className='si-ig-ov';ov.id='si-ig-dlg';
+  ov.setAttribute('role','dialog');ov.setAttribute('aria-modal','true');ov.setAttribute('aria-labelledby','si-ig-h');
+  ov.innerHTML=_siIgDlgHtml(code,a?a.name:code);
+  ov.addEventListener('click',e=>{if(e.target===ov)_siIgClose();});
+  ov.addEventListener('keydown',e=>{if(e.key==='Escape')_siIgClose();else if(e.key==='Enter'&&e.target&&e.target.tagName!=='BUTTON'){if(e.preventDefault)e.preventDefault();window._siIgGo(code);}});
+  document.body.appendChild(ov);_siIgDlg=ov;
+  const f=ov.querySelector&&ov.querySelector('input:checked');if(f&&f.focus)f.focus();
+  return true;
+};
+// The Ignored tab.
+function _siIgnoredSectionHtml(){
+  const list=_siIgList();
+  const note=_siMetaNote();
+  if(_siMetaState==='loading'||_siMetaState==='idle')return`<div class="si-ax-empty">Reading the ignore list…</div>`;
+  if(!list.length)return note+`<div class="card"><div class="card-title">Ignored</div><div class="si-ax-empty">Nothing is ignored. Use Ignore on an article you do not want in the lists for a while.</div></div>`;
+  let idx=null;try{idx=_siAxIndex();}catch(_){}
+  const row=e=>{
+    const a=idx&&idx.map&&idx.map.get(e.code),back=_siIgUntilText(e.code);
+    const nm=a?a.name:e.code,cls=a&&(a.units>0||a.hasStock)?(_siAxClassify(a).label||''):'';
+    const by=e.m.ignoredBy?(' · by '+e.m.ignoredBy):'';
+    return`<div class="si-ig-row"><div class="nm">${_siAxThumb(e.code,48,nm)}<div class="tx"><strong>${_siEsc(nm)}</strong><div class="si-ax-note" style="margin:0">${_siEsc(e.code)}${cls?' · <span class="si-ig-cls">'+_siEsc(cls)+'</span>':''}</div></div></div>
+      <div class="rt"><div class="k">Returns</div><div class="v">${back==='never'?'never':_siEsc(_siAxFmtDay(back))}</div><div class="si-ax-note" style="margin:0">${_siEsc(('ignored '+(e.m.ignoredAt?_siAxFmtDay(_siPktDayOf(e.m.ignoredAt)):'')+by).trim())}</div></div>
+      <div class="btns"><button type="button" class="si-ax-btn" data-code="${_siEsc(e.code)}" onclick="window._siIgOpenInExplorer(this.dataset.code)">Open</button><button type="button" class="si-ax-btn si-ig-btn" data-code="${_siEsc(e.code)}" onclick="window._siIgRestore(this.dataset.code)">Restore</button></div></div>`;
+  };
+  return note+`<div class="card"><div class="card-title">Ignored — ${list.length} article${list.length===1?'':'s'}</div>
+    <div class="si-ax-note" style="margin:0 0 6px">Shared: everyone sees the same list. An article comes back by itself on the date shown; nothing needs to be done.</div>
+    ${list.map(row).join('')}</div>`;
+}
+window._siIgOpenInExplorer=function(code){
+  code=String(code||'').toUpperCase();
+  _siSection='explorer';_siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';
+  const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
+  _siRefreshContent();
+  if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
+};
+function _siPktDayOf(ms){return new Date(ms+5*3600000).toISOString().slice(0,10);}
+// ═══ end Ignore ═══
 
 // ── Season tagging ───────────────────────────────────────────────────
 // Products carry Shopify tags 'season:winter' / 'season:summer'. Anything
@@ -764,7 +980,7 @@ window._siRetry=function(){
   if(typeof window.showPage==='function')window.showPage('shopify-intel');
 };
 
-const _SI_SECTIONS=['overview','attention','skutable','explorer','weekly','advanced'];
+const _SI_SECTIONS=['overview','attention','skutable','explorer','weekly','ignored','advanced'];
 function _siSecId(id){return _SI_SECTIONS.indexOf(id)>=0?id:'overview';}
 function _siTabBar(){
   const tabs=[
@@ -773,11 +989,12 @@ function _siTabBar(){
     {id:'skutable',label:'SKU Table'},
     {id:'explorer',label:'Article Explorer'},
     {id:'weekly',label:'Weekly Close'},
+    {id:'ignored',label:'Ignored',count:_siIgList().length},
     {id:'advanced',label:'Advanced'},
   ];
   const n=_siNaBadge();
   return`<div class="gp-tabs" id="si-tab-bar" style="margin-bottom:14px">${tabs.map(t=>
-    `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}${t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:''}</button>`
+    `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}${t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:''}${t.count?`<span class="si-ig-n" role="img" aria-label="${t.count} ignored">${t.count}</span>`:''}</button>`
   ).join('')}</div>`;
 }
 
@@ -800,6 +1017,7 @@ function _siRenderSection(m,skuRows){
   if(_siSection==='skutable')return _siSkuTableSection(skuRows);
   if(_siSection==='explorer')return _siArticleExplorerSection();
   if(_siSection==='weekly')return _siWeeklySection();
+  if(_siSection==='ignored')return _siIgnoredSectionHtml();
   if(_siSection==='advanced')return _siAdvancedSection(skuRows);
   return _siOverview(m);
 }
@@ -846,7 +1064,8 @@ function _siOverview(m){
 
 // The two Overview tiles read the SAME article-level counts as the Needs Attention tab (one computation, uncapped).
 // The quiet "Stock history: loading…" line (and, on a failed read, its Retry). Empty once the history has landed.
-function _siHistStrip(){
+function _siHistStrip(){return _siMetaNote()+_siHistStrip0();}
+function _siHistStrip0(){
   if(_siHistState==='loading'||_siHistState==='idle')return'<div class="si-hist-pend" id="si-hist-pend" role="status">Stock history: loading…<span> the counts below show … until it lands</span></div>';
   if(_siHistState==='error')return`<div class="si-hist-pend err" id="si-hist-pend" role="alert">Stock history could not be read (${_siEsc(_siHistError)}); the counts below are rougher without it. <button type="button" class="si-ax-btn" onclick="window._siHistRetry()">Retry</button></div>`;
   return'';
@@ -2466,7 +2685,7 @@ function _siAxLtHtml(){
 function _siAxClassCounts(){
   const idx=_siAxIndex();if(idx.classCounts)return idx.classCounts;
   const c={};Object.keys(_SI_AX_CLASSES).forEach(k=>{c[k]=0;});
-  idx.list.forEach(a=>{if(a.units>0||a.hasStock)c[_siAxClassify(a).cls]++;});
+  _siAxLive().forEach(a=>{if(a.units>0||a.hasStock)c[_siAxClassify(a).cls]++;});
   idx.classCounts=c;return c;
 }
 // Plain-words definitions: one registry feeds the tooltips, the "How these are
@@ -2792,7 +3011,8 @@ function _siArticleExplorerSection(){
   const modeBtn=_siAxModeBtnHtml;
   _siAxWireSlash();
   return`<div class="si-ax-bar" id="si-ax-modebar">${modeBtn('overview','Overview')}${modeBtn('portfolio','Portfolio')}${modeBtn('search','Search')}${modeBtn('compare','Compare')}
-    <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles · ignores the season filter</span></div>
+    <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles${idx.list.length!==_siAxLive().length?' ('+(idx.list.length-_siAxLive().length)+' ignored)':''} · ignores the season filter</span></div>
+  ${_siMetaNote()}
   ${_siAxSearchBarHtml()}
   ${_siAxTrustBanner()}
   <div id="si-ax-live" class="si-ax-live" role="status" aria-live="polite"></div>
@@ -2832,7 +3052,7 @@ function _siAxResultsHtml(){
   const hit=a=>{
     const on=add&&_siAxCmp.includes(a.code);
     const tail=add?(on?'<span class="si-ax-added" aria-hidden="true">✓ Added</span>':'<span class="si-ax-plus" aria-hidden="true">+ Add</span>'):'';
-    return`<button class="si-ax-hit${on?' is-added':''}" data-code="${_siEsc(a.code)}"${add?` aria-pressed="${on}"`:''} onclick="window._siAx${fn}(this.dataset.code)">${_siAxThumb(a.code,40,a.name)}<span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div></span><span class="n">${a.units} sold</span>${tail}</button>`;
+    return`<button class="si-ax-hit${on?' is-added':''}" data-code="${_siEsc(a.code)}"${add?` aria-pressed="${on}"`:''} onclick="window._siAx${fn}(this.dataset.code)">${_siAxThumb(a.code,40,a.name)}<span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div>${_siIgChipHtml(a.code)}</span><span class="n">${a.units} sold</span>${tail}</button>`;
   };
   return`<div class="si-ax-note" style="margin:6px 0 4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'} · ordered by units sold, then name, then code</div>
   <div class="si-ax-results">${r.hits.map(hit).join('')}</div>`;
@@ -3613,7 +3833,7 @@ function _siAxSearchBody(){
     <div class="si-ax-note" style="margin:4px 0 0">${_siEsc(vc.rule)}${vc.near?' '+_siEsc(vc.near):''}${vc.unverified?' (partly unverified)':''}</div></div>`;
   return`<div class="card"><div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:1 1 220px;min-width:0;display:flex;gap:12px;align-items:center">${_siAxThumb(a.code,64,a.name)}<div style="min-width:0"><div style="font-size:18px;font-weight:700">${_siEsc(a.name)}</div><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${cat} · ${a.skus.size} SKU${a.skus.size===1?'':'s'}</div></div></div>
-    <button class="si-ax-btn${_siAxHintOn()?' si-ax-hint':''}" data-code="${_siEsc(a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button><button class="si-ax-btn" onclick="window._siAxSetMode('overview')">Overview</button><button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button></div></div>
+    <button class="si-ax-btn${_siAxHintOn()?' si-ax-hint':''}" data-code="${_siEsc(a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button><button class="si-ax-btn" onclick="window._siAxSetMode('overview')">Overview</button><button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button>${_siIgBtnHtml(a.code)}</div>${_siIgnored(a.code)?`<div style="flex-basis:100%">${_siIgChipHtml(a.code)}</div>`:''}</div>
   ${verdictHtml}
   <div class="si-ax-kpis si-ax-head6">${kpi('Units per week',_siAxNum(m.paceHead),m.paceHead!=null?(m.paceHeadBasis==='in stock'?'while in stock — sold out '+m.outDays+' of '+m.measured+' days, so real demand is higher (plain rate '+_siAxNum(m.rateWeek)+')':_siEsc(win)):'needs 7+ counted days','rate')}
     ${kpi('Stock lasts',_siEsc(_siAxCoverText(m)),m.cover!=null?_siEsc(_siAxCoverNote(m)):(!a.hasStock?'no stock data':'no pace to divide by'),'cover')}
@@ -3781,7 +4001,7 @@ const _SI_OV_TILES=[
 ];
 function _siAxOvRows(){
   const idx=_siAxIndex();
-  return idx.list.filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat||(a.category||'Unknown')===_siAxOvCat)).map(a=>{
+  return _siAxLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat||(a.category||'Unknown')===_siAxOvCat)).map(a=>{
     const m=_siAxStats(a),c=_siAxClassify(a),act=_siAxActionOf(a);
     return{a,m,c,act};
   });
@@ -3805,7 +4025,7 @@ function _siAxOverviewBody(){
   if(_siHistState!=='ok'&&_siHistState!=='error')return`<div class="si-ax-empty">Reading the stock history…</div>`+_siAxHistBanner();
   if(_siAxOvSit){const h=_siAxOvSitHtml();if(h)return h;}
   const rows=_siAxOvRows();
-  const cats=[...new Set(idx.list.filter(a=>a.units>0||a.hasStock).map(a=>a.category||'Unknown'))].sort(_siSortNat);
+  const cats=[...new Set(_siAxLive().filter(a=>a.units>0||a.hasStock).map(a=>a.category||'Unknown'))].sort(_siSortNat);
   const tile=t=>{const n=rows.filter(r=>_siAxOvIn(r,t.k)).length;return`<button class="si-ov-tile${_siAxOvTile===t.k?' on':''}" aria-pressed="${_siAxOvTile===t.k}" onclick="window._siAxOvTile('${t.k}')"><span class="l">${_siEsc(t.l)}</span><span class="n">${n}</span><span class="w">${_siEsc(t.what)}</span><span class="s">${_siEsc(t.sub)}</span></button>`;};
   const cur=_SI_OV_TILES.find(t=>t.k===_siAxOvTile)||_SI_OV_TILES[0];
   const list=rows.filter(r=>_siAxOvIn(r,cur.k)).sort(_siAxOvSort(cur.k));
@@ -3816,7 +4036,7 @@ function _siAxOverviewBody(){
     <div class="fg"><div class="k">Sizes out</div><div class="v">${r.m.risk&&r.m.risk.length?_siEsc(r.m.risk.map(x=>x.size).join(', ')):'—'}</div></div>
     <div class="act">${_siEsc(r.act.text)}</div>
     <div class="lt">${_siAxLtCtlHtml(r.a)}</div>
-    <div class="btns"><button class="si-ax-btn si-ov-sit" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvSituation(this.dataset.code)">Situation</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOpen(this.dataset.code)">Open</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button></div></div>`;
+    <div class="btns"><button class="si-ax-btn si-ov-sit" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvSituation(this.dataset.code)">Situation</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOpen(this.dataset.code)">Open</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button>${_siIgBtnHtml(r.a.code)}</div></div>`;
   const cnt={};rows.forEach(r=>{cnt[r.c.cls]=(cnt[r.c.cls]||0)+1;});
   const classLine=['winner','solid','steady','constrained','slow','dead','early','unrated'].filter(k=>cnt[k]).map(k=>cnt[k]+' '+_SI_AX_CLASSES[k].label).join(' · ');
   return`<div class="card"><div class="si-ax-bar"><label class="si-ax-lab" for="si-ov-cat">Category</label><select id="si-ov-cat" class="si-ax-select" onchange="window._siAxOvCat(this.value)"><option value="">All categories</option>${cats.map(c=>`<option value="${_siEsc(c)}"${c===_siAxOvCat?' selected':''}>${_siEsc(c)}</option>`).join('')}</select></div>
@@ -3994,9 +4214,9 @@ function _siAxPfLostOf(a){
 function _siAxPf(){
   const idx=_siAxIndex();
   let lt='';try{lt=(localStorage.getItem(_SI_LT_KEY)||'')+'|'+(localStorage.getItem(_SI_LT_ART_KEY)||'');}catch(_){}
-  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState;
+  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey();
   if(_siAxPfMemo&&_siAxPfMemo.idx===idx&&_siAxPfMemo.sig===sig)return _siAxPfMemo.res;
-  const rows=idx.list.filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)}));
+  const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)}));
   const res=_siAxPfCalc(rows,{today:_siPktDate(0),demand:_siAxDemand(),lost:_siHistState==='ok'?_siAxPfLostOf:null});
   _siAxPfMemo={idx,sig,res};return res;
 }
@@ -4477,9 +4697,9 @@ function _siNaCtx(){
 function _siNaState(){
   const idx=_siAxIndex();
   let lt='';try{lt=(localStorage.getItem(_SI_LT_KEY)||'')+'|'+(localStorage.getItem(_SI_LT_ART_KEY)||'');}catch(_){}
-  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState;
+  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey();
   if(_siNaMemo&&_siNaMemo.idx===idx&&_siNaMemo.sig===sig)return _siNaMemo.res;
-  const rows=idx.list.filter(a=>a.units>0||a.hasStock).map(_siNaRow);
+  const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(_siNaRow);
   const res=_siNaBuild(rows,_siNaCtx());
   res.rows=rows.length;
   res.skipped=rows.filter(r=>r.c.cls==='early'||r.c.cls==='unrated').length;
@@ -4751,7 +4971,7 @@ function _siNaBandHtml(b,list,trustRed){
   const head=fold?`<button type="button" class="si-na-bh toggle" aria-expanded="${!watchShut}" onclick="window._siNaToggleWatch()"><span class="t">${_siEsc(b.l)}</span><span class="s">${_siEsc(b.sub)}</span><span class="n">${list.length}</span><span class="car" aria-hidden="true">${watchShut?'▸':'▾'}</span></button>`
     :`<div class="si-na-bh"><span class="t">${_siEsc(b.l)}</span><span class="s">${_siEsc(b.sub)}</span><span class="n">${list.length}</span></div>`;
   const more=(list.length>cap&&!iso&&_siNaFilter==='all')?`<button type="button" class="si-ax-btn si-na-more" onclick="window._siNaShowAll('${b.k}')">${_siNaShow[b.k]?'Show the first '+cap:'Show all '+list.length}</button>`:'';
-  const body=watchShut?'':show.map(i=>_siNaRowHtml(i,trustRed)).join('')+more;
+  const body=watchShut?'':show.map(i=>`<div class="si-na-rw">${_siNaRowHtml(i,trustRed)}${_siIgBtnHtml(i.code,'si-na-ig')}</div>`).join('')+more;
   return`<section class="si-na-band ${b.k}${_siNaFlash===b.k?' flash':''}" id="si-na-band-${b.k}" aria-label="${_siEsc(b.l)}">${head}${body}</section>`;
 }
 // What a reason chip says while it cannot list anything: how it will light up, never a zero.
@@ -4771,7 +4991,7 @@ function _siNaListHtml(){
   const bands=_SI_NA_BANDS.map(b=>_siNaBandHtml(b,list.filter(i=>i.band===b.k),trustRed)).join('');
   _siNaFlash='';   // the highlight is one-shot: painted once, then gone
   const waiting=_siNaFilter!=='all'&&_siNaFilter!=='cash'&&res.unavailable&&res.unavailable[_siNaFilter];
-  return`<div class="si-na">${_siNaTrustHtml(trust)}${_siNaHeadHtml(res)}${_siNaFilterHtml(res)}${waiting?_siNaWaitHtml(_siNaFilter):(bands||_siNaEmptyHtml(res,trust))}</div>`;
+  return`<div class="si-na">${_siMetaNote()}${_siNaTrustHtml(trust)}${_siNaHeadHtml(res)}${_siNaFilterHtml(res)}${waiting?_siNaWaitHtml(_siNaFilter):(bands||_siNaEmptyHtml(res,trust))}</div>`;
 }
 function _siNaFactsHtml(i){
   const n=i.n,P=v=>_siAxNum(v),F=[];
@@ -4800,7 +5020,7 @@ function _siNaDetailHtml(i,o){
   return`<div class="si-na-detail ${i.band}">
     <div class="si-na-dbar"><button type="button" class="si-ax-btn si-na-back" onclick="${backFn}">${_siEsc(o.backLabel||'‹ Needs Attention')}</button>
       <span class="si-na-pn">${pos>=0?`<button type="button" class="si-ax-btn" ${pos<=0?'disabled':''} onclick="${stepFn}(-1)" aria-label="Previous article">‹ Prev</button><span class="si-ax-note" style="margin:0">${pos+1} of ${order.length}</span><button type="button" class="si-ax-btn" ${pos>=order.length-1?'disabled':''} onclick="${stepFn}(1)" aria-label="Next article">Next ›</button>`:''}</span>
-      <span class="si-na-btns"><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaToExplorer(this.dataset.code)">Open in Article Explorer</button><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaCompare(this.dataset.code)">+ Compare</button></span></div>
+      <span class="si-na-btns"><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaToExplorer(this.dataset.code)">Open in Article Explorer</button><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaCompare(this.dataset.code)">+ Compare</button>${_siIgBtnHtml(i.code)}</span></div>
     <div class="si-na-dhead"><div class="si-na-dtop">${_siAxThumb(i.code,64,i.label)}<div class="si-na-dtx"><span class="si-na-reason ${i.band} big">${_siEsc(bandL)}</span><h2>${_siEsc(i.label)}</h2><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(i.code)} · ${_siEsc(i.clsLabel)} · ${_siEsc(i.reason)}${i.also&&i.also.length?' · also '+_siEsc(i.also.map(t=>_SI_NA_REASON[t].toLowerCase()).join(', ')):''}</div></div></div></div>
     <section class="si-na-sit"><h3>Situation</h3><p>${_siEsc(pb.situation)}</p></section>
     <section class="si-na-how"><h3>How to tackle</h3><ol class="si-na-acts">${pb.actions.map(a=>`<li><span class="si-na-own">${_siEsc(a.owner)}</span><span>${_siEsc(a.text)}</span></li>`).join('')}</ol><div class="si-ax-note">Owners are suggestions, not assignments.</div></section>

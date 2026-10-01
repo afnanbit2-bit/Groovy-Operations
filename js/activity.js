@@ -51,7 +51,7 @@ const _MONITOR_CATEGORIES=[
   {key:'auth',   label:'Sign-in',        color:'#6b7280', icon:'🔑', match:a=>/^Login$/.test(a)||/^Password/.test(a)},
   {key:'delete', label:'Delete',         color:'#dc2626', icon:'🗑️', match:a=>/delet|remov|cleared|cleanup|withdraw/i.test(a)},
   {key:'money',  label:'Approve / Money',color:'#059669', icon:'💰', match:a=>/approv|rejected|paid|processed|^Loan |^Advance |withhold|billing/i.test(a)},
-  {key:'edit',   label:'Edit',           color:'#d97706', icon:'✎',  match:a=>/edit|correct|override|renamed|updated|fetched|tidied|dedup|overwritten|reconstructed|policy chang/i.test(a)},
+  {key:'edit',   label:'Edit',           color:'#d97706', icon:'✎',  match:a=>/edit|correct|override|renamed|updated|fetched|tidied|dedup|overwritten|reconstructed|policy chang|^Article (ignored|restored)/i.test(a)},
   {key:'create', label:'Create',         color:'#2563eb', icon:'➕', match:a=>/^Fabric In$|created|issued|added|submitted|reserved|restocked|reported|import|recorded|logged|captured/i.test(a)},
   {key:'other',  label:'Process',        color:'#7c3aed', icon:'⚙️', match:()=>true}
 ];
