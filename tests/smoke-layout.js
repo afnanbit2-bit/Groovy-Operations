@@ -2801,6 +2801,13 @@ const FRAGMENTS={
     app.run('_siAxTlRes="day";_siAxTlRange="90"');
     return Promise.resolve('<div id="si-content">'+a+b+c+'</div>');
   },
+  // The Portfolio sub-view: readout, tiles, class mix bars, category / season / concentration / cash tables, filters, scatter and ranked list.
+  'inventory intel — Article Explorer portfolio':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    return Promise.resolve('<div id="si-content">'+app.run('(()=>{_siAxModeSel="portfolio";_siAxPfMemo=null;_siAxPfAll=true;_siAxPfConcAll=true;return _siAxPortfolioBody();})()')+'</div>');
+  },
   // The Sizes card: the sales-vs-stock bars, every status chip (out, thin, fine, over, no sales, no stock data), the readout and the
   // suggested split, for a seeded article and for a synthetic run covering every chip and a long hostile-length size label.
   'inventory intel — Article Explorer sizes card':()=>{
