@@ -451,7 +451,16 @@ function _renderHeader(doc, o) {
   let top = P.marginTop;
 
   _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.hero, PRINT_COLORS.black);
-  doc.text('GROOVY', L, top + 16);
+  if (o.boldMark) {
+    // PO only: AptosDisplay-Bold is the heaviest real face, so thicken the
+    // wordmark with a stroke in the text colour (fill + stroke text).
+    const bk = _pc(PRINT_COLORS.black);
+    doc.setDrawColor(bk[0], bk[1], bk[2]);
+    doc.setLineWidth(1);
+    doc.text('GROOVY', L, top + 16, { renderingMode: 'fillThenStroke' });
+  } else {
+    doc.text('GROOVY', L, top + 16);
+  }
 
   if (o.documentNumber) {
     // o.numberSize (the PO only) enlarges the number; unset = the old 16pt.
@@ -1685,7 +1694,11 @@ function _renderMoodBoard(doc, data) {
    - the main sheet is at most TWO A4 pages;
    - a station block (band, dates, table, total row, sign-off lines) is never
      split across a page break — each block is laid out as one unit;
-   - every table line is red and drawn at double the old width.
+   - red is kept for what matters most (START DATE, station bands and their
+     START/END DATE, TOTAL rows, Total Quantity / Ratio / Weight / Average
+     boxes); every ordinary table line is a dark neutral at double the old
+     width. The printout prints no Notes and no "Grand Total Quantity
+     Processed" (2 Oct 2026, reversal).
    Both follow from how it is built: every part is a block with a measured
    height, a planner tries four densities (comfortable → compact) and takes
    the first whose simulated page flow fits two pages, then draws exactly
@@ -1707,6 +1720,30 @@ const _PO_DENSITIES = [
   { rowH: 16, hdrH: 20, gap: 4,  kvMin: 20, imgH: 160, remH: 14, signH: 22 }
 ];
 
+/* Sizes row of the PO: each size with its quantity and ratio, e.g.
+   S 100(1)  M 200(2). Returns null (print the plain sizes string) when the
+   ratio is missing or does not give one number per size; otherwise one token
+   per size = [{t,red}] parts. The quantity (totalQty * ratio / sum) is shown
+   only when every quantity is a whole number summing to totalQty. */
+function _poSizeTokens(sizes, ratio, totalQty) {
+  const sz = String(sizes == null ? '' : sizes).split(/[-,\/\s]+/).filter(Boolean);
+  const rt = String(ratio == null ? '' : ratio).split(/[:\-,\/\s]+/).filter(Boolean).map(Number);
+  if (!sz.length || sz.length !== rt.length) return null;
+  if (!rt.every(function (n) { return isFinite(n) && n >= 0; })) return null;
+  const sum = rt.reduce(function (a, n) { return a + n; }, 0);
+  if (!(sum > 0)) return null;
+  const tot = Number(String(totalQty == null ? '' : totalQty).replace(/,/g, ''));
+  let q = null;
+  if (isFinite(tot) && tot > 0 && Math.floor(tot) === tot) {
+    const cand = rt.map(function (n) { return tot * n / sum; });
+    if (cand.every(function (v) { return Math.abs(v - Math.round(v)) < 1e-9; }) &&
+        cand.reduce(function (a, v) { return a + Math.round(v); }, 0) === tot) q = cand.map(Math.round);
+  }
+  return sz.map(function (label, i) {
+    return [{ t: q ? label + ' ' + q[i] : label, red: false }, { t: '(' + rt[i] + ')', red: true }];
+  });
+}
+
 function _renderPO(doc, data) {
   data = data || {};
   const L = PRINT_LAYOUT.marginLeft;
@@ -1719,6 +1756,8 @@ function _renderPO(doc, data) {
   const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 22;
   const SIZE_ROWS = ['Small', 'Medium', 'Large', 'X-Large'];
   const LW = 0.8, LW_ROW = 0.6, LW_BOX = 1.5;   // table lines: double the old 0.4 / 0.3
+  const DARK = _pc('#262626');                   // ordinary table lines (red is for the key items only)
+  const darkLine = function (w) { doc.setDrawColor(DARK[0], DARK[1], DARK[2]); doc.setLineWidth(w); };
 
   const redLine = function (w) { doc.setDrawColor(RED[0], RED[1], RED[2]); doc.setLineWidth(w); };
   const greyLine = function (w) { const g = _pc(PRINT_COLORS.greyAccent); doc.setDrawColor(g[0], g[1], g[2]); doc.setLineWidth(w); };
@@ -1733,6 +1772,7 @@ function _renderPO(doc, data) {
     documentType: 'Production Order',
     documentNumber: data.documentNumber || data.id || '',
     numberSize: 26,
+    boldMark: true,
     startDateLabel: 'START DATE',
     startDate: data.startDate || ''
   });
@@ -1756,8 +1796,8 @@ function _renderPO(doc, data) {
       [cell('Article Name', data.articleName)],
       [cell('Article Code', data.articleCode), cell('Fabric Code', data.fabricCode)],
       [cell('Fabric Name', data.fabricName)],
-      [cell('Sizes', data.sizes, ratio ? { suffix: 'Ratio ' + ratio } : {})],
-      [cell('Total Quantity', data.totalQty), cell('Ratio', ratio, { red: true, box: true })],
+      [cell('Sizes', data.sizes, { sizesRatio: ratio })],
+      [cell('Total Quantity', data.totalQty, { red: true, box: true }), cell('Ratio', ratio, { red: true, box: true })],
       [cell('Total Weight / Mtr', data.totalWeight, { red: true, box: true }), cell('Average Per Unit', data.avgPerUnit, { red: true, box: true })]
     ];
     // lay out every cell: wrapped label + value lines at the largest font that fits
@@ -1772,18 +1812,30 @@ function _renderPO(doc, data) {
         [9, 8, 7.5].forEach(function (f) {
           if (lines.length > 2) { fs = f; lines = wrap(c.value, valW, fs, c.red ? 'bold' : 'normal'); }
         });
-        c.fs = fs;
-        // segments per line; the ratio rides the last line if it fits, else wraps below
         c.segs = lines.map(function (t) { return [{ t: t, red: !!c.red }]; });
-        if (c.suffix) {
-          const last = c.segs[c.segs.length - 1];
-          _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', fs, PRINT_COLORS.text);
-          const used = doc.getTextWidth(last.map(function (s) { return s.t; }).join(''));
-          _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', fs, PRINT_COLORS.red);
-          const sw = doc.getTextWidth('   ' + c.suffix);
-          if (used + sw <= valW) last.push({ t: '   ' + c.suffix, red: true, bold: true });
-          else c.segs.push([{ t: c.suffix, red: true, bold: true }]);
+        if (c.sizesRatio !== undefined) {
+          const tk = _poSizeTokens(data.sizes, c.sizesRatio, data.totalQty);
+          if (tk) {
+            // each size is one unbreakable token: label (+ quantity) in body ink, "(n)" in red
+            for (let k = 0; k < 4; k++) {
+              fs = [10, 9, 8, 7.5][k];
+              const sepW = (_setFont(doc, PRINT_FONTS.bodyRegular, 'normal', fs, PRINT_COLORS.text), doc.getTextWidth('  '));
+              const wid = function (sg) { _setFont(doc, PRINT_FONTS.bodyRegular, sg.red ? 'bold' : 'normal', fs, PRINT_COLORS.text); return doc.getTextWidth(sg.t); };
+              const out = [[]]; let used = 0;
+              tk.forEach(function (parts) {
+                const tw = parts.reduce(function (a, sg) { return a + wid(sg); }, 0);
+                let cur = out[out.length - 1];
+                if (cur.length && used + sepW + tw > valW) { cur = []; out.push(cur); used = 0; }
+                if (cur.length) { cur.push({ t: '  ', red: false }); used += sepW; }
+                parts.forEach(function (sg) { cur.push({ t: sg.t, red: sg.red }); });
+                used += tw;
+              });
+              c.segs = out;
+              if (out.length <= 2) break;
+            }
+          }
         }
+        c.fs = fs;
         c.h = Math.max(d.kvMin, c.segs.length * fs * 1.2 + 8, c.labLines.length * 9.6 + 8);
       });
       row.h = Math.max.apply(null, row.map(function (c) { return c.h; }));
@@ -1799,7 +1851,7 @@ function _renderPO(doc, data) {
           const rh = row.h + extra;
           let cx = L;
           row.forEach(function (c) {
-            fill(shadeL); redLine(LW_ROW);
+            fill(shadeL); darkLine(LW_ROW);
             doc.rect(cx, gy, c.labW, rh, 'FD');
             doc.rect(cx + c.labW, gy, c.w - c.labW, rh, 'S');
             if (c.box) { redLine(LW_BOX); doc.rect(cx + c.labW, gy, c.w - c.labW, rh, 'S'); }
@@ -1822,7 +1874,7 @@ function _renderPO(doc, data) {
         });
         if (im) {
           const ix = L + gridW + imgGap;
-          redLine(LW_ROW);
+          darkLine(LW_ROW);
           doc.rect(ix, y + 14, imgW, boxH, 'S');
           const pad = 3;
           const ar = (im.w && im.h) ? (im.w / im.h) : 0.75;
@@ -1830,37 +1882,6 @@ function _renderPO(doc, data) {
           if (dh > boxH - 2 * pad) { dh = boxH - 2 * pad; dw = dh * ar; }
           try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ix + (imgW - dw) / 2, y + 14 + (boxH - dh) / 2, dw, dh); } catch (e) { /* skip */ }
         }
-      }
-    };
-  };
-
-  // NOTES — free text from PO creation (po.notes), always red. The type steps
-  // down (10 → 7pt) so a long note costs lines, not a third page.
-  const notesBlock = function () {
-    const label = 'Notes: ';
-    let fs = 10, wrapped;
-    for (let i = 0; i < 4; i++) {
-      fs = [10, 9, 8, 7][i];
-      _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', fs, PRINT_COLORS.red);
-      const labelW = doc.getTextWidth(label) + 2;
-      wrapped = doc.splitTextToSize(String(data.notes), W - labelW);
-      if (wrapped.length <= 4) break;
-    }
-    // Hard two-page limit: past six lines at the smallest type the note is cut
-    // and says so, rather than pushing a station onto a third page.
-    const MAX_NOTE_LINES = 6;
-    if (wrapped.length > MAX_NOTE_LINES) {
-      wrapped = wrapped.slice(0, MAX_NOTE_LINES);
-      wrapped[MAX_NOTE_LINES - 1] = wrapped[MAX_NOTE_LINES - 1].replace(/\s+\S*$/, '').slice(0, 120) + ' … (note continues in the app — see the PO)';
-    }
-    const lineH = fs * 1.15;
-    return {
-      h: 12 + wrapped.length * lineH + 4,
-      draw: function (y) {
-        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', fs, PRINT_COLORS.red);
-        const labelW = doc.getTextWidth(label) + 2;
-        doc.text(label, L, y + 12);
-        doc.text(wrapped, L + labelW, y + 12);
       }
     };
   };
@@ -1876,7 +1897,7 @@ function _renderPO(doc, data) {
     let h = d.gap + bandH + 4 + bodyH;
     const ops = [];
     extras.forEach(function (x) {
-      const eh = x === 'grand' ? 32 : (x === 'remarks' ? 14 + d.remH + 6 : d.signH);
+      const eh = x === 'remarks' ? 14 + d.remH + 6 : d.signH;
       ops.push({ kind: x, h: eh });
       h += eh;
     });
@@ -1907,11 +1928,11 @@ function _renderPO(doc, data) {
         yy += bandH + 4;
         // table
         const totalW = cols.reduce(function (s, c) { return s + c.w; }, 0);
-        fill(shade); redLine(LW);
+        fill(shade); darkLine(LW);
         doc.rect(L, yy, totalW, d.hdrH, 'FD');
         let cx = L;
         cols.forEach(function (c) {
-          redLine(LW);
+          darkLine(LW);
           doc.rect(cx, yy, c.w, d.hdrH, 'S');
           _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
           doc.text(String(c.title || ''), cx + 5, yy + d.hdrH / 2 + 3, { maxWidth: c.w - 8 });
@@ -1923,7 +1944,7 @@ function _renderPO(doc, data) {
           cx = L;
           cols.forEach(function (c, i) {
             if (cols.shadeFirst && i === 0) { fill(shadeL); doc.rect(cx, yy, c.w, d.rowH, 'F'); }
-            redLine(LW_ROW);
+            darkLine(LW_ROW);
             doc.rect(cx, yy, c.w, d.rowH, 'S');
             if (i === 0 && body[r]) {
               _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
@@ -1949,18 +1970,13 @@ function _renderPO(doc, data) {
         yy += th;
         // sign-off lines
         ops.forEach(function (x) {
-          if (x.kind === 'grand') {
-            _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
-            doc.text('Grand Total Quantity Processed', L, yy + 21);
-            redLine(LW_BOX);
-            doc.rect(R - 140, yy + 6, 140, 22, 'S');
-          } else if (x.kind === 'sign' || x.kind === 'signname') {
+          if (x.kind === 'sign') {
             _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
             let x0 = L;
             doc.text('Signature', x0, yy + 18); x0 += doc.getTextWidth('Signature');
             const s = ': ________________';
             doc.text(s, x0, yy + 18); x0 += doc.getTextWidth(s) + 20;
-            doc.text('With Name: ' + (x.kind === 'signname' && st.owner ? st.owner : '________________'), x0, yy + 18);
+            doc.text('With Name: ________________', x0, yy + 18);
           } else if (x.kind === 'remarks') {
             const lab = (key === 'qc') ? 'Remarks' : 'Defects / Remarks';
             _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
@@ -1987,8 +2003,8 @@ function _renderPO(doc, data) {
     return c;
   };
   const colsStitch = function () {
-    const c = [{ title: 'Date', w: 110 }, { title: 'Size + Bundle', w: 180 },
-               { title: 'OFFLINE', w: 110 }, { title: 'Total', w: 123 }];
+    const c = [{ title: 'Date', w: 73 }, { title: 'Size + Bundle', w: 209 },
+               { title: 'OFFLINE', w: 146 }, { title: 'Total', w: 95 }];   // ~14 / 40 / 28 / 18 %
     c.rows = 4;
     return c;
   };
@@ -2001,11 +2017,10 @@ function _renderPO(doc, data) {
 
   const build = function (d) {
     const blocks = [infoBlock(d)];
-    if (data.notes) blocks.push(notesBlock());
-    blocks.push(stationBlock('cutting', cols3(), [1, 2], ['grand', 'sign'], d));
+    blocks.push(stationBlock('cutting', cols3(), [1, 2], ['sign'], d));
     blocks.push(stationBlock('qc', colsQc(), [1, 2, 3], ['remarks'], d));
-    blocks.push(stationBlock('bundling', cols3(), [1, 2], ['grand', 'sign'], d));
-    blocks.push(stationBlock('stitching', colsStitch(), [2, 3], ['signname', 'remarks'], d));
+    blocks.push(stationBlock('bundling', cols3(), [1, 2], ['sign'], d));
+    blocks.push(stationBlock('stitching', colsStitch(), [2, 3], ['sign', 'remarks'], d));
     blocks.push(stationBlock('washing', colsWash(), [1, 3], ['remarks', 'sign'], d));
     return blocks;
   };

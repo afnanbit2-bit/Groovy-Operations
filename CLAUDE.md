@@ -765,24 +765,34 @@ do not call jsPDF directly for new print features.**
 - **Blob delivery (M1.4):** `printDocument({…, deliver:'blob'})` opens no
   tab, downloads nothing and shows no toast; it resolves `{blob, filename}`,
   and a failure rejects. Without `deliver`, nothing changes.
-- **`_renderPO` — Notes (Sept 2026):** free-text field on the PO, entered in
-  `renderPOCreate()` (`js/pos.js`, `#po-notes` textarea) and saved as
-  `po.notes`. Rendered on the printed PO traveler right after the order-info
-  grid/product photo, before the station tables — always in
-  `PRINT_COLORS.red` (`#DC2626`), never the default body text color, so it
-  stands out to every station handling the PO. Also shown in red on the PO
-  detail page (`renderDetailPage()`) and in the legacy (`__usePrintEngine =
-  false`) jsPDF fallback in `generatePOPdf()`, so all three paths agree.
+- **`_renderPO` — Notes (Sept 2026), REVERSED 2 Oct 2026:** the free-text
+  `po.notes` field is still entered in `renderPOCreate()` (`#po-notes`), saved
+  as `po.notes` and shown in red on the PO detail page and in the legacy
+  (`__usePrintEngine = false`) fallback — but **the printed PO traveler no
+  longer prints notes at all** (Afnan crossed the Notes line out on both
+  pages). `_renderPO` ignores `data.notes`; `tests/po-print.test.js` passes a
+  note and asserts it is never drawn.
 - **`_renderPO` layout (2 Oct 2026):** at most TWO A4 pages and a station block
   is never split — every part is a measured block, `_PO_DENSITIES` is tried
   comfortable → compact and the first whose simulated page flow fits two pages
   is drawn. START DATE (po.startDate; a red line when empty) is top-middle in
-  the header, every station carries red START / END DATE lines, every table has
-  a boxed TOTAL row, all table lines are red and double width. Station titles
-  and the name printed under each live in `_PO_STATIONS`. No Urdu is drawn on
-  the PO (the font draws blanks), so `po` defaults to `minimal`. A note past six
-  lines at 7pt is cut with a visible marker. `tests/po-print.test.js`; **not
-  seen on a printer.**
+  the header and the GROOVY wordmark is thickened (fill+stroke text, 1pt),
+  every station carries red START / END DATE lines, every table has a boxed
+  TOTAL row. **Red is only for what matters most:** START DATE, station bands
+  (and their dates), TOTAL rows and the Total Quantity / Ratio / Total Weight /
+  Average Per Unit boxes; all ordinary table and info-grid lines are a dark
+  neutral (`#262626`) at the same heavier width. The printout prints **no
+  Notes and no "Grand Total Quantity Processed"** (the boxed TOTAL row is the
+  only total) and the Stitching sign-off is a blank "With Name" line (the
+  owner name stays under the heading). The Sizes row prints each size with its
+  quantity and ratio, e.g. `S 100(1)  M 200(2)` — the `(n)` in red
+  (`_poSizeTokens`): quantity = totalQty × ratio ÷ Σratio, shown only when
+  whole numbers summing to totalQty, else `S(1)  M(2)`; no/unparseable ratio =
+  the plain sizes string. Stitching columns: Date 73 / Size + Bundle 209 /
+  OFFLINE 146 / Total 95 pt (~14/40/28/18%). Station titles and the name
+  printed under each live in `_PO_STATIONS`. No Urdu is drawn on the PO (the
+  font draws blanks), so `po` defaults to `minimal`. `tests/po-print.test.js`;
+  **not seen on a printer.**
 - **Internal components (NOT global; JSDoc'd in the file):**
   `_renderHeader`, `_renderFooter` (auto every page via `_stampFooters`),
   `_renderSectionHeader`, `_renderBilingualLabel`, `_renderInfoTable`,

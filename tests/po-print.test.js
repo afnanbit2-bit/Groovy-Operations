@@ -15,7 +15,12 @@
      Stitching / Waqas / Abbas, read from ONE constant (_PO_STATIONS);
    - "Printing, Embroidery & QC" is spelled out;
    - every table has a boxed TOTAL row;
-   - every stroked table rect is red and at least double the old line width;
+   - red ONLY on START DATE, station bands, TOTAL rows and the Total Quantity /
+     Ratio / Weight / Average boxes; every ordinary table line is a dark
+     neutral at least double the old width (2 Oct 2026);
+   - no Notes block and no "Grand Total Quantity Processed" are printed;
+   - the Sizes row prints e.g. S 100(1) with the (n) in red (quantity rule);
+   - GROOVY is drawn fill+stroke (heavier); stitching Date column is narrow;
    - the ratio, total weight and average per unit are red;
    - Size narrower / Bundles wider / Total narrower on both bundling tables;
    - the info grid never overprints (every text baseline sits inside a cell);
@@ -51,7 +56,7 @@ FakePDF=function(opts){
   ['setFillColor','addFileToVFS','addFont','addImage','roundedRect'].forEach(k=>{d[k]=function(){return d;};});
   d.getTextWidth=t=>String(t).length*size*0.5;
   d.splitTextToSize=(t,w)=>{const out=[];String(t).split('\\n').forEach(par=>{let cur='';par.split(' ').forEach(wd=>{const nx=cur?cur+' '+wd:wd;if(cur&&nx.length*size*0.5>w){out.push(cur);cur=wd;}else cur=nx;});out.push(cur);});return out;};
-  d.text=(t,x,y,o)=>{(Array.isArray(t)?t:[t]).forEach((s,i)=>{d.log.text.push({t:String(s),x,y:y+i*size*1.15,page,size,style,ink,align:o&&o.align||'left'});});return d;};
+  d.text=(t,x,y,o)=>{(Array.isArray(t)?t:[t]).forEach((s,i)=>{d.log.text.push({t:String(s),x,y:y+i*size*1.15,page,size,style,ink,align:o&&o.align||'left',mode:o&&o.renderingMode||'',draw,lw});});return d;};
   d.rect=(x,y,w,h,st)=>{d.log.rect.push({x,y,w,h,st:st||'',page,draw,lw});return d;};
   d.line=(x1,y1,x2,y2)=>{d.log.line.push({x1,y1,x2,y2,page,draw,lw});return d;};
   d.output=()=>({size:4096,fake:true});
@@ -154,40 +159,92 @@ module.exports=async function(){
     s.ok('Cutting + Bundling: "Department Manager: Kashif Bhai"',has(0,'Department Manager: Kashif Bhai'));
     s.ok('Printing, Embroidery & QC: Shameer, not Haris',has(1,'Shameer')&&!nd.log.text.some(t=>/Haris/.test(t.t)));
     s.ok('Bundling Before Stitching shows NO name at all',!NAMES.concat(['Raees','Zuhaib','Haris']).some(n=>st[2].texts.some(t=>t.t.indexOf(n)>=0))&&!st[2].texts.some(t=>/Manager/.test(t.t)));
-    s.ok('Stitching: Waqas as before (band and "With Name")',has(3,'Waqas')&&has(3,'With Name: Waqas'));
+    s.ok('Stitching: Waqas under the heading, but the sign-off "With Name" is a blank line',has(3,'Waqas')&&!has(3,'With Name: Waqas')&&has(3,'With Name: ________________'));
     s.ok('Washing: Abbas as before',has(4,'Abbas'));
     s.ok('Raees and Zuhaib are no longer printed anywhere',!nd.log.text.some(t=>/Raees|Zuhaib/.test(t.t)));
     const src=read('js/print-engine.js');
     s.ok('the station names live in ONE constant',/const _PO_STATIONS = \{/.test(src)&&['Kashif Bhai','Shameer','Waqas','Abbas'].every(n=>src.split("'"+n).length===2||src.split(n).length===2),'');
   }
 
-  s.section('every table has a boxed TOTAL row; the grand total has a red box to write in');
+  s.section('every table has a boxed TOTAL row; there is no second "grand total"');
   {
     [['normal',nd],['stress',sd]].forEach(([nm,d])=>{
       s.eq(nm+': five TOTAL rows (cutting, QC, bundling, stitching, washing)',d.log.text.filter(t=>t.t==='TOTAL').length,5);
       const boxes=d.log.rect.filter(r=>r.draw===RED&&r.lw>=1.4&&r.w>=500);
       s.eq(nm+': each TOTAL row is boxed in a heavy red rect the full table width',boxes.length,5);
-      s.eq(nm+': two "Grand Total Quantity Processed" with a red box to write the count in',
-        d.log.text.filter(t=>t.t==='Grand Total Quantity Processed').length+'/'+d.log.rect.filter(r=>r.draw===RED&&r.lw>=1.4&&r.w===140&&r.h===22).length,'2/2');
+      s.ok(nm+': no "Grand Total Quantity Processed" text and no 140x22 red box',!d.log.text.some(t=>/Grand Total/i.test(t.t))&&!d.log.rect.some(r=>r.w===140&&r.h===22));
     });
     s.ok('the old "Grand Total" row of the QC table is renamed TOTAL',!nd.log.text.some(t=>t.t==='Grand Total'));
   }
 
-  s.section('table lines: all red, double the old width');
+  s.section('red only where it matters; ordinary table lines are a dark neutral at the heavier width');
   {
+    const NEUTRAL='38,38,38';
     const stroked=nd.log.rect.filter(r=>/S|D/.test(r.st));
-    s.ok('every stroked rect is red',stroked.every(r=>r.draw===RED),J(stroked.filter(r=>r.draw!==RED).slice(0,2)));
-    s.ok('… and no thinner than 0.6 (the old row lines were 0.3, headers 0.4)',stroked.every(r=>r.lw>=0.6),J(stroked.filter(r=>r.lw<0.6).slice(0,2)));
-    s.ok('header rects are 0.8 (double the old 0.4)',stroked.some(r=>r.lw===0.8));
+    const red=stroked.filter(r=>r.draw===RED), neu=stroked.filter(r=>r.draw===NEUTRAL);
+    s.ok('every stroked rect is either red or the neutral',red.length+neu.length===stroked.length,J(stroked.filter(r=>r.draw!==RED&&r.draw!==NEUTRAL).slice(0,2)));
+    s.ok('neutral lines are no thinner than 0.6 (old row lines were 0.3, headers 0.4)',neu.length>40&&neu.every(r=>r.lw>=0.6));
+    s.ok('header rects are 0.8 (double the old 0.4)',neu.some(r=>r.lw===0.8));
+    // red rects: 5 bands (w=523, lw .8), 5 TOTAL rows (cells + box), Total Quantity/Ratio/Weight/Average boxes
+    s.eq('five red station bands (full width, 0.8)',red.filter(r=>r.w===523&&r.lw===0.8).length,5);
+    s.eq('five red TOTAL boxes (full width, heavy)',red.filter(r=>r.w>=500&&r.lw>=1.4).length,5);
+    s.eq('four red info boxes: Total Quantity, Ratio, Total Weight, Average Per Unit',red.filter(r=>r.lw===1.5&&r.w<200&&r.w>40).length,4);
+    s.ok('no size-row / bundles / stitching / washing body rect is red',
+      neu.filter(r=>r.page>=1).length>0&&!neu.some(r=>r.draw===RED));
+    s.ok('Total Quantity value is red bold',nd.log.text.some(t=>t.t==='600'&&t.ink===RED));
+    s.ok('the red START/END DATE lines still draw red',nd.log.line.filter(l=>l.draw===RED&&Math.abs(l.x2-l.x1-74)<0.01).length===10);
+  }
+
+  s.section('GROOVY is thickened with fill + stroke');
+  {
+    const g=nd.log.text.find(t=>t.t==='GROOVY');
+    s.ok('GROOVY is drawn with renderingMode fillThenStroke, stroke 0.8-1.2pt, black',!!g&&g.mode==='fillThenStroke'&&g.lw>=0.8&&g.lw<=1.2&&g.draw==='0,0,0',J(g));
+    const no=nd.log.text.find(t=>t.t==='PO-0142'&&t.size>=24);
+    s.ok('the PO number is unchanged (plain fill)',!!no&&no.mode==='');
+    const gd=e.run('__docs[__docs.length-1]');
+  }
+
+  s.section('no notes on the printout');
+  {
+    s.ok('data.notes is passed but never drawn (normal, stress, huge)',[nd,sd].every(d=>!d.log.text.some(t=>/Front chest|Embroidery chest|Notes:|note continues/.test(t.t))));
+    const only=await printPO(e,Object.assign({},BASE,{notes:'UNIQUE-NOTE-TEXT'}));
+    s.ok('a note with a unique marker leaves no trace',!only.d.log.text.some(t=>/UNIQUE-NOTE-TEXT|Notes/.test(t.t)));
+  }
+
+  s.section('Sizes row: size + quantity in body ink, (ratio) in red');
+  {
+    const sizesTx=d=>{const tx=d.log.text,a=tx.findIndex(t=>t.t==='Sizes');return tx.slice(a+1,a+16);};
+    const nt=sizesTx(nd);
+    s.ok('S 100 / M 200 / L 200 / XL 100 in body ink',['S 100','M 200','L 200','XL 100'].every(v=>nt.some(t=>t.t===v&&t.ink!==RED)),J(nt.map(t=>[t.t,t.ink])));
+    s.ok('(1) (2) (2) (1) in red',['(1)','(2)'].every(v=>nt.filter(t=>t.t===v&&t.ink===RED).length>=1)&&nt.filter(t=>/^\(\d\)$/.test(t.t)&&t.ink===RED).length===4);
+    s.ok('the old "Ratio 1:2:2:1" suffix text is gone, the plain "S-M-L-XL" too',!nd.log.text.some(t=>/Ratio 1:2/.test(t.t)||t.t==='S-M-L-XL'));
+    s.ok('the separate Ratio box still prints 1:2:2:1 in red',nd.log.text.filter(t=>t.t==='1:2:2:1'&&t.ink===RED).length===1);
+    const nodiv=await printPO(e,Object.assign({},BASE,{totalQty:'601'}));
+    const nv=sizesTx(nodiv.d);
+    s.ok('non-divisible total: S / M / L / XL with red brackets only, no quantities',['S','M','L','XL'].every(v=>nv.some(t=>t.t===v&&t.ink!==RED))&&nv.filter(t=>/^\(\d\)$/.test(t.t)&&t.ink===RED).length===4&&!nv.some(t=>/^(S|M|L|XL) \d/.test(t.t)),J(nv.map(t=>t.t)));
+    const noq=await printPO(e,Object.assign({},BASE,{totalQty:'',ratio:'1:2:2:1'}));
+    s.ok('no total quantity: label + red bracket only',sizesTx(noq.d).some(t=>t.t==='M')&&!sizesTx(noq.d).some(t=>/^M \d/.test(t.t)));
+    const norat=await printPO(e,Object.assign({},BASE,{ratio:''}));
+    s.ok('no ratio: the plain sizes string',norat.d.log.text.some(t=>t.t==='S-M-L-XL'&&t.ink!==RED)&&!norat.d.log.text.some(t=>/^\(\d\)$/.test(t.t)));
+    const bad=await printPO(e,Object.assign({},BASE,{ratio:'1:2:2'}));
+    s.ok('ratio with the wrong number of parts: the plain sizes string',bad.d.log.text.some(t=>t.t==='S-M-L-XL'));
+    s.ok('stress (8 sizes, 12000): quantities and red brackets drawn, wrapped inside the cell',sd.log.text.filter(t=>/^\(\d\)$/.test(t.t)&&t.ink===RED).length===8&&sd.log.text.some(t=>t.t==='XXS 600'));
+  }
+
+  s.section('Stitching: narrow Date, Size + Bundle widest');
+  {
+    const x=stations(nd)[3].texts, g=t=>x.find(y=>y.t===t);
+    const dt=g('Date'),sb=g('Size + Bundle'),of=g('OFFLINE'),to=g('Total');
+    const wD=sb.x-dt.x,wS=of.x-sb.x,wO=to.x-of.x,wT=(36+523)-(to.x-5);
+    s.ok('Date '+wD+' < 90, Size + Bundle '+wS+' widest, OFFLINE '+wO+' > Total '+wT,wD<90&&wS>wO&&wO>wT&&wS>wD*2,'');
+    s.ok('the Date column is still there',!!dt);
   }
 
   s.section('ratio, weight and average per unit are red');
   {
-    s.ok('the ratio is drawn red twice: next to the sizes AND in its own cell',nd.log.text.filter(t=>/1:2:2:1/.test(t.t)&&t.ink===RED).length>=2,
-      J(nd.log.text.filter(t=>/1:2:2:1/.test(t.t)).map(t=>[t.t,t.ink])));
+    s.ok('the ratio is drawn red in its own cell',nd.log.text.filter(t=>/1:2:2:1/.test(t.t)&&t.ink===RED).length>=1);
     s.ok('Total Weight and Average Per Unit values are red',['312 kg','0.52 kg'].every(v=>nd.log.text.some(t=>t.t===v&&t.ink===RED)));
     s.ok('… each in a heavy red box',nd.log.rect.filter(r=>r.draw===RED&&r.lw>=1.4&&r.h<60&&r.w<200&&r.w>40).length>=3);
-    s.ok('the sizes themselves stay in the body ink',nd.log.text.some(t=>t.t==='S-M-L-XL'&&t.ink!==RED));
   }
 
   s.section('Cutting + Bundling and Bundling Before Stitching: Size narrower, Bundles wider, Total narrower');
@@ -202,8 +259,7 @@ module.exports=async function(){
   s.section('the info grid never overprints');
   [['normal',nd],['stress',sd]].forEach(([nm,d])=>{
     const tx=d.log.text, a=tx.findIndex(t=>t.t==='Department: Manufacturing'), b=tx.findIndex(t=>t.t==='CUTTING + BUNDLING');
-    const nn=tx.findIndex(t=>/^Notes:/.test(t.t));
-    const region=tx.slice(a+1,nn>0?nn:b);
+    const region=tx.slice(a+1,b);
     const cells=d.log.rect.filter(r=>/S|D/.test(r.st)&&r.page===1&&r.y>110&&r.y<tx[b].y);
     s.ok(nm+': every info-grid text baseline sits inside a cell',region.length>10&&region.every(t=>cells.some(r=>t.x>=r.x-0.5&&t.x<=r.x+r.w&&t.y>r.y&&t.y<r.y+r.h)),
       J(region.filter(t=>!cells.some(r=>t.x>=r.x-0.5&&t.x<=r.x+r.w&&t.y>r.y&&t.y<r.y+r.h)).slice(0,3).map(t=>[t.t,t.x,t.y])));
@@ -222,7 +278,7 @@ module.exports=async function(){
   s.section('the fallback density: an overlong order still lands on two pages');
   {
     const huge=await printPO(e,Object.assign({},STRESS,{notes:'Very long production note. '.repeat(200)}));
-    s.ok('a 5,000-character note is capped (6 lines, says so), not given a third page',huge.d.log.pages<=2&&huge.d.log.text.some(x=>/note continues in the app/.test(x.t)),huge.d.log.pages+' pages');
+    s.ok('a 5,000-character note changes nothing: 2 pages at most, nothing printed',huge.d.log.pages<=2&&!huge.d.log.text.some(x=>/Very long/.test(x.t)),huge.d.log.pages+' pages');
   }
   return s;
 };
