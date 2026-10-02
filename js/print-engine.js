@@ -101,6 +101,7 @@ const _PRINT_DOC_LABELS = {
   'embroidery-vendor': 'Embroidery Vendor Sheet',
   'embroidery-job': 'Embroidery Job',
   'printing-job': 'Printing Job',
+  'washing-job': 'Washing Job',
   'sublimation-vendor': 'Sublimation Vendor Sheet',
   'gate-pass': 'Gate Pass',
   'placement-sheet': 'Placement Sheet',
@@ -141,6 +142,7 @@ const _PRINT_URDU_DEFAULTS = {
   'embroidery-vendor': 'full',
   'embroidery-job': 'minimal',   // English only, like the PO
   'printing-job': 'minimal',
+  'washing-job': 'minimal',   // Urdu comes as caller-rasterised pictures, never as jsPDF text
   'sublimation-vendor': 'full',
   'qc-report': 'full',
   'placement-sheet': 'full',
@@ -2090,7 +2092,7 @@ function _jobTop(doc, k, data, documentType, title) {
     numberSize: 26,
     boldMark: true,
     // START DATE on EVERY job copy is handwritten: never pass a date here, whatever
-    // data.startDate holds. Washing (not built yet) must follow the same rule.
+    // data.startDate holds.
     startDateLabel: 'START DATE'
   });
   const y = doc.__groovyY + 8;
@@ -2236,6 +2238,87 @@ function _renderPrintingJob(doc, data) {
   y += 10;
   y = _jobSizeTable(doc, k, y, lw) + 18;
   _jobEndDate(doc, k, y, lw);
+  doc.__groovyY = y;
+}
+
+/* ── Washing job copy (step 3 of 3) ──
+   Same page, header, band, photo and lines as the other two copies. A SHORT
+   bilingual checklist to confirm BEFORE CUTTING: fabric 100% cotton, rib 100%
+   cotton, shrinkage done, each with a hand tick box, then Checked by / Signature
+   / Date checked, a remarks line, one Size | Qty table (its boxed red TOTAL row
+   is the only total) and a red END DATE. START DATE is handwritten (_jobTop).
+   URDU: this engine cannot draw Urdu through jsPDF (see Fonts), so the CALLER
+   rasterises each Urdu line with the browser's own shaping and passes pictures in
+   data.urduImages = { note, fabric, rib, shrink }, each {dataUrl (PNG), w, h (px),
+   fontPx}. They are placed with addImage, right-aligned. No pictures (font not
+   loaded, no canvas) = the same sheet in clean English only. No Urdu is ever
+   passed to doc.text. */
+function _jobUrduImg(doc, img, rightX, cy, maxW, maxH, fontPt) {
+  if (!img || typeof img.dataUrl !== 'string' || img.dataUrl.indexOf('data:image/png') !== 0) return false;
+  const iw = Number(img.w), ih = Number(img.h);
+  if (!(iw > 0 && ih > 0)) return false;
+  let sc = fontPt / (Number(img.fontPx) > 0 ? Number(img.fontPx) : 96);
+  let dw = iw * sc, dh = ih * sc;
+  if (dw > maxW) { dh *= maxW / dw; dw = maxW; }
+  if (dh > maxH) { dw *= maxH / dh; dh = maxH; }
+  try { doc.addImage(img.dataUrl, 'PNG', rightX - dw, cy - dh / 2, dw, dh); return true; } catch (e) { return false; }
+}
+const _WASH_CHECKS = [
+  { key: 'fabric', en: 'Fabric is 100% cotton' },
+  { key: 'rib', en: 'Rib is 100% cotton' },
+  { key: 'shrink', en: 'Shrinkage of fabric is done' }
+];
+function _renderWashingJob(doc, data) {
+  data = data || {};
+  const k = _jobKit(doc), L = k.L, W = k.W, R = k.R;
+  const U = data.urduImages || {};
+  let y = _jobTop(doc, k, data, 'Washing Job', 'WASHING JOB');
+
+  // Left: article name + the prominent "complete before cutting" note. Right: photo.
+  const imgW = 200, gap = 14, colW = W - imgW - gap, bodyH = 150;
+  const top = y;
+  y = _jobNameRow(doc, k, data, y, colW);
+  const nTop = y - 12 + 8, nH = top + bodyH - nTop;
+  k.fill(k.shade); k.dark(k.LW_BOX);
+  doc.rect(L, nTop, colW, nH, 'FD');
+  const hasUr = _jobUrduImg(doc, U.note, L + colW - 12, nTop + 24 + (nH - 24) / 2, colW - 24, nH - 38, 26);
+  _setFont(doc, PRINT_FONTS.display, 'bold', 15, PRINT_COLORS.text);
+  // English only (no picture): the note sits in the middle of its box, not at the top of an empty one.
+  doc.text('COMPLETE BEFORE CUTTING', L + colW / 2, hasUr ? nTop + 24 : nTop + nH / 2 + 5, { align: 'center' });
+  _jobPhoto(doc, k, data, L + colW + gap, top, imgW, bodyH);
+  y = top + bodyH + 14;
+
+  // Checklist
+  k.label('CONFIRM BEFORE CUTTING  (tick each box by hand)', L, y + 4);
+  y += 10;
+  const rowH = 42;
+  _WASH_CHECKS.forEach(function (c) {
+    k.dark(k.LW_ROW); doc.rect(L, y, W, rowH, 'S');
+    k.dark(k.LW_BOX); doc.rect(L + 10, y + (rowH - 18) / 2, 18, 18, 'S');
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 12, PRINT_COLORS.text);
+    doc.text(c.en, L + 40, y + rowH / 2 + 4);
+    _jobUrduImg(doc, U[c.key], R - 10, y + rowH / 2, 300, rowH - 8, 22);
+    y += rowH;
+  });
+  y += 16;
+
+  // Checked by / signature / date checked
+  const cw = [Math.round(W * 0.4), Math.round(W * 0.34)]; cw.push(W - cw[0] - cw[1] - 2 * 14);
+  let x = L;
+  ['CHECKED BY (name)', 'SIGNATURE', 'DATE CHECKED'].forEach(function (t, i) {
+    k.label(t, x, y);
+    k.dark(k.LW_ROW); doc.line(x, y + 24, x + cw[i], y + 24);
+    x += cw[i] + 14;
+  });
+  y += 24 + 16;
+  k.label('REMARKS', L, y);
+  k.dark(k.LW_ROW); doc.line(L + 56, y + 1, R, y + 1);
+  y += 22;
+
+  k.label('ACTUAL CUT QUANTITY BY SIZE', L, y + 4);
+  y += 10;
+  y = _jobSizeTable(doc, k, y, W) + 18;
+  _jobEndDate(doc, k, y, W);
   doc.__groovyY = y;
 }
 
@@ -3278,7 +3361,7 @@ window.printDocument = async function (opts) {
     return;
   }
 
-  const known = ['po', 'embroidery-job', 'printing-job', 'embroidery-vendor', 'sublimation-vendor',
+  const known = ['po', 'embroidery-job', 'printing-job', 'washing-job', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
     'daily-performance', 'stock-transfer', 'mood-board',
     'ma-ledger', 'ma-statement-party', 'ma-statement-holder', 'ma-receipt', 'ma-voucher', 'ma-collection',
@@ -3287,6 +3370,7 @@ window.printDocument = async function (opts) {
     'po': _renderPO,
     'embroidery-job': _renderEmbroideryJob,
     'printing-job': _renderPrintingJob,
+    'washing-job': _renderWashingJob,
     'gate-pass': _renderGatePass,
     'payslip': _renderPayslip,
     'daily-performance': _renderDailyPerformance,

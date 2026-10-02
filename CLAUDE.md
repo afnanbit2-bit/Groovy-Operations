@@ -770,7 +770,7 @@ do not call jsPDF directly for new print features.**
   no PO-creation checkbox or button yet. An article name over two lines is cut
   to two. `tests/job-print.test.js`. **Not seen on a printer.** `embroidery-vendor`
   is still the unbuilt stub.
-- **`printing-job` (2 Oct 2026, step 2 of 3; washing is NOT built).**
+- **`printing-job` (2 Oct 2026, step 2 of 3).**
   `_renderPrintingJob`: same single A4 page, header, red-bordered band, photo
   and line colours as the embroidery copy, `minimal` Urdu, footer "Printing
   Job". Typed: PO number, article code, article name, photo, title PRINTING
@@ -786,6 +786,35 @@ do not call jsPDF directly for new print features.**
   `_jobPhoto`/`_jobSizeTable`/`_jobEndDate` (the embroidery tests pass
   unchanged). Console: `window.generatePrintingJobPdf(po | fbKey)`; no UI.
   `tests/job-print.test.js`. **Not seen on a printer.**
+- **`washing-job` (2 Oct 2026, step 3 of 3 — the set is complete).**
+  `_renderWashingJob`: the same single A4 page, header (START DATE handwritten
+  via `_jobTop`), red-bordered band "WASHING JOB", article name, photo and
+  `_jobSizeTable` (ONE boxed red TOTAL row, no separate total) and red END DATE.
+  Between them: a prominent "COMPLETE BEFORE CUTTING" box and a short checklist
+  to confirm before cutting, each line with a hand tick box: Fabric is 100%
+  cotton / Rib is 100% cotton / Shrinkage of fabric is done; then Checked by
+  (name), Signature, Date checked and one Remarks line. `minimal` Urdu, footer
+  "Washing Job". Console: `window.generateWashingJobPdf(po | fbKey)` (async);
+  no UI.
+  **URDU WORKS HERE, AND NOT THROUGH jsPDF.** The engine still cannot draw Urdu
+  (see Fonts). The CALLER (`js/pos.js`, `_washRasterUrdu`) rasterises each Urdu
+  line with the browser's own shaping — a 2D canvas, `direction='rtl'`, the
+  self-hosted Jameel Noori Nastaleeq @font-face (`document.fonts.load` awaited
+  first), 72px, transparent, ink `#262626`, cropped to the ink box — and passes
+  `data.urduImages = {note, fabric, rib, shrink}` (`{dataUrl, w, h, fontPx}`);
+  the renderer places them with `addImage` at 22pt-equivalent (26pt for the
+  note), right-aligned, aspect kept, capped at 300pt wide. No Urdu string ever
+  reaches `doc.text`. **Font unavailable, no canvas, or a throw = no pictures
+  and the same sheet in clean English only** (never blanks, never tofu; held by
+  tests). `"100%"` is wrapped in LRI/PDI (U+2066/2069) or the canvas's bidi
+  prints it `%100`. **Cost, measured in headless Chromium:** the font is the
+  ~10 MB TTF, fetched by the browser on first `document.fonts.load` (it is only
+  fetched when something on the page uses it; locally 382 ms for the first
+  print, ~70 ms after); the four pictures make the PDF ~1.2 MB (English-only
+  ~130 KB). **The Urdu wording below was written by Claude and has NOT been
+  checked by an Urdu speaker:** کٹنگ سے پہلے مکمل کریں / کپڑا 100% کاٹن ہے؟ /
+  ریب 100% کاٹن ہے؟ / کپڑے کی شرنکیج (سکڑنا) مکمل ہو چکی ہے؟ — get them
+  reviewed before printing in bulk. **Not seen on a printer.**
 - **Landscape (M1.4):** `data.orientation:'landscape'` (or the type's default
   in `_PRINT_ORIENTATION_DEFAULTS`) builds A4 landscape (842×595) for a type
   in `_PRINT_LANDSCAPE_READY`; the shared components read the page from

@@ -1419,6 +1419,52 @@ window.generatePrintingJobPdf=function(poOrKey){
   }});
 };
 
+// Washing job copy (step 3 of 3). Urdu cannot go through jsPDF (see CLAUDE.md, Print design
+// system > Fonts), so each Urdu line is rasterised HERE with the browser's own shaping (a 2D
+// canvas + the self-hosted Jameel Noori Nastaleeq @font-face) and handed to the engine as a PNG.
+// Any failure (no canvas, font not loaded) returns null and the sheet prints English only.
+const _WASH_URDU={
+  note:'کٹنگ سے پہلے مکمل کریں',
+  fabric:'کپڑا \u2066100%\u2069 کاٹن ہے؟',
+  rib:'ریب \u2066100%\u2069 کاٹن ہے؟',
+  shrink:'کپڑے کی شرنکیج (سکڑنا) مکمل ہو چکی ہے؟'
+};
+const _WASH_URDU_PX=72;
+async function _washRasterUrdu(text,px){
+  try{
+    if(typeof document==='undefined'||!document.createElement)return null;
+    px=px||_WASH_URDU_PX;
+    const spec='400 '+px+'px "Jameel Noori Nastaleeq"';
+    if(document.fonts&&document.fonts.load){await document.fonts.load(spec,text);}
+    if(!(document.fonts&&document.fonts.check&&document.fonts.check(spec,text)))return null;
+    const cv=document.createElement('canvas'),cx=cv.getContext&&cv.getContext('2d');
+    if(!cx)return null;
+    cx.font=spec;cx.direction='rtl';cx.textAlign='right';cx.textBaseline='alphabetic';
+    const m=cx.measureText(text);
+    const asc=Math.ceil(m.actualBoundingBoxAscent||px),desc=Math.ceil(m.actualBoundingBoxDescent||px*.4);
+    const left=Math.ceil(m.actualBoundingBoxLeft||0),right=Math.ceil(m.actualBoundingBoxRight||0);
+    const pad=Math.ceil(px*.08);
+    const w=Math.max(8,Math.max(left+right,Math.ceil(m.width))+2*pad),h=asc+desc+2*pad;
+    if(!(w>8&&h>8&&w<6000&&h<2000))return null;
+    cv.width=w;cv.height=h;
+    cx.font=spec;cx.direction='rtl';cx.textAlign='right';cx.textBaseline='alphabetic';
+    cx.fillStyle='#262626';
+    cx.fillText(text,pad+Math.max(left,Math.ceil(m.width)),pad+asc);
+    return {dataUrl:cv.toDataURL('image/png'),w:w,h:h,fontPx:px};
+  }catch(e){return null;}
+}
+window.generateWashingJobPdf=async function(poOrKey){
+  const po=(typeof poOrKey==='string')?allPOs.find(p=>p.fbKey===poOrKey):poOrKey;
+  if(!po){showToast('PO not found.',true);return;}
+  if(typeof window.printDocument!=='function'){showToast('Print engine not loaded.',true);return;}
+  const urduImages={};
+  for(const k of Object.keys(_WASH_URDU)){const im=await _washRasterUrdu(_WASH_URDU[k]);if(im)urduImages[k]=im;}
+  return window.printDocument({type:'washing-job',filename:`${po.id}-washing-job.pdf`,data:{
+    documentType:'Washing Job',documentNumber:po.id,id:po.id,poNumber:po.id,
+    articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||'',urduImages:urduImages
+  }});
+};
+
 // ── Gate Pass ──
 window.generatePOPdf=function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
