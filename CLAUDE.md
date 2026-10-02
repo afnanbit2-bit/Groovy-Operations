@@ -775,8 +775,13 @@ do not call jsPDF directly for new print features.**
   and line colours as the embroidery copy, `minimal` Urdu, footer "Printing
   Job". Typed: PO number, article code, article name, photo, title PRINTING
   JOB. Handwritten: red START DATE, PLACEMENT (3 lines), PANTONE CODE (5
-  lines), PRINT NAME / DESIGN NAME, a boxed TOTAL ACTUAL CUT UNITS, Size | Qty
-  (`_PO_SIZE_ROWS`, red boxed TOTAL), red END DATE; no fabric sample box. The
+  lines), PRINT NAME / DESIGN NAME, Size | Qty
+  (`_PO_SIZE_ROWS`, red boxed TOTAL row = the ONLY total; the separate TOTAL
+  ACTUAL CUT UNITS box was removed, 2 Oct, and the table now uses the full
+  width), red END DATE; no fabric sample box. **START DATE is ALWAYS
+  handwritten on every job copy** (red label + blank line): `_jobTop` never
+  passes a date to the header and `generate*JobPdf` no longer send
+  `startDate`; washing must follow the same rule. The PO keeps its auto date. The
   two job copies now share `_jobKit`/`_jobTop`/`_jobNameRow`/`_jobWriteBox`/
   `_jobPhoto`/`_jobSizeTable`/`_jobEndDate` (the embroidery tests pass
   unchanged). Console: `window.generatePrintingJobPdf(po | fbKey)`; no UI.

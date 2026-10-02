@@ -1403,7 +1403,7 @@ window.generateEmbroideryJobPdf=function(poOrKey){
   if(!po){showToast('PO not found.',true);return;}
   if(typeof window.printDocument!=='function'){showToast('Print engine not loaded.',true);return;}
   return window.printDocument({type:'embroidery-job',filename:`${po.id}-embroidery-job.pdf`,data:{
-    documentType:'Embroidery Job',documentNumber:po.id,id:po.id,poNumber:po.id,startDate:po.startDate||'',
+    documentType:'Embroidery Job',documentNumber:po.id,id:po.id,poNumber:po.id,
     articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||''
   }});
 };
@@ -1414,7 +1414,7 @@ window.generatePrintingJobPdf=function(poOrKey){
   if(!po){showToast('PO not found.',true);return;}
   if(typeof window.printDocument!=='function'){showToast('Print engine not loaded.',true);return;}
   return window.printDocument({type:'printing-job',filename:`${po.id}-printing-job.pdf`,data:{
-    documentType:'Printing Job',documentNumber:po.id,id:po.id,poNumber:po.id,startDate:po.startDate||'',
+    documentType:'Printing Job',documentNumber:po.id,id:po.id,poNumber:po.id,
     articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||''
   }});
 };

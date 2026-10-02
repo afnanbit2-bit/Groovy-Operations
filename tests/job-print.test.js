@@ -142,12 +142,23 @@ module.exports=async function(){
   const pd2=await printJob(e,Object.assign({},PB,{__productImg:null}),'printing-job');
   s.ok('no image: nothing embedded, one page',pd2.log.images.length===0&&pd2.log.pages===1);
   s.section('printing job: handwritten fields');
-  ['PLACEMENT','PANTONE CODE','PRINT NAME / DESIGN NAME','TOTAL ACTUAL CUT UNITS','ACTUAL CUT QUANTITY BY SIZE'].forEach(n=>s.ok(n+' labelled',PT.some(t=>t.t===n)));
+  ['PLACEMENT','PANTONE CODE','PRINT NAME / DESIGN NAME','ACTUAL CUT QUANTITY BY SIZE'].forEach(n=>s.ok(n+' labelled',PT.some(t=>t.t===n)));
   const ruled=pd.log.line.filter(l=>l.draw===DARKC&&l.y1===l.y2&&l.x2-l.x1>200);
   s.ok('PANTONE CODE has several (5) ruled lines',ruled.length>=9,String(ruled.length));
   s.ok('same size rows as the PO, Size | Qty',['Small','Medium','Large','X-Large'].every(z=>PT.some(t=>t.t===z))&&PT.some(t=>t.t==='Size')&&PT.some(t=>t.t==='Qty'));
-  const tbox=pd.log.rect.find(r=>r.draw===DARKC&&r.lw>=1.5&&r.w>200);
-  s.ok('TOTAL ACTUAL CUT UNITS is a heavy dark box',!!tbox);
+  s.ok('no separate TOTAL ACTUAL CUT UNITS field (the size table TOTAL row is the only total)',!PT.some(t=>/TOTAL ACTUAL CUT/i.test(t.t)));
+  s.eq('exactly one TOTAL row on the printing copy',PT.filter(t=>/^TOTAL/i.test(t.t)).length,1);
+  s.ok('no heavy dark (1.5) box is left over',!pd.log.rect.some(r=>r.draw===DARKC&&r.lw>=1.5));
+  s.eq('exactly one TOTAL row on the embroidery copy',T.filter(t=>/^TOTAL/i.test(t.t)).length,1);
+  s.section('START DATE is always handwritten');
+  for(const [nm,type,base] of [['embroidery','embroidery-job',BASE],['printing','printing-job',PB]]){
+    const x=await printJob(e,Object.assign({},base,{startDate:'02/10/2026'}),type);
+    const xs=x.log.text.find(t=>/^START DATE/.test(t.t));
+    s.ok(nm+': START DATE label is red even when startDate is supplied',!!xs&&xs.ink===RED);
+    s.ok(nm+': no date text is drawn',!x.log.text.some(t=>/\d\d\/\d\d\/\d{4}|2026/.test(t.t)));
+    s.ok(nm+': a red blank line is drawn beside the label',x.log.line.some(l=>l.draw===RED&&l.y1<80&&l.x1>150&&l.x2<450));
+  }
+  s.ok('generate*JobPdf no longer pass startDate',!/type:'(embroidery|printing)-job'[\s\S]{0,200}startDate/.test(pos));
   s.ok('no fabric sample box or label',!PT.some(t=>/Fabric sample/.test(t.t)));
   s.ok('the box and table sit above the footer',pd.log.rect.every(r=>r.y+r.h<800));
   s.section('printing job: red only where it belongs');

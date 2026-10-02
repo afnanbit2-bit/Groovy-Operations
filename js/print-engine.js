@@ -2089,8 +2089,9 @@ function _jobTop(doc, k, data, documentType, title) {
     documentNumber: data.poNumber || data.documentNumber || data.id || '',
     numberSize: 26,
     boldMark: true,
-    startDateLabel: 'START DATE',
-    startDate: data.startDate || ''
+    // START DATE on EVERY job copy is handwritten: never pass a date here, whatever
+    // data.startDate holds. Washing (not built yet) must follow the same rule.
+    startDateLabel: 'START DATE'
   });
   const y = doc.__groovyY + 8;
   const bandH = 46;
@@ -2211,8 +2212,7 @@ function _renderEmbroideryJob(doc, data) {
 /* ── Printing job copy (step 2 of 3; washing follows, NOT built) ──
    Same page, header, band, photo and lines as the embroidery copy. Typed: PO
    number, article code, article name, photo, title PRINTING JOB. Handwritten:
-   red START DATE, PLACEMENT, PANTONE CODE (several lines), PRINT NAME, TOTAL
-   ACTUAL CUT UNITS (boxed), Size | Qty with a red TOTAL row, red END DATE. No
+   red START DATE (always handwritten), PLACEMENT, PANTONE CODE (several lines), PRINT NAME, Size | Qty with a red TOTAL row, red END DATE. No
    fabric sample box. Single A4 page, outside the PO's two-page limit. */
 function _renderPrintingJob(doc, data) {
   data = data || {};
@@ -2229,18 +2229,13 @@ function _renderPrintingJob(doc, data) {
   _jobPhoto(doc, k, data, L + colW + gap, top, imgW, bodyH);
   y = top + Math.max(bodyH, y - top - 12) + 14;
 
-  // Lower row: left = quantity table + end date; right = boxed total field.
-  const lowTop = y;
-  const lw = W - _JOB_SAMPLE_PT - gap;
+  // Lower row: the Size | Qty table (its TOTAL row is the only total) and END DATE,
+  // using the full width.
+  const lw = W;
   k.label('ACTUAL CUT QUANTITY BY SIZE', L, y + 4);
   y += 10;
   y = _jobSizeTable(doc, k, y, lw) + 18;
   _jobEndDate(doc, k, y, lw);
-
-  const bx = R - _JOB_SAMPLE_PT;
-  k.label('TOTAL ACTUAL CUT UNITS', bx, lowTop + 10);
-  k.dark(k.LW_BOX);
-  doc.rect(bx, lowTop + 16, _JOB_SAMPLE_PT, 90, 'S');
   doc.__groovyY = y;
 }
 
