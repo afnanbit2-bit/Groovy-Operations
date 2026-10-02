@@ -460,6 +460,49 @@ window.releaseToProduction=async function(fbKey){
   }catch(e){showToast('Error: '+e.message,true);}
 };
 
+// ── Job copies (embroidery / printing / washing) on the PO detail page ──
+// ONE rule for which buttons show: po.jobCopies?.[kind]===true. A PO with no jobCopies field
+// (every PO created before the field existed) shows all three so older POs keep working.
+const _PO_JOB_KINDS=[
+  {key:'embroidery',label:'Embroidery job',fn:'generateEmbroideryJobPdf'},
+  {key:'printing',label:'Printing job',fn:'generatePrintingJobPdf'},
+  {key:'washing',label:'Washing job',fn:'generateWashingJobPdf'}
+];
+function _poJobCopyKinds(po){
+  const jc=po&&po.jobCopies;
+  if(jc==null||typeof jc!=='object')return _PO_JOB_KINDS.map(k=>k.key);
+  return _PO_JOB_KINDS.filter(k=>jc[k.key]===true).map(k=>k.key);
+}
+function _poJobCopiesHTML(po){
+  const kinds=_poJobCopyKinds(po);
+  if(!kinds.length)return'';
+  const fb=String(po.fbKey||'').replace(/[^A-Za-z0-9_-]/g,'');
+  const btns=kinds.map(k=>{
+    const d=_PO_JOB_KINDS.find(x=>x.key===k);
+    return`<button class="btn-pdf" style="min-height:34px" data-jobcopy="${k}" onclick="window.poJobCopyPrint('${fb}','${k}')">⬇ ${d.label}</button>`;
+  }).join('');
+  const all=kinds.length>1?`<button class="btn-pdf" style="min-height:34px" data-jobcopy="all" onclick="window.poJobCopyPrintAll('${fb}')">⬇ Print all selected</button>`:'';
+  return`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px"><span class="info-label" style="font-size:13px">Job copies</span>${btns}${all}</div>`;
+}
+async function _poJobCopyRun(po,kind){
+  const d=_PO_JOB_KINDS.find(x=>x.key===kind);
+  try{
+    if(!d||typeof window[d.fn]!=='function'){showToast('Job copy not available.',true);return false;}
+    await window[d.fn](po);
+    return true;
+  }catch(e){showToast((d?d.label:'Job copy')+' failed: '+(e&&e.message||e),true);return false;}
+}
+window.poJobCopyPrint=function(fbKey,kind){
+  const po=allPOs.find(p=>p.fbKey===fbKey);
+  if(!po){showToast('PO not found.',true);return Promise.resolve(false);}
+  return _poJobCopyRun(po,kind);
+};
+window.poJobCopyPrintAll=async function(fbKey){
+  const po=allPOs.find(p=>p.fbKey===fbKey);
+  if(!po){showToast('PO not found.',true);return;}
+  for(const k of _poJobCopyKinds(po)){await _poJobCopyRun(po,k);}
+};
+
 function renderDetailPage(){
   const po=allPOs.find(p=>p.fbKey===viewingPO);
   if(!po){window.showPage('po-registry');return;}
@@ -508,6 +551,7 @@ function renderDetailPage(){
       ${_poCanDelete()?`<button class="btn-outline" style="font-size:13px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
     </div>
   </div>
+  ${_poJobCopiesHTML(po)}
   ${_reservedBanner}
   ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
