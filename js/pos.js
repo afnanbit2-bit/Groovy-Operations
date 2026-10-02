@@ -1396,6 +1396,18 @@ window.completeQC=async function(fbKey){
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;}}
 };
 
+// Embroidery job copy: single A4 page, outside the PO's two-page limit. Console-callable
+// (no UI yet). Accepts a PO object or its fbKey.
+window.generateEmbroideryJobPdf=function(poOrKey){
+  const po=(typeof poOrKey==='string')?allPOs.find(p=>p.fbKey===poOrKey):poOrKey;
+  if(!po){showToast('PO not found.',true);return;}
+  if(typeof window.printDocument!=='function'){showToast('Print engine not loaded.',true);return;}
+  return window.printDocument({type:'embroidery-job',filename:`${po.id}-embroidery-job.pdf`,data:{
+    documentType:'Embroidery Job',documentNumber:po.id,id:po.id,poNumber:po.id,startDate:po.startDate||'',
+    articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||''
+  }});
+};
+
 // ── Gate Pass ──
 window.generatePOPdf=function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}

@@ -757,6 +757,19 @@ do not call jsPDF directly for new print features.**
   interim page (never a stark `about:blank`) during the font fetch/subset,
   and `_previewError` renders a readable failure page instead of a
   blank/closed tab. Remaining variant builders reuse the components below.
+- **`embroidery-job` (2 Oct 2026, step 1 of 3 job copies; printing and washing
+  are NOT built).** `_renderEmbroideryJob`: its own single A4 page, OUTSIDE the
+  PO's two-page limit, `minimal` Urdu, English only. Typed: big PO number top
+  right (header, as the PO), big ARTICLE CODE in a red-bordered title band,
+  article name, product photo (the same `__productImg` preload every variant
+  gets). Handwritten: red START DATE (header line), PLACEMENT, CANDLE / SHADE
+  CODE (five ruled lines), DATE HANDED OVER, ACTUAL CUT QUANTITY BY SIZE (Size |
+  Qty, rows from `_PO_SIZE_ROWS`, shared with the PO tables, red boxed TOTAL),
+  red END DATE, and a square 8 x 8 cm "Fabric sample — staple here" box. Called
+  from the console as `window.generateEmbroideryJobPdf(po | fbKey)` (`js/pos.js`);
+  no PO-creation checkbox or button yet. An article name over two lines is cut
+  to two. `tests/job-print.test.js`. **Not seen on a printer.** `embroidery-vendor`
+  is still the unbuilt stub.
 - **Landscape (M1.4):** `data.orientation:'landscape'` (or the type's default
   in `_PRINT_ORIENTATION_DEFAULTS`) builds A4 landscape (842×595) for a type
   in `_PRINT_LANDSCAPE_READY`; the shared components read the page from

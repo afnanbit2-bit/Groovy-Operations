@@ -99,6 +99,7 @@ const PRINT_LAYOUT_LANDSCAPE = {
 const _PRINT_DOC_LABELS = {
   'po': 'Production Order',
   'embroidery-vendor': 'Embroidery Vendor Sheet',
+  'embroidery-job': 'Embroidery Job',
   'sublimation-vendor': 'Sublimation Vendor Sheet',
   'gate-pass': 'Gate Pass',
   'placement-sheet': 'Placement Sheet',
@@ -137,6 +138,7 @@ const _PRINT_URDU_DEFAULTS = {
   'mood-board': 'minimal',
   'po': 'minimal',   // the Urdu font draws blank space (see Fonts); the PO draws no Urdu
   'embroidery-vendor': 'full',
+  'embroidery-job': 'minimal',   // English only, like the PO
   'sublimation-vendor': 'full',
   'qc-report': 'full',
   'placement-sheet': 'full',
@@ -1705,6 +1707,7 @@ function _renderMoodBoard(doc, data) {
    that plan. The Urdu parts are NOT drawn on this sheet: the Urdu font draws
    them as blank space (see "Fonts"), so 'po' defaults to urduLevel 'minimal'
    and this renderer carries no Urdu strings. */
+const _PO_SIZE_ROWS = ['Small', 'Medium', 'Large', 'X-Large'];   // shared by the PO tables and the job copies
 const _PO_STATIONS = {
   // ONE place for the station titles and the name printed under each.
   cutting:   { title: 'Cutting + Bundling',        owner: 'Department Manager: Kashif Bhai' },
@@ -1754,7 +1757,7 @@ function _renderPO(doc, data) {
   const shade = _pc('#E6E6E6');
   const shadeL = _pc(PRINT_COLORS.greyShade);
   const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 22;
-  const SIZE_ROWS = ['Small', 'Medium', 'Large', 'X-Large'];
+  const SIZE_ROWS = _PO_SIZE_ROWS;
   const LW = 0.8, LW_ROW = 0.6, LW_BOX = 1.5;   // table lines: double the old 0.4 / 0.3
   const DARK = _pc('#262626');                   // ordinary table lines (red is for the key items only)
   const darkLine = function (w) { doc.setDrawColor(DARK[0], DARK[1], DARK[2]); doc.setLineWidth(w); };
@@ -2050,6 +2053,129 @@ function _renderPO(doc, data) {
     y += b.h;
     doc.__groovyY = y;
   });
+}
+
+/* ── Embroidery job copy (step 1 of 3 job copies; printing and washing follow) ──
+   Its own single A4 page, OUTSIDE the PO's two-page limit. Typed: PO number
+   (big, top right, as on the PO), article code (big, in the title band),
+   article name, product photo. Handwritten: START DATE (header, red), candle /
+   shade codes, placement, date handed over, actual cut quantity by size with
+   a boxed red TOTAL row, END DATE (red). A square 8 x 8 cm box is left for a
+   fabric sample to be stapled. Same fonts, line widths and colours as
+   _renderPO; red only for the dates, the TOTAL row and the title band. */
+const _JOB_SAMPLE_PT = 8 * 72 / 2.54;   // 8 cm in points
+function _renderEmbroideryJob(doc, data) {
+  data = data || {};
+  const L = PRINT_LAYOUT.marginLeft, W = PRINT_LAYOUT.contentWidth, R = L + W;
+  const RED = _pc(PRINT_COLORS.red);
+  const shade = _pc('#E6E6E6'), shadeL = _pc(PRINT_COLORS.greyShade);
+  const DARK = _pc('#262626');
+  const LW = 0.8, LW_ROW = 0.6, LW_BOX = 1.5;
+  const dark = function (w) { doc.setDrawColor(DARK[0], DARK[1], DARK[2]); doc.setLineWidth(w); };
+  const red = function (w) { doc.setDrawColor(RED[0], RED[1], RED[2]); doc.setLineWidth(w); };
+  const fill = function (c) { doc.setFillColor(c[0], c[1], c[2]); };
+  const label = function (t, x, y) { _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text); doc.text(t, x, y); };
+
+  _renderHeader(doc, {
+    documentType: 'Embroidery Job',
+    documentNumber: data.poNumber || data.documentNumber || data.id || '',
+    numberSize: 26,
+    boldMark: true,
+    startDateLabel: 'START DATE',
+    startDate: data.startDate || ''
+  });
+  let y = doc.__groovyY + 8;
+
+  // Title band: EMBROIDERY JOB left, ARTICLE CODE big right.
+  const bandH = 46;
+  fill(shadeL); red(LW);
+  doc.rect(L, y, W, bandH, 'FD');
+  _setFont(doc, PRINT_FONTS.display, 'bold', 20, PRINT_COLORS.text);
+  doc.text('EMBROIDERY JOB', L + 10, y + 29);
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text);
+  doc.text('ARTICLE CODE', R - 10, y + 12, { align: 'right' });
+  _setFont(doc, PRINT_FONTS.display, 'bold', 26, PRINT_COLORS.text);
+  doc.text(String(data.articleCode || ''), R - 10, y + 38, { align: 'right' });
+  y += bandH + 10;
+
+  // Left column: article name, placement, candle / shade codes. Right: photo.
+  const imgW = 200, gap = 14, colW = W - imgW - gap;
+  const top = y;
+  const im = (data.__productImg && data.__productImg.dataUrl) ? data.__productImg : null;
+  fill(shadeL); dark(LW_ROW);
+  doc.rect(L, y, 70, 40, 'FD'); doc.rect(L + 70, y, colW - 70, 40, 'S');
+  label('Article Name', L + 4, y + 24);
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 11, PRINT_COLORS.text);
+  doc.splitTextToSize(String(data.articleName || ''), colW - 70 - 10).slice(0, 2)
+    .forEach(function (ln, i) { doc.text(ln, L + 74, y + 17 + i * 14); });
+  y += 40 + 12;
+  const writeBox = function (title, n, lineH) {
+    const h = 16 + n * lineH + 4;
+    dark(LW_ROW); doc.rect(L, y, colW, h, 'S');
+    label(title, L + 4, y + 11);
+    dark(LW_ROW);
+    for (let i = 1; i <= n; i++) doc.line(L + 6, y + 16 + i * lineH, L + colW - 6, y + 16 + i * lineH);
+    y += h + 12;
+  };
+  writeBox('PLACEMENT', 3, 24);
+  writeBox('CANDLE / SHADE CODE (thread book)', 5, 24);
+  const bodyH = Math.max(y - top - 12, 200);
+  dark(LW_ROW);
+  const ix = L + colW + gap;
+  doc.rect(ix, top, imgW, bodyH, 'S');
+  if (im) {
+    const pad = 3, ar = (im.w && im.h) ? (im.w / im.h) : 0.75;
+    let dw = imgW - 2 * pad, dh = dw / ar;
+    if (dh > bodyH - 2 * pad) { dh = bodyH - 2 * pad; dw = dh * ar; }
+    try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ix + (imgW - dw) / 2, top + (bodyH - dh) / 2, dw, dh); } catch (e) { /* skip */ }
+  }
+  y = top + Math.max(bodyH, y - top - 12) + 14;
+
+  // Lower row: left = handed over, quantity table, end date; right = sample box.
+  const lowTop = y;
+  const lw = W - _JOB_SAMPLE_PT - gap;
+  dark(LW_ROW);
+  doc.rect(L, y, lw, 30, 'S');
+  label('DATE HANDED OVER', L + 4, y + 12);
+  dark(LW_ROW); doc.line(L + 6, y + 25, L + lw - 6, y + 25);
+  y += 30 + 14;
+  label('ACTUAL CUT QUANTITY BY SIZE', L, y + 4);
+  y += 10;
+  const hdrH = 24, rowH = 28, cw = [Math.round(lw * 0.45), lw - Math.round(lw * 0.45)];
+  fill(shade); dark(LW);
+  doc.rect(L, y, lw, hdrH, 'FD');
+  ['Size', 'Qty'].forEach(function (t, i) {
+    const cx = L + (i ? cw[0] : 0);
+    dark(LW); doc.rect(cx, y, cw[i], hdrH, 'S');
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
+    doc.text(t, cx + 5, y + hdrH / 2 + 3);
+  });
+  y += hdrH;
+  _PO_SIZE_ROWS.forEach(function (sz) {
+    fill(shadeL); doc.rect(L, y, cw[0], rowH, 'F');
+    dark(LW_ROW); doc.rect(L, y, cw[0], rowH, 'S'); doc.rect(L + cw[0], y, cw[1], rowH, 'S');
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+    doc.text(sz, L + 5, y + rowH / 2 + 3.5);
+    y += rowH;
+  });
+  const th = rowH + 2;
+  red(LW_ROW);
+  doc.rect(L, y, cw[0], th, 'S'); doc.rect(L + cw[0], y, cw[1], th, 'S');
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.text);
+  doc.text('TOTAL', L + 5, y + th / 2 + 4);
+  red(LW_BOX); doc.rect(L, y, lw, th, 'S');
+  y += th + 18;
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 11, PRINT_COLORS.red);
+  doc.text('END DATE', L, y);
+  const ew = doc.getTextWidth('END DATE:  ');
+  red(LW);
+  doc.line(L + ew + 4, y + 1.5, L + lw, y + 1.5);
+
+  const sx = R - _JOB_SAMPLE_PT;
+  label('Fabric sample — staple here', sx, lowTop + 10);
+  dark(LW_BOX);
+  doc.rect(sx, lowTop + 16, _JOB_SAMPLE_PT, _JOB_SAMPLE_PT, 'S');
+  doc.__groovyY = Math.max(y, lowTop + 16 + _JOB_SAMPLE_PT);
 }
 
 /* ── Custom page size ──────────────────────────────────────────────────────
@@ -3091,13 +3217,14 @@ window.printDocument = async function (opts) {
     return;
   }
 
-  const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
+  const known = ['po', 'embroidery-job', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
     'daily-performance', 'stock-transfer', 'mood-board',
     'ma-ledger', 'ma-statement-party', 'ma-statement-holder', 'ma-receipt', 'ma-voucher', 'ma-collection',
     'pattern-label', 'consumable-log', 'generic'];
   const _VARIANTS = {
     'po': _renderPO,
+    'embroidery-job': _renderEmbroideryJob,
     'gate-pass': _renderGatePass,
     'payslip': _renderPayslip,
     'daily-performance': _renderDailyPerformance,
