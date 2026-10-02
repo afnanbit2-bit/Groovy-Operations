@@ -135,7 +135,7 @@ const _PRINT_URDU_DEFAULTS = {
   'daily-performance': 'minimal',
   'stock-transfer': 'minimal',
   'mood-board': 'minimal',
-  'po': 'full',
+  'po': 'minimal',   // the Urdu font draws blank space (see Fonts); the PO draws no Urdu
   'embroidery-vendor': 'full',
   'sublimation-vendor': 'full',
   'qc-report': 'full',
@@ -454,16 +454,36 @@ function _renderHeader(doc, o) {
   doc.text('GROOVY', L, top + 16);
 
   if (o.documentNumber) {
-    _setFont(doc, PRINT_FONTS.display, 'bold', 16, PRINT_COLORS.black);
-    doc.text(String(o.documentNumber), R, top + 14, { align: 'right' });
+    // o.numberSize (the PO only) enlarges the number; unset = the old 16pt.
+    const numSize = o.numberSize || 16;
+    _setFont(doc, PRINT_FONTS.display, 'bold', numSize, PRINT_COLORS.black);
+    doc.text(String(o.documentNumber), R, top + (o.numberSize ? numSize * 0.85 : 14), { align: 'right' });
   }
 
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.greyAccent);
   doc.text(String(o.documentType || 'Document'), L, top + 32);
 
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
-  const created = 'Created: ' + (o.issuedDate || '—') + ' by ' + (o.issuedBy || '—');
-  doc.text(created, R, top + 30, { align: 'right' });
+  if (o.startDateLabel) {
+    // PO only: START DATE top-middle in red; no date yet = a line to write on.
+    const lab = o.startDateLabel + ':  ';
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.red);
+    const labW = doc.getTextWidth(lab);
+    const val = o.startDate ? String(o.startDate) : '';
+    const valW = val ? doc.getTextWidth(val) : 96;
+    const sx = (L + R) / 2 - (labW + valW) / 2;
+    doc.text(lab, sx, top + 30);
+    if (val) doc.text(val, sx + labW, top + 30);
+    else {
+      const rc = _pc(PRINT_COLORS.red);
+      doc.setDrawColor(rc[0], rc[1], rc[2]);
+      doc.setLineWidth(0.8);
+      doc.line(sx + labW, top + 31.5, sx + labW + valW, top + 31.5);
+    }
+  } else {
+    const created = 'Created: ' + (o.issuedDate || '—') + ' by ' + (o.issuedBy || '—');
+    doc.text(created, R, top + 30, { align: 'right' });
+  }
 
   const ruleY = top + 38 + 6; // 6pt spacing above the rule
   const c = _pc(PRINT_COLORS.greyLine);
@@ -1655,288 +1675,366 @@ function _renderMoodBoard(doc, data) {
 }
 
 /* ── Production Order variant ──────────────────────────────────────────────
-   Full manufacturing traveler / routing sheet matching the "Production Order
-   2.0" reference: header + "Department: Manufacturing", an order-info block
-   with the product photo on the right, then the signed per-station size grids
-   (Cutting + Bundling, Printing & Emb QC, Bundling Before Stitching,
-   Stitching, Washing). The quantity/bundle cells are intentionally left blank
-   for hand-entry on the floor; only the order header is pre-filled. Bilingual
-   (urduLevel defaults to 'full'). Composes the shared _render* components and
-   two local table closures. */
+   Manufacturing traveler / routing sheet: header (START DATE top-middle in
+   red, large PO number), an order-info block with the product photo on the
+   right, then the per-station size grids (Cutting + Bundling, Printing,
+   Embroidery & QC, Bundling Before Stitching, Stitching, Washing).
+   Quantity / bundle cells are left blank for pen entry on the floor.
+
+   HARD LAYOUT RULES (tested in tests/po-print.test.js):
+   - the main sheet is at most TWO A4 pages;
+   - a station block (band, dates, table, total row, sign-off lines) is never
+     split across a page break — each block is laid out as one unit;
+   - every table line is red and drawn at double the old width.
+   Both follow from how it is built: every part is a block with a measured
+   height, a planner tries four densities (comfortable → compact) and takes
+   the first whose simulated page flow fits two pages, then draws exactly
+   that plan. The Urdu parts are NOT drawn on this sheet: the Urdu font draws
+   them as blank space (see "Fonts"), so 'po' defaults to urduLevel 'minimal'
+   and this renderer carries no Urdu strings. */
+const _PO_STATIONS = {
+  // ONE place for the station titles and the name printed under each.
+  cutting:   { title: 'Cutting + Bundling',        owner: 'Department Manager: Kashif Bhai' },
+  qc:        { title: 'Printing, Embroidery & QC', owner: 'Shameer' },
+  bundling:  { title: 'Bundling Before Stitching', owner: '' },   // no name, by instruction
+  stitching: { title: 'Stitching',                 owner: 'Waqas' },
+  washing:   { title: 'Washing Department',        owner: 'Abbas' }
+};
+const _PO_DENSITIES = [
+  { rowH: 22, hdrH: 26, gap: 10, kvMin: 26, imgH: 240, remH: 18, signH: 28 },
+  { rowH: 20, hdrH: 24, gap: 8,  kvMin: 24, imgH: 215, remH: 16, signH: 26 },
+  { rowH: 18, hdrH: 22, gap: 6,  kvMin: 22, imgH: 190, remH: 15, signH: 24 },
+  { rowH: 16, hdrH: 20, gap: 4,  kvMin: 20, imgH: 160, remH: 14, signH: 22 }
+];
+
 function _renderPO(doc, data) {
   data = data || {};
   const L = PRINT_LAYOUT.marginLeft;
   const W = PRINT_LAYOUT.contentWidth;
   const R = L + W;
   const sess = (typeof session !== 'undefined' && session) ? session : null;
-  const line = _pc(PRINT_COLORS.greyLine);
-  const shade = _pc(PRINT_COLORS.greyShade);
-  const shadeL = _pc(PRINT_COLORS.greyShadeLight);
+  const RED = _pc(PRINT_COLORS.red);
+  const shade = _pc('#E6E6E6');
+  const shadeL = _pc(PRINT_COLORS.greyShade);
   const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 22;
   const SIZE_ROWS = ['Small', 'Medium', 'Large', 'X-Large'];
+  const LW = 0.8, LW_ROW = 0.6, LW_BOX = 1.5;   // table lines: double the old 0.4 / 0.3
 
-  const need = function (h) {
-    if ((doc.__groovyY || PRINT_LAYOUT.marginTop) + h > maxY) {
-      doc.addPage();
-      doc.__groovyY = PRINT_LAYOUT.marginTop;
-    }
-    return doc.__groovyY;
+  const redLine = function (w) { doc.setDrawColor(RED[0], RED[1], RED[2]); doc.setLineWidth(w); };
+  const greyLine = function (w) { const g = _pc(PRINT_COLORS.greyAccent); doc.setDrawColor(g[0], g[1], g[2]); doc.setLineWidth(w); };
+  const fill = function (c) { doc.setFillColor(c[0], c[1], c[2]); };
+  const wrap = function (txt, w, fs, style) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, style || 'normal', fs, PRINT_COLORS.text);
+    return doc.splitTextToSize(String(txt == null ? '' : txt), w);
   };
 
-  // Generic bordered table: cols=[{title,ur,w}], rows=array of cell arrays
-  // (null/'' → blank cell). o.shadeFirst shades+bolds the first column.
-  const tableGrid = function (cols, rows, o) {
-    o = o || {};
-    const hdrH = o.hdrH || 26, rowH = o.rowH || 20;
-    const totalW = cols.reduce(function (s, c) { return s + c.w; }, 0);
-    const drawHdr = function () {
-      const yy = doc.__groovyY;
-      doc.setFillColor(shade[0], shade[1], shade[2]);
-      doc.rect(L, yy, totalW, hdrH, 'F');
-      let cx = L;
-      cols.forEach(function (c) {
-        doc.setDrawColor(line[0], line[1], line[2]);
-        doc.setLineWidth(0.4);
-        doc.rect(cx, yy, c.w, hdrH, 'S');
-        const bilingual = c.ur && _urduOn(doc);
-        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
-        doc.text(String(c.title || ''), cx + 5, yy + (bilingual ? 11 : hdrH / 2 + 3), { maxWidth: c.w - 8 });
-        if (bilingual) {
-          _setFont(doc, PRINT_FONTS.urdu, 'normal', 9, PRINT_COLORS.greyAccent);
-          doc.text(String(c.ur), cx + 5, yy + 22, { maxWidth: c.w - 8 });
-        }
-        cx += c.w;
-      });
-      doc.__groovyY = yy + hdrH;
-    };
-    need(hdrH + rowH);
-    drawHdr();
-    rows.forEach(function (r) {
-      if (doc.__groovyY + rowH > maxY) {
-        doc.addPage();
-        doc.__groovyY = PRINT_LAYOUT.marginTop;
-        drawHdr();
-      }
-      const yy = doc.__groovyY;
-      let cx = L;
-      cols.forEach(function (c, i) {
-        if (o.shadeFirst && i === 0) {
-          doc.setFillColor(shadeL[0], shadeL[1], shadeL[2]);
-          doc.rect(cx, yy, c.w, rowH, 'F');
-        }
-        doc.setDrawColor(line[0], line[1], line[2]);
-        doc.setLineWidth(0.3);
-        doc.rect(cx, yy, c.w, rowH, 'S');
-        const v = r ? r[i] : '';
-        if (v != null && v !== '') {
-          _setFont(doc, PRINT_FONTS.bodyRegular, (o.shadeFirst && i === 0) ? 'bold' : 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
-          doc.text(String(v), cx + 5, yy + rowH / 2 + 3.5, { maxWidth: c.w - 8 });
-        }
-        cx += c.w;
-      });
-      doc.__groovyY = yy + rowH;
-    });
-  };
-
-  // "Grand Total Quantity Processed ______" line (bilingual).
-  const grandTotalLine = function () {
-    need(28);
-    const yy = doc.__groovyY + 16;
-    const en = 'Grand Total Quantity Processed';
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
-    doc.text(en, L, yy);
-    let gx = L + doc.getTextWidth(en) + 4;
-    if (_urduOn(doc)) {
-      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.urduBody, PRINT_COLORS.greyAccent);
-      doc.text('مقدار مکمل کی گئی', gx, yy);
-    }
-    doc.setDrawColor(line[0], line[1], line[2]);
-    doc.setLineWidth(0.5);
-    doc.line(R - 120, yy + 2, R, yy + 2);
-    doc.__groovyY = yy + 4;
-  };
-
-  // "Signature (دستخط) : ______   With Name: ______" line.
-  const signWithName = function (owner) {
-    need(28);
-    const yy = doc.__groovyY + 18;
-    let x = L;
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-    doc.text('Signature', x, yy); x += doc.getTextWidth('Signature');
-    if (_urduOn(doc)) {
-      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-      doc.text(' (دستخط)', x, yy); x += doc.getTextWidth(' (دستخط)');
-    }
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-    const s = ': ________________';
-    doc.text(s, x, yy); x += doc.getTextWidth(s) + 20;
-    doc.text('With Name: ' + (owner ? owner : '________________'), x, yy);
-    doc.__groovyY = yy + 4;
-  };
-
-  // A label followed by two blank ruled lines (used for Remarks / Defects).
-  const remarksLine = function (en, ur) {
-    need(42);
-    let yy = doc.__groovyY + 18;
-    let x = L;
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-    doc.text(en, x, yy); x += doc.getTextWidth(en);
-    if (ur && _urduOn(doc)) {
-      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-      doc.text(' (' + ur + ')', x, yy); x += doc.getTextWidth(' (' + ur + ')');
-    }
-    doc.setDrawColor(line[0], line[1], line[2]);
-    doc.setLineWidth(0.5);
-    doc.line(x + 8, yy + 2, R, yy + 2);
-    yy += 18;
-    doc.line(L, yy + 2, R, yy + 2);
-    doc.__groovyY = yy + 4;
-  };
-
-  // 1) HEADER + department line
+  // 1) HEADER — big PO number top right, START DATE top-middle in red.
   _renderHeader(doc, {
     documentType: 'Production Order',
     documentNumber: data.documentNumber || data.id || '',
-    issuedDate: data.issuedDate || new Date().toLocaleDateString('en-GB'),
-    issuedBy: data.issuedBy || (sess && sess.name) || '—'
+    numberSize: 26,
+    startDateLabel: 'START DATE',
+    startDate: data.startDate || ''
   });
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
-  doc.text('Department: Manufacturing', L, doc.__groovyY + 4);
+  doc.text('Department: Manufacturing', L, doc.__groovyY + 8);
+  const y0 = doc.__groovyY + 16;
 
-  // 2) ORDER INFO BLOCK (label/value grid on the left, product photo right)
-  const im = (data.__productImg && data.__productImg.dataUrl) ? data.__productImg : null;
-  const imgW = 150, imgGap = 14;
-  const gridW = im ? (W - imgW - imgGap) : W;
-  const gy0 = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 14;
-  let gy = gy0;
-  const cellH = 22;
+  // ── blocks: {h, draw(y)} ────────────────────────────────────────────────
 
-  const drawKV = function (x, w, label, value) {
-    const labW = Math.min(84, w * 0.42);
-    doc.setFillColor(shadeL[0], shadeL[1], shadeL[2]);
-    doc.rect(x, gy, labW, cellH, 'F');
-    doc.setDrawColor(line[0], line[1], line[2]);
-    doc.setLineWidth(0.3);
-    doc.rect(x, gy, labW, cellH, 'S');
-    doc.rect(x + labW, gy, w - labW, cellH, 'S');
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text);
-    doc.text(String(label), x + 4, gy + cellH / 2 + 3, { maxWidth: labW - 6 });
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
-    doc.text(String(value == null ? '' : value), x + labW + 4, gy + cellH / 2 + 3, { maxWidth: w - labW - 8 });
+  // ORDER INFO: label/value grid (cells grow to fit their text) + photo.
+  const infoBlock = function (d) {
+    const im = (data.__productImg && data.__productImg.dataUrl) ? data.__productImg : null;
+    const imgW = 200, imgGap = 12;
+    const gridW = im ? (W - imgW - imgGap) : W;
+    const halfW = gridW / 2;
+    const ratio = data.ratio || '';
+    const cell = function (label, value, o) { return Object.assign({ label: label, value: value == null ? '' : String(value) }, o || {}); };
+    const rows = [
+      [cell('PO Number', data.poNumber || data.id), cell('Issued By', data.issuedBy)],
+      [cell('Pattern # / Name', data.pattern)],
+      [cell('Article Name', data.articleName)],
+      [cell('Article Code', data.articleCode), cell('Fabric Code', data.fabricCode)],
+      [cell('Fabric Name', data.fabricName)],
+      [cell('Sizes', data.sizes, ratio ? { suffix: 'Ratio ' + ratio } : {})],
+      [cell('Total Quantity', data.totalQty), cell('Ratio', ratio, { red: true, box: true })],
+      [cell('Total Weight / Mtr', data.totalWeight, { red: true, box: true }), cell('Average Per Unit', data.avgPerUnit, { red: true, box: true })]
+    ];
+    // lay out every cell: wrapped label + value lines at the largest font that fits
+    rows.forEach(function (row) {
+      const w = row.length === 1 ? gridW : halfW;
+      const labW = 70;   // one label width for every cell, so the columns line up
+      const valW = w - labW - 8;
+      row.forEach(function (c) {
+        c.w = w; c.labW = labW;
+        c.labLines = wrap(c.label, labW - 6, 8, 'bold');
+        let fs = 10, lines = wrap(c.value, valW, fs, c.red ? 'bold' : 'normal');
+        [9, 8, 7.5].forEach(function (f) {
+          if (lines.length > 2) { fs = f; lines = wrap(c.value, valW, fs, c.red ? 'bold' : 'normal'); }
+        });
+        c.fs = fs;
+        // segments per line; the ratio rides the last line if it fits, else wraps below
+        c.segs = lines.map(function (t) { return [{ t: t, red: !!c.red }]; });
+        if (c.suffix) {
+          const last = c.segs[c.segs.length - 1];
+          _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', fs, PRINT_COLORS.text);
+          const used = doc.getTextWidth(last.map(function (s) { return s.t; }).join(''));
+          _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', fs, PRINT_COLORS.red);
+          const sw = doc.getTextWidth('   ' + c.suffix);
+          if (used + sw <= valW) last.push({ t: '   ' + c.suffix, red: true, bold: true });
+          else c.segs.push([{ t: c.suffix, red: true, bold: true }]);
+        }
+        c.h = Math.max(d.kvMin, c.segs.length * fs * 1.2 + 8, c.labLines.length * 9.6 + 8);
+      });
+      row.h = Math.max.apply(null, row.map(function (c) { return c.h; }));
+    });
+    const gridH = rows.reduce(function (s, r) { return s + r.h; }, 0);
+    const boxH = im ? Math.max(gridH, d.imgH) : gridH;
+    const extra = (boxH - gridH) / rows.length;   // stretch rows to the photo's height
+    return {
+      h: 14 + boxH,
+      draw: function (y) {
+        let gy = y + 14;
+        rows.forEach(function (row) {
+          const rh = row.h + extra;
+          let cx = L;
+          row.forEach(function (c) {
+            fill(shadeL); redLine(LW_ROW);
+            doc.rect(cx, gy, c.labW, rh, 'FD');
+            doc.rect(cx + c.labW, gy, c.w - c.labW, rh, 'S');
+            if (c.box) { redLine(LW_BOX); doc.rect(cx + c.labW, gy, c.w - c.labW, rh, 'S'); }
+            _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text);
+            const lt = gy + (rh - c.labLines.length * 9.6) / 2;
+            c.labLines.forEach(function (ln, i) { doc.text(ln, cx + 4, lt + 8 + i * 9.6); });
+            const lh = c.fs * 1.2;
+            const vt = gy + (rh - c.segs.length * lh) / 2;
+            c.segs.forEach(function (line, i) {
+              let tx = cx + c.labW + 4;
+              line.forEach(function (sg) {
+                _setFont(doc, PRINT_FONTS.bodyRegular, (sg.red || sg.bold) ? 'bold' : 'normal', c.fs, sg.red ? PRINT_COLORS.red : PRINT_COLORS.text);
+                doc.text(sg.t, tx, vt + c.fs * 0.9 + i * lh);
+                tx += doc.getTextWidth(sg.t);
+              });
+            });
+            cx += c.w;
+          });
+          gy += rh;
+        });
+        if (im) {
+          const ix = L + gridW + imgGap;
+          redLine(LW_ROW);
+          doc.rect(ix, y + 14, imgW, boxH, 'S');
+          const pad = 3;
+          const ar = (im.w && im.h) ? (im.w / im.h) : 0.75;
+          let dw = imgW - 2 * pad, dh = dw / ar;
+          if (dh > boxH - 2 * pad) { dh = boxH - 2 * pad; dw = dh * ar; }
+          try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ix + (imgW - dw) / 2, y + 14 + (boxH - dh) / 2, dw, dh); } catch (e) { /* skip */ }
+        }
+      }
+    };
   };
-  const halfW = gridW / 2;
-  const kvRow = function (l1, v1, l2, v2) {
-    drawKV(L, halfW, l1, v1);
-    if (l2 != null) drawKV(L + halfW, gridW - halfW, l2, v2);
-    gy += cellH;
-  };
-  const kvSpan = function (l, v) {
-    drawKV(L, gridW, l, v);
-    gy += cellH;
-  };
 
-  kvRow('PO Number', data.poNumber || data.id || '', 'Start Date', data.startDate || '');
-  kvRow('Pattern # / Name', data.pattern || '', 'Issued By', data.issuedBy || '');
-  kvSpan('Article Name', data.articleName || '');
-  kvRow('Article Code', data.articleCode || '', 'Sizes', data.sizes || '');
-  kvRow('Fabric Name', data.fabricName || '', 'Fabric Code', data.fabricCode || '');
-  kvRow('Total Quantity', data.totalQty || '', 'Ratio', data.ratio || '');
-  kvRow('Total Weight / Mtr', data.totalWeight || '', 'Average Per Unit', data.avgPerUnit || '');
-
-  if (im) {
-    const boxH = gy - gy0;
-    const ar = (im.w && im.h) ? (im.w / im.h) : 0.75;
-    let dw = imgW, dh = dw / ar;
-    if (dh > boxH) { dh = boxH; dw = dh * ar; }
-    const ix = L + gridW + imgGap;
-    const ox = ix + (imgW - dw) / 2;
-    doc.setDrawColor(line[0], line[1], line[2]);
-    doc.setLineWidth(0.3);
-    doc.rect(ix, gy0, imgW, boxH, 'S');
-    try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ox, gy0, dw, dh); } catch (e) { /* skip */ }
-  }
-  doc.__groovyY = gy;
-
-  // NOTES — free text from PO creation (renderPOCreate() in js/pos.js, saved
-  // as po.notes). Always rendered in PRINT_COLORS.red so it stands out on
-  // the printed traveler to every station handling this PO, never the
-  // default body text color.
-  if (data.notes) {
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.red);
+  // NOTES — free text from PO creation (po.notes), always red. The type steps
+  // down (10 → 7pt) so a long note costs lines, not a third page.
+  const notesBlock = function () {
     const label = 'Notes: ';
-    const labelW = doc.getTextWidth(label) + 2;
-    const wrapped = doc.splitTextToSize(String(data.notes), W - labelW);
-    const lineH = PRINT_SIZES.bodySmall * 1.15;
-    need(12 + wrapped.length * lineH + 6);
-    const notesY0 = doc.__groovyY + 12;
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.red);
-    doc.text(label, L, notesY0);
-    doc.text(wrapped, L + labelW, notesY0);
-    doc.__groovyY = notesY0 + (wrapped.length - 1) * lineH + 6;
+    let fs = 10, wrapped;
+    for (let i = 0; i < 4; i++) {
+      fs = [10, 9, 8, 7][i];
+      _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', fs, PRINT_COLORS.red);
+      const labelW = doc.getTextWidth(label) + 2;
+      wrapped = doc.splitTextToSize(String(data.notes), W - labelW);
+      if (wrapped.length <= 4) break;
+    }
+    // Hard two-page limit: past six lines at the smallest type the note is cut
+    // and says so, rather than pushing a station onto a third page.
+    const MAX_NOTE_LINES = 6;
+    if (wrapped.length > MAX_NOTE_LINES) {
+      wrapped = wrapped.slice(0, MAX_NOTE_LINES);
+      wrapped[MAX_NOTE_LINES - 1] = wrapped[MAX_NOTE_LINES - 1].replace(/\s+\S*$/, '').slice(0, 120) + ' … (note continues in the app — see the PO)';
+    }
+    const lineH = fs * 1.15;
+    return {
+      h: 12 + wrapped.length * lineH + 4,
+      draw: function (y) {
+        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', fs, PRINT_COLORS.red);
+        const labelW = doc.getTextWidth(label) + 2;
+        doc.text(label, L, y + 12);
+        doc.text(wrapped, L + labelW, y + 12);
+      }
+    };
+  };
+
+  // One station: gap, titled band (manager left, START / END DATE to be
+  // written by pen on the right), the table with its boxed TOTAL row, then
+  // the sign-off lines. Everything is ONE block, so it is never split.
+  const stationBlock = function (key, cols, sumCols, extras, d) {
+    const st = _PO_STATIONS[key];
+    const bandH = 38;
+    const rowsN = cols.rows || SIZE_ROWS.length;
+    const bodyH = d.hdrH + rowsN * d.rowH + (d.rowH + 2);
+    let h = d.gap + bandH + 4 + bodyH;
+    const ops = [];
+    extras.forEach(function (x) {
+      const eh = x === 'grand' ? 32 : (x === 'remarks' ? 14 + d.remH + 6 : d.signH);
+      ops.push({ kind: x, h: eh });
+      h += eh;
+    });
+    return {
+      h: h,
+      draw: function (y) {
+        let yy = y + d.gap;
+        // band
+        fill(shadeL); redLine(LW);
+        doc.rect(L, yy, W, bandH, 'FD');
+        _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.subsectionTitle, PRINT_COLORS.text);
+        doc.text(st.title.toUpperCase(), L + 8, yy + 16);
+        if (st.owner) {
+          _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+          doc.text(st.owner, L + 8, yy + 30);
+        }
+        // START DATE / END DATE — red, written by pen (SLA measurement)
+        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.red);
+        const lineLen = 74, g = 14;
+        const endW = doc.getTextWidth('END DATE'), startW = doc.getTextWidth('START DATE');
+        const endLx1 = R - 8, endLx0 = endLx1 - lineLen;
+        const startLx1 = endLx0 - 4 - endW - g, startLx0 = startLx1 - lineLen;
+        doc.text('END DATE', endLx0 - 4 - endW, yy + 25);
+        doc.text('START DATE', startLx0 - 4 - startW, yy + 25);
+        redLine(LW);
+        doc.line(endLx0, yy + 26.5, endLx1, yy + 26.5);
+        doc.line(startLx0, yy + 26.5, startLx1, yy + 26.5);
+        yy += bandH + 4;
+        // table
+        const totalW = cols.reduce(function (s, c) { return s + c.w; }, 0);
+        fill(shade); redLine(LW);
+        doc.rect(L, yy, totalW, d.hdrH, 'FD');
+        let cx = L;
+        cols.forEach(function (c) {
+          redLine(LW);
+          doc.rect(cx, yy, c.w, d.hdrH, 'S');
+          _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
+          doc.text(String(c.title || ''), cx + 5, yy + d.hdrH / 2 + 3, { maxWidth: c.w - 8 });
+          cx += c.w;
+        });
+        yy += d.hdrH;
+        const body = cols.rowLabels || [];
+        for (let r = 0; r < rowsN; r++) {
+          cx = L;
+          cols.forEach(function (c, i) {
+            if (cols.shadeFirst && i === 0) { fill(shadeL); doc.rect(cx, yy, c.w, d.rowH, 'F'); }
+            redLine(LW_ROW);
+            doc.rect(cx, yy, c.w, d.rowH, 'S');
+            if (i === 0 && body[r]) {
+              _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+              doc.text(String(body[r]), cx + 5, yy + d.rowH / 2 + 3.5, { maxWidth: c.w - 8 });
+            }
+            cx += c.w;
+          });
+          yy += d.rowH;
+        }
+        // TOTAL row — columns nobody sums are shaded out, the whole row boxed
+        const th = d.rowH + 2;
+        cx = L;
+        cols.forEach(function (c, i) {
+          if (i > 0 && sumCols.indexOf(i) < 0) { fill(shade); doc.rect(cx, yy, c.w, th, 'F'); }
+          redLine(LW_ROW);
+          doc.rect(cx, yy, c.w, th, 'S');
+          cx += c.w;
+        });
+        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.text);
+        doc.text('TOTAL', L + 5, yy + th / 2 + 4);
+        redLine(LW_BOX);
+        doc.rect(L, yy, totalW, th, 'S');
+        yy += th;
+        // sign-off lines
+        ops.forEach(function (x) {
+          if (x.kind === 'grand') {
+            _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+            doc.text('Grand Total Quantity Processed', L, yy + 21);
+            redLine(LW_BOX);
+            doc.rect(R - 140, yy + 6, 140, 22, 'S');
+          } else if (x.kind === 'sign' || x.kind === 'signname') {
+            _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+            let x0 = L;
+            doc.text('Signature', x0, yy + 18); x0 += doc.getTextWidth('Signature');
+            const s = ': ________________';
+            doc.text(s, x0, yy + 18); x0 += doc.getTextWidth(s) + 20;
+            doc.text('With Name: ' + (x.kind === 'signname' && st.owner ? st.owner : '________________'), x0, yy + 18);
+          } else if (x.kind === 'remarks') {
+            const lab = (key === 'qc') ? 'Remarks' : 'Defects / Remarks';
+            _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+            doc.text(lab, L, yy + 14);
+            greyLine(0.6);
+            doc.line(L + doc.getTextWidth(lab) + 8, yy + 16, R, yy + 16);
+            doc.line(L, yy + 16 + d.remH, R, yy + 16 + d.remH);
+          }
+          yy += x.h;
+        });
+      }
+    };
+  };
+
+  const cols3 = function () {
+    const c = [{ title: 'Size', w: 100 }, { title: 'Bundles', w: 270 }, { title: 'Total', w: 153 }];
+    c.shadeFirst = true; c.rowLabels = SIZE_ROWS;
+    return c;
+  };
+  const colsQc = function () {
+    const c = [{ title: 'Size', w: 100 }, { title: 'Total Passed', w: 130 },
+               { title: 'QA Not Passed But Forwarded', w: 173 }, { title: 'Rejected', w: 120 }];
+    c.shadeFirst = true; c.rowLabels = SIZE_ROWS;
+    return c;
+  };
+  const colsStitch = function () {
+    const c = [{ title: 'Date', w: 110 }, { title: 'Size + Bundle', w: 180 },
+               { title: 'OFFLINE', w: 110 }, { title: 'Total', w: 123 }];
+    c.rows = 4;
+    return c;
+  };
+  const colsWash = function () {
+    const c = [{ title: 'Date Out', w: 131 }, { title: 'PCs / Kgs', w: 130 },
+               { title: 'Date Received', w: 132 }, { title: 'PCs / Kgs', w: 130 }];
+    c.rows = 3;
+    return c;
+  };
+
+  const build = function (d) {
+    const blocks = [infoBlock(d)];
+    if (data.notes) blocks.push(notesBlock());
+    blocks.push(stationBlock('cutting', cols3(), [1, 2], ['grand', 'sign'], d));
+    blocks.push(stationBlock('qc', colsQc(), [1, 2, 3], ['remarks'], d));
+    blocks.push(stationBlock('bundling', cols3(), [1, 2], ['grand', 'sign'], d));
+    blocks.push(stationBlock('stitching', colsStitch(), [2, 3], ['signname', 'remarks'], d));
+    blocks.push(stationBlock('washing', colsWash(), [1, 3], ['remarks', 'sign'], d));
+    return blocks;
+  };
+  const pagesFor = function (blocks) {
+    let y = y0, p = 1;
+    blocks.forEach(function (b) {
+      if (y + b.h > maxY) { p++; y = PRINT_LAYOUT.marginTop; }
+      y += b.h;
+    });
+    return p;
+  };
+
+  // Plan: the most comfortable density whose page flow fits two pages.
+  let plan = null, last = null;
+  for (let i = 0; i < _PO_DENSITIES.length; i++) {
+    last = build(_PO_DENSITIES[i]);
+    if (pagesFor(last) <= 2) { plan = last; break; }
   }
-
-  // STATION — CUTTING + BUNDLING
-  _renderSectionHeader(doc, { titleEn: 'Cutting + Bundling', titleUr: 'بنڈلنگ اور ٹرانسپورٹیشن', ownerName: 'Raees' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Size', ur: 'سائز', w: 175 }, { title: 'Bundles', ur: '', w: 174 }, { title: 'Total', ur: '', w: 174 }],
-    SIZE_ROWS.map(function (s) { return [s, '', '']; }),
-    { shadeFirst: true }
-  );
-  grandTotalLine();
-  signWithName();
-
-  // 6) STATION — PRINTING & EMB QC
-  _renderSectionHeader(doc, { titleEn: 'Printing & Emb QC', titleUr: '', ownerName: 'Haris' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Size', ur: 'سائز', w: 100 },
-     { title: 'Total Passed', ur: '', w: 130 },
-     { title: 'QA Not Passed But Forwarded', ur: '', w: 173 },
-     { title: 'Rejected', ur: '', w: 120 }],
-    SIZE_ROWS.map(function (s) { return [s, '', '', '']; }).concat([['Grand Total', '', '', '']]),
-    { shadeFirst: true }
-  );
-  remarksLine('Remarks', 'تبصرے');
-
-  // 7) STATION — BUNDLING BEFORE STITCHING
-  _renderSectionHeader(doc, { titleEn: 'Bundling Before Stitching', titleUr: 'بنڈلنگ اور ٹرانسپورٹیشن', ownerName: 'Zuhaib' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Size', ur: 'سائز', w: 175 }, { title: 'Bundles', ur: '', w: 174 }, { title: 'Total', ur: '', w: 174 }],
-    SIZE_ROWS.map(function (s) { return [s, '', '']; }),
-    { shadeFirst: true }
-  );
-  grandTotalLine();
-  signWithName();
-
-  // 8) STATION — STITCHING
-  _renderSectionHeader(doc, { titleEn: 'Stitching', titleUr: '', ownerName: 'Waqas' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Date', ur: '', w: 110 },
-     { title: 'Size + Bundle', ur: '', w: 180 },
-     { title: 'OFFLINE', ur: '', w: 110 },
-     { title: 'Total', ur: '', w: 123 }],
-    [['', '', '', ''], ['', '', '', ''], ['', '', '', ''], ['', '', '', '']],
-    {}
-  );
-  signWithName('Waqas');
-  remarksLine('Defects / Remarks', 'خامیوں / تبصرے');
-
-  // 9) STATION — WASHING DEPARTMENT
-  _renderSectionHeader(doc, { titleEn: 'Washing Department', titleUr: '', ownerName: 'Abbas' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Date Out', ur: '', w: 131 },
-     { title: 'PCs / Kgs', ur: '', w: 130 },
-     { title: 'Date Received', ur: '', w: 132 },
-     { title: 'PCs / Kgs', ur: '', w: 130 }],
-    [['', '', '', ''], ['', '', '', ''], ['', '', '', '']],
-    {}
-  );
-  remarksLine('Defects / Remarks', 'خامیوں / تبصرے');
-  signWithName();
+  if (!plan) {
+    console.warn('[print-engine] po: does not fit two pages even at the tightest density');
+    plan = last;
+  }
+  let y = y0;
+  plan.forEach(function (b) {
+    if (y + b.h > maxY) { doc.addPage(); y = PRINT_LAYOUT.marginTop; }
+    b.draw(y);
+    y += b.h;
+    doc.__groovyY = y;
+  });
 }
 
 /* ── Custom page size ──────────────────────────────────────────────────────

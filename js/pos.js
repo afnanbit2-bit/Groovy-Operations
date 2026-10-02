@@ -1405,7 +1405,7 @@ window.generatePOPdf=function(fbKey){
     const sizesStr=(activeSizes.length?activeSizes:sizeOrder).join('-');
     return window.printDocument({type:'po',filename:`${po.id}.pdf`,data:{
       documentType:'Production Order',documentNumber:po.id,id:po.id,
-      poNumber:po.id,startDate:po.createdAt||'',pattern:(typeof window.ptnPoTravelerPattern==='function'?window.ptnPoTravelerPattern(po):'')||po.pattern||'',
+      poNumber:po.id,startDate:po.startDate||'',pattern:(typeof window.ptnPoTravelerPattern==='function'?window.ptnPoTravelerPattern(po):'')||po.pattern||'',
       articleName:po.name||'',articleCode:po.code||'',sizes:sizesStr,
       fabricName:po.fabric||'',fabricCode:po.fabricCode||'',
       totalQty:po.qty!=null?String(po.qty):'',ratio:po.ratio||'',

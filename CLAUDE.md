@@ -773,6 +773,16 @@ do not call jsPDF directly for new print features.**
   stands out to every station handling the PO. Also shown in red on the PO
   detail page (`renderDetailPage()`) and in the legacy (`__usePrintEngine =
   false`) jsPDF fallback in `generatePOPdf()`, so all three paths agree.
+- **`_renderPO` layout (2 Oct 2026):** at most TWO A4 pages and a station block
+  is never split — every part is a measured block, `_PO_DENSITIES` is tried
+  comfortable → compact and the first whose simulated page flow fits two pages
+  is drawn. START DATE (po.startDate; a red line when empty) is top-middle in
+  the header, every station carries red START / END DATE lines, every table has
+  a boxed TOTAL row, all table lines are red and double width. Station titles
+  and the name printed under each live in `_PO_STATIONS`. No Urdu is drawn on
+  the PO (the font draws blanks), so `po` defaults to `minimal`. A note past six
+  lines at 7pt is cut with a visible marker. `tests/po-print.test.js`; **not
+  seen on a printer.**
 - **Internal components (NOT global; JSDoc'd in the file):**
   `_renderHeader`, `_renderFooter` (auto every page via `_stampFooters`),
   `_renderSectionHeader`, `_renderBilingualLabel`, `_renderInfoTable`,
@@ -809,8 +819,8 @@ do not call jsPDF directly for new print features.**
   | Default `urduLevel` | Types |
   |---|---|
   | `none` | `pattern-label`, `ma-ledger`, `ma-statement-holder` |
-  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board`, `consumable-log`, `ma-statement-party` |
-  | `full` | `gate-pass` (forced), `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet`, `ma-receipt`, `ma-voucher` |
+  | `minimal` | `po` (2 Oct 2026), `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board`, `consumable-log`, `ma-statement-party` |
+  | `full` | `gate-pass` (forced), `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet`, `ma-receipt`, `ma-voucher` |
 
   Measured (same PO, real JNN): `minimal` ≈ 116 KB / 0 JNN fetch · `full`
   ≈ 552 KB / JNN fetched. jsPDF 2.5.1 subsets embedded TTFs so `full` is far
