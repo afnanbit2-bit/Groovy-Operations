@@ -770,6 +770,17 @@ do not call jsPDF directly for new print features.**
   no PO-creation checkbox or button yet. An article name over two lines is cut
   to two. `tests/job-print.test.js`. **Not seen on a printer.** `embroidery-vendor`
   is still the unbuilt stub.
+- **`printing-job` (2 Oct 2026, step 2 of 3; washing is NOT built).**
+  `_renderPrintingJob`: same single A4 page, header, red-bordered band, photo
+  and line colours as the embroidery copy, `minimal` Urdu, footer "Printing
+  Job". Typed: PO number, article code, article name, photo, title PRINTING
+  JOB. Handwritten: red START DATE, PLACEMENT (3 lines), PANTONE CODE (5
+  lines), PRINT NAME / DESIGN NAME, a boxed TOTAL ACTUAL CUT UNITS, Size | Qty
+  (`_PO_SIZE_ROWS`, red boxed TOTAL), red END DATE; no fabric sample box. The
+  two job copies now share `_jobKit`/`_jobTop`/`_jobNameRow`/`_jobWriteBox`/
+  `_jobPhoto`/`_jobSizeTable`/`_jobEndDate` (the embroidery tests pass
+  unchanged). Console: `window.generatePrintingJobPdf(po | fbKey)`; no UI.
+  `tests/job-print.test.js`. **Not seen on a printer.**
 - **Landscape (M1.4):** `data.orientation:'landscape'` (or the type's default
   in `_PRINT_ORIENTATION_DEFAULTS`) builds A4 landscape (842×595) for a type
   in `_PRINT_LANDSCAPE_READY`; the shared components read the page from

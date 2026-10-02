@@ -1408,6 +1408,17 @@ window.generateEmbroideryJobPdf=function(poOrKey){
   }});
 };
 
+// Printing job copy (step 2 of 3): same mapping as the embroidery copy; console-callable, no UI.
+window.generatePrintingJobPdf=function(poOrKey){
+  const po=(typeof poOrKey==='string')?allPOs.find(p=>p.fbKey===poOrKey):poOrKey;
+  if(!po){showToast('PO not found.',true);return;}
+  if(typeof window.printDocument!=='function'){showToast('Print engine not loaded.',true);return;}
+  return window.printDocument({type:'printing-job',filename:`${po.id}-printing-job.pdf`,data:{
+    documentType:'Printing Job',documentNumber:po.id,id:po.id,poNumber:po.id,startDate:po.startDate||'',
+    articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||''
+  }});
+};
+
 // ── Gate Pass ──
 window.generatePOPdf=function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}

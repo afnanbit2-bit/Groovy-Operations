@@ -46,9 +46,9 @@ function engine(){
   e.run(FAKE);
   return e;
 }
-async function printJob(e,data){
+async function printJob(e,data,type){
   const n=e.run('__docs.length');
-  await e.run('window.printDocument('+J({type:'embroidery-job',filename:'j.pdf',deliver:'blob',data})+')');
+  await e.run('window.printDocument('+J({type:type||'embroidery-job',filename:'j.pdf',deliver:'blob',data})+')');
   return e.run('__docs['+n+']');
 }
 const BASE={documentType:'Embroidery Job',documentNumber:'PO-0142',poNumber:'PO-0142',articleName:'EFFORTLESS TEE | DEEP BLUE',articleCode:'GST073',
@@ -121,5 +121,49 @@ module.exports=async function(){
   const pos=fs.readFileSync(path.join(ROOT,'js/pos.js'),'utf8');
   s.ok('generateEmbroideryJobPdf is window-exposed and maps the PO fields',/window\.generateEmbroideryJobPdf=function/.test(pos)&&/type:'embroidery-job'/.test(pos)&&/articleCode:po\.code/.test(pos)&&/productImage:po\.imgFront/.test(pos));
   s.ok('no PO-creation UI was added',!/embroidery-job/.test(fs.readFileSync(path.join(ROOT,'index.html'),'utf8')));
+  /* ── Printing job copy (step 2) ── */
+  const PB=Object.assign({},BASE,{documentType:'Printing Job'});
+  const pd=await printJob(e,PB,'printing-job');
+  const PT=pd.log.text;
+  s.section('printing job: one A4 page, English only');
+  s.eq('a single page',pd.log.pages,1);
+  s.ok('no Urdu letter is drawn',!PT.some(t=>ARABIC.test(t.t)));
+  s.ok('footer label is Printing Job',PT.some(t=>/^GROOVY · Printing Job/.test(t.t)));
+  s.ok('Jameel is never fetched',!e.state.fetches.some(f=>/Jameel|Nastaleeq/i.test(f.url)));
+  s.section('printing job: typed items');
+  const pno=PT.find(t=>t.t==='PO-0142'&&t.size>=24);
+  s.ok('PO number 26pt top right',!!pno&&pno.size>=26&&pno.align==='right'&&pno.y<80);
+  const pac=PT.find(t=>t.t==='GST073');
+  s.ok('article code at 24pt or more',!!pac&&pac.size>=24);
+  s.ok('article name printed',PT.some(t=>t.t==='EFFORTLESS TEE | DEEP BLUE'));
+  s.ok('title PRINTING JOB (and not EMBROIDERY JOB)',PT.some(t=>t.t==='PRINTING JOB')&&!PT.some(t=>t.t==='EMBROIDERY JOB'));
+  s.ok('bold GROOVY wordmark',PT.some(t=>t.t==='GROOVY'&&t.mode==='fillThenStroke'));
+  s.eq('photo embedded once',pd.log.images.length,1);
+  const pd2=await printJob(e,Object.assign({},PB,{__productImg:null}),'printing-job');
+  s.ok('no image: nothing embedded, one page',pd2.log.images.length===0&&pd2.log.pages===1);
+  s.section('printing job: handwritten fields');
+  ['PLACEMENT','PANTONE CODE','PRINT NAME / DESIGN NAME','TOTAL ACTUAL CUT UNITS','ACTUAL CUT QUANTITY BY SIZE'].forEach(n=>s.ok(n+' labelled',PT.some(t=>t.t===n)));
+  const ruled=pd.log.line.filter(l=>l.draw===DARKC&&l.y1===l.y2&&l.x2-l.x1>200);
+  s.ok('PANTONE CODE has several (5) ruled lines',ruled.length>=9,String(ruled.length));
+  s.ok('same size rows as the PO, Size | Qty',['Small','Medium','Large','X-Large'].every(z=>PT.some(t=>t.t===z))&&PT.some(t=>t.t==='Size')&&PT.some(t=>t.t==='Qty'));
+  const tbox=pd.log.rect.find(r=>r.draw===DARKC&&r.lw>=1.5&&r.w>200);
+  s.ok('TOTAL ACTUAL CUT UNITS is a heavy dark box',!!tbox);
+  s.ok('no fabric sample box or label',!PT.some(t=>/Fabric sample/.test(t.t)));
+  s.ok('the box and table sit above the footer',pd.log.rect.every(r=>r.y+r.h<800));
+  s.section('printing job: red only where it belongs');
+  const psd=PT.find(t=>/^START DATE/.test(t.t));
+  s.ok('START DATE label red',!!psd&&psd.ink===RED);
+  const ped=PT.find(t=>t.t==='END DATE');
+  s.ok('END DATE red with a thick red line',!!ped&&ped.ink===RED&&pd.log.line.some(l=>l.draw===RED&&l.lw>=0.8&&l.y1>ped.y&&l.y1<ped.y+4));
+  const ptot=PT.find(t=>t.t==='TOTAL');
+  s.ok('red TOTAL row boxed at 1.5',!!ptot&&pd.log.rect.some(r=>r.draw===RED&&r.lw>=1.5&&r.w>200&&ptot.y>r.y&&ptot.y<r.y+r.h));
+  s.ok('title band red-bordered',pd.log.rect.some(r=>r.draw===RED&&r.st==='FD'&&r.w>500));
+  s.ok('red text is only date labels',PT.filter(t=>t.ink===RED).every(t=>/DATE/.test(t.t)||/^\d\d\/\d\d\/\d{4}$/.test(t.t)));
+  s.ok('every non-red line is neutral #262626',pd.log.rect.concat(pd.log.line).filter(l=>l.draw!==RED).every(l=>[DARKC,'0,0,0','204,204,204'].indexOf(l.draw)>=0));
+  s.section('printing job: wiring');
+  s.ok('registered: known, label, minimal, variant',/known = \['po', 'embroidery-job', 'printing-job'/.test(pe)&&/'printing-job': 'Printing Job'/.test(pe)&&/'printing-job': 'minimal'/.test(pe)&&/'printing-job': _renderPrintingJob/.test(pe));
+  s.ok('generatePrintingJobPdf mapped like the embroidery one',/window\.generatePrintingJobPdf=function/.test(pos)&&/type:'printing-job'/.test(pos)&&/documentType:'Printing Job'/.test(pos));
+  s.ok('both copies share the job helpers',/function _renderEmbroideryJob[\s\S]*_jobTop\(/.test(pe)&&/function _renderPrintingJob[\s\S]*_jobTop\(/.test(pe));
+  s.ok('no UI added for printing job',!/printing-job/.test(fs.readFileSync(path.join(ROOT,'index.html'),'utf8')));
   return s;
 };
