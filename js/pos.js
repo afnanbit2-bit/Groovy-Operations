@@ -590,6 +590,26 @@ window.deletePO=async function(fbKey,poId){
 };
 
 // ── PO Create ──
+// ── Job copies (Oct 2026) — which of the Embroidery / Printing / Washing job
+// sheets this PO will have printed. Stored as po.jobCopies, ALWAYS all three
+// keys as real booleans; a PO with no field (older POs) reads as all false.
+const _PO_JOBCOPY_KEYS=['embroidery','printing','washing'];
+const _PO_JOBCOPY_LABELS={embroidery:'Embroidery',printing:'Printing',washing:'Washing'};
+function _poJobCopiesOf(po){
+  const j=(po&&po.jobCopies&&typeof po.jobCopies==='object')?po.jobCopies:{};
+  const out={};_PO_JOBCOPY_KEYS.forEach(k=>{out[k]=j[k]===true;});return out;
+}
+function _poJobCopiesRead(){
+  const out={};_PO_JOBCOPY_KEYS.forEach(k=>{out[k]=!!(document.getElementById('po-jc-'+k)||{}).checked;});return out;
+}
+function _poJobCopiesCardHTML(po){
+  const cur=_poJobCopiesOf(po);
+  return`<div class="card" id="po-jobcopies-card"><div class="card-title">Job copies to print</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Tick the job sheets this PO needs. They print separately from the PO (outside its 2-page limit). Leave all unticked for none.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+    ${_PO_JOBCOPY_KEYS.map(k=>`<label for="po-jc-${k}" style="display:flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text);cursor:pointer"><input type="checkbox" id="po-jc-${k}" ${cur[k]?'checked ':''}style="width:18px;height:18px;accent-color:var(--dark);cursor:pointer">${_PO_JOBCOPY_LABELS[k]}</label>`).join('')}
+    </div></div>`;
+}
 function renderPOCreate(){
   if(!session.canPO)return'<div class="empty">Not authorized to create POs.</div>';
   return`<div class="page-head"><div class="page-title">New Production Order</div><div class="page-sub">Fields marked * required</div></div>
@@ -614,6 +634,7 @@ function renderPOCreate(){
       <label for="emb-not-required" style="font-size:13px;color:var(--muted);cursor:pointer">No embellishment required for this PO</label>
     </div>
   </div>
+  ${_poJobCopiesCardHTML(null)}
   <div class="card"><div class="card-title">Size breakdown *</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="0" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" oninput="window.updateRatio()"></div>`).join('')}
@@ -773,7 +794,7 @@ window.submitPO=async function(){
     // it hangs, onto the PO. Guarded — no Pattern Hub, no change; the
     // free-text `pattern` box below is never touched. See js/patterns.js.
     const _ptnFields=(typeof window.ptnPoFieldsFor==='function'?await window.ptnPoFieldsFor(code).catch(()=>({})):{});
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,jobCopies:_poJobCopiesRead(),notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     Object.assign(payload,_ptnFields);
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
@@ -835,6 +856,7 @@ function renderPOEditPage(){
     </div>
     <div style="font-size:12px;color:var(--muted);margin-top:6px">Corrects the record only — does not release or re-reserve fabric rolls. Use Fabric Inventory for that.</div>
   </div>
+  ${_poJobCopiesCardHTML(po)}
   <div class="card"><div class="card-title">Notes</div>
     <div class="field">
       <label>Notes for this PO (optional) — printed in <span style="color:var(--accent-urgent);font-weight:700">red</span> on the PO copy</label>
@@ -860,6 +882,7 @@ window.savePOEdit=async function(fbKey){
     store:document.getElementById('po-store')?.value.trim()||'',
     totalRoll:document.getElementById('po-rolls')?.value.trim()||'',
     notes:document.getElementById('po-notes')?.value.trim()||'',
+    jobCopies:_poJobCopiesRead(),
     editedBy:session.name,editedAt:new Date().toISOString()
   };
   // Pattern Hub (M6): re-stamp on edit — the article code can change.
