@@ -23,7 +23,7 @@ function checks(src){
   const codes=['AAA','BBB','CCC','DDD','EEE','FFF'];
   const prods=codes.map(c=>P(c+'-M','Art '+c,c==='DDD'?'':G));
   const items=codes.map((c,i)=>li(c+'-M',10-i,'2026-09-12'));
-  R('_siProducts='+J(prods)+';_siLineItems='+J(items)+';_siOrders=[];_siWeeklyCloses=[];_siAxCache=null;_siHistState="ok";_siHist=_siAxBuildHistory([]);_siSection="explorer";');
+  R('_siProducts='+J(prods)+';_siLineItems='+J(items)+';_siOrders=[];_siWeeklyCloses=[];_siAxCache=null;_siHistState="ok";_siHist=_siAxBuildHistory([]);_siSection="articles";');
   // a document whose input records focus, and whose result node records the scroll
   R('window.__foc=0;window.__sc=0;window.__inp={value:"",focus(){window.__foc++;},select(){},setSelectionRange(){}};window.__res={innerHTML:""};window.__body={innerHTML:""};window.__go={classList:{add(){},remove(){}},scrollIntoView(){window.__sc++;},focus(){}};'
    +'var _g0=document.getElementById;document.getElementById=function(i){return i==="si-ax-input"?window.__inp:i==="si-ax-results"?window.__res:i==="si-ax-body"?window.__body:i==="si-ax-result"?window.__go:null;};');
@@ -75,7 +75,7 @@ function checks(src){
   o['"/" does nothing while typing in an input, textarea, select or a contenteditable']=['INPUT','TEXTAREA','SELECT'].every(t=>slash({tagName:t}).foc===0)&&slash({tagName:'DIV',isContentEditable:true}).foc===0;
   o['"/" does nothing with Ctrl, Meta or Alt held']=slash(null,{ctrlKey:true}).foc===0&&slash(null,{metaKey:true}).foc===0&&slash(null,{altKey:true}).foc===0;
   o['"/" does nothing for another key']=slash(null,{key:'a'}).foc===0;
-  o['"/" does nothing on another Inventory Intel section or when the box is not on screen']=(()=>{R('_siSection="sku"');const x=slash().foc===0;R('_siSection="explorer"');return x;})();
+  o['"/" does nothing on another Inventory Intel section or when the box is not on screen']=(()=>{R('_siSection="sku"');const x=slash().foc===0;R('_siSection="articles"');return x;})();
   o['the listener is registered once, however often the section is painted']=(()=>{R('_siArticleExplorerSection();_siArticleExplorerSection()');return (a.state.listeners.keydown||[]).length===1;})();
   // ---- CSS
   o['css: the box is at least 48px tall, has a solid 2px token border and a visible focus ring']=/\.si-ax-sbox\{[^}]*min-height:52px[^}]*border:2px solid var\(--text\)/.test(CSS)&&/\.si-ax-sbox:focus-within\{outline:3px solid var\(--cat-notes\)/.test(CSS);
@@ -106,7 +106,7 @@ module.exports=async function(){
   brk('no cap message','return{ok:false,msg:\'You can compare at most \'','return{ok:false,msg:\'\'+\'You can compare at most \'.slice(0,0)+\'\'',['at the maximum the sixth is refused with a message, and the tray shows it']);
   brk('"/" ignores typing guard','if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||\'\')||t.isContentEditable))return false;','',['"/" does nothing while typing in an input, textarea, select or a contenteditable']);
   brk('"/" ignores modifiers','e.ctrlKey||e.metaKey||e.altKey','false',['"/" does nothing with Ctrl, Meta or Alt held']);
-  brk('"/" ignores the section','if(typeof _siSection===\'undefined\'||_siSection!==\'explorer\')return false;','',['"/" does nothing on another Inventory Intel section or when the box is not on screen']);
+  brk('"/" ignores the section','if(typeof _siSection===\'undefined\'||_siSection!==\'articles\')return false;','',['"/" does nothing on another Inventory Intel section or when the box is not on screen']);
   brk('"/" listener every paint','if(_siAxSlashWired||typeof document','if(typeof document',['the listener is registered once, however often the section is painted']);
   brk('"/" not prevented','if(e.preventDefault)e.preventDefault();\n    i.focus();','i.focus();',['"/" focuses the box and swallows the key when nothing is being typed']);
   brk('search box only on Search and Compare','${_siAxSearchBarHtml()}','${_siAxModeSel===\'search\'||_siAxModeSel===\'compare\'?_siAxSearchBarHtml():\'\'}',['the search box is on the overview tab, labelled, with a magnifier path and the / hint','the search box is on the portfolio tab, labelled, with a magnifier path and the / hint']);

@@ -126,7 +126,7 @@ function checks(src){
   o['SKU table: an expanded size row also opens its article']=/<tr class="si-sku-open"[^>]*data-code="AAA"/.test(html);
   o['SKU table: a group resolves through the ONE SKU-prefix rule (case and spaces)']=R('_siSkuArticleCode([{sku:"  aaa-m "}])')==='AAA'&&R('_siSkuArticleCode([{sku:""},{sku:"bbb-l"}])')==='BBB'&&R('_siSkuArticleCode([])')==='';
   const ok=R('window._siSkuOpen("aaa")');
-  o['SKU click: returns true and lands on the article page (search mode, that article, explorer tab)']=ok===true&&R('_siSection')==='explorer'&&R('_siAxModeSel')==='search'&&R('_siAxSel')==='AAA'&&/Art AAA/.test(a.el('si-content').innerHTML);
+  o['SKU click: returns true and lands on the article page (search mode, that article, explorer tab)']=ok===true&&R('_siSection')==='articles'&&R('_siAxModeSel')==='search'&&R('_siAxSel')==='AAA'&&/Art AAA/.test(a.el('si-content').innerHTML);
   o['SKU click: scroll goes to the top']=R('J=JSON.stringify(window.__sc)')==='[0]';
   o['SKU click: the entrance class is set, then removed after it ends']=a.el('si-content').classList.contains('si-ax-enter')&&(R('__tick(300)'),a.el('si-content').classList.contains('si-ax-enter'))===true&&(R('__tick(200)'),!a.el('si-content').classList.contains('si-ax-enter'));
   o['SKU click: the SKU table kept its sort, search, filters and expanded group']=R('_siSkuSort')==='s7'&&R('_siSkuDir')===-1&&R('_siSkuSearch')==='art'&&R('_siSkuExpanded.has("Art AAA|||Blue")')===true;

@@ -4,8 +4,9 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 let _siLoaded=false;
+let _siLinesScope='none',_siLinesCut='';
 let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=null,_siPrevSnapshot=null,_siSyncMeta={};
-let _siSkuSearch='',_siSkuSort='s7',_siSkuDir=-1,_siSection='overview';
+let _siSkuSearch='',_siSkuSort='s7',_siSkuDir=-1,_siSection='today',_siSub='',_siSecTouched=false,_siLandDone=false;
 let _siSkuLimit=200;        // SKU table page size; grows by 200 via Load more
 let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
 let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt on data load
@@ -118,7 +119,7 @@ function siProgressNext(prev,raw){return Math.max(prev,raw);} // never backwards
 function _siNow(){return Date.now();}
 function _siRand(){return Math.random();}
 let _siLoad=_siLoadFresh();
-const _siRetryCtl={timer:null,tick:null,timer2:null,running:{},proms:{},gen:0};
+const _siRetryCtl={timer:null,tick:null,timer2:null,auto:null,running:{},proms:{},gen:0};
 function _siLoadFresh(){
   return{state:{},pct:0,startedAt:0,shownAt:0,shown:false,slow:false,final:false,finishing:false,done:false,resolved:false,resume:false,
     complete:false,attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
@@ -145,30 +146,49 @@ function _siLoadErr(e){
 // ── The reads. Each assigns its own result the moment it returns, so a later failure keeps it. ──
 function _siColRunner(id,col,q){
   return async function(){
+    const stamps=await _siFrStampsPre(); // captured BEFORE the read, so a sync landing mid-read can only make us under-claim
     const s=await getDocs(q?q():collection(db,col));
     const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
     if(id==='products'){_siProducts=a;_siSeasonMapCache=null;_siProdMapCache=null;}
     else if(id==='orders')_siOrders=a;
     else if(id==='lines')_siLineItems=a;
     else _siWeeklyCloses=a;
-    _siColl[id]=true;
+    _siColl[id]=true;_siFrNote(id,stamps);
     if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
   };
 }
 const _siRunners={
   products:_siColRunner('products','shopify_products'),
   orders:_siColRunner('orders','shopify_orders'),
-  lines:_siColRunner('lines','shopify_line_items'),
+  // PHASE 1 of the line-item read: only the last _SI_WIN_DAYS days (single-field range on order_created_at, no composite index).
+  // fresh=true is the freshness refresh (a moved order sync): it ALWAYS re-reads the window, with the SAME cut as before so the window and the
+  // phase-2 read stay disjoint; if the whole history was loaded, it goes back to 'window' and phase 2 is marked as needing a reload
+  // (_siFull idle) — the older rows are dropped, never mixed with a newer window without being re-read. A phase-2 read still IN FLIGHT is left
+  // alone: it is disjoint from the window and concatenates onto whatever _siLineItems is when it lands.
+  lines:async function(fresh){
+    if(_siLinesScope==='full'&&!fresh)return;
+    const stamps=await _siFrStampsPre(); // captured BEFORE the read, so a sync landing mid-read can only make us under-claim
+    const cut=(fresh&&_siLinesCut)?_siLinesCut:_siPktDate(-_SI_WIN_DAYS);
+    const s=await getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','>=',cut)));
+    const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
+    if(_siLinesScope==='full'||_siFull.st==='done'){_siFull.st='idle';_siFull.err=null;_siFull.n=0;_siFull.tok++;} // checked AFTER the await: a phase 2 that landed meanwhile counts
+    _siLineItems=a;_siLinesScope='window';_siLinesCut=cut;
+    _siFrNote('lines',stamps);
+    _siColl.lines=true;
+    if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
+  },
   closes:_siColRunner('closes','shopify_weekly_closes',()=>query(collection(db,'shopify_weekly_closes'),orderBy('week_ending','desc'))),
   snap:async function(){
+    const stamps=await _siFrStampsPre();
     const today=_siPktDate(0),yesterday=_siPktDate(-1);
     let snap=await getDoc(doc(db,'shopify_inventory_snapshots',today));
     if(!snap.exists())snap=await getDoc(doc(db,'shopify_inventory_snapshots',yesterday));
     if(snap.exists())_siSnapshot=snap.data();
     if(!_siSnapshot)throw new Error('Inventory snapshot unavailable (no snapshot for today or yesterday).');
+    _siFrNote('snap',stamps);
   },
   meta:async function(){ // never fatal: the page says "unknown" for what is missing
-    try{const snap=await getDoc(doc(db,'shopify_inventory_snapshots',_siPktDate(-7)));if(snap.exists())_siPrevSnapshot=snap.data();}catch(_){}
+    try{const snap=await getDoc(doc(db,'shopify_inventory_snapshots',_siPktDate(-7)));if(snap.exists())_siPrevSnapshot=snap.data();_siFr.prevDay=_siPktDate(-7);}catch(_){}
     try{
       const r=await Promise.all([getDoc(doc(db,'shopify_sync_meta','catalog_sync')),getDoc(doc(db,'shopify_sync_meta','order_backfill')),getDoc(doc(db,'shopify_sync_meta','inventory_sync'))]);
       _siSyncMeta={catalog:r[0].exists()?r[0].data():{},orders:r[1].exists()?r[1].data():{},inventory:r[2].exists()?r[2].data():{}};
@@ -193,6 +213,7 @@ function siRetryClearTimers(){
   if(C.timer){clearTimeout(C.timer);C.timer=null;}
   if(C.tick){clearInterval(C.tick);C.tick=null;}
   if(C.timer2){clearTimeout(C.timer2);C.timer2=null;}
+  if(C.auto){clearInterval(C.auto);C.auto=null;}
 }
 function siRetryCancel(){siRetryClearTimers();_siRetryCtl.gen++;}
 function _siLoadClearWatch(){
@@ -335,6 +356,7 @@ function _siLoadSucceed(){
   const late=L.resolved; // the page's waiter already resolved: a retry in place, so we repaint the page ourselves
   const finish=()=>{
     L.finishing=false;L.final=true;L.complete=true;
+    _siFrStart(false);
     if(late){if(_siLoadAlive()&&typeof document!=='undefined'&&document.getElementById){const m=document.getElementById('main-content');if(m)m.innerHTML=renderShopifyDashboard();}}
     else _siLoadResolveOnce();
   };
@@ -416,7 +438,7 @@ function _siLoadView(){
   }
   const parts=[];
   if(_siColl.products||_siCollectionsLoaded)parts.push(_siFmtN(_siProducts.length)+' catalog entries');
-  if(_siColl.lines||_siCollectionsLoaded)parts.push(_siFmtN(_siLineItems.length)+' line items');
+  if(_siColl.lines||_siCollectionsLoaded)parts.push(_siFmtN(_siLineItems.length)+' line items'+(_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''));
   const retryable=mode==='fail'?fails:[];
   return{pct,mode,stage,sub:parts.join(' · '),detail,cd,failed,retryable,
     bucket:Math.floor(pct/25),text:stage+', '+pct+' percent',frac:pct/100,
@@ -478,10 +500,87 @@ function siPaintLoad(){
 (function(){ // leaving the page cancels every timer and pending retry
   if(typeof window!=='undefined'&&typeof window.showPage==='function'&&!window.showPage.__si){
     const o=window.showPage;
-    const w=function(id){if(id!=='shopify-intel')_siLoadLeave();return o.apply(this,arguments);};
+    const w=function(id){if(id!=='shopify-intel')_siLoadLeave();const r=o.apply(this,arguments);if(id==='shopify-intel'&&_siLoaded)_siFrStart(true);return r;};
     w.__si=true;window.showPage=w;
   }
 })();
+
+// ═══ Line items in two phases (Oct 2026, load-time stage 2) ═════════════════════════════════════════════════════════════
+// Phase 1 (the 'lines' stage above, inside the percentage) reads only the last _SI_WIN_DAYS days of shopify_line_items:
+//   where('order_created_at','>=',<PKT day>) — one field, so Firestore's automatic single-field index serves it (firestore.indexes.json
+//   has no fieldOverrides that exempt it). order_created_at is Shopify's offset timestamp string; 'YYYY-MM-DD' compares correctly against it.
+// Phase 2 (this block) reads ONLY THE REST, where('order_created_at','<',<same day>) — disjoint from phase 1, so the two together cost
+//   exactly what the old single read cost and nothing is read twice. It runs only when a view that needs the whole history is opened
+//   (_SI_FULL_SECTIONS) or when the person presses "Load full history". It is outside the percentage: its size is not known in advance, so
+//   it shows an indeterminate bar and never a made-up number. It has its own state, a timeout and a manual Retry.
+// A figure that needs the whole history is never shown from the window as if it were complete: it says "needs full history".
+const _SI_WIN_DAYS=90,_SI_FULL_TIMEOUT_MS=120000;
+// Section / sub-view ids (the four-section model: _SI_SECTIONS + _SI_SUBVIEWS) that need the whole history. Articles covers its Explorer AND its Type & season sub-view.
+const _SI_FULL_SECTIONS=['attention','articles','ignored'];
+const _siFull={st:'idle',err:null,tries:0,n:0,tok:0};
+function _siFullHist(){return _siLinesScope!=='window';} // 'none' = line items were not read through the window (nothing loaded yet, or data placed directly): never gate it
+function _siLinesPartial(){return _siLinesScope==='window';}
+// Which gated id is on screen: an open sub-view first (Ignored), else its section; '' when this view works from the window.
+function _siFullKey(){
+  const r=_siSecResolve(_siSection);
+  if(_siSub&&_SI_FULL_SECTIONS.indexOf(_siSub)>=0)return _siSub;
+  return _SI_FULL_SECTIONS.indexOf(r.sec)>=0?r.sec:'';
+}
+function _siFullLabel(){return({attention:'Needs Attention',articles:_siSub==='typeseason'?'Type & season':'The Article Explorer',ignored:'The Ignored list'})[_siFullKey()]||'This view';}
+// start (or, manual, restart after a failure) the read of the older line items. Never reads twice; returns nothing.
+function _siFullStart(manual){
+  const F=_siFull;
+  if(!_siLinesPartial()||F.st==='loading'||F.st==='done')return;
+  if(F.st==='failed'&&!manual)return;
+  if(typeof getDocs!=='function'||typeof where!=='function'){F.st='failed';F.err={msg:'The Firestore query helpers are not available on this build.',code:'',cls:'other',at:_siNow()};return;}
+  F.st='loading';F.err=null;F.tries++;
+  const t=++F.tok,cut=_siLinesCut;
+  const guard=setTimeout(()=>{if(F.tok===t&&F.st==='loading'){F.st='failed';F.err={msg:'Timed out after '+(_SI_FULL_TIMEOUT_MS/1000)+'s while reading older line items',code:'timeout',cls:'timeout',at:_siNow()};_siFullPaint();}},_SI_FULL_TIMEOUT_MS);
+  let p;try{p=Promise.resolve(getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','<',cut))));}catch(e){p=Promise.reject(e);}
+  p.then(s=>{
+    clearTimeout(guard); // a read that lands after the timeout is still good data: accept it
+    if(!_siLinesPartial()||_siLinesCut!==cut)return;
+    const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
+    _siLineItems=_siLineItems.concat(a); // a new array: every cache keyed on it rebuilds
+    _siLinesScope='full';F.st='done';F.err=null;F.n=a.length;
+    _siFullPaint();
+  },e=>{
+    clearTimeout(guard);
+    if(F.tok!==t||_siFullHist())return;
+    F.st='failed';F.err=_siLoadErr(e);_siFullPaint();
+  });
+}
+window._siFullLoad=function(){_siFullStart(true);_siFullPaint();};
+function _siFullErrText(){
+  const e=_siFull.err;if(!e)return'';
+  return e.msg+(e.cls==='quota'?' — this is a Firestore read quota problem, not a bug here (Firebase Console → Usage).':e.cls==='permission'?' — permission refused: firestore.rules may need republishing.':'');
+}
+function _siFullBtn(label){return'<button type="button" class="si-full-btn" onclick="window._siFullLoad()">'+label+'</button>';}
+// The card that REPLACES a view that cannot be shown from the window. Starting the read is the caller's job (_siRenderSection).
+function _siFullGateHtml(label){
+  const F=_siFull;
+  const head='<div class="card-title">'+_siEsc(label||_siFullLabel())+' needs the full sales history</div>';
+  if(F.st==='failed')return'<div class="card si-full-card fail" id="si-full-gate" data-st="failed" role="alert">'+head+'<div class="si-full-txt">Could not read the older line items. '+_siEsc(_siFullErrText())+'</div><div>'+_siFullBtn('Retry')+'</div></div>';
+  return'<div class="card si-full-card" id="si-full-gate" data-st="'+F.st+'" role="status">'+head+'<div class="si-full-txt">It works from every order line since the store opened, and only the last '+_SI_WIN_DAYS+' days are loaded so far. Reading the older line items…</div><div class="si-full-bar"><i></i></div><div class="si-full-note">The size of this read is not known in advance, so no percentage is shown.</div></div>';
+}
+// The strip above a view that is correct from the window for most of its figures.
+function _siFullStripHtml(){
+  if(!_siLinesPartial())return'';
+  const F=_siFull;
+  const cut=_siEsc(_siLinesCut);
+  if(F.st==='loading')return'<div class="si-full-strip" id="si-full-strip" data-st="loading" role="status"><span>Reading the older line items…</span><span class="si-full-bar sm"><i></i></span></div>';
+  if(F.st==='failed')return'<div class="si-full-strip fail" id="si-full-strip" data-st="failed" role="alert"><span>Could not read the older line items. '+_siEsc(_siFullErrText())+'</span>'+_siFullBtn('Retry')+'</div>';
+  return'<div class="si-full-strip" id="si-full-strip" data-st="idle"><span>Showing the last '+_SI_WIN_DAYS+' days of sales (from '+cut+'). Figures that need the whole history say “needs full history”.</span>'+_siFullBtn('Load full history')+'</div>';
+}
+function _siFullNeedsCell(){return'<span class="si-full-need">needs full history</span>';}
+function _siFullPaint(){
+  if(typeof document==='undefined'||!document.getElementById||!_siLoaded||!_siLoadAlive())return;
+  try{
+    if(_siFullHist()){const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();_siRefreshContent();return;}
+    const g=document.getElementById('si-full-gate');if(g)g.outerHTML=_siFullGateHtml(_siFullLabel());
+    const s=document.getElementById('si-full-strip');if(s)s.outerHTML=_siFullStripHtml();
+  }catch(_){}
+}
 
 // ── Data loader ─────────────────────────────────────────────────────
 // Resolves when the load has SETTLED (loaded, or failed for good after its automatic retries); _siLoaded says which.
@@ -497,6 +596,234 @@ async function loadShopifyData(){
   if(_siMetaState==='idle')_siMetaLoad(); // the shared ignore list: tiny, in parallel, outside the percentage; a failed read hides nothing
   if(ids.length)_siLoadRunStages(ids);else _siLoadSettle();
   return _siLoad.promise;
+}
+
+// ═══ Freshness: "Data as of", a cheap Refresh and a 10-minute meta-gated auto-refresh ═══
+// What is on screen was read at some moment. This block says WHEN (per source, from the stamps the sync functions write into
+// shopify_sync_meta), flags a source older than twice its schedule IN WORDS, and re-reads only what moved:
+//   1. read the small meta docs (catalog_sync, order_sync, order_refresh[+_now], inventory_sync) — never a big collection;
+//   2. compare each source's last_success_at with the stamp captured BEFORE this page's last read of the collections it feeds;
+//   3. re-read exactly the collections whose source moved. Nothing moved = zero big reads (the Store 429 read-quota lesson).
+// The stamp stored for a collection is the one captured BEFORE its read began, so a sync landing mid-read can only make the page
+// UNDER-claim freshness (one extra read next time), never over-claim it. A failed check or read leaves the old data AND the old
+// stamp, so the line keeps saying how old it really is. Closes have no sync doc (weekly job): re-read when 24h old.
+// Auto-refresh: ONE interval (held in _siRetryCtl, so leaving the page clears it with every other timer), a no-op while the tab is
+// hidden, a catch-up when it becomes visible or the page is re-entered. New data is applied through the section's own repaint, and
+// DEFERRED (a "Show new data" button) while an input has focus or a situation drawer / lead-time editor is open — never destroying them.
+const _SI_FR_SOURCES=[ // intervalH = hours between scheduled runs (netlify.toml): catalog 0 4 * * *, orders 0 */4 * * *, refresh 20 */4 * * *, snapshot 0 5,17 * * *
+  {id:'catalog',  label:'Catalog',              noun:'The catalog',          intervalH:24},
+  {id:'orders',   label:'Orders and line items',noun:'Orders and line items',intervalH:4},
+  {id:'refresh',  label:'Order status refresh', noun:'The order status refresh',intervalH:4},
+  {id:'inventory',label:'Stock snapshot',       noun:'The stock snapshot',   intervalH:12},
+];
+const _SI_FR_DOCS={catalog:['catalog_sync'],orders:['order_sync'],refresh:['order_refresh','order_refresh_now'],inventory:['inventory_sync']};
+const _SI_FR_GATE={products:['catalog'],orders:['orders','refresh'],lines:['orders','refresh'],snap:['inventory']};
+const _SI_FR_AUTO_MS=600000,_SI_FR_TICK_MS=60000,_SI_FR_CLOSES_MS=86400000,_SI_FR_STALE_X=2,_SI_FR_META_MS=8000,_SI_FR_READ_MS=90000;
+const _siFr={seen:{},readAt:{},checkedAt:0,busy:false,pin:null,pre:null,state:{},stages:[],pct:0,fails:{},check:null,last:null,docs:null,
+  pending:false,detOpen:false,prevDay:'',histFail:'',wired:false};
+function _siFrAge(ms){
+  if(ms==null||!isFinite(ms))return'';
+  if(ms<60000)return'under a minute';
+  const m=Math.round(ms/60000);if(m<60)return m+(m===1?' minute':' minutes');
+  const h=Math.round(ms/3600000);if(h<48)return h+(h===1?' hour':' hours');
+  const d=Math.round(ms/86400000);return d+' days';
+}
+function _siFrFmt(ms){
+  if(ms==null)return'';
+  const d=new Date(ms+5*3600000),M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],p=n=>(n<10?'0':'')+n;
+  return d.getUTCDate()+' '+M[d.getUTCMonth()]+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes())+' PKT';
+}
+function _siFrClock(ms){const d=new Date(ms+5*3600000),p=n=>(n<10?'0':'')+n;return p(d.getUTCHours())+':'+p(d.getUTCMinutes());}
+// Read the small meta docs. Rejects if ANY read fails (a partial answer cannot prove "nothing moved").
+async function _siFrReadMeta(){
+  const keys=Object.keys(_SI_FR_DOCS),jobs=[];
+  keys.forEach(k=>_SI_FR_DOCS[k].forEach(n=>jobs.push([k,n])));
+  const r=await Promise.all(jobs.map(j=>getDoc(doc(db,'shopify_sync_meta',j[1]))));
+  const docs={},stamps={};
+  keys.forEach(k=>{docs[k]=null;stamps[k]=null;});
+  jobs.forEach((j,i)=>{
+    const d=r[i]&&r[i].exists()?r[i].data():null,ms=d?_siAxSnapMs(d.last_success_at):null,k=j[0];
+    if(d&&(docs[k]==null||(ms!=null&&(stamps[k]==null||ms>=stamps[k]))))docs[k]=d;
+    if(ms!=null&&(stamps[k]==null||ms>stamps[k]))stamps[k]=ms;
+  });
+  return{docs,stamps,at:_siNow()};
+}
+// The stamps a collection read is filed under: the pinned ones during a refresh, else one shared, bounded read made now.
+// Failure or a slow answer = null (the age is then shown as unknown, never guessed) and the collection read goes ahead.
+function _siFrStampsPre(){
+  if(_siFr.pin)return Promise.resolve(_siFr.pin);
+  if(_siFr.pre)return _siFr.pre;
+  let t=null;
+  const p=Promise.race([_siFrReadMeta().then(m=>{_siFr.docs=m.docs;return m.stamps;}),new Promise(r=>{t=setTimeout(()=>r(null),_SI_FR_META_MS);})]).catch(()=>null).then(v=>{clearTimeout(t);_siFr.pre=null;return v;});
+  return _siFr.pre=p;
+}
+function _siFrNote(id,stamps){_siFr.seen[id]=stamps||null;_siFr.readAt[id]=_siNow();}
+// Pure: which collections need a re-read, given the stamps just read. A source whose stamp is missing now cannot be judged (kept);
+// a collection with NO recorded stamp cannot be proven fresh (re-read).
+function _siFrMoved(stamps,seen,readAt,now,free){
+  const out=[];
+  Object.keys(_SI_FR_GATE).forEach(id=>{
+    if(free&&!free(id))return;
+    const was=seen[id];let moved=false;
+    _SI_FR_GATE[id].forEach(k=>{const n=stamps?stamps[k]:null;if(n==null)return;const o=was?was[k]:null;if(o==null||n>o)moved=true;});
+    if(moved)out.push(id);
+  });
+  if((!free||free('closes'))&&(!readAt.closes||now-readAt.closes>=_SI_FR_CLOSES_MS))out.push('closes');
+  return out;
+}
+// Pure: the model the strip draws; `now` is passed in so any moment can be tested.
+function _siFrView(now){
+  const F=_siFr,docs=F.docs||{},meta=_siSyncMeta||{};
+  const min2=(a,b)=>a==null||b==null?null:Math.min(a,b);
+  const ms={
+    catalog:F.seen.products?F.seen.products.catalog:null,
+    orders:F.seen.orders&&F.seen.lines?min2(F.seen.orders.orders,F.seen.lines.orders):null,
+    refresh:F.seen.orders&&F.seen.lines?min2(F.seen.orders.refresh,F.seen.lines.refresh):null,
+    inventory:F.seen.snap?F.seen.snap.inventory:null,
+  };
+  const snapMs=_siSnapshot?_siAxSnapMs(_siSnapshot.snapshot_at):null;
+  if(snapMs!=null)ms.inventory=ms.inventory==null?snapMs:Math.min(ms.inventory,snapMs); // the snapshot's own time is the truest stock timestamp
+  const sources=_SI_FR_SOURCES.map(s=>{
+    const t=ms[s.id],age=t==null?null:Math.max(0,now-t),limit=s.intervalH*_SI_FR_STALE_X*3600000;
+    const d=docs[s.id]||(s.id==='catalog'?meta.catalog:s.id==='inventory'?meta.inventory:s.id==='orders'?meta.orderSync:null);
+    let state='ok',words='';
+    if(t==null){state=s.id==='refresh'?'quiet':'unknown';words=s.id==='refresh'?'':s.noun+': age unknown — the sync stamp could not be read.';}
+    else if(age>limit){state='stale';words=s.noun+' '+(s.id==='orders'?'are':'is')+' '+_siFrAge(age)+' old — more than twice the '+s.intervalH+'-hour schedule, so the sync may have stopped.';}
+    if(d&&d.last_status==='error'&&state!=='stale'){state='failed';words='The last run of '+s.noun.toLowerCase()+' failed'+(d.last_error?' ('+String(d.last_error)+')':'')+'; the data shown is from the run before.';}
+    return{id:s.id,label:s.label,ms:t,ageMs:age,intervalH:s.intervalH,state,words};
+  });
+  const core=sources.filter(s=>s.id!=='refresh'),known=core.filter(s=>s.ms!=null);
+  let oldest=null;known.forEach(s=>{if(!oldest||s.ms<oldest.ms)oldest=s;});
+  const unknownAny=core.some(s=>s.ms==null);
+  let line;
+  if(oldest)line='Data as of '+_siFrFmt(oldest.ms)+' — oldest source: '+oldest.label.toLowerCase()+', '+_siFrAge(now-oldest.ms)+' ago'+(unknownAny?'; another source’s age is unknown':'');
+  else line='Data age unknown — the sync stamps could not be read';
+  let status='',statusKind='';
+  const fl=Object.keys(F.fails);
+  if(F.busy){status='Refreshing'+(F.stages.length>1?' '+F.stages.filter(s=>s.id!=='meta').map(s=>_siStage(s.id).label.toLowerCase()).join(', '):' — checking what changed')+'… '+F.pct+'%';statusKind='busy';}
+  else if(F.check&&!F.check.ok){status='Could not check for new data ('+F.check.err+'). Still showing data from '+(oldest?_siFrFmt(oldest.ms):'an unknown time')+'.';statusKind='err';}
+  else if(fl.length){status='Could not refresh '+fl.map(id=>_siStage(id).label.toLowerCase()).join(', ')+' ('+F.fails[fl[0]].msg+'). Still showing the earlier data.';statusKind='err';}
+  else if(F.histFail){status='Stock history was not refreshed ('+F.histFail+'); its figures are from the earlier read.';statusKind='err';}
+  else if(F.last)status=F.last.read.length?'Updated '+F.last.read.map(id=>_siStage(id).label.toLowerCase()).join(', ')+' at '+_siFrClock(F.last.at)+'.':'Checked '+_siFrClock(F.last.at)+' — nothing new.';
+  if(F.pending&&!F.busy&&statusKind!=='err'){status='New data is loaded but not shown yet, so nothing you are working on moves.';statusKind='pending';}
+  const bad=sources.filter(s=>s.words&&s.state!=='quiet');
+  return{line,oldest,sources,closesAt:F.readAt.closes||null,status,statusKind,busy:F.busy,pct:F.pct,pending:F.pending,
+    stale:sources.some(s=>s.state==='stale'),warnings:bad.map(s=>s.words)};
+}
+function _siFrHtml(){
+  const now=_siNow(),v=_siFrView(now);
+  const tagOf={ok:'on schedule',stale:'stale',failed:'last run failed',unknown:'unknown',quiet:''};
+  const rows=v.sources.map(s=>'<li class="si-fr-src '+s.state+'"><b>'+_siEsc(s.label)+'</b> — '+(s.ms==null?_siEsc(s.state==='quiet'?'not recorded yet':'age unknown'):_siEsc(_siFrFmt(s.ms)+' ('+_siFrAge(s.ageMs)+' ago)'))+' <span class="si-fr-tag">'+_siEsc(tagOf[s.state])+'</span> <span class="si-fr-sch">runs about every '+s.intervalH+' h</span></li>').join('')
+    +'<li class="si-fr-src"><b>Weekly closes</b> — '+(v.closesAt?_siEsc('read '+_siFrFmt(v.closesAt)):'not read yet')+' <span class="si-fr-sch">re-read daily</span></li>';
+  const tip=v.sources.filter(s=>s.ms!=null).map(s=>s.label+': '+_siFrAge(s.ageMs)+' old').join('\n');
+  const warn=v.warnings.length?'<div class="si-fr-warn" role="status"><b>'+(v.stale?'Stale data.':'Check the sync.')+'</b> '+_siEsc(v.warnings.join(' '))+'</div>':'';
+  return'<div class="si-fr-row"><span class="si-fr-line" title="'+_siEsc(tip)+'">'+_siEsc(v.line)+'</span>'
+    +'<button type="button" id="si-fr-btn" class="si-fr-btn" aria-disabled="'+(v.busy?'true':'false')+'" onclick="window._siFrRefresh()">'+(v.busy?'Refreshing…':'Refresh')+'</button>'
+    +(v.pending?'<button type="button" class="si-fr-btn" onclick="window._siFrShow()">Show new data</button>':'')+'</div>'
+    +(v.busy?'<div class="si-fr-bar" aria-hidden="true"><i style="width:'+v.pct+'%"></i></div>':'')
+    +(v.status?'<div class="si-fr-st '+v.statusKind+'" id="si-fr-st" role="'+(v.statusKind==='err'?'alert':'status')+'">'+_siEsc(v.status)+'</div>':'')
+    +warn
+    +'<details class="si-fr-det" id="si-fr-det"'+(_siFr.detOpen?' open':'')+' ontoggle="window._siFrDet(this.open)"><summary>Each source</summary><ul>'+rows+'</ul></details>';
+}
+window._siFrDet=function(o){_siFr.detOpen=!!o;};
+function _siFrPaint(){
+  if(typeof document==='undefined'||!document.getElementById)return;
+  const el=document.getElementById('si-fr');if(!el)return;
+  const had=document.activeElement&&document.activeElement.id==='si-fr-btn';
+  el.innerHTML=_siFrHtml();
+  if(had){const b=document.getElementById('si-fr-btn');if(b&&b.focus)try{b.focus();}catch(_){}}
+}
+// Is anything on the page in the middle of being used? Then new data waits behind a button instead of repainting over it.
+function _siFrUiBusy(){
+  if(_siNaSel||_siAxOvSit||_siAxLtEdit)return true;
+  try{
+    const a=typeof document!=='undefined'?document.activeElement:null;
+    if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName||'')&&a.id!=='si-fr-btn')return true;
+    if(a&&a.isContentEditable)return true;
+  }catch(_){}
+  return false;
+}
+function _siFrRepaintData(){
+  let y=0,top=0,m=null;
+  try{y=window.scrollY||0;m=document.getElementById('main-content');top=m?m.scrollTop:0;}catch(_){}
+  _siIgRepaint();
+  try{if(m&&top)m.scrollTop=top;if(y&&typeof window.scrollTo==='function')window.scrollTo(0,y);}catch(_){}
+}
+function _siFrApply(force){
+  if(!_siLoaded||!_siLoadAlive())return;
+  if(!force&&_siFrUiBusy()){_siFr.pending=true;return;}
+  _siFr.pending=false;_siFrRepaintData();
+}
+window._siFrShow=function(){_siFrApply(true);_siFrPaint();};
+function _siFrIsHidden(){try{return typeof document!=='undefined'&&(document.hidden===true||document.visibilityState==='hidden');}catch(_){return false;}}
+// ── The refresh ──
+async function siRefresh(o){
+  const F=_siFr,C=_siRetryCtl;
+  if(!_siLoaded||!_siLoadAlive())return{skipped:'not-ready'};
+  if(F.busy)return{skipped:'busy'};
+  const gen=C.gen;
+  F.busy=true;F.fails={};F.check=null;F.histFail='';F.stages=[{id:'meta',w:3}];F.state={meta:'active'};F.pct=0;
+  _siFrPaint();
+  const finish=()=>{F.busy=false;F.pin=null;};
+  let meta;
+  try{meta=await _siFrReadMeta();}
+  catch(e){finish();F.checkedAt=_siNow();F.check={ok:false,err:_siLoadErr(e).msg,at:_siNow()};_siFrPaint();return{error:'meta'};}
+  if(C.gen!==gen){finish();return{cancelled:true};}
+  F.checkedAt=_siNow();F.docs=meta.docs;
+  if(meta.docs.catalog)_siSyncMeta.catalog=meta.docs.catalog;
+  if(meta.docs.inventory)_siSyncMeta.inventory=meta.docs.inventory;
+  if(meta.docs.orders)_siSyncMeta.orderSync=meta.docs.orders;
+  F.state.meta='done';
+  const ids=_siFrMoved(meta.stamps,F.seen,F.readAt,_siNow(),id=>!C.running[id]);
+  if(!ids.length){finish();F.last={at:_siNow(),read:[]};F.pct=100;_siFrPaint();return{read:[]};}
+  F.pin=meta.stamps;
+  ids.forEach(id=>{F.stages.push({id,w:_siStage(id).w});F.state[id]='active';});
+  F.pct=siProgressNext(0,siProgress(F.stages,F.state));_siFrPaint();
+  const done=[];
+  await Promise.all(ids.map(async id=>{
+    C.running[id]=true;
+    let tm=null;
+    try{
+      await Promise.race([Promise.resolve().then(()=>_siRunners[id](true)),new Promise((_,rej)=>{tm=setTimeout(()=>rej(Object.assign(new Error('timed out after '+(_SI_FR_READ_MS/1000)+'s'),{code:'timeout'})),_SI_FR_READ_MS);})]);
+      _siFrNote(id,meta.stamps);F.state[id]='done';done.push(id);
+    }catch(e){F.state[id]='failed';F.fails[id]=_siLoadErr(e);}
+    finally{clearTimeout(tm);C.running[id]=false;}
+    F.pct=siProgressNext(F.pct,siProgress(F.stages,F.state));if(C.gen===gen)_siFrPaint();
+  }));
+  if(C.gen!==gen){finish();return{cancelled:true,read:done};}
+  if(done.indexOf('snap')>=0){
+    const day=_siPktDate(-7);
+    if(F.prevDay!==day){try{const s=await getDoc(doc(db,'shopify_inventory_snapshots',day));if(s.exists())_siPrevSnapshot=s.data();F.prevDay=day;}catch(_){}}
+    if(_siHistState==='ok'&&!_siHistPromise){ // only the days newer than the cached ones (warm cache); never the shared "loading" state, so nothing blanks
+      try{const r=await _siAxReadFolds(false);_siHist=_siAxHistoryFromFolds(r.folds);_siHistLast={read:r.read,warm:r.warm};_siHistCacheWrite(r.folds,r.fullAt);_siAxCache=null;}
+      catch(e){F.histFail=_siLoadErr(e).msg;}
+    }
+    if(C.gen!==gen){finish();return{cancelled:true,read:done};}
+  }
+  finish();
+  F.last={at:_siNow(),read:done.slice()};if(!Object.keys(F.fails).length)F.pct=100;
+  if(done.length)_siFrApply(false);
+  _siFrPaint();
+  return{read:done,failed:Object.keys(F.fails)};
+}
+window._siFrRefresh=function(){if(_siFr.busy)return;return siRefresh();};
+// ── The 10-minute timer: one interval, held in the controller, so leaving the page clears it with every other timer ──
+function _siFrTick(){
+  const F=_siFr;
+  if(!_siLoaded||!_siLoadAlive()){siRetryClearTimers();return;}
+  if(_siFrIsHidden())return;               // paused while the tab is hidden; the catch-up on becoming visible does the check
+  _siFrPaint();                             // the ages move every minute
+  if(!F.busy&&_siNow()-F.checkedAt>=_SI_FR_AUTO_MS)siRefresh();
+}
+function _siFrStart(catchUp){
+  const C=_siRetryCtl,F=_siFr;
+  if(C.auto){clearInterval(C.auto);C.auto=null;}   // never two timers
+  if(!F.checkedAt)F.checkedAt=_siNow();
+  C.auto=setInterval(_siFrTick,_SI_FR_TICK_MS);
+  if(!F.wired&&typeof document!=='undefined'&&document.addEventListener){
+    F.wired=true;document.addEventListener('visibilitychange',()=>{if(!_siFrIsHidden()&&_siLoaded&&_siLoadAlive()&&_siRetryCtl.auto)_siFrTick();});
+  }
+  if(catchUp)_siFrTick();
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -607,13 +934,14 @@ function _siIgRepaint(){
     if(_siAxOvSit&&_siIgnored(_siAxOvSit))_siAxOvSit='';
     const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
     if(_siSection==='attention'&&typeof window._siNaRepaint==='function')window._siNaRepaint();
-    else if(_siSection==='explorer')_siAxRepaintAll();
+    else if(_siSection==='articles'&&_siSub==='typeseason')_siTsRepaint();
+    else if(_siSection==='articles')_siAxRepaintAll();
     else _siRefreshContent();
   }catch(_){}
 }
 function _siIgUser(){return typeof session!=='undefined'&&session&&session.u?String(session.u):'';}
 // The ONE writer. Optimistic: memory first, then a merge write of the allowed fields only; a refusal puts memory back and says so.
-async function _siIgWrite(code,fields,okMsg,verb){
+async function _siIgWrite(code,fields,okMsg,verb,what){
   if(!_SI_IG_CODE.test(code)){if(typeof showToast==='function')showToast('This article code cannot be saved to the ignore list.',true);return false;}
   const u=_siIgUser();
   if(!u){if(typeof showToast==='function')showToast('Sign in again to change the ignore list.',true);return false;}
@@ -628,13 +956,13 @@ async function _siIgWrite(code,fields,okMsg,verb){
     if(typeof navigator!=='undefined'&&navigator.onLine===false&&typeof showToast==='function')showToast('Saved on this device — will sync when you are back online.');
     else if(okMsg&&typeof showToast==='function')showToast(okMsg);
     await p;stop();
-    if(typeof logActivity==='function')logActivity(verb,code+(fields.ignoreForever?' — never remind':fields.ignoredUntil?' — until '+fields.ignoredUntil:''));
+    if(typeof logActivity==='function')logActivity(verb,code+(fields.ignoreForever?' — never remind':fields.ignoredUntil?' — until '+fields.ignoredUntil:'')+(fields.type!==undefined?' — type '+(fields.type||'cleared'):'')+(fields.season!==undefined?' — season '+(fields.season||'cleared'):''));
     return true;
   }catch(e){
     stop();
     if(had)_siMeta.set(code,prev);else _siMeta.delete(code);
     _siIgVer++;_siIgRepaint();
-    if(typeof showToast==='function')showToast('Could not save the ignore list — nothing was changed.'+(e&&/permission/i.test(String(e.code||e.message))?' (firestore.rules may not be published yet.)':''),true);
+    if(typeof showToast==='function')showToast('Could not save '+(what||'the ignore list')+' — nothing was changed.'+(e&&/permission/i.test(String(e.code||e.message))?' (firestore.rules may not be published yet.)':''),true);
     return false;
   }
 }
@@ -693,6 +1021,7 @@ window._siIgOpen=function(code){
 };
 // The Ignored tab.
 function _siIgnoredSectionHtml(){
+  if(!_siFullHist()){_siFullStart(false);return _siFullGateHtml('The Ignored list');}
   const list=_siIgList();
   const note=_siMetaNote();
   if(_siMetaState==='loading'||_siMetaState==='idle')return`<div class="si-ax-empty">Reading the ignore list…</div>`;
@@ -712,12 +1041,124 @@ function _siIgnoredSectionHtml(){
 }
 window._siIgOpenInExplorer=function(code){
   code=String(code||'').toUpperCase();
-  _siSection='explorer';_siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';
+  _siSection='articles';_siSub='';_siSecTouched=true;_siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';
   const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
   _siRefreshContent();
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
 };
 function _siPktDayOf(ms){return new Date(ms+5*3600000).toISOString().slice(0,10);}
+
+// ═══ Type & season — a fill queue over the same shared list (inventory_article_meta/{CODE}.type / .season) ═══
+// Sub-phase 2 of the product-data work. Staff press a button to give each live article a TYPE and a SEASON; nothing is ever written
+// without a press (the suggestions are buttons). The values are the ones firestore.rules already allows (held equal by
+// tests/shopify-typeseason.test.js): that is why the vocab is short. ONE place: _SI_TYPES / _SI_SEASONS. The writer is the Ignore writer.
+// Sub-phase 3 reads _siMetaOf(code); nothing here feeds the Explorer filter, Portfolio or Needs Attention yet.
+const _SI_TYPES=[{k:'top',l:'Top'},{k:'bottom',l:'Bottom'},{k:'other',l:'Other'}];
+const _SI_SEASONS=[{k:'winter',l:'Winter'},{k:'summer',l:'Summer'},{k:'all',l:'All-season'}];
+const _SI_TS_CUBES=20,_SI_TS_MILESTONES=[25,50,75,100],_SI_TS_PAGE=20;
+// Word stems (a trailing s is dropped) that name a garment. "short sleeve" is removed first: a short-sleeve tee is not shorts.
+const _SI_TS_TOP=['tee','tshirt','shirt','hoodie','sweatshirt','jacket','top','polo','tank','sweater','vest','coat','shacket','bomber','crewneck','pullover','zipper','kurta'];
+const _SI_TS_BOTTOM=['pant','jean','denim','short','jort','trouser','jogger','cargo','skirt','legging','bottom','sweatpant','trackpant','flare','chino'];
+let _siTsFilter='all',_siTsLimit=_SI_TS_PAGE,_siTsPrev=-1;
+function _siMetaOf(code){ // what sub-phase 3 reads: the saved type and season of one article (null = not set)
+  const m=_siMeta.get(String(code||'').toUpperCase());
+  return{type:m&&m.type?m.type:null,season:m&&m.season?m.season:null};
+}
+function _siTsStems(text){
+  const t=String(text||'').toLowerCase().replace(/short[\s-]*sleeve[d]?/g,' ').replace(/t[\s-]*shirt/g,' tshirt ');
+  const out=new Set();(t.match(/[a-z]+/g)||[]).forEach(w=>out.add(w.length>3?w.replace(/s$/,''):w));return out;
+}
+function _siTsHit(stems,list){return list.some(w=>stems.has(w));}
+// Type from the Shopify product_type first, then the title. Both a top word and a bottom word in the SAME text is a set: no suggestion.
+function _siTsSuggestType(category,title){
+  const pick=(txt,src)=>{const s=_siTsStems(txt),t=_siTsHit(s,_SI_TS_TOP),b=_siTsHit(s,_SI_TS_BOTTOM);
+    if(t&&!b)return{k:'top',why:src};if(b&&!t)return{k:'bottom',why:src};return null;};
+  return(category&&pick(category,'from its Shopify type "'+String(category).slice(0,40)+'"'))||(title&&pick(title,'from its name'))||null;
+}
+function _siTsWinterDay(day){const m=/^\d{4}-(\d{2})-\d{2}/.exec(String(day||''));if(!m)return null;const mo=+m[1];return mo>=10||mo<=2;} // Oct..Feb, the Explorer's winter
+// Suggestions are a list of {k,why}: one from the date, one from siblings (the other articles of the same type that already have a season).
+function _siTsSuggestSeason(day,typeLabel,siblingSeasons){
+  const out=[];
+  const w=_siTsWinterDay(day);
+  if(w!==null)out.push({k:w?'winter':'summer',why:'by its first date, '+_siAxFmtDay(day)});
+  const sib=Array.isArray(siblingSeasons)?siblingSeasons:[];
+  if(typeLabel&&sib.length>=3){
+    const c={};sib.forEach(s=>{c[s]=(c[s]||0)+1;});
+    const top=Object.keys(c).sort((x,y)=>c[y]-c[x]||(x<y?-1:1))[0];
+    if(c[top]/sib.length>=0.6&&!out.some(s=>s.k===top))out.push({k:top,why:c[top]+' of '+sib.length+' other '+typeLabel.toLowerCase()+' articles'});
+  }
+  return out;
+}
+// Progress: both type and season, of the live (not ignored) articles. A meta list that was not read gives NO number (never 0% read as done or empty).
+function _siTsProgress(live,metaMap,state){
+  if(state!=='ok')return{ok:false,state};
+  let done=0,noType=0,noSeason=0;
+  live.forEach(a=>{const m=metaMap.get(a.code),t=m&&m.type,s=m&&m.season;if(t&&s)done++;if(!t)noType++;if(!s)noSeason++;});
+  const total=live.length;
+  return{ok:true,total,done,noType,noSeason,pct:total?Math.floor(done*100/total):0,filled:total?Math.floor(done*_SI_TS_CUBES/total):0};
+}
+function _siTsNextMilestone(p){
+  if(!p||!p.ok||!p.total)return null;
+  const m=_SI_TS_MILESTONES.find(x=>x>p.pct);if(!m)return null;
+  return{pct:m,more:Math.max(1,Math.ceil(p.total*m/100)-p.done)};
+}
+function _siTsQueue(live,metaMap,filter){ // articles still missing something, most-sold first (they matter most)
+  return live.filter(a=>{const m=metaMap.get(a.code),t=m&&m.type,s=m&&m.season;
+    return filter==='type'?!t:filter==='season'?!s:(!t||!s);})
+    .sort((x,y)=>(y.units||0)-(x.units||0)||(x.code<y.code?-1:x.code>y.code?1:0));
+}
+function _siTsBarHtml(p){
+  if(!p.ok){
+    return`<div class="si-ts-prog" role="status"><div class="si-ts-bar na" aria-hidden="true">${Array(_SI_TS_CUBES).fill('<span class="si-ts-cube"></span>').join('')}</div><span class="si-ts-pct" id="si-ts-pct">—</span></div>`;
+  }
+  const prev=_siTsPrev;
+  const cubes=[];for(let i=0;i<_SI_TS_CUBES;i++)cubes.push(`<span class="si-ts-cube${i<p.filled?' on':''}${prev>=0&&i>=prev&&i<p.filled?' pop':''}"></span>`);
+  _siTsPrev=p.filled;
+  return`<div class="si-ts-prog"><div class="si-ts-bar" role="progressbar" aria-label="Articles with a type and a season" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}" aria-valuetext="${p.pct} percent: ${p.done} of ${p.total} articles done">${cubes.join('')}</div><span class="si-ts-pct" id="si-ts-pct">${p.pct}%</span></div>`;
+}
+function _siTsRowHtml(a,live){
+  const m=_siMeta.get(a.code)||{},curT=m.type||null,curS=m.season||null;
+  const sugT=curT?null:_siTsSuggestType(a.category,a.title);
+  const typeLabel=curT?(_SI_TYPES.find(t=>t.k===curT)||{}).l:(sugT?(_SI_TYPES.find(t=>t.k===sugT.k)||{}).l:'');
+  const sibs=[];if(!curS&&(curT||sugT)){const tk=curT||sugT.k;live.forEach(o=>{if(o.code===a.code)return;const om=_siMeta.get(o.code);if(om&&om.type===tk&&om.season)sibs.push(om.season);});}
+  const sugS=curS?[]:_siTsSuggestSeason(_siAxLiveDay(a)||a.firstDay,typeLabel,sibs);
+  const opt=(f,v,cur,sug)=>`<button type="button" class="si-ax-btn si-ts-opt${cur===v.k?' on':''}${sug&&sug.k===v.k&&!cur?' sug':''}" aria-pressed="${cur===v.k?'true':'false'}" data-code="${_siEsc(a.code)}" data-f="${f}" data-k="${v.k}" onclick="window._siTsSet(this.dataset.code,this.dataset.f,this.dataset.k)">${_siEsc(v.l)}</button>`;
+  const sugBtn=(f,s,list)=>s?`<button type="button" class="si-ax-btn si-ts-sug" data-code="${_siEsc(a.code)}" data-f="${f}" data-k="${s.k}" onclick="window._siTsSet(this.dataset.code,this.dataset.f,this.dataset.k)">Use ${_siEsc((list.find(x=>x.k===s.k)||{}).l||s.k)} <span class="why">${_siEsc(s.why)}</span></button>`:'';
+  const hint=a.category?` · Shopify type: ${_siEsc(a.category)}`:'';
+  return`<div class="si-ts-row" data-code="${_siEsc(a.code)}"><div class="nm">${_siAxThumb(a.code,48,a.name)}<div class="tx"><strong>${_siEsc(a.name)}</strong><div class="si-ax-note" style="margin:0">${_siEsc(a.code)}${hint}</div></div></div>
+    <div class="grp" role="group" aria-label="Type for ${_siEsc(a.name)}"><span class="lab">Type</span>${_SI_TYPES.map(v=>opt('type',v,curT,sugT)).join('')}${sugBtn('type',sugT,_SI_TYPES)}</div>
+    <div class="grp" role="group" aria-label="Season for ${_siEsc(a.name)}"><span class="lab">Season</span>${_SI_SEASONS.map(v=>opt('season',v,curS,sugS[0])).join('')}${sugS.map(s=>sugBtn('season',s,_SI_SEASONS)).join('')}</div></div>`;
+}
+function _siTsBodyHtml(){
+  if(_siMetaState==='loading'||_siMetaState==='idle')return`<div class="si-ax-empty">Reading the saved types and seasons…</div>`;
+  const live=_siAxLive(),p=_siTsProgress(live,_siMeta,_siMetaState);
+  if(!p.ok)return`<div class="si-hist-pend err" id="si-meta-note" role="status">The saved types and seasons could not be read, so progress is not shown and nothing can be saved safely. <button type="button" class="si-ax-btn" onclick="window._siMetaRetry()">Retry</button></div>${_siTsBarHtml(p)}`;
+  const q=_siTsQueue(live,_siMeta,_siTsFilter),shown=q.slice(0,_siTsLimit),ms=_siTsNextMilestone(p);
+  const chip=(k,l,n)=>`<button type="button" class="si-ax-btn si-ts-f${_siTsFilter===k?' on':''}" aria-pressed="${_siTsFilter===k?'true':'false'}" onclick="window._siTsFilterSet('${k}')">${l} <b>${n}</b></button>`;
+  const summary=p.total===0?'No live articles yet.':`${p.done} of ${p.total} live articles have both a type and a season.`+(ms?` Next milestone ${ms.pct}%: ${ms.more} more.`:' Every live article is done.');
+  return`${_siTsBarHtml(p)}<div class="si-ax-note" id="si-ts-sum" style="margin:6px 0 10px">${_siEsc(summary)}</div>
+    <div class="si-ax-bar" id="si-ts-filters">${chip('all','Missing either',_siTsQueue(live,_siMeta,'all').length)}${chip('type','No type',p.noType)}${chip('season','No season',p.noSeason)}</div>
+    ${q.length?shown.map(a=>_siTsRowHtml(a,live)).join('')+(q.length>shown.length?`<div style="padding:10px 0"><button type="button" class="si-ax-btn" onclick="window._siTsMore()">Show ${Math.min(_SI_TS_PAGE,q.length-shown.length)} more (${q.length-shown.length} left)</button></div>`:''):`<div class="si-ax-empty">${p.total?'Nothing is missing in this view.':'Nothing to fill yet.'}</div>`}`;
+}
+function _siTsSectionHtml(){
+  return`<div class="card" id="si-ts-wrap"><div class="card-title">Type &amp; season</div>
+    <div class="si-ax-note" style="margin:0 0 8px">Give each article a type and a season. A suggestion is only a button: nothing is saved until you press one. Everyone sees the same list.</div>
+    <div id="si-ts-body">${_siTsBodyHtml()}</div></div>`;
+}
+function _siTsRepaint(){ // only the body, so the scroll position and the tab stay put; the bar updates with every save
+  const el=document.getElementById&&document.getElementById('si-ts-body');
+  if(el)el.innerHTML=_siTsBodyHtml();else if(typeof _siRefreshContent==='function')_siRefreshContent();
+}
+window._siTsFilterSet=function(f){_siTsFilter=(f==='type'||f==='season')?f:'all';_siTsLimit=_SI_TS_PAGE;_siTsRepaint();};
+window._siTsMore=function(){_siTsLimit+=_SI_TS_PAGE;_siTsRepaint();};
+// Press = save. Pressing the value an article already has clears it. Refused write: the Ignore writer puts it back and says so.
+window._siTsSet=function(code,field,k){
+  code=String(code||'').toUpperCase();
+  const vocab=field==='type'?_SI_TYPES:field==='season'?_SI_SEASONS:null;
+  if(!vocab||!vocab.some(v=>v.k===k))return Promise.resolve(false);
+  const cur=_siMetaOf(code)[field],val=cur===k?null:k;
+  return _siIgWrite(code,{[field]:val},null,field==='type'?'Article type set':'Article season set','the type and season list');
+};
 // ═══ end Ignore ═══
 
 // ── Season tagging ───────────────────────────────────────────────────
@@ -867,7 +1308,9 @@ function _siComputeSkuTable(){
       onHand,prevOnHand,weeklyDelta,s7,s30,dailyRate,daysLeft,sellThrough,
       firstSold:fs,lastSold:ls,daysSinceLastSale,refunds,totalSold:totalSoldMap[sku]||0,
       price:prod.price||0,reorderPoint,suggestedQty,created_at:prod.created_at||'',
-      liveAt:prod.published_at||prod.created_at||''
+      liveAt:prod.published_at||prod.created_at||'',
+      // complete only if the product went live inside the window (or the whole history is loaded); otherwise the window undercounts it
+      totalSoldPartial:_siLinesPartial()&&!((prod.published_at||prod.created_at||'').slice(0,10)>=_siLinesCut&&(prod.published_at||prod.created_at||'')!=='')
     });
   });
 
@@ -939,7 +1382,8 @@ function renderShopifyDashboard(){
   if(_siLoadError)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="si-ld-lede">⚠ Could not load inventory data</div>'+_siLoaderHTML(false);
   if(!_siLoaded)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div>'+_siLoaderHTML(false);
 
-  _siSection=_siSecId(_siSection);   // a stale or removed section id lands on Overview, never a blank page
+  _siLandingApply();
+  {const r=_siSecResolve(_siSection);_siSection=r.sec;if(r.sub)_siSub=r.sub;}   // a stale or removed section id lands on Today, never a blank page
   // the stock history feeds the Needs Attention counts (tab pill, Overview tiles): one bounded read, repaints when it lands
   if(_siHistState==='idle'&&typeof getDocs==='function')_siAxEnsureHistory();
   const m=_siComputeMetrics();
@@ -950,6 +1394,7 @@ function renderShopifyDashboard(){
     <div class="page-sub">Shopify sales + inventory — read-only, updated every 4 hours</div>
   </div>
 
+  <div class="si-fr" id="si-fr">${_siFrHtml()}</div>
   ${_siSeasonBar()}
   ${_siTabBar()}
   <div id="si-content">${_siRenderSection(m,skuRows)}</div>
@@ -980,29 +1425,62 @@ window._siRetry=function(){
   if(typeof window.showPage==='function')window.showPage('shopify-intel');
 };
 
-const _SI_SECTIONS=['overview','attention','skutable','explorer','weekly','ignored','advanced'];
-function _siSecId(id){return _SI_SECTIONS.indexOf(id)>=0?id:'overview';}
+// ONE section list: id, label, render fn. The four top-level sections (a side bar or freshness line plugs in by reading this).
+// Weekly Close, Ignored and Advanced are not sections; they are sub-views of Today (_siSub), reached from the small bar under the tabs.
+const _SI_SECTIONS=[
+  {id:'today',label:'Today',render:(m)=>_siOverview(m)},
+  {id:'attention',label:'Needs Attention',badge:true,render:()=>_siNaSectionHtml()},
+  {id:'articles',label:'Articles',render:()=>_siArticleExplorerSection()},
+  {id:'skutable',label:'SKU Table',render:(m,rows)=>_siSkuTableSection(rows)},
+];
+// Each sub-view names its parent section. Type & season is a sub-view of Articles (it is about articles: fill their type and season).
+const _SI_SUBVIEWS=[
+  {id:'weekly',parent:'today',label:'Weekly Close',render:()=>_siWeeklySection()},
+  {id:'ignored',parent:'today',label:'Ignored',count:true,render:()=>_siIgnoredSectionHtml()},
+  {id:'advanced',parent:'today',label:'Advanced',render:(m,rows)=>_siAdvancedSection(rows)},
+  {id:'typeseason',parent:'articles',label:'Type &amp; season',render:()=>_siTsSectionHtml()},
+];
+// Old ids from before the restructure still resolve (stale deep links, saved state): overview->today, explorer->articles, the three extras -> Today's sub-views.
+const _SI_LEGACY_IDS={overview:'today',explorer:'articles'};
+function _siSecResolve(id){
+  id=_SI_LEGACY_IDS[id]||id;
+  if(_SI_SECTIONS.some(x=>x.id===id))return{sec:id,sub:''};
+  {const v=_SI_SUBVIEWS.find(x=>x.id===id);if(v)return{sec:v.parent,sub:id};}
+  return{sec:'today',sub:''};
+}
+function _siSecId(id){return _siSecResolve(id).sec;}
+// Which section a person lands on the first time they open the page this session. Landing only, NOT a permission gate.
+const _SI_LANDING={raees:'attention',afnan:'today',mustafa:'today',daniyal:'articles',sami:'articles'};
+const _SI_LANDING_DEFAULT='today';
+function _siLandingFor(u){return Object.prototype.hasOwnProperty.call(_SI_LANDING,u)?_SI_LANDING[u]:_SI_LANDING_DEFAULT;}
+function _siLandingApply(){
+  if(_siLandDone)return;_siLandDone=true;
+  if(_siSecTouched)return;   // an explicit deep link or tab press wins
+  const u=(typeof session!=='undefined'&&session)?session.u:'';
+  const r=_siSecResolve(_siLandingFor(u));_siSection=r.sec;_siSub=r.sub;
+}
+// THE section list for NAVIGATION: the tab bar and the takeover's left rail both read this, and it is derived from _SI_SECTIONS
+// (the one list), so a restructure edits _SI_SECTIONS only. `short` is the rail's collapsed monogram; absent, the label's first letters.
+// Sub-views (Weekly Close, Ignored, Advanced under Today; Type & season under Articles) are reached from the sub-bar under the tabs.
+function _siNavItems(){return _SI_SECTIONS.map(t=>({id:t.id,label:t.label,badge:!!t.badge,short:t.short}));}
+// The id a deep link / address bar carries: the sub-view when one is open, else the section.
+function _siSecKey(){return _siSub||_siSection;}
 function _siTabBar(){
-  const tabs=[
-    {id:'overview',label:'Overview'},
-    {id:'attention',label:'Needs Attention',badge:true},
-    {id:'skutable',label:'SKU Table'},
-    {id:'explorer',label:'Article Explorer'},
-    {id:'weekly',label:'Weekly Close'},
-    {id:'ignored',label:'Ignored',count:_siIgList().length},
-    {id:'advanced',label:'Advanced'},
-  ];
   const n=_siNaBadge();
-  return`<div class="gp-tabs" id="si-tab-bar" style="margin-bottom:14px">${tabs.map(t=>
-    `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}${t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:''}${t.count?`<span class="si-ig-n" role="img" aria-label="${t.count} ignored">${t.count}</span>`:''}</button>`
-  ).join('')}</div>`;
+  if(typeof _siTkPaintSoon==='function')_siTkPaintSoon();   // every repaint of the tab bar (switch, badge, history landing) repaints the takeover rail too
+  const svs=_SI_SUBVIEWS.filter(v=>v.parent===_siSection);
+  const sub=svs.length?`<div class="si-sub-bar" id="si-sub-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin:-6px 0 12px">${svs.map(v=>{const c=v.count?_siIgList().length:0;return`<button type="button" class="si-ax-btn" style="${_siSub===v.id?'background:var(--dark);color:var(--on-dark)':''}" aria-pressed="${_siSub===v.id}" onclick="window._siSwitchTab('${_siSub===v.id?_siSection:v.id}')">${v.label}${c?` (${c})`:''}</button>`;}).join('')}</div>`:'';
+  return`<div id="si-tab-bar"><div class="gp-tabs" style="margin-bottom:14px">${_siNavItems().map(t=>
+    `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}${t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:''}</button>`
+  ).join('')}</div>${sub}</div>`;
 }
 
 window._siSwitchTab=function(id){
-  id=_siSecId(id);
+  _siSecTouched=true;
+  const r=_siSecResolve(id);id=r.sec;
   if(id!=='attention')_siNaSel='';
-  if(id!=='explorer')_siAxOvSit='';   // leaving the tab closes an open situation; the list's own state (filter, expanded bands) is kept
-  _siSection=id;
+  if(id!=='articles')_siAxOvSit='';   // leaving the tab closes an open situation; the list's own state (filter, expanded bands) is kept
+  _siSection=id;_siSub=r.sub;
   const m=_siComputeMetrics();
   const skuRows=_siComputeSkuTable();
   const bar=document.getElementById('si-tab-bar');
@@ -1012,19 +1490,162 @@ window._siSwitchTab=function(id){
   if(id==='skutable'&&_siSkuReturnY>0){const y=_siSkuReturnY;_siSkuReturnY=0;if(typeof window.scrollTo==='function')try{window.scrollTo(0,y);}catch(_){}}
 };
 
+
+// ═══════════════════════════════════════════════════════════════════
+// Full-view takeover + left rail (Oct 2026)
+// ═══════════════════════════════════════════════════════════════════
+// While currentPage==='shopify-intel' the page is a position:fixed full-viewport view (js/boards.js' canvas rules: z-index 120 sits above
+// .topbar 100 and .cash-action-bar 115 and below #bug-report-fab 500 and the toasts; 100dvh with a 100vh fallback; html/body carry
+// .si-fullscreen so nothing behind scrolls). The bar (Exit) and the rail live in <body>, NOT in #main-content, because renderPage replaces
+// #main-content's innerHTML on every load and retry: the way out must never be something a render can remove. Leaving by ANY route goes
+// through the showPage wrap below, so the class cannot outlive the page. Deep links: #inventory/<section>, replaceState only.
+const _SI_TK_HASH=/^#inventory(?:\/([A-Za-z0-9_-]*))?$/;
+const _SI_TK_RAIL_KEY='groovy-si-rail';
+let _siTkOn=false,_siTkPaintT=null,_siTkMin=false;
+function _siTkAllowed(){   // the Inventory Intel audience: owners + mustafa (nav), the CSR lead and the Marketing lead (their role scopes grant the page)
+  try{return typeof session!=='undefined'&&!!session&&(session.role==='owner'||session.u==='mustafa'||session.role==='csr_lead'||session.role==='creator_content_ops_lead');}catch(e){return false;}
+}
+function _siTkRailHtml(){
+  const n=_siNaBadge();
+  return _siNavItems().map(t=>{
+    const on=_siSection===t.id;
+    const mono=String(t.short||t.label||'?').slice(0,2);
+    return`<button type="button" class="si-tk-item${on?' on':''}" data-sec="${t.id}"${on?' aria-current="page"':''} title="${t.label}" onclick="window._siTkGo('${t.id}')">`
+      +`<span class="si-tk-mono" aria-hidden="true">${mono}</span><span class="si-tk-label">${t.label}</span>`
+      +(t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:'')
+      +(t.count?`<span class="si-ig-n" role="img" aria-label="${t.count} ignored">${t.count}</span>`:'')
+      +`</button>`;
+  }).join('');
+}
+function _siTkChromeHtml(){
+  return`<div class="si-tk-bar" id="si-tk-bar"><button type="button" class="si-tk-exit" id="si-tk-exit" onclick="window._siTkExit()">&larr; Exit</button>`
+    +`<div class="si-tk-title">Inventory Intelligence</div>`
+    +`<button type="button" class="si-tk-toggle" id="si-tk-toggle" aria-expanded="${_siTkMin?'false':'true'}" aria-controls="si-tk-rail" onclick="window._siTkToggleRail()">${_siTkMin?'Show menu':'Hide menu'}</button></div>`
+    +`<nav class="si-tk-rail" id="si-tk-rail" aria-label="Inventory Intelligence sections">${_siTkRailHtml()}</nav>`;
+}
+function _siTkMount(){
+  if(typeof document==='undefined'||!document.body)return;
+  if(document.getElementById('si-tk-bar')&&document.getElementById('si-tk-rail'))return;
+  // two direct children of <body>, so each is a fixed element of the root stacking context
+  document.body.insertAdjacentHTML('beforeend',_siTkChromeHtml());
+}
+function _siTkSetHash(sec){
+  try{
+    const base=location.pathname+(location.search||''),want=sec?'#inventory/'+sec:'';
+    if(sec){if(String(location.hash||'')!==want)history.replaceState(null,'',base+want);}
+    else if(_SI_TK_HASH.test(String(location.hash||'')))history.replaceState(null,'',base);
+  }catch(e){}
+}
+function _siTkApplyClasses(on){
+  try{
+    const b=document.body,h=document.documentElement,m=document.getElementById('main-content');
+    b.classList.toggle('si-fullscreen',!!on);h.classList.toggle('si-fullscreen',!!on);
+    b.classList.toggle('si-rail-min',!!on&&_siTkMin);
+    if(m)m.classList.toggle('si-takeover',!!on);
+  }catch(e){}
+}
+function _siTkSync(){   // repaint the rail from the one list, keep the address bar naming the section
+  if(!_siTkOn||typeof document==='undefined')return;
+  const rail=document.getElementById('si-tk-rail');
+  if(rail){const h=_siTkRailHtml();if(rail._h!==h){rail.innerHTML=h;rail._h=h;}}
+  _siTkSetHash(_siSecKey());
+}
+function _siTkPaintSoon(){
+  if(!_siTkOn||_siTkPaintT)return;
+  _siTkPaintT=setTimeout(()=>{_siTkPaintT=null;try{_siTkSync();}catch(e){}},0);
+}
+let _siTkKeyWired=false;
+function _siTkEnter(){
+  if(_siTkOn)return;
+  try{
+    if(!_siTkKeyWired&&typeof document!=='undefined'&&document.addEventListener){document.addEventListener('keydown',_siTkKey);_siTkKeyWired=true;}   // once, on first open: not at load
+    try{_siTkMin=localStorage.getItem(_SI_TK_RAIL_KEY)==='min';}catch(e){_siTkMin=false;}
+    _siTkMount();_siTkOn=true;_siTkApplyClasses(true);_siTkSync();
+  }catch(e){_siTkOn=true;_siTkLeave();console.warn('[inventory] takeover failed, left:',e);}
+}
+function _siTkLeave(){
+  const was=_siTkOn;_siTkOn=false;
+  if(_siTkPaintT){clearTimeout(_siTkPaintT);_siTkPaintT=null;}
+  _siTkApplyClasses(false);
+  if(was)_siTkSetHash('');
+}
+function _siTkOnPage(){   // called after every showPage: the page decides, never a flag set elsewhere
+  const want=typeof currentPage!=='undefined'&&currentPage==='shopify-intel';
+  if(want&&!_siTkOn)_siTkEnter();else if(!want&&_siTkOn)_siTkLeave();else if(want)_siTkSync();
+}
+window._siTkGo=function(id){window._siSwitchTab(id);_siTkSync();};
+window._siTkToggleRail=function(){
+  _siTkMin=!_siTkMin;
+  try{localStorage.setItem(_SI_TK_RAIL_KEY,_siTkMin?'min':'full');}catch(e){}
+  _siTkApplyClasses(_siTkOn);
+  const t=document.getElementById('si-tk-toggle');
+  if(t){t.textContent=_siTkMin?'Show menu':'Hide menu';t.setAttribute('aria-expanded',_siTkMin?'false':'true');}
+};
+window._siTkExit=function(){   // never strands: the takeover is taken down FIRST, then the navigation is attempted
+  _siTkLeave();
+  try{if(typeof window.showPage==='function')window.showPage('dashboard');}catch(e){console.warn('[inventory] exit navigation failed:',e);}
+};
+function _siTkParseHash(){const m=_SI_TK_HASH.exec(String(typeof location!=='undefined'?location.hash||'':''));if(!m)return null;const r=_siSecResolve(m[1]||'today');return{section:r.sec,sub:r.sub};}
+function _siTkConsumeHash(){
+  const link=_siTkParseHash();
+  if(!link||typeof session==='undefined'||!session||!_siTkAllowed())return false;   // fail closed: no session or not on the audience, nothing opens
+  if(currentPage==='shopify-intel'&&_siLoaded&&typeof window._siSwitchTab==='function'){
+    if(_siSection!==link.section||_siSub!==link.sub)window._siSwitchTab(link.sub||link.section);
+    _siTkOnPage();return true;
+  }
+  _siSection=link.section;_siSub=link.sub;_siSecTouched=true;   // a deep link wins over the role landing
+  if(typeof window.showPage==='function')window.showPage('shopify-intel');
+  return true;
+}
+function _siTkKey(e){
+  if(!_siTkOn||!e)return;
+  const k=e.key,rail=document.getElementById('si-tk-rail');
+  if(k==='Escape'){
+    const t=e.target,tag=t&&t.tagName?String(t.tagName).toUpperCase():'';
+    if(e.defaultPrevented||tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(t&&t.isContentEditable))return;
+    if(typeof _siNaSel!=='undefined'&&_siNaSel)return;       // an open situation view closes itself on Escape first
+    if(typeof _siAxOvSit!=='undefined'&&_siAxOvSit)return;
+    window._siTkExit();return;
+  }
+  if(rail&&e.target&&e.target.closest&&e.target.closest('#si-tk-rail')&&(k==='ArrowDown'||k==='ArrowUp'||k==='ArrowLeft'||k==='ArrowRight'||k==='Home'||k==='End')){
+    const items=Array.prototype.slice.call(rail.querySelectorAll('.si-tk-item'));
+    const i=items.indexOf(e.target.closest('.si-tk-item'));if(i<0)return;
+    const next=k==='Home'?0:k==='End'?items.length-1:(k==='ArrowDown'||k==='ArrowRight')?(i+1)%items.length:(i-1+items.length)%items.length;
+    items[next].focus();if(e.preventDefault)e.preventDefault();
+  }
+}
+(function(){   // wired once at load, like boards.js: every route out of the page passes through showPage
+  if(typeof window==='undefined')return;
+  if(typeof window.showPage==='function'&&!window.showPage.__siTk){
+    const o=window.showPage;
+    const w=function(){const r=o.apply(this,arguments);try{_siTkOnPage();}catch(e){}
+      try{Promise.resolve(r).then(()=>{try{_siTkOnPage();}catch(e){}},()=>{try{_siTkOnPage();}catch(e){}});}catch(e){}
+      return r;};
+    w.__siTk=true;window.showPage=w;
+  }
+  if(window.addEventListener)window.addEventListener('hashchange',()=>{try{_siTkConsumeHash();}catch(e){}});
+})();
+// startApp is wrapped (boards.js' pattern, not an edit to js/auth.js): the original runs, then a cold #inventory link is consumed.
+const _siTkOrigStartApp=window.startApp;
+if(typeof _siTkOrigStartApp==='function'){
+  window.startApp=async function(){
+    const out=await _siTkOrigStartApp.apply(this,arguments);
+    try{_siTkConsumeHash();}catch(e){console.warn('[inventory] deep link failed:',e);}
+    return out;
+  };
+}
+
 function _siRenderSection(m,skuRows){
-  if(_siSection==='attention')return _siNaSectionHtml();
-  if(_siSection==='skutable')return _siSkuTableSection(skuRows);
-  if(_siSection==='explorer')return _siArticleExplorerSection();
-  if(_siSection==='weekly')return _siWeeklySection();
-  if(_siSection==='ignored')return _siIgnoredSectionHtml();
-  if(_siSection==='advanced')return _siAdvancedSection(skuRows);
-  return _siOverview(m);
+  const r=_siSecResolve(_siSection);
+  if(_siFullKey()&&!_siFullHist()){_siFullStart(false);return _siFullGateHtml(_siFullLabel());}
+  const sv=_siSub?_SI_SUBVIEWS.find(x=>x.id===_siSub&&x.parent===r.sec):null;
+  const d=sv||_SI_SECTIONS.find(x=>x.id===r.sec);
+  return d.render(m,skuRows);
 }
 
 // ── Overview ────────────────────────────────────────────────────────
 function _siOverview(m){
-  return`<div class="stats-row">
+  return _siFullStripHtml()+`<div class="stats-row">
     <div class="stat-card">
       <div class="stat-label">Inventory Value</div>
       <div class="stat-val" style="font-size:19px">${_siPKR(m.totalValue)}</div>
@@ -1056,7 +1677,7 @@ function _siOverview(m){
     <div style="font-size:13px;color:var(--muted);line-height:2">
       Products: <strong>${_siProducts.length}</strong> variants
       · Orders: <strong>${_siOrders.length}</strong>
-      · Line items: <strong>${_siLineItems.length}</strong>
+      · Line items: <strong>${_siLineItems.length}</strong>${_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''}
       · Snapshots: ${_siSnapshot?'latest '+(_siSnapshot.date||'—'):'none yet'}
     </div>
   </div>`;
@@ -1072,6 +1693,7 @@ function _siHistStrip0(){
 }
 window._siHistRetry=function(){_siAxEnsureHistory(true);if(typeof _siNaOnHistory==='function')_siNaOnHistory();};
 function _siOverviewAttnTiles(){
+  if(!_siFullHist())return _siHistStrip()+`<div class="si-na-tiles"><div class="card si-na-tile"><div class="card-title">Needs attention</div><div class="num">—</div><div class="sub">${_siFullNeedsCell()}</div></div><div class="card si-na-tile"><div class="card-title">Overstocked / dead stock</div><div class="num">—</div><div class="sub">${_siFullNeedsCell()}</div></div></div>`;
   const n=_siNaBadge();
   if(n==null)return _siHistStrip()+`<div class="si-na-tiles"><div class="card si-na-tile"><div class="card-title">Needs attention</div><div class="num">…</div><div class="sub">reading the stock history</div></div><div class="card si-na-tile"><div class="card-title">Overstocked / dead stock</div><div class="num">…</div><div class="sub">reading the stock history</div></div></div>`;
   const c=_siNaState().counts;
@@ -1161,7 +1783,7 @@ function _siSkuRowsHtml(rows){
       <td>${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
       <td>${r.reorderPoint||'—'}</td>
       <td>${r.suggestedQty||'—'}</td>
-      <td>${r.refunds||'—'}</td>
+      <td${_siLinesPartial()?` title="last ${_SI_WIN_DAYS} days only"`:''}>${r.refunds||'—'}</td>
     </tr>`;
   }).join('');
 }
@@ -1200,7 +1822,8 @@ function _siGroupLiveAt(variants){
   variants.forEach(v=>{if(v.liveAt&&(!best||v.liveAt<best))best=v.liveAt;});
   return best;
 }
-function _siSoldSinceLiveCell(units,liveAt){
+function _siSoldSinceLiveCell(units,liveAt,partial){
+  if(partial)return`${_siFullNeedsCell()}<div style="font-size:11px;color:var(--muted);white-space:nowrap">${(()=>{const d=liveAt?_siDaysAgo(liveAt):null;return d!==null&&!isNaN(d)&&d>=0?'live '+d+'d':'live —';})()}</div>`;
   const d=liveAt?_siDaysAgo(liveAt):null;
   const age=d!==null&&!isNaN(d)&&d>=0?'live '+d+'d':'live —';
   return`<span style="font-weight:600">${units||0}</span><div style="font-size:11px;color:var(--muted);white-space:nowrap">${age}</div>`;
@@ -1250,7 +1873,7 @@ function _siGroupedBodyHtml(filteredRows){
       <td style="font-weight:700;color:${totColor}">${tot}</td>
       <td style="font-weight:600">${totS7}</td>
       <td>${totS30}</td>
-      <td>${_siSoldSinceLiveCell(g.variants.reduce((s,r)=>s+(r.totalSold||0),0),_siGroupLiveAt(g.variants))}</td>
+      <td>${_siSoldSinceLiveCell(g.variants.reduce((s,r)=>s+(r.totalSold||0),0),_siGroupLiveAt(g.variants),g.variants.some(r=>r.totalSoldPartial))}</td>
       <td>${minDaysStr}</td>
       <td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td>
     </tr>`;
@@ -1265,7 +1888,7 @@ function _siGroupedBodyHtml(filteredRows){
         <td style="font-weight:700;font-size:13px">${_siEsc(r.size||'?')}</td>
         <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'var(--accent-urgent)':'inherit'}">${r.onHand}</td>
         <td>${r.s7}</td><td>${r.s30}</td>
-        <td>${_siSoldSinceLiveCell(r.totalSold||0,r.liveAt)}</td>
+        <td>${_siSoldSinceLiveCell(r.totalSold||0,r.liveAt,r.totalSoldPartial)}</td>
         <td style="${daysClass}">${daysStr}</td>
         <td style="font-size:12px">${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
         <td style="font-size:12px">${r.reorderPoint||'—'}</td>
@@ -1338,7 +1961,8 @@ function _siSkuTableSection(rows){
     <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="si-sku-count">${countStr}</span>
   </div>
   <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Click a product to open it in the Article Explorer; the ▶ arrow shows its sizes. ☀ = Summer · ❄ = Winter · <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">TOP</span> / <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sold since live counts non-refunded orders synced from ${_siEsc(_siEarliestOrderDate()||'—')} onward, so it understates products that launched earlier. "live Nd" comes from the catalog's published/created date ("—" until the catalog sync has stored it).</div>
+  ${_siFullStripHtml()}
+  <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${_siLinesPartial()?`Sold since live is shown only for products that went live inside the loaded ${_SI_WIN_DAYS} days; the others say “needs full history” until it is loaded.`:`Sold since live counts non-refunded orders synced from ${_siEsc(_siEarliestOrderDate()||'—')} onward, so it understates products that launched earlier.`} "live Nd" comes from the catalog's published/created date ("—" until the catalog sync has stored it).</div>
   <div style="overflow-x:auto"><table class="cut-table" style="min-width:1040px">
     <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
     <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--muted);font-size:14px">No products match your filters</td></tr>`:'')}</tbody>
@@ -1450,13 +2074,13 @@ let _siSkuReturnY=0;
 // (search, category, type, sort, expanded groups, page size) lives in module variables, so coming back restores it.
 window._siSkuOpen=function(code){
   code=String(code||'').toUpperCase();
-  if(!code||!_siAxIndex().map.has(code)){
+  if(!code||(!_siLinesPartial()&&!_siAxIndex().map.has(code))){ // from the window alone, "not in the index" cannot be told from "not sold in the last 90 days"
     if(typeof showToast==='function')showToast(code?code+' has no sales or stock rows, so the Article Explorer has nothing to show for it.':'This row has no article code.',true);
     return false;
   }
   _siSkuReturnY=(typeof window.scrollY==='number'?window.scrollY:0)||0;
   _siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';
-  window._siSwitchTab('explorer');
+  window._siSwitchTab('articles');
   _siAxEnter();
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
   return true;
@@ -1549,8 +2173,11 @@ function _siAdvancedSection(skuRows){
   const md=_siMarkdownCandidates(skuRows);
   const stockouts=skuRows.filter(r=>r.onHand<=0&&r.s30>0).sort((a,b)=>b.s30-a.s30).slice(0,15);
   const dropPerf=_siDropPerformance(skuRows);
+  const part=_siLinesPartial();
+  const needCard=t=>`<div class="card si-full-need-card"><div class="card-title">${t}</div><div style="font-size:13px;color:var(--muted)">${_siFullNeedsCell()} — it reads each product's first sale, last sale or lifetime total, which the loaded ${_SI_WIN_DAYS} days cannot give.</div></div>`;
 
   return`
+  ${_siFullStripHtml()}
   <div class="card">
     <div class="card-title">Weeks of Supply by Category</div>
     ${wos.length?`<div style="overflow-x:auto"><table class="cut-table">
@@ -1576,7 +2203,7 @@ function _siAdvancedSection(skuRows){
     </div>`).join(''):'<div class="empty">No stockouts with recent demand</div>'}
   </div>
 
-  <div class="card">
+  ${part?needCard('Variant Aging (first / last sold)'):`<div class="card">
     <div class="card-title">Variant Aging (first / last sold)</div>
     <div style="overflow-x:auto"><table class="cut-table" style="min-width:600px">
       <thead><tr><th>SKU</th><th>Product</th><th>First Sold</th><th>Last Sold</th><th>Days Since</th><th>Total Sold</th></tr></thead>
@@ -1589,7 +2216,7 @@ function _siAdvancedSection(skuRows){
         <td>${r.totalSold}</td>
       </tr>`).join('')}</tbody>
     </table></div>
-  </div>
+  </div>`}
 
   <div class="card">
     <div class="card-title">Reorder Points + Suggested Qty</div>
@@ -1622,12 +2249,12 @@ function _siAdvancedSection(skuRows){
     </div>`).join('')}
   </div>`:''}
 
-  <div class="card">
+  ${part?needCard('Returns Signal per SKU'):`<div class="card">
     <div class="card-title">Returns Signal per SKU</div>
     ${_siReturnsTable(skuRows)}
-  </div>
+  </div>`}
 
-  ${md.length?`<div class="card">
+  ${part?needCard('Markdown Candidates (cash-freed estimate)'):''}${!part&&md.length?`<div class="card">
     <div class="card-title">Markdown Candidates (cash-freed estimate)</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px">45+ days no sale, 10+ units. Markdown at 30% off frees the estimated cash below.</div>
     <div style="overflow-x:auto"><table class="cut-table">
@@ -3006,6 +3633,7 @@ function _siAxFlash(){
 }
 function _siAxBodyHtml(){return _siAxModeSel==='compare'?_siAxCompareBody():(_siAxModeSel==='overview'?_siAxOverviewBody():(_siAxModeSel==='portfolio'?_siAxPortfolioBody():_siAxSearchBody()));}
 function _siArticleExplorerSection(){
+  if(!_siFullHist()){_siFullStart(false);return _siFullGateHtml('The Article Explorer');}
   _siAxEnsureHistory(); // one bounded read per session; repaints the body when it lands
   const idx=_siAxIndex();
   const modeBtn=_siAxModeBtnHtml;
@@ -3029,7 +3657,7 @@ function _siAxSlashOk(e){
   if(!e||e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey)return false;
   const t=e.target;
   if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||'')||t.isContentEditable))return false;
-  if(typeof _siSection==='undefined'||_siSection!=='explorer')return false;
+  if(typeof _siSection==='undefined'||_siSection!=='articles')return false;
   return !!document.getElementById('si-ax-input');
 }
 let _siAxSlashWired=false;
@@ -4719,6 +5347,7 @@ function _siNaClosest(rows){
 }
 // The pill on the tab and the count the Overview shows: critical + act (the things that need an action). Watch is shown, not counted.
 function _siNaBadge(){
+  if(!_siFullHist())return null; // classes need each article's whole history
   if(_siHistState!=='ok'&&_siHistState!=='error')return null;
   try{return _siNaState().counts.action;}catch(_){return null;}
 }
@@ -4780,8 +5409,33 @@ function _siNaTrustHtml(t){
   const amber=t.amber.map(x=>`<div class="si-na-trust amber" role="note"><strong>${_siEsc(x.title)}.</strong> ${_siEsc(x.text)}</div>`).join('');
   const notes=t.quiet.concat(t.unknown);
   const quiet=notes.length?`<details class="si-na-checks"><summary>Data checks: ${t.red.length+t.amber.length===0?'all clear, ':''}${notes.length} note${notes.length===1?'':'s'}</summary><ul>${notes.map(x=>`<li>${_siEsc(x)}</li>`).join('')}</ul></details>`:'';
-  return red+amber+quiet;
+  return red+amber+quiet+_siRrHtml();
 }
+
+// ── Returns refresh button (owners only) ─────────────────────────────────
+// Calls the existing owners' endpoint exactly as it expects: POST {idToken,days}. See docs/RETURNS_REFRESH_RUNBOOK.md.
+// Shown only while returns are unsynced AND the signed-in person is an owner (the server re-checks the ID token against its owner list).
+const _SI_RR_DAYS=365;
+let _siRrBusy=false,_siRrMsg='';
+function _siRrIsOwner(){return typeof session!=='undefined'&&!!session&&(session.u==='afnan'||session.u==='ammar');}
+function _siRrHtml(){
+  let synced=true;try{synced=_siAxIndex().quality.returns.synced;}catch(_){}
+  if(synced||!_siRrIsOwner())return'';
+  return`<div class="si-na-checks" role="note" id="si-rr"><strong>Returns refresh.</strong> Starts Shopify's refund and cancellation catch-up for the last ${_SI_RR_DAYS} days. It runs in the background (minutes); press again if it says partial, then reload this page.${_siRrMsg?` <span id="si-rr-msg">${_siEsc(_siRrMsg)}</span>`:''} <button type="button" class="si-ax-btn" id="si-rr-btn" onclick="window._siRrRun()"${_siRrBusy?' disabled':''}>${_siRrBusy?'Starting…':'Run returns refresh'}</button></div>`;
+}
+window._siRrRun=async function(){
+  if(_siRrBusy||!_siRrIsOwner())return;
+  _siRrBusy=true;_siRrMsg='';
+  const done=m=>{_siRrBusy=false;_siRrMsg=m;const e=document.getElementById('si-rr');if(e)e.outerHTML=_siRrHtml()||'';};
+  try{
+    const idToken=await auth.currentUser.getIdToken();
+    const res=await fetch('/.netlify/functions/shopify-order-refresh-now-background',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken,days:_SI_RR_DAYS})});
+    const data=await res.json().catch(()=>({}));
+    if(res.status===202)done('Started. Progress is in shopify_sync_meta/order_refresh_now; reload this page in a few minutes.');
+    else if(res.ok)done('Finished a pass: '+(data.status||'ok')+(data.status==='partial'?' (press again to continue).':'. Reload this page.'));
+    else done(data.error||('Failed ('+res.status+').'));
+  }catch(e){done('Network error: '+e.message);}
+};
 
 // ── Playbook: situation, why, how to tackle, what not to do, how sure ───
 // Pure: issue -> strings only. Owners are role suggestions, not assignments: Raees buys and cuts, Mustafa runs the store and prices,
@@ -5032,6 +5686,7 @@ function _siNaDetailHtml(i,o){
 }
 // The section: the list, or one article's situation when one is open. History is read once (the Explorer's own bounded read).
 function _siNaSectionHtml(){
+  if(!_siFullHist()){_siFullStart(false);return _siFullGateHtml('Needs Attention');}
   if(_siHistState==='idle'||_siHistState==='loading'){
     if(_siHistState==='idle')_siAxEnsureHistory();
     return`<div class="si-ax-empty">Reading the stock history…</div>`;
@@ -5051,14 +5706,14 @@ function _siNaOnHistory(){
   try{
     const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
     if(_siSection==='attention')window._siNaRepaint();
-    else if(_siSection==='overview'){const el=document.getElementById('si-content');if(el)el.innerHTML=_siOverview(_siComputeMetrics());}
+    else if(_siSection==='today'&&!_siSub){const el=document.getElementById('si-content');if(el)el.innerHTML=_siOverview(_siComputeMetrics());}
   }catch(_){}
 }
 function _siNaWireKeys(){
   if(_siNaKeyWired||typeof document==='undefined'||!document.addEventListener)return;
   _siNaKeyWired=true;
   document.addEventListener('keydown',e=>{
-    if(e&&e.key==='Escape'&&_siAxOvSit&&_siSection==='explorer'){window._siAxOvBack();return;}
+    if(e&&e.key==='Escape'&&_siAxOvSit&&_siSection==='articles'){window._siAxOvBack();return;}
     if(!_siNaSel||_siSection!=='attention')return;
     if(e&&e.key==='Escape'){window._siNaBack();}
   });
@@ -5108,7 +5763,7 @@ window._siNaToggleWatch=function(){_siNaWatchOpen=!_siNaWatchOpen;window._siNaRe
 window._siNaToExplorer=function(code){
   code=String(code||'').toUpperCase();
   _siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';_siNaSel='';_siAxOvSit='';
-  window._siSwitchTab('explorer');_siAxEnter();
+  window._siSwitchTab('articles');_siAxEnter();
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
 };
 window._siNaCompare=function(code){window._siAxOvCompare(code);};

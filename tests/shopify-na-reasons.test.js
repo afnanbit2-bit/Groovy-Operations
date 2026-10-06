@@ -161,7 +161,7 @@ async function checks(src){
   R('window._siAxOvBack()');
   o['changing the tile or category closes an open situation']=(()=>{R('window._siAxOvTile("reorder")');R('window._siAxOvSituation("'+rows1[0]+'")');R('window._siAxOvCat("")');const a1=R('_siAxOvSit')==='';R('window._siAxOvSituation("'+rows1[0]+'")');R('window._siAxOvTile("risk")');return a1&&R('_siAxOvSit')==='';})();
   o['an unknown article code does nothing']=R('window._siAxOvSituation("NOPE")')===false;
-  o['Escape in the Explorer situation returns to the tile list']=(()=>{R('_siSection="explorer";window._siAxOvTile("reorder")');R('window._siAxOvSituation("'+rows1[0]+'")');(A.state.listeners.keydown||[]).forEach(f=>f({key:'Escape'}));return R('_siAxOvSit')==='';})();
+  o['Escape in the Explorer situation returns to the tile list']=(()=>{R('_siSection="articles";window._siAxOvTile("reorder")');R('window._siAxOvSituation("'+rows1[0]+'")');(A.state.listeners.keydown||[]).forEach(f=>f({key:'Escape'}));return R('_siAxOvSit')==='';})();
   o['escaping: the tile text and the situation view carry no raw tag from the data']=!/<script|onerror=/.test(R('_siAxOverviewBody()'));
   // playbook text for the new types, direct
   const pb=t=>R('J=JSON.stringify(_siNaPlaybook(Object.assign(_siNaState().issues[0],{type:"'+t+'"})))');
@@ -211,7 +211,7 @@ module.exports=async function(){
   await brk('tile situation ignores the tile\u2019s action','let want=(_SI_OV_PLAY[tile]||[\'runout\']).slice();','let want=[\'overstock\'];',['a Winners tile row opens the winner playbook (protect it: owners Raees, Daniyal, Mustafa, Saim)']);
   await brk('tile back goes nowhere','window._siAxOvBack=function(){_siAxOvSit=\'\';','window._siAxOvBack=function(){',['Back returns to the list of that tile, same counts']);
   await brk('category change keeps the situation open','window._siAxOvCat=function(v){_siAxOvCat=v||\'\';_siAxOvAll=false;_siAxOvSit=\'\';','window._siAxOvCat=function(v){_siAxOvCat=v||\'\';_siAxOvAll=false;',['changing the tile or category closes an open situation']);
-  await brk('Escape ignores the Explorer situation','if(e&&e.key===\'Escape\'&&_siAxOvSit&&_siSection===\'explorer\'){window._siAxOvBack();return;}','',['Escape in the Explorer situation returns to the tile list']);
+  await brk('Escape ignores the Explorer situation','if(e&&e.key===\'Escape\'&&_siAxOvSit&&_siSection===\'articles\'){window._siAxOvBack();return;}','',['Escape in the Explorer situation returns to the tile list']);
   await brk('tile count from the NA state','const tile=t=>{const n=rows.filter(r=>_siAxOvIn(r,t.k)).length;','const tile=t=>{const n=_siNaState().counts.action;',['the four tiles keep their counts (the existing calculator, untouched)']);
   s.ok('breaks run: '+broken,broken>=28);
   return s;

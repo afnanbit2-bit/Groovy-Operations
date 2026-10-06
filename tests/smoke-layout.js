@@ -255,6 +255,19 @@ function _axSeed(app){
 
 // Needs Attention seed (Oct 2026): ~14 articles over the last 90 days (relative to today, so the weekly shapes always exist), with every
 // issue type: run-outs (critical and act), a stock-out, a size hole, an overstock, dead stock, a fading seller and a voided-unit data check.
+function _tkFragment(min,inBody){
+  const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+    globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+  _naSeed(app);
+  app.run('_siSection="attention";_siNaSel="";_siNaFilter="all";_siNaWatchOpen=true;_siNaShow={critical:false,act:false,watch:false};_siTkMin='+(min?'true':'false'));
+  const chrome=app.run('_siTkChromeHtml()'),na=app.run('_siNaSectionHtml()');
+  const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("si-fullscreen");'+(min?'b.classList.add("si-rail-min");':'')
+    +'document.documentElement.classList.add("si-fullscreen");m.classList.add("si-takeover");m.style.padding="";'
+    +(inBody?'["si-tk-bar","si-tk-rail"].forEach(function(i){b.appendChild(document.getElementById(i));});':'')+'})();<\/script>';
+  const out={html:'<button class="btn-sm" onclick="void 0">First control in the content</button><div id="si-content">'+na+'</div>'+chrome+script};
+  if(min)out.widths=[1900,1280];
+  return Promise.resolve(out);
+}
 function _naSeed(app,opts){
   opts=opts||{};
   const prods=[],lis=[],defs=[];
@@ -2814,6 +2827,29 @@ const FRAGMENTS={
     const dlg=app.run('_siIgDlgHtml("GNA02","Denim Jort With A Very Long Name Indeed Because Titles Wrap Onto Several Lines")');
     return Promise.resolve('<div id="si-content">'+tabs+'<div class="si-frag">'+na+'</div><div class="si-frag">'+tab+'</div><div class="si-frag">'+hits+'</div><div class="si-frag">'+page+'</div><div class="si-frag" style="position:relative;height:420px"><div class="si-ig-ov" style="position:absolute">'+dlg+'</div></div></div>');
   },
+  // Inventory Intel ▸ Type & season (sub-phase 2): the ice-cube progress bar (partial, and unreadable), the fill queue rows with
+  // pressed options and suggestion buttons (a long name wraps), the filter chips. Rows are read flat; every control must be reachable.
+  'inventory intel — Type & season: bar, queue and suggestions':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siMetaState="ok";_siMeta=new Map([["GNA01",_siMetaClean("GNA01",{type:"top",season:"summer"})],["GNA03",_siMetaClean("GNA03",{type:"top"})],["GNA04",_siMetaClean("GNA04",{type:"bottom",season:"winter"})],["GNH001",_siMetaClean("GNH001",{season:"all"})]]);_siIgVer++;_siSection="articles";_siSub="typeseason";_siTsFilter="all";_siTsLimit=20;_siTsPrev=-1');
+    const part=app.run('_siTsSectionHtml()');
+    app.run('_siTsFilter="season";_siTsPrev=0');const f2=app.run('_siTsBodyHtml()');
+    app.run('_siMetaState="error"');const bad=app.run('_siTsSectionHtml()');
+    app.run('_siMetaState="ok";_siMeta=new Map();_siTsFilter="all";_siIgVer++;_siProducts.forEach(p=>{p.published_at=""});_siAxCache=null');
+    const none=app.run('_siTsBodyHtml()');
+    return Promise.resolve('<div id="si-content">'+app.run('_siTabBar()')+'<div class="si-frag">'+part+'</div><div class="si-frag">'+f2+'</div><div class="si-frag">'+bad+'</div><div class="si-frag">'+none+'</div></div>');
+  },
+  // Inventory Intel ▸ full-view takeover (Oct 2026): the fixed bar (Exit) and the left rail (desktop column / phone dock) over a real section.
+  // The fragment applies the same classes js/shopify.js sets (body/html .si-fullscreen, #main-content.si-takeover) and leaves the two chrome
+  // nodes INSIDE #main-content (the probe only walks that subtree; they are position:fixed, so they lay out exactly as <body> children do), so Exit, every rail item and the toggle must be reachable,
+  // the pill must read on its chip, and nothing may sit over the content's first row. Collapsed variant: desktop only (phone ignores it).
+  'inventory intel — takeover and rail':()=>_tkFragment(false),
+  'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
+  // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
+  // rail, so a scroller that started under the bar (top:0) reports its first row as covered.
+  'inventory intel — takeover content clear of the bar and rail':()=>_tkFragment(false,true),
   'inventory intel — Needs Attention empty and failed states':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
@@ -2832,6 +2868,37 @@ const FRAGMENTS={
     app.run('_siHistState="error";_siHistError="snapshot read refused by the server (permission-denied)";_siHist=null;_siAxCache=null;_siNaMemo=null');
     const failed=app.run('_siHistStrip()');
     return Promise.resolve('<div id="si-content">'+pending+'<div style="height:16px"></div>'+failed+'</div>');
+  },
+  // Freshness strip (Oct 2026): normal, stale + failed run, refresh in progress, refresh failed, new data waiting. Tokens only; the Refresh
+  // button must be reachable and every line readable in both themes. Details forced open so the per-source list is measured too.
+  'inventory intel — freshness strip':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siLoaded=true;_siFr.detOpen=true;var N=Date.now();_siSnapshot={snapshot_at:new Date(N-2*3600000).toISOString(),items:{}};_siSyncMeta={};_siFr.seen={products:{catalog:N-3600000},orders:{orders:N-3600000,refresh:N-3600000},lines:{orders:N-3600000,refresh:N-3600000},snap:{inventory:N-2*3600000}};_siFr.readAt={closes:N-3600000}');
+    const ok=app.run('_siFrHtml()');
+    app.run('_siFr.seen.orders.orders=N-9*3600000;_siFr.seen.lines.orders=N-9*3600000;_siFr.docs={inventory:{last_status:"error",last_error:"Shopify 502"}}');
+    const stale=app.run('_siFrHtml()');
+    app.run('_siFr.busy=true;_siFr.stages=[{id:"meta",w:3},{id:"orders",w:10},{id:"lines",w:50}];_siFr.state={meta:"done",orders:"done",lines:"active"};_siFr.pct=20');
+    const busy=app.run('_siFrHtml()');
+    app.run('_siFr.busy=false;_siFr.fails={lines:{msg:"HTTP 429 quota exceeded",cls:"quota"}}');
+    const err=app.run('_siFrHtml()');
+    app.run('_siFr.fails={};_siFr.pending=true');
+    const pend=app.run('_siFrHtml()');
+    return Promise.resolve([ok,stale,busy,err,pend].map(h=>'<div class="si-fr">'+h+'</div>').join(''));
+  },
+  // Two-phase line items (load-time stage 2): the strip in its three states, the gate card (loading and failed), the "needs full history" cell
+  // and the dashed placeholder cards. Tokens only; the buttons must be reachable and every line readable in both themes.
+  'inventory intel — full history strip, gate and labelled partial figures':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siLinesScope="window";_siLinesCut="2026-07-08"');
+    const idle=app.run('_siFullStripHtml()');
+    app.run('_siFull.st="loading"');
+    const loading=app.run('_siFullStripHtml()')+app.run('_siFullGateHtml("The Article Explorer")');
+    app.run('_siFull.st="failed";_siFull.err={msg:"older read refused",code:"",cls:"quota",at:0}');
+    const failed=app.run('_siFullStripHtml()')+app.run('_siFullGateHtml("Needs Attention")');
+    const cells='<div class="card"><div class="card-title">Sold since live</div>'+app.run('_siSoldSinceLiveCell(5,"2026-01-01T00:00:00Z",true)')+'</div>'
+      +'<div class="card si-full-need-card"><div class="card-title">Variant Aging (first / last sold)</div><div style="font-size:13px;color:var(--muted)">'+app.run('_siFullNeedsCell()')+' — it reads each product\'s first sale, last sale or lifetime total, which the loaded 90 days cannot give.</div></div>';
+    return Promise.resolve('<div id="si-content">'+idle+'<div style="height:12px"></div>'+loading+'<div style="height:12px"></div>'+failed+'<div style="height:12px"></div>'+cells+'</div>');
   },
   // The loader (Oct 2026): the card over the page skeleton mid-way, the stalled countdown, and the final error card. Tokens only; every
   // control must be reachable (hit-tested) and every line readable in both themes. Verified by painting the stage line in --surface.

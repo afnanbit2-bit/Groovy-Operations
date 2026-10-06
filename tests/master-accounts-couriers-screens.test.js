@@ -137,7 +137,7 @@ const PARCELS=[
 const DER=M.maCprDerive(PARCELS,{from:'2026-07-01',today:'2026-08-05'});
 const CPRS=M.maCourierDocs(DER,SET).filter(d=>['upfront','reserve','mixed'].indexOf(d.kind)>=0);
 const CPR_DB={};M.maCourierDocs(DER,SET).forEach(d=>{CPR_DB[d.id]=d;});
-const RUN=()=>({id:'rollup',state:'done',ok:true,at:Date.UTC(2026,8,29,3,45),day:'2026-09-29',parcels:4,created:6,updated:0,voided:0,transit:DER.transit,issueCount:0,issues:[],checks:{}});
+const RUN=()=>({id:'rollup',state:'done',ok:true,at:Date.now()-2*3600000,day:new Date(Date.now()-2*3600000).toISOString().slice(0,10),parcels:4,created:6,updated:0,voided:0,transit:DER.transit,issueCount:0,issues:[],checks:{}});
 const ATT={publicId:'ma/'+'a'.repeat(64),format:'jpg',type:'authenticated',resourceType:'image'};
 function seedBase(extra){
   return Object.assign({ma_cpr:clone(CPR_DB),ma_runs:{rollup:RUN()},postex_orders:{
@@ -254,6 +254,12 @@ module.exports=async function(){
     const ok=mkApp({seed:seedBase()});
     await ok.app.run('maLoad()');
     s.ok('a healthy run says nothing about the rollup',!sentences(ok.app).some(x=>/rollup/.test(x)),J(sentences(ok.app)));
+    const stale=mkApp({seed:seedBase({ma_runs:{rollup:Object.assign(RUN(),{at:Date.now()-40*3600000})}})});
+    await stale.app.run('maLoad()');
+    s.ok('a run older than runWatchHours (36 by default) is a concern',sentences(stale.app).some(x=>/The courier rollup last ran (39|40) hours ago/.test(x)),J(sentences(stale.app)));
+    const edge=mkApp({seed:seedBase({ma_runs:{rollup:Object.assign(RUN(),{at:Date.now()-30*3600000})}})});
+    await edge.app.run('maLoad()');
+    s.ok('a 30-hour-old run is still inside the window and says nothing',!sentences(edge.app).some(x=>/rollup/.test(x)),J(sentences(edge.app)));
     s.eq('the rollup read is null when ma_runs holds no run…',none.app.run('_maRun()===null'),true);
     const refused=mkApp({seed:seedBase(),fail:['ma_runs']});
     await refused.app.run('maLoad()');
