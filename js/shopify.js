@@ -608,12 +608,13 @@ function _siIgRepaint(){
     const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
     if(_siSection==='attention'&&typeof window._siNaRepaint==='function')window._siNaRepaint();
     else if(_siSection==='explorer')_siAxRepaintAll();
+    else if(_siSection==='typeseason')_siTsRepaint();
     else _siRefreshContent();
   }catch(_){}
 }
 function _siIgUser(){return typeof session!=='undefined'&&session&&session.u?String(session.u):'';}
 // The ONE writer. Optimistic: memory first, then a merge write of the allowed fields only; a refusal puts memory back and says so.
-async function _siIgWrite(code,fields,okMsg,verb){
+async function _siIgWrite(code,fields,okMsg,verb,what){
   if(!_SI_IG_CODE.test(code)){if(typeof showToast==='function')showToast('This article code cannot be saved to the ignore list.',true);return false;}
   const u=_siIgUser();
   if(!u){if(typeof showToast==='function')showToast('Sign in again to change the ignore list.',true);return false;}
@@ -628,13 +629,13 @@ async function _siIgWrite(code,fields,okMsg,verb){
     if(typeof navigator!=='undefined'&&navigator.onLine===false&&typeof showToast==='function')showToast('Saved on this device — will sync when you are back online.');
     else if(okMsg&&typeof showToast==='function')showToast(okMsg);
     await p;stop();
-    if(typeof logActivity==='function')logActivity(verb,code+(fields.ignoreForever?' — never remind':fields.ignoredUntil?' — until '+fields.ignoredUntil:''));
+    if(typeof logActivity==='function')logActivity(verb,code+(fields.ignoreForever?' — never remind':fields.ignoredUntil?' — until '+fields.ignoredUntil:'')+(fields.type!==undefined?' — type '+(fields.type||'cleared'):'')+(fields.season!==undefined?' — season '+(fields.season||'cleared'):''));
     return true;
   }catch(e){
     stop();
     if(had)_siMeta.set(code,prev);else _siMeta.delete(code);
     _siIgVer++;_siIgRepaint();
-    if(typeof showToast==='function')showToast('Could not save the ignore list — nothing was changed.'+(e&&/permission/i.test(String(e.code||e.message))?' (firestore.rules may not be published yet.)':''),true);
+    if(typeof showToast==='function')showToast('Could not save '+(what||'the ignore list')+' — nothing was changed.'+(e&&/permission/i.test(String(e.code||e.message))?' (firestore.rules may not be published yet.)':''),true);
     return false;
   }
 }
@@ -718,6 +719,118 @@ window._siIgOpenInExplorer=function(code){
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
 };
 function _siPktDayOf(ms){return new Date(ms+5*3600000).toISOString().slice(0,10);}
+
+// ═══ Type & season — a fill queue over the same shared list (inventory_article_meta/{CODE}.type / .season) ═══
+// Sub-phase 2 of the product-data work. Staff press a button to give each live article a TYPE and a SEASON; nothing is ever written
+// without a press (the suggestions are buttons). The values are the ones firestore.rules already allows (held equal by
+// tests/shopify-typeseason.test.js): that is why the vocab is short. ONE place: _SI_TYPES / _SI_SEASONS. The writer is the Ignore writer.
+// Sub-phase 3 reads _siMetaOf(code); nothing here feeds the Explorer filter, Portfolio or Needs Attention yet.
+const _SI_TYPES=[{k:'top',l:'Top'},{k:'bottom',l:'Bottom'},{k:'other',l:'Other'}];
+const _SI_SEASONS=[{k:'winter',l:'Winter'},{k:'summer',l:'Summer'},{k:'all',l:'All-season'}];
+const _SI_TS_CUBES=20,_SI_TS_MILESTONES=[25,50,75,100],_SI_TS_PAGE=20;
+// Word stems (a trailing s is dropped) that name a garment. "short sleeve" is removed first: a short-sleeve tee is not shorts.
+const _SI_TS_TOP=['tee','tshirt','shirt','hoodie','sweatshirt','jacket','top','polo','tank','sweater','vest','coat','shacket','bomber','crewneck','pullover','zipper','kurta'];
+const _SI_TS_BOTTOM=['pant','jean','denim','short','jort','trouser','jogger','cargo','skirt','legging','bottom','sweatpant','trackpant','flare','chino'];
+let _siTsFilter='all',_siTsLimit=_SI_TS_PAGE,_siTsPrev=-1;
+function _siMetaOf(code){ // what sub-phase 3 reads: the saved type and season of one article (null = not set)
+  const m=_siMeta.get(String(code||'').toUpperCase());
+  return{type:m&&m.type?m.type:null,season:m&&m.season?m.season:null};
+}
+function _siTsStems(text){
+  const t=String(text||'').toLowerCase().replace(/short[\s-]*sleeve[d]?/g,' ').replace(/t[\s-]*shirt/g,' tshirt ');
+  const out=new Set();(t.match(/[a-z]+/g)||[]).forEach(w=>out.add(w.length>3?w.replace(/s$/,''):w));return out;
+}
+function _siTsHit(stems,list){return list.some(w=>stems.has(w));}
+// Type from the Shopify product_type first, then the title. Both a top word and a bottom word in the SAME text is a set: no suggestion.
+function _siTsSuggestType(category,title){
+  const pick=(txt,src)=>{const s=_siTsStems(txt),t=_siTsHit(s,_SI_TS_TOP),b=_siTsHit(s,_SI_TS_BOTTOM);
+    if(t&&!b)return{k:'top',why:src};if(b&&!t)return{k:'bottom',why:src};return null;};
+  return(category&&pick(category,'from its Shopify type "'+String(category).slice(0,40)+'"'))||(title&&pick(title,'from its name'))||null;
+}
+function _siTsWinterDay(day){const m=/^\d{4}-(\d{2})-\d{2}/.exec(String(day||''));if(!m)return null;const mo=+m[1];return mo>=10||mo<=2;} // Oct..Feb, the Explorer's winter
+// Suggestions are a list of {k,why}: one from the date, one from siblings (the other articles of the same type that already have a season).
+function _siTsSuggestSeason(day,typeLabel,siblingSeasons){
+  const out=[];
+  const w=_siTsWinterDay(day);
+  if(w!==null)out.push({k:w?'winter':'summer',why:'by its first date, '+_siAxFmtDay(day)});
+  const sib=Array.isArray(siblingSeasons)?siblingSeasons:[];
+  if(typeLabel&&sib.length>=3){
+    const c={};sib.forEach(s=>{c[s]=(c[s]||0)+1;});
+    const top=Object.keys(c).sort((x,y)=>c[y]-c[x]||(x<y?-1:1))[0];
+    if(c[top]/sib.length>=0.6&&!out.some(s=>s.k===top))out.push({k:top,why:c[top]+' of '+sib.length+' other '+typeLabel.toLowerCase()+' articles'});
+  }
+  return out;
+}
+// Progress: both type and season, of the live (not ignored) articles. A meta list that was not read gives NO number (never 0% read as done or empty).
+function _siTsProgress(live,metaMap,state){
+  if(state!=='ok')return{ok:false,state};
+  let done=0,noType=0,noSeason=0;
+  live.forEach(a=>{const m=metaMap.get(a.code),t=m&&m.type,s=m&&m.season;if(t&&s)done++;if(!t)noType++;if(!s)noSeason++;});
+  const total=live.length;
+  return{ok:true,total,done,noType,noSeason,pct:total?Math.floor(done*100/total):0,filled:total?Math.floor(done*_SI_TS_CUBES/total):0};
+}
+function _siTsNextMilestone(p){
+  if(!p||!p.ok||!p.total)return null;
+  const m=_SI_TS_MILESTONES.find(x=>x>p.pct);if(!m)return null;
+  return{pct:m,more:Math.max(1,Math.ceil(p.total*m/100)-p.done)};
+}
+function _siTsQueue(live,metaMap,filter){ // articles still missing something, most-sold first (they matter most)
+  return live.filter(a=>{const m=metaMap.get(a.code),t=m&&m.type,s=m&&m.season;
+    return filter==='type'?!t:filter==='season'?!s:(!t||!s);})
+    .sort((x,y)=>(y.units||0)-(x.units||0)||(x.code<y.code?-1:x.code>y.code?1:0));
+}
+function _siTsBarHtml(p){
+  if(!p.ok){
+    return`<div class="si-ts-prog" role="status"><div class="si-ts-bar na" aria-hidden="true">${Array(_SI_TS_CUBES).fill('<span class="si-ts-cube"></span>').join('')}</div><span class="si-ts-pct" id="si-ts-pct">—</span></div>`;
+  }
+  const prev=_siTsPrev;
+  const cubes=[];for(let i=0;i<_SI_TS_CUBES;i++)cubes.push(`<span class="si-ts-cube${i<p.filled?' on':''}${prev>=0&&i>=prev&&i<p.filled?' pop':''}"></span>`);
+  _siTsPrev=p.filled;
+  return`<div class="si-ts-prog"><div class="si-ts-bar" role="progressbar" aria-label="Articles with a type and a season" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}" aria-valuetext="${p.pct} percent: ${p.done} of ${p.total} articles done">${cubes.join('')}</div><span class="si-ts-pct" id="si-ts-pct">${p.pct}%</span></div>`;
+}
+function _siTsRowHtml(a,live){
+  const m=_siMeta.get(a.code)||{},curT=m.type||null,curS=m.season||null;
+  const sugT=curT?null:_siTsSuggestType(a.category,a.title);
+  const typeLabel=curT?(_SI_TYPES.find(t=>t.k===curT)||{}).l:(sugT?(_SI_TYPES.find(t=>t.k===sugT.k)||{}).l:'');
+  const sibs=[];if(!curS&&(curT||sugT)){const tk=curT||sugT.k;live.forEach(o=>{if(o.code===a.code)return;const om=_siMeta.get(o.code);if(om&&om.type===tk&&om.season)sibs.push(om.season);});}
+  const sugS=curS?[]:_siTsSuggestSeason(_siAxLiveDay(a)||a.firstDay,typeLabel,sibs);
+  const opt=(f,v,cur,sug)=>`<button type="button" class="si-ax-btn si-ts-opt${cur===v.k?' on':''}${sug&&sug.k===v.k&&!cur?' sug':''}" aria-pressed="${cur===v.k?'true':'false'}" data-code="${_siEsc(a.code)}" data-f="${f}" data-k="${v.k}" onclick="window._siTsSet(this.dataset.code,this.dataset.f,this.dataset.k)">${_siEsc(v.l)}</button>`;
+  const sugBtn=(f,s,list)=>s?`<button type="button" class="si-ax-btn si-ts-sug" data-code="${_siEsc(a.code)}" data-f="${f}" data-k="${s.k}" onclick="window._siTsSet(this.dataset.code,this.dataset.f,this.dataset.k)">Use ${_siEsc((list.find(x=>x.k===s.k)||{}).l||s.k)} <span class="why">${_siEsc(s.why)}</span></button>`:'';
+  const hint=a.category?` · Shopify type: ${_siEsc(a.category)}`:'';
+  return`<div class="si-ts-row" data-code="${_siEsc(a.code)}"><div class="nm">${_siAxThumb(a.code,48,a.name)}<div class="tx"><strong>${_siEsc(a.name)}</strong><div class="si-ax-note" style="margin:0">${_siEsc(a.code)}${hint}</div></div></div>
+    <div class="grp" role="group" aria-label="Type for ${_siEsc(a.name)}"><span class="lab">Type</span>${_SI_TYPES.map(v=>opt('type',v,curT,sugT)).join('')}${sugBtn('type',sugT,_SI_TYPES)}</div>
+    <div class="grp" role="group" aria-label="Season for ${_siEsc(a.name)}"><span class="lab">Season</span>${_SI_SEASONS.map(v=>opt('season',v,curS,sugS[0])).join('')}${sugS.map(s=>sugBtn('season',s,_SI_SEASONS)).join('')}</div></div>`;
+}
+function _siTsBodyHtml(){
+  if(_siMetaState==='loading'||_siMetaState==='idle')return`<div class="si-ax-empty">Reading the saved types and seasons…</div>`;
+  const live=_siAxLive(),p=_siTsProgress(live,_siMeta,_siMetaState);
+  if(!p.ok)return`<div class="si-hist-pend err" id="si-meta-note" role="status">The saved types and seasons could not be read, so progress is not shown and nothing can be saved safely. <button type="button" class="si-ax-btn" onclick="window._siMetaRetry()">Retry</button></div>${_siTsBarHtml(p)}`;
+  const q=_siTsQueue(live,_siMeta,_siTsFilter),shown=q.slice(0,_siTsLimit),ms=_siTsNextMilestone(p);
+  const chip=(k,l,n)=>`<button type="button" class="si-ax-btn si-ts-f${_siTsFilter===k?' on':''}" aria-pressed="${_siTsFilter===k?'true':'false'}" onclick="window._siTsFilterSet('${k}')">${l} <b>${n}</b></button>`;
+  const summary=p.total===0?'No live articles yet.':`${p.done} of ${p.total} live articles have both a type and a season.`+(ms?` Next milestone ${ms.pct}%: ${ms.more} more.`:' Every live article is done.');
+  return`${_siTsBarHtml(p)}<div class="si-ax-note" id="si-ts-sum" style="margin:6px 0 10px">${_siEsc(summary)}</div>
+    <div class="si-ax-bar" id="si-ts-filters">${chip('all','Missing either',_siTsQueue(live,_siMeta,'all').length)}${chip('type','No type',p.noType)}${chip('season','No season',p.noSeason)}</div>
+    ${q.length?shown.map(a=>_siTsRowHtml(a,live)).join('')+(q.length>shown.length?`<div style="padding:10px 0"><button type="button" class="si-ax-btn" onclick="window._siTsMore()">Show ${Math.min(_SI_TS_PAGE,q.length-shown.length)} more (${q.length-shown.length} left)</button></div>`:''):`<div class="si-ax-empty">${p.total?'Nothing is missing in this view.':'Nothing to fill yet.'}</div>`}`;
+}
+function _siTsSectionHtml(){
+  return`<div class="card" id="si-ts-wrap"><div class="card-title">Type &amp; season</div>
+    <div class="si-ax-note" style="margin:0 0 8px">Give each article a type and a season. A suggestion is only a button: nothing is saved until you press one. Everyone sees the same list.</div>
+    <div id="si-ts-body">${_siTsBodyHtml()}</div></div>`;
+}
+function _siTsRepaint(){ // only the body, so the scroll position and the tab stay put; the bar updates with every save
+  const el=document.getElementById&&document.getElementById('si-ts-body');
+  if(el)el.innerHTML=_siTsBodyHtml();else if(typeof _siRefreshContent==='function')_siRefreshContent();
+}
+window._siTsFilterSet=function(f){_siTsFilter=(f==='type'||f==='season')?f:'all';_siTsLimit=_SI_TS_PAGE;_siTsRepaint();};
+window._siTsMore=function(){_siTsLimit+=_SI_TS_PAGE;_siTsRepaint();};
+// Press = save. Pressing the value an article already has clears it. Refused write: the Ignore writer puts it back and says so.
+window._siTsSet=function(code,field,k){
+  code=String(code||'').toUpperCase();
+  const vocab=field==='type'?_SI_TYPES:field==='season'?_SI_SEASONS:null;
+  if(!vocab||!vocab.some(v=>v.k===k))return Promise.resolve(false);
+  const cur=_siMetaOf(code)[field],val=cur===k?null:k;
+  return _siIgWrite(code,{[field]:val},null,field==='type'?'Article type set':'Article season set','the type and season list');
+};
 // ═══ end Ignore ═══
 
 // ── Season tagging ───────────────────────────────────────────────────
@@ -980,7 +1093,7 @@ window._siRetry=function(){
   if(typeof window.showPage==='function')window.showPage('shopify-intel');
 };
 
-const _SI_SECTIONS=['overview','attention','skutable','explorer','weekly','ignored','advanced'];
+const _SI_SECTIONS=['overview','attention','skutable','explorer','weekly','typeseason','ignored','advanced'];
 function _siSecId(id){return _SI_SECTIONS.indexOf(id)>=0?id:'overview';}
 function _siTabBar(){
   const tabs=[
@@ -989,6 +1102,7 @@ function _siTabBar(){
     {id:'skutable',label:'SKU Table'},
     {id:'explorer',label:'Article Explorer'},
     {id:'weekly',label:'Weekly Close'},
+    {id:'typeseason',label:'Type &amp; season'},
     {id:'ignored',label:'Ignored',count:_siIgList().length},
     {id:'advanced',label:'Advanced'},
   ];
@@ -1017,6 +1131,7 @@ function _siRenderSection(m,skuRows){
   if(_siSection==='skutable')return _siSkuTableSection(skuRows);
   if(_siSection==='explorer')return _siArticleExplorerSection();
   if(_siSection==='weekly')return _siWeeklySection();
+  if(_siSection==='typeseason')return _siTsSectionHtml();
   if(_siSection==='ignored')return _siIgnoredSectionHtml();
   if(_siSection==='advanced')return _siAdvancedSection(skuRows);
   return _siOverview(m);

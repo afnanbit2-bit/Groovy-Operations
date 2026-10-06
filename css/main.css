@@ -5537,3 +5537,30 @@ a.ma-btn{text-decoration:none}
   .si-ig-row{grid-template-columns:minmax(0,1fr);}
   .si-ig-opts{grid-template-columns:1fr}
 }
+
+/* ── Inventory Intel: Type & season fill queue and its ice-cube progress bar ── */
+.si-ts-prog{display:flex;align-items:center;gap:12px;margin:2px 0 0}
+.si-ts-bar{display:flex;gap:3px;flex:1 1 auto;min-width:0}
+.si-ts-cube{flex:1 1 0;min-width:0;height:18px;border-radius:4px;background:var(--soft);border:1px solid var(--border);transition:background-color .25s,box-shadow .25s,border-color .25s}
+/* the fill is the app's one real red, which never inverts (--count-accent); the glint is literal white because the cube under it is a literal colour */
+.si-ts-cube.on{background-color:var(--count-accent);border-color:var(--count-accent);background-image:linear-gradient(135deg,rgba(255,255,255,.34),rgba(255,255,255,0) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 1px 0 0 rgba(255,255,255,.22)}
+.si-ts-cube.pop{animation:si-ts-pop .35s ease-out}
+@keyframes si-ts-pop{0%{transform:scale(.6);opacity:.4}60%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+.si-ts-pct{flex:0 0 auto;min-width:46px;text-align:right;font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.si-ts-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:8px 14px;align-items:center;padding:12px 0;border-top:1px solid var(--border)}
+.si-ts-row .nm{grid-row:span 2;min-width:0;overflow-wrap:anywhere;display:flex;gap:10px;align-items:center}
+.si-ts-row .nm .tx{min-width:0;display:flex;flex-direction:column}
+.si-ts-row .grp{min-width:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.si-ts-row .lab{flex:0 0 52px;font-size:12px;font-weight:600;color:var(--muted)}
+.si-ts-opt.on,.si-ts-f.on{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
+.si-ts-opt.sug{border-style:dashed;border-color:var(--count-accent)}
+.si-ts-sug{border-style:dashed;text-align:left}
+.si-ts-sug .why{display:block;font-size:12px;font-weight:500;color:var(--muted)}
+.si-ts-f b{font-variant-numeric:tabular-nums}
+@media (max-width:600px){
+  .si-ts-row{grid-template-columns:minmax(0,1fr)}
+  .si-ts-row .nm{grid-row:auto}
+  .si-ts-pct{font-size:16px}
+  .si-ts-opt,.si-ts-sug,.si-ts-f{min-height:40px}
+}
+@media (prefers-reduced-motion:reduce){.si-ts-cube{transition:none}.si-ts-cube.pop{animation:none}}

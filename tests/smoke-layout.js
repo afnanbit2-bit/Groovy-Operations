@@ -2814,6 +2814,20 @@ const FRAGMENTS={
     const dlg=app.run('_siIgDlgHtml("GNA02","Denim Jort With A Very Long Name Indeed Because Titles Wrap Onto Several Lines")');
     return Promise.resolve('<div id="si-content">'+tabs+'<div class="si-frag">'+na+'</div><div class="si-frag">'+tab+'</div><div class="si-frag">'+hits+'</div><div class="si-frag">'+page+'</div><div class="si-frag" style="position:relative;height:420px"><div class="si-ig-ov" style="position:absolute">'+dlg+'</div></div></div>');
   },
+  // Inventory Intel ▸ Type & season (sub-phase 2): the ice-cube progress bar (partial, and unreadable), the fill queue rows with
+  // pressed options and suggestion buttons (a long name wraps), the filter chips. Rows are read flat; every control must be reachable.
+  'inventory intel — Type & season: bar, queue and suggestions':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siMetaState="ok";_siMeta=new Map([["GNA01",_siMetaClean("GNA01",{type:"top",season:"summer"})],["GNA03",_siMetaClean("GNA03",{type:"top"})],["GNA04",_siMetaClean("GNA04",{type:"bottom",season:"winter"})],["GNH001",_siMetaClean("GNH001",{season:"all"})]]);_siIgVer++;_siSection="typeseason";_siTsFilter="all";_siTsLimit=20;_siTsPrev=-1');
+    const part=app.run('_siTsSectionHtml()');
+    app.run('_siTsFilter="season";_siTsPrev=0');const f2=app.run('_siTsBodyHtml()');
+    app.run('_siMetaState="error"');const bad=app.run('_siTsSectionHtml()');
+    app.run('_siMetaState="ok";_siMeta=new Map();_siTsFilter="all";_siIgVer++;_siProducts.forEach(p=>{p.published_at=""});_siAxCache=null');
+    const none=app.run('_siTsBodyHtml()');
+    return Promise.resolve('<div id="si-content">'+app.run('_siTabBar()')+'<div class="si-frag">'+part+'</div><div class="si-frag">'+f2+'</div><div class="si-frag">'+bad+'</div><div class="si-frag">'+none+'</div></div>');
+  },
   'inventory intel — Needs Attention empty and failed states':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
