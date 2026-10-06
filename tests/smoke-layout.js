@@ -2820,7 +2820,7 @@ const FRAGMENTS={
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
     _naSeed(app);
-    app.run('_siMetaState="ok";_siMeta=new Map([["GNA01",_siMetaClean("GNA01",{type:"top",season:"summer"})],["GNA03",_siMetaClean("GNA03",{type:"top"})],["GNA04",_siMetaClean("GNA04",{type:"bottom",season:"winter"})],["GNH001",_siMetaClean("GNH001",{season:"all"})]]);_siIgVer++;_siSection="typeseason";_siTsFilter="all";_siTsLimit=20;_siTsPrev=-1');
+    app.run('_siMetaState="ok";_siMeta=new Map([["GNA01",_siMetaClean("GNA01",{type:"top",season:"summer"})],["GNA03",_siMetaClean("GNA03",{type:"top"})],["GNA04",_siMetaClean("GNA04",{type:"bottom",season:"winter"})],["GNH001",_siMetaClean("GNH001",{season:"all"})]]);_siIgVer++;_siSection="articles";_siSub="typeseason";_siTsFilter="all";_siTsLimit=20;_siTsPrev=-1');
     const part=app.run('_siTsSectionHtml()');
     app.run('_siTsFilter="season";_siTsPrev=0');const f2=app.run('_siTsBodyHtml()');
     app.run('_siMetaState="error"');const bad=app.run('_siTsSectionHtml()');

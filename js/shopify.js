@@ -5,7 +5,7 @@
 
 let _siLoaded=false;
 let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=null,_siPrevSnapshot=null,_siSyncMeta={};
-let _siSkuSearch='',_siSkuSort='s7',_siSkuDir=-1,_siSection='overview';
+let _siSkuSearch='',_siSkuSort='s7',_siSkuDir=-1,_siSection='today',_siSub='',_siSecTouched=false,_siLandDone=false;
 let _siSkuLimit=200;        // SKU table page size; grows by 200 via Load more
 let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
 let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt on data load
@@ -607,8 +607,8 @@ function _siIgRepaint(){
     if(_siAxOvSit&&_siIgnored(_siAxOvSit))_siAxOvSit='';
     const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
     if(_siSection==='attention'&&typeof window._siNaRepaint==='function')window._siNaRepaint();
-    else if(_siSection==='explorer')_siAxRepaintAll();
-    else if(_siSection==='typeseason')_siTsRepaint();
+    else if(_siSection==='articles'&&_siSub==='typeseason')_siTsRepaint();
+    else if(_siSection==='articles')_siAxRepaintAll();
     else _siRefreshContent();
   }catch(_){}
 }
@@ -713,7 +713,7 @@ function _siIgnoredSectionHtml(){
 }
 window._siIgOpenInExplorer=function(code){
   code=String(code||'').toUpperCase();
-  _siSection='explorer';_siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';
+  _siSection='articles';_siSub='';_siSecTouched=true;_siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';
   const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
   _siRefreshContent();
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
@@ -1052,7 +1052,8 @@ function renderShopifyDashboard(){
   if(_siLoadError)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="si-ld-lede">⚠ Could not load inventory data</div>'+_siLoaderHTML(false);
   if(!_siLoaded)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div>'+_siLoaderHTML(false);
 
-  _siSection=_siSecId(_siSection);   // a stale or removed section id lands on Overview, never a blank page
+  _siLandingApply();
+  {const r=_siSecResolve(_siSection);_siSection=r.sec;if(r.sub)_siSub=r.sub;}   // a stale or removed section id lands on Today, never a blank page
   // the stock history feeds the Needs Attention counts (tab pill, Overview tiles): one bounded read, repaints when it lands
   if(_siHistState==='idle'&&typeof getDocs==='function')_siAxEnsureHistory();
   const m=_siComputeMetrics();
@@ -1093,30 +1094,55 @@ window._siRetry=function(){
   if(typeof window.showPage==='function')window.showPage('shopify-intel');
 };
 
-const _SI_SECTIONS=['overview','attention','skutable','explorer','weekly','typeseason','ignored','advanced'];
-function _siSecId(id){return _SI_SECTIONS.indexOf(id)>=0?id:'overview';}
+// ONE section list: id, label, render fn. The four top-level sections (a side bar or freshness line plugs in by reading this).
+// Weekly Close, Ignored and Advanced are not sections; they are sub-views of Today (_siSub), reached from the small bar under the tabs.
+const _SI_SECTIONS=[
+  {id:'today',label:'Today',render:(m)=>_siOverview(m)},
+  {id:'attention',label:'Needs Attention',badge:true,render:()=>_siNaSectionHtml()},
+  {id:'articles',label:'Articles',render:()=>_siArticleExplorerSection()},
+  {id:'skutable',label:'SKU Table',render:(m,rows)=>_siSkuTableSection(rows)},
+];
+// Each sub-view names its parent section. Type & season is a sub-view of Articles (it is about articles: fill their type and season).
+const _SI_SUBVIEWS=[
+  {id:'weekly',parent:'today',label:'Weekly Close',render:()=>_siWeeklySection()},
+  {id:'ignored',parent:'today',label:'Ignored',count:true,render:()=>_siIgnoredSectionHtml()},
+  {id:'advanced',parent:'today',label:'Advanced',render:(m,rows)=>_siAdvancedSection(rows)},
+  {id:'typeseason',parent:'articles',label:'Type &amp; season',render:()=>_siTsSectionHtml()},
+];
+// Old ids from before the restructure still resolve (stale deep links, saved state): overview->today, explorer->articles, the three extras -> Today's sub-views.
+const _SI_LEGACY_IDS={overview:'today',explorer:'articles'};
+function _siSecResolve(id){
+  id=_SI_LEGACY_IDS[id]||id;
+  if(_SI_SECTIONS.some(x=>x.id===id))return{sec:id,sub:''};
+  {const v=_SI_SUBVIEWS.find(x=>x.id===id);if(v)return{sec:v.parent,sub:id};}
+  return{sec:'today',sub:''};
+}
+function _siSecId(id){return _siSecResolve(id).sec;}
+// Which section a person lands on the first time they open the page this session. Landing only, NOT a permission gate.
+const _SI_LANDING={raees:'attention',afnan:'today',mustafa:'today',daniyal:'articles',sami:'articles'};
+const _SI_LANDING_DEFAULT='today';
+function _siLandingFor(u){return Object.prototype.hasOwnProperty.call(_SI_LANDING,u)?_SI_LANDING[u]:_SI_LANDING_DEFAULT;}
+function _siLandingApply(){
+  if(_siLandDone)return;_siLandDone=true;
+  if(_siSecTouched)return;   // an explicit deep link or tab press wins
+  const u=(typeof session!=='undefined'&&session)?session.u:'';
+  const r=_siSecResolve(_siLandingFor(u));_siSection=r.sec;_siSub=r.sub;
+}
 function _siTabBar(){
-  const tabs=[
-    {id:'overview',label:'Overview'},
-    {id:'attention',label:'Needs Attention',badge:true},
-    {id:'skutable',label:'SKU Table'},
-    {id:'explorer',label:'Article Explorer'},
-    {id:'weekly',label:'Weekly Close'},
-    {id:'typeseason',label:'Type &amp; season'},
-    {id:'ignored',label:'Ignored',count:_siIgList().length},
-    {id:'advanced',label:'Advanced'},
-  ];
   const n=_siNaBadge();
-  return`<div class="gp-tabs" id="si-tab-bar" style="margin-bottom:14px">${tabs.map(t=>
-    `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}${t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:''}${t.count?`<span class="si-ig-n" role="img" aria-label="${t.count} ignored">${t.count}</span>`:''}</button>`
-  ).join('')}</div>`;
+  const svs=_SI_SUBVIEWS.filter(v=>v.parent===_siSection);
+  const sub=svs.length?`<div class="si-sub-bar" id="si-sub-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin:-6px 0 12px">${svs.map(v=>{const c=v.count?_siIgList().length:0;return`<button type="button" class="si-ax-btn" style="${_siSub===v.id?'background:var(--dark);color:var(--on-dark)':''}" aria-pressed="${_siSub===v.id}" onclick="window._siSwitchTab('${_siSub===v.id?_siSection:v.id}')">${v.label}${c?` (${c})`:''}</button>`;}).join('')}</div>`:'';
+  return`<div id="si-tab-bar"><div class="gp-tabs" style="margin-bottom:14px">${_SI_SECTIONS.map(t=>
+    `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}${t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:''}</button>`
+  ).join('')}</div>${sub}</div>`;
 }
 
 window._siSwitchTab=function(id){
-  id=_siSecId(id);
+  _siSecTouched=true;
+  const r=_siSecResolve(id);id=r.sec;
   if(id!=='attention')_siNaSel='';
-  if(id!=='explorer')_siAxOvSit='';   // leaving the tab closes an open situation; the list's own state (filter, expanded bands) is kept
-  _siSection=id;
+  if(id!=='articles')_siAxOvSit='';   // leaving the tab closes an open situation; the list's own state (filter, expanded bands) is kept
+  _siSection=id;_siSub=r.sub;
   const m=_siComputeMetrics();
   const skuRows=_siComputeSkuTable();
   const bar=document.getElementById('si-tab-bar');
@@ -1127,14 +1153,10 @@ window._siSwitchTab=function(id){
 };
 
 function _siRenderSection(m,skuRows){
-  if(_siSection==='attention')return _siNaSectionHtml();
-  if(_siSection==='skutable')return _siSkuTableSection(skuRows);
-  if(_siSection==='explorer')return _siArticleExplorerSection();
-  if(_siSection==='weekly')return _siWeeklySection();
-  if(_siSection==='typeseason')return _siTsSectionHtml();
-  if(_siSection==='ignored')return _siIgnoredSectionHtml();
-  if(_siSection==='advanced')return _siAdvancedSection(skuRows);
-  return _siOverview(m);
+  const r=_siSecResolve(_siSection);
+  const sv=_siSub?_SI_SUBVIEWS.find(x=>x.id===_siSub&&x.parent===r.sec):null;
+  const d=sv||_SI_SECTIONS.find(x=>x.id===r.sec);
+  return d.render(m,skuRows);
 }
 
 // ── Overview ────────────────────────────────────────────────────────
@@ -1571,7 +1593,7 @@ window._siSkuOpen=function(code){
   }
   _siSkuReturnY=(typeof window.scrollY==='number'?window.scrollY:0)||0;
   _siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';
-  window._siSwitchTab('explorer');
+  window._siSwitchTab('articles');
   _siAxEnter();
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
   return true;
@@ -3144,7 +3166,7 @@ function _siAxSlashOk(e){
   if(!e||e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey)return false;
   const t=e.target;
   if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||'')||t.isContentEditable))return false;
-  if(typeof _siSection==='undefined'||_siSection!=='explorer')return false;
+  if(typeof _siSection==='undefined'||_siSection!=='articles')return false;
   return !!document.getElementById('si-ax-input');
 }
 let _siAxSlashWired=false;
@@ -5166,14 +5188,14 @@ function _siNaOnHistory(){
   try{
     const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
     if(_siSection==='attention')window._siNaRepaint();
-    else if(_siSection==='overview'){const el=document.getElementById('si-content');if(el)el.innerHTML=_siOverview(_siComputeMetrics());}
+    else if(_siSection==='today'&&!_siSub){const el=document.getElementById('si-content');if(el)el.innerHTML=_siOverview(_siComputeMetrics());}
   }catch(_){}
 }
 function _siNaWireKeys(){
   if(_siNaKeyWired||typeof document==='undefined'||!document.addEventListener)return;
   _siNaKeyWired=true;
   document.addEventListener('keydown',e=>{
-    if(e&&e.key==='Escape'&&_siAxOvSit&&_siSection==='explorer'){window._siAxOvBack();return;}
+    if(e&&e.key==='Escape'&&_siAxOvSit&&_siSection==='articles'){window._siAxOvBack();return;}
     if(!_siNaSel||_siSection!=='attention')return;
     if(e&&e.key==='Escape'){window._siNaBack();}
   });
@@ -5223,7 +5245,7 @@ window._siNaToggleWatch=function(){_siNaWatchOpen=!_siNaWatchOpen;window._siNaRe
 window._siNaToExplorer=function(code){
   code=String(code||'').toUpperCase();
   _siAxModeSel='search';_siAxSel=code;_siAxQuery='';_siAxMsg='';_siNaSel='';_siAxOvSit='';
-  window._siSwitchTab('explorer');_siAxEnter();
+  window._siSwitchTab('articles');_siAxEnter();
   if(typeof window.scrollTo==='function')try{window.scrollTo(0,0);}catch(_){}
 };
 window._siNaCompare=function(code){window._siAxOvCompare(code);};

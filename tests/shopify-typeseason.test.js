@@ -107,8 +107,10 @@ async function checks(src,rules){
     const f=k=>JSON.parse(R('J=JSON.stringify(_siTsQueue(_siAxLive(),_siMeta,'+J(k)+').map(a=>a.code))'));
     return f('all').length===7&&f('type').indexOf('B1')<0&&f('type').indexOf('B2')>=0&&f('season').indexOf('B2')<0&&f('season').indexOf('B1')>=0&&f('type').length===6&&f('season').length===6;})();
   // ── rendering is read-only ──
-  o['rendering the tab, a row and the suggestions writes NOTHING (a suggestion is only a button)']=(()=>{const n=W.calls.length;R('_siSection="typeseason"');R('_siRenderSection(_siComputeMetrics(),[])');body();return W.calls.length===n&&W.acts.length===0;})();
-  o['the tab exists in the tab bar and the section id is accepted']=/>Type &amp; season</.test(R('_siTabBar()'))&&R('_siSecId("typeseason")')==='typeseason'&&/id="si-ts-body"/.test(R('_siRenderSection(_siComputeMetrics(),[])'));
+  o['rendering the tab, a row and the suggestions writes NOTHING (a suggestion is only a button)']=(()=>{const n=W.calls.length;R('_siSection="articles";_siSub="typeseason"');R('_siRenderSection(_siComputeMetrics(),[])');body();return W.calls.length===n&&W.acts.length===0;})();
+  // Four-section model: Type & season is a sub-view of Articles (reached from the small bar under the tabs); its old id still deep-links to it.
+  o['Type & season is a sub-view of Articles: in the Articles sub-bar, the old id resolves to it, and it renders']=(()=>{R('_siSection="articles";_siSub=""');const bar=R('_siTabBar()');const r=JSON.parse(R('JSON.stringify(_siSecResolve("typeseason"))'));R('_siSection="articles";_siSub="typeseason"');return />Type &amp; season</.test(bar)&&(bar.match(/class="gp-tab[ "]/g)||[]).length===4&&r.sec==='articles'&&r.sub==='typeseason'&&R('_siSecId("typeseason")')==='articles'&&/id="si-ts-body"/.test(R('_siRenderSection(_siComputeMetrics(),[])'));})();
+  o['the Type & season sub-button is NOT on the Today sub-bar']=(()=>{R('_siSection="today";_siSub=""');return!/Type &amp; season/.test(R('_siTabBar()'));})();
   o['a row shows picture, code, the Shopify type as a hint, pressed state, suggestion buttons (type from the name, season from the date)']=(()=>{
     R('_siMeta=new Map([["G1",_siMetaClean("G1",{ignoreForever:true})]]);_siIgVer++;_siTsFilter="all";_siTsLimit=20;');
     const h=body();
@@ -197,7 +199,7 @@ module.exports=async function(){
   await brk('success toast on every press',"return _siIgWrite(code,{[field]:val},null,","return _siIgWrite(code,{[field]:val},'Saved.',",K('no success toast'));
   await brk('no audit verb on a type',"field==='type'?'Article type set':'Article season set'","'Article changed'",K('audit: logActivity'));
   await brk('row name not escaped','<strong>${_siEsc(a.name)}</strong><div class="si-ax-note" style="margin:0">${_siEsc(a.code)}${hint}','<strong>${a.name}</strong><div class="si-ax-note" style="margin:0">${_siEsc(a.code)}${hint}',K('escaping: a hostile'));
-  await brk('tab missing',"{id:'typeseason',label:'Type &amp; season'},","",K('the tab exists'));
+  await brk('tab missing',"  {id:'typeseason',parent:'articles',label:'Type &amp; season',render:()=>_siTsSectionHtml()},\n","",K('Type & season is a sub-view'));
   await brk('rules: type enum widened',"request.resource.data.type in ['top','bottom','other']","request.resource.data.type is string",K('vocab: the types'),true);
   await brk('rules: delete allowed','allow delete: if false;\n    }\n    // ── Pattern Hub','allow delete: if signedIn();\n    }\n    // ── Pattern Hub',K('rules: the block is unchanged'),true);
   s.ok('breaks run: '+broken,broken>=30);

@@ -213,16 +213,16 @@ async function checks(src){
   // the real page: tab bar, sections, handlers
   R('window.scrollY=420;window.__sc=[];window.scrollTo=function(x,y){window.__sc.push(y);};');
   const bar=R('_siTabBar()');
-  o['tab bar: eight tabs (Ignored, Type & season added), no Selling Patterns, Needs Attention carries a red pill with the count 16']=(bar.match(/class="gp-tab[ "]/g)||[]).length===8&&!/Selling Patterns/.test(bar)&&/Needs Attention<span class="si-na-pill"[^>]*>16</.test(bar);
+  o['tab bar: four sections (Today, Needs Attention, Articles, SKU Table), no Selling Patterns, Needs Attention carries a red pill with the count 16']=(bar.match(/class="gp-tab[ "]/g)||[]).length===4&&!/Selling Patterns/.test(bar)&&/Needs Attention<span class="si-na-pill"[^>]*>16</.test(bar);
   o['tab bar: the pill is hidden while the stock history is still being read']=(()=>{R('_siHistState="loading"');const b=R('_siTabBar()');R('_siHistState="ok"');return!/si-na-pill/.test(b)&&/Needs Attention<\/button>/.test(b);})();
   o['tab bar: a count over 99 reads 99+']=R('(()=>{const g=_siNaBadge;_siNaBadge=()=>150;const b=_siTabBar();_siNaBadge=g;return /si-na-pill[^>]*>99\\+</.test(b);})()');
   o['Selling Patterns is gone from the source: tab, section, helpers and the old attention rule']=!/Selling Patterns/.test(src)&&!/_siPatternsSection|_siByNormDim|_siByCategoryLive|_siSizeCurve|_siNeedsAttention|_siAttentionSection/.test(src)&&!/id:'patterns'|=== ?'patterns'/.test(src);
   R('window._siSwitchTab("patterns")');
-  o['a stale "patterns" section lands on Overview, not a blank page']=R('_siSection')==='overview'&&/Inventory Value/.test(a.el('si-content').innerHTML);
+  o['a stale "patterns" section lands on Today, not a blank page']=R('_siSection')==='today'&&/Inventory Value/.test(a.el('si-content').innerHTML);
   R('_siSection="nonsense";window.__h=renderShopifyDashboard()');
-  o['an unknown section id renders Overview in the page and in the tab switch']=R('_siSection')==='overview'&&/Inventory Value/.test(R('window.__h'))&&!/Selling Patterns/.test(R('window.__h'));
+  o['an unknown section id renders Today in the page and in the tab switch']=R('_siSection')==='today'&&/Inventory Value/.test(R('window.__h'))&&!/Selling Patterns/.test(R('window.__h'));
   R('_siSection="gone";window._siSwitchTab("gone")');
-  o['switching to an unknown id is Overview']=R('_siSection')==='overview'&&a.el('si-content').innerHTML.length>200;
+  o['switching to an unknown id is Today']=R('_siSection')==='today'&&a.el('si-content').innerHTML.length>200;
   const ovh=R('_siOverview(_siComputeMetrics())');
   o['Overview tiles read the Needs Attention counts: 16 need action (more than the old cap of 8) and 3 cash piles']=/si-na-tile hot"[^>]*>[\s\S]*?<div class="num">16</.test(ovh)&&/Overstocked \/ dead stock<\/div><div class="num">3</.test(ovh)&&/11 critical · 5 this week · 2 to watch/.test(ovh)&&16>8;
   o['Overview red border: the style is a class now, never a style attribute inside class="..."']=!/class="[^"]*style=/.test(ovh)&&/class="card si-na-tile hot"/.test(ovh)&&/class="card si-na-tile warm"/.test(ovh);
@@ -270,7 +270,7 @@ async function checks(src){
   R('window._siNaOpen("H")');
   o['a size-hole article shows the per-size table with S out']=/si-na-sizes/.test(html())&&/<tr class="bad"><td><strong>S<\/strong><\/td><td>0<\/td><td>56<\/td>/.test(html());
   R('window._siNaToExplorer("h")');
-  o['Open in Article Explorer: goes to the Explorer on that article and closes the situation']=R('_siSection')==='explorer'&&R('_siAxSel')==='H'&&R('_siAxModeSel')==='search'&&R('_siNaSel')==='';
+  o['Open in Article Explorer: goes to the Explorer on that article and closes the situation']=R('_siSection')==='articles'&&R('_siAxSel')==='H'&&R('_siAxModeSel')==='search'&&R('_siNaSel')==='';
   R('window._siSwitchTab("attention")');
   R('window._siNaCompare("R10")');
   o['+ Compare adds the article to the Explorer comparison']=R('_siAxCmp.indexOf("R10")')>=0;
@@ -385,8 +385,8 @@ module.exports=async function(){
   await brk('missing order meta treated as fine','if(!os||(!os.last_status&&!os.last_success_at))unknown.push(','if(!os||(!os.last_status&&!os.last_success_at))void(',['trust: missing order-sync meta is "unknown" (a quiet note), never fine and never red']);
   await brk('Overview shows the critical count only','<div class="num">${c.action}</div>','<div class="num">${c.critical}</div>',['Overview tiles read the Needs Attention counts: 16 need action (more than the old cap of 8) and 3 cash piles']);
   await brk('Overview style back inside class','class="card si-na-tile${c.action?\' hot\':\'\'}"','class="card si-na-tile${c.action?\' style=&quot;border-left:3px solid var(--accent-urgent)&quot;\':\'\'}"',['Overview red border: the style is a class now, never a style attribute inside class="..."']);
-  await brk('section ids not normalised','function _siSecId(id){return _SI_SECTIONS.indexOf(id)>=0?id:\'overview\';}','function _siSecId(id){return id;}',['a stale "patterns" section lands on Overview, not a blank page','switching to an unknown id is Overview']);
-  await brk('Selling Patterns tab back','{id:\'skutable\',label:\'SKU Table\'},','{id:\'skutable\',label:\'SKU Table\'},{id:\'patterns\',label:\'Selling Patterns\'},',['tab bar: eight tabs (Ignored, Type & season added), no Selling Patterns, Needs Attention carries a red pill with the count 16']);
+  await brk('section ids not normalised','return{sec:\'today\',sub:\'\'};\n}\nfunction _siSecId','return{sec:id,sub:\'\'};\n}\nfunction _siSecId',['a stale "patterns" section lands on Today, not a blank page','switching to an unknown id is Today']);
+  await brk('Selling Patterns tab back','{id:\'skutable\',label:\'SKU Table\',render','{id:\'patterns\',label:\'Selling Patterns\',render:()=>\'\'},{id:\'skutable\',label:\'SKU Table\',render',['tab bar: four sections (Today, Needs Attention, Articles, SKU Table), no Selling Patterns, Needs Attention carries a red pill with the count 16']);
   await brk('back forgets the scroll position','const y=_siNaReturnY;if(y>0','const y=0;if(y>0',['back: returns to the list, keeps the expanded band (11 critical rows), restores the scroll position 420']);
   await brk('back collapses the bands','_siNaSel=\'\';window._siNaRepaint();_siAxEnter();\n  const y','_siNaSel=\'\';_siNaShow={critical:false,act:false,watch:false};window._siNaRepaint();_siAxEnter();\n  const y',['back: returns to the list, keeps the expanded band (11 critical rows), restores the scroll position 420']);
   await brk('Escape does nothing','if(e&&e.key===\'Escape\'){window._siNaBack();}','if(false){window._siNaBack();}',['Escape closes the situation and returns to the list']);
