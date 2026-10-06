@@ -42,7 +42,7 @@ function mk(src,o){
   const copied=[];
   ctx.navigator={onLine:true,clipboard:{writeText:t=>{copied.push(t);return Promise.resolve();}}};
   vm.runInContext(src,ctx,{filename:'shopify.js'});
-  a.run('collection=function(d,n){return{n}};query=function(c){return c};orderBy=function(){return 1};doc=function(d,c,id){return{c,id}};');
+  a.run('collection=function(d,n){return{n}};where=function(f,op,v){return{f:f,op:op,v:v}};query=function(c){return{n:c.n,w:[].slice.call(arguments,1)}};orderBy=function(){return 1};doc=function(d,c,id){return{c,id}};');
   a.run('_siNow=function(){return window.__t};_siRand=function(){return 0.5};window.__t=0');
   const st={reads:{},plan:o.plan||{},holds:{}};
   const run1=(name,doc_)=>{
@@ -53,7 +53,24 @@ function mk(src,o){
     if(step instanceof Error)return Promise.reject(step);
     return Promise.resolve(doc_);
   };
-  ctx.getDocs=ref=>run1(ref.n,{forEach(f){(o.rows&&o.rows[ref.n]||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
+  // The line-item window is read as several date-range queries issued in ONE burst (js/shopify.js _SI_LINE_CHUNKS). For the older checks they are
+  // ONE logical read: the first query of a burst counts and consumes the plan entry, the rest wait on the same outcome (and carry no rows).
+  // st.chunkMode='split' turns that off so the per-chunk progress tests can release the ranges one at a time.
+  const emptySnap={forEach(){}};let burst=null;
+  ctx.getDocs=ref=>{
+    if(ref.n==='shopify_line_items'&&ref.w&&ref.w.length&&st.chunkMode!=='split'){
+      const lo=String(ref.w[0].v);
+      if(burst&&!burst.seen[lo]){burst.seen[lo]=1;return burst.p.then(()=>emptySnap);}
+      const first=run1(ref.n,{forEach(f){(o.rows&&o.rows[ref.n]||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
+      const b={p:Promise.resolve(first).then(x=>x),seen:{[lo]:1}};b.p.catch(()=>{});burst=b;Promise.resolve().then(()=>{if(burst===b)burst=null;});
+      return first;
+    }
+    if(ref.n==='shopify_line_items'&&ref.w&&ref.w.length&&st.chunkMode==='split'){
+      (st.chunkLog=st.chunkLog||[]).push(ref.w.map(x=>x.v));
+      const i=st.chunkLog.length-1;return new Promise((res,rej)=>{(st.chunkHolds=st.chunkHolds||[]).push({res:()=>res(emptySnap),rej});});
+    }
+    return run1(ref.n,{forEach(f){(o.rows&&o.rows[ref.n]||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
+  };
   ctx.getDoc=ref=>run1(ref.c==='shopify_inventory_snapshots'?'snap:'+ref.id:'meta:'+ref.id,{exists:()=>true,data:()=>({date:ref.id,items:{}})});
   const tick=async ms=>{ctx.__t=ck.t;await ck.advance(ms);};
   // keep window.__t in step with the fake clock
@@ -338,6 +355,59 @@ async function checks(src,CSS){
     R('window.showPage=function(){window.__went=1}');R('_siLoaded=true;_siLoadError="x"');R('window._siRetry()');
     o['the old _siRetry still works: it clears the error and re-enters the page']=R('_siLoaded')===false&&R('_siLoadError')===null&&R('window.__went')===1;
   }
+
+  // ── 9. The line-item read is in pieces, and each piece that lands is progress (30 Oct: it sat at 32 for as long as the read took) ──
+  {
+    const m=mk(src),R=m.R;
+    o['partial credit: line items active at 3 of 6 ranges = 4 products done + 25 = 29']=R('siProgress(_SI_STAGES,{products:"done",lines:"active"},{lines:0.5})')===29;
+    o['partial credit: 5 of 6 ranges = floor(41.67) = 41']=R('siProgress(_SI_STAGES,{lines:"active"},{lines:5/6})')===41;
+    o['partial credit counts only while the stage is ACTIVE (done uses the full weight, failed gets nothing)']=R('siProgress(_SI_STAGES,{lines:"done"},{lines:0.1})')===50&&R('siProgress(_SI_STAGES,{lines:"failed"},{lines:0.9})')===0;
+    o['partial credit never passes the stage weight and the total stays capped at 99']=R('siProgress(_SI_STAGES,{lines:"active"},{lines:7})')===50;
+    o['without a part map the answer is the old one']=R('siProgress(_SI_STAGES,{products:"done",lines:"active"})')===4;
+    o['ranges: 90 days from 2026-07-08 to 2026-10-06 in 6 steps of 15 days']=R('_siLineBounds("2026-07-08","2026-10-06",6).join(",")')==='2026-07-08,2026-07-23,2026-08-07,2026-08-22,2026-09-06,2026-09-21';
+    o['ranges: a short span makes fewer ranges, never an empty or repeated one']=R('_siLineBounds("2026-10-01","2026-10-08",6).join(",")')==='2026-10-01,2026-10-03,2026-10-05,2026-10-07'&&R('_siLineBounds("2026-10-06","2026-10-06",6).join(",")')==='2026-10-06';
+  }
+  {
+    const m=mk(src),R=m.R,ck=m.ck;m.st.chunkMode='split';
+    R('loadShopifyData()');await ck.advance(1);
+    const log=m.st.chunkLog||[],H=m.st.chunkHolds||[];
+    o['the window is read as 6 disjoint ranges (5 bounded, the last open-ended), not one big read']=log.length===6&&log.slice(0,5).every(w=>w.length===2)&&(log[5]||[]).length===1&&true;
+    o['every range starts where the previous one ended (nothing read twice, nothing missed)']=log.slice(0,5).every((w,i)=>w[1]===(log[i+1]||[])[0]);
+    o['before any range lands the percent is the other stages only: 4+10+1+14+3 = 32']=R('_siLoad.pct')===32;
+    const rel=i=>{if(H[i])H[i].res();};rel(0);rel(1);rel(2);await ck.advance(0);
+    o['3 of 6 ranges landed: 32 + 25 = 57, the sub line says so, and the stage is still active']=R('_siLoad.pct')===57&&/^date range 3 of 6/.test(R('_siLoadView().sub'))&&R('_siLoad.state.lines')==='active';
+    rel(3);rel(4);await ck.advance(0);
+    o['5 of 6: 32 + 41 = 73 and the percent never reaches 100 before the last range']=R('_siLoad.pct')===73&&R('_siLoaded')===false;
+    rel(5);await ck.advance(0);
+    o['the last range lands: the stage is done and the load completes']=R('_siLoad.state.lines')==='done'&&R('_siColl.lines')===true;
+  }
+  {
+    // a stall, not total time, fails the read: every range that lands restarts the 90s clock
+    const m=mk(src),R=m.R,ck=m.ck;m.st.chunkMode='split';
+    R('loadShopifyData()');await ck.advance(80000);
+    (m.st.chunkHolds||[{res(){}}])[0].res();await ck.advance(0);
+    await ck.advance(89000);
+    o['a slow but moving read is not timed out (80s + a range + 89s = 169s later it is still reading)']=R('_siLoad.state.lines')==='active';
+    await ck.advance(2000);
+    o['a read that then makes NO progress for 90s stops and names the stage']=R('_siLoad.state.lines')==='failed'&&/Timed out after 90s while reading line items/.test(R('_siLoadError')||'');
+  }
+  {
+    // the slow flag also counts from the last progress
+    const m=mk(src),R=m.R,ck=m.ck;m.st.chunkMode='split';
+    R('loadShopifyData()');await ck.advance(19000);
+    (m.st.chunkHolds||[{res(){}}])[0].res();await ck.advance(0);await ck.advance(19000);
+    o['"slow connection" is said only after 20s WITHOUT progress']=R('_siLoadView().stage')==='Reading line items…';
+    await ck.advance(1500);
+    o['and then it is said']=R('_siLoadView().stage')==='Still reading line items — slow connection';
+  }
+  {
+    // the owner's call: only the loading card, no grey placeholder boxes behind it
+    const m=mk(src),R=m.R;
+    const h=R('_siLoadingSkeleton()');
+    o['the loading page is the head and the card host only: no skeleton boxes']=!/si-skel/.test(h)&&!/stat-card/.test(h)&&/id="si-load-host"/.test(h)&&/Inventory Intelligence/.test(h);
+    o['the wrap keeps a min-height so the absolutely placed card is not clipped']=/\.si-ld-wrap\{position:relative;min-height:\d+px\}/.test(CSS);
+    o['the garments are scaled to fit the 45-unit pitch (widest garment 60 x .74 = 44.4)']=/<g transform="scale\(\.74\)"><path class="hk"/.test(R('_siLoaderHTML(false)'));
+  }
   return o;
 }
 
@@ -380,5 +450,10 @@ module.exports=async function(){
   await brk(s,'live region on every paint',[A('bucket:Math.floor(pct/25)','bucket:pct')],['aria-live is throttled: three repaints in the same bucket write it zero times']);
   await brk(s,'counts shown before they are real',[A("if(_siColl.products||_siCollectionsLoaded)parts.push","if(true)parts.push")],['no counts before they are real']);
   await brk(s,'reduced motion forgotten',[['  .si-ld-card .gm{animation:none;opacity:1;transform:none}\n  .si-ld-bar i{transition:none}','  .si-ld-bar i{transition:none}',true]],['reduced motion CSS: garments static and visible, the bar jumps, the settle and the countdown animation are off']);
+  await brk(s,'no partial credit',[A('else if(part&&state[s.id]===\'active\'&&part[s.id]>0)w+=s.w*Math.min(1,part[s.id]);','')],['partial credit: line items active at 3 of 6 ranges = 4 products done + 25 = 29','3 of 6 ranges landed: 32 + 25 = 57, the sub line says so, and the stage is still active']);
+  await brk(s,'one big read again',[A('const _SI_LINE_CHUNKS=6;','const _SI_LINE_CHUNKS=1;')],['the window is read as 6 disjoint ranges (5 bounded, the last open-ended), not one big read']);
+  await brk(s,'progress does not restart the stall clock',[A('_siLoadArmWatch(); // progress was made','/* no re-arm */ // progress was made')],['a slow but moving read is not timed out (80s + a range + 89s = 169s later it is still reading)','"slow connection" is said only after 20s WITHOUT progress']);
+  await brk(s,'skeleton boxes back',[A('<div class="si-ld-wrap"><div id="si-load-host"></div></div>`;','<div class="si-ld-wrap"><div id="si-load-host"></div><div class="si-skel"></div></div>`;')],['the loading page is the head and the card host only: no skeleton boxes']);
+  await brk(s,'garments unscaled',[A('<g transform="scale(.74)">','<g>')],['the garments are scaled to fit the 45-unit pitch (widest garment 60 x .74 = 44.4)']);
   return s;
 };

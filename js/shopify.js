@@ -22,46 +22,14 @@ let _siProdMapCache=null;       // sku → product doc map, rebuilt lazily, clea
 let _siSkuExpanded=new Set();   // group keys currently expanded in the SKU table
 let _siMeta=new Map(),_siMetaState='idle',_siMetaPromise=null,_siIgVer=0; // shared Ignore list: code → doc (see the Ignore block)
 
-// ── Skeleton loader ──────────────────────────────────────────────────
+// ── Loading page (Oct 2026: the loading card alone — the grey skeleton boxes behind it are gone) ──
+// Only the page head and the host the loader card paints into. The wrap carries a min-height (CSS) so the absolutely placed card is never clipped.
 function _siLoadingSkeleton(){
-  const statCard=()=>`<div class="stat-card">
-    <div class="si-skel" style="height:11px;width:68%;margin:0 auto 10px"></div>
-    <div class="si-skel" style="height:28px;width:52%;margin:0 auto 6px"></div>
-    <div class="si-skel" style="height:9px;width:44%;margin:0 auto"></div>
-  </div>`;
-  const widths=[88,72,95,80,65];
-  const tableRows=widths.map(w=>`<div style="display:flex;gap:10px;margin-bottom:9px">
-    <div class="si-skel" style="height:16px;width:90px;flex-shrink:0"></div>
-    <div class="si-skel" style="height:16px;flex:1;max-width:${w}%"></div>
-    <div class="si-skel" style="height:16px;width:60px;flex-shrink:0"></div>
-    <div class="si-skel" style="height:16px;width:70px;flex-shrink:0"></div>
-  </div>`).join('');
   return`<div class="page-head">
     <div class="page-title">Inventory Intelligence</div>
     <div class="page-sub">Shopify sales + inventory — read-only, updated every 4 hours</div>
   </div>
-  <div class="si-ld-wrap"><div id="si-load-host"></div>
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <div class="si-skel" style="width:50px;height:14px"></div>
-    <div class="si-skel" style="width:218px;height:34px;border-radius:10px"></div>
-  </div>
-  <div class="si-skel" style="height:36px;border-radius:10px;margin-bottom:14px"></div>
-  <div class="stats-row" style="margin-bottom:16px">${[0,0,0,0].map(statCard).join('')}</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-    ${[0,0].map(()=>`<div class="card">
-      <div class="si-skel" style="height:11px;width:52%;margin-bottom:14px"></div>
-      <div class="si-skel" style="height:34px;width:36%;margin-bottom:8px"></div>
-      <div class="si-skel" style="height:10px;width:70%"></div>
-    </div>`).join('')}
-  </div>
-  <div class="card">
-    <div class="si-skel" style="height:11px;width:34%;margin-bottom:16px"></div>
-    ${tableRows}
-  </div>
-  <div class="card">
-    <div class="si-skel" style="height:11px;width:20%;margin-bottom:12px"></div>
-    <div class="si-skel" style="height:13px;width:76%"></div>
-  </div></div>`;
+  <div class="si-ld-wrap"><div id="si-load-host"></div></div>`;
 }
 
 // ── Product lookup ───────────────────────────────────────────────────
@@ -110,9 +78,10 @@ const _SI_STAGES=[
 const _SI_LOAD_SHOW_MS=300,_SI_LOAD_MIN_MS=500,_SI_LOAD_SLOW_MS=20000,_SI_LOAD_TIMEOUT_MS=90000,_SI_LOAD_SETTLE_MS=400,_SI_LOAD_MAX_ATTEMPTS=3,_SI_QUOTA_WAIT_MS=10000;
 const _siColl={products:false,orders:false,lines:false,closes:false}; // which collections were read OK (kept across retries)
 // Pure: the percentage of a state map. Capped at 99 — 100 belongs to _siLoaded alone.
-function siProgress(stages,state){
+// part (optional) = {stageId: 0..1}: the proven share of an ACTIVE stage whose read is in pieces (counted only when a piece really returned).
+function siProgress(stages,state,part){
   let w=0,t=0;
-  for(const s of stages){t+=s.w;if(state[s.id]==='done')w+=s.w;}
+  for(const s of stages){t+=s.w;if(state[s.id]==='done')w+=s.w;else if(part&&state[s.id]==='active'&&part[s.id]>0)w+=s.w*Math.min(1,part[s.id]);}
   return t?Math.min(99,Math.floor(100*w/t)):0;
 }
 function siProgressNext(prev,raw){return Math.max(prev,raw);} // never backwards, even if a stage finishes out of order or a retry re-marks
@@ -122,13 +91,21 @@ let _siLoad=_siLoadFresh();
 const _siRetryCtl={timer:null,tick:null,timer2:null,auto:null,running:{},proms:{},gen:0};
 function _siLoadFresh(){
   return{state:{},pct:0,startedAt:0,shownAt:0,shown:false,slow:false,final:false,finishing:false,done:false,resolved:false,resume:false,
-    complete:false,attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
+    complete:false,part:{},partText:'',attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
 }
 // siMark(id,state): the ONE place progress moves.
 function siMark(id,st,now){
   const L=_siLoad;L.state[id]=st;
-  L.pct=siProgressNext(L.pct,siProgress(_SI_STAGES,L.state));
+  L.pct=siProgressNext(L.pct,siProgress(_SI_STAGES,L.state,L.part));
   siPaintLoad(now);
+}
+// siPart(id,frac,detail): a piece of a stage's read landed. Moves the percentage (never backwards), restarts the stall clock and says how far it is.
+function siPart(id,frac,detail){
+  const L=_siLoad;if(L.state[id]!=='active')return;
+  L.part[id]=frac;if(detail!==undefined)L.partText=detail;
+  L.pct=siProgressNext(L.pct,siProgress(_SI_STAGES,L.state,L.part));
+  _siLoadArmWatch(); // progress was made: the slow flag and the 90s timeout count from NOW, so only a read that STALLS times out
+  siPaintLoad();
 }
 function _siStage(id){return _SI_STAGES.find(s=>s.id===id)||{id,label:id,verb:id,noun:id,w:0};}
 function _siLoadAlive(){return typeof currentPage==='undefined'||currentPage==='shopify-intel';}
@@ -169,8 +146,16 @@ const _siRunners={
     if(_siLinesScope==='full'&&!fresh)return;
     const stamps=await _siFrStampsPre(); // captured BEFORE the read, so a sync landing mid-read can only make us under-claim
     const cut=(fresh&&_siLinesCut)?_siLinesCut:_siPktDate(-_SI_WIN_DAYS);
-    const s=await getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','>=',cut)));
-    const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
+    // The window is read as _SI_LINE_CHUNKS disjoint date ranges, in parallel: the same documents, but each range that lands is real
+    // progress (the old single getDocs gave no number for the whole read — the percentage sat still for as long as it took).
+    const bounds=_siLineBounds(cut,_siPktDate(0),_SI_LINE_CHUNKS);
+    let landed=0;
+    const parts=await Promise.all(bounds.map((lo,i)=>{
+      const hi=bounds[i+1];
+      const q=hi?query(collection(db,'shopify_line_items'),where('order_created_at','>=',lo),where('order_created_at','<',hi)):query(collection(db,'shopify_line_items'),where('order_created_at','>=',lo));
+      return Promise.resolve(getDocs(q)).then(sn=>{landed++;const arr=[];sn.forEach(d=>{const o=d.data();o._id=d.id;arr.push(o);});siPart('lines',landed/bounds.length,'date range '+landed+' of '+bounds.length);return arr;});
+    }));
+    const a=[].concat.apply([],parts);
     if(_siLinesScope==='full'||_siFull.st==='done'){_siFull.st='idle';_siFull.err=null;_siFull.n=0;_siFull.tok++;} // checked AFTER the await: a phase 2 that landed meanwhile counts
     _siLineItems=a;_siLinesScope='window';_siLinesCut=cut;
     _siFrNote('lines',stamps);
@@ -201,6 +186,16 @@ const _siRunners={
     try{if(typeof _siAxIndex==='function')_siAxIndex();}catch(_){}
   },
 };
+const _SI_LINE_CHUNKS=6;
+// Pure: the start days of n disjoint ranges that together cover [cut, today]; the last is open-ended. YYYY-MM-DD strings (compare as text).
+function _siLineBounds(cut,today,n){
+  const dn=s=>{const p=String(s).split('-');return Date.UTC(+p[0],+p[1]-1,+p[2])/864e5;};
+  const ds=d=>new Date(d*864e5).toISOString().slice(0,10);
+  const span=Math.max(0,dn(today)-dn(cut)),step=Math.max(1,Math.ceil(span/n));
+  const out=[cut];
+  for(let k=1;k<n;k++){const d=dn(cut)+k*step;if(d>dn(today))break;out.push(ds(d));}
+  return out;
+}
 function _siStageNeeds(id){
   if(id==='snap')return!_siSnapshot;
   if(id==='meta')return true;
@@ -284,6 +279,7 @@ function _siLoadRunStages(ids){
     C.running[id]=true;
     L.attempts[id]=(L.attempts[id]||0)+1;
     const tok=L.tok[id]=(L.tok[id]||0)+1;
+    L.part[id]=0;if(id==='lines')L.partText='';
     siMark(id,'active');
     let p;try{p=Promise.resolve(_siRunners[id]());}catch(e){p=Promise.reject(e);}
     C.proms[id]=p.then(()=>{
@@ -421,11 +417,12 @@ function _siLoadView(){
   let mode='load';
   if(L.done)mode='done';else if(L.wait)mode='wait';else if((fails.length||_siLoadError)&&!act.length)mode='fail';
   const failed=mode==='wait'?L.wait.ids:fails;
-  let stage,detail='',cd='';
+  let stage,detail='',cd='',detail0='';
   if(mode==='done')stage='Ready';
   else if(mode==='load'){
     const a=act[0];
     stage=a?(L.slow?'Still '+a.noun+' — slow connection':a.verb+'…'):'Starting…';
+    if(a&&a.id==='lines'&&L.partText)detail0=L.partText;
     if(!a&&L.state.build==='done')stage='Finishing…';
   }else{
     stage='Stopped while '+(failed.length===1?_siStage(failed[0]).noun:failed.length?'loading '+failed.map(id=>_siStage(id).label.toLowerCase()).join(' and '):'loading');
@@ -437,6 +434,7 @@ function _siLoadView(){
     }
   }
   const parts=[];
+  if(detail0)parts.push(detail0);
   if(_siColl.products||_siCollectionsLoaded)parts.push(_siFmtN(_siProducts.length)+' catalog entries');
   if(_siColl.lines||_siCollectionsLoaded)parts.push(_siFmtN(_siLineItems.length)+' line items'+(_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''));
   const retryable=mode==='fail'?fails:[];
@@ -453,7 +451,7 @@ function _siLoaderHTML(overlay){
   let g='';
   for(let i=0;i<8;i++){
     const x=40+i*45,k=i%3,cls=(i===3?' hot':'')+(i===5?' gap':i>5?' late':'');
-    g+='<g transform="translate('+x+' 0)"><g class="gm'+cls+'" style="--i:'+i+'"><path class="hk" d="M0 10V5a4 4 0 1 0-4-4"/><path class="b" d="'+_SI_GARMENTS[k]+'"/></g></g>';
+    g+='<g transform="translate('+x+' 0)"><g class="gm'+cls+'" style="--i:'+i+'"><g transform="scale(.74)"><path class="hk" d="M0 10V5a4 4 0 1 0-4-4"/><path class="b" d="'+_SI_GARMENTS[k]+'"/></g></g></g>';
   }
   const fail=v.mode==='wait'||v.mode==='fail';
   return'<div class="si-ld-card'+(overlay?' over':' flow')+(fail?' fail':'')+(_siLoadReduced()?' rm':'')+'" id="si-load" data-mode="'+v.mode+'">'
