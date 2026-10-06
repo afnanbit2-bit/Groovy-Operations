@@ -4780,8 +4780,33 @@ function _siNaTrustHtml(t){
   const amber=t.amber.map(x=>`<div class="si-na-trust amber" role="note"><strong>${_siEsc(x.title)}.</strong> ${_siEsc(x.text)}</div>`).join('');
   const notes=t.quiet.concat(t.unknown);
   const quiet=notes.length?`<details class="si-na-checks"><summary>Data checks: ${t.red.length+t.amber.length===0?'all clear, ':''}${notes.length} note${notes.length===1?'':'s'}</summary><ul>${notes.map(x=>`<li>${_siEsc(x)}</li>`).join('')}</ul></details>`:'';
-  return red+amber+quiet;
+  return red+amber+quiet+_siRrHtml();
 }
+
+// ── Returns refresh button (owners only) ─────────────────────────────────
+// Calls the existing owners' endpoint exactly as it expects: POST {idToken,days}. See docs/RETURNS_REFRESH_RUNBOOK.md.
+// Shown only while returns are unsynced AND the signed-in person is an owner (the server re-checks the ID token against its owner list).
+const _SI_RR_DAYS=365;
+let _siRrBusy=false,_siRrMsg='';
+function _siRrIsOwner(){return typeof session!=='undefined'&&!!session&&(session.u==='afnan'||session.u==='ammar');}
+function _siRrHtml(){
+  let synced=true;try{synced=_siAxIndex().quality.returns.synced;}catch(_){}
+  if(synced||!_siRrIsOwner())return'';
+  return`<div class="si-na-checks" role="note" id="si-rr"><strong>Returns refresh.</strong> Starts Shopify's refund and cancellation catch-up for the last ${_SI_RR_DAYS} days. It runs in the background (minutes); press again if it says partial, then reload this page.${_siRrMsg?` <span id="si-rr-msg">${_siEsc(_siRrMsg)}</span>`:''} <button type="button" class="si-ax-btn" id="si-rr-btn" onclick="window._siRrRun()"${_siRrBusy?' disabled':''}>${_siRrBusy?'Starting…':'Run returns refresh'}</button></div>`;
+}
+window._siRrRun=async function(){
+  if(_siRrBusy||!_siRrIsOwner())return;
+  _siRrBusy=true;_siRrMsg='';
+  const done=m=>{_siRrBusy=false;_siRrMsg=m;const e=document.getElementById('si-rr');if(e)e.outerHTML=_siRrHtml()||'';};
+  try{
+    const idToken=await auth.currentUser.getIdToken();
+    const res=await fetch('/.netlify/functions/shopify-order-refresh-now-background',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken,days:_SI_RR_DAYS})});
+    const data=await res.json().catch(()=>({}));
+    if(res.status===202)done('Started. Progress is in shopify_sync_meta/order_refresh_now; reload this page in a few minutes.');
+    else if(res.ok)done('Finished a pass: '+(data.status||'ok')+(data.status==='partial'?' (press again to continue).':'. Reload this page.'));
+    else done(data.error||('Failed ('+res.status+').'));
+  }catch(e){done('Network error: '+e.message);}
+};
 
 // ── Playbook: situation, why, how to tackle, what not to do, how sure ───
 // Pure: issue -> strings only. Owners are role suggestions, not assignments: Raees buys and cuts, Mustafa runs the store and prices,
