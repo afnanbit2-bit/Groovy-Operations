@@ -45,6 +45,10 @@ function build(T){
       let r=rows(name,q.cons||[]);
       if(name==='shopify_line_items'){
         const w=q.cons.filter(c=>c.t==='where');
+        // 6 Oct 2026: the window is read as date ranges issued in one burst (js/shopify.js _SI_LINE_CHUNKS). They are ONE logical window read here:
+        // the bounded ranges return nothing and are not logged; the open-ended last range stands for the whole window (from the burst's first start day).
+        if(w.some(c=>c.op==='>=')&&w.some(c=>c.op==='<')){if(!st.burst){st.burst=w.find(c=>c.op==='>=').v;Promise.resolve().then(()=>{st.burst=null;});}return{forEach(){}};}
+        if(w.some(c=>c.op==='>=')){const cut=st.burst||w[0].v;r=rows(name,[{t:'where',op:'>=',v:cut}]);w[0]={v:cut};}
         const older=w.some(c=>c.op==='<');
         st.queries.push({older,v:w[0]&&w[0].v});st.lineReads++;
         const hold=older?st.holdOlder:st.holdWin;
