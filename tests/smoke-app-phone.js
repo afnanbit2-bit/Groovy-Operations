@@ -170,8 +170,8 @@ function DRIVE(){
           if(currentPage==='shopify-intel')tk.push('Escape did not leave the page');
           if(/^#inventory/.test(location.hash))tk.push('the hash was left behind');
           location.hash='#inventory/explorer';await wait(700);
-          if(currentPage!=='shopify-intel'||!document.body.classList.contains('si-fullscreen'))tk.push('the #inventory/explorer link did not open the page');
-          if(location.hash!=='#inventory/explorer')tk.push('the hash is '+location.hash);
+          if(currentPage!=='shopify-intel'||!document.body.classList.contains('si-fullscreen'))tk.push('the legacy #inventory/explorer link (now Articles) did not open the page');
+          if(location.hash!=='#inventory/articles')tk.push('the hash is '+location.hash);
           window.showPage('hrm-employees');await wait(500);
           if(document.body.classList.contains('si-fullscreen')||document.documentElement.classList.contains('si-fullscreen')||document.getElementById('main-content').classList.contains('si-takeover'))tk.push('leaving by showPage left the class behind');
           if(/^#inventory/.test(location.hash))tk.push('leaving by showPage left the hash behind');

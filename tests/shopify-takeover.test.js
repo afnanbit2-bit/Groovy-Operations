@@ -178,6 +178,7 @@ module.exports=async function(){
   s.ok('height is 100dvh with a 100vh line before it',/height:calc\(100vh - [^;]*\);height:calc\(100dvh - /.test(tk));
   s.ok('html and body stop the page behind from scrolling',/body\.si-fullscreen\{[^}]*overflow:hidden/.test(CSS)&&/html\.si-fullscreen\{[^}]*overflow:hidden/.test(CSS)&&/body\.si-fullscreen\{[^}]*height:100dvh/.test(CSS));
   s.ok('bar and rail are hidden unless body.si-fullscreen is set',/\.si-tk-bar,\.si-tk-rail\{display:none\}/.test(CSS));
+  s.ok('the takeover hides only the tab ROW: the sub-bar (Weekly Close, Ignored, Advanced, Type & season) stays reachable',/body\.si-fullscreen #si-tab-bar>\.gp-tabs\{display:none\}/.test(CSS)&&!/body\.si-fullscreen #si-tab-bar\{display:none\}/.test(CSS));
   s.ok('bar and rail sit at z-index 121, under 500',/body\.si-fullscreen \.si-tk-bar\{[^}]*z-index:121/.test(CSS)&&/body\.si-fullscreen \.si-tk-rail\{[^}]*z-index:121/.test(CSS));
   s.ok('the FAB is not hidden (it is on the Mood Boards canvas)',!/si-fullscreen #bug-report-fab\{[^}]*display:none/.test(CSS));
   s.ok('on a phone the FAB clears the dock',/@media \(max-width:600px\)\{[\s\S]*body\.si-fullscreen #bug-report-fab\{bottom:calc\(var\(--si-tk-dock\)/.test(CSS));

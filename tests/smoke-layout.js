@@ -2884,6 +2884,7 @@ const FRAGMENTS={
     app.run('_siFr.fails={};_siFr.pending=true');
     const pend=app.run('_siFrHtml()');
     return Promise.resolve([ok,stale,busy,err,pend].map(h=>'<div class="si-fr">'+h+'</div>').join(''));
+  },
   // Two-phase line items (load-time stage 2): the strip in its three states, the gate card (loading and failed), the "needs full history" cell
   // and the dashed placeholder cards. Tokens only; the buttons must be reachable and every line readable in both themes.
   'inventory intel — full history strip, gate and labelled partial figures':()=>{

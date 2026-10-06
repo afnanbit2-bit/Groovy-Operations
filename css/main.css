@@ -5577,7 +5577,7 @@ html.si-fullscreen{overflow:hidden;overscroll-behavior:none}
 body.si-fullscreen .si-tk-bar{display:flex;position:fixed;top:0;left:0;right:0;height:var(--si-tk-bar);z-index:121;align-items:center;gap:12px;padding:0 12px;background:var(--surface);border-bottom:1px solid var(--border)}
 body.si-fullscreen .si-tk-rail{display:flex;position:fixed;top:var(--si-tk-bar);left:0;bottom:0;width:var(--si-tk-rail-w);z-index:121;flex-direction:column;gap:2px;padding:10px 8px;overflow-x:hidden;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);transition:width .22s cubic-bezier(.4,0,.2,1);overscroll-behavior:contain}
 #main-content.si-takeover{position:fixed;top:var(--si-tk-bar,52px);left:var(--si-tk-rail-w,232px);right:0;bottom:auto;height:calc(100vh - var(--si-tk-bar,52px));height:calc(100dvh - var(--si-tk-bar,52px));z-index:120;background:var(--bg);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;transition:left .22s cubic-bezier(.4,0,.2,1)}
-body.si-fullscreen #si-tab-bar{display:none}
+body.si-fullscreen #si-tab-bar>.gp-tabs{display:none}   /* the rail replaces the tab row; the sub-bar (Weekly Close, Ignored, Advanced, Type & season) stays: it is the only way to those views */
 .si-tk-exit,.si-tk-toggle{font-family:inherit;font-size:14px;font-weight:600;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;min-height:36px;padding:0 14px;cursor:pointer;white-space:nowrap}
 .si-tk-exit:hover,.si-tk-toggle:hover{border-color:var(--muted)}
 .si-tk-exit:active,.si-tk-toggle:active{background:var(--soft)}
