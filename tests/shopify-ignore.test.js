@@ -142,7 +142,7 @@ async function checks(src,rules){
   o['Search result chip for a dated ignore reads "Ignored until <date>"']=(()=>{R('_siMeta=new Map([["R10",_siMetaClean("R10",{ignoredUntil:"2026-09-07"})]]);_siIgVer++;');const h=R('(()=>{_siAxModeSel="search";_siAxQuery="R10";return _siAxResultsHtml();})()');R('_siMeta=new Map([["R10",_siMetaClean("R10",{ignoreForever:true})]]);_siIgVer++;');return/Ignored until [^<]*Sep/.test(h);})();
   o['Compare can still add an ignored article']=R('_siAxCmp=[];_siAxTryAdd("R10").ok')===true;
   o['the article page offers Restore (not Ignore) for an ignored article, and Ignore for the others']=(()=>{R('_siAxSel="R10";_siAxModeSel="search"');const h=R('_siAxSearchBody()');R('_siAxSel="R9"');const h2=R('_siAxSearchBody()');R('_siAxSel="";');return/_siIgRestore/.test(h)&&/Ignored for good/.test(h)&&/_siIgOpen/.test(h2)&&!/_siIgRestore/.test(h2);})();
-  o['tab bar: seven tabs with "Ignored" and its count (1) before Advanced']=(()=>{const b=R('_siTabBar()');return(b.match(/class="gp-tab[ "]/g)||[]).length===7&&/Ignored<span class="si-ig-n"[^>]*>1</.test(b)&&b.indexOf('Ignored')<b.indexOf('Advanced');})();
+  o['tab bar: four sections; Today carries a sub-bar with "Ignored (1)" before Advanced']=(()=>{R('_siSection="today";_siSub=""');const b=R('_siTabBar()');return(b.match(/class="gp-tab[ "]/g)||[]).length===4&&/Ignored \(1\)/.test(b)&&b.indexOf('Ignored')<b.indexOf('Advanced');})();
   R('_siMetaState="ok";');
   o['Ignored tab: lists R10 with its picture tile, code, class chip, return date 8 Sep and "by afnan"; Restore button']=(()=>{
     R('_siMeta=new Map([["R10",_siMetaClean("R10",{ignoredUntil:"2026-09-07",ignoredAt:'+Date.parse('2026-08-31T12:00:00+05:00')+',ignoredBy:"afnan"})]]);_siIgVer++;');
@@ -154,7 +154,7 @@ async function checks(src,rules){
     return order.join()==='R8,R9,R10'&&/never/.test(h);})();
   o['Ignored tab: the empty state, and a loading state while the read is in flight']=(()=>{R('_siMeta=new Map();_siIgVer++;');const e=R('_siIgnoredSectionHtml()');R('_siMetaState="loading"');const l=R('_siIgnoredSectionHtml()');R('_siMetaState="ok"');return/Nothing is ignored/.test(e)&&/Reading the ignore list/.test(l);})();
   R('_siMeta=new Map([["R10",_siMetaClean("R10",{ignoredUntil:"2026-09-07",ignoredAt:1,ignoredBy:"afnan"})]]);_siIgVer++;');
-  o['the tab switch paints the Ignored section']=(()=>{R('window._siSwitchTab("ignored")');const h=R('document.getElementById("si-content").innerHTML');R('_siSection="overview"');return/Ignored — 1 article/.test(h);})();
+  o['the tab switch paints the Ignored section']=(()=>{R('window._siSwitchTab("ignored")');const h=R('document.getElementById("si-content").innerHTML');R('_siSection="today";_siSub=""');return/Ignored — 1 article/.test(h);})();
   const nW=W.calls.length;
   await R('window._siIgRestore("R10")');
   const rw=W.calls[nW]||{};
