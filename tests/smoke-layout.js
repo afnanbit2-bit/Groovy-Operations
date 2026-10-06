@@ -2950,6 +2950,38 @@ const FRAGMENTS={
     _axSeed(app);
     return Promise.resolve('<div id="si-content">'+app.run('(()=>{_siAxModeSel="portfolio";_siAxPfMemo=null;_siAxPfAll=true;_siAxPfConcAll=true;return _siAxPortfolioBody();})()')+'</div>');
   },
+  // Product-data sub-phase 3: the Season and Type filter bars over the Explorer (chips with counts and an active filter, the unavailable line, the reading
+  // line), and the Portfolio's "by saved type / by saved season" rollups (with an Unclassified row, and the unavailable note). Chips must be reachable.
+  'inventory intel — Article Explorer type and season filter':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('(()=>{const L=_siAxIndex().list,m=new Map();L.forEach((a,i)=>{const t=["top","bottom","other",null][i%4],s=["winter","summer","all",null][i%3];m.set(a.code,_siMetaClean(a.code,{type:t,season:s}));});_siMeta=m;_siMetaState="ok";_siIgVer++;_siAxModeSel="overview";_siAxOvTile="reorder";_siAxOvAll=false;_siAxOvCat="";_siAxQuery="";_siAxFSeason="winter";_siAxFType="";})()');
+    return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
+  },
+  // the same bars on their own: two filters set (Unclassified + top), the unavailable line with Retry, and the reading line
+  'inventory intel — Article Explorer type and season filter states':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('(()=>{const L=_siAxIndex().list,m=new Map();L.forEach((a,i)=>{const t=["top","bottom","other",null][i%4],s=["winter","summer","all",null][i%3];m.set(a.code,_siMetaClean(a.code,{type:t,season:s}));});_siMeta=m;_siMetaState="ok";_siIgVer++;_siAxModeSel="overview";_siAxFSeason="none";_siAxFType="top";})()');
+    const b=app.run('_siAxFilterBarHtml()');
+    app.run('_siAxFSeason="";_siAxFType="";_siMetaState="error"');
+    const bad=app.run('_siAxFilterBarHtml()');
+    app.run('_siMetaState="loading"');
+    const load=app.run('_siAxFilterBarHtml()');
+    return Promise.resolve('<div id="si-content"><div class="si-frag">'+b+'</div><div class="si-frag">'+bad+'</div><div class="si-frag">'+load+'</div></div>');
+  },
+  'inventory intel — Article Explorer portfolio by saved type and season':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('(()=>{const L=_siAxIndex().list,m=new Map();L.forEach((a,i)=>{const t=["top","bottom","other",null][i%4],s=["winter","summer","all",null][i%3];m.set(a.code,_siMetaClean(a.code,{type:t,season:s}));});_siMeta=m;_siMetaState="ok";_siIgVer++;_siAxModeSel="portfolio";_siAxPfMemo=null;_siAxFSeason="";_siAxFType="";})()');
+    const a=app.run('_siAxPfFeedHtml(_siAxPf())');
+    app.run('_siMetaState="error";_siIgVer++;_siAxPfMemo=null');
+    const bad=app.run('_siAxPfFeedHtml(_siAxPf())');
+    return Promise.resolve('<div id="si-content"><div class="card si-pf"><div class="card-title">By saved type and saved season</div>'+a+'</div><div class="card si-pf">'+bad+'</div></div>');
+  },
   // The Sizes card: the sales-vs-stock bars, every status chip (out, thin, fine, over, no sales, no stock data), the readout and the
   // suggested split, for a seeded article and for a synthetic run covering every chip and a long hostile-length size label.
   'inventory intel — Article Explorer sizes card':()=>{
