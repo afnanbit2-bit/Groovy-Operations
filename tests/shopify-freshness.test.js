@@ -53,7 +53,9 @@ function mk(src,o){
     if(ref.n==='shopify_line_items'&&ref.w&&ref.w.some(x=>x.op==='<')&&ref.w.some(x=>x.op==='>='))return Promise.resolve({forEach(){}});
     st.reads[ref.n]=(st.reads[ref.n]||0)+1;
     if(st.fail[ref.n])return Promise.reject(st.fail[ref.n]);
-    return Promise.resolve({forEach(f){((o.rows&&o.rows[ref.n])||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
+    // the catalog and the line-item window are never empty on a real store (an empty read now fails the stage, 6 Oct 2026): one placeholder row each unless the test gives rows
+    const dflt={shopify_products:[{id:'p1',sku:'AA'}],shopify_line_items:[{id:'l1',sku:'AA',order_created_at:'2026-10-01T10:00:00+05:00'}]};
+    return Promise.resolve({forEach(f){((o.rows&&o.rows[ref.n])||dflt[ref.n]||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
   };
   ctx.getDoc=ref=>{
     if(ref.c==='shopify_inventory_snapshots'){

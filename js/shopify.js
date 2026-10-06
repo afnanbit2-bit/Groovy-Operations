@@ -120,12 +120,23 @@ function _siLoadErr(e){
   else if(/unavailable|network|offline|failed to fetch/i.test(code+' '+msg))cls='network';
   return{msg,code,cls,at:_siNow()};
 }
+// A read that returns ZERO documents from a collection that always holds some (the catalog, the line items of the window) is
+// not "a quiet store": Firestore answers a query from its local cache, with no error, when the client cannot reach the server, and a
+// wrong project would answer empty too. Treating it as a successful read showed "Line items: this is the full read" over zeros (6 Oct 2026).
+// It fails the stage instead (so the loader retries, then says so with a Retry button) and never replaces data already held with nothing.
+// Weekly closes are exempt (a young store may really have none) and so are orders (only used to drop cancelled lines and to count): every
+// figure on the page comes from the catalog and the line items, so those two are what must not be silently empty.
+function _siEmptyRead(col,fromCache){
+  const e=new Error('Read 0 documents from '+col+(fromCache?' (answered from this device\u2019s local cache, so the connection to the server may be down)':' — it normally holds data; check the connection and that the sync has run')+'.');
+  e.code='empty-read';return e;
+}
 // ── The reads. Each assigns its own result the moment it returns, so a later failure keeps it. ──
 function _siColRunner(id,col,q){
   return async function(){
     const stamps=await _siFrStampsPre(); // captured BEFORE the read, so a sync landing mid-read can only make us under-claim
     const s=await getDocs(q?q():collection(db,col));
     const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
+    if(!a.length&&(id==='products'))throw _siEmptyRead(col,!!(s&&s.metadata&&s.metadata.fromCache));
     if(id==='products'){_siProducts=a;_siSeasonMapCache=null;_siProdMapCache=null;}
     else if(id==='orders')_siOrders=a;
     else if(id==='lines')_siLineItems=a;
@@ -164,13 +175,14 @@ const _siRunners={
     // The window is read as _SI_LINE_CHUNKS disjoint date ranges, in parallel: the same documents, but each range that lands is real
     // progress (the old single getDocs gave no number for the whole read — the percentage sat still for as long as it took).
     const bounds=_siLineBounds(cut,_siPktDate(0),_SI_LINE_CHUNKS);
-    let landed=0;
+    let landed=0,cached=false;
     const parts=await Promise.all(bounds.map((lo,i)=>{
       const hi=bounds[i+1];
       const q=hi?query(collection(db,'shopify_line_items'),where('order_created_at','>=',lo),where('order_created_at','<',hi)):query(collection(db,'shopify_line_items'),where('order_created_at','>=',lo));
-      return Promise.resolve(getDocs(q)).then(sn=>{landed++;const arr=[];sn.forEach(d=>{const o=d.data();o._id=d.id;arr.push(o);});siPart('lines',landed/bounds.length,'date range '+landed+' of '+bounds.length);return arr;});
+      return Promise.resolve(getDocs(q)).then(sn=>{landed++;if(sn&&sn.metadata&&sn.metadata.fromCache)cached=true;const arr=[];sn.forEach(d=>{const o=d.data();o._id=d.id;arr.push(o);});siPart('lines',landed/bounds.length,'date range '+landed+' of '+bounds.length);return arr;});
     }));
     const a=[].concat.apply([],parts);
+    if(!a.length)throw _siEmptyRead('shopify_line_items (last '+_SI_WIN_DAYS+' days)',cached); // before anything is replaced or stamped as a full read
     if(_siLinesScope==='full'||_siFull.st==='done'){_siFull.st='idle';_siFull.err=null;_siFull.n=0;_siFull.tok++;} // checked AFTER the await: a phase 2 that landed meanwhile counts
     _siLineItems=a;_siLinesScope='window';_siLinesCut=cut;
     _siLinesFullAt=t0;_siLinesLastReadAt=t0;_siLinesForceFull=false;_siLinesMode='full';_siLinesIncN=0;_siLinesIncFrom='';

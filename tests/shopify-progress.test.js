@@ -56,20 +56,22 @@ function mk(src,o){
   // The line-item window is read as several date-range queries issued in ONE burst (js/shopify.js _SI_LINE_CHUNKS). For the older checks they are
   // ONE logical read: the first query of a burst counts and consumes the plan entry, the rest wait on the same outcome (and carry no rows).
   // st.chunkMode='split' turns that off so the per-chunk progress tests can release the ranges one at a time.
+  // the catalog and the line-item window are never empty on a real store (an empty read now fails the stage, 6 Oct 2026): one placeholder row each
+  const dflt={shopify_products:[{id:'p1',sku:'AA'}],shopify_line_items:[{id:'l1',sku:'AA',order_created_at:'2026-10-01T10:00:00+05:00'}]};
   const emptySnap={forEach(){}};let burst=null;
   ctx.getDocs=ref=>{
     if(ref.n==='shopify_line_items'&&ref.w&&ref.w.length&&st.chunkMode!=='split'){
       const lo=String(ref.w[0].v);
       if(burst&&!burst.seen[lo]){burst.seen[lo]=1;return burst.p.then(()=>emptySnap);}
-      const first=run1(ref.n,{forEach(f){(o.rows&&o.rows[ref.n]||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
+      const first=run1(ref.n,{forEach(f){(o.rows&&o.rows[ref.n]||dflt[ref.n]||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
       const b={p:Promise.resolve(first).then(x=>x),seen:{[lo]:1}};b.p.catch(()=>{});burst=b;Promise.resolve().then(()=>{if(burst===b)burst=null;});
       return first;
     }
     if(ref.n==='shopify_line_items'&&ref.w&&ref.w.length&&st.chunkMode==='split'){
       (st.chunkLog=st.chunkLog||[]).push(ref.w.map(x=>x.v));
-      const i=st.chunkLog.length-1;return new Promise((res,rej)=>{(st.chunkHolds=st.chunkHolds||[]).push({res:()=>res(emptySnap),rej});});
+      const i=st.chunkLog.length-1;return new Promise((res,rej)=>{(st.chunkHolds=st.chunkHolds||[]).push({res:()=>res(i===0?{forEach(f){dflt.shopify_line_items.forEach(r=>f({id:r.id,data:()=>Object.assign({},r)}));}}:emptySnap),rej});});
     }
-    return run1(ref.n,{forEach(f){(o.rows&&o.rows[ref.n]||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
+    return run1(ref.n,{forEach(f){(o.rows&&o.rows[ref.n]||dflt[ref.n]||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});
   };
   ctx.getDoc=ref=>run1(ref.c==='shopify_inventory_snapshots'?'snap:'+ref.id:'meta:'+ref.id,{exists:()=>true,data:()=>({date:ref.id,items:{}})});
   const tick=async ms=>{ctx.__t=ck.t;await ck.advance(ms);};

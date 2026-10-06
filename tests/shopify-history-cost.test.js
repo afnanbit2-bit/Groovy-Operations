@@ -283,7 +283,7 @@ async function checks(src,sink){
 
   // ── 8. when the read starts ──
   {
-    const mkCols=()=>({shopify_products:[],shopify_orders:[],shopify_line_items:[],shopify_weekly_closes:[]});
+    const mkCols=()=>({shopify_products:[{sku:'AA-S'}],shopify_orders:[],shopify_line_items:[{sku:'AA-S',quantity:1,order_created_at:T+'T10:00:00+05:00'}],shopify_weekly_closes:[]}); // an empty catalog or line-item read now fails the stage (6 Oct 2026)
     // warm cache: the history read is issued while the line items are still being read
     let rel;const hold=new Promise(r=>{rel=r;});
     const fk=fake(snaps40,{cols:mkCols(),hold:{shopify_line_items:hold},today:T}),a=app(src,fk,Object.assign({},coldStore));
