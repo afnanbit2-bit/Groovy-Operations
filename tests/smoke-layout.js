@@ -2780,6 +2780,27 @@ const FRAGMENTS={
     return Promise.resolve('<div id="si-content">'+out+'</div>');
   },
   // Reason chips (with the returns-waiting chip), the isolated band and its flash, a reason's list, and the clickable Overview tiles.
+  // Already on order (Oct 2026): the open-PO chip on rows (single PO, several POs, a long PO id), "moved down: PO covers it", the situation
+  // view of a covered and a partial reorder, the Overview reorder row and the Explorer verdict, and the unavailable note. Chip ink is
+  // --text on --surface with a --cat-notes edge, so both themes must read it at every width.
+  'inventory intel — on order chip, rows, situation and unavailable note':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siSection="attention";_siNaSel="";_siNaFilter="all";_siNaWatchOpen=true;_siNaShow={critical:true,act:true,watch:true}');
+    const codes=JSON.parse(app.run('J=JSON.stringify(_siNaState().issues.filter(i=>i.n.qty).slice(0,3).map(i=>i.code))'));
+    const today=app.run('_siPktDate(0)'),d=n=>app.run('_siAxDayStr(_siAxDayNum("'+today+'")-'+n+')');
+    const m={};
+    if(codes[0])m[codes[0]]=[{id:'PO-176 with a long reference number',code:codes[0],qty:5000,day:d(5)}];
+    if(codes[1])m[codes[1]]=[{id:'PO-170',code:codes[1],qty:12,day:d(12)},{id:'PO-171',code:codes[1],qty:12,day:d(3)}];
+    app.run('_siPoByCode=new Map(Object.entries('+JSON.stringify(m)+'));_siPoState="ok";_siPoVer++;_siPoMemo=null');
+    const list=app.run('_siNaListHtml()');
+    const view=codes.slice(0,2).map(c=>{app.run('_siNaSel='+JSON.stringify(c));return'<div class="si-na-frag">'+app.run('_siNaSectionHtml()')+'</div>';}).join('');
+    app.run('_siNaSel="";_siPoState="error"');
+    const note=app.run('_siPoNote()');
+    app.run('_siPoState="ok"');
+    return Promise.resolve('<div id="si-content"><div class="si-na-frag">'+list+'</div>'+view+'<div class="si-na-frag">'+note+'</div></div>');
+  },
   'inventory intel — Needs Attention reason chips and isolated band':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
