@@ -2833,6 +2833,21 @@ const FRAGMENTS={
     const failed=app.run('_siHistStrip()');
     return Promise.resolve('<div id="si-content">'+pending+'<div style="height:16px"></div>'+failed+'</div>');
   },
+  // Two-phase line items (load-time stage 2): the strip in its three states, the gate card (loading and failed), the "needs full history" cell
+  // and the dashed placeholder cards. Tokens only; the buttons must be reachable and every line readable in both themes.
+  'inventory intel — full history strip, gate and labelled partial figures':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siLinesScope="window";_siLinesCut="2026-07-08"');
+    const idle=app.run('_siFullStripHtml()');
+    app.run('_siFull.st="loading"');
+    const loading=app.run('_siFullStripHtml()')+app.run('_siFullGateHtml("The Article Explorer")');
+    app.run('_siFull.st="failed";_siFull.err={msg:"older read refused",code:"",cls:"quota",at:0}');
+    const failed=app.run('_siFullStripHtml()')+app.run('_siFullGateHtml("Needs Attention")');
+    const cells='<div class="card"><div class="card-title">Sold since live</div>'+app.run('_siSoldSinceLiveCell(5,"2026-01-01T00:00:00Z",true)')+'</div>'
+      +'<div class="card si-full-need-card"><div class="card-title">Variant Aging (first / last sold)</div><div style="font-size:13px;color:var(--muted)">'+app.run('_siFullNeedsCell()')+' — it reads each product\'s first sale, last sale or lifetime total, which the loaded 90 days cannot give.</div></div>';
+    return Promise.resolve('<div id="si-content">'+idle+'<div style="height:12px"></div>'+loading+'<div style="height:12px"></div>'+failed+'<div style="height:12px"></div>'+cells+'</div>');
+  },
   // The loader (Oct 2026): the card over the page skeleton mid-way, the stalled countdown, and the final error card. Tokens only; every
   // control must be reachable (hit-tested) and every line readable in both themes. Verified by painting the stage line in --surface.
   'inventory intel — loading mid-way':()=>{
