@@ -757,6 +757,64 @@ do not call jsPDF directly for new print features.**
   interim page (never a stark `about:blank`) during the font fetch/subset,
   and `_previewError` renders a readable failure page instead of a
   blank/closed tab. Remaining variant builders reuse the components below.
+- **`embroidery-job` (2 Oct 2026, step 1 of 3 job copies; printing and washing
+  are NOT built).** `_renderEmbroideryJob`: its own single A4 page, OUTSIDE the
+  PO's two-page limit, `minimal` Urdu, English only. Typed: big PO number top
+  right (header, as the PO), big ARTICLE CODE in a red-bordered title band,
+  article name, product photo (the same `__productImg` preload every variant
+  gets). Handwritten: red START DATE (header line), PLACEMENT, CANDLE / SHADE
+  CODE (five ruled lines), DATE HANDED OVER, ACTUAL CUT QUANTITY BY SIZE (Size |
+  Qty, rows from `_PO_SIZE_ROWS`, shared with the PO tables, red boxed TOTAL),
+  red END DATE, and a square 8 x 8 cm "Fabric sample — staple here" box. Called
+  from the console as `window.generateEmbroideryJobPdf(po | fbKey)` (`js/pos.js`);
+  no PO-creation checkbox or button yet. An article name over two lines is cut
+  to two. `tests/job-print.test.js`. **Not seen on a printer.** `embroidery-vendor`
+  is still the unbuilt stub.
+- **`printing-job` (2 Oct 2026, step 2 of 3).**
+  `_renderPrintingJob`: same single A4 page, header, red-bordered band, photo
+  and line colours as the embroidery copy, `minimal` Urdu, footer "Printing
+  Job". Typed: PO number, article code, article name, photo, title PRINTING
+  JOB. Handwritten: red START DATE, PLACEMENT (3 lines), PANTONE CODE (5
+  lines), PRINT NAME / DESIGN NAME, Size | Qty
+  (`_PO_SIZE_ROWS`, red boxed TOTAL row = the ONLY total; the separate TOTAL
+  ACTUAL CUT UNITS box was removed, 2 Oct, and the table now uses the full
+  width), red END DATE; no fabric sample box. **START DATE is ALWAYS
+  handwritten on every job copy** (red label + blank line): `_jobTop` never
+  passes a date to the header and `generate*JobPdf` no longer send
+  `startDate`; washing must follow the same rule. The PO keeps its auto date. The
+  two job copies now share `_jobKit`/`_jobTop`/`_jobNameRow`/`_jobWriteBox`/
+  `_jobPhoto`/`_jobSizeTable`/`_jobEndDate` (the embroidery tests pass
+  unchanged). Console: `window.generatePrintingJobPdf(po | fbKey)`; no UI.
+  `tests/job-print.test.js`. **Not seen on a printer.**
+- **`washing-job` (2 Oct 2026, step 3 of 3 — the set is complete).**
+  `_renderWashingJob`: the same single A4 page, header (START DATE handwritten
+  via `_jobTop`), red-bordered band "WASHING JOB", article name, photo and
+  `_jobSizeTable` (ONE boxed red TOTAL row, no separate total) and red END DATE.
+  Between them: a prominent "COMPLETE BEFORE CUTTING" box and a short checklist
+  to confirm before cutting, each line with a hand tick box: Fabric is 100%
+  cotton / Rib is 100% cotton / Shrinkage of fabric is done; then Checked by
+  (name), Signature, Date checked and one Remarks line. `minimal` Urdu, footer
+  "Washing Job". Console: `window.generateWashingJobPdf(po | fbKey)` (async);
+  no UI.
+  **URDU WORKS HERE, AND NOT THROUGH jsPDF.** The engine still cannot draw Urdu
+  (see Fonts). The CALLER (`js/pos.js`, `_washRasterUrdu`) rasterises each Urdu
+  line with the browser's own shaping — a 2D canvas, `direction='rtl'`, the
+  self-hosted Jameel Noori Nastaleeq @font-face (`document.fonts.load` awaited
+  first), 72px, transparent, ink `#262626`, cropped to the ink box — and passes
+  `data.urduImages = {note, fabric, rib, shrink}` (`{dataUrl, w, h, fontPx}`);
+  the renderer places them with `addImage` at 22pt-equivalent (26pt for the
+  note), right-aligned, aspect kept, capped at 300pt wide. No Urdu string ever
+  reaches `doc.text`. **Font unavailable, no canvas, or a throw = no pictures
+  and the same sheet in clean English only** (never blanks, never tofu; held by
+  tests). `"100%"` is wrapped in LRI/PDI (U+2066/2069) or the canvas's bidi
+  prints it `%100`. **Cost, measured in headless Chromium:** the font is the
+  ~10 MB TTF, fetched by the browser on first `document.fonts.load` (it is only
+  fetched when something on the page uses it; locally 382 ms for the first
+  print, ~70 ms after); the four pictures make the PDF ~1.2 MB (English-only
+  ~130 KB). **The Urdu wording below was written by Claude and has NOT been
+  checked by an Urdu speaker:** کٹنگ سے پہلے مکمل کریں / کپڑا 100% کاٹن ہے؟ /
+  ریب 100% کاٹن ہے؟ / کپڑے کی شرنکیج (سکڑنا) مکمل ہو چکی ہے؟ — get them
+  reviewed before printing in bulk. **Not seen on a printer.**
 - **Landscape (M1.4):** `data.orientation:'landscape'` (or the type's default
   in `_PRINT_ORIENTATION_DEFAULTS`) builds A4 landscape (842×595) for a type
   in `_PRINT_LANDSCAPE_READY`; the shared components read the page from
@@ -765,14 +823,34 @@ do not call jsPDF directly for new print features.**
 - **Blob delivery (M1.4):** `printDocument({…, deliver:'blob'})` opens no
   tab, downloads nothing and shows no toast; it resolves `{blob, filename}`,
   and a failure rejects. Without `deliver`, nothing changes.
-- **`_renderPO` — Notes (Sept 2026):** free-text field on the PO, entered in
-  `renderPOCreate()` (`js/pos.js`, `#po-notes` textarea) and saved as
-  `po.notes`. Rendered on the printed PO traveler right after the order-info
-  grid/product photo, before the station tables — always in
-  `PRINT_COLORS.red` (`#DC2626`), never the default body text color, so it
-  stands out to every station handling the PO. Also shown in red on the PO
-  detail page (`renderDetailPage()`) and in the legacy (`__usePrintEngine =
-  false`) jsPDF fallback in `generatePOPdf()`, so all three paths agree.
+- **`_renderPO` — Notes (Sept 2026), REVERSED 2 Oct 2026:** the free-text
+  `po.notes` field is still entered in `renderPOCreate()` (`#po-notes`), saved
+  as `po.notes` and shown in red on the PO detail page and in the legacy
+  (`__usePrintEngine = false`) fallback — but **the printed PO traveler no
+  longer prints notes at all** (Afnan crossed the Notes line out on both
+  pages). `_renderPO` ignores `data.notes`; `tests/po-print.test.js` passes a
+  note and asserts it is never drawn.
+- **`_renderPO` layout (2 Oct 2026):** at most TWO A4 pages and a station block
+  is never split — every part is a measured block, `_PO_DENSITIES` is tried
+  comfortable → compact and the first whose simulated page flow fits two pages
+  is drawn. START DATE (po.startDate; a red line when empty) is top-middle in
+  the header and the GROOVY wordmark is thickened (fill+stroke text, 1pt),
+  every station carries red START / END DATE lines, every table has a boxed
+  TOTAL row. **Red is only for what matters most:** START DATE, station bands
+  (and their dates), TOTAL rows and the Total Quantity / Ratio / Total Weight /
+  Average Per Unit boxes; all ordinary table and info-grid lines are a dark
+  neutral (`#262626`) at the same heavier width. The printout prints **no
+  Notes and no "Grand Total Quantity Processed"** (the boxed TOTAL row is the
+  only total) and the Stitching sign-off is a blank "With Name" line (the
+  owner name stays under the heading). The Sizes row prints each size with its
+  quantity and ratio, e.g. `S 100(1)  M 200(2)` — the `(n)` in red
+  (`_poSizeTokens`): quantity = totalQty × ratio ÷ Σratio, shown only when
+  whole numbers summing to totalQty, else `S(1)  M(2)`; no/unparseable ratio =
+  the plain sizes string. Stitching columns: Date 73 / Size + Bundle 209 /
+  OFFLINE 146 / Total 95 pt (~14/40/28/18%). Station titles and the name
+  printed under each live in `_PO_STATIONS`. No Urdu is drawn on the PO (the
+  font draws blanks), so `po` defaults to `minimal`. `tests/po-print.test.js`;
+  **not seen on a printer.**
 - **Internal components (NOT global; JSDoc'd in the file):**
   `_renderHeader`, `_renderFooter` (auto every page via `_stampFooters`),
   `_renderSectionHeader`, `_renderBilingualLabel`, `_renderInfoTable`,
@@ -809,8 +887,8 @@ do not call jsPDF directly for new print features.**
   | Default `urduLevel` | Types |
   |---|---|
   | `none` | `pattern-label`, `ma-ledger`, `ma-statement-holder` |
-  | `minimal` | `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board`, `consumable-log`, `ma-statement-party` |
-  | `full` | `gate-pass` (forced), `po`, `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet`, `ma-receipt`, `ma-voucher` |
+  | `minimal` | `po` (2 Oct 2026), `generic`, `payroll-sheet`, `payslip`, `daily-performance`, `stock-transfer`, `mood-board`, `consumable-log`, `ma-statement-party` |
+  | `full` | `gate-pass` (forced), `embroidery-vendor`, `sublimation-vendor`, `qc-report`, `placement-sheet`, `ma-receipt`, `ma-voucher` |
 
   Measured (same PO, real JNN): `minimal` ≈ 116 KB / 0 JNN fetch · `full`
   ≈ 552 KB / JNN fetched. jsPDF 2.5.1 subsets embedded TTFs so `full` is far
