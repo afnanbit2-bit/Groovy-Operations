@@ -671,6 +671,7 @@ async function loadShopifyData(){
   // usually landed by the first paint. A cold one is a full read of up to 150 snapshots: it starts after the first paint as
   // before, so it does not compete with the line items for bandwidth. Either way it stays outside the percentage.
   if(_siHistState==='idle'&&typeof getDocs==='function'&&_siHistCacheRead())_siAxEnsureHistory();
+  if(_siPoState==='idle')_siPoLoad(); // open POs: one bounded read, outside the percentage; a failed read downgrades nothing and hides nothing
   if(_siMetaState==='idle')_siMetaLoad(); // the shared ignore list: tiny, in parallel, outside the percentage; a failed read hides nothing
   if(ids.length)_siLoadRunStages(ids);else _siLoadSettle();
   return _siLoad.promise;
@@ -4592,6 +4593,7 @@ function _siAxSearchBody(){
   const vc=_siAxClassify(a),va=_siAxActionOf(a),vconf=_siAxConfidence(a);
   const verdictHtml=`<div class="card si-verdict act-${va.key}"><div class="si-vd-top"><span class="si-vd-act">${_siEsc(va.label)}</span><span class="si-pc-chip cls-${vc.cls}"><i class="si-pc-key cls-${vc.cls}"></i>${_siEsc(vc.label)}</span>${_siAxConfChip(vconf)}</div>
     <div class="si-vd-text">${_siEsc(va.text)}</div>
+    ${_siPoVerdictHtml(a,va)}
     <div class="si-vd-lt">${_siAxLtCtlHtml(a)}</div>
     <div class="si-ax-note" style="margin:4px 0 0">${_siEsc(vc.rule)}${vc.near?' '+_siEsc(vc.near):''}${vc.unverified?' (partly unverified)':''}</div></div>`;
   return`<div class="card"><div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
@@ -4797,7 +4799,7 @@ function _siAxOverviewBody(){
     <div class="fg"><div class="k">Stock lasts</div><div class="v">${_siEsc(_siAxCoverText(r.m))}</div></div>
     <div class="fg"><div class="k">Selling / week</div><div class="v">${_siEsc(_siAxNum(r.m.paceHead))}</div></div>
     <div class="fg"><div class="k">Sizes out</div><div class="v">${r.m.risk&&r.m.risk.length?_siEsc(r.m.risk.map(x=>x.size).join(', ')):'—'}</div></div>
-    <div class="act">${_siEsc(r.act.text)}</div>
+    <div class="act">${_siEsc(r.act.text)}${_siPoChipHtml(r.a.code)}</div>
     <div class="lt">${_siAxLtCtlHtml(r.a)}</div>
     <div class="btns"><button class="si-ax-btn si-ov-sit" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvSituation(this.dataset.code)">Situation</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOpen(this.dataset.code)">Open</button><button class="si-ax-btn" data-code="${_siEsc(r.a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button>${_siIgBtnHtml(r.a.code)}</div></div>`;
   const cnt={};rows.forEach(r=>{cnt[r.c.cls]=(cnt[r.c.cls]||0)+1;});
@@ -4805,7 +4807,7 @@ function _siAxOverviewBody(){
   return`<div class="card"><div class="si-ax-bar"><label class="si-ax-lab" for="si-ov-cat">Category</label><select id="si-ov-cat" class="si-ax-select" onchange="window._siAxOvCat(this.value)"><option value="">All categories</option>${cats.map(c=>`<option value="${_siEsc(c)}"${c===_siAxOvCat?' selected':''}>${_siEsc(c)}</option>`).join('')}</select></div>
     <div class="si-ov-tiles">${_SI_OV_TILES.map(tile).join('')}</div>
     <div class="si-ax-lab" style="margin:12px 0 4px">${_siEsc(cur.l)} — ${list.length} article${list.length===1?'':'s'}${list.length>show.length?' (showing '+show.length+')':''}</div>
-    ${show.length?show.map(row).join(''):`<div class="si-ax-empty">Nothing here right now.</div>`}
+    ${cur.k==='reorder'?_siPoNote():''}${show.length?show.map(row).join(''):`<div class="si-ax-empty">Nothing here right now.</div>`}
     ${list.length>10?`<button class="si-ax-btn" onclick="window._siAxOvAll()">${_siAxOvAll?'Show the first 10':'Show all '+list.length}</button>`:''}
     <div class="si-ax-note" style="margin-top:10px">${_siEsc(classLine)}. Articles with fewer than ${_SI_AX_SCORE.minDays} counted days or no stock data are not classed. Lead times are editable defaults, not facts (Lead time section below).</div></div>
   ${_siAxHistBanner()}
@@ -5314,6 +5316,126 @@ function _siNaQty(perDay,lead,onHand,cls){
   if(hi<=0)return null;
   return{lo,hi,target:tgt};
 }
+// ═══ On order: open production orders (PO read), arrival inferred from stock jumps ═══
+// Inventory Intel never read `pos`, so an article already being cut still read "Reorder now" (27 of 71 on the 30 Sept dump had a PO in
+// the last 35 days). This block reads the POs ONCE per page load (never rejects, never hides what it could not read) and answers, per
+// article, how many pieces are still on order. PO stages are never completed in this app, so ARRIVAL IS INFERRED, not read: a PO is open
+// from the day it was created until a stock jump after that day covers at least half of it, or until a safety expiry. Both numbers
+// below are ASSUMPTIONS for the owner to confirm, not facts. Nothing is hidden because of a PO: it is a chip, a band downgrade and a
+// smaller reorder guide, each with its reason on screen.
+const _SI_PO={
+  col:'pos',
+  readDays:120,        // the read: POs created in the last 120 days (single-field range query on ts, no index needed)
+  readCap:400,         // safety cap on documents read
+  expiryDays:45,       // ASSUMPTION: a PO that has not been seen arriving is assumed delivered or abandoned 45 days after it was created
+  jumpMin:5,           // ASSUMPTION: an arrival is an unexplained stock rise (stock change + units sold) of at least max(5, half the PO qty)
+  jumpShare:0.5
+};
+let _siPoState='idle',_siPoPromise=null,_siPoByCode=new Map(),_siPoRead=0,_siPoVer=0,_siPoMemo=null;
+function _siPoSig(){return _siPoState+'|'+_siPoVer;}
+function _siPoClean(id,d){
+  if(!d)return null;
+  const code=_siCleanCode(_siCleanSku(d.code)),qty=Number(d.qty),day=_siAxDayOf(d.createdAt)||(typeof d.ts==='number'?_siAxDayOf(new Date(d.ts+5*3600000).toISOString()):'');
+  if(!code||!(qty>0)||!isFinite(qty)||!day)return null;
+  return{id:String(d.id||id),code,qty:Math.round(qty),day};
+}
+// One bounded read per page load. Never rejects, never blocks the loader or its percentage; a failed read is 'error', never an empty list.
+function _siPoLoad(force){
+  if(_siPoPromise&&!force)return _siPoPromise;
+  if(typeof getDocs!=='function'||typeof collection!=='function'||typeof query!=='function'||typeof where!=='function'){_siPoState='error';return Promise.resolve();}
+  _siPoState='loading';
+  _siPoPromise=(async()=>{
+    try{
+      const since=Date.now()-_SI_PO.readDays*86400000;
+      const q=typeof limit==='function'?query(collection(db,_SI_PO.col),where('ts','>=',since),limit(_SI_PO.readCap)):query(collection(db,_SI_PO.col),where('ts','>=',since));
+      const s=await getDocs(q);
+      const m=new Map();let n=0;
+      s.forEach(d=>{n++;const p=_siPoClean(d.id,d.data());if(!p)return;let l=m.get(p.code);if(!l){l=[];m.set(p.code,l);}l.push(p);});
+      _siPoByCode=m;_siPoRead=n;_siPoState='ok';
+    }catch(_){_siPoState='error';}
+    _siPoVer++;_siPoMemo=null;
+    try{_siIgRepaint();}catch(_){}
+  })();
+  return _siPoPromise;
+}
+window._siPoRetry=function(){_siPoPromise=null;_siPoLoad(true);};
+// The pure core. pos: [{id,qty,day}] for ONE article; days: the article's per-day series [{d,stock,prev,sold}] or null (no stock history:
+// arrival cannot be inferred, so only the expiry applies); today: YYYY-MM-DD. Oldest PO first; one stock jump can explain several POs
+// (its size is used up as it is matched), and a jump must be AFTER the PO's creation day.
+function _siPoCalc(pos,days,today){
+  const C=_SI_PO,tn=_siAxDayNum(today),out={open:[],arrived:[],expired:[],qty:0,until:null,latest:null,checked:!!days};
+  const ev=[];
+  if(days)days.forEach(x=>{if(x.stock==null||x.prev==null)return;const r=x.stock-x.prev+(x.sold||0);if(r>0)ev.push({d:x.d,rem:r});});
+  (pos||[]).slice().sort((x,y)=>(x.day<y.day?-1:x.day>y.day?1:(x.id<y.id?-1:1))).forEach(p=>{
+    const age=tn==null?null:tn-_siAxDayNum(p.day),thr=Math.max(C.jumpMin,C.jumpShare*p.qty);
+    const hit=ev.find(e=>e.d>p.day&&e.rem>=thr);
+    if(hit){hit.rem-=Math.min(hit.rem,p.qty);out.arrived.push({id:p.id,qty:p.qty,day:p.day,arrivedOn:hit.d});return;}
+    const exp=_siAxDayStr(_siAxDayNum(p.day)+C.expiryDays);
+    if(age!=null&&age>=C.expiryDays){out.expired.push({id:p.id,qty:p.qty,day:p.day,expired:exp});return;}
+    out.open.push({id:p.id,qty:p.qty,day:p.day,ageDays:age,expires:exp});
+  });
+  out.open.forEach(p=>{out.qty+=p.qty;if(out.until==null||p.expires<out.until)out.until=p.expires;if(out.latest==null||p.day>out.latest)out.latest=p.day;});
+  return out;
+}
+// What is still on order for one article. now = YYYY-MM-DD (PKT today). state: 'ok' | 'loading' | 'unavailable' (the read failed: no downgrade,
+// nothing zeroed). qty is null unless the read is ok.
+function _siPoOpenFor(code,now){
+  const c=_siCleanCode(_siCleanSku(code)),today=now||_siPktDate(0);
+  if(_siPoState==='loading'||_siPoState==='idle')return{state:'loading',qty:null,open:[],arrived:[],expired:[],until:null,latest:null,checked:false};
+  if(_siPoState!=='ok')return{state:'unavailable',qty:null,open:[],arrived:[],expired:[],until:null,latest:null,checked:false};
+  const pos=_siPoByCode.get(c);
+  if(!pos||!pos.length)return Object.assign({state:'ok'},_siPoCalc([],null,today));
+  let idx=null;try{idx=_siAxIndex();}catch(_){}
+  const sig=_siPoSig()+'|'+_siHistState+'|'+today;
+  if(!_siPoMemo||_siPoMemo.idx!==idx||_siPoMemo.sig!==sig||_siPoMemo.hist!==_siHist)_siPoMemo={idx,sig,hist:_siHist,m:new Map()};
+  let r=_siPoMemo.m.get(c);
+  if(!r){
+    let days=null;
+    try{const a=idx&&idx.map.get(c);if(a&&_siHistState==='ok'&&_siHist)days=_siAxTimeline(a,_siHist).days;}catch(_){days=null;}
+    r=Object.assign({state:'ok'},_siPoCalc(pos,days,today));_siPoMemo.m.set(c,r);
+  }
+  return r;
+}
+function _siPoDateText(day){const n=_siAxDayNum(day);if(n==null)return String(day||'');const d=new Date(n*86400000);return d.getUTCDate()+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];}
+function _siPoChipText(oo){
+  if(!oo||oo.state!=='ok'||!(oo.qty>0))return'';
+  return'On order: '+oo.qty+' pcs ('+(oo.open.length===1?'PO '+_siPoDateText(oo.open[0].day):oo.open.length+' POs, latest '+_siPoDateText(oo.latest))+')';
+}
+function _siPoChipTitle(oo){
+  if(!oo||oo.state!=='ok'||!(oo.qty>0))return'';
+  return oo.open.map(p=>p.id+': '+p.qty+' pcs, raised '+_siPoDateText(p.day)).join('; ')+'. Treated as on order until a stock jump after its date covers about half of it, or '+_SI_PO.expiryDays+' days after it was raised (an assumption). Arrival is inferred, not recorded.'+(oo.checked?'':' Stock history is not available for this article, so only the '+_SI_PO.expiryDays+'-day limit applies.');
+}
+function _siPoChipHtml(code){
+  const oo=_siPoOpenFor(code),t=_siPoChipText(oo);
+  return t?`<span class="si-po-chip" title="${_siEsc(_siPoChipTitle(oo))}">${_siEsc(t)}</span>`:'';
+}
+function _siPoVerdictHtml(a,va){
+  const oo=_siPoOpenFor(a.code);
+  if(oo.state==='ok'&&oo.qty>0)return`<div class="si-vd-po">${_siPoChipHtml(a.code)}<span class="si-ax-note" style="margin:0 0 0 8px">${_siEsc(va&&(va.key==='reorder'||va.key==='risk')?'Check the open PO before ordering again; the reorder guide in Needs Attention is reduced by it.':'Open PO for this article.')}</span></div>`;
+  if(oo.state==='unavailable'&&va&&va.key==='reorder')return`<div class="si-vd-po"><span class="si-ax-note" style="margin:0">On-order data unavailable — open POs could not be read, so pieces already being cut are not accounted for.</span></div>`;
+  return'';
+}
+// Quiet note, only when the read failed: nothing is downgraded and nothing is hidden.
+function _siPoNote(){
+  return _siPoState==='error'?`<div class="si-hist-pend err" id="si-po-note" role="status">On-order data unavailable — open POs could not be read, so no reorder row is downgraded or reduced and nothing is hidden. <button type="button" class="si-ax-btn" onclick="window._siPoRetry()">Retry</button></div>`:'';
+}
+// Applied to one issue (the ONLY place a PO changes a band or a quantity). A reorder size that on-order pieces cover drops one band; one it
+// covers in part is reduced by the on-order amount (never below 0). Types with no reorder size get the chip only.
+function _siNaOnOrder(x,ctx){
+  const oo=ctx&&ctx.onOrder?ctx.onOrder(x.code):null;
+  if(!oo)return x;
+  x.n.onOrder=oo;
+  if(oo.state!=='ok'||!(oo.qty>0)||!x.n.qty)return x;
+  const q=x.n.qty,pack=_SI_NA.pack,up=v=>Math.max(0,Math.ceil(v/pack)*pack);
+  const hi=up(q.hi-oo.qty),lo=up(q.lo-oo.qty);
+  x.n.qtyBefore={lo:q.lo,hi:q.hi};x.n.onOrderUntil=oo.until;
+  if(hi<=0){
+    x.n.qty=null;x.n.onOrderCovers=true;
+    const down={critical:'act',act:'watch'}[x.band];
+    if(down){x.n.bandBefore=x.band;x.band=down;}
+  }else{x.n.qty={lo,hi,target:q.target};x.n.onOrderPartial=true;}
+  return x;
+}
 function _siNaRow(a){return{a,m:_siAxStats(a),c:_siAxClassify(a),act:_siAxActionOf(a),lt:_siAxLeadTime(a),conf:_siAxConfidence(a)};}
 function _siNaSizeRows(m,lead){
   return(m.sizeRows||[]).filter(s=>s.stock!=null||s.sold>0).map(s=>{
@@ -5422,6 +5544,7 @@ function _siNaDetect(r,ctx){
   if(m.voidRate!=null&&m.voidRate>=C.voidRate&&m.voided>=C.voidUnits){
     out.push(mk('datatrust','watch',{atKind:''}));
   }
+  out.forEach(x=>_siNaOnOrder(x,ctx));
   return out;
 }
 const _SI_NA_BAND_RANK={critical:0,act:1,watch:2};
@@ -5503,14 +5626,14 @@ function _siNaCtx(){
   const today=_siPktDate(0);
   let rs=null;try{rs=_siAxIndex().quality.returns.synced;}catch(_){}
   return{today,returnsSynced:rs,disc:a=>_siNaDiscount(a,today),sudden:(a,m)=>_siNaSudden(a,m,today),winter:a=>_siNaWinter(a,today),season:a=>_siNaSeasonInfo(a,today),ret:(a,m)=>_siNaRet90(a,m,today),
-    lost:_siHistState==='ok'?_siAxPfLostOf:null,lostDays:_SI_PF.lostDays};
+    lost:_siHistState==='ok'?_siAxPfLostOf:null,lostDays:_SI_PF.lostDays,onOrder:code=>_siPoOpenFor(code,today)};
 }
 // The ranked issues for the loaded data. Memoised on the index object, today and the lead-time settings (the only inputs that change without
 // a data reload), so the tab pill, the Overview tiles and the list read ONE computation.
 function _siNaState(){
   const idx=_siAxIndex();
   let lt='';try{lt=(localStorage.getItem(_SI_LT_KEY)||'')+'|'+(localStorage.getItem(_SI_LT_ART_KEY)||'');}catch(_){}
-  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey();
+  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey()+'|'+_siPoSig();
   if(_siNaMemo&&_siNaMemo.idx===idx&&_siNaMemo.sig===sig)return _siNaMemo.res;
   const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(_siNaRow);
   const res=_siNaBuild(rows,_siNaCtx());
@@ -5631,7 +5754,8 @@ function _siNaPlaybook(i){
   const money=v=>v==null?'—':_siPKR(Math.round(v));
   const leadWhy=n.leadSrc==='default'?'the default, unconfirmed':(n.leadSrc==='article'?'your setting for this article':'your setting');
   const leadTxt=n.leadDays+' days ('+leadWhy+')';
-  const qtyTxt=n.qty?'about '+n.qty.lo+'–'+n.qty.hi+' units (demand over the lead time plus '+n.qty.target+' days of cover, pace ±25%, rounded up to a pack of 12)':'';
+  const oo=n.onOrder&&n.onOrder.state==='ok'&&n.onOrder.qty>0?n.onOrder:null;
+  const qtyTxt=n.qty?(n.onOrderPartial?'about '+n.qty.lo+'–'+n.qty.hi+' more units (the guide was '+n.qtyBefore.lo+'–'+n.qtyBefore.hi+'; already '+oo.qty+' on order, so that is taken off)':'about '+n.qty.lo+'–'+n.qty.hi+' units (demand over the lead time plus '+n.qty.target+' days of cover, pace ±25%, rounded up to a pack of 12)'):'';
   const inPct=n.inRate!=null?Math.round(n.inRate*100)+'%':'—';
   const rt=n.returnsSynced===true?'':' Later returns are not synced, so pace may read about a fifth high (stock is exact).';
   let situation='',why='',actions=[],avoid=[];
@@ -5734,6 +5858,21 @@ function _siNaPlaybook(i){
       actions=[{owner:'Raees',text:'Count the shelf for it.'},{owner:'Mustafa',text:'Compare Shopify inventory and the voided orders with what is on the shelf.'}];
       avoid=['Do not reorder or mark down on this figure until it is checked.'];
   }
+  if(oo&&(n.onOrderCovers||n.onOrderPartial)){
+    const poTxt=oo.open.map(p=>p.id+' '+p.qty+' pcs (raised '+_siPoDateText(p.day)+')').join(', ');
+    situation+=' Already on order: '+poTxt+' — '+oo.qty+' pcs in all.';
+    if(n.onOrderCovers){
+      const from={critical:'Critical',act:'Act this week'}[n.bandBefore];
+      why+=' '+(from?'Moved down from '+from+' because':'Shown as a watch item because')+' the '+oo.qty+' pieces already on order cover the reorder guide ('+n.qtyBefore.lo+'–'+n.qtyBefore.hi+' units). This lasts until about '+_siPoDateText(n.onOrderUntil)+' ('+_SI_PO.expiryDays+' days after the PO was raised, an assumption); if the batch has not landed by then, it comes back.';
+      actions.unshift({owner:'Raees',text:'Do not raise a new PO: '+oo.qty+' pieces are already on order. Confirm the delivery date with the cutting master or supplier.'});
+      avoid=avoid.concat(['Do not cut the same article twice: check the open PO before any new order.']);
+    }else{
+      why+=' '+oo.qty+' pieces are already on order, so the reorder size is reduced by that much (it is not hidden).';
+    }
+  }else if(n.onOrder&&n.onOrder.state==='unavailable'&&(i.type==='stockout'||i.type==='runout'||i.type==='rising')){
+    confBits.push('On-order data unavailable: open POs could not be read, so the reorder size and band do not account for pieces already being cut.');
+    return{situation,why,actions,avoid,confidence:confBits.join(' ')};
+  }
   return{situation,why,actions,avoid,confidence:confBits.join(' ')};
 }
 
@@ -5764,7 +5903,7 @@ function _siNaAtText(i){
 }
 function _siNaRowHtml(i,trustRed){
   return`<button type="button" class="si-na-row ${i.band}" data-code="${_siEsc(i.code)}" onclick="window._siNaOpen(this.dataset.code)" aria-label="${_siEsc(i.label+': '+i.reason+'. Open the situation.')}">
-    <span class="rs"><span class="si-na-reason ${i.band}">${_siEsc(i.reason)}</span>${i.seasonal?'<span class="si-na-reason soft">Seasonal wait</span>':''}${i.also&&i.also.length?`<span class="si-na-reason soft">also ${_siEsc(i.also.map(t=>_SI_NA_REASON[t].toLowerCase()).join(', '))}</span>`:''}${trustRed?'<span class="si-na-reason soft">numbers may be off</span>':''}</span>
+    <span class="rs"><span class="si-na-reason ${i.band}">${_siEsc(i.reason)}</span>${i.seasonal?'<span class="si-na-reason soft">Seasonal wait</span>':''}${i.also&&i.also.length?`<span class="si-na-reason soft">also ${_siEsc(i.also.map(t=>_SI_NA_REASON[t].toLowerCase()).join(', '))}</span>`:''}${trustRed?'<span class="si-na-reason soft">numbers may be off</span>':''}${_siPoChipHtml(i.code)}${i.n&&i.n.onOrderCovers?'<span class="si-na-reason soft">'+(i.n.bandBefore?'moved down: PO covers it':'PO covers it')+'</span>':''}</span>
     <span class="nm">${_siAxThumb(i.code,44,i.label)}<span class="tx"><strong>${_siEsc(i.label)}</strong><span class="cd">${_siEsc(i.code)} · ${_siEsc(i.clsLabel)}</span></span></span>
     <span class="ln">${_siEsc(_siNaRowLine(i))}</span>
     <span class="at">${_siEsc(_siNaAtText(i))}</span>
@@ -5835,7 +5974,7 @@ function _siNaListHtml(){
   const bands=_SI_NA_BANDS.map(b=>_siNaBandHtml(b,list.filter(i=>i.band===b.k),trustRed)).join('');
   _siNaFlash='';   // the highlight is one-shot: painted once, then gone
   const waiting=_siNaFilter!=='all'&&_siNaFilter!=='cash'&&res.unavailable&&res.unavailable[_siNaFilter];
-  return`<div class="si-na">${_siMetaNote()}${_siNaTrustHtml(trust)}${_siNaHeadHtml(res)}${_siNaFilterHtml(res)}${waiting?_siNaWaitHtml(_siNaFilter):(bands||_siNaEmptyHtml(res,trust))}</div>`;
+  return`<div class="si-na">${_siMetaNote()}${_siPoNote()}${_siNaTrustHtml(trust)}${_siNaHeadHtml(res)}${_siNaFilterHtml(res)}${waiting?_siNaWaitHtml(_siNaFilter):(bands||_siNaEmptyHtml(res,trust))}</div>`;
 }
 function _siNaFactsHtml(i){
   const n=i.n,P=v=>_siAxNum(v),F=[];
@@ -5846,7 +5985,9 @@ function _siNaFactsHtml(i){
   F.push(['In stock',n.inRate==null?'—':Math.round(n.inRate*100)+'% of '+n.measured+' days']);
   F.push(['Lead time',n.leadDays+' days ('+(n.leadSrc==='default'?'default, unconfirmed':'set')+')']);
   if(n.valueTied!=null)F.push(['At selling price',_siPKR(Math.round(n.valueTied))]);
-  if(n.qty)F.push(['Reorder guide',n.qty.lo+'–'+n.qty.hi+' units']);
+  if(n.onOrder&&n.onOrder.state==='ok'&&n.onOrder.qty>0)F.push(['On order',_siPoChipText(n.onOrder).replace('On order: ','')]);
+  if(n.qty)F.push(['Reorder guide',n.qty.lo+'–'+n.qty.hi+' units'+(n.onOrderPartial?' (after '+n.onOrder.qty+' on order)':'')]);
+  else if(n.onOrderCovers)F.push(['Reorder guide','covered by the PO ('+n.qtyBefore.lo+'–'+n.qtyBefore.hi+' before)']);
   if(n.disc)F.push(['Sold at a reduced price (last 7 days)',Math.round(n.disc.share*100)+'% of '+n.disc.units7]);
   return`<dl class="si-na-facts">${F.map(f=>`<div><dt>${_siEsc(f[0])}</dt><dd>${_siEsc(f[1])}</dd></div>`).join('')}</dl>`;
 }
@@ -5981,7 +6122,7 @@ function _siNaViewFor(a,tile){
   }else if(type==='sizehole'){
     x.n.holes=(m.risk||[]).map(k=>({size:k.size,kind:'out',units28:k.units,share:m.units28>0?k.units/m.units28:0,stock:0}));
   }else if(type==='overstock'||type==='dead'){x.n.valueTied=val;x.at=val;}
-  return x;
+  return _siNaOnOrder(x,ctx);
 }
 function _siAxOvList(){
   const cur=_SI_OV_TILES.find(t=>t.k===_siAxOvTile)||_SI_OV_TILES[0];
