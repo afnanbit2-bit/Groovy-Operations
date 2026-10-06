@@ -22,14 +22,46 @@ let _siProdMapCache=null;       // sku → product doc map, rebuilt lazily, clea
 let _siSkuExpanded=new Set();   // group keys currently expanded in the SKU table
 let _siMeta=new Map(),_siMetaState='idle',_siMetaPromise=null,_siIgVer=0; // shared Ignore list: code → doc (see the Ignore block)
 
-// ── Loading page (Oct 2026: the loading card alone — the grey skeleton boxes behind it are gone) ──
-// Only the page head and the host the loader card paints into. The wrap carries a min-height (CSS) so the absolutely placed card is never clipped.
+// ── Skeleton loader ──────────────────────────────────────────────────
 function _siLoadingSkeleton(){
+  const statCard=()=>`<div class="stat-card">
+    <div class="si-skel" style="height:11px;width:68%;margin:0 auto 10px"></div>
+    <div class="si-skel" style="height:28px;width:52%;margin:0 auto 6px"></div>
+    <div class="si-skel" style="height:9px;width:44%;margin:0 auto"></div>
+  </div>`;
+  const widths=[88,72,95,80,65];
+  const tableRows=widths.map(w=>`<div style="display:flex;gap:10px;margin-bottom:9px">
+    <div class="si-skel" style="height:16px;width:90px;flex-shrink:0"></div>
+    <div class="si-skel" style="height:16px;flex:1;max-width:${w}%"></div>
+    <div class="si-skel" style="height:16px;width:60px;flex-shrink:0"></div>
+    <div class="si-skel" style="height:16px;width:70px;flex-shrink:0"></div>
+  </div>`).join('');
   return`<div class="page-head">
     <div class="page-title">Inventory Intelligence</div>
     <div class="page-sub">Shopify sales + inventory — read-only, updated every 4 hours</div>
   </div>
-  <div class="si-ld-wrap"><div id="si-load-host"></div></div>`;
+  <div class="si-ld-wrap"><div id="si-load-host"></div>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <div class="si-skel" style="width:50px;height:14px"></div>
+    <div class="si-skel" style="width:218px;height:34px;border-radius:10px"></div>
+  </div>
+  <div class="si-skel" style="height:36px;border-radius:10px;margin-bottom:14px"></div>
+  <div class="stats-row" style="margin-bottom:16px">${[0,0,0,0].map(statCard).join('')}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    ${[0,0].map(()=>`<div class="card">
+      <div class="si-skel" style="height:11px;width:52%;margin-bottom:14px"></div>
+      <div class="si-skel" style="height:34px;width:36%;margin-bottom:8px"></div>
+      <div class="si-skel" style="height:10px;width:70%"></div>
+    </div>`).join('')}
+  </div>
+  <div class="card">
+    <div class="si-skel" style="height:11px;width:34%;margin-bottom:16px"></div>
+    ${tableRows}
+  </div>
+  <div class="card">
+    <div class="si-skel" style="height:11px;width:20%;margin-bottom:12px"></div>
+    <div class="si-skel" style="height:13px;width:76%"></div>
+  </div></div>`;
 }
 
 // ── Product lookup ───────────────────────────────────────────────────
@@ -78,10 +110,9 @@ const _SI_STAGES=[
 const _SI_LOAD_SHOW_MS=300,_SI_LOAD_MIN_MS=500,_SI_LOAD_SLOW_MS=20000,_SI_LOAD_TIMEOUT_MS=90000,_SI_LOAD_SETTLE_MS=400,_SI_LOAD_MAX_ATTEMPTS=3,_SI_QUOTA_WAIT_MS=10000;
 const _siColl={products:false,orders:false,lines:false,closes:false}; // which collections were read OK (kept across retries)
 // Pure: the percentage of a state map. Capped at 99 — 100 belongs to _siLoaded alone.
-// part (optional) = {stageId: 0..1}: the proven share of an ACTIVE stage whose read is in pieces (counted only when a piece really returned).
-function siProgress(stages,state,part){
+function siProgress(stages,state){
   let w=0,t=0;
-  for(const s of stages){t+=s.w;if(state[s.id]==='done')w+=s.w;else if(part&&state[s.id]==='active'&&part[s.id]>0)w+=s.w*Math.min(1,part[s.id]);}
+  for(const s of stages){t+=s.w;if(state[s.id]==='done')w+=s.w;}
   return t?Math.min(99,Math.floor(100*w/t)):0;
 }
 function siProgressNext(prev,raw){return Math.max(prev,raw);} // never backwards, even if a stage finishes out of order or a retry re-marks
@@ -91,21 +122,13 @@ let _siLoad=_siLoadFresh();
 const _siRetryCtl={timer:null,tick:null,timer2:null,auto:null,running:{},proms:{},gen:0};
 function _siLoadFresh(){
   return{state:{},pct:0,startedAt:0,shownAt:0,shown:false,slow:false,final:false,finishing:false,done:false,resolved:false,resume:false,
-    complete:false,part:{},partText:'',attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
+    complete:false,attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
 }
 // siMark(id,state): the ONE place progress moves.
 function siMark(id,st,now){
   const L=_siLoad;L.state[id]=st;
-  L.pct=siProgressNext(L.pct,siProgress(_SI_STAGES,L.state,L.part));
+  L.pct=siProgressNext(L.pct,siProgress(_SI_STAGES,L.state));
   siPaintLoad(now);
-}
-// siPart(id,frac,detail): a piece of a stage's read landed. Moves the percentage (never backwards), restarts the stall clock and says how far it is.
-function siPart(id,frac,detail){
-  const L=_siLoad;if(L.state[id]!=='active')return;
-  L.part[id]=frac;if(detail!==undefined)L.partText=detail;
-  L.pct=siProgressNext(L.pct,siProgress(_SI_STAGES,L.state,L.part));
-  _siLoadArmWatch(); // progress was made: the slow flag and the 90s timeout count from NOW, so only a read that STALLS times out
-  siPaintLoad();
 }
 function _siStage(id){return _SI_STAGES.find(s=>s.id===id)||{id,label:id,verb:id,noun:id,w:0};}
 function _siLoadAlive(){return typeof currentPage==='undefined'||currentPage==='shopify-intel';}
@@ -145,35 +168,11 @@ const _siRunners={
   lines:async function(fresh){
     if(_siLinesScope==='full'&&!fresh)return;
     const stamps=await _siFrStampsPre(); // captured BEFORE the read, so a sync landing mid-read can only make us under-claim
-    const t0=_siNow();
-    // INCREMENTAL (Oct 2026): a freshness refresh between two full re-reads reads ONLY the trailing days and merges them by line id into
-    // what is already loaded (older lines and a loaded full history are kept, not dropped and re-read). See the block "Line-item reads:
-    // full at 00:00 and 12:00 PKT, incremental in between".
-    if(fresh&&_siLinesCanIncr()&&!siLinesFullDue(_siLinesFullAt,t0,_siLinesForceFull)){
-      const start=siLinesIncStart(_siLinesLastReadAt,_siLinesScope==='window'?_siLinesCut:'');
-      if(start){
-        const s=await getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','>=',start)));
-        const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
-        _siLineItems=siMergeLines(_siLineItems,a); // a NEW array: every cache keyed on array identity rebuilds
-        _siLinesLastReadAt=t0;_siLinesMode='incremental';_siLinesIncN=a.length;_siLinesIncFrom=start;
-        _siFrNote('lines',stamps);
-        return;
-      }
-    }
     const cut=(fresh&&_siLinesCut)?_siLinesCut:_siPktDate(-_SI_WIN_DAYS);
-    // The window is read as _SI_LINE_CHUNKS disjoint date ranges, in parallel: the same documents, but each range that lands is real
-    // progress (the old single getDocs gave no number for the whole read — the percentage sat still for as long as it took).
-    const bounds=_siLineBounds(cut,_siPktDate(0),_SI_LINE_CHUNKS);
-    let landed=0;
-    const parts=await Promise.all(bounds.map((lo,i)=>{
-      const hi=bounds[i+1];
-      const q=hi?query(collection(db,'shopify_line_items'),where('order_created_at','>=',lo),where('order_created_at','<',hi)):query(collection(db,'shopify_line_items'),where('order_created_at','>=',lo));
-      return Promise.resolve(getDocs(q)).then(sn=>{landed++;const arr=[];sn.forEach(d=>{const o=d.data();o._id=d.id;arr.push(o);});siPart('lines',landed/bounds.length,'date range '+landed+' of '+bounds.length);return arr;});
-    }));
-    const a=[].concat.apply([],parts);
+    const s=await getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','>=',cut)));
+    const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
     if(_siLinesScope==='full'||_siFull.st==='done'){_siFull.st='idle';_siFull.err=null;_siFull.n=0;_siFull.tok++;} // checked AFTER the await: a phase 2 that landed meanwhile counts
     _siLineItems=a;_siLinesScope='window';_siLinesCut=cut;
-    _siLinesFullAt=t0;_siLinesLastReadAt=t0;_siLinesForceFull=false;_siLinesMode='full';_siLinesIncN=0;_siLinesIncFrom='';
     _siFrNote('lines',stamps);
     _siColl.lines=true;
     if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
@@ -202,16 +201,6 @@ const _siRunners={
     try{if(typeof _siAxIndex==='function')_siAxIndex();}catch(_){}
   },
 };
-const _SI_LINE_CHUNKS=6;
-// Pure: the start days of n disjoint ranges that together cover [cut, today]; the last is open-ended. YYYY-MM-DD strings (compare as text).
-function _siLineBounds(cut,today,n){
-  const dn=s=>{const p=String(s).split('-');return Date.UTC(+p[0],+p[1]-1,+p[2])/864e5;};
-  const ds=d=>new Date(d*864e5).toISOString().slice(0,10);
-  const span=Math.max(0,dn(today)-dn(cut)),step=Math.max(1,Math.ceil(span/n));
-  const out=[cut];
-  for(let k=1;k<n;k++){const d=dn(cut)+k*step;if(d>dn(today))break;out.push(ds(d));}
-  return out;
-}
 function _siStageNeeds(id){
   if(id==='snap')return!_siSnapshot;
   if(id==='meta')return true;
@@ -295,7 +284,6 @@ function _siLoadRunStages(ids){
     C.running[id]=true;
     L.attempts[id]=(L.attempts[id]||0)+1;
     const tok=L.tok[id]=(L.tok[id]||0)+1;
-    L.part[id]=0;if(id==='lines')L.partText='';
     siMark(id,'active');
     let p;try{p=Promise.resolve(_siRunners[id]());}catch(e){p=Promise.reject(e);}
     C.proms[id]=p.then(()=>{
@@ -386,7 +374,6 @@ window._siRetryStage=function(id){
   const L=_siLoad,C=_siRetryCtl;
   if(!_SI_STAGES.some(s=>s.id===id)||C.running[id]||L.state[id]!=='failed'||!_siLoadAlive())return;
   siRetryClearTimers();L.wait=null;
-  if(id==='lines')_siLinesForceFull=true; // a manual Retry of the line items is always a full read
   L.attempts[id]=0;L.quotaRetried[id]=0;_siLoadError=null;L.final=false;L.resume=true;
   const f=L.fails[id];
   if(f&&f.cls==='quota'){const rem=f.at+_SI_QUOTA_WAIT_MS-_siNow();if(rem>0){_siLoadWait({ids:[id],delay:rem,k:1});return;}}
@@ -434,12 +421,11 @@ function _siLoadView(){
   let mode='load';
   if(L.done)mode='done';else if(L.wait)mode='wait';else if((fails.length||_siLoadError)&&!act.length)mode='fail';
   const failed=mode==='wait'?L.wait.ids:fails;
-  let stage,detail='',cd='',detail0='';
+  let stage,detail='',cd='';
   if(mode==='done')stage='Ready';
   else if(mode==='load'){
     const a=act[0];
     stage=a?(L.slow?'Still '+a.noun+' — slow connection':a.verb+'…'):'Starting…';
-    if(a&&a.id==='lines'&&L.partText)detail0=L.partText;
     if(!a&&L.state.build==='done')stage='Finishing…';
   }else{
     stage='Stopped while '+(failed.length===1?_siStage(failed[0]).noun:failed.length?'loading '+failed.map(id=>_siStage(id).label.toLowerCase()).join(' and '):'loading');
@@ -451,7 +437,6 @@ function _siLoadView(){
     }
   }
   const parts=[];
-  if(detail0)parts.push(detail0);
   if(_siColl.products||_siCollectionsLoaded)parts.push(_siFmtN(_siProducts.length)+' catalog entries');
   if(_siColl.lines||_siCollectionsLoaded)parts.push(_siFmtN(_siLineItems.length)+' line items'+(_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''));
   const retryable=mode==='fail'?fails:[];
@@ -468,7 +453,7 @@ function _siLoaderHTML(overlay){
   let g='';
   for(let i=0;i<8;i++){
     const x=40+i*45,k=i%3,cls=(i===3?' hot':'')+(i===5?' gap':i>5?' late':'');
-    g+='<g transform="translate('+x+' 0)"><g class="gm'+cls+'" style="--i:'+i+'"><g transform="scale(.74)"><path class="hk" d="M0 10V5a4 4 0 1 0-4-4"/><path class="b" d="'+_SI_GARMENTS[k]+'"/></g></g></g>';
+    g+='<g transform="translate('+x+' 0)"><g class="gm'+cls+'" style="--i:'+i+'"><path class="hk" d="M0 10V5a4 4 0 1 0-4-4"/><path class="b" d="'+_SI_GARMENTS[k]+'"/></g></g>';
   }
   const fail=v.mode==='wait'||v.mode==='fail';
   return'<div class="si-ld-card'+(overlay?' over':' flow')+(fail?' fail':'')+(_siLoadReduced()?' rm':'')+'" id="si-load" data-mode="'+v.mode+'">'
@@ -520,57 +505,6 @@ function siPaintLoad(){
   }
 })();
 
-// ═══ Line-item reads: full at 00:00 and 12:00 PKT, incremental in between (Oct 2026) ══════════════════════════════════════
-// shopify_line_items is ~51k documents and Firestore bills per document read. Owner's rule: re-read the (window of) line items in full
-// only at 00:00 and 12:00 Pakistan time (PKT = UTC+5, no DST); a refresh in between reads ONLY the trailing days and merges them.
-// WHAT IDENTIFIES NEW/CHANGED LINES (read from the functions, not guessed): shopify-order-sync.js writes a line once, with order_created_at
-//   (the order's created_at) and synced_at (a server timestamp, never rewritten); it looks back 48 h and skips orders it holds.
-//   netlify/lib/shopify-order-refresh.js updates only status fields in place and stamps status_synced_at, on lines of recent orders.
-//   So a NEW line has order_created_at within about 48 h of the sync that wrote it, and a status change lands on a line of a recent order.
-//   synced_at / status_synced_at are the exact "changed since" fields, but they are Firestore Timestamps and this page has no Timestamp
-//   constructor bridged (index.html is cross-track), so a range on them cannot be built here. The safe alternative used instead: a
-//   single-field range on order_created_at (the same automatic index the window read uses) starting 72 h before the previous read, floored
-//   to a PKT day. 72 h > the 48 h sync look-back, so every line written since the last read is inside it, and status changes to lines of
-//   those recent orders are picked up too (same id replaces).
-// HONEST LIMIT: a refund, void or cancellation applied to a line of an order OLDER than that trailing window stays stale until the next
-//   full read (the refund job's own window can reach back much further). A full read is forced by: no earlier full read in memory, the
-//   boundary passing, the returns-refresh button, and a manual Retry of the line-item stage.
-// The decision uses MEMORY, not localStorage: what is in memory is what defines "already loaded"; a reload starts empty and reads in full.
-const _SI_INC_BACK_MS=72*3600000,_SI_PKT_OFFSET_MS=5*3600000,_SI_HALF_DAY_MS=12*3600000;
-let _siLinesFullAt=null,_siLinesLastReadAt=null,_siLinesForceFull=false,_siLinesMode='',_siLinesIncN=0,_siLinesIncFrom='';
-// Pure: the most recent 00:00 or 12:00 PKT at or before nowMs, as epoch ms.
-function siFullBoundary(nowMs){return Math.floor((nowMs+_SI_PKT_OFFSET_MS)/_SI_HALF_DAY_MS)*_SI_HALF_DAY_MS-_SI_PKT_OFFSET_MS;}
-// Pure: is a full re-read due? No earlier full read, a forced one, or the last full read is before the latest boundary.
-function siLinesFullDue(lastFullMs,nowMs,force){
-  if(force||lastFullMs==null||!isFinite(lastFullMs))return true;
-  return lastFullMs<siFullBoundary(nowMs);
-}
-// Pure: the first PKT day (YYYY-MM-DD) an incremental read must cover; null when there is no previous read to build on.
-function siLinesIncStart(lastReadMs,floorDay){
-  if(lastReadMs==null||!isFinite(lastReadMs))return null;
-  const d=new Date(lastReadMs-_SI_INC_BACK_MS+_SI_PKT_OFFSET_MS).toISOString().slice(0,10);
-  return floorDay&&floorDay>d?floorDay:d; // never below the window's cut: the older rows belong to phase 2 and must stay disjoint
-}
-// Pure: merge by line id. Same id: the incoming copy replaces it in place (newest wins; a later duplicate inside incoming wins too);
-// new ids are appended. Always returns a NEW array; a document is never duplicated.
-function siMergeLines(existing,incoming){
-  const out=(existing||[]).slice(),at=new Map();
-  out.forEach((o,i)=>{if(o&&o._id!=null)at.set(o._id,i);});
-  (incoming||[]).forEach(o=>{
-    if(o&&o._id!=null&&at.has(o._id))out[at.get(o._id)]=o;
-    else{if(o&&o._id!=null)at.set(o._id,out.length);out.push(o);}
-  });
-  return out;
-}
-function _siLinesCanIncr(){return!!_siColl.lines&&(_siLinesScope==='window'||_siLinesScope==='full')&&_siLinesLastReadAt!=null;}
-// Pure text for the freshness card: when the last full read was, and whether the data now is that read or merged on top of it.
-function siLinesFreshText(fullAt,mode,incN,incFrom){
-  if(fullAt==null||!mode)return'';
-  const t='Last full refresh: '+_siFrFmt(fullAt)+'.';
-  const m=mode==='incremental'?' Line items since then: incremental (read from '+incFrom+', '+incN+' lines merged in).':' Line items: this is the full read.';
-  return t+m+' Later refunds and voids on older lines show at the next full refresh (00:00 or 12:00 PKT).';
-}
-
 // ═══ Line items in two phases (Oct 2026, load-time stage 2) ═════════════════════════════════════════════════════════════
 // Phase 1 (the 'lines' stage above, inside the percentage) reads only the last _SI_WIN_DAYS days of shopify_line_items:
 //   where('order_created_at','>=',<PKT day>) — one field, so Firestore's automatic single-field index serves it (firestore.indexes.json
@@ -607,7 +541,7 @@ function _siFullStart(manual){
     clearTimeout(guard); // a read that lands after the timeout is still good data: accept it
     if(!_siLinesPartial()||_siLinesCut!==cut)return;
     const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
-    _siLineItems=siMergeLines(_siLineItems,a); // a new array (every cache keyed on it rebuilds); by id, so a line an incremental read already brought is never doubled
+    _siLineItems=_siLineItems.concat(a); // a new array: every cache keyed on it rebuilds
     _siLinesScope='full';F.st='done';F.err=null;F.n=a.length;
     _siFullPaint();
   },e=>{
@@ -789,7 +723,6 @@ function _siFrHtml(){
     +(v.busy?'<div class="si-fr-bar" aria-hidden="true"><i style="width:'+v.pct+'%"></i></div>':'')
     +(v.status?'<div class="si-fr-st '+v.statusKind+'" id="si-fr-st" role="'+(v.statusKind==='err'?'alert':'status')+'">'+_siEsc(v.status)+'</div>':'')
     +warn
-    +(function(){const t=siLinesFreshText(_siLinesFullAt,_siLinesMode,_siLinesIncN,_siLinesIncFrom);return t?'<div class="si-fr-sch" id="si-fr-lines" title="'+_siEsc(t)+'">'+_siEsc(t)+'</div>':'';})()
     +'<details class="si-fr-det" id="si-fr-det"'+(_siFr.detOpen?' open':'')+' ontoggle="window._siFrDet(this.open)"><summary>Each source</summary><ul>'+rows+'</ul></details>';
 }
 window._siFrDet=function(o){_siFr.detOpen=!!o;};
@@ -1119,7 +1052,7 @@ function _siPktDayOf(ms){return new Date(ms+5*3600000).toISOString().slice(0,10)
 // Sub-phase 2 of the product-data work. Staff press a button to give each live article a TYPE and a SEASON; nothing is ever written
 // without a press (the suggestions are buttons). The values are the ones firestore.rules already allows (held equal by
 // tests/shopify-typeseason.test.js): that is why the vocab is short. ONE place: _SI_TYPES / _SI_SEASONS. The writer is the Ignore writer.
-// Sub-phase 3 (below, "Type & season feed") reads _siMetaOf(code): the Explorer filter, the Portfolio rollups and Needs Attention's seasonal wait.
+// Sub-phase 3 reads _siMetaOf(code); nothing here feeds the Explorer filter, Portfolio or Needs Attention yet.
 const _SI_TYPES=[{k:'top',l:'Top'},{k:'bottom',l:'Bottom'},{k:'other',l:'Other'}];
 const _SI_SEASONS=[{k:'winter',l:'Winter'},{k:'summer',l:'Summer'},{k:'all',l:'All-season'}];
 const _SI_TS_CUBES=20,_SI_TS_MILESTONES=[25,50,75,100],_SI_TS_PAGE=20;
@@ -1131,59 +1064,6 @@ function _siMetaOf(code){ // what sub-phase 3 reads: the saved type and season o
   const m=_siMeta.get(String(code||'').toUpperCase());
   return{type:m&&m.type?m.type:null,season:m&&m.season?m.season:null};
 }
-// ═══ Type & season feed — what the saved type and season now drive (product-data sub-phase 3) ═══
-// ONE reader (_siMetaOf). A filter in the Explorer (Overview, Search, Portfolio; not Compare, where articles are chosen by name), the
-// Portfolio's two rollups and Needs Attention's seasonal wait. Unclassified (no saved value) is its own bucket and is counted: nothing is
-// dropped silently. When the saved list could not be read (or is still loading) the filter is OFF and the page says "type/season unavailable".
-let _siAxFSeason='',_siAxFType='';
-const _SI_FD_SEASON=[{k:'winter',l:'Winter'},{k:'summer',l:'Summer'},{k:'all',l:'All-season'},{k:'none',l:'Unclassified'}];
-const _SI_FD_TYPE=[{k:'top',l:'Top'},{k:'bottom',l:'Bottom'},{k:'other',l:'Other'},{k:'none',l:'Unclassified'}];
-function _siFeedOk(){return _siMetaState==='ok';}
-function _siFdBucket(code,field){return _siMetaOf(code)[field]||'none';}
-function _siAxFOn(){return _siFeedOk()&&_siAxModeSel!=='compare'&&!!(_siAxFSeason||_siAxFType);}
-function _siAxFPass(a,skipSeason,skipType){
-  if(!_siFeedOk())return true;
-  if(!skipSeason&&_siAxFSeason&&_siFdBucket(a.code,'season')!==_siAxFSeason)return false;
-  if(!skipType&&_siAxFType&&_siFdBucket(a.code,'type')!==_siAxFType)return false;
-  return true;
-}
-function _siAxFSig(){return _siFeedOk()?_siAxFSeason+'/'+_siAxFType:'off';}
-// The articles the Overview and the Portfolio read: the live (not ignored) ones, narrowed by the two filters.
-function _siAxFLive(){
-  const base=_siAxLive();
-  if(!_siAxFOn())return base;
-  return base.filter(a=>_siAxFPass(a));
-}
-// Counts for the chips: each dimension is counted under the OTHER filter, over the articles with sales or stock (what every list shows).
-function _siAxFCounts(){
-  const base=_siAxLive().filter(a=>a.units>0||a.hasStock),on=_siFeedOk();
-  const season={'':0,winter:0,summer:0,all:0,none:0},type={'':0,top:0,bottom:0,other:0,none:0};
-  base.forEach(a=>{
-    if(!on)return;
-    if(_siAxFPass(a,true,false)){season['']++;season[_siFdBucket(a.code,'season')]++;}
-    if(_siAxFPass(a,false,true)){type['']++;type[_siFdBucket(a.code,'type')]++;}
-  });
-  let shown=0;base.forEach(a=>{if(!on||_siAxFPass(a))shown++;});
-  return{season,type,shown,total:base.length};
-}
-function _siAxFilterBarHtml(){
-  if(_siAxModeSel==='compare')return'';
-  if(_siMetaState==='error')return`<div class="si-fd si-hist-pend err" id="si-ax-feed" role="status">Type/season unavailable — the saved list could not be read, so no type or season filter is applied and every article is shown. <button type="button" class="si-ax-btn" onclick="window._siMetaRetry()">Retry</button></div>`;
-  if(!_siFeedOk())return`<div class="si-fd" id="si-ax-feed"><div class="si-ax-note" style="margin:0">Reading the saved types and seasons…</div></div>`;
-  const c=_siAxFCounts();
-  const chips=(kind,list,cur,counts)=>`<span class="si-ax-lab">${kind==='season'?'Season':'Type'}</span>`+[{k:'',l:'Any'}].concat(list).map(o=>`<button type="button" class="si-ax-btn${cur===o.k?' on':''}" aria-pressed="${cur===o.k}" data-k="${_siEsc(o.k)}" onclick="window._siAxFSet('${kind}',this.dataset.k)">${_siEsc(o.l)} (${counts[o.k]})</button>`).join('');
-  const hidden=c.total-c.shown;
-  return`<div class="si-fd" id="si-ax-feed"><div class="si-ax-bar" role="group" aria-label="Season">${chips('season',_SI_FD_SEASON,_siAxFSeason,c.season)}</div><div class="si-ax-bar" role="group" aria-label="Type">${chips('type',_SI_FD_TYPE,_siAxFType,c.type)}</div>
-  <div class="si-ax-note" style="margin:2px 0 6px">Showing ${c.shown} of ${c.total} articles with sales or stock${hidden>0?' · '+hidden+' hidden by these filters':''}. Unclassified means nobody has saved a value in Type &amp; season yet.${(_siAxFSeason||_siAxFType)?' <button type="button" class="si-ax-btn" onclick="window._siAxFClear()">Clear filters</button>':''}</div></div>`;
-}
-window._siAxFSet=function(kind,v){
-  v=String(v==null?'':v);
-  if(kind==='season')_siAxFSeason=_SI_FD_SEASON.some(o=>o.k===v)?v:'';
-  else if(kind==='type')_siAxFType=_SI_FD_TYPE.some(o=>o.k===v)?v:'';
-  else return;
-  _siAxOvAll=false;_siAxPfAll=false;_siAxOvSit='';_siAxRepaintAll();
-};
-window._siAxFClear=function(){_siAxFSeason='';_siAxFType='';_siAxOvAll=false;_siAxPfAll=false;_siAxRepaintAll();};
 function _siTsStems(text){
   const t=String(text||'').toLowerCase().replace(/short[\s-]*sleeve[d]?/g,' ').replace(/t[\s-]*shirt/g,' tshirt ');
   const out=new Set();(t.match(/[a-z]+/g)||[]).forEach(w=>out.add(w.length>3?w.replace(/s$/,''):w));return out;
@@ -1195,7 +1075,7 @@ function _siTsSuggestType(category,title){
     if(t&&!b)return{k:'top',why:src};if(b&&!t)return{k:'bottom',why:src};return null;};
   return(category&&pick(category,'from its Shopify type "'+String(category).slice(0,40)+'"'))||(title&&pick(title,'from its name'))||null;
 }
-function _siTsWinterDay(day){const m=/^\d{4}-(\d{2})-\d{2}/.exec(String(day||''));if(!m)return null;const mo=+m[1];return mo>=10||mo<=1;} // Oct..Jan, the Explorer's winter
+function _siTsWinterDay(day){const m=/^\d{4}-(\d{2})-\d{2}/.exec(String(day||''));if(!m)return null;const mo=+m[1];return mo>=10||mo<=2;} // Oct..Feb, the Explorer's winter
 // Suggestions are a list of {k,why}: one from the date, one from siblings (the other articles of the same type that already have a season).
 function _siTsSuggestSeason(day,typeLabel,siblingSeasons){
   const out=[];
@@ -2481,8 +2361,8 @@ function _siAxFmtBucket(start,bucket,tick){
   return _siAxFmtDay(start,tick);
 }
 // ── Calendar helpers: months, years, winters (pure) ─────────────────
-// Winter = October to the end of January (owner decision 6 Oct 2026; summer is Feb to Sep). It straddles New Year, so a winter is named by the year its October falls in.
-const _SI_AX_WINTER_MONTHS=[10,11,12,1];
+// Winter = October to the end of February. It straddles New Year, so a winter is named by the year its October falls in.
+const _SI_AX_WINTER_MONTHS=[10,11,12,1,2];
 function _siAxIsWinterMonth(m){return _SI_AX_WINTER_MONTHS.indexOf(+m)>=0;}
 function _siAxLeap(y){return(y%4===0&&y%100!==0)||y%400===0;}
 function _siAxMonthLen(y,m){return[31,_siAxLeap(y)?29:28,31,30,31,30,31,31,30,31,30,31][m-1];}
@@ -2493,12 +2373,12 @@ function _siAxAddMonths(day,n){
   return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');
 }
 function _siAxAddYears(day,n){return _siAxAddMonths(day,12*n);} // Feb 29 + 1 year = Feb 28
-// The winter that starts in October of startYear: Oct 1 .. 31 January.
+// The winter that starts in October of startYear: Oct 1 .. last day of February (28 or 29).
 function _siAxWinterWindow(startYear){
   const y=+startYear,e=y+1;
-  return{startYear:y,from:y+'-10-01',to:e+'-01-'+String(_siAxMonthLen(e,1)).padStart(2,'0'),label:'Winter '+y+'–'+String(e).slice(2)};
+  return{startYear:y,from:y+'-10-01',to:e+'-02-'+String(_siAxMonthLen(e,2)).padStart(2,'0'),label:'Winter '+y+'–'+String(e).slice(2)};
 }
-// The winter a day belongs to; a day from February to September has no winter of its own, so the LATEST one that has ended.
+// The winter a day belongs to; a day from March to September has no winter of its own, so the LATEST one that has ended.
 function _siAxWinterOf(day){
   const m=/^(\d{4})-(\d{2})/.exec(day||'');if(!m)return null;
   return(+m[2]>=10)?+m[1]:+m[1]-1;
@@ -2765,9 +2645,8 @@ window._siAxImgFail=function(img){
 function _siAxSearch(q,limit){
   const toks=String(q||'').toLowerCase().split(/\s+/).filter(Boolean);
   const list=_siAxIndex().list;
-  const all=toks.length?list.filter(a=>toks.every(t=>a.text.includes(t))):list;
-  const on=_siAxFOn(),out=on?all.filter(a=>_siAxFPass(a)):all;
-  return{hits:out.slice(0,limit||12),total:out.length,hidden:all.length-out.length};
+  const out=toks.length?list.filter(a=>toks.every(t=>a.text.includes(t))):list;
+  return{hits:out.slice(0,limit||12),total:out.length};
 }
 function _siAxUnitsSince(a,days){
   const cut=_siPktDate(-days);let u=0,r=0;
@@ -3762,7 +3641,6 @@ function _siArticleExplorerSection(){
   return`<div class="si-ax-bar" id="si-ax-modebar">${modeBtn('overview','Overview')}${modeBtn('portfolio','Portfolio')}${modeBtn('search','Search')}${modeBtn('compare','Compare')}
     <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles${idx.list.length!==_siAxLive().length?' ('+(idx.list.length-_siAxLive().length)+' ignored)':''} · ignores the season filter</span></div>
   ${_siMetaNote()}
-  ${_siAxFilterBarHtml()}
   ${_siAxSearchBarHtml()}
   ${_siAxTrustBanner()}
   <div id="si-ax-live" class="si-ax-live" role="status" aria-live="polite"></div>
@@ -3797,15 +3675,14 @@ function _siAxResultsHtml(){
   const q=_siAxQuery.trim(),mode=_siAxModeSel;
   if(!q&&(mode==='overview'||mode==='portfolio'||_siAxSel||(mode==='compare'&&_siAxCmp.length)))return'';
   const r=_siAxSearch(q,q?12:8);
-  const hid=r.hidden>0?` · ${r.hidden} more match${r.hidden===1?'es':''} but ${r.hidden===1?'is':'are'} hidden by the Type/Season filter`:'';
-  if(!r.hits.length)return`<div class="si-ax-empty">No article matches “${_siEsc(q)}”${_siEsc(r.hidden>0?' with the current Type/Season filter ('+r.hidden+' more match without it)':'')}.</div>`;
+  if(!r.hits.length)return`<div class="si-ax-empty">No article matches “${_siEsc(q)}”.</div>`;
   const add=mode==='compare',fn=add?'Add':(mode==='search'?'Pick':'Open');
   const hit=a=>{
     const on=add&&_siAxCmp.includes(a.code);
     const tail=add?(on?'<span class="si-ax-added" aria-hidden="true">✓ Added</span>':'<span class="si-ax-plus" aria-hidden="true">+ Add</span>'):'';
     return`<button class="si-ax-hit${on?' is-added':''}" data-code="${_siEsc(a.code)}"${add?` aria-pressed="${on}"`:''} onclick="window._siAx${fn}(this.dataset.code)">${_siAxThumb(a.code,40,a.name)}<span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div>${_siIgChipHtml(a.code)}</span><span class="n">${a.units} sold</span>${tail}</button>`;
   };
-  return`<div class="si-ax-note" style="margin:6px 0 4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'}${hid} · ordered by units sold, then name, then code</div>
+  return`<div class="si-ax-note" style="margin:6px 0 4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'} · ordered by units sold, then name, then code</div>
   <div class="si-ax-results">${r.hits.map(hit).join('')}</div>`;
 }
 window._siAxSetMode=function(m){
@@ -4664,7 +4541,7 @@ function _siAxCompareData(){
   });
   return{arts,ser,rows,M,chartSeries,noPrev};
 }
-// ── Calendar window: all data / a winter (Oct–Jan) / month by month ──────────
+// ── Calendar window: all data / a winter (Oct–Feb) / month by month ──────────
 function _siAxLatestWinter(){return _siAxWinterOf(_siPktDate(0));}
 function _siAxWinYearNow(){
   const latest=_siAxLatestWinter(),first=Math.min(latest,_siAxWinterOf(_siAxIndex().cov||_siPktDate(0)));
@@ -4692,12 +4569,12 @@ function _siAxPrevNote(d){
 function _siAxCalOptsHtml(){
   const b=(id,l)=>`<button class="si-ax-btn${_siAxWin===id?' on':''}" aria-pressed="${_siAxWin===id}" onclick="window._siAxSetWin('${id}')">${l}</button>`;
   const nav=_siAxWin==='all'?'':_siAxWin==='months'?(()=>{const l=_siAxMonthList();if(l.total<=_SI_AX_MONTHS_MAX)return'';const a=_siAxFmtBucket(l.months[0],'month',false),z=_siAxFmtBucket(l.months[l.months.length-1],'month',false);return`<span class="si-ax-lab" style="margin-left:8px">Months</span><button class="si-ax-btn" aria-label="Earlier months" ${l.hasOlder?'':'disabled '}onclick="window._siAxMonStep(-1)">‹</button><span class="si-ax-lab" style="color:var(--text)">${_siEsc(a)} – ${_siEsc(z)}</span><button class="si-ax-btn" aria-label="Later months" ${l.hasNewer?'':'disabled '}onclick="window._siAxMonStep(1)">›</button>`;})():(()=>{const w=_siAxWinterWindow(_siAxWinYearNow());return`<span class="si-ax-lab" style="margin-left:8px">Which winter</span><button class="si-ax-btn" aria-label="Earlier winter" onclick="window._siAxWinStep(-1)">‹</button><span class="si-ax-lab" style="color:var(--text)">${_siEsc(w.label)}</span><button class="si-ax-btn" aria-label="Later winter" onclick="window._siAxWinStep(1)">›</button>`;})();
-  return`<div class="si-ax-bar" id="si-ax-calopts"><span class="si-ax-lab">Window</span>${b('all','All data')}${b('winter','Winter (Oct–Jan)')}${b('months','Month by month')}${nav}
+  return`<div class="si-ax-bar" id="si-ax-calopts"><span class="si-ax-lab">Window</span>${b('all','All data')}${b('winter','Winter (Oct–Feb)')}${b('months','Month by month')}${nav}
     <button class="si-ax-btn${_siAxPrev?' on':''}" aria-pressed="${_siAxPrev}" style="margin-left:8px" onclick="window._siAxTogglePrev()">Compare with previous year</button></div>`;
 }
 // Month by month: a ROLLING window that ENDS at the current month and reaches back to the month of the first synced
 // order, at most twelve tiles (the latest twelve; the stepper goes further back). No future month is ever drawn, and a
-// month before the synced data is not drawn at all. Frost stays on Oct..Jan wherever they fall.
+// month before the synced data is not drawn at all. Frost stays on Oct..Feb wherever they fall.
 // Value = the month's total for the chosen metric family (revenue for revenue metrics, units otherwise).
 // A month before the article was live is "no data" — never 0.
 function _siAxMonthList(){
@@ -4752,7 +4629,7 @@ const _SI_OV_TILES=[
 ];
 function _siAxOvRows(){
   const idx=_siAxIndex();
-  return _siAxFLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat||(a.category||'Unknown')===_siAxOvCat)).map(a=>{
+  return _siAxLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat||(a.category||'Unknown')===_siAxOvCat)).map(a=>{
     const m=_siAxStats(a),c=_siAxClassify(a),act=_siAxActionOf(a);
     return{a,m,c,act};
   });
@@ -4776,7 +4653,7 @@ function _siAxOverviewBody(){
   if(_siHistState!=='ok'&&_siHistState!=='error')return`<div class="si-ax-empty">Reading the stock history…</div>`+_siAxHistBanner();
   if(_siAxOvSit){const h=_siAxOvSitHtml();if(h)return h;}
   const rows=_siAxOvRows();
-  const cats=[...new Set(_siAxFLive().filter(a=>a.units>0||a.hasStock).map(a=>a.category||'Unknown'))].sort(_siSortNat);
+  const cats=[...new Set(_siAxLive().filter(a=>a.units>0||a.hasStock).map(a=>a.category||'Unknown'))].sort(_siSortNat);
   const tile=t=>{const n=rows.filter(r=>_siAxOvIn(r,t.k)).length;return`<button class="si-ov-tile${_siAxOvTile===t.k?' on':''}" aria-pressed="${_siAxOvTile===t.k}" onclick="window._siAxOvTile('${t.k}')"><span class="l">${_siEsc(t.l)}</span><span class="n">${n}</span><span class="w">${_siEsc(t.what)}</span><span class="s">${_siEsc(t.sub)}</span></button>`;};
   const cur=_SI_OV_TILES.find(t=>t.k===_siAxOvTile)||_SI_OV_TILES[0];
   const list=rows.filter(r=>_siAxOvIn(r,cur.k)).sort(_siAxOvSort(cur.k));
@@ -4829,7 +4706,7 @@ const _SI_PF_SORTS=[{k:'demand',l:'Units per in-stock day'},{k:'cover',l:'Longes
 const _SI_PF_BUCKETS=[{k:'winner',l:'Winners'},{k:'over',l:'Over-stocked (26+ weeks of cover)'},{k:'slow',l:'Slow'},{k:'dead',l:'Dead stock'},{k:'other',l:'Everything else'}];
 let _siAxPfCls='',_siAxPfCat='',_siAxPfSeason='',_siAxPfSort='demand',_siAxPfAll=false,_siAxPfConcAll=false,_siAxPfMemo=null;
 
-// units and revenue sold in winter months (Oct to Jan) and in the other months, by the day of each counted sale
+// units and revenue sold in winter months (Oct to Feb) and in the other months, by the day of each counted sale
 function _siAxPfSeasonUnits(a){
   const o={wU:0,wR:0,sU:0,sR:0};
   if(!a||!a.daily)return o;
@@ -4857,8 +4734,7 @@ function _siAxPfCalc(rows,opts){
     const pace=(m.paceHead!=null&&m.paceHead>0)?m.paceHead:null;
     return{a,m,c:r.c,cls:r.c.cls,code:a.code,cat:a.category||'Unknown',units:a.units||0,rev:a.rev||0,hasRev:!!a.hasPrice,
       onHand:a.hasStock?a.onHand:null,val,noPrice:a.hasStock&&a.onHand>0&&asp==null,cover:m.cover,demand:d?d.D:null,pace,
-      su,season:(a.units>0)?(su.wU*2>a.units?'winter':'summer'):null,
-      mtype:opts.metaOf?(opts.metaOf(a.code).type||'none'):null,mseason:opts.metaOf?(opts.metaOf(a.code).season||'none'):null};
+      su,season:(a.units>0)?(su.wU*2>a.units?'winter':'summer'):null};
   });
   const tot={articles:R.length,units:0,rev:0,stockUnits:0,stockVal:0,noPrice:0,noStock:0};
   R.forEach(r=>{tot.units+=r.units;tot.rev+=r.rev;if(r.onHand!=null)tot.stockUnits+=r.onHand;else tot.noStock++;if(r.val!=null)tot.stockVal+=r.val;if(r.noPrice)tot.noPrice++;});
@@ -4867,30 +4743,25 @@ function _siAxPfCalc(rows,opts){
   const mixBy={};mix.forEach(x=>{mixBy[x.k]=x;});
   R.forEach(r=>{const x=mixBy[r.cls]||mixBy.unrated;x.n++;x.units+=r.units;x.rev+=r.rev;});
   mix.forEach(x=>{x.pN=R.length?x.n/R.length:null;x.pU=tot.units>0?x.units/tot.units:null;x.pR=tot.rev>0?x.rev/tot.rev:null;});
-  // the one definition of where an article's stock sits (dead, then slow, then winner, then over-stocked); the cash table and the rollups read it
-  const bucketOf=r=>r.cls==='dead'?'dead':(r.cls==='slow'?'slow':(r.cls==='winner'?'winner':((r.cover!=null&&r.cover>=T.overCoverWeeks&&(r.cls==='solid'||r.cls==='steady'||r.cls==='constrained'))?'over':'other')));
   // 2. category and season
   const grp=(keyOf,label)=>{
     const g=new Map();
     R.forEach(r=>{
       const k=keyOf(r);let x=g.get(k);
-      if(!x){x={k,label:label?label(k):k,n:0,units:0,rev:0,wU:0,stockUnits:0,stockVal:0,valMissing:0,paceStock:0,paceSum:0,paceN:0,dead:0,slow:0,stU:0,inSum:0,inN:0,tied:0,tiedMissing:0};g.set(k,x);}
+      if(!x){x={k,label:label?label(k):k,n:0,units:0,rev:0,wU:0,stockUnits:0,stockVal:0,valMissing:0,paceStock:0,paceSum:0,paceN:0};g.set(k,x);}
       x.n++;x.units+=r.units;x.rev+=r.rev;x.wU+=r.su.wU;
       if(r.onHand!=null)x.stockUnits+=r.onHand;
       if(r.val!=null)x.stockVal+=r.val;else if(r.onHand!=null)x.valMissing++;
       if(r.onHand!=null&&r.pace!=null){x.paceStock+=r.onHand;x.paceSum+=r.pace;x.paceN++;}
-      if(r.cls==='dead')x.dead++;else if(r.cls==='slow')x.slow++;
-      if(r.onHand!=null){x.stU+=r.units;const b=bucketOf(r);if(b==='dead'||b==='slow'||b==='over'){if(r.val!=null)x.tied+=r.val;else x.tiedMissing++;}}
-      if(r.m&&r.m.inRate!=null){x.inSum+=r.m.inRate;x.inN++;}
     });
     const out=[...g.values()];
-    out.forEach(x=>{x.pU=tot.units>0?x.units/tot.units:null;x.pR=tot.rev>0?x.rev/tot.rev:null;x.pV=tot.stockVal>0?x.stockVal/tot.stockVal:null;x.cover=x.paceSum>0?x.paceStock/x.paceSum:null;x.wShare=x.units>0?x.wU/x.units:null;x.sellThru=(x.stU+x.stockUnits)>0?x.stU/(x.stU+x.stockUnits):null;x.inRate=x.inN?x.inSum/x.inN:null;});
+    out.forEach(x=>{x.pU=tot.units>0?x.units/tot.units:null;x.pR=tot.rev>0?x.rev/tot.rev:null;x.pV=tot.stockVal>0?x.stockVal/tot.stockVal:null;x.cover=x.paceSum>0?x.paceStock/x.paceSum:null;x.wShare=x.units>0?x.wU/x.units:null;});
     return out;
   };
   const cats=grp(r=>r.cat).sort((x,y)=>(y.units-x.units)||_siSortNat(x.k,y.k));
   const sg=grp(r=>r.season||'none');
-  // season of SALE: every counted sale by its month (Oct to Jan = winter). Stock and cover go with the season each article mainly sells in.
-  const seasons=[{k:'winter',label:'Winter months (Oct–Jan)'},{k:'summer',label:'Other months (Feb–Sep)'},{k:'none',label:'No counted sales'}].map(s=>{
+  // season of SALE: every counted sale by its month (Oct to Feb = winter). Stock and cover go with the season each article mainly sells in.
+  const seasons=[{k:'winter',label:'Winter months (Oct–Feb)'},{k:'summer',label:'Other months (Mar–Sep)'},{k:'none',label:'No counted sales'}].map(s=>{
     const g=sg.find(x=>x.k===s.k)||{n:0,stockUnits:0,stockVal:0,valMissing:0,cover:null,pV:null};
     let u=0,rv=0;
     if(s.k==='winter')R.forEach(r=>{u+=r.su.wU;rv+=r.su.wR;});
@@ -4899,13 +4770,6 @@ function _siAxPfCalc(rows,opts){
     return{k:s.k,label:s.label,units:has?u:null,rev:has?rv:null,pU:has&&tot.units>0?u/tot.units:null,pR:has&&tot.rev>0?rv/tot.rev:null,
       n:g.n,stockUnits:g.stockUnits,stockVal:g.stockVal,valMissing:g.valMissing,cover:g.cover,pV:g.pV};
   });
-  // 2b. the saved type and the saved season (inputs: opts.metaOf; absent = the saved list is unavailable, so there is no rollup, never zeros)
-  let feed=null;
-  if(opts.metaOf){
-    const mk=(vocab,field)=>{const g=grp(r=>r[field]);return vocab.map(o=>g.find(x=>x.k===o.k)||{k:o.k,n:0,units:0,rev:0,stockUnits:0,stockVal:0,valMissing:0,dead:0,slow:0,tied:0,tiedMissing:0,pU:null,sellThru:null,inRate:null,cover:null}).map(x=>Object.assign({},x,{label:vocab.find(o=>o.k===x.k).l}));};
-    feed={types:mk([{k:'top',l:'Top'},{k:'bottom',l:'Bottom'},{k:'other',l:'Other'},{k:'none',l:'Unclassified'}],'mtype'),
-      seasons:mk([{k:'winter',l:'Winter'},{k:'summer',l:'Summer'},{k:'all',l:'All-season'},{k:'none',l:'Unclassified'}],'mseason')};
-  }
   // 3. concentration (articles with sales, biggest first)
   const sold=R.filter(r=>r.units>0).sort((x,y)=>(y.units-x.units)||_siSortNat(x.code,y.code));
   const uv=sold.map(r=>r.units),byRev=R.filter(r=>r.rev>0).sort((x,y)=>(y.rev-x.rev)||_siSortNat(x.code,y.code)),rv=byRev.map(r=>r.rev);
@@ -4914,6 +4778,7 @@ function _siAxPfCalc(rows,opts){
     reachU50:_siAxPfReach(uv,50),reachU80:_siAxPfReach(uv,80),reachR50:_siAxPfReach(rv,50),reachR80:_siAxPfReach(rv,80),nRev:byRev.length,
     topU:T.concNs.map(n=>({n,share:_siAxPfTop(uv,n)})),topR:T.concNs.map(n=>({n,share:_siAxPfTop(rv,n)}))};
   // 4. cash by bucket (disjoint: dead, then slow, then winner, then over-stocked, else everything else)
+  const bucketOf=r=>r.cls==='dead'?'dead':(r.cls==='slow'?'slow':(r.cls==='winner'?'winner':((r.cover!=null&&r.cover>=T.overCoverWeeks&&(r.cls==='solid'||r.cls==='steady'||r.cls==='constrained'))?'over':'other')));
   const cash=_SI_PF_BUCKETS.map(b=>({k:b.k,label:b.l,n:0,stockUnits:0,val:0,valMissing:0}));
   const cashBy={};cash.forEach(x=>{cashBy[x.k]=x;});
   R.forEach(r=>{
@@ -4936,7 +4801,7 @@ function _siAxPfCalc(rows,opts){
       if(s.lost){lost.lo+=s.lost.lo;lost.hi+=s.lost.hi;lost.mid+=s.lost.mid;lost.articles++;if(s.price!=null)lost.rs+=s.lost.mid*s.price;}
     });
   }
-  const res={rows:R,tot,mix,cats,seasons,feed,conc,cash,stuck,lost,today:opts.today||''};
+  const res={rows:R,tot,mix,cats,seasons,conc,cash,stuck,lost,today:opts.today||''};
   res.readout=_siAxPfReadout(res);
   return res;
 }
@@ -4977,10 +4842,10 @@ function _siAxPfLostOf(a){
 function _siAxPf(){
   const idx=_siAxIndex();
   let lt='';try{lt=(localStorage.getItem(_SI_LT_KEY)||'')+'|'+(localStorage.getItem(_SI_LT_ART_KEY)||'');}catch(_){}
-  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey()+'|'+_siAxFSig()+'|'+_siMetaState;
+  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey();
   if(_siAxPfMemo&&_siAxPfMemo.idx===idx&&_siAxPfMemo.sig===sig)return _siAxPfMemo.res;
-  const rows=_siAxFLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)}));
-  const res=_siAxPfCalc(rows,{today:_siPktDate(0),demand:_siAxDemand(),lost:_siHistState==='ok'?_siAxPfLostOf:null,metaOf:_siFeedOk()?_siMetaOf:null});
+  const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)}));
+  const res=_siAxPfCalc(rows,{today:_siPktDate(0),demand:_siAxDemand(),lost:_siHistState==='ok'?_siAxPfLostOf:null});
   _siAxPfMemo={idx,sig,res};return res;
 }
 function _siAxPfFiltered(pf){
@@ -5009,18 +4874,8 @@ function _siAxPfCatHtml(pf){
 }
 function _siAxPfSeasonHtml(pf){
   const row=x=>`<tr><td>${_siEsc(x.label)}</td><td class="r">${x.units==null?'—':x.units}</td><td class="r">${_siAxPfRs(x.rev)}</td><td class="r">${_siAxPct(x.pU)}</td><td class="r">${x.n}</td><td class="r">${_siAxPfRs(x.stockVal)}</td><td class="r">${x.cover==null?'—':_siEsc(_siAxNum(x.cover))}</td></tr>`;
-  return`<div class="si-pf-wrap"><table class="si-pf-tbl"><thead><tr><th>Selling window</th><th class="r">Units sold in these months</th><th class="r">Revenue (list)</th><th class="r">% of units</th><th class="r">Articles that mainly sell then</th><th class="r">Their stock at selling price</th><th class="r">Their cover (weeks)</th></tr></thead><tbody>${pf.seasons.map(row).join('')}</tbody></table></div>
-  <div class="si-ax-note">This is the selling window: sales are split by the month of each order (October to January is winter), whatever season staff saved for an article. An article counts as a winter seller when more than half of its units sold in winter months; stock follows the article.</div>`;
-}
-// The saved type / saved season rollups: the SAME grouping function as Category (inside _siAxPfCalc), never a second calculator.
-function _siAxPfFeedHtml(pf){
-  if(!pf.feed)return'<div class="si-ax-empty">Type/season unavailable — the saved list could not be read. The tables by selling window and by category above are unaffected.</div>';
-  const tbl=(rows,head)=>{
-    const row=x=>`<tr><td>${_siEsc(x.label)}</td><td class="r">${x.n}</td><td class="r">${x.n?x.units:'—'}</td><td class="r">${x.n?_siAxPfRs(x.rev):'—'}</td><td class="r">${_siAxPct(x.sellThru)}</td><td class="r">${_siAxPct(x.inRate)}</td><td class="r">${x.n?x.dead:'—'}</td><td class="r">${x.n?x.slow:'—'}</td><td class="r">${x.n?_siAxPfRs(x.stockVal):'—'}${x.valMissing?'<sup title="'+x.valMissing+' article(s) with stock and no sale price are not valued">*</sup>':''}</td><td class="r">${x.n?_siAxPfRs(x.tied):'—'}${x.tiedMissing?'<sup title="'+x.tiedMissing+' article(s) with stock and no sale price are not valued">*</sup>':''}</td></tr>`;
-    return`<div class="si-pf-wrap"><table class="si-pf-tbl"><thead><tr><th>${head}</th><th class="r">Articles</th><th class="r">Units</th><th class="r">Revenue (list)</th><th class="r">Sell-through</th><th class="r">In-stock days</th><th class="r">Dead</th><th class="r">Slow</th><th class="r">Stock at selling price</th><th class="r">Cash tied up</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>`;
-  };
-  return`<div class="si-pf-lab">By saved type</div>${tbl(pf.feed.types,'Type')}<div class="si-pf-lab">By saved season</div>${tbl(pf.feed.seasons,'Saved season')}
-  <div class="si-ax-note">Grouped by what staff saved in Type &amp; season; Unclassified = no saved value yet. Sell-through = units sold ÷ (units sold + units on hand), over articles with stock data. In-stock days = the average of each article’s share of measured days in stock. Cash tied up = stock at selling price in dead, slow and over-stocked articles (the same buckets as the cash table below). Dead and Slow are class counts. An article is in exactly one row per table. Not cost.</div>`;
+  return`<div class="si-pf-wrap"><table class="si-pf-tbl"><thead><tr><th>Season</th><th class="r">Units sold in these months</th><th class="r">Revenue (list)</th><th class="r">% of units</th><th class="r">Articles that mainly sell then</th><th class="r">Their stock at selling price</th><th class="r">Their cover (weeks)</th></tr></thead><tbody>${pf.seasons.map(row).join('')}</tbody></table></div>
+  <div class="si-ax-note">Sales are split by the month of each order (October to February is winter). An article counts as a winter seller when more than half of its units sold in winter months; stock follows the article.</div>`;
 }
 function _siAxPfConcHtml(pf){
   const c=pf.conc,T=_SI_PF;
@@ -5062,7 +4917,7 @@ function _siAxPfListHtml(pf){
   const sel=(id,cur,opts,onch)=>`<select id="${id}" class="si-ax-select" onchange="${onch}">${opts.map(o=>`<option value="${_siEsc(o[0])}"${o[0]===cur?' selected':''}>${_siEsc(o[1])}</option>`).join('')}</select>`;
   const filters=`<div class="si-ax-bar"><label class="si-ax-lab" for="si-pf-cls">Class</label>${sel('si-pf-cls',_siAxPfCls,[['','All classes']].concat(_SI_PF_ORDER.map(k=>[k,_SI_AX_CLASSES[k].label])),"window._siAxPfSet('cls',this.value)")}
     <label class="si-ax-lab" for="si-pf-cat">Category</label>${sel('si-pf-cat',_siAxPfCat,[['','All categories']].concat(cats.map(c=>[c,c])),"window._siAxPfSet('cat',this.value)")}
-    <label class="si-ax-lab" for="si-pf-season">Selling window</label>${sel('si-pf-season',_siAxPfSeason,[['','Any season'],['winter','Mainly winter'],['summer','Mainly other months'],['none','No counted sales']],"window._siAxPfSet('season',this.value)")}
+    <label class="si-ax-lab" for="si-pf-season">Season</label>${sel('si-pf-season',_siAxPfSeason,[['','Any season'],['winter','Mainly winter'],['summer','Mainly other months'],['none','No counted sales']],"window._siAxPfSet('season',this.value)")}
     <label class="si-ax-lab" for="si-pf-sort">Order by</label>${sel('si-pf-sort',_siAxPfSort,_SI_PF_SORTS.map(o=>[o.k,o.l]),"window._siAxPfSet('sort',this.value)")}</div>`;
   const row=r=>`<tr><td><div class="si-pf-nm">${_siAxThumb(r.code,32,r.a.name)}<span><button class="si-pf-link" data-code="${_siEsc(r.code)}" onclick="window._siAxOpen(this.dataset.code)">${_siEsc(_siAxLabel(r.a))}</button><span class="si-ax-note" style="margin:0;display:block">${_siEsc(r.code)} · ${_siEsc(r.cat)}</span></span></div></td><td>${_siAxPfChip(r.cls)}</td><td class="r">${r.demand==null?'—':_siEsc(_siAxNum(r.demand))}</td><td class="r">${r.cover==null?(r.onHand===0?'0':'—'):_siEsc(_siAxNum(r.cover))}</td><td class="r">${r.onHand==null?'—':r.onHand}</td><td class="r">${_siAxPfRs(r.val)}</td><td class="r">${r.units}</td></tr>`;
   return`${filters}<div class="si-ax-lab" style="margin:4px 0">${f.length} of ${pf.rows.length} articles${f.length>show.length?' (showing '+show.length+')':''}</div>${_siAxPfScatterHtml(f)}
@@ -5082,8 +4937,7 @@ function _siAxPortfolioBody(){
   return`<div class="card si-pf"><div class="card-title">Portfolio</div><p class="si-pf-read" id="si-pf-read">${_siEsc(pf.readout)}</p>${tiles}${caveat}</div>
   <div class="card si-pf"><div class="card-title">Class mix</div>${_siAxPfMixHtml(pf)}</div>
   <div class="card si-pf"><div class="card-title">Category</div>${_siAxPfCatHtml(pf)}</div>
-  <div class="card si-pf"><div class="card-title">By selling window (order month)</div>${_siAxPfSeasonHtml(pf)}</div>
-  <div class="card si-pf" id="si-pf-feed"><div class="card-title">By saved type and saved season</div>${_siAxPfFeedHtml(pf)}</div>
+  <div class="card si-pf"><div class="card-title">Season</div>${_siAxPfSeasonHtml(pf)}</div>
   <div class="card si-pf"><div class="card-title">Concentration</div>${_siAxPfConcHtml(pf)}</div>
   <div class="card si-pf"><div class="card-title">Cash tied up and stock-outs</div>${_siAxPfCashHtml(pf)}</div>
   <div class="card si-pf" id="si-pf-list"><div class="card-title">Every article: demand against cover</div>${_siAxPfListHtml(pf)}</div>
@@ -5171,7 +5025,7 @@ function _siAxCompareBody(){
     {key:'refund',label:'Refunded units',title:_siAxTip('refund'),type:'num',get:r=>r.m.refunded,cell:r=>`<td>${r.m.refunded!=null?r.m.refunded:'—'}</td>`},
     {key:'asp',label:'Avg unit price',title:_siAxTip('asp'),type:'num',get:r=>r.m.asp,cell:r=>`<td>${r.m.asp!=null?_siEsc(_siPKR(Math.round(r.m.asp))):'—'}</td>`}
   ]),d.rows,{def:{key:'n',dir:1},defText:'the order you added them',minWidth:900,ties});
-  const winNote=_siAxBasis!=='calendar'?'':(_siAxWin==='winter'?' Winter window: '+_siAxFmtDay(d.ser.win.from)+' to '+_siAxFmtDay(d.ser.win.to)+' (October to the end of January); part of the window that has not happened yet is left empty, not zero.':(monthsView?' Month by month: every month from the first synced orders up to the current one (the latest twelve; use the arrows for earlier ones), winter months frosted; units (or revenue) per month, the current month is marked so far, and an article not yet live in a month reads no data. Months before the synced orders and months still ahead are not shown.':''));
+  const winNote=_siAxBasis!=='calendar'?'':(_siAxWin==='winter'?' Winter window: '+_siAxFmtDay(d.ser.win.from)+' to '+_siAxFmtDay(d.ser.win.to)+' (October to the end of February); part of the window that has not happened yet is left empty, not zero.':(monthsView?' Month by month: every month from the first synced orders up to the current one (the latest twelve; use the arrows for earlier ones), winter months frosted; units (or revenue) per month, the current month is marked so far, and an article not yet live in a month reads no data. Months before the synced orders and months still ahead are not shown.':''));
   const basisNote=d.ser.basis==='launch'?'Since launch: x-axis is weeks (or months) since each article\'s live date, so products from different years line up at the same age.':'Calendar: the same dates on the x-axis; a line starts when the article went live.';
   // The chart comes first, right under the controls: it used to sit below the scorecard and the "Read this" block, so a click on
   // Calendar / Since launch changed nothing anyone could see without scrolling past them.
@@ -5266,31 +5120,12 @@ function _siNaSudden(a,m,today){
   return{last,base,z};
 }
 // Winter stock is not "dead" while winter is starting (15 Sept to 30 Nov): hoodies, zippers, jackets, or anything tagged season:winter.
-function _siNaWinter(a,today){ // the legacy rule, kept for an article with NO saved season (and when the saved list could not be read)
+function _siNaWinter(a,today){
   const md=String(today||'').slice(5).replace('-','');
   if(md<_SI_NA.seasonFrom||md>_SI_NA.seasonTo)return false;
   if(/hood|zip|jacket|coat|fleece|sweat/i.test(a&&a.category||''))return true;
   try{const sm=_siSeasonMap();for(const s of (a&&a.skus)||[]){if(sm[s]==='winter')return true;}}catch(_){}
   return false;
-}
-// Product-data sub-phase 3: the article's SAVED season replaces the fixed 15 Sept to 30 Nov window. The window an article is judged in:
-// winter = Oct to Jan (the Explorer's own rule, _SI_AX_WINTER_MONTHS), summer = Feb to Sep (so no gap), all-season = always. No grace period. Outside its window an
-// article is on a seasonal wait (Watch, never a red clear-out); inside it, it is judged like any other. 'unknown' (no saved season) and
-// 'unavailable' (the saved list could not be read) keep the legacy rule above and say so.
-const _SI_NA_SUMMER_MONTHS=[2,3,4,5,6,7,8,9];
-function _siNaInWindow(season,today){
-  if(season==='all')return true;
-  const m=+String(today||'').slice(5,7);
-  if(season==='winter')return _siAxIsWinterMonth(m);
-  if(season==='summer')return _SI_NA_SUMMER_MONTHS.indexOf(m)>=0;
-  return true;
-}
-function _siNaLegacyActive(today){const md=String(today||'').slice(5).replace('-','');return md>=_SI_NA.seasonFrom&&md<=_SI_NA.seasonTo;}
-function _siNaSeasonInfo(a,today){
-  if(_siMetaState!=='ok')return{state:'unavailable',season:null,wait:_siNaWinter(a,today),legacy:true,window:_siNaLegacyActive(today)};
-  const s=_siMetaOf(a&&a.code).season;
-  if(!s)return{state:'unknown',season:null,wait:_siNaWinter(a,today),legacy:true,window:_siNaLegacyActive(today)};
-  return{state:'saved',season:s,wait:!_siNaInWindow(s,today),legacy:false,window:false};
 }
 // Reorder size guide: demand per day x (lead time + cover target) minus what is on hand, as a range (pace +/- 25%, because returns
 // are not synced and read the pace high), rounded UP to a pack of 12. null when even the top of the range needs nothing.
@@ -5383,25 +5218,17 @@ function _siNaDetect(r,ctx){
   }
   // 6. cash: dead and overstocked stock at article level, value at SELLING price (no cost is stored)
   if(a.hasStock&&a.onHand>0){
-    const val=asp!=null?a.onHand*asp:null,sinf=ctx&&ctx.season?ctx.season(a):null,winter=sinf?!!sinf.wait:!!(ctx&&ctx.winter&&ctx.winter(a));
-    const seasonMark=x=>{ // the season the verdict rests on is on the issue: saved, unknown or unavailable
-      if(!sinf)return;
-      x.n.seasonState=sinf.state;x.n.season=sinf.season;
-      if(sinf.state!=='saved'&&sinf.window){ // the legacy window is open, so the guess decides the band: say so and lower the confidence one step
-        const names=['Low','Medium','High'],lv=['low','medium','high'],i=Math.max(0,lv.indexOf(x.conf)-1);
-        x.conf=lv[i];x.n.confName=names[i];x.n.confWhy=(x.n.confWhy||[]).concat(['season '+(sinf.state==='unknown'?'unknown':'unavailable')]);
-      }
-    };
+    const val=asp!=null?a.onHand*asp:null,winter=!!(ctx&&ctx.winter&&ctx.winter(a));
     const wk=m.cover;
     if(cls==='dead'&&a.onHand>=C.deadMinStock&&m.days>=C.deadMinAge){
       const x=mk('dead',(val!=null&&val>=C.overMinValue)?'act':'watch',{at:val,atKind:'tied up at selling price'});
-      x.n.valueTied=val;seasonMark(x);
+      x.n.valueTied=val;
       if(winter){x.band='watch';x.seasonal=true;}
       out.push(x);
     }else if(cls!=='dead'&&((cls==='slow'&&r.act&&(r.act.key==='stuck'||r.act.key==='markdown'))||(wk!=null&&wk>=C.overCoverWeeks&&val!=null&&val>=C.overMinValue))){
       const big=(wk!=null&&wk>=C.bigCoverWeeks)||(val!=null&&val>=C.bigValue);
       const x=mk('overstock',big?'act':'watch',{at:val,atKind:'tied up at selling price'});
-      x.n.valueTied=val;seasonMark(x);
+      x.n.valueTied=val;
       if(winter){x.band='watch';x.seasonal=true;}
       out.push(x);
     }
@@ -5490,7 +5317,7 @@ function _siNaBuild(rows,ctx){
 function _siNaCtx(){
   const today=_siPktDate(0);
   let rs=null;try{rs=_siAxIndex().quality.returns.synced;}catch(_){}
-  return{today,returnsSynced:rs,disc:a=>_siNaDiscount(a,today),sudden:(a,m)=>_siNaSudden(a,m,today),winter:a=>_siNaWinter(a,today),season:a=>_siNaSeasonInfo(a,today),ret:(a,m)=>_siNaRet90(a,m,today),
+  return{today,returnsSynced:rs,disc:a=>_siNaDiscount(a,today),sudden:(a,m)=>_siNaSudden(a,m,today),winter:a=>_siNaWinter(a,today),ret:(a,m)=>_siNaRet90(a,m,today),
     lost:_siHistState==='ok'?_siAxPfLostOf:null,lostDays:_SI_PF.lostDays};
 }
 // The ranked issues for the loaded data. Memoised on the index object, today and the lead-time settings (the only inputs that change without
@@ -5599,7 +5426,6 @@ function _siRrHtml(){
 window._siRrRun=async function(){
   if(_siRrBusy||!_siRrIsOwner())return;
   _siRrBusy=true;_siRrMsg='';
-  _siLinesForceFull=true; // pressing the returns refresh makes the next line-item read a full one (statuses change on lines of any age)
   const done=m=>{_siRrBusy=false;_siRrMsg=m;const e=document.getElementById('si-rr');if(e)e.outerHTML=_siRrHtml()||'';};
   try{
     const idToken=await auth.currentUser.getIdToken();
@@ -5626,10 +5452,6 @@ function _siNaPlaybook(i){
   const confBits=[n.confName+' confidence: '+(n.confWhy&&n.confWhy[0]?n.confWhy[0]:'—')+'.'];
   if(n.confCaps&&n.confCaps.length)confBits.push('Capped at Medium because '+n.confCaps.join(' and ')+'.');
   if(i.type==='stockout'||i.type==='runout'||i.type==='sizehole'||i.type==='rising'||i.type==='saleloss'||i.type==='winner')confBits.push('Lead time: '+leadTxt+'.'+rt);
-  const sSaved=n.seasonState==='saved',sLabel=sSaved?({winter:'winter',summer:'summer',all:'all-season'})[n.season]:'';
-  const sOpens=n.season==='summer'?'February':'October';
-  if((i.type==='dead'||i.type==='overstock')&&n.seasonState&&n.seasonState!=='saved')confBits.push(n.seasonState==='unknown'?'Season unknown: nobody has saved a season for this article (Type & season), so the seasonal wait follows the 15 September to 30 November rule and the category and tags.':'Type and season unavailable: the saved list could not be read, so the seasonal wait follows the 15 September to 30 November rule and the category and tags.');
-  if((i.type==='dead'||i.type==='overstock')&&sSaved)confBits.push('Season: saved as '+sLabel+'.');
   const holesTxt=(n.holes||[]).map(h=>h.size+(h.kind==='out'?' (out)':' ('+h.stock+' left)')).join(', ');
   switch(i.type){
     case'stockout':
@@ -5654,9 +5476,9 @@ function _siNaPlaybook(i){
       avoid=['Do not reorder the whole article.','Do not read a size at 0 with low recent sales as "no demand".'];break;
     case'overstock':
       if(i.seasonal){
-        situation=R(n.onHand)+' units on hand ('+money(n.valueTied)+' at selling price): '+n.coverText+' of cover, but '+(sSaved?'it is '+sLabel+' stock and outside its season.':'it is winter stock and the season is starting.');
-        why=sSaved?'Judging it now would be unfair: it is outside its saved season, so slow sales now say little.':'Judging it now would be unfair: there is no winter sales history in the data yet (it starts 26 March 2026).';
-        actions=[{owner:'Raees',text:'Hold: no reorder and no re-cut.'},{owner:'Daniyal',text:'Plan winter creative and creator seeding for it now.'},{owner:'Mustafa',text:sSaved?'Check it again when its season opens ('+sOpens+'); if it still moves slowly, move to the markdown steps.':'Check it again on 15 November; if it still moves slowly, move to the markdown steps.'}];
+        situation=R(n.onHand)+' units on hand ('+money(n.valueTied)+' at selling price): '+n.coverText+' of cover, but it is winter stock and the season is starting.';
+        why='Judging it now would be unfair: there is no winter sales history in the data yet (it starts 26 March 2026).';
+        actions=[{owner:'Raees',text:'Hold: no reorder and no re-cut.'},{owner:'Daniyal',text:'Plan winter creative and creator seeding for it now.'},{owner:'Mustafa',text:'Check it again on 15 November; if it still moves slowly, move to the markdown steps.'}];
         avoid=['Do not mark it down before the season has had a chance.','Do not reorder.'];
       }else{
         situation=R(n.onHand)+' units on hand'+(n.valueTied!=null?' ('+money(n.valueTied)+' at selling price, cost is not recorded)':'')+': '+n.coverText+' of cover at about '+P(n.perDay)+' a day.';
@@ -5670,7 +5492,7 @@ function _siNaPlaybook(i){
     case'dead':
       situation='Nothing sold in the last '+(n.pace28Days==null?'—':n.pace28Days)+' counted days with '+R(n.onHand)+' on hand'+(n.valueTied!=null?' ('+money(n.valueTied)+' at selling price)':'')+'.';
       why='There is no demand signal at all, and the stock is not getting cheaper to hold.';
-      if(i.seasonal){actions=[{owner:'Raees',text:'Hold: no reorder.'},{owner:'Mustafa',text:sSaved?'It is '+sLabel+' stock and outside its season: check the listing is live and priced right, then look again when its season opens ('+sOpens+').':'It is winter stock and winter is starting: check the listing is live and priced right, then look again on 15 November.'}];avoid=['Do not clear it yet.'];}
+      if(i.seasonal){actions=[{owner:'Raees',text:'Hold: no reorder.'},{owner:'Mustafa',text:'It is winter stock and winter is starting: check the listing is live and priced right, then look again on 15 November.'}];avoid=['Do not clear it yet.'];}
       else{actions=[{owner:'Mustafa',text:'First check the listing is live, priced right and in its collection.'},{owner:'Mustafa',text:'Then bundle or discount it to clear.'},{owner:'Raees',text:'Do not reorder.'},{owner:'Saim',text:'Note it for design: do not re-run this style.'}];avoid=['Do not reorder.'];}
       break;
     case'rising':
@@ -5734,8 +5556,8 @@ function _siNaRowLine(i){
     case'stockout':s='Out of stock · '+(n.units28==null?'—':n.units28)+' sold in 28 days · lead time '+n.leadDays+'d ('+(n.leadSrc==='default'?'default':'set')+')';break;
     case'runout':s=n.onHand+' left · empty in about '+_siNaDays(n.coverDays)+' · lead time '+n.leadDays+'d ('+(n.leadSrc==='default'?'default':'set')+')'+(i.rising?' · demand rising':'');break;
     case'sizehole':s=(n.holes.length===1?'Size ':'Sizes ')+n.holes.map(h=>h.size).join(', ')+' '+(n.holes.some(h=>h.kind==='out')?'out':'thin')+' · '+Math.round(100*n.holes.reduce((t,h)=>t+h.share,0))+'% of 28-day sales';break;
-    case'overstock':s=(i.seasonal?(n.seasonState==='saved'?'Out of season, wait · ':'Winter stock, wait · '):'')+n.onHand+' on hand · '+n.coverText+' of cover';break;
-    case'dead':s=(i.seasonal?(n.seasonState==='saved'?'Out of season, wait · ':'Winter stock, wait · '):'')+n.onHand+' on hand · nothing sold in '+(n.pace28Days==null?'—':n.pace28Days)+' days';break;
+    case'overstock':s=(i.seasonal?'Winter stock, wait · ':'')+n.onHand+' on hand · '+n.coverText+' of cover';break;
+    case'dead':s=(i.seasonal?'Winter stock, wait · ':'')+n.onHand+' on hand · nothing sold in '+(n.pace28Days==null?'—':n.pace28Days)+' days';break;
     case'rising':s='Rising: '+n.units28+' vs '+(n.prev28==null?'—':n.prev28)+' units · '+n.onHand+' left, about '+_siNaDays(n.coverDays);break;
     case'demanddrop':s=n.sudden?'Last 7 days: '+n.sudden.last+' vs about '+Math.round(n.sudden.base)+' a week':'Last 28 days: '+n.units28+' vs '+(n.prev28==null?'—':n.prev28)+' units';break;
     case'saleloss':{const S=n.sales||{};s='Est. '+(S.lo===S.hi?'~'+S.lo:S.lo+'–'+S.hi)+' units lost over '+S.days+' days out'+(S.ongoing?' · out now':'')+' · estimate';break;}

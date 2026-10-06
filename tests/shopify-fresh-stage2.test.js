@@ -45,10 +45,6 @@ function build(T){
       let r=rows(name,q.cons||[]);
       if(name==='shopify_line_items'){
         const w=q.cons.filter(c=>c.t==='where');
-        // 6 Oct 2026: the window is read as date ranges issued in one burst (js/shopify.js _SI_LINE_CHUNKS). They are ONE logical window read here:
-        // the bounded ranges return nothing and are not logged; the open-ended last range stands for the whole window (from the burst's first start day).
-        if(w.some(c=>c.op==='>=')&&w.some(c=>c.op==='<')){if(!st.burst){st.burst=w.find(c=>c.op==='>=').v;Promise.resolve().then(()=>{st.burst=null;});}return{forEach(){}};}
-        if(w.some(c=>c.op==='>=')){const cut=st.burst||w[0].v;r=rows(name,[{t:'where',op:'>=',v:cut}]);w[0]={v:cut};}
         const older=w.some(c=>c.op==='<');
         st.queries.push({older,v:w[0]&&w[0].v});st.lineReads++;
         const hold=older?st.holdOlder:st.holdWin;
@@ -72,7 +68,6 @@ async function checks(src){
   const T=mkApp(src,'2000-01-01').R('_siPktDate(0)'),cut=dayShift(T,90);
   const open=async()=>{const m=mkApp(src,T);m.R('_siNow=function(){return Date.now()}');await m.R('loadShopifyData()');await flush();return m;};
   const refresh=async(m,moved)=>{ // move the order sync's stamp, then run the real refresh
-    m.R('_siLinesFullAt=0'); // these scenarios are about the FULL re-read (due at 00:00/12:00 PKT); the incremental path is tests/shopify-load-incremental.test.js
     m.fk.st.stamps.order_sync=(moved||Date.now())+5*H;m.fk.st.stamps.order_refresh=m.fk.st.stamps.order_sync;
     return m.R('siRefresh()');
   };
@@ -133,7 +128,7 @@ async function checks(src){
   // 4. phase 2 lands WHILE the refresh's window read is still pending: the window read wins, phase 2 is reset to idle (never done-with-scope-window)
   {
     const m=await open();
-    m.fk.st.holdWin={};m.R('_siLinesFullAt=0');
+    m.fk.st.holdWin={};
     m.fk.st.stamps.order_sync=Date.now()+5*H;m.fk.st.stamps.order_refresh=m.fk.st.stamps.order_sync;
     const p=m.R('siRefresh()');await flush();
     o['setup: the refresh window read is held']=m.fk.st.pending&&m.fk.st.pending.length===1&&m.R('_siFull.st')==='idle';
@@ -181,7 +176,7 @@ module.exports=async function(){
   await brk('new cut on refresh','const cut=(fresh&&_siLinesCut)?_siLinesCut:_siPktDate(-_SI_WIN_DAYS);','const cut=_siPktDate(-_SI_WIN_DAYS);',['a refresh keeps the cut the page loaded with, even after midnight']);
   await brk('phase 2 not reset after a full load',"if(_siLinesScope==='full'||_siFull.st==='done'){_siFull.st='idle';_siFull.err=null;_siFull.n=0;_siFull.tok++;}","",['full + moved order sync: scope back to window, 4 rows, phase 2 marked as needing a reload (idle, tok moved)','window read finishing after phase 2: back to window and idle — never "done" over a window-only array']);
   await brk('reset only on scope (not on state)',"if(_siLinesScope==='full'||_siFull.st==='done'){","if(false){",['window read finishing after phase 2: back to window and idle — never "done" over a window-only array']);
-  await brk('lines stamp not filed at load',"_siLinesIncFrom='';\n    _siFrNote('lines',stamps);","_siLinesIncFrom='';",['nothing moved: zero line-item reads, full history and its state kept']);
+  await brk('lines stamp not filed at load',"_siFrNote('lines',stamps);","",['nothing moved: zero line-item reads, full history and its state kept']);
   await brk('refresh does not pass fresh',"_siRunners[id](true)","_siRunners[id]()",['full + moved order sync: re-reads the window ONLY (one >= query with the same cut, no older read)']);
   await brk('refresh restarts a loading phase 2',"if(!_siLinesPartial()||F.st==='loading'||F.st==='done')return;","if(!_siLinesPartial()||F.st==='done')return;",['refresh during phase 2: one window read, NO second older read, phase 2 still loading (state not fought over)','a gated render during that read does not start another']);
   await brk('trigger list uses the old ids',"const _SI_FULL_SECTIONS=['attention','articles','ignored'];","const _SI_FULL_SECTIONS=['attention','explorer','ignored'];",['gated ids: Needs Attention, Articles (incl. its Type & season sub-view) and the Ignored sub-view; Today, SKU Table, Weekly Close, Advanced are not']);

@@ -43,14 +43,11 @@ function mk(src,o){
   ctx.navigator={onLine:true};
   ctx.window.showPage=function(id){ctx.window.__page=id;};
   vm.runInContext(src,ctx,{filename:'shopify.js'});
-  a.run('collection=function(d,n){return{n}};where=function(f,op,v){return{f:f,op:op,v:v}};query=function(c){return{n:c.n,w:[].slice.call(arguments,1)}};orderBy=function(){return 1};doc=function(d,c,id){return{c,id}};');
+  a.run('collection=function(d,n){return{n}};query=function(c){return c};orderBy=function(){return 1};doc=function(d,c,id){return{c,id}};');
   a.run('_siNow=function(){return window.__t};_siRand=function(){return 0.5}');
   ck.sync();
   const st={reads:{},meta:{},fail:{},stamps:Object.assign({catalog_sync:T0-1*H,order_sync:T0-1*H,order_refresh:T0-1*H,order_refresh_now:null,inventory_sync:T0-2*H},o.stamps||{}),docExtra:o.docExtra||{}};
   ctx.getDocs=ref=>{
-    // the line-item window is read as date ranges in one burst (js/shopify.js _SI_LINE_CHUNKS): the bounded ranges are not reads of their own here,
-    // the open-ended last one stands for the whole window (rows and failures included)
-    if(ref.n==='shopify_line_items'&&ref.w&&ref.w.some(x=>x.op==='<')&&ref.w.some(x=>x.op==='>='))return Promise.resolve({forEach(){}});
     st.reads[ref.n]=(st.reads[ref.n]||0)+1;
     if(st.fail[ref.n])return Promise.reject(st.fail[ref.n]);
     return Promise.resolve({forEach(f){((o.rows&&o.rows[ref.n])||[]).forEach(r=>f({id:r.id||'x',data:()=>Object.assign({},r)}));}});

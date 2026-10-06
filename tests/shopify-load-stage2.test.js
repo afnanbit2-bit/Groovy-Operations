@@ -10,7 +10,6 @@ const fs=require('fs'),path=require('path'),vm=require('vm');
 const harness=require('./harness');
 const {suite}=harness;
 const SRC=fs.readFileSync(path.join(__dirname,'../js/shopify.js'),'utf8');
-const NCH=6; // js/shopify.js _SI_LINE_CHUNKS
 const flush=async()=>{for(let i=0;i<12;i++)await new Promise(r=>setImmediate(r));};
 const dayShift=(T,k)=>new Date(new Date(T+'T00:00:00Z').getTime()-k*86400000).toISOString().slice(0,10);
 
@@ -43,7 +42,7 @@ function fake(T,o){
       if(name==='shopify_line_items'){
         st.queries.push(q.cons);
         const w=q.cons.filter(c=>c.t==='where');
-        if(w.some(c=>c.op==='<')&&!w.some(c=>c.op==='>=')&&st.failOlder>0){st.failOlder--;throw new Error('older read refused');}
+        if(w.some(c=>c.op==='<')&&st.failOlder>0){st.failOlder--;throw new Error('older read refused');}
         if(w.some(c=>c.op==='>=')&&st.failLinesWin>0){st.failLinesWin--;const e=new Error('Missing or insufficient permissions');e.code='permission-denied';throw e;}
         w.forEach(c=>{if(c.f==='order_created_at'&&c.op==='>=')rows=rows.filter(x=>String(x.order_created_at)>=c.v);if(c.f==='order_created_at'&&c.op==='<')rows=rows.filter(x=>String(x.order_created_at)<c.v);});
       }
@@ -70,10 +69,8 @@ async function checks(src){
   // ── 1. phase 1 ──
   {
     const {fk,B}=await open();
-    // Phase 1 is read as NCH disjoint date ranges of the SAME single field (6 Oct 2026: each range that lands moves the loading percentage).
-    const P1=fk.st.queries.slice(0,NCH),ws=P1.map(q=>q.filter(c=>c.t==='where'));
-    o['phase 1: the line-item read is single-field ranges only, order_created_at >= the cut day (no orderBy, no other field: no composite index)']=fk.st.queries.length===NCH&&P1.every((q,i)=>q.length===ws[i].length&&ws[i].every(c=>c.f==='order_created_at')&&ws[i][0].op==='>='&&(i<NCH-1?ws[i].length===2&&ws[i][1].op==='<':ws[i].length===1))&&ws[0][0].v===cut;
-    o['phase 1: the ranges are contiguous and disjoint (each ends where the next starts; nothing read twice or missed)']=ws.slice(0,NCH-1).every((w,i)=>w[1].v===ws[i+1][0].v);
+    const q=fk.st.queries[0]||[],w=q.filter(c=>c.t==='where');
+    o['phase 1: the line-item read is ONE single-field range, order_created_at >= the cut day (no orderBy, no second field: no composite index)']=fk.st.queries.length===1&&w.length===1&&w[0].f==='order_created_at'&&w[0].op==='>='&&w[0].v===cut&&q.length===1;
     o['phase 1: 4 documents read (not 7), the cut day itself is inside, scope window, loaded']=fk.st.reads.shopify_line_items===4&&B('_siLineItems.length')===4&&B('_siLinesScope')==='window'&&B('_siLinesCut')===cut&&B('_siLoaded')===true;
     o['phase 1: the products collection is read once, as before']=fk.st.reads.shopify_products===3;
     o['phase 1: the loader still has 7 stages weighted 4,10,50,1,14,3,18 (percentage untouched)']=B('_SI_STAGES.map(s=>s.w).join()')==='4,10,50,1,14,3,18';
@@ -104,15 +101,15 @@ async function checks(src){
     B('_siSection="articles";_siSub=""');
     const gate=B(SEC);
     const gate2=B(SEC);
-    o['opening the Explorer shows the gate (no percentage) and starts the read; a second open while loading starts nothing']=/id="si-full-gate"/.test(gate)&&/no percentage is shown/.test(gate)&&!/si-ld-num/.test(gate)&&B('_siFull.st')==='loading'&&/si-full-gate/.test(gate2)&&fk.st.queries.length===NCH+1;
+    o['opening the Explorer shows the gate (no percentage) and starts the read; a second open while loading starts nothing']=/id="si-full-gate"/.test(gate)&&/no percentage is shown/.test(gate)&&!/si-ld-num/.test(gate)&&B('_siFull.st')==='loading'&&/si-full-gate/.test(gate2)&&fk.st.queries.length===2;
     await flush();
-    const q2=fk.st.queries[NCH]||[],w2=q2.filter(c=>c.t==='where');
+    const q2=fk.st.queries[1]||[],w2=q2.filter(c=>c.t==='where');
     o['phase 2 reads ONLY the rest: one where order_created_at < the cut day']=w2.length===1&&w2[0].f==='order_created_at'&&w2[0].op==='<'&&w2[0].v===cut&&q2.length===1;
     o['phase 2: 3 older documents; total reads 7 = the old single read, nothing read twice']=fk.st.reads.shopify_line_items===7&&B('_siLineItems.length')===7&&B('_siFull.n')===3&&B('new Set(_siLineItems.map(l=>l._id)).size')===7;
     o['after phase 2: scope full, state done, gate gone, no "needs full history" on the SKU rows']=B('_siLinesScope')==='full'&&B('_siFull.st')==='done'&&!/si-full-gate/.test(B(SEC))&&!/needs full history/.test(B('_siGroupedBodyHtml(_siComputeSkuTable())'));
     o['after phase 2: AA-S lifetime is 2+3+4 = 9 (refunded BB-S not counted) and complete']=B('_siComputeSkuTable().find(r=>r.sku==="AA-S").totalSold')===9&&B('_siComputeSkuTable().find(r=>r.sku==="AA-S").totalSoldPartial')===false;
     B('_siSection="articles";_siSub=""');B(SEC);
-    o['re-opening the Explorer after done reads nothing more']=fk.st.reads.shopify_line_items===7&&fk.st.queries.length===NCH+1;
+    o['re-opening the Explorer after done reads nothing more']=fk.st.reads.shopify_line_items===7&&fk.st.queries.length===2;
     const adv=B('(_siSection="today",_siSub="advanced",'+SEC+')');
     o['after phase 2: Advanced renders Variant Aging and no strip']=/Variant Aging/.test(adv)&&!/si-full-need-card/.test(adv)&&!/si-full-strip/.test(adv);
   }
@@ -128,9 +125,9 @@ async function checks(src){
     B('_siSection="articles";_siSub=""');B(SEC);await flush();
     const g=B(SEC);await flush();
     o['phase 2 failed: the window data is kept, the page stays loaded, state failed with the reason']=B('_siLineItems.length')===4&&B('_siLoaded')===true&&B('_siFull.st')==='failed'&&/older read refused/.test(g);
-    o['phase 2 failed: the gate says it could not read and offers Retry; rendering again does NOT restart the read (no loop)']=/Could not read the older line items/.test(g)&&/_siFullLoad/.test(g)&&fk.st.queries.length===NCH+1;
+    o['phase 2 failed: the gate says it could not read and offers Retry; rendering again does NOT restart the read (no loop)']=/Could not read the older line items/.test(g)&&/_siFullLoad/.test(g)&&fk.st.queries.length===2;
     B('window._siFullLoad()');await flush();
-    o['phase 2 Retry: reads the rest, done, scope full']=B('_siFull.st')==='done'&&B('_siLinesScope')==='full'&&B('_siLineItems.length')===7&&fk.st.queries.length===NCH+2;
+    o['phase 2 Retry: reads the rest, done, scope full']=B('_siFull.st')==='done'&&B('_siLinesScope')==='full'&&B('_siLineItems.length')===7&&fk.st.queries.length===3;
   }
   // ── 6. phase 1 per-collection retry still works ──
   {
@@ -170,10 +167,10 @@ module.exports=async function(){
     const hit=failing.filter(f=>failed.some(k=>k.indexOf(f)===0));
     s.ok('break "'+label+'" fails "'+failing.join('" and "')+'"',hit.length===failing.length,hit.length===failing.length?undefined:'failed: '+failed.slice(0,4).join(' | '));
   };
-  await brk('phase 1 reads everything',":query(collection(db,'shopify_line_items'),where('order_created_at','>=',lo));",":collection(db,'shopify_line_items');",['phase 1: the line-item read is single-field','phase 1: 4 documents']);
+  await brk('phase 1 reads everything',"query(collection(db,'shopify_line_items'),where('order_created_at','>=',cut))","collection(db,'shopify_line_items')",['phase 1: the line-item read is ONE','phase 1: 4 documents']);
   await brk('phase 2 reads everything again',"where('order_created_at','<',cut)","where('order_created_at','>=','0')",['phase 2 reads ONLY the rest','phase 2: 3 older documents']);
-  await brk('older lines replace the window',"_siLineItems=siMergeLines(_siLineItems,a); // a new array (every","_siLineItems=a; // a new array (every",['phase 2: 3 older documents','after phase 2: AA-S lifetime']);
-  await brk('the cut day is excluded',"where('order_created_at','>=',lo),where","where('order_created_at','>',lo+'Z'),where",['phase 1: 4 documents']);
+  await brk('the cut day is excluded',"where('order_created_at','>=',cut)","where('order_created_at','>',cut+'Z')",['phase 1: 4 documents']);
+  await brk('older lines replace the window',"_siLineItems=_siLineItems.concat(a);","_siLineItems=a;",['phase 2: 3 older documents','after phase 2: AA-S lifetime']);
   await brk('everything reads as full history',"function _siFullHist(){return _siLinesScope!=='window';}","function _siFullHist(){return true;}",['opening the Explorer shows the gate','the tab pill is absent while partial']);
   await brk('Overview starts the full read',"function _siOverview(m){\n  return _siFullStripHtml()+","function _siOverview(m){\n  _siFullStart(false);return _siFullStripHtml()+",['phase 2 is NOT started by Overview']);
   await brk('partial total shown as complete',"totalSoldPartial:_siLinesPartial()&&","totalSoldPartial:false&&",['SKU rows: a product live 300 days ago','SKU table body']);

@@ -7,9 +7,9 @@
      B1 Cargo Pants | Pants | 2027-01-20 | bottom | winter (January)
      B2 Denim Shorts | Shorts | 2026-05-01 | bottom | summer (May)
      S1 Short Sleeve Tee | (none) | 2026-10-01 | top FROM THE NAME: "short sleeve" is not shorts | winter (1 Oct is the first winter day)
-     X1 Hoodie and Joggers Set | Co-ord | 2026-02-28 | no type (a top word AND a bottom word) | summer (28 Feb is summer under the owner map Oct-Jan / Feb-Sep)
-     Z1 Mystery Item | (none) | 2026-03-01 | no type | summer
-     J1 Bomber Jacket | Jackets | 2026-09-30 | top | summer (30 Sep is the last summer day)
+     X1 Hoodie and Joggers Set | Co-ord | 2026-02-28 | no type (a top word AND a bottom word) | winter (28 Feb is the last winter day)
+     Z1 Mystery Item | (none) | 2026-03-01 | no type | summer (1 Mar is the first non-winter day)
+     J1 Bomber Jacket | Jackets | 2026-09-30 | top | summer (30 Sep is the last non-winter day)
      G1 Ignored Tee | Tees | 2026-06-01 | ignored for good -> not in the live list at all
    Live = 8. Progress with nothing saved: 0 of 8 = 0%, 0 cubes of 20. */
 'use strict';
@@ -75,7 +75,7 @@ async function checks(src,rules){
   o['type suggestion: a top word AND a bottom word in one text (a set) gives no suggestion, and so does an unknown name']=st('Co-ord','Hoodie and Joggers Set')==='null'&&st('','Hoodie and Joggers Set')==='null'&&st('','Mystery Item')==='null';
   o['type suggestion: a Shopify type that decides beats a misleading name']=sug('Pants','Hoodie Black').k==='bottom';
   const ss=(d,t,sib)=>JSON.parse(R('J=JSON.stringify(_siTsSuggestSeason('+J(d)+','+J(t)+','+J(sib||[])+'))'));
-  o['season suggestion: winter is Oct to Jan — 2026-10-01, 2026-12-31 and 2027-01-31 winter; 2027-02-01, 2026-09-30 and 2026-03-01 summer']=ss('2026-10-01','',[])[0].k==='winter'&&ss('2026-12-31','',[])[0].k==='winter'&&ss('2027-01-31','',[])[0].k==='winter'&&ss('2027-02-01','',[])[0].k==='summer'&&ss('2026-09-30','',[])[0].k==='summer'&&ss('2026-03-01','',[])[0].k==='summer';
+  o['season suggestion: winter is Oct to Feb — 2026-10-01 and 2027-02-28 winter; 2026-09-30 and 2026-03-01 summer']=ss('2026-10-01','',[])[0].k==='winter'&&ss('2027-02-28','',[])[0].k==='winter'&&ss('2026-09-30','',[])[0].k==='summer'&&ss('2026-03-01','',[])[0].k==='summer';
   o['season suggestion: no date -> no date-based suggestion (never a guessed one)']=ss('','',[]).length===0;
   o['season suggestion: siblings need at least 3 and a 60% majority — 4 winter of 5 (80%) is offered, 2 of 3 winter (66%) is, 1 of 2 and 2 of 5 are not']=(()=>{
     const w4=ss('2026-07-05','Top',['winter','winter','winter','winter','summer']),w3=ss('2026-07-05','Top',['winter','winter','summer']),two=ss('2026-07-05','Top',['winter','summer']),spl=ss('2026-11-10','Top',['winter','winter','summer','summer','all']),two2=ss('2026-07-05','Top',['winter','winter']);
@@ -154,7 +154,7 @@ async function checks(src,rules){
   o['while the list is still being read, the section says so and shows no number']=(()=>{R('_siMetaState="loading";');const h=body();R('_siMetaState="ok";');return/Reading the saved types/.test(h)&&!/\d+%/.test(h);})();
   // ── rules text ──
   o['rules: the block is unchanged in its writes — signedIn(), updatedBy bound to the caller, no delete']=/allow create, update: if signedIn\(\)/.test(blk)&&/updatedBy == userEmail\(\)\.split\('@'\)\[0\]/.test(blk)&&/allow delete: if false;/.test(blk);
-  o['sub-phase 3 now reads the saved values, only through _siMetaOf (the Explorer filter, the Portfolio rollups, Needs Attention): the readers exist']=(()=>{const rest=src.replace(/\/\/ ═══ Type & season\n[\s\S]*?window\._siTsSet=function[\s\S]*?\n};\n/,'');return /_siFdBucket\(code,field\)\{return _siMetaOf\(code\)\[field\]/.test(src)&&/_siMetaOf\(a&&a\.code\)\.season/.test(src)&&/metaOf:_siFeedOk\(\)\?_siMetaOf:null/.test(src)&&rest.length>0;})();
+  o['the Explorer filter, Portfolio and Needs Attention do not read type or season yet (sub-phase 3): no _siMetaOf outside this block']=(()=>{const rest=src.replace(/\/\/ ═══ Type & season[\s\S]*?window\._siTsSet=function[\s\S]*?\n};\n/,'');return!/_siMetaOf\(/.test(rest);})();
   return o;
 }
 module.exports=async function(){
@@ -176,8 +176,8 @@ module.exports=async function(){
   await brk('short sleeve read as shorts',"replace(/short[\\s-]*sleeve[d]?/g,' ')","replace(/zzz/g,' ')",K('type suggestion: "Short Sleeve'));
   await brk('a set still gets a suggestion',"if(t&&!b)return{k:'top',why:src};if(b&&!t)return{k:'bottom',why:src};return null;","if(t)return{k:'top',why:src};if(b)return{k:'bottom',why:src};return null;",K('type suggestion: a top word AND'));
   await brk('name beats the Shopify type',"(category&&pick(category,'from its Shopify type \"'+String(category).slice(0,40)+'\"'))||(title&&pick(title,'from its name'))","(title&&pick(title,'from its name'))||(category&&pick(category,'from its Shopify type \"'+String(category).slice(0,40)+'\"'))",K('type suggestion: a Shopify type that decides'));
-  await brk('winter runs to February',"return mo>=10||mo<=1;","return mo>=10||mo<=2;",K('season suggestion: winter is Oct'));
-  await brk('winter starts in November',"return mo>=10||mo<=1;","return mo>=11||mo<=1;",K('season suggestion: winter is Oct'));
+  await brk('winter ends in January',"return mo>=10||mo<=2;","return mo>=10||mo<=1;",K('season suggestion: winter is Oct'));
+  await brk('winter starts in November',"return mo>=10||mo<=2;","return mo>=11||mo<=2;",K('season suggestion: winter is Oct'));
   await brk('siblings need only 2',"sib.length>=3","sib.length>=2",K('season suggestion: siblings need'));
   await brk('majority threshold 50%',"c[top]/sib.length>=0.6","c[top]/sib.length>=0.4",K('season suggestion: siblings need'));
   await brk('sibling suggestion repeated',"&&!out.some(s=>s.k===top)","",K('season suggestion: a sibling answer'));

@@ -210,8 +210,8 @@ async function checks(src,rules){
   const hits2=[];SRC_LINES(src).forEach(l=>{if(!/^\s*\/\//.test(l)&&/(idx|_siAxIndex\(\))\.list\b/.test(l))hits2.push(l.replace(/\s/g,''));});
   const allowed=['idx._lv=idx.list.filter(a=>!_siIgnored(a.code))','const list=_siAxIndex().list;','idx.list.forEach(a=>{','${idx.list.length}articles'];
   o['every use of the FULL index list is accounted for: the live-set builder, Search, the demand pool, the header count (4 lines, no other)']=hits2.length===4&&allowed.every(x=>hits2.some(h=>h.includes(x.replace(/\s/g,''))));
-  o['every list builder reads _siAxLive(): class counts, Explorer Overview rows and categories, Portfolio rows, Needs Attention rows']=['_siAxLive().forEach(a=>{if(a.units>0||a.hasStock)c[','const base=_siAxLive();','return _siAxFLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat','const cats=[...new Set(_siAxFLive().filter(','const rows=_siAxFLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a)','const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(_siNaRow)'].every(x=>src.includes(x));
-  o['the memos are keyed on the ignore state (Needs Attention and Portfolio recompute after an ignore or an expiry)']=(src.match(/const sig=[^\n]*_siIgKey\(\)/g)||[]).length===2;
+  o['every list builder reads _siAxLive(): class counts, Explorer Overview rows and categories, Portfolio rows, Needs Attention rows']=['_siAxLive().forEach(a=>{if(a.units>0||a.hasStock)c[','return _siAxLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat','const cats=[...new Set(_siAxLive().filter(','const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a)','const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(_siNaRow)'].every(x=>src.includes(x));
+  o['the memos are keyed on the ignore state (Needs Attention and Portfolio recompute after an ignore or an expiry)']=(src.match(/\|'\+_siIgKey\(\);/g)||[]).length===2;
   const blk=ruleBlock(rules);
   const fieldsJs=JSON.parse(R('J=JSON.stringify(_SI_META_FIELDS)'));
   const hasOnly=(/keys\(\)\.hasOnly\(\[([^\]]*)\]\)/.exec(blk)||[])[1]||'';
@@ -244,8 +244,8 @@ module.exports=async function(){
   await brk('one-week is 6 days',"d+(k==='1w'?7:14)","d+(k==='1w'?6:14)",K('periods from'));
   await brk('months not clamped','Math.min(d,last)','d',K('month-end'));
   await brk('Needs Attention uses the full list','const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(_siNaRow);','const rows=_siAxIndex().list.filter(a=>a.units>0||a.hasStock).map(_siNaRow);',K('Needs Attention counts').concat(K('Overview tiles')));
-  await brk('Explorer Overview uses the full list','return _siAxFLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat','return _siAxIndex().list.filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat',K('Explorer Overview rows'));
-  await brk('Portfolio uses the full list','const rows=_siAxFLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a)','const rows=_siAxIndex().list.filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a)',K('Portfolio'));
+  await brk('Explorer Overview uses the full list','return _siAxLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat','return _siAxIndex().list.filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat',K('Explorer Overview rows'));
+  await brk('Portfolio uses the full list','const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a)','const rows=_siAxIndex().list.filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a)',K('Portfolio'));
   await brk('class counts use the full list','_siAxLive().forEach(a=>{if(a.units>0||a.hasStock)c[','_siAxIndex().list.forEach(a=>{if(a.units>0||a.hasStock)c[',K('Class counts'));
   await brk('Search hides ignored articles','const list=_siAxIndex().list;','const list=_siAxLive();',K('Search still FINDS'));
   await brk('no chip on search results','</div>${_siIgChipHtml(a.code)}</span><span class="n">${a.units} sold</span>${tail}','</div></span><span class="n">${a.units} sold</span>${tail}',K('Search still FINDS'));
