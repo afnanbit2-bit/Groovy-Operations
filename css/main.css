@@ -5557,11 +5557,18 @@ a.ma-btn{text-decoration:none}
 .si-ts-sug{border-style:dashed;text-align:left}
 .si-ts-sug .why{display:block;font-size:12px;font-weight:500;color:var(--muted)}
 .si-ts-f b{font-variant-numeric:tabular-nums}
+.si-sc{flex:1 1 100%;min-width:0;display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.si-sc .grp{min-width:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.si-sc .lab{flex:0 0 52px;font-size:12px;font-weight:600;color:var(--muted)}
+.si-sc .si-ax-btn{min-height:34px}
+.si-sc .si-ax-btn:disabled{opacity:.55;cursor:not-allowed}
+.si-sc .by{margin:0;font-size:12px;color:var(--muted)}
+.si-sc .by.err{color:var(--text)}
 @media (max-width:600px){
   .si-ts-row{grid-template-columns:minmax(0,1fr)}
   .si-ts-row .nm{grid-row:auto}
   .si-ts-pct{font-size:16px}
-  .si-ts-opt,.si-ts-sug,.si-ts-f{min-height:40px}
+  .si-ts-opt,.si-ts-sug,.si-ts-f,.si-sc .si-ax-btn{min-height:40px}
 }
 @media (prefers-reduced-motion:reduce){.si-ts-cube{transition:none}.si-ts-cube.pop{animation:none}}
 /* ── Inventory Intel: full-view takeover + left rail (Oct 2026) ──────────

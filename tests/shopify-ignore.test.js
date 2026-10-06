@@ -263,7 +263,7 @@ module.exports=async function(){
   await brk('never tick ignored','const choice=nv&&nv.checked?\'never\':','const choice=',K('dialog: Ignore with the default'));
   await brk('a sixth period sneaks in',"{k:'6m',l:'6 months'}]","{k:'6m',l:'6 months'},{k:'1y',l:'1 year'}]",K('dialog: ONE question'));
   await brk('button code not escaped','data-code="${_siEsc(code)}" onclick="window.${on?','data-code="${code}" onclick="window.${on?',K('escaping: the code in the Ignore'));
-  await brk('memo not keyed on ignore (NA)',"+_siHistState+'|'+_siIgKey();\n  if(_siNaMemo","+_siHistState;\n  if(_siNaMemo",K('the memos'));
+  await brk('memo not keyed on ignore (NA)',"+_siHistState+'|'+_siIgKey()+'|'+_siMetaState;\n  if(_siNaMemo","+_siHistState+'|'+_siMetaState;\n  if(_siNaMemo",K('the memos'));
   await brk('rules: authed() instead of signedIn()','allow create, update: if signedIn()\n        && code.matches','allow create, update: if authed()\n        && code.matches',K('rules: writes need'),true);
   await brk('rules: read without isQaRead','allow read: if isQaRead() || signedIn();\n      allow create, update: if signedIn()\n        && code.matches','allow read: if signedIn();\n      allow create, update: if signedIn()\n        && code.matches',K('rules: read is'),true);
   await brk('rules: updatedBy not bound',"request.resource.data.updatedBy == userEmail().split('@')[0]",'request.resource.data.updatedBy is string',K('rules: updatedBy'),true);

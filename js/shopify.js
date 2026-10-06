@@ -9,6 +9,7 @@ let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=n
 let _siSkuSearch='',_siSkuSort='s7',_siSkuDir=-1,_siSection='today',_siSub='',_siSecTouched=false,_siLandDone=false;
 let _siSkuLimit=200;        // SKU table page size; grows by 200 via Load more
 let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
+let _siSeasonMapVer=-1; // _siIgVer the season map was built at: a save in the shared list (any type or season) rebuilds it
 let _siSeasonMapCache=null; // { sku: 'winter'|'summer'|'all-season' }, rebuilt on data load
 let _siLoadError=null;      // last load failure message; non-null → render error state, never zeros
 let _siCollectionsLoaded=false; // collections fetched OK once → skip re-download on snapshot-only retry
@@ -1000,6 +1001,7 @@ function _siIgRepaint(){
     if(_siNaSel&&_siIgnored(_siNaSel))_siNaSel='';
     if(_siAxOvSit&&_siIgnored(_siAxOvSit))_siAxOvSit='';
     const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();
+    const sb=document.getElementById('si-season-bar');if(sb)sb.outerHTML=_siSeasonBar();
     if(_siSection==='attention'&&typeof window._siNaRepaint==='function')window._siNaRepaint();
     else if(_siSection==='articles'&&_siSub==='typeseason')_siTsRepaint();
     else if(_siSection==='articles')_siAxRepaintAll();
@@ -1279,6 +1281,40 @@ window._siTsSet=function(code,field,k){
   const cur=_siMetaOf(code)[field],val=cur===k?null:k;
   return _siIgWrite(code,{[field]:val},null,field==='type'?'Article type set':'Article season set','the type and season list');
 };
+// ── Season and type, on the article itself (6 Oct 2026) ──
+// The same two values the Type & season tab saves, set where the decision is made: the Article Explorer's single-article header and the
+// Needs Attention situation header. NO new vocab, collection or writer: pressing calls _siTsSet (optimistic, rolled back and toasted on a
+// refused write; pressing the saved value clears it). A suggestion is a one-tap button and is never saved on render. The code travels in
+// data-code only. An unread list shows the buttons disabled with Retry, never a pretend value.
+function _siScWho(m){ // "saved by Afnan, 6 Oct": only when the stored document actually holds who (and when)
+  if(!m||!(m.type||m.season)||!m.updatedBy)return'';
+  let n=m.updatedBy;
+  if(typeof USER_DEFS!=='undefined'&&Array.isArray(USER_DEFS)){const d=USER_DEFS.find(x=>x&&x.u===m.updatedBy);if(d&&d.name)n=d.name;}
+  return'saved by '+n+(typeof m.updatedAt==='number'?', '+_siAxFmtDay(_siPktDayOf(m.updatedAt),true):'');
+}
+function _siSeasonCtlHtml(code){
+  code=String(code||'').toUpperCase();
+  const ok=_siMetaState==='ok',off=ok?'':' disabled';
+  const m=ok?(_siMeta.get(code)||{}):{},curT=m.type||null,curS=m.season||null;
+  let sugT=null,sugS=[];
+  if(ok&&(!curT||!curS)){
+    const a=_siAxIndex().map.get(code);
+    if(a){
+      sugT=curT?null:_siTsSuggestType(a.category,a.name);
+      const typeLabel=curT?(_SI_TYPES.find(t=>t.k===curT)||{}).l:(sugT?(_SI_TYPES.find(t=>t.k===sugT.k)||{}).l:'');
+      const sibs=[];if(!curS&&(curT||sugT)){const tk=curT||sugT.k;_siAxLive().forEach(o=>{if(o.code===code)return;const om=_siMeta.get(o.code);if(om&&om.type===tk&&om.season)sibs.push(om.season);});}
+      sugS=curS?[]:_siTsSuggestSeason(_siAxLiveDay(a)||a.firstDay,typeLabel,sibs);
+    }
+  }
+  const c=_siEsc(code);
+  const opt=(f,v,cur,sug)=>`<button type="button" class="si-ax-btn si-ts-opt${cur===v.k?' on':''}${sug&&sug.k===v.k&&!cur?' sug':''}" aria-pressed="${cur===v.k?'true':'false'}" data-code="${c}" data-f="${f}" data-k="${v.k}"${off} onclick="window._siTsSet(this.dataset.code,this.dataset.f,this.dataset.k)">${_siEsc(v.l)}</button>`;
+  const sug=(f,s,list)=>s?`<button type="button" class="si-ax-btn si-ts-sug" data-code="${c}" data-f="${f}" data-k="${s.k}" onclick="window._siTsSet(this.dataset.code,this.dataset.f,this.dataset.k)">Use ${_siEsc((list.find(x=>x.k===s.k)||{}).l||s.k)} <span class="why">${_siEsc(s.why)}</span></button>`:'';
+  const who=_siScWho(ok?m:null);
+  const note=_siMetaState==='error'?`<div class="si-ax-note by err" role="status">Type/season unavailable — the saved list could not be read. <button type="button" class="si-ax-btn" onclick="window._siMetaRetry()">Retry</button></div>`
+    :!ok?`<div class="si-ax-note by" role="status">Reading the saved type and season…</div>`:(who?`<div class="si-ax-note by">${_siEsc(who)}</div>`:'');
+  return`<div class="si-sc" data-code="${c}"><div class="grp" role="group" aria-label="Season"><span class="lab">Season</span>${_SI_SEASONS.map(v=>opt('season',v,curS,sugS[0])).join('')}${sugS.slice(0,1).map(s=>sug('season',s,_SI_SEASONS)).join('')}</div>
+    <div class="grp" role="group" aria-label="Type"><span class="lab">Type</span>${_SI_TYPES.map(v=>opt('type',v,curT,sugT)).join('')}${sug('type',sugT,_SI_TYPES)}</div>${note}</div>`;
+}
 // ═══ end Ignore ═══
 
 // ── Season tagging ───────────────────────────────────────────────────
@@ -1299,13 +1335,26 @@ function _siMatchSeason(season){
   return season===_siSeason;
 }
 // SKU → season map from the live catalog (cached per data load).
+// The SHARED saved season (inventory_article_meta, set in Type & season or on the article page) comes FIRST; only an article with no saved
+// season falls back to the older rule (this device's custom list, then the Shopify tag). null = nothing saved (or the list is unread).
+function _siSavedSeasonOfSku(sku){
+  if(_siMetaState!=='ok'||!sku)return null;
+  const m=_siMeta.get(_siAxCode(sku)),s=m&&m.season;
+  return s?(s==='all'?'all-season':s):null;
+}
 function _siSeasonMap(){
-  if(_siSeasonMapCache)return _siSeasonMapCache;
+  if(_siSeasonMapCache&&_siSeasonMapVer===_siIgVer)return _siSeasonMapCache;
   const m={};
   const customSeasons=_siGetCustomSeasons();
-  _siProducts.forEach(p=>{if(p.sku&&m[p.sku]===undefined)m[p.sku]=customSeasons[p.sku]||_siSeasonOfTags(p.tags);});
-  _siSeasonMapCache=m;
+  _siProducts.forEach(p=>{if(p.sku&&m[p.sku]===undefined)m[p.sku]=_siSavedSeasonOfSku(p.sku)||customSeasons[p.sku]||_siSeasonOfTags(p.tags);});
+  _siSeasonMapCache=m;_siSeasonMapVer=_siIgVer;
   return m;
+}
+// For the top Season bar's caption: how many articles carry a saved season (the rest use the old tag rule).
+function _siSeasonSavedCounts(){
+  if(_siMetaState!=='ok')return null;
+  const l=_siAxLive();let n=0;l.forEach(a=>{const m=_siMeta.get(a.code);if(m&&m.season)n++;});
+  return{saved:n,total:l.length};
 }
 // Resolve a line item's season via the catalog (no SKU / unknown → year-round).
 function _siItemSeason(li){const m=_siSeasonMap();return(li.sku&&m[li.sku])||'all-season';}
@@ -1337,7 +1386,7 @@ function _siComputeMetrics(){
       const vid=items[invId].variant_id;
       const prod=vid?_siProducts.find(p=>p._id===vid):null;
       // year-round when no catalog match, so unmatched stock still counts
-      if(!_siMatchSeason(prod?_siSeasonOfTags(prod.tags):'all-season'))continue;
+      if(!_siMatchSeason(prod?(_siSeasonMap()[prod.sku]||_siSeasonOfTags(prod.tags)):'all-season'))continue;
       const av=items[invId].available||0;
       totalOnHand+=av;
       if(prod)totalValue+=av*(prod.price||0);
@@ -1423,7 +1472,7 @@ function _siComputeSkuTable(){
     rows.push({
       sku,title:prod.product_title||'',color:_normColor,size:_normSize,
       productType:_siGetCustomCats()[sku]||prod.product_type||'',needsReview:!!prod.needs_review,status:prod.status||'',
-      tags:prod.tags||[],season:_siGetCustomSeasons()[sku]||_siSeasonOfTags(prod.tags),
+      tags:prod.tags||[],season:_siSavedSeasonOfSku(sku)||_siGetCustomSeasons()[sku]||_siSeasonOfTags(prod.tags),
       garmentType:_siGetCustomTypes()[sku]||'',
       onHand,prevOnHand,weeklyDelta,s7,s30,dailyRate,daysLeft,sellThrough,
       firstSold:fs,lastSold:ls,daysSinceLastSale,refunds,totalSold:totalSoldMap[sku]||0,
@@ -1521,6 +1570,11 @@ function renderShopifyDashboard(){
   <div style="height:80px"></div>`;
 }
 
+function _siSeasonNote(){
+  const c=_siSeasonSavedCounts();
+  const rule=c?'a saved season wins; '+(c.total-c.saved)+' of '+c.total+' articles have none saved and use the old tag rule':'saved seasons unavailable, so only the old tag rule applies';
+  return(_siSeason==='all'?'showing all items':'in-season + year-round items only')+' · '+rule+'. Applies to Today and the SKU Table (Needs Attention and Articles have their own Season/Type controls).';
+}
 function _siSeasonBar(){
   const opts=[{id:'all',label:'All Seasons'},{id:'winter',label:'❄ Winter'},{id:'summer',label:'☀ Summer'}];
   return`<div id="si-season-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
@@ -1528,7 +1582,7 @@ function _siSeasonBar(){
     <div class="gp-tabs" style="margin:0">${opts.map(o=>
       `<button class="gp-tab${_siSeason===o.id?' active':''}" onclick="window._siSetSeason('${o.id}')">${o.label}</button>`
     ).join('')}</div>
-    <span style="font-size:11px;color:var(--muted)">${_siSeason==='all'?'showing all items':'in-season + year-round (untagged) items only'}</span>
+    <span id="si-season-note" style="font-size:11px;color:var(--muted)">${_siSeasonNote()}</span>
   </div>`;
 }
 window._siSetSeason=function(s){
@@ -4584,7 +4638,7 @@ function _siAxSearchBody(){
     <div class="si-ax-note" style="margin:4px 0 0">${_siEsc(vc.rule)}${vc.near?' '+_siEsc(vc.near):''}${vc.unverified?' (partly unverified)':''}</div></div>`;
   return`<div class="card"><div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:1 1 220px;min-width:0;display:flex;gap:12px;align-items:center">${_siAxThumb(a.code,64,a.name)}<div style="min-width:0"><div style="font-size:18px;font-weight:700">${_siEsc(a.name)}</div><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${cat} · ${a.skus.size} SKU${a.skus.size===1?'':'s'}</div></div></div>
-    <button class="si-ax-btn${_siAxHintOn()?' si-ax-hint':''}" data-code="${_siEsc(a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button><button class="si-ax-btn" onclick="window._siAxSetMode('overview')">Overview</button><button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button>${_siIgBtnHtml(a.code)}</div>${_siIgnored(a.code)?`<div style="flex-basis:100%">${_siIgChipHtml(a.code)}</div>`:''}</div>
+    <button class="si-ax-btn${_siAxHintOn()?' si-ax-hint':''}" data-code="${_siEsc(a.code)}" onclick="window._siAxOvCompare(this.dataset.code)">+ Compare</button><button class="si-ax-btn" onclick="window._siAxSetMode('overview')">Overview</button><button class="si-ax-btn" onclick="window._siAxClear()">Pick another</button>${_siIgBtnHtml(a.code)}</div>${_siIgnored(a.code)?`<div style="flex-basis:100%">${_siIgChipHtml(a.code)}</div>`:''}${_siSeasonCtlHtml(a.code)}</div>
   ${verdictHtml}
   <div class="si-ax-kpis si-ax-head6">${kpi('Units per week',_siAxNum(m.paceHead),m.paceHead!=null?(m.paceHeadBasis==='in stock'?'while in stock — sold out '+m.outDays+' of '+m.measured+' days, so real demand is higher (plain rate '+_siAxNum(m.rateWeek)+')':_siEsc(win)):'needs 7+ counted days','rate')}
     ${kpi('Stock lasts',_siEsc(_siAxCoverText(m)),m.cover!=null?_siEsc(_siAxCoverNote(m)):(!a.hasStock?'no stock data':'no pace to divide by'),'cover')}
@@ -5498,7 +5552,7 @@ function _siNaCtx(){
 function _siNaState(){
   const idx=_siAxIndex();
   let lt='';try{lt=(localStorage.getItem(_SI_LT_KEY)||'')+'|'+(localStorage.getItem(_SI_LT_ART_KEY)||'');}catch(_){}
-  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey();
+  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey()+'|'+_siMetaState;
   if(_siNaMemo&&_siNaMemo.idx===idx&&_siNaMemo.sig===sig)return _siNaMemo.res;
   const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(_siNaRow);
   const res=_siNaBuild(rows,_siNaCtx());
@@ -5853,7 +5907,7 @@ function _siNaDetailHtml(i,o){
     <div class="si-na-dbar"><button type="button" class="si-ax-btn si-na-back" onclick="${backFn}">${_siEsc(o.backLabel||'‹ Needs Attention')}</button>
       <span class="si-na-pn">${pos>=0?`<button type="button" class="si-ax-btn" ${pos<=0?'disabled':''} onclick="${stepFn}(-1)" aria-label="Previous article">‹ Prev</button><span class="si-ax-note" style="margin:0">${pos+1} of ${order.length}</span><button type="button" class="si-ax-btn" ${pos>=order.length-1?'disabled':''} onclick="${stepFn}(1)" aria-label="Next article">Next ›</button>`:''}</span>
       <span class="si-na-btns"><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaToExplorer(this.dataset.code)">Open in Article Explorer</button><button type="button" class="si-ax-btn" data-code="${_siEsc(i.code)}" onclick="window._siNaCompare(this.dataset.code)">+ Compare</button>${_siIgBtnHtml(i.code)}</span></div>
-    <div class="si-na-dhead"><div class="si-na-dtop">${_siAxThumb(i.code,64,i.label)}<div class="si-na-dtx"><span class="si-na-reason ${i.band} big">${_siEsc(bandL)}</span><h2>${_siEsc(i.label)}</h2><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(i.code)} · ${_siEsc(i.clsLabel)} · ${_siEsc(i.reason)}${i.also&&i.also.length?' · also '+_siEsc(i.also.map(t=>_SI_NA_REASON[t].toLowerCase()).join(', ')):''}</div></div></div></div>
+    <div class="si-na-dhead"><div class="si-na-dtop">${_siAxThumb(i.code,64,i.label)}<div class="si-na-dtx"><span class="si-na-reason ${i.band} big">${_siEsc(bandL)}</span><h2>${_siEsc(i.label)}</h2><div class="si-ax-note" style="margin:2px 0 0">${_siEsc(i.code)} · ${_siEsc(i.clsLabel)} · ${_siEsc(i.reason)}${i.also&&i.also.length?' · also '+_siEsc(i.also.map(t=>_SI_NA_REASON[t].toLowerCase()).join(', ')):''}</div></div></div>${_siSeasonCtlHtml(i.code)}</div>
     <section class="si-na-sit"><h3>Situation</h3><p>${_siEsc(pb.situation)}</p></section>
     <section class="si-na-how"><h3>How to tackle</h3><ol class="si-na-acts">${pb.actions.map(a=>`<li><span class="si-na-own">${_siEsc(a.owner)}</span><span>${_siEsc(a.text)}</span></li>`).join('')}</ol><div class="si-ax-note">Owners are suggestions, not assignments.</div></section>
     ${fold('Why it matters','<p>'+_siEsc(pb.why)+'</p>')}
