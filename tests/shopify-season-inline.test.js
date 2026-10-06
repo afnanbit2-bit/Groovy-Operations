@@ -205,7 +205,7 @@ module.exports=async function(){
   await brk('buttons enabled when unreadable',"const ok=_siMetaState==='ok',off=ok?'':' disabled';","const ok=_siMetaState==='ok',off='';",K('unreadable list').concat(K('list still loading')));
   await brk('unreadable list hidden',"Type/season unavailable — the saved list could not be read. <button","Saved list could not be read. <button",K('unreadable list'));
   await brk('error state pretends saved values',"const m=ok?(_siMeta.get(code)||{}):{},","const m=(_siMeta.get(code)||{}),",K('unreadable list'));
-  await brk('memo ignores the meta state',"+'|'+_siIgKey()+'|'+_siMetaState;","+'|'+_siIgKey();",K('Needs Attention memo is keyed'));
+  await brk('memo ignores the meta state',"+'|'+_siMetaState+'|'+_siPoSig();","+'|'+_siPoSig();",K('Needs Attention memo is keyed'));
   await brk('code interpolated into the handler',"onclick=\"window._siTsSet(this.dataset.code,this.dataset.f,this.dataset.k)\">${_siEsc(v.l)}</button>`;\n  const sug=","onclick=\"window._siTsSet('${code}',this.dataset.f,this.dataset.k)\">${_siEsc(v.l)}</button>`;\n  const sug=",K('special code: carried'));
   await brk('code not escaped',"const c=_siEsc(code);\n  const opt=","const c=code;\n  const opt=",K('special code: carried'));
   await brk('the rollback toast loses its text',"showToast('Could not save '+(what||'the ignore list')","showToast('Oops'+(what?'':'')",K('refused write: shown'));
@@ -226,7 +226,7 @@ module.exports=async function(){
   await brk2('saved list read even when unreadable',"if(_siMetaState!=='ok'||!sku)return null;","if(!sku)return null;",K2('an unread saved list'));
   await brk2('top bar caption stale',"const rule=c?'a saved season wins;","const rule=false?'a saved season wins;",K2('the top bar says'));
   await brk2('top bar not repainted after a save',"const sb=document.getElementById('si-season-bar');if(sb)sb.outerHTML=_siSeasonBar();","",K2('repaint on the SKU Table').concat(K2('repaint on Today')));
-  await brk2('Needs Attention memo not rebuilt',"+'|'+_siIgKey()+'|'+_siMetaState;","+'|'+_siMetaState;",K2('after the save — Needs Attention'));
+  await brk2('Needs Attention memo not rebuilt',"+'|'+_siIgKey()+'|'+_siMetaState+'|'+_siPoSig();","+'|'+_siMetaState+'|'+_siPoSig();",K2('after the save — Needs Attention'));
   await brk2('Portfolio memo not rebuilt',"+'|'+_siIgKey()+'|'+_siAxFSig()+'|'+_siMetaState;","+'|'+_siAxFSig()+'|'+_siMetaState;",K2('after the save — Portfolio'));
   await brk2('no repaint and no invalidation after a save',"_siMeta.set(code,next);_siIgVer++;_siIgRepaint();","_siMeta.set(code,next);",K2('after saving summer on W2').concat(K2('after the save — Needs Attention'),K2('after the save — Portfolio')));
   await brk2('no repaint on Needs Attention',"if(_siSection==='attention'&&typeof window._siNaRepaint==='function')window._siNaRepaint();","",K2('repaint on Needs Attention'));

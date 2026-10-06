@@ -178,7 +178,7 @@ module.exports=async function(){
   await brk('read without the date window',"where('ts','>=',since),limit(_SI_PO.readCap)","limit(_SI_PO.readCap)",[k('read: one query on pos')]);
   await brk('row chip dropped','${_siPoChipHtml(i.code)}${i.n&&i.n.onOrderCovers','${i.n&&i.n.onOrderCovers',[k('Needs Attention row: shows the chip')]);
   await brk('PO id not escaped in the chip title','title="${_siEsc(_siPoChipTitle(oo))}"','title="${_siPoChipTitle(oo)}"',[k('escaping: a hostile PO id')]);
-  await brk('Needs Attention memo ignores the PO read',"+'|'+_siIgKey()+'|'+_siPoSig();","+'|'+_siIgKey();",[k('covering PO: the counts follow')]);
+  await brk('Needs Attention memo ignores the PO read',"+'|'+_siMetaState+'|'+_siPoSig();","+'|'+_siMetaState;",[k('covering PO: the counts follow')]);
   await brk('Overview chip dropped','${_siEsc(r.act.text)}${_siPoChipHtml(r.a.code)}','${_siEsc(r.act.text)}',[k('Overview reorder tile: O1 row')]);
   await brk('verdict chip dropped','    ${_siPoVerdictHtml(a,va)}\n','',[k('Explorer verdict')]);
   await brk('loader does not start the read',"if(_siPoState==='idle')_siPoLoad();",'',[k('the page load starts the PO read')]);
