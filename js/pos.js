@@ -460,6 +460,49 @@ window.releaseToProduction=async function(fbKey){
   }catch(e){showToast('Error: '+e.message,true);}
 };
 
+// ── Job copies (embroidery / printing / washing) on the PO detail page ──
+// ONE rule for which buttons show: po.jobCopies?.[kind]===true. A PO with no jobCopies field
+// (every PO created before the field existed) shows all three so older POs keep working.
+const _PO_JOB_KINDS=[
+  {key:'embroidery',label:'Embroidery job',fn:'generateEmbroideryJobPdf'},
+  {key:'printing',label:'Printing job',fn:'generatePrintingJobPdf'},
+  {key:'washing',label:'Washing job',fn:'generateWashingJobPdf'}
+];
+function _poJobCopyKinds(po){
+  const jc=po&&po.jobCopies;
+  if(jc==null||typeof jc!=='object')return _PO_JOB_KINDS.map(k=>k.key);
+  return _PO_JOB_KINDS.filter(k=>jc[k.key]===true).map(k=>k.key);
+}
+function _poJobCopiesHTML(po){
+  const kinds=_poJobCopyKinds(po);
+  if(!kinds.length)return'';
+  const fb=String(po.fbKey||'').replace(/[^A-Za-z0-9_-]/g,'');
+  const btns=kinds.map(k=>{
+    const d=_PO_JOB_KINDS.find(x=>x.key===k);
+    return`<button class="btn-pdf" style="min-height:34px" data-jobcopy="${k}" onclick="window.poJobCopyPrint('${fb}','${k}')">⬇ ${d.label}</button>`;
+  }).join('');
+  const all=kinds.length>1?`<button class="btn-pdf" style="min-height:34px" data-jobcopy="all" onclick="window.poJobCopyPrintAll('${fb}')">⬇ Print all selected</button>`:'';
+  return`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px"><span class="info-label" style="font-size:13px">Job copies</span>${btns}${all}</div>`;
+}
+async function _poJobCopyRun(po,kind){
+  const d=_PO_JOB_KINDS.find(x=>x.key===kind);
+  try{
+    if(!d||typeof window[d.fn]!=='function'){showToast('Job copy not available.',true);return false;}
+    await window[d.fn](po);
+    return true;
+  }catch(e){showToast((d?d.label:'Job copy')+' failed: '+(e&&e.message||e),true);return false;}
+}
+window.poJobCopyPrint=function(fbKey,kind){
+  const po=allPOs.find(p=>p.fbKey===fbKey);
+  if(!po){showToast('PO not found.',true);return Promise.resolve(false);}
+  return _poJobCopyRun(po,kind);
+};
+window.poJobCopyPrintAll=async function(fbKey){
+  const po=allPOs.find(p=>p.fbKey===fbKey);
+  if(!po){showToast('PO not found.',true);return;}
+  for(const k of _poJobCopyKinds(po)){await _poJobCopyRun(po,k);}
+};
+
 function renderDetailPage(){
   const po=allPOs.find(p=>p.fbKey===viewingPO);
   if(!po){window.showPage('po-registry');return;}
@@ -508,6 +551,7 @@ function renderDetailPage(){
       ${_poCanDelete()?`<button class="btn-outline" style="font-size:13px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
     </div>
   </div>
+  ${_poJobCopiesHTML(po)}
   ${_reservedBanner}
   ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -590,6 +634,26 @@ window.deletePO=async function(fbKey,poId){
 };
 
 // ── PO Create ──
+// ── Job copies (Oct 2026) — which of the Embroidery / Printing / Washing job
+// sheets this PO will have printed. Stored as po.jobCopies, ALWAYS all three
+// keys as real booleans; a PO with no field (older POs) reads as all false.
+const _PO_JOBCOPY_KEYS=['embroidery','printing','washing'];
+const _PO_JOBCOPY_LABELS={embroidery:'Embroidery',printing:'Printing',washing:'Washing'};
+function _poJobCopiesOf(po){
+  const j=(po&&po.jobCopies&&typeof po.jobCopies==='object')?po.jobCopies:{};
+  const out={};_PO_JOBCOPY_KEYS.forEach(k=>{out[k]=j[k]===true;});return out;
+}
+function _poJobCopiesRead(){
+  const out={};_PO_JOBCOPY_KEYS.forEach(k=>{out[k]=!!(document.getElementById('po-jc-'+k)||{}).checked;});return out;
+}
+function _poJobCopiesCardHTML(po){
+  const cur=_poJobCopiesOf(po);
+  return`<div class="card" id="po-jobcopies-card"><div class="card-title">Job copies to print</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Tick the job sheets this PO needs. They print separately from the PO (outside its 2-page limit). Leave all unticked for none.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+    ${_PO_JOBCOPY_KEYS.map(k=>`<label for="po-jc-${k}" style="display:flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text);cursor:pointer"><input type="checkbox" id="po-jc-${k}" ${cur[k]?'checked ':''}style="width:18px;height:18px;accent-color:var(--dark);cursor:pointer">${_PO_JOBCOPY_LABELS[k]}</label>`).join('')}
+    </div></div>`;
+}
 function renderPOCreate(){
   if(!session.canPO)return'<div class="empty">Not authorized to create POs.</div>';
   return`<div class="page-head"><div class="page-title">New Production Order</div><div class="page-sub">Fields marked * required</div></div>
@@ -614,6 +678,7 @@ function renderPOCreate(){
       <label for="emb-not-required" style="font-size:13px;color:var(--muted);cursor:pointer">No embellishment required for this PO</label>
     </div>
   </div>
+  ${_poJobCopiesCardHTML(null)}
   <div class="card"><div class="card-title">Size breakdown *</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
       ${['XS','S','M','L','XL','2XL'].map(sz=>`<div class="field"><label>${sz}</label><input id="sz-${sz}" type="number" min="0" value="0" onfocus="if(this.value==='0')this.value=''" onblur="if(this.value==='')this.value='0'" oninput="window.updateRatio()"></div>`).join('')}
@@ -773,7 +838,7 @@ window.submitPO=async function(){
     // it hangs, onto the PO. Guarded — no Pattern Hub, no change; the
     // free-text `pattern` box below is never touched. See js/patterns.js.
     const _ptnFields=(typeof window.ptnPoFieldsFor==='function'?await window.ptnPoFieldsFor(code).catch(()=>({})):{});
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,jobCopies:_poJobCopiesRead(),notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
     Object.assign(payload,_ptnFields);
     await setDoc(doc(db,'pos',poId),payload);
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
@@ -835,6 +900,7 @@ function renderPOEditPage(){
     </div>
     <div style="font-size:12px;color:var(--muted);margin-top:6px">Corrects the record only — does not release or re-reserve fabric rolls. Use Fabric Inventory for that.</div>
   </div>
+  ${_poJobCopiesCardHTML(po)}
   <div class="card"><div class="card-title">Notes</div>
     <div class="field">
       <label>Notes for this PO (optional) — printed in <span style="color:var(--accent-urgent);font-weight:700">red</span> on the PO copy</label>
@@ -860,6 +926,7 @@ window.savePOEdit=async function(fbKey){
     store:document.getElementById('po-store')?.value.trim()||'',
     totalRoll:document.getElementById('po-rolls')?.value.trim()||'',
     notes:document.getElementById('po-notes')?.value.trim()||'',
+    jobCopies:_poJobCopiesRead(),
     editedBy:session.name,editedAt:new Date().toISOString()
   };
   // Pattern Hub (M6): re-stamp on edit — the article code can change.
@@ -1396,6 +1463,75 @@ window.completeQC=async function(fbKey){
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;}}
 };
 
+// Embroidery job copy: single A4 page, outside the PO's two-page limit. Console-callable
+// (no UI yet). Accepts a PO object or its fbKey.
+window.generateEmbroideryJobPdf=function(poOrKey){
+  const po=(typeof poOrKey==='string')?allPOs.find(p=>p.fbKey===poOrKey):poOrKey;
+  if(!po){showToast('PO not found.',true);return;}
+  if(typeof window.printDocument!=='function'){showToast('Print engine not loaded.',true);return;}
+  return window.printDocument({type:'embroidery-job',filename:`${po.id}-embroidery-job.pdf`,data:{
+    documentType:'Embroidery Job',documentNumber:po.id,id:po.id,poNumber:po.id,
+    articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||''
+  }});
+};
+
+// Printing job copy (step 2 of 3): same mapping as the embroidery copy; console-callable, no UI.
+window.generatePrintingJobPdf=function(poOrKey){
+  const po=(typeof poOrKey==='string')?allPOs.find(p=>p.fbKey===poOrKey):poOrKey;
+  if(!po){showToast('PO not found.',true);return;}
+  if(typeof window.printDocument!=='function'){showToast('Print engine not loaded.',true);return;}
+  return window.printDocument({type:'printing-job',filename:`${po.id}-printing-job.pdf`,data:{
+    documentType:'Printing Job',documentNumber:po.id,id:po.id,poNumber:po.id,
+    articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||''
+  }});
+};
+
+// Washing job copy (step 3 of 3). Urdu cannot go through jsPDF (see CLAUDE.md, Print design
+// system > Fonts), so each Urdu line is rasterised HERE with the browser's own shaping (a 2D
+// canvas + the self-hosted Jameel Noori Nastaleeq @font-face) and handed to the engine as a PNG.
+// Any failure (no canvas, font not loaded) returns null and the sheet prints English only.
+const _WASH_URDU={
+  note:'کٹنگ سے پہلے مکمل کریں',
+  fabric:'کپڑا \u2066100%\u2069 کاٹن ہے؟',
+  rib:'ریب \u2066100%\u2069 کاٹن ہے؟',
+  shrink:'کپڑے کی شرنکیج (سکڑنا) مکمل ہو چکی ہے؟'
+};
+const _WASH_URDU_PX=72;
+async function _washRasterUrdu(text,px){
+  try{
+    if(typeof document==='undefined'||!document.createElement)return null;
+    px=px||_WASH_URDU_PX;
+    const spec='400 '+px+'px "Jameel Noori Nastaleeq"';
+    if(document.fonts&&document.fonts.load){await document.fonts.load(spec,text);}
+    if(!(document.fonts&&document.fonts.check&&document.fonts.check(spec,text)))return null;
+    const cv=document.createElement('canvas'),cx=cv.getContext&&cv.getContext('2d');
+    if(!cx)return null;
+    cx.font=spec;cx.direction='rtl';cx.textAlign='right';cx.textBaseline='alphabetic';
+    const m=cx.measureText(text);
+    const asc=Math.ceil(m.actualBoundingBoxAscent||px),desc=Math.ceil(m.actualBoundingBoxDescent||px*.4);
+    const left=Math.ceil(m.actualBoundingBoxLeft||0),right=Math.ceil(m.actualBoundingBoxRight||0);
+    const pad=Math.ceil(px*.08);
+    const w=Math.max(8,Math.max(left+right,Math.ceil(m.width))+2*pad),h=asc+desc+2*pad;
+    if(!(w>8&&h>8&&w<6000&&h<2000))return null;
+    cv.width=w;cv.height=h;
+    cx.font=spec;cx.direction='rtl';cx.textAlign='right';cx.textBaseline='alphabetic';
+    cx.fillStyle='#262626';
+    cx.fillText(text,pad+Math.max(left,Math.ceil(m.width)),pad+asc);
+    return {dataUrl:cv.toDataURL('image/png'),w:w,h:h,fontPx:px};
+  }catch(e){return null;}
+}
+window.generateWashingJobPdf=async function(poOrKey){
+  const po=(typeof poOrKey==='string')?allPOs.find(p=>p.fbKey===poOrKey):poOrKey;
+  if(!po){showToast('PO not found.',true);return;}
+  if(typeof window.printDocument!=='function'){showToast('Print engine not loaded.',true);return;}
+  const urduImages={};
+  for(const k of Object.keys(_WASH_URDU)){const im=await _washRasterUrdu(_WASH_URDU[k]);if(im)urduImages[k]=im;}
+  return window.printDocument({type:'washing-job',filename:`${po.id}-washing-job.pdf`,data:{
+    documentType:'Washing Job',documentNumber:po.id,id:po.id,poNumber:po.id,
+    articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||'',urduImages:urduImages
+  }});
+};
+
 // ── Gate Pass ──
 window.generatePOPdf=function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
@@ -1405,7 +1541,7 @@ window.generatePOPdf=function(fbKey){
     const sizesStr=(activeSizes.length?activeSizes:sizeOrder).join('-');
     return window.printDocument({type:'po',filename:`${po.id}.pdf`,data:{
       documentType:'Production Order',documentNumber:po.id,id:po.id,
-      poNumber:po.id,startDate:po.createdAt||'',pattern:(typeof window.ptnPoTravelerPattern==='function'?window.ptnPoTravelerPattern(po):'')||po.pattern||'',
+      poNumber:po.id,startDate:po.startDate||'',pattern:(typeof window.ptnPoTravelerPattern==='function'?window.ptnPoTravelerPattern(po):'')||po.pattern||'',
       articleName:po.name||'',articleCode:po.code||'',sizes:sizesStr,
       fabricName:po.fabric||'',fabricCode:po.fabricCode||'',
       totalQty:po.qty!=null?String(po.qty):'',ratio:po.ratio||'',
