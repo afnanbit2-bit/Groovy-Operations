@@ -4,6 +4,7 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 let _siLoaded=false;
+let _siLinesScope='none',_siLinesCut='';
 let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=null,_siPrevSnapshot=null,_siSyncMeta={};
 let _siSkuSearch='',_siSkuSort='s7',_siSkuDir=-1,_siSection='today',_siSub='',_siSecTouched=false,_siLandDone=false;
 let _siSkuLimit=200;        // SKU table page size; grows by 200 via Load more
@@ -159,7 +160,23 @@ function _siColRunner(id,col,q){
 const _siRunners={
   products:_siColRunner('products','shopify_products'),
   orders:_siColRunner('orders','shopify_orders'),
-  lines:_siColRunner('lines','shopify_line_items'),
+  // PHASE 1 of the line-item read: only the last _SI_WIN_DAYS days (single-field range on order_created_at, no composite index).
+  // fresh=true is the freshness refresh (a moved order sync): it ALWAYS re-reads the window, with the SAME cut as before so the window and the
+  // phase-2 read stay disjoint; if the whole history was loaded, it goes back to 'window' and phase 2 is marked as needing a reload
+  // (_siFull idle) — the older rows are dropped, never mixed with a newer window without being re-read. A phase-2 read still IN FLIGHT is left
+  // alone: it is disjoint from the window and concatenates onto whatever _siLineItems is when it lands.
+  lines:async function(fresh){
+    if(_siLinesScope==='full'&&!fresh)return;
+    const stamps=await _siFrStampsPre(); // captured BEFORE the read, so a sync landing mid-read can only make us under-claim
+    const cut=(fresh&&_siLinesCut)?_siLinesCut:_siPktDate(-_SI_WIN_DAYS);
+    const s=await getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','>=',cut)));
+    const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
+    if(_siLinesScope==='full'||_siFull.st==='done'){_siFull.st='idle';_siFull.err=null;_siFull.n=0;_siFull.tok++;} // checked AFTER the await: a phase 2 that landed meanwhile counts
+    _siLineItems=a;_siLinesScope='window';_siLinesCut=cut;
+    _siFrNote('lines',stamps);
+    _siColl.lines=true;
+    if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
+  },
   closes:_siColRunner('closes','shopify_weekly_closes',()=>query(collection(db,'shopify_weekly_closes'),orderBy('week_ending','desc'))),
   snap:async function(){
     const stamps=await _siFrStampsPre();
@@ -421,7 +438,7 @@ function _siLoadView(){
   }
   const parts=[];
   if(_siColl.products||_siCollectionsLoaded)parts.push(_siFmtN(_siProducts.length)+' catalog entries');
-  if(_siColl.lines||_siCollectionsLoaded)parts.push(_siFmtN(_siLineItems.length)+' line items');
+  if(_siColl.lines||_siCollectionsLoaded)parts.push(_siFmtN(_siLineItems.length)+' line items'+(_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''));
   const retryable=mode==='fail'?fails:[];
   return{pct,mode,stage,sub:parts.join(' · '),detail,cd,failed,retryable,
     bucket:Math.floor(pct/25),text:stage+', '+pct+' percent',frac:pct/100,
@@ -487,6 +504,83 @@ function siPaintLoad(){
     w.__si=true;window.showPage=w;
   }
 })();
+
+// ═══ Line items in two phases (Oct 2026, load-time stage 2) ═════════════════════════════════════════════════════════════
+// Phase 1 (the 'lines' stage above, inside the percentage) reads only the last _SI_WIN_DAYS days of shopify_line_items:
+//   where('order_created_at','>=',<PKT day>) — one field, so Firestore's automatic single-field index serves it (firestore.indexes.json
+//   has no fieldOverrides that exempt it). order_created_at is Shopify's offset timestamp string; 'YYYY-MM-DD' compares correctly against it.
+// Phase 2 (this block) reads ONLY THE REST, where('order_created_at','<',<same day>) — disjoint from phase 1, so the two together cost
+//   exactly what the old single read cost and nothing is read twice. It runs only when a view that needs the whole history is opened
+//   (_SI_FULL_SECTIONS) or when the person presses "Load full history". It is outside the percentage: its size is not known in advance, so
+//   it shows an indeterminate bar and never a made-up number. It has its own state, a timeout and a manual Retry.
+// A figure that needs the whole history is never shown from the window as if it were complete: it says "needs full history".
+const _SI_WIN_DAYS=90,_SI_FULL_TIMEOUT_MS=120000;
+// Section / sub-view ids (the four-section model: _SI_SECTIONS + _SI_SUBVIEWS) that need the whole history. Articles covers its Explorer AND its Type & season sub-view.
+const _SI_FULL_SECTIONS=['attention','articles','ignored'];
+const _siFull={st:'idle',err:null,tries:0,n:0,tok:0};
+function _siFullHist(){return _siLinesScope!=='window';} // 'none' = line items were not read through the window (nothing loaded yet, or data placed directly): never gate it
+function _siLinesPartial(){return _siLinesScope==='window';}
+// Which gated id is on screen: an open sub-view first (Ignored), else its section; '' when this view works from the window.
+function _siFullKey(){
+  const r=_siSecResolve(_siSection);
+  if(_siSub&&_SI_FULL_SECTIONS.indexOf(_siSub)>=0)return _siSub;
+  return _SI_FULL_SECTIONS.indexOf(r.sec)>=0?r.sec:'';
+}
+function _siFullLabel(){return({attention:'Needs Attention',articles:_siSub==='typeseason'?'Type & season':'The Article Explorer',ignored:'The Ignored list'})[_siFullKey()]||'This view';}
+// start (or, manual, restart after a failure) the read of the older line items. Never reads twice; returns nothing.
+function _siFullStart(manual){
+  const F=_siFull;
+  if(!_siLinesPartial()||F.st==='loading'||F.st==='done')return;
+  if(F.st==='failed'&&!manual)return;
+  if(typeof getDocs!=='function'||typeof where!=='function'){F.st='failed';F.err={msg:'The Firestore query helpers are not available on this build.',code:'',cls:'other',at:_siNow()};return;}
+  F.st='loading';F.err=null;F.tries++;
+  const t=++F.tok,cut=_siLinesCut;
+  const guard=setTimeout(()=>{if(F.tok===t&&F.st==='loading'){F.st='failed';F.err={msg:'Timed out after '+(_SI_FULL_TIMEOUT_MS/1000)+'s while reading older line items',code:'timeout',cls:'timeout',at:_siNow()};_siFullPaint();}},_SI_FULL_TIMEOUT_MS);
+  let p;try{p=Promise.resolve(getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','<',cut))));}catch(e){p=Promise.reject(e);}
+  p.then(s=>{
+    clearTimeout(guard); // a read that lands after the timeout is still good data: accept it
+    if(!_siLinesPartial()||_siLinesCut!==cut)return;
+    const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
+    _siLineItems=_siLineItems.concat(a); // a new array: every cache keyed on it rebuilds
+    _siLinesScope='full';F.st='done';F.err=null;F.n=a.length;
+    _siFullPaint();
+  },e=>{
+    clearTimeout(guard);
+    if(F.tok!==t||_siFullHist())return;
+    F.st='failed';F.err=_siLoadErr(e);_siFullPaint();
+  });
+}
+window._siFullLoad=function(){_siFullStart(true);_siFullPaint();};
+function _siFullErrText(){
+  const e=_siFull.err;if(!e)return'';
+  return e.msg+(e.cls==='quota'?' — this is a Firestore read quota problem, not a bug here (Firebase Console → Usage).':e.cls==='permission'?' — permission refused: firestore.rules may need republishing.':'');
+}
+function _siFullBtn(label){return'<button type="button" class="si-full-btn" onclick="window._siFullLoad()">'+label+'</button>';}
+// The card that REPLACES a view that cannot be shown from the window. Starting the read is the caller's job (_siRenderSection).
+function _siFullGateHtml(label){
+  const F=_siFull;
+  const head='<div class="card-title">'+_siEsc(label||_siFullLabel())+' needs the full sales history</div>';
+  if(F.st==='failed')return'<div class="card si-full-card fail" id="si-full-gate" data-st="failed" role="alert">'+head+'<div class="si-full-txt">Could not read the older line items. '+_siEsc(_siFullErrText())+'</div><div>'+_siFullBtn('Retry')+'</div></div>';
+  return'<div class="card si-full-card" id="si-full-gate" data-st="'+F.st+'" role="status">'+head+'<div class="si-full-txt">It works from every order line since the store opened, and only the last '+_SI_WIN_DAYS+' days are loaded so far. Reading the older line items…</div><div class="si-full-bar"><i></i></div><div class="si-full-note">The size of this read is not known in advance, so no percentage is shown.</div></div>';
+}
+// The strip above a view that is correct from the window for most of its figures.
+function _siFullStripHtml(){
+  if(!_siLinesPartial())return'';
+  const F=_siFull;
+  const cut=_siEsc(_siLinesCut);
+  if(F.st==='loading')return'<div class="si-full-strip" id="si-full-strip" data-st="loading" role="status"><span>Reading the older line items…</span><span class="si-full-bar sm"><i></i></span></div>';
+  if(F.st==='failed')return'<div class="si-full-strip fail" id="si-full-strip" data-st="failed" role="alert"><span>Could not read the older line items. '+_siEsc(_siFullErrText())+'</span>'+_siFullBtn('Retry')+'</div>';
+  return'<div class="si-full-strip" id="si-full-strip" data-st="idle"><span>Showing the last '+_SI_WIN_DAYS+' days of sales (from '+cut+'). Figures that need the whole history say “needs full history”.</span>'+_siFullBtn('Load full history')+'</div>';
+}
+function _siFullNeedsCell(){return'<span class="si-full-need">needs full history</span>';}
+function _siFullPaint(){
+  if(typeof document==='undefined'||!document.getElementById||!_siLoaded||!_siLoadAlive())return;
+  try{
+    if(_siFullHist()){const bar=document.getElementById('si-tab-bar');if(bar)bar.outerHTML=_siTabBar();_siRefreshContent();return;}
+    const g=document.getElementById('si-full-gate');if(g)g.outerHTML=_siFullGateHtml(_siFullLabel());
+    const s=document.getElementById('si-full-strip');if(s)s.outerHTML=_siFullStripHtml();
+  }catch(_){}
+}
 
 // ── Data loader ─────────────────────────────────────────────────────
 // Resolves when the load has SETTLED (loaded, or failed for good after its automatic retries); _siLoaded says which.
@@ -690,7 +784,7 @@ async function siRefresh(o){
     C.running[id]=true;
     let tm=null;
     try{
-      await Promise.race([Promise.resolve().then(()=>_siRunners[id]()),new Promise((_,rej)=>{tm=setTimeout(()=>rej(Object.assign(new Error('timed out after '+(_SI_FR_READ_MS/1000)+'s'),{code:'timeout'})),_SI_FR_READ_MS);})]);
+      await Promise.race([Promise.resolve().then(()=>_siRunners[id](true)),new Promise((_,rej)=>{tm=setTimeout(()=>rej(Object.assign(new Error('timed out after '+(_SI_FR_READ_MS/1000)+'s'),{code:'timeout'})),_SI_FR_READ_MS);})]);
       _siFrNote(id,meta.stamps);F.state[id]='done';done.push(id);
     }catch(e){F.state[id]='failed';F.fails[id]=_siLoadErr(e);}
     finally{clearTimeout(tm);C.running[id]=false;}
@@ -927,6 +1021,7 @@ window._siIgOpen=function(code){
 };
 // The Ignored tab.
 function _siIgnoredSectionHtml(){
+  if(!_siFullHist()){_siFullStart(false);return _siFullGateHtml('The Ignored list');}
   const list=_siIgList();
   const note=_siMetaNote();
   if(_siMetaState==='loading'||_siMetaState==='idle')return`<div class="si-ax-empty">Reading the ignore list…</div>`;
@@ -1213,7 +1308,9 @@ function _siComputeSkuTable(){
       onHand,prevOnHand,weeklyDelta,s7,s30,dailyRate,daysLeft,sellThrough,
       firstSold:fs,lastSold:ls,daysSinceLastSale,refunds,totalSold:totalSoldMap[sku]||0,
       price:prod.price||0,reorderPoint,suggestedQty,created_at:prod.created_at||'',
-      liveAt:prod.published_at||prod.created_at||''
+      liveAt:prod.published_at||prod.created_at||'',
+      // complete only if the product went live inside the window (or the whole history is loaded); otherwise the window undercounts it
+      totalSoldPartial:_siLinesPartial()&&!((prod.published_at||prod.created_at||'').slice(0,10)>=_siLinesCut&&(prod.published_at||prod.created_at||'')!=='')
     });
   });
 
@@ -1540,6 +1637,7 @@ if(typeof _siTkOrigStartApp==='function'){
 
 function _siRenderSection(m,skuRows){
   const r=_siSecResolve(_siSection);
+  if(_siFullKey()&&!_siFullHist()){_siFullStart(false);return _siFullGateHtml(_siFullLabel());}
   const sv=_siSub?_SI_SUBVIEWS.find(x=>x.id===_siSub&&x.parent===r.sec):null;
   const d=sv||_SI_SECTIONS.find(x=>x.id===r.sec);
   return d.render(m,skuRows);
@@ -1547,7 +1645,7 @@ function _siRenderSection(m,skuRows){
 
 // ── Overview ────────────────────────────────────────────────────────
 function _siOverview(m){
-  return`<div class="stats-row">
+  return _siFullStripHtml()+`<div class="stats-row">
     <div class="stat-card">
       <div class="stat-label">Inventory Value</div>
       <div class="stat-val" style="font-size:19px">${_siPKR(m.totalValue)}</div>
@@ -1579,7 +1677,7 @@ function _siOverview(m){
     <div style="font-size:13px;color:var(--muted);line-height:2">
       Products: <strong>${_siProducts.length}</strong> variants
       · Orders: <strong>${_siOrders.length}</strong>
-      · Line items: <strong>${_siLineItems.length}</strong>
+      · Line items: <strong>${_siLineItems.length}</strong>${_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''}
       · Snapshots: ${_siSnapshot?'latest '+(_siSnapshot.date||'—'):'none yet'}
     </div>
   </div>`;
@@ -1595,6 +1693,7 @@ function _siHistStrip0(){
 }
 window._siHistRetry=function(){_siAxEnsureHistory(true);if(typeof _siNaOnHistory==='function')_siNaOnHistory();};
 function _siOverviewAttnTiles(){
+  if(!_siFullHist())return _siHistStrip()+`<div class="si-na-tiles"><div class="card si-na-tile"><div class="card-title">Needs attention</div><div class="num">—</div><div class="sub">${_siFullNeedsCell()}</div></div><div class="card si-na-tile"><div class="card-title">Overstocked / dead stock</div><div class="num">—</div><div class="sub">${_siFullNeedsCell()}</div></div></div>`;
   const n=_siNaBadge();
   if(n==null)return _siHistStrip()+`<div class="si-na-tiles"><div class="card si-na-tile"><div class="card-title">Needs attention</div><div class="num">…</div><div class="sub">reading the stock history</div></div><div class="card si-na-tile"><div class="card-title">Overstocked / dead stock</div><div class="num">…</div><div class="sub">reading the stock history</div></div></div>`;
   const c=_siNaState().counts;
@@ -1684,7 +1783,7 @@ function _siSkuRowsHtml(rows){
       <td>${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
       <td>${r.reorderPoint||'—'}</td>
       <td>${r.suggestedQty||'—'}</td>
-      <td>${r.refunds||'—'}</td>
+      <td${_siLinesPartial()?` title="last ${_SI_WIN_DAYS} days only"`:''}>${r.refunds||'—'}</td>
     </tr>`;
   }).join('');
 }
@@ -1723,7 +1822,8 @@ function _siGroupLiveAt(variants){
   variants.forEach(v=>{if(v.liveAt&&(!best||v.liveAt<best))best=v.liveAt;});
   return best;
 }
-function _siSoldSinceLiveCell(units,liveAt){
+function _siSoldSinceLiveCell(units,liveAt,partial){
+  if(partial)return`${_siFullNeedsCell()}<div style="font-size:11px;color:var(--muted);white-space:nowrap">${(()=>{const d=liveAt?_siDaysAgo(liveAt):null;return d!==null&&!isNaN(d)&&d>=0?'live '+d+'d':'live —';})()}</div>`;
   const d=liveAt?_siDaysAgo(liveAt):null;
   const age=d!==null&&!isNaN(d)&&d>=0?'live '+d+'d':'live —';
   return`<span style="font-weight:600">${units||0}</span><div style="font-size:11px;color:var(--muted);white-space:nowrap">${age}</div>`;
@@ -1773,7 +1873,7 @@ function _siGroupedBodyHtml(filteredRows){
       <td style="font-weight:700;color:${totColor}">${tot}</td>
       <td style="font-weight:600">${totS7}</td>
       <td>${totS30}</td>
-      <td>${_siSoldSinceLiveCell(g.variants.reduce((s,r)=>s+(r.totalSold||0),0),_siGroupLiveAt(g.variants))}</td>
+      <td>${_siSoldSinceLiveCell(g.variants.reduce((s,r)=>s+(r.totalSold||0),0),_siGroupLiveAt(g.variants),g.variants.some(r=>r.totalSoldPartial))}</td>
       <td>${minDaysStr}</td>
       <td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td>
     </tr>`;
@@ -1788,7 +1888,7 @@ function _siGroupedBodyHtml(filteredRows){
         <td style="font-weight:700;font-size:13px">${_siEsc(r.size||'?')}</td>
         <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'var(--accent-urgent)':'inherit'}">${r.onHand}</td>
         <td>${r.s7}</td><td>${r.s30}</td>
-        <td>${_siSoldSinceLiveCell(r.totalSold||0,r.liveAt)}</td>
+        <td>${_siSoldSinceLiveCell(r.totalSold||0,r.liveAt,r.totalSoldPartial)}</td>
         <td style="${daysClass}">${daysStr}</td>
         <td style="font-size:12px">${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
         <td style="font-size:12px">${r.reorderPoint||'—'}</td>
@@ -1861,7 +1961,8 @@ function _siSkuTableSection(rows){
     <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="si-sku-count">${countStr}</span>
   </div>
   <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Click a product to open it in the Article Explorer; the ▶ arrow shows its sizes. ☀ = Summer · ❄ = Winter · <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">TOP</span> / <span style="background:var(--soft);color:var(--cat-notes);border-radius:3px;padding:1px 4px;font-size:11px;font-weight:700">BOTTOM</span> badges from your labels. Green = all sizes in stock · Red = any sold out.</div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sold since live counts non-refunded orders synced from ${_siEsc(_siEarliestOrderDate()||'—')} onward, so it understates products that launched earlier. "live Nd" comes from the catalog's published/created date ("—" until the catalog sync has stored it).</div>
+  ${_siFullStripHtml()}
+  <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${_siLinesPartial()?`Sold since live is shown only for products that went live inside the loaded ${_SI_WIN_DAYS} days; the others say “needs full history” until it is loaded.`:`Sold since live counts non-refunded orders synced from ${_siEsc(_siEarliestOrderDate()||'—')} onward, so it understates products that launched earlier.`} "live Nd" comes from the catalog's published/created date ("—" until the catalog sync has stored it).</div>
   <div style="overflow-x:auto"><table class="cut-table" style="min-width:1040px">
     <thead><tr id="si-sku-head">${_siSkuHeadCells()}</tr></thead>
     <tbody id="si-sku-tbody">${_siGroupedBodyHtml(filtered)||(totalGroups===0?`<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--muted);font-size:14px">No products match your filters</td></tr>`:'')}</tbody>
@@ -1973,7 +2074,7 @@ let _siSkuReturnY=0;
 // (search, category, type, sort, expanded groups, page size) lives in module variables, so coming back restores it.
 window._siSkuOpen=function(code){
   code=String(code||'').toUpperCase();
-  if(!code||!_siAxIndex().map.has(code)){
+  if(!code||(!_siLinesPartial()&&!_siAxIndex().map.has(code))){ // from the window alone, "not in the index" cannot be told from "not sold in the last 90 days"
     if(typeof showToast==='function')showToast(code?code+' has no sales or stock rows, so the Article Explorer has nothing to show for it.':'This row has no article code.',true);
     return false;
   }
@@ -2072,8 +2173,11 @@ function _siAdvancedSection(skuRows){
   const md=_siMarkdownCandidates(skuRows);
   const stockouts=skuRows.filter(r=>r.onHand<=0&&r.s30>0).sort((a,b)=>b.s30-a.s30).slice(0,15);
   const dropPerf=_siDropPerformance(skuRows);
+  const part=_siLinesPartial();
+  const needCard=t=>`<div class="card si-full-need-card"><div class="card-title">${t}</div><div style="font-size:13px;color:var(--muted)">${_siFullNeedsCell()} — it reads each product's first sale, last sale or lifetime total, which the loaded ${_SI_WIN_DAYS} days cannot give.</div></div>`;
 
   return`
+  ${_siFullStripHtml()}
   <div class="card">
     <div class="card-title">Weeks of Supply by Category</div>
     ${wos.length?`<div style="overflow-x:auto"><table class="cut-table">
@@ -2099,7 +2203,7 @@ function _siAdvancedSection(skuRows){
     </div>`).join(''):'<div class="empty">No stockouts with recent demand</div>'}
   </div>
 
-  <div class="card">
+  ${part?needCard('Variant Aging (first / last sold)'):`<div class="card">
     <div class="card-title">Variant Aging (first / last sold)</div>
     <div style="overflow-x:auto"><table class="cut-table" style="min-width:600px">
       <thead><tr><th>SKU</th><th>Product</th><th>First Sold</th><th>Last Sold</th><th>Days Since</th><th>Total Sold</th></tr></thead>
@@ -2112,7 +2216,7 @@ function _siAdvancedSection(skuRows){
         <td>${r.totalSold}</td>
       </tr>`).join('')}</tbody>
     </table></div>
-  </div>
+  </div>`}
 
   <div class="card">
     <div class="card-title">Reorder Points + Suggested Qty</div>
@@ -2145,12 +2249,12 @@ function _siAdvancedSection(skuRows){
     </div>`).join('')}
   </div>`:''}
 
-  <div class="card">
+  ${part?needCard('Returns Signal per SKU'):`<div class="card">
     <div class="card-title">Returns Signal per SKU</div>
     ${_siReturnsTable(skuRows)}
-  </div>
+  </div>`}
 
-  ${md.length?`<div class="card">
+  ${part?needCard('Markdown Candidates (cash-freed estimate)'):''}${!part&&md.length?`<div class="card">
     <div class="card-title">Markdown Candidates (cash-freed estimate)</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px">45+ days no sale, 10+ units. Markdown at 30% off frees the estimated cash below.</div>
     <div style="overflow-x:auto"><table class="cut-table">
@@ -3529,6 +3633,7 @@ function _siAxFlash(){
 }
 function _siAxBodyHtml(){return _siAxModeSel==='compare'?_siAxCompareBody():(_siAxModeSel==='overview'?_siAxOverviewBody():(_siAxModeSel==='portfolio'?_siAxPortfolioBody():_siAxSearchBody()));}
 function _siArticleExplorerSection(){
+  if(!_siFullHist()){_siFullStart(false);return _siFullGateHtml('The Article Explorer');}
   _siAxEnsureHistory(); // one bounded read per session; repaints the body when it lands
   const idx=_siAxIndex();
   const modeBtn=_siAxModeBtnHtml;
@@ -5242,6 +5347,7 @@ function _siNaClosest(rows){
 }
 // The pill on the tab and the count the Overview shows: critical + act (the things that need an action). Watch is shown, not counted.
 function _siNaBadge(){
+  if(!_siFullHist())return null; // classes need each article's whole history
   if(_siHistState!=='ok'&&_siHistState!=='error')return null;
   try{return _siNaState().counts.action;}catch(_){return null;}
 }
@@ -5555,6 +5661,7 @@ function _siNaDetailHtml(i,o){
 }
 // The section: the list, or one article's situation when one is open. History is read once (the Explorer's own bounded read).
 function _siNaSectionHtml(){
+  if(!_siFullHist()){_siFullStart(false);return _siFullGateHtml('Needs Attention');}
   if(_siHistState==='idle'||_siHistState==='loading'){
     if(_siHistState==='idle')_siAxEnsureHistory();
     return`<div class="si-ax-empty">Reading the stock history…</div>`;
