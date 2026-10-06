@@ -133,7 +133,7 @@ function checks(src){
   o['the tabs run Overview, Portfolio, Search, Compare']=sec.indexOf('si-ax-tab-overview')<sec.indexOf('si-ax-tab-portfolio')&&sec.indexOf('si-ax-tab-portfolio')<sec.indexOf('si-ax-tab-search')&&sec.indexOf('si-ax-tab-search')<sec.indexOf('si-ax-tab-compare');
   R('_siAxPfCls="";_siAxPfCat="";_siAxPfSeason="";_siAxPfSort="demand";_siAxPfAll=false;_siAxPfConcAll=false');
   const html=R('_siAxPortfolioBody()');
-  o['body: readout, six tiles, class mix, category, season, concentration, cash and the article list are all there']=['si-pf-read','Class mix','>Category<','>Season<','Concentration','Cash tied up and stock-outs','si-pf-list'].every(s=>html.indexOf(s)>-1)&&(html.match(/class="si-pf-tile"/g)||[]).length===6;
+  o['body: readout, six tiles, class mix, category, season, concentration, cash and the article list are all there']=['si-pf-read','Class mix','>Category<','By selling window','By saved type and saved season','Concentration','Cash tied up and stock-outs','si-pf-list'].every(s=>html.indexOf(s)>-1)&&(html.match(/class="si-pf-tile"/g)||[]).length===6;
   o['body: the caveat says returns, discounts and selling-price-not-cost']=/before returns/.test(html)&&/before discounts/.test(html)&&/not cost/.test(html);
   o['body: every table is a real <table> and the stock value is labelled "selling price"']=(html.match(/<table/g)||[]).length>=6&&/Stock at selling price/.test(html);
   o['body: charts are HTML boxes — no svg, viewBox or text element']=!/<svg|viewBox|<text/.test(html);

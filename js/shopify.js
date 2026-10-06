@@ -1052,7 +1052,7 @@ function _siPktDayOf(ms){return new Date(ms+5*3600000).toISOString().slice(0,10)
 // Sub-phase 2 of the product-data work. Staff press a button to give each live article a TYPE and a SEASON; nothing is ever written
 // without a press (the suggestions are buttons). The values are the ones firestore.rules already allows (held equal by
 // tests/shopify-typeseason.test.js): that is why the vocab is short. ONE place: _SI_TYPES / _SI_SEASONS. The writer is the Ignore writer.
-// Sub-phase 3 reads _siMetaOf(code); nothing here feeds the Explorer filter, Portfolio or Needs Attention yet.
+// Sub-phase 3 (below, "Type & season feed") reads _siMetaOf(code): the Explorer filter, the Portfolio rollups and Needs Attention's seasonal wait.
 const _SI_TYPES=[{k:'top',l:'Top'},{k:'bottom',l:'Bottom'},{k:'other',l:'Other'}];
 const _SI_SEASONS=[{k:'winter',l:'Winter'},{k:'summer',l:'Summer'},{k:'all',l:'All-season'}];
 const _SI_TS_CUBES=20,_SI_TS_MILESTONES=[25,50,75,100],_SI_TS_PAGE=20;
@@ -1064,6 +1064,59 @@ function _siMetaOf(code){ // what sub-phase 3 reads: the saved type and season o
   const m=_siMeta.get(String(code||'').toUpperCase());
   return{type:m&&m.type?m.type:null,season:m&&m.season?m.season:null};
 }
+// ═══ Type & season feed — what the saved type and season now drive (product-data sub-phase 3) ═══
+// ONE reader (_siMetaOf). A filter in the Explorer (Overview, Search, Portfolio; not Compare, where articles are chosen by name), the
+// Portfolio's two rollups and Needs Attention's seasonal wait. Unclassified (no saved value) is its own bucket and is counted: nothing is
+// dropped silently. When the saved list could not be read (or is still loading) the filter is OFF and the page says "type/season unavailable".
+let _siAxFSeason='',_siAxFType='';
+const _SI_FD_SEASON=[{k:'winter',l:'Winter'},{k:'summer',l:'Summer'},{k:'all',l:'All-season'},{k:'none',l:'Unclassified'}];
+const _SI_FD_TYPE=[{k:'top',l:'Top'},{k:'bottom',l:'Bottom'},{k:'other',l:'Other'},{k:'none',l:'Unclassified'}];
+function _siFeedOk(){return _siMetaState==='ok';}
+function _siFdBucket(code,field){return _siMetaOf(code)[field]||'none';}
+function _siAxFOn(){return _siFeedOk()&&_siAxModeSel!=='compare'&&!!(_siAxFSeason||_siAxFType);}
+function _siAxFPass(a,skipSeason,skipType){
+  if(!_siFeedOk())return true;
+  if(!skipSeason&&_siAxFSeason&&_siFdBucket(a.code,'season')!==_siAxFSeason)return false;
+  if(!skipType&&_siAxFType&&_siFdBucket(a.code,'type')!==_siAxFType)return false;
+  return true;
+}
+function _siAxFSig(){return _siFeedOk()?_siAxFSeason+'/'+_siAxFType:'off';}
+// The articles the Overview and the Portfolio read: the live (not ignored) ones, narrowed by the two filters.
+function _siAxFLive(){
+  const base=_siAxLive();
+  if(!_siAxFOn())return base;
+  return base.filter(a=>_siAxFPass(a));
+}
+// Counts for the chips: each dimension is counted under the OTHER filter, over the articles with sales or stock (what every list shows).
+function _siAxFCounts(){
+  const base=_siAxLive().filter(a=>a.units>0||a.hasStock),on=_siFeedOk();
+  const season={'':0,winter:0,summer:0,all:0,none:0},type={'':0,top:0,bottom:0,other:0,none:0};
+  base.forEach(a=>{
+    if(!on)return;
+    if(_siAxFPass(a,true,false)){season['']++;season[_siFdBucket(a.code,'season')]++;}
+    if(_siAxFPass(a,false,true)){type['']++;type[_siFdBucket(a.code,'type')]++;}
+  });
+  let shown=0;base.forEach(a=>{if(!on||_siAxFPass(a))shown++;});
+  return{season,type,shown,total:base.length};
+}
+function _siAxFilterBarHtml(){
+  if(_siAxModeSel==='compare')return'';
+  if(_siMetaState==='error')return`<div class="si-fd si-hist-pend err" id="si-ax-feed" role="status">Type/season unavailable — the saved list could not be read, so no type or season filter is applied and every article is shown. <button type="button" class="si-ax-btn" onclick="window._siMetaRetry()">Retry</button></div>`;
+  if(!_siFeedOk())return`<div class="si-fd" id="si-ax-feed"><div class="si-ax-note" style="margin:0">Reading the saved types and seasons…</div></div>`;
+  const c=_siAxFCounts();
+  const chips=(kind,list,cur,counts)=>`<span class="si-ax-lab">${kind==='season'?'Season':'Type'}</span>`+[{k:'',l:'Any'}].concat(list).map(o=>`<button type="button" class="si-ax-btn${cur===o.k?' on':''}" aria-pressed="${cur===o.k}" data-k="${_siEsc(o.k)}" onclick="window._siAxFSet('${kind}',this.dataset.k)">${_siEsc(o.l)} (${counts[o.k]})</button>`).join('');
+  const hidden=c.total-c.shown;
+  return`<div class="si-fd" id="si-ax-feed"><div class="si-ax-bar" role="group" aria-label="Season">${chips('season',_SI_FD_SEASON,_siAxFSeason,c.season)}</div><div class="si-ax-bar" role="group" aria-label="Type">${chips('type',_SI_FD_TYPE,_siAxFType,c.type)}</div>
+  <div class="si-ax-note" style="margin:2px 0 6px">Showing ${c.shown} of ${c.total} articles with sales or stock${hidden>0?' · '+hidden+' hidden by these filters':''}. Unclassified means nobody has saved a value in Type &amp; season yet.${(_siAxFSeason||_siAxFType)?' <button type="button" class="si-ax-btn" onclick="window._siAxFClear()">Clear filters</button>':''}</div></div>`;
+}
+window._siAxFSet=function(kind,v){
+  v=String(v==null?'':v);
+  if(kind==='season')_siAxFSeason=_SI_FD_SEASON.some(o=>o.k===v)?v:'';
+  else if(kind==='type')_siAxFType=_SI_FD_TYPE.some(o=>o.k===v)?v:'';
+  else return;
+  _siAxOvAll=false;_siAxPfAll=false;_siAxOvSit='';_siAxRepaintAll();
+};
+window._siAxFClear=function(){_siAxFSeason='';_siAxFType='';_siAxOvAll=false;_siAxPfAll=false;_siAxRepaintAll();};
 function _siTsStems(text){
   const t=String(text||'').toLowerCase().replace(/short[\s-]*sleeve[d]?/g,' ').replace(/t[\s-]*shirt/g,' tshirt ');
   const out=new Set();(t.match(/[a-z]+/g)||[]).forEach(w=>out.add(w.length>3?w.replace(/s$/,''):w));return out;
@@ -2645,8 +2698,9 @@ window._siAxImgFail=function(img){
 function _siAxSearch(q,limit){
   const toks=String(q||'').toLowerCase().split(/\s+/).filter(Boolean);
   const list=_siAxIndex().list;
-  const out=toks.length?list.filter(a=>toks.every(t=>a.text.includes(t))):list;
-  return{hits:out.slice(0,limit||12),total:out.length};
+  const all=toks.length?list.filter(a=>toks.every(t=>a.text.includes(t))):list;
+  const on=_siAxFOn(),out=on?all.filter(a=>_siAxFPass(a)):all;
+  return{hits:out.slice(0,limit||12),total:out.length,hidden:all.length-out.length};
 }
 function _siAxUnitsSince(a,days){
   const cut=_siPktDate(-days);let u=0,r=0;
@@ -3641,6 +3695,7 @@ function _siArticleExplorerSection(){
   return`<div class="si-ax-bar" id="si-ax-modebar">${modeBtn('overview','Overview')}${modeBtn('portfolio','Portfolio')}${modeBtn('search','Search')}${modeBtn('compare','Compare')}
     <span class="si-ax-lab" style="margin-left:auto">${idx.list.length} articles${idx.list.length!==_siAxLive().length?' ('+(idx.list.length-_siAxLive().length)+' ignored)':''} · ignores the season filter</span></div>
   ${_siMetaNote()}
+  ${_siAxFilterBarHtml()}
   ${_siAxSearchBarHtml()}
   ${_siAxTrustBanner()}
   <div id="si-ax-live" class="si-ax-live" role="status" aria-live="polite"></div>
@@ -3675,14 +3730,15 @@ function _siAxResultsHtml(){
   const q=_siAxQuery.trim(),mode=_siAxModeSel;
   if(!q&&(mode==='overview'||mode==='portfolio'||_siAxSel||(mode==='compare'&&_siAxCmp.length)))return'';
   const r=_siAxSearch(q,q?12:8);
-  if(!r.hits.length)return`<div class="si-ax-empty">No article matches “${_siEsc(q)}”.</div>`;
+  const hid=r.hidden>0?` · ${r.hidden} more match${r.hidden===1?'es':''} but ${r.hidden===1?'is':'are'} hidden by the Type/Season filter`:'';
+  if(!r.hits.length)return`<div class="si-ax-empty">No article matches “${_siEsc(q)}”${_siEsc(r.hidden>0?' with the current Type/Season filter ('+r.hidden+' more match without it)':'')}.</div>`;
   const add=mode==='compare',fn=add?'Add':(mode==='search'?'Pick':'Open');
   const hit=a=>{
     const on=add&&_siAxCmp.includes(a.code);
     const tail=add?(on?'<span class="si-ax-added" aria-hidden="true">✓ Added</span>':'<span class="si-ax-plus" aria-hidden="true">+ Add</span>'):'';
     return`<button class="si-ax-hit${on?' is-added':''}" data-code="${_siEsc(a.code)}"${add?` aria-pressed="${on}"`:''} onclick="window._siAx${fn}(this.dataset.code)">${_siAxThumb(a.code,40,a.name)}<span class="t">${_siEsc(a.name)}<div class="m">${_siEsc(a.color||'—')} · ${_siEsc(a.code)} · ${_siEsc(a.category||'no category')}</div>${_siIgChipHtml(a.code)}</span><span class="n">${a.units} sold</span>${tail}</button>`;
   };
-  return`<div class="si-ax-note" style="margin:6px 0 4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'} · ordered by units sold, then name, then code</div>
+  return`<div class="si-ax-note" style="margin:6px 0 4px">${q?r.total+' match'+(r.total===1?'':'es')+(r.total>r.hits.length?' — showing '+r.hits.length+', refine to narrow':''):'Top sellers (type to search all '+r.total+' articles)'}${hid} · ordered by units sold, then name, then code</div>
   <div class="si-ax-results">${r.hits.map(hit).join('')}</div>`;
 }
 window._siAxSetMode=function(m){
@@ -4629,7 +4685,7 @@ const _SI_OV_TILES=[
 ];
 function _siAxOvRows(){
   const idx=_siAxIndex();
-  return _siAxLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat||(a.category||'Unknown')===_siAxOvCat)).map(a=>{
+  return _siAxFLive().filter(a=>(a.units>0||a.hasStock)&&(!_siAxOvCat||(a.category||'Unknown')===_siAxOvCat)).map(a=>{
     const m=_siAxStats(a),c=_siAxClassify(a),act=_siAxActionOf(a);
     return{a,m,c,act};
   });
@@ -4653,7 +4709,7 @@ function _siAxOverviewBody(){
   if(_siHistState!=='ok'&&_siHistState!=='error')return`<div class="si-ax-empty">Reading the stock history…</div>`+_siAxHistBanner();
   if(_siAxOvSit){const h=_siAxOvSitHtml();if(h)return h;}
   const rows=_siAxOvRows();
-  const cats=[...new Set(_siAxLive().filter(a=>a.units>0||a.hasStock).map(a=>a.category||'Unknown'))].sort(_siSortNat);
+  const cats=[...new Set(_siAxFLive().filter(a=>a.units>0||a.hasStock).map(a=>a.category||'Unknown'))].sort(_siSortNat);
   const tile=t=>{const n=rows.filter(r=>_siAxOvIn(r,t.k)).length;return`<button class="si-ov-tile${_siAxOvTile===t.k?' on':''}" aria-pressed="${_siAxOvTile===t.k}" onclick="window._siAxOvTile('${t.k}')"><span class="l">${_siEsc(t.l)}</span><span class="n">${n}</span><span class="w">${_siEsc(t.what)}</span><span class="s">${_siEsc(t.sub)}</span></button>`;};
   const cur=_SI_OV_TILES.find(t=>t.k===_siAxOvTile)||_SI_OV_TILES[0];
   const list=rows.filter(r=>_siAxOvIn(r,cur.k)).sort(_siAxOvSort(cur.k));
@@ -4734,7 +4790,8 @@ function _siAxPfCalc(rows,opts){
     const pace=(m.paceHead!=null&&m.paceHead>0)?m.paceHead:null;
     return{a,m,c:r.c,cls:r.c.cls,code:a.code,cat:a.category||'Unknown',units:a.units||0,rev:a.rev||0,hasRev:!!a.hasPrice,
       onHand:a.hasStock?a.onHand:null,val,noPrice:a.hasStock&&a.onHand>0&&asp==null,cover:m.cover,demand:d?d.D:null,pace,
-      su,season:(a.units>0)?(su.wU*2>a.units?'winter':'summer'):null};
+      su,season:(a.units>0)?(su.wU*2>a.units?'winter':'summer'):null,
+      mtype:opts.metaOf?(opts.metaOf(a.code).type||'none'):null,mseason:opts.metaOf?(opts.metaOf(a.code).season||'none'):null};
   });
   const tot={articles:R.length,units:0,rev:0,stockUnits:0,stockVal:0,noPrice:0,noStock:0};
   R.forEach(r=>{tot.units+=r.units;tot.rev+=r.rev;if(r.onHand!=null)tot.stockUnits+=r.onHand;else tot.noStock++;if(r.val!=null)tot.stockVal+=r.val;if(r.noPrice)tot.noPrice++;});
@@ -4743,19 +4800,24 @@ function _siAxPfCalc(rows,opts){
   const mixBy={};mix.forEach(x=>{mixBy[x.k]=x;});
   R.forEach(r=>{const x=mixBy[r.cls]||mixBy.unrated;x.n++;x.units+=r.units;x.rev+=r.rev;});
   mix.forEach(x=>{x.pN=R.length?x.n/R.length:null;x.pU=tot.units>0?x.units/tot.units:null;x.pR=tot.rev>0?x.rev/tot.rev:null;});
+  // the one definition of where an article's stock sits (dead, then slow, then winner, then over-stocked); the cash table and the rollups read it
+  const bucketOf=r=>r.cls==='dead'?'dead':(r.cls==='slow'?'slow':(r.cls==='winner'?'winner':((r.cover!=null&&r.cover>=T.overCoverWeeks&&(r.cls==='solid'||r.cls==='steady'||r.cls==='constrained'))?'over':'other')));
   // 2. category and season
   const grp=(keyOf,label)=>{
     const g=new Map();
     R.forEach(r=>{
       const k=keyOf(r);let x=g.get(k);
-      if(!x){x={k,label:label?label(k):k,n:0,units:0,rev:0,wU:0,stockUnits:0,stockVal:0,valMissing:0,paceStock:0,paceSum:0,paceN:0};g.set(k,x);}
+      if(!x){x={k,label:label?label(k):k,n:0,units:0,rev:0,wU:0,stockUnits:0,stockVal:0,valMissing:0,paceStock:0,paceSum:0,paceN:0,dead:0,slow:0,stU:0,inSum:0,inN:0,tied:0,tiedMissing:0};g.set(k,x);}
       x.n++;x.units+=r.units;x.rev+=r.rev;x.wU+=r.su.wU;
       if(r.onHand!=null)x.stockUnits+=r.onHand;
       if(r.val!=null)x.stockVal+=r.val;else if(r.onHand!=null)x.valMissing++;
       if(r.onHand!=null&&r.pace!=null){x.paceStock+=r.onHand;x.paceSum+=r.pace;x.paceN++;}
+      if(r.cls==='dead')x.dead++;else if(r.cls==='slow')x.slow++;
+      if(r.onHand!=null){x.stU+=r.units;const b=bucketOf(r);if(b==='dead'||b==='slow'||b==='over'){if(r.val!=null)x.tied+=r.val;else x.tiedMissing++;}}
+      if(r.m&&r.m.inRate!=null){x.inSum+=r.m.inRate;x.inN++;}
     });
     const out=[...g.values()];
-    out.forEach(x=>{x.pU=tot.units>0?x.units/tot.units:null;x.pR=tot.rev>0?x.rev/tot.rev:null;x.pV=tot.stockVal>0?x.stockVal/tot.stockVal:null;x.cover=x.paceSum>0?x.paceStock/x.paceSum:null;x.wShare=x.units>0?x.wU/x.units:null;});
+    out.forEach(x=>{x.pU=tot.units>0?x.units/tot.units:null;x.pR=tot.rev>0?x.rev/tot.rev:null;x.pV=tot.stockVal>0?x.stockVal/tot.stockVal:null;x.cover=x.paceSum>0?x.paceStock/x.paceSum:null;x.wShare=x.units>0?x.wU/x.units:null;x.sellThru=(x.stU+x.stockUnits)>0?x.stU/(x.stU+x.stockUnits):null;x.inRate=x.inN?x.inSum/x.inN:null;});
     return out;
   };
   const cats=grp(r=>r.cat).sort((x,y)=>(y.units-x.units)||_siSortNat(x.k,y.k));
@@ -4770,6 +4832,13 @@ function _siAxPfCalc(rows,opts){
     return{k:s.k,label:s.label,units:has?u:null,rev:has?rv:null,pU:has&&tot.units>0?u/tot.units:null,pR:has&&tot.rev>0?rv/tot.rev:null,
       n:g.n,stockUnits:g.stockUnits,stockVal:g.stockVal,valMissing:g.valMissing,cover:g.cover,pV:g.pV};
   });
+  // 2b. the saved type and the saved season (inputs: opts.metaOf; absent = the saved list is unavailable, so there is no rollup, never zeros)
+  let feed=null;
+  if(opts.metaOf){
+    const mk=(vocab,field)=>{const g=grp(r=>r[field]);return vocab.map(o=>g.find(x=>x.k===o.k)||{k:o.k,n:0,units:0,rev:0,stockUnits:0,stockVal:0,valMissing:0,dead:0,slow:0,tied:0,tiedMissing:0,pU:null,sellThru:null,inRate:null,cover:null}).map(x=>Object.assign({},x,{label:vocab.find(o=>o.k===x.k).l}));};
+    feed={types:mk([{k:'top',l:'Top'},{k:'bottom',l:'Bottom'},{k:'other',l:'Other'},{k:'none',l:'Unclassified'}],'mtype'),
+      seasons:mk([{k:'winter',l:'Winter'},{k:'summer',l:'Summer'},{k:'all',l:'All-season'},{k:'none',l:'Unclassified'}],'mseason')};
+  }
   // 3. concentration (articles with sales, biggest first)
   const sold=R.filter(r=>r.units>0).sort((x,y)=>(y.units-x.units)||_siSortNat(x.code,y.code));
   const uv=sold.map(r=>r.units),byRev=R.filter(r=>r.rev>0).sort((x,y)=>(y.rev-x.rev)||_siSortNat(x.code,y.code)),rv=byRev.map(r=>r.rev);
@@ -4778,7 +4847,6 @@ function _siAxPfCalc(rows,opts){
     reachU50:_siAxPfReach(uv,50),reachU80:_siAxPfReach(uv,80),reachR50:_siAxPfReach(rv,50),reachR80:_siAxPfReach(rv,80),nRev:byRev.length,
     topU:T.concNs.map(n=>({n,share:_siAxPfTop(uv,n)})),topR:T.concNs.map(n=>({n,share:_siAxPfTop(rv,n)}))};
   // 4. cash by bucket (disjoint: dead, then slow, then winner, then over-stocked, else everything else)
-  const bucketOf=r=>r.cls==='dead'?'dead':(r.cls==='slow'?'slow':(r.cls==='winner'?'winner':((r.cover!=null&&r.cover>=T.overCoverWeeks&&(r.cls==='solid'||r.cls==='steady'||r.cls==='constrained'))?'over':'other')));
   const cash=_SI_PF_BUCKETS.map(b=>({k:b.k,label:b.l,n:0,stockUnits:0,val:0,valMissing:0}));
   const cashBy={};cash.forEach(x=>{cashBy[x.k]=x;});
   R.forEach(r=>{
@@ -4801,7 +4869,7 @@ function _siAxPfCalc(rows,opts){
       if(s.lost){lost.lo+=s.lost.lo;lost.hi+=s.lost.hi;lost.mid+=s.lost.mid;lost.articles++;if(s.price!=null)lost.rs+=s.lost.mid*s.price;}
     });
   }
-  const res={rows:R,tot,mix,cats,seasons,conc,cash,stuck,lost,today:opts.today||''};
+  const res={rows:R,tot,mix,cats,seasons,feed,conc,cash,stuck,lost,today:opts.today||''};
   res.readout=_siAxPfReadout(res);
   return res;
 }
@@ -4842,10 +4910,10 @@ function _siAxPfLostOf(a){
 function _siAxPf(){
   const idx=_siAxIndex();
   let lt='';try{lt=(localStorage.getItem(_SI_LT_KEY)||'')+'|'+(localStorage.getItem(_SI_LT_ART_KEY)||'');}catch(_){}
-  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey();
+  const sig=_siPktDate(0)+'|'+lt+'|'+_siHistState+'|'+_siIgKey()+'|'+_siAxFSig()+'|'+_siMetaState;
   if(_siAxPfMemo&&_siAxPfMemo.idx===idx&&_siAxPfMemo.sig===sig)return _siAxPfMemo.res;
-  const rows=_siAxLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)}));
-  const res=_siAxPfCalc(rows,{today:_siPktDate(0),demand:_siAxDemand(),lost:_siHistState==='ok'?_siAxPfLostOf:null});
+  const rows=_siAxFLive().filter(a=>a.units>0||a.hasStock).map(a=>({a,m:_siAxStats(a),c:_siAxClassify(a)}));
+  const res=_siAxPfCalc(rows,{today:_siPktDate(0),demand:_siAxDemand(),lost:_siHistState==='ok'?_siAxPfLostOf:null,metaOf:_siFeedOk()?_siMetaOf:null});
   _siAxPfMemo={idx,sig,res};return res;
 }
 function _siAxPfFiltered(pf){
@@ -4874,8 +4942,18 @@ function _siAxPfCatHtml(pf){
 }
 function _siAxPfSeasonHtml(pf){
   const row=x=>`<tr><td>${_siEsc(x.label)}</td><td class="r">${x.units==null?'—':x.units}</td><td class="r">${_siAxPfRs(x.rev)}</td><td class="r">${_siAxPct(x.pU)}</td><td class="r">${x.n}</td><td class="r">${_siAxPfRs(x.stockVal)}</td><td class="r">${x.cover==null?'—':_siEsc(_siAxNum(x.cover))}</td></tr>`;
-  return`<div class="si-pf-wrap"><table class="si-pf-tbl"><thead><tr><th>Season</th><th class="r">Units sold in these months</th><th class="r">Revenue (list)</th><th class="r">% of units</th><th class="r">Articles that mainly sell then</th><th class="r">Their stock at selling price</th><th class="r">Their cover (weeks)</th></tr></thead><tbody>${pf.seasons.map(row).join('')}</tbody></table></div>
-  <div class="si-ax-note">Sales are split by the month of each order (October to February is winter). An article counts as a winter seller when more than half of its units sold in winter months; stock follows the article.</div>`;
+  return`<div class="si-pf-wrap"><table class="si-pf-tbl"><thead><tr><th>Selling window</th><th class="r">Units sold in these months</th><th class="r">Revenue (list)</th><th class="r">% of units</th><th class="r">Articles that mainly sell then</th><th class="r">Their stock at selling price</th><th class="r">Their cover (weeks)</th></tr></thead><tbody>${pf.seasons.map(row).join('')}</tbody></table></div>
+  <div class="si-ax-note">This is the selling window: sales are split by the month of each order (October to February is winter), whatever season staff saved for an article. An article counts as a winter seller when more than half of its units sold in winter months; stock follows the article.</div>`;
+}
+// The saved type / saved season rollups: the SAME grouping function as Category (inside _siAxPfCalc), never a second calculator.
+function _siAxPfFeedHtml(pf){
+  if(!pf.feed)return'<div class="si-ax-empty">Type/season unavailable — the saved list could not be read. The tables by selling window and by category above are unaffected.</div>';
+  const tbl=(rows,head)=>{
+    const row=x=>`<tr><td>${_siEsc(x.label)}</td><td class="r">${x.n}</td><td class="r">${x.n?x.units:'—'}</td><td class="r">${x.n?_siAxPfRs(x.rev):'—'}</td><td class="r">${_siAxPct(x.sellThru)}</td><td class="r">${_siAxPct(x.inRate)}</td><td class="r">${x.n?x.dead:'—'}</td><td class="r">${x.n?x.slow:'—'}</td><td class="r">${x.n?_siAxPfRs(x.stockVal):'—'}${x.valMissing?'<sup title="'+x.valMissing+' article(s) with stock and no sale price are not valued">*</sup>':''}</td><td class="r">${x.n?_siAxPfRs(x.tied):'—'}${x.tiedMissing?'<sup title="'+x.tiedMissing+' article(s) with stock and no sale price are not valued">*</sup>':''}</td></tr>`;
+    return`<div class="si-pf-wrap"><table class="si-pf-tbl"><thead><tr><th>${head}</th><th class="r">Articles</th><th class="r">Units</th><th class="r">Revenue (list)</th><th class="r">Sell-through</th><th class="r">In-stock days</th><th class="r">Dead</th><th class="r">Slow</th><th class="r">Stock at selling price</th><th class="r">Cash tied up</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>`;
+  };
+  return`<div class="si-pf-lab">By saved type</div>${tbl(pf.feed.types,'Type')}<div class="si-pf-lab">By saved season</div>${tbl(pf.feed.seasons,'Saved season')}
+  <div class="si-ax-note">Grouped by what staff saved in Type &amp; season; Unclassified = no saved value yet. Sell-through = units sold ÷ (units sold + units on hand), over articles with stock data. In-stock days = the average of each article’s share of measured days in stock. Cash tied up = stock at selling price in dead, slow and over-stocked articles (the same buckets as the cash table below). Dead and Slow are class counts. An article is in exactly one row per table. Not cost.</div>`;
 }
 function _siAxPfConcHtml(pf){
   const c=pf.conc,T=_SI_PF;
@@ -4917,7 +4995,7 @@ function _siAxPfListHtml(pf){
   const sel=(id,cur,opts,onch)=>`<select id="${id}" class="si-ax-select" onchange="${onch}">${opts.map(o=>`<option value="${_siEsc(o[0])}"${o[0]===cur?' selected':''}>${_siEsc(o[1])}</option>`).join('')}</select>`;
   const filters=`<div class="si-ax-bar"><label class="si-ax-lab" for="si-pf-cls">Class</label>${sel('si-pf-cls',_siAxPfCls,[['','All classes']].concat(_SI_PF_ORDER.map(k=>[k,_SI_AX_CLASSES[k].label])),"window._siAxPfSet('cls',this.value)")}
     <label class="si-ax-lab" for="si-pf-cat">Category</label>${sel('si-pf-cat',_siAxPfCat,[['','All categories']].concat(cats.map(c=>[c,c])),"window._siAxPfSet('cat',this.value)")}
-    <label class="si-ax-lab" for="si-pf-season">Season</label>${sel('si-pf-season',_siAxPfSeason,[['','Any season'],['winter','Mainly winter'],['summer','Mainly other months'],['none','No counted sales']],"window._siAxPfSet('season',this.value)")}
+    <label class="si-ax-lab" for="si-pf-season">Selling window</label>${sel('si-pf-season',_siAxPfSeason,[['','Any season'],['winter','Mainly winter'],['summer','Mainly other months'],['none','No counted sales']],"window._siAxPfSet('season',this.value)")}
     <label class="si-ax-lab" for="si-pf-sort">Order by</label>${sel('si-pf-sort',_siAxPfSort,_SI_PF_SORTS.map(o=>[o.k,o.l]),"window._siAxPfSet('sort',this.value)")}</div>`;
   const row=r=>`<tr><td><div class="si-pf-nm">${_siAxThumb(r.code,32,r.a.name)}<span><button class="si-pf-link" data-code="${_siEsc(r.code)}" onclick="window._siAxOpen(this.dataset.code)">${_siEsc(_siAxLabel(r.a))}</button><span class="si-ax-note" style="margin:0;display:block">${_siEsc(r.code)} · ${_siEsc(r.cat)}</span></span></div></td><td>${_siAxPfChip(r.cls)}</td><td class="r">${r.demand==null?'—':_siEsc(_siAxNum(r.demand))}</td><td class="r">${r.cover==null?(r.onHand===0?'0':'—'):_siEsc(_siAxNum(r.cover))}</td><td class="r">${r.onHand==null?'—':r.onHand}</td><td class="r">${_siAxPfRs(r.val)}</td><td class="r">${r.units}</td></tr>`;
   return`${filters}<div class="si-ax-lab" style="margin:4px 0">${f.length} of ${pf.rows.length} articles${f.length>show.length?' (showing '+show.length+')':''}</div>${_siAxPfScatterHtml(f)}
@@ -4937,7 +5015,8 @@ function _siAxPortfolioBody(){
   return`<div class="card si-pf"><div class="card-title">Portfolio</div><p class="si-pf-read" id="si-pf-read">${_siEsc(pf.readout)}</p>${tiles}${caveat}</div>
   <div class="card si-pf"><div class="card-title">Class mix</div>${_siAxPfMixHtml(pf)}</div>
   <div class="card si-pf"><div class="card-title">Category</div>${_siAxPfCatHtml(pf)}</div>
-  <div class="card si-pf"><div class="card-title">Season</div>${_siAxPfSeasonHtml(pf)}</div>
+  <div class="card si-pf"><div class="card-title">By selling window (order month)</div>${_siAxPfSeasonHtml(pf)}</div>
+  <div class="card si-pf" id="si-pf-feed"><div class="card-title">By saved type and saved season</div>${_siAxPfFeedHtml(pf)}</div>
   <div class="card si-pf"><div class="card-title">Concentration</div>${_siAxPfConcHtml(pf)}</div>
   <div class="card si-pf"><div class="card-title">Cash tied up and stock-outs</div>${_siAxPfCashHtml(pf)}</div>
   <div class="card si-pf" id="si-pf-list"><div class="card-title">Every article: demand against cover</div>${_siAxPfListHtml(pf)}</div>
@@ -5120,12 +5199,31 @@ function _siNaSudden(a,m,today){
   return{last,base,z};
 }
 // Winter stock is not "dead" while winter is starting (15 Sept to 30 Nov): hoodies, zippers, jackets, or anything tagged season:winter.
-function _siNaWinter(a,today){
+function _siNaWinter(a,today){ // the legacy rule, kept for an article with NO saved season (and when the saved list could not be read)
   const md=String(today||'').slice(5).replace('-','');
   if(md<_SI_NA.seasonFrom||md>_SI_NA.seasonTo)return false;
   if(/hood|zip|jacket|coat|fleece|sweat/i.test(a&&a.category||''))return true;
   try{const sm=_siSeasonMap();for(const s of (a&&a.skus)||[]){if(sm[s]==='winter')return true;}}catch(_){}
   return false;
+}
+// Product-data sub-phase 3: the article's SAVED season replaces the fixed 15 Sept to 30 Nov window. The window an article is judged in:
+// winter = Oct to Feb (the Explorer's own rule, _SI_AX_WINTER_MONTHS), summer = Mar to Aug, all-season = always. Outside its window an
+// article is on a seasonal wait (Watch, never a red clear-out); inside it, it is judged like any other. 'unknown' (no saved season) and
+// 'unavailable' (the saved list could not be read) keep the legacy rule above and say so.
+const _SI_NA_SUMMER_MONTHS=[3,4,5,6,7,8];
+function _siNaInWindow(season,today){
+  if(season==='all')return true;
+  const m=+String(today||'').slice(5,7);
+  if(season==='winter')return _siAxIsWinterMonth(m);
+  if(season==='summer')return _SI_NA_SUMMER_MONTHS.indexOf(m)>=0;
+  return true;
+}
+function _siNaLegacyActive(today){const md=String(today||'').slice(5).replace('-','');return md>=_SI_NA.seasonFrom&&md<=_SI_NA.seasonTo;}
+function _siNaSeasonInfo(a,today){
+  if(_siMetaState!=='ok')return{state:'unavailable',season:null,wait:_siNaWinter(a,today),legacy:true,window:_siNaLegacyActive(today)};
+  const s=_siMetaOf(a&&a.code).season;
+  if(!s)return{state:'unknown',season:null,wait:_siNaWinter(a,today),legacy:true,window:_siNaLegacyActive(today)};
+  return{state:'saved',season:s,wait:!_siNaInWindow(s,today),legacy:false,window:false};
 }
 // Reorder size guide: demand per day x (lead time + cover target) minus what is on hand, as a range (pace +/- 25%, because returns
 // are not synced and read the pace high), rounded UP to a pack of 12. null when even the top of the range needs nothing.
@@ -5218,17 +5316,25 @@ function _siNaDetect(r,ctx){
   }
   // 6. cash: dead and overstocked stock at article level, value at SELLING price (no cost is stored)
   if(a.hasStock&&a.onHand>0){
-    const val=asp!=null?a.onHand*asp:null,winter=!!(ctx&&ctx.winter&&ctx.winter(a));
+    const val=asp!=null?a.onHand*asp:null,sinf=ctx&&ctx.season?ctx.season(a):null,winter=sinf?!!sinf.wait:!!(ctx&&ctx.winter&&ctx.winter(a));
+    const seasonMark=x=>{ // the season the verdict rests on is on the issue: saved, unknown or unavailable
+      if(!sinf)return;
+      x.n.seasonState=sinf.state;x.n.season=sinf.season;
+      if(sinf.state!=='saved'&&sinf.window){ // the legacy window is open, so the guess decides the band: say so and lower the confidence one step
+        const names=['Low','Medium','High'],lv=['low','medium','high'],i=Math.max(0,lv.indexOf(x.conf)-1);
+        x.conf=lv[i];x.n.confName=names[i];x.n.confWhy=(x.n.confWhy||[]).concat(['season '+(sinf.state==='unknown'?'unknown':'unavailable')]);
+      }
+    };
     const wk=m.cover;
     if(cls==='dead'&&a.onHand>=C.deadMinStock&&m.days>=C.deadMinAge){
       const x=mk('dead',(val!=null&&val>=C.overMinValue)?'act':'watch',{at:val,atKind:'tied up at selling price'});
-      x.n.valueTied=val;
+      x.n.valueTied=val;seasonMark(x);
       if(winter){x.band='watch';x.seasonal=true;}
       out.push(x);
     }else if(cls!=='dead'&&((cls==='slow'&&r.act&&(r.act.key==='stuck'||r.act.key==='markdown'))||(wk!=null&&wk>=C.overCoverWeeks&&val!=null&&val>=C.overMinValue))){
       const big=(wk!=null&&wk>=C.bigCoverWeeks)||(val!=null&&val>=C.bigValue);
       const x=mk('overstock',big?'act':'watch',{at:val,atKind:'tied up at selling price'});
-      x.n.valueTied=val;
+      x.n.valueTied=val;seasonMark(x);
       if(winter){x.band='watch';x.seasonal=true;}
       out.push(x);
     }
@@ -5317,7 +5423,7 @@ function _siNaBuild(rows,ctx){
 function _siNaCtx(){
   const today=_siPktDate(0);
   let rs=null;try{rs=_siAxIndex().quality.returns.synced;}catch(_){}
-  return{today,returnsSynced:rs,disc:a=>_siNaDiscount(a,today),sudden:(a,m)=>_siNaSudden(a,m,today),winter:a=>_siNaWinter(a,today),ret:(a,m)=>_siNaRet90(a,m,today),
+  return{today,returnsSynced:rs,disc:a=>_siNaDiscount(a,today),sudden:(a,m)=>_siNaSudden(a,m,today),winter:a=>_siNaWinter(a,today),season:a=>_siNaSeasonInfo(a,today),ret:(a,m)=>_siNaRet90(a,m,today),
     lost:_siHistState==='ok'?_siAxPfLostOf:null,lostDays:_SI_PF.lostDays};
 }
 // The ranked issues for the loaded data. Memoised on the index object, today and the lead-time settings (the only inputs that change without
@@ -5452,6 +5558,10 @@ function _siNaPlaybook(i){
   const confBits=[n.confName+' confidence: '+(n.confWhy&&n.confWhy[0]?n.confWhy[0]:'—')+'.'];
   if(n.confCaps&&n.confCaps.length)confBits.push('Capped at Medium because '+n.confCaps.join(' and ')+'.');
   if(i.type==='stockout'||i.type==='runout'||i.type==='sizehole'||i.type==='rising'||i.type==='saleloss'||i.type==='winner')confBits.push('Lead time: '+leadTxt+'.'+rt);
+  const sSaved=n.seasonState==='saved',sLabel=sSaved?({winter:'winter',summer:'summer',all:'all-season'})[n.season]:'';
+  const sOpens=n.season==='summer'?'March':'October';
+  if((i.type==='dead'||i.type==='overstock')&&n.seasonState&&n.seasonState!=='saved')confBits.push(n.seasonState==='unknown'?'Season unknown: nobody has saved a season for this article (Type & season), so the seasonal wait follows the 15 September to 30 November rule and the category and tags.':'Type and season unavailable: the saved list could not be read, so the seasonal wait follows the 15 September to 30 November rule and the category and tags.');
+  if((i.type==='dead'||i.type==='overstock')&&sSaved)confBits.push('Season: saved as '+sLabel+'.');
   const holesTxt=(n.holes||[]).map(h=>h.size+(h.kind==='out'?' (out)':' ('+h.stock+' left)')).join(', ');
   switch(i.type){
     case'stockout':
@@ -5476,9 +5586,9 @@ function _siNaPlaybook(i){
       avoid=['Do not reorder the whole article.','Do not read a size at 0 with low recent sales as "no demand".'];break;
     case'overstock':
       if(i.seasonal){
-        situation=R(n.onHand)+' units on hand ('+money(n.valueTied)+' at selling price): '+n.coverText+' of cover, but it is winter stock and the season is starting.';
-        why='Judging it now would be unfair: there is no winter sales history in the data yet (it starts 26 March 2026).';
-        actions=[{owner:'Raees',text:'Hold: no reorder and no re-cut.'},{owner:'Daniyal',text:'Plan winter creative and creator seeding for it now.'},{owner:'Mustafa',text:'Check it again on 15 November; if it still moves slowly, move to the markdown steps.'}];
+        situation=R(n.onHand)+' units on hand ('+money(n.valueTied)+' at selling price): '+n.coverText+' of cover, but '+(sSaved?'it is '+sLabel+' stock and outside its season.':'it is winter stock and the season is starting.');
+        why=sSaved?'Judging it now would be unfair: it is outside its saved season, so slow sales now say little.':'Judging it now would be unfair: there is no winter sales history in the data yet (it starts 26 March 2026).';
+        actions=[{owner:'Raees',text:'Hold: no reorder and no re-cut.'},{owner:'Daniyal',text:'Plan winter creative and creator seeding for it now.'},{owner:'Mustafa',text:sSaved?'Check it again when its season opens ('+sOpens+'); if it still moves slowly, move to the markdown steps.':'Check it again on 15 November; if it still moves slowly, move to the markdown steps.'}];
         avoid=['Do not mark it down before the season has had a chance.','Do not reorder.'];
       }else{
         situation=R(n.onHand)+' units on hand'+(n.valueTied!=null?' ('+money(n.valueTied)+' at selling price, cost is not recorded)':'')+': '+n.coverText+' of cover at about '+P(n.perDay)+' a day.';
@@ -5492,7 +5602,7 @@ function _siNaPlaybook(i){
     case'dead':
       situation='Nothing sold in the last '+(n.pace28Days==null?'—':n.pace28Days)+' counted days with '+R(n.onHand)+' on hand'+(n.valueTied!=null?' ('+money(n.valueTied)+' at selling price)':'')+'.';
       why='There is no demand signal at all, and the stock is not getting cheaper to hold.';
-      if(i.seasonal){actions=[{owner:'Raees',text:'Hold: no reorder.'},{owner:'Mustafa',text:'It is winter stock and winter is starting: check the listing is live and priced right, then look again on 15 November.'}];avoid=['Do not clear it yet.'];}
+      if(i.seasonal){actions=[{owner:'Raees',text:'Hold: no reorder.'},{owner:'Mustafa',text:sSaved?'It is '+sLabel+' stock and outside its season: check the listing is live and priced right, then look again when its season opens ('+sOpens+').':'It is winter stock and winter is starting: check the listing is live and priced right, then look again on 15 November.'}];avoid=['Do not clear it yet.'];}
       else{actions=[{owner:'Mustafa',text:'First check the listing is live, priced right and in its collection.'},{owner:'Mustafa',text:'Then bundle or discount it to clear.'},{owner:'Raees',text:'Do not reorder.'},{owner:'Saim',text:'Note it for design: do not re-run this style.'}];avoid=['Do not reorder.'];}
       break;
     case'rising':
@@ -5556,8 +5666,8 @@ function _siNaRowLine(i){
     case'stockout':s='Out of stock · '+(n.units28==null?'—':n.units28)+' sold in 28 days · lead time '+n.leadDays+'d ('+(n.leadSrc==='default'?'default':'set')+')';break;
     case'runout':s=n.onHand+' left · empty in about '+_siNaDays(n.coverDays)+' · lead time '+n.leadDays+'d ('+(n.leadSrc==='default'?'default':'set')+')'+(i.rising?' · demand rising':'');break;
     case'sizehole':s=(n.holes.length===1?'Size ':'Sizes ')+n.holes.map(h=>h.size).join(', ')+' '+(n.holes.some(h=>h.kind==='out')?'out':'thin')+' · '+Math.round(100*n.holes.reduce((t,h)=>t+h.share,0))+'% of 28-day sales';break;
-    case'overstock':s=(i.seasonal?'Winter stock, wait · ':'')+n.onHand+' on hand · '+n.coverText+' of cover';break;
-    case'dead':s=(i.seasonal?'Winter stock, wait · ':'')+n.onHand+' on hand · nothing sold in '+(n.pace28Days==null?'—':n.pace28Days)+' days';break;
+    case'overstock':s=(i.seasonal?(n.seasonState==='saved'?'Out of season, wait · ':'Winter stock, wait · '):'')+n.onHand+' on hand · '+n.coverText+' of cover';break;
+    case'dead':s=(i.seasonal?(n.seasonState==='saved'?'Out of season, wait · ':'Winter stock, wait · '):'')+n.onHand+' on hand · nothing sold in '+(n.pace28Days==null?'—':n.pace28Days)+' days';break;
     case'rising':s='Rising: '+n.units28+' vs '+(n.prev28==null?'—':n.prev28)+' units · '+n.onHand+' left, about '+_siNaDays(n.coverDays);break;
     case'demanddrop':s=n.sudden?'Last 7 days: '+n.sudden.last+' vs about '+Math.round(n.sudden.base)+' a week':'Last 28 days: '+n.units28+' vs '+(n.prev28==null?'—':n.prev28)+' units';break;
     case'saleloss':{const S=n.sales||{};s='Est. '+(S.lo===S.hi?'~'+S.lo:S.lo+'–'+S.hi)+' units lost over '+S.days+' days out'+(S.ongoing?' · out now':'')+' · estimate';break;}

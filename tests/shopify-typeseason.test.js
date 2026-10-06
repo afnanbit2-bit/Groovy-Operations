@@ -154,7 +154,7 @@ async function checks(src,rules){
   o['while the list is still being read, the section says so and shows no number']=(()=>{R('_siMetaState="loading";');const h=body();R('_siMetaState="ok";');return/Reading the saved types/.test(h)&&!/\d+%/.test(h);})();
   // ── rules text ──
   o['rules: the block is unchanged in its writes — signedIn(), updatedBy bound to the caller, no delete']=/allow create, update: if signedIn\(\)/.test(blk)&&/updatedBy == userEmail\(\)\.split\('@'\)\[0\]/.test(blk)&&/allow delete: if false;/.test(blk);
-  o['the Explorer filter, Portfolio and Needs Attention do not read type or season yet (sub-phase 3): no _siMetaOf outside this block']=(()=>{const rest=src.replace(/\/\/ ═══ Type & season[\s\S]*?window\._siTsSet=function[\s\S]*?\n};\n/,'');return!/_siMetaOf\(/.test(rest);})();
+  o['sub-phase 3 now reads the saved values, only through _siMetaOf (the Explorer filter, the Portfolio rollups, Needs Attention): the readers exist']=(()=>{const rest=src.replace(/\/\/ ═══ Type & season\n[\s\S]*?window\._siTsSet=function[\s\S]*?\n};\n/,'');return /_siFdBucket\(code,field\)\{return _siMetaOf\(code\)\[field\]/.test(src)&&/_siMetaOf\(a&&a\.code\)\.season/.test(src)&&/metaOf:_siFeedOk\(\)\?_siMetaOf:null/.test(src)&&rest.length>0;})();
   return o;
 }
 module.exports=async function(){
