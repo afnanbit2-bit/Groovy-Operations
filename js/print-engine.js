@@ -99,6 +99,9 @@ const PRINT_LAYOUT_LANDSCAPE = {
 const _PRINT_DOC_LABELS = {
   'po': 'Production Order',
   'embroidery-vendor': 'Embroidery Vendor Sheet',
+  'embroidery-job': 'Embroidery Job',
+  'printing-job': 'Printing Job',
+  'washing-job': 'Washing Job',
   'sublimation-vendor': 'Sublimation Vendor Sheet',
   'gate-pass': 'Gate Pass',
   'placement-sheet': 'Placement Sheet',
@@ -135,8 +138,11 @@ const _PRINT_URDU_DEFAULTS = {
   'daily-performance': 'minimal',
   'stock-transfer': 'minimal',
   'mood-board': 'minimal',
-  'po': 'full',
+  'po': 'minimal',   // the Urdu font draws blank space (see Fonts); the PO draws no Urdu
   'embroidery-vendor': 'full',
+  'embroidery-job': 'minimal',   // English only, like the PO
+  'printing-job': 'minimal',
+  'washing-job': 'minimal',   // Urdu comes as caller-rasterised pictures, never as jsPDF text
   'sublimation-vendor': 'full',
   'qc-report': 'full',
   'placement-sheet': 'full',
@@ -451,19 +457,48 @@ function _renderHeader(doc, o) {
   let top = P.marginTop;
 
   _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.hero, PRINT_COLORS.black);
-  doc.text('GROOVY', L, top + 16);
+  if (o.boldMark) {
+    // PO only: AptosDisplay-Bold is the heaviest real face, so thicken the
+    // wordmark with a stroke in the text colour (fill + stroke text).
+    const bk = _pc(PRINT_COLORS.black);
+    doc.setDrawColor(bk[0], bk[1], bk[2]);
+    doc.setLineWidth(1);
+    doc.text('GROOVY', L, top + 16, { renderingMode: 'fillThenStroke' });
+  } else {
+    doc.text('GROOVY', L, top + 16);
+  }
 
   if (o.documentNumber) {
-    _setFont(doc, PRINT_FONTS.display, 'bold', 16, PRINT_COLORS.black);
-    doc.text(String(o.documentNumber), R, top + 14, { align: 'right' });
+    // o.numberSize (the PO only) enlarges the number; unset = the old 16pt.
+    const numSize = o.numberSize || 16;
+    _setFont(doc, PRINT_FONTS.display, 'bold', numSize, PRINT_COLORS.black);
+    doc.text(String(o.documentNumber), R, top + (o.numberSize ? numSize * 0.85 : 14), { align: 'right' });
   }
 
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.greyAccent);
   doc.text(String(o.documentType || 'Document'), L, top + 32);
 
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
-  const created = 'Created: ' + (o.issuedDate || '—') + ' by ' + (o.issuedBy || '—');
-  doc.text(created, R, top + 30, { align: 'right' });
+  if (o.startDateLabel) {
+    // PO only: START DATE top-middle in red; no date yet = a line to write on.
+    const lab = o.startDateLabel + ':  ';
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.red);
+    const labW = doc.getTextWidth(lab);
+    const val = o.startDate ? String(o.startDate) : '';
+    const valW = val ? doc.getTextWidth(val) : 96;
+    const sx = (L + R) / 2 - (labW + valW) / 2;
+    doc.text(lab, sx, top + 30);
+    if (val) doc.text(val, sx + labW, top + 30);
+    else {
+      const rc = _pc(PRINT_COLORS.red);
+      doc.setDrawColor(rc[0], rc[1], rc[2]);
+      doc.setLineWidth(0.8);
+      doc.line(sx + labW, top + 31.5, sx + labW + valW, top + 31.5);
+    }
+  } else {
+    const created = 'Created: ' + (o.issuedDate || '—') + ' by ' + (o.issuedBy || '—');
+    doc.text(created, R, top + 30, { align: 'right' });
+  }
 
   const ruleY = top + 38 + 6; // 6pt spacing above the rule
   const c = _pc(PRINT_COLORS.greyLine);
@@ -1655,288 +1690,636 @@ function _renderMoodBoard(doc, data) {
 }
 
 /* ── Production Order variant ──────────────────────────────────────────────
-   Full manufacturing traveler / routing sheet matching the "Production Order
-   2.0" reference: header + "Department: Manufacturing", an order-info block
-   with the product photo on the right, then the signed per-station size grids
-   (Cutting + Bundling, Printing & Emb QC, Bundling Before Stitching,
-   Stitching, Washing). The quantity/bundle cells are intentionally left blank
-   for hand-entry on the floor; only the order header is pre-filled. Bilingual
-   (urduLevel defaults to 'full'). Composes the shared _render* components and
-   two local table closures. */
+   Manufacturing traveler / routing sheet: header (START DATE top-middle in
+   red, large PO number), an order-info block with the product photo on the
+   right, then the per-station size grids (Cutting + Bundling, Printing,
+   Embroidery & QC, Bundling Before Stitching, Stitching, Washing).
+   Quantity / bundle cells are left blank for pen entry on the floor.
+
+   HARD LAYOUT RULES (tested in tests/po-print.test.js):
+   - the main sheet is at most TWO A4 pages;
+   - a station block (band, dates, table, total row, sign-off lines) is never
+     split across a page break — each block is laid out as one unit;
+   - red is kept for what matters most (START DATE, station bands and their
+     START/END DATE, TOTAL rows, Total Quantity / Ratio / Weight / Average
+     boxes); every ordinary table line is a dark neutral at double the old
+     width. The printout prints no Notes and no "Grand Total Quantity
+     Processed" (2 Oct 2026, reversal).
+   Both follow from how it is built: every part is a block with a measured
+   height, a planner tries four densities (comfortable → compact) and takes
+   the first whose simulated page flow fits two pages, then draws exactly
+   that plan. The Urdu parts are NOT drawn on this sheet: the Urdu font draws
+   them as blank space (see "Fonts"), so 'po' defaults to urduLevel 'minimal'
+   and this renderer carries no Urdu strings. */
+const _PO_SIZE_ROWS = ['Small', 'Medium', 'Large', 'X-Large'];   // shared by the PO tables and the job copies
+const _PO_STATIONS = {
+  // ONE place for the station titles and the name printed under each.
+  cutting:   { title: 'Cutting + Bundling',        owner: 'Department Manager: Kashif Bhai' },
+  qc:        { title: 'Printing, Embroidery & QC', owner: 'Shameer' },
+  bundling:  { title: 'Bundling Before Stitching', owner: '' },   // no name, by instruction
+  stitching: { title: 'Stitching',                 owner: 'Waqas' },
+  washing:   { title: 'Washing Department',        owner: 'Abbas' }
+};
+const _PO_DENSITIES = [
+  { rowH: 22, hdrH: 26, gap: 10, kvMin: 26, imgH: 240, remH: 18, signH: 28 },
+  { rowH: 20, hdrH: 24, gap: 8,  kvMin: 24, imgH: 215, remH: 16, signH: 26 },
+  { rowH: 18, hdrH: 22, gap: 6,  kvMin: 22, imgH: 190, remH: 15, signH: 24 },
+  { rowH: 16, hdrH: 20, gap: 4,  kvMin: 20, imgH: 160, remH: 14, signH: 22 }
+];
+
+/* Sizes row of the PO: each size with its quantity and ratio, e.g.
+   S 100(1)  M 200(2). Returns null (print the plain sizes string) when the
+   ratio is missing or does not give one number per size; otherwise one token
+   per size = [{t,red}] parts. The quantity (totalQty * ratio / sum) is shown
+   only when every quantity is a whole number summing to totalQty. */
+function _poSizeTokens(sizes, ratio, totalQty) {
+  const sz = String(sizes == null ? '' : sizes).split(/[-,\/\s]+/).filter(Boolean);
+  const rt = String(ratio == null ? '' : ratio).split(/[:\-,\/\s]+/).filter(Boolean).map(Number);
+  if (!sz.length || sz.length !== rt.length) return null;
+  if (!rt.every(function (n) { return isFinite(n) && n >= 0; })) return null;
+  const sum = rt.reduce(function (a, n) { return a + n; }, 0);
+  if (!(sum > 0)) return null;
+  const tot = Number(String(totalQty == null ? '' : totalQty).replace(/,/g, ''));
+  let q = null;
+  if (isFinite(tot) && tot > 0 && Math.floor(tot) === tot) {
+    const cand = rt.map(function (n) { return tot * n / sum; });
+    if (cand.every(function (v) { return Math.abs(v - Math.round(v)) < 1e-9; }) &&
+        cand.reduce(function (a, v) { return a + Math.round(v); }, 0) === tot) q = cand.map(Math.round);
+  }
+  return sz.map(function (label, i) {
+    return [{ t: q ? label + ' ' + q[i] : label, red: false }, { t: '(' + rt[i] + ')', red: true }];
+  });
+}
+
 function _renderPO(doc, data) {
   data = data || {};
   const L = PRINT_LAYOUT.marginLeft;
   const W = PRINT_LAYOUT.contentWidth;
   const R = L + W;
   const sess = (typeof session !== 'undefined' && session) ? session : null;
-  const line = _pc(PRINT_COLORS.greyLine);
-  const shade = _pc(PRINT_COLORS.greyShade);
-  const shadeL = _pc(PRINT_COLORS.greyShadeLight);
+  const RED = _pc(PRINT_COLORS.red);
+  const shade = _pc('#E6E6E6');
+  const shadeL = _pc(PRINT_COLORS.greyShade);
   const maxY = PRINT_LAYOUT.pageHeight - PRINT_LAYOUT.marginBottom - 22;
-  const SIZE_ROWS = ['Small', 'Medium', 'Large', 'X-Large'];
+  const SIZE_ROWS = _PO_SIZE_ROWS;
+  const LW = 0.8, LW_ROW = 0.6, LW_BOX = 1.5;   // table lines: double the old 0.4 / 0.3
+  const DARK = _pc('#262626');                   // ordinary table lines (red is for the key items only)
+  const darkLine = function (w) { doc.setDrawColor(DARK[0], DARK[1], DARK[2]); doc.setLineWidth(w); };
 
-  const need = function (h) {
-    if ((doc.__groovyY || PRINT_LAYOUT.marginTop) + h > maxY) {
-      doc.addPage();
-      doc.__groovyY = PRINT_LAYOUT.marginTop;
-    }
-    return doc.__groovyY;
+  const redLine = function (w) { doc.setDrawColor(RED[0], RED[1], RED[2]); doc.setLineWidth(w); };
+  const greyLine = function (w) { const g = _pc(PRINT_COLORS.greyAccent); doc.setDrawColor(g[0], g[1], g[2]); doc.setLineWidth(w); };
+  const fill = function (c) { doc.setFillColor(c[0], c[1], c[2]); };
+  const wrap = function (txt, w, fs, style) {
+    _setFont(doc, PRINT_FONTS.bodyRegular, style || 'normal', fs, PRINT_COLORS.text);
+    return doc.splitTextToSize(String(txt == null ? '' : txt), w);
   };
 
-  // Generic bordered table: cols=[{title,ur,w}], rows=array of cell arrays
-  // (null/'' → blank cell). o.shadeFirst shades+bolds the first column.
-  const tableGrid = function (cols, rows, o) {
-    o = o || {};
-    const hdrH = o.hdrH || 26, rowH = o.rowH || 20;
-    const totalW = cols.reduce(function (s, c) { return s + c.w; }, 0);
-    const drawHdr = function () {
-      const yy = doc.__groovyY;
-      doc.setFillColor(shade[0], shade[1], shade[2]);
-      doc.rect(L, yy, totalW, hdrH, 'F');
-      let cx = L;
-      cols.forEach(function (c) {
-        doc.setDrawColor(line[0], line[1], line[2]);
-        doc.setLineWidth(0.4);
-        doc.rect(cx, yy, c.w, hdrH, 'S');
-        const bilingual = c.ur && _urduOn(doc);
-        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
-        doc.text(String(c.title || ''), cx + 5, yy + (bilingual ? 11 : hdrH / 2 + 3), { maxWidth: c.w - 8 });
-        if (bilingual) {
-          _setFont(doc, PRINT_FONTS.urdu, 'normal', 9, PRINT_COLORS.greyAccent);
-          doc.text(String(c.ur), cx + 5, yy + 22, { maxWidth: c.w - 8 });
-        }
-        cx += c.w;
-      });
-      doc.__groovyY = yy + hdrH;
-    };
-    need(hdrH + rowH);
-    drawHdr();
-    rows.forEach(function (r) {
-      if (doc.__groovyY + rowH > maxY) {
-        doc.addPage();
-        doc.__groovyY = PRINT_LAYOUT.marginTop;
-        drawHdr();
-      }
-      const yy = doc.__groovyY;
-      let cx = L;
-      cols.forEach(function (c, i) {
-        if (o.shadeFirst && i === 0) {
-          doc.setFillColor(shadeL[0], shadeL[1], shadeL[2]);
-          doc.rect(cx, yy, c.w, rowH, 'F');
-        }
-        doc.setDrawColor(line[0], line[1], line[2]);
-        doc.setLineWidth(0.3);
-        doc.rect(cx, yy, c.w, rowH, 'S');
-        const v = r ? r[i] : '';
-        if (v != null && v !== '') {
-          _setFont(doc, PRINT_FONTS.bodyRegular, (o.shadeFirst && i === 0) ? 'bold' : 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
-          doc.text(String(v), cx + 5, yy + rowH / 2 + 3.5, { maxWidth: c.w - 8 });
-        }
-        cx += c.w;
-      });
-      doc.__groovyY = yy + rowH;
-    });
-  };
-
-  // "Grand Total Quantity Processed ______" line (bilingual).
-  const grandTotalLine = function () {
-    need(28);
-    const yy = doc.__groovyY + 16;
-    const en = 'Grand Total Quantity Processed';
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
-    doc.text(en, L, yy);
-    let gx = L + doc.getTextWidth(en) + 4;
-    if (_urduOn(doc)) {
-      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.urduBody, PRINT_COLORS.greyAccent);
-      doc.text('مقدار مکمل کی گئی', gx, yy);
-    }
-    doc.setDrawColor(line[0], line[1], line[2]);
-    doc.setLineWidth(0.5);
-    doc.line(R - 120, yy + 2, R, yy + 2);
-    doc.__groovyY = yy + 4;
-  };
-
-  // "Signature (دستخط) : ______   With Name: ______" line.
-  const signWithName = function (owner) {
-    need(28);
-    const yy = doc.__groovyY + 18;
-    let x = L;
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-    doc.text('Signature', x, yy); x += doc.getTextWidth('Signature');
-    if (_urduOn(doc)) {
-      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-      doc.text(' (دستخط)', x, yy); x += doc.getTextWidth(' (دستخط)');
-    }
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-    const s = ': ________________';
-    doc.text(s, x, yy); x += doc.getTextWidth(s) + 20;
-    doc.text('With Name: ' + (owner ? owner : '________________'), x, yy);
-    doc.__groovyY = yy + 4;
-  };
-
-  // A label followed by two blank ruled lines (used for Remarks / Defects).
-  const remarksLine = function (en, ur) {
-    need(42);
-    let yy = doc.__groovyY + 18;
-    let x = L;
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-    doc.text(en, x, yy); x += doc.getTextWidth(en);
-    if (ur && _urduOn(doc)) {
-      _setFont(doc, PRINT_FONTS.urdu, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
-      doc.text(' (' + ur + ')', x, yy); x += doc.getTextWidth(' (' + ur + ')');
-    }
-    doc.setDrawColor(line[0], line[1], line[2]);
-    doc.setLineWidth(0.5);
-    doc.line(x + 8, yy + 2, R, yy + 2);
-    yy += 18;
-    doc.line(L, yy + 2, R, yy + 2);
-    doc.__groovyY = yy + 4;
-  };
-
-  // 1) HEADER + department line
+  // 1) HEADER — big PO number top right, START DATE top-middle in red.
   _renderHeader(doc, {
     documentType: 'Production Order',
     documentNumber: data.documentNumber || data.id || '',
-    issuedDate: data.issuedDate || new Date().toLocaleDateString('en-GB'),
-    issuedBy: data.issuedBy || (sess && sess.name) || '—'
+    numberSize: 26,
+    boldMark: true,
+    startDateLabel: 'START DATE',
+    startDate: data.startDate || ''
   });
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
-  doc.text('Department: Manufacturing', L, doc.__groovyY + 4);
+  doc.text('Department: Manufacturing', L, doc.__groovyY + 8);
+  const y0 = doc.__groovyY + 16;
 
-  // 2) ORDER INFO BLOCK (label/value grid on the left, product photo right)
+  // ── blocks: {h, draw(y)} ────────────────────────────────────────────────
+
+  // ORDER INFO: label/value grid (cells grow to fit their text) + photo.
+  const infoBlock = function (d) {
+    const im = (data.__productImg && data.__productImg.dataUrl) ? data.__productImg : null;
+    const imgW = 200, imgGap = 12;
+    const gridW = im ? (W - imgW - imgGap) : W;
+    const halfW = gridW / 2;
+    const ratio = data.ratio || '';
+    const cell = function (label, value, o) { return Object.assign({ label: label, value: value == null ? '' : String(value) }, o || {}); };
+    const rows = [
+      [cell('PO Number', data.poNumber || data.id), cell('Issued By', data.issuedBy)],
+      [cell('Pattern # / Name', data.pattern)],
+      [cell('Article Name', data.articleName)],
+      [cell('Article Code', data.articleCode), cell('Fabric Code', data.fabricCode)],
+      [cell('Fabric Name', data.fabricName)],
+      [cell('Sizes', data.sizes, { sizesRatio: ratio })],
+      [cell('Total Quantity', data.totalQty, { red: true, box: true }), cell('Ratio', ratio, { red: true, box: true })],
+      [cell('Total Weight / Mtr', data.totalWeight, { red: true, box: true }), cell('Average Per Unit', data.avgPerUnit, { red: true, box: true })]
+    ];
+    // lay out every cell: wrapped label + value lines at the largest font that fits
+    rows.forEach(function (row) {
+      const w = row.length === 1 ? gridW : halfW;
+      const labW = 70;   // one label width for every cell, so the columns line up
+      const valW = w - labW - 8;
+      row.forEach(function (c) {
+        c.w = w; c.labW = labW;
+        c.labLines = wrap(c.label, labW - 6, 8, 'bold');
+        let fs = 10, lines = wrap(c.value, valW, fs, c.red ? 'bold' : 'normal');
+        [9, 8, 7.5].forEach(function (f) {
+          if (lines.length > 2) { fs = f; lines = wrap(c.value, valW, fs, c.red ? 'bold' : 'normal'); }
+        });
+        c.segs = lines.map(function (t) { return [{ t: t, red: !!c.red }]; });
+        if (c.sizesRatio !== undefined) {
+          const tk = _poSizeTokens(data.sizes, c.sizesRatio, data.totalQty);
+          if (tk) {
+            // each size is one unbreakable token: label (+ quantity) in body ink, "(n)" in red
+            for (let k = 0; k < 4; k++) {
+              fs = [10, 9, 8, 7.5][k];
+              const sepW = (_setFont(doc, PRINT_FONTS.bodyRegular, 'normal', fs, PRINT_COLORS.text), doc.getTextWidth('  '));
+              const wid = function (sg) { _setFont(doc, PRINT_FONTS.bodyRegular, sg.red ? 'bold' : 'normal', fs, PRINT_COLORS.text); return doc.getTextWidth(sg.t); };
+              const out = [[]]; let used = 0;
+              tk.forEach(function (parts) {
+                const tw = parts.reduce(function (a, sg) { return a + wid(sg); }, 0);
+                let cur = out[out.length - 1];
+                if (cur.length && used + sepW + tw > valW) { cur = []; out.push(cur); used = 0; }
+                if (cur.length) { cur.push({ t: '  ', red: false }); used += sepW; }
+                parts.forEach(function (sg) { cur.push({ t: sg.t, red: sg.red }); });
+                used += tw;
+              });
+              c.segs = out;
+              if (out.length <= 2) break;
+            }
+          }
+        }
+        c.fs = fs;
+        c.h = Math.max(d.kvMin, c.segs.length * fs * 1.2 + 8, c.labLines.length * 9.6 + 8);
+      });
+      row.h = Math.max.apply(null, row.map(function (c) { return c.h; }));
+    });
+    const gridH = rows.reduce(function (s, r) { return s + r.h; }, 0);
+    const boxH = im ? Math.max(gridH, d.imgH) : gridH;
+    const extra = (boxH - gridH) / rows.length;   // stretch rows to the photo's height
+    return {
+      h: 14 + boxH,
+      draw: function (y) {
+        let gy = y + 14;
+        rows.forEach(function (row) {
+          const rh = row.h + extra;
+          let cx = L;
+          row.forEach(function (c) {
+            fill(shadeL); darkLine(LW_ROW);
+            doc.rect(cx, gy, c.labW, rh, 'FD');
+            doc.rect(cx + c.labW, gy, c.w - c.labW, rh, 'S');
+            if (c.box) { redLine(LW_BOX); doc.rect(cx + c.labW, gy, c.w - c.labW, rh, 'S'); }
+            _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text);
+            const lt = gy + (rh - c.labLines.length * 9.6) / 2;
+            c.labLines.forEach(function (ln, i) { doc.text(ln, cx + 4, lt + 8 + i * 9.6); });
+            const lh = c.fs * 1.2;
+            const vt = gy + (rh - c.segs.length * lh) / 2;
+            c.segs.forEach(function (line, i) {
+              let tx = cx + c.labW + 4;
+              line.forEach(function (sg) {
+                _setFont(doc, PRINT_FONTS.bodyRegular, (sg.red || sg.bold) ? 'bold' : 'normal', c.fs, sg.red ? PRINT_COLORS.red : PRINT_COLORS.text);
+                doc.text(sg.t, tx, vt + c.fs * 0.9 + i * lh);
+                tx += doc.getTextWidth(sg.t);
+              });
+            });
+            cx += c.w;
+          });
+          gy += rh;
+        });
+        if (im) {
+          const ix = L + gridW + imgGap;
+          darkLine(LW_ROW);
+          doc.rect(ix, y + 14, imgW, boxH, 'S');
+          const pad = 3;
+          const ar = (im.w && im.h) ? (im.w / im.h) : 0.75;
+          let dw = imgW - 2 * pad, dh = dw / ar;
+          if (dh > boxH - 2 * pad) { dh = boxH - 2 * pad; dw = dh * ar; }
+          try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ix + (imgW - dw) / 2, y + 14 + (boxH - dh) / 2, dw, dh); } catch (e) { /* skip */ }
+        }
+      }
+    };
+  };
+
+  // One station: gap, titled band (manager left, START / END DATE to be
+  // written by pen on the right), the table with its boxed TOTAL row, then
+  // the sign-off lines. Everything is ONE block, so it is never split.
+  const stationBlock = function (key, cols, sumCols, extras, d) {
+    const st = _PO_STATIONS[key];
+    const bandH = 38;
+    const rowsN = cols.rows || SIZE_ROWS.length;
+    const bodyH = d.hdrH + rowsN * d.rowH + (d.rowH + 2);
+    let h = d.gap + bandH + 4 + bodyH;
+    const ops = [];
+    extras.forEach(function (x) {
+      const eh = x === 'remarks' ? 14 + d.remH + 6 : d.signH;
+      ops.push({ kind: x, h: eh });
+      h += eh;
+    });
+    return {
+      h: h,
+      draw: function (y) {
+        let yy = y + d.gap;
+        // band
+        fill(shadeL); redLine(LW);
+        doc.rect(L, yy, W, bandH, 'FD');
+        _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.subsectionTitle, PRINT_COLORS.text);
+        doc.text(st.title.toUpperCase(), L + 8, yy + 16);
+        if (st.owner) {
+          _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+          doc.text(st.owner, L + 8, yy + 30);
+        }
+        // START DATE / END DATE — red, written by pen (SLA measurement)
+        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.red);
+        const lineLen = 74, g = 14;
+        const endW = doc.getTextWidth('END DATE'), startW = doc.getTextWidth('START DATE');
+        const endLx1 = R - 8, endLx0 = endLx1 - lineLen;
+        const startLx1 = endLx0 - 4 - endW - g, startLx0 = startLx1 - lineLen;
+        doc.text('END DATE', endLx0 - 4 - endW, yy + 25);
+        doc.text('START DATE', startLx0 - 4 - startW, yy + 25);
+        redLine(LW);
+        doc.line(endLx0, yy + 26.5, endLx1, yy + 26.5);
+        doc.line(startLx0, yy + 26.5, startLx1, yy + 26.5);
+        yy += bandH + 4;
+        // table
+        const totalW = cols.reduce(function (s, c) { return s + c.w; }, 0);
+        fill(shade); darkLine(LW);
+        doc.rect(L, yy, totalW, d.hdrH, 'FD');
+        let cx = L;
+        cols.forEach(function (c) {
+          darkLine(LW);
+          doc.rect(cx, yy, c.w, d.hdrH, 'S');
+          _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
+          doc.text(String(c.title || ''), cx + 5, yy + d.hdrH / 2 + 3, { maxWidth: c.w - 8 });
+          cx += c.w;
+        });
+        yy += d.hdrH;
+        const body = cols.rowLabels || [];
+        for (let r = 0; r < rowsN; r++) {
+          cx = L;
+          cols.forEach(function (c, i) {
+            if (cols.shadeFirst && i === 0) { fill(shadeL); doc.rect(cx, yy, c.w, d.rowH, 'F'); }
+            darkLine(LW_ROW);
+            doc.rect(cx, yy, c.w, d.rowH, 'S');
+            if (i === 0 && body[r]) {
+              _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+              doc.text(String(body[r]), cx + 5, yy + d.rowH / 2 + 3.5, { maxWidth: c.w - 8 });
+            }
+            cx += c.w;
+          });
+          yy += d.rowH;
+        }
+        // TOTAL row — columns nobody sums are shaded out, the whole row boxed
+        const th = d.rowH + 2;
+        cx = L;
+        cols.forEach(function (c, i) {
+          if (i > 0 && sumCols.indexOf(i) < 0) { fill(shade); doc.rect(cx, yy, c.w, th, 'F'); }
+          redLine(LW_ROW);
+          doc.rect(cx, yy, c.w, th, 'S');
+          cx += c.w;
+        });
+        _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.text);
+        doc.text('TOTAL', L + 5, yy + th / 2 + 4);
+        redLine(LW_BOX);
+        doc.rect(L, yy, totalW, th, 'S');
+        yy += th;
+        // sign-off lines
+        ops.forEach(function (x) {
+          if (x.kind === 'sign') {
+            _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+            let x0 = L;
+            doc.text('Signature', x0, yy + 18); x0 += doc.getTextWidth('Signature');
+            const s = ': ________________';
+            doc.text(s, x0, yy + 18); x0 += doc.getTextWidth(s) + 20;
+            doc.text('With Name: ________________', x0, yy + 18);
+          } else if (x.kind === 'remarks') {
+            const lab = (key === 'qc') ? 'Remarks' : 'Defects / Remarks';
+            _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.body, PRINT_COLORS.text);
+            doc.text(lab, L, yy + 14);
+            greyLine(0.6);
+            doc.line(L + doc.getTextWidth(lab) + 8, yy + 16, R, yy + 16);
+            doc.line(L, yy + 16 + d.remH, R, yy + 16 + d.remH);
+          }
+          yy += x.h;
+        });
+      }
+    };
+  };
+
+  const cols3 = function () {
+    const c = [{ title: 'Size', w: 100 }, { title: 'Bundles', w: 270 }, { title: 'Total', w: 153 }];
+    c.shadeFirst = true; c.rowLabels = SIZE_ROWS;
+    return c;
+  };
+  const colsQc = function () {
+    const c = [{ title: 'Size', w: 100 }, { title: 'Total Passed', w: 130 },
+               { title: 'QA Not Passed But Forwarded', w: 173 }, { title: 'Rejected', w: 120 }];
+    c.shadeFirst = true; c.rowLabels = SIZE_ROWS;
+    return c;
+  };
+  const colsStitch = function () {
+    const c = [{ title: 'Date', w: 73 }, { title: 'Size + Bundle', w: 209 },
+               { title: 'OFFLINE', w: 146 }, { title: 'Total', w: 95 }];   // ~14 / 40 / 28 / 18 %
+    c.rows = 4;
+    return c;
+  };
+  const colsWash = function () {
+    const c = [{ title: 'Date Out', w: 131 }, { title: 'PCs / Kgs', w: 130 },
+               { title: 'Date Received', w: 132 }, { title: 'PCs / Kgs', w: 130 }];
+    c.rows = 3;
+    return c;
+  };
+
+  const build = function (d) {
+    const blocks = [infoBlock(d)];
+    blocks.push(stationBlock('cutting', cols3(), [1, 2], ['sign'], d));
+    blocks.push(stationBlock('qc', colsQc(), [1, 2, 3], ['remarks'], d));
+    blocks.push(stationBlock('bundling', cols3(), [1, 2], ['sign'], d));
+    blocks.push(stationBlock('stitching', colsStitch(), [2, 3], ['sign', 'remarks'], d));
+    blocks.push(stationBlock('washing', colsWash(), [1, 3], ['remarks', 'sign'], d));
+    return blocks;
+  };
+  const pagesFor = function (blocks) {
+    let y = y0, p = 1;
+    blocks.forEach(function (b) {
+      if (y + b.h > maxY) { p++; y = PRINT_LAYOUT.marginTop; }
+      y += b.h;
+    });
+    return p;
+  };
+
+  // Plan: the most comfortable density whose page flow fits two pages.
+  let plan = null, last = null;
+  for (let i = 0; i < _PO_DENSITIES.length; i++) {
+    last = build(_PO_DENSITIES[i]);
+    if (pagesFor(last) <= 2) { plan = last; break; }
+  }
+  if (!plan) {
+    console.warn('[print-engine] po: does not fit two pages even at the tightest density');
+    plan = last;
+  }
+  let y = y0;
+  plan.forEach(function (b) {
+    if (y + b.h > maxY) { doc.addPage(); y = PRINT_LAYOUT.marginTop; }
+    b.draw(y);
+    y += b.h;
+    doc.__groovyY = y;
+  });
+}
+
+/* ── Embroidery job copy (step 1 of 3 job copies; printing and washing follow) ──
+   Its own single A4 page, OUTSIDE the PO's two-page limit. Typed: PO number
+   (big, top right, as on the PO), article code (big, in the title band),
+   article name, product photo. Handwritten: START DATE (header, red), candle /
+   shade codes, placement, date handed over, actual cut quantity by size with
+   a boxed red TOTAL row, END DATE (red). A square 8 x 8 cm box is left for a
+   fabric sample to be stapled. Same fonts, line widths and colours as
+   _renderPO; red only for the dates, the TOTAL row and the title band. */
+const _JOB_SAMPLE_PT = 8 * 72 / 2.54;   // 8 cm in points
+/* Shared by the job copies (embroidery, printing; washing will follow): the
+   drawing helpers, the header + title band, the product photo, the Size | Qty
+   table and the END DATE line, so the copies cannot drift apart. */
+function _jobKit(doc) {
+  const RED = _pc(PRINT_COLORS.red), DARK = _pc('#262626');
+  const k = { L: PRINT_LAYOUT.marginLeft, W: PRINT_LAYOUT.contentWidth, RED: RED,
+    shade: _pc('#E6E6E6'), shadeL: _pc(PRINT_COLORS.greyShade), DARK: DARK,
+    LW: 0.8, LW_ROW: 0.6, LW_BOX: 1.5 };
+  k.R = k.L + k.W;
+  k.dark = function (w) { doc.setDrawColor(DARK[0], DARK[1], DARK[2]); doc.setLineWidth(w); };
+  k.red = function (w) { doc.setDrawColor(RED[0], RED[1], RED[2]); doc.setLineWidth(w); };
+  k.fill = function (c) { doc.setFillColor(c[0], c[1], c[2]); };
+  k.label = function (t, x, y) { _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text); doc.text(t, x, y); };
+  return k;
+}
+/* Header (bold GROOVY, PO number 26pt top right, red START DATE) and the
+   red-bordered title band with the article code. Returns the y below it. */
+function _jobTop(doc, k, data, documentType, title) {
+  _renderHeader(doc, {
+    documentType: documentType,
+    documentNumber: data.poNumber || data.documentNumber || data.id || '',
+    numberSize: 26,
+    boldMark: true,
+    // START DATE on EVERY job copy is handwritten: never pass a date here, whatever
+    // data.startDate holds.
+    startDateLabel: 'START DATE'
+  });
+  const y = doc.__groovyY + 8;
+  const bandH = 46;
+  k.fill(k.shadeL); k.red(k.LW);
+  doc.rect(k.L, y, k.W, bandH, 'FD');
+  _setFont(doc, PRINT_FONTS.display, 'bold', 20, PRINT_COLORS.text);
+  doc.text(title, k.L + 10, y + 29);
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text);
+  doc.text('ARTICLE CODE', k.R - 10, y + 12, { align: 'right' });
+  _setFont(doc, PRINT_FONTS.display, 'bold', 26, PRINT_COLORS.text);
+  doc.text(String(data.articleCode || ''), k.R - 10, y + 38, { align: 'right' });
+  return y + bandH + 10;
+}
+/* The "Article Name" row (two lines at most). Returns the y below it. */
+function _jobNameRow(doc, k, data, y, colW) {
+  k.fill(k.shadeL); k.dark(k.LW_ROW);
+  doc.rect(k.L, y, 70, 40, 'FD'); doc.rect(k.L + 70, y, colW - 70, 40, 'S');
+  k.label('Article Name', k.L + 4, y + 24);
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 11, PRINT_COLORS.text);
+  doc.splitTextToSize(String(data.articleName || ''), colW - 70 - 10).slice(0, 2)
+    .forEach(function (ln, i) { doc.text(ln, k.L + 74, y + 17 + i * 14); });
+  return y + 40 + 12;
+}
+/* A boxed handwriting area with n ruled lines; returns the y below it. */
+function _jobWriteBox(doc, k, y, w, title, n, lineH) {
+  const h = 16 + n * lineH + 4;
+  k.dark(k.LW_ROW); doc.rect(k.L, y, w, h, 'S');
+  k.label(title, k.L + 4, y + 11);
+  k.dark(k.LW_ROW);
+  for (let i = 1; i <= n; i++) doc.line(k.L + 6, y + 16 + i * lineH, k.L + w - 6, y + 16 + i * lineH);
+  return y + h + 12;
+}
+/* The product photo in its frame (right column). */
+function _jobPhoto(doc, k, data, ix, top, imgW, bodyH) {
   const im = (data.__productImg && data.__productImg.dataUrl) ? data.__productImg : null;
-  const imgW = 150, imgGap = 14;
-  const gridW = im ? (W - imgW - imgGap) : W;
-  const gy0 = (doc.__groovyY || PRINT_LAYOUT.marginTop) + 14;
-  let gy = gy0;
-  const cellH = 22;
-
-  const drawKV = function (x, w, label, value) {
-    const labW = Math.min(84, w * 0.42);
-    doc.setFillColor(shadeL[0], shadeL[1], shadeL[2]);
-    doc.rect(x, gy, labW, cellH, 'F');
-    doc.setDrawColor(line[0], line[1], line[2]);
-    doc.setLineWidth(0.3);
-    doc.rect(x, gy, labW, cellH, 'S');
-    doc.rect(x + labW, gy, w - labW, cellH, 'S');
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 8, PRINT_COLORS.text);
-    doc.text(String(label), x + 4, gy + cellH / 2 + 3, { maxWidth: labW - 6 });
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
-    doc.text(String(value == null ? '' : value), x + labW + 4, gy + cellH / 2 + 3, { maxWidth: w - labW - 8 });
-  };
-  const halfW = gridW / 2;
-  const kvRow = function (l1, v1, l2, v2) {
-    drawKV(L, halfW, l1, v1);
-    if (l2 != null) drawKV(L + halfW, gridW - halfW, l2, v2);
-    gy += cellH;
-  };
-  const kvSpan = function (l, v) {
-    drawKV(L, gridW, l, v);
-    gy += cellH;
-  };
-
-  kvRow('PO Number', data.poNumber || data.id || '', 'Start Date', data.startDate || '');
-  kvRow('Pattern # / Name', data.pattern || '', 'Issued By', data.issuedBy || '');
-  kvSpan('Article Name', data.articleName || '');
-  kvRow('Article Code', data.articleCode || '', 'Sizes', data.sizes || '');
-  kvRow('Fabric Name', data.fabricName || '', 'Fabric Code', data.fabricCode || '');
-  kvRow('Total Quantity', data.totalQty || '', 'Ratio', data.ratio || '');
-  kvRow('Total Weight / Mtr', data.totalWeight || '', 'Average Per Unit', data.avgPerUnit || '');
-
+  k.dark(k.LW_ROW);
+  doc.rect(ix, top, imgW, bodyH, 'S');
   if (im) {
-    const boxH = gy - gy0;
-    const ar = (im.w && im.h) ? (im.w / im.h) : 0.75;
-    let dw = imgW, dh = dw / ar;
-    if (dh > boxH) { dh = boxH; dw = dh * ar; }
-    const ix = L + gridW + imgGap;
-    const ox = ix + (imgW - dw) / 2;
-    doc.setDrawColor(line[0], line[1], line[2]);
-    doc.setLineWidth(0.3);
-    doc.rect(ix, gy0, imgW, boxH, 'S');
-    try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ox, gy0, dw, dh); } catch (e) { /* skip */ }
+    const pad = 3, ar = (im.w && im.h) ? (im.w / im.h) : 0.75;
+    let dw = imgW - 2 * pad, dh = dw / ar;
+    if (dh > bodyH - 2 * pad) { dh = bodyH - 2 * pad; dw = dh * ar; }
+    try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ix + (imgW - dw) / 2, top + (bodyH - dh) / 2, dw, dh); } catch (e) { /* skip */ }
   }
-  doc.__groovyY = gy;
+}
+/* Size | Qty table (rows from _PO_SIZE_ROWS) with the boxed red TOTAL row. */
+function _jobSizeTable(doc, k, y, lw) {
+  const hdrH = 24, rowH = 28, cw = [Math.round(lw * 0.45), lw - Math.round(lw * 0.45)];
+  const L = k.L;
+  k.fill(k.shade); k.dark(k.LW);
+  doc.rect(L, y, lw, hdrH, 'FD');
+  ['Size', 'Qty'].forEach(function (t, i) {
+    const cx = L + (i ? cw[0] : 0);
+    k.dark(k.LW); doc.rect(cx, y, cw[i], hdrH, 'S');
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
+    doc.text(t, cx + 5, y + hdrH / 2 + 3);
+  });
+  y += hdrH;
+  _PO_SIZE_ROWS.forEach(function (sz) {
+    k.fill(k.shadeL); doc.rect(L, y, cw[0], rowH, 'F');
+    k.dark(k.LW_ROW); doc.rect(L, y, cw[0], rowH, 'S'); doc.rect(L + cw[0], y, cw[1], rowH, 'S');
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.text);
+    doc.text(sz, L + 5, y + rowH / 2 + 3.5);
+    y += rowH;
+  });
+  const th = rowH + 2;
+  k.red(k.LW_ROW);
+  doc.rect(L, y, cw[0], th, 'S'); doc.rect(L + cw[0], y, cw[1], th, 'S');
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.body, PRINT_COLORS.text);
+  doc.text('TOTAL', L + 5, y + th / 2 + 4);
+  k.red(k.LW_BOX); doc.rect(L, y, lw, th, 'S');
+  return y + th;
+}
+/* Red END DATE with its red writing line; returns the baseline y. */
+function _jobEndDate(doc, k, y, lw) {
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 11, PRINT_COLORS.red);
+  doc.text('END DATE', k.L, y);
+  const ew = doc.getTextWidth('END DATE:  ');
+  k.red(k.LW);
+  doc.line(k.L + ew + 4, y + 1.5, k.L + lw, y + 1.5);
+  return y;
+}
 
-  // NOTES — free text from PO creation (renderPOCreate() in js/pos.js, saved
-  // as po.notes). Always rendered in PRINT_COLORS.red so it stands out on
-  // the printed traveler to every station handling this PO, never the
-  // default body text color.
-  if (data.notes) {
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.red);
-    const label = 'Notes: ';
-    const labelW = doc.getTextWidth(label) + 2;
-    const wrapped = doc.splitTextToSize(String(data.notes), W - labelW);
-    const lineH = PRINT_SIZES.bodySmall * 1.15;
-    need(12 + wrapped.length * lineH + 6);
-    const notesY0 = doc.__groovyY + 12;
-    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', PRINT_SIZES.bodySmall, PRINT_COLORS.red);
-    doc.text(label, L, notesY0);
-    doc.text(wrapped, L + labelW, notesY0);
-    doc.__groovyY = notesY0 + (wrapped.length - 1) * lineH + 6;
-  }
+function _renderEmbroideryJob(doc, data) {
+  data = data || {};
+  const k = _jobKit(doc), L = k.L, W = k.W, R = k.R;
+  let y = _jobTop(doc, k, data, 'Embroidery Job', 'EMBROIDERY JOB');
 
-  // STATION — CUTTING + BUNDLING
-  _renderSectionHeader(doc, { titleEn: 'Cutting + Bundling', titleUr: 'بنڈلنگ اور ٹرانسپورٹیشن', ownerName: 'Raees' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Size', ur: 'سائز', w: 175 }, { title: 'Bundles', ur: '', w: 174 }, { title: 'Total', ur: '', w: 174 }],
-    SIZE_ROWS.map(function (s) { return [s, '', '']; }),
-    { shadeFirst: true }
-  );
-  grandTotalLine();
-  signWithName();
+  // Left column: article name, placement, candle / shade codes. Right: photo.
+  const imgW = 200, gap = 14, colW = W - imgW - gap;
+  const top = y;
+  y = _jobNameRow(doc, k, data, y, colW);
+  y = _jobWriteBox(doc, k, y, colW, 'PLACEMENT', 3, 24);
+  y = _jobWriteBox(doc, k, y, colW, 'CANDLE / SHADE CODE (thread book)', 5, 24);
+  const bodyH = Math.max(y - top - 12, 200);
+  _jobPhoto(doc, k, data, L + colW + gap, top, imgW, bodyH);
+  y = top + Math.max(bodyH, y - top - 12) + 14;
 
-  // 6) STATION — PRINTING & EMB QC
-  _renderSectionHeader(doc, { titleEn: 'Printing & Emb QC', titleUr: '', ownerName: 'Haris' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Size', ur: 'سائز', w: 100 },
-     { title: 'Total Passed', ur: '', w: 130 },
-     { title: 'QA Not Passed But Forwarded', ur: '', w: 173 },
-     { title: 'Rejected', ur: '', w: 120 }],
-    SIZE_ROWS.map(function (s) { return [s, '', '', '']; }).concat([['Grand Total', '', '', '']]),
-    { shadeFirst: true }
-  );
-  remarksLine('Remarks', 'تبصرے');
+  // Lower row: left = handed over, quantity table, end date; right = sample box.
+  const lowTop = y;
+  const lw = W - _JOB_SAMPLE_PT - gap;
+  k.dark(k.LW_ROW);
+  doc.rect(L, y, lw, 30, 'S');
+  k.label('DATE HANDED OVER', L + 4, y + 12);
+  k.dark(k.LW_ROW); doc.line(L + 6, y + 25, L + lw - 6, y + 25);
+  y += 30 + 14;
+  k.label('ACTUAL CUT QUANTITY BY SIZE', L, y + 4);
+  y += 10;
+  y = _jobSizeTable(doc, k, y, lw) + 18;
+  _jobEndDate(doc, k, y, lw);
 
-  // 7) STATION — BUNDLING BEFORE STITCHING
-  _renderSectionHeader(doc, { titleEn: 'Bundling Before Stitching', titleUr: 'بنڈلنگ اور ٹرانسپورٹیشن', ownerName: 'Zuhaib' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Size', ur: 'سائز', w: 175 }, { title: 'Bundles', ur: '', w: 174 }, { title: 'Total', ur: '', w: 174 }],
-    SIZE_ROWS.map(function (s) { return [s, '', '']; }),
-    { shadeFirst: true }
-  );
-  grandTotalLine();
-  signWithName();
+  const sx = R - _JOB_SAMPLE_PT;
+  k.label('Fabric sample — staple here', sx, lowTop + 10);
+  k.dark(k.LW_BOX);
+  doc.rect(sx, lowTop + 16, _JOB_SAMPLE_PT, _JOB_SAMPLE_PT, 'S');
+  doc.__groovyY = Math.max(y, lowTop + 16 + _JOB_SAMPLE_PT);
+}
 
-  // 8) STATION — STITCHING
-  _renderSectionHeader(doc, { titleEn: 'Stitching', titleUr: '', ownerName: 'Waqas' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Date', ur: '', w: 110 },
-     { title: 'Size + Bundle', ur: '', w: 180 },
-     { title: 'OFFLINE', ur: '', w: 110 },
-     { title: 'Total', ur: '', w: 123 }],
-    [['', '', '', ''], ['', '', '', ''], ['', '', '', ''], ['', '', '', '']],
-    {}
-  );
-  signWithName('Waqas');
-  remarksLine('Defects / Remarks', 'خامیوں / تبصرے');
+/* ── Printing job copy (step 2 of 3; washing follows, NOT built) ──
+   Same page, header, band, photo and lines as the embroidery copy. Typed: PO
+   number, article code, article name, photo, title PRINTING JOB. Handwritten:
+   red START DATE (always handwritten), PLACEMENT, PANTONE CODE (several lines), PRINT NAME, Size | Qty with a red TOTAL row, red END DATE. No
+   fabric sample box. Single A4 page, outside the PO's two-page limit. */
+function _renderPrintingJob(doc, data) {
+  data = data || {};
+  const k = _jobKit(doc), L = k.L, W = k.W, R = k.R;
+  let y = _jobTop(doc, k, data, 'Printing Job', 'PRINTING JOB');
 
-  // 9) STATION — WASHING DEPARTMENT
-  _renderSectionHeader(doc, { titleEn: 'Washing Department', titleUr: '', ownerName: 'Abbas' });
-  doc.__groovyY += 6;
-  tableGrid(
-    [{ title: 'Date Out', ur: '', w: 131 },
-     { title: 'PCs / Kgs', ur: '', w: 130 },
-     { title: 'Date Received', ur: '', w: 132 },
-     { title: 'PCs / Kgs', ur: '', w: 130 }],
-    [['', '', '', ''], ['', '', '', ''], ['', '', '', '']],
-    {}
-  );
-  remarksLine('Defects / Remarks', 'خامیوں / تبصرے');
-  signWithName();
+  const imgW = 200, gap = 14, colW = W - imgW - gap;
+  const top = y;
+  y = _jobNameRow(doc, k, data, y, colW);
+  y = _jobWriteBox(doc, k, y, colW, 'PLACEMENT', 3, 24);
+  y = _jobWriteBox(doc, k, y, colW, 'PANTONE CODE', 5, 24);
+  y = _jobWriteBox(doc, k, y, colW, 'PRINT NAME / DESIGN NAME', 1, 24);
+  const bodyH = Math.max(y - top - 12, 200);
+  _jobPhoto(doc, k, data, L + colW + gap, top, imgW, bodyH);
+  y = top + Math.max(bodyH, y - top - 12) + 14;
+
+  // Lower row: the Size | Qty table (its TOTAL row is the only total) and END DATE,
+  // using the full width.
+  const lw = W;
+  k.label('ACTUAL CUT QUANTITY BY SIZE', L, y + 4);
+  y += 10;
+  y = _jobSizeTable(doc, k, y, lw) + 18;
+  _jobEndDate(doc, k, y, lw);
+  doc.__groovyY = y;
+}
+
+/* ── Washing job copy (step 3 of 3) ──
+   Same page, header, band, photo and lines as the other two copies. A SHORT
+   bilingual checklist to confirm BEFORE CUTTING: fabric 100% cotton, rib 100%
+   cotton, shrinkage done, each with a hand tick box, then Checked by / Signature
+   / Date checked, a remarks line, one Size | Qty table (its boxed red TOTAL row
+   is the only total) and a red END DATE. START DATE is handwritten (_jobTop).
+   URDU: this engine cannot draw Urdu through jsPDF (see Fonts), so the CALLER
+   rasterises each Urdu line with the browser's own shaping and passes pictures in
+   data.urduImages = { note, fabric, rib, shrink }, each {dataUrl (PNG), w, h (px),
+   fontPx}. They are placed with addImage, right-aligned. No pictures (font not
+   loaded, no canvas) = the same sheet in clean English only. No Urdu is ever
+   passed to doc.text. */
+function _jobUrduImg(doc, img, rightX, cy, maxW, maxH, fontPt) {
+  if (!img || typeof img.dataUrl !== 'string' || img.dataUrl.indexOf('data:image/png') !== 0) return false;
+  const iw = Number(img.w), ih = Number(img.h);
+  if (!(iw > 0 && ih > 0)) return false;
+  let sc = fontPt / (Number(img.fontPx) > 0 ? Number(img.fontPx) : 96);
+  let dw = iw * sc, dh = ih * sc;
+  if (dw > maxW) { dh *= maxW / dw; dw = maxW; }
+  if (dh > maxH) { dw *= maxH / dh; dh = maxH; }
+  try { doc.addImage(img.dataUrl, 'PNG', rightX - dw, cy - dh / 2, dw, dh); return true; } catch (e) { return false; }
+}
+const _WASH_CHECKS = [
+  { key: 'fabric', en: 'Fabric is 100% cotton' },
+  { key: 'rib', en: 'Rib is 100% cotton' },
+  { key: 'shrink', en: 'Shrinkage of fabric is done' }
+];
+function _renderWashingJob(doc, data) {
+  data = data || {};
+  const k = _jobKit(doc), L = k.L, W = k.W, R = k.R;
+  const U = data.urduImages || {};
+  let y = _jobTop(doc, k, data, 'Washing Job', 'WASHING JOB');
+
+  // Left: article name + the prominent "complete before cutting" note. Right: photo.
+  const imgW = 200, gap = 14, colW = W - imgW - gap, bodyH = 150;
+  const top = y;
+  y = _jobNameRow(doc, k, data, y, colW);
+  const nTop = y - 12 + 8, nH = top + bodyH - nTop;
+  k.fill(k.shade); k.dark(k.LW_BOX);
+  doc.rect(L, nTop, colW, nH, 'FD');
+  const hasUr = _jobUrduImg(doc, U.note, L + colW - 12, nTop + 24 + (nH - 24) / 2, colW - 24, nH - 38, 26);
+  _setFont(doc, PRINT_FONTS.display, 'bold', 15, PRINT_COLORS.text);
+  // English only (no picture): the note sits in the middle of its box, not at the top of an empty one.
+  doc.text('COMPLETE BEFORE CUTTING', L + colW / 2, hasUr ? nTop + 24 : nTop + nH / 2 + 5, { align: 'center' });
+  _jobPhoto(doc, k, data, L + colW + gap, top, imgW, bodyH);
+  y = top + bodyH + 14;
+
+  // Checklist
+  k.label('CONFIRM BEFORE CUTTING  (tick each box by hand)', L, y + 4);
+  y += 10;
+  const rowH = 42;
+  _WASH_CHECKS.forEach(function (c) {
+    k.dark(k.LW_ROW); doc.rect(L, y, W, rowH, 'S');
+    k.dark(k.LW_BOX); doc.rect(L + 10, y + (rowH - 18) / 2, 18, 18, 'S');
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 12, PRINT_COLORS.text);
+    doc.text(c.en, L + 40, y + rowH / 2 + 4);
+    _jobUrduImg(doc, U[c.key], R - 10, y + rowH / 2, 300, rowH - 8, 22);
+    y += rowH;
+  });
+  y += 16;
+
+  // Checked by / signature / date checked
+  const cw = [Math.round(W * 0.4), Math.round(W * 0.34)]; cw.push(W - cw[0] - cw[1] - 2 * 14);
+  let x = L;
+  ['CHECKED BY (name)', 'SIGNATURE', 'DATE CHECKED'].forEach(function (t, i) {
+    k.label(t, x, y);
+    k.dark(k.LW_ROW); doc.line(x, y + 24, x + cw[i], y + 24);
+    x += cw[i] + 14;
+  });
+  y += 24 + 16;
+  k.label('REMARKS', L, y);
+  k.dark(k.LW_ROW); doc.line(L + 56, y + 1, R, y + 1);
+  y += 22;
+
+  k.label('ACTUAL CUT QUANTITY BY SIZE', L, y + 4);
+  y += 10;
+  y = _jobSizeTable(doc, k, y, W) + 18;
+  _jobEndDate(doc, k, y, W);
+  doc.__groovyY = y;
 }
 
 /* ── Custom page size ──────────────────────────────────────────────────────
@@ -2978,13 +3361,16 @@ window.printDocument = async function (opts) {
     return;
   }
 
-  const known = ['po', 'embroidery-vendor', 'sublimation-vendor',
+  const known = ['po', 'embroidery-job', 'printing-job', 'washing-job', 'embroidery-vendor', 'sublimation-vendor',
     'gate-pass', 'placement-sheet', 'qc-report', 'payslip',
     'daily-performance', 'stock-transfer', 'mood-board',
     'ma-ledger', 'ma-statement-party', 'ma-statement-holder', 'ma-receipt', 'ma-voucher', 'ma-collection',
     'pattern-label', 'consumable-log', 'generic'];
   const _VARIANTS = {
     'po': _renderPO,
+    'embroidery-job': _renderEmbroideryJob,
+    'printing-job': _renderPrintingJob,
+    'washing-job': _renderWashingJob,
     'gate-pass': _renderGatePass,
     'payslip': _renderPayslip,
     'daily-performance': _renderDailyPerformance,
