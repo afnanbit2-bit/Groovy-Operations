@@ -1128,11 +1128,18 @@ function _siLandingApply(){
   const u=(typeof session!=='undefined'&&session)?session.u:'';
   const r=_siSecResolve(_siLandingFor(u));_siSection=r.sec;_siSub=r.sub;
 }
+// THE section list for NAVIGATION: the tab bar and the takeover's left rail both read this, and it is derived from _SI_SECTIONS
+// (the one list), so a restructure edits _SI_SECTIONS only. `short` is the rail's collapsed monogram; absent, the label's first letters.
+// Sub-views (Weekly Close, Ignored, Advanced under Today; Type & season under Articles) are reached from the sub-bar under the tabs.
+function _siNavItems(){return _SI_SECTIONS.map(t=>({id:t.id,label:t.label,badge:!!t.badge,short:t.short}));}
+// The id a deep link / address bar carries: the sub-view when one is open, else the section.
+function _siSecKey(){return _siSub||_siSection;}
 function _siTabBar(){
   const n=_siNaBadge();
+  if(typeof _siTkPaintSoon==='function')_siTkPaintSoon();   // every repaint of the tab bar (switch, badge, history landing) repaints the takeover rail too
   const svs=_SI_SUBVIEWS.filter(v=>v.parent===_siSection);
   const sub=svs.length?`<div class="si-sub-bar" id="si-sub-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin:-6px 0 12px">${svs.map(v=>{const c=v.count?_siIgList().length:0;return`<button type="button" class="si-ax-btn" style="${_siSub===v.id?'background:var(--dark);color:var(--on-dark)':''}" aria-pressed="${_siSub===v.id}" onclick="window._siSwitchTab('${_siSub===v.id?_siSection:v.id}')">${v.label}${c?` (${c})`:''}</button>`;}).join('')}</div>`:'';
-  return`<div id="si-tab-bar"><div class="gp-tabs" style="margin-bottom:14px">${_SI_SECTIONS.map(t=>
+  return`<div id="si-tab-bar"><div class="gp-tabs" style="margin-bottom:14px">${_siNavItems().map(t=>
     `<button class="gp-tab${_siSection===t.id?' active':''}" onclick="window._siSwitchTab('${t.id}')">${t.label}${t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:''}</button>`
   ).join('')}</div>${sub}</div>`;
 }
@@ -1151,6 +1158,151 @@ window._siSwitchTab=function(id){
   if(el)el.innerHTML=_siRenderSection(m,skuRows);
   if(id==='skutable'&&_siSkuReturnY>0){const y=_siSkuReturnY;_siSkuReturnY=0;if(typeof window.scrollTo==='function')try{window.scrollTo(0,y);}catch(_){}}
 };
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Full-view takeover + left rail (Oct 2026)
+// ═══════════════════════════════════════════════════════════════════
+// While currentPage==='shopify-intel' the page is a position:fixed full-viewport view (js/boards.js' canvas rules: z-index 120 sits above
+// .topbar 100 and .cash-action-bar 115 and below #bug-report-fab 500 and the toasts; 100dvh with a 100vh fallback; html/body carry
+// .si-fullscreen so nothing behind scrolls). The bar (Exit) and the rail live in <body>, NOT in #main-content, because renderPage replaces
+// #main-content's innerHTML on every load and retry: the way out must never be something a render can remove. Leaving by ANY route goes
+// through the showPage wrap below, so the class cannot outlive the page. Deep links: #inventory/<section>, replaceState only.
+const _SI_TK_HASH=/^#inventory(?:\/([A-Za-z0-9_-]*))?$/;
+const _SI_TK_RAIL_KEY='groovy-si-rail';
+let _siTkOn=false,_siTkPaintT=null,_siTkMin=false;
+function _siTkAllowed(){   // the Inventory Intel audience: owners + mustafa (nav), the CSR lead and the Marketing lead (their role scopes grant the page)
+  try{return typeof session!=='undefined'&&!!session&&(session.role==='owner'||session.u==='mustafa'||session.role==='csr_lead'||session.role==='creator_content_ops_lead');}catch(e){return false;}
+}
+function _siTkRailHtml(){
+  const n=_siNaBadge();
+  return _siNavItems().map(t=>{
+    const on=_siSection===t.id;
+    const mono=String(t.short||t.label||'?').slice(0,2);
+    return`<button type="button" class="si-tk-item${on?' on':''}" data-sec="${t.id}"${on?' aria-current="page"':''} title="${t.label}" onclick="window._siTkGo('${t.id}')">`
+      +`<span class="si-tk-mono" aria-hidden="true">${mono}</span><span class="si-tk-label">${t.label}</span>`
+      +(t.badge&&n?`<span class="si-na-pill" role="img" aria-label="${n} article${n===1?'':'s'} need action">${n>99?'99+':n}</span>`:'')
+      +(t.count?`<span class="si-ig-n" role="img" aria-label="${t.count} ignored">${t.count}</span>`:'')
+      +`</button>`;
+  }).join('');
+}
+function _siTkChromeHtml(){
+  return`<div class="si-tk-bar" id="si-tk-bar"><button type="button" class="si-tk-exit" id="si-tk-exit" onclick="window._siTkExit()">&larr; Exit</button>`
+    +`<div class="si-tk-title">Inventory Intelligence</div>`
+    +`<button type="button" class="si-tk-toggle" id="si-tk-toggle" aria-expanded="${_siTkMin?'false':'true'}" aria-controls="si-tk-rail" onclick="window._siTkToggleRail()">${_siTkMin?'Show menu':'Hide menu'}</button></div>`
+    +`<nav class="si-tk-rail" id="si-tk-rail" aria-label="Inventory Intelligence sections">${_siTkRailHtml()}</nav>`;
+}
+function _siTkMount(){
+  if(typeof document==='undefined'||!document.body)return;
+  if(document.getElementById('si-tk-bar')&&document.getElementById('si-tk-rail'))return;
+  // two direct children of <body>, so each is a fixed element of the root stacking context
+  document.body.insertAdjacentHTML('beforeend',_siTkChromeHtml());
+}
+function _siTkSetHash(sec){
+  try{
+    const base=location.pathname+(location.search||''),want=sec?'#inventory/'+sec:'';
+    if(sec){if(String(location.hash||'')!==want)history.replaceState(null,'',base+want);}
+    else if(_SI_TK_HASH.test(String(location.hash||'')))history.replaceState(null,'',base);
+  }catch(e){}
+}
+function _siTkApplyClasses(on){
+  try{
+    const b=document.body,h=document.documentElement,m=document.getElementById('main-content');
+    b.classList.toggle('si-fullscreen',!!on);h.classList.toggle('si-fullscreen',!!on);
+    b.classList.toggle('si-rail-min',!!on&&_siTkMin);
+    if(m)m.classList.toggle('si-takeover',!!on);
+  }catch(e){}
+}
+function _siTkSync(){   // repaint the rail from the one list, keep the address bar naming the section
+  if(!_siTkOn||typeof document==='undefined')return;
+  const rail=document.getElementById('si-tk-rail');
+  if(rail){const h=_siTkRailHtml();if(rail._h!==h){rail.innerHTML=h;rail._h=h;}}
+  _siTkSetHash(_siSecKey());
+}
+function _siTkPaintSoon(){
+  if(!_siTkOn||_siTkPaintT)return;
+  _siTkPaintT=setTimeout(()=>{_siTkPaintT=null;try{_siTkSync();}catch(e){}},0);
+}
+let _siTkKeyWired=false;
+function _siTkEnter(){
+  if(_siTkOn)return;
+  try{
+    if(!_siTkKeyWired&&typeof document!=='undefined'&&document.addEventListener){document.addEventListener('keydown',_siTkKey);_siTkKeyWired=true;}   // once, on first open: not at load
+    try{_siTkMin=localStorage.getItem(_SI_TK_RAIL_KEY)==='min';}catch(e){_siTkMin=false;}
+    _siTkMount();_siTkOn=true;_siTkApplyClasses(true);_siTkSync();
+  }catch(e){_siTkOn=true;_siTkLeave();console.warn('[inventory] takeover failed, left:',e);}
+}
+function _siTkLeave(){
+  const was=_siTkOn;_siTkOn=false;
+  if(_siTkPaintT){clearTimeout(_siTkPaintT);_siTkPaintT=null;}
+  _siTkApplyClasses(false);
+  if(was)_siTkSetHash('');
+}
+function _siTkOnPage(){   // called after every showPage: the page decides, never a flag set elsewhere
+  const want=typeof currentPage!=='undefined'&&currentPage==='shopify-intel';
+  if(want&&!_siTkOn)_siTkEnter();else if(!want&&_siTkOn)_siTkLeave();else if(want)_siTkSync();
+}
+window._siTkGo=function(id){window._siSwitchTab(id);_siTkSync();};
+window._siTkToggleRail=function(){
+  _siTkMin=!_siTkMin;
+  try{localStorage.setItem(_SI_TK_RAIL_KEY,_siTkMin?'min':'full');}catch(e){}
+  _siTkApplyClasses(_siTkOn);
+  const t=document.getElementById('si-tk-toggle');
+  if(t){t.textContent=_siTkMin?'Show menu':'Hide menu';t.setAttribute('aria-expanded',_siTkMin?'false':'true');}
+};
+window._siTkExit=function(){   // never strands: the takeover is taken down FIRST, then the navigation is attempted
+  _siTkLeave();
+  try{if(typeof window.showPage==='function')window.showPage('dashboard');}catch(e){console.warn('[inventory] exit navigation failed:',e);}
+};
+function _siTkParseHash(){const m=_SI_TK_HASH.exec(String(typeof location!=='undefined'?location.hash||'':''));if(!m)return null;const r=_siSecResolve(m[1]||'today');return{section:r.sec,sub:r.sub};}
+function _siTkConsumeHash(){
+  const link=_siTkParseHash();
+  if(!link||typeof session==='undefined'||!session||!_siTkAllowed())return false;   // fail closed: no session or not on the audience, nothing opens
+  if(currentPage==='shopify-intel'&&_siLoaded&&typeof window._siSwitchTab==='function'){
+    if(_siSection!==link.section||_siSub!==link.sub)window._siSwitchTab(link.sub||link.section);
+    _siTkOnPage();return true;
+  }
+  _siSection=link.section;_siSub=link.sub;_siSecTouched=true;   // a deep link wins over the role landing
+  if(typeof window.showPage==='function')window.showPage('shopify-intel');
+  return true;
+}
+function _siTkKey(e){
+  if(!_siTkOn||!e)return;
+  const k=e.key,rail=document.getElementById('si-tk-rail');
+  if(k==='Escape'){
+    const t=e.target,tag=t&&t.tagName?String(t.tagName).toUpperCase():'';
+    if(e.defaultPrevented||tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(t&&t.isContentEditable))return;
+    if(typeof _siNaSel!=='undefined'&&_siNaSel)return;       // an open situation view closes itself on Escape first
+    if(typeof _siAxOvSit!=='undefined'&&_siAxOvSit)return;
+    window._siTkExit();return;
+  }
+  if(rail&&e.target&&e.target.closest&&e.target.closest('#si-tk-rail')&&(k==='ArrowDown'||k==='ArrowUp'||k==='ArrowLeft'||k==='ArrowRight'||k==='Home'||k==='End')){
+    const items=Array.prototype.slice.call(rail.querySelectorAll('.si-tk-item'));
+    const i=items.indexOf(e.target.closest('.si-tk-item'));if(i<0)return;
+    const next=k==='Home'?0:k==='End'?items.length-1:(k==='ArrowDown'||k==='ArrowRight')?(i+1)%items.length:(i-1+items.length)%items.length;
+    items[next].focus();if(e.preventDefault)e.preventDefault();
+  }
+}
+(function(){   // wired once at load, like boards.js: every route out of the page passes through showPage
+  if(typeof window==='undefined')return;
+  if(typeof window.showPage==='function'&&!window.showPage.__siTk){
+    const o=window.showPage;
+    const w=function(){const r=o.apply(this,arguments);try{_siTkOnPage();}catch(e){}
+      try{Promise.resolve(r).then(()=>{try{_siTkOnPage();}catch(e){}},()=>{try{_siTkOnPage();}catch(e){}});}catch(e){}
+      return r;};
+    w.__siTk=true;window.showPage=w;
+  }
+  if(window.addEventListener)window.addEventListener('hashchange',()=>{try{_siTkConsumeHash();}catch(e){}});
+})();
+// startApp is wrapped (boards.js' pattern, not an edit to js/auth.js): the original runs, then a cold #inventory link is consumed.
+const _siTkOrigStartApp=window.startApp;
+if(typeof _siTkOrigStartApp==='function'){
+  window.startApp=async function(){
+    const out=await _siTkOrigStartApp.apply(this,arguments);
+    try{_siTkConsumeHash();}catch(e){console.warn('[inventory] deep link failed:',e);}
+    return out;
+  };
+}
 
 function _siRenderSection(m,skuRows){
   const r=_siSecResolve(_siSection);

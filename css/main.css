@@ -5564,3 +5564,51 @@ a.ma-btn{text-decoration:none}
   .si-ts-opt,.si-ts-sug,.si-ts-f{min-height:40px}
 }
 @media (prefers-reduced-motion:reduce){.si-ts-cube{transition:none}.si-ts-cube.pop{animation:none}}
+/* ── Inventory Intel: full-view takeover + left rail (Oct 2026) ──────────
+   js/shopify.js (_siTk*). The page is a fixed full-viewport view while currentPage==='shopify-intel'.
+   z-index 120 is the Mood Boards canvas rule: above .topbar (100) and .cash-action-bar (115), below #bug-report-fab (500) and the
+   toasts (9999), so both stay usable. 100dvh with a 100vh line first (100vh is a lie on a phone). html/body.si-fullscreen stop the page
+   behind from scrolling. The bar and the rail are children of <body>, not of #main-content (every render replaces its innerHTML), and are
+   hidden unless body.si-fullscreen is set, so the class on <body> is the only switch. Tokens only: every colour inverts with the theme. */
+body.si-fullscreen{--si-tk-bar:52px;--si-tk-rail-w:232px;--si-tk-dock:60px;overflow:hidden;height:100vh;height:100dvh;min-height:0;overscroll-behavior:none}
+body.si-fullscreen.si-rail-min{--si-tk-rail-w:64px}
+html.si-fullscreen{overflow:hidden;overscroll-behavior:none}
+.si-tk-bar,.si-tk-rail{display:none}
+body.si-fullscreen .si-tk-bar{display:flex;position:fixed;top:0;left:0;right:0;height:var(--si-tk-bar);z-index:121;align-items:center;gap:12px;padding:0 12px;background:var(--surface);border-bottom:1px solid var(--border)}
+body.si-fullscreen .si-tk-rail{display:flex;position:fixed;top:var(--si-tk-bar);left:0;bottom:0;width:var(--si-tk-rail-w);z-index:121;flex-direction:column;gap:2px;padding:10px 8px;overflow-x:hidden;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);transition:width .22s cubic-bezier(.4,0,.2,1);overscroll-behavior:contain}
+#main-content.si-takeover{position:fixed;top:var(--si-tk-bar,52px);left:var(--si-tk-rail-w,232px);right:0;bottom:auto;height:calc(100vh - var(--si-tk-bar,52px));height:calc(100dvh - var(--si-tk-bar,52px));z-index:120;background:var(--bg);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;transition:left .22s cubic-bezier(.4,0,.2,1)}
+body.si-fullscreen #si-tab-bar{display:none}
+.si-tk-exit,.si-tk-toggle{font-family:inherit;font-size:14px;font-weight:600;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;min-height:36px;padding:0 14px;cursor:pointer;white-space:nowrap}
+.si-tk-exit:hover,.si-tk-toggle:hover{border-color:var(--muted)}
+.si-tk-exit:active,.si-tk-toggle:active{background:var(--soft)}
+.si-tk-title{flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si-tk-item{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 8px;border:none;border-radius:8px;background:transparent;color:var(--muted);font-family:inherit;font-size:14px;font-weight:500;text-align:left;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:background .16s,color .16s}
+.si-tk-item:hover{background:var(--soft);color:var(--text)}
+.si-tk-item.on{background:var(--soft);color:var(--text);font-weight:700}
+.si-tk-item::before{content:"";position:absolute;left:-8px;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--dark);opacity:0;transform:scaleY(.2);transition:opacity .2s,transform .2s}
+.si-tk-item.on::before{opacity:1;transform:scaleY(1)}
+.si-tk-mono{flex:0 0 28px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);color:var(--text);font-size:12px;font-weight:700;letter-spacing:.02em}
+.si-tk-item.on .si-tk-mono{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
+.si-tk-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;transition:opacity .18s}
+.si-tk-item .si-na-pill,.si-tk-item .si-ig-n{margin-left:0;flex-shrink:0}
+.si-tk-item:focus-visible,.si-tk-exit:focus-visible,.si-tk-toggle:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+body.si-fullscreen.si-rail-min .si-tk-label{opacity:0;pointer-events:none;flex:0 0 auto}
+body.si-fullscreen.si-rail-min .si-tk-item .si-na-pill,body.si-fullscreen.si-rail-min .si-tk-item .si-ig-n{position:absolute;top:3px;left:30px;min-width:16px;height:16px;padding:0 4px;font-size:11px;line-height:16px}
+/* the FAB stays usable: it keeps its place on desktop; on a phone it clears the dock */
+body.si-fullscreen #bug-report-fab{bottom:20px}
+@media (max-width:600px){
+  body.si-fullscreen .si-tk-bar{gap:8px;padding:0 10px}
+  .si-tk-toggle{display:none}
+  body.si-fullscreen .si-tk-rail,body.si-fullscreen.si-rail-min .si-tk-rail{top:auto;left:0;right:0;bottom:0;width:auto;height:calc(var(--si-tk-dock) + env(safe-area-inset-bottom));flex-direction:row;gap:4px;padding:6px 8px env(safe-area-inset-bottom);overflow-x:auto;overflow-y:hidden;border-right:none;border-top:1px solid var(--border);transition:none;touch-action:pan-x}
+  .si-tk-item{flex:0 0 auto;width:auto;min-width:76px;min-height:48px;flex-direction:column;justify-content:center;gap:2px;padding:0 10px}
+  .si-tk-item::before{left:10px;right:10px;top:-6px;bottom:auto;width:auto;height:3px;border-radius:0 0 3px 3px;transform:scaleX(.2)}
+  .si-tk-item.on::before{transform:scaleX(1)}
+  .si-tk-mono{flex:0 0 22px;width:auto;min-width:22px;height:22px;padding:0 4px;font-size:11px}
+  .si-tk-label{flex:0 0 auto;font-size:12px;opacity:1!important}
+  .si-tk-item .si-na-pill,.si-tk-item .si-ig-n,body.si-fullscreen.si-rail-min .si-tk-item .si-na-pill,body.si-fullscreen.si-rail-min .si-tk-item .si-ig-n{position:absolute;top:2px;left:50%;margin-left:10px;min-width:16px;height:16px;padding:0 4px;font-size:11px;line-height:16px}
+  #main-content.si-takeover,body.si-fullscreen.si-rail-min #main-content.si-takeover{left:0;height:calc(100vh - var(--si-tk-bar,52px) - var(--si-tk-dock) - env(safe-area-inset-bottom));height:calc(100dvh - var(--si-tk-bar,52px) - var(--si-tk-dock) - env(safe-area-inset-bottom))}
+  body.si-fullscreen #bug-report-fab{bottom:calc(var(--si-tk-dock) + env(safe-area-inset-bottom) + 14px)}
+}
+@media (prefers-reduced-motion:reduce){
+  body.si-fullscreen .si-tk-rail,#main-content.si-takeover,.si-tk-item,.si-tk-item::before,.si-tk-label{transition:none}
+}

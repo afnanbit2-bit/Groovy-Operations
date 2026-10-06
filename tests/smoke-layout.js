@@ -255,6 +255,19 @@ function _axSeed(app){
 
 // Needs Attention seed (Oct 2026): ~14 articles over the last 90 days (relative to today, so the weekly shapes always exist), with every
 // issue type: run-outs (critical and act), a stock-out, a size hole, an overstock, dead stock, a fading seller and a voided-unit data check.
+function _tkFragment(min,inBody){
+  const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+    globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+  _naSeed(app);
+  app.run('_siSection="attention";_siNaSel="";_siNaFilter="all";_siNaWatchOpen=true;_siNaShow={critical:false,act:false,watch:false};_siTkMin='+(min?'true':'false'));
+  const chrome=app.run('_siTkChromeHtml()'),na=app.run('_siNaSectionHtml()');
+  const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("si-fullscreen");'+(min?'b.classList.add("si-rail-min");':'')
+    +'document.documentElement.classList.add("si-fullscreen");m.classList.add("si-takeover");m.style.padding="";'
+    +(inBody?'["si-tk-bar","si-tk-rail"].forEach(function(i){b.appendChild(document.getElementById(i));});':'')+'})();<\/script>';
+  const out={html:'<button class="btn-sm" onclick="void 0">First control in the content</button><div id="si-content">'+na+'</div>'+chrome+script};
+  if(min)out.widths=[1900,1280];
+  return Promise.resolve(out);
+}
 function _naSeed(app,opts){
   opts=opts||{};
   const prods=[],lis=[],defs=[];
@@ -2828,6 +2841,15 @@ const FRAGMENTS={
     const none=app.run('_siTsBodyHtml()');
     return Promise.resolve('<div id="si-content">'+app.run('_siTabBar()')+'<div class="si-frag">'+part+'</div><div class="si-frag">'+f2+'</div><div class="si-frag">'+bad+'</div><div class="si-frag">'+none+'</div></div>');
   },
+  // Inventory Intel ▸ full-view takeover (Oct 2026): the fixed bar (Exit) and the left rail (desktop column / phone dock) over a real section.
+  // The fragment applies the same classes js/shopify.js sets (body/html .si-fullscreen, #main-content.si-takeover) and leaves the two chrome
+  // nodes INSIDE #main-content (the probe only walks that subtree; they are position:fixed, so they lay out exactly as <body> children do), so Exit, every rail item and the toggle must be reachable,
+  // the pill must read on its chip, and nothing may sit over the content's first row. Collapsed variant: desktop only (phone ignores it).
+  'inventory intel — takeover and rail':()=>_tkFragment(false),
+  'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
+  // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
+  // rail, so a scroller that started under the bar (top:0) reports its first row as covered.
+  'inventory intel — takeover content clear of the bar and rail':()=>_tkFragment(false,true),
   'inventory intel — Needs Attention empty and failed states':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});

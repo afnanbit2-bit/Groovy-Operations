@@ -147,6 +147,37 @@ function DRIVE(){
         var errs=window.__errs.slice(e0).filter(function(e){return!/ERR_|Failed to load resource/.test(e);});
         res.push({page:id||'(landing: '+currentPage+')',issues:probe().concat(errs.map(function(e){return'threw: '+e;}))});
       }
+      // Inventory Intel's full-view takeover, in the real shell on a phone: the bar and the dock are on screen and clear of the content and the
+      // bug FAB, Escape and the deep link both work, and leaving removes every trace.
+      if(PAGES.indexOf('shopify-intel')>=0){
+        var tk=[];
+        try{
+          window.showPage('shopify-intel');await wait(600);
+          var tb=document.getElementById('si-tk-bar'),tr=document.getElementById('si-tk-rail'),tm=document.getElementById('main-content');
+          if(!document.body.classList.contains('si-fullscreen')||!tb||!tr)tk.push('the takeover did not open');
+          else{
+            var br=tb.getBoundingClientRect(),rr=tr.getBoundingClientRect(),mr=tm.getBoundingClientRect(),fab=document.getElementById('bug-report-fab');
+            if(br.top!==0||br.height<40)tk.push('the bar is not at the top ('+Math.round(br.top)+','+Math.round(br.height)+')');
+            if(Math.round(rr.bottom)!==innerHeight||rr.height<56)tk.push('the dock is not at the bottom ('+Math.round(rr.bottom)+' of '+innerHeight+', '+Math.round(rr.height)+'px tall)');
+            if(Math.round(mr.top)!==Math.round(br.bottom)||Math.round(mr.bottom)>Math.round(rr.top))tk.push('the content overlaps the bar or the dock');
+            if(fab&&fab.getClientRects().length&&fab.getBoundingClientRect().bottom>rr.top+0.5)tk.push('the bug button sits on the dock');
+            var tz=+getComputedStyle(tm).zIndex,fz=fab?+getComputedStyle(fab).zIndex:500;
+            if(!(tz>100&&tz<fz))tk.push('the takeover z-index '+tz+' is not between the topbar (100) and the bug button ('+fz+')');
+            [].slice.call(tr.querySelectorAll('.si-tk-item')).forEach(function(it){var r=it.getBoundingClientRect();if(r.height<34||r.width<34)tk.push('a rail item is '+Math.round(r.width)+'x'+Math.round(r.height));if(r.right>innerWidth+1&&it.parentElement.scrollWidth<=it.parentElement.clientWidth)tk.push('a rail item is past the edge');});
+          }
+          document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(500);
+          if(document.body.classList.contains('si-fullscreen')||document.getElementById('main-content').classList.contains('si-takeover'))tk.push('Escape did not leave the takeover');
+          if(currentPage==='shopify-intel')tk.push('Escape did not leave the page');
+          if(/^#inventory/.test(location.hash))tk.push('the hash was left behind');
+          location.hash='#inventory/explorer';await wait(700);
+          if(currentPage!=='shopify-intel'||!document.body.classList.contains('si-fullscreen'))tk.push('the #inventory/explorer link did not open the page');
+          if(location.hash!=='#inventory/explorer')tk.push('the hash is '+location.hash);
+          window.showPage('hrm-employees');await wait(500);
+          if(document.body.classList.contains('si-fullscreen')||document.documentElement.classList.contains('si-fullscreen')||document.getElementById('main-content').classList.contains('si-takeover'))tk.push('leaving by showPage left the class behind');
+          if(/^#inventory/.test(location.hash))tk.push('leaving by showPage left the hash behind');
+        }catch(e){tk.push('the takeover check threw: '+e.message);}
+        res.push({page:'(inventory takeover)',issues:tk});
+      }
       // The toast must clear the bottom nav.
       var nav=document.getElementById('mob-nav');
       if(typeof showToast==='function')showToast('A toast on a phone');
