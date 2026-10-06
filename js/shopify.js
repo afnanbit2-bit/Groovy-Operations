@@ -168,11 +168,27 @@ const _siRunners={
   lines:async function(fresh){
     if(_siLinesScope==='full'&&!fresh)return;
     const stamps=await _siFrStampsPre(); // captured BEFORE the read, so a sync landing mid-read can only make us under-claim
+    const t0=_siNow();
+    // INCREMENTAL (Oct 2026): a freshness refresh between two full re-reads reads ONLY the trailing days and merges them by line id into
+    // what is already loaded (older lines and a loaded full history are kept, not dropped and re-read). See the block "Line-item reads:
+    // full at 00:00 and 12:00 PKT, incremental in between".
+    if(fresh&&_siLinesCanIncr()&&!siLinesFullDue(_siLinesFullAt,t0,_siLinesForceFull)){
+      const start=siLinesIncStart(_siLinesLastReadAt,_siLinesScope==='window'?_siLinesCut:'');
+      if(start){
+        const s=await getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','>=',start)));
+        const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
+        _siLineItems=siMergeLines(_siLineItems,a); // a NEW array: every cache keyed on array identity rebuilds
+        _siLinesLastReadAt=t0;_siLinesMode='incremental';_siLinesIncN=a.length;_siLinesIncFrom=start;
+        _siFrNote('lines',stamps);
+        return;
+      }
+    }
     const cut=(fresh&&_siLinesCut)?_siLinesCut:_siPktDate(-_SI_WIN_DAYS);
     const s=await getDocs(query(collection(db,'shopify_line_items'),where('order_created_at','>=',cut)));
     const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
     if(_siLinesScope==='full'||_siFull.st==='done'){_siFull.st='idle';_siFull.err=null;_siFull.n=0;_siFull.tok++;} // checked AFTER the await: a phase 2 that landed meanwhile counts
     _siLineItems=a;_siLinesScope='window';_siLinesCut=cut;
+    _siLinesFullAt=t0;_siLinesLastReadAt=t0;_siLinesForceFull=false;_siLinesMode='full';_siLinesIncN=0;_siLinesIncFrom='';
     _siFrNote('lines',stamps);
     _siColl.lines=true;
     if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
@@ -374,6 +390,7 @@ window._siRetryStage=function(id){
   const L=_siLoad,C=_siRetryCtl;
   if(!_SI_STAGES.some(s=>s.id===id)||C.running[id]||L.state[id]!=='failed'||!_siLoadAlive())return;
   siRetryClearTimers();L.wait=null;
+  if(id==='lines')_siLinesForceFull=true; // a manual Retry of the line items is always a full read
   L.attempts[id]=0;L.quotaRetried[id]=0;_siLoadError=null;L.final=false;L.resume=true;
   const f=L.fails[id];
   if(f&&f.cls==='quota'){const rem=f.at+_SI_QUOTA_WAIT_MS-_siNow();if(rem>0){_siLoadWait({ids:[id],delay:rem,k:1});return;}}
@@ -505,6 +522,57 @@ function siPaintLoad(){
   }
 })();
 
+// ═══ Line-item reads: full at 00:00 and 12:00 PKT, incremental in between (Oct 2026) ══════════════════════════════════════
+// shopify_line_items is ~51k documents and Firestore bills per document read. Owner's rule: re-read the (window of) line items in full
+// only at 00:00 and 12:00 Pakistan time (PKT = UTC+5, no DST); a refresh in between reads ONLY the trailing days and merges them.
+// WHAT IDENTIFIES NEW/CHANGED LINES (read from the functions, not guessed): shopify-order-sync.js writes a line once, with order_created_at
+//   (the order's created_at) and synced_at (a server timestamp, never rewritten); it looks back 48 h and skips orders it holds.
+//   netlify/lib/shopify-order-refresh.js updates only status fields in place and stamps status_synced_at, on lines of recent orders.
+//   So a NEW line has order_created_at within about 48 h of the sync that wrote it, and a status change lands on a line of a recent order.
+//   synced_at / status_synced_at are the exact "changed since" fields, but they are Firestore Timestamps and this page has no Timestamp
+//   constructor bridged (index.html is cross-track), so a range on them cannot be built here. The safe alternative used instead: a
+//   single-field range on order_created_at (the same automatic index the window read uses) starting 72 h before the previous read, floored
+//   to a PKT day. 72 h > the 48 h sync look-back, so every line written since the last read is inside it, and status changes to lines of
+//   those recent orders are picked up too (same id replaces).
+// HONEST LIMIT: a refund, void or cancellation applied to a line of an order OLDER than that trailing window stays stale until the next
+//   full read (the refund job's own window can reach back much further). A full read is forced by: no earlier full read in memory, the
+//   boundary passing, the returns-refresh button, and a manual Retry of the line-item stage.
+// The decision uses MEMORY, not localStorage: what is in memory is what defines "already loaded"; a reload starts empty and reads in full.
+const _SI_INC_BACK_MS=72*3600000,_SI_PKT_OFFSET_MS=5*3600000,_SI_HALF_DAY_MS=12*3600000;
+let _siLinesFullAt=null,_siLinesLastReadAt=null,_siLinesForceFull=false,_siLinesMode='',_siLinesIncN=0,_siLinesIncFrom='';
+// Pure: the most recent 00:00 or 12:00 PKT at or before nowMs, as epoch ms.
+function siFullBoundary(nowMs){return Math.floor((nowMs+_SI_PKT_OFFSET_MS)/_SI_HALF_DAY_MS)*_SI_HALF_DAY_MS-_SI_PKT_OFFSET_MS;}
+// Pure: is a full re-read due? No earlier full read, a forced one, or the last full read is before the latest boundary.
+function siLinesFullDue(lastFullMs,nowMs,force){
+  if(force||lastFullMs==null||!isFinite(lastFullMs))return true;
+  return lastFullMs<siFullBoundary(nowMs);
+}
+// Pure: the first PKT day (YYYY-MM-DD) an incremental read must cover; null when there is no previous read to build on.
+function siLinesIncStart(lastReadMs,floorDay){
+  if(lastReadMs==null||!isFinite(lastReadMs))return null;
+  const d=new Date(lastReadMs-_SI_INC_BACK_MS+_SI_PKT_OFFSET_MS).toISOString().slice(0,10);
+  return floorDay&&floorDay>d?floorDay:d; // never below the window's cut: the older rows belong to phase 2 and must stay disjoint
+}
+// Pure: merge by line id. Same id: the incoming copy replaces it in place (newest wins; a later duplicate inside incoming wins too);
+// new ids are appended. Always returns a NEW array; a document is never duplicated.
+function siMergeLines(existing,incoming){
+  const out=(existing||[]).slice(),at=new Map();
+  out.forEach((o,i)=>{if(o&&o._id!=null)at.set(o._id,i);});
+  (incoming||[]).forEach(o=>{
+    if(o&&o._id!=null&&at.has(o._id))out[at.get(o._id)]=o;
+    else{if(o&&o._id!=null)at.set(o._id,out.length);out.push(o);}
+  });
+  return out;
+}
+function _siLinesCanIncr(){return!!_siColl.lines&&(_siLinesScope==='window'||_siLinesScope==='full')&&_siLinesLastReadAt!=null;}
+// Pure text for the freshness card: when the last full read was, and whether the data now is that read or merged on top of it.
+function siLinesFreshText(fullAt,mode,incN,incFrom){
+  if(fullAt==null||!mode)return'';
+  const t='Last full refresh: '+_siFrFmt(fullAt)+'.';
+  const m=mode==='incremental'?' Line items since then: incremental (read from '+incFrom+', '+incN+' lines merged in).':' Line items: this is the full read.';
+  return t+m+' Later refunds and voids on older lines show at the next full refresh (00:00 or 12:00 PKT).';
+}
+
 // ═══ Line items in two phases (Oct 2026, load-time stage 2) ═════════════════════════════════════════════════════════════
 // Phase 1 (the 'lines' stage above, inside the percentage) reads only the last _SI_WIN_DAYS days of shopify_line_items:
 //   where('order_created_at','>=',<PKT day>) — one field, so Firestore's automatic single-field index serves it (firestore.indexes.json
@@ -541,7 +609,7 @@ function _siFullStart(manual){
     clearTimeout(guard); // a read that lands after the timeout is still good data: accept it
     if(!_siLinesPartial()||_siLinesCut!==cut)return;
     const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
-    _siLineItems=_siLineItems.concat(a); // a new array: every cache keyed on it rebuilds
+    _siLineItems=siMergeLines(_siLineItems,a); // a new array (every cache keyed on it rebuilds); by id, so a line an incremental read already brought is never doubled
     _siLinesScope='full';F.st='done';F.err=null;F.n=a.length;
     _siFullPaint();
   },e=>{
@@ -723,6 +791,7 @@ function _siFrHtml(){
     +(v.busy?'<div class="si-fr-bar" aria-hidden="true"><i style="width:'+v.pct+'%"></i></div>':'')
     +(v.status?'<div class="si-fr-st '+v.statusKind+'" id="si-fr-st" role="'+(v.statusKind==='err'?'alert':'status')+'">'+_siEsc(v.status)+'</div>':'')
     +warn
+    +(function(){const t=siLinesFreshText(_siLinesFullAt,_siLinesMode,_siLinesIncN,_siLinesIncFrom);return t?'<div class="si-fr-sch" id="si-fr-lines" title="'+_siEsc(t)+'">'+_siEsc(t)+'</div>':'';})()
     +'<details class="si-fr-det" id="si-fr-det"'+(_siFr.detOpen?' open':'')+' ontoggle="window._siFrDet(this.open)"><summary>Each source</summary><ul>'+rows+'</ul></details>';
 }
 window._siFrDet=function(o){_siFr.detOpen=!!o;};
@@ -5426,6 +5495,7 @@ function _siRrHtml(){
 window._siRrRun=async function(){
   if(_siRrBusy||!_siRrIsOwner())return;
   _siRrBusy=true;_siRrMsg='';
+  _siLinesForceFull=true; // pressing the returns refresh makes the next line-item read a full one (statuses change on lines of any age)
   const done=m=>{_siRrBusy=false;_siRrMsg=m;const e=document.getElementById('si-rr');if(e)e.outerHTML=_siRrHtml()||'';};
   try{
     const idToken=await auth.currentUser.getIdToken();

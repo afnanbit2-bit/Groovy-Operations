@@ -170,7 +170,7 @@ module.exports=async function(){
   await brk('phase 1 reads everything',"query(collection(db,'shopify_line_items'),where('order_created_at','>=',cut))","collection(db,'shopify_line_items')",['phase 1: the line-item read is ONE','phase 1: 4 documents']);
   await brk('phase 2 reads everything again',"where('order_created_at','<',cut)","where('order_created_at','>=','0')",['phase 2 reads ONLY the rest','phase 2: 3 older documents']);
   await brk('the cut day is excluded',"where('order_created_at','>=',cut)","where('order_created_at','>',cut+'Z')",['phase 1: 4 documents']);
-  await brk('older lines replace the window',"_siLineItems=_siLineItems.concat(a);","_siLineItems=a;",['phase 2: 3 older documents','after phase 2: AA-S lifetime']);
+  await brk('older lines replace the window',"_siLineItems=siMergeLines(_siLineItems,a); // a new array (every","_siLineItems=a; // a new array (every",['phase 2: 3 older documents','after phase 2: AA-S lifetime']);
   await brk('everything reads as full history',"function _siFullHist(){return _siLinesScope!=='window';}","function _siFullHist(){return true;}",['opening the Explorer shows the gate','the tab pill is absent while partial']);
   await brk('Overview starts the full read',"function _siOverview(m){\n  return _siFullStripHtml()+","function _siOverview(m){\n  _siFullStart(false);return _siFullStripHtml()+",['phase 2 is NOT started by Overview']);
   await brk('partial total shown as complete',"totalSoldPartial:_siLinesPartial()&&","totalSoldPartial:false&&",['SKU rows: a product live 300 days ago','SKU table body']);
