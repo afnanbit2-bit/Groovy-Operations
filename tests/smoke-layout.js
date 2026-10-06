@@ -2869,6 +2869,22 @@ const FRAGMENTS={
     const failed=app.run('_siHistStrip()');
     return Promise.resolve('<div id="si-content">'+pending+'<div style="height:16px"></div>'+failed+'</div>');
   },
+  // Freshness strip (Oct 2026): normal, stale + failed run, refresh in progress, refresh failed, new data waiting. Tokens only; the Refresh
+  // button must be reachable and every line readable in both themes. Details forced open so the per-source list is measured too.
+  'inventory intel — freshness strip':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    app.run('_siLoaded=true;_siFr.detOpen=true;var N=Date.now();_siSnapshot={snapshot_at:new Date(N-2*3600000).toISOString(),items:{}};_siSyncMeta={};_siFr.seen={products:{catalog:N-3600000},orders:{orders:N-3600000,refresh:N-3600000},lines:{orders:N-3600000,refresh:N-3600000},snap:{inventory:N-2*3600000}};_siFr.readAt={closes:N-3600000}');
+    const ok=app.run('_siFrHtml()');
+    app.run('_siFr.seen.orders.orders=N-9*3600000;_siFr.seen.lines.orders=N-9*3600000;_siFr.docs={inventory:{last_status:"error",last_error:"Shopify 502"}}');
+    const stale=app.run('_siFrHtml()');
+    app.run('_siFr.busy=true;_siFr.stages=[{id:"meta",w:3},{id:"orders",w:10},{id:"lines",w:50}];_siFr.state={meta:"done",orders:"done",lines:"active"};_siFr.pct=20');
+    const busy=app.run('_siFrHtml()');
+    app.run('_siFr.busy=false;_siFr.fails={lines:{msg:"HTTP 429 quota exceeded",cls:"quota"}}');
+    const err=app.run('_siFrHtml()');
+    app.run('_siFr.fails={};_siFr.pending=true');
+    const pend=app.run('_siFrHtml()');
+    return Promise.resolve([ok,stale,busy,err,pend].map(h=>'<div class="si-fr">'+h+'</div>').join(''));
+  },
   // The loader (Oct 2026): the card over the page skeleton mid-way, the stalled countdown, and the final error card. Tokens only; every
   // control must be reachable (hit-tested) and every line readable in both themes. Verified by painting the stage line in --surface.
   'inventory intel — loading mid-way':()=>{

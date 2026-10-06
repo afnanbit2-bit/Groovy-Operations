@@ -118,7 +118,7 @@ function siProgressNext(prev,raw){return Math.max(prev,raw);} // never backwards
 function _siNow(){return Date.now();}
 function _siRand(){return Math.random();}
 let _siLoad=_siLoadFresh();
-const _siRetryCtl={timer:null,tick:null,timer2:null,running:{},proms:{},gen:0};
+const _siRetryCtl={timer:null,tick:null,timer2:null,auto:null,running:{},proms:{},gen:0};
 function _siLoadFresh(){
   return{state:{},pct:0,startedAt:0,shownAt:0,shown:false,slow:false,final:false,finishing:false,done:false,resolved:false,resume:false,
     complete:false,attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
@@ -145,13 +145,14 @@ function _siLoadErr(e){
 // ── The reads. Each assigns its own result the moment it returns, so a later failure keeps it. ──
 function _siColRunner(id,col,q){
   return async function(){
+    const stamps=await _siFrStampsPre(); // captured BEFORE the read, so a sync landing mid-read can only make us under-claim
     const s=await getDocs(q?q():collection(db,col));
     const a=[];s.forEach(d=>{const o=d.data();o._id=d.id;a.push(o);});
     if(id==='products'){_siProducts=a;_siSeasonMapCache=null;_siProdMapCache=null;}
     else if(id==='orders')_siOrders=a;
     else if(id==='lines')_siLineItems=a;
     else _siWeeklyCloses=a;
-    _siColl[id]=true;
+    _siColl[id]=true;_siFrNote(id,stamps);
     if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
   };
 }
@@ -161,14 +162,16 @@ const _siRunners={
   lines:_siColRunner('lines','shopify_line_items'),
   closes:_siColRunner('closes','shopify_weekly_closes',()=>query(collection(db,'shopify_weekly_closes'),orderBy('week_ending','desc'))),
   snap:async function(){
+    const stamps=await _siFrStampsPre();
     const today=_siPktDate(0),yesterday=_siPktDate(-1);
     let snap=await getDoc(doc(db,'shopify_inventory_snapshots',today));
     if(!snap.exists())snap=await getDoc(doc(db,'shopify_inventory_snapshots',yesterday));
     if(snap.exists())_siSnapshot=snap.data();
     if(!_siSnapshot)throw new Error('Inventory snapshot unavailable (no snapshot for today or yesterday).');
+    _siFrNote('snap',stamps);
   },
   meta:async function(){ // never fatal: the page says "unknown" for what is missing
-    try{const snap=await getDoc(doc(db,'shopify_inventory_snapshots',_siPktDate(-7)));if(snap.exists())_siPrevSnapshot=snap.data();}catch(_){}
+    try{const snap=await getDoc(doc(db,'shopify_inventory_snapshots',_siPktDate(-7)));if(snap.exists())_siPrevSnapshot=snap.data();_siFr.prevDay=_siPktDate(-7);}catch(_){}
     try{
       const r=await Promise.all([getDoc(doc(db,'shopify_sync_meta','catalog_sync')),getDoc(doc(db,'shopify_sync_meta','order_backfill')),getDoc(doc(db,'shopify_sync_meta','inventory_sync'))]);
       _siSyncMeta={catalog:r[0].exists()?r[0].data():{},orders:r[1].exists()?r[1].data():{},inventory:r[2].exists()?r[2].data():{}};
@@ -193,6 +196,7 @@ function siRetryClearTimers(){
   if(C.timer){clearTimeout(C.timer);C.timer=null;}
   if(C.tick){clearInterval(C.tick);C.tick=null;}
   if(C.timer2){clearTimeout(C.timer2);C.timer2=null;}
+  if(C.auto){clearInterval(C.auto);C.auto=null;}
 }
 function siRetryCancel(){siRetryClearTimers();_siRetryCtl.gen++;}
 function _siLoadClearWatch(){
@@ -335,6 +339,7 @@ function _siLoadSucceed(){
   const late=L.resolved; // the page's waiter already resolved: a retry in place, so we repaint the page ourselves
   const finish=()=>{
     L.finishing=false;L.final=true;L.complete=true;
+    _siFrStart(false);
     if(late){if(_siLoadAlive()&&typeof document!=='undefined'&&document.getElementById){const m=document.getElementById('main-content');if(m)m.innerHTML=renderShopifyDashboard();}}
     else _siLoadResolveOnce();
   };
@@ -478,7 +483,7 @@ function siPaintLoad(){
 (function(){ // leaving the page cancels every timer and pending retry
   if(typeof window!=='undefined'&&typeof window.showPage==='function'&&!window.showPage.__si){
     const o=window.showPage;
-    const w=function(id){if(id!=='shopify-intel')_siLoadLeave();return o.apply(this,arguments);};
+    const w=function(id){if(id!=='shopify-intel')_siLoadLeave();const r=o.apply(this,arguments);if(id==='shopify-intel'&&_siLoaded)_siFrStart(true);return r;};
     w.__si=true;window.showPage=w;
   }
 })();
@@ -497,6 +502,234 @@ async function loadShopifyData(){
   if(_siMetaState==='idle')_siMetaLoad(); // the shared ignore list: tiny, in parallel, outside the percentage; a failed read hides nothing
   if(ids.length)_siLoadRunStages(ids);else _siLoadSettle();
   return _siLoad.promise;
+}
+
+// ═══ Freshness: "Data as of", a cheap Refresh and a 10-minute meta-gated auto-refresh ═══
+// What is on screen was read at some moment. This block says WHEN (per source, from the stamps the sync functions write into
+// shopify_sync_meta), flags a source older than twice its schedule IN WORDS, and re-reads only what moved:
+//   1. read the small meta docs (catalog_sync, order_sync, order_refresh[+_now], inventory_sync) — never a big collection;
+//   2. compare each source's last_success_at with the stamp captured BEFORE this page's last read of the collections it feeds;
+//   3. re-read exactly the collections whose source moved. Nothing moved = zero big reads (the Store 429 read-quota lesson).
+// The stamp stored for a collection is the one captured BEFORE its read began, so a sync landing mid-read can only make the page
+// UNDER-claim freshness (one extra read next time), never over-claim it. A failed check or read leaves the old data AND the old
+// stamp, so the line keeps saying how old it really is. Closes have no sync doc (weekly job): re-read when 24h old.
+// Auto-refresh: ONE interval (held in _siRetryCtl, so leaving the page clears it with every other timer), a no-op while the tab is
+// hidden, a catch-up when it becomes visible or the page is re-entered. New data is applied through the section's own repaint, and
+// DEFERRED (a "Show new data" button) while an input has focus or a situation drawer / lead-time editor is open — never destroying them.
+const _SI_FR_SOURCES=[ // intervalH = hours between scheduled runs (netlify.toml): catalog 0 4 * * *, orders 0 */4 * * *, refresh 20 */4 * * *, snapshot 0 5,17 * * *
+  {id:'catalog',  label:'Catalog',              noun:'The catalog',          intervalH:24},
+  {id:'orders',   label:'Orders and line items',noun:'Orders and line items',intervalH:4},
+  {id:'refresh',  label:'Order status refresh', noun:'The order status refresh',intervalH:4},
+  {id:'inventory',label:'Stock snapshot',       noun:'The stock snapshot',   intervalH:12},
+];
+const _SI_FR_DOCS={catalog:['catalog_sync'],orders:['order_sync'],refresh:['order_refresh','order_refresh_now'],inventory:['inventory_sync']};
+const _SI_FR_GATE={products:['catalog'],orders:['orders','refresh'],lines:['orders','refresh'],snap:['inventory']};
+const _SI_FR_AUTO_MS=600000,_SI_FR_TICK_MS=60000,_SI_FR_CLOSES_MS=86400000,_SI_FR_STALE_X=2,_SI_FR_META_MS=8000,_SI_FR_READ_MS=90000;
+const _siFr={seen:{},readAt:{},checkedAt:0,busy:false,pin:null,pre:null,state:{},stages:[],pct:0,fails:{},check:null,last:null,docs:null,
+  pending:false,detOpen:false,prevDay:'',histFail:'',wired:false};
+function _siFrAge(ms){
+  if(ms==null||!isFinite(ms))return'';
+  if(ms<60000)return'under a minute';
+  const m=Math.round(ms/60000);if(m<60)return m+(m===1?' minute':' minutes');
+  const h=Math.round(ms/3600000);if(h<48)return h+(h===1?' hour':' hours');
+  const d=Math.round(ms/86400000);return d+' days';
+}
+function _siFrFmt(ms){
+  if(ms==null)return'';
+  const d=new Date(ms+5*3600000),M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],p=n=>(n<10?'0':'')+n;
+  return d.getUTCDate()+' '+M[d.getUTCMonth()]+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes())+' PKT';
+}
+function _siFrClock(ms){const d=new Date(ms+5*3600000),p=n=>(n<10?'0':'')+n;return p(d.getUTCHours())+':'+p(d.getUTCMinutes());}
+// Read the small meta docs. Rejects if ANY read fails (a partial answer cannot prove "nothing moved").
+async function _siFrReadMeta(){
+  const keys=Object.keys(_SI_FR_DOCS),jobs=[];
+  keys.forEach(k=>_SI_FR_DOCS[k].forEach(n=>jobs.push([k,n])));
+  const r=await Promise.all(jobs.map(j=>getDoc(doc(db,'shopify_sync_meta',j[1]))));
+  const docs={},stamps={};
+  keys.forEach(k=>{docs[k]=null;stamps[k]=null;});
+  jobs.forEach((j,i)=>{
+    const d=r[i]&&r[i].exists()?r[i].data():null,ms=d?_siAxSnapMs(d.last_success_at):null,k=j[0];
+    if(d&&(docs[k]==null||(ms!=null&&(stamps[k]==null||ms>=stamps[k]))))docs[k]=d;
+    if(ms!=null&&(stamps[k]==null||ms>stamps[k]))stamps[k]=ms;
+  });
+  return{docs,stamps,at:_siNow()};
+}
+// The stamps a collection read is filed under: the pinned ones during a refresh, else one shared, bounded read made now.
+// Failure or a slow answer = null (the age is then shown as unknown, never guessed) and the collection read goes ahead.
+function _siFrStampsPre(){
+  if(_siFr.pin)return Promise.resolve(_siFr.pin);
+  if(_siFr.pre)return _siFr.pre;
+  let t=null;
+  const p=Promise.race([_siFrReadMeta().then(m=>{_siFr.docs=m.docs;return m.stamps;}),new Promise(r=>{t=setTimeout(()=>r(null),_SI_FR_META_MS);})]).catch(()=>null).then(v=>{clearTimeout(t);_siFr.pre=null;return v;});
+  return _siFr.pre=p;
+}
+function _siFrNote(id,stamps){_siFr.seen[id]=stamps||null;_siFr.readAt[id]=_siNow();}
+// Pure: which collections need a re-read, given the stamps just read. A source whose stamp is missing now cannot be judged (kept);
+// a collection with NO recorded stamp cannot be proven fresh (re-read).
+function _siFrMoved(stamps,seen,readAt,now,free){
+  const out=[];
+  Object.keys(_SI_FR_GATE).forEach(id=>{
+    if(free&&!free(id))return;
+    const was=seen[id];let moved=false;
+    _SI_FR_GATE[id].forEach(k=>{const n=stamps?stamps[k]:null;if(n==null)return;const o=was?was[k]:null;if(o==null||n>o)moved=true;});
+    if(moved)out.push(id);
+  });
+  if((!free||free('closes'))&&(!readAt.closes||now-readAt.closes>=_SI_FR_CLOSES_MS))out.push('closes');
+  return out;
+}
+// Pure: the model the strip draws; `now` is passed in so any moment can be tested.
+function _siFrView(now){
+  const F=_siFr,docs=F.docs||{},meta=_siSyncMeta||{};
+  const min2=(a,b)=>a==null||b==null?null:Math.min(a,b);
+  const ms={
+    catalog:F.seen.products?F.seen.products.catalog:null,
+    orders:F.seen.orders&&F.seen.lines?min2(F.seen.orders.orders,F.seen.lines.orders):null,
+    refresh:F.seen.orders&&F.seen.lines?min2(F.seen.orders.refresh,F.seen.lines.refresh):null,
+    inventory:F.seen.snap?F.seen.snap.inventory:null,
+  };
+  const snapMs=_siSnapshot?_siAxSnapMs(_siSnapshot.snapshot_at):null;
+  if(snapMs!=null)ms.inventory=ms.inventory==null?snapMs:Math.min(ms.inventory,snapMs); // the snapshot's own time is the truest stock timestamp
+  const sources=_SI_FR_SOURCES.map(s=>{
+    const t=ms[s.id],age=t==null?null:Math.max(0,now-t),limit=s.intervalH*_SI_FR_STALE_X*3600000;
+    const d=docs[s.id]||(s.id==='catalog'?meta.catalog:s.id==='inventory'?meta.inventory:s.id==='orders'?meta.orderSync:null);
+    let state='ok',words='';
+    if(t==null){state=s.id==='refresh'?'quiet':'unknown';words=s.id==='refresh'?'':s.noun+': age unknown — the sync stamp could not be read.';}
+    else if(age>limit){state='stale';words=s.noun+' '+(s.id==='orders'?'are':'is')+' '+_siFrAge(age)+' old — more than twice the '+s.intervalH+'-hour schedule, so the sync may have stopped.';}
+    if(d&&d.last_status==='error'&&state!=='stale'){state='failed';words='The last run of '+s.noun.toLowerCase()+' failed'+(d.last_error?' ('+String(d.last_error)+')':'')+'; the data shown is from the run before.';}
+    return{id:s.id,label:s.label,ms:t,ageMs:age,intervalH:s.intervalH,state,words};
+  });
+  const core=sources.filter(s=>s.id!=='refresh'),known=core.filter(s=>s.ms!=null);
+  let oldest=null;known.forEach(s=>{if(!oldest||s.ms<oldest.ms)oldest=s;});
+  const unknownAny=core.some(s=>s.ms==null);
+  let line;
+  if(oldest)line='Data as of '+_siFrFmt(oldest.ms)+' — oldest source: '+oldest.label.toLowerCase()+', '+_siFrAge(now-oldest.ms)+' ago'+(unknownAny?'; another source’s age is unknown':'');
+  else line='Data age unknown — the sync stamps could not be read';
+  let status='',statusKind='';
+  const fl=Object.keys(F.fails);
+  if(F.busy){status='Refreshing'+(F.stages.length>1?' '+F.stages.filter(s=>s.id!=='meta').map(s=>_siStage(s.id).label.toLowerCase()).join(', '):' — checking what changed')+'… '+F.pct+'%';statusKind='busy';}
+  else if(F.check&&!F.check.ok){status='Could not check for new data ('+F.check.err+'). Still showing data from '+(oldest?_siFrFmt(oldest.ms):'an unknown time')+'.';statusKind='err';}
+  else if(fl.length){status='Could not refresh '+fl.map(id=>_siStage(id).label.toLowerCase()).join(', ')+' ('+F.fails[fl[0]].msg+'). Still showing the earlier data.';statusKind='err';}
+  else if(F.histFail){status='Stock history was not refreshed ('+F.histFail+'); its figures are from the earlier read.';statusKind='err';}
+  else if(F.last)status=F.last.read.length?'Updated '+F.last.read.map(id=>_siStage(id).label.toLowerCase()).join(', ')+' at '+_siFrClock(F.last.at)+'.':'Checked '+_siFrClock(F.last.at)+' — nothing new.';
+  if(F.pending&&!F.busy&&statusKind!=='err'){status='New data is loaded but not shown yet, so nothing you are working on moves.';statusKind='pending';}
+  const bad=sources.filter(s=>s.words&&s.state!=='quiet');
+  return{line,oldest,sources,closesAt:F.readAt.closes||null,status,statusKind,busy:F.busy,pct:F.pct,pending:F.pending,
+    stale:sources.some(s=>s.state==='stale'),warnings:bad.map(s=>s.words)};
+}
+function _siFrHtml(){
+  const now=_siNow(),v=_siFrView(now);
+  const tagOf={ok:'on schedule',stale:'stale',failed:'last run failed',unknown:'unknown',quiet:''};
+  const rows=v.sources.map(s=>'<li class="si-fr-src '+s.state+'"><b>'+_siEsc(s.label)+'</b> — '+(s.ms==null?_siEsc(s.state==='quiet'?'not recorded yet':'age unknown'):_siEsc(_siFrFmt(s.ms)+' ('+_siFrAge(s.ageMs)+' ago)'))+' <span class="si-fr-tag">'+_siEsc(tagOf[s.state])+'</span> <span class="si-fr-sch">runs about every '+s.intervalH+' h</span></li>').join('')
+    +'<li class="si-fr-src"><b>Weekly closes</b> — '+(v.closesAt?_siEsc('read '+_siFrFmt(v.closesAt)):'not read yet')+' <span class="si-fr-sch">re-read daily</span></li>';
+  const tip=v.sources.filter(s=>s.ms!=null).map(s=>s.label+': '+_siFrAge(s.ageMs)+' old').join('\n');
+  const warn=v.warnings.length?'<div class="si-fr-warn" role="status"><b>'+(v.stale?'Stale data.':'Check the sync.')+'</b> '+_siEsc(v.warnings.join(' '))+'</div>':'';
+  return'<div class="si-fr-row"><span class="si-fr-line" title="'+_siEsc(tip)+'">'+_siEsc(v.line)+'</span>'
+    +'<button type="button" id="si-fr-btn" class="si-fr-btn" aria-disabled="'+(v.busy?'true':'false')+'" onclick="window._siFrRefresh()">'+(v.busy?'Refreshing…':'Refresh')+'</button>'
+    +(v.pending?'<button type="button" class="si-fr-btn" onclick="window._siFrShow()">Show new data</button>':'')+'</div>'
+    +(v.busy?'<div class="si-fr-bar" aria-hidden="true"><i style="width:'+v.pct+'%"></i></div>':'')
+    +(v.status?'<div class="si-fr-st '+v.statusKind+'" id="si-fr-st" role="'+(v.statusKind==='err'?'alert':'status')+'">'+_siEsc(v.status)+'</div>':'')
+    +warn
+    +'<details class="si-fr-det" id="si-fr-det"'+(_siFr.detOpen?' open':'')+' ontoggle="window._siFrDet(this.open)"><summary>Each source</summary><ul>'+rows+'</ul></details>';
+}
+window._siFrDet=function(o){_siFr.detOpen=!!o;};
+function _siFrPaint(){
+  if(typeof document==='undefined'||!document.getElementById)return;
+  const el=document.getElementById('si-fr');if(!el)return;
+  const had=document.activeElement&&document.activeElement.id==='si-fr-btn';
+  el.innerHTML=_siFrHtml();
+  if(had){const b=document.getElementById('si-fr-btn');if(b&&b.focus)try{b.focus();}catch(_){}}
+}
+// Is anything on the page in the middle of being used? Then new data waits behind a button instead of repainting over it.
+function _siFrUiBusy(){
+  if(_siNaSel||_siAxOvSit||_siAxLtEdit)return true;
+  try{
+    const a=typeof document!=='undefined'?document.activeElement:null;
+    if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName||'')&&a.id!=='si-fr-btn')return true;
+    if(a&&a.isContentEditable)return true;
+  }catch(_){}
+  return false;
+}
+function _siFrRepaintData(){
+  let y=0,top=0,m=null;
+  try{y=window.scrollY||0;m=document.getElementById('main-content');top=m?m.scrollTop:0;}catch(_){}
+  _siIgRepaint();
+  try{if(m&&top)m.scrollTop=top;if(y&&typeof window.scrollTo==='function')window.scrollTo(0,y);}catch(_){}
+}
+function _siFrApply(force){
+  if(!_siLoaded||!_siLoadAlive())return;
+  if(!force&&_siFrUiBusy()){_siFr.pending=true;return;}
+  _siFr.pending=false;_siFrRepaintData();
+}
+window._siFrShow=function(){_siFrApply(true);_siFrPaint();};
+function _siFrIsHidden(){try{return typeof document!=='undefined'&&(document.hidden===true||document.visibilityState==='hidden');}catch(_){return false;}}
+// ── The refresh ──
+async function siRefresh(o){
+  const F=_siFr,C=_siRetryCtl;
+  if(!_siLoaded||!_siLoadAlive())return{skipped:'not-ready'};
+  if(F.busy)return{skipped:'busy'};
+  const gen=C.gen;
+  F.busy=true;F.fails={};F.check=null;F.histFail='';F.stages=[{id:'meta',w:3}];F.state={meta:'active'};F.pct=0;
+  _siFrPaint();
+  const finish=()=>{F.busy=false;F.pin=null;};
+  let meta;
+  try{meta=await _siFrReadMeta();}
+  catch(e){finish();F.checkedAt=_siNow();F.check={ok:false,err:_siLoadErr(e).msg,at:_siNow()};_siFrPaint();return{error:'meta'};}
+  if(C.gen!==gen){finish();return{cancelled:true};}
+  F.checkedAt=_siNow();F.docs=meta.docs;
+  if(meta.docs.catalog)_siSyncMeta.catalog=meta.docs.catalog;
+  if(meta.docs.inventory)_siSyncMeta.inventory=meta.docs.inventory;
+  if(meta.docs.orders)_siSyncMeta.orderSync=meta.docs.orders;
+  F.state.meta='done';
+  const ids=_siFrMoved(meta.stamps,F.seen,F.readAt,_siNow(),id=>!C.running[id]);
+  if(!ids.length){finish();F.last={at:_siNow(),read:[]};F.pct=100;_siFrPaint();return{read:[]};}
+  F.pin=meta.stamps;
+  ids.forEach(id=>{F.stages.push({id,w:_siStage(id).w});F.state[id]='active';});
+  F.pct=siProgressNext(0,siProgress(F.stages,F.state));_siFrPaint();
+  const done=[];
+  await Promise.all(ids.map(async id=>{
+    C.running[id]=true;
+    let tm=null;
+    try{
+      await Promise.race([Promise.resolve().then(()=>_siRunners[id]()),new Promise((_,rej)=>{tm=setTimeout(()=>rej(Object.assign(new Error('timed out after '+(_SI_FR_READ_MS/1000)+'s'),{code:'timeout'})),_SI_FR_READ_MS);})]);
+      _siFrNote(id,meta.stamps);F.state[id]='done';done.push(id);
+    }catch(e){F.state[id]='failed';F.fails[id]=_siLoadErr(e);}
+    finally{clearTimeout(tm);C.running[id]=false;}
+    F.pct=siProgressNext(F.pct,siProgress(F.stages,F.state));if(C.gen===gen)_siFrPaint();
+  }));
+  if(C.gen!==gen){finish();return{cancelled:true,read:done};}
+  if(done.indexOf('snap')>=0){
+    const day=_siPktDate(-7);
+    if(F.prevDay!==day){try{const s=await getDoc(doc(db,'shopify_inventory_snapshots',day));if(s.exists())_siPrevSnapshot=s.data();F.prevDay=day;}catch(_){}}
+    if(_siHistState==='ok'&&!_siHistPromise){ // only the days newer than the cached ones (warm cache); never the shared "loading" state, so nothing blanks
+      try{const r=await _siAxReadFolds(false);_siHist=_siAxHistoryFromFolds(r.folds);_siHistLast={read:r.read,warm:r.warm};_siHistCacheWrite(r.folds,r.fullAt);_siAxCache=null;}
+      catch(e){F.histFail=_siLoadErr(e).msg;}
+    }
+    if(C.gen!==gen){finish();return{cancelled:true,read:done};}
+  }
+  finish();
+  F.last={at:_siNow(),read:done.slice()};if(!Object.keys(F.fails).length)F.pct=100;
+  if(done.length)_siFrApply(false);
+  _siFrPaint();
+  return{read:done,failed:Object.keys(F.fails)};
+}
+window._siFrRefresh=function(){if(_siFr.busy)return;return siRefresh();};
+// ── The 10-minute timer: one interval, held in the controller, so leaving the page clears it with every other timer ──
+function _siFrTick(){
+  const F=_siFr;
+  if(!_siLoaded||!_siLoadAlive()){siRetryClearTimers();return;}
+  if(_siFrIsHidden())return;               // paused while the tab is hidden; the catch-up on becoming visible does the check
+  _siFrPaint();                             // the ages move every minute
+  if(!F.busy&&_siNow()-F.checkedAt>=_SI_FR_AUTO_MS)siRefresh();
+}
+function _siFrStart(catchUp){
+  const C=_siRetryCtl,F=_siFr;
+  if(C.auto){clearInterval(C.auto);C.auto=null;}   // never two timers
+  if(!F.checkedAt)F.checkedAt=_siNow();
+  C.auto=setInterval(_siFrTick,_SI_FR_TICK_MS);
+  if(!F.wired&&typeof document!=='undefined'&&document.addEventListener){
+    F.wired=true;document.addEventListener('visibilitychange',()=>{if(!_siFrIsHidden()&&_siLoaded&&_siLoadAlive()&&_siRetryCtl.auto)_siFrTick();});
+  }
+  if(catchUp)_siFrTick();
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -1064,6 +1297,7 @@ function renderShopifyDashboard(){
     <div class="page-sub">Shopify sales + inventory — read-only, updated every 4 hours</div>
   </div>
 
+  <div class="si-fr" id="si-fr">${_siFrHtml()}</div>
   ${_siSeasonBar()}
   ${_siTabBar()}
   <div id="si-content">${_siRenderSection(m,skuRows)}</div>
