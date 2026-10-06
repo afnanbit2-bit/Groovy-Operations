@@ -1195,7 +1195,7 @@ function _siTsSuggestType(category,title){
     if(t&&!b)return{k:'top',why:src};if(b&&!t)return{k:'bottom',why:src};return null;};
   return(category&&pick(category,'from its Shopify type "'+String(category).slice(0,40)+'"'))||(title&&pick(title,'from its name'))||null;
 }
-function _siTsWinterDay(day){const m=/^\d{4}-(\d{2})-\d{2}/.exec(String(day||''));if(!m)return null;const mo=+m[1];return mo>=10||mo<=2;} // Oct..Feb, the Explorer's winter
+function _siTsWinterDay(day){const m=/^\d{4}-(\d{2})-\d{2}/.exec(String(day||''));if(!m)return null;const mo=+m[1];return mo>=10||mo<=1;} // Oct..Jan, the Explorer's winter
 // Suggestions are a list of {k,why}: one from the date, one from siblings (the other articles of the same type that already have a season).
 function _siTsSuggestSeason(day,typeLabel,siblingSeasons){
   const out=[];
@@ -2481,8 +2481,8 @@ function _siAxFmtBucket(start,bucket,tick){
   return _siAxFmtDay(start,tick);
 }
 // ── Calendar helpers: months, years, winters (pure) ─────────────────
-// Winter = October to the end of February. It straddles New Year, so a winter is named by the year its October falls in.
-const _SI_AX_WINTER_MONTHS=[10,11,12,1,2];
+// Winter = October to the end of January (owner decision 6 Oct 2026; summer is Feb to Sep). It straddles New Year, so a winter is named by the year its October falls in.
+const _SI_AX_WINTER_MONTHS=[10,11,12,1];
 function _siAxIsWinterMonth(m){return _SI_AX_WINTER_MONTHS.indexOf(+m)>=0;}
 function _siAxLeap(y){return(y%4===0&&y%100!==0)||y%400===0;}
 function _siAxMonthLen(y,m){return[31,_siAxLeap(y)?29:28,31,30,31,30,31,31,30,31,30,31][m-1];}
@@ -2493,12 +2493,12 @@ function _siAxAddMonths(day,n){
   return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');
 }
 function _siAxAddYears(day,n){return _siAxAddMonths(day,12*n);} // Feb 29 + 1 year = Feb 28
-// The winter that starts in October of startYear: Oct 1 .. last day of February (28 or 29).
+// The winter that starts in October of startYear: Oct 1 .. 31 January.
 function _siAxWinterWindow(startYear){
   const y=+startYear,e=y+1;
-  return{startYear:y,from:y+'-10-01',to:e+'-02-'+String(_siAxMonthLen(e,2)).padStart(2,'0'),label:'Winter '+y+'–'+String(e).slice(2)};
+  return{startYear:y,from:y+'-10-01',to:e+'-01-'+String(_siAxMonthLen(e,1)).padStart(2,'0'),label:'Winter '+y+'–'+String(e).slice(2)};
 }
-// The winter a day belongs to; a day from March to September has no winter of its own, so the LATEST one that has ended.
+// The winter a day belongs to; a day from February to September has no winter of its own, so the LATEST one that has ended.
 function _siAxWinterOf(day){
   const m=/^(\d{4})-(\d{2})/.exec(day||'');if(!m)return null;
   return(+m[2]>=10)?+m[1]:+m[1]-1;
@@ -4664,7 +4664,7 @@ function _siAxCompareData(){
   });
   return{arts,ser,rows,M,chartSeries,noPrev};
 }
-// ── Calendar window: all data / a winter (Oct–Feb) / month by month ──────────
+// ── Calendar window: all data / a winter (Oct–Jan) / month by month ──────────
 function _siAxLatestWinter(){return _siAxWinterOf(_siPktDate(0));}
 function _siAxWinYearNow(){
   const latest=_siAxLatestWinter(),first=Math.min(latest,_siAxWinterOf(_siAxIndex().cov||_siPktDate(0)));
@@ -4692,12 +4692,12 @@ function _siAxPrevNote(d){
 function _siAxCalOptsHtml(){
   const b=(id,l)=>`<button class="si-ax-btn${_siAxWin===id?' on':''}" aria-pressed="${_siAxWin===id}" onclick="window._siAxSetWin('${id}')">${l}</button>`;
   const nav=_siAxWin==='all'?'':_siAxWin==='months'?(()=>{const l=_siAxMonthList();if(l.total<=_SI_AX_MONTHS_MAX)return'';const a=_siAxFmtBucket(l.months[0],'month',false),z=_siAxFmtBucket(l.months[l.months.length-1],'month',false);return`<span class="si-ax-lab" style="margin-left:8px">Months</span><button class="si-ax-btn" aria-label="Earlier months" ${l.hasOlder?'':'disabled '}onclick="window._siAxMonStep(-1)">‹</button><span class="si-ax-lab" style="color:var(--text)">${_siEsc(a)} – ${_siEsc(z)}</span><button class="si-ax-btn" aria-label="Later months" ${l.hasNewer?'':'disabled '}onclick="window._siAxMonStep(1)">›</button>`;})():(()=>{const w=_siAxWinterWindow(_siAxWinYearNow());return`<span class="si-ax-lab" style="margin-left:8px">Which winter</span><button class="si-ax-btn" aria-label="Earlier winter" onclick="window._siAxWinStep(-1)">‹</button><span class="si-ax-lab" style="color:var(--text)">${_siEsc(w.label)}</span><button class="si-ax-btn" aria-label="Later winter" onclick="window._siAxWinStep(1)">›</button>`;})();
-  return`<div class="si-ax-bar" id="si-ax-calopts"><span class="si-ax-lab">Window</span>${b('all','All data')}${b('winter','Winter (Oct–Feb)')}${b('months','Month by month')}${nav}
+  return`<div class="si-ax-bar" id="si-ax-calopts"><span class="si-ax-lab">Window</span>${b('all','All data')}${b('winter','Winter (Oct–Jan)')}${b('months','Month by month')}${nav}
     <button class="si-ax-btn${_siAxPrev?' on':''}" aria-pressed="${_siAxPrev}" style="margin-left:8px" onclick="window._siAxTogglePrev()">Compare with previous year</button></div>`;
 }
 // Month by month: a ROLLING window that ENDS at the current month and reaches back to the month of the first synced
 // order, at most twelve tiles (the latest twelve; the stepper goes further back). No future month is ever drawn, and a
-// month before the synced data is not drawn at all. Frost stays on Oct..Feb wherever they fall.
+// month before the synced data is not drawn at all. Frost stays on Oct..Jan wherever they fall.
 // Value = the month's total for the chosen metric family (revenue for revenue metrics, units otherwise).
 // A month before the article was live is "no data" — never 0.
 function _siAxMonthList(){
@@ -4829,7 +4829,7 @@ const _SI_PF_SORTS=[{k:'demand',l:'Units per in-stock day'},{k:'cover',l:'Longes
 const _SI_PF_BUCKETS=[{k:'winner',l:'Winners'},{k:'over',l:'Over-stocked (26+ weeks of cover)'},{k:'slow',l:'Slow'},{k:'dead',l:'Dead stock'},{k:'other',l:'Everything else'}];
 let _siAxPfCls='',_siAxPfCat='',_siAxPfSeason='',_siAxPfSort='demand',_siAxPfAll=false,_siAxPfConcAll=false,_siAxPfMemo=null;
 
-// units and revenue sold in winter months (Oct to Feb) and in the other months, by the day of each counted sale
+// units and revenue sold in winter months (Oct to Jan) and in the other months, by the day of each counted sale
 function _siAxPfSeasonUnits(a){
   const o={wU:0,wR:0,sU:0,sR:0};
   if(!a||!a.daily)return o;
@@ -4889,8 +4889,8 @@ function _siAxPfCalc(rows,opts){
   };
   const cats=grp(r=>r.cat).sort((x,y)=>(y.units-x.units)||_siSortNat(x.k,y.k));
   const sg=grp(r=>r.season||'none');
-  // season of SALE: every counted sale by its month (Oct to Feb = winter). Stock and cover go with the season each article mainly sells in.
-  const seasons=[{k:'winter',label:'Winter months (Oct–Feb)'},{k:'summer',label:'Other months (Mar–Sep)'},{k:'none',label:'No counted sales'}].map(s=>{
+  // season of SALE: every counted sale by its month (Oct to Jan = winter). Stock and cover go with the season each article mainly sells in.
+  const seasons=[{k:'winter',label:'Winter months (Oct–Jan)'},{k:'summer',label:'Other months (Feb–Sep)'},{k:'none',label:'No counted sales'}].map(s=>{
     const g=sg.find(x=>x.k===s.k)||{n:0,stockUnits:0,stockVal:0,valMissing:0,cover:null,pV:null};
     let u=0,rv=0;
     if(s.k==='winter')R.forEach(r=>{u+=r.su.wU;rv+=r.su.wR;});
@@ -5010,7 +5010,7 @@ function _siAxPfCatHtml(pf){
 function _siAxPfSeasonHtml(pf){
   const row=x=>`<tr><td>${_siEsc(x.label)}</td><td class="r">${x.units==null?'—':x.units}</td><td class="r">${_siAxPfRs(x.rev)}</td><td class="r">${_siAxPct(x.pU)}</td><td class="r">${x.n}</td><td class="r">${_siAxPfRs(x.stockVal)}</td><td class="r">${x.cover==null?'—':_siEsc(_siAxNum(x.cover))}</td></tr>`;
   return`<div class="si-pf-wrap"><table class="si-pf-tbl"><thead><tr><th>Selling window</th><th class="r">Units sold in these months</th><th class="r">Revenue (list)</th><th class="r">% of units</th><th class="r">Articles that mainly sell then</th><th class="r">Their stock at selling price</th><th class="r">Their cover (weeks)</th></tr></thead><tbody>${pf.seasons.map(row).join('')}</tbody></table></div>
-  <div class="si-ax-note">This is the selling window: sales are split by the month of each order (October to February is winter), whatever season staff saved for an article. An article counts as a winter seller when more than half of its units sold in winter months; stock follows the article.</div>`;
+  <div class="si-ax-note">This is the selling window: sales are split by the month of each order (October to January is winter), whatever season staff saved for an article. An article counts as a winter seller when more than half of its units sold in winter months; stock follows the article.</div>`;
 }
 // The saved type / saved season rollups: the SAME grouping function as Category (inside _siAxPfCalc), never a second calculator.
 function _siAxPfFeedHtml(pf){
@@ -5171,7 +5171,7 @@ function _siAxCompareBody(){
     {key:'refund',label:'Refunded units',title:_siAxTip('refund'),type:'num',get:r=>r.m.refunded,cell:r=>`<td>${r.m.refunded!=null?r.m.refunded:'—'}</td>`},
     {key:'asp',label:'Avg unit price',title:_siAxTip('asp'),type:'num',get:r=>r.m.asp,cell:r=>`<td>${r.m.asp!=null?_siEsc(_siPKR(Math.round(r.m.asp))):'—'}</td>`}
   ]),d.rows,{def:{key:'n',dir:1},defText:'the order you added them',minWidth:900,ties});
-  const winNote=_siAxBasis!=='calendar'?'':(_siAxWin==='winter'?' Winter window: '+_siAxFmtDay(d.ser.win.from)+' to '+_siAxFmtDay(d.ser.win.to)+' (October to the end of February); part of the window that has not happened yet is left empty, not zero.':(monthsView?' Month by month: every month from the first synced orders up to the current one (the latest twelve; use the arrows for earlier ones), winter months frosted; units (or revenue) per month, the current month is marked so far, and an article not yet live in a month reads no data. Months before the synced orders and months still ahead are not shown.':''));
+  const winNote=_siAxBasis!=='calendar'?'':(_siAxWin==='winter'?' Winter window: '+_siAxFmtDay(d.ser.win.from)+' to '+_siAxFmtDay(d.ser.win.to)+' (October to the end of January); part of the window that has not happened yet is left empty, not zero.':(monthsView?' Month by month: every month from the first synced orders up to the current one (the latest twelve; use the arrows for earlier ones), winter months frosted; units (or revenue) per month, the current month is marked so far, and an article not yet live in a month reads no data. Months before the synced orders and months still ahead are not shown.':''));
   const basisNote=d.ser.basis==='launch'?'Since launch: x-axis is weeks (or months) since each article\'s live date, so products from different years line up at the same age.':'Calendar: the same dates on the x-axis; a line starts when the article went live.';
   // The chart comes first, right under the controls: it used to sit below the scorecard and the "Read this" block, so a click on
   // Calendar / Since launch changed nothing anyone could see without scrolling past them.
@@ -5274,10 +5274,10 @@ function _siNaWinter(a,today){ // the legacy rule, kept for an article with NO s
   return false;
 }
 // Product-data sub-phase 3: the article's SAVED season replaces the fixed 15 Sept to 30 Nov window. The window an article is judged in:
-// winter = Oct to Feb (the Explorer's own rule, _SI_AX_WINTER_MONTHS), summer = Mar to Aug, all-season = always. Outside its window an
+// winter = Oct to Jan (the Explorer's own rule, _SI_AX_WINTER_MONTHS), summer = Feb to Sep (so no gap), all-season = always. No grace period. Outside its window an
 // article is on a seasonal wait (Watch, never a red clear-out); inside it, it is judged like any other. 'unknown' (no saved season) and
 // 'unavailable' (the saved list could not be read) keep the legacy rule above and say so.
-const _SI_NA_SUMMER_MONTHS=[3,4,5,6,7,8];
+const _SI_NA_SUMMER_MONTHS=[2,3,4,5,6,7,8,9];
 function _siNaInWindow(season,today){
   if(season==='all')return true;
   const m=+String(today||'').slice(5,7);
@@ -5627,7 +5627,7 @@ function _siNaPlaybook(i){
   if(n.confCaps&&n.confCaps.length)confBits.push('Capped at Medium because '+n.confCaps.join(' and ')+'.');
   if(i.type==='stockout'||i.type==='runout'||i.type==='sizehole'||i.type==='rising'||i.type==='saleloss'||i.type==='winner')confBits.push('Lead time: '+leadTxt+'.'+rt);
   const sSaved=n.seasonState==='saved',sLabel=sSaved?({winter:'winter',summer:'summer',all:'all-season'})[n.season]:'';
-  const sOpens=n.season==='summer'?'March':'October';
+  const sOpens=n.season==='summer'?'February':'October';
   if((i.type==='dead'||i.type==='overstock')&&n.seasonState&&n.seasonState!=='saved')confBits.push(n.seasonState==='unknown'?'Season unknown: nobody has saved a season for this article (Type & season), so the seasonal wait follows the 15 September to 30 November rule and the category and tags.':'Type and season unavailable: the saved list could not be read, so the seasonal wait follows the 15 September to 30 November rule and the category and tags.');
   if((i.type==='dead'||i.type==='overstock')&&sSaved)confBits.push('Season: saved as '+sLabel+'.');
   const holesTxt=(n.holes||[]).map(h=>h.size+(h.kind==='out'?' (out)':' ('+h.stock+' left)')).join(', ');

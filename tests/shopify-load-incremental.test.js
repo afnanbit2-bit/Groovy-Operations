@@ -90,7 +90,7 @@ async function checks(src){
   {
     const {fk,B}=await open();
     const win=dayShift(T,90);
-    o['first load is a full window read: 202 documents (the T-120 line is phase 2), mode full, a full-read time recorded']=fk.st.reads===202&&B('_siLineItems.length')===202&&B('_siLinesMode')==='full'&&B('_siLinesFullAt')>0&&fk.st.queries[0].join()==='order_created_at>='+win;
+    o['first load is a full window read: 202 documents (the T-120 line is phase 2), mode full, a full-read time recorded']=fk.st.reads===202&&B('_siLineItems.length')===202&&B('_siLinesMode')==='full'&&B('_siLinesFullAt')>0&&fk.st.queries.length===6&&fk.st.queries[0].join().indexOf('order_created_at>='+win)===0; // SUPERSEDED single-range assumption: the full window is read as 6 date ranges (ii-fix-loading)
     mutate(fk);
     const before=B('_siLineItems'),r0=fk.st.reads;
     const idBefore=B('(globalThis.__arr=_siLineItems,0)');
@@ -99,7 +99,7 @@ async function checks(src){
     await B('_siRunners.lines(true)');
     const expStart=new Date(Date.now()-72*3600000+5*3600000).toISOString().slice(0,10);
     const q=fk.st.queries[fk.st.queries.length-1];
-    o['incremental: ONE range order_created_at >= (previous read - 72 h, PKT day), not the 90-day cut']=fk.st.queries.length===2&&q.join()==='order_created_at>='+expStart&&expStart>win;
+    o['incremental: ONE range order_created_at >= (previous read - 72 h, PKT day), not the 90-day cut']=fk.st.queries.length===7&&q.join()==='order_created_at>='+expStart&&expStart>win;
     o['incremental reads 2 documents, not 202 (read-count assertion)']=fk.st.reads-r0===2;
     o['incremental merge: 203 lines (202 + the new one), no duplicate ids']=B('_siLineItems.length')===203&&B('new Set(_siLineItems.map(l=>l._id)).size')===203;
     o['incremental merge: the existing line 1_11 now says refunded (newest wins), older filler lines are kept']=B('_siLineItems.find(l=>l._id==="1_11").financial_status')==='refunded'&&B('_siLineItems.filter(l=>l.order_created_at<"'+dayShift(T,9)+'").length')>=150;

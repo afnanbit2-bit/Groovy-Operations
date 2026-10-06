@@ -125,8 +125,8 @@ async function checks(src){
   // ── Needs Attention: the saved season decides the wait ──
   const inf=(cat,code,day)=>JSON.parse(R('J=JSON.stringify(_siNaSeasonInfo({code:"'+code+'",category:"'+cat+'",skus:new Set()},"'+day+'"))'));
   const wait=(code,day)=>inf('Tees',code,day).wait;
-  o['season window, winter (A1): waits 30 Sep, judged 1 Oct and 28 Feb, waits again 1 Mar']=wait('A1','2026-09-30')===true&&wait('A1','2026-10-01')===false&&wait('A1','2027-02-28')===false&&wait('A1','2027-03-01')===true;
-  o['season window, summer (A2): judged 1 Mar and 31 Aug, waits 1 Sep and 28 Feb']=wait('A2','2026-03-01')===false&&wait('A2','2026-08-31')===false&&wait('A2','2026-09-01')===true&&wait('A2','2027-02-28')===true;
+  o['season window, winter (A1): waits 30 Sep, judged 1 Oct, 31 Dec and 31 Jan, waits again 1 Feb (owner map: Oct-Jan, no grace)']=wait('A1','2026-09-30')===true&&wait('A1','2026-10-01')===false&&wait('A1','2026-12-31')===false&&wait('A1','2027-01-31')===false&&wait('A1','2027-02-01')===true;
+  o['season window, summer (A2): judged 1 Feb, 31 Aug and 30 Sep, waits 1 Oct and 31 Jan (owner map: Feb-Sep, September is summer)']=wait('A2','2027-02-01')===false&&wait('A2','2026-08-31')===false&&wait('A2','2026-09-30')===false&&wait('A2','2026-10-01')===true&&wait('A2','2027-01-31')===true;
   o['season window, all-season (A4): never waits, on any date']=['2026-01-15','2026-04-15','2026-07-15','2026-10-15','2026-12-31'].every(d=>wait('A4',d)===false);
   o['saved season is reported as state "saved" with the season']=inf('Tees','A1','2026-10-01').state==='saved'&&inf('Tees','A1','2026-10-01').season==='winter';
   o['no saved season (A5): state "unknown", the LEGACY rule decides — a hoodie waits on 1 Oct, a tee does not, nobody waits on 1 Dec']=inf('Hoodies','A5','2026-10-01').state==='unknown'&&inf('Hoodies','A5','2026-10-01').wait===true&&inf('Tees','A5','2026-10-01').wait===false&&inf('Hoodies','A5','2026-12-01').wait===false;
@@ -158,7 +158,7 @@ async function checks(src){
   let p=pbk('A1','2026-09-30');
   o['playbook: a saved winter article off season says "outside its season" and when it opens (October), not "15 November"']=/outside its season/.test(p.situation+p.actions.map(x=>x.text).join(' '))&&p.actions.some(x=>/season opens \(October\)/.test(x.text))&&!p.actions.some(x=>/15 November/.test(x.text))&&/Season: saved as winter/.test(p.confidence);
   p=pbk('A2','2026-10-01');
-  o['playbook: a saved summer article says its season opens in March']=p.actions.some(x=>/season opens \(March\)/.test(x.text));
+  o['playbook: a saved summer article says its season opens in February']=p.actions.some(x=>/season opens \(February\)/.test(x.text));
   p=pbk('A5','2026-10-01','Hoodies');
   o['playbook: unknown season keeps the 15 November text and says "Season unknown"']=p.actions.some(x=>/15 November/.test(x.text))&&/Season unknown/.test(p.confidence);
   R('_siMetaState="error"');p=pbk('A1','2026-10-01','Hoodies');R('_siMetaState="ok"');
@@ -200,8 +200,10 @@ module.exports=async function(){
   await brk('rollups present when unreadable',["opts.metaOf?(opts.metaOf(a.code).type||'none'):null","metaOf:_siFeedOk()?_siMetaOf:null"],["(opts.metaOf||_siMetaOf)(a.code).type||'none'","metaOf:_siMetaOf"],K('unavailable: the Portfolio'));
   await brk('rollups lose the Unclassified row',"{k:'none',l:'Unclassified'}],'mtype')","{k:'zz',l:'Zz'}],'mtype')",K('rollup by type: Unclassified').concat(K('rollups conserve')));
   await brk('old table still called Season','By selling window (order month)','Season',K('portfolio body: two cards'));
-  await brk('winter window starts in November','function _siAxIsWinterMonth(m){return _SI_AX_WINTER_MONTHS.indexOf(+m)>=0;}','function _siAxIsWinterMonth(m){return [11,12,1,2].indexOf(+m)>=0;}',K('season window, winter').concat(K('detect: a saved winter')));
-  await brk('summer window to September','const _SI_NA_SUMMER_MONTHS=[3,4,5,6,7,8];','const _SI_NA_SUMMER_MONTHS=[3,4,5,6,7,8,9];',K('season window, summer'));
+  await brk('winter window starts in November','function _siAxIsWinterMonth(m){return _SI_AX_WINTER_MONTHS.indexOf(+m)>=0;}','function _siAxIsWinterMonth(m){return [11,12,1].indexOf(+m)>=0;}',K('season window, winter').concat(K('detect: a saved winter')));
+  await brk('summer window drops September','const _SI_NA_SUMMER_MONTHS=[2,3,4,5,6,7,8,9];','const _SI_NA_SUMMER_MONTHS=[2,3,4,5,6,7,8];',K('season window, summer'));
+  await brk('winter window keeps February','function _siAxIsWinterMonth(m){return _SI_AX_WINTER_MONTHS.indexOf(+m)>=0;}','function _siAxIsWinterMonth(m){return [10,11,12,1,2].indexOf(+m)>=0;}',K('season window, winter'));
+  await brk('summer window starts in March','const _SI_NA_SUMMER_MONTHS=[2,3,','const _SI_NA_SUMMER_MONTHS=[3,3,',K('season window, summer'));
   await brk('all-season waits',"if(season==='all')return true;","if(season==='all')return false;",K('season window, all-season').concat(K('detect: an all-season')));
   await brk('saved season ignored (legacy always)','wait:!_siNaInWindow(s,today),legacy:false','wait:_siNaWinter(a,today),legacy:false',K('season window, winter').concat(K('detect: the same article on 30 Sep')));
   await brk('unreadable list still uses saved season',"if(_siMetaState!=='ok')return{state:'unavailable'","if(false)return{state:'unavailable'",K('list unreadable'));

@@ -15,8 +15,8 @@ function load(src,counter){
   return a;
 }
 const near=(x,y,e)=>Math.abs(x-y)<(e||0.0005);
-// Six built articles (no classifier involved). daily = day -> {u units, r revenue}. W = winter month (Oct-Feb), S = other.
-//  A Tees   winner     daily 10-05 40/40000 W, 02-28 20/20000 W, 03-01 40/40000 S   units 100 rev 100000  on hand 50 asp 1000 -> 50000, cover 5,  pace 10
+// Six built articles (no classifier involved). daily = day -> {u units, r revenue}. W = winter month (Oct-Jan, owner map 6 Oct 2026), S = other (Feb-Sep).
+//  A Tees   winner     daily 10-05 40/40000 W, 02-28 20/20000 S, 03-01 40/40000 S   units 100 rev 100000  on hand 50 asp 1000 -> 50000, cover 5,  pace 10
 //  B Tees   solid      daily 09-30 25/12500 S, 10-01 25/12500 W                       units 50  rev 25000   on hand 100 asp 500  -> 50000, cover 30, pace 5   (exactly half winter: NOT a winter seller)
 //  C Hoodie slow       daily 01-31 30/60000 W                                         units 30  rev 60000   on hand 60  asp 2000 -> 120000, cover 40, pace 1.5
 //  D Hoodie dead       daily 12-31 10/20000 W                                         units 10  rev 20000   on hand 20  asp 2000 -> 40000, no cover, no pace
@@ -51,20 +51,20 @@ function checks(src){
   o['% of articles: each class with one article is 1/6']=near(mix.slow.pN,1/6)&&mix.steady.pN===0;
   o['the class mix shares of units sum to 100%']=near(pf.mix.reduce((s,x)=>s+x.pU,0),1,1e-9);
   const sea={};pf.seasons.forEach(x=>sea[x.k]=x);
-  // winter units: A 40+20, B 25 (10-01), C 30, D 10 = 125; revenue 40000+20000+12500+60000+20000 = 152500. Summer: A 40, B 25, E 10 = 75; 40000+12500+5000 = 57500
-  o['season of sale: winter 125 units / 152500 (Oct 1 and Feb 28 are winter)']=sea.winter.units===125&&sea.winter.rev===152500;
-  o['season of sale: other months 75 units / 57500 (Sep 30 and Mar 1 are not winter)']=sea.summer.units===75&&sea.summer.rev===57500;
+  // winter units (Oct-Jan): A 40 (10-05), B 25 (10-01), C 30 (01-31), D 10 (12-31) = 105; revenue 40000+12500+60000+20000 = 132500. Other (Feb-Sep): A 20 (02-28) + 40 (03-01), B 25 (09-30), E 10 = 95; 60000+12500+5000 = 77500
+  o['season of sale: winter 105 units / 132500 (Oct 1, Dec 31 and Jan 31 are winter)']=sea.winter.units===105&&sea.winter.rev===132500;
+  o['season of sale: other months 95 units / 77500 (Sep 30, Feb 28 and Mar 1 are not winter)']=sea.summer.units===95&&sea.summer.rev===77500;
   o['winter + other months = every counted unit']=sea.winter.units+sea.summer.units===pf.tot.units;
-  o['an article whose units are exactly half winter (B) is not a winter seller; A, C, D are']=J(pf.rows.filter(r=>r.season==='winter').map(r=>r.code))===J(['A','C','D'])&&pf.rows.find(r=>r.code==='B').season==='summer'&&pf.rows.find(r=>r.code==='F').season===null;
-  // winter-selling articles A, C, D: stock 50000+120000+40000 = 210000; cover = (50+60)/(10+1.5) = 9.565 (D has no pace)
-  o['stock follows the article: winter sellers hold 210000, cover 9.57 weeks (an article without a pace is left out of the cover)']=sea.winter.stockVal===210000&&near(sea.winter.cover,110/11.5,0.001)&&sea.winter.n===3;
-  o['other-season sellers (B, E): stock 50000, cover (100+0)/(5+5) = 10 weeks']=sea.summer.stockVal===50000&&near(sea.summer.cover,10)&&sea.summer.n===2;
+  o['an article whose units are exactly half winter (B) is not a winter seller, nor is A (40 of 100); C, D are']=J(pf.rows.filter(r=>r.season==='winter').map(r=>r.code))===J(['C','D'])&&pf.rows.find(r=>r.code==='B').season==='summer'&&pf.rows.find(r=>r.code==='F').season===null;
+  // winter-selling articles C, D: stock 120000+40000 = 160000; cover = 60/1.5 = 40 (D has no pace)
+  o['stock follows the article: winter sellers hold 160000, cover 40 weeks (an article without a pace is left out of the cover)']=sea.winter.stockVal===160000&&near(sea.winter.cover,40,0.001)&&sea.winter.n===2;
+  o['other-season sellers (A, B, E): stock 100000, cover (50+100+0)/(10+5+5) = 7.5 weeks']=sea.summer.stockVal===100000&&near(sea.summer.cover,7.5)&&sea.summer.n===3;
   o['no counted sales: units are "—" (null) and the article is counted (1)']=sea.none.units===null&&sea.none.rev===null&&sea.none.n===1;
   const cat={};pf.cats.forEach(x=>cat[x.k]=x);
   o['categories: Tees 2 articles / 150 units / 125000 / value 100000 / cover 150/15 = 10']=cat.Tees.n===2&&cat.Tees.units===150&&cat.Tees.rev===125000&&cat.Tees.stockVal===100000&&near(cat.Tees.cover,10);
   o['categories: Hoodies 40 units / 80000 / value 160000 / cover 60/1.5 = 40 / winter share 100%']=cat.Hoodies.units===40&&cat.Hoodies.rev===80000&&cat.Hoodies.stockVal===160000&&near(cat.Hoodies.cover,40)&&near(cat.Hoodies.wShare,1);
   o['categories: Caps value 0 with one unpriced article flagged, cover 0 (out of stock)']=cat.Caps.stockVal===0&&cat.Caps.valMissing===1&&cat.Caps.cover===0;
-  o['Tees winter share is (60+25)/150 = 56.7%']=near(cat.Tees.wShare,85/150,0.0001);
+  o['Tees winter share is (40+25)/150 = 43.3%']=near(cat.Tees.wShare,65/150,0.0001);
   o['categories are ordered by units (Tees, Hoodies, Caps) and shares of units sum to 100%']=J(pf.cats.map(x=>x.k))===J(['Tees','Hoodies','Caps'])&&near(pf.cats.reduce((s,x)=>s+x.pU,0),1,1e-9);
   const c=pf.conc;
   // units 100, 50, 30, 10, 10 of 200 (ties by code: D before E): cumulative 100, 150, 180, 190, 200
@@ -89,7 +89,7 @@ function checks(src){
   const li=(sku,q,day,price)=>({sku,quantity:q,price:price||1000,order_created_at:day+'T12:00:00+05:00',financial_status:'paid'});
   const prod=(code,title,cat)=>['S','M'].map(sz=>({_id:code+'-'+sz,sku:code+'-'+sz,product_title:title,color:'Blue',size:sz,product_type:cat,status:'active',published_at:'2025-01-01T10:00:00+05:00'}));
   const P=[].concat(prod('GA','Alpha Tee','Tees'),prod('GB','Beta Hood <img src=x onerror=alert(1)>','Hoodies'),prod('GC','Gamma Tee','Tees'));
-  const L=[li('GA-S',20,'2026-07-01'),li('GA-M',20,'2026-09-01'),li('GB-S',10,'2026-01-15',2000),li('GB-M',10,'2026-02-10',2000)];
+  const L=[li('GA-S',20,'2026-07-01'),li('GA-M',20,'2026-09-01'),li('GB-S',10,'2026-01-15',2000),li('GB-M',10,'2026-01-20',2000)];
   const it=(a,b,c,d,e,f)=>({a:{sku:'GA-S',available:a},b:{sku:'GA-M',available:b},c:{sku:'GB-S',available:c},d:{sku:'GB-M',available:d},e:{sku:'GC-S',available:e},f:{sku:'GC-M',available:f}});
   const docs=[{date:'2026-09-14',items:it(10,10,5,5,3,3)},{date:'2026-09-15',items:it(10,10,5,5,3,3)}];
   R('_siProducts='+J(P)+';_siLineItems='+J(L)+';_siSnapshot='+J({date:'2026-09-15',items:it(10,10,5,5,3,3)})+';_siPrevSnapshot=null;_siHist=_siAxBuildHistory('+J(docs)+');_siHistState="ok";_siAxCache=null;_siAxPfMemo=null');
@@ -179,9 +179,10 @@ module.exports=async function(){
     let r;try{r=checks(SRC.split(from).join(to));}catch(e){r={};failing.forEach(f=>r[f]=false);}
     failing.forEach(f=>s.ok('break "'+label+'" fails "'+f+'"',r[f]!==true));
   };
-  const SEAW='season of sale: winter 125 units / 152500 (Oct 1 and Feb 28 are winter)';
-  brk('October is not winter','const _SI_AX_WINTER_MONTHS=[10,11,12,1,2];','const _SI_AX_WINTER_MONTHS=[11,12,1,2];',[SEAW,'season of sale: other months 75 units / 57500 (Sep 30 and Mar 1 are not winter)']);
-  brk('March is winter','const _SI_AX_WINTER_MONTHS=[10,11,12,1,2];','const _SI_AX_WINTER_MONTHS=[10,11,12,1,2,3];',['season of sale: other months 75 units / 57500 (Sep 30 and Mar 1 are not winter)']);
+  const SEAW='season of sale: winter 105 units / 132500 (Oct 1, Dec 31 and Jan 31 are winter)';
+  brk('October is not winter','const _SI_AX_WINTER_MONTHS=[10,11,12,1];','const _SI_AX_WINTER_MONTHS=[11,12,1];',[SEAW,'season of sale: other months 95 units / 77500 (Sep 30, Feb 28 and Mar 1 are not winter)']);
+  brk('February is winter','const _SI_AX_WINTER_MONTHS=[10,11,12,1];','const _SI_AX_WINTER_MONTHS=[10,11,12,1,2];',[SEAW]);
+  brk('March is winter','const _SI_AX_WINTER_MONTHS=[10,11,12,1];','const _SI_AX_WINTER_MONTHS=[10,11,12,1,2,3];',['season of sale: other months 95 units / 77500 (Sep 30, Feb 28 and Mar 1 are not winter)']);
   brk('half-winter article counts as winter','su.wU*2>a.units','su.wU*2>=a.units',['an article whose units are exactly half winter (B) is not a winter seller; A, C, D are']);
   brk('Pareto needs strictly more than the share','if(c*100>=tot*pct)','if(c*100>tot*pct)',['Pareto units: 1 article makes 50% (100 of 200 is exactly half), 3 make 80%']);
   brk('missing price valued as 0',"(asp!=null?a.onHand*asp:null)","(asp!=null?a.onHand*asp:0)",['an article with stock and no price is counted (1) and not valued, never read as 0','cash: slow 120000, dead 40000, everything else (E, F) 8 units and value 0 with 1 unpriced']);
