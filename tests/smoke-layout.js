@@ -2848,6 +2848,22 @@ const FRAGMENTS={
     const dlg=app.run('_siIgDlgHtml("GNA02","Denim Jort With A Very Long Name Indeed Because Titles Wrap Onto Several Lines")');
     return Promise.resolve('<div id="si-content">'+tabs+'<div class="si-frag">'+na+'</div><div class="si-frag">'+tab+'</div><div class="si-frag">'+hits+'</div><div class="si-frag">'+page+'</div><div class="si-frag" style="position:relative;height:420px"><div class="si-ig-ov" style="position:absolute">'+dlg+'</div></div></div>');
   },
+  // Inventory Intel ▸ season and type set ON the article: the single-article header and the Needs Attention situation header, with a saved value
+  // and "saved by", with a suggestion only, and with the saved list unreadable (buttons disabled + Retry). Every control must be reachable.
+  'inventory intel — season and type on the article headers':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siMetaState="ok";_siMeta=new Map([["GNA02",_siMetaClean("GNA02",{type:"bottom",season:"summer",updatedBy:"afnan",updatedAt:'+Date.now()+'})]]);_siIgVer++;_siSection="articles";_siSub="search";_siAxModeSel="search";_siAxQuery=""');
+    const art=c=>{app.run('_siAxSel='+JSON.stringify(c));return'<div class="si-frag">'+app.run('_siAxSearchBody()')+'</div>';};
+    const sit=c=>'<div class="si-na-frag">'+app.run('(()=>{const a=_siAxIndex().map.get('+JSON.stringify(c)+');const r=_siNaRow(a);const x=_siNaMk(r,_siNaCtx(),"winner","watch",{at:240000,atKind:"x"});return _siNaDetailHtml(x,{order:[{code:x.code}]});})()')+'</div>';
+    const saved=art('GNA02')+sit('GNA02');
+    const sugg=art('GNA01')+sit('GNA01');
+    app.run('_siMetaState="error"');
+    const bad=art('GNA03')+sit('GNA03');
+    app.run('_siMetaState="ok"');
+    return Promise.resolve('<div id="si-content">'+saved+sugg+bad+'</div>');
+  },
   // Inventory Intel ▸ Type & season (sub-phase 2): the ice-cube progress bar (partial, and unreadable), the fill queue rows with
   // pressed options and suggestion buttons (a long name wraps), the filter chips. Rows are read flat; every control must be reachable.
   'inventory intel — Type & season: bar, queue and suggestions':()=>{
