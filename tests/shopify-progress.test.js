@@ -129,7 +129,7 @@ async function checks(src,CSS){
     const m=mk(src),R=m.R;
     await R('loadShopifyData()');await m.ck.advance(0);
     o['a fast load (<300ms) never paints the overlay and ends loaded']=R('_siLoaded')===true&&R('_siLoad.shown')===false&&!/si-load/.test(String(m.a.el('si-load-host').innerHTML||''));
-    o['no timer is left running after a load (nothing keeps the page awake)']=m.ck.timers.length===0;
+    o['no timer is left running after a load but the ONE freshness interval (60s, cleared on leaving; see shopify-freshness.test.js)']=m.ck.timers.length===1&&m.ck.timers[0].every===60000;
     o['the percent shown at the end is 100 only because _siLoaded is true']=R('_siLoadView().pct')===100;
   }
   {
@@ -267,7 +267,7 @@ async function checks(src,CSS){
     o['going to another page without showPage still cancels at the next tick']=R('_siRetryCtl.timer')===null&&ck.timers.length===0&&m.st.reads.shopify_line_items===1;
   }
   {
-    const a=src.slice(src.indexOf('// ═══ Loading, honest percentage'),src.indexOf('// ── Helpers ──'));
+    const a=src.slice(src.indexOf('// ═══ Loading, honest percentage'),src.indexOf('// ═══ Freshness'));
     o['no listener can stack: the loader never uses onSnapshot or addEventListener']=!/onSnapshot|addEventListener/.test(a);
     o['no fake creep: the loader has no setInterval that moves the percent (the only interval is the 1s countdown tick)']=(a.match(/setInterval/g)||[]).length===1&&/C\.tick=setInterval\(\(\)=>\{if\(C\.gen!==gen\)return;if\(!_siLoadAlive\(\)\)\{_siLoadLeave\(\);return;\}siPaintLoad\(\);\},1000\)/.test(a);
   }
