@@ -308,6 +308,14 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
   const who=personas.filter(p=>p.u!==QA).map(p=>p.u).concat(['__anon','__stranger']);
   const payload=u=>{ const id=u.startsWith('__')?'u-stranger':uidOf(u); return rich(id,u.replace('__','')); };
   const outcome=async fn=>{ try{ await fn(); return 'ok'; }catch(e){ return 'no'; } };
+  // Collections added AFTER the baseline (OLD_RULES) was cut: the baseline has no match
+  // block for them, so it denies everyone and every signed-in persona would read as a
+  // "difference". They are held to an explicit expectation instead of being skipped:
+  // the baseline must deny all five operations, and this ruleset must let a signed-in
+  // persona get + list and nothing else (writes are Admin-SDK only, or a validated payload
+  // this probe's junk payload cannot satisfy); anonymous gets nothing.
+  const NEW_SINCE_BASE=['shopify_article_daily','shopify_article_summary','shopify_rollup_meta','inventory_article_meta'];
+  const isNewSinceBase=l=>NEW_SINCE_BASE.some(c=>l.full.startsWith('/'+c+'/'));
   const cellsDiff=[];let cells=0;
   const reseed=async(env,l)=>raw(env,async db=>{
     const segs=docPath(l,'d1').split('/');
@@ -330,7 +338,10 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
         res[tag]=r.join(',');
       }
       cells+=5;
-      if(res.old!==res.new) cellsDiff.push(l.full+' as '+u+': old['+res.old+'] new['+res.new+']');
+      if(isNewSinceBase(l)){
+        const want=u==='__anon'?'no,no,no,no,no':'ok,ok,no,no,no';
+        if(res.old!=='no,no,no,no,no'||res.new!==want) cellsDiff.push(l.full+' as '+u+' (new since baseline): old['+res.old+'] new['+res.new+'] want old[no,no,no,no,no] new['+want+']');
+      } else if(res.old!==res.new) cellsDiff.push(l.full+' as '+u+': old['+res.old+'] new['+res.new+']');
     }
   }
   await check('zero differences across '+cells+' (persona × path × operation) cells for '+who.length+' non-QA personas',async()=>{
