@@ -841,8 +841,12 @@ module.exports=function(){
     s.ok('js/pos.js calls embOnCuttingDone',/embOnCuttingDone\s*\(/.test(pos));
     s.ok('behind a typeof guard too',
       /typeof\s+embOnCuttingDone\s*===\s*'function'/.test(pos));
+    // markCuttingDone copies cutState.actualQty ONCE at the start of the save
+    // (`actual`) and hands that copy over, so the job is topped up with what
+    // was committed even if the screen changed while the save was in flight.
     s.ok('handing over the ACTUAL cut per size',
-      /embOnCuttingDone\([^)]*cutState\.actualQty[^)]*\)/.test(pos));
+      /embOnCuttingDone\([^)]*cutState\.actualQty[^)]*\)/.test(pos)
+      ||(/const\s+actual\s*=\s*\{\s*\.\.\.cutState\.actualQty\s*\}/.test(pos)&&/embOnCuttingDone\([^)]*\{\s*\.\.\.actual\s*\}[^)]*\)/.test(pos)));
 
     // The old entry point sized its job off po.qty/po.sizes — what was
     // ORDERED — while the caller passed the real cut in and it was dropped.
