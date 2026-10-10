@@ -20,6 +20,17 @@ const GP_REASON_OPTS={
 const GP_REASON_LABEL={process:'For process',return_vendor:'Return to vendor',sale:'Sale',other:'Other'};
 const GP_RET_TOL={kg:0.02,pcs:0.01,qty:0};   // ±2% wash/dye · ±1% garments · exact items
 let _gpType='garments',_gpReason='other',_gpItemIdx=0,_gpRetSelGp=null;
+// The LOCAL calendar day (YYYY-MM-DD) — the same convention as _fabRegDayStr
+// (js/fabric.js) and _tbDay (js/theboard.js). NEVER use
+// toISOString().split('T')[0] for a day this file writes: it is UTC, and in
+// PKT (UTC+5) it names the PREVIOUS day between midnight and 5am. Accepts a
+// Date, a millisecond timestamp, or nothing (= today). Returns '' for junk.
+function _gpDayStr(d){
+  const t=(d instanceof Date)?d:(d==null||d===''?new Date():new Date(d));
+  if(isNaN(t.getTime()))return'';
+  const p=n=>String(n).padStart(2,'0');
+  return t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate());
+}
 function _gpTypeKind(t){return (t==='fabric_kg'||t==='fabric_m')?'fabric':(t==='item'?'item':'garments');}
 function _gpUnitForPass(p){return p.gpType==='fabric'?(p.fabricUnit||'kg'):(p.gpType==='item'?'qty':'pcs');}
 function _gpRetUnitKey(p){return p.gpType==='fabric'?'kg':(p.gpType==='item'?'qty':'pcs');}
@@ -77,7 +88,7 @@ function renderOutward(){
   return`<div class="card"><div class="card-title">Issue new pass</div>
     <div class="form-grid">
       <div class="field"><label>Person name</label><input id="gp-name" value="${session.name}" readonly style="background:var(--soft);cursor:default"></div>
-      <div class="field"><label>Date</label><input id="gp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="field"><label>Date</label><input id="gp-date" type="date" value="${_gpDayStr()}"></div>
       <div class="field"><label>Pass type *</label>
         <select id="gp-type" onchange="window.onGPTypeChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface-2);color:var(--text);font-family:inherit;outline:none;width:100%">
           ${GP_TYPE_OPTS.map(([v,l])=>`<option value="${v}"${v===_gpType?' selected':''}>${l}</option>`).join('')}
@@ -219,7 +230,7 @@ window.gpPickReturn=function(gpId){
   card.innerHTML=`<div class="card-title">Record return · ${p.id}</div>
     <div style="background:var(--soft);border-radius:9px;padding:11px 13px;font-size:13.5px;margin-bottom:12px">Sent <b>${sent} ${uL}</b> · already back <b>${back} ${uL}</b> · <b style="color:var(--accent-urgent)">${bal} ${uL}</b> still out. Tolerance ±${tol} ${uL}.</div>
     <div class="form-grid">
-      <div class="field"><label>Return date</label><input id="ret2-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="field"><label>Return date</label><input id="ret2-date" type="date" value="${_gpDayStr()}"></div>
       <div class="field"><label>This load (${uL}) *</label><input id="ret2-qty" type="number" min="0" step="0.01" placeholder="0" oninput="window.gpRetPreview()"></div>
     </div>
     <div id="ret2-preview" style="margin:8px 0"></div>
@@ -448,7 +459,7 @@ function _gpApplyReasonFields(){
   if(exp){
     exp.style.display=(_gpReason==='process')?'block':'none';
     const inp=document.getElementById('gp-exp-back');
-    if(inp&&_gpReason==='process'&&!inp.value){const d=new Date();d.setDate(d.getDate()+7);inp.value=d.toISOString().split('T')[0];}
+    if(inp&&_gpReason==='process'&&!inp.value){const d=new Date();d.setDate(d.getDate()+7);inp.value=_gpDayStr(d);}
   }
   const showSale=(_gpReason==='sale');
   if(sale){sale.style.display=showSale?'block':'none';if(showSale)_gpPopulateSaleAccounts();}
@@ -547,7 +558,46 @@ window.gpFabRecalc=function(){
   if(rollsDisp)rollsDisp.textContent=String(rolls);
 };
 
+// ── Submit an outward gate pass ──────────────────────────────────────────
+// window.submitGP() — signature unchanged (no parameters).
+//   • ONE submit at a time (audit B4). The button is disabled and a second
+//     tap / Enter while a pass is still being saved is ignored; it used to
+//     mint a second number, write a second pass and post a sale to Store
+//     Accounts twice. A 30s failsafe frees the guard if the network hangs.
+//   • A FABRIC pass is committed ATOMICALLY with its stock decrement: the
+//     pass document rides in the SAME Firestore transaction as the roll
+//     removal (extraWrites), exactly as the Fabric Issue screen does. It used
+//     to be setDoc(pass) THEN _fabInvUpsert(), so a failure between them left
+//     a pass in the registry with its rolls still in stock. If any picked roll
+//     is no longer issuable (someone issued it first) the transaction aborts —
+//     no pass, no stock change, an error that names the rolls (audit B2/B4).
+//   • The GP number is minted only after every check has passed, so a form
+//     that is refused no longer burns a number (the audit's B12 shape).
+let _gpSubmitBusy=false,_gpSubmitTimer=null,_gpSubmitTok=0;
+// Start a submit: returns a token, or 0 when one is already in flight. The
+// token is what releases the guard, so a late finish of an OLD submit (after the
+// failsafe freed it) can never free the guard of a newer one.
+function _gpSubmitStart(){
+  if(_gpSubmitBusy)return 0;
+  _gpSubmitBusy=true;const tok=++_gpSubmitTok;
+  const btn=document.getElementById('gp-submit-btn');if(btn)btn.disabled=true;
+  clearTimeout(_gpSubmitTimer);
+  _gpSubmitTimer=setTimeout(()=>_gpSubmitEnd(tok),30000);   // failsafe: a hung request must not strand the button forever
+  return tok;
+}
+function _gpSubmitEnd(tok){
+  if(tok!==_gpSubmitTok)return;
+  _gpSubmitBusy=false;clearTimeout(_gpSubmitTimer);_gpSubmitTimer=null;
+  const btn=document.getElementById('gp-submit-btn');if(btn)btn.disabled=false;
+}
 window.submitGP=async function(){
+  const tok=_gpSubmitStart();
+  if(!tok)return;
+  try{await _gpSubmitRun();}
+  finally{_gpSubmitEnd(tok);}
+};
+
+async function _gpSubmitRun(){
   const article=document.getElementById('gp-article')?.value.trim(),dest=document.getElementById('gp-dest')?.value.trim();
   const spec=document.getElementById('gp-spec')?.value.trim()||'';
   const type=document.getElementById('gp-type')?.value||'garments';
@@ -560,13 +610,12 @@ window.submitGP=async function(){
   else if(!dest){showToast('Destination required.',true);return;}
   if(kind!=='item'&&!spec){showToast('Specification is required.',true);return;}
   if(reason==='return_vendor'&&kind==='fabric'&&!(document.getElementById('gp-src-vendor')?.value.trim())){showToast('Enter the vendor to return to.',true);return;}
-  let payload,inventoryUpdate=null,saleObj=null;
   try{
-    const next=await getNextId('gatepasses');
-    const gpId='GP-'+String(next).padStart(3,'0');
+    // ── 1. read + validate the form. Nothing is written and no number is minted yet. ──
     const expectedBack=(reason==='process')?(document.getElementById('gp-exp-back')?.value||''):'';
     const destFinal=isSale?(cust||dest):dest;
-    const base={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,spec,dest:destFinal,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||'',gpReason:reason,expectedBack};
+    const baseFields={ts:Date.now(),name:session.name,issuer:session.name,article,spec,dest:destFinal,date:document.getElementById('gp-date')?.value,time:document.getElementById('gp-time')?.value,purpose:document.getElementById('gp-purpose')?.value?.trim()||'',gpReason:reason,expectedBack};
+    let kindFields,fab=null;
     if(kind==='fabric'){
       const fabUnit=type==='fabric_m'?'meters':'kg';
       const stockKey=document.getElementById('gp-fab-stock')?.value||'';
@@ -576,14 +625,14 @@ window.submitGP=async function(){
       if(!stock){showToast('Fabric stock not found.',true);return;}
       const fabQty=parseFloat(document.getElementById('gp-fab-qty')?.value)||0;
       const rollCodes=_gpOutwardFabRolls.map(r=>r.rollCode);
-      payload={...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stockKey,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0,expectReturn:reason==='process'};
-      if(reason==='return_vendor')payload.sourceVendor=document.getElementById('gp-src-vendor')?.value.trim()||'';
-      inventoryUpdate={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||fabUnit,removeRollCodes:rollCodes,reason,note:`GP ${gpId} · ${GP_REASON_LABEL[reason]||reason} → ${destFinal}`,sourceCol:'gatepasses',sourceId:gpId};
+      kindFields={gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stockKey,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0,expectReturn:reason==='process'};
+      if(reason==='return_vendor')kindFields.sourceVendor=document.getElementById('gp-src-vendor')?.value.trim()||'';
+      fab={stock,fabUnit,rollCodes};
     }else if(kind==='item'){
       const assetItems=[];document.querySelectorAll('#gp-item-body tr').forEach(r=>{const i=r.querySelectorAll('input');const nm=i[0]?.value.trim();if(nm)assetItems.push({name:nm,qty:parseFloat(i[1]?.value)||0,returnable:!!r.querySelector('.gp-item-ret')?.checked});});
       if(!assetItems.length){showToast('Add at least one item.',true);return;}
       const anyRet=assetItems.some(i=>i.returnable);
-      payload={...base,gpType:'item',assetItems,boras:'0',items:[],totalUnits:assetItems.reduce((s,i)=>s+(i.qty||0),0),totalWeight:0,expectReturn:reason==='process'&&anyRet};
+      kindFields={gpType:'item',assetItems,boras:'0',items:[],totalUnits:assetItems.reduce((s,i)=>s+(i.qty||0),0),totalWeight:0,expectReturn:reason==='process'&&anyRet};
     }else{
       _gpSyncSizesFromDOM();
       const items=_gpSizes.map(s=>({size:(s.size||'').trim(),bundles:_gpParseBundles(s.bundles)}))
@@ -591,24 +640,34 @@ window.submitGP=async function(){
         .map(s=>({...s,bundleCount:s.bundles.length,units:s.bundles.reduce((a,b)=>a+b,0)}));
       if(!items.length){showToast('Add at least one size with bundles.',true);return;}
       const totalBundles=items.reduce((s,r)=>s+r.bundleCount,0);
-      payload={...base,gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalBundles,totalWeight:0,items,expectReturn:reason==='process'};
+      kindFields={gpType:'garments',boras:document.getElementById('gp-boras')?.value||'0',totalUnits:items.reduce((s,r)=>s+r.units,0),totalBundles,totalWeight:0,items,expectReturn:reason==='process'};
     }
+    let saleObj=null;
     if(isSale){
       const rate=parseFloat(document.getElementById('gp-sale-rate')?.value)||0;
       if(rate<=0){showToast('Enter a sale rate.',true);return;}
-      const qtyForSale=(kind==='fabric')?(payload.fabricQty||0):(payload.totalUnits||0);
-      saleObj={customer:cust,phone:document.getElementById('gp-sale-phone')?.value.trim()||'',rate,amount:Math.round(qtyForSale*rate),account:document.getElementById('gp-sale-acc')?.value||'',unit:(kind==='fabric')?(payload.fabricUnit||'kg'):'pcs'};
-      payload.sale=saleObj;payload.expectReturn=false;
+      const qtyForSale=(kind==='fabric')?(kindFields.fabricQty||0):(kindFields.totalUnits||0);
+      saleObj={customer:cust,phone:document.getElementById('gp-sale-phone')?.value.trim()||'',rate,amount:Math.round(qtyForSale*rate),account:document.getElementById('gp-sale-acc')?.value||'',unit:(kind==='fabric')?(kindFields.fabricUnit||'kg'):'pcs'};
     }
-    await setDoc(doc(db,'gatepasses',gpId),payload);
-    if(inventoryUpdate)await _fabInvUpsert(inventoryUpdate);
+    // ── 2. everything is valid — NOW mint the number and build the pass. ──
+    const next=await getNextId('gatepasses');
+    const gpId='GP-'+String(next).padStart(3,'0');
+    const payload={id:gpId,...baseFields,...kindFields};
+    if(saleObj){payload.sale=saleObj;payload.expectReturn=false;}
+    // ── 3. commit. A fabric pass and its stock decrement are ONE transaction. ──
+    const gpRef=doc(db,'gatepasses',gpId);
+    if(fab){
+      await _fabInvUpsert({fabType:fab.stock.fabType,gsm:fab.stock.gsm,color:fab.stock.color,unit:fab.stock.unit||fab.fabUnit,removeRollCodes:fab.rollCodes,reason,note:`GP ${gpId} · ${GP_REASON_LABEL[reason]||reason} → ${destFinal}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:gpRef,data:payload}]});
+    }else{
+      await setDoc(gpRef,payload);
+    }
     if(isSale&&saleObj&&saleObj.amount>0){
       // The sale's money lands in Store Accounts (js/store-accounts.js) as a
       // cash-in against the customer. typeof-guarded: a build without the
       // module still issues the pass, and says the sale was not recorded.
       try{
         if(typeof acctPostSale==='function'){
-          const row=await acctPostSale({account:saleObj.account,amount:saleObj.amount,customer:saleObj.customer,ref:gpId,note:`${article} · ${saleObj.unit==='kg'?(payload.fabricQty||0)+' kg':(payload.totalUnits||0)+' pcs'} @ ₨${saleObj.rate}`,date:base.date||''});
+          const row=await acctPostSale({account:saleObj.account,amount:saleObj.amount,customer:saleObj.customer,ref:gpId,note:`${article} · ${saleObj.unit==='kg'?(payload.fabricQty||0)+' kg':(payload.totalUnits||0)+' pcs'} @ ₨${saleObj.rate}`,date:baseFields.date||''});
           if(row&&row._id)await updateDoc(doc(db,'gatepasses',gpId),{cashLedgerId:row._id});
           else showToast('Pass saved — record the sale in Store Accounts (it was not posted).',true);
         }else showToast('Pass saved — Store Accounts is not loaded, record the sale there.',true);
@@ -620,7 +679,7 @@ window.submitGP=async function(){
     else showToast(gpId+' issued ✓');
     window.showPage('gatepass');
   }catch(e){showToast('Error: '+e.message,true);}
-};
+}
 
 // ── Gate Pass tab switcher ──
 window.switchGPTab=function(tab){
@@ -726,31 +785,113 @@ function renderReturnsList(){
 // deleteRollCodes (hard remove) · reserveRollCodes (+reservePO) ·
 // releaseRollCodes · returnRollCodes (whole vendor return) · returnPartial
 // [{parentRollCode,weight}] (mint remnant + log consumed) ·
-// supplierReturnRollCodes (+reason). Runs in a Firestore transaction; callers
+// supplierReturnRollCodes (+reason) · restockRollCodes (reverse an issue, see
+// below). Runs in a Firestore transaction; callers
 // can pass extraWrites:[{ref,data,merge}] and extraDeletes:[ref] to commit the
 // receipt / gate-pass doc in the SAME atomic unit. See FABRIC_INVENTORY_PLAN.
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
+//
+// ── FAILING LOUDLY (audit B2 / B24) ─────────────────────────────────────────
+// An operation that names rolls must be able to act on every one of them. If it
+// cannot, the WHOLE transaction aborts — nothing is written, including the
+// caller's extraWrites / extraDeletes (the gate-pass or receipt doc) — and the
+// call rejects with an Error whose `.code` is 'fabric/rolls-unavailable' and
+// whose `.rollCodes` lists the offending codes (the message names them too).
+//   • removeRollCodes   every code must be in_stock or reserved. A roll already
+//                       issued, used or gone used to be SKIPPED silently
+//                       (`if(!r)continue`) while the caller still committed its
+//                       gate-pass doc: two people issuing one roll from stale
+//                       screens made two passes for one stock decrement.
+//   • deleteRollCodes   a roll that EXISTS but is not in_stock (issued / reserved
+//                       / returned) aborts. A roll already ABSENT is tolerated —
+//                       the delete's end state already holds.
+//   • restockRollCodes  see below.
+// OPTIONAL PARAMETER  tolerateMissing:true  restores the old skip-silently
+// behaviour for a caller that legitimately wants it; the codes it skipped come
+// back in the result's `skipped`. Default false.
+// Every OTHER operation keeps its old tolerance ON PURPOSE — releaseRollCodes,
+// reserveRollCodes, relabelRollCodes, editRolls, returnRollCodes, returnPartial,
+// supplierReturnRollCodes: a PO delete releases whatever is still reserved, the
+// PO form reserves a best-effort list, … flipping them would break flows that
+// rely on it. (Audit B23 asks for the reserve path to fail loudly too; that call
+// site lives in js/fabric.js / js/pos.js.)
+//
+// ── restockRollCodes — the ONE way to reverse an issue (audit B5 / B6) ──────
+//   restockRollCodes:[codes]          the rolls of ONE inventory bucket to put back
+//   restockDraws:{rc:{weight,po,ts}}  rolls that were only PARTLY drawn — they
+//                                     stayed in_stock, lighter, with the draw logged
+//   sourceId                          the gate pass being reversed
+// Per roll: issued to this pass → back to in_stock; partly drawn → the draw is
+// found in the roll's own consumptionLog (an entry stamped `gp:<id>` — every draw
+// since this change — else, for older entries, the same PO and the same weight
+// nearest the pass's time), its weight is ADDED back and the entry removed, and a
+// `drawsRestored` marker is kept so a retry is a no-op; a roll already back in
+// stock, or issued to a different pass since, is left alone (reported, not an
+// error). Idempotent: running it twice restores once. A roll that is missing from
+// inventory, returned to the supplier, or whose draw cannot be located aborts
+// (the rule above) — better a refused delete than a silent loss of weight.
+// The bucket's stored `unit` is never rewritten by a restock.
+//
+// RESULT  {movCodes,movQty,skipped,restock}  (the first two as before; `restock`
+// is null except for restockRollCodes: {returned,restoredPartial,alreadyInStock,
+// elsewhere} — arrays of roll codes / {rollCode,weightBefore,restoredWeight,weightAfter}).
+const FAB_ROLLS_UNAVAILABLE='fabric/rolls-unavailable';
+function _fabInvError(verb,items,why){
+  const codes=items.map(i=>i.code);
+  const list=items.map(i=>i.why?`${i.code} (${i.why})`:i.code).join(', ');
+  const e=new Error(`Cannot ${verb} roll${codes.length>1?'s':''} ${list} — ${why} Nothing was saved. Refresh the page and try again.`);
+  e.code=FAB_ROLLS_UNAVAILABLE;e.rollCodes=codes;
+  return e;
+}
+// The index in r.consumptionLog of the draw a gate pass made, or -1.
+function _fabFindDraw(r,gpId,d){
+  const log=Array.isArray(r&&r.consumptionLog)?r.consumptionLog:[];
+  if(gpId){for(let k=log.length-1;k>=0;k--){if(log[k]&&log[k].gp===gpId)return k;}}
+  if(!d||d.weight==null)return -1;
+  let best=-1,bestGap=Infinity;
+  log.forEach((e,k)=>{
+    if(!e||e.gp)return;                                    // stamped for some pass: only an exact `gp` match counts
+    if(Math.abs((parseFloat(e.weight)||0)-d.weight)>0.005)return;
+    if(d.po!=null&&(e.po||'')!==(d.po||''))return;
+    const gap=Math.abs((e.ts||0)-(d.ts||0));
+    if(gap<bestGap){bestGap=gap;best=k;}
+  });
+  return best;
+}
+function _fabDrawRestored(r,gpId,d){
+  return (Array.isArray(r&&r.drawsRestored)?r.drawsRestored:[]).some(x=>x&&x.gp===gpId&&(d.weight==null||Math.abs((parseFloat(x.weight)||0)-d.weight)<=0.005));
+}
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,restockRollCodes,restockDraws,tolerateMissing,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
   const key=_fabInvKey(fabType,gsm,color);
   const invRef=doc(db,'fabric_inventory',key);
   const movRef=doc(collection(db,'fabric_movements'));  // stable id across tx retries
-  let outPayload=null,outMov=null;
+  let outPayload=null,outMov=null,outSkipped=[],outRestock=null;
   // One Firestore transaction: read the LIVE inventory fresh (not stale local
   // memory) so concurrent receive/issue/return can't clobber each other
   // (last-write-wins), and commit the aggregate + movement + any caller docs
   // (receipt / gate pass) or deletes together so a mid-operation failure can't
-  // split the books.
+  // split the books. Everything accumulated below is declared INSIDE the
+  // callback: Firestore re-runs it on contention, and a retry must start clean.
   await runTransaction(db,async tx=>{
     const snap=await tx.get(invRef);
     const rolls=Array.isArray(snap.data()?.rolls)?snap.data().rolls.map(r=>({...r})):[];
     let movType='out',movSub='',movQty=0;const movCodes=[];let partialLog=null;
+    let skipped=[],restock=null;
     const findRoll=(rc,statuses)=>rolls.find(r=>r.rollCode===rc&&statuses.includes(r.status||'in_stock'));
     if(Array.isArray(addRolls)){
       for(const r of addRolls){rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});movQty+=r.weight||0;movCodes.push(r.rollCode);}
       movType='in';movSub='receipt';
     }else if(Array.isArray(removeRollCodes)){
-      for(const rc of removeRollCodes){
+      // Every named roll must be issuable BEFORE any of them is touched.
+      const want=[...new Set(removeRollCodes)];            // a code named twice is one roll, never drawn twice
+      const gone=want.filter(rc=>!findRoll(rc,['in_stock','reserved']));
+      if(gone.length&&!tolerateMissing){
+        throw _fabInvError('issue',gone.map(rc=>{const x=rolls.find(r=>r.rollCode===rc);return{code:rc,why:x?String(x.status||'in_stock').replace('_',' '):'not in inventory'};}),
+          gone.length>1?'they are no longer available in stock (already issued, used, or removed by someone else).':'it is no longer available in stock (already issued, used, or removed by someone else).');
+      }
+      skipped=gone;
+      for(const rc of want){
         const r=findRoll(rc,['in_stock','reserved']);
-        if(!r)continue;
+        if(!r)continue;                                    // only reachable with tolerateMissing:true
         const po=reservePO||r.reservedPO||'';
         const before=r.weight||0;
         let use=before;
@@ -762,13 +903,15 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
           // printed label weight is now stale → flag for reprint. A running
           // consumption log records every PO the roll has fed. Repeat draws just
           // shrink it further (40→20→5); no second code is ever minted.
+          // The entry also names the gate pass that drew it (`gp`) so deleting
+          // that pass can put exactly this weight back (restockRollCodes).
           r.originalWeight=r.originalWeight||before;
           r.weight=leftover;
           r.status='in_stock';delete r.reservedPO;
           r.partiallyConsumed=true;
           r.labelStale=true;
-          r.consumptionLog=Array.isArray(r.consumptionLog)?r.consumptionLog:[];
-          r.consumptionLog.push({po,weight:use,ts:Date.now(),by:session.name});
+          r.consumptionLog=Array.isArray(r.consumptionLog)?r.consumptionLog.slice():[];
+          r.consumptionLog.push({po,weight:use,ts:Date.now(),by:session.name,...((sourceCol==='gatepasses'&&sourceId)?{gp:sourceId}:{})});
           r.lastDrawAt=Date.now();
           (partialLog=partialLog||[]).push({rollCode:rc,weightBefore:before,usedWeight:use,weightAfter:leftover});
         }else{
@@ -786,7 +929,16 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
       movType='adjust';movSub='relabel';
     }else if(Array.isArray(deleteRollCodes)){
       // Hard-remove an in-stock roll entered by mistake — physically splices it
-      // out of inventory (NOT an issue/return). Only in_stock rolls qualify.
+      // out of inventory (NOT an issue/return). Only in_stock rolls qualify. A
+      // roll that exists but is in use (issued / reserved / returned) aborts the
+      // transaction — the caller's receipt doc must not be deleted while its
+      // roll is still out there. A roll that is already absent is tolerated.
+      const inUse=deleteRollCodes.map(rc=>rolls.find(r=>r.rollCode===rc)).filter(r=>r&&(r.status||'in_stock')!=='in_stock');
+      if(inUse.length&&!tolerateMissing){
+        throw _fabInvError('delete',inUse.map(r=>({code:r.rollCode,why:String(r.status).replace('_',' ')})),
+          inUse.length>1?'they are in use, not in stock.':'it is in use, not in stock.');
+      }
+      skipped=inUse.map(r=>r.rollCode);
       for(const rc of deleteRollCodes){const i=rolls.findIndex(r=>r.rollCode===rc&&(r.status||'in_stock')==='in_stock');if(i>=0){movQty+=rolls[i].weight||0;movCodes.push(rc);rolls.splice(i,1);}}
       movType='out';movSub='delete';
     }else if(Array.isArray(editRolls)){
@@ -818,6 +970,59 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     }else if(Array.isArray(supplierReturnRollCodes)){
       for(const rc of supplierReturnRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='returned_supplier';r.returnedToSupplierAt=Date.now();r.returnReason=reason||'';movQty+=r.weight||0;movCodes.push(rc);}}
       movType='out';movSub='return_out';
+    }else if(Array.isArray(restockRollCodes)){
+      // Reverse an issue (see the header). Whole rolls flip issued → in_stock; a
+      // partly drawn roll gets the weight of THIS pass's draw added back.
+      const gpId=sourceId||'';
+      const rs={returned:[],restoredPartial:[],alreadyInStock:[],elsewhere:[]};
+      const bad=[];
+      for(const rc of [...new Set(restockRollCodes)]){
+        const r=rolls.find(x=>x.rollCode===rc);
+        const d=restockDraws&&restockDraws[rc];
+        if(!r){bad.push({code:rc,why:'not in inventory'});continue;}
+        const st=r.status||'in_stock';
+        if(st==='issued'){
+          if(r.issuedTo&&gpId&&r.issuedTo!==gpId){
+            // Issued to a DIFFERENT pass now: this pass's roll was returned and re-issued
+            // since. A whole roll is simply not ours to touch; a part-draw cannot be put
+            // back into a roll that has gone onward.
+            if(d)bad.push({code:rc,why:`its leftover was issued onward on ${r.issuedTo}`});else rs.elsewhere.push(rc);
+            continue;
+          }
+          r.status='in_stock';r.returnedAt=Date.now();r.returnedBy=session.name;delete r.issuedTo;
+          movQty+=r.weight||0;movCodes.push(rc);rs.returned.push(rc);
+        }else if(st==='returned_supplier'){
+          bad.push({code:rc,why:'returned to the supplier'});
+        }else{
+          // in_stock / reserved: already back — or a partly drawn roll.
+          if(!d){rs.alreadyInStock.push(rc);continue;}
+          const i=_fabFindDraw(r,gpId,d);
+          if(i>=0){
+            const e=r.consumptionLog[i];
+            const back=parseFloat((parseFloat(e.weight)||0).toFixed(2));
+            const wBefore=r.weight||0;
+            r.consumptionLog=r.consumptionLog.slice();r.consumptionLog.splice(i,1);
+            r.weight=parseFloat((wBefore+back).toFixed(2));
+            r.drawsRestored=(Array.isArray(r.drawsRestored)?r.drawsRestored:[]).concat([{gp:gpId,po:e.po||'',weight:back,at:Date.now(),by:session.name}]);
+            r.lastRestoreAt=Date.now();
+            const whole=r.consumptionLog.length===0;
+            r.partiallyConsumed=!whole;
+            // The printed label is right again only if the roll is whole, never relabelled, and back at its original weight.
+            r.labelStale=!(whole&&!r.relabeledAt&&r.originalWeight!=null&&Math.abs(r.weight-r.originalWeight)<=0.005);
+            movQty+=back;movCodes.push(rc);
+            rs.restoredPartial.push({rollCode:rc,weightBefore:wBefore,restoredWeight:back,weightAfter:r.weight});
+          }else if(_fabDrawRestored(r,gpId,d)){
+            rs.alreadyInStock.push(rc);                      // restored by an earlier (retried) run
+          }else{
+            bad.push({code:rc,why:'its partial draw is not in the roll history'});
+          }
+        }
+      }
+      if(bad.length&&!tolerateMissing){
+        throw _fabInvError('restock',bad,bad.length>1?'they cannot be put back into stock.':'it cannot be put back into stock.');
+      }
+      skipped=bad.map(b=>b.code);restock=rs;
+      movType='in';movSub='return_in';
     }
     // Aggregate: "stock" = AVAILABLE (in_stock) only, for BOTH weight and count,
     // so the two never disagree; reserved is tracked separately (it's spoken for).
@@ -825,27 +1030,128 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     const reserved=rolls.filter(r=>r.status==='reserved');
     const totalWeight=parseFloat(inStock.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
     const reservedWeight=parseFloat(reserved.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
-    const payload={key,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',rolls,totalWeight,reservedWeight,rollsCount:inStock.length,reservedCount:reserved.length,lastMovementAt:Date.now()};
-    const movDoc={id:movRef.id,ts:Date.now(),type:movType,subtype:movSub,fabType,gsm:Number(gsm)||0,color,unit:unit||'kg',qty:parseFloat(movQty.toFixed(2)),rollCodes:movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
+    // A restock never changes what the bucket IS — keep its stored unit.
+    const bucketUnit=(restock&&snap.exists()&&snap.data()&&snap.data().unit)||unit||'kg';
+    const payload={key,fabType,gsm:Number(gsm)||0,color,unit:bucketUnit,rolls,totalWeight,reservedWeight,rollsCount:inStock.length,reservedCount:reserved.length,lastMovementAt:Date.now()};
+    const movDoc={id:movRef.id,ts:Date.now(),type:movType,subtype:movSub,fabType,gsm:Number(gsm)||0,color,unit:bucketUnit,qty:parseFloat(movQty.toFixed(2)),rollCodes:movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
     if(partialLog)movDoc.partialRolls=partialLog;   // per-roll partial-usage detail for the log/reports
-    tx.set(invRef,payload,{merge:true});
-    tx.set(movRef,movDoc);
+    if(restock&&restock.restoredPartial.length)movDoc.partialRestored=restock.restoredPartial;
+    // A restock that found nothing to do (every roll already back) writes no
+    // inventory or movement row; the caller's own writes / deletes still commit.
+    const touched=!restock||movCodes.length>0;
+    if(touched){tx.set(invRef,payload,{merge:true});tx.set(movRef,movDoc);}
     if(Array.isArray(extraWrites))for(const w of extraWrites){if(w&&w.ref&&w.data){if(w.merge)tx.set(w.ref,w.data,{merge:true});else tx.set(w.ref,w.data);}}
     if(Array.isArray(extraDeletes))for(const dref of extraDeletes){if(dref)tx.delete(dref);}
-    outPayload=payload;outMov=movDoc;
+    outPayload=touched?payload:null;outMov=touched?movDoc:null;outSkipped=skipped;outRestock=restock;
   });
   // Sync in-memory caches to the committed state.
-  const existing=allFabricInventory.find(x=>x._id===key);
-  if(existing)Object.assign(existing,outPayload);else allFabricInventory.push({...outPayload,_id:key});
-  allFabricMovements.unshift({...outMov,_id:movRef.id});
-  return{movCodes:outMov.rollCodes,movQty:outMov.qty};
+  if(outPayload){
+    const existing=allFabricInventory.find(x=>x._id===key);
+    if(existing)Object.assign(existing,outPayload);else allFabricInventory.push({...outPayload,_id:key});
+  }
+  if(outMov)allFabricMovements.unshift({...outMov,_id:movRef.id});
+  return{movCodes:outMov?outMov.rollCodes:[],movQty:outMov?outMov.qty:0,skipped:outSkipped,restock:outRestock};
 }
+
 // Next free remnant suffix (-A,-B,…) for a parent roll code.
 function _nextRemnantCode(rolls,parentCode){
   const used=new Set(rolls.map(r=>r.rollCode));
   for(let i=0;i<26;i++){const c=`${parentCode}-${String.fromCharCode(65+i)}`;if(!used.has(c))return c;}
   return `${parentCode}-${Date.now().toString(36).toUpperCase()}`;
 }
+
+// ── Reverse a fabric issue / outward fabric pass (audit B5 / B6) ────────────
+// _gpRestockIssue(g, opts) → Promise<{returned,restoredPartial,alreadyInStock,
+//                                     elsewhere,skipped,rolls}>
+//   g                       a gate-pass record with gpType 'fabric': a Fabric
+//                           Issue (fabrics[] + rib*) or an outward fabric pass
+//   opts.tolerateMissing    default false. When true, a roll that cannot be put
+//                           back is skipped (listed in `skipped`) instead of
+//                           aborting — see the engine header (_fabInvUpsert).
+//   `rolls` = whole rolls returned + part-draws restored.
+// THE single restock path: the Gate Pass registry's Delete and the approval of a
+// delete request go through _gpDeleteGatePass below, and js/fabric.js's registry
+// delete should call THIS instead of its own _fabRestockIssue (which swallows
+// every failure, counts a roll as restocked regardless, cannot restore a partly
+// drawn roll — it stays in_stock, so `returnRollCodes` never finds it — and lets
+// its caller delete the pass anyway).
+// It THROWS if any roll cannot be put back, naming the rolls; the caller must
+// then NOT delete the pass. Each inventory bucket is its own transaction, so
+// when a later fabric of a multi-fabric issue fails the earlier ones are
+// already back — the error says so, and trying again is safe (idempotent).
+function _gpIssueCombos(g){
+  const combos=[];
+  if(Array.isArray(g.fabrics)&&g.fabrics.length){
+    for(const f of g.fabrics)combos.push({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||g.fabricUnit||'kg',codes:f.rollCodes||[]});
+  }else if((g.rollCodes||[]).length){
+    combos.push({fabType:g.fabricType,gsm:g.fabricGsm,color:g.fabricColor,unit:g.fabricUnit||'kg',codes:g.rollCodes||[]});
+  }
+  if((g.ribRollCodes||[]).length&&g.ribType){
+    combos.push({fabType:g.ribType,gsm:g.ribGsm,color:g.ribColor,unit:'kg',codes:g.ribRollCodes});
+  }
+  return combos.filter(c=>c.codes.length&&c.fabType);
+}
+async function _gpRestockIssue(g,opts){
+  opts=opts||{};
+  // What the pass recorded as PARTLY drawn: {rollCode:{weight,po,ts}} — the
+  // engine finds each in the roll's own consumptionLog.
+  const partials={};
+  (Array.isArray(g.partialRolls)?g.partialRolls:[]).forEach(p=>{if(p&&p.rollCode)partials[p.rollCode]={weight:parseFloat(p.usedWeight)||0,po:g.poId||'',ts:g.ts||0};});
+  const out={returned:[],restoredPartial:[],alreadyInStock:[],elsewhere:[],skipped:[],rolls:0};
+  const label=(g.gpType==='fabric'&&!g.gpReason)?'Issue':'Gate pass';
+  for(const c of _gpIssueCombos(g)){
+    const draws={};c.codes.forEach(rc=>{if(partials[rc])draws[rc]=partials[rc];});
+    let res;
+    try{
+      res=await _fabInvUpsert({fabType:c.fabType,gsm:c.gsm,color:c.color,unit:c.unit,restockRollCodes:c.codes,restockDraws:draws,tolerateMissing:!!opts.tolerateMissing,note:`${label} ${g.id} deleted — returned to stock by ${session.name}`,sourceCol:'gatepasses',sourceId:g.id});
+    }catch(e){
+      const done=out.returned.length+out.restoredPartial.length;
+      if(done&&e&&typeof e==='object')e.message+=` (${done} roll(s) of this pass's other fabrics were already returned to stock — trying again is safe.)`;
+      throw e;
+    }
+    const r=res.restock||{};
+    out.returned.push(...(r.returned||[]));
+    out.restoredPartial.push(...(r.restoredPartial||[]));
+    out.alreadyInStock.push(...(r.alreadyInStock||[]));
+    out.elsewhere.push(...(r.elsewhere||[]));
+    out.skipped.push(...(res.skipped||[]));
+  }
+  out.rolls=out.returned.length+out.restoredPartial.length;
+  return out;
+}
+window._gpRestockIssue=_gpRestockIssue;
+
+// Delete a gate pass for real. A FABRIC pass first puts its rolls back — whole
+// rolls and partial draws — through _gpRestockIssue; if that fails NOTHING is
+// deleted and the returned promise REJECTS with the reason. Used by the
+// Registry's Delete AND by the approval of a delete request, so both take the
+// same path (before, both just deleteDoc'd: the rolls stayed `issued` for ever).
+//   opts.gp   the pass record to use when it is no longer in memory (a delete
+//             request carries a copy). With no record at all the doc is simply
+//             deleted, as before.
+// Resolves {rolls,returned,restoredPartial,…} (rolls = 0 for a non-fabric pass).
+const _gpDeleteBusy=new Set();
+async function _gpDeleteGatePass(gpId,opts){
+  opts=opts||{};
+  const gp=allPasses.find(p=>p.id===gpId)||opts.gp||null;
+  if(_gpDeleteBusy.has(gpId))throw new Error(gpId+' is already being deleted.');
+  _gpDeleteBusy.add(gpId);
+  try{
+    let out={rolls:0,returned:[],restoredPartial:[],alreadyInStock:[],elsewhere:[],skipped:[]};
+    if(gp&&gp.gpType==='fabric'&&_gpIssueCombos(gp).length){
+      // A process pass that already has returns recorded: each return added NEW
+      // rolls to stock, so putting the original rolls back as well would count
+      // the same fabric twice.
+      if((Array.isArray(allReturns)&&allReturns.some(r=>r.gpNum===gpId))||(parseFloat(gp.returnedQty)||0)>0)
+        throw new Error(`${gpId} has returns recorded — the returned fabric was already added to stock as new rolls, so putting its original rolls back would count it twice.`);
+      out=await _gpRestockIssue(gp);
+    }
+    await deleteDoc(doc(db,'gatepasses',gpId));
+    allPasses=allPasses.filter(p=>p.id!==gpId);
+    return out;
+  }finally{_gpDeleteBusy.delete(gpId);}
+}
+window._gpDeleteGatePass=_gpDeleteGatePass;
 
 // ── Gate Pass / Returns / Fabric In: Edit & Delete with approval ──
 function _gpCanApprove(){return session&&['owner','manager'].includes(session.role);}
@@ -1041,14 +1347,23 @@ window.requestDeleteGP=async function(gpId){
   if(!gp)return showToast('Gate pass not found.',true);
   if(_gpPendingFor('gp',gpId))return showToast('A request is already pending for '+gpId,true);
   if(_gpCanApprove()){
-    if(!confirm(`Delete ${gpId}? This cannot be undone.`))return;
+    // A FABRIC pass (an issue to production or an outward fabric pass) puts its
+    // rolls back into stock first — whole rolls and partial draws — through
+    // _gpDeleteGatePass, the same path the approval of a delete request takes.
+    // If the restock fails the pass is NOT deleted and the person is told.
+    if(_gpDeleteBusy.has(gpId))return;                       // a delete of this pass is already running
+    const rollN=(gp.gpType==='fabric')?_gpIssueCombos(gp).reduce((n,c)=>n+c.codes.length,0):0;
+    const msg=rollN
+      ?`Delete ${gpId}?\n\nIts ${rollN} fabric roll(s) will be RETURNED to fabric inventory (stock restored, partial draws included) and then the pass is removed. This cannot be undone.`+(gp.cashLedgerId?'\n\nThe sale entry already posted to Store Accounts is NOT removed.':'')
+      :`Delete ${gpId}? This cannot be undone.`;
+    if(!confirm(msg))return;
     try{
-      await deleteDoc(doc(db,'gatepasses',gpId));
-      await logActivity('Gate pass deleted',`${gpId} deleted by ${session.name}`);
-      allPasses=allPasses.filter(p=>p.id!==gpId);
-      showToast(`${gpId} deleted`);
+      const res=await _gpDeleteGatePass(gpId);
+      const back=res&&res.rolls?` · ${res.rolls} roll(s) returned to stock`:'';
+      await logActivity('Gate pass deleted',`${gpId} deleted by ${session.name}${back}`);
+      showToast(`${gpId} deleted${back}`);
       _gpRefreshActiveTab();
-    }catch(e){showToast('Error: '+e.message,true);}
+    }catch(e){showToast(`${gpId} was NOT deleted — ${e.message}`,true);}
     return;
   }
   const reason=prompt(`Request to delete ${gpId}. Reason for deletion:`,'');
@@ -1231,6 +1546,11 @@ window.gpApproveRequest=async function(reqId){
         // Use the shared receipt-delete so inventory rolls are removed too
         // (and it blocks if any roll has left stock). It also splices allFabricIn.
         await window._fabDeleteReceipt(r.targetId);
+      }else if(r.type==='gp'){
+        // The same delete the Registry button runs: a fabric pass puts its rolls
+        // back first, and if that fails nothing is deleted (the request stays
+        // pending and the failure is shown below).
+        await _gpDeleteGatePass(r.targetId,{gp:r.currentData});
       }else{
         await deleteDoc(doc(db,collName,r.targetId));
         const i=arr.findIndex(x=>x.id===r.targetId);
