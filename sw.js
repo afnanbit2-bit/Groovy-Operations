@@ -69,6 +69,7 @@ const PRECACHE_URLS = [
   '/js/patterns.js',
   '/js/ma-core.js',
   '/js/master-accounts.js',
+  '/js/prod-backup.js',
   '/assets/icons/icon-192.png',
   '/assets/icons/icon-512.png',
   '/assets/icons/icon-maskable-v3-512.png',
