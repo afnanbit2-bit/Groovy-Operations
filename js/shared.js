@@ -638,17 +638,83 @@ async function logActivity(action,detail=''){
   try{await addDoc(collection(db,'activity'),{user:session.name,u:session.u,role:session.title,action,detail,ts:Date.now(),date:new Date().toLocaleDateString('en-GB')});}catch(e){}
 }
 
-async function getNextId(field){
+// `opts.floor` (optional, Oct 2026): never hand out a number at or below it.
+// With no `opts` this is byte-for-byte what it always was, so every existing
+// caller is unchanged. NOTE what it does NOT do: it commits the counter in
+// its OWN transaction, so a caller that writes its document afterwards still
+// burns a number whenever that write fails. A caller that creates a document
+// with the number should use createWithNextId() below instead.
+async function getNextId(field,opts){
   const ref=doc(db,'counters','main');
+  const floor=Math.max(0,Math.floor(Number(opts&&opts.floor))||0);
   let next=1;
   await runTransaction(db,async tx=>{
     const snap=await tx.get(ref);
     const cur=snap.exists()?(snap.data()[field]||0):0;
-    next=cur+1;
+    next=Math.max(cur,floor)+1;
     if(snap.exists())tx.update(ref,{[field]:next});
     else tx.set(ref,{pos:0,gatepasses:0,bundles:0,[field]:next});
   });
   return next;
+}
+
+// Mint the next number from counters/main AND create the document that
+// carries it, in ONE transaction (B12/B13, Oct 2026). The Pattern Hub's
+// PTN mint (js/patterns.js, _ptnSaveBlockData) is the model.
+//
+// getNextId() commits the counter on its own; the caller then writes its
+// document in a second, unrelated write. Two failures follow, and both were
+// reachable on the PO path:
+//   * the second write fails (a refused write, or no connection — a
+//     transaction cannot use the offline cache) and the number is spent for
+//     nothing, so the next PO jumps (PO-007, then PO-009);
+//   * counters/main is missing or was reset, the counter restarts at 1 and
+//     `setDoc(doc(db,'pos','PO-001'))` — which does not check — OVERWRITES
+//     the first PO.
+// Here the counter read, the existence check and both writes sit in one
+// transaction, so a write that does not land never moves the counter and an
+// existing document is never replaced.
+//
+//   field       the counters/main field ('pos')
+//   collection  where the document goes ('pos')
+//   idFor(n)    document id for number n ('PO-'+pad(n))
+//   build(n,id) the record to write — pure, it may run more than once if
+//               Firestore retries the transaction
+//   floor       optional: never mint at or below this (the highest number
+//               the caller already knows exists), so a counter that was
+//               reset can still never hand out a number that is taken
+//
+// Resolves {n,id,record}. Rejects, having written nothing, if the id already
+// exists — the caller shows the message and the person reloads.
+async function createWithNextId(opts){
+  opts=opts||{};
+  const field=opts.field,colName=opts.collection;
+  if(!field||!colName||typeof opts.idFor!=='function'||typeof opts.build!=='function'){
+    throw new Error('createWithNextId: field, collection, idFor and build are all required');
+  }
+  const floor=Math.max(0,Math.floor(Number(opts.floor))||0);
+  const cref=doc(db,'counters','main');
+  let made=null;
+  await runTransaction(db,async tx=>{
+    made=null;
+    // Every read before every write — a transaction requires it.
+    const csnap=await tx.get(cref);
+    const has=!!csnap&&typeof csnap.exists==='function'&&csnap.exists();
+    const cur=has?(Number((csnap.data()||{})[field])||0):0;
+    const n=Math.max(cur,floor)+1;
+    const id=opts.idFor(n);
+    const dref=doc(db,colName,id);
+    const dsnap=await tx.get(dref);
+    if(dsnap&&typeof dsnap.exists==='function'&&dsnap.exists()){
+      throw new Error(id+' already exists, so nothing was created and nothing was overwritten. Reload the page and try again.');
+    }
+    const record=opts.build(n,id);
+    if(has)tx.update(cref,{[field]:n});
+    else tx.set(cref,{pos:0,gatepasses:0,bundles:0,[field]:n});
+    tx.set(dref,record);
+    made={n,id,record};
+  });
+  return made;
 }
 
 async function reserveBundleIds(n){

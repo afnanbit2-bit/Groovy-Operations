@@ -2317,7 +2317,7 @@ function fabTrimAlertsCard(){
 
 function renderFabricIssueTab(){
   const stocks=allFabricInventory.filter(s=>(s.rolls||[]).some(r=>['in_stock','reserved'].includes(r.status||'in_stock')));
-  const pos=(typeof allPOs!=='undefined'&&allPOs)||[];
+  const pos=((typeof allPOs!=='undefined'&&allPOs)||[]).filter(p=>p.poStatus!=='cancelled');
   return`<div class="card"><div class="card-title">Issue fabric to production</div>
     <div class="form-grid">
       <div class="field" style="grid-column:1/-1"><label>Production Order (PO) *</label>

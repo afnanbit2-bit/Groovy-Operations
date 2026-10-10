@@ -290,11 +290,12 @@ window._saveNewProduct=async function(){
 function poRowHTML(p){
   const st=poStatusOf(p);
   const isReserved=st===PO_STATUS.RESERVED;
+  const isCancelled=st===_PO_CANCELLED; // a cancelled PO has no stage; without this it would read "Completed"
   const isCompleted=st===PO_STATUS.COMPLETE||p.currentStage==='completed';
   const stage=STAGES.find(s=>s.key===p.currentStage)||{label:isReserved?'Reserved':'Completed',color:'#111111'};
-  const badgeLabel=isReserved?'Reserved':isCompleted?'Completed':stage.label;
-  const badgeBg=isReserved?'#fef3c7':isCompleted?'#EFEFEF':'#f0f0f0';
-  const badgeColor=isReserved?'#b45309':'#111';
+  const badgeLabel=isCancelled?'Cancelled':isReserved?'Reserved':isCompleted?'Completed':stage.label;
+  const badgeBg=isCancelled?'var(--accent-urgent-soft)':isReserved?'#fef3c7':isCompleted?'#EFEFEF':'#f0f0f0';
+  const badgeColor=isCancelled?'var(--accent-urgent)':isReserved?'#b45309':'#111';
   return`<div class="po-row" onclick="window.openPODetail('${p.fbKey}')">
     <div class="po-img">${p.imgFront?`<img src="${p.imgFront}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`:'<span style="font-size:11px;color:var(--muted)">No img</span>'}</div>
     <div class="po-info">
@@ -379,7 +380,11 @@ let _poRegTab='orders';
 function renderRegistry(){
   _cleanupAutoFabricPOs();
   const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
-  const sub=`${allPOs.length} production order${allPOs.length!==1?'s':''}${reservedCount?` · <span style="color:var(--accent-warning);font-weight:600">${reservedCount} reserved</span>`:''}`;
+  // A cancelled PO stays in the list (with its chip) but is not a live order,
+  // so it is counted apart from the pipeline figure.
+  const cancelledCount=allPOs.filter(p=>poStatusOf(p)===_PO_CANCELLED).length;
+  const liveCount=allPOs.length-cancelledCount;
+  const sub=`${liveCount} production order${liveCount!==1?'s':''}${reservedCount?` · <span style="color:var(--accent-warning);font-weight:600">${reservedCount} reserved</span>`:''}${cancelledCount?` · <span style="color:var(--accent-urgent);font-weight:600">${cancelledCount} cancelled</span>`:''}`;
   return`<div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">${sub}</div></div>
   <div class="gp-tabs">
     <button class="gp-tab${_poRegTab==='orders'?' active':''}" onclick="window.switchPoRegTab('orders')">Orders</button>
@@ -396,17 +401,18 @@ function _poRegTabContent(){
 }
 function _poRegOrdersHTML(){
   const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
+  const cancelledCount=allPOs.filter(p=>poStatusOf(p)===_PO_CANCELLED).length;
   return`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <input placeholder="Search name, code, fabric…" oninput="window.filterPOs(this.value)" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
     <select onchange="window.filterStage(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);outline:none">
-      <option value="">All stages</option><option value="reserved">🟡 Reserved${reservedCount?` (${reservedCount})`:''}</option>${STAGES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('')}<option value="completed">Completed</option>
+      <option value="">All stages</option><option value="reserved">🟡 Reserved${reservedCount?` (${reservedCount})`:''}</option>${STAGES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('')}<option value="completed">Completed</option>${cancelledCount?`<option value="cancelled">Cancelled (${cancelledCount})</option>`:''}
     </select>
   </div>
   <div id="po-list-wrap">${allPOs.length?allPOs.map(p=>poRowHTML(p)).join(''):'<div class="empty">No POs yet.</div>'}</div>`;
 }
 window.switchPoRegTab=function(tab){_poRegTab=tab;const m=document.getElementById('main-content');if(m)m.innerHTML=renderRegistry();};
 window.filterPOs=function(q){const f=allPOs.filter(p=>!q||[p.name,p.id,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q.toLowerCase())));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
-window.filterStage=function(s){const f=!s?allPOs:(s==='reserved'?allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED):allPOs.filter(p=>p.currentStage===s));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
+window.filterStage=function(s){const f=!s?allPOs:(s==='reserved'?allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED):s==='cancelled'?allPOs.filter(p=>poStatusOf(p)===_PO_CANCELLED):allPOs.filter(p=>p.currentStage===s));document.getElementById('po-list-wrap').innerHTML=f.length?f.map(p=>poRowHTML(p)).join(''):'<div class="empty">No results.</div>';};
 
 // ── My Work — defined in Chunk 5 (printing module) to support all roles ──
 
@@ -518,6 +524,13 @@ function renderDetailPage(){
       </div>
       ${isOwner?`<button class="mark-done-btn" style="width:auto;padding:9px 18px" onclick="window.releaseToProduction('${po.fbKey}')">Release to production →</button>`:'<span style="font-size:13px;color:var(--accent-warning)">A manager must release this PO.</span>'}
     </div></div>`:'';
+  // A cancelled PO keeps its whole record; this says so, and who/why (the
+  // reason is typed by a person, so it goes through _gpEsc).
+  const _isCancelled=poStatusOf(po)===_PO_CANCELLED;
+  const _cancelledBanner=_isCancelled?`<div class="card" style="border:2px solid var(--accent-urgent);background:var(--accent-urgent-soft);margin-bottom:12px">
+    <div style="font-weight:800;color:var(--accent-urgent);font-size:15px">Cancelled — nothing was removed</div>
+    <div style="font-size:13px;color:var(--accent-urgent);margin-top:2px">By ${_gpEsc(po.cancelledBy||'—')}${po.cancelledAt?' · '+new Date(po.cancelledAt).toLocaleDateString('en-GB'):''}${po.cancelledReason?' — '+_gpEsc(po.cancelledReason):''}</div>
+  </div>`:'';
   const stagesHTML=STAGES.map(s=>{
     const sd=po.stages?.[s.key]||{};const isDone=!!sd.done;const isCurrent=po.currentStage===s.key;
     const canUpdate=session.stages?.includes(s.key)&&isCurrent;
@@ -549,10 +562,12 @@ function renderDetailPage(){
       <button class="btn-pdf" onclick="window.generatePOPdf('${po.fbKey}')">⬇ PDF</button>
       ${_poCanEdit()?`<button class="btn-outline" style="font-size:13px" onclick="window.openPOEdit('${po.fbKey}')">Edit PO</button>`:''}
       ${_poCanDelete()?`<button class="btn-outline" style="font-size:13px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
+      ${_poCanCancel()&&!_isCancelled&&po.currentStage!=='completed'?`<button class="btn-outline" style="font-size:13px" onclick="window.cancelPO('${po.fbKey}','${po.id}')">Cancel PO</button>`:''}
     </div>
   </div>
   ${_poJobCopiesHTML(po)}
   ${_reservedBanner}
+  ${_cancelledBanner}
   ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <div class="card" style="margin-bottom:0"><div class="card-title">Product</div>
@@ -620,6 +635,22 @@ window.ownerAdvance=async function(fbKey,stageKey){
 };
 window.deletePO=async function(fbKey,poId){
   if(!_poCanDelete()){showToast('Not authorized.',true);return;}
+  const po=(typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).find(p=>p.fbKey===fbKey)||{id:poId,fbKey};
+  // Look BEFORE anything is changed — not even the fabric restock below runs
+  // for a PO that is about to be refused.
+  const res=await _poLinkedRecords(po);
+  if(res.failed.length){
+    showToast(`PO ${poId} was NOT deleted: could not read ${res.failed.join(', ')} from the server (offline or refused), so it cannot be shown to have no linked records. Nothing was changed.`,true);
+    return;
+  }
+  if(res.total>0){
+    const msg=`PO ${poId} cannot be deleted: it has ${_poLinkSummary(res)}. Deleting it would leave those records pointing at a PO that no longer exists. Nothing was changed.`;
+    showToast(msg,true);
+    if(_poCanCancel()&&poStatusOf(po)!==_PO_CANCELLED&&confirm(`${msg}\n\nCancel PO ${poId} instead? It stays in the registry marked Cancelled and leaves the pipeline. Nothing is removed.`)){
+      return window.cancelPO(fbKey,poId);
+    }
+    return;
+  }
   if(!confirm(`Delete PO ${poId}? Cannot be undone.`))return;
   try{
     // Restock any fabric rolls still reserved for this PO before it's gone.
@@ -631,6 +662,124 @@ window.deletePO=async function(fbKey,poId){
     await deleteDoc(doc(db,'pos',fbKey));await logActivity('PO deleted',`PO ${poId} deleted`);showToast(`PO ${poId} deleted${restockNote}`);await loadData();window.showPage('po-registry');
   }
   catch(e){showToast('Error: '+e.message,true);}
+};
+// ── Delete is refused once anything points at the PO; Cancel is the way out ──
+// (B14, Oct 2026.) deletePO used to remove only the PO document, so every
+// bundle, embellishment job, fabric-issue gate pass, transfer and trim
+// request that named it was left behind, and the registry and Observer
+// screens kept drawing records for a PO that no longer existed. Nothing in
+// the app can put that data back, so the delete now looks first and REFUSES
+// when anything is linked. Cancel is the non-destructive route: the PO
+// document stays, marked cancelled, and drops out of the pipeline.
+const _PO_CANCELLED='cancelled';
+// Every place that carries a PO's id. [singular, plural] for the message.
+const _PO_LINKS=[
+  {key:'issue', words:['fabric issue / gate pass','fabric issues / gate passes'],col:'gatepasses',       field:'poId'},
+  {key:'bundle',words:['bundle','bundles'],                                     col:'bundles',          field:'poId'},
+  {key:'job',   words:['embellishment job','embellishment jobs'],               col:'printing_jobs',    field:'poNumber'},
+  {key:'xfer',  words:['stock transfer','stock transfers'],                     col:'stock_transfers',  field:'poId'},
+  {key:'bstock',words:['B-stock item','B-stock items'],                         col:'bstock_items',     field:'poId'},
+  {key:'trim',  words:['trim issue request','trim issue requests'],             col:'po_issue_requests',field:'poId'}
+];
+// What the app already holds in memory for each link, as a second witness
+// beside the query. Guarded: embellishments.js / store.js may not be loaded.
+function _poLinkMemory(key){
+  try{
+    if(key==='issue'&&typeof allPasses!=='undefined'&&Array.isArray(allPasses))return allPasses;
+    if(key==='job'&&typeof allPrintingJobs!=='undefined'&&Array.isArray(allPrintingJobs))return allPrintingJobs;
+    if(key==='trim'&&typeof allPoIssueRequests!=='undefined'&&Array.isArray(allPoIssueRequests))return allPoIssueRequests;
+  }catch(e){}
+  return [];
+}
+// The two spellings a record may use for this PO: its id and its document key.
+function _poLinkValues(po){
+  const out=[];[po&&po.id,po&&po.fbKey].forEach(v=>{v=String(v==null?'':v).trim();if(v&&out.indexOf(v)<0)out.push(v);});
+  return out;
+}
+// A free-text 'po-12' on a gate pass is the same PO as 'PO-012'. Compare the
+// numbers when both read as PO numbers, else the trimmed text. Erring towards
+// "linked" only ever REFUSES a delete, never allows one.
+function _poSamePO(a,b){
+  const na=_poNumberOf(a),nb=_poNumberOf(b);
+  if(na!=null&&nb!=null)return na===nb;
+  const sa=String(a==null?'':a).trim().toUpperCase(),sb=String(b==null?'':b).trim().toUpperCase();
+  return sa!==''&&sa===sb;
+}
+// Production already written INTO the PO document itself (a delete takes it
+// with the document): a finished stage, the cut, bundle ids, packing receipts,
+// stock transfers.
+function _poOwnRecords(po){
+  if(!po)return 0;
+  let n=0;
+  Object.keys(po.stages||{}).forEach(k=>{if(po.stages[k]&&po.stages[k].done)n++;});
+  const nonEmpty=o=>!!o&&typeof o==='object'&&Object.keys(o).some(k=>Number(o[k])>0);
+  if(nonEmpty(po.cutQty)||nonEmpty(po.cutBySize))n++;
+  ['bundleIds','packingReceipts','stockTransfers'].forEach(k=>{if(Array.isArray(po[k])&&po[k].length)n+=po[k].length;});
+  return n;
+}
+// Counts of everything linked to a PO. NEVER rejects: a lookup that fails is
+// named in `failed`, and the caller treats that as "cannot prove it is safe".
+// `counts[key]` is max(rows the server returned, rows already in memory) —
+// each is a lower bound of the truth, so the max is too.
+async function _poLinkedRecords(po){
+  const vals=_poLinkValues(po),counts={},failed=[];
+  const jobs=[];
+  _PO_LINKS.forEach(l=>vals.forEach(v=>jobs.push({l,v})));
+  const settled=await Promise.allSettled(jobs.map(j=>getDocs(query(collection(db,j.l.col),where(j.l.field,'==',j.v)))));
+  const server={};
+  settled.forEach((r,i)=>{
+    const l=jobs[i].l;
+    // An answer that came from the offline cache is not an answer: a cache
+    // that never held this PO's bundles says "none". Treated as a failed read.
+    const cached=r.status==='fulfilled'&&!!r.value&&!!r.value.metadata&&r.value.metadata.fromCache===true;
+    if(r.status==='fulfilled'&&!cached){const n=(r.value&&r.value.docs&&r.value.docs.length)||0;server[l.key]=(server[l.key]||0)+n;}
+    else if(failed.indexOf(l.col)<0)failed.push(l.col);
+  });
+  let total=0;
+  _PO_LINKS.forEach(l=>{
+    const mem=_poLinkMemory(l.key).filter(r=>r&&vals.some(v=>_poSamePO(r[l.field],v))).length;
+    counts[l.key]=Math.max(server[l.key]||0,mem);
+    total+=counts[l.key];
+  });
+  const own=_poOwnRecords(po);
+  return{counts,total:total+own,own,failed};
+}
+function _poLinkSummary(res){
+  const parts=_PO_LINKS.filter(l=>res.counts[l.key]>0).map(l=>res.counts[l.key]+' '+l.words[res.counts[l.key]===1?0:1]);
+  if(res.own>0)parts.push('production already recorded on the PO itself ('+res.own+' item'+(res.own===1?'':'s')+')');
+  return parts.join(', ');
+}
+function _poCanCancel(){return !!(session&&(session.role==='owner'||session.u==='mustafa'));}
+// Cancel a PO without removing anything. Only NEW fields are added, and the
+// two values it overwrites are kept beside them (cancelledFromStatus /
+// cancelledFromStage), so a cancel can always be read back and undone by
+// hand. currentStage is cleared because every pipeline count and worker queue
+// in the app keys off it; poStatus 'cancelled' keeps it out of the reserved /
+// in-production lists. Fabric rolls reserved for the PO are NOT touched here
+// (that is an inventory write the cancel does not own) — the toast says so.
+window.cancelPO=async function(fbKey,poId){
+  if(!_poCanCancel()){showToast('Not authorized.',true);return;}
+  const po=(typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).find(p=>p.fbKey===fbKey);
+  if(!po){showToast('PO not found.',true);return;}
+  const id=po.id||poId;
+  const st=poStatusOf(po);
+  if(st===_PO_CANCELLED){showToast(`${id} is already cancelled.`,true);return;}
+  if(st===PO_STATUS.COMPLETE||po.currentStage==='completed'){showToast(`${id} is completed and cannot be cancelled.`,true);return;}
+  const reason=String(prompt(`Why is ${id} being cancelled? (Required — it is kept on the PO.)`,'')||'').trim();
+  if(!reason){showToast(`${id} was NOT cancelled: a reason is required. Nothing was changed.`,true);return;}
+  const patch={
+    poStatus:_PO_CANCELLED,currentStage:null,
+    cancelledAt:new Date().toISOString(),cancelledBy:session.name,cancelledReason:reason,
+    cancelledFromStatus:po.poStatus||st,cancelledFromStage:po.currentStage||null
+  };
+  try{
+    await updateDoc(doc(db,'pos',fbKey),patch);
+    await logActivity('PO cancelled',`${id} cancelled by ${session.name} — ${reason}`);
+    const held=_poReservedFabric(id);
+    showToast(`${id} cancelled ✓ — it stays in the registry.${held.rolls?` ${held.rolls} fabric roll(s) are still reserved for it — release them in Fabric Inventory.`:''}`);
+    await loadData();
+    if(currentPage==='po-detail')renderDetailPage();else if(currentPage==='po-registry')renderPage('po-registry');
+  }catch(e){showToast('Error: '+e.message,true);}
 };
 
 // ── PO Create ──
@@ -816,6 +965,44 @@ window.getBundleParts=function(){
 window.clearImg=function(side){
   poImages[side]=null;document.getElementById(`img-${side}-prev`).style.display='none';document.getElementById(`img-${side}-ph`).style.display='flex';document.getElementById(`inp-${side}`).value='';
 };
+// PKT calendar day (UTC+5, no DST) of a timestamp, by ms arithmetic so the
+// browser's own timezone never shifts it. toISOString().slice(0,10) is the UTC
+// day, which in Pakistan is the PREVIOUS day between midnight and 05:00 — a PO
+// made at 02:00 PKT used to carry yesterday's createdAt.
+function _poPktDay(ms){
+  const d=new Date((Number.isFinite(ms)?ms:Date.now())+5*3600000),p=n=>String(n).padStart(2,'0');
+  return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate());
+}
+// The number inside a PO id ('PO-012' -> 12); null for anything that is not one.
+function _poNumberOf(id){const m=/^PO-0*(\d+)$/i.exec(String(id==null?'':id).trim());return m?parseInt(m[1],10):null;}
+function _poIdFor(n){return 'PO-'+String(n).padStart(3,'0');}
+// Highest PO number among the POs already loaded (by id and by document key,
+// retired or not). The mint is floored here so a counter that was reset can
+// never hand out a number a loaded PO already holds.
+function _poNumberFloor(){
+  let max=0;
+  (typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).forEach(p=>{
+    [p&&p.id,p&&p.fbKey].forEach(v=>{const n=_poNumberOf(v);if(n&&n>max)max=n;});
+  });
+  return max;
+}
+// The floor to mint above. With the PO list loaded it is the highest number in
+// it. With NO list loaded (a failed or never-run loadData) a floor of 0 plus a
+// reset counter would aim at an existing PO and be refused on every press
+// without ever advancing — so read the PO ids from the server once instead,
+// and if that cannot be trusted either, refuse and say to reload first.
+async function _poFloorNow(){
+  const loaded=typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[];
+  if(loaded.length)return _poNumberFloor();
+  let snap=null;
+  try{snap=await getDocs(collection(db,'pos'));}catch(e){snap=null;}
+  if(!snap||(snap.metadata&&snap.metadata.fromCache===true)){
+    throw new Error('The PO list did not load, so the next PO number cannot be checked. Reload the page first. Nothing was created.');
+  }
+  let max=0;
+  (snap.docs||[]).forEach(d=>{[d.id,(d.data()||{}).id].forEach(v=>{const n=_poNumberOf(v);if(n&&n>max)max=n;});});
+  return max;
+}
 window.submitPO=async function(){
   if(!session.canPO){showToast('Not authorized.',true);return;}
   const name=document.getElementById('po-name')?.value.trim(),code=document.getElementById('po-code')?.value.trim(),qty=parseInt(document.getElementById('po-qty')?.value)||0,fabric=document.getElementById('po-fabric')?.value.trim();
@@ -824,12 +1011,11 @@ window.submitPO=async function(){
   if(!fabric){showToast('Fabric type required.',true);return;}
   if(!poImages.front){showToast('Front image required.',true);return;}
   const btn=document.getElementById('po-submit-btn');if(btn){btn.disabled=true;btn.textContent='Uploading image…';}
+  let _createdId='';
   try{
     const imgFrontUrl=await uploadToCloudinary(poImages.front);
     const imgBackUrl=poImages.back?await uploadToCloudinary(poImages.back):'';
     if(btn)btn.textContent='Creating…';
-    const nextNum=await getNextId('pos');
-    const poId='PO-'+String(nextNum).padStart(3,'0');
     const sizes={};['XS','S','M','L','XL','2XL'].forEach(sz=>sizes[sz]=parseInt(document.getElementById('sz-'+sz)?.value)||0);
     const stages={};STAGE_KEYS.forEach(k=>stages[k]={done:false,doneAt:null,doneBy:null,dueDate:document.getElementById('due-'+k)?.value||'',notes:''});
     const bundlingParts=window.getBundleParts();
@@ -838,9 +1024,19 @@ window.submitPO=async function(){
     // it hangs, onto the PO. Guarded — no Pattern Hub, no change; the
     // free-text `pattern` box below is never touched. See js/patterns.js.
     const _ptnFields=(typeof window.ptnPoFieldsFor==='function'?await window.ptnPoFieldsFor(code).catch(()=>({})):{});
-    const payload={id:poId,ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,jobCopies:_poJobCopiesRead(),notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10)};
+    const payload={ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,jobCopies:_poJobCopiesRead(),notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:_poPktDay(Date.now())};
     Object.assign(payload,_ptnFields);
-    await setDoc(doc(db,'pos',poId),payload);
+    // B12/B13: the number is minted INSIDE the transaction that writes the PO.
+    // It used to come from getNextId('pos') — its own transaction, committed
+    // before the PO was written — so a refused or offline write spent a number
+    // (PO-007, then PO-009), and a counter that had been reset restarted at 1
+    // and setDoc silently OVERWROTE PO-001. Now the counter read, the
+    // "does this id already exist?" check and both writes are one transaction:
+    // a write that does not land never moves the counter, an existing PO is
+    // never replaced, and the number is floored at the highest PO already
+    // loaded. See createWithNextId in js/shared.js.
+    const made=await createWithNextId({field:'pos',collection:'pos',floor:await _poFloorNow(),idFor:_poIdFor,build:(n,id)=>Object.assign({},payload,{id})});
+    const poId=made.id;_createdId=poId;
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
     if(typeof fabPoReserveCommit==='function'){try{await fabPoReserveCommit(poId);}catch(_re){showToast('PO saved, but fabric reservation failed: '+_re.message,true);}}
     if(embellishment.required&&embellishment.recipeStatus==='missing')await logActivity('Recipe Missing',`${poId} — ${embellishment.articleCode||code}: Recipe required before PP approval. Ammar notified.`).catch(()=>{});
@@ -858,7 +1054,14 @@ window.submitPO=async function(){
       }
     }catch(_te){_trimNote=' (trim request failed: '+_te.message+')';}
     showToast(`${poId} created ✓${_trimNote}`);poImages={front:null,back:null};await loadData();window.showPage('po-registry');
-  }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Create Production Order';}}
+  }catch(e){
+    // A transaction cannot use the offline cache, so with no signal it fails
+    // outright. Say so plainly; the form (and the uploaded images) stay as they
+    // are and nothing was created.
+    const offline=!_createdId&&((typeof navigator!=='undefined'&&navigator.onLine===false)||/unavailable|offline|network/i.test(String(e&&e.code||'')+' '+String(e&&e.message||'')));
+    showToast(offline?'Needs a connection; nothing was created. Check your signal and press Create again — your form is kept.':'Error: '+e.message,true);
+    if(btn){btn.disabled=false;btn.textContent='Create Production Order';}
+  }
 };
 
 // ── PO Edit (Sept 2026) — a correction tool for clerical fields on an
