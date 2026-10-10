@@ -566,6 +566,70 @@ module.exports=async function(){
     s.ok('one bundle: singular, no "more"',/already has 1 bundle on file/.test(f.lastToast())&&!/and \d+ more/.test(f.lastToast()),f.lastToast());
   }
 
+  /* ═══ typed numbers: the open override gate is not a licence for nonsense ═══ */
+  s.section('typed numbers: negatives, NaN, fractions and zero-unit bundles are refused, override or not');
+  {
+    const inv=[{_id:'k',fabType:'Denim',gsm:300,color:'Blue',unit:'kg',totalWeight:100,rolls:[]}];
+    const Q=o=>Object.assign({XS:0,S:0,M:0,L:0,XL:0,'2XL':0},o);
+    const B=(...a)=>a.map(([size,units],i)=>({tempId:i+1,size,units}));
+    const OV={cutOverride:{by:'afnan',byName:'Afnan',at:'x',reason:'fabric short',ordered:100}};
+    const trial=async(aq,bundles,withOverride)=>{
+      const d=boot({inventory:inv,seed:{'pos/PO-001':po1(withOverride?OV:{}),'counters/main':{pos:1,bundles:0}},
+        cutState:{poId:'PO-001',actualQty:Q(aq),pendingBundles:B(...bundles)}});
+      d.syncPOs();d.app.el('cut-fab-stock').value='k';d.app.run("_cutFabRolls=[{rollCode:'R1',weight:20}]");
+      await d.cut();return d;
+    };
+    const refused=async(label,aq,bundles,withOverride,rx)=>{
+      const d=await trial(aq,bundles,withOverride);
+      const t=d.lastToast();
+      s.eq(label+': nothing saved',d.store.commits.length+':'+d.bundles().length+':'+d.store.get('pos/PO-001').stages.cutting.done,'0:0:false');
+      s.eq(label+': no fabric deduction call',d.calls.fab.length,0);
+      s.ok(label+': the message names what is wrong',rx.test(t)&&/Nothing was saved/.test(t),t);
+      s.eq(label+': no database read at all (refused at the button)',d.store.getDocCalls+d.store.txRuns,0);
+      s.eq(label+': the button check refuses it too',d.app.run('cutValidationOk('+JSON.stringify(Object.assign(po1(withOverride?OV:{}),{fbKey:'PO-001'}))+')'),false);
+    };
+    // The reported case: S=50 / M=-50 under an override (total 0, two bundles).
+    await refused('S=50 M=-50 under an override',{S:50,M:-50},[['S',50],['M',-50]],true,/Size M: .*whole number, 0 or more \(got -50\)/);
+    await refused('negative size, no override',{S:130,M:-5},[['S',130]],false,/Size M/);
+    await refused('negative bundle units under an override',{S:50},[['S',100],['S',-50]],true,/Bundle 2 \(S\): the units must be a whole number above 0 \(got -50\)/);
+    await refused('negative bundle units, no override',{S:100},[['S',130],['S',-30]],false,/Bundle 2 \(S\)/);
+    await refused('zero-unit bundle',{S:50},[['S',50],['S',0]],true,/Bundle 2 \(S\): .*above 0 \(got 0\)/);
+    await refused('NaN size quantity',{S:NaN},[['S',50]],true,/Size S: .*\(got NaN\)/);
+    await refused('NaN bundle units',{S:50},[['S',NaN]],true,/Bundle 1 \(S\): .*\(got NaN\)/);
+    await refused('fractional size quantity',{S:50.5},[['S',50]],true,/Size S: .*\(got 50\.5\)/);
+    await refused('fractional bundle units',{S:50},[['S',12.5],['S',37.5]],true,/Bundle 1 \(S\): .*\(got 12\.5\)/);
+    await refused('a size typed as text',{S:'50'},[['S',50]],true,/Size S: .*\(got "50"\)/);
+    await refused('infinite size quantity',{S:Infinity},[['S',50]],true,/Size S: .*\(got Infinity\)/);
+    await refused('a bundle for a size that cannot be cut',{S:50},[['S',20],['3XL',30]],true,/Bundle 2: "3XL" is not a size that can be cut/);
+    await refused('a total of zero under an override',{},[['S',10]],true,/The total cut must be above 0/);
+
+    // The pure checker says the same, in the same words.
+    const pc=(aq,b)=>d0.app.run('poCutInputProblem('+JSON.stringify(Q(aq))+','+JSON.stringify(B(...b))+')');
+    const d0=boot();
+    s.eq('a sound cut has no problem',pc({S:50,M:50},[['S',50],['M',50]]),null);
+    s.eq('a sound cut of any size under an override is the gate\'s business, not the checker\'s',pc({S:1000},[['S',1000]]),null);
+    s.eq('the checker reports the first size at fault, in size order',pc({XS:-1,S:-2},[['S',1]]),'Size XS: the cut quantity must be a whole number, 0 or more (got -1).');
+
+    // Legit cuts are unaffected.
+    const ok=await trial({S:50,M:50},[['S',30],['S',20],['M',50]],false);
+    s.eq('a normal cut still saves',ok.store.get('pos/PO-001').currentStage+':'+ok.bundles().length,'bundling:3');
+    const ok2=await trial({S:250},[['S',250]],true);
+    s.eq('an override still lets 250 of 100 through',ok2.store.get('pos/PO-001').currentStage+':'+ok2.store.get('pos/PO-001').cutOverride.pct,'bundling:250');
+    const ok3=await trial({XS:10,'2XL':60},[['XS',10],['2XL',60]],false);
+    s.eq('XS and 2XL (the ends of the size set) still save',ok3.store.get('pos/PO-001').currentStage,'bundling');
+
+    // The TRANSACTION is the authority on its own: slip past both early checks
+    // (the button and the first look in markCuttingDone) and it still refuses.
+    const t=boot({inventory:inv,seed:{'pos/PO-001':po1(OV),'counters/main':{pos:1,bundles:0}},
+      cutState:{poId:'PO-001',actualQty:Q({S:50,M:-50}),pendingBundles:B(['S',50],['M',-50])}});
+    t.syncPOs();
+    t.app.run("cutValidationOk=()=>true;const __real=poCutInputProblem;let __n=0;poCutInputProblem=(a,b)=>(++__n===1?null:__real(a,b));");
+    await t.cut();
+    s.eq('the transaction alone refuses S=50 / M=-50 under an override: nothing saved',t.store.commits.length+':'+t.bundles().length+':'+t.store.get('pos/PO-001').stages.cutting.done,'0:0:false');
+    s.ok('and names the size at fault',/Size M: .*\(got -50\)/.test(t.lastToast())&&/Nothing was saved/.test(t.lastToast()),t.lastToast());
+    s.eq('the PO is not marked done and no override use is stamped',t.store.get('pos/PO-001').cutOverride.usedAt,undefined);
+  }
+
   /* ═══ the PO must be at cutting ═══ */
   s.section('only a PO that is waiting to be cut can be cut');
   {

@@ -1213,7 +1213,41 @@ window.poCutOverride=async function(fbKey,reasonArg){
   }catch(e){showToast('Error: '+e.message+' (approving a variance needs a connection)',true);}
 };
 
+// PURE. What is wrong with the raw numbers typed on the cutting screen, in
+// words that name the size or bundle at fault — or null when they are sound.
+// Size inputs and bundle units are typed numbers (min is only advisory in the
+// browser), so a minus sign, a decimal or a blank can arrive; the open gate of
+// an owner override (any quantity) must not let them through, because a
+// negative bundle would cancel a positive one and save a cut of nothing.
+//   · every size quantity: a whole number, 0 or more
+//   · every bundle: a known size and a whole number of units ABOVE 0
+//   · the total cut: above 0 (the 70–130% gate is judged separately, and only
+//     ever narrows this)
+// Used by cutValidationOk (the button) and again INSIDE markCuttingDone's
+// transaction, which is the authority.
+function poCutInputProblem(actualQty,bundles){
+  const SZ=['XS','S','M','L','XL','2XL'];
+  const q=actualQty||{};
+  const shown=v=>(typeof v==='number'&&!isFinite(v))?String(v):JSON.stringify(v);
+  let total=0;
+  for(const sz of SZ){
+    const v=q[sz];
+    if(v===undefined||v===null)continue;
+    if(typeof v!=='number'||!isFinite(v)||Math.floor(v)!==v||v<0)return`Size ${sz}: the cut quantity must be a whole number, 0 or more (got ${shown(v)}).`;
+    total+=v;
+  }
+  const list=Array.isArray(bundles)?bundles:[];
+  for(let i=0;i<list.length;i++){
+    const b=list[i]||{};
+    if(SZ.indexOf(b.size)<0)return`Bundle ${i+1}: "${b.size}" is not a size that can be cut.`;
+    const u=b.units;
+    if(typeof u!=='number'||!isFinite(u)||Math.floor(u)!==u||u<=0)return`Bundle ${i+1} (${b.size}): the units must be a whole number above 0 (got ${shown(u)}).`;
+  }
+  if(!(total>0))return'The total cut must be above 0.';
+  return null;
+}
 function cutValidationOk(po){
+  if(poCutInputProblem(cutState.actualQty,cutState.pendingBundles))return false;
   const szs=['XS','S','M','L','XL','2XL'];
   const target=po.qty||0;const actualTotal=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
   const {min,max}=poCutRange(target,poCutGateFor(po));
@@ -1349,12 +1383,15 @@ function _poCutBlocked(po,c,live){
   }
   if(c.state==='reserved')return{error:true,msg:`${po.id} is still a reserve order — release it to production before it is cut. Nothing was saved.`};
   if(c.state==='wrongStage')return{error:true,msg:`${po.id} is no longer at cutting (${c.at?'it is at '+_poStageLabel(c.at):'it is not in production'}) — nothing was saved.`};
+  if(c.state==='input')return{error:true,msg:c.msg+' Nothing was saved.'};
   if(c.state==='range')return{error:true,msg:`${c.total} pcs is outside the ${c.rng.min}–${c.rng.max} allowed for ${c.qty} ordered (${poCutPct(c.gate)}). An owner or Mustafa can approve a variance from the PO page. Nothing was saved.`};
   return{error:true,msg:`${po.id} could not be found — nothing was saved.`};
 }
 window.markCuttingDone=async function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po)return;
   if(_poCutBusy[fbKey])return;   // second tap / second call while the first is still saving
+  const bad0=poCutInputProblem(cutState.actualQty,cutState.pendingBundles);
+  if(bad0){showToast(bad0+' Nothing was saved.',true);return;}
   if(!cutValidationOk(po)){showToast('Validation failed — check quantities.',true);return;}
   _poCutBusy[fbKey]=true;
   const btn=document.getElementById('cut-done-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
@@ -1452,6 +1489,10 @@ window.markCuttingDone=async function(fbKey){
       const lv=ps.exists()?ps.data():null;
       const c=poCutLiveCheck(lv);
       if(c.state!=='ok')return{blocked:c,live:lv};
+      // The typed numbers, again, here: this is the authority (an override opens
+      // the 70–130% window, never this).
+      const bad=poCutInputProblem(actual,pend);
+      if(bad)return{blocked:{state:'input',msg:bad},live:lv};
       // The gate is judged on the LIVE order quantity and the LIVE override.
       const total=SZ.reduce((a,s)=>a+(parseInt(actual[s])||0),0);
       const gate=poCutGateFor(lv),rng=poCutRange(lv.qty||0,gate),std=poCutRange(lv.qty||0,PO_CUT_GATE);
