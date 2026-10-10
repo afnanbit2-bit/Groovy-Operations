@@ -49,6 +49,8 @@ function same(a,b){
   return a===b;
 }
 function walk(n,out){out=out||[];if(!n)return out;if(n.textContent)out.push(String(n.textContent));(n.children||[]).forEach(c=>walk(c,out));return out;}
+// How many collections the module reads — derived, so adding one never silently shrinks coverage.
+const N=loadApp({files:['js/prod-backup.js']}).run('PB_COLLECTIONS.length');
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 const watchdog=(p,ms)=>Promise.race([p,delay(ms||3000).then(()=>'HUNG')]);
 
@@ -68,7 +70,21 @@ function liveStore(){
     drawstring_moves:[{id:'DM-1',data:{color:'black',delta:-5}}],
     printing_jobs:[{id:'PJ-1',data:{po:'PO-1',stage:'bulk',sizes:{M:50},stageHistory:[{s:'pp',at:new Ts(1700000400,9)}]}}],
     counters:[{id:'main',data:{pos:41,bundles:900,gatepasses:12}}],
-    settings:[{id:'pattern_hub',data:{poIntegration:true}}]
+    settings:[{id:'pattern_hub',data:{poIntegration:true}}],
+    gatepass_edit_requests:[{id:'GER-1',data:{gp:'GP-1',status:'pending',at:new Ts(1700002000,3)}}],
+    po_issue_requests:[{id:'PIR-1',data:{po:'PO-1',lines:[{code:'T1',qty:4}],status:'open'}}],
+    po_edit_requests:[{id:'PER-1',data:{po:'PO-1',changes:{qty:[500,520]}}}],
+    po_shortfalls:[{id:'SF-1',data:{po:'PO-1',short:3}}],
+    qc_reports:[{id:'QC-1',data:{po:'PO-1',defects:[{k:'stain',n:2}]}}],
+    printing_billing:[{id:'PB-1',data:{job:'PJ-1',amount:15000}}],
+    sla_events:[{id:'SLA-1',data:{job:'PJ-1',kind:'pp_sample',at:new Ts(1700000500,0)}}],
+    article_recipes:[{id:'GST073',data:{name:'Tee',steps:[{s:'print'},{s:'wash'}]}}],
+    color_library:[{id:'CL-1',data:{pantoneCode:'485 C',hexApprox:'#da291c'}}],
+    stock_transfers:[{id:'ST-1',data:{poId:'PO-1',items:[{c:'T1',q:4}],status:'booked'}}],
+    bstock_items:[{id:'BS-1',data:{code:'GST073-M',qty:2}}],
+    bstock_cartons:[{id:'BC-1',data:{items:['BS-1']}}],
+    trim_templates:[{id:'TT-1',data:{name:'Basic',trims:['label','tag']}}],
+    articles:[{id:'GST073',data:{code:'GST073',category:'tops',name:'Tee'}}]
   };
 }
 
@@ -257,7 +273,7 @@ module.exports=async function(){
     s.eq('collections are keyed by name, in the owner\'s list order',Object.keys(bk.collections).join(','),run('PB_COLLECTIONS.join(",")'));
     s.eq('a collection is {docId: document}',Object.keys(bk.collections.pos).join(','),'PO-1,PO-2');
     s.eq('a document holds its fields',bk.collections.pos['PO-1'].qty,500);
-    s.eq('total documents',bk.summary.total,store.pos.length+store.bundles.length+store.gatepasses.length+store.fabricin.length+store.fabric_inventory.length+store.fabric_movements.length+store.fabric_drawstrings.length+store.drawstring_moves.length+store.printing_jobs.length+store.counters.length+store.settings.length);
+    s.eq('total documents',bk.summary.total,Object.keys(store).reduce((n,c)=>n+store[c].length,0));
     s.eq('counts per collection: pos',bk.summary.counts.pos,2);
     s.eq('counts per collection: fabric_movements',bk.summary.counts.fabric_movements,2);
     s.ok('a fingerprint per read collection',Object.keys(bk.summary.counts).every(c=>typeof bk.summary.hashes[c]==='string'&&bk.summary.hashes[c].length>5));
@@ -277,7 +293,7 @@ module.exports=async function(){
     s.eq('…is not complete',f.summary.complete,false);
     s.eq('…is ABSENT from the file, never an empty {}',Object.prototype.hasOwnProperty.call(f.backup.collections,'bundles'),false);
     s.ok('…and has no count or fingerprint',f.summary.counts.bundles===undefined&&f.summary.hashes.bundles===undefined);
-    s.eq('the other collections are all still there',Object.keys(f.backup.collections).length,11);
+    s.eq('the other collections are all still there',Object.keys(f.backup.collections).length,N-1);
 
     ctx.__r3=results.filter(r=>r.col!=='settings');
     const miss=run('pbBuildBackup(__r3,{})').summary;
@@ -307,7 +323,7 @@ module.exports=async function(){
     s.ok('it finished (did not hang)',r!=='HUNG');
     s.eq('the run is ok and complete',r.ok&&r.complete,true);
     s.eq('every collection in the owner\'s list was read exactly once',t.calls.cols.slice().sort().join(','),t.app.run('PB_COLLECTIONS.slice().sort().join(",")'));
-    s.eq('…12 reads',t.calls.getDocs,12);
+    s.eq('…one read per collection in the list',t.calls.getDocs,N);
     s.eq('no limit() was applied — a whole read, no cap',t.calls.limit,0);
     s.eq('no query/where/orderBy either',t.calls.query+t.calls.where+t.calls.orderBy,0);
     s.eq('exactly one file was saved',t.saved.length,1);
@@ -316,7 +332,7 @@ module.exports=async function(){
     s.eq('it is a JSON download',t.saved[0].type,'application/json');
     const file=JSON.parse(goodText);
     const live=liveStore();
-    s.eq('the file holds the 12 collections',Object.keys(file.collections).length,12);
+    s.eq('the file holds every collection in the list',Object.keys(file.collections).length,N);
     s.ok('every document of every collection is in the file with the right fields',Object.keys(live).every(c=>live[c].every(row=>{
       const got=file.collections[c][row.id];if(!got)return false;
       t.app.ctx.__row=row.data;const e=t.app.run('pbEncodeDoc(__row)');
@@ -330,8 +346,8 @@ module.exports=async function(){
     s.eq('NOTHING was written to Firestore (no set/update/add/delete/transaction/batch)',noWrites(t.app),true);
     s.eq('exactly one app activity row',t.app.state.activity.length,1);
     s.eq('…saying what happened',t.app.state.activity[0].action,'Production data backup');
-    s.ok('…with counts, never with data',/complete · \d+ documents in 12 collections/.test(t.app.state.activity[0].detail)&&!/PO-1|denim|uzaib/.test(t.app.state.activity[0].detail));
-    s.ok('the status line says what was saved',/12 of 12 collections/.test(t.app.el('pb-status').textContent)&&/Backup saved as groovy-production-backup_/.test(t.app.el('pb-status').textContent));
+    s.ok('…with counts, never with data',new RegExp('complete · \\d+ documents in '+N+' collections').test(t.app.state.activity[0].detail)&&!/PO-1|denim|uzaib/.test(t.app.state.activity[0].detail));
+    s.ok('the status line says what was saved',new RegExp(N+' of '+N+' collections').test(t.app.el('pb-status').textContent)&&/Backup saved as groovy-production-backup_/.test(t.app.el('pb-status').textContent));
     s.ok('the size is shown in KB for a small file and never as "0 MB"',/\(about \d+ KB\)/.test(t.app.el('pb-status').textContent));
     s.ok('a toast confirms it',t.app.state.toasts.some(x=>/Production backup saved/.test(x)));
     const last=t.app.run('pbLastBackup()');
@@ -375,7 +391,7 @@ module.exports=async function(){
     const t0=Date.now();
     const r=await watchdog(t.app.run('pbRunBackup({timeoutMs:60})'),2500);
     s.ok('a read that never answers is a named timeout, not a hang',r!=='HUNG'&&r.summary&&r.summary.failed.some(f=>f.col==='returns'&&/no answer after/.test(f.message)&&/timeout/.test(f.message)));
-    s.ok('…and the other 11 collections still made it',r!=='HUNG'&&Object.keys(r.summary.counts).length===11);
+    s.ok('…and the other collections still made it',r!=='HUNG'&&Object.keys(r.summary.counts).length===N-1);
     s.ok('…promptly',Date.now()-t0<2500);
     s.eq('the run released its lock afterwards',await t.app.run('pbRunBackup({timeoutMs:60})').then(x=>x.reason!=='busy'),true);
   }
@@ -393,7 +409,7 @@ module.exports=async function(){
     const r=await watchdog(t.app.run('pbRunBackup()'));
     s.eq('when NOTHING can be read, no file is saved at all (an empty file must not pass for a backup)',t.saved.length,0);
     s.ok('…and the message says so',/Nothing could be read, so NO backup file was saved/.test(r.message)&&r.saved===false);
-    s.eq('…all 12 are named',r.summary.failed.length,12);
+    s.eq('…every collection is named',r.summary.failed.length,N);
     s.ok('…the activity row says NOT saved',/NOT saved/.test(t.app.state.activity[0].detail));
   }
   {
@@ -439,6 +455,43 @@ module.exports=async function(){
     s.ok('an unknown value type is said in the status, not hidden',/value types this file does not know in: pos/.test(r.message));
   }
 
+  s.section('the list: the owner\'s 12 plus the requests, approvals and records beside a job');
+  {
+    const t=boot(OWNER_A);
+    const list=t.app.run('PB_COLLECTIONS.slice()');
+    const owners=['pos','bundles','gatepasses','returns','fabricin','fabric_inventory','fabric_movements','fabric_drawstrings','drawstring_moves','printing_jobs','counters','settings'];
+    const more=['gatepass_edit_requests','po_issue_requests','po_edit_requests','po_shortfalls','qc_reports','printing_billing','sla_events','article_recipes','color_library','stock_transfers','bstock_items','bstock_cartons','trim_templates','articles'];
+    s.eq('26 collections',list.length,26);
+    s.ok('the original 12 are all still there',owners.every(c=>list.indexOf(c)>-1));
+    s.ok('the 14 added after review are all there',more.every(c=>list.indexOf(c)>-1));
+    s.ok('no collection is listed twice',new Set(list).size===list.length);
+    s.ok('the Store ledger (store_items, store_transactions) is deliberately NOT read',list.indexOf('store_items')<0&&list.indexOf('store_transactions')<0);
+    const rules=fs.readFileSync(path.join(ROOT,'firestore.rules'),'utf8');
+    s.ok('every listed collection has a firestore.rules block (else its read is default-denied)',list.every(c=>new RegExp('match /'+c+'/').test(rules)),list.filter(c=>!new RegExp('match /'+c+'/').test(rules)).join(','));
+    const r=await watchdog(t.app.run('pbRunBackup()'));
+    s.ok('every one is read with collection(db,name) — one access shape, whatever shape the app itself uses for that collection',r!=='HUNG'&&t.calls.cols.slice().sort().join(',')===list.slice().sort().join(','));
+    s.ok('…and each lands in the file with its documents',more.every(c=>Object.keys(JSON.parse(t.saved[0].text).collections[c]).length>=1));
+  }
+
+  s.section('documents holding unsent local changes are named, through the real read path');
+  {
+    const data=liveStore();
+    data.pos[1].pending=true;data.gatepasses[0].pending=true;data.articles[0].pending=true;
+    const t=boot(OWNER_A,{},data);
+    const r=await watchdog(t.app.run('pbRunBackup()'));
+    const sm=r!=='HUNG'&&r.summary;
+    s.eq('the summary counts them per collection',JSON.stringify(sm&&sm.pendingWrites),JSON.stringify({pos:1,gatepasses:1,articles:1}));
+    s.eq('…and names the documents',JSON.stringify(sm&&sm.pendingIds),JSON.stringify({pos:['PO-2'],gatepasses:['GP-1'],articles:['GST073']}));
+    s.ok('…and the status message says so, with the ids',/not yet sent to the server in: pos \(1: PO-2\), gatepasses \(1: GP-1\), articles \(1: GST073\)/.test(r.message||''));
+    const file=JSON.parse(t.saved[0].text);
+    s.eq('…and the file itself carries it',JSON.stringify(file.summary.pendingWrites),JSON.stringify({pos:1,gatepasses:1,articles:1}));
+    s.ok('they are still IN the backup (the local copy is the newest)',file.collections.pos['PO-2']&&file.collections.gatepasses['GP-1']);
+    const clean=boot(OWNER_A);
+    const rc=await watchdog(clean.app.run('pbRunBackup()'));
+    s.eq('a clean read reports none',JSON.stringify(rc.summary.pendingWrites),'{}');
+    s.ok('…and says nothing about it',!/not yet sent/.test(rc.message));
+  }
+
   /* ── 5. verifying a backup file against live data ────────────────── */
   s.section('verify: counts, new / gone / changed documents, read-only');
   {
@@ -450,11 +503,11 @@ module.exports=async function(){
     s.ok('it finished (did not hang)',v!=='HUNG');
     s.eq('an untouched backup is identical to live',v.identical,true);
     s.eq('…the file is intact',v.intact,true);
-    s.eq('…all 12 rows are "identical"',v.rows.filter(r=>r.status==='identical').length,12);
+    s.eq('…every row is "identical"',v.rows.filter(r=>r.status==='identical').length,N);
     s.eq('each row carries the file count and the live count',v.rows.find(r=>r.col==='pos').inFile+'/'+v.rows.find(r=>r.col==='pos').live,'2/2');
     t.app.ctx.__vv=v;
     s.ok('pbVerifyText: intact + identical',/The file is intact/.test(t.app.run('pbVerifyText(__vv)'))&&/Live data is identical/.test(t.app.run('pbVerifyText(__vv)')));
-    s.eq('verification reads exactly the 12 collections once',t.calls.getDocs,12);
+    s.eq('verification reads exactly the listed collections once',t.calls.getDocs,N);
     s.eq('…and writes nothing at all',noWrites(t.app),true);
     s.eq('…not even an activity row',t.app.state.activity.length,0);
 
@@ -561,7 +614,7 @@ module.exports=async function(){
     s.ok('…the message is painted',/Live data is identical/.test(t.app.el('pb-verify-msg').textContent));
     const cells=walk(t.app.el('pb-verify-table'));
     s.ok('…and a table row per collection with the collection name',t.app.run('PB_COLLECTIONS').every(c=>cells.indexOf(c)>-1));
-    s.ok('…and "Identical" in the result column',cells.filter(x=>x==='Identical').length===12);
+    s.ok('…and "Identical" in the result column',cells.filter(x=>x==='Identical').length===N);
     t=boot(OWNER_A);
     const badIn={files:[{name:'broken.json',text:async()=>'{"format":'}],value:'x'};
     t.app.ctx.__input=badIn;
@@ -583,6 +636,9 @@ module.exports=async function(){
     s.ok('…the verify control',/pbVerifyPick/.test(html)&&/Check a backup file/.test(html));
     s.ok('…and lists every collection it covers',t.app.run('PB_COLLECTIONS').every(c=>html.indexOf(c)>-1));
     s.ok('…and says it is read-only',/Read-only/.test(html));
+    s.ok('…advises running it on a computer',/Run this on a computer/.test(html));
+    s.ok('…and says the file is business data that must be kept private',/contains business data and must be kept private/.test(html));
+    s.ok('…and lists the added collections too',t.app.run('PB_COLLECTIONS').length===26&&/articles/.test(html)&&/gatepass_edit_requests/.test(html));
     s.ok('…and carries no literal colour (tokens only)',!/#[0-9a-fA-F]{3,8}\b/.test(html)&&!/rgba?\(/.test(html));
     s.ok('a stored note is NEVER put into markup (a hostile one stays text)',html.indexOf('<img')<0&&html.indexOf('onerror')<0);
     const note=t.app.el('pb-last').textContent;

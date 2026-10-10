@@ -65,7 +65,10 @@ const PB_FORMAT='groovy-production-backup';
 const PB_VERSION=1;
 // The owner's list. A collection added here is read, fingerprinted, listed
 // and compared everywhere with no other change.
-const PB_COLLECTIONS=['pos','bundles','gatepasses','returns','fabricin','fabric_inventory','fabric_movements','fabric_drawstrings','drawstring_moves','printing_jobs','counters','settings'];
+const PB_COLLECTIONS=['pos','bundles','gatepasses','returns','fabricin','fabric_inventory','fabric_movements','fabric_drawstrings','drawstring_moves','printing_jobs','counters','settings',
+  // Requests, approvals and records that sit beside a job (added after review):
+  'gatepass_edit_requests','po_issue_requests','po_edit_requests','po_shortfalls','qc_reports','printing_billing','sla_events','article_recipes','color_library','stock_transfers','bstock_items','bstock_cartons','trim_templates','articles'];
+// NOT here on purpose: store_items and store_transactions (the Store's own ledger).
 // By USERNAME, never by role — the same shape as _MA_USERS.
 const _PB_USERS=['afnan','ammar'];
 const PB_READ_TIMEOUT_MS=180000;
@@ -263,7 +266,7 @@ async function pbReadAll(opts){
 // from `collections` (never {}), so nobody can mistake it for an empty one.
 function pbBuildBackup(results,meta){
   meta=meta||{};
-  const collections={},tags={},counts={},hashes={},pendingWrites={},unusual={};
+  const collections={},tags={},counts={},hashes={},pendingWrites={},pendingIds={},unusual={};
   const failed=[],empty=[],seen=new Set();
   let total=0;
   (results||[]).forEach(r=>{
@@ -271,7 +274,7 @@ function pbBuildBackup(results,meta){
     if(col)seen.add(col);
     if(!r||!r.ok){failed.push({col:col||'(unknown)',message:String((r&&r.message)||'could not be read')});return;}
     const colObj={},colTags={};
-    let pend=0;
+    let pend=0;const pids=[];
     const docs=r.docs||[];
     docs.forEach(d=>{
       const e=pbEncodeDoc(d.data);
@@ -286,7 +289,7 @@ function pbBuildBackup(results,meta){
           }
         });
       }
-      if(d.pending)pend++;
+      if(d.pending){pend++;if(pids.length<50)pids.push(d.id);}
     });
     const n=Object.keys(colObj).length;
     if(n!==docs.length){failed.push({col,message:'the read held duplicate document ids ('+docs.length+' documents, '+n+' ids)'});return;}
@@ -295,11 +298,11 @@ function pbBuildBackup(results,meta){
     counts[col]=n;total+=n;
     hashes[col]=pbHash(pbCanon({d:colObj,t:colTags}));
     if(!n)empty.push(col);
-    if(pend)pendingWrites[col]=pend;
+    if(pend){pendingWrites[col]=pend;pendingIds[col]=pids;}
   });
   PB_COLLECTIONS.forEach(c=>{if(!seen.has(c))failed.push({col:c,message:'was not read'});});
   const summary={
-    total,counts,hashes,failed,empty,pendingWrites,unusualTypes:unusual,
+    total,counts,hashes,failed,empty,pendingWrites,pendingIds,unusualTypes:unusual,
     expected:PB_COLLECTIONS.slice(),
     complete:failed.length===0
   };
@@ -324,7 +327,7 @@ function pbSummaryText(s,x){
   if(s.failed.length)parts.push('Could not read: '+s.failed.map(f=>f.col+' ('+f.message+')').join('; ')+'.');
   if(s.empty.length)parts.push('Read fine but empty: '+s.empty.join(', ')+'.');
   const pw=Object.keys(s.pendingWrites||{});
-  if(pw.length)parts.push('Holds changes this device has not yet sent to the server in: '+pw.map(c=>c+' ('+s.pendingWrites[c]+')').join(', ')+'.');
+  if(pw.length)parts.push('Holds changes this device has not yet sent to the server in: '+pw.map(c=>c+' ('+s.pendingWrites[c]+(s.pendingIds&&s.pendingIds[c]?': '+s.pendingIds[c].slice(0,5).join(', ')+(s.pendingWrites[c]>5?', …':''):'')+')').join(', ')+'.');
   const un=Object.keys(s.unusualTypes||{});
   if(un.length)parts.push('Contains value types this file does not know in: '+un.join(', ')+' (kept as plain fields and tagged).');
   return parts.join(' ');
@@ -532,7 +535,7 @@ function pbUsersEntry(){
 function pbCardHTML(){
   return '<h3>Back up production data</h3>'
     +'<div class="sub">Read-only. Saves every job record to this device as one file. Nothing in the app is changed.</div>'
-    +'<div style="font-size:13px;line-height:1.5;color:var(--muted);margin-bottom:12px">Covers: '+PB_COLLECTIONS.join(' · ')+'. The file holds your business records — keep it private.</div>'
+    +'<div style="font-size:13px;line-height:1.5;color:var(--muted);margin-bottom:12px">Covers: '+PB_COLLECTIONS.join(' · ')+'. Run this on a computer; the file contains business data and must be kept private — do not share it or leave it on a shared device.</div>'
     +'<button class="btn-primary" id="pb-backup-btn" onclick="window.pbBackupNow()">Back up production data</button>'
     +'<div id="pb-status" role="status" style="font-size:13px;line-height:1.5;margin-top:10px;color:var(--text)"></div>'
     +'<div id="pb-last" style="font-size:12px;line-height:1.5;margin-top:8px;color:var(--muted)"></div>'
