@@ -5,7 +5,7 @@
 
 let _siLoaded=false;
 let _siLinesScope='none',_siLinesCut='';
-let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=null,_siPrevSnapshot=null,_siSyncMeta={};
+let _siProducts=[],_siOrders=[],_siLineItems=[],_siWeeklyCloses=[],_siSnapshot=null,_siPrevSnapshot=null,_siSyncMeta={},_siSnapNone=false,_siSnapFallback=false;
 let _siSkuSearch='',_siSkuSort='s7',_siSkuDir=-1,_siSection='today',_siSub='',_siSecTouched=false,_siLandDone=false;
 let _siSkuLimit=200;        // SKU table page size; grows by 200 via Load more
 let _siSeason='all';        // global season filter: 'all' | 'winter' | 'summer'
@@ -192,13 +192,22 @@ const _siRunners={
     if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
   },
   closes:_siColRunner('closes','shopify_weekly_closes',()=>query(collection(db,'shopify_weekly_closes'),orderBy('week_ending','desc'))),
+  // The stock snapshot. Today's, else yesterday's, else the NEWEST one that exists (one bounded single-field read: orderBy snapshot_at desc, limit 3,
+  // no composite index). An older snapshot is used and labelled stale (see _siSnapAgeWords); NO snapshot at all finishes the stage as loaded-with-none
+  // (_siSnapNone) so the figures that need it show "—". A real read error (permission, network, timeout) still throws and fails the stage with Retry.
   snap:async function(){
     const stamps=await _siFrStampsPre();
     const today=_siPktDate(0),yesterday=_siPktDate(-1);
     let snap=await getDoc(doc(db,'shopify_inventory_snapshots',today));
     if(!snap.exists())snap=await getDoc(doc(db,'shopify_inventory_snapshots',yesterday));
-    if(snap.exists())_siSnapshot=snap.data();
-    if(!_siSnapshot)throw new Error('Inventory snapshot unavailable (no snapshot for today or yesterday).');
+    let data=snap.exists()?snap.data():null,fallback=false;
+    if(!data){
+      const q=await getDocs(query(collection(db,'shopify_inventory_snapshots'),orderBy('snapshot_at','desc'),limit(3)));
+      q.forEach(d=>{if(!data){data=d.data();if(data&&!data.date)data.date=d.id;}});
+      fallback=!!data;
+    }
+    if(data){_siSnapshot=data;_siSnapNone=false;_siSnapFallback=fallback;}
+    else if(!_siSnapshot){_siSnapNone=true;_siSnapFallback=false;} // read fine, collection empty: loaded with no snapshot
     _siFrNote('snap',stamps);
   },
   meta:async function(){ // never fatal: the page says "unknown" for what is missing
@@ -226,7 +235,7 @@ function _siLineBounds(cut,today,n){
   return out;
 }
 function _siStageNeeds(id){
-  if(id==='snap')return!_siSnapshot;
+  if(id==='snap')return!_siSnapshot&&!_siSnapNone;
   if(id==='meta')return true;
   if(id==='build')return false; // runs after the critical stages, from _siLoadSettle
   return!_siHave(id);
@@ -265,7 +274,7 @@ function siLoadBegin(){
   const L=_siLoad=_siLoadFresh();
   // keep the stages already running or held; everything else restarts for this visit
   _SI_STAGES.forEach(s=>{
-    const held=s.id==='snap'?!!_siSnapshot:s.id==='meta'||s.id==='build'?false:_siHave(s.id);
+    const held=s.id==='snap'?(!!_siSnapshot||_siSnapNone):s.id==='meta'||s.id==='build'?false:_siHave(s.id);
     L.state[s.id]=C.running[s.id]?'active':held?'done':'pending';
     L.attempts[s.id]=C.running[s.id]?(L0.attempts[s.id]||1):0;
     L.tok[s.id]=L0.tok[s.id]||0;
@@ -752,6 +761,14 @@ function _siFrMoved(stamps,seen,readAt,now,free){
   return out;
 }
 // Pure: the model the strip draws; `now` is passed in so any moment can be tested.
+// Pure: how old the snapshot behind every stock figure is, in words. null when it is today's or yesterday's (normal). none:true = no snapshot exists.
+function _siSnapAgeWords(now){
+  if(_siSnapNone&&!_siSnapshot)return{none:true,days:null,words:'No stock snapshot exists yet, so stock, days-left and cover figures show “—” (never 0). The stock sync has not written one.'};
+  if(!_siSnapshot||!_siSnapFallback)return null;
+  const d=_siSnapshot.date,t=d?Date.parse(d+'T00:00:00Z'):NaN,today=Date.parse(_siPktDate(0)+'T00:00:00Z');
+  const days=isNaN(t)?null:Math.max(0,Math.round((today-t)/864e5));
+  return{none:false,days,words:'Stock as of '+(d||'an unknown date')+(days==null?'':', '+days+' day'+(days===1?'':'s')+' old')+' — no snapshot for today or yesterday was found, so the newest one is used and stock figures may be out of date.'};
+}
 function _siFrView(now){
   const F=_siFr,docs=F.docs||{},meta=_siSyncMeta||{};
   const min2=(a,b)=>a==null||b==null?null:Math.min(a,b);
@@ -769,6 +786,7 @@ function _siFrView(now){
     let state='ok',words='';
     if(t==null){state=s.id==='refresh'?'quiet':'unknown';words=s.id==='refresh'?'':s.noun+': age unknown — the sync stamp could not be read.';}
     else if(age>limit){state='stale';words=s.noun+' '+(s.id==='orders'?'are':'is')+' '+_siFrAge(age)+' old — more than twice the '+s.intervalH+'-hour schedule, so the sync may have stopped.';}
+    if(s.id==='inventory'){const sw=_siSnapAgeWords(now);if(sw&&state!=='failed'){if(sw.none||age==null||sw.days>=1){state='stale';words=sw.words;}}}
     if(d&&d.last_status==='error'&&state!=='stale'){state='failed';words='The last run of '+s.noun.toLowerCase()+' failed'+(d.last_error?' ('+String(d.last_error)+')':'')+'; the data shown is from the run before.';}
     return{id:s.id,label:s.label,ms:t,ageMs:age,intervalH:s.intervalH,state,words};
   });
@@ -908,7 +926,7 @@ function _siFrStart(catchUp){
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
-function _siPktDate(off){const d=new Date(Date.now()+5*3600000);d.setDate(d.getDate()+(off||0));return d.toISOString().split('T')[0];}
+function _siPktDate(off){return new Date(Date.now()+5*3600000+(off||0)*864e5).toISOString().split('T')[0];} // PKT (UTC+5, no DST) calendar day; ms arithmetic so the browser's own timezone never shifts it
 function _siFmt(n){if(n==null)return'—';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return n.toLocaleString();}
 function _siPKR(n){if(n==null)return'—';return'PKR '+n.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});}
 function _siPct(n){if(n==null||isNaN(n))return'—';return(n*100).toFixed(1)+'%';}
@@ -1435,6 +1453,7 @@ function _siComputeSkuTable(){
   items7.forEach(li=>{const k=li.sku||'NO-SKU';sold7Map[k]=(sold7Map[k]||0)+(li.quantity||0);});
   items30.forEach(li=>{const k=li.sku||'NO-SKU';sold30Map[k]=(sold30Map[k]||0)+(li.quantity||0);});
 
+  const noSnap=!(_siSnapshot&&_siSnapshot.items); // no snapshot at all: stock is UNKNOWN (null), never 0
   const invMap={};
   if(_siSnapshot&&_siSnapshot.items){
     for(const invId in _siSnapshot.items){
@@ -1462,20 +1481,20 @@ function _siComputeSkuTable(){
   const rows=[];
   allSkus.forEach(sku=>{
     const prod=prodMap[sku]||{};
-    const onHand=invMap[sku]||0;
-    const prevOnHand=prevInvMap[sku]||0;
+    const onHand=noSnap?null:(invMap[sku]||0);
+    const prevOnHand=noSnap?null:(prevInvMap[sku]||0);
     const s7=sold7Map[sku]||0;
     const s30=sold30Map[sku]||0;
     const dailyRate=s30/30;
-    const daysLeft=dailyRate>0?Math.round(onHand/dailyRate):onHand>0?999:0;
-    const sellThrough=onHand+s7>0?s7/(onHand+s7):null;
-    const weeklyDelta=onHand-prevOnHand;
+    const daysLeft=onHand==null?null:dailyRate>0?Math.round(onHand/dailyRate):onHand>0?999:0;
+    const sellThrough=onHand==null?null:onHand+s7>0?s7/(onHand+s7):null;
+    const weeklyDelta=onHand==null||prevOnHand==null?null:onHand-prevOnHand;
     const fs=firstSold[sku]||null;
     const ls=lastSold[sku]||null;
     const daysSinceLastSale=_siDaysAgo(ls);
     const refunds=refundMap[sku]||0;
     const reorderPoint=Math.ceil(dailyRate*14);
-    const suggestedQty=dailyRate>0?Math.max(0,Math.ceil(dailyRate*30)-onHand):0;
+    const suggestedQty=onHand==null?0:dailyRate>0?Math.max(0,Math.ceil(dailyRate*30)-onHand):0;
 
     // Normalize swapped options: some products have size in color field and vice versa
     const _rc=(prod.color||'').trim(),_rs=(prod.size||'').trim();
@@ -1523,9 +1542,10 @@ function _siWeeksOfSupply(rows){
   const cats={};
   rows.forEach(r=>{
     if(r.status==='archived')return; // archived products carry no product_type; keep them out of the 'Unknown' bucket
+    if(r.onHand==null)return; // no stock snapshot: unknown stock is not 0 units
     const c=r.productType||'Unknown';
     if(!cats[c])cats[c]={onHand:0,weeklyRate:0};
-    cats[c].onHand+=r.onHand;
+    cats[c].onHand+=(r.onHand||0);
     cats[c].weeklyRate+=r.s7;
   });
   return Object.entries(cats).map(([cat,d])=>{
@@ -1865,7 +1885,7 @@ function _siOverview(m){
       Products: <strong>${_siProducts.length}</strong> variants
       · Orders: <strong>${_siOrders.length}</strong>
       · Line items: <strong>${_siLineItems.length}</strong>${_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''}
-      · Snapshots: ${_siSnapshot?'latest '+(_siSnapshot.date||'—'):'none yet'}
+      · Snapshots: ${_siSnapshot?'latest '+(_siSnapshot.date||'—')+(_siSnapFallback?' (stale)':''):'none yet'}
     </div>
   </div>`;
 }
@@ -1963,10 +1983,10 @@ function _siSkuRowsHtml(rows){
       <td style="font-size:12px">${r.color}</td>
       <td style="font-size:12px">${r.size}</td>
       <td style="font-size:12px">${r.productType||'—'}</td>
-      <td style="font-weight:600">${r.onHand}</td>
+      <td style="font-weight:600">${r.onHand==null?'—':r.onHand}</td>
       <td>${r.s7}</td>
       <td>${r.s30}</td>
-      <td style="${daysClass}">${r.daysLeft===999?'∞':r.daysLeft===0?'—':r.daysLeft+'d'}</td>
+      <td style="${daysClass}">${r.daysLeft==null?'—':r.daysLeft===999?'∞':r.daysLeft===0?'—':r.daysLeft+'d'}</td>
       <td>${r.sellThrough!=null?_siPct(r.sellThrough):'—'}</td>
       <td>${r.reorderPoint||'—'}</td>
       <td>${r.suggestedQty||'—'}</td>
@@ -2027,7 +2047,7 @@ function _siGroupedBodyHtml(filteredRows){
   const getGroupVal=g=>{
     const tot=f=>g.variants.reduce((s,r)=>s+(r[f]||0),0);
     const minDays=Math.min(...g.variants.filter(r=>r.dailyRate>0.05).map(r=>r.daysLeft).concat([9999]));
-    const oh=tot('onHand'),s7=tot('s7');
+    const oh=tot('onHand'),s7=tot('s7');if(g.variants.every(r=>r.onHand==null)){/* unknown stock sorts last, never as 0 */}
     const m={title:g.title,color:g.color,productType:g.productType,
       onHand:oh,s7,s30:tot('s30'),totalSold:tot('totalSold'),daysLeft:minDays<9999?minDays:null,
       sellThrough:oh+s7>0?s7/(oh+s7):null,reorderPoint:tot('reorderPoint'),suggestedQty:tot('suggestedQty')};
@@ -2036,9 +2056,10 @@ function _siGroupedBodyHtml(filteredRows){
   const page=_siSortRows(Object.entries(groups),[{key,type:(key==='title'||key==='color'||key==='productType')?'text':'num',get:e=>getGroupVal(e[1])}],key,dir).slice(0,_siSkuLimit);
   return page.map(([gkey,g])=>{
     const expanded=_siSkuExpanded.has(gkey);
-    const tot=g.variants.reduce((s,r)=>s+(r.onHand||0),0);
-    const anySoldOut=g.variants.some(r=>r.onHand<=0);
-    const allInStock=g.variants.every(r=>r.onHand>0);
+    const unk=g.variants.every(r=>r.onHand==null);
+    const tot=unk?'—':g.variants.reduce((s,r)=>s+(r.onHand||0),0);
+    const anySoldOut=!unk&&g.variants.some(r=>r.onHand!=null&&r.onHand<=0);
+    const allInStock=!unk&&g.variants.every(r=>r.onHand>0);
     const totColor=allInStock?'var(--accent-success)':anySoldOut?'var(--accent-urgent)':'inherit';
     const totS7=g.variants.reduce((s,r)=>s+(r.s7||0),0);
     const totS30=g.variants.reduce((s,r)=>s+(r.s30||0),0);
@@ -2065,15 +2086,15 @@ function _siGroupedBodyHtml(filteredRows){
       <td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td><td style="color:var(--muted)">—</td>
     </tr>`;
     const children=!expanded?'':g.variants.map(r=>{
-      const soldOut=r.onHand<=0;
+      const soldOut=r.onHand!=null&&r.onHand<=0;
       const daysClass=r.daysLeft<=7&&r.daysLeft>0?'color:var(--accent-urgent);font-weight:700':r.daysLeft<=14&&r.daysLeft>0?'color:var(--accent-warning);font-weight:600':'';
-      const daysStr=r.daysLeft===999?'∞':r.daysLeft===0?'—':`${r.daysLeft}d`;
+      const daysStr=r.daysLeft==null?'—':r.daysLeft===999?'∞':r.daysLeft===0?'—':`${r.daysLeft}d`;
       return`<tr class="si-sku-open" style="background:var(--surface-2);cursor:pointer" data-code="${_siEsc(_siAxCode(r.sku))}" onclick="window._siSkuOpen(this.dataset.code)">
         <td style="padding:4px 8px" onclick="event.stopPropagation()"><input type="checkbox" ${_siSkuSelected.has(r.sku)?'checked':''} data-sku="${_siEsc(r.sku)}" onchange="window._siToggleSku(this.dataset.sku,this.checked)"></td>
         <td style="font-size:11px;color:var(--muted);padding:7px 8px 7px 22px">${_siEsc(r.sku)}</td>
         <td></td><td></td>
         <td style="font-weight:700;font-size:13px">${_siEsc(r.size||'?')}</td>
-        <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'var(--accent-urgent)':'inherit'}">${r.onHand}</td>
+        <td style="font-weight:${soldOut?'700':'600'};color:${soldOut?'var(--accent-urgent)':'inherit'}">${r.onHand==null?'—':r.onHand}</td>
         <td>${r.s7}</td><td>${r.s30}</td>
         <td>${_siSoldSinceLiveCell(r.totalSold||0,r.liveAt,r.totalSoldPartial)}</td>
         <td style="${daysClass}">${daysStr}</td>
@@ -2240,8 +2261,8 @@ window._siExportSelectedCsv=function(){
   const esc=s=>'"'+(String(s||'').replace(/"/g,'""'))+'"';
   const lines=['SKU,Product,Color,Size,On Hand,Sold 7d,Sold 30d,Weeks of Supply,Category,Season,Garment Type,Product Type'];
   for(const r of sel){
-    const wos=r.dailyRate>0.05?(r.onHand/r.dailyRate/7).toFixed(1):'∞';
-    lines.push([esc(r.sku),esc(r.title),esc(r.color),esc(r.size||'?'),r.onHand,r.s7||0,r.s30||0,wos,esc(cats[r.sku]||r.productType||''),esc(seasons[r.sku]||''),esc(types[r.sku]||''),esc(r.productType||'')].join(','));
+    const wos=r.onHand==null?'':r.dailyRate>0.05?(r.onHand/r.dailyRate/7).toFixed(1):'∞';
+    lines.push([esc(r.sku),esc(r.title),esc(r.color),esc(r.size||'?'),r.onHand==null?'':r.onHand,r.s7||0,r.s30||0,wos,esc(cats[r.sku]||r.productType||''),esc(seasons[r.sku]||''),esc(types[r.sku]||''),esc(r.productType||'')].join(','));
   }
   const blob=new Blob([lines.join('\n')],{type:'text/csv'});
   const url=URL.createObjectURL(blob);
@@ -2358,7 +2379,7 @@ function _siWeeklySection(){
 function _siAdvancedSection(skuRows){
   const wos=_siWeeksOfSupply(skuRows);
   const md=_siMarkdownCandidates(skuRows);
-  const stockouts=skuRows.filter(r=>r.onHand<=0&&r.s30>0).sort((a,b)=>b.s30-a.s30).slice(0,15);
+  const stockouts=skuRows.filter(r=>r.onHand!=null&&r.onHand<=0&&r.s30>0).sort((a,b)=>b.s30-a.s30).slice(0,15);
   const dropPerf=_siDropPerformance(skuRows);
   const part=_siLinesPartial();
   const needCard=t=>`<div class="card si-full-need-card"><div class="card-title">${t}</div><div style="font-size:13px;color:var(--muted)">${_siFullNeedsCell()} — it reads each product's first sale, last sale or lifetime total, which the loaded ${_SI_WIN_DAYS} days cannot give.</div></div>`;
@@ -2431,7 +2452,7 @@ function _siAdvancedSection(skuRows){
       </div>
       <div style="text-align:right">
         <div style="font-weight:700">${r.totalSold} sold</div>
-        <div style="font-size:11px;color:var(--muted)">${r.dailyRate.toFixed(1)}/day · ${r.onHand} left</div>
+        <div style="font-size:11px;color:var(--muted)">${r.dailyRate.toFixed(1)}/day · ${r.onHand==null?"—":r.onHand} left</div>
       </div>
     </div>`).join('')}
   </div>`:''}
