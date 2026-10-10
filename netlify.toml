@@ -22,6 +22,12 @@
 [functions."shopify-inventory-snapshot"]
   schedule = "0 5,17 * * *"
 
+# Hourly watchdog: retries a failed/stale catalog or stock sync with back-off and
+# bells the owners after 48 h (netlify/functions/shopify-sync-watchdog-background.js).
+# A background function (15-min budget), like the other long syncs.
+[functions."shopify-sync-watchdog-background"]
+  schedule = "15 * * * *"
+
 # Every 4 hours — incremental order sync (last 48h, skip existing)
 [functions."shopify-order-sync"]
   schedule = "0 */4 * * *"
