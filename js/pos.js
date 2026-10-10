@@ -549,6 +549,7 @@ function renderDetailPage(){
           <div style="flex-shrink:0;display:flex;gap:6px">
             ${canUpdate?`<button class="mark-done-btn" style="width:auto;padding:8px 14px;font-size:13px" onclick="window.openStageWork('${po.fbKey}','${s.key}')">Go to stage</button>`:''}
             ${isOwner&&isCurrent&&!canUpdate?`<button class="btn-sm" onclick="window.ownerAdvance('${po.fbKey}','${s.key}')">Force advance</button>`:''}
+            ${s.key==='cutting'&&isCurrent&&!isDone&&_poCutCanOverride()?`<button class="btn-sm" onclick="window.poCutOverride('${po.fbKey}')">${po.cutOverride&&po.cutOverride.by?'Cut variance approved ✓':'Approve cut variance'}</button>`:''}
           </div>
         </div>
       </div>
@@ -620,18 +621,89 @@ function renderDetailPage(){
 function _poCanEdit(){return !!(session&&(session.role==='owner'||session.u==='mustafa'));}
 function _poCanDelete(){return !!(session&&(session.role==='owner'||session.u==='mustafa'));}
 
+// ── The REAL production flow (Oct 2026) ──────────────────────────────────
+// shared.js STAGES (so STAGE_KEYS) lists cutting, printing, bundling,
+// stitching, washing, qc — a DISPLAY order that predates the flow the floor
+// actually runs: cutting → bundling → stitching → printing → washing → qc →
+// completed (markCuttingDone → 'bundling', completeBundling → 'stitching',
+// renderStageWorkPage's nextStage arguments, completeQC → 'completed').
+// Anything that needs "the stage after this one" reads THIS list and never
+// STAGE_KEYS — ownerAdvance used to, and force-advancing cutting skipped
+// bundling and stitching, stitching skipped printing, and printing went
+// BACKWARDS to bundling. shared.js is deliberately left as it is.
+const PO_REAL_STAGE_ORDER=['cutting','bundling','stitching','printing','washing','qc'];
+function poRealNextStage(stageKey){
+  const i=PO_REAL_STAGE_ORDER.indexOf(stageKey);
+  if(i<0)return null;
+  return i+1<PO_REAL_STAGE_ORDER.length?PO_REAL_STAGE_ORDER[i+1]:'completed';
+}
+function _poStageLabel(key){
+  const s=(typeof STAGES!=='undefined'&&Array.isArray(STAGES))?STAGES.find(x=>x.key===key):null;
+  return s&&s.label?s.label:key;
+}
+// PURE. May the owner force `stageKey` of this PO forward? One decision, used
+// by the click (so the confirm only appears for a move that can happen) and
+// again on the LIVE document inside the write's transaction.
+//   → {ok:false,msg} | {ok:true,from,to}
+// Only ever acts on the stage the PO is AT, so it can never move a PO
+// backwards or skip a stage; a reserve order, a completed PO or a stage the PO
+// has already left are refused. Cutting is refused: its side effects (the
+// bundles and the per-size cut that embOnCuttingDone tops the embellishment job
+// up with) need quantities that only the cutting screen collects, and a PO
+// forced past cutting would read its ORDERED sizes as "cut" everywhere
+// (poCutBySize falls back to po.sizes).
+function poForceAdvancePlan(po,stageKey){
+  if(!po)return{ok:false,msg:'PO not found.'};
+  if(PO_REAL_STAGE_ORDER.indexOf(stageKey)<0)return{ok:false,msg:`"${stageKey}" is not a production stage.`};
+  if(poStatusOf(po)===PO_STATUS.RESERVED)return{ok:false,msg:`${po.id} is still a reserve order — release it to production first.`};
+  if(po.currentStage!==stageKey){
+    const at=po.currentStage==='completed'?'already complete':po.currentStage?`at ${_poStageLabel(po.currentStage)}`:'not in production';
+    return{ok:false,msg:`${po.id} is ${at}, not at ${_poStageLabel(stageKey)} — force-advance only acts on the stage the PO is at. Reload and check where it is now.`};
+  }
+  if(stageKey==='cutting')return{ok:false,msg:'Cutting cannot be forced: the bundles and the actual cut per size are created when cutting is recorded on the cutting screen (Uzaib\'s queue). Have the cut entered there — if it lands outside '+poCutPct(PO_CUT_GATE)+' an owner or Mustafa can approve it from this page.'};
+  return{ok:true,from:stageKey,to:poRealNextStage(stageKey)};
+}
 window.ownerAdvance=async function(fbKey,stageKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po)return;
   if(!['owner','manager'].includes(session.role)){showToast('Not authorized.',true);return;}
-  const stage=STAGES.find(s=>s.key===stageKey);
-  if(!confirm(`Force-advance "${stage?.label}" for PO ${po.id}?`))return;
-  const nextIdx=STAGE_KEYS.indexOf(stageKey)+1;
-  const nextStage=nextIdx<STAGE_KEYS.length?STAGE_KEYS[nextIdx]:'completed';
+  const plan=poForceAdvancePlan(po,stageKey);
+  if(!plan.ok){showToast(plan.msg,true);return;}
+  if(!confirm(`Force-advance "${_poStageLabel(stageKey)}" for PO ${po.id} to ${plan.to==='completed'?'Completed':_poStageLabel(plan.to)}?`))return;
+  let committed=false;
   try{
-    await updateDoc(doc(db,'pos',fbKey),{currentStage:nextStage,[`stages.${stageKey}.done`]:true,[`stages.${stageKey}.doneAt`]:new Date().toISOString(),[`stages.${stageKey}.doneBy`]:session.name+' (override)'});
-    await logActivity('Stage override',`PO ${po.id} · ${stage?.label} force-advanced`);
+    const poRef=doc(db,'pos',fbKey);
+    const at=new Date().toISOString();
+    // A transaction, because the screen this click came from can be hours
+    // stale: the stage worker may have finished the stage since, and a plain
+    // update would drag the PO BACK to the stage after this one. The plan is
+    // judged again on the document as it is NOW.
+    const out=await runTransaction(db,async tx=>{
+      const snap=await tx.get(poRef);
+      const live=snap.exists()?snap.data():null;
+      const lp=poForceAdvancePlan(live,stageKey);
+      if(!lp.ok)return{refused:lp.msg};
+      tx.update(poRef,{
+        currentStage:lp.to,
+        [`stages.${stageKey}.done`]:true,
+        [`stages.${stageKey}.doneAt`]:at,
+        [`stages.${stageKey}.doneBy`]:session.name+' (override)',
+        // Who forced it, as data rather than only as the text above — additive.
+        [`stages.${stageKey}.forcedBy`]:session.u,
+        [`stages.${stageKey}.forcedAt`]:at,
+        [`stages.${stageKey}.forcedFrom`]:lp.from,
+        [`stages.${stageKey}.forcedTo`]:lp.to
+      });
+      return{to:lp.to};
+    });
+    if(out.refused){
+      showToast(out.refused,true);
+      try{await loadData();renderDetailPage();}catch(_e){}
+      return;
+    }
+    committed=true;
+    await logActivity('Stage override',`PO ${po.id} · ${_poStageLabel(stageKey)} force-advanced → ${out.to==='completed'?'Completed':_poStageLabel(out.to)}`);
     showToast('Advanced ✓');await loadData();renderDetailPage();
-  }catch(e){showToast('Error: '+e.message,true);}
+  }catch(e){showToast(committed?'Advanced, but the screen could not refresh — reload the page. ('+e.message+')':'Error: '+e.message,true);}
 };
 window.deletePO=async function(fbKey,poId){
   if(!_poCanDelete()){showToast('Not authorized.',true);return;}
@@ -1165,7 +1237,7 @@ function renderCuttingWork(po){
   const szs=['XS','S','M','L','XL','2XL'];
   const target=po.qty||0;
   const actualTotal=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
-  const min=Math.ceil(target*0.8),max=Math.floor(target*1.2);
+  const gate=poCutGateFor(po),{min,max}=poCutRange(target,gate);
   const rangeOk=actualTotal>=min&&actualTotal<=max;
   return`<button class="back-btn" onclick="window.showPage('my-work')">← Back to My Work</button>
   ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
@@ -1181,8 +1253,9 @@ function renderCuttingWork(po){
     </tbody></table>
     <div id="cut-total-row" style="margin-top:10px;font-size:14px">
       Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;
-      <span style="font-size:12px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span>
+      <span style="font-size:12px;color:var(--muted)">${poCutRangeText(min,max,gate)}</span>
       <span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>
+      ${_poCutOverrideNote(po)}
     </div>
   </div>
   <div class="card"><div class="card-title">Fabric used</div>
@@ -1233,10 +1306,154 @@ function renderCutBundleSummary(po){
   }).join('');
 }
 
+// ── Cutting tolerance + owner override (Oct 2026) ─────────────────────────
+// How far the ACTUAL cut may sit from the ORDERED quantity, as a share of it.
+// 70–130% is the everyday gate (owner decision, Oct 2026; it was 80–120% typed
+// inline in four places). Beyond it a cut needs an OWNER OVERRIDE
+// (poCutOverride below): any quantity, with a reason, no outer limit — the
+// override is recorded on the PO with the ordered quantity, the actual total
+// and the percentage. One edit here moves every place that reads it.
+const PO_CUT_GATE={min:0.7,max:1.3};
+// What a PO with an approved override is held to: no window at all.
+const PO_CUT_GATE_OPEN={open:true};
+// The window a PO is held to: open once an owner has approved a variance on it
+// (po.cutOverride, written by poCutOverride), the everyday one otherwise.
+function poCutGateFor(po){return(po&&po.cutOverride&&po.cutOverride.by)?PO_CUT_GATE_OPEN:PO_CUT_GATE;}
+// Allowed pieces for an ordered quantity. Same arithmetic the gate always used:
+// the lower bound rounds UP, the upper bound DOWN.
+function poCutRange(target,gate){const g=gate||PO_CUT_GATE;if(g.open)return{min:0,max:Infinity};return{min:Math.ceil(target*g.min),max:Math.floor(target*g.max)};}
+function poCutPct(gate){const g=gate||PO_CUT_GATE;if(g.open)return'any quantity';return Math.round(g.min*100)+'–'+Math.round(g.max*100)+'%';}
+// "Allowed: 70–130 pcs (70–130%)" / "Allowed: any quantity (owner override)".
+function poCutRangeText(min,max,gate){return(gate&&gate.open)?'Allowed: any quantity (owner override)':`Allowed: ${min}–${max} pcs (${poCutPct(gate)})`;}
+function _poCutEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// PKT (UTC+5, no daylight saving) calendar day, YYYY-MM-DD. NEVER
+// toISOString().slice(0,10): that is the UTC day, and in PKT it names the
+// PREVIOUS day between 00:00 and 05:00. A fixed offset rather than the device's
+// own timezone, so the business day is the same whoever's phone saves it.
+function _poCutPktDay(ms){
+  const d=new Date((ms==null?Date.now():ms)+5*3600*1000);
+  const p=n=>String(n).padStart(2,'0');
+  return`${d.getUTCFullYear()}-${p(d.getUTCMonth()+1)}-${p(d.getUTCDate())}`;
+}
+// Who may widen a cut: owners, and Mustafa by username (the Sept 2026 grant
+// shape — never role-wide, which would hand it to Arfat as well).
+function _poCutCanOverride(){return!!(session&&(session.role==='owner'||session.u==='mustafa'));}
+// What the cutting screen says about an approved variance. Everything that was
+// typed by someone is escaped: this goes into innerHTML.
+function _poCutOverrideNote(po){
+  const o=po&&po.cutOverride;if(!o||!o.by)return'';
+  return`<div style="margin-top:6px;font-size:12px;color:var(--accent-warning);font-weight:600">Owner override: any quantity allowed — approved by ${_poCutEsc(o.byName||o.by)}${o.reason?` (${_poCutEsc(o.reason)})`:''}</div>`;
+}
+// PURE. May cutting be recorded against this PO document as it is NOW?
+//   {state:'ok'} | {state:'done'|'reserved'|'wrongStage'|'gone'}
+// 'done' is the one that matters for B1: the PO's own record that cutting has
+// happened — a second tap, a second device or a retry after a lost reply all
+// land here instead of minting a second set of bundles.
+function poCutLiveCheck(live){
+  if(!live)return{state:'gone'};
+  if(live.stages&&live.stages.cutting&&live.stages.cutting.done)return{state:'done'};
+  if(poStatusOf(live)===PO_STATUS.RESERVED)return{state:'reserved'};
+  if(live.currentStage!=='cutting')return{state:'wrongStage',at:live.currentStage};
+  return{state:'ok'};
+}
+// OWNER OVERRIDE of the cutting tolerance — the hook (Oct 2026). Owners and
+// Mustafa only. Approves a cut OUTSIDE PO_CUT_GATE (any quantity) of the ordered
+// quantity on ONE PO: records who, when and why on the PO (po.cutOverride), and
+// puts a row in Mustafa's notification bell — in the SAME transaction, so an
+// override nobody was told about cannot exist. The cutting screen then gates on
+// the wider window (poCutGateFor), and markCuttingDone stamps the override as
+// used. Mustafa overriding himself is recorded but not notified (he is the
+// one who would have been told). `reasonArg` skips the prompt (tests, callers).
+// The bell prints title and message RAW (_hrmNotifCardHTML), so both are
+// escaped here; the reason is stored as typed and escaped wherever it is drawn.
+window.poCutOverride=async function(fbKey,reasonArg){
+  if(!_poCutCanOverride()){showToast('Only an owner or Mustafa can approve a cut outside '+poCutPct(PO_CUT_GATE)+'.',true);return;}
+  const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
+  if(po.cutOverride&&po.cutOverride.by){showToast(`A variance is already approved on ${po.id} (by ${po.cutOverride.byName||po.cutOverride.by}).`);return;}
+  const pre=poCutLiveCheck(po);
+  if(pre.state!=='ok'){showToast(`${po.id} is not waiting to be cut — there is nothing to approve.`,true);return;}
+  let reason=reasonArg;
+  if(reason===undefined){
+    reason=prompt(`Approve a cut outside ${poCutPct(PO_CUT_GATE)} of the ${po.qty||'?'} pcs ordered for ${po.id} (any quantity)?\n\nReason (required) — Mustafa will be told:`);
+    if(reason===null)return;
+  }
+  reason=String(reason||'').trim().slice(0,300);
+  if(reason.length<3){showToast('A reason is required to approve a cut variance.',true);return;}
+  try{
+    const poRef=doc(db,'pos',fbKey);
+    const nowMs=Date.now();
+    const rec={by:session.u,byName:session.name,at:new Date(nowMs).toISOString(),reason,gateMin:PO_CUT_GATE.min,gateMax:PO_CUT_GATE.max,ordered:po.qty||0};
+    const nid='po_cutov_'+fbKey+'_'+nowMs;
+    const notifRef=doc(db,'hrm_notifications',nid);
+    const out=await runTransaction(db,async tx=>{
+      const snap=await tx.get(poRef);
+      const live=snap.exists()?snap.data():null;
+      if(live&&live.cutOverride&&live.cutOverride.by)return{already:live.cutOverride};
+      if(poCutLiveCheck(live).state!=='ok')return{blocked:true};
+      tx.update(poRef,{cutOverride:rec});
+      if(session.u!=='mustafa'){
+        const clip=(s,n)=>String(s).slice(0,n);
+        // Same row shape as _hrmNotify (js/hrm.js), written here instead so it
+        // commits WITH the override. Escaped once, after the length cut.
+        tx.set(notifRef,{
+          id:nid,type:'po_cut_override',source:'po_cutting',
+          title:_poCutEsc(clip(`Cut variance approved: ${po.id}`,80)),
+          message:_poCutEsc(clip(`${session.name} approved a cut beyond ${poCutPct(PO_CUT_GATE)} (any quantity) of the ${po.qty||'?'} pcs ordered on ${po.id}${po.name?' ('+po.name+')':''}. Reason: ${reason}`,300)),
+          forUser:'mustafa',forRole:'',relatedTo:fbKey,createdAt:nowMs,readBy:[],
+          priority:'high',actionRequired:false,actionUrl:'po-registry'
+        });
+      }
+      return{ok:true};
+    });
+    if(out.already){showToast(`A variance is already approved on ${po.id} (by ${out.already.byName||out.already.by}).`);}
+    else if(out.blocked){showToast(`${po.id} is no longer waiting to be cut — nothing was approved.`,true);}
+    else{
+      await logActivity('Cut variance approved',`PO ${po.id} · cut beyond ${poCutPct(PO_CUT_GATE)} approved by ${session.name} — ${reason}`);
+      showToast(`Cut variance approved on ${po.id} ✓${session.u!=='mustafa'?' — Mustafa has been told':''}`);
+    }
+    await loadData();
+    if(currentPage==='po-detail')renderDetailPage();
+  }catch(e){showToast('Error: '+e.message+' (approving a variance needs a connection)',true);}
+};
+
+// PURE. What is wrong with the raw numbers typed on the cutting screen, in
+// words that name the size or bundle at fault — or null when they are sound.
+// Size inputs and bundle units are typed numbers (min is only advisory in the
+// browser), so a minus sign, a decimal or a blank can arrive; the open gate of
+// an owner override (any quantity) must not let them through, because a
+// negative bundle would cancel a positive one and save a cut of nothing.
+//   · every size quantity: a whole number, 0 or more
+//   · every bundle: a known size and a whole number of units ABOVE 0
+//   · the total cut: above 0 (the 70–130% gate is judged separately, and only
+//     ever narrows this)
+// Used by cutValidationOk (the button) and again INSIDE markCuttingDone's
+// transaction, which is the authority.
+function poCutInputProblem(actualQty,bundles){
+  const SZ=['XS','S','M','L','XL','2XL'];
+  const q=actualQty||{};
+  const shown=v=>(typeof v==='number'&&!isFinite(v))?String(v):JSON.stringify(v);
+  let total=0;
+  for(const sz of SZ){
+    const v=q[sz];
+    if(v===undefined||v===null)continue;
+    if(typeof v!=='number'||!isFinite(v)||Math.floor(v)!==v||v<0)return`Size ${sz}: the cut quantity must be a whole number, 0 or more (got ${shown(v)}).`;
+    total+=v;
+  }
+  const list=Array.isArray(bundles)?bundles:[];
+  for(let i=0;i<list.length;i++){
+    const b=list[i]||{};
+    if(SZ.indexOf(b.size)<0)return`Bundle ${i+1}: "${b.size}" is not a size that can be cut.`;
+    const u=b.units;
+    if(typeof u!=='number'||!isFinite(u)||Math.floor(u)!==u||u<=0)return`Bundle ${i+1} (${b.size}): the units must be a whole number above 0 (got ${shown(u)}).`;
+  }
+  if(!(total>0))return'The total cut must be above 0.';
+  return null;
+}
 function cutValidationOk(po){
+  if(poCutInputProblem(cutState.actualQty,cutState.pendingBundles))return false;
   const szs=['XS','S','M','L','XL','2XL'];
   const target=po.qty||0;const actualTotal=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
-  const min=Math.ceil(target*0.8),max=Math.floor(target*1.2);
+  const {min,max}=poCutRange(target,poCutGateFor(po));
   if(actualTotal<min||actualTotal>max)return false;
   for(const sz of szs){
     const actual=parseInt(cutState.actualQty[sz])||0;if(!actual)continue;
@@ -1250,7 +1467,7 @@ function refreshCutPartial(po){
   const szs=['XS','S','M','L','XL','2XL'];
   const target=po.qty||0;
   const actualTotal=szs.reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
-  const min=Math.ceil(target*0.8),max=Math.floor(target*1.2);
+  const gate=poCutGateFor(po),{min,max}=poCutRange(target,gate);
   const rangeOk=actualTotal>=min&&actualTotal<=max;
   // Update variance cells
   szs.forEach(sz=>{
@@ -1261,7 +1478,7 @@ function refreshCutPartial(po){
   });
   // Update total row
   const tot=document.getElementById('cut-total-row');
-  if(tot)tot.innerHTML=`Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;<span style="font-size:12px;color:var(--muted)">Allowed: ${min}–${max} pcs (80–120%)</span><span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>`;
+  if(tot)tot.innerHTML=`Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;<span style="font-size:12px;color:var(--muted)">${poCutRangeText(min,max,gate)}</span><span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>${_poCutOverrideNote(po)}`;
   // Update bundle list & summary
   const bl=document.getElementById('cut-bundle-list');if(bl)bl.innerHTML=renderCutBundleList();
   const bs=document.getElementById('cut-bundle-summary');if(bs)bs.innerHTML=renderCutBundleSummary(po);
@@ -1331,47 +1548,215 @@ window.onCutFabRollToggle=function(){
   if(typeof window.calcCutAvg==='function')window.calcCutAvg();
 };
 
+// ── Cutting done — idempotent and atomic (B1, Oct 2026) ────────────────────
+// WAS: the bundles were committed in one batch, THEN the fabric was deducted
+// and the PO updated in a second write. Anything failing after the first
+// commit left bundles behind a PO still at cutting, and the retry minted a
+// second full set; a second tap or a second device did the same, because
+// nothing ever asked whether cutting had already happened.
+// NOW:
+//  · the PO's own record is the guard (stages.cutting.done), read on the LIVE
+//    document — early (so nothing is deducted for a cut that already
+//    happened) and again INSIDE the write;
+//  · the bundles, the bundle counter and the PO update are ONE transaction:
+//    all land or none do, so a failed save leaves nothing behind and spends no
+//    numbers, and a retry just runs it again;
+//  · the ids come from the counter inside that transaction and every
+//    candidate is probed first, so a counter that has fallen behind (reset,
+//    hand-edited) steps over ids that exist instead of overwriting a bundle
+//    that is in use;
+//  · bundles already on file for this PO — debris from a save that died under
+//    the old code — are REUSED when they match what was entered, and refused
+//    (never duplicated, never overwritten) when they do not;
+//  · a second tap while a save is in flight is ignored.
+// Fabric is the one thing NOT inside the transaction: _fabInvUpsert runs its
+// own and cannot also mint bundle ids. It runs after every check that can
+// refuse, and is remembered per PO, so a retry after a failed save does not
+// deduct the rolls twice.
+let _poCutBusy={};       // fbKey → true while a save is in flight
+let _poCutFabDone={};    // fbKey → {sig,consumed}: rolls already deducted this session
+const _PO_CUT_PROBE_MAX=500;   // how many taken bundle ids one save will step over before giving up
+function _poCutBundleSig(list){return list.map(b=>b.size+':'+b.units).sort().join('|');}
+// PURE. The words for a cut the live document refuses. error:false is not a
+// failure — it means the work is already done.
+function _poCutBlocked(po,c,live){
+  if(c.state==='done'){
+    const by=live&&live.stages&&live.stages.cutting&&live.stages.cutting.doneBy;
+    return{error:false,msg:`Cutting for ${po.id} was already recorded${by?' by '+by:''} — nothing was changed.`};
+  }
+  if(c.state==='reserved')return{error:true,msg:`${po.id} is still a reserve order — release it to production before it is cut. Nothing was saved.`};
+  if(c.state==='wrongStage')return{error:true,msg:`${po.id} is no longer at cutting (${c.at?'it is at '+_poStageLabel(c.at):'it is not in production'}) — nothing was saved.`};
+  if(c.state==='input')return{error:true,msg:c.msg+' Nothing was saved.'};
+  if(c.state==='range')return{error:true,msg:`${c.total} pcs is outside the ${c.rng.min}–${c.rng.max} allowed for ${c.qty} ordered (${poCutPct(c.gate)}). An owner or Mustafa can approve a variance from the PO page. Nothing was saved.`};
+  return{error:true,msg:`${po.id} could not be found — nothing was saved.`};
+}
 window.markCuttingDone=async function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po)return;
+  if(_poCutBusy[fbKey])return;   // second tap / second call while the first is still saving
+  const bad0=poCutInputProblem(cutState.actualQty,cutState.pendingBundles);
+  if(bad0){showToast(bad0+' Nothing was saved.',true);return;}
   if(!cutValidationOk(po)){showToast('Validation failed — check quantities.',true);return;}
+  _poCutBusy[fbKey]=true;
   const btn=document.getElementById('cut-done-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  let committed=false;
   try{
-    const batch=writeBatch(db);
-    const bundleIds=[];
-    const bundleStart=await reserveBundleIds(cutState.pendingBundles.length);
-    for(let i=0;i<cutState.pendingBundles.length;i++){
-      const b=cutState.pendingBundles[i];
-      const num=bundleStart+i;
-      const bid='B-'+String(num).padStart(4,'0');
-      bundleIds.push(bid);
-      batch.set(doc(db,'bundles',bid),{bundleId:bid,bundleNumber:num,poId:po.id,size:b.size,units:b.units,stage:'cutting',bundlingDone:false,stitchingDone:false,qcStatus:null,qcReason:'',createdBy:session.name,createdAt:new Date().toISOString().slice(0,10),ts:Date.now()});
+    // The fixed alpha set, as everywhere on the cutting screen (PO_FLOW_SIZES).
+    // Denim WAIST sizes (28–40) cannot be cut on a PO yet — a later milestone
+    // (audit B17); until then a size outside this set is not counted.
+    const SZ=['XS','S','M','L','XL','2XL'];
+    // Everything the save needs is copied NOW: the screen can change while the
+    // awaits below are in flight.
+    const actual={...cutState.actualQty};
+    const pend=cutState.pendingBundles.map(b=>({size:b.size,units:b.units}));
+    const poRef=doc(db,'pos',fbKey);
+    // 1. The PO as it is NOW — allPOs can be hours old on a second device.
+    const liveSnap=await getDoc(poRef);
+    const live=liveSnap&&liveSnap.exists()?liveSnap.data():null;
+    const pre=poCutLiveCheck(live);
+    if(pre.state!=='ok'){
+      const b=_poCutBlocked(po,pre,live);
+      showToast(b.msg,b.error);
+      await loadData();if(!b.error)window.showPage('my-work');
+      return;
     }
-    await batch.commit();
+    // 1b. The gate on the LIVE quantity and override, BEFORE anything is
+    // deducted: a stale screen (quantity or override changed since it loaded)
+    // must not deduct rolls and then save nothing. The check inside the
+    // transaction below stays the authority.
+    {
+      const tot0=SZ.reduce((a,s)=>a+(parseInt(actual[s])||0),0);
+      const g0=poCutGateFor(live),r0=poCutRange(live.qty||0,g0);
+      if(tot0<r0.min||tot0>r0.max){
+        const b=_poCutBlocked(po,{state:'range',rng:r0,gate:g0,total:tot0,qty:live.qty||0},live);
+        showToast(b.msg,b.error);
+        return;
+      }
+    }
+    // 2. Bundles already on file for this PO (a save that died under the old code).
+    const bsnap=await getDocs(query(collection(db,'bundles'),where('poId','==',po.id)));
+    const existing=bsnap.docs.map(d=>d.data()).filter(b=>b&&b.bundleId).sort((a,b)=>(a.bundleNumber||0)-(b.bundleNumber||0));
+    let reuse=null;
+    if(existing.length){
+      if(_poCutBundleSig(existing)!==_poCutBundleSig(pend)){
+        const ids=existing.map(b=>b.bundleId),shown=ids.slice(0,10).join(', ');
+        showToast(`${po.id} already has ${existing.length} bundle${existing.length!==1?'s':''} on file from an earlier save that did not finish (${shown}${ids.length>10?` and ${ids.length-10} more`:''}), and they do not match what you entered. Nothing was saved. An owner must review these bundles in the bundles collection before cutting can be recorded.`,true);
+        return;
+      }
+      reuse=existing.map(b=>b.bundleId);
+    }
     const cutWt=parseFloat(document.getElementById('cut-weight')?.value)||0;
     const cutRolls=document.getElementById('cut-rolls')?.value.trim()||'';
-    const cutUnits=['XS','S','M','L','XL','2XL'].reduce((a,s)=>a+(parseInt(cutState.actualQty[s])||0),0);
+    const cutUnits=SZ.reduce((a,s)=>a+(parseInt(actual[s])||0),0);
     const cutAvg=cutWt>0&&cutUnits>0?Math.round(cutWt*1000/cutUnits)+'g':'';
-    // Fabric inventory consumption (optional)
+    // 3. Fabric inventory consumption (optional) — once per PO and roll set.
     const stockKey=document.getElementById('cut-fab-stock')?.value||'';
-    let consumedFromInv=null;
+    let consumedFromInv=null,fabricFail=null;
     if(stockKey&&_cutFabRolls.length){
       const stock=allFabricInventory.find(s=>s._id===stockKey);
       if(stock){
         const rollCodes=_cutFabRolls.map(r=>r.rollCode);
-        await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||'kg',removeRollCodes:rollCodes,note:`Consumed for PO ${po.id} cutting`,sourceCol:'pos',sourceId:po.id});
-        consumedFromInv={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,rollCodes,qty:_cutFabRolls.reduce((s,r)=>s+r.weight,0)};
+        const sig=stockKey+'|'+rollCodes.slice().sort().join(',');
+        const prior=_poCutFabDone[fbKey];
+        if(prior&&prior.sig===sig){consumedFromInv=prior.consumed;fabricFail=prior.fail;}   // a retry — already deducted
+        else{
+          // OPTIONAL, and never allowed to block or corrupt cutting-done: a roll
+          // that is no longer issuable is reported and recorded on the PO, and the
+          // cut is saved regardless. tolerateMissing keeps the engine's old
+          // skip-a-missing-roll behaviour (the engine may abort by default);
+          // the catch covers an engine that throws anyway. Nothing has been
+          // written to the bundles or the PO at this point, so a failure here
+          // can neither leave bundles behind nor make a retry duplicate them.
+          try{
+            const res=await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||'kg',removeRollCodes:rollCodes,note:`Consumed for PO ${po.id} cutting`,sourceCol:'pos',sourceId:po.id,tolerateMissing:true});
+            // With tolerateMissing the engine reports the rolls it did NOT take in
+            // res.skipped. Only the rolls really deducted are recorded as consumed;
+            // the skipped ones are reported and recorded as a failure.
+            const skipped=((res&&res.skipped)||[]).map(x=>typeof x==='string'?x:String((x&&(x.rollCode||x.code))||x));
+            const taken=_cutFabRolls.filter(r=>skipped.indexOf(r.rollCode)<0);
+            if(taken.length)consumedFromInv={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,rollCodes:taken.map(r=>r.rollCode),qty:taken.reduce((s,r)=>s+r.weight,0)};
+            if(skipped.length)fabricFail={rollCodes:skipped,partial:taken.length>0,error:`${skipped.length} roll${skipped.length!==1?'s':''} not deducted (${skipped.join(', ')}) — no longer issuable`,code:'fabric/rolls-skipped'};
+            _poCutFabDone[fbKey]={sig,consumed:consumedFromInv,fail:fabricFail};
+          }catch(fe){
+            fabricFail={rollCodes,error:String((fe&&fe.message)||fe).slice(0,200),code:String((fe&&fe.code)||'')};
+          }
+        }
       }
     }
-    const poUpdate={currentStage:'bundling',cutQty:{...cutState.actualQty},cutBySize:{...cutState.actualQty},cutBy:session.name,cutAt:new Date().toISOString(),bundleIds,totalWeight:cutWt||'',totalRoll:cutRolls,avgPerUnit:cutAvg,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:new Date().toISOString(),[`stages.cutting.doneBy`]:session.name};
-    if(consumedFromInv)poUpdate.fabricConsumed=consumedFromInv;
-    await updateDoc(doc(db,'pos',fbKey),poUpdate);
-    await logActivity('Stage done',`PO ${po.id} · Cutting done — ${cutState.pendingBundles.length} bundles${consumedFromInv?` · consumed ${consumedFromInv.rollCodes.length} rolls`:''}`);
+    // 4. ONE transaction: the bundles, the counter and the PO.
+    const nowMs=Date.now(),nowISO=new Date(nowMs).toISOString(),day=_poCutPktDay(nowMs);
+    const ctrRef=doc(db,'counters','main');
+    const bidOf=n=>'B-'+String(n).padStart(4,'0');
+    const out=await runTransaction(db,async tx=>{
+      // Every read first (a transaction refuses a read after a write).
+      const ps=await tx.get(poRef);
+      const lv=ps.exists()?ps.data():null;
+      const c=poCutLiveCheck(lv);
+      if(c.state!=='ok')return{blocked:c,live:lv};
+      // The typed numbers, again, here: this is the authority (an override opens
+      // the 70–130% window, never this).
+      const bad=poCutInputProblem(actual,pend);
+      if(bad)return{blocked:{state:'input',msg:bad},live:lv};
+      // The gate is judged on the LIVE order quantity and the LIVE override.
+      const total=SZ.reduce((a,s)=>a+(parseInt(actual[s])||0),0);
+      const gate=poCutGateFor(lv),rng=poCutRange(lv.qty||0,gate),std=poCutRange(lv.qty||0,PO_CUT_GATE);
+      if(total<rng.min||total>rng.max)return{blocked:{state:'range',rng,gate,total,qty:lv.qty||0},live:lv};
+      const usedOverride=total<std.min||total>std.max;
+      let ids,nums=[],cs=null,cur=0;
+      if(reuse){ids=reuse.slice();}
+      else{
+        cs=await tx.get(ctrRef);
+        cur=cs.exists()?(Number(cs.data().bundles)||0):0;
+        let n=cur,probes=0;
+        while(nums.length<pend.length){
+          n++;
+          if(++probes>pend.length+_PO_CUT_PROBE_MAX)throw new Error('No free bundle numbers after B-'+String(cur).padStart(4,'0')+' — the bundle counter needs an owner\'s attention. Nothing was saved.');
+          const bs=await tx.get(doc(db,'bundles',bidOf(n)));
+          if(!bs.exists())nums.push(n);
+        }
+        ids=nums.map(bidOf);
+      }
+      // Then every write.
+      if(!reuse){
+        pend.forEach((b,i)=>tx.set(doc(db,'bundles',ids[i]),{bundleId:ids[i],bundleNumber:nums[i],poId:po.id,size:b.size,units:b.units,stage:'cutting',bundlingDone:false,stitchingDone:false,qcStatus:null,qcReason:'',createdBy:session.name,createdAt:day,ts:nowMs}));
+        const last=nums[nums.length-1];
+        if(cs.exists())tx.update(ctrRef,{bundles:Math.max(cur,last)});else tx.set(ctrRef,{bundles:last},{merge:true});
+      }
+      const poUpdate={currentStage:poRealNextStage('cutting'),cutQty:{...actual},cutBySize:{...actual},cutBy:session.name,cutAt:nowISO,cutDate:day,bundleIds:ids,totalWeight:cutWt||'',avgPerUnit:cutAvg,[`stages.cutting.done`]:true,[`stages.cutting.doneAt`]:nowISO,[`stages.cutting.doneBy`]:session.name};
+      // The rolls the cutter counted replace the PO's rolls figure — but a BLANK
+      // box must not erase the figure the PO was created with (it prints on the
+      // traveler and shows on the PO page).
+      if(cutRolls!=='')poUpdate.totalRoll=cutRolls;
+      if(consumedFromInv)poUpdate.fabricConsumed=consumedFromInv;
+      if(fabricFail)poUpdate.fabricConsumeFailed={...fabricFail,at:nowISO,by:session.name};
+      // A cut that only fits the widened window says so on the override record.
+      if(usedOverride){poUpdate['cutOverride.usedAt']=nowISO;poUpdate['cutOverride.actualTotal']=total;poUpdate['cutOverride.pct']=lv.qty?Math.round(total/lv.qty*1000)/10:null;}
+      tx.update(poRef,poUpdate);
+      return{ids,usedOverride,total};
+    });
+    if(out.blocked){
+      const b=_poCutBlocked(po,out.blocked,out.live);
+      showToast(b.msg,b.error);
+      await loadData();if(!b.error)window.showPage('my-work');
+      return;
+    }
+    committed=true;
+    delete _poCutFabDone[fbKey];
+    await logActivity('Stage done',`PO ${po.id} · Cutting done — ${pend.length} bundles${consumedFromInv?` · consumed ${consumedFromInv.rollCodes.length} rolls`:''}${out.usedOverride?` · ${out.total} pcs inside an owner-approved variance`:''}`);
     // Tops up the embellishment job the fabric issue created with what was
     // ACTUALLY cut per size (and creates one if no issue ever did). Guarded —
     // no embellishments module, no change. See js/embellishments.js.
-    if(typeof embOnCuttingDone==='function')await embOnCuttingDone({...po,bundleIds},{...cutState.actualQty}).catch(()=>{});
-    showToast(`Cutting done ✓ — ${cutState.pendingBundles.length} bundles${consumedFromInv?' · fabric deducted':''}`);await loadData();window.showPage('my-work');
-  }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Mark Cutting Done ✓';}}
+    if(typeof embOnCuttingDone==='function')await embOnCuttingDone({...po,bundleIds:out.ids},{...actual}).catch(e=>console.warn('[pos] embellishment top-up failed:',e&&e.message));
+    showToast(fabricFail
+      ?`Cutting done ✓ — ${pend.length} bundles. Fabric was ${fabricFail.partial?'only PARTLY deducted':'NOT deducted'} (${fabricFail.error}) — deduct ${fabricFail.partial?'the skipped':'those'} rolls from Fabric Inventory by hand.`
+      :`Cutting done ✓ — ${pend.length} bundles${consumedFromInv?' · fabric deducted':''}`,!!fabricFail);await loadData();window.showPage('my-work');
+  }catch(e){
+    showToast(committed
+      ?'Cutting was saved, but the screen could not refresh — reload the page. ('+e.message+')'
+      :'Error: '+e.message+(_poCutFabDone[fbKey]?' — the fabric deduction already went through: press Mark Cutting Done again and do not pick the rolls again.':''),true);
+  }finally{
+    delete _poCutBusy[fbKey];
+    if(!committed&&btn){btn.disabled=false;btn.textContent='Mark Cutting Done ✓';}
+  }
 };
 
 // ── Bundling stage (damage tracking + destination split) ──
@@ -1653,8 +2038,17 @@ window.setQCFail=function(bundleId){
   const reason=prompt('Reason for failure:');if(reason===null)return;
   window.setQC(bundleId,'fail',reason||'No reason given');
 };
+// poStatus is deliberately NOT set to 'complete' here. A PO whose Final QC is
+// done is still `in_production` as far as Packing is concerned: js/production.js
+// (_packOpenPOs, line 37; the barcode list, line 363) selects POs by
+// poStatusOf(p)===IN_PRODUCTION && cut>0 && not fully received — flipping the
+// status at QC would drop every finished PO out of Receiving and Ready to
+// Barcode. currentStage:'completed' is what says QC is done.
 window.completeQC=async function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po)return;
+  // Only the stage the PO is AT can be completed: a stale screen or a second
+  // tap must not overwrite who finished QC and when.
+  if(po.currentStage!=='qc'){showToast(po.currentStage==='completed'?`${po.id} has already completed Final QC.`:`${po.id} is not at Final QC — nothing to complete.`,true);return;}
   const failed=currentBundles.filter(b=>b.qcStatus==='fail').length;
   const msg=failed>0?`Complete QC with ${failed} failed bundle${failed!==1?'s':''}?`:'Mark Final QC complete?';
   if(!confirm(msg))return;
