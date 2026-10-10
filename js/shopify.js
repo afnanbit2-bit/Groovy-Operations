@@ -125,7 +125,7 @@ function _siLoadErr(e){
 // not "a quiet store": Firestore answers a query from its local cache, with no error, when the client cannot reach the server, and a
 // wrong project would answer empty too. Treating it as a successful read showed "Line items: this is the full read" over zeros (6 Oct 2026).
 // It fails the stage instead (so the loader retries, then says so with a Retry button) and never replaces data already held with nothing.
-// Weekly closes are exempt (a young store may really have none) and so are orders (only used to drop cancelled lines and to count): every
+// Weekly closes are exempt (a young store may really have none) and so are orders (now only the CANCELLED orders, used to drop their lines; zero is a valid answer): every
 // figure on the page comes from the catalog and the line items, so those two are what must not be silently empty.
 function _siEmptyRead(col,fromCache){
   const e=new Error('Read 0 documents from '+col+(fromCache?' (answered from this device\u2019s local cache, so the connection to the server may be down)':' — it normally holds data; check the connection and that the sync has run')+'.');
@@ -148,7 +148,10 @@ function _siColRunner(id,col,q){
 }
 const _siRunners={
   products:_siColRunner('products','shopify_products'),
-  orders:_siColRunner('orders','shopify_orders'),
+  // CANCELLED ORDERS ONLY (Oct 2026): the whole collection (33k docs, 10-30 MB) was read just to learn which orders were cancelled. A single-field
+  // range on an automatic index (no orderBy, no composite) returns exactly those (1,049 on the live check). Zero cancelled orders is a valid answer.
+  // This stage is now cheap; its loader weight (10) is left as it was.
+  orders:_siColRunner('orders','shopify_orders',()=>query(collection(db,'shopify_orders'),where('cancelled_at','>',''))),
   // PHASE 1 of the line-item read: only the last _SI_WIN_DAYS days (single-field range on order_created_at, no composite index).
   // fresh=true is the freshness refresh (a moved order sync): it ALWAYS re-reads the window, with the SAME cut as before so the window and the
   // phase-2 read stay disjoint; if the whole history was loaded, it goes back to 'window' and phase 2 is marked as needing a reload
@@ -707,7 +710,7 @@ async function loadShopifyData(){
 //   siCache.get(key) -> Promise<null|{value,savedAt,meta}>, siCache.put(key,value,meta) -> Promise<boolean>, siCache.del(key), siCache.clear(),
 //   siCache.bytesApprox(). Keys: products, orders, lines (the window), lines-old (phase 2), closes, snap.
 // _SI_CACHE_SHAPE: bump it whenever the fields of a stored row change shape (catalog, order, line item, snapshot): a copy with another shape is a miss.
-const _SI_CACHE_SCHEMA=1,_SI_CACHE_SHAPE='2026-10-11a',_SI_CACHE_GET_MS=1500,_SI_CACHE_MAX_AGE_MS=86400000,_SI_CACHE_SKEW_MS=300000,_SI_CACHE_CUT_SLACK_DAYS=14,_SI_CACHE_SMALL_MS=150,_SI_CACHE_BIG_MS=1500,_SI_CACHE_BIG_ROWS=5000,_SI_CACHE_BYTES_MS=30000,_SI_CACHE_CHUNK=2000,_SI_CACHE_CHUNK_GET_MS=4000;
+const _SI_CACHE_SCHEMA=1,_SI_CACHE_SHAPE='2026-10-11b',_SI_CACHE_GET_MS=1500,_SI_CACHE_MAX_AGE_MS=86400000,_SI_CACHE_SKEW_MS=300000,_SI_CACHE_CUT_SLACK_DAYS=14,_SI_CACHE_SMALL_MS=150,_SI_CACHE_BIG_MS=1500,_SI_CACHE_BIG_ROWS=5000,_SI_CACHE_BYTES_MS=30000,_SI_CACHE_CHUNK=2000,_SI_CACHE_CHUNK_GET_MS=4000;
 // 2026-10-11a: an array longer than _SI_CACHE_BIG_ROWS is stored as chunks of _SI_CACHE_CHUNK rows under 'key#0..n' plus a manifest
 // {__chunks,nonce,count} under 'key' (written LAST, so a half-written set is never read); shorter arrays and the snapshot are one record as before.
 const _siCache={prom:null,tried:false,pending:false,from:null,used:[],err:'',errKeys:{},slow:{},chunkN:{},bytes:null,bytesAt:0};
@@ -2169,7 +2172,7 @@ function _siOverview(m){
     <div class="card-title">Sync Status</div>
     <div style="font-size:13px;color:var(--muted);line-height:2">
       Products: <strong>${_siProducts.length}</strong> variants
-      · Orders: <strong>${_siOrders.length}</strong>
+      · Cancelled orders: <strong>${_siOrders.length}</strong>
       · Line items: <strong>${_siLineItems.length}</strong>${_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''}
       · Snapshots: ${_siSnapshot?'latest '+(_siSnapshot.date||'—')+(_siSnapFallback?' (stale)':''):'none yet'}
     </div>
@@ -2906,7 +2909,7 @@ function _siCleanCategories(rows){
 }
 function _siCleanIsRefunded(li){return String(li&&li.financial_status||'').trim().toLowerCase()==='refunded';}
 // Voided: Shopify's financial_status 'voided' on the line item (copied from the order at sync time),
-// or the order's own cancelled_at (joined via order_id; line items carry no cancelled_at themselves).
+// or the order's own cancelled_at (joined via order_id). Line items mostly do NOT carry cancelled_at (live check: 242 of ~1,573 lines on cancelled orders do), so the cancelled ORDERS are read (only those: where cancelled_at > '')
 function _siCleanIsVoided(li){return String(li&&li.financial_status||'').trim().toLowerCase()==='voided';}
 function _siClean(src){
   const products=(src&&src.products)||[],lineItems=(src&&src.lineItems)||[],orders=(src&&src.orders)||[],snap=src&&src.snapshot;

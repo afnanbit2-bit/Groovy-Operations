@@ -147,7 +147,7 @@ async function checks(src){
     B('currentPage="dashboard"');await flush();
     o['the read that was in flight when the page was left still merges, and painting a page nobody is on does nothing']=B('_siLinesScope')==='full'&&B('_siLineItems.length')===7;
     const r=await open({noWhere:true},'dashboard');
-    o['no where() bridge (an old cached index.html): phase 1 fails by name instead of reading everything silently']=r.B('_siLoadFailedIds().join()')==='lines'&&r.B('_siLinesScope')==='none';
+    o['no where() bridge (an old cached index.html): the cancelled-orders read and phase 1 both fail by name instead of reading everything silently']=r.B('_siLoadFailedIds().join()').split(',').sort().join()==='lines,orders'&&r.B('_siLinesScope')==='none';
   }
   // ── 8. data placed without the loader is never gated ──
   {

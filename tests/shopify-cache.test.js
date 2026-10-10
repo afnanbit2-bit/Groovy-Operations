@@ -32,7 +32,7 @@ function fakeFs(T,o){
   st.prods=[
     {sku:'AA-S',product_title:'Alpha',color:'Red',size:'S',price:100,created_at:D(300),status:'active',tags:[],product_type:'Tee',variant_id:'v1'},
     {sku:'AA-M',product_title:'Alpha',color:'Red',size:'M',price:100,created_at:D(300),status:'active',tags:[],product_type:'Tee',variant_id:'v2'}];
-  st.orders=[{order_id:1,created_at:D(1),total_price:200},{order_id:2,created_at:D(30),total_price:300}];
+  st.orders=[{order_id:1,created_at:D(1),total_price:200},{order_id:2,created_at:D(30),total_price:300},{order_id:3,created_at:D(40),total_price:50,cancelled_at:'2026-09-01T00:00:00Z'}]; // only order 3 is cancelled: the orders read returns cancelled orders only
   st.closes=[{week_ending:dayShift(T,7),revenue:1000}];
   st.snap={date:T,snapshot_at:new Date().toISOString(),items:{a:{sku:'AA-S',variant_id:'v1',available:5},b:{sku:'AA-M',variant_id:'v2',available:3}}};
   const bump=(c,n)=>{st.calls[c]=(st.calls[c]||0)+1;st.rows[c]=(st.rows[c]||0)+n;};
@@ -58,6 +58,7 @@ function fakeFs(T,o){
       const name=q.__c;
       if(st.fail[name])throw st.fail[name];
       let rows=name==='shopify_line_items'?st.lines:name==='shopify_products'?st.prods:name==='shopify_orders'?st.orders:name==='shopify_weekly_closes'?st.closes:[];
+      if(name==='shopify_orders')q.cons.filter(c=>c.t==='where'&&c.f==='cancelled_at'&&c.op==='>').forEach(c=>{rows=rows.filter(x=>x.cancelled_at!=null&&String(x.cancelled_at)>c.v);});
       if(name==='shopify_line_items'){
         const w=q.cons.filter(c=>c.t==='where');
         st.lineQueries.push(w.map(c=>c.f+c.op+c.v));
@@ -138,7 +139,7 @@ async function checks(src){
     const R=c1.R,fx=c1.fx,cm=c1.cache.m;
     o['cold: loads from Firestore exactly as today (4 big collections once each; 6 date-range queries; 202 line documents)']=R('_siLoaded')===true&&fx.big()==='products:1,orders:1,line_items:6,weekly_closes:1'&&fx.lineQueries.length===6&&fx.rows.shopify_line_items===202;
     o['cold: every collection was put: products, orders, lines, closes, snap (and nothing was put for lines-old, which was not read)']=['products','orders','lines','closes','snap'].every(k=>cm.has(k))&&!cm.has('lines-old');
-    o['cold: the stored arrays are the rows that were read (2 products, 2 orders, 202 line items, 1 close)']=cm.get('products').value.length===2&&cm.get('orders').value.length===2&&cm.get('lines').value.length===202&&cm.get('closes').value.length===1;
+    o['cold: the stored arrays are the rows that were read (2 products, 1 cancelled order of the 3 in the collection, 202 line items, 1 close)']=cm.get('products').value.length===2&&cm.get('orders').value.length===1&&cm.get('lines').value.length===202&&cm.get('closes').value.length===1;
     const lm=cm.get('lines').meta;
     o['cold: the lines record carries its cut, the time of its full read (fullAt) and last read, and the stamps it was filed under']=lm.cut===dayShift(T,90)&&lm.fullAt===B00+1*H&&lm.lastReadAt===B00+1*H&&lm.stamps&&lm.stamps.orders===B00-5*H;
     o['cold: each collection record is filed under the sync stamps read BEFORE its read (catalog for products, order sync for orders)']=cm.get('products').meta.stamps.catalog===B00-5*H&&cm.get('orders').meta.stamps.orders===B00-5*H&&cm.get('snap').meta.stamps.inventory===B00-5*H;
@@ -488,7 +489,7 @@ module.exports=async function(){
   await brk('a missing chunk is not a miss',"if(!p||!p.meta||","if(false||",['chunks: a MISSING chunk makes the whole lines record a miss']);
   await brk('a timed-out put is reported as a failure',"else if(res.timedOut){","else if(false){",['slow put: a put that times out is NOT reported as a failure']);
   await brk('big arrays are not chunked',"job.val.length>_SI_CACHE_BIG_ROWS)res=await _siCachePutChunked(job)","false)res=await _siCachePutChunked(job)",['chunks: 202 line items are stored as 5 chunk records']);
-  await brk('the stored shape is not bumped',"_SI_CACHE_SHAPE='2026-10-11a'","_SI_CACHE_SHAPE='2026-10-10a'",['shape: a copy written under the previous stored format']);
+  await brk('the stored shape is not bumped',"_SI_CACHE_SHAPE='2026-10-11b'","_SI_CACHE_SHAPE='2026-10-10a'",['shape: a copy written under the previous stored format']);
   await brk('the device-copy note is not drawn',"+(v.cacheNote?'<div class=\"si-fr-st pending\" id=\"si-fr-cache\" role=\"status\">'+_siEsc(v.cacheNote)+'</div>':'')","",['strip, check still running: it says the data came from the copy']);
   return s;
 };
