@@ -9,16 +9,21 @@
 const {loadApp,suite}=require('./harness');
 
 function app(extra){
-  return loadApp({files:['js/pos.js'],globals:Object.assign({
+  const a=loadApp({files:['js/pos.js'],globals:Object.assign({
     currentPage:'',
     allPOs:[],allPasses:[],allReturns:[],allFabricIn:[],
     allGPEditRequests:[],allFabricInventory:[],allFabricMovements:[],
     STAGE_KEYS:['cutting','bundling'],
     PO_STATUS:{RESERVED:'reserved'},poImages:{front:null,back:null},editingPO:null,_poEmbellishment:null,session:{uid:'u1',name:'Afnan',u:'afnan',role:'owner',canPO:true},
-    getNextId:async()=>7,
     loadData:async()=>{},
     _gpEsc:s=>String(s)
   },extra||{})});
+  // submitPO now mints its number INSIDE the write (createWithNextId in
+  // js/shared.js, which this suite does not load). This stand-in mints PO-007
+  // and writes the record the caller built — what is under test here is the
+  // shape of that record. The real mint is driven by tests/po-numbering.test.js.
+  a.ctx.createWithNextId=async o=>{const n=7,id=o.idFor(n),record=o.build(n,id);a.state.writes.push({op:'set',data:record});return{n,id,record};};
+  return a;
 }
 function fill(a,ticks){
   const v={'po-name':'Tee','po-code':'GST001','po-qty':'100','po-fabric':'Terry'};
