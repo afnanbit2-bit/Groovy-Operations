@@ -10438,6 +10438,92 @@ verified by deleting the fabric.js site (4 fail) and the pos.js guard (1).
 
 **Nobody has issued fabric on a real screen** — the sandbox cannot sign in [29 Sept: a headless QA session can sign in and render — see "Sandbox limits"].
 
+## M0 foundation fixes (10 Oct 2026)
+
+Four independently built and reviewed branches, integrated on
+`claude/fabric-inventory-workflow-56gjli` on top of `origin/main` `f790a40`
+(`CACHE_VERSION` v306 → **v307**). Owner's rule behind all of them: no
+existing production data lost or rewritten. Everything below is read from the
+code; none of it has been run against real Firestore.
+
+- **PO numbering (`js/shared.js`, `js/pos.js`).** `createWithNextId({field,
+  collection,idFor,build,floor})` reads `counters/main`, checks the target id is
+  free and writes the counter and the document in ONE transaction, so a refused
+  or offline write never spends a number and an existing PO is never
+  overwritten (a reset counter used to be able to `setDoc` over `PO-001`).
+  `getNextId(field,opts)` gained an optional `floor` (mints above it; with no
+  `opts` it is unchanged) but still commits in its own transaction.
+  `submitPO` passes `floor:await _poFloorNow()` — the highest number in
+  `allPOs`, else read from the server, else refuse (a cache-only read counts as
+  a failure).
+- **`deletePO` / `cancelPO` (`js/pos.js`).** `deletePO` first runs
+  `_poLinkedRecords` (the six `_PO_LINKS`: gatepasses, bundles, printing_jobs,
+  stock_transfers, bstock_items, po_issue_requests, plus production written on
+  the PO itself) and REFUSES when anything points at it or a lookup failed
+  (`metadata.fromCache` counts as failed). `cancelPO` (owners and Mustafa,
+  reason required) only adds fields (`poStatus:'cancelled'`, `cancelledAt/By/
+  Reason`, `cancelledFromStatus/Stage`) and clears `currentStage`; reserved
+  rolls are NOT released by it. Cancelled POs are filtered out of the fabric
+  issue picker, the embellishment job PO list and the All Active Orders list.
+- **Fabric engine strict by default (`js/gatepass.js`, `_fabInvUpsert`).** A
+  roll that cannot be taken or put back (not `in_stock`/`reserved` for
+  `removeRollCodes`, an existing non-in-stock roll for `deleteRollCodes`, a
+  restock that cannot be located) aborts the WHOLE transaction — including the
+  caller's gate-pass write — with an Error whose `.code` is
+  `'fabric/rolls-unavailable'` and `.rollCodes` names the rolls. The old
+  skip-silently behaviour is the opt-out `tolerateMissing:true` (skipped codes
+  come back in `skipped`). Other operations (release, reserve, relabel, edit,
+  return, supplier-return) keep their old tolerance on purpose.
+- **One restock path.** `restockRollCodes` / `restockDraws` in the engine, used
+  through `_gpRestockIssue(g,opts)` and `_gpDeleteGatePass(gpId,opts)` (a
+  delete request's approval goes through the same). A partly drawn roll gets
+  its weight added back by finding the draw in its `consumptionLog` (entries
+  stamped `gp:<id>`; older entries matched by PO and weight nearest the pass's
+  time) and a `drawsRestored` marker makes a retry a no-op. `tolerateMissing`
+  on these needs `_gpCanForceDelete()` (afnan, ammar, mustafa by username),
+  checked inside the function, not only in the UI; `_gpDeleteGatePassOverride`
+  asks first, names the rolls and logs "Gate pass deleted — rolls NOT restored".
+- **`markCuttingDone` (`js/pos.js`).** The bundles, the `counters/main` bundle
+  counter and the PO update are ONE `runTransaction` that re-reads the PO
+  (`poCutLiveCheck`: not reserved, still at cutting — so a second call is
+  refused, not repeated) and reuses bundles already on file if they match
+  (`_poCutBundleSig`). `PO_CUT_GATE` is **70–130%** (was 80–120% typed inline);
+  beyond it only an approved owner override (`poCutOverride`, owners and
+  Mustafa, reason required) opens the gate (`poCutGateFor`), stored as
+  `po.cutOverride` and written with a bell row for Mustafa in the same
+  transaction. `poCutInputProblem` refuses negative, fractional, NaN, unknown
+  size and zero-unit input on the button and again inside the transaction.
+  Fabric deduction (`_fabInvUpsert` with `tolerateMissing:true`) runs BEFORE and
+  OUTSIDE that transaction; a roll that could not be taken is recorded as
+  `po.fabricConsumeFailed` and the cut still saves.
+- **`ownerAdvance`** now steps through `PO_REAL_STAGE_ORDER` (cutting, bundling,
+  stitching, printing, washing, qc) via `poRealNextStage`, never `STAGE_KEYS`
+  (which kept the old display order and skipped or reversed stages). It judges
+  `poForceAdvancePlan` again on the live document in a transaction, acts only on
+  the stage the PO is at, and refuses cutting.
+- **`js/prod-backup.js` (owner-only, read-only).** `pbUsersEntry()` adds a
+  "Back up production data" card to the Users page; `window.pbOpen` opens it.
+  Audience `_PB_USERS` = afnan, ammar (by username). Reads the 26
+  `PB_COLLECTIONS` with `getDocs`, downloads one JSON file with a summary and
+  per-collection fingerprints, and `pbVerifyLive()` compares a chosen file with
+  live. It writes nothing (only the app's own `logActivity` row). A cache-served
+  read is a failure, an unreadable collection is named, never empty. Not in the
+  file: subcollections, RTDB attendance, Auth accounts, Cloudinary files. New
+  script tag, `PRECACHE_URLS` entry and `?v=` tag are in place.
+- **NOT verified:** nothing here was run against real Firestore, the real SDK
+  or the emulator, or seen on a real screen (all suites use the harness's fake
+  SDK). `prod-backup.js` has never read live data — **the first real run is the
+  test, and it reports its own result.** The legacy `consumptionLog` matching
+  (entries without a `gp:` stamp) is untested on production data.
+- **Known open:** `tests/run.js` can exit 0 without a failure if a test awaits a
+  promise that never settles; the cutting transaction does not re-check
+  per-size bundle sums against the cut (audit B16); `js/fabric.js`
+  `_fabRestockIssue` (registry delete) is still on the legacy restock path and
+  a multi-fabric issue is not atomic (wave 2); an embellishment job is not
+  closed when its PO is cancelled; `firestore.rules` still lets any signed-in
+  user write `pos`, `gatepasses` and `counters`, so every gate above is
+  app-layer only.
+
 ## Pattern Hub (Sept 2026)
 
 Physical sewing patterns — heavy craft paper, traced by Hassan and Alam,
