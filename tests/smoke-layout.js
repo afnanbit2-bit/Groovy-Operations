@@ -2780,6 +2780,27 @@ const FRAGMENTS={
     return Promise.resolve('<div id="si-content">'+out+'</div>');
   },
   // Reason chips (with the returns-waiting chip), the isolated band and its flash, a reason's list, and the clickable Overview tiles.
+  // Already on order (Oct 2026): the open-PO chip on rows (single PO, several POs, a long PO id), "moved down: PO covers it", the situation
+  // view of a covered and a partial reorder, the Overview reorder row and the Explorer verdict, and the unavailable note. Chip ink is
+  // --text on --surface with a --cat-notes edge, so both themes must read it at every width.
+  'inventory intel — on order chip, rows, situation and unavailable note':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siSection="attention";_siNaSel="";_siNaFilter="all";_siNaWatchOpen=true;_siNaShow={critical:true,act:true,watch:true}');
+    const codes=JSON.parse(app.run('J=JSON.stringify(_siNaState().issues.filter(i=>i.n.qty).slice(0,3).map(i=>i.code))'));
+    const today=app.run('_siPktDate(0)'),d=n=>app.run('_siAxDayStr(_siAxDayNum("'+today+'")-'+n+')');
+    const m={};
+    if(codes[0])m[codes[0]]=[{id:'PO-176 with a long reference number',code:codes[0],qty:5000,day:d(5)}];
+    if(codes[1])m[codes[1]]=[{id:'PO-170',code:codes[1],qty:12,day:d(12)},{id:'PO-171',code:codes[1],qty:12,day:d(3)}];
+    app.run('_siPoByCode=new Map(Object.entries('+JSON.stringify(m)+'));_siPoState="ok";_siPoVer++;_siPoMemo=null');
+    const list=app.run('_siNaListHtml()');
+    const view=codes.slice(0,2).map(c=>{app.run('_siNaSel='+JSON.stringify(c));return'<div class="si-na-frag">'+app.run('_siNaSectionHtml()')+'</div>';}).join('');
+    app.run('_siNaSel="";_siPoState="error"');
+    const note=app.run('_siPoNote()');
+    app.run('_siPoState="ok"');
+    return Promise.resolve('<div id="si-content"><div class="si-na-frag">'+list+'</div>'+view+'<div class="si-na-frag">'+note+'</div></div>');
+  },
   'inventory intel — Needs Attention reason chips and isolated band':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
@@ -2826,6 +2847,22 @@ const FRAGMENTS={
     app.run('_siAxSel="GNA02"');const page=app.run('_siAxSearchBody()');
     const dlg=app.run('_siIgDlgHtml("GNA02","Denim Jort With A Very Long Name Indeed Because Titles Wrap Onto Several Lines")');
     return Promise.resolve('<div id="si-content">'+tabs+'<div class="si-frag">'+na+'</div><div class="si-frag">'+tab+'</div><div class="si-frag">'+hits+'</div><div class="si-frag">'+page+'</div><div class="si-frag" style="position:relative;height:420px"><div class="si-ig-ov" style="position:absolute">'+dlg+'</div></div></div>');
+  },
+  // Inventory Intel ▸ season and type set ON the article: the single-article header and the Needs Attention situation header, with a saved value
+  // and "saved by", with a suggestion only, and with the saved list unreadable (buttons disabled + Retry). Every control must be reachable.
+  'inventory intel — season and type on the article headers':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siMetaState="ok";_siMeta=new Map([["GNA02",_siMetaClean("GNA02",{type:"bottom",season:"summer",updatedBy:"afnan",updatedAt:'+Date.now()+'})]]);_siIgVer++;_siSection="articles";_siSub="search";_siAxModeSel="search";_siAxQuery=""');
+    const art=c=>{app.run('_siAxSel='+JSON.stringify(c));return'<div class="si-frag">'+app.run('_siAxSearchBody()')+'</div>';};
+    const sit=c=>'<div class="si-na-frag">'+app.run('(()=>{const a=_siAxIndex().map.get('+JSON.stringify(c)+');const r=_siNaRow(a);const x=_siNaMk(r,_siNaCtx(),"winner","watch",{at:240000,atKind:"x"});return _siNaDetailHtml(x,{order:[{code:x.code}]});})()')+'</div>';
+    const saved=art('GNA02')+sit('GNA02');
+    const sugg=art('GNA01')+sit('GNA01');
+    app.run('_siMetaState="error"');
+    const bad=art('GNA03')+sit('GNA03');
+    app.run('_siMetaState="ok"');
+    return Promise.resolve('<div id="si-content">'+saved+sugg+bad+'</div>');
   },
   // Inventory Intel ▸ Type & season (sub-phase 2): the ice-cube progress bar (partial, and unreadable), the fill queue rows with
   // pressed options and suggestion buttons (a long name wraps), the filter chips. Rows are read flat; every control must be reachable.
@@ -2949,6 +2986,38 @@ const FRAGMENTS={
       globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
     _axSeed(app);
     return Promise.resolve('<div id="si-content">'+app.run('(()=>{_siAxModeSel="portfolio";_siAxPfMemo=null;_siAxPfAll=true;_siAxPfConcAll=true;return _siAxPortfolioBody();})()')+'</div>');
+  },
+  // Product-data sub-phase 3: the Season and Type filter bars over the Explorer (chips with counts and an active filter, the unavailable line, the reading
+  // line), and the Portfolio's "by saved type / by saved season" rollups (with an Unclassified row, and the unavailable note). Chips must be reachable.
+  'inventory intel — Article Explorer type and season filter':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('(()=>{const L=_siAxIndex().list,m=new Map();L.forEach((a,i)=>{const t=["top","bottom","other",null][i%4],s=["winter","summer","all",null][i%3];m.set(a.code,_siMetaClean(a.code,{type:t,season:s}));});_siMeta=m;_siMetaState="ok";_siIgVer++;_siAxModeSel="overview";_siAxOvTile="reorder";_siAxOvAll=false;_siAxOvCat="";_siAxQuery="";_siAxFSeason="winter";_siAxFType="";})()');
+    return Promise.resolve('<div id="si-content">'+app.run('_siArticleExplorerSection()')+'</div>');
+  },
+  // the same bars on their own: two filters set (Unclassified + top), the unavailable line with Retry, and the reading line
+  'inventory intel — Article Explorer type and season filter states':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('(()=>{const L=_siAxIndex().list,m=new Map();L.forEach((a,i)=>{const t=["top","bottom","other",null][i%4],s=["winter","summer","all",null][i%3];m.set(a.code,_siMetaClean(a.code,{type:t,season:s}));});_siMeta=m;_siMetaState="ok";_siIgVer++;_siAxModeSel="overview";_siAxFSeason="none";_siAxFType="top";})()');
+    const b=app.run('_siAxFilterBarHtml()');
+    app.run('_siAxFSeason="";_siAxFType="";_siMetaState="error"');
+    const bad=app.run('_siAxFilterBarHtml()');
+    app.run('_siMetaState="loading"');
+    const load=app.run('_siAxFilterBarHtml()');
+    return Promise.resolve('<div id="si-content"><div class="si-frag">'+b+'</div><div class="si-frag">'+bad+'</div><div class="si-frag">'+load+'</div></div>');
+  },
+  'inventory intel — Article Explorer portfolio by saved type and season':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _axSeed(app);
+    app.run('(()=>{const L=_siAxIndex().list,m=new Map();L.forEach((a,i)=>{const t=["top","bottom","other",null][i%4],s=["winter","summer","all",null][i%3];m.set(a.code,_siMetaClean(a.code,{type:t,season:s}));});_siMeta=m;_siMetaState="ok";_siIgVer++;_siAxModeSel="portfolio";_siAxPfMemo=null;_siAxFSeason="";_siAxFType="";})()');
+    const a=app.run('_siAxPfFeedHtml(_siAxPf())');
+    app.run('_siMetaState="error";_siIgVer++;_siAxPfMemo=null');
+    const bad=app.run('_siAxPfFeedHtml(_siAxPf())');
+    return Promise.resolve('<div id="si-content"><div class="card si-pf"><div class="card-title">By saved type and saved season</div>'+a+'</div><div class="card si-pf">'+bad+'</div></div>');
   },
   // The Sizes card: the sales-vs-stock bars, every status chip (out, thin, fine, over, no sales, no stock data), the readout and the
   // suggested split, for a seeded article and for a synthetic run covering every chip and a long hostile-length size label.
