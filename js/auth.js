@@ -254,6 +254,86 @@ function _authLeave(run){
   if(!_authLeaving)_authLeaving=(async()=>{try{return await run();}catch(e){_authLeaving=null;throw e;}})();
   return _authLeaving;
 }
+// Inventory Intel's saved copy (js/si-cache.js, IndexedDB) holds orders and
+// customer-linked line items. Signing out takes it off this device, the way
+// Master Accounts takes the books (maBooksOffDevice) — but BOUNDED and never
+// blocking: it waits at most ~3 s, a rejection, a hang or a missing
+// window.siCache all fall through to the sign-out. When it did not finish, a
+// flag is kept and the clear is retried the next time the page loads.
+const _SI_CLEAR_MS=3000, _SI_PENDING_KEY='groovy-si-clear-pending', _SI_OFF_KEY='groovy-si-signout';
+// Set at the start of every sign-out path so js/shopify.js can refuse to write a saved copy while the person is leaving (a pending save
+// could otherwise re-create the records after the clear). Reset by startApp. Also removes the folded stock-history copy (localStorage).
+function _authSiStart(){
+  try{window.__gvSignOutStarted=true;}catch(_){}
+  try{localStorage.removeItem('groovy-si-histfold');}catch(_){}
+}
+async function _authSiClear(){
+  let c=null;try{c=window.siCache;}catch(_){}
+  if(!c||typeof c.clear!=='function')return 'absent';
+  let t=null;
+  const res=await Promise.race([
+    Promise.resolve().then(()=>c.clear()).then(v=>v===false?'failed':'ok',()=>'failed'),   // js/si-cache.js never rejects: it resolves false when it could not clear
+    new Promise(r=>{t=setTimeout(()=>r('timeout'),_SI_CLEAR_MS);})
+  ]);
+  if(t)clearTimeout(t);
+  if(res==='ok'){try{localStorage.removeItem(_SI_PENDING_KEY);}catch(_){}}
+  else{try{localStorage.setItem(_SI_PENDING_KEY,'1');}catch(_){}}
+  return res;
+}
+// Tell this person's other tabs (localStorage 'storage' event: it reaches
+// only OTHER tabs, so this tab never reacts to its own sign-out). Only when a
+// saved copy exists to remove, so nothing else changes for anyone.
+function _authSiTell(){
+  try{
+    if(!window.siCache||typeof window.siCache.clear!=='function')return;
+    const uid=(session&&session.uid)||(auth&&auth.currentUser&&auth.currentUser.uid)||'';
+    if(!uid)return;
+    localStorage.setItem(_SI_OFF_KEY,JSON.stringify({uid:String(uid),at:Date.now(),n:Math.random().toString(36).slice(2,10)}));
+  }catch(_){}
+}
+// A tab signed in as the person who just signed out elsewhere: clear the copy
+// (this tab could write it back from memory) and go to the login. One way out
+// per tab (_authLeave).
+function _authSiHeard(m){
+  try{
+    if(!m||typeof m.uid!=='string'||!m.uid)return false;
+    const mine=String((session&&session.uid)||(auth&&auth.currentUser&&auth.currentUser.uid)||'');
+    if(!mine||m.uid!==mine)return false;
+    _authLeave(async()=>{
+      _authSiStart();
+      await _authSiClear();
+      try{sessionStorage.removeItem('u');sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}
+      try{await signOut(auth);}catch(_){}
+      session=null;
+      location.reload();
+    }).catch(()=>{});
+    return true;
+  }catch(_){return false;}
+}
+try{
+  if(typeof window!=='undefined'&&window&&typeof window.addEventListener==='function'){
+    window.addEventListener('storage',e=>{
+      if(!e||e.key!==_SI_OFF_KEY||!e.newValue)return;
+      let m=null;try{m=JSON.parse(e.newValue);}catch(_){return;}
+      _authSiHeard(m);
+    });
+    // A clear that failed or timed out at sign-out is tried again at the next load.
+    if(localStorage.getItem(_SI_PENDING_KEY)==='1')setTimeout(()=>{_authSiClear();},2000);
+  }
+}catch(_){}
+// A copy left by a DIFFERENT account must not stay on the device. Sign-out clears it, but not every way out passes through sign-out (a session that
+// ends when the browser closes, an expired or revoked login). siCache reads are already per uid; this removes the previous person's records too:
+// the first start-up of a new uid clears the saved copy (fire-and-forget, bounded) and remembers whose device session this is.
+const _SI_OWNER_KEY='groovy-si-owner';
+function _authSiOwnerCheck(uid){
+  try{
+    if(!uid||!window.siCache||typeof window.siCache.clear!=='function')return;
+    let prev=null;try{prev=localStorage.getItem(_SI_OWNER_KEY);}catch(_){}
+    if(prev===String(uid))return;
+    try{localStorage.setItem(_SI_OWNER_KEY,String(uid));}catch(_){return;}   // cannot remember it: do not clear on every start
+    _authSiClear();
+  }catch(_){}
+}
 window.doLogout=function(){return _authLeave(async()=>{
   // Master Accounts: an owner's sign-out takes the books off this device
   // first (js/master-accounts.js); while another tab holds them, nothing is
@@ -268,6 +348,7 @@ window.doLogout=function(){return _authLeave(async()=>{
       location.reload();return;
     }
   }
+  _authSiStart();_authSiTell();await _authSiClear();   // Inventory Intel's saved copy (bounded, never blocks)
   await signOut(auth);session=null;sessionStorage.clear();
   try{sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}   // signing out on purpose: may be switching account
   location.reload();
@@ -291,6 +372,8 @@ async function startApp(){
   document.getElementById('user-name').textContent=session.name;
   document.getElementById('user-title').textContent=session.title;
   sessionStorage.setItem('u',session.u);
+  try{window.__gvSignOutStarted=false;}catch(_){}   // a fresh sign-in: saving the copy is allowed again
+  _authSiOwnerCheck(session.uid);   // a different account than last time on this device: its saved Inventory Intel copy goes
   // Whatever name and photo this person chose on their Profile.
   //
   // NEVER AWAIT THIS. It was awaited when Profiles shipped, so that
@@ -1258,6 +1341,7 @@ window.lockUsePassword=function(){return _authLeave(async()=>{
   const msg=document.getElementById('lock-msg');if(msg)msg.textContent='Signing out…';
   const u=(session&&session.u)||'';
   if(typeof window.maBooksOffDevice==='function'){try{await window.maBooksOffDevice({leaving:true});}catch(_){}}
+  _authSiStart();_authSiTell();await _authSiClear();   // Inventory Intel's saved copy (bounded, never blocks)
   try{await signOut(auth);}catch(_){}
   session=null;
   try{sessionStorage.clear();sessionStorage.setItem('gv-no-auto-fp','1');}catch(_){}
