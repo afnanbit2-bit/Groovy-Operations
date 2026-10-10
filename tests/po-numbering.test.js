@@ -25,6 +25,10 @@ const {loadApp,suite,ROOT}=require('./harness');
 
 const FILES=['js/shared.js','js/pos.js'];
 const J=v=>JSON.stringify(v);
+// Null-safe read of a document: an assertion should NAME a missing document,
+// not crash the whole suite on `undefined.pos` (a revert would then show as
+// "suite threw" and hide every section after it).
+const at=(a,p)=>a.db.get(p)||{};
 const OWNER={uid:'u1',u:'afnan',name:'Afnan',role:'owner',canPO:true};
 const MUSTAFA={uid:'u2',u:'mustafa',name:'Mustafa',role:'manager',canPO:true};
 const ARFAT={uid:'u3',u:'arfat',name:'Arfat',role:'manager',canPO:true};
@@ -64,7 +68,7 @@ function fakeFirestore(seed){
         const i=k.indexOf('/');if(k.slice(0,i)!==q.col)return;
         if(q.cs.every(w=>w.op!=='=='||v[w.f]===w.v))docs.push({id:k.slice(i+1),data:()=>JSON.parse(J(v))});
       });
-      return{docs,metadata:{fromCache:!!(fail.cached&&fail.cached(q.col))}};
+      return{docs,empty:docs.length===0,size:docs.length,metadata:{fromCache:!!(fail.cached&&fail.cached(q.col))}};
     },
     getDoc:async ref=>snap(ref.path),
     setDoc:async(ref,data)=>{apply({op:'set',ref,data});},
@@ -141,14 +145,15 @@ module.exports=async function(){
     await createPO(a);
     s.ok('the person is told it failed',a.toasts().some(t=>/^Error:/.test(t)),a.toasts().join('|'));
     s.eq('no PO-007 exists',a.db.get('pos/PO-007'),undefined);
-    s.eq('the counter did NOT move',a.db.get('counters/main').pos,6);
-    s.eq('the other counters are untouched',J([a.db.get('counters/main').gatepasses,a.db.get('counters/main').bundles,a.db.get('counters/main').fabricin]),J([2,9,4]));
+    s.eq('the counter did NOT move',at(a,'counters/main').pos,6);
+    s.eq('the other counters are untouched',J([at(a,'counters/main').gatepasses,at(a,'counters/main').bundles,at(a,'counters/main').fabricin]),J([2,9,4]));
     // Retrying once the write can land gets the very next number — no gap.
     a.db.fail.commit=null;
     await createPO(a);
-    const made=a.db.get('pos/PO-007');
+    const made=a.db.get('pos/PO-007')||null;
     s.ok('the retry is PO-007, not PO-008',!!made&&made.id==='PO-007',J(made&&made.id));
-    s.eq('and the counter is now 7',a.db.get('counters/main').pos,7);
+    s.eq('and the counter is now 7',at(a,'counters/main').pos,7);
+    s.ok('the success toast is clean (no trim-request noise)',a.toasts().some(t=>/^PO-007 created ✓$/.test(t)),a.toasts().join('|'));
     s.eq('the PO carries what was typed',J([made&&made.name,made&&made.code,made&&made.qty,made&&made.fabric]),J(['Tee','GST001',100,'Terry']));
     s.eq('stored status is reserved with no stage',J([made&&made.poStatus,made&&made.currentStage]),J(['reserved',null]));
   }
@@ -174,7 +179,7 @@ module.exports=async function(){
     await createPO(a);
     s.eq('PO-001 is byte-identical',J(a.db.get('pos/PO-001')),J(original));
     s.eq('no other PO appeared',[...a.db.store.keys()].filter(k=>k.indexOf('pos/')===0).length,1);
-    s.eq('the counter did not move',a.db.get('counters/main').pos,0);
+    s.eq('the counter did not move',at(a,'counters/main').pos,0);
     s.ok('the refusal says it already exists',a.toasts().some(t=>/PO-001 already exists/.test(t)),a.toasts().join('|'));
     s.ok('and says nothing was overwritten',a.toasts().some(t=>/nothing was overwritten/.test(t)));
     s.ok('the button is usable again',a.el('po-submit-btn').disabled===false);
@@ -196,14 +201,14 @@ module.exports=async function(){
     await createPO(a);
     s.ok('the new PO is PO-006',!!a.db.get('pos/PO-006'),[...a.db.store.keys()].join(','));
     s.eq('PO-001..005 are byte-identical',J([1,2,3,4,5].map(n=>a.db.get('pos/PO-00'+n))),before);
-    s.eq('the counter was created at 6',a.db.get('counters/main').pos,6);
+    s.eq('the counter was created at 6',at(a,'counters/main').pos,6);
 
     const b=mkApp(Object.assign({'counters/main':{pos:2,returns:9}},seedPOs(1,2,3,4,5)));
     load(b,1,2,3,4,5);
     await createPO(b);
     s.ok('a counter BEHIND the loaded POs still mints PO-006',!!b.db.get('pos/PO-006'));
-    s.eq('and is healed to 6',b.db.get('counters/main').pos,6);
-    s.eq('without touching the other counters',b.db.get('counters/main').returns,9);
+    s.eq('and is healed to 6',at(b,'counters/main').pos,6);
+    s.eq('without touching the other counters',at(b,'counters/main').returns,9);
 
     const c=mkApp(Object.assign({'counters/main':{pos:40}},seedPOs(1,2)));
     load(c,1,2);
@@ -221,28 +226,29 @@ module.exports=async function(){
     const a=mkApp({});
     // (the closures cannot be JSON'd — drive it from inside the sandbox)
     a.run('globalThis.__mint=(floor)=>createWithNextId({field:"pos",collection:"pos",floor,idFor:n=>"X-"+n,build:(n,id)=>({id,n})})');
-    const r1=await a.run('__mint(0)');
-    const r2=await a.run('__mint(0)');
+    const mint=async f=>{try{return await a.run('__mint('+f+')');}catch(e){return{err:e.message};}};
+    const r1=await mint(0),r2=await mint(0);
     s.eq('first mint is 1',J([r1.n,r1.id]),J([1,'X-1']));
     s.eq('second mint is 2 — consecutive',J([r2.n,r2.id]),J([2,'X-2']));
-    s.eq('a floor lifts the number past it',(await a.run('__mint(10)')).n,11);
-    s.eq('a negative or junk floor is ignored',(await a.run('__mint(-5)')).n,12);
+    s.eq('a floor lifts the number past it',(await mint(10)).n,11);
+    s.eq('a negative or junk floor is ignored',(await mint(-5)).n,12);
     let threw=null;try{await a.run('createWithNextId({field:"pos"})');}catch(e){threw=e.message;}
     s.ok('missing arguments are refused up front',/required/.test(threw||''),threw);
     // A build() that throws must leave the counter exactly where it was.
-    let counterBefore=a.db.get('counters/main').pos,thrown=null;
+    const counterBefore=at(a,'counters/main').pos;let thrown=null;
     try{await a.run('createWithNextId({field:"pos",collection:"pos",idFor:n=>"Y-"+n,build:()=>{throw new Error("nope")}})');}catch(e){thrown=e.message;}
     s.ok('a throwing build is reported',thrown==='nope',thrown);
-    s.eq('and moved nothing',a.db.get('counters/main').pos,counterBefore);
+    s.eq('and moved nothing',at(a,'counters/main').pos,counterBefore);
   }
 
   s.section('getNextId: existing callers unchanged, floor optional');
   {
     const a=mkApp({'counters/main':{pos:3,gatepasses:5,returns:2}});
-    s.eq('no opts: counter+1 as before',await a.run('getNextId("gatepasses")'),6);
+    const gn=async c=>{try{return await a.run(c);}catch(e){return 'threw: '+e.message;}};
+    s.eq('no opts: counter+1 as before',await gn('getNextId("gatepasses")'),6);
     s.eq('and only that field moved',J(a.db.get('counters/main')),J({pos:3,gatepasses:6,returns:2}));
-    s.eq('a floor above the counter lifts it',await a.run('getNextId("gatepasses",{floor:20})'),21);
-    s.eq('a floor below the counter changes nothing',await a.run('getNextId("gatepasses",{floor:3})'),22);
+    s.eq('a floor above the counter lifts it',await gn('getNextId("gatepasses",{floor:20})'),21);
+    s.eq('a floor below the counter changes nothing',await gn('getNextId("gatepasses",{floor:3})'),22);
     const b=mkApp({});
     s.eq('missing counters doc: starts at 1',await b.run('getNextId("returns")'),1);
     s.eq('and seeds the other fields at 0, as before',J(b.db.get('counters/main')),J({pos:0,gatepasses:0,bundles:0,returns:1}));
@@ -293,7 +299,7 @@ module.exports=async function(){
     s.eq('the fabric restock did NOT run for a refused delete',a.calls.restock.length,0);
     s.eq('no "PO deleted" activity',a.acts().filter(x=>/^PO deleted/.test(x)).length,0);
     s.ok('Cancel was offered instead',(a.calls.confirms||[]).some(m=>/Cancel PO PO-010 instead/.test(m)),J(a.calls.confirms));
-    s.eq('declining the offer writes nothing',a.db.get('pos/PO-010').poStatus,'in_production');
+    s.eq('declining the offer writes nothing',at(a,'pos/PO-010').poStatus,'in_production');
   }
 
   s.section('every kind of link counts');
@@ -378,9 +384,9 @@ module.exports=async function(){
   {
     const a=mkApp(reg(linked.bundles),{prompt:'  Buyer pulled the order  '});
     load(a,10);a.run('allPOs[0].poStatus="in_production";allPOs[0].currentStage="cutting"');
-    const before=a.db.get('pos/PO-010');
+    const before=a.db.get('pos/PO-010')||{};
     await a.run('window.cancelPO("PO-010","PO-010")');
-    const after=a.db.get('pos/PO-010');
+    const after=a.db.get('pos/PO-010')||{};
     s.eq('status is cancelled',after.poStatus,'cancelled');
     s.eq('the stage is cleared so pipeline counts drop it',after.currentStage,null);
     s.eq('the old status is kept',after.cancelledFromStatus,'in_production');
@@ -402,8 +408,8 @@ module.exports=async function(){
     load(a,10);
     await a.run('window.deletePO("PO-010","PO-010")');
     s.eq('still nothing deleted',a.db.log.deleted.length,0);
-    s.eq('accepting the offer cancelled it',a.db.get('pos/PO-010').poStatus,'cancelled');
-    s.eq('with the reason typed at the prompt',a.db.get('pos/PO-010').cancelledReason,'Duplicate of PO-011');
+    s.eq('accepting the offer cancelled it',at(a,'pos/PO-010').poStatus,'cancelled');
+    s.eq('with the reason typed at the prompt',at(a,'pos/PO-010').cancelledReason,'Duplicate of PO-011');
     // Once cancelled, a delete is refused and the offer is not repeated.
     const b=mkApp(Object.assign(reg(linked.bundles),{'pos/PO-010':po(10,{poStatus:'cancelled',currentStage:null})}),{confirm:true,prompt:'x'});
     load(b,10);b.run('allPOs[0].poStatus="cancelled"');
@@ -416,22 +422,22 @@ module.exports=async function(){
   {
     const a=mkApp(reg({}),{prompt:'why not',session:MUSTAFA});load(a,10);
     await a.run('window.cancelPO("PO-010","PO-010")');
-    s.eq('Mustafa can cancel',a.db.get('pos/PO-010').poStatus,'cancelled');
+    s.eq('Mustafa can cancel',at(a,'pos/PO-010').poStatus,'cancelled');
     const b=mkApp(reg({}),{prompt:'why not',session:ARFAT});load(b,10);
     await b.run('window.cancelPO("PO-010","PO-010")');
-    s.ok('Arfat (same role, not Mustafa) cannot',b.db.get('pos/PO-010').poStatus==='in_production'&&/Not authorized/.test(b.toasts().join('|')));
+    s.ok('Arfat (same role, not Mustafa) cannot',at(b,'pos/PO-010').poStatus==='in_production'&&/Not authorized/.test(b.toasts().join('|')));
     const c=mkApp(reg({}),{prompt:'   '});load(c,10);
     await c.run('window.cancelPO("PO-010","PO-010")');
-    s.ok('a blank reason cancels nothing',c.db.get('pos/PO-010').poStatus==='in_production'&&/a reason is required/.test(c.toasts().join('|')));
+    s.ok('a blank reason cancels nothing',at(c,'pos/PO-010').poStatus==='in_production'&&/a reason is required/.test(c.toasts().join('|')));
     const d=mkApp(reg({}),{prompt:null});load(d,10);
     await d.run('window.cancelPO("PO-010","PO-010")');
-    s.eq('dismissing the prompt cancels nothing',d.db.get('pos/PO-010').poStatus,'in_production');
+    s.eq('dismissing the prompt cancels nothing',at(d,'pos/PO-010').poStatus,'in_production');
     const e=mkApp({'pos/PO-010':po(10,{poStatus:'cancelled'})},{prompt:'again'});load(e,10);e.run('allPOs[0].poStatus="cancelled"');
     await e.run('window.cancelPO("PO-010","PO-010")');
-    s.ok('cancelling twice is refused',/already cancelled/.test(e.toasts().join('|'))&&!e.db.get('pos/PO-010').cancelledReason);
+    s.ok('cancelling twice is refused',/already cancelled/.test(e.toasts().join('|'))&&!at(e,'pos/PO-010').cancelledReason);
     const f=mkApp({'pos/PO-010':po(10,{poStatus:'complete',currentStage:'completed'})},{prompt:'late'});f.run('allPOs='+J([po(10,{poStatus:'complete',currentStage:'completed'})]));
     await f.run('window.cancelPO("PO-010","PO-010")');
-    s.ok('a completed PO cannot be cancelled',/completed and cannot be cancelled/.test(f.toasts().join('|'))&&f.db.get('pos/PO-010').poStatus==='complete');
+    s.ok('a completed PO cannot be cancelled',/completed and cannot be cancelled/.test(f.toasts().join('|'))&&at(f,'pos/PO-010').poStatus==='complete');
     const g=mkApp({},{prompt:'x'});
     await g.run('window.cancelPO("PO-404","PO-404")');
     s.ok('an unknown PO is refused, not invented',/PO not found/.test(g.toasts().join('|'))&&g.db.store.size===0);
