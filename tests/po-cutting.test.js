@@ -132,7 +132,7 @@ function boot(o){
     allFabricInventory:o.inventory||[],currentBundles:[],viewingPO:o.viewingPO||null,stageWorkPO:null,
     cutState:o.cutState||{poId:'PO-001',actualQty:{XS:0,S:50,M:50,L:0,XL:0,'2XL':0},
       pendingBundles:[{tempId:1,size:'S',units:30},{tempId:2,size:'S',units:20},{tempId:3,size:'M',units:50}]},
-    _fabInvUpsert:async a=>{calls.fab.push(a);if(o.fabFail){const e=new Error('roll R1 is not issuable');e.code='fabric/rolls-unavailable';throw e;}return{movCodes:a.removeRollCodes,movQty:0};}
+    _fabInvUpsert:async a=>{calls.fab.push(a);if(o.fabFail){const e=new Error('roll R1 is not issuable');e.code='fabric/rolls-unavailable';throw e;}return{movCodes:a.removeRollCodes.filter(c=>(o.skip||[]).map(x=>x.rollCode||x).indexOf(c)<0),movQty:0,skipped:o.skip||[]};}
   },o.globals||{});
   if(o.withEmb!==false)globals.embOnCuttingDone=async(p,s)=>{calls.emb.push({po:p,sizes:s});};
   const app=loadApp({files:FILES,session:o.session||OWNER,globals});
@@ -154,41 +154,36 @@ const commitPaths=st=>st.commits.map(c=>c.map(w=>w.path));
 module.exports=async function(){
   const s=suite('po-cutting');
 
-  /* ═══ the tolerance is a named constant, and the 80–120 gate did not move ═══ */
+  /* ═══ the tolerance is a named constant: 70–130% is the everyday gate ═══ */
   s.section('the cutting tolerance');
   {
     const d=boot();
-    const G=d.app.run('JSON.stringify({a:PO_CUT_GATE,b:PO_CUT_GATE_OVERRIDE})');
-    s.eq('the everyday gate is 80–120%, named',JSON.parse(G).a.min+'-'+JSON.parse(G).a.max,'0.8-1.2');
-    s.eq('the owner-override window is 70–130%, named',JSON.parse(G).b.min+'-'+JSON.parse(G).b.max,'0.7-1.3');
-    s.eq('its label is derived, not typed',d.app.run('poCutPct(PO_CUT_GATE)+" / "+poCutPct(PO_CUT_GATE_OVERRIDE)'),'80–120% / 70–130%');
-    // The arithmetic the gate has always used, restated here as the reference.
+    const G=JSON.parse(d.app.run('JSON.stringify(PO_CUT_GATE)'));
+    s.eq('the everyday gate is 70–130%, one named constant',G.min+'-'+G.max,'0.7-1.3');
+    s.eq('no stale override-window constant is left behind',d.app.run('typeof PO_CUT_GATE_OVERRIDE'),'undefined');
+    s.eq('its label is derived, not typed',d.app.run('poCutPct(PO_CUT_GATE)'),'70–130%');
+    s.eq('an override has no window: the label says so',d.app.run('poCutPct(poCutGateFor({cutOverride:{by:"afnan"}}))'),'any quantity');
+    // The arithmetic the gate has always used (ceil down-bound, floor up-bound), restated as the reference.
     let bad=0;
     for(let t=0;t<=3000;t++){
       const r=d.app.run(`poCutRange(${t})`);
-      if(r.min!==Math.ceil(t*0.8)||r.max!==Math.floor(t*1.2))bad++;
+      if(r.min!==Math.ceil(t*0.7)||r.max!==Math.floor(t*1.3))bad++;
     }
-    s.eq('poCutRange(n) is exactly ceil(n*0.8)..floor(n*1.2) for every n 0–3000',bad,0);
-    s.eq('500 ordered: everyday window 400–600',JSON.stringify(d.app.run('poCutRange(500)')),JSON.stringify({min:400,max:600}));
-    s.eq('500 ordered: override window 350–650',JSON.stringify(d.app.run('poCutRange(500,PO_CUT_GATE_OVERRIDE)')),JSON.stringify({min:350,max:650}));
+    s.eq('poCutRange(n) is exactly ceil(n*0.7)..floor(n*1.3) for every n 0–3000',bad,0);
+    s.eq('500 ordered: everyday window 350–650',JSON.stringify(d.app.run('poCutRange(500)')),JSON.stringify({min:350,max:650}));
     s.eq('no PO override: the everyday window applies',d.app.run('poCutGateFor({qty:100})===PO_CUT_GATE'),true);
-    s.eq('an override on the PO widens it',d.app.run('poCutGateFor({qty:100,cutOverride:{by:"afnan"}})===PO_CUT_GATE_OVERRIDE'),true);
+    s.eq('an override on the PO opens the window',d.app.run('poCutGateFor({qty:100,cutOverride:{by:"afnan"}}).open'),true);
+    s.eq('open means no upper limit',d.app.run('poCutRange(100,poCutGateFor({cutOverride:{by:"afnan"}})).max===Infinity'),true);
     s.eq('a hollow override object does not',d.app.run('poCutGateFor({qty:100,cutOverride:{}})===PO_CUT_GATE'),true);
     // The button gate, at the edges (100 ordered, bundles always matching).
-    const edge=n=>{
-      const dd=boot({cutState:{poId:'PO-001',actualQty:{XS:0,S:n,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:n}]}});
-      return dd.app.run("cutValidationOk({qty:100})");
-    };
-    s.eq('79 of 100 is refused',edge(79),false);
-    s.eq('80 of 100 is allowed',edge(80),true);
-    s.eq('120 of 100 is allowed',edge(120),true);
-    s.eq('121 of 100 is refused',edge(121),false);
+    const edge=n=>boot({cutState:{poId:'PO-001',actualQty:{XS:0,S:n,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:n}]}}).app.run("cutValidationOk({qty:100})");
+    s.eq('69 of 100 is refused',edge(69),false);
+    s.eq('70 of 100 is allowed, no override',edge(70),true);
+    s.eq('130 of 100 is allowed, no override',edge(130),true);
+    s.eq('131 of 100 is refused',edge(131),false);
     const wide=n=>boot({cutState:{poId:'PO-001',actualQty:{XS:0,S:n,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:n}]}})
       .app.run('cutValidationOk({qty:100,cutOverride:{by:"afnan"}})');
-    s.eq('with an override 70 of 100 is allowed',wide(70),true);
-    s.eq('with an override 130 of 100 is allowed',wide(130),true);
-    s.eq('with an override 69 of 100 is STILL refused',wide(69),false);
-    s.eq('with an override 131 of 100 is STILL refused',wide(131),false);
+    [69,131,40,250,1000].forEach(n=>s.eq('with an override '+n+' of 100 is allowed (no outer limit)',wide(n),true));
   }
 
   /* ═══ dates: the PKT day, never the UTC one ═══ */
@@ -384,38 +379,75 @@ module.exports=async function(){
   /* ═══ the gate, judged on the live document ═══ */
   s.section('the cut must sit inside the window — and the live document decides');
   {
-    const out=boot({cutState:{poId:'PO-001',actualQty:{XS:0,S:70,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:70}]}});
+    const cs=n=>({poId:'PO-001',actualQty:{XS:0,S:n,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:n}]});
+    const out=boot({cutState:cs(69)});
     out.syncPOs();
     await out.cut();
-    s.ok('70 of 100 is refused at the button, before any read',/Validation failed/.test(out.lastToast()),out.lastToast());
+    s.ok('69 of 100 is refused at the button, before any read',/Validation failed/.test(out.lastToast()),out.lastToast());
     s.eq('no database access',out.store.getDocCalls+out.store.txRuns,0);
+    const hi=boot({cutState:cs(131)});hi.syncPOs();await hi.cut();
+    s.ok('131 of 100 is refused too',/Validation failed/.test(hi.lastToast())&&hi.bundles().length===0,hi.lastToast());
 
-    // The local copy says 75 ordered (70 is fine); the live document says 100.
-    const d=boot({cutState:{poId:'PO-001',actualQty:{XS:0,S:70,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:70}]}});
-    d.app.run('allPOs='+JSON.stringify([Object.assign(po1({qty:75}),{fbKey:'PO-001'})]));
+    // Exactly on the edge: allowed with NO override.
+    for(const n of [70,130]){
+      const e=boot({cutState:cs(n)});e.syncPOs();await e.cut();
+      const ep=e.store.get('pos/PO-001');
+      s.eq('exactly '+n+' of 100 passes with no override',ep.currentStage+':'+e.bundles().length,'bundling:1');
+      s.eq('and no override is involved',ep.cutOverride,undefined);
+    }
+
+    // The local copy says 60 ordered (69 is fine); the live document says 100.
+    const d=boot({cutState:cs(69)});
+    d.app.run('allPOs='+JSON.stringify([Object.assign(po1({qty:60}),{fbKey:'PO-001'})]));
     await d.cut();
     s.eq('the gate is judged on the LIVE order quantity: nothing saved',d.store.commits.length,0);
-    s.ok('and it says what the window is, from the constant',/70 pcs is outside the 80–120 allowed for 100 ordered \(80–120%\)/.test(d.lastToast()),d.lastToast());
+    s.ok('and it says what the window is, from the constant',/69 pcs is outside the 70–130 allowed for 100 ordered \(70–130%\)/.test(d.lastToast()),d.lastToast());
     s.eq('no bundles',d.bundles().length,0);
 
-    // An owner-approved variance: 75 of 100.
-    const ov=boot({seed:{'pos/PO-001':po1({cutOverride:{by:'afnan',byName:'Afnan',at:'x',reason:'fabric short',min:0.7,max:1.3,ordered:100}}),
-      'counters/main':{pos:1,bundles:0}},
-      cutState:{poId:'PO-001',actualQty:{XS:0,S:75,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:75}]}});
-    ov.syncPOs();
-    await ov.cut();
-    const p=ov.store.get('pos/PO-001');
-    s.eq('an approved variance lets 75 of 100 through',p.currentStage,'bundling');
-    s.eq('and the override is stamped USED, with the total',p.cutOverride.usedTotal,75);
-    s.eq('with the time',p.cutOverride.usedAt,new Date(FIXED).toISOString());
-    s.eq('the override record is otherwise intact',p.cutOverride.reason+':'+p.cutOverride.by,'fabric short:afnan');
-    s.ok('the activity row says so',ov.app.state.activity.some(a=>/inside an owner-approved variance/.test(a.detail)));
+    // An owner-approved variance lets any quantity through, and records it.
+    for(const [n,pct] of [[69,69],[131,131],[250,250]]){
+      const ov=boot({seed:{'pos/PO-001':po1({cutOverride:{by:'afnan',byName:'Afnan',at:'x',reason:'fabric short',gateMin:0.7,gateMax:1.3,ordered:100}}),
+        'counters/main':{pos:1,bundles:0}},cutState:cs(n)});
+      ov.syncPOs();
+      await ov.cut();
+      const p=ov.store.get('pos/PO-001');
+      s.eq('an approved variance lets '+n+' of 100 through',p.currentStage,'bundling');
+      s.eq(n+': the actual total is recorded on the override',p.cutOverride.actualTotal,n);
+      s.eq(n+': and the percentage',p.cutOverride.pct,pct);
+      s.eq(n+': the ordered quantity is on the override',p.cutOverride.ordered,100);
+      s.eq(n+': with the time',p.cutOverride.usedAt,new Date(FIXED).toISOString());
+      s.eq(n+': the record is otherwise intact',p.cutOverride.reason+':'+p.cutOverride.by,'fabric short:afnan');
+      s.ok(n+': the activity row says so',ov.app.state.activity.some(a=>/inside an owner-approved variance/.test(a.detail)));
+    }
 
     // Within the everyday window the override is not "used".
-    const w=boot({seed:{'pos/PO-001':po1({cutOverride:{by:'afnan',byName:'Afnan',at:'x',reason:'r',min:0.7,max:1.3,ordered:100}}),'counters/main':{pos:1,bundles:0}}});
+    const w=boot({seed:{'pos/PO-001':po1({cutOverride:{by:'afnan',byName:'Afnan',at:'x',reason:'r',ordered:100}}),'counters/main':{pos:1,bundles:0}}});
     w.syncPOs();
     await w.cut();
-    s.eq('a cut inside 80–120 does not stamp the override as used',w.store.get('pos/PO-001').cutOverride.usedAt,undefined);
+    s.eq('a cut inside 70–130 does not stamp the override as used',w.store.get('pos/PO-001').cutOverride.usedAt,undefined);
+
+    // The whole path: approve through the hook, then cut at 69% — the bell fires once.
+    const f=boot({seed:{'pos/PO-001':po1(),'counters/main':{pos:1,bundles:0}},cutState:cs(69)});
+    f.syncPOs();
+    await f.cut();
+    s.eq('(before approval 69 of 100 is refused)',f.store.get('pos/PO-001').stages.cutting.done,false);
+    await f.app.run("window.poCutOverride('PO-001','fabric ran short')");
+    f.syncPOs();
+    await f.cut();
+    const fp=f.store.get('pos/PO-001');
+    s.eq('after approval the 69% cut is recorded',fp.currentStage+':'+fp.cutOverride.actualTotal+':'+fp.cutOverride.pct,'bundling:69:69');
+    s.eq('Mustafa was notified exactly once (approving; cutting does not notify again)',f.store.ids('hrm_notifications').length,1);
+    // A second approval attempt on the same PO adds nothing.
+    await f.app.run("window.poCutOverride('PO-001','again')");
+    s.eq('still one notification',f.store.ids('hrm_notifications').length,1);
+
+    // The in-transaction gate stays the authority when the early read was stale.
+    const g=boot({cutState:cs(60)});
+    g.app.run('allPOs='+JSON.stringify([Object.assign(po1({qty:60}),{fbKey:'PO-001'})]));
+    g.store.stale={'pos/PO-001':{exists:()=>true,data:()=>po1({qty:60})}};   // the early read is stale; the live PO says 100
+    await g.cut();
+    s.eq('a stale early read does not get a 60-of-100 cut past the transaction',g.store.commits.length+':'+g.bundles().length,'0:0');
+    s.ok('the transaction says why',/60 pcs is outside the 70–130 allowed for 100 ordered/.test(g.lastToast()),g.lastToast());
   }
 
   /* ═══ fabric: deducted once, never for a refused save ═══ */
@@ -469,6 +501,71 @@ module.exports=async function(){
     s.eq('and does not call the engine again',f.calls.fab.length,1);
   }
 
+  s.section('fabric: rolls the engine SKIPPED are not claimed as consumed');
+  {
+    const inv=[{_id:'k',fabType:'Denim',gsm:300,color:'Blue',unit:'kg',totalWeight:100,rolls:[]}];
+    const setup=o=>{const d=boot(Object.assign({inventory:inv},o));d.syncPOs();d.app.el('cut-fab-stock').value='k';
+      d.app.run("_cutFabRolls=[{rollCode:'R1',weight:20},{rollCode:'R2',weight:30}]");return d;};
+    const p=setup({skip:['R2']});await p.cut();
+    const pp=p.store.get('pos/PO-001');
+    s.eq('partly skipped: only the rolls really deducted are recorded as consumed',(pp.fabricConsumed.rollCodes||[]).join(',')+'|'+pp.fabricConsumed.qty,'R1|20');
+    s.eq('the skipped roll is recorded as a failure, flagged partial',(pp.fabricConsumeFailed.rollCodes||[]).join(',')+'|'+pp.fabricConsumeFailed.partial+'|'+pp.fabricConsumeFailed.code,'R2|true|fabric/rolls-skipped');
+    s.ok('the toast does not say fabric was deducted, names the skipped roll',/only PARTLY deducted/.test(p.lastToast())&&/R2/.test(p.lastToast())&&!/fabric deducted/.test(p.lastToast()),p.lastToast());
+    s.eq('the cut itself still completes, once',pp.currentStage+':'+p.bundles().length+':'+p.store.commits.length,'bundling:3:1');
+    const a=setup({skip:[{rollCode:'R1'},{rollCode:'R2'}]});await a.cut();
+    const ap=a.store.get('pos/PO-001');
+    s.eq('all skipped (object form): nothing is claimed as consumed',ap.fabricConsumed,undefined);
+    s.eq('the failure lists both rolls, not partial',(ap.fabricConsumeFailed.rollCodes||[]).join(',')+'|'+ap.fabricConsumeFailed.partial,'R1,R2|false');
+    s.ok('and the toast says NOT deducted',/NOT deducted/.test(a.lastToast())&&!/fabric deducted/.test(a.lastToast()),a.lastToast());
+    const n=setup({});await n.cut();
+    s.eq('nothing skipped: no failure recorded, both rolls consumed',(n.store.get('pos/PO-001').fabricConsumeFailed===undefined)+'|'+n.store.get('pos/PO-001').fabricConsumed.rollCodes.join(','),'true|R1,R2');
+    s.ok('and the toast says fabric deducted',/fabric deducted/.test(n.lastToast()),n.lastToast());
+    // A failed save then a retry keeps the partial result and calls the engine once.
+    const r=setup({skip:['R2']});r.store.failNextCommit='lost';await r.cut();await r.cut();
+    s.eq('retry after a failed save: engine called once',r.calls.fab.length,1);
+    s.eq('and the retry still records the partial result',(r.store.get('pos/PO-001').fabricConsumed.rollCodes||[]).join(',')+'|'+(r.store.get('pos/PO-001').fabricConsumeFailed.rollCodes||[]).join(','),'R1|R2');
+  }
+
+  s.section('a stale screen cannot deduct fabric and then save nothing');
+  {
+    const inv=[{_id:'k',fabType:'Denim',gsm:300,color:'Blue',unit:'kg',totalWeight:100,rolls:[]}];
+    const cs=n=>({poId:'PO-001',actualQty:{XS:0,S:n,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:n}]});
+    // Local copy says 60 ordered (69 is in range); the live PO says 100 (69 is not).
+    const d=boot({inventory:inv,cutState:cs(69)});
+    d.app.run('allPOs='+JSON.stringify([Object.assign(po1({qty:60}),{fbKey:'PO-001'})]));
+    d.app.el('cut-fab-stock').value='k';d.app.run("_cutFabRolls=[{rollCode:'R1',weight:20}]");
+    await d.cut();
+    s.eq('stale quantity outside the live gate: NO deduction call at all',d.calls.fab.length,0);
+    s.eq('nothing saved',d.store.commits.length+':'+d.bundles().length,'0:0');
+    s.ok('and the toast explains the live window',/69 pcs is outside the 70–130 allowed for 100 ordered/.test(d.lastToast()),d.lastToast());
+    s.eq('the button is usable again',d.app.el('cut-done-btn').disabled,false);
+    // Stale OVERRIDE: the local copy has one, the live PO does not: 60 of 100.
+    const e=boot({inventory:inv,cutState:cs(60)});
+    e.app.run('allPOs='+JSON.stringify([Object.assign(po1({cutOverride:{by:'afnan',byName:'Afnan',at:'x',reason:'r'}}),{fbKey:'PO-001'})]));
+    e.app.el('cut-fab-stock').value='k';e.app.run("_cutFabRolls=[{rollCode:'R1',weight:20}]");
+    await e.cut();
+    s.eq('an override only the stale screen knows about: no deduction',e.calls.fab.length,0);
+    s.eq('and nothing saved',e.store.commits.length,0);
+  }
+
+  s.section('mismatched bundles on file: the refusal names them');
+  {
+    const seed={'pos/PO-001':po1(),'counters/main':{pos:1,bundles:12}};
+    for(let n=1;n<=12;n++)seed['bundles/B-'+String(n).padStart(4,'0')]={bundleId:'B-'+String(n).padStart(4,'0'),bundleNumber:n,poId:'PO-001',size:'L',units:1};
+    const d=boot({seed});d.syncPOs();
+    await d.cut();
+    const t=d.lastToast();
+    s.ok('it names the PO',/PO-001 already has/.test(t),t);
+    s.ok('and the number of bundles',/12 bundles/.test(t),t);
+    s.ok('and the first ten ids, in order',t.indexOf('B-0001, B-0002, B-0003, B-0004, B-0005, B-0006, B-0007, B-0008, B-0009, B-0010')>-1,t);
+    s.ok('and a count for the rest, not the ids',/and 2 more/.test(t)&&t.indexOf('B-0011')===-1,t);
+    s.ok('and says an owner must review them in the bundles collection',/owner must review/.test(t)&&/bundles collection/.test(t),t);
+    s.eq('no delete/adopt path: nothing written',d.store.commits.length+':'+d.store.plain.length+':'+d.bundles().length,'0:0:12');
+    const f=boot({seed:{'pos/PO-001':po1(),'counters/main':{bundles:5},'bundles/B-0005':{bundleId:'B-0005',bundleNumber:5,poId:'PO-001',size:'L',units:1}}});f.syncPOs();
+    await f.cut();
+    s.ok('one bundle: singular, no "more"',/already has 1 bundle on file/.test(f.lastToast())&&!/and \d+ more/.test(f.lastToast()),f.lastToast());
+  }
+
   /* ═══ the PO must be at cutting ═══ */
   s.section('only a PO that is waiting to be cut can be cut');
   {
@@ -513,7 +610,7 @@ module.exports=async function(){
     s.eq('with the overrider\'s name',po.cutOverride.byName,'Afnan');
     s.eq('when',po.cutOverride.at,new Date(FIXED).toISOString());
     s.eq('and the reason AS TYPED (it is escaped where it is drawn)',po.cutOverride.reason,NASTY);
-    s.eq('the window it unlocks is recorded',po.cutOverride.min+'-'+po.cutOverride.max,'0.7-1.3');
+    s.eq('the everyday gate it goes beyond is recorded',po.cutOverride.gateMin+'-'+po.cutOverride.gateMax,'0.7-1.3');
     s.eq('and what was ordered',po.cutOverride.ordered,100);
     const nid=a.store.ids('hrm_notifications')[0];
     s.eq('ONE transaction wrote the override and the notification',a.store.commits.length+':'+a.store.plain.length,'1:0');
@@ -528,12 +625,12 @@ module.exports=async function(){
     s.ok('the bell prints title and message RAW, so neither contains a tag',!/[<>]/.test(String(n.title)+String(n.message)),n.title+' || '+n.message);
     s.ok('the reason arrives escaped',String(n.message).indexOf('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; &#39;z&#39;')>-1,n.message);
     s.ok('so does the PO name',String(n.message).indexOf('Pants &lt;b&gt;X&lt;/b&gt;')>-1,n.message);
-    s.ok('it says who approved it',/Afnan approved a cut of up to 70–130%/.test(n.message),n.message);
+    s.ok('it says who approved it',/Afnan approved a cut beyond 70–130% \(any quantity\)/.test(n.message),n.message);
     s.eq('the cutting screen note is escaped too',/[<>]/.test(a.app.run('_poCutOverrideNote('+JSON.stringify(po)+')').replace(/<\/?div[^>]*>/g,'')),false);
-    s.ok('and shows the window',/70–130% allowed/.test(a.app.run('_poCutOverrideNote('+JSON.stringify(po)+')')));
+    s.ok('and says any quantity is allowed',/any quantity allowed/.test(a.app.run('_poCutOverrideNote('+JSON.stringify(po)+')')));
     s.ok('the activity row records it',a.app.state.activity.some(x=>x.action==='Cut variance approved'&&/PO PO-001/.test(x.detail)));
     s.ok('the toast says Mustafa was told',/Mustafa has been told/.test(a.lastToast()),a.lastToast());
-    s.eq('the override widens the gate for that PO from now on',a.app.run('poCutGateFor('+JSON.stringify(po)+')===PO_CUT_GATE_OVERRIDE'),true);
+    s.eq('the override opens the gate for that PO from now on',a.app.run('poCutGateFor('+JSON.stringify(po)+').open'),true);
 
     const am=await run(AMMAR,'second owner');
     s.eq('Ammar (owner) can too, and Mustafa is told',am.store.ids('hrm_notifications').length,1);
@@ -549,7 +646,7 @@ module.exports=async function(){
     s.eq('or write a second record',a.store.commits.length,1);
     s.ok('it says it is already approved',/already approved/.test(a.lastToast()),a.lastToast());
     // …also when THIS screen has not seen the first approval yet (a second device).
-    const two=boot({seed:{'pos/PO-001':po1({cutOverride:{by:'ammar',byName:'Ammar',at:'x',reason:'first',min:0.7,max:1.3,ordered:100}})}});
+    const two=boot({seed:{'pos/PO-001':po1({cutOverride:{by:'ammar',byName:'Ammar',at:'x',reason:'first',ordered:100}})}});
     two.app.run('allPOs='+JSON.stringify([Object.assign(po1(),{fbKey:'PO-001'})]));
     await two.app.run("window.poCutOverride('PO-001','second device')");
     s.eq('a stale screen cannot approve over an approval it has not seen',two.store.commits.length,0);
@@ -594,21 +691,21 @@ module.exports=async function(){
   {
     const d=boot();
     const plain=d.app.run('renderCuttingWork('+JSON.stringify(po1())+')');
-    s.ok('everyday: "Allowed: 80–120 pcs (80–120%)" from the constant',/Allowed: 80–120 pcs \(80–120%\)/.test(plain),(/Allowed:[^<]*/.exec(plain)||[''])[0]);
+    s.ok('everyday: "Allowed: 70–130 pcs (70–130%)" from the constant',/Allowed: 70–130 pcs \(70–130%\)/.test(plain),(/Allowed:[^<]*/.exec(plain)||[''])[0]);
     s.ok('and no override note',!/Owner override/.test(plain));
-    const OV=po1({cutOverride:{by:'afnan',byName:'Afn<b>an',at:'x',reason:'<script>alert(1)</script>',min:0.7,max:1.3,ordered:100}});
+    const OV=po1({cutOverride:{by:'afnan',byName:'Afn<b>an',at:'x',reason:'<script>alert(1)</script>',ordered:100}});
     const wide=d.app.run('renderCuttingWork('+JSON.stringify(OV)+')');
-    s.ok('approved: the window reads 70–130 pcs (70–130%)',/Allowed: 70–130 pcs \(70–130%\)/.test(wide),(/Allowed:[^<]*/.exec(wide)||[''])[0]);
-    s.ok('and says an owner approved it',/Owner override: 70–130% allowed — approved by/.test(wide));
+    s.ok('approved: the window reads "any quantity (owner override)"',/Allowed: any quantity \(owner override\)/.test(wide),(/Allowed:[^<]*/.exec(wide)||[''])[0]);
+    s.ok('and says an owner approved it',/Owner override: any quantity allowed — approved by/.test(wide));
     s.ok('the approver and the reason are escaped in the screen',wide.indexOf('Afn&lt;b&gt;an')>-1&&wide.indexOf('&lt;script&gt;alert(1)&lt;/script&gt;')>-1&&wide.indexOf('<script>alert(1)')===-1);
     // The live recalculation (refreshCutPartial) writes the same words.
     d.app.run('window.__po='+JSON.stringify(OV));
     d.app.run('refreshCutPartial(window.__po)');
     const row=d.app.el('cut-total-row').innerHTML;
-    s.ok('the live total row says 70–130% too',/\(70–130%\)/.test(row)&&/Owner override/.test(row),row.slice(0,200));
+    s.ok('the live total row says any quantity too',/any quantity/.test(row)&&/Owner override/.test(row),row.slice(0,200));
     d.app.run('window.__po='+JSON.stringify(po1()));
     d.app.run('refreshCutPartial(window.__po)');
-    s.ok('and 80–120% without an override',/\(80–120%\)/.test(d.app.el('cut-total-row').innerHTML)&&!/Owner override/.test(d.app.el('cut-total-row').innerHTML));
+    s.ok('and 70–130% without an override',/\(70–130%\)/.test(d.app.el('cut-total-row').innerHTML)&&!/Owner override/.test(d.app.el('cut-total-row').innerHTML));
   }
 
   s.section('poCutOverride on the PO page');
@@ -724,7 +821,7 @@ module.exports=async function(){
     s.eq('the PO stays at cutting',d.store.get('pos/PO-001').currentStage,'cutting');
     s.eq('no bundles were made out of thin air',d.bundles().length,0);
     s.ok('the message points at the cutting screen',/cutting screen/.test(d.lastToast()),d.lastToast());
-    s.ok('and at the owner override for a cut outside the window',/80–120%/.test(d.lastToast())&&/approve it/.test(d.lastToast()),d.lastToast());
+    s.ok('and at the owner override for a cut outside the window',/70–130%/.test(d.lastToast())&&/approve it/.test(d.lastToast()),d.lastToast());
     s.eq('it did not ask for confirmation of something it would refuse',d.app.state.confirms.length,0);
     s.eq('the embellishment job was not touched',d.calls.emb.length,0);
     s.eq('the pure planner agrees',d.app.run("poForceAdvancePlan({id:'PO-001',poStatus:'in_production',currentStage:'cutting'},'cutting').ok"),false);

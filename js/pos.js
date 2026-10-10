@@ -1050,7 +1050,7 @@ function renderCuttingWork(po){
     </tbody></table>
     <div id="cut-total-row" style="margin-top:10px;font-size:14px">
       Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;
-      <span style="font-size:12px;color:var(--muted)">Allowed: ${min}–${max} pcs (${poCutPct(gate)})</span>
+      <span style="font-size:12px;color:var(--muted)">${poCutRangeText(min,max,gate)}</span>
       <span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>
       ${_poCutOverrideNote(po)}
     </div>
@@ -1105,20 +1105,23 @@ function renderCutBundleSummary(po){
 
 // ── Cutting tolerance + owner override (Oct 2026) ─────────────────────────
 // How far the ACTUAL cut may sit from the ORDERED quantity, as a share of it.
-// The everyday gate is 80–120% — unchanged, only named (it was typed inline in
-// four places). The owner wants 70–130%, but as an explicit OWNER OVERRIDE
-// (poCutOverride below) and never as the everyday gate. Outside even the
-// override window the cut is refused: that is a typing slip or a real problem,
-// not a variance to wave through. One edit here moves every place that reads it.
-const PO_CUT_GATE={min:0.8,max:1.2};
-const PO_CUT_GATE_OVERRIDE={min:0.7,max:1.3};
-// The window a PO is held to: wide once an owner has approved a variance on it
+// 70–130% is the everyday gate (owner decision, Oct 2026; it was 80–120% typed
+// inline in four places). Beyond it a cut needs an OWNER OVERRIDE
+// (poCutOverride below): any quantity, with a reason, no outer limit — the
+// override is recorded on the PO with the ordered quantity, the actual total
+// and the percentage. One edit here moves every place that reads it.
+const PO_CUT_GATE={min:0.7,max:1.3};
+// What a PO with an approved override is held to: no window at all.
+const PO_CUT_GATE_OPEN={open:true};
+// The window a PO is held to: open once an owner has approved a variance on it
 // (po.cutOverride, written by poCutOverride), the everyday one otherwise.
-function poCutGateFor(po){return(po&&po.cutOverride&&po.cutOverride.by)?PO_CUT_GATE_OVERRIDE:PO_CUT_GATE;}
+function poCutGateFor(po){return(po&&po.cutOverride&&po.cutOverride.by)?PO_CUT_GATE_OPEN:PO_CUT_GATE;}
 // Allowed pieces for an ordered quantity. Same arithmetic the gate always used:
 // the lower bound rounds UP, the upper bound DOWN.
-function poCutRange(target,gate){const g=gate||PO_CUT_GATE;return{min:Math.ceil(target*g.min),max:Math.floor(target*g.max)};}
-function poCutPct(gate){const g=gate||PO_CUT_GATE;return Math.round(g.min*100)+'–'+Math.round(g.max*100)+'%';}
+function poCutRange(target,gate){const g=gate||PO_CUT_GATE;if(g.open)return{min:0,max:Infinity};return{min:Math.ceil(target*g.min),max:Math.floor(target*g.max)};}
+function poCutPct(gate){const g=gate||PO_CUT_GATE;if(g.open)return'any quantity';return Math.round(g.min*100)+'–'+Math.round(g.max*100)+'%';}
+// "Allowed: 70–130 pcs (70–130%)" / "Allowed: any quantity (owner override)".
+function poCutRangeText(min,max,gate){return(gate&&gate.open)?'Allowed: any quantity (owner override)':`Allowed: ${min}–${max} pcs (${poCutPct(gate)})`;}
 function _poCutEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 // PKT (UTC+5, no daylight saving) calendar day, YYYY-MM-DD. NEVER
 // toISOString().slice(0,10): that is the UTC day, and in PKT it names the
@@ -1136,7 +1139,7 @@ function _poCutCanOverride(){return!!(session&&(session.role==='owner'||session.
 // typed by someone is escaped: this goes into innerHTML.
 function _poCutOverrideNote(po){
   const o=po&&po.cutOverride;if(!o||!o.by)return'';
-  return`<div style="margin-top:6px;font-size:12px;color:var(--accent-warning);font-weight:600">Owner override: ${poCutPct(PO_CUT_GATE_OVERRIDE)} allowed — approved by ${_poCutEsc(o.byName||o.by)}${o.reason?` (${_poCutEsc(o.reason)})`:''}</div>`;
+  return`<div style="margin-top:6px;font-size:12px;color:var(--accent-warning);font-weight:600">Owner override: any quantity allowed — approved by ${_poCutEsc(o.byName||o.by)}${o.reason?` (${_poCutEsc(o.reason)})`:''}</div>`;
 }
 // PURE. May cutting be recorded against this PO document as it is NOW?
 //   {state:'ok'} | {state:'done'|'reserved'|'wrongStage'|'gone'}
@@ -1151,7 +1154,7 @@ function poCutLiveCheck(live){
   return{state:'ok'};
 }
 // OWNER OVERRIDE of the cutting tolerance — the hook (Oct 2026). Owners and
-// Mustafa only. Approves a cut of up to PO_CUT_GATE_OVERRIDE of the ordered
+// Mustafa only. Approves a cut OUTSIDE PO_CUT_GATE (any quantity) of the ordered
 // quantity on ONE PO: records who, when and why on the PO (po.cutOverride), and
 // puts a row in Mustafa's notification bell — in the SAME transaction, so an
 // override nobody was told about cannot exist. The cutting screen then gates on
@@ -1168,7 +1171,7 @@ window.poCutOverride=async function(fbKey,reasonArg){
   if(pre.state!=='ok'){showToast(`${po.id} is not waiting to be cut — there is nothing to approve.`,true);return;}
   let reason=reasonArg;
   if(reason===undefined){
-    reason=prompt(`Approve a cut of ${poCutPct(PO_CUT_GATE_OVERRIDE)} of the ${po.qty||'?'} pcs ordered for ${po.id}?\n\nReason (required) — Mustafa will be told:`);
+    reason=prompt(`Approve a cut outside ${poCutPct(PO_CUT_GATE)} of the ${po.qty||'?'} pcs ordered for ${po.id} (any quantity)?\n\nReason (required) — Mustafa will be told:`);
     if(reason===null)return;
   }
   reason=String(reason||'').trim().slice(0,300);
@@ -1176,7 +1179,7 @@ window.poCutOverride=async function(fbKey,reasonArg){
   try{
     const poRef=doc(db,'pos',fbKey);
     const nowMs=Date.now();
-    const rec={by:session.u,byName:session.name,at:new Date(nowMs).toISOString(),reason,min:PO_CUT_GATE_OVERRIDE.min,max:PO_CUT_GATE_OVERRIDE.max,ordered:po.qty||0};
+    const rec={by:session.u,byName:session.name,at:new Date(nowMs).toISOString(),reason,gateMin:PO_CUT_GATE.min,gateMax:PO_CUT_GATE.max,ordered:po.qty||0};
     const nid='po_cutov_'+fbKey+'_'+nowMs;
     const notifRef=doc(db,'hrm_notifications',nid);
     const out=await runTransaction(db,async tx=>{
@@ -1192,7 +1195,7 @@ window.poCutOverride=async function(fbKey,reasonArg){
         tx.set(notifRef,{
           id:nid,type:'po_cut_override',source:'po_cutting',
           title:_poCutEsc(clip(`Cut variance approved: ${po.id}`,80)),
-          message:_poCutEsc(clip(`${session.name} approved a cut of up to ${poCutPct(PO_CUT_GATE_OVERRIDE)} of the ${po.qty||'?'} pcs ordered on ${po.id}${po.name?' ('+po.name+')':''}. Reason: ${reason}`,300)),
+          message:_poCutEsc(clip(`${session.name} approved a cut beyond ${poCutPct(PO_CUT_GATE)} (any quantity) of the ${po.qty||'?'} pcs ordered on ${po.id}${po.name?' ('+po.name+')':''}. Reason: ${reason}`,300)),
           forUser:'mustafa',forRole:'',relatedTo:fbKey,createdAt:nowMs,readBy:[],
           priority:'high',actionRequired:false,actionUrl:'po-registry'
         });
@@ -1202,7 +1205,7 @@ window.poCutOverride=async function(fbKey,reasonArg){
     if(out.already){showToast(`A variance is already approved on ${po.id} (by ${out.already.byName||out.already.by}).`);}
     else if(out.blocked){showToast(`${po.id} is no longer waiting to be cut — nothing was approved.`,true);}
     else{
-      await logActivity('Cut variance approved',`PO ${po.id} · cut up to ${poCutPct(PO_CUT_GATE_OVERRIDE)} approved by ${session.name} — ${reason}`);
+      await logActivity('Cut variance approved',`PO ${po.id} · cut beyond ${poCutPct(PO_CUT_GATE)} approved by ${session.name} — ${reason}`);
       showToast(`Cut variance approved on ${po.id} ✓${session.u!=='mustafa'?' — Mustafa has been told':''}`);
     }
     await loadData();
@@ -1238,7 +1241,7 @@ function refreshCutPartial(po){
   });
   // Update total row
   const tot=document.getElementById('cut-total-row');
-  if(tot)tot.innerHTML=`Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;<span style="font-size:12px;color:var(--muted)">Allowed: ${min}–${max} pcs (${poCutPct(gate)})</span><span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>${_poCutOverrideNote(po)}`;
+  if(tot)tot.innerHTML=`Total: <strong>${actualTotal}</strong> actual / <strong>${target}</strong> target &nbsp;<span style="font-size:12px;color:var(--muted)">${poCutRangeText(min,max,gate)}</span><span style="margin-left:8px;font-weight:600;color:${rangeOk?'var(--green)':'#dc2626'}">${rangeOk?'✓ In range':'✗ Out of range'}</span>${_poCutOverrideNote(po)}`;
   // Update bundle list & summary
   const bl=document.getElementById('cut-bundle-list');if(bl)bl.innerHTML=renderCutBundleList();
   const bs=document.getElementById('cut-bundle-summary');if(bs)bs.innerHTML=renderCutBundleSummary(po);
@@ -1376,13 +1379,27 @@ window.markCuttingDone=async function(fbKey){
       await loadData();if(!b.error)window.showPage('my-work');
       return;
     }
+    // 1b. The gate on the LIVE quantity and override, BEFORE anything is
+    // deducted: a stale screen (quantity or override changed since it loaded)
+    // must not deduct rolls and then save nothing. The check inside the
+    // transaction below stays the authority.
+    {
+      const tot0=SZ.reduce((a,s)=>a+(parseInt(actual[s])||0),0);
+      const g0=poCutGateFor(live),r0=poCutRange(live.qty||0,g0);
+      if(tot0<r0.min||tot0>r0.max){
+        const b=_poCutBlocked(po,{state:'range',rng:r0,gate:g0,total:tot0,qty:live.qty||0},live);
+        showToast(b.msg,b.error);
+        return;
+      }
+    }
     // 2. Bundles already on file for this PO (a save that died under the old code).
     const bsnap=await getDocs(query(collection(db,'bundles'),where('poId','==',po.id)));
     const existing=bsnap.docs.map(d=>d.data()).filter(b=>b&&b.bundleId).sort((a,b)=>(a.bundleNumber||0)-(b.bundleNumber||0));
     let reuse=null;
     if(existing.length){
       if(_poCutBundleSig(existing)!==_poCutBundleSig(pend)){
-        showToast(`${existing.length} bundle${existing.length!==1?'s':''} from an earlier save that did not finish already exist for ${po.id} and do not match what you entered. Nothing was saved — ask an owner to check the bundles for this PO.`,true);
+        const ids=existing.map(b=>b.bundleId),shown=ids.slice(0,10).join(', ');
+        showToast(`${po.id} already has ${existing.length} bundle${existing.length!==1?'s':''} on file from an earlier save that did not finish (${shown}${ids.length>10?` and ${ids.length-10} more`:''}), and they do not match what you entered. Nothing was saved. An owner must review these bundles in the bundles collection before cutting can be recorded.`,true);
         return;
       }
       reuse=existing.map(b=>b.bundleId);
@@ -1400,7 +1417,7 @@ window.markCuttingDone=async function(fbKey){
         const rollCodes=_cutFabRolls.map(r=>r.rollCode);
         const sig=stockKey+'|'+rollCodes.slice().sort().join(',');
         const prior=_poCutFabDone[fbKey];
-        if(prior&&prior.sig===sig){consumedFromInv=prior.consumed;}   // a retry — already deducted
+        if(prior&&prior.sig===sig){consumedFromInv=prior.consumed;fabricFail=prior.fail;}   // a retry — already deducted
         else{
           // OPTIONAL, and never allowed to block or corrupt cutting-done: a roll
           // that is no longer issuable is reported and recorded on the PO, and the
@@ -1410,9 +1427,15 @@ window.markCuttingDone=async function(fbKey){
           // written to the bundles or the PO at this point, so a failure here
           // can neither leave bundles behind nor make a retry duplicate them.
           try{
-            await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||'kg',removeRollCodes:rollCodes,note:`Consumed for PO ${po.id} cutting`,sourceCol:'pos',sourceId:po.id,tolerateMissing:true});
-            consumedFromInv={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,rollCodes,qty:_cutFabRolls.reduce((s,r)=>s+r.weight,0)};
-            _poCutFabDone[fbKey]={sig,consumed:consumedFromInv};
+            const res=await _fabInvUpsert({fabType:stock.fabType,gsm:stock.gsm,color:stock.color,unit:stock.unit||'kg',removeRollCodes:rollCodes,note:`Consumed for PO ${po.id} cutting`,sourceCol:'pos',sourceId:po.id,tolerateMissing:true});
+            // With tolerateMissing the engine reports the rolls it did NOT take in
+            // res.skipped. Only the rolls really deducted are recorded as consumed;
+            // the skipped ones are reported and recorded as a failure.
+            const skipped=((res&&res.skipped)||[]).map(x=>typeof x==='string'?x:String((x&&(x.rollCode||x.code))||x));
+            const taken=_cutFabRolls.filter(r=>skipped.indexOf(r.rollCode)<0);
+            if(taken.length)consumedFromInv={fabType:stock.fabType,gsm:stock.gsm,color:stock.color,rollCodes:taken.map(r=>r.rollCode),qty:taken.reduce((s,r)=>s+r.weight,0)};
+            if(skipped.length)fabricFail={rollCodes:skipped,partial:taken.length>0,error:`${skipped.length} roll${skipped.length!==1?'s':''} not deducted (${skipped.join(', ')}) — no longer issuable`,code:'fabric/rolls-skipped'};
+            _poCutFabDone[fbKey]={sig,consumed:consumedFromInv,fail:fabricFail};
           }catch(fe){
             fabricFail={rollCodes,error:String((fe&&fe.message)||fe).slice(0,200),code:String((fe&&fe.code)||'')};
           }
@@ -1462,7 +1485,7 @@ window.markCuttingDone=async function(fbKey){
       if(consumedFromInv)poUpdate.fabricConsumed=consumedFromInv;
       if(fabricFail)poUpdate.fabricConsumeFailed={...fabricFail,at:nowISO,by:session.name};
       // A cut that only fits the widened window says so on the override record.
-      if(usedOverride){poUpdate['cutOverride.usedAt']=nowISO;poUpdate['cutOverride.usedTotal']=total;}
+      if(usedOverride){poUpdate['cutOverride.usedAt']=nowISO;poUpdate['cutOverride.actualTotal']=total;poUpdate['cutOverride.pct']=lv.qty?Math.round(total/lv.qty*1000)/10:null;}
       tx.update(poRef,poUpdate);
       return{ids,usedOverride,total};
     });
@@ -1480,7 +1503,7 @@ window.markCuttingDone=async function(fbKey){
     // no embellishments module, no change. See js/embellishments.js.
     if(typeof embOnCuttingDone==='function')await embOnCuttingDone({...po,bundleIds:out.ids},{...actual}).catch(e=>console.warn('[pos] embellishment top-up failed:',e&&e.message));
     showToast(fabricFail
-      ?`Cutting done ✓ — ${pend.length} bundles. Fabric was NOT deducted (${fabricFail.error}) — deduct those rolls from Fabric Inventory by hand.`
+      ?`Cutting done ✓ — ${pend.length} bundles. Fabric was ${fabricFail.partial?'only PARTLY deducted':'NOT deducted'} (${fabricFail.error}) — deduct ${fabricFail.partial?'the skipped':'those'} rolls from Fabric Inventory by hand.`
       :`Cutting done ✓ — ${pend.length} bundles${consumedFromInv?' · fabric deducted':''}`,!!fabricFail);await loadData();window.showPage('my-work');
   }catch(e){
     showToast(committed
