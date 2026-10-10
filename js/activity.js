@@ -14,7 +14,7 @@ async function loadActivity(){
     <div class="card">${items.length?items.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="width:28px;height:28px;border-radius:50%;background:var(--dark);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--on-dark);flex-shrink:0">${(a.user||'?')[0].toUpperCase()}</div>
       <div style="flex:1"><div style="font-size:14px"><strong>${a.user||'?'}</strong> <span style="color:var(--muted)">— ${a.action||''}</span></div>
-        <div style="font-size:12px;color:var(--muted)">${a.detail||''}</div>
+        <div style="font-size:12px;color:var(--muted)">${_monitorEsc(a.detail||'')}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:1px">${a.ts?new Date(a.ts).toLocaleString('en-GB'):a.date||''}</div>
       </div></div>`).join(''):'<div class="empty">No activity yet.</div>'}
     </div><div style="height:80px"></div>`;

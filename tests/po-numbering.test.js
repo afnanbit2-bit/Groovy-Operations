@@ -44,7 +44,7 @@ const ESC_SRC=fs.readFileSync(path.join(ROOT,'js/gatepass.js'),'utf8').match(/fu
      - getDocs honours where(field,'==',value) on a collection            */
 function fakeFirestore(seed){
   const store=new Map(Object.entries(seed||{}).map(([k,v])=>[k,JSON.parse(J(v))]));
-  const fail={commit:null,read:null,cached:null};
+  const fail={commit:null,read:null,cached:null,err:null};
   const log={commits:0,attempts:0,deleted:[]};
   const snap=path=>({exists:()=>store.has(path),data:()=>store.has(path)?JSON.parse(J(store.get(path))):undefined});
   const apply=w=>{
@@ -66,7 +66,7 @@ function fakeFirestore(seed){
       const docs=[];
       store.forEach((v,k)=>{
         const i=k.indexOf('/');if(k.slice(0,i)!==q.col)return;
-        if(q.cs.every(w=>w.op!=='=='||v[w.f]===w.v))docs.push({id:k.slice(i+1),data:()=>JSON.parse(J(v))});
+        if((q.cs||[]).every(w=>w.op!=='=='||v[w.f]===w.v))docs.push({id:k.slice(i+1),data:()=>JSON.parse(J(v))});
       });
       return{docs,empty:docs.length===0,size:docs.length,metadata:{fromCache:!!(fail.cached&&fail.cached(q.col))}};
     },
@@ -87,7 +87,7 @@ function fakeFirestore(seed){
         delete(ref){pending.push({op:'delete',ref});return tx;}
       };
       const r=await fn(tx);
-      if(fail.commit&&fail.commit(pending))throw Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
+      if(fail.commit&&fail.commit(pending))throw Object.assign(new Error((fail.err&&fail.err.message)||'Missing or insufficient permissions.'),{code:(fail.err&&fail.err.code)||'permission-denied'});
       // All-or-nothing: validate every write before applying any.
       pending.forEach(w=>{if(w.op==='update'&&!store.has(w.ref.path))throw new Error('NOT_FOUND: no document to update: '+w.ref.path);});
       pending.forEach(apply);
@@ -173,9 +173,11 @@ module.exports=async function(){
   s.section('an existing PO id is never overwritten');
   {
     const original=po(1,{name:'ORIGINAL PO-001',qty:480});
-    // counters/main was reset, and this screen never loaded the POs (a failed
-    // read, an old tab): floor 0, counter 0 -> the mint lands on PO-001.
+    // counters/main was reset and this screen's list is stale (it loaded, but
+    // does not hold PO-001): floor 0, counter 0 -> the mint lands on PO-001.
+    const stale='allPOs=[{id:"junk",fbKey:"junk"}]';
     const a=mkApp({'counters/main':{pos:0,gatepasses:5},'pos/PO-001':original});
+    a.run(stale);
     await createPO(a);
     s.eq('PO-001 is byte-identical',J(a.db.get('pos/PO-001')),J(original));
     s.eq('no other PO appeared',[...a.db.store.keys()].filter(k=>k.indexOf('pos/')===0).length,1);
@@ -186,9 +188,63 @@ module.exports=async function(){
 
     // The same with the counter doc missing outright.
     const b=mkApp({'pos/PO-001':original});
+    b.run(stale);
     await createPO(b);
     s.eq('counters/main missing: PO-001 still untouched',J(b.db.get('pos/PO-001')),J(original));
     s.eq('and no counters document was invented',b.db.get('counters/main'),undefined);
+  }
+
+  s.section('no PO list loaded: the floor comes from the server, or the create is refused');
+  {
+    const original=po(1,{name:'ORIGINAL PO-001'}),third=po(3);
+    // List never loaded, counter reset, PO-001 and PO-003 exist: do NOT loop on
+    // "already exists" — read the ids, mint PO-004.
+    const a=mkApp({'counters/main':{pos:0},'pos/PO-001':original,'pos/PO-003':third});
+    await createPO(a);
+    s.ok('PO-004 is minted past the highest existing PO',!!a.db.get('pos/PO-004'),[...a.db.store.keys()].join(','));
+    s.eq('PO-001 untouched',J(a.db.get('pos/PO-001')),J(original));
+    s.eq('counter healed to 4',at(a,'counters/main').pos,4);
+    // The very first PO in an empty system still works.
+    const f=mkApp({});
+    await createPO(f);
+    s.ok('an empty system mints PO-001',!!f.db.get('pos/PO-001'),f.toasts().join('|'));
+    // The PO read is refused: refuse, say reload first, change nothing.
+    const b=mkApp({'counters/main':{pos:0},'pos/PO-001':original});
+    b.db.fail.read=col=>col==='pos';
+    await createPO(b);
+    s.ok('a refused read says to reload first',b.toasts().some(t=>/PO list did not load.*Reload the page first.*Nothing was created/.test(t)),b.toasts().join('|'));
+    s.eq('nothing written',J([b.db.get('pos/PO-001'),at(b,'counters/main').pos,b.db.store.size]),J([original,0,2]));
+    s.ok('and the button is usable',b.el('po-submit-btn').disabled===false);
+    // An answer from the offline cache is not an answer either.
+    const c=mkApp({'counters/main':{pos:0},'pos/PO-001':original});
+    c.db.fail.cached=col=>col==='pos';
+    await createPO(c);
+    s.ok('a cached PO list is refused too',c.toasts().some(t=>/PO list did not load/.test(t))&&c.db.store.size===2,c.toasts().join('|'));
+  }
+
+  s.section('offline: a clear message, nothing created, the form kept');
+  {
+    const a=mkApp({'counters/main':{pos:6},'pos/PO-006':po(6)});
+    load(a,6);
+    a.db.fail.commit=()=>true;
+    a.db.fail.err={code:'unavailable',message:'Failed to get document because the client is offline.'};
+    await createPO(a);
+    s.ok('says it needs a connection and nothing was created',a.toasts().some(t=>/^Needs a connection; nothing was created/.test(t)),a.toasts().join('|'));
+    s.ok('and is not the generic Error: toast',!a.toasts().some(t=>/^Error:/.test(t)));
+    s.eq('no PO and the counter unmoved',J([a.db.get('pos/PO-007'),at(a,'counters/main').pos]),J([undefined,6]));
+    s.eq('the typed form is still there',J([a.el('po-name').value,a.el('po-qty').value,a.run('poImages.front')]),J(['Tee','100','x']));
+    s.ok('the button is usable again',a.el('po-submit-btn').disabled===false);
+    // A failure AFTER the PO was written must not claim nothing was created.
+    const c=mkApp({'counters/main':{pos:6},'pos/PO-006':po(6)});load(c,6);
+    c.run('loadData=async function(){throw new Error("Failed to get document because the client is offline.")};');
+    await createPO(c);
+    s.ok('the PO exists',!!c.db.get('pos/PO-007'));
+    s.ok('and the toast does not say nothing was created',!c.toasts().some(t=>/nothing was created/.test(t)),c.toasts().join('|'));
+    // A refusal that is NOT connectivity keeps the plain error.
+    const b=mkApp({'counters/main':{pos:6},'pos/PO-006':po(6)});load(b,6);
+    b.db.fail.commit=()=>true;
+    await createPO(b);
+    s.ok('a permission refusal still reads Error:',b.toasts().some(t=>/^Error: Missing or insufficient/.test(t))&&!b.toasts().some(t=>/Needs a connection/.test(t)));
   }
 
   // ── B13: the floor ────────────────────────────────────────────────────
@@ -269,11 +325,19 @@ module.exports=async function(){
     s.eq('00:00 PKT rolls to the 10th',a.run('_poPktDay('+at(2026,9,9,19,0)+')'),'2026-10-10');
     s.eq('month and year roll over',a.run('_poPktDay('+at(2026,11,31,19,30)+')'),'2027-01-01');
     s.eq('a non-number falls back to now (a valid day)',/^\d{4}-\d{2}-\d{2}$/.test(a.run('_poPktDay(undefined)')),true);
-    // And the stored PO uses it: freeze the clock at 02:00 PKT on the 10th.
-    const FixedDate=class extends Date{static now(){return ms+3600000;}};   // 21:00 UTC = 02:00 PKT
+    // And the STORED PO uses it. Freeze every clock read — Date.now() AND a
+    // bare new Date() — at 01:00 PKT on the 10th (20:00 UTC on the 9th), the
+    // window in which the UTC day is the wrong one.
+    const FixedDate=class extends Date{
+      constructor(...a){if(a.length===0)super(ms);else super(...a);}
+      static now(){return ms;}
+    };
     const b=mkApp({},{globals:{Date:FixedDate}});
     await createPO(b);
-    s.eq('a PO made at 02:00 PKT on the 10th is dated the 10th',(b.db.get('pos/PO-001')||{}).createdAt,'2026-10-10');
+    const stored=b.db.get('pos/PO-001')||{};
+    s.eq('the clock really is frozen at 01:00 PKT (stored ts)',stored.ts,ms);
+    s.eq('a PO made at 01:00 PKT on the 10th is stored dated the 10th',stored.createdAt,'2026-10-10');
+    s.ok('(the UTC date of that instant is the 9th — the old value)',new FixedDate().toISOString().slice(0,10)==='2026-10-09');
   }
 
   // ── B14: delete is refused while anything is linked ───────────────────
@@ -493,6 +557,46 @@ module.exports=async function(){
     s.ok('and has no cancelled banner',hb.indexOf('Cancelled — nothing')<0);
     const c=mkApp({'pos/PO-010':live},{session:ARFAT});c.run('allPOs='+J([live])+';viewingPO="PO-010"');c.run('renderDetailPage()');
     s.ok('Arfat is not offered Cancel PO',c.el('main-content').innerHTML.indexOf('window.cancelPO')<0);
+  }
+
+  // ── cancelled POs must not look active anywhere else ──────────────────
+  const wide=(session)=>{
+    const a=loadApp({files:['js/shared.js','js/auth.js','js/pos.js','js/fabric.js','js/embellishments.js','js/activity.js'],currentPage:'dashboard',
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}},_poEmbellishment:null}});
+    a.run('session='+J(session||{uid:'u1',u:'afnan',name:'Afnan',role:'owner',stages:[]}));
+    a.run(ESC_SRC);
+    return a;
+  };
+  const mixed=[po(11,{poStatus:'in_production',currentStage:'cutting'}),po(12,{poStatus:'reserved'}),po(13,{poStatus:'cancelled',currentStage:null,cancelledReason:'x'})];
+
+  s.section('Cancelled POs are not offered as active work (embellishments.js, fabric.js)');
+  {
+    const a=wide();
+    a.run('allPOs='+J(mixed));
+    const html=a.run('_renderMyWorkInner()');
+    s.ok('"All Active Orders" lists the live POs',html.indexOf('PO-011')>=0&&html.indexOf('PO-012')>=0,html.slice(0,200));
+    s.ok('and not the cancelled one',html.indexOf('PO-013')<0);
+    s.ok('the count says 2 in progress',/2 in progress/.test(html),(/(\d+) in progress/.exec(html)||[])[0]);
+    const modal=a.run('renderCreateJobModal()');
+    s.ok('the job-form PO list has the live POs',/<option value="PO-011">/.test(modal)&&/<option value="PO-012">/.test(modal));
+    s.ok('and not the cancelled one',modal.indexOf('<option value="PO-013">')<0);
+    a.run('allFabricInventory=[{_id:"k",fabType:"Terry",gsm:200,color:"Black",rolls:[{rollCode:"R1",status:"in_stock",weight:10}]}]');
+    const fab=a.run('renderFabricIssueTab()');
+    s.ok('the fabric-issue PO list has the live POs',/<option value="PO-011">/.test(fab)&&/<option value="PO-012">/.test(fab),fab.slice(fab.indexOf('fab-iss-po-list'),fab.indexOf('fab-iss-po-list')+200));
+    s.ok('and not the cancelled one',fab.indexOf('<option value="PO-013">')<0);
+  }
+
+  s.section('the Activity Log escapes the detail it prints (the cancel reason is typed text)');
+  {
+    const hostile='Out of fabric <img src=x onerror=alert(1)> & "more"';
+    const row={user:'Afnan',u:'afnan',action:'PO cancelled',detail:'PO-013 cancelled by Afnan — '+hostile,ts:1791666000000};
+    const a=wide();
+    a.ctx.getDocs=async()=>({docs:[{data:()=>row}]});
+    await a.run('loadActivity()');
+    const h=a.el('main-content').innerHTML;
+    s.ok('the row rendered',h.indexOf('PO cancelled')>=0,h.slice(0,160));
+    s.ok('the markup in the reason is shown as text',h.indexOf('&lt;img src=x onerror=alert(1)&gt;')>=0&&h.indexOf('&amp; &quot;more&quot;')>=0);
+    s.ok('and no live <img> reached the page',h.indexOf('<img src=x')<0);
   }
 
   return s;

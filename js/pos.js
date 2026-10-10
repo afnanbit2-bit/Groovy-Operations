@@ -986,6 +986,23 @@ function _poNumberFloor(){
   });
   return max;
 }
+// The floor to mint above. With the PO list loaded it is the highest number in
+// it. With NO list loaded (a failed or never-run loadData) a floor of 0 plus a
+// reset counter would aim at an existing PO and be refused on every press
+// without ever advancing — so read the PO ids from the server once instead,
+// and if that cannot be trusted either, refuse and say to reload first.
+async function _poFloorNow(){
+  const loaded=typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[];
+  if(loaded.length)return _poNumberFloor();
+  let snap=null;
+  try{snap=await getDocs(collection(db,'pos'));}catch(e){snap=null;}
+  if(!snap||(snap.metadata&&snap.metadata.fromCache===true)){
+    throw new Error('The PO list did not load, so the next PO number cannot be checked. Reload the page first. Nothing was created.');
+  }
+  let max=0;
+  (snap.docs||[]).forEach(d=>{[d.id,(d.data()||{}).id].forEach(v=>{const n=_poNumberOf(v);if(n&&n>max)max=n;});});
+  return max;
+}
 window.submitPO=async function(){
   if(!session.canPO){showToast('Not authorized.',true);return;}
   const name=document.getElementById('po-name')?.value.trim(),code=document.getElementById('po-code')?.value.trim(),qty=parseInt(document.getElementById('po-qty')?.value)||0,fabric=document.getElementById('po-fabric')?.value.trim();
@@ -994,6 +1011,7 @@ window.submitPO=async function(){
   if(!fabric){showToast('Fabric type required.',true);return;}
   if(!poImages.front){showToast('Front image required.',true);return;}
   const btn=document.getElementById('po-submit-btn');if(btn){btn.disabled=true;btn.textContent='Uploading image…';}
+  let _createdId='';
   try{
     const imgFrontUrl=await uploadToCloudinary(poImages.front);
     const imgBackUrl=poImages.back?await uploadToCloudinary(poImages.back):'';
@@ -1017,8 +1035,8 @@ window.submitPO=async function(){
     // a write that does not land never moves the counter, an existing PO is
     // never replaced, and the number is floored at the highest PO already
     // loaded. See createWithNextId in js/shared.js.
-    const made=await createWithNextId({field:'pos',collection:'pos',floor:_poNumberFloor(),idFor:_poIdFor,build:(n,id)=>Object.assign({},payload,{id})});
-    const poId=made.id;
+    const made=await createWithNextId({field:'pos',collection:'pos',floor:await _poFloorNow(),idFor:_poIdFor,build:(n,id)=>Object.assign({},payload,{id})});
+    const poId=made.id;_createdId=poId;
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
     if(typeof fabPoReserveCommit==='function'){try{await fabPoReserveCommit(poId);}catch(_re){showToast('PO saved, but fabric reservation failed: '+_re.message,true);}}
     if(embellishment.required&&embellishment.recipeStatus==='missing')await logActivity('Recipe Missing',`${poId} — ${embellishment.articleCode||code}: Recipe required before PP approval. Ammar notified.`).catch(()=>{});
@@ -1036,7 +1054,14 @@ window.submitPO=async function(){
       }
     }catch(_te){_trimNote=' (trim request failed: '+_te.message+')';}
     showToast(`${poId} created ✓${_trimNote}`);poImages={front:null,back:null};await loadData();window.showPage('po-registry');
-  }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;btn.textContent='Create Production Order';}}
+  }catch(e){
+    // A transaction cannot use the offline cache, so with no signal it fails
+    // outright. Say so plainly; the form (and the uploaded images) stay as they
+    // are and nothing was created.
+    const offline=!_createdId&&((typeof navigator!=='undefined'&&navigator.onLine===false)||/unavailable|offline|network/i.test(String(e&&e.code||'')+' '+String(e&&e.message||'')));
+    showToast(offline?'Needs a connection; nothing was created. Check your signal and press Create again — your form is kept.':'Error: '+e.message,true);
+    if(btn){btn.disabled=false;btn.textContent='Create Production Order';}
+  }
 };
 
 // ── PO Edit (Sept 2026) — a correction tool for clerical fields on an

@@ -2334,7 +2334,7 @@ function renderCreateJobModal(){
       </div>
       <div class="field" style="grid-column:1/-1"><label>PO Number *</label>
         <input id="cj-po-num" placeholder="e.g. PO-041" list="cj-po-list">
-        <datalist id="cj-po-list">${allPOs.filter(p=>p.currentStage!=='completed').map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</datalist>
+        <datalist id="cj-po-list">${allPOs.filter(p=>p.currentStage!=='completed'&&p.poStatus!=='cancelled').map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</datalist>
       </div>
       <div class="field" style="grid-column:1/-1"><label>Article Code / Recipe</label>
         <input id="cj-article-code" placeholder="e.g. GP020" oninput="window._lookupRecipe(this.value)">
@@ -4317,7 +4317,7 @@ function _renderMyWorkInner(){
       </div>
     </div>`).join('')||'<div class="empty">No orders in your queue right now.<br>You\'re all caught up!</div>'}`;
   }
-  const active=allPOs.filter(p=>p.currentStage!=='completed');
+  const active=allPOs.filter(p=>p.currentStage!=='completed'&&p.poStatus!=='cancelled');
   return`<div class="page-head"><div class="page-title">All Active Orders</div><div class="page-sub">${active.length} in progress</div></div>${active.map(p=>poRowHTML(p)).join('')||'<div class="empty">No active orders.</div>'}`;
 }
 
