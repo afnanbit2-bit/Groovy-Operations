@@ -682,5 +682,60 @@ module.exports=async function(){
     s.ok('a missing inventory bucket takes the same override route',!a.fs.store.has('gatepasses/GP-955')&&a.fs.keys('fabric_inventory/').length===0,lastToast(a));
   }
 
+  s.section('the role gate is in the functions that delete, not only in the UI wrapper');
+  {
+    for(const [u,role] of [['arfat','manager'],['viewer1','viewer']]){
+      const a=app();orphan(a,'GP-960');as(a,u,role);
+      const snap=()=>J([[...a.fs.store.entries()],a.fs.stats.tx]);
+      addPass(a,{id:'GP-962',gpType:'garments',items:[]});
+      const before=snap();
+      const d=await attempt(a.run(`window._gpDeleteGatePass('GP-960',{tolerateMissing:true})`));
+      const r=await attempt(a.run(`window._gpRestockIssue(${J(a.ctx.allPasses[0])},{tolerateMissing:true})`));
+      s.ok(u+': _gpDeleteGatePass with tolerateMissing is refused',!!d.err&&/Only an owner/.test(d.err.message),d.err&&d.err.message);
+      const g=await attempt(a.run(`window._gpDeleteGatePass('GP-962',{tolerateMissing:true})`));
+      s.ok(u+': the gate is in _gpDeleteGatePass itself — it holds even for a pass with no rolls',!!g.err&&/Only an owner/.test(g.err.message)&&a.fs.store.has('gatepasses/GP-962'),g.err&&g.err.message);
+      s.ok(u+': _gpRestockIssue with tolerateMissing is refused',!!r.err&&/Only an owner/.test(r.err.message),r.err&&r.err.message);
+      s.eq(u+': NOTHING changed (pass, inventory, movements, no transaction)',snap(),before);
+      s.ok(u+': the pass is still in the page list',a.ctx.allPasses.some(p=>p.id==='GP-960'));
+    }
+    for(const [u,role] of [['afnan','owner'],['mustafa','manager']]){
+      const a=app();orphan(a,'GP-961');as(a,u,role);
+      const d=await attempt(a.run(`window._gpDeleteGatePass('GP-961',{tolerateMissing:true})`));
+      s.ok(u+' may call it directly',!d.err&&!a.fs.store.has('gatepasses/GP-961'),d.err&&d.err.message);
+    }
+  }
+
+  s.section('other refusals are NOT offered the override');
+  {
+    const a=app();
+    seed(a,[roll('R1',10,{status:'issued',issuedTo:'GP-970'})]);
+    addPass(a,issueGp('GP-970',{gpReason:'process',rollCodes:['R1'],fabrics:undefined}));
+    a.ctx.allReturns.push({id:'RET-9',gpNum:'GP-970',returnedQty:10});
+    await a.run('window.requestDeleteGP("GP-970")');
+    s.ok('an owner refused for "has returns recorded" is told so',a.fs.store.has('gatepasses/GP-970')&&/returns recorded/.test(lastToast(a)),lastToast(a));
+    s.ok('and is never shown the "anyway" confirm',a.state.confirms.length===1&&!a.state.confirms.some(c=>/anyway/.test(c)),J(a.state.confirms));
+    s.ok('nothing was logged as forced',!a.state.activity.some(x=>/NOT restored/.test(x.action)));
+  }
+
+  s.section('a refused or declined delete on a MULTI-bucket pass says plainly that some rolls are already back');
+  {
+    const mk=(extra)=>{
+      const a=app(extra);
+      seed(a,[roll('R1',10,{status:'issued',issuedTo:'GP-980'})]);
+      addPass(a,issueGp('GP-980',{rollCodes:['R1','B9'],fabrics:[
+        {inventoryKey:KEY,fabType:'Jersey',gsm:220,color:'Black',unit:'kg',rollCodes:['R1']},
+        {inventoryKey:KEY2,fabType:'Rib',gsm:250,color:'Black',unit:'kg',rollCodes:['B9']}]}));
+      return a;
+    };
+    const a=mk();                                  // second bucket missing; default confirm declines the override
+    await a.run('window.requestDeleteGP("GP-980")');
+    s.ok('declined override: the pass stays',a.fs.store.has('gatepasses/GP-980'));
+    s.eq('the first fabric really was restocked',rollOf(a,'R1').status,'in_stock');
+    s.ok('and the message says so, and that retrying is safe',/already returned to stock; retrying is safe/.test(lastToast(a))&&!/Nothing was saved/.test(lastToast(a)),lastToast(a));
+    const b=mk();as(b,'arfat','manager');
+    await b.run('window.requestDeleteGP("GP-980")');
+    s.ok('refused (not an owner): same plain wording',/already returned to stock; retrying is safe/.test(lastToast(b)),lastToast(b));
+  }
+
   return s;
 };

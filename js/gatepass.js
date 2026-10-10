@@ -1097,6 +1097,9 @@ function _gpIssueCombos(g){
 }
 async function _gpRestockIssue(g,opts){
   opts=opts||{};
+  // The role gate lives HERE (and in _gpDeleteGatePass), not only in the UI wrapper:
+  // a console call with tolerateMissing must not bypass it.
+  if(opts.tolerateMissing&&!_gpCanForceDelete())throw new Error('Only an owner (Afnan, Ammar) or Mustafa can delete a pass without restoring all its rolls.');
   // What the pass recorded as PARTLY drawn: {rollCode:{weight,po,ts}} — the
   // engine finds each in the roll's own consumptionLog.
   const partials={};
@@ -1110,7 +1113,7 @@ async function _gpRestockIssue(g,opts){
       res=await _fabInvUpsert({fabType:c.fabType,gsm:c.gsm,color:c.color,unit:c.unit,restockRollCodes:c.codes,restockDraws:draws,tolerateMissing:!!opts.tolerateMissing,note:`${label} ${g.id} deleted — returned to stock by ${session.name}`,sourceCol:'gatepasses',sourceId:g.id});
     }catch(e){
       const done=out.returned.length+out.restoredPartial.length;
-      if(done&&e&&typeof e==='object')e.message+=` (${done} roll(s) of this pass's other fabrics were already returned to stock — trying again is safe.)`;
+      if(done&&e&&typeof e==='object')e.message=String(e.message).replace('Nothing was saved. ','')+` Some rolls (${done}) were already returned to stock; retrying is safe.`;
       throw e;
     }
     const r=res.restock||{};
@@ -1140,6 +1143,7 @@ window._gpRestockIssue=_gpRestockIssue;
 const _gpDeleteBusy=new Set();
 async function _gpDeleteGatePass(gpId,opts){
   opts=opts||{};
+  if(opts.tolerateMissing&&!_gpCanForceDelete())throw new Error('Only an owner (Afnan, Ammar) or Mustafa can delete a pass without restoring all its rolls.');
   const gp=allPasses.find(p=>p.id===gpId)||opts.gp||null;
   if(_gpDeleteBusy.has(gpId))throw new Error(gpId+' is already being deleted.');
   _gpDeleteBusy.add(gpId);
