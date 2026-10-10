@@ -996,8 +996,14 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
         }else{
           // in_stock / reserved: already back — or a partly drawn roll.
           if(!d){rs.alreadyInStock.push(rc);continue;}
-          const i=_fabFindDraw(r,gpId,d);
-          if(i>=0){
+          // Already restored by an earlier (retried) run? Ask THAT first: an older,
+          // unstamped draw is matched by PO + weight, so with two equal draws a retry
+          // would otherwise restore the OTHER pass's draw (phantom weight).
+          const done=_fabDrawRestored(r,gpId,d);
+          const i=done?-1:_fabFindDraw(r,gpId,d);
+          if(done){
+            rs.alreadyInStock.push(rc);
+          }else if(i>=0){
             const e=r.consumptionLog[i];
             const back=parseFloat((parseFloat(e.weight)||0).toFixed(2));
             const wBefore=r.weight||0;
@@ -1011,8 +1017,6 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
             r.labelStale=!(whole&&!r.relabeledAt&&r.originalWeight!=null&&Math.abs(r.weight-r.originalWeight)<=0.005);
             movQty+=back;movCodes.push(rc);
             rs.restoredPartial.push({rollCode:rc,weightBefore:wBefore,restoredWeight:back,weightAfter:r.weight});
-          }else if(_fabDrawRestored(r,gpId,d)){
-            rs.alreadyInStock.push(rc);                      // restored by an earlier (retried) run
           }else{
             bad.push({code:rc,why:'its partial draw is not in the roll history'});
           }
@@ -1126,6 +1130,9 @@ window._gpRestockIssue=_gpRestockIssue;
 // deleted and the returned promise REJECTS with the reason. Used by the
 // Registry's Delete AND by the approval of a delete request, so both take the
 // same path (before, both just deleteDoc'd: the rolls stayed `issued` for ever).
+//   opts.tolerateMissing  default false; skip rolls that cannot be put back
+//             (returned in `skipped`) instead of refusing. Only the override
+//             below passes it, after an owner has confirmed.
 //   opts.gp   the pass record to use when it is no longer in memory (a delete
 //             request carries a copy). With no record at all the doc is simply
 //             deleted, as before.
@@ -1144,7 +1151,7 @@ async function _gpDeleteGatePass(gpId,opts){
       // the same fabric twice.
       if((Array.isArray(allReturns)&&allReturns.some(r=>r.gpNum===gpId))||(parseFloat(gp.returnedQty)||0)>0)
         throw new Error(`${gpId} has returns recorded — the returned fabric was already added to stock as new rolls, so putting its original rolls back would count it twice.`);
-      out=await _gpRestockIssue(gp);
+      out=await _gpRestockIssue(gp,{tolerateMissing:!!opts.tolerateMissing});
     }
     await deleteDoc(doc(db,'gatepasses',gpId));
     allPasses=allPasses.filter(p=>p.id!==gpId);
@@ -1152,6 +1159,32 @@ async function _gpDeleteGatePass(gpId,opts){
   }finally{_gpDeleteBusy.delete(gpId);}
 }
 window._gpDeleteGatePass=_gpDeleteGatePass;
+
+// The ESCAPE HATCH for a delete that is refused because rolls cannot be put back
+// (a roll gone from inventory, a bucket missing, a draw that cannot be located —
+// error code 'fabric/rolls-unavailable'). Same contract as _gpDeleteGatePass, but:
+//   • only afnan / ammar / mustafa (by username) may go on; anyone else gets the
+//     refusal with a line saying who can;
+//   • they are first shown a confirm that NAMES the rolls and says exactly what
+//     will not be restored; declining leaves everything untouched (rejects with
+//     the original error);
+//   • on yes it retries with tolerateMissing, and the activity log records every
+//     roll that was skipped. Never silent. Result gets forced:true.
+function _gpCanForceDelete(){return !!session&&['afnan','ammar','mustafa'].includes(session.u);}
+async function _gpDeleteGatePassOverride(gpId,opts){
+  try{return await _gpDeleteGatePass(gpId,opts);}
+  catch(e){
+    if(!(e&&e.code===FAB_ROLLS_UNAVAILABLE))throw e;
+    if(!_gpCanForceDelete()){e.message+=' Only an owner (Afnan, Ammar) or Mustafa can delete it anyway.';throw e;}
+    const codes=(e.rollCodes||[]).join(', ');
+    if(!confirm(`${e.message}\n\nDelete ${gpId} anyway?\n\nIts other rolls will be returned to stock, but ${codes} — and any weight drawn from ${(e.rollCodes||[]).length>1?'them':'it'} — will NOT be restored. This cannot be undone.`))throw e;
+    const res=await _gpDeleteGatePass(gpId,Object.assign({},opts,{tolerateMissing:true}));
+    res.forced=true;
+    await logActivity('Gate pass deleted — rolls NOT restored',`${gpId} deleted by ${session.name} after confirming · not restored: ${(res.skipped&&res.skipped.length?res.skipped:(e.rollCodes||[])).join(', ')} · ${res.rolls||0} roll(s) returned to stock`);
+    return res;
+  }
+}
+window._gpDeleteGatePassOverride=_gpDeleteGatePassOverride;
 
 // ── Gate Pass / Returns / Fabric In: Edit & Delete with approval ──
 function _gpCanApprove(){return session&&['owner','manager'].includes(session.role);}
@@ -1358,8 +1391,8 @@ window.requestDeleteGP=async function(gpId){
       :`Delete ${gpId}? This cannot be undone.`;
     if(!confirm(msg))return;
     try{
-      const res=await _gpDeleteGatePass(gpId);
-      const back=res&&res.rolls?` · ${res.rolls} roll(s) returned to stock`:'';
+      const res=await _gpDeleteGatePassOverride(gpId);
+      const back=(res&&res.rolls?` · ${res.rolls} roll(s) returned to stock`:'')+(res&&res.forced?` · NOT restored: ${(res.skipped||[]).join(', ')}`:'');
       await logActivity('Gate pass deleted',`${gpId} deleted by ${session.name}${back}`);
       showToast(`${gpId} deleted${back}`);
       _gpRefreshActiveTab();
@@ -1550,7 +1583,7 @@ window.gpApproveRequest=async function(reqId){
         // The same delete the Registry button runs: a fabric pass puts its rolls
         // back first, and if that fails nothing is deleted (the request stays
         // pending and the failure is shown below).
-        await _gpDeleteGatePass(r.targetId,{gp:r.currentData});
+        await _gpDeleteGatePassOverride(r.targetId,{gp:r.currentData});
       }else{
         await deleteDoc(doc(db,collName,r.targetId));
         const i=arr.findIndex(x=>x.id===r.targetId);

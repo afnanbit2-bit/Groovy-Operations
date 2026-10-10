@@ -81,7 +81,11 @@ function app(opts){
   opts=opts||{};
   const fs=makeFs();
   const sales=[];
-  const a=loadApp({files:['js/gatepass.js'],globals:Object.assign({},fs.api,{
+  // By default the "delete it ANYWAY" override is declined (every other confirm is accepted),
+  // so a test of a refusal sees the refusal; override `confirm` in opts.globals to accept it.
+  let a;
+  a=loadApp({files:['js/gatepass.js'],globals:Object.assign({},fs.api,{
+    confirm:m=>{a.state.confirms.push(String(m));return !/anyway/.test(String(m));},
     allPasses:[],allFabricInventory:[],allFabricMovements:[],allReturns:[],allGPEditRequests:[],allFabricIn:[],
     gpActiveTab:'registry',
     loadData:async()=>{},
@@ -585,6 +589,97 @@ module.exports=async function(){
     s.eq('rolls restocked (whole)',rollOf(a,'R1').status,'in_stock');
     s.eq('and the part-draw restored',rollOf(a,'R3').weight,100);
     s.ok('and the pass deleted',!a.fs.store.has('gatepasses/GP-600'));
+  }
+
+  s.section('B6 — two UNSTAMPED equal draws: a retry never restores the OTHER pass\'s draw (no phantom weight)');
+  {
+    const mk=()=>{
+      const a=app();
+      seed(a,[roll('R3',20,{originalWeight:100,partiallyConsumed:true,labelStale:true,consumptionLog:[{po:'PO-1',weight:40,ts:1000,by:'X'},{po:'PO-1',weight:40,ts:1002,by:'X'}]})]);
+      const pass=(id,ts)=>issueGp(id,{ts,poId:'PO-1',rollCodes:['R3'],fabrics:[{inventoryKey:KEY,fabType:'Jersey',gsm:220,color:'Black',unit:'kg',rollCodes:['R3']}],partialRolls:[{rollCode:'R3',usedWeight:40}]});
+      return{a,A:pass('GP-A',1001),B:pass('GP-B',1003)};
+    };
+    const {a,A,B}=mk();
+    await a.run(`_gpRestockIssue(${J(A)})`);
+    s.eq('restoring A gives back 40',rollOf(a,'R3').weight,60);
+    const retry=await attempt(a.run(`_gpRestockIssue(${J(A)})`));
+    s.ok('a RETRY of A does not throw',!retry.err,retry.err&&retry.err.message);
+    s.eq('a retry of A restores nothing — B\'s draw is untouched (60, not 100)',rollOf(a,'R3').weight,60);
+    s.eq('B\'s draw is still in the log',(rollOf(a,'R3').consumptionLog||[]).length,1);
+    s.eq('the retry says A was already back',J(retry.res&&retry.res.alreadyInStock),'["R3"]');
+    const bTry=await attempt(a.run(`_gpRestockIssue(${J(B)})`));
+    s.ok('B\'s own restock still finds its draw',!bTry.err,bTry.err&&bTry.err.message);
+    s.eq('then B restores its own 40: the roll is whole again',rollOf(a,'R3').weight,100);
+    s.eq('with an empty log',(rollOf(a,'R3').consumptionLog||[]).length,0);
+  }
+  {
+    // invariant: whatever order and however many retries, never more is restored than was drawn
+    const a=app();
+    seed(a,[roll('R3',20,{originalWeight:100,partiallyConsumed:true,consumptionLog:[{po:'PO-1',weight:40,ts:1000,by:'X'},{po:'PO-1',weight:40,ts:1002,by:'X'}]})]);
+    const pass=(id,ts)=>issueGp(id,{ts,poId:'PO-1',rollCodes:['R3'],fabrics:[{inventoryKey:KEY,fabType:'Jersey',gsm:220,color:'Black',unit:'kg',rollCodes:['R3']}],partialRolls:[{rollCode:'R3',usedWeight:40}]});
+    const A=pass('GP-A',1001),B=pass('GP-B',1003);
+    let restored=0,max=0;
+    for(const g of [A,A,B,A,B,B,A]){
+      const r=await attempt(a.run(`_gpRestockIssue(${J(g)})`));
+      restored+=((r.res&&r.res.restoredPartial)||[]).reduce((n,p)=>n+p.restoredWeight,0);
+      max=Math.max(max,rollOf(a,'R3').weight);
+    }
+    s.eq('total restored is exactly what was drawn (80), however many retries',restored,80);
+    s.ok('the roll never weighed more than its original 100',max<=100,'max '+max);
+    s.eq('and ends at 100',rollOf(a,'R3').weight,100);
+  }
+
+  // ═══ the escape hatch ═══════════════════════════════════════════════════
+  const orphan=(a,id)=>{
+    seed(a,[roll('R1',10,{status:'issued',issuedTo:id})]);
+    addPass(a,issueGp(id,{rollCodes:['R1','R9'],fabrics:[{inventoryKey:KEY,fabType:'Jersey',gsm:220,color:'Black',unit:'kg',rollCodes:['R1','R9']}]}));
+  };
+  const as=(a,u,role)=>{a.ctx.session={uid:'u-'+u,name:u[0].toUpperCase()+u.slice(1),u,role,email:u+'@groovy.op'};};
+
+  s.section('no dead end — an owner / Mustafa may delete a pass whose roll is gone, after a confirm that names what is lost');
+  {
+    const a=app({globals:{confirm:m=>{a.state.confirms.push(String(m));return true;}}});orphan(a,'GP-950');
+    await a.run('window.requestDeleteGP("GP-950")');
+    const c=a.state.confirms;
+    s.eq('two confirms: the plain one, then the "anyway" one',c.length,2);
+    s.ok('the second names the missing roll and says it will NOT be restored',/R9/.test(c[1]||'')&&/NOT be restored/.test(c[1]||'')&&/anyway/.test(c[1]||''),c[1]);
+    s.ok('the pass is deleted',!a.fs.store.has('gatepasses/GP-950'));
+    s.eq('the roll that could be restocked was',rollOf(a,'R1').status,'in_stock');
+    s.ok('the toast says what was not restored',/NOT restored: R9/.test(lastToast(a)),lastToast(a));
+    s.ok('the activity log records the skipped roll',a.state.activity.some(x=>/NOT restored/.test(x.action)&&/R9/.test(x.detail)),J(a.state.activity));
+  }
+  {
+    const a=app({globals:{confirm:m=>{a.state.confirms.push(String(m));return !/anyway/.test(m);}}});orphan(a,'GP-951');
+    await a.run('window.requestDeleteGP("GP-951")');
+    s.ok('declining the "anyway" confirm keeps the pass',a.fs.store.has('gatepasses/GP-951')&&/NOT deleted/.test(lastToast(a)),lastToast(a));
+    s.eq('and restocks nothing',rollOf(a,'R1').status,'issued');
+    s.ok('and logs nothing',!a.state.activity.some(x=>/NOT restored/.test(x.action)));
+  }
+  {
+    const a=app();orphan(a,'GP-952');as(a,'arfat','manager');
+    await a.run('window.requestDeleteGP("GP-952")');
+    s.ok('a manager (not owner / Mustafa) is refused, told who can, and never offered the override',a.fs.store.has('gatepasses/GP-952')&&/Only an owner/.test(lastToast(a))&&a.state.confirms.length===1,lastToast(a));
+    const b=app({globals:{confirm:m=>{b.state.confirms.push(String(m));return true;}}});orphan(b,'GP-953');as(b,'mustafa','manager');
+    await b.run('window.requestDeleteGP("GP-953")');
+    s.ok('Mustafa (by username) can',!b.fs.store.has('gatepasses/GP-953'));
+  }
+  {
+    const a=app({globals:{confirm:m=>{a.state.confirms.push(String(m));return true;}}});orphan(a,'GP-954');
+    const req=(id)=>({id,status:'pending',type:'gp',action:'delete',targetId:'GP-954',currentData:clone(a.ctx.allPasses[0]),requestedBy:'uzaib'});
+    a.ctx.allGPEditRequests.push(req('RQ9'));a.fs.store.set('gatepass_edit_requests/RQ9',clone(req('RQ9')));
+    as(a,'arfat','manager');
+    await a.run('window.gpApproveRequest("RQ9")');
+    s.ok('approving as a manager: refused, pass kept, request still pending',/Approve failed/.test(lastToast(a))&&a.fs.store.has('gatepasses/GP-954')&&a.fs.store.get('gatepass_edit_requests/RQ9').status==='pending',lastToast(a));
+    as(a,'afnan','owner');
+    await a.run('window.gpApproveRequest("RQ9")');
+    s.ok('approving as an owner, after the confirm: deleted and approved',!a.fs.store.has('gatepasses/GP-954')&&a.fs.store.get('gatepass_edit_requests/RQ9').status==='approved');
+    s.ok('the skipped roll is in the activity log',a.state.activity.some(x=>/NOT restored/.test(x.action)&&/R9/.test(x.detail)));
+  }
+  {
+    const a=app({globals:{confirm:m=>{a.state.confirms.push(String(m));return true;}}});   // a missing BUCKET (not just a roll)
+    addPass(a,issueGp('GP-955',{rollCodes:['R1'],fabrics:[{inventoryKey:KEY,fabType:'Jersey',gsm:220,color:'Black',unit:'kg',rollCodes:['R1']}]}));
+    await a.run('window.requestDeleteGP("GP-955")');
+    s.ok('a missing inventory bucket takes the same override route',!a.fs.store.has('gatepasses/GP-955')&&a.fs.keys('fabric_inventory/').length===0,lastToast(a));
   }
 
   return s;
