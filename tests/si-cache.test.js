@@ -53,7 +53,7 @@ function fakeIdb(clk){
         tx.addEventListener=(t,fn)=>{(tx._l[t]=tx._l[t]||[]).push(fn);};
         tx.__fire=(t,src)=>{const e={target:src||tx,type:t};if(tx['on'+t])tx['on'+t](e);(tx._l[t]||[]).forEach(fn=>fn(e));};
         tx._pending=0;tx._idle=()=>{};
-        let spins=0;const finish=()=>{if(tx._failed||tx._done)return;if(tx._pending>0){if(++spins<300)setTimeout(finish,1);return;} /* capped: a transaction whose request never answers must not keep the process alive */tx._done=true;tx.__fire('complete');};
+        let spins=0;const finish=()=>{if(tx._failed||tx._done)return;if(tx._pending>0){if(++spins<300)setTimeout(finish,1);return;} /* capped: a transaction whose request never answers must not keep the process alive */tx._done=true;if(f.mode.commitDelay&&clk){/* a slow disk: the write is applied now but the commit event comes later, on the FAKE clock */clk.timers.push({id:++clk.seq,at:clk.t+f.mode.commitDelay,fn:()=>tx.__fire('complete')});}else tx.__fire('complete');};
         setTimeout(()=>setTimeout(finish,0),0);
         return tx;
       }};
@@ -273,6 +273,41 @@ async function checks(src){
       o['after a quota failure a later put on a store with room works']=ok.done&&ok.value===true;
     }
   });
+  // 5b. the bound scales with the payload; a timeout is reported as a timeout
+  await guard('scaled bound',async()=>{
+    const rows=n=>Array.from({length:n},(_,i)=>({i}));
+    {
+      const m=load(src),C=m.C();m.idb.mode.commitDelay=8000;
+      const big=track(C.put('lines#0',rows(2000),{})),small=track(C.put('tiny',{a:1},{}));
+      await m.adv(6000);
+      o['slow commit: a small record gives up at its 5 s bound (resolves false)']=small.done&&small.value===false;
+      o['slow commit: a 2000-row record is still waiting at 6 s (its bound is longer than 5 s)']=!big.done;
+      await m.adv(4000);
+      o['slow commit: a 2000-row put whose commit lands at 8 s resolves TRUE (it no longer reports failure)']=big.done&&big.value===true;
+    }
+    {
+      const m=load(src),C=m.C();m.idb.mode.commitDelay=60000;
+      const d=track(C.putDetailed('lines#0',rows(2000),{}));
+      await m.adv(12000);const early=d.done;
+      await m.adv(2000);
+      o['putDetailed: a 2000-row write is bounded at 13 s (5 s + 4 ms a row), not earlier']=!early&&d.done;
+      o['putDetailed: a timeout is reported as {ok:false, timedOut:true, error:"timeout"} and never rejects']=!!d.value&&d.value.ok===false&&d.value.timedOut===true&&d.value.error==='timeout'&&!d.rejected;
+      o['bound arithmetic: 100000 rows is capped at 30 s, a small value is 5 s, an explicit timeoutMs is honoured but capped']=C._budget(rows(100000))===30000&&C._budget({a:1})===5000&&C._budget(1,{timeoutMs:9000})===9000&&C._budget(1,{timeoutMs:99999})===30000;
+    }
+    {
+      const m=load(src),C=m.C();m.idb.mode.requestError=true;
+      const d=track(C.putDetailed('k',{a:1},{}));await m.adv(1000);
+      o['putDetailed: a refusal is {ok:false, timedOut:false} with the browser\'s reason - not mistaken for a timeout']=d.done&&d.value.ok===false&&d.value.timedOut===false&&/request failed|UnknownError/.test(d.value.error);
+    }
+    {
+      const m=load(src),C=m.C();
+      const d=await C.putDetailed('k',{a:1},{});
+      o['putDetailed: success is {ok:true, timedOut:false}; put() still resolves a plain boolean']=d.ok===true&&d.timedOut===false&&(await C.put('k2',{a:1},{}))===true;
+      m.as(null);
+      const n=await C.putDetailed('k',{a:1},{});
+      o['putDetailed with nobody signed in: {ok:false} and nothing written']=n.ok===false&&m.idb.keys().join()==='u1:k,u1:k2';
+    }
+  });
   // 6. clear
   await guard('clear',async()=>{
     const m=load(src),C=m.C();
@@ -307,12 +342,16 @@ module.exports=async function(){
     const hit=failing.filter(f=>failed.some(k=>k.indexOf(f)===0));
     s.ok('break "'+label+'" fails "'+failing.join('" and "')+'"',hit.length===failing.length,hit.length===failing.length?undefined:'failed: '+failed.slice(0,4).join(' | '));
   };
-  await brk('the 5 second bound is gone',"if (!done) { done = true; _setErr('timeout'); resolve(fallback); }","/* no bound */",['timeout (open never answers): get has resolved null','timeout (a request never answers): put has resolved false']);
+  await brk('the 5 second bound is gone',"if (!done) { done = true; _setErr('timeout', ctx); if (ctx) ctx.timedOut = true; resolve(fallback); }","/* no bound */",['timeout (open never answers): get has resolved null','timeout (a request never answers): put has resolved false']);
   await brk('the key ignores the uid',"return String(uid) + ':' + String(key);","return String(key);",['per-uid isolation: both users','_recordKey(uid,key) is']);
   await brk('the record version is not checked',"rec.v === VERSION &&","true &&",['a record written by another version is a miss']);
-  await brk('a missing user writes under an anonymous key',"if (!uid) return Promise.resolve(false);","uid = uid || 'anon';",['no signed-in user: put is false']);
-  await brk('quota: no evict-and-retry',"return _evictOldest(uid, rk).then(function () { return _putOnce(rk, uid, key, value, meta); });","return false;",['quota (abort): one QuotaExceededError then success']);
+  await brk('a missing user writes under an anonymous key',"if (!uid) return Promise.resolve({ ok: false, timedOut: false, error: 'not signed in' });","uid = uid || 'anon';",['no signed-in user: put is false']);
+  await brk('quota: no evict-and-retry',"return _evictOldest(uid, rk).then(function () { return _putOnce(rk, uid, key, value, meta, ms, c2); }).then(function (ok2) {","return Promise.resolve(false).then(function (ok2) {",['quota (abort): one QuotaExceededError then success']);
   await brk('clear only removes one key',"st.clear(); set(true);","st.delete('u1:orders'); set(true);",['clear removes EVERY user']);
   await brk('a version-mismatched or corrupt row is returned as a hit',"if (rec && rec.v === VERSION && rec.uid === uid && typeof rec.savedAt === 'number') {","if (rec) {",['a corrupt stored row']);
+  await brk('the put bound does not scale with the payload',"Math.max(TIMEOUT_MS, Math.min(PUT_MAX_MS, ms))","TIMEOUT_MS",['slow commit: a 2000-row put whose commit lands at 8 s resolves TRUE','putDetailed: a 2000-row write is bounded at 13 s']);
+  await brk('the ceiling is gone (30 s)',"PUT_MAX_MS = 30000","PUT_MAX_MS = 9e9",['bound arithmetic: 100000 rows is capped at 30 s']);
+  await brk('a timeout is not flagged as one',"if (ctx) ctx.timedOut = true; ","",['putDetailed: a timeout is reported as']);
+  await brk('a refusal is flagged as a timeout',"return { ok: false, timedOut: !!c1.timedOut, error: c1.err || '' };","return { ok: false, timedOut: true, error: c1.err || '' };",['putDetailed: a refusal is {ok:false, timedOut:false}']);
   return s;
 };

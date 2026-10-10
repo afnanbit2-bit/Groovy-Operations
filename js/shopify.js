@@ -707,18 +707,46 @@ async function loadShopifyData(){
 //   siCache.get(key) -> Promise<null|{value,savedAt,meta}>, siCache.put(key,value,meta) -> Promise<boolean>, siCache.del(key), siCache.clear(),
 //   siCache.bytesApprox(). Keys: products, orders, lines (the window), lines-old (phase 2), closes, snap.
 // _SI_CACHE_SHAPE: bump it whenever the fields of a stored row change shape (catalog, order, line item, snapshot): a copy with another shape is a miss.
-const _SI_CACHE_SCHEMA=1,_SI_CACHE_SHAPE='2026-10-10a',_SI_CACHE_GET_MS=1500,_SI_CACHE_MAX_AGE_MS=86400000,_SI_CACHE_SKEW_MS=300000,_SI_CACHE_CUT_SLACK_DAYS=14,_SI_CACHE_SMALL_MS=150,_SI_CACHE_BIG_MS=1500,_SI_CACHE_BIG_ROWS=5000,_SI_CACHE_BYTES_MS=30000;
-const _siCache={prom:null,tried:false,pending:false,from:null,used:[],err:'',errKeys:{},bytes:null,bytesAt:0};
+const _SI_CACHE_SCHEMA=1,_SI_CACHE_SHAPE='2026-10-11a',_SI_CACHE_GET_MS=1500,_SI_CACHE_MAX_AGE_MS=86400000,_SI_CACHE_SKEW_MS=300000,_SI_CACHE_CUT_SLACK_DAYS=14,_SI_CACHE_SMALL_MS=150,_SI_CACHE_BIG_MS=1500,_SI_CACHE_BIG_ROWS=5000,_SI_CACHE_BYTES_MS=30000,_SI_CACHE_CHUNK=2000,_SI_CACHE_CHUNK_GET_MS=4000;
+// 2026-10-11a: an array longer than _SI_CACHE_BIG_ROWS is stored as chunks of _SI_CACHE_CHUNK rows under 'key#0..n' plus a manifest
+// {__chunks,nonce,count} under 'key' (written LAST, so a half-written set is never read); shorter arrays and the snapshot are one record as before.
+const _siCache={prom:null,tried:false,pending:false,from:null,used:[],err:'',errKeys:{},slow:{},chunkN:{},bytes:null,bytesAt:0};
 const _siCacheQ={}; // key -> {run,t}: the writes waiting to happen (newest per key wins)
 function _siCacheOn(){try{return typeof siCache!=='undefined'&&!!siCache&&typeof siCache.available==='function'&&!!siCache.available();}catch(_){return false;}}
-function _siCacheGet(key){ // never rejects, never hangs: a slow or failing read is "no copy"
+function _siCacheGet1(key,ms){ // one record; never rejects, never hangs: a slow or failing read is "no copy"
   return new Promise(res=>{
     let done=false;const fin=v=>{if(!done){done=true;clearTimeout(t);res(v);}};
-    const t=setTimeout(()=>fin(null),_SI_CACHE_GET_MS);
+    const t=setTimeout(()=>fin(null),ms||_SI_CACHE_GET_MS);
     try{Promise.resolve(siCache.get(key)).then(r=>fin(r||null),()=>fin(null));}catch(_){fin(null);}
   });
 }
-function _siCacheDel(key){try{const p=siCache.del(key);if(p&&p.catch)p.catch(()=>{});}catch(_){}}
+// A chunked record is read back whole or not at all: every chunk must exist, carry the manifest's nonce and index, and hold its row count.
+// Anything else (a chunk lost to eviction, a half-finished rewrite) is a miss and the whole set is deleted.
+async function _siCacheGet(key){
+  const r=await _siCacheGet1(key);
+  const m=r&&r.value;
+  if(!m||typeof m!=='object'||Array.isArray(m)||!(m.__chunks>0))return r;
+  const n=m.__chunks|0,parts=await Promise.all(Array.from({length:n},(_,i)=>_siCacheGet1(key+'#'+i,_SI_CACHE_CHUNK_GET_MS)));
+  _siCache.chunkN[key]=n;
+  let rows=[],ok=true;
+  parts.forEach((p,i)=>{
+    if(!ok)return;
+    if(!p||!p.meta||p.meta.nonce!==m.nonce||p.meta.idx!==i||!Array.isArray(p.value)||p.value.length!==p.meta.count){ok=false;return;}
+    rows=rows.length?rows.concat(p.value):p.value;
+  });
+  if(!ok||rows.length!==m.count){_siCacheDel(key);return null;}
+  return{value:rows,savedAt:r.savedAt,meta:r.meta};
+}
+function _siCacheDel(key){
+  try{const p=siCache.del(key);if(p&&p.catch)p.catch(()=>{});}catch(_){}
+  _siCacheDelChunks(key,0);
+}
+function _siCacheDelChunks(key,from){ // the chunks this page knows about (read or written this visit); a stray one is bounded by clear() and the 24 h copy rule
+  const n=_siCache.chunkN[key]||0;
+  for(let i=from;i<n;i++){try{const p=siCache.del(key+'#'+i);if(p&&p.catch)p.catch(()=>{});}catch(_){}}
+  if(!from)delete _siCache.chunkN[key];
+}
+const _siCacheYield=()=>new Promise(r=>setTimeout(r,0)); // gives the event loop back, so cleaning 25k rows never freezes the page
 // Firestore Timestamps keep their methods on the prototype, which a stored copy loses; they are written as plain {seconds,nanoseconds},
 // the shape _siAxSnapMs already reads. Functions are dropped. Everything else is copied as is.
 function _siCacheClean(v){
@@ -730,18 +758,52 @@ function _siCacheClean(v){
   for(const k in v){if(Object.prototype.hasOwnProperty.call(v,k)){const x=v[k];if(typeof x!=='function')o[k]=_siCacheClean(x);}}
   return o;
 }
-function _siCacheFail(key,msg){_siCache.errKeys[key]=String(msg||'save failed');_siCache.err=_siCache.errKeys[key];}
+function _siCacheFail(key,msg){delete _siCache.slow[key];_siCache.errKeys[key]=String(msg||'save failed');_siCache.err=_siCache.errKeys[key];}
+function _siCacheOkKey(key){delete _siCache.errKeys[key];delete _siCache.slow[key];_siCache.err=Object.keys(_siCache.errKeys).map(k=>_siCache.errKeys[k])[0]||'';}
+// One put, normalised to {ok,timedOut,error}. putDetailed (js/si-cache.js) says "no answer in time" apart from "refused"; an older siCache gives a boolean.
+async function _siCachePutOne(key,v,meta){
+  if(typeof siCache.putDetailed==='function'){
+    const r=await Promise.resolve(siCache.putDetailed(key,v,meta));
+    return r&&typeof r==='object'?{ok:r.ok===true,timedOut:!!r.timedOut,error:String(r.error||'')}:{ok:r===true,timedOut:false,error:''};
+  }
+  const ok=await Promise.resolve(siCache.put(key,v,meta));
+  if(ok!==false)return{ok:true,timedOut:false,error:''};
+  let why='';try{if(siCache&&siCache.lastError)why=String(siCache.lastError.message||siCache.lastError);}catch(_){}
+  return{ok:false,timedOut:why==='timeout',error:why};
+}
+// The chunks first (each cleaned and written on its own, yielding to the page between them), the manifest LAST.
+async function _siCachePutChunked(job){
+  const rows=job.val,CH=_SI_CACHE_CHUNK,n=Math.ceil(rows.length/CH),nonce=Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+  for(let i=0;i<n;i++){
+    await _siCacheYield();
+    if(!_siCacheWriteOk())return{aborted:true};
+    let part;try{part=_siCacheClean(rows.slice(i*CH,(i+1)*CH));}catch(e){return{ok:false,timedOut:false,error:'could not prepare '+job.key+': '+((e&&e.message)||e)};}
+    const r=await _siCachePutOne(job.key+'#'+i,part,{chunk:true,idx:i,nonce,of:n,count:part.length});
+    if(!r.ok)return r;
+  }
+  if(!_siCacheWriteOk())return{aborted:true};
+  const r=await _siCachePutOne(job.key,{__chunks:n,nonce,count:rows.length},job.meta);
+  if(r.ok){_siCacheDelChunks(job.key,n);_siCache.chunkN[job.key]=n;} // chunks left from a longer earlier copy go
+  return r;
+}
 async function _siCacheDo(job){
   if(!_siCacheWriteOk()){delete _siCacheQ[job.key];return;}
-  let v;
-  try{v=_siCacheClean(job.val);}catch(e){_siCacheFail(job.key,'could not prepare '+job.key+': '+((e&&e.message)||e));return;}
+  let res;
   try{
-    if(!_siCacheWriteOk())return; // re-checked after the (possibly long) copy: the sign-out may have started meanwhile
-    const ok=await Promise.resolve(siCache.put(job.key,v,job.meta));
-    if(ok===false){
-      let why='';try{if(siCache&&siCache.lastError)why=String(siCache.lastError.message||siCache.lastError);}catch(_){}
-      _siCacheFail(job.key,why||'the browser refused the write (storage may be full or blocked)');
-    }else{delete _siCache.errKeys[job.key];_siCache.err=Object.keys(_siCache.errKeys).map(k=>_siCache.errKeys[k])[0]||'';}
+    if(Array.isArray(job.val)&&job.val.length>_SI_CACHE_BIG_ROWS)res=await _siCachePutChunked(job);
+    else{
+      let v;
+      try{v=_siCacheClean(job.val);}catch(e){_siCacheFail(job.key,'could not prepare '+job.key+': '+((e&&e.message)||e));return;}
+      if(!_siCacheWriteOk())return; // re-checked after the (possibly long) copy: the sign-out may have started meanwhile
+      res=await _siCachePutOne(job.key,v,job.meta);
+      if(res.ok&&_siCache.chunkN[job.key])_siCacheDelChunks(job.key,0); // it used to be chunked: the old chunks are not wanted
+    }
+    if(res.aborted)return;
+    if(res.ok)_siCacheOkKey(job.key);
+    else if(res.timedOut){ // no answer within the (size-scaled) bound is NOT a refusal: the browser may still commit it; the next refresh saves again
+      delete _siCache.errKeys[job.key];_siCache.slow[job.key]=true;
+      _siCache.err=Object.keys(_siCache.errKeys).map(k=>_siCache.errKeys[k])[0]||'';
+    }else _siCacheFail(job.key,res.error||'the browser refused the write (storage may be full or blocked)');
   }catch(e){_siCacheFail(job.key,(e&&e.message)||e);}
   _siCacheBytesRefresh(true);
   _siCacheRepaintNote();
@@ -887,7 +949,7 @@ function _siCacheCtlHtml(){
   _siCacheBytesRefresh(false);
   const bt=_siCacheBytesText();
   return'<div class="si-na-checks" role="note" id="si-cache"><strong>Saved copy.</strong> This page keeps a copy of what it read on this device, so the next visit paints from it and asks Firestore only for what changed. <span id="si-cache-bytes">'+_siEsc(bt)+'</span>'
-    +(_siCache.err?' <span id="si-cache-err">Saved copy unavailable: '+_siEsc(_siCache.err)+'.</span>':'')
+    +(_siCache.err?' <span id="si-cache-err">Saved copy unavailable: '+_siEsc(_siCache.err)+'.</span>':(Object.keys(_siCache.slow).length?' <span id="si-cache-slow">Saving the copy on this device is taking longer than usual; it will be tried again at the next refresh.</span>':''))
     +' <button type="button" class="si-ax-btn" id="si-cache-clear" onclick="window._siCacheClear()">Clear saved data on this device</button></div>';
 }
 function _siCacheRepaintNote(){
@@ -901,7 +963,7 @@ window._siCacheClear=async function(){
   Object.keys(_siCacheQ).forEach(k=>{const j=_siCacheQ[k];if(j&&j.t)clearTimeout(j.t);delete _siCacheQ[k];});
   try{await Promise.resolve(siCache.clear());}catch(e){_siCacheFail('clear',(e&&e.message)||e);_siCacheRepaintNote();return;}
   try{_siHistCacheClear();}catch(_){} // the folded stock-history copy belongs to the same page
-  _siCache.errKeys={};_siCache.err='';_siCache.used=[];_siCache.pending=false;_siCache.from=null;_siCache.bytes=null;
+  _siCache.errKeys={};_siCache.slow={};_siCache.chunkN={};_siCache.err='';_siCache.used=[];_siCache.pending=false;_siCache.from=null;_siCache.bytes=null;
   try{if(typeof showToast==='function')showToast('Saved data cleared on this device — reloading');}catch(_){}
   setTimeout(()=>{try{if(typeof location!=='undefined'&&location.reload)location.reload();}catch(_){}},400);
 };

@@ -70,7 +70,7 @@ function fakeFs(T,o){
   return st;
 }
 /* ── a fake siCache: a Map of {value,savedAt,meta}, cloned both ways like structured clone ── */
-function fakeCache(now){
+function fakeCache(now,opts){
   const c={m:new Map(),log:[],mode:{},lastError:'',n:{put:0,get:0,del:0,clear:0}};
   c.api={
     available:()=>c.mode.unavailable?false:true,
@@ -84,6 +84,15 @@ function fakeCache(now){
     clear:async()=>{c.n.clear++;c.log.push('clear');if(c.mode.clearReject)throw new Error('clear broke');c.m.clear();return true;},
     bytesApprox:async()=>1234567,lastError:''
   };
+  if(opts&&opts.detailed){ // the real js/si-cache.js also offers putDetailed -> {ok,timedOut,error}; this wraps the fake put the same way
+    c.putSizes=[];c.onPut=null;
+    c.api.putDetailed=async(k,v,meta)=>{
+      if(c.onPut)c.onPut(k,v);
+      if(Array.isArray(v))c.putSizes.push(v.length);
+      if(c.mode.timeoutKey&&k===c.mode.timeoutKey){c.n.put++;c.log.push('put:'+k);return{ok:false,timedOut:true,error:'timeout'};}
+      if(c.mode.refuseKey&&k===c.mode.refuseKey){c.n.put++;c.log.push('put:'+k);return{ok:false,timedOut:false,error:'QuotaExceededError'};}
+      const ok=await c.api.put(k,v,meta);return{ok:ok===true,timedOut:false,error:ok?'':String(c.api.lastError||'')};};
+  }
   return c;
 }
 /* ── one page load (a fresh sandbox, as a new tab would be) ── */
@@ -105,20 +114,20 @@ async function checks(src){
   const B00=probe.run('siFullBoundary(0)')===undefined?0:(Math.floor((Date.now()+5*H)/(24*H))*24*H-5*H),B12=B00+12*H;
   const mutate=fx=>{fx.lines.find(l=>l.order_id===1).financial_status='refunded';fx.lines.push({order_id:8,line_item_id:81,sku:'AA-M',quantity:5,price:100,order_created_at:fx.D(0),financial_status:'paid'});};
   // a cold visit at fake time t0 (empty cache): returns everything a later visit needs
-  const cold=async(t0,extra,fxo)=>{
+  const cold=async(t0,extra,fxo,srcX,copts)=>{
     if(process.env.SIC_TRACE)console.error('cold@'+(Date.now()%100000));
     const fx=fakeFs(T,fxo||{stamps:{catalog_sync:B00-5*H,order_sync:B00-5*H,order_refresh:B00-5*H,inventory_sync:B00-5*H}});
-    const clk={t:t0},cache=fakeCache(()=>clk.t);
-    const a=app(src,fx,cache,clk,extra);
+    const clk={t:t0},cache=fakeCache(()=>clk.t,copts);
+    const a=app(srcX||src,fx,cache,clk,extra);
     await a.run('loadShopifyData()');await waitIdle();await a.run('window._siCacheFlush()');await waitIdle();
     return{fx,cache,clk,a,R:c=>a.run(c)};
   };
   // a later visit: new sandbox, same Firestore + same cache, new time; the counters are reset first
-  const warm=async(base,t1,mod)=>{
+  const warm=async(base,t1,mod,srcX)=>{
     base.fx.reset();
     if(mod)mod();
     base.clk.t=t1;
-    const a=app(src,base.fx,base.cache,base.clk);
+    const a=app(srcX||src,base.fx,base.cache,base.clk);
     await a.run('loadShopifyData()');await waitIdle();
     return{a,R:c=>a.run(c)};
   };
@@ -382,6 +391,67 @@ async function checks(src){
     await c3.a.run('window._siCacheClear()');
     o['clear that fails: the records stay and the failure is shown ("Saved copy unavailable: ...") instead of a success toast']=c3.cache.m.size===5&&/Saved copy unavailable/.test(c3.R('_siNaTrustHtml({red:[],amber:[],quiet:[],unknown:[]})'))&&c3.a.state.toasts.length===0;
   }
+  mark('13. chunked records');
+  // 13. big arrays are stored as chunks + a manifest (this scratch copy lowers the thresholds: 202 line items become 5 chunks of 50)
+  {
+    const csrc=src.replace(/_SI_CACHE_BIG_ROWS=\d+/,'_SI_CACHE_BIG_ROWS=100').replace(/_SI_CACHE_CHUNK=\d+/,'_SI_CACHE_CHUNK=50');
+    const noBig='products:0,orders:0,line_items:0,weekly_closes:0';
+    if(csrc===src)o['chunks: the test could not lower the thresholds in a scratch copy of the source']=false;
+    else{
+      const cc=await cold(B00+1*H,undefined,undefined,csrc,{detailed:true});
+      const cm=cc.cache.m;
+      o['chunks: 202 line items are stored as 5 chunk records lines#0..lines#4 of at most 50 rows plus a manifest under "lines" (written last); small arrays stay one record']=[0,1,2,3,4].every(i=>cm.has('lines#'+i))&&!cm.has('lines#5')&&cm.get('lines').value.__chunks===5&&cm.get('lines').value.count===202&&cm.get('products').value.length===2&&Math.max.apply(null,cc.cache.putSizes)<=50;
+      o['chunks: the manifest was put AFTER every chunk, and each chunk carries the manifest nonce, its index and its row count']=cc.cache.log.indexOf('put:lines')>cc.cache.log.indexOf('put:lines#4')&&[0,1,2,3,4].every(i=>cm.get('lines#'+i).meta.nonce===cm.get('lines').value.nonce&&cm.get('lines#'+i).meta.idx===i&&cm.get('lines#'+i).meta.count===cm.get('lines#'+i).value.length);
+      const w=await warm(cc,B00+3*H,undefined,csrc);
+      o['chunks: a warm visit reassembles the 202 rows in order from the chunks with ZERO big reads']=w.R('_siLineItems.length')===202&&cc.fx.big()===noBig&&w.R('_siLineItems[0]._id')===cc.cache.m.get('lines#0').value[0]._id&&w.R('_siLineItems[201]._id')===cm.get('lines#4').value[1]._id;
+      // a missing chunk is a miss: the whole set is deleted and the window is read in full
+      const c2=await cold(B00+1*H,undefined,undefined,csrc,{detailed:true});
+      c2.cache.m.delete('lines#2');
+      const w2=await warm(c2,B00+3*H,undefined,csrc);
+      o['chunks: a MISSING chunk makes the whole lines record a miss - the window is read in full (6 ranges, 202 documents) and the rest still comes from the copy']=c2.fx.big()==='products:0,orders:0,line_items:6,weekly_closes:0'&&w2.R('_siLineItems.length')===202;
+      o['chunks: a missing chunk deletes the manifest and the other chunks (no half set is left to be read)']=c2.cache.log.indexOf('del:lines')>=0&&['del:lines#0','del:lines#1','del:lines#3','del:lines#4'].every(k=>c2.cache.log.indexOf(k)>=0);
+      // a chunk left by another write (different nonce) is a miss too
+      const c3=await cold(B00+1*H,undefined,undefined,csrc,{detailed:true});
+      c3.cache.m.get('lines#1').meta.nonce='another-write';
+      await warm(c3,B00+3*H,undefined,csrc);
+      o['chunks: a chunk from ANOTHER write (different nonce) is a miss: the window is read in full']=c3.fx.big()==='products:0,orders:0,line_items:6,weekly_closes:0';
+      const c4=await cold(B00+1*H,undefined,undefined,csrc,{detailed:true});
+      c4.cache.m.get('lines#3').value=c4.cache.m.get('lines#3').value.slice(1);
+      await warm(c4,B00+3*H,undefined,csrc);
+      o['chunks: a chunk with fewer rows than it declared is a miss: the window is read in full']=c4.fx.big()==='products:0,orders:0,line_items:6,weekly_closes:0';
+      // the old stored shape is a miss
+      const c5=await cold(B00+1*H);
+      c5.cache.m.get('products').meta.shape='2026-10-10a';
+      await warm(c5,B00+3*H);
+      o['shape: a copy written under the previous stored format (2026-10-10a) is ignored - that collection is read again']=c5.fx.big()==='products:1,orders:0,line_items:0,weekly_closes:0';
+      // the page is given the event loop back between chunks
+      const c6=await cold(B00+1*H,undefined,undefined,csrc,{detailed:true});
+      const fx6=fakeFs(T,{stamps:{catalog_sync:B00-5*H,order_sync:B00-5*H,order_refresh:B00-5*H,inventory_sync:B00-5*H}}),clk6={t:B00+1*H},cache6=fakeCache(()=>clk6.t,{detailed:true});
+      let ticks=0,alive=true;const tick=()=>{ticks++;if(alive)setTimeout(tick,0);};setTimeout(tick,0);
+      const seen=[];cache6.onPut=k=>{if(/^lines#\d$/.test(k))seen.push(ticks);};
+      const a6=app(csrc,fx6,cache6,clk6);
+      await a6.run('loadShopifyData()');await waitIdle();await a6.run('window._siCacheFlush()');await waitIdle();
+      alive=false;
+      o['chunks: the work yields to the event loop between chunks (5 chunk writes, and macrotasks ran between the first and the last)']=seen.length===5&&seen[4]>seen[0]&&seen.every((x,i)=>i===0||x>=seen[i-1]);
+      // a slow put is "still saving", never "Saved copy unavailable"; a refused put still is
+      const c7=await cold(B00+1*H,undefined,undefined,csrc,{detailed:true});
+      const fx7=fakeFs(T,{stamps:{catalog_sync:B00-5*H,order_sync:B00-5*H,order_refresh:B00-5*H,inventory_sync:B00-5*H}}),clk7={t:B00+1*H},cache7=fakeCache(()=>clk7.t,{detailed:true});cache7.mode={timeoutKey:'lines#1'};
+      const a7=app(csrc,fx7,cache7,clk7);
+      await a7.run('loadShopifyData()');await waitIdle();await a7.run('window._siCacheFlush()');await waitIdle();
+      const ctl7=a7.run('_siNaTrustHtml({red:[],amber:[],quiet:[],unknown:[]})');
+      o['slow put: a put that times out is NOT reported as a failure - no "Saved copy unavailable", the strip and control say it is still saving']=a7.run('_siCache.err')===''&&!/Saved copy unavailable/.test(ctl7+a7.run('_siFrHtml()'))&&/taking longer than usual/.test(ctl7);
+      o['slow put: after a timed-out chunk the manifest is NOT written (a partial set can never be read), the page is loaded and nothing was toasted']=!cache7.m.has('lines')&&a7.run('_siLoaded')===true&&a7.state.toasts.length===0;
+      const fx8=fakeFs(T,{stamps:{catalog_sync:B00-5*H,order_sync:B00-5*H,order_refresh:B00-5*H,inventory_sync:B00-5*H}}),clk8={t:B00+1*H},cache8=fakeCache(()=>clk8.t,{detailed:true});cache8.mode={refuseKey:'lines#1'};
+      const a8=app(csrc,fx8,cache8,clk8);
+      await a8.run('loadShopifyData()');await waitIdle();await a8.run('window._siCacheFlush()');await waitIdle();
+      o['refused put: a real refusal still says "Saved copy unavailable: ..." with the browser\'s reason, and not "still saving"']=/Saved copy unavailable: QuotaExceededError/.test(a8.run('_siNaTrustHtml({red:[],amber:[],quiet:[],unknown:[]})'))&&!/taking longer than usual/.test(a8.run('_siNaTrustHtml({red:[],amber:[],quiet:[],unknown:[]})'));
+      // an older siCache (boolean put only) that answers false with lastError "timeout" is also "slow", not "unavailable"
+      const fx9=fakeFs(T,{stamps:{catalog_sync:B00-5*H,order_sync:B00-5*H,order_refresh:B00-5*H,inventory_sync:B00-5*H}}),clk9={t:B00+1*H},cache9=fakeCache(()=>clk9.t);cache9.mode={putFalse:true};
+      const a9=app(src,fx9,cache9,clk9);cache9.api.put=async()=>{cache9.api.lastError='timeout';return false;};
+      await a9.run('loadShopifyData()');await waitIdle();await a9.run('window._siCacheFlush()');await waitIdle();
+      o['slow put (boolean put, lastError "timeout"): reported as still saving, not as "Saved copy unavailable"']=a9.run('_siCache.err')===''&&/taking longer than usual/.test(a9.run('_siNaTrustHtml({red:[],amber:[],quiet:[],unknown:[]})'));
+    }
+  }
   return o;
 }
 
@@ -410,9 +480,15 @@ module.exports=async function(){
   await brk('the 24 hour age limit is gone',"||nowMs-r.savedAt>_SI_CACHE_MAX_AGE_MS","",['a copy 25 hours old']);
   await brk('a copy from the future is trusted (the skew allowance is unlimited)',"_SI_CACHE_SKEW_MS=300000","_SI_CACHE_SKEW_MS=9e12",['a copy saved "in the future" (device clock set back by 20 minutes)']);
   await brk('a confirmed copy keeps its note',"function _siCacheSettled(){if(_siCache.pending){_siCache.pending=false;}}","function _siCacheSettled(){}",['warm, nothing moved: the copy is confirmed','strip, once the check succeeds']);
-  await brk('a refused write is not recorded',"if(ok===false){","if(false){",['put failure (put resolves false (quota)): the failure is recorded']);
+  await brk('a refused write is not recorded',"}else _siCacheFail(job.key,res.error||","}else if(false)_siCacheFail(job.key,res.error||",['put failure (put resolves false (quota)): the failure is recorded']);
   await brk('clear does not clear the store',"try{await Promise.resolve(siCache.clear());}","try{await Promise.resolve(0);}",['clear: siCache.clear() was called']);
   await brk('the merge replaces instead of merging',"_siLineItems=siMergeLines(_siLineItems,a); // a NEW array: every cache keyed","_siLineItems=a; // a NEW array: every cache keyed",['orders stamp moved: the merge is by id']);
+  await brk('the work never yields between chunks',"await _siCacheYield();\n    if(!_siCacheWriteOk())return{aborted:true};","if(!_siCacheWriteOk())return{aborted:true};",['chunks: the work yields to the event loop between chunks']);
+  await brk('a chunk from another write is accepted',"p.meta.nonce!==m.nonce||","",['chunks: a chunk from ANOTHER write']);
+  await brk('a missing chunk is not a miss',"if(!p||!p.meta||","if(false||",['chunks: a MISSING chunk makes the whole lines record a miss']);
+  await brk('a timed-out put is reported as a failure',"else if(res.timedOut){","else if(false){",['slow put: a put that times out is NOT reported as a failure']);
+  await brk('big arrays are not chunked',"job.val.length>_SI_CACHE_BIG_ROWS)res=await _siCachePutChunked(job)","false)res=await _siCachePutChunked(job)",['chunks: 202 line items are stored as 5 chunk records']);
+  await brk('the stored shape is not bumped',"_SI_CACHE_SHAPE='2026-10-11a'","_SI_CACHE_SHAPE='2026-10-10a'",['shape: a copy written under the previous stored format']);
   await brk('the device-copy note is not drawn',"+(v.cacheNote?'<div class=\"si-fr-st pending\" id=\"si-fr-cache\" role=\"status\">'+_siEsc(v.cacheNote)+'</div>':'')","",['strip, check still running: it says the data came from the copy']);
   return s;
 };
