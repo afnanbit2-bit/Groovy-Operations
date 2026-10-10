@@ -460,6 +460,7 @@ function renderUsers(){
   <div class="card"><div class="card-title">Stage assignments</div>
     ${STAGES.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px"><span style="font-weight:500">${s.label}</span><span style="font-weight:600;color:var(--text)">${s.owner}</span></div>`).join('')}
   </div>
+  ${typeof pbUsersEntry==='function'?pbUsersEntry():''}
   <div style="height:80px"></div>`;
 }
 
