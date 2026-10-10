@@ -152,8 +152,8 @@ window.fabSaveAlerts=async function(key){
 function renderFabricInventory(){
   if(_fabInvDrillKey){return _renderFabInvDrill(_fabInvDrillKey);}
   const agg=allFabricInventory.filter(s=>s);
-  const totalKg=agg.filter(s=>(s.unit||'kg')==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
-  const totalM=agg.filter(s=>(s.unit||'kg')==='meters'||(s.unit||'kg')==='m').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const totalKg=agg.filter(s=>_fabUnitNorm(s.unit)==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const totalM=agg.filter(s=>_fabUnitNorm(s.unit)==='m').reduce((a,s)=>a+(s.totalWeight||0),0);
   const totalRolls=agg.reduce((a,s)=>a+(s.rollsCount||0),0);
   const totalReservedKg=agg.reduce((a,s)=>a+(s.reservedWeight||0),0);
   const alertCount=agg.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
@@ -607,7 +607,7 @@ function _fabUnitForSupplier(supplier){
 }
 
 function renderFabricInTab(){
-  const today=new Date().toISOString().split('T')[0];
+  const today=_fabToday();
   const fabTypes=['100% Poly Sublimation Jersey','Jersey Heavy','Terry Stock','Terry Fresh','Twill','Burbury 100% Cotton','Drill','Denim','Fleece','100% Cotton Cora Jersey','100% Cotton Terry Cora','PFGD Rigid','PFGD Lycra','Rib 1x1','Rib 2x2','Rib 2x1'];
   const suppliers=['Gul Enterprises','JR Trader','Akhlaq Sublimation','Khursheed Enterprise','Daniyal Twill'];
   return`<div class="card"><div class="card-title">Record fabric arrival</div>
@@ -1219,19 +1219,29 @@ function _fabCanLabel(){return !!(session&&(session.role==='owner'||session.u===
 // Shared receipt deletion used by BOTH the owner immediate path and the
 // approval-execution path. Removes the receipt's rolls from inventory AND
 // deletes the receipt doc in ONE transaction (no more orphaned stock), and
-// refuses if any roll has left stock (issued/reserved/returned) — those must
-// be returned first or the stock numbers would corrupt. Throws on problems so
-// callers can surface the message.
+// REFUSES — naming every roll — if any of its rolls has left stock (issued /
+// reserved / returned) or has already been drawn from by production (a partly
+// used roll): that stock has been used, so its receipt cannot quietly vanish.
+// Return the rolls to stock first. Two layers: this check on what the page holds
+// (a friendly message before anything is attempted), and the same refusal INSIDE
+// the engine's transaction on the live data (refusePartlyUsed), which is what
+// holds when another device used a roll since this page loaded. No override
+// exists for a receipt (unlike a gate pass): there is nothing to "restore".
+// Throws on problems so callers can surface the message.
 window._fabDeleteReceipt=async function(fabId){
   const f=allFabricIn.find(x=>x.id===fabId);
   if(!f)throw new Error('Fabric entry '+fabId+' not found.');
   const codes=(f.rolls||[]).map(r=>r.rollCode||r.rollNumber).filter(Boolean);
+  const used=[];
   for(const rc of codes){
     const inv=_fabFindRoll(rc);
-    const st=inv?.roll?.status||'in_stock';
-    if(inv&&st!=='in_stock')throw new Error(`${rc} is ${st.replace('_',' ')} — return it to stock before deleting ${fabId}.`);
+    if(!inv)continue;                                      // already absent from inventory: nothing of it left to protect
+    const st=inv.roll.status||'in_stock';
+    if(st!=='in_stock')used.push(`${rc} (${st.replace('_',' ')})`);
+    else if(inv.roll.partiallyConsumed||(Array.isArray(inv.roll.consumptionLog)&&inv.roll.consumptionLog.length))used.push(`${rc} (partly used)`);
   }
-  await _fabInvUpsert({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||'kg',deleteRollCodes:codes,note:`Receipt ${fabId} deleted`,sourceCol:'fabricin',sourceId:fabId,extraDeletes:[doc(db,'fabricin',fabId)]});
+  if(used.length)throw new Error(`Cannot delete ${fabId} — ${used.join(', ')} ${used.length>1?'are':'is'} no longer untouched stock. Return ${used.length>1?'them':'it'} to stock first. Nothing was deleted.`);
+  await _fabInvUpsert({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||'kg',deleteRollCodes:codes,refusePartlyUsed:true,note:`Receipt ${fabId} deleted`,sourceCol:'fabricin',sourceId:fabId,extraDeletes:[doc(db,'fabricin',fabId)]});
   allFabricIn=allFabricIn.filter(x=>x.id!==fabId);
 };
 
@@ -1541,6 +1551,19 @@ let _fabTagWork={id:null,incomplete:false,labels:[],colorIdx:null,_pendingText:'
 // Local YYYY-MM-DD. Not toISOString(), which is UTC — in PKT (UTC+5) that
 // names the previous day for anything before 5am.
 function _fabRegDayStr(d){const p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
+// Today as the LOCAL (PKT) day — what every date this file WRITES defaults to.
+function _fabToday(){return _fabRegDayStr(new Date());}
+// Units. Metres were saved as 'm' (receipts, stock buckets) and 'meters' (gate
+// passes, and any issue taken from an 'm' bucket) — and 'meter/metre/metres'
+// can turn up by hand. This is the ONE reader: every spelling of metres → 'm',
+// blank → 'kg', anything else kept (trimmed, lower-case). It is for READING —
+// comparing, grouping and totalling. Nothing stored is ever rewritten to match.
+function _fabUnitNorm(u){
+  const v=String(u==null?'':u).trim().toLowerCase();
+  if(!v||v==='kg'||v==='kgs')return'kg';
+  if(v==='m'||v==='meter'||v==='meters'||v==='metre'||v==='metres')return'm';
+  return v;
+}
 // The day an issue belongs to. `g.date` is what the card shows, so it wins;
 // a record written without one falls back to its creation timestamp.
 function _fabRegDayOf(g){
@@ -1582,10 +1605,17 @@ function _fabRegDayTotals(issues){
   issues.forEach(g=>{
     const k=_fabRegDayOf(g),t=m.get(k)||{n:0,pcs:0,bundles:0,kg:0,m:0};
     t.n++;t.pcs+=g.plannedQty||0;t.bundles+=g.totalBundles||0;
-    if((g.fabricUnit||'kg')==='kg')t.kg+=g.fabricQty||0;else t.m+=g.fabricQty||0;
+    if(_fabUnitNorm(g.fabricUnit)==='kg')t.kg+=g.fabricQty||0;else t.m+=g.fabricQty||0;
     m.set(k,t);
   });
   return m;
+}
+// Fabric out for a set of issues, SPLIT by unit: kg and metres are different
+// quantities and adding them gives a number that means nothing.
+function _fabRegUnitTotals(issues){
+  const t={kg:0,m:0};
+  issues.forEach(g=>{if(_fabUnitNorm(g.fabricUnit)==='kg')t.kg+=g.fabricQty||0;else t.m+=g.fabricQty||0;});
+  return t;
 }
 function _fabIssueRecords(){
   return (typeof allPasses!=='undefined'&&allPasses||[])
@@ -1694,7 +1724,7 @@ function _fabRegRows(issues,dayTotals){
         </div>`;
       }
     }
-    const u=_gpEsc(g.fabricUnit||'kg');
+    const u=_gpEsc(_fabUnitNorm(g.fabricUnit));
     const sizes=(g.sizeBreakdown||[]).filter(s=>s.qty).map(_fabSizeLabel).join(' · ');
     const incBadge=g.regIncomplete?'<span style="background:var(--accent-urgent-soft);color:var(--accent-urgent);font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:6px;letter-spacing:.04em">INCOMPLETE</span>':'';
     const labelChips=(g.regLabels||[]).map(l=>`<span style="background:${l.bg||'#f3f4f6'};color:${l.fg||'#374151'};font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-left:6px">${_gpEsc(l.text)}</span>`).join('');
@@ -1772,7 +1802,8 @@ function _fabRegDateBarHTML(){
 // wrong question. The caption says exactly what is being counted.
 function _fabRegStatsHTML(){
   const all=_fabIssueRecords(),shown=_fabRegFiltered();
-  const totalWeight=shown.reduce((s,g)=>s+(g.fabricQty||0),0);
+  const ut=_fabRegUnitTotals(shown);
+  const outTxt=(ut.m&&!ut.kg)?`${ut.m.toFixed(1)} m`:(ut.m?`${ut.kg.toFixed(1)} kg · ${ut.m.toFixed(1)} m`:`${ut.kg.toFixed(1)} kg`);
   const totalPcs=shown.reduce((s,g)=>s+(g.plannedQty||0),0);
   const totalBundles=shown.reduce((s,g)=>s+(g.totalBundles||0),0);
   const days=new Set(shown.map(_fabRegDayOf).filter(Boolean)).size;
@@ -1780,7 +1811,7 @@ function _fabRegStatsHTML(){
   return`<div style="display:flex;gap:8px">
       ${tile('Pieces cut',`${totalPcs.toLocaleString()} pcs`)}
       ${tile('Bundles',totalBundles.toLocaleString())}
-      ${tile('Fabric out',totalWeight.toFixed(1))}
+      ${tile('Fabric out',outTxt)}
     </div>
     <div style="font-size:12px;color:var(--muted);margin:7px 2px 0">${shown.length===all.length?`All <strong style="color:var(--text)">${all.length}</strong> issues`:`<strong style="color:var(--text)">${shown.length}</strong> of ${all.length} issues`} · ${_gpEsc(_fabRegRangeLabel())}${days>1?` · across ${days} days`:''}</div>`;
 }
@@ -1908,58 +1939,52 @@ window._fabTagSave=async function(){
   _fabBusyEnd();
   const el=document.getElementById('fab-reg-list');if(el)el.innerHTML=_fabRegListHTML();
 };
-// Reverse a fabric issue: flip its issued rolls (each fabric combo + rib) back
-// to in_stock. Handles multi-fabric issues (fabrics[]), legacy single-fabric
-// (top-level fabric*/rollCodes) and the matching rib. Returns rolls restocked.
-async function _fabRestockIssue(g){
-  const combos=[];
-  if(Array.isArray(g.fabrics)&&g.fabrics.length){
-    for(const f of g.fabrics)combos.push({fabType:f.fabType,gsm:f.gsm,color:f.color,unit:f.unit||g.fabricUnit||'kg',codes:f.rollCodes||[]});
-  }else if((g.rollCodes||[]).length){
-    combos.push({fabType:g.fabricType,gsm:g.fabricGsm,color:g.fabricColor,unit:g.fabricUnit||'kg',codes:g.rollCodes||[]});
-  }
-  if((g.ribRollCodes||[]).length&&g.ribType){
-    combos.push({fabType:g.ribType,gsm:g.ribGsm,color:g.ribColor,unit:'kg',codes:g.ribRollCodes});
-  }
-  let restocked=0;
-  for(const c of combos){
-    if(!c.codes.length||!c.fabType)continue;
-    try{
-      await _fabInvUpsert({fabType:c.fabType,gsm:c.gsm,color:c.color,unit:c.unit,returnRollCodes:c.codes,note:`Issue ${g.id} deleted — returned to stock by ${session.name}`,sourceCol:'gatepasses',sourceId:g.id});
-      restocked+=c.codes.length;
-    }catch(e){console.warn('[fabric] restock on delete failed',c,e);}
-  }
-  return restocked;
+// Deleting a fabric issue puts its rolls back through js/gatepass.js's ONE restock
+// path (_gpDeleteGatePass → _gpRestockIssue → the engine's restockRollCodes): whole
+// rolls flip back to in_stock, a partly drawn roll gets exactly its draw back, a
+// retry restores nothing twice (the roll's `drawsRestored` marker), and if ANY roll
+// cannot be put back NOTHING is deleted and the rolls are named. The old local
+// restock swallowed every failure, could not restore a partial draw and let the
+// pass be deleted anyway. The role gate for skipping unrecoverable rolls
+// (afnan/ammar/mustafa) lives inside _gpRestockIssue / _gpDeleteGatePass.
+function _fabDeleteIssueFn(){
+  return(typeof _gpDeleteGatePassOverride==='function')?_gpDeleteGatePassOverride:null;
 }
 window.fabRegDeleteAll=async function(){
   if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
   const issues=_fabIssueRecords();
   if(!issues.length){showToast('Nothing to delete.');return;}
-  if(!confirm(`Delete ALL ${issues.length} fabric issue record(s)?\n\nEvery issued roll will be RETURNED to fabric inventory (stock restored), then the records are removed. Cannot be undone.`))return;
+  if(typeof _gpDeleteGatePass!=='function'){showToast('Gate pass module not loaded — reload the page.',true);return;}
+  if(!confirm(`Delete ALL ${issues.length} fabric issue record(s)?\n\nEvery issued roll will be RETURNED to fabric inventory (stock restored), then the records are removed. An issue whose rolls cannot all be put back is left alone and listed. Cannot be undone.`))return;
   if(!_fabBusyStart('Returning to stock…'))return;
-  let n=0,rolls=0;
+  let n=0,rolls=0;const refused=[];
   for(const g of issues){
     const key=g.id||g._id;
     if(!key)continue;
-    try{rolls+=await _fabRestockIssue(g);await deleteDoc(doc(db,'gatepasses',key));n++;}catch(e){console.warn('[fabric] delete issue failed',key,e);}
+    // The plain delete (no "delete anyway" prompt per issue): a refusal is collected and named below.
+    try{const res=await _gpDeleteGatePass(key,{gp:g});rolls+=res.rolls||0;n++;}
+    catch(e){console.warn('[fabric] delete issue failed',key,e);refused.push(`${key}${e&&e.rollCodes&&e.rollCodes.length?' ('+e.rollCodes.join(', ')+')':''}`);}
   }
-  await logActivity('Fabric issues cleared',`${n} record(s) deleted by ${session.name} · ${rolls} roll(s) returned to stock`).catch(()=>{});
+  await logActivity('Fabric issues cleared',`${n} record(s) deleted by ${session.name} · ${rolls} roll(s) returned to stock${refused.length?` · NOT deleted (rolls could not be put back): ${refused.join('; ')}`:''}`).catch(()=>{});
   _fabBusyEnd();
-  showToast(`${n} issue(s) deleted ✓ · ${rolls} roll(s) returned`);
+  showToast(`${n} issue(s) deleted ✓ · ${rolls} roll(s) returned${refused.length?` · ${refused.length} left alone: ${refused.join('; ')}`:''}`,refused.length>0);
   if(typeof loadData==='function')await loadData();
   window.switchFabTab('registry');
 };
 window.fabRegDeleteOne=async function(gpId){
   if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
   const g=_fabIssueRecords().find(x=>x.id===gpId);if(!g){showToast('Entry not found.',true);return;}
+  const del=_fabDeleteIssueFn();
+  if(!del){showToast('Gate pass module not loaded — reload the page.',true);return;}
   const rollN=(g.rollCodes||[]).length+(g.ribRollCodes||[]).length;
   if(!confirm(`Delete fabric issue ${gpId} (PO ${g.poId||'—'})?\n\nThe ${rollN} issued roll(s) will be RETURNED to fabric inventory (stock restored), then this entry is removed.`))return;
   if(!_fabBusyStart('Returning to stock…'))return;
   try{
-    const restocked=await _fabRestockIssue(g);
-    await deleteDoc(doc(db,'gatepasses',gpId));
-    await logActivity('Fabric issue deleted',`${gpId} · PO ${g.poId||''} deleted by ${session.name} · ${restocked} roll(s) returned to stock`).catch(()=>{});
-    showToast(`Deleted ✓ · ${restocked} roll(s) returned to stock`);
+    // Restock first, delete the record only if every roll went back; for a roll
+    // that cannot, afnan/ammar/mustafa are asked (by name) whether to go on anyway.
+    const res=await del(gpId,{gp:g});
+    await logActivity('Fabric issue deleted',`${gpId} · PO ${g.poId||''} deleted by ${session.name} · ${res.rolls||0} roll(s) returned to stock`).catch(()=>{});
+    showToast(`Deleted ✓ · ${res.rolls||0} roll(s) returned to stock`);
   }catch(e){showToast('Delete failed: '+e.message,true);}
   _fabBusyEnd();
   if(typeof loadData==='function')await loadData();
@@ -2066,7 +2091,7 @@ window.fabExportIssueRegistry=function(){
   const rows=issues.map(g=>[
     g.date||'',g.id||'',g.poId||'',g.articleName||'',g.articleCode||'',
     g.fabricType||'',g.fabricGsm||0,g.fabricColor||'',
-    g.plannedQty||0,g.totalBundles||0,g.fabricQty||0,g.fabricUnit||'',g.rollsCount||0,
+    g.plannedQty||0,g.totalBundles||0,g.fabricQty||0,_fabUnitNorm(g.fabricUnit),g.rollsCount||0,
     g.avgConsumption||0,
     (g.sizeBreakdown||[]).filter(s=>s.qty).map(s=>`${s.size||'?'}:${s.qty}[${bstr(s)}]`).join(' | '),
     g.ribType?`${g.ribType} ${g.ribGsm||0}gsm ${g.ribColor||''}`:'',g.ribWeight||0,g.ribPct||0,
@@ -2077,11 +2102,14 @@ window.fabExportIssueRegistry=function(){
   const tot=['TOTAL','','','','','','','',
     issues.reduce((n,g)=>n+(g.plannedQty||0),0),
     issues.reduce((n,g)=>n+(g.totalBundles||0),0),
-    issues.reduce((n,g)=>n+(g.fabricQty||0),0),'','','','',
+    _fabRegUnitTotals(issues).kg,'kg','','','',
     '',issues.reduce((n,g)=>n+(g.ribWeight||0),0),'','','','','',''];
+  // Metres are their own total, never added to the kg figure above.
+  const totM=_fabRegUnitTotals(issues).m;
+  const totRowM=totM?['TOTAL (metres)','','','','','','','','','',totM,'m','','','','','','','','','','']:null;
   const[dFrom,dTo]=_fabRegDateBounds();
   const base='fabric-issue-registry'+(dFrom||dTo?`-${dFrom||'start'}_to_${dTo||'latest'}`:'');
-  _fabXlsx([header,...rows,[],tot],'Fabric Issues',base);
+  _fabXlsx([header,...rows,[],tot,...(totRowM?[totRowM]:[])],'Fabric Issues',base);
   showToast(`Exported ${issues.length} issue${issues.length===1?'':'s'} · ${_fabRegRangeLabel()} ✓`);
 };
 
@@ -2709,7 +2737,7 @@ window.submitFabricIssue=async function(){
   const articleName=(document.getElementById('fab-iss-article')?.value||'').trim();
   const articleCode=(document.getElementById('fab-iss-code')?.value||'').trim();
   const dest='Factory';                                  // issued to production, not a vendor
-  const date=new Date().toISOString().split('T')[0];     // auto date
+  const date=_fabToday();                                // auto date — the PKT day, never the UTC one
   if(!po){showToast('Enter or pick a PO (required).',true);return;}
   if(!articleName){showToast('Enter the article name.',true);return;}
   if(!articleCode){showToast('Enter the article code.',true);return;}
@@ -2760,21 +2788,23 @@ window.submitFabricIssue=async function(){
     // The gate pass IS the fabric-issue registry record. Top-level fabric* keep
     // the PRIMARY (first) fabric for back-compat; fabricQty/fabricUsed are the
     // TOTAL across all fabrics; the full per-fabric split lives in `fabrics`.
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,partialRolls,partialCount:partialRolls.length,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
-    // Decrement each fabric combo. The FIRST commits the gate-pass doc in its
-    // own transaction (atomic with the primary decrement); the rest are
-    // best-effort like rib, warning on any failure.
-    for(let i=0;i<groups.length;i++){
-      const g=groups[i];const codes=g.rolls.map(r=>r.rollCode);
-      const opts={fabType:g.stock.fabType,gsm:g.stock.gsm,color:g.stock.color,unit:g.stock.unit||fabUnit,removeRollCodes:codes,partialUse,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`,sourceCol:'gatepasses',sourceId:gpId};
-      if(i===0){opts.extraWrites=[{ref:doc(db,'gatepasses',gpId),data:payload}];await _fabInvUpsert(opts);}
-      else{try{await _fabInvUpsert(opts);}catch(e){showToast(`Issued, but decrement for ${g.stock.color} failed: ${e.message}`,true);}}
-    }
-    // Decrement the rib inventory too (separate combo → separate transaction).
+    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,partialRolls,partialCount:partialRolls.length,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:_fabUnitNorm(fabUnit)==='kg'?fabQty:0,totalLength:_fabUnitNorm(fabUnit)==='m'?fabQty:0};
+    // ONE transaction for the whole issue: every fabric combo's roll take, the
+    // matching rib and the gate-pass doc commit together or not at all. The first
+    // combo is the engine's own bucket and carries the gate pass (extraWrites);
+    // the others ride in moreBuckets. A roll that is gone from ANY of them aborts
+    // everything — nothing is consumed, no pass is written — and the error names
+    // every roll that was unavailable. (tolerateMissing is never used on an issue.)
+    const buckets=groups.map(g=>({fabType:g.stock.fabType,gsm:g.stock.gsm,color:g.stock.color,unit:g.stock.unit||fabUnit,removeRollCodes:g.rolls.map(r=>r.rollCode),partialUse,reservePO:po,note:`Issued to factory for ${po} by ${session.name}`}));
+    // The rib is one more bucket — unless it is the SAME inventory doc as a fabric
+    // above (then its rolls simply join that bucket: one doc can only be read once).
     if(ribStock&&ribCodes.length){
-      try{ await _fabInvUpsert({fabType:ribStock.fabType,gsm:ribStock.gsm,color:ribStock.color,unit:ribStock.unit||'kg',removeRollCodes:ribCodes,reservePO:po,note:`Rib issued with ${article} for ${po}`,sourceCol:'gatepasses',sourceId:gpId}); }
-      catch(e){ showToast('Fabric issued, but rib decrement failed: '+e.message,true); }
+      const ribHit=buckets.find(b=>_fabInvKey(b.fabType,b.gsm,b.color)===_fabInvKey(ribStock.fabType,ribStock.gsm,ribStock.color));
+      if(ribHit)ribHit.removeRollCodes=[...new Set([...ribHit.removeRollCodes,...ribCodes])];
+      else buckets.push({fabType:ribStock.fabType,gsm:ribStock.gsm,color:ribStock.color,unit:ribStock.unit||'kg',removeRollCodes:ribCodes,reservePO:po,note:`Rib issued with ${article} for ${po}`});
     }
+    const [mainBucket,...moreBuckets]=buckets;
+    await _fabInvUpsert({...mainBucket,moreBuckets,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
     await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${cutQty?` · cut ${cutQty} pcs / ${totalBundles} bundles`:''}${partialRolls.length?` · ${partialRolls.length} partial (roll kept in stock)`:''}${ribCodes.length?` · rib ${ribWeight}kg`:''} by ${session.name}`);
     // The issue is what tells the Embellishment Department a job is coming:
     // which PO, which fabric, which article and the planned cut per size. It
@@ -3152,7 +3182,7 @@ function renderFabricReportsTab(){
   const received=agg(sub('receipt')),issued=agg(sub('issue')),returned=agg(sub('return_out')),edited=agg(sub('edit')),deleted=agg(sub('delete'));
   const fabrics=allFabricInventory.length;
   const rollsNow=allFabricInventory.reduce((a,s)=>a+(s.rollsCount||0),0);
-  const kg=allFabricInventory.filter(s=>(s.unit||'kg')==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
+  const kg=allFabricInventory.filter(s=>_fabUnitNorm(s.unit)==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
   const lvls=allFabricInventory.map(_fabAlertLevel);
   const crit=lvls.filter(l=>l.label==='Critical'||l.label==='Out of stock').length;
   const low=lvls.filter(l=>l.label==='Low'||l.label==='Very low').length;
@@ -3178,7 +3208,7 @@ function renderFabricReportsTab(){
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:${_fabRptPeriod==='custom'?'8':'0'}px">
       ${periods.map(([k,l])=>chip(k,l)).join('')}
     </div>
-    ${_fabRptPeriod==='custom'?`<input type="date" value="${_fabRptDate||new Date().toISOString().slice(0,10)}" onchange="window.fabRptSetDate(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px">`:''}
+    ${_fabRptPeriod==='custom'?`<input type="date" value="${_fabRptDate||_fabToday()}" onchange="window.fabRptSetDate(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px">`:''}
   </div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
     ${card('Received','#16a34a',received)}
@@ -3288,7 +3318,7 @@ function _fabXlsx(aoa,sheetName,fileBase){
   if(typeof XLSX==='undefined'){showToast('Excel library not loaded.',true);return;}
   const ws=XLSX.utils.aoa_to_sheet(aoa);const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,sheetName);
-  XLSX.writeFile(wb,`${fileBase}-${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb,`${fileBase}-${_fabToday()}.xlsx`);
 }
 
 window.fabExportStock=function(){

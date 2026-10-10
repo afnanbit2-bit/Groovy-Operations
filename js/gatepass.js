@@ -831,6 +831,16 @@ function renderReturnsList(){
 // (the rule above) — better a refused delete than a silent loss of weight.
 // The bucket's stored `unit` is never rewritten by a restock.
 //
+// ── moreBuckets — ONE issue, ALL its fabrics, ONE transaction ───────────────
+//   moreBuckets:[{fabType,gsm,color,unit,removeRollCodes,partialUse,reservePO,note}]
+// Only with removeRollCodes. The call's own fabType/gsm/color is the first bucket;
+// each entry here is another inventory doc (a 2-tone issue, the matching rib) taken
+// in the SAME transaction as the first and as the caller's extraWrites (the gate
+// pass). If a roll in ANY bucket is unavailable the whole call aborts with ONE
+// error naming every such roll: no bucket is touched and the pass is not written.
+// Two buckets must be different inventory docs (merge rolls of one fabric into one
+// entry). RESULT gains `more:[{key,movCodes,movQty}]`, one per extra bucket.
+//
 // RESULT  {movCodes,movQty,skipped,restock}  (the first two as before; `restock`
 // is null except for restockRollCodes: {returned,restoredPartial,alreadyInStock,
 // elsewhere} — arrays of roll codes / {rollCode,weightBefore,restoredWeight,weightAfter}).
@@ -860,11 +870,18 @@ function _fabFindDraw(r,gpId,d){
 function _fabDrawRestored(r,gpId,d){
   return (Array.isArray(r&&r.drawsRestored)?r.drawsRestored:[]).some(x=>x&&x.gp===gpId&&(d.weight==null||Math.abs((parseFloat(x.weight)||0)-d.weight)<=0.005));
 }
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,restockRollCodes,restockDraws,tolerateMissing,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,refusePartlyUsed,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,restockRollCodes,restockDraws,moreBuckets,tolerateMissing,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
   const key=_fabInvKey(fabType,gsm,color);
   const invRef=doc(db,'fabric_inventory',key);
   const movRef=doc(collection(db,'fabric_movements'));  // stable id across tx retries
-  let outPayload=null,outMov=null,outSkipped=[],outRestock=null;
+  // moreBuckets (issue only) — see the header: the other fabrics of ONE issue,
+  // taken in this same transaction. Every bucket must be a different inventory doc.
+  const extras=(Array.isArray(moreBuckets)&&Array.isArray(removeRollCodes))?moreBuckets.filter(b=>b&&Array.isArray(b.removeRollCodes)):[];
+  const exKeys=extras.map(b=>_fabInvKey(b.fabType,b.gsm,b.color));
+  if(new Set([key,...exKeys]).size!==exKeys.length+1)throw new Error('An issue names the same fabric twice — merge its rolls into one entry.');
+  const exRefs=exKeys.map(k=>doc(db,'fabric_inventory',k));
+  const exMovRefs=extras.map(()=>doc(collection(db,'fabric_movements')));
+  let outPayload=null,outMov=null,outSkipped=[],outRestock=null,outExtras=[];
   // One Firestore transaction: read the LIVE inventory fresh (not stale local
   // memory) so concurrent receive/issue/return can't clobber each other
   // (last-write-wins), and commit the aggregate + movement + any caller docs
@@ -873,54 +890,33 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
   // callback: Firestore re-runs it on contention, and a retry must start clean.
   await runTransaction(db,async tx=>{
     const snap=await tx.get(invRef);
+    // Every read comes before any write (a Firestore rule): the other buckets of a
+    // multi-fabric issue are read here, right after the first.
+    const exSnaps=[];for(const r of exRefs)exSnaps.push(await tx.get(r));
     const rolls=Array.isArray(snap.data()?.rolls)?snap.data().rolls.map(r=>({...r})):[];
     let movType='out',movSub='',movQty=0;const movCodes=[];let partialLog=null;
     let skipped=[],restock=null;
+    const exWork=[];
     const findRoll=(rc,statuses)=>rolls.find(r=>r.rollCode===rc&&statuses.includes(r.status||'in_stock'));
     if(Array.isArray(addRolls)){
       for(const r of addRolls){rolls.push({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm||gsm||0,unit:r.unit||unit,status:'in_stock',sourceFabId:r.sourceFabId||sourceId,addedAt:Date.now(),addedBy:session.name});movQty+=r.weight||0;movCodes.push(r.rollCode);}
       movType='in';movSub='receipt';
     }else if(Array.isArray(removeRollCodes)){
-      // Every named roll must be issuable BEFORE any of them is touched.
-      const want=[...new Set(removeRollCodes)];            // a code named twice is one roll, never drawn twice
-      const gone=want.filter(rc=>!findRoll(rc,['in_stock','reserved']));
+      // Every named roll — in EVERY bucket of the issue — must be issuable BEFORE
+      // the transaction may commit. All the work is on copies, so a refusal in the
+      // second fabric leaves the first one untouched and writes nothing.
+      const first=_fabApplyIssue(rolls,{removeRollCodes,partialUse,reservePO,tolerateMissing,sourceCol,sourceId});
+      const gone=first.gone.slice();
+      extras.forEach((b,i)=>{
+        const xr=Array.isArray(exSnaps[i].data()?.rolls)?exSnaps[i].data().rolls.map(r=>({...r})):[];
+        const res=_fabApplyIssue(xr,{removeRollCodes:b.removeRollCodes,partialUse:b.partialUse,reservePO:b.reservePO!=null?b.reservePO:reservePO,tolerateMissing,sourceCol,sourceId});
+        gone.push(...res.gone);exWork.push({b,i,rolls:xr,res});
+      });
       if(gone.length&&!tolerateMissing){
-        throw _fabInvError('issue',gone.map(rc=>{const x=rolls.find(r=>r.rollCode===rc);return{code:rc,why:x?String(x.status||'in_stock').replace('_',' '):'not in inventory'};}),
+        throw _fabInvError('issue',gone,
           gone.length>1?'they are no longer available in stock (already issued, used, or removed by someone else).':'it is no longer available in stock (already issued, used, or removed by someone else).');
       }
-      skipped=gone;
-      for(const rc of want){
-        const r=findRoll(rc,['in_stock','reserved']);
-        if(!r)continue;                                    // only reachable with tolerateMissing:true
-        const po=reservePO||r.reservedPO||'';
-        const before=r.weight||0;
-        let use=before;
-        if(partialUse&&partialUse[rc]!=null){const v=parseFloat(partialUse[rc]);if(!isNaN(v))use=Math.max(0,Math.min(v,before));}
-        const leftover=parseFloat((before-use).toFixed(2));
-        if(leftover>0){
-          // PARTIAL DRAW — only `use` went to production; the SAME roll stays in
-          // stock at its reduced weight (one physical roll, one barcode). The
-          // printed label weight is now stale → flag for reprint. A running
-          // consumption log records every PO the roll has fed. Repeat draws just
-          // shrink it further (40→20→5); no second code is ever minted.
-          // The entry also names the gate pass that drew it (`gp`) so deleting
-          // that pass can put exactly this weight back (restockRollCodes).
-          r.originalWeight=r.originalWeight||before;
-          r.weight=leftover;
-          r.status='in_stock';delete r.reservedPO;
-          r.partiallyConsumed=true;
-          r.labelStale=true;
-          r.consumptionLog=Array.isArray(r.consumptionLog)?r.consumptionLog.slice():[];
-          r.consumptionLog.push({po,weight:use,ts:Date.now(),by:session.name,...((sourceCol==='gatepasses'&&sourceId)?{gp:sourceId}:{})});
-          r.lastDrawAt=Date.now();
-          (partialLog=partialLog||[]).push({rollCode:rc,weightBefore:before,usedWeight:use,weightAfter:leftover});
-        }else{
-          // Whole roll (or a sub-scrap leftover the caller rounded up) — the roll
-          // leaves stock exactly as before.
-          r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=po;delete r.reservedPO;
-        }
-        movQty+=use;movCodes.push(rc);
-      }
+      skipped=first.skipped;movQty=first.movQty;movCodes.push(...first.movCodes);partialLog=first.partialLog;
       movType='out';movSub='issue';
     }else if(Array.isArray(relabelRollCodes)){
       // Barcode/label reprinted for a partially-used roll — same code, current
@@ -933,13 +929,17 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
       // roll that exists but is in use (issued / reserved / returned) aborts the
       // transaction — the caller's receipt doc must not be deleted while its
       // roll is still out there. A roll that is already absent is tolerated.
-      const inUse=deleteRollCodes.map(rc=>rolls.find(r=>r.rollCode===rc)).filter(r=>r&&(r.status||'in_stock')!=='in_stock');
+      // refusePartlyUsed:true (a RECEIPT delete) also refuses an in-stock roll that
+      // production has already drawn from — its used weight is on a gate pass and
+      // deleting the receipt would erase the record of where it went.
+      const partlyUsed=r=>!!refusePartlyUsed&&(r.status||'in_stock')==='in_stock'&&(r.partiallyConsumed||(Array.isArray(r.consumptionLog)&&r.consumptionLog.length>0));
+      const inUse=deleteRollCodes.map(rc=>rolls.find(r=>r.rollCode===rc)).filter(r=>r&&((r.status||'in_stock')!=='in_stock'||partlyUsed(r)));
       if(inUse.length&&!tolerateMissing){
-        throw _fabInvError('delete',inUse.map(r=>({code:r.rollCode,why:String(r.status).replace('_',' ')})),
+        throw _fabInvError('delete',inUse.map(r=>({code:r.rollCode,why:(r.status||'in_stock')==='in_stock'?'partly used':String(r.status).replace('_',' ')})),
           inUse.length>1?'they are in use, not in stock.':'it is in use, not in stock.');
       }
       skipped=inUse.map(r=>r.rollCode);
-      for(const rc of deleteRollCodes){const i=rolls.findIndex(r=>r.rollCode===rc&&(r.status||'in_stock')==='in_stock');if(i>=0){movQty+=rolls[i].weight||0;movCodes.push(rc);rolls.splice(i,1);}}
+      for(const rc of deleteRollCodes){const i=rolls.findIndex(r=>r.rollCode===rc&&(r.status||'in_stock')==='in_stock'&&!partlyUsed(r));if(i>=0){movQty+=rolls[i].weight||0;movCodes.push(rc);rolls.splice(i,1);}}
       movType='out';movSub='delete';
     }else if(Array.isArray(editRolls)){
       // Correct an in-stock roll's weight/gsm/QC in place (owner roll edit).
@@ -1030,13 +1030,9 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     }
     // Aggregate: "stock" = AVAILABLE (in_stock) only, for BOTH weight and count,
     // so the two never disagree; reserved is tracked separately (it's spoken for).
-    const inStock=rolls.filter(r=>(r.status||'in_stock')==='in_stock');
-    const reserved=rolls.filter(r=>r.status==='reserved');
-    const totalWeight=parseFloat(inStock.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
-    const reservedWeight=parseFloat(reserved.reduce((s,r)=>s+(r.weight||0),0).toFixed(2));
     // A restock never changes what the bucket IS — keep its stored unit.
     const bucketUnit=(restock&&snap.exists()&&snap.data()&&snap.data().unit)||unit||'kg';
-    const payload={key,fabType,gsm:Number(gsm)||0,color,unit:bucketUnit,rolls,totalWeight,reservedWeight,rollsCount:inStock.length,reservedCount:reserved.length,lastMovementAt:Date.now()};
+    const payload=_fabInvBucketPayload(key,fabType,gsm,color,bucketUnit,rolls);
     const movDoc={id:movRef.id,ts:Date.now(),type:movType,subtype:movSub,fabType,gsm:Number(gsm)||0,color,unit:bucketUnit,qty:parseFloat(movQty.toFixed(2)),rollCodes:movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
     if(partialLog)movDoc.partialRolls=partialLog;   // per-roll partial-usage detail for the log/reports
     if(restock&&restock.restoredPartial.length)movDoc.partialRestored=restock.restoredPartial;
@@ -1044,9 +1040,19 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     // inventory or movement row; the caller's own writes / deletes still commit.
     const touched=!restock||movCodes.length>0;
     if(touched){tx.set(invRef,payload,{merge:true});tx.set(movRef,movDoc);}
+    const exOut=[];
+    exWork.forEach(w=>{
+      const bk=exKeys[w.i],bu=w.b.unit||unit||'kg';
+      const p=_fabInvBucketPayload(bk,w.b.fabType,w.b.gsm,w.b.color,bu,w.rolls);
+      const m={id:exMovRefs[w.i].id,ts:Date.now(),type:'out',subtype:'issue',fabType:w.b.fabType,gsm:Number(w.b.gsm)||0,color:w.b.color,unit:bu,qty:parseFloat(w.res.movQty.toFixed(2)),rollCodes:w.res.movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:w.b.note||note||''};
+      if(w.res.partialLog)m.partialRolls=w.res.partialLog;
+      tx.set(exRefs[w.i],p,{merge:true});tx.set(exMovRefs[w.i],m);
+      exOut.push({key:bk,payload:p,mov:m,ref:exMovRefs[w.i]});
+      skipped=skipped.concat(w.res.skipped);
+    });
     if(Array.isArray(extraWrites))for(const w of extraWrites){if(w&&w.ref&&w.data){if(w.merge)tx.set(w.ref,w.data,{merge:true});else tx.set(w.ref,w.data);}}
     if(Array.isArray(extraDeletes))for(const dref of extraDeletes){if(dref)tx.delete(dref);}
-    outPayload=touched?payload:null;outMov=touched?movDoc:null;outSkipped=skipped;outRestock=restock;
+    outPayload=touched?payload:null;outMov=touched?movDoc:null;outSkipped=skipped;outRestock=restock;outExtras=exOut;
   });
   // Sync in-memory caches to the committed state.
   if(outPayload){
@@ -1054,7 +1060,70 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     if(existing)Object.assign(existing,outPayload);else allFabricInventory.push({...outPayload,_id:key});
   }
   if(outMov)allFabricMovements.unshift({...outMov,_id:movRef.id});
-  return{movCodes:outMov?outMov.rollCodes:[],movQty:outMov?outMov.qty:0,skipped:outSkipped,restock:outRestock};
+  for(const x of outExtras){
+    const ex=allFabricInventory.find(v=>v._id===x.key);
+    if(ex)Object.assign(ex,x.payload);else allFabricInventory.push({...x.payload,_id:x.key});
+    allFabricMovements.unshift({...x.mov,_id:x.ref.id});
+  }
+  const result={movCodes:outMov?outMov.rollCodes:[],movQty:outMov?outMov.qty:0,skipped:outSkipped,restock:outRestock};
+  if(outExtras.length)result.more=outExtras.map(x=>({key:x.key,movCodes:x.mov.rollCodes,movQty:x.mov.qty}));
+  return result;
+}
+
+// The in-stock / reserved aggregate of one bucket — one definition for the main
+// bucket and the other buckets of a multi-fabric issue.
+function _fabInvBucketPayload(key,fabType,gsm,color,unit,rolls){
+  const inStock=rolls.filter(r=>(r.status||'in_stock')==='in_stock');
+  const reserved=rolls.filter(r=>r.status==='reserved');
+  return{key,fabType,gsm:Number(gsm)||0,color,unit,rolls,
+    totalWeight:parseFloat(inStock.reduce((s,r)=>s+(r.weight||0),0).toFixed(2)),
+    reservedWeight:parseFloat(reserved.reduce((s,r)=>s+(r.weight||0),0).toFixed(2)),
+    rollsCount:inStock.length,reservedCount:reserved.length,lastMovementAt:Date.now()};
+}
+// Take the named rolls out of ONE bucket's roll array (a working copy), for an
+// issue. Returns {gone,skipped,movQty,movCodes,partialLog}. A roll that cannot be
+// issued is listed in `gone` ({code,why}) and — unless tolerateMissing — NOTHING
+// is touched; the caller decides whether to throw. Never reads or writes Firestore.
+function _fabApplyIssue(rolls,{removeRollCodes,partialUse,reservePO,tolerateMissing,sourceCol,sourceId}){
+  const findRoll=(rc,statuses)=>rolls.find(r=>r.rollCode===rc&&statuses.includes(r.status||'in_stock'));
+  const want=[...new Set(removeRollCodes)];                // a code named twice is one roll, never drawn twice
+  const goneCodes=want.filter(rc=>!findRoll(rc,['in_stock','reserved']));
+  const gone=goneCodes.map(rc=>{const x=rolls.find(r=>r.rollCode===rc);return{code:rc,why:x?String(x.status||'in_stock').replace('_',' '):'not in inventory'};});
+  const out={gone,skipped:goneCodes,movQty:0,movCodes:[],partialLog:null};
+  if(gone.length&&!tolerateMissing)return out;
+  for(const rc of want){
+    const r=findRoll(rc,['in_stock','reserved']);
+    if(!r)continue;                                        // only reachable with tolerateMissing:true
+    const po=reservePO||r.reservedPO||'';
+    const before=r.weight||0;
+    let use=before;
+    if(partialUse&&partialUse[rc]!=null){const v=parseFloat(partialUse[rc]);if(!isNaN(v))use=Math.max(0,Math.min(v,before));}
+    const leftover=parseFloat((before-use).toFixed(2));
+    if(leftover>0){
+      // PARTIAL DRAW — only `use` went to production; the SAME roll stays in
+      // stock at its reduced weight (one physical roll, one barcode). The
+      // printed label weight is now stale → flag for reprint. A running
+      // consumption log records every PO the roll has fed. Repeat draws just
+      // shrink it further (40→20→5); no second code is ever minted.
+      // The entry also names the gate pass that drew it (`gp`) so deleting
+      // that pass can put exactly this weight back (restockRollCodes).
+      r.originalWeight=r.originalWeight||before;
+      r.weight=leftover;
+      r.status='in_stock';delete r.reservedPO;
+      r.partiallyConsumed=true;
+      r.labelStale=true;
+      r.consumptionLog=Array.isArray(r.consumptionLog)?r.consumptionLog.slice():[];
+      r.consumptionLog.push({po,weight:use,ts:Date.now(),by:session.name,...((sourceCol==='gatepasses'&&sourceId)?{gp:sourceId}:{})});
+      r.lastDrawAt=Date.now();
+      (out.partialLog=out.partialLog||[]).push({rollCode:rc,weightBefore:before,usedWeight:use,weightAfter:leftover});
+    }else{
+      // Whole roll (or a sub-scrap leftover the caller rounded up) — the roll
+      // leaves stock exactly as before.
+      r.status='issued';r.issuedAt=Date.now();r.issuedBy=session.name;r.issuedTo=sourceId;r.issuedPO=po;delete r.reservedPO;
+    }
+    out.movQty+=use;out.movCodes.push(rc);
+  }
+  return out;
 }
 
 // Next free remnant suffix (-A,-B,…) for a parent roll code.
