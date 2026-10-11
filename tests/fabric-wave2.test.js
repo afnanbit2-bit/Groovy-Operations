@@ -14,6 +14,15 @@
      4  every date fabric.js writes is the PKT day, not the UTC one.
      5  a receipt cannot be deleted once rolls from it were used — named, never
         silent — on the page's data AND on the live data inside the transaction.
+     6  (wave 2b) the GP NUMBER is minted inside the issue transaction: a refused
+        or failed issue leaves counters/main untouched, a good one moves it by
+        exactly one in the same commit, and a counter that lags behind a pass
+        that exists can never overwrite it (floor + the in-transaction exists check).
+     7  (wave 2b) 'm' is metres in the gate-pass edit label, the edit totals, the
+        legacy PDF label and the outward fabric picker — read-only, nothing stored
+        is rewritten.
+     8  (wave 2b) Delete-all with many refused issues: the toast names the first 3
+        and "and N more"; the activity log keeps the full list with the rolls.
 
    The Firestore stand-in is a real transaction (writes buffered, applied only if
    the callback resolves), so "nothing was written" is something this file can
@@ -21,6 +30,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 'use strict';
 const {loadApp,suite}=require('./harness');
+const {installMint}=require('./mint-helper');
 
 const clone=x=>x===undefined?undefined:JSON.parse(JSON.stringify(x));
 const J=x=>JSON.stringify(x);
@@ -33,7 +43,9 @@ const K3='rib__250gsm__black';
 
 function makeFs(){
   const store=new Map();
-  const counters={};
+  // counters/main lives IN the store now (the gate pass number is minted inside the
+  // issue transaction); `counters.gatepasses` reads it back.
+  const counters=new Proxy({},{get:(_t,f)=>{const c=store.get('counters/main');return c?c[f]:undefined;}});
   const stats={tx:0};
   let auto=0;
   const ref=path=>({path,id:path.split('/').pop()});
@@ -66,7 +78,8 @@ function makeFs(){
     setDoc:async(r,data)=>{store.set(r.path,clone(data));},
     updateDoc:async(r,data)=>{if(!store.has(r.path))throw new Error('No document to update: '+r.path);store.set(r.path,Object.assign({},store.get(r.path),clone(data)));},
     deleteDoc:async r=>{store.delete(r.path);},
-    getNextId:async field=>{await new Promise(r=>setTimeout(r,0));counters[field]=(counters[field]||0)+1;return counters[field];}
+    // The server list, for _gpFloorNow when the page has not loaded the passes.
+    getDocs:async c=>({metadata:{fromCache:false},docs:[...store.keys()].filter(k=>k.startsWith(c.__coll+'/')).map(k=>({id:k.split('/').pop(),data:()=>clone(store.get(k))}))})
   };
   return{store,counters,stats,api,keys:prefix=>[...store.keys()].filter(k=>k.startsWith(prefix))};
 }
@@ -85,6 +98,7 @@ function app(opts){
     confirm:m=>{a.state.confirms.push(String(m));return !/Delete \S+ anyway/.test(String(m));}
   },opts.globals||{})});
   a.fs=fs;
+  installMint(a);
   return a;
 }
 // A bucket in the fake Firestore AND the page's in-memory copy.
@@ -279,7 +293,8 @@ module.exports=async function(){
     await a.run('window.fabRegDeleteAll()');
     s.ok('the restockable issue is deleted',!a.fs.store.has('gatepasses/GP-011'));
     s.ok('the one with a missing roll is kept',a.fs.store.has('gatepasses/GP-010'));
-    s.ok('and named in the toast with its roll',/GP-010/.test(lastToast(a))&&/B1/.test(lastToast(a)),lastToast(a));
+    s.ok('and named in the toast',/GP-010/.test(lastToast(a)),lastToast(a));
+    s.ok('its roll is named in the activity log (the toast carries issue numbers only)',a.state.activity.some(x=>x.action==='Fabric issues cleared'&&/GP-010 \(B1\)/.test(x.detail)),J(a.state.activity));
   }
 
   // ═══ 3 — one unit for metres ═══════════════════════════════════════════
@@ -430,6 +445,204 @@ module.exports=async function(){
     J1(a,[roll('R1',12,{partiallyConsumed:true,consumptionLog:[{po:'PO-7',weight:8,ts:5000}]})]);
     await a.run("_fabInvUpsert({fabType:'Jersey',gsm:220,color:'Black',unit:'kg',deleteRollCodes:['R1'],sourceCol:'fabric_inventory',sourceId:'x'})");
     s.eq('a roll-level delete of a partly used in-stock roll still goes through (owner action, as before)',(inv(a,K1).rolls||[]).length,0);
+  }
+
+  // ═══ 6 — the GP number is minted INSIDE the issue transaction (wave 2b) ═
+  const counterOf=a=>a.fs.store.get('counters/main');
+  const snap=a=>J([...a.fs.store.entries()]);
+  const twoFabrics=(a,gone)=>{
+    J1(a,[roll('A1',10),roll('A2',20)]);
+    T2(a,[roll('B1',30),roll('B2',40,{status:'issued',issuedTo:'GP-050'})],[roll('B1',30),roll('B2',40)]);
+    pick(a,[{key:K1,type:'Jersey',gsm:220,color:'Black',code:'A1',weight:10},{key:K2,type:'Twill',gsm:300,color:'Navy',code:gone?'B2':'B1',weight:gone?40:30}]);
+  };
+  s.section('6 — a REFUSED issue (a roll is gone) leaves counters/main exactly as it was');
+  {
+    const a=app();
+    a.fs.store.set('counters/main',{pos:3,gatepasses:5,bundles:2});
+    twoFabrics(a,true);
+    const before=snap(a);
+    await a.run('window.submitFabricIssue()');
+    s.eq('the whole store is byte-identical — counter included',snap(a),before);
+    s.eq('gatepasses counter still 5',counterOf(a).gatepasses,5);
+    s.ok('the refusal names the roll',/B2/.test(lastToast(a)),lastToast(a));
+    // with no counters document at all, a refusal must not create one
+    const b=app();
+    twoFabrics(b,true);
+    await b.run('window.submitFabricIssue()');
+    s.ok('no counters/main is created by a refused issue',!b.fs.store.has('counters/main'),J(counterOf(b)));
+    // the retry after the roll problem is fixed gets the number the refusal did not spend
+    b.fs.store.get('fabric_inventory/'+K2).rolls[1]=roll('B2',40);
+    await b.run('window.submitFabricIssue()');
+    s.ok('the retry is GP-001 — the refusal burned nothing',b.fs.store.has('gatepasses/GP-001'),b.fs.keys('gatepasses/').join(','));
+  }
+  s.section('6 — a FAILED commit (network lost mid-transaction) spends no number');
+  {
+    const a=app();
+    a.fs.store.set('counters/main',{pos:0,gatepasses:7,bundles:0});
+    twoFabrics(a,false);
+    const orig=a.ctx.runTransaction;
+    a.ctx.runTransaction=async(d,fn)=>orig(d,async tx=>{await fn(tx);throw new Error('network lost before commit');});
+    const before=snap(a);
+    await a.run('window.submitFabricIssue()');
+    s.ok('the error is shown',/network lost/.test(lastToast(a)),lastToast(a));
+    s.eq('nothing changed: counter, pass, stock',snap(a),before);
+    a.ctx.runTransaction=orig;
+    await a.run('window.submitFabricIssue()');
+    s.ok('the next press issues GP-008 — 7 was never spent',a.fs.store.has('gatepasses/GP-008'),a.fs.keys('gatepasses/').join(','));
+  }
+  s.section('6 — a GOOD issue moves the counter by exactly one, in the same commit as the roll takes');
+  {
+    const a=app();
+    a.fs.store.set('counters/main',{pos:3,gatepasses:5,bundles:2});
+    twoFabrics(a,false);
+    await a.run('window.submitFabricIssue()');
+    s.eq('counter 5 → 6, other counters untouched',J(counterOf(a)),J({pos:3,gatepasses:6,bundles:2}));
+    s.ok('the pass is GP-006',a.fs.store.has('gatepasses/GP-006'));
+    s.eq('the pass document carries its own id',a.fs.store.get('gatepasses/GP-006').id,'GP-006');
+    s.eq('ONE transaction did the counter, the pass and both fabrics',a.fs.stats.tx,1);
+    s.eq('rolls name the pass',rollOf(a,K1,'A1').issuedTo+'|'+rollOf(a,K2,'B1').issuedTo,'GP-006|GP-006');
+    s.ok('movements are stamped with the minted id',movs(a).length===2&&movs(a).every(m=>m.sourceId==='GP-006'),J(movs(a).map(m=>m.sourceId)));
+    s.ok('the success toast names it',/GP-006 issued/.test(lastToast(a)),lastToast(a));
+    s.ok('the activity row names it',a.state.activity.some(x=>x.action==='Fabric issued'&&/^GP-006 /.test(x.detail)),J(a.state.activity));
+    const b=app();
+    twoFabrics(b,false);
+    await b.run('window.submitFabricIssue()');
+    s.eq('with no counters document the first issue creates it at 1',counterOf(b)&&counterOf(b).gatepasses,1);
+    s.ok('and is GP-001',b.fs.store.has('gatepasses/GP-001'));
+  }
+
+  s.section('6 — a counter that LAGS behind a pass that exists never overwrites it (floor)');
+  {
+    const a=app();
+    a.fs.store.set('counters/main',{pos:0,gatepasses:4,bundles:0});
+    const old={id:'GP-005',ts:1,gpType:'garments',article:'KEEP ME',date:'2026-10-01'},hi={id:'GP-009',ts:2,gpType:'garments',article:'AND ME',date:'2026-10-02'};
+    [old,hi].forEach(g=>{a.fs.store.set('gatepasses/'+g.id,clone(g));a.ctx.allPasses.push(clone(g));});
+    twoFabrics(a,false);
+    await a.run('window.submitFabricIssue()');
+    s.ok('minted ABOVE the highest pass on file: GP-010',a.fs.store.has('gatepasses/GP-010'),a.fs.keys('gatepasses/').join(','));
+    s.eq('GP-005 is untouched',J(a.fs.store.get('gatepasses/GP-005')),J(old));
+    s.eq('GP-009 is untouched',J(a.fs.store.get('gatepasses/GP-009')),J(hi));
+    s.eq('the counter is lifted to 10',counterOf(a).gatepasses,10);
+  }
+  {
+    // The page has NOT loaded the passes: the floor is read from the server list.
+    const a=app();
+    a.fs.store.set('counters/main',{pos:0,gatepasses:0,bundles:0});
+    a.fs.store.set('gatepasses/GP-003',{id:'GP-003',article:'ON THE SERVER'});
+    twoFabrics(a,false);
+    await a.run('window.submitFabricIssue()');
+    s.ok('with an empty page list the server list sets the floor: GP-004',a.fs.store.has('gatepasses/GP-004'),a.fs.keys('gatepasses/').join(','));
+    s.eq('GP-003 untouched',a.fs.store.get('gatepasses/GP-003').article,'ON THE SERVER');
+  }
+  {
+    // A page list that is STALE (a pass made elsewhere): the in-transaction exists check is the backstop.
+    const a=app();
+    a.fs.store.set('counters/main',{pos:0,gatepasses:2,bundles:0});
+    a.fs.store.set('gatepasses/GP-003',{id:'GP-003',article:'MADE ON ANOTHER PHONE'});
+    a.ctx.allPasses.push({id:'GP-002',article:'x'});
+    twoFabrics(a,false);
+    const before=snap(a);
+    await a.run('window.submitFabricIssue()');
+    s.ok('refused: the id is taken',/GP-003 already exists/.test(lastToast(a)),lastToast(a));
+    s.eq('nothing at all changed — GP-003 not overwritten, counter not moved, no roll taken',snap(a),before);
+  }
+  {
+    // Nothing trustworthy to floor from (cache-only read, no list): refuse BEFORE any write.
+    const a=app({globals:{getDocs:async()=>({metadata:{fromCache:true},docs:[]})}});
+    a.fs.store.set('counters/main',{pos:0,gatepasses:2,bundles:0});
+    twoFabrics(a,false);
+    const before=snap(a);
+    await a.run('window.submitFabricIssue()');
+    s.ok('told to reload, nothing saved',/Reload the page first/.test(lastToast(a))&&/Nothing was saved/.test(lastToast(a)),lastToast(a));
+    s.eq('no transaction was even attempted',a.fs.stats.tx,0);
+    s.eq('store untouched',snap(a),before);
+  }
+
+  // ═══ 7 — 'm' is metres in js/gatepass.js too (wave 2b) ═════════════════
+  s.section("7 — the gate-pass EDIT label and totals read 'm', 'meters' and 'kg' correctly");
+  {
+    const a=app();
+    let cap=null;a.ctx.document.body.appendChild=e=>{cap=e;};
+    const label=unit=>{a.ctx.allPasses.length=0;a.ctx.allPasses.push({id:'G1',gpType:'fabric',fabricUnit:unit,fabricQty:30,rollsCount:2,date:'2026-10-10'});cap=null;a.run("window.editGP('G1')");return String(cap&&cap.innerHTML).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');};
+    s.ok("'m' (an issue taken from an 'm' bucket) reads as LENGTH",/Total length \(meters\)/i.test(label('m')),label('m'));
+    s.ok("'meters' still reads as length",/Total length \(meters\)/i.test(label('meters')));
+    s.ok("'Metres' (by hand) reads as length",/Total length \(meters\)/i.test(label('Metres')));
+    s.ok("'kg' reads as weight",/Total weight \(kg\)/i.test(label('kg')));
+    s.ok("no unit reads as weight",/Total weight \(kg\)/i.test(label('')));
+    const payload=(unit)=>{
+      a.el('gpe-type').value='fabric';a.el('gpe-fab-unit').value=unit;a.el('gpe-fab-qty').value='30';a.el('gpe-fab-rolls').value='2';
+      return a.run('_collectGPEditPayload()');
+    };
+    const pm=payload('m'),pM=payload('meters'),pk=payload('kg');
+    s.eq("edit totals: 'm' → totalLength 30, totalWeight 0",pm.totalLength+'|'+pm.totalWeight,'30|0');
+    s.eq("edit totals: 'meters' → totalLength 30, totalWeight 0",pM.totalLength+'|'+pM.totalWeight,'30|0');
+    s.eq("edit totals: 'kg' → totalWeight 30, totalLength 0",pk.totalWeight+'|'+pk.totalLength,'30|0');
+    s.eq("the edit keeps the unit EXACTLY as stored (read-only normalisation)",pm.fabricUnit+'|'+pM.fabricUnit,'m|meters');
+  }
+  s.section("7 — the PDF: legacy path labels 'm' as Total Length; the engine path passes the stored unit through untouched");
+  {
+    const a=app();
+    const texts=[];
+    class FakePdf{constructor(){}setFillColor(){}rect(){}setTextColor(){}setFontSize(){}setFont(){}text(t){texts.push(String(t));}setDrawColor(){}setLineWidth(){}line(){}addPage(){}save(){}}
+    a.ctx.window=a.ctx.window||a.ctx;
+    a.ctx.window.jspdf={jsPDF:FakePdf};a.ctx.jspdf={jsPDF:FakePdf};
+    const pass=(unit)=>({id:'G'+unit,gpType:'fabric',fabricUnit:unit,fabricQty:30,rollsCount:2,date:'2026-10-10',name:'x',article:'a',dest:'Factory'});
+    a.ctx.allPasses.push(pass('m'),pass('meters'),pass('kg'));
+    a.run('window.__usePrintEngine=false');
+    const render=id=>{texts.length=0;a.run(`window.generateGPPdf(${J(id)})`);return texts.slice();};
+    const tm=render('Gm');
+    s.ok("legacy PDF, unit 'm': Total Length, '30 m'",tm.includes('Total Length')&&tm.includes('30 m')&&!tm.includes('Total Weight'),J(tm));
+    s.ok("legacy PDF, unit 'meters': Total Length",render('Gmeters').includes('Total Length'));
+    const tk=render('Gkg');
+    s.ok("legacy PDF, unit 'kg': Total Weight, '30 kg'",tk.includes('Total Weight')&&tk.includes('30 kg')&&!tk.includes('Total Length'),J(tk));
+    // engine path: the data handed to the engine keeps the stored unit (the engine prints it beside the number)
+    let sent=null;a.run('window.__usePrintEngine=true');a.ctx.window.printDocument=d=>{sent=d;};a.ctx.printDocument=a.ctx.window.printDocument;
+    a.run("window.generateGPPdf('Gm')");
+    s.eq("engine data: unit passed through as stored ('m')",sent&&sent.data.fabricUnit,'m');
+    s.eq('and the stored pass was not rewritten',a.ctx.allPasses.find(p=>p.id==='Gm').fabricUnit,'m');
+  }
+  s.section("7 — the outward fabric picker lists buckets stored as 'm' for a metres pass");
+  {
+    const a=app();
+    seed(a,[roll('M1',30,{unit:'m'})],K2,'Twill',300,'Navy','m');
+    seed(a,[roll('M2',5,{unit:'meters'})],'drill__200gsm__grey','Drill',200,'Grey','meters');
+    seed(a,[roll('K1',9)],K1,'Jersey',220,'Black','kg');
+    const listed=(unit)=>{const sel=a.el('gp-fab-stock');sel.innerHTML='';a.run(`_populateFabStockSelect(${J(unit)})`);return String(sel.innerHTML);};
+    const m=listed('meters');
+    s.ok("a 'meters' pass lists the 'm' bucket AND the 'meters' bucket",m.includes(K2)&&m.includes('drill__200gsm__grey'),m);
+    s.ok('and not the kg bucket',!m.includes(K1),m);
+    const k=listed('kg');
+    s.ok('a kg pass lists only kg buckets',k.includes(K1)&&!k.includes(K2),k);
+  }
+
+  // ═══ 8 — Delete all: a capped toast, the full list in the log (wave 2b) ═
+  s.section('8 — the delete-all toast names the first 3 refused issues, then "and N more"');
+  {
+    const mk=(a,n)=>{
+      J1(a,[]);                                              // the bucket exists but holds none of the issued rolls
+      for(let i=1;i<=n;i++){
+        const id='GP-1'+String(i).padStart(2,'0');
+        const g={id,ts:9000-i,gpType:'fabric',poId:'PO-7',fabricUnit:'kg',fabricType:'Jersey',fabricGsm:220,fabricColor:'Black',inventoryKey:K1,rollCodes:['X'+i],partialRolls:[],
+          fabrics:[{inventoryKey:K1,fabType:'Jersey',gsm:220,color:'Black',unit:'kg',rollCodes:['X'+i]}]};
+        a.fs.store.set('gatepasses/'+id,clone(g));a.ctx.allPasses.push(clone(g));
+      }
+    };
+    const a=app();mk(a,6);
+    await a.run('window.fabRegDeleteAll()');
+    const t=lastToast(a);
+    s.ok('the first three issue numbers are named',['GP-101','GP-102','GP-103'].every(k=>t.includes(k))||['GP-106','GP-105','GP-104'].every(k=>t.includes(k)),t);
+    s.ok('"and 3 more" closes the list',/and 3 more/.test(t),t);
+    s.eq('exactly 3 issue numbers appear',(t.match(/GP-1\d\d/g)||[]).length,3);
+    s.ok('the toast says where the full list is',/Activity Log/.test(t),t);
+    s.ok('it stays short (under 160 characters)',t.length<160,t.length+': '+t);
+    const log=a.state.activity.find(x=>x.action==='Fabric issues cleared');
+    s.ok('the activity log keeps ALL six, each with its rolls',!!log&&[1,2,3,4,5,6].every(i=>log.detail.includes(`GP-10${i} (X${i})`)),log&&log.detail);
+    s.eq('nothing was deleted (all refused)',a.fs.keys('gatepasses/').length,6);
+    const b=app();mk(b,3);
+    await b.run('window.fabRegDeleteAll()');
+    s.ok('exactly 3 refused: all named, no "and N more"',!/more/.test(lastToast(b))&&(lastToast(b).match(/GP-1\d\d/g)||[]).length===3,lastToast(b));
+    s.eq('_fabRefusedToast([]) is empty',a.run('_fabRefusedToast([])'),'');
+    s.eq('_fabRefusedToast with 4 → 3 + "and 1 more"',a.run("_fabRefusedToast(['a','b','c','d'])"),'a; b; c and 1 more');
   }
 
   return s;

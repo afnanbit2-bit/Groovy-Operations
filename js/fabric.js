@@ -1950,6 +1950,13 @@ window._fabTagSave=async function(){
 function _fabDeleteIssueFn(){
   return(typeof _gpDeleteGatePassOverride==='function')?_gpDeleteGatePassOverride:null;
 }
+// The refused issue numbers as a toast reads them: the first 3, then "and N more".
+const _FAB_TOAST_MAX_REFUSED=3;
+function _fabRefusedToast(keys){
+  const list=(keys||[]).map(String);
+  if(list.length<=_FAB_TOAST_MAX_REFUSED)return list.join('; ');
+  return list.slice(0,_FAB_TOAST_MAX_REFUSED).join('; ')+` and ${list.length-_FAB_TOAST_MAX_REFUSED} more`;
+}
 window.fabRegDeleteAll=async function(){
   if(!['owner','manager'].includes(session.role)){showToast('Owners/managers only.',true);return;}
   const issues=_fabIssueRecords();
@@ -1963,11 +1970,14 @@ window.fabRegDeleteAll=async function(){
     if(!key)continue;
     // The plain delete (no "delete anyway" prompt per issue): a refusal is collected and named below.
     try{const res=await _gpDeleteGatePass(key,{gp:g});rolls+=res.rolls||0;n++;}
-    catch(e){console.warn('[fabric] delete issue failed',key,e);refused.push(`${key}${e&&e.rollCodes&&e.rollCodes.length?' ('+e.rollCodes.join(', ')+')':''}`);}
+    catch(e){console.warn('[fabric] delete issue failed',key,e);refused.push({key,text:`${key}${e&&e.rollCodes&&e.rollCodes.length?' ('+e.rollCodes.join(', ')+')':''}`});}
   }
-  await logActivity('Fabric issues cleared',`${n} record(s) deleted by ${session.name} · ${rolls} roll(s) returned to stock${refused.length?` · NOT deleted (rolls could not be put back): ${refused.join('; ')}`:''}`).catch(()=>{});
+  // The activity log keeps the FULL list (issue + the rolls that could not go back);
+  // the toast names only the first few issue numbers, or with many refusals it grows
+  // longer than the screen.
+  await logActivity('Fabric issues cleared',`${n} record(s) deleted by ${session.name} · ${rolls} roll(s) returned to stock${refused.length?` · NOT deleted (rolls could not be put back): ${refused.map(r=>r.text).join('; ')}`:''}`).catch(()=>{});
   _fabBusyEnd();
-  showToast(`${n} issue(s) deleted ✓ · ${rolls} roll(s) returned${refused.length?` · ${refused.length} left alone: ${refused.join('; ')}`:''}`,refused.length>0);
+  showToast(`${n} issue(s) deleted ✓ · ${rolls} roll(s) returned${refused.length?` · ${refused.length} left alone: ${_fabRefusedToast(refused.map(r=>r.key))} — the Activity Log lists their rolls`:''}`,refused.length>0);
   if(typeof loadData==='function')await loadData();
   window.switchFabTab('registry');
 };
@@ -2782,16 +2792,14 @@ window.submitFabricIssue=async function(){
   const ribData=ribStock?{ribType:ribStock.fabType,ribGsm:ribStock.gsm||0,ribColor:ribStock.color,ribRollCodes:ribCodes,ribRolls:ribCodes.length,ribWeight,ribPct}:{};
   if(!_fabBusyStart('Issuing fabric…'))return;
   try{
-    const next=await getNextId('gatepasses');
-    const gpId='GP-'+String(next).padStart(3,'0');
     const article=fabrics.length>1?fabrics.map(f=>`${f.fabType} ${f.gsm||0}gsm ${f.color}`).join(' + '):`${primary.fabType} ${primary.gsm||0}gsm ${primary.color}`;
     // The gate pass IS the fabric-issue registry record. Top-level fabric* keep
     // the PRIMARY (first) fabric for back-compat; fabricQty/fabricUsed are the
     // TOTAL across all fabrics; the full per-fabric split lives in `fabrics`.
-    const payload={id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,partialRolls,partialCount:partialRolls.length,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:_fabUnitNorm(fabUnit)==='kg'?fabQty:0,totalLength:_fabUnitNorm(fabUnit)==='m'?fabQty:0};
-    // ONE transaction for the whole issue: every fabric combo's roll take, the
+    const buildPass=(n,gpId)=>({id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,partialRolls,partialCount:partialRolls.length,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:_fabUnitNorm(fabUnit)==='kg'?fabQty:0,totalLength:_fabUnitNorm(fabUnit)==='m'?fabQty:0});
+    // ONE transaction for the whole issue (and for its GP NUMBER — see mintDoc below): every fabric combo's roll take, the
     // matching rib and the gate-pass doc commit together or not at all. The first
-    // combo is the engine's own bucket and carries the gate pass (extraWrites);
+    // combo is the engine's own bucket and carries the gate pass (mintDoc);
     // the others ride in moreBuckets. A roll that is gone from ANY of them aborts
     // everything — nothing is consumed, no pass is written — and the error names
     // every roll that was unavailable. (tolerateMissing is never used on an issue.)
@@ -2804,7 +2812,14 @@ window.submitFabricIssue=async function(){
       else buckets.push({fabType:ribStock.fabType,gsm:ribStock.gsm,color:ribStock.color,unit:ribStock.unit||'kg',removeRollCodes:ribCodes,reservePO:po,note:`Rib issued with ${article} for ${po}`});
     }
     const [mainBucket,...moreBuckets]=buckets;
-    await _fabInvUpsert({...mainBucket,moreBuckets,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:doc(db,'gatepasses',gpId),data:payload}]});
+    // The GP number is minted INSIDE that transaction (mintDoc → mintNextIdInTx,
+    // js/shared.js), floored at the highest GP on file: a roll that is gone, a
+    // refused write or no connection leaves counters/main exactly as it was. It
+    // used to come from getNextId('gatepasses') first, which burned a number on
+    // every refused issue.
+    const floor=await _gpFloorNow();
+    const done=await _fabInvUpsert({...mainBucket,moreBuckets,sourceCol:'gatepasses',mintDoc:{field:'gatepasses',collection:'gatepasses',floor,idFor:_gpIdFor,build:buildPass}});
+    const gpId=done.minted.id,payload=done.minted.record;
     await logActivity('Fabric issued',`${gpId} — ${rollCodes.length} rolls of ${article} to factory for ${po}${cutQty?` · cut ${cutQty} pcs / ${totalBundles} bundles`:''}${partialRolls.length?` · ${partialRolls.length} partial (roll kept in stock)`:''}${ribCodes.length?` · rib ${ribWeight}kg`:''} by ${session.name}`);
     // The issue is what tells the Embellishment Department a job is coming:
     // which PO, which fabric, which article and the planned cut per size. It

@@ -10519,10 +10519,56 @@ code; none of it has been run against real Firestore.
   promise that never settles; the cutting transaction does not re-check
   per-size bundle sums against the cut (audit B16); `js/fabric.js`
   `_fabRestockIssue` (registry delete) is still on the legacy restock path and
-  a multi-fabric issue is not atomic (wave 2); an embellishment job is not
+  a multi-fabric issue is not atomic (SUPERSEDED 11 Oct 2026 by wave 2, next
+  section); an embellishment job is not
   closed when its PO is cancelled; `firestore.rules` still lets any signed-in
   user write `pos`, `gatepasses` and `counters`, so every gate above is
   app-layer only.
+
+## Fabric wave 2 (11 Oct 2026)
+
+Wave 2 is commit `8fdd199` (verified: `git show --stat`); wave 2b (the leftovers
+below) is the commit after it on `claude/fabric-inventory-workflow-56gjli`. Owner's
+rule: no existing production data lost or rewritten. **Everything here was checked
+ONLY by plain-node suites against an in-memory Firestore stand-in with real
+transaction semantics — NOT against real Firestore, the real SDK or the emulator,
+and nothing was seen on a screen. How any of it behaves live is hypothesis.**
+
+- **One atomic multi-bucket issue (wave 2; verified, `tests/fabric-wave2` §1).**
+  `_fabInvUpsert(...,moreBuckets)` (`js/gatepass.js`) takes every fabric's rolls, the
+  matching rib and the gate pass in ONE transaction; a roll gone from any bucket
+  aborts all and one `fabric/rolls-unavailable` error names every such roll.
+- **One restock path (verified, §2).** Registry delete (one and all) goes through
+  `_gpDeleteGatePass` -> `_gpRestockIssue`; `_fabRestockIssue` is gone; a failed
+  restock deletes nothing, a retry restores once.
+- **The GP number is minted INSIDE the issue transaction (wave 2b; verified, §6 and
+  `tests/gatepass-engine`).** `mintNextIdInTx` (`js/shared.js`) is the in-transaction
+  half of `createWithNextId` (which now calls it; `tests/po-numbering` unchanged).
+  `_fabInvUpsert({mintDoc})` writes counter + pass in the same commit as the roll
+  takes, `sourceId`/`note` follow the minted id, result has `minted`. `_gpFloorNow()`
+  floors at the highest GP on file (server list when none loaded; cache-only refuses,
+  like `_poFloorNow`). Used by `submitFabricIssue` and `submitGP` (fabric and, via
+  `createWithNextId`, non-fabric). A refused issue, failed commit or taken id leaves
+  `counters/main` byte-identical. Each piece was reverted once and caught by name.
+- **NOT fixed, same burn shape (hypothesis, from reading):** `getNextId` before the
+  write for Fabric In (`fabricin`, FAB-), returns (RET-, `setDoc` then `updateDoc`),
+  stock transfer (STN-) and B-stock carton (CTN-). Different write shapes, not the
+  small same change.
+- **`_fabUnitNorm` is read-only (verified, §3 and §7).** Metres -> `m`, blank -> `kg`;
+  stored units are never rewritten. `js/gatepass.js` loads first, so `_gpUnitNorm`
+  calls it at runtime with an inline fallback; used by the pass edit label/totals,
+  the legacy PDF "Total Length", the outward picker (it hid `m` buckets from a metres
+  pass) and the sale note. The print engine prints the stored unit ("30 m"); its
+  "Weight" header is unchanged. Hypothesis from reading: a returned load passes the
+  PASS's unit to the engine, so a `meters` pass into an `m` bucket would rename it.
+- **`_fabToday()`** is the PKT day for every date `js/fabric.js` writes. **Receipt
+  delete refuses** issued, reserved or partly used rolls (`refusePartlyUsed`), naming
+  them, on page data and again on live data in the transaction (§5); **no override
+  exists for a receipt delete** (the "anyway" is for an issue's restock only).
+- **Delete-all toast (§8):** first 3 refused issue numbers then "and N more"; the
+  Activity Log entry keeps every issue with its rolls.
+- **Known open:** `dashboard totals in js/embellishments.js (allPOs.length) still
+  count cancelled POs` (verified by grep: line 4331, `total=allPOs.length`).
 
 ## Pattern Hub (Sept 2026)
 

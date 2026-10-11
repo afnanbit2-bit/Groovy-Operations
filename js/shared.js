@@ -692,29 +692,52 @@ async function createWithNextId(opts){
   if(!field||!colName||typeof opts.idFor!=='function'||typeof opts.build!=='function'){
     throw new Error('createWithNextId: field, collection, idFor and build are all required');
   }
-  const floor=Math.max(0,Math.floor(Number(opts.floor))||0);
-  const cref=doc(db,'counters','main');
   let made=null;
   await runTransaction(db,async tx=>{
     made=null;
-    // Every read before every write — a transaction requires it.
-    const csnap=await tx.get(cref);
-    const has=!!csnap&&typeof csnap.exists==='function'&&csnap.exists();
-    const cur=has?(Number((csnap.data()||{})[field])||0):0;
-    const n=Math.max(cur,floor)+1;
-    const id=opts.idFor(n);
-    const dref=doc(db,colName,id);
-    const dsnap=await tx.get(dref);
-    if(dsnap&&typeof dsnap.exists==='function'&&dsnap.exists()){
-      throw new Error(id+' already exists, so nothing was created and nothing was overwritten. Reload the page and try again.');
-    }
-    const record=opts.build(n,id);
+    const m=await mintNextIdInTx(tx,opts);
+    const record=opts.build(m.n,m.id);
+    m.write(record);
+    made={n:m.n,id:m.id,record};
+  });
+  return made;
+}
+
+// The in-transaction half of createWithNextId (Oct 2026), so a caller that
+// already runs ITS OWN transaction — the fabric engine's roll take
+// (_fabInvUpsert, js/gatepass.js) — can mint the number in that same
+// transaction instead of burning one first.
+//
+// Call it INSIDE runTransaction, before the transaction's first write: it
+// reads counters/main and checks the target id is free (throwing, having
+// written nothing, if it is taken). It returns {n,id,dref,write(record)};
+// `write` buffers the counter move and the document in the caller's
+// transaction — call it once, after every read the caller has to make. If the
+// transaction never commits, the counter never moves.
+async function mintNextIdInTx(tx,opts){
+  opts=opts||{};
+  const field=opts.field,colName=opts.collection;
+  if(!field||!colName||typeof opts.idFor!=='function'){
+    throw new Error('mintNextIdInTx: field, collection and idFor are required');
+  }
+  const floor=Math.max(0,Math.floor(Number(opts.floor))||0);
+  const cref=doc(db,'counters','main');
+  // Every read before every write — a transaction requires it.
+  const csnap=await tx.get(cref);
+  const has=!!csnap&&typeof csnap.exists==='function'&&csnap.exists();
+  const cur=has?(Number((csnap.data()||{})[field])||0):0;
+  const n=Math.max(cur,floor)+1;
+  const id=opts.idFor(n);
+  const dref=doc(db,colName,id);
+  const dsnap=await tx.get(dref);
+  if(dsnap&&typeof dsnap.exists==='function'&&dsnap.exists()){
+    throw new Error(id+' already exists, so nothing was created and nothing was overwritten. Reload the page and try again.');
+  }
+  return{n,id,dref,write(record){
     if(has)tx.update(cref,{[field]:n});
     else tx.set(cref,{pos:0,gatepasses:0,bundles:0,[field]:n});
     tx.set(dref,record);
-    made={n,id,record};
-  });
-  return made;
+  }};
 }
 
 async function reserveBundleIds(n){

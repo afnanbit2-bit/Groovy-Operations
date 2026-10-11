@@ -23,6 +23,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 'use strict';
 const {loadApp,suite}=require('./harness');
+const {installMint}=require('./mint-helper');
 
 const KEY='jersey__220gsm__black';        // _fabInvKey('Jersey',220,'Black')
 const KEY2='rib__250gsm__black';          // a second bucket (rib) for multi-fabric issues
@@ -32,7 +33,8 @@ const clone=x=>x===undefined?undefined:JSON.parse(JSON.stringify(x));
 // ── an in-memory Firestore with real transaction semantics ───────────────
 function makeFs(){
   const store=new Map();                  // 'coll/id' -> data
-  const counters={};
+  // counters/main lives IN the store (the number is minted inside the writing transaction).
+  const counters=new Proxy({},{get:(_t,f)=>{const c=store.get('counters/main');return c?c[f]:undefined;}});
   const stats={tx:0,txFailed:0,plainSets:[],plainDeletes:[],plainUpdates:[]};
   const failures=[];                      // [{prefix,message,times}]
   let auto=0;
@@ -67,8 +69,8 @@ function makeFs(){
       stats.plainUpdates.push(r.path);store.set(r.path,Object.assign({},store.get(r.path),clone(data)));
     },
     deleteDoc:async r=>{stats.plainDeletes.push(r.path);store.delete(r.path);},
-    // A real await, so two overlapping submits genuinely interleave.
-    getNextId:async field=>{await new Promise(r=>setTimeout(r,0));counters[field]=(counters[field]||0)+1;return counters[field];}
+    // The server list, for _gpFloorNow when the page has not loaded the passes.
+    getDocs:async c=>({metadata:{fromCache:false},docs:[...store.keys()].filter(k=>k.startsWith(c.__coll+'/')).map(k=>({id:k.split('/').pop(),data:()=>clone(store.get(k))}))})
   };
   return{store,counters,stats,api,
     failNext(prefix,message,times){failures.push({prefix,message:message||'injected commit failure',times:times||1});},
@@ -92,6 +94,7 @@ function app(opts){
     acctPostSale:async o=>{sales.push(o);return{_id:'CL-'+sales.length};}
   },opts.globals||{})});
   a.fs=fs;a.sales=sales;
+  installMint(a);
   return a;
 }
 // Put a bucket into the fake Firestore AND the page's in-memory copy.
@@ -221,6 +224,17 @@ module.exports=async function(){
     s.ok('the legacy returnRollCodes still skips silently',!ret.err,ret.err&&ret.err.message);
   }
 
+  // ═══ unit spelling inside js/gatepass.js alone (js/fabric.js not loaded) ══
+  s.section("units — _gpUnitNorm falls back to its own copy when js/fabric.js (_fabUnitNorm) is not loaded");
+  {
+    const a=app();
+    s.eq('this suite really loads gatepass.js alone',a.run('typeof _fabUnitNorm'),'undefined');
+    const n=x=>a.run('_gpUnitNorm('+J(x)+')');
+    s.eq("'m' → m",n('m'),'m');s.eq("'meters' → m",n('meters'),'m');s.eq("' Metres ' → m",n(' Metres '),'m');s.eq("'metre' → m",n('metre'),'m');
+    s.eq("'kg' / 'KG' / blank / null → kg",[n('kg'),n('KG'),n(''),n(null)].join(),'kg,kg,kg,kg');
+    s.eq("an unknown unit is kept, not guessed",n('Pcs'),'pcs');
+  }
+
   // ═══ B4 — submitGP ═════════════════════════════════════════════════════
   s.section('B4/B2 — a pass for a roll someone else already issued is refused, whole');
   {
@@ -233,6 +247,7 @@ module.exports=async function(){
     s.ok('the person is told, naming the roll',/^Error/.test(lastToast(a))&&/R1/.test(lastToast(a)),lastToast(a));
     s.eq('the other device\'s issue is untouched',rollOf(a,'R1').issuedTo,'GP-050');
     s.eq('no movement row',movs(a).length,0);
+    s.ok('and NO gate pass number was spent (counters/main was never written)',!a.fs.store.has('counters/main'),J(a.fs.store.get('counters/main')));
   }
 
   s.section('B4 — the pass and its stock decrement are ONE transaction');
@@ -262,8 +277,26 @@ module.exports=async function(){
     s.eq('the roll is still in stock',rollOf(a,'R1').status,'in_stock');
     s.ok('the error is shown',/network went away/.test(lastToast(a)),lastToast(a));
     s.eq('the submit button is enabled again',a.el('gp-submit-btn').disabled,false);
+    s.ok('the failed commit spent no number',!a.fs.store.has('counters/main'));
     await a.run('window.submitGP()');
     s.eq('a second try issues exactly one pass',a.fs.keys('gatepasses/').length,1);
+    s.eq('as GP-001 — the failed try did not burn it',a.fs.keys('gatepasses/')[0],'gatepasses/GP-001');
+  }
+
+  s.section('B12 — a NON-fabric pass whose write fails spends no number either (createWithNextId)');
+  {
+    const a=app();
+    fillOutward(a,{type:'garments',reason:'other'});
+    a.el('gp-fab-stock').value='';
+    a.run("_gpSizes=[{size:'M',bundles:'10-10'}]");
+    a.fs.failNext('gatepasses/','write refused',1);
+    await a.run('window.submitGP()');
+    s.ok('the error is shown',/write refused/.test(lastToast(a)),lastToast(a));
+    s.eq('no pass',a.fs.keys('gatepasses/').length,0);
+    s.ok('and counters/main was not created or moved',!a.fs.store.has('counters/main'),J(a.fs.store.get('counters/main')));
+    await a.run('window.submitGP()');
+    s.eq('the retry is GP-001 and the counter is 1',a.fs.keys('gatepasses/')[0]+'|'+a.fs.counters.gatepasses,'gatepasses/GP-001|1');
+    s.eq('plain setDoc was never used for the pass',a.fs.stats.plainSets.filter(x=>x.startsWith('gatepasses/')).length,0);
   }
 
   s.section('B4 — double submit: ONE pass, ONE sale post');
@@ -302,9 +335,12 @@ module.exports=async function(){
     const releases=[];
     const holds=[0,1].map(()=>new Promise(r=>releases.push(r)));
     const a=app({globals:{
-      setTimeout:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearTimeout:()=>{},
-      getNextId:async()=>{calls++;if(holds[calls-1])await holds[calls-1];return++n;}
+      setTimeout:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearTimeout:()=>{}
     }});
+    // The number is minted inside the writing transaction now, so the hang is held
+    // at the transaction: the Nth attempt to write waits for its release.
+    const _tx=a.ctx.runTransaction;
+    a.ctx.runTransaction=async(d,fn)=>{calls++;if(holds[calls-1])await holds[calls-1];return _tx(d,fn);};
     fillOutward(a,{type:'garments',reason:'other'});
     a.el('gp-fab-stock').value='';
     a.run("_gpSizes=[{size:'M',bundles:'10-10'}]");
@@ -320,7 +356,7 @@ module.exports=async function(){
     s.ok('the old submit finished',(await within(p1))!==TIMEOUT);       // the OLD submit finally finishes
     s.eq('the old one finishing does NOT free the guard of the newer submit',a.el('gp-submit-btn').disabled,true);
     const p3=a.run('window.submitGP()');                      // a third tap (never awaited blindly: if the guard was wrongly free it would hang on the 2nd hold)
-    s.eq('a third tap is still ignored (it never reached the number)',calls,2);
+    s.eq('a third tap is still ignored (it never reached the write)',calls,2);
     releases[1]();
     s.ok('the newer submit finished',(await within(p2))!==TIMEOUT);
     s.ok('and the third tap returned',(await within(p3))!==TIMEOUT);

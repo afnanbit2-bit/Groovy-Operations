@@ -32,6 +32,47 @@ function _gpDayStr(d){
   return t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate());
 }
 function _gpTypeKind(t){return (t==='fabric_kg'||t==='fabric_m')?'fabric':(t==='item'?'item':'garments');}
+// ── Unit spelling (read-only) ──────────────────────────────────────────────
+// Metres are stored as 'm' (receipts, stock buckets, and an issue taken from
+// one) and 'meters' (outward passes) — 'meter/metre/metres' can turn up by hand.
+// The ONE reader is _fabUnitNorm (js/fabric.js, which loads after this file, so
+// it is called at runtime); the inline copy only runs if that file is missing.
+// 'm' = metres, 'kg' = kilos. It is for READING — labels, totals — and nothing
+// stored is ever rewritten to match.
+function _gpUnitNorm(u){
+  if(typeof _fabUnitNorm==='function')return _fabUnitNorm(u);
+  const v=String(u==null?'':u).trim().toLowerCase();
+  if(!v||v==='kg'||v==='kgs')return'kg';
+  if(v==='m'||v==='meter'||v==='meters'||v==='metre'||v==='metres')return'm';
+  return v;
+}
+// ── Gate pass numbers ──────────────────────────────────────────────────────
+// 'GP-012' <-> 12. The number is minted INSIDE the transaction that creates the
+// pass (mintNextIdInTx, js/shared.js), floored at the highest number already on
+// file, so a refused or failed pass spends nothing and a counter that lags
+// behind can never aim at a pass that exists.
+function _gpIdFor(n){return'GP-'+String(n).padStart(3,'0');}
+function _gpNumberOf(id){const m=/^GP-0*(\d+)$/i.exec(String(id==null?'':id).trim());return m?parseInt(m[1],10):null;}
+function _gpNumberFloor(){
+  let max=0;
+  (typeof allPasses!=='undefined'&&Array.isArray(allPasses)?allPasses:[]).forEach(p=>{const n=_gpNumberOf(p&&p.id);if(n&&n>max)max=n;});
+  return max;
+}
+// The floor to mint above: the highest loaded pass. With NO list loaded, read the
+// ids from the server once; if that cannot be trusted either (cache-only), refuse
+// and say to reload — the same rule as _poFloorNow (js/pos.js).
+async function _gpFloorNow(){
+  const loaded=typeof allPasses!=='undefined'&&Array.isArray(allPasses)?allPasses:[];
+  if(loaded.length)return _gpNumberFloor();
+  let snap=null;
+  try{snap=await getDocs(collection(db,'gatepasses'));}catch(e){snap=null;}
+  if(!snap||(snap.metadata&&snap.metadata.fromCache===true)){
+    throw new Error('The gate pass list did not load, so the next gate pass number cannot be checked. Reload the page first. Nothing was saved.');
+  }
+  let max=0;
+  (snap.docs||[]).forEach(d=>{[d.id,(d.data()||{}).id].forEach(v=>{const n=_gpNumberOf(v);if(n&&n>max)max=n;});});
+  return max;
+}
 function _gpUnitForPass(p){return p.gpType==='fabric'?(p.fabricUnit||'kg'):(p.gpType==='item'?'qty':'pcs');}
 function _gpRetUnitKey(p){return p.gpType==='fabric'?'kg':(p.gpType==='item'?'qty':'pcs');}
 function _gpSentQtyForPass(p){
@@ -500,7 +541,7 @@ window.gpSaleRecalc=function(){
 function _populateFabStockSelect(unit){
   const sel=document.getElementById('gp-fab-stock');
   if(!sel)return;
-  const stocks=allFabricInventory.filter(s=>(s.unit||'kg')===unit&&(s.totalWeight||0)>0);
+  const stocks=allFabricInventory.filter(s=>_gpUnitNorm(s.unit)===_gpUnitNorm(unit)&&(s.totalWeight||0)>0);
   sel.innerHTML=`<option value="">— pick a fabric in stock —</option>`+
     stocks.map(s=>`<option value="${s._id}">${s.fabType} · ${s.gsm||0}gsm · ${s.color} — ${s.totalWeight} ${s.unit||'kg'} · ${s.rollsCount||0} rolls</option>`).join('');
   if(!stocks.length){sel.innerHTML+=`<option disabled>No fabric in stock for this unit</option>`;}
@@ -571,8 +612,11 @@ window.gpFabRecalc=function(){
 //     a pass in the registry with its rolls still in stock. If any picked roll
 //     is no longer issuable (someone issued it first) the transaction aborts —
 //     no pass, no stock change, an error that names the rolls (audit B2/B4).
-//   • The GP number is minted only after every check has passed, so a form
-//     that is refused no longer burns a number (the audit's B12 shape).
+//   • The GP number is minted INSIDE the transaction that writes the pass (and,
+//     for a fabric pass, takes the rolls) — mintNextIdInTx / createWithNextId
+//     (js/shared.js), floored at the highest GP on file — so a form that is
+//     refused, a roll that is gone, or a write that fails spends no number and
+//     leaves counters/main unchanged (the audit's B12 shape, Oct 2026).
 let _gpSubmitBusy=false,_gpSubmitTimer=null,_gpSubmitTok=0;
 // Start a submit: returns a token, or 0 when one is already in flight. The
 // token is what releases the guard, so a late finish of an OLD submit (after the
@@ -625,7 +669,7 @@ async function _gpSubmitRun(){
       if(!stock){showToast('Fabric stock not found.',true);return;}
       const fabQty=parseFloat(document.getElementById('gp-fab-qty')?.value)||0;
       const rollCodes=_gpOutwardFabRolls.map(r=>r.rollCode);
-      kindFields={gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stockKey,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0,expectReturn:reason==='process'};
+      kindFields={gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:stock.fabType,fabricGsm:stock.gsm,fabricColor:stock.color,inventoryKey:stockKey,boras:'0',items:[],totalUnits:0,totalWeight:_gpUnitNorm(fabUnit)==='kg'?fabQty:0,totalLength:_gpUnitNorm(fabUnit)==='m'?fabQty:0,expectReturn:reason==='process'};
       if(reason==='return_vendor')kindFields.sourceVendor=document.getElementById('gp-src-vendor')?.value.trim()||'';
       fab={stock,fabUnit,rollCodes};
     }else if(kind==='item'){
@@ -649,25 +693,32 @@ async function _gpSubmitRun(){
       const qtyForSale=(kind==='fabric')?(kindFields.fabricQty||0):(kindFields.totalUnits||0);
       saleObj={customer:cust,phone:document.getElementById('gp-sale-phone')?.value.trim()||'',rate,amount:Math.round(qtyForSale*rate),account:document.getElementById('gp-sale-acc')?.value||'',unit:(kind==='fabric')?(kindFields.fabricUnit||'kg'):'pcs'};
     }
-    // ── 2. everything is valid — NOW mint the number and build the pass. ──
-    const next=await getNextId('gatepasses');
-    const gpId='GP-'+String(next).padStart(3,'0');
-    const payload={id:gpId,...baseFields,...kindFields};
-    if(saleObj){payload.sale=saleObj;payload.expectReturn=false;}
-    // ── 3. commit. A fabric pass and its stock decrement are ONE transaction. ──
-    const gpRef=doc(db,'gatepasses',gpId);
+    // ── 2. everything is valid. The number is minted INSIDE the write that creates the pass ──
+    // (mintNextIdInTx, js/shared.js) — never beforehand — so a refused or failed pass
+    // leaves counters/main exactly as it was. The floor is the highest GP on file.
+    const floor=await _gpFloorNow();
+    const buildPass=(n,id)=>{
+      const payload={id,...baseFields,...kindFields};
+      if(saleObj){payload.sale=saleObj;payload.expectReturn=false;}
+      return payload;
+    };
+    const mintDoc={field:'gatepasses',collection:'gatepasses',floor,idFor:_gpIdFor,build:buildPass};
+    // ── 3. commit. A fabric pass, its number and its stock decrement are ONE transaction. ──
+    let made;
     if(fab){
-      await _fabInvUpsert({fabType:fab.stock.fabType,gsm:fab.stock.gsm,color:fab.stock.color,unit:fab.stock.unit||fab.fabUnit,removeRollCodes:fab.rollCodes,reason,note:`GP ${gpId} · ${GP_REASON_LABEL[reason]||reason} → ${destFinal}`,sourceCol:'gatepasses',sourceId:gpId,extraWrites:[{ref:gpRef,data:payload}]});
+      const res=await _fabInvUpsert({fabType:fab.stock.fabType,gsm:fab.stock.gsm,color:fab.stock.color,unit:fab.stock.unit||fab.fabUnit,removeRollCodes:fab.rollCodes,reason,note:id=>`GP ${id} · ${GP_REASON_LABEL[reason]||reason} → ${destFinal}`,sourceCol:'gatepasses',mintDoc});
+      made=res.minted;
     }else{
-      await setDoc(gpRef,payload);
+      made=await createWithNextId(mintDoc);
     }
+    const gpId=made.id,payload=made.record;
     if(isSale&&saleObj&&saleObj.amount>0){
       // The sale's money lands in Store Accounts (js/store-accounts.js) as a
       // cash-in against the customer. typeof-guarded: a build without the
       // module still issues the pass, and says the sale was not recorded.
       try{
         if(typeof acctPostSale==='function'){
-          const row=await acctPostSale({account:saleObj.account,amount:saleObj.amount,customer:saleObj.customer,ref:gpId,note:`${article} · ${saleObj.unit==='kg'?(payload.fabricQty||0)+' kg':(payload.totalUnits||0)+' pcs'} @ ₨${saleObj.rate}`,date:baseFields.date||''});
+          const row=await acctPostSale({account:saleObj.account,amount:saleObj.amount,customer:saleObj.customer,ref:gpId,note:`${article} · ${_gpUnitNorm(saleObj.unit)==='kg'?(payload.fabricQty||0)+' kg':(payload.totalUnits||0)+' pcs'} @ ₨${saleObj.rate}`,date:baseFields.date||''});
           if(row&&row._id)await updateDoc(doc(db,'gatepasses',gpId),{cashLedgerId:row._id});
           else showToast('Pass saved — record the sale in Store Accounts (it was not posted).',true);
         }else showToast('Pass saved — Store Accounts is not loaded, record the sale there.',true);
@@ -841,6 +892,17 @@ function renderReturnsList(){
 // Two buckets must be different inventory docs (merge rolls of one fabric into one
 // entry). RESULT gains `more:[{key,movCodes,movQty}]`, one per extra bucket.
 //
+// ── mintDoc — the pass's NUMBER is minted in the same transaction ───────────
+//   mintDoc:{field:'gatepasses',collection:'gatepasses',idFor(n),floor,build(n,id)}
+// For a call that CREATES a numbered document alongside the roll takes (a fabric
+// issue or an outward fabric pass). counters/main is read and the id checked free
+// inside the transaction (mintNextIdInTx, js/shared.js); the counter move and the
+// record build(n,id) returns commit WITH the roll takes — or, if any roll is
+// unavailable or the commit fails, not at all, so a refused issue spends no
+// number. `floor` (the highest number already on file) lifts a counter that was
+// reset or lags behind; a taken id aborts the call. `sourceId` is taken from the
+// minted id, and `note` may be a function of it. RESULT gains `minted:{n,id,record}`.
+//
 // RESULT  {movCodes,movQty,skipped,restock}  (the first two as before; `restock`
 // is null except for restockRollCodes: {returned,restoredPartial,alreadyInStock,
 // elsewhere} — arrays of roll codes / {rollCode,weightBefore,restoredWeight,weightAfter}).
@@ -870,7 +932,7 @@ function _fabFindDraw(r,gpId,d){
 function _fabDrawRestored(r,gpId,d){
   return (Array.isArray(r&&r.drawsRestored)?r.drawsRestored:[]).some(x=>x&&x.gp===gpId&&(d.weight==null||Math.abs((parseFloat(x.weight)||0)-d.weight)<=0.005));
 }
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,refusePartlyUsed,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,restockRollCodes,restockDraws,moreBuckets,tolerateMissing,reason,note,sourceCol,sourceId,extraWrites,extraDeletes}){
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,refusePartlyUsed,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,restockRollCodes,restockDraws,moreBuckets,mintDoc,tolerateMissing,reason,note:_noteIn,sourceCol,sourceId:_srcIn,extraWrites,extraDeletes}){
   const key=_fabInvKey(fabType,gsm,color);
   const invRef=doc(db,'fabric_inventory',key);
   const movRef=doc(collection(db,'fabric_movements'));  // stable id across tx retries
@@ -881,7 +943,7 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
   if(new Set([key,...exKeys]).size!==exKeys.length+1)throw new Error('An issue names the same fabric twice — merge its rolls into one entry.');
   const exRefs=exKeys.map(k=>doc(db,'fabric_inventory',k));
   const exMovRefs=extras.map(()=>doc(collection(db,'fabric_movements')));
-  let outPayload=null,outMov=null,outSkipped=[],outRestock=null,outExtras=[];
+  let outPayload=null,outMov=null,outSkipped=[],outRestock=null,outExtras=[],outMinted=null;
   // One Firestore transaction: read the LIVE inventory fresh (not stale local
   // memory) so concurrent receive/issue/return can't clobber each other
   // (last-write-wins), and commit the aggregate + movement + any caller docs
@@ -893,6 +955,16 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     // Every read comes before any write (a Firestore rule): the other buckets of a
     // multi-fabric issue are read here, right after the first.
     const exSnaps=[];for(const r of exRefs)exSnaps.push(await tx.get(r));
+    // mintDoc: the new document's number is minted HERE, in this transaction, so
+    // a refused or failed call never spends a number (see the header). The pass
+    // id, once known, is the sourceId every roll draw and movement is stamped with.
+    let mint=null;
+    if(mintDoc){
+      if(typeof mintNextIdInTx!=='function')throw new Error('The numbering service is not loaded — reload the page. Nothing was saved.');
+      mint=await mintNextIdInTx(tx,mintDoc);
+    }
+    const sourceId=mint?mint.id:_srcIn;
+    const note=typeof _noteIn==='function'?_noteIn(sourceId):_noteIn;
     const rolls=Array.isArray(snap.data()?.rolls)?snap.data().rolls.map(r=>({...r})):[];
     let movType='out',movSub='',movQty=0;const movCodes=[];let partialLog=null;
     let skipped=[],restock=null;
@@ -1050,6 +1122,13 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
       exOut.push({key:bk,payload:p,mov:m,ref:exMovRefs[w.i]});
       skipped=skipped.concat(w.res.skipped);
     });
+    if(mint){
+      // The new document (and the counter move) join the same commit as the
+      // roll takes above. build() is pure; it sees the number just minted.
+      const record=typeof mintDoc.build==='function'?mintDoc.build(mint.n,mint.id):{id:mint.id};
+      mint.write(record);
+      outMinted={n:mint.n,id:mint.id,record};
+    }
     if(Array.isArray(extraWrites))for(const w of extraWrites){if(w&&w.ref&&w.data){if(w.merge)tx.set(w.ref,w.data,{merge:true});else tx.set(w.ref,w.data);}}
     if(Array.isArray(extraDeletes))for(const dref of extraDeletes){if(dref)tx.delete(dref);}
     outPayload=touched?payload:null;outMov=touched?movDoc:null;outSkipped=skipped;outRestock=restock;outExtras=exOut;
@@ -1067,6 +1146,7 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
   }
   const result={movCodes:outMov?outMov.rollCodes:[],movQty:outMov?outMov.qty:0,skipped:outSkipped,restock:outRestock};
   if(outExtras.length)result.more=outExtras.map(x=>({key:x.key,movCodes:x.mov.rollCodes,movQty:x.mov.qty}));
+  if(outMinted)result.minted=outMinted;
   return result;
 }
 
@@ -1342,7 +1422,7 @@ window.editGP=function(gpId){
   const sectionHTML=isFab
     ?`<div style="margin-top:12px;font-weight:600;font-size:14px">Fabric details (${fabUnit})</div>
       <div class="hrm-grid-2" style="margin-top:6px">
-        <div class="field"><label>Total ${fabUnit==='meters'?'length (meters)':'weight (kg)'} *</label><input id="gpe-fab-qty" type="number" min="0" step="0.01" value="${gp.fabricQty||0}"></div>
+        <div class="field"><label>Total ${_gpUnitNorm(fabUnit)==='m'?'length (meters)':'weight (kg)'} *</label><input id="gpe-fab-qty" type="number" min="0" step="0.01" value="${gp.fabricQty||0}"></div>
         <div class="field"><label>Roll count</label><input id="gpe-fab-rolls" type="number" min="0" value="${gp.rollsCount||0}"></div>
       </div>
       <input type="hidden" id="gpe-fab-unit" value="${fabUnit}">`
@@ -1410,7 +1490,7 @@ function _collectGPEditPayload(){
     const fabUnit=v('gpe-fab-unit')||'kg';
     const fabQty=parseFloat(document.getElementById('gpe-fab-qty')?.value)||0;
     const rollsCount=parseInt(document.getElementById('gpe-fab-rolls')?.value)||0;
-    return{...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount,boras:'0',items:[],totalUnits:0,totalWeight:fabUnit==='kg'?fabQty:0,totalLength:fabUnit==='meters'?fabQty:0};
+    return{...base,gpType:'fabric',fabricUnit:fabUnit,fabricQty:fabQty,rollsCount,boras:'0',items:[],totalUnits:0,totalWeight:_gpUnitNorm(fabUnit)==='kg'?fabQty:0,totalLength:_gpUnitNorm(fabUnit)==='m'?fabQty:0};
   }
   const items=[];
   document.querySelectorAll('#gpe-rows-body tr').forEach(tr=>{
@@ -1767,7 +1847,7 @@ window.generateGPPdf=function(gpId){
   y+=4;pdf.setFillColor(242,242,244);pdf.rect(M,y,W-M*2,24,'F');
   const bw=(W-M*2)/3;
   const tots=isFabric
-    ?[[gp.fabricUnit==='meters'?'Total Length':'Total Weight',`${gp.fabricQty||0} ${gp.fabricUnit||'kg'}`],['Rolls',`${gp.rollsCount||0}`],['Type',`Fabric`]]
+    ?[[_gpUnitNorm(gp.fabricUnit)==='m'?'Total Length':'Total Weight',`${gp.fabricQty||0} ${gp.fabricUnit||'kg'}`],['Rolls',`${gp.rollsCount||0}`],['Type',`Fabric`]]
     :[['Total Units',`${gp.totalUnits||0} pcs`],['Total Weight',`${gp.totalWeight||0} kg`],['Total Boras',`${gp.boras||0}`]];
   tots.forEach(([lbl,val],i)=>{
     pdf.setTextColor(107,114,128);pdf.setFontSize(8);pdf.setFont(undefined,'bold');pdf.text(lbl,M+bw*i+bw/2,y+8,{align:'center'});
