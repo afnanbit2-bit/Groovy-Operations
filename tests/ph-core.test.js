@@ -218,13 +218,13 @@ module.exports=async function(){
     // 120 kg of fabric over 380 pieces cut = 0.315789... -> 0.3158 (4 dp). Planned basis: 120/400 = 0.3000.
     const a=P.phGrossActual({fabricUsed:120,cutUnits:380,unit:'kg'});
     deq('120 kg over 380 pieces',[a.ok,a.perPiece,a.unit],[true,0.3158,'kg']);
-    s.eq('...on 400 planned pieces it is 0.3',P.phGrossActual({fabricUsed:120,cutUnits:400}).perPiece,0.3);
+    s.eq('...on 400 planned pieces it is 0.3',P.phGrossActual({fabricUsed:120,cutUnits:400,unit:'kg'}).perPiece,0.3);
     s.eq("'meters' is read as m",P.phGrossActual({fabricUsed:90,cutUnits:200,unit:'meters'}).unit,'m');
     s.eq('90 m over 200 pieces',P.phGrossActual({fabricUsed:90,cutUnits:200,unit:'m'}).perPiece,0.45);
     deq('no pieces cut: no figure, never 0',(r=>[r.ok,r.perPiece,r.reason])(P.phGrossActual({fabricUsed:120,cutUnits:0})),[false,null,'no_pieces']);
     deq('no fabric: no figure, never 0',(r=>[r.ok,r.perPiece,r.reason])(P.phGrossActual({fabricUsed:0,cutUnits:100})),[false,null,'no_fabric']);
     s.eq('a unit that is not kg or m is refused, not guessed',P.phGrossActual({fabricUsed:5,cutUnits:5,unit:'yards'}).reason,'bad_unit');
-    s.eq('a string quantity with a comma is read',P.phGrossActual({fabricUsed:'1,200',cutUnits:'4,000'}).perPiece,0.3);
+    s.eq('a string quantity with a comma is read',P.phGrossActual({fabricUsed:'1,200',cutUnits:'4,000',unit:'kg'}).perPiece,0.3);
     s.eq('junk input is a refusal',P.phGrossActual(null).ok,false);
     // the standard
     deq('a standard is cleaned',P.phStandard({unit:'KG',grossPerPiece:'0.3',tolerancePct:3}),{unit:'kg',grossPerPiece:0.3,tolerancePct:3,sizes:null});
@@ -477,7 +477,8 @@ module.exports=async function(){
     //  A reserved 100 | B cutting 400 | C cutting 200 | D bundling 300 but cut 290 (140+150) | E stitching 500, no cut record
     //  F completed 250 cut 240 | G cancelled 999 | H unknown stage 50 | null (junk)
     // counts: reserved 1, cutting 2, bundling 1, stitching 1, completed 1; units: 100, 600, 290, 500, 240.
-    // afloat = cutting..qc = 2+1+1 = 4 POs, 600+290+500 = 1390 pieces.
+    // afloat (owner decision 5) = issued pieces of POs not yet cut done = stage cutting: B + C = 2 POs, 600 pieces.
+    // inProduction = cutting..qc = 2+1+1 = 4 POs, 600+290+500 = 1390 pieces (the actual cut counted past cutting).
     const cutD={cutAt:'2026-10-09T10:00:00.000Z'};
     const fx=[
       {id:'A',poStatus:'reserved',currentStage:null,qty:100},
@@ -493,7 +494,8 @@ module.exports=async function(){
     const pl=P.phPipeline(fx);
     deq('counts per stage',[pl.counts.reserved,pl.counts.cutting,pl.counts.bundling,pl.counts.stitching,pl.counts.printing,pl.counts.washing,pl.counts.qc,pl.counts.completed],[1,2,1,1,0,0,0,1]);
     deq('units per stage',[pl.units.reserved,pl.units.cutting,pl.units.bundling,pl.units.stitching,pl.units.completed],[100,600,290,500,240]);
-    deq('units afloat: cutting to qc, 4 POs and 1390 pieces',[pl.afloat.pos,pl.afloat.units],[4,1390]);
+    deq('units afloat: issued pieces of POs still at cutting, 2 POs and 600 pieces',[pl.afloat.pos,pl.afloat.units],[2,600]);
+    deq('in production: cutting to qc, 4 POs and 1390 pieces',[pl.inProduction.pos,pl.inProduction.units],[4,1390]);
     deq('cancelled is left out and counted; unknown and junk are counted apart',[pl.cancelled,pl.unknown,pl.junk],[1,1,1]);
     s.eq('the total is the live POs (7): the cancelled 999 is in no figure',pl.total,7);
     s.eq('cancelled units are in no stage',P.PH_STAGES.reduce((t,k)=>t+pl.units[k],0),1730);
@@ -685,7 +687,8 @@ module.exports=async function(){
     const R=P.phReport(pos,jobs,{from:'2026-10-05',to:'2026-10-12'},o);
     // pipeline (a snapshot of all POs): reserved 1, cutting 2 (200+600), bundling 1 (the actual cut 380); cancelled left out
     deq('pipeline counts',[R.pipeline.counts.reserved,R.pipeline.counts.cutting,R.pipeline.counts.bundling,R.pipeline.total,R.pipeline.cancelled],[1,2,1,4,1]);
-    deq('units afloat: 200+600+380 over 3 POs',[R.unitsAfloat.pos,R.unitsAfloat.units],[3,1180]);
+    deq('units afloat: the issued pieces of the 2 POs still at cutting, 200+600',[R.unitsAfloat.pos,R.unitsAfloat.units],[2,800]);
+    deq('in production: 200+600+380 over 3 POs',[R.inProduction.pos,R.inProduction.units],[3,1180]);
     // POs issued in range: PO-001, 002, 003 (PO-005 is on the 20th): (400+200+600)/3 = 400.0
     deq('average PO issue quantity',[R.avgPoIssueQty.n,R.avgPoIssueQty.value,R.avgPoIssueQty.total],[3,400,1200]);
     // seasons: PO-001 stored winter (upcoming winter from its planned 8 Oct = winter-2026); PO-003 no season -> by planned date 7 Oct = winter-2026, a guess; PO-002 summer 2027
@@ -715,8 +718,9 @@ module.exports=async function(){
     deq('no season rows when no PO was issued in range',N.seasons,[]);
     // open range
     const A=P.phReport(pos,jobs,{},o);
-    s.eq('no range = every PO issued: 4 live POs',A.avgPoIssueQty.n,4);
-    deq('PO-005 (qty 100) joins: (400+200+600+100)/4 = 325',A.avgPoIssueQty.value,325);
+    s.eq('no range = every RELEASED PO: 3 (PO-005 is reserved, PO-004 cancelled)',A.avgPoIssueQty.n,3);
+    deq('PO-005 (qty 100, reserved) does not join: (400+200+600)/3 = 400',A.avgPoIssueQty.value,400);
+    deq('the reserved PO is counted apart',[A.reserved,A.unknown,A.excluded.reservedPos],[1,0,1]);
     // empty
     const E=P.phReport([],[],{from:'2026-10-05',to:'2026-10-12'});
     deq('empty input: explicit no data everywhere',[E.state,E.pipeline.state,E.pipeline.total,E.unitsAfloat,E.avgCutQty.value,E.avgCutQty.state,E.avgPoIssueQty.value,E.delayGap.value,E.leadTime.value,E.cutTotal.units,E.cutTotal.state],
@@ -731,6 +735,316 @@ module.exports=async function(){
     // season of a single PO with a stored 'all'
     deq('an all-season PO is its own row',P.phReport([{id:'P',poStatus:'in_production',currentStage:'cutting',qty:50,ts:pkt('2026-10-05',9),season:'all'}],[],{}).seasons.map(r=>[r.key,r.label]),[['all','All-season']]);
     deq('a PO with no season and no date is "unassigned", listed last',P.phReport([{id:'P',poStatus:'in_production',currentStage:'cutting',qty:50,ts:pkt('2026-10-05',9),season:'all'},{id:'Q',poStatus:'in_production',currentStage:'cutting',qty:60,createdAt:'x'}],[],{}).seasons.map(r=>r.key),['all']);
+  }
+
+  /* ── the verifier's round (11 Oct 2026) ─────────────────────────────── */
+  s.section('R1  report lead time: the start is an issue date, never the creation moment');
+  {
+    // PO documents carry ts (created), releasedAt, cutAt — no issue date. Every PO below is cut on 9 Oct 15:00 PKT.
+    const cut=iso(pkt('2026-10-09',15));
+    const mk=(id,extra)=>Object.assign({id:id,poStatus:'in_production',currentStage:'bundling',qty:100,cutAt:cut,cutQty:{M:100}},extra);
+    const rg={from:'2026-10-05',to:'2026-10-12'};
+    // released 5 Oct 09:00 -> cut 9 Oct 15:00 = 4 days (late against 3)
+    const rel=P.phReport([mk('A',{ts:pkt('2026-09-01',9),releasedAt:iso(pkt('2026-10-05',9))})],[],rg);
+    deq('releasedAt is the start: 1 PO, 4 days, 1 late, none unstarted',[rel.leadTime.n,rel.leadTime.value,rel.leadTime.late,rel.leadTime.noStart],[1,4,1,0]);
+    // a PO with only ts (created 1 Oct) must NOT be averaged as 8 days
+    const onlyTs=P.phReport([mk('B',{ts:pkt('2026-10-01',9)})],[],rg);
+    deq('a ts-only PO is excluded and counted in noStart: no data, never an 8-day average',[onlyTs.leadTime.n,onlyTs.leadTime.value,onlyTs.leadTime.state,onlyTs.leadTime.noStart],[0,null,'no data',1]);
+    const mix=P.phReport([mk('A',{releasedAt:iso(pkt('2026-10-05',9))}),mk('B',{ts:pkt('2026-10-01',9)})],[],rg);
+    deq('mixed: the average is the released PO alone (4), the other is noStart',[mix.leadTime.n,mix.leadTime.value,mix.leadTime.noStart],[1,4,1]);
+    // precedence: map > fabricIssuedAt > releasedAt
+    const both=mk('C',{ts:pkt('2026-10-01',9),releasedAt:iso(pkt('2026-10-05',9)),fabricIssuedAt:iso(pkt('2026-10-07',9))});
+    s.eq('fabricIssuedAt beats releasedAt: 2 days',P.phReport([both],[],rg).leadTime.value,2);
+    s.eq('the per-PO issue map beats both: issued 8 Oct = 1 day',P.phReport([both],[],rg,{issueAtById:{C:iso(pkt('2026-10-08',9))}}).leadTime.value,1);
+    s.eq('the map key is case- and space-insensitive',P.phReport([both],[],rg,{issueAtById:{' c ':iso(pkt('2026-10-08',9))}}).leadTime.value,1);
+    s.eq('a ts-only PO WITH a map entry is measured from it: 9 Oct 15:00 - 6 Oct = 3 days',P.phReport([mk('D',{ts:pkt('2026-10-01',9)})],[],rg,{issueAtById:{D:pkt('2026-10-06',9)}}).leadTime.value,3);
+    s.eq('an unreadable map date is ignored (still noStart)',P.phReport([mk('D',{ts:pkt('2026-10-01',9)})],[],rg,{issueAtById:{D:'soon'}}).leadTime.noStart,1);
+    // direct callers still get the flag, not an exclusion
+    const direct=P.phLeadTime({ts:pkt('2026-10-01',9),cutAt:cut});
+    deq('phLeadTime on a ts-only PO still answers, flagged start_from_ts',[direct.state,direct.days,direct.quality.indexOf('start_from_ts')>=0],['cut',8,true]);
+    s.ok('releasedAt as the start is flagged start_from_release',P.phLeadTime({releasedAt:iso(pkt('2026-10-05',9)),cutAt:cut}).quality.indexOf('start_from_release')>=0);
+    s.eq('...and measures 4 days',P.phLeadTime({releasedAt:iso(pkt('2026-10-05',9)),cutAt:cut}).days,4);
+  }
+
+  s.section('R2  report: one basis for every issue-based figure (released POs only)');
+  {
+    const mk=(id,stage,extra)=>Object.assign({id:id,poStatus:stage==='reserved'?'reserved':'in_production',currentStage:stage==='reserved'?null:stage,qty:100},extra||{});
+    const pos=[
+      mk('R1','cutting',{releasedAt:iso(pkt('2026-10-06',10)),ts:pkt('2026-09-01',9),season:'winter',qty:300}),   // released 6 Oct, created 1 Sept
+      mk('R2','cutting',{ts:pkt('2026-10-07',10),qty:100}),                                                    // no release date: dated by ts, marked
+      mk('RES','reserved',{ts:pkt('2026-10-06',10),qty:900,season:'summer'}),                                    // reserved: apart
+      mk('UNK','packing',{releasedAt:iso(pkt('2026-10-06',10)),qty:700}),                                       // unknown stage: apart
+      {id:'CAN',poStatus:'cancelled',qty:5000,ts:pkt('2026-10-06',10)}
+    ];
+    const R=P.phReport(pos,[],{from:'2026-10-05',to:'2026-10-12'});
+    deq('average issue quantity: only the two released POs, (300+100)/2 = 200',[R.avgPoIssueQty.n,R.avgPoIssueQty.value],[2,200]);
+    deq('seasons: the reserved 900 and the unknown 700 are in no row',R.seasons.reduce((t,r)=>t+r.units,0),400);
+    deq('reserved and unknown POs are counted apart',[R.reserved,R.unknown,R.excluded.reservedPos,R.excluded.unknownPos,R.excluded.cancelledPos],[1,1,1,1,1]);
+    s.eq('one released PO had no release date and was dated by its ts: counted',R.excluded.datedFromTs,1);
+    // releasedAt before ts: R1 was CREATED 1 Sept but RELEASED 6 Oct
+    s.eq('dated by releasedAt (6 Oct), not by ts (1 Sept): inside an October range',P.phReport([pos[0]],[],{from:'2026-10-01',to:'2026-10-31'}).avgPoIssueQty.n,1);
+    s.eq('...and outside a September range',P.phReport([pos[0]],[],{from:'2026-09-01',to:'2026-09-30'}).avgPoIssueQty.n,0);
+    s.eq('a reserved PO alone: no data, state no data',P.phReport([pos[2]],[],{}).state,'no data');
+    s.eq('...but the pipeline still counts it',P.phReport([pos[2]],[],{}).pipeline.counts.reserved,1);
+  }
+
+  s.section('R3  units afloat = issued pieces not yet cut done; inProduction is the wide figure');
+  {
+    const cutD={cutAt:'2026-10-09T10:00:00.000Z'};
+    const pos=[
+      {id:'A',currentStage:'cutting',poStatus:'in_production',qty:500},
+      Object.assign({id:'B',currentStage:'cutting',poStatus:'in_production',qty:300,cutQty:{M:250}},cutD),   // stage still cutting: afloat counts what was ISSUED (300)
+      Object.assign({id:'C',currentStage:'stitching',poStatus:'in_production',qty:400,cutQty:{M:380}},cutD),
+      {id:'D',poStatus:'reserved',qty:999},
+      {id:'E',currentStage:'completed',poStatus:'complete',qty:100}
+    ];
+    const pl=P.phPipeline(pos);
+    deq('afloat: 2 POs at cutting, the ordered 500+300',[pl.afloat.pos,pl.afloat.units,pl.afloat.stages],[2,800,['cutting']]);
+    deq('inProduction: cutting + stitching = 3 POs; cutting 500+300 ordered, stitching the ACTUAL 380',[pl.inProduction.pos,pl.inProduction.units],[3,1180]);
+    deq('inProduction stages are cutting..qc',pl.inProduction.stages,P.PH_REAL_STAGE_ORDER);
+    const none=P.phPipeline([{id:'C',currentStage:'bundling',poStatus:'in_production',qty:50}]);
+    deq('nothing at cutting: afloat is a real 0, inProduction is not',[none.afloat.pos,none.afloat.units,none.inProduction.units],[0,0,50]);
+    const R=P.phReport(pos,[],{});
+    deq('phReport exports both',[R.unitsAfloat.units,R.inProduction.units],[800,1180]);
+    s.eq('...the same as the pipeline',J([R.unitsAfloat,R.inProduction]),J([R.pipeline.afloat,R.pipeline.inProduction]));
+    s.eq('a PO with no quantity at cutting is counted in noUnits, not as 0 pieces',P.phPipeline([{id:'Z',currentStage:'cutting',poStatus:'in_production'}]).noUnits,1);
+  }
+
+  s.section('R4  gross tolerance: the master log and phGrossVariance judge by the same rule');
+  {
+    // 100 pieces, 40.8 kg = 0.408 per piece against a standard of 0.40 = +2.00 %. The standard's own tolerance is 1 %: OVER.
+    const std={unit:'kg',grossPerPiece:0.4,tolerancePct:1};
+    const act=P.phGrossActual({fabricUsed:40.8,cutUnits:100,unit:'kg'});
+    const direct=P.phGrossVariance(act,std);
+    const job=(id,code,fab,units)=>({id:id,master:'Alam',cutDay:'2026-10-09',cutUnits:units,fabricUsed:fab,unit:'kg',articleCode:code});
+    const log=P.phMasterLog([job('J1','GST073',40.8,100)],'alam',{from:'2026-10-05',to:'2026-10-12'},{standards:{GST073:std}});
+    const row=P.phMastersSummary([job('J1','GST073',40.8,100)],{},{standards:{GST073:std}}).rows[0];
+    deq('phGrossVariance: +2 % against 1 % is over',[direct.gapPct,direct.state],[2,'over']);
+    deq('phMasterLog totals: the same case is over',[log.totals.vsStandard.kg.gapPct,log.totals.vsStandard.kg.state],[2,'over']);
+    s.eq('...and so is its daily bucket',log.daily[0].vsStandard.kg.state,'over');
+    s.eq('...and its weekly bucket',log.weekly[0].vsStandard.kg.state,'over');
+    s.eq('...and the masters summary',row.vsStandard.kg.state,'over');
+    s.eq('the report agrees',P.phReport([],[job('J1','GST073',40.8,100)],{},{standards:{GST073:std}}).grossPerMaster[0].vsStandard.kg.state,'over');
+    deq('the bucket shows the tolerance it used',log.totals.vsStandard.kg.tolerancePct,{over:1,under:1});
+    // no tolerance on the standard: the global defaults (+3 over / -5 under) apply to both paths
+    const plain={unit:'kg',grossPerPiece:0.4};
+    s.eq('no own tolerance: +2 % is within the global 3 % (direct)',P.phGrossVariance(act,plain).state,'within');
+    s.eq('...and in the log',P.phMasterLog([job('J1','GST073',40.8,100)],'',{},{standards:{GST073:plain}}).totals.vsStandard.kg.state,'within');
+    s.eq('...+4 % is over in both',P.phMasterLog([job('J1','GST073',41.6,100)],'',{},{standards:{GST073:plain}}).totals.vsStandard.kg.state,P.phGrossVariance(P.phGrossActual({fabricUsed:41.6,cutUnits:100,unit:'kg'}),plain).state);
+    s.eq('...-4 % is within (global under limit is 5)',P.phMasterLog([job('J1','GST073',38.4,100)],'',{},{standards:{GST073:plain}}).totals.vsStandard.kg.state,'within');
+    s.eq('settings in opts change the fallback for both paths: over limit 1 makes +2 % over',P.phMasterLog([job('J1','GST073',40.8,100)],'',{},{standards:{GST073:plain},settings:{grossOverTolPct:1}}).totals.vsStandard.kg.state,'over');
+    // two standards in one bucket: expected-fabric-weighted tolerance.
+    // A: 0.4 tol 1, 100 pcs, 40.8 kg (+2 %).  B: 0.5 tol 10, 100 pcs, 51 kg (+2 %).  expected 40+50 = 90, actual 91.8, gap +2.00 %.
+    // weighted over limit = (1*40 + 10*50)/90 = 6 -> the bucket is within, while A alone is over.
+    const two=P.phMasterLog([job('A','GA',40.8,100),job('B','GB',51,100)],'',{},{standards:{GA:{unit:'kg',grossPerPiece:0.4,tolerancePct:1},GB:{unit:'kg',grossPerPiece:0.5,tolerancePct:10}}});
+    deq('two standards: gap 2 %, weighted tolerance 6, within',[two.totals.vsStandard.kg.gapPct,two.totals.vsStandard.kg.tolerancePct.over,two.totals.vsStandard.kg.state],[2,6,'within']);
+  }
+
+  s.section('R5  a date-time with no offset is PKT whatever the machine\'s timezone');
+  {
+    const probe=`const P=require(${JSON.stringify(path.join(ROOT,'js/ph-core.js'))});
+      const ms=x=>P.phMs(x);
+      const lt=P.phLeadTime({issuedAt:'2026-10-05T23:30:00',cutAt:'2026-10-06 10:00'});
+      console.log(JSON.stringify({off:new Date(2026,9,5,12).getTimezoneOffset(),
+        a:ms('2026-10-05T23:30:00'),b:ms('2026-10-05 01:30'),c:ms('2026-10-05T23:30:00Z'),d:ms('2026-10-05T23:30:00+05:00'),
+        e:ms('2026-10-05T10:00:00-08:00'),f:ms('2026-10-05'),g:ms('2026-10-05T23:30'),h:ms('2026-10-05 23:30:15.250'),
+        da:P.phDay('2026-10-05T23:30:00'),db:P.phDay('2026-10-05 01:30'),dc:P.phDay('2026-10-05T23:30:00Z'),df:P.phDay('2026-10-05'),
+        lt:[lt.state,lt.startDay,lt.endDay,lt.days,lt.hours]}));`;
+    const want={a:Date.UTC(2026,9,5,18,30),b:Date.UTC(2026,9,4,20,30),c:Date.UTC(2026,9,5,23,30),d:Date.UTC(2026,9,5,18,30),
+      e:Date.UTC(2026,9,5,18,0),f:Date.UTC(2026,9,4,19,0),g:Date.UTC(2026,9,5,18,30),h:Date.UTC(2026,9,5,18,30,15,250),
+      da:'2026-10-05',db:'2026-10-05',dc:'2026-10-06',df:'2026-10-05',lt:['cut','2026-10-05','2026-10-06',1,10.5]};
+    const zones=['Asia/Karachi','UTC','America/Los_Angeles'],offs=[];
+    zones.forEach(tz=>{
+      const r=require('child_process').spawnSync(process.execPath,['-e',probe],{env:Object.assign({},process.env,{TZ:tz}),encoding:'utf8'});
+      let got=null;try{got=JSON.parse(r.stdout);}catch(e){}
+      s.ok('TZ='+tz+': the child ran',got!==null,(r.stderr||'').slice(0,200));
+      if(got){
+        offs.push(got.off);delete got.off;
+        deq('TZ='+tz+': every zone-less / offset / date-only string reads the same',got,want);
+      }
+    });
+    s.ok('the three child processes really had three different timezones (offsets '+offs.join(',')+')',new Set(offs).size===3);
+    // in-process too
+    s.eq('in this process: a zone-less string is PKT',P.phMs('2026-10-05T23:30:00'),want.a);
+    s.eq('a bare date with an offset means nothing',P.phMs('2026-10-05Z'),null);
+    s.eq('hour 24 is refused',P.phMs('2026-10-05T24:00:00'),null);
+    s.eq('minute 60 is refused',P.phMs('2026-10-05T10:60:00'),null);
+    s.eq('offset +25:00 is refused',P.phMs('2026-10-05T10:00:00+25:00'),null);
+    s.eq('trailing junk is refused',P.phMs('2026-10-05T10:00:00 maybe'),null);
+  }
+
+  s.section('R6  seasons stay Oct-Jan winter / Feb-Sep summer (owner decision)');
+  {
+    s.eq('31 Jan 2027 is winter 2026',P.phSeasonOfDay('2027-01-31').key,'winter-2026');
+    s.eq('1 Feb 2027 is summer 2027',P.phSeasonOfDay('2027-02-01').key,'summer-2027');
+    s.eq('1 Oct 2026 is winter 2026',P.phSeasonOfDay('2026-10-01').key,'winter-2026');
+    s.eq('30 Sep 2026 is summer 2026',P.phSeasonOfDay('2026-09-30').key,'summer-2026');
+    const src=fs.readFileSync(path.join(ROOT,'js/ph-core.js'),'utf8');
+    s.ok('the source records that the contract said Oct-Feb and the owner decision wins',/contract said Oct-Feb/.test(src)&&/OWNER/.test(src));
+  }
+
+  s.section('R-a  size lookups use own properties only');
+  {
+    ['constructor','__proto__','toString','hasOwnProperty','valueOf'].forEach(n=>{
+      let v,k,m,e=null;
+      try{v=P.phValidateSizes(n,{S:5});k=P.phSizeKey(n,'S');m=P.phSizeModel({sizeModel:n,code:'GST073'});}catch(x){e=x;}
+      s.ok('"'+n+'" as a model name does not throw',e===null,e&&e.message);
+      if(!e){
+        deq('"'+n+'" as a model name: invalid, no model, no key',[v.ok,v.model,v.issues.length>0,k],[false,null,true,null]);
+        deq('"'+n+'" in phSizeModel falls back to the default alpha, not to a prototype member',[m.model,m.source],['alpha','default']);
+      }
+    });
+    const names={};['constructor','toString','__proto__'].forEach(n=>{
+      let r,e=null;try{r=P.phValidateSizes('alpha',JSON.parse('{"'+n+'":3,"S":2}'));}catch(x){e=x;}
+      names[n]=e?'threw':(r.ok?'ok':r.issues.map(i=>i.size).join());
+    });
+    deq('a raw "constructor" / "toString" / "__proto__" SIZE name is a clear issue, never a throw',names,{constructor:'constructor',toString:'toString',__proto__:'__proto__'});
+    s.eq('a standard\'s sizes map does not read inherited members',P.phExpectedGross({unit:'kg',grossPerPiece:0.3,sizes:{M:0.4}},{constructor:10,M:10}),0.35);
+  }
+
+  s.section('R-b  the cut gate in every shape the app and a person might write');
+  {
+    const r=(g)=>P.phCutRange(100,g);
+    deq('{minPct,maxPct}',(x=>[x.min,x.max,x.gateFallback])(r({minPct:80,maxPct:120})),[80,120,false]);
+    deq('[lo,hi] in percent',(x=>[x.min,x.max,x.gateFallback])(r([80,120])),[80,120,false]);
+    deq('the app\'s fraction shape {min:0.8,max:1.2}',(x=>[x.min,x.max,x.gate,x.gateFallback])(r({min:0.8,max:1.2})),[80,120,[80,120],false]);
+    deq('PO_CUT_GATE as it is in js/pos.js {min:0.7,max:1.3} is 70-130 with no fallback',(x=>[x.min,x.max,x.gateFallback])(r({min:0.7,max:1.3})),[70,130,false]);
+    deq('no gate given is the default, not a fallback',(x=>[x.min,x.max,x.gateFallback])(r(undefined)),[70,130,false]);
+    ['wide',[0,1000],{min:0,max:99},{minPct:'x',maxPct:5},[80],{min:2,max:3},{}].forEach(g=>
+      deq('an unsane gate '+J(g)+' falls back to 70-130 and says so',(x=>[x.min,x.max,x.gateFallback])(r(g)),[70,130,true]));
+    s.eq('a fraction gate judges: 79 of 100 needs an override',P.phCutVerdict(100,79,{gate:{min:0.8,max:1.2}}),'needs_override');
+    s.eq('...80 is ok',P.phCutVerdict(100,80,{gate:{min:0.8,max:1.2}}),'ok');
+    deq('phCutCheck carries the range and the flag',(x=>[x.verdict,x.min,x.max,x.gateFallback])(P.phCutCheck(100,60,{gate:'wide'})),['needs_override',70,130,true]);
+    deq('phCutCheck on a cut it cannot judge is invalid but still names the gate',(x=>[x.verdict,x.gateFallback])(P.phCutCheck(100,0,{gate:'wide'})),['invalid',true]);
+    deq('phSettings reads the fraction gate',P.phSettings({cutGate:{min:0.8,max:1.2}}).cutGate,[80,120]);
+  }
+
+  s.section('R-c  cancelled cut records, and a job id given twice');
+  {
+    const jb=(o)=>Object.assign({master:'Alam',cutDay:'2026-10-09',cutUnits:100,fabricUsed:30,unit:'kg',articleCode:'GST073'},o);
+    const jobs=[jb({id:'J1',poId:'PO-1'}),jb({id:'J2',poId:' po-004 '}),jb({id:'po-005'}),jb({id:'J4',poId:'PO-1',cancelled:true})];
+    const live=P.phMasterLog(jobs,'',{},{}).totals.jobs;
+    s.eq('with nothing cancelled supplied only the flagged job goes',live,3);
+    s.eq('a cancelled poId supplied as a list (case/space-insensitive) excludes its jobs',P.phMasterLog(jobs,'',{},{cancelledPoIds:['PO-004']}).totals.jobs,2);
+    s.eq('a job whose own id is the cancelled PO is excluded too',P.phMasterLog(jobs,'',{},{cancelledPoIds:[' po-005 ']}).totals.jobs,2);
+    s.eq('cancelled POs supplied as documents (opts.pos) count',P.phMasterLog(jobs,'',{},{pos:[{id:'PO-004',poStatus:'cancelled'},{id:'PO-1',poStatus:'in_production'}]}).totals.jobs,2);
+    s.eq('a live PO supplied as a document excludes nothing',P.phMasterLog(jobs,'',{},{pos:[{id:'PO-004',poStatus:'in_production'}]}).totals.jobs,3);
+    deq('skipped.cancelled counts them',P.phMasterLog(jobs,'',{},{cancelledPoIds:['PO-004','PO-005']}).skipped.cancelled,3);
+    s.eq('the masters summary honours the same list',P.phMastersSummary(jobs,{},{cancelledPoIds:['PO-004','PO-005']}).rows[0].jobs,1);
+    // the report: cancelled PO documents exclude jobs by poId OR id
+    const R=P.phReport([{id:'PO-004',poStatus:'cancelled',qty:5},{id:'PO-005',poStatus:'cancelled',qty:5}],jobs,{});
+    deq('phReport: cut total counts only the one live job, 3 jobs excluded as cancelled',[R.cutTotal.n,R.excluded.cancelledJobs],[1,3]);
+    // duplicates
+    const dup=[jb({id:'D1',cutDay:'2026-10-10',cutUnits:50}),jb({id:'D1',cutDay:'2026-10-09',cutUnits:70}),jb({id:'D1',cutDay:'2026-10-09',cutUnits:90}),jb({id:'D2',cutUnits:30})];
+    const L=P.phMasterLog(dup,'',{},{});
+    deq('a job id given three times counts once: the first by day then units (9 Oct, 70) + D2 30',[L.totals.jobs,L.totals.units,L.duplicateJobs],[2,100,2]);
+    deq('the same in the summary',(r=>[r.rows[0].units,r.duplicateJobs])(P.phMastersSummary(dup,{},{})),[100,2]);
+    deq('the same in the report',(r=>[r.cutTotal.units,r.duplicateJobs,r.excluded.duplicateJobs])(P.phReport([],dup,{})),[100,2,2]);
+    deq('a range does not change which copy survives (10 Oct only: the 10 Oct copy was a duplicate of an earlier one)',(r=>[r.totals,r.duplicateJobs])(P.phMasterLog(dup,'',{from:'2026-10-10',to:'2026-10-10'},{})),[null,2]);
+    deq('two cuts of one PO with no job id are two jobs, never merged',P.phMasterLog([jb({poId:'PO-9'}),jb({poId:'PO-9'})],'',{},{}).totals.jobs,2);
+  }
+
+  s.section('R-d  size keys outside the article\'s size model');
+  {
+    const jb=(o)=>Object.assign({id:'J',master:'Alam',cutDay:'2026-10-09',articleCode:'GST073'},o);
+    const t=(j)=>P.phMasterLog([j],'',{},{}).totals;
+    const unk=t(jb({cutUnits:{S:100,M:50,FOO:999}}));
+    deq('model not known (default alpha guess): everything counts, the stray key is reported',[unk.units,unk.unknownSizes],[1149,['FOO']]);
+    const al=t(jb({sizeModel:'alpha',cutUnits:{S:100,M:50,FOO:999,'30':7}}));
+    deq('model known (explicit alpha): only alpha sizes count, the rest are reported',[al.units,al.unknownSizes],[150,['30','FOO']]);
+    const wa=t(jb({articleCode:'GD007',cutUnits:{'30':10,'32':20,S:5}}));
+    deq('a waist article (prefix GD): 30 + 32 count, S is reported',[wa.units,wa.unknownSizes],[30,['S']]);
+    s.eq('a waist size on an unknown-model article is no stray (it is a size of some model)',t(jb({cutUnits:{S:1,'30':2}})).unknownSizes.length,0);
+    const po=P.phPoUnits({code:'GD007',currentStage:'bundling',cutAt:'2026-10-09T10:00:00.000Z',cutQty:{'30':10,S:5}});
+    deq('phPoUnits: the actual cut of a waist article ignores S and names it',[po.units,po.basis,po.unknownSizes],[10,'cut',['S']]);
+    deq('phPoUnits without strays has no unknownSizes key',P.phPoUnits({qty:5}),{units:5,basis:'ordered'});
+    s.eq('a cut map of only strays on a known model has no cut',P.phPoUnits({code:'GD007',currentStage:'bundling',cutAt:'2026-10-09T10:00:00.000Z',cutQty:{S:5},qty:40}).basis,'ordered');
+  }
+
+  s.section('R-e  pipeline total = counts + unknown');
+  {
+    const fx=[
+      [{id:'A',poStatus:'reserved'},{id:'B',currentStage:'cutting',poStatus:'in_production',qty:5},{id:'H',currentStage:'packing',poStatus:'in_production',qty:50},{id:'I',currentStage:'zzz',poStatus:'in_production',qty:7}],
+      [{id:'H',currentStage:'packing',poStatus:'in_production',qty:50}],
+      [{id:'A',poStatus:'reserved'},null,{poStatus:'cancelled'},{id:'F',currentStage:'completed',poStatus:'complete',qty:9}]
+    ];
+    fx.forEach((list,i)=>{
+      const pl=P.phPipeline(list);
+      const sum=pl.counts?P.PH_STAGES.reduce((t,k)=>t+pl.counts[k],0):0;
+      s.eq('fixture '+(i+1)+': total equals the sum of the stage counts plus unknown ('+sum+'+'+pl.unknown+')',pl.total,sum+pl.unknown);
+    });
+    const only=P.phPipeline(fx[1]);
+    deq('only an unknown-stage PO: state ok, total 1, every stage count 0, unknown 1 with its pieces apart',[only.state,only.total,!!only.counts&&P.PH_STAGES.every(k=>only.counts[k]===0),only.unknown,only.unknownUnits],['ok',1,true,1,50]);
+    deq('unknown is separate from the stage units',only.units?P.PH_STAGES.reduce((t,k)=>t+only.units[k],0):null,0);
+  }
+
+  s.section('R-f  phRound: finite in, finite out, never -0');
+  {
+    s.eq('a huge value comes back as it is',P.phRound(1e300,4),1e300);
+    s.eq('the largest double is finite',isFinite(P.phRound(Number.MAX_VALUE,12)),true);
+    s.eq('...and unchanged',P.phRound(Number.MAX_VALUE,12),Number.MAX_VALUE);
+    s.eq('a value just under 2^53 at 12 places is finite',isFinite(P.phRound(9007199254740991,12)),true);
+    s.eq('a value that would print with an exponent when scaled is not NaN',Number.isNaN(P.phRound(123456789012345.6,12)),false);
+    s.eq('-0.001 to 2 places is +0',Object.is(P.phRound(-0.001,2),0),true);
+    s.eq('-1e-9 (exponent form) to 2 places is +0',Object.is(P.phRound(-1e-9,2),0),true);
+    s.eq('-0 in is +0 out',Object.is(P.phRound(-0,2),0),true);
+    s.eq('1.005 to 2 places is 1.01 (the trap is still avoided)',P.phRound(1.005,2),1.01);
+    s.eq('-2.5 to 0 places rounds away from zero',P.phRound(-2.5,0),-3);
+    let bad=0;[1e21,1e22,-1e21,5e-324,1.5e-7,123456.789e10,2**52+0.5,-(2**60)].forEach(x=>{[0,2,4,12].forEach(dp=>{const r=P.phRound(x,dp);if(typeof r!=='number'||!isFinite(r)||Object.is(r,-0))bad++;});});
+    s.eq('a sweep of awkward finite values never gives NaN, Infinity or -0',bad,0);
+  }
+
+  s.section('R-g  settings that were replaced are named');
+  {
+    const jobs=[{id:'A',qty:100}];
+    const fb=(o)=>P.phAllocate(jobs,Object.assign({startDay:'2026-10-12'},o)).settingsFallback;
+    deq('nothing wrong: an empty list',fb({}),[]);
+    deq('good settings: an empty list',fb({capacity:200,offWeekdays:[0,6]}),[]);
+    const c0=fb({capacity:0});
+    deq('capacity 0 is named and replaced by 400',[c0.length,(c0[0]||{}).field,(c0[0]||{}).given,(c0[0]||{}).used],[1,'dailyCapacity',0,400]);
+    deq('negative capacity too',fb({dailyCapacity:-5}).map(x=>x.field),['dailyCapacity']);
+    deq('capacity "lots" too',fb({dailyCapacity:'lots'}).map(x=>x.field),['dailyCapacity']);
+    const off=fb({offWeekdays:[0,1,2,3,4,5,6]});
+    deq('all seven weekdays off is named, and the allocation still runs on a seven-day week',[off.map(x=>x.field),P.phAllocate(jobs,{startDay:'2026-10-12',offWeekdays:[0,1,2,3,4,5,6]}).ok],[['offWeekdays'],true]);
+    deq('an off-weekday list that is not a list is named',fb({offWeekdays:'sat'}).map(x=>x.field),['offWeekdays']);
+    deq('several at once are all named',fb({capacity:0,offWeekdays:[0,1,2,3,4,5,6]}).map(x=>x.field),['dailyCapacity','offWeekdays']);
+    s.eq('the schedule used the replacement: 401 pieces over a capacity of 0 still caps at 400',J(P.phAllocate([{id:'A',qty:401}],{startDay:'2026-10-12',capacity:0}).days.map(d=>d.units)),'[400,1]');
+    s.eq('a failed allocation (bad start) still carries the list',Array.isArray(P.phAllocate(jobs,{capacity:0}).settingsFallback),true);
+  }
+
+  s.section('R-h  phNum: decimal comma vs thousands separator');
+  {
+    [['1,5',1.5],['0,5',0.5],['1,50',1.5],['12,34',12.34],['-3,5',-3.5],['12,345',12345],['1,234,567',1234567],['1,234.5',1234.5],['1,200',1200],['4,000',4000],['1.5',1.5],['  2,5 ',2.5]].forEach(c=>
+      s.eq('phNum('+J(c[0])+') = '+c[1],P.phNum(c[0]),c[1]));
+    ['1,',',5','1,,5','1,5,5x','a,5'].forEach(x=>s.ok('phNum('+J(x)+') is not guessed at unless it is a number',P.phNum(x)===null||isFinite(P.phNum(x))));
+    s.eq('a comma amount in a gross figure: 1,5 kg over 10 pieces',P.phGrossActual({fabricUsed:'1,5',cutUnits:10,unit:'kg'}).perPiece,0.15);
+  }
+
+  s.section('R-i  the allocator does not walk to year 9999');
+  {
+    const jobs=[];for(let i=0;i<300;i++)jobs.push({id:'J'+String(1000+i),qty:10,requestedDay:'9999-12-31'});
+    const t0=Date.now();
+    const A=P.phAllocate(jobs,{startDay:'2026-10-12'});
+    const ms=Date.now()-t0;
+    s.ok('300 jobs asking for 31 Dec 9999 come back in under 200 ms ('+ms+' ms)',ms<200,String(ms));
+    const r=A.jobs[0];
+    deq('delayDays is null, the reason is named per job, the calendar gap is still given',[A.ok,A.jobs.length,r.delayDays,r.delayReason,r.delayCalendarDays<-100000,r.late],[true,300,null,'requested_out_of_range',true,false]);
+    s.eq('every job carries the reason',A.jobs.every(j=>j.delayReason==='requested_out_of_range'),true);
+    const near=P.phAllocate([{id:'A',qty:100,requestedDay:'2026-10-12'}],{startDay:'2026-10-12'}).jobs[0];
+    deq('an ordinary request is unchanged: 0 working days, 0 calendar days, no reason',[near.delayDays,near.delayCalendarDays,near.delayReason],[0,0,null]);
+    const far=P.phAllocate([{id:'A',qty:100,requestedDay:'2026-10-05'}],{startDay:'2026-10-12',offWeekdays:[0,6]}).jobs[0];
+    deq('working vs calendar days: finish Mon 12 Oct vs asked Mon 5 Oct = 5 working days, 7 calendar days',[far.delayDays,far.delayCalendarDays],[5,7]);
+    deq('an earliest day at the end of time is unscheduled, not a hang',P.phAllocate([{id:'A',qty:900,earliestDay:'9999-12-31'}],{startDay:'2026-10-12'}).unscheduled.map(u=>u.reason),['horizon']);
+  }
+
+  s.section('R-j  a gross figure needs a unit');
+  {
+    deq('no unit: not ok, reason no_unit, no figure',(r=>[r.ok,r.reason,r.perPiece,r.raw])(P.phGrossActual({fabricUsed:120,cutUnits:400})),[false,'no_unit',null,null]);
+    deq('an empty unit is no unit',P.phGrossActual({fabricUsed:120,cutUnits:400,unit:''}).reason,'no_unit');
+    deq('a null unit is no unit',P.phGrossActual({fabricUsed:120,cutUnits:400,unit:null}).ok,false);
+    s.eq('a bad unit is still bad_unit',P.phGrossActual({fabricUsed:120,cutUnits:400,unit:'yards'}).reason,'bad_unit');
+    s.eq('with a unit it works',P.phGrossActual({fabricUsed:120,cutUnits:400,unit:'kg'}).ok,true);
+    s.eq('missing pieces is reported before the unit',P.phGrossActual({fabricUsed:120,cutUnits:0}).reason,'no_pieces');
   }
 
   /* ── the module itself ──────────────────────────────────────────────── */
@@ -826,7 +1140,7 @@ module.exports=async function(){
     s.ok('it comes after the last existing classic script (prod-backup.js)',iPh>iPb&&iPb>0);
     s.ok('and before the bootstrap module',iPh<iMod&&iMod>0);
     s.ok('it is in PRECACHE_URLS',/PRECACHE_URLS[\s\S]*'\/js\/ph-core\.js'/.test(sw));
-    s.ok('CACHE_VERSION is past v309',(v=>v!==null&&+v>309)((/CACHE_VERSION = 'v(\d+)'/.exec(sw)||[])[1]||null));
+    s.ok('CACHE_VERSION is past v310',(v=>v!==null&&+v>310)((/CACHE_VERSION = 'v(\d+)'/.exec(sw)||[])[1]||null));
   }
   return s;
 };

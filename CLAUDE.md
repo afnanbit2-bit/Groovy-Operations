@@ -10570,6 +10570,16 @@ and nothing was seen on a screen. How any of it behaves live is hypothesis.**
 - **Known open:** `dashboard totals in js/embellishments.js (allPOs.length) still
   count cancelled POs` (verified by grep: line 4331, `total=allPOs.length`).
 
+## Production Ops ph-core (11 Oct 2026)
+
+`js/ph-core.js` (pure classic script, `tests/ph-core.test.js`, 696 assertions) is the decision core for the planned Production Ops module. **The app calls nothing in it yet; it reads and writes no Firestore, and no production data was touched** (verified: the file has no DOM, clock, Firestore or session reference, held by a test). Script tag, `PRECACHE_URLS` entry, `CACHE_VERSION` v311.
+- **Decisions:** units **afloat** = ISSUED pieces (ordered qty) of released POs at stage `cutting`, i.e. not yet cut done (owner decision 5); the wider cutting..qc figure is **`inProduction`** (actual cut qty once past cutting); `phPipeline`/`phReport` carry both. Seasons stay **Oct-Jan winter / Feb-Sep summer** (owner decision, "Type & season feed"; the contract's Oct-Feb loses). `delayDays` = working days, `delayCalendarDays` = calendar days (both on every allocated job).
+- **Lead time:** PO documents carry no issue date (`ts` = created). The report's start is `opts.issueAtById[id]` > `fabricIssuedAt` > `releasedAt`; a PO that would start from `ts` is **excluded and counted in `leadTime.noStart`**, never averaged. All issue-based report figures use released POs only (reserved/unknown counted apart), dated by release before `ts`.
+- **Gross:** `_phBucket` and `phGrossVariance` share `_phTolOf` (the standard's own `tolerancePct`, else global 3 / 5); a bucket of several standards uses the expected-fabric-weighted tolerance (my call, labelled a judgement). `phGrossActual` without a unit is `no_unit`.
+- **Dates:** a zone-less date-time string is read as +05:00, never the process timezone; a date-only string is a PKT day. Held by child processes under TZ=Asia/Karachi, UTC and America/Los_Angeles (verified: identical results).
+- **Also:** own-property model lookups; cut gate accepts `{minPct,maxPct}`, `[lo,hi]` and `{min:0.7,max:1.3}` with `gateFallback`; cancelled cut records matched by id/poId; a repeated job id counts once (`duplicateJobs`); stray size keys reported (`unknownSizes`); `phAllocate` returns `settingsFallback` and does not walk to year 9999 (`requested_out_of_range`); `phRound` finite and never -0; `phNum` reads `1,5` as 1.5.
+- **Verified:** 21 deliberate reverts, each failed a named assertion; `node tests/run.js` 16,142 passed. **Not verified:** any real data (shape of `releasedAt`/`cutAt` on live POs is read from the contract, hypothesis), a real screen, the weighted-tolerance rule against what the owner expects, the 3650-day allocator horizon.
+
 ## Pattern Hub (Sept 2026)
 
 Physical sewing patterns — heavy craft paper, traced by Hassan and Alam,
