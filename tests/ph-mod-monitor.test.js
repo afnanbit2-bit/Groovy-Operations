@@ -389,7 +389,7 @@ module.exports=async function(){
   s.section('wiring: script order, precache, the tabs, the audience');
   const IDX=read('index.html'),SW=read('sw.js');
   const iUi=IDX.indexOf('<script src="/js/ph-ui.js'),iMon=IDX.indexOf('<script src="/js/ph-mod-monitor.js');
-  s.ok('index.html loads js/ph-mod-monitor.js once, right after js/ph-ui.js',iUi>0&&iMon>iUi&&IDX.slice(iUi,iMon).split('<script').length===2&&(IDX.match(/ph-mod-monitor\.js/g)||[]).length===1);
+  s.ok('index.html loads js/ph-mod-monitor.js once, after js/ph-ui.js',iUi>0&&iMon>iUi&&(IDX.match(/ph-mod-monitor\.js/g)||[]).length===1);
   s.ok('the script is loaded before the Firebase module (it is a classic script)',iMon<IDX.indexOf('<script type="module">'));
   s.ok('sw.js precaches it after js/ph-ui.js',SW.indexOf("'/js/ph-mod-monitor.js'")>SW.indexOf("'/js/ph-ui.js'")&&SW.indexOf("'/js/ph-ui.js'")>0);
   {
@@ -402,7 +402,7 @@ module.exports=async function(){
   s.section('stylesheet contract (geometry the harness cannot lay out)');
   const a0=CSS.indexOf('/* ph-mod-monitor START */'),b0=CSS.indexOf('/* ph-mod-monitor END */');
   const blk=CSS.slice(a0,b0).replace(/\/\*[\s\S]*?\*\//g,'');
-  s.ok('the block exists, is delimited and is the LAST thing in the stylesheet',a0>0&&b0>a0&&CSS.slice(b0).trim()==='/* ph-mod-monitor END */');
+  s.ok('the block exists, is delimited and sits in the trailing run of ph-mod-* blocks at the END of the stylesheet',a0>0&&b0>a0&&CSS.slice(b0+'/* ph-mod-monitor END */'.length).replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
   s.ok('tokens only: no literal colour',!/#[0-9a-fA-F]{3,8}\b/.test(blk)&&!/\b(?:rgb|rgba|hsl|hsla)\(/.test(blk));
   s.ok('every selector is .phm- prefixed',(blk.match(/[^{}]+(?=\{)/g)||[]).filter(x=>!/^\s*@(media|keyframes)/.test(x)&&!/^\s*(from|to)\s*$/.test(x)).every(sel=>sel.split(',').every(p=>/phm-/.test(p))));
   s.ok('no text under 12px',!/font-size:(?:[0-9]|10|11)(?:\.\d+)?px/.test(blk));

@@ -652,10 +652,10 @@ function wiring(s){
   s.section('wiring: script tag, precache, stylesheet block');
   const lines=IDX.split('\n');
   const iUi=lines.findIndex(l=>/\/js\/ph-ui\.js/.test(l)),iAd=lines.findIndex(l=>/\/js\/ph-mod-admin\.js/.test(l));
-  s.ok('index.html has ONE script tag for js/ph-mod-admin.js, directly after the ph-ui.js tag',lines.filter(l=>/ph-mod-admin\.js/.test(l)).length===1&&iUi>-1&&iAd===iUi+1&&/^<script src="\/js\/ph-mod-admin\.js\?v=[0-9a-z]+"><\/script>$/.test(lines[iAd]));
-  s.ok('sw.js precaches /js/ph-mod-admin.js exactly once, directly after /js/ph-ui.js',(SW.match(/'\/js\/ph-mod-admin\.js'/g)||[]).length===1&&/'\/js\/ph-ui\.js',\n  '\/js\/ph-mod-admin\.js',/.test(SW));
+  s.ok('index.html has ONE script tag for js/ph-mod-admin.js, after the ph-ui.js tag',lines.filter(l=>/ph-mod-admin\.js/.test(l)).length===1&&iUi>-1&&iAd>iUi&&/^<script src="\/js\/ph-mod-admin\.js\?v=[0-9a-z]+"><\/script>$/.test(lines[iAd]));
+  s.ok('sw.js precaches /js/ph-mod-admin.js exactly once, after /js/ph-ui.js',(SW.match(/'\/js\/ph-mod-admin\.js'/g)||[]).length===1&&SW.indexOf("'/js/ph-mod-admin.js'")>SW.indexOf("'/js/ph-ui.js'"));
   const a=CSS.indexOf('/* ph-mod-admin START */'),b=CSS.indexOf('/* ph-mod-admin END */');
-  s.ok('css/main.css carries ONE delimited ph-mod-admin block at the end of the file',a>0&&b>a&&CSS.split('/* ph-mod-admin START */').length===2&&CSS.slice(b).trim()==='/* ph-mod-admin END */');
+  s.ok('css/main.css carries ONE delimited ph-mod-admin block in the trailing run of ph-mod-* blocks at the end of the file',a>0&&b>a&&CSS.split('/* ph-mod-admin START */').length===2&&CSS.slice(b+'/* ph-mod-admin END */'.length).replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
   const blk=CSS.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');
   s.ok('every selector in the block is .pha- prefixed',(blk.match(/[^{}]+(?=\{)/g)||[]).filter(x=>!/^\s*@media/.test(x)).every(x=>x.split(',').every(p=>/\.pha-/.test(p))));
   s.ok('tokens only: no literal colour in the block',!/#[0-9a-fA-F]{3,8}\b/.test(blk)&&!/\b(?:rgb|rgba|hsl|hsla)\(/.test(blk));

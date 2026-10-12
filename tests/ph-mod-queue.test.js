@@ -500,7 +500,7 @@ async function checks(src){
     o['XSS: the source never assigns innerHTML / outerHTML / insertAdjacentHTML or parses a string as HTML']=!/\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML|DOMParser|document\.write/.test(code);
     const a=CSS.indexOf('/* ph-mod-queue START */'),b=CSS.indexOf('/* ph-mod-queue END */');
     const blk=CSS.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');
-    o['css: the block exists, is the LAST thing in the file, and its braces balance']=a>0&&b>a&&CSS.slice(b+'/* ph-mod-queue END */'.length).trim()===''&&(blk.match(/\{/g)||[]).length===(blk.match(/\}/g)||[]).length;
+    o['css: the block exists, is in the trailing run of ph-mod-* blocks at the END of the file, and its braces balance']=a>0&&b>a&&CSS.slice(b+'/* ph-mod-queue END */'.length).replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()===''&&(blk.match(/\{/g)||[]).length===(blk.match(/\}/g)||[]).length;
     o['css: tokens only (no literal colour)']=!/#[0-9a-fA-F]{3,8}\b/.test(blk)&&!/\b(?:rgb|rgba|hsl|hsla)\(/.test(blk);
     o['css: every selector is .phq-prefixed']=(blk.match(/[^{}]+(?=\{)/g)||[]).filter(s=>!/^\s*@media/.test(s)).every(s=>s.split(',').every(p=>/phq-/.test(p)));
     o['css: nothing under 12px']=!/font-size:(?:[0-9]|10|11)(?:\.\d+)?px/.test(blk);

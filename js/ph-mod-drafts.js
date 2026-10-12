@@ -665,7 +665,7 @@ function _phdAddActions(aside){
   const wc=_phdWriteCheck();
   if(st==='draft'||st==='ready'){
     const abandon=_phdBtn('phd-danger',f.id?'Abandon draft':'Discard draft',function(){_phdAsk={kind:f.id?'abandon':'discard'};_phdPaint();},{'data-act':'abandon'});
-    if(!wc.ok||busy||(st==='ready'&&!_phdCanRecord()))_phdOff(abandon);
+    if(!wc.ok||busy||(st==='ready'&&!_phdCanManage())){_phdOff(abandon);if(st==='ready'&&!_phdCanManage())abandon.setAttribute('title','Only a manager (Afnan, Ammar, Mustafa) can abandon a ready draft.');}
     row.appendChild(abandon);_phdRefs.actionBtns.push(abandon);
   }
   if(st==='ready'){
@@ -862,6 +862,7 @@ async function _phdAbandon(reason){
   const f=_phdForm;
   if(!_phdWriteCheck().ok){_phdSetNote('err',_phdWriteCheck().why);return;}
   if(!f||!f.id){_phdSetNote('err','This draft was never saved, so there is nothing to abandon.');return;}
+  if(f.status==='ready'&&!_phdCanManage()){_phdSetNote('err','Only a manager (Afnan, Ammar, Mustafa) can abandon a ready draft.');return;}
   if(!String(reason||'').trim()){_phdSetNote('err','A reason is needed to abandon a draft.');return;}
   const r=await phAbandonDraft(f.id,reason,{expectedRev:f.rev});
   if(r&&r.ok){f.status='abandoned';f.rev=r.rev;f.dirty=false;_phdAsk=null;f.meta=f.meta||{};f.meta.abandonedReason=String(reason).trim().slice(0,500);_phdSetNote('ok','Draft '+f.id+' abandoned.');}

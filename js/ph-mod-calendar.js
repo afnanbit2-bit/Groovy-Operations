@@ -69,11 +69,12 @@ function phcRange(view,anchor){
 }
 
 /* ── pure: what may happen to a job ────────────────────────────────────── */
-// Why a job's date is fixed, or null. The database rules refuse a change to a 'done' job; 'overridden' and
-// "already cut" are refused by this screen only (the rules do not look at them).
-function phcLockReason(job,po){
+// Why a job's date is fixed, or null. The rules refuse a change to a 'done' job, and (since the 13 Oct hardening) any change to an
+// 'overridden' job by someone who is not an OWNER (PH_JOB_TRANSITIONS: overridden -> overridden is an owner's step). "Already cut" is
+// refused by this screen only. `isOwner` is passed in so the function stays pure; absent it fails closed (locked for everyone).
+function phcLockReason(job,po,isOwner){
   if(job&&job.status==='done')return'Done: the cut is recorded, so its date is fixed.';
-  if(job&&job.status==='overridden')return'Overridden by an owner: its date is fixed here.';
+  if(job&&job.status==='overridden'&&isOwner!==true)return'Overridden by an owner: only an owner (Afnan or Ammar) can change its date.';
   if(po){
     const st=phStageOf(po);
     if(st&&st!=='cutting'&&st!=='reserved'&&st!=='cancelled'&&st!=='unknown')return'Already cut (the PO is at '+(st==='completed'?'completed':st)+'): its cut date is no longer planned here.';
@@ -100,7 +101,7 @@ function phcPlanMove(inp){
   if(!si.known||si.failed)return{ok:false,why:'The Production Ops settings could not be read, so skip days and capacity are unknown: planning is off until they load.'};
   if(!_PHC_PO_RE.test(String(i.poId)))return{ok:false,why:'Not a PO id: '+i.poId+'.'};
   const job=i.job||null,po=i.po||null;
-  const lock=phcLockReason(job,po);
+  const lock=phcLockReason(job,po,i.isOwner===true);
   if(lock)return{ok:false,why:lock};
   if(!job){
     if(!po)return{ok:false,why:i.poId+' is not loaded on this device, so it cannot be planned from here. Reload the POs and try again.'};
@@ -143,7 +144,7 @@ function phcBuildModel(inp){
     const po=idx[j.fbKey]||null;
     if(po&&phStageOf(po)==='cancelled'){out.cancelled++;return;}
     const units=phcUnitsOf(po);
-    const chip={poId:j.fbKey,job:j,po:po,day:day,units:units,lock:phcLockReason(j,po),master:typeof j.masterName==='string'?j.masterName:'',
+    const chip={poId:j.fbKey,job:j,po:po,day:day,units:units,lock:phcLockReason(j,po,inp.isOwner===true),master:typeof j.masterName==='string'?j.masterName:'',
       article:po?String(po.name||po.code||''):'',code:po?String(po.code||''):'',status:j.status||'open',alloc:null,spill:null,workday:phcIsWork(day,S)};
     out.chips.push(chip);
     (out.byDay[day]=out.byDay[day]||[]).push(chip);
@@ -174,7 +175,7 @@ function phcBuildModel(inp){
     const j=out.jobByPo[id]||null;
     if(j&&phIsDay(j.plannedCutDate))return;
     if(j&&j.status==='done')return;
-    out.tray.push({poId:id,po:p,job:j,units:phcUnitsOf(p),article:String(p.name||p.code||''),lock:phcLockReason(j,p),requested:phIsDay(p.requestedDate)?p.requestedDate:(phIsDay(p.requestedDay)?p.requestedDay:null)});
+    out.tray.push({poId:id,po:p,job:j,units:phcUnitsOf(p),article:String(p.name||p.code||''),lock:phcLockReason(j,p,inp.isOwner===true),requested:phIsDay(p.requestedDate)?p.requestedDate:(phIsDay(p.requestedDay)?p.requestedDay:null)});
   });
   out.tray.sort(function(a,b){return a.poId<b.poId?-1:a.poId>b.poId?1:0;});
   out.todayChips=(out.byDay[today]||[]).slice();
@@ -205,6 +206,7 @@ let _phcJustDragged=false,_phcCells={},_phcChipEls={},_phcFocusPo='',_phcMsgEl=n
 
 function _phcToday(){return phDay(Date.now());}
 function _phcIsPhone(){try{return typeof window!=='undefined'&&typeof window.matchMedia==='function'&&window.matchMedia(PH_CAL_PHONE_QUERY).matches===true;}catch(e){return false;}}
+function _phcIsOwner(){return typeof phIsOwner==='function'&&_phcCtx&&phIsOwner(_phcCtx.user)===true;}
 function _phcPosList(){return typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:null;}
 function _phcRepaint(){try{if(_phcCtx&&typeof _phcCtx.repaint==='function')_phcCtx.repaint();}catch(e){}}
 function _phcSay(kind,text){
@@ -218,7 +220,7 @@ function _phcPlanFor(poId,day){
   const ctx=_phcCtx;
   const jg=ctx&&typeof ctx.get==='function'?ctx.get('jobs'):{ok:false,rows:null};
   const job=jg.ok?(jg.rows.filter(function(r){return r.fbKey===poId;})[0]||null):null;
-  return phcPlanMove({canManage:!!(ctx&&ctx.canManage),jobsOk:!!jg.ok,settings:phSettingsInfo(),job:job,po:phcPoIndex(_phcPosList())[poId]||null,poId:poId,to:day,today:_phcToday()});
+  return phcPlanMove({isOwner:_phcIsOwner(),canManage:!!(ctx&&ctx.canManage),jobsOk:!!jg.ok,settings:phSettingsInfo(),job:job,po:phcPoIndex(_phcPosList())[poId]||null,poId:poId,to:day,today:_phcToday()});
 }
 function _phcWarnLoad(poId,day){
   if(!_phcLast||!_phcLast.capKnown)return'';
@@ -364,7 +366,7 @@ function _phcOpenDialog(poId,mode){
   _phcFocusPo=poId;
   const jg=ctx.get('jobs'),job=jg.ok?(jg.rows.filter(function(r){return r.fbKey===poId;})[0]||null):null;
   const po=phcPoIndex(_phcPosList())[poId]||null;
-  const lock=phcLockReason(job,po);
+  const lock=phcLockReason(job,po,_phcIsOwner());
   if(!ctx.canManage){_phcSay('info','View only: only the Production Ops managers can plan cutting.');_phcRepaint();return;}
   if(lock){_phcSay('bad',poId+': '+lock);_phcRepaint();return;}
   let value=job&&phIsDay(job.plannedCutDate)?job.plannedCutDate:null;
@@ -572,7 +574,7 @@ function phcRender(host,ctx){
   const view=phone?'week':_phcView;
   if(!_phcAnchor)_phcAnchor=today;
   const pos=_phcPosList();
-  const model=phcBuildModel({jobs:jg.rows,pos:pos||[],S:S,capKnown:capKnown,today:today});
+  const model=phcBuildModel({isOwner:_phcIsOwner(),jobs:jg.rows,pos:pos||[],S:S,capKnown:capKnown,today:today});
   _phcLast=model;
   if(!capKnown){
     const w=phEl('section','ph-card ph-card-err');w.setAttribute('role','alert');

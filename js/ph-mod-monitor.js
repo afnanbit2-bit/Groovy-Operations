@@ -632,7 +632,7 @@ function _phmRenderOverview(host,ctx){
   foot.appendChild(_phmBtn('ph-btn','Refresh',function(){phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();Promise.resolve(ctx.reload()).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});}));
   host.appendChild(foot);
   host.appendChild(_phmFooterNote(M,ctx));
-  if(ctx.readOnly)host.appendChild(phEl('p','ph-note','Your account can see Overview and Today\'s Cutting. It is a view-only account: nothing here writes.'));
+  if(ctx.readOnly)host.appendChild(phEl('p','ph-note','Your account can see Overview, PO Queue and Today\'s Cutting. Overview is view-only: PO drafts are entered in PO Queue and the cut is recorded in Today\'s Cutting.'));
 }
 function _phmSkeleton(){
   if(typeof _phUiSkeleton==='function')return _phUiSkeleton();

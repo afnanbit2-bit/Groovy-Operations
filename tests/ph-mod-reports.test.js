@@ -446,7 +446,7 @@ async function checks(src){
   // ── audience ──
   {
     const U=load({src:src,session:USERS.uzaib});
-    o['audience: Uzaib\'s tab list has no Reports and he cannot go to it']=U.R('phTabsFor().map(t=>t.id).join()')==='overview,cutting'&&U.R('phGoTab("reports")')===false;
+    o['audience: Uzaib\'s tab list has no Reports and he cannot go to it']=U.R('phTabsFor().map(t=>t.id).join()')==='overview,queue,cutting'&&U.R('phGoTab("reports")')===false;
     const Rz=load({src:src,session:USERS.raees});
     o['audience: Raees has no tabs at all']=Rz.R('phTabsFor().length')===0;
     const M=load({src:src,session:USERS.mustafa});
@@ -499,13 +499,13 @@ async function wiring(s){
   const tagsAll=idx.match(/<script src="\/js\/[^"]+"/g)||[];
   const names=tagsAll.map(t=>/\/js\/([^?"]+)/.exec(t)[1]);
   s.ok('ONE script tag for ph-mod-reports.js',names.filter(n=>n==='ph-mod-reports.js').length===1);
-  s.ok('it loads right after ph-ui.js',names.indexOf('ph-mod-reports.js')===names.indexOf('ph-ui.js')+1);
+  s.ok('it loads after ph-ui.js',names.indexOf('ph-mod-reports.js')>names.indexOf('ph-ui.js')&&names.indexOf('ph-ui.js')>-1);
   s.ok('and carries a ?v= tag',/<script src="\/js\/ph-mod-reports\.js\?v=[0-9a-z]+"><\/script>/.test(idx));
   const pre=sw.match(/'\/js\/[^']+'/g).map(x=>x.slice(1,-1));
-  s.ok('ONE PRECACHE_URLS entry, right after ph-ui.js',pre.filter(x=>x==='/js/ph-mod-reports.js').length===1&&pre.indexOf('/js/ph-mod-reports.js')===pre.indexOf('/js/ph-ui.js')+1);
+  s.ok('ONE PRECACHE_URLS entry, after ph-ui.js',pre.filter(x=>x==='/js/ph-mod-reports.js').length===1&&pre.indexOf('/js/ph-mod-reports.js')>pre.indexOf('/js/ph-ui.js'));
   s.section('stylesheet contract (geometry the harness cannot lay out)');
   const a=CSS.indexOf('/* ph-mod-reports START */'),b=CSS.indexOf('/* ph-mod-reports END */');
-  s.ok('the block is delimited by START / END markers and sits at the END of css/main.css',a>0&&b>a&&CSS.slice(b+'/* ph-mod-reports END */'.length).trim()==='');
+  s.ok('the block is delimited by START / END markers and sits in the trailing run of ph-mod-* blocks at the END of css/main.css',a>0&&b>a&&CSS.slice(b+'/* ph-mod-reports END */'.length).replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
   const blk=CSS.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');
   s.ok('tokens only: no literal colour in the block',!/#[0-9a-fA-F]{3,8}\b/.test(blk)&&!/\b(?:rgb|rgba|hsl|hsla)\(/.test(blk));
   s.ok('every selector in the block is .phr-prefixed or a .ph-btn child of one',(blk.match(/[^{}]+(?=\{)/g)||[]).filter(sel=>!/^\s*@media/.test(sel)).every(sel=>sel.split(',').every(p=>/phr-/.test(p))));

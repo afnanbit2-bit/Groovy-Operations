@@ -568,11 +568,11 @@ async function wiring(s){
   s.section('wiring: script order, precache, stylesheet');
   const html=read('index.html'),sw=read('sw.js');
   const tag=f=>html.indexOf('/js/'+f+'?v=');
-  s.ok('ph-mod-cutting.js has ONE script tag, right after ph-ui.js and before the Firebase module',tag('ph-mod-cutting.js')>tag('ph-ui.js')&&tag('ph-ui.js')>0&&html.indexOf('<script type="module">')>tag('ph-mod-cutting.js')&&html.split('/js/ph-mod-cutting.js').length===2&&/ph-ui\.js\?v=[^"]*"><\/script>\r?\n<script src="\/js\/ph-mod-cutting\.js/.test(html));
-  s.ok('it is in PRECACHE_URLS (once, after ph-ui.js)',/'\/js\/ph-ui\.js',\r?\n  '\/js\/ph-mod-cutting\.js',/.test(sw)&&sw.split("'/js/ph-mod-cutting.js'").length===2);
+  s.ok('ph-mod-cutting.js has ONE script tag, after ph-ui.js and before the Firebase module',tag('ph-mod-cutting.js')>tag('ph-ui.js')&&tag('ph-ui.js')>0&&html.indexOf('<script type="module">')>tag('ph-mod-cutting.js')&&html.split('/js/ph-mod-cutting.js').length===2&&/<script src="\/js\/ph-mod-cutting\.js\?v=[0-9a-z]+"><\/script>/.test(html));
+  s.ok('it is in PRECACHE_URLS (once, after ph-ui.js)',sw.indexOf("'/js/ph-mod-cutting.js'")>sw.indexOf("'/js/ph-ui.js'")&&sw.split("'/js/ph-mod-cutting.js'").length===2);
   s.section('stylesheet contract');
   const a=CSS.indexOf('/* ph-mod-cutting START */'),b=CSS.indexOf('/* ph-mod-cutting END */');
-  s.ok('one delimited block, at the end of the stylesheet',a>0&&b>a&&CSS.indexOf('/* ph-mod-cutting START */',a+1)<0&&CSS.slice(b+'/* ph-mod-cutting END */'.length).trim()==='');
+  s.ok('one delimited block, in the trailing run of ph-mod-* blocks at the end of the stylesheet',a>0&&b>a&&CSS.indexOf('/* ph-mod-cutting START */',a+1)<0&&CSS.slice(b+'/* ph-mod-cutting END */'.length).replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
   const blk=CSS.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');
   s.ok('tokens only: no literal colour in the block',!/#[0-9a-fA-F]{3,8}\b/.test(blk)&&!/\b(?:rgb|rgba|hsl|hsla)\(/.test(blk));
   s.ok('every selector is .phk- prefixed (no collision with another module)',(blk.match(/[^{}]+(?=\{)/g)||[]).filter(sel=>!/^\s*@media/.test(sel)).every(sel=>sel.split(',').every(p=>/\.phk-/.test(p))));

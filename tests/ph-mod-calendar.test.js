@@ -174,7 +174,7 @@ async function checks(src){
     o['pure: phcCheckDay refuses a day before today']=(()=>{const r=JSON.parse(R('JSON.stringify(phcCheckDay("2026-10-09",'+J(S())+',"'+TODAY+'"))'));return r.ok===false&&/before today/.test(r.why);})();
     o['pure: phcCheckDay accepts a working day, today included']=R('phcCheckDay("2026-10-13",'+J(S())+',"'+TODAY+'").ok')===true&&R('phcCheckDay("'+TODAY+'",'+J(S())+',"'+TODAY+'").ok')===true;
     o['pure: phcLockReason: done and overridden are fixed, an already-cut PO is fixed, an open job is not']=
-      /Done/.test(R('phcLockReason({status:"done"},null)'))&&/Overridden/.test(R('phcLockReason({status:"overridden"},null)'))&&/Already cut/.test(R('phcLockReason({status:"open"},{currentStage:"bundling"})'))&&R('phcLockReason({status:"open"},{currentStage:"cutting"})')===null&&R('phcLockReason({status:"complete"},null)')===null;
+      /Done/.test(R('phcLockReason({status:"done"},null)'))&&/Overridden/.test(R('phcLockReason({status:"overridden"},null)'))&&/only an owner/.test(R('phcLockReason({status:"overridden"},null,false)'))&&R('phcLockReason({status:"overridden"},null,true)')===null&&/Already cut/.test(R('phcLockReason({status:"open"},{currentStage:"bundling"})'))&&R('phcLockReason({status:"open"},{currentStage:"cutting"})')===null&&R('phcLockReason({status:"complete"},null)')===null;
     const base={canManage:true,jobsOk:true,settings:{known:true,failed:false,settings:S()},job:{status:'open',rev:2,plannedCutDate:'2026-10-14'},po:{currentStage:'cutting',poStatus:'in_production'},poId:'PO-103',to:'2026-10-15',today:TODAY};
     const plan=m=>JSON.parse(R('JSON.stringify(phcPlanMove('+J(Object.assign({},base,m))+'))'));
     o['pure: phcPlanMove accepts a normal move and carries the revision']=(()=>{const r=plan({});return r.ok===true&&r.from==='2026-10-14'&&r.to==='2026-10-15'&&r.create===false&&r.rev===2;})();
@@ -182,7 +182,8 @@ async function checks(src){
     o['pure: unreadable jobs refuse']=plan({jobsOk:false}).ok===false&&/could not be read/.test(plan({jobsOk:false}).why);
     o['pure: unreadable settings refuse (skip days unknown)']=plan({settings:{known:false,failed:true,settings:S()}}).ok===false&&/settings could not be read/.test(plan({settings:{known:false,failed:true,settings:S()}}).why);
     o['pure: a done job is refused']=/Done/.test(plan({job:{status:'done',rev:1,plannedCutDate:'2026-10-14'}}).why||'');
-    o['pure: an overridden job is refused']=/Overridden/.test(plan({job:{status:'overridden',rev:1,plannedCutDate:'2026-10-14'}}).why||'');
+    o['pure: an overridden job is refused (for a non-owner)']=/Overridden/.test(plan({job:{status:'overridden',rev:1,plannedCutDate:'2026-10-14'}}).why||'');
+    o['pure: an overridden job is movable by an OWNER (the writer table: overridden -> overridden is an owner step)']=plan({isOwner:true,job:{status:'overridden',rev:1,plannedCutDate:'2026-10-14'}}).ok===true;
     o['pure: an already-cut PO is refused']=/Already cut/.test(plan({po:{currentStage:'stitching',poStatus:'in_production'}}).why||'');
     o['pure: a skip day, an off day and a past day are refused']=[ '2026-10-16','2026-10-18','2026-10-09'].every(d=>plan({to:d}).ok===false);
     o['pure: the same day is a "same" no-op, not an error write']=(()=>{const r=plan({to:'2026-10-14'});return r.ok===false&&r.same===true;})();
@@ -219,7 +220,8 @@ async function checks(src){
     o['screen: the skip day and the Sunday say so in words']=/Skip day/.test(T.text(T.cell('2026-10-16')))&&/\boff\b/.test(T.cell('2026-10-16').className)&&/Off \(Sunday\)/.test(T.text(T.cell('2026-10-18')));
     o['screen: today is marked']=/Today/.test(T.text(T.cell(TODAY)))&&/\btoday\b/.test(T.cell(TODAY).className);
     o['screen: a spilling chip says so (the allocation, not just the load)']=/Spills/.test(T.text(T.chip('PO-102')))&&/Over capacity: finishes Wed 14 Oct \(\+2 working days\)/.test(T.chip('PO-102').getAttribute('title')||'');
-    o['screen: a locked chip says Locked, with the reason in its label']=/Locked/.test(T.text(T.chip('PO-104')))&&/Done/.test(T.chip('PO-104').getAttribute('aria-label')||'')&&T.chip('PO-104').getAttribute('aria-disabled')==='true'&&/Locked/.test(T.text(T.chip('PO-105')))&&/Locked/.test(T.text(T.chip('PO-108')));
+    o['screen: a locked chip says Locked, with the reason in its label']=/Locked/.test(T.text(T.chip('PO-104')))&&/Done/.test(T.chip('PO-104').getAttribute('aria-label')||'')&&T.chip('PO-104').getAttribute('aria-disabled')==='true'&&!/Locked/.test(T.text(T.chip('PO-105')))&&/Locked/.test(T.text(T.chip('PO-108')));
+    {const MM=load(src,{session:USERS.mustafa});await MM.open();o['screen: an OVERRIDDEN chip says Locked for Mustafa (a manager, not an owner) but not for an owner']=/Locked/.test(T.text(MM.chip('PO-105')))&&/only an owner/.test(MM.chip('PO-105').getAttribute('aria-label')||'')&&MM.chip('PO-105').getAttribute('aria-disabled')==='true';}
     const trayIds=T.R('JSON.stringify(_phcLast.tray.map(t=>t.poId))');
     o['screen: the tray is PO-106 and PO-110 only (reserved PO-107, bundling PO-108, cancelled PO-109 and the planned ones are not)']=trayIds===J(['PO-106','PO-110'])&&!!T.tray('PO-106')&&!!T.tray('PO-110')&&!T.tray('PO-107')&&!T.tray('PO-101');
     o['screen: the tray says reserved POs are not listed and counts its items']=/Not planned yet \(2\)/.test(T.text(T.panel()))&&/Reserved POs are not listed/.test(T.text(T.panel()));
@@ -308,20 +310,29 @@ async function checks(src){
     o['refuse: dropping on a day before today writes nothing and says why']=await refuse('past','PO-103','2026-10-09',/before today/);
     o['refuse: the same day is a no-op with a plain message']=await refuse('same','PO-103','2026-10-14',/already planned/);
     o['refuse: a tray PO dropped on a skip day is refused too']=await refuse('tray skip','tray:PO-106','2026-10-16',/skip day/);
-    const D=load(src);await D.open();
+    const D=load(src,{session:USERS.mustafa});await D.open();
     D.down(D.chip('PO-104'),100,100);D.move(150,150);
     o['refuse: a DONE job cannot even start a drag (no tracking, no ghost)']=D.nListeners('pointermove')===0&&D.dom.byClass(D.dom.body,'phc-ghost').length===0;
     D.up(150,150);D.dom.click(D.chip('PO-104'));
     o['refuse: pressing a done chip explains it and opens no menu']=/Done: the cut is recorded/.test(D.msg())&&D.dialog()===null&&nWrites(D)===0;
     D.dom.click(D.chip('PO-105'));
-    o['refuse: an OVERRIDDEN job is fixed (UI refusal; the rules only block done)']=/Overridden by an owner/.test(D.msg())&&D.dialog()===null;
+    o['refuse: an OVERRIDDEN job is fixed for a non-owner manager (the UI says only an owner can)']=/Overridden by an owner: only an owner/.test(D.msg())&&D.dialog()===null;
     D.dom.click(D.chip('PO-108'));
     o['refuse: a PO that is already cut (bundling) is fixed']=/Already cut/.test(D.msg());
     // the same refusals reach the writer-side path through _phcApply too
-    const A=load(src);await A.open();
+    const A=load(src,{session:USERS.mustafa});await A.open();
     const r1=await A.R('_phcApply("PO-104","2026-10-20")');
     const r2=await A.R('_phcApply("PO-105","2026-10-20")');
-    o['refuse: _phcApply itself refuses done and overridden (no write)']=r1.ok===false&&r2.ok===false&&nWrites(A)===0;
+    o['refuse: _phcApply itself refuses done, and overridden for a non-owner (no write)']=r1.ok===false&&r2.ok===false&&nWrites(A)===0;
+    // even if the screen's lock were bypassed, the WRITER refuses a non-owner on an overridden job (PH_JOB_TRANSITIONS), with a reason that agrees with the screen
+    const w=await A.R('phSaveCutJob("PO-105",{plannedCutDate:"2026-10-20"},{})');
+    o['refuse: the writer itself refuses Mustafa on an overridden job (forbidden, only an owner), nothing written']=w.ok===false&&w.code==='forbidden'&&/Only an owner/.test(w.error||'')&&nWrites(A)===0;
+    // an OWNER may move it: screen and writer agree
+    const O=load(src,{session:USERS.afnan});await O.open();
+    const ro=await O.R('_phcApply("PO-105","2026-10-20")');
+    o['owner: an owner CAN move an overridden job (screen and writer agree): the job and its history row are written']=ro.ok===true&&nWrites(O)===2&&O.writes()[0].data.status===undefined&&O.writes()[0].data.plannedCutDate==='2026-10-20';
+    const rd=await O.R('_phcApply("PO-104","2026-10-21")');
+    o['owner: a DONE job is still fixed for an owner (terminal)']=rd.ok===false&&nWrites(O)===2;
     // stale revision
     const St=load(src);await St.open();
     St.fk.store['po_cut_jobs/PO-103'].rev=5;
@@ -463,7 +474,7 @@ async function wiring(s){
   s.ok('the script tag follows ph-ui.js and precedes the Firebase module',tag('ph-mod-calendar.js')>tag('ph-ui.js')&&tag('ph-ui.js')>0&&html.indexOf('<script type="module">')>tag('ph-mod-calendar.js'));
   s.ok('it is precached, after ph-ui.js',/'\/js\/ph-mod-calendar\.js'/.test(sw)&&sw.indexOf("'/js/ph-mod-calendar.js'")>sw.indexOf("'/js/ph-ui.js'"));
   const a=CSS.indexOf('/* ph-mod-calendar START */'),b=CSS.indexOf('/* ph-mod-calendar END */');
-  s.ok('the CSS block exists, delimited, and is at the END of the stylesheet',a>0&&b>a&&CSS.slice(b+'/* ph-mod-calendar END */'.length).trim()==='');
+  s.ok('the CSS block exists, delimited, and sits in the trailing run of ph-mod-* blocks at the END of the stylesheet',a>0&&b>a&&CSS.slice(b+'/* ph-mod-calendar END */'.length).replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
   const css=CSS.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');
   s.ok('tokens only: no literal colour in the block',!/#[0-9a-fA-F]{3,8}\b/.test(css)&&!/\b(?:rgb|rgba|hsl|hsla)\(/.test(css));
   s.ok('every selector is .phc- scoped (or the body.phc-dragging hook)',(css.match(/[^{}]+(?=\{)/g)||[]).filter(x=>!/^\s*@media/.test(x)).every(sel=>sel.split(',').every(p=>/phc-/.test(p))));
@@ -511,7 +522,8 @@ module.exports=async function(){
   await brk('weekly off day not checked',"if(S&&Array.isArray(S.offWeekdays)&&S.offWeekdays.indexOf(wd)>-1)return{ok:false","if(false)return{ok:false",['refuse: dropping on a Sunday (weekly off day) writes nothing and says why','pure: phcCheckDay refuses a weekly off day (Sunday) by name']);
   await brk('past day allowed',"if(phIsDay(today)&&day<today)return","if(false)return",['refuse: dropping on a day before today writes nothing and says why','pure: phcCheckDay refuses a day before today']);
   await brk('done lock dropped',"if(job&&job.status==='done')return'Done: the cut is recorded, so its date is fixed.';","",['refuse: a DONE job cannot even start a drag (no tracking, no ghost)','pure: a done job is refused']);
-  await brk('overridden lock dropped',"if(job&&job.status==='overridden')return'Overridden by an owner: its date is fixed here.';","",['refuse: an OVERRIDDEN job is fixed (UI refusal; the rules only block done)','pure: an overridden job is refused']);
+  await brk('overridden lock dropped',"if(job&&job.status==='overridden'&&isOwner!==true)return'Overridden by an owner: only an owner (Afnan or Ammar) can change its date.';","",['refuse: an OVERRIDDEN job is fixed for a non-owner manager (the UI says only an owner can)','pure: an overridden job is refused (for a non-owner)']);
+  await brk('overridden locked for owners too',"if(job&&job.status==='overridden'&&isOwner!==true)","if(job&&job.status==='overridden')",['owner: an owner CAN move an overridden job (screen and writer agree): the job and its history row are written','pure: an overridden job is movable by an OWNER (the writer table: overridden -> overridden is an owner step)']);
   await brk('already-cut lock dropped',"if(st&&st!=='cutting'&&st!=='reserved'&&st!=='cancelled'&&st!=='unknown')return","if(false)return",['refuse: a PO that is already cut (bundling) is fixed','pure: an already-cut PO is refused']);
   await brk('view-only allowed to plan',"if(!i.canManage)return{ok:false,why:'View only: only the Production Ops managers can plan cutting.'};","",['pure: a view-only person is refused','view-only: _phcApply refuses with no write']);
   await brk('settings failure ignored',"if(!si.known||si.failed)return","if(false)return",['pure: unreadable settings refuse (skip days unknown)','settings failed: a drop is refused with the reason and nothing is written']);

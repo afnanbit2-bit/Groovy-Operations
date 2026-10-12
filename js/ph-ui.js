@@ -53,11 +53,11 @@ const PH_ROLE_ALL=function(u){return _phUiCanSee(u);};       // the whole audien
 const PH_ROLE_MANAGE=function(u){return _phUiCanManage(u);}; // afnan, ammar, mustafa
 
 /* ── the tab registry: ONE constant ────────────────────────────────────── */
-// {id, label, short (rail monogram), render(host,ctx), roles(username)}. The floor user (Uzaib) sees
-// ONLY Overview and Today's Cutting, read-only; the rest are managers'. Order is the rail's order.
+// {id, label, short (rail monogram), render(host,ctx), roles(username)}. The floor user (Uzaib / Kashif) sees
+// ONLY Overview, PO Queue (his PO data entry: drafts) and Today's Cutting; the other six are managers'. Order is the rail's order.
 const PH_TABS=[
   {id:'overview',label:'Overview',     short:'Ov',roles:PH_ROLE_ALL,   render:_phRenderOverview},
-  {id:'queue',   label:'PO Queue',     short:'PQ',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'PO Queue',      blurb:'The queue of PO drafts and issued POs, by season, as tiles.',stages:['drafts'],list:_phUiNames('drafts','fbKey')})},
+  {id:'queue',   label:'PO Queue',     short:'PQ',roles:PH_ROLE_ALL,   render:_phPlaceholder({title:'PO Queue',      blurb:'The queue of PO drafts and issued POs, by season, as tiles.',stages:['drafts'],list:_phUiNames('drafts','fbKey')})},
   {id:'calendar',label:'Calendar',     short:'Ca',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'Calendar',      blurb:'Planned cutting by day against capacity and skip days.',stages:['jobs','settings']})},
   {id:'cutting', label:"Today's Cutting",short:'TC',roles:PH_ROLE_ALL, render:_phPlaceholder({title:"Today's Cutting",blurb:'The cutting floor: open cut jobs, the checklist, actual cut by size.',stages:['jobs','masters'],list:_phUiNames('masters','name')})},
   {id:'monitor', label:'Monitor',      short:'Mo',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'Monitor',       blurb:'Pipeline, units afloat, delays and alerts.',stages:['jobs','drafts']})},
@@ -218,7 +218,7 @@ function _phRenderOverview(host,ctx){
   const tl=phEl('ul','ph-lines');
   tabs.forEach(function(t){tl.appendChild(phEl('li','ph-line',null,[phEl('span','ph-line-name',t.label),phEl('span','ph-line-txt',t.id===ctx.tab.id?'you are here':'placeholder until built')]));});
   host.appendChild(_phUiCard('Tabs you can open',[tl]));
-  if(ctx.readOnly)host.appendChild(phEl('p','ph-note','Your account can see Overview and Today\'s Cutting. It is a view-only account: nothing here writes.'));
+  if(ctx.readOnly)host.appendChild(phEl('p','ph-note','Your account can see Overview, PO Queue and Today\'s Cutting. Overview is view-only: PO drafts are entered in PO Queue and the cut is recorded in Today\'s Cutting.'));
 }
 // A placeholder tab: says what it will be, then prints the real state of the collections it will read.
 function _phPlaceholder(spec){

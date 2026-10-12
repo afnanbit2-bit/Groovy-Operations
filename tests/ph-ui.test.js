@@ -2,7 +2,7 @@
 
    What this drives (the real handlers, against tests/ph-dom.js's small real DOM and the REAL js/ph-core.js + js/ph-data.js over a fake Firestore):
      · the audience (afnan, ammar, mustafa, uzaib in; raees, umair, arfat, a worker, the QA account, signed-out out) and the tab roles
-       (Uzaib sees ONLY Overview and Today's Cutting, read-only), honoured by the tab list, the rail, the hash and the render path
+       (Uzaib sees ONLY Overview, PO Queue and Today's Cutting), honoured by the tab list, the rail, the hash and the render path
      · the takeover: enters and leaves on showPage (the page decides), Exit never strands, Escape, deep links #prodops[/tab], replaceState only
      · the honest states: a skeleton while the read is out (the shell is already up), a banner naming each failed collection with Retry that
        re-reads ONLY the failed ones, a failed collection never printed as a number, a render that throws or draws nothing says so
@@ -131,7 +131,8 @@ async function checks(src){
     o['the tab list is exactly the nine, in the rail order']=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(ALL_TABS)&&T.R('JSON.stringify(PH_TABS.map(t=>t.label))')===J(['Overview','PO Queue','Calendar',"Today's Cutting",'Monitor','Reports','Masters','Standards','Settings']);
     for(const u of ['afnan','ammar','mustafa']){T.as(USERS[u]);o['tabs: '+u+' (a manager) has all nine']=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(ALL_TABS);}
     T.as(USERS.uzaib);
-    o["tabs: uzaib sees ONLY Overview and Today's Cutting"]=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(['overview','cutting']);
+    o["tabs: uzaib (Kashif, PO data entry) sees ONLY Overview, PO Queue and Today's Cutting"]=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(['overview','queue','cutting']);
+    o['tabs: Calendar, Monitor, Reports, Masters, Standards and Settings stay manager-only (not one of them is his)']=['calendar','monitor','reports','masters','standards','settings'].every(id=>T.R('phTabsFor().some(t=>t.id==='+J(id)+')')===false);
     T.as(USERS.raees);
     o['tabs: someone off the audience gets no tabs at all']=T.R('phTabsFor().length')===0&&T.R('phResolveTab("overview")')===null&&T.R('phGoTab("overview")')===false;
   }
@@ -139,7 +140,7 @@ async function checks(src){
   {
     const T=mk('uzaib');
     await T.show('prod-ops');
-    o['uzaib: the rail lists his two tabs only']=T.itemIds().join()==='overview,cutting';
+    o['uzaib: the rail lists his three tabs only (Overview, PO Queue, Today\'s Cutting)']=T.itemIds().join()==='overview,queue,cutting';
     o['uzaib: asking for a manager tab is refused and the tab does not change']=T.R('phGoTab("masters")')===false&&T.R('_phUiTab')==='overview'&&T.R('phGoTab("settings")')===false;
     T.R('_phUiTab="masters"');T.R('_phUiPaintPanel()');
     o['uzaib: even a forced tab id renders HIS default, never the manager tab']=/Overview/.test(T.text(T.panel()))&&!/Masters/.test(T.text(T.panel()))&&T.R('_phUiTab')==='overview';
@@ -439,7 +440,7 @@ async function wiring(s){
     const go=async(X,id)=>{try{await X.a.run('window.showPage('+J(id)+')');}catch(e){}await settle();};
     const U=real(USERS.uzaib);
     await go(U,'prod-ops');
-    s.ok('Uzaib (viewer): the REAL showPage opens the takeover and renderPage draws the canvas',U.d.body.classList.contains('ph-fullscreen')&&!!U.d.find('ph-panel')&&U.d.find('ph-tk-rail').children.length===2);
+    s.ok('Uzaib (viewer): the REAL showPage opens the takeover and renderPage draws the canvas',U.d.body.classList.contains('ph-fullscreen')&&!!U.d.find('ph-panel')&&U.d.find('ph-tk-rail').children.length===3);
     const M=real(USERS.mustafa);await go(M,'prod-ops');
     s.ok('Mustafa (manager): same, with all nine tabs',M.d.body.classList.contains('ph-fullscreen')&&M.d.find('ph-tk-rail').children.length===9);
     await go(M,'dashboard');
@@ -511,7 +512,7 @@ module.exports=async function(){
   };
   await brk('audience gate opened to everyone',"function _phUiCanSee(u){return typeof phCanSee==='function'&&phCanSee(_phUiUser(u))===true;}","function _phUiCanSee(u){return true;}",['audience: raees, umair, arfat, a worker and the QA account are out','audience: signed out is out (fail closed)']);
   await brk('audience gate role-wide (viewers and managers)',"typeof phCanSee==='function'&&phCanSee(_phUiUser(u))===true","(typeof session!=='undefined'&&session&&(session.role==='manager'||session.role==='viewer'||session.role==='owner'))",['audience: raees, umair, arfat, a worker and the QA account are out']);
-  await brk('tab roles ignored (every tab for the audience)',"try{return typeof t.roles==='function'?t.roles(_phUiUser(u))===true:_phUiCanManage(u);}catch(e){return false;}","return true;",["tabs: uzaib sees ONLY Overview and Today's Cutting",'uzaib: asking for a manager tab is refused and the tab does not change']);
+  await brk('tab roles ignored (every tab for the audience)',"try{return typeof t.roles==='function'?t.roles(_phUiUser(u))===true:_phUiCanManage(u);}catch(e){return false;}","return true;",["tabs: uzaib (Kashif, PO data entry) sees ONLY Overview, PO Queue and Today's Cutting",'uzaib: asking for a manager tab is refused and the tab does not change']);
   await brk('a throwing roles() shows the tab',"}catch(e){return false;}\n}\nfunction phTabsFor","}catch(e){return true;}\n}\nfunction phTabsFor",['a roles() that throws hides the tab (fail closed)']);
   await brk('render path ignores the roles (forced tab id renders)',"const tab=phResolveTab(_phUiTab,u);\n  if(!tab){host.appendChild(_phUiError('No tabs'","const tab=PH_TABS.filter(function(x){return x.id===_phUiTab;})[0]||phResolveTab(_phUiTab,u);\n  if(!tab){host.appendChild(_phUiError('No tabs'",['uzaib: even a forced tab id renders HIS default, never the manager tab','uzaib: the render function of a manager tab is never called for him']);
   await brk('phGoTab accepts any tab',"const l=phTabsFor(u).filter(function(t){return t.id===id;});\n  if(!l.length)return false;","const l=PH_TABS.filter(function(t){return t.id===id;});\n  if(!l.length)return false;",['uzaib: asking for a manager tab is refused and the tab does not change']);

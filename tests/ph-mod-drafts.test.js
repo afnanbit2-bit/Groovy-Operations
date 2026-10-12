@@ -410,6 +410,17 @@ async function checks(src){
     D.type('phd-f-name','Floor edit');await D.act('save');
     K('floor: a floor user can edit and save a draft (one update)',D.log.writes.length===1&&D.log.writes[0].data.updatedBy==='uzaib');
   }
+  {   // Owner decision 13 Oct 2026: a READY draft is read-only for Kashif (uzaib); only managers abandon or send back a ready draft
+    const T=load(src,{session:USERS.uzaib});await T.open();T.press(T.byAttr('data-open','DRAFT-K1-CCCC'));
+    K('ready (floor): every input is disabled and Save and Mark ready are off',T.byId('phd-f-code').disabled===true&&T.byId('phd-f-name').disabled===true&&T.byAct('save').disabled===true&&T.byAct('ready').disabled===true);
+    K('ready (floor): the Abandon button is disabled and says only a manager can',T.byAct('abandon').disabled===true&&/Only a manager/.test(T.byAct('abandon').getAttribute('title')||''));
+    await T.R('_phdAbandon("not mine")');T.R('_phdPaint()');await settle();
+    K('ready (floor): calling abandon directly is refused by the screen, nothing is written',/abandon a ready draft/.test(T.text())&&T.log.writes.length===0&&T.log.tx===0);
+    const M=load(src);await M.open();M.press(M.byAttr('data-open','DRAFT-K1-CCCC'));
+    K('ready (manager): the Abandon button is enabled for a manager',M.byAct('abandon').disabled!==true);
+    const F=load(src,{session:USERS.uzaib});await F.open();F.press(F.byAttr('data-open','DRAFT-K1-BBBB'));
+    K('draft (floor): his own draft-status draft can still be abandoned from the screen',F.byAct('abandon').disabled!==true);
+  }
   {
     const T=load(src);await T.open();T.press(T.byAttr('data-open','DRAFT-K1-BBBB'));
     T.press(T.byAct('abandon'));
@@ -557,10 +568,10 @@ module.exports=async function(){
   s.section('wiring: script tag, precache, version');
   const idx=read('index.html'),sw=read('sw.js');
   const iUi=idx.indexOf('/js/ph-ui.js'),iMod=idx.indexOf('/js/ph-mod-drafts.js'),iMod2=idx.indexOf('/js/ph-mod-drafts.js',iMod+1);
-  s.ok('index.html loads js/ph-mod-drafts.js once, right after js/ph-ui.js',iMod>iUi&&iUi>0&&iMod2<0&&/ph-ui\.js[^\n]*\n<script src="\/js\/ph-mod-drafts\.js\?v=[^"]+"><\/script>/.test(idx));
+  s.ok('index.html loads js/ph-mod-drafts.js once, after js/ph-ui.js',iMod>iUi&&iUi>0&&iMod2<0&&/<script src="\/js\/ph-mod-drafts\.js\?v=[^"]+"><\/script>/.test(idx));
   s.ok('the script tag is before the Firebase bootstrap module',iMod<idx.indexOf('<script type="module">'));
   const pre=sw.indexOf("'/js/ph-ui.js'"),pm=sw.indexOf("'/js/ph-mod-drafts.js'");
-  s.ok('sw.js precaches it once, right after js/ph-ui.js',pm>pre&&pre>0&&sw.split("'/js/ph-mod-drafts.js'").length===2&&/'\/js\/ph-ui\.js',\n  '\/js\/ph-mod-drafts\.js',/.test(sw));
+  s.ok('sw.js precaches it once, after js/ph-ui.js',pm>pre&&pre>0&&sw.split("'/js/ph-mod-drafts.js'").length===2);
   s.ok('every global the file declares is ph/_phd/PH_DRAFTS_ prefixed (one lexical scope with the other ph files)',(()=>{
     const code=SRC.replace(/\/\*[\s\S]*?\*\//g,'');
     const names=[...code.matchAll(/^(?:const|let|function|async function)\s+([A-Za-z_$][\w$]*)/gm)].map(m=>m[1]);
@@ -576,7 +587,7 @@ module.exports=async function(){
   s.section('stylesheet contract (geometry the harness cannot lay out)');
   const a0=CSS.indexOf('/* ph-mod-drafts START */'),b0=CSS.indexOf('/* ph-mod-drafts END */');
   const blk=CSS.slice(a0,b0).replace(/\/\*[\s\S]*?\*\//g,'');
-  s.ok('the block exists, is delimited and sits at the end of the stylesheet',a0>0&&b0>a0&&CSS.slice(b0).trim()==='/* ph-mod-drafts END */');
+  s.ok('the block exists, is delimited and sits in the trailing run of ph-mod-* blocks at the end of the stylesheet',a0>0&&b0>a0&&CSS.slice(b0).replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='/* ph-mod-drafts END */');
   s.ok('tokens only: no literal colour in the block',!/#[0-9a-fA-F]{3,8}\b/.test(blk)&&!/\b(?:rgb|rgba|hsl|hsla)\(/.test(blk));
   s.ok('every selector in the block is .phd- prefixed',(blk.match(/[^{}]+(?=\{)/g)||[]).filter(x=>!/^\s*@media/.test(x)).every(x=>x.split(',').every(p=>/\.phd-/.test(p))));
   s.ok('text sizes: nothing under 12px in the block',!/font-size:(?:[0-9]|10|11)(?:\.\d+)?px/.test(blk));
@@ -609,6 +620,8 @@ module.exports=async function(){
   await brk('a failed read is drawn as an empty list',"  if(!g.ok){\n    const c=_phdErrCard('PO drafts could not be read'","  if(false){\n    const c=_phdErrCard('PO drafts could not be read'",['failed: the list says po_drafts could not be read and names the rules','failed: it is never shown as "no drafts" or as a zero count']);
   await brk('Retry re-reads everything',"Promise.resolve(typeof phLoadStage==='function'?phLoadStage('drafts',{force:true}):null).then(done,done);   // phLoadStage never rejects","Promise.resolve(phLoadAll({force:true})).then(done,done);   // phLoadStage never rejects",['failed: Retry re-reads po_drafts only (no other collection is read again)']);
   await brk('masters unread shown as complete',"if(masters===null)chips.appendChild(_phdChip('not checked','wait'));\n    else{","if(false)chips.appendChild(_phdChip('not checked','wait'));\n    else{",['masters failed: rows say "not checked", never Complete']);
+  await brk('the Abandon button ignores the ready rule for a floor user',"if(!wc.ok||busy||(st==='ready'&&!_phdCanManage())){_phdOff(abandon);","if(!wc.ok||busy||(st==='ready'&&false)){_phdOff(abandon);",['ready (floor): the Abandon button is disabled and says only a manager can']);
+  await brk('the screen lets a floor user abandon a ready draft directly',"  if(f.status==='ready'&&!_phdCanManage()){_phdSetNote('err','Only a manager (Afnan, Ammar, Mustafa) can abandon a ready draft.');return;}\n","",['ready (floor): calling abandon directly is refused by the screen, nothing is written']);
   await brk('a floor user can send back',"  if(!_phdCanManage()){_phdSetNote('err','Only a manager (Afnan, Ammar, Mustafa) can send a ready draft back.');return;}","",['send back: a floor user calling it directly is refused and writes nothing']);
   await brk('the stale revision is not sent',"const r=await phSaveDraft(f.id||null,t.po,f.id?{expectedRev:f.rev}:{});","const r=await phSaveDraft(f.id||null,t.po,{});",['stale: a save over a draft someone else changed is refused with the revision, and writes nothing']);
   await brk('unparseable text is quietly dropped on save',"  if(t.problems.length){_phdSetNote('err','Not saved. Fix these first: '","  if(false){_phdSetNote('err','Not saved. Fix these first: '",['problems: Save refuses, names both, writes nothing']);
