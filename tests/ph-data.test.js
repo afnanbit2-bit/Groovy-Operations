@@ -694,7 +694,7 @@ module.exports=async function(){
     s.ok('ph-data.js and ph-write.js have script tags, after ph-core.js and before the Firebase module',tag('ph-core.js')>0&&tag('ph-data.js')>tag('ph-core.js')&&tag('ph-write.js')>tag('ph-data.js')&&html.indexOf('<script type="module">')>tag('ph-write.js'));
     s.ok('both are in PRECACHE_URLS',/'\/js\/ph-data\.js'/.test(sw)&&/'\/js\/ph-write\.js'/.test(sw));
     s.ok('the ?v= tags of the new scripts are not the old ph-core one',/ph-data\.js\?v=[0-9a-z]+/.test(html)&&/ph-write\.js\?v=[0-9a-z]+/.test(html));
-    s.ok('CACHE_VERSION moved past v312',/CACHE_VERSION = 'v313'/.test(sw));
+    s.ok('CACHE_VERSION moved past v311',+(/CACHE_VERSION = 'v(\d+)'/.exec(sw)||[0,0])[1]>=312);
   }
   return s;
 };

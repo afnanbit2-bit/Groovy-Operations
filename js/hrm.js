@@ -248,6 +248,7 @@ function renderMePage(){
     <button class="btn-outline" onclick="window.showPage('my-work')" style="font-size:13px">← My Work</button>
     <button class="btn-outline" onclick="window.showPage('gatepass')" style="font-size:13px">Gate Pass</button>
     ${(typeof _canSeeCreativeHub==='function'&&_canSeeCreativeHub())?`<button class="btn-outline" onclick="window.showPage('creative-hub')" style="font-size:13px">Milanote</button>`:''}
+    ${(typeof phCanSee==='function'&&phCanSee())?`<button class="btn-outline" onclick="window.showPage('prod-ops')" style="font-size:13px">Production Ops</button>`:''}
     ${(typeof _canSeePatternHub==='function'&&_canSeePatternHub())?`<button class="btn-outline" onclick="window.showPage('pattern-notices')" style="font-size:13px">Pattern updates${typeof _ptnNoticeBadge==='function'?_ptnNoticeBadge():''}</button>`:''}
   </div>`;
   return widget+sublink;

@@ -945,6 +945,9 @@ function buildNav(){
   // gate lives in js/patterns.js, which loads AFTER this file — hence the
   // typeof guard, which fails CLOSED. See PATTERN_HUB_PLAN.md.
   if(typeof _canSeePatternHub==='function'&&_canSeePatternHub())mainItems.push({id:'pattern-hub',label:'Pattern Hub'});
+  // Production Ops (Oct 2026): afnan, ammar, mustafa, uzaib by username (phCanSee, js/ph-data.js, which loads AFTER this
+  // file -- hence typeof, which fails CLOSED). Uzaib is a viewer with no More sheet, so the sidebar and his Me page are his routes.
+  if(typeof phCanSee==='function'&&phCanSee())mainItems.push({id:'prod-ops',label:'Production Ops'});
   if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
@@ -1181,7 +1184,7 @@ function _updateMobNavActive(pageId){
     'attendance':'hrm','hrm-employees':'hrm','hrm-payroll':'hrm','hrm-advances':'hrm','hrm-loans':'hrm','hrm-policy':'hrm',
     'recipe-directory':'more','recipe-create':'more','recipe-detail':'more','recipe-draft':'more','recipe-draft-review':'more','printing-jobs':'more','printing-job-detail':'more','observer-tower':'more','qc-report-page':'more','billing-detail':'more','color-library':'more',
     'store-dashboard':'more','store-inventory':'more','store-receive':'more','store-issue':'more','store-log':'more','store-analytics':'more','store-templates':'more','po-issue-list':'more','po-issue-detail':'more','po-edit-inbox':'more','acct-ledger':'more','acct-vendors':'more','acct-vendor':'more','acct-category':'more','acct-runner':'more','acct-consumables':'more','acct-review':'more',
-    'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more','pattern-reconcile':'more','pattern-blocks':'more','pattern-block':'more','pattern-unassigned':'more','pattern-poms':'more','pattern-notices':'more',
+    'activity':'more','monitor':'more','users':'more','bug-tracker':'more','shopify-intel':'more','fulfillment':'more','pattern-hub':'more','pattern-reconcile':'more','pattern-blocks':'more','pattern-block':'more','pattern-unassigned':'more','pattern-poms':'more','pattern-notices':'more','prod-ops':'more',
     'mkt-creators':'more','mkt-dispatches':'more','mkt-paid-pr':'more','mkt-reports':'more','mkt-import':'more',
     'ma-overview':'more','ma-money':'more','ma-holder':'more','ma-in':'more','ma-out':'more','ma-parties':'more','ma-party':'more','ma-ledger':'more','ma-close':'more',
     'creative-hub':'more','notes':'more','note-detail':'more','boards':'more','boards-all':'more','board-canvas':'more',
@@ -1321,6 +1324,7 @@ window.openMoreSheet=function(){
   if(om||session.canFabric)items.push({iconName:'box',label:'Fabric Inventory',pageId:'fabric-inventory'});
   if(_canSeeCreativeHub())items.push({label:'Milanote',pageId:'creative-hub'}); // staged rollout, no icon — see buildNav()
   if(typeof _canSeePatternHub==='function'&&_canSeePatternHub())items.push({label:'Pattern Hub',pageId:'pattern-hub'}); // test phase — see buildNav()
+  if(typeof phCanSee==='function'&&phCanSee())items.push({label:'Production Ops',pageId:'prod-ops'}); // no icon — see buildNav()
   if(om)items.push({iconName:'activity',label:'Courier Performance',pageId:'fulfillment'});
   if(typeof maNavItems==='function'&&maNavItems().length)items.push({iconName:'money',label:'Master Accounts ›',onClick:'window.openMaSheet()'});
   if(_salesTeamGroups().length)items.push({iconName:'people',label:'The Sales Team ›',onClick:'window.openSalesSheet()'});
@@ -1522,6 +1526,8 @@ function renderPage(id){
   // new Pattern Hub page never needs a line here — the mkt-* rule. Its
   // loaders cannot reject; a failed read renders its own error card.
   else if(id.startsWith('pattern-')){if(typeof ptnRenderPage==='function')ptnRenderPage(id);else m.innerHTML='<div class="empty">The Pattern Hub module did not load — refresh the page.</div>';}
+  // Production Ops (js/ph-ui.js): ONE line; the module re-checks the audience itself and draws its own takeover.
+  else if(id==='prod-ops'){if(typeof phRenderPage==='function')phRenderPage(id);else m.innerHTML='<div class="empty">The Production Ops module did not load — refresh the page.</div>';}
   else if(id==='notes'){if(!notesLoaded){m.innerHTML=gvSkeleton(6);loadNotesData().then(()=>{if(currentPage===id)m.innerHTML=renderNotesPage();});}else m.innerHTML=renderNotesPage();}
   else if(id==='note-detail'){_notesOpenDetail();return;}
   // Mood Boards' home is a BOARD, not a list — boardsOpenHome resolves (or
@@ -1610,6 +1616,7 @@ const BUG_PAGE_NAMES={
   'pattern-unassigned':'Pattern Hub · Unassigned',
   'pattern-poms':'Pattern Hub · Points of measure',
   'pattern-notices':'Pattern Hub · Pattern updates',
+  'prod-ops':'Production Ops',
   'attendance':'HRM Attendance',
   'hrm-employees':'HRM Employees',
   'hrm-payroll':'HRM Payroll',

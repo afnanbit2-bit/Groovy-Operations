@@ -84,7 +84,7 @@ const OWNER_PAGES=['dashboard','po-create','po-registry','gatepass','fabric-inve
   'fulfillment','activity','monitor','users','bug-tracker','profile','creative-hub','notes','boards-all',
   'store-dashboard','store-inventory','store-receive','store-issue','store-templates','store-log',
   'store-analytics','acct-ledger','po-issue-list','recipe-directory','printing-jobs','observer-tower',
-  'color-library','shopify-intel','hrm-employees','attendance','hrm-payroll','hrm-advances','hrm-loans',
+  'color-library','shopify-intel','prod-ops','hrm-employees','attendance','hrm-payroll','hrm-advances','hrm-loans',
   'mkt-creators','mkt-dispatches','mkt-paid-pr','mkt-reports','pattern-hub','pattern-blocks',
   'tb-dash','tb-calendar','tb-lists','tb-inbox','me',
   'ma-overview','ma-money','ma-in','ma-out','ma-parties','ma-ledger','ma-close'];
@@ -92,7 +92,7 @@ const JOBS=[
   {id:'owner-light',user:'afnan',theme:'light',pages:OWNER_PAGES},
   {id:'owner-dark',user:'afnan',theme:'dark',pages:OWNER_PAGES},
   {id:'worker',user:'abbas',theme:'light',pages:['','gatepass','me','creative-hub']},
-  {id:'viewer',user:'uzaib',theme:'dark',pages:['','fabric-inventory','me']},
+  {id:'viewer',user:'uzaib',theme:'dark',pages:['','fabric-inventory','prod-ops','me']},
   {id:'store',user:'raees',theme:'light',pages:['','store-inventory','acct-ledger','store-receive','profile']},
   {id:'fulfilment',user:'umair',theme:'light',pages:['']},
   {id:'marketing',user:'daniyal',theme:'dark',pages:['','mkt-dispatches','mkt-creators']},
@@ -177,6 +177,40 @@ function DRIVE(){
           if(/^#inventory/.test(location.hash))tk.push('leaving by showPage left the hash behind');
         }catch(e){tk.push('the takeover check threw: '+e.message);}
         res.push({page:'(inventory takeover)',issues:tk});
+      }
+      // Production Ops' full-view takeover (12 Oct 2026), in the real shell on a phone: the same checks as Inventory Intel's, for js/ph-ui.js.
+      // Afnan sees nine tabs, Uzaib (a viewer, no More sheet) two; Escape and the #prodops deep link work; leaving removes every trace.
+      if(PAGES.indexOf('prod-ops')>=0){
+        var pk=[],want=window.__SESSION&&window.__SESSION.u==='uzaib'?2:9;
+        try{
+          window.showPage('prod-ops');await wait(900);
+          var pb=document.getElementById('ph-tk-bar'),pr=document.getElementById('ph-tk-rail'),pm=document.getElementById('main-content');
+          if(!document.body.classList.contains('ph-fullscreen')||!pb||!pr)pk.push('the takeover did not open');
+          else{
+            var b2=pb.getBoundingClientRect(),r2=pr.getBoundingClientRect(),m2=pm.getBoundingClientRect(),fab2=document.getElementById('bug-report-fab');
+            if(b2.top!==0||b2.height<40)pk.push('the bar is not at the top ('+Math.round(b2.top)+','+Math.round(b2.height)+')');
+            if(Math.round(r2.bottom)!==innerHeight||r2.height<56)pk.push('the dock is not at the bottom ('+Math.round(r2.bottom)+' of '+innerHeight+', '+Math.round(r2.height)+'px tall)');
+            if(Math.round(m2.top)!==Math.round(b2.bottom)||Math.round(m2.bottom)>Math.round(r2.top))pk.push('the content overlaps the bar or the dock');
+            if(fab2&&fab2.getClientRects().length&&fab2.getBoundingClientRect().bottom>r2.top+0.5)pk.push('the bug button sits on the dock');
+            var tz2=+getComputedStyle(pm).zIndex,fz2=fab2?+getComputedStyle(fab2).zIndex:500;
+            if(!(tz2>100&&tz2<fz2))pk.push('the takeover z-index '+tz2+' is not between the topbar (100) and the bug button ('+fz2+')');
+            var its=[].slice.call(pr.querySelectorAll('.ph-tk-item'));
+            if(its.length!==want)pk.push('the rail has '+its.length+' tabs, expected '+want);
+            its.forEach(function(it){var r=it.getBoundingClientRect();if(r.height<44||r.width<44)pk.push('a rail item is '+Math.round(r.width)+'x'+Math.round(r.height));});
+            if(!document.getElementById('ph-panel'))pk.push('the canvas has no panel');
+          }
+          document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(500);
+          if(document.body.classList.contains('ph-fullscreen')||document.getElementById('main-content').classList.contains('ph-takeover'))pk.push('Escape did not leave the takeover');
+          if(currentPage==='prod-ops')pk.push('Escape did not leave the page');
+          if(/^#prodops/.test(location.hash))pk.push('the hash was left behind');
+          location.hash='#prodops/cutting';await wait(900);
+          if(currentPage!=='prod-ops'||!document.body.classList.contains('ph-fullscreen'))pk.push('the #prodops/cutting link did not open the page');
+          if(location.hash!=='#prodops/cutting')pk.push('the hash is '+location.hash);
+          window.showPage('dashboard');await wait(500);
+          if(document.body.classList.contains('ph-fullscreen')||document.documentElement.classList.contains('ph-fullscreen')||document.getElementById('main-content').classList.contains('ph-takeover'))pk.push('leaving by showPage left the class behind');
+          if(/^#prodops/.test(location.hash))pk.push('leaving by showPage left the hash behind');
+        }catch(e){pk.push('the takeover check threw: '+e.message);}
+        res.push({page:'(production ops takeover)',issues:pk});
       }
       // The toast must clear the bottom nav.
       var nav=document.getElementById('mob-nav');

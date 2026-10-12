@@ -73,6 +73,7 @@ const PRECACHE_URLS = [
   '/js/ph-core.js',
   '/js/ph-data.js',
   '/js/ph-write.js',
+  '/js/ph-ui.js',
   '/assets/icons/icon-192.png',
   '/assets/icons/icon-512.png',
   '/assets/icons/icon-maskable-v3-512.png',

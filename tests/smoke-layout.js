@@ -268,6 +268,41 @@ function _tkFragment(min,inBody){
   if(min)out.widths=[1900,1280];
   return Promise.resolve(out);
 }
+// Production Ops shell (12 Oct 2026): the REAL js/ph-ui.js run over tests/ph-dom.js's small DOM, with js/ph-core.js + js/ph-data.js reading a
+// fake Firestore (one collection refused, one with a long hostile-ish name), then SERIALISED to markup. Variants: manager / Uzaib (view only),
+// rail expanded / collapsed, and (inBody) the bar and rail moved to <body> as _phTkMount does, so the probe hit-tests the CONTENT against them.
+async function _phFragment(o){
+  o=o||{};
+  const vm=require('vm'),domkit=require('./ph-dom');
+  const bad=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
+  const DATA={po_drafts:[{id:'DRAFT-1'},{id:'DRAFT-2'}],po_cut_jobs:[],cutting_masters:[{id:'CM-001',name:'Hassan'},{id:'CM-002',name:'Alam With A Very Long Name That Must Wrap Onto Several Lines Instead Of Clipping'}],ph_standards:[{id:'GST073'}],'ph_settings/main':{capacity:1}};
+  const rows=p=>(DATA[p]||[]).map(r=>({id:r.id,data:()=>{const c=Object.assign({},r);delete c.id;return c;}}));
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
+    localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+    collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
+    getDocs:async q=>{if(o.fail&&q.path==='ph_standards')throw new Error('ph_standards could not be read: '+'a long reason that has to wrap inside the card and never push the page sideways '.repeat(3));if(o.fail&&q.path==='cutting_masters')throw bad();return{docs:rows(q.path),metadata:{fromCache:false}};},
+    getDoc:async r=>({exists:()=>!!DATA[r.path],data:()=>Object.assign({},DATA[r.path]),metadata:{fromCache:false}})}});
+  const dom=domkit.install(app.ctx);
+  app.ctx.console={warn(){},log(){},error(){}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  app.ctx.currentPage='prod-ops';
+  app.ctx.phRenderPage('prod-ops');
+  if(o.tab)app.run('_phUiTab='+JSON.stringify(o.tab));
+  app.run('_phTkOnPage()');
+  await app.run('phUiLoad()');
+  if(o.min)app.run('phToggleRail()');
+  app.run('_phUiPaintData();_phTkSync()');
+  const canvas=dom.byClass(dom.main,'ph-canvas')[0];
+  const chrome=domkit.toHtml(dom.find('ph-tk-bar'))+domkit.toHtml(dom.find('ph-tk-rail'));
+  const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");'+(o.min?'b.classList.add("ph-rail-min");':'')
+    +'document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";'
+    // the bar sits above the scroller's box: without this the probe reads Exit and the toggle as "scrolled away" and never hit-tests them
+    +(o.inBody?'':'m.style.overflow="visible";')
+    +(o.inBody?'["ph-tk-bar","ph-tk-rail"].forEach(function(i){b.appendChild(document.getElementById(i));});':'')+'})();<\/script>';
+  const out={html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
+  if(o.min)out.widths=[1900,1280];
+  return out;
+}
 function _naSeed(app,opts){
   opts=opts||{};
   const prods=[],lis=[],defs=[];
@@ -2882,6 +2917,14 @@ const FRAGMENTS={
   // The fragment applies the same classes js/shopify.js sets (body/html .si-fullscreen, #main-content.si-takeover) and leaves the two chrome
   // nodes INSIDE #main-content (the probe only walks that subtree; they are position:fixed, so they lay out exactly as <body> children do), so Exit, every rail item and the toggle must be reachable,
   // the pill must read on its chip, and nothing may sit over the content's first row. Collapsed variant: desktop only (phone ignores it).
+  // Production Ops shell (12 Oct 2026): the fixed bar (Exit, title, View only chip, menu toggle), the left rail / phone dock with its monogram
+  // items, the failure banner (a permission refusal and a long error text) and the Overview lines. Every control must be reachable, the chips
+  // and rail ink must read on their grounds, nothing may sit over the content's first row. The probe walks #main-content only, so the chrome
+  // is placed inside it and laid out as the fixed elements it is; the last variant moves it to <body> as the app does.
+  'production ops — shell: rail, top bar, banner and Overview':()=>_phFragment({fail:true}),
+  'production ops — shell collapsed':()=>_phFragment({fail:true,min:true}),
+  'production ops — shell for the cutting floor (view only)':()=>_phFragment({floor:true,tab:'cutting'}),
+  'production ops — shell content clear of the bar and rail':()=>_phFragment({fail:true,inBody:true,tab:'masters'}),
   'inventory intel — takeover and rail':()=>_tkFragment(false),
   'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
   // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
