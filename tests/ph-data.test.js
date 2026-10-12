@@ -162,8 +162,23 @@ module.exports=async function(){
     const jobs=matchBlock('po_cut_jobs'),jstep=funcBody('phJobStep');
     s.eq('po_cut_jobs create keys = PH_JOB_CREATE_FIELDS',J(nth(jobs,0).slice().sort()),J(L('PH_JOB_CREATE_FIELDS').sort()));
     s.eq('phJobStep mutable keys = PH_JOB_MUTABLE_FIELDS',J(nth(jstep,0).slice().sort()),J(L('PH_JOB_MUTABLE_FIELDS').sort()));
-    s.eq('job statuses in the rule = PH_JOB_STATUSES',J(inList(jstep,/status', ''\) in \[([^\]]*)\]/).sort()),J(L('PH_JOB_STATUSES').sort()));
-    s.ok('overridden is an owner\'s decision in the rule',/!= 'overridden' \|\| r\.get\('status', ''\) == 'overridden' \|\| isOwner\(\)/.test(jstep));
+    s.eq('job statuses the rule writes (ds in […]) = PH_JOB_STATUSES',J(inList(jstep,/ds in \[([^\]]*)\]/).sort()),J(L('PH_JOB_STATUSES').sort()));
+    s.eq('job statuses the rule can move FROM (rs in […]) = PH_JOB_STATUSES without done (done is terminal)',J(inList(jstep,/rs in \[([^\]]*)\]/).sort()),J(L('PH_JOB_STATUSES').filter(x=>x!=='done').sort()));
+    {
+      // the transition table printed in the rules comment = PH_JOB_TRANSITIONS (and is what the emulator test runs)
+      const cm=RULES.slice(RULES.indexOf('// Cut job transitions'),RULES.indexOf('function phJobStep('));
+      const tbl=[...cm.matchAll(/^\s*\/\/\s+(\w+)\s+->\s+(\w+)\s+:\s+(floor|manager|owner)\b/gm)].map(m=>m[1]+'>'+m[2]+':'+m[3]);
+      const js=L('PH_JOB_TRANSITIONS').map(t=>t[0]+'>'+t[1]+':'+t[2]);
+      s.eq('the rules\' printed transition table = PH_JOB_TRANSITIONS ('+js.length+' rows)',J(tbl.slice().sort()),J(js.slice().sort()));
+      s.ok('the table has 12 rows, none leaving done, and every other from/to pair is present',js.length===12&&js.every(x=>!/^done>/.test(x))&&['open','complete','overridden'].every(a=>['open','complete','overridden','done'].every(b=>js.indexOf(a+'>'+b+':floor')>-1||js.indexOf(a+'>'+b+':manager')>-1||js.indexOf(a+'>'+b+':owner')>-1)));
+      const who=funcBody('phJobWho');
+      s.ok('phJobWho: any step into or out of overridden is an owner\'s; into done or out of/within complete a manager\'s; the rest the audience\'s',
+        /rs == 'overridden' \|\| ds == 'overridden'\) \? isOwner\(\)/.test(who)&&/ds == 'done' \|\| rs == 'complete'\)\s*\? isProdOpsManager\(\)/.test(who)&&/: isProdOps\(\);/.test(who));
+      const tm=funcBody('phJobTimes');
+      s.ok('phJobTimes: completedAt+completedBy (caller) only when becoming complete, doneAt only when becoming done, all typed',
+        /ds == 'complete' && rs != 'complete'/.test(tm)&&/k\.hasAll\(\['completedAt','completedBy'\]\) && phBy\(d\.get\('completedBy', ''\)\)/.test(tm)&&/!k\.hasAny\(\['completedAt','completedBy'\]\)/.test(tm)
+        &&/ds == 'done' \? k\.hasAll\(\['doneAt'\]\) : !k\.hasAny\(\['doneAt'\]\)/.test(tm)&&/completedAt', 0\) is number/.test(tm)&&/doneAt', 0\) is number/.test(tm)&&/completedBy', ''\) is string/.test(tm));
+    }
     const masters=matchBlock('cutting_masters');
     s.eq('cutting_masters create keys = PH_MASTER_CREATE_FIELDS',J(nth(masters,0).slice().sort()),J(L('PH_MASTER_CREATE_FIELDS').sort()));
     s.eq('cutting_masters update keys = PH_MASTER_MUTABLE_FIELDS',J(nth(masters,1).slice().sort()),J(L('PH_MASTER_MUTABLE_FIELDS').sort()));
@@ -549,6 +564,98 @@ module.exports=async function(){
     s.ok('the three scripts load together in one context (no redeclaration error) and the public API exists',['phLoadAll','phGet','phSaveDraft','phSaveCutJob','phAppendHistory','phMasterAdd','phStandardSave','phSettingsSave','phHistoryOf'].every(n=>w.run('typeof '+n)==='function'));
   }
 
+  /* ═══ 6b. 13 Oct hardening: job transitions, history limits, draft terminal, settings bounds ═══ */
+  s.section('hardening: the cut job transition table, history row limits, abandoned is terminal, settings bounds');
+  {
+    const OW=[AF],MG=[AF,MU],FL=[AF,MU,UZ];
+    const who=(w)=>w==='floor'?FL:w==='manager'?MG:OW;
+    const m0=mk();
+    const mv=(from,to,u)=>m0.run('phJobMoveProblem("'+from+'","'+to+'","'+u+'")');
+    // every row of the table, for every audience member
+    let bad=[];
+    for(const [from,to,w] of m0.run('PH_JOB_TRANSITIONS.map(t=>t.slice())')){
+      for(const u of ['afnan','ammar','mustafa','uzaib','raees',null]){
+        const allowed=u&&(w==='owner'?['afnan','ammar'].includes(u):w==='manager'?['afnan','ammar','mustafa'].includes(u):['afnan','ammar','mustafa','uzaib'].includes(u));
+        const p=mv(from,to,u);if(allowed?p!==null:typeof p!=='string')bad.push(from+'>'+to+' '+u+' '+p);
+      }
+    }
+    s.eq('phJobMoveProblem agrees with every row of the table for afnan, ammar, mustafa, uzaib, raees and nobody',J(bad),'[]');
+    s.ok('nothing leaves done, and an unknown status has no steps',typeof mv('done','open','afnan')==='string'&&typeof mv('done','done','afnan')==='string'&&typeof mv('finished','open','afnan')==='string'&&mv('open','finished','afnan')!==null);
+    // the writer enforces it before any write
+    const jobAs=async(prev,patch,actor,extra)=>{
+      const m=mk();m.store['pos/PO-001']={id:'PO-001'};m.store['po_cut_jobs/PO-001']=Object.assign({poId:'PO-001',rev:2},prev);
+      const r=await m.call('phSaveCutJob("PO-001",'+J(patch)+','+A(actor,Object.assign({now:nx()},extra||{}))+')');
+      return{r:r,m:m};
+    };
+    {
+      const a=await jobAs({status:'open'},{status:'done'},UZ);
+      s.ok('uzaib cannot take an open job straight to done',a.r.ok===false&&a.r.code==='forbidden'&&a.m.log.writes.length===0);
+      const b=await jobAs({status:'open'},{status:'done'},MU);
+      s.ok('a manager can (open -> done): doneAt set, completedAt absent',b.r.ok===true&&typeof b.m.store['po_cut_jobs/PO-001'].doneAt==='number'&&!('completedAt' in b.m.store['po_cut_jobs/PO-001']));
+      const c=await jobAs({status:'complete',completedAt:5,completedBy:'uzaib'},{status:'done'},MU);
+      s.ok('complete -> done by a manager sets doneAt and keeps completedAt / completedBy',c.r.ok===true&&c.m.store['po_cut_jobs/PO-001'].completedBy==='uzaib'&&typeof c.m.store['po_cut_jobs/PO-001'].doneAt==='number');
+      const d=await jobAs({status:'complete',completedAt:5,completedBy:'uzaib'},{status:'done'},UZ);
+      s.ok('uzaib cannot mark done, even from complete',d.r.code==='forbidden');
+      const e=await jobAs({status:'open'},{status:'complete'},UZ);
+      const ej=e.m.store['po_cut_jobs/PO-001'];
+      s.ok('uzaib marks open -> complete: completedAt a number, completedBy himself, nothing else',e.r.ok===true&&typeof ej.completedAt==='number'&&ej.completedBy==='uzaib'&&!('doneAt' in ej));
+      const f=await jobAs({status:'open'},{note:'edited'},UZ);
+      s.ok('uzaib edits an open job',f.r.ok===true&&f.m.store['po_cut_jobs/PO-001'].note==='edited');
+      const g=await jobAs({status:'complete',completedAt:5,completedBy:'uzaib'},{note:'later'},UZ);
+      s.ok('uzaib cannot edit a job once complete, nor reopen it',g.r.code==='forbidden'&&(await jobAs({status:'complete'},{status:'open'},UZ)).r.code==='forbidden');
+      s.ok('a manager can edit a complete job and reopen it, and neither touches completedAt',(await jobAs({status:'complete',completedAt:5,completedBy:'uzaib'},{note:'later'},MU)).r.ok===true
+        &&(await jobAs({status:'complete',completedAt:5,completedBy:'uzaib'},{status:'open'},MU)).m.store['po_cut_jobs/PO-001'].completedAt===5);
+      const h=await jobAs({status:'overridden'},{status:'open'},MU);
+      s.ok('Mustafa cannot un-override; nor can uzaib; nor edit an overridden job',h.r.code==='forbidden'&&(await jobAs({status:'overridden'},{status:'open'},UZ)).r.code==='forbidden'&&(await jobAs({status:'overridden'},{note:'x'},MU)).r.code==='forbidden');
+      const i=await jobAs({status:'overridden'},{status:'open'},AF);
+      s.ok('an owner can leave overridden',i.r.ok===true&&i.m.store['po_cut_jobs/PO-001'].status==='open');
+      s.ok('an owner can mark a job overridden; a manager cannot',(await jobAs({status:'open'},{status:'overridden'},AF)).r.ok===true&&(await jobAs({status:'open'},{status:'overridden'},MU)).r.code==='forbidden');
+      const j=await jobAs({status:'done',doneAt:9},{note:'x'},AF);
+      s.ok('done is terminal for everyone, an owner included',j.r.code==='refused'&&j.m.log.writes.length===0);
+    }
+    // history rows: limits in the builder (the rules' limits)
+    const hx=(spec,ctx)=>m0.run('phBuildHistoryRow('+J(spec)+','+J(Object.assign({u:'afnan',name:'Afnan',now:T0,rand:'ab12'},ctx||{}))+')');
+    {
+      const r=hx({type:'scheduled',from:'f'.repeat(300),to:'t'.repeat(300),reason:'r'.repeat(900)},{name:'N'.repeat(200)});
+      s.ok('byName is cut to 60, from and to to 80, reason to 500 (the rules\' limits)',r.data.byName.length===60&&r.data.from.length===80&&r.data.to.length===80&&r.data.reason.length===500);
+      const many={};for(let i=0;i<41;i++)many['k'+i]=1;const few={};for(let i=0;i<40;i++)few['k'+i]=1;
+      s.ok('data with 41 keys is refused by name, 40 keys passes',/more than 40 keys/.test(hx({type:'scheduled',data:many}).error||'')&&!!hx({type:'scheduled',data:few}).id);
+      s.ok('the builder\'s constants equal the rules\' numbers',m0.run('[PH_HISTORY_NAME_MAX,PH_HISTORY_FT_MAX,PH_HISTORY_KEYS_MAX,PH_DAYS_MAX]').join()==='60,80,40,3650');
+      const hb=funcBody('phHistoryShapeOk');
+      s.ok('the rules carry those limits: byName <= 60, from / to <= 80, reason <= 500, data keys <= 40, at a positive whole number within 2 days of request.time',
+        /byName', ''\)\.size\(\) <= 60/.test(hb)&&/from', ''\)\.size\(\) <= 80/.test(hb)&&/to', ''\)\.size\(\) <= 80/.test(hb)&&/reason', ''\)\.size\(\) <= 500/.test(hb)&&/keys\(\)\.size\(\) <= 40/.test(hb)
+        &&/\) > 0/.test(hb)&&/math\.floor\(d\.get\('at', 0\)\) == d\.get\('at', 0\)/.test(hb)&&/math\.abs\(d\.get\('at', 0\) - request\.time\.toMillis\(\)\) <= 172800000/.test(hb));
+      s.ok('the history create rule calls phHistoryShapeOk and keeps its id, hasOnly, phBy and existsAfter guards',/phHistoryShapeOk\(request\.resource\.data\)/.test(matchBlock('pos'))&&/PH_HISTORY_ROW_RE|\^\[0-9\]\{13\}-/.test(matchBlock('pos'))&&/existsAfter\(/.test(matchBlock('pos'))&&/phBy\(/.test(matchBlock('pos')));
+    }
+    // settings: bounds in the writer and the rules
+    {
+      const w=mk();
+      const big=await w.call('phSettingsSave({delayTargetDays:3,stuckDays:3651},'+A(AF,{now:nx()})+')');
+      s.ok('stuckDays 3651 is refused by the writer naming the field, nothing written',big.ok===false&&big.code==='invalid'&&/stuckDays/.test(big.error)&&w.log.writes.length===0);
+      const edge=await w.call('phSettingsSave({delayTargetDays:3649,stuckDays:3650},'+A(AF,{now:nx()})+')');
+      s.ok('3650 is the last day count the writer stores',edge.ok===true&&w.store['ph_settings/main'].stuckDays===3650);
+      const sb=funcBody('phSettingsOk');
+      s.ok('the rules bound delayTargetDays and stuckDays to 0..3650, cap skipDays at 5000, and check offWeekdays through phWeekdaysOk',
+        /delayTargetDays >= 0 && d\.delayTargetDays <= 3650/.test(sb)&&/stuckDays >= 0 && d\.stuckDays <= 3650/.test(sb)&&/skipDays\.size\(\) <= 5000/.test(sb)&&/phWeekdaysOk\(d\.offWeekdays\)/.test(sb));
+    }
+    // drafts: abandoned is terminal, reasons required
+    {
+      const ds=funcBody('phDraftStep');
+      s.ok('phDraftStep admits only a stored draft or ready draft (abandoned is terminal) before any branch',/return r\.get\('status', ''\) in \['draft', 'ready'\]/.test(ds));
+      s.ok('abandoning a ready draft is a manager\'s: the rule gates the ready branch on isProdOpsManager()',/\(r\.status == 'draft' \|\| \(r\.status == 'ready' && isProdOpsManager\(\)\)\) && d\.status == 'abandoned'/.test(ds));
+      {
+        const mk2=async(who)=>{const m=mk();m.store['po_drafts/DRAFT-A-AAAA']={id:'DRAFT-A-AAAA',status:'ready',rev:2,createdBy:'uzaib',po:{}};return{m:m,r:await m.call('phAbandonDraft("DRAFT-A-AAAA","dup",'+A(who,{now:nx()})+')')};};
+        const u=await mk2(UZ),g=await mk2(MU),o=await mk2(AF);
+        s.ok('uzaib cannot abandon a ready draft (forbidden, nothing written); Mustafa and an owner can',u.r.ok===false&&u.r.code==='forbidden'&&u.m.log.writes.length===0&&g.r.ok===true&&o.r.ok===true);
+        const own=mk();own.store['po_drafts/DRAFT-B-BBBB']={id:'DRAFT-B-BBBB',status:'draft',rev:1,createdBy:'uzaib',po:{}};
+        s.ok('uzaib still abandons a draft-status draft',(await own.call('phAbandonDraft("DRAFT-B-BBBB","dup",'+A(UZ,{now:nx()})+')')).ok===true);
+      }
+      s.ok('abandoning and sending back need a stored reason (phReasonOk) and a numeric time',(ds.match(/phReasonOk\(/g)||[]).length===2&&/abandonedAt', null\) is number/.test(ds)&&/sentBackAt', null\) is number/.test(ds)&&/readyAt', null\) is number/.test(ds));
+      const rr=funcBody('phReasonOk');
+      s.ok('phReasonOk: a string of 1..500 characters that is not only spaces',/size\(\) >= 1/.test(rr)&&/size\(\) <= 500/.test(rr)&&/!v\.matches\(' \+'\)/.test(rr));
+    }
+  }
+
   /* ═══ 7. the rules text ═══ */
   s.section('rules: the new blocks follow the repo conventions; the old ones are untouched');
   {
@@ -587,7 +694,7 @@ module.exports=async function(){
     s.ok('ph-data.js and ph-write.js have script tags, after ph-core.js and before the Firebase module',tag('ph-core.js')>0&&tag('ph-data.js')>tag('ph-core.js')&&tag('ph-write.js')>tag('ph-data.js')&&html.indexOf('<script type="module">')>tag('ph-write.js'));
     s.ok('both are in PRECACHE_URLS',/'\/js\/ph-data\.js'/.test(sw)&&/'\/js\/ph-write\.js'/.test(sw));
     s.ok('the ?v= tags of the new scripts are not the old ph-core one',/ph-data\.js\?v=[0-9a-z]+/.test(html)&&/ph-write\.js\?v=[0-9a-z]+/.test(html));
-    s.ok('CACHE_VERSION moved past v311',/CACHE_VERSION = 'v312'/.test(sw));
+    s.ok('CACHE_VERSION moved past v312',/CACHE_VERSION = 'v313'/.test(sw));
   }
   return s;
 };

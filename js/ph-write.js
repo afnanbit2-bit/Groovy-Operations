@@ -41,6 +41,17 @@ const PH_JOB_STATUSES=Object.freeze(['open','complete','overridden','done']);
 const PH_JOB_CREATE_FIELDS=Object.freeze(['poId','status','rev','plannedCutDate','masterId','masterName','plannedFabric','rollsChecklist','note','createdAt','createdBy','createdByName','updatedAt','updatedBy']);
 const PH_JOB_MUTABLE_FIELDS=Object.freeze(['status','rev','plannedCutDate','masterId','masterName','plannedFabric','rollsChecklist','note','completedAt','completedBy','doneAt','updatedAt','updatedBy']);
 
+// The cut job transition table: [from, to, who]. who = floor (the audience), manager, owner.
+// firestore.rules prints the same table in the comment above phJobStep and enforces it in
+// phJobWho; tests/ph-data.test.js compares the two, tests/rules-emulator-ph.js runs every row
+// as every kind of caller. 'done' is terminal: nothing leaves it.
+const PH_JOB_TRANSITIONS=Object.freeze([
+  Object.freeze(['open','open','floor']),Object.freeze(['open','complete','floor']),Object.freeze(['open','overridden','owner']),Object.freeze(['open','done','manager']),
+  Object.freeze(['complete','open','manager']),Object.freeze(['complete','complete','manager']),Object.freeze(['complete','overridden','owner']),Object.freeze(['complete','done','manager']),
+  Object.freeze(['overridden','open','owner']),Object.freeze(['overridden','complete','owner']),Object.freeze(['overridden','overridden','owner']),Object.freeze(['overridden','done','owner'])
+]);
+const PH_DAYS_MAX=3650;                           // rules: delayTargetDays / stuckDays are 0..3650
+const PH_HISTORY_NAME_MAX=60,PH_HISTORY_FT_MAX=80,PH_HISTORY_KEYS_MAX=40;   // rules: byName, from/to, data keys
 const PH_MASTER_KINDS=Object.freeze(['inhouse','outsource','unset']);
 const PH_MASTER_CREATE_FIELDS=Object.freeze(['id','name','nameKey','kind','active','aliases','notes','createdAt','createdBy','createdByName','updatedAt','updatedBy','retiredAt','retiredBy','retiredReason']);
 const PH_MASTER_MUTABLE_FIELDS=Object.freeze(['name','nameKey','kind','active','aliases','notes','retiredAt','retiredBy','retiredReason','updatedAt','updatedBy']);
@@ -95,7 +106,7 @@ function _phStr(x,max){return typeof x==='string'?x.trim().slice(0,max):'';}
 function _phFromError(e){
   const i=typeof phErrInfo==='function'?phErrInfo(e):{code:e&&e.code||'',message:String(e&&e.message||e),permission:false};
   if(e&&e.phRefusal)return _phFail(e.phRefusal.code,e.phRefusal.error,e.phRefusal.extra);
-  if(i.permission)return _phFail('permission','Refused by the database rules. Republish firestore.rules from the repo file (the Production Ops block) and retry.',{detail:i.message});
+  if(i.permission)return _phFail('permission','Refused by the database rules. Republish firestore.rules from the repo file (the Production Ops block) and retry. If it was published, check that this device\'s clock is right (a history row is refused when the clock is more than two days off).',{detail:i.message});
   if(i.code==='unavailable'||/offline/i.test(i.message))return _phFail('offline','No connection. This needs to be online (a transaction cannot be queued) - try again when the connection is back.',{detail:i.message});
   return _phFail('failed','Could not save ('+i.message+').',{detail:i.message});
 }
@@ -147,9 +158,10 @@ function phBuildHistoryRow(spec,ctx){
   if(s.data!==undefined&&s.data!==null){
     const p=_phPlainMap(s.data,PH_HISTORY_DATA_MAX_BYTES,'history data');
     if(p.error)return{error:p.error};
+    if(Object.keys(p.value).length>PH_HISTORY_KEYS_MAX)return{error:'history data has more than '+PH_HISTORY_KEYS_MAX+' keys'};
     data=p.value;
   }
-  return{id:id,data:{at:now,by:c.u,byName:c.name||c.u,type:type,from:_phStr(s.from,200),to:_phStr(s.to,200),reason:_phStr(s.reason,500),data:data}};
+  return{id:id,data:{at:now,by:c.u,byName:_phStr(c.name||c.u,PH_HISTORY_NAME_MAX),type:type,from:_phStr(s.from,PH_HISTORY_FT_MAX),to:_phStr(s.to,PH_HISTORY_FT_MAX),reason:_phStr(s.reason,500),data:data}};
 }
 function phBuildDraft(po,ctx){
   const c=ctx||{};
@@ -319,8 +331,27 @@ function phAbandonDraft(id,reason,opts){
   if(!_phStr(reason,500))return Promise.resolve(_phFail('invalid','A reason is needed to abandon a draft.'));
   return _phDraftStep(id,o,function(prev,ctx){
     if(prev.status!=='draft'&&prev.status!=='ready')return{refuse:{code:'refused',error:'Draft '+id+' is '+prev.status+' already.'}};
+    if(prev.status==='ready'&&!phCanManage(a.u))return{refuse:{code:'forbidden',error:'Only a manager can abandon a draft that is ready. Ask Afnan, Ammar or Mustafa.'}};   // the rules say the same
     return phDraftAbandonPatch(prev,reason,ctx);
   }).then(function(r){if(r.ok)_phLog('PO draft withdrawn',id+' - '+_phStr(reason,120));return r;});
+}
+
+/* ── Cut job transitions ─────────────────────────────────────────────────── */
+// Who a step needs: 'floor' | 'manager' | 'owner', or null when the step does not exist
+// (nothing leaves 'done'; an unknown status has no steps).
+function phJobMoveWho(from,to){
+  for(let i=0;i<PH_JOB_TRANSITIONS.length;i++){const t=PH_JOB_TRANSITIONS[i];if(t[0]===from&&t[1]===to)return t[2];}
+  return null;
+}
+// null when `u` may make the step, else a refusal sentence (shared by the writer; the rules say the same).
+function phJobMoveProblem(from,to,u){
+  const who=phJobMoveWho(from,to);
+  if(from==='done')return'The cut job is done and is not changed again.';
+  if(!who)return'A cut job cannot go from '+from+' to '+to+'.';
+  if(who==='owner'&&!phIsOwner(u))return from==='overridden'?'Only an owner can change a cut job that was overridden.':'Only an owner can mark a cut job overridden.';
+  if(who==='manager'&&!phCanManage(u))return to==='done'?'Only a manager can close a cut job (mark it done).':from==='complete'&&to==='open'?'Only a manager can reopen a completed cut job.':'Only a manager can change a cut job after it is complete.';
+  if(who==='floor'&&!phCanRecordFloor(u))return'Production Ops drafts are for the Production Ops team.';
+  return null;
 }
 
 /* ── Cut jobs (the planned cut of one PO), with the history row in the SAME transaction ─ */
@@ -375,6 +406,8 @@ async function phSaveCutJob(poId,input,opts){
           const prev=js.data();
           if(prev.status==='done')throw _phRefuse('refused','The cut job of '+poId+' is done and is not changed again.');
           if(o.expectedRev!=null&&prev.rev!==o.expectedRev)throw _phRefuse('stale','The cut job of '+poId+' was changed by someone else (revision '+prev.rev+'). Reload it.',{rev:prev.rev});
+          const problem=phJobMoveProblem(prev.status,clean.status||prev.status,a.u);   // the rules' transition table, said before the round trip
+          if(problem)throw _phRefuse('forbidden',problem);
           const patch=Object.assign({},clean,{rev:prev.rev+1,updatedAt:now,updatedBy:a.u});
           if(patch.status==='complete'&&prev.status!=='complete'){patch.completedAt=now;patch.completedBy=a.u;}
           if(patch.status==='done'){patch.doneAt=now;}
@@ -588,6 +621,9 @@ async function phSettingsSave(patch,opts){
           if(!(k in merged))return;
           if(k==='pcOnlyHard')doc_[k]=merged[k]===true;
           else if(k in fb.S)doc_[k]=fb.S[k];
+        });
+        ['delayTargetDays','stuckDays'].forEach(function(k){   // the rules bound both at 0..3650 days
+          if(k in doc_&&(doc_[k]<0||doc_[k]>PH_DAYS_MAX))throw _phRefuse('invalid',k+': a number of days from 0 to '+PH_DAYS_MAX+'.');
         });
         doc_.rev=prev?prev.rev+1:1;doc_.updatedAt=now;doc_.updatedBy=a.u;
         created=!prev;

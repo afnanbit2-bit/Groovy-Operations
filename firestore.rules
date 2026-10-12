@@ -167,6 +167,24 @@ service cloud.firestore {
     // A stored "who" is the caller: usernames are <u>@groovy.op.
     function phBy(u) { return u is string && (u + '@groovy.op') == userEmail(); }
     function phIsDayStr(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    // A stored reason: a string of 1..500 characters that is not just spaces.
+    function phReasonOk(v) { return v is string && v.size() >= 1 && v.size() <= 500 && !v.matches(' +'); }
+    // pos/{id}/history row limits (13 Oct 2026). `at` orders the history (newest first), so it
+    // must be a positive whole number of milliseconds within two days of the server clock: a
+    // forged far-future `at` would otherwise sit at the top of every PO's history for good.
+    // (The same precedent as the Master Accounts audit rows, with a wider window. A device clock
+    // more than two days wrong has its history rows refused.) Callers check `is number` and
+    // `data is map` first; the default arguments keep an absent optional field passing.
+    function phHistoryShapeOk(d) {
+      return d.get('byName', '') is string && d.get('byName', '').size() <= 60
+        && d.get('from', '') is string && d.get('from', '').size() <= 80
+        && d.get('to', '') is string && d.get('to', '').size() <= 80
+        && d.get('reason', '') is string && d.get('reason', '').size() <= 500
+        && d.get('data', {}) is map && d.get('data', {}).keys().size() <= 40
+        && d.get('at', 0) is number && d.get('at', 0) > 0
+        && math.floor(d.get('at', 0)) == d.get('at', 0)
+        && math.abs(d.get('at', 0) - request.time.toMillis()) <= 172800000;
+    }
 
     // ── Operational data (POs, gate passes, returns, fabric in) ──
     match /pos/{doc} {
@@ -188,6 +206,7 @@ service cloud.firestore {
                       && request.resource.data.get('type', '') is string
                       && request.resource.data.get('type', '').matches('^[a-z][a-z_]{1,39}$')
                       && request.resource.data.get('data', {}) is map
+                      && phHistoryShapeOk(request.resource.data)
                       && existsAfter(/databases/$(database)/documents/pos/$(doc));
         allow update, delete: if false;
       }
@@ -1137,9 +1156,19 @@ service cloud.firestore {
       allow update: if isProdOps() && phDraftStep(resource.data, request.resource.data);
       allow delete: if false;
     }
+    // Draft transitions (r = stored, d = written). 'abandoned' is TERMINAL: the first
+    // clause admits only a stored draft or ready draft, so an abandoned draft can neither
+    // be edited, re-abandoned (no rewrite of who/why), revived nor sent back.
+    //   draft     -> draft      edit            audience   (po, rev, updated*)
+    //   draft     -> ready      mark ready      audience   (readyAt number, readyBy = caller)
+    //   ready     -> draft      send back       managers   (sentBackAt number, sentBackBy = caller, reason 1..500)
+    //   draft     -> abandoned  abandon         audience   (abandonedAt number, abandonedBy = caller, reason 1..500)
+    //   ready     -> abandoned  abandon         managers   (same keys; the floor (uzaib) cannot abandon a ready draft)
+    //   ready -> ready, anything -> issued: refused.
     function phDraftStep(r, d) {
       let k = d.diff(r).affectedKeys();
-      return d.get('rev', 0) == r.get('rev', 0) + 1
+      return r.get('status', '') in ['draft', 'ready']
+        && d.get('rev', 0) == r.get('rev', 0) + 1
         && phBy(d.get('updatedBy', ''))
         && d.get('updatedAt', null) is number
         && d.get('po', null) is map
@@ -1148,12 +1177,15 @@ service cloud.firestore {
                   && k.hasOnly(['po','rev','updatedAt','updatedBy']))
             || // mark ready
                (r.status == 'draft' && d.status == 'ready' && phBy(d.get('readyBy', ''))
+                  && d.get('readyAt', null) is number
                   && k.hasOnly(['status','po','rev','readyAt','readyBy','updatedAt','updatedBy']))
             || // send a ready draft back (managers)
                (r.status == 'ready' && d.status == 'draft' && isProdOpsManager() && phBy(d.get('sentBackBy', ''))
+                  && d.get('sentBackAt', null) is number && phReasonOk(d.get('sentBackReason', null))
                   && k.hasOnly(['status','rev','sentBackAt','sentBackBy','sentBackReason','updatedAt','updatedBy']))
             || // abandon (never delete)
-               ((r.status == 'draft' || r.status == 'ready') && d.status == 'abandoned' && phBy(d.get('abandonedBy', ''))
+               ((r.status == 'draft' || (r.status == 'ready' && isProdOpsManager())) && d.status == 'abandoned' && phBy(d.get('abandonedBy', ''))
+                  && d.get('abandonedAt', null) is number && phReasonOk(d.get('abandonedReason', null))
                   && k.hasOnly(['status','rev','abandonedAt','abandonedBy','abandonedReason','updatedAt','updatedBy'])));
     }
 
@@ -1183,16 +1215,53 @@ service cloud.firestore {
         && (d.get('rollsChecklist', null) == null || d.rollsChecklist is map)
         && (d.get('note', '') is string);
     }
+    // Cut job transitions (r = stored status -> d = written status), and WHO may make each one.
+    // js/ph-write.js PH_JOB_TRANSITIONS lists the same table (tests/ph-data.test.js reads the
+    // lines below and fails if they differ; tests/rules-emulator-ph.js runs every row as every
+    // kind of caller). floor = the audience (afnan, ammar, mustafa, uzaib); manager = afnan,
+    // ammar, mustafa; owner = afnan, ammar. 'done' is TERMINAL (nothing leaves it) and a stored
+    // status outside open / complete / overridden cannot move at all.
+    //   open       -> open        : floor      edit the planned fields
+    //   open       -> complete    : floor      sets completedAt and completedBy
+    //   open       -> overridden  : owner
+    //   open       -> done        : manager    (a manager may close a job that was never marked complete)
+    //   complete   -> open        : manager    reopen
+    //   complete   -> complete    : manager    edit after completion
+    //   complete   -> overridden  : owner
+    //   complete   -> done        : manager    sets doneAt
+    //   overridden -> open        : owner      only an owner leaves 'overridden'
+    //   overridden -> complete    : owner      sets completedAt and completedBy
+    //   overridden -> overridden  : owner
+    //   overridden -> done        : owner      sets doneAt
+    // The time keys move only with the step that earns them: completedAt + completedBy (a number,
+    // and the caller) when the status BECOMES complete; doneAt (a number) when it becomes done;
+    // never on any other step. A stored value stays typed whatever step is next.
     function phJobStep(r, d) {
       let k = d.diff(r).affectedKeys();
+      let rs = r.get('status', '');
+      let ds = d.get('status', '');
       return k.hasOnly(['status','rev','plannedCutDate','masterId','masterName','plannedFabric','rollsChecklist','note','completedAt','completedBy','doneAt','updatedAt','updatedBy'])
-        && r.get('status', '') != 'done'
-        && d.get('status', '') in ['open','complete','overridden','done']
-        && (d.get('status', '') != 'overridden' || r.get('status', '') == 'overridden' || isOwner())
+        && rs in ['open','complete','overridden']
+        && ds in ['open','complete','overridden','done']
+        && phJobWho(rs, ds)
+        && phJobTimes(k, d, rs, ds)
         && d.get('rev', 0) == r.get('rev', 0) + 1
         && phBy(d.get('updatedBy', ''))
         && d.get('updatedAt', null) is number
         && phJobShapeOk(d);
+    }
+    function phJobWho(rs, ds) {
+      return (rs == 'overridden' || ds == 'overridden') ? isOwner()
+           : (ds == 'done' || rs == 'complete')         ? isProdOpsManager()
+           : isProdOps();
+    }
+    function phJobTimes(k, d, rs, ds) {
+      return (ds == 'complete' && rs != 'complete'
+                ? k.hasAll(['completedAt','completedBy']) && phBy(d.get('completedBy', ''))
+                : !k.hasAny(['completedAt','completedBy']))
+        && (ds == 'done' ? k.hasAll(['doneAt']) : !k.hasAny(['doneAt']))
+        && d.get('completedAt', 0) is number && d.get('doneAt', 0) is number
+        && d.get('completedBy', '') is string;
     }
 
     // cutting_masters/{CM-nnn}: the registry. Managers add, rename and retire; no delete.
@@ -1289,13 +1358,28 @@ service cloud.firestore {
               && phBy(request.resource.data.get('updatedBy', ''))));
       allow delete: if false;
     }
+    // skipDays: the rules language has no loop, so the ELEMENTS of this list (day strings,
+    // YYYY-MM-DD) cannot be checked here -- only that it is a list of at most 5000. js/ph-write.js
+    // stores what js/ph-core.js resolved (valid days only), and the core's settings resolver
+    // drops any element that is not a day (phIsDay) and reads at most 5000, so a bad element
+    // written by a modified client is ignored, not a way to break the calendar. offWeekdays is short enough (<= 6) to check element by
+    // element: each is a weekday number 0..6 (Sunday = 0).
+    function phWeekdaysOk(l) {
+      return l is list && l.size() <= 6
+        && (l.size() < 1 || l[0] in [0,1,2,3,4,5,6])
+        && (l.size() < 2 || l[1] in [0,1,2,3,4,5,6])
+        && (l.size() < 3 || l[2] in [0,1,2,3,4,5,6])
+        && (l.size() < 4 || l[3] in [0,1,2,3,4,5,6])
+        && (l.size() < 5 || l[4] in [0,1,2,3,4,5,6])
+        && (l.size() < 6 || l[5] in [0,1,2,3,4,5,6]);
+    }
     function phSettingsOk(d) {
       return d.keys().hasOnly(['dailyCapacity','skipDays','offWeekdays','delayTargetDays','stuckDays','grossOverTolPct','grossUnderTolPct','cutGate','pcOnlyHard','rev','updatedAt','updatedBy'])
         && (!('dailyCapacity' in d) || (d.dailyCapacity is number && d.dailyCapacity >= 1 && d.dailyCapacity <= 100000))
         && (!('skipDays' in d) || (d.skipDays is list && d.skipDays.size() <= 5000))
-        && (!('offWeekdays' in d) || (d.offWeekdays is list && d.offWeekdays.size() <= 6))
-        && (!('delayTargetDays' in d) || d.delayTargetDays is number)
-        && (!('stuckDays' in d) || d.stuckDays is number)
+        && (!('offWeekdays' in d) || phWeekdaysOk(d.offWeekdays))
+        && (!('delayTargetDays' in d) || (d.delayTargetDays is number && d.delayTargetDays >= 0 && d.delayTargetDays <= 3650))
+        && (!('stuckDays' in d) || (d.stuckDays is number && d.stuckDays >= 0 && d.stuckDays <= 3650))
         && (!('grossOverTolPct' in d) || (d.grossOverTolPct is number && d.grossOverTolPct >= 0 && d.grossOverTolPct <= 100))
         && (!('grossUnderTolPct' in d) || (d.grossUnderTolPct is number && d.grossUnderTolPct >= 0 && d.grossUnderTolPct <= 100))
         && (!('cutGate' in d) || (d.cutGate is list && d.cutGate.size() == 2))

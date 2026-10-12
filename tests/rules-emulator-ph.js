@@ -78,7 +78,7 @@ async function t(name,fn){
     return app;
   };
   const call=async(w,expr)=>{asApp(w);app.ctx.__r=undefined;return await app.run('(async()=>{return await '+expr+';})()');};
-  const NOW=1790000000000;
+  const NOW=Date.now();   // a history row's `at` must be within 2 days of the emulator's clock (the host clock)
   let tick=0;
   const nx=()=>NOW+(++tick)*1000;
   const PO='PO-001';
@@ -138,6 +138,56 @@ async function t(name,fn){
     const ok=await call(UZAIB,'phAbandonDraft("'+DID+'","entered twice",{now:'+nx()+'})');if(!ok.ok||ok.status!=='abandoned')throw new Error('abandon: '+JSON.stringify(ok));
     await assertFails(updateDoc(doc(as(AFNAN),'po_drafts',DID),{status:'draft',rev:3,updatedAt:NOW+9,updatedBy:'afnan'}));
     await assertFails(deleteDoc(doc(as(AFNAN),'po_drafts',DID)));await assertFails(deleteDoc(doc(as(UZAIB),'po_drafts',DID)));});
+  await t('abandoned is TERMINAL: no edit, no ready, no second abandon (who/why cannot be rewritten), no send back, no revive - by anyone, an owner included',async()=>{await reset();
+    const ab=draftDoc(UZAIB,{status:'abandoned',rev:2,abandonedAt:NOW,abandonedBy:'uzaib',abandonedReason:'entered twice'});
+    for(const w of [AFNAN,AMMAR,MUSTAFA,UZAIB]){
+      await seed('po_drafts/'+DID,ab);
+      const u=w.u,base={rev:3,updatedAt:NOW+9,updatedBy:u};
+      for(const [what,patch] of [['edit',{po:{a:1}}],
+          ['re-abandon with a new reason',{status:'abandoned',abandonedAt:NOW+9,abandonedBy:u,abandonedReason:'changed my mind'}],
+          ['re-abandon with the same reason',{status:'abandoned',abandonedAt:NOW,abandonedBy:u,abandonedReason:'entered twice'}],
+          ['mark ready',{status:'ready',readyAt:NOW+9,readyBy:u}],
+          ['revive to draft',{status:'draft'}],
+          ['send back',{status:'draft',sentBackAt:NOW+9,sentBackBy:u,sentBackReason:'oops'}]])
+        await assertFails(updateDoc(doc(as(w),'po_drafts',DID),Object.assign({},base,patch)));
+    }});
+  await t('a READY draft: uzaib cannot edit, abandon or send it back (raw and writer); Mustafa and an owner can send it back or abandon it; uzaib still abandons a draft-status draft',async()=>{await reset();
+    const rd=()=>seed('po_drafts/'+DID,draftDoc(UZAIB,{status:'ready',rev:2,readyAt:NOW,readyBy:'uzaib'}));
+    const abandon=(w)=>updateDoc(doc(as(w),'po_drafts',DID),{status:'abandoned',rev:3,abandonedAt:NOW+1,abandonedBy:w.u,abandonedReason:'dup',updatedAt:NOW+1,updatedBy:w.u});
+    const back=(w)=>updateDoc(doc(as(w),'po_drafts',DID),{status:'draft',rev:3,sentBackAt:NOW+1,sentBackBy:w.u,sentBackReason:'fabric',updatedAt:NOW+1,updatedBy:w.u});
+    await rd();
+    await assertFails(updateDoc(doc(as(UZAIB),'po_drafts',DID),{rev:3,po:{a:1},updatedAt:NOW+1,updatedBy:'uzaib'}));
+    await assertFails(abandon(UZAIB));await assertFails(back(UZAIB));
+    const wa=await call(UZAIB,'phAbandonDraft("'+DID+'","dup",{now:'+nx()+'})');if(wa.ok||wa.code!=='forbidden')throw new Error('writer let uzaib abandon: '+JSON.stringify(wa));
+    const wb=await call(UZAIB,'phSendBackDraft("'+DID+'","x",{now:'+nx()+'})');if(wb.ok||wb.code!=='forbidden')throw new Error('writer let uzaib send back: '+JSON.stringify(wb));
+    const we=await call(UZAIB,'phSaveDraft("'+DID+'",{code:"GST073",qty:3},{now:'+nx()+'})');if(we.ok||we.code!=='refused')throw new Error('writer let uzaib edit: '+JSON.stringify(we));
+    for(const w of [MUSTAFA,AFNAN,AMMAR]){await rd();await assertSucceeds(abandon(w));await rd();await assertSucceeds(back(w));}
+    await rd();const ok=await call(MUSTAFA,'phAbandonDraft("'+DID+'","duplicate",{now:'+nx()+'})');if(!ok.ok)throw new Error('writer: '+JSON.stringify(ok));
+    await seed('po_drafts/'+DID,draftDoc(UZAIB));
+    await assertSucceeds(updateDoc(doc(as(UZAIB),'po_drafts',DID),{status:'abandoned',rev:2,abandonedAt:NOW+1,abandonedBy:'uzaib',abandonedReason:'entered twice',updatedAt:NOW+1,updatedBy:'uzaib'}));});
+  await t('abandon needs a stored reason: missing, empty, spaces only, a number, 501 characters are refused; 500 is fine; abandonedAt must be a number',async()=>{await reset();
+    let W=UZAIB;   // a draft is abandoned by the floor, a ready draft only by a manager
+    const go=(over,del)=>{const d=Object.assign({status:'abandoned',rev:2,abandonedAt:NOW,abandonedBy:W.u,updatedAt:NOW+1,updatedBy:W.u},over||{});(del||[]).forEach(k=>delete d[k]);return updateDoc(doc(as(W),'po_drafts',DID),d);};
+    for(const status of ['draft','ready']){
+      W=status==='ready'?MUSTAFA:UZAIB;
+      await seed('po_drafts/'+DID,draftDoc(UZAIB,{status}));
+      await assertFails(go({},['abandonedReason']));
+      await assertFails(go({abandonedReason:''}));
+      await assertFails(go({abandonedReason:'   '}));
+      await assertFails(go({abandonedReason:7}));
+      await assertFails(go({abandonedReason:'x'.repeat(501)}));
+      await assertFails(go({abandonedReason:'ok',abandonedAt:'now'}));
+      await assertSucceeds(go({abandonedReason:'x'.repeat(500)}));
+    }});
+  await t('send back needs a reason (1..500) and a numeric sentBackAt; mark ready needs a numeric readyAt',async()=>{await reset();
+    const back=(over,del)=>{const d=Object.assign({status:'draft',rev:2,sentBackAt:NOW,sentBackBy:'mustafa',sentBackReason:'fabric missing',updatedAt:NOW+1,updatedBy:'mustafa'},over||{});(del||[]).forEach(k=>delete d[k]);return updateDoc(doc(as(MUSTAFA),'po_drafts',DID),d);};
+    await seed('po_drafts/'+DID,draftDoc(UZAIB,{status:'ready'}));
+    for(const o of [{sentBackReason:''},{sentBackReason:'  '},{sentBackReason:5},{sentBackReason:'x'.repeat(501)},{sentBackAt:'now'}])await assertFails(back(o));
+    await assertFails(back({},['sentBackReason']));
+    await assertSucceeds(back({}));
+    await seed('po_drafts/'+DID,draftDoc(UZAIB));
+    await assertFails(updateDoc(doc(as(UZAIB),'po_drafts',DID),{status:'ready',rev:2,readyAt:'now',readyBy:'uzaib',updatedAt:NOW+1,updatedBy:'uzaib'}));
+    await assertSucceeds(updateDoc(doc(as(UZAIB),'po_drafts',DID),{status:'ready',rev:2,readyAt:NOW,readyBy:'uzaib',updatedAt:NOW+1,updatedBy:'uzaib'}));});
 
   /* ═══ po_cut_jobs (+ the history row in the same transaction) ═══ */
   console.log('po_cut_jobs and pos/{id}/history');
@@ -167,6 +217,74 @@ async function t(name,fn){
     await assertFails(updateDoc(doc(as(UZAIB),'po_cut_jobs',PO),Object.assign({updatedBy:'uzaib'},p)));
     await assertFails(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),Object.assign({updatedBy:'mustafa'},p)));
     await assertSucceeds(updateDoc(doc(as(AFNAN),'po_cut_jobs',PO),Object.assign({updatedBy:'afnan'},p)));});
+  await t('THE TRANSITION TABLE: every row of PH_JOB_TRANSITIONS, as raw writes by afnan, ammar, mustafa, uzaib, raees, QA and signed-out - allowed exactly for the role the table names',async()=>{await reset();await seedPo();
+    const table=app.run('PH_JOB_TRANSITIONS.map(t=>t.slice())');
+    if(table.length!==12)throw new Error('table has '+table.length+' rows');
+    const roleOk=(who,w)=>who==='owner'?(w===AFNAN||w===AMMAR):who==='manager'?(w===AFNAN||w===AMMAR||w===MUSTAFA):(w===AFNAN||w===AMMAR||w===MUSTAFA||w===UZAIB);
+    const wrong=[];
+    for(const [from,to,who] of table){
+      for(const w of [AFNAN,AMMAR,MUSTAFA,UZAIB,RAEES,QA,'anon']){
+        const actor=w==='anon'?AFNAN:w;
+        const patch={status:to,rev:2,updatedAt:NOW+1,updatedBy:actor.u,note:'n'+from+to};
+        if(to==='complete'&&from!=='complete'){patch.completedAt=NOW+1;patch.completedBy=actor.u;}
+        if(to==='done')patch.doneAt=NOW+1;
+        if(from===to)delete patch.status;
+        await seed('po_cut_jobs/'+PO,jobDoc(UZAIB,from==='complete'?{status:from,completedAt:NOW,completedBy:'uzaib'}:{status:from}));
+        let ok=true;try{await assertSucceeds(updateDoc(doc(as(w),'po_cut_jobs',PO),patch));}catch(e){ok=false;}
+        const want=(w!=='anon'&&w!==RAEES&&w!==QA)&&roleOk(who,w);
+        if(ok!==want)wrong.push(from+'>'+to+' by '+(w.u||'signed-out')+': '+(ok?'allowed':'refused')+', table says '+(want?'allowed':'refused'));
+      }
+    }
+    if(wrong.length)throw new Error(wrong.length+' rows differ: '+wrong.slice(0,4).join(' | '));});
+  await t('done is TERMINAL: nothing leaves it for any status, nor is it edited, by anyone - an owner included',async()=>{await reset();await seedPo();
+    for(const w of [AFNAN,AMMAR,MUSTAFA,UZAIB])for(const to of ['open','complete','overridden','done',null]){
+      await seed('po_cut_jobs/'+PO,jobDoc(UZAIB,{status:'done',doneAt:NOW}));
+      const patch={rev:2,updatedAt:NOW+1,updatedBy:w.u,note:'x'};if(to){patch.status=to;if(to==='complete'){patch.completedAt=NOW+1;patch.completedBy=w.u;}}
+      await assertFails(updateDoc(doc(as(w),'po_cut_jobs',PO),patch));}});
+  await t('a job cannot reach done without doneAt, or carry doneAt on another step; open -> done is a manager\'s and uzaib is refused',async()=>{await reset();await seedPo();
+    const base={status:'done',rev:2,updatedAt:NOW+1,updatedBy:'mustafa'};
+    await seed('po_cut_jobs/'+PO,jobDoc(UZAIB,{status:'complete',completedAt:NOW,completedBy:'uzaib'}));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),base));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),Object.assign({doneAt:'now'},base)));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),{rev:2,note:'x',doneAt:NOW,updatedAt:NOW+1,updatedBy:'mustafa'}));
+    await assertSucceeds(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),Object.assign({doneAt:NOW+1},base)));
+    await seed('po_cut_jobs/'+PO,jobDoc(UZAIB));
+    await assertFails(updateDoc(doc(as(UZAIB),'po_cut_jobs',PO),Object.assign({doneAt:NOW+1},base,{updatedBy:'uzaib'})));
+    await assertSucceeds(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),Object.assign({doneAt:NOW+1},base)));});
+  await t('completedAt / completedBy: a number and the CALLER, set only as the job becomes complete, never rewritten later',async()=>{await reset();await seedPo();
+    const go=(w,over,del)=>{const d=Object.assign({status:'complete',rev:2,completedAt:NOW+1,completedBy:w.u,updatedAt:NOW+1,updatedBy:w.u},over||{});(del||[]).forEach(k=>delete d[k]);return updateDoc(doc(as(w),'po_cut_jobs',PO),d);};
+    await seed('po_cut_jobs/'+PO,jobDoc(UZAIB));
+    await assertFails(go(UZAIB,{completedBy:'afnan'}));
+    await assertFails(go(UZAIB,{completedAt:'now'}));
+    await assertFails(go(UZAIB,{completedBy:7}));
+    await assertFails(go(UZAIB,{},['completedBy']));
+    await assertFails(go(UZAIB,{},['completedAt']));
+    await assertFails(go(UZAIB,{doneAt:NOW+1}));
+    await assertSucceeds(go(UZAIB,{}));
+    // later steps may not move them
+    await seed('po_cut_jobs/'+PO,jobDoc(UZAIB,{status:'complete',completedAt:NOW,completedBy:'uzaib'}));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),{rev:2,note:'x',completedAt:NOW+5,updatedAt:NOW+1,updatedBy:'mustafa'}));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),{rev:2,note:'x',completedBy:'mustafa',updatedAt:NOW+1,updatedBy:'mustafa'}));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),{status:'open',rev:2,completedBy:'mustafa',updatedAt:NOW+1,updatedBy:'mustafa'}));
+    await assertSucceeds(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),{rev:2,note:'x',updatedAt:NOW+1,updatedBy:'mustafa'}));});
+  await t('uzaib\'s floor: edits an open job and marks it complete; cannot edit a complete job, reopen it, un-override, override or close it',async()=>{await reset();await seedPo();
+    await seed('po_cut_jobs/'+PO,jobDoc(UZAIB));
+    await assertSucceeds(updateDoc(doc(as(UZAIB),'po_cut_jobs',PO),{rev:2,note:'edit',updatedAt:NOW+1,updatedBy:'uzaib'}));
+    await assertSucceeds(updateDoc(doc(as(UZAIB),'po_cut_jobs',PO),{status:'complete',rev:3,completedAt:NOW+2,completedBy:'uzaib',updatedAt:NOW+2,updatedBy:'uzaib'}));
+    await assertFails(updateDoc(doc(as(UZAIB),'po_cut_jobs',PO),{rev:4,note:'again',updatedAt:NOW+3,updatedBy:'uzaib'}));
+    await assertFails(updateDoc(doc(as(UZAIB),'po_cut_jobs',PO),{status:'open',rev:4,updatedAt:NOW+3,updatedBy:'uzaib'}));
+    await seed('po_cut_jobs/'+PO,jobDoc(AFNAN,{status:'overridden'}));
+    await assertFails(updateDoc(doc(as(UZAIB),'po_cut_jobs',PO),{status:'open',rev:2,updatedAt:NOW+1,updatedBy:'uzaib'}));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_cut_jobs',PO),{status:'open',rev:2,updatedAt:NOW+1,updatedBy:'mustafa'}));
+    await assertSucceeds(updateDoc(doc(as(AMMAR),'po_cut_jobs',PO),{status:'open',rev:2,updatedAt:NOW+1,updatedBy:'ammar'}));});
+  await t('the app\'s own writer walks the legal path: uzaib completes, a manager closes, nothing moves after; and it refuses the illegal steps before the round trip',async()=>{await reset();await seedPo();
+    await call(UZAIB,'phSaveCutJob("'+PO+'",{note:"a"},{now:'+nx()+'})');
+    const c=await call(UZAIB,'phSaveCutJob("'+PO+'",{status:"complete"},{now:'+nx()+'})');if(!c.ok)throw new Error(JSON.stringify(c));
+    const j=await read('po_cut_jobs/'+PO);if(j.completedBy!=='uzaib'||typeof j.completedAt!=='number'||'doneAt' in j)throw new Error('complete wrong '+JSON.stringify(j));
+    const u=await call(UZAIB,'phSaveCutJob("'+PO+'",{status:"done"},{now:'+nx()+'})');if(u.ok||u.code!=='forbidden')throw new Error('uzaib closed it '+JSON.stringify(u));
+    const d=await call(MUSTAFA,'phSaveCutJob("'+PO+'",{status:"done"},{now:'+nx()+'})');if(!d.ok)throw new Error(JSON.stringify(d));
+    const j2=await read('po_cut_jobs/'+PO);if(typeof j2.doneAt!=='number'||j2.completedBy!=='uzaib')throw new Error('done wrong '+JSON.stringify(j2));
+    const e=await call(AFNAN,'phSaveCutJob("'+PO+'",{note:"x"},{now:'+nx()+'})');if(e.ok||e.code!=='refused')throw new Error('done changed '+JSON.stringify(e));});
   await t('update: a done job is never changed again',async()=>{await reset();await seed('po_cut_jobs/'+PO,jobDoc(UZAIB,{status:'done'}));
     await assertFails(updateDoc(doc(as(AFNAN),'po_cut_jobs',PO),{note:'x',rev:2,updatedAt:NOW+1,updatedBy:'afnan'}));});
   await t('update: poId / createdAt / createdBy cannot move; an unknown status is refused; rev must be +1',async()=>{await reset();await seed('po_cut_jobs/'+PO,jobDoc(UZAIB));
@@ -196,6 +314,17 @@ async function t(name,fn){
     await assertFails(setDoc(doc(as(UZAIB),'pos',PO,'history','row-1'),rowDoc(UZAIB)));
     await assertFails(setDoc(doc(as(UZAIB),'pos',PO,'history','179000000100-ab12'),rowDoc(UZAIB)));
     await assertSucceeds(setDoc(doc(as(UZAIB),'pos',PO,'history',ROW),rowDoc(UZAIB)));});
+  await t('history limits: byName 60, from / to 80, reason 500, data 40 keys - one over is refused, the limit itself passes, wrong types are refused',async()=>{await reset();await seedPo();
+    const keys=n=>{const o={};for(let i=0;i<n;i++)o['k'+i]=i;return o;};
+    const put=over=>setDoc(doc(as(UZAIB),'pos',PO,'history',ROW),rowDoc(UZAIB,over));
+    for(const over of [{byName:'n'.repeat(61)},{byName:7},{from:'f'.repeat(81)},{to:'t'.repeat(81)},{from:5},{to:{a:1}},{reason:'r'.repeat(501)},{reason:9},{data:keys(41)}])await assertFails(put(over));
+    for(const ok of [{byName:'n'.repeat(60)},{from:'f'.repeat(80),to:'t'.repeat(80)},{reason:'r'.repeat(500)},{data:keys(40)}]){await reset();await seedPo();await assertSucceeds(put(ok));}});
+  await t('history `at`: a positive whole number within 2 days of the server clock; zero, negative, fractional, text, far future and far past are refused',async()=>{await reset();await seedPo();
+    const put=over=>setDoc(doc(as(UZAIB),'pos',PO,'history',ROW),rowDoc(UZAIB,over));
+    const DAY=86400000;
+    for(const at of [0,-NOW,NOW+0.5,'now',null,NOW+3*DAY,NOW-3*DAY,NOW*1000,1790000000000-DAY*400])await assertFails(put({at}));
+    for(const at of [NOW+DAY,NOW-DAY,NOW+1000]){await reset();await seedPo();await assertSucceeds(put({at}));}
+    await reset();await seedPo();const missing=rowDoc(UZAIB);delete missing.at;await assertFails(setDoc(doc(as(UZAIB),'pos',PO,'history',ROW),missing));});
   await t('append-only: no update, no delete, not even by an owner',async()=>{await reset();await seedPo();await seed('pos/'+PO+'/history/'+ROW,rowDoc(AFNAN));
     for(const w of [AFNAN,AMMAR,UZAIB]){await assertFails(updateDoc(doc(as(w),'pos',PO,'history',ROW),{reason:'edited'}));await assertFails(deleteDoc(doc(as(w),'pos',PO,'history',ROW)));}});
   await t('history reads: signed-in and QA read a PO\'s rows; signed-out does not; the writer\'s phHistoryOf reads them bounded',async()=>{await reset();await seedPo();
@@ -330,6 +459,25 @@ async function t(name,fn){
     await assertSucceeds(setDoc(doc(as(AFNAN),'ph_settings','main'),{dailyCapacity:400,rev:1,updatedAt:NOW,updatedBy:'afnan'}));
     await assertFails(updateDoc(doc(as(AFNAN),'ph_settings','main'),{rev:3,updatedAt:NOW+1,updatedBy:'afnan'}));
     await assertFails(deleteDoc(doc(as(AFNAN),'ph_settings','main')));});
+  await t('delayTargetDays and stuckDays: 0..3650 numbers only (-1, 3651, 1e9 and text are refused; 0 and 3650 pass)',async()=>{await reset();
+    const put=over=>setDoc(doc(as(AFNAN),'ph_settings','main'),Object.assign({dailyCapacity:400,rev:1,updatedAt:NOW,updatedBy:'afnan'},over));
+    for(const k of ['delayTargetDays','stuckDays'])for(const v of [-1,3651,1e9,'3',null])await assertFails(put({[k]:v}));
+    await assertSucceeds(put({delayTargetDays:0,stuckDays:3650}));
+    await assertSucceeds(updateDoc(doc(as(AFNAN),'ph_settings','main'),{delayTargetDays:3650,stuckDays:0,rev:2,updatedAt:NOW+1,updatedBy:'afnan'}));
+    await assertFails(updateDoc(doc(as(AFNAN),'ph_settings','main'),{stuckDays:3651,rev:3,updatedAt:NOW+2,updatedBy:'afnan'}));});
+  await t('skipDays is a list of at most 5000 (5001 is refused, 5000 passes, a non-list is refused); the elements cannot be checked by the rules language',async()=>{await reset();
+    const days=n=>{const a=[];for(let i=0;i<n;i++)a.push('2026-'+String(1+i%12).padStart(2,'0')+'-'+String(1+i%28).padStart(2,'0'));return a;};
+    const put=over=>setDoc(doc(as(AFNAN),'ph_settings','main'),Object.assign({dailyCapacity:400,rev:1,updatedAt:NOW,updatedBy:'afnan'},over));
+    await assertFails(put({skipDays:days(5001)}));
+    await assertFails(put({skipDays:'2026-10-31'}));
+    await assertFails(put({skipDays:{a:1}}));
+    await assertSucceeds(put({skipDays:days(5000)}));});
+  await t('offWeekdays: at most 6 elements, each a whole weekday 0..6 (7, -1, 1.5, text and a 7th element are refused)',async()=>{await reset();
+    const put=over=>setDoc(doc(as(AFNAN),'ph_settings','main'),Object.assign({dailyCapacity:400,rev:1,updatedAt:NOW,updatedBy:'afnan'},over));
+    for(const v of [[7],[-1],[1.5],['1'],[0,1,2,3,4,5,6],[0,0,0,0,0,0,0],[0,6,9],[1,2,3,4,5,'x'],'sun'])await assertFails(put({offWeekdays:v}));
+    await assertSucceeds(put({offWeekdays:[0,6]}));
+    await assertSucceeds(updateDoc(doc(as(AFNAN),'ph_settings','main'),{offWeekdays:[0,1,2,3,4,5],rev:2,updatedAt:NOW+1,updatedBy:'afnan'}));
+    await assertSucceeds(updateDoc(doc(as(AFNAN),'ph_settings','main'),{offWeekdays:[],rev:3,updatedAt:NOW+2,updatedBy:'afnan'}));});
   await t('settings are read by every signed-in user and by QA, not signed-out',async()=>{await reset();await seed('ph_settings/main',{dailyCapacity:400,rev:1});
     for(const w of [RAEES,UZAIB,QA])await assertSucceeds(getDoc(doc(as(w),'ph_settings','main')));await assertFails(getDoc(doc(as('anon'),'ph_settings','main')));});
 
