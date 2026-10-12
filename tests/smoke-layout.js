@@ -253,6 +253,55 @@ function _axSeed(app){
   app.run('_siWeeklyCloses=[{week_ending:"2026-09-26",week_starting:"2026-09-20",top_sku:{sku:"GST073-S",quantity:11}}]');
 }
 
+// Production Ops "PO Drafts" (12 Oct 2026): the REAL js/ph-mod-drafts.js run over tests/ph-dom.js's small DOM, with js/ph-core.js + ph-data.js + ph-write.js
+// reading a fake Firestore, then SERIALISED to markup. Variants: the list plus an editable form on a PC (a long hostile article name, many missing
+// fields, an unsaved edit, a long fabric note), and a read-only form off a PC (the soft warning banner) beside a ready draft. The probe checks that
+// every control is reachable and every text has room, in both themes at 1900 / 1280 / 420.
+async function _phdFragment(o){
+  o=o||{};
+  const vm=require('vm'),domkit=require('./ph-dom');
+  const LONG='Super Long Article Name That Has To Wrap Onto Several Lines Instead Of Clipping Or Pushing The Page Sideways Past The Right Edge '.repeat(2).trim();
+  const GOOD={code:'GST073',name:LONG,pattern:'P-12',qty:100,sizes:{S:50,M:50},ratio:'1:1',fabric:'Jersey 180 gsm combed cotton with a long description',fabricCode:'JER180',store:'Main store',totalRoll:'6',
+    plannedFabricQty:30,plannedFabricUnit:'kg',season:'winter',plannedCutDate:'2026-10-20',requestedDate:'2026-10-25',cutMasterId:'CM-001',cutMaster:'Hassan',
+    embellishment:{required:true},jobCopies:{embroidery:true,printing:false,washing:false},notes:'Handle with care. '.repeat(12)};
+  const dd=(id,status,po,extra)=>Object.assign({status,rev:2,entryDevice:'pc',createdBy:'afnan',createdByName:'Afnan',createdAt:1790000000000,updatedAt:1790000005000,updatedBy:'afnan',po},extra||{});
+  const DATA={
+    'po_drafts':{'DRAFT-K1-AAAA':dd('DRAFT-K1-AAAA','draft',Object.assign({},GOOD,{season:'',requestedDate:'',cutMasterId:'CM-009',cutMaster:'Gone Master'})),
+      'DRAFT-K1-BBBB':dd('DRAFT-K1-BBBB','draft',{code:'GH001',name:'Black Hoodie',qty:50,sizes:{M:50},fabric:'Fleece'}),
+      'DRAFT-K1-CCCC':dd('DRAFT-K1-CCCC','ready',GOOD,{readyAt:1790000009000,readyBy:'afnan'}),
+      'DRAFT-K1-DDDD':dd('DRAFT-K1-DDDD','abandoned',{code:'GB001',name:'Old'},{abandonedReason:'duplicate'})},
+    'cutting_masters':{'CM-001':{id:'CM-001',name:'Hassan',nameKey:'hassan',active:true},'CM-002':{id:'CM-002',name:'Alam With A Very Long Name That Must Wrap Onto Several Lines',nameKey:'alam',active:true}},
+    'ph_standards':{'GST073':{code:'GST073',unit:'kg',grossPerPiece:0.3,tolerancePct:3,sizes:null,sizeModel:null,rev:1}}
+  };
+  const rows=p=>Object.keys(DATA[p]||{}).map(id=>({id,data:()=>Object.assign({},DATA[p][id])}));
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],session:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},currentPage:'prod-ops',viewportW:o.narrow?800:1400,globals:{
+    navigator:{onLine:true,userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36'},
+    localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+    getProductCatalog:()=>[{code:'GH001',name:'Black Hoodie'},{code:'GST073',name:LONG}],
+    collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
+    getDocs:async q=>({docs:rows(q.path),metadata:{fromCache:false}}),
+    getDoc:async r=>({exists:()=>false,data:()=>({}),metadata:{fromCache:false}})}});
+  const dom=domkit.install(app.ctx);
+  app.ctx.console={warn(){},log(){},error(){}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-drafts.js'),'utf8'),app.ctx,{filename:'ph-mod-drafts.js'});
+  await app.run('phLoadAll()');
+  const host=dom.mk('div');dom.body.appendChild(host);
+  const parts=[];
+  const grab=()=>parts.push('<div class="ph-canvas">'+host.children.map(domkit.toHtml).join('')+'</div>');
+  app.ctx.phDraftsPanel(host,{});
+  if(!o.narrow){
+    grab();                                                             // the list on a PC
+    app.run('_phdOpen("DRAFT-K1-AAAA")');                               // an incomplete draft: many missing fields, a retired master, the live panels
+    app.run('_phdForm.f.name=_phdForm.f.name+" edited";_phdTouch();_phdSearch("hood",_phdRefs.results)');
+    grab();
+  }else{
+    app.run('_phdOpen("DRAFT-K1-AAAA")');                               // off a PC: the soft banner and a read-only form
+    grab();
+    app.run('_phdBack(true);_phdOpen("DRAFT-K1-CCCC")');                // a ready draft: locked, with the Send back control
+    grab();
+  }
+  return{html:parts.join('')};
+}
 // Needs Attention seed (Oct 2026): ~14 articles over the last 90 days (relative to today, so the weekly shapes always exist), with every
 // issue type: run-outs (critical and act), a stock-out, a size hole, an overstock, dead stock, a fading seller and a voided-unit data check.
 function _tkFragment(min,inBody){
@@ -2925,6 +2974,10 @@ const FRAGMENTS={
   'production ops — shell collapsed':()=>_phFragment({fail:true,min:true}),
   'production ops — shell for the cutting floor (view only)':()=>_phFragment({floor:true,tab:'cutting'}),
   'production ops — shell content clear of the bar and rail':()=>_phFragment({fail:true,inBody:true,tab:'masters'}),
+  // Production Ops PO Drafts (12 Oct 2026): the list and an editable, incomplete form on a PC (long hostile-ish article name, the live completeness panel,
+  // the print-ready summary, the disabled Issue control, search results), then the same module off a PC (the soft banner, a read-only form) and a ready draft.
+  'production ops — po draft form':()=>_phdFragment({}),
+  'production ops — po draft form off a PC and a ready draft':()=>_phdFragment({narrow:true}),
   'inventory intel — takeover and rail':()=>_tkFragment(false),
   'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
   // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
