@@ -442,6 +442,71 @@ async function _phCalFragment(o){
   const out={html:html};
   if(o.widths)out.widths=o.widths;
   return out;
+// Production Ops > Today's Cutting (12 Oct 2026): the REAL js/ph-mod-cutting.js inside the REAL shell (js/ph-ui.js), serialised to markup.
+// Variants: a manager (Record the cut, scan state with a mismatch, the gate preview open, an overdue card expanded), the cutting floor (Uzaib),
+// count-only mode, and the failure states (a refused PO read, a refused fabric-issue read with a long error). Long names must wrap, every
+// control must be reachable (48px buttons, roll rows), the mismatch / ok boxes must read, nothing may sit over the content's first row.
+async function _phkFragment(o){
+  o=o||{};
+  const vm=require('vm'),domkit=require('./ph-dom');
+  const bad=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
+  const DATA={};
+  const rows=(p,q)=>{let r=DATA[p]||[];((q&&q.w)||[]).forEach(w=>{r=r.filter(x=>x[w[0]]===w[2]);});return r.map(x=>({id:x.id,data:()=>{const c=Object.assign({},x);delete c.id;return c;}}));};
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
+    localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+    allPOs:[{fbKey:'PO-001',currentStage:'cutting'}],
+    collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:(c,...cs)=>({path:c.path,w:cs.filter(x=>x&&x.w).map(x=>x.w)}),where:(f,op,v)=>({w:[f,op,v]}),orderBy:()=>({}),limit:()=>({}),
+    getDocs:async q=>{
+      if(o.fail&&q.path==='gatepasses'&&(q.w||[]).some(w=>w[2]==='PO-002'))throw new Error('gatepasses read failed: '+'a long reason that has to wrap inside the card and never push the page sideways '.repeat(3));
+      return{docs:rows(q.path,q),metadata:{fromCache:false}};},
+    getDoc:async r=>{
+      if(o.fail&&r.path==='pos/PO-001')throw bad();
+      const d=DATA[r.path];return{exists:()=>!!d,data:()=>Object.assign({},d),metadata:{fromCache:false}};}}});
+  const dom=domkit.install(app.ctx);
+  app.ctx.console={warn(){},log(){},error(){}};
+  const today=app.run('phDay(Date.now())'),old=app.run('phDayAdd(phDay(Date.now()),-6)');
+  const job=(id,x)=>Object.assign({id,poId:id,status:'open',rev:2,plannedCutDate:today,masterId:'CM-001',masterName:'Hassan',plannedFabric:{qty:310.4,unit:'kg',note:''},rollsChecklist:null,note:'',createdAt:1,createdBy:'afnan',createdByName:'Afnan',updatedAt:1,updatedBy:'afnan'},x||{});
+  const codes=[];for(let i=1;i<=9;i++)codes.push('JER-180-BLK-000'+i);
+  DATA.po_drafts=[];DATA.cutting_masters=[{id:'CM-001',name:'Hassan'}];DATA.ph_standards=[];DATA['ph_settings/main']={};
+  DATA.po_cut_jobs=[job('PO-001',{masterName:'Hassan With A Long Master Name That Must Wrap Onto Several Lines Instead Of Clipping',note:'Start with the black, keep the navy rolls apart. A long note that must wrap inside the card too.'}),
+    job('PO-002',{status:'complete',rollsChecklist:{total:12,verified:10,short:1,missing:2,extra:0}}),
+    job('PO-003',{plannedCutDate:old}),job('PO-004',{plannedCutDate:old}),job('PO-005',{plannedCutDate:app.run('phDayAdd(phDay(Date.now()),-2)')})];
+  DATA['pos/PO-001']={id:'PO-001',name:'Superman Full Sleeves Tee With A Very Long Article Name That Has To Wrap Properly',code:'GST073',qty:240,sizes:{XS:20,S:40,M:80,L:60,XL:30,'2XL':10},currentStage:'cutting'};
+  DATA['pos/PO-002']={id:'PO-002',name:'Core Tee',code:'GCT002',qty:120,sizes:{M:60,L:60},currentStage:'cutting'};
+  DATA['pos/PO-003']={id:'PO-003',name:'Late Hoodie',code:'GHD011',qty:100,sizes:{M:50,L:50},currentStage:'cutting'};
+  DATA['pos/PO-004']={id:'PO-004',name:'Denim Jort',code:'GJO001',qty:90,sizes:{'30':45,'32':45},currentStage:'cutting'};
+  DATA['pos/PO-005']={id:'PO-005',name:'Trouser',code:'GTR001',qty:60,sizes:{M:30,L:30},currentStage:'cutting'};
+  DATA.gatepasses=[
+    {id:'GP-0101',gpType:'fabric',poId:'PO-001',dest:'Factory',fabricUnit:'kg',fabricQty:310.4,rollCodes:codes,
+      fabrics:[{fabType:'Single Jersey Combed Cotton',gsm:180,color:'Black With A Long Colour Name',unit:'kg',rollCodes:codes.slice(0,6),rollsCount:6,weight:200.4},
+               {fabType:'Fleece',gsm:260,color:'Navy',unit:'kg',rollCodes:codes.slice(6),rollsCount:3,weight:105}],
+      ribType:'Rib',ribGsm:220,ribColor:'Black',ribRollCodes:['RIB-BLK-0001'],ribWeight:5},
+    {id:'GP-0102',gpType:'fabric',poId:'PO-002',dest:'Factory',fabricUnit:'kg',fabricQty:50,rollCodes:['K-1','K-2'],fabrics:[{fabType:'Rib',gsm:200,color:'Navy',unit:'kg',rollCodes:['K-1','K-2'],weight:50}]},
+    {id:'GP-0103',gpType:'fabric',poId:'PO-003',dest:'Factory',fabricUnit:'kg',fabricQty:30,rollCodes:['Q-1','Q-2'],fabrics:[{fabType:'Rib',gsm:200,color:'Navy',unit:'kg',rollCodes:['Q-1','Q-2'],weight:30}]}];
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-cutting.js'),'utf8'),app.ctx,{filename:'ph-mod-cutting.js'});
+  app.ctx.currentPage='prod-ops';
+  app.ctx.phRenderPage('prod-ops');
+  app.run('_phUiTab="cutting"');
+  app.run('_phTkOnPage()');
+  await app.run('phUiLoad()');
+  app.run('_phUiPaintData();_phTkSync()');
+  app.run('_phkOpen["PO-003"]=true;_phkCtx.repaint()');
+  await app.run('Promise.all(["PO-001","PO-002","PO-003","PO-004","PO-005"].map(function(i){return phkLoadPO(i,false);}))');
+  if(!o.fail){
+    if(o.tally){app.run('phkSetMode("PO-001","tally");phkSetTally("PO-001","tallyRolls","8");phkSetTally("PO-001","tallyWeight","301")');}
+    else{
+      codes.slice(0,6).forEach(c=>app.run('phkScan("PO-001",'+JSON.stringify(c)+')'));
+      app.run('phkScan("PO-001","RIB-BLK-0001");phkScan("PO-001","STRAY-ROLL-WITH-A-LONG-CODE-0099");phkScan("PO-001","JER-180-BLK-0001");phkSetTally("PO-001","weighed","318")');
+    }
+    app.run('phkWork("PO-001").previewOpen=true;phkWork("PO-001").cut={S:"30",M:"70",L:"50",XL:"20"};_phkRepaintCard("PO-001")');
+    app.run('phkWork("PO-003").mode="scan";phkScan("PO-003","Q-1")');
+  }
+  const canvas=dom.byClass(dom.main,'ph-canvas')[0];
+  const chrome=domkit.toHtml(dom.find('ph-tk-bar'))+domkit.toHtml(dom.find('ph-tk-rail'));
+  const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");'
+    +'document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";m.style.overflow="visible";})();<\/script>';
+  return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
 }
 function _naSeed(app,opts){
   opts=opts||{};
@@ -3080,6 +3145,10 @@ const FRAGMENTS={
   'production ops — calendar phone week list':()=>_phCalFragment({phone:true,six:true,widths:[420]}),
   'production ops — calendar Move menu':()=>_phCalFragment({dialog:true,widths:[1280,420]}),
   'production ops — calendar jobs unreadable':()=>_phCalFragment({fail:true}),
+  "production ops — todays cutting (manager: scan, mismatch, preview, overdue)":()=>_phkFragment({}),
+  "production ops — todays cutting (count only)":()=>_phkFragment({tally:true}),
+  "production ops — todays cutting (the cutting floor, view only)":()=>_phkFragment({floor:true}),
+  "production ops — todays cutting (refused reads)":()=>_phkFragment({fail:true}),
   'inventory intel — takeover and rail':()=>_tkFragment(false),
   'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
   // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
