@@ -78,6 +78,7 @@ const PRECACHE_URLS = [
   '/js/ph-mod-drafts.js',
   '/js/ph-mod-calendar.js',
   '/js/ph-mod-cutting.js',
+  '/js/ph-mod-monitor.js',
   '/assets/icons/icon-192.png',
   '/assets/icons/icon-512.png',
   '/assets/icons/icon-maskable-v3-512.png',

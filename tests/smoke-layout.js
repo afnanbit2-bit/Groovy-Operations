@@ -501,12 +501,48 @@ async function _phkFragment(o){
     }
     app.run('phkWork("PO-001").previewOpen=true;phkWork("PO-001").cut={S:"30",M:"70",L:"50",XL:"20"};_phkRepaintCard("PO-001")');
     app.run('phkWork("PO-003").mode="scan";phkScan("PO-003","Q-1")');
+// Production Ops ▸ Monitor and Overview (12 Oct 2026): the REAL js/ph-ui.js + js/ph-mod-monitor.js over tests/ph-dom.js's small DOM, with the
+// shared fifteen-PO fixture (tests/ph-mod-monitor-fixture.js, clock pinned to Mon 12 Oct 2026), then SERIALISED to markup. Variants: the Monitor
+// tab with every tile / the range bar / the stage bars / the attention list / the settings card; the same with po_cut_jobs refused and the range
+// set to Today (so the `unavailable —` and `no data yet` tiles are measured); the Overview as a manager and as Uzaib (view only); and the list
+// drawer open (flattened with a style override, because a fixed overlay would read every control under it as covered: the documented false hit).
+async function _phmFragment(o){
+  o=o||{};
+  const vm=require('vm'),domkit=require('./ph-dom'),fx=require('./ph-mod-monitor-fixture');
+  const bad=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
+  const DATA=fx.dbData();
+  DATA.pos=DATA.pos.map(p=>p.id==='PO-103'?Object.assign(p,{name:'A very long article name that has to wrap onto several lines instead of clipping or pushing the page sideways at any width at all'}):p);
+  const rows=p=>(DATA[p]||[]).map(r=>({id:r.id,data:()=>Object.assign({},r)}));
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
+    localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+    collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
+    getDocs:async q=>{if(o.jobsFail&&q.path==='po_cut_jobs')throw bad();return{docs:rows(q.path),metadata:{fromCache:false}};},
+    getDoc:async r=>({exists:()=>!!DATA[r.path],data:()=>Object.assign({},DATA[r.path]),metadata:{fromCache:false}})}});
+  const dom=domkit.install(app.ctx);
+  const RealDate=Date;
+  app.ctx.Date=class extends RealDate{constructor(...x){if(x.length===0)super(fx.NOW);else super(...x);}static now(){return fx.NOW;}};
+  app.ctx.console={warn(){},log(){},error(){}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-monitor.js'),'utf8'),app.ctx,{filename:'ph-mod-monitor.js'});
+  app.ctx.currentPage='prod-ops';
+  app.ctx.phRenderPage('prod-ops');
+  app.run('_phUiTab='+JSON.stringify(o.tab||'monitor'));
+  if(o.range)app.run('_phmRange.preset='+JSON.stringify(o.range));
+  app.run('_phTkOnPage()');
+  await app.run('phUiLoad()');
+  await app.run('phmLoadPos()');
+  app.run('_phUiPaintData();_phTkSync()');
+  if(o.drawer){
+    const tile=dom.all(dom.find('ph-panel'),n=>n.getAttribute&&n.getAttribute('data-tile')===o.drawer)[0];
+    dom.click(tile.children[0]);
   }
   const canvas=dom.byClass(dom.main,'ph-canvas')[0];
   const chrome=domkit.toHtml(dom.find('ph-tk-bar'))+domkit.toHtml(dom.find('ph-tk-rail'));
   const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");'
     +'document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";m.style.overflow="visible";})();<\/script>';
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
+  const flat=o.drawer?'<style>.phm-drawer-wrap{position:static!important;display:block!important;height:auto!important}.phm-scrim{display:none!important}.phm-drawer{height:auto!important;width:100%!important;max-width:520px;overflow:visible!important}.phm-drawer-head{position:static!important}</style>':'';
+  return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+flat+domkit.toHtml(canvas)+chrome+script};
 }
 function _naSeed(app,opts){
   opts=opts||{};
@@ -3149,6 +3185,11 @@ const FRAGMENTS={
   "production ops — todays cutting (count only)":()=>_phkFragment({tally:true}),
   "production ops — todays cutting (the cutting floor, view only)":()=>_phkFragment({floor:true}),
   "production ops — todays cutting (refused reads)":()=>_phkFragment({fail:true}),
+  'production ops — monitor':()=>_phmFragment({tab:'monitor'}),
+  'production ops — monitor: unavailable and no-data states':()=>_phmFragment({tab:'monitor',jobsFail:true,range:'today'}),
+  'production ops — monitor: the list drawer':()=>_phmFragment({tab:'monitor',drawer:'stuck'}),
+  'production ops — overview':()=>_phmFragment({tab:'overview'}),
+  'production ops — overview for the cutting floor (view only)':()=>_phmFragment({tab:'overview',floor:true}),
   'inventory intel — takeover and rail':()=>_tkFragment(false),
   'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
   // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
