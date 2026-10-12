@@ -303,6 +303,74 @@ async function _phFragment(o){
   if(o.min)out.widths=[1900,1280];
   return out;
 }
+// Production Ops ▸ PO Queue (12 Oct 2026): the REAL js/ph-ui.js + js/ph-mod-queue.js (+ pos.js for the Force-advance gate) over tests/ph-dom.js's
+// small DOM, with ~14 POs (a hostile-ish long name, an overdue plan, a capacity-late plan, a guessed season, a long master name), serialised to
+// markup. Variants: manager board (reserved lane opened), the cutting floor's READ-ONLY board, the Plan dialog (rendered flat), a refused pos read,
+// and refused plans/masters. Every control must be reachable, every badge / chip must read on its ground, nothing may overflow sideways.
+async function _phqFragment(o){
+  o=o||{};
+  const vm=require('vm'),domkit=require('./ph-dom');
+  const NOW=Date.UTC(2026,9,12,5,0,0),DAYMS=86400000;
+  class FixedDate extends Date{constructor(...a){if(a.length===0)super(NOW);else super(...a);}static now(){return NOW;}}
+  const bad=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
+  const st={};['cutting','bundling','stitching','printing','washing','qc'].forEach(k=>{st[k]={done:false,doneAt:null,doneBy:null};});
+  const mk=(id,x)=>[ 'pos/'+id,Object.assign({id:id,name:'Effortless Tee',code:'GST073',qty:300,sizes:{S:100,M:200},poStatus:'in_production',currentStage:'cutting',stages:JSON.parse(JSON.stringify(st)),ts:NOW-30*DAYMS,createdAt:'2026-09-12'},x||{})];
+  const bundled=JSON.parse(JSON.stringify(st));bundled.cutting={done:true,doneAt:new Date(NOW-4*DAYMS).toISOString(),doneBy:'Uzaib'};
+  const LONG='A Very Long Article Name That Must Wrap Onto Several Lines Instead Of Clipping Or Pushing The Tile Sideways';
+  const DATA=Object.fromEntries([
+    mk('PO-101'),mk('PO-102',{code:'GD007',name:'Live In Pants',qty:200,ts:NOW-20*DAYMS}),
+    mk('PO-103',{code:'GHW001',name:LONG,qty:6000,season:'winter',seasonYear:2026,ts:NOW-10*DAYMS}),
+    mk('PO-104',{currentStage:'bundling',stages:bundled,cutAt:new Date(NOW-4*DAYMS).toISOString(),cutQty:{S:100,M:195},ts:NOW-25*DAYMS}),
+    mk('PO-105',{code:'GD009',name:'Baggy Denim',currentStage:'stitching',ts:NOW-40*DAYMS}),
+    mk('PO-106',{code:'GST100',name:'Reserve Tee',poStatus:'reserved',currentStage:undefined,ts:NOW-2*DAYMS}),
+    mk('PO-107',{code:'GST101',name:'Cancelled Tee',poStatus:'cancelled',currentStage:null}),
+    mk('PO-108',{code:'GST102',name:'Done Tee',poStatus:'complete',currentStage:'completed',ts:NOW-90*DAYMS}),
+    mk('PO-109',{code:'GX<b>1-VERYLONGCODEWITHOUTANYBREAKSATALLTOPROVEWRAPPING',name:'<img src=x onerror=alert(1)> '+LONG,qty:50,ts:NOW-1*DAYMS}),
+    mk('PO-110',{code:'GZZ',name:'Odd Stage',currentStage:'zzz'}),
+    mk('PO-111',{code:'GST200',name:'Printing Tee',currentStage:'printing',ts:NOW-33*DAYMS}),
+    mk('PO-112',{code:'GST201',name:'Washing Tee',currentStage:'washing',ts:NOW-35*DAYMS}),
+    mk('PO-113',{code:'GST202',name:'Final Tee',currentStage:'qc',ts:NOW-36*DAYMS}),
+    mk('PO-114',{code:'GST203',name:'Planned Tee',ts:NOW-5*DAYMS}),
+    ['po_cut_jobs/PO-102',{poId:'PO-102',status:'open',rev:1,plannedCutDate:'2026-10-09',masterId:'CM-001',masterName:'Hassan'}],
+    ['po_cut_jobs/PO-103',{poId:'PO-103',status:'open',rev:3,plannedCutDate:'2026-10-20',masterId:'CM-002',masterName:'Alam With A Very Long Name That Must Wrap Onto Several Lines Instead Of Clipping'}],
+    ['po_cut_jobs/PO-114',{poId:'PO-114',status:'open',rev:1,plannedCutDate:'2027-01-05',masterId:null,masterName:''}],
+    ['cutting_masters/CM-001',{id:'CM-001',name:'Hassan',nameKey:'hassan',kind:'inhouse',active:true}],
+    ['cutting_masters/CM-002',{id:'CM-002',name:'Alam With A Very Long Name That Must Wrap Onto Several Lines Instead Of Clipping',nameKey:'alam',kind:'inhouse',active:true}],
+    ['ph_settings/main',{dailyCapacity:400}]
+  ]);
+  const colOf=p=>p.split('/').slice(0,-1).join('/');
+  const snap=p=>({id:p.split('/').pop(),exists:()=>p in DATA,data:()=>JSON.parse(JSON.stringify(DATA[p])),metadata:{fromCache:false}});
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/pos.js'],currentPage:'prod-ops',
+    session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer',email:'uzaib@groovy.op'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'},
+    globals:{Date:FixedDate,allPOs:[],allPasses:[],allReturns:[],allFabricIn:[],allGPEditRequests:[],allFabricMovements:[],allFabricInventory:[],currentBundles:[],viewingPO:null,
+      localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+      collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
+      getDocs:async q=>{
+        if(o.failPos&&q.path==='pos')throw bad();
+        if(o.failPlans&&(q.path==='po_cut_jobs'||q.path==='cutting_masters'))throw bad();
+        return{docs:Object.keys(DATA).filter(p=>colOf(p)===q.path).sort().map(snap),metadata:{fromCache:false}};
+      },
+      getDoc:async r=>snap(r.path)}});
+  app.ctx.allPOs=Object.keys(DATA).filter(p=>/^pos\/[^/]+$/.test(p)).map(p=>Object.assign({},DATA[p],{fbKey:p.slice(4)}));
+  const dom=domkit.install(app.ctx);
+  app.ctx.console={warn(){},log(){},error(){}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-queue.js'),'utf8'),app.ctx,{filename:'ph-mod-queue.js'});
+  app.ctx.currentPage='prod-ops';
+  app.run('_phUiTab="queue";_phqSub="board"'+(o.floor?'':';_phqCollapsed.reserved=false;_phqCollapsed.completed=false'));
+  app.ctx.phRenderPage('prod-ops');
+  await app.run('phUiLoad()');
+  await new Promise(r=>setTimeout(r,80));
+  const canvas=dom.byClass(dom.main,'ph-canvas')[0];
+  let extra='';
+  if(o.dialog){
+    const btn=dom.all(dom.main,n=>n.tagName==='BUTTON'&&/Plan cut|Change plan/.test(n.textContent))[0];
+    if(btn)dom.click(btn);
+    const dlg=dom.all(dom.body,n=>/\bphq-ov\b/.test(n.className))[0];
+    if(dlg){extra='<div style="position:relative;height:520px"><div class="phq-ov" style="position:absolute">'+domkit.toHtml(dlg.children[0])+'</div></div>';dlg.parentNode.removeChild(dlg);}
+  }
+  return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+extra};
+}
 function _naSeed(app,opts){
   opts=opts||{};
   const prods=[],lis=[],defs=[];
@@ -2925,6 +2993,11 @@ const FRAGMENTS={
   'production ops — shell collapsed':()=>_phFragment({fail:true,min:true}),
   'production ops — shell for the cutting floor (view only)':()=>_phFragment({floor:true,tab:'cutting'}),
   'production ops — shell content clear of the bar and rail':()=>_phFragment({fail:true,inBody:true,tab:'masters'}),
+  // Production Ops ▸ PO Queue (12 Oct 2026): see _phqFragment.
+  'production ops — po queue':()=>_phqFragment({}),
+  'production ops — po queue for the cutting floor (read-only board)':()=>_phqFragment({floor:true}),
+  'production ops — po queue plan dialog':()=>_phqFragment({dialog:true}),
+  'production ops — po queue failed reads':()=>_phqFragment({failPlans:true}).then(a=>_phqFragment({failPos:true}).then(b=>({html:a.html+b.html}))),
   'inventory intel — takeover and rail':()=>_tkFragment(false),
   'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
   // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
