@@ -543,6 +543,41 @@ async function _phmFragment(o){
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
   const flat=o.drawer?'<style>.phm-drawer-wrap{position:static!important;display:block!important;height:auto!important}.phm-scrim{display:none!important}.phm-drawer{height:auto!important;width:100%!important;max-width:520px;overflow:visible!important}.phm-drawer-head{position:static!important}</style>':'';
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+flat+domkit.toHtml(canvas)+chrome+script};
+// Production Ops admin tabs (12 Oct 2026): the REAL tab renders (js/ph-mod-admin.js) over the real core/data/write layers and an in-memory Firestore,
+// serialised to markup for the probe. Inputs carry their value / checked / selected as attributes (the DOM stand-in keeps them as properties).
+async function _phAdminPanel(o){
+  const vm=require('vm'),domkit=require('./ph-dom');
+  const bad=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
+  const M=(id,name,extra)=>Object.assign({id:id,name:name,nameKey:name.toLowerCase(),kind:'unset',active:true,aliases:[],notes:'',createdAt:1,createdBy:'afnan',updatedAt:1,updatedBy:'afnan',retiredAt:null,retiredBy:null,retiredReason:''},extra||{});
+  const S=Object.assign({},o.store||{});
+  const keysUnder=pre=>Object.keys(S).filter(k=>k.indexOf(pre+'/')===0&&k.slice(pre.length+1).indexOf('/')===-1).sort();
+  const U=o.user==='mustafa'?{uid:'u-mustafa',u:'mustafa',name:'Mustafa',role:'manager'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'};
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],currentPage:'prod-ops',session:U,globals:Object.assign({
+    localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+    navigator:{onLine:true},auth:{currentUser:{getIdToken:async()=>{}}},
+    collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
+    getDocs:async q=>{if(o.fail&&o.fail.indexOf(q.path)>-1)throw bad();return{docs:keysUnder(q.path).map(k=>({id:k.split('/').pop(),data:()=>Object.assign({},S[k])})),metadata:{fromCache:false}};},
+    getDoc:async r=>{if(o.fail&&o.fail.indexOf(r.path)>-1)throw bad();return{exists:()=>!!S[r.path],data:()=>Object.assign({},S[r.path]),metadata:{fromCache:false}};}
+  },o.globals||{})});
+  const dom=domkit.install(app.ctx);
+  app.ctx.console={warn(){},log(){},error(){}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-admin.js'),'utf8'),app.ctx,{filename:'ph-mod-admin.js'});
+  app.ctx.currentPage='prod-ops';
+  app.ctx.phRenderPage('prod-ops');
+  await app.run('phUiLoad()');
+  app.run('_phUiTab='+JSON.stringify(o.tab));
+  if(o.setup)app.run(o.setup);
+  app.run('_phUiPaintPanel()');
+  const root=dom.find('ph-panel');
+  dom.walk(root,n=>{
+    if(n.tagName==='INPUT'){
+      if(n.value!==undefined&&n.value!=='')n.setAttribute('value',n.value);
+      if(n.checked)n.setAttribute('checked','');
+    }
+    if(n.tagName==='OPTION'&&n.selected)n.setAttribute('selected','');
+  });
+  return'<div class="ph-canvas">'+domkit.toHtml(root)+'</div>';
 }
 function _naSeed(app,opts){
   opts=opts||{};
@@ -3214,6 +3249,42 @@ const FRAGMENTS={
   'production ops — reports':()=>_phrFragment({open:true,long:true}),
   'production ops — reports, no data and unavailable':()=>_phrFragment({nocut:true,fail:true}),
   'production ops — reports, pos unavailable':()=>_phrFragment({posfail:true}),
+  // Production Ops admin tabs (12 Oct 2026): Masters, Standards, Settings, each in the states that stress the layout - a long name, an
+  // open inline edit, a retired row, a suggestion, a flash, a stale refusal, an empty/no-data/failed state, a disabled owner-only switch.
+  'production ops — admin tabs — Masters':async()=>{
+    const mast=(id,name,e)=>Object.assign({id:id,name:name,nameKey:name.toLowerCase(),kind:'inhouse',active:true,aliases:[],notes:'',createdAt:1,createdBy:'afnan',updatedAt:1,updatedBy:'afnan',retiredAt:null,retiredBy:null,retiredReason:''},e||{});
+    const store={'cutting_masters/CM-001':mast('CM-001','Hassan'),'cutting_masters/CM-002':mast('CM-002','Muhammad Abdul Rehman Qureshi Al Hashmi'),
+      'cutting_masters/CM-003':mast('CM-003','Alam',{active:false,retiredAt:1790000000000,retiredBy:'afnan',retiredReason:'left the company and the reason is long enough to wrap onto a second line on a phone'}),
+      'ph_settings/counters':{cutting_masters:3,updatedAt:1,updatedBy:'afnan'}};
+    const pos=[{fbKey:'PO-001',code:'GST073',cutAt:'2026-10-05T09:00:00+05:00',cutQty:{S:50,M:50}},{fbKey:'PO-002',code:'GST073',cutAt:'2026-10-08T10:00:00+05:00',cutQty:{M:30}},{fbKey:'PO-003',code:'GST073',cutAt:'2026-10-14T10:00:00+05:00',cutQty:{L:12}}];
+    const passes=[{gpType:'fabric',poId:'PO-001',cutMaster:'Hassan',ts:1},{gpType:'fabric',poId:'PO-002',cutMaster:'Muhammad Abdul Rehman Qureshi Al Hashmi',ts:2},{gpType:'fabric',poId:'PO-003',cutMaster:'Unregistered Cutter With A Long Name',ts:3}];
+    const g={allPOs:pos,allPasses:passes};
+    const a=await _phAdminPanel({tab:'masters',store,globals:g,setup:"_phaM.month='2026-10';_phaM.edit={id:'CM-001',kind:'rename',text:'Hasan Khan'};_phaM.showRetired=true;_phaFlash={tab:'masters',kind:'ok',text:'Zaheer added (CM-004).'}"});
+    const week=await _phAdminPanel({tab:'masters',store,globals:g,setup:"_phaM.mode='week';_phaM.week='2026-10-08';_phaM.master='hassan';_phaM.edit={id:'CM-002',kind:'retire',text:''};_phaFlash={tab:'masters',kind:'bad',text:'A reason is required to retire a master.'}"});
+    const empty=await _phAdminPanel({tab:'masters',store:{},globals:{allPOs:[{fbKey:'PO-001',code:'GST073'}],allPasses:[]},setup:"_phaM.month='2026-10'"});
+    const failed=await _phAdminPanel({tab:'masters',store:{},fail:['cutting_masters'],globals:{allPOs:pos,allPasses:passes},setup:"_phaM.month='2026-10'"});
+    return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[a,week,empty,failed].join('')};
+  },
+  'production ops — admin tabs — Standards':async()=>{
+    const std=(code,e)=>Object.assign({code:code,unit:'kg',grossPerPiece:0.31,tolerancePct:null,sizes:null,sizeModel:'alpha',reason:'first cut',rev:2,createdAt:1,createdBy:'afnan',updatedAt:1,updatedBy:'afnan'},e||{});
+    const store={'ph_standards/GST073':std('GST073'),'ph_standards/GD007':std('GD007',{sizeModel:'waist',sizes:{'30':0.62,'32':0.66},grossPerPiece:0.64,tolerancePct:4,rev:5}),'ph_standards/ZZ999':std('ZZ999',{rev:1}),
+      'cutting_masters/CM-001':{id:'CM-001',name:'Hassan',nameKey:'hassan',active:true,aliases:[]}};
+    const arts=[{code:'GST073',name:'Effortless Tee With A Rather Long Descriptive Name That Must Wrap Inside Its Row',brand:'groovy',active:true},{code:'GD007',name:'Straight Denim',brand:'groovy',active:true},{code:'GHW001',name:'Classic Cap',brand:'groovy'},{code:'GP123',name:'Graphic Tee',brand:'groovy',active:true}];
+    const g={tacArticles:arts,patternsLoaded:true,_ptnLoadFailed:()=>false};
+    const edit=await _phAdminPanel({tab:'standards',store,globals:g,user:'mustafa',setup:"_phaS.edit='GD007';_phaS.form=_phaStdBlank('GD007','Straight Denim',phStandardFor('GD007'));_phaS.form.reason='re-weighed on the table';_phaFlash={tab:'standards',kind:'bad',text:'The standard of GD007 was changed by someone else (revision 7, yours was 5). Reload it.',stale:true}"});
+    const fresh=await _phAdminPanel({tab:'standards',store,globals:g,setup:"_phaS.edit='GP123';_phaS.form=_phaStdBlank('GP123','Graphic Tee',null);_phaS.form.model='alpha';_phaS.form.sizes={XS:'0.28',S:'0.30',XL:'0.36'};_phaFlash={tab:'standards',kind:'ok',text:'Saved the standard of GD007 (revision 6).'}"});
+    const noreg=await _phAdminPanel({tab:'standards',store,globals:{tacArticles:[],patternsLoaded:true,_ptnLoadFailed:c=>c==='articles'},setup:"_phaS.q=''"});
+    const nostd=await _phAdminPanel({tab:'standards',store:{},fail:['ph_standards'],globals:g});
+    return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[edit,fresh,noreg,nostd].join('')};
+  },
+  'production ops — admin tabs — Settings':async()=>{
+    const saved={dailyCapacity:420,skipDays:['2026-10-20','2026-11-14','2026-12-25','2027-01-01','2027-03-23'],offWeekdays:[0],delayTargetDays:3,stuckDays:7,grossOverTolPct:3,grossUnderTolPct:5,cutGate:[70,130],pcOnlyHard:true,rev:4,updatedAt:1790000000000,updatedBy:'afnan'};
+    const defaults=await _phAdminPanel({tab:'settings',store:{},user:'mustafa',globals:{},setup:"_phaFlash={tab:'settings',kind:'bad',text:'The stuck limit must be above the delay target.'}"});
+    const owner=await _phAdminPanel({tab:'settings',store:{'ph_settings/main':saved},user:'afnan',globals:{},setup:"_phaFlash={tab:'settings',kind:'bad',text:'Settings were changed by someone else (revision 5). Reload them.',stale:true}"});
+    const mus=await _phAdminPanel({tab:'settings',store:{'ph_settings/main':saved},user:'mustafa',globals:{}});
+    const failed=await _phAdminPanel({tab:'settings',store:{},fail:['ph_settings/main'],globals:{}});
+    return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[defaults,owner,mus,failed].join('')};
+  },
   'inventory intel — takeover and rail':()=>_tkFragment(false),
   'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
   // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
