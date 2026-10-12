@@ -1,0 +1,269 @@
+{
+ "Fabric In": {
+  "counters/main": {
+   "pos": 3,
+   "gatepasses": 5,
+   "bundles": 2,
+   "fabricin": 6,
+   "returns": 11,
+   "stock_transfer": 6,
+   "bstock_carton": 2,
+   "fablot_blkjrs220": 1
+  },
+  "fabric_inventory/jersey_heavy__220gsm__black": {
+   "key": "jersey_heavy__220gsm__black",
+   "fabType": "Jersey Heavy",
+   "gsm": 220,
+   "color": "Black",
+   "unit": "kg",
+   "rolls": [
+    {
+     "rollCode": "BLKJRS220-01-R01",
+     "weight": 10.5,
+     "gsm": 220,
+     "unit": "kg",
+     "status": "in_stock",
+     "sourceFabId": "FAB-006",
+     "addedAt": 1791709200000,
+     "addedBy": "Afnan"
+    },
+    {
+     "rollCode": "BLKJRS220-01-R02",
+     "weight": 20,
+     "gsm": 220,
+     "unit": "kg",
+     "status": "in_stock",
+     "sourceFabId": "FAB-006",
+     "addedAt": 1791709200000,
+     "addedBy": "Afnan"
+    }
+   ],
+   "totalWeight": 30.5,
+   "reservedWeight": 0,
+   "rollsCount": 2,
+   "reservedCount": 0,
+   "lastMovementAt": 1791709200000
+  },
+  "fabric_movements/auto1": {
+   "id": "auto1",
+   "ts": 1791709200000,
+   "type": "in",
+   "subtype": "receipt",
+   "fabType": "Jersey Heavy",
+   "gsm": 220,
+   "color": "Black",
+   "unit": "kg",
+   "qty": 30.5,
+   "rollCodes": [
+    "BLKJRS220-01-R01",
+    "BLKJRS220-01-R02"
+   ],
+   "sourceCollection": "fabricin",
+   "sourceId": "FAB-006",
+   "by": "Afnan",
+   "note": "Receipt from Gul Enterprises"
+  },
+  "fabricin/FAB-006": {
+   "id": "FAB-006",
+   "fabCode": "BLKJRS220-01",
+   "ts": 1791709200000,
+   "supplier": "Gul Enterprises",
+   "date": "2026-10-11",
+   "fabType": "Jersey Heavy",
+   "gsm": 220,
+   "color": "Black",
+   "receivedBy": "Afnan",
+   "notes": "first lot",
+   "unit": "kg",
+   "totalWeight": 30.5,
+   "rollsCount": 2,
+   "rolls": [
+    {
+     "rollCode": "BLKJRS220-01-R01",
+     "rollNumber": "BLKJRS220-01-R01",
+     "weight": 10.5,
+     "gsm": 220,
+     "unit": "kg",
+     "qcPassed": true,
+     "qcBy": "Afnan",
+     "qcAt": 1791709200000
+    },
+    {
+     "rollCode": "BLKJRS220-01-R02",
+     "rollNumber": "BLKJRS220-01-R02",
+     "weight": 20,
+     "gsm": 220,
+     "unit": "kg",
+     "qcPassed": false,
+     "qcBy": "",
+     "qcAt": null
+    }
+   ]
+  }
+ },
+ "Returns": {
+  "counters/main": {
+   "pos": 3,
+   "gatepasses": 5,
+   "bundles": 2,
+   "fabricin": 5,
+   "returns": 12,
+   "stock_transfer": 6,
+   "bstock_carton": 2
+  },
+  "gatepasses/GP-004": {
+   "id": "GP-004",
+   "ts": 1,
+   "gpType": "garments",
+   "dest": "Vendor X",
+   "article": "Tee",
+   "totalUnits": 100,
+   "expectReturn": true,
+   "date": "2026-10-01",
+   "returnedQty": 40,
+   "returnStatus": "Partial",
+   "closedAt": null
+  },
+  "returns/RET-012": {
+   "id": "RET-012",
+   "ts": 1791709200000,
+   "gpNum": "GP-004",
+   "vendor": "Vendor X",
+   "article": "Tee",
+   "unit": "pcs",
+   "sentQty": 100,
+   "returnedQty": 40,
+   "cumulative": 40,
+   "shortage": 60,
+   "status": "Partial",
+   "date": "2026-10-11",
+   "receivedBy": "Afnan",
+   "notes": "first batch"
+  }
+ },
+ "Stock transfer": {
+  "counters/main": {
+   "pos": 3,
+   "gatepasses": 5,
+   "bundles": 2,
+   "fabricin": 5,
+   "returns": 11,
+   "stock_transfer": 7,
+   "bstock_carton": 2
+  },
+  "pos/FB1": {
+   "id": "PO-007",
+   "name": "Live In Pants",
+   "code": "GD007",
+   "qty": 100,
+   "poStatus": "in_production",
+   "qcDispositions": [
+    {
+     "size": "M",
+     "kind": "passed",
+     "qty": 50
+    },
+    {
+     "size": "S",
+     "kind": "passed",
+     "qty": 30
+    }
+   ],
+   "stockTransfers": [
+    {
+     "id": "STN-002-M",
+     "transferId": "STN-002",
+     "size": "M",
+     "qty": 10,
+     "ts": "2026-10-01T00:00:00.000Z",
+     "by": "Faizan"
+    },
+    {
+     "id": "STN-007-S",
+     "transferId": "STN-007",
+     "size": "S",
+     "qty": 5,
+     "ts": "2026-10-11T09:00:00.000Z",
+     "by": "Afnan"
+    },
+    {
+     "id": "STN-007-M",
+     "transferId": "STN-007",
+     "size": "M",
+     "qty": 20,
+     "ts": "2026-10-11T09:00:00.000Z",
+     "by": "Afnan"
+    }
+   ]
+  },
+  "stock_transfers/STN-007": {
+   "id": "STN-007",
+   "poId": "PO-007",
+   "poName": "Live In Pants",
+   "productCode": "GD007",
+   "items": [
+    {
+     "size": "S",
+     "qty": 5
+    },
+    {
+     "size": "M",
+     "qty": 20
+    }
+   ],
+   "total": 25,
+   "by": "Afnan",
+   "ts": "2026-10-11T09:00:00.000Z",
+   "status": "booked"
+  }
+ },
+ "B-stock carton": {
+  "bstock_cartons/CTN-003": {
+   "id": "CTN-003",
+   "no": 3,
+   "status": "open",
+   "createdBy": "Afnan",
+   "createdAt": "2026-10-11T09:00:00.000Z",
+   "ts": 1791709200000
+  },
+  "bstock_items/BSI-1791709200000": {
+   "id": "BSI-1791709200000",
+   "poId": "PO-007",
+   "poName": "Live In Pants",
+   "productCode": "GD007",
+   "article": "GD007",
+   "size": "M",
+   "qty": 3,
+   "cartonId": "CTN-003",
+   "cartonNo": "CTN-003",
+   "assignedBy": "Afnan",
+   "assignedAt": "2026-10-11T09:00:00.000Z",
+   "transferred": false,
+   "ts": 1791709200000
+  },
+  "counters/main": {
+   "pos": 3,
+   "gatepasses": 5,
+   "bundles": 2,
+   "fabricin": 5,
+   "returns": 11,
+   "stock_transfer": 6,
+   "bstock_carton": 3
+  },
+  "pos/FB1": {
+   "id": "PO-007",
+   "name": "Live In Pants",
+   "code": "GD007",
+   "qty": 100,
+   "poStatus": "in_production",
+   "qcDispositions": [
+    {
+     "size": "M",
+     "kind": "bstock",
+     "qty": 9
+    }
+   ],
+   "stockTransfers": []
+  }
+ }
+}

@@ -586,6 +586,23 @@ module.exports=async function(){
     s.ok('and not the cancelled one',fab.indexOf('<option value="PO-013">')<0);
   }
 
+  s.section('The dashboard\'s Total POs headline leaves cancelled POs out (embellishments.js renderDashboard)');
+  {
+    const stat=(html,label)=>{const m=new RegExp('<div class="stat-label">'+label+'</div><div class="stat-val">(\\d+)</div>').exec(html);return m?+m[1]:null;};
+    const a=wide();
+    a.run('allPOs='+J(mixed));
+    const html=a.run('renderDashboard()');
+    s.eq('3 POs on file, one cancelled: Total POs reads 2',stat(html,'Total POs'),2);
+    s.eq('Active is unchanged (the cancelled PO has no stage)',stat(html,'Active'),1);
+    const day=new Date().toISOString().slice(0,10);
+    a.run('allPOs='+J([po(21,{poStatus:'reserved',createdAt:day}),po(22,{poStatus:'cancelled',currentStage:null,createdAt:day})]));
+    const h2=a.run('renderDashboard()');
+    s.eq('a PO cancelled today is not counted in Today either',stat(h2,'Today'),1);
+    s.eq('and Total POs reads 1',stat(h2,'Total POs'),1);
+    a.run('allPOs=[]');
+    s.eq('no POs: 0',stat(a.run('renderDashboard()'),'Total POs'),0);
+  }
+
   s.section('the Activity Log escapes the detail it prints (the cancel reason is typed text)');
   {
     const hostile='Out of fabric <img src=x onerror=alert(1)> & "more"';

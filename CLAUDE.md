@@ -10550,10 +10550,10 @@ and nothing was seen on a screen. How any of it behaves live is hypothesis.**
   like `_poFloorNow`). Used by `submitFabricIssue` and `submitGP` (fabric and, via
   `createWithNextId`, non-fabric). A refused issue, failed commit or taken id leaves
   `counters/main` byte-identical. Each piece was reverted once and caught by name.
-- **NOT fixed, same burn shape (hypothesis, from reading):** `getNextId` before the
+- **SUPERSEDED 12 Oct 2026 (next section): fixed.** ~~**NOT fixed, same burn shape (hypothesis, from reading):** `getNextId` before the
   write for Fabric In (`fabricin`, FAB-), returns (RET-, `setDoc` then `updateDoc`),
   stock transfer (STN-) and B-stock carton (CTN-). Different write shapes, not the
-  small same change.
+  small same change.~~
 - **`_fabUnitNorm` is read-only (verified, §3 and §7).** Metres -> `m`, blank -> `kg`;
   stored units are never rewritten. `js/gatepass.js` loads first, so `_gpUnitNorm`
   calls it at runtime with an inline fallback; used by the pass edit label/totals,
@@ -10567,8 +10567,69 @@ and nothing was seen on a screen. How any of it behaves live is hypothesis.**
   exists for a receipt delete** (the "anyway" is for an issue's restock only).
 - **Delete-all toast (§8):** first 3 refused issue numbers then "and N more"; the
   Activity Log entry keeps every issue with its rolls.
-- **Known open:** `dashboard totals in js/embellishments.js (allPOs.length) still
-  count cancelled POs` (verified by grep: line 4331, `total=allPOs.length`).
+- **Known open:** ~~`dashboard totals in js/embellishments.js (allPOs.length) still
+  count cancelled POs` (verified by grep: line 4331, `total=allPOs.length`)~~ —
+  **fixed 12 Oct 2026, next section.**
+
+## Number burn, the four remaining flows (12 Oct 2026)
+
+Same bug shape as the gate-pass fix above, same cure: the counter read, the
+"id is free" check and the document(s) commit in ONE transaction, floored at the
+highest number already on file. **Verified only by plain-node suites against an in-memory
+Firestore stand-in with real transaction semantics (`tests/number-burn.test.js`). NONE of
+it was run against real Firestore, the real SDK or the emulator, and nothing was seen on a
+screen — how it behaves live is hypothesis.** `firestore.rules` is unchanged.
+
+- **Fabric In (`FAB-`, `submitFabricIn`, `js/fabric.js`).** The receipt, the inventory, the
+  movement and the counter are one `_fabInvUpsert` transaction with `mintDoc`
+  (`field:'fabricin'`); `sourceId` and each roll's `sourceFabId` are the minted id.
+  Floor: `_fabInFloorNow()` (highest `allFabricIn` id, else the server list). **Found by the
+  new test on the OLD code: with a lagging counter the old flow OVERWROTE an existing
+  receipt** (its write had no existence check). **Not fixed, same shape,
+  a different counter:** `_allocFabLot` reserves the lot (`fablot_<BASECODE>` in
+  `counters/main`) in its own transaction first, so a failed receipt still burns a LOT number
+  (`…-02` skipped). The floor check now runs before the lot reservation, so a list that
+  cannot be trusted burns neither.
+- **Returns (`RET-`, `submitReturn`, `js/gatepass.js`).** The return document and the gate
+  pass update (`returnedQty`, `returnStatus`, `expectReturn`, `closedAt`) are one
+  transaction (`createWithNextId` with the new `reads`/`writes` hooks; the pass is read in the
+  transaction, and a pass that is gone refuses the whole return). Before: `getNextId`, then
+  `setDoc`, then `updateDoc` — a failed update left a return on file against a pass that
+  never recorded it. Floor: `_gpRetFloorNow()`. The fabric re-add for a process pass is still
+  a separate step after the commit with its own "Return saved, but stock re-add failed"
+  message (the return stands; not changed). **Known, unchanged:** `cumulative`/`status` are
+  computed from this page's list, so two phones returning the same pass at once still race.
+- **Stock transfer (`STN-`, `bookTransfer`, `js/production.js`).** The `stock_transfers`
+  document and the PO's `stockTransfers` append are one transaction. **One deliberate
+  difference from the old code:** the PO is read in the transaction and the new entries are
+  appended to what the PO holds NOW, not to this page's older copy (the old `updateDoc`
+  overwrote the whole array, so a transfer booked on another phone was lost). The produced
+  entries and document are byte-identical. Floor: `_stnFloorNow()` — the highest `transferId`
+  on the loaded POs, else the `stock_transfers` server list.
+- **B-stock carton (`CTN-`, `bstockAssign`, `js/production.js`).** Boxing into a NEW carton
+  writes the carton and the first item in one transaction; boxing into an existing carton
+  mints nothing and is unchanged. Floor: `_ctnFloorNow()` — highest `CTN-` id or `no`
+  (a transferred carton counts), else the server list.
+- **Shared pieces (`js/shared.js`).** `createWithNextId` gained two optional hooks,
+  `reads(tx)` (extra reads, run after the counter/id reads and before any write) and
+  `writes(tx,{n,id,record,pre})` (the caller's other writes, same transaction); with neither
+  it is unchanged. `numberFloorNow({collection,loaded,numberOf,what,also})` is the shared
+  floor rule (something loaded → its highest; nothing loaded → the server list; a failed or
+  cache-only read refuses BEFORE any write: "Reload the page first. Nothing was saved.").
+  `tests/mint-helper.js` installs both (and `getNextId`).
+- **Golden shapes.** `tests/fixtures/number-burn-golden.json` is the full store after one
+  good run of each flow, captured from the UNCHANGED code (`NB_WRITE_GOLDEN=1` rewrites it —
+  only do that against code you trust); the test compares byte for byte.
+- **Small fixes in the same change.** The gate-pass fabric table's last column head is
+  `Length` when every row is in metres (any spelling), `Weight / Length` when mixed, `Weight`
+  otherwise (`js/print-engine.js`; `tests/gatepass-print.test.js`). The dashboard's Total
+  POs and Today figures leave out `poStatus==='cancelled'` (`js/embellishments.js`;
+  `tests/po-numbering.test.js`).
+- **NOT verified:** any real Firestore behaviour (the stand-in applies a transaction's
+  writes all-or-nothing, which is what the SDK documents; contention retries were not
+  exercised here); a real phone; the print change on paper (a recording fake jsPDF only);
+  that `bstock_cartons` / `stock_transfers` / `returns` / `fabricin` list reads succeed for
+  every role that books these (read from `firestore.rules`: all `signedIn()`).
 
 ## Production Ops ph-core (11 Oct 2026)
 

@@ -73,6 +73,15 @@ async function _gpFloorNow(){
   (snap.docs||[]).forEach(d=>{[d.id,(d.data()||{}).id].forEach(v=>{const n=_gpNumberOf(v);if(n&&n>max)max=n;});});
   return max;
 }
+// ── Return numbers ──────────────────────────────────────────────────────────
+// 'RET-012' <-> 12. (A fabric roll re-added from a return is coded
+// 'RET-<GP id>-R<n>' — that is a roll code, not a return id, and does not match.)
+function _gpRetIdFor(n){return'RET-'+String(n).padStart(3,'0');}
+function _gpRetNumberOf(id){const m=/^RET-0*(\d+)$/i.exec(String(id==null?'':id).trim());return m?parseInt(m[1],10):null;}
+async function _gpRetFloorNow(){
+  const loaded=(typeof allReturns!=='undefined'&&Array.isArray(allReturns)?allReturns:[]).map(r=>r&&r.id).filter(Boolean);
+  return numberFloorNow({collection:'returns',loaded,numberOf:_gpRetNumberOf,what:'return'});
+}
 function _gpUnitForPass(p){return p.gpType==='fabric'?(p.fabricUnit||'kg'):(p.gpType==='item'?'qty':'pcs');}
 function _gpRetUnitKey(p){return p.gpType==='fabric'?'kg':(p.gpType==='item'?'qty':'pcs');}
 function _gpSentQtyForPass(p){
@@ -769,11 +778,28 @@ window.submitReturn=async function(){
   const status=newBack>sent+tol?'Overage':(newBack>=sent-tol?'Complete':'Partial');
   const closed=(status==='Complete'||status==='Overage');
   try{
-    const next=await getNextId('returns');
-    const retId='RET-'+String(next).padStart(3,'0');
-    const rec={id:retId,ts:Date.now(),gpNum:p.id,vendor:p.dest||'',article:p.article||'',unit,sentQty:sent,returnedQty:qty,cumulative:newBack,shortage:Math.max(0,+(sent-newBack).toFixed(2)),status,date,receivedBy:session.name,notes};
-    await setDoc(doc(db,'returns',retId),rec);
-    await updateDoc(doc(db,'gatepasses',p.id),{returnedQty:newBack,returnStatus:status,expectReturn:closed?false:true,closedAt:closed?Date.now():null});
+    // The RET number is minted INSIDE the transaction that writes the return AND
+    // updates the gate pass (createWithNextId, js/shared.js). It used to be
+    // getNextId('returns') — its own committed transaction — then a setDoc, then
+    // an updateDoc: a refused or offline write spent a number, and a failed
+    // update left a return on file against a pass that never recorded it. Now
+    // all three land together or not at all. The floor is the highest RET
+    // number on file, so a reset counter can never aim at a return that exists.
+    const floor=await _gpRetFloorNow();
+    const gpRef=doc(db,'gatepasses',p.id);
+    const ts=Date.now();
+    const made=await createWithNextId({field:'returns',collection:'returns',floor,idFor:_gpRetIdFor,
+      build:(n,retId)=>({id:retId,ts,gpNum:p.id,vendor:p.dest||'',article:p.article||'',unit,sentQty:sent,returnedQty:qty,cumulative:newBack,shortage:Math.max(0,+(sent-newBack).toFixed(2)),status,date,receivedBy:session.name,notes}),
+      // The pass is read in the same transaction: a pass that is gone refuses
+      // the whole return instead of leaving it behind.
+      reads:async tx=>{
+        const snap=await tx.get(gpRef);
+        if(!snap||typeof snap.exists!=='function'||!snap.exists())throw new Error(p.id+' no longer exists, so the return was not recorded. Nothing was saved. Reload the page and check the gate pass.');
+        return snap;
+      },
+      writes:tx=>{tx.update(gpRef,{returnedQty:newBack,returnStatus:status,expectReturn:closed?false:true,closedAt:closed?Date.now():null});}
+    });
+    const retId=made.id;
     // Fabric sent for a process → re-add this load's weight to inventory.
     if(p.gpType==='fabric'&&p.fabricType&&p.gpReason==='process'){
       try{

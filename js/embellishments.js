@@ -4328,7 +4328,8 @@ window.openReworkReturn=function(jobId){ viewingPrintJob=jobId; window.recordRew
 
 // ── Dashboard ──
 function renderDashboard(){
-  const total=allPOs.length,active=allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length,done=allPOs.filter(p=>p.currentStage==='completed').length,todayCount=allPOs.filter(p=>p.createdAt===new Date().toISOString().slice(0,10)).length;
+  // A cancelled PO is not a PO in the business any more (Oct 2026): leave it out of the headline total.
+  const total=allPOs.filter(p=>p.poStatus!=='cancelled').length,active=allPOs.filter(p=>p.currentStage&&p.currentStage!=='completed').length,done=allPOs.filter(p=>p.currentStage==='completed').length,todayCount=allPOs.filter(p=>p.poStatus!=='cancelled'&&p.createdAt===new Date().toISOString().slice(0,10)).length;
 
   // Embellishment job counts
   const ALL_EMB=['po_received','pp_sample','pp_approval','bulk_printing','final_qc','rework','qc_bundling','stitching','final_qc_post_stitch'];

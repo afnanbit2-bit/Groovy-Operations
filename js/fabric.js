@@ -602,6 +602,15 @@ async function _allocFabLot(baseCode){
   });
   return String(lot).padStart(2,'0');
 }
+// ── Fabric In (receipt) numbers ─────────────────────────────────────────────
+// 'FAB-012' <-> 12. Minted inside the receipt's own transaction (see
+// submitFabricIn); the floor is the highest receipt on file.
+function _fabInIdFor(n){return'FAB-'+String(n).padStart(3,'0');}
+function _fabInNumberOf(id){const m=/^FAB-0*(\d+)$/i.exec(String(id==null?'':id).trim());return m?parseInt(m[1],10):null;}
+async function _fabInFloorNow(){
+  const loaded=(typeof allFabricIn!=='undefined'&&Array.isArray(allFabricIn)?allFabricIn:[]).map(f=>f&&f.id).filter(Boolean);
+  return numberFloorNow({collection:'fabricin',loaded,numberOf:_fabInNumberOf,what:'fabric receipt'});
+}
 function _fabUnitForSupplier(supplier){
   return(supplier||'').toLowerCase().includes('daniyal twill')?'m':'kg';
 }
@@ -779,6 +788,9 @@ window.submitFabricIn=async function(){
   if(!_fabBusyStart('Saving fabric entry…'))return;
   try{
     const baseCode=_fabBaseCode(fabType,gsm,color);
+    // Checked FIRST: a list that cannot be trusted refuses before any lot or
+    // number is touched.
+    const floor=await _fabInFloorNow();
     let lot=await _allocFabLot(baseCode);                // atomic + unique
     let fabCode=`${baseCode}-${lot}`;
     // Defensive: guarantee the code is unused even against loaded data.
@@ -789,11 +801,18 @@ window.submitFabricIn=async function(){
       return{rollCode,rollNumber:rollCode,weight:r.weight,gsm:r.gsm,unit,qcPassed:r.qcPassed,qcBy:r.qcPassed?session.name:'',qcAt:r.qcPassed?Date.now():null};
     });
     const totalWeight=parseFloat(rolls.reduce((s,r)=>s+r.weight,0).toFixed(2));
-    const next=await getNextId('fabricin');
-    const fabId='FAB-'+String(next).padStart(3,'0');
-    const payload={id:fabId,fabCode,ts:Date.now(),supplier,date,fabType,gsm,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls};
-    // Receipt doc + inventory + movement commit in ONE transaction.
-    await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm,unit:r.unit,sourceFabId:fabId})),sourceCol:'fabricin',sourceId:fabId,note:`Receipt from ${supplier}`,extraWrites:[{ref:doc(db,'fabricin',fabId),data:payload}]});
+    // The FAB number is minted INSIDE the transaction that writes the receipt,
+    // the inventory and the movement (mintDoc → mintNextIdInTx, js/shared.js).
+    // It used to come from getNextId('fabricin') first — its own committed
+    // transaction — so a refused or failed receipt spent a number for nothing.
+    // The floor is the highest FAB number already on file, so a counter that
+    // was reset or lags can never aim at a receipt that exists.
+    const ts=Date.now();
+    const buildReceipt=(n,fabId)=>({id:fabId,fabCode,ts,supplier,date,fabType,gsm,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls});
+    // Receipt doc + inventory + movement + the counter commit in ONE transaction.
+    // (sourceId, and so each roll's sourceFabId, is the minted FAB id.)
+    const done=await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm,unit:r.unit})),sourceCol:'fabricin',note:`Receipt from ${supplier}`,mintDoc:{field:'fabricin',collection:'fabricin',floor,idFor:_fabInIdFor,build:buildReceipt}});
+    const payload=done.minted.record,fabId=done.minted.id;
     allFabricIn.unshift(payload);
     await logActivity('Fabric In',`${fabId} (${fabCode}) — ${supplier} · ${fabType} ${gsm}gsm · ${color} · ${rolls.length} rolls · ${totalWeight} ${unit}`);
     showToast(`${fabCode} saved ✓ · added to inventory`);

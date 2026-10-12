@@ -271,6 +271,17 @@ window.bcSetSearch=function(v){
 };
 window.bcOpen=function(fbKey){_bcSel=fbKey;const m=document.getElementById('main-content');if(m)m.innerHTML=renderPacking();};
 window.bcBack=function(){_bcSel=null;const m=document.getElementById('main-content');if(m)m.innerHTML=renderPacking();};
+// ── Stock transfer numbers ('STN-012' <-> 12) ──────────────────────────────
+// Booked transfers live on the PO (po.stockTransfers[].transferId) and as one
+// stock_transfers document each; the floor is the highest of what the loaded
+// POs hold, else the highest stock_transfers id on the server.
+function _stnIdFor(n){return'STN-'+String(n).padStart(3,'0');}
+function _stnNumberOf(id){const m=/^STN-0*(\d+)$/i.exec(String(id==null?'':id).trim());return m?parseInt(m[1],10):null;}
+async function _stnFloorNow(){
+  const loaded=[];
+  (typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).forEach(p=>{((p&&p.stockTransfers)||[]).forEach(e=>{if(e&&e.transferId)loaded.push(e.transferId);});});
+  return numberFloorNow({collection:'stock_transfers',loaded,numberOf:_stnNumberOf,what:'stock transfer'});
+}
 window.bookTransfer=async function(fbKey){
   const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===fbKey);
   if(!po){showToast('PO not found.',true);return;}
@@ -281,14 +292,33 @@ window.bookTransfer=async function(fbKey){
   if(over){showToast('A size exceeds the available ready quantity.',true);return;}
   const btn=document.getElementById('bc-book-btn');if(btn){btn.disabled=true;btn.textContent='Booking…';}
   try{
-    const n=await getNextId('stock_transfer');
-    const transferId='STN-'+String(n).padStart(3,'0');
+    // The STN number is minted INSIDE the transaction that writes the transfer
+    // document AND appends it to the PO (createWithNextId, js/shared.js). It
+    // used to be getNextId('stock_transfer') — its own committed transaction —
+    // then updateDoc(pos) then setDoc(stock_transfers): a refused or offline
+    // write spent a number, and a failure between the two writes left the PO
+    // carrying a transfer that had no document (or the reverse). Now both land
+    // together or not at all. The PO's transfers are appended to what the PO
+    // holds NOW (read in the transaction), not to this page's older copy, so a
+    // transfer booked on another phone is never overwritten.
+    const floor=await _stnFloorNow();
+    const poRef=doc(db,'pos',fbKey);
     const ts=new Date().toISOString();
-    const newEntries=entries.map(e=>({id:transferId+'-'+e.size,transferId,size:e.size,qty:e.qty,ts,by:session.name}));
-    const merged=((po.stockTransfers)||[]).concat(newEntries);
     const total=entries.reduce((a,e)=>a+e.qty,0);
-    await updateDoc(doc(db,'pos',fbKey),{stockTransfers:merged});
-    await setDoc(doc(db,'stock_transfers',transferId),{id:transferId,poId:po.id,poName:po.name||'',productCode:po.code||'',items:entries,total,by:session.name,ts,status:'booked'});
+    const made=await createWithNextId({field:'stock_transfer',collection:'stock_transfers',floor,idFor:_stnIdFor,
+      build:(n,transferId)=>({id:transferId,poId:po.id,poName:po.name||'',productCode:po.code||'',items:entries,total,by:session.name,ts,status:'booked'}),
+      reads:async tx=>{
+        const snap=await tx.get(poRef);
+        if(!snap||typeof snap.exists!=='function'||!snap.exists())throw new Error(po.id+' no longer exists, so the transfer was not booked. Nothing was saved. Reload the page.');
+        return snap;
+      },
+      writes:(tx,m)=>{
+        const live=(typeof m.pre.data==='function'?(m.pre.data()||{}):{}).stockTransfers;
+        const newEntries=entries.map(e=>({id:m.id+'-'+e.size,transferId:m.id,size:e.size,qty:e.qty,ts,by:session.name}));
+        tx.update(poRef,{stockTransfers:(Array.isArray(live)?live:[]).concat(newEntries)});
+      }
+    });
+    const transferId=made.id;
     await logActivity('Stock transfer',`${transferId} — ${po.id} ${entries.map(e=>e.size+'×'+e.qty).join(', ')} by ${session.name}`).catch(()=>{});
     if(typeof printDocument==='function'){
       try{printDocument({type:'stock-transfer',data:{id:transferId,documentNumber:transferId,poId:po.id,poName:po.name||'',productCode:po.code||'',items:entries,total,fromLabel:'Packing (Faizan)',toLabel:'Warehouse',issuedBy:session.name},filename:`stock-transfer-${transferId}.pdf`});}catch(_pe){console.warn('[production] transfer print failed',_pe);}
@@ -633,6 +663,17 @@ function _bstockCartonsHTML(){
 
 // ── B-stock handlers ──
 window.bstockTab=function(tab){_bstockTab=tab;const m=document.getElementById('main-content');if(m&&currentPage==='bstock')m.innerHTML=renderBstock();};
+// ── B-stock carton numbers ('CTN-012' <-> 12) ──────────────────────────────
+function _ctnIdFor(n){return'CTN-'+String(n).padStart(3,'0');}
+function _ctnNumberOf(v){
+  if(typeof v==='number')return Number.isFinite(v)&&v>0?Math.floor(v):null;     // a carton's `no` field
+  const m=/^CTN-0*(\d+)$/i.exec(String(v==null?'':v).trim());return m?parseInt(m[1],10):null;
+}
+async function _ctnFloorNow(){
+  const loaded=[];
+  (typeof allBstockCartons!=='undefined'&&Array.isArray(allBstockCartons)?allBstockCartons:[]).forEach(c=>{if(!c)return;if(c.id)loaded.push(c.id);if(c._id)loaded.push(c._id);if(c.no)loaded.push(Number(c.no));});
+  return numberFloorNow({collection:'bstock_cartons',loaded,numberOf:_ctnNumberOf,what:'B-stock carton',also:['no']});
+}
 window.bstockAssign=async function(fbKey,size){
   const po=(typeof allPOs!=='undefined'?allPOs:[]).find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
   const qty=parseInt(document.getElementById(`bs-qty-${fbKey}-${size}`)?.value)||0;
@@ -643,13 +684,26 @@ window.bstockAssign=async function(fbKey,size){
   if(!cartonSel){showToast('Choose or create a carton.',true);return;}
   try{
     let cartonId=cartonSel,cartonNo;
-    if(cartonSel==='__new__'){
-      const n=await getNextId('bstock_carton');
-      cartonNo='CTN-'+String(n).padStart(3,'0');cartonId=cartonNo;
-      await setDoc(doc(db,'bstock_cartons',cartonId),{id:cartonId,no:n,status:'open',createdBy:session.name,createdAt:new Date().toISOString(),ts:Date.now()});
-    }else{const c=allBstockCartons.find(x=>x._id===cartonSel);cartonNo=c?c.id:cartonSel;}
     const itemId='BSI-'+Date.now();
-    await setDoc(doc(db,'bstock_items',itemId),{id:itemId,poId:po.id,poName:po.name||'',productCode:po.code||'',article:po.code||'',size,qty,cartonId,cartonNo,assignedBy:session.name,assignedAt:new Date().toISOString(),transferred:false,ts:Date.now()});
+    const itemRec=(cid,cno)=>({id:itemId,poId:po.id,poName:po.name||'',productCode:po.code||'',article:po.code||'',size,qty,cartonId:cid,cartonNo:cno,assignedBy:session.name,assignedAt:new Date().toISOString(),transferred:false,ts:Date.now()});
+    if(cartonSel==='__new__'){
+      // The CTN number is minted INSIDE the transaction that writes the carton
+      // AND the first item boxed into it (createWithNextId, js/shared.js). It
+      // used to be getNextId('bstock_carton') — its own committed transaction —
+      // then two setDocs: a refused or offline write spent a number, and an
+      // item that failed left an empty carton behind. The floor is the highest
+      // CTN number on file.
+      const floor=await _ctnFloorNow();
+      const stamp=new Date().toISOString(),stampTs=Date.now();
+      const made=await createWithNextId({field:'bstock_carton',collection:'bstock_cartons',floor,idFor:_ctnIdFor,
+        build:(n,cid)=>({id:cid,no:n,status:'open',createdBy:session.name,createdAt:stamp,ts:stampTs}),
+        writes:(tx,m)=>{tx.set(doc(db,'bstock_items',itemId),itemRec(m.id,m.id));}
+      });
+      cartonNo=made.id;cartonId=made.id;
+    }else{
+      const c=allBstockCartons.find(x=>x._id===cartonSel);cartonNo=c?c.id:cartonSel;
+      await setDoc(doc(db,'bstock_items',itemId),itemRec(cartonId,cartonNo));
+    }
     await logActivity('B-stock boxed',`${po.id} ${size}×${qty} → ${cartonNo} by ${session.name}`).catch(()=>{});
     showToast(`${qty} ${size} → ${cartonNo} ✓`);
     await loadBstockData();
