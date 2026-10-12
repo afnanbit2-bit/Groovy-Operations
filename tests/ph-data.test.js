@@ -157,8 +157,8 @@ module.exports=async function(){
     s.ok('… mark-ready keys = PH_DRAFT_READY_FIELDS',sameSet(dl[1],L('PH_DRAFT_READY_FIELDS')));
     s.ok('… send-back keys = PH_DRAFT_BACK_FIELDS',sameSet(dl[2],L('PH_DRAFT_BACK_FIELDS')));
     s.ok('… abandon keys = PH_DRAFT_ABANDON_FIELDS',sameSet(dl[3],L('PH_DRAFT_ABANDON_FIELDS')));
-    s.eq('the draft statuses the rules move between = PH_DRAFT_STATUSES (no `issued` yet)',J([...new Set([...dstep.matchAll(/(?:r|d)\.status == '([a-z]+)'/g)].map(m=>m[1]))].sort()),J(L('PH_DRAFT_STATUSES').sort()));
-    s.ok('the word issued appears in neither draft rule (it arrives with the issue transaction and its own rules change)',!/issued/.test(drafts+dstep));
+    s.eq('the draft statuses the rules move between = PH_DRAFT_STATUSES (issued is terminal: it appears only as a destination)',J([...new Set([...dstep.matchAll(/(?:r|d)\.status == '([a-z]+)'/g)].map(m=>m[1]))].sort()),J(L('PH_DRAFT_STATUSES').sort()));
+    s.ok('issued appears in the draft rules only as a destination of the managers\' ready clause (tests/ph-issue.test.js holds the clause itself)',!/r\.status == 'issued'/.test(drafts+dstep)&&(dstep.match(/d\.status == 'issued'/g)||[]).length===1);
     const jobs=matchBlock('po_cut_jobs'),jstep=funcBody('phJobStep');
     s.eq('po_cut_jobs create keys = PH_JOB_CREATE_FIELDS',J(nth(jobs,0).slice().sort()),J(L('PH_JOB_CREATE_FIELDS').sort()));
     s.eq('phJobStep mutable keys = PH_JOB_MUTABLE_FIELDS',J(nth(jstep,0).slice().sort()),J(L('PH_JOB_MUTABLE_FIELDS').sort()));

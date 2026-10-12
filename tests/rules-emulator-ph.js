@@ -21,6 +21,10 @@
    client that has to satisfy it are tested together; the REFUSED paths are raw
    SDK writes, because a modified client is exactly what a rule is for.
 
+   Issue as PO (14 Oct 2026): the last section runs js/ph-issue.js's phIssueDraft (with the real js/shared.js and js/pos.js) against
+   the emulator for Mustafa, Afnan and Ammar and shows Uzaib, Raees, Umair, QA and signed-out refused, every raw way of damaging the
+   ready -> issued commit refused, and issued terminal.
+
    This checks the rules FILE. What the Firebase Console has published is a
    separate question only the human can answer.
    ───────────────────────────────────────────────────────────────────────── */
@@ -493,6 +497,119 @@ async function t(name,fn){
     if(r.ok||r.failed.length!==5)throw new Error('expected 5 failures, got '+JSON.stringify(r.failed.map(f=>f.name)));
     const g=await app2.run('phGet("drafts")');if(g.ok||g.rows!==null)throw new Error('a refused read looked like an empty list');
     if(!r.failed.every(f=>/republish firestore\.rules/.test(f.text)&&f.text.indexOf(f.name)===0))throw new Error('failures not named: '+r.failed.map(f=>f.text).join(' | '));});
+
+  /* ═══ ISSUE AS PO (14 Oct 2026): ready -> issued, the pos document created in the SAME commit ═══ */
+  console.log('issue as PO (po_drafts ready -> issued + a NEW pos document + counters/main + history, one transaction)');
+  // A second app: the issue writer needs the real js/shared.js (mintNextIdInTx) and js/pos.js (_poFloorNow, _poIdFor, PO_STATUS, STAGE_KEYS).
+  const appI=harness.loadApp({files:['js/shared.js','js/pos.js','js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-issue.js'],globals:{
+    doc,collection,query,orderBy,limit,where,getDoc,getDocs,deleteDoc,writeBatch,
+    setDoc:(r,d,o)=>o===undefined?setDoc(r,clone(d)):setDoc(r,clone(d),o),
+    updateDoc:(r,d)=>updateDoc(r,clone(d)),
+    runTransaction:(db,fn)=>runTransaction(db,tx=>fn(wrapTx(tx))),
+    _poEmbellishment:null
+  }});
+  appI.run('globalThis.__acts=[];logActivity=async function(x,d){__acts.push(x);};loadData=async function(){};showToast=function(){};allPOs=[];');
+  const callI=async(w,expr)=>{appI.ctx.db=as(w);appI.run('session='+JSON.stringify({uid:w.uid,u:w.u,name:w.name,email:w.email,role:'owner'})+';');return await appI.run('(async()=>{return await '+expr+';})()');};
+  const IPO='PO-007';
+  const ISS_PO=Object.assign({},GOOD_PO,{pattern:'P-12',ratio:'1:1',fabricCode:'JER180',store:'Main store',totalRoll:'6',cutMaster:'Hassan',embellishment:{required:false},jobCopies:{embroidery:true,printing:false,washing:false},notes:'Handle with care'});
+  const readyDraft=(over)=>draftDoc(UZAIB,Object.assign({status:'ready',rev:2,readyAt:NOW,readyBy:'uzaib',po:ISS_PO},over||{}));
+  const issueSeed=async(over)=>{await reset();
+    await seed('counters/main',{pos:6,gatepasses:2,bundles:9});await seed('pos/PO-006',{id:'PO-006',name:'PO 6',qty:100,poStatus:'reserved'});
+    await seed('cutting_masters/CM-001',{id:'CM-001',name:'Hassan',nameKey:'hassan',active:true,kind:'inhouse'});
+    await seed('po_drafts/'+DID,readyDraft(over));
+    appI.run('allPOs=[];');await callI(MUSTAFA,'phResetData()');await callI(MUSTAFA,'phLoadStage("masters",{force:true})');};
+  const posDoc=(over)=>{const d=Object.assign({ts:NOW,name:'Effortless Tee',code:'GST073',qty:100,sizes:{XS:0,S:50,M:50,L:0,XL:0,'2XL':0},poStatus:'reserved',currentStage:null,id:IPO,season:'winter',fromDraftId:DID,enteredBy:'uzaib',issuedBy:'mustafa',createdBy:'Mustafa'},over||{});Object.keys(d).forEach(k=>{if(d[k]===null)delete d[k];});return d;};
+  const issuedPatch=(w,over)=>Object.assign({status:'issued',rev:3,poId:IPO,issuedAt:NOW,issuedBy:w.u,updatedAt:NOW,updatedBy:w.u},over||{});
+  // a raw transaction that does exactly what the writer does (counter + pos + draft), with a hook to damage one part
+  const rawIssue=(w,o)=>{o=o||{};
+    const fdb=as(w);
+    return runTransaction(fdb,async tx=>{
+      const dref=doc(fdb,'po_drafts',DID),cref=doc(fdb,'counters','main'),pref=doc(fdb,'pos',o.posId||IPO);
+      await tx.get(dref);await tx.get(cref);await tx.get(pref);
+      if(!o.noCounter)tx.update(cref,{pos:7});
+      if(!o.noPos)tx.set(pref,posDoc(Object.assign({issuedBy:w.u},o.pos||{})));
+      tx.update(dref,issuedPatch(w,o.patch));
+    });};
+
+  for(const w of [MUSTAFA,AFNAN,AMMAR])
+    await t(w.u+' issues a ready draft with the app\'s own writer: PO-007, the counter, the draft and the history row land together',async()=>{await issueSeed();
+      const r=await callI(w,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false})');if(!r.ok)throw new Error('writer: '+JSON.stringify(r));
+      if(r.poId!==IPO)throw new Error('expected PO-007, got '+r.poId);
+      const p=await read('pos/'+IPO),d=await read('po_drafts/'+DID),c=await read('counters/main');
+      if(!p||p.fromDraftId!==DID||p.issuedBy!==w.u||p.enteredBy!=='uzaib'||p.poStatus!=='reserved'||p.currentStage!==null)throw new Error('pos document wrong: '+JSON.stringify(p));
+      if(!d||d.status!=='issued'||d.poId!==IPO||d.issuedBy!==w.u||d.rev!==3)throw new Error('draft wrong: '+JSON.stringify(d));
+      if(c.pos!==7||c.gatepasses!==2||c.bundles!==9)throw new Error('counter wrong: '+JSON.stringify(c));
+      let hs=[];await env.withSecurityRulesDisabled(async cx=>{const sn=await getDocs(collection(cx.firestore(),'pos',IPO,'history'));hs=sn.docs.map(x=>x.data());});
+      if(hs.length!==1||hs[0].type!=='issued'||hs[0].by!==w.u)throw new Error('history wrong: '+JSON.stringify(hs));});
+  await t('Mustafa\'s issue leaves PO-006 and every other existing document byte-identical',async()=>{await issueSeed();
+    const before=JSON.stringify(await read('pos/PO-006'));
+    const r=await callI(MUSTAFA,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false})');if(!r.ok)throw new Error(JSON.stringify(r));
+    if(JSON.stringify(await read('pos/PO-006'))!==before)throw new Error('PO-006 changed');
+    const m=await read('cutting_masters/CM-001');if(!m||m.name!=='Hassan')throw new Error('master changed');});
+  await t('Uzaib: the writer refuses (forbidden) and writes nothing',async()=>{await issueSeed();
+    const r=await callI(UZAIB,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false})');if(r.ok||r.code!=='forbidden')throw new Error(JSON.stringify(r));
+    const d=await read('po_drafts/'+DID),c=await read('counters/main');if(d.status!=='ready'||c.pos!==6||(await read('pos/'+IPO)))throw new Error('something was written');});
+  await t('Uzaib, raw: the same transaction (counter + new pos + draft -> issued) is refused as a whole; nothing is written',async()=>{await issueSeed();
+    await assertFails(rawIssue(UZAIB));
+    const d=await read('po_drafts/'+DID),c=await read('counters/main');if(d.status!=='ready'||c.pos!==6||(await read('pos/'+IPO)))throw new Error('a part of it landed');});
+  await t('Uzaib, raw: setting only the draft to issued (no pos) is refused too; Raees, Umair, QA and signed-out likewise',async()=>{await issueSeed();
+    for(const w of [UZAIB,RAEES,UMAIR,QA,'anon'])await assertFails(updateDoc(doc(as(w),'po_drafts',DID),issuedPatch(w.u?w:AFNAN,{issuedBy:(w.u||'afnan')})));});
+  await t('Mustafa, raw: the full transaction is allowed (this is the exact write set the writer sends)',async()=>{await issueSeed();await assertSucceeds(rawIssue(MUSTAFA));});
+  await t('refused: draft -> issued without the pos document in the commit',async()=>{await issueSeed();await assertFails(rawIssue(MUSTAFA,{noPos:true}));});
+  await t('refused: the pos document names ANOTHER draft / has another issuer',async()=>{await issueSeed();
+    await assertFails(rawIssue(MUSTAFA,{pos:{fromDraftId:'DRAFT-LZ4K9F2A-ZZ99'}}));
+    await assertFails(rawIssue(MUSTAFA,{pos:{issuedBy:'ammar'}}));
+    await assertFails(rawIssue(MUSTAFA,{pos:{fromDraftId:null}}));});
+  await t('refused: the pos id already exists (an issue can never point at an existing PO)',async()=>{await issueSeed();await seed('pos/'+IPO,{id:IPO,name:'ALREADY HERE',qty:5});
+    await assertFails(rawIssue(MUSTAFA));
+    const p=await read('pos/'+IPO);if(p.name!=='ALREADY HERE')throw new Error('existing PO overwritten');});
+  await t('refused: a poId that is not a PO number, or a draft pointing at a different PO than the one created',async()=>{await issueSeed();
+    await assertFails(rawIssue(MUSTAFA,{patch:{poId:'PO-7'}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{poId:'PO-008'}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{poId:'x'}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{poId:7}}));});
+  await t('refused: wrong key list (an extra key, a missing key), issuedBy of someone else, issuedAt not a number, rev not +1, updatedBy of someone else',async()=>{await issueSeed();
+    await assertFails(rawIssue(MUSTAFA,{patch:{extra:1}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{po:{code:'X'}}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{issuedBy:'afnan'}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{issuedBy:'afnan'},pos:{issuedBy:'afnan'}}));    // spoofing the issuer on BOTH documents: only the caller binding refuses it
+    await assertFails(rawIssue(MUSTAFA,{patch:{issuedAt:'now'}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{rev:4}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{rev:2}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{updatedBy:'afnan'}}));
+    await assertFails(rawIssue(MUSTAFA,{patch:{sentBackReason:'x'}}));
+    {const fdb=as(MUSTAFA);
+    await assertFails(runTransaction(fdb,async tx=>{const dref=doc(fdb,'po_drafts',DID);await tx.get(dref);await tx.get(doc(fdb,'counters','main'));await tx.get(doc(fdb,'pos',IPO));
+      tx.update(doc(fdb,'counters','main'),{pos:7});tx.set(doc(fdb,'pos',IPO),posDoc());
+      const p=issuedPatch(MUSTAFA);delete p.poId;tx.update(dref,p);}));}});
+  for(const st of ['draft','abandoned']){
+    await t('refused: a '+st+' draft cannot become issued (only ready can), even by an owner with a pos document',async()=>{await issueSeed({status:st,rev:2});
+      await assertFails(rawIssue(AFNAN));
+      const d=await read('po_drafts/'+DID);if(d.status!==st)throw new Error('changed');});}
+  await t('issued is TERMINAL: nobody - an owner included - can edit, abandon, send back, re-ready, re-issue or delete it',async()=>{await issueSeed();
+    const r=await callI(AFNAN,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false})');if(!r.ok)throw new Error(JSON.stringify(r));
+    for(const w of [AFNAN,AMMAR,MUSTAFA,UZAIB]){
+      const u=w.u,base={rev:4,updatedAt:NOW+9,updatedBy:u};
+      for(const patch of [{po:{a:1}},{status:'abandoned',abandonedAt:NOW,abandonedBy:u,abandonedReason:'x'},{status:'draft',sentBackAt:NOW,sentBackBy:u,sentBackReason:'x'},{status:'ready',readyAt:NOW,readyBy:u},
+          {status:'issued',poId:'PO-008',issuedAt:NOW+9,issuedBy:u},{poId:'PO-099'},{status:'issued'}])
+        await assertFails(updateDoc(doc(as(w),'po_drafts',DID),Object.assign({},base,patch)));
+      await assertFails(deleteDoc(doc(as(w),'po_drafts',DID)));}
+    const d=await read('po_drafts/'+DID);if(d.status!=='issued'||d.poId!==IPO)throw new Error('issued draft changed');});
+  await t('the writer refuses a second issue of an issued draft ("already issued as PO-007") and spends no number',async()=>{await issueSeed();
+    await callI(MUSTAFA,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false})');
+    const r=await callI(MUSTAFA,'phIssueDraft("'+DID+'",{expectedRev:3,now:'+nx()+',followUps:false})');
+    if(r.ok||!/already issued as PO-007/.test(r.error))throw new Error(JSON.stringify(r));
+    if((await read('counters/main')).pos!==7)throw new Error('a number was spent');});
+  await t('two concurrent issues of one draft through the real SDK: one wins, the other is refused, one number is spent',async()=>{await issueSeed();
+    const [x,y]=await Promise.all([callI(MUSTAFA,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false,rand:"aaaa"})'),callI(MUSTAFA,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false,rand:"bbbb"})')]);
+    const oks=[x,y].filter(r=>r.ok);if(oks.length!==1)throw new Error('expected exactly one winner: '+JSON.stringify([x,y]));
+    const c=await read('counters/main');if(c.pos!==7||(await read('pos/PO-008')))throw new Error('a number was burned or a second PO exists: '+JSON.stringify(c));});
+  await t('a failed issue (incomplete stored po) writes nothing: no PO, the counter and the draft untouched',async()=>{await issueSeed({po:Object.assign({},ISS_PO,{fabric:''})});
+    const r=await callI(MUSTAFA,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false})');if(r.ok||r.code!=='refused'||!/not complete/.test(r.error))throw new Error(JSON.stringify(r));
+    if((await read('counters/main')).pos!==6||(await read('pos/'+IPO))||(await read('po_drafts/'+DID)).status!=='ready')throw new Error('something changed');});
+  await t('the pos rule is unchanged: a signed-in user can still create a pos document directly (only the draft transition is gated); the history row of the issue needs the audience',async()=>{await issueSeed();
+    await assertSucceeds(setDoc(doc(as(RAEES),'pos','PO-050'),{id:'PO-050',name:'classic'}));
+    await assertFails(setDoc(doc(as(RAEES),'pos','PO-050','history','1790000000000-abcd'),{at:NOW,by:'raees',byName:'Raees',type:'issued',from:'',to:'',reason:'',data:{}}));});
 
   await env.cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

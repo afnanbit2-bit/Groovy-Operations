@@ -18,8 +18,8 @@ const {suite}=harness;
 const ROOT=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
 const J=JSON.stringify;
-const ORDER=['ph-core','ph-data','ph-write','ph-ui','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin'];
-const MODS=ORDER.slice(4);
+const ORDER=['ph-core','ph-data','ph-write','ph-issue','ph-ui','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin'];
+const MODS=ORDER.slice(5);
 const TABS=['overview','queue','calendar','cutting','monitor','reports','masters','standards','settings'];
 const USERS={
   afnan:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},ammar:{uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner'},
@@ -51,7 +51,7 @@ module.exports=async function(){
   const names=tags.map(t=>t[1].replace(/\.js$/,''));
   const idx=n=>names.indexOf(n);
   s.ok('every Production Ops script has exactly ONE tag',ORDER.every(n=>names.filter(x=>x===n).length===1));
-  s.ok('in the documented order: core, data, write, ui, then the modules',ORDER.every((n,i)=>i===0||idx(n)>idx(ORDER[i-1])));
+  s.ok('in the documented order: core, data, write, issue, ui, then the modules',ORDER.every((n,i)=>i===0||idx(n)>idx(ORDER[i-1])));
   s.ok('all of them before the Firebase module',html.indexOf('<script type="module">')>html.indexOf('/js/ph-mod-admin.js'));
   const vs=ORDER.map(n=>{const t=tags.filter(x=>x[1]===n+'.js')[0];return t&&t[2];});
   s.ok('each has a ?v= tag',vs.every(v=>/^[0-9a-z]+$/.test(v||'')));
@@ -97,6 +97,9 @@ module.exports=async function(){
   const strip=t=>t.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,'');
   const WRITE=/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch|runTransaction)\s*\(|\btx\.(set|update|delete)\s*\(|\bbatch\.(set|update|delete|commit)\s*\(/;
   s.ok('no ph-mod-* file calls a Firestore write API',MODS.every(n=>!WRITE.test(strip(read('js/'+n+'.js')))));
+  s.ok('ph-issue.js is the ONE other file that writes (Issue as PO, 14 Oct 2026): one transaction, and its collections are pos (a NEW document through mintNextIdInTx), counters (through it), po_drafts and pos/{id}/history',(()=>{const t=strip(read('js/ph-issue.js'));
+    const docs=Array.from(new Set((t.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
+    return J(docs)===J(['po_drafts','pos'])&&(t.match(/runTransaction\(/g)||[]).length===1&&!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch)\s*\(/.test(t);})());
   s.ok('ph-ui.js and ph-data.js call none either',!WRITE.test(strip(read('js/ph-ui.js')))&&!WRITE.test(strip(read('js/ph-data.js'))));
   const wsrc=strip(read('js/ph-write.js'));
   const colls=Array.from(new Set((wsrc.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
@@ -110,7 +113,7 @@ module.exports=async function(){
   const pat=/^(?:async\s+)?(?:function\s*\*?\s*([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*))/gm;
   for(const n of ORDER){let m;const t=read('js/'+n+'.js');while((m=pat.exec(t))){const k=m[1]||m[2];(decl[k]=decl[k]||[]).push(n);}}
   const dups=Object.keys(decl).filter(k=>decl[k].length>1);
-  s.eq('no duplicates across the eleven Production Ops files',J(dups),J([]));
+  s.eq('no duplicates across the twelve Production Ops files',J(dups),J([]));
   const other=fs.readdirSync(path.join(ROOT,'js')).filter(f=>/\.js$/.test(f)&&!/^ph-/.test(f));
   const odecl=Object.create(null);
   for(const f of other){let m;const t=read('js/'+f);while((m=pat.exec(t))){odecl[m[1]||m[2]]=f;}}
@@ -128,7 +131,7 @@ module.exports=async function(){
   brk('a module never registers',()=>{const T=mk('afnan',n=>n==='ph-mod-reports'?mut(read('js/ph-mod-reports.js'),"if(typeof phRegisterTab==='function')phRegisterTab('reports',{render:phrRender});",""):read('js/'+n+'.js'));return T.a.run('PH_TABS.map(t=>t.render)').every((r,i)=>r!==T.renders0[i]);},"every tab's render was replaced by a module (none is still the shell's placeholder)");
   brk('script tag missing',()=>{const h=html.replace(/<script src="\/js\/ph-mod-monitor\.js[^\n]*\n/,'');return ORDER.every(n=>(h.match(new RegExp('/js/'+n+'\\.js','g'))||[]).length===1);},'every Production Ops script has exactly ONE tag');
   brk('precache line missing',()=>{const w=sw.replace("  '/js/ph-mod-cutting.js',\n",'');return ORDER.every(n=>(w.match(new RegExp("'/js/"+n+"\\.js'",'g'))||[]).length===1);},'every Production Ops script is in PRECACHE_URLS exactly once');
-  brk('cache version not bumped',()=>+(/CACHE_VERSION = 'v(\d+)'/.exec(sw.replace(/v314/,'v313'))||[0,0])[1]>=314,'CACHE_VERSION is past v313');
+  brk('cache version not bumped',()=>+(/CACHE_VERSION = 'v(\d+)'/.exec(sw.replace(/CACHE_VERSION = 'v\d+'/,"CACHE_VERSION = 'v313'"))||[0,0])[1]>=314,'CACHE_VERSION is past v313');
   brk('two scripts share one ?v= tag',()=>{const h=html.replace('ph-mod-admin.js?v=20261013pha2','ph-mod-admin.js?v=20261013phq2');const t2=(h.match(/<script src="\/js\/[^"]+"/g)||[]).map(t=>/\/js\/([^?"]+)(?:\?v=([^"]*))?/.exec(t));const v2=ORDER.map(n=>t2.filter(x=>x[1]===n+'.js')[0][2]);return new Set(v2).size===v2.length;},'and no two of them share one (a shared tag would hide a changed file behind an unchanged URL)');
   brk('a module writes directly',()=>!WRITE.test(strip(mut(read('js/ph-mod-calendar.js'),"r=await phSaveCutJob(poId,{plannedCutDate:plan.to},o);","r=await phSaveCutJob(poId,{plannedCutDate:plan.to},o);await updateDoc(doc(db,'pos',poId),{x:1});"))),'no ph-mod-* file calls a Firestore write API');
   brk('a css block left unclosed',()=>{const c=css.replace('/* ph-mod-monitor END */','');const t=c.slice(c.indexOf('/* ph-mod-queue START */'));return t.split('/* ph-mod-monitor END */').length===2;},'the trailing run is only ph-mod-* blocks, one per module');

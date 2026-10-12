@@ -5817,6 +5817,10 @@ body.ph-fullscreen #bug-report-fab{bottom:20px}
 .phd-danger{border-color:var(--accent-urgent);color:var(--accent-urgent)}
 .phd-danger:disabled{border-color:var(--border);color:var(--muted)}
 .phd-issue{margin-top:8px;width:100%}
+.phd-issued{margin:10px 0 0;font-size:15px;font-weight:700;color:var(--accent-success)}
+.phd-openpo{margin-top:8px;width:100%}
+.phd-wait{color:var(--text);font-weight:600}
+.phd-issue-sum{margin:8px 0}
 .phd-fine{margin:8px 0 0;font-size:13px;line-height:1.5;color:var(--muted)}
 .phd-bad{color:var(--accent-urgent)}
 .phd-note-ok{background:var(--accent-success-soft);border-color:var(--accent-success)}

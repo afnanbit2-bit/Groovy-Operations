@@ -22,9 +22,11 @@
          pcOnlyHard true   no override: nothing is written from this screen (writers are not called);
          pcOnlyHard false  a visible warning and an explicit "Edit anyway on this screen" button;
          setting unread    treated as true (fail closed) and said so.
-     - NO ISSUING: nothing here creates a `pos` document or writes any existing collection. "Issue as
-       PO" is a disabled control that says it arrives in a later wave (its own transaction and a rules
-       change). No PDF is made: the summary is a read-only panel.
+     - ISSUING (14 Oct 2026): a READY draft is issued as a real PO by a MANAGER only (Afnan, Ammar,
+       Mustafa), through js/ph-issue.js phIssueDraft (one transaction; this file writes nothing itself).
+       The button is a two-step confirm; Kashif (uzaib) sees "Ready - waiting for Mustafa" and no button
+       that works. An issued draft is read-only and says "Issued as PO-nnn". Issuing is not PC-only (it is
+       a decision, not data entry). No PDF is made: the summary is a read-only panel.
 
    Rules held: writes only through ph-write.js, to po_drafts; nothing is read or shown as zero when its
    read failed (a failed or unread collection is named, never an empty list); PKT days; every stored
@@ -37,7 +39,7 @@
 const PH_DRAFTS_TEXT_MAX=Object.freeze({code:40,name:200,pattern:80,fabric:120,fabricCode:60,store:80,totalRoll:40,notes:500});
 const PH_DRAFTS_COPIES=Object.freeze([['embroidery','Embroidery'],['printing','Printing'],['washing','Washing']]);   // = js/pos.js _PO_JOBCOPY_KEYS / labels
 const PH_DRAFTS_SEASONS=Object.freeze([['winter','Winter'],['summer','Summer'],['all','All-season']]);
-const PH_DRAFTS_FILTERS=Object.freeze([['open','Open'],['draft','Draft'],['ready','Ready'],['abandoned','Abandoned'],['all','All']]);
+const PH_DRAFTS_FILTERS=Object.freeze([['open','Open'],['draft','Draft'],['ready','Ready'],['issued','Issued'],['abandoned','Abandoned'],['all','All']]);
 const PH_DRAFTS_MODELS=Object.freeze([['','Automatic (from the article code)'],['alpha','Alpha (XXXS to 2XL)'],['waist','Waist (26 to 40)'],['free','Free size']]);
 const PH_DRAFTS_FIELD_LABELS=Object.freeze({code:'Article code',name:'Article name',sizes:'Sizes',qty:'Quantity',fabric:'Fabric',plannedFabricQty:'Planned fabric quantity',
   plannedFabricUnit:'Planned fabric unit',season:'Season',plannedCutDate:'Planned cut date',requestedDate:'Requested date',cutMaster:'Cutting master',draft:'Draft'});
@@ -280,13 +282,13 @@ function _phdSortRows(rows){
   return rows.slice().sort(function(a,b){const x=Number(a.updatedAt)||0,y=Number(b.updatedAt)||0;return y-x||(a.fbKey<b.fbKey?-1:a.fbKey>b.fbKey?1:0);});
 }
 function _phdRowStatus(r){return typeof r.status==='string'&&r.status?r.status:'unknown';}
-function _phdStatusChip(s){return _phdChip(s,s==='ready'?'ok':s==='abandoned'?'bad':'view');}
+function _phdStatusChip(s){return _phdChip(s,s==='ready'||s==='issued'?'ok':s==='abandoned'?'bad':'view');}
 function _phdPaintList(wrap){
   const g=_phdGet('drafts');
   const wc=_phdWriteCheck();
   const newBtn=_phdBtn('ph-btn-primary','New draft',function(){_phdNew();},{'data-act':'new'});
   if(!wc.ok){_phdOff(newBtn);newBtn.setAttribute('title',wc.why);}
-  wrap.appendChild(_phdHeader('PO Drafts','PC-only entry. A draft is complete before it is marked ready; a ready draft is what gets issued as a PO in a later wave.',[_phdChip('PC-only entry','view')],[newBtn]));
+  wrap.appendChild(_phdHeader('PO Drafts','PC-only entry. A draft is complete before it is marked ready; a ready draft is issued as a PO by a manager (Mustafa, Afnan or Ammar).',[_phdChip('PC-only entry','view')],[newBtn]));
   const banner=_phdPcBanner();if(banner)wrap.appendChild(banner);
   const nn=_phdNoteNode();if(nn)wrap.appendChild(nn);
   if(_phdLoading){const s=_phdEl('section','ph-card phd-card');s.setAttribute('role','status');s.appendChild(_phdEl('p','ph-note','Reading po_drafts…'));wrap.appendChild(s);return;}
@@ -327,6 +329,8 @@ function _phdRowNode(r,masters){
   const chips=_phdEl('div','phd-row-chips');
   const st=_phdRowStatus(r);
   chips.appendChild(_phdStatusChip(st));
+  if(st==='issued'&&r.poId)chips.appendChild(_phdChip('Issued as '+r.poId,'ok'));
+  if(st==='ready'&&!_phdCanManage())chips.appendChild(_phdChip('Ready - waiting for Mustafa','wait'));
   if(st==='draft'||st==='ready'){
     if(masters===null)chips.appendChild(_phdChip('not checked','wait'));
     else{const gate=phPoComplete(po,{masters:masters,today:_phdToday()});chips.appendChild(gate.ok?_phdChip('Complete','ok'):_phdChip(gate.missing.length+' missing','bad'));}
@@ -362,7 +366,7 @@ function _phdOpen(id){
   if(!row){_phdSetNote('err','Draft '+id+' is not in the list that was read. Retry the read.');_phdView='list';_phdPaint();return false;}
   _phdForm={id:row.fbKey,rev:row.rev,status:_phdRowStatus(row),owner:_phdUser(),f:_phdFromPo(row.po),dirty:false,seq:0,
     meta:{createdByName:row.createdByName||row.createdBy||'',createdAt:row.createdAt,updatedBy:row.updatedBy||'',updatedAt:row.updatedAt,
-      sentBackReason:row.sentBackReason||'',abandonedReason:row.abandonedReason||''}};
+      sentBackReason:row.sentBackReason||'',abandonedReason:row.abandonedReason||'',poId:row.poId||'',issuedBy:row.issuedBy||'',issuedAt:row.issuedAt||null}};
   _phdView='form';_phdNote=null;_phdAsk=null;_phdPaint();return true;
 }
 function _phdBack(force){
@@ -374,7 +378,8 @@ function _phdBack(force){
 function _phdEditable(){return!!_phdForm&&_phdForm.status==='draft'&&_phdWriteCheck().ok;}
 function _phdWhyReadOnly(){
   const f=_phdForm;if(!f)return'';
-  if(f.status==='ready')return'This draft is READY: it is locked. A manager can send it back to draft to edit it.';
+  if(f.status==='ready')return'This draft is READY: it is locked, waiting for a manager to issue it as a PO. A manager can send it back to draft to edit it.';
+  if(f.status==='issued')return'This draft was issued as '+(f.meta&&f.meta.poId?f.meta.poId:'a PO')+'. It is final and cannot be edited.';
   if(f.status==='abandoned')return'This draft was abandoned'+(f.meta&&f.meta.abandonedReason?' ('+f.meta.abandonedReason+')':'')+'. It is kept for the record and cannot be edited.';
   if(f.status!=='draft')return'This draft is '+f.status+' and cannot be edited here.';
   const wc=_phdWriteCheck();
@@ -637,7 +642,7 @@ function _phdAddEmbellishment(main){
   const copies=_phdEl('div','phd-checks');
   PH_DRAFTS_COPIES.forEach(function(c){copies.appendChild(_phdCheck('phd-jc-'+c[0],c[1],f.jobCopies[c[0]],function(v){_phdForm.f.jobCopies[c[0]]=v;}));});
   main.appendChild(_phdCard('Embellishment and job copies',[row,_phdEl('div','phd-hint','Job copies to print. They print separately from the PO. Leave all unticked for none.'),copies,
-    _phdEl('div','phd-hint','The embellishment recipe lookup and the product photos are attached when the PO is issued (a later wave); a draft only records the choice.')]));
+    _phdEl('div','phd-hint','The embellishment recipe is looked up when the PO is issued; product photos and fabric rolls are not part of a draft (the PO is created without photos and reserves no rolls). A draft only records the choice.')]));
 }
 function _phdAddNotes(main){
   const f=_phdForm.f;
@@ -675,11 +680,25 @@ function _phdAddActions(aside){
   }
   card.appendChild(row);
   if(busy)card.appendChild(_phdEl('p','phd-fine','Working…'));
-  // NO ISSUING from this module: a disabled control that says so
-  const issue=_phdBtn('phd-issue','Issue as PO (later wave)',null,{'data-act':'issue','aria-disabled':'true'});_phdOff(issue);
-  issue.setAttribute('title','Issuing creates the PO number and the PO in its own transaction and needs a rules change. It arrives in a later wave.');
-  card.appendChild(issue);
-  card.appendChild(_phdEl('p','phd-fine','Issuing a ready draft as a PO (the PO number and the pos document) is a later wave: it needs its own transaction and a rules change. Nothing here creates a PO.'));
+  // ISSUE AS PO: managers only, ready drafts only, a two-step confirm. Kashif sees why it is not his.
+  const mgr=_phdCanManage();
+  if(st==='issued'){
+    const po=f.meta&&f.meta.poId?f.meta.poId:'';
+    card.appendChild(_phdEl('p','phd-issued','Issued as '+(po||'a PO')+'.'));
+    if(po&&typeof phqOpenPO==='function'&&typeof window!=='undefined'&&window&&typeof window.openPODetail==='function')
+      card.appendChild(_phdBtn('ph-btn-primary phd-openpo','Open '+po,function(){phqOpenPO(po);},{'data-act':'openpo'}));
+    card.appendChild(_phdEl('p','phd-fine','This draft is final. The PO was created reserved, like one from the New PO form, without photos and with no fabric rolls reserved.'));
+  }else if(st==='ready'||(st==='draft'&&f.id)||!f.id){
+    const label=st==='ready'?(mgr?'Issue as PO':'Ready - waiting for Mustafa'):'Issue as PO';
+    const issue=_phdBtn('phd-issue'+(st==='ready'&&mgr?' ph-btn-primary':''),label,function(){_phdAsk={kind:'issue'};_phdPaint();},{'data-act':'issue'});
+    if(st!=='ready'||!mgr||busy||!f.id){
+      _phdOff(issue);issue.setAttribute('aria-disabled','true');
+      issue.setAttribute('title',st!=='ready'?'Only a READY draft can be issued. Mark it ready first.':!mgr?'Ready. A manager (Mustafa, Afnan or Ammar) issues it as a PO.':'Working...');
+    }
+    card.appendChild(issue);_phdRefs.actionBtns.push(issue);
+    if(st==='ready'&&!mgr)card.appendChild(_phdEl('p','phd-fine phd-wait','Ready - waiting for Mustafa. He issues it as a PO; you will see "Issued as PO-nnn" here.'));
+    if(st==='ready'&&mgr)card.appendChild(_phdEl('p','phd-fine','Issuing creates the PO number and the PO in one step. It asks you to confirm first.'));
+  }
   if(_phdAsk)card.appendChild(_phdAskNode());
   aside.appendChild(card);
 }
@@ -689,8 +708,19 @@ function _phdAskNode(){
   const texts={abandon:'Abandon this draft? It stays in the list as abandoned and cannot be edited. A reason is required.',
     sendback:'Send this ready draft back to draft so it can be edited. A reason is required.',
     discard:'Discard this new draft? Nothing was saved, so nothing is written.',
-    leave:'Leave this draft? Your unsaved changes will be lost.'};
+    leave:'Leave this draft? Your unsaved changes will be lost.',
+    issue:'Issue this draft as a real PO? This cannot be undone: the draft becomes final and a PO is created.'};
   box.appendChild(_phdEl('p','ph-note',texts[a.kind]||''));
+  if(a.kind==='issue'&&_phdForm){
+    const po=_phdToPo(_phdForm.f).po;
+    const dl=_phdEl('dl','phd-dl phd-issue-sum');
+    const kv=function(k,v){dl.appendChild(_phdEl('dt','phd-dt',k));dl.appendChild(_phdEl('dd','phd-dd',v||'-'));};
+    kv('Article',(po.code||'')+(po.code&&po.name?' - ':'')+(po.name||''));
+    kv('Quantity',po.qty!=null?po.qty+' pcs':'');
+    kv('PO number','Not known yet - it is given the moment the PO is created');
+    kv('Created as','Reserved (like the New PO form), no photos, no fabric rolls reserved');
+    box.appendChild(dl);
+  }
   let ta=null;
   if(a.kind==='abandon'||a.kind==='sendback'){
     ta=_phdEl('textarea','phd-in phd-ta');ta.id='phd-f-ask-reason';ta.setAttribute('rows','2');ta.setAttribute('maxlength','500');ta.setAttribute('placeholder','Reason');
@@ -698,8 +728,9 @@ function _phdAskNode(){
     ta.addEventListener('input',function(){a.reason=ta.value;});
     box.appendChild(_phdFieldWrap('ask-reason','Reason',ta));_phdRefs.reason=ta;
   }
-  const ok=_phdBtn(a.kind==='leave'||a.kind==='discard'?'ph-btn-primary':'phd-danger',a.kind==='leave'?'Discard changes and leave':a.kind==='discard'?'Discard':a.kind==='abandon'?'Abandon':'Send back',function(){
+  const ok=_phdBtn(a.kind==='leave'||a.kind==='discard'||a.kind==='issue'?'ph-btn-primary':'phd-danger',a.kind==='leave'?'Discard changes and leave':a.kind==='discard'?'Discard':a.kind==='issue'?'Yes, issue it as a PO':a.kind==='abandon'?'Abandon':'Send back',function(){
     const reason=ta?ta.value:'';
+    if(a.kind==='issue'){_phdRun(_phdIssue);return;}
     if(a.kind==='leave'){_phdBack(true);return;}
     if(a.kind==='discard'){_phdForm=null;_phdView='list';_phdAsk=null;_phdSetNote('ok','Discarded. Nothing had been saved.');_phdPaint();return;}
     _phdRun(function(){return a.kind==='abandon'?_phdAbandon(reason):_phdSendBack(reason);});
@@ -798,7 +829,7 @@ function _phdSummary(po,gate,t){
   row('Job copies',jc.length?jc.join(', '):'None');
   if(po.notes)row('Notes',po.notes);
   card.appendChild(dl);
-  card.appendChild(_phdEl('p','phd-fine','Read-only. Nothing is printed from here: the PO is printed after it is issued (a later wave).'));
+  card.appendChild(_phdEl('p','phd-fine','Read-only. Nothing is printed from here: the PO is printed from its own page after it is issued.'));
   return card;
 }
 
@@ -856,6 +887,23 @@ async function _phdReady(){
   }else{
     const miss=r&&Array.isArray(r.missing)?' Missing: '+_phdFmtList(r.missing.map(function(m){return _phdLabel(m.field)+' ('+m.why+')';}))+'.':'';
     _phdSetNote('err',((r&&r.error)||'The draft could not be marked ready.')+(r&&r.error&&miss?'':miss),r&&r.code==='stale'?{code:'stale'}:null);
+  }
+}
+async function _phdIssue(){
+  const f=_phdForm;
+  if(!_phdCanManage()){_phdAsk=null;_phdSetNote('err','Only a manager (Afnan, Ammar, Mustafa) can issue a draft as a PO.');return;}
+  if(!f||!f.id||f.status!=='ready'){_phdAsk=null;_phdSetNote('err','Only a saved, READY draft can be issued.');return;}
+  if(typeof phIssueDraft!=='function'){_phdAsk=null;_phdSetNote('err','js/ph-issue.js did not load - refresh the page.');return;}
+  if(typeof navigator!=='undefined'&&navigator&&navigator.onLine===false){_phdAsk=null;_phdSetNote('err','No connection. Issuing a PO needs one (it is a single transaction and cannot be queued). Nothing was created.');return;}
+  const r=await phIssueDraft(f.id,{expectedRev:f.rev});
+  _phdAsk=null;
+  if(r&&r.ok){
+    f.status='issued';f.rev=r.rev;f.dirty=false;f.meta=f.meta||{};f.meta.poId=r.poId;f.meta.issuedBy=_phdUser();f.meta.issuedAt=r.draft&&r.draft.issuedAt||null;
+    const fu=r.followUps||{};
+    const bad=['activity','recipe','trim'].filter(function(k){return /^failed/.test(String(fu[k]||''));});
+    _phdSetNote('ok','Issued as '+r.poId+'. The PO is reserved, like one from the New PO form.'+(fu.trim==='created'?' A trim issue request was created.':'')+(bad.length?' Follow-up step failed ('+bad.join(', ')+'); the PO itself is fine.':''));
+  }else{
+    _phdSetNote('err',(r&&r.error)||'The draft could not be issued. Nothing was created.',r&&r.code==='stale'?{code:'stale'}:null);
   }
 }
 async function _phdAbandon(reason){

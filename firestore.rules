@@ -1136,9 +1136,9 @@ service cloud.firestore {
     // tests/rules-emulator-ph.js. REPUBLISH REQUIRED: until it is, every read and
     // write below is default-denied and the loaders say so by collection name.
 
-    // po_drafts/{DRAFT-…}: a PO entered on a PC before it has a number. 'issued' is
-    // NOT a status here yet -- the issue transaction (which also creates the pos
-    // document) arrives with its own rules change.
+    // po_drafts/{DRAFT-…}: a PO entered on a PC before it has a number. 'issued' is the
+    // TERMINAL status (14 Oct 2026): reachable only from 'ready', only by a manager, only
+    // in the same commit that creates the pos document (see phDraftStep / phIssueOk).
     match /po_drafts/{id} {
       allow read: if isQaRead() || signedIn();
       allow create: if isProdOps()
@@ -1164,7 +1164,9 @@ service cloud.firestore {
     //   ready     -> draft      send back       managers   (sentBackAt number, sentBackBy = caller, reason 1..500)
     //   draft     -> abandoned  abandon         audience   (abandonedAt number, abandonedBy = caller, reason 1..500)
     //   ready     -> abandoned  abandon         managers   (same keys; the floor (uzaib) cannot abandon a ready draft)
-    //   ready -> ready, anything -> issued: refused.
+    //   ready     -> issued     issue as PO     managers   (issuedAt number, issuedBy = caller, poId; the same commit creates
+    //                                                        a NEW pos/{poId} that names this draft -- phIssueOk; 'issued' is terminal)
+    //   ready -> ready, draft -> issued, anything leaving issued: refused.
     function phDraftStep(r, d) {
       let k = d.diff(r).affectedKeys();
       return r.get('status', '') in ['draft', 'ready']
@@ -1186,7 +1188,23 @@ service cloud.firestore {
             || // abandon (never delete)
                ((r.status == 'draft' || (r.status == 'ready' && isProdOpsManager())) && d.status == 'abandoned' && phBy(d.get('abandonedBy', ''))
                   && d.get('abandonedAt', null) is number && phReasonOk(d.get('abandonedReason', null))
-                  && k.hasOnly(['status','rev','abandonedAt','abandonedBy','abandonedReason','updatedAt','updatedBy'])));
+                  && k.hasOnly(['status','rev','abandonedAt','abandonedBy','abandonedReason','updatedAt','updatedBy']))
+            || // issue as a PO (managers; terminal)
+               (r.status == 'ready' && d.status == 'issued' && isProdOpsManager() && phBy(d.get('issuedBy', ''))
+                  && d.get('issuedAt', null) is number
+                  && k.hasOnly(['status','rev','poId','issuedAt','issuedBy','updatedAt','updatedBy'])
+                  && phIssueOk(d)));
+    }
+    // The pos document an issue creates: the id is a PO number, it did NOT exist before this
+    // commit, it exists after it, and it names this draft and this issuer. (exists() reads the
+    // state before the commit, existsAfter()/getAfter() the state after it.)
+    function phIssueOk(d) {
+      return d.get('poId', '') is string
+        && d.get('poId', '').matches('^PO-[0-9]{3,}$')
+        && !exists(/databases/$(database)/documents/pos/$(d.get('poId', '')))
+        && existsAfter(/databases/$(database)/documents/pos/$(d.get('poId', '')))
+        && getAfter(/databases/$(database)/documents/pos/$(d.get('poId', ''))).data.get('fromDraftId', '') == d.get('id', '')
+        && getAfter(/databases/$(database)/documents/pos/$(d.get('poId', ''))).data.get('issuedBy', '') == d.get('issuedBy', '');
     }
 
     // po_cut_jobs/{PO-nnn}: the planned cut job of one PO (id = the PO id). 'overridden'

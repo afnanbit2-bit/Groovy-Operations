@@ -30,7 +30,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 /* ── Field lists. firestore.rules mirrors each; tests/ph-data.test.js holds them equal. ─ */
-const PH_DRAFT_STATUSES=Object.freeze(['draft','ready','abandoned']);   // 'issued' is reserved for the later issue transaction (needs a rules change with it)
+const PH_DRAFT_STATUSES=Object.freeze(['draft','ready','abandoned','issued']);   // 'issued' is terminal and is written ONLY by js/ph-issue.js (phIssueDraft: managers, from ready, in the transaction that creates the pos document)
 const PH_DRAFT_CREATE_FIELDS=Object.freeze(['id','status','rev','entryDevice','createdBy','createdByName','createdAt','updatedAt','updatedBy','po']);
 const PH_DRAFT_EDIT_FIELDS=Object.freeze(['po','rev','updatedAt','updatedBy']);
 const PH_DRAFT_READY_FIELDS=Object.freeze(['status','po','rev','readyAt','readyBy','updatedAt','updatedBy']);
