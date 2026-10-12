@@ -2518,3 +2518,45 @@ onAuthStateChanged(auth,async user=>{
   }
 });
 };
+
+/* ── Share a generated file to WhatsApp (Oct 2026) ───────────────────────────
+   phShareFile(blob, filename, text) -> 'shared' | 'cancelled' | 'downloaded'
+   Phones (navigator.canShare({files}) true): the share sheet, the person picks
+   the WhatsApp group. Anywhere else: the file is DOWNLOADED, wa.me opens with
+   the caption and a toast says to attach it. Nothing here ever claims a message
+   was sent. A cancelled share (AbortError) is silent; any other share error is
+   toasted and falls back to the download. */
+async function phShareFile(blob, filename, text) {
+  const nav = (typeof navigator !== 'undefined') ? navigator : null;
+  const _dl = function () {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    if (document.body && document.body.appendChild) document.body.appendChild(a);
+    a.click();
+    if (a.remove) a.remove();
+    setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+  };
+  let file = null;
+  try { file = new File([blob], filename, { type: 'application/pdf' }); } catch (e) { file = null; }
+  if (file && nav && typeof nav.share === 'function' && typeof nav.canShare === 'function') {
+    let can = false;
+    try { can = !!nav.canShare({ files: [file] }); } catch (e) { can = false; }
+    if (can) {
+      try {
+        await nav.share({ files: [file], title: filename, text: text || '' });
+        return 'shared';
+      } catch (e) {
+        if (e && e.name === 'AbortError') return 'cancelled';
+        showToast('Could not open the share sheet (' + ((e && e.message) || 'unknown') + ') — PDF saved instead, attach it in the group.', true);
+        _dl();
+        return 'downloaded';
+      }
+    }
+  }
+  _dl();
+  try { window.open('https://wa.me/?text=' + encodeURIComponent(text || ''), '_blank'); } catch (e) {}
+  showToast('PDF saved — attach it in the group');
+  return 'downloaded';
+}
+window.phShareFile = phShareFile;

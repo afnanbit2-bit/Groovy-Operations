@@ -1645,6 +1645,7 @@ function _fulfillLogRow(r){
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0">
       <button class="btn-pdf" onclick="window.fulfillPdf('${r.date}')">PDF</button>
+      <button class="btn-outline" onclick="window.fulfillShareWa('${r.date}')">Share to WhatsApp</button>
       <button class="btn-outline" onclick="window.fulfillEditDate('${r.date}')">Edit</button>
     </div>
   </div>`;
@@ -1805,6 +1806,24 @@ window.fulfillExport=function(){
   }
 };
 
+// The ONE definition of what the day's PDF carries (fulfillPdf and the
+// WhatsApp share both build from it, so the numbers cannot differ).
+function _fulfillPdfData(r,date){
+  return {
+    documentType:'Daily Performance',
+    id:date,
+    date:date,
+    dateLabel:_fulfillFmtDate(date),
+    issuedDate:_fulfillFmtDate(date),
+    issuedBy:r.enteredBy||r.updatedBy||'—',
+    dispatched:r.dispatched||[],
+    returns:r.returns||[],
+    dispatchedTotal:r.dispatchedTotal||{shipments:0,amount:0},
+    returnsTotal:r.returnsTotal||{shipments:0,amount:0},
+    urduLevel:'minimal'
+  };
+}
+
 // Generate (open + download) the one-day PDF via the shared print engine.
 window.fulfillPdf=function(date){
   const r=fulfillReports.find(x=>x.date===date);
@@ -1813,18 +1832,34 @@ window.fulfillPdf=function(date){
   printDocument({
     type:'daily-performance',
     filename:`daily-performance-${date}.pdf`,
-    data:{
-      documentType:'Daily Performance',
-      id:date,
-      date:date,
-      dateLabel:_fulfillFmtDate(date),
-      issuedDate:_fulfillFmtDate(date),
-      issuedBy:r.enteredBy||r.updatedBy||'—',
-      dispatched:r.dispatched||[],
-      returns:r.returns||[],
-      dispatchedTotal:r.dispatchedTotal||{shipments:0,amount:0},
-      returnsTotal:r.returnsTotal||{shipments:0,amount:0},
-      urduLevel:'minimal'
-    }
+    data:_fulfillPdfData(r,date)
   });
+};
+
+// Short plain-text day summary (WhatsApp caption). Pure: reads only the PDF's
+// own data. The date is the stored YYYY-MM-DD day (PKT) formatted from the
+// string, never a UTC slice. phShareFile encodes it for the wa.me link.
+function fulfillWaText(data){
+  const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(data.date||''));
+  const label=m?m[3]+' '+(MON[Number(m[2])-1]||m[2])+' '+m[1]:String(data.date||'');
+  const d=data.dispatchedTotal||{},r=data.returnsTotal||{};
+  const ds=Number(d.shipments||0),da=Number(d.amount||0),rs=Number(r.shipments||0),ra=Number(r.amount||0);
+  const rate=ds>0?Math.round(rs/ds*1000)/10:0;
+  return 'Daily Performance — '+label+'\nDispatched: '+_fnum(ds)+' shipments · '+_fRs(da)+'\nReturns: '+_fnum(rs)+' shipments · '+_fRs(ra)+' ('+rate+'%)';
+}
+window.fulfillWaText=fulfillWaText;
+
+// Build the same PDF as a blob (no tab) and hand it to the share helper.
+window.fulfillShareWa=async function(date){
+  const r=fulfillReports.find(x=>x.date===date);
+  if(!r)return showToast('No saved report for that day — save it first.',true);
+  if(typeof printDocument!=='function')return showToast('Print engine not loaded yet — retry in a moment.',true);
+  const data=_fulfillPdfData(r,date);
+  let out;
+  try{
+    out=await printDocument({type:'daily-performance',filename:`daily-performance-${date}.pdf`,deliver:'blob',data});
+  }catch(e){return showToast('Could not build the PDF: '+(e&&e.message||e),true);}
+  if(!out||!out.blob)return showToast('Could not build the PDF.',true);
+  return phShareFile(out.blob,out.filename||`daily-performance-${date}.pdf`,fulfillWaText(data));
 };
