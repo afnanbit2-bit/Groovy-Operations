@@ -630,6 +630,60 @@ module.exports=async function(){
     s.eq('the PO is not marked done and no override use is stamped',t.store.get('pos/PO-001').cutOverride.usedAt,undefined);
   }
 
+  /* ═══ B16: the bundles must account for the cut, inside the transaction ═══ */
+  s.section('B16: bundles add up to the cut per size — checked inside the transaction; a size not cut gets no bundles');
+  {
+    const Q=o=>Object.assign({XS:0,S:0,M:0,L:0,XL:0,'2XL':0},o);
+    const B=(...a)=>a.map(([size,units],i)=>({tempId:i+1,size,units}));
+    const OV={cutOverride:{by:'afnan',byName:'Afnan',at:'x',reason:'fabric short',ordered:100}};
+    // The TRANSACTION alone: the button check and the early look in
+    // markCuttingDone are both slipped past, so only the check inside
+    // runTransaction can refuse (the line-626 technique).
+    const txOnly=async(aq,bundles,ov,rawActual)=>{
+      const d=boot({seed:{'pos/PO-001':po1(ov?OV:{}),'counters/main':{pos:1,bundles:40}},
+        cutState:{poId:'PO-001',actualQty:rawActual||Q(aq),pendingBundles:B(...bundles)}});
+      d.syncPOs();
+      d.app.run("cutValidationOk=()=>true;const __real=poCutInputProblem;let __n=0;poCutInputProblem=(a,b)=>(++__n===1?null:__real(a,b));");
+      await d.cut();return d;
+    };
+    const nothing=(d)=>d.store.commits.length+':'+d.bundles().length+':'+d.store.get('pos/PO-001').stages.cutting.done+':'+d.store.get('counters/main').bundles;
+    const refusedTx=async(label,aq,bundles,ov,rx,raw)=>{
+      const d=await txOnly(aq,bundles,ov,raw);
+      s.eq(label+': the transaction alone saves nothing, mints no number',nothing(d),'0:0:false:40');
+      s.ok(label+': and names the size at fault',rx.test(d.lastToast())&&/Nothing was saved/.test(d.lastToast()),d.lastToast());
+      s.eq(label+': the embellishment job was not touched',d.calls.emb.length,0);
+    };
+    await refusedTx('bundles short of the cut (S: 30 of 50)',{S:50,M:50},[['S',30],['M',50]],false,/Size S: the bundles add up to 30 but 50 were cut/);
+    await refusedTx('bundles over the cut (M: 60 of 50)',{S:50,M:50},[['S',50],['M',60]],false,/Size M: the bundles add up to 60 but 50 were cut/);
+    await refusedTx('the same under an owner override (it widens the gate, not this)',{S:250},[['S',200]],true,/Size S: the bundles add up to 200 but 250 were cut/);
+    await refusedTx('a cut with no bundles at all',{S:100},[],false,/Size S: the bundles add up to 0 but 100 were cut/);
+    await refusedTx('a size with nothing cut (0) but a bundle for it',{S:100,M:0},[['S',100],['M',20]],false,/Size M: nothing was cut \(0\), but 1 bundle \(20 units\) was entered for it/);
+    await refusedTx('a size left blank but with two bundles',{S:100},[['S',100],['L',5],['L',5]],false,/Size L: nothing was cut \(0\), but 2 bundles \(10 units\) were entered for it/,{S:100});
+    await refusedTx('a size missing from the cut (undefined) but bundled',{S:100},[['S',100],['XL',7]],false,/Size XL: nothing was cut \(0\)/,{XS:0,S:100});
+
+    // The button agrees (it already did for under/over; the zero-cut size used to slip past it).
+    const btn=(aq,b)=>boot({cutState:{poId:'PO-001',actualQty:Q(aq),pendingBundles:B(...b)}}).app.run('cutValidationOk({qty:100})');
+    s.eq('the button refuses a bundle for a size that was not cut',btn({S:100,M:0},[['S',100],['M',20]]),false);
+    s.eq('the button still accepts a sound cut',btn({S:50,M:50},[['S',30],['S',20],['M',50]]),true);
+
+    // The pure checker, in words.
+    const d0=boot();
+    const pc=(aq,b)=>d0.app.run('poCutInputProblem('+JSON.stringify(Q(aq))+','+JSON.stringify(B(...b))+')');
+    s.eq('a sound cut has no problem',pc({S:50,M:50},[['S',30],['S',20],['M',50]]),null);
+    s.eq('a size with 0 cut and no bundles is fine',pc({S:100,M:0},[['S',100]]),null);
+    s.eq('first size at fault in size order',pc({XS:5,S:5},[['XS',4],['S',9]]),'Size XS: the bundles add up to 4 but 5 were cut — they must match exactly.');
+    s.eq('a malformed bundle is still reported before the sum',pc({S:50},[['S',0],['S',50]]),'Bundle 1 (S): the units must be a whole number above 0 (got 0).');
+
+    // Valid flows are byte-identical: a size that was not cut is simply absent
+    // from the bundles; the PO and bundle documents keep their shape.
+    const ok=await txOnly({S:100,M:0},[['S',60],['S',40]],false);
+    const p=ok.store.get('pos/PO-001');
+    s.eq('a sound cut with a 0 size still saves',p.currentStage+':'+ok.bundles().join(','),'bundling:B-0041,B-0042');
+    s.eq('cutQty keeps the 0 for the size not cut (same shape as ever)',JSON.stringify(p.cutQty),JSON.stringify(Q({S:100})));
+    s.eq('exactly the bundles entered were minted, counter moved by 2',ok.store.get('counters/main').bundles,42);
+    s.eq('the bundle documents keep their shape',Object.keys(ok.store.get('bundles/B-0041')).sort().join(','),'bundleId,bundleNumber,bundlingDone,createdAt,createdBy,poId,qcReason,qcStatus,size,stage,stitchingDone,ts,units');
+  }
+
   /* ═══ the PO must be at cutting ═══ */
   s.section('only a PO that is waiting to be cut can be cut');
   {

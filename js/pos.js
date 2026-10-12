@@ -829,6 +829,63 @@ function _poCanCancel(){return !!(session&&(session.role==='owner'||session.u===
 // in the app keys off it; poStatus 'cancelled' keeps it out of the reserved /
 // in-production lists. Fabric rolls reserved for the PO are NOT touched here
 // (that is an inventory write the cancel does not own) — the toast says so.
+// ── Cancel also closes the PO's embellishment jobs (Oct 2026) ─────────────
+// WAS: a cancelled PO's printing_jobs stayed open and live on the printing
+// floor, the Observer tower and the SLA clocks. NOW: the cancel and the jobs'
+// cancel land in ONE transaction, and every write only ADDS fields:
+//   cancelled:true, cancelledAt, cancelledBy, cancelledReason,
+//   cancelledFromStage (the stage the job was at), cancelledByPO
+// Nothing is deleted; currentStage, stageHistory and updatedAt are untouched,
+// so a cancel can be read back and undone by hand. js/embellishments.js keeps
+// the cancelled ones out of its job lists (loadPrintingData).
+// A job already closed (finished work) or already cancelled is left alone.
+// A transaction cannot run a query, so the job ids are looked up first and each
+// is READ inside the transaction: one that vanished, was closed or was
+// cancelled meanwhile is judged on its live state. A job created between that
+// lookup and the commit is caught by one sweep right after (_poCancelSweep);
+// the gap left is a job created after the sweep (see CLAUDE.md).
+// PURE. The fields a job gets, or null when it must not be touched.
+function poCancelJobPatch(job,po,cancel){
+  if(!job||typeof job!=='object')return null;
+  if(job.cancelled===true)return null;
+  if(job.currentStage==='closed')return null;
+  if(!_poLinkValues(po).some(v=>_poSamePO(job.poNumber,v)))return null;   // never touch a job that is not this PO's
+  return{cancelled:true,cancelledAt:cancel.at,cancelledBy:cancel.by,cancelledReason:cancel.reason,cancelledFromStage:job.currentStage||null,cancelledByPO:po.id};
+}
+// Ids of this PO's embellishment jobs: the server query (every spelling of the
+// PO's id) plus what the app already holds in memory. NEVER rejects; an answer
+// from the offline cache is not an answer (it counts as failed).
+async function _poFindJobIds(po){
+  const vals=_poLinkValues(po),ids=[];let failed=false;
+  const add=id=>{if(id&&ids.indexOf(id)<0)ids.push(id);};
+  const settled=await Promise.allSettled(vals.map(v=>getDocs(query(collection(db,'printing_jobs'),where('poNumber','==',v)))));
+  settled.forEach(r=>{
+    const cached=r.status==='fulfilled'&&!!r.value&&!!r.value.metadata&&r.value.metadata.fromCache===true;
+    if(r.status==='fulfilled'&&!cached)((r.value&&r.value.docs)||[]).forEach(d=>add(d.id));
+    else failed=true;
+  });
+  try{
+    const mem=(typeof allPrintingJobs!=='undefined'&&Array.isArray(allPrintingJobs))?allPrintingJobs:[];
+    mem.forEach(j=>{if(j&&vals.some(v=>_poSamePO(j.poNumber,v)))add(j._id);});
+  }catch(e){}
+  return{ids,failed};
+}
+// After the commit: look once more and cancel any job the first lookup missed.
+// Best effort — a failure is reported, never allowed to undo the cancel.
+async function _poCancelSweep(po,cancel,done){
+  const found=await _poFindJobIds(po);
+  const swept=[];let failed=found.failed;
+  for(const id of found.ids){
+    if(done.indexOf(id)>-1)continue;
+    try{
+      const ref=doc(db,'printing_jobs',id),snap=await getDoc(ref);
+      const patch=poCancelJobPatch(snap&&snap.exists()?snap.data():null,po,cancel);
+      if(!patch)continue;
+      await updateDoc(ref,patch);swept.push({id,patch});
+    }catch(e){failed=true;}
+  }
+  return{swept,failed};
+}
 window.cancelPO=async function(fbKey,poId){
   if(!_poCanCancel()){showToast('Not authorized.',true);return;}
   const po=(typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).find(p=>p.fbKey===fbKey);
@@ -839,16 +896,50 @@ window.cancelPO=async function(fbKey,poId){
   if(st===PO_STATUS.COMPLETE||po.currentStage==='completed'){showToast(`${id} is completed and cannot be cancelled.`,true);return;}
   const reason=String(prompt(`Why is ${id} being cancelled? (Required — it is kept on the PO.)`,'')||'').trim();
   if(!reason){showToast(`${id} was NOT cancelled: a reason is required. Nothing was changed.`,true);return;}
-  const patch={
-    poStatus:_PO_CANCELLED,currentStage:null,
-    cancelledAt:new Date().toISOString(),cancelledBy:session.name,cancelledReason:reason,
-    cancelledFromStatus:po.poStatus||st,cancelledFromStage:po.currentStage||null
-  };
   try{
-    await updateDoc(doc(db,'pos',fbKey),patch);
-    await logActivity('PO cancelled',`${id} cancelled by ${session.name} — ${reason}`);
+    const cancel={at:new Date().toISOString(),by:session.name,reason};
+    const found=await _poFindJobIds(po);
+    const poRef=doc(db,'pos',fbKey);
+    const out=await runTransaction(db,async tx=>{
+      // Every read first (a transaction refuses a read after a write).
+      const ps=await tx.get(poRef);
+      const lv=ps.exists()?ps.data():null;
+      const jobSnaps=[];
+      for(const jid of found.ids){const ref=doc(db,'printing_jobs',jid);jobSnaps.push({id:jid,ref,snap:await tx.get(ref)});}
+      if(!lv)return{blocked:'gone'};
+      // Judged on the LIVE document: a second owner who got there first must
+      // not overwrite the first cancel's cancelledFrom* record.
+      const lst=poStatusOf(lv);
+      if(lst===_PO_CANCELLED)return{blocked:'already'};
+      if(lst===PO_STATUS.COMPLETE||lv.currentStage==='completed')return{blocked:'complete'};
+      const patch={
+        poStatus:_PO_CANCELLED,currentStage:null,
+        cancelledAt:cancel.at,cancelledBy:cancel.by,cancelledReason:cancel.reason,
+        cancelledFromStatus:lv.poStatus||lst,cancelledFromStage:lv.currentStage||null
+      };
+      const jobs=[];
+      for(const j of jobSnaps){
+        const jd=j.snap&&j.snap.exists()?j.snap.data():null;
+        const jp=poCancelJobPatch(jd,po,cancel);
+        if(jp)jobs.push({id:j.id,ref:j.ref,patch:jp});
+      }
+      tx.update(poRef,patch);
+      jobs.forEach(j=>tx.update(j.ref,j.patch));
+      return{jobs:jobs.map(j=>({id:j.id,patch:j.patch}))};
+    });
+    if(out.blocked){
+      showToast(out.blocked==='gone'?'PO not found.':out.blocked==='already'?`${id} is already cancelled.`:`${id} is completed and cannot be cancelled.`,true);
+      await loadData();
+      return;
+    }
+    let jobsDone=out.jobs.slice();
+    const sweep=await _poCancelSweep(po,cancel,jobsDone.map(j=>j.id)).catch(()=>({swept:[],failed:true}));
+    jobsDone=jobsDone.concat(sweep.swept);
+    if(typeof embMarkJobsCancelled==='function'&&jobsDone.length){try{embMarkJobsCancelled(jobsDone);}catch(e){}}
+    await logActivity('PO cancelled',`${id} cancelled by ${session.name} — ${reason}${jobsDone.length?` · ${jobsDone.length} embellishment job${jobsDone.length===1?'':'s'} cancelled with it`:''}`);
     const held=_poReservedFabric(id);
-    showToast(`${id} cancelled ✓ — it stays in the registry.${held.rolls?` ${held.rolls} fabric roll(s) are still reserved for it — release them in Fabric Inventory.`:''}`);
+    const unchecked=found.failed&&sweep.failed;
+    showToast(`${id} cancelled ✓ — it stays in the registry.${jobsDone.length?` ${jobsDone.length} embellishment job${jobsDone.length===1?'':'s'} cancelled with it.`:''}${unchecked?' Its embellishment jobs could NOT be checked — look for open jobs on this PO in Embellishment Jobs.':''}${held.rolls?` ${held.rolls} fabric roll(s) are still reserved for it — release them in Fabric Inventory.`:''}`,unchecked);
     await loadData();
     if(currentPage==='po-detail')renderDetailPage();else if(currentPage==='po-registry')renderPage('po-registry');
   }catch(e){showToast('Error: '+e.message,true);}
@@ -1447,6 +1538,18 @@ function poCutInputProblem(actualQty,bundles){
     if(typeof u!=='number'||!isFinite(u)||Math.floor(u)!==u||u<=0)return`Bundle ${i+1} (${b.size}): the units must be a whole number above 0 (got ${shown(u)}).`;
   }
   if(!(total>0))return'The total cut must be above 0.';
+  // B16 (Oct 2026): the bundles must account for the cut EXACTLY, size by size
+  // (so also in total). This used to be judged on the button only; the
+  // transaction trusted whatever arrived. And a size that was not cut (0 or
+  // blank) gets no bundles at all — an empty size must not mint a bundle
+  // number or a bundle document.
+  const per={},cnt={};
+  for(const b of list){per[b.size]=(per[b.size]||0)+b.units;cnt[b.size]=(cnt[b.size]||0)+1;}
+  for(const sz of SZ){
+    const cut=(typeof q[sz]==='number')?q[sz]:0,bundled=per[sz]||0;
+    if(cut===0&&bundled>0)return`Size ${sz}: nothing was cut (0), but ${cnt[sz]} bundle${cnt[sz]===1?'':'s'} (${bundled} units) ${cnt[sz]===1?'was':'were'} entered for it — a size that was not cut gets no bundles.`;
+    if(bundled!==cut)return`Size ${sz}: the bundles add up to ${bundled} but ${cut} were cut — they must match exactly.`;
+  }
   return null;
 }
 function cutValidationOk(po){

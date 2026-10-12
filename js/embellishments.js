@@ -4,6 +4,7 @@
    window by the bootstrap module in index.html before __bootApp() runs.
    Code is byte-identical to the original single-file index.html. */
 
+let allCancelledPrintingJobs=[];   // jobs closed by a PO cancel (js/pos.js cancelPO) — kept out of every job list and count
 let allRecipes=[], allPrintingJobs=[], allQCReports=[], allPrintBilling=[], allSLAEvents=[], allCommNotes=[];
 let allColors=[], colorLibLoaded=false, pendingColorImport=[];
 let _poEmbellishment=null; // set during PO create when recipe is detected
@@ -243,7 +244,12 @@ async function loadPrintingData(){
       getDocs(query(collection(db,'color_library'),orderBy('createdAt','desc'))).catch(()=>({docs:[]}))
     ]);
     allRecipes       = recSnap.docs.map(d=>({...d.data(),_id:d.id}));
-    allPrintingJobs  = jobSnap.docs.map(d=>({...d.data(),_id:d.id}));
+    // A job whose PO was cancelled carries cancelled:true (added by cancelPO).
+    // It stays in Firestore untouched but is not a live job: the lists, the
+    // tower and every count below read allPrintingJobs, so it is kept out here.
+    { const allJobs = jobSnap.docs.map(d=>({...d.data(),_id:d.id}));
+      allPrintingJobs = allJobs.filter(j=>j.cancelled!==true);
+      allCancelledPrintingJobs = allJobs.filter(j=>j.cancelled===true); }
     allQCReports     = qcSnap.docs.map(d=>({...d.data(),_id:d.id}));
     allPrintBilling  = bilSnap.docs.map(d=>({...d.data(),_id:d.id}));
     allSLAEvents     = slaSnap.docs.map(d=>({...d.data(),_id:d.id}));
@@ -2551,8 +2557,21 @@ async function _embUpsertJob(po,patch){
   // A plain garment reaches the printing floor never: no job, no noise.
   if(!po||!po.embellishment||!po.embellishment.required)return null;
   if(!printingDataLoaded)await loadPrintingData().catch(()=>{});
+  // A cancelled PO gets no new job and its cancelled job is not topped up or
+  // re-created (the app's copy of the PO may be stale on a second device).
+  if(po.poStatus==='cancelled'||allCancelledPrintingJobs.some(j=>j.poNumber===po.id))return null;
   const existing=allPrintingJobs.find(j=>j.poNumber===po.id);
   return existing?_embTopUpJob(existing,patch):_embCreateJob(po,patch);
+}
+
+/* Called by cancelPO once the cancel has landed: moves the jobs it cancelled
+   out of the live list in memory (the loader only runs once per session).
+   jobs = [{id, patch}] — the patch is exactly what was written. */
+function embMarkJobsCancelled(jobs){
+  (jobs||[]).forEach(({id,patch})=>{
+    const i=allPrintingJobs.findIndex(j=>j._id===id);
+    if(i>-1){allCancelledPrintingJobs.push({...allPrintingJobs[i],...patch});allPrintingJobs.splice(i,1);}
+  });
 }
 
 async function _embTopUpJob(job,patch){

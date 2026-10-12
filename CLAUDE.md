@@ -10516,14 +10516,84 @@ code; none of it has been run against real Firestore.
   test, and it reports its own result.** The legacy `consumptionLog` matching
   (entries without a `gp:` stamp) is untested on production data.
 - **Known open:** `tests/run.js` can exit 0 without a failure if a test awaits a
-  promise that never settles; the cutting transaction does not re-check
-  per-size bundle sums against the cut (audit B16); `js/fabric.js`
+  promise that never settles (SUPERSEDED 12 Oct 2026, see "Cutting integrity…"
+  below); the cutting transaction does not re-check
+  per-size bundle sums against the cut (audit B16; SUPERSEDED 12 Oct 2026, same
+  section); `js/fabric.js`
   `_fabRestockIssue` (registry delete) is still on the legacy restock path and
   a multi-fabric issue is not atomic (SUPERSEDED 11 Oct 2026 by wave 2, next
   section); an embellishment job is not
-  closed when its PO is cancelled; `firestore.rules` still lets any signed-in
+  closed when its PO is cancelled (SUPERSEDED 12 Oct 2026, same section as
+  above); `firestore.rules` still lets any signed-in
   user write `pos`, `gatepasses` and `counters`, so every gate above is
   app-layer only.
+
+## Cutting integrity, cancel closes jobs, runner watchdog (12 Oct 2026)
+
+`js/pos.js`, `js/embellishments.js`, `tests/run.js`; cache v315. `firestore.rules`
+untouched. No existing document is rewritten or deleted by any of it. **Checked only
+by plain-node suites against an in-memory Firestore stand-in — never run on real
+Firestore, the real SDK or the emulator, and nothing seen on a screen.**
+
+- **B16 and zero-cut sizes (`poCutInputProblem`).** The bundles must add up to the
+  cut EXACTLY, size by size (so also in total), and a size with 0 (or blank) cut gets
+  no bundles — an empty size no longer mints a bundle number or bundle document. It
+  sits at the end of `poCutInputProblem`, which `markCuttingDone` already ran on the
+  live path INSIDE `runTransaction` (and on the button and the early look), so one
+  check serves all three; the owner override still widens only the 70–130% gate,
+  never this. Reasons are named ("Size S: the bundles add up to 30 but 50 were cut…",
+  "Size M: nothing was cut (0), but 1 bundle (20 units) was entered for it…").
+  Also closes a hole found while reading: a cut with NO bundles reached the counter
+  write with `last=undefined` (`Math.max(cur,undefined)`). Valid input is
+  byte-identical (`cutQty` keeps its 0s; bundle documents keep their keys — asserted).
+  **Not covered:** a stray size key in `actualQty` outside XS–2XL is still copied into
+  `cutQty` and ignored by the checks (the fixed set is the cutting screen's, audit B17).
+- **`cancelPO` closes the PO's embellishment jobs.** Jobs link by `printing_jobs.poNumber
+  == po.id`. A transaction cannot query, so `_poFindJobIds` looks them up first (server
+  query on every spelling of the PO id + the app's in-memory list; an offline-cache
+  answer counts as failed), then `runTransaction` READS the PO and each job, judges
+  them on their live state and writes the PO patch (same fields as before, from the LIVE
+  document, so a second owner can no longer overwrite the first cancel's
+  `cancelledFrom*`) plus, on each open job, ONLY `cancelled:true, cancelledAt,
+  cancelledBy, cancelledReason, cancelledFromStage, cancelledByPO` (`poCancelJobPatch`,
+  pure). `currentStage`, `stageHistory`, `updatedAt` and the SLA clock are untouched.
+  Jobs already `closed` or `cancelled`, or not this PO's, are skipped. One sweep after
+  the commit (`_poCancelSweep`) cancels a job created between the lookup and the commit.
+  **Behaviour change:** cancel now needs a connection (it was a queued `updateDoc`).
+  **The window left:** a job created AFTER the sweep (another device with a stale PO list
+  issuing fabric, since `_embUpsertJob` judges the PO it is handed) — `_embUpsertJob`
+  now refuses a PO marked cancelled and one whose cancelled job it holds, which narrows
+  but cannot close that. A failed lookup does not block the cancel: the PO is cancelled,
+  the toast turns red and says the jobs could NOT be checked.
+- **Job lists.** `loadPrintingData` splits `printing_jobs` into `allPrintingJobs` (live)
+  and `allCancelledPrintingJobs`; every list, tab, count, the Observer tower and the SLA
+  views read the first, so they stop counting cancelled jobs with one edit.
+  `embMarkJobsCancelled` moves the jobs a cancel just closed out of the loaded list
+  (the loader runs once a session). Cancelled jobs are not shown anywhere (no
+  "cancelled" tab) — they stay in Firestore. `_poLinkMemory('job')` therefore no longer
+  sees them, but `deletePO`'s server query still does, so delete stays refused.
+- **`tests/run.js` watchdog.** A suite awaiting a never-settling promise used to end
+  the run with exit 0 (Node exits when nothing is left to wait for). Now: the process
+  `exit` hook prints `FAIL suite "<name>" never settled…` and sets exit 1 at once; a
+  per-suite timer (`TEST_SUITE_TIMEOUT_MS`, default 20 minutes, unref'd) covers a hang
+  that keeps the loop alive (an interval, a socket). The `all N assertions passed` /
+  `N failed, M passed` lines are unchanged. `tests/run-watchdog.test.js` runs the real
+  runner as a child process against fake suites.
+- **Tests:** `tests/po-cutting.test.js` (+31, section B16), new
+  `tests/po-cancel-jobs.test.js` (60), new `tests/run-watchdog.test.js` (15). Each
+  guard was reverted once and caught by a named assertion: the sum check, the zero-cut
+  rule, the check inside the transaction, the jobs write in the cancel transaction, the
+  sweep, the closed-job skip, the already-cancelled skip, the job-belongs-to-PO check,
+  the live already-cancelled check, trusting a cache answer, the loader filter, the
+  `_embUpsertJob` guard, the in-memory move, the runner's exit hook and its timer.
+- **NOT verified:** any real Firestore/SDK behaviour (transaction contention, a
+  `tx.get` of a deleted job, the `poNumber` equality query's index — it is a single-field
+  query, so the automatic index serves it, read from `firestore.indexes.json`, not from
+  the Console); the real shape of existing `printing_jobs` (jobs are matched on
+  `poNumber`, read from `_embCreateJob`, not seen on live data — a hand-made job with a
+  different spelling would be missed by the query and caught only if it is in memory); a
+  real screen; whether closing a job should also stop its SLA events (`sla_events` are
+  not touched).
 
 ## Fabric wave 2 (11 Oct 2026)
 
