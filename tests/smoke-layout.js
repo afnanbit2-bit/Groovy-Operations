@@ -303,6 +303,30 @@ async function _phFragment(o){
   if(o.min)out.widths=[1900,1280];
   return out;
 }
+// Production Ops ▸ Calendar (12 Oct 2026): the REAL js/ph-mod-calendar.js over tests/ph-mod-calendar.test.js's scenario (Monday 12 Oct, capacity 400,
+// Sundays off, 16 Oct a skip day: an over-full day, a spilling chip, a done / overridden / already-cut locked chip, a hostile article name, a
+// reserved PO that must NOT be in the tray), serialised to markup. Variants: month, week, a day with SIX chips, the phone week list, the Move menu
+// (its scrim laid in the flow so it does not cover everything), and the failure card. Every control must be reachable, the over-capacity text
+// and the tags must read on their grounds, and no chip text may be crushed.
+async function _phCalFragment(o){
+  o=o||{};
+  const domkit=require('./ph-dom');
+  const T=require('./ph-mod-calendar.test.js').load(fs.readFileSync(path.join(ROOT,'js/ph-mod-calendar.js'),'utf8'),{phone:!!o.phone,fail:o.fail?{po_cut_jobs:1}:undefined,mutate:o.six?(st=>{
+    ['PO-211','PO-212','PO-213','PO-214'].forEach((id,i)=>{
+      st['pos/'+id]={id,name:i===0?'A Very Long Article Name That Has To Be Clipped Inside The Chip Instead Of Pushing The Cell Wider':'Article '+i,code:'GX'+i,qty:40+i,poStatus:'in_production',currentStage:'cutting'};
+      st['po_cut_jobs/'+id]={poId:id,status:'open',rev:1,plannedCutDate:'2026-10-14',masterName:i===1?'A Master With A Long Name Indeed':'Alam',createdAt:1,createdBy:'afnan',updatedAt:1,updatedBy:'afnan'};
+    });
+  }):undefined});
+  await T.open('calendar');
+  if(o.week){T.R('_phcView="week"');T.R('_phUiPaintPanel()');}
+  if(o.dialog){T.dom.click(T.chip('PO-103'));}
+  const canvas=T.dom.byClass(T.dom.main,'ph-canvas')[0];
+  let html=domkit.toHtml(canvas);
+  if(o.dialog)html='<style>.phc-dialog-back{position:static;display:block;padding:0}.phc-dialog-back::before{display:none}</style>'+html;
+  const out={html:html};
+  if(o.widths)out.widths=o.widths;
+  return out;
+}
 function _naSeed(app,opts){
   opts=opts||{};
   const prods=[],lis=[],defs=[];
@@ -2925,6 +2949,12 @@ const FRAGMENTS={
   'production ops — shell collapsed':()=>_phFragment({fail:true,min:true}),
   'production ops — shell for the cutting floor (view only)':()=>_phFragment({floor:true,tab:'cutting'}),
   'production ops — shell content clear of the bar and rail':()=>_phFragment({fail:true,inBody:true,tab:'masters'}),
+  'production ops — calendar':()=>_phCalFragment({}),
+  'production ops — calendar week':()=>_phCalFragment({week:true}),
+  'production ops — calendar a day with six chips':()=>_phCalFragment({six:true}),
+  'production ops — calendar phone week list':()=>_phCalFragment({phone:true,six:true,widths:[420]}),
+  'production ops — calendar Move menu':()=>_phCalFragment({dialog:true,widths:[1280,420]}),
+  'production ops — calendar jobs unreadable':()=>_phCalFragment({fail:true}),
   'inventory intel — takeover and rail':()=>_tkFragment(false),
   'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
   // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
