@@ -179,9 +179,9 @@ function DRIVE(){
         res.push({page:'(inventory takeover)',issues:tk});
       }
       // Production Ops' full-view takeover (12 Oct 2026), in the real shell on a phone: the same checks as Inventory Intel's, for js/ph-ui.js.
-      // Afnan sees nine tabs, Uzaib (a viewer, no More sheet) two; Escape and the #prodops deep link work; leaving removes every trace.
+      // Afnan sees nine tabs, Uzaib (a viewer, no More sheet) three (Overview, PO Queue for the drafts, Today's Cutting; ph-mod-queue.js widens the queue tab to him); Escape and the #prodops deep link work; leaving removes every trace.
       if(PAGES.indexOf('prod-ops')>=0){
-        var pk=[],want=window.__SESSION&&window.__SESSION.u==='uzaib'?2:9;
+        var pk=[],want=window.__SESSION&&window.__SESSION.u==='uzaib'?3:9;
         try{
           window.showPage('prod-ops');await wait(900);
           var pb=document.getElementById('ph-tk-bar'),pr=document.getElementById('ph-tk-rail'),pm=document.getElementById('main-content');
