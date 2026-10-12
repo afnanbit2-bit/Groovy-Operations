@@ -419,6 +419,7 @@ async function _phqFragment(o){
     if(dlg){extra='<div style="position:relative;height:520px"><div class="phq-ov" style="position:absolute">'+domkit.toHtml(dlg.children[0])+'</div></div>';dlg.parentNode.removeChild(dlg);}
   }
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+extra};
+}
 // Production Ops ▸ Calendar (12 Oct 2026): the REAL js/ph-mod-calendar.js over tests/ph-mod-calendar.test.js's scenario (Monday 12 Oct, capacity 400,
 // Sundays off, 16 Oct a skip day: an over-full day, a spilling chip, a done / overridden / already-cut locked chip, a hostile article name, a
 // reserved PO that must NOT be in the tray), serialised to markup. Variants: month, week, a day with SIX chips, the phone week list, the Move menu
@@ -442,6 +443,7 @@ async function _phCalFragment(o){
   const out={html:html};
   if(o.widths)out.widths=o.widths;
   return out;
+}
 // Production Ops > Today's Cutting (12 Oct 2026): the REAL js/ph-mod-cutting.js inside the REAL shell (js/ph-ui.js), serialised to markup.
 // Variants: a manager (Record the cut, scan state with a mismatch, the gate preview open, an overdue card expanded), the cutting floor (Uzaib),
 // count-only mode, and the failure states (a refused PO read, a refused fabric-issue read with a long error). Long names must wrap, every
@@ -501,6 +503,13 @@ async function _phkFragment(o){
     }
     app.run('phkWork("PO-001").previewOpen=true;phkWork("PO-001").cut={S:"30",M:"70",L:"50",XL:"20"};_phkRepaintCard("PO-001")');
     app.run('phkWork("PO-003").mode="scan";phkScan("PO-003","Q-1")');
+  }
+  const canvas=dom.byClass(dom.main,'ph-canvas')[0];
+  const chrome=domkit.toHtml(dom.find('ph-tk-bar'))+domkit.toHtml(dom.find('ph-tk-rail'));
+  const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");'
+    +'document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";m.style.overflow="visible";})();<\/script>';
+  return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
+}
 // Production Ops ▸ Monitor and Overview (12 Oct 2026): the REAL js/ph-ui.js + js/ph-mod-monitor.js over tests/ph-dom.js's small DOM, with the
 // shared fifteen-PO fixture (tests/ph-mod-monitor-fixture.js, clock pinned to Mon 12 Oct 2026), then SERIALISED to markup. Variants: the Monitor
 // tab with every tile / the range bar / the stage bars / the attention list / the settings card; the same with po_cut_jobs refused and the range
@@ -540,9 +549,9 @@ async function _phmFragment(o){
   const chrome=domkit.toHtml(dom.find('ph-tk-bar'))+domkit.toHtml(dom.find('ph-tk-rail'));
   const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");'
     +'document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";m.style.overflow="visible";})();<\/script>';
-  return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
   const flat=o.drawer?'<style>.phm-drawer-wrap{position:static!important;display:block!important;height:auto!important}.phm-scrim{display:none!important}.phm-drawer{height:auto!important;width:100%!important;max-width:520px;overflow:visible!important}.phm-drawer-head{position:static!important}</style>':'';
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+flat+domkit.toHtml(canvas)+chrome+script};
+}
 // Production Ops admin tabs (12 Oct 2026): the REAL tab renders (js/ph-mod-admin.js) over the real core/data/write layers and an in-memory Firestore,
 // serialised to markup for the probe. Inputs carry their value / checked / selected as attributes (the DOM stand-in keeps them as properties).
 async function _phAdminPanel(o){
