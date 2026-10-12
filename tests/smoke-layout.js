@@ -573,6 +573,27 @@ function _naSeed(app,opts){
   app.run('(()=>{const docs='+JSON.stringify(rebuilt)+';_siHist=_siAxBuildHistory(docs);_siHistState="ok";_siSnapshot=Object.assign({},docs[docs.length-1],{snapshot_at:'+JSON.stringify(opts.snapAt||new Date().toISOString())+'});_siPrevSnapshot=docs[docs.length-8];_siAxCache=null;_siNaMemo=null;_siSyncMeta={orderSync:{last_status:"success",last_success_at:new Date().toISOString()},inventory:{last_status:"success"}};})()');
 }
 
+// Production Ops ▸ Reports (12 Oct 2026): the REAL js/ph-mod-reports.js over tests/ph-dom.js's DOM, rendered from the SAME fixture as
+// tests/ph-mod-reports.test.js, then serialised. Variants: the full report with one row's POs open (tables, bars, chips, flagged rows, the
+// filter bar), and the honest-state report (no cut record, a refused standards read, a refused gate-pass read, the red notices).
+async function _phrFragment(o){
+  o=o||{};
+  const domkit=require('./ph-dom'),T=require('./ph-mod-reports.test.js');
+  const fx=T.fixture();
+  if(o.nocut)fx.pos.forEach(p=>{delete p.cutAt;delete p.cutQty;delete p.cutOverride;});
+  if(o.long){fx.passes.push({gpType:'fabric',poId:'PO-006',cutMaster:'Master With A Very Long Name That Must Wrap Onto Several Lines And Never Push The Page Sideways',date:'2026-10-08',fabricUsed:10,fabricUnit:'kg'});fx.pos[5].name='A purchase order name that is far too long for any one table cell and has to wrap inside it without clipping';}
+  const fail={};
+  if(o.fail)fail.ph_standards=()=>T.PERM();
+  if(o.posfail){fail.pos=()=>T.PERM();fail.gatepasses=()=>T.PERM();}
+  const R=T.load({fx,db:{fail},noApp:!!o.posfail});
+  R.R('_phrF='+JSON.stringify(T.RANGE));
+  await R.show('reports');
+  if(o.posfail)await new Promise(r=>setTimeout(r,60));
+  if(o.open){const cm=R.cards()[2];R.dom.click(R.dom.byClass(cm,'phr-row-tr')[0]);}
+  const canvas=R.dom.byClass(R.dom.main,'ph-canvas')[0];
+  return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)};
+}
+
 const FRAGMENTS={
   // Master Accounts (MASTER_ACCOUNTS_PLAN.md §16.4): Today, Money and a
   // holder, the Ledger with the review queue, a party page, and the Record
@@ -3190,6 +3211,9 @@ const FRAGMENTS={
   'production ops — monitor: the list drawer':()=>_phmFragment({tab:'monitor',drawer:'stuck'}),
   'production ops — overview':()=>_phmFragment({tab:'overview'}),
   'production ops — overview for the cutting floor (view only)':()=>_phmFragment({tab:'overview',floor:true}),
+  'production ops — reports':()=>_phrFragment({open:true,long:true}),
+  'production ops — reports, no data and unavailable':()=>_phrFragment({nocut:true,fail:true}),
+  'production ops — reports, pos unavailable':()=>_phrFragment({posfail:true}),
   'inventory intel — takeover and rail':()=>_tkFragment(false),
   'inventory intel — takeover and rail collapsed':()=>_tkFragment(true),
   // The same page with the chrome moved to <body> as _siTkMount does: the probe then hit-tests the CONTENT's controls against the fixed bar and
