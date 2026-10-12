@@ -5777,6 +5777,7 @@ body.ph-fullscreen #bug-report-fab{bottom:20px}
 .phq-name{overflow-wrap:anywhere;color:var(--muted)}
 .phq-t-meta{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:13px;color:var(--text)}
 .phq-plan{color:var(--muted)}
+.phq-plan-locked{align-self:center;font-size:13px;color:var(--muted);padding:6px 4px}
 .phq-t-badges{display:flex;flex-wrap:wrap;gap:4px}
 .phq-badge{display:inline-flex;align-items:center;min-height:22px;max-width:100%;padding:0 8px;border:1px solid var(--border);border-radius:999px;background:var(--soft);font-size:12px;font-weight:700;line-height:1.2;color:var(--text);overflow-wrap:anywhere}
 .phq-b-overdue,.phq-b-late,.phq-b-stuck{border-color:var(--accent-urgent);background:var(--accent-urgent-soft);color:var(--accent-urgent)}
@@ -6008,6 +6009,9 @@ body.phc-dragging{cursor:grabbing;-webkit-user-select:none;user-select:none}
 .phk-chip-open{background:var(--soft)}
 .phk-saved{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0 0 10px;font-size:14px;color:var(--text)}
 .phk-saved-t{flex:1 1 220px;min-width:0;font-weight:600}
+.phk-saved-wrap .phk-saved{margin-bottom:4px}
+.phk-saved-detail{margin:0 0 10px}
+.phk-saved-codes{margin:2px 0;font-size:13px;color:var(--text);overflow-wrap:anywhere}
 .ph-btn.phk-btn,.phk-btn{min-height:48px;padding:0 18px;font-size:15px;touch-action:manipulation}
 .phk-seg{display:flex;gap:8px;margin:0 0 12px}
 .phk-seg-b{flex:1 1 0;min-width:0}
@@ -6123,6 +6127,7 @@ button.phm-tile-main:focus-visible,.phm-sublink:focus-visible,.phm-chip-btn:focu
 .phm-kind-delayed{background:var(--accent-warning-soft);border-color:var(--accent-warning);color:var(--accent-warning)}
 .phm-more{margin-top:8px}
 .phm-more,.phm-refresh,.phm-drawer-close,.phm-actions .ph-btn{min-height:44px}
+.phm-open{margin-top:6px;min-height:44px}
 .phm-bar-row{display:flex;align-items:center;gap:10px;padding:6px 0}
 .phm-bar-label{flex:0 0 96px;font-size:13px;color:var(--text)}
 .phm-bar-track{flex:1 1 auto;min-width:0;height:12px;border-radius:6px;background:var(--soft);overflow:hidden}
@@ -6220,6 +6225,8 @@ button.phm-tile-main:focus-visible,.phm-sublink:focus-visible,.phm-chip-btn:focu
 .pha-when{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px;flex:1 1 100%;margin:0 0 12px}
 .pha-when>.pha-field{flex:1 1 160px;margin:0}
 .pha-acts{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0}
+.pha-saved{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.pha-clear{min-height:36px}
 .pha-add{display:flex;flex-wrap:wrap;align-items:flex-end;gap:4px 12px;margin:12px 0}
 .pha-add>.pha-field{flex:1 1 200px}
 .pha-add>.pha-btn{margin:0 0 12px}

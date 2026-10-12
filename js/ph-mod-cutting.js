@@ -22,8 +22,12 @@
    the owner has not set one; change the two constants, nothing else).
    The result is {total, verified, short, missing, extra} (ph-write.js's checklist shape; all whole
    numbers; `short` is 1 when the weight is outside the tolerance, else 0). A MISMATCH IS FLAGGED
-   AND SAVED, NEVER BLOCKED. The which-codes detail goes into the history row's `reason`, in the
-   same transaction (ph-write.js phSaveCutJob writes the job and its pos/{id}/history row together).
+   AND SAVED, NEVER BLOCKED. The which-codes detail is stored TWICE since 14 Oct 2026: as `missingCodes` and
+   `extraCodes` (lists of roll codes, each at most 40 characters, at most 200 of each) inside the
+   job's rollsChecklist map (the full list, shown on the card), and as the history row's `reason`
+   (truncated at 480). Both are written in the same transaction (ph-write.js phSaveCutJob writes the
+   job and its pos/{id}/history row together). If a list is longer than 200 the counts still say
+   how many, and the screen says how many codes are not listed.
 
    MARK COMPLETE (a floor action): status 'complete' through phSaveCutJob. It does NOT do the
    real cutting-done (js/pos.js markCuttingDone: bundles, actual cut by size, the 70-130% gate).
@@ -41,6 +45,8 @@ const PHK_WEIGHT_TOL_PCT=2;        // DEFAULT: a weighed total may differ from t
 const PHK_WEIGHT_TOL_ABS=0.5;      // ... or by this many units (kg or m), whichever is larger. Unconfirmed by the owner.
 const PHK_OVERDUE_SHOW=10;         // overdue rows listed before "show all"
 const PHK_PASS_LIMIT=50;           // fabric passes read per PO
+const PHK_CODES_MAX=200,PHK_CODE_LEN=40;   // ph-write.js refuses a longer list / code; the screen clips first and says so
+const PHK_CODES_SHOWN=40;          // saved codes printed on a card before "+N more"
 const PHK_REASON_MAX=480;          // history `reason` is cut at 500 by ph-write.js
 const PHK_SIZE_ORDER=Object.freeze(['XXXS','XXS','XS','S','M','L','XL','2XL','FREE']);
 
@@ -194,6 +200,23 @@ function phkEvalChecklist(issue,w){
   out.ok=true;
   out.summary=phkSummaryText(out,mode);
   return out;
+}
+// The rollsChecklist to SAVE: the five counts plus the two code lists, clipped to what the writer accepts
+// (code <= PHK_CODE_LEN characters, list <= PHK_CODES_MAX, no empty or repeated code). The counts always carry the truth;
+// `left` says how many codes the lists could not hold. Both lists are sent even when empty, so a re-save clears an old one.
+function phkChecklistForSave(res){
+  const clip=function(l){
+    const out=[],seen={};let left=0;
+    (Array.isArray(l)?l:[]).forEach(function(c){
+      const t=String(c==null?'':c).trim().slice(0,PHK_CODE_LEN);
+      if(!t||seen[t])return;
+      seen[t]=true;
+      if(out.length<PHK_CODES_MAX)out.push(t);else left++;
+    });
+    return{list:out,left:left};
+  };
+  const m=clip(res&&res.missingCodes),x=clip(res&&res.extraCodes);
+  return{checklist:Object.assign({},res&&res.counts,{missingCodes:m.list,extraCodes:x.list}),left:{missing:m.left,extra:x.left}};
 }
 // The sentence kept in the history row (and shown to the person): which codes, how much.
 function phkSummaryText(res,mode){
@@ -402,7 +425,7 @@ function phkSaveChecklist(poId){
   const res=phkEval(id);
   if(!res.ok)return Promise.resolve({ok:false,code:'invalid',error:'The roll check is not ready: '+res.problems.join('; ')+'.'});
   if(!res.active)return Promise.resolve({ok:false,code:'invalid',error:'Scan or tick at least one roll first (or use Count only).'});
-  return _phkWrite(id,{rollsChecklist:res.counts},res.summary,res.mismatch?'Saved - FLAGGED: '+res.flags.join('; ')+'.':'Saved - all rolls match the issue.');
+  return _phkWrite(id,{rollsChecklist:phkChecklistForSave(res).checklist},res.summary,res.mismatch?'Saved - FLAGGED: '+res.flags.join('; ')+'.':'Saved - all rolls match the issue.');
 }
 // Mark the job complete (a floor action). Saves an unsaved roll check in the SAME call, so it is one transaction.
 function phkMarkComplete(poId){
@@ -414,7 +437,7 @@ function phkMarkComplete(poId){
   let reason='Marked complete';
   const res=phkEval(id);
   if(res.ok&&res.active&&w.dirty){
-    input.rollsChecklist=res.counts;
+    input.rollsChecklist=phkChecklistForSave(res).checklist;
     reason='Marked complete - '+res.summary;
     if(reason.length>PHK_REASON_MAX)reason=reason.slice(0,PHK_REASON_MAX-1)+'…';
   }else if(!res.ok&&res.problems.length&&w.dirty&&res.active){
@@ -515,10 +538,24 @@ function _phkSavedResult(job){
   if(c.extra>0)bits.push(_phkPlural(c.extra,'extra roll','extra rolls'));
   if(c.short>0)bits.push('weight outside the limit');
   const flagged=bits.length>0;
-  return _phkE('div','phk-saved',null,[
+  const kids=[
     _phkE('span','phk-saved-t','Saved roll check: '+c.verified+' of '+c.total+' verified'+(bits.length?' · '+bits.join(' · '):'')),
     _phkChip(flagged?'✗ MISMATCH flagged':'✓ Matches the issue',flagged?'bad':'ok')
-  ]);
+  ];
+  // the which-rolls detail saved with the check (older checks have only the counts)
+  const codes=function(label,list,count){
+    if(!Array.isArray(list)||!list.length)return null;
+    const shown=list.slice(0,PHK_CODES_SHOWN),left=Math.max(count>>>0,list.length)-shown.length;
+    return _phkE('p','phk-saved-codes',label+': '+shown.join(', ')+(left>0?' (+'+left+' more)':''));
+  };
+  const mc=codes('Missing',c.missingCodes,c.missing),ec=codes('Not on the issue',c.extraCodes,c.extra);
+  if(mc||ec){
+    const box=_phkE('div','phk-saved-detail');
+    if(mc)box.appendChild(mc);
+    if(ec)box.appendChild(ec);
+    return _phkE('div','phk-saved-wrap',null,[_phkE('div','phk-saved',null,kids),box]);
+  }
+  return _phkE('div','phk-saved',null,kids);
 }
 
 function _phkCheckCol(poId,job,entry){

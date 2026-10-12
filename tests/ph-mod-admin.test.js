@@ -504,6 +504,64 @@ async function checks(src){
     o['standard input: the reason is required (pure builder)']=/reason is required/.test(T.R('phaStandardInput(__f).error'));
   }
 
+  /* ── Back to default (14 Oct 2026) and a master's kind ── */
+  {
+    const SAVED={'ph_settings/main':{dailyCapacity:450,delayTargetDays:5,stuckDays:20,grossOverTolPct:4.5,cutGate:[75,125],offWeekdays:[0,6],skipDays:['2026-10-31'],pcOnlyHard:true,rev:4,updatedAt:1,updatedBy:'afnan'}};
+    const T=mk('mustafa',{store:Object.assign({},MASTERS_BOTH,JSON.parse(JSON.stringify(SAVED))),globals:FULLG()});
+    await T.open('settings');
+    o['clear: every saved value has a Back to default button; an unsaved one has none']=['dailyCapacity','delayTargetDays','stuckDays','grossOverTolPct','cutGate','offWeekdays','skipDays'].every(k=>!!T.act('clear-'+k))&&!T.act('clear-grossUnderTolPct');
+    o['clear: the hard PC-only rule has NO clear button for a manager (an owner\'s switch)']=!T.act('clear-pcOnlyHard');
+    o['clear: showing the buttons wrote nothing']=T.log.writes.length===0;
+    await T.click(T.act('clear-dailyCapacity'));
+    const d1=T.store['ph_settings/main'];
+    o['clear: the capacity key is REMOVED from the document, the other values stay, the revision moves']=!('dailyCapacity' in d1)&&d1.grossOverTolPct===4.5&&J(d1.cutGate)===J([75,125])&&d1.rev===5&&d1.updatedBy==='mustafa';
+    o['clear: the screen reads Default 400 again and says the capacity is back to its default']=/Default 400 - defaults, unconfirmed/.test(T.text(T.panel()))&&/back to its default \(revision 5\)/.test(T.flash());
+    o['clear: written to ph_settings only, nothing deleted (the whole document is replaced)']=J(T.wroteRoots())===J(['ph_settings'])&&T.log.deletes===0&&T.log.writes.every(w=>w.path==='ph_settings/main');
+    o['clear: the stale-looking pcOnlyHard the manager cannot clear is still stored']=d1.pcOnlyHard===true;
+    // the pair goes together, from either button
+    await T.click(T.act('clear-stuckDays'));
+    const d2=T.store['ph_settings/main'];
+    o['clear: the delay target and the stuck limit go back TOGETHER (pressing the stuck limit clears both)']=!('delayTargetDays' in d2)&&!('stuckDays' in d2)&&d2.rev===6&&d2.grossOverTolPct===4.5;
+    await T.click(T.act('clear-cutGate'));await T.click(T.act('clear-offWeekdays'));await T.click(T.act('clear-skipDays'));
+    const d3=T.store['ph_settings/main'];
+    o['clear: the cut gate, the weekdays off and the skip days clear one by one']=!('cutGate' in d3)&&!('offWeekdays' in d3)&&!('skipDays' in d3)&&d3.rev===9&&d3.pcOnlyHard===true&&d3.grossOverTolPct===4.5;
+    o['clear: the saved document still has only legal keys (rev, updatedAt, updatedBy, the values left)']=Object.keys(d3).every(k=>['dailyCapacity','skipDays','offWeekdays','delayTargetDays','stuckDays','grossOverTolPct','grossUnderTolPct','cutGate','pcOnlyHard','rev','updatedAt','updatedBy'].indexOf(k)>-1);
+    // an owner can clear the hard PC-only rule
+    const Ow=mk('afnan',{store:Object.assign({},MASTERS_BOTH,JSON.parse(JSON.stringify(SAVED))),globals:FULLG()});
+    await Ow.open('settings');
+    o['clear: an owner sees the PC-only clear button']=!!Ow.act('clear-pcOnlyHard');
+    await Ow.click(Ow.act('clear-pcOnlyHard'));
+    o['clear: the owner clears pcOnlyHard; it is gone from the document']=!('pcOnlyHard' in Ow.store['ph_settings/main'])&&Ow.store['ph_settings/main'].dailyCapacity===450;
+    // a stale revision is refused and nothing is cleared
+    const St=mk('mustafa',{store:Object.assign({},MASTERS_BOTH,JSON.parse(JSON.stringify(SAVED))),globals:FULLG()});
+    await St.open('settings');
+    St.store['ph_settings/main'].rev=9;   // someone else saved meanwhile
+    await St.click(St.act('clear-dailyCapacity'));
+    o['clear: a stale revision is refused, the value is NOT cleared']=St.store['ph_settings/main'].dailyCapacity===450&&St.store['ph_settings/main'].rev===9&&/changed by someone else/.test(St.flash());
+
+    // master kind
+    const M=mk('afnan',{store:Object.assign({},MASTERS_BOTH),globals:FULLG()});
+    await M.open('masters');
+    const row=()=>M.rowOf('data-master','CM-001');
+    await M.click(M.act('kind',row()));
+    o['kind: Change kind opens an inline select on the current kind, no write yet']=!!M.byF(null,'kind')&&M.byF(null,'kind').value==='unset'&&M.log.writes.length===0;
+    M.set('kind','outsource','change');
+    await M.click(M.act('save-edit'));
+    const mk1=M.store['cutting_masters/CM-001'];
+    o['kind: saving writes kind only (name, key and aliases untouched) with who and when']=mk1.kind==='outsource'&&mk1.name==='Hassan'&&mk1.nameKey==='hassan'&&J(mk1.aliases)==='[]'&&mk1.updatedBy==='afnan'&&mk1.updatedAt>1;
+    o['kind: written to cutting_masters only, nothing deleted, and the list shows Outsourced']=J(M.wroteRoots())===J(['cutting_masters'])&&M.log.deletes===0&&/Outsourced/.test(M.text(row()))&&/Hassan is now Outsourced/.test(M.flash());
+    await M.click(M.act('kind',row()));
+    M.set('kind','outsource','change');
+    await M.click(M.act('save-edit'));
+    o['kind: choosing the kind it already has is refused by name, nothing written']=/already outsource/.test(M.flash());
+    const U=mk('mustafa',{store:Object.assign({},MASTERS_BOTH),globals:FULLG()});
+    await U.open('masters');
+    await U.click(U.act('kind',U.rowOf('data-master','CM-002')));
+    U.set('kind','unset','change');
+    await U.click(U.act('save-edit'));
+    o['kind: a manager (Mustafa) can set it back to Not set']=U.store['cutting_masters/CM-002'].kind==='unset';
+  }
+
   /* ── Settings ── */
   {
     const T=mk('mustafa',{store:Object.assign({},MASTERS_BOTH),globals:FULLG()});
@@ -521,7 +579,7 @@ async function checks(src){
     const sv=T.store['ph_settings/main'];
     o['settings save: a first save creates revision 1 holding ONLY the changed field plus rev/updatedAt/updatedBy']=!!sv&&sv.rev===1&&sv.dailyCapacity===450&&J(Object.keys(sv).sort())===J(['dailyCapacity','rev','updatedAt','updatedBy'])&&sv.updatedBy==='mustafa';
     o['settings save: a message names what was saved and the revision']=/Settings saved \(revision 1\): dailyCapacity/.test(T.flash());
-    o['settings save: afterwards that field reads "Saved" and the rest still read as defaults']=/Saved/.test(T.text(T.byF(null,'dailyCapacity').parentNode))&&/Default 3 - defaults, unconfirmed/.test(T.text(T.panel()));
+    o['settings save: afterwards that field reads "Saved" and the rest still read as defaults']=/Saved/.test(T.text(T.byF(null,'dailyCapacity').parentNode.parentNode))&&/Default 3 - defaults, unconfirmed/.test(T.text(T.panel()));
     o['settings save: written to ph_settings only, nothing deleted']=J(T.wroteRoots())===J(['ph_settings'])&&T.log.deletes===0;
     // second save: revision 2, adds a field, keeps the first
     T.set('grossOverTolPct','4.5');
@@ -731,6 +789,12 @@ module.exports=async function(){
   brk('stale refusal loses its Reload button',"stale:r.code==='stale'","stale:false",['standards stale: the refusal offers a Reload the data button and says nothing of yours was saved','settings stale: a Reload the data button is offered']);
   brk('the size model guess ignored',"const guess=_phaGuessModel(code);\n  const model=std&&std.sizeModel&&Object.prototype.hasOwnProperty.call(PH_SIZE_MODELS,std.sizeModel)?std.sizeModel:guess.model;","const guess=_phaGuessModel(code);\n  const model='alpha';",['standards edit: GD007 (prefix GD) is guessed as Waist, with the reason shown']);
   brk('coverage counts retired and other-brand articles',"function _phaIsActiveGroovy(a){return a&&a.active!==false&&(a.brand===undefined||a.brand===null||a.brand==='groovy');}","function _phaIsActiveGroovy(a){return !!a;}",['standards: coverage reads "1 of 3 active articles have a standard" (retired and other-brand articles are not counted)']);
+  brk('Back to default sends 0, not null',"const patch={};keys.forEach(function(k){patch[k]=null;});","const patch={};keys.forEach(function(k){patch[k]=0;});",['clear: the capacity key is REMOVED from the document, the other values stay, the revision moves']);
+  brk('the pair is cleared one at a time',"const cb=clearBtn(pair?CLEAR_PAIR.slice():[k],pair","const cb=clearBtn([k],pair",['clear: the delay target and the stuck limit go back TOGETHER (pressing the stuck limit clears both)']);
+  brk('a manager gets the PC-only clear button',"if(!keys.every(function(k){return k!=='pcOnlyHard'||isOwner;}))return null;","",['clear: the hard PC-only rule has NO clear button for a manager (an owner\'s switch)']);
+  brk('the clear ignores the revision',"return phSettingsSave(patch,{expectedRev:_phaT.rev});},\n        function(r){_phaT.form=null;_phaT.sig=null;return label","return phSettingsSave(patch,{});},\n        function(r){_phaT.form=null;_phaT.sig=null;return label",['clear: a stale revision is refused, the value is NOT cleared']);
+  brk('Save kind always saves the old kind',"return phMasterSetKind(r.fbKey,k);","return phMasterSetKind(r.fbKey,r.kind||'unset');",['kind: saving writes kind only (name, key and aliases untouched) with who and when']);
+  brk('the kind select does not follow the pick',"_phaBind(ksel,ed,'text');","",['kind: saving writes kind only (name, key and aliases untouched) with who and when']);
   const results=new Array(queue.length);let next=0;
   const worker=async()=>{while(next<queue.length){const i=next++;results[i]=await queue[i]();}};
   await Promise.all([worker(),worker(),worker(),worker(),worker()]);

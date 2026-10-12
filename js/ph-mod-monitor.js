@@ -113,7 +113,7 @@ function _phmDef(sv,k){return sv.isDefault[k]?' (default)':'';}
 /* ── rows (one per PO behind a number) ─────────────────────────────────── */
 function _phmRow(ep,detail,extra){
   const u=phPoUnits(ep);
-  return Object.assign({id:ep.id,title:_phmTitle(ep),stage:phStageOf(ep),units:u.units,basis:u.basis,detail:detail||''},extra||{});
+  return Object.assign({id:ep.id,fbKey:phStr(ep.fbKey).trim()||ep.id,title:_phmTitle(ep),stage:phStageOf(ep),units:u.units,basis:u.basis,detail:detail||''},extra||{});
 }
 function _phmByIdRows(list,fn){return list.map(function(ep){return _phmRow(ep,fn?fn(ep):'');});}
 function _phmSumUnits(rows){let t=0,k=0;rows.forEach(function(r){if(typeof r.units==='number'&&isFinite(r.units)){t+=r.units;k++;}});return{total:t,known:k,unknown:rows.length-k};}
@@ -439,6 +439,29 @@ function phmLoadPos(force){
 }
 function phmReset(){_phmPos={state:'idle',rows:null,at:null,err:null,errText:'',truncated:false,p:null,refreshing:false};_phmRange={preset:'month',from:'',to:'',error:''};_phmDrawer=null;}
 
+/* ── open a PO's detail page from a row (managers only) ────────────────── */
+// openPODetail (js/pos.js) bypasses page scoping and sets currentPage itself, so the takeover comes down first (the same
+// order ph-mod-queue's phqOpenPO uses). Managers only: Kashif's Overview rows are plain text, and this refuses him too.
+function phmCanOpenPO(u){
+  const w=u!==undefined?(typeof u==='string'?u:''):((typeof session!=='undefined'&&session&&typeof session.u==='string')?session.u:'');
+  return typeof phCanManage==='function'&&phCanManage(w)===true&&typeof window!=='undefined'&&!!window&&typeof window.openPODetail==='function';
+}
+function phmOpenPO(fbKey){
+  const k=phStr(fbKey).trim();
+  if(!phmCanOpenPO()||!/^[A-Za-z0-9_-]{1,60}$/.test(k))return false;
+  phmCloseDrawer(false);
+  try{if(typeof _phTkLeave==='function')_phTkLeave();}catch(e){}
+  window.openPODetail(k);
+  return true;
+}
+function _phmOpenBtn(r){
+  const b=phEl('button','ph-btn phm-open','Open '+r.id);
+  b.setAttribute('type','button');b.setAttribute('data-act','open-po');b.setAttribute('data-po',r.fbKey||r.id);
+  b.setAttribute('aria-label','Open the detail page of '+r.id);
+  b.addEventListener('click',function(){phmOpenPO(r.fbKey||r.id);});
+  return b;
+}
+
 /* ── drawer: the POs behind a number ───────────────────────────────────── */
 let _phmDrawer=null;     // {el, opener}
 function phmCloseDrawer(restore){
@@ -476,6 +499,7 @@ function phmOpenDrawer(host,spec,opener){
     li.appendChild(top);
     li.appendChild(E('div','phm-row-title',r.title));
     if(r.detail)li.appendChild(E('div','phm-row-detail',r.detail));
+    if(spec.openable&&phmCanOpenPO())li.appendChild(_phmOpenBtn(r));
     ul.appendChild(li);
   });
   panel.appendChild(ul);
@@ -515,7 +539,7 @@ function _phmTileEl(t,host){
   }
   if(t.cap)main.appendChild(E('div','phm-tile-cap',t.cap));
   if(clickable)main.appendChild(E('div','phm-tile-foot','Show the '+_phmPlural(t.rows.length,'PO')+' ›'));
-  if(clickable)main.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label,rows:t.rows,note:t.cap,sum:t.sum,sumLabel:t.sumLabel},main);});
+  if(clickable)main.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label,rows:t.rows,note:t.cap,sum:t.sum,sumLabel:t.sumLabel,openable:t.id==='attention'},main);});
   box.appendChild(main);
   t.links.forEach(function(l){
     const b=E('button','phm-sublink',l.label+' ›');b.setAttribute('type','button');
@@ -550,12 +574,13 @@ function _phmAttentionCard(M,host,opts){
     li.appendChild(top);
     li.appendChild(E('div','phm-row-title',r.title));
     li.appendChild(E('div','phm-row-detail',r.detail));
+    if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));
     ul.appendChild(li);
   });
   card.appendChild(ul);
   if(rows.length>(o.limit||rows.length)){
     const b=E('button','ph-btn phm-more','Show all '+rows.length);b.setAttribute('type','button');
-    b.addEventListener('click',function(){phmOpenDrawer(host,{title:'Needs attention',rows:rows,note:M.tiles.attention?M.tiles.attention.cap:''},b);});
+    b.addEventListener('click',function(){phmOpenDrawer(host,{title:'Needs attention',rows:rows,note:M.tiles.attention?M.tiles.attention.cap:'',openable:true},b);});
     card.appendChild(b);
   }
   if(M.attention.note)card.appendChild(E('p','phm-note-soft',M.attention.note));

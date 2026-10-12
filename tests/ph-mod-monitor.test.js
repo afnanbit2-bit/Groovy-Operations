@@ -341,6 +341,47 @@ async function checks(src){
     const html=domkit.toHtml(T.dom.body);
     o['XSS: a hostile PO name reaches the drawer as TEXT (escaped), never as markup']=T.text(T.drawer()).indexOf(evil)>-1&&html.indexOf('<img')<0&&html.indexOf('<script')<0&&html.indexOf('&lt;img')>-1;
   });
+  /* ── open a PO from an attention row (managers only) ── */
+  await sec(async()=>{
+    const J=JSON.stringify;
+    const setup=(T)=>{T.R('window.openPODetail=function(k){__log.push("open:"+k);};');T.ctx.__log=[];T.R('(function(){const o=_phTkLeave;_phTkLeave=function(){__log.push("leave");return o.apply(this,arguments);};})()');};
+    const M=load(src,{session:USERS.mustafa});
+    setup(M);
+    await M.show('prod-ops');
+    const rows=M.dom.byClass(M.panel(),'phm-att-row');
+    const opens=r=>M.dom.all(r,n=>n.getAttribute&&n.getAttribute('data-act')==='open-po');
+    o['open PO: a manager gets an Open button on every attention row (4 rows, 4 buttons), naming the PO']=rows.length===4&&rows.every(r=>opens(r).length===1)&&/^Open PO-103$/.test(M.text(opens(rows[0])[0]))&&/detail page of PO-103/.test(opens(rows[0])[0].getAttribute('aria-label'));
+    o['open PO: showing the buttons opened nothing']=M.ctx.__log.length===0;
+    M.dom.click(opens(rows[0])[0]);
+    o['open PO: pressing it leaves the Production Ops takeover FIRST, then calls openPODetail with that PO']=J(M.ctx.__log)===J(['leave','open:PO-103']);
+    // the drawer behind the Needs attention tile
+    const D=load(src,{session:USERS.afnan});
+    setup(D);
+    await D.show('prod-ops');
+    D.dom.click(D.main('attention'));
+    const dBtns=D.dom.all(D.drawer(),n=>n.getAttribute&&n.getAttribute('data-act')==='open-po');
+    o['open PO: the Needs attention drawer rows carry the button too (owner)']=D.drawerRows().length===4&&dBtns.length===4;
+    D.dom.click(dBtns[1]);
+    o['open PO: from the drawer it closes the drawer, leaves the takeover, then opens the PO']=!D.drawer()&&J(D.ctx.__log)===J(['leave','open:'+dBtns[1].getAttribute('data-po')]);
+    const D2=load(src,{session:USERS.afnan});
+    setup(D2);
+    await D2.show('prod-ops');
+    D2.dom.click(D2.main('stuck'));
+    o['open PO: the other tiles\' drawers (Stuck POs) have NO Open button (only the attention rows do)']=D2.drawerRows().length>0&&D2.dom.all(D2.drawer(),n=>n.getAttribute&&n.getAttribute('data-act')==='open-po').length===0;
+    // Kashif
+    const U=load(src,{session:USERS.uzaib});
+    setup(U);
+    await U.show('prod-ops');
+    o['open PO: uzaib (Kashif) sees the attention rows as plain text, NO Open button']=U.dom.byClass(U.panel(),'phm-att-row').length===4&&U.dom.all(U.panel(),n=>n.getAttribute&&n.getAttribute('data-act')==='open-po').length===0;
+    U.dom.click(U.main('attention'));
+    o['open PO: nor in his attention drawer']=U.drawerRows().length===4&&U.dom.all(U.drawer(),n=>n.getAttribute&&n.getAttribute('data-act')==='open-po').length===0;
+    o['open PO: phmOpenPO refuses him and calls nothing']=U.R('phmOpenPO("PO-103")')===false&&U.ctx.__log.length===0;
+    // no openPODetail in this build: no button, nothing thrown
+    const N=load(src,{session:USERS.mustafa});
+    await N.show('prod-ops');
+    o['open PO: without openPODetail (an older build) there is no button']=N.dom.byClass(N.panel(),'phm-att-row').length===4&&N.dom.all(N.panel(),n=>n.getAttribute&&n.getAttribute('data-act')==='open-po').length===0&&N.R('phmOpenPO("PO-103")')===false;
+    o['open PO: an id that is not a plain PO key is refused']=M.R('phmOpenPO("PO-103/../x")')===false&&M.R('phmOpenPO("")')===false;
+  });
   /* ── the audience ── */
   await sec(async()=>{
     const U=load(src,{session:USERS.uzaib});
@@ -427,6 +468,12 @@ module.exports=async function(){
     failing.forEach(f=>{broken++;s.ok('break "'+label+'" fails "'+f.slice(0,90)+'"',r[f]!==true);});
   };
   const K=prefix=>Object.keys(base).filter(k=>k.indexOf(prefix)===0);
+  await brk('Open on the attention rows for everyone',"    li.appendChild(E('div','phm-row-detail',r.detail));\n    if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));","    li.appendChild(E('div','phm-row-detail',r.detail));\n    li.appendChild(_phmOpenBtn(r));",K('open PO: uzaib (Kashif) sees'));
+  await brk('phmOpenPO does not check who',"  if(!phmCanOpenPO()||!/^[A-Za-z0-9_-]{1,60}$/.test(k))return false;","  if(!/^[A-Za-z0-9_-]{1,60}$/.test(k))return false;",K('open PO: phmOpenPO refuses him'));
+  await brk('the takeover stays up when a PO opens',"  try{if(typeof _phTkLeave==='function')_phTkLeave();}catch(e){}\n  window.openPODetail(k);","  window.openPODetail(k);",K('open PO: pressing it leaves'));
+  await brk('every drawer gets Open buttons',"openable:t.id==='attention'","openable:true",K('open PO: the other tiles'));
+  await brk('the attention rows lose the button',"    if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));\n    ul.appendChild(li);\n  });\n  card.appendChild(ul);","    ul.appendChild(li);\n  });\n  card.appendChild(ul);",K('open PO: a manager gets an Open button'));
+  await brk('the PO key is not validated',"!/^[A-Za-z0-9_-]{1,60}$/.test(k)","false",K('open PO: an id that is not a plain PO key'));
   await brk('pipeline counts every PO (reserved and completed too)','value:_phmN(pl.state===\'ok\'?pl.inProduction.pos:0),sub:cnt','value:_phmN(pl.state===\'ok\'?pl.total:0),sub:cnt',K('pipeline: 10 released'));
   await brk('afloat uses the in-production pieces',"value:_phmN(pl.state==='ok'?pl.afloat.units:0)","value:_phmN(pl.state==='ok'?pl.inProduction.units:0)",K('units afloat: 1,050'));
   await brk('reserved POs fall into the pipeline',"const inProd=function(e){return PH_REAL_STAGE_ORDER.indexOf(stageOf(e))>-1;};","const inProd=function(e){return PH_REAL_STAGE_ORDER.indexOf(stageOf(e))>-1||stageOf(e)==='reserved';};",K('pipeline: the list is'));
@@ -463,7 +510,7 @@ module.exports=async function(){
   await brk('no Retry button on the pos error card',"c.appendChild(_phmBtn('ph-btn ph-btn-primary','Retry',function(){_phmEnsure(ctx,true);ctx.repaint();}));","",K('Retry reads again'));
   await brk('Refresh does not re-read pos',"phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();","phmCloseDrawer(false);ctx.repaint();",K('Refresh reads pos again'));
   await brk('the po_cut_jobs note is dropped from the attention list',"note:jobsOk?'':'Delays against a planned cut day are not checked: po_cut_jobs could not be read.'","note:''",K('po_cut_jobs failed: the planned-day reason'));
-  await brk('a view-only user cannot open a list (the tile button is inert)',"if(clickable)main.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label,rows:t.rows,note:t.cap,sum:t.sum,sumLabel:t.sumLabel},main);});","",K('a tile opens the list').concat(K('uzaib: he can open')));
+  await brk('a view-only user cannot open a list (the tile button is inert)',"if(clickable)main.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label,rows:t.rows,note:t.cap,sum:t.sum,sumLabel:t.sumLabel,openable:t.id==='attention'},main);});","",K('a tile opens the list').concat(K('uzaib: he can open')));
   await brk('the sum of the list is not shown',"if(spec.sum!==null&&spec.sum!==undefined)panel.appendChild","if(false)panel.appendChild",K('a tile opens the list'));
   s.ok('breaks run: '+broken,broken>=40);
   return s;

@@ -283,6 +283,7 @@ async function checks(src){
     const w=T.writes();
     o['drop: ONE transaction wrote po_cut_jobs/PO-103 and its pos/PO-103/history row — both in it']=w.length===2&&w.every(x=>x.tx===1)&&w[0].path==='po_cut_jobs/PO-103'&&w[0].op==='update'&&w[0].data.plannedCutDate==='2026-10-15'&&/^pos\/PO-103\/history\/\d{13}-/.test(w[1].path)&&w[1].op==='set';
     o['drop: the pos document itself is never written (only the new collection and the history sub-collection)']=!w.some(x=>x.path==='pos/PO-103')&&rootsOf(T).every(r=>r==='po_cut_jobs'||r==='pos')&&w.filter(x=>x.path.split('/')[0]==='pos').every(x=>x.path.split('/')[2]==='history');
+    o['drop: the history row carries STRUCTURED data {field:plannedCutDate, from:2026-10-14, to:2026-10-15, jobRev:2}, not only the reason text']=J(w[1].data.data)===J({field:'plannedCutDate',from:'2026-10-14',to:'2026-10-15',jobRev:2});
     o['drop: the revision moved by one and the history row names the move']=w[0].data.rev===2&&/Calendar: planned cut date 2026-10-14 -> 2026-10-15/.test(w[1].data.reason)&&w[1].data.type==='cut_job_updated';
     o['drop: the chip is now on the new day and the ghost and the tracking are gone']=T.dayOf('PO-103')==='2026-10-15'&&T.dom.byClass(T.dom.body,'phc-ghost').length===0&&!T.dom.body.classList.contains('phc-dragging')&&T.nListeners('pointermove')===before&&spy.rel===1;
     o['drop: the message says what happened, in words with a tick']=/^✓ PO-103 moved to Thu 15 Oct \(was Wed 14 Oct\)\./.test(T.msg());
@@ -351,6 +352,7 @@ async function checks(src){
     await T.drag(T.tray('PO-106'),'2026-10-13');
     const w=T.writes();
     o['tray: dropping a tray PO on a day PLANS it: a created po_cut_jobs doc (open, dated) + its history row in one transaction']=w.length===2&&w[0].tx===w[1].tx&&w[0].path==='po_cut_jobs/PO-106'&&w[0].op==='set'&&w[0].data.status==='open'&&w[0].data.plannedCutDate==='2026-10-13'&&w[0].data.rev===1&&w[1].data.type==='cut_job_opened';
+    o['tray: planning a tray PO records {field:plannedCutDate, from:"" (no day before), to:2026-10-13, jobRev:1}']=J(w[1].data.data)===J({field:'plannedCutDate',from:'',to:'2026-10-13',jobRev:1});
     o['tray: the PO leaves the tray and appears on the day; the message says planned']=T.tray('PO-106')===null&&T.dayOf('PO-106')==='2026-10-13'&&/PO-106 planned for Tue 13 Oct/.test(T.msg());
     const R2=load(src);await R2.open();
     o['tray: a reserved PO is refused by the plan even if asked for directly']=(await R2.R('_phcApply("PO-107","2026-10-13")')).ok===false&&nWrites(R2)===0;
@@ -548,6 +550,7 @@ module.exports=async function(){
   await brk('the dialog does not preview refusals',"const txt=d.error||(plan.ok?","const txt=d.error||(true?",['menu: choosing a skip day shows the refusal live, before anything is pressed']);
   await brk('apply skips the plan',"const plan=_phcPlanFor(poId,day);\n  if(!plan.ok){_phcSay(plan.same?'info':'bad',plan.why);_phcRepaint();return plan;}","const plan={ok:true,from:null,to:day,create:false};",['refuse: _phcApply itself refuses done and overridden (no write)','view-only: _phcApply refuses with no write']);
   await brk('the escape guard is not registered',"phAddEscapeGuard(_phcEscape);","",['menu: the shell\'s Escape closes the dialog first and does not leave the page','end: Escape cancels the drag and does NOT leave the page']);
+  await brk('the calendar sends no structured data',"    if(d)o.data=d;\n","",['drop: the history row carries STRUCTURED data {field:plannedCutDate, from:2026-10-14, to:2026-10-15, jobRev:2}, not only the reason text','tray: planning a tray PO records {field:plannedCutDate, from:"" (no day before), to:2026-10-13, jobRev:1}']);
   await brk('the date is not written (wrong field)',"phSaveCutJob(poId,{plannedCutDate:plan.to},o)","phSaveCutJob(poId,{note:plan.to},o)",['drop: ONE transaction wrote po_cut_jobs/PO-103 and its pos/PO-103/history row — both in it']);
   await brk('a direct pos write sneaks in',"r=await phSaveCutJob(poId,{plannedCutDate:plan.to},o);","r=await phSaveCutJob(poId,{plannedCutDate:plan.to},o);await updateDoc(doc(db,'pos',poId),{plannedCutDate:plan.to});",['drop: the pos document itself is never written (only the new collection and the history sub-collection)','source: no Firestore write API or transaction is used directly']);
   await brk('stored text parsed as HTML',"b.appendChild(phEl('span','phc-chip-art',art));","const ar=phEl('span','phc-chip-art');ar.innerHTML=art;b.appendChild(ar);",['xss: a hostile article name reaches the page as escaped text, never as a tag','xss: the source never assigns innerHTML/outerHTML or parses a string as HTML']);

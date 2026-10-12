@@ -381,7 +381,7 @@ async function _phqFragment(o){
     mk('PO-113',{code:'GST202',name:'Final Tee',currentStage:'qc',ts:NOW-36*DAYMS}),
     mk('PO-114',{code:'GST203',name:'Planned Tee',ts:NOW-5*DAYMS}),
     ['po_cut_jobs/PO-102',{poId:'PO-102',status:'open',rev:1,plannedCutDate:'2026-10-09',masterId:'CM-001',masterName:'Hassan'}],
-    ['po_cut_jobs/PO-103',{poId:'PO-103',status:'open',rev:3,plannedCutDate:'2026-10-20',masterId:'CM-002',masterName:'Alam With A Very Long Name That Must Wrap Onto Several Lines Instead Of Clipping'}],
+    ['po_cut_jobs/PO-103',{poId:'PO-103',status:o.locked?'overridden':'open',rev:3,plannedCutDate:'2026-10-20',masterId:'CM-002',masterName:'Alam With A Very Long Name That Must Wrap Onto Several Lines Instead Of Clipping'}],
     ['po_cut_jobs/PO-114',{poId:'PO-114',status:'open',rev:1,plannedCutDate:'2027-01-05',masterId:null,masterName:''}],
     ['cutting_masters/CM-001',{id:'CM-001',name:'Hassan',nameKey:'hassan',kind:'inhouse',active:true}],
     ['cutting_masters/CM-002',{id:'CM-002',name:'Alam With A Very Long Name That Must Wrap Onto Several Lines Instead Of Clipping',nameKey:'alam',kind:'inhouse',active:true}],
@@ -390,7 +390,7 @@ async function _phqFragment(o){
   const colOf=p=>p.split('/').slice(0,-1).join('/');
   const snap=p=>({id:p.split('/').pop(),exists:()=>p in DATA,data:()=>JSON.parse(JSON.stringify(DATA[p])),metadata:{fromCache:false}});
   const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/pos.js'],currentPage:'prod-ops',
-    session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer',email:'uzaib@groovy.op'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'},
+    session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer',email:'uzaib@groovy.op'}:(o.locked?{uid:'u-mustafa',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}),
     globals:{Date:FixedDate,allPOs:[],allPasses:[],allReturns:[],allFabricIn:[],allGPEditRequests:[],allFabricMovements:[],allFabricInventory:[],currentBundles:[],viewingPO:null,
       localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
       collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
@@ -405,6 +405,7 @@ async function _phqFragment(o){
   app.ctx.console={warn(){},log(){},error(){}};
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-queue.js'),'utf8'),app.ctx,{filename:'ph-mod-queue.js'});
+  app.ctx.window.openPODetail=function(){};   // the Open button is drawn for managers only when the app has this function
   app.ctx.currentPage='prod-ops';
   app.run('_phUiTab="queue";_phqSub="board"'+(o.floor?'':';_phqCollapsed.reserved=false;_phqCollapsed.completed=false'));
   app.ctx.phRenderPage('prod-ops');
@@ -471,7 +472,7 @@ async function _phkFragment(o){
   const codes=[];for(let i=1;i<=9;i++)codes.push('JER-180-BLK-000'+i);
   DATA.po_drafts=[];DATA.cutting_masters=[{id:'CM-001',name:'Hassan'}];DATA.ph_standards=[];DATA['ph_settings/main']={};
   DATA.po_cut_jobs=[job('PO-001',{masterName:'Hassan With A Long Master Name That Must Wrap Onto Several Lines Instead Of Clipping',note:'Start with the black, keep the navy rolls apart. A long note that must wrap inside the card too.'}),
-    job('PO-002',{status:'complete',rollsChecklist:{total:12,verified:10,short:1,missing:2,extra:0}}),
+    job('PO-002',{status:'complete',rollsChecklist:{total:60,verified:10,short:1,missing:50,extra:2,missingCodes:Array.from({length:45},(_,i)=>'JER-180-BLK-0'+(100+i)),extraCodes:['STRAY-ROLL-WITH-A-LONG-CODE-0099-ABCDEFGH','X-2']}}),
     job('PO-003',{plannedCutDate:old}),job('PO-004',{plannedCutDate:old}),job('PO-005',{plannedCutDate:app.run('phDayAdd(phDay(Date.now()),-2)')})];
   DATA['pos/PO-001']={id:'PO-001',name:'Superman Full Sleeves Tee With A Very Long Article Name That Has To Wrap Properly',code:'GST073',qty:240,sizes:{XS:20,S:40,M:80,L:60,XL:30,'2XL':10},currentStage:'cutting'};
   DATA['pos/PO-002']={id:'PO-002',name:'Core Tee',code:'GCT002',qty:120,sizes:{M:60,L:60},currentStage:'cutting'};
@@ -533,6 +534,7 @@ async function _phmFragment(o){
   app.ctx.console={warn(){},log(){},error(){}};
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-monitor.js'),'utf8'),app.ctx,{filename:'ph-mod-monitor.js'});
+  app.ctx.window.openPODetail=function(){};   // managers get an Open button on every attention row when the app has this function
   app.ctx.currentPage='prod-ops';
   app.ctx.phRenderPage('prod-ops');
   app.run('_phUiTab='+JSON.stringify(o.tab||'monitor'));
@@ -3235,6 +3237,7 @@ const FRAGMENTS={
   'production ops — po queue':()=>_phqFragment({}),
   'production ops — po queue for the cutting floor (read-only board)':()=>_phqFragment({floor:true}),
   'production ops — po queue plan dialog':()=>_phqFragment({dialog:true}),
+  'production ops — po queue a locked (overridden) plan for a manager who is not an owner':()=>_phqFragment({locked:true}),
   'production ops — po queue failed reads':()=>_phqFragment({failPlans:true}).then(a=>_phqFragment({failPos:true}).then(b=>({html:a.html+b.html}))),
   // Production Ops PO Drafts (12 Oct 2026): the list and an editable, incomplete form on a PC (long hostile-ish article name, the live completeness panel,
   // the print-ready summary, the disabled Issue control, search results), then the same module off a PC (the soft banner, a read-only form) and a ready draft.
@@ -3272,7 +3275,8 @@ const FRAGMENTS={
     const week=await _phAdminPanel({tab:'masters',store,globals:g,setup:"_phaM.mode='week';_phaM.week='2026-10-08';_phaM.master='hassan';_phaM.edit={id:'CM-002',kind:'retire',text:''};_phaFlash={tab:'masters',kind:'bad',text:'A reason is required to retire a master.'}"});
     const empty=await _phAdminPanel({tab:'masters',store:{},globals:{allPOs:[{fbKey:'PO-001',code:'GST073'}],allPasses:[]},setup:"_phaM.month='2026-10'"});
     const failed=await _phAdminPanel({tab:'masters',store:{},fail:['cutting_masters'],globals:{allPOs:pos,allPasses:passes},setup:"_phaM.month='2026-10'"});
-    return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[a,week,empty,failed].join('')};
+    const kind=await _phAdminPanel({tab:'masters',store,globals:g,setup:"_phaM.month='2026-10';_phaM.edit={id:'CM-002',kind:'kind',text:'outsource'};_phaFlash={tab:'masters',kind:'ok',text:'Hassan is now Outsourced.'}"});
+    return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[a,week,empty,failed,kind].join('')};
   },
   'production ops — admin tabs — Standards':async()=>{
     const std=(code,e)=>Object.assign({code:code,unit:'kg',grossPerPiece:0.31,tolerancePct:null,sizes:null,sizeModel:'alpha',reason:'first cut',rev:2,createdAt:1,createdBy:'afnan',updatedAt:1,updatedBy:'afnan'},e||{});

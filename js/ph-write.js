@@ -210,6 +210,30 @@ function _phCleanChecklist(x){
     if(v===null||v<0)return{error:'the rolls checklist '+k+' must be a whole number, zero or more'};
     out[k]=v;
   }
+  // The WHICH-rolls detail (14 Oct 2026): optional lists of roll codes, kept inside the same map. firestore.rules checks
+  // rollsChecklist only as a map (phJobShapeOk), so no rule list moves. A bad list is refused by name, never trimmed
+  // quietly; the screen (js/ph-mod-cutting.js) clips to these limits first and says how many it left out.
+  for(const k of['missingCodes','extraCodes']){
+    if(x[k]===undefined||x[k]===null)continue;
+    const l=_phCleanCodeList(x[k],k);
+    if(l.error)return{error:l.error};
+    out[k]=l.value;
+  }
+  return{value:out};
+}
+const PH_CODES_MAX=200,PH_CODE_LEN_MAX=40;
+function _phCleanCodeList(x,what){
+  if(!Array.isArray(x))return{error:'the rolls checklist '+what+' must be a list of roll codes'};
+  const out=[],seen={};
+  for(let i=0;i<x.length;i++){
+    if(typeof x[i]!=='string')return{error:'the rolls checklist '+what+' holds something that is not text'};
+    const t=x[i].trim();
+    if(!t)continue;
+    if(t.length>PH_CODE_LEN_MAX)return{error:'a roll code in '+what+' is longer than '+PH_CODE_LEN_MAX+' characters'};
+    if(seen[t])continue;
+    seen[t]=true;out.push(t);
+  }
+  if(out.length>PH_CODES_MAX)return{error:'the rolls checklist '+what+' has more than '+PH_CODES_MAX+' codes'};
   return{value:out};
 }
 // Builds a job's CREATE document (input is already cleaned) -- see phSaveCutJob.
@@ -354,9 +378,32 @@ function phJobMoveProblem(from,to,u){
   return null;
 }
 
+// The STRUCTURED detail of a plan or a move, for phSaveCutJob's opts.data (14 Oct 2026): what changed, from -> to, so a report
+// need not parse the free-text reason. Only the two things the planning screens change (the planned day and the master).
+// One change = {field,from,to}; more = {field:'plannedCutDate+master',changes:[{field,from,to},...]} (an array of maps is legal
+// in Firestore; an array in an array is not). null = nothing moved, send no data. Strings are cut at the history from/to limit.
+function phCutJobChangeData(prev,input){
+  const p=_phIsObj(prev)?prev:{},i=_phIsObj(input)?input:{};
+  const ch=[];
+  if('plannedCutDate' in i){
+    const f=_phStr(p.plannedCutDate||'',PH_HISTORY_FT_MAX),t=_phStr(i.plannedCutDate||'',PH_HISTORY_FT_MAX);
+    if(f!==t)ch.push({field:'plannedCutDate',from:f,to:t});
+  }
+  if('masterId' in i||'masterName' in i){
+    const lab=function(id,name){return _phStr([id||'',name||''].join(' ').trim(),PH_HISTORY_FT_MAX);};
+    const f=lab(p.masterId,p.masterName);
+    const t=lab('masterId' in i?i.masterId:p.masterId,'masterName' in i?i.masterName:p.masterName);
+    if(f!==t)ch.push({field:'master',from:f,to:t});
+  }
+  if(!ch.length)return null;
+  if(ch.length===1)return{field:ch[0].field,from:ch[0].from,to:ch[0].to};
+  return{field:ch.map(function(c){return c.field;}).join('+'),changes:ch};
+}
+
 /* ── Cut jobs (the planned cut of one PO), with the history row in the SAME transaction ─ */
 // input (all optional, only given keys change): {plannedCutDate:'YYYY-MM-DD'|null, masterId, masterName,
-// plannedFabric:{qty,unit,note}|null, rollsChecklist:{total,verified,short,missing,extra}|null, note, status}.
+// plannedFabric:{qty,unit,note}|null, rollsChecklist:{total,verified,short,missing,extra[,missingCodes,extraCodes]}|null, note, status}.
+// opts: {reason, expectedRev, data (optional map for the history row), actor...}.
 // 'overridden' is an owner's decision. A job that is 'done' is never changed again.
 // Reads pos/{poId} (a read) and refuses a PO that does not exist; writes po_cut_jobs/{poId} and
 // pos/{poId}/history/{row} in one transaction.
@@ -382,6 +429,16 @@ async function phSaveCutJob(poId,input,opts){
     if(PH_JOB_STATUSES.indexOf(inp.status)<0)return _phFail('invalid','Not a cut job status: '+inp.status);
     if(inp.status==='overridden'&&!phIsOwner(a.u))return _phFail('forbidden','Only an owner can mark a cut job overridden.');
     clean.status=inp.status;
+  }
+  // Optional structured detail for the history row (e.g. {field:'plannedCutDate',from,to}), checked BEFORE any round trip
+  // against the same limits as every history row (a plain map, at most PH_HISTORY_KEYS_MAX keys INCLUDING the writer's own
+  // jobRev, which always wins). Not given = the row carries jobRev only, as before.
+  let extraData={};
+  if(o.data!==undefined&&o.data!==null){
+    if(!_phIsObj(o.data))return _phFail('invalid','The history data must be an object.');
+    const t=phBuildHistoryRow({type:'cut_job_updated',data:Object.assign({},o.data,{jobRev:0})},{u:a.u,name:a.name,now:_phNowOf(o),rand:o.rand});
+    if(t.error)return _phFail('invalid',t.error);
+    extraData=o.data;
   }
   if(_phOffline())return _phFail('offline','No connection. A cut job is saved with a transaction, which cannot be queued - try again when the connection is back.');
   try{
@@ -416,7 +473,7 @@ async function phSaveCutJob(poId,input,opts){
           saved=Object.assign({},prev,patch);
           from=prev.status||'';to=saved.status||'';
         }
-        const h=phBuildHistoryRow({type:type,from:from,to:to,reason:_phStr(o.reason,500),data:{jobRev:saved.rev}},ctx);
+        const h=phBuildHistoryRow({type:type,from:from,to:to,reason:_phStr(o.reason,500),data:Object.assign({},extraData,{jobRev:saved.rev})},ctx);
         if(h.error)throw _phRefuse('invalid',h.error);
         histId=h.id;
         tx.set(doc(db,'pos',poId,'history',h.id),h.data);   // the history row, in the SAME transaction
@@ -547,6 +604,16 @@ function phMasterSetActive(id,active,reason,opts){
   },function(m){return m.active?'Cutting master reactivated':'Cutting master retired';});
 }
 
+// Change a master's kind (inhouse | outsource | unset). Managers; the rules' update key list includes `kind`.
+function phMasterSetKind(id,kind,opts){
+  const o=opts||{};
+  if(PH_MASTER_KINDS.indexOf(kind)<0)return Promise.resolve(_phFail('invalid','The kind must be inhouse, outsource or unset.'));
+  return _phMasterUpdate(id,o,function(prev,ctx){
+    if((prev.kind||'unset')===kind)return{refuse:{code:'refused',error:'Cutting master '+id+' is already '+kind+'.'}};
+    return{patch:{kind:kind,updatedAt:ctx.now,updatedBy:ctx.u}};
+  },function(){return'Cutting master kind changed';});
+}
+
 /* ── Consumption standards (managers) ───────────────────────────────────── */
 // input: {unit:'kg'|'m', grossPerPiece:number>0, tolerancePct?:0..100, sizes?:{size:gross}, sizeModel?:'alpha'|'waist'|'free', reason?}.
 // Cleaned by the core's phStandard (the one definition of a valid standard). One document per article
@@ -597,9 +664,15 @@ async function phSettingsSave(patch,opts){
   const bad=Object.keys(patch).filter(function(k){return PH_SETTINGS_VALUE_FIELDS.indexOf(k)<0;});
   if(bad.length)return _phFail('invalid','Not a Production Ops setting: '+bad.join(', ')+'.');
   if('pcOnlyHard' in patch){
-    if(typeof patch.pcOnlyHard!=='boolean')return _phFail('invalid','pcOnlyHard must be true or false.');
+    if(patch.pcOnlyHard!==null&&typeof patch.pcOnlyHard!=='boolean')return _phFail('invalid','pcOnlyHard must be true or false (or null to go back to the default).');
     if(!phIsOwner(a.u))return _phFail('forbidden','Only an owner can switch the hard PC-only rule.');
   }
+  // null = CLEAR the saved value, back to the default (14 Oct 2026). The save writes the WHOLE document, so a cleared key is
+  // simply left out; phSettingsOk in firestore.rules is `!('x' in d) || ...` for every value, so an omitted key is legal.
+  // The delay target and the stuck limit are judged as a pair by the core, so they are cleared together or not at all.
+  const clearing=Object.keys(patch).filter(function(k){return patch[k]===null;});
+  if((patch.delayTargetDays===null)!==(patch.stuckDays===null))
+    return _phFail('invalid','The delay target and the stuck limit go back to their defaults together: clear both or neither.');
   if(typeof _phSettingsFb!=='function')return _phFail('failed','js/ph-core.js is not loaded, so settings cannot be checked.');
   if(_phOffline())return _phFail('offline','No connection. Saving settings is a transaction and cannot be queued.');
   try{
@@ -612,7 +685,14 @@ async function phSettingsSave(patch,opts){
         const prev=s&&s.exists()?s.data():null;
         if(prev&&o.expectedRev!=null&&prev.rev!==o.expectedRev)throw _phRefuse('stale','Settings were changed by someone else (revision '+prev.rev+'). Reload them.',{rev:prev.rev});
         const merged={};
-        PH_SETTINGS_VALUE_FIELDS.forEach(function(k){if(prev&&k in prev)merged[k]=prev[k];if(k in patch)merged[k]=patch[k];});
+        PH_SETTINGS_VALUE_FIELDS.forEach(function(k){
+          if(prev&&k in prev)merged[k]=prev[k];
+          if(k in patch){if(patch[k]===null)delete merged[k];else merged[k]=patch[k];}
+        });
+        if(clearing.length){
+          if(!prev)throw _phRefuse('refused','Nothing has been saved yet, so there is nothing to put back to its default.');
+          if(clearing.every(function(k){return!(k in prev);}))throw _phRefuse('refused','Nothing to clear: '+clearing.join(', ')+(clearing.length===1?' has':' have')+' no saved value (already the default).');
+        }
         const fb=_phSettingsFb(merged);
         const given=fb.fallback.filter(function(f){return Object.keys(patch).some(function(k){return f.field.indexOf(k)>-1;});});
         if(given.length)throw _phRefuse('invalid',given.map(function(f){return f.field+': '+f.why;}).join('; ')+'.');
@@ -631,7 +711,7 @@ async function phSettingsSave(patch,opts){
         saved=doc_;
       });
       _phPatchLocal('settings','main',saved);
-      _phLog('Production Ops settings updated',Object.keys(patch).join(', '));
+      _phLog('Production Ops settings updated',Object.keys(patch).map(function(k){return patch[k]===null?k+' (default)':k;}).join(', '));
       return{ok:true,created:created,rev:saved.rev,settings:saved};
     });
   }catch(e){return _phFromError(e);}

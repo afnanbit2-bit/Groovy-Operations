@@ -353,6 +353,7 @@ async function checks(src){
     o['plan: Save writes po_cut_jobs/PO-101 (day, master id and name) and nothing else but the history row, in ONE transaction']=!!job&&job.plannedCutDate==='2026-10-15'&&job.masterId==='CM-002'&&job.masterName==='Alam'&&T.log.writes.length===2&&new Set(T.log.writes.map(w=>w.tx)).size===1&&T.log.writes[0].tx>0&&T.log.plain===0;
     o['plan: every recorded write path is po_cut_jobs/{PO} or pos/{PO}/history/{row} (nothing in pos itself)']=T.paths().length>0&&writesOnly(T,PLAN_PATHS);
     o['plan: the dialog closes, the tile shows the plan and a toast confirms']=T.dom.all(T.dom.body,n=>n.getAttribute('role')==='dialog').length===0&&/Cut 15 Oct · Alam/.test(T.text(T.tile('PO-101')))&&T.a.state.toasts.some(m=>/Plan saved for PO-101/.test(m));
+    o['plan: the history row carries STRUCTURED data for both changes: {field, changes:[plannedCutDate "" -> 2026-10-15, master "" -> "CM-002 Alam"], jobRev}']=(()=>{const h=T.log.writes.filter(w=>/history/.test(w.path))[0];const d=h&&h.data.data;return !!d&&d.field==='plannedCutDate+master'&&J(d.changes)===J([{field:'plannedCutDate',from:'',to:'2026-10-15'},{field:'master',from:'',to:'CM-002 Alam'}])&&d.jobRev===1;})();
     o['plan: the history row names the action (cut_job_opened) and the actor']=(()=>{const h=T.log.writes.filter(w=>/history/.test(w.path))[0];return !!h&&h.data.type==='cut_job_opened'&&h.data.by==='afnan';})();
     // change an existing plan: only the changed key is sent, with the loaded revision
     T.dom.click(T.btn(T.tile('PO-102'),/Change plan/));
@@ -363,6 +364,7 @@ async function checks(src){
     T.dom.click(T.byClass('phq-d-save',d2)[0]);await settle(60);
     const j2=T.st.get('po_cut_jobs/PO-102');
     o['plan: editing the day changes the day and leaves the master alone; revision +1']=j2.plannedCutDate==='2026-10-14'&&j2.masterId==='CM-001'&&j2.rev===2;
+    o['plan: changing the day only records {field:plannedCutDate, from:2026-10-09, to:2026-10-14, jobRev:2} on the history row']=(()=>{const h=T.log.writes.filter(w=>/history/.test(w.path))[0];const d=h&&h.data.data;return !!d&&J(d)===J({field:'plannedCutDate',from:'2026-10-09',to:'2026-10-14',jobRev:2});})();
     o['plan: the update names ONLY the keys that changed (plus rev and the stamp)']=(()=>{const w=T.log.writes.filter(x=>x.path==='po_cut_jobs/PO-102')[0];return !!w&&!('masterId' in w.data)&&!('masterName' in w.data)&&w.data.plannedCutDate==='2026-10-14';})();
     // clearing the day / the master
     T.dom.click(T.btn(T.tile('PO-103'),/Change plan/));
@@ -462,7 +464,7 @@ async function checks(src){
     T.dom.click(T.q(T.panel(),n=>n.getAttribute('data-sub')==='board')[0]);await settle(80);
     o['uzaib: the read-only board shows the tiles']=T.tiles().length>=7&&!!T.tile('PO-102')&&/Cut 9 Oct · Hassan/.test(T.text(T.tile('PO-102')));
     o['uzaib: NO Plan cut / Change plan button and NO Force-advance button anywhere on the board']=!T.btn(T.panel(),/Plan cut|Change plan|Force-advance/);
-    o['uzaib: Open is still offered (it is a link to the PO page, a read)']=!!T.btn(T.tile('PO-101'),/^Open$/);
+    o['uzaib: NO Open button on any tile (openPODetail bypasses page scoping), and phqOpenPO refuses him']=!T.btn(T.panel(),/^Open$/)&&(()=>{T.R('window.openPODetail=function(k){window.__opened2=k;};');return T.R('phqOpenPO("PO-101")')===false&&T.R('typeof window.__opened2')==='undefined';})();
     const r=await T.R('phqSavePlan("PO-101",{plannedCutDate:"2026-10-20"},null)');
     o['uzaib: phqSavePlan is refused (forbidden) and writes nothing, even though phSaveCutJob would let the floor save']=r.ok===false&&r.code==='forbidden'&&T.paths().length===0;
     const ra=await T.R('phqAdvance("PO-104",{repaint(){}})');
@@ -481,6 +483,44 @@ async function checks(src){
     // audience: the shell still refuses everyone else
     const RA=load(src,{session:USERS.raees});
     o['audience: raees gets no tabs at all (the queue\'s widened roles cannot reach someone off the audience)']=RA.R('phTabsFor("raees").length')===0&&RA.R('phTabsFor("arfat").length')===0;
+  }
+
+  /* ═══ PRE-CHECK: an overridden plan (non-owner) and a done plan are refused before the writer is called ═══ */
+  {
+    const seed=fixture();
+    seed['po_cut_jobs/PO-103'].status='overridden';
+    seed['po_cut_jobs/PO-102'].status='done';
+    const T=await open('mustafa',{src,seed:seed});
+    o['precheck: the pure answer: overridden is an owner\'s (Mustafa refused, Afnan allowed), done is nobody\'s, open and a missing job are fine']=T.R('phqPlanProblem({status:"overridden"},"mustafa")')!==null&&/only an owner/.test(T.R('phqPlanProblem({status:"overridden"},"mustafa")'))&&T.R('phqPlanProblem({status:"overridden"},"afnan")')===null&&/done/.test(T.R('phqPlanProblem({status:"done"},"afnan")'))&&T.R('phqPlanProblem({status:"open"},"mustafa")')===null&&T.R('phqPlanProblem(null,"mustafa")')===null&&typeof T.R('phqPlanProblem({status:"finished"},"afnan")')==='string';
+    o['precheck: Mustafa\'s tile of an overridden plan has no Plan button, it says "Plan locked" with the reason']=!T.btn(T.tile('PO-103'),/Plan|Change/)&&T.byClass('phq-plan-locked',T.tile('PO-103')).length===1&&/only an owner/.test(T.byClass('phq-plan-locked',T.tile('PO-103'))[0].getAttribute('title'));
+    o['precheck: a done plan has no button (as before)']=!T.btn(T.tile('PO-102'),/Plan|Change/);
+    T.R('__t=phqModel(_phqPos.rows,phGet("jobs").rows,{now:'+NOW+'}).tiles.filter(t=>t.id==="PO-103")[0]');
+    T.R('_phqOpenPlan(__t,{user:"mustafa",canManage:true,get:phGet,repaint(){}},null)');
+    o['precheck: calling the dialog directly for an overridden plan opens nothing and toasts the reason']=T.dom.all(T.dom.body,n=>n.getAttribute('role')==='dialog').length===0&&T.a.state.toasts.some(m=>/only an owner/.test(m));
+    const job3=T.R('phGet("jobs").rows.filter(r=>r.fbKey==="PO-103")[0]');
+    const r1=await T.R('phqSavePlan("PO-103",{plannedCutDate:"2026-10-25"},'+J(job3)+')');
+    o['precheck: phqSavePlan on an overridden plan by a non-owner is refused with the reason BEFORE the writer (no transaction was even started, nothing written)']=r1.ok===false&&r1.code==='forbidden'&&/only an owner/.test(r1.error)&&T.log.tx===0&&T.paths().length===0;
+    const job2=T.R('phGet("jobs").rows.filter(r=>r.fbKey==="PO-102")[0]');
+    const r2=await T.R('phqSavePlan("PO-102",{plannedCutDate:"2026-10-25"},'+J(job2)+')');
+    o['precheck: phqSavePlan on a done plan is refused with the reason before the writer (no transaction, nothing written)']=r2.ok===false&&/done/.test(r2.error)&&T.log.tx===0&&T.paths().length===0;
+    // the owner may change the overridden plan, through the same screen
+    const O=await open('afnan',{src,seed:seed});
+    o['precheck: an owner (Afnan) still gets Change plan on the overridden plan and no locked note']=!!O.btn(O.tile('PO-103'),/Change plan/)&&O.byClass('phq-plan-locked',O.tile('PO-103')).length===0;
+    O.dom.click(O.btn(O.tile('PO-103'),/Change plan/));
+    const od=O.dom.all(O.dom.body,n=>n.getAttribute('role')==='dialog')[0];
+    O.byClass('phq-d-day',od)[0].value='2026-10-28';
+    O.dom.click(O.byClass('phq-d-save',od)[0]);await settle(60);
+    o['precheck: the owner\'s plan of an overridden job lands (status stays overridden), with structured from/to']=O.st.get('po_cut_jobs/PO-103').plannedCutDate==='2026-10-28'&&O.st.get('po_cut_jobs/PO-103').status==='overridden'&&O.log.tx===1&&(()=>{const h=O.log.writes.filter(w=>/history/.test(w.path))[0];return !!h&&h.data.data.field==='plannedCutDate'&&h.data.data.from==='2026-10-20'&&h.data.data.to==='2026-10-28';})();
+    // stale: the dialog opened on an OPEN plan, then the plan became overridden (someone else); the freshest loaded copy decides
+    const S=await open('mustafa',{src});
+    S.dom.click(S.btn(S.tile('PO-103'),/Change plan/));
+    const sd=S.dom.all(S.dom.body,n=>n.getAttribute('role')==='dialog')[0];
+    S.st.put('po_cut_jobs/PO-103',Object.assign(S.st.get('po_cut_jobs/PO-103'),{status:'overridden'}));
+    await S.R('phLoadStage("jobs",{force:true})');await settle(30);
+    S.byClass('phq-d-day',sd)[0].value='2026-11-05';
+    S.log.writes.length=0;const tx0=S.log.tx;
+    S.dom.click(S.byClass('phq-d-save',sd)[0]);await settle(60);
+    o['precheck: a plan that became overridden while the dialog was open is refused from the freshest copy, before the writer']=/only an owner/.test(S.text(sd))&&S.log.tx===tx0&&S.log.writes.length===0;
   }
 
   /* ═══ Open PO ═══ */
@@ -555,6 +595,14 @@ module.exports=async function(){
   await brk('Plan shown while plans are not loaded',"if(manage&&t.lane==='cutting'&&jobsOk&&_phqPlannable(t.id)","if(manage&&t.lane==='cutting'&&_phqPlannable(t.id)",['failed cut plans: the board says so and draws no Plan / Change plan button']);
   await brk('a failed plans read printed as "Not planned"',"if(!jobsOk)plan='Plan: not loaded';\n    else if","if(false)plan='';\n    else if",['failed cut plans: tiles say "Plan: not loaded", not "Not planned"']);
   await brk('no Escape guard on the dialog',"if(typeof phAddEscapeGuard==='function')phAddEscapeGuard(_phqEscape);","",['plan: Escape closes the dialog through the registered guard and writes nothing']);
+  await brk('the Open button is drawn for everyone',"if(phqCanOpen(ctx.user)){","if(typeof window!=='undefined'&&window&&typeof window.openPODetail==='function'){",["uzaib: NO Open button on any tile (openPODetail bypasses page scoping), and phqOpenPO refuses him"]);
+  await brk('phqOpenPO does not check who',"function phqOpenPO(fbKey){\n  if(!phqCanOpen())return false;","function phqOpenPO(fbKey){\n  if(typeof window==='undefined'||typeof window.openPODetail!=='function')return false;",["uzaib: NO Open button on any tile (openPODetail bypasses page scoping), and phqOpenPO refuses him"]);
+  await brk('no pre-check before the writer',"  const why=phqPlanProblem(live,_phqUser());\n  if(why)return{ok:false,code:'forbidden',error:why};\n","",['precheck: phqSavePlan on an overridden plan by a non-owner is refused with the reason BEFORE the writer (no transaction was even started, nothing written)','precheck: phqSavePlan on a done plan is refused with the reason before the writer (no transaction, nothing written)']);
+  await brk('the pre-check ignores the freshest copy',"const live=_phqLiveJob(poId)||job;","const live=job;",['precheck: a plan that became overridden while the dialog was open is refused from the freshest copy, before the writer']);
+  await brk('the pre-check lets a non-owner through on overridden',"  const p=phJobMoveProblem(st,st,_phqUser(u));","  const p=st==='overridden'?null:phJobMoveProblem(st,st,_phqUser(u));",['precheck: the pure answer: overridden is an owner\'s (Mustafa refused, Afnan allowed), done is nobody\'s, open and a missing job are fine','precheck: phqSavePlan on an overridden plan by a non-owner is refused with the reason BEFORE the writer (no transaction was even started, nothing written)']);
+  await brk('the dialog opens for an overridden plan',"  if(lockWhy){if(typeof showToast==='function')showToast(lockWhy,true);return;}","",['precheck: calling the dialog directly for an overridden plan opens nothing and toasts the reason']);
+  await brk('the tile offers Change plan on an overridden plan',"  if(planWhy&&t.plan.status!=='done'){","  if(false){",["precheck: Mustafa's tile of an overridden plan has no Plan button, it says \"Plan locked\" with the reason"]);
+  await brk('the plan history row has no structured data',"  if(cd)opts.data=cd;\n","",['plan: the history row carries STRUCTURED data for both changes: {field, changes:[plannedCutDate "" -> 2026-10-15, master "" -> "CM-002 Alam"], jobRev}','plan: changing the day only records {field:plannedCutDate, from:2026-10-09, to:2026-10-14, jobRev:2} on the history row']);
   await brk('a dialog outlives the page',"try{if(typeof currentPage==='undefined'||currentPage!=='prod-ops')_phqCloseDlg();}catch(e){}","",['plan: leaving Production Ops by any route closes an open dialog']);
   await brk('cancelled POs shown',"if(st==='cancelled'){cancelled++;return;}","if(st==='cancelled'){cancelled++;}",['model: a cancelled PO has no tile and is counted']);
   await brk('reserved POs fall into cutting',"const lane=PHQ_LANES.some(function(l){return l.id===stage;})?stage:(stage==='reserved'||stage==='completed'?stage:'unknown');","const lane=PHQ_LANES.some(function(l){return l.id===stage;})?stage:(stage==='reserved'?'cutting':stage==='completed'?stage:'unknown');",['model: reserved, completed and an unrecognised stage are apart (never counted as cutting)']);
