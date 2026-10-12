@@ -154,8 +154,44 @@ service cloud.firestore {
     // role. Mirror in js/warehouse-sales.js _WHS_USERS / whsCanView().
     function isWhSales() { return isOwner() || (signedIn() && userEmail() == 'umair@groovy.op'); }
 
+    // Production Ops data layer (12 Oct 2026). By username -> email, never by role.
+    //   isProdOps()        the whole audience: afnan, ammar, mustafa and uzaib (Kashif,
+    //                      the cutting incharge) -- drafts, cut jobs, the PO history rows.
+    //   isProdOpsManager() afnan, ammar, mustafa -- masters, standards, settings.
+    // Mirror: js/ph-data.js _PH_USERS / _PH_MANAGE_USERS; tests/ph-data.test.js
+    // fails if the lists differ. Nothing here lets anyone but the people named
+    // write to the NEW collections; the existing pos / gatepasses / counters rules
+    // are untouched (pos only gains a history sub-collection, below).
+    function isProdOps() { return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op','mustafa@groovy.op','uzaib@groovy.op']; }
+    function isProdOpsManager() { return signedIn() && userEmail() in ['afnan@groovy.op','ammar@groovy.op','mustafa@groovy.op']; }
+    // A stored "who" is the caller: usernames are <u>@groovy.op.
+    function phBy(u) { return u is string && (u + '@groovy.op') == userEmail(); }
+    function phIsDayStr(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+
     // ── Operational data (POs, gate passes, returns, fabric in) ──
-    match /pos/{doc}                  { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
+    match /pos/{doc} {
+      allow read:  if isQaRead() || signedIn();
+      allow write: if signedIn();
+      // Production Ops (12 Oct 2026): the append-only history of one PO. A NEW
+      // sub-collection -- the pos document above is not changed by it. A row is
+      // created by the Production Ops team in their own name, only for a PO that
+      // exists once the write lands (existsAfter, so a PO and its first row may
+      // be written together), and is never edited or deleted (like
+      // fabric_movements). tests/rules-emulator-ph.js runs it in the emulator.
+      match /history/{row} {
+        allow read:   if isQaRead() || signedIn();
+        allow create: if isProdOps()
+                      && row.matches('^[0-9]{13}-[A-Za-z0-9]{4}$')
+                      && request.resource.data.keys().hasOnly(['at','by','byName','type','from','to','reason','data'])
+                      && request.resource.data.get('at', null) is number
+                      && phBy(request.resource.data.get('by', ''))
+                      && request.resource.data.get('type', '') is string
+                      && request.resource.data.get('type', '').matches('^[a-z][a-z_]{1,39}$')
+                      && request.resource.data.get('data', {}) is map
+                      && existsAfter(/databases/$(database)/documents/pos/$(doc));
+        allow update, delete: if false;
+      }
+    }
     match /bundles/{doc}              { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
     match /gatepasses/{doc}           { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
     match /returns/{doc}              { allow read: if isQaRead() || signedIn(); allow write: if signedIn(); }
@@ -1069,6 +1105,203 @@ service cloud.firestore {
     match /settings/{doc} {
       allow read: if isQaRead() || (signedIn());
       allow write: if isOwner();
+    }
+
+    // ══ Production Ops data layer (12 Oct 2026) ═════════════════════════════
+    // NEW collections only; nothing existing is opened or changed. Every read is
+    // 'isQaRead() || signedIn()' (the repo convention: tests/qa-read-guard.test.js).
+    // Every write is limited by key lists that js/ph-write.js mirrors
+    // (PH_*_FIELDS; tests/ph-data.test.js holds them equal), carries a revision
+    // that moves by exactly one, and names the caller (phBy). Nothing is deletable
+    // (a draft is abandoned, a master retired). Run in the emulator by
+    // tests/rules-emulator-ph.js. REPUBLISH REQUIRED: until it is, every read and
+    // write below is default-denied and the loaders say so by collection name.
+
+    // po_drafts/{DRAFT-…}: a PO entered on a PC before it has a number. 'issued' is
+    // NOT a status here yet -- the issue transaction (which also creates the pos
+    // document) arrives with its own rules change.
+    match /po_drafts/{id} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isProdOps()
+        && id.matches('^DRAFT-[0-9A-Z]+-[0-9A-Z]{4}$')
+        && request.resource.data.keys().hasOnly(['id','status','rev','entryDevice','createdBy','createdByName','createdAt','updatedAt','updatedBy','po'])
+        && request.resource.data.get('id', '') == id
+        && request.resource.data.get('status', '') == 'draft'
+        && request.resource.data.get('rev', 0) == 1
+        && request.resource.data.get('entryDevice', '') == 'pc'
+        && phBy(request.resource.data.get('createdBy', ''))
+        && phBy(request.resource.data.get('updatedBy', ''))
+        && request.resource.data.get('createdAt', null) is number
+        && request.resource.data.get('updatedAt', null) is number
+        && request.resource.data.get('po', null) is map;
+      allow update: if isProdOps() && phDraftStep(resource.data, request.resource.data);
+      allow delete: if false;
+    }
+    function phDraftStep(r, d) {
+      let k = d.diff(r).affectedKeys();
+      return d.get('rev', 0) == r.get('rev', 0) + 1
+        && phBy(d.get('updatedBy', ''))
+        && d.get('updatedAt', null) is number
+        && d.get('po', null) is map
+        && (   // edit a draft
+               (r.status == 'draft' && d.status == 'draft'
+                  && k.hasOnly(['po','rev','updatedAt','updatedBy']))
+            || // mark ready
+               (r.status == 'draft' && d.status == 'ready' && phBy(d.get('readyBy', ''))
+                  && k.hasOnly(['status','po','rev','readyAt','readyBy','updatedAt','updatedBy']))
+            || // send a ready draft back (managers)
+               (r.status == 'ready' && d.status == 'draft' && isProdOpsManager() && phBy(d.get('sentBackBy', ''))
+                  && k.hasOnly(['status','rev','sentBackAt','sentBackBy','sentBackReason','updatedAt','updatedBy']))
+            || // abandon (never delete)
+               ((r.status == 'draft' || r.status == 'ready') && d.status == 'abandoned' && phBy(d.get('abandonedBy', ''))
+                  && k.hasOnly(['status','rev','abandonedAt','abandonedBy','abandonedReason','updatedAt','updatedBy'])));
+    }
+
+    // po_cut_jobs/{PO-nnn}: the planned cut job of one PO (id = the PO id). 'overridden'
+    // is an owner's decision; a job that is 'done' is never changed again.
+    match /po_cut_jobs/{id} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isProdOps()
+        && id.matches('^PO-[0-9]{3,}$')
+        && request.resource.data.keys().hasOnly(['poId','status','rev','plannedCutDate','masterId','masterName','plannedFabric','rollsChecklist','note','createdAt','createdBy','createdByName','updatedAt','updatedBy'])
+        && request.resource.data.get('poId', '') == id
+        && request.resource.data.get('status', '') == 'open'
+        && request.resource.data.get('rev', 0) == 1
+        && phBy(request.resource.data.get('createdBy', ''))
+        && phBy(request.resource.data.get('updatedBy', ''))
+        && request.resource.data.get('createdAt', null) is number
+        && request.resource.data.get('updatedAt', null) is number
+        && phJobShapeOk(request.resource.data);
+      allow update: if isProdOps() && phJobStep(resource.data, request.resource.data);
+      allow delete: if false;
+    }
+    function phJobShapeOk(d) {
+      return (d.get('plannedCutDate', null) == null || phIsDayStr(d.plannedCutDate))
+        && (d.get('masterId', null) == null || (d.masterId is string && d.masterId.matches('^CM-[0-9]{3,}$')))
+        && (d.get('masterName', '') is string)
+        && (d.get('plannedFabric', null) == null || d.plannedFabric is map)
+        && (d.get('rollsChecklist', null) == null || d.rollsChecklist is map)
+        && (d.get('note', '') is string);
+    }
+    function phJobStep(r, d) {
+      let k = d.diff(r).affectedKeys();
+      return k.hasOnly(['status','rev','plannedCutDate','masterId','masterName','plannedFabric','rollsChecklist','note','completedAt','completedBy','doneAt','updatedAt','updatedBy'])
+        && r.get('status', '') != 'done'
+        && d.get('status', '') in ['open','complete','overridden','done']
+        && (d.get('status', '') != 'overridden' || r.get('status', '') == 'overridden' || isOwner())
+        && d.get('rev', 0) == r.get('rev', 0) + 1
+        && phBy(d.get('updatedBy', ''))
+        && d.get('updatedAt', null) is number
+        && phJobShapeOk(d);
+    }
+
+    // cutting_masters/{CM-nnn}: the registry. Managers add, rename and retire; no delete.
+    match /cutting_masters/{id} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isProdOpsManager()
+        && id.matches('^CM-[0-9]{3,}$')
+        && request.resource.data.keys().hasOnly(['id','name','nameKey','kind','active','aliases','notes','createdAt','createdBy','createdByName','updatedAt','updatedBy','retiredAt','retiredBy','retiredReason'])
+        && request.resource.data.get('id', '') == id
+        && request.resource.data.get('active', false) == true
+        && request.resource.data.get('kind', '') in ['inhouse','outsource','unset']
+        && phMasterShapeOk(request.resource.data)
+        && phBy(request.resource.data.get('createdBy', ''))
+        && phBy(request.resource.data.get('updatedBy', ''))
+        && request.resource.data.get('createdAt', null) is number
+        && request.resource.data.get('updatedAt', null) is number;
+      allow update: if isProdOpsManager()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['name','nameKey','kind','active','aliases','notes','retiredAt','retiredBy','retiredReason','updatedAt','updatedBy'])
+        && request.resource.data.get('kind', '') in ['inhouse','outsource','unset']
+        && phMasterShapeOk(request.resource.data)
+        && phBy(request.resource.data.get('updatedBy', ''))
+        && request.resource.data.get('updatedAt', null) is number;
+      allow delete: if false;
+    }
+    function phMasterShapeOk(d) {
+      return d.get('name', '') is string && d.get('name', '').size() >= 1 && d.get('name', '').size() <= 40
+        && d.get('nameKey', '') is string && d.get('nameKey', '').size() >= 1 && d.get('nameKey', '').size() <= 40
+        && d.get('aliases', []) is list && d.get('aliases', []).size() <= 20;
+    }
+
+    // ph_standards/{CODE}: the gross standard of one article (id = article code).
+    // Managers only; no delete. Holds the CURRENT standard (rev counts the saves).
+    match /ph_standards/{code} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isProdOpsManager()
+        && code.matches('^[A-Z0-9][A-Z0-9._-]{1,39}$')
+        && request.resource.data.keys().hasOnly(['code','unit','grossPerPiece','tolerancePct','sizes','sizeModel','reason','rev','createdAt','createdBy','createdByName','updatedAt','updatedBy'])
+        && request.resource.data.get('code', '') == code
+        && request.resource.data.get('rev', 0) == 1
+        && phStandardShapeOk(request.resource.data)
+        && phBy(request.resource.data.get('createdBy', ''))
+        && phBy(request.resource.data.get('updatedBy', ''))
+        && request.resource.data.get('createdAt', null) is number
+        && request.resource.data.get('updatedAt', null) is number;
+      allow update: if isProdOpsManager()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['unit','grossPerPiece','tolerancePct','sizes','sizeModel','reason','rev','updatedAt','updatedBy'])
+        && request.resource.data.get('rev', 0) == resource.data.get('rev', 0) + 1
+        && phStandardShapeOk(request.resource.data)
+        && phBy(request.resource.data.get('updatedBy', ''))
+        && request.resource.data.get('updatedAt', null) is number;
+      allow delete: if false;
+    }
+    function phStandardShapeOk(d) {
+      return d.get('unit', '') in ['kg','m']
+        && d.get('grossPerPiece', 0) is number && d.get('grossPerPiece', 0) > 0
+        && (d.get('tolerancePct', null) == null || (d.tolerancePct is number && d.tolerancePct >= 0 && d.tolerancePct <= 100))
+        && (d.get('sizes', null) == null || d.sizes is map)
+        && (d.get('sizeModel', null) == null || d.sizeModel in ['alpha','waist','free']);
+    }
+
+    // ph_settings/main and ph_settings/counters. A NEW collection rather than the
+    // existing settings/{doc}, whose write is owner-only: the managers (Mustafa
+    // runs production) must be able to set the daily capacity and skip days.
+    // main      managers write the values; only an OWNER may touch pcOnlyHard.
+    // counters  the id counter for cutting_masters (NOT counters/main, which is
+    //           never written by this layer); it can only go up.
+    match /ph_settings/{doc} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isProdOpsManager() && (
+           (doc == 'main'
+              && phSettingsOk(request.resource.data)
+              && request.resource.data.get('rev', 0) == 1
+              && (request.resource.data.get('pcOnlyHard', false) == false || isOwner()))
+        || (doc == 'counters'
+              && request.resource.data.keys().hasOnly(['cutting_masters','updatedAt','updatedBy'])
+              && request.resource.data.get('cutting_masters', 0) is number
+              && request.resource.data.get('cutting_masters', 0) >= 1
+              && request.resource.data.get('cutting_masters', 0) <= 50
+              && request.resource.data.get('updatedAt', null) is number
+              && phBy(request.resource.data.get('updatedBy', ''))));
+      allow update: if isProdOpsManager() && (
+           (doc == 'main'
+              && phSettingsOk(request.resource.data)
+              && request.resource.data.get('rev', 0) == resource.data.get('rev', 0) + 1
+              && (request.resource.data.get('pcOnlyHard', false) == resource.data.get('pcOnlyHard', false) || isOwner()))
+        || (doc == 'counters'
+              && request.resource.data.keys().hasOnly(['cutting_masters','updatedAt','updatedBy'])
+              && request.resource.data.get('cutting_masters', 0) is number
+              && request.resource.data.get('cutting_masters', 0) > resource.data.get('cutting_masters', 0)
+              && request.resource.data.get('cutting_masters', 0) <= resource.data.get('cutting_masters', 0) + 50
+              && request.resource.data.get('updatedAt', null) is number
+              && phBy(request.resource.data.get('updatedBy', ''))));
+      allow delete: if false;
+    }
+    function phSettingsOk(d) {
+      return d.keys().hasOnly(['dailyCapacity','skipDays','offWeekdays','delayTargetDays','stuckDays','grossOverTolPct','grossUnderTolPct','cutGate','pcOnlyHard','rev','updatedAt','updatedBy'])
+        && (!('dailyCapacity' in d) || (d.dailyCapacity is number && d.dailyCapacity >= 1 && d.dailyCapacity <= 100000))
+        && (!('skipDays' in d) || (d.skipDays is list && d.skipDays.size() <= 5000))
+        && (!('offWeekdays' in d) || (d.offWeekdays is list && d.offWeekdays.size() <= 6))
+        && (!('delayTargetDays' in d) || d.delayTargetDays is number)
+        && (!('stuckDays' in d) || d.stuckDays is number)
+        && (!('grossOverTolPct' in d) || (d.grossOverTolPct is number && d.grossOverTolPct >= 0 && d.grossOverTolPct <= 100))
+        && (!('grossUnderTolPct' in d) || (d.grossUnderTolPct is number && d.grossUnderTolPct >= 0 && d.grossUnderTolPct <= 100))
+        && (!('cutGate' in d) || (d.cutGate is list && d.cutGate.size() == 2))
+        && (!('pcOnlyHard' in d) || d.pcOnlyHard is bool)
+        && d.get('updatedAt', null) is number
+        && phBy(d.get('updatedBy', ''));
     }
 
     // ══ The Board (Sept 2026) ═══════════════════════════════════════════

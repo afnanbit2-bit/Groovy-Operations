@@ -314,8 +314,13 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
   // the baseline must deny all five operations, and this ruleset must let a signed-in
   // persona get + list and nothing else (writes are Admin-SDK only, or a validated payload
   // this probe's junk payload cannot satisfy); anonymous gets nothing.
-  const NEW_SINCE_BASE=['shopify_article_daily','shopify_article_summary','shopify_rollup_meta','inventory_article_meta'];
-  const isNewSinceBase=l=>NEW_SINCE_BASE.some(c=>l.full.startsWith('/'+c+'/'));
+  // 12 Oct 2026, Production Ops data layer: five new collections and the append-only
+  // pos/{id}/history sub-collection. Same expectation (every signed-in persona gets + lists,
+  // this probe's junk payload cannot create / update / delete). The existing pos document
+  // itself is NOT in this list: its cells must still match the baseline exactly.
+  const NEW_SINCE_BASE=['shopify_article_daily','shopify_article_summary','shopify_rollup_meta','inventory_article_meta',
+    'po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings'];
+  const isNewSinceBase=l=>NEW_SINCE_BASE.some(c=>l.full.startsWith('/'+c+'/'))||/^\/pos\/\{[A-Za-z]+\}\/history\//.test(l.full);
   const cellsDiff=[];let cells=0;
   const reseed=async(env,l)=>raw(env,async db=>{
     const segs=docPath(l,'d1').split('/');
