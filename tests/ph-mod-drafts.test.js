@@ -8,7 +8,9 @@
      · the COMPLETENESS GATE: Mark ready is refused with the missing fields named, BEFORE anything is written; a complete draft saves then readies
      · PC-ONLY: a PC edits; off a PC the form is read-only; soft rule = warning + explicit override; hard rule (or an unread setting) = no override and
        no writer is ever called, even if the handler is invoked directly
-     · NO ISSUING: every recorded write is to po_drafts; no `pos` write, no PDF; "Issue as PO (later wave)" is disabled
+     · ISSUING (14 Oct 2026): managers only, ready drafts only, a two-step confirm, one call to phIssueDraft with the revision seen;
+       Kashif sees "Ready - waiting for Mustafa"; an issued draft is read-only and says "Issued as PO-nnn" (phIssueDraft itself is
+       stubbed here and tested in tests/ph-issue.test.js); this module writes nothing itself and makes no PDF
      · send back (managers only), abandon (reason required), audience (off the audience: nothing, no write)
      · XSS: stored text only ever reaches textContent / value; the source never parses a string as HTML
      · wiring: script tag after ph-ui.js, one precache entry, the stylesheet block (tokens only, 44px targets)
@@ -222,7 +224,7 @@ async function checks(src){
     K('new: the New draft button is enabled on a PC and opens a blank form',T.press(T.byAct('new'))&&!!T.byId('phd-f-code'));
     K('new: nothing is written by opening the form',T.log.writes.length===0);
     K('new: the live panel says Not complete and names the missing fields',/Not complete yet/.test(T.text())&&['Article code','Article name','Quantity','Fabric','Season','Planned cut date','Requested date','Cutting master'].every(x=>T.text().indexOf(x)>-1));
-    K('new: Issue as PO is a disabled control that says it is a later wave',(()=>{const b=T.byAct('issue');return !!b&&b.disabled===true&&b.getAttribute('disabled')!==null&&/later wave/.test(b.textContent);})());
+    K('new: Issue as PO is a disabled control on an unsaved draft, saying a draft must be ready first',(()=>{const b=T.byAct('issue');return !!b&&b.disabled===true&&b.getAttribute('disabled')!==null&&b.textContent==='Issue as PO'&&/READY draft/.test(b.getAttribute('title')||'');})());
     T.type('phd-f-code','gd007');
     K('sizes: a waist-size article code switches the grid to the waist axis (26..40), by itself',T.byId('phd-sz-26')&&T.byId('phd-sz-40')&&!T.byId('phd-sz-XS'));
     T.choose('phd-f-sizeModel','alpha');
@@ -377,15 +379,80 @@ async function checks(src){
     K('unread setting: on a PC the form is still editable',P.byId('phd-f-code').disabled!==true);
   }
 
-  /* ── NO ISSUING, nothing outside po_drafts ── */
+  /* ── no write from this module but through ph-write.js (a full cycle writes only po_drafts) ── */
   {
     const T=load(src);await T.open();
     T.press(T.byAttr('data-open','DRAFT-K1-AAAA'));await T.act('ready',60);
-    const T2=load(src);await T2.open();T2.press(T2.byAttr('data-open','DRAFT-K1-CCCC'));
-    K('issue: the Issue control exists on a READY draft and is disabled (a later wave)',(()=>{const b=T2.byAct('issue');return !!b&&b.disabled===true&&/later wave/.test(b.textContent);})());
-    const w=T2.byAct('issue');let clicked=false;(w._ls.click||[]).forEach(()=>{clicked=true;});
-    K('issue: the Issue control has no click handler at all',clicked===false);
-    K('issue: a full cycle (open, edit, ready) wrote only to po_drafts: no pos, no counters, no history, no cut job',T.roots().length>0&&T.roots().every(r=>r==='po_drafts'));
+    K('scope: a full cycle (open, edit, ready) wrote only to po_drafts: no pos, no counters, no history, no cut job',T.roots().length>0&&T.roots().every(r=>r==='po_drafts'));
+  }
+
+  /* ── ISSUE AS PO (14 Oct 2026): managers only, a two-step confirm, the revision seen, nothing from this module itself ── */
+  {
+    const calls=[];
+    const stub=res=>async function(id,opts){calls.push([id,JSON.parse(JSON.stringify(opts))]);return typeof res==='function'?res(id,opts):res;};
+    const OKRES={ok:true,poId:'PO-007',n:7,rev:2,draft:{issuedAt:T0},followUps:{activity:'logged',recipe:'skipped',trim:'created'}};
+    const opens=[];
+    const T=load(src,{session:USERS.mustafa,globals:{phIssueDraft:stub(OKRES),phqOpenPO:id=>{opens.push(id);return true;}}});T.ctx.window.openPODetail=()=>{};
+    await T.open();T.press(T.byAttr('data-open','DRAFT-K1-CCCC'));
+    const b=T.byAct('issue');
+    K('issue (manager): a ready draft has a live Issue as PO button',!!b&&b.disabled!==true&&b.textContent==='Issue as PO'&&(b._ls.click||[]).length>0);
+    await T.act('issue',30);
+    K('issue (manager): the first press only ASKS (a confirm with the article, the quantity and "number not known yet"); nothing called, nothing written',
+      !!T.byAct('ask-ok')&&/GST073/.test(T.text())&&/100 pcs/.test(T.text())&&/Not known yet/.test(T.text())&&calls.length===0&&T.log.writes.length===0);
+    K('issue (manager): the confirm says it cannot be undone and that the PO is created reserved without photos or rolls',/cannot be undone/.test(T.text())&&/Reserved/.test(T.text())&&/no photos/.test(T.text()));
+    await T.act('ask-cancel');
+    K('issue (manager): Cancel asks nothing more and calls nothing',calls.length===0&&!T.byAct('ask-ok')&&T.byAct('issue').disabled!==true);
+    await T.act('issue');await T.act('ask-ok',60);
+    K('issue (manager): confirming calls phIssueDraft once with the draft id and the revision on screen',calls.length===1&&calls[0][0]==='DRAFT-K1-CCCC'&&calls[0][1].expectedRev===1&&Object.keys(calls[0][1]).join()==='expectedRev');
+    K('issue (manager): the screen says "Issued as PO-007" and mentions the trim request',/Issued as PO-007/.test(T.text())&&/trim issue request was created/.test(T.text()));
+    K('issue (manager): after issuing the Issue button is gone and the form is final (inputs disabled)',!T.byAct('issue')&&T.byId('phd-f-code').disabled===true);
+    K('issue (manager): no Abandon, no Send back, no Save on an issued draft',!T.byAct('abandon')&&!T.byAct('sendback')&&T.byAct('save').disabled===true);
+    K('issue (manager): this module itself wrote nothing',T.log.writes.length===0);
+    const open=T.byAct('openpo');
+    K('issue (manager): an Open PO-007 button is offered and opens the PO page through the queue\'s opener',!!open&&/PO-007/.test(open.textContent)&&(T.press(open),opens.join()==='PO-007'));
+    K('issue (manager): the explanation of the status is on screen',/final/.test(T.text()));
+  }
+  {   // refusals are shown, the draft stays ready, a stale one offers Reload
+    const mkT=async(res,over)=>{const calls=[];const T=load(src,{session:USERS.mustafa,globals:Object.assign({phIssueDraft:async(id,o)=>{calls.push(o);return res;}},over||{})});await T.open();T.press(T.byAttr('data-open','DRAFT-K1-CCCC'));T.calls=calls;return T;};
+    let T=await mkT({ok:false,code:'stale',error:'Draft DRAFT-K1-CCCC was changed by someone else (revision 2, yours was 1). Reload it.',rev:2});
+    await T.act('issue');await T.act('ask-ok',40);
+    K('issue refused (stale): the message is shown, a Reload button is offered, the draft is still ready and issuable again',/changed by someone else/.test(T.text())&&!!T.byText('button','Reload the latest copy')&&T.byAct('issue')&&T.byAct('issue').disabled!==true&&!T.byAct('openpo'));
+    T=await mkT({ok:false,code:'offline',error:'No connection. Issuing a PO is one transaction and cannot be queued - nothing was created.'});
+    await T.act('issue');await T.act('ask-ok',40);
+    K('issue refused (offline): the writer\'s plain message is shown and nothing is marked issued',/nothing was created/.test(T.text())&&!/Issued as/.test(T.text())&&!!T.byAct('issue'));
+    T=await mkT({ok:true,poId:'PO-009',rev:2,draft:{},followUps:{trim:'failed: store down',activity:'logged',recipe:'skipped'}});
+    await T.act('issue');await T.act('ask-ok',40);
+    K('issue ok but a follow-up failed: the PO is still reported as issued, with the failed step named',/Issued as PO-009/.test(T.text())&&/Follow-up step failed \(trim\)/.test(T.text()));
+    T=await mkT({ok:true,poId:'PO-010',rev:2,draft:{}});T.nav.onLine=false;
+    await T.act('issue');await T.act('ask-ok',40);
+    K('issue (browser says offline): refused on the screen with a clear message, phIssueDraft not called',T.calls.length===0&&/No connection/.test(T.text())&&/Nothing was created/.test(T.text())&&!/Issued as/.test(T.text()));
+    T=await mkT({ok:true,poId:'PO-011',rev:2,draft:{}});T.R('phIssueDraft=undefined');
+    await T.R('_phdIssue()');T.R('_phdPaint()');
+    K('issue (code missing): says js/ph-issue.js did not load and writes nothing',/js\/ph-issue\.js did not load/.test(T.text())&&T.log.writes.length===0);
+  }
+  {   // Kashif: waiting for Mustafa; nothing works even when the handler is called directly
+    const calls=[];
+    const T=load(src,{session:USERS.uzaib,globals:{phIssueDraft:async(id,o)=>{calls.push(o);return{ok:true,poId:'PO-007',rev:2,draft:{}};}}});await T.open();
+    K('issue (Kashif): the ready row says "Ready - waiting for Mustafa"',(()=>{const r=rowOf(T,'DRAFT-K1-CCCC');return !!r&&/Ready - waiting for Mustafa/.test(r.textContent);})());
+    T.press(T.byAttr('data-open','DRAFT-K1-CCCC'));
+    const b=T.byAct('issue');
+    K('issue (Kashif): the control reads "Ready - waiting for Mustafa" and is disabled with the reason',!!b&&b.disabled===true&&b.textContent==='Ready - waiting for Mustafa'&&/manager/.test(b.getAttribute('title')||''));
+    K('issue (Kashif): the explanation is on screen',/waiting for Mustafa\. He issues it as a PO/.test(T.text()));
+    await T.R('_phdIssue()');T.R('_phdPaint()');
+    K('issue (Kashif): calling the handler directly is refused by the screen and calls nothing',calls.length===0&&/Only a manager/.test(T.text())&&T.log.writes.length===0);
+  }
+  {   // a draft in draft status is not issuable; an issued draft reads "Issued as PO-nnn" in the list and the form
+    const store=SEED();store['po_drafts/DRAFT-K1-EEEE']=draftDoc('DRAFT-K1-EEEE','issued',GOOD,{rev:5,updatedAt:T0+9000,readyAt:T0+2000,readyBy:'afnan',poId:'PO-009',issuedAt:T0+9000,issuedBy:'mustafa'});
+    const T=load(src,{session:USERS.mustafa,store,globals:{phIssueDraft:async()=>({ok:false})}});await T.open();
+    T.press(T.byAttr('data-open','DRAFT-K1-AAAA'));
+    K('issue: a draft in draft status shows a disabled Issue control (mark it ready first)',(()=>{const b=T.byAct('issue');return !!b&&b.disabled===true&&/READY draft/.test(b.getAttribute('title')||'');})());
+    const T2=load(src,{session:USERS.mustafa,store,globals:{phIssueDraft:async()=>({ok:false})}});await T2.open();
+    K('issued: the filter row has an Issued filter with its count',!!T2.byAttr('data-filter','issued')&&/Issued 1/.test(T2.byAttr('data-filter','issued').textContent));
+    T2.press(T2.byAttr('data-filter','issued'));
+    const r=rowOf(T2,'DRAFT-K1-EEEE');
+    K('issued: the list row shows the status and "Issued as PO-009"',!!r&&/Issued as PO-009/.test(r.textContent));
+    T2.press(T2.byAttr('data-open','DRAFT-K1-EEEE'));
+    K('issued: the form is final: "issued as PO-009" explained, inputs disabled, no Issue / Abandon / Send back',/issued as PO-009/.test(T2.text())&&T2.byId('phd-f-code').disabled===true&&!T2.byAct('issue')&&!T2.byAct('abandon')&&!T2.byAct('sendback'));
   }
 
   /* ── send back and abandon ── */
@@ -628,7 +695,15 @@ module.exports=async function(){
   await brk('another person inherits the form',"if(_phdForm&&_phdForm.owner!==_phdUser()){","if(false){",['another person on the same page load: nothing carries over (list view, no form)']);
   await brk('the audience gate is removed',"function _phdCanSee(){return typeof phCanSee==='function'&&phCanSee(_phdUser())===true;}","function _phdCanSee(){return true;}",['audience: raees gets \"No access\" and no list','audience: the QA account is out','audience: signed out is out (fail closed)']);
   await brk('role check on writes dropped',"function _phdCanRecord(){return typeof phCanRecordFloor==='function'&&phCanRecordFloor(_phdUser())===true;}","function _phdCanRecord(){return true;}",['audience: raees cannot reach a form even by calling the handlers, and nothing is written']);
-  await brk('the Issue control becomes live',"const issue=_phdBtn('phd-issue','Issue as PO (later wave)',null,{'data-act':'issue','aria-disabled':'true'});_phdOff(issue);","const issue=_phdBtn('phd-issue','Issue as PO (later wave)',function(){},{'data-act':'issue','aria-disabled':'true'});",['issue: the Issue control exists on a READY draft and is disabled (a later wave)','issue: the Issue control has no click handler at all','new: Issue as PO is a disabled control that says it is a later wave']);
+  await brk('the manager gate on the issue handler dropped',"  if(!_phdCanManage()){_phdAsk=null;_phdSetNote('err','Only a manager (Afnan, Ammar, Mustafa) can issue a draft as a PO.');return;}\n","",['issue (Kashif): calling the handler directly is refused by the screen and calls nothing']);
+  await brk('the Issue button is live for the floor',"if(st!=='ready'||!mgr||busy||!f.id){","if(st!=='ready'||busy||!f.id){",['issue (Kashif): the control reads "Ready - waiting for Mustafa" and is disabled with the reason']);
+  await brk('the confirm step is skipped (one press issues)',"function(){_phdAsk={kind:'issue'};_phdPaint();}","function(){_phdRun(_phdIssue);}",['issue (manager): the first press only ASKS (a confirm with the article, the quantity and "number not known yet"); nothing called, nothing written']);
+  await brk('the revision on screen is not sent',"const r=await phIssueDraft(f.id,{expectedRev:f.rev});","const r=await phIssueDraft(f.id,{});",['issue (manager): confirming calls phIssueDraft once with the draft id and the revision on screen']);
+  await brk('the offline pre-check dropped',"  if(typeof navigator!=='undefined'&&navigator&&navigator.onLine===false){_phdAsk=null;_phdSetNote('err','No connection. Issuing a PO needs one","  if(false){_phdAsk=null;_phdSetNote('err','No connection. Issuing a PO needs one",['issue (browser says offline): refused on the screen with a clear message, phIssueDraft not called']);
+  await brk('a refused issue is reported as issued',"  if(r&&r.ok){\n    f.status='issued';","  if(true){\n    f.status='issued';",['issue refused (stale): the message is shown, a Reload button is offered, the draft is still ready and issuable again']);
+  await brk('an issued draft stays editable',"function _phdEditable(){return!!_phdForm&&_phdForm.status==='draft'&&_phdWriteCheck().ok;}","function _phdEditable(){return!!_phdForm&&_phdForm.status!=='abandoned'&&_phdWriteCheck().ok;}",['issued: the form is final: "issued as PO-009" explained, inputs disabled, no Issue / Abandon / Send back']);
+  await brk('the issued row hides which PO',"if(st==='issued'&&r.poId)chips.appendChild(_phdChip('Issued as '+r.poId,'ok'));","",['issued: the list row shows the status and "Issued as PO-009"']);
+  await brk('the waiting chip dropped',"if(st==='ready'&&!_phdCanManage())chips.appendChild(_phdChip('Ready - waiting for Mustafa','wait'));","",['issue (Kashif): the ready row says "Ready - waiting for Mustafa"']);
   await brk('a pos write sneaks in',"async function _phdAbandon(reason){","async function _phdAbandon(reason){ await setDoc(doc(db,'pos','PO-001'),{x:1});",['scope: the source calls no Firestore write API itself (only ph-write.js writers)','scope: no PDF, no print, no pos document: the source names none of them']);
   await brk('a PDF is generated',"function _phdSummary(po,gate,t){","function _phdSummary(po,gate,t){ if(false)generatePOPdf(po);",['scope: no PDF, no print, no pos document: the source names none of them']);
   await brk('a tab is registered by the module',"let _phdHost=null,","phRegisterTab('queue',{render:phDraftsPanel});\nlet _phdHost=null,",['scope: it registers nothing (no tab, no listener, no escape guard, no window.* handler)']);

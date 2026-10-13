@@ -73,6 +73,7 @@ const PRECACHE_URLS = [
   '/js/ph-core.js',
   '/js/ph-data.js',
   '/js/ph-write.js',
+  '/js/ph-issue.js',
   '/js/ph-ui.js',
   '/js/ph-mod-queue.js',
   '/js/ph-mod-drafts.js',

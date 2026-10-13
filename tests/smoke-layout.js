@@ -269,7 +269,8 @@ async function _phdFragment(o){
     'po_drafts':{'DRAFT-K1-AAAA':dd('DRAFT-K1-AAAA','draft',Object.assign({},GOOD,{season:'',requestedDate:'',cutMasterId:'CM-009',cutMaster:'Gone Master'})),
       'DRAFT-K1-BBBB':dd('DRAFT-K1-BBBB','draft',{code:'GH001',name:'Black Hoodie',qty:50,sizes:{M:50},fabric:'Fleece'}),
       'DRAFT-K1-CCCC':dd('DRAFT-K1-CCCC','ready',GOOD,{readyAt:1790000009000,readyBy:'afnan'}),
-      'DRAFT-K1-DDDD':dd('DRAFT-K1-DDDD','abandoned',{code:'GB001',name:'Old'},{abandonedReason:'duplicate'})},
+      'DRAFT-K1-DDDD':dd('DRAFT-K1-DDDD','abandoned',{code:'GB001',name:'Old'},{abandonedReason:'duplicate'}),
+      'DRAFT-K1-EEEE':dd('DRAFT-K1-EEEE','issued',GOOD,{rev:5,readyAt:1790000009000,readyBy:'afnan',poId:'PO-1234',issuedAt:1790000019000,issuedBy:'mustafa'})},
     'cutting_masters':{'CM-001':{id:'CM-001',name:'Hassan',nameKey:'hassan',active:true},'CM-002':{id:'CM-002',name:'Alam With A Very Long Name That Must Wrap Onto Several Lines',nameKey:'alam',active:true}},
     'ph_standards':{'GST073':{code:'GST073',unit:'kg',grossPerPiece:0.3,tolerancePct:3,sizes:null,sizeModel:null,rev:1}}
   };
@@ -297,7 +298,14 @@ async function _phdFragment(o){
   }else{
     app.run('_phdOpen("DRAFT-K1-AAAA")');                               // off a PC: the soft banner and a read-only form
     grab();
-    app.run('_phdBack(true);_phdOpen("DRAFT-K1-CCCC")');                // a ready draft: locked, with the Send back control
+    app.run('_phdBack(true);_phdOpen("DRAFT-K1-CCCC")');                // a ready draft: locked, with the Send back control and the live Issue as PO button (a manager)
+    grab();
+    app.run('_phdAsk={kind:"issue"};_phdPaint()');                      // Issue as PO, step two: the confirm box with the article, the quantity and "number not known yet"
+    grab();
+    app.run('_phdAsk=null;_phdBack(true);_phdOpen("DRAFT-K1-EEEE")');   // an issued draft: final, "Issued as PO-1234"
+    grab();
+    app.ctx.session={uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'};
+    app.run('_phdBack(true);_phdOpen("DRAFT-K1-CCCC")');                // Kashif on the same ready draft: "Ready - waiting for Mustafa"
     grab();
   }
   return{html:parts.join('')};
