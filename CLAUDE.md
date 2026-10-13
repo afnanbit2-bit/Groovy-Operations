@@ -10345,6 +10345,11 @@ have access" div — one element, no buttons, no contrast problem. Set
 does. With that fixed the ink break fails at 1:1 naming `tb-railbtn on`.
 **This is the "fragment measuring itself" trap in a new place — confirm a
 break actually bites before believing a fragment has teeth.**
+## Recipe ▸ Embroidery codes (12 Oct 2026, cache v316)
+
+`js/embellishments.js` (Ammar's file; additive, tell him). Owner: "add a section for embroidery codes" in the article recipe. Field `article_recipes/{id}.embroideryCodes = [{code,candle,shade,position,note}]` (maps, never nested arrays; trimmed, code 40, candle/shade/position 80, note 200, max 30 rows). **No `firestore.rules` change:** `article_recipes` is `write: if signedIn()` with no field allow-list (read, not run). `embRecipeEmbroidery(recipe)` is the one pure reader (cleaned list; for the later product-instructions import and job-copy PDFs, which are NOT changed). The Create/Edit form (`renderRecipeCreatePage`/`saveRecipe`) has the card, shown when Embroidery is ticked or codes exist; a row needs a Code (save refused with a message), Position offers the recipe's placement names as a datalist. Codes are kept when Embroidery is unticked (views gate on the process, the data is not thrown away). A recipe that never had the field is saved without it; opening a form writes nothing. The history entry gains `changes:['embroideryCodes']` when the cleaned list differs. Shown on the recipe detail page and the printing worker card only when the recipe's `processTypes` includes `embroidery`. Every stored string goes through `_embCodeEsc`. `tests/embroidery-codes.test.js` (36), layout fragment `embellishments — embroidery codes`.
+**NOT verified:** a real screen/phone, a real Firestore write, the job-sheet print window (`window.document.write` path) and the draft/review recipe pages (`submitRecipeDraft`, review save) do not carry the field, no "unsaved changes" prompt exists (the existing form has none).
+
 ## Fabric issue → Embellishment job (21 Sept 2026)
 
 Afnan: *"after issue registry the data is landed in embellishment department
