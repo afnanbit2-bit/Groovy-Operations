@@ -36,6 +36,29 @@ const PROCESS_TYPES={
   sublimation: {label:'Sublimation',          icon:'🔥', dept:'external'},
   embroidery:  {label:'Embroidery',           icon:'🪡', dept:'external'}
 };
+// ── Embroidery codes on the recipe (additive field `embroideryCodes`) ─────
+// [{code,candle,shade,position,note}] — an array of MAPS, never nested arrays
+// (Firestore refuses those). A recipe without the field behaves as before.
+const EMB_CODES_MAX=30, EMB_CODE_LEN=40, EMB_CODE_FIELD_LEN=80, EMB_CODE_NOTE_LEN=200;
+function embRecipeEmbroidery(recipe){
+  const src=recipe&&Array.isArray(recipe.embroideryCodes)?recipe.embroideryCodes:[];
+  const t=(v,n)=>String(v==null?'':v).trim().slice(0,n);
+  const out=[];
+  for(const row of src){
+    if(!row||typeof row!=='object'||Array.isArray(row))continue;
+    const c={code:t(row.code,EMB_CODE_LEN),candle:t(row.candle,EMB_CODE_FIELD_LEN),shade:t(row.shade,EMB_CODE_FIELD_LEN),position:t(row.position,EMB_CODE_FIELD_LEN),note:t(row.note,EMB_CODE_NOTE_LEN)};
+    if(!c.code&&!c.candle&&!c.shade&&!c.position&&!c.note)continue;
+    out.push(c);
+    if(out.length>=EMB_CODES_MAX)break;
+  }
+  return out;
+}
+function embRecipeIsEmbroidery(recipe){ return !!(recipe&&recipe.printing&&(recipe.printing.processTypes||[]).includes('embroidery')); }
+// Names the recipe history records: ['embroideryCodes'] when the cleaned lists differ, else [].
+function embRecipeEmbroideryChanges(before,after){
+  return JSON.stringify(embRecipeEmbroidery(before))===JSON.stringify(embRecipeEmbroidery(after))?[]:['embroideryCodes'];
+}
+function _embCodeEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 const GROOVY_SEED_COLORS=[
   {id:'clr-001',colorName:'Brown',pantoneCode:'PANTONE 438 C',hexApprox:'#5C3317',localInkName:'Camlin Brown 01',inkType:'rubber',supplierName:'Camlin',mixingNotes:''},
   {id:'clr-002',colorName:'Brown 2',pantoneCode:'PANTONE 7615 C',hexApprox:'#7A4020',localInkName:'Camlin Brown 02',inkType:'rubber',supplierName:'Camlin',mixingNotes:'Slightly warmer tone'},
@@ -1572,7 +1595,7 @@ function renderRecipeCreatePage(){
         <label>Process Types (select all that apply)</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
           ${Object.entries(PROCESS_TYPES).map(([k,v])=>`<label style="display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
-            <input type="checkbox" id="rc-pt-${k}" ${(pt.processTypes||[]).includes(k)?'checked':''} style="accent-color:var(--dark)"> ${v.icon} ${v.label}
+            <input type="checkbox" onchange="window._rcEmbToggle()" id="rc-pt-${k}" ${(pt.processTypes||[]).includes(k)?'checked':''} style="accent-color:var(--dark)"> ${v.icon} ${v.label}
           </label>`).join('')}
         </div>
       </div>
@@ -1616,6 +1639,14 @@ function renderRecipeCreatePage(){
       ${(pt.pantones||[]).map((p,i)=>pantoneRowHTML(i,p)).join('')}
     </div>
     <button type="button" class="btn-outline" style="width:100%;margin-top:6px" onclick="window.addPantoneRow()">+ Add Color</button>
+  </div>
+
+  <div class="card" id="rc-emb-card" style="display:${(pt.processTypes||[]).includes('embroidery')||embRecipeEmbroidery(e).length?'block':'none'}"><div class="card-title">Embroidery Codes</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Thread / embroidery code, candle and shade for each part. Up to ${EMB_CODES_MAX} rows.</div>
+    <datalist id="rc-emb-positions">${(pt.placements||[]).map(pl=>pl.templateNameEn||pl.name||'').filter(Boolean).map(n=>`<option value="${_embCodeEsc(n)}">`).join('')}</datalist>
+    <div id="rc-emb-rows">${embRecipeEmbroidery(e).map((r,k)=>_embCodeRowHTML(k,r)).join('')}</div>
+    <div id="rc-emb-msg" role="alert" style="font-size:13px;color:var(--accent-urgent);margin-top:6px"></div>
+    <button type="button" class="btn-outline" style="width:100%;min-height:44px;margin-top:6px" onclick="window.addEmbCodeRow()">+ Add Embroidery Code</button>
   </div>
 
   <div class="card"><div class="card-title">Product Images</div>
@@ -1846,6 +1877,45 @@ window._ptSelectColor=function(i,colorId){
   var dd=document.getElementById('pt-dropdown-'+i);if(dd)dd.innerHTML='';
 };
 window.addPlacementRow=function(){ document.getElementById('rc-placements')?.insertAdjacentHTML('beforeend',placementRowHTML(_plIdx)); _plIdx++; };
+let _embRowIdx=0;
+function _embCodeRowHTML(i,r={}){
+  _embRowIdx=Math.max(_embRowIdx,i+1);
+  const f=(k,label,max,extra)=>`<div class="field" style="margin:0"><label style="font-size:12px">${label}</label><input class="emb-f-${k}" maxlength="${max}" value="${_embCodeEsc(r[k])}" ${extra||''} style="min-height:40px"></div>`;
+  return`<div class="emb-code-row" data-i="${i}" style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
+      ${f('code','Code',EMB_CODE_LEN)}${f('candle','Candle',EMB_CODE_FIELD_LEN)}${f('shade','Shade',EMB_CODE_FIELD_LEN)}${f('position','Position',EMB_CODE_FIELD_LEN,'list="rc-emb-positions"')}
+    </div>
+    <div class="field" style="margin:8px 0 0"><label style="font-size:12px">Note</label><input class="emb-f-note" maxlength="${EMB_CODE_NOTE_LEN}" value="${_embCodeEsc(r.note)}" style="min-height:40px"></div>
+    <button type="button" class="btn-outline" style="min-height:44px;min-width:44px;margin-top:8px" aria-label="Remove this embroidery code" onclick="window.removeEmbCodeRow(this)">Remove</button>
+  </div>`;
+}
+window.addEmbCodeRow=function(){
+  const box=document.getElementById('rc-emb-rows'); if(!box)return;
+  const msg=document.getElementById('rc-emb-msg');
+  if(box.querySelectorAll('.emb-code-row').length>=EMB_CODES_MAX){ if(msg)msg.textContent='At most '+EMB_CODES_MAX+' rows.'; return; }
+  if(msg)msg.textContent='';
+  box.insertAdjacentHTML('beforeend',_embCodeRowHTML(_embRowIdx));
+};
+window.removeEmbCodeRow=function(btn){ const row=btn&&btn.closest&&btn.closest('.emb-code-row'); if(row)row.remove(); };
+window._rcEmbToggle=function(){
+  const card=document.getElementById('rc-emb-card'); const cb=document.getElementById('rc-pt-embroidery');
+  if(card&&cb)card.style.display=cb.checked?'block':'none';
+};
+// Reads the form rows. Returns {rows, error}. Does not throw.
+function collectEmbroideryCodes(){
+  const raw=[];
+  document.querySelectorAll('#rc-emb-rows .emb-code-row').forEach(row=>{
+    const g=k=>(row.querySelector('.emb-f-'+k)||{}).value||'';
+    raw.push({code:g('code'),candle:g('candle'),shade:g('shade'),position:g('position'),note:g('note')});
+  });
+  let error='';
+  for(const r of raw){
+    const any=[r.code,r.candle,r.shade,r.position,r.note].some(v=>String(v).trim());
+    if(any&&!String(r.code).trim()){error='Every embroidery row needs a Code.';break;}
+    if(String(r.code).trim().length>EMB_CODE_LEN){error='Code is at most '+EMB_CODE_LEN+' characters.';break;}
+  }
+  return{rows:embRecipeEmbroidery({embroideryCodes:raw}),error};
+}
 window.addPantoneRow=function(){ document.getElementById('rc-pantones')?.insertAdjacentHTML('beforeend',pantoneRowHTML(_ptIdx)); _ptIdx++; };
 
 function collectPlacements(){
@@ -1958,6 +2028,8 @@ window.saveRecipe=async function(lock=false){
   if(lock&&session.u!=='ammar'){showToast('Only Ammar can lock a recipe.',true);return;}
   if(lock&&(!rate||!processTypes.length)){showToast('Rate and process type required before locking.',true);return;}
   const editing=viewingRecipe?allRecipes.find(r=>r._id===viewingRecipe):null;
+  const embC=collectEmbroideryCodes();
+  if(embC.error){const m=document.getElementById('rc-emb-msg');if(m)m.textContent=embC.error;showToast(embC.error,true);return;}
   const now=nowIso();
   const payload={
     articleCode:code, articleName:name,
@@ -2005,8 +2077,15 @@ window.saveRecipe=async function(lock=false){
     labelsLogic:{enabled:false,items:[]},
     rawMaterialLogic:{enabled:false,fabricType:'',consumption:'',notes:''},
     qcSuggestions:editing?.qcSuggestions||[],
-    changeHistory:[...(editing?.changeHistory||[]),{by:session.name,at:now,action:lock?'locked':'saved',note:''}]
+    changeHistory:[...(editing?.changeHistory||[]),(()=>{
+      const h={by:session.name,at:now,action:lock?'locked':'saved',note:''};
+      const ch=editing?embRecipeEmbroideryChanges(editing,{embroideryCodes:embC.rows}):(embC.rows.length?['embroideryCodes']:[]);
+      if(ch.length){h.changes=ch;h.note='Embroidery codes: '+embC.rows.length;}
+      return h;
+    })()]
   };
+  // Additive: a recipe that never had codes and has none now stays without the field.
+  if(embC.rows.length||(editing&&Array.isArray(editing.embroideryCodes)))payload.embroideryCodes=embC.rows;
   try{
     const id=editing?editing._id:prntId();
     await setDoc(doc(db,'article_recipes',id),payload);
@@ -2071,6 +2150,16 @@ function _recPlacementHTML(pl,idx){
         ${techPDNotes?`<div class="info-row"><span class="info-label">Print Dim Notes</span><span>${techPDNotes}</span></div>`:''}
       </div>
     </details>`:''}`);
+}
+function _embCodesDetailHTML(r){
+  const rows=embRecipeEmbroidery(r); if(!rows.length)return'';
+  return`<div class="card"><div class="card-title">Embroidery Codes (${rows.length})</div>
+    ${rows.map(x=>_embCodeViewRow(x)).join('')}
+  </div>`;
+}
+function _embCodeViewRow(x){
+  const bits=[x.candle?'Candle '+x.candle:'',x.shade?'Shade '+x.shade:'',x.position?x.position:''].filter(Boolean).map(_embCodeEsc).join(' · ');
+  return`<div style="padding:8px 0;border-bottom:1px solid var(--soft)"><div style="font-size:15px;font-weight:700">${_embCodeEsc(x.code)||'—'}</div>${bits?`<div style="font-size:13px;color:var(--muted)">${bits}</div>`:''}${x.note?`<div style="font-size:13px;color:var(--text)">${_embCodeEsc(x.note)}</div>`:''}</div>`;
 }
 function renderRecipeDetailPage(){
   const m=document.getElementById('main-content');
@@ -2140,6 +2229,8 @@ function renderRecipeDetailPage(){
     <div class="card-title">Colors / Ink (${pt.pantones.length})</div>
     ${pt.pantones.map(p=>_ptDetailChipHTML(p)).join('')}
   </div>`:''}
+
+  ${embRecipeIsEmbroidery(r)?_embCodesDetailHTML(r):''}
 
   ${(r.draftPlacements||[]).length?`<div class="card"><div class="card-title">Placements (${r.draftPlacements.length})</div>
     ${r.draftPlacements.map((p,i)=>`<div style="padding:10px 0;border-bottom:1px solid var(--soft)">
@@ -2786,6 +2877,7 @@ function printWorkerCardHTML(j){
           ${pantones.length?`<div style="margin-top:6px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:3px 0"><div style="width:16px;height:16px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:13px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:12px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
         </div>`).join('')}
       ${!placements.length&&pantones.length?`<div style="margin-top:4px">${pantones.map(p=>'<div style="display:flex;align-items:center;gap:7px;padding:4px 0"><div style="width:18px;height:18px;border-radius:4px;background:'+(p.hexApprox||'#ddd')+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div><span style="font-size:13px;font-weight:600">'+(p.colorName||'—')+'</span>'+(p.localInkName?'<span style="font-size:12px;color:var(--muted)">· '+p.localInkName+'</span>':'')+'</div>').join('')}</div>`:''}
+      ${embRecipeIsEmbroidery(recipe)&&embRecipeEmbroidery(recipe).length?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--soft)"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px">Embroidery Codes</div>${embRecipeEmbroidery(recipe).map(_embCodeViewRow).join('')}</div>`:''}
       ${recipe.printing?.instructionsUr?`<div style="margin-top:8px;font-size:15px;line-height:2;direction:rtl;text-align:right;color:var(--dark);background:var(--surface-2);padding:8px 10px;border-radius:8px">${recipe.printing.instructionsUr}</div>`:''}
       ${recipe.printing?.instructionsEn?`<div style="margin-top:6px;font-size:13px;color:var(--dark);line-height:1.6">${recipe.printing.instructionsEn}</div>`:''}
       ${pantones.length?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--soft)">

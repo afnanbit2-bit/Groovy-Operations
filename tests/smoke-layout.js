@@ -1848,6 +1848,23 @@ const FRAGMENTS={
       +app.run('renderTowerSwimlane("printing",[])');
     return Promise.resolve(html);
   },
+  // Recipe Embroidery Codes: the edit-form rows (code/candle/shade/position/
+  // note, remove button) and the worker card's list, with long values.
+  'embellishments — embroidery codes (form rows and worker card)':()=>{
+    const long='ThreadBook-LONG-CODE-123456789012345678';
+    const rec={_id:'r1',articleCode:'GP020',articleName:'Bird patch',status:'locked',
+      printing:{processTypes:['embroidery'],pantones:[],placements:[{templateNameEn:'Left chest'}]},
+      embroideryCodes:[{code:long,candle:'Candle 22',shade:'Navy blue deep',position:'Left chest',note:'Double pass, keep tension low on the cuff area'},
+        {code:'T-2',candle:'',shade:'',position:'',note:''}]};
+    const app=loadApp({files:['js/embellishments.js'],
+      session:{u:'ammar',name:'Ammar',role:'owner'},
+      globals:{allRecipes:[rec],allPOs:[],allPrintingJobs:[],allQCReports:[],allPrintBilling:[],allColors:[],viewingRecipe:'r1'}});
+    const form=app.run('renderRecipeCreatePage()');
+    const i=form.indexOf('id="rc-emb-card"');
+    const card=form.slice(form.lastIndexOf('<div',i),form.indexOf('Product Images'));
+    const worker=app.run('printWorkerCardHTML('+JSON.stringify({_id:'j1',recipeId:'r1',currentStage:'po_received',totalQty:1,sizeBreakdown:{}})+')');
+    return Promise.resolve(card+worker);
+  },
   // A table carrying cell attributes — bold, sized, aligned and coloured —
   // with one cell focused. The contrast check is the point: a cell colour
   // is a palette NAME painted by a class precisely so it reads in BOTH
