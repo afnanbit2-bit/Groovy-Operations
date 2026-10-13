@@ -313,7 +313,7 @@ async function checks(src,only){
     set('admin: nothing saved yet -> no green "Saved" pill beside an untouched field (defaults still say so)',T.byClass(T.panel(),'ph-chip-ok').filter(n=>n.textContent==='Saved').length===0&&/Default/.test(t));
     const S=load(src,{session:USERS.afnan,data:baseData({'ph_settings/main':{rev:3,dailyCapacity:500,updatedBy:'afnan',updatedAt:1}})});
     await S.open('settings');
-    set('admin: even with saved settings no "Saved" pill is drawn on a field',S.byClass(S.panel(),'ph-chip-ok').filter(n=>n.textContent==='Saved').length===0);
+    set('admin: with one saved setting, exactly that field carries a "Saved" pill (it has the Back to default button); untouched fields carry none',S.byClass(S.panel(),'ph-chip-ok').filter(n=>n.textContent==='Saved').length===1);
     const M=load(src,{session:USERS.afnan});
     let focused='';
     M.ctx.document.querySelector=sel=>({focus(){focused=sel;}});
@@ -428,7 +428,7 @@ module.exports=async function(){
   await brk('the admin master log matches raw poId text','admin',"const id=_phaPoKey(g.poId),n=phNorm(g.cutMaster)","const id=String(g.poId||'').trim().toUpperCase(),n=phNorm(g.cutMaster)",['admin: a pass that stores "125" names the master of PO-125 (matched through phPoKey)'],['admin']);
   await brk('the PC-only text unchanged','admin',"The PO Drafts form (PO Queue, Drafts) reads this.","Today this is only stored: nothing reads it yet.",['admin: the hard PC-only text says the Drafts form reads it'],['admin']);
   await brk('the developer path back','admin',"The PO cutting screen uses its own fixed","The PO cutting screen (js/pos.js) uses its own fixed",['admin: no developer path "(js/pos.js)" on the settings screen'],['admin']);
-  await brk('the Saved pill back','admin',"return saved(k)?phEl('span','pha-nochip'):","return saved(k)?_phaChip('Saved','ph-chip-ok'):",['admin: even with saved settings no "Saved" pill is drawn on a field','admin: nothing saved yet -> no green "Saved" pill beside an untouched field (defaults still say so)'].slice(0,1),['admin']);
+  await brk('Saved pill drawn on every field','admin',"if(!saved(k))return _phaChip('Default '+defTxt+' - defaults, unconfirmed');","if(!saved(k))return _phaChip('Saved','ph-chip-ok');",['admin: with one saved setting, exactly that field carries a "Saved" pill (it has the Back to default button); untouched fields carry none'],['admin']);
   await brk('no focus into the Rename editor','admin',"ctx.repaint();_phaFocusSoon('.pha-edit input');}","ctx.repaint();}",['admin: opening Rename moves focus into the editor\'s input'],['admin']);
   await brk('a rejected name kept after a refused add','admin',"if(r&&r.ok===false){_phaM.newName='';","if(r&&r.ok===false){",['admin: a REFUSED add shows the refusal (no old success banner) and does not keep the rejected name in the box'],['admin']);
   await brk('finished jobs take capacity','calendar',"chip.finished=phcIsFinished(j,po);","chip.finished=false;",['calendar: a COMPLETE job takes no capacity and nothing spills (planned 80, not over)','calendar: a DONE job is ignored the same way','calendar: a job whose PO is already past cutting is finished work too'],['calendar']);

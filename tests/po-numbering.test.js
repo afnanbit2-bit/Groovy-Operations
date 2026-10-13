@@ -375,7 +375,7 @@ module.exports=async function(){
       ['a B-stock item',reg({'bstock_items/I1':{poId:'PO-010'}}),/1 B-stock item\b/],
       ['a trim issue request',reg({'po_issue_requests/PIR-PO-010':{poId:'PO-010'}}),/1 trim issue request\b/],
       ['a Production Ops cut job (po_cut_jobs/PO-010, 14 Oct 2026)',reg({'po_cut_jobs/PO-010':{poId:'PO-010',status:'open',plannedCutDate:'2026-10-14'}}),/1 Production Ops cut job\b/],
-      ['a Production Ops draft issued as this PO (po_drafts, issuedPoId)',reg({'po_drafts/DRAFT-1-ABCD':{status:'ready',issuedPoId:'PO-010'}}),/1 Production Ops draft\b/],
+      ['a Production Ops draft issued as this PO (po_drafts, poId as js/ph-issue.js writes it)',reg({'po_drafts/DRAFT-1-ABCD':{status:'issued',poId:'PO-010'}}),/1 Production Ops draft\b/],
       ['all of them at once',reg(Object.assign({},linked.bundles,linked.gp,linked.job)),/3 bundles.*1 fabric issue.*1 embellishment job|1 fabric issue.*3 bundles.*1 embellishment job/]
     ];
     for(const [label,seed,re] of cases){
