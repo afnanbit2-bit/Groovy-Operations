@@ -154,7 +154,8 @@ async function checks(src){
     o['warm, unmoved stamps: ZERO big reads (no products, orders, line-item or closes query at all)']=fx.big()==='products:0,orders:0,line_items:0,weekly_closes:0'&&fx.lineQueries.length===0;
     o['warm: the page is loaded and holds the same data (2 products, 202 line items, 1 close, the snapshot) as the cold visit']=w.R('_siLoaded')===true&&w.R('_siProducts.length')===2&&w.R('_siLineItems.length')===202&&w.R('_siWeeklyCloses.length')===1&&w.R('_siSnapshot&&_siSnapshot.date')===T;
     o['warm: the five small sync-meta docs WERE read (the check that decides "unmoved" is made, not skipped)']=fx.metaGets>=5;
-    o['warm: the page painted from the device copy first (the cache was read for all six keys, hydrate ran before any stage)']=['get:products','get:orders','get:lines','get:lines-old','get:closes','get:snap'].every(k=>c1.cache.log.indexOf(k)>=0);
+    o['warm: the page painted from the device copy first (the cache was read for the five keys the first paint needs, hydrate ran before any stage)']=['get:products','get:orders','get:lines','get:closes','get:snap'].every(k=>c1.cache.log.indexOf(k)>=0);
+    o['warm start: the keys are read in priority order (snapshot, catalog, 90-day window, closes, cancelled orders) and the OLDER line rows (lines-old, the biggest record) are not read for the first paint']=['get:snap','get:products','get:lines','get:closes','get:orders'].map(k=>c1.cache.log.indexOf(k)).every((v,i,a)=>v>=0&&(i===0||v>a[i-1]))&&c1.cache.log.indexOf('get:lines-old')<0;
     o['warm: the line items keep the cold visit\'s full-read time and cut (not re-stamped as read now)']=w.R('_siLinesFullAt')===B00+1*H&&w.R('_siLinesCut')===dayShift(T,90);
     o['warm, nothing moved: the copy is confirmed - the device-copy note is gone and the status says nothing new']=w.R('_siCache.pending')===false&&!/si-fr-cache/.test(w.R('_siFrHtml()'))&&/nothing new/.test(w.R('_siFrView(_siNow()).status'));
   }
@@ -230,9 +231,13 @@ async function checks(src){
     await cp.a.run('_siFullStart(true)');await waitIdle();await cp.a.run('window._siCacheFlush()');await waitIdle();
     o['phase 2: the older rows are put under lines-old with the cut and the time the read began; the window record holds only the window rows']=cp.cache.m.has('lines-old')&&cp.cache.m.get('lines-old').value.length===1&&cp.cache.m.get('lines-old').meta.cut===dayShift(T,90)&&cp.cache.m.get('lines-old').meta.readAt===B00+1*H&&cp.cache.m.get('lines').value.length===202;
     const w=await warm(cp,B00+3*H);
-    o['phase 2: a visit in the same half-day restores the whole history (203 lines, scope full) with zero reads']=w.R('_siLineItems.length')===203&&w.R('_siLinesScope')==='full'&&cp.fx.big()==='products:0,orders:0,line_items:0,weekly_closes:0';
+    o['phase 2: a warm visit paints the WINDOW only (202 lines, scope window): the older rows are not restored before the first paint']=w.R('_siLineItems.length')===202&&w.R('_siLinesScope')==='window'&&cp.cache.log.indexOf('get:lines-old')<0;
+    await w.a.run('_siFullStart(true)');await waitIdle();
+    o['phase 2: a visit in the same half-day restores the whole history when a full-history view opens (203 lines, scope full) with zero reads']=w.R('_siLineItems.length')===203&&w.R('_siLinesScope')==='full'&&w.R('_siFull.st')==='done'&&cp.cache.log.indexOf('get:lines-old')>=0&&cp.fx.big()==='products:0,orders:0,line_items:0,weekly_closes:0'&&cp.fx.lineQueries.length===0;
     const w2=await warm(cp,B12+MIN);
-    o['phase 2: after the 12:00 PKT boundary the older rows are IGNORED and deleted (refunds mutate them): 202 lines, scope window']=w2.R('_siLineItems.length')===202&&w2.R('_siLinesScope')==='window'&&cp.cache.log.indexOf('del:lines-old')>=0&&!cp.cache.m.has('lines-old');
+    o['phase 2: after the 12:00 PKT boundary a warm visit still paints the window (202 lines, scope window)']=w2.R('_siLineItems.length')===202&&w2.R('_siLinesScope')==='window';
+    await w2.a.run('_siFullStart(true)');await waitIdle();
+    o['phase 2: after the 12:00 PKT boundary the saved older rows are IGNORED and deleted when the full-history view opens (refunds mutate them) and read from Firestore instead (one range query): 203 lines, scope full']=w2.R('_siLineItems.length')===203&&w2.R('_siLinesScope')==='full'&&cp.cache.log.indexOf('del:lines-old')>=0&&cp.fx.lineQueries.length===1;
   }
   mark('7. corrupt');
   // 7. corrupt / mismatched records
@@ -471,7 +476,7 @@ module.exports=async function(){
     const hit=failing.filter(f=>failed.some(k=>k.indexOf(f)===0));
     s.ok('break "'+label+'" fails "'+failing.join('" and "')+'"',hit.length===failing.length,hit.length===failing.length?undefined:'failed: '+failed.slice(0,4).join(' | '));
   };
-  await brk('hydrate is skipped',"if(_siCacheOn())await _siCacheHydrate();","",['warm, unmoved stamps: ZERO big reads','warm: the line items keep']);
+  await brk('hydrate is skipped',"try{await _siCacheHydrate();}finally{Lh.hold=false;}","Lh.hold=false;",['warm, unmoved stamps: ZERO big reads','warm: the line items keep']);
   await brk('collection reads are not saved',"_siColl[id]=true;_siFrNote(id,stamps);_siCachePutColl(id,stamps);","_siColl[id]=true;_siFrNote(id,stamps);",['cold: every collection was put']);
   await brk('the copy\'s stamps are not restored',"function _siCacheNoteStamps(id,rec){_siFr.seen[id]=rec.meta.stamps||null;","function _siCacheNoteStamps(id,rec){_siFr.seen[id]=null;",['warm, unmoved stamps: ZERO big reads']);
   await brk('the boundary no longer forces a full read',"!siLinesFullDue(_siLinesFullAt,t0,_siLinesForceFull)","true",['boundary: 12:00 PKT crossed','boundary: 00:00 PKT crossed']);
@@ -486,7 +491,7 @@ module.exports=async function(){
   await brk('the merge replaces instead of merging',"_siLineItems=siMergeLines(_siLineItems,a); // a NEW array: every cache keyed","_siLineItems=a; // a NEW array: every cache keyed",['orders stamp moved: the merge is by id']);
   await brk('the work never yields between chunks',"await _siCacheYield();\n    if(!_siCacheWriteOk())return{aborted:true};","if(!_siCacheWriteOk())return{aborted:true};",['chunks: the work yields to the event loop between chunks']);
   await brk('a chunk from another write is accepted',"p.meta.nonce!==m.nonce||","",['chunks: a chunk from ANOTHER write']);
-  await brk('a missing chunk is not a miss',"if(!p||!p.meta||","if(false||",['chunks: a MISSING chunk makes the whole lines record a miss']);
+  await brk('a missing chunk is not a miss',"if(!p||!p.meta||","if(false||",['chunks: a missing chunk deletes the manifest']); // a record that throws no longer discards the others (records apply as they land), so the window-read check still holds and the half-set deletion is what catches this break
   await brk('a timed-out put is reported as a failure',"else if(res.timedOut){","else if(false){",['slow put: a put that times out is NOT reported as a failure']);
   await brk('big arrays are not chunked',"job.val.length>_SI_CACHE_BIG_ROWS)res=await _siCachePutChunked(job)","false)res=await _siCachePutChunked(job)",['chunks: 202 line items are stored as 5 chunk records']);
   await brk('the stored shape is not bumped',"_SI_CACHE_SHAPE='2026-10-11b'","_SI_CACHE_SHAPE='2026-10-10a'",['shape: a copy written under the previous stored format']);

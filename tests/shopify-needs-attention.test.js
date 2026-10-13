@@ -395,7 +395,7 @@ module.exports=async function(){
   await brk('history hook dropped','if(typeof _siNaOnHistory===\'function\')_siNaOnHistory();','',['when the history lands the tab bar is repainted (the pill appears without a click)']);
   await brk('page never starts the history read',"if(_siHistState==='idle'&&typeof getDocs==='function')_siAxEnsureHistory();",'',['the page starts the stock-history read when idle (one read), not on every render']);
   await brk('order_sync not read',"'shopify_sync_meta','order_sync'","'shopify_sync_meta','order_backfill'",['loader: reads shopify_sync_meta/order_sync into _siSyncMeta.orderSync (and keeps the backfill doc as orders)']);
-  await brk('order_sync failure leaves a value behind','s4.data():null;}catch(_){}','s4.data():null;}catch(e){_siSyncMeta.orderSync="broken";}',['loader: a refused order_sync read is never fatal (the page still loads, the meta is just absent)']);
+  await brk('order_sync failure leaves a value behind','if(r[4])_siSyncMeta.orderSync=r[4].exists()?r[4].data():null;','if(r[4])_siSyncMeta.orderSync=r[4].exists()?r[4].data():null;else _siSyncMeta.orderSync="broken";',['loader: a refused order_sync read is never fatal (the page still loads, the meta is just absent)']);
   s.ok('breaks run: '+broken,broken>=40);
   return s;
 };

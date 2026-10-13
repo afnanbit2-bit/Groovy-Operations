@@ -381,7 +381,7 @@ const BREAKS=[
   ['offline age limit is 30 days instead of 7',"const _SI_CACHE_OFFLINE_MAX_AGE_MS=7*86400000;","const _SI_CACHE_OFFLINE_MAX_AGE_MS=30*86400000;",['offline, copy 7.1 days old: a miss']],
   ['a copy dated in the future is accepted offline',"r.savedAt>nowMs+_SI_CACHE_SKEW_MS||nowMs-r.savedAt>_SI_CACHE_OFFLINE_MAX_AGE_MS","nowMs-r.savedAt>_SI_CACHE_OFFLINE_MAX_AGE_MS",['offline, copy dated 20 minutes in the future']],
   ['the PO read is made while offline',"if(_siOffBlocked()){_siPoState='error';_siOff.sideSkipped.po=true;_siPoVer++;_siPoMemo=null;return Promise.resolve();}","",['offline, copy 25 h old: ZERO Firestore reads']],
-  ['the sync-meta read is made while offline',"if(_siOffBlocked())return; // offline on a saved copy: no read","",['offline, copy 25 h old: ZERO Firestore reads']],
+  ['the sync-meta read is made while offline',"if(_siOffBlocked()){_siMetaSide='done';return;} // offline on a saved copy: no read","",['offline, copy 25 h old: ZERO Firestore reads']],
   ['no window online listener',"window.addEventListener('online',_siOnOnline);","",['online event: the offline note was up before it','online event, copy 25 h old: the normal check runs']],
   ['coming back online does not force full reads for an aged copy',"_siOffForce(ids,id=>!C.running[id]);","",['online event, copy 25 h old: the normal check runs']],
   ['the note calls the figures fresh',"Figures may be out of date.","Figures are fresh.",['offline, copy 25 h old: the persistent note','offline, copy 25 h old: nothing in the page']],

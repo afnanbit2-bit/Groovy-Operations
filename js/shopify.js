@@ -77,7 +77,36 @@ const _SI_STAGES=[
   {id:'build',   w:18,critical:false,label:'Counting the stock',verb:'Counting the stock',   noun:'counting the stock'},
 ];
 const _SI_LOAD_SHOW_MS=300,_SI_LOAD_MIN_MS=500,_SI_LOAD_SLOW_MS=20000,_SI_LOAD_TIMEOUT_MS=90000,_SI_LOAD_SETTLE_MS=400,_SI_LOAD_MAX_ATTEMPTS=3,_SI_QUOTA_WAIT_MS=10000;
+// Warm start (Oct 2026): a load that finished in under _SI_LOAD_QUICK_MS, or that needed no read at all (every critical part came from the device copy),
+// skips the 500 ms minimum hold and the 400 ms settle: those exist so a card that was shown does not flash, and a quick load has nothing to smooth.
+const _SI_LOAD_QUICK_MS=1500,_SI_META_SIDE_MS=10000;
 const _siColl={products:false,orders:false,lines:false,closes:false}; // which collections were read OK (kept across retries)
+// Load timing marks (Oct 2026, cheap instrumentation): names are 'begin','hydrate-start','hydrate-end','critical-done','meta-done','build-done','render'.
+// Each is recorded once per load as ms since 'begin' (the injectable clock _siNow), and mirrored to performance.mark('si:<name>') when that exists.
+// window._siLoadMarks() returns {marks:{name:ms},durations:{hydrate,toCritical,toBuild,toMeta,toRender}} (a missing mark gives null); it is shown in the
+// Data-checks area only when localStorage['groovy-si-debug']==='1'.
+const _siMarks={t0:0,m:{}};
+function _siMark(name,reset){
+  try{
+    if(reset){_siMarks.t0=_siNow();_siMarks.m={};}
+    if(_siMarks.m[name]!=null)return;
+    _siMarks.m[name]=Math.max(0,_siNow()-_siMarks.t0);
+    if(typeof performance!=='undefined'&&performance&&typeof performance.mark==='function')performance.mark('si:'+name);
+  }catch(_){}
+}
+function _siMarkGap(a,b){const m=_siMarks.m;return m[a]==null||m[b]==null?null:m[b]-m[a];}
+window._siLoadMarks=function(){
+  const m=_siMarks.m,o={};Object.keys(m).forEach(k=>{o[k]=m[k];});
+  return{marks:o,durations:{hydrate:_siMarkGap('hydrate-start','hydrate-end'),toCritical:m['critical-done']==null?null:m['critical-done'],toBuild:m['build-done']==null?null:m['build-done'],toMeta:m['meta-done']==null?null:m['meta-done'],toRender:m['render']==null?null:m['render']}};
+};
+function _siDebugOn(){try{return typeof localStorage!=='undefined'&&localStorage.getItem('groovy-si-debug')==='1';}catch(_){return false;}}
+function _siMarksHtml(){
+  if(!_siDebugOn())return'';
+  const d=window._siLoadMarks(),f=v=>v==null?'—':Math.round(v)+' ms';
+  return'<div class="si-fr-sch" id="si-marks" role="note"><strong>Load timing.</strong> device copy read '+f(d.durations.hydrate)+' · critical stages done at '+f(d.durations.toCritical)+' · counting done at '+f(d.durations.toBuild)+' · sync status at '+f(d.durations.toMeta)+' · first render at '+f(d.durations.toRender)+'</div>';
+}
+// The sync-status side read (stage "meta"): off the settle path. 'idle' = never started, 'loading' = in flight, 'done' = finished (read, failed or skipped offline).
+let _siMetaSide='idle';
 // Pure: the percentage of a state map. Capped at 99 — 100 belongs to _siLoaded alone.
 // part (optional) = {stageId: 0..1}: the proven share of an ACTIVE stage whose read is in pieces (counted only when a piece really returned).
 function siProgress(stages,state,part){
@@ -92,7 +121,7 @@ let _siLoad=_siLoadFresh();
 const _siRetryCtl={timer:null,tick:null,timer2:null,auto:null,running:{},proms:{},gen:0};
 function _siLoadFresh(){
   return{state:{},pct:0,startedAt:0,shownAt:0,shown:false,slow:false,final:false,finishing:false,done:false,resolved:false,resume:false,
-    complete:false,part:{},partText:'',attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
+    complete:false,warm:false,hold:false,part:{},partText:'',attempts:{},fails:{},tok:{},quotaRetried:{},wait:null,promise:null,resolve:null,showT:null,slowT:null,toT:null,live:''};
 }
 // siMark(id,state): the ONE place progress moves.
 function siMark(id,st,now){
@@ -214,19 +243,26 @@ const _siRunners={
     else if(!_siSnapshot){_siSnapNone=true;_siSnapFallback=false;} // read fine, collection empty: loaded with no snapshot
     _siFrNote('snap',stamps);_siCachePutSnap(stamps);
   },
-  meta:async function(){ // never fatal: the page says "unknown" for what is missing
-    if(_siOffBlocked())return; // offline on a saved copy: no read
-    try{const snap=await getDoc(doc(db,'shopify_inventory_snapshots',_siPktDate(-7)));if(snap.exists())_siPrevSnapshot=snap.data();_siFr.prevDay=_siPktDate(-7);}catch(_){}
+  meta:async function(){ // never fatal: the page says "unknown" for what is missing. NOT on the settle path (see _siLoadSettle): the page renders without it and repaints when it lands.
+    if(_siOffBlocked()){_siMetaSide='done';return;} // offline on a saved copy: no read
+    _siMetaSide='loading';
+    const cap=p=>{let t=null;return Promise.race([Promise.resolve(p),new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error('timeout')),_SI_META_SIDE_MS);})]).then(v=>{clearTimeout(t);return v;},e=>{clearTimeout(t);throw e;});}; // a hung read must not leave the stage running for ever
+    const prevBefore=_siPrevSnapshot,g=(c,id)=>cap(Promise.resolve().then(()=>getDoc(doc(db,c,id)))).catch(()=>null);
     try{
-      const r=await Promise.all([getDoc(doc(db,'shopify_sync_meta','catalog_sync')),getDoc(doc(db,'shopify_sync_meta','order_backfill')),getDoc(doc(db,'shopify_sync_meta','inventory_sync'))]);
-      _siSyncMeta={catalog:r[0].exists()?r[0].data():{},orders:r[1].exists()?r[1].data():{},inventory:r[2].exists()?r[2].data():{}};
-    }catch(_){}
-    // the 4-hourly order sync's own status doc (the 'orders' entry above is the backfill's); missing = "unknown" on screen
-    try{const s4=await getDoc(doc(db,'shopify_sync_meta','order_sync'));_siSyncMeta.orderSync=s4.exists()?s4.data():null;}catch(_){}
+      // all five small reads at once (one round trip instead of three in a row); each is judged on its own, as before
+      const day=_siPktDate(-7);
+      const r=await Promise.all([g('shopify_inventory_snapshots',day),g('shopify_sync_meta','catalog_sync'),g('shopify_sync_meta','order_backfill'),g('shopify_sync_meta','inventory_sync'),g('shopify_sync_meta','order_sync')]);
+      if(r[0]){if(r[0].exists())_siPrevSnapshot=r[0].data();_siFr.prevDay=day;}
+      if(r[1]&&r[2]&&r[3])_siSyncMeta={catalog:r[1].exists()?r[1].data():{},orders:r[2].exists()?r[2].data():{},inventory:r[3].exists()?r[3].data():{}};
+      // the 4-hourly order sync's own status doc (the 'orders' entry above is the backfill's); missing = "unknown" on screen
+      if(r[4])_siSyncMeta.orderSync=r[4].exists()?r[4].data():null;
+    }finally{_siMetaSide='done';_siMark('meta-done');}
+    _siMetaLanded(prevBefore!==_siPrevSnapshot);
   },
   build:async function(){ // the first index over the loaded rows — real CPU the first render would otherwise pay for after the bar said 100
     if(_siLoad.shown)await new Promise(r=>setTimeout(r,16)); // let the "Counting the stock" paint before the thread is busy
     try{if(typeof _siAxIndex==='function')_siAxIndex();}catch(_){}
+    _siMark('build-done');
   },
 };
 const _SI_LINE_CHUNKS=6;
@@ -368,8 +404,8 @@ function _siLoadGoRetry(ids){
 }
 function _siLoadSettle(){
   const L=_siLoad,C=_siRetryCtl,st=id=>L.state[id];
-  if(L.finishing||L.complete||C.timer)return;
-  if(_SI_STAGES.some(s=>st(s.id)==='active'))return;
+  if(L.finishing||L.complete||C.timer||L.hold)return; // hold = the device copy is still being read: nothing may finish (or start counting) until it has ended and its stamps are filed
+  if(_SI_STAGES.some(s=>s.id!=='meta'&&st(s.id)==='active'))return; // the sync-status read (meta) never holds the page: it repaints its own parts when it lands
   const crit=_SI_STAGES.filter(s=>s.critical);
   const failed=crit.filter(s=>st(s.id)==='failed').map(s=>s.id);
   if(failed.length){
@@ -379,6 +415,7 @@ function _siLoadSettle(){
     _siLoadFinalFail();return;
   }
   if(crit.some(s=>st(s.id)!=='done'))return;
+  _siMark('critical-done');
   if(st('build')!=='done'){if(!C.running.build)_siLoadRunStages(['build']);return;}
   _siLoadSucceed();
 }
@@ -400,7 +437,8 @@ function _siLoadSucceed(){
     if(late){if(_siLoadAlive()&&typeof document!=='undefined'&&document.getElementById){const m=document.getElementById('main-content');if(m)m.innerHTML=renderShopifyDashboard();}}
     else _siLoadResolveOnce();
   };
-  if(!L.shown){finish();return;}
+  const quick=L.warm||(_siNow()-L.startedAt)<_SI_LOAD_QUICK_MS; // nothing was slow: no minimum hold, no settle
+  if(!L.shown||quick){finish();return;}
   L.finishing=true;siPaintLoad(); // the view reads 100 once _siLoaded is true
   const hold=Math.max(0,L.shownAt+_SI_LOAD_MIN_MS-_siNow());
   C.timer2=setTimeout(()=>{
@@ -628,6 +666,15 @@ function _siFullStart(manual){
   if(F.st==='failed'&&!manual)return;
   if(_siOffBlocked()){F.st='failed';F.err={msg:"You're offline — the older line items are not saved on this device and cannot be read without a connection.",code:'offline',cls:'network',at:_siNow()};return;} // no read is attempted; cleared when the connection is back
   if(typeof getDocs!=='function'||typeof where!=='function'){F.st='failed';F.err={msg:'The Firestore query helpers are not available on this build.',code:'',cls:'other',at:_siNow()};return;}
+  if(_siCache.oldTry&&_siCacheOn()){ // the older rows may be saved on this device (warm start left them unread): try that before the network
+    F.st='loading';F.err=null;const t0=++F.tok;
+    _siCacheLoadOld().then(ok=>{
+      if(F.tok!==t0)return; // something else restarted or reset the read meanwhile
+      if(ok){F.err=null;_siFullPaint();return;} // _siCacheApply set scope 'full' and F.st 'done' (the saved rows, labelled by the device-copy note)
+      F.st='idle';_siFullStart(manual);_siFullPaint();
+    });
+    return;
+  }
   F.st='loading';F.err=null;F.tries++;
   const t=++F.tok,cut=_siLinesCut,began=_siNow();
   const guard=setTimeout(()=>{if(F.tok===t&&F.st==='loading'){F.st='failed';F.err={msg:'Timed out after '+(_SI_FULL_TIMEOUT_MS/1000)+'s while reading older line items',code:'timeout',cls:'timeout',at:_siNow()};_siFullPaint();}},_SI_FULL_TIMEOUT_MS);
@@ -682,19 +729,34 @@ function _siFullPaint(){
 // Resolves when the load has SETTLED (loaded, or failed for good after its automatic retries); _siLoaded says which.
 async function loadShopifyData(){
   _siLoadError=null;
-  if(_siCacheOn())await _siCacheHydrate(); // the device copy first (never rejects); with no usable cache this path is not entered at all
-  _siOffStart(); // offline: show the saved copy (any age up to 7 days, labelled) or the honest empty state; no Firestore read is attempted
-  if(_siOff.nocopy&&!_siLoaded)return;
-  siLoadBegin();
+  _siMark('begin',true);
+  siLoadBegin(); // the loading card and the stall watch exist from the first millisecond, BEFORE the device copy is read
   const C=_siRetryCtl;
-  const ids=_SI_STAGES.filter(s=>s.id!=='build'&&(C.running[s.id]||_siStageNeeds(s.id))).map(s=>s.id);
+  // The sync-status read (stage "meta") is off the settle path and needs nothing from the device copy, so it starts now, in parallel with it
+  // (online only: offline it must wait for _siOffStart to know whether a saved copy is being shown).
+  let metaEarly=false;
+  if(!_siIsOffline()&&!C.running.meta&&typeof getDoc==='function'){metaEarly=true;_siLoadRunStages(['meta']);}
+  if(_siCacheOn()){ // the device copy (never rejects); with no usable cache this path is not entered at all
+    _siMark('hydrate-start');
+    const Lh=_siLoad;Lh.hold=true;
+    try{await _siCacheHydrate();}finally{Lh.hold=false;}
+    _siMark('hydrate-end');
+  }
+  _siOffStart(); // offline: show the saved copy (any age up to 7 days, labelled) or the honest empty state; no Firestore read is attempted
+  if(_siOff.nocopy&&!_siLoaded){ // nothing to show and nothing to read: end the load that was started above, quietly
+    siRetryCancel();_siLoadClearWatch();_siLoad.final=true;_siLoadResolveOnce();return;
+  }
+  _siHydrateLanded(); // whatever the copy (or the offline start) put in memory is done: never re-read
+  const ids=_SI_STAGES.filter(s=>s.id!=='build'&&!(s.id==='meta'&&metaEarly)&&(C.running[s.id]||_siStageNeeds(s.id))).map(s=>s.id);
+  _siLoad.warm=!ids.some(id=>_SI_STAGES.find(s=>s.id===id).critical); // every critical part is already held: nothing slow to hide
   // A warm per-device history cache makes the stock-history read tiny (the newest days only), so it starts WITH the load and is
   // usually landed by the first paint. A cold one is a full read of up to 150 snapshots: it starts after the first paint as
   // before, so it does not compete with the line items for bandwidth. Either way it stays outside the percentage.
   if(_siHistState==='idle'&&typeof getDocs==='function'&&_siHistCacheRead())_siAxEnsureHistory();
   if(_siPoState==='idle')_siPoLoad(); // open POs: one bounded read, outside the percentage; a failed read downgrades nothing and hides nothing
   if(_siMetaState==='idle')_siMetaLoad(); // the shared ignore list: tiny, in parallel, outside the percentage; a failed read hides nothing
-  if(ids.length)_siLoadRunStages(ids);else _siLoadSettle();
+  if(ids.length)_siLoadRunStages(ids);
+  _siLoadSettle(); // the sync-status stage never holds it: with every critical stage held this goes straight to counting, then the page
   return _siLoad.promise;
 }
 
@@ -718,7 +780,7 @@ async function loadShopifyData(){
 const _SI_CACHE_SCHEMA=1,_SI_CACHE_SHAPE='2026-10-11b',_SI_CACHE_GET_MS=1500,_SI_CACHE_MAX_AGE_MS=86400000,_SI_CACHE_SKEW_MS=300000,_SI_CACHE_CUT_SLACK_DAYS=14,_SI_CACHE_SMALL_MS=150,_SI_CACHE_BIG_MS=1500,_SI_CACHE_BIG_ROWS=5000,_SI_CACHE_BYTES_MS=30000,_SI_CACHE_CHUNK=2000,_SI_CACHE_CHUNK_GET_MS=4000;
 // 2026-10-11a: an array longer than _SI_CACHE_BIG_ROWS is stored as chunks of _SI_CACHE_CHUNK rows under 'key#0..n' plus a manifest
 // {__chunks,nonce,count} under 'key' (written LAST, so a half-written set is never read); shorter arrays and the snapshot are one record as before.
-const _siCache={prom:null,tried:false,pending:false,recs:null,linesCut:'',from:null,used:[],err:'',errKeys:{},slow:{},chunkN:{},bytes:null,bytesAt:0};
+const _siCache={prom:null,tried:false,pending:false,oldTry:false,recs:null,linesCut:'',from:null,used:[],err:'',errKeys:{},slow:{},chunkN:{},bytes:null,bytesAt:0};
 // ── OFFLINE MODE (Oct 2026) ──────────────────────────────────────────────────────────────────────────────────────────────
 // While ONLINE a copy older than _SI_CACHE_MAX_AGE_MS (24 h) is not trusted as current: it is read back from the network. OFFLINE (no connection) it is
 // still shown, up to _SI_CACHE_OFFLINE_MAX_AGE_MS (7 days), clearly labelled, never as current. A copy aged 24 h..7 d is 'aged' (stale-but-usable): it is
@@ -966,18 +1028,42 @@ function _siCacheApply(rs,allowAged,only,ctx){
 // Fills the arrays from the device copy. One shared promise (a second call during the first waits for it). Never rejects.
 // ONLINE: only records within 24 h are used (as before); an AGED record (24 h..7 d) is not applied and not deleted: it is held in _siCache.recs for the
 // offline start / the network-failure fallback. OFFLINE: aged records are used too (and the page says so).
+// WARM START (Oct 2026): ONLINE the keys are read in priority order (the stock snapshot, the catalog, the 90-day window, then the weekly closes and the
+// cancelled orders) and each is APPLIED THE MOMENT IT LANDS (then _siHydrateLanded marks its stage done, so the loading card's percentage moves from the
+// first record). The older line rows ('lines-old', the biggest record, only needed by a full-history view) are NOT read here: they are read when such a
+// view opens (_siCacheLoadOld, from _siFullStart), with the same boundary rule applied at that moment. OFFLINE the old all-at-once read is kept, lines-old
+// included (nothing can be read later without a connection to fall back on, and the offline note depends on it).
+function _siHydrateMemory(){return _siLoaded||_siColl.products||_siColl.orders||_siColl.lines||_siColl.closes||_siSnapshot||_siSnapNone;}
+// A record landed (or the whole hydrate ended): any stage the memory now holds and the load still lists as pending is done, so nothing re-reads it.
+function _siHydrateLanded(){
+  const L=_siLoad;if(!L||L.final)return;
+  ['snap','products','lines','closes','orders'].forEach(id=>{
+    const held=id==='snap'?(!!_siSnapshot||_siSnapNone):!!_siColl[id];
+    if(held&&L.state[id]==='pending')siMark(id,'done');
+  });
+}
 function _siCacheHydrate(){
   if(_siCache.prom)return _siCache.prom;
   if(!_siCacheOn()||_siCache.tried)return Promise.resolve();
   _siCache.tried=true;
   return _siCache.prom=(async()=>{
     try{
-      if(_siLoaded||_siColl.products||_siColl.orders||_siColl.lines||_siColl.closes||_siSnapshot||_siSnapNone)return; // something is already in memory: memory wins
-      const keys=['products','orders','lines','lines-old','closes','snap'];
-      const rs={};(await Promise.all(keys.map(_siCacheGet))).forEach((r,i)=>{rs[keys[i]]=r;});
-      if(_siLoaded||_siColl.products||_siColl.orders||_siColl.lines||_siColl.closes||_siSnapshot||_siSnapNone)return;
-      const ctx={used:[],times:[],aged:[],bad:[]};
-      _siCacheApply(rs,_siIsOffline(),null,ctx);
+      if(_siHydrateMemory())return; // something is already in memory: memory wins
+      const off=_siIsOffline(),keys=off?['products','orders','lines','lines-old','closes','snap']:['snap','products','lines','closes','orders'];
+      const rs={},ctx={used:[],times:[],aged:[],bad:[]};
+      if(off){
+        (await Promise.all(keys.map(_siCacheGet))).forEach((r,i)=>{rs[keys[i]]=r;});
+        if(_siHydrateMemory())return;
+        _siCacheApply(rs,true,null,ctx);
+      }else{
+        await Promise.all(keys.map(async k=>{
+          rs[k]=await _siCacheGet(k);
+          if(_siLoaded)return; // a load finished meanwhile: memory wins
+          const one={};one[k]=rs[k];
+          try{_siCacheApply(one,false,[k==='lines-old'?'lines':k],ctx);}catch(_){}
+          _siHydrateLanded();
+        }));
+      }
       // aged records that were not applied are kept for later (never deleted unless past 7 days / unusable)
       const recs={};let any=false;
       [['products',true,true],['orders',false,true],['lines',true,true],['lines-old',true,true],['closes',false,true],['snap',false,false]].forEach(a=>{
@@ -988,8 +1074,28 @@ function _siCacheHydrate(){
       ctx.bad.forEach(k=>_siCacheDel(k));
       if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
       if(ctx.used.length){_siCache.used=ctx.used;_siCache.from=Math.min.apply(null,ctx.times);_siCache.pending=true;}
+      _siCache.oldTry=!off&&ctx.used.indexOf('lines')>=0&&_siLinesScope==='window'; // the older rows may be saved too: read them when a full-history view opens
     }catch(_){} // a corrupt or odd copy must never stop the page: whatever was not set is read from Firestore as before
+    _siHydrateLanded();
   })();
+}
+// Reads the saved older line rows (phase 2) on demand. Resolves true when they were applied (scope becomes 'full'), false when there was nothing usable
+// (the caller then reads them from Firestore). The boundary rule (read at/after the latest 00:00/12:00 PKT) is judged HERE, at apply time. A full window
+// re-read that happened while this was reading makes the result stale, so it is thrown away.
+async function _siCacheLoadOld(){
+  if(!_siCacheOn()||!_siCache.oldTry||_siLinesScope!=='window'||!_siCache.linesCut)return false;
+  _siCache.oldTry=false;
+  const gen=_siLinesFullAt,cut=_siLinesCut;
+  let applied=false;
+  try{
+    const r=await _siCacheGet('lines-old');
+    if(!r||gen!==_siLinesFullAt||_siLinesScope!=='window'||_siLinesCut!==cut)return false;
+    const ctx={used:[],times:[],aged:[],bad:[]};
+    _siCacheApply({'lines-old':r},_siIsOffline(),['lines'],ctx);
+    ctx.bad.forEach(k=>_siCacheDel(k));
+    applied=_siLinesScope==='full';
+  }catch(_){}
+  return applied;
 }
 // ── Offline mode: start from an aged copy, or fall back to it when the cold read fails with the network class ──
 // Is a stage's data in memory, or held aged in _siCache.recs and usable?
@@ -1134,7 +1240,7 @@ window._siCacheClear=async function(){
   Object.keys(_siCacheQ).forEach(k=>{const j=_siCacheQ[k];if(j&&j.t)clearTimeout(j.t);delete _siCacheQ[k];});
   try{await Promise.resolve(siCache.clear());}catch(e){_siCacheFail('clear',(e&&e.message)||e);_siCacheRepaintNote();return;}
   try{_siHistCacheClear();}catch(_){} // the folded stock-history copy belongs to the same page
-  _siCache.errKeys={};_siCache.slow={};_siCache.chunkN={};_siCache.err='';_siCache.used=[];_siCache.pending=false;_siCache.from=null;_siCache.bytes=null;_siCache.recs=null;
+  _siCache.errKeys={};_siCache.slow={};_siCache.chunkN={};_siCache.err='';_siCache.used=[];_siCache.pending=false;_siCache.oldTry=false;_siCache.from=null;_siCache.bytes=null;_siCache.recs=null;
   try{if(typeof showToast==='function')showToast('Saved data cleared on this device — reloading');}catch(_){}
   setTimeout(()=>{try{if(typeof location!=='undefined'&&location.reload)location.reload();}catch(_){}},400);
 };
@@ -1306,6 +1412,16 @@ function _siFrApply(force){
   if(!_siLoaded||!_siLoadAlive())return;
   if(!force&&_siFrUiBusy()){_siFr.pending=true;return;}
   _siFr.pending=false;_siFrRepaintData();
+}
+// The sync-status read landed AFTER the page was shown (it is not on the settle path): repaint only what reads it, through the existing targeted paths.
+// The freshness strip always; the data (previous-day figures, the Needs Attention trust notes) only when the week-ago snapshot arrived or Needs Attention is open.
+// Never m.innerHTML=renderShopifyDashboard(); an open drawer/input defers it behind "Show new data" exactly like any refresh.
+function _siMetaLanded(prevChanged){
+  try{
+    if(!_siLoad.complete||!_siLoadAlive()||typeof document==='undefined'||!document.getElementById)return;
+    _siFrPaint();
+    if(prevChanged||_siSection==='attention')_siFrApply(false);
+  }catch(_){}
 }
 window._siFrShow=function(){_siFrApply(true);_siFrPaint();};
 function _siFrIsHidden(){try{return typeof document!=='undefined'&&(document.hidden===true||document.visibilityState==='hidden');}catch(_){return false;}}
@@ -1949,7 +2065,7 @@ function _siComputeSkuTable(){
   allSkus.forEach(sku=>{
     const prod=prodMap[sku]||{};
     const onHand=noSnap?null:(invMap[sku]||0);
-    const prevOnHand=noSnap?null:(prevInvMap[sku]||0);
+    const prevOnHand=noSnap||!(_siPrevSnapshot&&_siPrevSnapshot.items)?null:(prevInvMap[sku]||0); // no week-ago snapshot yet (still loading, or none exists): unknown, never 0
     const s7=sold7Map[sku]||0;
     const s30=sold30Map[sku]||0;
     const dailyRate=s30/30;
@@ -2052,6 +2168,7 @@ function renderShopifyDashboard(){
   if(_siLoadError)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="si-ld-lede">⚠ Could not load inventory data</div>'+_siLoaderHTML(false);
   if(!_siLoaded)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div>'+_siLoaderHTML(false);
 
+  _siMark('render');
   _siLandingApply();
   {const r=_siSecResolve(_siSection);_siSection=r.sec;if(r.sub)_siSub=r.sub;}   // a stale or removed section id lands on Today, never a blank page
   // the stock history feeds the Needs Attention counts (tab pill, Overview tiles): one bounded read, repaints when it lands
@@ -6240,7 +6357,8 @@ function _siNaTrustOf(ctx){
     if(snap.complete===false||dropped)red.push({id:'snapshot_truncated',title:'Today’s stock snapshot looks incomplete',text:'It holds far fewer items than usual, so items can read as sold out when they are not.',action:'Re-run the snapshot. Do not reorder from these lists until it is fixed.'});
   }
   const os=meta.orderSync;
-  if(!os||(!os.last_status&&!os.last_success_at))unknown.push('Order sync status is not available, so how fresh the sales are is not known.');
+  if(ctx.metaPending)quiet.push('Sync status is still loading; the notes about the order and stock syncs appear when it lands.');
+  else if(!os||(!os.last_status&&!os.last_success_at))unknown.push('Order sync status is not available, so how fresh the sales are is not known.');
   else{
     const sm=_siAxSnapMs(os.last_success_at);
     if(os.last_status==='error')red.push({id:'orders_failed',title:'The last order sync failed',text:'Recent sales may be missing, so pace and cover read low.'+lastErr(os),action:'Check the Netlify deploy list first (a skipped deploy looks like this), then the function log for shopify-order-sync.'});
@@ -6264,14 +6382,14 @@ function _siNaTrustOf(ctx){
 }
 function _siNaTrust(){
   const idx=_siAxIndex();
-  return _siNaTrustOf({now:_siNaNow(),today:_siPktDate(0),snapshot:_siSnapshot,meta:_siSyncMeta,hist:_siHist,histState:_siHistState,histError:_siHistError,quality:idx.quality});
+  return _siNaTrustOf({now:_siNaNow(),today:_siPktDate(0),snapshot:_siSnapshot,meta:_siSyncMeta,metaPending:_siMetaSide==='loading'&&!(_siSyncMeta&&_siSyncMeta.orderSync),hist:_siHist,histState:_siHistState,histError:_siHistError,quality:idx.quality});
 }
 function _siNaTrustHtml(t){
   const red=t.red.map(x=>`<div class="si-na-trust red" role="alert"><strong>${_siEsc(x.title)}.</strong> ${_siEsc(x.text)} ${x.action?`<span class="act">${_siEsc(x.action)}</span>`:''}${x.retry?` <button class="si-ax-btn" onclick="window._siNaRetry()">Retry</button>`:''}</div>`).join('');
   const amber=t.amber.map(x=>`<div class="si-na-trust amber" role="note"><strong>${_siEsc(x.title)}.</strong> ${_siEsc(x.text)}</div>`).join('');
   const notes=t.quiet.concat(t.unknown);
   const quiet=notes.length?`<details class="si-na-checks"><summary>Data checks: ${t.red.length+t.amber.length===0?'all clear, ':''}${notes.length} note${notes.length===1?'':'s'}</summary><ul>${notes.map(x=>`<li>${_siEsc(x)}</li>`).join('')}</ul></details>`:'';
-  return red+amber+quiet+_siRrHtml()+_siCacheCtlHtml();
+  return red+amber+quiet+_siRrHtml()+_siCacheCtlHtml()+_siMarksHtml();
 }
 
 // ── Returns refresh button (owners only) ─────────────────────────────────

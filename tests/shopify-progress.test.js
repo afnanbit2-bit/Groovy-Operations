@@ -152,24 +152,28 @@ async function checks(src,CSS){
     o['the percent shown at the end is 100 only because _siLoaded is true']=R('_siLoadView().pct')===100;
   }
   {
-    // 500ms minimum once shown, 400ms settle
+    // WARM START (Oct 2026): a load that shows the card but finishes in under _SI_LOAD_QUICK_MS (1500ms) has nothing to smooth: no minimum hold, no settle.
     const m=mk(src,{plan:{shopify_line_items:[{hold:true}]}}),R=m.R,ck=m.ck;
     let resolved=false;R('loadShopifyData()').then(()=>{resolved=true;});
     await ck.advance(350); // shown at 300
     o['(setup) overlay shown at 300']=R('_siLoad.shownAt')===300;
     await m.release('shopify_line_items'); // lines land at 350; the count runs (16ms yield)
     await ck.advance(30);
-    o['the reads are done but the card stays up: loaded is true, not yet resolved']=R('_siLoaded')===true&&!resolved&&R('_siLoad.done')===false;
-    await ck.advance(300); // t=680
-    o['at 680ms (380ms after it appeared) it is still there']=!resolved&&R('_siLoad.done')===false;
-    await ck.advance(119); // t=799
-    o['at 799ms the 500ms minimum is not over']=R('_siLoad.done')===false;
-    await ck.advance(2); // t=801
-    o['at 801ms (500ms after it appeared) the completion settle starts']=R('_siLoad.done')===true&&!resolved;
-    await ck.advance(398);
-    o['the settle lasts 400ms: unresolved at 1199']=!resolved;
-    await ck.advance(2);
-    o['and the page is released at 1201']=resolved===true;
+    o['a quick load (under 1500ms) that showed the card is released at once: no 500ms minimum, no 400ms settle']=R('_siLoaded')===true&&resolved===true&&R('_siLoad.done')===false;
+  }
+  {
+    // 400ms settle once the card was shown and the load was genuinely slow (the old 500ms minimum is already over by then: it ends at 800ms, a slow load at 1500ms+)
+    const m=mk(src,{plan:{shopify_line_items:[{hold:true}]}}),R=m.R,ck=m.ck;
+    let resolved=false;R('loadShopifyData()').then(()=>{resolved=true;});
+    await ck.advance(1600); // shown at 300; the read is still running
+    o['(setup) overlay shown at 300, slow load']=R('_siLoad.shownAt')===300&&!resolved;
+    await m.release('shopify_line_items'); // lines land at 1600; the count runs (16ms yield)
+    await ck.advance(30);
+    o['the reads are done but the card stays up: loaded is true, the completion settle has started, not yet resolved']=R('_siLoaded')===true&&!resolved&&R('_siLoad.done')===true;
+    await ck.advance(300);
+    o['the settle lasts 400ms: still unresolved 330ms in']=!resolved;
+    await ck.advance(100);
+    o['and the page is released after it']=resolved===true;
     o['the final frame says 100']=R('_siLoadView().pct')===100;
   }
   // ── 3. Retry: per-collection reads, backoff, classes ─────────────────────
@@ -434,8 +438,8 @@ module.exports=async function(){
   await brk(s,'no max(): the percent can go down',[A('return Math.max(prev,raw);','return raw;')],['siMark: out-of-order completion 50 -> 54, then a stage going back to failed/active never lowers it','monotonic: siProgressNext never goes down']);
   await brk(s,'cap at 100',[A('Math.min(99,Math.floor','Math.min(100,Math.floor')],['everything but the count: 82; everything: 100 is CAPPED at 99']);
   await brk(s,'no 300ms delay',[A('_SI_LOAD_SHOW_MS=300','_SI_LOAD_SHOW_MS=0')],['nothing is painted at 299ms']);
-  await brk(s,'no 500ms minimum',[A('_SI_LOAD_MIN_MS=500','_SI_LOAD_MIN_MS=0')],['at 799ms the 500ms minimum is not over']);
-  await brk(s,'no settle',[A('_SI_LOAD_SETTLE_MS=400','_SI_LOAD_SETTLE_MS=0')],['the settle lasts 400ms: unresolved at 1199']);
+  await brk(s,'quick threshold is zero (holds always apply)',[A('_SI_LOAD_QUICK_MS=1500','_SI_LOAD_QUICK_MS=0')],['a quick load (under 1500ms) that showed the card is released at once: no 500ms minimum, no 400ms settle']);
+  await brk(s,'no settle',[A('_SI_LOAD_SETTLE_MS=400','_SI_LOAD_SETTLE_MS=0')],['the settle lasts 400ms: still unresolved 330ms in']);
   await brk(s,'slow text at 200s',[A('_SI_LOAD_SLOW_MS=20000','_SI_LOAD_SLOW_MS=200000')],['at 20s the stage is named as slow and the percent holds']);
   await brk(s,'timeout at 900s',[A('_SI_LOAD_TIMEOUT_MS=90000','_SI_LOAD_TIMEOUT_MS=900000')],['at 90s the load stops and NAMES the stage']);
   await brk(s,'403 is retried',[A("f.cls==='permission'||f.cls==='timeout'||","f.cls==='timeout'||")],['403 permission-denied: no automatic retry, straight to the card']);
