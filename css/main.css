@@ -6327,3 +6327,14 @@ button.phm-tile-main:focus-visible,.phm-sublink:focus-visible,.phm-chip-btn:focu
 .phh-mini{list-style:none;margin:6px 0 0;padding:0}
 .phh-mini-i{font-size:14px;line-height:1.5;color:var(--text)}
 /* ph-mod-health END */
+
+/* ph-mod-instructions START */
+.phi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end;padding:8px 0;border-top:1px solid var(--border)}
+.phi-row .pha-btn{align-self:end}
+.phi-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 0}
+.phi-import{margin:8px 0}
+.phi-imported{color:var(--text);font-weight:600}
+.phi-pan{display:flex;gap:8px;align-items:center}
+.phi-sw{display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:var(--surface-2);flex:none}
+textarea.pha-in{width:100%;min-height:72px;font:inherit}
+/* ph-mod-instructions END */

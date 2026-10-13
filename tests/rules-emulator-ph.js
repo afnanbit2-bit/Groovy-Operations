@@ -494,7 +494,7 @@ async function t(name,fn){
   await t('signed-out: phLoadAll never rejects and NAMES every refused collection; no stage reads as empty',async()=>{await reset();
     const app2=asApp(UZAIB);app2.ctx.db=as('anon');await app2.run('phResetData()');
     const r=await app2.run('(async()=>await phLoadAll({force:true}))()');
-    if(r.ok||r.failed.length!==5)throw new Error('expected 5 failures, got '+JSON.stringify(r.failed.map(f=>f.name)));
+    if(r.ok||r.failed.length!==6)throw new Error('expected 6 failures, got '+JSON.stringify(r.failed.map(f=>f.name)));
     const g=await app2.run('phGet("drafts")');if(g.ok||g.rows!==null)throw new Error('a refused read looked like an empty list');
     if(!r.failed.every(f=>/republish firestore\.rules/.test(f.text)&&f.text.indexOf(f.name)===0))throw new Error('failures not named: '+r.failed.map(f=>f.text).join(' | '));});
 
@@ -657,6 +657,56 @@ async function t(name,fn){
   await t('the pos rule is unchanged: a signed-in user can still create a pos document directly (only the draft transition is gated); the history row of the issue needs the audience',async()=>{await issueSeed();
     await assertSucceeds(setDoc(doc(as(RAEES),'pos','PO-050'),{id:'PO-050',name:'classic'}));
     await assertFails(setDoc(doc(as(RAEES),'pos','PO-050','history','1790000000000-abcd'),{at:NOW,by:'raees',byName:'Raees',type:'issued',from:'',to:'',reason:'',data:{}}));});
+
+  /* ═══ ph_article_instructions (WP3a) ═══ */
+  console.log('ph_article_instructions');
+  const IGOOD={placements:[{en:'Front centre',ur:'',side:'front'}],pantones:[{system:'C',code:'485',name:'Red',hex:'#DA291C'}],embroidery:[],notes:{en:'n',ur:''},reason:'first'};
+  const iDoc=(w,over)=>Object.assign({code:'GP042',rev:1,placements:[],pantones:[],embroidery:[],notes:{en:'',ur:''},reason:'',createdAt:NOW,createdBy:w.u,createdByName:w.name,updatedAt:NOW,updatedBy:w.u},over||{});
+  const iRev=(w,over)=>Object.assign({code:'GP042',rev:1,placements:[],pantones:[],embroidery:[],notes:{en:'',ur:''},reason:'',at:NOW,by:w.u,byName:w.name},over||{});
+  const iBatch=async(w,docData,revData,revId)=>{const db=as(w);const b=writeBatch(db);b.set(doc(db,'ph_article_instructions','GP042'),docData);b.set(doc(db,'ph_article_instructions','GP042','revisions',revId||String(revData.rev)),revData);await b.commit();};
+  for(const w of [AFNAN,AMMAR,MUSTAFA])
+    await t(w.u+' saves instructions with the app\'s own writer: revision 1, then 2, each with its revisions row',async()=>{await reset();
+      const r=await call(w,'phInstructionsSave("gp042",'+JSON.stringify(IGOOD)+',{now:'+nx()+'})');if(!r.ok||r.rev!==1)throw new Error(JSON.stringify(r));
+      const r2=await call(w,'phInstructionsSave("GP042",'+JSON.stringify(Object.assign({},IGOOD,{notes:{en:'changed',ur:''},reason:'why'}))+',{now:'+nx()+',expectedRev:1})');if(!r2.ok||r2.rev!==2)throw new Error(JSON.stringify(r2));
+      const a=await read('ph_article_instructions/GP042/revisions/1'),b=await read('ph_article_instructions/GP042/revisions/2');
+      if(!a||!b||a.notes.en!=='n'||b.notes.en!=='changed'||b.reason!=='why')throw new Error('revision snapshots wrong');});
+  await t('Kashif (uzaib), Raees, Umair, Arfat, QA and signed-out cannot create instructions',async()=>{await reset();
+    for(const w of [UZAIB,RAEES,UMAIR,ARFAT,QA])await assertFails(setDoc(doc(as(w),'ph_article_instructions','GP042'),iDoc(w)));
+    await assertFails(setDoc(doc(as('anon'),'ph_article_instructions','GP042'),iDoc(AFNAN)));});
+  await t('a manager create is bound to the code, rev 1, the caller and the key list',async()=>{await reset();
+    for(const over of [{rev:2},{code:'GP099'},{createdBy:'ammar'},{updatedBy:'ammar'},{extra:1},{notes:'text'},{notes:{en:'x',ur:'',zz:'1'}},{createdAt:'now'},{reason:'x'.repeat(301)},
+        {placements:Array.from({length:13},()=>({en:'p'}))},{pantones:Array.from({length:17},()=>({code:'1'}))},{embroidery:Array.from({length:17},()=>({code:'1'}))},{notes:{en:'y'.repeat(1001),ur:''}}])
+      await assertFails(setDoc(doc(as(AFNAN),'ph_article_instructions','GP042'),iDoc(AFNAN,over)));
+    await assertFails(setDoc(doc(as(AFNAN),'ph_article_instructions','gp 042'),iDoc(AFNAN,{code:'gp 042'})));
+    await assertSucceeds(setDoc(doc(as(AFNAN),'ph_article_instructions','GP042'),iDoc(AFNAN)));});
+  await t('update: rev must be +1, only the mutable keys, and a reason is required (stale or skipped revisions refused)',async()=>{await reset();
+    await seed('ph_article_instructions/GP042',iDoc(AFNAN));
+    const p={placements:[],pantones:[],embroidery:[],notes:{en:'z',ur:''},reason:'why',updatedAt:NOW+1,updatedBy:'afnan'};
+    await assertFails(updateDoc(doc(as(AFNAN),'ph_article_instructions','GP042'),Object.assign({rev:3},p)));
+    await assertFails(updateDoc(doc(as(AFNAN),'ph_article_instructions','GP042'),Object.assign({rev:1},p)));
+    await assertFails(updateDoc(doc(as(AFNAN),'ph_article_instructions','GP042'),Object.assign({rev:2},p,{reason:''})));
+    for(const patch of [{code:'GP099'},{createdAt:1},{createdBy:'ammar'}])await assertFails(updateDoc(doc(as(AFNAN),'ph_article_instructions','GP042'),Object.assign({rev:2},p,patch)));
+    await assertFails(updateDoc(doc(as(UZAIB),'ph_article_instructions','GP042'),Object.assign({rev:2},p,{updatedBy:'uzaib'})));
+    await assertSucceeds(updateDoc(doc(as(MUSTAFA),'ph_article_instructions','GP042'),Object.assign({rev:2},p,{updatedBy:'mustafa'})));});
+  await t('nothing in the collection or its revisions can be deleted',async()=>{await reset();await seed('ph_article_instructions/GP042',iDoc(AFNAN));await seed('ph_article_instructions/GP042/revisions/1',iRev(AFNAN));
+    for(const w of [AFNAN,AMMAR,MUSTAFA]){await assertFails(deleteDoc(doc(as(w),'ph_article_instructions','GP042')));await assertFails(deleteDoc(doc(as(w),'ph_article_instructions','GP042','revisions','1')));}});
+  await t('a revision row: its id must equal its rev, the parent must be at that rev in the same commit, and it can never be changed',async()=>{await reset();
+    await assertSucceeds(iBatch(AFNAN,iDoc(AFNAN),iRev(AFNAN)));
+    await reset();await assertFails(iBatch(AFNAN,iDoc(AFNAN),iRev(AFNAN),'7'));                       // id != rev
+    await reset();await assertFails(setDoc(doc(as(AFNAN),'ph_article_instructions','GP042','revisions','1'),iRev(AFNAN)));   // no parent in the commit
+    await reset();await assertFails(iBatch(AFNAN,iDoc(AFNAN),iRev(AFNAN,{rev:2}),'2'));                // parent is rev 1
+    await reset();await assertFails(iBatch(AFNAN,iDoc(AFNAN),iRev(AFNAN,{extra:1})));
+    await reset();await assertFails(iBatch(AFNAN,iDoc(AFNAN),iRev(AFNAN,{by:'ammar'})));
+    await reset();await assertFails(iBatch(AFNAN,iDoc(AFNAN),iRev(AFNAN,{code:'GP099'})));
+    await reset();await seed('ph_article_instructions/GP042',iDoc(AFNAN));await seed('ph_article_instructions/GP042/revisions/1',iRev(AFNAN));
+    await assertFails(updateDoc(doc(as(AFNAN),'ph_article_instructions','GP042','revisions','1'),{reason:'rewritten'}));
+    await assertFails(setDoc(doc(as(AFNAN),'ph_article_instructions','GP042','revisions','1'),iRev(AFNAN,{reason:'overwritten'})));
+    await assertFails(setDoc(doc(as(UZAIB),'ph_article_instructions','GP042','revisions','2'),iRev(UZAIB,{rev:2})));});
+  await t('everyone signed in reads instructions and their revisions (Kashif, Raees, Umair); QA reads, QA cannot write; signed-out reads nothing',async()=>{await reset();
+    await seed('ph_article_instructions/GP042',iDoc(AFNAN));await seed('ph_article_instructions/GP042/revisions/1',iRev(AFNAN));
+    for(const w of [UZAIB,RAEES,UMAIR,QA]){await assertSucceeds(getDoc(doc(as(w),'ph_article_instructions','GP042')));await assertSucceeds(getDocs(collection(as(w),'ph_article_instructions')));await assertSucceeds(getDoc(doc(as(w),'ph_article_instructions','GP042','revisions','1')));}
+    await assertFails(getDoc(doc(as('anon'),'ph_article_instructions','GP042')));await assertFails(getDoc(doc(as('anon'),'ph_article_instructions','GP042','revisions','1')));
+    await assertFails(setDoc(doc(as(QA),'ph_article_instructions','GP043'),iDoc(QA,{code:'GP043'})));});
 
   await env.cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

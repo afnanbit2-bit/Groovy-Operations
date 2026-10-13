@@ -587,6 +587,7 @@ async function _phAdminPanel(o){
   app.ctx.console={warn(){},log(){},error(){}};
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-admin.js'),'utf8'),app.ctx,{filename:'ph-mod-admin.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-instructions.js'),'utf8'),app.ctx,{filename:'ph-mod-instructions.js'});
   app.ctx.currentPage='prod-ops';
   app.ctx.phRenderPage('prod-ops');
   await app.run('phUiLoad()');
@@ -3320,6 +3321,16 @@ const FRAGMENTS={
     const noreg=await _phAdminPanel({tab:'standards',store,globals:{tacArticles:[],patternsLoaded:true,_ptnLoadFailed:c=>c==='articles'},setup:"_phaS.q=''"});
     const nostd=await _phAdminPanel({tab:'standards',store:{},fail:['ph_standards'],globals:g});
     return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[edit,fresh,noreg,nostd].join('')};
+  },
+  // Production Ops Instructions tab (WP3a, 14 Oct 2026): the editor with rows in every section (long Urdu text, a swatch with and without a hex, an
+  // embroidery row, an import note), the saved list, a flash, and the failed-read state.
+  'production ops — admin tabs — Instructions':async()=>{
+    const row=(code,e)=>Object.assign({code:code,rev:3,placements:[{en:'Front centre',ur:'',side:'front',templateId:''}],pantones:[{system:'C',code:'485',name:'Red',hex:'#DA291C',use:'logo'}],embroidery:[],notes:{en:'',ur:''},reason:'x',createdAt:1,createdBy:'afnan',createdByName:'Afnan',updatedAt:1,updatedBy:'afnan'},e||{});
+    const store={'ph_article_instructions/GP042':row('GP042'),'ph_article_instructions/GST073':row('GST073',{rev:1})};
+    const edit=await _phAdminPanel({tab:'instructions',store,globals:{},setup:"_phiS.form=_phiFormFrom('GP042',phInstructionsFor('GP042'));_phiS.form.placements.push({en:'Left sleeve, 2 in above the hem, centred on the seam with a very long description that must wrap on a phone',ur:'بائیں آستین کے نیچے سے دو انچ اوپر درمیان میں',side:'left',templateId:''});_phiS.form.pantones.push({system:'TCX',code:'19-1664',name:'Fiery Red',hex:'',use:''});_phiS.form.embroidery.push({code:'E-12',candle:'C-44',shade:'S-9',position:'left chest',note:'soft backing'});_phiS.form.notesEn='Use the soft backing';_phiS.form.reason='re-checked against the sample';_phiS.importNote='Copied from the recipe. Review it, then save - the recipe is not changed and nothing syncs.';_phaFlash={tab:'instructions',kind:'ok',text:'Saved the instructions of GP042 (revision 3).'}"});
+    const fresh=await _phAdminPanel({tab:'instructions',store,globals:{},user:'mustafa',setup:"_phiS.form=_phiFormFrom('GP123',null);_phaFlash={tab:'instructions',kind:'bad',text:'A reason is required for a new revision.'}"});
+    const failed=await _phAdminPanel({tab:'instructions',store:{},fail:['ph_article_instructions'],globals:{}});
+    return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[edit,fresh,failed].join('')};
   },
   'production ops — admin tabs — Settings':async()=>{
     const saved={dailyCapacity:420,skipDays:['2026-10-20','2026-11-14','2026-12-25','2027-01-01','2027-03-23'],offWeekdays:[0],delayTargetDays:3,stuckDays:7,grossOverTolPct:3,grossUnderTolPct:5,cutGate:[70,130],pcOnlyHard:true,rev:4,updatedAt:1790000000000,updatedBy:'afnan'};

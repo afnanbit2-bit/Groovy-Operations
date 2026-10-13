@@ -67,18 +67,19 @@ const PH_COLLECTIONS=Object.freeze({
   jobs:     Object.freeze({col:'po_cut_jobs',    label:'Cutting jobs',           order:'createdAt',limit:500}),
   masters:  Object.freeze({col:'cutting_masters',label:'Cutting masters',        order:null,       limit:500}),
   standards:Object.freeze({col:'ph_standards',   label:'Consumption standards',  order:null,       limit:1500}),
-  settings: Object.freeze({col:'ph_settings',    label:'Production Ops settings',doc:'main'})
+  settings: Object.freeze({col:'ph_settings',    label:'Production Ops settings',doc:'main'}),
+  instructions:Object.freeze({col:'ph_article_instructions',label:'Product instructions',order:null,limit:1500})
 });
-const PH_STAGE_IDS=Object.freeze(['drafts','jobs','masters','standards','settings']);
+const PH_STAGE_IDS=Object.freeze(['drafts','jobs','masters','standards','settings','instructions']);
 // Every collection path this layer is allowed to touch (both files). A test scans the
 // source and the recorded writes against this list.
-const PH_WRITE_ROOTS=Object.freeze(['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings']);
+const PH_WRITE_ROOTS=Object.freeze(['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions']);
 const PH_READ_TIMEOUT_MS=20000;
 const PH_HISTORY_LIMIT=50;
 const PH_HISTORY_MAX=200;
 
 /* ── State ─────────────────────────────────────────────────────────────── */
-let _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null};
+let _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null};
 let _phLoad={};                 // stage -> {state:'idle'|'ok'|'error',at,n,truncated,err}
 let _phInflight={};             // stage -> Promise (concurrent calls coalesce)
 let _phHistCache={};            // poId -> {at,rows,truncated}
@@ -201,7 +202,7 @@ function phGet(stageId){
   return{ok:false,state:s.state,rows:null,err:s.err,text:s.err?phErrText(stageId,s.err):null};
 }
 function phResetData(){
-  _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null};
+  _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null};
   _phLoad={};PH_STAGE_IDS.forEach(function(s){_phLoad[s]=_phStageFresh();});
   _phInflight={};_phHistCache={};
 }
@@ -232,6 +233,13 @@ function phMasterList(){
 }
 function phStandardFor(code){
   const g=phGet('standards');
+  if(!g.ok)return null;
+  const k=String(code==null?'':code).trim().toUpperCase();
+  for(let i=0;i<g.rows.length;i++)if(g.rows[i].fbKey===k)return g.rows[i];
+  return null;
+}
+function phInstructionsFor(code){
+  const g=phGet('instructions');
   if(!g.ok)return null;
   const k=String(code==null?'':code).trim().toUpperCase();
   for(let i=0;i<g.rows.length;i++)if(g.rows[i].fbKey===k)return g.rows[i];
