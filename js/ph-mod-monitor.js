@@ -199,13 +199,16 @@ function phmBuildModel(inp){
 
   /* stuck / delayed / over the cut gate */
   const items=[],noStart=[],unjudged=[];
+  const fiMap=_phmObj(I.firstIssueById)?I.firstIssueById:null,basis={issue:0,release:0,passesOk:!!I.passesOk};
   inProdList.forEach(function(ep){
     const st=stageOf(ep),sl=_phmStageLabel(st);
     let l=null,since='';
     if(st==='cutting'){
-      l=phLeadTime(ep,O);
+      // start: the FIRST fabric-issue gate pass when there is one (matched through phPoKey, so '125' and 'PO-125' agree), else the release date
+      const pk=phPoKey(ep.id),fi=pk!==null&&fiMap&&Object.prototype.hasOwnProperty.call(fiMap,pk)?fiMap[pk]:null;
+      l=phLeadTime(ep,fi!==null?Object.assign({},O,{issueAt:fi}):O);
       if(l.quality.indexOf('start_from_ts')>-1||l.quality.indexOf('no_issue')>-1){noStart.push(ep);return;}
-      since='release';
+      if(fi!==null){since='first fabric issue';basis.issue++;}else{since='release';basis.release++;}
     }else{
       const prev=PH_REAL_STAGE_ORDER[PH_REAL_STAGE_ORDER.indexOf(st)-1];
       const sg=_phmObj(ep.stages)?ep.stages[prev]:null;
@@ -219,7 +222,7 @@ function phmBuildModel(inp){
     const reasons=[];
     let kind=null;
     if(l.status==='stuck'){kind='stuck';reasons.push(_phmPlural(l.ageDays,'day')+' at '+sl+' (since '+_phmDayLabel(l.startDay)+', '+since+'); the limit is '+S.stuckDays+' days'+_phmDef(sv,'stuckDays'));}
-    else if(st==='cutting'&&l.status==='delayed'){kind='delayed';reasons.push(_phmPlural(l.ageDays,'day')+' since release (since '+_phmDayLabel(l.startDay)+'); the target is '+S.delayTargetDays+' days'+_phmDef(sv,'delayTargetDays'));}
+    else if(st==='cutting'&&l.status==='delayed'){kind='delayed';reasons.push(_phmPlural(l.ageDays,'day')+' since '+(since==='release'?'release':since)+' (since '+_phmDayLabel(l.startDay)+'); the target is '+S.delayTargetDays+' days'+_phmDef(sv,'delayTargetDays'));}
     if(st==='cutting'&&jobsOk){
       const g=phDelayGap(ep,undefined,O);
       if(g.state==='overdue'){kind=kind||'delayed';reasons.push('planned cut day '+_phmDayLabel(g.plannedDay)+' passed '+_phmPlural(g.days,'day')+' ago');}
@@ -237,12 +240,13 @@ function phmBuildModel(inp){
   items.sort(function(a,b){return(PHM_KIND_RANK[b.kind]-PHM_KIND_RANK[a.kind])||(b.age-a.age)||(a.ep.id<b.ep.id?-1:a.ep.id>b.ep.id?1:0);});
   const attRows=items.map(function(it){return _phmRow(it.ep,it.text,{kind:it.kind,kindLabel:PHM_KIND_LABEL[it.kind]});});
   const nStuck=items.filter(function(i){return i.kind==='stuck';}).length,nDelayed=items.filter(function(i){return i.kind==='delayed';}).length,nGate=items.filter(function(i){return i.kind==='overgate';}).length;
+  M.stuckBasis=basis;
   M.attention={items:items,rows:attRows,count:items.length,counts:{stuck:nStuck,delayed:nDelayed,overgate:nGate},unavailable:null,noStart:noStart.length,
     note:jobsOk?'':'Delays against a planned cut day are not checked: po_cut_jobs could not be read.'};
   {
     const stuckRows=attRows.filter(function(r){return r.kind==='stuck';});
     const t=_phmT('stuck','Stuck POs','now','ok',{value:_phmN(nStuck),sub:'at one stage for '+S.stuckDays+' days or more'+_phmDef(sv,'stuckDays'),
-      cap:'Counted from the release date (cutting) or from the date the previous stage was done. The limit is the setting stuckDays; ph-core calls a PO stuck at the limit or beyond.',count:nStuck,rows:stuckRows});
+      cap:'A PO at cutting is counted from its FIRST fabric-issue gate pass when it has one, else from its release date; a later stage from the date the previous stage was done. '+(basis.passesOk?'Start used at cutting: '+basis.issue+(basis.issue===1?' PO':' POs')+' from the first fabric issue, '+basis.release+(basis.release===1?' PO':' POs')+' from the release date.':'The gate passes could not be read, so every PO at cutting was counted from its release date.')+' The limit is the setting stuckDays; ph-core calls a PO stuck at the limit or beyond.',count:nStuck,rows:stuckRows});
     if(noStart.length)t.links.push({label:_phmPlural(noStart.length,'open PO')+' with no start date — cannot be judged',count:noStart.length,rows:_phmByIdRows(noStart,function(e){return'at '+_phmStageLabel(stageOf(e))+', no release or stage date on the PO';})});
     M.tiles.stuck=_phmFinish(t);
   }
@@ -606,7 +610,8 @@ function _phmPosLine(){
 }
 function _phmInputs(ctx,range){
   const gj=ctx.get('jobs'),gs=ctx.get('settings');
-  return{now:Date.now(),range:range,pos:_phmPos.state==='ok'?_phmPos.rows:null,jobs:gj&&gj.ok&&Array.isArray(gj.rows)?gj.rows:null,
+  const fim=typeof phhFirstIssueNow==='function'?phhFirstIssueNow():null;
+  return{now:Date.now(),range:range,firstIssueById:fim,passesOk:fim!==null,pos:_phmPos.state==='ok'?_phmPos.rows:null,jobs:gj&&gj.ok&&Array.isArray(gj.rows)?gj.rows:null,
     settingsRaw:gs&&gs.ok&&_phmObj(gs.rows)?gs.rows:null,truncated:_phmPos.truncated,jobsTruncated:!!(gj&&gj.ok&&gj.truncated),
     errors:{pos:_phmPos.errText,po_cut_jobs:gj&&gj.text,ph_settings:gs&&gs.text}};
 }
@@ -621,6 +626,10 @@ function _phmHead(ctx,title,blurb,extra){
 function _phmCurrent(ctx){return typeof _phUiTab==='undefined'||_phUiTab===ctx.tab.id;}
 // Kick the read of `pos` (once) and repaint the tab that asked when it settles. Never throws.
 function _phmEnsure(ctx,force){
+  if(typeof phhEnsure==='function'&&typeof phhSources==='function'){   // the gate passes (the stuck basis): once, or again on Refresh
+    const S=phhSources();
+    if(force||S.pos.state==='idle'||S.gatepasses.state==='idle')phhEnsure(!!force).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});
+  }
   const wasOk=_phmPos.state==='ok',stale=wasOk&&_phmPos.at!==null&&Date.now()-_phmPos.at>=PHM_STALE_MS;
   if(!force&&(_phmPos.p||(wasOk&&!stale)||_phmPos.state==='error'))return;
   phmLoadPos(!!force).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});
@@ -638,25 +647,37 @@ function _phmFooterNote(M,ctx){
 }
 
 /* ── Overview ──────────────────────────────────────────────────────────── */
+// The per-collection status lines. Collapsed under a small disclosure while everything read fine; OPEN (and marked)
+// when anything failed, so a failed collection is never hidden behind a click.
+function _phmSourcesCard(ctx){
+  const E=phEl,strip=E('ul','ph-lines');
+  (ctx.status.stages||[]).forEach(function(r){strip.appendChild(_phmStageLine(r));});
+  if(!(ctx.status.stages||[]).length)(ctx.status.failed||[]).forEach(function(f){strip.appendChild(_phmStageLine({label:f.label,name:f.name,state:'error',text:f.text}));});
+  strip.appendChild(_phmPosLine());
+  const failed=(ctx.status.failed||[]).length>0||(ctx.status.stages||[]).some(function(r){return r&&r.state==='error';})||_phmPos.state==='error';
+  const d=E('details','ph-card phm-sources'+(failed?' phm-sources-bad':''));
+  d.setAttribute('data-sources',failed?'failed':'ok');
+  if(failed)d.setAttribute('open','');
+  d.appendChild(E('summary','phm-sources-sum',failed?'Data sources - something failed to read':'Data sources'));
+  d.appendChild(strip);
+  return d;
+}
 function _phmRenderOverview(host,ctx){
   const E=phEl;
   _phmEnsure(ctx,false);
   host.appendChild(_phmHead(ctx,'Overview','Where production stands right now. Every number opens the list of POs behind it.'));
-  const strip=E('ul','ph-lines');
-  (ctx.status.stages||[]).forEach(function(r){strip.appendChild(_phmStageLine(r));});
-  if(!(ctx.status.stages||[]).length)(ctx.status.failed||[]).forEach(function(f){strip.appendChild(_phmStageLine({label:f.label,name:f.name,state:'error',text:f.text}));});
-  strip.appendChild(_phmPosLine());
-  host.appendChild(phEl('section','ph-card',null,[E('h3','ph-card-title','Data read on open'),strip]));
-  if(_phmPos.state==='idle'||_phmPos.state==='loading'){host.appendChild(_phmSkeleton());return;}
+  if(_phmPos.state==='idle'||_phmPos.state==='loading'){host.appendChild(_phmSkeleton());host.appendChild(_phmSourcesCard(ctx));return;}
   const M=phmBuildModel(_phmInputs(ctx,{}));
   if(_phmPos.state==='error')host.appendChild(_phmPosError(ctx));
   host.appendChild(_phmTilesEl(PHM_OVERVIEW_TILES,M,host));
   host.appendChild(_phmAttentionCard(M,host,{limit:5}));
+  if(typeof phhOverviewCard==='function'){try{host.appendChild(phhOverviewCard(ctx));}catch(e){}}
   const foot=phEl('div','phm-actions');
   if(ctx.canManage)foot.appendChild(_phmBtn('ph-btn','Open the Monitor',function(){if(typeof phGoTab==='function')phGoTab('monitor');}));
   foot.appendChild(_phmBtn('ph-btn','Refresh',function(){phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();Promise.resolve(ctx.reload()).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});}));
   host.appendChild(foot);
   host.appendChild(_phmFooterNote(M,ctx));
+  host.appendChild(_phmSourcesCard(ctx));
   if(ctx.readOnly)host.appendChild(phEl('p','ph-note','Your account can see Overview, PO Queue and Today\'s Cutting. Overview is view-only: PO drafts are entered in PO Queue and the cut is recorded in Today\'s Cutting.'));
 }
 function _phmSkeleton(){
@@ -743,6 +764,7 @@ function _phmRenderMonitor(host,ctx){
   host.appendChild(_phmTilesEl(PHM_RANGE_TILES,M,host));
   host.appendChild(_phmStageBars(M));
   host.appendChild(_phmAttentionCard(M,host,{limit:8}));
+  if(typeof phhSection==='function'){try{host.appendChild(phhSection(ctx));}catch(e){}}
   host.appendChild(_phmSettingsCard(M));
   host.appendChild(_phmFooterNote(M,ctx));
 }

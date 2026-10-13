@@ -727,6 +727,8 @@ function _phdAskNode(){
     _phdSetVal(ta,a.reason||'');
     ta.addEventListener('input',function(){a.reason=ta.value;});
     box.appendChild(_phdFieldWrap('ask-reason','Reason',ta));_phdRefs.reason=ta;
+    // the reason box has just opened: put the caret in it (once per ask, not on every repaint)
+    if(!a._focused){a._focused=true;try{setTimeout(function(){try{if(ta.focus)ta.focus();}catch(e){}},0);}catch(e){}}
   }
   const ok=_phdBtn(a.kind==='leave'||a.kind==='discard'||a.kind==='issue'?'ph-btn-primary':'phd-danger',a.kind==='leave'?'Discard changes and leave':a.kind==='discard'?'Discard':a.kind==='issue'?'Yes, issue it as a PO':a.kind==='abandon'?'Abandon':'Send back',function(){
     const reason=ta?ta.value:'';
@@ -775,7 +777,7 @@ function _phdCompleteness(t,gate){
   const card=_phdEl('section','ph-card phd-card phd-complete');
   const ok=gate.ok&&!t.problems.length;
   card.appendChild(_phdEl('h3','ph-card-title',ok?'Complete':'Not complete yet'));
-  if(ok)card.appendChild(_phdEl('p','ph-note','Every required field is filled. This draft can be marked ready.'));
+  if(ok)card.appendChild(_phdEl('p','ph-note',_phdForm&&_phdForm.status==='ready'?'Every required field is filled. This draft is already marked ready.':'Every required field is filled. This draft can be marked ready.'));
   else{
     card.appendChild(_phdEl('p','ph-note',(gate.missing.length+t.problems.length)+' to fix before this can be marked ready:'));
     const ul=_phdEl('ul','ph-lines phd-miss');

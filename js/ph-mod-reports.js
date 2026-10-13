@@ -40,7 +40,9 @@ const PHR_NONE_MASTER='__none';
 const PHR_SHEETS=Object.freeze({summary:'Summary',seasons:'By season',cutMaster:'Cut per master',cutDay:'Cut per day',cutWeek:'Cut per week',grossProduct:'Gross per product',grossMaster:'Gross per master',averages:'Averages',lead:'Lead time and delay',overrides:'Cut gate overrides'});
 
 /* ── small helpers ─────────────────────────────────────────────────────── */
-function _phrIdKey(x){return phStr(x).replace(/\s+/g,'').toUpperCase();}
+// ONE key for a PO number in any spelling ('PO-125', '125', 'po-0125'): ph-core's phPoKey. 71 of 208 real fabric passes store the
+// bare digits, and matching them as text left those POs with no master and no fabric. Not a PO number -> the squashed upper-case text.
+function _phrIdKey(x){const k=typeof phPoKey==='function'?phPoKey(x):null;return k!==null?k:phStr(x).replace(/\s+/g,'').toUpperCase();}
 function _phrN(x,dp){
   if(typeof x!=='number'||!isFinite(x))return'';
   const neg=x<0,a=Math.abs(x);

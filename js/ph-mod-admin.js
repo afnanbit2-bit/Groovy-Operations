@@ -105,6 +105,10 @@ function _phaStampLabel(ms){const d=phDay(ms);return d?_phaDayLabel(d):'';}
 function _phaGross(n){return String(Math.round(n*10000)/10000);}
 
 /* ── an action's outcome, shown above the tab; one write at a time ─────── */
+// Move focus into an editor that has just opened (a keyboard or screen-reader user would otherwise be left on the button that vanished).
+function _phaFocusSoon(sel){
+  try{setTimeout(function(){try{const n=document.querySelector(sel);if(n&&typeof n.focus==='function')n.focus();}catch(e){}},0);}catch(e){}
+}
 function _phaFlashFor(tab){
   if(_phaFlash&&_phaFlash.tab!==tab)_phaFlash=null;
   return _phaFlash;
@@ -161,6 +165,8 @@ function _phaGuard(host,ctx,title){
 // The cut jobs the log is built from: one per PO that has a recorded cut (cutAt + cut quantities). The master
 // is the PO's cut job (po_cut_jobs.masterName), else the fabric issue (gate pass) cutMaster for that PO,
 // resolved to the registry's current spelling (an old name via its aliases). Pure.
+// The PO key in any spelling (a pass may store '125' for PO-125): ph-core's phPoKey, else the upper-cased text.
+function _phaPoKey(x){const k=typeof phPoKey==='function'?phPoKey(x):null;return k!==null?k:String(x==null?'':x).trim().toUpperCase();}
 function phaCutJobs(pos,passes,jobRows,masters){
   const byKey=Object.create(null);
   const reg=Array.isArray(masters)?masters:[];
@@ -168,13 +174,13 @@ function phaCutJobs(pos,passes,jobRows,masters){
   reg.forEach(function(m){if(m&&m.name&&Array.isArray(m.aliases)){const nm=phNorm(m.name);m.aliases.forEach(function(a){const k=phMasterKey(a);if(k&&!byKey[k])byKey[k]=nm;});}});
   const jobMaster=Object.create(null);
   (Array.isArray(jobRows)?jobRows:[]).forEach(function(j){
-    const n=phNorm(j&&j.masterName),id=String(j&&(j.fbKey||j.poId)||'').trim().toUpperCase();
+    const n=phNorm(j&&j.masterName),id=_phaPoKey(j&&(j.fbKey||j.poId));
     if(n&&id)jobMaster[id]=n;
   });
   const passMaster=Object.create(null),passTs=Object.create(null);
   (Array.isArray(passes)?passes:[]).forEach(function(g){
     if(!g||g.gpType!=='fabric')return;
-    const id=String(g.poId||'').trim().toUpperCase(),n=phNorm(g.cutMaster),ts=Number(g.ts)||0;
+    const id=_phaPoKey(g.poId),n=phNorm(g.cutMaster),ts=Number(g.ts)||0;
     if(!id||!n)return;
     if(passMaster[id]===undefined||ts>=passTs[id]){passMaster[id]=n;passTs[id]=ts;}
   });
@@ -185,7 +191,7 @@ function phaCutJobs(pos,passes,jobRows,masters){
     if(!id||phMs(po.cutAt)===null)return;
     const units=po.cutQty!=null?po.cutQty:po.cutBySize;
     if(units==null)return;
-    const raw=jobMaster[id.toUpperCase()]||passMaster[id.toUpperCase()]||'';
+    const raw=jobMaster[_phaPoKey(id)]||passMaster[_phaPoKey(id)]||'';
     out.push({id:id,poId:id,master:raw?(byKey[phMasterKey(raw)]||raw):'',cutAt:po.cutAt,cutUnits:units,
       articleCode:po.code!=null?po.code:po.articleCode,sizeModel:po.sizeModel,sizeAxis:po.sizeAxis,poStatus:po.poStatus});
   });
@@ -234,6 +240,8 @@ function _phaWeekRange(day){
 function phaMasterLogModel(st,env){
   const out={state:'unloaded',range:null,jobsTotal:0,summary:null,log:null,names:[]};
   if(!env||!Array.isArray(env.pos))return out;
+  // the masters come from the fabric issues: with those not loaded, every cut would read as "no master" (unassigned) - say so instead
+  if(env.passesLoaded===false){out.state='nopasses';return out;}
   const rg=st.mode==='week'?_phaWeekRange(st.week):_phaMonthRange(st.month);
   if(!rg){out.state='badrange';return out;}
   out.range=rg;
@@ -254,11 +262,18 @@ function phaMasterLogModel(st,env){
   out.state=(out.summary&&out.summary.rows&&out.summary.rows.length)?'ok':'noperiod';
   return out;
 }
+// The fabric gate passes: the classic app's list when it holds anything, else the one shared read (js/ph-mod-health.js); null = not loaded.
+function _phaPasses(){
+  if(typeof allPasses!=='undefined'&&Array.isArray(allPasses)&&allPasses.length)return allPasses;
+  if(typeof phhRows==='function'){const r=phhRows('gatepasses');if(r)return r;}
+  return null;
+}
 function _phaEnv(ctx){
   const gm=ctx.get('masters'),gs=ctx.get('standards'),gj=ctx.get('jobs');
   return{
     pos:typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:null,
-    passes:typeof allPasses!=='undefined'&&Array.isArray(allPasses)?allPasses:[],
+    passes:_phaPasses(),
+    passesLoaded:_phaPasses()!==null,
     jobRows:gj.ok?gj.rows:[],
     masters:gm.ok?gm.rows:null,
     standards:gs.ok?gs.rows:null,
@@ -282,9 +297,9 @@ function _phaMasterRow(r,ctx){
     if(why.trim())row.appendChild(phEl('div','pha-sub','Retired: '+why));
   }
   const acts=phEl('div','pha-acts');
-  acts.appendChild(_phaBtn('','Rename',function(){_phaM.edit={id:r.fbKey,kind:'rename',text:r.name};ctx.repaint();},{'data-act':'rename','aria-label':'Rename '+r.name}));
-  acts.appendChild(_phaBtn('','Change kind',function(){_phaM.edit={id:r.fbKey,kind:'kind',text:PHA_KINDS.some(function(k){return k.v===r.kind;})?r.kind:'unset'};ctx.repaint();},{'data-act':'kind','aria-label':'Change the kind of '+r.name}));
-  if(active)acts.appendChild(_phaBtn('','Retire',function(){_phaM.edit={id:r.fbKey,kind:'retire',text:''};ctx.repaint();},{'data-act':'retire','aria-label':'Retire '+r.name}));
+  acts.appendChild(_phaBtn('','Rename',function(){_phaM.edit={id:r.fbKey,kind:'rename',text:r.name};ctx.repaint();_phaFocusSoon('.pha-edit input');},{'data-act':'rename','aria-label':'Rename '+r.name}));
+  acts.appendChild(_phaBtn('','Change kind',function(){_phaM.edit={id:r.fbKey,kind:'kind',text:PHA_KINDS.some(function(k){return k.v===r.kind;})?r.kind:'unset'};ctx.repaint();_phaFocusSoon('.pha-edit select, .pha-edit input');},{'data-act':'kind','aria-label':'Change the kind of '+r.name}));
+  if(active)acts.appendChild(_phaBtn('','Retire',function(){_phaM.edit={id:r.fbKey,kind:'retire',text:''};ctx.repaint();_phaFocusSoon('.pha-edit input');},{'data-act':'retire','aria-label':'Retire '+r.name}));
   else acts.appendChild(_phaBtn('','Reactivate',function(e,b){
     _phaAct(ctx,'masters',function(){return phMasterSetActive(r.fbKey,true,'');},function(){return r.name+' is active again.';},b);
   },{'data-act':'reactivate','aria-label':'Reactivate '+r.name}));
@@ -346,7 +361,7 @@ function _phaRegistryCard(ctx){
     kids.push(box);
   }
   // suggestions from names on fabric issues (read-only data)
-  const sug=phaMasterSuggestions(typeof allPasses!=='undefined'&&Array.isArray(allPasses)?allPasses:[],rows);
+  const sug=phaMasterSuggestions(_phaPasses()||[],rows);
   if(sug&&sug.length){
     const box=phEl('div','pha-sug');
     box.appendChild(phEl('h4','pha-sub-title','Names found on fabric issues, not in the register'));
@@ -375,7 +390,10 @@ function _phaRegistryCard(ctx){
   add.appendChild(_phaBtn('ph-btn-primary','Add master',function(e,b){
     const name=phNorm(_phaM.newName);
     if(!name){_phaFlash={tab:'masters',kind:'bad',text:'A master needs a name.'};ctx.repaint();return;}
-    _phaAct(ctx,'masters',function(){return phMasterAdd(name,{kind:_phaM.newKind});},function(r){_phaM.newName='';return name+' added ('+r.id+').';},b);
+    _phaAct(ctx,'masters',function(){return phMasterAdd(name,{kind:_phaM.newKind});},function(r){_phaM.newName='';return name+' added ('+r.id+').';},b).then(function(r){
+      // a REFUSED add leaves no old success message behind (the refusal replaces it) and does not keep the rejected name in the box
+      if(r&&r.ok===false){_phaM.newName='';try{ctx.repaint();}catch(e){}}
+    });
   },{'data-act':'add'}));
   kids.push(add);
   // the list
@@ -454,6 +472,13 @@ function _phaPaintLog(ctx){
   const b=_phaLogBody(ctx),model=b.model,env=b.env;
   host.appendChild(phEl('h3','ph-card-title','Cutting log'));
   host.appendChild(phEl('p','ph-note','Units cut per day and per week, from the purchase orders that have a recorded cut (cut date and cut quantities). The master is the one on the PO\'s cut job, else on its fabric issue. Days and weeks with no cut are left out, not shown as zero.'));
+  if(model.state==='nopasses'){
+    const S=typeof phhSources==='function'?phhSources():null,g=S&&S.gatepasses;
+    if(g&&g.state==='idle'&&typeof phhEnsure==='function')phhEnsure(false).then(function(){try{_phaPaintLog(ctx);}catch(e){}});
+    host.appendChild(phEl('p','pha-empty',g&&g.state==='error'?'Gate passes not loaded: '+g.text:(g&&(g.state==='idle'||g.state==='loading')?'Gate passes not loaded yet - reading them…':'Gate passes not loaded, so the master of each cut cannot be told and nothing is counted.')));
+    if(g&&g.state==='error'&&typeof phhEnsure==='function'){const b=phEl('button','ph-btn','Try again');b.setAttribute('type','button');b.addEventListener('click',function(){phhEnsure(true).then(function(){try{_phaPaintLog(ctx);}catch(e){}});});host.appendChild(b);}
+    return;
+  }
   if(model.state==='unloaded'){
     host.appendChild(phEl('p','pha-empty','No data yet: the purchase order list is not loaded on this device, so nothing can be counted. Open the Dashboard once, then come back.'));
     return;
@@ -609,7 +634,7 @@ function _phaStdLine(r,ctx){
   li.appendChild(mid);
   const acts=phEl('div','pha-acts');
   acts.appendChild(_phaBtn('',r.std?'Edit':'Set standard',function(){
-    _phaS.edit=r.code;_phaS.form=_phaStdBlank(r.code,r.name,r.std);ctx.repaint();
+    _phaS.edit=r.code;_phaS.form=_phaStdBlank(r.code,r.name,r.std);ctx.repaint();_phaFocusSoon('.pha-editor select, .pha-editor input');
   },{'data-act':'edit','aria-label':(r.std?'Edit the standard of ':'Set the standard of ')+r.code}));
   li.appendChild(acts);
   return li;
@@ -840,7 +865,7 @@ function _phaRenderSettings(host,ctx){
   host.appendChild(nums);
   // gate
   const gate=_phaCard('Cut gate',[]);
-  gate.appendChild(phEl('p','ph-note','The allowed range of the actual cut against the planned quantity, in percent. The shipped value is 70 to 130. The PO cutting screen (js/pos.js) uses its own fixed 70 to 130 gate and does not read this; this is the value Production Ops checks will use.'));
+  gate.appendChild(phEl('p','ph-note','The allowed range of the actual cut against the planned quantity, in percent. The shipped value is 70 to 130. The PO cutting screen uses its own fixed 70 to 130 gate and does not read this; this is the value Production Ops checks will use.'));
   const gg=phEl('div','pha-grid');
   const lo=_phaInput('text',f.gateLo,'gateLo',{inputmode:'numeric','aria-label':'Cut gate lower limit percent'});_phaBind(lo,f,'gateLo');
   const hi=_phaInput('text',f.gateHi,'gateHi',{inputmode:'numeric','aria-label':'Cut gate upper limit percent'});_phaBind(hi,f,'gateHi');
@@ -886,7 +911,7 @@ function _phaRenderSettings(host,ctx){
   host.appendChild(cal);
   // PC-only
   const pc=_phaCard('PC-only rule',[]);
-  pc.appendChild(phEl('p','ph-note','When on, entering a PO is meant to be refused on a phone. Today this is only stored: nothing reads it yet, so switching it changes no behaviour.'));
+  pc.appendChild(phEl('p','ph-note','The PO Drafts form (PO Queue, Drafts) reads this. Off: on a phone the form shows a warning and an "Edit anyway" button. On: on a phone the form is read-only with no way round it. It is a check on the device\'s width and type, so it guards against mistakes, not against someone determined.'));
   pc.appendChild(_phaCheck(f.pcOnlyHard,'pcOnlyHard','Hard PC-only rule',!isOwner));
   const pcCb=pc.lastChild.firstChild;pcCb.addEventListener('change',function(){f.pcOnlyHard=!!pcCb.checked;});
   if(!isOwner)pc.appendChild(phEl('p','ph-note pha-reason','Only an owner (Afnan or Ammar) can change this. The database rules enforce it, so it cannot be changed from here.'));

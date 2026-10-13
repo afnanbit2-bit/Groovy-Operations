@@ -67,7 +67,9 @@ const PB_VERSION=1;
 // and compared everywhere with no other change.
 const PB_COLLECTIONS=['pos','bundles','gatepasses','returns','fabricin','fabric_inventory','fabric_movements','fabric_drawstrings','drawstring_moves','printing_jobs','counters','settings',
   // Requests, approvals and records that sit beside a job (added after review):
-  'gatepass_edit_requests','po_issue_requests','po_edit_requests','po_shortfalls','qc_reports','printing_billing','sla_events','article_recipes','color_library','stock_transfers','bstock_items','bstock_cartons','trim_templates','articles'];
+  'gatepass_edit_requests','po_issue_requests','po_edit_requests','po_shortfalls','qc_reports','printing_billing','sla_events','article_recipes','color_library','stock_transfers','bstock_items','bstock_cartons','trim_templates','articles',
+  // Production Ops (14 Oct 2026): the drafts, cut jobs, cutting masters, consumption standards and settings it keeps
+  'po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings'];
 // NOT here on purpose: store_items and store_transactions (the Store's own ledger).
 // By USERNAME, never by role — the same shape as _MA_USERS.
 const _PB_USERS=['afnan','ammar'];

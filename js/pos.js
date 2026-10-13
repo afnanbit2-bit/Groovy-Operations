@@ -751,7 +751,11 @@ const _PO_LINKS=[
   {key:'job',   words:['embellishment job','embellishment jobs'],               col:'printing_jobs',    field:'poNumber'},
   {key:'xfer',  words:['stock transfer','stock transfers'],                     col:'stock_transfers',  field:'poId'},
   {key:'bstock',words:['B-stock item','B-stock items'],                         col:'bstock_items',     field:'poId'},
-  {key:'trim',  words:['trim issue request','trim issue requests'],             col:'po_issue_requests',field:'poId'}
+  {key:'trim',  words:['trim issue request','trim issue requests'],             col:'po_issue_requests',field:'poId'},
+  // Production Ops (14 Oct 2026): a cut job is keyed by the PO id and carries it as poId; a draft that was issued as this PO
+  // names it in issuedPoId (the field the issue step writes - nothing writes it yet, so today this finds none).
+  {key:'cutjob',words:['Production Ops cut job','Production Ops cut jobs'],       col:'po_cut_jobs',      field:'poId'},
+  {key:'draft', words:['Production Ops draft','Production Ops drafts'],           col:'po_drafts',        field:'issuedPoId'}
 ];
 // What the app already holds in memory for each link, as a second witness
 // beside the query. Guarded: embellishments.js / store.js may not be loaded.

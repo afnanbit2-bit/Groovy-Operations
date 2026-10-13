@@ -292,10 +292,24 @@ async function _phkReadPo(poId){
 }
 async function _phkReadIssue(poId){
   try{
-    const snap=await _phkTimed(getDocs(query(collection(db,'gatepasses'),where('poId','==',poId),limit(PHK_PASS_LIMIT))));
+    // 71 of 208 real passes store the PO as bare digits ('125'), so ask for every spelling (an `in` takes up to 10)
+    const spell=typeof phPoSpellings==='function'?phPoSpellings(poId):[];
+    const q=spell.length>1?where('poId','in',spell):where('poId','==',poId);
+    const snap=await _phkTimed(getDocs(query(collection(db,'gatepasses'),q,limit(PHK_PASS_LIMIT))));
     if(_phkFromCache(snap))throw _phkCacheErr();
-    const passes=((snap&&snap.docs)||[]).map(function(d){return Object.assign({},d.data(),{id:d.data().id!=null?d.data().id:d.id});});
-    return{state:'ok',passes:passes,issue:phkIssueFromPasses(passes),text:''};
+    let passes=((snap&&snap.docs)||[]).map(function(d){return Object.assign({},d.data(),{id:d.data().id!=null?d.data().id:d.id});});
+    if(spell.length>1&&typeof phPoKey==='function'){const k=phPoKey(poId);passes=passes.filter(function(g){return phPoKey(g.poId)===k;});}
+    // passes the person picked in "Find the fabric issue" (kept in memory for the session; see js/ph-mod-health.js)
+    let picked=0;
+    if(typeof phhPicked==='function'&&typeof phhRows==='function'){
+      const want=phhPicked(poId),rows=phhRows('gatepasses')||[];
+      want.forEach(function(pid){
+        if(passes.some(function(g){return String(g.id)===pid;}))return;
+        const hit=rows.filter(function(g){return String(g.id!=null?g.id:g.fbKey)===pid;})[0];
+        if(hit){passes.push(Object.assign({},hit,{id:hit.id!=null?hit.id:hit.fbKey,_picked:true}));picked++;}
+      });
+    }
+    return{state:'ok',passes:passes,issue:phkIssueFromPasses(passes),text:'',picked:picked};
   }catch(e){return{state:'error',passes:null,issue:null,text:_phkErrText('gatepasses for '+poId,e)};}
 }
 // Loads (or re-loads) one PO's details. Resolves when settled; NEVER rejects; repaints that card.
@@ -486,6 +500,43 @@ function _phkPlural(n,one,many){return n+' '+(n===1?one:many);}
 
 function _phkCanEdit(job){return!!job&&job.status==='open'&&typeof phCanRecordFloor==='function'&&phCanRecordFloor();}
 
+// "No fabric issue found" is a dead end on its own: list the fabric passes that point at no real PO, best guesses first.
+function _phkFindBlock(job,entry){
+  const kids=[_phkE('p','phk-muted','No fabric issue was found for this PO yet.')];
+  const po=entry&&entry.po&&entry.po.state==='ok'?entry.po.data:null;
+  if(typeof phhCandidatesFor!=='function'||!po)return _phkE('div','phk-find',null,kids);
+  const poId=String(job.fbKey||job.poId||po.id||'');
+  const c=phhCandidatesFor(po);
+  const box=_phkE('div','phk-find');
+  box.appendChild(_phkE('h4','phk-find-h','Find the fabric issue'));
+  if(c.state==='loading'){
+    box.appendChild(_phkE('p','phk-muted','Reading the fabric issues…'));
+    if(typeof phhEnsure==='function')phhEnsure(false).then(function(){try{_phkRepaintCard(poId);}catch(e){}});
+    return _phkE('div','phk-find-wrap',null,[kids[0],box]);
+  }
+  if(c.state==='error'){
+    box.appendChild(_phkE('p','phk-err',c.text));
+    box.appendChild(_phkBtn('ph-btn phk-btn','Try again',function(){phhEnsure(true).then(function(){try{_phkRepaintCard(poId);}catch(e){}});_phkRepaintCard(poId);}));
+    return _phkE('div','phk-find-wrap',null,[kids[0],box]);
+  }
+  if(!c.rows.length){
+    box.appendChild(_phkE('p','phk-muted','No fabric issue is waiting without a PO, so there is nothing to pick. It may not have been issued yet.'));
+    return _phkE('div','phk-find-wrap',null,[kids[0],box]);
+  }
+  box.appendChild(_phkE('p','phk-muted','These fabric issues point at no real PO. Tap the one that belongs here. It is remembered for this visit only; nothing is saved to the pass or the job.'));
+  const ul=_phkE('ul','phk-cands');
+  c.rows.forEach(function(r){
+    const g=r.gp,w=phNum(g.fabricQty!=null?g.fabricQty:g.totalWeight),rolls=Array.isArray(g.rollCodes)?g.rollCodes.length:(phNum(g.rollsCount)!==null?phNum(g.rollsCount):null);
+    const line=[r.date||'no date',(phStr(g.fabricType||g.article).trim()||'fabric not named')+(phStr(g.fabricColor).trim()?' '+g.fabricColor:''),w!==null?w+' '+(phUnit(g.fabricUnit)||'kg'):'weight not recorded',rolls!==null?_phkPlural(rolls,'roll','rolls'):'rolls not recorded','PO field: '+(phStr(g.poId).trim()||'blank')].join(' · ');
+    const b=_phkBtn('ph-btn phk-btn phk-cand-b',null,function(){if(typeof phhPick==='function'){phhPick(poId,r.id);phkLoadPO(poId,true);}},{'aria-label':'Use fabric issue '+r.id+' for '+poId});
+    b.appendChild(_phkE('span','phk-cand-id',r.id));
+    b.appendChild(_phkE('span','phk-cand-t',line));
+    if(r.why.length)b.appendChild(_phkE('span','phk-cand-why',r.why.join('; ')));
+    ul.appendChild(_phkE('li','phk-cand',null,[b]));
+  });
+  box.appendChild(ul);
+  return _phkE('div','phk-find-wrap',null,[kids[0],box]);
+}
 function _phkFabricBlock(job,entry){
   const kids=[];
   const pf=job&&job.plannedFabric&&typeof job.plannedFabric==='object'?job.plannedFabric:null;
@@ -495,14 +546,18 @@ function _phkFabricBlock(job,entry){
   else if(entry.issue.state==='error')kids.push(_phkE('p','phk-err',entry.issue.text));
   else{
     const is=entry.issue.issue;
-    if(!is.groups.length)kids.push(_phkE('p','phk-muted','No fabric issue was found for this PO yet.'));
+    if(!is.groups.length)kids.push(_phkFindBlock(job,entry));
     else{
       const ul=_phkE('ul','phk-groups');
       is.groups.forEach(function(g){
         ul.appendChild(_phkE('li','phk-group',null,[_phkE('span','phk-group-n',g.label),_phkE('span','phk-group-d',_phkPlural(g.rolls,'roll','rolls')+(g.weight!==null?' · '+g.weight+' '+g.unit:' · weight not recorded'))]));
       });
-      kids.push(_phkE('div','phk-fact phk-fact-col',null,[_phkE('span','phk-k','Issued to the PO'),ul]));
-      kids.push(_phkE('p','phk-muted',_phkPlural(is.rolls.length,'roll','rolls')+' in all'+(is.weight!==null?' · '+is.weight+' '+is.unit:'')+(is.mixedUnits?' · units differ (kg and m)':'')));
+      // the reference table is collapsed: the person came to scan and mark complete, not to read it
+      const det=_phkE('details','phk-ref');
+      det.appendChild(_phkE('summary','phk-ref-sum','Issued to the PO · '+_phkPlural(is.rolls.length,'roll','rolls')+' in all'+(is.weight!==null?' · '+is.weight+' '+is.unit:'')+(is.mixedUnits?' · units differ (kg and m)':'')));
+      det.appendChild(ul);
+      kids.push(det);
+      if(entry.issue.picked)kids.push(_phkE('p','phk-muted','Includes '+_phkPlural(entry.issue.picked,'fabric issue','fabric issues')+' you picked for this PO. The pick is remembered on this device for this visit only.'));
     }
   }
   return _phkE('div','phk-block',null,kids);
@@ -668,11 +723,13 @@ function _phkPaintDyn(poId){
   }else{
     const c=res.counts;
     sum.appendChild(_phkE('p','phk-sum-big',c.verified+' of '+c.total+' rolls verified'));
-    if(res.mismatch){
+    if(!res.active){
+      // nothing scanned or counted yet: "N rolls missing" would be true of every job and means nothing
+      sum.appendChild(_phkE('p','phk-sum-p','Not checked yet. Scan the rolls or enter a count; a mismatch is only shown once you have.'));
+    }else if(res.mismatch){
       sum.appendChild(_phkE('p','phk-sum-bad','✗ MISMATCH: '+res.flags.join(' · ')+'. It is saved flagged, never blocked.'));
       if(res.missingCodes.length)sum.appendChild(_phkE('p','phk-sum-p','Missing: '+res.missingCodes.join(', ')));
-    }else if(res.active)sum.appendChild(_phkE('p','phk-sum-ok','✓ Matches the issue.'));
-    else sum.appendChild(_phkE('p','phk-sum-p','Nothing checked yet.'));
+    }else sum.appendChild(_phkE('p','phk-sum-ok','✓ Matches the issue.'));
     if(res.weight&&!res.weight.comparable)sum.appendChild(_phkE('p','phk-sum-p','Weight not compared: '+res.weight.why+'.'));
     else if(res.weight&&res.weight.comparable&&!res.weight.flag)sum.appendChild(_phkE('p','phk-sum-p','Weight '+res.weight.entered+' '+res.weight.unit+' is within '+res.weight.tol+' of the issued '+res.weight.issued+'.'));
   }
