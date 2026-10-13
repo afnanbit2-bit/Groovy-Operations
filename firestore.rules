@@ -1342,6 +1342,62 @@ service cloud.firestore {
         && (d.get('sizeModel', null) == null || d.sizeModel in ['alpha','waist','free']);
     }
 
+    // ph_article_instructions/{CODE}: the standing product instructions of one article (id = article code):
+    // placements, Pantone colours, embroidery codes, notes. Managers write, everybody signed in reads (the floor
+    // reads it). No delete. rev counts the saves; every save also writes revisions/{rev}, a FULL snapshot, in the
+    // same transaction (the patterns/revisions precedent). The rules cannot loop over a list, so the list SIZES
+    // are capped here and each element (hex #RRGGBB, text lengths) is cleaned by the app (js/ph-core.js).
+    match /ph_article_instructions/{code} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isProdOpsManager()
+        && code.matches('^[A-Z0-9][A-Z0-9._-]{1,39}$')
+        && request.resource.data.keys().hasOnly(['code','rev','placements','pantones','embroidery','notes','reason','createdAt','createdBy','createdByName','updatedAt','updatedBy'])
+        && request.resource.data.get('code', '') == code
+        && request.resource.data.get('rev', 0) == 1
+        && phInstrShapeOk(request.resource.data)
+        && phBy(request.resource.data.get('createdBy', ''))
+        && phBy(request.resource.data.get('updatedBy', ''))
+        && request.resource.data.get('createdAt', null) is number
+        && request.resource.data.get('updatedAt', null) is number;
+      allow update: if isProdOpsManager()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['placements','pantones','embroidery','notes','reason','rev','updatedAt','updatedBy'])
+        && request.resource.data.get('rev', 0) == resource.data.get('rev', 0) + 1
+        && phInstrShapeOk(request.resource.data)
+        && request.resource.data.get('reason', '') is string
+        && request.resource.data.get('reason', '').size() >= 1
+        && phBy(request.resource.data.get('updatedBy', ''))
+        && request.resource.data.get('updatedAt', null) is number;
+      allow delete: if false;
+
+      // Append-only: one full snapshot per revision, id = the revision number, written with the save.
+      match /revisions/{n} {
+        allow read: if isQaRead() || signedIn();
+        allow create: if isProdOpsManager()
+          && request.resource.data.keys().hasOnly(['code','rev','placements','pantones','embroidery','notes','reason','at','by','byName'])
+          && request.resource.data.get('code', '') == code
+          && request.resource.data.get('rev', 0) is int
+          && n == string(request.resource.data.get('rev', 0))
+          && request.resource.data.get('rev', 0) >= 1
+          && existsAfter(/databases/$(database)/documents/ph_article_instructions/$(code))
+          && getAfter(/databases/$(database)/documents/ph_article_instructions/$(code)).data.get('rev', 0) == request.resource.data.get('rev', 0)
+          && phInstrShapeOk(request.resource.data)
+          && phBy(request.resource.data.get('by', ''))
+          && request.resource.data.get('at', null) is number;
+        allow update, delete: if false;
+      }
+    }
+    function phInstrShapeOk(d) {
+      return d.get('placements', []) is list && d.get('placements', []).size() <= 12
+        && d.get('pantones', []) is list && d.get('pantones', []).size() <= 16
+        && d.get('embroidery', []) is list && d.get('embroidery', []).size() <= 16
+        && d.get('notes', {}) is map
+        && d.get('notes', {}).keys().hasOnly(['en','ur'])
+        && d.get('notes', {}).get('en', '') is string && d.get('notes', {}).get('en', '').size() <= 1000
+        && d.get('notes', {}).get('ur', '') is string && d.get('notes', {}).get('ur', '').size() <= 1000
+        && d.get('reason', '') is string && d.get('reason', '').size() <= 300;
+    }
+
     // ph_settings/main and ph_settings/counters. A NEW collection rather than the
     // existing settings/{doc}, whose write is owner-only: the managers (Mustafa
     // runs production) must be able to set the daily capacity and skip days.

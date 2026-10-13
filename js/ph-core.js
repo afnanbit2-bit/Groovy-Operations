@@ -1200,6 +1200,124 @@ function phPoSpellings(x){
   return out.filter(function(v,i){return out.indexOf(v)===i;});
 }
 
+/* ── Standing product instructions (WP3a, 14 Oct 2026) ──────────────────────
+   ph_article_instructions/{CODE}: the typed text of the handwritten job copies, per article code.
+   Pure: no DOM, no Firestore. The writers (js/ph-write.js) and the rules hold the same caps. */
+const PH_INSTR_PLACEMENTS_MAX=12,PH_INSTR_PANTONES_MAX=16,PH_INSTR_EMB_MAX=16;
+const PH_INSTR_TEXT_MAX=300,PH_INSTR_NOTE_MAX=1000,PH_INSTR_REASON_MAX=300;
+const PH_INSTR_SYSTEMS=Object.freeze(['C','TCX']);
+const PH_INSTR_HEX_RE=/^#[0-9A-Fa-f]{6}$/;
+function _phInstrS(v,n){return String(v==null?'':v).trim().slice(0,n);}
+// A hex colour: exactly #RRGGBB (real data holds '#FFFFF', five digits, which is refused -> '').
+function phHexOk(h){return typeof h==='string'&&PH_INSTR_HEX_RE.test(h.trim());}
+function phHexNorm(h){return phHexOk(h)?h.trim().toUpperCase():'';}
+// Pantone code as typed on the floor: '485 C' / '485c' / '19-1664 TCX' -> {system, code}. Unknown system -> null.
+function phPantoneParse(raw,system){
+  const t=_phInstrS(raw,40).toUpperCase().replace(/\s+/g,' ');
+  if(!t)return null;
+  let sys=PH_INSTR_SYSTEMS.indexOf(system)>-1?system:null,code=t;
+  const m=/^(.*?)\s*(TCX|TPX|C)$/.exec(t);
+  if(m&&m[1]){code=m[1].trim();if(m[2]==='TCX')sys=sys||'TCX';else if(m[2]==='C')sys=sys||'C';}
+  if(!sys)sys=/^\d\d-\d{4}$/.test(code)?'TCX':'C';
+  return{system:sys,code:code};
+}
+// Resolve a swatch hex once: libs = {library:[{pantoneCode,hexApprox}], builtin:{'485 C':'#..'}, tcx:{'19-1664':'#..'}}.
+// First VALID hex wins (library, then built-in C table, then the TCX book); '' when none.
+function phPantoneHex(code,system,libs){
+  const L=libs||{};
+  const p=phPantoneParse(code,system);
+  if(!p)return'';
+  const key=p.code+' '+p.system,keyC=p.code+' C';
+  const lib=Array.isArray(L.library)?L.library:[];
+  for(let i=0;i<lib.length;i++){
+    const e=lib[i];
+    if(e&&_phInstrS(e.pantoneCode,40).toUpperCase().replace(/\s+/g,' ')===(p.system==='C'?keyC:key)&&phHexOk(e.hexApprox))return phHexNorm(e.hexApprox);
+  }
+  if(p.system==='C'&&L.builtin&&Object.prototype.hasOwnProperty.call(L.builtin,keyC)&&phHexOk(L.builtin[keyC]))return phHexNorm(L.builtin[keyC]);
+  if(p.system==='TCX'&&L.tcx&&Object.prototype.hasOwnProperty.call(L.tcx,p.code)&&phHexOk(L.tcx[p.code]))return phHexNorm(L.tcx[p.code]);
+  return'';
+}
+// Clean one instruction set. Never throws. Returns {value:{placements,pantones,embroidery,notes}, problems:[...]}.
+// Rows with nothing in them are dropped; over-cap rows are dropped AND reported; arrays of MAPS only (Firestore refuses nested arrays).
+function phInstructionsClean(input){
+  const inp=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  const problems=[];
+  const arr=function(x){return Array.isArray(x)?x:[];};
+  const plc=[];
+  arr(inp.placements).forEach(function(r){
+    if(!r||typeof r!=='object'||Array.isArray(r))return;
+    const o={en:_phInstrS(r.en,PH_INSTR_TEXT_MAX),ur:_phInstrS(r.ur,PH_INSTR_TEXT_MAX),side:_phInstrS(r.side,40),templateId:_phInstrS(r.templateId,60)};
+    if(!o.en&&!o.ur)return;
+    plc.push(o);
+  });
+  const pan=[];
+  arr(inp.pantones).forEach(function(r){
+    if(!r||typeof r!=='object'||Array.isArray(r))return;
+    const p=phPantoneParse(r.code,r.system);
+    if(!p)return;
+    let hex='';
+    if(r.hex!=null&&String(r.hex).trim()!==''){
+      hex=phHexNorm(String(r.hex));
+      if(!hex)problems.push('Pantone '+p.code+' '+p.system+': "'+_phInstrS(r.hex,12)+'" is not a #RRGGBB colour - left blank.');
+    }
+    pan.push({system:p.system,code:p.code,name:_phInstrS(r.name,80),hex:hex,use:_phInstrS(r.use,60)});
+  });
+  const emb=[];
+  arr(inp.embroidery).forEach(function(r){
+    if(!r||typeof r!=='object'||Array.isArray(r))return;
+    const o={code:_phInstrS(r.code,40),candle:_phInstrS(r.candle,80),shade:_phInstrS(r.shade,80),position:_phInstrS(r.position,80),note:_phInstrS(r.note,200)};
+    if(!o.code&&!o.candle&&!o.shade&&!o.position&&!o.note)return;
+    emb.push(o);
+  });
+  if(plc.length>PH_INSTR_PLACEMENTS_MAX)problems.push('At most '+PH_INSTR_PLACEMENTS_MAX+' placements ('+plc.length+' given).');
+  if(pan.length>PH_INSTR_PANTONES_MAX)problems.push('At most '+PH_INSTR_PANTONES_MAX+' Pantone colours ('+pan.length+' given).');
+  if(emb.length>PH_INSTR_EMB_MAX)problems.push('At most '+PH_INSTR_EMB_MAX+' embroidery rows ('+emb.length+' given).');
+  const nt=inp.notes&&typeof inp.notes==='object'&&!Array.isArray(inp.notes)?inp.notes:{};
+  return{value:{placements:plc.slice(0,PH_INSTR_PLACEMENTS_MAX),pantones:pan.slice(0,PH_INSTR_PANTONES_MAX),embroidery:emb.slice(0,PH_INSTR_EMB_MAX),
+    notes:{en:_phInstrS(nt.en,PH_INSTR_NOTE_MAX),ur:_phInstrS(nt.ur,PH_INSTR_NOTE_MAX)}},problems:problems};
+}
+function phInstructionsEmpty(v){
+  return!v||(!(v.placements||[]).length&&!(v.pantones||[]).length&&!(v.embroidery||[]).length&&!(v.notes&&(v.notes.en||v.notes.ur)));
+}
+// What changed between two cleaned sets: names of the top-level parts that differ.
+function phInstructionsDiff(a,b){
+  const x=phInstructionsClean(a).value,y=phInstructionsClean(b).value,out=[];
+  ['placements','pantones','embroidery','notes'].forEach(function(k){if(JSON.stringify(x[k])!==JSON.stringify(y[k]))out.push(k);});
+  return out;
+}
+// Import from an article recipe (js/embellishments.js shape). PURE: reads the recipe only; the caller shows the result for review and saves.
+// opts: {libs} for swatch hexes. Pantones: printing.pantones (+ locked placements' pantones are not read). Placements: production.visibleInstruction*
+// of each placement in recipe.placements, else the draftPlacements' technique/positionSize text. Embroidery: recipe.embroideryCodes.
+function phInstructionsFromRecipe(recipe,opts){
+  const r=recipe&&typeof recipe==='object'?recipe:{};
+  const libs=opts&&opts.libs;
+  const pr=r.printing&&typeof r.printing==='object'?r.printing:{};
+  const pantones=(Array.isArray(pr.pantones)?pr.pantones:[]).map(function(p){
+    if(!p||typeof p!=='object')return null;
+    const code=p.pantoneCode||p.code;
+    const parsed=phPantoneParse(code,p.system);
+    if(!parsed)return null;
+    const hex=phHexOk(p.hexApprox)?phHexNorm(p.hexApprox):phPantoneHex(code,parsed.system,libs);
+    return{system:parsed.system,code:parsed.code,name:p.colorName||p.name||'',hex:hex,use:p.usage||''};
+  }).filter(Boolean);
+  const placements=[];
+  (Array.isArray(r.placements)?r.placements:[]).forEach(function(pl){
+    if(!pl||typeof pl!=='object')return;
+    const pd=pl.production&&typeof pl.production==='object'?pl.production:{};
+    const en=pd.visibleInstructionEn||pl.templateNameEn||'',ur=pd.visibleInstructionUr||pl.templateNameUr||'';
+    if(!_phInstrS(en,5)&&!_phInstrS(ur,5))return;
+    placements.push({en:en,ur:ur,side:pl.side||'',templateId:pl.templateId||''});
+  });
+  if(!placements.length)(Array.isArray(r.draftPlacements)?r.draftPlacements:[]).forEach(function(d){
+    if(!d||typeof d!=='object')return;
+    const en=[d.placementType,d.positionSize,d.notes].filter(function(x){return x;}).join(' - ');
+    if(en)placements.push({en:en,ur:'',side:'',templateId:''});
+  });
+  const emb=(Array.isArray(r.embroideryCodes)?r.embroideryCodes:[]).filter(function(x){return x&&typeof x==='object'&&!Array.isArray(x);});
+  const notes={en:_phInstrS(pr.instructionsEn,PH_INSTR_NOTE_MAX),ur:_phInstrS(pr.instructionsUr,PH_INSTR_NOTE_MAX)};
+  return phInstructionsClean({placements:placements,pantones:pantones,embroidery:emb,notes:notes});
+}
+
 if(typeof module!=='undefined'&&module.exports){
   module.exports={PH_VERSION,PH_TZ_OFFSET_MIN,PH_UNITS,PH_SEASON_VALUES,PH_WINTER_MONTHS,PH_SUMMER_MONTHS,PH_SIZE_MODELS,
     PH_WAIST_CODE_PREFIXES,PH_FREE_KEY,PH_REAL_STAGE_ORDER,PH_STAGES,PH_CUT_GATE_PCT,PH_PC_MIN_WIDTH,PH_MASTER_NAME_MAX,
@@ -1213,5 +1331,7 @@ if(typeof module!=='undefined'&&module.exports){
     phAllocate,
     phStageOf,phPoUnits,phPipeline,phNextAction,phLeadTime,phDelayGap,
     phPoComplete,phIsPcOnly,phCutRange,phCutCheck,phCutVerdict,phReport,
-    phPoKey,phPoSpelling,phPoSpellings};
+    phPoKey,phPoSpelling,phPoSpellings,
+    PH_INSTR_PLACEMENTS_MAX,PH_INSTR_PANTONES_MAX,PH_INSTR_EMB_MAX,PH_INSTR_SYSTEMS,phHexOk,phHexNorm,phPantoneParse,phPantoneHex,
+    phInstructionsClean,phInstructionsEmpty,phInstructionsDiff,phInstructionsFromRecipe};
 }

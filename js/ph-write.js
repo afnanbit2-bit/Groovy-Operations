@@ -57,6 +57,10 @@ const PH_MASTER_CREATE_FIELDS=Object.freeze(['id','name','nameKey','kind','activ
 const PH_MASTER_MUTABLE_FIELDS=Object.freeze(['name','nameKey','kind','active','aliases','notes','retiredAt','retiredBy','retiredReason','updatedAt','updatedBy']);
 
 const PH_STANDARD_CREATE_FIELDS=Object.freeze(['code','unit','grossPerPiece','tolerancePct','sizes','sizeModel','reason','rev','createdAt','createdBy','createdByName','updatedAt','updatedBy']);
+// Standing product instructions (WP3a). ph_article_instructions/{CODE} + revisions/{rev}; firestore.rules mirrors all three lists.
+const PH_INSTR_CREATE_FIELDS=Object.freeze(['code','rev','placements','pantones','embroidery','notes','reason','createdAt','createdBy','createdByName','updatedAt','updatedBy']);
+const PH_INSTR_MUTABLE_FIELDS=Object.freeze(['placements','pantones','embroidery','notes','reason','rev','updatedAt','updatedBy']);
+const PH_INSTR_REVISION_FIELDS=Object.freeze(['code','rev','placements','pantones','embroidery','notes','reason','at','by','byName']);
 const PH_STANDARD_MUTABLE_FIELDS=Object.freeze(['unit','grossPerPiece','tolerancePct','sizes','sizeModel','reason','rev','updatedAt','updatedBy']);
 
 const PH_SETTINGS_VALUE_FIELDS=Object.freeze(['dailyCapacity','skipDays','offWeekdays','delayTargetDays','stuckDays','grossOverTolPct','grossUnderTolPct','cutGate','pcOnlyHard']);
@@ -651,6 +655,73 @@ async function phStandardSave(code,input,opts){
       return{ok:true,id:cd,created:created,rev:saved.rev,standard:saved};
     });
   }catch(e){return _phFromError(e);}
+}
+
+/* ── Standing product instructions (managers) ───────────────────────────── */
+// input: {placements,pantones,embroidery,notes,reason} (cleaned by the core's phInstructionsClean -- the one definition).
+// Save = create (rev 1) or update (rev + 1, a reason is REQUIRED from rev 2), plus revisions/{rev}: a full snapshot,
+// in the SAME transaction. Nothing is deleted; revisions are append-only. Writes no pos document.
+function phBuildInstructions(code,clean,reason,ctx){
+  const now=_phNowOf(ctx);
+  return{id:code,data:{code:code,rev:1,placements:clean.placements,pantones:clean.pantones,embroidery:clean.embroidery,notes:clean.notes,reason:_phStr(reason,300),
+    createdAt:now,createdBy:ctx.u,createdByName:ctx.name||ctx.u,updatedAt:now,updatedBy:ctx.u}};
+}
+function phBuildInstructionsRevision(doc_,ctx){
+  return{id:String(doc_.rev),data:{code:doc_.code,rev:doc_.rev,placements:doc_.placements,pantones:doc_.pantones,embroidery:doc_.embroidery,notes:doc_.notes,reason:doc_.reason||'',
+    at:_phNowOf(ctx),by:ctx.u,byName:ctx.name||ctx.u}};
+}
+async function phInstructionsSave(code,input,opts){
+  const o=opts||{},a=_phActor(o);
+  const no=_phNeedManage(a.u);if(no)return no;
+  const cd=typeof code==='string'?code.trim().toUpperCase():'';
+  if(!PH_CODE_RE.test(cd))return _phFail('invalid','Not an article code: '+code);
+  if(typeof phInstructionsClean!=='function')return _phFail('failed','js/ph-core.js is not loaded, so instructions cannot be checked.');
+  const inp=_phIsObj(input)?input:{};
+  const cl=phInstructionsClean(inp);
+  if(cl.problems.some(function(p){return/^At most/.test(p);}))return _phFail('invalid',cl.problems.filter(function(p){return/^At most/.test(p);}).join(' '));
+  if(phInstructionsEmpty(cl.value))return _phFail('invalid','Nothing to save: add a placement, a Pantone colour, an embroidery row or a note.');
+  if(_phOffline())return _phFail('offline','No connection. Saving instructions is a transaction and cannot be queued.');
+  try{
+    return await _phSilent(false,async function(){
+      const now=_phNowOf(o),ctx={u:a.u,name:a.name,now:now};
+      const ref=doc(db,'ph_article_instructions',cd);
+      let saved=null,created=false,unchanged=false;
+      await runTransaction(db,async function(tx){
+        const s=await tx.get(ref);
+        if(!s||!s.exists()){
+          created=true;
+          saved=phBuildInstructions(cd,cl.value,inp.reason,ctx).data;
+          tx.set(ref,saved);
+          const rv=phBuildInstructionsRevision(saved,ctx);
+          tx.set(doc(db,'ph_article_instructions',cd,'revisions',rv.id),rv.data);
+          return;
+        }
+        const prev=s.data();
+        if(o.expectedRev!=null&&prev.rev!==o.expectedRev)throw _phRefuse('stale','The instructions of '+cd+' were changed by someone else (revision '+prev.rev+'). Reload them.',{rev:prev.rev});
+        const reason=_phStr(inp.reason,300);
+        if(!reason)throw _phRefuse('invalid','A reason is required for a new revision (what changed and why).');
+        if(!phInstructionsDiff(prev,cl.value).length)throw _phRefuse('refused','Nothing has changed since revision '+prev.rev+'.');
+        const patch={placements:cl.value.placements,pantones:cl.value.pantones,embroidery:cl.value.embroidery,notes:cl.value.notes,reason:reason,rev:prev.rev+1,updatedAt:now,updatedBy:a.u};
+        tx.update(ref,patch);
+        created=false;saved=Object.assign({},prev,patch);
+        const rv=phBuildInstructionsRevision(saved,ctx);
+        tx.set(doc(db,'ph_article_instructions',cd,'revisions',rv.id),rv.data);
+      });
+      _phPatchLocal('instructions',cd,saved);
+      _phLog('Product instructions updated',cd+' revision '+saved.rev);
+      return{ok:true,id:cd,created:created,rev:saved.rev,instructions:saved,problems:cl.problems};
+    });
+  }catch(e){return _phFromError(e);}
+}
+// The revisions of one article, newest first (bounded; a failed read is an error, never an empty list).
+async function phInstructionsHistory(code,opts){
+  const cd=typeof code==='string'?code.trim().toUpperCase():'';
+  if(!PH_CODE_RE.test(cd))return{ok:false,rows:null,text:'Not an article code.'};
+  try{
+    const snap=await _phWithTimeout(getDocs(query(collection(db,'ph_article_instructions',cd,'revisions'),orderBy('rev','desc'),limit(50))),PH_READ_TIMEOUT_MS);
+    if(_phFromCache(snap))throw _phCacheError();
+    return{ok:true,rows:((snap&&snap.docs)||[]).map(function(d){return Object.assign({},d.data(),{fbKey:d.id});})};
+  }catch(e){const err=phErrInfo(e);return{ok:false,rows:null,err:err,text:err.permission?'ph_article_instructions revisions: could not be read - republish firestore.rules from the repo file.':'revisions: read failed ('+err.message+').'};}
 }
 
 /* ── Settings (managers; the PC-only switch is an owner's) ──────────────── */
