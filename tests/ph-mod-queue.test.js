@@ -510,7 +510,7 @@ async function checks(src){
     o['css: ink on --dark is --on-dark (the lane count chip)']=/\.phq-lane-count\{[^}]*background:var\(--dark\)[^}]*color:var\(--on-dark\)/.test(blk);
     o['css: a keyboard focus ring is drawn']=/\.phq-btn:focus-visible[^}]*outline:2px solid var\(--text\)/.test(blk);
     const idx=read('index.html'),sw=read('sw.js');
-    o['wiring: the script tag follows ph-ui.js in index.html and the precache lists the file']=/ph-ui\.js\?v=[^"]*"><\/script>\s*<script src="\/js\/ph-mod-queue\.js\?v=[^"]*"><\/script>/.test(idx)&&/'\/js\/ph-ui\.js',\s*'\/js\/ph-mod-queue\.js',/.test(sw);
+    o['wiring: the script tag follows ph-ui.js in index.html and the precache lists the file']=/ph-ui\.js\?v=[^"]*"><\/script>\s*(?:<script src="\/js\/ph-mod-health\.js\?v=[^"]*"><\/script>\s*)?<script src="\/js\/ph-mod-queue\.js\?v=[^"]*"><\/script>/.test(idx)&&/'\/js\/ph-ui\.js',\s*(?:'\/js\/ph-mod-health\.js',\s*)?'\/js\/ph-mod-queue\.js',/.test(sw);   // Data health (14 Oct 2026) may sit between
   }
   return o;
 }

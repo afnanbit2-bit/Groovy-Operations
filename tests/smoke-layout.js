@@ -521,6 +521,8 @@ async function _phmFragment(o){
   const bad=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
   const DATA=fx.dbData();
   DATA.pos=DATA.pos.map(p=>p.id==='PO-103'?Object.assign(p,{name:'A very long article name that has to wrap onto several lines instead of clipping or pushing the page sideways at any width at all'}):p);
+  // two fabric passes for the Data health section (14 Oct 2026): one that points at no PO (free text), one with a master
+  DATA.gatepasses=[{id:'GP-9001',gpType:'fabric',poId:'Sample',date:'2026-10-01',fabricType:'Jersey Heavy',fabricQty:33.9,fabricUnit:'kg',rollCodes:['R-1'],ts:2},{id:'GP-9002',gpType:'fabric',poId:'101',date:'2026-10-02',cutMaster:'Hassan',ts:1}];
   const rows=p=>(DATA[p]||[]).map(r=>({id:r.id,data:()=>Object.assign({},r)}));
   const app=loadApp({files:['js/ph-core.js','js/ph-data.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
     localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
@@ -532,6 +534,7 @@ async function _phmFragment(o){
   app.ctx.Date=class extends RealDate{constructor(...x){if(x.length===0)super(fx.NOW);else super(...x);}static now(){return fx.NOW;}};
   app.ctx.console={warn(){},log(){},error(){}};
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-health.js'),'utf8'),app.ctx,{filename:'ph-mod-health.js'});
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-monitor.js'),'utf8'),app.ctx,{filename:'ph-mod-monitor.js'});
   app.ctx.currentPage='prod-ops';
   app.ctx.phRenderPage('prod-ops');
@@ -540,6 +543,8 @@ async function _phmFragment(o){
   app.run('_phTkOnPage()');
   await app.run('phUiLoad()');
   await app.run('phmLoadPos()');
+  await app.run('phhEnsure(false)');
+  if(o.health)app.run('_phhOpen={orphan_passes:true,qty_mismatch:true,cutting_no_pass:true}');
   app.run('_phUiPaintData();_phTkSync()');
   if(o.drawer){
     const tile=dom.all(dom.find('ph-panel'),n=>n.getAttribute&&n.getAttribute('data-tile')===o.drawer)[0];
@@ -549,7 +554,7 @@ async function _phmFragment(o){
   const chrome=domkit.toHtml(dom.find('ph-tk-bar'))+domkit.toHtml(dom.find('ph-tk-rail'));
   const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");'
     +'document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";m.style.overflow="visible";})();<\/script>';
-  const flat=o.drawer?'<style>.phm-drawer-wrap{position:static!important;display:block!important;height:auto!important}.phm-scrim{display:none!important}.phm-drawer{height:auto!important;width:100%!important;max-width:520px;overflow:visible!important}.phm-drawer-head{position:static!important}</style>':'';
+  const flat=o.drawer?'<style>.phm-drawer-wrap{position:static!important;display:block!important;height:auto!important}.phm-scrim{display:none!important}.phm-drawer{height:auto!important;width:100%!important;max-width:520px;overflow:visible!important}.phm-drawer-head{position:static!important}</style>':(o.tab==='overview'?'<style>@media (max-width:600px){body.ph-fullscreen .ph-tk-rail{position:static!important;height:auto!important;width:auto!important}}</style>':'');
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+flat+domkit.toHtml(canvas)+chrome+script};
 }
 // Production Ops admin tabs (12 Oct 2026): the REAL tab renders (js/ph-mod-admin.js) over the real core/data/write layers and an in-memory Firestore,
@@ -3253,6 +3258,7 @@ const FRAGMENTS={
   'production ops — monitor':()=>_phmFragment({tab:'monitor'}),
   'production ops — monitor: unavailable and no-data states':()=>_phmFragment({tab:'monitor',jobsFail:true,range:'today'}),
   'production ops — monitor: the list drawer':()=>_phmFragment({tab:'monitor',drawer:'stuck'}),
+  'production ops — monitor: data health with the drill lists open':()=>_phmFragment({tab:'monitor',health:true}),
   'production ops — overview':()=>_phmFragment({tab:'overview'}),
   'production ops — overview for the cutting floor (view only)':()=>_phmFragment({tab:'overview',floor:true}),
   'production ops — reports':()=>_phrFragment({open:true,long:true}),

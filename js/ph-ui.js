@@ -355,6 +355,41 @@ function _phTkPaintRail(){
   }
   const chip=document.getElementById('ph-tk-chip');
   if(chip)chip.className='ph-chip ph-chip-view ph-tk-chip'+(_phUiCanManage()?' ph-hidden':'');
+  _phTkRevealActive(rail);
+}
+// On a phone the rail is a sideways dock: the active tab must be on screen on EVERY route into it (a tab press, a hash, the first open).
+function _phTkRevealActive(rail){
+  try{
+    const a=rail&&rail.querySelector?rail.querySelector('.ph-tk-item.on'):null;
+    if(!a)return;
+    if(typeof a.scrollIntoView==='function')a.scrollIntoView({block:'nearest',inline:'center'});
+    else if(typeof a.offsetLeft==='number'&&typeof rail.clientWidth==='number')rail.scrollLeft=Math.max(0,a.offsetLeft-(rail.clientWidth-(a.offsetWidth||0))/2);
+  }catch(e){}
+}
+// While the takeover is up, the app's OWN top bar, sidebar and phone nav sit behind it: they must not take Tab or Enter
+// (Sign out is on that bar). We set inert and aria-hidden, remember that WE did, and put them back exactly on leave.
+const PH_INERT_SELECTORS=Object.freeze(['.topbar','#sidebar','#mob-nav']);
+function _phTkInert(on){
+  try{
+    PH_INERT_SELECTORS.forEach(function(sel){
+      const list=document.querySelectorAll?document.querySelectorAll(sel):[];
+      for(let i=0;i<list.length;i++){
+        const n=list[i];
+        if(on){
+          if(n.getAttribute('data-ph-inert')===null){
+            n.setAttribute('data-ph-inert',n.hasAttribute('aria-hidden')?'h'+n.getAttribute('aria-hidden'):'');
+            if(!n.hasAttribute('inert'))n.setAttribute('inert','');else n.setAttribute('data-ph-inert',n.getAttribute('data-ph-inert')+'|had');
+            n.setAttribute('aria-hidden','true');
+          }
+        }else if(n.getAttribute('data-ph-inert')!==null){
+          const mark=n.getAttribute('data-ph-inert');
+          if(mark.indexOf('|had')<0)n.removeAttribute('inert');
+          if(mark.charAt(0)==='h')n.setAttribute('aria-hidden',mark.slice(1).split('|')[0]);else n.removeAttribute('aria-hidden');
+          n.removeAttribute('data-ph-inert');
+        }
+      }
+    });
+  }catch(e){}
 }
 function _phTkSetHash(tab){
   try{
@@ -370,6 +405,7 @@ function _phTkApplyClasses(on){
     b.classList.toggle('ph-rail-min',!!on&&_phUiMin);
     if(m)m.classList.toggle('ph-takeover',!!on);
   }catch(e){}
+  _phTkInert(!!on);
 }
 function _phTkSync(){   // repaint the rail from the one list; keep the address bar naming the tab
   if(!_phUiOn||typeof document==='undefined')return;

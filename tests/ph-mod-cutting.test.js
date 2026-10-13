@@ -58,7 +58,7 @@ function fakeFs(o){
       if(o.gate)await o.gate.p;
       const f=o.fail&&o.fail[q.path];if(f)throw f();
       let rows=(o.data&&o.data[q.path])||[];
-      (q.w||[]).forEach(w=>{rows=rows.filter(r=>r[w[0]]===w[2]);});
+      (q.w||[]).forEach(w=>{rows=rows.filter(r=>w[1]==='in'?w[2].indexOf(r[w[0]])>-1:r[w[0]]===w[2]);});   // the cutting screen asks for every spelling of the PO with an `in`
       return{docs:rows.map(r=>({id:r.id,data:()=>stripId(r)})),metadata:{fromCache:!!(o.cache&&o.cache[q.path])}};
     },
     getDoc:async r=>{
@@ -553,7 +553,7 @@ async function checks(src,only){
   if(want('source')){grp='source';
     const code=src.replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[^:'"])\/\/.*$/gm,'$1');
     o['read/write scope: the source calls no Firestore write API and writes only through phSaveCutJob']=!/\b(?:setDoc|updateDoc|addDoc|deleteDoc|writeBatch|runTransaction)\s*\(/.test(code)&&/\bphSaveCutJob\(/.test(code)&&!/\bphAppendHistory\(|\bphMasterAdd\(|\bphStandardSave\(|\bphSettingsSave\(|\bphSaveDraft\(/.test(code);
-    o['read/write scope: it reads only pos/{id} (getDoc) and gatepasses (getDocs), nothing else']=(src.match(/\b(?:getDoc|getDocs)\(/g)||[]).length===2&&/getDoc\(doc\(db,'pos',poId\)\)/.test(src)&&/collection\(db,'gatepasses'\),where\('poId','==',poId\)/.test(src);
+    o['read/write scope: it reads only pos/{id} (getDoc) and gatepasses (getDocs), nothing else']=(src.match(/\b(?:getDoc|getDocs)\(/g)||[]).length===2&&/getDoc\(doc\(db,'pos',poId\)\)/.test(src)&&/collection\(db,'gatepasses'\),q,limit/.test(src)&&/where\('poId','in',spell\)/.test(src);
     o['the real cutting-done is not reimplemented: markCuttingDone / cutState / bundles are not referenced; only openStageWork is called']=!/markCuttingDone|cutState|pendingBundles|counters\/main|getNextId|createWithNextId/.test(code)&&/openStageWork\(id,'cutting'\)/.test(code);
     const names=[];(code.match(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)|^(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)||[]).forEach(l=>{const m=/(?:function\s+|(?:const|let|var)\s+)([A-Za-z_$][\w$]*)/.exec(l);if(m)names.push(m[1]);});
     o['globals: every top-level name is phk / _phk / PHK_ prefixed']=names.length>30&&names.every(n=>/^(?:phk|_phk|PHK_)/.test(n));

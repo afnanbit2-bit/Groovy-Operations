@@ -18,7 +18,7 @@ const {suite}=harness;
 const ROOT=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
 const J=JSON.stringify;
-const ORDER=['ph-core','ph-data','ph-write','ph-ui','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin'];
+const ORDER=['ph-core','ph-data','ph-write','ph-ui','ph-mod-health','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin'];
 const MODS=ORDER.slice(4);
 const TABS=['overview','queue','calendar','cutting','monitor','reports','masters','standards','settings'];
 const USERS={
@@ -67,7 +67,7 @@ module.exports=async function(){
 
   s.section('stylesheet: one balanced block per module, at the end');
   const trail=css.slice(css.indexOf('/* ph-mod-queue START */'));
-  s.ok('the trailing run is only ph-mod-* blocks, one per module',MODS.length===7&&MODS.map(n=>n.replace('ph-mod-','')).every(m=>trail.split('/* ph-mod-'+m+' START */').length===2&&trail.split('/* ph-mod-'+m+' END */').length===2)&&trail.replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
+  s.ok('the trailing run is only ph-mod-* blocks, one per module',MODS.length===8&&MODS.map(n=>n.replace('ph-mod-','')).every(m=>trail.split('/* ph-mod-'+m+' START */').length===2&&trail.split('/* ph-mod-'+m+' END */').length===2)&&trail.replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
   s.ok('and every block\'s braces balance',MODS.every(n=>{const m=n.replace('ph-mod-','');const a=css.indexOf('/* ph-mod-'+m+' START */'),b=css.indexOf('/* ph-mod-'+m+' END */');const blk=css.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');return a>0&&b>a&&(blk.match(/\{/g)||[]).length===(blk.match(/\}/g)||[]).length;}));
   s.ok('the START/END pairs are not interleaved (each END precedes the next START)',(()=>{const re=/\/\* ph-mod-([a-z]+) (START|END) \*\//g;let m,open=null,ok=true;while((m=re.exec(css))){if(m[2]==='START'){if(open)ok=false;open=m[1];}else{if(open!==m[1])ok=false;open=null;}}return ok&&open===null;})());
 
@@ -128,8 +128,8 @@ module.exports=async function(){
   brk('a module never registers',()=>{const T=mk('afnan',n=>n==='ph-mod-reports'?mut(read('js/ph-mod-reports.js'),"if(typeof phRegisterTab==='function')phRegisterTab('reports',{render:phrRender});",""):read('js/'+n+'.js'));return T.a.run('PH_TABS.map(t=>t.render)').every((r,i)=>r!==T.renders0[i]);},"every tab's render was replaced by a module (none is still the shell's placeholder)");
   brk('script tag missing',()=>{const h=html.replace(/<script src="\/js\/ph-mod-monitor\.js[^\n]*\n/,'');return ORDER.every(n=>(h.match(new RegExp('/js/'+n+'\\.js','g'))||[]).length===1);},'every Production Ops script has exactly ONE tag');
   brk('precache line missing',()=>{const w=sw.replace("  '/js/ph-mod-cutting.js',\n",'');return ORDER.every(n=>(w.match(new RegExp("'/js/"+n+"\\.js'",'g'))||[]).length===1);},'every Production Ops script is in PRECACHE_URLS exactly once');
-  brk('cache version not bumped',()=>+(/CACHE_VERSION = 'v(\d+)'/.exec(sw.replace(/v314/,'v313'))||[0,0])[1]>=314,'CACHE_VERSION is past v313');
-  brk('two scripts share one ?v= tag',()=>{const h=html.replace('ph-mod-admin.js?v=20261013pha2','ph-mod-admin.js?v=20261013phq2');const t2=(h.match(/<script src="\/js\/[^"]+"/g)||[]).map(t=>/\/js\/([^?"]+)(?:\?v=([^"]*))?/.exec(t));const v2=ORDER.map(n=>t2.filter(x=>x[1]===n+'.js')[0][2]);return new Set(v2).size===v2.length;},'and no two of them share one (a shared tag would hide a changed file behind an unchanged URL)');
+  brk('cache version not bumped',()=>+(/CACHE_VERSION = 'v(\d+)'/.exec(sw.replace(/v315/,'v313'))||[0,0])[1]>=314,'CACHE_VERSION is past v313');
+  brk('two scripts share one ?v= tag',()=>{const h=html.replace('ph-mod-admin.js?v=20261014pha6','ph-mod-admin.js?v=20261014phm6');const t2=(h.match(/<script src="\/js\/[^"]+"/g)||[]).map(t=>/\/js\/([^?"]+)(?:\?v=([^"]*))?/.exec(t));const v2=ORDER.map(n=>t2.filter(x=>x[1]===n+'.js')[0][2]);return new Set(v2).size===v2.length;},'and no two of them share one (a shared tag would hide a changed file behind an unchanged URL)');
   brk('a module writes directly',()=>!WRITE.test(strip(mut(read('js/ph-mod-calendar.js'),"r=await phSaveCutJob(poId,{plannedCutDate:plan.to},o);","r=await phSaveCutJob(poId,{plannedCutDate:plan.to},o);await updateDoc(doc(db,'pos',poId),{x:1});"))),'no ph-mod-* file calls a Firestore write API');
   brk('a css block left unclosed',()=>{const c=css.replace('/* ph-mod-monitor END */','');const t=c.slice(c.indexOf('/* ph-mod-queue START */'));return t.split('/* ph-mod-monitor END */').length===2;},'the trailing run is only ph-mod-* blocks, one per module');
 

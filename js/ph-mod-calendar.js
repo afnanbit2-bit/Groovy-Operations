@@ -146,9 +146,11 @@ function phcBuildModel(inp){
     const units=phcUnitsOf(po);
     const chip={poId:j.fbKey,job:j,po:po,day:day,units:units,lock:phcLockReason(j,po,inp.isOwner===true),master:typeof j.masterName==='string'?j.masterName:'',
       article:po?String(po.name||po.code||''):'',code:po?String(po.code||''):'',status:j.status||'open',alloc:null,spill:null,workday:phcIsWork(day,S)};
+    // a finished job (marked complete, done, or its PO is already past cutting) takes no capacity and can spill nowhere
+    chip.finished=phcIsFinished(j,po);
     out.chips.push(chip);
     (out.byDay[day]=out.byDay[day]||[]).push(chip);
-    if(units!==null){items.push({id:j.fbKey,qty:units,earliestDay:day,requestedDay:day});if(minDay===null||day<minDay)minDay=day;}
+    if(units!==null&&!chip.finished){items.push({id:j.fbKey,qty:units,earliestDay:day,requestedDay:day});if(minDay===null||day<minDay)minDay=day;}
   });
   Object.keys(out.byDay).forEach(function(d){out.byDay[d].sort(function(a,b){return a.poId<b.poId?-1:a.poId>b.poId?1:0;});});
   // where an over-full day spills to (phAllocate): earliest day = the planned day, in planned-day order
@@ -181,6 +183,19 @@ function phcBuildModel(inp){
   out.todayChips=(out.byDay[today]||[]).slice();
   return out;
 }
+// Work that is already over: the job was marked complete or done, or its PO has left cutting (completed counts). Pure.
+// How to move a PO, in words that fit the device: a touch screen has no dragging here (it only has the Move menu).
+function _phcTouch(){try{return typeof matchMedia==='function'&&!!matchMedia('(pointer: coarse)').matches;}catch(e){return false;}}
+function _phcMoveHow(tray){
+  return _phcTouch()?(tray?'Press one and choose "Move to..." to pick a date.':'Press a PO and choose "Move to..." to pick a day.')
+    :(tray?'Drag one onto a day, or press it to choose a date.':'Drag a PO onto a day, or press it for the Move menu.');
+}
+function phcIsFinished(job,po){
+  const st=job&&typeof job.status==='string'?job.status:'';
+  if(st==='complete'||st==='done')return true;
+  if(po){const s=phStageOf(po);if(s&&s!=='cutting'&&s!=='reserved'&&s!=='unknown'&&s!=='cancelled')return true;}
+  return false;
+}
 function phcIsWork(day,S){
   if(!S)return true;
   if(Array.isArray(S.skipDays)&&S.skipDays.indexOf(day)>-1)return false;
@@ -191,7 +206,7 @@ function phcIsWork(day,S){
 function phcDayInfo(model,S,day){
   const chips=model.byDay[day]||[];
   let planned=0,unknown=0;
-  chips.forEach(function(c){if(c.units===null)unknown++;else planned+=c.units;});
+  chips.forEach(function(c){if(c.finished)return;if(c.units===null)unknown++;else planned+=c.units;});   // finished work takes no capacity
   const cap=model.capKnown?S.dailyCapacity:null;
   const wd=phWeekday(day);
   const skip=Array.isArray(S.skipDays)&&S.skipDays.indexOf(day)>-1;
@@ -539,7 +554,7 @@ function _phcTrayCard(model,posList){
     if(typeof loadData==='function')card.appendChild(_phcBtn('phc-btn','Reload POs',function(){try{loadData();}catch(e){}}));
     return card;
   }
-  card.appendChild(phEl('p','phc-sub','Released POs still waiting to be cut, with no planned date. Reserved POs are not listed. Drag one onto a day, or press it to choose a date.'));
+  card.appendChild(phEl('p','phc-sub','Released POs still waiting to be cut, with no planned date. Reserved POs are not listed. '+_phcMoveHow(true)));
   if(!model.tray.length)card.appendChild(phEl('p','phc-empty','Every released PO waiting to be cut has a planned date.'));
   const list=phEl('div','phc-tray');
   model.tray.slice(0,PH_CAL_TRAY_MAX).forEach(function(t){list.appendChild(_phcChipEl(t,true));});
@@ -555,7 +570,7 @@ function phcRender(host,ctx){
   const hrow=phEl('div','ph-head-row',null,[phEl('h2','ph-title','Calendar')]);
   if(!ctx.canManage)hrow.appendChild(phEl('span','ph-chip ph-chip-view','View only'));
   head.appendChild(hrow);
-  head.appendChild(phEl('p','ph-blurb','Planned cut dates by day against the daily capacity and the skip days. Drag a PO onto a day, or press it for the Move menu.'));
+  head.appendChild(phEl('p','ph-blurb','Planned cut dates by day against the daily capacity and the skip days. '+_phcMoveHow(false)));
   wrap.appendChild(head);
   const jg=ctx.get('jobs');
   if(!jg||!jg.ok){

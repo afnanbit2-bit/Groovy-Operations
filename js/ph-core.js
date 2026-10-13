@@ -1168,6 +1168,38 @@ function phReport(pos,jobs,range,opts){
   return out;
 }
 
+/* ── 9. One PO key for every spelling of a PO number (14 Oct 2026) ──────────
+   Real fabric gate passes spell the PO three ways: 'PO-125' (123 of 208), '125' (71 of 208: bare
+   digits) and junk ('Sample', 'SAMPLE', 'Sample & Sleeve', missing). The key is the canonical id
+   the `pos` collection uses: 'PO-' + the number, at least three digits ('PO-017', 'PO-125').
+   'PO-125', '125', 'po-0125', ' PO 125 ', 'PO_125' and 125 (a number) all give 'PO-125'. Bare
+   digits DO map to a PO key; whether that PO exists is the caller's lookup, so '538' gives
+   'PO-538' and simply matches no PO. Text that is not a PO number ('Sample', '', null) is null. */
+function phPoKey(x){
+  if(x===null||x===undefined)return null;
+  const s=(typeof x==='number'&&isFinite(x)&&Math.floor(x)===x?String(x):phStr(x)).replace(/\s+/g,'').toUpperCase();
+  const m=/^(?:PO[-_]?)?0*([0-9]{1,9})$/.exec(s);
+  if(!m)return null;
+  const n=parseInt(m[1],10);
+  if(!(n>0))return null;
+  const d=String(n);
+  return'PO-'+(d.length<3?('000'+d).slice(-3):d);
+}
+// How a stored poId is spelt: 'prefixed' (PO-125, po 125), 'digits' (125), or null (not a PO number).
+function phPoSpelling(x){
+  if(phPoKey(x)===null)return null;
+  return/^\s*PO/i.test(phStr(x))?'prefixed':'digits';
+}
+// Every spelling worth asking Firestore for when looking up the passes of one PO (an `in` query takes
+// at most 10 values): 'PO-125', '125', and the zero-padded digits ('017' for PO-017). [] for a non-PO.
+function phPoSpellings(x){
+  const k=phPoKey(x);
+  if(k===null)return[];
+  const n=k.slice(3),bare=String(parseInt(n,10));
+  const out=[k,n,bare,'PO-'+bare];
+  return out.filter(function(v,i){return out.indexOf(v)===i;});
+}
+
 if(typeof module!=='undefined'&&module.exports){
   module.exports={PH_VERSION,PH_TZ_OFFSET_MIN,PH_UNITS,PH_SEASON_VALUES,PH_WINTER_MONTHS,PH_SUMMER_MONTHS,PH_SIZE_MODELS,
     PH_WAIST_CODE_PREFIXES,PH_FREE_KEY,PH_REAL_STAGE_ORDER,PH_STAGES,PH_CUT_GATE_PCT,PH_PC_MIN_WIDTH,PH_MASTER_NAME_MAX,
@@ -1180,5 +1212,6 @@ if(typeof module!=='undefined'&&module.exports){
     phMasterKey,phMasterEntry,phMasterFind,phMasterLog,phMastersSummary,
     phAllocate,
     phStageOf,phPoUnits,phPipeline,phNextAction,phLeadTime,phDelayGap,
-    phPoComplete,phIsPcOnly,phCutRange,phCutCheck,phCutVerdict,phReport};
+    phPoComplete,phIsPcOnly,phCutRange,phCutCheck,phCutVerdict,phReport,
+    phPoKey,phPoSpelling,phPoSpellings};
 }

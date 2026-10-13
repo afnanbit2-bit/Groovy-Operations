@@ -119,7 +119,7 @@ function phqModel(pos,jobs,o){
     const st=phStageOf(p);
     if(st===null)return;
     if(st==='cancelled'){cancelled++;return;}
-    tiles.push(phqTileOf(p,jobBy[_phqIdOf(p)]||null,{today:today,now:now,S:S,alloc:alloc,jobsLoaded:x.jobsLoaded!==false&&Array.isArray(jobs)}));
+    tiles.push(phqTileOf(p,jobBy[_phqIdOf(p)]||null,{today:today,now:now,S:S,alloc:alloc,jobsLoaded:x.jobsLoaded!==false&&Array.isArray(jobs),firstIssue:x.firstIssueById}));
   });
   const lanes={};
   PHQ_LANES.concat(PHQ_SIDE_LANES).forEach(function(l){lanes[l.id]=[];});
@@ -150,7 +150,9 @@ function phqTileOf(po,job,x){
     age:null,delay:{level:'none',text:'',delayed:false}
   };
   if(stage==='cutting'){
-    const lt=phLeadTime(po,{now:x.now,settings:x.S});
+    // the age at cutting starts at the FIRST fabric-issue gate pass when there is one (matched through phPoKey), else the release date
+    const fk=typeof phPoKey==='function'?phPoKey(id):null,fi=fk!==null&&x.firstIssue&&Object.prototype.hasOwnProperty.call(x.firstIssue,fk)?x.firstIssue[fk]:null;
+    const lt=phLeadTime(po,fi!==null?{now:x.now,settings:x.S,issueAt:fi}:{now:x.now,settings:x.S});
     if(lt.state==='open'){
       const basis=lt.quality.indexOf('start_from_ts')>-1?'created':lt.quality.indexOf('start_from_release')>-1?'released':'issued';
       tile.age={days:lt.ageDays,basis:basis,status:lt.status,text:lt.ageDays+'d since '+basis};
@@ -344,6 +346,7 @@ function _phqBoard(body,ctx,manage){
     phqLoadPos(false).then(function(){if(_phqIsHere())ctx.repaint();});
   }
   const loading=!!_phqPosP;
+  if(typeof phhEnsure==='function'&&typeof phhSources==='function'&&phhSources().gatepasses.state==='idle')phhEnsure(false).then(function(){if(_phqIsHere())ctx.repaint();});   // the gate passes date a PO's time at cutting
   if(_phqPos.rows===null){
     if(_phqPos.state==='error'&&!loading){
       body.appendChild(_phqErrCard('Could not read the POs',_phqPosErrText(),_phqBtn('ph-btn ph-btn-primary','Retry',function(){phqLoadPos(true).then(function(){ctx.repaint();});ctx.repaint();})));
@@ -360,7 +363,7 @@ function _phqBoard(body,ctx,manage){
   }
   const settingsInfo=typeof phSettingsInfo==='function'?phSettingsInfo():{known:false,settings:{}};
   const jobsG=ctx.get('jobs'),mastersG=ctx.get('masters');
-  const m=phqModel(_phqPos.rows,jobsG.ok?jobsG.rows:null,{settings:settingsInfo.settings,jobsLoaded:jobsG.ok});
+  const m=phqModel(_phqPos.rows,jobsG.ok?jobsG.rows:null,{settings:settingsInfo.settings,jobsLoaded:jobsG.ok,firstIssueById:typeof phhFirstIssueNow==='function'?phhFirstIssueNow():null});
   // 1. read state notes (a stage that failed says so; it never reads as "none")
   const notes=phEl('div','phq-notes');
   if(_phqPos.truncated)notes.appendChild(phEl('p','phq-note phq-warn','Only the newest '+PHQ_POS_LIMIT+' POs were read; older ones are not on the board.'));
@@ -444,7 +447,7 @@ function _phqRepaintBoard(ctx){
   if(!_phqBoardEl||_phqPos.rows===null)return;
   const settingsInfo=typeof phSettingsInfo==='function'?phSettingsInfo():{known:false,settings:{}};
   const jobsG=ctx.get('jobs');
-  const m=phqModel(_phqPos.rows,jobsG.ok?jobsG.rows:null,{settings:settingsInfo.settings,jobsLoaded:jobsG.ok});
+  const m=phqModel(_phqPos.rows,jobsG.ok?jobsG.rows:null,{settings:settingsInfo.settings,jobsLoaded:jobsG.ok,firstIssueById:typeof phhFirstIssueNow==='function'?phhFirstIssueNow():null});
   _phqPaintBoard(m,ctx,phqCanPlan(ctx.user)&&ctx.canManage!==false,jobsG.ok);
 }
 function _phqPaintBoard(m,ctx,manage,jobsOk){

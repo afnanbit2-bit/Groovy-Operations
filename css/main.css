@@ -5663,6 +5663,8 @@ body.ph-fullscreen #bug-report-fab{bottom:20px}
   #main-content.ph-takeover,body.ph-fullscreen.ph-rail-min #main-content.ph-takeover{left:0;height:calc(100vh - var(--ph-tk-bar,52px) - var(--ph-tk-dock) - env(safe-area-inset-bottom));height:calc(100dvh - var(--ph-tk-bar,52px) - var(--ph-tk-dock) - env(safe-area-inset-bottom))}
   body.ph-fullscreen #bug-report-fab{bottom:calc(var(--ph-tk-dock) + env(safe-area-inset-bottom) + 14px)}
 }
+/* the report-bug button floats over the panel's bottom-right: leave room under the last row, and keep sticky action bars clear of it */
+#main-content.ph-takeover .ph-canvas{padding-bottom:88px}
 @media (prefers-reduced-motion:reduce){
   body.ph-fullscreen .ph-tk-rail,#main-content.ph-takeover,.ph-tk-item,.ph-tk-item::before,.ph-tk-label{transition:none}
 }
@@ -5870,6 +5872,10 @@ body.ph-fullscreen #bug-report-fab{bottom:20px}
   .phd-dl{grid-template-columns:minmax(0,1fr)}
   .phd-btnrow .phd-btn{flex:1 1 140px}
 }
+.phd-actions{position:sticky;bottom:0;z-index:6;background:var(--surface);box-shadow:0 -6px 12px -8px var(--border)}
+.phd-actions .phd-btnrow{padding-right:72px}
+@media (min-width:1101px){.phd-aside{align-self:stretch}.phd-actions{bottom:auto;top:12px}}   /* beside the form the bar pins to the top of the column; stacked (below) it pins to the bottom of the screen */
+@media (max-width:1100px){.phd-aside{display:contents}.phd-aside>.phd-card{grid-column:1}}
 /* ph-mod-drafts END */
 
 /* ph-mod-calendar START */
@@ -6067,6 +6073,23 @@ body.phc-dragging{cursor:grabbing;-webkit-user-select:none;user-select:none}
   .phk-act{flex-basis:100%}
 }
 @media (prefers-reduced-motion:reduce){.phk-roll-b{transition:none}}
+.phk-x{min-height:48px}
+.phk-ref{margin:6px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)}
+.phk-ref-sum{min-height:44px;display:flex;align-items:center;padding:0 12px;font-size:14px;font-weight:600;color:var(--text);cursor:pointer}
+.phk-ref>.phk-groups{padding:0 12px 8px}
+.phk-find-wrap{margin:0}
+.phk-find{margin:8px 0 0;padding:10px 12px;border:1px solid var(--accent-warning);border-radius:8px;background:var(--accent-warning-soft);color:var(--text)}
+.phk-find-h{margin:0 0 6px;font-size:15px;font-weight:700;color:var(--text)}
+.phk-cands{list-style:none;margin:8px 0 0;padding:0}
+.phk-cand{margin:0 0 6px}
+.phk-cand-b{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;height:auto;padding:8px 12px;text-align:left}
+.phk-cand-id{font-weight:800;font-size:15px}
+.phk-cand-t{font-size:14px;line-height:1.4;overflow-wrap:anywhere}
+.phk-cand-why{font-size:13px;color:var(--muted)}
+@media (max-width:899px){
+  /* on a phone the person came to scan and mark complete: that comes first, the reference facts below it */
+  .phk-card-body>.phk-check{order:-1}
+}
 /* ph-mod-cutting END */
 /* ph-mod-monitor START */
 /* Production Ops ▸ Monitor and Overview (js/ph-mod-monitor.js). Tokens only: no literal colour in this block. Text >= 12px (chrome) / 13px (content). */
@@ -6146,6 +6169,11 @@ button.phm-tile-main:focus-visible,.phm-sublink:focus-visible,.phm-chip-btn:focu
   .phm-bar-label{flex-basis:80px}
 }
 @media (prefers-reduced-motion:reduce){.phm-drawer{animation:none}}
+.phm-sources{padding:0}
+.phm-sources-sum{min-height:44px;display:flex;align-items:center;padding:0 16px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer}
+.phm-sources>.ph-lines{padding:0 16px 12px}
+.phm-sources-bad{border-color:var(--accent-urgent)}
+.phm-sources-bad>.phm-sources-sum{color:var(--accent-urgent)}
 /* ph-mod-monitor END */
 /* ph-mod-reports START */
 /* Production Ops ▸ Reports (js/ph-mod-reports.js). Tokens only: every colour inverts with the theme, no literal colour in this block.
@@ -6258,3 +6286,33 @@ button.phm-tile-main:focus-visible,.phm-sublink:focus-visible,.phm-chip-btn:focu
   .pha-acts>.pha-btn,.pha-savebar>.pha-btn{flex:1 1 auto}
 }
 /* ph-mod-admin END */
+
+/* ph-mod-health START */
+/* Production Ops: Data health (js/ph-mod-health.js). Classes .phh-; tokens only; text >= 13px; targets 44px. A state is always a word, never colour alone. */
+.phh-sec{margin:0 0 18px}
+.phh-checks{list-style:none;margin:10px 0 0;padding:0}
+.phh-check{margin:0 0 10px;padding:10px 12px;border:1px solid var(--border);border-left:4px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)}
+.phh-warn{border-left-color:var(--accent-warning)}
+.phh-ok{border-left-color:var(--accent-success)}
+.phh-na{border-left-color:var(--muted);background:var(--surface-2)}
+.phh-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;width:100%;min-height:44px;padding:0;border:none;background:transparent;font-family:inherit;font-size:15px;text-align:left;color:var(--text);cursor:pointer}
+.phh-head[aria-disabled="true"]{cursor:default}
+.phh-head:focus-visible,.phh-open:focus-visible,.phh-more:focus-visible,.phh-go:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.phh-count{flex:0 0 auto;min-width:40px;font-size:22px;font-weight:800;color:var(--text)}
+.phh-label{flex:1 1 220px;min-width:0;font-weight:600;overflow-wrap:anywhere}
+.phh-state{flex:0 0 auto;font-size:13px;font-weight:600;color:var(--muted)}
+.phh-hint{margin:2px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
+.phh-list{list-style:none;margin:10px 0 0;padding:0}
+.phh-item{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:8px 0;border-top:1px solid var(--border);font-size:14px}
+.phh-item-id{flex:0 0 auto;font-weight:800}
+.phh-item-txt{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;color:var(--text)}
+.phh-open,.phh-more,.phh-go,.phh-reload{min-height:44px}
+.phh-more,.phh-go{margin:8px 0 0}
+.phh-err{margin:6px 0;padding:8px 10px;border-left:3px solid var(--accent-urgent);background:var(--accent-urgent-soft);font-size:14px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}
+.phh-note{margin:6px 0;font-size:13px;line-height:1.45;color:var(--muted)}
+.phh-foot{margin:10px 0 0}
+.phh-tile{margin:0 0 16px}
+.phh-big{font-size:32px;font-weight:800;line-height:1.1;color:var(--text)}
+.phh-mini{list-style:none;margin:6px 0 0;padding:0}
+.phh-mini-i{font-size:14px;line-height:1.5;color:var(--text)}
+/* ph-mod-health END */
