@@ -494,7 +494,7 @@ async function t(name,fn){
   await t('signed-out: phLoadAll never rejects and NAMES every refused collection; no stage reads as empty',async()=>{await reset();
     const app2=asApp(UZAIB);app2.ctx.db=as('anon');await app2.run('phResetData()');
     const r=await app2.run('(async()=>await phLoadAll({force:true}))()');
-    if(r.ok||r.failed.length!==6)throw new Error('expected 6 failures, got '+JSON.stringify(r.failed.map(f=>f.name)));
+    if(r.ok||r.failed.length!==7)throw new Error('expected 7 failures, got '+JSON.stringify(r.failed.map(f=>f.name)));
     const g=await app2.run('phGet("drafts")');if(g.ok||g.rows!==null)throw new Error('a refused read looked like an empty list');
     if(!r.failed.every(f=>/republish firestore\.rules/.test(f.text)&&f.text.indexOf(f.name)===0))throw new Error('failures not named: '+r.failed.map(f=>f.text).join(' | '));});
 
@@ -707,6 +707,92 @@ async function t(name,fn){
     for(const w of [UZAIB,RAEES,UMAIR,QA]){await assertSucceeds(getDoc(doc(as(w),'ph_article_instructions','GP042')));await assertSucceeds(getDocs(collection(as(w),'ph_article_instructions')));await assertSucceeds(getDoc(doc(as(w),'ph_article_instructions','GP042','revisions','1')));}
     await assertFails(getDoc(doc(as('anon'),'ph_article_instructions','GP042')));await assertFails(getDoc(doc(as('anon'),'ph_article_instructions','GP042','revisions','1')));
     await assertFails(setDoc(doc(as(QA),'ph_article_instructions','GP043'),iDoc(QA,{code:'GP043'})));});
+
+
+  /* ═══ po_marks (WP2: manager marks + comments on a PO) ═══ */
+  console.log('po_marks');
+  const MID='PO-001';
+  const mDoc=(w,over)=>Object.assign({poId:MID,rev:1,marks:{priority:'urgent'},noteCount:0,lastNote:'',lastNoteBy:'',lastNoteAt:0,createdAt:NOW,createdBy:w.u,updatedAt:NOW,updatedBy:w.u,updatedByName:w.name},over||{});
+  const nId=(n)=>String(NOW+n)+'-ab12';
+  const nDoc=(w,over)=>Object.assign({poId:MID,seq:1,at:NOW,by:w.u,byName:w.name,text:'Push this one'},over||{});
+  const mBatch=(w,parentOver,noteOver,id)=>{const d=as(w),b=writeBatch(d);b.set(doc(d,'po_marks',MID),mDoc(w,Object.assign({noteCount:1,lastNote:'Push this one',lastNoteBy:w.name,lastNoteAt:NOW},parentOver||{})));b.set(doc(d,'po_marks',MID,'notes',id||nId(1)),nDoc(w,noteOver));return b.commit();};
+  for(const w of [AFNAN,AMMAR,MUSTAFA])
+    await t(w.u+' saves marks with the app\'s own writer (only po_marks is written)',async()=>{await reset();await seedPo();
+      const r=await call(w,'phMarksSave("'+MID+'",{priority:"urgent",hold:{reason:"waiting for the rib"},highlight:"amber",label:"Eid drop"},{now:'+nx()+'})');if(!r.ok)throw new Error('writer: '+JSON.stringify(r));
+      const d=await read('po_marks/'+MID);if(!d||d.rev!==1||d.createdBy!==w.u||d.marks.highlight!=='amber')throw new Error('stored marks wrong');
+      const p=await read('pos/'+MID);if(JSON.stringify(p)!==JSON.stringify({id:MID,qty:100,code:'GST073'}))throw new Error('the pos document changed');});
+  for(const w of [UZAIB,RAEES,UMAIR,ARFAT,QA,'anon'])
+    await t((w.u||'signed-out')+' (the cutting floor and everyone else) cannot create a mark',async()=>{await reset();await seedPo();await assertFails(setDoc(doc(as(w),'po_marks',MID),mDoc(w.u?w:AFNAN)));});
+  await t('KASHIF (uzaib): the app\'s own writers refuse him before any round trip, nothing is written',async()=>{await reset();await seedPo();
+    const r=await call(UZAIB,'phMarksSave("'+MID+'",{priority:"urgent"},{now:'+nx()+'})');const c=await call(UZAIB,'phMarkComment("'+MID+'","hi",{now:'+nx()+'})');
+    if(r.ok||r.code!=='forbidden'||c.ok||c.code!=='forbidden')throw new Error('expected forbidden');if(await read('po_marks/'+MID))throw new Error('something was written');});
+  await t('KASHIF cannot edit or remove an existing mark, nor add or touch a comment (raw)',async()=>{await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN));await seed('po_marks/'+MID+'/notes/'+nId(1),nDoc(AFNAN));
+    await assertFails(updateDoc(doc(as(UZAIB),'po_marks',MID),{marks:{priority:'high'},rev:2,updatedAt:NOW+1,updatedBy:'uzaib',updatedByName:'Uzaib'}));
+    await assertFails(updateDoc(doc(as(UZAIB),'po_marks',MID),{marks:{},rev:2,updatedAt:NOW+1,updatedBy:'afnan',updatedByName:'Afnan'}));
+    await assertFails(deleteDoc(doc(as(UZAIB),'po_marks',MID)));
+    await assertFails(setDoc(doc(as(UZAIB),'po_marks',MID,'notes',nId(2)),nDoc(UZAIB,{seq:2})));
+    await assertFails(updateDoc(doc(as(UZAIB),'po_marks',MID,'notes',nId(1)),{text:'edited'}));
+    await assertFails(deleteDoc(doc(as(UZAIB),'po_marks',MID,'notes',nId(1))));
+    await assertFails(mBatch(UZAIB,{rev:2},{seq:1},nId(3)));
+    await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN,{noteCount:1,lastNote:'x',lastNoteBy:'Afnan',lastNoteAt:NOW}));
+    await assertFails(setDoc(doc(as(UZAIB),'po_marks',MID,'notes',nId(5)),nDoc(UZAIB,{seq:1})));    // the parent already says 1, so only the caller check stops him
+    await assertSucceeds(setDoc(doc(as(AFNAN),'po_marks',MID,'notes',nId(5)),nDoc(AFNAN,{seq:1})));});
+  await t('everyone signed in SEES marks and comments (Kashif, Raees, Umair); QA reads; signed-out does not',async()=>{await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN));await seed('po_marks/'+MID+'/notes/'+nId(1),nDoc(AFNAN));
+    for(const w of [UZAIB,RAEES,UMAIR,QA]){await assertSucceeds(getDoc(doc(as(w),'po_marks',MID)));await assertSucceeds(getDocs(query(collection(as(w),'po_marks'),limit(5))));await assertSucceeds(getDocs(collection(as(w),'po_marks',MID,'notes')));}
+    await assertFails(getDoc(doc(as('anon'),'po_marks',MID)));await assertFails(getDocs(collection(as('anon'),'po_marks',MID,'notes')));});
+  await t('create: a PO that does not exist, or a bad id, is refused',async()=>{await reset();await seedPo();
+    await assertFails(setDoc(doc(as(AFNAN),'po_marks','PO-777'),mDoc(AFNAN,{poId:'PO-777'})));
+    await assertFails(setDoc(doc(as(AFNAN),'po_marks','po-001'),mDoc(AFNAN,{poId:'po-001'})));
+    await assertSucceeds(setDoc(doc(as(AFNAN),'po_marks',MID),mDoc(AFNAN)));});
+  await t('create: shape - priority, hold, highlight (palette), label length, extra keys, rev, ids, names, clock',async()=>{await reset();await seedPo();
+    const bad=[{marks:{priority:'normal'}},{marks:{priority:'critical'}},{marks:{hold:{reason:''}}},{marks:{hold:{reason:'  '}}},{marks:{hold:{why:'x'}}},{marks:{hold:true}},{marks:{highlight:'pink'}},{marks:{highlight:'#fff'}},{marks:{label:'x'.repeat(61)}},{marks:{label:''}},{marks:{note:'x'}},{marks:'text'},{marks:{label:'a'},extra:1},{rev:2},{poId:'PO-002'},{createdBy:'ammar'},{updatedBy:'ammar'},{noteCount:2},{noteCount:-1},{noteCount:'1'},{createdAt:NOW+3*86400000},{updatedAt:NOW-3*86400000},{updatedAt:NOW+0.5},{updatedAt:'now'},{updatedByName:'x'.repeat(61)},{lastNote:'x'.repeat(141)}];
+    for(const over of bad)await assertFails(setDoc(doc(as(AFNAN),'po_marks',MID),mDoc(AFNAN,over)));
+    for(const over of [{marks:{}},{marks:{priority:'high'}},{marks:{hold:{reason:'x'.repeat(200)},label:'x'.repeat(60)}},{marks:{highlight:'teal'}}]){await reset();await seedPo();await assertSucceeds(setDoc(doc(as(AFNAN),'po_marks',MID),mDoc(AFNAN,over)));}});
+  await t('update: rev + 1 only; createdBy / createdAt / poId cannot change; the marks stay inside the allow-lists',async()=>{await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN));
+    const ok={marks:{priority:'high'},rev:2,updatedAt:NOW+1,updatedBy:'mustafa',updatedByName:'Mustafa'};
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_marks',MID),Object.assign({},ok,{rev:3})));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_marks',MID),Object.assign({},ok,{rev:1})));
+    for(const patch of [{createdBy:'mustafa'},{createdAt:1},{poId:'PO-002'},{extra:1},{updatedBy:'afnan'},{marks:{highlight:'pink'}},{marks:{priority:'normal'}},{noteCount:5},{updatedAt:NOW-3*86400000}])
+      await assertFails(updateDoc(doc(as(MUSTAFA),'po_marks',MID),Object.assign({},ok,patch)));
+    await assertSucceeds(updateDoc(doc(as(MUSTAFA),'po_marks',MID),ok));});
+  await t('update with the app\'s writer: a stale revision is refused by the writer; a different manager edits fine',async()=>{await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN));
+    const ok=await call(AMMAR,'phMarksSave("'+MID+'",{priority:"high"},{now:'+nx()+',expectedRev:1})');if(!ok.ok||ok.rev!==2)throw new Error('edit: '+JSON.stringify(ok));
+    const st=await call(AFNAN,'phMarksSave("'+MID+'",{priority:"urgent"},{now:'+nx()+',expectedRev:1})');if(st.ok||st.code!=='stale')throw new Error('expected stale, got '+JSON.stringify(st));});
+  await t('a marks edit made long after the last comment still lands (the old lastNoteAt is not re-judged)',async()=>{await reset();await seedPo();
+    await seed('po_marks/'+MID,mDoc(AFNAN,{noteCount:1,lastNote:'old',lastNoteBy:'Afnan',lastNoteAt:NOW-30*86400000}));
+    await assertSucceeds(updateDoc(doc(as(AFNAN),'po_marks',MID),{marks:{priority:'high'},rev:2,updatedAt:NOW+1,updatedBy:'afnan',updatedByName:'Afnan'}));});
+  await t('a mark is never deletable, by anyone',async()=>{await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN));
+    for(const w of [AFNAN,AMMAR,MUSTAFA,UZAIB,QA])await assertFails(deleteDoc(doc(as(w),'po_marks',MID)));});
+  for(const w of [AFNAN,AMMAR,MUSTAFA])
+    await t(w.u+' comments with the app\'s own writer: parent created, counter and note in one commit',async()=>{await reset();await seedPo();
+      const r=await call(w,'phMarkComment("'+MID+'","Please push this one",{now:'+nx()+',rand:"ab12"})');if(!r.ok||r.seq!==1)throw new Error('writer: '+JSON.stringify(r));
+      const r2=await call(w,'phMarkComment("'+MID+'","And again",{now:'+nx()+',rand:"cd34"})');if(!r2.ok||r2.seq!==2)throw new Error('second: '+JSON.stringify(r2));
+      const d=await read('po_marks/'+MID);if(d.noteCount!==2||d.rev!==2||d.lastNote!=='And again')throw new Error('parent wrong '+JSON.stringify(d));
+      const th=await call(w,'phMarkNotesOf("'+MID+'")');if(!th.ok||th.rows.length!==2)throw new Error('thread');});
+  await t('comments are APPEND-ONLY: no manager can edit or delete a note (raw)',async()=>{await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN,{noteCount:1,lastNote:'Push',lastNoteBy:'Afnan',lastNoteAt:NOW}));await seed('po_marks/'+MID+'/notes/'+nId(1),nDoc(AFNAN));
+    for(const w of [AFNAN,AMMAR,MUSTAFA]){
+      await assertFails(updateDoc(doc(as(w),'po_marks',MID,'notes',nId(1)),{text:'rewritten'}));
+      await assertFails(setDoc(doc(as(w),'po_marks',MID,'notes',nId(1)),nDoc(w,{text:'overwritten'})));
+      await assertFails(deleteDoc(doc(as(w),'po_marks',MID,'notes',nId(1))));}});
+  await t('a note: id pattern, keys, caller, text length, clock, and its seq must equal the parent count after the commit',async()=>{
+    await reset();await seedPo();await assertSucceeds(mBatch(AFNAN,{}, {}));
+    const fresh=async()=>{await reset();await seedPo();};
+    await fresh();await assertFails(mBatch(AFNAN,{},{},'not-an-id'));
+    await fresh();await assertFails(mBatch(AFNAN,{},{extra:1}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{by:'ammar'}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{text:''}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{text:'   '}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{text:'x'.repeat(501)}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{at:NOW-3*86400000}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{at:NOW+0.5}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{seq:5}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{poId:'PO-002'}));
+    await fresh();await assertFails(mBatch(AFNAN,{},{byName:'x'.repeat(61)}));
+    await fresh();await assertFails(setDoc(doc(as(AFNAN),'po_marks',MID,'notes',nId(1)),nDoc(AFNAN)));
+    await fresh();await seed('po_marks/'+MID,mDoc(AFNAN));await assertFails(setDoc(doc(as(AFNAN),'po_marks',MID,'notes',nId(1)),nDoc(AFNAN)));
+  });
+  await t('a counter bump of more than one is refused',async()=>{await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN));
+    await assertFails(updateDoc(doc(as(AFNAN),'po_marks',MID),{noteCount:3,lastNote:'x',lastNoteBy:'Afnan',lastNoteAt:NOW,rev:2,updatedAt:NOW+1,updatedBy:'afnan',updatedByName:'Afnan'}));});
 
   await env.cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);

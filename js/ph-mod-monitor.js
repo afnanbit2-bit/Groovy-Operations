@@ -508,6 +508,7 @@ function phmOpenDrawer(host,spec,opener){
     li.appendChild(top);
     li.appendChild(E('div','phm-row-title',r.title));
     if(r.detail)li.appendChild(E('div','phm-row-detail',r.detail));
+    if(typeof phmkApply==='function')phmkApply(li,r.fbKey||r.id);
     if(spec.openable&&phmCanOpenPO())li.appendChild(_phmOpenBtn(r));
     ul.appendChild(li);
   });
@@ -583,6 +584,7 @@ function _phmAttentionCard(M,host,opts){
     li.appendChild(top);
     li.appendChild(E('div','phm-row-title',r.title));
     li.appendChild(E('div','phm-row-detail',r.detail));
+    if(typeof phmkApply==='function')phmkApply(li,r.fbKey||r.id);
     if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));
     ul.appendChild(li);
   });

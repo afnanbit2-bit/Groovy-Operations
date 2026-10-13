@@ -468,7 +468,7 @@ module.exports=async function(){
     failing.forEach(f=>{broken++;s.ok('break "'+label+'" fails "'+f.slice(0,90)+'"',r[f]!==true);});
   };
   const K=prefix=>Object.keys(base).filter(k=>k.indexOf(prefix)===0);
-  await brk('Open on the attention rows for everyone',"    li.appendChild(E('div','phm-row-detail',r.detail));\n    if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));","    li.appendChild(E('div','phm-row-detail',r.detail));\n    li.appendChild(_phmOpenBtn(r));",K('open PO: uzaib (Kashif) sees'));
+  await brk('Open on the attention rows for everyone',"    if(typeof phmkApply==='function')phmkApply(li,r.fbKey||r.id);\n    if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));","    if(typeof phmkApply==='function')phmkApply(li,r.fbKey||r.id);\n    li.appendChild(_phmOpenBtn(r));",K('open PO: uzaib (Kashif) sees'));
   await brk('phmOpenPO does not check who',"  if(!phmCanOpenPO()||!/^[A-Za-z0-9_-]{1,60}$/.test(k))return false;","  if(!/^[A-Za-z0-9_-]{1,60}$/.test(k))return false;",K('open PO: phmOpenPO refuses him'));
   await brk('the takeover stays up when a PO opens',"  try{if(typeof _phTkLeave==='function')_phTkLeave();}catch(e){}\n  window.openPODetail(k);","  window.openPODetail(k);",K('open PO: pressing it leaves'));
   await brk('every drawer gets Open buttons',"openable:t.id==='attention'","openable:true",K('open PO: the other tiles'));

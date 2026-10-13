@@ -319,7 +319,7 @@ const rich=(uid,uname)=>({uid,ownerUid:uid,adminUid:uid,authorUid:uid,byUid:uid,
   // this probe's junk payload cannot create / update / delete). The existing pos document
   // itself is NOT in this list: its cells must still match the baseline exactly.
   const NEW_SINCE_BASE=['shopify_article_daily','shopify_article_summary','shopify_rollup_meta','inventory_article_meta',
-    'po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings'];
+    'po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions','po_marks'];
   const isNewSinceBase=l=>NEW_SINCE_BASE.some(c=>l.full.startsWith('/'+c+'/'))||/^\/pos\/\{[A-Za-z]+\}\/history\//.test(l.full);
   const cellsDiff=[];let cells=0;
   const reseed=async(env,l)=>raw(env,async db=>{

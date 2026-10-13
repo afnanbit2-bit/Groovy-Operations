@@ -607,6 +607,60 @@ async function _phAdminPanel(o){
   });
   return'<div class="ph-canvas">'+domkit.toHtml(root)+'</div>';
 }
+// Production Ops ▸ manager marks (WP2, 18 Oct 2026): the REAL js/ph-mod-marks.js badges, the cutting-card summary and the manager panel over
+// tests/ph-dom.js's DOM and an in-memory marks list, serialised for the probe. Every highlight colour, a hold, both priorities, a text mark and a
+// comment count appear, so contrast and overflow are measured for each (colour AND glyph AND word).
+async function _phMarksFragment(o){
+  const vm=require('vm'),domkit=require('./ph-dom');
+  const GOOD={priority:'urgent',hold:{reason:'Waiting for the rib to arrive from the dyer'},highlight:'amber',label:'Rush for the Eid drop - check the print placement twice'};
+  const S={};
+  ['amber','red','green','blue','purple','teal'].forEach((c,i)=>{S['po_marks/PO-10'+(i+1)]={poId:'PO-10'+(i+1),rev:1,marks:{highlight:c,priority:i%2?'high':'urgent'},noteCount:i,lastNote:i?'Please push this one':'',lastNoteBy:'Mustafa',lastNoteAt:1};});
+  S['po_marks/PO-110']={poId:'PO-110',rev:1,marks:GOOD,noteCount:2,lastNote:'Second comment from a manager with a rather long sentence that must wrap inside the card',lastNoteBy:'Mustafa',lastNoteAt:1};
+  S['po_marks/PO-111']={poId:'PO-111',rev:1,marks:{},noteCount:1,lastNote:'Only a comment',lastNoteBy:'Afnan',lastNoteAt:1};
+  const U=o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'};
+  const keysUnder=pre=>Object.keys(S).filter(k=>k.indexOf(pre+'/')===0&&k.slice(pre.length+1).indexOf('/')===-1).sort();
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],currentPage:'prod-ops',session:U,globals:{
+    localStorage:{getItem:()=>null,setItem(){},removeItem(){}},navigator:{onLine:true},auth:{currentUser:{getIdToken:async()=>{}}},
+    collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
+    getDocs:async q=>({docs:keysUnder(q.path).map(k=>({id:k.split('/').pop(),data:()=>Object.assign({},S[k])})),metadata:{fromCache:false}}),
+    getDoc:async r=>({exists:()=>!!S[r.path],data:()=>Object.assign({},S[r.path]),metadata:{fromCache:false}})
+  }});
+  const dom=domkit.install(app.ctx);
+  app.ctx.console={warn(){},log(){},error(){}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-marks.js'),'utf8'),app.ctx,{filename:'ph-mod-marks.js'});
+  await app.run('phLoadStage("marks")');
+  const wrap=dom.mk('div');wrap.className='ph-canvas';
+  const ul=dom.mk('ul');ul.className='phq-tiles';
+  const ids=['PO-101','PO-102','PO-103','PO-104','PO-105','PO-106','PO-110','PO-111'];
+  ids.forEach(id=>{
+    const li=dom.mk('li');li.className='phq-tile phq-lvl-none';
+    const top=dom.mk('div');top.className='phq-t-top';const po=dom.mk('span');po.className='phq-po';po.textContent=id;top.appendChild(po);li.appendChild(top);
+    app.run('phmkApply')(li,id);
+    ul.appendChild(li);
+  });
+  wrap.appendChild(ul);
+  const card=dom.mk('section');card.className='phk-card';
+  const sum=app.run('phmkSummaryNode("PO-110")');if(sum)card.appendChild(sum);
+  wrap.appendChild(card);
+  const cal=dom.mk('button');cal.className='phc-chip';cal.setAttribute('type','button');
+  const ct=dom.mk('span');ct.className='phc-chip-po';ct.textContent='PO-110';cal.appendChild(ct);
+  app.run('phmkApply')(cal,'PO-110',{compact:true});wrap.appendChild(cal);
+  if(!o.floor){
+    const tile=dom.mk('li');tile.className='phq-tile phq-lvl-none';
+    const tt=dom.mk('span');tt.className='phq-po';tt.textContent='PO-110';tile.appendChild(tt);
+    const ctl=app.run('phmkTileControls("PO-110",{repaint(){}},true)');if(ctl)tile.appendChild(ctl);
+    app.run('phmkTogglePanel("PO-110",{repaint(){}})');
+    app.run('_phmkNotes["PO-110"]={state:"ok",rows:[{byName:"Mustafa",by:"mustafa",at:1790000000000,text:"Second comment from a manager"},{byName:"Afnan",by:"afnan",at:1789999000000,text:"First comment"}],text:""}');
+    const pn=app.run('phmkTilePanel("PO-110",{repaint(){}},true)');if(pn)tile.appendChild(pn);
+    const ul2=dom.mk('ul');ul2.className='phq-tiles';ul2.appendChild(tile);wrap.appendChild(ul2);
+  }
+  dom.walk(wrap,n=>{
+    if(n.tagName==='INPUT'){if(n.value!==undefined&&n.value!=='')n.setAttribute('value',n.value);if(n.checked)n.setAttribute('checked','');}
+    if(n.tagName==='OPTION'&&n.selected)n.setAttribute('selected','');
+  });
+  return{html:domkit.toHtml(wrap)};
+}
 function _naSeed(app,opts){
   opts=opts||{};
   const prods=[],lis=[],defs=[];
@@ -3271,6 +3325,8 @@ const FRAGMENTS={
   'production ops — shell for the cutting floor (view only)':()=>_phFragment({floor:true,tab:'cutting'}),
   'production ops — shell content clear of the bar and rail':()=>_phFragment({fail:true,inBody:true,tab:'masters'}),
   // Production Ops ▸ PO Queue (12 Oct 2026): see _phqFragment.
+  'production ops — marks and comments (manager: badges, summary, panel open)':()=>_phMarksFragment({}),
+  'production ops — marks and comments (the cutting floor, read-only)':()=>_phMarksFragment({floor:true}),
   'production ops — po queue':()=>_phqFragment({}),
   'production ops — po queue for the cutting floor (read-only board)':()=>_phqFragment({floor:true}),
   'production ops — po queue plan dialog':()=>_phqFragment({dialog:true}),

@@ -195,7 +195,7 @@ module.exports=async function(){
       J(w.run('Object.keys(PH_DEFAULT_SETTINGS).filter(k=>PH_SETTINGS_VALUE_FIELDS.indexOf(k)<0).concat(PH_SETTINGS_VALUE_FIELDS.filter(k=>Object.keys(PH_DEFAULT_SETTINGS).indexOf(k)<0))')),J(['pcOnlyHard']));
     for(const [n,re] of [['PH_HIST_TYPE_RE','history type'],['PH_CODE_RE','article code'],['PH_DRAFT_ID_RE','draft id'],['PH_PO_ID_RE','PO id'],['PH_MASTER_ID_RE','master id'],['PH_HISTORY_ROW_RE','history row id']])
       s.ok('the '+re+' pattern is written the same in JS and in the rules ('+w.run(n+'.source')+')',RULES.indexOf("'"+w.run(n+'.source')+"'")>-1);
-    s.eq('PH_WRITE_ROOTS is exactly the six new collections',J(L('PH_WRITE_ROOTS').sort()),J(['cutting_masters','ph_article_instructions','ph_settings','ph_standards','po_cut_jobs','po_drafts']));
+    s.eq('PH_WRITE_ROOTS is exactly the seven new collections',J(L('PH_WRITE_ROOTS').sort()),J(['cutting_masters','ph_article_instructions','ph_settings','ph_standards','po_cut_jobs','po_drafts','po_marks']));
     s.ok('every PH_COLLECTIONS collection has a match block',w.run("Object.keys(PH_COLLECTIONS).every(k=>true)")&&['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions'].every(c=>!!matchBlock(c)));
     s.ok('and the pos history match block sits inside the existing pos block',!!hist&&!!matchBlock('pos'));
   }
@@ -234,18 +234,18 @@ module.exports=async function(){
     m.store['cutting_masters/CM-001']={id:'CM-001',name:'Alam',active:true};
     m.store['ph_settings/main']={dailyCapacity:500,rev:1};
     const r=await m.call('phLoadAll({})');
-    s.ok('phLoadAll resolves ok:true with all six stages loaded',r.ok===true&&r.loaded.length===6&&r.failed.length===0);
+    s.ok('phLoadAll resolves ok:true with all seven stages loaded',r.ok===true&&r.loaded.length===7&&r.failed.length===0);
     const d=m.run('phGet("drafts")');
     s.ok('drafts read: ok, 2 rows, each carries its document id as fbKey',d.ok&&d.rows.length===2&&d.rows.every(x=>/^DRAFT-/.test(x.fbKey)));
     s.ok('an empty collection that WAS read is ok with rows [] (so [] can only mean empty)',m.run('phGet("jobs")').ok===true&&m.run('phGet("jobs")').rows.length===0);
     s.eq('settings resolved through the core: capacity 500',m.run('phSettingsNow().dailyCapacity'),500);
-    s.ok('every list query is bounded by limit() and no query touches a pos history',m.log.queries.length===5&&m.log.queries.every(q=>typeof q.limit==='number'&&q.limit>0&&q.limit<=1500)&&m.log.queries.every(q=>q.path.indexOf('history')<0));
-    s.eq('the limits are the declared ones',J(m.log.queries.map(q=>q.limit).sort((a,b)=>a-b)),J([300,500,500,1500,1500]));
+    s.ok('every list query is bounded by limit() and no query touches a pos history',m.log.queries.length===6&&m.log.queries.every(q=>typeof q.limit==='number'&&q.limit>0&&q.limit<=1500)&&m.log.queries.every(q=>q.path.indexOf('history')<0));
+    s.eq('the limits are the declared ones',J(m.log.queries.map(q=>q.limit).sort((a,b)=>a-b)),J([300,500,500,1500,1500,1500]));
     s.ok('ordered lists ask for newest first on a single field (no composite index)',m.log.queries.filter(q=>q.order).every(q=>q.order[1]==='desc'));
     const again=await m.call('phLoadAll({})');
-    s.eq('a second phLoadAll reads nothing (cached) unless forced',m.log.getDocs,5);
+    s.eq('a second phLoadAll reads nothing (cached) unless forced',m.log.getDocs,6);
     await m.call('phLoadAll({force:true})');
-    s.eq('force re-reads',m.log.getDocs,10);
+    s.eq('force re-reads',m.log.getDocs,12);
   }
   {
     // a refused read is NAMED and not empty; others still load
@@ -253,7 +253,7 @@ module.exports=async function(){
     const m=mk({failPath:p=>p==='cutting_masters'?e:null});
     m.store['po_drafts/DRAFT-A-AAAA']={id:'DRAFT-A-AAAA',status:'draft',updatedAt:2};
     const r=await m.call('phLoadAll({})');
-    s.ok('one refused collection does not take the others down (allSettled shape)',r.ok===false&&r.failed.length===1&&r.loaded.length===5);
+    s.ok('one refused collection does not take the others down (allSettled shape)',r.ok===false&&r.failed.length===1&&r.loaded.length===6);
     s.eq('the failure names the collection',r.failed[0].name,'cutting_masters');
     s.ok('and says to republish firestore.rules, starting with the collection name',/^cutting_masters: could not be read - republish firestore\.rules/.test(r.failed[0].text));
     const g=m.run('phGet("masters")');
@@ -274,7 +274,7 @@ module.exports=async function(){
     const m=mk({getDocsSync:true});
     let out,threw=false;
     try{out=await m.call('phLoadAll({force:true})');}catch(e){threw=true;}
-    s.ok('a getDocs that THROWS synchronously does not reject phLoadAll',!threw&&out.failed.length===5);
+    s.ok('a getDocs that THROWS synchronously does not reject phLoadAll',!threw&&out.failed.length===6);
     const h=mk({hang:p=>p==='po_cut_jobs'});
     const t0=Date.now();
     // guarded: a loader that really hung would leave node with an empty event loop and exit 0 in silence
@@ -282,7 +282,7 @@ module.exports=async function(){
     s.ok('a read that never settles is cut off and reported as a timeout (not a hang)',!rh.hung&&Date.now()-t0<2900&&rh.failed.length===1&&rh.failed[0].name==='po_cut_jobs'&&/did not finish/.test(rh.failed[0].text));
     const c=mk({fromCache:true});
     const rc=await c.call('phLoadAll({})');
-    s.ok('an answer from the offline copy is a FAILURE, not an empty list (all six)',rc.failed.length===6&&rc.failed.every(f=>/offline copy/.test(f.text))&&c.run('phGet("drafts")').rows===null);
+    s.ok('an answer from the offline copy is a FAILURE, not an empty list (all seven)',rc.failed.length===7&&rc.failed.every(f=>/offline copy/.test(f.text))&&c.run('phGet("drafts")').rows===null);
     const bad=await m.call('phLoadStage("nonsense")');
     s.ok('an unknown stage resolves {ok:false}, never throws',bad.ok===false);
     const co=mk();let reads=0;
@@ -541,13 +541,13 @@ module.exports=async function(){
       s.ok(n+': no prompt / confirm / alert, no inline onclick',!/\b(prompt|confirm|alert)\s*\(|onclick=/.test(src));
       s.ok(n+': no import / export / require (classic script)',!/^\s*(import|export)\s/m.test(src)&&!/\brequire\(/.test(src));
     }
-    s.eq('ph-write.js names the pos collection exactly three times: the read of the PO, and two history row paths',(W.match(/'pos'/g)||[]).length,3);
-    s.ok('… as doc(db,\'pos\',poId) once (a read) and doc(db,\'pos\',poId,\'history\',…) twice (the cut-job transaction and phAppendHistory)',(W.match(/doc\(db,'pos',poId\)/g)||[]).length===1&&(W.match(/doc\(db,'pos',poId,'history',/g)||[]).length===2);
+    s.eq('ph-write.js names the pos collection exactly five times: three reads of the PO (cut job, mark, comment), and two history row paths',(W.match(/'pos'/g)||[]).length,5);
+    s.ok('… as doc(db,\'pos\',poId) three times (reads: the cut job, a new mark, a new comment) and doc(db,\'pos\',poId,\'history\',…) twice (the cut-job transaction and phAppendHistory)',(W.match(/doc\(db,'pos',poId\)/g)||[]).length===3&&(W.match(/doc\(db,'pos',poId,'history',/g)||[]).length===2);
     s.ok('ph-write.js: the PO document reference is only ever passed to tx.get (never set/update)',!/tx\.(set|update)\(pref/.test(W)&&/tx\.get\(pref\)/.test(W));
     s.ok('ph-data.js names pos once, for the bounded history read',(D.match(/'pos'/g)||[]).length===1&&/collection\(db,'pos',id,'history'\)/.test(D));
     s.ok('every setDoc/updateDoc/tx.set/tx.update target is a po_drafts / po_cut_jobs / ph_* / cutting_masters / history reference',(()=>{
       const targets=[...W.matchAll(/(?:setDoc|updateDoc|tx\.set|tx\.update)\(([A-Za-z_.]+(?:\([^)]*\))?)/g)].map(m=>m[1]);
-      return targets.length>10&&targets.every(t=>/^(ref|jref|cref|doc\(db,'(pos|ph_settings|cutting_masters|ph_article_instructions)',)/.test(t));
+      return targets.length>10&&targets.every(t=>/^(ref|jref|cref|doc\(db,'(pos|ph_settings|cutting_masters|ph_article_instructions|po_marks)',)/.test(t));
     })());
     s.ok('the loaders are never async-rejecting: every exported loader is wrapped (phLoadStage catches, phLoadAll catches, phHistoryOf try/catch)',/\.catch\(function\(e\)\{return\{ok:false,stage:key/.test(D)&&/catch\(e\)\{results=/.test(D)&&/catch\(e\)\{\s*const err=phErrInfo\(e\)/.test(D));
   }

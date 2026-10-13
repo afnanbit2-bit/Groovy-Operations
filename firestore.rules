@@ -1398,6 +1398,77 @@ service cloud.firestore {
         && d.get('reason', '') is string && d.get('reason', '').size() <= 300;
     }
 
+    // po_marks/{PO-nnn}: the managers' marks on ONE PO (priority, hold with a reason, a highlight colour, a short custom
+    // label) plus a comment counter. Managers (afnan, ammar, mustafa) write; everybody signed in reads, which is how the
+    // cutting floor (Kashif, uzaib) SEES every mark and can never create, edit or remove one. NO delete. A mark never
+    // touches the pos document or its history. rev counts the saves. `marks` holds only what is set: an absent key is
+    // "not marked" (priority 'normal' is stored as nothing). The comment thread is the append-only sub-collection `notes`;
+    // each comment bumps noteCount in the same commit (the note's `seq` must equal the parent's noteCount afterwards).
+    // Clock window: every stored time is a whole number of ms within two days of the server clock (the history-row precedent).
+    // Mirror: js/ph-write.js PH_MARKS_* lists and js/ph-core.js PH_MARK_*; tests/ph-marks.test.js holds them equal.
+    function phMarkAtOk(v) {
+      return v is number && v > 0 && math.floor(v) == v && math.abs(v - request.time.toMillis()) <= 172800000;
+    }
+    function phMarkTextOk(v, hi) { return v is string && v.size() >= 1 && v.size() <= hi && !v.matches(' +'); }
+    function phMarksShapeOk(m) {
+      return m is map && m.keys().hasOnly(['priority','hold','highlight','label'])
+        && (!('priority' in m) || m.priority in ['urgent','high'])
+        && (!('hold' in m) || (m.hold is map && m.hold.keys().hasOnly(['reason']) && phMarkTextOk(m.hold.get('reason', null), 200)))
+        && (!('highlight' in m) || m.highlight in ['amber','red','green','blue','purple','teal'])
+        && (!('label' in m) || phMarkTextOk(m.label, 60));
+    }
+    function phMarksDocOk(d) {
+      return phMarksShapeOk(d.get('marks', null))
+        && d.get('noteCount', null) is int && d.noteCount >= 0 && d.noteCount <= 100000
+        && (d.get('lastNote', '') is string && d.get('lastNote', '').size() <= 140)
+        && (d.get('lastNoteBy', '') is string && d.get('lastNoteBy', '').size() <= 60)
+        && d.get('updatedByName', '') is string && d.get('updatedByName', '').size() <= 60
+        && phBy(d.get('updatedBy', ''))
+        && phMarkAtOk(d.get('updatedAt', null));
+    }
+    match /po_marks/{id} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isProdOpsManager()
+        && id.matches('^PO-[0-9]{3,}$')
+        && request.resource.data.keys().hasOnly(['poId','rev','marks','noteCount','lastNote','lastNoteBy','lastNoteAt','createdAt','createdBy','updatedAt','updatedBy','updatedByName'])
+        && request.resource.data.get('poId', '') == id
+        && request.resource.data.get('rev', 0) == 1
+        && request.resource.data.get('noteCount', 9) <= 1
+        && (request.resource.data.get('lastNoteAt', 0) == 0 || phMarkAtOk(request.resource.data.get('lastNoteAt', 0)))
+        && phMarksDocOk(request.resource.data)
+        && phBy(request.resource.data.get('createdBy', ''))
+        && phMarkAtOk(request.resource.data.get('createdAt', null))
+        && exists(/databases/$(database)/documents/pos/$(id));
+      allow update: if isProdOpsManager()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['marks','rev','noteCount','lastNote','lastNoteBy','lastNoteAt','updatedAt','updatedBy','updatedByName'])
+        && request.resource.data.get('rev', 0) == resource.data.get('rev', 0) + 1
+        && (request.resource.data.get('noteCount', -1) == resource.data.get('noteCount', 0)
+            || request.resource.data.get('noteCount', -1) == resource.data.get('noteCount', 0) + 1)
+        && (request.resource.data.get('lastNoteAt', 0) == resource.data.get('lastNoteAt', 0)
+            || phMarkAtOk(request.resource.data.get('lastNoteAt', 0)))
+        && phMarksDocOk(request.resource.data);
+      allow delete: if false;
+
+      // Append-only comments: id = 13-digit ms + '-' + 4 chars (like a history row), never edited or deleted.
+      match /notes/{row} {
+        allow read: if isQaRead() || signedIn();
+        allow create: if isProdOpsManager()
+          && row.matches('^[0-9]{13}-[A-Za-z0-9]{4}$')
+          && request.resource.data.keys().hasOnly(['poId','seq','at','by','byName','text'])
+          && request.resource.data.get('poId', '') == id
+          && request.resource.data.get('seq', 0) is int
+          && request.resource.data.get('seq', 0) >= 1
+          && phMarkTextOk(request.resource.data.get('text', null), 500)
+          && request.resource.data.get('byName', '') is string && request.resource.data.get('byName', '').size() <= 60
+          && phBy(request.resource.data.get('by', ''))
+          && phMarkAtOk(request.resource.data.get('at', null))
+          && existsAfter(/databases/$(database)/documents/po_marks/$(id))
+          && getAfter(/databases/$(database)/documents/po_marks/$(id)).data.get('noteCount', 0) == request.resource.data.get('seq', 0);
+        allow update, delete: if false;
+      }
+    }
+
     // ph_settings/main and ph_settings/counters. A NEW collection rather than the
     // existing settings/{doc}, whose write is owner-only: the managers (Mustafa
     // runs production) must be able to set the daily capacity and skip days.

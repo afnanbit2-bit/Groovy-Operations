@@ -349,6 +349,7 @@ function _phqBoard(body,ctx,manage){
     phqLoadPos(false).then(function(){if(_phqIsHere())ctx.repaint();});
   }
   const loading=!!_phqPosP;
+  if(typeof phmkNoteNode==='function'){const mn=phmkNoteNode();if(mn)body.appendChild(mn);}
   if(typeof phhEnsure==='function'&&typeof phhSources==='function'&&phhSources().gatepasses.state==='idle')phhEnsure(false).then(function(){if(_phqIsHere())ctx.repaint();});   // the gate passes date a PO's time at cutting
   if(_phqPos.rows===null){
     if(_phqPos.state==='error'&&!loading){
@@ -541,7 +542,11 @@ function _phqTile(t,ctx,manage,jobsOk,m){
     act.appendChild(_phqBtn('ph-btn phq-btn phq-adv',phI18nD('queue.force_advance',{stage:nxt}),function(){phqAdvance(t.fbKey,ctx);},
       {'aria-label':phI18nAttr(phI18nD('queue.force_adv_aria',{po:t.po,from:lfrom,stage:nxt})),'title':phI18nAttr(phI18nD('queue.force_advance_tip2',{from:lfrom,stage:nxt}))}));
   }
+  // manager marks (WP2): everyone SEES them; only managers get the Marks button and panel (js/ph-mod-marks.js)
+  if(typeof phmkApply==='function')phmkApply(li,t.id);
+  if(typeof phmkTileControls==='function'){const mc=phmkTileControls(t.id,ctx,manage);if(mc)act.appendChild(mc);}
   if(act.firstChild)li.appendChild(act);
+  if(typeof phmkTilePanel==='function'){const mp=phmkTilePanel(t.id,ctx,manage);if(mp)li.appendChild(mp);}
   return li;
 }
 
