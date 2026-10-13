@@ -569,7 +569,7 @@ async function checks(src){
     const t=T.text(T.panel());
     o['settings: with nothing saved every value is a default and the screen says the defaults are unconfirmed']=/Nothing has been saved yet: every value below is a default, and the defaults are unconfirmed/.test(t)&&/Default 400 - defaults, unconfirmed/.test(t)&&/Default 3 - defaults, unconfirmed/.test(t)&&/Default 7 - defaults, unconfirmed/.test(t)&&/Default 5 - defaults, unconfirmed/.test(t)&&/Default 70 to 130 - defaults, unconfirmed/.test(t);
     o['settings: the default values are filled in (400, 3, 7, 3, 5, 70, 130)']=['dailyCapacity','delayTargetDays','stuckDays','grossOverTolPct','grossUnderTolPct','gateLo','gateHi'].map(f=>T.byF(null,f).value).join()==='400,3,7,3,5,70,130';
-    o['settings: the gate note says the PO cutting screen keeps its own fixed 70 to 130']=/does not read this/.test(t);
+    o['settings: the gate note says the PO cutting screen reads this value (WP1)']=/classic PO cutting screen reads this value/.test(t)&&!/does not read this/.test(t);
     o['settings: no weekday is off by default and there are no skip days']=[0,1,2,3,4,5,6].every(d=>T.byF(null,'off-'+d).checked===false)&&/No skip days/.test(t);
     o['settings: rendering wrote nothing']=T.log.writes.length===0;
     await T.click(T.act('save'));

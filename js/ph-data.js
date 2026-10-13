@@ -222,6 +222,8 @@ function phSettingsInfo(){
   };
 }
 function phSettingsNow(){return phSettingsInfo().settings;}
+// One bounded read of ph_settings/main for callers outside Production Ops (the classic cutting screen's gate). Never rejects.
+function phSettingsEnsure(){return phLoadStage('settings');}
 
 /* ── Lookups over what was loaded (null when the stage did not load) ──── */
 function phMasterList(){

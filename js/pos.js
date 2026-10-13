@@ -74,6 +74,7 @@ async function loadData(){
   // Whatever loaded is rendered either way — a dashboard showing six of
   // seven datasets beats a dashboard showing zeros.
   if(currentPage&&typeof renderPage==='function')renderPage(currentPage);
+  if(typeof phSettingsEnsure==='function')phSettingsEnsure();   // WP1: the cut gate (one bounded read, never rejects)
   if(typeof _maybeLoadPrintingData==='function')_maybeLoadPrintingData();
   if(typeof loadProducts==='function')loadProducts();
   if(typeof loadHRMData==='function')loadHRMData().then(()=>{ if(currentPage==='dashboard'||currentPage==='hrm-employees'){const m=document.getElementById('main-content');if(m&&typeof renderPage==='function')renderPage(currentPage);} });
@@ -660,7 +661,7 @@ function poForceAdvancePlan(po,stageKey){
     const at=po.currentStage==='completed'?'already complete':po.currentStage?`at ${_poStageLabel(po.currentStage)}`:'not in production';
     return{ok:false,msg:`${po.id} is ${at}, not at ${_poStageLabel(stageKey)} — force-advance only acts on the stage the PO is at. Reload and check where it is now.`};
   }
-  if(stageKey==='cutting')return{ok:false,msg:'Cutting cannot be forced: the bundles and the actual cut per size are created when cutting is recorded on the cutting screen (Uzaib\'s queue). Have the cut entered there — if it lands outside '+poCutPct(PO_CUT_GATE)+' an owner or Mustafa can approve it from this page.'};
+  if(stageKey==='cutting')return{ok:false,msg:'Cutting cannot be forced: the bundles and the actual cut per size are created when cutting is recorded on the cutting screen (Uzaib\'s queue). Have the cut entered there — if it lands outside '+poCutPct(poCutGateNow())+' an owner or Mustafa can approve it from this page.'};
   return{ok:true,from:stageKey,to:poRealNextStage(stageKey)};
 }
 window.ownerAdvance=async function(fbKey,stageKey){
@@ -1413,13 +1414,36 @@ const PO_CUT_GATE={min:0.7,max:1.3};
 const PO_CUT_GATE_OPEN={open:true};
 // The window a PO is held to: open once an owner has approved a variance on it
 // (po.cutOverride, written by poCutOverride), the everyday one otherwise.
-function poCutGateFor(po){return(po&&po.cutOverride&&po.cutOverride.by)?PO_CUT_GATE_OPEN:PO_CUT_GATE;}
+// WP1 (Oct 2026): the everyday window is the Production Ops Settings cut gate
+// (ph_settings/main.cutGate, whole percent) WHEN that document was read from the
+// server; otherwise this file's fixed 70–130 (PO_CUT_GATE) and the screen says
+// "default gate (settings not read)". poCutGateFrom(raw): raw is the settings
+// document's data ({} = read, nothing saved), or null = not read.
+function poCutGateFrom(raw){
+  if(raw==null||typeof phSettings!=='function')return PO_CUT_GATE;
+  const g=phSettings(raw).cutGate;
+  if(!Array.isArray(g)||g.length!==2)return PO_CUT_GATE;
+  if(g[0]===70&&g[1]===130)return PO_CUT_GATE;
+  return{min:g[0]/100,max:g[1]/100};
+}
+// The settings document as the data layer last READ it: its data, or null.
+function _poCutSettingsRaw(){
+  if(typeof phSettingsInfo!=='function')return null;
+  try{const i=phSettingsInfo();return i&&i.known?(i.raw||{}):null;}catch(e){return null;}
+}
+function poCutSettingsRead(){return _poCutSettingsRaw()!==null;}
+function poCutGateNow(){return poCutGateFrom(_poCutSettingsRaw());}
+// rawOverride: the settings data read INSIDE a transaction ({} or data), or null when that read failed.
+function poCutGateFor(po,rawOverride){
+  if(po&&po.cutOverride&&po.cutOverride.by)return PO_CUT_GATE_OPEN;
+  return rawOverride===undefined?poCutGateNow():poCutGateFrom(rawOverride);
+}
 // Allowed pieces for an ordered quantity. Same arithmetic the gate always used:
 // the lower bound rounds UP, the upper bound DOWN.
 function poCutRange(target,gate){const g=gate||PO_CUT_GATE;if(g.open)return{min:0,max:Infinity};return{min:Math.ceil(target*g.min),max:Math.floor(target*g.max)};}
 function poCutPct(gate){const g=gate||PO_CUT_GATE;if(g.open)return'any quantity';return Math.round(g.min*100)+'–'+Math.round(g.max*100)+'%';}
 // "Allowed: 70–130 pcs (70–130%)" / "Allowed: any quantity (owner override)".
-function poCutRangeText(min,max,gate){return(gate&&gate.open)?'Allowed: any quantity (owner override)':`Allowed: ${min}–${max} pcs (${poCutPct(gate)})`;}
+function poCutRangeText(min,max,gate){return(gate&&gate.open)?'Allowed: any quantity (owner override)':`Allowed: ${min}–${max} pcs (${poCutPct(gate)})${poCutSettingsRead()?'':' — default gate (settings not read)'}`;}
 function _poCutEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 // PKT (UTC+5, no daylight saving) calendar day, YYYY-MM-DD. NEVER
 // toISOString().slice(0,10): that is the UTC day, and in PKT it names the
@@ -1462,14 +1486,14 @@ function poCutLiveCheck(live){
 // The bell prints title and message RAW (_hrmNotifCardHTML), so both are
 // escaped here; the reason is stored as typed and escaped wherever it is drawn.
 window.poCutOverride=async function(fbKey,reasonArg){
-  if(!_poCutCanOverride()){showToast('Only an owner or Mustafa can approve a cut outside '+poCutPct(PO_CUT_GATE)+'.',true);return;}
+  if(!_poCutCanOverride()){showToast('Only an owner or Mustafa can approve a cut outside '+poCutPct(poCutGateNow())+'.',true);return;}
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
   if(po.cutOverride&&po.cutOverride.by){showToast(`A variance is already approved on ${po.id} (by ${po.cutOverride.byName||po.cutOverride.by}).`);return;}
   const pre=poCutLiveCheck(po);
   if(pre.state!=='ok'){showToast(`${po.id} is not waiting to be cut — there is nothing to approve.`,true);return;}
   let reason=reasonArg;
   if(reason===undefined){
-    reason=prompt(`Approve a cut outside ${poCutPct(PO_CUT_GATE)} of the ${po.qty||'?'} pcs ordered for ${po.id} (any quantity)?\n\nReason (required) — Mustafa will be told:`);
+    reason=prompt(`Approve a cut outside ${poCutPct(poCutGateNow())} of the ${po.qty||'?'} pcs ordered for ${po.id} (any quantity)?\n\nReason (required) — Mustafa will be told:`);
     if(reason===null)return;
   }
   reason=String(reason||'').trim().slice(0,300);
@@ -1477,7 +1501,7 @@ window.poCutOverride=async function(fbKey,reasonArg){
   try{
     const poRef=doc(db,'pos',fbKey);
     const nowMs=Date.now();
-    const rec={by:session.u,byName:session.name,at:new Date(nowMs).toISOString(),reason,gateMin:PO_CUT_GATE.min,gateMax:PO_CUT_GATE.max,ordered:po.qty||0};
+    const rec={by:session.u,byName:session.name,at:new Date(nowMs).toISOString(),reason,gateMin:poCutGateNow().min,gateMax:poCutGateNow().max,ordered:po.qty||0};
     const nid='po_cutov_'+fbKey+'_'+nowMs;
     const notifRef=doc(db,'hrm_notifications',nid);
     const out=await runTransaction(db,async tx=>{
@@ -1493,7 +1517,7 @@ window.poCutOverride=async function(fbKey,reasonArg){
         tx.set(notifRef,{
           id:nid,type:'po_cut_override',source:'po_cutting',
           title:_poCutEsc(clip(`Cut variance approved: ${po.id}`,80)),
-          message:_poCutEsc(clip(`${session.name} approved a cut beyond ${poCutPct(PO_CUT_GATE)} (any quantity) of the ${po.qty||'?'} pcs ordered on ${po.id}${po.name?' ('+po.name+')':''}. Reason: ${reason}`,300)),
+          message:_poCutEsc(clip(`${session.name} approved a cut beyond ${poCutPct(poCutGateNow())} (any quantity) of the ${po.qty||'?'} pcs ordered on ${po.id}${po.name?' ('+po.name+')':''}. Reason: ${reason}`,300)),
           forUser:'mustafa',forRole:'',relatedTo:fbKey,createdAt:nowMs,readBy:[],
           priority:'high',actionRequired:false,actionUrl:'po-registry'
         });
@@ -1503,7 +1527,7 @@ window.poCutOverride=async function(fbKey,reasonArg){
     if(out.already){showToast(`A variance is already approved on ${po.id} (by ${out.already.byName||out.already.by}).`);}
     else if(out.blocked){showToast(`${po.id} is no longer waiting to be cut — nothing was approved.`,true);}
     else{
-      await logActivity('Cut variance approved',`PO ${po.id} · cut beyond ${poCutPct(PO_CUT_GATE)} approved by ${session.name} — ${reason}`);
+      await logActivity('Cut variance approved',`PO ${po.id} · cut beyond ${poCutPct(poCutGateNow())} approved by ${session.name} — ${reason}`);
       showToast(`Cut variance approved on ${po.id} ✓${session.u!=='mustafa'?' — Mustafa has been told':''}`);
     }
     await loadData();
@@ -1797,6 +1821,9 @@ window.markCuttingDone=async function(fbKey){
       // Every read first (a transaction refuses a read after a write).
       const ps=await tx.get(poRef);
       const lv=ps.exists()?ps.data():null;
+      // WP1: the Settings cut gate, read live here (reads before writes). A failed read = null = the fixed default.
+      let sraw=null;
+      try{const ss=await tx.get(doc(db,'ph_settings','main'));sraw=ss.exists()?(ss.data()||{}):{};}catch(e){sraw=null;}
       const c=poCutLiveCheck(lv);
       if(c.state!=='ok')return{blocked:c,live:lv};
       // The typed numbers, again, here: this is the authority (an override opens
@@ -1805,7 +1832,7 @@ window.markCuttingDone=async function(fbKey){
       if(bad)return{blocked:{state:'input',msg:bad},live:lv};
       // The gate is judged on the LIVE order quantity and the LIVE override.
       const total=SZ.reduce((a,s)=>a+(parseInt(actual[s])||0),0);
-      const gate=poCutGateFor(lv),rng=poCutRange(lv.qty||0,gate),std=poCutRange(lv.qty||0,PO_CUT_GATE);
+      const gate=poCutGateFor(lv,sraw),rng=poCutRange(lv.qty||0,gate),std=poCutRange(lv.qty||0,poCutGateFrom(sraw));
       if(total<rng.min||total>rng.max)return{blocked:{state:'range',rng,gate,total,qty:lv.qty||0},live:lv};
       const usedOverride=total<std.min||total>std.max;
       let ids,nums=[],cs=null,cur=0;

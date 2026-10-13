@@ -865,7 +865,7 @@ function _phaRenderSettings(host,ctx){
   host.appendChild(nums);
   // gate
   const gate=_phaCard('Cut gate',[]);
-  gate.appendChild(phEl('p','ph-note','The allowed range of the actual cut against the planned quantity, in percent. The shipped value is 70 to 130. The PO cutting screen uses its own fixed 70 to 130 gate and does not read this; this is the value Production Ops checks will use.'));
+  gate.appendChild(phEl('p','ph-note','The allowed range of the actual cut against the planned quantity, in percent. The shipped value is 70 to 130. The classic PO cutting screen reads this value; if the setting cannot be read it falls back to 70 to 130 and says so.'));
   const gg=phEl('div','pha-grid');
   const lo=_phaInput('text',f.gateLo,'gateLo',{inputmode:'numeric','aria-label':'Cut gate lower limit percent'});_phaBind(lo,f,'gateLo');
   const hi=_phaInput('text',f.gateHi,'gateHi',{inputmode:'numeric','aria-label':'Cut gate upper limit percent'});_phaBind(hi,f,'gateHi');
