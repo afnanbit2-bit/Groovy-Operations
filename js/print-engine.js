@@ -1069,9 +1069,18 @@ function _renderGatePass(doc, data) {
     cols = [{ en: '#', ur: '', w: 28 }, { en: 'Item', ur: 'اشیاء', w: 315 }, { en: 'Qty', ur: 'مقدار', w: 90 }, { en: 'Returnable', ur: '', w: 90 }];
     rowsData = data.assetItems.map((it, i) => [i + 1, _gpDash(it.name), _gpDash(it.qty), it.returnable ? 'Yes' : 'No']);
   } else if (data.gpType === 'fabric') {
-    cols = [{ en: '#', ur: '', w: 28 }, { en: 'Fabric', ur: 'کپڑا', w: 275 }, { en: 'Rolls', ur: '', w: 100 }, { en: 'Weight', ur: 'وزن', w: 120 }];
     const fabs = (Array.isArray(data.fabrics) && data.fabrics.length) ? data.fabrics
       : [{ fabType: data.fabricType, gsm: data.fabricGsm, color: data.fabricColor, rollsCount: data.rollsCount, weight: data.fabricQty, unit: data.fabricUnit }];
+    // The last column's head follows the unit the rows print: a pass in metres
+    // is a LENGTH, not a weight (Oct 2026). Every spelling of metres counts
+    // ('m', 'meter(s)', 'metre(s)'); kg or no unit stays 'Weight' exactly as
+    // before; a pass that mixes both says 'Weight / Length'. Reading only — the
+    // stored unit is printed beside each number untouched.
+    const _isMetres = (u) => /^(m|meter|meters|metre|metres)$/i.test(String(u == null ? '' : u).trim());
+    const _nMetres = fabs.filter((f) => _isMetres(f && f.unit)).length;
+    const qtyHead = _nMetres === 0 ? { en: 'Weight', ur: 'وزن' }
+      : (_nMetres === fabs.length ? { en: 'Length', ur: '' } : { en: 'Weight / Length', ur: '' });
+    cols = [{ en: '#', ur: '', w: 28 }, { en: 'Fabric', ur: 'کپڑا', w: 275 }, { en: 'Rolls', ur: '', w: 100 }, { en: qtyHead.en, ur: qtyHead.ur, w: 120 }];
     rowsData = fabs.map((f, i) => [i + 1, _gpDash([f.fabType, f.gsm ? f.gsm + 'gsm' : '', f.color].filter(Boolean).join(' ')), _gpDash(f.rollsCount) + ' rolls', _gpDash(f.weight) + ' ' + (f.unit || 'kg')]);
   } else if (data.gpType === 'garments' || _items.some(it => it && it.size != null)) {
     cols = [{ en: '#', ur: '', w: 28 }, { en: 'Size', ur: 'سائز', w: 150 }, { en: 'Bundles', ur: '', w: 215 }, { en: 'Units', ur: 'مقدار', w: 130 }];

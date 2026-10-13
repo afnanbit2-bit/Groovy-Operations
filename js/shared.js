@@ -678,11 +678,22 @@ async function getNextId(field,opts){
 //   field       the counters/main field ('pos')
 //   collection  where the document goes ('pos')
 //   idFor(n)    document id for number n ('PO-'+pad(n))
-//   build(n,id) the record to write — pure, it may run more than once if
-//               Firestore retries the transaction
+//   build(n,id,pre) the record to write — pure, it may run more than once if
+//               Firestore retries the transaction. `pre` is what reads()
+//               returned (undefined when there is no reads())
 //   floor       optional: never mint at or below this (the highest number
 //               the caller already knows exists), so a counter that was
 //               reset can still never hand out a number that is taken
+//   reads(tx)   optional (Oct 2026): extra documents the caller must read to
+//               decide its other writes — runs AFTER the counter and the
+//               target id were read and BEFORE the first write, so a
+//               transaction's reads-before-writes rule holds. Its result
+//               is handed to build() and writes() as `pre`
+//   writes(tx,{n,id,record,pre})  optional: the caller's OTHER writes
+//               (a gate pass updated with the return, the PO that carries the
+//               transfer), buffered in the SAME transaction after the counter
+//               and the document. With neither hook this is byte-for-byte
+//               what it was
 //
 // Resolves {n,id,record}. Rejects, having written nothing, if the id already
 // exists — the caller shows the message and the person reloads.
@@ -696,11 +707,48 @@ async function createWithNextId(opts){
   await runTransaction(db,async tx=>{
     made=null;
     const m=await mintNextIdInTx(tx,opts);
-    const record=opts.build(m.n,m.id);
+    const pre=typeof opts.reads==='function'?await opts.reads(tx):undefined;
+    const record=opts.build(m.n,m.id,pre);
     m.write(record);
+    if(typeof opts.writes==='function')opts.writes(tx,{n:m.n,id:m.id,record,pre});
     made={n:m.n,id:m.id,record};
   });
   return made;
+}
+
+// The floor to mint above for a numbered document the page may not have
+// loaded (Oct 2026; the same rule as _gpFloorNow / _poFloorNow, once, for the
+// flows that have no list of their own to write):
+//   collection  the Firestore collection ('returns')
+//   loaded      the numbers/ids the page already holds (flat list; each is
+//               passed to numberOf)
+//   numberOf(v) the number inside an id such as 'RET-012', or null
+//   also        extra fields of a server document that carry a number ('no')
+//   what        how the error names the list ('return')
+// With something loaded the highest of it is the floor. With NOTHING loaded
+// (a failed or never-run loader — which would otherwise let a reset counter aim
+// at a document that exists) the ids are read from the server once; a read that
+// failed or was served from the offline cache cannot be trusted, so it refuses
+// BEFORE any write and says to reload.
+async function numberFloorNow(opts){
+  opts=opts||{};
+  const numberOf=opts.numberOf;
+  const maxOf=vals=>{let m=0;vals.forEach(v=>{const n=numberOf(v);if(n&&n>m)m=n;});return m;};
+  const loaded=Array.isArray(opts.loaded)?opts.loaded:[];
+  if(loaded.length)return maxOf(loaded);
+  let snap=null;
+  try{snap=await getDocs(collection(db,opts.collection));}catch(e){snap=null;}
+  if(!snap||(snap.metadata&&snap.metadata.fromCache===true)){
+    throw new Error('The '+opts.what+' list did not load, so the next '+opts.what+' number cannot be checked. Reload the page first. Nothing was saved.');
+  }
+  const vals=[];
+  (snap.docs||[]).forEach(d=>{
+    vals.push(d.id);
+    const x=(d.data&&d.data())||{};
+    vals.push(x.id);
+    (opts.also||[]).forEach(f=>vals.push(x[f]));
+  });
+  return maxOf(vals);
 }
 
 // The in-transaction half of createWithNextId (Oct 2026), so a caller that

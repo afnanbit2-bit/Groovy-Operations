@@ -22,7 +22,7 @@ function fnSource(name){
 }
 
 function installMint(app){
-  app.run(fnSource('mintNextIdInTx')+'\n'+fnSource('createWithNextId')+'\nglobalThis.mintNextIdInTx=mintNextIdInTx;globalThis.createWithNextId=createWithNextId;');
+  app.run(fnSource('mintNextIdInTx')+'\n'+fnSource('createWithNextId')+'\n'+fnSource('numberFloorNow')+'\n'+fnSource('getNextId')+'\nglobalThis.mintNextIdInTx=mintNextIdInTx;globalThis.createWithNextId=createWithNextId;globalThis.numberFloorNow=numberFloorNow;globalThis.getNextId=getNextId;');
   return app;
 }
 module.exports={installMint,fnSource};
