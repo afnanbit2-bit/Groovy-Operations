@@ -136,8 +136,8 @@ function load(opts){
     showToast:(m,e)=>calls.toasts.push({m,e:!!e}),
     allPOs:opts.noApp?[]:fx.pos,allPasses:opts.noApp?[]:fx.passes
   },opts.globals||{});
-  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',globals});
-  const ctx=a.ctx;
+  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',globals});
+  const ctx=a.ctx;if(typeof ctx.phI18nSetLang==='function')ctx.phI18nSetLang('en');
   const dom=domkit.install(ctx);
   ctx.window.printDocument=function(arg){calls.pdf.push(arg);};
   ctx.window.openPODetail=function(fb){calls.open.push(fb);};

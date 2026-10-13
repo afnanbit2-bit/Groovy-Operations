@@ -89,11 +89,11 @@ function load(src,opts){
   const data=opts.data||baseData();
   const fk=fakeFs({data:data,fail:opts.fail,failUnfiltered:opts.failUnfiltered});
   const calls=[];
-  const a=harness.loadApp({files:[],session:opts.session||USERS.afnan,currentPage:'dashboard',
+  const a=harness.loadApp({files:['js/ph-i18n.js'],session:opts.session||USERS.afnan,currentPage:'dashboard',
     globals:Object.assign({},fk.api,{Date:FixedDate,allPOs:opts.allPOs,allPasses:opts.allPasses,
       localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
       history:{replaceState(s,t,u){calls.push(String(u));},pushState(){}}},opts.globals||{})});
-  const ctx=a.ctx;
+  const ctx=a.ctx;if(typeof ctx.phI18nSetLang==='function')ctx.phI18nSetLang('en');
   const dom=domkit.install(ctx);
   ctx.window.showPage=function(id){ctx.currentPage=id;if(id==='prod-ops')ctx.phRenderPage(id);return Promise.resolve();};
   ctx.window.startApp=async function(){};
@@ -413,7 +413,7 @@ module.exports=async function(){
   await brk('the Overview card shows a total over a failed read','health',"if(bad.length){\n    const p=E('p','phh-err','unavailable - '+bad.join(', '));p.setAttribute('role','alert');card.appendChild(p);\n    return card;\n  }","",['health ui: Overview with the gate passes refused says "unavailable - gatepasses" and prints no total'],['health']);
   await brk('stuck always from the release date','monitor',"l=phLeadTime(ep,fi!==null?Object.assign({},O,{issueAt:fi}):O);","l=phLeadTime(ep,O);",['stuck: PO-701 first fabric issue was 9 Oct (3 days ago): not stuck; the other two (release 11 days) are'],['stuck']);
   await brk('the PO Queue age from release only','queue',"const lt=phLeadTime(po,fi!==null?{now:x.now,settings:x.S,issueAt:fi}:{now:x.now,settings:x.S});","const lt=phLeadTime(po,{now:x.now,settings:x.S});",['stuck (PO Queue): with the first fabric issue 3 days ago the age is 3 d from "issued" and nothing is stuck'],['stuck']);
-  await brk('the stuck caption without the basis','monitor',"'Start used at cutting: '+basis.issue","'Start: '+basis.issue",['stuck: the caption says which start was used and how many POs used each'],['stuck']);
+  await brk('the stuck caption without the basis','monitor',"phI18nD('ov.stuck_cap_ok',{a:_phmPoD(basis.issue,'po'),b:_phmPoD(basis.release,'po')})","'Start: '+basis.issue",['stuck: the caption says which start was used and how many POs used each'],['stuck']);
   await brk('the first-issue map takes the newest pass','health',"const f=l.filter(function(x){return x.ms!==null;});if(f.length)out[k]=f[0].ms;","const f=l.filter(function(x){return x.ms!==null;});if(f.length)out[k]=f[f.length-1].ms;",['stuck: the first-issue map uses phPoKey (090 -> PO-090, 125 -> PO-125) and keeps the OLDEST pass of a PO'],['stuck']);
   await brk('the first-issue map matches the raw text','health',"const raw=_phhPassPoRaw(g),k=phPoKey(raw);","const raw=_phhPassPoRaw(g),k=phStr(raw).trim().toUpperCase()||null;",['stuck: the first-issue map uses phPoKey (090 -> PO-090, 125 -> PO-125) and keeps the OLDEST pass of a PO','health: a pass whose poId is a NUMBER maps to its PO'],['stuck','model']);
   await brk('sources panel open when all is well','monitor',"if(failed)d.setAttribute('open','');","d.setAttribute('open','');",['overview: with everything read fine the sources panel is COLLAPSED (no open attribute) and says "Data sources"'],['overview']);
@@ -433,7 +433,7 @@ module.exports=async function(){
   await brk('a rejected name kept after a refused add','admin',"if(r&&r.ok===false){_phaM.newName='';","if(r&&r.ok===false){",['admin: a REFUSED add shows the refusal (no old success banner) and does not keep the rejected name in the box'],['admin']);
   await brk('finished jobs take capacity','calendar',"chip.finished=phcIsFinished(j,po);","chip.finished=false;",['calendar: a COMPLETE job takes no capacity and nothing spills (planned 80, not over)','calendar: a DONE job is ignored the same way','calendar: a job whose PO is already past cutting is finished work too'],['calendar']);
   await brk('touch copy says Drag','calendar',"return _phcTouch()?(","return false?(",['calendar: on a touch screen the copy never says "Drag" (it says Move to...)'],['calendar']);
-  await brk('a ready draft says it can be marked ready','drafts',"_phdForm&&_phdForm.status==='ready'?'Every required field is filled. This draft is already marked ready.'","false?'x'",['drafts: a READY draft never says it "can be marked ready"; a draft still does'],['drafts']);
+  await brk('a ready draft says it can be marked ready','drafts',"_phdForm&&_phdForm.status==='ready'?phI18nD('drafts.complete_ready')","false?'x'",['drafts: a READY draft never says it "can be marked ready"; a draft still does'],['drafts']);
   await brk('the send-back reason box not focused','drafts',"if(!a._focused){","if(false){",['drafts: opening the Send-back reason box puts the caret in it (once)'],['drafts']);
   await brk('focus stolen on every repaint','drafts',"if(!a._focused){a._focused=true;","if(true){a._focused=true;",["drafts: ... and a repaint of the same ask does not steal focus again"],['drafts']);
   s.ok('breaks run: '+broken,broken>=40,String(broken));

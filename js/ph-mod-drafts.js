@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   js/ph-mod-drafts.js — Production Ops, module "PO Drafts" (PC-only entry), 12 Oct 2026.
+   js/ph-mod-drafts.js — Production Ops, module PO Drafts (PC-only entry), 12 Oct 2026.
 
    One global entry point: phDraftsPanel(host, ctx). The PO Queue tab calls it behind a typeof
    guard; this file registers NOTHING (no tab, no listener, no Escape guard, no route).
@@ -11,7 +11,7 @@
    What it is: a list of PO drafts (po_drafts) and a PC-width form that captures the fields the
    classic New PO form captures, saved only through js/ph-write.js (phSaveDraft, phMarkDraftReady,
    phSendBackDraft, phAbandonDraft). Owner rule: PO entry is PC-only and COMPLETE before print.
-     - COMPLETENESS GATE: "Mark ready" runs js/ph-core.js phPoComplete on the form first and is
+     - COMPLETENESS GATE: Mark ready runs js/ph-core.js phPoComplete on the form first and is
        REFUSED with the missing fields named, before anything is written. ph-write.js runs the same
        gate again on the saved document (the writer is the boundary, this is the courtesy).
      - PC-ONLY: js/ph-core.js phIsPcOnly(userAgent, width) is a HEURISTIC. It reads what the browser
@@ -20,7 +20,7 @@
        guard against mistakes, not a security boundary, and the screen says so. Off a PC the form
        is READ-ONLY with an explanation. settings.pcOnlyHard (ph_settings/main) decides how firm:
          pcOnlyHard true   no override: nothing is written from this screen (writers are not called);
-         pcOnlyHard false  a visible warning and an explicit "Edit anyway on this screen" button;
+         pcOnlyHard false  a visible warning and an explicit Edit anyway on this screen button;
          setting unread    treated as true (fail closed) and said so.
      - ISSUING (14 Oct 2026): a READY draft is issued as a real PO by a MANAGER only (Afnan, Ammar,
        Mustafa), through js/ph-issue.js phIssueDraft (one transaction; this file writes nothing itself).
@@ -37,12 +37,14 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 const PH_DRAFTS_TEXT_MAX=Object.freeze({code:40,name:200,pattern:80,fabric:120,fabricCode:60,store:80,totalRoll:40,notes:500});
-const PH_DRAFTS_COPIES=Object.freeze([['embroidery','Embroidery'],['printing','Printing'],['washing','Washing']]);   // = js/pos.js _PO_JOBCOPY_KEYS / labels
-const PH_DRAFTS_SEASONS=Object.freeze([['winter','Winter'],['summer','Summer'],['all','All-season']]);
-const PH_DRAFTS_FILTERS=Object.freeze([['open','Open'],['draft','Draft'],['ready','Ready'],['issued','Issued'],['abandoned','Abandoned'],['all','All']]);
-const PH_DRAFTS_MODELS=Object.freeze([['','Automatic (from the article code)'],['alpha','Alpha (XXXS to 2XL)'],['waist','Waist (26 to 40)'],['free','Free size']]);
+const PH_DRAFTS_COPIES=Object.freeze([['embroidery',phI18nD('drafts.cp_embroidery')],['printing',phI18nD('queue.lane_printing')],['washing',phI18nD('queue.lane_washing')]]);   // = js/pos.js _PO_JOBCOPY_KEYS / labels
+const PH_DRAFTS_SEASONS=Object.freeze([['winter',phI18nD('shell.season_winter')],['summer',phI18nD('shell.season_summer')],['all',phI18nD('shell.season_all')]]);
+const PH_DRAFTS_FILTERS=Object.freeze([['open',phI18nD('drafts.fl_open')],['draft',phI18nD('drafts.fl_draft')],['ready',phI18nD('drafts.fl_ready')],['issued',phI18nD('drafts.fl_issued')],['abandoned',phI18nD('drafts.fl_abandoned')],['all',phI18nD('drafts.status_all')]]);
+const PH_DRAFTS_MODELS=Object.freeze([['',phI18nD('drafts.axis_auto')],['alpha',phI18nD('drafts.axis_alpha')],['waist',phI18nD('drafts.axis_waist')],['free',phI18nD('drafts.axis_free')]]);
 const PH_DRAFTS_FIELD_LABELS=Object.freeze({code:'Article code',name:'Article name',sizes:'Sizes',qty:'Quantity',fabric:'Fabric',plannedFabricQty:'Planned fabric quantity',
   plannedFabricUnit:'Planned fabric unit',season:'Season',plannedCutDate:'Planned cut date',requestedDate:'Requested date',cutMaster:'Cutting master',draft:'Draft'});
+// The Urdu pair of a field's label (the English label above stays a plain string: it is lower-cased into sentences).
+function _phdLabelD(field){const k='drafts.fl_'+field;return typeof phI18nHas==='function'&&phI18nHas(k)?phI18nD(k):_phdLabel(field);}
 const PH_DRAFTS_MONTHS=Object.freeze(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']);
 
 /* ── state (module level: survives a tab switch, which re-renders the host) ─── */
@@ -52,7 +54,7 @@ let _phdHost=null,_phdView='list',_phdFilter='open',_phdForm=null,_phdNote=null,
 function _phdEl(tag,cls,text,kids){
   const n=document.createElement(tag);
   if(cls)n.className=cls;
-  if(text!==undefined&&text!==null&&text!=='')n.textContent=String(text);
+  if(text!==undefined&&text!==null&&text!==''){if(typeof phI18nSet==='function')phI18nSet(n,text);else n.textContent=String(text);}
   if(kids)for(let i=0;i<kids.length;i++)if(kids[i])n.appendChild(kids[i]);
   return n;
 }
@@ -78,7 +80,7 @@ function _phdFmtList(items){return items.join(', ');}
 function _phdLabel(field){return Object.prototype.hasOwnProperty.call(PH_DRAFTS_FIELD_LABELS,field)?PH_DRAFTS_FIELD_LABELS[field]:String(field);}
 
 /* ── data access: honest, never an empty list for a failed read ─────────── */
-function _phdGet(stage){return typeof phGet==='function'?phGet(stage):{ok:false,state:'unknown',rows:null,err:null,text:'js/ph-data.js did not load - refresh the page.'};}
+function _phdGet(stage){return typeof phGet==='function'?phGet(stage):{ok:false,state:'unknown',rows:null,err:null,text:phI18nD('shell.data_layer_missing')};}
 function _phdMasters(){return typeof phMasterList==='function'?phMasterList():null;}   // null unless the registry was read
 function _phdCatalog(){
   try{
@@ -106,14 +108,14 @@ function _phdPcState(){
 // May this person write a draft from this screen right now? Checked again inside every action, so a read-only
 // form is not merely cosmetic: with the hard rule on, no writer is ever called off a PC.
 function _phdWriteCheck(){
-  if(!_phdCanRecord())return{ok:false,kind:'role',why:'Your account is not on the Production Ops team, so it cannot write PO drafts.'};
+  if(!_phdCanRecord())return{ok:false,kind:'role',why:phI18nD('drafts.err_not_team')};
   const pc=_phdPcState();
   if(pc.isPc)return{ok:true,kind:'pc'};
   if(pc.hard)return{ok:false,kind:'hard',why:pc.known
-    ?'PO entry is PC-only and an owner has switched the hard rule on: nothing can be written from this screen.'
-    :'PO entry is PC-only. The PC-only setting could not be read, so the hard rule is assumed: nothing can be written from this screen.'};
+    ?phI18nD('drafts.err_pc_hard')
+    :phI18nD('drafts.err_pc_assumed')};
   if(_phdOverride)return{ok:true,kind:'override'};
-  return{ok:false,kind:'soft',why:'PO entry is meant for a PC. This screen does not look like one, so the form is read-only.'};
+  return{ok:false,kind:'soft',why:phI18nD('drafts.err_pc_soft')};
 }
 
 /* ── the form model ──────────────────────────────────────────────────────── */
@@ -160,23 +162,23 @@ function _phdToPo(f){
     const raw=f.sizes[k];
     if(raw===undefined||raw===null||String(raw).trim()==='')return;
     const q=phWhole(raw);
-    if(q===null||q<0){problems.push({field:'sizes',why:k+': "'+String(raw).trim().slice(0,12)+'" is not a whole number of pieces'});return;}
+    if(q===null||q<0){problems.push({field:'sizes',why:phI18nD('drafts.err_size_not_whole',{k:k,v:String(raw).trim().slice(0,12)})});return;}
     if(q>0)sizes[k]=q;
   });
   let qty=null;
   if(String(f.qty).trim()!==''){
     qty=phWhole(f.qty);
-    if(qty===null||qty<0){problems.push({field:'qty',why:'the quantity "'+String(f.qty).trim().slice(0,12)+'" is not a whole number of pieces'});qty=null;}
+    if(qty===null||qty<0){problems.push({field:'qty',why:phI18nD('drafts.err_qty_not_whole',{v:String(f.qty).trim().slice(0,12)})});qty=null;}
   }
   let pfq=null;
   if(String(f.plannedFabricQty).trim()!==''){
     pfq=phNum(f.plannedFabricQty);
-    if(pfq===null){problems.push({field:'plannedFabricQty',why:'the planned fabric quantity "'+String(f.plannedFabricQty).trim().slice(0,12)+'" is not a number'});}
+    if(pfq===null){problems.push({field:'plannedFabricQty',why:phI18nD('drafts.err_fabric_qty',{v:String(f.plannedFabricQty).trim().slice(0,12)})});}
   }
   const day=function(field,raw){
     const s=String(raw||'').trim();
     if(!s)return null;
-    if(!phIsDay(s)){problems.push({field:field,why:_phdLabel(field).toLowerCase()+' "'+s.slice(0,12)+'" is not a date (YYYY-MM-DD)'});return null;}
+    if(!phIsDay(s)){problems.push({field:field,why:phI18nD('drafts.err_date_field',{label:_phdLabelD(field),v:s.slice(0,12)})});return null;}
     return s;
   };
   const pcd=day('plannedCutDate',f.plannedCutDate),rqd=day('requestedDate',f.requestedDate);
@@ -223,14 +225,14 @@ function _phdPaint(){
   const wrap=_phdEl('div','phd-root');
   host.appendChild(wrap);
   try{
-    if(!_phdCanSee()){wrap.appendChild(_phdErrCard('No access','PO drafts are for the Production Ops team (Afnan, Ammar, Mustafa and Uzaib).'));return;}
+    if(!_phdCanSee()){wrap.appendChild(_phdErrCard(phI18nD('shell.no_access'),phI18nD('drafts.no_access_msg')));return;}
     if(typeof phGet!=='function'||typeof phPoComplete!=='function'||typeof phSaveDraft!=='function'){
-      wrap.appendChild(_phdErrCard('Production Ops code did not load','js/ph-core.js, js/ph-data.js or js/ph-write.js is missing - refresh the page.'));return;
+      wrap.appendChild(_phdErrCard(phI18nD('drafts.code_missing_title'),phI18nD('drafts.code_missing_msg')));return;
     }
     if(_phdView==='form'&&_phdForm)_phdPaintForm(wrap);else{_phdView='list';_phdPaintList(wrap);}
   }catch(e){
     _phdClear(wrap);
-    wrap.appendChild(_phdErrCard('PO drafts could not be drawn',String(e&&e.message||e)));
+    wrap.appendChild(_phdErrCard(phI18nD('drafts.not_drawn'),String(e&&e.message||e)));
     if(typeof console!=='undefined')console.warn('[ph-mod-drafts] paint failed:',e);
   }
 }
@@ -241,7 +243,7 @@ function _phdNoteNode(){
   const c=_phdEl('section','ph-card phd-card phd-note phd-note-'+n.kind);
   c.setAttribute('role',n.kind==='err'?'alert':'status');
   c.appendChild(_phdEl('p','ph-note',n.text));
-  if(n.extra&&n.extra.code==='stale')c.appendChild(_phdBtn('',('Reload the latest copy'),function(){_phdReloadLatest();}));
+  if(n.extra&&n.extra.code==='stale')c.appendChild(_phdBtn('',(phI18nD('drafts.reload_latest')),function(){_phdReloadLatest();}));
   return c;
 }
 // the PC-only banner for the current screen (null on a PC)
@@ -249,21 +251,19 @@ function _phdPcBanner(){
   const pc=_phdPcState();
   if(pc.isPc)return null;
   const wc=_phdWriteCheck();
-  const w=pc.width==null?'unknown':String(pc.width)+' px';
+  const w=pc.width==null?phI18nD('drafts.w_unknown'):String(pc.width)+' px';
   const c=_phdEl('section','ph-card phd-card phd-pc '+(pc.hard?'phd-pc-hard':'phd-pc-soft'));
   c.setAttribute('role',pc.hard?'alert':'status');
-  c.appendChild(_phdEl('h3','ph-card-title',pc.hard?'PO entry is PC-only - this screen is read-only':'This does not look like a PC screen'));
+  c.appendChild(_phdEl('h3','ph-card-title',pc.hard?phI18nD('drafts.pc_read_only_title'):phI18nD('drafts.pc_not_pc')));
   if(pc.hard){
-    c.appendChild(_phdEl('p','ph-note',pc.known
-      ?'An owner has switched on the hard PC-only rule. This screen (width '+w+') does not look like a PC, so you can read drafts here but nothing can be written. Open Production Ops on a PC.'
-      :'The PC-only setting could not be read, so the strict rule is assumed. This screen (width '+w+') does not look like a PC: read-only. Open Production Ops on a PC, or retry the settings read.'));
+    c.appendChild(_phdEl('p','ph-note',phI18nD(pc.known?'drafts.pc_hard':'drafts.pc_hard_assumed',{w:w})));
   }else if(wc.kind==='override'){
-    c.appendChild(_phdEl('p','ph-note','Warning: you are editing on a screen that does not look like a PC (width '+w+'). PO entry is meant for a PC. Everything you save is recorded as entered on a PC, so check it carefully.'));
+    c.appendChild(_phdEl('p','ph-note',phI18nD('drafts.pc_warn',{w:w})));
   }else{
-    c.appendChild(_phdEl('p','ph-note','PO entry is meant for a PC (a screen at least 1024 px wide). This screen (width '+w+') is read-only. If your window is just narrow, widen it - or edit anyway on this screen.'));
-    if(_phdCanRecord())c.appendChild(_phdBtn('',"Edit anyway on this screen",function(){_phdOverride=true;_phdSetNote(null);_phdPaint();}));
+    c.appendChild(_phdEl('p','ph-note',phI18nD('drafts.pc_soft',{w:w})));
+    if(_phdCanRecord())c.appendChild(_phdBtn('',phI18nD('drafts.edit_anyway'),function(){_phdOverride=true;_phdSetNote(null);_phdPaint();}));
   }
-  c.appendChild(_phdEl('p','phd-fine','This check reads the browser\'s user agent and window width. It is a guard against mistakes, not a security boundary: it can be wrong and it can be faked, and the server cannot tell what device wrote a draft.'));
+  c.appendChild(_phdEl('p','phd-fine',phI18nD('drafts.pc_guard_note')));
   return c;
 }
 function _phdHeader(title,sub,chips,btns){
@@ -282,61 +282,62 @@ function _phdSortRows(rows){
   return rows.slice().sort(function(a,b){const x=Number(a.updatedAt)||0,y=Number(b.updatedAt)||0;return y-x||(a.fbKey<b.fbKey?-1:a.fbKey>b.fbKey?1:0);});
 }
 function _phdRowStatus(r){return typeof r.status==='string'&&r.status?r.status:'unknown';}
-function _phdStatusChip(s){return _phdChip(s,s==='ready'||s==='issued'?'ok':s==='abandoned'?'bad':'view');}
+function _phdStatusChip(s){return _phdChip(typeof phI18nHas==='function'&&phI18nHas('drafts.status_'+s)?phI18nD('drafts.status_'+s):s,s==='ready'||s==='issued'?'ok':s==='abandoned'?'bad':'view');}
 function _phdPaintList(wrap){
   const g=_phdGet('drafts');
   const wc=_phdWriteCheck();
-  const newBtn=_phdBtn('ph-btn-primary','New draft',function(){_phdNew();},{'data-act':'new'});
+  const newBtn=_phdBtn('ph-btn-primary',phI18nD('drafts.new'),function(){_phdNew();},{'data-act':'new'});
   if(!wc.ok){_phdOff(newBtn);newBtn.setAttribute('title',wc.why);}
-  wrap.appendChild(_phdHeader('PO Drafts','PC-only entry. A draft is complete before it is marked ready; a ready draft is issued as a PO by a manager (Mustafa, Afnan or Ammar).',[_phdChip('PC-only entry','view')],[newBtn]));
+  wrap.appendChild(_phdHeader(phI18nD('drafts.title'),phI18nD('drafts.blurb2'),[_phdChip(phI18nD('drafts.pc_only_chip'),'view')],[newBtn]));
   const banner=_phdPcBanner();if(banner)wrap.appendChild(banner);
   const nn=_phdNoteNode();if(nn)wrap.appendChild(nn);
-  if(_phdLoading){const s=_phdEl('section','ph-card phd-card');s.setAttribute('role','status');s.appendChild(_phdEl('p','ph-note','Reading po_drafts…'));wrap.appendChild(s);return;}
+  if(_phdLoading){const s=_phdEl('section','ph-card phd-card');s.setAttribute('role','status');s.appendChild(_phdEl('p','ph-note',phI18nD('drafts.reading')));wrap.appendChild(s);return;}
   if(!g.ok){
-    const c=_phdErrCard('PO drafts could not be read',(g.text||'po_drafts: not loaded.')+' Nothing below is shown as "no drafts": the list was not read.');
-    c.appendChild(_phdBtn('ph-btn-primary','Retry',function(){_phdRetryDrafts();}));
+    const c=_phdErrCard(phI18nD('drafts.could_not_read'),phI18nD('drafts.err_plus_none',{err:g.text?phI18nErr(g.text):phI18nD('err.not_loaded',{col:'po_drafts'})}));
+    c.appendChild(_phdBtn('ph-btn-primary',phI18nD('shell.retry'),function(){_phdRetryDrafts();}));
     wrap.appendChild(c);
     return;
   }
   const rows=_phdSortRows(g.rows||[]);
   const count=function(s){return rows.filter(function(r){return s==='all'?true:s==='open'?(_phdRowStatus(r)==='draft'||_phdRowStatus(r)==='ready'):_phdRowStatus(r)===s;}).length;};
-  const bar=_phdEl('div','phd-filters');bar.setAttribute('role','group');bar.setAttribute('aria-label','Filter drafts by status');
+  const bar=_phdEl('div','phd-filters');bar.setAttribute('role','group');bar.setAttribute('aria-label',phI18nAttr(phI18nD('drafts.filter_label')));
   PH_DRAFTS_FILTERS.forEach(function(fl){
-    const b=_phdBtn('phd-filter'+(_phdFilter===fl[0]?' on':''),fl[1]+' '+count(fl[0]),function(){_phdFilter=fl[0];_phdPaint();},{'aria-pressed':_phdFilter===fl[0]?'true':'false','data-filter':fl[0]});
+    const b=_phdBtn('phd-filter'+(_phdFilter===fl[0]?' on':''),phI18nD('drafts.filter_count',{label:fl[1],n:count(fl[0])}),function(){_phdFilter=fl[0];_phdPaint();},{'aria-pressed':_phdFilter===fl[0]?'true':'false','data-filter':fl[0]});
     bar.appendChild(b);
   });
   wrap.appendChild(bar);
-  if(g.truncated)wrap.appendChild(_phdEl('p','phd-fine','The list was cut at its read limit ('+rows.length+' drafts): older drafts are not shown.'));
+  if(g.truncated)wrap.appendChild(_phdEl('p','phd-fine',phI18nD('drafts.cut_limit',{n:rows.length})));
   const shown=rows.filter(function(r){const s=_phdRowStatus(r);return _phdFilter==='all'?true:_phdFilter==='open'?(s==='draft'||s==='ready'):s===_phdFilter;});
-  if(!rows.length){wrap.appendChild(_phdEl('p','ph-placeholder','po_drafts was read and holds no drafts yet.'));return;}
-  if(!shown.length){wrap.appendChild(_phdEl('p','ph-placeholder','No draft is '+(_phdFilter==='open'?'open':_phdFilter)+'.'));return;}
+  if(!rows.length){wrap.appendChild(_phdEl('p','ph-placeholder',phI18nD('drafts.none_yet')));return;}
+  if(!shown.length){wrap.appendChild(_phdEl('p','ph-placeholder',phI18nD('drafts.none_status',{status:_phdFilter==='open'?phI18nD('drafts.st_open'):(typeof phI18nHas==='function'&&phI18nHas('drafts.status_'+_phdFilter)?phI18nD('drafts.status_'+_phdFilter):_phdFilter)})));return;}
   const masters=_phdMasters();
   const list=_phdEl('ul','ph-lines phd-list');
   shown.forEach(function(r){list.appendChild(_phdRowNode(r,masters));});
   wrap.appendChild(_phdEl('section','ph-card phd-card',null,[list]));
-  if(masters===null)wrap.appendChild(_phdEl('p','phd-fine','The cutting masters were not read, so completeness is shown as "not checked".'));
+  if(masters===null)wrap.appendChild(_phdEl('p','phd-fine',phI18nD('drafts.masters_unread_note')));
 }
 function _phdRowNode(r,masters){
   const po=r.po&&typeof r.po==='object'?r.po:{};
   const li=_phdEl('li','ph-line phd-row');
   const code=_phdStr(po.code),name=_phdStr(po.name);
   const main=_phdEl('div','phd-row-main');
-  main.appendChild(_phdEl('div','phd-row-title',code||name?(code+(code&&name?' - ':'')+name):'(no article chosen yet)'));
+  main.appendChild(_phdEl('div','phd-row-title',code||name?(code+(code&&name?' - ':'')+name):phI18nD('drafts.no_article_yet')));
   const upd=typeof phDay==='function'?phDay(r.updatedAt):null;
   const qty=phWhole(po.qty);
-  main.appendChild(_phdEl('div','phd-row-sub',[r.fbKey,qty?qty+' pcs':'quantity not set','revision '+(r.rev==null?'?':r.rev),upd?'updated '+_phdDayLabel(upd)+(r.updatedBy?' by '+r.updatedBy:''):''].filter(Boolean).join(' · ')));
+  const sub=[r.fbKey,qty?phI18nD('queue.pcs',{n:qty}):phI18nD('drafts.qty_not_set'),phI18nD('drafts.revision',{n:r.rev==null?'?':r.rev}),upd?phI18nD(r.updatedBy?'drafts.updated_by':'drafts.updated',{when:_phdDayLabel(upd),who:r.updatedBy}):''].filter(Boolean);
+  main.appendChild(_phdEl('div','phd-row-sub',phI18nD('drafts.row_sub'+sub.length,{a:sub[0],b:sub[1],c:sub[2],d:sub[3]})));
   li.appendChild(main);
   const chips=_phdEl('div','phd-row-chips');
   const st=_phdRowStatus(r);
   chips.appendChild(_phdStatusChip(st));
-  if(st==='issued'&&r.poId)chips.appendChild(_phdChip('Issued as '+r.poId,'ok'));
-  if(st==='ready'&&!_phdCanManage())chips.appendChild(_phdChip('Ready - waiting for Mustafa','wait'));
+  if(st==='issued'&&r.poId)chips.appendChild(_phdChip(phI18nD('drafts.issued_as',{po:r.poId}),'ok'));
+  if(st==='ready'&&!_phdCanManage())chips.appendChild(_phdChip(phI18nD('drafts.ready_wait'),'wait'));
   if(st==='draft'||st==='ready'){
-    if(masters===null)chips.appendChild(_phdChip('not checked','wait'));
-    else{const gate=phPoComplete(po,{masters:masters,today:_phdToday()});chips.appendChild(gate.ok?_phdChip('Complete','ok'):_phdChip(gate.missing.length+' missing','bad'));}
+    if(masters===null)chips.appendChild(_phdChip(phI18nD('drafts.not_checked'),'wait'));
+    else{const gate=phPoComplete(po,{masters:masters,today:_phdToday()});chips.appendChild(gate.ok?_phdChip(phI18nD('drafts.chip_complete'),'ok'):_phdChip(phI18nD('drafts.missing_n',{n:gate.missing.length}),'bad'));}
   }
   li.appendChild(chips);
-  li.appendChild(_phdBtn('',st==='draft'&&_phdWriteCheck().ok?'Open':'View',function(){_phdOpen(r.fbKey);},{'data-open':r.fbKey,'aria-label':'Open draft '+r.fbKey}));
+  li.appendChild(_phdBtn('',phI18nD(st==='draft'&&_phdWriteCheck().ok?'queue.btn_open':'drafts.btn_view'),function(){_phdOpen(r.fbKey);},{'data-open':r.fbKey,'aria-label':phI18nAttr(phI18nD('drafts.open_draft',{id:r.fbKey}))}));
   return li;
 }
 function _phdRetryDrafts(){
@@ -363,7 +364,7 @@ function _phdNew(){
 function _phdOpen(id){
   const g=_phdGet('drafts');
   const row=g.ok&&Array.isArray(g.rows)?g.rows.filter(function(r){return r.fbKey===id;})[0]:null;
-  if(!row){_phdSetNote('err','Draft '+id+' is not in the list that was read. Retry the read.');_phdView='list';_phdPaint();return false;}
+  if(!row){_phdSetNote('err',phI18nD('drafts.not_in_list',{id:id}));_phdView='list';_phdPaint();return false;}
   _phdForm={id:row.fbKey,rev:row.rev,status:_phdRowStatus(row),owner:_phdUser(),f:_phdFromPo(row.po),dirty:false,seq:0,
     meta:{createdByName:row.createdByName||row.createdBy||'',createdAt:row.createdAt,updatedBy:row.updatedBy||'',updatedAt:row.updatedAt,
       sentBackReason:row.sentBackReason||'',abandonedReason:row.abandonedReason||'',poId:row.poId||'',issuedBy:row.issuedBy||'',issuedAt:row.issuedAt||null}};
@@ -378,10 +379,10 @@ function _phdBack(force){
 function _phdEditable(){return!!_phdForm&&_phdForm.status==='draft'&&_phdWriteCheck().ok;}
 function _phdWhyReadOnly(){
   const f=_phdForm;if(!f)return'';
-  if(f.status==='ready')return'This draft is READY: it is locked, waiting for a manager to issue it as a PO. A manager can send it back to draft to edit it.';
-  if(f.status==='issued')return'This draft was issued as '+(f.meta&&f.meta.poId?f.meta.poId:'a PO')+'. It is final and cannot be edited.';
-  if(f.status==='abandoned')return'This draft was abandoned'+(f.meta&&f.meta.abandonedReason?' ('+f.meta.abandonedReason+')':'')+'. It is kept for the record and cannot be edited.';
-  if(f.status!=='draft')return'This draft is '+f.status+' and cannot be edited here.';
+  if(f.status==='ready')return phI18nD('drafts.locked_ready2');
+  if(f.status==='issued')return phI18nD('drafts.locked_issued',{po:f.meta&&f.meta.poId?f.meta.poId:phI18nD('drafts.a_po')});
+  if(f.status==='abandoned')return phI18nD(f.meta&&f.meta.abandonedReason?'drafts.locked_abandoned_why':'drafts.locked_abandoned2',{why:f.meta&&f.meta.abandonedReason});
+  if(f.status!=='draft')return phI18nD('drafts.locked_other',{status:f.status});
   const wc=_phdWriteCheck();
   return wc.ok?'':wc.why;
 }
@@ -436,20 +437,20 @@ function _phdCard(title,kids){
 
 function _phdPaintForm(wrap){
   const f=_phdForm,st=f.status;
-  const back=_phdBtn('',"← Back to the list",function(){_phdBack(false);},{'data-act':'back'});
+  const back=_phdBtn('',phI18nD('drafts.back'),function(){_phdBack(false);},{'data-act':'back'});
   const dirtyChip=_phdChip('','wait');_phdRefs.dirty=dirtyChip;
   const chips=[_phdStatusChip(st),dirtyChip];
-  wrap.appendChild(_phdHeader(f.id?'Draft '+f.id:'New draft',f.id?('Revision '+f.rev+(f.meta&&f.meta.createdByName?' · started by '+f.meta.createdByName:'')):'Not saved yet. Nothing is written until you press Save draft.',chips,[back]));
+  wrap.appendChild(_phdHeader(f.id?phI18nD('drafts.heading_existing',{id:f.id}):phI18nD('drafts.new'),f.id?(f.meta&&f.meta.createdByName?phI18nD('drafts.heading_revision',{n:f.rev,who:f.meta.createdByName}):phI18nD('drafts.heading_rev_only',{n:f.rev})):phI18nD('drafts.not_saved_yet'),chips,[back]));
   const banner=_phdPcBanner();if(banner)wrap.appendChild(banner);
   const nn=_phdNoteNode();if(nn)wrap.appendChild(nn);
   // why the form is read-only: the PC-only banner above explains a screen; this line explains the status or the person
   const wcz=_phdWriteCheck();
   if(st!=='draft')wrap.appendChild(_phdEl('p','ph-placeholder phd-ro',_phdWhyReadOnly()));
   else if(!wcz.ok&&wcz.kind==='role')wrap.appendChild(_phdEl('p','ph-placeholder phd-ro',wcz.why));
-  if(f.meta&&f.meta.sentBackReason&&st==='draft')wrap.appendChild(_phdEl('p','ph-placeholder phd-ro','Sent back: '+f.meta.sentBackReason));
+  if(f.meta&&f.meta.sentBackReason&&st==='draft')wrap.appendChild(_phdEl('p','ph-placeholder phd-ro',phI18nD('drafts.sent_back',{why:f.meta.sentBackReason})));
   // standards / masters read problems that change what the form can promise
   const gm=_phdGet('masters');
-  if(!gm.ok)wrap.appendChild(_phdErrCard('The cutting masters could not be read',(gm.text||'cutting_masters: not loaded.')+' A draft cannot be marked ready until the masters are read, because the planned master cannot be checked.'));
+  if(!gm.ok)wrap.appendChild(_phdErrCard(phI18nD('drafts.masters_unreadable_title'),phI18nD('drafts.masters_unreadable_msg2',{err:gm.text?phI18nErr(gm.text):phI18nD('err.not_loaded',{col:'cutting_masters'})})));
   const layout=_phdEl('div','phd-layout');
   const main=_phdEl('div','phd-main'),aside=_phdEl('div','phd-aside');
   _phdAddArticle(main);_phdAddQuantity(main);_phdAddFabric(main);_phdAddPlan(main);_phdAddEmbellishment(main);_phdAddNotes(main);
@@ -462,17 +463,17 @@ function _phdPaintForm(wrap){
 /* article */
 function _phdAddArticle(main){
   const f=_phdForm.f;
-  const search=_phdEl('input','phd-in');search.id='phd-f-search';search.setAttribute('type','search');search.setAttribute('placeholder','Search the catalog by name or code, e.g. GH001 or Black Hoodie');search.setAttribute('autocomplete','off');
+  const search=_phdEl('input','phd-in');search.id='phd-f-search';search.setAttribute('type','search');search.setAttribute('placeholder',phI18nAttr(phI18nD('drafts.catalog_search')));search.setAttribute('autocomplete','off');
   if(!_phdEditable())_phdOff(search);
   const results=_phdEl('div','phd-results');results.id='phd-results';
   search.addEventListener('input',function(){_phdSearch(search.value,results);});
   _phdRefs.search=search;_phdRefs.results=results;
   const grid=_phdEl('div','phd-grid');
-  grid.appendChild(_phdFieldWrap('code','Article code *',_phdInput('code',{maxlength:PH_DRAFTS_TEXT_MAX.code})));
-  grid.appendChild(_phdFieldWrap('name','Article name *',_phdInput('name',{maxlength:PH_DRAFTS_TEXT_MAX.name}),null,'phd-wide'));
-  grid.appendChild(_phdFieldWrap('pattern','Pattern',_phdInput('pattern',{maxlength:PH_DRAFTS_TEXT_MAX.pattern,placeholder:'Pattern number'})));
+  grid.appendChild(_phdFieldWrap('code',phI18nD('drafts.f_article_code'),_phdInput('code',{maxlength:PH_DRAFTS_TEXT_MAX.code})));
+  grid.appendChild(_phdFieldWrap('name',phI18nD('drafts.f_article_name'),_phdInput('name',{maxlength:PH_DRAFTS_TEXT_MAX.name}),null,'phd-wide'));
+  grid.appendChild(_phdFieldWrap('pattern',phI18nD('drafts.s_pattern'),_phdInput('pattern',{maxlength:PH_DRAFTS_TEXT_MAX.pattern,placeholder:phI18nAttr(phI18nD('drafts.f_pattern'))})));
   const catHint=_phdEl('div','phd-hint phd-cathint');catHint.id='phd-cathint';_phdRefs.cathint=catHint;
-  main.appendChild(_phdCard('Article',[_phdFieldWrap('search','Find an article',search),results,grid,catHint]));
+  main.appendChild(_phdCard('Article',[_phdFieldWrap('search',phI18nD('drafts.find_article'),search),results,grid,catHint]));
   _phdUpdateCatHint();
 }
 function _phdSearch(q,box){
@@ -480,7 +481,7 @@ function _phdSearch(q,box){
   const term=String(q||'').trim().toLowerCase();
   if(!term||!_phdEditable())return;
   const hits=_phdCatalog().filter(function(p){return p&&(String(p.code||'').toLowerCase().indexOf(term)>-1||String(p.name||'').toLowerCase().indexOf(term)>-1);}).slice(0,8);
-  if(!hits.length){box.appendChild(_phdEl('div','phd-hint','No article in the catalog matches "'+term.slice(0,30)+'". You can still type the code and name below.'));return;}
+  if(!hits.length){box.appendChild(_phdEl('div','phd-hint',phI18nD('drafts.catalog_no_match',{q:term.slice(0,30)})));return;}
   hits.forEach(function(p){
     const b=_phdBtn('phd-hit',null,function(){_phdPickArticle(p);},{'data-code':String(p.code||'')});
     b.appendChild(_phdEl('span','phd-hit-code',p.code));b.appendChild(_phdEl('span','phd-hit-name',p.name));
@@ -502,9 +503,9 @@ function _phdUpdateCatHint(){
   const code=String(_phdForm.f.code||'').trim().toUpperCase();
   if(!code)return;
   const cat=_phdCatalog();
-  if(!cat.length){h.textContent='The article catalog is not available here, so the code cannot be checked against it.';return;}
+  if(!cat.length){phI18nSet(h,phI18nD('drafts.catalog_unavailable'));return;}
   const hit=cat.filter(function(p){return String(p.code||'').toUpperCase()===code;})[0];
-  h.textContent=hit?'In the catalog: '+hit.name:'Not in the article catalog - check the code. (It is not blocked: a new article may not be listed yet.)';
+  phI18nSet(h,hit?phI18nD('drafts.in_catalog',{name:hit.name}):phI18nD('drafts.not_in_catalog'));
 }
 function _phdOnCode(){
   _phdUpdateCatHint();
@@ -515,9 +516,9 @@ function _phdOnCode(){
 function _phdAddQuantity(main){
   const f=_phdForm.f;
   const grid=_phdEl('div','phd-grid');
-  grid.appendChild(_phdFieldWrap('qty','Total quantity (pcs) *',_phdInput('qty',{inputmode:'numeric',placeholder:'0'})));
+  grid.appendChild(_phdFieldWrap('qty',phI18nD('drafts.f_total_qty'),_phdInput('qty',{inputmode:'numeric',placeholder:'0'})));
   const sumHint=_phdEl('div','phd-hint');sumHint.id='phd-sumhint';_phdRefs.sumhint=sumHint;
-  const useBtn=_phdBtn('phd-small','Use the sizes total',function(){
+  const useBtn=_phdBtn('phd-small',phI18nD('drafts.use_sizes_total'),function(){
     const t=_phdToPo(_phdForm.f);const sum=phSizesTotal(t.po.sizes);
     if(!sum||!_phdEditable())return;
     _phdForm.f.qty=String(sum);_phdSetVal(_phdRefs.qty,String(sum));_phdTouch();
@@ -526,11 +527,11 @@ function _phdAddQuantity(main){
   _phdRefs.useTotal=useBtn;
   const axis=_phdSelect('sizeModel',PH_DRAFTS_MODELS,f.sizeModel,function(v){_phdForm.f.sizeModel=v;_phdRebuildSizes();});
   const axisHint=_phdEl('div','phd-hint');axisHint.id='phd-axishint';_phdRefs.axishint=axisHint;
-  grid.appendChild(_phdFieldWrap('sizeModel','Size axis',axis,null));
+  grid.appendChild(_phdFieldWrap('sizeModel',phI18nD('drafts.f_size_axis'),axis,null));
   const sizes=_phdEl('div','phd-sizes');sizes.id='phd-sizes';_phdRefs.sizesBox=sizes;
   const ratio=_phdEl('div','phd-hint');ratio.id='phd-ratio';_phdRefs.ratio=ratio;
   const strays=_phdEl('div','phd-hint');strays.id='phd-strays';_phdRefs.strays=strays;
-  main.appendChild(_phdCard('Quantity and sizes',[grid,_phdEl('div','phd-inline',null,[sumHint,useBtn]),axisHint,sizes,strays,ratio]));
+  main.appendChild(_phdCard(phI18nD('drafts.sec_qty'),[grid,_phdEl('div','phd-inline',null,[sumHint,useBtn]),axisHint,sizes,strays,ratio]));
   _phdRebuildSizes();
 }
 function _phdRebuildSizes(){
@@ -561,15 +562,15 @@ function _phdRebuildSizes(){
 function _phdAddFabric(main){
   const f=_phdForm.f;
   const grid=_phdEl('div','phd-grid');
-  grid.appendChild(_phdFieldWrap('fabric','Fabric type *',_phdInput('fabric',{maxlength:PH_DRAFTS_TEXT_MAX.fabric,placeholder:'e.g. Terry, Fleece'})));
-  grid.appendChild(_phdFieldWrap('fabricCode','Fabric code',_phdInput('fabricCode',{maxlength:PH_DRAFTS_TEXT_MAX.fabricCode,placeholder:'e.g. BLKTRY220'})));
-  grid.appendChild(_phdFieldWrap('store','Supply store',_phdInput('store',{maxlength:PH_DRAFTS_TEXT_MAX.store,placeholder:'Store/supplier'})));
-  grid.appendChild(_phdFieldWrap('totalRoll','Total rolls',_phdInput('totalRoll',{maxlength:PH_DRAFTS_TEXT_MAX.totalRoll,placeholder:'e.g. 12'})));
-  grid.appendChild(_phdFieldWrap('plannedFabricQty','Planned fabric quantity *',_phdInput('plannedFabricQty',{inputmode:'decimal',placeholder:'e.g. 120'})));
-  const unit=_phdSelect('plannedFabricUnit',[['','- choose -'],['kg','kg'],['m','m (meters)']],f.plannedFabricUnit,function(v){_phdForm.f.plannedFabricUnit=v;});
-  grid.appendChild(_phdFieldWrap('plannedFabricUnit','Planned fabric unit *',unit,'kg and m are never mixed.'));
+  grid.appendChild(_phdFieldWrap('fabric',phI18nD('drafts.f_fabric_type'),_phdInput('fabric',{maxlength:PH_DRAFTS_TEXT_MAX.fabric,placeholder:phI18nAttr(phI18nD('drafts.ph_fabric_type'))})));
+  grid.appendChild(_phdFieldWrap('fabricCode',phI18nD('drafts.f_fabric_code'),_phdInput('fabricCode',{maxlength:PH_DRAFTS_TEXT_MAX.fabricCode,placeholder:phI18nAttr(phI18nD('drafts.ph_fabric_code'))})));
+  grid.appendChild(_phdFieldWrap('store',phI18nD('drafts.f_supply'),_phdInput('store',{maxlength:PH_DRAFTS_TEXT_MAX.store,placeholder:phI18nAttr(phI18nD('drafts.ph_supply'))})));
+  grid.appendChild(_phdFieldWrap('totalRoll',phI18nD('drafts.f_rolls'),_phdInput('totalRoll',{maxlength:PH_DRAFTS_TEXT_MAX.totalRoll,placeholder:phI18nAttr(phI18nD('drafts.ph_rolls'))})));
+  grid.appendChild(_phdFieldWrap('plannedFabricQty',phI18nD('drafts.f_fabric_qty'),_phdInput('plannedFabricQty',{inputmode:'decimal',placeholder:phI18nAttr(phI18nD('drafts.ph_fabric_qty'))})));
+  const unit=_phdSelect('plannedFabricUnit',[['',phI18nD('drafts.choose')],['kg',phI18nD('drafts.unit_kg')],['m',phI18nD('drafts.unit_m')]],f.plannedFabricUnit,function(v){_phdForm.f.plannedFabricUnit=v;});
+  grid.appendChild(_phdFieldWrap('plannedFabricUnit',phI18nD('drafts.f_fabric_unit'),unit,phI18nD('drafts.unit_hint')));
   const std=_phdEl('div','phd-std');std.id='phd-std';_phdRefs.std=std;
-  main.appendChild(_phdCard('Fabric and supply',[grid,std]));
+  main.appendChild(_phdCard(phI18nD('drafts.sec_fabric'),[grid,std]));
   _phdUpdateStd();
 }
 // A SUGGESTION from the consumption standard (ph_standards), shown beside the field and never written on its own.
@@ -580,17 +581,17 @@ function _phdUpdateStd(){
   const code=String(f.code||'').trim().toUpperCase();
   if(!code)return;
   const gs=_phdGet('standards');
-  if(!gs.ok){box.appendChild(_phdEl('div','phd-hint','The consumption standards could not be read, so no fabric suggestion is shown.'));return;}
+  if(!gs.ok){box.appendChild(_phdEl('div','phd-hint',phI18nD('drafts.std_unreadable')));return;}
   const std=typeof phStandardFor==='function'?phStandardFor(code):null;
-  if(!std){box.appendChild(_phdEl('div','phd-hint','No consumption standard is saved for '+code+'.'));return;}
+  if(!std){box.appendChild(_phdEl('div','phd-hint',phI18nD('drafts.std_none',{code:code})));return;}
   const t=_phdToPo(f);
   const sum=phSizesTotal(t.po.sizes);
   const pieces=sum||t.po.qty||0;
   const per=pieces?phExpectedGross(std,sum?t.po.sizes:pieces):null;
-  const line=_phdEl('div','phd-hint','Standard for '+code+': '+std.grossPerPiece+' '+std.unit+' per piece'+(per!==null&&pieces?' → about '+phRound(per*pieces,2)+' '+std.unit+' for '+pieces+' pieces.':'.'));
+  const line=_phdEl('div','phd-hint',per!==null&&pieces?phI18nD('drafts.std_line',{code:code,per:std.grossPerPiece+' '+std.unit,total:phRound(per*pieces,2)+' '+std.unit,n:pieces}):phI18nD('drafts.std_line_short',{code:code,per:std.grossPerPiece+' '+std.unit}));
   box.appendChild(line);
   if(per!==null&&pieces){
-    const b=_phdBtn('phd-small','Use the standard ('+phRound(per*pieces,2)+' '+std.unit+')',function(){
+    const b=_phdBtn('phd-small',phI18nD('drafts.std_use',{total:phRound(per*pieces,2)+' '+std.unit}),function(){
       if(!_phdEditable())return;
       const v=String(phRound(per*pieces,2));
       _phdForm.f.plannedFabricQty=v;_phdSetVal(_phdRefs.plannedFabricQty,v);
@@ -607,20 +608,20 @@ function _phdUpdateStd(){
 function _phdAddPlan(main){
   const f=_phdForm.f;
   const grid=_phdEl('div','phd-grid');
-  const season=_phdSelect('season',[['','- choose -']].concat(PH_DRAFTS_SEASONS),f.season,function(v){_phdForm.f.season=v;});
-  grid.appendChild(_phdFieldWrap('season','Season *',season,'Stated, not guessed from a date.'));
+  const season=_phdSelect('season',[['',phI18nD('drafts.choose')]].concat(PH_DRAFTS_SEASONS),f.season,function(v){_phdForm.f.season=v;});
+  grid.appendChild(_phdFieldWrap('season',phI18nD('drafts.f_season'),season,phI18nD('drafts.season_hint')));
   const pcd=_phdInput('plannedCutDate',{type:'date'});
-  grid.appendChild(_phdFieldWrap('plannedCutDate','Planned cut date *',pcd));
+  grid.appendChild(_phdFieldWrap('plannedCutDate',phI18nD('drafts.f_cut_date'),pcd));
   const rqd=_phdInput('requestedDate',{type:'date'});
-  grid.appendChild(_phdFieldWrap('requestedDate','Requested date *',rqd,'The date the PO asks for.'));
+  grid.appendChild(_phdFieldWrap('requestedDate',phI18nD('drafts.f_req_date'),rqd,phI18nD('drafts.req_hint')));
   // cutting master: only registered, active masters can be chosen; one already on the draft that is not on the list stays visible (and is flagged)
   const gm=_phdGet('masters');
   const reg=gm.ok?_phdMasters():null;
-  let opts=[['','- choose -']];
+  let opts=[['',phI18nD('drafts.choose')]];
   if(reg){
     reg.filter(function(m){return m.active!==false;}).forEach(function(m){opts.push([m.fbKey,m.name+' ('+m.fbKey+')']);});
-    if(f.cutMasterId&&!opts.some(function(o){return o[0]===f.cutMasterId;}))opts.push([f.cutMasterId,(f.cutMaster||f.cutMasterId)+' (retired or not in the registry)']);
-  }else opts=[['','Masters not loaded']];
+    if(f.cutMasterId&&!opts.some(function(o){return o[0]===f.cutMasterId;}))opts.push([f.cutMasterId,phI18nD('drafts.master_retired',{name:f.cutMaster||f.cutMasterId})]);
+  }else opts=[['',phI18nD('drafts.masters_not_loaded_opt')]];
   const prevId=f.cutMasterId,prevName=f.cutMaster;
   const master=_phdSelect('cutMasterId',opts,reg?f.cutMasterId:'',function(v){
     const m=(_phdMasters()||[]).filter(function(x){return x.fbKey===v;})[0];
@@ -629,75 +630,75 @@ function _phdAddPlan(main){
   });
   if(!reg)_phdOff(master);
   const noActive=!!reg&&!reg.some(function(m){return m.active!==false;});
-  grid.appendChild(_phdFieldWrap('cutMasterId','Planned cutting master *',master,reg?(noActive?'The registry has no active master yet - a manager adds one in the Masters tab.':null):'The master registry was not read.'));
+  grid.appendChild(_phdFieldWrap('cutMasterId',phI18nD('drafts.f_master'),master,reg?(noActive?phI18nD('drafts.no_active_master'):null):phI18nD('drafts.master_registry_unread')));
   _phdRefs.cutMaster=master;
-  main.appendChild(_phdCard('Plan',[grid]));
+  main.appendChild(_phdCard(phI18nD('drafts.sec_plan'),[grid]));
 }
 
 /* embellishment and job copies */
 function _phdAddEmbellishment(main){
   const f=_phdForm.f;
   const row=_phdEl('div','phd-checks');
-  row.appendChild(_phdCheck('phd-emb',"This PO needs embellishment (printing / embroidery)",f.embRequired,function(v){_phdForm.f.embRequired=v;}));
+  row.appendChild(_phdCheck('phd-emb',phI18nD('drafts.emb_required'),f.embRequired,function(v){_phdForm.f.embRequired=v;}));
   const copies=_phdEl('div','phd-checks');
   PH_DRAFTS_COPIES.forEach(function(c){copies.appendChild(_phdCheck('phd-jc-'+c[0],c[1],f.jobCopies[c[0]],function(v){_phdForm.f.jobCopies[c[0]]=v;}));});
-  main.appendChild(_phdCard('Embellishment and job copies',[row,_phdEl('div','phd-hint','Job copies to print. They print separately from the PO. Leave all unticked for none.'),copies,
-    _phdEl('div','phd-hint','The embellishment recipe is looked up when the PO is issued; product photos and fabric rolls are not part of a draft (the PO is created without photos and reserves no rolls). A draft only records the choice.')]));
+  main.appendChild(_phdCard(phI18nD('drafts.sec_emb'),[row,_phdEl('div','phd-hint',phI18nD('drafts.job_copies')),copies,
+    _phdEl('div','phd-hint',phI18nD('drafts.emb_hint'))]));
 }
 function _phdAddNotes(main){
   const f=_phdForm.f;
   const ta=_phdEl('textarea','phd-in phd-ta');ta.id='phd-f-notes';ta.setAttribute('rows','3');ta.setAttribute('maxlength',String(PH_DRAFTS_TEXT_MAX.notes));
-  ta.setAttribute('placeholder','e.g. special instructions, buyer remarks');
+  ta.setAttribute('placeholder',phI18nAttr(phI18nD('drafts.ph_notes')));
   _phdSetVal(ta,f.notes);
   if(!_phdEditable())_phdOff(ta);
   ta.addEventListener('input',function(){_phdForm.f.notes=ta.value;_phdTouch();});
   _phdRefs.notes=ta;
-  main.appendChild(_phdCard('Notes',[_phdFieldWrap('notes','Notes for this PO (optional)',ta)]));
+  main.appendChild(_phdCard(phI18nD('drafts.sec_notes'),[_phdFieldWrap('notes',phI18nD('drafts.f_notes'),ta)]));
 }
 
 /* ═══ the aside: actions, completeness, the summary ══════════════════════ */
 function _phdAddActions(aside){
   const f=_phdForm,st=f.status;
   const card=_phdEl('section','ph-card phd-card phd-actions');
-  card.appendChild(_phdEl('h3','ph-card-title','Actions'));
+  card.appendChild(_phdEl('h3','ph-card-title',phI18nD('drafts.sec_actions')));
   const row=_phdEl('div','phd-btnrow');
   const editable=_phdEditable(),busy=_phdBusy;
-  const save=_phdBtn('ph-btn-primary','Save draft',function(){_phdRun(_phdSave);},{'data-act':'save'});
-  const ready=_phdBtn('','Mark ready',function(){_phdRun(_phdReady);},{'data-act':'ready'});
+  const save=_phdBtn('ph-btn-primary',phI18nD('drafts.save'),function(){_phdRun(_phdSave);},{'data-act':'save'});
+  const ready=_phdBtn('',phI18nD('drafts.mark_ready'),function(){_phdRun(_phdReady);},{'data-act':'ready'});
   if(!editable||busy){_phdOff(save);_phdOff(ready);}
   row.appendChild(save);row.appendChild(ready);
   _phdRefs.actionBtns=[save,ready];
   const wc=_phdWriteCheck();
   if(st==='draft'||st==='ready'){
-    const abandon=_phdBtn('phd-danger',f.id?'Abandon draft':'Discard draft',function(){_phdAsk={kind:f.id?'abandon':'discard'};_phdPaint();},{'data-act':'abandon'});
-    if(!wc.ok||busy||(st==='ready'&&!_phdCanManage())){_phdOff(abandon);if(st==='ready'&&!_phdCanManage())abandon.setAttribute('title','Only a manager (Afnan, Ammar, Mustafa) can abandon a ready draft.');}
+    const abandon=_phdBtn('phd-danger',f.id?phI18nD('drafts.abandon'):phI18nD('drafts.discard'),function(){_phdAsk={kind:f.id?'abandon':'discard'};_phdPaint();},{'data-act':'abandon'});
+    if(!wc.ok||busy||(st==='ready'&&!_phdCanManage())){_phdOff(abandon);if(st==='ready'&&!_phdCanManage())abandon.setAttribute('title',phI18nAttr(phI18nD('drafts.abandon_managers')));}
     row.appendChild(abandon);_phdRefs.actionBtns.push(abandon);
   }
   if(st==='ready'){
-    const back=_phdBtn('','Send back to draft',function(){_phdAsk={kind:'sendback'};_phdPaint();},{'data-act':'sendback'});
-    if(!_phdCanManage()||!wc.ok||busy){_phdOff(back);back.setAttribute('title',_phdCanManage()?'Not available from this screen.':'Only a manager (Afnan, Ammar, Mustafa) can send a ready draft back.');}
+    const back=_phdBtn('',phI18nD('drafts.send_back'),function(){_phdAsk={kind:'sendback'};_phdPaint();},{'data-act':'sendback'});
+    if(!_phdCanManage()||!wc.ok||busy){_phdOff(back);back.setAttribute('title',phI18nAttr(_phdCanManage()?phI18nD('drafts.send_back_unavailable'):phI18nD('drafts.send_back_managers')));}
     row.appendChild(back);_phdRefs.actionBtns.push(back);
   }
   card.appendChild(row);
-  if(busy)card.appendChild(_phdEl('p','phd-fine','Working…'));
+  if(busy)card.appendChild(_phdEl('p','phd-fine',phI18nD('shell.working')));
   // ISSUE AS PO: managers only, ready drafts only, a two-step confirm. Kashif sees why it is not his.
   const mgr=_phdCanManage();
   if(st==='issued'){
     const po=f.meta&&f.meta.poId?f.meta.poId:'';
-    card.appendChild(_phdEl('p','phd-issued','Issued as '+(po||'a PO')+'.'));
+    card.appendChild(_phdEl('p','phd-issued',phI18nD('drafts.issued_as_dot',{po:po||phI18nD('drafts.a_po')})));
     if(po&&typeof phqOpenPO==='function'&&typeof window!=='undefined'&&window&&typeof window.openPODetail==='function')
-      card.appendChild(_phdBtn('ph-btn-primary phd-openpo','Open '+po,function(){phqOpenPO(po);},{'data-act':'openpo'}));
-    card.appendChild(_phdEl('p','phd-fine','This draft is final. The PO was created reserved, like one from the New PO form, without photos and with no fabric rolls reserved.'));
+      card.appendChild(_phdBtn('ph-btn-primary phd-openpo',phI18nD('queue.open',{po:po}),function(){phqOpenPO(po);},{'data-act':'openpo'}));
+    card.appendChild(_phdEl('p','phd-fine',phI18nD('drafts.final_note')));
   }else if(st==='ready'||(st==='draft'&&f.id)||!f.id){
-    const label=st==='ready'?(mgr?'Issue as PO':'Ready - waiting for Mustafa'):'Issue as PO';
+    const label=st==='ready'?(mgr?phI18nD('drafts.issue'):phI18nD('drafts.ready_wait')):phI18nD('drafts.issue');
     const issue=_phdBtn('phd-issue'+(st==='ready'&&mgr?' ph-btn-primary':''),label,function(){_phdAsk={kind:'issue'};_phdPaint();},{'data-act':'issue'});
     if(st!=='ready'||!mgr||busy||!f.id){
       _phdOff(issue);issue.setAttribute('aria-disabled','true');
-      issue.setAttribute('title',st!=='ready'?'Only a READY draft can be issued. Mark it ready first.':!mgr?'Ready. A manager (Mustafa, Afnan or Ammar) issues it as a PO.':'Working...');
+      issue.setAttribute('title',phI18nAttr(st!=='ready'?phI18nD('drafts.issue_tip_notready'):!mgr?phI18nD('drafts.issue_tip_mgr'):phI18nD('drafts.issue_tip_working')));
     }
     card.appendChild(issue);_phdRefs.actionBtns.push(issue);
-    if(st==='ready'&&!mgr)card.appendChild(_phdEl('p','phd-fine phd-wait','Ready - waiting for Mustafa. He issues it as a PO; you will see "Issued as PO-nnn" here.'));
-    if(st==='ready'&&mgr)card.appendChild(_phdEl('p','phd-fine','Issuing creates the PO number and the PO in one step. It asks you to confirm first.'));
+    if(st==='ready'&&!mgr)card.appendChild(_phdEl('p','phd-fine phd-wait',phI18nD('drafts.wait_note')));
+    if(st==='ready'&&mgr)card.appendChild(_phdEl('p','phd-fine',phI18nD('drafts.issue_note')));
   }
   if(_phdAsk)card.appendChild(_phdAskNode());
   aside.appendChild(card);
@@ -705,39 +706,39 @@ function _phdAddActions(aside){
 function _phdAskNode(){
   const a=_phdAsk;
   const box=_phdEl('div','phd-ask');box.setAttribute('role','group');
-  const texts={abandon:'Abandon this draft? It stays in the list as abandoned and cannot be edited. A reason is required.',
-    sendback:'Send this ready draft back to draft so it can be edited. A reason is required.',
-    discard:'Discard this new draft? Nothing was saved, so nothing is written.',
-    leave:'Leave this draft? Your unsaved changes will be lost.',
-    issue:'Issue this draft as a real PO? This cannot be undone: the draft becomes final and a PO is created.'};
+  const texts={abandon:phI18nD('drafts.confirm_abandon'),
+    sendback:phI18nD('drafts.confirm_send_back'),
+    discard:phI18nD('drafts.confirm_discard'),
+    leave:phI18nD('drafts.confirm_leave'),
+    issue:phI18nD('drafts.confirm_issue')};
   box.appendChild(_phdEl('p','ph-note',texts[a.kind]||''));
   if(a.kind==='issue'&&_phdForm){
     const po=_phdToPo(_phdForm.f).po;
     const dl=_phdEl('dl','phd-dl phd-issue-sum');
     const kv=function(k,v){dl.appendChild(_phdEl('dt','phd-dt',k));dl.appendChild(_phdEl('dd','phd-dd',v||'-'));};
-    kv('Article',(po.code||'')+(po.code&&po.name?' - ':'')+(po.name||''));
-    kv('Quantity',po.qty!=null?po.qty+' pcs':'');
-    kv('PO number','Not known yet - it is given the moment the PO is created');
-    kv('Created as','Reserved (like the New PO form), no photos, no fabric rolls reserved');
+    kv(phI18nD('drafts.s_article'),(po.code||'')+(po.code&&po.name?' - ':'')+(po.name||''));
+    kv(phI18nD('drafts.fl_qty'),po.qty!=null?phI18nD('queue.pcs',{n:po.qty}):'');
+    kv(phI18nD('drafts.s_po_number'),phI18nD('drafts.po_number_later'));
+    kv(phI18nD('drafts.s_created_as'),phI18nD('drafts.created_as_val'));
     box.appendChild(dl);
   }
   let ta=null;
   if(a.kind==='abandon'||a.kind==='sendback'){
-    ta=_phdEl('textarea','phd-in phd-ta');ta.id='phd-f-ask-reason';ta.setAttribute('rows','2');ta.setAttribute('maxlength','500');ta.setAttribute('placeholder','Reason');
+    ta=_phdEl('textarea','phd-in phd-ta');ta.id='phd-f-ask-reason';ta.setAttribute('rows','2');ta.setAttribute('maxlength','500');ta.setAttribute('placeholder',phI18nAttr(phI18nD('drafts.reason_placeholder')));
     _phdSetVal(ta,a.reason||'');
     ta.addEventListener('input',function(){a.reason=ta.value;});
-    box.appendChild(_phdFieldWrap('ask-reason','Reason',ta));_phdRefs.reason=ta;
+    box.appendChild(_phdFieldWrap('ask-reason',phI18nD('drafts.reason_placeholder'),ta));_phdRefs.reason=ta;
     // the reason box has just opened: put the caret in it (once per ask, not on every repaint)
     if(!a._focused){a._focused=true;try{setTimeout(function(){try{if(ta.focus)ta.focus();}catch(e){}},0);}catch(e){}}
   }
-  const ok=_phdBtn(a.kind==='leave'||a.kind==='discard'||a.kind==='issue'?'ph-btn-primary':'phd-danger',a.kind==='leave'?'Discard changes and leave':a.kind==='discard'?'Discard':a.kind==='issue'?'Yes, issue it as a PO':a.kind==='abandon'?'Abandon':'Send back',function(){
+  const ok=_phdBtn(a.kind==='leave'||a.kind==='discard'||a.kind==='issue'?'ph-btn-primary':'phd-danger',a.kind==='leave'?phI18nD('drafts.discard_leave'):a.kind==='discard'?phI18nD('drafts.btn_discard'):a.kind==='issue'?phI18nD('drafts.btn_yes_issue'):a.kind==='abandon'?phI18nD('drafts.btn_abandon'):phI18nD('drafts.send_back_btn'),function(){
     const reason=ta?ta.value:'';
     if(a.kind==='issue'){_phdRun(_phdIssue);return;}
     if(a.kind==='leave'){_phdBack(true);return;}
-    if(a.kind==='discard'){_phdForm=null;_phdView='list';_phdAsk=null;_phdSetNote('ok','Discarded. Nothing had been saved.');_phdPaint();return;}
+    if(a.kind==='discard'){_phdForm=null;_phdView='list';_phdAsk=null;_phdSetNote('ok',phI18nD('drafts.discarded'));_phdPaint();return;}
     _phdRun(function(){return a.kind==='abandon'?_phdAbandon(reason):_phdSendBack(reason);});
   },{'data-act':'ask-ok'});
-  const no=_phdBtn('','Cancel',function(){_phdAsk=null;_phdPaint();},{'data-act':'ask-cancel'});
+  const no=_phdBtn('',phI18nD('queue.cancel'),function(){_phdAsk=null;_phdPaint();},{'data-act':'ask-cancel'});
   box.appendChild(_phdEl('div','phd-btnrow',null,[ok,no]));
   return box;
 }
@@ -745,7 +746,7 @@ function _phdAskNode(){
 /* the live part: completeness + summary, repainted on every edit without touching the inputs */
 function _phdPaintDirty(){
   const c=_phdRefs.dirty,f=_phdForm;if(!c||!f)return;
-  c.textContent=f.dirty?'unsaved changes':'';
+  phI18nSet(c,f.dirty?phI18nD('drafts.unsaved'):'');
   c.className='ph-chip ph-chip-wait'+(f.dirty?'':' ph-hidden');
 }
 function _phdUpdateLive(){
@@ -756,14 +757,14 @@ function _phdUpdateLive(){
   if(_phdRefs.sumhint){
     const sum=phSizesTotal(t.po.sizes);
     const qty=t.po.qty;
-    _phdRefs.sumhint.textContent='Sizes add up to '+sum+' pcs'+(qty!==null?(qty===sum?' - matches the quantity.':' - the quantity says '+qty+'.'):'.');
+    phI18nSet(_phdRefs.sumhint,phI18nD(qty===null?'drafts.sizes_sum_dot':(qty===sum?'drafts.sizes_sum_match':'drafts.sizes_sum_mismatch'),{n:sum,q:qty}));
     _phdRefs.sumhint.className='phd-hint'+(qty!==null&&sum&&qty!==sum?' phd-bad':'');
   }
-  if(_phdRefs.axishint)_phdRefs.axishint.textContent='Sizes shown: '+t.model.keys.join(', ')+' ('+(f.f.sizeModel?'chosen by you':t.model.source==='prefix'?'from the article code':'the default axis')+').';
-  if(_phdRefs.ratio)_phdRefs.ratio.textContent='Ratio: '+(t.po.ratio||'-');
+  if(_phdRefs.axishint)phI18nSet(_phdRefs.axishint,phI18nD('drafts.axis_line',{keys:t.model.keys.join(', '),how:f.f.sizeModel?phI18nD('drafts.axis_by_you'):t.model.source==='prefix'?phI18nD('drafts.axis_by_code'):phI18nD('drafts.axis_default')}));
+  if(_phdRefs.ratio)phI18nSet(_phdRefs.ratio,phI18nD('drafts.ratio',{r:t.po.ratio||'-'}));
   if(_phdRefs.strays){
     const n=t.dropped;
-    _phdRefs.strays.textContent=n?n+' size entr'+(n===1?'y does':'ies do')+' not belong to this size axis and will not be saved.':'';
+    phI18nSet(_phdRefs.strays,n?phI18nD(n===1?'drafts.sizes_foreign_one':'drafts.sizes_foreign_many',{n:n}):'');
     _phdRefs.strays.className='phd-hint'+(n?' phd-bad':'');
   }
   _phdUpdateStd();
@@ -776,19 +777,19 @@ function _phdUpdateLive(){
 function _phdCompleteness(t,gate){
   const card=_phdEl('section','ph-card phd-card phd-complete');
   const ok=gate.ok&&!t.problems.length;
-  card.appendChild(_phdEl('h3','ph-card-title',ok?'Complete':'Not complete yet'));
-  if(ok)card.appendChild(_phdEl('p','ph-note',_phdForm&&_phdForm.status==='ready'?'Every required field is filled. This draft is already marked ready.':'Every required field is filled. This draft can be marked ready.'));
+  card.appendChild(_phdEl('h3','ph-card-title',ok?phI18nD('drafts.chip_complete'):phI18nD('drafts.not_complete')));
+  if(ok)card.appendChild(_phdEl('p','ph-note',_phdForm&&_phdForm.status==='ready'?phI18nD('drafts.complete_ready'):phI18nD('drafts.complete')));
   else{
-    card.appendChild(_phdEl('p','ph-note',(gate.missing.length+t.problems.length)+' to fix before this can be marked ready:'));
+    card.appendChild(_phdEl('p','ph-note',phI18nD('drafts.to_fix',{n:gate.missing.length+t.problems.length})));
     const ul=_phdEl('ul','ph-lines phd-miss');
-    t.problems.forEach(function(p){ul.appendChild(_phdMissRow(p.field,'Not understood',p.why));});
-    gate.missing.forEach(function(m){ul.appendChild(_phdMissRow(m.field,_phdLabel(m.field),m.why));});
+    t.problems.forEach(function(p){ul.appendChild(_phdMissRow(p.field,phI18nD('drafts.not_understood'),p.why));});
+    gate.missing.forEach(function(m){ul.appendChild(_phdMissRow(m.field,_phdLabelD(m.field),m.why));});
     card.appendChild(ul);
   }
   if(gate.warnings&&gate.warnings.length){
-    card.appendChild(_phdEl('p','phd-fine','Worth a look (does not block):'));
+    card.appendChild(_phdEl('p','phd-fine',phI18nD('drafts.worth_a_look')));
     const ul=_phdEl('ul','ph-lines phd-warn');
-    gate.warnings.forEach(function(w){ul.appendChild(_phdEl('li','ph-line',null,[_phdEl('span','ph-line-name',_phdLabel(w.field)),_phdEl('span','ph-line-txt',w.why)]));});
+    gate.warnings.forEach(function(w){ul.appendChild(_phdEl('li','ph-line',null,[_phdEl('span','ph-line-name',_phdLabelD(w.field)),_phdEl('span','ph-line-txt',w.why)]));});
     card.appendChild(ul);
   }
   return card;
@@ -799,7 +800,7 @@ function _phdMissRow(field,label,why){
   li.appendChild(_phdEl('span','ph-line-txt',why));
   const refKey={cutMaster:'cutMaster'}[field]||field;
   if(_phdEditable()){
-    li.appendChild(_phdBtn('phd-small','Fix',function(){const r=_phdRefs[refKey];if(r&&typeof r.focus==='function')r.focus();},{'data-fix':field,'aria-label':'Go to '+label}));
+    li.appendChild(_phdBtn('phd-small',phI18nD('drafts.btn_fix'),function(){const r=_phdRefs[refKey];if(r&&typeof r.focus==='function')r.focus();},{'data-fix':field,'aria-label':phI18nAttr(phI18nD('drafts.go_to',{label:label}))}));
   }
   return li;
 }
@@ -807,31 +808,31 @@ function _phdMissRow(field,label,why){
 function _phdSummary(po,gate,t){
   const complete=gate.ok&&(!t||!t.problems.length);
   const card=_phdEl('section','ph-card phd-card phd-summary');
-  card.appendChild(_phdEl('h3','ph-card-title',complete?'Print-ready summary':'Summary (not print-ready: incomplete)'));
+  card.appendChild(_phdEl('h3','ph-card-title',complete?phI18nD('drafts.summary'):phI18nD('drafts.summary_incomplete')));
   const dl=_phdEl('dl','phd-dl');
   const row=function(k,v,missing){
     dl.appendChild(_phdEl('dt','phd-dt',k));
     dl.appendChild(_phdEl('dd','phd-dd'+(missing?' phd-none':''),v||'-'));
   };
-  row('Article',po.code||po.name?(po.code+(po.code&&po.name?' - ':'')+po.name):'',!po.code&&!po.name);
-  if(po.pattern)row('Pattern',po.pattern);
-  row('Quantity',po.qty!=null?po.qty+' pcs':'',po.qty==null);
+  row(phI18nD('drafts.s_article'),po.code||po.name?(po.code+(po.code&&po.name?' - ':'')+po.name):'',!po.code&&!po.name);
+  if(po.pattern)row(phI18nD('drafts.s_pattern'),po.pattern);
+  row(phI18nD('drafts.fl_qty'),po.qty!=null?phI18nD('queue.pcs',{n:po.qty}):'',po.qty==null);
   const m=t?t.model:phSizeModel({sizeModel:po.sizeModel,code:po.code});
   const sizeTxt=m.keys.filter(function(k){return po.sizes&&po.sizes[k]>0;}).map(function(k){return k+' '+po.sizes[k];}).join(' · ');
-  row('Sizes ('+m.model+')',sizeTxt+(po.ratio?'  (ratio '+po.ratio+')':''),!sizeTxt);
-  row('Fabric',[po.fabric,po.fabricCode,po.store,po.totalRoll?po.totalRoll+' rolls':''].filter(Boolean).join(' · '),!po.fabric);
-  row('Planned fabric',po.plannedFabricQty!=null&&po.plannedFabricUnit?po.plannedFabricQty+' '+po.plannedFabricUnit:'',po.plannedFabricQty==null||!po.plannedFabricUnit);
+  row(phI18nD('drafts.s_sizes',{total:m.model}),sizeTxt+(po.ratio?'  (ratio '+po.ratio+')':''),!sizeTxt);
+  row(phI18nD('drafts.fl_fabric'),[po.fabric,po.fabricCode,po.store,po.totalRoll?phI18nD('drafts.s_rolls',{n:po.totalRoll}):''].filter(Boolean).join(' · '),!po.fabric);
+  row(phI18nD('drafts.s_fabric'),po.plannedFabricQty!=null&&po.plannedFabricUnit?po.plannedFabricQty+' '+po.plannedFabricUnit:'',po.plannedFabricQty==null||!po.plannedFabricUnit);
   const sl=PH_DRAFTS_SEASONS.filter(function(s){return s[0]===po.season;})[0];
-  row('Season',sl?sl[1]:'',!sl);
-  row('Planned cut date',_phdDayLabel(po.plannedCutDate),!po.plannedCutDate);
-  row('Requested date',_phdDayLabel(po.requestedDate),!po.requestedDate);
-  row('Cutting master',po.cutMaster||po.cutMasterId,!po.cutMaster&&!po.cutMasterId);
-  row('Embellishment',po.embellishment&&po.embellishment.required?'Required':'Not required');
+  row(phI18nD('drafts.fl_season'),sl?sl[1]:'',!sl);
+  row(phI18nD('drafts.fl_plannedCutDate'),_phdDayLabel(po.plannedCutDate),!po.plannedCutDate);
+  row(phI18nD('drafts.fl_requestedDate'),_phdDayLabel(po.requestedDate),!po.requestedDate);
+  row(phI18nD('drafts.fl_cutMaster'),po.cutMaster||po.cutMasterId,!po.cutMaster&&!po.cutMasterId);
+  row(phI18nD('drafts.s_embellishment'),po.embellishment&&po.embellishment.required?phI18nD('drafts.s_required'):phI18nD('drafts.s_not_required'));
   const jc=PH_DRAFTS_COPIES.filter(function(c){return po.jobCopies&&po.jobCopies[c[0]];}).map(function(c){return c[1];});
-  row('Job copies',jc.length?jc.join(', '):'None');
-  if(po.notes)row('Notes',po.notes);
+  row(phI18nD('drafts.s_job_copies'),jc.length?jc.join(', '):phI18nD('drafts.s_none'));
+  if(po.notes)row(phI18nD('drafts.sec_notes'),po.notes);
   card.appendChild(dl);
-  card.appendChild(_phdEl('p','phd-fine','Read-only. Nothing is printed from here: the PO is printed from its own page after it is issued.'));
+  card.appendChild(_phdEl('p','phd-fine',phI18nD('drafts.s_readonly2')));
   return card;
 }
 
@@ -842,7 +843,7 @@ function _phdRun(fn){
   _phdPaintBusy();
   let p;
   try{p=Promise.resolve(fn());}catch(e){p=Promise.reject(e);}
-  return p.catch(function(e){_phdSetNote('err','Unexpected error: '+String(e&&e.message||e));}).then(function(){_phdBusy=false;_phdPaint();});
+  return p.catch(function(e){_phdSetNote('err',phI18nD('drafts.err_unexpected',{why:String(e&&e.message||e)}));}).then(function(){_phdBusy=false;_phdPaint();});
 }
 function _phdPaintBusy(){   // keep the form in place and just disable the action buttons while a write is out
   (_phdRefs.actionBtns||[]).forEach(function(b){_phdOff(b);});
@@ -850,23 +851,23 @@ function _phdPaintBusy(){   // keep the form in place and just disable the actio
 function _phdWriteGuard(){
   const wc=_phdWriteCheck();
   if(!wc.ok){_phdSetNote('err',wc.why);return false;}
-  if(!_phdForm||_phdForm.status!=='draft'){_phdSetNote('err',_phdWhyReadOnly()||'This draft cannot be changed.');return false;}
+  if(!_phdForm||_phdForm.status!=='draft'){_phdSetNote('err',_phdWhyReadOnly()||phI18nD('drafts.err_cannot_change'));return false;}
   return true;
 }
 async function _phdSave(){
   const f=_phdForm;
   if(!_phdWriteGuard())return{ok:false,code:'forbidden'};
   const t=_phdToPo(f.f);
-  if(t.problems.length){_phdSetNote('err','Not saved. Fix these first: '+_phdFmtList(t.problems.map(function(p){return p.why;}))+'.');return{ok:false,code:'invalid'};}
+  if(t.problems.length){_phdSetNote('err',phI18nD('drafts.err_not_saved_fix',{fields:_phdFmtList(t.problems.map(function(p){return p.why;}))+'.'}));return{ok:false,code:'invalid'};}
   const seq=f.seq;
   const r=await phSaveDraft(f.id||null,t.po,f.id?{expectedRev:f.rev}:{});
   if(r&&r.ok){
     f.id=r.id;f.rev=r.rev;f.status=r.draft&&r.draft.status||'draft';
     f.meta=f.meta||{};f.meta.createdByName=f.meta.createdByName||(r.draft&&r.draft.createdByName)||'';
     if(f.seq===seq)f.dirty=false;
-    _phdSetNote('ok',(r.created?'Draft '+r.id+' created':'Draft saved')+' (revision '+r.rev+').'+(t.dropped?' '+t.dropped+' size entr'+(t.dropped===1?'y':'ies')+' outside this size axis were not saved.':''));
+    _phdSetNote('ok',phI18nD(t.dropped?(r.created?'drafts.ok_created_rev_dropped':'drafts.ok_saved_dropped'):(r.created?'drafts.ok_created_rev':'drafts.ok_saved_dot'),{id:r.id,n:r.rev,d:t.dropped}));
   }else{
-    _phdSetNote('err',(r&&r.error)||'The draft could not be saved.',r&&r.code==='stale'?{code:'stale'}:null);
+    _phdSetNote('err',(r&&r.error)||phI18nD('drafts.err_save'),r&&r.code==='stale'?{code:'stale'}:null);
   }
   return r||{ok:false};
 }
@@ -874,57 +875,57 @@ async function _phdReady(){
   const f=_phdForm;
   if(!_phdWriteGuard())return;
   const t=_phdToPo(f.f);
-  if(t.problems.length){_phdSetNote('err','Not marked ready. Fix these first: '+_phdFmtList(t.problems.map(function(p){return p.why;}))+'.');return;}
+  if(t.problems.length){_phdSetNote('err',phI18nD('drafts.err_not_ready_fix',{fields:_phdFmtList(t.problems.map(function(p){return p.why;}))+'.'}));return;}
   // THE GATE, before anything is written: refused with the missing fields named.
   const gate=_phdGate(t.po);
   if(!gate.ok){
-    _phdSetNote('err','Not marked ready - the draft is incomplete. Missing: '+_phdFmtList(gate.missing.map(function(m){return _phdLabel(m.field)+' ('+m.why+')';}))+'. Your changes are still in the form; press Save draft to keep them.',{missing:gate.missing});
+    _phdSetNote('err',phI18nD('drafts.err_not_ready_missing2',{fields:_phdFmtList(gate.missing.map(function(m){return _phdLabelD(m.field)+' ('+m.why+')';}))}),{missing:gate.missing});
     return;
   }
   if(f.dirty||!f.id){const s=await _phdSave();if(!s||!s.ok)return;}
   const r=await phMarkDraftReady(f.id,{expectedRev:f.rev});
   if(r&&r.ok){
     f.status='ready';f.rev=r.rev;f.dirty=false;
-    _phdSetNote('ok','Draft '+f.id+' is marked ready (revision '+r.rev+'). It is locked; a manager can send it back.');
+    _phdSetNote('ok',phI18nD('drafts.ok_ready',{id:f.id,n:r.rev}));
   }else{
-    const miss=r&&Array.isArray(r.missing)?' Missing: '+_phdFmtList(r.missing.map(function(m){return _phdLabel(m.field)+' ('+m.why+')';}))+'.':'';
-    _phdSetNote('err',((r&&r.error)||'The draft could not be marked ready.')+(r&&r.error&&miss?'':miss),r&&r.code==='stale'?{code:'stale'}:null);
+    const miss=r&&Array.isArray(r.missing)?' Missing: '+_phdFmtList(r.missing.map(function(m){return _phdLabelD(m.field)+' ('+m.why+')';}))+'.':'';
+    _phdSetNote('err',((r&&r.error)||phI18nD('drafts.err_ready'))+(r&&r.error&&miss?'':miss),r&&r.code==='stale'?{code:'stale'}:null);
   }
 }
 async function _phdIssue(){
   const f=_phdForm;
-  if(!_phdCanManage()){_phdAsk=null;_phdSetNote('err','Only a manager (Afnan, Ammar, Mustafa) can issue a draft as a PO.');return;}
-  if(!f||!f.id||f.status!=='ready'){_phdAsk=null;_phdSetNote('err','Only a saved, READY draft can be issued.');return;}
-  if(typeof phIssueDraft!=='function'){_phdAsk=null;_phdSetNote('err','js/ph-issue.js did not load - refresh the page.');return;}
-  if(typeof navigator!=='undefined'&&navigator&&navigator.onLine===false){_phdAsk=null;_phdSetNote('err','No connection. Issuing a PO needs one (it is a single transaction and cannot be queued). Nothing was created.');return;}
+  if(!_phdCanManage()){_phdAsk=null;_phdSetNote('err',phI18nD('drafts.err_issue_mgr'));return;}
+  if(!f||!f.id||f.status!=='ready'){_phdAsk=null;_phdSetNote('err',phI18nD('drafts.err_issue_ready'));return;}
+  if(typeof phIssueDraft!=='function'){_phdAsk=null;_phdSetNote('err',phI18nD('drafts.err_issue_missing'));return;}
+  if(typeof navigator!=='undefined'&&navigator&&navigator.onLine===false){_phdAsk=null;_phdSetNote('err',phI18nD('drafts.err_issue_offline'));return;}
   const r=await phIssueDraft(f.id,{expectedRev:f.rev});
   _phdAsk=null;
   if(r&&r.ok){
     f.status='issued';f.rev=r.rev;f.dirty=false;f.meta=f.meta||{};f.meta.poId=r.poId;f.meta.issuedBy=_phdUser();f.meta.issuedAt=r.draft&&r.draft.issuedAt||null;
     const fu=r.followUps||{};
     const bad=['activity','recipe','trim'].filter(function(k){return /^failed/.test(String(fu[k]||''));});
-    _phdSetNote('ok','Issued as '+r.poId+'. The PO is reserved, like one from the New PO form.'+(fu.trim==='created'?' A trim issue request was created.':'')+(bad.length?' Follow-up step failed ('+bad.join(', ')+'); the PO itself is fine.':''));
+    _phdSetNote('ok',phI18nD('drafts.ok_issued',{po:r.poId})+(fu.trim==='created'?' A trim issue request was created.':'')+(bad.length?' Follow-up step failed ('+bad.join(', ')+'); the PO itself is fine.':''));
   }else{
-    _phdSetNote('err',(r&&r.error)||'The draft could not be issued. Nothing was created.',r&&r.code==='stale'?{code:'stale'}:null);
+    _phdSetNote('err',(r&&r.error)||phI18nD('drafts.err_issue'),r&&r.code==='stale'?{code:'stale'}:null);
   }
 }
 async function _phdAbandon(reason){
   const f=_phdForm;
   if(!_phdWriteCheck().ok){_phdSetNote('err',_phdWriteCheck().why);return;}
-  if(!f||!f.id){_phdSetNote('err','This draft was never saved, so there is nothing to abandon.');return;}
-  if(f.status==='ready'&&!_phdCanManage()){_phdSetNote('err','Only a manager (Afnan, Ammar, Mustafa) can abandon a ready draft.');return;}
-  if(!String(reason||'').trim()){_phdSetNote('err','A reason is needed to abandon a draft.');return;}
+  if(!f||!f.id){_phdSetNote('err',phI18nD('drafts.err_abandon_unsaved'));return;}
+  if(f.status==='ready'&&!_phdCanManage()){_phdSetNote('err',phI18nD('drafts.abandon_managers'));return;}
+  if(!String(reason||'').trim()){_phdSetNote('err',phI18nD('drafts.err_abandon_reason'));return;}
   const r=await phAbandonDraft(f.id,reason,{expectedRev:f.rev});
-  if(r&&r.ok){f.status='abandoned';f.rev=r.rev;f.dirty=false;_phdAsk=null;f.meta=f.meta||{};f.meta.abandonedReason=String(reason).trim().slice(0,500);_phdSetNote('ok','Draft '+f.id+' abandoned.');}
-  else _phdSetNote('err',(r&&r.error)||'The draft could not be abandoned.',r&&r.code==='stale'?{code:'stale'}:null);
+  if(r&&r.ok){f.status='abandoned';f.rev=r.rev;f.dirty=false;_phdAsk=null;f.meta=f.meta||{};f.meta.abandonedReason=String(reason).trim().slice(0,500);_phdSetNote('ok',phI18nD('drafts.ok_abandoned',{id:f.id}));}
+  else _phdSetNote('err',(r&&r.error)||phI18nD('drafts.err_abandon'),r&&r.code==='stale'?{code:'stale'}:null);
 }
 async function _phdSendBack(reason){
   const f=_phdForm;
-  if(!_phdCanManage()){_phdSetNote('err','Only a manager (Afnan, Ammar, Mustafa) can send a ready draft back.');return;}
+  if(!_phdCanManage()){_phdSetNote('err',phI18nD('drafts.send_back_managers'));return;}
   if(!_phdWriteCheck().ok){_phdSetNote('err',_phdWriteCheck().why);return;}
-  if(!f||!f.id||f.status!=='ready'){_phdSetNote('err','Only a ready draft can be sent back.');return;}
-  if(!String(reason||'').trim()){_phdSetNote('err','A reason is needed to send a draft back.');return;}
+  if(!f||!f.id||f.status!=='ready'){_phdSetNote('err',phI18nD('drafts.err_send_back_only_ready'));return;}
+  if(!String(reason||'').trim()){_phdSetNote('err',phI18nD('drafts.err_send_back_reason'));return;}
   const r=await phSendBackDraft(f.id,reason,{expectedRev:f.rev});
-  if(r&&r.ok){f.status='draft';f.rev=r.rev;f.dirty=false;_phdAsk=null;f.meta=f.meta||{};f.meta.sentBackReason=String(reason).trim().slice(0,500);_phdSetNote('ok','Draft '+f.id+' sent back to draft (revision '+r.rev+').');}
-  else _phdSetNote('err',(r&&r.error)||'The draft could not be sent back.',r&&r.code==='stale'?{code:'stale'}:null);
+  if(r&&r.ok){f.status='draft';f.rev=r.rev;f.dirty=false;_phdAsk=null;f.meta=f.meta||{};f.meta.sentBackReason=String(reason).trim().slice(0,500);_phdSetNote('ok',phI18nD('drafts.ok_sent_back',{id:f.id,n:r.rev}));}
+  else _phdSetNote('err',(r&&r.error)||phI18nD('drafts.err_send_back'),r&&r.code==='stale'?{code:'stale'}:null);
 }

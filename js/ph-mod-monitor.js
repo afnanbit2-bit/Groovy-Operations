@@ -31,10 +31,10 @@ const PHM_CAP_DAYS=14;                       // the load window, today + 13
 const PHM_MAX_POS=1000;                      // one bounded read of `pos`; a list that hit it says so
 const PHM_READ_TIMEOUT_MS=20000;
 const PHM_STALE_MS=5*60*1000;                // a cached read older than this is read again when a tab opens
-const PHM_STAGE_LABEL=Object.freeze({reserved:'Reserved',cutting:'Cutting',bundling:'Bundling',stitching:'Stitching',printing:'Printing',washing:'Washing',qc:'Final QC',completed:'Completed',unknown:'Unknown stage'});
+const PHM_STAGE_LABEL=Object.freeze({reserved:phI18nD('ov.stage_reserved'),cutting:phI18nD('queue.lane_cutting'),bundling:phI18nD('queue.lane_bundling'),stitching:phI18nD('queue.lane_stitching'),printing:phI18nD('queue.lane_printing'),washing:phI18nD('queue.lane_washing'),qc:phI18nD('queue.lane_qc'),completed:phI18nD('queue.lane_completed'),unknown:phI18nD('ov.stage_unknown')});
 const PHM_MONTHS=Object.freeze(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']);
 const PHM_RANGES=Object.freeze([['today','Today'],['week','This week'],['month','This month'],['all','All time'],['custom','Custom']]);
-const PHM_KIND_LABEL=Object.freeze({stuck:'▲ Stuck',delayed:'◆ Delayed',overgate:'■ Over the cut gate'});
+const PHM_KIND_LABEL=Object.freeze({stuck:phI18nD('ov.reason_stuck'),delayed:phI18nD('ov.reason_delayed'),overgate:phI18nD('ov.reason_gate')});
 const PHM_KIND_RANK=Object.freeze({stuck:3,overgate:2,delayed:1});
 const PHM_OVERVIEW_TILES=Object.freeze(['pipeline','afloat','inProduction','reserved','stuck','attention']);
 const PHM_NOW_TILES=Object.freeze(['pipeline','afloat','inProduction','reserved','stuck','capacity','queueDelay']);
@@ -53,6 +53,11 @@ function _phmN(n){
 }
 function _phmSigned(n){const v=phNum(n);if(v===null)return'—';return(v>0?'+':'')+_phmN(v);}
 function _phmPlural(n,one,many){return _phmN(n)+' '+(n===1?one:(many||one+'s'));}
+// The Urdu pair of a PO count, e.g. 3 POs. kind: 'po' | 'openpo'
+function _phmPoD(n,kind){return phI18nD(kind==='openpo'?(n===1?'ov.openpo_one':'ov.openpo_many'):(n===1?'ov.po_one':'ov.po_many'),{n:_phmN(n)});}
+function _phmDaysD(n){return phI18nD(n===1?'ov.n_day_one':'ov.n_day_many',{n:_phmN(n)});}
+function _phmJoinD(list,key){return list.reduce(function(a,b){return a===null?b:phI18nD(key,{a:a,b:b});},null);}
+function _phmDefD(sv,k){return sv.isDefault[k]?phI18nD('ov.default_sp'):'';}
 function _phmDayLabel(d){return(typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d))?(+d.slice(8,10))+' '+PHM_MONTHS[(+d.slice(5,7))-1]:'—';}
 function _phmTime(ms){   // PKT clock time, fixed UTC+5
   if(typeof ms!=='number'||!isFinite(ms))return'';
@@ -123,11 +128,11 @@ function _phmT(id,label,scope,state,o){
   return Object.assign({id:id,label:label,scope:scope,state:state,value:'',sub:'',cap:'',lines:[],count:0,rows:[],links:[],sum:null,sumLabel:'',unavailable:null,warn:''},o||{});
 }
 function _phmUnavail(id,label,scope,names){
-  return _phmT(id,label,scope,'unavailable',{value:'unavailable — '+names.join(', '),unavailable:names.slice(),cap:'This figure needs '+names.join(' and ')+', which could not be read.'});
+  return _phmT(id,label,scope,'unavailable',{value:phI18nD('ov.unavailable_x',{names:names.join(', ')}),unavailable:names.slice(),cap:phI18nD('ov.unavailable_needs_x',{names:names.join(' and ')})});
 }
 function _phmNoData(id,label,scope,text,o){return _phmT(id,label,scope,'nodata',Object.assign({value:text},o||{}));}
 function _phmFinish(t){   // a number and the list behind it must agree; if they do not, the tile says so
-  if(t.state!=='unavailable'&&t.count!==t.rows.length)t.warn='The list behind this number has '+t.rows.length+' rows but the number says '+t.count+' — please report this.';
+  if(t.state!=='unavailable'&&t.count!==t.rows.length)t.warn=phI18nD('ov.list_mismatch',{rows:t.rows.length,count:t.count});
   return t;
 }
 
@@ -167,34 +172,34 @@ function phmBuildModel(inp){
 
   /* pipeline / afloat / in production / reserved */
   {
-    const cnt=PH_REAL_STAGE_ORDER.map(function(s){return _phmStageLabel(s)+' '+at(s).length;}).join(' · ');
-    const t=_phmT('pipeline','POs in pipeline','now','ok',{value:_phmN(pl.state==='ok'?pl.inProduction.pos:0),sub:cnt,
-      cap:'Released POs from cutting to final QC. Completed, reserved and cancelled POs are not in this number.',count:pl.state==='ok'?pl.inProduction.pos:0,
-      rows:_phmByIdRows(inProdList,function(e){return'at '+_phmStageLabel(stageOf(e));})});
+    const cnt=_phmJoinD(PH_REAL_STAGE_ORDER.map(function(s){return phI18nD('ov.stage_n',{s:_phmStageLabel(s),n:at(s).length});}),'ov.join_dot');
+    const t=_phmT('pipeline',phI18nD('ov.t_pipeline'),'now','ok',{value:_phmN(pl.state==='ok'?pl.inProduction.pos:0),sub:cnt,
+      cap:phI18nD('ov.t_pipeline_cap'),count:pl.state==='ok'?pl.inProduction.pos:0,
+      rows:_phmByIdRows(inProdList,function(e){return phI18nD('ov.at_stage',{stage:_phmStageLabel(stageOf(e))});})});
     const unk=at('unknown');
-    if(unk.length)t.links.push({label:_phmPlural(unk.length,'PO')+' in a stage this app does not recognise',count:unk.length,rows:_phmByIdRows(unk,function(e){return'stage: '+(phStr(e.currentStage).trim()||phStr(e.poStatus).trim()||'—');})});
+    if(unk.length)t.links.push({label:phI18nD('ov.unrecognised_link',{po:_phmPoD(unk.length,'po')}),count:unk.length,rows:_phmByIdRows(unk,function(e){return phI18nD('ov.stage_colon',{v:phStr(e.currentStage).trim()||phStr(e.poStatus).trim()||'—'});})});
     M.tiles.pipeline=_phmFinish(t);
   }
   {
-    const list=at('cutting'),rows=_phmByIdRows(list,function(e){const u=phPoUnits(e);return u.units===null?'no quantity on the PO':_phmN(u.units)+' pcs ordered';});
+    const list=at('cutting'),rows=_phmByIdRows(list,function(e){const u=phPoUnits(e);return u.units===null?phI18nD('ov.no_qty_on_po'):phI18nD('ov.pcs_ordered',{n:_phmN(u.units)});});
     const sm=_phmSumUnits(rows);
-    const t=_phmT('afloat','Units afloat','now','ok',{value:_phmN(pl.state==='ok'?pl.afloat.units:0),sub:_phmPlural(list.length,'PO')+' at cutting'+(sm.unknown?' · '+_phmPlural(sm.unknown,'PO')+' with no quantity':''),
-      cap:'Afloat = the pieces ISSUED (ordered quantity) of released POs still at cutting, i.e. not yet cut done.',count:pl.state==='ok'?pl.afloat.pos:0,rows:rows,sum:sm.total,sumLabel:'pieces ordered'});
+    const t=_phmT('afloat',phI18nD('ov.t_afloat'),'now','ok',{value:_phmN(pl.state==='ok'?pl.afloat.units:0),sub:sm.unknown?phI18nD('ov.sub_afloat_noqty',{po:_phmPoD(list.length,'po'),noq:phI18nD('ov.n_po_noqty',{po:_phmPoD(sm.unknown,'po')})}):phI18nD('ov.t_afloat_sub',{po:_phmPoD(list.length,'po')}),
+      cap:phI18nD('ov.t_afloat_cap'),count:pl.state==='ok'?pl.afloat.pos:0,rows:rows,sum:sm.total,sumLabel:phI18nD('ov.sum_pieces_ordered')});
     M.tiles.afloat=_phmFinish(t);
-    if(pl.state==='ok'&&pl.afloat.units!==sm.total)M.tiles.afloat.warn='The pieces in the list ('+_phmN(sm.total)+') differ from the number — please report this.';
+    if(pl.state==='ok'&&pl.afloat.units!==sm.total)M.tiles.afloat.warn=phI18nD('ov.sum_differs',{n:_phmN(sm.total)});
   }
   {
-    const rows=_phmByIdRows(inProdList,function(e){const u=phPoUnits(e);return u.units===null?'no quantity':_phmN(u.units)+' pcs ('+(u.basis==='cut'?'actual cut':'ordered')+')';});
+    const rows=_phmByIdRows(inProdList,function(e){const u=phPoUnits(e);return u.units===null?phI18nD('ov.no_qty'):phI18nD('ov.pcs_actual_or_ordered',{n:_phmN(u.units),basis:phI18nD(u.basis==='cut'?'ov.basis_cut':'ov.basis_ordered')});});
     const sm=_phmSumUnits(rows);
-    const t=_phmT('inProduction','Units in production','now','ok',{value:_phmN(pl.state==='ok'?pl.inProduction.units:0),sub:_phmPlural(inProdList.length,'PO')+', cutting to final QC'+(sm.unknown?' · '+_phmPlural(sm.unknown,'PO')+' with no quantity':''),
-      cap:'In production = cutting to final QC. It counts the ACTUAL cut quantity once a PO is past cutting, so it differs from units afloat.',count:pl.state==='ok'?pl.inProduction.pos:0,rows:rows,sum:sm.total,sumLabel:'pieces (actual cut once cut)'});
+    const t=_phmT('inProduction',phI18nD('ov.t_inprod'),'now','ok',{value:_phmN(pl.state==='ok'?pl.inProduction.units:0),sub:sm.unknown?phI18nD('ov.sub_inprod_noqty',{po:_phmPoD(inProdList.length,'po'),noq:phI18nD('ov.n_po_noqty',{po:_phmPoD(sm.unknown,'po')})}):phI18nD('ov.t_inprod_sub',{po:_phmPoD(inProdList.length,'po')}),
+      cap:phI18nD('ov.t_inprod_cap'),count:pl.state==='ok'?pl.inProduction.pos:0,rows:rows,sum:sm.total,sumLabel:phI18nD('ov.sum_pieces_actual')});
     M.tiles.inProduction=_phmFinish(t);
-    if(pl.state==='ok'&&pl.inProduction.units!==sm.total)M.tiles.inProduction.warn='The pieces in the list ('+_phmN(sm.total)+') differ from the number — please report this.';
+    if(pl.state==='ok'&&pl.inProduction.units!==sm.total)M.tiles.inProduction.warn=phI18nD('ov.sum_differs',{n:_phmN(sm.total)});
   }
   {
     const list=at('reserved');
-    M.tiles.reserved=_phmFinish(_phmT('reserved','Reserved POs','now','ok',{value:_phmN(list.length),sub:'not released to production',
-      cap:'Reserved POs are kept apart: they are in no other figure on this page.',count:pl.state==='ok'?pl.counts.reserved:0,rows:_phmByIdRows(list,function(e){const u=phPoUnits(e);return u.units===null?'no quantity':_phmN(u.units)+' pcs reserved';})}));
+    M.tiles.reserved=_phmFinish(_phmT('reserved',phI18nD('ov.t_reserved'),'now','ok',{value:_phmN(list.length),sub:phI18nD('ov.t_reserved_sub'),
+      cap:phI18nD('ov.t_reserved_cap'),count:pl.state==='ok'?pl.counts.reserved:0,rows:_phmByIdRows(list,function(e){const u=phPoUnits(e);return u.units===null?phI18nD('ov.no_qty'):phI18nD('ov.pcs_reserved',{n:_phmN(u.units)});})}));
   }
 
   /* stuck / delayed / over the cut gate */
@@ -208,7 +213,7 @@ function phmBuildModel(inp){
       const pk=phPoKey(ep.id),fi=pk!==null&&fiMap&&Object.prototype.hasOwnProperty.call(fiMap,pk)?fiMap[pk]:null;
       l=phLeadTime(ep,fi!==null?Object.assign({},O,{issueAt:fi}):O);
       if(l.quality.indexOf('start_from_ts')>-1||l.quality.indexOf('no_issue')>-1){noStart.push(ep);return;}
-      if(fi!==null){since='first fabric issue';basis.issue++;}else{since='release';basis.release++;}
+      if(fi!==null){since=phI18nD('ov.since_issue');basis.issue++;}else{since=phI18nD('ov.since_release');basis.release++;}
     }else{
       const prev=PH_REAL_STAGE_ORDER[PH_REAL_STAGE_ORDER.indexOf(st)-1];
       const sg=_phmObj(ep.stages)?ep.stages[prev]:null;
@@ -216,18 +221,18 @@ function phmBuildModel(inp){
       if(entry===null&&prev==='cutting'&&phMs(ep.cutAt)!==null)entry=ep.cutAt;
       if(entry===null){noStart.push(ep);return;}
       l=phLeadTime({id:ep.id,fabricIssuedAt:entry},O);
-      since=_phmStageLabel(prev).toLowerCase()+' done';
+      since=phI18nD('ov.done_'+prev);
     }
     if(l.state!=='open'){unjudged.push(ep);return;}
     const reasons=[];
     let kind=null;
-    if(l.status==='stuck'){kind='stuck';reasons.push(_phmPlural(l.ageDays,'day')+' at '+sl+' (since '+_phmDayLabel(l.startDay)+', '+since+'); the limit is '+S.stuckDays+' days'+_phmDef(sv,'stuckDays'));}
-    else if(st==='cutting'&&l.status==='delayed'){kind='delayed';reasons.push(_phmPlural(l.ageDays,'day')+' since '+(since==='release'?'release':since)+' (since '+_phmDayLabel(l.startDay)+'); the target is '+S.delayTargetDays+' days'+_phmDef(sv,'delayTargetDays'));}
+    if(l.status==='stuck'){kind='stuck';reasons.push(phI18nD('ov.r_stuck',{days:_phmDaysD(l.ageDays),stage:sl,day:_phmDayLabel(l.startDay),since:since,lim:S.stuckDays,def:_phmDefD(sv,'stuckDays')}));}
+    else if(st==='cutting'&&l.status==='delayed'){kind='delayed';reasons.push(phI18nD('ov.r_delayed',{days:_phmDaysD(l.ageDays),since:since,day:_phmDayLabel(l.startDay),tgt:S.delayTargetDays,def:_phmDefD(sv,'delayTargetDays')}));}
     if(st==='cutting'&&jobsOk){
       const g=phDelayGap(ep,undefined,O);
-      if(g.state==='overdue'){kind=kind||'delayed';reasons.push('planned cut day '+_phmDayLabel(g.plannedDay)+' passed '+_phmPlural(g.days,'day')+' ago');}
+      if(g.state==='overdue'){kind=kind||'delayed';reasons.push(phI18nD('ov.r_planned_passed',{day:_phmDayLabel(g.plannedDay),days:_phmDaysD(g.days)}));}
     }
-    if(kind)items.push({kind:kind,ep:ep,age:l.ageDays,text:reasons.join('; ')});
+    if(kind)items.push({kind:kind,ep:ep,age:l.ageDays,text:_phmJoinD(reasons,'ov.join_semi')});
   });
   inProdList.forEach(function(ep){   // a PO already completed is history: nothing can still be done about its cut
     const u=phPoUnits(ep),qty=phWhole(ep.qty);
@@ -235,25 +240,25 @@ function phmBuildModel(inp){
     const c=phCutCheck(qty,u.units,{gate:S.cutGate});
     if(c.verdict!=='needs_override')return;
     if(_phmObj(ep.cutOverride)&&ep.cutOverride.by)return;   // approved by an owner: it is on record
-    items.push({kind:'overgate',ep:ep,age:0,text:'cut '+_phmN(u.units)+' pcs against '+_phmN(qty)+' ordered ('+phRound(u.units/qty*100,0)+'%); the gate is '+c.gate[0]+'–'+c.gate[1]+'% = '+_phmN(c.min)+'–'+_phmN(c.max)+' pcs'+_phmDef(sv,'cutGate')+'; no owner override on record'});
+    items.push({kind:'overgate',ep:ep,age:0,text:phI18nD('ov.r_overgate',{u:_phmN(u.units),q:_phmN(qty),pct:phRound(u.units/qty*100,0),lo:c.gate[0],hi:c.gate[1],min:_phmN(c.min),max:_phmN(c.max),def:_phmDefD(sv,'cutGate')})});
   });
   items.sort(function(a,b){return(PHM_KIND_RANK[b.kind]-PHM_KIND_RANK[a.kind])||(b.age-a.age)||(a.ep.id<b.ep.id?-1:a.ep.id>b.ep.id?1:0);});
   const attRows=items.map(function(it){return _phmRow(it.ep,it.text,{kind:it.kind,kindLabel:PHM_KIND_LABEL[it.kind]});});
   const nStuck=items.filter(function(i){return i.kind==='stuck';}).length,nDelayed=items.filter(function(i){return i.kind==='delayed';}).length,nGate=items.filter(function(i){return i.kind==='overgate';}).length;
   M.stuckBasis=basis;
   M.attention={items:items,rows:attRows,count:items.length,counts:{stuck:nStuck,delayed:nDelayed,overgate:nGate},unavailable:null,noStart:noStart.length,
-    note:jobsOk?'':'Delays against a planned cut day are not checked: po_cut_jobs could not be read.'};
+    note:jobsOk?'':phI18nD('ov.jobs_unread_delays')};
   {
     const stuckRows=attRows.filter(function(r){return r.kind==='stuck';});
-    const t=_phmT('stuck','Stuck POs','now','ok',{value:_phmN(nStuck),sub:'at one stage for '+S.stuckDays+' days or more'+_phmDef(sv,'stuckDays'),
-      cap:'A PO at cutting is counted from its FIRST fabric-issue gate pass when it has one, else from its release date; a later stage from the date the previous stage was done. '+(basis.passesOk?'Start used at cutting: '+basis.issue+(basis.issue===1?' PO':' POs')+' from the first fabric issue, '+basis.release+(basis.release===1?' PO':' POs')+' from the release date.':'The gate passes could not be read, so every PO at cutting was counted from its release date.')+' The limit is the setting stuckDays; ph-core calls a PO stuck at the limit or beyond.',count:nStuck,rows:stuckRows});
-    if(noStart.length)t.links.push({label:_phmPlural(noStart.length,'open PO')+' with no start date — cannot be judged',count:noStart.length,rows:_phmByIdRows(noStart,function(e){return'at '+_phmStageLabel(stageOf(e))+', no release or stage date on the PO';})});
+    const t=_phmT('stuck',phI18nD('ov.t_stuck'),'now','ok',{value:_phmN(nStuck),sub:phI18nD(sv.isDefault.stuckDays?'ov.stuck_sub_def':'ov.t_stuck_sub',{n:S.stuckDays}),
+      cap:basis.passesOk?phI18nD('ov.stuck_cap_ok',{a:_phmPoD(basis.issue,'po'),b:_phmPoD(basis.release,'po')}):phI18nD('ov.stuck_cap_nopass'),count:nStuck,rows:stuckRows});
+    if(noStart.length)t.links.push({label:phI18nD('ov.nostart_link',{po:_phmPoD(noStart.length,'openpo')}),count:noStart.length,rows:_phmByIdRows(noStart,function(e){return phI18nD('ov.r_at_no_date',{stage:_phmStageLabel(stageOf(e))});})});
     M.tiles.stuck=_phmFinish(t);
   }
   {
-    const sub=nStuck+' stuck · '+nDelayed+' delayed · '+nGate+' over the cut gate';
-    M.tiles.attention=_phmFinish(_phmT('attention','Needs attention','now','ok',{value:_phmN(items.length),sub:sub,
-      cap:'Delayed (past the '+S.delayTargetDays+'-day target'+_phmDef(sv,'delayTargetDays')+' or its planned cut day), stuck, and cuts outside the gate with no owner override on record. A PO can be on the list for more than one reason.'+(jobsOk?'':' '+M.attention.note),count:items.length,rows:attRows}));
+    const sub=phI18nD('ov.attention_summary',{stuck:nStuck,delayed:nDelayed,gate:nGate});
+    M.tiles.attention=_phmFinish(_phmT('attention',phI18nD('ov.t_attention'),'now','ok',{value:_phmN(items.length),sub:sub,
+      cap:jobsOk?phI18nD('ov.attn_cap2',{n:S.delayTargetDays,def:_phmDefD(sv,'delayTargetDays')}):phI18nD('ov.attn_cap2_note',{cap:phI18nD('ov.attn_cap2',{n:S.delayTargetDays,def:_phmDefD(sv,'delayTargetDays')}),note:M.attention.note}),count:items.length,rows:attRows}));
   }
 
   /* load against capacity for the next 14 days */
@@ -335,8 +340,8 @@ function phmBuildModel(inp){
     else{
       const t=_phmT('seasons','Season split','range','ok',{value:_phmPlural(total,'PO'),sub:'issued'+rangeWord+', by season',
         cap:'A season stored on the PO is used. Otherwise it is guessed from the dates and marked guessed: a winter garment is cut in the summer, so the date alone can mislabel it.',count:total,
-        rows:_phmByIdRows(mem.issued,function(e){const s=phSeasonOf(e);return'issued '+startTxt(e)+' · '+(s.key?phSeasonLabel(s.key):'No season')+(s.guess?' (guessed)':s.key?' (stored)':'');})});
-      rep.seasons.forEach(function(s){t.lines.push({text:s.label+' · '+_phmPlural(s.pos,'PO')+' · '+(s.units?_phmN(s.units)+' pcs':'no quantity')+(s.noUnits&&s.units?' (+'+s.noUnits+' with none)':''),flag:s.guessed?(s.guessed===s.pos?'all guessed':s.guessed+' guessed'):''});});
+        rows:_phmByIdRows(mem.issued,function(e){const s=phSeasonOf(e);return'issued '+startTxt(e)+' · '+(s.key?phSeasonLabel(s.key):phI18nD('queue.no_season'))+(s.guess?' (guessed)':s.key?' (stored)':'');})});
+      rep.seasons.forEach(function(s){t.lines.push({text:s.label+' · '+_phmPlural(s.pos,'PO')+' · '+(s.units?_phmN(s.units)+' pcs':phI18nD('ov.no_qty'))+(s.noUnits&&s.units?' (+'+s.noUnits+' with none)':''),flag:s.guessed?(s.guessed===s.pos?'all guessed':s.guessed+' guessed'):''});});
       M.tiles.seasons=_phmFinish(t);
     }
   }
@@ -388,7 +393,7 @@ function phmBuildModel(inp){
   }
   return M;
 }
-const PHM_LABELS=Object.freeze({pipeline:'POs in pipeline',afloat:'Units afloat',inProduction:'Units in production',reserved:'Reserved POs',stuck:'Stuck POs',attention:'Needs attention',
+const PHM_LABELS=Object.freeze({pipeline:phI18nD('ov.t_pipeline'),afloat:phI18nD('ov.t_afloat'),inProduction:phI18nD('ov.t_inprod'),reserved:phI18nD('ov.t_reserved'),stuck:phI18nD('ov.t_stuck'),attention:phI18nD('ov.t_attention'),
   capacity:'Load, next '+PHM_CAP_DAYS+' days',queueDelay:'Queue delay vs requested day',seasons:'Season split',avgIssue:'Average PO issue quantity',avgCut:'Average cut quantity',leadTime:'Lead time',cutGap:'Delay gap, cut vs planned'});
 
 /* ── the read of `pos` (the data layer does not load PO documents) ─────── */
@@ -459,9 +464,9 @@ function phmOpenPO(fbKey){
   return true;
 }
 function _phmOpenBtn(r){
-  const b=phEl('button','ph-btn phm-open','Open '+r.id);
+  const b=phEl('button','ph-btn phm-open',phI18nD('queue.open',{po:r.id}));
   b.setAttribute('type','button');b.setAttribute('data-act','open-po');b.setAttribute('data-po',r.fbKey||r.id);
-  b.setAttribute('aria-label','Open the detail page of '+r.id);
+  b.setAttribute('aria-label',phI18nAttr(phI18nD('ov.open_detail_aria',{po:r.id})));
   b.addEventListener('click',function(){phmOpenPO(r.fbKey||r.id);});
   return b;
 }
@@ -480,26 +485,26 @@ function phmOpenDrawer(host,spec,opener){
   phmCloseDrawer(false);
   const E=phEl;
   const wrap=E('div','phm-drawer-wrap');
-  const scrim=E('button','phm-scrim');scrim.setAttribute('type','button');scrim.setAttribute('aria-label','Close the list');scrim.setAttribute('tabindex','-1');
+  const scrim=E('button','phm-scrim');scrim.setAttribute('type','button');scrim.setAttribute('aria-label',phI18nAttr(phI18nD('ov.close_list')));scrim.setAttribute('tabindex','-1');
   scrim.addEventListener('click',function(){phmCloseDrawer(true);});
-  const panel=E('div','phm-drawer');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',spec.title+' — the POs behind this number');
+  const panel=E('div','phm-drawer');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',phI18nAttr(phI18nD('ov.pos_behind',{title:spec.title})));
   const head=E('div','phm-drawer-head');
   const ttl=E('div','phm-drawer-title',spec.title);
-  const cnt=E('span','ph-chip phm-drawer-count',_phmPlural(spec.rows.length,'PO'));
-  const close=E('button','ph-btn phm-drawer-close','Close');close.setAttribute('type','button');close.addEventListener('click',function(){phmCloseDrawer(true);});
+  const cnt=E('span','ph-chip phm-drawer-count',_phmPoD(spec.rows.length,'po'));
+  const close=E('button','ph-btn phm-drawer-close',phI18nD('ov.btn_close'));close.setAttribute('type','button');close.addEventListener('click',function(){phmCloseDrawer(true);});
   head.appendChild(ttl);head.appendChild(cnt);head.appendChild(close);
   panel.appendChild(head);
   if(spec.note)panel.appendChild(E('p','phm-drawer-note',spec.note));
-  if(spec.sum!==null&&spec.sum!==undefined)panel.appendChild(E('p','phm-drawer-sum','Sum of the list: '+_phmN(spec.sum)+' '+(spec.sumLabel||'pieces')));
+  if(spec.sum!==null&&spec.sum!==undefined)panel.appendChild(E('p','phm-drawer-sum',phI18nD('ov.sum_of_list2',{n:_phmN(spec.sum),label:spec.sumLabel||phI18nD('ov.pieces')})));
   const ul=E('ul','phm-rows');
-  if(!spec.rows.length)ul.appendChild(E('li','phm-row phm-row-empty','No POs behind this number.'));
+  if(!spec.rows.length)ul.appendChild(E('li','phm-row phm-row-empty',phI18nD('ov.no_pos_behind')));
   spec.rows.forEach(function(r){
     const li=E('li','phm-row');
     const top=E('div','phm-row-top');
     top.appendChild(E('span','phm-row-id',r.id));
     if(r.kindLabel)top.appendChild(E('span','ph-chip phm-kind phm-kind-'+r.kind,r.kindLabel));
     top.appendChild(E('span','ph-chip phm-stage',_phmStageLabel(r.stage)));
-    top.appendChild(E('span','phm-row-units',r.units===null||r.units===undefined?'no quantity':_phmN(r.units)+' pcs'));
+    top.appendChild(E('span','phm-row-units',r.units===null||r.units===undefined?phI18nD('ov.no_qty'):phI18nD('queue.pcs',{n:_phmN(r.units)})));
     li.appendChild(top);
     li.appendChild(E('div','phm-row-title',r.title));
     if(r.detail)li.appendChild(E('div','phm-row-detail',r.detail));
@@ -528,11 +533,11 @@ function _phmTileEl(t,host){
   const main=E(clickable?'button':'div','phm-tile-main');
   if(clickable){
     main.setAttribute('type','button');
-    main.setAttribute('aria-label',t.label+': '+t.value+'. Show the '+_phmPlural(t.rows.length,'PO')+' behind this number.');
+    main.setAttribute('aria-label',phI18nAttr(phI18nD('ov.tile_aria',{label:t.label,value:t.value,po:_phmPoD(t.rows.length,'po')})));
   }
   const top=E('div','phm-tile-top');
   top.appendChild(E('span','phm-tile-label',t.label));
-  top.appendChild(E('span','phm-scope phm-scope-'+t.scope,t.scope==='range'?'In range':'Now'));
+  top.appendChild(E('span','phm-scope phm-scope-'+t.scope,t.scope==='range'?phI18nD('ov.scope_in_range'):phI18nD('ov.scope_now')));
   main.appendChild(top);
   main.appendChild(E('div','phm-tile-val'+(t.state==='ok'?'':' phm-val-soft'),t.value));
   if(t.sub)main.appendChild(E('div','phm-tile-sub',t.sub));
@@ -542,12 +547,12 @@ function _phmTileEl(t,host){
     main.appendChild(ul);
   }
   if(t.cap)main.appendChild(E('div','phm-tile-cap',t.cap));
-  if(clickable)main.appendChild(E('div','phm-tile-foot','Show the '+_phmPlural(t.rows.length,'PO')+' ›'));
+  if(clickable)main.appendChild(E('div','phm-tile-foot',phI18nD('ov.show_pos_foot',{po:_phmPoD(t.rows.length,'po')})));
   if(clickable)main.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label,rows:t.rows,note:t.cap,sum:t.sum,sumLabel:t.sumLabel,openable:t.id==='attention'},main);});
   box.appendChild(main);
   t.links.forEach(function(l){
-    const b=E('button','phm-sublink',l.label+' ›');b.setAttribute('type','button');
-    b.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label+' — '+l.label,rows:l.rows,note:''},b);});
+    const b=E('button','phm-sublink',phI18nD('ov.sublink',{label:l.label}));b.setAttribute('type','button');
+    b.addEventListener('click',function(){phmOpenDrawer(host,{title:phI18nD('ov.drawer_title_link',{t:t.label,l:l.label}),rows:l.rows,note:''},b);});
     box.appendChild(b);
   });
   if(t.warn){const w=E('div','phm-warn',t.warn);w.setAttribute('role','alert');box.appendChild(w);}
@@ -561,13 +566,13 @@ function _phmTilesEl(ids,M,host){
 function _phmAttentionCard(M,host,opts){
   const E=phEl,o=opts||{};
   const card=E('section','ph-card phm-att');
-  card.appendChild(E('h3','ph-card-title','Needs attention'));
+  card.appendChild(E('h3','ph-card-title',phI18nD('ov.t_attention')));
   if(M.attention.unavailable){
-    card.appendChild(E('p','phm-val-soft','unavailable — '+M.attention.unavailable.join(', ')));
+    card.appendChild(E('p','phm-val-soft',phI18nD('ov.unavailable_x',{names:M.attention.unavailable.join(', ')})));
     return card;
   }
   const rows=M.attention.rows;
-  if(!rows.length)card.appendChild(E('p','ph-note',M.attention.noStart?'Nothing is stuck, delayed or over the cut gate among the POs that can be judged.':'Nothing is stuck, delayed or over the cut gate.'));
+  if(!rows.length)card.appendChild(E('p','ph-note',M.attention.noStart?phI18nD('ov.attention_none_judged'):phI18nD('ov.attention_none')));
   const ul=E('ul','phm-att-list');
   rows.slice(0,o.limit||rows.length).forEach(function(r){
     const li=E('li','phm-att-row');
@@ -583,12 +588,12 @@ function _phmAttentionCard(M,host,opts){
   });
   card.appendChild(ul);
   if(rows.length>(o.limit||rows.length)){
-    const b=E('button','ph-btn phm-more','Show all '+rows.length);b.setAttribute('type','button');
-    b.addEventListener('click',function(){phmOpenDrawer(host,{title:'Needs attention',rows:rows,note:M.tiles.attention?M.tiles.attention.cap:'',openable:true},b);});
+    const b=E('button','ph-btn phm-more',phI18nD('ov.show_all',{n:rows.length}));b.setAttribute('type','button');
+    b.addEventListener('click',function(){phmOpenDrawer(host,{title:phI18nD('ov.t_attention'),rows:rows,note:M.tiles.attention?M.tiles.attention.cap:'',openable:true},b);});
     card.appendChild(b);
   }
   if(M.attention.note)card.appendChild(E('p','phm-note-soft',M.attention.note));
-  if(M.attention.noStart)card.appendChild(E('p','phm-note-soft',_phmPlural(M.attention.noStart,'open PO')+' with no start date cannot be judged (see Stuck POs).'));
+  if(M.attention.noStart)card.appendChild(E('p','phm-note-soft',phI18nD('ov.attention_no_start2',{po:_phmPoD(M.attention.noStart,'openpo')})));
   return card;
 }
 function _phmStageLine(row){   // the shell's per-collection status line, same classes
@@ -597,16 +602,16 @@ function _phmStageLine(row){   // the shell's per-collection status line, same c
   li.appendChild(E('code','ph-code',row.name));
   let chip,txt;
   if(row.state==='ok'){
-    chip=E('span','ph-chip ph-chip-ok','✓ Loaded');
-    txt=row.doc?(row.n?'saved':'none saved yet - defaults apply'):(row.n+(row.n===1?' record':' records')+(row.truncated?' (list is cut at its limit)':''));
-  }else if(row.state==='error'){chip=E('span','ph-chip ph-chip-bad','✕ FAILED');txt=row.text||'read failed';}
-  else{chip=E('span','ph-chip ph-chip-wait','… Loading');txt='not loaded yet';}
+    chip=E('span','ph-chip ph-chip-ok',phI18nD('shell.chip_loaded'));
+    txt=row.doc?(row.n?phI18nD('shell.saved'):phI18nD('shell.none_saved_defaults')):phI18nD(row.n===1?'shell.record_one':'shell.record_many',{n:row.n});
+  }else if(row.state==='error'){chip=E('span','ph-chip ph-chip-bad',phI18nD('shell.chip_failed'));txt=row.text?phI18nErr(row.text):phI18nD('shell.read_failed');}
+  else{chip=E('span','ph-chip ph-chip-wait',phI18nD('shell.chip_loading'));txt=phI18nD('shell.not_loaded_yet');}
   li.appendChild(chip);li.appendChild(E('span','ph-line-txt',txt));
   return li;
 }
 function _phmPosLine(){
   const p=_phmPos;
-  return _phmStageLine({label:'Purchase orders',name:'pos',state:p.state==='ok'?'ok':(p.state==='error'?'error':'wait'),n:p.rows?p.rows.length:0,truncated:p.truncated,doc:false,text:p.errText});
+  return _phmStageLine({label:phI18nD('ov.purchase_orders'),name:'pos',state:p.state==='ok'?'ok':(p.state==='error'?'error':'wait'),n:p.rows?p.rows.length:0,truncated:p.truncated,doc:false,text:p.errText});
 }
 function _phmInputs(ctx,range){
   const gj=ctx.get('jobs'),gs=ctx.get('settings');
@@ -617,7 +622,7 @@ function _phmInputs(ctx,range){
 }
 function _phmHead(ctx,title,blurb,extra){
   const E=phEl,h=E('header','ph-head'),row=E('div','ph-head-row',null,[E('h2','ph-title',title)]);
-  if(ctx.readOnly)row.appendChild(E('span','ph-chip ph-chip-view','View only'));
+  if(ctx.readOnly)row.appendChild(E('span','ph-chip ph-chip-view',phI18nD('shell.view_only')));
   if(extra)row.appendChild(extra);
   h.appendChild(row);
   if(blurb)h.appendChild(E('p','ph-blurb',blurb));
@@ -637,12 +642,12 @@ function _phmEnsure(ctx,force){
 function _phmFooterNote(M,ctx){
   const E=phEl,c=E('div','phm-foot');
   const bits=[];
-  if(M.quality.cancelled)bits.push(_phmPlural(M.quality.cancelled,'cancelled PO')+' left out of every figure');
-  if(M.quality.unknown)bits.push(_phmPlural(M.quality.unknown,'PO')+' in an unrecognised stage (see POs in pipeline)');
-  if(M.quality.junk)bits.push(_phmPlural(M.quality.junk,'unreadable record')+' ignored');
-  if(M.quality.truncated)bits.push('the PO list was cut at '+PHM_MAX_POS+' — figures may be incomplete');
-  if(M.quality.jobsTruncated)bits.push('the cutting-job list was cut at its limit — some planned cut days may be missing');
-  if(bits.length)c.appendChild(E('p','phm-note-soft','Data quality: '+bits.join(' · ')+'.'));
+  if(M.quality.cancelled)bits.push(phI18nD('ov.q_cancelled2',{po:phI18nD(M.quality.cancelled===1?'ov.q_cancelled_po_one':'ov.q_cancelled_po_many',{n:_phmN(M.quality.cancelled)})}));
+  if(M.quality.unknown)bits.push(phI18nD('ov.q_unknown',{po:_phmPoD(M.quality.unknown,'po')}));
+  if(M.quality.junk)bits.push(phI18nD('ov.q_junk_ignored',{x:phI18nD(M.quality.junk===1?'ov.q_junk_one':'ov.q_junk_many',{n:_phmN(M.quality.junk)})}));
+  if(M.quality.truncated)bits.push(phI18nD('ov.q_trunc2',{n:PHM_MAX_POS}));
+  if(M.quality.jobsTruncated)bits.push(phI18nD('ov.q_jobs_trunc'));
+  if(bits.length)c.appendChild(E('p','phm-note-soft',phI18nD('ov.quality2',{bits:_phmJoinD(bits,'ov.join_dot')})));
   return c;
 }
 
@@ -658,14 +663,14 @@ function _phmSourcesCard(ctx){
   const d=E('details','ph-card phm-sources'+(failed?' phm-sources-bad':''));
   d.setAttribute('data-sources',failed?'failed':'ok');
   if(failed)d.setAttribute('open','');
-  d.appendChild(E('summary','phm-sources-sum',failed?'Data sources - something failed to read':'Data sources'));
+  d.appendChild(E('summary','phm-sources-sum',phI18nD(failed?'ov.sources_failed':'ov.sources_ok')));
   d.appendChild(strip);
   return d;
 }
 function _phmRenderOverview(host,ctx){
   const E=phEl;
   _phmEnsure(ctx,false);
-  host.appendChild(_phmHead(ctx,'Overview','Where production stands right now. Every number opens the list of POs behind it.'));
+  host.appendChild(_phmHead(ctx,phI18nD('shell.tab_overview'),phI18nD('ov.blurb')));
   if(_phmPos.state==='idle'||_phmPos.state==='loading'){host.appendChild(_phmSkeleton());host.appendChild(_phmSourcesCard(ctx));return;}
   const M=phmBuildModel(_phmInputs(ctx,{}));
   if(_phmPos.state==='error')host.appendChild(_phmPosError(ctx));
@@ -673,16 +678,16 @@ function _phmRenderOverview(host,ctx){
   host.appendChild(_phmAttentionCard(M,host,{limit:5}));
   if(typeof phhOverviewCard==='function'){try{host.appendChild(phhOverviewCard(ctx));}catch(e){}}
   const foot=phEl('div','phm-actions');
-  if(ctx.canManage)foot.appendChild(_phmBtn('ph-btn','Open the Monitor',function(){if(typeof phGoTab==='function')phGoTab('monitor');}));
-  foot.appendChild(_phmBtn('ph-btn','Refresh',function(){phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();Promise.resolve(ctx.reload()).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});}));
+  if(ctx.canManage)foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.open_monitor'),function(){if(typeof phGoTab==='function')phGoTab('monitor');}));
+  foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.refresh'),function(){phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();Promise.resolve(ctx.reload()).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});}));
   host.appendChild(foot);
   host.appendChild(_phmFooterNote(M,ctx));
   host.appendChild(_phmSourcesCard(ctx));
-  if(ctx.readOnly)host.appendChild(phEl('p','ph-note','Your account can see Overview, PO Queue and Today\'s Cutting. Overview is view-only: PO drafts are entered in PO Queue and the cut is recorded in Today\'s Cutting.'));
+  if(ctx.readOnly)host.appendChild(phEl('p','ph-note',phI18nD('shell.readonly_note')));
 }
 function _phmSkeleton(){
   if(typeof _phUiSkeleton==='function')return _phUiSkeleton();
-  const w=phEl('div','ph-skelwrap');w.setAttribute('aria-busy','true');w.setAttribute('role','status');w.setAttribute('aria-label','Loading');return w;
+  const w=phEl('div','ph-skelwrap');w.setAttribute('aria-busy','true');w.setAttribute('role','status');w.setAttribute('aria-label',phI18nAttr(phI18nD('shell.loading_short')));return w;
 }
 function _phmBtn(cls,text,fn,attrs){
   const b=phEl('button',cls,text);b.setAttribute('type','button');
@@ -692,10 +697,10 @@ function _phmBtn(cls,text,fn,attrs){
 }
 function _phmPosError(ctx){
   const c=phEl('section','ph-card ph-card-err');c.setAttribute('role','alert');
-  c.appendChild(phEl('h3','ph-card-title','Could not read the purchase orders'));
-  c.appendChild(phEl('p','ph-note',_phmPos.errText||'pos: read failed.'));
-  c.appendChild(phEl('p','ph-note','Every figure that needs the POs reads "unavailable — pos" below; none is shown as zero.'));
-  c.appendChild(_phmBtn('ph-btn ph-btn-primary','Retry',function(){_phmEnsure(ctx,true);ctx.repaint();}));
+  c.appendChild(phEl('h3','ph-card-title',phI18nD('ov.pos_failed')));
+  c.appendChild(phEl('p','ph-note',_phmPos.errText?phI18nErr(_phmPos.errText):phI18nD('ov.pos_read_failed')));
+  c.appendChild(phEl('p','ph-note',phI18nD('ov.pos_failed_note')));
+  c.appendChild(_phmBtn('ph-btn ph-btn-primary',phI18nD('shell.retry'),function(){_phmEnsure(ctx,true);ctx.repaint();}));
   return c;
 }
 
@@ -751,16 +756,16 @@ function _phmRenderMonitor(host,ctx){
   const E=phEl;
   _phmEnsure(ctx,false);
   const rgv=phmRangeFor(_phmRange.preset,{from:_phmRange.from,to:_phmRange.to},phDay(Date.now()));
-  const refresh=_phmBtn('ph-btn phm-refresh','Refresh',function(){phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();Promise.resolve(ctx.reload()).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});});
+  const refresh=_phmBtn('ph-btn phm-refresh',phI18nD('shell.refresh'),function(){phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();Promise.resolve(ctx.reload()).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});});
   host.appendChild(_phmHead(ctx,'Monitor','Pipeline, units afloat, delays and what needs attention. Every number opens the list of POs behind it, so each figure can be checked.',refresh));
   if(_phmPos.state==='idle'||_phmPos.state==='loading'){host.appendChild(_phmSkeleton());return;}
   host.appendChild(_phmRangeBar(ctx,rgv));
   const M=phmBuildModel(_phmInputs(ctx,rgv.bad?{from:'invalid',to:'invalid'}:{from:rgv.from,to:rgv.to}));   // an impossible range makes the range tiles unavailable, never a number for some other range
   if(_phmPos.state==='error')host.appendChild(_phmPosError(ctx));
-  else host.appendChild(E('p','phm-asof','Purchase orders read at '+_phmTime(_phmPos.at)+' (PKT)'+(_phmPos.refreshing?' · refreshing…':'')+'.'));
-  host.appendChild(E('h3','phm-sec','Right now'));
+  else host.appendChild(E('p','phm-asof','Purchase orders read at '+_phmTime(_phmPos.at)+' (PKT)'+(_phmPos.refreshing?phI18nD('ov.refreshing_suffix'):'')+'.'));
+  host.appendChild(E('h3','phm-sec',phI18nD('ov.right_now')));
   host.appendChild(_phmTilesEl(PHM_NOW_TILES,M,host));
-  host.appendChild(E('h3','phm-sec','In the selected range'));
+  host.appendChild(E('h3','phm-sec',phI18nD('ov.in_range')));
   host.appendChild(_phmTilesEl(PHM_RANGE_TILES,M,host));
   host.appendChild(_phmStageBars(M));
   host.appendChild(_phmAttentionCard(M,host,{limit:8}));

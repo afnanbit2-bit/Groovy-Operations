@@ -71,12 +71,12 @@ function load(src,opts){
   opts=opts||{};
   const store=opts.store||{},calls=[],shown=[];
   const fk=fakeDb(opts.db);
-  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',
+  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',
     globals:Object.assign({},fk.api,{
       localStorage:{getItem:k=>store[k]==null?null:store[k],setItem(k,v){store[k]=String(v);},removeItem(k){delete store[k];}},
       history:{replaceState(s,t,u){calls.push(String(u));const i=String(u).indexOf('#');a.ctx.location.hash=i<0?'':String(u).slice(i);},pushState(s,t,u){calls.push('PUSH '+u);}}
     },opts.globals||{})});
-  const ctx=a.ctx;
+  const ctx=a.ctx;if(typeof ctx.phI18nSetLang==='function')ctx.phI18nSetLang('en');
   const dom=domkit.install(ctx);
   ctx.window.showPage=function(id){
     shown.push(id);
@@ -383,7 +383,7 @@ function SRC_NOCOMMENT(s){return s.replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[
 /* ── wiring in the other files ── */
 async function wiring(s){
   const LS={getItem:()=>null,setItem(){},removeItem(){}};
-  const NAV_FILES=['js/shared.js','js/auth.js','js/embellishments.js','js/hrm.js','js/store.js','js/store-accounts.js','js/ph-core.js','js/ph-data.js'];
+  const NAV_FILES=['js/shared.js','js/auth.js','js/embellishments.js','js/hrm.js','js/store.js','js/store-accounts.js','js/ph-core.js','js/ph-data.js','js/ph-i18n.js'];
   const load2=u=>{
     const a=harness.loadApp({files:NAV_FILES,currentPage:'dashboard',globals:{localStorage:LS}});
     a.run('session='+J(Object.assign({},u)));
@@ -515,7 +515,7 @@ module.exports=async function(){
   await brk('audience gate role-wide (viewers and managers)',"typeof phCanSee==='function'&&phCanSee(_phUiUser(u))===true","(typeof session!=='undefined'&&session&&(session.role==='manager'||session.role==='viewer'||session.role==='owner'))",['audience: raees, umair, arfat, a worker and the QA account are out']);
   await brk('tab roles ignored (every tab for the audience)',"try{return typeof t.roles==='function'?t.roles(_phUiUser(u))===true:_phUiCanManage(u);}catch(e){return false;}","return true;",["tabs: uzaib (Kashif, PO data entry) sees ONLY Overview, PO Queue and Today's Cutting",'uzaib: asking for a manager tab is refused and the tab does not change']);
   await brk('a throwing roles() shows the tab',"}catch(e){return false;}\n}\nfunction phTabsFor","}catch(e){return true;}\n}\nfunction phTabsFor",['a roles() that throws hides the tab (fail closed)']);
-  await brk('render path ignores the roles (forced tab id renders)',"const tab=phResolveTab(_phUiTab,u);\n  if(!tab){host.appendChild(_phUiError('No tabs'","const tab=PH_TABS.filter(function(x){return x.id===_phUiTab;})[0]||phResolveTab(_phUiTab,u);\n  if(!tab){host.appendChild(_phUiError('No tabs'",['uzaib: even a forced tab id renders HIS default, never the manager tab','uzaib: the render function of a manager tab is never called for him']);
+  await brk('render path ignores the roles (forced tab id renders)',"const tab=phResolveTab(_phUiTab,u);\n  if(!tab){host.appendChild(_phUiError(phI18nD('shell.no_tabs')","const tab=PH_TABS.filter(function(x){return x.id===_phUiTab;})[0]||phResolveTab(_phUiTab,u);\n  if(!tab){host.appendChild(_phUiError(phI18nD('shell.no_tabs')",['uzaib: even a forced tab id renders HIS default, never the manager tab','uzaib: the render function of a manager tab is never called for him']);
   await brk('phGoTab accepts any tab',"const l=phTabsFor(u).filter(function(t){return t.id===id;});\n  if(!l.length)return false;","const l=PH_TABS.filter(function(t){return t.id===id;});\n  if(!l.length)return false;",['uzaib: asking for a manager tab is refused and the tab does not change']);
   await brk('hash resolves to a tab that is not yours',"const t=phResolveTab(link.tab,_phUiUser());                                       // unknown or not-yours -> your default tab, never a blank page","const t=PH_TABS.filter(function(x){return x.id===link.tab;})[0]||phResolveTab(link.tab,_phUiUser());",['a tab that is not yours (uzaib, masters) lands on HIS default tab']);
   await brk('the page decides dropped (never leaves)','else if(!want&&_phUiOn)_phTkLeave();','',['leaving through any other showPage removes the classes and the hash']);
@@ -533,14 +533,14 @@ module.exports=async function(){
   await brk('pasted link navigates instead of switching',"if(currentPage===PH_PAGE_ID){phGoTab(t.id);_phTkOnPage();return true;}","",['a link pasted while on the page switches the tab in place (no navigation)']);
   await brk('the skeleton never shows (content before data)',"if(_phUiState!=='done'){host.appendChild(_phUiSkeleton());return;}","",['loading: the panel is a skeleton (.gv-skel), not content and not blank','loading: no tab content and no number is printed before the read settles']);
   await brk('the shell waits for the read before painting (both paints removed)',[["  _phUiPaintData();      // the shell paints first (skeleton); nothing waits on the network\n  // Loads once on open.","  // Loads once on open."],["  _phUiState='loading';\n  _phUiPaintData();","  _phUiState='loading';"]],null,['loading: phRenderPage paints the skeleton SYNCHRONOUSLY, before any read returns']);
-  await brk('banner does not name the failures',"st.failed.forEach(function(f){ul.appendChild(phEl('li','ph-line',null,[phEl('code','ph-code',f.name),phEl('span','ph-line-txt',f.text)]));});","",['failed: the banner names BOTH failed collections','failed: a permission failure says to republish the rules']);
-  await brk('no Retry button',"card.appendChild(_phUiBtn('ph-btn ph-btn-primary','Retry',function(){phRetry();}));","",['failed: the banner is an alert with a Retry button']);
+  await brk('banner does not name the failures',"st.failed.forEach(function(f){ul.appendChild(phEl('li','ph-line',null,[phEl('code','ph-code',f.name),phEl('span','ph-line-txt',_phUiErrText(f))]));});","",['failed: the banner names BOTH failed collections','failed: a permission failure says to republish the rules']);
+  await brk('no Retry button',"card.appendChild(_phUiBtn('ph-btn ph-btn-primary',phI18nD('shell.retry'),function(){phRetry();}));","",['failed: the banner is an alert with a Retry button']);
   await brk('Retry re-reads everything',"return phUiLoad(only.length?{only:only}:{force:true});","return phUiLoad({force:true});",['Retry re-reads ONLY the failed collection (every other count is unchanged)']);
-  await brk('a failed stage printed as a count',"txt=row.text||'read failed';","txt=(row.n||0)+' records';",['failed: Overview marks them FAILED and prints no count for them','failed: the Masters placeholder says FAILED for its collection, never "0 records"']);
-  await brk('a throwing render is swallowed into a blank panel',"    phClear(host);\n    host.appendChild(_phUiError('This tab could not be drawn',String(e&&e.message||e)));","    phClear(host);",['a render that throws draws an error card with the message, not a blank panel']);
-  await brk('a render that draws nothing is left blank',"if(!host.firstChild)host.appendChild(_phUiError(tab.label,'This tab drew nothing.'));","",['a render that draws nothing says so']);
+  await brk('a failed stage printed as a count',"txt=row.text?_phUiErrText(row):phI18nD('shell.read_failed');","txt=(row.n||0)+' records';",['failed: Overview marks them FAILED and prints no count for them','failed: the Masters placeholder says FAILED for its collection, never "0 records"']);
+  await brk('a throwing render is swallowed into a blank panel',"    phClear(host);\n    host.appendChild(_phUiError(phI18nD('shell.tab_failed'),String(e&&e.message||e)));","    phClear(host);",['a render that throws draws an error card with the message, not a blank panel']);
+  await brk('a render that draws nothing is left blank',"if(!host.firstChild)host.appendChild(_phUiError(tab.lkey?phI18nD(tab.lkey):tab.label,phI18nD('shell.tab_empty')));","",['a render that draws nothing says so']);
   await brk('error text parsed as HTML',"function _phUiError(title,msg){\n  const c=phEl('section','ph-card ph-card-err');c.setAttribute('role','alert');\n  c.appendChild(phEl('h3','ph-card-title',title));\n  c.appendChild(phEl('p','ph-note',msg));","function _phUiError(title,msg){\n  const c=phEl('section','ph-card ph-card-err');c.setAttribute('role','alert');\n  c.appendChild(phEl('h3','ph-card-title',title));\n  const p=phEl('p','ph-note');p.innerHTML=msg;c.appendChild(p);",['XSS: the source never assigns innerHTML/outerHTML or parses a string as HTML']);
-  await brk('the chip still says View only for the floor',[["  if(typeof phCanRecordFloor==='function'&&phCanRecordFloor(w)===true)return{show:true,text:PH_CHIP_FLOOR,title:PH_CHIP_FLOOR_TITLE};\n",""]],null,['uzaib: the top bar chip is visible and says what his account does (Data entry & cutting), NOT View only','phChipFor: a manager none, the floor Data entry & cutting, anyone else View only']);
+  await brk('the chip still says View only for the floor',[["  if(typeof phCanRecordFloor==='function'&&phCanRecordFloor(w)===true)return{show:true,text:PH_CHIP_FLOOR,title:PH_CHIP_FLOOR_TITLE,key:'shell.chip_floor',tkey:'shell.chip_floor_tip'};\n",""]],null,['uzaib: the top bar chip is visible and says what his account does (Data entry & cutting), NOT View only','phChipFor: a manager none, the floor Data entry & cutting, anyone else View only']);
   await brk('the chip shows for a manager',"if(_phUiCanManage(w))return{show:false,text:'',title:''};","",['phChipFor: a manager none, the floor Data entry & cutting, anyone else View only','a manager: no View only chip (it is hidden in the top bar)']);
   await brk('a write sneaks into the shell',"function phRetry(){","function phRetry(){ setDoc(doc(db,'po_drafts','x'),{});",['read-only: the source calls no Firestore write API and no ph-write function']);
   s.ok('breaks run: '+broken,broken>=40);

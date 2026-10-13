@@ -275,7 +275,7 @@ async function _phdFragment(o){
     'ph_standards':{'GST073':{code:'GST073',unit:'kg',grossPerPiece:0.3,tolerancePct:3,sizes:null,sizeModel:null,rev:1}}
   };
   const rows=p=>Object.keys(DATA[p]||{}).map(id=>({id,data:()=>Object.assign({},DATA[p][id])}));
-  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],session:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},currentPage:'prod-ops',viewportW:o.narrow?800:1400,globals:{
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],session:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},currentPage:'prod-ops',viewportW:o.narrow?800:1400,globals:{
     navigator:{onLine:true,userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36'},
     localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
     getProductCatalog:()=>[{code:'GH001',name:'Black Hoodie'},{code:'GST073',name:LONG}],
@@ -334,7 +334,7 @@ async function _phFragment(o){
   const bad=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
   const DATA={po_drafts:[{id:'DRAFT-1'},{id:'DRAFT-2'}],po_cut_jobs:[],cutting_masters:[{id:'CM-001',name:'Hassan'},{id:'CM-002',name:'Alam With A Very Long Name That Must Wrap Onto Several Lines Instead Of Clipping'}],ph_standards:[{id:'GST073'}],'ph_settings/main':{capacity:1}};
   const rows=p=>(DATA[p]||[]).map(r=>({id:r.id,data:()=>{const c=Object.assign({},r);delete c.id;return c;}}));
-  const app=loadApp({files:['js/ph-core.js','js/ph-data.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
     localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
     collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
     getDocs:async q=>{if(o.fail&&q.path==='ph_standards')throw new Error('ph_standards could not be read: '+'a long reason that has to wrap inside the card and never push the page sideways '.repeat(3));if(o.fail&&q.path==='cutting_masters')throw bad();return{docs:rows(q.path),metadata:{fromCache:false}};},
@@ -342,6 +342,7 @@ async function _phFragment(o){
   const dom=domkit.install(app.ctx);
   app.ctx.console={warn(){},log(){},error(){}};
   vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  if(o.ur)app.run("phI18nSetLang('ur-first')");
   app.ctx.currentPage='prod-ops';
   app.ctx.phRenderPage('prod-ops');
   if(o.tab)app.run('_phUiTab='+JSON.stringify(o.tab));
@@ -351,7 +352,8 @@ async function _phFragment(o){
   app.run('_phUiPaintData();_phTkSync()');
   const canvas=dom.byClass(dom.main,'ph-canvas')[0];
   const chrome=domkit.toHtml(dom.find('ph-tk-bar'))+domkit.toHtml(dom.find('ph-tk-rail'));
-  const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");'+(o.min?'b.classList.add("ph-rail-min");':'')
+  const ur=app.run('phI18nUrduOn()')===true;
+  const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");'+(ur?'b.classList.add("ph-ur");':'')+(o.min?'b.classList.add("ph-rail-min");':'')
     +'document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";'
     // the bar sits above the scroller's box: without this the probe reads Exit and the toggle as "scrolled away" and never hit-tests them
     +(o.inBody?'':'m.style.overflow="visible";')
@@ -397,7 +399,7 @@ async function _phqFragment(o){
   ]);
   const colOf=p=>p.split('/').slice(0,-1).join('/');
   const snap=p=>({id:p.split('/').pop(),exists:()=>p in DATA,data:()=>JSON.parse(JSON.stringify(DATA[p])),metadata:{fromCache:false}});
-  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/pos.js'],currentPage:'prod-ops',
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js','js/pos.js'],currentPage:'prod-ops',
     session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer',email:'uzaib@groovy.op'}:(o.locked?{uid:'u-mustafa',u:'mustafa',name:'Mustafa',role:'manager',email:'mustafa@groovy.op'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}),
     globals:{Date:FixedDate,allPOs:[],allPasses:[],allReturns:[],allFabricIn:[],allGPEditRequests:[],allFabricMovements:[],allFabricInventory:[],currentBundles:[],viewingPO:null,
       localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
@@ -463,7 +465,7 @@ async function _phkFragment(o){
   const bad=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
   const DATA={};
   const rows=(p,q)=>{let r=DATA[p]||[];((q&&q.w)||[]).forEach(w=>{r=r.filter(x=>x[w[0]]===w[2]);});return r.map(x=>({id:x.id,data:()=>{const c=Object.assign({},x);delete c.id;return c;}}));};
-  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
     localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
     allPOs:[{fbKey:'PO-001',currentStage:'cutting'}],
     collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:(c,...cs)=>({path:c.path,w:cs.filter(x=>x&&x.w).map(x=>x.w)}),where:(f,op,v)=>({w:[f,op,v]}),orderBy:()=>({}),limit:()=>({}),
@@ -533,7 +535,7 @@ async function _phmFragment(o){
   // two fabric passes for the Data health section (14 Oct 2026): one that points at no PO (free text), one with a master
   DATA.gatepasses=[{id:'GP-9001',gpType:'fabric',poId:'Sample',date:'2026-10-01',fabricType:'Jersey Heavy',fabricQty:33.9,fabricUnit:'kg',rollCodes:['R-1'],ts:2},{id:'GP-9002',gpType:'fabric',poId:'101',date:'2026-10-02',cutMaster:'Hassan',ts:1}];
   const rows=p=>(DATA[p]||[]).map(r=>({id:r.id,data:()=>Object.assign({},r)}));
-  const app=loadApp({files:['js/ph-core.js','js/ph-data.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
     localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
     collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
     getDocs:async q=>{if(o.jobsFail&&q.path==='po_cut_jobs')throw bad();return{docs:rows(q.path),metadata:{fromCache:false}};},
@@ -576,7 +578,7 @@ async function _phAdminPanel(o){
   const S=Object.assign({},o.store||{});
   const keysUnder=pre=>Object.keys(S).filter(k=>k.indexOf(pre+'/')===0&&k.slice(pre.length+1).indexOf('/')===-1).sort();
   const U=o.user==='mustafa'?{uid:'u-mustafa',u:'mustafa',name:'Mustafa',role:'manager'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'};
-  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],currentPage:'prod-ops',session:U,globals:Object.assign({
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],currentPage:'prod-ops',session:U,globals:Object.assign({
     localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
     navigator:{onLine:true},auth:{currentUser:{getIdToken:async()=>{}}},
     collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
@@ -3261,6 +3263,9 @@ const FRAGMENTS={
   // and rail ink must read on their grounds, nothing may sit over the content's first row. The probe walks #main-content only, so the chrome
   // is placed inside it and laid out as the fixed elements it is; the last variant moves it to <body> as the app does.
   'production ops — shell: rail, top bar, banner and Overview':()=>_phFragment({fail:true}),
+  'production ops — shell in Urdu-first (Kashif: Overview, two-line bar and dock, language box, review notice)':()=>_phFragment({floor:true,tab:'overview',ur:true}),
+  'production ops — shell in Urdu-first with failed reads (an owner who switched the language on)':()=>_phFragment({fail:true,ur:true}),
+  'production ops — shell in Urdu-first, content clear of the taller bar and dock':()=>_phFragment({floor:true,inBody:true,tab:'overview',ur:true}),
   'production ops — shell collapsed':()=>_phFragment({fail:true,min:true}),
   'production ops — shell for the cutting floor (view only)':()=>_phFragment({floor:true,tab:'cutting'}),
   'production ops — shell content clear of the bar and rail':()=>_phFragment({fail:true,inBody:true,tab:'masters'}),

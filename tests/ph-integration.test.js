@@ -29,8 +29,8 @@ const USERS={
 
 function mk(user,srcOf){
   srcOf=srcOf||(n=>read('js/'+n+'.js'));
-  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],session:USERS[user],currentPage:'dashboard',globals:{allPOs:[],allPasses:[]}});
-  const ctx=a.ctx;
+  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],session:USERS[user],currentPage:'dashboard',globals:{allPOs:[],allPasses:[]}});
+  const ctx=a.ctx;if(typeof ctx.phI18nSetLang==='function')ctx.phI18nSetLang('en');
   domkit.install(ctx);
   ctx.window.showPage=function(){return Promise.resolve();};
   ctx.window.startApp=async function(){};

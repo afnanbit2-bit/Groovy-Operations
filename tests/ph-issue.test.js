@@ -121,7 +121,7 @@ function mkApp(seed,o){
   o=o||{};
   const db=makeDb(seed);
   const acts=[];
-  const a=harness.loadApp({files:['js/shared.js','js/pos.js','js/ph-core.js','js/ph-data.js','js/ph-write.js'],currentPage:'dashboard',session:o.session||{uid:'u2',u:'mustafa',name:'Mustafa',role:'manager',canPO:true},
+  const a=harness.loadApp({files:['js/shared.js','js/pos.js','js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],currentPage:'dashboard',session:o.session||{uid:'u2',u:'mustafa',name:'Mustafa',role:'manager',canPO:true},
     globals:Object.assign({},db.api,{
       auth:{currentUser:{getIdToken:async()=>{}}},navigator:{onLine:o.offline?false:true},
       _poEmbellishment:null,
