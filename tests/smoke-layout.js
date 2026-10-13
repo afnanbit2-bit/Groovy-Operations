@@ -358,7 +358,8 @@ async function _phFragment(o){
     // the bar sits above the scroller's box: without this the probe reads Exit and the toggle as "scrolled away" and never hit-tests them
     +(o.inBody?'':'m.style.overflow="visible";')
     +(o.inBody?'["ph-tk-bar","ph-tk-rail"].forEach(function(i){b.appendChild(document.getElementById(i));});':'')+'})();<\/script>';
-  const out={html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
+  // data-ph-ur-chrome opts into the probe's Urdu-first bar/dock check (68px bar, 76px dock, nothing hanging out of them)
+  const out={html:(o.ur&&o.inBody?'<i data-ph-ur-chrome="1" hidden></i>':'')+'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
   if(o.min)out.widths=[1900,1280];
   return out;
 }
@@ -3844,6 +3845,26 @@ document.querySelectorAll('#main-content .card, #main-content [class*="-row"], #
 // and fails when the text's right edge is past that block's - or, for text
 // held straight by #main-content, past the window's. A holder that scrolls
 // or clips on purpose (a table wrapper, an ellipsis) keeps what it holds.
+// OPT-IN (data-ph-ur-chrome): the Urdu-first takeover bar is 68px and the phone dock 76px (body.ph-ur sets
+// --ph-tk-bar / --ph-tk-dock). Everything else keys off those two tokens, so a bar that lost them would still be
+// self-consistent and no stock check would notice; this holds the numbers and that no control hangs out of the bar or dock.
+if(document.querySelector('[data-ph-ur-chrome]')){
+  const bar=document.getElementById('ph-tk-bar'),rail=document.getElementById('ph-tk-rail');
+  const inside=(box,why)=>{if(!box)return;const br=box.getBoundingClientRect();
+    box.querySelectorAll('button,a,[role="tab"],[role="button"]').forEach(c=>{const r=c.getBoundingClientRect();if(r.width<1||hiddenEl(c))return;
+      if(r.top<br.top-1||r.bottom>br.bottom+1)bad.push({why:why,cls:clsOf(c,40),top:Math.round(r.top),bottom:Math.round(r.bottom),boxTop:Math.round(br.top),boxBottom:Math.round(br.bottom)});});};
+  if(!bar)bad.push({why:'the Urdu-first top bar is missing'});
+  else{
+    const h=Math.round(bar.getBoundingClientRect().height);
+    if(h!==68)bad.push({why:'the Urdu-first top bar is not 68px tall',height:h});
+    inside(bar,'a control hangs out of the Urdu-first top bar');
+  }
+  if(rail&&innerWidth<=600){
+    const h=Math.round(rail.getBoundingClientRect().height);
+    if(h!==76)bad.push({why:'the Urdu-first phone dock is not 76px tall',height:h});
+    inside(rail,'a control hangs out of the Urdu-first dock');
+  }
+}
 if(document.querySelector('[data-ma-past-edge]')){
   document.querySelectorAll('#main-content *').forEach(el=>{
     if(el.children.length||!textOfOwn(el)||hiddenEl(el))return;

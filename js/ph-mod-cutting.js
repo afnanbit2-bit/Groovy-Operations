@@ -258,7 +258,11 @@ function phkCutPreview(po,cut){
     const o=sizes.filter(function(s){return s.size===z;})[0];
     perSize.push({size:z,ordered:o?o.qty:null,cut:raw===''?null:n,diff:o&&raw!==''?n-o.qty:null});
   });
-  const gate=typeof PO_CUT_GATE!=='undefined'&&PO_CUT_GATE&&typeof PO_CUT_GATE==='object'?PO_CUT_GATE:undefined;
+  // The Settings gate (ph_settings/main.cutGate) when it was read from the server, via js/pos.js's
+  // poCutGateNow(); otherwise the fixed 70-130 (PO_CUT_GATE). Never throws.
+  let gate;
+  try{gate=typeof poCutGateNow==='function'?poCutGateNow():undefined;}catch(e){gate=undefined;}
+  if(!gate||typeof gate!=='object')gate=typeof PO_CUT_GATE!=='undefined'&&PO_CUT_GATE&&typeof PO_CUT_GATE==='object'?PO_CUT_GATE:undefined;
   const check=phCutCheck(ordered,total,{gate:gate});
   const override=!!(P.cutOverride&&P.cutOverride.by);
   let verdict=check.verdict;

@@ -219,6 +219,14 @@ async function checks(src,only){
     const T=mk('uzaib');
     const pv=(cut,p)=>JSON.parse(J(T.R('phkCutPreview('+J(p||po('PO-1'))+','+J(cut)+')')));
     o['gate: 168 of 240 is the bottom of 70-130% (ok), 167 needs an override']=pv({S:'168'}).verdict==='ok'&&pv({S:'167'}).verdict==='needs_override'&&pv({S:'168'}).min===168&&pv({S:'168'}).max===312;
+    // The Settings gate (poCutGateNow from js/pos.js) wins when it exists; a throw or nonsense falls back to the fixed 70-130.
+    T.ctx.poCutGateNow=()=>({min:0.8,max:1.2});
+    o['gate: the Settings gate (80-120) is what the preview judges: 192 ok, 191 needs an override, 288 ok, 289 needs one']=pv({S:'192'}).verdict==='ok'&&pv({S:'191'}).verdict==='needs_override'&&pv({S:'288'}).verdict==='ok'&&pv({S:'289'}).verdict==='needs_override'&&pv({S:'192'}).min===192&&pv({S:'192'}).max===288;
+    T.ctx.poCutGateNow=()=>{throw new Error('x');};
+    o['gate: a throwing Settings helper falls back to 70-130']=pv({S:'168'}).verdict==='ok'&&pv({S:'167'}).verdict==='needs_override';
+    T.ctx.poCutGateNow=()=>null;
+    o['gate: a helper that answers nothing falls back to 70-130']=pv({S:'168'}).min===168&&pv({S:'168'}).max===312;
+    delete T.ctx.poCutGateNow;
     o['gate: 312 is the top (ok), 313 needs an override']=pv({S:'312'}).verdict==='ok'&&pv({S:'313'}).verdict==='needs_override';
     o['gate: per-size numbers add up to the total the gate judges']=pv({S:'40',M:'80',L:'50'}).total===170&&pv({S:'40',M:'80',L:'50'}).verdict==='ok';
     o['gate: nothing entered / junk / negative is "invalid" (information only), never a verdict']=pv({}).verdict==='invalid'&&pv({S:'x'}).verdict==='invalid'&&pv({S:'-4'}).verdict==='invalid'&&pv({S:'x'}).bad.join()==='S';
@@ -673,6 +681,7 @@ module.exports=async function(){
   await brk('a failed jobs read drawn as an empty day',"if(!jobs||!jobs.ok){","if(false){",['failed jobs read: an alert names po_cut_jobs with Retry; no cards, no "0 jobs", no "no cut jobs are planned"']);
   await brk('the loading state shows the checklist',"if(!entry||entry.issue.state==='loading'){kids.push(_phkE('p','phk-muted',phI18nD('cut.reading_issue')));return _phkE('div','phk-col phk-check',null,kids);}","",['loading: before the PO / fabric reads settle the card says it is reading, and shows no roll count and no input']);
   await brk('the gate preview writes',"w.cut[z]=i.value;paint();","w.cut[z]=i.value;paint();phSaveCutJob(poId,{note:'x'});",['preview: it writes nothing at all']);
+  await brk('the preview ignores the Settings gate',"gate=typeof poCutGateNow==='function'?poCutGateNow():undefined;","gate=undefined;",['gate: the Settings gate (80-120) is what the preview judges: 192 ok, 191 needs an override, 288 ok, 289 needs one']);
   await brk('the gate verdict ignores an approved variance',"else if(override)verdict='override';","",['gate: an approved variance (po.cutOverride) is shown as such, any quantity']);
   await brk('a stored string parsed as HTML',"function _phkE(tag,cls,text,kids){return(_phkCtx&&_phkCtx.el?_phkCtx.el:phEl)(tag,cls,text,kids);}","function _phkE(tag,cls,text,kids){const n=(_phkCtx&&_phkCtx.el?_phkCtx.el:phEl)(tag,cls,null,kids);if(text!=null)n.innerHTML=text;return n;}",['XSS: the source never assigns innerHTML / outerHTML / insertAdjacentHTML or parses a string as HTML']);
   await brk('the codes are not sent (counts only, as before)',"Object.assign({},res&&res.counts,{missingCodes:m.list,extraCodes:x.list})","Object.assign({},res&&res.counts)",['save: the WHICH-rolls detail is stored inside rollsChecklist (missingCodes ["RB-1"], extraCodes ["STRAY-1"]); the job update still carries only the same four keys','save (count mode): no codes exist, so both lists are sent EMPTY (a re-save clears an older list)']);

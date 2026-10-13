@@ -75,11 +75,12 @@ function load(opts){
   const fk=makeFake({store:opts.store,failPath:opts.failPath});
   const g=Object.assign({},fk.api,{auth:{currentUser:{getIdToken:async()=>{}}},navigator:{onLine:opts.offline?false:true},
     localStorage:{getItem(){return null;},setItem(){},removeItem(){}},history:{replaceState(){},pushState(){}}},opts.globals||{});
-  const a=harness.loadApp({files:opts.writeSrc?['js/ph-core.js','js/ph-data.js']:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',globals:g});
+  const a=harness.loadApp({files:opts.writeSrc?['js/ph-core.js','js/ph-data.js','js/ph-i18n.js']:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',globals:g});
   const ctx=a.ctx;if(opts.writeSrc)vm.runInContext(opts.writeSrc,ctx,{filename:'ph-write.js'});const dom=domkit.install(ctx);
   ctx.window.showPage=function(id){ctx.currentPage=id;if(id==='prod-ops')ctx.phRenderPage(id);return Promise.resolve();};
   ctx.window.startApp=async function(){};
   ctx.console={warn(){},log(){},error(){}};
+  try{vm.runInContext("phI18nSetLang('en')",ctx);}catch(e){}
   vm.runInContext(read('js/ph-ui.js'),ctx,{filename:'ph-ui.js'});
   vm.runInContext(read('js/ph-mod-admin.js'),ctx,{filename:'ph-mod-admin.js'});
   vm.runInContext(opts.src||read('js/ph-mod-instructions.js'),ctx,{filename:'ph-mod-instructions.js'});
