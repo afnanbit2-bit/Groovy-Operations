@@ -609,6 +609,15 @@ function phrExportPdf(model){
   }catch(e){_phrToast('Could not build the PDF: '+(e&&e.message||e),true);return false;}
 }
 
+function phrSharePdf(model){
+  if(!_phrCanExport(model))return false;
+  if(typeof window.printDocument!=='function'||typeof window.phShareFile!=='function'){_phrToast('The print engine did not load - refresh and try again.',true);return false;}
+  window.printDocument({type:'generic',deliver:'blob',filename:phrFileBase(model)+'.pdf',data:{documentNumber:'PROD-'+(model.range.from||'ALL'),title:'Production Report',subtitle:model.rangeText+' · '+_phrPdfText(_phrFilterText(model.filters,model.masterNames)),bodyHtml:phrPdfBody(model),urduLevel:'none'}})
+    .then(function(o){return window.phShareFile(o.blob,o.filename,'Production Report - '+model.rangeText);})
+    .catch(function(e){_phrToast('Could not build the PDF: '+(e&&e.message||e),true);});
+  return true;
+}
+
 /* ── the tab ───────────────────────────────────────────────────────────── */
 let _phrMemo=null;
 function _phrInput(ctx){
@@ -732,6 +741,7 @@ function _phrFilters(model){
   act.appendChild(_phrBtn('ph-btn','Reload from server',function(){phrReload();}));
   act.appendChild(_phrBtn('ph-btn ph-btn-primary','Export Excel',function(){phrExportXlsx(model);},{'data-act':'xlsx'}));
   act.appendChild(_phrBtn('ph-btn ph-btn-primary','Export PDF',function(){phrExportPdf(model);},{'data-act':'pdf'}));
+  act.appendChild(_phrBtn('ph-btn','Share to WhatsApp',function(){phrSharePdf(model);},{'data-act':'wa'}));
   bar.appendChild(act);
   return bar;
 }
