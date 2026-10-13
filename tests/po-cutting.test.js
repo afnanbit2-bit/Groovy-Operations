@@ -135,7 +135,7 @@ function boot(o){
     _fabInvUpsert:async a=>{calls.fab.push(a);if(o.fabFail){const e=new Error('roll R1 is not issuable');e.code='fabric/rolls-unavailable';throw e;}return{movCodes:a.removeRollCodes.filter(c=>(o.skip||[]).map(x=>x.rollCode||x).indexOf(c)<0),movQty:0,skipped:o.skip||[]};}
   },o.globals||{});
   if(o.withEmb!==false)globals.embOnCuttingDone=async(p,s)=>{calls.emb.push({po:p,sizes:s});};
-  const app=loadApp({files:FILES,session:o.session||OWNER,globals});
+  const app=loadApp({files:o.ph?['js/ph-core.js','js/ph-data.js','js/pos.js']:FILES,session:o.session||OWNER,globals});
   // The real stage list, straight from shared.js — so the display order the
   // fix is about is the one in the file, not a copy that could drift.
   const sh=fs.readFileSync(path.join(ROOT,'js/shared.js'),'utf8');
@@ -184,6 +184,52 @@ module.exports=async function(){
     const wide=n=>boot({cutState:{poId:'PO-001',actualQty:{XS:0,S:n,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:n}]}})
       .app.run('cutValidationOk({qty:100,cutOverride:{by:"afnan"}})');
     [69,131,40,250,1000].forEach(n=>s.eq('with an override '+n+' of 100 is allowed (no outer limit)',wide(n),true));
+  }
+
+  /* ═══ WP1: the gate is the Production Ops Settings cut gate, fallback 70–130 ═══ */
+  s.section('the cut gate reads Settings (WP1)');
+  {
+    const cs=n=>({poId:'PO-001',actualQty:{XS:0,S:n,M:0,L:0,XL:0,'2XL':0},pendingBundles:[{tempId:1,size:'S',units:n}]});
+    const seed=g=>({'pos/PO-001':po1(),'counters/main':{pos:1,gatepasses:0,bundles:40},'ph_settings/main':{rev:1,cutGate:g}});
+    const mk=(n,g)=>boot({ph:true,seed:seed(g),cutState:cs(n)});
+    // 60–140 saved: 65 of 100 is accepted, 50 refused (through the real markCuttingDone)
+    const a=mk(65,[60,140]);
+    await a.app.run('phSettingsEnsure()');
+    s.eq('settings read: the gate is 60–140',a.app.run('poCutPct(poCutGateNow())'),'60–140%');
+    s.eq('65 of 100 passes the button gate under 60–140',a.app.run('cutValidationOk({qty:100})'),true);
+    a.syncPOs();await a.cut();
+    s.eq('65 of 100 is SAVED under 60–140 (transaction judged it)',a.store.get('pos/PO-001').cutAt!=null&&a.store.get('pos/PO-001').cutOverride===undefined,true);
+    const b=mk(50,[60,140]);await b.app.run('phSettingsEnsure()');b.syncPOs();
+    s.eq('50 of 100 refused on the button under 60–140',b.app.run('cutValidationOk({qty:100})'),false);
+    await b.cut();
+    s.eq('50 of 100: nothing saved',b.store.commits.length,0);
+    // the transaction judges the LIVE setting even when the screen's copy is stale
+    const c=mk(65,[60,140]);await c.app.run('phSettingsEnsure()');c.syncPOs();
+    c.store.put('ph_settings/main',{rev:2,cutGate:[80,120]});
+    await c.cut();
+    s.eq('settings tightened after the screen loaded: the transaction refuses 65',c.store.get('pos/PO-001').cutAt,undefined);
+    s.ok('and its toast names the live window 80–120',/outside the 80–120 allowed/.test(c.lastToast()),c.lastToast());
+    // read failed / never read -> 70–130 and the label says so
+    const d=boot({ph:true,seed:seed([60,140]),cutState:cs(65),globals:{getDoc:async()=>{throw new Error('Missing or insufficient permissions');}}});
+    await d.app.run('phSettingsEnsure()');
+    s.eq('read failed: the gate is the fixed 70–130',d.app.run('poCutPct(poCutGateNow())'),'70–130%');
+    s.eq('read failed: 65 of 100 is refused',d.app.run('cutValidationOk({qty:100})'),false);
+    s.ok('read failed: the range text says default gate (settings not read)',/Allowed: 70–130 pcs \(70–130%\) — default gate \(settings not read\)/.test(d.app.run('poCutRangeText(70,130,poCutGateNow())')));
+    s.ok('settings read: the label is absent',!/settings not read/.test(a.app.run('poCutRangeText(60,140,poCutGateNow())')));
+    // the tx read failing = default for that save
+    const e=mk(65,[60,140]);await e.app.run('phSettingsEnsure()');e.syncPOs();
+    const orig=e.store.api.runTransaction;
+    e.app.ctx.runTransaction=async(db,fn)=>orig(db,tx=>fn(Object.assign({},tx,{get:r=>r._p==='ph_settings/main'?Promise.reject(new Error('denied')):tx.get(r)})));
+    await e.cut();
+    s.eq('tx settings read failed: the default 70–130 refuses 65',e.store.get('pos/PO-001').cutAt,undefined);
+    // an override records the gate it widened
+    const f=mk(65,[60,140]);await f.app.run('phSettingsEnsure()');f.syncPOs();
+    await f.app.run("window.poCutOverride('PO-001','fabric short')");
+    const ov=f.store.get('pos/PO-001').cutOverride;
+    s.eq('override record stores the gate used (60–140)',ov&&ov.gateMin+'-'+ov.gateMax,'0.6-1.4');
+    // the same setting saved as 70/130 is still the exported constant
+    const g=mk(65,[70,130]);await g.app.run('phSettingsEnsure()');
+    s.eq('70–130 saved reads as the constant',g.app.run('poCutGateNow()===PO_CUT_GATE'),true);
   }
 
   /* ═══ dates: the PKT day, never the UTC one ═══ */
