@@ -247,6 +247,8 @@ async function _phcApply(poId,day){
   try{
     const o={reason:('Calendar: planned cut date '+(plan.from||'none')+' -> '+plan.to).slice(0,500)};
     if(plan.rev!==undefined)o.expectedRev=plan.rev;
+    const d=typeof phCutJobChangeData==='function'?phCutJobChangeData({plannedCutDate:plan.from||null},{plannedCutDate:plan.to}):null;   // structured from/to for the history row
+    if(d)o.data=d;
     r=await phSaveCutJob(poId,{plannedCutDate:plan.to},o);
   }catch(e){r={ok:false,code:'failed',error:'Could not save ('+String(e&&e.message||e)+').'};}
   _phcBusy=false;

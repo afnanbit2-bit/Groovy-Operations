@@ -698,3 +698,6 @@ module.exports=async function(){
   }
   return s;
 };
+
+// Helpers for tests/ph-open-items.test.js (the same fake Firestore, so a second copy never drifts).
+module.exports.helpers={makeFake:makeFake,T0:T0,mk:mk,AF:AF,MU:MU,UZ:UZ,A:A,nx:nx,J:J,GOOD_PO:GOOD_PO};

@@ -150,7 +150,8 @@ async function checks(src){
       T.R('_phUiTab="masters"');T.R('_phUiPaintPanel()');return hit===0;})();
     o["uzaib: Today's Cutting opens for him"]=T.R('phGoTab("cutting")')===true&&/Today's Cutting/.test(T.text(T.panel()));
     o['uzaib: the panel says View only (read-only account)']=/View only/.test(T.text(T.panel()));
-    o['uzaib: the top bar carries the View only chip, visible']=!/ph-hidden/.test(T.dom.find('ph-tk-chip').className);
+    o['uzaib: the top bar chip is visible and says what his account does (Data entry & cutting), NOT View only']=!/ph-hidden/.test(T.dom.find('ph-tk-chip').className)&&T.dom.find('ph-tk-chip').textContent==='Data entry & cutting'&&!/View only/.test(T.dom.find('ph-tk-chip').textContent)&&/enters PO drafts and records the cut/.test(T.dom.find('ph-tk-chip').getAttribute('title')||'');
+    o['phChipFor: a manager none, the floor Data entry & cutting, anyone else View only']=T.R('phChipFor("mustafa").show')===false&&T.R('phChipFor("afnan").show')===false&&T.R('phChipFor("uzaib").text')==='Data entry & cutting'&&T.R('phChipFor("raees").text')==='View only'&&T.R('phChipFor("").text')==='View only';
     const M=mk('mustafa');await M.show('prod-ops');
     o['a manager: no View only chip (it is hidden in the top bar)']=/ph-hidden/.test(M.dom.find('ph-tk-chip').className)&&!/View only/.test(M.text(M.panel()));
     o['a manager: all nine rail items']=M.itemIds().join()===ALL_TABS.join();
@@ -539,6 +540,8 @@ module.exports=async function(){
   await brk('a throwing render is swallowed into a blank panel',"    phClear(host);\n    host.appendChild(_phUiError('This tab could not be drawn',String(e&&e.message||e)));","    phClear(host);",['a render that throws draws an error card with the message, not a blank panel']);
   await brk('a render that draws nothing is left blank',"if(!host.firstChild)host.appendChild(_phUiError(tab.label,'This tab drew nothing.'));","",['a render that draws nothing says so']);
   await brk('error text parsed as HTML',"function _phUiError(title,msg){\n  const c=phEl('section','ph-card ph-card-err');c.setAttribute('role','alert');\n  c.appendChild(phEl('h3','ph-card-title',title));\n  c.appendChild(phEl('p','ph-note',msg));","function _phUiError(title,msg){\n  const c=phEl('section','ph-card ph-card-err');c.setAttribute('role','alert');\n  c.appendChild(phEl('h3','ph-card-title',title));\n  const p=phEl('p','ph-note');p.innerHTML=msg;c.appendChild(p);",['XSS: the source never assigns innerHTML/outerHTML or parses a string as HTML']);
+  await brk('the chip still says View only for the floor',[["  if(typeof phCanRecordFloor==='function'&&phCanRecordFloor(w)===true)return{show:true,text:PH_CHIP_FLOOR,title:PH_CHIP_FLOOR_TITLE};\n",""]],null,['uzaib: the top bar chip is visible and says what his account does (Data entry & cutting), NOT View only','phChipFor: a manager none, the floor Data entry & cutting, anyone else View only']);
+  await brk('the chip shows for a manager',"if(_phUiCanManage(w))return{show:false,text:'',title:''};","",['phChipFor: a manager none, the floor Data entry & cutting, anyone else View only','a manager: no View only chip (it is hidden in the top bar)']);
   await brk('a write sneaks into the shell',"function phRetry(){","function phRetry(){ setDoc(doc(db,'po_drafts','x'),{});",['read-only: the source calls no Firestore write API and no ph-write function']);
   s.ok('breaks run: '+broken,broken>=40);
   return s;

@@ -49,6 +49,16 @@ function _phUiUser(u){
 // failed to parse FAILS CLOSED (nobody is on the audience) instead of throwing.
 function _phUiCanSee(u){return typeof phCanSee==='function'&&phCanSee(_phUiUser(u))===true;}
 function _phUiCanManage(u){return typeof phCanManage==='function'&&phCanManage(_phUiUser(u))===true;}
+// The top-bar chip. Managers see none (hidden). The cutting floor (Kashif) is NOT view-only: he enters PO
+// drafts and records cuts, so the chip says what his account does; it still cannot plan or change settings.
+const PH_CHIP_FLOOR='Data entry & cutting';
+const PH_CHIP_FLOOR_TITLE='This account enters PO drafts and records the cut. Planning, Calendar and settings are for the managers.';
+function phChipFor(u){
+  const w=_phUiUser(u);
+  if(_phUiCanManage(w))return{show:false,text:'',title:''};
+  if(typeof phCanRecordFloor==='function'&&phCanRecordFloor(w)===true)return{show:true,text:PH_CHIP_FLOOR,title:PH_CHIP_FLOOR_TITLE};
+  return{show:true,text:'View only',title:'This account can only look.'};
+}
 const PH_ROLE_ALL=function(u){return _phUiCanSee(u);};       // the whole audience (managers + the cutting floor)
 const PH_ROLE_MANAGE=function(u){return _phUiCanManage(u);}; // afnan, ammar, mustafa
 
@@ -323,7 +333,7 @@ function _phTkMount(){
   const bar=phEl('div','ph-tk-bar');bar.id='ph-tk-bar';
   const exit=_phUiBtn('ph-tk-exit','← Exit',function(){phExit();});exit.id='ph-tk-exit';
   const title=phEl('div','ph-tk-title','Production Ops');title.id='ph-tk-title';
-  const chip=phEl('span','ph-chip ph-chip-view ph-tk-chip','View only');chip.id='ph-tk-chip';
+  const chip=phEl('span','ph-chip ph-chip-view ph-tk-chip',PH_CHIP_FLOOR);chip.id='ph-tk-chip';
   const tog=_phUiBtn('ph-tk-toggle','Hide menu',function(){phToggleRail();},{'aria-expanded':'true','aria-controls':'ph-tk-rail'});tog.id='ph-tk-toggle';
   bar.appendChild(exit);bar.appendChild(title);bar.appendChild(chip);bar.appendChild(tog);
   const rail=phEl('nav','ph-tk-rail');rail.id='ph-tk-rail';rail.setAttribute('aria-label','Production Ops sections');
@@ -354,7 +364,11 @@ function _phTkPaintRail(){
     });
   }
   const chip=document.getElementById('ph-tk-chip');
-  if(chip)chip.className='ph-chip ph-chip-view ph-tk-chip'+(_phUiCanManage()?' ph-hidden':'');
+  if(chip){
+    const c=phChipFor();
+    chip.className='ph-chip ph-chip-view ph-tk-chip'+(c.show?'':' ph-hidden');
+    chip.textContent=c.text||PH_CHIP_FLOOR;chip.setAttribute('title',c.title);
+  }
 }
 function _phTkSetHash(tab){
   try{

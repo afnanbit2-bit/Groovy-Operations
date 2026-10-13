@@ -382,6 +382,8 @@ async function checks(src,only){
     o['save: ONE transaction holds the job update and the pos history row']=T.fk.txs.length===1&&T.fk.txs[0].length===2&&T.fk.txs[0][0].path==='po_cut_jobs/PO-001'&&/^pos\/PO-001\/history\//.test(T.fk.txs[0][1].path);
     const upd=T.fk.txs[0][0].data,hist=T.fk.txs[0][1].data;
     o['save: the job update is the checklist + rev + updatedBy only (status untouched); rev is +1']=T.fk.txs[0][0].op==='update'&&J(Object.keys(upd).sort())===J(['rev','rollsChecklist','updatedAt','updatedBy'])&&upd.rev===3&&upd.updatedBy==='uzaib';
+    o['save: the WHICH-rolls detail is stored inside rollsChecklist (missingCodes ["RB-1"], extraCodes ["STRAY-1"]); the job update still carries only the same four keys']=J(upd.rollsChecklist.missingCodes)==='["RB-1"]'&&J(upd.rollsChecklist.extraCodes)==='["STRAY-1"]'&&J(Object.keys(upd).sort())===J(['rev','rollsChecklist','updatedAt','updatedBy']);
+    o['save: the saved card prints the codes (Missing: RB-1 / Not on the issue: STRAY-1), not only the counts']=/Missing: RB-1/.test(T.text(T.card('PO-001')))&&/Not on the issue: STRAY-1/.test(T.text(T.card('PO-001')));
     o['save: the history row names the codes (MISSING RB-1 / NOT ON THE ISSUE STRAY-1) in its reason and is a cut_job_updated row by uzaib']=hist.type==='cut_job_updated'&&hist.by==='uzaib'&&/MISSING RB-1/.test(hist.reason)&&/NOT ON THE ISSUE STRAY-1/.test(hist.reason)&&/5 of 6 verified/.test(hist.reason);
     o['save: the card says Saved - FLAGGED and shows the saved result with the mismatch chip']=/Saved - FLAGGED/.test(T.text(T.card('PO-001')))&&/✗ MISMATCH flagged/.test(T.text(T.card('PO-001')))&&T.R('phkWork("PO-001").dirty')===false;
     o['save: the loaded job copy followed (rev 3), so the next save is not stale']=T.R('phGet("jobs").rows.filter(r=>r.fbKey==="PO-001")[0].rev')===3;
@@ -396,6 +398,7 @@ async function checks(src,only){
     T.click(T.btn(T.card('PO-001'),'Count only'));
     T.type(T.dom.find('phk-cnt-PO-001'),'6');T.type(T.dom.find('phk-cw-PO-001'),'108');
     const r=await T.R('phkSaveChecklist("PO-001")');
+    o['save (count mode): no codes exist, so both lists are sent EMPTY (a re-save clears an older list)']=r.ok&&J(r.job.rollsChecklist.missingCodes)==='[]'&&J(r.job.rollsChecklist.extraCodes)==='[]';
     o['save (count mode): 6 of 6 rolls but 5.6 kg over the limit = short 1, flagged and saved']=r.ok&&r.job.rollsChecklist.verified===6&&r.job.rollsChecklist.short===1&&/WEIGHT 5\.6 kg over/.test(T.fk.txs[0][1].data.reason)&&/count/.test(T.fk.txs[0][1].data.reason);
   }
   if(want('writes')){grp='writes';
@@ -404,6 +407,19 @@ async function checks(src,only){
     ['R-101','R-102','R-103','R-201','R-202','RB-1'].forEach(c=>T.scan('PO-001',c));
     const r=await T.R('phkSaveChecklist("PO-001")');
     o['save: all six present = no mismatch, saved as matching']=r.ok&&r.job.rollsChecklist.missing===0&&/Matches the issue/.test(T.text(T.card('PO-001')))&&/no mismatch/.test(T.fk.txs[0][1].data.reason);
+  }
+  /* the code lists are clipped to what the writer accepts, and the counts keep the truth */
+  if(want('writes')){grp='writes';
+    const T=mk('uzaib');
+    await T.open();
+    const big=Array.from({length:250},(_,i)=>'R-'+i);
+    const cl=T.R('phkChecklistForSave('+J({counts:{total:260,verified:9,short:0,missing:251,extra:0},missingCodes:['X'.repeat(60),'  ','R-0'].concat(big),extraCodes:[]})+')');
+    o['codes: a list longer than 200 is clipped to 200, the rest is counted in left, and the counts still say 251']=cl.checklist.missingCodes.length===200&&cl.left.missing===51&&cl.checklist.missing===251&&cl.checklist.total===260;
+    o['codes: a code over 40 characters is clipped to 40, an empty one is dropped, a repeat is one']=cl.checklist.missingCodes.every(c=>c.length<=40&&c.length>0)&&new Set(cl.checklist.missingCodes).size===cl.checklist.missingCodes.length;
+    ['R-101','R-102','R-103','R-201','R-202'].forEach(c=>T.scan('PO-001',c));
+    T.scan('PO-001','Z'.repeat(60));
+    const r=await T.R('phkSaveChecklist("PO-001")');
+    o['codes: a 60-character stray code (a scanner can type anything) still SAVES, clipped to 40 (never blocked)']=r.ok===true&&r.job.rollsChecklist.extraCodes.length===1&&r.job.rollsChecklist.extraCodes[0]==='Z'.repeat(40)&&r.job.rollsChecklist.extra===1;
   }
   /* mark complete */
   if(want('writes')){grp='writes';
@@ -419,6 +435,7 @@ async function checks(src,only){
     T.click(T.btn(T.card('PO-001'),'Yes, mark complete'));
     await settle(30);
     o['complete: Yes writes status complete + the unsaved roll check in ONE transaction (job + history)']=T.fk.txs.length===1&&T.fk.txs[0].length===2&&T.fk.txs[0][0].data.status==='complete'&&T.fk.txs[0][0].data.rollsChecklist.verified===1&&T.fk.txs[0][0].data.completedBy==='uzaib'&&typeof T.fk.txs[0][0].data.completedAt==='number';
+    o['complete: the roll check goes with its code lists (5 missing codes, none extra)']=J(T.fk.txs[0][0].data.rollsChecklist.missingCodes)===J(['R-102','R-103','R-201','R-202','RB-1'])&&J(T.fk.txs[0][0].data.rollsChecklist.extraCodes)==='[]';
     o['complete: the history reason says it was marked complete and carries the roll check']=/^Marked complete - Roll check \(scan\): 1 of 6 verified/.test(T.fk.txs[0][1].data.reason);
     o['complete: the card now reads Complete and the edit controls are gone (the roll check is closed)']=/✓ Complete/.test(T.text(T.card('PO-001')))&&!T.btn(T.card('PO-001'),'Mark complete')&&!T.dom.find('phk-scan-PO-001')&&/roll check is closed/.test(T.text(T.card('PO-001')));
     o['complete: it does NOT do the real cut: no pos write, no status beyond complete, no bundles, the job is not "done"']=T.fk.txs[0].every(p=>!/^pos\/PO-\d+$/.test(p.path))&&T.fk.txs[0][0].data.status!=='done'&&T.fk.plain.length===0;
@@ -658,6 +675,11 @@ module.exports=async function(){
   await brk('the gate preview writes',"w.cut[z]=i.value;paint();","w.cut[z]=i.value;paint();phSaveCutJob(poId,{note:'x'});",['preview: it writes nothing at all']);
   await brk('the gate verdict ignores an approved variance',"else if(override)verdict='override';","",['gate: an approved variance (po.cutOverride) is shown as such, any quantity']);
   await brk('a stored string parsed as HTML',"function _phkE(tag,cls,text,kids){return(_phkCtx&&_phkCtx.el?_phkCtx.el:phEl)(tag,cls,text,kids);}","function _phkE(tag,cls,text,kids){const n=(_phkCtx&&_phkCtx.el?_phkCtx.el:phEl)(tag,cls,null,kids);if(text!=null)n.innerHTML=text;return n;}",['XSS: the source never assigns innerHTML / outerHTML / insertAdjacentHTML or parses a string as HTML']);
+  await brk('the codes are not sent (counts only, as before)',"Object.assign({},res&&res.counts,{missingCodes:m.list,extraCodes:x.list})","Object.assign({},res&&res.counts)",['save: the WHICH-rolls detail is stored inside rollsChecklist (missingCodes ["RB-1"], extraCodes ["STRAY-1"]); the job update still carries only the same four keys','save (count mode): no codes exist, so both lists are sent EMPTY (a re-save clears an older list)']);
+  await brk('the saved card hides the codes',"if(mc||ec){","if(false){",['save: the saved card prints the codes (Missing: RB-1 / Not on the issue: STRAY-1), not only the counts']);
+  await brk('a code is not clipped to 40',"const t=String(c==null?'':c).trim().slice(0,PHK_CODE_LEN);","const t=String(c==null?'':c).trim();",['codes: a code over 40 characters is clipped to 40, an empty one is dropped, a repeat is one','codes: a 60-character stray code (a scanner can type anything) still SAVES, clipped to 40 (never blocked)']);
+  await brk('the list is not capped',"if(out.length<PHK_CODES_MAX)out.push(t);else left++;","out.push(t);",['codes: a list longer than 200 is clipped to 200, the rest is counted in left, and the counts still say 251']);
+  await brk('Mark complete saves counts only',"input.rollsChecklist=phkChecklistForSave(res).checklist;","input.rollsChecklist=res.counts;",['complete: the roll check goes with its code lists (5 missing codes, none extra)']);
   await brk('a global without the prefix',"function phkNormCode(c){","function normCode(c){return phkNormCode(c);}\nfunction phkNormCode(c){",['globals: every top-level name is phk / _phk / PHK_ prefixed']);
   s.ok('breaks run: '+broken,broken>=45,String(broken));
   return s;

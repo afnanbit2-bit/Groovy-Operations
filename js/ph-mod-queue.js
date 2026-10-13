@@ -517,10 +517,15 @@ function _phqTile(t,ctx,manage,jobsOk,m){
   if(badges.firstChild)li.appendChild(badges);
   // actions
   const act=phEl('div','phq-t-act');
-  if(typeof window!=='undefined'&&window&&typeof window.openPODetail==='function'){
+  if(phqCanOpen(ctx.user)){
     act.appendChild(_phqBtn('ph-btn phq-btn phq-open','Open',function(){phqOpenPO(t.fbKey);},{'aria-label':'Open '+t.po}));
   }
-  if(manage&&t.lane==='cutting'&&jobsOk&&_phqPlannable(t.id)&&t.plan.status!=='done'){
+  const planWhy=manage&&t.lane==='cutting'&&jobsOk&&_phqPlannable(t.id)&&t.plan.exists?phqPlanProblem({status:t.plan.status},ctx.user):null;
+  if(planWhy&&t.plan.status!=='done'){
+    // locked for this person (an overridden plan, non-owner): say so instead of offering a button that would be refused
+    const lk=phEl('span','phq-plan-locked','Plan locked');lk.setAttribute('title',planWhy);
+    act.appendChild(lk);
+  }else if(manage&&t.lane==='cutting'&&jobsOk&&_phqPlannable(t.id)&&t.plan.status!=='done'){
     act.appendChild(_phqBtn('ph-btn phq-btn phq-plan-btn',t.plan.exists?'Change plan':'Plan cut',function(ev){_phqOpenPlan(t,ctx,ev&&ev.currentTarget);},{'aria-label':'Plan the cut of '+t.po}));
   }
   if(manage&&phqCanAdvance()&&PHQ_LANES.some(function(l){return l.id===t.lane;})&&t.lane!=='cutting'){
@@ -536,8 +541,13 @@ function _phqTile(t,ctx,manage,jobsOk,m){
 /* ── open the PO (the existing detail page) ────────────────────────────── */
 // openPODetail sets currentPage itself and does not go through showPage, so the takeover has to come
 // down first or the PO page would paint inside a fixed Production Ops frame.
+// The PO detail page is for the managers: openPODetail BYPASSES page scoping (it sets currentPage itself), so for Kashif
+// (uzaib) the button is not drawn and this refuses him as well.
+function phqCanOpen(u){
+  return phqCanPlan(u)&&typeof window!=='undefined'&&!!window&&typeof window.openPODetail==='function';
+}
 function phqOpenPO(fbKey){
-  if(typeof window==='undefined'||typeof window.openPODetail!=='function')return false;
+  if(!phqCanOpen())return false;
   _phqCloseDlg();
   try{if(typeof _phTkLeave==='function')_phTkLeave();}catch(e){}
   window.openPODetail(fbKey);
@@ -572,6 +582,8 @@ function _phqOpenPlan(t,ctx,opener){
   const jobsG=ctx.get('jobs');
   if(!jobsG.ok)return;
   const job=jobsG.rows.filter(function(r){return r.fbKey===t.id;})[0]||null;
+  const lockWhy=phqPlanProblem(job,ctx.user);
+  if(lockWhy){if(typeof showToast==='function')showToast(lockWhy,true);return;}   // refused before the dialog, let alone the writer
   const mastersG=ctx.get('masters');
   const masters=mastersG.ok?mastersG.rows.filter(function(r){return r.active!==false;}).sort(function(a,b){return a.fbKey<b.fbKey?-1:a.fbKey>b.fbKey?1:0;}):[];
   const ov=phEl('div','phq-ov');
@@ -635,12 +647,38 @@ function _phqCloseDlg(){
   try{if(d.node.parentNode)d.node.parentNode.removeChild(d.node);}catch(e){}
   try{if(d.opener&&typeof d.opener.focus==='function')d.opener.focus();}catch(e){}
 }
+// Can this job's plan be changed by this person? null = yes (or no job yet: Plan creates one), else the reason.
+// Reuses ph-write.js's phJobMoveProblem on the open -> open style step (status -> the same status): an 'overridden' job is an
+// OWNER's, a 'done' job is never changed again, an unknown status has no step.
+function phqPlanProblem(job,u){
+  if(!job||typeof job!=='object'||!job.status)return null;
+  if(typeof phJobMoveProblem!=='function')return null;   // the writer (and its own check) is not loaded: phqSavePlan refuses first
+  const st=_phqStr(job.status);
+  const p=phJobMoveProblem(st,st,_phqUser(u));
+  return p?(st==='overridden'?'This plan is overridden - only an owner (Afnan or Ammar) can change it.':p):null;
+}
+// The freshest loaded copy of a PO's cut job (the data layer's rows), or null.
+function _phqLiveJob(poId){
+  try{
+    if(typeof phGet!=='function')return null;
+    const g=phGet('jobs');
+    if(!g||!g.ok||!Array.isArray(g.rows))return null;
+    return g.rows.filter(function(r){return r&&r.fbKey===poId;})[0]||null;
+  }catch(e){return null;}
+}
 // The only function in this file that writes. Gated again here (the button is not the boundary).
 async function phqSavePlan(poId,input,job){
   if(!phqCanPlan())return{ok:false,code:'forbidden',error:'Planning is for the Production Ops managers (Afnan, Ammar, Mustafa).'};
   if(typeof phSaveCutJob!=='function')return{ok:false,code:'failed',error:'The Production Ops writers did not load - refresh the page.'};
   if(!_phqPlannable(poId))return{ok:false,code:'invalid',error:'Not a PO id: '+poId};
+  // PRE-CHECK against the job as it is NOW (the freshest loaded copy, else the one the dialog opened on): an overridden job
+  // for a non-owner, a done job, a status with no step. Said here, before the writer is called (the writer and the rules agree).
+  const live=_phqLiveJob(poId)||job;
+  const why=phqPlanProblem(live,_phqUser());
+  if(why)return{ok:false,code:'forbidden',error:why};
   const opts={};
+  const cd=typeof phCutJobChangeData==='function'?phCutJobChangeData(live,input):null;   // structured from/to for the history row
+  if(cd)opts.data=cd;
   if(job&&typeof job.rev==='number')opts.expectedRev=job.rev;
   try{return await phSaveCutJob(poId,input,opts);}
   catch(e){return{ok:false,code:'failed',error:'Could not save the plan ('+(e&&e.message||e)+').'};}

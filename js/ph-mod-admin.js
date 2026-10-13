@@ -283,6 +283,7 @@ function _phaMasterRow(r,ctx){
   }
   const acts=phEl('div','pha-acts');
   acts.appendChild(_phaBtn('','Rename',function(){_phaM.edit={id:r.fbKey,kind:'rename',text:r.name};ctx.repaint();},{'data-act':'rename','aria-label':'Rename '+r.name}));
+  acts.appendChild(_phaBtn('','Change kind',function(){_phaM.edit={id:r.fbKey,kind:'kind',text:PHA_KINDS.some(function(k){return k.v===r.kind;})?r.kind:'unset'};ctx.repaint();},{'data-act':'kind','aria-label':'Change the kind of '+r.name}));
   if(active)acts.appendChild(_phaBtn('','Retire',function(){_phaM.edit={id:r.fbKey,kind:'retire',text:''};ctx.repaint();},{'data-act':'retire','aria-label':'Retire '+r.name}));
   else acts.appendChild(_phaBtn('','Reactivate',function(e,b){
     _phaAct(ctx,'masters',function(){return phMasterSetActive(r.fbKey,true,'');},function(){return r.name+' is active again.';},b);
@@ -291,10 +292,20 @@ function _phaMasterRow(r,ctx){
   const ed=_phaM.edit;
   if(ed&&ed.id===r.fbKey){
     const box=phEl('div','pha-edit');
+    const bar=phEl('div','pha-acts');
+    if(ed.kind==='kind'){
+      const ksel=_phaSelect(PHA_KINDS,ed.text,'kind',{'aria-label':'Kind of '+r.name});
+      _phaBind(ksel,ed,'text');
+      box.appendChild(_phaField('Kind',ksel,'In-house, outsourced, or not set. This only labels the master; nothing else changes.'));
+      bar.appendChild(_phaBtn('ph-btn-primary','Save kind',function(e,b){
+        const k=String(ed.text||'');
+        _phaAct(ctx,'masters',function(){return phMasterSetKind(r.fbKey,k);},
+          function(){_phaM.edit=null;return r.name+' is now '+((PHA_KINDS.filter(function(x){return x.v===k;})[0]||{}).t||k)+'.';},b);
+      },{'data-act':'save-edit'}));
+    }else{
     const inp=_phaInput('text',ed.text,ed.kind==='rename'?'rename':'reason',{maxlength:ed.kind==='rename'?'40':'300','aria-label':ed.kind==='rename'?'New name':'Reason for retiring'});
     _phaBind(inp,ed,'text');
     box.appendChild(_phaField(ed.kind==='rename'?'New name':'Reason for retiring (required)',inp,ed.kind==='rename'?'The old name stays as an alias, so gate passes that carry it still match this master.':'A retired master stays on every past record. It is never deleted.'));
-    const bar=phEl('div','pha-acts');
     bar.appendChild(_phaBtn('ph-btn-primary',ed.kind==='rename'?'Save name':'Retire master',function(e,b){
       const text=String(ed.text||'');
       if(ed.kind==='retire'&&!text.trim()){_phaFlash={tab:'masters',kind:'bad',text:'A reason is required to retire a master.'};ctx.repaint();return;}
@@ -302,6 +313,7 @@ function _phaMasterRow(r,ctx){
       _phaAct(ctx,'masters',function(){return ed.kind==='rename'?phMasterRename(r.fbKey,text):phMasterSetActive(r.fbKey,false,text);},
         function(){_phaM.edit=null;return ed.kind==='rename'?'Renamed to '+phNorm(text)+'.':r.name+' is retired.';},b);
     },{'data-act':'save-edit'}));
+    }
     bar.appendChild(_phaBtn('','Cancel',function(){_phaM.edit=null;ctx.repaint();},{'data-act':'cancel-edit'}));
     box.appendChild(bar);
     row.appendChild(box);
@@ -787,7 +799,28 @@ function _phaRenderSettings(host,ctx){
   const f=_phaT.form,D=PH_DEFAULT_SETTINGS;
   const isOwner=typeof phIsOwner==='function'&&phIsOwner(ctx.user);
   const saved=function(k){return Object.prototype.hasOwnProperty.call(raw,k);};
-  const status=function(k,defTxt){return saved(k)?_phaChip('Saved','ph-chip-ok'):_phaChip('Default '+defTxt+' - defaults, unconfirmed');};
+  // A saved value can be put back to its default (14 Oct 2026): the key is removed from the document. The delay target and the stuck
+  // limit go together (the core judges them as a pair); the hard PC-only rule only an owner can touch.
+  const clearBtn=function(keys,label,actKey){
+    if(!keys.every(function(k){return k!=='pcOnlyHard'||isOwner;}))return null;
+    const b=_phaBtn('pha-clear','Back to default',function(e,btn){
+      const patch={};keys.forEach(function(k){patch[k]=null;});
+      _phaAct(ctx,'settings',function(){return phSettingsSave(patch,{expectedRev:_phaT.rev});},
+        function(r){_phaT.form=null;_phaT.sig=null;return label+' is back to its default (revision '+r.rev+'). Unsaved edits on this page were discarded.';},btn);
+    },{'data-act':'clear-'+actKey,'aria-label':'Put '+label+' back to its default','title':'Removes the saved value. Anything typed on this page and not saved is discarded.'});
+    return b;
+  };
+  const CLEAR_PAIR=['delayTargetDays','stuckDays'];
+  const status=function(k,defTxt){
+    if(!saved(k))return _phaChip('Default '+defTxt+' - defaults, unconfirmed');
+    const w=phEl('span','pha-saved');
+    w.appendChild(_phaChip('Saved','ph-chip-ok'));
+    const label=(PHA_NUM_FIELDS.filter(function(n){return n.k===k;})[0]||{label:k}).label;
+    const pair=CLEAR_PAIR.indexOf(k)>-1;
+    const cb=clearBtn(pair?CLEAR_PAIR.slice():[k],pair?'The delay target and the stuck limit':label,k);
+    if(cb)w.appendChild(cb);
+    return w;
+  };
   // where we are
   const meta=phEl('p','ph-note',_phaT.rev?'Revision '+_phaT.rev+(raw.updatedBy?', last saved by '+raw.updatedBy:'')+(raw.updatedAt?' on '+_phaStampLabel(raw.updatedAt):'')+'.':'Nothing has been saved yet: every value below is a default, and the defaults are unconfirmed.');
   host.appendChild(meta);
@@ -798,8 +831,10 @@ function _phaRenderSettings(host,ctx){
     const i=_phaInput('text',f[n.k],n.k,{inputmode:'decimal','aria-label':n.label});
     _phaBind(i,f,n.k);
     const fld=_phaField(n.label,i,n.hint);
-    fld.appendChild(status(n.k,String(D[n.k])));
-    grid.appendChild(fld);
+    const cell=phEl('div','pha-cell');   // the status (and its button) sit OUTSIDE the label: a button inside a label is invalid
+    cell.appendChild(fld);
+    cell.appendChild(status(n.k,String(D[n.k])));
+    grid.appendChild(cell);
   });
   nums.appendChild(grid);
   host.appendChild(nums);
@@ -835,6 +870,7 @@ function _phaRenderSettings(host,ctx){
     sl.appendChild(li);
   });
   cal.appendChild(sl);
+  cal.appendChild(status('skipDays','none'));
   const add=phEl('div','pha-add');
   const di=_phaInput('date',f.skipNew,'skipNew',{'aria-label':'Day to skip'});_phaBind(di,f,'skipNew');
   add.appendChild(_phaField('Add a skip day',di));
