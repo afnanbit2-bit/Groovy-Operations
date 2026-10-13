@@ -70,13 +70,13 @@ function load(src,opts){
   const data=opts.data||fx.dbData();
   const fk=fakeDb(Object.assign({data:data},opts.db||{}));
   let tokenRefreshes=0;
-  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',
+  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',
     globals:Object.assign({},fk.api,{
       auth:{currentUser:{getIdToken:async()=>{tokenRefreshes++;return'tok';}}},
       localStorage:{getItem:k=>store[k]==null?null:store[k],setItem(k,v){store[k]=String(v);},removeItem(k){delete store[k];}},
       history:{replaceState(s,t,u){calls.push(String(u));const i=String(u).indexOf('#');a.ctx.location.hash=i<0?'':String(u).slice(i);},pushState(){}}
     },opts.globals||{})});
-  const ctx=a.ctx;
+  const ctx=a.ctx;if(typeof ctx.phI18nSetLang==='function')ctx.phI18nSetLang('en');
   const dom=domkit.install(ctx);
   const RealDate=Date;
   ctx.Date=class extends RealDate{constructor(...x){if(x.length===0)super(fx.NOW);else super(...x);}static now(){return fx.NOW;}};
@@ -197,9 +197,9 @@ async function checks(src){
   /* ── failed collections ── */
   await sec(async()=>{
     const M=build({pos:null,errors:{pos:'pos: boom'}});
-    o['pos failed: EVERY tile reads "unavailable — pos" and prints no number']=ALL_TILES.every(k=>M.tiles[k].state==='unavailable'&&M.tiles[k].value==='unavailable — pos'&&!/\d/.test(M.tiles[k].value))&&M.attention.unavailable[0]==='pos';
+    o['pos failed: EVERY tile reads "unavailable — pos" and prints no number']=ALL_TILES.every(k=>M.tiles[k].state==='unavailable'&&String(M.tiles[k].value)==='unavailable — pos'&&!/\d/.test(M.tiles[k].value))&&M.attention.unavailable[0]==='pos';
     const J=build({jobs:null,errors:{po_cut_jobs:'x'}}).tiles;
-    o['po_cut_jobs failed: the two tiles that need planned days say "unavailable — po_cut_jobs"; the rest still show numbers']=J.cutGap.value==='unavailable — po_cut_jobs'&&J.queueDelay.value==='unavailable — po_cut_jobs'&&J.pipeline.value==='10'&&J.afloat.value==='1,050'&&J.leadTime.value==='2.3 days';
+    o['po_cut_jobs failed: the two tiles that need planned days say "unavailable — po_cut_jobs"; the rest still show numbers']=String(J.cutGap.value)==='unavailable — po_cut_jobs'&&String(J.queueDelay.value)==='unavailable — po_cut_jobs'&&J.pipeline.value==='10'&&J.afloat.value==='1,050'&&J.leadTime.value==='2.3 days';
     const Ja=build({jobs:null});
     o['po_cut_jobs failed: the planned-day reason is not applied (PO-102 stays delayed on the lead time alone) and the list says so']=!/planned cut day/.test(Ja.attention.rows.filter(r=>r.id==='PO-102')[0].detail)&&/po_cut_jobs could not be read/.test(Ja.attention.note);
     const S0=build({settingsRaw:null});
@@ -453,7 +453,7 @@ module.exports=async function(){
   s.ok('prefers-reduced-motion drops the drawer animation',/prefers-reduced-motion:reduce\)\{\.phm-drawer\{animation:none\}\}/.test(blk));
   s.ok('a focus ring is drawn on the tile button, sub-link, chips and drawer close',/button\.phm-tile-main:focus-visible[^{]*\{outline:2px solid var\(--text\)/.test(blk));
   s.ok('the ink on the active range chip is --on-dark (anything painted on --dark takes its ink from it)',/\.phm-chip-btn\.on\{[^}]*background:var\(--dark\)[^}]*color:var\(--on-dark\)/.test(blk));
-  s.ok('a stuck/over-gate chip and a delayed chip carry a glyph and a word as well as a colour',/▲ Stuck/.test(SRC)&&/◆ Delayed/.test(SRC)&&/■ Over the cut gate/.test(SRC));
+  s.ok('a stuck/over-gate chip and a delayed chip carry a glyph and a word as well as a colour',(function(){const I=read('js/ph-i18n.js');return /ov\.reason_stuck/.test(SRC)&&/ov\.reason_delayed/.test(SRC)&&/ov\.reason_gate/.test(SRC)&&/'ov\.reason_stuck','▲ Stuck'/.test(I)&&/'ov\.reason_delayed','◆ Delayed'/.test(I)&&/'ov\.reason_gate','■ Over the cut gate'/.test(I);})());
 
   s.section('deliberate breaks — each must fail the named check');
   let broken=0;
@@ -487,9 +487,9 @@ module.exports=async function(){
   await brk('the lead-time average includes a PO with no start date',"if(r.leadTime.noStart>0)mem.noStart.push(ep);","if(r.leadTime.noStart>0){mem.noStart.push(ep);mem.lead.push(ep);}",K('lead time: 2.3'));
   await brk('a list behind a number uses another rule than the report (every PO counted as led)',"if(r.leadTime.n>0)mem.lead.push(ep);","mem.lead.push(ep);",K('drill: every tile'));
   await brk('no cut recorded shows 0 pcs',"_phmNoData('avgCut','Average cut quantity','range',none?'No cut recorded yet':'No cut recorded in this range',","_phmNoData('avgCut','Average cut quantity','range','0 pcs',",K('no cut recorded anywhere').concat(K('no cut recorded: no range')).concat(K('range today: nothing')));
-  await brk('an unavailable tile prints a number',"value:'unavailable — '+names.join(', '),unavailable:names.slice()","value:'0',unavailable:names.slice()",K('pos failed: EVERY tile'));
+  await brk('an unavailable tile prints a number',"value:phI18nD('ov.unavailable_x',{names:names.join(', ')}),unavailable:names.slice()","value:'0',unavailable:names.slice()",K('pos failed: EVERY tile'));
   await brk('a failed po_cut_jobs still gives a delay gap',"if(!jobsOk)M.tiles.cutGap=_phmUnavail('cutGap','Delay gap, cut vs planned','range',['po_cut_jobs']);\n  else{","if(false)M.tiles.cutGap=null;\n  {",K('po_cut_jobs failed: the two tiles'));
-  await brk('defaults are not flagged as defaults',"function _phmDef(sv,k){return sv.isDefault[k]?' (default)':'';}","function _phmDef(sv,k){return'';}",K('settings: capacity and the off day').concat(K('settings unreadable')));
+  await brk('defaults are not flagged as defaults',[["function _phmDef(sv,k){return sv.isDefault[k]?' (default)':'';}","function _phmDef(sv,k){return'';}"],["function _phmDefD(sv,k){return sv.isDefault[k]?phI18nD('ov.default_sp'):'';}","function _phmDefD(sv,k){return'';}"],["phI18nD(sv.isDefault.stuckDays?'ov.stuck_sub_def':'ov.t_stuck_sub'","phI18nD(false?'ov.stuck_sub_def':'ov.t_stuck_sub'"]],null,K('settings: capacity and the off day').concat(K('settings unreadable')));
   await brk('the range is ignored by the report',"const rep=phReport(eps,jobsD,rg,O);","const rep=phReport(eps,jobsD,{},O);",K('range today: nothing'));
   await brk('a guessed season is not flagged',"flag:s.guessed?(s.guessed===s.pos?'all guessed':s.guessed+' guessed'):''","flag:''",K('seasons: a guessed season'));
   await brk('a PO read failure is treated as an empty book',"_phmPos={state:'error',rows:null,at:Date.now(),err:err,errText:_phmErrText(err),truncated:false,p:null,refreshing:false};","_phmPos={state:'ok',rows:[],at:Date.now(),err:null,errText:'',truncated:false,p:null,refreshing:false};",K('pos refused'));
@@ -501,15 +501,15 @@ module.exports=async function(){
   await brk('a PO title written as HTML',"if(r.detail)li.appendChild(E('div','phm-row-detail',r.detail));","if(r.detail)li.appendChild(E('div','phm-row-detail',r.detail));li.children[1].innerHTML=r.title;",K('XSS: the source never'));
   await brk('a write sneaks in',"function phmCloseDrawer(restore){","function phmCloseDrawer(restore){ setDoc(doc(db,'pos','x'),{});",K('read-only: the source calls no Firestore write API'));
   await brk('the status strip is dropped from Overview',"(ctx.status.stages||[]).forEach(function(r){strip.appendChild(_phmStageLine(r));});","",K('Overview keeps the per-collection'));
-  await brk('the view-only account gets the Monitor button',"if(ctx.canManage)foot.appendChild(_phmBtn('ph-btn','Open the Monitor'","if(true)foot.appendChild(_phmBtn('ph-btn','Open the Monitor'",K('uzaib: no button'));
+  await brk('the view-only account gets the Monitor button',"if(ctx.canManage)foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.open_monitor')","if(true)foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.open_monitor')",K('uzaib: no button'));
   await brk('a global without the prefix',"function _phmObj(x){","function monObj(x){return x!==null&&typeof x==='object'&&!Array.isArray(x);}\nfunction _phmObj(x){",K('globals: every top-level'));
   await brk('a global that collides with another script',"function _phmObj(x){","function phEl(){return 1;}\nfunction _phmObj(x){",K('globals: none of them'));
   await brk('queue delay reports calendar days as working days',".map(function(j){return j.delayDays;})",".map(function(j){return j.delayCalendarDays;})",K('queue delay'));
   await brk('the cut gate setting is ignored',"phCutCheck(qty,u.units,{gate:S.cutGate})","phCutCheck(qty,u.units,{})",K('the settings are honoured'));
   await brk('the saved settings are not given to ph-core\'s lead-time rule',"const O={settings:rawS,now:now,today:today};","const O={now:now,today:today};",K('the settings are honoured'));
-  await brk('no Retry button on the pos error card',"c.appendChild(_phmBtn('ph-btn ph-btn-primary','Retry',function(){_phmEnsure(ctx,true);ctx.repaint();}));","",K('Retry reads again'));
+  await brk('no Retry button on the pos error card',"c.appendChild(_phmBtn('ph-btn ph-btn-primary',phI18nD('shell.retry'),function(){_phmEnsure(ctx,true);ctx.repaint();}));","",K('Retry reads again'));
   await brk('Refresh does not re-read pos',"phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();","phmCloseDrawer(false);ctx.repaint();",K('Refresh reads pos again'));
-  await brk('the po_cut_jobs note is dropped from the attention list',"note:jobsOk?'':'Delays against a planned cut day are not checked: po_cut_jobs could not be read.'","note:''",K('po_cut_jobs failed: the planned-day reason'));
+  await brk('the po_cut_jobs note is dropped from the attention list',"note:jobsOk?'':phI18nD('ov.jobs_unread_delays')","note:''",K('po_cut_jobs failed: the planned-day reason'));
   await brk('a view-only user cannot open a list (the tile button is inert)',"if(clickable)main.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label,rows:t.rows,note:t.cap,sum:t.sum,sumLabel:t.sumLabel,openable:t.id==='attention'},main);});","",K('a tile opens the list').concat(K('uzaib: he can open')));
   await brk('the sum of the list is not shown',"if(spec.sum!==null&&spec.sum!==undefined)panel.appendChild","if(false)panel.appendChild",K('a tile opens the list'));
   s.ok('breaks run: '+broken,broken>=40);

@@ -109,8 +109,8 @@ function load(src,opts){
     history:{replaceState(s,t,u){calls.push(String(u));},pushState(){}},
     loadData:()=>{fk.log.reloaded=(fk.log.reloaded||0)+1;}
   },opts.globals||{});
-  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',phone:!!opts.phone,globals});
-  const ctx=a.ctx;
+  const a=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],session:opts.session===undefined?USERS.afnan:opts.session,currentPage:'dashboard',phone:!!opts.phone,globals});
+  const ctx=a.ctx;if(typeof ctx.phI18nSetLang==='function')ctx.phI18nSetLang('en');
   const dom=domkit.install(ctx);
   ctx.window.showPage=function(id){ctx.currentPage=id;if(id==='prod-ops')ctx.phRenderPage(id);return Promise.resolve();};
   ctx.window.startApp=async function(){};

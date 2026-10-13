@@ -10,7 +10,7 @@ const harness=require('./harness');
 const domkit=require('./ph-dom');
 const {suite}=harness;
 const SRC=fs.readFileSync(path.join(__dirname,'..','js','ph-i18n.js'),'utf8');
-const CSS=fs.readFileSync(path.join(__dirname,'..','css-ph-i18n-block.css'),'utf8');
+const CSS=(function(){const all=fs.readFileSync(path.join(__dirname,'..','css','main.css'),'utf8');const i=all.indexOf('/* ph-i18n START');const j=all.indexOf('/* ph-i18n END');return i>=0&&j>i?all.slice(i,j+'/* ph-i18n END */'.length):all;})();
 
 function boot(src,o){
   o=o||{};
@@ -34,7 +34,7 @@ function checks(src){
   o['table: every key has non-empty ur and en']=keys.every(k=>typeof T[k].ur==='string'&&T[k].ur.trim()&&typeof T[k].en==='string'&&T[k].en.trim());
   o['table: every {token} of en is in ur, and the reverse']=keys.every(k=>J(tokens(T[k].en))===J(tokens(T[k].ur)));
   o['table: Urdu uses Western digits only']=keys.every(k=>!/[٠-٩۰-۹]/.test(T[k].ur));
-  o['table: every ur contains Arabic-script letters']=keys.every(k=>/[؀-ۿ]/.test(T[k].ur));
+  o['table: every ur contains Arabic-script letters (a pure join like "{a} · {b}" has no words in en either, so it has none in ur)']=keys.every(k=>/[؀-ۿ]/.test(T[k].ur)||!/[A-Za-z]/.test(T[k].en.replace(/\{[A-Za-z_]\w*\}/g,'')));
   o['table: review flags are booleans true only']=keys.every(k=>T[k].review===undefined||T[k].review===true);
   o['table: the three rail names exist in both languages']=['shell.tab_overview','shell.tab_queue','shell.tab_cutting'].every(k=>T[k]&&T[k].ur&&T[k].en);
 
@@ -135,7 +135,7 @@ module.exports=async function(){
     let r;try{r=checks(mut);}catch(e){r={};}
     failing.forEach(f=>{n++;s.ok('break "'+label+'" fails "'+f+'"',r[f]!==true);});
   };
-  brk('fill ignores params','return Object.prototype.hasOwnProperty.call(params,k)?_phI18nStr(params[k]):m;','return m;',['T: fills params in en and ur']);
+  brk('fill ignores params','return phI18nIsD(v)?phI18nT(v.key,v.params,lang):_phI18nStr(v);','return m;',['T: fills params in en and ur']);
   brk('fallback to key removed',"if(!e)return _phI18nStr(key);","if(!e)return '';",['T: unknown key returns the key']);
   brk('fallback to en removed',"const raw=(want==='ur'&&e.ur)?e.ur:(e.en||_phI18nStr(key));","const raw=e[want];",['T: missing ur falls back to en']);
   brk('T can throw',"}catch(x){return _phI18nStr(key);}\n}\nfunction phI18nPair","}catch(x){throw x;}\n}\nfunction phI18nPair",['T: hostile inputs never throw']);

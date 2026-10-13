@@ -135,9 +135,9 @@ function load(src,opts){
     confirm:opts.confirm||undefined
   },opts.globals||{});
   if(globals.confirm===undefined)delete globals.confirm;
-  const files=['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/pos.js'];
+  const files=['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js','js/pos.js'];
   const a=harness.loadApp({files:files,session:opts.session===undefined?USERS.afnan:opts.session,globals:globals});
-  const ctx=a.ctx;
+  const ctx=a.ctx;if(typeof ctx.phI18nSetLang==='function')ctx.phI18nSetLang('en');
   // what loadData left in the app's own PO list
   if(!opts.noAllPOs)ctx.allPOs=[...st.docs.keys()].filter(k=>/^pos\/[^/]+$/.test(k)).map(k=>Object.assign({},st.get(k),{fbKey:k.slice(4)}));
   const dom=domkit.install(ctx);
@@ -589,11 +589,11 @@ module.exports=async function(){
   await brk('the board writes the stage itself',"await window.ownerAdvance(fbKey,stage);","await updateDoc(doc(db,'pos',fbKey),{currentStage:'stitching'});",['source: this file calls NO Firestore write API (no setDoc / updateDoc / addDoc / deleteDoc / writeBatch / runTransaction)','advance: it calls window.ownerAdvance(fbKey, the stage the PO is at) and the existing function asks its own confirm first']);
   await brk('plan writes the job with setDoc',"try{return await phSaveCutJob(poId,input,opts);}","try{await setDoc(doc(db,'po_cut_jobs',poId),input);return{ok:true};}",['source: this file calls NO Firestore write API (no setDoc / updateDoc / addDoc / deleteDoc / writeBatch / runTransaction)','plan: Save writes po_cut_jobs/PO-101 (day, master id and name) and nothing else but the history row, in ONE transaction']);
   await brk('plan skips the revision check',"if(job&&typeof job.rev==='number')opts.expectedRev=job.rev;","",['plan: a plan changed by someone else since it was loaded is refused (no write) and the plans are re-read']);
-  await brk('an unchanged save still writes',"if(!r.changed){msg.textContent='Nothing changed.';return;}","",['plan: saving with nothing changed writes nothing and says so']);
+  await brk('an unchanged save still writes',"if(!r.changed){phI18nSet(msg,phI18nD('queue.nothing_changed'));return;}","",['plan: saving with nothing changed writes nothing and says so']);
   await brk('only changed keys is dropped (the master is always sent)',"if(sel!=='__keep'&&sel!==curId){","if(sel!=='__keep'){",['plan: the update names ONLY the keys that changed (plus rev and the stamp)']);
   await brk('clearing the master is ignored',"if(sel===''){out.masterId=null;out.masterName='';}","if(sel===''){}",['plan: an empty day and "No master" clear the plan (null / empty), they are not ignored']);
   await brk('Plan shown while plans are not loaded',"if(manage&&t.lane==='cutting'&&jobsOk&&_phqPlannable(t.id)","if(manage&&t.lane==='cutting'&&_phqPlannable(t.id)",['failed cut plans: the board says so and draws no Plan / Change plan button']);
-  await brk('a failed plans read printed as "Not planned"',"if(!jobsOk)plan='Plan: not loaded';\n    else if","if(false)plan='';\n    else if",['failed cut plans: tiles say "Plan: not loaded", not "Not planned"']);
+  await brk('a failed plans read printed as "Not planned"',"if(!jobsOk)plan=phI18nD('queue.plan_not_loaded');\n    else if","if(false)plan='';\n    else if",['failed cut plans: tiles say "Plan: not loaded", not "Not planned"']);
   await brk('no Escape guard on the dialog',"if(typeof phAddEscapeGuard==='function')phAddEscapeGuard(_phqEscape);","",['plan: Escape closes the dialog through the registered guard and writes nothing']);
   await brk('the Open button is drawn for everyone',"if(phqCanOpen(ctx.user)){","if(typeof window!=='undefined'&&window&&typeof window.openPODetail==='function'){",["uzaib: NO Open button on any tile (openPODetail bypasses page scoping), and phqOpenPO refuses him"]);
   await brk('phqOpenPO does not check who',"function phqOpenPO(fbKey){\n  if(!phqCanOpen())return false;","function phqOpenPO(fbKey){\n  if(typeof window==='undefined'||typeof window.openPODetail!=='function')return false;",["uzaib: NO Open button on any tile (openPODetail bypasses page scoping), and phqOpenPO refuses him"]);
@@ -614,7 +614,7 @@ module.exports=async function(){
   await brk('search filter ignored',"if(q&&(t.code+' '+t.name+' '+t.po+' '+t.id).toLowerCase().indexOf(q)<0)return false;","",['filter: article search matches code or name, case-insensitively, and the PO number']);
   await brk('master filter ignored',"if(F.master){","if(false){",['filter: master Hassan (by its registry key) keeps his tiles; Unassigned keeps the rest']);
   await brk('season filter ignored',"if(F.season){","if(false){",['filter: season winter-2026 keeps the stored-winter PO only']);
-  await brk('a failed read drawn as an empty board',"if(_phqPos.state==='error'&&!loading){\n      body.appendChild(_phqErrCard('Could not read the POs'","if(false){\n      body.appendChild(_phqErrCard('Could not read the POs'",['failed pos read: an alert names pos, prints no tile and no PO count']);
+  await brk('a failed read drawn as an empty board',"if(_phqPos.state==='error'&&!loading){\n      body.appendChild(_phqErrCard(phI18nD('queue.could_not_read')","if(false){\n      body.appendChild(_phqErrCard(phI18nD('queue.could_not_read')",['failed pos read: an alert names pos, prints no tile and no PO count']);
   await brk('a failed read retried in a loop',"const due=_phqPos.state==='idle'||(_phqPos.state==='ok'&&","const due=_phqPos.state==='idle'||_phqPos.state==='error'||(_phqPos.state==='ok'&&",['failed pos read: not retried in a loop (one read plus one token-refresh retry, then it waits for the button)']);
   await brk('a failed refresh drops the old tiles',"_phqPos={state:'error',rows:_phqPos.rows,at:_phqPos.at,err:err,truncated:_phqPos.truncated,stale:true};\n      if(typeof console","_phqPos={state:'error',rows:null,at:_phqPos.at,err:err,truncated:_phqPos.truncated,stale:true};\n      if(typeof console",['failed refresh: the old tiles stay, an alert says the refresh failed and when the tiles are from']);
   await brk('the Drafts panel called unguarded',"if(typeof phDraftsPanel!=='function'){","if(false){",['drafts: without the other file, the sub-tab says it is not part of this build (no crash)']);

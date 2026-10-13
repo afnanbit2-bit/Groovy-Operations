@@ -567,11 +567,13 @@ function _phI18nStore(){
 }
 function _phI18nStr(v){return v===undefined||v===null?'':String(v);}
 // Fill {token}s. Unknown tokens are left as written; a hostile value is just text (callers use textContent).
-function _phI18nFill(s,params){
+function _phI18nFill(s,params,lang){
   if(typeof s!=='string')return '';
   if(!params||typeof params!=='object')return s;
   return s.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g,function(m,k){
-    return Object.prototype.hasOwnProperty.call(params,k)?_phI18nStr(params[k]):m;
+    if(!Object.prototype.hasOwnProperty.call(params,k))return m;
+    const v=params[k];
+    return phI18nIsD(v)?phI18nT(v.key,v.params,lang):_phI18nStr(v);   // a descriptor inside a descriptor is filled in the same language
   });
 }
 // lang: 'ur' | 'en' (or 'ur-first' meaning ur). Falls back en, then the key. Never throws.
@@ -581,7 +583,7 @@ function phI18nT(key,params,lang){
     if(!e)return _phI18nStr(key);
     const want=(lang==='ur'||lang==='ur-first')?'ur':'en';
     const raw=(want==='ur'&&e.ur)?e.ur:(e.en||_phI18nStr(key));
-    return _phI18nFill(raw,params);
+    return _phI18nFill(raw,params,want);
   }catch(x){return _phI18nStr(key);}
 }
 function phI18nPair(key,params){return{ur:phI18nT(key,params,'ur'),en:phI18nT(key,params,'en')};}
@@ -670,3 +672,351 @@ function phI18nToggleNode(doc,username){
   });
   return g;
 }
+
+/* ── WP4 wiring helpers (14 Oct 2026) — section 4a ──────────────────────────
+   A DESCRIPTOR is what a screen passes where it used to pass an English literal:
+     phI18nD('queue.save_plan')  /  phI18nD('queue.plan_saved',{po:id})
+   Its toString() IS the English text with the tokens filled, so any code that was never taught about
+   descriptors (a toast, a confirm, a title attribute, a concatenation) prints exactly what it printed before.
+   A builder that IS taught (phEl, _phdEl) calls phI18nSet(node,x): in English the node holds that text directly
+   (the DOM is byte-for-byte what it was); in Urdu-first it holds the Urdu block above the small English line.
+   Urdu is ON SCREEN only (the browser shapes it); nothing here reaches a PDF. Textual content goes in with
+   textContent only. */
+function phI18nD(key,params){
+  const p=params&&typeof params==='object'?params:null;
+  return{__phi18n:1,key:String(key),params:p,toString:function(){return phI18nT(this.key,this.params,'en');},valueOf:function(){return phI18nT(this.key,this.params,'en');},toJSON:function(){return phI18nT(this.key,this.params,'en');}};
+}
+function phI18nIsD(x){return !!x&&typeof x==='object'&&x.__phi18n===1&&typeof x.key==='string';}
+// A descriptor in a language ('ur'|'en'), or any other value as the string it already was.
+function phI18nStr(x,lang){return phI18nIsD(x)?phI18nT(x.key,x.params,lang):_phI18nStr(x);}
+// Is the Urdu-first view on for the signed-in person right now?
+function phI18nUrduOn(){try{return phI18nLangFor()==='ur-first';}catch(e){return false;}}
+// Put x into node. English view / a plain string: textContent (exactly today's DOM). Urdu-first descriptor: the pair block.
+function phI18nSet(node,x){
+  if(!node)return node;
+  if(phI18nIsD(x)&&phI18nUrduOn()&&typeof document!=='undefined'&&!/^(OPTION|OPTGROUP|TEXTAREA|INPUT|TITLE)$/.test(String(node.tagName||''))){
+    while(node.firstChild)node.removeChild(node.firstChild);
+    node.appendChild(phI18nNode(document,x.key,x.params,{lang:'ur-first'}));
+    return node;
+  }
+  node.textContent=_phI18nStr(x);
+  return node;
+}
+// For title / aria-label / placeholder: one string. Urdu-first shows "اردو — English"; English view is today's text.
+function phI18nAttr(x){
+  if(!phI18nIsD(x))return _phI18nStr(x);
+  return phI18nUrduOn()?phI18nT(x.key,x.params,'ur')+' — '+phI18nT(x.key,x.params,'en'):phI18nT(x.key,x.params,'en');
+}
+// Keys whose Urdu has not been read by an Urdu speaker (review:true in the table) — the screens show a visible chip while any
+// Urdu-first text is on screen (urdu-review.md lists them).
+function phI18nReviewKeys(){return Object.keys(PH_I18N_STR).filter(function(k){return PH_I18N_STR[k].review===true;});}
+// Every key in the table that is missing an Urdu line, and the keys a screen asks for that do not exist (used by the test).
+function phI18nHas(key){return Object.prototype.hasOwnProperty.call(PH_I18N_STR,key);}
+// A read-error sentence written in English by a lower layer (js/ph-data.js phErrText, the PO read in queue/monitor) is matched against
+// the err.* templates and returned as a descriptor; anything that does not match comes back as the plain string, unchanged.
+let _phI18nErrRe=null;
+function phI18nErr(text){
+  if(typeof text!=='string'||!text)return text;
+  try{
+    if(!_phI18nErrRe){
+      _phI18nErrRe=[];
+      Object.keys(PH_I18N_STR).forEach(function(k){
+        if(k.indexOf('err.')!==0&&k.indexOf('cut.read_')!==0&&k.indexOf('queue.read_')!==0)return;
+        const names=[];
+        const src=PH_I18N_STR[k].en.replace(/[.*+?^$()|[\]\\]/g,'\\$&').replace(/\{([A-Za-z_]\w*)\}/g,function(m,n){names.push(n);return '(.+?)';});
+        _phI18nErrRe.push({k:k,names:names,re:new RegExp('^'+src+'$')});
+      });
+    }
+    for(let i=0;i<_phI18nErrRe.length;i++){
+      const m=_phI18nErrRe[i].re.exec(text);
+      if(m){const p={};_phI18nErrRe[i].names.forEach(function(n,j){p[n]=m[j+1];});return phI18nD(_phI18nErrRe[i].k,p);}
+    }
+  }catch(e){}
+  return text;
+}
+
+// The standing notice while any Urdu-first text is on screen: the wording was written by Claude and no Urdu speaker has read it yet
+// (urdu-review.md lists the rows; the 26 least sure are marked review:true in the table).
+function phI18nReviewNotice(doc){
+  const d=doc.createElement('div');
+  d.className='phi-review-row';
+  d.setAttribute('role','note');
+  const chip=_phI18nSpan(doc,'phi-review','ur','rtl',phI18nT('shell.review_chip',null,'ur'));
+  const en=_phI18nSpan(doc,'phi-en','en','ltr',phI18nT('shell.review_note',null,'en'));
+  d.appendChild(chip);d.appendChild(en);
+  return d;
+}
+
+/* ── new keys added by the wiring (the original table had no string for these screens' later text) ──
+   Urdu below was written by Claude; every row here is review:true. */
+(function(){
+  const A=function(k,en,ur){_phI18nAdd(k,en,ur,true);};
+  A('shell.review_chip','اردو زیرِ نظرثانی','اردو زیرِ نظرثانی');
+  A('shell.review_note','Urdu wording not yet checked by an Urdu speaker','اردو الفاظ کو ابھی کسی اردو دان نے نہیں دیکھا');
+  A('shell.chip_floor','Data entry & cutting','ڈیٹا انٹری اور کٹنگ');
+  A('shell.chip_floor_tip','This account enters PO drafts and records the cut. Planning, Calendar and settings are for the managers.','یہ اکاؤنٹ پی او ڈرافٹ لکھتا ہے اور کٹ درج کرتا ہے۔ پلاننگ، کیلنڈر اور سیٹنگز منیجرز کے لیے ہیں۔');
+  A('shell.chip_view_tip','This account can only look.','یہ اکاؤنٹ صرف دیکھ سکتا ہے۔');
+  A('shell.ph_queue_blurb','The queue of PO drafts and issued POs, by season, as tiles.','پی او ڈرافٹ اور جاری شدہ پی اوز کی قطار، سیزن کے مطابق ٹائلوں میں۔');
+  A('shell.ph_cutting_blurb','The cutting floor: open cut jobs, the checklist, actual cut by size.','کٹنگ فلور: کھلے کٹ جابز، چیک لسٹ، سائز کے مطابق اصل کٹ۔');
+})();
+
+/* ── WP4: keys for the strings the screens build (Urdu written by Claude, NOT read by an Urdu speaker: every row is review:true) ── */
+(function(){
+  const A=function(k,en,ur){_phI18nAdd(k,en,ur,true);};
+  A('cut.aria_open_overdue','Open overdue job {po}','تاخیر والی جاب {po} کھولیں');
+  A('cut.bar_text','{today} planned today · {overdue} overdue','{today} آج کے لیے · {overdue} تاخیر سے');
+  A('cut.bar_text_undated','{today} planned today · {overdue} overdue · {undated} with no planned day','{today} آج کے لیے · {overdue} تاخیر سے · {undated} بغیر طے شدہ دن کے');
+  A('cut.btn_add','Add','شامل کریں');
+  A('cut.btn_cancel','Cancel','منسوخ');
+  A('cut.btn_open','Open','کھولیں');
+  A('cut.btn_remove','Remove','ہٹائیں');
+  A('cut.cand_aria','Use fabric issue {id} for {po}','{po} کے لیے فیبرک ایشو {id} استعمال کریں');
+  A('cut.cand_blank','blank','خالی');
+  A('cut.cand_nodate','no date','تاریخ نہیں');
+  A('cut.cand_nofabric','fabric not named','کپڑے کا نام نہیں');
+  A('cut.cand_noroll','rolls not recorded','رولز درج نہیں');
+  A('cut.cand_noweight','weight not recorded','وزن درج نہیں');
+  A('cut.cand_poField','PO field: {v}','پی او خانہ: {v}');
+  A('cut.chip_open','Open','کھلی');
+  A('cut.closed_all','Close','بند کریں');
+  A('cut.codes_line','{label}: {codes}','{label}: {codes}');
+  A('cut.codes_line_more','{label}: {codes} (+{n} more)','{label}: {codes} (+{n} مزید)');
+  A('cut.confirm_complete_will','Mark this job complete? {will}','کیا یہ جاب مکمل کریں؟ {will}');
+  A('cut.could_not_save_why2','Could not save ({why}).','محفوظ نہیں ہو سکا ({why})۔');
+  A('cut.cut_so_far_n','Cut so far: {n} pcs','اب تک کٹ: {n} عدد');
+  A('cut.cut_so_far_of','Cut so far: {n} pcs of {ord} ordered','اب تک کٹ: {ord} آرڈر میں سے {n} عدد');
+  A('cut.f_master','Cutting master','کٹنگ ماسٹر');
+  A('cut.f_note','Note','نوٹ');
+  A('cut.f_ordered','Ordered','آرڈر');
+  A('cut.f_sizes','Sizes','سائز');
+  A('cut.find_h','Find the fabric issue','فیبرک ایشو تلاش کریں');
+  A('cut.find_none','No fabric issue is waiting without a PO, so there is nothing to pick. It may not have been issued yet.','کوئی فیبرک ایشو بغیر پی او کے نہیں پڑا، اس لیے چننے کو کچھ نہیں۔ شاید ابھی جاری نہیں ہوا۔');
+  A('cut.find_pick','These fabric issues point at no real PO. Tap the one that belongs here. It is remembered for this visit only; nothing is saved to the pass or the job.','یہ فیبرک ایشوز کسی اصل پی او کی طرف اشارہ نہیں کرتے۔ جو یہاں کا ہے اس پر ٹیپ کریں۔ یہ صرف اس وزٹ کے لیے یاد رہتا ہے؛ پاس یا جاب میں کچھ محفوظ نہیں ہوتا۔');
+  A('cut.flag_weight_over','weight {d} {u} over the issued {i} {u} (limit {t})','وزن جاری شدہ {i} {u} سے {d} {u} زیادہ (حد {t})');
+  A('cut.flag_weight_under','weight {d} {u} under the issued {i} {u} (limit {t})','وزن جاری شدہ {i} {u} سے {d} {u} کم (حد {t})');
+  A('cut.gate_enter_allowed','Enter the pieces cut to see the gate ({min}–{max} pcs allowed).','حد دیکھنے کے لیے کٹے ہوئے پیس لکھیں ({min}–{max} عدد کی اجازت)۔');
+  A('cut.gate_enter_dot','Enter the pieces cut to see the gate.','حد دیکھنے کے لیے کٹے ہوئے پیس لکھیں۔');
+  A('cut.gate_inside2','✓ Inside the gate: {min}–{max} pcs ({lo}–{hi}% of {ord}).','✓ حد کے اندر: {min}–{max} عدد ({ord} کا {lo}–{hi}%)۔');
+  A('cut.gate_outside2','✗ Outside the gate ({min}–{max} pcs, {lo}–{hi}%). Recording this needs an owner or Mustafa to approve the variance first.','✗ حد سے باہر ({min}–{max} عدد، {lo}–{hi}%)۔ اسے درج کرنے سے پہلے اونر یا مصطفیٰ کی منظوری چاہیے۔');
+  A('cut.group_line','{rolls}{wt}','{rolls}{wt}');
+  A('cut.group_line_wt','{rolls} · {w} {u}','{rolls} · {w} {u}');
+  A('cut.includes_picked','Includes {n} you picked for this PO. The pick is remembered on this device for this visit only.','اس میں {n} شامل ہیں جو آپ نے اس پی او کے لیے چنے۔ یہ انتخاب صرف اس ڈیوائس پر اس وزٹ کے لیے یاد رہتا ہے۔');
+  A('cut.issued_summary','Issued to the PO · {rolls} in all{wt}{mixed}','پی او کو جاری · کل {rolls}{wt}{mixed}');
+  A('cut.issued_to_po_line','Issued to the PO · {rolls} in all','پی او کو جاری · کل {rolls}');
+  A('cut.job_closed2','This job is {status} - the roll check is closed.','یہ جاب {status} ہے - رول چیک بند ہے۔');
+  A('cut.join_dot','{a} · {b}','{a} · {b}');
+  A('cut.join_semi','{a}; {b}','{a}؛ {b}');
+  A('cut.lbl_missing','Missing','غائب');
+  A('cut.lbl_not_on_issue','Not on the issue','ایشو میں نہیں');
+  A('cut.mismatch_saved','✗ MISMATCH: {what}. It is saved flagged, never blocked.','✗ فرق: {what}۔ نشان لگا کر محفوظ ہو جاتا ہے، روکا نہیں جاتا۔');
+  A('cut.missing_codes','Missing: {what}','غائب: {what}');
+  A('cut.msg_dup','{code} was already scanned - counted once.','{code} پہلے ہی اسکین ہو چکا - ایک بار گنا گیا۔');
+  A('cut.n_w','{n} {w}','{n} {w}');
+  A('cut.not_checked_yet2','Not checked yet. Scan the rolls or enter a count; a mismatch is only shown once you have.','ابھی چیک نہیں ہوا۔ رول اسکین کریں یا تعداد لکھیں؛ فرق تبھی دکھے گا جب آپ چیک کر لیں۔');
+  A('cut.planned_for_line','Planned for {day}. Check the rolls against what was issued, then mark the job complete.','{day} کے لیے طے۔ رولز کو جاری شدہ سے ملائیں، پھر جاب مکمل کریں۔');
+  A('cut.read_po_missing','PO {po} was not found in the PO list.','پی او {po} پی او فہرست میں نہیں ملا۔');
+  A('cut.read_timeout','{col}: the read did not finish in time - check the connection and retry.','{col}: پڑھنا وقت پر مکمل نہیں ہوا - انٹرنیٹ چیک کریں اور دوبارہ کوشش کریں۔');
+  A('cut.reading_issues','Reading the fabric issues…','فیبرک ایشوز پڑھے جا رہے ہیں…');
+  A('cut.record_already_x','The cut is already recorded (the PO is at {stage}).','کٹ پہلے ہی درج ہے (پی او {stage} پر ہے)۔');
+  A('cut.roll_noton_many','rolls not on the issue','رولز ایشو میں نہیں');
+  A('cut.roll_noton_one','roll not on the issue','رول ایشو میں نہیں');
+  A('cut.rolls_verified_of','{v} of {t} rolls verified','{t} میں سے {v} رول تصدیق شدہ');
+  A('cut.saved_check_of','Saved roll check: {v} of {t} verified','محفوظ رول چیک: {t} میں سے {v} تصدیق شدہ');
+  A('cut.saved_check_of_bits','Saved roll check: {v} of {t} verified · {bits}','محفوظ رول چیک: {t} میں سے {v} تصدیق شدہ · {bits}');
+  A('cut.size_only','Size {s}','سائز {s}');
+  A('cut.size_ordered_x','Size {s} (ordered {n})','سائز {s} (آرڈر {n})');
+  A('cut.to_do','To do: {what}.','کرنے کا کام: {what}۔');
+  A('cut.w_fi_many','fabric issues','فیبرک ایشوز');
+  A('cut.w_fi_one','fabric issue','فیبرک ایشو');
+  A('cut.w_job_many','jobs','جابز');
+  A('cut.w_job_one','job','جاب');
+  A('cut.w_openjob_many','open jobs','کھلی جابز');
+  A('cut.w_openjob_one','open job','کھلی جاب');
+  A('cut.w_roll_many','rolls','رولز');
+  A('cut.w_roll_one','roll','رول');
+  A('cut.weighed_total2','Weighed total of the rolls ({unit}) - optional','رولز کا تولا ہوا کل وزن ({unit}) - اختیاری');
+  A('cut.weight_counted2','Weight counted ({unit}) - optional','گنا ہوا وزن ({unit}) - اختیاری');
+  A('cut.weight_not_compared_dot','Weight not compared: {why}.','وزن کا موازنہ نہیں ہوا: {why}۔');
+  A('cut.weight_within2','Weight {a} {u} is within {tol} of the issued {b}.','وزن {a} {u} جاری شدہ {b} کے {tol} کے اندر ہے۔');
+  A('cut.whole_only_x','Whole numbers only: {v}','صرف پوری گنتی: {v}');
+  A('cut.wt_pairs','{w} · {u}','{w} · {u}');
+  A('drafts.a_po','a PO','ایک پی او');
+  A('drafts.axis_line','Sizes shown: {keys} ({how}).','دکھائے گئے سائز: {keys} ({how})۔');
+  A('drafts.blurb2','PC-only entry. A draft is complete before it is marked ready; a ready draft is issued as a PO by a manager (Mustafa, Afnan or Ammar).','صرف پی سی پر لکھیں۔ ڈرافٹ پورا ہو تب "تیار" کریں؛ تیار ڈرافٹ کو منیجر (مصطفیٰ، عفنان یا عمار) پی او کے طور پر جاری کرتا ہے۔');
+  A('drafts.btn_abandon','Abandon','ترک کریں');
+  A('drafts.btn_discard','Discard','رد کریں');
+  A('drafts.btn_fix','Fix','درست کریں');
+  A('drafts.btn_view','View','دیکھیں');
+  A('drafts.btn_yes_issue','Yes, issue it as a PO','ہاں، پی او کے طور پر جاری کریں');
+  A('drafts.chip_complete','Complete','مکمل');
+  A('drafts.complete_ready','Every required field is filled. This draft is already marked ready.','ہر ضروری خانہ بھرا ہے۔ یہ ڈرافٹ پہلے ہی تیار کیا جا چکا ہے۔');
+  A('drafts.confirm_issue','Issue this draft as a real PO? This cannot be undone: the draft becomes final and a PO is created.','کیا یہ ڈرافٹ اصل پی او کے طور پر جاری کریں؟ یہ واپس نہیں ہو سکتا: ڈرافٹ حتمی ہو جائے گا اور پی او بن جائے گا۔');
+  A('drafts.cp_embroidery','Embroidery','ایمبرائیڈری');
+  A('drafts.created_as_val','Reserved (like the New PO form), no photos, no fabric rolls reserved','ریزرو ("نیا پی او" فارم کی طرح)، بغیر فوٹو، کوئی کپڑے کا رول ریزرو نہیں');
+  A('drafts.emb_hint','The embellishment recipe is looked up when the PO is issued; product photos and fabric rolls are not part of a draft (the PO is created without photos and reserves no rolls). A draft only records the choice.','ایمبلشمنٹ ریسیپی پی او جاری ہونے پر دیکھی جاتی ہے؛ پروڈکٹ فوٹو اور کپڑے کے رولز ڈرافٹ کا حصہ نہیں (پی او بغیر فوٹو کے بنتا ہے اور کوئی رول ریزرو نہیں ہوتا)۔ ڈرافٹ صرف انتخاب لکھتا ہے۔');
+  A('drafts.err_date_field','{label} "{v}" is not a date (YYYY-MM-DD)','{label} "{v}" تاریخ نہیں (YYYY-MM-DD)');
+  A('drafts.err_issue','The draft could not be issued. Nothing was created.','ڈرافٹ جاری نہیں ہو سکا۔ کچھ نہیں بنا۔');
+  A('drafts.err_issue_mgr','Only a manager (Afnan, Ammar, Mustafa) can issue a draft as a PO.','صرف منیجر (عفنان، عمار، مصطفیٰ) ڈرافٹ کو پی او کے طور پر جاری کر سکتا ہے۔');
+  A('drafts.err_issue_missing','js/ph-issue.js did not load - refresh the page.','js/ph-issue.js لوڈ نہیں ہوئی - پیج ریفریش کریں۔');
+  A('drafts.err_issue_offline','No connection. Issuing a PO needs one (it is a single transaction and cannot be queued). Nothing was created.','انٹرنیٹ نہیں۔ پی او جاری کرنے کے لیے ضروری ہے (یہ ایک ہی ٹرانزیکشن ہے، قطار میں نہیں رک سکتی)۔ کچھ نہیں بنا۔');
+  A('drafts.err_issue_ready','Only a saved, READY draft can be issued.','صرف محفوظ شدہ، تیار ڈرافٹ جاری ہو سکتا ہے۔');
+  A('drafts.err_not_ready_missing2','Not marked ready - the draft is incomplete. Missing: {fields}. Your changes are still in the form; press Save draft to keep them.','تیار نہیں ہوا - ڈرافٹ نامکمل ہے۔ کمی: {fields}۔ آپ کی تبدیلیاں فارم میں موجود ہیں؛ انہیں رکھنے کے لیے "ڈرافٹ محفوظ کریں" دبائیں۔');
+  A('drafts.err_plus_none','{err} Nothing below is shown as "no drafts": the list was not read.','{err} نیچے "کوئی ڈرافٹ نہیں" نہیں دکھایا گیا: فہرست پڑھی نہیں گئی۔');
+  A('drafts.err_size_not_whole','{k}: "{v}" is not a whole number of pieces','{k}: "{v}" پیس کی پوری تعداد نہیں');
+  A('drafts.filter_count','{label} {n}','{label} {n}');
+  A('drafts.final_note','This draft is final. The PO was created reserved, like one from the New PO form, without photos and with no fabric rolls reserved.','یہ ڈرافٹ حتمی ہے۔ پی او "نیا پی او" فارم کی طرح ریزرو بنا، بغیر فوٹو کے اور کوئی کپڑے کا رول ریزرو نہیں ہوا۔');
+  A('drafts.fl_abandoned','Abandoned','ترک');
+  A('drafts.fl_code','Article code','آرٹیکل کوڈ');
+  A('drafts.fl_cutMaster','Cutting master','کٹنگ ماسٹر');
+  A('drafts.fl_draft','Draft','ڈرافٹ');
+  A('drafts.fl_fabric','Fabric','کپڑا');
+  A('drafts.fl_issued','Issued','جاری');
+  A('drafts.fl_name','Article name','آرٹیکل کا نام');
+  A('drafts.fl_open','Open','کھلے');
+  A('drafts.fl_plannedCutDate','Planned cut date','کٹنگ کی طے شدہ تاریخ');
+  A('drafts.fl_plannedFabricQty','Planned fabric quantity','منصوبہ شدہ کپڑے کی مقدار');
+  A('drafts.fl_plannedFabricUnit','Planned fabric unit','کپڑے کی اکائی');
+  A('drafts.fl_qty','Quantity','مقدار');
+  A('drafts.fl_ready','Ready','تیار');
+  A('drafts.fl_requestedDate','Requested date','مطلوبہ تاریخ');
+  A('drafts.fl_season','Season','سیزن');
+  A('drafts.fl_sizes','Sizes','سائز');
+  A('drafts.go_to','Go to {label}','{label} پر جائیں');
+  A('drafts.heading_rev_only','Revision {n}','ریویژن {n}');
+  A('drafts.issue','Issue as PO','پی او کے طور پر جاری کریں');
+  A('drafts.issue_note','Issuing creates the PO number and the PO in one step. It asks you to confirm first.','جاری کرنے سے پی او نمبر اور پی او ایک ہی قدم میں بنتے ہیں۔ پہلے تصدیق پوچھتا ہے۔');
+  A('drafts.issue_tip_mgr','Ready. A manager (Mustafa, Afnan or Ammar) issues it as a PO.','تیار ہے۔ منیجر (مصطفیٰ، عفنان یا عمار) اسے پی او کے طور پر جاری کرتا ہے۔');
+  A('drafts.issue_tip_notready','Only a READY draft can be issued. Mark it ready first.','صرف تیار ڈرافٹ جاری ہو سکتا ہے۔ پہلے اسے تیار کریں۔');
+  A('drafts.issue_tip_working','Working...','کام ہو رہا ہے...');
+  A('drafts.issued_as','Issued as {po}','{po} کے طور پر جاری');
+  A('drafts.issued_as_dot','Issued as {po}.','{po} کے طور پر جاری۔');
+  A('drafts.locked_abandoned2','This draft was abandoned. It is kept for the record and cannot be edited.','یہ ڈرافٹ ترک کر دیا گیا۔ ریکارڈ کے لیے رکھا ہے، ایڈٹ نہیں ہو سکتا۔');
+  A('drafts.locked_abandoned_why','This draft was abandoned ({why}). It is kept for the record and cannot be edited.','یہ ڈرافٹ ترک کر دیا گیا ({why})۔ ریکارڈ کے لیے رکھا ہے، ایڈٹ نہیں ہو سکتا۔');
+  A('drafts.locked_issued','This draft was issued as {po}. It is final and cannot be edited.','یہ ڈرافٹ {po} کے طور پر جاری ہو چکا ہے۔ یہ حتمی ہے، ایڈٹ نہیں ہو سکتا۔');
+  A('drafts.locked_ready2','This draft is READY: it is locked, waiting for a manager to issue it as a PO. A manager can send it back to draft to edit it.','یہ ڈرافٹ تیار ہے: بند ہے اور منیجر کے پی او جاری کرنے کا منتظر ہے۔ منیجر اسے ایڈٹ کے لیے واپس ڈرافٹ میں بھیج سکتا ہے۔');
+  A('drafts.masters_unreadable_msg2','{err} A draft cannot be marked ready until the masters are read, because the planned master cannot be checked.','{err} جب تک ماسٹرز پڑھے نہ جائیں ڈرافٹ "تیار" نہیں ہو سکتا، کیونکہ طے شدہ ماسٹر چیک نہیں ہو سکتا۔');
+  A('drafts.ok_created_rev','Draft {id} created (revision {n}).','ڈرافٹ {id} بن گیا (ریویژن {n})۔');
+  A('drafts.ok_created_rev_dropped','Draft {id} created (revision {n}). {d} size entries outside this size axis were not saved.','ڈرافٹ {id} بن گیا (ریویژن {n})۔ اس سائز ایکسز سے باہر کی {d} اندراجات محفوظ نہیں ہوئیں۔');
+  A('drafts.ok_issued','Issued as {po}. The PO is reserved, like one from the New PO form.','{po} کے طور پر جاری ہوا۔ پی او ریزرو ہے، "نیا پی او" فارم کی طرح۔');
+  A('drafts.ok_saved_dot','Draft saved (revision {n}).','ڈرافٹ محفوظ ہوا (ریویژن {n})۔');
+  A('drafts.ok_saved_dropped','Draft saved (revision {n}). {d} size entries outside this size axis were not saved.','ڈرافٹ محفوظ ہوا (ریویژن {n})۔ اس سائز ایکسز سے باہر کی {d} اندراجات محفوظ نہیں ہوئیں۔');
+  A('drafts.ph_fabric_qty','e.g. 120','مثلاً 120');
+  A('drafts.ph_rolls','e.g. 12','مثلاً 12');
+  A('drafts.po_number_later','Not known yet - it is given the moment the PO is created','ابھی معلوم نہیں - پی او بنتے ہی ملے گا');
+  A('drafts.ready_wait','Ready - waiting for Mustafa','تیار - مصطفیٰ کا انتظار');
+  A('drafts.row_sub3','{a} · {b} · {c}','{a} · {b} · {c}');
+  A('drafts.row_sub4','{a} · {b} · {c} · {d}','{a} · {b} · {c} · {d}');
+  A('drafts.s_article','Article','آرٹیکل');
+  A('drafts.s_created_as','Created as','اس طرح بنے گا');
+  A('drafts.s_embellishment','Embellishment','ایمبلشمنٹ');
+  A('drafts.s_none','None','کوئی نہیں');
+  A('drafts.s_pattern','Pattern','پیٹرن');
+  A('drafts.s_po_number','PO number','پی او نمبر');
+  A('drafts.s_readonly2','Read-only. Nothing is printed from here: the PO is printed from its own page after it is issued.','صرف دیکھنے کے لیے۔ یہاں سے کچھ پرنٹ نہیں ہوتا: پی او جاری ہونے کے بعد اپنے صفحے سے پرنٹ ہوتا ہے۔');
+  A('drafts.s_required','Required','ضروری');
+  A('drafts.sec_actions','Actions','عمل');
+  A('drafts.sec_notes','Notes','نوٹس');
+  A('drafts.sec_plan','Plan','پلان');
+  A('drafts.sizes_sum_dot','Sizes add up to {n} pcs.','سائز کا مجموعہ {n} عدد۔');
+  A('drafts.sizes_sum_match','Sizes add up to {n} pcs - matches the quantity.','سائز کا مجموعہ {n} عدد - مقدار سے مطابقت ہے۔');
+  A('drafts.sizes_sum_mismatch','Sizes add up to {n} pcs - the quantity says {q}.','سائز کا مجموعہ {n} عدد - مقدار {q} لکھی ہے۔');
+  A('drafts.st_open','open','کھلا');
+  A('drafts.status_issued','issued','جاری');
+  A('drafts.std_line_short','Standard for {code}: {per} per piece.','{code} کا معیار: {per} فی پیس۔');
+  A('drafts.updated_by','updated {when} by {who}','{when} کو {who} نے اپڈیٹ کیا');
+  A('drafts.w_unknown','unknown','معلوم نہیں');
+  A('drafts.wait_note','Ready - waiting for Mustafa. He issues it as a PO; you will see "Issued as PO-nnn" here.','تیار - مصطفیٰ کا انتظار۔ وہ اسے پی او کے طور پر جاری کرے گا؛ یہاں "Issued as PO-nnn" نظر آئے گا۔');
+  A('err.read_failed_dot','{col}: read failed ({why}).','{col}: پڑھنے میں ناکامی ({why})۔');
+  A('ov.asof','Purchase orders read at {time} (PKT){ref}.','پرچیز آرڈرز {time} (PKT) پر پڑھے گئے{ref}۔');
+  A('ov.attention_no_start2','{po} with no start date cannot be judged (see Stuck POs).','{po} بغیر آغاز کی تاریخ کے جانچے نہیں جا سکتے (رکے ہوئے پی اوز دیکھیں)۔');
+  A('ov.attn_cap2','Delayed (past the {n}-day target{def} or its planned cut day), stuck, and cuts outside the gate with no owner override on record. A PO can be on the list for more than one reason.','لیٹ ({n} دن کے ہدف{def} یا طے شدہ کٹنگ کے دن سے آگے)، رکے ہوئے، اور وہ کٹ جو حد سے باہر ہیں اور اونر کی منظوری درج نہیں۔ ایک پی او ایک سے زیادہ وجہ سے فہرست میں آ سکتا ہے۔');
+  A('ov.attn_cap2_note','{cap} {note}','{cap} {note}');
+  A('ov.btn_close','Close','بند کریں');
+  A('ov.dash_stage','—','—');
+  A('ov.default','(default)','(ڈیفالٹ)');
+  A('ov.default_sp',' (default)',' (ڈیفالٹ)');
+  A('ov.done_bundling','bundling done','بنڈلنگ مکمل');
+  A('ov.done_cutting','cutting done','کٹنگ مکمل');
+  A('ov.done_printing','printing done','پرنٹنگ مکمل');
+  A('ov.done_qc','qc done','فائنل کیو سی مکمل');
+  A('ov.done_stitching','stitching done','سلائی مکمل');
+  A('ov.done_washing','washing done','واشنگ مکمل');
+  A('ov.drawer_title_link','{t} — {l}','{t} — {l}');
+  A('ov.join_dot','{a} · {b}','{a} · {b}');
+  A('ov.join_semi','{a}; {b}','{a}؛ {b}');
+  A('ov.list_mismatch','The list behind this number has {rows} rows but the number says {count} — please report this.','اس عدد کے پیچھے فہرست میں {rows} قطاریں ہیں مگر عدد {count} بتاتا ہے — براہِ کرم اطلاع دیں۔');
+  A('ov.n_day_many','{n} days','{n} دن');
+  A('ov.n_day_one','{n} day','{n} دن');
+  A('ov.n_po_noqty','{po} with no quantity','{po} بغیر مقدار کے');
+  A('ov.nostart_link','{po} with no start date — cannot be judged','{po} بغیر آغاز کی تاریخ کے — جانچا نہیں جا سکتا');
+  A('ov.open_detail_aria','Open the detail page of {po}','{po} کا تفصیلی صفحہ کھولیں');
+  A('ov.openpo_many','{n} open POs','{n} کھلے پی اوز');
+  A('ov.openpo_one','{n} open PO','{n} کھلا پی او');
+  A('ov.pieces','pieces','پیس');
+  A('ov.pos_read_failed','pos: read failed.','pos: پڑھنے میں ناکامی۔');
+  A('ov.q_cancelled2','{po} left out of every figure','{po} ہر عدد سے باہر');
+  A('ov.q_cancelled_po_many','{n} cancelled POs','{n} منسوخ پی اوز');
+  A('ov.q_cancelled_po_one','{n} cancelled PO','{n} منسوخ پی او');
+  A('ov.q_junk_ignored','{x} ignored','{x} نظر انداز');
+  A('ov.q_junk_many','{n} unreadable records','{n} ناقابلِ پڑھ ریکارڈ');
+  A('ov.q_junk_one','{n} unreadable record','{n} ناقابلِ پڑھ ریکارڈ');
+  A('ov.q_trunc2','the PO list was cut at {n} — figures may be incomplete','پی او فہرست {n} پر کٹ گئی — اعداد نامکمل ہو سکتے ہیں');
+  A('ov.quality2','Data quality: {bits}.','ڈیٹا کا معیار: {bits}۔');
+  A('ov.r_at_no_date','at {stage}, no release or stage date on the PO','{stage} پر، پی او پر ریلیز یا مرحلے کی تاریخ نہیں');
+  A('ov.r_delayed','{days} since {since} (since {day}); the target is {tgt} days{def}','{since} سے {days} ({day} سے); ہدف {tgt} دن ہے{def}');
+  A('ov.r_overgate','cut {u} pcs against {q} ordered ({pct}%); the gate is {lo}–{hi}% = {min}–{max} pcs{def}; no owner override on record','{q} آرڈر کے مقابلے {u} عدد کٹے ({pct}%); حد {lo}–{hi}% = {min}–{max} عدد{def}; اونر کی منظوری درج نہیں');
+  A('ov.r_planned_passed','planned cut day {day} passed {days} ago','طے شدہ کٹنگ کا دن {day} {days} پہلے گزر گیا');
+  A('ov.r_stuck','{days} at {stage} (since {day}, {since}); the limit is {lim} days{def}','{days} {stage} پر ({day} سے، {since}); حد {lim} دن ہے{def}');
+  A('ov.scope_now','Now','ابھی');
+  A('ov.show_pos_foot','Show the {po} ›','{po} دکھائیں ›');
+  A('ov.since_issue','first fabric issue','پہلا فیبرک ایشو');
+  A('ov.since_release','release','ریلیز');
+  A('ov.sources_failed','Data sources - something failed to read','ڈیٹا کے ذرائع - کچھ پڑھا نہیں جا سکا');
+  A('ov.sources_ok','Data sources','ڈیٹا کے ذرائع');
+  A('ov.stage_colon','stage: {v}','مرحلہ: {v}');
+  A('ov.stage_n','{s} {n}','{s} {n}');
+  A('ov.stage_n_po','{po}','{po}');
+  A('ov.stage_reserved','Reserved','ریزرو');
+  A('ov.stuck_cap_nopass','A PO at cutting is counted from its FIRST fabric-issue gate pass when it has one, else from its release date; a later stage from the date the previous stage was done. The gate passes could not be read, so every PO at cutting was counted from its release date. The limit is the setting stuckDays; ph-core calls a PO stuck at the limit or beyond.','کٹنگ پر پی او کو اس کے پہلے فیبرک ایشو گیٹ پاس سے گنا جاتا ہے، ورنہ ریلیز کی تاریخ سے؛ بعد کے مرحلے کو پچھلے مرحلے کی مکمل ہونے کی تاریخ سے۔ گیٹ پاس پڑھے نہیں جا سکے، اس لیے کٹنگ پر ہر پی او ریلیز کی تاریخ سے گنا گیا۔ حد stuckDays سیٹنگ ہے؛ حد پر یا اس سے آگے کا پی او رکا ہوا ہے۔');
+  A('ov.stuck_cap_ok','A PO at cutting is counted from its FIRST fabric-issue gate pass when it has one, else from its release date; a later stage from the date the previous stage was done. Start used at cutting: {a} from the first fabric issue, {b} from the release date. The limit is the setting stuckDays; ph-core calls a PO stuck at the limit or beyond.','کٹنگ پر پی او کو اس کے پہلے فیبرک ایشو گیٹ پاس سے گنا جاتا ہے، ورنہ ریلیز کی تاریخ سے؛ بعد کے مرحلے کو پچھلے مرحلے کی مکمل ہونے کی تاریخ سے۔ کٹنگ پر استعمال شدہ آغاز: {a} پہلے فیبرک ایشو سے، {b} ریلیز کی تاریخ سے۔ حد stuckDays سیٹنگ ہے؛ حد پر یا اس سے آگے کا پی او رکا ہوا ہے۔');
+  A('ov.stuck_sub_def','at one stage for {n} days or more (default)','ایک مرحلے پر {n} یا زیادہ دن سے (ڈیفالٹ)');
+  A('ov.sub_afloat_noqty','{po} at cutting · {noq}','{po} کٹنگ پر · {noq}');
+  A('ov.sub_inprod_noqty','{po}, cutting to final QC · {noq}','{po}، کٹنگ سے فائنل کیو سی تک · {noq}');
+  A('ov.sublink','{label} ›','{label} ›');
+  A('ov.sum_of_list2','Sum of the list: {n} {label}','فہرست کا مجموعہ: {n} {label}');
+  A('ov.sum_pieces_actual','pieces (actual cut once cut)','پیس (کٹنے کے بعد اصل کٹ)');
+  A('ov.sum_pieces_ordered','pieces ordered','پیس آرڈر');
+  A('ov.tile_aria','{label}: {value}. Show the {po} behind this number.','{label}: {value}۔ اس عدد کے پیچھے {po} دکھائیں۔');
+  A('ov.unavailable_needs_x','This figure needs {names}, which could not be read.','اس عدد کے لیے {names} چاہیے، جو پڑھا نہیں جا سکا۔');
+  A('ov.unavailable_x','unavailable — {names}','دستیاب نہیں — {names}');
+  A('queue.afloat_word','Afloat','افلوٹ');
+  A('queue.aria_pipeline','Pipeline','پائپ لائن');
+  A('queue.basis_created','created','بنایا گیا');
+  A('queue.basis_issued','issued','جاری');
+  A('queue.basis_released','released','ریلیز');
+  A('queue.btn_open','Open','کھولیں');
+  A('queue.cancel','Cancel','منسوخ');
+  A('queue.chip_afloat','Afloat {pos} {w} · {units} pcs','افلوٹ {pos} {w} · {units} عدد');
+  A('queue.chip_inprod','In production {pos} · {units} pcs','پروڈکشن میں {pos} · {units} عدد');
+  A('queue.could_not_save_why','Could not save the plan ({why}).','پلان محفوظ نہیں ہو سکا ({why})۔');
+  A('queue.count_all','{n} {w}','{n} {w}');
+  A('queue.count_of','{shown} of {total} POs','{total} میں سے {shown} پی اوز');
+  A('queue.err_plus_reread','{err} The plans were re-read: close this and open it again.','{err} پلان دوبارہ پڑھ لیے گئے ہیں: اسے بند کر کے دوبارہ کھولیں۔');
+  A('queue.err_plus_showing','{err} Showing the POs read at {time} (Pakistan time).','{err} {time} (پاکستانی وقت) پر پڑھے گئے پی اوز دکھائے جا رہے ہیں۔');
+  A('queue.f_master','Master','ماسٹر');
+  A('queue.f_search','Search','تلاش');
+  A('queue.f_season','Season','سیزن');
+  A('queue.force_adv_aria','Force-advance {po} from {from} to {stage}','{po} کو {from} سے {stage} میں زبردستی آگے بھیجیں');
+  A('queue.force_advance_tip2','Owner override: marks {from} done and moves the PO to {stage}. Asks to confirm.','اونر کا اختیار: {from} کو مکمل کر کے پی او کو {stage} میں بھیجتا ہے۔ پہلے پوچھتا ہے۔');
+  A('queue.plan_line','{day} · {master}','{day} · {master}');
+  A('queue.plan_locked','Plan locked','پلان بند ہے');
+  A('queue.plan_overridden','This plan is overridden - only an owner (Afnan or Ammar) can change it.','یہ پلان اووررائیڈ ہے - صرف اونر (عفنان یا عمار) بدل سکتا ہے۔');
+  A('queue.po_not_loaded_yet','{po} is not in the app\'s loaded PO list yet - reload the page and try again.','{po} ابھی ایپ کی لوڈ شدہ پی او فہرست میں نہیں - پیج دوبارہ کھولیں اور کوشش کریں۔');
+  A('queue.read_perm_denied','{col}: could not be read - permission denied. Check the firestore.rules block for pos and that the published rules match the repo, then retry.','{col}: پڑھا نہیں جا سکا - اجازت نہیں۔ pos کے لیے firestore.rules کا بلاک اور شائع شدہ rules چیک کریں، پھر دوبارہ کوشش کریں۔');
+  A('queue.unassigned','Unassigned','غیر مقرر');
+  A('queue.w_po_many','POs','پی اوز');
+  A('queue.w_po_one','PO','پی او');
+  A('shell.season_all','All-season','ہر موسم');
+  A('shell.season_summer','Summer','گرمی');
+  A('shell.season_winter','Winter','سردی');
+})();

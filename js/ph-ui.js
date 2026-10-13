@@ -51,13 +51,13 @@ function _phUiCanSee(u){return typeof phCanSee==='function'&&phCanSee(_phUiUser(
 function _phUiCanManage(u){return typeof phCanManage==='function'&&phCanManage(_phUiUser(u))===true;}
 // The top-bar chip. Managers see none (hidden). The cutting floor (Kashif) is NOT view-only: he enters PO
 // drafts and records cuts, so the chip says what his account does; it still cannot plan or change settings.
-const PH_CHIP_FLOOR='Data entry & cutting';
+const PH_CHIP_FLOOR='Data entry & cutting';   // chip text; its Urdu pair is shell.chip_floor
 const PH_CHIP_FLOOR_TITLE='This account enters PO drafts and records the cut. Planning, Calendar and settings are for the managers.';
 function phChipFor(u){
   const w=_phUiUser(u);
   if(_phUiCanManage(w))return{show:false,text:'',title:''};
-  if(typeof phCanRecordFloor==='function'&&phCanRecordFloor(w)===true)return{show:true,text:PH_CHIP_FLOOR,title:PH_CHIP_FLOOR_TITLE};
-  return{show:true,text:'View only',title:'This account can only look.'};
+  if(typeof phCanRecordFloor==='function'&&phCanRecordFloor(w)===true)return{show:true,text:PH_CHIP_FLOOR,title:PH_CHIP_FLOOR_TITLE,key:'shell.chip_floor',tkey:'shell.chip_floor_tip'};
+  return{show:true,text:'View only',title:'This account can only look.',key:'shell.view_only',tkey:'shell.chip_view_tip'};
 }
 const PH_ROLE_ALL=function(u){return _phUiCanSee(u);};       // the whole audience (managers + the cutting floor)
 const PH_ROLE_MANAGE=function(u){return _phUiCanManage(u);}; // afnan, ammar, mustafa
@@ -66,10 +66,10 @@ const PH_ROLE_MANAGE=function(u){return _phUiCanManage(u);}; // afnan, ammar, mu
 // {id, label, short (rail monogram), render(host,ctx), roles(username)}. The floor user (Uzaib / Kashif) sees
 // ONLY Overview, PO Queue (his PO data entry: drafts) and Today's Cutting; the other six are managers'. Order is the rail's order.
 const PH_TABS=[
-  {id:'overview',label:'Overview',     short:'Ov',roles:PH_ROLE_ALL,   render:_phRenderOverview},
-  {id:'queue',   label:'PO Queue',     short:'PQ',roles:PH_ROLE_ALL,   render:_phPlaceholder({title:'PO Queue',      blurb:'The queue of PO drafts and issued POs, by season, as tiles.',stages:['drafts'],list:_phUiNames('drafts','fbKey')})},
+  {id:'overview',label:'Overview',lkey:'shell.tab_overview',     short:'Ov',roles:PH_ROLE_ALL,   render:_phRenderOverview},
+  {id:'queue',   label:'PO Queue',lkey:'shell.tab_queue',     short:'PQ',roles:PH_ROLE_ALL,   render:_phPlaceholder({title:phI18nD('shell.tab_queue'),      blurb:phI18nD('shell.ph_queue_blurb'),stages:['drafts'],list:_phUiNames('drafts','fbKey')})},
   {id:'calendar',label:'Calendar',     short:'Ca',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'Calendar',      blurb:'Planned cutting by day against capacity and skip days.',stages:['jobs','settings']})},
-  {id:'cutting', label:"Today's Cutting",short:'TC',roles:PH_ROLE_ALL, render:_phPlaceholder({title:"Today's Cutting",blurb:'The cutting floor: open cut jobs, the checklist, actual cut by size.',stages:['jobs','masters'],list:_phUiNames('masters','name')})},
+  {id:'cutting', label:"Today's Cutting",lkey:'shell.tab_cutting',short:'TC',roles:PH_ROLE_ALL, render:_phPlaceholder({title:phI18nD('shell.tab_cutting'),blurb:phI18nD('shell.ph_cutting_blurb'),stages:['jobs','masters'],list:_phUiNames('masters','name')})},
   {id:'monitor', label:'Monitor',      short:'Mo',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'Monitor',       blurb:'Pipeline, units afloat, delays and alerts.',stages:['jobs','drafts']})},
   {id:'reports', label:'Reports',      short:'Re',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'Reports',       blurb:'Cutting by day, week and master; consumption and gross variance; export.',stages:['jobs','standards']})},
   {id:'masters', label:'Masters',      short:'Ma',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'Masters',       blurb:'The cutting masters register (add, rename, retire).',stages:['masters'],list:_phUiNames('masters','name')})},
@@ -104,7 +104,7 @@ function phResolveTab(id,u){
 function phEl(tag,cls,text,kids){
   const n=document.createElement(tag);
   if(cls)n.className=cls;
-  if(text!==undefined&&text!==null&&text!=='')n.textContent=String(text);
+  if(text!==undefined&&text!==null&&text!==''){if(typeof phI18nSet==='function')phI18nSet(n,text);else n.textContent=String(text);}
   if(kids)for(let i=0;i<kids.length;i++)if(kids[i])n.appendChild(kids[i]);
   return n;
 }
@@ -142,7 +142,7 @@ function phUiLoad(opts){
 function phUiStatus(){
   const out={loading:_phUiState!=='done',failed:[],allOk:false,stages:[]};
   if(typeof phLoadState!=='function'||typeof PH_STAGE_IDS==='undefined'||typeof PH_COLLECTIONS==='undefined'){
-    out.failed.push({name:'js/ph-data.js',label:'Production Ops data layer',text:'js/ph-data.js did not load - refresh the page.'});
+    out.failed.push({name:'js/ph-data.js',label:'Production Ops data layer',text:'js/ph-data.js did not load - refresh the page.',key:'shell.data_layer_missing'});
     out.loading=false;return out;
   }
   PH_STAGE_IDS.forEach(function(s){
@@ -184,13 +184,13 @@ function _phUiCard(title,kids){
 function _phUiHead(title,blurb,ctx){
   const h=phEl('header','ph-head');
   const row=phEl('div','ph-head-row',null,[phEl('h2','ph-title',title)]);
-  if(ctx&&ctx.readOnly)row.appendChild(phEl('span','ph-chip ph-chip-view','View only'));
+  if(ctx&&ctx.readOnly)row.appendChild(phEl('span','ph-chip ph-chip-view',phI18nD('shell.view_only')));
   h.appendChild(row);
   if(blurb)h.appendChild(phEl('p','ph-blurb',blurb));
   return h;
 }
 function _phUiSkeleton(){
-  const w=phEl('div','ph-skelwrap');w.setAttribute('aria-busy','true');w.setAttribute('role','status');w.setAttribute('aria-label','Loading Production Ops data');
+  const w=phEl('div','ph-skelwrap');w.setAttribute('aria-busy','true');w.setAttribute('role','status');w.setAttribute('aria-label',phI18nAttr(phI18nD('shell.loading')));
   ['ph-skel-t','ph-skel-a','ph-skel-b','ph-skel-b'].forEach(function(c){w.appendChild(phEl('div','gv-skel ph-skel '+c));});
   return w;
 }
@@ -207,28 +207,28 @@ function _phUiStageLine(row){
   li.appendChild(phEl('code','ph-code',row.name));
   let chip,txt;
   if(row.state==='ok'){
-    chip=phEl('span','ph-chip ph-chip-ok','✓ Loaded');
-    txt=row.doc?(row.n?'saved':'none saved yet - defaults apply'):(row.n+(row.n===1?' record':' records')+(row.truncated?' (list is cut at its limit)':''));
+    chip=phEl('span','ph-chip ph-chip-ok',phI18nD('shell.chip_loaded'));
+    txt=row.doc?(row.n?phI18nD('shell.saved'):phI18nD('shell.none_saved_defaults')):phI18nD(row.n===1?'shell.record_one':'shell.record_many',{n:row.n});
   }else if(row.state==='error'){
-    chip=phEl('span','ph-chip ph-chip-bad','✕ FAILED');txt=row.text||'read failed';
+    chip=phEl('span','ph-chip ph-chip-bad',phI18nD('shell.chip_failed'));txt=row.text?_phUiErrText(row):phI18nD('shell.read_failed');
   }else{
-    chip=phEl('span','ph-chip ph-chip-wait','… Loading');txt='not loaded yet';
+    chip=phEl('span','ph-chip ph-chip-wait',phI18nD('shell.chip_loading'));txt=phI18nD('shell.not_loaded_yet');
   }
   li.appendChild(chip);
   li.appendChild(phEl('span','ph-line-txt',txt));
   return li;
 }
 function _phRenderOverview(host,ctx){
-  host.appendChild(_phUiHead('Overview','Production Ops shell. The modules arrive tab by tab; this page shows what the data layer has read.',ctx));
+  host.appendChild(_phUiHead(phI18nD('shell.tab_overview'),phI18nD('shell.overview_blurb'),ctx));
   const ul=phEl('ul','ph-lines');
   ctx.status.stages.forEach(function(r){ul.appendChild(_phUiStageLine(r));});
   if(!ctx.status.stages.length)ctx.status.failed.forEach(function(f){ul.appendChild(_phUiStageLine({label:f.label,name:f.name,state:'error',text:f.text}));});
-  host.appendChild(_phUiCard('Data read on open',[ul]));
+  host.appendChild(_phUiCard(phI18nD('shell.data_read_open'),[ul]));
   const tabs=phTabsFor(ctx.user);
   const tl=phEl('ul','ph-lines');
-  tabs.forEach(function(t){tl.appendChild(phEl('li','ph-line',null,[phEl('span','ph-line-name',t.label),phEl('span','ph-line-txt',t.id===ctx.tab.id?'you are here':'placeholder until built')]));});
-  host.appendChild(_phUiCard('Tabs you can open',[tl]));
-  if(ctx.readOnly)host.appendChild(phEl('p','ph-note','Your account can see Overview, PO Queue and Today\'s Cutting. Overview is view-only: PO drafts are entered in PO Queue and the cut is recorded in Today\'s Cutting.'));
+  tabs.forEach(function(t){tl.appendChild(phEl('li','ph-line',null,[phEl('span','ph-line-name',t.lkey?phI18nD(t.lkey):t.label),phEl('span','ph-line-txt',t.id===ctx.tab.id?phI18nD('shell.you_are_here'):phI18nD('shell.placeholder_until_built'))]));});
+  host.appendChild(_phUiCard(phI18nD('shell.tabs_you_can_open'),[tl]));
+  if(ctx.readOnly)host.appendChild(phEl('p','ph-note',phI18nD('shell.readonly_note')));
 }
 // A placeholder tab: says what it will be, then prints the real state of the collections it will read.
 function _phPlaceholder(spec){
@@ -262,28 +262,31 @@ function _phUiNames(stage,field){
 
 /* ── painting ──────────────────────────────────────────────────────────── */
 let _phUiTab='';
+// A failed read's sentence: the data layer writes English; the known shapes get their Urdu pair, anything else stays as written.
+function _phUiErrText(f){return f&&f.key?phI18nD(f.key):(typeof phI18nErr==='function'?phI18nErr(f&&f.text):(f&&f.text));}
 function _phUiPaintBanner(){
   const host=document.getElementById('ph-banner');if(!host)return;
   phClear(host);
+  if(typeof phI18nUrduOn==='function'&&phI18nUrduOn())host.appendChild(phI18nReviewNotice(document));
   if(_phUiState!=='done')return;
   const st=phUiStatus();
   if(!st.failed.length)return;
   const card=phEl('section','ph-card ph-card-err');card.setAttribute('role','alert');
-  card.appendChild(phEl('h3','ph-card-title','Could not read '+st.failed.length+(st.failed.length===1?' collection':' collections')));
+  card.appendChild(phEl('h3','ph-card-title',phI18nD(st.failed.length===1?'shell.could_not_read_one':'shell.could_not_read_many',{n:st.failed.length})));
   const ul=phEl('ul','ph-lines');
-  st.failed.forEach(function(f){ul.appendChild(phEl('li','ph-line',null,[phEl('code','ph-code',f.name),phEl('span','ph-line-txt',f.text)]));});
+  st.failed.forEach(function(f){ul.appendChild(phEl('li','ph-line',null,[phEl('code','ph-code',f.name),phEl('span','ph-line-txt',_phUiErrText(f))]));});
   card.appendChild(ul);
-  card.appendChild(phEl('p','ph-note','Nothing below is shown as zero for a collection that failed: it reads "not loaded".'));
-  card.appendChild(_phUiBtn('ph-btn ph-btn-primary','Retry',function(){phRetry();}));
+  card.appendChild(phEl('p','ph-note',phI18nD('shell.not_shown_as_zero')));
+  card.appendChild(_phUiBtn('ph-btn ph-btn-primary',phI18nD('shell.retry'),function(){phRetry();}));
   host.appendChild(card);
 }
 function _phUiPaintPanel(){
   const host=document.getElementById('ph-panel');if(!host)return;
   phClear(host);
   const u=_phUiUser();
-  if(!_phUiCanSee(u)){host.appendChild(_phUiError('No access','Production Ops is for Afnan, Ammar, Mustafa and Uzaib.'));return;}
+  if(!_phUiCanSee(u)){host.appendChild(_phUiError(phI18nD('shell.no_access'),phI18nD('shell.no_access_msg')));return;}
   const tab=phResolveTab(_phUiTab,u);
-  if(!tab){host.appendChild(_phUiError('No tabs','Your account has no Production Ops tabs.'));return;}
+  if(!tab){host.appendChild(_phUiError(phI18nD('shell.no_tabs'),phI18nD('shell.no_tabs_msg')));return;}
   _phUiTab=tab.id;
   if(_phUiState!=='done'){host.appendChild(_phUiSkeleton());return;}
   try{
@@ -291,10 +294,10 @@ function _phUiPaintPanel(){
     tab.render(host,_phUiCtx(tab));
   }catch(e){
     phClear(host);
-    host.appendChild(_phUiError('This tab could not be drawn',String(e&&e.message||e)));
+    host.appendChild(_phUiError(phI18nD('shell.tab_failed'),String(e&&e.message||e)));
     if(typeof console!=='undefined')console.warn('[prod-ops] tab "'+tab.id+'" failed:',e);
   }
-  if(!host.firstChild)host.appendChild(_phUiError(tab.label,'This tab drew nothing.'));
+  if(!host.firstChild)host.appendChild(_phUiError(tab.lkey?phI18nD(tab.lkey):tab.label,phI18nD('shell.tab_empty')));
 }
 function _phUiPaintData(){
   if(typeof document==='undefined')return;
@@ -308,7 +311,7 @@ function phRenderPage(id){
   const m=document.getElementById('main-content');if(!m)return;
   phClear(m);
   if(!_phUiCanSee()){
-    m.appendChild(phEl('div','empty','Production Ops is restricted to Afnan, Ammar, Mustafa and Uzaib.'));
+    m.appendChild(phEl('div','empty',phI18nD('shell.restricted')));
     return;
   }
   const canvas=phEl('div','ph-canvas');
@@ -331,18 +334,41 @@ function _phTkMount(){
   if(typeof document==='undefined'||!document.body)return;
   if(document.getElementById('ph-tk-bar')&&document.getElementById('ph-tk-rail'))return;
   const bar=phEl('div','ph-tk-bar');bar.id='ph-tk-bar';
-  const exit=_phUiBtn('ph-tk-exit','← Exit',function(){phExit();});exit.id='ph-tk-exit';
-  const title=phEl('div','ph-tk-title','Production Ops');title.id='ph-tk-title';
+  const exit=_phUiBtn('ph-tk-exit',phI18nD('shell.exit'),function(){phExit();});exit.id='ph-tk-exit';
+  const title=phEl('div','ph-tk-title',phI18nD('shell.title'));title.id='ph-tk-title';
   const chip=phEl('span','ph-chip ph-chip-view ph-tk-chip',PH_CHIP_FLOOR);chip.id='ph-tk-chip';
-  const tog=_phUiBtn('ph-tk-toggle','Hide menu',function(){phToggleRail();},{'aria-expanded':'true','aria-controls':'ph-tk-rail'});tog.id='ph-tk-toggle';
-  bar.appendChild(exit);bar.appendChild(title);bar.appendChild(chip);bar.appendChild(tog);
-  const rail=phEl('nav','ph-tk-rail');rail.id='ph-tk-rail';rail.setAttribute('aria-label','Production Ops sections');
+  const lang=phEl('div','phi-bar ph-tk-lang');lang.id='ph-tk-lang';
+  const tog=_phUiBtn('ph-tk-toggle',phI18nD('shell.menu_hide'),function(){phToggleRail();},{'aria-expanded':'true','aria-controls':'ph-tk-rail'});tog.id='ph-tk-toggle';
+  bar.appendChild(exit);bar.appendChild(title);bar.appendChild(chip);bar.appendChild(lang);bar.appendChild(tog);
+  const rail=phEl('nav','ph-tk-rail');rail.id='ph-tk-rail';rail.setAttribute('aria-label',phI18nAttr(phI18nD('shell.rail_label')));
   // two direct children of <body>, so each is a fixed element of the root stacking context
   document.body.appendChild(bar);document.body.appendChild(rail);
+  _phTkPaintLang();
+}
+// The Urdu / English switch (everyone has it; it is stored per device, and safe when storage is blocked: phI18nSetLang keeps the choice in memory).
+// A change repaints the bar, the rail and the open tab (phI18nOnChange below, wired once at load).
+function _phTkPaintLang(){
+  if(typeof document==='undefined')return;
+  const box=document.getElementById('ph-tk-lang');
+  try{document.body.classList.toggle('ph-ur',typeof phI18nUrduOn==='function'&&phI18nUrduOn());}catch(e){}
+  if(!box)return;
+  phClear(box);
+  if(typeof phI18nToggleNode==='function')box.appendChild(phI18nToggleNode(document,_phUiUser()));
+}
+function _phTkPaintBar(){
+  const exit=document.getElementById('ph-tk-exit');if(exit)phI18nSet(exit,phI18nD('shell.exit'));
+  const t=phResolveTab(_phUiTab,_phUiUser());
+  const sub=document.getElementById('ph-tk-title');
+  if(sub)phI18nSet(sub,t?phI18nD('shell.title_tab',{tab:t.lkey?phI18nD(t.lkey):t.label}):phI18nD('shell.title'));
+  const tog=document.getElementById('ph-tk-toggle');
+  if(tog)phI18nSet(tog,phI18nD(_phUiMin?'shell.menu_show':'shell.menu_hide'));
+  const rail=document.getElementById('ph-tk-rail');
+  if(rail)rail.setAttribute('aria-label',phI18nAttr(phI18nD('shell.rail_label')));
+  _phTkPaintLang();
 }
 function _phTkRailKey(){
   const u=_phUiUser();
-  return phTabsFor(u).map(function(t){return t.id+':'+t.label+':'+t.short;}).join('|')+'#'+_phUiTab+'#'+(_phUiCanManage(u)?'m':'v');
+  return phTabsFor(u).map(function(t){return t.id+':'+t.label+':'+t.short;}).join('|')+'#'+_phUiTab+'#'+(_phUiCanManage(u)?'m':'v')+'#'+(phI18nUrduOn()?'ur':'en');
 }
 function _phTkPaintRail(){
   const rail=document.getElementById('ph-tk-rail');if(!rail)return;
@@ -353,12 +379,12 @@ function _phTkPaintRail(){
     phTabsFor(_phUiUser()).forEach(function(t){
       const on=t.id===_phUiTab;
       const b=phEl('button','ph-tk-item'+(on?' on':''));
-      b.setAttribute('type','button');b.setAttribute('data-tab',t.id);b.setAttribute('title',t.label);
+      b.setAttribute('type','button');b.setAttribute('data-tab',t.id);b.setAttribute('title',phI18nAttr(t.lkey?phI18nD(t.lkey):t.label));
       if(on)b.setAttribute('aria-current','page');
       const mono=phEl('span','ph-tk-mono',String(t.short||t.label).slice(0,2));
       mono.setAttribute('aria-hidden','true');
       b.appendChild(mono);
-      b.appendChild(phEl('span','ph-tk-label',t.label));
+      b.appendChild(phEl('span','ph-tk-label',t.lkey?phI18nD(t.lkey):t.label));
       b.addEventListener('click',function(){phGoTab(t.id);});
       rail.appendChild(b);
     });
@@ -367,7 +393,7 @@ function _phTkPaintRail(){
   if(chip){
     const c=phChipFor();
     chip.className='ph-chip ph-chip-view ph-tk-chip'+(c.show?'':' ph-hidden');
-    chip.textContent=c.text||PH_CHIP_FLOOR;chip.setAttribute('title',c.title);
+    phI18nSet(chip,c.key?phI18nD(c.key):(c.text||PH_CHIP_FLOOR));chip.setAttribute('title',c.tkey?phI18nAttr(phI18nD(c.tkey)):c.title);
   }
   _phTkRevealActive(rail);
 }
@@ -427,7 +453,7 @@ function _phTkSync(){   // repaint the rail from the one list; keep the address 
   if(t)_phUiTab=t.id;
   _phTkPaintRail();
   const sub=document.getElementById('ph-tk-title');
-  if(sub)sub.textContent=t?'Production Ops · '+t.label:'Production Ops';
+  _phTkPaintBar();
   _phTkSetHash(t?t.id:'');
 }
 function _phTkEnter(){
@@ -437,7 +463,7 @@ function _phTkEnter(){
     try{_phUiMin=localStorage.getItem(PH_RAIL_KEY)==='min';}catch(e){_phUiMin=false;}
     _phTkMount();_phUiOn=true;_phUiRailKey='';_phTkApplyClasses(true);_phTkSync();
     const tog=document.getElementById('ph-tk-toggle');
-    if(tog){tog.textContent=_phUiMin?'Show menu':'Hide menu';tog.setAttribute('aria-expanded',_phUiMin?'false':'true');}
+    if(tog){phI18nSet(tog,phI18nD(_phUiMin?'shell.menu_show':'shell.menu_hide'));tog.setAttribute('aria-expanded',_phUiMin?'false':'true');}
   }catch(e){_phUiOn=true;_phTkLeave();console.warn('[prod-ops] takeover failed, left:',e);}
 }
 function _phTkLeave(){
@@ -466,7 +492,7 @@ function phToggleRail(){
   try{localStorage.setItem(PH_RAIL_KEY,_phUiMin?'min':'full');}catch(e){}
   _phTkApplyClasses(_phUiOn);
   const t=document.getElementById('ph-tk-toggle');
-  if(t){t.textContent=_phUiMin?'Show menu':'Hide menu';t.setAttribute('aria-expanded',_phUiMin?'false':'true');}
+  if(t){phI18nSet(t,phI18nD(_phUiMin?'shell.menu_show':'shell.menu_hide'));t.setAttribute('aria-expanded',_phUiMin?'false':'true');}
 }
 function phExit(){   // never strands: the takeover comes down FIRST, then the navigation is attempted
   _phTkLeave();
@@ -505,6 +531,13 @@ function _phTkKey(e){
 }
 (function(){   // wired once at load, like boards.js and shopify.js: every route out of the page passes through showPage
   if(typeof window==='undefined')return;
+  // The language switch changed: repaint the bar, the rail and the open tab. Nothing is re-read (the data layer's state is untouched).
+  if(typeof phI18nOnChange==='function')phI18nOnChange(function(){
+    try{
+      if(_phUiOn){_phUiRailKey='';_phTkSync();}
+      if(typeof document!=='undefined'&&document.getElementById('ph-panel')){_phUiPaintBanner();_phUiPaintPanel();}
+    }catch(e){}
+  });
   if(typeof window.showPage==='function'&&!window.showPage.__phTk){
     const o=window.showPage;
     const w=function(){const r=o.apply(this,arguments);try{_phTkOnPage();}catch(e){}
