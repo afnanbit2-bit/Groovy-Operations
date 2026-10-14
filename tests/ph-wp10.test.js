@@ -217,7 +217,7 @@ module.exports=async function(){
   Object.keys(res).forEach(k=>{NAMES.push(k);s.ok(k,!!res[k]);});
   s.section('wiring');
   const html=read('index.html'),sw=read('sw.js');
-  s.ok('CACHE_VERSION is v328 or later',/CACHE_VERSION = 'v32[89]'/.test(sw));
+  s.ok('CACHE_VERSION is v328 or later',/CACHE_VERSION = 'v3(2[89]|3[0-9])'/.test(sw));
   const tag=f=>(new RegExp('/'+f.replace(/\./g,'\\.')+'\\?v=([0-9a-zA-Z]+)').exec(html)||[])[1];
   const files=['css/main.css','js/ph-i18n.js','js/ph-ui.js','js/ph-core.js','js/ph-mod-queue.js','js/ph-mod-calendar.js','js/ph-mod-cutting.js','js/ph-mod-monitor.js','js/ph-mod-marks.js'];
   const tags=files.map(tag);
