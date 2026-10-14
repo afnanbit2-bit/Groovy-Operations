@@ -1760,6 +1760,30 @@ function _poSizeTokens(sizes, ratio, totalQty) {
   });
 }
 
+/* WP6: normalise data.cut ({sizes:{S:20,...}, bundles:[{no,size,units}] | null, by, fabricUsed}).
+   Returns null when there is no usable cut (the page then prints the ordered values). Pure. */
+function _poCutData(c) {
+  if (!c || typeof c !== 'object' || !c.sizes || typeof c.sizes !== 'object') return null;
+  const order = ['XXXS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', '2XL'];
+  const keys = Object.keys(c.sizes).filter(function (k) { return Number(c.sizes[k]) > 0; });
+  keys.sort(function (a, b) { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || (a < b ? -1 : 1); });
+  const sizes = keys.map(function (k) { return { k: k, q: Math.round(Number(c.sizes[k])) }; });
+  const total = sizes.reduce(function (a, x) { return a + x.q; }, 0);
+  if (!sizes.length) return null;
+  const bl = Array.isArray(c.bundles) ? c.bundles.filter(function (b) { return b && b.no != null; }) : [];
+  const bundleLines = [];
+  if (bl.length) {
+    bundleLines.push('Bundles (' + bl.length + '): ' + bl.map(function (b) { return '#' + b.no + ' ' + (b.size || '') + ' x' + (b.units != null ? b.units : '?'); }).join('   '));
+  }
+  return {
+    sizes: sizes, total: total, by: c.by || '',
+    sizeText: sizes.map(function (x) { return x.k + ' ' + x.q; }).join('   '),
+    bundleLines: bundleLines,
+    bundleNote: bl.length ? '' : 'No bundles on file for this cut.',
+    fabricNote: c.fabricUsed ? 'Fabric used: ' + String(c.fabricUsed) : ''
+  };
+}
+
 function _renderPO(doc, data) {
   data = data || {};
   const L = PRINT_LAYOUT.marginLeft;
@@ -1794,6 +1818,13 @@ function _renderPO(doc, data) {
   });
   _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 9, PRINT_COLORS.greyAccent);
   doc.text('Department: Manufacturing', L, doc.__groovyY + 8);
+  // WP6 (after-cut print): say which quantities this paper carries. data.cut = the recorded cut;
+  // data.qtyBasis === 'ordered' = printed from the ordered quantities. Neither = the page is drawn exactly as before.
+  const cut = _poCutData(data.cut);
+  if (cut || data.qtyBasis === 'ordered') {
+    _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
+    doc.text(cut ? 'ACTUAL CUT QUANTITIES' : 'ORDERED QUANTITIES - BEFORE CUT', R, doc.__groovyY + 8, { align: 'right' });
+  }
   const y0 = doc.__groovyY + 16;
 
   // ── blocks: {h, draw(y)} ────────────────────────────────────────────────
@@ -1804,7 +1835,7 @@ function _renderPO(doc, data) {
     const imgW = 200, imgGap = 12;
     const gridW = im ? (W - imgW - imgGap) : W;
     const halfW = gridW / 2;
-    const ratio = data.ratio || '';
+    const ratio = cut ? '' : (data.ratio || '');
     const cell = function (label, value, o) { return Object.assign({ label: label, value: value == null ? '' : String(value) }, o || {}); };
     const rows = [
       [cell('PO Number', data.poNumber || data.id), cell('Issued By', data.issuedBy)],
@@ -1812,8 +1843,8 @@ function _renderPO(doc, data) {
       [cell('Article Name', data.articleName)],
       [cell('Article Code', data.articleCode), cell('Fabric Code', data.fabricCode)],
       [cell('Fabric Name', data.fabricName)],
-      [cell('Sizes', data.sizes, { sizesRatio: ratio })],
-      [cell('Total Quantity', data.totalQty, { red: true, box: true }), cell('Ratio', ratio, { red: true, box: true })],
+      cut ? [cell('Sizes (actual cut)', cut.sizeText)] : [cell('Sizes', data.sizes, { sizesRatio: ratio })],
+      [cell(cut ? 'Total Quantity (actual cut)' : 'Total Quantity', cut ? String(cut.total) : data.totalQty, { red: true, box: true }), cell('Ratio', ratio, { red: true, box: true })],
       [cell('Total Weight / Mtr', data.totalWeight, { red: true, box: true }), cell('Average Per Unit', data.avgPerUnit, { red: true, box: true })]
     ];
     // lay out every cell: wrapped label + value lines at the largest font that fits
@@ -1898,6 +1929,47 @@ function _renderPO(doc, data) {
           if (dh > boxH - 2 * pad) { dh = boxH - 2 * pad; dw = dh * ar; }
           try { doc.addImage(im.dataUrl, im.fmt || 'JPEG', ix + (imgW - dw) / 2, y + 14 + (boxH - dh) / 2, dw, dh); } catch (e) { /* skip */ }
         }
+      }
+    };
+  };
+
+  // WP6: the recorded cut, typed (sizes, bundles, fabric used). Its own measured block, so the
+  // two-page planner and the "a block is never split" rule apply to it like any other.
+  const cutBlock = function (d) {
+    const lines = [];
+    cut.bundleLines.forEach(function (t) { wrap(t, W - 12, 8, 'normal').forEach(function (ln) { lines.push(ln); }); });
+    const shown = lines.slice(0, 6);
+    const more = lines.length - shown.length;
+    if (more > 0) shown.push('+ ' + more + ' more line' + (more === 1 ? '' : 's') + ' of bundles (see the PO in the app)');
+    const extra = [];
+    if (cut.bundleNote) extra.push(cut.bundleNote);
+    if (cut.fabricNote) extra.push(cut.fabricNote);
+    const rowsAll = shown.concat(extra);
+    const bandH = 20, cellH = d.rowH + 4;
+    const h = d.gap + bandH + cellH * 2 + 6 + rowsAll.length * 10.5 + 4;
+    return {
+      h: h,
+      draw: function (y) {
+        let yy = y + d.gap;
+        fill(shadeL); redLine(LW);
+        doc.rect(L, yy, W, bandH, 'FD');
+        _setFont(doc, PRINT_FONTS.display, 'bold', PRINT_SIZES.subsectionTitle, PRINT_COLORS.text);
+        doc.text('ACTUAL CUT - RECORDED IN THE SYSTEM' + (cut.by ? ' BY ' + String(cut.by).toUpperCase() : ''), L + 8, yy + 14);
+        yy += bandH;
+        const n = cut.sizes.length + 1, cw = W / n;
+        cut.sizes.concat([{ k: 'TOTAL', q: cut.total }]).forEach(function (c, i) {
+          const x = L + i * cw, isT = c.k === 'TOTAL';
+          fill(shade); darkLine(LW_ROW);
+          doc.rect(x, yy, cw, cellH, 'FD');
+          doc.rect(x, yy + cellH, cw, cellH, 'S');
+          if (isT) { redLine(LW_BOX); doc.rect(x, yy, cw, cellH * 2, 'S'); }
+          _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', 9, PRINT_COLORS.text);
+          doc.text(String(c.k), x + cw / 2, yy + cellH / 2 + 3, { align: 'center' });
+          doc.text(String(c.q), x + cw / 2, yy + cellH * 1.5 + 3, { align: 'center' });
+        });
+        yy += cellH * 2 + 10;
+        _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, PRINT_COLORS.text);
+        rowsAll.forEach(function (t, i) { doc.text(String(t), L + 4, yy + i * 10.5); });
       }
     };
   };
@@ -2033,6 +2105,7 @@ function _renderPO(doc, data) {
 
   const build = function (d) {
     const blocks = [infoBlock(d)];
+    if (cut) blocks.push(cutBlock(d));
     blocks.push(stationBlock('cutting', cols3(), [1, 2], ['sign'], d));
     blocks.push(stationBlock('qc', colsQc(), [1, 2, 3], ['remarks'], d));
     blocks.push(stationBlock('bundling', cols3(), [1, 2], ['sign'], d));

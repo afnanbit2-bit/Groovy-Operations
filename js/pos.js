@@ -561,12 +561,13 @@ function renderDetailPage(){
   <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
     <div><div class="page-title">PO ${po.id}</div><div class="page-sub">By ${po.createdBy||'—'} · ${po.createdAt||''}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn-pdf" onclick="window.generatePOPdf('${po.fbKey}')">⬇ PDF</button>
+      ${typeof window.poPrintButtonHTML==='function'?window.poPrintButtonHTML(po,_isCancelled):`<button class="btn-pdf" onclick="window.generatePOPdf('${po.fbKey}')">⬇ PDF</button>`}
       ${_poCanEdit()?`<button class="btn-outline" style="font-size:13px" onclick="window.openPOEdit('${po.fbKey}')">Edit PO</button>`:''}
       ${_poCanDelete()?`<button class="btn-outline" style="font-size:13px" onclick="window.deletePO('${po.fbKey}','${po.id}')">Delete PO</button>`:''}
       ${_poCanCancel()&&!_isCancelled&&po.currentStage!=='completed'?`<button class="btn-outline" style="font-size:13px" onclick="window.cancelPO('${po.fbKey}','${po.id}')">Cancel PO</button>`:''}
     </div>
   </div>
+  ${typeof window.poPrintInfoHTML==='function'?window.poPrintInfoHTML(po):''}
   ${_poJobCopiesHTML(po)}
   ${_reservedBanner}
   ${_cancelledBanner}
@@ -2270,23 +2271,29 @@ window.generateWashingJobPdf=async function(poOrKey){
   }});
 };
 
+// The data the PO traveler is printed from (the ORDERED values). Shared by generatePOPdf and js/po-print.js.
+function _poPdfData(po){
+  const sizeOrder=['XS','S','M','L','XL','2XL'];
+  const activeSizes=sizeOrder.filter(sz=>(po.sizes?.[sz]||0)>0);
+  const sizesStr=(activeSizes.length?activeSizes:sizeOrder).join('-');
+  return{
+    documentType:'Production Order',documentNumber:po.id,id:po.id,
+    poNumber:po.id,startDate:po.startDate||'',pattern:(typeof window.ptnPoTravelerPattern==='function'?window.ptnPoTravelerPattern(po):'')||po.pattern||'',
+    articleName:po.name||'',articleCode:po.code||'',sizes:sizesStr,
+    fabricName:po.fabric||'',fabricCode:po.fabricCode||'',
+    totalQty:po.qty!=null?String(po.qty):'',ratio:po.ratio||'',
+    issuedBy:po.createdBy||'',issuedDate:po.createdAt||'',
+    totalWeight:po.totalWeight||'',avgPerUnit:po.avgPerUnit||'',
+    productImage:po.imgFront||'',notes:po.notes||''
+  };
+}
 // ── Gate Pass ──
 window.generatePOPdf=function(fbKey){
   const po=allPOs.find(p=>p.fbKey===fbKey);if(!po){showToast('PO not found.',true);return;}
   if(window.__usePrintEngine&&typeof window.printDocument==='function'){
-    const sizeOrder=['XS','S','M','L','XL','2XL'];
-    const activeSizes=sizeOrder.filter(sz=>(po.sizes?.[sz]||0)>0);
-    const sizesStr=(activeSizes.length?activeSizes:sizeOrder).join('-');
-    return window.printDocument({type:'po',filename:`${po.id}.pdf`,data:{
-      documentType:'Production Order',documentNumber:po.id,id:po.id,
-      poNumber:po.id,startDate:po.startDate||'',pattern:(typeof window.ptnPoTravelerPattern==='function'?window.ptnPoTravelerPattern(po):'')||po.pattern||'',
-      articleName:po.name||'',articleCode:po.code||'',sizes:sizesStr,
-      fabricName:po.fabric||'',fabricCode:po.fabricCode||'',
-      totalQty:po.qty!=null?String(po.qty):'',ratio:po.ratio||'',
-      issuedBy:po.createdBy||'',issuedDate:po.createdAt||'',
-      totalWeight:po.totalWeight||'',avgPerUnit:po.avgPerUnit||'',
-      productImage:po.imgFront||'',notes:po.notes||''
-    }});
+    // WP6: js/po-print.js decides ordered vs actual cut, reads the bundles and records the print.
+    if(typeof window.poPrintRun==='function')return window.poPrintRun(po,_poPdfData(po));
+    return window.printDocument({type:'po',filename:`${po.id}.pdf`,data:_poPdfData(po)});
   }
   const{jsPDF}=window.jspdf;const pdf=new jsPDF({unit:'mm',format:'a4'});
   const W=210,M=14;let y=18;
