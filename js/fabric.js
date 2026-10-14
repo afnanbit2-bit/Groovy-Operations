@@ -3009,20 +3009,16 @@ function _fabPoRowHTML(){
 // the flat type/code/rolls fields auto-summarise the picks and stay editable
 // so fabric not yet in inventory can still be entered by hand.
 window.fabPoFabricCard=function(){
+  // Reserve removal follow-up (Oct 2026): the roll picker is NOT drawn for a new PO. fabPoReserveCommit is no longer called, so a
+  // picked roll would silently not be reserved. The legacy picker code below (_fabPoRowHTML, fabPoRowPick, fabPoReserveCommit) is kept, unused.
   _poFabrics=[];_poFabRowSeq=0;
-  const stocks=_fabPoStocks();
-  const firstRow=_fabPoRowHTML();
-  return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:12px">* · linked to fabric inventory</span></div>
-    <div class="field"><label>Pick from fabric inventory <span style="font-weight:400;color:var(--muted)">optional · fills the fields below · nothing is reserved, rolls stay in stock until the fabric issue</span></label>
-      <div id="po-fab-rows">${firstRow}</div>
-      <button type="button" onclick="window.fabPoAddRow()" style="background:none;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;color:var(--dark);cursor:pointer;font-family:inherit">+ Add another fabric</button>
-      ${stocks.length?'':'<div style="font-size:12px;color:var(--muted);margin-top:8px">No fabric in inventory yet — enter details manually below, or add stock in the Fabric Inventory section.</div>'}
-    </div>
-    <div class="form-grid" style="margin-top:12px">
+  return`<div class="card"><div class="card-title">Fabric &amp; supply *</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Fabric is issued later through <b>Fabric Issue</b>, which takes the rolls from stock. Nothing is reserved when a PO is created. Enter the details below for reference.</div>
+    <div class="form-grid">
       <div class="field"><label>Fabric type *</label><input id="po-fabric" placeholder="e.g. Terry, Fleece"></div>
       <div class="field"><label>Fabric code</label><input id="po-fabriccode" placeholder="e.g. BLKTRY220"></div>
       <div class="field"><label>Supply store</label><input id="po-store" placeholder="Store/supplier"></div>
-      <div class="field"><label>Total rolls <span style="font-weight:400;color:var(--muted);font-size:12px">auto from reserved</span></label><input id="po-rolls" placeholder="e.g. 12"></div>
+      <div class="field"><label>Total rolls</label><input id="po-rolls" placeholder="e.g. 12"></div>
     </div>
   </div>`;
 };

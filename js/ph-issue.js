@@ -45,7 +45,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 // The keys of the document submitPO (js/pos.js) builds, in its order, and the keys this adds.
-const PH_ISSUE_CLASSIC_KEYS=Object.freeze(['ts','name','code','pattern','qty','sizes','ratio','fabric','fabricCode','store','totalRoll','fabrics','imgFront','imgBack','poStatus','currentStage','stages','bundlingParts','embellishment','jobCopies','notes','createdBy','createdAt']);
+const PH_ISSUE_CLASSIC_KEYS=Object.freeze(['ts','name','code','pattern','qty','sizes','ratio','fabric','fabricCode','store','totalRoll','fabrics','imgFront','imgBack','poStatus','currentStage','stages','bundlingParts','embellishment','jobCopies','notes','createdBy','createdAt','releasedAt']);
 const PH_ISSUE_PTN_KEYS=Object.freeze(['patternId','patternCode','patternHook']);   // js/patterns.js ptnPoFieldsFor, when the Pattern Hub integration is on
 const PH_ISSUE_EXTRA_KEYS=Object.freeze(['id','season','fromDraftId','enteredBy','issuedBy']);
 const PH_ISSUE_PO_KEYS=Object.freeze(PH_ISSUE_CLASSIC_KEYS.concat(PH_ISSUE_EXTRA_KEYS));
@@ -136,7 +136,8 @@ function phBuildIssuedPo(dpo,ctx){
     jobCopies:jc,
     notes:_phiStr(d.notes,500),
     createdBy:c.issuedByName,
-    createdAt:c.pktDay
+    createdAt:c.pktDay,
+    releasedAt:c.now   // ms, same unit as ts: the PO is born released (in the same commit), so ph-core counts its lead time from the issue
   };
   const ptn=c.ptn&&typeof c.ptn==='object'?c.ptn:{};
   PH_ISSUE_PTN_KEYS.forEach(function(k){if(k in ptn)rec[k]=ptn[k];});
