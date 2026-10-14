@@ -73,7 +73,7 @@ module.exports=async function(){
   const a=CSS.indexOf('/* ph-mod-jobcopy START */'),b=CSS.indexOf('/* ph-mod-jobcopy END */'),blk=CSS.slice(a,b);
   s.ok('CSS lives in the jobcopy block, tokens only',/#ph-detail-instr \.phk-ins/.test(blk)&&!/#[0-9a-fA-F]{3,8}\b/.test(blk.replace(/\/\*[\s\S]*?\*\//g,'')));
   const html=read('index.html'),sw=read('sw.js');
-  s.ok('CACHE_VERSION is v326',/CACHE_VERSION = 'v326'/.test(sw));
+  s.ok('CACHE_VERSION is v325 or later (v327 by WP9)',/CACHE_VERSION = 'v32[5-9]'/.test(sw));
   const tag=f=>(new RegExp('/'+f.replace(/\./g,'\\.')+'\\?v=([0-9a-z]+)').exec(html)||[])[1];
   const tags=['js/pos.js','js/ph-i18n.js','js/ph-mod-cutting.js','css/main.css'].map(tag);
   s.ok('the four changed files carry distinct ?v tags',tags.every(Boolean)&&new Set(tags).size===4);
