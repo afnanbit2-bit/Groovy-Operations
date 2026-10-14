@@ -23,16 +23,15 @@
    mintNextIdInTx and only lands with the commit). Concurrent issues of one draft: Firestore
    retries the loser's callback, which re-reads the draft, sees 'issued' and refuses.
 
-   Released vs reserved: the classic form creates every PO `reserved` (PO_STATUS.RESERVED,
-   currentStage null) and a person releases it later. This does the same. It invents no release.
+   Born in production (Reserve removal, Oct 2026): Issue as PO means start, so the PO is created
+   poStatus `in_production` with currentStage `cutting`, exactly like the classic form now does. The
+   old `reserved` state is only read for the legacy POs that still carry it (ph-core phStageOf).
 
    What the classic form does that this CANNOT, and what happens instead:
      - product photos (the draft has none): imgFront / imgBack are '' ("No image" everywhere
        the app draws a PO, which already handles an empty photo);
-     - fabric roll RESERVATION (fabPoReserveCommit): the draft names no rolls, so `fabrics`
-       is [] and nothing is reserved. fabPoReserveCommit is deliberately NOT called -- it
-       reads the classic form's module-level pick list, which belongs to a form that may be
-       open elsewhere;
+     - fabric roll RESERVATION: gone for new POs everywhere (the classic form no longer calls
+       fabPoReserveCommit either), so `fabrics` is [] and nothing is reserved;
      - the embellishment recipe lookup runs BEFORE the transaction (phIssueEmbellishment,
        the same three outcomes as the classic `_checkEmbRecipe`); if a recipe is required
        and the recipe data cannot be read, the issue is refused (unread), never guessed;
@@ -104,7 +103,7 @@ function _phiRatio(sizes){   // js/pos.js updateRatio
 
 // PURE. The pos document for an issued draft -- the classic payload, in the classic key order, then
 // `id`, `season`, `fromDraftId`, `enteredBy`, `issuedBy`. No Firestore, no DOM, no clock but ctx.now.
-// ctx: {id, now, draftId, enteredBy, issuedBy, issuedByName, stageKeys, poStatus, pktDay, embellishment, ptn}
+// ctx: {id, now, draftId, enteredBy, issuedBy, issuedByName, stageKeys, poStatus, currentStage, pktDay, embellishment, ptn}
 function phBuildIssuedPo(dpo,ctx){
   const d=dpo&&typeof dpo==='object'&&!Array.isArray(dpo)?dpo:{};
   const c=ctx||{};
@@ -130,7 +129,7 @@ function phBuildIssuedPo(dpo,ctx){
     imgFront:'',
     imgBack:'',
     poStatus:c.poStatus,
-    currentStage:null,
+    currentStage:c.currentStage!=null?c.currentStage:null,
     stages:stages,
     bundlingParts:[{name:'Full Garment',notes:'',dest:'Warehouse'}],
     embellishment:c.embellishment||{required:false},
@@ -251,7 +250,7 @@ async function phIssueDraft(draftId,opts){
         }
         const m=await mintNextIdInTx(tx,{field:'pos',collection:'pos',floor:floor,idFor:_poIdFor});   // THROWS (nothing written) if the target id exists
         rec=phBuildIssuedPo(prev.po,{id:m.id,now:now,draftId:draftId,enteredBy:prev.createdBy,issuedBy:a.u,issuedByName:a.name,
-          stageKeys:STAGE_KEYS,poStatus:PO_STATUS.RESERVED,pktDay:pktDay,embellishment:emb,ptn:ptn,instr:instr});
+          stageKeys:STAGE_KEYS,poStatus:PO_STATUS.IN_PRODUCTION,currentStage:'cutting',pktDay:pktDay,embellishment:emb,ptn:ptn,instr:instr});
         const d=phDraftIssuePatch(prev,m.id,ctx);
         // ALL WRITES: the counter and the new pos document (mintNextIdInTx buffers both), the draft, the history row.
         m.write(rec);

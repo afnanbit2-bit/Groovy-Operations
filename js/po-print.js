@@ -9,7 +9,9 @@
    - cut recorded (po.cutAt and a cutQty with pieces): the traveler prints the ACTUAL cut: per-size
      quantities and total from po.cutQty, the bundles read by poId, the fabric used if the PO records it.
      The bundles are read first; if they cannot be read (failed, offline copy, or none returned for a PO
-     that lists bundleIds) the ORDERED values are printed instead and the PO page says so. Never blank.
+     that lists bundleIds) the print STILL carries the recorded cut (po.cutQty per size and total), the
+     bundle list is left out and the actual-cut block says "Bundles unavailable"; the PO page says so too.
+     The ordered values are never printed as if they were the cut. Never blank.
    - no cut yet: still available, labelled "before cut"; the page is marked ORDERED QUANTITIES.
    - every print is recorded in an additive field on the pos document, po.printLog =
      [{at,by,byName,stage:'before-cut'|'after-cut'}], appended inside a transaction. NO firestore.rules
@@ -53,7 +55,7 @@ window.poPrintInfoHTML = function (po) {
     parts.push('Not printed yet.');
   }
   let warn = '';
-  if (st.unread) warn += '<div style="color:var(--accent-warning);margin-top:4px">The bundles could not be read (' + _poPrintEsc(st.unread) + '), so the ORDERED quantities were printed, not the actual cut. Try again when you are online.</div>';
+  if (st.unread) warn += '<div style="color:var(--accent-warning);margin-top:4px">The bundles could not be read (' + _poPrintEsc(st.unread) + '), so the print has no bundle list (the actual-cut block says "Bundles unavailable"). The quantities printed are the cut recorded on the PO. Try again when you are online.</div>';
   if (st.logFail) warn += '<div style="color:var(--accent-warning);margin-top:4px">The print was NOT recorded (' + _poPrintEsc(st.logFail) + '). The PDF itself was made.</div>';
   return '<div id="po-print-info" style="font-size:13px;color:var(--muted);margin-bottom:10px">' + parts.join('') + warn + '</div>';
 };
@@ -104,14 +106,13 @@ window.poPrintRun = async function (po, data) {
   let stage = 'before-cut';
   if (poPrintCutRecorded(po)) {
     const rb = await poPrintReadBundles(po);
-    if (rb.ok) {
-      const fc = po.fabricConsumed && typeof po.fabricConsumed === 'object' ? po.fabricConsumed : null;
-      d.cut = {
-        sizes: Object.assign({}, po.cutQty), bundles: rb.list, by: po.cutBy || '',
-        fabricUsed: fc && Number(fc.qty) > 0 ? String(Math.round(Number(fc.qty) * 100) / 100) + (Array.isArray(fc.rollCodes) && fc.rollCodes.length ? ' (' + fc.rollCodes.length + ' rolls)' : '') : ''
-      };
-      stage = 'after-cut';
-    } else { st.unread = rb.error; d.qtyBasis = 'ordered'; }
+    const fc = po.fabricConsumed && typeof po.fabricConsumed === 'object' ? po.fabricConsumed : null;
+    d.cut = {
+      sizes: Object.assign({}, po.cutQty), bundles: rb.ok ? rb.list : null, bundlesUnavailable: !rb.ok, by: po.cutBy || '',
+      fabricUsed: fc && Number(fc.qty) > 0 ? String(Math.round(Number(fc.qty) * 100) / 100) + (Array.isArray(fc.rollCodes) && fc.rollCodes.length ? ' (' + fc.rollCodes.length + ' rolls)' : '') : ''
+    };
+    stage = 'after-cut';
+    if (!rb.ok) st.unread = rb.error;
   } else { d.qtyBasis = 'ordered'; }
   let r;
   try { r = await window.printDocument({ type: 'po', filename: po.id + '.pdf', data: d }); }

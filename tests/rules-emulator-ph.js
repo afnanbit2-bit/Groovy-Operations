@@ -565,7 +565,7 @@ async function t(name,fn){
     await seed('cutting_masters/CM-001',{id:'CM-001',name:'Hassan',nameKey:'hassan',active:true,kind:'inhouse'});
     await seed('po_drafts/'+DID,readyDraft(over));
     appI.run('allPOs=[];');await callI(MUSTAFA,'phResetData()');await callI(MUSTAFA,'phLoadStage("masters",{force:true})');};
-  const posDoc=(over)=>{const d=Object.assign({ts:NOW,name:'Effortless Tee',code:'GST073',qty:100,sizes:{XS:0,S:50,M:50,L:0,XL:0,'2XL':0},poStatus:'reserved',currentStage:null,id:IPO,season:'winter',fromDraftId:DID,enteredBy:'uzaib',issuedBy:'mustafa',createdBy:'Mustafa'},over||{});Object.keys(d).forEach(k=>{if(d[k]===null)delete d[k];});return d;};
+  const posDoc=(over)=>{const d=Object.assign({ts:NOW,name:'Effortless Tee',code:'GST073',qty:100,sizes:{XS:0,S:50,M:50,L:0,XL:0,'2XL':0},poStatus:'in_production',currentStage:'cutting',id:IPO,season:'winter',fromDraftId:DID,enteredBy:'uzaib',issuedBy:'mustafa',createdBy:'Mustafa'},over||{});Object.keys(d).forEach(k=>{if(d[k]===null)delete d[k];});return d;};
   const issuedPatch=(w,over)=>Object.assign({status:'issued',rev:3,poId:IPO,issuedAt:NOW,issuedBy:w.u,updatedAt:NOW,updatedBy:w.u},over||{});
   // a raw transaction that does exactly what the writer does (counter + pos + draft), with a hook to damage one part
   const rawIssue=(w,o)=>{o=o||{};
@@ -583,7 +583,7 @@ async function t(name,fn){
       const r=await callI(w,'phIssueDraft("'+DID+'",{expectedRev:2,now:'+nx()+',followUps:false})');if(!r.ok)throw new Error('writer: '+JSON.stringify(r));
       if(r.poId!==IPO)throw new Error('expected PO-007, got '+r.poId);
       const p=await read('pos/'+IPO),d=await read('po_drafts/'+DID),c=await read('counters/main');
-      if(!p||p.fromDraftId!==DID||p.issuedBy!==w.u||p.enteredBy!=='uzaib'||p.poStatus!=='reserved'||p.currentStage!==null)throw new Error('pos document wrong: '+JSON.stringify(p));
+      if(!p||p.fromDraftId!==DID||p.issuedBy!==w.u||p.enteredBy!=='uzaib'||p.poStatus!=='in_production'||p.currentStage!=='cutting')throw new Error('pos document wrong: '+JSON.stringify(p));
       if(!d||d.status!=='issued'||d.poId!==IPO||d.issuedBy!==w.u||d.rev!==3)throw new Error('draft wrong: '+JSON.stringify(d));
       if(c.pos!==7||c.gatepasses!==2||c.bundles!==9)throw new Error('counter wrong: '+JSON.stringify(c));
       let hs=[];await env.withSecurityRulesDisabled(async cx=>{const sn=await getDocs(collection(cx.firestore(),'pos',IPO,'history'));hs=sn.docs.map(x=>x.data());});

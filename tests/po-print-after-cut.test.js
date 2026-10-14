@@ -5,7 +5,7 @@
    App half: the real js/pos.js + js/po-print.js against an in-memory Firestore.
    Held: actual cut vs ordered rendering; a PO with no cut and no flags is drawn byte-for-byte as before
    (GOLDEN hashes captured from the engine at origin/wp3c-jobcopy); two pages at most; unreadable bundles
-   -> the ordered values + a notice on the PO page; the print log written, and a failed log write never
+   -> the PO's own recorded cutQty (never the ordered values) + 'Bundles unavailable' in the actual-cut block + a notice on the PO page; the print log written, and a failed log write never
    blocks the print; the button states before/after the cut and for a cancelled PO.
    Proves logic only: not seen on a printer, not run against real Firestore.
    ───────────────────────────────────────────────────────────────────────── */
@@ -257,7 +257,7 @@ module.exports=async function(){
     s.eq('no history sub-collection write',Object.keys(a.db.store).length>=0&&[...a.db.store.keys()].some(k=>/history/.test(k)),false);
   }
 
-  s.section('bundles unreadable: ordered values, said on the PO page');
+  s.section('bundles unreadable: the recorded cut is still printed, said on paper and on the PO page');
   {
     const cases=[
       ['read throws',{ },a=>{a.db.fail.read=c=>c==='bundles';}],
@@ -268,11 +268,19 @@ module.exports=async function(){
       const a=mkApp({'pos/PO-012':CUT_PO()},CUT_PO());prep(a);
       await a.run('window.generatePOPdf("PO-012")');
       const d=a.run('__printed')[0].data;
-      s.ok(nm+': ordered values printed (no data.cut, basis ordered)',d.cut===undefined&&d.qtyBasis==='ordered'&&d.totalQty==='600');
+      s.ok(nm+': the PO recorded cutQty is passed per size, flagged bundles unavailable, not marked ordered',d.cut&&J(d.cut.sizes)===J({S:90,M:190,L:180,XL:90})&&d.cut.bundles===null&&d.cut.bundlesUnavailable===true&&d.qtyBasis===undefined,J(d.cut));
       const info=a.run('window.poPrintInfoHTML(allPOs[0])');
-      s.ok(nm+': the PO page says the bundles could not be read and ORDERED was printed',/bundles could not be read/.test(info)&&/ORDERED quantities/.test(info),info);
-      s.eq(nm+': the print is still logged',(a.db.get('pos/PO-012').printLog||[]).length,1);
+      s.ok(nm+': the PO page says the bundles could not be read and "Bundles unavailable"',/bundles could not be read/.test(info)&&/Bundles unavailable/.test(info)&&!/ORDERED quantities were printed/.test(info),info);
+      const l=a.db.get('pos/PO-012').printLog||[];
+      s.eq(nm+': the print is still logged, as after-cut',J([l.length,l[0]&&l[0].stage]),J([1,'after-cut']));
     }
+    const e=engine();
+    const cutNo=await printPO(e,Object.assign({},BASE,{totalQty:'600',cut:{sizes:{S:90,M:190,L:180,XL:90},bundles:null,bundlesUnavailable:true,by:'Uzaib'}}));
+    const T=cutNo.log.text.map(t=>t.t);
+    s.ok('paper: the actual-cut block carries the recorded total (550), never the ordered 600',T.includes('550')&&!T.includes('600'));
+    s.ok('paper: the block says Bundles unavailable',T.some(t=>/^Bundles unavailable/.test(t)));
+    s.ok('paper: it is still headed ACTUAL CUT QUANTITIES, not ORDERED',T.includes('ACTUAL CUT QUANTITIES')&&!T.includes('ORDERED QUANTITIES - BEFORE CUT'));
+    s.ok('paper: a cut with bundles read fine does not say unavailable',!(await printPO(e,Object.assign({},BASE,{cut:CUT}))).log.text.some(t=>/Bundles unavailable/.test(t.t)));
   }
 
   s.section('the print log is best effort');

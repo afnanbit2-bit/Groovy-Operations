@@ -164,7 +164,7 @@ async function checks(src){
     K('happy: ONE commit carrying exactly the four writes (counter, pos, draft, history)',a.db.log.commits===1&&J(a.db.log.commitBatches[0].map(x=>x.split(':')[0]+':'+x.split(':')[1].replace(/\/[0-9]{13}-[A-Za-z0-9]{4}$/,'/ROW')).sort())===J(['set:pos/PO-007','set:pos/PO-007/history/ROW','update:counters/main','update:po_drafts/'+DID].sort()));
     K('happy: the counter moved by exactly one and nothing else on it changed',J(a.db.get('counters/main'))===J({pos:7,gatepasses:2,bundles:9}));
     const p=a.db.get('pos/PO-007')||{};
-    K('happy: the PO is reserved with no stage (what submitPO creates)',p.poStatus==='reserved'&&p.currentStage===null);
+    K('happy: the PO is born in_production at cutting (what submitPO creates since the reserve removal)',p.poStatus==='in_production'&&p.currentStage==='cutting');
     K('happy: the PO names its draft, who entered it and who issued it',p.fromDraftId===DID&&p.enteredBy==='uzaib'&&p.issuedBy==='mustafa'&&p.createdBy==='Mustafa'&&p.id==='PO-007');
     const d=a.db.get('po_drafts/'+DID)||{};
     K('happy: the draft is issued with poId / issuedAt / issuedBy, rev + 1, the po map untouched',d.status==='issued'&&d.poId==='PO-007'&&d.issuedAt===NOW&&d.issuedBy==='mustafa'&&d.rev===4&&J(d.po)===J(GOOD)&&d.updatedBy==='mustafa');
@@ -432,7 +432,8 @@ module.exports=async function(){
   await brk('the offline refusal dropped',"  if(_phOffline())return _phFail('offline',","  if(false)return _phFail('offline',",['offline: refused out loud, nothing created']);
   await brk('the unread PO list is guessed (floor 0)',"    catch(e){return _phFail('unread',String((e&&e.message)||'The PO list did not load, so the next PO number cannot be checked.')+' Nothing was created.');}","    catch(e){floor=0;}",['unread: a PO list that cannot be read refuses the issue, saying nothing was created']);
   await brk('the basis check dropped',"        if(!sameBasis)throw","        if(false)throw",['basis: a draft whose article changed between the lookup and the transaction is refused']);
-  await brk('PO status invented (released instead of reserved)',"poStatus:PO_STATUS.RESERVED,","poStatus:PO_STATUS.IN_PRODUCTION,",['happy: the PO is reserved with no stage (what submitPO creates)']);
+  await brk('PO born reserved again (status)',"poStatus:PO_STATUS.IN_PRODUCTION,currentStage:'cutting',","poStatus:PO_STATUS.RESERVED,currentStage:'cutting',",['happy: the PO is born in_production at cutting (what submitPO creates since the reserve removal)']);
+  await brk('PO born with no stage',"poStatus:PO_STATUS.IN_PRODUCTION,currentStage:'cutting',","poStatus:PO_STATUS.IN_PRODUCTION,",['happy: the PO is born in_production at cutting (what submitPO creates since the reserve removal)']);
   await brk('the recipe lookup is guessed when unreadable',"throw _phRefuse('unread','This PO needs an embellishment recipe check, but the recipes are not loaded.","return{recipes:[],rateOf:null};throw _phRefuse('unread','This PO needs an embellishment recipe check, but the recipes are not loaded.",['embellishment: required but the recipes cannot be had = refused (unread), nothing written']);
   await brk('the draft id is not recorded on the PO',"  rec.fromDraftId=c.draftId;","  rec.fromDraftId='';",['happy: the PO names its draft, who entered it and who issued it']);
   await brk('the follow-up failure undoes the issue',"  try{\n    const emb=po.embellishment||{};","  throw new Error('x');\n  try{\n    const emb=po.embellishment||{};",['follow-ups: a failing trim request is reported and the PO stands']);

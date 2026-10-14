@@ -3013,7 +3013,7 @@ window.fabPoFabricCard=function(){
   const stocks=_fabPoStocks();
   const firstRow=_fabPoRowHTML();
   return`<div class="card"><div class="card-title">Fabric &amp; supply <span style="font-weight:400;color:var(--muted);font-size:12px">* · linked to fabric inventory</span></div>
-    <div class="field"><label>Reserve from fabric inventory <span style="font-weight:400;color:var(--muted)">optional · pick one or more fabrics &amp; reserve rolls</span></label>
+    <div class="field"><label>Pick from fabric inventory <span style="font-weight:400;color:var(--muted)">optional · fills the fields below · nothing is reserved, rolls stay in stock until the fabric issue</span></label>
       <div id="po-fab-rows">${firstRow}</div>
       <button type="button" onclick="window.fabPoAddRow()" style="background:none;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;color:var(--dark);cursor:pointer;font-family:inherit">+ Add another fabric</button>
       ${stocks.length?'':'<div style="font-size:12px;color:var(--muted);margin-top:8px">No fabric in inventory yet — enter details manually below, or add stock in the Fabric Inventory section.</div>'}
