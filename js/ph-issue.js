@@ -50,6 +50,8 @@ const PH_ISSUE_CLASSIC_KEYS=Object.freeze(['ts','name','code','pattern','qty','s
 const PH_ISSUE_PTN_KEYS=Object.freeze(['patternId','patternCode','patternHook']);   // js/patterns.js ptnPoFieldsFor, when the Pattern Hub integration is on
 const PH_ISSUE_EXTRA_KEYS=Object.freeze(['id','season','fromDraftId','enteredBy','issuedBy']);
 const PH_ISSUE_PO_KEYS=Object.freeze(PH_ISSUE_CLASSIC_KEYS.concat(PH_ISSUE_EXTRA_KEYS));
+// WP3b: the snapshot of the product's standing instructions, appended AFTER the keys above and only when the article has any.
+const PH_ISSUE_INSTR_KEYS=Object.freeze(['instructions','instructionsRev','instructionsAt']);
 const PH_ISSUE_SIX=Object.freeze(['XS','S','M','L','XL','2XL']);                    // the six sizes the classic form always writes (js/pos.js PO_FLOW_SIZES)
 const PH_ISSUE_COPIES=Object.freeze(['embroidery','printing','washing']);
 // The draft status change (rules: phDraftStep, the issue clause, holds the same list).
@@ -144,7 +146,21 @@ function phBuildIssuedPo(dpo,ctx){
   rec.fromDraftId=c.draftId;
   rec.enteredBy=c.enteredBy;
   rec.issuedBy=c.issuedBy;
+  // WP3b snapshot: ctx.instr = {rev, doc} (the stored instructions); cleaned by the core's phInstructionsClean, so a later
+  // edit of ph_article_instructions never changes this PO. Absent (no keys at all) when the article has none.
+  const snap=phInstrSnapshot(c.instr,c.now);
+  if(snap)PH_ISSUE_INSTR_KEYS.forEach(function(k){rec[k]=snap[k];});
   return rec;
+}
+// PURE. {instructions, instructionsRev, instructionsAt} from a stored instruction doc, or null when there is nothing to copy.
+function phInstrSnapshot(instr,now){
+  if(!instr||typeof instr!=='object'||typeof phInstructionsClean!=='function')return null;
+  const d=instr.doc&&typeof instr.doc==='object'?instr.doc:null;
+  if(!d)return null;
+  const v=phInstructionsClean(d).value;
+  if(phInstructionsEmpty(v))return null;
+  const rev=typeof instr.rev==='number'&&isFinite(instr.rev)?instr.rev:(typeof d.rev==='number'?d.rev:0);
+  return{instructions:v,instructionsRev:rev,instructionsAt:now};
 }
 // PURE. The status change written to the draft.
 function phDraftIssuePatch(prev,poId,ctx){
@@ -222,14 +238,25 @@ async function phIssueDraft(draftId,opts){
         const sameBasis=prev.po&&pd.po&&prev.po.code===pd.po.code&&prev.po.name===pd.po.name
           &&!!(prev.po.embellishment&&prev.po.embellishment.required)===!!(pd.po.embellishment&&pd.po.embellishment.required);
         if(!sameBasis)throw _phRefuse('stale','Draft '+draftId+' changed while it was being issued. Reload it and retry. Nothing was created.');
+        // WP3b: the article's standing instructions, read inside the transaction (a consistent snapshot). No document = no snapshot.
+        // A read that FAILS cannot tell "none" from "some", so it refuses (named) rather than issue a PO without them.
+        let instr=null;
+        const icode=_phiStr(prev.po&&prev.po.code,40).toUpperCase();
+        if(icode){
+          let isn;
+          try{isn=await tx.get(doc(db,'ph_article_instructions',icode));}
+          catch(e){throw _phRefuse('unread','The product instructions of '+icode+' (ph_article_instructions) could not be read ('+((e&&e.message)||e)+'), so the PO was not issued. Nothing was created. Retry.');}
+          if(isn&&isn.metadata&&isn.metadata.fromCache&&!isn.exists())throw _phRefuse('unread','The product instructions of '+icode+' were answered from this device\'s offline copy, which cannot show whether they exist. Nothing was created. Retry when online.');
+          if(isn&&isn.exists())instr={rev:(isn.data()||{}).rev,doc:isn.data()};
+        }
         const m=await mintNextIdInTx(tx,{field:'pos',collection:'pos',floor:floor,idFor:_poIdFor});   // THROWS (nothing written) if the target id exists
         rec=phBuildIssuedPo(prev.po,{id:m.id,now:now,draftId:draftId,enteredBy:prev.createdBy,issuedBy:a.u,issuedByName:a.name,
-          stageKeys:STAGE_KEYS,poStatus:PO_STATUS.RESERVED,pktDay:pktDay,embellishment:emb,ptn:ptn});
+          stageKeys:STAGE_KEYS,poStatus:PO_STATUS.RESERVED,pktDay:pktDay,embellishment:emb,ptn:ptn,instr:instr});
         const d=phDraftIssuePatch(prev,m.id,ctx);
         // ALL WRITES: the counter and the new pos document (mintNextIdInTx buffers both), the draft, the history row.
         m.write(rec);
         tx.update(dref,d.patch);
-        tx.set(doc(db,'pos',m.id,'history',hist.id),Object.assign({},hist.data,{data:Object.assign({},hist.data.data,{poId:m.id,qty:rec.qty})}));
+        tx.set(doc(db,'pos',m.id,'history',hist.id),Object.assign({},hist.data,{data:Object.assign({},hist.data.data,{poId:m.id,qty:rec.qty},rec.instructionsRev!=null?{instructionsRev:rec.instructionsRev}:{})}));
         made=m;savedDraft=Object.assign({},prev,d.patch);
       });
       return true;
@@ -272,4 +299,56 @@ async function phIssueFollowUps(po,opts){
     }
   }catch(e){out.trim='failed: '+((e&&e.message)||e);}
   return out;
+}
+
+/* ── WP3b: deliberately refresh a PO's instruction snapshot (managers) ─────────────────────────────
+   phPoInstructionsRefresh(poId,{expectedRev}) copies the article's CURRENT product instructions onto an existing PO.
+   expectedRev = the instructionsRev the caller sees on the PO (0 when it has no snapshot); a different stored value is refused (stale).
+   One transaction: reads pos/{id} and ph_article_instructions/{CODE}; tx.update(pos) with EXACTLY instructions, instructionsRev,
+   instructionsAt (PH_ISSUE_INSTR_KEYS); one append-only pos/{id}/history row of type instructions_refreshed.
+   RULES: no firestore.rules change. The pos rule is `allow write: if signedIn()` with no field list, so the manager gate here
+   (phCanManage) is the ONLY guard on this field, exactly as for every other pos field; the history row is covered by the existing
+   isProdOps() history rule. Never touches any other field of the PO. */
+async function phPoInstructionsRefresh(poId,opts){
+  const o=opts||{},a=_phActor(o);
+  if(!phCanManage(a.u))return _phFail('forbidden','Only a manager (Afnan, Ammar, Mustafa) can refresh a PO\'s instructions.');
+  if(!PH_PO_ID_RE.test(String(poId)))return _phFail('invalid','Not a PO id: '+poId);
+  if(!(typeof o.expectedRev==='number'&&isFinite(o.expectedRev)&&Math.floor(o.expectedRev)===o.expectedRev&&o.expectedRev>=0))return _phFail('invalid','The instruction revision you are looking at is needed (0 when the PO has none). Reload the PO and retry.');
+  if(typeof runTransaction!=='function')return _phFail('failed','The transaction API is not loaded. Reload the page.');
+  if(_phOffline())return _phFail('offline','No connection. Refreshing the instructions is one transaction and cannot be queued - nothing was changed.');
+  try{
+    const now=_phNowOf(o);
+    const hist=phBuildHistoryRow({type:'instructions_refreshed',from:'',to:'',data:{}},{u:a.u,name:a.name,now:now,rand:o.rand});
+    if(hist.error)return _phFail('invalid',hist.error);
+    let snapOut=null,fromRev=0;
+    const res=await _phSilent(false,async function(){
+      const pref=doc(db,'pos',poId);
+      await runTransaction(db,async function(tx){
+        snapOut=null;
+        const ps=await tx.get(pref);
+        if(!ps||!ps.exists())throw _phRefuse('missing','PO '+poId+' does not exist.');
+        const po=ps.data()||{};
+        const have=typeof po.instructionsRev==='number'?po.instructionsRev:0;
+        if(have!==o.expectedRev)throw _phRefuse('stale','PO '+poId+' instructions were changed by someone else (revision '+have+', yours was '+o.expectedRev+'). Reload it.',{rev:have});
+        const code=_phiStr(po.code,40).toUpperCase();
+        if(!code)throw _phRefuse('refused','PO '+poId+' has no article code, so there are no instructions to copy.');
+        let isn;
+        try{isn=await tx.get(doc(db,'ph_article_instructions',code));}
+        catch(e){throw _phRefuse('unread','The product instructions of '+code+' could not be read ('+((e&&e.message)||e)+'). Nothing was changed.');}
+        if(!isn||!isn.exists())throw _phRefuse('refused','Article '+code+' has no saved product instructions, so there is nothing to copy.');
+        const snap=phInstrSnapshot({rev:(isn.data()||{}).rev,doc:isn.data()},now);
+        if(!snap)throw _phRefuse('refused','The saved instructions of '+code+' are empty, so there is nothing to copy.');
+        if(snap.instructionsRev===have&&po.instructions)throw _phRefuse('refused','PO '+poId+' already holds revision '+have+' of the instructions. Nothing changed.');
+        fromRev=have;
+        tx.update(pref,snap);
+        tx.set(doc(db,'pos',poId,'history',hist.id),Object.assign({},hist.data,{from:'rev '+have,to:'rev '+snap.instructionsRev,data:{code:code,fromRev:have,toRev:snap.instructionsRev}}));
+        snapOut=snap;
+      });
+      return true;
+    });
+    if(res!==true||!snapOut)return _phFail('failed','The refresh was not confirmed.');
+    try{if(typeof allPOs!=='undefined'&&Array.isArray(allPOs)){const p=allPOs.find(function(x){return x&&(x.fbKey===poId||x.id===poId);});if(p)Object.assign(p,snapOut);}}catch(e){}
+    if(typeof phHistoryForget==='function')phHistoryForget(poId);
+    return{ok:true,poId:poId,fromRev:fromRev,rev:snapOut.instructionsRev,snapshot:snapOut};
+  }catch(e){return _phFromError(e);}
 }

@@ -394,7 +394,8 @@ module.exports=async function(){
   /* ═══ source scope ═══ */
   s.section('scope: what ph-issue.js may write');
   {
-    const code=SRC.replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[^:])\/\/.*$/gm,'$1');
+    // WP3b: phPoInstructionsRefresh (below the marker) is a second, separate transaction, tested in tests/ph-snapshot.test.js
+    const code=SRC.split('/* ── WP3b: deliberately refresh')[0].replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[^:])\/\/.*$/gm,'$1');
     s.ok('no plain write API (setDoc, updateDoc, deleteDoc, addDoc, writeBatch) and no delete',!/\b(setDoc|updateDoc|deleteDoc|addDoc|writeBatch)\s*\(/.test(code)&&!/\.delete\s*\(/.test(code));
     s.ok('it never calls getNextId or createWithNextId itself: the number comes from mintNextIdInTx inside its own transaction',!/\bgetNextId\s*\(/.test(code)&&/mintNextIdInTx\(tx,/.test(code)&&(code.match(/runTransaction\(/g)||[]).length===1);
     const sets=[...code.matchAll(/tx\.(set|update)\(([^)]*)\)/g)].map(m=>m[1]+':'+m[2].split(',')[0].trim());
@@ -426,7 +427,7 @@ module.exports=async function(){
   await brk('an unreadable registry is skipped',"    if(masters===null)return _phFail('unread','The cutting-master list was not read, so the draft cannot be checked. Nothing was created. Reload Production Ops and retry.');","",['masters: an unreadable registry refuses the issue (unread), nothing written']);
   await brk('the floor is ignored',"floor:floor,idFor:_poIdFor","floor:0,idFor:_poIdFor",['floor: a reset counter cannot mint at or below a loaded PO (PO-007, not PO-001)']);
   await brk('the draft is not updated',"        tx.update(dref,d.patch);\n","",['happy: the draft is issued with poId / issuedAt / issuedBy, rev + 1, the po map untouched','happy: ONE commit carrying exactly the four writes (counter, pos, draft, history)']);
-  await brk('no history row',"        tx.set(doc(db,'pos',m.id,'history',hist.id),Object.assign({},hist.data,{data:Object.assign({},hist.data.data,{poId:m.id,qty:rec.qty})}));\n","",['happy: one history row of type issued, by the issuer, from ready to issued','happy: ONE commit carrying exactly the four writes (counter, pos, draft, history)']);
+  await brk('no history row',"        tx.set(doc(db,'pos',m.id,'history',hist.id),Object.assign({},hist.data,{data:Object.assign({},hist.data.data,{poId:m.id,qty:rec.qty},rec.instructionsRev!=null?{instructionsRev:rec.instructionsRev}:{})}));\n","",['happy: one history row of type issued, by the issuer, from ready to issued','happy: ONE commit carrying exactly the four writes (counter, pos, draft, history)']);
   await brk('the pos document is written outside the transaction',"        m.write(rec);\n","        await setDoc(doc(db,'pos',m.id),rec);tx.update(doc(db,'counters','main'),{pos:m.n});\n",['refused commit: the store is byte-identical (no PO, no counter move, draft still ready)','happy: no plain (non-transaction) write was made']);
   await brk('the offline refusal dropped',"  if(_phOffline())return _phFail('offline',","  if(false)return _phFail('offline',",['offline: refused out loud, nothing created']);
   await brk('the unread PO list is guessed (floor 0)',"    catch(e){return _phFail('unread',String((e&&e.message)||'The PO list did not load, so the next PO number cannot be checked.')+' Nothing was created.');}","    catch(e){floor=0;}",['unread: a PO list that cannot be read refuses the issue, saying nothing was created']);

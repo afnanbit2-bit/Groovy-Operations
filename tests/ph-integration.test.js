@@ -97,9 +97,9 @@ module.exports=async function(){
   const strip=t=>t.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,'');
   const WRITE=/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch|runTransaction)\s*\(|\btx\.(set|update|delete)\s*\(|\bbatch\.(set|update|delete|commit)\s*\(/;
   s.ok('no ph-mod-* file calls a Firestore write API',MODS.every(n=>!WRITE.test(strip(read('js/'+n+'.js')))));
-  s.ok('ph-issue.js is the ONE other file that writes (Issue as PO, 14 Oct 2026): one transaction, and its collections are pos (a NEW document through mintNextIdInTx), counters (through it), po_drafts and pos/{id}/history',(()=>{const t=strip(read('js/ph-issue.js'));
+  s.ok('ph-issue.js is the ONE other file that writes (Issue as PO, 14 Oct 2026): one transaction, and its collections are pos (a NEW document through mintNextIdInTx), counters (through it), po_drafts and pos/{id}/history',(()=>{const t=strip(read('js/ph-issue.js')).split('async function phPoInstructionsRefresh')[0];
     const docs=Array.from(new Set((t.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
-    return J(docs)===J(['po_drafts','pos'])&&(t.match(/runTransaction\(/g)||[]).length===1&&!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch)\s*\(/.test(t);})());
+    return J(docs)===J(['ph_article_instructions','po_drafts','pos'])&&(t.match(/runTransaction\(/g)||[]).length===1&&!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch)\s*\(/.test(t);})());
   s.ok('ph-ui.js and ph-data.js call none either',!WRITE.test(strip(read('js/ph-ui.js')))&&!WRITE.test(strip(read('js/ph-data.js'))));
   const wsrc=strip(read('js/ph-write.js'));
   const colls=Array.from(new Set((wsrc.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
