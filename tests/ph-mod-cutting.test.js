@@ -608,7 +608,8 @@ async function wiring(s){
   s.ok('reduced motion: the one transition is switched off',/prefers-reduced-motion:reduce\)\{\.phk-roll-b\{transition:none\}/.test(blk));
   s.ok('the ink on the active mode button is --on-dark (anything painted on --dark takes its ink from it)',/\.phk-seg-b\.on\{background:var\(--dark\);border-color:var\(--dark\);color:var\(--on-dark\)\}/.test(blk));
   const used=new Set();(SRC.match(/'(?:[^']*\s)?phk-[a-z0-9-]+(?:\s[^']*)?'/g)||[]).forEach(str=>(str.match(/phk-[a-z0-9-]+/g)||[]).forEach(c=>used.add(c)));
-  const defined=new Set((blk.match(/\.phk-[a-z0-9-]+/g)||[]).map(c=>c.slice(1)));
+  const jc=CSS.slice(CSS.indexOf('/* ph-mod-jobcopy START */'),CSS.indexOf('/* ph-mod-jobcopy END */')).replace(/\/\*[\s\S]*?\*\//g,'');   // WP3c: the instruction card's rules live in their own block
+  const defined=new Set(((blk+jc).match(/\.phk-[a-z0-9-]+/g)||[]).map(c=>c.slice(1)));
   const dynamic=['phk-scan-','phk-wt-','phk-cnt-','phk-cw-','phk-cut-'];   // ids, not classes
   const hooks=['phk-info','phk-check','phk-head'];                         // structural hooks with no rule of their own
   const missing=[...used].filter(c=>!defined.has(c)&&hooks.indexOf(c)<0&&!/-$/.test(c)&&!dynamic.some(d=>c.indexOf(d)===0));
