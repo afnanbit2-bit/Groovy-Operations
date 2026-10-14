@@ -3,7 +3,7 @@
    Inventory value PKR 0, Units sold 0, while the stock snapshot (a single-document read) was fine. Reproduced here by a Firestore that
    answers every collection query with an empty snapshot and no error (what the SDK does from its local cache when the client cannot
    reach the server). Before the fix the loader marked every stage done and rendered zeros; now each stage fails and the page says so.
-   Hand-computed fixture: 1 product, 3 orders, 4 line items (T-1, T-2, T-40, T-80), 1 snapshot. */
+   Hand-computed fixture: 1 product, 1 cancelled order (of 3 in the collection), 4 line items (T-1, T-2, T-40, T-80), 1 snapshot. */
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm');
 const harness=require('./harness');
@@ -17,7 +17,7 @@ function fake(mode){
   const data={
     shopify_line_items:[1,2,40,80].map((k,i)=>({order_id:i+1,line_item_id:i+1,sku:'AA-S',quantity:1,price:100,order_created_at:D(k),financial_status:'paid'})),
     shopify_products:[{sku:'AA-S',product_title:'Alpha',color:'Red',size:'S',price:100,created_at:D(300),status:'active',tags:[],product_type:'Tee',variant_id:'v1'}],
-    shopify_orders:[1,2,3].map(i=>({order_id:i,created_at:D(i),total_price:100}))};
+    shopify_orders:[1,2,3].map(i=>({order_id:i,created_at:D(i),total_price:100,cancelled_at:i===2?'2026-10-01T00:00:00Z':null}))};
   const snap={date:T,snapshot_at:new Date().toISOString(),items:{a:{sku:'AA-S',variant_id:'v1',available:5}}};
   const st={reads:{}};
   const g={
@@ -28,6 +28,7 @@ function fake(mode){
       let rows=data[n]||[];
       if(mode==='empty'&&n.indexOf('shopify_')===0&&n!=='shopify_weekly_closes')rows=[];
       q.cons.filter(c=>c.t==='where').forEach(c=>{if(c.op==='>=')rows=rows.filter(x=>String(x.order_created_at)>=c.v);if(c.op==='<')rows=rows.filter(x=>String(x.order_created_at)<c.v);});
+      q.cons.filter(c=>c.t==='where'&&c.f==='cancelled_at'&&c.op==='>').forEach(c=>{rows=rows.filter(x=>x.cancelled_at!=null&&String(x.cancelled_at)>c.v);});
       if(mode==='noorders'&&n==='shopify_orders')rows=[];
       const fromCache=mode==='cache';
       if(fromCache)rows=[];
@@ -50,7 +51,7 @@ async function checks(src){
   // 1. normal data: loads, counts are exactly the fixture's
   {
     const {B}=await open(src,'normal');
-    o['normal: loaded, 1 product, 3 orders, 4 line items (90-day window holds all 4)']=B('_siLoaded')===true&&B('_siProducts.length')===1&&B('_siOrders.length')===3&&B('_siLineItems.length')===4;
+    o['normal: loaded, 1 product, 1 cancelled order (of 3 in the collection), 4 line items (90-day window holds all 4)']=B('_siLoaded')===true&&B('_siProducts.length')===1&&B('_siOrders.length')===1&&B('_siLineItems.length')===4;
     o['normal: the freshness card says this is the full read']=/Line items: this is the full read/.test(B('_siFrHtml()'));
   }
   // 2. every collection empty, no error: must NOT be a healthy load

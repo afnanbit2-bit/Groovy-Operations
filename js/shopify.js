@@ -118,18 +118,18 @@ function _siLoadErr(e){
   let cls='other';
   if(/permission-denied/i.test(code)||/insufficient permissions|permission[- ]denied/i.test(msg))cls='permission';
   else if((e&&e.quota)||/resource-exhausted/i.test(code)||/\b429\b|quota/i.test(msg))cls='quota';
-  else if(/unavailable|network|offline|failed to fetch/i.test(code+' '+msg))cls='network';
+  else if((e&&e.code==='empty-read'&&e.fromCache)||/unavailable|network|offline|failed to fetch/i.test(code+' '+msg))cls='network'; // an empty answer served from the local cache = the server was not reached
   return{msg,code,cls,at:_siNow()};
 }
 // A read that returns ZERO documents from a collection that always holds some (the catalog, the line items of the window) is
 // not "a quiet store": Firestore answers a query from its local cache, with no error, when the client cannot reach the server, and a
 // wrong project would answer empty too. Treating it as a successful read showed "Line items: this is the full read" over zeros (6 Oct 2026).
 // It fails the stage instead (so the loader retries, then says so with a Retry button) and never replaces data already held with nothing.
-// Weekly closes are exempt (a young store may really have none) and so are orders (only used to drop cancelled lines and to count): every
+// Weekly closes are exempt (a young store may really have none) and so are orders (now only the CANCELLED orders, used to drop their lines; zero is a valid answer): every
 // figure on the page comes from the catalog and the line items, so those two are what must not be silently empty.
 function _siEmptyRead(col,fromCache){
   const e=new Error('Read 0 documents from '+col+(fromCache?' (answered from this device\u2019s local cache, so the connection to the server may be down)':' — it normally holds data; check the connection and that the sync has run')+'.');
-  e.code='empty-read';return e;
+  e.code='empty-read';e.fromCache=!!fromCache;return e;
 }
 // ── The reads. Each assigns its own result the moment it returns, so a later failure keeps it. ──
 function _siColRunner(id,col,q){
@@ -148,7 +148,10 @@ function _siColRunner(id,col,q){
 }
 const _siRunners={
   products:_siColRunner('products','shopify_products'),
-  orders:_siColRunner('orders','shopify_orders'),
+  // CANCELLED ORDERS ONLY (Oct 2026): the whole collection (33k docs, 10-30 MB) was read just to learn which orders were cancelled. A single-field
+  // range on an automatic index (no orderBy, no composite) returns exactly those (1,049 on the live check). Zero cancelled orders is a valid answer.
+  // This stage is now cheap; its loader weight (10) is left as it was.
+  orders:_siColRunner('orders','shopify_orders',()=>query(collection(db,'shopify_orders'),where('cancelled_at','>',''))),
   // PHASE 1 of the line-item read: only the last _SI_WIN_DAYS days (single-field range on order_created_at, no composite index).
   // fresh=true is the freshness refresh (a moved order sync): it ALWAYS re-reads the window, with the SAME cut as before so the window and the
   // phase-2 read stay disjoint; if the whole history was loaded, it goes back to 'window' and phase 2 is marked as needing a reload
@@ -212,6 +215,7 @@ const _siRunners={
     _siFrNote('snap',stamps);_siCachePutSnap(stamps);
   },
   meta:async function(){ // never fatal: the page says "unknown" for what is missing
+    if(_siOffBlocked())return; // offline on a saved copy: no read
     try{const snap=await getDoc(doc(db,'shopify_inventory_snapshots',_siPktDate(-7)));if(snap.exists())_siPrevSnapshot=snap.data();_siFr.prevDay=_siPktDate(-7);}catch(_){}
     try{
       const r=await Promise.all([getDoc(doc(db,'shopify_sync_meta','catalog_sync')),getDoc(doc(db,'shopify_sync_meta','order_backfill')),getDoc(doc(db,'shopify_sync_meta','inventory_sync'))]);
@@ -370,6 +374,7 @@ function _siLoadSettle(){
   const failed=crit.filter(s=>st(s.id)==='failed').map(s=>s.id);
   if(failed.length){
     if(L.final)return;
+    if(_siOffFallback(failed)){_siLoadSettle();return;} // a network failure with a saved copy for every failed stage: finish from the copy, labelled
     if(_siLoadAlive()){const plan=_siLoadAutoPlan(failed);if(plan){_siLoadWait(plan);return;}}
     _siLoadFinalFail();return;
   }
@@ -387,7 +392,7 @@ function _siLoadFinalFail(){
 function _siLoadReduced(){try{return!!(typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(_){return false;}}
 function _siLoadSucceed(){
   const L=_siLoad,C=_siRetryCtl,gen=C.gen;
-  _siLoaded=true;_siLoadError=null;L.wait=null;_siLoadClearWatch();siRetryClearTimers();
+  _siLoaded=true;_siLoadError=null;_siOff.nocopy=false;_siOff.bypass=false;L.wait=null;_siLoadClearWatch();siRetryClearTimers();
   const late=L.resolved; // the page's waiter already resolved: a retry in place, so we repaint the page ourselves
   const finish=()=>{
     L.finishing=false;L.final=true;L.complete=true;
@@ -621,6 +626,7 @@ function _siFullStart(manual){
   const F=_siFull;
   if(!_siLinesPartial()||F.st==='loading'||F.st==='done')return;
   if(F.st==='failed'&&!manual)return;
+  if(_siOffBlocked()){F.st='failed';F.err={msg:"You're offline — the older line items are not saved on this device and cannot be read without a connection.",code:'offline',cls:'network',at:_siNow()};return;} // no read is attempted; cleared when the connection is back
   if(typeof getDocs!=='function'||typeof where!=='function'){F.st='failed';F.err={msg:'The Firestore query helpers are not available on this build.',code:'',cls:'other',at:_siNow()};return;}
   F.st='loading';F.err=null;F.tries++;
   const t=++F.tok,cut=_siLinesCut,began=_siNow();
@@ -677,6 +683,8 @@ function _siFullPaint(){
 async function loadShopifyData(){
   _siLoadError=null;
   if(_siCacheOn())await _siCacheHydrate(); // the device copy first (never rejects); with no usable cache this path is not entered at all
+  _siOffStart(); // offline: show the saved copy (any age up to 7 days, labelled) or the honest empty state; no Firestore read is attempted
+  if(_siOff.nocopy&&!_siLoaded)return;
   siLoadBegin();
   const C=_siRetryCtl;
   const ids=_SI_STAGES.filter(s=>s.id!=='build'&&(C.running[s.id]||_siStageNeeds(s.id))).map(s=>s.id);
@@ -707,18 +715,59 @@ async function loadShopifyData(){
 //   siCache.get(key) -> Promise<null|{value,savedAt,meta}>, siCache.put(key,value,meta) -> Promise<boolean>, siCache.del(key), siCache.clear(),
 //   siCache.bytesApprox(). Keys: products, orders, lines (the window), lines-old (phase 2), closes, snap.
 // _SI_CACHE_SHAPE: bump it whenever the fields of a stored row change shape (catalog, order, line item, snapshot): a copy with another shape is a miss.
-const _SI_CACHE_SCHEMA=1,_SI_CACHE_SHAPE='2026-10-10a',_SI_CACHE_GET_MS=1500,_SI_CACHE_MAX_AGE_MS=86400000,_SI_CACHE_SKEW_MS=300000,_SI_CACHE_CUT_SLACK_DAYS=14,_SI_CACHE_SMALL_MS=150,_SI_CACHE_BIG_MS=1500,_SI_CACHE_BIG_ROWS=5000,_SI_CACHE_BYTES_MS=30000;
-const _siCache={prom:null,tried:false,pending:false,from:null,used:[],err:'',errKeys:{},bytes:null,bytesAt:0};
+const _SI_CACHE_SCHEMA=1,_SI_CACHE_SHAPE='2026-10-11b',_SI_CACHE_GET_MS=1500,_SI_CACHE_MAX_AGE_MS=86400000,_SI_CACHE_SKEW_MS=300000,_SI_CACHE_CUT_SLACK_DAYS=14,_SI_CACHE_SMALL_MS=150,_SI_CACHE_BIG_MS=1500,_SI_CACHE_BIG_ROWS=5000,_SI_CACHE_BYTES_MS=30000,_SI_CACHE_CHUNK=2000,_SI_CACHE_CHUNK_GET_MS=4000;
+// 2026-10-11a: an array longer than _SI_CACHE_BIG_ROWS is stored as chunks of _SI_CACHE_CHUNK rows under 'key#0..n' plus a manifest
+// {__chunks,nonce,count} under 'key' (written LAST, so a half-written set is never read); shorter arrays and the snapshot are one record as before.
+const _siCache={prom:null,tried:false,pending:false,recs:null,linesCut:'',from:null,used:[],err:'',errKeys:{},slow:{},chunkN:{},bytes:null,bytesAt:0};
+// ── OFFLINE MODE (Oct 2026) ──────────────────────────────────────────────────────────────────────────────────────────────
+// While ONLINE a copy older than _SI_CACHE_MAX_AGE_MS (24 h) is not trusted as current: it is read back from the network. OFFLINE (no connection) it is
+// still shown, up to _SI_CACHE_OFFLINE_MAX_AGE_MS (7 days), clearly labelled, never as current. A copy aged 24 h..7 d is 'aged' (stale-but-usable): it is
+// KEPT (not deleted) and used only when offline, or when the cold read fails with the 'network' class. Past 7 days, another shape/schema, corrupt, saved
+// "in the future" or for another user = deleted/ignored exactly as before (shape/schema mismatch is a miss even offline: the rows could be the wrong shape).
+// The age decision lives on this page (siCacheFresh / siCacheUsable); js/si-cache.js keeps no age limit (its get/put/del/clear contract is unchanged).
+const _SI_CACHE_OFFLINE_MAX_AGE_MS=7*86400000;
+// _siOff: on = the page is showing a saved copy because there is no connection (reason 'offline'|'network'); from = savedAt of the oldest record shown;
+// missing = parts with no saved copy ('orders','closes','lines-old'); nocopy = offline and no usable copy; bypass = the person pressed Retry while the
+// browser claims to be offline (try the network anyway); sideSkipped = side reads (ignore list, POs, stock history) skipped while offline.
+const _siOff={on:false,reason:'',from:null,missing:[],nocopy:false,nocopyMissing:[],bypass:false,sideSkipped:{},histOff:false,wired:false};
+function _siIsOffline(){try{return typeof navigator!=='undefined'&&!!navigator&&navigator.onLine===false;}catch(_){return false;}}
+function _siOffBlocked(){return _siOff.on&&!_siOff.bypass&&_siIsOffline();} // offline AND showing a saved copy: no Firestore read may be attempted
 const _siCacheQ={}; // key -> {run,t}: the writes waiting to happen (newest per key wins)
 function _siCacheOn(){try{return typeof siCache!=='undefined'&&!!siCache&&typeof siCache.available==='function'&&!!siCache.available();}catch(_){return false;}}
-function _siCacheGet(key){ // never rejects, never hangs: a slow or failing read is "no copy"
+function _siCacheGet1(key,ms){ // one record; never rejects, never hangs: a slow or failing read is "no copy"
   return new Promise(res=>{
     let done=false;const fin=v=>{if(!done){done=true;clearTimeout(t);res(v);}};
-    const t=setTimeout(()=>fin(null),_SI_CACHE_GET_MS);
+    const t=setTimeout(()=>fin(null),ms||_SI_CACHE_GET_MS);
     try{Promise.resolve(siCache.get(key)).then(r=>fin(r||null),()=>fin(null));}catch(_){fin(null);}
   });
 }
-function _siCacheDel(key){try{const p=siCache.del(key);if(p&&p.catch)p.catch(()=>{});}catch(_){}}
+// A chunked record is read back whole or not at all: every chunk must exist, carry the manifest's nonce and index, and hold its row count.
+// Anything else (a chunk lost to eviction, a half-finished rewrite) is a miss and the whole set is deleted.
+async function _siCacheGet(key){
+  const r=await _siCacheGet1(key);
+  const m=r&&r.value;
+  if(!m||typeof m!=='object'||Array.isArray(m)||!(m.__chunks>0))return r;
+  const n=m.__chunks|0,parts=await Promise.all(Array.from({length:n},(_,i)=>_siCacheGet1(key+'#'+i,_SI_CACHE_CHUNK_GET_MS)));
+  _siCache.chunkN[key]=n;
+  let rows=[],ok=true;
+  parts.forEach((p,i)=>{
+    if(!ok)return;
+    if(!p||!p.meta||p.meta.nonce!==m.nonce||p.meta.idx!==i||!Array.isArray(p.value)||p.value.length!==p.meta.count){ok=false;return;}
+    rows=rows.length?rows.concat(p.value):p.value;
+  });
+  if(!ok||rows.length!==m.count){_siCacheDel(key);return null;}
+  return{value:rows,savedAt:r.savedAt,meta:r.meta};
+}
+function _siCacheDel(key){
+  try{const p=siCache.del(key);if(p&&p.catch)p.catch(()=>{});}catch(_){}
+  _siCacheDelChunks(key,0);
+}
+function _siCacheDelChunks(key,from){ // the chunks this page knows about (read or written this visit); a stray one is bounded by clear() and the 24 h copy rule
+  const n=_siCache.chunkN[key]||0;
+  for(let i=from;i<n;i++){try{const p=siCache.del(key+'#'+i);if(p&&p.catch)p.catch(()=>{});}catch(_){}}
+  if(!from)delete _siCache.chunkN[key];
+}
+const _siCacheYield=()=>new Promise(r=>setTimeout(r,0)); // gives the event loop back, so cleaning 25k rows never freezes the page
 // Firestore Timestamps keep their methods on the prototype, which a stored copy loses; they are written as plain {seconds,nanoseconds},
 // the shape _siAxSnapMs already reads. Functions are dropped. Everything else is copied as is.
 function _siCacheClean(v){
@@ -730,18 +779,52 @@ function _siCacheClean(v){
   for(const k in v){if(Object.prototype.hasOwnProperty.call(v,k)){const x=v[k];if(typeof x!=='function')o[k]=_siCacheClean(x);}}
   return o;
 }
-function _siCacheFail(key,msg){_siCache.errKeys[key]=String(msg||'save failed');_siCache.err=_siCache.errKeys[key];}
+function _siCacheFail(key,msg){delete _siCache.slow[key];_siCache.errKeys[key]=String(msg||'save failed');_siCache.err=_siCache.errKeys[key];}
+function _siCacheOkKey(key){delete _siCache.errKeys[key];delete _siCache.slow[key];_siCache.err=Object.keys(_siCache.errKeys).map(k=>_siCache.errKeys[k])[0]||'';}
+// One put, normalised to {ok,timedOut,error}. putDetailed (js/si-cache.js) says "no answer in time" apart from "refused"; an older siCache gives a boolean.
+async function _siCachePutOne(key,v,meta){
+  if(typeof siCache.putDetailed==='function'){
+    const r=await Promise.resolve(siCache.putDetailed(key,v,meta));
+    return r&&typeof r==='object'?{ok:r.ok===true,timedOut:!!r.timedOut,error:String(r.error||'')}:{ok:r===true,timedOut:false,error:''};
+  }
+  const ok=await Promise.resolve(siCache.put(key,v,meta));
+  if(ok!==false)return{ok:true,timedOut:false,error:''};
+  let why='';try{if(siCache&&siCache.lastError)why=String(siCache.lastError.message||siCache.lastError);}catch(_){}
+  return{ok:false,timedOut:why==='timeout',error:why};
+}
+// The chunks first (each cleaned and written on its own, yielding to the page between them), the manifest LAST.
+async function _siCachePutChunked(job){
+  const rows=job.val,CH=_SI_CACHE_CHUNK,n=Math.ceil(rows.length/CH),nonce=Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+  for(let i=0;i<n;i++){
+    await _siCacheYield();
+    if(!_siCacheWriteOk())return{aborted:true};
+    let part;try{part=_siCacheClean(rows.slice(i*CH,(i+1)*CH));}catch(e){return{ok:false,timedOut:false,error:'could not prepare '+job.key+': '+((e&&e.message)||e)};}
+    const r=await _siCachePutOne(job.key+'#'+i,part,{chunk:true,idx:i,nonce,of:n,count:part.length});
+    if(!r.ok)return r;
+  }
+  if(!_siCacheWriteOk())return{aborted:true};
+  const r=await _siCachePutOne(job.key,{__chunks:n,nonce,count:rows.length},job.meta);
+  if(r.ok){_siCacheDelChunks(job.key,n);_siCache.chunkN[job.key]=n;} // chunks left from a longer earlier copy go
+  return r;
+}
 async function _siCacheDo(job){
   if(!_siCacheWriteOk()){delete _siCacheQ[job.key];return;}
-  let v;
-  try{v=_siCacheClean(job.val);}catch(e){_siCacheFail(job.key,'could not prepare '+job.key+': '+((e&&e.message)||e));return;}
+  let res;
   try{
-    if(!_siCacheWriteOk())return; // re-checked after the (possibly long) copy: the sign-out may have started meanwhile
-    const ok=await Promise.resolve(siCache.put(job.key,v,job.meta));
-    if(ok===false){
-      let why='';try{if(siCache&&siCache.lastError)why=String(siCache.lastError.message||siCache.lastError);}catch(_){}
-      _siCacheFail(job.key,why||'the browser refused the write (storage may be full or blocked)');
-    }else{delete _siCache.errKeys[job.key];_siCache.err=Object.keys(_siCache.errKeys).map(k=>_siCache.errKeys[k])[0]||'';}
+    if(Array.isArray(job.val)&&job.val.length>_SI_CACHE_BIG_ROWS)res=await _siCachePutChunked(job);
+    else{
+      let v;
+      try{v=_siCacheClean(job.val);}catch(e){_siCacheFail(job.key,'could not prepare '+job.key+': '+((e&&e.message)||e));return;}
+      if(!_siCacheWriteOk())return; // re-checked after the (possibly long) copy: the sign-out may have started meanwhile
+      res=await _siCachePutOne(job.key,v,job.meta);
+      if(res.ok&&_siCache.chunkN[job.key])_siCacheDelChunks(job.key,0); // it used to be chunked: the old chunks are not wanted
+    }
+    if(res.aborted)return;
+    if(res.ok)_siCacheOkKey(job.key);
+    else if(res.timedOut){ // no answer within the (size-scaled) bound is NOT a refusal: the browser may still commit it; the next refresh saves again
+      delete _siCache.errKeys[job.key];_siCache.slow[job.key]=true;
+      _siCache.err=Object.keys(_siCache.errKeys).map(k=>_siCache.errKeys[k])[0]||'';
+    }else _siCacheFail(job.key,res.error||'the browser refused the write (storage may be full or blocked)');
   }catch(e){_siCacheFail(job.key,(e&&e.message)||e);}
   _siCacheBytesRefresh(true);
   _siCacheRepaintNote();
@@ -752,6 +835,7 @@ async function _siCacheDo(job){
 function _siCacheWriteOk(){
   try{if(typeof window!=='undefined'&&window.__gvSignOutStarted)return false;}catch(_){}
   try{if(typeof auth!=='undefined'&&auth&&!auth.currentUser)return false;}catch(_){}
+  if(_siOffBlocked())return false; // offline, showing a saved (possibly aged) copy: nothing may be written over it
   return true;
 }
 function _siCachePut(key,val,meta){
@@ -792,6 +876,20 @@ function siCacheFresh(r,nowMs,isArr){
 function _siCacheRecOk(r,needRows){
   return siCacheFresh(r,_siNow(),true)&&(!needRows||r.value.length>0);
 }
+// Pure: like siCacheFresh but with the OFFLINE age limit (7 days): is a stored record usable as a labelled stale copy? Same shape/schema/future/user rules.
+function siCacheUsable(r,nowMs,isArr){
+  if(!r||!r.meta||r.meta.schema!==_SI_CACHE_SCHEMA||r.meta.shape!==_SI_CACHE_SHAPE||!isFinite(r.savedAt))return false;
+  if(r.savedAt>nowMs+_SI_CACHE_SKEW_MS||nowMs-r.savedAt>_SI_CACHE_OFFLINE_MAX_AGE_MS)return false;
+  if(r.meta.readAt!=null&&(!isFinite(r.meta.readAt)||r.meta.readAt>nowMs+_SI_CACHE_SKEW_MS))return false;
+  return isArr?Array.isArray(r.value):!!r.value&&typeof r.value==='object'&&!Array.isArray(r.value);
+}
+// Pure: 'none' | 'ok' (within 24 h: used as today) | 'aged' (24 h..7 d: kept, used only offline / on a network failure) | 'bad' (delete).
+function _siCacheKind(r,needRows,isArr){
+  if(!r)return'none';
+  if(isArr?_siCacheRecOk(r,needRows):siCacheFresh(r,_siNow(),false))return'ok';
+  if(siCacheUsable(r,_siNow(),!!isArr)&&(!isArr||!needRows||r.value.length>0))return'aged';
+  return'bad';
+}
 // Pure: may a stored window of line items be used? Needs its cut, its full-read time and its last-read time, and a cut not older than the window plus slack.
 function siCacheLinesOk(meta,oldestCut,nowMs){
   const n=nowMs==null?_siNow():nowMs;
@@ -800,6 +898,10 @@ function siCacheLinesOk(meta,oldestCut,nowMs){
 // Pure: may stored OLDER rows be used? Same cut as the window and read at or after the latest 00:00/12:00 PKT boundary (they are mutated by refunds).
 function siCacheOldOk(meta,cut,nowMs){
   return!!(meta&&meta.cut===cut&&isFinite(meta.readAt)&&meta.readAt<=nowMs+_SI_CACHE_SKEW_MS&&meta.readAt>=siFullBoundary(nowMs));
+}
+// Offline only: the older rows need not have been read after the last 00:00/12:00 PKT boundary (they are labelled stale); the same cut is still required.
+function siCacheOldAgedOk(meta,cut,nowMs){
+  return!!(meta&&meta.cut===cut&&isFinite(meta.readAt)&&meta.readAt<=nowMs+_SI_CACHE_SKEW_MS);
 }
 // A collection taken from the device copy is only trusted when its sources can be COMPARED: a missing or unparsed stamp (now or when saved)
 // counts as moved, so a copy can never suppress every read. (_siFrMoved itself keeps its old rule for the ordinary refresh.)
@@ -814,7 +916,56 @@ function _siCacheForceMoved(stamps,ids,free){
   });
 }
 function _siCacheNoteStamps(id,rec){_siFr.seen[id]=rec.meta.stamps||null;_siFr.readAt[id]=isFinite(rec.meta.readAt)?rec.meta.readAt:rec.savedAt;}
+// Applies the records in `rs` to the page's arrays. allowAged: also use 'aged' (24 h..7 d) records. only: stage ids to consider (null = all). A stage already
+// loaded is never touched. ctx collects {used,times,aged,bad}; `bad` (keys to delete) is acted on by the caller. Never throws past its caller's try.
+function _siCacheApply(rs,allowAged,only,ctx){
+  const want=id=>!only||only.indexOf(id)>=0;
+  const take=(k,needRows,isArr)=>{const c=_siCacheKind(rs[k],needRows,isArr);if(c==='ok')return{r:rs[k],aged:false};if(c==='aged'&&allowAged)return{r:rs[k],aged:true};if(c==='bad')ctx.bad.push(k);return null;};
+  const done=(id,t)=>{ctx.used.push(id);ctx.times.push(t.r.savedAt);if(t.aged)ctx.aged.push(id);};
+  let t;
+  if(want('products')&&!_siColl.products&&(t=take('products',true,true))){_siProducts=t.r.value;_siSeasonMapCache=null;_siProdMapCache=null;_siColl.products=true;_siCacheNoteStamps('products',t.r);done('products',t);}
+  if(want('orders')&&!_siColl.orders&&(t=take('orders',false,true))){_siOrders=t.r.value;_siColl.orders=true;_siCacheNoteStamps('orders',t.r);done('orders',t);}
+  if(want('closes')&&!_siColl.closes&&(t=take('closes',false,true))){_siWeeklyCloses=t.r.value;_siColl.closes=true;_siCacheNoteStamps('closes',t.r);done('closes',t);}
+  if(want('lines')&&!_siColl.lines){
+    const lk=_siCacheKind(rs['lines'],true,true);
+    t=take('lines',true,true);
+    if(t){
+      const r=t.r;
+      if(!siCacheLinesOk(r.meta,_siPktDate(-(_SI_WIN_DAYS+_SI_CACHE_CUT_SLACK_DAYS)))){ctx.bad.push('lines','lines-old');}
+      else{
+        const m=r.meta;
+        const win=_siPktDate(-_SI_WIN_DAYS),newCut=m.cut>win?m.cut:win; // never a window wider than the normal 90 days: a cut older than that is raised
+        _siLineItems=r.value;_siLinesScope='window';_siLinesCut=newCut;_siLinesFullAt=m.fullAt;_siLinesLastReadAt=m.lastReadAt;_siLinesForceFull=!!t.aged; // an aged window is always re-read in full once online
+        _siLinesMode=m.mode==='incremental'?'incremental':'full';_siLinesIncN=isFinite(m.incN)?m.incN:0;_siLinesIncFrom=typeof m.incFrom==='string'?m.incFrom:'';
+        _siColl.lines=true;_siCache.linesCut=m.cut;_siCacheNoteStamps('lines',r);done('lines',t);
+        ctx.linesFrom=t;
+      }
+    }else if(rs['lines-old']&&lk!=='aged')ctx.bad.push('lines-old'); // older rows without a usable window are unusable
+  }
+  // The older rows (phase 2) ride on a window that came from this copy. Same cut required; read at/after the last 00:00/12:00 PKT boundary, or (offline only) any time within 7 days.
+  if(want('lines')&&_siColl.lines&&_siLinesScope==='window'&&rs['lines-old']&&_siCache.linesCut){
+    const o=take('lines-old',true,true),m={cut:_siCache.linesCut};
+    if(o){
+      if(!o.r.meta||o.r.meta.cut!==m.cut)ctx.bad.push('lines-old'); // another window's older rows
+      else if(siCacheOldOk(o.r.meta,m.cut,_siNow())||(allowAged&&siCacheOldAgedOk(o.r.meta,m.cut,_siNow()))){
+        _siLineItems=siMergeLines(_siLineItems,o.r.value);_siLinesScope='full';_siFull.st='done';_siFull.err=null;_siFull.n=o.r.value.length;ctx.times.push(o.r.savedAt);
+        if(!siCacheOldOk(o.r.meta,m.cut,_siNow())){ctx.aged.push('lines-old');_siLinesForceFull=true;}
+      }else if(!allowAged)ctx.bad.push('lines-old'); // online: older rows from before the last 00:00/12:00 PKT boundary are ignored and deleted (refunds mutate them), as before
+    }
+  }
+  if(ctx.linesFrom&&_siLinesScope==='window'&&_siCache.linesCut&&_siLinesCut!==_siCache.linesCut)_siLineItems=_siLineItems.filter(x=>!(x&&typeof x.order_created_at==='string'&&x.order_created_at<_siLinesCut)); // the rows between the old and the raised cut belong to phase 2 now
+  const sr=rs['snap']; // an object, not an array: read directly (take() is for arrays)
+  if(want('snap')&&!_siSnapshot&&!_siSnapNone&&sr){
+    const c=_siCacheKind(sr,false,false),okShape=!!sr.value&&((sr.value.snap&&typeof sr.value.snap==='object'&&!Array.isArray(sr.value.snap))||sr.value.none===true);
+    if((c==='ok'||(c==='aged'&&allowAged))&&okShape){
+      const sp=sr.value.snap&&typeof sr.value.snap==='object'?sr.value.snap:null;_siSnapshot=sp;_siSnapNone=!sp;_siSnapFallback=!!sr.value.fallback&&!!sp;
+      _siCacheNoteStamps('snap',sr);done('snap',{r:sr,aged:c==='aged'});
+    }else if(c==='bad'||(c!=='none'&&!okShape))ctx.bad.push('snap');
+  }
+}
 // Fills the arrays from the device copy. One shared promise (a second call during the first waits for it). Never rejects.
+// ONLINE: only records within 24 h are used (as before); an AGED record (24 h..7 d) is not applied and not deleted: it is held in _siCache.recs for the
+// offline start / the network-failure fallback. OFFLINE: aged records are used too (and the page says so).
 function _siCacheHydrate(){
   if(_siCache.prom)return _siCache.prom;
   if(!_siCacheOn()||_siCache.tried)return Promise.resolve();
@@ -825,45 +976,127 @@ function _siCacheHydrate(){
       const keys=['products','orders','lines','lines-old','closes','snap'];
       const rs={};(await Promise.all(keys.map(_siCacheGet))).forEach((r,i)=>{rs[keys[i]]=r;});
       if(_siLoaded||_siColl.products||_siColl.orders||_siColl.lines||_siColl.closes||_siSnapshot||_siSnapNone)return;
-      const used=[],times=[],bad=k=>{_siCacheDel(k);};
-      const take=(k,needRows)=>{const r=rs[k];if(!r)return null;if(!_siCacheRecOk(r,needRows)){bad(k);return null;}return r;};
-      let r=take('products',true);
-      if(r){_siProducts=r.value;_siSeasonMapCache=null;_siProdMapCache=null;_siColl.products=true;_siCacheNoteStamps('products',r);used.push('products');times.push(r.savedAt);}
-      r=take('orders',false);
-      if(r){_siOrders=r.value;_siColl.orders=true;_siCacheNoteStamps('orders',r);used.push('orders');times.push(r.savedAt);}
-      r=take('closes',false);
-      if(r){_siWeeklyCloses=r.value;_siColl.closes=true;_siCacheNoteStamps('closes',r);used.push('closes');times.push(r.savedAt);}
-      r=take('lines',true);
-      if(r){
-        if(!siCacheLinesOk(r.meta,_siPktDate(-(_SI_WIN_DAYS+_SI_CACHE_CUT_SLACK_DAYS)))){bad('lines');bad('lines-old');}
-        else{
-          const m=r.meta;
-          const win=_siPktDate(-_SI_WIN_DAYS),newCut=m.cut>win?m.cut:win; // never a window wider than the normal 90 days: a cut older than that is raised
-          _siLineItems=r.value;_siLinesScope='window';_siLinesCut=newCut;_siLinesFullAt=m.fullAt;_siLinesLastReadAt=m.lastReadAt;_siLinesForceFull=false;
-          _siLinesMode=m.mode==='incremental'?'incremental':'full';_siLinesIncN=isFinite(m.incN)?m.incN:0;_siLinesIncFrom=typeof m.incFrom==='string'?m.incFrom:'';
-          _siColl.lines=true;_siCacheNoteStamps('lines',r);used.push('lines');times.push(r.savedAt);
-          const o=take('lines-old',true);
-          if(o){
-            if(siCacheOldOk(o.meta,m.cut,_siNow())){_siLineItems=siMergeLines(_siLineItems,o.value);_siLinesScope='full';_siFull.st='done';_siFull.err=null;_siFull.n=o.value.length;times.push(o.savedAt);}
-            else bad('lines-old');
-          }
-          if(_siLinesScope==='window'&&newCut!==m.cut)_siLineItems=_siLineItems.filter(x=>!(x&&typeof x.order_created_at==='string'&&x.order_created_at<newCut)); // the rows between the old and the raised cut belong to phase 2 now
-        }
-      }else if(rs['lines-old'])bad('lines-old');
-      const sr=rs['snap']; // an object, not an array: read directly (take() is for arrays)
-      if(siCacheFresh(sr,_siNow(),false)&&((sr.value.snap&&typeof sr.value.snap==='object'&&!Array.isArray(sr.value.snap))||sr.value.none===true)){
-        const sp=sr.value.snap&&typeof sr.value.snap==='object'?sr.value.snap:null;_siSnapshot=sp;_siSnapNone=!sp;_siSnapFallback=!!sr.value.fallback&&!!sp;
-        _siCacheNoteStamps('snap',sr);used.push('snap');times.push(sr.savedAt);
-      }else if(sr)bad('snap');
+      const ctx={used:[],times:[],aged:[],bad:[]};
+      _siCacheApply(rs,_siIsOffline(),null,ctx);
+      // aged records that were not applied are kept for later (never deleted unless past 7 days / unusable)
+      const recs={};let any=false;
+      [['products',true,true],['orders',false,true],['lines',true,true],['lines-old',true,true],['closes',false,true],['snap',false,false]].forEach(a=>{
+        const k=a[0];if(ctx.bad.indexOf(k)>=0)return;
+        if(_siCacheKind(rs[k],a[1],a[2])==='aged'&&!(k==='snap'?(_siSnapshot||_siSnapNone):k==='lines-old'?_siLinesScope==='full':_siColl[k])){recs[k]=rs[k];any=true;}
+      });
+      if(any)_siCache.recs=recs;
+      ctx.bad.forEach(k=>_siCacheDel(k));
       if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
-      if(used.length){_siCache.used=used;_siCache.from=Math.min.apply(null,times);_siCache.pending=true;}
+      if(ctx.used.length){_siCache.used=ctx.used;_siCache.from=Math.min.apply(null,ctx.times);_siCache.pending=true;}
     }catch(_){} // a corrupt or odd copy must never stop the page: whatever was not set is read from Firestore as before
   })();
+}
+// ── Offline mode: start from an aged copy, or fall back to it when the cold read fails with the network class ──
+// Is a stage's data in memory, or held aged in _siCache.recs and usable?
+function _siOffAvail(stage){
+  const R=_siCache.recs||{};
+  if(stage==='products')return!!_siColl.products||!!R.products;
+  if(stage==='lines')return!!_siColl.lines||(!!R.lines&&siCacheLinesOk(R.lines.meta,_siPktDate(-(_SI_WIN_DAYS+_SI_CACHE_CUT_SLACK_DAYS))));
+  if(stage==='snap')return!!_siSnapshot||_siSnapNone||!!R.snap;
+  return true; // orders / closes may be missing: they are filled with an honest placeholder and named in the note
+}
+// Applies the aged records for `stages`, fills what has no copy with a placeholder (named in _siOff.missing) and turns the mode on. Returns true if the page can show.
+function _siOffEnter(stages,reason){
+  const need=stages.filter(id=>id==='products'||id==='lines'||id==='snap');
+  if(!need.every(_siOffAvail))return false;
+  const ctx={used:[],times:[],aged:[],bad:[]};
+  try{if(_siCache.recs)_siCacheApply(_siCache.recs,true,stages,ctx);}catch(_){}
+  ctx.bad.forEach(k=>_siCacheDel(k));
+  if(!need.every(id=>id==='products'?_siColl.products:id==='lines'?_siColl.lines:(_siSnapshot||_siSnapNone)))return false;
+  const miss=[];
+  ['orders','closes'].forEach(id=>{if(stages.indexOf(id)>=0&&!_siColl[id]){if(id==='orders')_siOrders=[];else _siWeeklyCloses=[];_siColl[id]=true;miss.push(id);}});
+  if(_siLinesScope==='window'&&(_siCache.used||[]).concat(ctx.used).indexOf('lines')>=0)miss.push('lines-old'); // the window came from the copy and its older rows are not saved
+  _siOff.missing=Array.from(new Set(_siOff.missing.filter(x=>x!=='lines-old'||_siLinesScope==='window').concat(miss)));
+  if(ctx.used.length){
+    _siCache.used=Array.from(new Set((_siCache.used||[]).concat(ctx.used)));
+    const all=ctx.times.concat(_siCache.from!=null?[_siCache.from]:[]);
+    _siCache.from=Math.min.apply(null,all);_siCache.pending=true;
+  }
+  if(_siColl.products&&_siColl.orders&&_siColl.lines&&_siColl.closes)_siCollectionsLoaded=true;
+  _siOff.on=true;_siOff.reason=reason;_siOff.from=_siCache.from;
+  return true;
+}
+// Called by loadShopifyData after the hydrate: offline with nothing in memory -> show the copy (if a complete enough one exists) or the honest empty state.
+function _siOffStart(){
+  _siOff.nocopy=false;_siOff.nocopyMissing=[];
+  if(_siLoaded||!_siIsOffline()||_siOff.bypass||_siOff.on)return;
+  const crit=['products','lines','snap'],miss=crit.filter(id=>!_siOffAvail(id));
+  if(miss.length){_siOff.nocopy=true;_siOff.nocopyMissing=miss;return;}
+  const stages=['products','orders','lines','closes','snap'].filter(id=>id==='snap'?!_siSnapshot&&!_siSnapNone:!_siColl[id]);
+  if(!_siOffEnter(stages,'offline')){_siOff.nocopy=true;_siOff.nocopyMissing=crit.filter(id=>!_siOffAvail(id));}
+}
+// A critical stage failed for good-looking network reasons: if aged copies exist for every failed critical stage, finish the load from them. Returns true if handled.
+function _siOffFallback(failedIds){
+  const L=_siLoad;
+  if(!failedIds.length||!failedIds.every(id=>L.fails[id]&&L.fails[id].cls==='network'))return false;
+  if(!_siCache.recs)return false;
+  if(!_siOffEnter(failedIds,'network'))return false;
+  failedIds.forEach(id=>{delete L.fails[id];_siRetryCtl.running[id]=false;siMark(id,'done');});
+  _siLoadError=null;
+  return true;
+}
+// Recovery: a copy OLDER than 24 h (_SI_CACHE_MAX_AGE_MS) is re-read in full once online (never trusted because stamps "did not move"); a part that had
+// NO copy (placeholder) is always read. A copy within 24 h goes through the normal meta-gated check (big reads only for sources whose stamp moved).
+function _siOffForce(ids,free){
+  if(!_siOff.on)return;
+  const aged=_siOff.from!=null&&_siNow()-_siOff.from>_SI_CACHE_MAX_AGE_MS;
+  const all=(aged?(_siCache.used||[]).filter(id=>_SI_STAGES.some(s=>s.id===id)):[]).concat(_siOff.missing.filter(id=>id!=='lines-old'));
+  all.forEach(id=>{if(ids.indexOf(id)<0&&(!free||free(id)))ids.push(id);});
+}
+// The offline note ended: reset the state and let the side reads (ignore list, POs, stock history) that were skipped run now.
+function _siOffClear(){
+  if(!_siOff.on)return;
+  _siOff.on=false;_siOff.reason='';_siOff.from=null;_siOff.missing=[];_siCache.recs=null;
+  if(_siFull.st==='failed'&&_siFull.err&&_siFull.err.code==='offline'){_siFull.st='idle';_siFull.err=null;}
+  _siOffResumeSide();
+  try{_siFrApply(false);}catch(_){} // repaint so no offline-only message (stock history, ignore list) outlives the note
+}
+function _siOffResumeSide(){
+  const t=f=>{try{f();}catch(_){}};
+  if(_siOff.sideSkipped.meta){_siOff.sideSkipped.meta=false;t(()=>_siMetaLoad(true));}
+  if(_siOff.sideSkipped.po){_siOff.sideSkipped.po=false;t(()=>{_siPoPromise=null;_siPoLoad(true);});}
+  if(_siOff.histOff||_siOff.sideSkipped.hist){_siOff.histOff=false;_siOff.sideSkipped.hist=false;t(()=>{const go=()=>{_siHistState='idle';_siAxEnsureHistory();};if(_siHistPromise)_siHistPromise.then(go);else go();});} // a warm read (the saved folds + only the newer days); if the offline attempt is still settling, after it
+}
+function _siOffAgeText(now){
+  const age=Math.max(0,now-_siOff.from),d=Math.floor(age/86400000);
+  return d>=1?d+(d===1?' day':' days'):_siFrAge(age);
+}
+// What the strip says while a saved copy is shown without a connection (text only; set via _siEsc / textContent by its callers).
+function _siOffNoteText(now){
+  if(!_siOff.on||_siOff.from==null)return'';
+  let t="You're offline — showing the copy saved on "+_siFrFmt(_siOff.from)+' ('+_siOffAgeText(now)+' old). Figures may be out of date.';
+  if(_siOff.missing.indexOf('orders')>=0)t+=' Cancellations not applied (the cancelled-orders list is not saved on this device).';
+  if(_siOff.missing.indexOf('closes')>=0)t+=' Weekly closes are not saved on this device.';
+  if(_siOff.missing.indexOf('lines-old')>=0)t+=' The full sales history is not saved on this device, so Needs Attention and Articles are unavailable until you are online.';
+  return t;
+}
+// The honest state when offline and the copy is missing or incomplete (never zeros, never a spinner).
+function _siOffEmptyHtml(){
+  const miss=_siOff.nocopyMissing,none=miss.length>=3;
+  return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div>'
+    +'<div class="card si-full-card" id="si-off-empty" role="status"><div class="card-title">'+(none?"You're offline and nothing is saved on this device yet":"You're offline and the copy saved on this device is incomplete")+'</div>'
+    +'<div class="si-full-txt">'+(none?'Inventory Intelligence saves a copy of what it reads on this device the first time it is opened with a connection. Connect and press Retry.':'It cannot be shown without a connection (missing: '+_siEsc(miss.join(', '))+'). Connect and press Retry.')+'</div>'
+    +'<div><button type="button" class="si-full-btn" id="si-off-retry" onclick="window._siRetry()">Retry</button></div></div>';
+}
+// Back online ('online' event, registered once): the saved copy is checked against the sync stamps and re-read; a failed check leaves the note standing.
+function _siOnOnline(){
+  try{
+    _siOff.bypass=false;
+    if(!_siLoadAlive())return;
+    if(_siOff.nocopy&&!_siLoaded){window._siRetry();return;}
+    if(_siLoaded&&!_siFr.busy&&(_siOff.on||(_siFr.check&&!_siFr.check.ok)))siRefresh();
+  }catch(_){}
 }
 // The check after a copy was used succeeded (nothing moved, or what moved was read): the copy is confirmed.
 function _siCacheSettled(){if(_siCache.pending){_siCache.pending=false;}}
 function _siCacheNoteText(now){
   const C=_siCache;
+  if(_siOff.on)return _siOffNoteText(now);
   if(!C.pending||C.from==null)return'';
   return'Shown from the copy saved on this device at '+_siFrFmt(C.from)+' ('+_siFrAge(Math.max(0,now-C.from))+' old); checking for newer.';
 }
@@ -887,7 +1120,7 @@ function _siCacheCtlHtml(){
   _siCacheBytesRefresh(false);
   const bt=_siCacheBytesText();
   return'<div class="si-na-checks" role="note" id="si-cache"><strong>Saved copy.</strong> This page keeps a copy of what it read on this device, so the next visit paints from it and asks Firestore only for what changed. <span id="si-cache-bytes">'+_siEsc(bt)+'</span>'
-    +(_siCache.err?' <span id="si-cache-err">Saved copy unavailable: '+_siEsc(_siCache.err)+'.</span>':'')
+    +(_siCache.err?' <span id="si-cache-err">Saved copy unavailable: '+_siEsc(_siCache.err)+'.</span>':(Object.keys(_siCache.slow).length?' <span id="si-cache-slow">Saving the copy on this device is taking longer than usual; it will be tried again at the next refresh.</span>':''))
     +' <button type="button" class="si-ax-btn" id="si-cache-clear" onclick="window._siCacheClear()">Clear saved data on this device</button></div>';
 }
 function _siCacheRepaintNote(){
@@ -901,7 +1134,7 @@ window._siCacheClear=async function(){
   Object.keys(_siCacheQ).forEach(k=>{const j=_siCacheQ[k];if(j&&j.t)clearTimeout(j.t);delete _siCacheQ[k];});
   try{await Promise.resolve(siCache.clear());}catch(e){_siCacheFail('clear',(e&&e.message)||e);_siCacheRepaintNote();return;}
   try{_siHistCacheClear();}catch(_){} // the folded stock-history copy belongs to the same page
-  _siCache.errKeys={};_siCache.err='';_siCache.used=[];_siCache.pending=false;_siCache.from=null;_siCache.bytes=null;
+  _siCache.errKeys={};_siCache.slow={};_siCache.chunkN={};_siCache.err='';_siCache.used=[];_siCache.pending=false;_siCache.from=null;_siCache.bytes=null;_siCache.recs=null;
   try{if(typeof showToast==='function')showToast('Saved data cleared on this device — reloading');}catch(_){}
   setTimeout(()=>{try{if(typeof location!=='undefined'&&location.reload)location.reload();}catch(_){}},400);
 };
@@ -1013,7 +1246,7 @@ function _siFrView(now){
   let oldest=null;known.forEach(s=>{if(!oldest||s.ms<oldest.ms)oldest=s;});
   const unknownAny=core.some(s=>s.ms==null);
   let line;
-  if(oldest)line='Data as of '+_siFrFmt(oldest.ms)+' — oldest source: '+oldest.label.toLowerCase()+', '+_siFrAge(now-oldest.ms)+' ago'+(unknownAny?'; another source’s age is unknown':'')+(_siCache.pending?' (from the copy saved on this device)':'');
+  if(oldest)line='Data as of '+_siFrFmt(oldest.ms)+' — oldest source: '+oldest.label.toLowerCase()+', '+_siFrAge(now-oldest.ms)+' ago'+(unknownAny?'; another source’s age is unknown':'')+(_siOff.on?' (saved copy, offline — not current)':_siCache.pending?' (from the copy saved on this device)':'');
   else line='Data age unknown — the sync stamps could not be read';
   let status='',statusKind='';
   const fl=Object.keys(F.fails);
@@ -1023,9 +1256,9 @@ function _siFrView(now){
   else if(F.histFail){status='Stock history was not refreshed ('+F.histFail+'); its figures are from the earlier read.';statusKind='err';}
   else if(F.last)status=F.last.read.length?'Updated '+F.last.read.map(id=>_siStage(id).label.toLowerCase()).join(', ')+' at '+_siFrClock(F.last.at)+'.':'Checked '+_siFrClock(F.last.at)+' — nothing new.';
   if(F.pending&&!F.busy&&statusKind!=='err'){status='New data is loaded but not shown yet, so nothing you are working on moves.';statusKind='pending';}
-  const bad=sources.filter(s=>s.words&&s.state!=='quiet');
-  return{line,oldest,sources,closesAt:F.readAt.closes||null,status,statusKind,busy:F.busy,pct:F.pct,pending:F.pending,cacheNote:_siCacheNoteText(now),cacheErr:_siCache.err,
-    stale:sources.some(s=>s.state==='stale'),warnings:bad.map(s=>s.words)};
+  const bad=_siOff.on?[]:sources.filter(s=>s.words&&s.state!=='quiet'); // on a saved copy the ages are the copy's, not a sign that a sync stopped
+  return{line,oldest,sources,closesAt:F.readAt.closes||null,status,statusKind,busy:F.busy,pct:F.pct,pending:F.pending,cacheNote:_siCacheNoteText(now),cacheOff:_siOff.on,cacheErr:_siCache.err,
+    stale:!_siOff.on&&sources.some(s=>s.state==='stale'),warnings:bad.map(s=>s.words)};
 }
 function _siFrHtml(){
   const now=_siNow(),v=_siFrView(now);
@@ -1081,6 +1314,10 @@ async function siRefresh(o){
   const F=_siFr,C=_siRetryCtl;
   if(!_siLoaded||!_siLoadAlive())return{skipped:'not-ready'};
   if(F.busy)return{skipped:'busy'};
+  if(_siIsOffline()&&!_siOff.bypass){ // no connection: no read is attempted (it could hang); the saved-copy note already says so
+    if(_siOff.on)return{skipped:'offline'};
+    F.check={ok:false,err:"You're offline",at:_siNow()};_siFrPaint();return{skipped:'offline'};
+  }
   const gen=C.gen;
   F.busy=true;F.fails={};F.check=null;F.histFail='';F.stages=[{id:'meta',w:3}];F.state={meta:'active'};F.pct=0;
   _siFrPaint();
@@ -1096,7 +1333,8 @@ async function siRefresh(o){
   F.state.meta='done';
   const ids=_siFrMoved(meta.stamps,F.seen,F.readAt,_siNow(),id=>!C.running[id]);
   _siCacheForceMoved(meta.stamps,ids,id=>!C.running[id]); // a copy whose stamps cannot be compared is read, never trusted
-  if(!ids.length){finish();F.last={at:_siNow(),read:[]};F.pct=100;_siCacheSettled();_siFrPaint();return{read:[]};}
+  _siOffForce(ids,id=>!C.running[id]); // only a copy older than 24 h (or a part that had no copy) is forced; a younger copy goes through the meta-gated check
+  if(!ids.length){if(_siOff.on)_siOffClear();finish();F.last={at:_siNow(),read:[]};F.pct=100;_siCacheSettled();_siFrPaint();return{read:[]};}
   F.pin=meta.stamps;
   ids.forEach(id=>{F.stages.push({id,w:_siStage(id).w});F.state[id]='active';});
   F.pct=siProgressNext(0,siProgress(F.stages,F.state));_siFrPaint();
@@ -1122,7 +1360,7 @@ async function siRefresh(o){
     if(C.gen!==gen){finish();return{cancelled:true,read:done};}
   }
   finish();
-  F.last={at:_siNow(),read:done.slice()};if(!Object.keys(F.fails).length){F.pct=100;_siCacheSettled();}
+  F.last={at:_siNow(),read:done.slice()};if(!Object.keys(F.fails).length){F.pct=100;_siCacheSettled();if(_siOff.on)_siOffClear();}
   if(done.length)_siFrApply(false);
   _siFrPaint();
   return{read:done,failed:Object.keys(F.fails)};
@@ -1134,7 +1372,7 @@ function _siFrTick(){
   if(!_siLoaded||!_siLoadAlive()){siRetryClearTimers();return;}
   if(_siFrIsHidden())return;               // paused while the tab is hidden; the catch-up on becoming visible does the check
   _siFrPaint();                             // the ages move every minute
-  if(!F.busy&&_siNow()-F.checkedAt>=_SI_FR_AUTO_MS)siRefresh();
+  if(!F.busy&&(_siNow()-F.checkedAt>=_SI_FR_AUTO_MS||(_siOff.on&&!_siIsOffline())))siRefresh(); // on a saved copy, the connection coming back is checked at the next minute tick at the latest
 }
 function _siFrStart(catchUp){
   const C=_siRetryCtl,F=_siFr;
@@ -1148,6 +1386,10 @@ function _siFrStart(catchUp){
   // A page that opened from the device copy is checked against the sync stamps at once (five small meta reads; big reads only for what moved).
   if(_siCache.pending&&_siLoaded&&_siLoadAlive()&&!F.busy)siRefresh();
 }
+// The 'online' listener (registered ONCE at load, guarded): the connection coming back runs the normal check / re-read; see _siOnOnline.
+(function(){
+  if(typeof window!=='undefined'&&window.addEventListener&&!window.__siOnlineWired){window.__siOnlineWired=true;window.addEventListener('online',_siOnOnline);}
+})();
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function _siPktDate(off){return new Date(Date.now()+5*3600000+(off||0)*864e5).toISOString().split('T')[0];} // PKT (UTC+5, no DST) calendar day; ms arithmetic so the browser's own timezone never shifts it
@@ -1232,6 +1474,7 @@ function _siMetaClean(id,d){
 }
 // ONE bounded read per page load. Never rejects, never blocks the loader or its percentage, never hides what it could not read.
 function _siMetaLoad(force){
+  if(_siOffBlocked()){_siMetaState='error';_siOff.sideSkipped.meta=true;return Promise.resolve();} // offline on a saved copy: no read; Retry / the connection returning reads it
   if(_siMetaPromise&&!force)return _siMetaPromise;
   if(typeof getDocs!=='function'||typeof collection!=='function'){_siMetaState='error';return Promise.resolve();}
   _siMetaState='loading';
@@ -1805,6 +2048,7 @@ function _siDailyMovement(){
 // RENDER
 // ═══════════════════════════════════════════════════════════════════
 function renderShopifyDashboard(){
+  if(_siOff.nocopy&&!_siLoaded)return _siOffEmptyHtml(); // offline and nothing (complete) saved here: say so, no spinner, no zeros
   if(_siLoadError)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div><div class="si-ld-lede">⚠ Could not load inventory data</div>'+_siLoaderHTML(false);
   if(!_siLoaded)return'<div class="page-head"><div class="page-title">Inventory Intelligence</div></div>'+_siLoaderHTML(false);
 
@@ -1852,6 +2096,7 @@ window._siSetSeason=function(s){
 
 // The old whole-page Retry: the stage flags keep what loaded, so loadShopifyData (re-entered through showPage) re-reads ONLY what is missing.
 window._siRetry=function(){
+  if(_siOff.nocopy)_siOff.bypass=true; // the browser may claim to be offline when it is not: Retry tries the network anyway
   _siLoaded=false;_siLoadError=null;
   if(typeof window.showPage==='function')window.showPage('shopify-intel');
 };
@@ -2108,7 +2353,7 @@ function _siOverview(m){
     <div class="card-title">Sync Status</div>
     <div style="font-size:13px;color:var(--muted);line-height:2">
       Products: <strong>${_siProducts.length}</strong> variants
-      · Orders: <strong>${_siOrders.length}</strong>
+      · Cancelled orders: <strong>${_siOff.on&&_siOff.missing.indexOf('orders')>=0?'—':_siOrders.length}</strong>
       · Line items: <strong>${_siLineItems.length}</strong>${_siLinesPartial()?' (last '+_SI_WIN_DAYS+' days)':''}
       · Snapshots: ${_siSnapshot?'latest '+(_siSnapshot.date||'—')+(_siSnapFallback?' (stale)':''):'none yet'}
     </div>
@@ -2571,6 +2816,7 @@ function _siRefreshSkuBody(){
 
 // ── Weekly Close ────────────────────────────────────────────────────
 function _siWeeklySection(){
+  if(_siOff.on&&_siOff.missing.indexOf('closes')>=0)return'<div class="empty">Weekly closes are not saved on this device. They load when you are back online.</div>';
   if(!_siWeeklyCloses.length)return'<div class="empty">No weekly close data yet. First close runs Saturday 7am PKT.</div>';
   return _siWeeklyCloses.map(wc=>{
     return`<div class="card">
@@ -2845,7 +3091,7 @@ function _siCleanCategories(rows){
 }
 function _siCleanIsRefunded(li){return String(li&&li.financial_status||'').trim().toLowerCase()==='refunded';}
 // Voided: Shopify's financial_status 'voided' on the line item (copied from the order at sync time),
-// or the order's own cancelled_at (joined via order_id; line items carry no cancelled_at themselves).
+// or the order's own cancelled_at (joined via order_id). Line items mostly do NOT carry cancelled_at (live check: 242 of ~1,573 lines on cancelled orders do), so the cancelled ORDERS are read (only those: where cancelled_at > '')
 function _siCleanIsVoided(li){return String(li&&li.financial_status||'').trim().toLowerCase()==='voided';}
 function _siClean(src){
   const products=(src&&src.products)||[],lineItems=(src&&src.lineItems)||[],orders=(src&&src.orders)||[],snap=src&&src.snapshot;
@@ -3192,6 +3438,14 @@ function _siHistCacheWrite(folds,fullAt){
 function _siHistCacheClear(){try{localStorage.removeItem(_SI_HIST_CACHE_KEY);}catch(_){}}
 // Returns the folds of the newest _SI_HIST_MAX days: from the cache plus only the newer documents when the cache is warm.
 async function _siAxReadFolds(force){
+  if(_siOffBlocked()){ // offline on a saved copy: only the folds already saved on this device (no Firestore read)
+    _siOff.sideSkipped.hist=true;
+    const c=_siHistCacheRead();
+    if(!c)throw Object.assign(new Error("You're offline — the stock history is not saved on this device"),{code:'offline'});
+    const all=c.folds.slice().sort((x,y)=>String(y.date)<String(x.date)?-1:String(y.date)>String(x.date)?1:0).slice(0,_SI_HIST_MAX);
+    _siOff.histOff=true;
+    return{folds:all,fullAt:c.full,read:0,warm:true};
+  }
   const col=collection(db,'shopify_inventory_snapshots');
   const cache=force?null:_siHistCacheRead();
   let last='';if(cache)cache.folds.forEach(f=>{if(String(f.date)>last)last=String(f.date);});
@@ -5641,6 +5895,7 @@ function _siPoClean(id,d){
 }
 // One bounded read per page load. Never rejects, never blocks the loader or its percentage; a failed read is 'error', never an empty list.
 function _siPoLoad(force){
+  if(_siOffBlocked()){_siPoState='error';_siOff.sideSkipped.po=true;_siPoVer++;_siPoMemo=null;return Promise.resolve();} // offline on a saved copy: no read; never an empty list
   if(_siPoPromise&&!force)return _siPoPromise;
   if(typeof getDocs!=='function'||typeof collection!=='function'||typeof query!=='function'||typeof where!=='function'){_siPoState='error';return Promise.resolve();}
   _siPoState='loading';

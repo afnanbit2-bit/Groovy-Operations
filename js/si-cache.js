@@ -6,6 +6,9 @@
 (function () {
   'use strict';
   var DB_NAME = 'groovy-si-cache', STORE = 'records', VERSION = 1, TIMEOUT_MS = 5000;
+  // A write's bound grows with its payload (an array's rows): committing a big record to disk on a phone can take well over 5 s while the
+  // browser is still working normally. Ceiling 30 s so a truly stuck database still cannot hold anything for long.
+  var PUT_BASE_MS = 5000, PUT_PER_ROW_MS = 4, PUT_MAX_MS = 30000;
   var _dbPromise = null, _broken = false;
 
   function _recordKey(uid, key) { return String(uid) + ':' + String(key); }
@@ -19,18 +22,20 @@
   function _idb() {
     try { return (typeof indexedDB !== 'undefined' && indexedDB) ? indexedDB : null; } catch (e) { return null; }
   }
-  function _setErr(e) {
-    try { api.lastError = String((e && (e.name || e.message)) || e || 'error'); } catch (x) {}
+  function _setErr(e, ctx) {
+    var m = '';
+    try { m = String((e && (e.name || e.message)) || e || 'error'); api.lastError = m; } catch (x) {}
+    if (ctx) ctx.err = m; // this call's own reason: api.lastError is shared by every call in flight
   }
   // Resolve with fn's promise, or with `fallback` on throw / reject / timeout. Never rejects.
-  function _bounded(p, fallback) {
+  function _bounded(p, fallback, ms, ctx) {
     return new Promise(function (resolve) {
       var done = false, t = setTimeout(function () {
-        if (!done) { done = true; _setErr('timeout'); resolve(fallback); }
-      }, TIMEOUT_MS);
+        if (!done) { done = true; _setErr('timeout', ctx); if (ctx) ctx.timedOut = true; resolve(fallback); }
+      }, ms || TIMEOUT_MS);
       function fin(v) { if (!done) { done = true; clearTimeout(t); resolve(v); } }
-      try { Promise.resolve(p).then(fin, function (e) { _setErr(e); fin(fallback); }); }
-      catch (e) { _setErr(e); fin(fallback); }
+      try { Promise.resolve(p).then(fin, function (e) { _setErr(e, ctx); fin(fallback); }); }
+      catch (e) { _setErr(e, ctx); fin(fallback); }
     });
   }
   function _open() {
@@ -59,23 +64,23 @@
     return _dbPromise;
   }
   // Run one transaction step; `fn(store, done, fail)`. Resolves value or `fallback`.
-  function _tx(mode, fn, fallback) {
+  function _tx(mode, fn, fallback, ms, ctx) {
     return _bounded(_open().then(function (db) {
       if (!db) return fallback;
       return new Promise(function (resolve) {
         var out = fallback, tx;
-        try { tx = db.transaction(STORE, mode); } catch (e) { _setErr(e); _dbPromise = null; resolve(fallback); return; }
+        try { tx = db.transaction(STORE, mode); } catch (e) { _setErr(e, ctx); _dbPromise = null; resolve(fallback); return; }
         tx.oncomplete = function () { resolve(out); };
         tx.onerror = function (ev) {
           var er = null;
           try { er = (ev && ev.target && ev.target.error) || tx.error; } catch (x) {}
-          _setErr(er); resolve(fallback);
+          _setErr(er, ctx); resolve(fallback);
         };
-        tx.onabort = function () { _setErr(tx.error || 'aborted'); resolve(fallback); };
+        tx.onabort = function () { _setErr(tx.error || 'aborted', ctx); resolve(fallback); };
         try { fn(tx.objectStore(STORE), function (v) { out = v; }); }
-        catch (e) { _setErr(e); try { tx.abort(); } catch (x) {} resolve(fallback); }
+        catch (e) { _setErr(e, ctx); try { tx.abort(); } catch (x) {} resolve(fallback); }
       });
-    }), fallback);
+    }), fallback, ms, ctx);
   }
 
   function available() { return !!_idb() && !_broken; }
@@ -95,11 +100,16 @@
     }, null).then(function (v) { return v || null; }, function () { return null; });
   }
 
-  function _putOnce(rk, uid, key, value, meta) {
+  function _putOnce(rk, uid, key, value, meta, ms, ctx) {
     return _tx('readwrite', function (st, set) {
       st.put({ v: VERSION, uid: uid, key: String(key), value: value, meta: meta || {}, savedAt: Date.now() }, rk);
       set(true);
-    }, false);
+    }, false, ms, ctx);
+  }
+  // The bound for one write: 5 s plus 4 ms a row, never over 30 s; opts.timeoutMs overrides (still capped).
+  function _budget(value, opts) {
+    var ms = opts && opts.timeoutMs > 0 ? opts.timeoutMs : PUT_BASE_MS + (Array.isArray(value) ? value.length * PUT_PER_ROW_MS : 0);
+    return Math.max(TIMEOUT_MS, Math.min(PUT_MAX_MS, ms));
   }
   // Remove this user's single oldest record (other than rk); returns count removed.
   function _evictOldest(uid, rk) {
@@ -119,16 +129,23 @@
     }, 0);
   }
 
-  function put(key, value, meta) {
+  // putDetailed -> Promise<{ok, timedOut, error}>, never rejects. A timeout means "no answer within the bound", NOT "the browser refused":
+  // the commit may still land afterwards, so a caller must not report it as a failure.
+  function putDetailed(key, value, meta, opts) {
     var uid = _uid();
-    if (!uid) return Promise.resolve(false);
-    var rk = _recordKey(uid, key);
-    return _putOnce(rk, uid, key, value, meta).then(function (ok) {
-      if (ok) return true;
-      var q = /quota/i.test(String(api.lastError || ''));
-      if (!q) return false;
-      return _evictOldest(uid, rk).then(function () { return _putOnce(rk, uid, key, value, meta); });
-    }).then(function (ok) { return !!ok; }, function () { return false; });
+    if (!uid) return Promise.resolve({ ok: false, timedOut: false, error: 'not signed in' });
+    var rk = _recordKey(uid, key), ms = _budget(value, opts), c1 = {}, c2 = {};
+    return _putOnce(rk, uid, key, value, meta, ms, c1).then(function (ok) {
+      if (ok) return { ok: true, timedOut: false, error: '' };
+      var q = /quota/i.test(String(c1.err || ''));
+      if (!q) return { ok: false, timedOut: !!c1.timedOut, error: c1.err || '' };
+      return _evictOldest(uid, rk).then(function () { return _putOnce(rk, uid, key, value, meta, ms, c2); }).then(function (ok2) {
+        return { ok: !!ok2, timedOut: !!c2.timedOut, error: ok2 ? '' : (c2.err || c1.err || '') };
+      });
+    }).then(function (r) { return r; }, function () { return { ok: false, timedOut: false, error: 'error' }; });
+  }
+  function put(key, value, meta, opts) {
+    return putDetailed(key, value, meta, opts).then(function (r) { return !!(r && r.ok); }, function () { return false; });
   }
 
   function del(key) {
@@ -153,6 +170,6 @@
   }
 
   var api = { VERSION: VERSION, lastError: '', available: available, get: get, put: put, del: del,
-              clear: clear, bytesApprox: bytesApprox, _recordKey: _recordKey };
+              clear: clear, bytesApprox: bytesApprox, _recordKey: _recordKey, putDetailed: putDetailed, _budget: _budget };
   try { window.siCache = api; } catch (e) {}
 })();
