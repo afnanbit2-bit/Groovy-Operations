@@ -420,6 +420,7 @@ function _phcDialogEl(){
   if(chip&&chip.day)bits.push('planned '+phcDayLabel(chip.day,true));
   if(chip&&chip.master)bits.push('master '+chip.master);
   box.appendChild(phEl('p','phc-dlg-sum',bits.join(' · ')));
+  if(typeof phmkThreadNode==='function'){const th=phmkThreadNode(d.poId,_phcCtx,{repaint:_phcRepaint});if(th)box.appendChild(th);}   // marks thread, read-only
   const lab=phEl('label','phc-dlg-lab',d.mode==='plan'?'Plan for':'Move to');lab.setAttribute('for','phc-dlg-date');
   const inp=phEl('input','phc-dlg-date');inp.id='phc-dlg-date';inp.setAttribute('type','date');inp.value=d.value||'';
   const today=_phcToday();if(today)inp.setAttribute('min',today);

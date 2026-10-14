@@ -754,7 +754,7 @@ function phI18nReviewNotice(doc){
   A('shell.review_chip','اردو زیرِ نظرثانی','اردو زیرِ نظرثانی');
   A('shell.review_note','Urdu wording not yet checked by an Urdu speaker','اردو الفاظ کو ابھی کسی اردو دان نے نہیں دیکھا');
   A('shell.chip_floor','Data entry & cutting','ڈیٹا انٹری اور کٹنگ');
-  A('shell.chip_floor_tip','This account enters PO drafts and records the cut. Planning, Calendar and settings are for the managers.','یہ اکاؤنٹ پی او ڈرافٹ لکھتا ہے اور کٹ درج کرتا ہے۔ پلاننگ، کیلنڈر اور سیٹنگز منیجرز کے لیے ہیں۔');
+  A('shell.chip_floor_tip','This account enters PO drafts and checks fabric on Today\'s Cutting. The cut itself is recorded on the PO page (the classic cutting screen). Planning, Calendar and settings are for the managers.','یہ اکاؤنٹ پی او ڈرافٹ لکھتا ہے اور آج کی کٹنگ میں کپڑا چیک کرتا ہے۔ کٹ خود پی او کے صفحے (پرانی کٹنگ اسکرین) پر درج ہوتا ہے۔ پلاننگ، کیلنڈر اور سیٹنگز منیجرز کے لیے ہیں۔',true);
   A('shell.chip_view_tip','This account can only look.','یہ اکاؤنٹ صرف دیکھ سکتا ہے۔');
   A('shell.ph_queue_blurb','The queue of PO drafts and issued POs, by season, as tiles.','پی او ڈرافٹ اور جاری شدہ پی اوز کی قطار، سیزن کے مطابق ٹائلوں میں۔');
   A('shell.ph_cutting_blurb','The cutting floor: open cut jobs, the checklist, actual cut by size.','کٹنگ فلور: کھلے کٹ جابز، چیک لسٹ، سائز کے مطابق اصل کٹ۔');
@@ -1067,6 +1067,8 @@ function phI18nReviewNotice(doc){
   A('marks.comments_none','No comments yet.','ابھی کوئی تبصرہ نہیں۔');
   A('marks.comments_loading','Loading comments…','تبصرے آ رہے ہیں…');
   A('marks.comments_failed','Comments could not be read: {why}','تبصرے نہیں پڑھ سکے: {why}');
+  A('marks.thread_show','Show all {n} comments','تمام {n} تبصرے دکھائیں',true);
+  A('marks.thread_hide','Hide comments','تبصرے چھپائیں',true);
   A('marks.comments_load','Show comments','تبصرے دکھائیں');
   A('marks.n_comments','{n} comments','{n} تبصرے');
   A('marks.n_comment','{n} comment','{n} تبصرہ');

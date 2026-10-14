@@ -1381,8 +1381,15 @@ function phMarkBadges(marks){
   return out;
 }
 
+/* A PO is ON HOLD when its po_marks row carries a hold. A hold is a note: it takes the PO out of the stuck and delay-attention
+   counts (Monitor, PO Queue) and nothing else (planning and issuing are not blocked). Pure. */
+function phMarkOnHold(row){
+  const m=row&&typeof row==='object'&&row.marks&&typeof row.marks==='object'?row.marks:null;
+  return !!(m&&m.hold&&typeof m.hold==='object');
+}
+
 if(typeof module!=='undefined'&&module.exports){
-  module.exports={PH_VERSION,PH_TZ_OFFSET_MIN,PH_UNITS,PH_SEASON_VALUES,PH_WINTER_MONTHS,PH_SUMMER_MONTHS,PH_SIZE_MODELS,
+  module.exports={phMarkOnHold,PH_VERSION,PH_TZ_OFFSET_MIN,PH_UNITS,PH_SEASON_VALUES,PH_WINTER_MONTHS,PH_SUMMER_MONTHS,PH_SIZE_MODELS,
     PH_WAIST_CODE_PREFIXES,PH_FREE_KEY,PH_REAL_STAGE_ORDER,PH_STAGES,PH_CUT_GATE_PCT,PH_PC_MIN_WIDTH,PH_MASTER_NAME_MAX,
     PH_MAX_HORIZON_DAYS,PH_DEFAULT_SETTINGS,
     phStr,phNum,phWhole,phRound,phUnit,phNorm,phIsDay,phMs,phDay,phDayNum,phDayFromNum,phDayAdd,phDaysBetween,phWeekday,

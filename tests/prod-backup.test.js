@@ -90,7 +90,9 @@ function liveStore(){
     po_cut_jobs:[{id:'PO-1',data:{poId:'PO-1',status:'open',rev:1,plannedCutDate:'2026-10-14',masterName:'Hassan'}}],
     cutting_masters:[{id:'CM-001',data:{name:'Hassan',active:true}}],
     ph_standards:[{id:'GST073',data:{unit:'kg',grossPerPiece:0.42,rev:1}}],
-    ph_settings:[{id:'main',data:{dailyCapacity:400,rev:1}}]
+    ph_settings:[{id:'main',data:{dailyCapacity:400,rev:1}}],
+    ph_article_instructions:[{id:'GST073',data:{code:'GST073',rev:2,sections:[{title:'Wash',text:'cold'}]}}],
+    po_marks:[{id:'PO-1',data:{marks:{priority:'urgent'},rev:1,noteCount:1,lastNote:'hurry'}}]
   };
 }
 
@@ -285,6 +287,8 @@ module.exports=async function(){
     s.ok('the Production Ops collections are in the file with their documents and a fingerprint each (14 Oct 2026)',
       ['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings'].every(c=>bk.collections[c]&&Object.keys(bk.collections[c]).length===1&&bk.summary.counts[c]===1&&typeof bk.summary.hashes[c]==='string')
       &&bk.collections.po_cut_jobs['PO-1'].plannedCutDate==='2026-10-14'&&bk.collections.ph_settings.main.dailyCapacity===400);
+    s.ok('ph_article_instructions and po_marks are in the file with a fingerprint each (19 Oct 2026; their subcollections are not)',
+      ['ph_article_instructions','po_marks'].every(c=>Object.keys(bk.collections[c]).length===1&&bk.summary.counts[c]===1&&typeof bk.summary.hashes[c]==='string')&&bk.collections.po_marks['PO-1'].noteCount===1);
     s.ok('a fingerprint per read collection',Object.keys(bk.summary.counts).every(c=>typeof bk.summary.hashes[c]==='string'&&bk.summary.hashes[c].length>5));
     s.eq('complete when everything was read',bk.summary.complete,true);
     s.eq('a collection that read fine but holds nothing is LISTED as empty',JSON.stringify(bk.summary.empty),'["returns"]');
@@ -470,8 +474,8 @@ module.exports=async function(){
     const list=t.app.run('PB_COLLECTIONS.slice()');
     const owners=['pos','bundles','gatepasses','returns','fabricin','fabric_inventory','fabric_movements','fabric_drawstrings','drawstring_moves','printing_jobs','counters','settings'];
     const more=['gatepass_edit_requests','po_issue_requests','po_edit_requests','po_shortfalls','qc_reports','printing_billing','sla_events','article_recipes','color_library','stock_transfers','bstock_items','bstock_cartons','trim_templates','articles'];
-    const prodOps=['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings'];
-    s.eq('31 collections (26 + the five Production Ops ones, 14 Oct 2026)',list.length,31);
+    const prodOps=['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions','po_marks'];
+    s.eq('33 collections (26 + the seven Production Ops ones)',list.length,33);
     s.ok('the five Production Ops collections are all there (drafts, cut jobs, masters, standards, settings)',prodOps.every(c=>list.indexOf(c)>-1));
     s.ok('the original 12 are all still there',owners.every(c=>list.indexOf(c)>-1));
     s.ok('the 14 added after review are all there',more.every(c=>list.indexOf(c)>-1));
@@ -649,7 +653,7 @@ module.exports=async function(){
     s.ok('…and says it is read-only',/Read-only/.test(html));
     s.ok('…advises running it on a computer',/Run this on a computer/.test(html));
     s.ok('…and says the file is business data that must be kept private',/contains business data and must be kept private/.test(html));
-    s.ok('…and lists the added collections too',t.app.run('PB_COLLECTIONS').length===31&&/articles/.test(html)&&/gatepass_edit_requests/.test(html));
+    s.ok('…and lists the added collections too',t.app.run('PB_COLLECTIONS').length===33&&/articles/.test(html)&&/gatepass_edit_requests/.test(html));
     s.ok('…and carries no literal colour (tokens only)',!/#[0-9a-fA-F]{3,8}\b/.test(html)&&!/rgba?\(/.test(html));
     s.ok('a stored note is NEVER put into markup (a hostile one stays text)',html.indexOf('<img')<0&&html.indexOf('onerror')<0);
     const note=t.app.el('pb-last').textContent;

@@ -204,6 +204,6 @@ function _phiRender(host,ctx){
     if(typeof console!=='undefined')console.warn('[ph-mod-instructions] js/ph-ui.js is not loaded, so the Instructions tab was not registered.');
     return;
   }
-  // after Standards in the rail: register, then move it
+  // an unknown id appends to PH_TABS: this tab lands LAST in the rail (after Settings), not after Standards
   phRegisterTab('instructions',{label:'Instructions',short:'In',render:_phiRender});
 })();

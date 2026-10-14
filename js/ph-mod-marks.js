@@ -22,6 +22,7 @@ let _phmkDraft=null;           // the form state of the open panel: {po, priorit
 let _phmkMsg=null;             // {po, ok, text}
 let _phmkNotes={};             // poId -> {state:'idle'|'loading'|'ok'|'error', rows, text}
 let _phmkBusy=false;
+let _phmkThreadOpen={};        // poId -> true while a READ-ONLY thread is expanded (floor view / dialogs)
 
 function _phmkUser(u){
   if(u!==undefined)return typeof u==='string'?u:'';
@@ -276,4 +277,42 @@ function phmkTilePanel(poId,ctx,manage){
   if(!manage||!phmkCanMark()||_phmkOpen!==poId)return null;
   return phmkPanelNode(poId,ctx);
 }
-function phmkReset(){_phmkOpen=null;_phmkDraft=null;_phmkMsg=null;_phmkNotes={};_phmkBusy=false;}
+// READ-ONLY full comment thread for a PO (the floor view: Today's Cutting cards; Calendar dialog). Everyone who can read po_marks
+// sees it; nothing here writes (no textarea, no button other than show/hide). Returns null when the PO has no comment.
+// ctx.repaint (or opts.repaint) is called after a load so the host redraws.
+function phmkThreadNode(poId,ctx,opts){
+  const row=_phmkRow(poId);
+  const n=row&&typeof row.noteCount==='number'?row.noteCount:0;
+  if(!row||n<1)return null;
+  const rep=function(){const f=(opts&&opts.repaint)||(ctx&&ctx.repaint);if(typeof f==='function')f();};
+  const box=phEl('div','phmk-thread-ro');
+  box.setAttribute('data-phmk-thread',String(poId));
+  const open=!!_phmkThreadOpen[poId];
+  const b=phEl('button','ph-btn phmk-load phmk-thread-btn',phI18nD(open?'marks.thread_hide':'marks.thread_show',{n:n}));
+  b.setAttribute('type','button');b.setAttribute('aria-expanded',open?'true':'false');
+  b.addEventListener('click',function(){
+    _phmkThreadOpen[poId]=!_phmkThreadOpen[poId];
+    if(_phmkThreadOpen[poId]){
+      _phmkLoadNotes(poId,{repaint:rep});
+      rep();
+    }else rep();
+  });
+  box.appendChild(b);
+  if(open){
+    const ns=_phmkNotes[poId]||{state:'idle'};
+    if(ns.state==='loading'||ns.state==='idle')box.appendChild(phEl('p','phmk-note',phI18nD('marks.comments_loading')));
+    else if(ns.state==='error'){const p=phEl('p','phmk-unavail',null);p.setAttribute('role','alert');p.textContent=phI18nStr(phI18nD('marks.comments_failed',{why:ns.text||''}));box.appendChild(p);}
+    else{
+      const ul=phEl('ul','phmk-thread');
+      ns.rows.forEach(function(r){
+        const li=phEl('li','phmk-cmt');
+        const who=phEl('span','phmk-cmt-who',null);who.textContent=(r.byName||r.by||'')+' \u00b7 '+(typeof r.at==='number'?new Date(r.at).toLocaleString('en-GB'):'');
+        const tx=phEl('span','phmk-cmt-text',null);tx.textContent=r.text||'';
+        li.appendChild(who);li.appendChild(tx);ul.appendChild(li);
+      });
+      box.appendChild(ul);
+    }
+  }
+  return box;
+}
+function phmkReset(){_phmkThreadOpen={};_phmkOpen=null;_phmkDraft=null;_phmkMsg=null;_phmkNotes={};_phmkBusy=false;}

@@ -814,6 +814,7 @@ function _phkBuildCard(poId,host,kind){
   body.appendChild(right);
   host.appendChild(head);
   if(typeof phmkSummaryNode==='function'){const ms=phmkSummaryNode(poId);if(ms){host.appendChild(ms);host.classList.add('phmk-card');if(ms.querySelector('.phmk-k-hold'))host.classList.add('phmk-held');}}
+  if(typeof phmkThreadNode==='function'){const th=phmkThreadNode(poId,_phkCtx);if(th)host.appendChild(th);}   // the full thread, read-only (Kashif cannot write)
   host.appendChild(body);
   // managers only: the existing cutting screen
   if(_phkCtx&&_phkCtx.canManage&&entry&&entry.po.state==='ok'){

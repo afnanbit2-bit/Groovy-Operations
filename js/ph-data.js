@@ -282,6 +282,9 @@ function phMarksState(){
   const g=phGet('marks');
   return{ok:g.ok,failed:phLoadFailed('marks'),state:g.state,text:g.text||null,truncated:!!g.truncated};
 }
+// true when the PO carries a hold mark (false when none OR marks were not read: the hold only ever REMOVES a warning
+// when it is positively known).
+function phPoOnHold(poId){return typeof phMarkOnHold==='function'&&phMarkOnHold(phMarkOf(poId));}
 function phMarkOf(poId){
   const g=phGet('marks');
   if(!g.ok||!Array.isArray(g.rows))return null;

@@ -52,7 +52,7 @@ function _phUiCanManage(u){return typeof phCanManage==='function'&&phCanManage(_
 // The top-bar chip. Managers see none (hidden). The cutting floor (Kashif) is NOT view-only: he enters PO
 // drafts and records cuts, so the chip says what his account does; it still cannot plan or change settings.
 const PH_CHIP_FLOOR='Data entry & cutting';   // chip text; its Urdu pair is shell.chip_floor
-const PH_CHIP_FLOOR_TITLE='This account enters PO drafts and records the cut. Planning, Calendar and settings are for the managers.';
+const PH_CHIP_FLOOR_TITLE='This account enters PO drafts and checks fabric on Today\'s Cutting. The cut itself is recorded on the PO page (the classic cutting screen). Planning, Calendar and settings are for the managers.';
 function phChipFor(u){
   const w=_phUiUser(u);
   if(_phUiCanManage(w))return{show:false,text:'',title:''};

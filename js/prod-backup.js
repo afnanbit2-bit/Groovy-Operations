@@ -69,7 +69,11 @@ const PB_COLLECTIONS=['pos','bundles','gatepasses','returns','fabricin','fabric_
   // Requests, approvals and records that sit beside a job (added after review):
   'gatepass_edit_requests','po_issue_requests','po_edit_requests','po_shortfalls','qc_reports','printing_billing','sla_events','article_recipes','color_library','stock_transfers','bstock_items','bstock_cartons','trim_templates','articles',
   // Production Ops (14 Oct 2026): the drafts, cut jobs, cutting masters, consumption standards and settings it keeps
-  'po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings'];
+  'po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings',
+  // Production Ops (18-19 Oct 2026): per-article product instructions and the managers' marks. The comment threads
+  // (po_marks/{id}/notes, pos/{id}/history) are SUBCOLLECTIONS and are NOT in the file: only the parent documents are
+  // (po_marks keeps noteCount and the last comment as a preview).
+  'ph_article_instructions','po_marks'];
 // NOT here on purpose: store_items and store_transactions (the Store's own ledger).
 // By USERNAME, never by role — the same shape as _MA_USERS.
 const _PB_USERS=['afnan','ammar'];

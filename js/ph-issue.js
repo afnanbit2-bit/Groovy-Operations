@@ -352,3 +352,37 @@ async function phPoInstructionsRefresh(poId,opts){
     return{ok:true,poId:poId,fromRev:fromRev,rev:snapOut.instructionsRev,snapshot:snapOut};
   }catch(e){return _phFromError(e);}
 }
+
+/* ── WP3b follow-up (integration 5): the manager-only "Refresh instructions" control on the PO detail page ─────────────
+   js/pos.js renderDetailPage calls window.phPoInstructionsSlot(po) behind a typeof guard. It returns '' for anyone who is not
+   a manager (the button is not drawn; phPoInstructionsRefresh refuses a non-manager again). Two steps: the button shows the
+   revision the PO holds now (0 = none); "Yes, refresh" calls phPoInstructionsRefresh(poId,{expectedRev}). All text is set with
+   textContent after the markup (a PO id is validated against PH_PO_ID_RE first, so it is safe in an attribute). */
+function _phiSlotId(po){const k=po&&(po.fbKey||po.id);return typeof k==='string'&&PH_PO_ID_RE.test(k)?k:null;}
+function _phiSlotRev(po){return po&&typeof po.instructionsRev==='number'&&isFinite(po.instructionsRev)&&po.instructionsRev>=0?Math.floor(po.instructionsRev):0;}
+window.phPoInstructionsSlot=function(po){
+  if(typeof phCanManage!=='function'||phCanManage()!==true)return'';
+  const id=_phiSlotId(po);if(!id)return'';
+  return'<div class="card" id="ph-instr-slot" data-po="'+id+'" style="margin-bottom:12px"><div class="card-title">Product instructions on this PO</div>'
+    +'<div id="ph-instr-slot-body"><div class="info-row"><span class="info-label">Snapshot</span><span id="ph-instr-slot-rev">'+(_phiSlotRev(po)?'revision '+_phiSlotRev(po):'none')+'</span></div>'
+    +'<button class="btn-outline" style="font-size:13px" id="ph-instr-slot-btn" onclick="window.phPoInstructionsAsk(\''+id+'\')">Refresh instructions…</button></div></div>';
+};
+window.phPoInstructionsAsk=function(id){
+  const body=document.getElementById('ph-instr-slot-body');if(!body||!PH_PO_ID_RE.test(String(id)))return false;
+  const po=(typeof allPOs!=='undefined'&&Array.isArray(allPOs))?allPOs.find(function(x){return x&&(x.fbKey===id||x.id===id);}):null;
+  const rev=_phiSlotRev(po);
+  body.innerHTML='<p id="ph-instr-slot-q" style="margin:0 0 8px"></p><button class="btn-outline" style="font-size:13px" id="ph-instr-slot-yes">Yes, refresh</button> <button class="btn-outline" style="font-size:13px" id="ph-instr-slot-no">No</button><p id="ph-instr-slot-msg" role="status" style="margin:8px 0 0"></p>';
+  document.getElementById('ph-instr-slot-q').textContent='Copy the article\'s CURRENT product instructions onto '+id+'? This PO holds '+(rev?'revision '+rev:'no snapshot')+' now. The old snapshot is replaced; the change is recorded in the PO history.';
+  document.getElementById('ph-instr-slot-no').onclick=function(){if(typeof renderDetailPage==='function')renderDetailPage();};
+  document.getElementById('ph-instr-slot-yes').onclick=function(){window.phPoInstructionsDo(id,rev);};
+  return true;
+};
+window.phPoInstructionsDo=async function(id,expectedRev){
+  const msg=document.getElementById('ph-instr-slot-msg'),yes=document.getElementById('ph-instr-slot-yes');
+  if(yes)yes.disabled=true;
+  const r=await phPoInstructionsRefresh(id,{expectedRev:expectedRev});
+  if(r&&r.ok){if(typeof showToast==='function')showToast('Instructions refreshed to revision '+r.rev);if(typeof renderDetailPage==='function')renderDetailPage();return r;}
+  if(msg)msg.textContent='Not refreshed: '+((r&&r.error)||'unknown error');
+  if(yes)yes.disabled=false;
+  return r;
+};

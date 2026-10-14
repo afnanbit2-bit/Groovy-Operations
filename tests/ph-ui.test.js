@@ -150,7 +150,7 @@ async function checks(src){
       T.R('_phUiTab="masters"');T.R('_phUiPaintPanel()');return hit===0;})();
     o["uzaib: Today's Cutting opens for him"]=T.R('phGoTab("cutting")')===true&&/Today's Cutting/.test(T.text(T.panel()));
     o['uzaib: the panel says View only (read-only account)']=/View only/.test(T.text(T.panel()));
-    o['uzaib: the top bar chip is visible and says what his account does (Data entry & cutting), NOT View only']=!/ph-hidden/.test(T.dom.find('ph-tk-chip').className)&&T.dom.find('ph-tk-chip').textContent==='Data entry & cutting'&&!/View only/.test(T.dom.find('ph-tk-chip').textContent)&&/enters PO drafts and records the cut/.test(T.dom.find('ph-tk-chip').getAttribute('title')||'');
+    o['uzaib: the top bar chip is visible and says what his account does (Data entry & cutting), NOT View only']=!/ph-hidden/.test(T.dom.find('ph-tk-chip').className)&&T.dom.find('ph-tk-chip').textContent==='Data entry & cutting'&&!/View only/.test(T.dom.find('ph-tk-chip').textContent)&&/enters PO drafts and checks fabric on Today.s Cutting/.test(T.dom.find('ph-tk-chip').getAttribute('title')||'');
     o['phChipFor: a manager none, the floor Data entry & cutting, anyone else View only']=T.R('phChipFor("mustafa").show')===false&&T.R('phChipFor("afnan").show')===false&&T.R('phChipFor("uzaib").text')==='Data entry & cutting'&&T.R('phChipFor("raees").text')==='View only'&&T.R('phChipFor("").text')==='View only';
     const M=mk('mustafa');await M.show('prod-ops');
     o['a manager: no View only chip (it is hidden in the top bar)']=/ph-hidden/.test(M.dom.find('ph-tk-chip').className)&&!/View only/.test(M.text(M.panel()));

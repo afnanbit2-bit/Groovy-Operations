@@ -180,6 +180,7 @@ function phqTileOf(po,job,x){
     const n=d!==null&&x.today?phDaysBetween(d,x.today):null;
     if(n!==null&&n>=0)tile.age={days:n,basis:'stage',status:'ok',text:n+'d here',key:'queue.age_here',params:{n:n}};
   }
+  if(typeof phPoOnHold==='function'&&phPoOnHold(id)){tile.onHold=true;tile.delay={level:'none',text:'',delayed:false};}   // shown as "On hold" by the marks badge, never as a delay
   return tile;
 }
 

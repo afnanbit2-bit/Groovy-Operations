@@ -232,6 +232,7 @@ function phmBuildModel(inp){
       const g=phDelayGap(ep,undefined,O);
       if(g.state==='overdue'){kind=kind||'delayed';reasons.push(phI18nD('ov.r_planned_passed',{day:_phmDayLabel(g.plannedDay),days:_phmDaysD(g.days)}));}
     }
+    if(kind&&typeof phPoOnHold==='function'&&phPoOnHold(ep.id)){M.heldSkipped=(M.heldSkipped||0)+1;kind=null;}   // a hold takes the PO out of stuck / delayed attention
     if(kind)items.push({kind:kind,ep:ep,age:l.ageDays,text:_phmJoinD(reasons,'ov.join_semi')});
   });
   inProdList.forEach(function(ep){   // a PO already completed is history: nothing can still be done about its cut

@@ -571,6 +571,7 @@ function renderDetailPage(){
   ${_reservedBanner}
   ${_cancelledBanner}
   ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
+  ${typeof window.phPoInstructionsSlot==='function'?window.phPoInstructionsSlot(po):''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <div class="card" style="margin-bottom:0"><div class="card-title">Product</div>
       <div class="info-row"><span class="info-label">Name</span><span style="font-weight:500">${po.name||'—'}</span></div>
