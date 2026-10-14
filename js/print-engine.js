@@ -1641,7 +1641,7 @@ function _renderMoodBoard(doc, data) {
   if (data.ownerName) bits.push(data.ownerName);
   _renderTitleBlock(doc, {
     title: data.boardTitle || 'Untitled board',
-    subtitle: bits.join('  ·  '),
+    subtitle: bits.join(' · '),
     startY: doc.__groovyY
   });
 
@@ -2127,13 +2127,69 @@ function _jobNameRow(doc, k, data, y, colW) {
   return y + 40 + 12;
 }
 /* A boxed handwriting area with n ruled lines; returns the y below it. */
-function _jobWriteBox(doc, k, y, w, title, n, lineH) {
+function _jobWriteBox(doc, k, y, w, title, n, lineH, typed) {
   const h = 16 + n * lineH + 4;
   k.dark(k.LW_ROW); doc.rect(k.L, y, w, h, 'S');
   k.label(title, k.L + 4, y + 11);
   k.dark(k.LW_ROW);
   for (let i = 1; i <= n; i++) doc.line(k.L + 6, y + 16 + i * lineH, k.L + w - 6, y + 16 + i * lineH);
+  _jobTypedOn(doc, y, w, n, lineH, typed);
   return y + h + 12;
+}
+/* ── WP3c: typed product instructions on the job copies ──
+   When the PO carries the instructions snapshot (data.instructions, from the PO's own `instructions` field), its
+   values are printed TYPED on the ruled lines of the existing boxes, in a distinct style (bold, ink-blue, 10pt)
+   so they cannot be mistaken for handwriting. A field with nothing in it prints nothing: its blank lines stay.
+   No snapshot = no typed lines = the page is drawn exactly as before. Only Latin text is ever passed to doc.text:
+   a string holding an Arabic-script letter is dropped (this engine cannot draw Urdu, see Fonts). */
+const _JOB_TYPED_INK = '#1F3A8A', _JOB_TYPED_PT = 10;
+function _jobTypedStr(v, max) {
+  let t = String(v == null ? '' : v).replace(/[\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (/[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(t)) return '';
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+}
+function _jobTypedJoin(parts) { return parts.filter(function (x) { return x; }).join(' · '); }
+function _jobInstr(data) {
+  const i = data && data.instructions;
+  return (i && typeof i === 'object' && !Array.isArray(i)) ? i : null;
+}
+function _jobArr(x) { return Array.isArray(x) ? x : []; }
+/* Lines for a box: kind 'placement' | 'pantone' | 'embroidery'. [] when there is nothing to type. */
+function _jobTypedFor(data, kind) {
+  const i = _jobInstr(data); if (!i) return [];
+  const out = [];
+  if (kind === 'placement') {
+    _jobArr(i.placements).forEach(function (r) {
+      if (!r || typeof r !== 'object') return;
+      const t = _jobTypedJoin([_jobTypedStr(r.side, 40), _jobTypedStr(r.en, 120)]);
+      if (_jobTypedStr(r.en, 120)) out.push(t);
+    });
+  } else if (kind === 'pantone') {
+    _jobArr(i.pantones).forEach(function (r) {
+      if (!r || typeof r !== 'object') return;
+      const code = _jobTypedStr(r.code, 20); if (!code) return;
+      const sys = r.system === 'TCX' ? 'TCX' : (r.system === 'C' ? 'C' : '');
+      out.push(_jobTypedJoin([code + (sys ? ' ' + sys : ''), _jobTypedStr(r.name, 60), _jobTypedStr(r.use, 40)]));
+    });
+  } else if (kind === 'embroidery') {
+    _jobArr(i.embroidery).forEach(function (r) {
+      if (!r || typeof r !== 'object') return;
+      const c = _jobTypedStr(r.candle, 40), sh = _jobTypedStr(r.shade, 40);
+      const t = _jobTypedJoin([_jobTypedStr(r.code, 30), c && 'candle ' + c, sh && 'shade ' + sh, _jobTypedStr(r.position, 40), _jobTypedStr(r.note, 60)]);
+      if (t) out.push(t);
+    });
+  }
+  return out;
+}
+function _jobTypedOn(doc, y, w, n, lineH, typed) {
+  if (!Array.isArray(typed) || !typed.length) return;
+  const rows = typed.length > n ? typed.slice(0, n - 1).concat(['+ ' + (typed.length - (n - 1)) + ' more (see product instructions)']) : typed;
+  _setFont(doc, PRINT_FONTS.bodyRegular, 'bold', _JOB_TYPED_PT, _JOB_TYPED_INK);
+  rows.forEach(function (t, i) {
+    let fit = t;
+    if (doc.getTextWidth(t) > w - 16) fit = String(doc.splitTextToSize(t, w - 24)[0]).replace(/[\s·]+$/, '') + '…';
+    doc.text(fit, 8 + PRINT_LAYOUT.marginLeft, y + 16 + (i + 1) * lineH - 4);
+  });
 }
 /* The product photo in its frame (right column). */
 function _jobPhoto(doc, k, data, ix, top, imgW, bodyH) {
@@ -2194,8 +2250,8 @@ function _renderEmbroideryJob(doc, data) {
   const imgW = 200, gap = 14, colW = W - imgW - gap;
   const top = y;
   y = _jobNameRow(doc, k, data, y, colW);
-  y = _jobWriteBox(doc, k, y, colW, 'PLACEMENT', 3, 24);
-  y = _jobWriteBox(doc, k, y, colW, 'CANDLE / SHADE CODE (thread book)', 5, 24);
+  y = _jobWriteBox(doc, k, y, colW, 'PLACEMENT', 3, 24, _jobTypedFor(data, 'placement'));
+  y = _jobWriteBox(doc, k, y, colW, 'CANDLE / SHADE CODE (thread book)', 5, 24, _jobTypedFor(data, 'embroidery'));
   const bodyH = Math.max(y - top - 12, 200);
   _jobPhoto(doc, k, data, L + colW + gap, top, imgW, bodyH);
   y = top + Math.max(bodyH, y - top - 12) + 14;
@@ -2233,8 +2289,8 @@ function _renderPrintingJob(doc, data) {
   const imgW = 200, gap = 14, colW = W - imgW - gap;
   const top = y;
   y = _jobNameRow(doc, k, data, y, colW);
-  y = _jobWriteBox(doc, k, y, colW, 'PLACEMENT', 3, 24);
-  y = _jobWriteBox(doc, k, y, colW, 'PANTONE CODE', 5, 24);
+  y = _jobWriteBox(doc, k, y, colW, 'PLACEMENT', 3, 24, _jobTypedFor(data, 'placement'));
+  y = _jobWriteBox(doc, k, y, colW, 'PANTONE CODE', 5, 24, _jobTypedFor(data, 'pantone'));
   y = _jobWriteBox(doc, k, y, colW, 'PRINT NAME / DESIGN NAME', 1, 24);
   const bodyH = Math.max(y - top - 12, 200);
   _jobPhoto(doc, k, data, L + colW + gap, top, imgW, bodyH);
@@ -2385,7 +2441,7 @@ function _renderPatternLabel(doc, data) {
     doc.text(nameLines, M, y + 6);
     y += 14 * Math.max(1, nameLines.length);
     _setFont(doc, PRINT_FONTS.bodyRegular, 'normal', 8, grey);
-    doc.text([L.category, L.fit].filter(Boolean).join('  ·  '), M, y + 4);
+    doc.text([L.category, L.fit].filter(Boolean).join(' · '), M, y + 4);
     y = Math.max(y + 12, M + 12 + bh + 8);
     // home + bundle
     doc.setDrawColor(204, 204, 204); doc.setLineWidth(0.5); doc.line(M, y, W - M, y); y += 6;
@@ -2567,7 +2623,7 @@ function _prMaWhen(ms) {
 function _prMaRange(r) {
   r = r || {};
   const span = r.from && r.to ? _prMaDay(r.from) + ' – ' + _prMaDay(r.to) : (r.to ? 'to ' + _prMaDay(r.to) : '');
-  return [r.label, span].filter(Boolean).join('  ·  ');
+  return [r.label, span].filter(Boolean).join(' · ');
 }
 /* Cut to a width with an ellipsis — measured with getTextWidth, never a
    character guess — for every cell that does not wrap. */
@@ -2797,7 +2853,7 @@ function _renderMaLedger(doc, data) {
   _prMaHeader(doc, 'Ledger', a.code, data);
   _prMaTitle(doc, name, [
     _prMaRange(r),
-    (data.filters && data.filters.length) ? 'Filtered — ' + data.filters.join('  ·  ') : '',
+    (data.filters && data.filters.length) ? 'Filtered — ' + data.filters.join(' · ') : '',
     hid ? (hid.mirror ? 'Kept in Store Accounts: its balance is that module’s, and only handovers to and from it are listed here.'
       : (why ? why.charAt(0).toUpperCase() + why.slice(1) + '.' : 'No running balance under this filter.'))
       : (a.normal === 'cr' ? 'Credit' : 'Debit') + '-normal: the balance is in the account’s own sense; a minus sign is a balance on the other side.'
@@ -2849,7 +2905,7 @@ function _renderMaStatementHolder(doc, data) {
   const mirror = !!h.mirror;
   _prMaHeader(doc, 'Holder Statement', h.code, data);
   _prMaTitle(doc, h.name || 'Holder', [
-    [h.person ? 'Held by ' + h.person : '', _prMaRange(r)].filter(Boolean).join('  ·  '),
+    [h.person ? 'Held by ' + h.person : '', _prMaRange(r)].filter(Boolean).join(' · '),
     mirror ? 'Kept in Store Accounts: its balance is that module’s, and only handovers to and from it are listed here.' : ''
   ]);
   _prMaFigures(doc, mirror
@@ -2934,7 +2990,7 @@ function _renderMaStatementParty(doc, data) {
   const dir = data.direct || {};
   const who = p.name || 'this party';
   _prMaHeader(doc, 'Statement of Account', p.code, data);
-  _prMaTitle(doc, p.name || 'Party', [[p.kind, p.code, p.terms, p.phone].filter(Boolean).join('  ·  '), _prMaRange(r)]);
+  _prMaTitle(doc, p.name || 'Party', [[p.kind, p.code, p.terms, p.phone].filter(Boolean).join(' · '), _prMaRange(r)]);
   _prMaFigures(doc, [['Opening', _prMaSide(doc, data.opening)], ['Debits', _prMaRs(doc, t.dr)],
     ['Credits', _prMaRs(doc, t.cr)], ['Closing', _prMaSide(doc, data.closing)]]);
   _prMaNote(doc, 'Cr — Groovy owes ' + who + '. Dr — ' + who + ' owes Groovy. Their account is every bill, payment, advance and opening balance booked against them.');
@@ -3139,7 +3195,7 @@ function _prMaSlipFooter(doc, data) {
   const dt = doc.__groovyDocType || 'Document';
   const rec = data.recorded || {};
   const meta = [rec.by ? 'Recorded by ' + rec.by + (rec.at ? ', ' + _prMaWhen(rec.at) : '') : '',
-    data.printedOn ? 'Printed ' + _prMaDay(data.printedOn) + (data.printedBy ? ' by ' + data.printedBy : '') : ''].filter(Boolean).join('  ·  ');
+    data.printedOn ? 'Printed ' + _prMaDay(data.printedOn) + (data.printedBy ? ' by ' + data.printedBy : '') : ''].filter(Boolean).join(' · ');
   for (let p = 1; p <= total; p++) {
     doc.setPage(p);
     const y = b.H - 20;

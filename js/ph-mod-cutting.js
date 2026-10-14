@@ -571,6 +571,64 @@ function _phkFabricBlock(job,entry){
   return _phkE('div','phk-block',null,kids);
 }
 
+/* ── WP3c: the read-only instruction card (the product instructions the PO was issued with) ───────────────────
+   Read from the PO's own snapshot (po.instructions: pos documents are readable by every signed-in user), never from
+   the product-instructions collection. No edit control exists here for anybody; managers change instructions in their own tab.
+   Three honest states: a snapshot (shown), none saved (said so), the PO could not be read (said, by name). */
+function _phkSwatchHex(p){
+  let hex='';
+  try{if(typeof phPantoneHex==='function'){const libs=typeof _phiLibs==='function'?_phiLibs():undefined;hex=phPantoneHex(p.code,p.system,libs)||'';}}catch(e){}
+  if(!hex&&typeof phHexOk==='function'&&phHexOk(String(p.hex||'')))hex=String(p.hex).trim();
+  return hex&&typeof phHexOk==='function'&&phHexOk(hex)?hex:'';
+}
+function _phkInstrRow(parts,ur,lead){
+  const li=_phkE('li','phk-ins-row');
+  if(lead)li.appendChild(lead);
+  const t=parts.filter(Boolean).join(' · ');
+  if(t)li.appendChild(_phkE('span','phk-ins-t',t));
+  if(ur){const u=_phkE('span','phk-ins-ur',ur);u.setAttribute('lang','ur');u.setAttribute('dir','rtl');li.appendChild(u);}
+  return li;
+}
+function _phkInstrSection(titleKey,rows){
+  if(!rows.length)return null;
+  const ul=_phkE('ul','phk-ins-list',null,rows);
+  return _phkE('div','phk-ins-sec',null,[_phkE('h4','phk-ins-h',phI18nD(titleKey)),ul]);
+}
+// entry = the loaded PO entry ({state:'ok'|'error'|'missing'|'loading', data, text}); returns a node, or null while loading.
+function phkInstructionsCard(entry){
+  const card=_phkE('section','phk-ins');
+  card.setAttribute('data-phk-instructions','1');
+  card.appendChild(_phkE('h3','phk-ins-title',phI18nD('cut.instr_title')));
+  if(!entry||entry.state==='loading')return null;
+  if(entry.state!=='ok'||!entry.data){
+    card.classList.add('phk-ins-bad');
+    card.appendChild(_phkE('p','phk-ins-msg',phI18nD('cut.instr_unread',{why:String(entry.text||'')})));
+    return card;
+  }
+  const raw=entry.data.instructions;
+  const v=raw&&typeof raw==='object'&&!Array.isArray(raw)&&typeof phInstructionsClean==='function'?phInstructionsClean(raw).value:null;
+  if(!v||(typeof phInstructionsEmpty==='function'&&phInstructionsEmpty(v))){
+    card.appendChild(_phkE('p','phk-ins-msg',phI18nD('cut.instr_none')));
+    return card;
+  }
+  const kids=[];
+  const pl=_phkInstrSection('cut.instr_placement',v.placements.map(function(r){return _phkInstrRow([r.side,r.en],r.ur);}));
+  if(pl)kids.push(pl);
+  const pa=_phkInstrSection('cut.instr_pantone',v.pantones.map(function(r){
+    const hex=_phkSwatchHex(r);
+    let sw=null;
+    if(hex){sw=_phkE('i','phk-ins-sw');sw.style.background=hex;sw.setAttribute('aria-hidden','true');}
+    return _phkInstrRow([r.code+' '+r.system,r.name,r.use],'',sw);}));
+  if(pa)kids.push(pa);
+  const em=_phkInstrSection('cut.instr_embroidery',v.embroidery.map(function(r){
+    return _phkInstrRow([r.code,r.candle&&('candle '+r.candle),r.shade&&('shade '+r.shade),r.position,r.note]);}));
+  if(em)kids.push(em);
+  if(v.notes.en||v.notes.ur)kids.push(_phkInstrSection('cut.instr_notes',[_phkInstrRow([v.notes.en],v.notes.ur)]));
+  kids.forEach(function(k){card.appendChild(k);});
+  const rev=typeof entry.data.instructionsRev==='number'?entry.data.instructionsRev:null;
+  if(rev!==null)card.appendChild(_phkE('p','phk-ins-rev',phI18nD('cut.instr_rev',{n:rev})));
+  return card;
+}
 function _phkInfoCol(poId,job,entry){
   const kids=[];
   const po=entry&&entry.po.state==='ok'?entry.po.data:null;
@@ -590,6 +648,8 @@ function _phkInfoCol(poId,job,entry){
   kids.push(_phkFact(phI18nD('cut.planned_cut'),job.plannedCutDate||phI18nD('cut.no_day_set')));
   if(job.note)kids.push(_phkFact(phI18nD('cut.f_note'),job.note));
   kids.push(_phkFabricBlock(job,entry));
+  const ins=phkInstructionsCard(entry?entry.po:null);
+  if(ins)kids.push(ins);
   return _phkE('div','phk-col phk-info',null,kids);
 }
 

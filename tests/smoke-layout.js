@@ -485,7 +485,11 @@ async function _phkFragment(o){
   DATA.po_cut_jobs=[job('PO-001',{masterName:'Hassan With A Long Master Name That Must Wrap Onto Several Lines Instead Of Clipping',note:'Start with the black, keep the navy rolls apart. A long note that must wrap inside the card too.'}),
     job('PO-002',{status:'complete',rollsChecklist:{total:60,verified:10,short:1,missing:50,extra:2,missingCodes:Array.from({length:45},(_,i)=>'JER-180-BLK-0'+(100+i)),extraCodes:['STRAY-ROLL-WITH-A-LONG-CODE-0099-ABCDEFGH','X-2']}}),
     job('PO-003',{plannedCutDate:old}),job('PO-004',{plannedCutDate:old}),job('PO-005',{plannedCutDate:app.run('phDayAdd(phDay(Date.now()),-2)')})];
-  DATA['pos/PO-001']={id:'PO-001',name:'Superman Full Sleeves Tee With A Very Long Article Name That Has To Wrap Properly',code:'GST073',qty:240,sizes:{XS:20,S:40,M:80,L:60,XL:30,'2XL':10},currentStage:'cutting'};
+  DATA['pos/PO-001']={id:'PO-001',name:'Superman Full Sleeves Tee With A Very Long Article Name That Has To Wrap Properly',code:'GST073',qty:240,sizes:{XS:20,S:40,M:80,L:60,XL:30,'2XL':10},currentStage:'cutting',instructionsRev:4,
+    instructions:{placements:[{en:'Left chest, 8 cm below the shoulder seam, centred on the pocket line and never over the seam allowance',ur:'بائیں سینہ، کندھے کی سلائی سے آٹھ سینٹی میٹر نیچے',side:'Front'},{en:'Back neck',ur:'',side:'Back'}],
+      pantones:[{system:'C',code:'485',name:'Bright Red With A Long Colour Name',hex:'#DA291C',use:'logo outline'},{system:'TCX',code:'19-1664',name:'True Red',hex:'#BE2D3B',use:''},{system:'C',code:'1795',name:'Light on white',hex:'#FFFFFF',use:''}],
+      embroidery:[{code:'EMB-12',candle:'C-204',shade:'Navy 3 (thread book page 4, second row from the left)',position:'Left chest',note:'4 cm tall, satin stitch'}],
+      notes:{en:'Match the approved sample. Keep the thread tension loose on the fleece panels and check the first piece before the full run.',ur:'منظور شدہ نمونے کے مطابق بنائیں۔'}}};
   DATA['pos/PO-002']={id:'PO-002',name:'Core Tee',code:'GCT002',qty:120,sizes:{M:60,L:60},currentStage:'cutting'};
   DATA['pos/PO-003']={id:'PO-003',name:'Late Hoodie',code:'GHD011',qty:100,sizes:{M:50,L:50},currentStage:'cutting'};
   DATA['pos/PO-004']={id:'PO-004',name:'Denim Jort',code:'GJO001',qty:90,sizes:{'30':45,'32':45},currentStage:'cutting'};

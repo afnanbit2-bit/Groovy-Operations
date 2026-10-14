@@ -6444,3 +6444,18 @@ textarea.pha-in{width:100%;min-height:72px;font:inherit}
 .phmk-cmt-who{font-size:12px;color:var(--muted)}
 .phmk-cmt-text{font-size:14px;line-height:1.45;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap}
 /* ph-mod-marks END */
+
+/* ph-mod-jobcopy START */
+/* WP3c: the read-only instruction card in Today's Cutting. Tokens only; the swatch colour is a validated #RRGGBB set from script. */
+.phk-ins{margin:12px 0 0;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-card,10px);background:var(--surface-2);color:var(--text)}
+.phk-ins-bad{border-color:var(--accent-urgent);background:var(--accent-urgent-soft)}
+.phk-ins-title{margin:0 0 8px;font-size:15px;font-weight:700;color:var(--text)}
+.phk-ins-h{margin:10px 0 4px;font-size:13px;font-weight:700;color:var(--muted)}
+.phk-ins-list{margin:0;padding:0;list-style:none}
+.phk-ins-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:3px 0;font-size:14px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}
+.phk-ins-t{min-width:0}
+.phk-ins-ur{font-size:16px;min-width:0}
+.phk-ins-sw{display:inline-block;width:18px;height:18px;flex:0 0 18px;border:1px solid var(--border);border-radius:4px}
+.phk-ins-msg{margin:0;font-size:14px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}
+.phk-ins-rev{margin:8px 0 0;font-size:13px;color:var(--muted)}
+/* ph-mod-jobcopy END */

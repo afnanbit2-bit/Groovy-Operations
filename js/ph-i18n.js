@@ -1079,4 +1079,13 @@ function phI18nReviewNotice(doc){
   A('marks.saving','Saving…','محفوظ ہو رہا ہے…');
   A('marks.fail','Could not save: {why}','محفوظ نہیں ہو سکا: {why}');
   A('marks.hold_note','A hold is a note for everyone. It does not change delay or stuck counts.','روکنا سب کے لیے ایک نوٹ ہے۔ اس سے تاخیر یا اٹکے ہوئے کی گنتی نہیں بدلتی۔');
+  /* ── WP3c: the instruction card in Today's Cutting (Urdu wording unreviewed) ── */
+  A('cut.instr_title','Product instructions','پروڈکٹ ہدایات',true);
+  A('cut.instr_none','No saved instructions for this product.','اس پروڈکٹ کی کوئی محفوظ ہدایات نہیں۔',true);
+  A('cut.instr_unread','Instructions unavailable: {why}','ہدایات دستیاب نہیں: {why}',true);
+  A('cut.instr_placement','Placement','جگہ',true);
+  A('cut.instr_pantone','Pantone colours','پینٹون رنگ',true);
+  A('cut.instr_embroidery','Embroidery','کڑھائی',true);
+  A('cut.instr_notes','Notes','نوٹس',true);
+  A('cut.instr_rev','Instructions revision {n} (as issued on this PO)','ہدایات ریویژن {n} (اس پی او کے اجراء کے وقت)',true);
 })();

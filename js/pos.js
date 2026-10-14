@@ -2195,6 +2195,12 @@ window.completeQC=async function(fbKey){
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;}}
 };
 
+// WP3c: the PO's instructions snapshot (from the PO document itself) for the typed boxes. Absent snapshot = {} so the
+// printed data is exactly what it was before; the engine ignores anything that is not a list of maps.
+function _jobInstrData(po){
+  const i=po&&po.instructions;
+  return(i&&typeof i==='object'&&!Array.isArray(i))?{instructions:i}:{};
+}
 // Embroidery job copy: single A4 page, outside the PO's two-page limit. Console-callable
 // (no UI yet). Accepts a PO object or its fbKey.
 window.generateEmbroideryJobPdf=function(poOrKey){
@@ -2204,7 +2210,7 @@ window.generateEmbroideryJobPdf=function(poOrKey){
   return window.printDocument({type:'embroidery-job',filename:`${po.id}-embroidery-job.pdf`,data:{
     documentType:'Embroidery Job',documentNumber:po.id,id:po.id,poNumber:po.id,
     articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||''
-  }});
+  ,..._jobInstrData(po)}});
 };
 
 // Printing job copy (step 2 of 3): same mapping as the embroidery copy; console-callable, no UI.
@@ -2215,7 +2221,7 @@ window.generatePrintingJobPdf=function(poOrKey){
   return window.printDocument({type:'printing-job',filename:`${po.id}-printing-job.pdf`,data:{
     documentType:'Printing Job',documentNumber:po.id,id:po.id,poNumber:po.id,
     articleName:po.name||'',articleCode:po.code||'',productImage:po.imgFront||''
-  }});
+  ,..._jobInstrData(po)}});
 };
 
 // Washing job copy (step 3 of 3). Urdu cannot go through jsPDF (see CLAUDE.md, Print design
