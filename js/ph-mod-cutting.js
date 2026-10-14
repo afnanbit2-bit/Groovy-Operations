@@ -56,6 +56,7 @@ let _phkInflight={};      // poId -> Promise
 let _phkWork={};          // poId -> the checklist work in progress (never saved until Save / Mark complete)
 let _phkOpen={};          // overdue poId -> expanded
 let _phkOverdueAll=false;
+let _phkQ='',_phkQFocus=false,_phkSearchEl=null;   // WP10: the text filter
 let _phkCtx=null;         // the ctx of the last render
 let _phkCards={};         // poId -> {host}
 
@@ -77,6 +78,20 @@ function phkSplitJobs(rows,today){
   out.today.sort(k);
   out.overdue.sort(function(a,b){return a.plannedCutDate<b.plannedCutDate?-1:a.plannedCutDate>b.plannedCutDate?1:k(a,b);});
   return out;
+}
+// WP10: the text filter on the tab (PO number / article / code / master), the PO Queue's pattern. Pure. `po` may be null (not loaded yet): the
+// PO number and the master still match. Every word must appear.
+function phkJobMatches(row,po,q){
+  const words=String(q==null?'':q).toLowerCase().split(/\s+/).filter(Boolean);
+  if(!words.length)return true;
+  const hay=[row&&row.fbKey,row&&row.poId,row&&row.masterName,po&&po.name,po&&po.code,po&&po.fbKey].map(function(x){return String(x==null?'':x).toLowerCase();}).join(' ');
+  return words.every(function(w){return hay.indexOf(w)>-1;});
+}
+function _phkPoDataOf(poId){
+  const e=_phkPO[poId];
+  if(e&&e.po&&e.po.state==='ok'&&e.po.data)return e.po.data;
+  try{if(typeof allPOs!=='undefined'&&Array.isArray(allPOs)){const p=allPOs.filter(function(x){return x&&(x.fbKey===poId||x.id===poId);})[0];if(p)return p;}}catch(x){}
+  return null;
 }
 function phkSizesOf(po){
   const s=po&&po.sizes&&typeof po.sizes==='object'&&!Array.isArray(po.sizes)?po.sizes:{};
@@ -290,7 +305,7 @@ async function _phkReadPo(poId){
   try{
     const snap=await _phkTimed(getDoc(doc(db,'pos',poId)));
     if(_phkFromCache(snap))throw _phkCacheErr();
-    if(!snap||typeof snap.exists!=='function'||!snap.exists())return{state:'missing',data:null,text:'PO '+poId+' was not found in the PO list.'};
+    if(!snap||typeof snap.exists!=='function'||!snap.exists())return{state:'missing',data:null,text:poId+' was not found in the PO list.'};
     return{state:'ok',data:Object.assign({},snap.data()),text:''};
   }catch(e){return{state:'error',data:null,text:_phkErrText('pos/'+poId,e)};}
 }
@@ -959,14 +974,30 @@ function phkRenderTab(host,ctx){
   bar.appendChild(E('span','phk-bar-t',sp.undated?phI18nD('cut.bar_text_undated',{today:_phkPlural(sp.today.length,phI18nD('cut.w_job_one'),phI18nD('cut.w_job_many')),overdue:sp.overdue.length,undated:_phkPlural(sp.undated,phI18nD('cut.w_openjob_one'),phI18nD('cut.w_openjob_many'))}):phI18nD('cut.bar_text',{today:_phkPlural(sp.today.length,phI18nD('cut.w_job_one'),phI18nD('cut.w_job_many')),overdue:sp.overdue.length})));
   bar.appendChild(_phkBtn('ph-btn phk-btn',phI18nD('shell.refresh'),function(){_phkReloadAll();}));
   host.appendChild(bar);
+  // WP10: search / filter (PO number, article, master). The counts in the bar above stay the real ones; only the lists below follow the text.
+  const sr=E('div','phk-search');sr.setAttribute('role','search');
+  const qi=E('input','phk-search-in');qi.setAttribute('type','search');
+  qi.setAttribute('placeholder',phI18nAttr(phI18nD('cut.search_ph')));qi.setAttribute('aria-label',phI18nAttr(phI18nD('cut.search_label')));
+  qi.value=_phkQ;
+  qi.addEventListener('input',function(){_phkQ=qi.value;_phkQFocus=true;ctx.repaint();});
+  sr.appendChild(qi);
+  _phkSearchEl=qi;
+  const fl=function(list){return _phkQ?list.filter(function(r){return phkJobMatches(r,_phkPoDataOf(r.fbKey),_phkQ);}):list;};
+  const todayL=fl(sp.today),overL=fl(sp.overdue);
+  if(_phkQ){
+    const cnt=E('span','phk-search-count',phI18nD('cut.search_count',{n:todayL.length+overL.length,total:sp.today.length+sp.overdue.length}));cnt.setAttribute('role','status');sr.appendChild(cnt);
+    sr.appendChild(_phkBtn('ph-btn phk-btn phk-search-clear',phI18nD('cut.search_clear'),function(){_phkQ='';_phkQFocus=true;ctx.repaint();}));
+  }
+  host.appendChild(sr);
   if(jobs.truncated)host.appendChild(E('p','phk-err',phI18nD('cut.list_cut_limit')));
   // today
   const t=E('section','phk-sec');
   t.appendChild(E('h3','phk-sec-h',phI18nD('cut.todays_jobs')));
   if(!sp.today.length)t.appendChild(E('p','phk-empty',phI18nD('cut.none_today')));
+  else if(!todayL.length)t.appendChild(E('p','phk-empty',phI18nD('cut.search_none')));
   else{
     const g=E('div','phk-grid');
-    sp.today.forEach(function(r){g.appendChild(_phkCardShell(r.fbKey,'today'));});
+    todayL.forEach(function(r){g.appendChild(_phkCardShell(r.fbKey,'today'));});
     t.appendChild(g);
   }
   host.appendChild(t);
@@ -974,14 +1005,16 @@ function phkRenderTab(host,ctx){
   const o=E('section','phk-sec');
   o.appendChild(E('h3','phk-sec-h',phI18nD('cut.overdue_open')));
   if(!sp.overdue.length)o.appendChild(E('p','phk-empty',phI18nD('cut.none_overdue')));
+  else if(!overL.length)o.appendChild(E('p','phk-empty',phI18nD('cut.search_none')));
   else{
-    const shown=_phkOverdueAll?sp.overdue:sp.overdue.slice(0,PHK_OVERDUE_SHOW);
+    const shown=_phkOverdueAll?overL:overL.slice(0,PHK_OVERDUE_SHOW);
     shown.forEach(function(r){o.appendChild(_phkOverdueRow(r));});
-    if(sp.overdue.length>shown.length)o.appendChild(_phkBtn('ph-btn phk-btn',phI18nD('cut.show_all_overdue',{n:sp.overdue.length}),function(){_phkOverdueAll=true;ctx.repaint();}));
+    if(overL.length>shown.length)o.appendChild(_phkBtn('ph-btn phk-btn',phI18nD('cut.show_all_overdue',{n:overL.length}),function(){_phkOverdueAll=true;ctx.repaint();}));
   }
   host.appendChild(o);
   // load the PO and its issue for every card on screen, lazily
   Object.keys(_phkCards).forEach(function(id){if(!_phkPO[id])phkLoadPO(id,false);});
+  if(_phkQFocus&&_phkSearchEl){_phkQFocus=false;try{_phkSearchEl.focus();const L=String(_phkQ).length;if(typeof _phkSearchEl.setSelectionRange==='function')_phkSearchEl.setSelectionRange(L,L);}catch(e){}}
 }
 
 if(typeof phRegisterTab==='function')phRegisterTab('cutting',{render:phkRenderTab});
@@ -992,12 +1025,41 @@ if(typeof phRegisterTab==='function')phRegisterTab('cutting',{render:phkRenderTa
 window.phPoDetailCardSlot=function(po){
   return'<div id="ph-detail-instr" data-ph-detail-instr="1" style="margin-bottom:12px"></div>';
 };
+/* WP10: the PO detail page used to carry TWO instruction cards - this read-only one and, for managers, js/ph-issue.js's "Product instructions on this PO"
+   with the refresh button. They are ONE card now: this one, with the manager's Refresh inside it (a worker reads the same card with no control).
+   pos.js is unchanged: it still calls both slot functions, and the old one now answers ''. The refresh itself (phPoInstructionsAsk / Do, the
+   transaction in ph-issue.js) is untouched; it writes into the element ids built here (#ph-instr-slot-body ...). Built with the DOM only. */
+if(!window.phPoInstructionsSlot||!window.phPoInstructionsSlot.__phMerged){
+  window.phPoInstructionsSlot=function(po){return'';};
+  window.phPoInstructionsSlot.__phMerged=true;
+}
+function _phkDetailRefresh(po){
+  try{
+    if(typeof phCanManage!=='function'||phCanManage()!==true)return null;
+    if(typeof window.phPoInstructionsAsk!=='function')return null;
+    const id=po&&(po.fbKey||po.id);
+    if(typeof id!=='string'||typeof PH_PO_ID_RE==='undefined'||!PH_PO_ID_RE.test(id))return null;
+    const box=_phkE('div','phk-ins-refresh',null,null);
+    box.id='ph-instr-slot';box.setAttribute('data-po',id);
+    const body=_phkE('div','phk-ins-refresh-body',null,null);
+    body.id='ph-instr-slot-body';
+    const btn=_phkE('button','btn-outline phk-ins-refresh-btn',phI18nD('cut.instr_refresh'));
+    btn.id='ph-instr-slot-btn';btn.setAttribute('type','button');
+    btn.addEventListener('click',function(){window.phPoInstructionsAsk(id);});
+    body.appendChild(btn);box.appendChild(body);
+    return box;
+  }catch(e){return null;}
+}
 window.phPoDetailCardFill=function(po){
   try{
     const host=document.getElementById('ph-detail-instr');if(!host)return false;
     while(host.firstChild)host.removeChild(host.firstChild);
     const card=phkInstructionsCard({state:'ok',data:po&&typeof po==='object'?po:{}},{strict:true});
-    if(card)host.appendChild(card);
+    if(card){
+      const rf=_phkDetailRefresh(po);   // WP10: ONE card; a manager's refresh control lives inside it
+      if(rf)card.appendChild(rf);
+      host.appendChild(card);
+    }
     return !!card;
   }catch(e){return false;}
 };

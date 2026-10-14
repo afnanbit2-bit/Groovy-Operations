@@ -219,6 +219,14 @@ function phcDayInfo(model,S,day){
 let _phcView='month',_phcAnchor=null,_phcMsg=null,_phcBusy=false,_phcDrag=null,_phcDialog=null,_phcCtx=null,_phcLast=null;
 let _phcJustDragged=false,_phcCells={},_phcChipEls={},_phcFocusPo='',_phcMsgEl=null,_phcEscWired=false;
 
+let _phcQ='',_phcQFocus=false,_phcSearchEl=null;       // WP10: the text filter (PO number / article / code / master); the load figures never follow it
+// Pure: does a chip (or a tray item) match the filter text? Every word must appear in the PO, article, code or master. Empty text matches everything.
+function phcChipMatches(c,q){
+  const words=String(q==null?'':q).toLowerCase().split(/\s+/).filter(Boolean);
+  if(!words.length)return true;
+  const hay=[c&&c.poId,c&&c.article,c&&c.code,c&&c.master,c&&c.po&&c.po.code,c&&c.po&&c.po.name,c&&c.job&&c.job.masterName].map(function(x){return String(x==null?'':x).toLowerCase();}).join(' ');
+  return words.every(function(w){return hay.indexOf(w)>-1;});
+}
 function _phcToday(){return phDay(Date.now());}
 function _phcIsPhone(){try{return typeof window!=='undefined'&&typeof window.matchMedia==='function'&&window.matchMedia(PH_CAL_PHONE_QUERY).matches===true;}catch(e){return false;}}
 function _phcIsOwner(){return typeof phIsOwner==='function'&&_phcCtx&&phIsOwner(_phcCtx.user)===true;}
@@ -387,7 +395,11 @@ function _phcOpenDialog(poId,mode){
   if(!ctx.canManage){_phcSay('info','View only: only the Production Ops managers can plan cutting.');_phcRepaint();return;}
   if(lock){_phcSay('bad',poId+': '+lock);_phcRepaint();return;}
   let value=job&&phIsDay(job.plannedCutDate)?job.plannedCutDate:null;
-  if(!value){const n=phWorkdayNext(_phcToday(),phSettingsNow());value=n||_phcToday();}
+  if(!value){   // WP10: default to the next working day that still has ROOM for this PO (not just the next working day)
+    const S=phSettingsNow(),m=_phcLast;
+    const n=phNextDayWithRoom({from:_phcToday(),units:phcUnitsOf(po),settings:S,load:function(d){return m?phcDayInfo(m,S,d).planned:0;}});
+    value=n||phWorkdayNext(_phcToday(),S)||_phcToday();
+  }
   _phcDialog={poId:poId,mode:mode,value:value,error:null,focused:false};
   _phcMsg=null;
   _phcRepaint();
@@ -420,6 +432,7 @@ function _phcDialogEl(){
   if(chip&&chip.day)bits.push('planned '+phcDayLabel(chip.day,true));
   if(chip&&chip.master)bits.push('master '+chip.master);
   box.appendChild(phEl('p','phc-dlg-sum',bits.join(' · ')));
+  if(typeof phmkSummaryNode==='function'){const ms=phmkSummaryNode(d.poId);if(ms)box.appendChild(ms);}   // WP10: the chip shows glyphs only; the full marks (hold reason, text mark) are here
   if(typeof phmkThreadNode==='function'){const th=phmkThreadNode(d.poId,_phcCtx,{repaint:_phcRepaint});if(th)box.appendChild(th);}   // marks thread, read-only
   const lab=phEl('label','phc-dlg-lab',d.mode==='plan'?'Plan for':'Move to');lab.setAttribute('for','phc-dlg-date');
   const inp=phEl('input','phc-dlg-date');inp.id='phc-dlg-date';inp.setAttribute('type','date');inp.value=d.value||'';
@@ -476,7 +489,8 @@ function _phcChipEl(c,isTray){
   if(isTray&&c.requested)tags.appendChild(phEl('span','phc-tag','Wanted '+phcDayLabel(c.requested)));
   if(typeof phmkApply==='function')phmkApply(b,c.poId,{compact:true});
   if(tags.firstChild)b.appendChild(tags);
-  const full=c.poId+', '+(c.article||'article not loaded')+', '+(c.units!==null&&c.units!==undefined?c.units+' pieces':'quantity not known')+(isTray?', not planned yet':(c.master?', master '+c.master:', no master')+', planned '+phcDayLabel(c.day,true))+(c.lock?'. '+c.lock:'')+(c.spill?'. '+c.spill:'');
+  const mkTxt=typeof phmkTextOf==='function'?phmkTextOf(c.poId):'';
+  const full=c.poId+', '+(c.article||'article not loaded')+', '+(c.units!==null&&c.units!==undefined?c.units+' pieces':'quantity not known')+(isTray?', not planned yet':(c.master?', master '+c.master:', no master')+', planned '+phcDayLabel(c.day,true))+(c.lock?'. '+c.lock:'')+(c.spill?'. '+c.spill:'')+(mkTxt?'. Marks: '+mkTxt:'');
   b.setAttribute('aria-label',full+(canDrag?'. Press Enter for the Move menu.':''));
   b.setAttribute('title',full);
   if(c.lock)b.setAttribute('aria-disabled','true');
@@ -516,11 +530,12 @@ function _phcCellEl(model,S,day,range,view,today){
   cell.appendChild(head);
   if(info.chips.length||info.planned)cell.appendChild(_phcLoadEl(info));
   const list=phEl('div','phc-chips');
-  const lim=view==='month'?PH_CAL_MONTH_CHIPS:info.chips.length;
-  info.chips.slice(0,lim).forEach(function(c){list.appendChild(_phcChipEl(c,false));});
-  if(info.chips.length>lim){
-    const more=_phcBtn('phc-more','+'+(info.chips.length-lim)+' more',function(){_phcView='week';_phcAnchor=day;_phcRepaint();});
-    more.setAttribute('aria-label',(info.chips.length-lim)+' more jobs on '+phcDayLabel(day,true)+': open the week');
+  const shown=_phcQ?info.chips.filter(function(c){return phcChipMatches(c,_phcQ);}):info.chips;
+  const lim=view==='month'?PH_CAL_MONTH_CHIPS:shown.length;
+  shown.slice(0,lim).forEach(function(c){list.appendChild(_phcChipEl(c,false));});
+  if(shown.length>lim){
+    const more=_phcBtn('phc-more','+'+(shown.length-lim)+' more',function(){_phcView='week';_phcAnchor=day;_phcRepaint();});
+    more.setAttribute('aria-label',(shown.length-lim)+' more jobs on '+phcDayLabel(day,true)+': open the week');
     list.appendChild(more);
   }
   cell.appendChild(list);
@@ -539,8 +554,10 @@ function _phcTodayCard(model,today){
   const card=phEl('section','ph-card phc-card');
   card.appendChild(phEl('h3','ph-card-title','Today in cutting · '+phcDayLabel(today,true)));
   const ul=phEl('ul','phc-today-list');
+  const tc=_phcQ?model.todayChips.filter(function(c){return phcChipMatches(c,_phcQ);}):model.todayChips;
   if(!model.todayChips.length)ul.appendChild(phEl('li','phc-empty','Nothing is planned for today.'));
-  model.todayChips.forEach(function(c){
+  else if(!tc.length)ul.appendChild(phEl('li','phc-empty','No job planned for today matches the search.'));
+  tc.forEach(function(c){
     ul.appendChild(phEl('li','phc-today-row',null,[
       phEl('span','phc-chip-po',c.poId),
       phEl('span','phc-today-art',(c.article||'(PO not loaded)')+' · '+(c.units!==null?c.units+' pcs':'qty ?')+' · '+(c.master||'no master')+' · '+c.status)
@@ -559,11 +576,13 @@ function _phcTrayCard(model,posList){
     return card;
   }
   card.appendChild(phEl('p','phc-sub','Released POs still waiting to be cut, with no planned date. Reserved POs are not listed. '+_phcMoveHow(true)));
+  const trayShown=_phcQ?model.tray.filter(function(t){return phcChipMatches(t,_phcQ);}):model.tray;
   if(!model.tray.length)card.appendChild(phEl('p','phc-empty','Every released PO waiting to be cut has a planned date.'));
+  else if(!trayShown.length)card.appendChild(phEl('p','phc-empty','No unplanned PO matches the search.'));
   const list=phEl('div','phc-tray');
-  model.tray.slice(0,PH_CAL_TRAY_MAX).forEach(function(t){list.appendChild(_phcChipEl(t,true));});
+  trayShown.slice(0,PH_CAL_TRAY_MAX).forEach(function(t){list.appendChild(_phcChipEl(t,true));});
   card.appendChild(list);
-  if(model.tray.length>PH_CAL_TRAY_MAX)card.appendChild(phEl('p','phc-sub','and '+(model.tray.length-PH_CAL_TRAY_MAX)+' more (the first '+PH_CAL_TRAY_MAX+' are shown).'));
+  if(trayShown.length>PH_CAL_TRAY_MAX)card.appendChild(phEl('p','phc-sub','and '+(trayShown.length-PH_CAL_TRAY_MAX)+' more (the first '+PH_CAL_TRAY_MAX+' are shown).'));
   return card;
 }
 
@@ -624,6 +643,21 @@ function phcRender(host,ctx){
     bar.appendChild(tog);
   }
   wrap.appendChild(bar);
+  // WP10: search / filter, the PO Queue's pattern (a text box; the chips that do not match are left out of the cells, the tray and today's list;
+  // the load figures still count every job). Text only: the value is compared, never inserted as markup.
+  const sr=phEl('div','phc-search');sr.setAttribute('role','search');
+  const qi=phEl('input','phc-search-in');qi.setAttribute('type','search');qi.setAttribute('placeholder','Search PO, article or master');qi.setAttribute('aria-label','Search the calendar by PO number, article or master');
+  qi.value=_phcQ;
+  qi.addEventListener('input',function(){_phcQ=qi.value;_phcQFocus=true;_phcRepaint();});
+  sr.appendChild(qi);
+  if(_phcQ){
+    const total=model.chips.length+model.tray.length;
+    const hit=model.chips.filter(function(c){return phcChipMatches(c,_phcQ);}).length+model.tray.filter(function(c){return phcChipMatches(c,_phcQ);}).length;
+    const cnt=phEl('span','phc-search-count',hit+' of '+total+' match');cnt.setAttribute('role','status');sr.appendChild(cnt);
+    sr.appendChild(_phcBtn('phc-btn phc-search-clear','Clear',function(){_phcQ='';_phcQFocus=true;_phcRepaint();}));
+  }
+  wrap.appendChild(sr);
+  _phcSearchEl=qi;
   const grid=phEl('div','phc-grid '+view);
   grid.setAttribute('role','group');grid.setAttribute('aria-label','Planned cuts, '+range.label);
   const wds=phEl('div','phc-wds');wds.setAttribute('aria-hidden','true');
@@ -636,6 +670,7 @@ function phcRender(host,ctx){
   if(_phcDialog)wrap.appendChild(_phcDialogEl());
   // focus: the dialog's date field when it opens, else back on the chip that was just used
   try{
+    if(_phcQFocus&&!_phcDialog&&_phcSearchEl){_phcQFocus=false;_phcSearchEl.focus();const L=String(_phcQ).length;if(typeof _phcSearchEl.setSelectionRange==='function')_phcSearchEl.setSelectionRange(L,L);return;}
     if(_phcDialog&&_phcDialog.inputEl&&!_phcDialog.focused){_phcDialog.focused=true;_phcDialog.inputEl.focus();}
     else if(_phcFocusPo&&!_phcDialog){const el=_phcChipEls[_phcFocusPo]||_phcChipEls[_phcFocusPo+'#t'];if(el&&typeof el.focus==='function')el.focus();}
   }catch(e){}

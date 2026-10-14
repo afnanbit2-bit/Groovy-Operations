@@ -344,6 +344,10 @@ async function checks(src){
     o['plan: opens a modal dialog on <body> (above the rail), titled with the PO']=!!dlg&&dlg.parentNode.parentNode===T.dom.body&&/PO-101/.test(T.text(dlg))&&dlg.getAttribute('aria-modal')==='true';
     o['plan: the master list offers active masters only, plus "No master"']=(()=>{const sel=T.byClass('phq-d-master',dlg)[0];const o2=T.q(sel,n=>n.tagName==='OPTION').map(n=>T.text(n));return o2.join()==='— No master —,Hassan,Alam';})();
     const before=T.log.writes.length;
+    // WP10: a PO with no plan now opens on the next working day with room (not blank); clearing it back to blank is "nothing changed"
+    const day0=T.byClass('phq-d-day',dlg)[0];
+    o['plan (WP10): the day field opens on a real day with room, not blank']=/^2026-\d\d-\d\d$/.test(day0.value);
+    day0.value='';
     T.dom.click(T.byClass('phq-d-save',dlg)[0]);await settle(30);
     o['plan: saving with nothing changed writes nothing and says so']=T.log.writes.length===before&&/Nothing changed/.test(T.text(dlg));
     const day=T.byClass('phq-d-day',dlg)[0];day.value='2026-10-15';
@@ -460,7 +464,7 @@ async function checks(src){
     o['uzaib: the shell lists the PO Queue tab for him (registered roles = the whole audience)']=T.R('phTabsFor("uzaib").map(t=>t.id).indexOf("queue")')>=0;
     o['uzaib: he still has no other manager tab (Calendar, Monitor, Masters, Settings stay hidden)']=T.R('phTabsFor("uzaib").map(t=>t.id).join()')==='overview,queue,cutting';
     o['uzaib: the tab opens on DRAFTS, and phDraftsPanel receives his ctx (canManage false)']=/DRAFTS PANEL for uzaib/.test(T.text(T.panel()))&&T.ctx.__drafts.length>=1&&T.ctx.__drafts[0].canManage===false&&T.tiles().length===0;
-    o['uzaib: the tab says View only for the board']=/View only/.test(T.text(T.panel()))&&/cannot plan or move a PO/.test(T.text(T.panel()));
+    o['uzaib: the tab says he cannot plan (the blurb); WP10 drew no per-page View only chip for him']=!/View only/.test(T.text(T.panel()))&&/cannot plan or move a PO/.test(T.text(T.panel()));
     T.dom.click(T.q(T.panel(),n=>n.getAttribute('data-sub')==='board')[0]);await settle(80);
     o['uzaib: the read-only board shows the tiles']=T.tiles().length>=7&&!!T.tile('PO-102')&&/Cut 9 Oct · Hassan/.test(T.text(T.tile('PO-102')));
     o['uzaib: NO Plan cut / Change plan button and NO Force-advance button anywhere on the board']=!T.btn(T.panel(),/Plan cut|Change plan|Force-advance/);

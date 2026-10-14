@@ -246,8 +246,29 @@ function phmBuildModel(inp){
   items.sort(function(a,b){return(PHM_KIND_RANK[b.kind]-PHM_KIND_RANK[a.kind])||(b.age-a.age)||(a.ep.id<b.ep.id?-1:a.ep.id>b.ep.id?1:0);});
   const attRows=items.map(function(it){return _phmRow(it.ep,it.text,{kind:it.kind,kindLabel:PHM_KIND_LABEL[it.kind]});});
   const nStuck=items.filter(function(i){return i.kind==='stuck';}).length,nDelayed=items.filter(function(i){return i.kind==='delayed';}).length,nGate=items.filter(function(i){return i.kind==='overgate';}).length;
+  /* WP10: POs a manager put ON HOLD (and POs marked urgent / high that are not on hold) get their own lines in Needs attention, with the reason and how long ago
+     the mark was last saved. A hold still removes a PO from the stuck / delayed counts above; it is shown here instead of vanishing. Marks unread = no line. */
+  const heldRows=[],markedRows=[];
+  if(typeof phMarkOf==='function'&&typeof phMarksState==='function'&&phMarksState().ok){
+    eps.filter(function(e){return inProd(e)||stageOf(e)==='reserved';}).forEach(function(ep){
+      const row=phMarkOf(ep.id),mk=row&&_phmObj(row.marks)?row.marks:null;
+      if(!mk)return;
+      const upd=typeof row.updatedAt==='number'&&isFinite(row.updatedAt)?row.updatedAt:null;
+      const days=upd!==null?phDaysBetween(phDay(upd),today):null;
+      const age=days===null||days<=0?phI18nD('ov.hold_age_today'):phI18nD(days===1?'ov.hold_age_day':'ov.hold_age_days',{n:days});
+      if(_phmObj(mk.hold)){
+        const pri=mk.priority==='urgent'||mk.priority==='high'?phI18nD(mk.priority==='urgent'?'marks.b_urgent':'marks.b_high'):null;
+        const why=phStr(mk.hold.reason).trim()||phI18nD('ov.hold_no_reason');
+        heldRows.push(_phmRow(ep,phI18nD(pri?'ov.r_hold_pri':'ov.r_hold',{why:why,age:age,pri:pri||''}),{kind:'hold',kindLabel:phI18nD('ov.k_hold'),age:days===null?-1:days}));
+      }else if(mk.priority==='urgent'||mk.priority==='high'){
+        markedRows.push(_phmRow(ep,phI18nD('ov.r_marked',{pri:phI18nD(mk.priority==='urgent'?'marks.b_urgent':'marks.b_high'),age:age}),{kind:'marked',kindLabel:phI18nD(mk.priority==='urgent'?'marks.b_urgent':'marks.b_high'),age:days===null?-1:days}));
+      }
+    });
+    const byAge=function(a,b){return(b.age-a.age)||(a.id<b.id?-1:a.id>b.id?1:0);};
+    heldRows.sort(byAge);markedRows.sort(byAge);
+  }
   M.stuckBasis=basis;
-  M.attention={items:items,rows:attRows,count:items.length,counts:{stuck:nStuck,delayed:nDelayed,overgate:nGate},unavailable:null,noStart:noStart.length,
+  M.attention={held:heldRows,marked:markedRows,items:items,rows:attRows,count:items.length,counts:{stuck:nStuck,delayed:nDelayed,overgate:nGate},unavailable:null,noStart:noStart.length,
     note:jobsOk?'':phI18nD('ov.jobs_unread_delays')};
   {
     const stuckRows=attRows.filter(function(r){return r.kind==='stuck';});
@@ -575,8 +596,7 @@ function _phmAttentionCard(M,host,opts){
   }
   const rows=M.attention.rows;
   if(!rows.length)card.appendChild(E('p','ph-note',M.attention.noStart?phI18nD('ov.attention_none_judged'):phI18nD('ov.attention_none')));
-  const ul=E('ul','phm-att-list');
-  rows.slice(0,o.limit||rows.length).forEach(function(r){
+  const mkRow=function(r){
     const li=E('li','phm-att-row');
     const top=E('div','phm-row-top');
     top.appendChild(E('span','ph-chip phm-kind phm-kind-'+r.kind,r.kindLabel));
@@ -587,9 +607,23 @@ function _phmAttentionCard(M,host,opts){
     li.appendChild(E('div','phm-row-detail',r.detail));
     if(typeof phmkApply==='function')phmkApply(li,r.fbKey||r.id);
     if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));
-    ul.appendChild(li);
-  });
+    return li;
+  };
+  const ul=E('ul','phm-att-list');
+  rows.slice(0,o.limit||rows.length).forEach(function(r){ul.appendChild(mkRow(r));});
   card.appendChild(ul);
+  [['held','ov.t_on_hold','hold'],['marked','ov.t_marked','marked']].forEach(function(g){
+    const list=M.attention[g[0]];
+    if(!list||!list.length)return;
+    const sec=E('div','phm-att-group phm-att-group-'+g[2]);
+    sec.setAttribute('data-att-group',g[2]);
+    sec.appendChild(E('h4','phm-att-gh',phI18nD(g[1],{n:list.length})));
+    const gl=E('ul','phm-att-list');
+    list.slice(0,o.limit||list.length).forEach(function(r){gl.appendChild(mkRow(r));});
+    sec.appendChild(gl);
+    if(list.length>(o.limit||list.length))sec.appendChild(E('p','phm-note-soft',phI18nD('ov.group_more',{n:list.length-(o.limit||list.length)})));
+    card.appendChild(sec);
+  });
   if(rows.length>(o.limit||rows.length)){
     const b=E('button','ph-btn phm-more',phI18nD('ov.show_all',{n:rows.length}));b.setAttribute('type','button');
     b.addEventListener('click',function(){phmOpenDrawer(host,{title:phI18nD('ov.t_attention'),rows:rows,note:M.tiles.attention?M.tiles.attention.cap:'',openable:true},b);});
@@ -625,7 +659,7 @@ function _phmInputs(ctx,range){
 }
 function _phmHead(ctx,title,blurb,extra){
   const E=phEl,h=E('header','ph-head'),row=E('div','ph-head-row',null,[E('h2','ph-title',title)]);
-  if(ctx.readOnly)row.appendChild(E('span','ph-chip ph-chip-view',phI18nD('shell.view_only')));
+  if(typeof phViewChipOn==='function'?phViewChipOn(ctx):ctx.readOnly)row.appendChild(E('span','ph-chip ph-chip-view',phI18nD('shell.view_only')));
   if(extra)row.appendChild(extra);
   h.appendChild(row);
   if(blurb)h.appendChild(E('p','ph-blurb',blurb));
@@ -670,8 +704,43 @@ function _phmSourcesCard(ctx){
   d.appendChild(strip);
   return d;
 }
+// WP10: the cutting floor's Overview is SHORT - today's jobs and the overdue ones, and one button to Today's Cutting. He lands on that tab; this
+// page is only the summary behind it. It reads only the cut-job stage the shell already loaded (no pos read, no counts of stages he cannot open).
+function _phmFloorOverview(host,ctx){
+  const E=phEl;
+  host.appendChild(_phmHead(ctx,phI18nD('shell.tab_overview'),phI18nD('ov.floor_blurb')));
+  const chip=typeof phChipFor==='function'?phChipFor(ctx.user):null;
+  if(chip&&chip.show){   // the top-bar chip is hidden on a phone: its words live here instead
+    const c=E('p','phm-floor-role',null);
+    c.appendChild(E('span','ph-chip ph-chip-view',chip.key?phI18nD(chip.key):chip.text));
+    host.appendChild(c);
+  }
+  const jobs=ctx.get('jobs');
+  const card=E('section','ph-card phm-floor');
+  if(!jobs||!jobs.ok){
+    card.classList.add('ph-card-err');card.setAttribute('role','alert');
+    card.appendChild(E('h3','ph-card-title',phI18nD('cut.jobs_failed')));
+    card.appendChild(E('p','ph-note',(jobs&&jobs.text)?phI18nErr(jobs.text):phI18nD('cut.jobs_not_loaded')));
+  }else{
+    const today=typeof phkToday==='function'?phkToday():phDay(Date.now());
+    const sp=typeof phkSplitJobs==='function'?phkSplitJobs(jobs.rows,today):{today:[],overdue:[]};
+    const w=function(n,one,many){return phI18nD('cut.n_w',{n:n,w:phI18nD(n===1?one:many)});};
+    const line=E('p','phm-floor-line',phI18nD('cut.bar_text',{today:w(sp.today.length,'cut.w_job_one','cut.w_job_many'),overdue:sp.overdue.length}));
+    line.setAttribute('data-floor-line','1');
+    card.appendChild(line);
+    if(sp.overdue.length)card.appendChild(E('p','phm-floor-late',phI18nD('ov.floor_overdue_note')));
+  }
+  const go=E('button','ph-btn ph-btn-primary phm-floor-go',phI18nD('ov.floor_open'));
+  go.setAttribute('type','button');
+  go.addEventListener('click',function(){if(typeof phGoTab==='function')phGoTab('cutting');});
+  card.appendChild(go);
+  host.appendChild(card);
+  // the Data health card stays on his Overview (an earlier owner decision: he sees the total, never the "Open the checks" button)
+  if(typeof phhOverviewCard==='function'){try{host.appendChild(phhOverviewCard(ctx));}catch(e){}}
+}
 function _phmRenderOverview(host,ctx){
   const E=phEl;
+  if(!ctx.canManage)return _phmFloorOverview(host,ctx);
   _phmEnsure(ctx,false);
   host.appendChild(_phmHead(ctx,phI18nD('shell.tab_overview'),phI18nD('ov.blurb')));
   if(_phmPos.state==='idle'||_phmPos.state==='loading'){host.appendChild(_phmSkeleton());host.appendChild(_phmSourcesCard(ctx));return;}

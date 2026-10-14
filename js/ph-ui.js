@@ -92,12 +92,27 @@ function _phUiTabAllowed(t,u){
   try{return typeof t.roles==='function'?t.roles(_phUiUser(u))===true:_phUiCanManage(u);}catch(e){return false;}
 }
 function phTabsFor(u){return PH_TABS.filter(function(t){return _phUiTabAllowed(t,u);});}
-function phDefaultTab(u){const l=phTabsFor(u);return l.length?l[0]:null;}
+// WP10: the cutting floor (Kashif, login uzaib) lands on Today's Cutting - that is his job - and his Overview is a short "today" view.
+// Managers keep Overview (the first tab) as the default. Anyone else on the audience gets the first tab they may open.
+function phDefaultTab(u){
+  const l=phTabsFor(u);
+  if(!l.length)return null;
+  if(!_phUiCanManage(u)){
+    for(let i=0;i<l.length;i++)if(l[i].id==='cutting')return l[i];
+  }
+  return l[0];
+}
 // The tab to show for an id: that tab when this person may have it, else their default. null = no tabs at all.
 function phResolveTab(id,u){
   const l=phTabsFor(u);
   for(let i=0;i<l.length;i++)if(l[i].id===id)return l[i];
-  return l.length?l[0]:null;
+  return phDefaultTab(u);
+}
+// WP10: the per-page "View only" chip is for someone who can only look. The cutting floor is NOT that (the top-bar chip says what his account
+// does), so the pages draw no chip for him. ctx = the tab context ({readOnly,user}).
+function phViewChipOn(ctx){
+  if(!ctx||!ctx.readOnly)return false;
+  return!(typeof phCanRecordFloor==='function'&&phCanRecordFloor(ctx.user)===true);
 }
 
 /* ── safe DOM builders (nothing here ever parses a string as HTML) ─────── */
@@ -184,7 +199,7 @@ function _phUiCard(title,kids){
 function _phUiHead(title,blurb,ctx){
   const h=phEl('header','ph-head');
   const row=phEl('div','ph-head-row',null,[phEl('h2','ph-title',title)]);
-  if(ctx&&ctx.readOnly)row.appendChild(phEl('span','ph-chip ph-chip-view',phI18nD('shell.view_only')));
+  if(phViewChipOn(ctx))row.appendChild(phEl('span','ph-chip ph-chip-view',phI18nD('shell.view_only')));
   h.appendChild(row);
   if(blurb)h.appendChild(phEl('p','ph-blurb',blurb));
   return h;
@@ -267,7 +282,7 @@ function _phUiErrText(f){return f&&f.key?phI18nD(f.key):(typeof phI18nErr==='fun
 function _phUiPaintBanner(){
   const host=document.getElementById('ph-banner');if(!host)return;
   phClear(host);
-  if(typeof phI18nUrduOn==='function'&&phI18nUrduOn())host.appendChild(phI18nReviewNotice(document));
+  if(typeof phI18nUrduOn==='function'&&phI18nUrduOn()){const rn=phI18nReviewNotice(document);if(rn)host.appendChild(rn);}
   if(_phUiState!=='done')return;
   const st=phUiStatus();
   if(!st.failed.length)return;

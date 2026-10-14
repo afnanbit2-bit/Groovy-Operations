@@ -274,9 +274,10 @@ async function checks(src,only){
     const T=load({session:USERS.uzaib,src:src,data:dataHeld});
     // hold ONLY the pos / gatepasses reads
     const origGetDoc=T.ctx.getDoc,origGetDocs=T.ctx.getDocs;
-    await T.ctx.window.showPage('prod-ops');await settle();
+    // WP10: uzaib now LANDS on Today's Cutting, so the holds must be in place before the page opens (the first render is the one that reads)
     T.ctx.getDoc=async r=>{if(/^pos\//.test(r.path))await gp.p;return origGetDoc(r);};
     T.ctx.getDocs=async q=>{if(q.path==='gatepasses')await gp.p;return origGetDocs(q);};
+    await T.ctx.window.showPage('prod-ops');await settle(10);
     T.ctx.phGoTab('cutting');await settle(10);
     const t=T.text(T.card('PO-001'));
     o['loading: before the PO / fabric reads settle the card says it is reading, and shows no roll count and no input']=/Reading the PO/.test(t)&&/Reading the fabric issue/.test(t)&&!T.dom.find('phk-scan-PO-001')&&!/rolls verified/.test(t);
@@ -302,7 +303,7 @@ async function checks(src,only){
     const d=baseData();delete d['pos/PO-001'];
     const T=mk('uzaib',{data:d});
     await T.open();
-    o['a PO that does not exist: "was not found", not a blank card']=/PO PO-001 was not found/.test(T.text(T.card('PO-001')));
+    o['a PO that does not exist: "was not found", not a blank card']=/PO-001 was not found/.test(T.text(T.card('PO-001')))&&!/PO PO-001/.test(T.text(T.card('PO-001')));
   }
   if(want('states')){grp='states';
     const T=mk('uzaib',{cache:{gatepasses:true}});

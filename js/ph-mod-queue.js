@@ -287,7 +287,7 @@ function phqRender(host,ctx){
   const el=ctx.el;
   const head=el('header','ph-head');
   const row=el('div','ph-head-row',null,[el('h2','ph-title',phI18nD('shell.tab_queue'))]);
-  if(!manage)row.appendChild(el('span','ph-chip ph-chip-view',phI18nD('shell.view_only')));
+  if(!manage&&(typeof phViewChipOn!=='function'||phViewChipOn(ctx)))row.appendChild(el('span','ph-chip ph-chip-view',phI18nD('shell.view_only')));
   head.appendChild(row);
   head.appendChild(el('p','ph-blurb',manage
     ?phI18nD('queue.blurb_mgr')
@@ -589,6 +589,24 @@ function phqPlanInput(job,form){
   }
   return{input:out,changed:Object.keys(out).length>0};
 }
+// WP10: a PO with no plan opens the dialog on the next working day that still has ROOM for it (planned load + this PO <= daily capacity), not blank.
+// Load per day = the pieces of the other OPEN planned jobs (a finished job takes no capacity). Pure of the DOM; '' when no day can be worked out.
+function _phqDefaultPlanDay(t,jobsG){
+  try{
+    const info=typeof phSettingsInfo==='function'?phSettingsInfo():{settings:{}};
+    const idx=Object.create(null);
+    (_phqPos.rows||[]).forEach(function(p){const k=_phqIdOf(p);if(k)idx[k]=p;});
+    const byDay=Object.create(null);
+    (jobsG&&jobsG.ok?jobsG.rows:[]).forEach(function(j){
+      if(!j||j.fbKey===t.id||!phIsDay(j.plannedCutDate)||j.status==='complete'||j.status==='done')return;
+      const po=idx[j.fbKey];if(!po)return;
+      const st=phStageOf(po);if(st!=='cutting')return;
+      const u=phPoUnits(po).units;
+      if(typeof u==='number'&&u>0)byDay[j.plannedCutDate]=(byDay[j.plannedCutDate]||0)+u;
+    });
+    return phNextDayWithRoom({from:phDay(Date.now()),units:t.units,settings:info.settings,load:byDay})||'';
+  }catch(e){return'';}
+}
 function _phqOpenPlan(t,ctx,opener){
   if(!phqCanPlan(ctx.user))return;
   _phqCloseDlg();
@@ -604,7 +622,7 @@ function _phqOpenPlan(t,ctx,opener){
   const title=phEl('h3','phq-dlg-title',phI18nD('queue.plan_title',{po:t.po}));title.id='phq-dlg-title';
   dlg.appendChild(title);
   dlg.appendChild(phEl('p','phq-dlg-sub',[t.code,t.name].filter(Boolean).join(' · ')+(t.units!==null?' · '+t.units.toLocaleString('en-US')+' pcs':'')));
-  const dayIn=phEl('input','phq-in phq-d-day');dayIn.setAttribute('type','date');dayIn.value=job&&job.plannedCutDate?job.plannedCutDate:'';
+  const dayIn=phEl('input','phq-in phq-d-day');dayIn.setAttribute('type','date');dayIn.value=job&&job.plannedCutDate?job.plannedCutDate:_phqDefaultPlanDay(t,jobsG);
   const dayF=phEl('label','phq-field phq-field-block');dayF.appendChild(phEl('span','phq-flabel',phI18nD('queue.plan_day')));dayF.appendChild(dayIn);
   dlg.appendChild(dayF);
   const sel=phEl('select','phq-sel phq-d-master');

@@ -419,7 +419,7 @@ async function checks(src){
     // plan from the tray via the menu
     const P=load(src);await P.open();
     P.dom.click(P.tray('PO-106'));
-    o['menu: a tray item opens "Plan PO-106" with the next working day as default']=/Plan PO-106/.test(P.text(P.dialog()))&&P.dlgInput().value===TODAY;
+    o['menu: a tray item opens "Plan PO-106" with the next working day that has ROOM as default (WP10: Monday holds 1000 of 400, so Tuesday 13 Oct, not Monday)']=/Plan PO-106/.test(P.text(P.dialog()))&&P.dlgInput().value==='2026-10-13';
     // Enter / Escape in the dialog
     P.dlgInput().value='2026-10-22';P.dom.dispatch(P.dlgInput(),'input');
     P.dom.dispatch(P.dialog(),'keydown',ev('Enter',P.dlgInput()));await settle();

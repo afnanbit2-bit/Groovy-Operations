@@ -567,14 +567,26 @@ function _phI18nStore(){
 }
 function _phI18nStr(v){return v===undefined||v===null?'':String(v);}
 // Fill {token}s. Unknown tokens are left as written; a hostile value is just text (callers use textContent).
-function _phI18nFill(s,params,lang){
+function _phI18nFill(s,params,lang,iso){
   if(typeof s!=='string')return '';
   if(!params||typeof params!=='object')return s;
   return s.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g,function(m,k){
     if(!Object.prototype.hasOwnProperty.call(params,k))return m;
     const v=params[k];
-    return phI18nIsD(v)?phI18nT(v.key,v.params,lang):_phI18nStr(v);   // a descriptor inside a descriptor is filled in the same language
+    if(phI18nIsD(v))return phI18nT(v.key,v.params,lang);   // a descriptor inside a descriptor is filled in the same language
+    return(iso===undefined?lang==='ur':iso)?_phI18nIsolate(_phI18nStr(v)):_phI18nStr(v);   // isolate only inside Urdu text (an English fallback line is left as it was)
   });
+}
+// BIDI (WP10): inside an Urdu (right-to-left) line a Latin or numeric value ('Sep 2026', 'PO-105', 'Alam22', '3') is a neutral-ish run that the
+// bidi algorithm reorders against the Urdu around it ('2026 Sep', '105-PO'). Wrapping the VALUE in U+2066 (LRI) ... U+2069 (PDI) makes it an
+// isolated left-to-right run that keeps its own order and cannot reorder its neighbours. Only values that hold a Latin letter or a digit are
+// wrapped (pure Urdu or empty values are left alone); English output is never touched. The isolates are plain characters, so textContent,
+// toasts and title attributes carry them with no extra element.
+const PH_I18N_BIDI_LRI='\u2066',PH_I18N_BIDI_PDI='\u2069';
+function _phI18nIsolate(v){
+  if(typeof v!=='string'||!v||!/[A-Za-z0-9]/.test(v))return v;
+  if(v.charAt(0)===PH_I18N_BIDI_LRI&&v.charAt(v.length-1)===PH_I18N_BIDI_PDI)return v;
+  return PH_I18N_BIDI_LRI+v+PH_I18N_BIDI_PDI;
 }
 // lang: 'ur' | 'en' (or 'ur-first' meaning ur). Falls back en, then the key. Never throws.
 function phI18nT(key,params,lang){
@@ -583,7 +595,7 @@ function phI18nT(key,params,lang){
     if(!e)return _phI18nStr(key);
     const want=(lang==='ur'||lang==='ur-first')?'ur':'en';
     const raw=(want==='ur'&&e.ur)?e.ur:(e.en||_phI18nStr(key));
-    return _phI18nFill(raw,params,want);
+    return _phI18nFill(raw,params,want,want==='ur'&&!!e.ur);
   }catch(x){return _phI18nStr(key);}
 }
 function phI18nPair(key,params){return{ur:phI18nT(key,params,'ur'),en:phI18nT(key,params,'en')};}
@@ -637,8 +649,11 @@ function phI18nNode(doc,key,params,opts){
   if(lang!=='ur-first'){
     return _phI18nSpan(doc,'phi-en-only','en','ltr',pair.en);
   }
+  // WP10: Urdu-first now SHOWS Urdu only. The English line stays in the node (CSS hides `.phi-pair > .phi-en`) and is the title of the pair, so a
+  // hover (or a long press where the browser offers one) reads the English; the Urdu / English switch is the way to see English everywhere.
   const wrap=doc.createElement(o.tag||'span');
   wrap.className='phi-pair';
+  wrap.setAttribute('title',pair.en);
   wrap.appendChild(_phI18nSpan(doc,'phi-ur','ur','rtl',pair.ur));
   wrap.appendChild(_phI18nSpan(doc,'phi-en','en','ltr',pair.en));
   return wrap;
@@ -737,21 +752,43 @@ function phI18nErr(text){
 
 // The standing notice while any Urdu-first text is on screen: the wording was written by Claude and no Urdu speaker has read it yet
 // (urdu-review.md lists the rows; the 26 least sure are marked review:true in the table).
+const PH_I18N_NOTICE_KEY='groovy-ph-urdu-note';
+let _phI18nNoticeState='';   // '' = not shown yet this page load | 'shown' = on screen until dismissed | 'dismissed'
+// WP10: shown ONCE per device (the first time Urdu-first text is on screen; the flag is stored then) and dismissible. Within that first page load
+// it stays across repaints until the person dismisses it. Storage may be blocked: then it is once per page load. Returns null when it is not due.
 function phI18nReviewNotice(doc){
+  if(_phI18nNoticeState==='dismissed')return null;
+  if(_phI18nNoticeState===''){
+    let seen=false;
+    try{const st=_phI18nStore();seen=!!st&&st.getItem(PH_I18N_NOTICE_KEY)==='1';}catch(e){}
+    if(seen)return null;
+    try{const st=_phI18nStore();if(st)st.setItem(PH_I18N_NOTICE_KEY,'1');}catch(e){}
+    _phI18nNoticeState='shown';
+  }
   const d=doc.createElement('div');
   d.className='phi-review-row';
   d.setAttribute('role','note');
   const chip=_phI18nSpan(doc,'phi-review','ur','rtl',phI18nT('shell.review_chip',null,'ur'));
   const en=_phI18nSpan(doc,'phi-en','en','ltr',phI18nT('shell.review_note',null,'en'));
-  d.appendChild(chip);d.appendChild(en);
+  const x=doc.createElement('button');
+  x.setAttribute('type','button');x.className='phi-review-x';
+  x.setAttribute('aria-label',phI18nT('shell.review_dismiss',null,'en')+' / '+phI18nT('shell.review_dismiss',null,'ur'));
+  x.textContent='\u00d7';
+  x.addEventListener('click',function(){
+    _phI18nNoticeState='dismissed';
+    if(d.parentNode)d.parentNode.removeChild(d);
+  });
+  d.appendChild(chip);d.appendChild(en);d.appendChild(x);
   return d;
 }
+function phI18nNoticeReset(){_phI18nNoticeState='';}
 
 /* ── new keys added by the wiring (the original table had no string for these screens' later text) ──
    Urdu below was written by Claude; every row here is review:true. */
 (function(){
   const A=function(k,en,ur){_phI18nAdd(k,en,ur,true);};
   A('shell.review_chip','اردو زیرِ نظرثانی','اردو زیرِ نظرثانی');
+  A('shell.review_dismiss','Dismiss this notice','یہ نوٹس بند کریں');
   A('shell.review_note','Urdu wording not yet checked by an Urdu speaker','اردو الفاظ کو ابھی کسی اردو دان نے نہیں دیکھا');
   A('shell.chip_floor','Data entry & cutting','ڈیٹا انٹری اور کٹنگ');
   A('shell.chip_floor_tip','This account enters PO drafts and checks fabric on Today\'s Cutting. The cut itself is recorded on the PO page (the classic cutting screen). Planning, Calendar and settings are for the managers.','یہ اکاؤنٹ پی او ڈرافٹ لکھتا ہے اور آج کی کٹنگ میں کپڑا چیک کرتا ہے۔ کٹ خود پی او کے صفحے (پرانی کٹنگ اسکرین) پر درج ہوتا ہے۔ پلاننگ، کیلنڈر اور سیٹنگز منیجرز کے لیے ہیں۔',true);
@@ -814,7 +851,7 @@ function phI18nReviewNotice(doc){
   A('cut.n_w','{n} {w}','{n} {w}');
   A('cut.not_checked_yet2','Not checked yet. Scan the rolls or enter a count; a mismatch is only shown once you have.','ابھی چیک نہیں ہوا۔ رول اسکین کریں یا تعداد لکھیں؛ فرق تبھی دکھے گا جب آپ چیک کر لیں۔');
   A('cut.planned_for_line','Planned for {day}. Check the rolls against what was issued, then mark the job complete.','{day} کے لیے طے۔ رولز کو جاری شدہ سے ملائیں، پھر جاب مکمل کریں۔');
-  A('cut.read_po_missing','PO {po} was not found in the PO list.','پی او {po} پی او فہرست میں نہیں ملا۔');
+  A('cut.read_po_missing','{po} was not found in the PO list.','{po} پی او فہرست میں نہیں ملا۔');
   A('cut.read_timeout','{col}: the read did not finish in time - check the connection and retry.','{col}: پڑھنا وقت پر مکمل نہیں ہوا - انٹرنیٹ چیک کریں اور دوبارہ کوشش کریں۔');
   A('cut.reading_issues','Reading the fabric issues…','فیبرک ایشوز پڑھے جا رہے ہیں…');
   A('cut.record_already_x','The cut is already recorded (the PO is at {stage}).','کٹ پہلے ہی درج ہے (پی او {stage} پر ہے)۔');
@@ -1089,4 +1126,28 @@ function phI18nReviewNotice(doc){
   A('cut.instr_notes','Notes','نوٹس',true);
   A('cut.instr_rev','Instructions revision {n} (as issued on this PO)','ہدایات ریویژن {n} (اس پی او کے اجراء کے وقت)',true);
   A('cut.instr_malformed','The saved instructions on this PO are malformed (the "instructions" field is not a map), so they cannot be shown.','اس پی او پر محفوظ ہدایات خراب ہیں ("instructions" فیلڈ درست نہیں)، اس لیے دکھائی نہیں جا سکتیں۔',true);
+})();
+/* ── WP10: keys for the UI-fix round (Urdu written by Claude, NOT read by an Urdu speaker: every row is review:true) ── */
+(function(){
+  const A=function(k,en,ur){_phI18nAdd(k,en,ur,true);};
+  A('ov.floor_blurb','Today\'s cutting at a glance. The jobs themselves are on Today\'s Cutting.','آج کی کٹنگ ایک نظر میں۔ جابز خود "آج کی کٹنگ" میں ہیں۔');
+  A('ov.floor_open','Open Today\'s Cutting','آج کی کٹنگ کھولیں');
+  A('ov.floor_overdue_note','Some jobs are overdue. Open Today\'s Cutting to see them.','کچھ جابز تاخیر سے ہیں۔ دیکھنے کے لیے "آج کی کٹنگ" کھولیں۔');
+  A('ov.hold_age_today','marked today','آج نشان لگایا گیا');
+  A('ov.hold_age_day','marked 1 day ago','1 دن پہلے نشان لگایا گیا');
+  A('ov.hold_age_days','marked {n} days ago','{n} دن پہلے نشان لگایا گیا');
+  A('ov.hold_no_reason','no reason given','وجہ نہیں بتائی گئی');
+  A('ov.r_hold','On hold: {why} ({age})','روکا ہوا: {why} ({age})');
+  A('ov.r_hold_pri','On hold, {pri}: {why} ({age})','روکا ہوا، {pri}: {why} ({age})');
+  A('ov.r_marked','Marked {pri} ({age})','نشان: {pri} ({age})');
+  A('ov.k_hold','On hold','روکا ہوا');
+  A('ov.t_on_hold','On hold ({n})','روکے ہوئے ({n})');
+  A('ov.t_marked','Marked urgent or high ({n})','ارجنٹ یا ہائی نشان زد ({n})');
+  A('ov.group_more','+{n} more - open Monitor to see them all','+{n} مزید - سب دیکھنے کے لیے مانیٹر کھولیں');
+  A('cut.search_ph','Search PO, article or master','پی او، آرٹیکل یا ماسٹر تلاش کریں');
+  A('cut.search_label','Search today\'s and overdue jobs by PO number, article or master','پی او نمبر، آرٹیکل یا ماسٹر سے آج کی اور تاخیر والی جابز تلاش کریں');
+  A('cut.search_count','{n} of {total} jobs match','{total} میں سے {n} جابز ملیں');
+  A('cut.search_clear','Clear','صاف کریں');
+  A('cut.search_none','No job matches the search.','کوئی جاب تلاش سے نہیں ملتی۔');
+  A('cut.instr_refresh','Refresh instructions…','ہدایات تازہ کریں…');
 })();

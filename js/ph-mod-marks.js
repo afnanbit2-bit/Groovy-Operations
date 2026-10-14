@@ -39,6 +39,16 @@ function _phmkBadge(b,compact){
   const el=phEl('span','phmk-b phmk-c-'+b.colour+' phmk-k-'+b.kind);
   el.appendChild(phEl('span','phmk-g',b.glyph));
   el.lastChild.setAttribute('aria-hidden','true');
+  if(compact){
+    // WP10: a COMPACT badge (the Calendar chip) is the glyph alone, so it never wraps mid-word in a narrow chip. The word is still there for a
+    // screen reader (aria-label) and on hover (title); the full text (hold reason, text mark, comments) is in the Move dialog and the chip's title.
+    const word=b.kind==='label'?b.text:phI18nAttr(phI18nD(b.key));
+    el.classList.add('phmk-b-compact');
+    el.setAttribute('role','img');
+    el.setAttribute('aria-label',word+(b.kind==='hold'&&b.text?' - '+b.text:''));
+    el.setAttribute('title',word+(b.kind==='hold'&&b.text?' - '+b.text:''));
+    return el;
+  }
   if(b.kind==='label'){el.appendChild(phEl('span','phmk-w',null));el.lastChild.textContent=b.text;}
   else{
     el.appendChild(phEl('span','phmk-w',phI18nD(b.key)));
@@ -62,10 +72,23 @@ function phmkBadgesNode(poId,opts){
   if(n>0){
     const c=phEl('span','phmk-b phmk-c-blue phmk-k-comments');
     c.appendChild(phEl('span','phmk-g','\u{1F4AC}'));c.lastChild.setAttribute('aria-hidden','true');
-    c.appendChild(phEl('span','phmk-w',phI18nD(n===1?'marks.n_comment':'marks.n_comments',{n:n})));
+    if(compact){   // glyph + count; the sentence is the title / aria-label
+      const sent=phI18nAttr(phI18nD(n===1?'marks.n_comment':'marks.n_comments',{n:n}));
+      c.classList.add('phmk-b-compact');c.setAttribute('role','img');c.setAttribute('aria-label',sent);c.setAttribute('title',sent);
+      c.appendChild(phEl('span','phmk-cnt',String(n)));
+    }else c.appendChild(phEl('span','phmk-w',phI18nD(n===1?'marks.n_comment':'marks.n_comments',{n:n})));
     wrap.appendChild(c);
   }
   return wrap;
+}
+// The marks of a PO as ONE plain sentence (English words; hold reason, text mark, comment count) for a title / aria-label. '' = no mark or marks not read.
+function phmkTextOf(poId){
+  if(typeof phMarkBadges!=='function')return'';
+  const m=_phmkMarks(poId);if(!m)return'';
+  const row=_phmkRow(poId),n=row&&typeof row.noteCount==='number'?row.noteCount:0;
+  const bits=phMarkBadges(m).map(function(b){return b.kind==='label'?b.text:phI18nT(b.key,null,'en')+(b.kind==='hold'&&b.text?' ('+b.text+')':'');});
+  if(n>0)bits.push(phI18nT(n===1?'marks.n_comment':'marks.n_comments',{n:n},'en'));
+  return bits.join(', ');
 }
 // Tint a tile / chip / row for a highlight and a hold, and add its badges. Returns true when anything was added.
 function phmkApply(node,poId,opts){
@@ -162,7 +185,7 @@ async function phmkAddComment(ctx){
   try{r=await phMarkComment(d.po,d.note);}
   catch(e){r={ok:false,code:'failed',error:String(e&&e.message||e)};}
   finally{_phmkBusy=false;}
-  _phmkMsg={po:d.po,ok:!!r.ok,text:r.ok?phI18nStr(phI18nD('marks.comment_added')):phI18nStr(phI18nD('marks.fail',{why:r.error||r.code||''}))};
+  _phmkMsg={po:d.po,ok:!!r.ok,where:'comment',text:r.ok?phI18nStr(phI18nD('marks.comment_added')):phI18nStr(phI18nD('marks.fail',{why:r.error||r.code||''}))};   // WP10: shown beside the comment box
   if(r.ok){d.note='';await _phmkLoadNotes(d.po,ctx);}
   else if(ctx&&typeof ctx.repaint==='function')ctx.repaint();
   return r;
@@ -230,7 +253,7 @@ function phmkPanelNode(poId,ctx){
   clr.addEventListener('click',function(){_phmkDraft=Object.assign(_phmkSeed(poId),{priority:'normal',holdOn:false,holdReason:'',highlight:'',label:''});phmkSave(ctx);});
   act.appendChild(save);act.appendChild(clr);
   box.appendChild(act);
-  if(_phmkMsg&&_phmkMsg.po===poId){const m=phEl('p','phmk-msg '+(_phmkMsg.ok?'ok':'bad'),null);m.setAttribute('role',_phmkMsg.ok?'status':'alert');m.textContent=_phmkMsg.text;box.appendChild(m);}
+  if(_phmkMsg&&_phmkMsg.po===poId&&_phmkMsg.where!=='comment'){const m=phEl('p','phmk-msg '+(_phmkMsg.ok?'ok':'bad'),null);m.setAttribute('role',_phmkMsg.ok?'status':'alert');m.textContent=_phmkMsg.text;box.appendChild(m);}
   // comments
   const cm=phEl('div','phmk-comments');
   cm.appendChild(phEl('div','phmk-lab',phI18nD('marks.comments')));
@@ -253,10 +276,15 @@ function phmkPanelNode(poId,ctx){
   }
   const ta=document.createElement('textarea');ta.className='phmk-ta';ta.maxLength=500;ta.rows=2;ta.value=d.note||'';
   ta.placeholder=phI18nStr(phI18nD('marks.comment_ph'));ta.setAttribute('aria-label',phI18nAttr(phI18nD('marks.comment_ph')));
-  ta.addEventListener('input',function(){d.note=ta.value;});
+  // WP10: Add comment is DISABLED while the box is empty (the writer refused an empty comment anyway, after a round trip), and the answer to an add
+  // (the refusal, or "Comment added") is printed right under the box, not up with Save / Clear.
   const add=phEl('button','ph-btn phmk-add',phI18nD('marks.comment_add'));add.setAttribute('type','button');
-  add.addEventListener('click',function(){phmkAddComment(ctx);});
+  const sync=function(){const empty=!String(d.note||'').trim();if(empty)add.setAttribute('disabled','disabled');else add.removeAttribute('disabled');add.disabled=empty;};
+  ta.addEventListener('input',function(){d.note=ta.value;sync();});
+  add.addEventListener('click',function(){if(!String(d.note||'').trim())return;phmkAddComment(ctx);});
+  sync();
   cm.appendChild(ta);cm.appendChild(add);
+  if(_phmkMsg&&_phmkMsg.po===poId&&_phmkMsg.where==='comment'){const m=phEl('p','phmk-msg phmk-msg-cmt '+(_phmkMsg.ok?'ok':'bad'),null);m.setAttribute('role',_phmkMsg.ok?'status':'alert');m.textContent=_phmkMsg.text;cm.appendChild(m);}
   box.appendChild(cm);
   return box;
 }

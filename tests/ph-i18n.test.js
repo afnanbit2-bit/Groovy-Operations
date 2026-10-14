@@ -135,7 +135,7 @@ module.exports=async function(){
     let r;try{r=checks(mut);}catch(e){r={};}
     failing.forEach(f=>{n++;s.ok('break "'+label+'" fails "'+f+'"',r[f]!==true);});
   };
-  brk('fill ignores params','return phI18nIsD(v)?phI18nT(v.key,v.params,lang):_phI18nStr(v);','return m;',['T: fills params in en and ur']);
+  brk('fill ignores params','if(phI18nIsD(v))return phI18nT(v.key,v.params,lang);   // a descriptor inside a descriptor is filled in the same language\n    return(iso===undefined?lang===\'ur\':iso)?_phI18nIsolate(_phI18nStr(v)):_phI18nStr(v);   // isolate only inside Urdu text (an English fallback line is left as it was)','return m;',['T: fills params in en and ur']);
   brk('fallback to key removed',"if(!e)return _phI18nStr(key);","if(!e)return '';",['T: unknown key returns the key']);
   brk('fallback to en removed',"const raw=(want==='ur'&&e.ur)?e.ur:(e.en||_phI18nStr(key));","const raw=e[want];",['T: missing ur falls back to en']);
   brk('T can throw',"}catch(x){return _phI18nStr(key);}\n}\nfunction phI18nPair","}catch(x){throw x;}\n}\nfunction phI18nPair",['T: hostile inputs never throw']);
