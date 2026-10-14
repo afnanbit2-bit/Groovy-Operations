@@ -361,6 +361,9 @@ async function _phFragment(o){
   // data-ph-ur-chrome opts into the probe's Urdu-first bar/dock check (68px bar, 76px dock, nothing hanging out of them)
   const out={html:(o.ur&&o.inBody?'<i data-ph-ur-chrome="1" hidden></i>':'')+'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
   if(o.min)out.widths=[1900,1280];
+  if(o.widths)out.widths=o.widths;
+  if(o.heights)out.heights=o.heights;
+  if(o.titleMin)out.html='<i data-ph-title-min="1" hidden></i>'+out.html;
   return out;
 }
 // Production Ops ▸ PO Queue (12 Oct 2026): the REAL js/ph-ui.js + js/ph-mod-queue.js (+ pos.js for the Force-advance gate) over tests/ph-dom.js's
@@ -3346,6 +3349,9 @@ const FRAGMENTS={
   'production ops — shell in Urdu-first (Kashif: Overview, two-line bar and dock, language box, review notice)':()=>_phFragment({floor:true,tab:'overview',ur:true}),
   'production ops — shell in Urdu-first with failed reads (an owner who switched the language on)':()=>_phFragment({fail:true,ur:true}),
   'production ops — shell in Urdu-first, content clear of the taller bar and dock':()=>_phFragment({floor:true,inBody:true,tab:'overview',ur:true}),
+  // WP10: on a 390px phone the top-bar title must not be crushed (it was 24px wide with the role chip beside it); the chip leaves the bar under 481px.
+  'production ops — phone top bar keeps a readable title (Kashif, Urdu-first, 390px)':()=>_phFragment({floor:true,inBody:true,tab:'cutting',ur:true,widths:[390],heights:[844],titleMin:true}),
+  'production ops — phone top bar keeps a readable title (Kashif, English, 390px)':()=>_phFragment({floor:true,inBody:true,tab:'overview',widths:[390],heights:[844],titleMin:true}),
   'production ops — shell collapsed':()=>_phFragment({fail:true,min:true}),
   'production ops — shell for the cutting floor (view only)':()=>_phFragment({floor:true,tab:'cutting'}),
   'production ops — shell content clear of the bar and rail':()=>_phFragment({fail:true,inBody:true,tab:'masters'}),
@@ -3948,6 +3954,17 @@ if(document.querySelector('[data-ph-ur-chrome]')){
     if(h!==76)bad.push({why:'the Urdu-first phone dock is not 76px tall',height:h});
     inside(rail,'a control hangs out of the Urdu-first dock');
   }
+}
+// OPT-IN (data-ph-title-min): the takeover bar's title keeps a readable width on a phone, and the role chip is not squeezed in beside it.
+if(document.querySelector('[data-ph-title-min]')){
+  const t=document.getElementById('ph-tk-title'),chip=document.getElementById('ph-tk-chip');
+  if(!t)bad.push({why:'the top bar has no title'});
+  else{
+    const w=Math.round(t.getBoundingClientRect().width);
+    if(w<110)bad.push({why:'the top-bar title is squeezed below 110px',width:w,viewport:innerWidth});
+    if(t.scrollWidth>t.clientWidth+1&&w<150)bad.push({why:'the top-bar title is cut to a stub',width:w,scroll:t.scrollWidth});
+  }
+  if(chip&&innerWidth<=480&&getComputedStyle(chip).display!=='none')bad.push({why:'the role chip is still in the bar on a narrow phone',viewport:innerWidth});
 }
 if(document.querySelector('[data-ma-past-edge]')){
   document.querySelectorAll('#main-content *').forEach(el=>{

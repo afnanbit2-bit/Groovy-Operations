@@ -372,9 +372,13 @@ async function checks(src){
     const U=load(src,{session:USERS.uzaib});
     setup(U);
     await U.show('prod-ops');
-    o['open PO: uzaib (Kashif) sees the attention rows as plain text, NO Open button']=U.dom.byClass(U.panel(),'phm-att-row').length===4&&U.dom.all(U.panel(),n=>n.getAttribute&&n.getAttribute('data-act')==='open-po').length===0;
-    U.dom.click(U.main('attention'));
-    o['open PO: nor in his attention drawer']=U.drawerRows().length===4&&U.dom.all(U.drawer(),n=>n.getAttribute&&n.getAttribute('data-act')==='open-po').length===0;
+    // WP10: Kashif's Overview is the short view and he has no Monitor tab, so the attention card is rendered through the Monitor builder directly (what a
+    // build that showed it to him would draw): plain text rows, no Open button, because phmCanOpenPO() reads HIS session.
+    await U.R('phmLoadPos(true)');   // he lands on Today's Cutting now, so Monitor's own read of pos has not run
+    const mon=U.R('(function(){const h=document.createElement("div");_phmRenderMonitor(h,_phUiCtx(PH_TABS.filter(function(t){return t.id==="monitor";})[0]));return h;})()');
+    o['open PO: uzaib (Kashif) sees the attention rows as plain text, NO Open button']=U.dom.byClass(mon,'phm-att-row').length===4&&U.dom.all(mon,n=>n.getAttribute&&n.getAttribute('data-act')==='open-po').length===0;
+    U.R('phGoTab("overview")');
+    o['open PO: and his real Overview (the short view) has no attention rows and no Open button at all']=U.dom.byClass(U.panel(),'phm-att-row').length===0&&U.dom.all(U.panel(),n=>n.getAttribute&&n.getAttribute('data-act')==='open-po').length===0;
     o['open PO: phmOpenPO refuses him and calls nothing']=U.R('phmOpenPO("PO-103")')===false&&U.ctx.__log.length===0;
     // no openPODetail in this build: no button, nothing thrown
     const N=load(src,{session:USERS.mustafa});
@@ -386,10 +390,9 @@ async function checks(src){
   await sec(async()=>{
     const U=load(src,{session:USERS.uzaib});
     await U.show('prod-ops');
-    o['uzaib: Overview opens with the real tiles and says View only']=U.tiles().length===6&&/View only/.test(U.text(U.panel()))&&U.dom.byClass(U.tile('pipeline'),'phm-tile-val')[0].textContent==='10';
+    U.R('phGoTab("overview")');await settle(60);   // WP10: he lands on Today's Cutting now; his Overview is the short view (no tiles, no per-page View only chip)
+    o['uzaib: Overview is the SHORT view: a jobs line and one button, no tiles, no per-page View only chip']=U.tiles().length===0&&!/View only/.test(U.text(U.panel()))&&U.dom.byClass(U.panel(),'phm-floor').length===1&&/planned today/.test(U.text(U.panel()));
     o['uzaib: no button leads to the Monitor (he is not allowed it) and phGoTab refuses it']=!U.btn('Open the Monitor')&&U.R('phGoTab("monitor")')===false;
-    U.dom.click(U.main('afloat'));
-    o['uzaib: he can open the lists behind the numbers (read-only)']=U.drawerRows().length===5;
     o['uzaib: nothing was written']=U.fk.writes.length===0;
     const M=load(src,{session:USERS.mustafa});
     await M.show('prod-ops');
@@ -407,7 +410,7 @@ async function checks(src){
   await sec(async()=>{
     const code=src.replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[^:\\])\/\/[^\n]*/g,'$1');
     o['read-only: the source calls no Firestore write API']=!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch|runTransaction|arrayUnion|serverTimestamp)\s*\(/.test(code);
-    o['read-only: the source calls no ph-write.js function']=!/\bph(Save|Mark|Master|Standard|Settings?Save|Draft|Abandon|Send|Set|Create|Retire|Build)[A-Za-z]*\s*\(/.test(code.replace(/phSettings\(/g,''))&&!/\b_phSilent\b|_phLog\b|logActivity\s*\(/.test(code);
+    o['read-only: the source calls no ph-write.js function']=!/\bph(Save|Mark|Master|Standard|Settings?Save|Draft|Abandon|Send|Set|Create|Retire|Build)[A-Za-z]*\s*\(/.test(code.replace(/phSettings\(/g,'').replace(/phMarkOf\(|phMarksState\(/g,''))   /* WP10: phMarkOf / phMarksState are READS (the hold lines) */&&!/\b_phSilent\b|_phLog\b|logActivity\s*\(/.test(code);
     o['XSS: the source never assigns innerHTML/outerHTML or parses a string as HTML']=!/\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|DOMParser|document\.write|\beval\s*\(|new Function/.test(code);
     o['the only collection it reads itself is pos']=(code.match(/collection\(db,'[^']+'/g)||[]).join()==="collection(db,'pos'"&&!/\bgetDoc\(/.test(code);
     o['every rule comes from ph-core: the source calls phPipeline, phReport, phAllocate, phLeadTime, phDelayGap, phCutCheck, phStageOf, phPoUnits and phSettings']=['phPipeline','phReport','phAllocate','phLeadTime','phDelayGap','phCutCheck','phStageOf','phPoUnits','phSettings'].every(f=>new RegExp('\\b'+f+'\\(').test(code));
@@ -472,7 +475,7 @@ module.exports=async function(){
   await brk('phmOpenPO does not check who',"  if(!phmCanOpenPO()||!/^[A-Za-z0-9_-]{1,60}$/.test(k))return false;","  if(!/^[A-Za-z0-9_-]{1,60}$/.test(k))return false;",K('open PO: phmOpenPO refuses him'));
   await brk('the takeover stays up when a PO opens',"  try{if(typeof _phTkLeave==='function')_phTkLeave();}catch(e){}\n  window.openPODetail(k);","  window.openPODetail(k);",K('open PO: pressing it leaves'));
   await brk('every drawer gets Open buttons',"openable:t.id==='attention'","openable:true",K('open PO: the other tiles'));
-  await brk('the attention rows lose the button',"    if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));\n    ul.appendChild(li);\n  });\n  card.appendChild(ul);","    ul.appendChild(li);\n  });\n  card.appendChild(ul);",K('open PO: a manager gets an Open button'));
+  await brk('the attention rows lose the button',"    if(phmCanOpenPO())li.appendChild(_phmOpenBtn(r));\n    return li;","    return li;",K('open PO: a manager gets an Open button'));
   await brk('the PO key is not validated',"!/^[A-Za-z0-9_-]{1,60}$/.test(k)","false",K('open PO: an id that is not a plain PO key'));
   await brk('pipeline counts every PO (reserved and completed too)','value:_phmN(pl.state===\'ok\'?pl.inProduction.pos:0),sub:cnt','value:_phmN(pl.state===\'ok\'?pl.total:0),sub:cnt',K('pipeline: 10 released'));
   await brk('afloat uses the in-production pieces',"value:_phmN(pl.state==='ok'?pl.afloat.units:0)","value:_phmN(pl.state==='ok'?pl.inProduction.units:0)",K('units afloat: 1,050'));
@@ -501,7 +504,7 @@ module.exports=async function(){
   await brk('a PO title written as HTML',"if(r.detail)li.appendChild(E('div','phm-row-detail',r.detail));","if(r.detail)li.appendChild(E('div','phm-row-detail',r.detail));li.children[1].innerHTML=r.title;",K('XSS: the source never'));
   await brk('a write sneaks in',"function phmCloseDrawer(restore){","function phmCloseDrawer(restore){ setDoc(doc(db,'pos','x'),{});",K('read-only: the source calls no Firestore write API'));
   await brk('the status strip is dropped from Overview',"(ctx.status.stages||[]).forEach(function(r){strip.appendChild(_phmStageLine(r));});","",K('Overview keeps the per-collection'));
-  await brk('the view-only account gets the Monitor button',"if(ctx.canManage)foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.open_monitor')","if(true)foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.open_monitor')",K('uzaib: no button'));
+  await brk('the view-only account gets the Monitor button (WP10: and loses the short view that returns before it)',[["if(ctx.canManage)foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.open_monitor')","if(true)foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.open_monitor')"],["  if(!ctx.canManage)return _phmFloorOverview(host,ctx);\n",""]],null,K('uzaib: no button'));
   await brk('a global without the prefix',"function _phmObj(x){","function monObj(x){return x!==null&&typeof x==='object'&&!Array.isArray(x);}\nfunction _phmObj(x){",K('globals: every top-level'));
   await brk('a global that collides with another script',"function _phmObj(x){","function phEl(){return 1;}\nfunction _phmObj(x){",K('globals: none of them'));
   await brk('queue delay reports calendar days as working days',".map(function(j){return j.delayDays;})",".map(function(j){return j.delayCalendarDays;})",K('queue delay'));
@@ -510,7 +513,7 @@ module.exports=async function(){
   await brk('no Retry button on the pos error card',"c.appendChild(_phmBtn('ph-btn ph-btn-primary',phI18nD('shell.retry'),function(){_phmEnsure(ctx,true);ctx.repaint();}));","",K('Retry reads again'));
   await brk('Refresh does not re-read pos',"phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();","phmCloseDrawer(false);ctx.repaint();",K('Refresh reads pos again'));
   await brk('the po_cut_jobs note is dropped from the attention list',"note:jobsOk?'':phI18nD('ov.jobs_unread_delays')","note:''",K('po_cut_jobs failed: the planned-day reason'));
-  await brk('a view-only user cannot open a list (the tile button is inert)',"if(clickable)main.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label,rows:t.rows,note:t.cap,sum:t.sum,sumLabel:t.sumLabel,openable:t.id==='attention'},main);});","",K('a tile opens the list').concat(K('uzaib: he can open')));
+  await brk('a view-only user cannot open a list (the tile button is inert)',"if(clickable)main.addEventListener('click',function(){phmOpenDrawer(host,{title:t.label,rows:t.rows,note:t.cap,sum:t.sum,sumLabel:t.sumLabel,openable:t.id==='attention'},main);});","",K('a tile opens the list'));
   await brk('the sum of the list is not shown',"if(spec.sum!==null&&spec.sum!==undefined)panel.appendChild","if(false)panel.appendChild",K('a tile opens the list'));
   s.ok('breaks run: '+broken,broken>=40);
   return s;

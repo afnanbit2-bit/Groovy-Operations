@@ -141,15 +141,15 @@ async function checks(src){
     const T=mk('uzaib');
     await T.show('prod-ops');
     o['uzaib: the rail lists his three tabs only (Overview, PO Queue, Today\'s Cutting)']=T.itemIds().join()==='overview,queue,cutting';
-    o['uzaib: asking for a manager tab is refused and the tab does not change']=T.R('phGoTab("masters")')===false&&T.R('_phUiTab')==='overview'&&T.R('phGoTab("settings")')===false;
+    o['uzaib: asking for a manager tab is refused and the tab does not change']=T.R('phGoTab("masters")')===false&&T.R('_phUiTab')==='cutting'&&T.R('phGoTab("settings")')===false;   // WP10: his default tab is Today's Cutting
     T.R('_phUiTab="masters"');T.R('_phUiPaintPanel()');
-    o['uzaib: even a forced tab id renders HIS default, never the manager tab']=/Overview/.test(T.text(T.panel()))&&!/Masters/.test(T.text(T.panel()))&&T.R('_phUiTab')==='overview';
+    o['uzaib: even a forced tab id renders HIS default, never the manager tab']=/Today's Cutting/.test(T.text(T.panel()))&&!/Masters/.test(T.text(T.panel()))&&T.R('_phUiTab')==='cutting';
     o['uzaib: the render function of a manager tab is never called for him']=(()=>{
       let hit=0;T.ctx.__probe=()=>{hit++;};
       T.R('phRegisterTab("masters",{render:function(h){__probe();h.appendChild(phEl("p","x","boom"));}})');
       T.R('_phUiTab="masters"');T.R('_phUiPaintPanel()');return hit===0;})();
     o["uzaib: Today's Cutting opens for him"]=T.R('phGoTab("cutting")')===true&&/Today's Cutting/.test(T.text(T.panel()));
-    o['uzaib: the panel says View only (read-only account)']=/View only/.test(T.text(T.panel()));
+    o['uzaib: the panel draws NO per-page View only chip (WP10: the top-bar chip says what his account does)']=!/View only/.test(T.text(T.panel()));
     o['uzaib: the top bar chip is visible and says what his account does (Data entry & cutting), NOT View only']=!/ph-hidden/.test(T.dom.find('ph-tk-chip').className)&&T.dom.find('ph-tk-chip').textContent==='Data entry & cutting'&&!/View only/.test(T.dom.find('ph-tk-chip').textContent)&&/enters PO drafts and checks fabric on Today.s Cutting/.test(T.dom.find('ph-tk-chip').getAttribute('title')||'');
     o['phChipFor: a manager none, the floor Data entry & cutting, anyone else View only']=T.R('phChipFor("mustafa").show')===false&&T.R('phChipFor("afnan").show')===false&&T.R('phChipFor("uzaib").text')==='Data entry & cutting'&&T.R('phChipFor("raees").text')==='View only'&&T.R('phChipFor("").text')==='View only';
     const M=mk('mustafa');await M.show('prod-ops');
@@ -252,7 +252,7 @@ async function checks(src){
     d=D('#prodops/not-a-tab');
     o['an unknown tab lands on the default, never a blank page']=d.r===true&&d.t.R('_phUiTab')==='overview';
     {const peek={},t=mk('uzaib',null,{peek});t.ctx.location.hash='#prodops/masters';const r=t.R('_phTkConsumeHash()');
-      o['a tab that is not yours (uzaib, masters) lands on HIS default tab']=r===true&&peek.tab==='overview'&&t.R('_phUiTab')==='overview';}
+      o['a tab that is not yours (uzaib, masters) lands on HIS default tab']=r===true&&peek.tab==='cutting'&&t.R('_phUiTab')==='cutting';}
     d=D('#prodops/cutting','uzaib');
     o["uzaib's own tab opens (cutting)"]=d.r===true&&d.t.R('_phUiTab')==='cutting';
     d=D('#prodops/../x');

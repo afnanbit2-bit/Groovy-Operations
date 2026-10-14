@@ -104,7 +104,7 @@ module.exports=async function(){
   brk('the English view gets a pair too','i18n',"if(phI18nIsD(x)&&phI18nUrduOn()&&typeof document","if(phI18nIsD(x)&&true&&typeof document",['render: the English view is plain textContent, no child element (identical to the old DOM)']);
   brk('<option> takes markup','i18n',"!/^(OPTION|OPTGROUP|TEXTAREA|INPUT|TITLE)$/.test(String(node.tagName||''))","true",['render: an <option> stays one plain string even Urdu-first (a select cannot hold markup)']);
   brk('toJSON dropped','i18n',"toJSON:function(){return phI18nT(this.key,this.params,'en');}","",['render: a descriptor is its English as a string and in JSON (untaught sinks and JSON checks unchanged)']);
-  brk('nested descriptors not resolved','i18n',"return phI18nIsD(v)?phI18nT(v.key,v.params,lang):_phI18nStr(v);","return _phI18nStr(v);",['render: a nested descriptor param resolves per language']);
+  brk('nested descriptors not resolved','i18n',"if(phI18nIsD(v))return phI18nT(v.key,v.params,lang);","",['render: a nested descriptor param resolves per language']);
   brk('attributes always English','i18n',"return phI18nUrduOn()?phI18nT(x.key,x.params,'ur')+' — '+phI18nT(x.key,x.params,'en'):phI18nT(x.key,x.params,'en');","return phI18nT(x.key,x.params,'en');",['render: attributes get one string, Urdu — English when Urdu-first, English only otherwise']);
   brk('the review notice is empty','i18n',"d.appendChild(chip);d.appendChild(en);","",['review: many strings are flagged review:true and the notice is a visible Urdu chip plus an English line']);
   brk('ph-ui never shows the review notice','ui',"phI18nReviewNotice","phI18nReviewNoticeX",['review: ph-ui paints the notice while Urdu-first text is on screen']);

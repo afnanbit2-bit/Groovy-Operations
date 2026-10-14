@@ -310,6 +310,32 @@ function phWorkdayNext(day,cal){
   const n=_phNextWorkNum(_phCalSets(phSettings(cal)),phDayNum(d));
   return n===null?null:phDayFromNum(n);
 }
+// WP10: the first working day on or after `from` that still has ROOM for `units` pieces (planned load + units <= daily capacity), looking up to
+// `horizon` (default 120) days ahead. An empty day always counts (a PO bigger than a whole day's capacity still needs a day). `load` is a function
+// day -> pieces already planned, or a plain {day:pieces} map; a day it cannot answer counts as empty. units unknown/0 = just the first working day.
+// If no day within the horizon has room, the first working day is returned (a plan is never left without a default). null only for a bad `from`.
+function phNextDayWithRoom(o){
+  const x=o&&typeof o==='object'?o:{};
+  const from=phDay(x.from);if(from===null)return null;
+  const S=phSettings(x.settings||{});
+  const cap=S.dailyCapacity;
+  const u=phWhole(x.units);
+  const horizon=Math.max(1,phWhole(x.horizon)||120);
+  const loadOf=function(d){
+    let l=0;
+    try{l=typeof x.load==='function'?x.load(d):(x.load&&typeof x.load==='object'?x.load[d]:0);}catch(e){l=0;}
+    return typeof l==='number'&&isFinite(l)&&l>0?l:0;
+  };
+  let first=null;
+  for(let i=0;i<horizon;i++){
+    const d=phDayAdd(from,i);if(d===null)break;
+    if(!phIsWorkday(d,x.settings||{}))continue;
+    if(first===null)first=d;
+    const l=loadOf(d);
+    if(u===null||u<=0||typeof cap!=='number'||!(cap>0)||l===0||l+u<=cap)return d;
+  }
+  return first;
+}
 // Signed working days from a to b: b after a counts the working days d with a < d <= b;
 // b before a is the negative of the days with b < d <= a. Additive: wd(a,c) = wd(a,b) + wd(b,c).
 function phWorkdaysBetween(a,b,cal){
@@ -1393,7 +1419,7 @@ if(typeof module!=='undefined'&&module.exports){
     PH_WAIST_CODE_PREFIXES,PH_FREE_KEY,PH_REAL_STAGE_ORDER,PH_STAGES,PH_CUT_GATE_PCT,PH_PC_MIN_WIDTH,PH_MASTER_NAME_MAX,
     PH_MAX_HORIZON_DAYS,PH_DEFAULT_SETTINGS,
     phStr,phNum,phWhole,phRound,phUnit,phNorm,phIsDay,phMs,phDay,phDayNum,phDayFromNum,phDayAdd,phDaysBetween,phWeekday,
-    phWeekStart,phSettings,phIsWorkday,phWorkdayNext,phWorkdaysBetween,
+    phWeekStart,phSettings,phIsWorkday,phWorkdayNext,phNextDayWithRoom,phWorkdaysBetween,
     phSeasonKey,phSeasonOfDay,phSeasonOf,phSeasonLabel,
     phSizeKey,phSizeModel,phValidateSizes,phSizesTotal,
     phGrossActual,phStandard,phExpectedGross,phGrossVariance,

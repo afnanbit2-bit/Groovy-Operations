@@ -180,7 +180,7 @@ async function checks(src){
     let hits=0;U.ctx.__spy=()=>{hits++;};
     ['masters','standards','settings'].forEach(id=>U.R('(function(){var t=PH_TABS.filter(function(x){return x.id==='+J(id)+'})[0];var o=t.render;t.render=function(h,c){__spy();return o(h,c);};})()'));
     ['masters','standards','settings'].forEach(id=>{U.R('_phUiTab='+J(id));U.R('_phUiPaintPanel()');});
-    o['uzaib: a forced tab id never calls a render of the three (he gets his default)']=hits===0&&/Overview/.test(U.text(U.panel()));
+    o['uzaib: a forced tab id never calls a render of the three (he gets his default, which since WP10 is Today\'s Cutting)']=hits===0&&/Today's Cutting/.test(U.text(U.panel()));
     // defence in depth: a render handed a non-manager ctx refuses and draws no control
     const T=mk('afnan');await T.open('masters');
     for(const [name,fn] of [['masters','_phaRenderMasters'],['standards','_phaRenderStandards'],['settings','_phaRenderSettings']]){
