@@ -6024,7 +6024,7 @@ function _siRestockCardHtml(){
   let body='';
   if(st.state==='needs-full')body=`<div class="sub">${_siFullNeedsCell()}</div>`;
   else if(st.state==='loading')body='<div class="sub" role="status">Reading the stock history…</div>';
-  else if(st.state==='error')body='<div class="sub" role="alert">Stock history unavailable — cover cannot be judged. <button type="button" class="si-ax-btn" onclick="window._siHistRetry()">Retry</button></div>';
+  else if(st.state==='error')body='<div class="sub" role="alert">Stock history unavailable — cover cannot be judged. <button type="button" class="si-ax-btn si-rs-retry" onclick="window._siRestockRetry()">Retry</button></div>';
   else if(st.state==='empty')body=`<div class="sub">Nothing needs a restock today (${_siEsc(st.judged==null?'sellers':st.judged+' articles')} judged; lead times as set on this device).</div>`;
   else body=`<ul class="si-rs-list">${st.rows.map(_siRestockRowHtml).join('')}</ul>${st.total>st.rows.length?`<div class="sub">+${st.total-st.rows.length} more in Needs Attention</div>`:''}`;
   const stale=st.staleH!=null&&(st.state==='ok'||st.state==='empty')?`<div class="si-rs-stale" role="note">Data ${st.staleH} h old — the sync may have stopped.</div>`:'';
@@ -6032,6 +6032,7 @@ function _siRestockCardHtml(){
   const head=st.state==='ok'?` <span class="si-rs-n">${st.total}</span>`:'';
   return`<div class="card si-rs" id="si-rs"><div class="card-title">Restock${head}</div>${stale}${body}${po}</div>`;
 }
+window._siRestockRetry=function(){return window._siHistRetry();};
 window._siRestockOpen=function(btn){
   const code=btn&&btn.getAttribute?btn.getAttribute('data-code'):'';
   if(!code)return false;
