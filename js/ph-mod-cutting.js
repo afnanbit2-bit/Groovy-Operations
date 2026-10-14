@@ -812,7 +812,9 @@ function _phkBuildCard(poId,host,kind){
   const body=_phkE('div','phk-card-body',null,[_phkInfoCol(poId,job,entry)]);
   const right=_phkCheckCol(poId,job,entry);
   body.appendChild(right);
-  host.appendChild(head);host.appendChild(body);
+  host.appendChild(head);
+  if(typeof phmkSummaryNode==='function'){const ms=phmkSummaryNode(poId);if(ms){host.appendChild(ms);host.classList.add('phmk-card');if(ms.querySelector('.phmk-k-hold'))host.classList.add('phmk-held');}}
+  host.appendChild(body);
   // managers only: the existing cutting screen
   if(_phkCtx&&_phkCtx.canManage&&entry&&entry.po.state==='ok'){
     const po=entry.po.data;

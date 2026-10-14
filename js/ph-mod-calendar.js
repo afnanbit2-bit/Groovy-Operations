@@ -473,6 +473,7 @@ function _phcChipEl(c,isTray){
   if(c.spill)tags.appendChild(phEl('span','phc-tag warn','▲ Spills'));
   if(!isTray&&c.workday===false)tags.appendChild(phEl('span','phc-tag warn','Non-working day'));
   if(isTray&&c.requested)tags.appendChild(phEl('span','phc-tag','Wanted '+phcDayLabel(c.requested)));
+  if(typeof phmkApply==='function')phmkApply(b,c.poId,{compact:true});
   if(tags.firstChild)b.appendChild(tags);
   const full=c.poId+', '+(c.article||'article not loaded')+', '+(c.units!==null&&c.units!==undefined?c.units+' pieces':'quantity not known')+(isTray?', not planned yet':(c.master?', master '+c.master:', no master')+', planned '+phcDayLabel(c.day,true))+(c.lock?'. '+c.lock:'')+(c.spill?'. '+c.spill:'');
   b.setAttribute('aria-label',full+(canDrag?'. Press Enter for the Move menu.':''));

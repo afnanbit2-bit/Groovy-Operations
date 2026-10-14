@@ -68,18 +68,19 @@ const PH_COLLECTIONS=Object.freeze({
   masters:  Object.freeze({col:'cutting_masters',label:'Cutting masters',        order:null,       limit:500}),
   standards:Object.freeze({col:'ph_standards',   label:'Consumption standards',  order:null,       limit:1500}),
   settings: Object.freeze({col:'ph_settings',    label:'Production Ops settings',doc:'main'}),
-  instructions:Object.freeze({col:'ph_article_instructions',label:'Product instructions',order:null,limit:1500})
+  instructions:Object.freeze({col:'ph_article_instructions',label:'Product instructions',order:null,limit:1500}),
+  marks:    Object.freeze({col:'po_marks',     label:'PO marks',               order:'updatedAt',limit:1500})
 });
-const PH_STAGE_IDS=Object.freeze(['drafts','jobs','masters','standards','settings','instructions']);
+const PH_STAGE_IDS=Object.freeze(['drafts','jobs','masters','standards','settings','instructions','marks']);
 // Every collection path this layer is allowed to touch (both files). A test scans the
 // source and the recorded writes against this list.
-const PH_WRITE_ROOTS=Object.freeze(['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions']);
+const PH_WRITE_ROOTS=Object.freeze(['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions','po_marks']);
 const PH_READ_TIMEOUT_MS=20000;
 const PH_HISTORY_LIMIT=50;
 const PH_HISTORY_MAX=200;
 
 /* ── State ─────────────────────────────────────────────────────────────── */
-let _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null};
+let _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null,marks:null};
 let _phLoad={};                 // stage -> {state:'idle'|'ok'|'error',at,n,truncated,err}
 let _phInflight={};             // stage -> Promise (concurrent calls coalesce)
 let _phHistCache={};            // poId -> {at,rows,truncated}
@@ -202,7 +203,7 @@ function phGet(stageId){
   return{ok:false,state:s.state,rows:null,err:s.err,text:s.err?phErrText(stageId,s.err):null};
 }
 function phResetData(){
-  _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null};
+  _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null,marks:null};
   _phLoad={};PH_STAGE_IDS.forEach(function(s){_phLoad[s]=_phStageFresh();});
   _phInflight={};_phHistCache={};
 }
@@ -273,3 +274,18 @@ async function phHistoryOf(poId,opts){
   }
 }
 function phHistoryForget(poId){if(poId===undefined)_phHistCache={};else delete _phHistCache[poId];}
+
+/* ── Manager marks, read for every screen (WP2) ─────────────────────────────
+   One bounded read of po_marks (the 'marks' stage). Everybody signed in reads it, so the cutting floor SEES every mark.
+   phMarkOf is null both for "no mark" and "not read": a screen that must tell them apart asks phMarksState() first. */
+function phMarksState(){
+  const g=phGet('marks');
+  return{ok:g.ok,failed:phLoadFailed('marks'),state:g.state,text:g.text||null,truncated:!!g.truncated};
+}
+function phMarkOf(poId){
+  const g=phGet('marks');
+  if(!g.ok||!Array.isArray(g.rows))return null;
+  const k=typeof phPoKey==='function'?phPoKey(poId):poId;
+  const r=g.rows.filter(function(x){return x&&x.fbKey===k;})[0];
+  return r||null;
+}

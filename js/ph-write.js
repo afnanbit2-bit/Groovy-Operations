@@ -61,6 +61,10 @@ const PH_STANDARD_CREATE_FIELDS=Object.freeze(['code','unit','grossPerPiece','to
 const PH_INSTR_CREATE_FIELDS=Object.freeze(['code','rev','placements','pantones','embroidery','notes','reason','createdAt','createdBy','createdByName','updatedAt','updatedBy']);
 const PH_INSTR_MUTABLE_FIELDS=Object.freeze(['placements','pantones','embroidery','notes','reason','rev','updatedAt','updatedBy']);
 const PH_INSTR_REVISION_FIELDS=Object.freeze(['code','rev','placements','pantones','embroidery','notes','reason','at','by','byName']);
+// Manager marks (WP2). po_marks/{PO-nnn} + notes/{row}; firestore.rules mirrors all three lists.
+const PH_MARKS_CREATE_FIELDS=Object.freeze(['poId','rev','marks','noteCount','lastNote','lastNoteBy','lastNoteAt','createdAt','createdBy','updatedAt','updatedBy','updatedByName']);
+const PH_MARKS_MUTABLE_FIELDS=Object.freeze(['marks','rev','noteCount','lastNote','lastNoteBy','lastNoteAt','updatedAt','updatedBy','updatedByName']);
+const PH_MARKS_NOTE_FIELDS=Object.freeze(['poId','seq','at','by','byName','text']);
 const PH_STANDARD_MUTABLE_FIELDS=Object.freeze(['unit','grossPerPiece','tolerancePct','sizes','sizeModel','reason','rev','updatedAt','updatedBy']);
 
 const PH_SETTINGS_VALUE_FIELDS=Object.freeze(['dailyCapacity','skipDays','offWeekdays','delayTargetDays','stuckDays','grossOverTolPct','grossUnderTolPct','cutGate','pcOnlyHard']);
@@ -786,4 +790,103 @@ async function phSettingsSave(patch,opts){
       return{ok:true,created:created,rev:saved.rev,settings:saved};
     });
   }catch(e){return _phFromError(e);}
+}
+
+/* ── Manager marks on a PO (WP2) ─────────────────────────────────────────── */
+// Managers only (afnan, ammar, mustafa). Writes po_marks/{PO-nnn} (and its notes) and NOTHING else: no pos document, no pos history row.
+// input: {priority:'urgent'|'high'|'normal', hold:{reason}|null, highlight:colour|null, label:text}; cleaned by the core's phMarksClean,
+// which is the one definition of a valid mark. The save REPLACES the marks map (a cleared mark is simply absent).
+function phBuildMarks(poId,marks,ctx){
+  const now=_phNowOf(ctx);
+  return{id:poId,data:{poId:poId,rev:1,marks:marks,noteCount:0,lastNote:'',lastNoteBy:'',lastNoteAt:0,createdAt:now,createdBy:ctx.u,updatedAt:now,updatedBy:ctx.u,updatedByName:_phStr(ctx.name||ctx.u,60)}};
+}
+async function phMarksSave(poId,input,opts){
+  const o=opts||{},a=_phActor(o);
+  const no=_phNeedManage(a.u);if(no)return no;
+  if(typeof poId!=='string'||!PH_PO_ID_RE.test(poId))return _phFail('invalid','Not a PO number: '+poId);
+  if(typeof phMarksClean!=='function')return _phFail('failed','js/ph-core.js is not loaded, so marks cannot be checked.');
+  const cl=phMarksClean(input);
+  if(cl.problems.length)return _phFail('invalid',cl.problems.join(' '));
+  if(_phOffline())return _phFail('offline','No connection. Saving a mark is a transaction and cannot be queued.');
+  try{
+    return await _phSilent(false,async function(){
+      const now=_phNowOf(o),ctx={u:a.u,name:a.name,now:now};
+      const ref=doc(db,'po_marks',poId);
+      let saved=null,created=false,changed=[];
+      await runTransaction(db,async function(tx){
+        const s=await tx.get(ref);
+        if(!s||!s.exists()){
+          if(phMarksEmpty(cl.value))throw _phRefuse('refused','Nothing to save: no mark is set.');
+          const p=await tx.get(doc(db,'pos',poId));
+          if(!p||!p.exists())throw _phRefuse('missing','There is no PO '+poId+'.');
+          created=true;changed=phMarksDiff({},cl.value);
+          saved=phBuildMarks(poId,cl.value,ctx).data;
+          tx.set(ref,saved);
+          return;
+        }
+        const prev=s.data();
+        if(o.expectedRev!=null&&prev.rev!==o.expectedRev)throw _phRefuse('stale','The marks of '+poId+' were changed by someone else (revision '+prev.rev+'). Reload them.',{rev:prev.rev});
+        changed=phMarksDiff(prev.marks,cl.value);
+        if(!changed.length)throw _phRefuse('refused','Nothing has changed since revision '+prev.rev+'.');
+        const patch={marks:cl.value,rev:prev.rev+1,updatedAt:now,updatedBy:a.u,updatedByName:_phStr(a.name||a.u,60)};
+        tx.update(ref,patch);
+        created=false;saved=Object.assign({},prev,patch);
+      });
+      _phPatchLocal('marks',poId,saved);
+      _phLog('PO marks updated',poId+': '+changed.join(', '));
+      return{ok:true,id:poId,created:created,rev:saved.rev,changed:changed,marks:saved};
+    });
+  }catch(e){return _phFromError(e);}
+}
+// Add a comment to a PO's thread (append-only). The parent po_marks document is created on the first comment and
+// its counter and last-comment preview move in the SAME transaction as the note row.
+async function phMarkComment(poId,text,opts){
+  const o=opts||{},a=_phActor(o);
+  const no=_phNeedManage(a.u);if(no)return no;
+  if(typeof poId!=='string'||!PH_PO_ID_RE.test(poId))return _phFail('invalid','Not a PO number: '+poId);
+  if(typeof phMarkNoteClean!=='function')return _phFail('failed','js/ph-core.js is not loaded, so a comment cannot be checked.');
+  const nc=phMarkNoteClean(text);
+  if(!nc.ok)return _phFail('invalid',nc.problem);
+  if(_phOffline())return _phFail('offline','No connection. Saving a comment is a transaction and cannot be queued.');
+  const now=_phNowOf(o);
+  const rid=phHistoryRowId(now,o.rand);
+  if(!rid)return _phFail('invalid','The clock does not give a 13-digit time, so a comment id cannot be made.');
+  try{
+    return await _phSilent(false,async function(){
+      const ref=doc(db,'po_marks',poId);
+      const name=_phStr(a.name||a.u,60);
+      let saved=null,seq=0;
+      await runTransaction(db,async function(tx){
+        const s=await tx.get(ref);
+        const preview={lastNote:nc.text.slice(0,PH_MARK_LAST_MAX),lastNoteBy:name,lastNoteAt:now};
+        if(!s||!s.exists()){
+          const p=await tx.get(doc(db,'pos',poId));
+          if(!p||!p.exists())throw _phRefuse('missing','There is no PO '+poId+'.');
+          seq=1;
+          saved=phBuildMarks(poId,{},{u:a.u,name:a.name,now:now}).data;
+          Object.assign(saved,preview,{noteCount:1});
+          tx.set(ref,saved);
+        }else{
+          const prev=s.data();
+          seq=(typeof prev.noteCount==='number'?prev.noteCount:0)+1;
+          const patch=Object.assign({noteCount:seq,rev:prev.rev+1,updatedAt:now,updatedBy:a.u,updatedByName:name},preview);
+          tx.update(ref,patch);
+          saved=Object.assign({},prev,patch);
+        }
+        tx.set(doc(db,'po_marks',poId,'notes',rid),{poId:poId,seq:seq,at:now,by:a.u,byName:name,text:nc.text});
+      });
+      _phPatchLocal('marks',poId,saved);
+      _phLog('PO comment added',poId);
+      return{ok:true,id:poId,noteId:rid,seq:seq,marks:saved};
+    });
+  }catch(e){return _phFromError(e);}
+}
+// A PO's comment thread, newest first (bounded; a failed or offline-copy read is an error, never an empty list).
+async function phMarkNotesOf(poId,opts){
+  if(typeof poId!=='string'||!PH_PO_ID_RE.test(poId))return{ok:false,rows:null,text:'Not a PO number.'};
+  try{
+    const snap=await _phWithTimeout(getDocs(query(collection(db,'po_marks',poId,'notes'),orderBy('at','desc'),limit(100))),PH_READ_TIMEOUT_MS);
+    if(_phFromCache(snap))throw _phCacheError();
+    return{ok:true,rows:((snap&&snap.docs)||[]).map(function(d){return Object.assign({},d.data(),{fbKey:d.id});})};
+  }catch(e){const err=phErrInfo(e);return{ok:false,rows:null,err:err,text:err.permission?'po_marks comments: could not be read - republish firestore.rules from the repo file.':'comments: read failed ('+err.message+').'};}
 }

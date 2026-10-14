@@ -1318,6 +1318,69 @@ function phInstructionsFromRecipe(recipe,opts){
   return phInstructionsClean({placements:placements,pantones:pantones,embroidery:emb,notes:notes});
 }
 
+/* ── Manager marks on a PO (WP2, 18 Oct 2026) ─────────────────────────────────
+   po_marks/{PO-nnn}.marks: {priority?, hold?:{reason}, highlight?, label?}. Only what is set is stored; "normal"
+   priority is stored as nothing. Pure: no DOM, no Firestore. js/ph-write.js phMarksSave and firestore.rules hold
+   the same lists and caps (tests/ph-marks.test.js compares them). A mark is shown with a colour AND a glyph AND a word. */
+const PH_MARK_PRIORITIES=Object.freeze(['urgent','high']);
+const PH_MARK_COLOURS=Object.freeze(['amber','red','green','blue','purple','teal']);
+const PH_MARK_KEYS=Object.freeze(['priority','hold','highlight','label']);
+const PH_MARK_LABEL_MAX=60,PH_MARK_HOLD_MAX=200,PH_MARK_NOTE_MAX=500,PH_MARK_LAST_MAX=140;
+function _phMkS(v,n){return typeof v==='string'?v.trim():'';}
+// -> {value:{...only set keys}, problems:[text]}. A problem is a refusal: the writer will not save while any remain.
+function phMarksClean(input){
+  const inp=input!==null&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  const out={},problems=[];
+  const pr=inp.priority;
+  if(pr!==undefined&&pr!==null&&pr!==''&&pr!=='normal'){
+    if(PH_MARK_PRIORITIES.indexOf(pr)<0)problems.push('Priority must be urgent, high or normal.');
+    else out.priority=pr;
+  }
+  const h=inp.hold;
+  if(h!==undefined&&h!==null&&h!==false){
+    const r=_phMkS(h&&typeof h==='object'?h.reason:h);
+    if(h&&typeof h==='object'&&h.on===false){/* explicitly off */}
+    else if(!r)problems.push('A hold needs a reason.');
+    else if(r.length>PH_MARK_HOLD_MAX)problems.push('The hold reason is longer than '+PH_MARK_HOLD_MAX+' characters.');
+    else out.hold={reason:r};
+  }
+  const hl=inp.highlight;
+  if(hl!==undefined&&hl!==null&&hl!==''){
+    if(PH_MARK_COLOURS.indexOf(hl)<0)problems.push('Highlight must be one of: '+PH_MARK_COLOURS.join(', ')+'.');
+    else out.highlight=hl;
+  }
+  const lb=_phMkS(inp.label);
+  if(lb){
+    if(lb.length>PH_MARK_LABEL_MAX)problems.push('The text mark is longer than '+PH_MARK_LABEL_MAX+' characters.');
+    else out.label=lb;
+  }
+  return{value:out,problems:problems};
+}
+function phMarksEmpty(m){return!m||typeof m!=='object'||!PH_MARK_KEYS.some(function(k){return m[k]!==undefined&&m[k]!==null;});}
+// Which of the four marks differ between two (cleaned) marks maps. Order: PH_MARK_KEYS.
+function phMarksDiff(prev,next){
+  const a=prev&&typeof prev==='object'?prev:{},b=next&&typeof next==='object'?next:{};
+  return PH_MARK_KEYS.filter(function(k){return JSON.stringify(a[k]===undefined?null:a[k])!==JSON.stringify(b[k]===undefined?null:b[k]);});
+}
+// A comment: trimmed text, 1..500 characters, not blank. -> {ok,text,problem}
+function phMarkNoteClean(text){
+  const t=typeof text==='string'?text.trim():'';
+  if(!t)return{ok:false,text:'',problem:'A comment cannot be empty.'};
+  if(t.length>PH_MARK_NOTE_MAX)return{ok:false,text:t,problem:'A comment is at most '+PH_MARK_NOTE_MAX+' characters.'};
+  return{ok:true,text:t,problem:''};
+}
+// The badges a screen draws for a marks map, in the order hold, priority, highlight, label. Each has a glyph, a word key
+// (js/ph-i18n.js) and a colour name, so no mark is colour alone. A label carries its own text.
+function phMarkBadges(marks){
+  const m=marks&&typeof marks==='object'?marks:{},out=[];
+  if(m.hold&&typeof m.hold==='object')out.push({kind:'hold',glyph:'\u23F8',key:'marks.b_hold',colour:'red',text:typeof m.hold.reason==='string'?m.hold.reason:''});
+  if(m.priority==='urgent')out.push({kind:'priority',glyph:'\u203C',key:'marks.b_urgent',colour:'red',text:''});
+  else if(m.priority==='high')out.push({kind:'priority',glyph:'\u25B2',key:'marks.b_high',colour:'amber',text:''});
+  if(PH_MARK_COLOURS.indexOf(m.highlight)>-1)out.push({kind:'highlight',glyph:'\u25C6',key:'marks.hl_'+m.highlight,colour:m.highlight,text:''});
+  if(typeof m.label==='string'&&m.label)out.push({kind:'label',glyph:'\u270E',key:'',colour:'blue',text:m.label});
+  return out;
+}
+
 if(typeof module!=='undefined'&&module.exports){
   module.exports={PH_VERSION,PH_TZ_OFFSET_MIN,PH_UNITS,PH_SEASON_VALUES,PH_WINTER_MONTHS,PH_SUMMER_MONTHS,PH_SIZE_MODELS,
     PH_WAIST_CODE_PREFIXES,PH_FREE_KEY,PH_REAL_STAGE_ORDER,PH_STAGES,PH_CUT_GATE_PCT,PH_PC_MIN_WIDTH,PH_MASTER_NAME_MAX,
@@ -1333,5 +1396,7 @@ if(typeof module!=='undefined'&&module.exports){
     phPoComplete,phIsPcOnly,phCutRange,phCutCheck,phCutVerdict,phReport,
     phPoKey,phPoSpelling,phPoSpellings,
     PH_INSTR_PLACEMENTS_MAX,PH_INSTR_PANTONES_MAX,PH_INSTR_EMB_MAX,PH_INSTR_SYSTEMS,phHexOk,phHexNorm,phPantoneParse,phPantoneHex,
-    phInstructionsClean,phInstructionsEmpty,phInstructionsDiff,phInstructionsFromRecipe};
+    phInstructionsClean,phInstructionsEmpty,phInstructionsDiff,phInstructionsFromRecipe,
+    PH_MARK_PRIORITIES,PH_MARK_COLOURS,PH_MARK_KEYS,PH_MARK_LABEL_MAX,PH_MARK_HOLD_MAX,PH_MARK_NOTE_MAX,PH_MARK_LAST_MAX,
+    phMarksClean,phMarksEmpty,phMarksDiff,phMarkNoteClean,phMarkBadges};
 }
