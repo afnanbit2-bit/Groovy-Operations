@@ -6459,4 +6459,6 @@ textarea.pha-in{width:100%;min-height:72px;font:inherit}
 .phk-ins-sw{display:inline-block;width:18px;height:18px;flex:0 0 18px;border:1px solid var(--border);border-radius:4px}
 .phk-ins-msg{margin:0;font-size:14px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}
 .phk-ins-rev{margin:8px 0 0;font-size:13px;color:var(--muted)}
+/* WP7: the same card on the PO detail page */
+#ph-detail-instr .phk-ins{margin:0}
 /* ph-mod-jobcopy END */

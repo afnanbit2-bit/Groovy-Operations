@@ -526,6 +526,27 @@ async function _phkFragment(o){
     +'document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";m.style.overflow="visible";})();<\/script>';
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+chrome+script};
 }
+// WP7: the read-only instruction card on the PO DETAIL page (js/ph-mod-cutting.js phPoDetailCardSlot/Fill), real card builder over tests/ph-dom.js.
+// Variants: a full snapshot (long strings, swatches), none saved, malformed. Card sits in a plain page column, as in renderDetailPage.
+async function _phDetailCardFragment(o){
+  o=o||{};
+  const vm=require('vm'),domkit=require('./ph-dom');
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-i18n.js'],currentPage:'dashboard',session:{uid:'u-umair',u:'umair',name:'Umair',role:'worker'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+  const dom=domkit.install(app.ctx);
+  app.ctx.console={warn(){},log(){},error(){}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-cutting.js'),'utf8'),app.ctx,{filename:'ph-mod-cutting.js'});
+  const mk=()=>{const h=dom.mk('div');h.id='ph-detail-instr';dom.body.appendChild(h);return h;};
+  const full={placements:[{en:'Left chest, 8 cm below the shoulder seam, centred on the pocket line and never over the seam allowance',ur:'بائیں سینہ، کندھے کی سلائی سے آٹھ سینٹی میٹر نیچے',side:'Front'}],
+    pantones:[{system:'C',code:'485',name:'Bright Red With A Long Colour Name',hex:'#DA291C',use:'logo outline'},{system:'TCX',code:'19-1664',name:'True Red',hex:'#BE2D3B',use:''},{system:'C',code:'1795',name:'Light on white',hex:'#FFFFFF',use:''}],
+    embroidery:[{code:'EMB-12',candle:'C-204',shade:'Navy 3 (thread book page 4, second row from the left)',position:'Left chest',note:'4 cm tall, satin stitch'}],
+    notes:{en:'Match the approved sample. Keep the thread tension loose on the fleece panels and check the first piece before the full run.',ur:'منظور شدہ نمونے کے مطابق بنائیں۔'}};
+  const po=o.none?{id:'PO-009'}:o.bad?{id:'PO-009',instructions:'oops'}:{id:'PO-009',instructions:full,instructionsRev:3};
+  app.ctx.__po=po;
+  const host=mk();
+  vm.runInContext('window.phPoDetailCardFill(__po)',app.ctx);
+  return{html:'<div style="max-width:720px;padding:12px"><div class="card-title">Product</div>'+domkit.toHtml(host)+'</div>'};
+}
 // Production Ops ▸ Monitor and Overview (12 Oct 2026): the REAL js/ph-ui.js + js/ph-mod-monitor.js over tests/ph-dom.js's small DOM, with the
 // shared fifteen-PO fixture (tests/ph-mod-monitor-fixture.js, clock pinned to Mon 12 Oct 2026), then SERIALISED to markup. Variants: the Monitor
 // tab with every tile / the range bar / the stage bars / the attention list / the settings card; the same with po_cut_jobs refused and the range
@@ -3350,6 +3371,9 @@ const FRAGMENTS={
   "production ops — todays cutting (count only)":()=>_phkFragment({tally:true}),
   "production ops — todays cutting (the cutting floor, view only)":()=>_phkFragment({floor:true}),
   "production ops — todays cutting (refused reads)":()=>_phkFragment({fail:true}),
+  "production ops — po detail instruction card":()=>_phDetailCardFragment({}),
+  "production ops — po detail instruction card (none saved)":()=>_phDetailCardFragment({none:true}),
+  "production ops — po detail instruction card (malformed)":()=>_phDetailCardFragment({bad:true}),
   'production ops — monitor':()=>_phmFragment({tab:'monitor'}),
   'production ops — monitor: unavailable and no-data states':()=>_phmFragment({tab:'monitor',jobsFail:true,range:'today'}),
   'production ops — monitor: the list drawer':()=>_phmFragment({tab:'monitor',drawer:'stuck'}),

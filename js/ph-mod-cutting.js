@@ -595,7 +595,7 @@ function _phkInstrSection(titleKey,rows){
   return _phkE('div','phk-ins-sec',null,[_phkE('h4','phk-ins-h',phI18nD(titleKey)),ul]);
 }
 // entry = the loaded PO entry ({state:'ok'|'error'|'missing'|'loading', data, text}); returns a node, or null while loading.
-function phkInstructionsCard(entry){
+function phkInstructionsCard(entry,opts){
   const card=_phkE('section','phk-ins');
   card.setAttribute('data-phk-instructions','1');
   card.appendChild(_phkE('h3','phk-ins-title',phI18nD('cut.instr_title')));
@@ -606,6 +606,13 @@ function phkInstructionsCard(entry){
     return card;
   }
   const raw=entry.data.instructions;
+  // Only the PO detail page asks for this (opts.strict): a snapshot that is present but not a map is said to be malformed, by name.
+  // Today's Cutting calls with no opts and keeps its original wording for every input.
+  if(opts&&opts.strict&&raw!==undefined&&raw!==null&&(typeof raw!=='object'||Array.isArray(raw))){
+    card.classList.add('phk-ins-bad');
+    card.appendChild(_phkE('p','phk-ins-msg',phI18nD('cut.instr_malformed')));
+    return card;
+  }
   const v=raw&&typeof raw==='object'&&!Array.isArray(raw)&&typeof phInstructionsClean==='function'?phInstructionsClean(raw).value:null;
   if(!v||(typeof phInstructionsEmpty==='function'&&phInstructionsEmpty(v))){
     card.appendChild(_phkE('p','phk-ins-msg',phI18nD('cut.instr_none')));
@@ -978,3 +985,19 @@ function phkRenderTab(host,ctx){
 }
 
 if(typeof phRegisterTab==='function')phRegisterTab('cutting',{render:phkRenderTab});
+
+/* ── WP7: the same read-only card on the PO DETAIL page, for everybody who can open it ─────────────────────────────
+   js/pos.js renderDetailPage puts window.phPoDetailCardSlot(po) (an empty placeholder) in the page and calls window.phPoDetailCardFill(po)
+   after the page is in the DOM. Source is the PO document the page already holds (po.instructions): no read, no write, no rules change. */
+window.phPoDetailCardSlot=function(po){
+  return'<div id="ph-detail-instr" data-ph-detail-instr="1" style="margin-bottom:12px"></div>';
+};
+window.phPoDetailCardFill=function(po){
+  try{
+    const host=document.getElementById('ph-detail-instr');if(!host)return false;
+    while(host.firstChild)host.removeChild(host.firstChild);
+    const card=phkInstructionsCard({state:'ok',data:po&&typeof po==='object'?po:{}},{strict:true});
+    if(card)host.appendChild(card);
+    return !!card;
+  }catch(e){return false;}
+};

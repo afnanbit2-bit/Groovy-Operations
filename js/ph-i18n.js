@@ -1088,4 +1088,5 @@ function phI18nReviewNotice(doc){
   A('cut.instr_embroidery','Embroidery','کڑھائی',true);
   A('cut.instr_notes','Notes','نوٹس',true);
   A('cut.instr_rev','Instructions revision {n} (as issued on this PO)','ہدایات ریویژن {n} (اس پی او کے اجراء کے وقت)',true);
+  A('cut.instr_malformed','The saved instructions on this PO are malformed (the "instructions" field is not a map), so they cannot be shown.','اس پی او پر محفوظ ہدایات خراب ہیں ("instructions" فیلڈ درست نہیں)، اس لیے دکھائی نہیں جا سکتیں۔',true);
 })();
