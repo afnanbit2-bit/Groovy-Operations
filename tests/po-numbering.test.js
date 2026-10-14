@@ -155,7 +155,7 @@ module.exports=async function(){
     s.eq('and the counter is now 7',at(a,'counters/main').pos,7);
     s.ok('the success toast is clean (no trim-request noise)',a.toasts().some(t=>/^PO-007 created ✓$/.test(t)),a.toasts().join('|'));
     s.eq('the PO carries what was typed',J([made&&made.name,made&&made.code,made&&made.qty,made&&made.fabric]),J(['Tee','GST001',100,'Terry']));
-    s.eq('stored status is reserved with no stage',J([made&&made.poStatus,made&&made.currentStage]),J(['reserved',null]));
+    s.eq('stored status is in_production at cutting (reserve removal, Oct 2026: was reserved with no stage)',J([made&&made.poStatus,made&&made.currentStage]),J(['in_production','cutting']));
   }
 
   s.section('the counter and the PO are ONE transaction');

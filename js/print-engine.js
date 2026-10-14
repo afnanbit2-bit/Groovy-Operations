@@ -1779,7 +1779,7 @@ function _poCutData(c) {
     sizes: sizes, total: total, by: c.by || '',
     sizeText: sizes.map(function (x) { return x.k + ' ' + x.q; }).join('   '),
     bundleLines: bundleLines,
-    bundleNote: bl.length ? '' : 'No bundles on file for this cut.',
+    bundleNote: bl.length ? '' : (c.bundlesUnavailable ? 'Bundles unavailable - the bundle list could not be read. Quantities above are the cut recorded on the PO.' : 'No bundles on file for this cut.'),
     fabricNote: c.fabricUsed ? 'Fabric used: ' + String(c.fabricUsed) : ''
   };
 }

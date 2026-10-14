@@ -1196,7 +1196,7 @@ window.submitPO=async function(){
     // it hangs, onto the PO. Guarded — no Pattern Hub, no change; the
     // free-text `pattern` box below is never touched. See js/patterns.js.
     const _ptnFields=(typeof window.ptnPoFieldsFor==='function'?await window.ptnPoFieldsFor(code).catch(()=>({})):{});
-    const payload={ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:(typeof fabPoSelected==='function'?fabPoSelected():[]),imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.RESERVED,currentStage:null,stages,bundlingParts,embellishment,jobCopies:_poJobCopiesRead(),notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:_poPktDay(Date.now())};
+    const payload={ts:Date.now(),name,code,pattern:document.getElementById('po-pattern')?.value.trim()||'',qty,sizes,ratio:document.getElementById('ratio-disp')?.textContent||'',fabric,fabricCode:document.getElementById('po-fabriccode')?.value.trim()||'',store:document.getElementById('po-store')?.value.trim()||'',totalRoll:document.getElementById('po-rolls')?.value.trim()||'',fabrics:[],imgFront:imgFrontUrl,imgBack:imgBackUrl,poStatus:PO_STATUS.IN_PRODUCTION,currentStage:'cutting',stages,bundlingParts,embellishment,jobCopies:_poJobCopiesRead(),notes:document.getElementById('po-notes')?.value.trim()||'',createdBy:session.name,createdAt:_poPktDay(Date.now())};
     Object.assign(payload,_ptnFields);
     // B12/B13: the number is minted INSIDE the transaction that writes the PO.
     // It used to come from getNextId('pos') — its own transaction, committed
@@ -1210,7 +1210,9 @@ window.submitPO=async function(){
     const made=await createWithNextId({field:'pos',collection:'pos',floor:await _poFloorNow(),idFor:_poIdFor,build:(n,id)=>Object.assign({},payload,{id})});
     const poId=made.id;_createdId=poId;
     await logActivity('PO created',`${poId} — ${name} (${qty} pcs)`);
-    if(typeof fabPoReserveCommit==='function'){try{await fabPoReserveCommit(poId);}catch(_re){showToast('PO saved, but fabric reservation failed: '+_re.message,true);}}
+    // Reserve removal (Oct 2026): a new PO starts at cutting, so no fabric roll is reserved for it (fabPoReserveCommit is no longer called);
+    // the rolls stay in stock until the fabric issue takes them. Only the picker's selection state is cleared.
+    if(typeof fabPoReserveReset==='function'){try{fabPoReserveReset();}catch(_re){}}
     if(embellishment.required&&embellishment.recipeStatus==='missing')await logActivity('Recipe Missing',`${poId} — ${embellishment.articleCode||code}: Recipe required before PP approval. Ammar notified.`).catch(()=>{});
     if(embellishment.required&&embellishment.recipeStatus==='draft')await logActivity('Recipe Needs Lock',`${poId} — ${embellishment.articleCode||code}: Recipe exists but not locked by Ammar.`).catch(()=>{});
     _poEmbellishment=null;

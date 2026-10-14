@@ -154,7 +154,7 @@ module.exports=async function(){
   Object.keys(res).forEach(k=>{NAMES.push(k);s.ok(k,!!res[k]);});
   s.section('wiring');
   const html=read('index.html'),sw=read('sw.js');
-  s.ok('CACHE_VERSION is v323 or later (v325 by WP7)',/CACHE_VERSION = 'v32[345]'/.test(sw));
+  s.ok('CACHE_VERSION is v323 or later (v326 by WP8)',/CACHE_VERSION = 'v32[3456]'/.test(sw));
   const tag=f=>(new RegExp('/'+f.replace(/\./g,'\\.')+'\\?v=([0-9a-z]+)').exec(html)||[])[1];
   const tags=['js/print-engine.js','js/pos.js','js/ph-i18n.js','js/ph-mod-cutting.js','css/main.css'].map(tag);
   s.ok('the five changed files carry distinct ?v tags',tags.every(Boolean)&&new Set(tags).size===5&&true);
