@@ -121,7 +121,8 @@ async function checks(src){
   o['clicking a row opens that article’s situation in Needs Attention']=opened===true&&R('_siSection')==='attention'&&R('_siNaSel')==='R9';
   o['clicking with no code does nothing']=R('window._siRestockOpen({getAttribute:()=>""})')===false;
   const w0=a.ctx.__writes?a.ctx.__writes.length:0;
-  o['WP3 place-holder: _siRestockDraft is inert (returns false, writes nothing)']=R('window._siRestockDraft("R10")')===false;
+  const dr=await R('window._siRestockDraft("R10")');
+  o['WP3: with Production Ops not loaded (no phCanManage), _siRestockDraft refuses and writes nothing (tests/shopify-restock-draft.test.js drives the real thing)']=dr&&dr.ok===false&&dr.code==='forbidden'&&(a.ctx.__writes?a.ctx.__writes.length:0)===w0;
   // ── no read added ──
   o['no Firestore read: building the state and the card, repeatedly, calls getDocs/getDoc zero times']=a.reads.n===0;
   return o;
@@ -168,7 +169,7 @@ module.exports=async function(){
   await brk('card dropped from Today','  ${_siRestockCardHtml()}\n','',[k('card: it is part of the Today section')]);
   await brk('open handler does not switch','window._siSwitchTab(\'attention\');\n  return window._siNaOpen(code);','return window._siNaOpen(code);',[k('clicking a row opens')]);
   await brk('state does a read','let ns,all;','getDocs&&getDocs();let ns,all;',[k('no Firestore read')]);
-  await brk('draft place-holder writes','window._siRestockDraft=function(){return false;};','window._siRestockDraft=function(){return true;};',[k('WP3 place-holder')]);
+  await brk('draft refusal dropped',"if(!_siRestockCanDraft()){_siRestockToast('Starting a PO draft is for","if(false){_siRestockToast('Starting a PO draft is for",[k('WP3: with Production Ops not loaded')]);
   s.ok('breaks run: '+broken,broken>=28);
   return s;
 };

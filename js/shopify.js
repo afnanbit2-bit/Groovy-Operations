@@ -6217,7 +6217,7 @@ function _siNaBadge(){
 
 // ═══ Restock suggestions (WP1 card + WP2 bell; design: one Needs Attention issue that carries a reorder guide) ═══
 // A suggestion is NOT a new calculation: it is an existing _siNaState() issue that passes _siRestockPick. No Firestore read is added here.
-// "Start a PO draft" (WP3) is NOT in this build: _siRestockDraft is an inert place-holder that does nothing and writes nothing.
+// "Start a PO draft" (WP3, below): managers only, through the Production Ops writer phSaveDraft. No Firestore read is added here beyond phLoadStage('drafts').
 const _SI_RESTOCK_USERS=Object.freeze(['afnan','ammar','mustafa']); // held equal to _PH_MANAGE_USERS by a test
 const _SI_RESTOCK_TOP=5,_SI_RESTOCK_SNAP_KEY='groovy-si-restock-last',_SI_RESTOCK_DAY_KEY='groovy-si-restock-day';
 const _SI_RESTOCK_TYPES=Object.freeze(['stockout','runout','rising']),_SI_RESTOCK_BANDS=Object.freeze(['critical','act']),_SI_RESTOCK_NOT=Object.freeze(['stuck','hold','markdown']);
@@ -6270,7 +6270,7 @@ function _siRestockSnapshot(st){ // per-device record of what was computed (as-o
 function _siRestockRowHtml(r){
   const oo=r.onOrder==null?'on-order data unavailable':(r.onOrder>0?r.onOrder+' on order, already deducted':'none on order');
   const guide=r.lo===r.hi?r.hi:r.lo+'–'+r.hi;
-  return`<li class="si-rs-row ${r.band}"><button type="button" class="si-rs-open" data-code="${_siEsc(r.code)}" onclick="window._siRestockOpen(this)"><span class="si-rs-code">${_siEsc(r.code)}</span> <span class="si-rs-name">${_siEsc(r.label)}</span></button><div class="si-rs-qty"><strong>${_siEsc(r.hi)} pcs</strong> <span class="si-rs-guide">guide ${_siEsc(guide)}</span></div><div class="si-rs-meta">${_siEsc(r.band==='critical'?'Critical':'This week')} · ${_siEsc(r.cover)} · lead ${_siEsc(r.lead)} d · ${_siEsc(oo)}${r.split?' · split '+_siEsc(r.split):''}</div></li>`;
+  return`<li class="si-rs-row ${r.band}"><button type="button" class="si-rs-open" data-code="${_siEsc(r.code)}" onclick="window._siRestockOpen(this)"><span class="si-rs-code">${_siEsc(r.code)}</span> <span class="si-rs-name">${_siEsc(r.label)}</span></button><div class="si-rs-qty"><strong>${_siEsc(r.hi)} pcs</strong> <span class="si-rs-guide">guide ${_siEsc(guide)}</span></div><div class="si-rs-meta">${_siEsc(r.band==='critical'?'Critical':'This week')} · ${_siEsc(r.cover)} · lead ${_siEsc(r.lead)} d · ${_siEsc(oo)}${r.split?' · split '+_siEsc(r.split):''}</div>${_siRestockCanDraft()?`<button type="button" class="si-ax-btn si-rs-draft" data-code="${_siEsc(r.code)}" onclick="window._siRestockDraft(this)">Start a PO draft</button>`:''}</li>`;
 }
 function _siRestockCardHtml(){
   if(!_siRestockCanSee())return'';
@@ -6294,8 +6294,73 @@ window._siRestockOpen=function(btn){
   window._siSwitchTab('attention');
   return window._siNaOpen(code);
 };
-// WP3 place-holder: "Start a PO draft" is not built. Inert on purpose; it reads and writes nothing.
-window._siRestockDraft=function(){return false;};
+// ── Start a PO draft (WP3): a manager turns one suggestion into a prefilled po_drafts record ──
+// shopify.js loads BEFORE ph-core/ph-data/ph-write/ph-mod-drafts, so every call across is at RUNTIME behind typeof (a build without them says so, writes nothing).
+// The draft IS a drafts-form save: the po map is built by the form's own _phdBlank + _phdToPo (so it is byte-for-byte what the form would store), plus
+// po.source and the notes. Allowed from a phone for managers (no PC check at this entry; Kashif's own data entry stays PC-only).
+const _siRestockBusy=new Set();
+function _siRestockCanDraft(){
+  try{return typeof phCanManage==='function'&&typeof session!=='undefined'&&!!session&&phCanManage(String(session.u||''))===true;}catch(_){return false;}
+}
+function _siRestockToast(msg,bad){try{if(typeof showToast==='function')showToast(msg,!!bad);}catch(_){}}
+// Pure-ish: the suggestion for a code (the existing pick) -> {ok,po,source} or {ok:false,why}. Reads only what the page already holds.
+function _siRestockDraftPlan(code){
+  const c=String(code||'').trim().toUpperCase();
+  if(!c)return{ok:false,why:'No article code.'};
+  let issue=null;
+  try{issue=_siNaState().issues.filter(_siRestockPick).find(i=>String(i.code).toUpperCase()===c)||null;}catch(_){return{ok:false,why:'The restock list could not be worked out right now.'};}
+  if(!issue)return{ok:false,why:c+' is not a restock suggestion right now (it may be covered by an open PO).'};
+  if(typeof _phdBlank!=='function'||typeof _phdToPo!=='function'||typeof phSizeModel!=='function'||typeof phSizeKey!=='function')return{ok:false,why:'Production Ops is not loaded, so a draft cannot be started.'};
+  const q=issue.n.qty,hi=q.hi,oo=issue.n.onOrder,onOrder=(oo&&oo.state==='ok')?(oo.qty||0):null;
+  let a=null;try{const idx=_siAxIndex();a=idx&&idx.map&&idx.map.get(issue.code)||null;}catch(_){a=null;}
+  const f=_phdBlank();
+  f.code=c;f.name=(a&&a.name)||issue.label||c;f.qty=String(hi);
+  // sizes: the Sizes card's split of the HIGH end, keyed through phSizeKey; a size the article's axis does not know is named in the notes, never silently renamed
+  const mdl=phSizeModel({code:c}),odd=[];let split=null;
+  try{if(a){const sp=_siAxSizeSplit(_siAxStats(a).sizeRows,hi);if(sp.ok&&sp.rows)split=sp.rows.filter(r=>r.units>0);}}catch(_){split=null;}
+  if(split)split.forEach(r=>{const k=phSizeKey(mdl.model,r.size);if(k===null)odd.push(r.size+' '+r.units);else f.sizes[k]=String(r.units);});
+  // season: saved first, else a guess from today's date (labelled in the notes)
+  let seasonNote='';
+  const saved=_siMetaOf(c).season;
+  if(saved){f.season=saved;}
+  else if(typeof phSeasonOfDay==='function'){const g=phSeasonOfDay(_siPktDate(0)).season;if(g){f.season=g;seasonNote=' Season '+g+' is a guess from today\'s date: check it.';}}
+  const day=_siPktDate(0);
+  f.notes=('Restock suggestion '+day+': '+(issue.n.coverText||'')+' vs lead '+issue.n.leadDays+' d; guide '+q.lo+'-'+q.hi+' pcs.'
+    +(onOrder?' '+onOrder+' already on order and deducted.':(onOrder===null?' Open POs could not be read: on order unknown.':''))
+    +(split?'':' No size split (too little sales history): enter the sizes by hand.')
+    +(odd.length?' Sizes not on this article\'s axis, not entered: '+odd.join(', ')+'.':'')
+    +seasonNote+' Fill fabric, cut master and dates.').replace(/\s+/g,' ').trim();
+  f.source={kind:'restock',day,lo:q.lo,hi:q.hi,onOrder,band:issue.band};
+  const t=_phdToPo(f);
+  if(t.problems.length)return{ok:false,why:'The prefilled draft did not pass the form\'s checks: '+t.problems.map(p=>String(p.why)).join('; ')};
+  return{ok:true,po:t.po,code:c,onOrder};
+}
+window._siRestockDraft=async function(arg){
+  const code=String(arg&&arg.getAttribute?arg.getAttribute('data-code'):(arg||'')).trim().toUpperCase();
+  if(!code)return{ok:false,code:'invalid'};
+  if(!_siRestockCanDraft()){_siRestockToast('Starting a PO draft is for the Production Ops managers (Afnan, Ammar, Mustafa).',true);return{ok:false,code:'forbidden'};}
+  if(typeof phSaveDraft!=='function'||typeof phLoadStage!=='function'||typeof phGet!=='function'){_siRestockToast('Production Ops is not loaded, so a draft cannot be started.',true);return{ok:false,code:'unavailable'};}
+  if(_siRestockBusy.has(code))return{ok:false,code:'busy'};
+  _siRestockBusy.add(code);
+  try{
+    // 1. open POs: still loading cannot be judged; fully covered is no longer a suggestion (the plan refuses it)
+    if(_siPoState==='loading'||_siPoState==='idle'){_siRestockToast('Open POs are still loading: try again in a moment.',true);return{ok:false,code:'loading'};}
+    const plan=_siRestockDraftPlan(code);
+    if(!plan.ok){_siRestockToast(plan.why,true);return{ok:false,code:'refused',error:plan.why};}
+    // 2. an open draft for this code (draft or ready) is a twin; a failed read of the drafts refuses rather than guesses
+    const ld=await phLoadStage('drafts');
+    const g=ld&&ld.ok?phGet('drafts'):null;
+    if(!g||!g.ok||!Array.isArray(g.rows)){_siRestockToast('Could not check for an existing draft, so none was started. Nothing was saved.',true);return{ok:false,code:'unread'};}
+    const twin=g.rows.find(r=>r&&r.po&&String(r.po.code||'').toUpperCase()===code&&(r.status==='draft'||r.status==='ready'));
+    if(twin){const id=twin.fbKey||twin.id||'';_siRestockToast('A draft for '+code+' already exists ('+id+'): open it in Production Ops, no second one was started.',true);return{ok:false,code:'exists',existing:id};}
+    // 3. the same writer the form uses
+    const r=await phSaveDraft(null,plan.po);
+    if(r&&r.ok){_siRestockToast('Draft '+r.id+' started for '+code+'. Open Production Ops, PO Queue, Drafts to complete it.');return r;}
+    _siRestockToast((r&&r.error)||'The draft could not be saved.',true);
+    return r||{ok:false,code:'failed'};
+  }catch(e){_siRestockToast('The draft could not be started: '+((e&&e.message)||'error'),true);return{ok:false,code:'failed'};}
+  finally{_siRestockBusy.delete(code);}
+};
 
 // ── The daily bell row (Marketing M5 pattern): one per person per PKT day, deterministic id, only if absent, never throws ──
 function _siRestockPlan(st,day){

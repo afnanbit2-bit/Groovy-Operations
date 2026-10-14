@@ -6289,6 +6289,12 @@ button.phm-tile-main:focus-visible,.phm-sublink:focus-visible,.phm-chip-btn:focu
 .phm-floor-line{margin:0 0 10px;font-size:18px;font-weight:700;line-height:1.5;color:var(--text)}
 .phm-floor-late{margin:0 0 12px;font-size:14px;line-height:1.5;color:var(--text)}
 .phm-floor-go{min-height:48px;width:100%;max-width:360px}
+/* restock card (WP3) */
+.phm-rs-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.phm-rs-row{min-width:0;font-size:15px;line-height:1.4;color:var(--text);overflow-wrap:anywhere}
+.phm-rs-asof{margin-top:8px;font-size:14px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
+.phm-rs-old{margin-top:6px;font-size:14px;color:var(--text);overflow-wrap:anywhere}
+.phm-rs-go{margin-top:10px;min-height:44px}
 /* ph-mod-monitor END */
 /* ph-mod-reports START */
 /* Production Ops ▸ Reports (js/ph-mod-reports.js). Tokens only: every colour inverts with the theme, no literal colour in this block.
