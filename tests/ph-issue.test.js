@@ -352,8 +352,11 @@ module.exports=async function(){
     s.eq('the keys: the classic keys in the classic order, then id, season, fromDraftId, enteredBy, issuedBy',J(mk),J(ck.filter(k=>k!=='id').concat(['id','season','fromDraftId','enteredBy','issuedBy'])));
     s.eq('the classic keys are exactly PH_ISSUE_CLASSIC_KEYS (+ id)',J(ck),J(a.run('PH_ISSUE_CLASSIC_KEYS').concat(['id'])));
     s.eq('the extra keys are exactly the documented ones',J(a.run('PH_ISSUE_EXTRA_KEYS')),J(['id','season','fromDraftId','enteredBy','issuedBy']));
-    const norm=d=>{const x=clone(d);delete x.ts;delete x.id;delete x.imgFront;delete x.imgBack;delete x.season;delete x.fromDraftId;delete x.enteredBy;delete x.issuedBy;return J(x);};
+    const norm=d=>{const x=clone(d);delete x.ts;delete x.releasedAt;delete x.id;delete x.imgFront;delete x.imgBack;delete x.season;delete x.fromDraftId;delete x.enteredBy;delete x.issuedBy;return J(x);};
     s.eq('every other value is identical to what submitPO stored (sizes, ratio, stages, bundlingParts, jobCopies, embellishment, status, createdBy, createdAt, notes ...)',norm(mine),norm(classic));
+    s.ok('releasedAt (ms) is a classic key, last of them (after createdAt): both creators stamp it like ts, so it is compared apart from the other values',typeof mine.releasedAt==='number'&&typeof classic.releasedAt==='number'&&mine.releasedAt===mine.ts&&ck.indexOf('releasedAt')===ck.indexOf('createdAt')+1);
+    const dr=a.db.get('po_drafts/'+DID)||{};
+    s.ok('the stamp is part of the one commit: the issued draft, the new PO and its stamp carry the same instant',dr.status==='issued'&&dr.poId==='PO-008'&&mine.releasedAt===dr.issuedAt&&mine.releasedAt===mine.ts);
     s.eq('the six classic sizes with zeros, and the ratio the form computes',J([mine.sizes,mine.ratio]),J([{XS:0,S:50,M:50,L:0,XL:0,'2XL':0},'0:1:1:0:0:0']));
     s.eq('no photos: imgFront / imgBack are empty (the classic requires one; the app draws "No image")',J([mine.imgFront,mine.imgBack]),J(['','']));
     s.ok('no fabric rolls reserved: fabrics is empty and fabPoReserveCommit is never named',J(mine.fabrics)==='[]'&&!/fabPoReserveCommit\s*\(/.test(SRC.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/.*$/gm,'')));

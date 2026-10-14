@@ -119,7 +119,7 @@ module.exports=async function(){
     s.eq('no fabric is claimed as reserved: fabrics is empty',J(p.fabrics),'[]');
     s.eq('fabPoReserveCommit is NOT called for a new PO',a.calls.commit.length,0);
     s.ok('the picker state is still cleared after the save',a.calls.reset===1,String(a.calls.reset));
-    s.ok('the PO is a plain pos document (no releasedAt invented)',p.releasedAt===undefined&&p.id==='PO-007');
+    s.ok('the PO is a plain pos document, born released (releasedAt is a ms number; see po-releasedat.test.js)',typeof p.releasedAt==='number'&&p.id==='PO-007');
     s.eq('the success toast is clean',a.run('__toasts').some(t=>/^PO-007 created/.test(t)),true);
     const src=read('js/pos.js').replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/.*$/gm,'');
     s.ok('pos.js never names fabPoReserveCommit as a call any more',!/fabPoReserveCommit\s*\(/.test(src)&&!/typeof fabPoReserveCommit/.test(src));
@@ -176,7 +176,7 @@ module.exports=async function(){
     s.ok('the PO picker has no poStatus/currentStage filter other than cancelled',/filter\(p=>p\.poStatus!=='cancelled'\)/.test(read('js/fabric.js')));
     const src=read('js/fabric.js');
     s.ok('the roll-reserved confirm is still there for legacy reserved rolls',/is reserved for \$\{roll\.reservedPO\}, not \$\{po\}/.test(src));
-    s.ok('the New-PO picker no longer promises a reservation',!/reserve rolls/.test(src.slice(src.indexOf('window.fabPoFabricCard'),src.indexOf('window.fabPoAddRow')))&&/nothing is reserved/.test(src));
+    s.ok('the New-PO picker no longer promises a reservation',!/reserve rolls/.test(src.slice(src.indexOf('window.fabPoFabricCard'),src.indexOf('window.fabPoAddRow')))&&/Nothing is reserved/.test(src));
   }
 
   s.section('embellishment job still starts at the fabric issue (Ammar\'s file is untouched)');
@@ -186,3 +186,4 @@ module.exports=async function(){
   }
   return s;
 };
+module.exports.helpers={mkApp,createPO,at,fakeFirestore};   // shared with tests/po-releasedat.test.js
