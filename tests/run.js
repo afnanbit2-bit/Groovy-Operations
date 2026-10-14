@@ -47,6 +47,19 @@ process.on('exit',()=>{
   process.exitCode=1;
 });
 
+/* Once the final line is printed the run is DECIDED, and nothing a suite left behind may change it:
+   a timer, interval or socket owned by code under test (a read timeout, a freshness interval) would keep
+   Node alive after "all N assertions passed", and a CI step or a `timeout` wrapper then reports a hang or
+   exit 124 for a green run. So the runner ends the process itself, with the code it already decided on,
+   after the output is flushed. Failures and never-settled suites are decided BEFORE this point and still
+   exit 1; this only runs after the verdict line. */
+function finish(code){
+  process.exitCode=code;
+  const go=()=>process.exit(code);
+  try{process.stdout.write('',go);}catch(e){go();}
+  setTimeout(go,2000).unref();
+}
+
 (async()=>{
   let pass=0,fail=0;
   const failures=[];
@@ -75,7 +88,8 @@ process.on('exit',()=>{
     console.log('\x1b[31m'+fail+' failed\x1b[0m, '+pass+' passed\n');
     failures.forEach(x=>console.log('  ✗ '+x));
     console.log('');
-    process.exit(1);
+    return finish(1);
   }
   console.log('\x1b[32mall '+pass+' assertions passed\x1b[0m\n');
+  finish(0);
 })();
