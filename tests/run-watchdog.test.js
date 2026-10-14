@@ -84,5 +84,20 @@ module.exports=async function(){
     s.ok('the default is documented as 20 minutes in the runner',/20\*60\*1000/.test(RUNNER));
   }
 
+  s.section('a suite that leaves a live timer behind cannot keep a decided run from exiting');
+  {
+    const leaks="setInterval(()=>{},1000);setTimeout(()=>{},600000);";
+    const t0=Date.now();
+    const g=runWith({'a.test.js':leaks+"module.exports=async()=>({pass:4,fail:0,failures:[]});"});
+    ok('green run with a leaked interval and a 10-minute timer exits by itself with 0 (not killed)',g.code===0&&!g.signal,'code '+g.code+' signal '+g.signal);
+    ok('and printed the final line first',/all 4 assertions passed/.test(g.out),g.out.slice(-200));
+    ok('promptly, not at the 60 s test limit',Date.now()-t0<30000,String(Date.now()-t0));
+    const b=runWith({'a.test.js':leaks+"module.exports=async()=>({pass:1,fail:1,failures:['x / broke']});"});
+    ok('failing run with a leaked timer exits 1 by itself',b.code===1&&!b.signal,'code '+b.code+' signal '+b.signal);
+    ok('with the summary and the failure listed',/1 failed/.test(b.out)&&/x \/ broke/.test(b.out),b.out.slice(-200));
+    const t=runWith({'a.test.js':passing,'hang.test.js':hangsWithHandle},{TEST_SUITE_TIMEOUT_MS:'700'});
+    ok('a hung suite still fails the run beside a leaked handle',t.code===1&&/did not settle/.test(t.out),t.out.slice(-200));
+  }
+
   return s;
 };
