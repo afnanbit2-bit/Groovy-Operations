@@ -2097,6 +2097,7 @@ function _siOverview(m){
   </div>
 
   ${_siOverviewAttnTiles()}
+  ${_siRestockCardHtml()}
 
   <div class="card">
     <div class="card-title">Daily Movement (14 days)</div>
@@ -5957,6 +5958,126 @@ function _siNaBadge(){
   if(!_siFullHist())return null; // classes need each article's whole history
   if(_siHistState!=='ok'&&_siHistState!=='error')return null;
   try{return _siNaState().counts.action;}catch(_){return null;}
+}
+
+// ═══ Restock suggestions (WP1 card + WP2 bell; design: one Needs Attention issue that carries a reorder guide) ═══
+// A suggestion is NOT a new calculation: it is an existing _siNaState() issue that passes _siRestockPick. No Firestore read is added here.
+// "Start a PO draft" (WP3) is NOT in this build: _siRestockDraft is an inert place-holder that does nothing and writes nothing.
+const _SI_RESTOCK_USERS=Object.freeze(['afnan','ammar','mustafa']); // held equal to _PH_MANAGE_USERS by a test
+const _SI_RESTOCK_TOP=5,_SI_RESTOCK_SNAP_KEY='groovy-si-restock-last',_SI_RESTOCK_DAY_KEY='groovy-si-restock-day';
+const _SI_RESTOCK_TYPES=Object.freeze(['stockout','runout','rising']),_SI_RESTOCK_BANDS=Object.freeze(['critical','act']),_SI_RESTOCK_NOT=Object.freeze(['stuck','hold','markdown']);
+let _siRestockRan=false;
+function _siRestockPick(i){
+  if(!i||!i.n||typeof i.code!=='string')return false;
+  if(_SI_RESTOCK_TYPES.indexOf(i.type)<0||_SI_RESTOCK_BANDS.indexOf(i.band)<0)return false;
+  const q=i.n.qty;if(!q||!(q.hi>0))return false;               // null after on-order cover (or no guide): not a suggestion
+  if(_SI_RESTOCK_NOT.indexOf(i.n.actKey)>=0)return false;       // the Explorer verdict says do not reorder
+  if(typeof _siIgnored==='function'&&_siIgnored(i.code))return false;
+  return true;
+}
+function _siRestockCanSee(){return typeof session!=='undefined'&&!!session&&_SI_RESTOCK_USERS.indexOf(String(session.u||''))>=0;}
+function _siRestockRow(i){
+  const q=i.n.qty,oo=i.n.onOrder;
+  let split=null;
+  try{const idx=_siAxIndex(),a=idx&&idx.map&&idx.map.get(i.code);if(a){const s=_siAxSizeSplit(_siAxStats(a).sizeRows,q.hi);if(s.ok&&s.rows)split=s.rows.filter(r=>r.units>0).map(r=>r.size+' '+r.units).join(' · ')||null;}}catch(_){split=null;}
+  return{code:i.code,label:i.label||i.code,type:i.type,band:i.band,lo:q.lo,hi:q.hi,cover:i.n.coverText||'',lead:i.n.leadDays,
+    onOrder:(oo&&oo.state==='ok')?(oo.qty||0):null,split};
+}
+// The hours the data is old, only when a source is past its own stale line (snapshot 26 h, orders 8 h); null when nothing is stale.
+function _siRestockStaleH(){
+  try{
+    const now=_siNaNow(),C=_SI_NA;let worst=null;
+    const sm=_siSnapshot?_siAxSnapMs(_siSnapshot.snapshot_at):null;
+    if(sm!=null&&now-sm>C.staleSnapHours*3600000)worst=Math.max(worst||0,now-sm);
+    const os=_siSyncMeta&&_siSyncMeta.orderSync,om=os?_siAxSnapMs(os.last_success_at):null;
+    if(om!=null&&now-om>C.staleOrderHours*3600000)worst=Math.max(worst||0,now-om);
+    return worst==null?null:Math.max(1,Math.round(worst/3600000));
+  }catch(_){return null;}
+}
+// state: needs-full | loading | error | empty | ok (never "nothing to restock" unless it was computed)
+function _siRestockState(){
+  const no=s=>({state:s,rows:[],total:0,critical:0,staleH:null});
+  if(!_siFullHist())return no('needs-full');
+  if(_siHistState==='idle'||_siHistState==='loading')return no('loading');
+  if(_siHistState!=='ok')return no('error');
+  let ns,all;
+  try{ns=_siNaState();all=ns.issues.filter(_siRestockPick);}catch(_){return no('error');}
+  return{state:all.length?'ok':'empty',rows:all.slice(0,_SI_RESTOCK_TOP).map(_siRestockRow),total:all.length,critical:all.filter(i=>i.band==='critical').length,
+    staleH:_siRestockStaleH(),poUnknown:_siPoState!=='ok',judged:ns.rows};
+}
+function _siRestockSnapshot(st){ // per-device record of what was computed (as-of day, never claimed fresh); localStorage only
+  if(st.state!=='ok'&&st.state!=='empty')return;
+  try{
+    const rec={day:_siPktDate(0),n:st.total,critical:st.critical,rows:st.rows.map(r=>({code:r.code,label:r.label,lo:r.lo,hi:r.hi,band:r.band}))};
+    const s=JSON.stringify(rec);if(localStorage.getItem(_SI_RESTOCK_SNAP_KEY)!==s)localStorage.setItem(_SI_RESTOCK_SNAP_KEY,s);
+  }catch(_){}
+}
+function _siRestockRowHtml(r){
+  const oo=r.onOrder==null?'on-order data unavailable':(r.onOrder>0?r.onOrder+' on order, already deducted':'none on order');
+  const guide=r.lo===r.hi?r.hi:r.lo+'–'+r.hi;
+  return`<li class="si-rs-row ${r.band}"><button type="button" class="si-rs-open" data-code="${_siEsc(r.code)}" onclick="window._siRestockOpen(this)"><span class="si-rs-code">${_siEsc(r.code)}</span> <span class="si-rs-name">${_siEsc(r.label)}</span></button><div class="si-rs-qty"><strong>${_siEsc(r.hi)} pcs</strong> <span class="si-rs-guide">guide ${_siEsc(guide)}</span></div><div class="si-rs-meta">${_siEsc(r.band==='critical'?'Critical':'This week')} · ${_siEsc(r.cover)} · lead ${_siEsc(r.lead)} d · ${_siEsc(oo)}${r.split?' · split '+_siEsc(r.split):''}</div></li>`;
+}
+function _siRestockCardHtml(){
+  if(!_siRestockCanSee())return'';
+  const st=_siRestockState();_siRestockSnapshot(st);
+  if(st.state==='ok'&&!_siRestockRan&&typeof setTimeout==='function')setTimeout(()=>{_siRestockRaise();},0); // never blocks the paint; never throws
+  let body='';
+  if(st.state==='needs-full')body=`<div class="sub">${_siFullNeedsCell()}</div>`;
+  else if(st.state==='loading')body='<div class="sub" role="status">Reading the stock history…</div>';
+  else if(st.state==='error')body='<div class="sub" role="alert">Stock history unavailable — cover cannot be judged. <button type="button" class="si-ax-btn" onclick="window._siHistRetry()">Retry</button></div>';
+  else if(st.state==='empty')body=`<div class="sub">Nothing needs a restock today (${_siEsc(st.judged==null?'sellers':st.judged+' articles')} judged; lead times as set on this device).</div>`;
+  else body=`<ul class="si-rs-list">${st.rows.map(_siRestockRowHtml).join('')}</ul>${st.total>st.rows.length?`<div class="sub">+${st.total-st.rows.length} more in Needs Attention</div>`:''}`;
+  const stale=st.staleH!=null&&(st.state==='ok'||st.state==='empty')?`<div class="si-rs-stale" role="note">Data ${st.staleH} h old — the sync may have stopped.</div>`:'';
+  const po=st.poUnknown&&st.state==='ok'?'<div class="sub">Open POs could not be read, so "on order" is unknown.</div>':'';
+  const head=st.state==='ok'?` <span class="si-rs-n">${st.total}</span>`:'';
+  return`<div class="card si-rs" id="si-rs"><div class="card-title">Restock${head}</div>${stale}${body}${po}</div>`;
+}
+window._siRestockOpen=function(btn){
+  const code=btn&&btn.getAttribute?btn.getAttribute('data-code'):'';
+  if(!code)return false;
+  window._siSwitchTab('attention');
+  return window._siNaOpen(code);
+};
+// WP3 place-holder: "Start a PO draft" is not built. Inert on purpose; it reads and writes nothing.
+window._siRestockDraft=function(){return false;};
+
+// ── The daily bell row (Marketing M5 pattern): one per person per PKT day, deterministic id, only if absent, never throws ──
+function _siRestockPlan(st,day){
+  const crit=st.critical,n=st.total;
+  const stale=st.staleH!=null?' — data '+st.staleH+' h old':'';
+  const title='Restock: '+n+' article'+(n===1?'':'s')+' ('+crit+' critical)'+stale;
+  const message=st.rows.map(r=>r.code+' '+r.label+' — '+r.hi+' pcs (cover '+r.cover+', lead '+r.lead+' d)').join('; ')+(n>st.rows.length?'; +'+(n-st.rows.length)+' more':'');
+  return _SI_RESTOCK_USERS.map(u=>({id:'restock_'+day+'_'+u,type:'restock_daily',title:_siEsc(title),message:_siEsc(message),forUser:u,priority:crit>0?'high':'normal'}));
+}
+async function _siRestockRaise(opts){
+  const o=opts||{};
+  try{
+    if(!_siRestockCanSee())return{raised:0,skipped:'not a restock recipient'};
+    if(_siRestockRan&&!o.force)return{raised:0,skipped:'already ran'};
+    const day=_siPktDate(0);
+    if(!o.force){try{if(localStorage.getItem(_SI_RESTOCK_DAY_KEY)===day)return{raised:0,skipped:'ran today'};}catch(_){}}
+    const st=_siRestockState();
+    if(st.state!=='ok'||!st.total)return{raised:0,skipped:st.state}; // nothing due or not computed: no row, no spam
+    if(typeof getDoc!=='function'||typeof setDoc!=='function'||typeof doc!=='function'||typeof db==='undefined')return{raised:0,skipped:'no firestore'};
+    _siRestockRan=true;
+    const plan=_siRestockPlan(st,day),now=Date.now();
+    const known=new Set((typeof allHRMNotifs!=='undefined'&&allHRMNotifs?allHRMNotifs:[]).map(n=>n._id||n.id));
+    let raised=0,failed=0;
+    for(const n of plan){
+      if(known.has(n.id))continue;
+      try{
+        const ref=doc(db,'hrm_notifications',n.id);
+        const snap=await getDoc(ref);
+        if(snap&&snap.exists())continue; // raised before — maybe dismissed; never raise it again
+        const data={id:n.id,type:n.type,title:n.title,message:n.message,forUser:n.forUser,forRole:'',relatedTo:'restock',createdAt:now,readBy:[],priority:n.priority,actionRequired:false,actionUrl:'#inventory/attention'};
+        await setDoc(ref,data);raised++;
+        if(typeof allHRMNotifs!=='undefined'&&allHRMNotifs&&allHRMNotifs.unshift)allHRMNotifs.unshift(Object.assign({},data,{_id:n.id}));
+      }catch(e){failed++;}
+    }
+    if(!failed){try{localStorage.setItem(_SI_RESTOCK_DAY_KEY,day);}catch(_){}}
+    if(raised&&typeof _renderHRMNotifBadge==='function'){try{_renderHRMNotifBadge();}catch(_){}}
+    return{raised,failed,planned:plan.length};
+  }catch(e){return{raised:0,error:String(e&&e.message||e)};}
 }
 
 // ── Data trust ──────────────────────────────────────────────────────

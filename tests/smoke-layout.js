@@ -3456,6 +3456,26 @@ const FRAGMENTS={
   },
   // Freshness strip (Oct 2026): normal, stale + failed run, refresh in progress, refresh failed, new data waiting. Tokens only; the Refresh
   // button must be reachable and every line readable in both themes. Details forced open so the per-source list is measured too.
+  // Restock card (Oct 2026): the five rows with a long name, the stale line and the unavailable PO note, plus the other honest states.
+  // Tokens only; every control reachable (hit-tested) and every line readable in both themes. Verified by painting the meta ink in --surface.
+  'inventory intel — restock card':()=>{
+    const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},
+      globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
+    _naSeed(app);
+    app.run('_siNaNowMs=Date.parse(_siPktDate(0)+"T12:00:00Z");_siSnapshot.snapshot_at=new Date(_siNaNowMs-40*3600000).toISOString();_siSyncMeta={};_siPoState="error"');
+    const ok='<div id="rs-a">'+app.run('_siRestockCardHtml()')+'</div>';
+    app.run('_siSnapshot.snapshot_at=new Date(_siNaNowMs-1*3600000).toISOString();_siPoState="ok";_siPoByCode=new Map();_siPoVer++;_siPoMemo=null');
+    const clean='<div id="rs-b">'+app.run('_siRestockCardHtml()')+'</div>';
+    app.run('_siRestockPickKeep=_siRestockPick;_siRestockPick=function(){return false}');
+    const empty=app.run('_siRestockCardHtml()');
+    app.run('_siRestockPick=_siRestockPickKeep;_siHistState="error"');
+    const err=app.run('_siRestockCardHtml()');
+    app.run('_siHistState="loading"');
+    const load=app.run('_siRestockCardHtml()');
+    app.run('_siHistState="ok";_siLinesScope="window"');
+    const need=app.run('_siRestockCardHtml()');
+    return Promise.resolve('<div id="si-content">'+ok+clean+empty+err+load+need+'</div>');
+  },
   'inventory intel — freshness strip':()=>{
     const app=loadApp({files:['js/shopify.js'],session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner'},globals:{localStorage:{getItem:()=>null,setItem(){},removeItem(){}}}});
     app.run('_siLoaded=true;_siFr.detOpen=true;var N=Date.now();_siSnapshot={snapshot_at:new Date(N-2*3600000).toISOString(),items:{}};_siSyncMeta={};_siFr.seen={products:{catalog:N-3600000},orders:{orders:N-3600000,refresh:N-3600000},lines:{orders:N-3600000,refresh:N-3600000},snap:{inventory:N-2*3600000}};_siFr.readAt={closes:N-3600000}');
