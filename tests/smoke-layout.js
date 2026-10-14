@@ -565,7 +565,7 @@ async function _phmFragment(o){
   DATA.gatepasses=[{id:'GP-9001',gpType:'fabric',poId:'Sample',date:'2026-10-01',fabricType:'Jersey Heavy',fabricQty:33.9,fabricUnit:'kg',rollCodes:['R-1'],ts:2},{id:'GP-9002',gpType:'fabric',poId:'101',date:'2026-10-02',cutMaster:'Hassan',ts:1}];
   const rows=p=>(DATA[p]||[]).map(r=>({id:r.id,data:()=>Object.assign({},r)}));
   const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
-    localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+    localStorage:{getItem:k=>(k==='groovy-si-restock-last'&&o.restock!==undefined)?o.restock:null,setItem(){},removeItem(){}},
     collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
     getDocs:async q=>{if(o.jobsFail&&q.path==='po_cut_jobs')throw bad();return{docs:rows(q.path),metadata:{fromCache:false}};},
     getDoc:async r=>({exists:()=>!!DATA[r.path],data:()=>Object.assign({},DATA[r.path]),metadata:{fromCache:false}})}});
@@ -3382,6 +3382,8 @@ const FRAGMENTS={
   "production ops — po detail instruction card (malformed)":()=>_phDetailCardFragment({bad:true}),
   'production ops — monitor':()=>_phmFragment({tab:'monitor'}),
   'production ops — monitor: unavailable and no-data states':()=>_phmFragment({tab:'monitor',jobsFail:true,range:'today'}),
+  'production ops — overview: restock card':()=>_phmFragment({tab:'overview',restock:JSON.stringify({day:'2026-10-13',n:9,critical:3,rows:[{code:'GST073',label:'Effortless Tee With A Very Long Article Name That Has To Wrap — Deep Blue Colourway',lo:528,hi:888,band:'critical'},{code:'GD007',label:'Denim',lo:24,hi:60,band:'act'},{code:'GHZ012',label:'Hoodie',lo:12,hi:36,band:'act'}]})}),
+  'production ops — overview: restock card, unreadable':()=>_phmFragment({tab:'overview',restock:'{broken'}),
   'production ops — monitor: the list drawer':()=>_phmFragment({tab:'monitor',drawer:'stuck'}),
   'production ops — monitor: data health with the drill lists open':()=>_phmFragment({tab:'monitor',health:true}),
   'production ops — overview':()=>_phmFragment({tab:'overview'}),

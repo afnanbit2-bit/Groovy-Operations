@@ -749,6 +749,7 @@ function _phmRenderOverview(host,ctx){
   host.appendChild(_phmTilesEl(PHM_OVERVIEW_TILES,M,host));
   host.appendChild(_phmAttentionCard(M,host,{limit:5}));
   if(typeof phhOverviewCard==='function'){try{host.appendChild(phhOverviewCard(ctx));}catch(e){}}
+  host.appendChild(phmRestockCard());
   const foot=phEl('div','phm-actions');
   if(ctx.canManage)foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.open_monitor'),function(){if(typeof phGoTab==='function')phGoTab('monitor');}));
   foot.appendChild(_phmBtn('ph-btn',phI18nD('shell.refresh'),function(){phmCloseDrawer(false);_phmEnsure(ctx,true);ctx.repaint();Promise.resolve(ctx.reload()).then(function(){try{if(_phmCurrent(ctx))ctx.repaint();}catch(e){}});}));
@@ -756,6 +757,48 @@ function _phmRenderOverview(host,ctx){
   host.appendChild(_phmFooterNote(M,ctx));
   host.appendChild(_phmSourcesCard(ctx));
   if(ctx.readOnly)host.appendChild(phEl('p','ph-note',phI18nD('shell.readonly_note')));
+}
+/* ── Restock card (WP3): reads the per-device snapshot Inventory Intel wrote (groovy-si-restock-last). No Firestore read. ──
+   It says "as of <day>, from this device", never claims fresh, and an unread / missing / malformed snapshot is never an empty list. */
+const PHM_RESTOCK_KEY='groovy-si-restock-last';
+function phmRestockRead(){
+  let raw=null;
+  try{raw=localStorage.getItem(PHM_RESTOCK_KEY);}catch(e){return{state:'unreadable'};}
+  if(raw==null||raw==='')return{state:'none'};
+  let r=null;
+  try{r=JSON.parse(raw);}catch(e){return{state:'unreadable'};}
+  if(!r||typeof r!=='object'||Array.isArray(r)||typeof r.day!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(r.day)||typeof r.n!=='number'||!isFinite(r.n)||!Array.isArray(r.rows))return{state:'unreadable'};
+  const rows=r.rows.filter(function(x){return x&&typeof x.code==='string'&&typeof x.hi==='number';}).slice(0,5);
+  if(r.n>0&&!rows.length)return{state:'unreadable'};
+  return{state:r.n>0?'ok':'empty',day:r.day,n:r.n,rows:rows};
+}
+function phmRestockCard(){
+  const E=phEl,card=E('section','ph-card phm-rs');card.setAttribute('data-card','restock');
+  card.appendChild(E('h3','ph-card-title',phI18nD('ov.restock_title')));
+  const R=phmRestockRead();
+  if(R.state==='none'||R.state==='unreadable'){
+    const p=E('p','ph-note',phI18nD(R.state==='none'?'ov.restock_none_yet':'ov.restock_unreadable'));
+    if(R.state==='unreadable')p.setAttribute('role','alert');
+    card.appendChild(p);
+  }else{
+    if(R.state==='empty')card.appendChild(E('p','ph-note',phI18nD('ov.restock_empty')));
+    else{
+      const ul=E('ul','phm-rs-list');
+      R.rows.forEach(function(x){ul.appendChild(E('li','phm-rs-row',phI18nD('ov.restock_row',{code:x.code,name:typeof x.label==='string'?x.label:'',hi:x.hi})));});
+      card.appendChild(ul);
+      if(R.n>R.rows.length)card.appendChild(E('p','phm-rs-asof',phI18nD('ov.restock_more',{n:R.n,shown:R.rows.length})));
+    }
+    card.appendChild(E('p','phm-rs-asof',phI18nD('ov.restock_asof',{day:R.day})));
+    let today=null;try{today=phDay(Date.now());}catch(e){today=null;}
+    if(today&&R.day<today)card.appendChild(E('p','phm-rs-old',phI18nD('ov.restock_older')));
+  }
+  const b=_phmBtn('ph-btn phm-rs-go',phI18nD('ov.restock_open'),function(){
+    try{if(typeof _phTkLeave==='function')_phTkLeave();}catch(e){}
+    if(typeof showPage==='function')showPage('shopify-intel');
+  });
+  b.setAttribute('data-act','open-intel');
+  card.appendChild(b);
+  return card;
 }
 function _phmSkeleton(){
   if(typeof _phUiSkeleton==='function')return _phUiSkeleton();

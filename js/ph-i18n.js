@@ -498,6 +498,16 @@ function _phI18nAdd(k,en,ur,review){PH_I18N_STR[k]=review?{en:en,ur:ur,review:tr
 
   /* ── Overview tiles (monitor, overview part) ──────────────────── */
   A('ov.title','Overview','خلاصہ');
+  A('ov.restock_title','Restock suggestions','ری اسٹاک کی تجاویز',true);
+  A('ov.restock_asof','As of {day}, from this device\'s Inventory Intel. Not live.','{day} تک، اس ڈیوائس کے انوینٹری انٹیل سے۔ تازہ نہیں۔',true);
+  A('ov.restock_older','This is older than today.','یہ آج سے پرانا ہے۔',true);
+  A('ov.restock_none_yet','No restock list has been computed on this device. Open Inventory Intel to compute it.','اس ڈیوائس پر ابھی ری اسٹاک فہرست نہیں بنی۔ بنانے کے لیے انوینٹری انٹیل کھولیں۔',true);
+  A('ov.restock_unreadable','The saved restock list could not be read on this device. Open Inventory Intel to compute it again.','محفوظ ری اسٹاک فہرست اس ڈیوائس پر پڑھی نہیں جا سکی۔ دوبارہ بنانے کے لیے انوینٹری انٹیل کھولیں۔',true);
+  A('ov.restock_empty','When it was last computed, nothing needed a restock.','آخری بار حساب کے وقت کسی چیز کو ری اسٹاک کی ضرورت نہیں تھی۔',true);
+  A('ov.restock_row','{code} {name} — {hi} pcs','{code} {name} — {hi} عدد',true);
+  A('ov.restock_more','{n} articles in all; the top {shown} are listed.','کل {n} آرٹیکل ہیں؛ اوپر کے {shown} درج ہیں۔',true);
+  A('ov.restock_open','Open Inventory Intel','انوینٹری انٹیل کھولیں',true);
+  A('drafts.from_restock','From restock','ری اسٹاک سے',true);
   A('ov.blurb','Where production stands right now. Every number opens the list of POs behind it.','پروڈکشن ابھی کہاں کھڑی ہے۔ ہر نمبر دبانے سے اس کے پیچھے والے پی اوز کی فہرست کھلتی ہے۔');
   A('ov.po_read_at','Purchase orders read at {time} (PKT)','پی اوز {time} (پاکستانی وقت) پر پڑھے گئے');
   A('ov.refreshing_suffix',' · refreshing…',' · تازہ ہو رہا ہے…');

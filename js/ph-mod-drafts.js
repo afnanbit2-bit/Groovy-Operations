@@ -121,10 +121,16 @@ function _phdWriteCheck(){
 /* ── the form model ──────────────────────────────────────────────────────── */
 function _phdBlank(){
   return{code:'',name:'',pattern:'',qty:'',sizeModel:'',sizes:{},strays:{},fabric:'',fabricCode:'',store:'',totalRoll:'',plannedFabricQty:'',plannedFabricUnit:'',
-    season:'',plannedCutDate:'',requestedDate:'',cutMasterId:'',cutMaster:'',embRequired:false,jobCopies:{embroidery:false,printing:false,washing:false},notes:''};
+    season:'',plannedCutDate:'',requestedDate:'',cutMasterId:'',cutMaster:'',embRequired:false,jobCopies:{embroidery:false,printing:false,washing:false},notes:'',source:null};
 }
 function _phdModel(f){return phSizeModel({sizeModel:f.sizeModel||undefined,code:String(f.code||'').trim().toUpperCase()});}
 function _phdStr(x){return x==null?'':String(x);}
+// Where a draft came from (WP3, 14 Oct 2026): only {kind:'restock',day,lo,hi,onOrder,band} is understood; anything else is dropped, never carried blind.
+function _phdCleanSource(x){
+  if(!x||typeof x!=='object'||Array.isArray(x)||x.kind!=='restock')return null;
+  const n=function(v){return typeof v==='number'&&isFinite(v)?v:null;};
+  return{kind:'restock',day:_phdStr(x.day).slice(0,10),lo:n(x.lo),hi:n(x.hi),onOrder:n(x.onOrder),band:_phdStr(x.band).slice(0,12)};
+}
 function _phdFromPo(po){
   const p=po&&typeof po==='object'&&!Array.isArray(po)?po:{};
   const f=_phdBlank();
@@ -143,6 +149,7 @@ function _phdFromPo(po){
   f.embRequired=!!(p.embellishment&&p.embellishment.required===true);
   PH_DRAFTS_COPIES.forEach(function(c){f.jobCopies[c[0]]=!!(p.jobCopies&&p.jobCopies[c[0]]===true);});
   f.notes=_phdStr(p.notes);
+  f.source=_phdCleanSource(p.source);
   // stored sizes: a key that is a size of the article's axis (XXL reads as 2XL) goes into the grid; any other is a stray, kept visible
   const m=_phdModel(f);
   if(p.sizes&&typeof p.sizes==='object'&&!Array.isArray(p.sizes)){
@@ -199,6 +206,7 @@ function _phdToPo(f){
     notes:String(f.notes==null?'':f.notes).trim().slice(0,T.notes)
   };
   if(f.sizeModel)po.sizeModel=f.sizeModel;
+  if(f.source)po.source=_phdCleanSource(f.source);   // a form save keeps where the draft came from
   const dropped=Object.keys(f.strays||{}).length+Object.keys(f.sizes).filter(function(k){return m.keys.indexOf(k)<0&&String(f.sizes[k]).trim()!==''&&phWhole(f.sizes[k])>0;}).length;
   return{po:po,problems:problems,model:m,dropped:dropped};
 }
@@ -332,6 +340,7 @@ function _phdRowNode(r,masters){
   chips.appendChild(_phdStatusChip(st));
   if(st==='issued'&&r.poId)chips.appendChild(_phdChip(phI18nD('drafts.issued_as',{po:r.poId}),'ok'));
   if(st==='ready'&&!_phdCanManage())chips.appendChild(_phdChip(phI18nD('drafts.ready_wait'),'wait'));
+  if(_phdCleanSource(po.source))chips.appendChild(_phdChip(phI18nD('drafts.from_restock'),'wait'));
   if(st==='draft'||st==='ready'){
     if(masters===null)chips.appendChild(_phdChip(phI18nD('drafts.not_checked'),'wait'));
     else{const gate=phPoComplete(po,{masters:masters,today:_phdToday()});chips.appendChild(gate.ok?_phdChip(phI18nD('drafts.chip_complete'),'ok'):_phdChip(phI18nD('drafts.missing_n',{n:gate.missing.length}),'bad'));}
