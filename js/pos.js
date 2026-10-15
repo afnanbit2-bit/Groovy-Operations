@@ -2193,6 +2193,7 @@ window.completeQC=async function(fbKey){
   // Only the stage the PO is AT can be completed: a stale screen or a second
   // tap must not overwrite who finished QC and when.
   if(po.currentStage!=='qc'){showToast(po.currentStage==='completed'?`${po.id} has already completed Final QC.`:`${po.id} is not at Final QC — nothing to complete.`,true);return;}
+  if(typeof phqcCloseBlock==='function'){const qb=await phqcCloseBlock(po);if(qb){showToast(qb,true);return;}}   // QC6: refused while a QC reconciliation is open (js/ph-mod-afloat.js)
   const failed=currentBundles.filter(b=>b.qcStatus==='fail').length;
   const msg=failed>0?`Complete QC with ${failed} failed bundle${failed!==1?'s':''}?`:'Mark Final QC complete?';
   if(!confirm(msg))return;

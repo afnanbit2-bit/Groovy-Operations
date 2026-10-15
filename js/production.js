@@ -66,6 +66,7 @@ function renderPacking(){
 window.packTab=function(tab){_packTab=tab;const m=document.getElementById('main-content');if(m&&currentPage==='packing')m.innerHTML=renderPacking();};
 
 function _receivingListHTML(){
+  if(typeof phqcPackPointerHTML==='function'){const qp=phqcPackPointerHTML();if(qp)return qp;}   // QC6: QC Ops receives in Production Ops ▸ Afloat POs (js/ph-mod-afloat.js)
   const all=_packOpenPOs();
   const q=_packQ.trim().toLowerCase();
   const list=q?all.filter(p=>[p.id,p.name,p.code,p.fabric].some(v=>(v||'').toLowerCase().includes(q))):all;
