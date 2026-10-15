@@ -6508,6 +6508,15 @@ textarea.pha-in{width:100%;min-height:72px;font:inherit}
 .phmk-cmt-text{font-size:14px;line-height:1.45;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap}
 /* ph-mod-marks END */
 
+/* ph-mod-classic START */
+.ph-cl-wrap{display:block;min-width:0;color:var(--text)}
+.ph-cl-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-card,10px)}
+.ph-cl-note{flex:1 1 220px;min-width:0;font-size:13px;color:var(--muted)}
+.ph-cl-refresh{flex:0 0 auto}
+.ph-cl-body{min-width:0;overflow-wrap:anywhere}
+@media (max-width:600px){.ph-cl-refresh{min-height:44px}}
+/* ph-mod-classic END */
+
 /* ph-mod-jobcopy START */
 /* WP3c: the read-only instruction card in Today's Cutting. Tokens only; the swatch colour is a validated #RRGGBB set from script. */
 .phk-ins{margin:12px 0 0;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-card,10px);background:var(--surface-2);color:var(--text)}

@@ -80,9 +80,9 @@ const PH_TABS=[
 function phRegisterTab(id,patch){
   if(typeof id!=='string'||!id||!patch||typeof patch!=='object')return false;
   const t=PH_TABS.filter(function(x){return x.id===id;})[0];
-  if(t){['label','short','render','roles'].forEach(function(k){if(patch[k]!==undefined)t[k]=patch[k];});return true;}
+  if(t){['label','lkey','short','render','roles'].forEach(function(k){if(patch[k]!==undefined)t[k]=patch[k];});return true;}
   if(typeof patch.render!=='function'||!/^[A-Za-z0-9_-]+$/.test(id))return false;
-  PH_TABS.push({id:id,label:String(patch.label||id),short:String(patch.short||id.slice(0,2)),render:patch.render,roles:typeof patch.roles==='function'?patch.roles:PH_ROLE_MANAGE});
+  PH_TABS.push({id:id,label:String(patch.label||id),lkey:typeof patch.lkey==='string'?patch.lkey:undefined,short:String(patch.short||id.slice(0,2)),render:patch.render,roles:typeof patch.roles==='function'?patch.roles:PH_ROLE_MANAGE});
   return true;
 }
 // A tab is visible to a person when they are on the audience AND the tab's own predicate says so.

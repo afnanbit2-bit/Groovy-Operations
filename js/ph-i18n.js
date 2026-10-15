@@ -38,6 +38,10 @@ function _phI18nAdd(k,en,ur,review){PH_I18N_STR[k]=review?{en:en,ur:ur,review:tr
   A('shell.tab_overview','Overview','خلاصہ');
   A('shell.tab_queue','PO Queue','پی او قطار');
   A('shell.tab_cutting',"Today's Cutting",'آج کی کٹنگ');
+  A('shell.tab_registry','PO Registry','پی او رجسٹری',true);
+  A('shell.tab_patterns','Pattern updates','پیٹرن اپ ڈیٹس',true);
+  A('shell.tab_fabric','Fabric Inventory','کپڑے کا اسٹاک',true);
+  A('classic.snapshot_note','This list is a snapshot until you press Refresh.','یہ فہرست تازہ کرنے تک پرانی رہتی ہے۔',true);
   A('shell.retry','Retry','دوبارہ کوشش');
   A('shell.refresh','Refresh','تازہ کریں');
   A('shell.refreshing','Refreshing…','تازہ ہو رہا ہے…');
