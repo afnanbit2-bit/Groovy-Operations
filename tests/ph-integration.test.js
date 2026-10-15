@@ -18,9 +18,11 @@ const {suite}=harness;
 const ROOT=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
 const J=JSON.stringify;
-const ORDER=['ph-core','ph-data','ph-write','ph-issue','ph-ui','ph-mod-health','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin','ph-mod-instructions','ph-mod-marks'];
+const ORDER=['ph-core','ph-data','ph-write','ph-issue','ph-ui','ph-mod-health','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin','ph-mod-instructions','ph-mod-marks','ph-mod-classic'];
 const MODS=ORDER.slice(5);
 const TABS=['overview','queue','calendar','cutting','monitor','reports','masters','standards','settings','instructions'];
+const FLOOR_ONLY=['registry','patterns','fabric'];   // WP-15: hosted classic pages, the cutting floor's tabs only
+const ALL_TABS=TABS.concat(FLOOR_ONLY);
 const USERS={
   afnan:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},ammar:{uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner'},
   mustafa:{uid:'u-mustafa',u:'mustafa',name:'Mustafa',role:'manager'},uzaib:{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'},
@@ -67,23 +69,23 @@ module.exports=async function(){
 
   s.section('stylesheet: one balanced block per module, at the end');
   const trail=css.slice(css.indexOf('/* ph-mod-queue START */'));
-  s.ok('the trailing run is only ph-mod-* blocks, one per module',MODS.length===10&&MODS.map(n=>n.replace('ph-mod-','')).every(m=>trail.split('/* ph-mod-'+m+' START */').length===2&&trail.split('/* ph-mod-'+m+' END */').length===2)&&trail.replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
+  s.ok('the trailing run is only ph-mod-* blocks, one per module',MODS.length===11&&MODS.map(n=>n.replace('ph-mod-','')).every(m=>trail.split('/* ph-mod-'+m+' START */').length===2&&trail.split('/* ph-mod-'+m+' END */').length===2)&&trail.replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
   s.ok('and every block\'s braces balance',MODS.every(n=>{const m=n.replace('ph-mod-','');const a=css.indexOf('/* ph-mod-'+m+' START */'),b=css.indexOf('/* ph-mod-'+m+' END */');const blk=css.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');return a>0&&b>a&&(blk.match(/\{/g)||[]).length===(blk.match(/\}/g)||[]).length;}));
   s.ok('the START/END pairs are not interleaved (each END precedes the next START)',(()=>{const re=/\/\* ph-mod-([a-z]+) (START|END) \*\//g;let m,open=null,ok=true;while((m=re.exec(css))){if(m[2]==='START'){if(open)ok=false;open=m[1];}else{if(open!==m[1])ok=false;open=null;}}return ok&&open===null;})());
 
   s.section('the shell with ALL the modules loaded');
   const M=mk('afnan');
   const ids=M.a.run('JSON.stringify(PH_TABS.map(t=>t.id))');
-  s.eq('PH_TABS is the ten, in the rail order',ids,J(TABS));
+  s.eq('PH_TABS is the ten plus the three floor-only tabs, in the rail order',ids,J(ALL_TABS));
   s.ok('every tab\'s render was replaced by a module (none is still the shell\'s placeholder)',M.a.run('PH_TABS.map(t=>t.render)').every((r,i)=>r!==M.renders0[i]));
-  s.ok('the modules added no eleventh tab',M.a.run('PH_TABS.length')===10);
+  s.ok('the modules added no tab beyond the thirteen',M.a.run('PH_TABS.length')===13);
   for(const u of ['afnan','ammar','mustafa']){
     const T=mk(u);
     s.eq(u+': all ten tabs',T.a.run('JSON.stringify(phTabsFor().map(t=>t.id))'),J(TABS));
   }
   const U=mk('uzaib');
-  s.eq("uzaib (Kashif): EXACTLY Overview, PO Queue, Today's Cutting",U.a.run('JSON.stringify(phTabsFor().map(t=>t.id))'),J(['overview','queue','cutting']));
-  s.ok('uzaib cannot go to Calendar, Monitor, Reports, Masters, Standards or Settings',['calendar','monitor','reports','masters','standards','settings'].every(t=>U.a.run('phGoTab('+J(t)+')')===false));
+  s.eq("uzaib (Kashif): EXACTLY Overview, PO Queue, Today's Cutting, PO Registry, Pattern updates, Fabric Inventory",U.a.run('JSON.stringify(phTabsFor().map(t=>t.id))'),J(['overview','queue','cutting','registry','patterns','fabric']));
+  s.ok('uzaib cannot go to Calendar, Monitor, Reports, Masters, Standards or Settings',['calendar','monitor','reports','masters','standards','settings','instructions'].every(t=>U.a.run('phGoTab('+J(t)+')')===false));
   s.ok('uzaib can go to PO Queue and Today\'s Cutting',U.a.run('phResolveTab("queue","uzaib").id')==='queue'&&U.a.run('phResolveTab("cutting","uzaib").id')==='cutting');
   s.ok('PO Queue is PH_ROLE_ALL in the shell itself (coherent without the module)',(()=>{const T=mk('uzaib',n=>n==='ph-ui'?read('js/ph-ui.js'):'');return T.a.run('JSON.stringify(phTabsFor().map(t=>t.id))')===J(['overview','queue','cutting']);})());
   for(const u of ['raees','arfat']){

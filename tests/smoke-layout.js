@@ -366,6 +366,42 @@ async function _phFragment(o){
   if(o.titleMin)out.html='<i data-ph-title-min="1" hidden></i>'+out.html;
   return out;
 }
+// Production Ops ▸ the three classic pages hosted as rail tabs for the cutting floor (WP-15, Oct 2026): the REAL js/ph-ui.js + js/ph-mod-classic.js over
+// tests/ph-dom.js, with stand-in classic markup (long names, a tab strip, rows, a form) in the panel. The bar (note + Refresh), the hosted markup's controls,
+// the rail with six items and the dock must be reachable, readable and clear of the content; nothing may overflow sideways.
+async function _phclFragment(o){
+  o=o||{};
+  const vm=require('vm'),domkit=require('./ph-dom');
+  const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],currentPage:'prod-ops',session:{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'},globals:{
+    localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+    collection:(db,...p)=>({path:p.join('/')}),doc:(db,...p)=>({path:p.join('/')}),query:c=>c,orderBy:()=>({}),limit:()=>({}),
+    getDocs:async q=>({docs:[],metadata:{fromCache:false}}),getDoc:async r=>({exists:()=>false,data:()=>({}),metadata:{fromCache:false}})}});
+  const dom=domkit.install(app.ctx);
+  app.ctx.console={warn(){},log(){},error(){}};
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-ui.js'),'utf8'),app.ctx,{filename:'ph-ui.js'});
+  const LONG='A Very Long Article Name That Must Wrap Onto Several Lines Instead Of Clipping Or Pushing The Row Sideways';
+  vm.runInContext(`
+    var _poRegTab='orders',_fabInvDrillKey=null,patternsLoaded=true,_ptnShopifyLoaded=true,_ptnBlocksLoaded=true,_ptnPomsLoaded=true,_ptnNoticesLoaded=true,_ptnSettingsLoaded=true;
+    function renderRegistry(){return '<div class="page-head"><div class="page-title">PO Registry</div><div class="page-sub">12 production orders</div></div><div class="gp-tabs"><button class="gp-tab active" onclick="void 0">Orders</button><button class="gp-tab" onclick="void 0">Cutting / Issue Registry</button></div><div><input placeholder="Search name, code, fabric" style="width:100%"><div class="empty">${LONG}</div></div>';}
+    function renderPatternHub(){return '<div class="page-head"><div><h2 style="margin:0">Pattern updates</h2><div style="color:var(--muted);font-size:13px">What changed on a pattern</div></div></div><div style="display:flex;gap:6px;margin-bottom:12px"><button class="btn-sm">Open</button><button class="btn-sm">Acknowledged</button></div><div class="empty">${LONG}</div>';}
+    function renderFabricPage(){return '<div class="page-head"><div class="page-title">Fabric Inventory</div></div><div class="gp-tabs"><button class="gp-tab active" onclick="void 0">Stock</button><button class="gp-tab" onclick="void 0">Fabric In</button><button class="gp-tab" onclick="void 0">Issue</button><button class="gp-tab" onclick="void 0">Issue Registry</button></div><div id="fab-tab-content"><div class="empty">${LONG}</div></div>';}
+    window.switchFabTab=function(){};`,app.ctx,{filename:'fakes.js'});
+  vm.runInContext(fs.readFileSync(path.join(ROOT,'js/ph-mod-classic.js'),'utf8'),app.ctx,{filename:'ph-mod-classic.js'});
+  app.ctx.currentPage='prod-ops';
+  app.ctx.phRenderPage('prod-ops');
+  app.run('_phUiTab='+JSON.stringify(o.tab));
+  app.run('_phTkOnPage()');
+  await app.run('phUiLoad()');
+  app.run('_phUiPaintData();_phTkSync()');
+  const canvas=dom.byClass(dom.main,'ph-canvas')[0];
+  const chrome=domkit.toHtml(dom.find('ph-tk-bar'))+domkit.toHtml(dom.find('ph-tk-rail'));
+  const script='<script>(function(){var b=document.body,m=document.getElementById("main-content");b.classList.add("ph-fullscreen");document.documentElement.classList.add("ph-fullscreen");m.classList.add("ph-takeover");m.style.padding="";["ph-tk-bar","ph-tk-rail"].forEach(function(i){b.appendChild(document.getElementById(i));});})();<\/script>';
+  // the panel's string is "existing code" markup: the DOM stub keeps it in innerHTML, so the serialiser needs it spliced in
+  const inner=dom.all(canvas,n=>typeof n.innerHTML==='string'&&n.innerHTML!=='')[0];
+  let html=domkit.toHtml(canvas);
+  if(inner)html=html.replace('<div class="ph-cl-body"></div>','<div class="ph-cl-body">'+inner.innerHTML+'</div>');
+  return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+html+chrome+script};
+}
 // Production Ops ▸ PO Queue (12 Oct 2026): the REAL js/ph-ui.js + js/ph-mod-queue.js (+ pos.js for the Force-advance gate) over tests/ph-dom.js's
 // small DOM, with ~14 POs (a hostile-ish long name, an overdue plan, a capacity-late plan, a guessed season, a long master name), serialised to
 // markup. Variants: manager board (reserved lane opened), the cutting floor's READ-ONLY board, the Plan dialog (rendered flat), a refused pos read,
@@ -3358,6 +3394,9 @@ const FRAGMENTS={
   // Production Ops ▸ PO Queue (12 Oct 2026): see _phqFragment.
   'production ops — marks and comments (manager: badges, summary, panel open)':()=>_phMarksFragment({}),
   'production ops — marks and comments (the cutting floor, read-only)':()=>_phMarksFragment({floor:true}),
+  'production ops — hosted PO Registry (the cutting floor)':()=>_phclFragment({tab:'registry'}),
+  'production ops — hosted Pattern updates (the cutting floor)':()=>_phclFragment({tab:'patterns'}),
+  'production ops — hosted Fabric Inventory (the cutting floor)':()=>_phclFragment({tab:'fabric'}),
   'production ops — po queue':()=>_phqFragment({}),
   'production ops — po queue for the cutting floor (read-only board)':()=>_phqFragment({floor:true}),
   'production ops — po queue plan dialog':()=>_phqFragment({dialog:true}),

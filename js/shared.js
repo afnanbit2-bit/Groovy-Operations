@@ -974,13 +974,18 @@ function buildNav(){
   const isOwner=session.role==='owner',canPO=session.canPO,isWorker=session.role==='worker',isViewer=session.role==='viewer',isStore=session.role==='store';
   const om=isOwner||session.role==='manager';
   const mainItems=[];
+  // Production Ops floor user (Kashif / uzaib): PO Registry, Pattern updates and Fabric Inventory live INSIDE Production Ops as
+  // rail tabs (js/ph-mod-classic.js), so their sidebar entries are skipped. phCanSee/phCanManage load AFTER this file: typeof
+  // guarded, and any failure fails OPEN to the old sidebar. The pages stay reachable by deep link and bell (no showPage scope).
+  let phFloor=false;
+  try{phFloor=typeof phCanSee==='function'&&typeof phCanManage==='function'&&phCanSee()===true&&phCanManage()!==true;}catch(e){phFloor=false;}
   // The Board is the FIRST item in the sidebar (spec s2) -- above Dashboard,
   // deliberately. It is rendered from _tbNavItemHTML rather than as a plain
   // mainItems entry because it carries the unread badge.
   if(_canSeeTheBoard())mainItems.push({id:_tbNavHome(),label:_tbNavLabel(),html:_tbNavItemHTML(currentPage===_tbNavHome())});
   if(!isWorker&&!isStore)mainItems.push({id:'dashboard',label:'Dashboard'});
   if(canPO)mainItems.push({id:'po-create',label:'New PO'});
-  if(!isWorker&&!isStore)mainItems.push({id:'po-registry',label:'PO Registry'});
+  if(!isWorker&&!isStore&&!phFloor)mainItems.push({id:'po-registry',label:'PO Registry'});
   if(isWorker||isViewer)mainItems.push({id:'my-work',label:'My Work'});
   // Garment QC disposition — Haris (QC manager) + owners/managers.
   if(session.u==='haris'||om)mainItems.push({id:'qc-disposition',label:'QC Disposition'});
@@ -992,11 +997,11 @@ function buildNav(){
   // Pattern Hub (Sept 2026, test phase: afnan/ammar/mustafa by username). The
   // gate lives in js/patterns.js, which loads AFTER this file — hence the
   // typeof guard, which fails CLOSED. See PATTERN_HUB_PLAN.md.
-  if(typeof _canSeePatternHub==='function'&&_canSeePatternHub())mainItems.push({id:'pattern-hub',label:'Pattern Hub'});
+  if(!phFloor&&typeof _canSeePatternHub==='function'&&_canSeePatternHub())mainItems.push({id:'pattern-hub',label:'Pattern Hub'});
   // Production Ops (Oct 2026): afnan, ammar, mustafa, uzaib by username (phCanSee, js/ph-data.js, which loads AFTER this
   // file -- hence typeof, which fails CLOSED). Uzaib is a viewer with no More sheet, so the sidebar and his Me page are his routes.
   if(typeof phCanSee==='function'&&phCanSee())mainItems.push({id:'prod-ops',label:'Production Ops'});
-  if(om||session.canFabric)mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
+  if(!phFloor&&(om||session.canFabric))mainItems.push({id:'fabric-inventory',label:'Fabric Inventory'});
   if(om)mainItems.push({id:'fulfillment',label:'Courier Performance'});
   if(om)mainItems.push({id:'bug-tracker',label:'🐛 Bug Tracker'});
   // Inventory Intel: owners + Mustafa (Sept 2026 grant, by username — he's

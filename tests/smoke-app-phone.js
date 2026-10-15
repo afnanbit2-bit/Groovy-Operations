@@ -179,9 +179,9 @@ function DRIVE(){
         res.push({page:'(inventory takeover)',issues:tk});
       }
       // Production Ops' full-view takeover (12 Oct 2026), in the real shell on a phone: the same checks as Inventory Intel's, for js/ph-ui.js.
-      // Afnan sees nine tabs, Uzaib (a viewer, no More sheet) three (Overview, PO Queue for the drafts, Today's Cutting; ph-mod-queue.js widens the queue tab to him); Escape and the #prodops deep link work; leaving removes every trace.
+      // Afnan sees nine tabs, Uzaib (a viewer, no More sheet) six (Overview, PO Queue for the drafts, Today's Cutting, then WP-15's hosted PO Registry, Pattern updates and Fabric Inventory; ph-mod-queue.js widens the queue tab to him); Escape and the #prodops deep link work; leaving removes every trace.
       if(PAGES.indexOf('prod-ops')>=0){
-        var pk=[],want=window.__SESSION&&window.__SESSION.u==='uzaib'?3:10;
+        var pk=[],want=window.__SESSION&&window.__SESSION.u==='uzaib'?6:10;
         try{
           window.showPage('prod-ops');await wait(900);
           var pb=document.getElementById('ph-tk-bar'),pr=document.getElementById('ph-tk-rail'),pm=document.getElementById('main-content');
@@ -206,6 +206,7 @@ function DRIVE(){
           location.hash='#prodops/cutting';await wait(900);
           if(currentPage!=='prod-ops'||!document.body.classList.contains('ph-fullscreen'))pk.push('the #prodops/cutting link did not open the page');
           if(location.hash!=='#prodops/cutting')pk.push('the hash is '+location.hash);
+          if(want===6){location.hash='#prodops/patterns';await wait(700);if(!document.getElementById('ph-panel')||!document.querySelector('#ph-tk-rail .ph-tk-item.on, #ph-tk-rail .ph-tk-item[aria-current]'))pk.push('the #prodops/patterns link did not open a hosted tab');}
           window.showPage('dashboard');await wait(500);
           if(document.body.classList.contains('ph-fullscreen')||document.documentElement.classList.contains('ph-fullscreen')||document.getElementById('main-content').classList.contains('ph-takeover'))pk.push('leaving by showPage left the class behind');
           if(/^#prodops/.test(location.hash))pk.push('leaving by showPage left the hash behind');
