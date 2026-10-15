@@ -188,6 +188,14 @@ function _phI18nAdd(k,en,ur,review){PH_I18N_STR[k]=review?{en:en,ur:ur,review:tr
   A('queue.could_not_advance','Could not advance: {why}','آگے نہیں بھیج سکے: {why}');
 
   /* ── PO Drafts ────────────────────────────────────────────────── */
+  A('instr.placeholder','Article code or name, for example GST073','آرٹیکل کوڈ یا نام، مثلاً GST073',true);
+  A('instr.label','Article code','آرٹیکل کوڈ',true);
+  A('instr.hint','Type a code or a name and pick the article, or type any code and press Open. Opens the saved instructions, or starts new ones for a code that has none.','کوڈ یا نام لکھ کر آرٹیکل چنیں، یا کوئی بھی کوڈ لکھ کر "کھولیں" دبائیں۔ محفوظ ہدایات کھلتی ہیں، یا جس کوڈ کی ہدایات نہیں اس کی نئی شروع ہوتی ہیں۔',true);
+  A('instr.unavailable','Article list unavailable - type the article code and press Open.','آرٹیکل کی فہرست دستیاب نہیں - آرٹیکل کوڈ لکھ کر "کھولیں" دبائیں۔',true);
+  A('instr.no_match','No article matches. You can still press Open to use this code.','کوئی آرٹیکل نہیں ملا۔ پھر بھی "کھولیں" دبا کر یہی کوڈ استعمال کر سکتے ہیں۔',true);
+  A('instr.custom_loading','Loading the products added in the New PO form...','نئے پی او فارم میں شامل کی گئی مصنوعات لوڈ ہو رہی ہیں...',true);
+  A('instr.custom_failed','Products added in the New PO form could not be loaded, so they are missing from this list.','نئے پی او فارم میں شامل کی گئی مصنوعات لوڈ نہیں ہو سکیں، اس لیے فہرست میں نہیں ہیں۔',true);
+  A('instr.matches','Matching articles','مماثل آرٹیکل',true);
   A('drafts.title','PO Drafts','پی او ڈرافٹ');
   A('drafts.blurb','PC-only entry. A draft is complete before it is marked ready; a ready draft is what gets issued as a PO in a later wave.','صرف پی سی پر لکھیں۔ ڈرافٹ پورا ہو تب "تیار" کریں؛ تیار ڈرافٹ بعد میں پی او بنایا جائے گا۔',true);
   A('drafts.pc_only_chip','PC-only entry','صرف پی سی پر انٹری');

@@ -11,7 +11,7 @@
    small helpers _pha*). Everything global is prefixed phi / _phi / PHI_.
    ───────────────────────────────────────────────────────────────────────── */
 
-const _phiS={q:'',form:null,hist:null,limit:30,importNote:''};
+const _phiS={q:'',form:null,hist:null,limit:30,importNote:'',pickOpen:false,hi:-1,input:null,listHost:null,ctx:null,prodReq:false,prodState:''};
 
 function _phiLibs(){
   const libs={library:[],builtin:null,tcx:null};
@@ -166,6 +166,95 @@ function _phiOpen(code,ctx){
   }
   ctx.repaint();
 }
+
+/* ── the article picker (14 Oct 2026): same source and same matching rule as the Create PO form's picker ──
+   Source: getProductCatalog() (js/pos.js) = the static PRODUCT_CATALOG + the runtime `products` collection (loadProducts(), the same read the
+   Create PO page makes, started lazily here, bounded to 8 s, never rejecting). Rule (window.filterProducts in js/pos.js): the typed text,
+   lower-cased, is contained in the code OR the name; at most 18 rows. Typing any code and pressing Open still works with no match. */
+const PHI_PICK_MAX=18,PHI_PICK_TIMEOUT_MS=8000;
+function _phiT(key,params,fb){try{if(typeof phI18nT==='function'){const t=phI18nT(key,params,'en');if(t)return t;}}catch(e){}return fb;}
+function phiArticleMatches(q,catalog,max){
+  const t=String(q==null?'':q).trim().toLowerCase();
+  if(!t||!Array.isArray(catalog))return[];
+  return catalog.filter(function(p){return p&&(String(p.code||'').toLowerCase().includes(t)||String(p.name||'').toLowerCase().includes(t));}).slice(0,max||PHI_PICK_MAX);
+}
+// {ok,rows,note}: ok false when no article source exists at all; note says when the custom products are not (yet) in the list.
+function _phiCatalog(){
+  let rows=null;
+  try{
+    if(typeof getProductCatalog==='function')rows=getProductCatalog();
+    else if(typeof PRODUCT_CATALOG!=='undefined'&&Array.isArray(PRODUCT_CATALOG))rows=PRODUCT_CATALOG;
+  }catch(e){rows=null;}
+  if(!Array.isArray(rows))return{ok:false,rows:[],note:''};
+  let note='';
+  try{
+    if(typeof _productsLoaded!=='undefined'&&_productsLoaded!==true)note=_phiS.prodState==='failed'?_phiT('instr.custom_failed',null,'Products added in the New PO form could not be loaded, so they are missing from this list.'):_phiT('instr.custom_loading',null,'Loading the products added in the New PO form...');
+  }catch(e){}
+  return{ok:true,rows:rows,note:note};
+}
+function _phiEnsureProducts(){
+  if(_phiS.prodReq)return;
+  try{if(typeof _productsLoaded==='undefined'||_productsLoaded===true||typeof loadProducts!=='function')return;}catch(e){return;}
+  _phiS.prodReq=true;
+  let done=false;
+  const fin=function(failed){if(done)return;done=true;if(failed)_phiS.prodState='failed';_phiS.prodReq=false;try{_phiPaintList();}catch(e){}};
+  try{
+    Promise.resolve(loadProducts()).then(function(){
+      let ok=false;try{ok=_productsLoaded===true;}catch(e){}
+      fin(!ok);
+    },function(){fin(true);});
+  }catch(e){fin(true);return;}
+  setTimeout(function(){fin(true);},PHI_PICK_TIMEOUT_MS);
+}
+function _phiPick(p,ctx){
+  _phiS.q=String(p.code||'');_phiS.pickOpen=false;_phiS.hi=-1;
+  if(_phiS.input)_phiS.input.value=_phiS.q;
+  _phiOpen(p.code,ctx);
+}
+function _phiPickKey(e,ci,ctx){
+  const k=e.key,cat=_phiCatalog(),hits=_phiS.pickOpen?phiArticleMatches(ci.value,cat.rows):[];
+  if(k==='ArrowDown'||k==='ArrowUp'){
+    if(!hits.length)return;
+    e.preventDefault();
+    const n=hits.length;
+    _phiS.hi=k==='ArrowDown'?(_phiS.hi+1>=n?0:_phiS.hi+1):(_phiS.hi<=0?n-1:_phiS.hi-1);
+    _phiPaintList();return;
+  }
+  if(k==='Escape'){
+    if(_phiS.pickOpen){_phiS.pickOpen=false;_phiS.hi=-1;_phiPaintList();if(e.stopPropagation)e.stopPropagation();}
+    return;
+  }
+  if(k==='Enter'){
+    e.preventDefault();
+    if(hits.length&&_phiS.hi>=0&&hits[_phiS.hi]){_phiPick(hits[_phiS.hi],ctx);return;}
+    if(hits.length===1){_phiPick(hits[0],ctx);return;}
+    _phiS.pickOpen=false;_phiOpen(ci.value,ctx);
+  }
+}
+// Repaints the list ALONE (a full repaint would rebuild the input and lose the caret).
+function _phiPaintList(){
+  const h=_phiS.listHost,ci=_phiS.input;if(!h)return;
+  phClear(h);
+  const cat=_phiCatalog(),q=String(_phiS.q||'').trim();
+  const open=_phiS.pickOpen&&q!=='';
+  if(ci)ci.setAttribute('aria-expanded',open&&cat.ok?'true':'false');
+  if(!cat.ok){h.appendChild(phEl('p','ph-note pha-warn phi-pick-note',_phiT('instr.unavailable',null,'Article list unavailable - type the article code and press Open.')));return;}
+  if(cat.note)h.appendChild(phEl('p','ph-note phi-pick-note',cat.note));
+  if(!open)return;
+  const hits=phiArticleMatches(q,cat.rows);
+  if(!hits.length){h.appendChild(phEl('p','ph-note phi-pick-note',_phiT('instr.no_match',null,'No article matches. You can still press Open to use this code.')));return;}
+  const ul=phEl('div','phi-opts');ul.setAttribute('role','listbox');ul.setAttribute('aria-label',_phiT('instr.matches',null,'Matching articles'));
+  hits.forEach(function(p,i){
+    const b=phEl('button','phi-opt'+(i===_phiS.hi?' phi-opt-on':''));b.setAttribute('type','button');b.setAttribute('role','option');
+    b.setAttribute('id','phi-opt-'+i);b.setAttribute('aria-selected',i===_phiS.hi?'true':'false');b.setAttribute('data-act','pick');b.setAttribute('data-code',String(p.code));
+    b.appendChild(phEl('span','phi-opt-code',String(p.code)));b.appendChild(phEl('span','phi-opt-name',String(p.name||'')));
+    b.addEventListener('mousedown',function(e){if(e.preventDefault)e.preventDefault();});
+    b.addEventListener('click',function(){_phiPick(p,_phiS.ctx);});
+    ul.appendChild(b);
+  });
+  h.appendChild(ul);
+  if(ci&&_phiS.hi>=0)ci.setAttribute('aria-activedescendant','phi-opt-'+_phiS.hi);else if(ci&&ci.removeAttribute)ci.removeAttribute('aria-activedescendant');
+}
 function _phiRender(host,ctx){
   if(!_phaGuard(host,ctx,'Instructions'))return;
   host.appendChild(_phaHead('Instructions','The standing instructions per article code: placement, Pantone colours, embroidery codes and notes. Every save is a revision with a reason.',ctx));
@@ -173,12 +262,17 @@ function _phiRender(host,ctx){
   const g=ctx.get('instructions');
   if(!g.ok){host.appendChild(_phaFailCard(ctx,'instructions','Product instructions could not be read'));return;}
   const open=_phaCard('Open an article',[]);
-  const ci=_phaInput('text',_phiS.q,'code',{placeholder:'Article code, for example GST073','aria-label':'Article code',maxlength:'40'});
-  ci.addEventListener('input',function(){_phiS.q=ci.value;});
-  ci.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();_phiOpen(ci.value,ctx);}});
-  open.appendChild(_phaField('Article code',ci,'Opens the saved instructions, or starts new ones for a code that has none.'));
-  open.appendChild(_phaBtn('ph-btn-primary','Open',function(){_phiOpen(ci.value,ctx);},{'data-act':'open'}));
+  const ci=_phaInput('text',_phiS.q,'code',{placeholder:_phiT('instr.placeholder',null,'Article code or name, for example GST073'),'aria-label':_phiT('instr.label',null,'Article code'),maxlength:'40',
+    role:'combobox','aria-autocomplete':'list','aria-expanded':'false','aria-controls':'phi-pick-list',autocomplete:'off'});
+  _phiS.input=ci;_phiS.ctx=ctx;
+  ci.addEventListener('input',function(){_phiS.q=ci.value;_phiS.pickOpen=true;_phiS.hi=-1;_phiEnsureProducts();_phiPaintList();});
+  ci.addEventListener('focus',function(){if(String(ci.value||'').trim()){_phiS.pickOpen=true;_phiEnsureProducts();_phiPaintList();}});
+  ci.addEventListener('keydown',function(e){_phiPickKey(e,ci,ctx);});
+  open.appendChild(_phaField(_phiT('instr.label',null,'Article code'),ci,_phiT('instr.hint',null,'Type a code or a name and pick the article, or type any code and press Open. Opens the saved instructions, or starts new ones for a code that has none.')));
+  const lst=phEl('div','phi-pick');lst.setAttribute('id','phi-pick-list');_phiS.listHost=lst;open.appendChild(lst);
+  open.appendChild(_phaBtn('ph-btn-primary','Open',function(){_phiS.pickOpen=false;_phiOpen(ci.value,ctx);},{'data-act':'open'}));
   host.appendChild(open);
+  _phiPaintList();
   const ed=phEl('div','pha-edhost');host.appendChild(ed);_phiEditHost=ed;_phiPaintEditor(ctx);
   const lc=_phaCard('Saved instructions ('+g.rows.length+')',[]);
   if(!g.rows.length)lc.appendChild(phEl('p','pha-empty','No instructions have been saved yet.'));

@@ -3430,6 +3430,15 @@ const FRAGMENTS={
     const failed=await _phAdminPanel({tab:'instructions',store:{},fail:['ph_article_instructions'],globals:{}});
     return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[edit,fresh,failed].join('')};
   },
+  // Instructions tab article picker (14 Oct 2026): the open dropdown with a highlighted row, a very long name and a hostile name; the no-match note; the unavailable note.
+  'production ops — admin tabs — Instructions article picker':async()=>{
+    const cat="function getProductCatalog(){return [{code:'GST073',name:'Superman Full Sleeves Tee With A Very Long Article Name That Has To Wrap Properly On A Phone'},{code:'GST074',name:'Batman Tee'},{code:'GST075',name:'<img src=x onerror=1>'},{code:'GH001',name:'Black Hoodie'}];}var _productsLoaded=true;";
+    const g={getProductCatalog:undefined};
+    const open=await _phAdminPanel({tab:'instructions',store:{},globals:{},pre:cat,setup:cat+";_phiS.q='gst';_phiS.pickOpen=true;_phiS.hi=1;"});
+    const none=await _phAdminPanel({tab:'instructions',store:{},globals:{},setup:cat+";_phiS.q='zzz';_phiS.pickOpen=true;"});
+    const unavail=await _phAdminPanel({tab:'instructions',store:{},globals:{},setup:"var _productsLoaded=true;_phiS.q='gst';_phiS.pickOpen=true;"});
+    return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+[open,none,unavail].join('')};
+  },
   'production ops — admin tabs — Settings':async()=>{
     const saved={dailyCapacity:420,skipDays:['2026-10-20','2026-11-14','2026-12-25','2027-01-01','2027-03-23'],offWeekdays:[0],delayTargetDays:3,stuckDays:7,grossOverTolPct:3,grossUnderTolPct:5,cutGate:[70,130],pcOnlyHard:true,rev:4,updatedAt:1790000000000,updatedBy:'afnan'};
     const defaults=await _phAdminPanel({tab:'settings',store:{},user:'mustafa',globals:{},setup:"_phaFlash={tab:'settings',kind:'bad',text:'The stuck limit must be above the delay target.'}"});

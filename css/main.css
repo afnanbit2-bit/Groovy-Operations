@@ -6449,6 +6449,14 @@ button.phm-tile-main:focus-visible,.phm-sublink:focus-visible,.phm-chip-btn:focu
 .phi-pan{display:flex;gap:8px;align-items:center}
 .phi-sw{display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:var(--surface-2);flex:none}
 textarea.pha-in{width:100%;min-height:72px;font:inherit}
+.phi-pick{margin:4px 0 8px}
+.phi-pick-note{margin:4px 0}
+.phi-opts{display:flex;flex-direction:column;max-height:min(48vh,340px);overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.phi-opt{display:flex;gap:10px;align-items:baseline;width:100%;min-height:44px;padding:8px 12px;text-align:left;background:var(--surface);color:var(--text);border:0;border-bottom:1px solid var(--border);cursor:pointer;font:inherit}
+.phi-opt:last-child{border-bottom:0}
+.phi-opt:hover,.phi-opt-on{background:var(--soft)}
+.phi-opt-code{font-weight:700;min-width:80px;flex:none}
+.phi-opt-name{min-width:0;overflow-wrap:anywhere}
 /* ph-mod-instructions END */
 
 /* ph-mod-marks START */
