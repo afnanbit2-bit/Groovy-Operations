@@ -471,6 +471,41 @@ async function _phqFragment(o){
   }
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+extra};
 }
+// Production Ops ▸ Afloat POs (QC5, 15 Oct 2026): the REAL js/ph-mod-afloat.js inside the REAL shell, over tests/ph-mod-afloat.test.js's scenario
+// (the 120-piece 20/40/40/20 PO at every state), serialised to markup. Each variant keeps to a handful of tiles so it fits the window it is
+// measured in (the probe does not hit-test below the window). Pictures: a Cloudinary photo is swapped for a solid stand-in picture (the probe
+// has no network; Shopify CDN URLs are swapped by the runner below), a BROKEN one is the tile the module draws after the <img> errors, and
+// "no photo" is the code / name tile. A long article name and a hostile one are in the list. The lightbox is laid in the flow (static) so it
+// does not cover the rest of the fragment.
+async function _phafFragment(o){
+  o=o||{};
+  const domkit=require('./ph-dom');
+  const K=require('./ph-mod-afloat.test.js').kit;
+  const all=K.fixture();
+  const LONG='A Very Long Article Name That Must Wrap Onto Two Lines Inside The Tile Instead Of Pushing It Sideways';
+  all['pos/PO-107'].name=LONG;
+  if(o.broken)all['pos/PO-105'].imgFront=K.CLD+'broken105.jpg';
+  const pick=ids=>{const out={};Object.keys(all).forEach(k=>{const m=/^(?:pos|po_qc_recon|po_cut_jobs)\/(PO-\d+)$|^po_qc_lots\/(PO-\d+)-/.exec(k);const id=m&&(m[1]||m[2]);if(!m||ids.indexOf(id)>-1)out[k]=all[k];});return out;};
+  const seed=o.ids?pick(o.ids):all;
+  const fail={};(o.fail||[]).forEach(c=>{fail[c]={err:()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'})};});
+  const T=K.load({session:K.USERS[o.user||'afnan'],seed:seed,fail:fail});
+  await T.show();
+  if(o.closedOpen){const t=T.cls('phaf-gtog')[0];if(t)T.dom.click(t);}
+  if(o.open){T.dom.click(T.card(o.open));await K.settle(80);}
+  if(o.broken){const c=T.card('PO-105');const im=c&&T.dom.all(c,n=>n.tagName==='IMG')[0];if(im)T.dom.dispatch(im,'error');}
+  let lb='';
+  if(o.lightbox){const pb=T.cls('phaf-picbtn')[0];if(pb)T.dom.click(pb);const node=T.dom.find('phaf-lightbox');if(node){lb='<div style="position:relative;height:460px;margin-top:12px">'+domkit.toHtml(node)+'</div>';node.parentNode.removeChild(node);}}
+  // the src of every <img> is a DOM property (never an attribute); give the static markup a picture the probe can load
+  const STAND='data:image/svg+xml;utf8,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2780%27 height=%27100%27%3E%3Crect width=%2780%27 height=%27100%27 fill=%27%23999%27/%3E%3C/svg%3E';
+  T.dom.all(T.dom.body,n=>n.tagName==='IMG').forEach(n=>n.setAttribute('src',/^https:\/\/cdn\.shopify\.com\//.test(n.src||'')?n.src:STAND));
+  const canvas=T.dom.byClass(T.dom.main,'ph-canvas')[0];
+  let html='<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+lb;
+  if(o.lightbox)html='<style>.phaf-lightbox{position:absolute;inset:0;height:100%}</style>'+html;
+  const out={html:html};
+  if(o.heights)out.heights=o.heights;
+  if(o.widths)out.widths=o.widths;
+  return out;
+}
 // Production Ops ▸ Calendar (12 Oct 2026): the REAL js/ph-mod-calendar.js over tests/ph-mod-calendar.test.js's scenario (Monday 12 Oct, capacity 400,
 // Sundays off, 16 Oct a skip day: an over-full day, a spilling chip, a done / overridden / already-cut locked chip, a hostile article name, a
 // reserved PO that must NOT be in the tray), serialised to markup. Variants: month, week, a day with SIX chips, the phone week list, the Move menu
@@ -3397,6 +3432,14 @@ const FRAGMENTS={
   'production ops — hosted PO Registry (the cutting floor)':()=>_phclFragment({tab:'registry'}),
   'production ops — hosted Pattern updates (the cutting floor)':()=>_phclFragment({tab:'patterns'}),
   'production ops — hosted Fabric Inventory (the cutting floor)':()=>_phclFragment({tab:'fabric'}),
+  'production ops — afloat: the board (manager: Cutting, Finishing, Ready with within / over / short, Closed open)':()=>_phafFragment({ids:['PO-101','PO-103','PO-104','PO-106','PO-107','PO-108'],closedOpen:true,heights:[2200]}),
+  'production ops — afloat for QC receiving (Faizan: In the line, the hostile name, a reopened PO)':()=>_phafFragment({user:'faizan',ids:['PO-102','PO-113','PO-116','PO-117'],heights:[1700]}),
+  'production ops — afloat: detail of a short PO (manager, the long name, disabled close-short)':()=>_phafFragment({ids:['PO-107'],open:'PO-107',heights:[1700]}),
+  'production ops — afloat: detail with a void lot, legacy receipts and the drift band':()=>_phafFragment({ids:['PO-115','PO-114'],open:'PO-115',heights:[1900]}),
+  'production ops — afloat: failed reads (pos)':()=>_phafFragment({fail:['pos']}),
+  'production ops — afloat: failed reads (lots and recon)':()=>_phafFragment({ids:['PO-101','PO-103','PO-104'],fail:['po_qc_lots','po_qc_recon'],heights:[1700]}),
+  'production ops — afloat: images (photo, Shopify photo, no photo, a broken photo swapped to the tile)':()=>_phafFragment({ids:['PO-101','PO-103','PO-104','PO-105'],broken:true,heights:[1700]}),
+  'production ops — afloat: detail picture and the lightbox open':()=>_phafFragment({ids:['PO-101'],open:'PO-101',lightbox:true,heights:[1700]}),
   'production ops — po queue':()=>_phqFragment({}),
   'production ops — po queue for the cutting floor (read-only board)':()=>_phqFragment({floor:true}),
   'production ops — po queue plan dialog':()=>_phqFragment({dialog:true}),

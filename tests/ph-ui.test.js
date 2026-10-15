@@ -34,7 +34,8 @@ const USERS={
   asghar:{uid:'u-asghar',u:'asghar',name:'Asghar',role:'worker'},
   claude:{uid:'u-claude',u:'claude',name:'Claude',role:'qa'}
 };
-const ALL_TABS=['overview','queue','calendar','cutting','monitor','reports','masters','standards','settings'];
+// QC5 (15 Oct 2026), a deliberate change: the shell's registry gains Afloat POs right after PO Queue (managers + Faizan, not Kashif)
+const ALL_TABS=['overview','queue','afloat','calendar','cutting','monitor','reports','masters','standards','settings'];
 
 function fakeDb(o){
   o=o||{};
@@ -128,8 +129,8 @@ async function checks(src){
     T.as(null);
     o['audience: signed out is out (fail closed)']=T.R('_phUiCanSee()')===false&&T.R('phTabsFor().length')===0;
     T.as(USERS.afnan);
-    o['the tab list is exactly the nine, in the rail order']=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(ALL_TABS)&&T.R('JSON.stringify(PH_TABS.map(t=>t.label))')===J(['Overview','PO Queue','Calendar',"Today's Cutting",'Monitor','Reports','Masters','Standards','Settings']);
-    for(const u of ['afnan','ammar','mustafa']){T.as(USERS[u]);o['tabs: '+u+' (a manager) has all nine']=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(ALL_TABS);}
+    o['the tab list is exactly the ten, in the rail order']=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(ALL_TABS)&&T.R('JSON.stringify(PH_TABS.map(t=>t.label))')===J(['Overview','PO Queue','Afloat POs','Calendar',"Today's Cutting",'Monitor','Reports','Masters','Standards','Settings']);
+    for(const u of ['afnan','ammar','mustafa']){T.as(USERS[u]);o['tabs: '+u+' (a manager) has all ten']=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(ALL_TABS);}
     T.as(USERS.uzaib);
     o["tabs: uzaib (Kashif, PO data entry) sees ONLY Overview, PO Queue and Today's Cutting"]=T.R('JSON.stringify(phTabsFor().map(t=>t.id))')===J(['overview','queue','cutting']);
     o['tabs: Calendar, Monitor, Reports, Masters, Standards and Settings stay manager-only (not one of them is his)']=['calendar','monitor','reports','masters','standards','settings'].every(id=>T.R('phTabsFor().some(t=>t.id==='+J(id)+')')===false);
@@ -154,7 +155,7 @@ async function checks(src){
     o['phChipFor: a manager none, the floor Data entry & cutting, anyone else View only']=T.R('phChipFor("mustafa").show')===false&&T.R('phChipFor("afnan").show')===false&&T.R('phChipFor("uzaib").text')==='Data entry & cutting'&&T.R('phChipFor("raees").text')==='View only'&&T.R('phChipFor("").text')==='View only';
     const M=mk('mustafa');await M.show('prod-ops');
     o['a manager: no View only chip (it is hidden in the top bar)']=/ph-hidden/.test(M.dom.find('ph-tk-chip').className)&&!/View only/.test(M.text(M.panel()));
-    o['a manager: all nine rail items']=M.itemIds().join()===ALL_TABS.join();
+    o['a manager: all ten rail items']=M.itemIds().join()===ALL_TABS.join();
     // registry extension point
     const X=mk('afnan');
     X.R('phRegisterTab("queue",{render:function(h,c){h.appendChild(phEl("p","x","queue built: "+c.user+" "+c.canManage));}})');
@@ -174,7 +175,7 @@ async function checks(src){
     o['the bar and the rail are direct children of <body>, once']=T.bar()&&T.bar().parentNode===T.dom.body&&T.rail().parentNode===T.dom.body&&T.dom.body.children.filter(c=>c.id==='ph-tk-bar').length===1;
     o['the bar carries an Exit control']=!!T.dom.find('ph-tk-exit')&&/Exit/.test(T.text(T.dom.find('ph-tk-exit')))&&T.dom.find('ph-tk-exit').getAttribute('type')==='button';
     o['the rail is a nav landmark with a label']=T.rail().tagName==='NAV'&&/Production Ops/.test(T.rail().getAttribute('aria-label')||'');
-    o['the rail lists every tab of the one registry (9)']=T.items().length===9&&T.itemIds().join()===T.R('PH_TABS.map(t=>t.id).join()');
+    o['the rail lists every tab of the one registry (10)']=T.items().length===10&&T.itemIds().join()===T.R('PH_TABS.map(t=>t.id).join()');
     o['the active tab is aria-current and .on, alone (Overview)']=(()=>{const cur=T.items().filter(b=>b.getAttribute('aria-current')==='page');return cur.length===1&&cur[0].getAttribute('data-tab')==='overview'&&/\bon\b/.test(cur[0].className);})();
     o['the address bar names the tab: #prodops/overview via replaceState']=T.hash()==='#prodops/overview'&&T.calls.length>=1;
     await T.show('prod-ops');await T.show('prod-ops');
@@ -208,9 +209,9 @@ async function checks(src){
     T.keys(evKey('ArrowDown',first));
     o['ArrowDown in the rail moves focus to the next item']=T.dom.body&&T.ctx.document.activeElement===second;
     T.keys(evKey('End',first));
-    o['End moves to the last item, Home to the first']=T.ctx.document.activeElement===T.items()[8]&&(T.keys(evKey('Home',T.items()[8])),T.ctx.document.activeElement===T.items()[0]);
+    o['End moves to the last item, Home to the first']=T.ctx.document.activeElement===T.items()[9]&&(T.keys(evKey('Home',T.items()[9])),T.ctx.document.activeElement===T.items()[0]);
     T.keys(evKey('ArrowUp',T.items()[0]));
-    o['ArrowUp from the first wraps to the last']=T.ctx.document.activeElement===T.items()[8];
+    o['ArrowUp from the first wraps to the last']=T.ctx.document.activeElement===T.items()[9];
     T.R('PH_ESCAPE_GUARDS.length=0');
     const before=T.shown.length;
     T.keys(evKey('Escape'));
@@ -278,7 +279,7 @@ async function checks(src){
     const g=gate();
     const T=mk('afnan',{gate:g});
     await T.show('prod-ops');
-    o['loading: the shell (takeover, bar, rail) is up while the reads are still out']=T.body().contains('ph-fullscreen')&&T.items().length===9&&T.hash()==='#prodops/overview';
+    o['loading: the shell (takeover, bar, rail) is up while the reads are still out']=T.body().contains('ph-fullscreen')&&T.items().length===10&&T.hash()==='#prodops/overview';
     o['loading: the panel is a skeleton (.gv-skel), not content and not blank']=T.dom.byClass(T.panel(),'gv-skel').length>=2&&!!T.dom.byClass(T.panel(),'ph-skelwrap')[0]&&T.dom.byClass(T.panel(),'ph-skelwrap')[0].getAttribute('aria-busy')==='true';
     o['loading: no tab content and no number is printed before the read settles']=T.dom.byClass(T.panel(),'ph-line').length===0&&!/Loaded|records|FAILED/.test(T.text(T.panel()));
     {
@@ -338,7 +339,7 @@ async function checks(src){
     const T=mk('afnan');
     T.R('phLoadAll=undefined;phLoadState=undefined');
     await T.show('prod-ops');
-    o['a data layer that is not loaded: an honest error, not a blank screen']=/did not load/.test(T.text(T.banner())+T.text(T.panel()))&&T.items().length===9;
+    o['a data layer that is not loaded: an honest error, not a blank screen']=/did not load/.test(T.text(T.banner())+T.text(T.panel()))&&T.items().length===10;
   }
   // ── render failures ──
   {
@@ -401,7 +402,8 @@ async function wiring(s){
       try{b.ctx.window.openMoreSheet();more[d.u]=!!(items&&items.some(i=>i.pageId==='prod-ops'));}catch(e){more[d.u]='threw '+e.message;}
     }
   }
-  s.eq('the sidebar entry shows for exactly afnan, ammar, mustafa and uzaib',J(Object.keys(see).filter(k=>see[k]===true).sort()),J(['afnan','ammar','mustafa','uzaib']));
+  // QC5 (15 Oct 2026), a deliberate change: Faizan (QC floor, role packing) gets a "QC Ops" sidebar entry to the same page (his one tab)
+  s.eq('the sidebar entry shows for exactly afnan, ammar, mustafa, uzaib and (as "QC Ops", QC5) faizan',J(Object.keys(see).filter(k=>see[k]===true).sort()),J(['afnan','ammar','faizan','mustafa','uzaib']));
   s.ok('buildNav() ran for every account without throwing',Object.keys(see).every(k=>typeof see[k]==='boolean'));
   s.eq('the owner/manager More sheet has it for afnan, ammar, mustafa and NOT arfat',J([more.afnan,more.ammar,more.mustafa,more.arfat]),J([true,true,true,false]));
   {
@@ -418,7 +420,8 @@ async function wiring(s){
   const shared=read('js/shared.js'),hrm=read('js/hrm.js');
   s.ok('renderPage has ONE line for it: id===prod-ops -> phRenderPage behind typeof',(shared.match(/id==='prod-ops'/g)||[]).length===1&&/else if\(id==='prod-ops'\)\{if\(typeof phRenderPage==='function'\)phRenderPage\(id\);else m\.innerHTML=/.test(shared));
   s.ok('every route is typeof-guarded on phCanSee (sidebar, More sheet, Me page)',(shared.match(/typeof phCanSee==='function'&&phCanSee\(\)/g)||[]).length===2&&/typeof phCanSee==='function'&&phCanSee\(\)\)\?`<button/.test(hrm));
-  s.ok('shared.js adds nothing else for it besides the phone group map and the bug-page name',/'prod-ops':'more'/.test(shared)&&/'prod-ops':'Production Ops'/.test(shared)&&(shared.match(/prod-ops/g)||[]).length===5);
+  // QC5: + four mentions for Faizan's QC Ops entry (the sidebar's id and showPage, the phone button's id and showPage) = 9
+  s.ok('shared.js adds nothing else for it besides the phone group map, the bug-page name and Faizan\'s QC Ops entries (QC5)',/'prod-ops':'more'/.test(shared)&&/'prod-ops':'Production Ops'/.test(shared)&&(shared.match(/prod-ops/g)||[]).length===9);
   s.ok('showPage has no role scope for a viewer, so none needed widening: every scoped role is sent away from prod-ops',(()=>{
     const fn=shared.slice(shared.indexOf('window.showPage=async function'),shared.indexOf('currentPage=id;',shared.indexOf('window.showPage=async function')));
     return!/role==='viewer'/.test(fn)&&!/prod-ops/.test(fn);
@@ -443,7 +446,7 @@ async function wiring(s){
     await go(U,'prod-ops');
     s.ok('Uzaib (viewer): the REAL showPage opens the takeover and renderPage draws the canvas',U.d.body.classList.contains('ph-fullscreen')&&!!U.d.find('ph-panel')&&U.d.find('ph-tk-rail').children.length===3);
     const M=real(USERS.mustafa);await go(M,'prod-ops');
-    s.ok('Mustafa (manager): same, with all nine tabs',M.d.body.classList.contains('ph-fullscreen')&&M.d.find('ph-tk-rail').children.length===9);
+    s.ok('Mustafa (manager): same, with all ten tabs',M.d.body.classList.contains('ph-fullscreen')&&M.d.find('ph-tk-rail').children.length===10);
     await go(M,'dashboard');
     s.ok('and the REAL showPage to another page lets go of the takeover',!M.d.body.classList.contains('ph-fullscreen')&&!M.d.main.classList.contains('ph-takeover'));
     for(const u of ['raees','arfat','asghar']){
@@ -511,7 +514,7 @@ module.exports=async function(){
     let r;try{r=await checks(mut);}catch(e){r={};failing.forEach(f=>r[f]=false);}
     failing.forEach(f=>{broken++;s.ok('break "'+label+'" fails "'+f+'"',r[f]!==true);});
   };
-  await brk('audience gate opened to everyone',"function _phUiCanSee(u){return typeof phCanSee==='function'&&phCanSee(_phUiUser(u))===true;}","function _phUiCanSee(u){return true;}",['audience: raees, umair, arfat, a worker and the QA account are out','audience: signed out is out (fail closed)']);
+  await brk('audience gate opened to everyone',"function _phUiCanSee(u){return _phUiCanSeeProd(u)||_phUiCanQc(u);}","function _phUiCanSee(u){return true;}",['audience: raees, umair, arfat, a worker and the QA account are out','audience: signed out is out (fail closed)']);
   await brk('audience gate role-wide (viewers and managers)',"typeof phCanSee==='function'&&phCanSee(_phUiUser(u))===true","(typeof session!=='undefined'&&session&&(session.role==='manager'||session.role==='viewer'||session.role==='owner'))",['audience: raees, umair, arfat, a worker and the QA account are out']);
   await brk('tab roles ignored (every tab for the audience)',"try{return typeof t.roles==='function'?t.roles(_phUiUser(u))===true:_phUiCanManage(u);}catch(e){return false;}","return true;",["tabs: uzaib (Kashif, PO data entry) sees ONLY Overview, PO Queue and Today's Cutting",'uzaib: asking for a manager tab is refused and the tab does not change']);
   await brk('a throwing roles() shows the tab',"}catch(e){return false;}\n}\nfunction phTabsFor","}catch(e){return true;}\n}\nfunction phTabsFor",['a roles() that throws hides the tab (fail closed)']);

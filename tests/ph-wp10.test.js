@@ -217,7 +217,7 @@ module.exports=async function(){
   Object.keys(res).forEach(k=>{NAMES.push(k);s.ok(k,!!res[k]);});
   s.section('wiring');
   const html=read('index.html'),sw=read('sw.js');
-  s.ok('CACHE_VERSION is v328 or later',/CACHE_VERSION = 'v3(2[89]|3[0-9])'/.test(sw));
+  s.ok('CACHE_VERSION is v328 or later',+(/CACHE_VERSION = 'v(\d+)'/.exec(sw)||[0,0])[1]>=328);   // QC5: a number compare (v340 broke the old 32x/33x pattern)
   const tag=f=>(new RegExp('/'+f.replace(/\./g,'\\.')+'\\?v=([0-9a-zA-Z]+)').exec(html)||[])[1];
   const files=['css/main.css','js/ph-i18n.js','js/ph-ui.js','js/ph-core.js','js/ph-mod-queue.js','js/ph-mod-calendar.js','js/ph-mod-cutting.js','js/ph-mod-monitor.js','js/ph-mod-marks.js'];
   const tags=files.map(tag);
@@ -233,7 +233,7 @@ module.exports=async function(){
     let r;try{r=checks(S2);}catch(e){r={};}
     names.forEach(n=>{const k=NAMES.filter(x=>x.indexOf(n)===0)[0]||n;s.ok('revert '+label+' -> fails: '+k.slice(0,80),r[k]!==true);});
   };
-  brk('default tab = first tab for everyone','ui',"if(!_phUiCanManage(u)){\n    for(let i=0;i<l.length;i++)if(l[i].id==='cutting')return l[i];\n  }","",['1 default: Kashif (uzaib) lands']);
+  brk('default tab = first tab for everyone','ui',"if(!_phUiCanManage(u)){\n    for(let i=0;i<l.length;i++)if(l[i].id==='cutting')return l[i];\n    for(let i=0;i<l.length;i++)if(l[i].id==='afloat')return l[i];   // QC5: the QC floor lands on Afloat POs (his only tab)\n  }","",['1 default: Kashif (uzaib) lands']);
   brk('floor overview not short','monitor',"if(!ctx.canManage)return _phmFloorOverview(host,ctx);","",['1 overview: Kashif']);
   brk('bidi isolates dropped','i18n',"return(iso===undefined?lang==='ur':iso)?_phI18nIsolate(_phI18nStr(v)):_phI18nStr(v);","return _phI18nStr(v);",['4 bidi: "Sep 2026"','4 bidi: "PO-105"','4 bidi: "Alam22"','4 bidi: a number parameter']);
   brk('English fallback gets isolates','i18n',"return _phI18nFill(raw,params,want,want==='ur'&&!!e.ur);","return _phI18nFill(raw,params,want);",['4 bidi: an English fallback']);

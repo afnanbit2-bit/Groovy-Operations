@@ -96,7 +96,9 @@ const JOBS=[
   {id:'store',user:'raees',theme:'light',pages:['','store-inventory','acct-ledger','store-receive','profile']},
   {id:'fulfilment',user:'umair',theme:'light',pages:['']},
   {id:'marketing',user:'daniyal',theme:'dark',pages:['','mkt-dispatches','mkt-creators']},
-  {id:'csr',user:'sami',theme:'light',pages:['','qc-disposition','bstock']}
+  {id:'csr',user:'sami',theme:'light',pages:['','qc-disposition','bstock']},
+  // QC5 (15 Oct 2026): Faizan (role packing, the QC floor): Packing, B-Stock and the Production Ops takeover with ONE tab (Afloat POs)
+  {id:'packing',user:'faizan',theme:'light',pages:['','packing','bstock','prod-ops']}
 ];
 
 // ── In the phone frame: sign in, open every page, measure ───────────────
@@ -179,9 +181,14 @@ function DRIVE(){
         res.push({page:'(inventory takeover)',issues:tk});
       }
       // Production Ops' full-view takeover (12 Oct 2026), in the real shell on a phone: the same checks as Inventory Intel's, for js/ph-ui.js.
-      // Afnan sees nine tabs, Uzaib (a viewer, no More sheet) six (Overview, PO Queue for the drafts, Today's Cutting, then WP-15's hosted PO Registry, Pattern updates and Fabric Inventory; ph-mod-queue.js widens the queue tab to him); Escape and the #prodops deep link work; leaving removes every trace.
+      // Afnan sees eleven tabs (QC5 added Afloat POs), Faizan (QC floor) one, Uzaib (a viewer, no More sheet) six (Overview, PO Queue for the drafts, Today's Cutting, then WP-15's hosted PO Registry, Pattern updates and Fabric Inventory; ph-mod-queue.js widens the queue tab to him); Escape and the #prodops deep link work; leaving removes every trace.
       if(PAGES.indexOf('prod-ops')>=0){
-        var pk=[],want=window.__SESSION&&window.__SESSION.u==='uzaib'?6:10;
+        // QC5: the managers' rail gained Afloat POs (11); Faizan (QC floor) has exactly that one tab; Uzaib is unchanged (6)
+        var pk=[],who=window.__SESSION&&window.__SESSION.u,want=who==='uzaib'?6:who==='faizan'?1:11;
+        if(who==='faizan'){
+          var mb=[].slice.call(document.querySelectorAll('#mob-nav .mob-nav-btn')).map(function(b){return b.getAttribute('data-mob-id');});
+          if(mb.join()!=='packing,bstock,prod-ops')pk.push('Faizan\'s phone nav is '+mb.join()+', expected packing,bstock,prod-ops');
+        }
         try{
           window.showPage('prod-ops');await wait(900);
           var pb=document.getElementById('ph-tk-bar'),pr=document.getElementById('ph-tk-rail'),pm=document.getElementById('main-content');
@@ -205,7 +212,10 @@ function DRIVE(){
           if(/^#prodops/.test(location.hash))pk.push('the hash was left behind');
           location.hash='#prodops/cutting';await wait(900);
           if(currentPage!=='prod-ops'||!document.body.classList.contains('ph-fullscreen'))pk.push('the #prodops/cutting link did not open the page');
-          if(location.hash!=='#prodops/cutting')pk.push('the hash is '+location.hash);
+          if(location.hash!==(who==='faizan'?'#prodops/afloat':'#prodops/cutting'))pk.push('the hash is '+location.hash);
+          if(who==='faizan'){var rl=[].slice.call(document.querySelectorAll('#ph-tk-rail .ph-tk-item')).map(function(b){return b.getAttribute('data-tab');});
+            if(rl.join()!=='afloat')pk.push('Faizan\'s rail is '+rl.join()+', expected afloat');
+            if(!document.querySelector('#ph-panel .phaf-groups, #ph-panel .phaf-empty, #ph-panel .phaf-alert, #ph-panel .phaf-skel'))pk.push('the Afloat POs tab did not draw');}
           if(want===6){location.hash='#prodops/patterns';await wait(700);if(!document.getElementById('ph-panel')||!document.querySelector('#ph-tk-rail .ph-tk-item.on, #ph-tk-rail .ph-tk-item[aria-current]'))pk.push('the #prodops/patterns link did not open a hosted tab');}
           window.showPage('dashboard');await wait(500);
           if(document.body.classList.contains('ph-fullscreen')||document.documentElement.classList.contains('ph-fullscreen')||document.getElementById('main-content').classList.contains('ph-takeover'))pk.push('leaving by showPage left the class behind');
