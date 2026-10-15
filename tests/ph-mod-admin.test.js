@@ -169,7 +169,7 @@ async function checks(src){
   {
     const T=mk('afnan');
     o['the three tabs are registered with this file\'s render']=['masters','standards','settings'].every(id=>T.R('PH_TABS.filter(t=>t.id==='+J(id)+')[0].render.name')==={masters:'_phaRenderMasters',standards:'_phaRenderStandards',settings:'_phaRenderSettings'}[id]);
-    o['the tab order and the other six tabs are untouched']=T.R('PH_TABS.map(t=>t.id).join()')==='overview,queue,calendar,cutting,monitor,reports,masters,standards,settings'&&T.R('PH_TABS.filter(t=>/_phaRender/.test(t.render.name)).length')===3;
+    o['the tab order and the other six tabs are untouched']=T.R('PH_TABS.map(t=>t.id).join()')==='overview,queue,afloat,calendar,cutting,monitor,reports,masters,standards,settings'&&T.R('PH_TABS.filter(t=>/_phaRender/.test(t.render.name)).length')===3;
     for(const u of ['afnan','ammar','mustafa']){T.as(USERS[u]);o['tabs: '+u+' sees Masters, Standards and Settings']=T.R('phTabsFor().filter(t=>["masters","standards","settings"].indexOf(t.id)>-1).length')===3;}
     T.as(USERS.uzaib);
     o['tabs: uzaib sees none of the three']=T.R('phTabsFor().filter(t=>["masters","standards","settings"].indexOf(t.id)>-1).length')===0;
