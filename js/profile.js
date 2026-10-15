@@ -55,7 +55,7 @@ let _profileSaving=false;
 
 const _PROFILE_DEPARTMENTS=['','Operations','Production','Cutting','Stitching',
   'Printing & Embellishments','Quality Control','Store & Inventory','Fabric',
-  'Dispatch & Fulfilment','HR & Admin','Accounts','Design','E-commerce'];
+  'Dispatch & Fulfilment','HR & Admin','Accounts','Design','E-commerce','QC Ops'];
 
 // Who may edit someone else's profile, and who they may not touch.
 // By username, deliberately — see the header note.

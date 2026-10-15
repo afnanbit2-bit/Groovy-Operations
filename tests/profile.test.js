@@ -94,6 +94,26 @@ module.exports=async function(){
     s.eq('session.name picks up the chosen name',run(`session.name`),'Afnan Bit');
   }
 
+  // ── the department list ───────────────────────────────────────────────
+  {
+    const app=loadApp({files:FILES,currentPage:'profile'});
+    const {run,state}=app;
+    await run(`loadProfiles(true)`);
+    s.section('departments: QC Ops (Oct 2026)');
+    s.ok('QC Ops is on the list',run(`_PROFILE_DEPARTMENTS.indexOf('QC Ops')`)>=0);
+    s.ok('the existing entries are still there and in order',
+      run(`_PROFILE_DEPARTMENTS.slice(0,14).join('|')`)==='|Operations|Production|Cutting|Stitching|Printing & Embellishments|Quality Control|Store & Inventory|Fabric|Dispatch & Fulfilment|HR & Admin|Accounts|Design|E-commerce');
+    run(`window.profileStartEdit()`);
+    run(`window.profileField('department','QC Ops')`);
+    const form=run(`renderProfilePage()`);
+    s.ok('the edit form offers QC Ops as an option',/<option value="QC Ops"/.test(form));
+    s.ok('and marks it selected once chosen',/<option value="QC Ops" selected>QC Ops<\/option>/.test(form));
+    run(`_profileEdit._uploading=false`);
+    await run(`window.profileSave()`);
+    const w=state.writes.filter(x=>x.op==='set').pop().data;
+    s.eq('QC Ops is written as chosen',w.department,'QC Ops');
+  }
+
   // ── the loader must not reject ────────────────────────────────────────
   // renderPage dispatches it with no .catch — see "Loading must never hang"
   // in CLAUDE.md. A rejection leaves the page on its skeleton forever.
