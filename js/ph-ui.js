@@ -47,20 +47,29 @@ function _phUiUser(u){
 }
 // js/ph-data.js loads before this file; every use still goes through typeof so a data layer that
 // failed to parse FAILS CLOSED (nobody is on the audience) instead of throwing.
-function _phUiCanSee(u){return typeof phCanSee==='function'&&phCanSee(_phUiUser(u))===true;}
+// QC5 (15 Oct 2026): the takeover's AUDIENCE is the Production Ops list (phCanSee: the managers and Kashif) PLUS the QC floor
+// (phCanQc: Faizan). phCanSee itself is unchanged; the tabs the whole Production Ops audience shares read _phUiCanSeeProd (the OLD
+// list), so Faizan, who is on the audience only for the Afloat POs tab, inherits none of Overview / PO Queue / Today's Cutting.
+function _phUiCanSeeProd(u){return typeof phCanSee==='function'&&phCanSee(_phUiUser(u))===true;}
+function _phUiCanQc(u){return typeof phCanQc==='function'&&phCanQc(_phUiUser(u))===true;}
+function _phUiCanSee(u){return _phUiCanSeeProd(u)||_phUiCanQc(u);}
 function _phUiCanManage(u){return typeof phCanManage==='function'&&phCanManage(_phUiUser(u))===true;}
 // The top-bar chip. Managers see none (hidden). The cutting floor (Kashif) is NOT view-only: he enters PO
 // drafts and records cuts, so the chip says what his account does; it still cannot plan or change settings.
 const PH_CHIP_FLOOR='Data entry & cutting';   // chip text; its Urdu pair is shell.chip_floor
+const PH_CHIP_QC='QC receiving';         // QC5: Faizan's chip; its Urdu pair is shell.chip_qc
+const PH_CHIP_QC_TITLE='This account receives finished units at QC and closes a PO that matches its cut. Cutting, planning and settings are for the managers.';
 const PH_CHIP_FLOOR_TITLE='This account enters PO drafts and checks fabric on Today\'s Cutting. The cut itself is recorded on the PO page (the classic cutting screen). Planning, Calendar and settings are for the managers.';
 function phChipFor(u){
   const w=_phUiUser(u);
   if(_phUiCanManage(w))return{show:false,text:'',title:''};
   if(typeof phCanRecordFloor==='function'&&phCanRecordFloor(w)===true)return{show:true,text:PH_CHIP_FLOOR,title:PH_CHIP_FLOOR_TITLE,key:'shell.chip_floor',tkey:'shell.chip_floor_tip'};
+  if(_phUiCanQc(w))return{show:true,text:PH_CHIP_QC,title:PH_CHIP_QC_TITLE,key:'shell.chip_qc',tkey:'shell.chip_qc_tip'};
   return{show:true,text:'View only',title:'This account can only look.',key:'shell.view_only',tkey:'shell.chip_view_tip'};
 }
-const PH_ROLE_ALL=function(u){return _phUiCanSee(u);};       // the whole audience (managers + the cutting floor)
+const PH_ROLE_ALL=function(u){return _phUiCanSeeProd(u);};   // the Production Ops list (managers + the cutting floor), NOT the QC floor (QC5)
 const PH_ROLE_MANAGE=function(u){return _phUiCanManage(u);}; // afnan, ammar, mustafa
+const PH_ROLE_QC=function(u){return _phUiCanManage(u)||_phUiCanQc(u);};   // QC5: the Afloat POs tab - the managers and the QC floor (Faizan)
 
 /* ── the tab registry: ONE constant ────────────────────────────────────── */
 // {id, label, short (rail monogram), render(host,ctx), roles(username)}. The floor user (Uzaib / Kashif) sees
@@ -68,6 +77,8 @@ const PH_ROLE_MANAGE=function(u){return _phUiCanManage(u);}; // afnan, ammar, mu
 const PH_TABS=[
   {id:'overview',label:'Overview',lkey:'shell.tab_overview',     short:'Ov',roles:PH_ROLE_ALL,   render:_phRenderOverview},
   {id:'queue',   label:'PO Queue',lkey:'shell.tab_queue',     short:'PQ',roles:PH_ROLE_ALL,   render:_phPlaceholder({title:phI18nD('shell.tab_queue'),      blurb:phI18nD('shell.ph_queue_blurb'),stages:['drafts'],list:_phUiNames('drafts','fbKey')})},
+  // QC5 (15 Oct 2026): the QC reconciliation tab (js/ph-mod-afloat.js replaces this placeholder). The managers and Faizan; not Kashif.
+  {id:'afloat',  label:'Afloat POs',lkey:'afloat.tab',        short:'Af',roles:PH_ROLE_QC,    render:_phPlaceholder({title:phI18nD('afloat.tab'),          blurb:phI18nD('afloat.blurb'),stages:[]})},
   {id:'calendar',label:'Calendar',     short:'Ca',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'Calendar',      blurb:'Planned cutting by day against capacity and skip days.',stages:['jobs','settings']})},
   {id:'cutting', label:"Today's Cutting",lkey:'shell.tab_cutting',short:'TC',roles:PH_ROLE_ALL, render:_phPlaceholder({title:phI18nD('shell.tab_cutting'),blurb:phI18nD('shell.ph_cutting_blurb'),stages:['jobs','masters'],list:_phUiNames('masters','name')})},
   {id:'monitor', label:'Monitor',      short:'Mo',roles:PH_ROLE_MANAGE,render:_phPlaceholder({title:'Monitor',       blurb:'Pipeline, units afloat, delays and alerts.',stages:['jobs','drafts']})},
@@ -99,6 +110,7 @@ function phDefaultTab(u){
   if(!l.length)return null;
   if(!_phUiCanManage(u)){
     for(let i=0;i<l.length;i++)if(l[i].id==='cutting')return l[i];
+    for(let i=0;i<l.length;i++)if(l[i].id==='afloat')return l[i];   // QC5: the QC floor lands on Afloat POs (his only tab)
   }
   return l[0];
 }
