@@ -18,8 +18,9 @@ const {suite}=harness;
 const ROOT=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
 const J=JSON.stringify;
-const ORDER=['ph-core','ph-data','ph-write','ph-issue','ph-ui','ph-mod-health','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin','ph-mod-instructions','ph-mod-marks'];
-const MODS=ORDER.slice(5);
+// QC4 (15 Oct 2026): ph-qc-write.js (the QC reconciliation writers that touch pos) sits right after ph-issue.js, the other writer
+const ORDER=['ph-core','ph-data','ph-write','ph-issue','ph-qc-write','ph-ui','ph-mod-health','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin','ph-mod-instructions','ph-mod-marks'];
+const MODS=ORDER.slice(6);
 const TABS=['overview','queue','calendar','cutting','monitor','reports','masters','standards','settings','instructions'];
 const USERS={
   afnan:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},ammar:{uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner'},
@@ -103,7 +104,16 @@ module.exports=async function(){
   s.ok('ph-ui.js and ph-data.js call none either',!WRITE.test(strip(read('js/ph-ui.js')))&&!WRITE.test(strip(read('js/ph-data.js'))));
   const wsrc=strip(read('js/ph-write.js'));
   const colls=Array.from(new Set((wsrc.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
-  s.eq('ph-write.js touches only the new collections and pos',J(colls),J(['cutting_masters','ph_article_instructions','ph_settings','ph_standards','po_cut_jobs','po_drafts','po_marks','pos']));
+  // QC4 (15 Oct 2026), a deliberate change: the QC lock / adopt writers add po_qc_recon and po_qc_lots
+  s.eq('ph-write.js touches only the new collections and pos',J(colls),J(['cutting_masters','ph_article_instructions','ph_settings','ph_standards','po_cut_jobs','po_drafts','po_marks','po_qc_lots','po_qc_recon','pos']));
+  {
+    const q=strip(read('js/ph-qc-write.js'));
+    const qd=Array.from(new Set((q.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
+    s.eq('ph-qc-write.js (QC4) touches exactly pos, po_qc_recon, po_qc_lots and hrm_notifications (its PHQC_WRITE_ROOTS)',J(qd),J(['hrm_notifications','po_qc_lots','po_qc_recon','pos']));
+    s.ok('… one transaction per writer (five), and no other write API',(q.match(/runTransaction\(/g)||[]).length===5&&!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch)\s*\(/.test(q));
+    s.ok('… its pos references are the PO document and its history rows only',(q.match(/doc\(db,\s*'pos'[^)]*\)/g)||[]).every(x=>/'pos',\s*poId(?:,\s*'history',\s*h\.id)?\)/.test(x)));
+    s.ok('… and it never deletes (no tx.delete)',!/tx\.delete\(/.test(q));
+  }
   s.ok('and writes under pos ONLY the history subcollection',(wsrc.match(/doc\(db,\s*'pos',[^)]*\)/g)||[]).every(x=>/'pos',\s*poId(?:,\s*'history'(?:,\s*h\.id)?)?\)/.test(x)));
   const wr=[...MODS.map(n=>'js/'+n+'.js')];
   s.ok('the writers the modules call are only ph-write.js functions (no direct doc(db, ...) in a module for a write)',wr.every(f=>!/\bdoc\(db,\s*'(counters|gatepasses|bundles|fabric_[a-z]+|pos)'/.test(strip(read(f)).replace(/getDoc\(doc\(db,[^;]*;/g,''))));
@@ -113,7 +123,7 @@ module.exports=async function(){
   const pat=/^(?:async\s+)?(?:function\s*\*?\s*([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*))/gm;
   for(const n of ORDER){let m;const t=read('js/'+n+'.js');while((m=pat.exec(t))){const k=m[1]||m[2];(decl[k]=decl[k]||[]).push(n);}}
   const dups=Object.keys(decl).filter(k=>decl[k].length>1);
-  s.eq('no duplicates across the twelve Production Ops files',J(dups),J([]));
+  s.eq('no duplicates across the Production Ops files',J(dups),J([]));
   const other=fs.readdirSync(path.join(ROOT,'js')).filter(f=>/\.js$/.test(f)&&!/^ph-/.test(f));
   const odecl=Object.create(null);
   for(const f of other){let m;const t=read('js/'+f);while((m=pat.exec(t))){odecl[m[1]||m[2]]=f;}}

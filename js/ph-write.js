@@ -890,3 +890,276 @@ async function phMarkNotesOf(poId,opts){
     return{ok:true,rows:((snap&&snap.docs)||[]).map(function(d){return Object.assign({},d.data(),{fbKey:d.id});})};
   }catch(e){const err=phErrInfo(e);return{ok:false,rows:null,err:err,text:err.permission?'po_marks comments: could not be read - republish firestore.rules from the repo file.':'comments: read failed ('+err.message+').'};}
 }
+
+/* ── QC reconciliation (QC4, 15 Oct 2026): the lists, the transition table, the builders, and the two writers that
+   touch NO pos document ──────────────────────────────────────────────────────────────────────────────────────────────
+   po_qc_recon/{PO-nnn}  one per PO: the LOCKED cut snapshot (cutLock, a copy of pos.cutQty -- the rules hold the copy
+                         equal to the PO's recorded cut), the status, a revision, the lot counters, the overrides log and
+                         the close record. No received figure is stored: it is derived from the lots (js/ph-core.js phQc*).
+   po_qc_lots/{PO-nnn}-{ms13}-{rand4}  append-only lot rows (one hand-over each: a {size: units} map); never edited, voided
+                         by a status change. The id carries the PO id so the rules bind a row to its parent.
+   This file keeps its rule (no writer here touches the pos document): phQcLockCut and phQcAdoptLegacy write only the two
+   collections above and pos/{id}/history. The writers that DO touch pos -- a lot (mirrored into pos.packingReceipts so the
+   classic QC Disposition / Ready to Barcode / B-stock readers keep working), a void (a counter entry there), the close (the
+   classic Final QC fields), the relock and the reopen -- are js/ph-qc-write.js (the js/ph-issue.js precedent).
+   firestore.rules mirrors every list and the transition table; tests/ph-data.test.js holds them equal. */
+const PHQC_RECON_STATUSES=Object.freeze(['locked','closed','reopened']);
+const PHQC_RECON_FIELDS=Object.freeze(['poId','status','rev','cutLock','lotCount','voidCount','lastLotAt','overrides','legacyIds','closedAt','closedBy','closedByName','closeVerdict','createdAt','createdBy','updatedAt','updatedBy','updatedByName']);
+const PHQC_LOCK_FIELDS=Object.freeze(['sizes','total','cutAt','cutBy','lockedAt','lockedBy','source']);
+const PHQC_LOCK_SOURCES=Object.freeze(['first_lot','manual','relock']);
+const PHQC_OVERRIDE_FIELDS=Object.freeze(['kind','at','by','byName','reason','cause','before','after']);
+const PHQC_OVERRIDE_KINDS=Object.freeze(['relock','close_short','reopen']);
+const PHQC_CLOSE_CAUSES=Object.freeze(['cutting_miscount','lost_in_line','damaged_before_qc','other']);
+const PHQC_LOT_FIELDS=Object.freeze(['poId','seq','sizes','total','day','note','at','by','byName','status','src']);
+const PHQC_LOT_SOURCES=Object.freeze(['qc','legacy']);
+const PHQC_LOT_VOID_FIELDS=Object.freeze(['status','voidedAt','voidedBy','voidReason']);
+// The history row types the QC floor (Faizan) may write; managers already write any type (isProdOps()).
+const PHQC_FLOOR_HIST_TYPES=Object.freeze(['qc_lot_added','qc_lot_voided','qc_cut_locked','qc_closed']);
+const PHQC_OVERRIDES_MAX=20,PHQC_LEGACY_IDS_MAX=2000,PHQC_NOTE_MAX=200,PHQC_REASON_MIN=5,PHQC_VOID_REASON_MIN=3;
+const PHQC_VOID_WINDOW_MS=86400000;              // Faizan voids his OWN lot within 24 h; a manager any time
+const PHQC_LOT_ID_RE=/^PO-[0-9]{3,}-[0-9]{13}-[A-Za-z0-9]{4}$/;
+const PHQC_LOTS_READ_MAX=500;                    // one PO's lots, read before a transaction (rules: none; a bound)
+// The transition table: [from, to, action, who]. from '' = no document yet. who: ops (isQcOps: Faizan + the managers),
+// manager (isProdOpsManager), owner (isOwner). 'closed' leaves only to 'reopened', by an owner.
+// CHANGE FROM THE PLAN (owner decision, 15 Oct 2026): 'close_short' is a manager's close in ANY phase that is not 'ready'
+// (still receiving, short, or over beyond the allowance), with a reason and an overrides row; a plain 'close' is the floor's
+// or a manager's when the verdict is within tolerance. The rules print the same table above isQcFloor().
+const PHQC_TRANSITIONS=Object.freeze([
+  Object.freeze(['','locked','lock','ops']),Object.freeze(['','locked','adopt','manager']),
+  Object.freeze(['locked','locked','lot','ops']),Object.freeze(['locked','locked','adopt','manager']),Object.freeze(['locked','locked','void','ops']),
+  Object.freeze(['locked','locked','relock','owner']),Object.freeze(['locked','closed','close','ops']),Object.freeze(['locked','closed','close_short','manager']),
+  Object.freeze(['closed','reopened','reopen','owner']),
+  Object.freeze(['reopened','reopened','lot','ops']),Object.freeze(['reopened','reopened','adopt','manager']),Object.freeze(['reopened','reopened','void','ops']),
+  Object.freeze(['reopened','reopened','relock','owner']),Object.freeze(['reopened','closed','close','ops']),Object.freeze(['reopened','closed','close_short','manager'])
+]);
+// Who a step needs ('ops' | 'manager' | 'owner'), or null when the step does not exist.
+function phQcMoveWho(from,to,action){
+  for(let i=0;i<PHQC_TRANSITIONS.length;i++){const t=PHQC_TRANSITIONS[i];if(t[0]===(from||'')&&t[1]===to&&t[2]===action)return t[3];}
+  return null;
+}
+// null when `u` may make the step, else a sentence (the rules say the same).
+function phQcMoveProblem(from,to,action,u){
+  const who=phQcMoveWho(from,to,action);
+  if(!who)return(from==='closed'?'This reconciliation is closed. Only an owner can reopen it.':'A QC reconciliation cannot go from '+(from||'nothing')+' to '+to+' ('+action+').');
+  if(who==='owner'&&!phIsOwner(u))return'Only an owner (Afnan or Ammar) can do this.';
+  if(who==='manager'&&!phCanManage(u))return'Only a manager (Afnan, Ammar or Mustafa) can do this.';
+  if(who==='ops'&&!phCanQcOps(u))return'QC receiving is for QC Ops (Faizan) and the managers.';
+  return null;
+}
+function _phQcwNeedOps(u){return phCanQcOps(u)?null:_phFail('forbidden','QC receiving is for QC Ops (Faizan) and the managers (Afnan, Ammar, Mustafa).');}
+// expectedRev: a whole number >= 0 (0 = "this PO has no reconciliation yet"); null when it is missing or not that.
+function _phQcwRev(x){return typeof x==='number'&&isFinite(x)&&Math.floor(x)===x&&x>=0?x:null;}
+function _phQcwModel(po){
+  if(typeof phSizeModel!=='function'||typeof _phPoArt!=='function')return null;
+  const a=phSizeModel(_phPoArt(po||{}));return a.source==='default'?null:a.model;
+}
+// The cut lock built from the PO's RECORDED cut: a verbatim copy of pos.cutQty (the rules compare the two maps), refused unless
+// cutting is recorded (stages.cutting.done), the map has 1..12 sizes, every value is a whole number >= 0 and they sum above 0.
+// The ORDERED sizes are never a stand-in (the js/pos.js poCutBySize fallback is the trap this avoids). -> {lock} | {error}
+function phQcBuildLock(po,ctx,source){
+  const p=_phIsObj(po)?po:{};
+  const done=_phIsObj(p.stages)&&_phIsObj(p.stages.cutting)&&p.stages.cutting.done===true;
+  if(!done)return{error:'Cutting is not recorded on this PO yet, so its cut cannot be made final.'};
+  const c=p.cutQty;
+  if(!_phIsObj(c))return{error:'This PO carries no cut quantities, so its cut cannot be made final.'};
+  const keys=Object.keys(c);
+  if(keys.length<1||keys.length>PHQC_MAX_LOT_SIZES)return{error:'The cut of this PO names '+keys.length+' sizes; a cut holds 1 to '+PHQC_MAX_LOT_SIZES+'.'};
+  let total=0;
+  for(let i=0;i<keys.length;i++){
+    const v=c[keys[i]];
+    if(typeof v!=='number'||!isFinite(v)||Math.floor(v)!==v||v<0)return{error:'The cut of '+keys[i]+' is not stored as a whole number ('+JSON.stringify(v)+'), so it cannot be made final. Correct the cut first.'};
+    total+=v;
+  }
+  if(total<=0)return{error:'The cut of this PO adds up to 0, so there is nothing to receive.'};
+  if(typeof phQcExpected==='function'){const e=phQcExpected(Object.assign({},p),null,{model:_phQcwModel(p)});if(!e.ok||e.source!=='live')return{error:'The cut of this PO could not be read: '+(e.why||'unknown')+'.'};}
+  if(PHQC_LOCK_SOURCES.indexOf(source)<0)return{error:'not a cut lock source: '+source};
+  const sizes={};keys.forEach(function(k){sizes[k]=c[k];});
+  return{lock:{sizes:sizes,total:total,cutAt:_phStr(typeof p.cutAt==='string'?p.cutAt:'',40),cutBy:_phStr(typeof p.cutBy==='string'?p.cutBy:'',60),
+    lockedAt:_phNowOf(ctx),lockedBy:ctx.u,source:source}};
+}
+// A NEW reconciliation document (status locked). extra: {lotCount, lastLotAt, legacyIds}.
+function phQcBuildRecon(poId,lock,ctx,extra){
+  const now=_phNowOf(ctx),x=extra||{};
+  return{poId:poId,status:'locked',rev:1,cutLock:lock,lotCount:x.lotCount||0,voidCount:0,lastLotAt:x.lastLotAt||0,overrides:[],
+    legacyIds:Array.isArray(x.legacyIds)?x.legacyIds.slice():[],closedAt:0,closedBy:'',closedByName:'',closeVerdict:null,
+    createdAt:now,createdBy:ctx.u,updatedAt:now,updatedBy:ctx.u,updatedByName:_phStr(ctx.name||ctx.u,60)};
+}
+// A lot id: the PO id, 13-digit ms and 4 characters. null when the clock is not 13 digits.
+function phQcLotId(poId,now,rand){const h=phHistoryRowId(now,rand);return h&&PH_PO_ID_RE.test(String(poId))?poId+'-'+h:null;}
+// The units of a lot, cleaned through the core: canonical keys, whole numbers, only the sizes above 0 stored.
+// -> {sizes,total} | {error}. A lot holding nothing is refused here too (phQcLotProblem says it first).
+function phQcLotSizes(input,model){
+  if(!_phIsObj(input))return{error:'Enter the units received for each size.'};
+  if(Object.keys(input).length>PHQC_MAX_LOT_SIZES)return{error:'A lot names at most '+PHQC_MAX_LOT_SIZES+' sizes.'};
+  const m=_phQcMap(input,{model:model,blankIsZero:true});
+  if(!m.ok)return{error:m.issues[0]+'.'};
+  const sizes={};let total=0;
+  m.order.forEach(function(k){if(m.sizes[k]>0){sizes[k]=m.sizes[k];total+=m.sizes[k];}});
+  if(total<=0)return{error:'Nothing was entered - enter the units received for at least one size.'};
+  return{sizes:sizes,total:total};
+}
+function phQcBuildLot(poId,seq,sizes,total,ctx,o){
+  const x=o||{};
+  const id=phQcLotId(poId,_phNowOf(ctx),ctx.rand);
+  if(!id)return{error:'The clock does not give a 13-digit time, so a lot id cannot be made.'};
+  return{id:id,data:{poId:poId,seq:seq,sizes:sizes,total:total,day:x.day,note:_phStr(x.note,PHQC_NOTE_MAX),at:_phNowOf(ctx),by:ctx.u,
+    byName:_phStr(ctx.name||ctx.u,60),status:'live',src:PHQC_LOT_SOURCES.indexOf(x.src)>-1?x.src:'qc'}};
+}
+// An overrides row (relock / close_short / reopen). before/after are size maps (relock only); cause: close_short only.
+function phQcBuildOverride(kind,reason,ctx,extra){
+  const x=extra||{};
+  const o={kind:kind,at:_phNowOf(ctx),by:ctx.u,byName:_phStr(ctx.name||ctx.u,60),reason:_phStr(reason,500)};
+  if(kind==='close_short')o.cause=x.cause;
+  if(x.before)o.before=x.before;
+  if(x.after)o.after=x.after;
+  return o;
+}
+// One PO's lots, read FRESH before a transaction (a single-field query: Firestore's automatic index serves it). Never throws.
+// A failed, timed-out or offline-copy read is a failure ({ok:false}), never "no lots". -> {ok, rows, truncated} | {ok:false, error}
+async function _phQcwLotsFresh(poId){
+  try{
+    const snap=await _phWithTimeout(getDocs(query(collection(db,'po_qc_lots'),where('poId','==',poId),limit(PHQC_LOTS_READ_MAX))),PH_READ_TIMEOUT_MS);
+    if(_phFromCache(snap))throw _phCacheError();
+    const rows=((snap&&snap.docs)||[]).map(function(d){return Object.assign({},d.data(),{fbKey:d.id,id:d.id});})
+      .filter(function(r){return r&&r.poId===poId;});
+    if(rows.length>=PHQC_LOTS_READ_MAX)return{ok:false,error:'PO '+poId+' has '+PHQC_LOTS_READ_MAX+' or more QC lots, more than one read covers; nothing was saved.'};
+    return{ok:true,rows:rows};
+  }catch(e){
+    const i=phErrInfo(e);
+    return{ok:false,error:'The QC lots of '+poId+' (po_qc_lots) could not be read'+(i.permission?' - republish firestore.rules from the repo file':'')+' ('+(i.message||i.code)+'). Nothing was saved. Retry.'};
+  }
+}
+// The lots read before the transaction must be exactly what the reconciliation counts, or someone saved one in between.
+function _phQcwLotsCheck(rows,recon){
+  const want=recon?(typeof recon.lotCount==='number'?recon.lotCount:0):0;
+  return rows.length===want?null:'The QC lots of this PO changed while you were saving (the reconciliation counts '+want+', '+rows.length+' were read). Reload and retry - nothing was saved.';
+}
+function _phQcwRecon(snap){return snap&&snap.exists()?snap.data():null;}
+function _phQcwOpenStatus(r){return!!r&&(r.status==='locked'||r.status==='reopened');}
+function _phQcwPatchLots(rows){
+  if(typeof _phLoad==='undefined'||!_phLoad.lots||_phLoad.lots.state!=='ok')return;
+  rows.forEach(function(x){_phPatchLocal('lots',x.id,x.data);});
+}
+
+/* Lock the cut of a PO as FINAL now (before any lot): QC is held to these numbers. QC Ops (Faizan) and the managers.
+   opts: {expectedRev (0 = no reconciliation yet; required), reason, now, actor, rand}. One transaction: reads pos/{id} and the
+   reconciliation; creates po_qc_recon/{id} (status locked, source manual) and a pos history row qc_cut_locked. */
+async function phQcLockCut(poId,opts){
+  const o=opts||{},a=_phActor(o);
+  const no=_phQcwNeedOps(a.u);if(no)return no;
+  if(!PH_PO_ID_RE.test(String(poId)))return _phFail('invalid','Not a PO id: '+poId);
+  const er=_phQcwRev(o.expectedRev);
+  if(er===null)return _phFail('invalid','The reconciliation revision you are looking at is needed (0 when the PO has none yet). Reload and retry.');
+  if(_phOffline())return _phFail('offline','No connection. Locking the cut is a transaction, which cannot be queued - nothing was saved.');
+  try{
+    return await _phSilent(false,async function(){
+      const now=_phNowOf(o),ctx={u:a.u,name:a.name,now:now,rand:o.rand};
+      const h=phBuildHistoryRow({type:'qc_cut_locked',from:'',to:'locked',reason:_phStr(o.reason,500)},ctx);
+      if(h.error)return _phFail('invalid',h.error);
+      const pref=doc(db,'pos',poId),rref=doc(db,'po_qc_recon',poId);
+      let saved=null;
+      await runTransaction(db,async function(tx){
+        saved=null;
+        const ps=await tx.get(pref);
+        if(!ps||!ps.exists())throw _phRefuse('missing','PO '+poId+' does not exist.');
+        const po=ps.data()||{};
+        const r=_phQcwRecon(await tx.get(rref));
+        if(r){
+          if(r.rev!==er)throw _phRefuse('stale','The QC reconciliation of '+poId+' was changed by someone else (revision '+r.rev+'). Reload it.',{rev:r.rev});
+          throw _phRefuse('refused','The cut of '+poId+' is already final (locked '+(r.cutLock&&r.cutLock.source==='manual'?'by hand':'when the first lot was received')+').');
+        }
+        if(er!==0)throw _phRefuse('stale','The QC reconciliation of '+poId+' is not what this screen shows. Reload it.');
+        const st=phStageOf(po);
+        if(st==='cancelled'||st==='reserved')throw _phRefuse('refused','PO '+poId+' is '+st+', so its cut is not locked for QC.');
+        const lk=phQcBuildLock(po,ctx,'manual');
+        if(lk.error)throw _phRefuse('refused',lk.error);
+        const m=phQcMoveProblem('','locked','lock',a.u);if(m)throw _phRefuse('forbidden',m);
+        saved=phQcBuildRecon(poId,lk.lock,ctx,{lotCount:0});
+        tx.set(rref,saved);
+        tx.set(doc(db,'pos',poId,'history',h.id),Object.assign({},h.data,{data:{total:lk.lock.total,sizes:lk.lock.sizes}}));
+      });
+      _phPatchLocal('recon',poId,saved);
+      if(typeof phHistoryForget==='function')phHistoryForget(poId);
+      _phLog('QC cut locked',poId+' - '+saved.cutLock.total+' pcs');
+      return{ok:true,id:poId,rev:saved.rev,recon:saved,historyId:h.id};
+    });
+  }catch(e){return _phFromError(e);}
+}
+
+/* Adopt the receipts recorded through the OLD Packing page (pos.packingReceipts entries without src:'qc') as ONE lot.
+   Managers only, with a reason; never automatic. Entries already adopted (their ids are in the reconciliation's legacyIds)
+   are never taken twice. The lot is src 'legacy' and is NOT mirrored back into packingReceipts (those units are already
+   there). Writes the lot, the reconciliation (created, locking the cut, when there is none) and a history row
+   qc_legacy_adopted -- no pos document. opts: {expectedRev (required), reason (>= 5 characters), now, actor, rand}. */
+async function phQcAdoptLegacy(poId,opts){
+  const o=opts||{},a=_phActor(o);
+  if(!phCanManage(a.u))return _phFail('forbidden','Only a manager (Afnan, Ammar, Mustafa) can adopt the old Packing receipts.');
+  if(!PH_PO_ID_RE.test(String(poId)))return _phFail('invalid','Not a PO id: '+poId);
+  const er=_phQcwRev(o.expectedRev);
+  if(er===null)return _phFail('invalid','The reconciliation revision you are looking at is needed (0 when the PO has none yet). Reload and retry.');
+  const reason=_phStr(o.reason,500);
+  if(reason.length<PHQC_REASON_MIN)return _phFail('invalid','A reason of at least '+PHQC_REASON_MIN+' characters is needed to adopt the old receipts.');
+  if(_phOffline())return _phFail('offline','No connection. Adopting the old receipts is a transaction, which cannot be queued - nothing was saved.');
+  try{
+    return await _phSilent(false,async function(){
+      const now=_phNowOf(o),ctx={u:a.u,name:a.name,now:now,rand:o.rand};
+      const lr=await _phQcwLotsFresh(poId);
+      if(!lr.ok)return _phFail('unread',lr.error);
+      const pref=doc(db,'pos',poId),rref=doc(db,'po_qc_recon',poId);
+      let out=null;
+      await runTransaction(db,async function(tx){
+        out=null;
+        const ps=await tx.get(pref);
+        if(!ps||!ps.exists())throw _phRefuse('missing','PO '+poId+' does not exist.');
+        const po=ps.data()||{};
+        const r=_phQcwRecon(await tx.get(rref));
+        if(r){
+          if(r.rev!==er)throw _phRefuse('stale','The QC reconciliation of '+poId+' was changed by someone else (revision '+r.rev+'). Reload it.',{rev:r.rev});
+          if(!_phQcwOpenStatus(r))throw _phRefuse('refused','The QC reconciliation of '+poId+' is '+r.status+'. '+(r.status==='closed'?'An owner can reopen it first.':''));
+        }else if(er!==0)throw _phRefuse('stale','The QC reconciliation of '+poId+' is not what this screen shows. Reload it.');
+        const lc=_phQcwLotsCheck(lr.rows,r);if(lc)throw _phRefuse('stale',lc);
+        const mv=phQcMoveProblem(r?r.status:'',r?r.status:'locked','adopt',a.u);if(mv)throw _phRefuse('forbidden',mv);
+        const done=r&&Array.isArray(r.legacyIds)?r.legacyIds:[];
+        const sums={},ids=[];
+        (Array.isArray(po.packingReceipts)?po.packingReceipts:[]).forEach(function(e){
+          if(!_phIsObj(e)||e.src==='qc'||typeof e.size!=='string'||!e.size)return;
+          const id=typeof e.id==='string'&&e.id?e.id:(String(e.receiptId||'')+'-'+e.size);
+          if(done.indexOf(id)>-1||ids.indexOf(id)>-1)return;
+          const q=phWhole(e.qty);if(q===null||q<=0)return;
+          ids.push(id);sums[e.size]=(_phHas(sums,e.size)?sums[e.size]:0)+q;
+        });
+        if(!ids.length)throw _phRefuse('refused','PO '+poId+' has no receipts from the old Packing page that are not adopted already.');
+        if(done.length+ids.length>PHQC_LEGACY_IDS_MAX)throw _phRefuse('refused','Too many old receipts to keep track of on one PO ('+(done.length+ids.length)+').');
+        const model=_phQcwModel(po);
+        let lock;
+        if(r)lock=r.cutLock;else{const lk=phQcBuildLock(po,ctx,'first_lot');if(lk.error)throw _phRefuse('refused',lk.error);lock=lk.lock;}
+        const recv=phQcReceived(lr.rows,{model:model});
+        if(!recv||!recv.ok)throw _phRefuse('refused','The QC lots already on '+poId+' cannot be read: '+((recv&&recv.issues[0])||'unknown')+'.');
+        const pr=phQcLotProblem(lock.sizes,recv.sizes,sums,{model:model});
+        if(pr)throw _phRefuse('refused','The old receipts cannot be adopted: '+pr);
+        const ls=phQcLotSizes(sums,model);if(ls.error)throw _phRefuse('refused',ls.error);
+        const seq=(r?r.lotCount:0)+1;
+        const lot=phQcBuildLot(poId,seq,ls.sizes,ls.total,ctx,{day:phDay(now),note:'Adopted from the old Packing page: '+reason,src:'legacy'});
+        if(lot.error)throw _phRefuse('invalid',lot.error);
+        const h=phBuildHistoryRow({type:'qc_legacy_adopted',from:r?r.status:'',to:'locked',reason:reason,data:{lotId:lot.id,seq:seq,total:ls.total,sizes:ls.sizes,receipts:ids.length}},ctx);
+        if(h.error)throw _phRefuse('invalid',h.error);
+        let rec;
+        if(r){
+          const patch={lotCount:seq,lastLotAt:now,legacyIds:done.concat(ids),rev:r.rev+1,updatedAt:now,updatedBy:a.u,updatedByName:_phStr(a.name||a.u,60)};
+          tx.update(rref,patch);rec=Object.assign({},r,patch);
+        }else{
+          rec=phQcBuildRecon(poId,lock,ctx,{lotCount:1,lastLotAt:now,legacyIds:ids});
+          tx.set(rref,rec);
+        }
+        tx.set(doc(db,'po_qc_lots',lot.id),lot.data);
+        tx.set(doc(db,'pos',poId,'history',h.id),h.data);
+        out={recon:rec,lot:lot,ids:ids,historyId:h.id};
+      });
+      _phPatchLocal('recon',poId,out.recon);
+      _phQcwPatchLots([out.lot]);
+      if(typeof phHistoryForget==='function')phHistoryForget(poId);
+      _phLog('QC old receipts adopted',poId+' - lot #'+out.lot.data.seq+', '+out.lot.data.total+' pcs');
+      return{ok:true,id:poId,lotId:out.lot.id,seq:out.lot.data.seq,rev:out.recon.rev,recon:out.recon,lot:out.lot.data,adopted:out.ids.length,historyId:out.historyId};
+    });
+  }catch(e){return _phFromError(e);}
+}

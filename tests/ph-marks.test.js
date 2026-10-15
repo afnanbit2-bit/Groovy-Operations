@@ -274,7 +274,8 @@ module.exports=async function(){
     s.ok('the marks CSS block holds no literal colour',!/#[0-9a-fA-F]{3,8}\b|rgb\(/.test((/\/\* ph-mod-marks START \*\/([\s\S]*?)\/\* ph-mod-marks END \*\//.exec(css)||['',''])[1]));
     s.ok('the module never calls a Firestore write API itself',!/\b(setDoc|updateDoc|deleteDoc|addDoc|writeBatch|runTransaction)\(/.test(read('js/ph-mod-marks.js')));
     s.ok('no innerHTML in the module',!/innerHTML|insertAdjacentHTML/.test(read('js/ph-mod-marks.js')));
-    s.ok('the writers touch no pos path',!/doc\(db,'pos',poId\)[^;]*\bset\b|tx\.(set|update)\(doc\(db,'pos'/.test(read('js/ph-write.js').slice(read('js/ph-write.js').indexOf('Manager marks on a PO (WP2)'))));
+    // QC4 (15 Oct 2026): the QC writers that follow the marks section in ph-write.js write pos HISTORY rows by design, so the scan stops there
+    s.ok('the writers touch no pos path',(()=>{const t=read('js/ph-write.js');const a=t.indexOf('Manager marks on a PO (WP2)'),b=t.indexOf('QC reconciliation (QC4');return a>0&&b>a&&!/doc\(db,'pos',poId\)[^;]*\bset\b|tx\.(set|update)\(doc\(db,'pos'/.test(t.slice(a,b));})());
     const hooks=[['js/ph-mod-queue.js',"phmkApply(li,t.id)"],['js/ph-mod-queue.js','phmkTileControls(t.id,ctx,manage)'],['js/ph-mod-queue.js','phmkTilePanel(t.id,ctx,manage)'],['js/ph-mod-calendar.js',"phmkApply(b,c.poId,{compact:true})"],['js/ph-mod-cutting.js','phmkSummaryNode(poId)'],['js/ph-mod-monitor.js',"phmkApply(li,r.fbKey||r.id)"]];
     hooks.forEach(h=>s.ok('hook present, typeof-guarded: '+h[1],read(h[0]).indexOf(h[1])>-1&&new RegExp("typeof (phmkApply|phmkTileControls|phmkTilePanel|phmkSummaryNode)==='function'").test(read(h[0]))));
     s.eq('Monitor draws marks in BOTH the card and the drawer',(read('js/ph-mod-monitor.js').match(/phmkApply\(li,r\.fbKey\|\|r\.id\)/g)||[]).length,2);
