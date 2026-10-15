@@ -69,6 +69,11 @@ function seed(){
   names.forEach((n,i)=>{cols.pos['k'+i]={id:'PO-10'+(40+i),name:n,code:'GST0'+(70+i),fabric:'Single Jersey 180 GSM',
     qty:120+i*40,sizes:{XS:10,S:20,M:40,L:30,XL:15,'2XL':5},currentStage:stages[i],status:'active',ts:now-i*86400000,
     date:'2026-09-2'+i,createdBy:'Afnan',embellishment:{required:i%2===0}};});
+  // QC6: one PO at final QC with its cut recorded, so Faizan's "+ Receive units" sheet can be opened on the phone (keyed by its PO number, as a real pos document is)
+  cols.pos['PO-1046']={id:'PO-1046',name:'Athletic Tee · Black — the 120-piece QC example',code:'GAT012',fabric:'Single Jersey 180 GSM',qty:120,
+    sizes:{S:20,M:40,L:40,XL:20},cutQty:{S:20,M:40,L:40,XL:20},cutAt:'2026-09-24T08:00:00.000Z',cutDate:'2026-09-24',cutBy:'Uzaib',
+    currentStage:'qc',poStatus:'in_production',status:'active',ts:now-3*86400000,date:'2026-09-23',createdBy:'Afnan',
+    stages:{cutting:{done:true},qc:{done:false}},packingReceipts:[]};
   for(let i=0;i<4;i++)cols.gatepasses['g'+i]={id:'GP-031'+i,name:'Uzaib',date:'2026-09-25',type:'units',reason:'process',
     article:names[i],spec:'Black / 180 GSM',dest:'Rahim Gul Enterprise',qty:100,total:100,ts:now-i*3600000,status:'out'};
   for(let i=0;i<8;i++)cols.activity['a'+i]={user:'Mustafa',u:'mustafa',action:'Fabric roll deleted',
@@ -205,6 +210,41 @@ function DRIVE(){
             if(its.length!==want)pk.push('the rail has '+its.length+' tabs, expected '+want);
             its.forEach(function(it){var r=it.getBoundingClientRect();if(r.height<44||r.width<44)pk.push('a rail item is '+Math.round(r.width)+'x'+Math.round(r.height));});
             if(!document.getElementById('ph-panel'))pk.push('the canvas has no panel');
+            // QC6: Faizan opens a PO and its "+ Receive units" sheet at 390px: nothing sideways, boxes and buttons thumb-sized, Review reachable above the dock
+            if(who==='faizan'){
+              var findCard=function(){return[].slice.call(document.querySelectorAll('.phaf-card')).filter(function(c){return c.getAttribute('data-po')==='PO-1046';})[0];};
+              for(var wi=0;wi<20&&!findCard();wi++)await wait(250);
+              var card=findCard();
+              if(!card)pk.push('QC6: the PO-1046 tile is not on Faizan\'s board (tiles: '+[].slice.call(document.querySelectorAll('.phaf-card')).map(function(c){return c.getAttribute('data-po');}).join()+')');
+              else{card.click();await wait(500);
+                var rb=document.getElementById('phaf-recv-btn');
+                if(!rb||rb.disabled)pk.push('QC6: no live "+ Receive units" on the detail');
+                else{rb.click();await wait(400);
+                  var sh=document.querySelector('.phaf-sheet'),ins=[].slice.call(document.querySelectorAll('.phaf-rx-in'));
+                  if(!sh)pk.push('QC6: the receive sheet did not open');
+                  else{
+                    if(document.documentElement.scrollWidth>innerWidth+1)pk.push('QC6: the sheet scrolls sideways ('+document.documentElement.scrollWidth+' > '+innerWidth+')');
+                    if(ins.length!==4)pk.push('QC6: the sheet has '+ins.length+' size boxes, expected 4');
+                    ins.forEach(function(n){var r=n.getBoundingClientRect();if(r.height<44||r.right>innerWidth+0.5||r.left<-0.5)pk.push('QC6: a size box is '+Math.round(r.width)+'x'+Math.round(r.height)+' at '+Math.round(r.left));});
+                    [].slice.call(sh.querySelectorAll('.phaf-stepb')).forEach(function(n){var r=n.getBoundingClientRect();if(r.height<44||r.width<44)pk.push('QC6: a +/− button is '+Math.round(r.width)+'x'+Math.round(r.height));});
+                    if(document.activeElement!==ins[0])pk.push('QC6: focus is not in the first size box');
+                    ins[1].value='5';ins[1].dispatchEvent(new Event('input',{bubbles:true}));await wait(100);
+                    var rv=document.getElementById('phaf-rx-review');
+                    if(!rv)pk.push('QC6: no Review and save button');
+                    else{rv.scrollIntoView({block:'end'});await wait(200);var rr=rv.getBoundingClientRect(),dk=document.getElementById('ph-tk-rail').getBoundingClientRect();
+                      if(rr.bottom>dk.top+0.5||rr.height<44)pk.push('QC6: Review and save is under the dock or too small ('+Math.round(rr.bottom)+' vs dock '+Math.round(dk.top)+', '+Math.round(rr.height)+'px)');
+                      var hit=document.elementFromPoint(rr.left+rr.width/2,rr.top+rr.height/2);if(!hit||(hit!==rv&&!rv.contains(hit)))pk.push('QC6: Review and save cannot be tapped (covered by '+(hit&&hit.className)+')');
+                      rv.click();await wait(300);
+                      var sv=document.getElementById('phaf-rx-save');if(!sv)pk.push('QC6: the review step has no Save lot button');
+                      else{if(!/Once saved, this lot cannot be edited/.test(document.querySelector('.phaf-review').textContent))pk.push('QC6: the review does not say a saved lot cannot be edited');
+                        if(document.documentElement.scrollWidth>innerWidth+1)pk.push('QC6: the review scrolls sideways');}}
+                    var x=document.getElementById('phaf-sheet-x');if(x){x.click();await wait(300);}
+                    if(document.querySelector('.phaf-sheet'))pk.push('QC6: Cancel did not close the sheet');
+                    document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(300);
+                    if(document.querySelector('.phaf-detail'))pk.push('QC6: Escape did not close the PO detail (back to the board)');
+                  }}
+              }
+            }
           }
           document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(500);
           if(document.body.classList.contains('ph-fullscreen')||document.getElementById('main-content').classList.contains('ph-takeover'))pk.push('Escape did not leave the takeover');

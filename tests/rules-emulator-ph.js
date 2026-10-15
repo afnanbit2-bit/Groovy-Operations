@@ -990,6 +990,41 @@ async function t(name,fn){
     const oks=[x,y].filter(r=>r.ok);if(oks.length!==1)throw new Error('expected one winner '+qq([x,y]));
     const d=await read('po_qc_recon/'+QPO);if(d.lotCount!==1)throw new Error(qq(d));
     let n=0;await env.withSecurityRulesDisabled(async c=>{n=(await getDocs(collection(c.firestore(),'po_qc_lots'))).size;});if(n!==1)throw new Error('lots '+n);});
+  /* ═══ QC6 (15 Oct 2026): a SAVED entry cannot be edited, by anyone — only voided (four fields), and the lock and the close never in place ═══ */
+  const qVoidOps=(w,id,extra)=>[['update','po_qc_lots/'+id,Object.assign({status:'void',voidedAt:NOW+5,voidedBy:w.u,voidReason:'wrong size'},extra||{})],['update','po_qc_recon/'+QPO,{voidCount:1,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name}]];
+  const qEdits={sizes:{S:19},total:19,note:'changed',day:'2026-10-03',at:NOW+60000,by:'umair',byName:'Someone',seq:7,poId:'PO-002',src:'legacy'};
+  for(const w of [FAIZAN,MUSTAFA,AFNAN]){
+    await t('QC6: '+w.u+' cannot change ANY field of a saved lot (sizes, total, note, day, at, by, byName, seq, poId, src) — alone, with a recon bump, beside a valid void, or by overwriting the lot id',async()=>{
+      for(const k of Object.keys(qEdits)){
+        await reset();await qSeedLots([{S:20}]);await seed('po_qc_lots/'+qLotId(1),qLot(w.u==='faizan'?FAIZAN:MUSTAFA,{seq:1}));
+        const e={};e[k]=qEdits[k];
+        await assertFails(updateDoc(doc(as(w),'po_qc_lots',qLotId(1)),e));                                                              // the lot alone
+        await assertFails(qBatch(w,[['update','po_qc_lots/'+qLotId(1),e],['update','po_qc_recon/'+QPO,{voidCount:1,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name}]]));   // with a recon bump
+        await assertFails(qBatch(w,qVoidOps(w,qLotId(1),e)));                                                                           // smuggled into a void
+        const over=Object.assign({},qLot(FAIZAN,{seq:2,at:NOW+2}),e);
+        await assertFails(qBatch(w,[['set','po_qc_lots/'+qLotId(1),over],['update','po_qc_recon/'+QPO,{lotCount:2,lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name}]]));   // a set over the same id is an update
+        const d=await read('po_qc_lots/'+qLotId(1));if(d[k]===qEdits[k]||qq(d[k])===qq(qEdits[k]))throw new Error(k+' changed: '+qq(d));
+      }
+      // control: the same person CAN void that lot with exactly the four fields (so the refusals above are about the edit, not the person)
+      await reset();await qSeedLots([{S:20}]);await seed('po_qc_lots/'+qLotId(1),qLot(w.u==='faizan'?FAIZAN:MUSTAFA,{seq:1}));
+      await assertSucceeds(qBatch(w,qVoidOps(w,qLotId(1))));
+      const v=await read('po_qc_lots/'+qLotId(1));if(v.status!=='void'||qq(v.sizes)!==qq({S:20})||v.total!==20||v.seq!==1)throw new Error('void '+qq(v));});
+    await t('QC6: '+w.u+' cannot edit a VOIDED lot (reason, who, un-void, sizes)',async()=>{await reset();await qSeedLots([{S:20}]);
+      await seed('po_qc_lots/'+qLotId(1),qLot(FAIZAN,{seq:1,status:'void',voidedAt:NOW,voidedBy:'faizan',voidReason:'wrong size'}));await seed('po_qc_recon/'+QPO,qRec(FAIZAN,{lotCount:1,voidCount:1,lastLotAt:NOW}));
+      const bump={voidCount:2,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name};
+      for(const e of [{voidReason:'another reason'},{voidedBy:w.u},{status:'live'},{sizes:{S:1}},{voidedAt:NOW+9}]){
+        await assertFails(updateDoc(doc(as(w),'po_qc_lots',qLotId(1)),e));
+        await assertFails(qBatch(w,[['update','po_qc_lots/'+qLotId(1),e],['update','po_qc_recon/'+QPO,bump]]));}
+      const d=await read('po_qc_lots/'+qLotId(1));if(d.voidReason!=='wrong size'||d.voidedBy!=='faizan'||d.status!=='void')throw new Error(qq(d));});
+    await t('QC6: '+w.u+' cannot change a CLOSE record in place (closedAt, closedBy, closeVerdict) nor a lot of a closed PO',async()=>{await reset();
+      await qSeedLots([{S:20,M:40,L:40,XL:20}],{status:'closed',closedAt:NOW,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('ready','exact')});
+      for(const e of [{closedAt:NOW+5},{closedBy:w.u,closedByName:w.name},{closeVerdict:qVerdict('ready','within')},{status:'locked'}])await assertFails(qUpd(w,e));
+      await assertFails(qBatch(w,qVoidOps(w,qLotId(1))));
+      const d=await read('po_qc_recon/'+QPO);if(d.closedAt!==NOW||d.closedBy!=='faizan'||d.status!=='closed'||d.closeVerdict.state!=='exact')throw new Error(qq(d));});
+    await t('QC6: '+w.u+' cannot change the CUT LOCK in place (sizes, who, when, source) without the owner relock (an overrides row)',async()=>{await reset();await qSeedLots([{S:20}]);
+      for(const e of [{cutLock:qLock(FAIZAN,{sizes:{S:20,M:40,L:40,XL:21},total:121})},{cutLock:qLock(FAIZAN,{lockedBy:'afnan'})},{cutLock:qLock(FAIZAN,{lockedAt:NOW+60000})},{cutLock:qLock(FAIZAN,{source:'first_lot'})}])await assertFails(qUpd(w,e));
+      const d=await read('po_qc_recon/'+QPO);if(qq(d.cutLock)!==qq(qLock(FAIZAN)))throw new Error(qq(d.cutLock));});
+  }
   await t('the pos rule is unchanged: Raees can still write a pos document directly; the existing history block still refuses him',async()=>{await reset();await qSeedPo();
     await assertSucceeds(updateDoc(doc(as(RAEES),'pos',QPO),{note:'classic'}));
     await assertFails(setDoc(doc(as(RAEES),'pos',QPO,'history',String(NOW)+'-rr11'),{at:NOW,by:'raees',byName:'Raees',type:'qc_closed',from:'',to:'',reason:'',data:{}}));});

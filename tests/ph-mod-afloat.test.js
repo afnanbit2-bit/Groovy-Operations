@@ -11,7 +11,7 @@
        phase groups, never 0; a failed po_qc_recon read is named; a persistent failure is not re-read in a loop; empty and truncated states
      · the product picture chain: po.imgFront -> po.imgBack -> shopify_articles image_url -> the code tile; a lookalike host, a missing
        validator and a broken URL all end on the tile; a Cloudinary URL asks for its sized derivative
-     · the detail: per-size table, lots (a void one struck through), legacy receipts note, drift band, closed band, the QC6 actions DISABLED
+     · the detail: per-size table, lots (a void one struck through), legacy receipts note, drift band, closed band, the QC6 actions (LIVE since QC6; tests/ph-mod-afloat-write.test.js drives them)
        with the reason written, the lightbox and the Escape order
      · XSS: hostile names, codes and notes reach the page as text only; no Firestore write API in the module's source
    What it does NOT prove: geometry (tests/smoke-layout.js "production ops — afloat" fragments do that in real Chromium), real Firestore,
@@ -426,12 +426,13 @@ module.exports=async function(){
     s.ok('… the table: M | 40 | 40 | 39 | −1 | 1 | ✓ within (stitched from the bundles)',rows.some(r=>r==='M|40|40|39|−1|1|✓ within'));
     s.ok('… L stitched 0 (its bundle is not marked stitched)',rows.some(r=>r==='L|40|0|40|0|1|✓ exact'));
     s.ok('… the Total row: 120 | 60 | 119 | −1 | 2 | ✓ within',rows.some(r=>r==='Total|120|60|119|−1|2|✓ within'));
-    s.ok('… the lock line: "Cut is final — locked … when the first lot was received", with 🔒',/Cut is final — locked 12 Oct \d\d:\d\d when the first lot was received/.test(D.text(det))&&/🔒/.test(D.text(det)));
+    s.ok('… the lock line (QC6: a 12-hour PKT stamp and who): "Cut is final — locked Mon 12 Oct 2026, 12:00 PM by Faizan when the first lot was received", with 🔒',/Cut is final — locked Mon 12 Oct 2026, 12:00 PM by Faizan when the first lot was received/.test(D.text(det))&&/🔒/.test(D.text(det)));
     s.ok('… the stitched note counts the bundles (2 of 3)',/2 of 3 bundles/.test(D.text(det)));
     s.ok('… the QC disposition hint is read-only text (15 pcs)',/QC disposition so far .*: 15 pcs \(read-only\)/.test(D.text(det)));
     const off=D.all(n=>n.tagName==='BUTTON'&&hasC(n,'phaf-off'));
-    s.ok('… Receive units and Close PO are DISABLED (QC6), not live',off.length>=2&&off.every(b=>b.disabled===true&&b.getAttribute('aria-disabled')==='true'&&!(b._ls.click&&b._ls.click.length)));
-    s.ok('… and the reason is written beside them (aria-describedby)',/arrive in the next update/.test(D.text(det))&&off.every(b=>b.getAttribute('aria-describedby')==='phaf-off-why'));
+    // QC6, a deliberate change: the actions are LIVE now (QC5 drew them disabled). Receive units and Close PO for a manager on a within PO.
+    s.ok('… Receive units and Close PO are LIVE for a manager on a within PO (QC6), not the disabled QC5 placeholders',!!D.dom.find('phaf-recv-btn')&&D.dom.find('phaf-recv-btn').disabled!==true&&(D.dom.find('phaf-recv-btn')._ls.click||[]).length===1&&!!D.dom.find('phaf-close-btn')&&(D.dom.find('phaf-close-btn')._ls.click||[]).length===1&&off.length===0);
+    s.ok('… and the lots list says saved entries cannot be edited (QC6)',/Saved entries cannot be edited\. To correct one, void it and enter it again\./.test(D.text(det)));
     s.eq('… nothing written',D.log.writes.length,0);
     // Escape: the detail closes before the takeover
     D.R('globalThis.__esc=PH_ESCAPE_GUARDS.map(g=>g)');
@@ -457,7 +458,7 @@ module.exports=async function(){
     D.dom.click(D.card('PO-115'));await settle(60);
     const d115=D.cls('phaf-detail')[0];
     const voidLi=D.cls('phaf-lot-void',d115)[0];
-    s.ok('PO-115: the void lot is listed, struck through, with its reason',!!voidLi&&/void · typed the wrong size/.test(D.text(voidLi)));
+    s.ok('PO-115: the void lot is listed, struck through, with its stamp, who and reason (QC6: 12-hour PKT)',!!voidLi&&/void · Wed 14 Oct 2026, 12:00 PM by Faizan · typed the wrong size/.test(D.text(voidLi)));
     s.ok('… the live lot\'s hostile note is TEXT',D.cls('phaf-lot-note',d115).some(n=>n.textContent==='“'+HOSTILE+'”')&&/&lt;img src=x/.test(D.html(d115))&&!D.all(n=>n.tagName==='IMG'&&/onerror/.test(J(n._attrs))).length);
     s.ok('… the old Packing receipts are said and not counted (5 units)',/5 units were received through the old Packing page/.test(D.text(d115)));
     D.R('phqcBack()');await settle(20);
@@ -476,7 +477,7 @@ module.exports=async function(){
     s.ok('the Closed group expands on its header',!!D.card('PO-108')&&tog.getAttribute('aria-expanded')==='false');
     D.dom.click(D.card('PO-108'));await settle(40);
     const d108=D.cls('phaf-detail')[0];
-    s.ok('PO-108: the closed band "✓ Closed … by Faizan" and no action button',/✓ Closed 14 Oct \d\d:\d\d by Faizan/.test(D.text(d108))&&D.all(n=>hasC(n,'phaf-off')).length===0);
+    s.ok('PO-108: the closed band "✓ Closed Wed 14 Oct 2026, 12:00 PM by Faizan" (QC6 stamp) and no action button',/✓ Closed Wed 14 Oct 2026, 12:00 PM by Faizan/.test(D.text(d108))&&D.all(n=>n.tagName==='BUTTON'&&(hasC(n,'phaf-off')||/phaf-(recv|close|lock)-btn/.test(n.className))).length===0);
   }
   {
     const F=await open('faizan');
@@ -484,7 +485,7 @@ module.exports=async function(){
     s.ok('Faizan on a SHORT PO: no Close button of any kind (only a manager closes a short PO)',F.all(n=>hasC(n,'phaf-off')&&/Close/.test(n.textContent)).length===0);
     F.R('phqcBack()');await settle(20);
     F.dom.click(F.card('PO-104'));await settle(40);
-    s.ok('Faizan on a within PO: Close PO is drawn, DISABLED',F.all(n=>hasC(n,'phaf-off')&&/^Close PO$/.test(n.textContent)&&n.disabled===true).length===1);
+    s.ok('Faizan on a within PO: Close PO is a LIVE button (QC6; QC5 drew it disabled)',!!F.dom.find('phaf-close-btn')&&/^Close PO$/.test(F.dom.find('phaf-close-btn').textContent)&&!hasC(F.dom.find('phaf-close-btn'),'phaf-off')&&(F.dom.find('phaf-close-btn')._ls.click||[]).length===1);
     s.ok('… and no "Lock cut now" for him',F.all(n=>/Lock cut now/.test(n.textContent)).length===0);
   }
   {
@@ -505,7 +506,8 @@ module.exports=async function(){
   const code=strip(SRC);
   const WRITE=/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch|runTransaction)\s*\(|\btx\.(set|update|delete)\s*\(|\bbatch\.(set|update|delete|commit)\s*\(/;
   s.ok('the module calls NO Firestore write API',!WRITE.test(code));
-  s.ok('… and no QC writer (phQcAddLot / LockCut / VoidLot / Close / Relock / Reopen / AdoptLegacy) and no ph-write save',!/\bphQc(AddLot|LockCut|VoidLot|Close|Relock|Reopen|AdoptLegacy)\s*\(/.test(code)&&!/\bph(SaveDraft|SaveCutJob|MarksSave|MarkComment|SettingsSave|StandardSave)\s*\(/.test(code));
+  // QC6, a deliberate change: the module now calls the QC4 writers for receive / lock / void / close -- and NOTHING else that writes
+  s.ok('… it calls ONLY the QC4 writers phQcAddLot / phQcLockCut / phQcVoidLot / phQcClose (never Relock / Reopen / AdoptLegacy: QC7) and no other ph-write save',/\bphQcAddLot\(/.test(code)&&/\bphQcLockCut\(/.test(code)&&/\bphQcVoidLot\(/.test(code)&&/\bphQcClose\(/.test(code)&&!/\bphQc(Relock|Reopen|AdoptLegacy)\s*\(/.test(code)&&!/\bph(SaveDraft|SaveCutJob|MarksSave|MarkComment|SettingsSave|StandardSave)\s*\(/.test(code));
   s.ok('no innerHTML / outerHTML / insertAdjacentHTML / DOMParser / document.write',!/innerHTML|outerHTML|insertAdjacentHTML|DOMParser|document\.write/.test(code));
   s.ok('images are set through the src PROPERTY only (never setAttribute("src"))',!/setAttribute\('src'/.test(code)&&/img\.src=im\.src/.test(code));
   const I=read('js/ph-i18n.js');
@@ -544,12 +546,12 @@ module.exports=async function(){
   await brk('the catalog step dropped from the chain','PO-103 (no photo, a Shopify one for its code): from the catalog',async()=>{const F=await open('afnan',{src:mut(SRC,"  if(cat&&chain.every(function(c){return c.src!==cat;}))chain.push({src:cat,from:'catalog'});","")});return F.cls('phaf-img',F.card('PO-103'))[0].getAttribute('data-img-from')==='catalog';});
   await brk('old closed reconciliations listed','Closed: only the one closed in the last 7 days',async()=>{const F=await open('afnan',{src:mut(SRC,"if(at===null||now-at>PHAF_CLOSED_DAYS*86400000){out.closedOlder++;return;}","")});return J(JSON.parse(F.R('JSON.stringify(_phqcModelNow().groups.closed.map(t=>t.id))')))===J(['PO-108']);});
   await brk('a classic-completed PO with no reconciliation listed','a classic-completed PO with no reconciliation is not listed',async()=>{const F=await open('afnan',{src:mut(SRC,"if(st==='completed'&&(!reconOk||!rc))return;","")});return F.R('_phqcModelNow().tiles.map(t=>t.id).indexOf("PO-110")')<0;});
-  await brk('the QC6 actions made live','… Receive units and Close PO are DISABLED (QC6), not live',async()=>{const F=await open('afnan',{src:mut(SRC,"b.setAttribute('disabled','disabled');b.disabled=true;","b.addEventListener('click',function(){});")});F.dom.click(F.card('PO-104'));await settle(40);const off=F.all(n=>n.tagName==='BUTTON'&&hasC(n,'phaf-off'));return off.length>=2&&off.every(b=>b.disabled===true&&!(b._ls.click&&b._ls.click.length));});
-  await brk('the floor shown Close on a short PO','Faizan on a SHORT PO: no Close button of any kind',async()=>{const F=await open('faizan',{src:mut(SRC,"(r.canClose.floor||(phqcIsManager(ctx.user)&&r.canClose.manager))","(r.canClose.floor||r.canClose.manager)")});F.dom.click(F.card('PO-107'));await settle(40);return F.all(n=>hasC(n,'phaf-off')&&/Close/.test(n.textContent)).length===0;});
+  await brk('the QC6 Receive button drawn disabled again','… Receive units and Close PO are LIVE for a manager on a within PO (QC6), not the disabled QC5 placeholders',async()=>{const F=await open('afnan',{src:mut(SRC,"      const b=_phqcBtn('ph-btn ph-btn-primary phaf-recv-btn',phI18nD('afloat.a_receive'),function(){phqcSheetOpen(t.id);});b.id='phaf-recv-btn';row.appendChild(b);","      row.appendChild(off('afloat.a_receive','afloat.why_recv_unread',null,'phaf-recv-btn'));")});F.dom.click(F.card('PO-104'));await settle(40);const b=F.dom.find('phaf-recv-btn');return !!b&&b.disabled!==true&&(b._ls.click||[]).length===1;});
+  await brk('the floor shown Close on a short PO','Faizan on a SHORT PO: no Close button of any kind',async()=>{const F=await open('faizan',{src:mut(SRC,"if(mgr)row.appendChild(off('afloat.a_close_short'","if(mgr||qc)row.appendChild(off('afloat.a_close_short'")});F.dom.click(F.card('PO-107'));await settle(40);return F.all(n=>hasC(n,'phaf-off')&&/Close/.test(n.textContent)).length===0;});
   await brk('the article name written as HTML','no node anywhere has a hostile innerHTML',async()=>{const F=await open('afnan',{src:mut(SRC,"const nm=phEl('span','phaf-name');nm.textContent=t.name;","const nm=phEl('span','phaf-name');nm.innerHTML=t.name;")});return F.all(n=>typeof n.innerHTML==='string'&&n.innerHTML.indexOf('onerror')>-1).length===0;});
   await brk('the search ignored','search "po-104" leaves one tile',async()=>{const F=await open('afnan',{src:mut(SRC,"  if(q&&(t.id+' '+t.code+' '+t.name+' '+t.master).toLowerCase().indexOf(q)<0)return false;","")});const q=F.dom.find('phaf-q');q.value='po-104';F.dom.dispatch(q,'input');return J(F.cards().map(c=>c.getAttribute('data-po')))===J(['PO-104']);});
   await brk('an offline copy accepted as a read','an offline-copy answer for pos is a FAILURE, not "no PO"',async()=>{const F=await open('afnan',{cache:{pos:true},src:mut(SRC,"  if(snap&&snap.metadata&&snap.metadata.fromCache===true){const e=new Error('the read was answered from this device\\'s offline copy');e.code='from-cache';throw e;}\n","")});return /offline copy/.test(F.text(F.panel()))&&F.cards().length===0&&!/No PO is afloat/.test(F.text(F.panel()));});
-  await brk('Escape guard order: the detail before the lightbox','Escape closes the lightbox FIRST (the detail stays)',async()=>{const F=await open('afnan',{src:mut(SRC,"  phAddEscapeGuard(function(){if(_phqcLightbox){phqcLightboxClose();return true;}return false;});\n  phAddEscapeGuard(function(){if(_phqcOpen&&_phqcIsHere()){phqcBack();return true;}return false;});","  phAddEscapeGuard(function(){if(_phqcOpen&&_phqcIsHere()){phqcBack();return true;}return false;});\n  phAddEscapeGuard(function(){if(_phqcLightbox){phqcLightboxClose();return true;}return false;});")});F.dom.click(F.card('PO-101'));await settle(40);F.dom.click(F.cls('phaf-picbtn')[0]);F.R('PH_ESCAPE_GUARDS.some(g=>g()===true)');return !F.dom.find('phaf-lightbox')&&F.cls('phaf-detail').length===1;});
+  await brk('Escape guard order: the detail before the lightbox','Escape closes the lightbox FIRST (the detail stays)',async()=>{const F=await open('afnan',{src:mut(SRC,"  phAddEscapeGuard(function(){if(_phqcLightbox){phqcLightboxClose();return true;}return false;});\n  phAddEscapeGuard(function(){if(_phqcDlg&&_phqcIsHere()){phqcDlgClose();return true;}return false;});\n  phAddEscapeGuard(function(){if(_phqcSheet&&_phqcIsHere()&&!_phqcSheet.saving){phqcSheetClose();return true;}return false;});\n  phAddEscapeGuard(function(){if(_phqcOpen&&_phqcIsHere()){phqcBack();return true;}return false;});","  phAddEscapeGuard(function(){if(_phqcOpen&&_phqcIsHere()){phqcBack();return true;}return false;});\n  phAddEscapeGuard(function(){if(_phqcLightbox){phqcLightboxClose();return true;}return false;});\n  phAddEscapeGuard(function(){if(_phqcDlg&&_phqcIsHere()){phqcDlgClose();return true;}return false;});\n  phAddEscapeGuard(function(){if(_phqcSheet&&_phqcIsHere()&&!_phqcSheet.saving){phqcSheetClose();return true;}return false;});")});F.dom.click(F.card('PO-101'));await settle(40);F.dom.click(F.cls('phaf-picbtn')[0]);F.R('PH_ESCAPE_GUARDS.some(g=>g()===true)');return !F.dom.find('phaf-lightbox')&&F.cls('phaf-detail').length===1;});
   await brk('a failed bundles read printed as 0','bundles refused: the Stitched column reads "not read", never 0',async()=>{const F=await open('afnan',{fail:{bundles:{err:PERM}},src:mut(SRC,"if(stitched.state==='error')return phI18nD('afloat.t_not_read');","if(stitched.state==='error')return '0';")});F.dom.click(F.card('PO-104'));await settle(60);return F.all(n=>n.tagName==='TR').map(r=>r.children.map(c=>F.text(c)).join('|')).some(r=>r==='M|40|not read|39|−1|1|✓ within');});
   return s;
 };

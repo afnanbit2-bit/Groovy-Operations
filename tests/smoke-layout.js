@@ -488,10 +488,18 @@ async function _phafFragment(o){
   const pick=ids=>{const out={};Object.keys(all).forEach(k=>{const m=/^(?:pos|po_qc_recon|po_cut_jobs)\/(PO-\d+)$|^po_qc_lots\/(PO-\d+)-/.exec(k);const id=m&&(m[1]||m[2]);if(!m||ids.indexOf(id)>-1)out[k]=all[k];});return out;};
   const seed=o.ids?pick(o.ids):all;
   const fail={};(o.fail||[]).forEach(c=>{fail[c]={err:()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'})};});
+  if(o.longBy)Object.keys(seed).forEach(k=>{if(k.indexOf('po_qc_lots/')===0)seed[k].byName=o.longBy;});
   const T=K.load({session:K.USERS[o.user||'afnan'],seed:seed,fail:fail});
   await T.show();
   if(o.closedOpen){const t=T.cls('phaf-gtog')[0];if(t)T.dom.click(t);}
   if(o.open){T.dom.click(T.card(o.open));await K.settle(80);}
+  // QC6: the receive sheet (typed numbers, optionally the Review step) and the confirms, through the module's own handlers
+  if(o.sheet){const b=T.dom.find('phaf-recv-btn');if(b){T.dom.click(b);await K.settle(40);}
+    Object.keys(o.sheet.vals||{}).forEach(k=>{const n=T.dom.find('phaf-rx-in-'+k);if(n){n.value=String(o.sheet.vals[k]);T.dom.dispatch(n,'input');}});
+    if(o.sheet.review){const r=T.dom.find('phaf-rx-review');if(r){T.dom.click(r);await K.settle(40);}}}
+  let dl='';
+  if(o.dlg){const b=T.dom.find(o.dlg==='void'?(T.cls('phaf-void')[0]||{}).id:'phaf-close-btn');if(b){T.dom.click(b);await K.settle(40);}
+    const node=T.dom.find('phaf-dlg-back');if(node){dl='<div style="position:relative;height:420px;margin-top:12px">'+domkit.toHtml(node)+'</div>';node.parentNode.removeChild(node);}}
   if(o.broken){const c=T.card('PO-105');const im=c&&T.dom.all(c,n=>n.tagName==='IMG')[0];if(im)T.dom.dispatch(im,'error');}
   let lb='';
   if(o.lightbox){const pb=T.cls('phaf-picbtn')[0];if(pb)T.dom.click(pb);const node=T.dom.find('phaf-lightbox');if(node){lb='<div style="position:relative;height:460px;margin-top:12px">'+domkit.toHtml(node)+'</div>';node.parentNode.removeChild(node);}}
@@ -499,7 +507,8 @@ async function _phafFragment(o){
   const STAND='data:image/svg+xml;utf8,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2780%27 height=%27100%27%3E%3Crect width=%2780%27 height=%27100%27 fill=%27%23999%27/%3E%3C/svg%3E';
   T.dom.all(T.dom.body,n=>n.tagName==='IMG').forEach(n=>n.setAttribute('src',/^https:\/\/cdn\.shopify\.com\//.test(n.src||'')?n.src:STAND));
   const canvas=T.dom.byClass(T.dom.main,'ph-canvas')[0];
-  let html='<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+lb;
+  let html='<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+lb+dl;
+  if(o.dlg)html='<style>.phaf-dlg-back{position:absolute}</style>'+html;
   if(o.lightbox)html='<style>.phaf-lightbox{position:absolute;inset:0;height:100%}</style>'+html;
   const out={html:html};
   if(o.heights)out.heights=o.heights;
@@ -3439,6 +3448,11 @@ const FRAGMENTS={
   'production ops — afloat: failed reads (pos)':()=>_phafFragment({fail:['pos']}),
   'production ops — afloat: failed reads (lots and recon)':()=>_phafFragment({ids:['PO-101','PO-103','PO-104'],fail:['po_qc_lots','po_qc_recon'],heights:[1700]}),
   'production ops — afloat: images (photo, Shopify photo, no photo, a broken photo swapped to the tile)':()=>_phafFragment({ids:['PO-101','PO-103','PO-104','PO-105'],broken:true,heights:[1700]}),
+  'production ops — afloat QC6: the receive sheet (Faizan, a size over its allowance, the red hint and the inline refusal)':()=>_phafFragment({user:'faizan',ids:['PO-103'],open:'PO-103',sheet:{vals:{S:1,M:5,XL:5}},longBy:'Faizan Ahmed Khan Siddiqui (QC Ops, Warehouse Receiving Desk)',heights:[1700]}),
+  'production ops — afloat QC6: Review and save (the per-size numbers once more)':()=>_phafFragment({user:'faizan',ids:['PO-103'],open:'PO-103',sheet:{vals:{XL:20},review:true},heights:[1700]}),
+  'production ops — afloat QC6: the Close PO confirm (exact, Faizan)':()=>_phafFragment({user:'faizan',ids:['PO-105'],open:'PO-105',dlg:'close',heights:[1700]}),
+  'production ops — afloat QC6: the lots list with long 12-hour stamps and a long name, Void and the no-edit line':()=>_phafFragment({user:'mustafa',ids:['PO-103','PO-115'],open:'PO-103',longBy:'Faizan Ahmed Khan Siddiqui (QC Ops, Warehouse Receiving Desk)',heights:[1700]}),
+  'production ops — afloat QC6: the Void confirm (a manager, reason box)':()=>_phafFragment({user:'mustafa',ids:['PO-103'],open:'PO-103',dlg:'void',heights:[1700]}),
   'production ops — afloat: detail picture and the lightbox open':()=>_phafFragment({ids:['PO-101'],open:'PO-101',lightbox:true,heights:[1700]}),
   'production ops — po queue':()=>_phqFragment({}),
   'production ops — po queue for the cutting floor (read-only board)':()=>_phqFragment({floor:true}),
