@@ -1469,6 +1469,208 @@ service cloud.firestore {
       }
     }
 
+    // ══ QC reconciliation (QC3, 15 Oct 2026) ═══════════════════════════════════════════════════════════════════
+    // The owner's rule (Afnan): once the cut per size is recorded it is FINAL, and QC must receive the same units per size
+    // from stitching, within 2 %. Faizan (QC Ops) records each hand-over as a LOT. The VERDICT (received vs the locked cut)
+    // is decided by the app (js/ph-core.js phQc*): the rules language cannot loop, so it cannot add the lots up. What the
+    // rules hold: who may do what, every shape and key list, the cut snapshot EQUAL to the PO's recorded cut (and cutting
+    // recorded) whenever it is taken, the lot counters bound to the lots in the same commit, append-only lots, and nothing
+    // deletable. The pos document's own rule is untouched; Faizan's history rows come from a SEPARATE match below.
+    //   isQcFloor()  faizan, by email (he keeps role 'packing'). Mirror: js/ph-data.js _PH_QC_USERS.
+    //   isQcOps()    isQcFloor() or a Production Ops manager: who may receive, void and close inside the tolerance.
+    // po_qc_recon/{PO-nnn} transitions (mirror js/ph-write.js PHQC_TRANSITIONS; tests/ph-data.test.js compares this table,
+    // tests/rules-emulator-ph.js runs it). ops = isQcOps(), manager = isProdOpsManager(), owner = isOwner().
+    // CHANGE FROM THE PLAN (owner decision, 15 Oct 2026): close_short is a MANAGER's close in any phase that is not 'ready'
+    // (receiving, short, over beyond the allowance), with an overrides row; a plain close needs the verdict phase 'ready'.
+    // QC transitions
+    //   (none) -> locked : ops (lock)
+    //   (none) -> locked : manager (adopt)
+    //   locked -> locked : ops (lot)
+    //   locked -> locked : manager (adopt)
+    //   locked -> locked : ops (void)
+    //   locked -> locked : owner (relock)
+    //   locked -> closed : ops (close)
+    //   locked -> closed : manager (close_short)
+    //   closed -> reopened : owner (reopen)
+    //   reopened -> reopened : ops (lot)
+    //   reopened -> reopened : manager (adopt)
+    //   reopened -> reopened : ops (void)
+    //   reopened -> reopened : owner (relock)
+    //   reopened -> closed : ops (close)
+    //   reopened -> closed : manager (close_short)
+    function isQcFloor() { return signedIn() && userEmail() in ['faizan@groovy.op']; }
+    function isQcOps() { return isQcFloor() || isProdOpsManager(); }
+    // A stored time: a whole number of ms within two days of the server clock (the history-row precedent).
+    function phqcAtOk(v) { return v is number && v > 0 && math.floor(v) == v && math.abs(v - request.time.toMillis()) <= 172800000; }
+    // A size map: 1..12 sizes (the values are checked by the app; the rules cannot loop a map).
+    function phqcSizesOk(m) { return m is map && m.keys().size() >= 1 && m.keys().size() <= 12; }
+    // The cut snapshot: exactly these keys, taken by the caller, and EQUAL to the PO's recorded cut (pos.cutQty), with cutting
+    // recorded on the PO. A get() of a PO that does not exist fails, so a lock for a missing PO is refused.
+    function phqcLockOk(l, id) {
+      return l is map && l.keys().hasOnly(['sizes','total','cutAt','cutBy','lockedAt','lockedBy','source'])
+        && l.keys().hasAll(['sizes','total','cutAt','cutBy','lockedAt','lockedBy','source'])
+        && phqcSizesOk(l.sizes) && l.total is int && l.total > 0
+        && l.cutAt is string && l.cutAt.size() <= 40 && l.cutBy is string && l.cutBy.size() <= 60
+        && phBy(l.lockedBy) && phqcAtOk(l.lockedAt)
+        && l.source in ['first_lot','manual','relock']
+        && l.sizes == get(/databases/$(database)/documents/pos/$(id)).data.get('cutQty', null)
+        && get(/databases/$(database)/documents/pos/$(id)).data.get('stages', {}).get('cutting', {}).get('done', false) == true;
+    }
+    // One overrides row: the kind, the caller, the time and a reason of at least 5 characters; close_short names a cause.
+    function phqcOverrideOk(o, kind) {
+      return o is map && o.keys().hasOnly(['kind','at','by','byName','reason','cause','before','after'])
+        && o.get('kind', '') == kind && phBy(o.get('by', '')) && phqcAtOk(o.get('at', null))
+        && o.get('byName', '') is string && o.get('byName', '').size() <= 60
+        && phReasonOk(o.get('reason', null)) && o.get('reason', '').size() >= 5
+        && (kind != 'close_short' || o.get('cause', '') in ['cutting_miscount','lost_in_line','damaged_before_qc','other'])
+        && (!('before' in o) || o.before is map) && (!('after' in o) || o.after is map);
+    }
+    // The overrides log grows by exactly one row of `kind`, at the end; every row already there is still there.
+    function phqcOneMore(d, r, kind) {
+      return d.overrides is list && d.overrides.size() == r.overrides.size() + 1 && d.overrides.size() <= 20
+        && d.overrides.hasAll(r.overrides)
+        && phqcOverrideOk(d.overrides[r.overrides.size()], kind);
+    }
+    function phqcReconShapeOk(d, id) {
+      return d.keys().hasOnly(['poId','status','rev','cutLock','lotCount','voidCount','lastLotAt','overrides','legacyIds','closedAt','closedBy','closedByName','closeVerdict','createdAt','createdBy','updatedAt','updatedBy','updatedByName'])
+        && d.keys().hasAll(['poId','status','rev','cutLock','lotCount','voidCount','lastLotAt','overrides','legacyIds','closedAt','closedBy','closedByName','closeVerdict','createdAt','createdBy','updatedAt','updatedBy','updatedByName'])
+        && d.poId == id
+        && d.rev is int
+        && d.lotCount is int && d.lotCount >= 0 && d.lotCount <= 100000
+        && d.voidCount is int
+        && d.lastLotAt is number
+        && d.overrides is list && d.legacyIds is list
+        && d.closedAt is number && d.closedBy is string && d.closedByName is string
+        && d.createdAt is number && d.createdBy is string
+        && phqcStampOk(d);
+    }
+    // The three "who and when" fields every write sets (the keys a diff may touch on every update).
+    function phqcStampOk(d) {
+      return d.updatedByName is string && d.updatedByName.size() <= 60
+        && phBy(d.updatedBy) && phqcAtOk(d.updatedAt);
+    }
+    // (none) -> locked: the first write locks the cut (by hand, or with the first lot in the same commit, or a manager's adopt).
+    function phqcReconCreateOk(d, id) {
+      return id.matches('^PO-[0-9]{3,}$') && phqcReconShapeOk(d, id)
+        && d.status == 'locked' && d.rev == 1 && d.voidCount == 0 && d.overrides.size() == 0
+        && d.closedAt == 0 && d.closedBy == '' && d.closedByName == '' && d.closeVerdict == null
+        && (d.lotCount == 0 || d.lotCount == 1)
+        && (d.lotCount == 0 ? d.lastLotAt == 0 : phqcAtOk(d.lastLotAt))
+        && d.legacyIds.size() <= 2000
+        && (d.legacyIds.size() == 0 || isProdOpsManager())
+        && phBy(d.createdBy) && phqcAtOk(d.createdAt)
+        && phqcLockOk(d.cutLock, id)
+        && d.cutLock.source in ['first_lot','manual'];
+    }
+    // lot (ops) / adopt (manager): one more lot, the cut unchanged; legacyIds only grow, and only for a manager.
+    function phqcLotStepOk(d, r, k) {
+      return k.hasOnly(['lotCount','lastLotAt','legacyIds','rev','updatedAt','updatedBy','updatedByName'])
+        && d.lotCount == r.lotCount + 1 && d.lotCount <= 100000 && phqcAtOk(d.lastLotAt)
+        && (!k.hasAny(['legacyIds'])
+            || (isProdOpsManager() && d.legacyIds is list && d.legacyIds.size() > r.legacyIds.size()
+                && d.legacyIds.size() <= 2000 && d.legacyIds.hasAll(r.legacyIds)));
+    }
+    // void (ops): one more void lot (the lot's own rule says whose and when).
+    function phqcVoidStepOk(d, r, k) {
+      return k.hasOnly(['voidCount','rev','updatedAt','updatedBy','updatedByName'])
+        && d.voidCount == r.voidCount + 1 && d.voidCount <= r.lotCount;
+    }
+    // relock (owner): a new snapshot equal to the PO's (corrected) cut, different from the old one, with an overrides row.
+    function phqcRelockStepOk(d, r, k, id) {
+      return isOwner() && k.hasOnly(['cutLock','overrides','rev','updatedAt','updatedBy','updatedByName'])
+        && phqcLockOk(d.cutLock, id) && d.cutLock.source == 'relock' && d.cutLock.sizes != r.cutLock.sizes
+        && phqcOneMore(d, r, 'relock');
+    }
+    // close (ops, verdict phase 'ready') / close_short (manager, phase receiving or short, with an overrides row).
+    function phqcCloseStepOk(d, r, k) {
+      return k.hasOnly(['status','closedAt','closedBy','closedByName','closeVerdict','overrides','rev','updatedAt','updatedBy','updatedByName'])
+        && phBy(d.closedBy) && phqcAtOk(d.closedAt) && d.closedByName is string && d.closedByName.size() <= 60
+        && d.closeVerdict is map
+        && (!k.hasAny(['overrides'])
+            ? (d.closeVerdict.get('phase', '') == 'ready' && d.closeVerdict.get('state', '') in ['exact','within','over'])
+            : (isProdOpsManager() && phqcOneMore(d, r, 'close_short')
+               && d.closeVerdict.get('phase', '') in ['receiving','short']));
+    }
+    // reopen (owner): closed -> reopened, with an overrides row. Nothing else leaves closed.
+    function phqcReopenStepOk(d, r, k) {
+      return isOwner() && d.status == 'reopened'
+        && k.hasOnly(['status','overrides','rev','updatedAt','updatedBy','updatedByName'])
+        && phqcOneMore(d, r, 'reopen');
+    }
+    function phqcReconUpdateOk(d, r, id) {
+      let k = d.diff(r).affectedKeys();
+      return d.rev == r.rev + 1 && phqcStampOk(d)
+        && (r.status == 'closed' ? phqcReopenStepOk(d, r, k)
+           : !(r.status in ['locked','reopened']) ? false
+           : d.status == 'closed' ? phqcCloseStepOk(d, r, k)
+           : d.status != r.status ? false
+           : k.hasAny(['voidCount']) ? phqcVoidStepOk(d, r, k)
+           : k.hasAny(['cutLock']) ? phqcRelockStepOk(d, r, k, id)
+           : phqcLotStepOk(d, r, k));
+    }
+    match /po_qc_recon/{id} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isQcOps() && phqcReconCreateOk(request.resource.data, id);
+      allow update: if isQcOps() && phqcReconUpdateOk(request.resource.data, resource.data, id);
+      allow delete: if false;
+    }
+    // po_qc_lots/{PO-nnn}-{13-digit ms}-{4 chars}: append-only. The id carries the PO id (bound to the row's poId), and the
+    // PO's reconciliation must be written in the SAME commit with lotCount == this row's seq (and rev + 1). A row is never
+    // edited: it can only be voided (live -> void, with a reason), by a manager, or by the person who received it within
+    // 24 hours, while the reconciliation is open, and the reconciliation's voidCount moves by one in the same commit.
+    function phqcLotIdOk(row, poId) {
+      return poId is string && poId.matches('^PO-[0-9]{3,}$')
+        && row.matches('^' + poId + '-[0-9]{13}-[A-Za-z0-9]{4}$');
+    }
+    function phqcLotCreateOk(d, row) {
+      return row.matches('^PO-[0-9]{3,}-[0-9]{13}-[A-Za-z0-9]{4}$')
+        && d.keys().hasOnly(['poId','seq','sizes','total','day','note','at','by','byName','status','src'])
+        && d.keys().hasAll(['poId','seq','sizes','total','day','note','at','by','byName','status','src'])
+        && phqcLotIdOk(row, d.poId)
+        && d.status == 'live' && d.src in ['qc','legacy'] && (d.src == 'qc' || isProdOpsManager())
+        && phqcSizesOk(d.sizes) && d.total is int && d.total >= 1
+        && d.seq is int && d.seq >= 1
+        && phIsDayStr(d.day) && d.note is string && d.note.size() <= 200
+        && d.byName is string && d.byName.size() <= 60
+        && phBy(d.by) && phqcAtOk(d.at)
+        && existsAfter(/databases/$(database)/documents/po_qc_recon/$(d.poId))
+        && getAfter(/databases/$(database)/documents/po_qc_recon/$(d.poId)).data.lotCount == d.seq
+        && getAfter(/databases/$(database)/documents/po_qc_recon/$(d.poId)).data.status in ['locked','reopened']
+        && (!exists(/databases/$(database)/documents/po_qc_recon/$(d.poId))
+            || getAfter(/databases/$(database)/documents/po_qc_recon/$(d.poId)).data.rev
+               == get(/databases/$(database)/documents/po_qc_recon/$(d.poId)).data.rev + 1);
+    }
+    function phqcLotVoidOk(d, r) {
+      return d.diff(r).affectedKeys().hasOnly(['status','voidedAt','voidedBy','voidReason'])
+        && r.status == 'live' && d.status == 'void'
+        && phBy(d.get('voidedBy', '')) && phqcAtOk(d.get('voidedAt', null))
+        && phReasonOk(d.get('voidReason', null)) && d.get('voidReason', '').size() >= 3
+        && (isProdOpsManager() || (phBy(r.by) && request.time.toMillis() - r.at <= 86400000))
+        && get(/databases/$(database)/documents/po_qc_recon/$(r.poId)).data.status in ['locked','reopened']
+        && getAfter(/databases/$(database)/documents/po_qc_recon/$(r.poId)).data.voidCount
+           == get(/databases/$(database)/documents/po_qc_recon/$(r.poId)).data.voidCount + 1;
+    }
+    match /po_qc_lots/{row} {
+      allow read: if isQaRead() || signedIn();
+      allow create: if isQcOps() && phqcLotCreateOk(request.resource.data, row);
+      allow update: if isQcOps() && phqcLotVoidOk(request.resource.data, resource.data);
+      allow delete: if false;
+    }
+    // Faizan's rows in a PO's append-only history: ONLY the QC row types, under the same shape as every history row. A
+    // SEPARATE match on the same path (rules OR across matches), so the pos block above stays byte-for-byte what it was;
+    // the Production Ops team keeps writing every type through that block. Mirror: js/ph-write.js PHQC_FLOOR_HIST_TYPES.
+    match /pos/{doc}/history/{row} {
+      allow create: if isQcFloor()
+                    && request.resource.data.get('type', '') in ['qc_lot_added','qc_lot_voided','qc_cut_locked','qc_closed']
+                    && row.matches('^[0-9]{13}-[A-Za-z0-9]{4}$')
+                    && request.resource.data.keys().hasOnly(['at','by','byName','type','from','to','reason','data'])
+                    && request.resource.data.get('at', null) is number
+                    && phBy(request.resource.data.get('by', ''))
+                    && request.resource.data.get('data', {}) is map
+                    && phHistoryShapeOk(request.resource.data)
+                    && existsAfter(/databases/$(database)/documents/pos/$(doc));
+    }
+
     // ph_settings/main and ph_settings/counters. A NEW collection rather than the
     // existing settings/{doc}, whose write is owner-only: the managers (Mustafa
     // runs production) must be able to set the daily capacity and skip days.

@@ -21,6 +21,11 @@
    client that has to satisfy it are tested together; the REFUSED paths are raw
    SDK writes, because a modified client is exactly what a rule is for.
 
+   QC reconciliation (QC3, 15 Oct 2026): the 'qc reconciliation' section runs js/ph-write.js phQcLockCut / phQcAdoptLegacy and
+   js/ph-qc-write.js phQcAddLot / phQcVoidLot / phQcClose / phQcRelock / phQcReopen against the emulator for Faizan (QC Ops), the
+   managers and the owners, and shows every raw way round them refused (the transition table row by row, the lock equal to the
+   PO's cut, the lot counter bound to the lots, the 24 h own-lot void, the floor's history types, nothing deletable).
+
    Issue as PO (14 Oct 2026): the last section runs js/ph-issue.js's phIssueDraft (with the real js/shared.js and js/pos.js) against
    the emulator for Mustafa, Afnan and Ammar and shows Uzaib, Raees, Umair, QA and signed-out refused, every raw way of damaging the
    ready -> issued commit refused, and issued terminal.
@@ -45,9 +50,10 @@ const PEOPLE={
   raees:{uid:'u-raees',email:'raees@groovy.op',u:'raees',name:'Raees'},
   umair:{uid:'u-umair',email:'umair@groovy.op',u:'umair',name:'Umair'},
   arfat:{uid:'u-arfat',email:'arfat@groovy.op',u:'arfat',name:'Arfat'},
+  faizan:{uid:'u-faizan',email:'faizan@groovy.op',u:'faizan',name:'Faizan'},
   qa:{uid:'8TKOO3GKhBb0NSEEK15LFTIAshI2',email:'claude@groovy.op',u:'claude',name:'Claude QA'}
 };
-const {afnan:AFNAN,ammar:AMMAR,mustafa:MUSTAFA,uzaib:UZAIB,raees:RAEES,umair:UMAIR,arfat:ARFAT,qa:QA}=PEOPLE;
+const {afnan:AFNAN,ammar:AMMAR,mustafa:MUSTAFA,uzaib:UZAIB,raees:RAEES,umair:UMAIR,arfat:ARFAT,qa:QA,faizan:FAIZAN}=PEOPLE;
 
 let pass=0,fail=0;
 async function t(name,fn){
@@ -69,7 +75,7 @@ async function t(name,fn){
   // realm), so every payload is passed through a realm-neutral clone on its way to the SDK.
   const clone=x=>x===undefined?x:JSON.parse(JSON.stringify(x));
   const wrapTx=tx=>{const w={get:r=>tx.get(r),set:(r,d,o)=>{o===undefined?tx.set(r,clone(d)):tx.set(r,clone(d),o);return w;},update:(r,d)=>{tx.update(r,clone(d));return w;},delete:r=>{tx.delete(r);return w;}};return w;};
-  const app=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js'],globals:{
+  const app=harness.loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js','js/ph-qc-write.js'],globals:{
     doc,collection,query,orderBy,limit,where,getDoc,getDocs,deleteDoc,writeBatch,
     setDoc:(r,d,o)=>o===undefined?setDoc(r,clone(d)):setDoc(r,clone(d),o),
     updateDoc:(r,d)=>updateDoc(r,clone(d)),
@@ -793,6 +799,200 @@ async function t(name,fn){
   });
   await t('a counter bump of more than one is refused',async()=>{await reset();await seedPo();await seed('po_marks/'+MID,mDoc(AFNAN));
     await assertFails(updateDoc(doc(as(AFNAN),'po_marks',MID),{noteCount:3,lastNote:'x',lastNoteBy:'Afnan',lastNoteAt:NOW,rev:2,updatedAt:NOW+1,updatedBy:'afnan',updatedByName:'Afnan'}));});
+
+
+  /* ═══ QC reconciliation (QC3, 15 Oct 2026): po_qc_recon + po_qc_lots + Faizan's history rows ═══ */
+  console.log('qc reconciliation (po_qc_recon, po_qc_lots, the QC floor\'s history rows)');
+  const QPO='PO-001';
+  const QCUT={S:20,M:40,L:40,XL:20};
+  const qSeedPo=over=>seed('pos/'+QPO,Object.assign({id:QPO,qty:120,code:'GAT012',name:'Athletic Tee',poStatus:'in_production',currentStage:'qc',
+    stages:{cutting:{done:true},qc:{done:false}},cutQty:QCUT,cutDate:'2026-10-01',cutAt:'2026-10-01T10:00:00.000Z',cutBy:'Uzaib',packingReceipts:[]},over||{}));
+  const qLock=(w,over)=>Object.assign({sizes:QCUT,total:120,cutAt:'2026-10-01T10:00:00.000Z',cutBy:'Uzaib',lockedAt:NOW,lockedBy:w.u,source:'manual'},over||{});
+  const qRec=(w,over)=>Object.assign({poId:QPO,status:'locked',rev:1,cutLock:qLock(w),lotCount:0,voidCount:0,lastLotAt:0,overrides:[],legacyIds:[],closedAt:0,closedBy:'',closedByName:'',closeVerdict:null,
+    createdAt:NOW,createdBy:w.u,updatedAt:NOW,updatedBy:w.u,updatedByName:w.name},over||{});
+  const qLotId=n=>QPO+'-'+String(NOW+n)+'-ab12';
+  const qLot=(w,over)=>Object.assign({poId:QPO,seq:1,sizes:{S:20},total:20,day:'2026-10-02',note:'',at:NOW,by:w.u,byName:w.name,status:'live',src:'qc'},over||{});
+  const qBatch=async(w,ops)=>{const d=as(w),b=writeBatch(d);ops.forEach(o=>{if(o[0]==='set')b.set(doc(d,...o[1].split('/')),o[2]);else b.update(doc(d,...o[1].split('/')),o[2]);});await b.commit();};
+  const qUpd=(w,patch)=>updateDoc(doc(as(w),'po_qc_recon',QPO),Object.assign({rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name},patch));
+  const qq=x=>JSON.stringify(x);
+  const qHist=async()=>{let n=[];await env.withSecurityRulesDisabled(async c=>{const sn=await getDocs(collection(c.firestore(),'pos',QPO,'history'));n=sn.docs.map(d=>d.data());});return n;};
+  const qVerdict=(phase,state)=>({state:state,phase:phase,total:{cut:120,recv:119,diff:-1,allow:2,state:state},sizes:{}});
+  const qOv=(w,kind,over)=>Object.assign({kind:kind,at:NOW+5,by:w.u,byName:w.name,reason:'lost in the line'},kind==='close_short'?{cause:'lost_in_line'}:{},over||{});
+  // a locked reconciliation with lots already received, seeded (rules off): sizes is a list of lot size maps
+  const qSeedLots=async(lots,recOver)=>{await qSeedPo();
+    for(let i=0;i<lots.length;i++)await seed('po_qc_lots/'+qLotId(i+1),qLot(FAIZAN,{seq:i+1,sizes:lots[i],total:Object.values(lots[i]).reduce((a,b)=>a+b,0),at:NOW+i}));
+    await seed('po_qc_recon/'+QPO,qRec(FAIZAN,Object.assign({lotCount:lots.length,lastLotAt:lots.length?NOW:0},recOver||{})));};
+
+  for(const w of [FAIZAN,AFNAN,MUSTAFA])
+    await t(w.u+' locks the cut with the app\'s own writer: the snapshot IS the PO\'s recorded cut, a history row in the same commit',async()=>{await reset();await qSeedPo();
+      const r=await call(w,'phQcLockCut("'+QPO+'",{expectedRev:0,now:'+nx()+'})');if(!r.ok)throw new Error('writer: '+qq(r));
+      const d=await read('po_qc_recon/'+QPO);if(!d||d.status!=='locked'||qq(d.cutLock.sizes)!==qq(QCUT)||d.cutLock.source!=='manual'||d.cutLock.lockedBy!==w.u)throw new Error('stored '+qq(d));
+      const h=await qHist();if(h.length!==1||h[0].type!=='qc_cut_locked'||h[0].by!==w.u)throw new Error('history '+qq(h));});
+  await t('FAIZAN end to end with the app\'s writers: lot 1 locks the cut, lot 2, the classic packingReceipts mirror, close within 2 % marks Final QC complete',async()=>{await reset();await qSeedPo();
+    const a1=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{S:20,M:20,L:20,XL:10},day:"2026-10-05"},{expectedRev:0,now:'+nx()+',rand:"aa11"})');if(!a1.ok||a1.seq!==1||!a1.locked)throw new Error('lot1 '+qq(a1));
+    const a2=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{M:19,L:20,XL:10}},{expectedRev:1,now:'+nx()+',rand:"bb22"})');if(!a2.ok||a2.seq!==2)throw new Error('lot2 '+qq(a2));
+    const p=await read('pos/'+QPO);if(p.packingReceipts.length!==7||!p.packingReceipts.every(e=>e.src==='qc'))throw new Error('mirror '+qq(p.packingReceipts));
+    const c=await call(FAIZAN,'phQcClose("'+QPO+'",{expectedRev:2,now:'+nx()+'})');if(!c.ok||c.action!=='close'||c.phase!=='ready')throw new Error('close '+qq(c));
+    const d=await read('po_qc_recon/'+QPO);if(d.status!=='closed'||d.closedBy!=='faizan'||d.closeVerdict.state!=='within'||d.lotCount!==2)throw new Error('recon '+qq(d));
+    const p2=await read('pos/'+QPO);if(p2.currentStage!=='completed'||p2.stages.qc.done!==true||p2.stages.qc.doneBy!=='Faizan'||p2.qcReconClosedBy!=='faizan'||p2.stages.cutting.done!==true)throw new Error('pos '+qq(p2));
+    const h=await qHist();if(qq(h.map(x=>x.type).sort())!==qq(['qc_closed','qc_lot_added','qc_lot_added']))throw new Error('history '+qq(h.map(x=>x.type)));});
+  await t('FAIZAN cannot close a SHORT PO: the writer refuses (forbidden); a raw close without an overrides row, or with one, is refused',async()=>{await reset();await qSeedLots([{S:20,M:38,L:40,XL:20}]);
+    const c=await call(FAIZAN,'phQcClose("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"lost two pieces",cause:"lost_in_line"})');if(c.ok||c.code!=='forbidden')throw new Error(qq(c));
+    await assertFails(qUpd(FAIZAN,{status:'closed',closedAt:NOW+5,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('short','short')}));
+    await assertFails(qUpd(FAIZAN,{status:'closed',closedAt:NOW+5,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('short','short'),overrides:[qOv(FAIZAN,'close_short')]}));
+    await assertFails(qUpd(FAIZAN,{status:'closed',closedAt:NOW+5,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('receiving','short')}));
+    // a forged verdict whose STATE is allowed but whose PHASE is not 'ready' (holds the phase check on its own)
+    await assertFails(qUpd(FAIZAN,{status:'closed',closedAt:NOW+5,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('receiving','within')}));
+    await assertFails(qUpd(FAIZAN,{status:'closed',closedAt:NOW+5,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('awaiting_qc','exact')}));
+    if((await read('po_qc_recon/'+QPO)).status!=='locked')throw new Error('changed');});
+  await t('MUSTAFA closes a short PO with the writer: reason + cause, an overrides row, qc_closed_short, bell rows to afnan and ammar in the same commit',async()=>{await reset();await qSeedLots([{S:20,M:38,L:40,XL:20}]);
+    const c=await call(MUSTAFA,'phQcClose("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"two lost in the line",cause:"lost_in_line"})');if(!c.ok||c.action!=='close_short'||qq(c.told)!==qq(['afnan','ammar']))throw new Error(qq(c));
+    const d=await read('po_qc_recon/'+QPO);if(d.status!=='closed'||d.overrides.length!==1||d.overrides[0].kind!=='close_short'||d.overrides[0].cause!=='lost_in_line')throw new Error(qq(d));
+    for(const u of ['afnan','ammar']){const n=await read('hrm_notifications/po_qcclose_'+QPO+'_'+c.recon.closedAt+'_'+u);if(!n||n.forUser!==u)throw new Error('bell '+u);}
+    const h=await qHist();if(!h.some(x=>x.type==='qc_closed_short'))throw new Error('history');});
+  await t('CHANGE FROM THE PLAN: a manager closes a PO that is still RECEIVING (writer, reason + cause); the floor cannot',async()=>{await reset();await qSeedLots([{S:20,M:40,L:40}]);
+    const f=await call(FAIZAN,'phQcClose("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"twenty lost",cause:"lost_in_line"})');if(f.ok||f.code!=='forbidden')throw new Error('floor '+qq(f));
+    const c=await call(AFNAN,'phQcClose("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"XL never came back",cause:"lost_in_line"})');if(!c.ok||c.phase!=='receiving'||c.action!=='close_short')throw new Error(qq(c));
+    if((await read('po_qc_recon/'+QPO)).closeVerdict.phase!=='receiving')throw new Error('stored');});
+  await t('a raw manager close_short needs a reason of 5+, a cause on the list, and the row in the caller\'s name; a phase-ready close cannot carry it',async()=>{await reset();await qSeedLots([{S:20,M:38,L:40,XL:20}]);
+    const base={status:'closed',closedAt:NOW+5,closedBy:'mustafa',closedByName:'Mustafa',closeVerdict:qVerdict('short','short')};
+    for(const ov of [{reason:'abc'},{cause:'stolen'},{by:'afnan'},{kind:'relock'},{extra:1}])await assertFails(qUpd(MUSTAFA,Object.assign({},base,{overrides:[qOv(MUSTAFA,'close_short',ov)]})));
+    await assertFails(qUpd(MUSTAFA,Object.assign({},base,{closedBy:'afnan'})));
+    await assertFails(qUpd(MUSTAFA,Object.assign({},base,{closeVerdict:qVerdict('ready','within'),overrides:[qOv(MUSTAFA,'close_short')]})));   // an override on a phase-ready close
+    await assertSucceeds(qUpd(MUSTAFA,Object.assign({},base,{overrides:[qOv(MUSTAFA,'close_short')]})));});
+  await t('a plain close needs the verdict phase ready and an allowed state (raw), by QC Ops only; Kashif, Raees, Arfat, QA cannot',async()=>{await reset();await qSeedLots([{S:20,M:39,L:40,XL:20}]);
+    const base={status:'closed',closedAt:NOW+5,closedByName:'X'};
+    await assertFails(qUpd(FAIZAN,Object.assign({},base,{closedBy:'faizan',closeVerdict:qVerdict('ready','short')})));
+    await assertFails(qUpd(FAIZAN,Object.assign({},base,{closedBy:'faizan',closeVerdict:'within'})));
+    for(const w of [UZAIB,RAEES,ARFAT,QA])await assertFails(qUpd(w,Object.assign({},base,{closedBy:w.u,closeVerdict:qVerdict('ready','within')})));
+    await assertSucceeds(qUpd(FAIZAN,Object.assign({},base,{closedBy:'faizan',closeVerdict:qVerdict('ready','within')})));});
+  await t('closed is terminal but for an owner\'s reopen: closed -> locked / closed -> closed / any edit refused for everyone (raw)',async()=>{await reset();await qSeedLots([{S:20,M:40,L:40,XL:20}],{status:'closed',closedAt:NOW,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('ready','exact')});
+    for(const w of [FAIZAN,MUSTAFA,AFNAN]){
+      await assertFails(qUpd(w,{status:'locked'}));
+      await assertFails(qUpd(w,{lotCount:2,lastLotAt:NOW+5}));
+      await assertFails(qUpd(w,{voidCount:1}));
+      await assertFails(qUpd(w,{status:'closed',closedAt:NOW+6,closedBy:w.u,closedByName:w.name,closeVerdict:qVerdict('ready','exact')}));}});
+  await t('reopen: an OWNER with the writer (an overrides row, qc_reopened, the pos document untouched); Mustafa and Faizan cannot (raw)',async()=>{await reset();await qSeedLots([{S:20,M:40,L:40,XL:20}],{status:'closed',closedAt:NOW,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('ready','exact')});
+    for(const w of [MUSTAFA,FAIZAN])await assertFails(qUpd(w,{status:'reopened',overrides:[qOv(w,'reopen')]}));
+    await qSeedLots([{S:20,M:40,L:40,XL:20}],{status:'closed',closedAt:NOW,closedBy:'mustafa',closedByName:'Mustafa',closeVerdict:qVerdict('short','short'),overrides:[qOv(MUSTAFA,'close_short')],rev:2});
+    await assertFails(updateDoc(doc(as(AFNAN),'po_qc_recon',QPO),{status:'reopened',overrides:[qOv(MUSTAFA,'close_short',{reason:'rewritten reason'}),qOv(AFNAN,'reopen')],rev:3,updatedAt:NOW+5,updatedBy:'afnan',updatedByName:'Afnan'}));   // an older row rewritten
+    await assertFails(updateDoc(doc(as(AFNAN),'po_qc_recon',QPO),{status:'reopened',overrides:[qOv(AFNAN,'reopen')],rev:3,updatedAt:NOW+5,updatedBy:'afnan',updatedByName:'Afnan'}));   // the older row dropped
+    await assertSucceeds(updateDoc(doc(as(AFNAN),'po_qc_recon',QPO),{status:'reopened',overrides:[qOv(MUSTAFA,'close_short'),qOv(AFNAN,'reopen')],rev:3,updatedAt:NOW+5,updatedBy:'afnan',updatedByName:'Afnan'}));
+    await reset();await qSeedLots([{S:20,M:40,L:40,XL:20}],{status:'closed',closedAt:NOW,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('ready','exact')});
+    const before=await read('pos/'+QPO);
+    const r=await call(AMMAR,'phQcReopen("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"recount asked for"})');if(!r.ok)throw new Error(qq(r));
+    const d=await read('po_qc_recon/'+QPO);if(d.status!=='reopened'||d.overrides[0].kind!=='reopen')throw new Error(qq(d));
+    if(qq(await read('pos/'+QPO))!==qq(before))throw new Error('pos changed');
+    const m=await call(MUSTAFA,'phQcReopen("'+QPO+'",{expectedRev:2,now:'+nx()+',reason:"again again"})');if(m.ok||m.code!=='forbidden')throw new Error('mustafa '+qq(m));});
+  await t('relock: an OWNER with the writer only when the PO\'s cut was corrected; the new snapshot equals it; Mustafa and Faizan cannot; an unchanged cut is refused',async()=>{await reset();await qSeedLots([{S:20}]);
+    const same=await call(AFNAN,'phQcRelock("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"just checking"})');if(same.ok||same.code!=='refused')throw new Error('same '+qq(same));
+    await assertFails(qUpd(AFNAN,{cutLock:qLock(AFNAN,{source:'relock',lockedAt:NOW+5}),overrides:[qOv(AFNAN,'relock')]}));    // equal to the old lock
+    const NEW={S:20,M:42,L:40,XL:20};
+    await qSeedPo({cutQty:NEW});
+    for(const w of [MUSTAFA,FAIZAN])await assertFails(qUpd(w,{cutLock:qLock(w,{sizes:NEW,total:122,source:'relock',lockedAt:NOW+5}),overrides:[qOv(w,'relock')]}));
+    await assertFails(qUpd(AFNAN,{cutLock:qLock(AFNAN,{sizes:{S:20,M:41,L:40,XL:20},total:121,source:'relock',lockedAt:NOW+5}),overrides:[qOv(AFNAN,'relock')]}));   // not the PO's cut
+    await assertFails(qUpd(AFNAN,{cutLock:qLock(AFNAN,{sizes:NEW,total:122,source:'relock',lockedAt:NOW+5})}));   // no overrides row
+    const r=await call(AFNAN,'phQcRelock("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"M recounted at cutting"})');if(!r.ok||qq(r.told)!==qq(['ammar','mustafa']))throw new Error(qq(r));
+    const d=await read('po_qc_recon/'+QPO);if(qq(d.cutLock.sizes)!==qq(NEW)||d.overrides[0].kind!=='relock'||qq(d.overrides[0].before)!==qq(QCUT))throw new Error(qq(d));});
+  await t('the lock must be the PO\'s recorded cut, with cutting done, for a PO that exists (raw creates)',async()=>{await reset();await qSeedPo();
+    await assertFails(setDoc(doc(as(FAIZAN),'po_qc_recon',QPO),qRec(FAIZAN,{cutLock:qLock(FAIZAN,{sizes:{S:20,M:40,L:40,XL:21},total:121})})));
+    await assertFails(setDoc(doc(as(FAIZAN),'po_qc_recon','PO-777'),qRec(FAIZAN,{poId:'PO-777'})));
+    for(const over of [{rev:2},{status:'closed'},{voidCount:1},{lotCount:2},{overrides:[qOv(FAIZAN,'relock')]},{closeVerdict:{}},{createdBy:'afnan'},{updatedBy:'afnan'},{extra:1},{legacyIds:['x']},{cutLock:qLock(FAIZAN,{source:'relock'})},{cutLock:qLock(FAIZAN,{lockedBy:'afnan'})},{updatedAt:NOW-3*86400000}])
+      await assertFails(setDoc(doc(as(FAIZAN),'po_qc_recon',QPO),qRec(FAIZAN,over)));
+    await assertFails(setDoc(doc(as(FAIZAN),'po_qc_recon','po-001'),qRec(FAIZAN,{poId:'po-001'})));
+    await reset();await qSeedPo({stages:{cutting:{done:false}}});
+    await assertFails(setDoc(doc(as(FAIZAN),'po_qc_recon',QPO),qRec(FAIZAN)));
+    await reset();await qSeedPo();
+    await assertSucceeds(setDoc(doc(as(FAIZAN),'po_qc_recon',QPO),qRec(FAIZAN)));});
+  await t('Kashif (uzaib), Raees, Umair, Arfat, QA and signed-out cannot lock, receive or void; the writers refuse them before any round trip',async()=>{await reset();await qSeedPo();
+    for(const w of [UZAIB,RAEES,UMAIR,ARFAT,QA])await assertFails(setDoc(doc(as(w),'po_qc_recon',QPO),qRec(w)));
+    await assertFails(setDoc(doc(as('anon'),'po_qc_recon',QPO),qRec(FAIZAN)));
+    for(const w of [UZAIB,RAEES,ARFAT]){const r=await call(w,'phQcAddLot("'+QPO+'",{sizes:{S:1}},{expectedRev:0,now:'+nx()+'})');if(r.ok||r.code!=='forbidden')throw new Error(w.u+' '+qq(r));}
+    if(await read('po_qc_recon/'+QPO))throw new Error('something was written');
+    await qSeedLots([{S:20}]);
+    for(const w of [UZAIB,RAEES,UMAIR,ARFAT,QA])await assertFails(qBatch(w,[['set','po_qc_lots/'+qLotId(9),qLot(w,{seq:2,at:NOW})],['update','po_qc_recon/'+QPO,{lotCount:2,lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:'x'}]]));
+    await assertFails(setDoc(doc(as('anon'),'po_qc_lots',qLotId(9)),qLot(FAIZAN,{seq:2})));
+    await assertFails(updateDoc(doc(as('anon'),'po_qc_recon',QPO),{lotCount:2,lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:'faizan',updatedByName:'x'}));});
+  await t('everyone signed in reads the reconciliations and the lots (Kashif, Raees, Umair); QA reads (get + list); signed-out reads nothing',async()=>{await reset();await qSeedLots([{S:20}]);
+    for(const w of [UZAIB,RAEES,UMAIR,QA]){await assertSucceeds(getDoc(doc(as(w),'po_qc_recon',QPO)));await assertSucceeds(getDocs(query(collection(as(w),'po_qc_recon'),limit(5))));
+      await assertSucceeds(getDoc(doc(as(w),'po_qc_lots',qLotId(1))));await assertSucceeds(getDocs(query(collection(as(w),'po_qc_lots'),where('poId','==',QPO),limit(5))));}
+    await assertFails(getDoc(doc(as('anon'),'po_qc_recon',QPO)));await assertFails(getDoc(doc(as('anon'),'po_qc_lots',qLotId(1))));});
+  await t('a lot: seq bound to lotCount, the reconciliation written in the same commit (rev + 1), the id bound to its PO, the shape',async()=>{
+    const ok=()=>[['set','po_qc_lots/'+qLotId(2),qLot(FAIZAN,{seq:2,at:NOW+2})],['update','po_qc_recon/'+QPO,{lotCount:2,lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:'faizan',updatedByName:'Faizan'}]];
+    await reset();await qSeedLots([{S:20}]);await assertSucceeds(qBatch(FAIZAN,ok()));
+    await reset();await qSeedLots([{S:20}]);await assertFails(qBatch(FAIZAN,[['set','po_qc_lots/'+qLotId(2),qLot(FAIZAN,{seq:3})],ok()[1]]));          // seq != lotCount
+    await reset();await qSeedLots([{S:20}]);await assertFails(setDoc(doc(as(FAIZAN),'po_qc_lots',qLotId(2)),qLot(FAIZAN,{seq:1})));                     // the recon untouched (its lotCount is already 1)
+    await reset();await qSeedLots([{S:20}]);await assertFails(qBatch(FAIZAN,[['set','po_qc_lots/PO-002-'+String(NOW+2)+'-ab12',qLot(FAIZAN,{seq:2})],ok()[1]]));   // id of another PO
+    await reset();await qSeedLots([{S:20}]);await assertFails(qBatch(FAIZAN,[['set','po_qc_lots/'+QPO+'-123-ab12',qLot(FAIZAN,{seq:2})],ok()[1]]));         // bad id
+    for(const over of [{status:'void'},{src:'legacy'},{sizes:{}},{sizes:'S20'},{total:0},{total:1.5},{day:'2 Oct'},{note:'x'.repeat(201)},{by:'afnan'},{at:NOW-3*86400000},{extra:1},{seq:0}]){
+      await reset();await qSeedLots([{S:20}]);await assertFails(qBatch(FAIZAN,[['set','po_qc_lots/'+qLotId(2),qLot(FAIZAN,Object.assign({seq:2},over))],ok()[1]]));}
+    await reset();await qSeedLots([{S:20}],{status:'closed',closedAt:NOW,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('ready','exact')});
+    await assertFails(qBatch(FAIZAN,ok()));                                                                                                          // not on a closed reconciliation
+    await reset();await qSeedLots([{S:20}]);await assertFails(qUpd(FAIZAN,{lotCount:3,lastLotAt:NOW+5}));                                             // +2
+    await reset();await qSeedLots([{S:20}]);await assertFails(qUpd(FAIZAN,{lotCount:2,lastLotAt:NOW+5,cutLock:qLock(FAIZAN,{cutBy:'x'})}));          // cut changed with a lot
+    await reset();await qSeedLots([{S:20}]);await assertFails(qUpd(FAIZAN,{lotCount:2,lastLotAt:NOW+5,rev:3}));});                                   // rev +2
+  await t('the writer refuses a lot over cut + allowance and an over-total, by name, before anything is written; a stale revision is refused',async()=>{await reset();await qSeedLots([{S:20,M:40,L:40,XL:20}]);
+    const o=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{M:2}},{expectedRev:1,now:'+nx()+'})');if(o.ok||o.code!=='refused'||!/allowance is 1/.test(o.error))throw new Error(qq(o));
+    const st=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{M:1}},{expectedRev:5,now:'+nx()+'})');if(st.ok||st.code!=='stale')throw new Error(qq(st));
+    const d=await read('po_qc_recon/'+QPO);if(d.lotCount!==1||d.rev!==1)throw new Error('changed');});
+  await t('void: Faizan his OWN lot within 24 h (writer, a counter entry in packingReceipts); not another person\'s, not after 24 h; a manager any time',async()=>{await reset();await qSeedPo();
+    const a1=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{S:10}},{expectedRev:0,now:'+nx()+',rand:"cc33"})');if(!a1.ok)throw new Error(qq(a1));
+    const v=await call(FAIZAN,'phQcVoidLot("'+a1.lotId+'","typed the wrong size",{now:'+nx()+'})');if(!v.ok)throw new Error('void '+qq(v));
+    const p=await read('pos/'+QPO);const sum=p.packingReceipts.reduce((x,e)=>x+e.qty,0);if(sum!==0||p.packingReceipts.length!==2)throw new Error('mirror '+qq(p.packingReceipts));
+    const lot=await read('po_qc_lots/'+a1.lotId);if(lot.status!=='void'||lot.voidedBy!=='faizan'||lot.seq!==1)throw new Error(qq(lot));
+    await reset();await qSeedPo();await seed('po_qc_recon/'+QPO,qRec(FAIZAN,{lotCount:2,lastLotAt:NOW}));
+    await seed('po_qc_lots/'+qLotId(1),qLot(MUSTAFA,{seq:1}));await seed('po_qc_lots/'+qLotId(2),qLot(FAIZAN,{seq:2,at:NOW-25*3600000}));
+    const vp=id=>[['update','po_qc_lots/'+id,{status:'void',voidedAt:NOW+5,voidedBy:'faizan',voidReason:'wrong size'}],['update','po_qc_recon/'+QPO,{voidCount:1,rev:2,updatedAt:NOW+5,updatedBy:'faizan',updatedByName:'Faizan'}]];
+    await assertFails(qBatch(FAIZAN,vp(qLotId(1))));                                         // Mustafa's lot
+    await assertFails(qBatch(FAIZAN,vp(qLotId(2))));                                         // older than 24 h
+    const w2=await call(FAIZAN,'phQcVoidLot("'+qLotId(2)+'","wrong size",{now:'+nx()+'})');if(w2.ok||w2.code!=='forbidden')throw new Error('writer '+qq(w2));
+    const mm=await call(MUSTAFA,'phQcVoidLot("'+qLotId(2)+'","counted twice",{now:'+nx()+'})');if(!mm.ok)throw new Error('manager '+qq(mm));
+    await assertFails(qBatch(MUSTAFA,[['update','po_qc_lots/'+qLotId(1),{status:'void',voidedAt:NOW+6,voidedBy:'mustafa',voidReason:'no'}]]));                       // no voidCount bump
+    await assertFails(qBatch(MUSTAFA,[['update','po_qc_lots/'+qLotId(1),{status:'void',voidedAt:NOW+6,voidedBy:'mustafa',voidReason:'ab'}],['update','po_qc_recon/'+QPO,{voidCount:2,rev:3,updatedAt:NOW+6,updatedBy:'mustafa',updatedByName:'Mustafa'}]]));   // reason < 3
+    await assertFails(qBatch(MUSTAFA,[['update','po_qc_lots/'+qLotId(1),{status:'void',voidedAt:NOW+6,voidedBy:'mustafa',voidReason:'other',sizes:{S:1}}],['update','po_qc_recon/'+QPO,{voidCount:2,rev:3,updatedAt:NOW+6,updatedBy:'mustafa',updatedByName:'Mustafa'}]])); // sizes rewritten
+    await assertFails(qBatch(MUSTAFA,[['update','po_qc_lots/'+qLotId(2),{status:'live',voidedAt:NOW+6,voidedBy:'mustafa',voidReason:'undo'}]]));});                     // un-void
+  await t('a void on a CLOSED reconciliation is refused (raw and writer)',async()=>{await reset();await qSeedLots([{S:20}],{status:'closed',closedAt:NOW,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('ready','exact')});
+    await assertFails(qBatch(MUSTAFA,[['update','po_qc_lots/'+qLotId(1),{status:'void',voidedAt:NOW+5,voidedBy:'mustafa',voidReason:'wrong size'}],['update','po_qc_recon/'+QPO,{voidCount:1,rev:2,updatedAt:NOW+5,updatedBy:'mustafa',updatedByName:'Mustafa'}]]));
+    const r=await call(MUSTAFA,'phQcVoidLot("'+qLotId(1)+'","wrong size",{now:'+nx()+'})');if(r.ok||r.code!=='refused')throw new Error(qq(r));});
+  await t('the counters are bound (raw): a lot void without the voidCount bump, a voidCount past lotCount, and a reconciliation born with lotCount above 1 are refused',async()=>{await reset();await qSeedLots([{S:20}]);
+    const vd={status:'void',voidedAt:NOW+5,voidedBy:'mustafa',voidReason:'wrong count'};
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_qc_lots',qLotId(1)),vd));                         // the lot alone
+    await assertSucceeds(qBatch(MUSTAFA,[['update','po_qc_lots/'+qLotId(1),vd],['update','po_qc_recon/'+QPO,{voidCount:1,rev:2,updatedAt:NOW+5,updatedBy:'mustafa',updatedByName:'Mustafa'}]]));
+    await assertFails(updateDoc(doc(as(MUSTAFA),'po_qc_recon',QPO),{voidCount:2,rev:3,updatedAt:NOW+6,updatedBy:'mustafa',updatedByName:'Mustafa'}));   // 2 voids of 1 lot
+    await reset();await qSeedPo();
+    await assertFails(setDoc(doc(as(FAIZAN),'po_qc_recon',QPO),qRec(FAIZAN,{lotCount:5,lastLotAt:NOW})));
+    await assertSucceeds(setDoc(doc(as(FAIZAN),'po_qc_recon',QPO),qRec(FAIZAN)));});
+  await t('nothing is deletable: a reconciliation or a lot, by anyone',async()=>{await reset();await qSeedLots([{S:20}]);
+    for(const w of [AFNAN,AMMAR,MUSTAFA,FAIZAN,UZAIB,QA]){await assertFails(deleteDoc(doc(as(w),'po_qc_recon',QPO)));await assertFails(deleteDoc(doc(as(w),'po_qc_lots',qLotId(1))));}});
+  await t('Faizan\'s history rows: the four QC types only (raw); any other type, and any draft / cut job write, is refused; Kashif keeps writing any type',async()=>{await reset();await qSeedPo();
+    const hrow=type=>({at:NOW,by:'faizan',byName:'Faizan',type:type,from:'',to:'',reason:'',data:{}});
+    for(const ty of ['qc_lot_added','qc_lot_voided','qc_cut_locked','qc_closed'])await assertSucceeds(setDoc(doc(as(FAIZAN),'pos',QPO,'history',String(NOW+Math.floor(Math.random()*9e5))+'-ab12'),hrow(ty)));
+    for(const ty of ['cut_job_opened','qc_closed_short','qc_cut_relocked','qc_reopened','qc_legacy_adopted','issued'])await assertFails(setDoc(doc(as(FAIZAN),'pos',QPO,'history',String(NOW+9e5)+'-zz99'),hrow(ty)));
+    await assertFails(setDoc(doc(as(FAIZAN),'pos',QPO,'history',String(NOW+9e5+1)+'-zz98'),Object.assign(hrow('qc_closed'),{by:'afnan'})));
+    await assertFails(setDoc(doc(as(FAIZAN),'pos','PO-777','history',String(NOW+9e5+2)+'-zz97'),hrow('qc_closed')));                      // no such PO
+    await assertFails(updateDoc(doc(as(FAIZAN),'pos',QPO,'history',String(NOW+1)+'-ab12'),{reason:'edited'}));
+    await assertFails(setDoc(doc(as(FAIZAN),'po_drafts',DID),draftDoc(FAIZAN)));
+    await assertFails(setDoc(doc(as(FAIZAN),'po_cut_jobs',QPO),{poId:QPO,status:'open',rev:1}));
+    await assertSucceeds(setDoc(doc(as(UZAIB),'pos',QPO,'history',String(NOW+9e5+3)+'-zz96'),Object.assign(hrow('cut_job_opened'),{by:'uzaib',byName:'Uzaib'})));});
+  await t('adopt the old Packing receipts: a manager with the writer (one legacy lot, the ids remembered, no pos write); a second adopt takes nothing twice; Faizan cannot',async()=>{await reset();
+    await qSeedPo({packingReceipts:[{id:'RCV-1-S',receiptId:'RCV-1',size:'S',qty:20,ts:'x',by:'Faizan'},{id:'RCV-1-M',receiptId:'RCV-1',size:'M',qty:30,ts:'x',by:'Faizan'}]});
+    const f=await call(FAIZAN,'phQcAdoptLegacy("'+QPO+'",{expectedRev:0,now:'+nx()+',reason:"before QC Ops"})');if(f.ok||f.code!=='forbidden')throw new Error('faizan '+qq(f));
+    const before=await read('pos/'+QPO);
+    const r=await call(MUSTAFA,'phQcAdoptLegacy("'+QPO+'",{expectedRev:0,now:'+nx()+',reason:"before QC Ops",rand:"dd44"})');if(!r.ok||r.adopted!==2)throw new Error(qq(r));
+    if(qq(await read('pos/'+QPO))!==qq(before))throw new Error('pos changed');
+    const d=await read('po_qc_recon/'+QPO);if(qq(d.legacyIds)!==qq(['RCV-1-S','RCV-1-M'])||d.lotCount!==1)throw new Error(qq(d));
+    const l=await read('po_qc_lots/'+r.lotId);if(l.src!=='legacy'||l.total!==50)throw new Error(qq(l));
+    const again=await call(MUSTAFA,'phQcAdoptLegacy("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"before QC Ops"})');if(again.ok||again.code!=='refused')throw new Error('again '+qq(again));
+    await assertFails(qBatch(FAIZAN,[['set','po_qc_lots/'+qLotId(5),qLot(FAIZAN,{seq:2,src:'legacy'})],['update','po_qc_recon/'+QPO,{lotCount:2,lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:'faizan',updatedByName:'Faizan'}]]));
+    await assertFails(qBatch(FAIZAN,[['set','po_qc_lots/'+qLotId(5),qLot(FAIZAN,{seq:2})],['update','po_qc_recon/'+QPO,{lotCount:2,lastLotAt:NOW+5,legacyIds:['RCV-1-S','RCV-1-M','X'],rev:2,updatedAt:NOW+5,updatedBy:'faizan',updatedByName:'Faizan'}]]));});
+  await t('two concurrent first lots on one PO through the real SDK: one wins, the other is refused, seq and lotCount intact',async()=>{await reset();await qSeedPo();
+    const [x,y]=await Promise.all([call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{S:5}},{expectedRev:0,now:'+nx()+',rand:"ee55"})'),call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{M:5}},{expectedRev:0,now:'+nx()+',rand:"ff66"})')]);
+    const oks=[x,y].filter(r=>r.ok);if(oks.length!==1)throw new Error('expected one winner '+qq([x,y]));
+    const d=await read('po_qc_recon/'+QPO);if(d.lotCount!==1)throw new Error(qq(d));
+    let n=0;await env.withSecurityRulesDisabled(async c=>{n=(await getDocs(collection(c.firestore(),'po_qc_lots'))).size;});if(n!==1)throw new Error('lots '+n);});
+  await t('the pos rule is unchanged: Raees can still write a pos document directly; the existing history block still refuses him',async()=>{await reset();await qSeedPo();
+    await assertSucceeds(updateDoc(doc(as(RAEES),'pos',QPO),{note:'classic'}));
+    await assertFails(setDoc(doc(as(RAEES),'pos',QPO,'history',String(NOW)+'-rr11'),{at:NOW,by:'raees',byName:'Raees',type:'qc_closed',from:'',to:'',reason:'',data:{}}));});
 
   await env.cleanup();
   console.log(`\n${pass} passed, ${fail} failed`);
