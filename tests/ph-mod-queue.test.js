@@ -123,6 +123,7 @@ const PERM=()=>Object.assign(new Error('Missing or insufficient permissions.'),{
 /* ── one signed-in device ── */
 function load(src,opts){
   opts=opts||{};
+  if(!opts.narrow)src=src.split(NARROW).join(WIDE);
   const st=makeStore(opts.seed||fixture(),{fail:opts.fail,gate:opts.gate});
   const shown=[];
   const detail={calls:0};
@@ -184,8 +185,13 @@ function load(src,opts){
   };
   return T;
 }
+// The shipped board draws two lanes (PHQ_VISIBLE_STAGES). Every older check here drives a PO in bundling / stitching, so
+// they run on the SAME source with that one line widened to all six stages (which also proves the one-line way back);
+// the two-lane checks pass narrow:true and run the source exactly as shipped.
+const NARROW="PHQ_VISIBLE_STAGES=Object.freeze(['cutting','qc'])",WIDE="PHQ_VISIBLE_STAGES=Object.freeze(['cutting','bundling','stitching','printing','washing','qc'])";
 async function open(user,opts,sub){
-  const T=load(opts&&opts.src||SRC,Object.assign({session:USERS[user]},opts||{}));
+  const s0=opts&&opts.src||SRC;
+  const T=load(s0,Object.assign({session:USERS[user]},opts||{}));
   await T.show('queue');
   if(sub)T.R('_phqSub='+J(sub));
   T.R('_phUiTab="queue"');T.R('_phUiPaintPanel()');
@@ -229,6 +235,34 @@ async function checks(src){
     o['filter: article search matches code or name, case-insensitively, and the PO number']=F({q:'LIVE in'})===J(['PO-102'])&&F({q:'gd009'})===J(['PO-105'])&&F({q:'po-104'})===J(['PO-104']);
     o['filter: delayed only keeps the flagged tiles']=F({delayed:true})===J(['PO-102','PO-103']);
     o['filter: filters combine (AND)']=F({delayed:true,master:'alam'})===J(['PO-103'])&&F({delayed:true,q:'zzz'})===J([]);
+  }
+
+  /* ═══ the simple board: Cutting and QC only (owner, 15 Oct 2026) ═══ */
+  {
+    const T=await open('afnan',{src,narrow:true});
+    const board=T.byClass('phq-board')[0];
+    const lanes=T.q(board,n=>hc(n,'phq-lane')).map(n=>n.getAttribute('data-lane')).join();
+    o['simple: the visible stages are ONE named constant, Cutting and QC']=/const PHQ_VISIBLE_STAGES=Object\.freeze\(\['cutting','qc'\]\);/.test(src);
+    o['simple: the board draws exactly two lanes, Cutting then Final QC (no Bundling, Stitching, Printing or Washing lane)']=lanes==='cutting,qc'&&!T.lane('bundling')&&!T.lane('stitching')&&!T.lane('printing')&&!T.lane('washing');
+    o['simple: POs at bundling / stitching are NOT drawn as tiles and not counted in either lane']=!T.tile('PO-104')&&!T.tile('PO-105')&&T.text(T.q(T.lane('cutting'),n=>hc(n,'phq-lane-count'))[0])==='4'&&T.text(T.q(T.lane('qc'),n=>hc(n,'phq-lane-count'))[0])==='0';
+    const later=T.byClass('phq-later')[0];
+    o['simple: one later-stage line counts them (2 POs), names the stages and says they are not shown here']=!!later&&later.getAttribute('data-later')==='2'&&/2 POs in later stages \(Bundling, Stitching, Printing, Washing\) - not shown here/.test(T.text(later));
+    o['simple: the later-stage line carries the per-stage counts in its tooltip and says they are still counted above']=!!later&&/Bundling 1 · Stitching 1/.test(later.getAttribute('title')||'')&&/counted above/.test(later.getAttribute('title')||'');
+    o['simple: the header chips still count the later-stage POs (they are in production): In production 6 POs']=(()=>{const st=T.text(T.byClass('phq-strip')[0]);return /In production 6/.test(st)&&/6,550 pcs/.test(st);})();
+    o['simple: reserved, completed and the unrecognised-stage lane are unchanged']=!!T.lane('reserved')&&!!T.lane('completed')&&!!T.lane('unknown')&&!!T.q(T.lane('unknown'),n=>hc(n,'phq-lane-count'))[0];
+    o['simple: the unrecognised-stage PO is never dropped (its own lane, not the later-stage count)']=!!T.tile('PO-110')&&T.byClass('phq-later')[0].getAttribute('data-later')==='2';
+    const input=T.byClass('phq-f-q')[0];
+    input.value='gd009';T.dom.dispatch(input,'input');
+    const l1=T.byClass('phq-later')[0];
+    o['simple: the search filters the later-stage count too (1 of the 2 matches, and it says so)']=!!l1&&l1.getAttribute('data-later')==='1'&&/1 PO in later stages/.test(T.text(l1))&&/of 2 before the filters/.test(T.text(l1));
+    input.value='live';T.dom.dispatch(input,'input');
+    o['simple: a filter with no later-stage match reads 0 POs, never disappears']=(()=>{const l=T.byClass('phq-later')[0];return !!l&&l.getAttribute('data-later')==='0'&&/0 POs in later stages/.test(T.text(l));})();
+    input.value='';T.dom.dispatch(input,'input');
+    const W=await open('afnan',{src});
+    o['simple: adding the stages back in the one constant brings the lanes back and the later line goes']=T.q(W.byClass('phq-board')[0],n=>hc(n,'phq-lane')).length===6&&!W.byClass('phq-later').length;
+    const U=await open('uzaib',{src,narrow:true},'board');
+    o['simple: Kashif sees the same two lanes read-only, with the later-stage line']=T.q(U.byClass('phq-board')[0],n=>hc(n,'phq-lane')).length===2&&!!U.byClass('phq-later')[0]&&!U.btn(U.panel(),/Force-advance|Plan cut/);
+    o['simple: the model still places the bundling PO in its own bundling lane (same stage rule), so the numbers agree with the lanes']=(()=>{const mm=JSON.parse(T.R('(()=>{const m=phqModel(_phqPos.rows,phGet("jobs").rows,{settings:phSettingsNow(),now:'+NOW+'});return JSON.stringify({b:m.lanes.bundling.length,s:m.lanes.stitching.length,t:m.tiles.length});})()'));return mm.b===1&&mm.s===1&&mm.t===9;})();
   }
 
   /* ═══ drawing: the manager's board ═══ */
@@ -628,6 +662,10 @@ module.exports=async function(){
   await brk('lane cap removed',"const cap=_phqShowAll[l.id]?list.length:PHQ_LANE_CAP;","const cap=list.length;",['lane cap: 40 tiles are drawn, the rest sit behind a "Show N more" button that reveals them']);
   await brk('the previous person\'s sub-tab is kept',"if(_phqSeenUser&&_phqSeenUser!==ctx.user){","if(false){",["switching person on one page load resets the sub-tab: the next person gets their own default (Drafts for uzaib), not the manager's board"]);
   await brk('a search keystroke repaints the whole tab',"const onq=function(){_phqF.q=q.value;_phqRepaintBoard(ctx);};","const onq=function(){_phqF.q=q.value;ctx.repaint();};",['filters: typing in the search repaints the board only (the input node is the same one)']);
-  s.ok('breaks run: '+broken,broken>=35);
+  await brk('the visible stages widened back to all six',"PHQ_VISIBLE_STAGES=Object.freeze(['cutting','qc'])","PHQ_VISIBLE_STAGES=Object.freeze(['cutting','bundling','stitching','printing','washing','qc'])",['simple: the board draws exactly two lanes, Cutting then Final QC (no Bundling, Stitching, Printing or Washing lane)']);
+  await brk('the later-stage line removed',"  const later=_phqLater(m,filtered);\n  if(later)host.appendChild(later);","",['simple: one later-stage line counts them (2 POs), names the stages and says they are not shown here','simple: the search filters the later-stage count too (1 of the 2 matches, and it says so)']);
+  await brk('the later-stage line ignores the filters',"n+=f;allN+=a;","n+=a;allN+=a;",['simple: the search filters the later-stage count too (1 of the 2 matches, and it says so)']);
+  await brk('the unrecognised-stage lane dropped',"if(l.id==='unknown'&&!m.lanes.unknown.length)return;","if(l.id==='unknown')return;",['simple: reserved, completed and the unrecognised-stage lane are unchanged','simple: the unrecognised-stage PO is never dropped (its own lane, not the later-stage count)']);
+  s.ok('breaks run: '+broken,broken>=39);
   return s;
 };
