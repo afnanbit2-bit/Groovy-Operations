@@ -73,7 +73,9 @@ const PB_COLLECTIONS=['pos','bundles','gatepasses','returns','fabricin','fabric_
   // Production Ops (18-19 Oct 2026): per-article product instructions and the managers' marks. The comment threads
   // (po_marks/{id}/notes, pos/{id}/history) are SUBCOLLECTIONS and are NOT in the file: only the parent documents are
   // (po_marks keeps noteCount and the last comment as a preview).
-  'ph_article_instructions','po_marks'];
+  'ph_article_instructions','po_marks',
+  // QC reconciliation (QC2, 15 Oct 2026): the QC record of each PO and the append-only lots QC received.
+  'po_qc_recon','po_qc_lots'];
 // NOT here on purpose: store_items and store_transactions (the Store's own ledger).
 // By USERNAME, never by role — the same shape as _MA_USERS.
 const _PB_USERS=['afnan','ammar'];

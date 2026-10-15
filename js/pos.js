@@ -760,7 +760,11 @@ const _PO_LINKS=[
   // Production Ops (14 Oct 2026): a cut job is keyed by the PO id and carries it as poId; a draft that was issued as this PO
   // names it in poId (the field js/ph-issue.js writes when it issues the draft).
   {key:'cutjob',words:['Production Ops cut job','Production Ops cut jobs'],       col:'po_cut_jobs',      field:'poId'},
-  {key:'draft', words:['Production Ops draft','Production Ops drafts'],           col:'po_drafts',        field:'poId'}
+  {key:'draft', words:['Production Ops draft','Production Ops drafts'],           col:'po_drafts',        field:'poId'},
+  // QC reconciliation (QC2, 15 Oct 2026): the QC record of a PO (po_qc_recon/{PO-nnn}) and the lots QC received (po_qc_lots),
+  // both carrying the PO id as poId. A PO with either cannot be deleted (cancel it instead).
+  {key:'qcrec', words:['QC reconciliation','QC reconciliations'],               col:'po_qc_recon',      field:'poId'},
+  {key:'qclot', words:['QC lot','QC lots'],                                     col:'po_qc_lots',       field:'poId'}
 ];
 // What the app already holds in memory for each link, as a second witness
 // beside the query. Guarded: embellishments.js / store.js may not be loaded.

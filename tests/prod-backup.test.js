@@ -92,7 +92,10 @@ function liveStore(){
     ph_standards:[{id:'GST073',data:{unit:'kg',grossPerPiece:0.42,rev:1}}],
     ph_settings:[{id:'main',data:{dailyCapacity:400,rev:1}}],
     ph_article_instructions:[{id:'GST073',data:{code:'GST073',rev:2,sections:[{title:'Wash',text:'cold'}]}}],
-    po_marks:[{id:'PO-1',data:{marks:{priority:'urgent'},rev:1,noteCount:1,lastNote:'hurry'}}]
+    po_marks:[{id:'PO-1',data:{marks:{priority:'urgent'},rev:1,noteCount:1,lastNote:'hurry'}}],
+    // QC reconciliation (QC2, 15 Oct 2026): real shapes, abbreviated
+    po_qc_recon:[{id:'PO-1',data:{poId:'PO-1',status:'locked',rev:2,cutLock:{sizes:{S:20,M:40},total:60,source:'first_lot'},lotCount:1,voidCount:0,overrides:[],legacyIds:[]}}],
+    po_qc_lots:[{id:'PO-1-1790000000000-abcd',data:{poId:'PO-1',seq:1,sizes:{S:20},total:20,status:'live',src:'qc'}}]
   };
 }
 
@@ -474,8 +477,9 @@ module.exports=async function(){
     const list=t.app.run('PB_COLLECTIONS.slice()');
     const owners=['pos','bundles','gatepasses','returns','fabricin','fabric_inventory','fabric_movements','fabric_drawstrings','drawstring_moves','printing_jobs','counters','settings'];
     const more=['gatepass_edit_requests','po_issue_requests','po_edit_requests','po_shortfalls','qc_reports','printing_billing','sla_events','article_recipes','color_library','stock_transfers','bstock_items','bstock_cartons','trim_templates','articles'];
-    const prodOps=['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions','po_marks'];
-    s.eq('33 collections (26 + the seven Production Ops ones)',list.length,33);
+    const prodOps=['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions','po_marks','po_qc_recon','po_qc_lots'];
+    // QC2 (15 Oct 2026), a deliberate change: the two QC reconciliation collections join the list (33 -> 35)
+    s.eq('35 collections (26 + the nine Production Ops ones, the QC reconciliation two among them)',list.length,35);
     s.ok('the five Production Ops collections are all there (drafts, cut jobs, masters, standards, settings)',prodOps.every(c=>list.indexOf(c)>-1));
     s.ok('the original 12 are all still there',owners.every(c=>list.indexOf(c)>-1));
     s.ok('the 14 added after review are all there',more.every(c=>list.indexOf(c)>-1));
@@ -653,7 +657,7 @@ module.exports=async function(){
     s.ok('…and says it is read-only',/Read-only/.test(html));
     s.ok('…advises running it on a computer',/Run this on a computer/.test(html));
     s.ok('…and says the file is business data that must be kept private',/contains business data and must be kept private/.test(html));
-    s.ok('…and lists the added collections too',t.app.run('PB_COLLECTIONS').length===33&&/articles/.test(html)&&/gatepass_edit_requests/.test(html));
+    s.ok('…and lists the added collections too',t.app.run('PB_COLLECTIONS').length===35&&/articles/.test(html)&&/gatepass_edit_requests/.test(html));
     s.ok('…and carries no literal colour (tokens only)',!/#[0-9a-fA-F]{3,8}\b/.test(html)&&!/rgba?\(/.test(html));
     s.ok('a stored note is NEVER put into markup (a hostile one stays text)',html.indexOf('<img')<0&&html.indexOf('onerror')<0);
     const note=t.app.el('pb-last').textContent;

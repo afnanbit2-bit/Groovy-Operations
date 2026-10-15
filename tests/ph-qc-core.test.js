@@ -425,7 +425,8 @@ module.exports=async function(){
     // S 10 vs 20: -10 short ; total 109, diff -11 > 2 short -> the total is short, so more is expected: receiving
     s.eq('109 of 120: receiving (the total is still short)',r.phase,'receiving');
     s.eq('receiving: the overall verdict is short',r.verdict.state,'short');
-    s.eq('receiving: nobody can close',J(r.canClose),J({floor:false,manager:false}));
+    // owner decision 15 Oct 2026 (QC4, a change from the plan): a manager may close a PO that is still receiving (with a reason, in js/ph-qc-write.js)
+    s.eq('receiving: the floor cannot close, a manager can (owner decision 15 Oct 2026)',J(r.canClose),J({floor:false,manager:true}));
     // floor(109*100/120) = floor(90.83) = 90
     s.eq('receiving: progress 90 %',r.progressPct,90);
     s.eq('two live lots, one void',J([r.lotsLive,r.lotsVoid]),J([2,1]));

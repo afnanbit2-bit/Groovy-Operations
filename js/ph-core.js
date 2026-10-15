@@ -1651,7 +1651,9 @@ function phQcExpected(po,recon,opts){
 // phase: awaiting_cut (no cut) | awaiting_qc (a cut, no live lot) | receiving (lots, but the total is still short beyond the allowance:
 // more units are expected) | ready (exact / within / over: the floor may close) | short (the total is in but a size is short,
 // unexpected or over beyond its allowance: a manager may close it) | closed.
-// canClose: floor = ready only; manager = ready or short. progressPct = floor(received / cut, capped at 100), null with no cut.
+// canClose: floor = ready only; manager = ready, short OR receiving (owner decision, 15 Oct 2026, a change from the plan: units lost
+// for good would otherwise leave a PO open for ever; a manager's close outside 'ready' needs a reason, an overrides row, a history row
+// and bell rows -- js/ph-qc-write.js phQcClose). progressPct = floor(received / cut, capped at 100), null with no cut.
 function phQcReconcile(po,recon,lots,opts){
   const o=_phObj(opts)?opts:{};
   const fail=function(why,extra){
@@ -1693,7 +1695,7 @@ function phQcReconcile(po,recon,lots,opts){
   else phase='short';
   const pct=exp.total>0?Math.min(100,Math.floor(recv.total*100/exp.total)):null;
   return Object.assign({ok:true,why:'',cut:exp,recv:recv,verdict:verdict,
-    canClose:{floor:phase==='ready',manager:phase==='ready'||phase==='short'},phase:phase,progressPct:pct,issues:[]},base);
+    canClose:{floor:phase==='ready',manager:phase==='ready'||phase==='short'||phase==='receiving'},phase:phase,progressPct:pct,issues:[]},base);
 }
 // Which group of the Afloat list a PO sits in. rec = {stage, phase} (a phQcReconcile result carries both).
 // 'closed' (phase closed) | 'ready' (phase ready / short, from the stitching stage on) | 'cutting' (stage cutting) |
