@@ -40,6 +40,12 @@ const PHQ_LANES=Object.freeze([
   Object.freeze({id:'washing',  label:phI18nD('queue.lane_washing')}),
   Object.freeze({id:'qc',       label:phI18nD('queue.lane_qc')})
 ]);
+/* WHICH STAGES THE BOARD DRAWS (owner, 15 Oct 2026: "i just want cutting and QC ... i will add more journey time to time").
+   ONE line to edit: add a stage id back here (any of the ids in PHQ_LANES) and its lane returns, in PHQ_LANES order.
+   A stage left out is NOT dropped: its POs are still modelled (same stage rule), still counted in the header chips
+   (they are in production), and shown as one "N POs in later stages" line under the board. Nothing is written or hidden
+   silently, and an unrecognised stage keeps its own lane whatever this says. */
+const PHQ_VISIBLE_STAGES=Object.freeze(['cutting','qc']);
 const PHQ_SIDE_LANES=Object.freeze([
   Object.freeze({id:'reserved', label:phI18nD('queue.lane_reserved')}),
   Object.freeze({id:'completed',label:phI18nD('queue.lane_completed')}),
@@ -81,6 +87,9 @@ function _phqClock(ms){
   const p=function(n){return(n<10?'0':'')+n;};
   return p(d.getUTCHours())+':'+p(d.getUTCMinutes());
 }
+function phqIsVisibleLane(id){return PHQ_VISIBLE_STAGES.indexOf(id)>=0;}
+// the real stages the board does not draw (PHQ_LANES order)
+function phqHiddenLanes(){return PHQ_LANES.filter(function(l){return !phqIsVisibleLane(l.id);});}
 function _phqLaneLabel(id){
   const all=PHQ_LANES.concat(PHQ_SIDE_LANES);
   for(let i=0;i<all.length;i++)if(all[i].id===id)return all[i].label;
@@ -465,14 +474,33 @@ function _phqPaintBoard(m,ctx,manage,jobsOk){
   if(cnt)phI18nSet(cnt,shown===total?phI18nD('queue.count_all',{n:total,w:phI18nD(total===1?'queue.w_po_one':'queue.w_po_many')}):phI18nD('queue.count_of',{shown:shown,total:total}));
   if(!total){host.appendChild(_phqCard(phI18nD('queue.no_pos'),[phEl('p','ph-note',phI18nD('queue.no_pos_msg'))]));return;}
   const board=phEl('div','phq-board');board.setAttribute('role','list');board.setAttribute('aria-label',phI18nAttr(phI18nD('queue.released_by_stage')));
-  PHQ_LANES.forEach(function(l){board.appendChild(_phqLane(l,m.lanes[l.id],filtered[l.id],ctx,manage,jobsOk,m,false));});
+  PHQ_LANES.forEach(function(l){if(phqIsVisibleLane(l.id))board.appendChild(_phqLane(l,m.lanes[l.id],filtered[l.id],ctx,manage,jobsOk,m,false));});
   host.appendChild(board);
+  const later=_phqLater(m,filtered);
+  if(later)host.appendChild(later);
   const side=phEl('div','phq-side');
   PHQ_SIDE_LANES.forEach(function(l){
     if(l.id==='unknown'&&!m.lanes.unknown.length)return;
     side.appendChild(_phqLane(l,m.lanes[l.id],filtered[l.id],ctx,manage,jobsOk,m,true));
   });
   host.appendChild(side);
+}
+// ONE compact line for the POs in stages the board does not draw: the same stage rule as the lanes (t.lane), the
+// same filters. Counts per stage are in the tooltip. Still counted in the header chips (they are in production).
+function _phqLater(m,filtered){
+  const hid=phqHiddenLanes();if(!hid.length)return null;
+  let n=0,allN=0;const parts=[],names=[];
+  hid.forEach(function(l){
+    const a=m.lanes[l.id].length,f=filtered[l.id].length;
+    n+=f;allN+=a;names.push(l.label);
+    if(f)parts.push(l.label+' '+f);
+  });
+  const el=phEl('p','phq-later');el.setAttribute('role','status');
+  el.appendChild(phEl('span','phq-later-n',phI18nD('queue.later_line',{n:n,w:phI18nD(n===1?'queue.w_po_one':'queue.w_po_many'),stages:names.join(', ')})));
+  el.setAttribute('title',phI18nAttr(phI18nD('queue.later_tip',{detail:parts.length?parts.join(' · '):'0'})));
+  el.setAttribute('data-later',String(n));
+  if(n!==allN)el.appendChild(phEl('span','phq-later-f',phI18nD('queue.later_filtered',{total:allN})));
+  return el;
 }
 function _phqLane(l,all,list,ctx,manage,jobsOk,m,side){
   const lane=phEl('section','phq-lane'+(side?' phq-lane-side':''));lane.setAttribute('data-lane',l.id);lane.setAttribute('role','listitem');
