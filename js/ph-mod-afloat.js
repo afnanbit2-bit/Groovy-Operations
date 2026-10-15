@@ -82,13 +82,48 @@ function _phqcDay(x,today){
   const y=d.slice(0,4),m=+d.slice(5,7),dd=+d.slice(8,10);
   return dd+' '+PHAF_MONTHS[m-1]+(today&&today.slice(0,4)!==y?' '+y:'');
 }
-function _phqcClock(ms){
-  if(typeof ms!=='number'||!isFinite(ms))return'';
-  const d=new Date(ms+5*3600000);
+/* Day and time stamps (QC6, owner's rule): every QC entry -- a lot, a void, a lock, a close -- shows its day AND time in a 12-hour
+   clock with AM/PM, in PKT (UTC+5, no DST) whatever the viewer's device zone: "Thu 15 Oct 2026, 3:42 PM". The PKT day is
+   js/ph-core.js phDay (PH_TZ_OFFSET_MIN, ph-core.js:63/202); the 12-hour wording is js/hrm.js:927 formatTime12hr, handed an "HH:MM"
+   that is ALREADY in PKT (that helper reads "HH:MM" as given and never consults the device zone for it). hrm.js loads before every
+   ph file (index.html), but it is behind typeof: without it the same rule is applied here. No 24-hour time is shown in this tab. */
+const PHAF_WDAYS=Object.freeze(['Sun','Mon','Tue','Wed','Thu','Fri','Sat']);
+function _phqcPkHm(ms){
+  const off=typeof PH_TZ_OFFSET_MIN==='number'?PH_TZ_OFFSET_MIN:300;
+  const d=new Date(ms+off*60000);
   const p=function(n){return(n<10?'0':'')+n;};
   return p(d.getUTCHours())+':'+p(d.getUTCMinutes());
 }
-function _phqcWhen(ms,today){const a=_phqcDay(ms,today),b=_phqcClock(ms);return a&&b?a+' '+b:a;}
+function _phqc12(hm){
+  if(typeof formatTime12hr==='function'){try{const r=formatTime12hr(hm);if(/^(1[0-2]|[1-9]):[0-5][0-9] (AM|PM)$/.test(r))return r;}catch(e){}}
+  const h=+hm.slice(0,2),m=hm.slice(3,5);
+  return((h%12)||12)+':'+m+' '+(h>=12?'PM':'AM');
+}
+// "3:42 PM" (PKT) for a ms moment; '' when unreadable.
+function _phqcClock(ms){
+  if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return'';
+  return _phqc12(_phqcPkHm(ms));
+}
+// "Thu 15 Oct 2026" for a PKT day (YYYY-MM-DD) or a ms moment; '' when unreadable.
+function _phqcDayLong(x){
+  const d=typeof phDay==='function'?phDay(x):null;
+  if(!d)return'';
+  const wd=typeof phWeekday==='function'?phWeekday(d):null;
+  return(wd!==null&&wd!==undefined?PHAF_WDAYS[wd]+' ':'')+(+d.slice(8,10))+' '+PHAF_MONTHS[+d.slice(5,7)-1]+' '+d.slice(0,4);
+}
+// The stamp: "Thu 15 Oct 2026, 3:42 PM" (PKT). '' when ms is not a moment.
+function phqcStamp(ms){
+  if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return'';
+  const d=_phqcDayLong(ms),t=_phqcClock(ms);
+  return d&&t?d+', '+t:'';
+}
+// The stamp and who made the entry ("Thu 15 Oct 2026, 3:42 PM by Faizan"); '—' when the moment is unreadable.
+function phqcStampBy(ms,who){
+  const s=phqcStamp(ms),w=_phqcStr(who).trim();
+  if(!s)return w?phI18nD('afloat.stamp_by',{stamp:'—',who:w}):'—';
+  return w?phI18nD('afloat.stamp_by',{stamp:s,who:w}):s;
+}
+function _phqcWhen(ms){return phqcStamp(ms);}
 // A username -> the person's name from USER_DEFS (js/auth.js); else the username as stored.
 function _phqcWho(u){
   const s=_phqcStr(u).trim();if(!s)return'';
@@ -427,21 +462,36 @@ function _phqcLoading(){
 /* ── the tab ───────────────────────────────────────────────────────────── */
 function phqcRender(host,ctx){
   _phqcCtx=ctx;
+  // A background repaint (a fresh read landing) must not drop the person's focus: keep the focused control's id
+  // and focus the same control in the new paint, unless a step asked for another one.
+  if(!_phqcFocusId){try{const a=document.activeElement;if(a&&a.id&&a.id.indexOf('phaf-')===0)_phqcFocusId=a.id;}catch(e){}}
   if(_phqcSeenUser&&_phqcSeenUser!==ctx.user){phqcReset();}
   _phqcSeenUser=ctx.user;
   _phqcWireGuards();
   _phqcStart(ctx);
   if(_phqcOpen){
     const t=_phqcFindTile(_phqcOpen);
-    if(t){phqcDetail(host,ctx,t);return;}
+    if(t){
+      if(_phqcSheet&&_phqcSheet.poId===t.id&&phqcCanReceive(t,ctx.user))phqcSheetView(host,ctx,t);
+      else{if(_phqcSheet&&_phqcSheet.poId===t.id&&!_phqcSheet.saving)_phqcSheet=null;phqcDetail(host,ctx,t);}
+      _phqcFocusPending();
+      return;
+    }
     _phqcOpen='';
   }
+  _phqcSheet=null;_phqcDlg=null;
   phqcList(host,ctx);
+  _phqcFocusPending();
+}
+// Focus the element a step asked for (a sheet's first box, the confirm's button, the opener again), once, after the paint.
+function _phqcFocusPending(){
+  const id=_phqcFocusId;if(!id)return;
+  _phqcFocusId='';
+  try{const n=document.getElementById(id);if(n&&typeof n.focus==='function')n.focus();}catch(e){}
 }
 function _phqcHead(ctx,title,blurb){
   const h=phEl('header','ph-head');
   const row=phEl('div','ph-head-row',null,[phEl('h2','ph-title',title)]);
-  row.appendChild(phEl('span','ph-chip ph-chip-view phaf-ro',phI18nD('afloat.read_only_chip')));
   h.appendChild(row);
   if(blurb)h.appendChild(phEl('p','ph-blurb',blurb));
   return h;
@@ -671,8 +721,10 @@ function phqcTileNode(t,ctx){
   b.appendChild(body);
   return b;
 }
+// The stage's words: a completed PO whose reconciliation is CLOSED says so (not "reconciliation open").
+function _phqcStageKey(t){return t.stage==='completed'&&t.recon&&t.recon.status==='closed'?'afloat.st_completed_closed':(PHAF_STAGE_KEYS[t.stage]||'afloat.st_unknown');}
 function _phqcStageLine(t){
-  const st=phI18nD(PHAF_STAGE_KEYS[t.stage]||'afloat.st_unknown');
+  const st=phI18nD(_phqcStageKey(t));
   if(t.stage==='cutting'){
     const bits=[];
     if(t.planDay)bits.push(phI18nT('afloat.planned',{day:_phqcDay(t.planDay)},'en'));
@@ -739,13 +791,13 @@ function phqcVerdictNode(t){
 
 /* ── Screen B: the detail (read-only) ──────────────────────────────────── */
 function phqcOpen(id){
-  _phqcOpen=String(id||'');
+  _phqcOpen=String(id||'');_phqcSheet=null;_phqcDlg=null;_phqcFlash=null;
   if(_phqcCtx&&typeof _phqcCtx.repaint==='function')_phqcCtx.repaint();
   try{const m=document.getElementById('main-content');if(m)m.scrollTop=0;}catch(e){}
   try{const b=document.getElementById('phaf-back');if(b&&typeof b.focus==='function')b.focus();}catch(e){}
 }
 function phqcBack(){
-  const id=_phqcOpen;_phqcOpen='';
+  const id=_phqcOpen;_phqcOpen='';_phqcSheet=null;_phqcDlg=null;_phqcFlash=null;
   if(_phqcCtx&&typeof _phqcCtx.repaint==='function')_phqcCtx.repaint();
   try{   // focus back to the tile that opened the detail
     if(_phqcListEl&&id){(function walk(n){(n.children||[]).forEach(function(c){if(c.nodeType!==1)return;if(c.getAttribute&&c.getAttribute('data-po')===id&&typeof c.focus==='function'){c.focus();return;}walk(c);});})(_phqcListEl);}
@@ -760,7 +812,6 @@ function phqcDetail(host,ctx,t){
   const title=phEl('h2','ph-title phaf-dtitle');title.id='phaf-dtitle';
   title.textContent=t.id+(t.code?' · '+t.code:'')+(t.name?' · '+t.name:'');
   bar.appendChild(title);
-  bar.appendChild(phEl('span','ph-chip ph-chip-view phaf-ro',phI18nD('afloat.read_only_chip')));
   wrap.appendChild(bar);
   const r=t.rec,e=t.exp,rc=t.recon;
   // header: picture (tap to enlarge) + the facts
@@ -771,10 +822,10 @@ function phqcDetail(host,ctx,t){
     pb.appendChild(phqcImageNode(t.po,'head'));hd.appendChild(pb);
   }else hd.appendChild(phqcImageNode(t.po,'head'));
   const facts=phEl('div','phaf-facts');
-  const st=[phI18nT(PHAF_STAGE_KEYS[t.stage]||'afloat.st_unknown',null,'en')];
+  const st=[phI18nT(_phqcStageKey(t),null,'en')];
   if(t.po.cutAt){const cb=_phqcStr(t.po.cutBy);st.push(phI18nT(cb?'afloat.cut_on_by':'afloat.cut_on',{day:_phqcDay(t.po.cutAt,today),who:cb},'en'));}
   if(r.ok&&r.lotsLive)st.push(phI18nT(r.lotsLive===1?'afloat.lots_one':'afloat.lots_n',{n:r.lotsLive},'en'));
-  if(t.lastLotAt)st.push(phI18nT('afloat.last_lot',{when:_phqcWhen(t.lastLotAt,today)},'en'));
+  if(t.lastLotAt)st.push(phI18nT('afloat.last_lot',{when:phqcStamp(t.lastLotAt)},'en'));
   facts.appendChild(phEl('p','phaf-fact',st.join(' · ')));
   const ls=_phqcLockSentence(t,today),lp=phEl('p','phaf-fact phaf-lockline');
   if(ls&&ls.nodeType===1)lp.appendChild(ls);else phI18nSet(lp,ls);
@@ -784,10 +835,11 @@ function phqcDetail(host,ctx,t){
   vrow.appendChild(phqcVerdictNode(t));
   if(r.ok&&r.verdict&&r.verdict.total){const tt=r.verdict.total;vrow.appendChild(phEl('span','phaf-vtot',phI18nD('afloat.total_line',{recv:tt.recv,cut:tt.cut,diff:tt.diff>0?'+'+tt.diff:String(tt.diff).replace('-','−'),a:tt.allow})));}
   facts.appendChild(vrow);
+  const still=_phqcStillLine(t);if(still)facts.appendChild(phEl('p','phaf-fact phaf-still',still));
   hd.appendChild(facts);
   wrap.appendChild(hd);
   // bands
-  if(rc&&rc.status==='closed')wrap.appendChild(phEl('p','phaf-band phaf-band-ok',phI18nD('afloat.band_closed',{when:_phqcWhen(rc.closedAt,today),who:_phqcStr(rc.closedByName)||_phqcWho(rc.closedBy)})));
+  if(rc&&rc.status==='closed')wrap.appendChild(phEl('p','phaf-band phaf-band-ok phaf-closedline',phI18nD('afloat.band_closed',{when:phqcStamp(rc.closedAt)||'—',who:_phqcStr(rc.closedByName)||_phqcWho(rc.closedBy)})));
   if(rc&&rc.status==='reopened'){
     const ov=Array.isArray(rc.overrides)?rc.overrides.filter(function(o){return o&&o.kind==='reopen';}).slice(-1)[0]:null;
     wrap.appendChild(phEl('p','phaf-band phaf-band-warn',phI18nD('afloat.band_reopened',{who:ov?(_phqcStr(ov.byName)||_phqcWho(ov.by)):'—',why:ov?_phqcStr(ov.reason):'—'})));
@@ -796,6 +848,7 @@ function phqcDetail(host,ctx,t){
     const d=e.drift.sizes.map(function(s){return s.size+' '+s.lock+' → '+s.live;}).join(', ');
     wrap.appendChild(phEl('p','phaf-band phaf-band-warn',phI18nD('afloat.band_drift',{list:d})));
   }
+  if(_phqcFlash&&_phqcFlash.poId===t.id){const f=phEl('p','phaf-band phaf-flash phaf-band-'+(_phqcFlash.tone==='warn'?'warn':'ok'),_phqcFlash.text);f.id='phaf-flash';f.setAttribute('role','status');f.setAttribute('tabindex','-1');wrap.appendChild(f);}
   if(!t.lotsOk)wrap.appendChild(_phqcAlert(phI18nD('afloat.err_one',{n:1}),[phI18nErr(_phqcStage('lots').text||'po_qc_lots: could not be read.')]));
   if(!t.reconOk)wrap.appendChild(_phqcAlert(phI18nD('afloat.err_one',{n:1}),[phI18nErr(_phqcStage('recon').text||'po_qc_recon: could not be read.')]));
   // the table
@@ -811,13 +864,14 @@ function phqcDetail(host,ctx,t){
   const leg=phqcLegacyUnits(t.po);
   if(leg>0)hints.appendChild(phEl('p','ph-note phaf-note-warn',phI18nD('afloat.legacy',{n:leg})));
   wrap.appendChild(hints);
-  // lots
-  wrap.appendChild(_phqcLots(t,today));
-  // the actions of the next work package: drawn DISABLED, the reason beside them (never a button that does nothing silently)
+  // the actions (QC6): Receive units, Lock cut now, Close PO -- live where the person may act, else drawn DISABLED with the reason
   wrap.appendChild(_phqcActions(t,ctx));
+  // lots (oldest first, each with its day and time)
+  wrap.appendChild(_phqcLots(t,ctx));
   // history
   const hist=_phqcHistory(t,today);if(hist)wrap.appendChild(hist);
   host.appendChild(wrap);
+  if(_phqcDlg&&_phqcDlg.poId===t.id)host.appendChild(_phqcDlgNode(t,ctx));
 }
 function _phqcLockSentence(t,today){
   const e=t.exp,rc=t.recon;
@@ -826,10 +880,10 @@ function _phqcLockSentence(t,today){
   if(!t.reconOk)return phI18nD('afloat.lock_unread');
   if(e.source==='lock'&&rc&&rc.cutLock){
     const L=rc.cutLock,who=_phqcWho(L.lockedBy);
-    const how=L.source==='first_lot'?phI18nT('afloat.lock_how_first',null,'en'):L.source==='relock'?phI18nT('afloat.lock_how_relock',{who:who},'en'):phI18nT('afloat.lock_how_manual',{who:who},'en');
+    const how=phI18nD(L.source==='first_lot'?'afloat.lock_how_first':L.source==='relock'?'afloat.lock_how_relock':'afloat.lock_how_manual');
     const n=phEl('span','phaf-lock');n.setAttribute('aria-label',phI18nAttr(phI18nD('afloat.lock_aria')));
     n.appendChild(phEl('span','phaf-lock-g','🔒'));n.lastChild.setAttribute('aria-hidden','true');
-    n.appendChild(phEl('span','',phI18nD('afloat.lock_final',{when:_phqcWhen(L.lockedAt,today),how:how})));
+    n.appendChild(phEl('span','phaf-stamp',phI18nD('afloat.lock_final',{when:phqcStampBy(L.lockedAt,who),how:how})));
     return n;
   }
   return phI18nD('afloat.lock_open');
@@ -900,59 +954,642 @@ function _phqcBundlesErr(b){
   if(e.code==='timeout')return'bundles: the read did not finish in '+Math.round(PHAF_TIMEOUT_MS/1000)+'s.';
   return'bundles: read failed ('+(e.message||e.code||'unknown')+').';
 }
-function _phqcLots(t,today){
+/* ── QC6: the lots, the actions, the receive sheet and the confirms ────────────────────────────────────────────────────────
+   SAVED ENTRIES ARE NEVER EDITED (the owner's rule). A lot is one DELIVERY of finished units from stitching to QC; a PO of 120 pieces is
+   received in as many lots, on as many days, from as many visits and phones as it takes, and every visit adds a NEW lot. Nothing on this
+   tab changes a saved lot, a lock or a close: there is no edit control anywhere. A mistake is put right with a NEW entry -- void the lot
+   (with a reason; it stays listed, struck through) and receive the delivery again. The writers carry no path that rewrites a lot either
+   (js/ph-qc-write.js phQcVoidLot touches only status / voidedAt / voidedBy / voidReason), and firestore.rules lets a lot change ONLY
+   live -> void with exactly those four fields (phqcLotVoidOk); a lock and a close are replaced only by an owner's override (QC7).
+   Writes go through the QC4 writers only: phQcAddLot / phQcVoidLot / phQcClose (js/ph-qc-write.js) and phQcLockCut (js/ph-write.js),
+   each behind typeof. Nothing is written until the person presses the final Save / Lock / Close / Void. One write at a time (_phqcBusy). */
+let _phqcSheet=null;   // the receive sheet: {poId, vals:{size:text}, note, day, step:'edit'|'review', msg, saving}
+let _phqcDlg=null;     // a confirm: {kind:'lock'|'close'|'void', poId, lotId, reason, msg, opener}
+let _phqcFlash=null;   // the line under the header after a write: {poId, text, tone:'ok'|'warn'}
+let _phqcBusy=false;   // one write at a time (a double press saves once)
+let _phqcFocusId='';   // the element to focus after the next paint
+
+function _phqcModelOf(po){
+  if(typeof phSizeModel!=='function'||typeof _phPoArt!=='function')return null;
+  try{const a=phSizeModel(_phPoArt(po||{}));return a.source==='default'?null:a.model;}catch(e){return null;}
+}
+function _phqcVoidWindow(){return typeof PHQC_VOID_WINDOW_MS==='number'?PHQC_VOID_WINDOW_MS:86400000;}
+function _phqcOpenRecon(rc){return!!rc&&(rc.status==='locked'||rc.status==='reopened');}
+function _phqcOffline(){try{return typeof navigator!=='undefined'&&!!navigator&&navigator.onLine===false;}catch(e){return false;}}
+const PHAF_STAGES_FALLBACK=Object.freeze(['cutting','bundling','stitching','printing','washing','qc']);
+function _phqcStageOkForClose(st){
+  const o=typeof PH_REAL_STAGE_ORDER!=='undefined'&&Array.isArray(PH_REAL_STAGE_ORDER)?PH_REAL_STAGE_ORDER:PHAF_STAGES_FALLBACK;
+  return st==='completed'||o.indexOf(st)>=o.indexOf('stitching');
+}
+// Who may receive on this PO now: QC Ops or a manager, a cut to hold it to, the reconciliation and the lots read, not closed.
+function phqcCanReceive(t,u){
+  if(!t||!t.rec||!t.rec.ok||!t.rec.cut||!t.reconOk||!t.lotsOk)return false;
+  if(t.recon&&!_phqcOpenRecon(t.recon))return false;
+  return phqcIsManager(u)||phqcIsQc(u);
+}
+// May `u` void lot x? A manager any time; QC Ops (Faizan) his OWN lot within 24 h. Only a live lot, only while the reconciliation is open.
+function phqcCanVoid(t,x,u,now){
+  if(!t||!x||x.status!=='live'||!_phqcOpenRecon(t.recon)||!t.reconOk)return false;
+  const who=_phqcUser(u);
+  if(phqcIsManager(who))return true;
+  if(!phqcIsQc(who)||x.by!==who||typeof x.at!=='number')return false;
+  return(typeof now==='number'?now:Date.now())-x.at<=_phqcVoidWindow();
+}
+// "XL 20, M 5" -- what is still expected per size (cut minus received, sizes still short), largest first; '' when nothing.
+function _phqcStillList(v){
+  if(!v||!Array.isArray(v.order))return'';
+  return v.order.map(function(k){return{k:k,n:-v.sizes[k].diff};}).filter(function(g){return g.n>0;}).map(function(g){return g.k+' '+g.n;}).join(' · ');
+}
+// The detail's "still expected per size" line, after every lot (null before a cut or with nothing outstanding).
+function _phqcStillLine(t){
+  const r=t&&t.rec;
+  if(!r||!r.ok||!r.verdict||r.phase==='closed'||r.phase==='awaiting_cut')return null;
+  const list=_phqcStillList(r.verdict),tot=r.verdict.total;
+  if(!list)return phI18nD('afloat.still_none');
+  return phI18nD('afloat.still_line',{list:list,n:Math.max(0,-tot.diff)});
+}
+function _phqcLotsSorted(lots){
+  return(lots||[]).slice().sort(function(a,b){
+    const sa=typeof a.seq==='number'?a.seq:1e9,sb=typeof b.seq==='number'?b.seq:1e9;
+    if(sa!==sb)return sa-sb;
+    return(a.at||0)-(b.at||0);
+  });
+}
+function _phqcLotSizesText(x){
+  const sz=x&&x.sizes&&typeof x.sizes==='object'?x.sizes:{};
+  const keys=typeof phQcSizeOrder==='function'?phQcSizeOrder(null,Object.keys(sz)):Object.keys(sz);
+  return keys.map(function(k){return k+' '+sz[k];}).join(' · ');
+}
+function _phqcLotTotal(x){
+  if(x&&typeof x.total==='number')return x.total;
+  const sz=x&&x.sizes&&typeof x.sizes==='object'?x.sizes:{};
+  return Object.keys(sz).reduce(function(a,k){return a+(+sz[k]||0);},0);
+}
+// One saved lot, read-only: "Lot #1 · Mon 12 Oct 2026, 4:00 PM by Faizan" / "40 pcs delivered to QC: S 10 · M 15 · L 10 · XL 5".
+// The stamp is the lot's `at` (the moment it was saved, bound by the rules to the server clock); the lot's `day` is the day the person
+// said the units were delivered -- it may be earlier than the day of `at` (a delivery entered later), and is then said beside it.
+function phqcLotNode(x,opts){
+  const o=opts||{};
+  const li=phEl('li','phaf-lot'+(x.status==='void'?' phaf-lot-void':''));
+  li.setAttribute('data-lot',_phqcStr(x.id));
+  const head=phEl('span','phaf-lot-h phaf-stamp');
+  phI18nSet(head,phI18nD('afloat.lot_head',{n:x.seq!=null?x.seq:'?',when:phqcStampBy(x.at,_phqcStr(x.byName)||_phqcWho(x.by))}));
+  li.appendChild(head);
+  const body=phEl('span','phaf-lot-b');
+  phI18nSet(body,phI18nD('afloat.lot_body',{n:_phqcLotTotal(x),list:_phqcLotSizesText(x)}));
+  li.appendChild(body);
+  const atDay=typeof phDay==='function'?phDay(x.at):null;
+  if(x.day&&atDay&&x.day!==atDay)li.appendChild(phEl('span','phaf-lot-day',phI18nD('afloat.lot_day',{day:_phqcDayLong(x.day)})));
+  if(x.src==='legacy')li.appendChild(phEl('span','phaf-lot-tag',phI18nD('afloat.lot_legacy')));
+  if(x.note){const n=phEl('span','phaf-lot-note');n.textContent='“'+_phqcStr(x.note)+'”';li.appendChild(n);}
+  if(x.status==='void'){
+    const v=phEl('span','phaf-lot-voidw phaf-stamp');
+    phI18nSet(v,phI18nD('afloat.lot_voided',{when:phqcStampBy(x.voidedAt,_phqcWho(x.voidedBy)),why:_phqcStr(x.voidReason)}));
+    li.appendChild(v);
+  }
+  if(o.voidBtn){
+    const b=_phqcBtn('ph-btn phaf-void',phI18nD('afloat.a_void'),function(){phqcVoidAsk(o.poId,_phqcStr(x.id),b.id);},{'aria-label':phI18nAttr(phI18nD('afloat.a_void_aria',{n:x.seq}))});
+    b.id='phaf-void-'+_phqcStr(x.id);
+    li.appendChild(b);
+  }
+  return li;
+}
+function _phqcLots(t,ctx){
   const sec=phEl('section','phaf-lots');
   sec.appendChild(phEl('h3','ph-card-title',phI18nD('afloat.lots')));
+  sec.appendChild(phEl('p','ph-note phaf-lots-what',phI18nD('afloat.lots_what')));
   if(!t.lotsOk){sec.appendChild(phEl('p','ph-note phaf-unread',phI18nD('afloat.lots_unread')));return sec;}
-  const l=(t.lots||[]).slice().sort(function(a,b){return(b.at||0)-(a.at||0);});
-  if(!l.length){sec.appendChild(phEl('p','ph-note',phI18nD('afloat.lots_none')));return sec;}
+  const l=_phqcLotsSorted(t.lots);
+  if(!l.length){sec.appendChild(phEl('p','ph-note',phI18nD('afloat.lots_none')));sec.appendChild(phEl('p','ph-note phaf-noedit',phI18nD('afloat.no_edit')));return sec;}
   const ul=phEl('ul','phaf-lotlist');
-  l.forEach(function(x){
-    const li=phEl('li','phaf-lot'+(x.status==='void'?' phaf-lot-void':''));
-    const sz=x.sizes&&typeof x.sizes==='object'?x.sizes:{};
-    const keys=typeof phQcSizeOrder==='function'?phQcSizeOrder(null,Object.keys(sz)):Object.keys(sz);
-    const head=phEl('span','phaf-lot-h');
-    head.textContent='#'+(x.seq!=null?x.seq:'?')+' · '+(_phqcDay(x.day||x.at,today)||'—')+(typeof x.at==='number'?' '+_phqcClock(x.at):'')+' · '+(_phqcStr(x.byName)||_phqcWho(x.by)||'—');
-    li.appendChild(head);
-    const body=phEl('span','phaf-lot-b');
-    body.textContent=keys.map(function(k){return k+' '+sz[k];}).join(' ')+' · '+(x.total!=null?x.total:keys.reduce(function(a,k){return a+(+sz[k]||0);},0))+' pcs';
-    li.appendChild(body);
-    if(x.src==='legacy')li.appendChild(phEl('span','phaf-lot-tag',phI18nD('afloat.lot_legacy')));
-    if(x.note){const n=phEl('span','phaf-lot-note');n.textContent='“'+_phqcStr(x.note)+'”';li.appendChild(n);}
-    if(x.status==='void'){const v=phEl('span','phaf-lot-voidw');v.appendChild(phEl('span','',phI18nD('afloat.lot_void')));const why=phEl('span','');why.textContent=' · '+_phqcStr(x.voidReason);v.appendChild(why);li.appendChild(v);}
-    ul.appendChild(li);
-  });
+  const now=Date.now();
+  l.forEach(function(x){ul.appendChild(phqcLotNode(x,{poId:t.id,voidBtn:phqcCanVoid(t,x,ctx.user,now)}));});
   sec.appendChild(ul);
+  sec.appendChild(phEl('p','ph-note phaf-noedit',phI18nD('afloat.no_edit')));
   return sec;
 }
 function _phqcActions(t,ctx){
   const sec=phEl('section','phaf-actions');
-  const r=t.rec;
-  const btns=[];
-  const off=function(key){const b=phEl('button','ph-btn phaf-off',phI18nD(key));b.setAttribute('type','button');b.setAttribute('disabled','disabled');b.disabled=true;b.setAttribute('aria-disabled','true');b.setAttribute('aria-describedby','phaf-off-why');return b;};
-  const closed=t.recon&&t.recon.status==='closed';
-  if(!closed&&r&&r.ok&&r.cut)btns.push(off('afloat.a_receive'));
-  if(phqcIsManager(ctx.user)&&t.exp&&t.exp.ok&&t.exp.source==='live'&&t.reconOk)btns.push(off('afloat.a_lock'));
-  if(!closed&&r&&r.ok&&(r.canClose.floor||(phqcIsManager(ctx.user)&&r.canClose.manager)))btns.push(off(r.phase==='ready'?'afloat.a_close':'afloat.a_close_short'));
-  if(!btns.length)return sec;
-  const row=phEl('div','phaf-arow');btns.forEach(function(b){row.appendChild(b);});
-  sec.appendChild(row);
-  const why=phEl('p','ph-note phaf-off-why',phI18nD('afloat.a_soon'));why.id='phaf-off-why';sec.appendChild(why);
+  const r=t.rec,rc=t.recon;
+  const closed=!!rc&&rc.status==='closed';
+  const mgr=phqcIsManager(ctx.user),qc=phqcIsQc(ctx.user);
+  const row=phEl('div','phaf-arow');
+  const why=[];
+  const off=function(key,reasonKey,params,id){
+    const b=phEl('button','ph-btn phaf-off',phI18nD(key));b.setAttribute('type','button');b.setAttribute('disabled','disabled');b.disabled=true;b.setAttribute('aria-disabled','true');
+    const wid='phaf-off-why-'+why.length;b.setAttribute('aria-describedby',wid);if(id)b.id=id;
+    why.push({id:wid,text:phI18nD(reasonKey,params||undefined)});
+    return b;
+  };
+  if(closed){
+    sec.appendChild(phEl('p','ph-note phaf-closed-note',phI18nD('afloat.closed_no_more')));
+    return sec;
+  }
+  if(r&&r.ok&&r.cut&&(mgr||qc)){
+    if(phqcCanReceive(t,ctx.user)){
+      const b=_phqcBtn('ph-btn ph-btn-primary phaf-recv-btn',phI18nD('afloat.a_receive'),function(){phqcSheetOpen(t.id);});b.id='phaf-recv-btn';row.appendChild(b);
+    }else row.appendChild(off('afloat.a_receive','afloat.why_recv_unread',null,'phaf-recv-btn'));
+  }
+  if(mgr&&t.exp&&t.exp.ok&&t.exp.source==='live'&&t.reconOk&&!rc){
+    const b=_phqcBtn('ph-btn phaf-lock-btn',phI18nD('afloat.a_lock'),function(){phqcLockAsk(t.id,b.id);});b.id='phaf-lock-btn';row.appendChild(b);
+  }
+  let note=null;
+  if(r&&r.ok&&rc){
+    if(r.phase==='ready'&&(mgr||qc)){
+      if(_phqcStageOkForClose(t.stage)){const b=_phqcBtn('ph-btn ph-btn-primary phaf-close-btn',phI18nD('afloat.a_close'),function(){phqcCloseAsk(t.id,b.id);});b.id='phaf-close-btn';row.appendChild(b);}
+      else row.appendChild(off('afloat.a_close','afloat.why_close_stage',{stage:phI18nD(PHAF_STAGE_KEYS[t.stage]||'afloat.st_unknown')},'phaf-close-btn'));
+    }else if(r.phase==='receiving'||r.phase==='short'){
+      if(mgr)row.appendChild(off('afloat.a_close_short','afloat.why_close_qc7',null,'phaf-close-btn'));
+      else if(qc&&r.phase==='receiving')row.appendChild(off('afloat.a_close','afloat.why_close_wait',{list:_phqcStillList(r.verdict)||'—'},'phaf-close-btn'));
+      else if(qc)note=phI18nD('afloat.why_close_short');
+    }
+  }
+  if(row.firstChild)sec.appendChild(row);
+  why.forEach(function(w){const p=phEl('p','ph-note phaf-off-why',w.text);p.id=w.id;sec.appendChild(p);});
+  if(note)sec.appendChild(phEl('p','ph-note phaf-off-why phaf-short-note',note));
   return sec;
 }
 function _phqcHistory(t,today){
+  void today;
   const ev=[];
   const L=t.recon&&t.recon.cutLock;
-  if(L&&typeof L.lockedAt==='number')ev.push({at:L.lockedAt,txt:phI18nT('afloat.h_locked',{when:_phqcWhen(L.lockedAt,today),who:_phqcWho(L.lockedBy)},'en')});
-  (t.lots||[]).forEach(function(x){if(typeof x.at==='number')ev.push({at:x.at,txt:phI18nT(x.status==='void'?'afloat.h_lot_void':'afloat.h_lot',{n:x.seq!=null?x.seq:'?',when:_phqcWhen(x.at,today)},'en')});});
-  (t.recon&&Array.isArray(t.recon.overrides)?t.recon.overrides:[]).forEach(function(o){if(o&&typeof o.at==='number')ev.push({at:o.at,txt:phI18nT('afloat.h_override_'+(o.kind==='relock'||o.kind==='reopen'||o.kind==='close_short'?o.kind:'other'),{when:_phqcWhen(o.at,today),who:_phqcStr(o.byName)||_phqcWho(o.by)},'en')});});
-  if(t.recon&&typeof t.recon.closedAt==='number')ev.push({at:t.recon.closedAt,txt:phI18nT('afloat.h_closed',{when:_phqcWhen(t.recon.closedAt,today)},'en')});
+  if(L&&typeof L.lockedAt==='number')ev.push({at:L.lockedAt,d:phI18nD('afloat.h_locked',{when:phqcStampBy(L.lockedAt,_phqcWho(L.lockedBy))})});
+  (t.lots||[]).forEach(function(x){
+    if(typeof x.at==='number')ev.push({at:x.at,d:phI18nD('afloat.h_lot',{n:x.seq!=null?x.seq:'?',when:phqcStampBy(x.at,_phqcStr(x.byName)||_phqcWho(x.by))})});
+    if(x.status==='void'&&typeof x.voidedAt==='number')ev.push({at:x.voidedAt,d:phI18nD('afloat.h_lot_voided',{n:x.seq!=null?x.seq:'?',when:phqcStampBy(x.voidedAt,_phqcWho(x.voidedBy))})});
+  });
+  (t.recon&&Array.isArray(t.recon.overrides)?t.recon.overrides:[]).forEach(function(o){if(o&&typeof o.at==='number')ev.push({at:o.at,d:phI18nD('afloat.h_override_'+(o.kind==='relock'||o.kind==='reopen'||o.kind==='close_short'?o.kind:'other'),{when:phqcStampBy(o.at,_phqcStr(o.byName)||_phqcWho(o.by))})});});
+  if(t.recon&&typeof t.recon.closedAt==='number'&&t.recon.closedAt>0)ev.push({at:t.recon.closedAt,d:phI18nD('afloat.h_closed',{when:phqcStampBy(t.recon.closedAt,_phqcStr(t.recon.closedByName)||_phqcWho(t.recon.closedBy))})});
   if(!ev.length)return null;
   ev.sort(function(a,b){return a.at-b.at;});
-  const p=phEl('p','ph-note phaf-hist');
-  p.appendChild(phEl('span','phaf-vlab',phI18nD('afloat.history')));
-  const s=phEl('span','');s.textContent=' '+ev.map(function(e){return e.txt;}).join(' · ');p.appendChild(s);
-  return p;
+  const sec=phEl('section','phaf-hist');
+  sec.appendChild(phEl('h3','phaf-vlab',phI18nD('afloat.history')));
+  const ul=phEl('ul','phaf-histlist');
+  ev.forEach(function(e){ul.appendChild(phEl('li','phaf-hist-i phaf-stamp',e.d));});
+  sec.appendChild(ul);
+  return sec;
+}
+
+/* ── the receive sheet (Screen C, phone-first) ─────────────────────────────────────────────────────────────────────────── */
+function _phqcPaint(){if(_phqcCtx&&typeof _phqcCtx.repaint==='function'&&_phqcIsHere())_phqcCtx.repaint();}
+function _phqcToday(){return typeof phDay==='function'?phDay(Date.now()):'';}
+// Opens a BLANK sheet for one more delivery (nothing carried over from an earlier visit or a draft that was not saved).
+function phqcSheetOpen(id){
+  const t=_phqcFindTile(String(id||''));
+  if(!t||!phqcCanReceive(t,_phqcUser()))return false;
+  _phqcSheet={poId:t.id,vals:{},note:'',day:_phqcToday(),step:'edit',msg:null,saving:false};
+  _phqcFlash=null;_phqcDlg=null;
+  const first=t.rec.cut.order[0];
+  _phqcFocusId=first?'phaf-rx-in-'+first:'phaf-sheet-x';
+  _phqcPaint();
+  return true;
+}
+// Closes the sheet. A sheet that was not saved is thrown away: nothing was written and nothing is kept.
+function phqcSheetClose(){
+  if(!_phqcSheet)return false;
+  _phqcSheet=null;_phqcFocusId='phaf-recv-btn';
+  _phqcPaint();
+  return true;
+}
+// The lot as typed: canonical size -> whole number, a blank box is 0; a box that is not a whole number stays its text (phQcLotProblem says so).
+function _phqcSheetLot(S){
+  const out={};
+  Object.keys(S.vals||{}).forEach(function(k){
+    const v=String(S.vals[k]==null?'':S.vals[k]).trim();
+    if(v==='')return;
+    out[k]=/^[0-9]+$/.test(v)?parseInt(v,10):v;
+  });
+  return out;
+}
+// The live preview: the refusal (null = may be saved), the totals and the verdict after this lot. Pure over the tile.
+function phqcSheetPreview(t,vals){
+  const r=t.rec,cut=r.cut.sizes,recv=r.recv?r.recv.sizes:{},model=_phqcModelOf(t.po);
+  const lot=_phqcSheetLot({vals:vals||{}});
+  const problem=typeof phQcLotProblem==='function'?phQcLotProblem(cut,recv,lot,{model:model}):'the QC core is not loaded';
+  let lotTotal=0;Object.keys(lot).forEach(function(k){if(typeof lot[k]==='number')lotTotal+=lot[k];});
+  const after={};
+  r.cut.order.forEach(function(k){after[k]=(_phqcHas(recv,k)?recv[k]:0)+(typeof lot[k]==='number'?lot[k]:0);});
+  Object.keys(recv).forEach(function(k){if(!_phqcHas(after,k))after[k]=recv[k];});
+  const v=typeof phQcVerdict==='function'?phQcVerdict(cut,after,{model:model}):null;
+  let phase=null;
+  if(v&&v.ok)phase=v.total.state==='short'?'receiving':(v.state==='exact'||v.state==='within'||v.state==='over')?'ready':'short';
+  return{lot:lot,lotTotal:lotTotal,problem:problem,empty:lotTotal===0&&!Object.keys(lot).some(function(k){return typeof lot[k]!=='number';}),after:after,verdict:v,phase:phase,
+    recvTotal:r.recv?r.recv.total:0,cutTotal:r.cut.total};
+}
+// "after this lot: 120 of 120 — exact" (a descriptor)
+function _phqcAfterText(p){
+  const n=p.recvTotal+p.lotTotal;
+  if(!p.verdict||!p.verdict.ok)return phI18nD('afloat.rx_after_plain',{n:n,cut:p.cutTotal});
+  if(p.phase==='receiving')return phI18nD('afloat.rx_after_recv',{n:n,cut:p.cutTotal,list:_phqcStillList(p.verdict)});
+  if(p.phase==='ready')return phI18nD('afloat.rx_after_'+(p.verdict.state==='exact'?'exact':p.verdict.state==='over'?'over':'within'),{n:n,cut:p.cutTotal});
+  return phI18nD('afloat.rx_after_short',{n:n,cut:p.cutTotal});
+}
+// One size's hint while typing: "✓ complete", "→ will be exact", "→ 5 still expected after this lot", "would be 2 over — allowed 1".
+function _phqcRowHint(c,have,add,allow){
+  const a=typeof add==='number'?add:0,after=have+a;
+  if(after>c+allow)return{key:'afloat.rx_h_over',p:{n:after-c,a:allow},bad:true};
+  if(after===c)return{key:a?'afloat.rx_h_exact':'afloat.rx_h_complete',p:null,bad:false};
+  if(after>c)return{key:'afloat.rx_h_overok',p:{n:after-c,a:allow},bad:false};
+  return{key:a?'afloat.rx_h_still_after':'afloat.rx_h_still',p:{n:c-after},bad:false};
+}
+function phqcSheetView(host,ctx,t){
+  const S=_phqcSheet,r=t.rec,cut=r.cut,recv=r.recv?r.recv.sizes:{};
+  const wrap=phEl('section','phaf-sheet');wrap.setAttribute('aria-labelledby','phaf-stitle');
+  const bar=phEl('div','phaf-dbar');
+  const x=_phqcBtn('ph-btn phaf-back',phI18nD('afloat.rx_cancel'),function(){phqcSheetClose();});x.id='phaf-sheet-x';
+  bar.appendChild(x);
+  const title=phEl('h2','ph-title phaf-dtitle');title.id='phaf-stitle';
+  phI18nSet(title,phI18nD('afloat.rx_title',{po:t.id+(t.code?' · '+t.code:'')+(t.name?' · '+t.name:'')}));
+  bar.appendChild(title);
+  wrap.appendChild(bar);
+  const hd=phEl('div','phaf-dhead');
+  hd.appendChild(phqcImageNode(t.po,'tile'));
+  const facts=phEl('div','phaf-facts');
+  facts.appendChild(phEl('p','phaf-fact phaf-rx-what',phI18nD('afloat.rx_what')));
+  facts.appendChild(phEl('p','phaf-fact',phI18nD(t.exp&&t.exp.source==='lock'?'afloat.rx_cut_final':'afloat.rx_cut_locks',{n:cut.total})));
+  const still=_phqcStillLine(t);if(still)facts.appendChild(phEl('p','phaf-fact phaf-still',still));
+  hd.appendChild(facts);
+  wrap.appendChild(hd);
+  const pv=phqcSheetPreview(t,S.vals);
+  const msg=phEl('p','phaf-rx-msg');msg.id='phaf-rx-msg';msg.setAttribute('role','alert');
+  if(S.msg){phI18nSet(msg,S.msg);msg.classList.add('phaf-rx-msg-on');}
+  if(S.step==='review'){
+    // the final step: the numbers once more, BEFORE the save, because a saved lot cannot be edited
+    const rv=phEl('div','phaf-review');rv.setAttribute('role','group');rv.setAttribute('aria-labelledby','phaf-rv-title');
+    const h=phEl('h3','ph-card-title',phI18nD('afloat.rv_title'));h.id='phaf-rv-title';rv.appendChild(h);
+    rv.appendChild(phEl('p','ph-note phaf-noedit',phI18nD('afloat.rv_final')));
+    const tb=document.createElement('table');tb.className='phaf-table phaf-rv-table';
+    const tr0=document.createElement('tr');
+    ['afloat.t_size','afloat.rx_c_lot','afloat.rx_c_after','afloat.t_cut'].forEach(function(k){const th=document.createElement('th');th.setAttribute('scope','col');phI18nSet(th,phI18nD(k));tr0.appendChild(th);});
+    const th0=document.createElement('thead');th0.appendChild(tr0);tb.appendChild(th0);
+    const tbody=document.createElement('tbody');
+    cut.order.forEach(function(k){
+      const add=typeof pv.lot[k]==='number'?pv.lot[k]:0;
+      const tr=document.createElement('tr');
+      [k,String(add),String(pv.after[k]),String(cut.sizes[k])].forEach(function(v,i){const td=document.createElement('td');td.className=i?'phaf-n':'phaf-k';td.textContent=v;tr.appendChild(td);});
+      tbody.appendChild(tr);
+    });
+    const trt=document.createElement('tr');trt.className='phaf-total';
+    [phI18nT('afloat.t_total',null,'en'),String(pv.lotTotal),String(pv.recvTotal+pv.lotTotal),String(cut.total)].forEach(function(v,i){const td=document.createElement('td');td.className=i?'phaf-n':'phaf-k';td.textContent=v;trt.appendChild(td);});
+    tbody.appendChild(trt);tb.appendChild(tbody);
+    const tw=phEl('div','phaf-tablewrap');tw.appendChild(tb);rv.appendChild(tw);
+    rv.appendChild(phEl('p','phaf-fact phaf-rx-after',_phqcAfterText(pv)));
+    rv.appendChild(phEl('p','phaf-fact',phI18nD('afloat.rv_day',{day:_phqcDayLong(S.day)||S.day})));
+    if(S.note){const n=phEl('p','phaf-fact phaf-rv-note');n.textContent='“'+S.note+'”';rv.appendChild(n);}
+    wrap.appendChild(rv);
+    wrap.appendChild(msg);
+    const acts=phEl('div','phaf-rx-acts');
+    const save=_phqcBtn('ph-btn ph-btn-primary phaf-rx-save',phI18nD(S.saving?'afloat.rx_saving':'afloat.rx_save'),function(){phqcSheetSave();});save.id='phaf-rx-save';
+    if(S.saving||_phqcBusy){save.setAttribute('aria-disabled','true');save.setAttribute('aria-busy','true');}
+    acts.appendChild(save);
+    const edit=_phqcBtn('ph-btn phaf-rx-edit',phI18nD('afloat.rx_edit'),function(){if(_phqcBusy)return;S.step='edit';S.msg=null;_phqcFocusId='phaf-rx-review';_phqcPaint();});edit.id='phaf-rx-edit';
+    acts.appendChild(edit);
+    wrap.appendChild(acts);
+  }else{
+    const form=phEl('div','phaf-rx');
+    const dl=phEl('label','phaf-field phaf-rx-dayf');
+    dl.appendChild(phEl('span','phaf-lab',phI18nD('afloat.rx_day')));
+    const di=phEl('input','phaf-rx-day');di.id='phaf-rx-day';di.setAttribute('type','date');di.value=S.day||'';
+    const today=_phqcToday();if(today)di.setAttribute('max',today);
+    if(typeof t.po.cutDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(t.po.cutDate))di.setAttribute('min',t.po.cutDate);
+    di.addEventListener('input',function(){S.day=di.value;_phqcSheetLive(t);});di.addEventListener('change',function(){S.day=di.value;_phqcSheetLive(t);});
+    dl.appendChild(di);form.appendChild(dl);
+    const tb=document.createElement('table');tb.className='phaf-table phaf-rx-table';
+    const cap=document.createElement('caption');cap.className='phaf-cap';phI18nSet(cap,phI18nD('afloat.rx_caption'));tb.appendChild(cap);
+    const tr0=document.createElement('tr');
+    ['afloat.t_size','afloat.rx_c_cut','afloat.rx_c_sofar','afloat.rx_c_lot'].forEach(function(k){const th=document.createElement('th');th.setAttribute('scope','col');phI18nSet(th,phI18nD(k));tr0.appendChild(th);});
+    const th0=document.createElement('thead');th0.appendChild(tr0);tb.appendChild(th0);
+    const tbody=document.createElement('tbody');
+    const inputs=[];
+    cut.order.forEach(function(k,ix){
+      const tr=document.createElement('tr');
+      const c=cut.sizes[k],have=_phqcHas(recv,k)?recv[k]:0;
+      const tdk=document.createElement('td');tdk.className='phaf-k';tdk.textContent=k;tr.appendChild(tdk);
+      const tdc=document.createElement('td');tdc.className='phaf-n';tdc.textContent=String(c);tr.appendChild(tdc);
+      const tdh=document.createElement('td');tdh.className='phaf-n';tdh.textContent=String(have);tr.appendChild(tdh);
+      const tdi=document.createElement('td');tdi.className='phaf-rx-cell';
+      const grp=phEl('div','phaf-step');
+      const inp=phEl('input','phaf-rx-in');inp.id='phaf-rx-in-'+k;inp.setAttribute('type','number');inp.setAttribute('inputmode','numeric');
+      inp.setAttribute('min','0');inp.setAttribute('step','1');inp.setAttribute('autocomplete','off');
+      inp.setAttribute('aria-label',phI18nAttr(phI18nD('afloat.rx_in_aria',{size:k})));
+      inp.value=S.vals[k]!=null?String(S.vals[k]):'';
+      const set=function(v){inp.value=v;S.vals[k]=v;_phqcSheetLive(t);};
+      const minus=_phqcBtn('ph-btn phaf-stepb',null,function(){const n=parseInt(inp.value,10);set(String(isFinite(n)&&n>0?n-1:0));},{'aria-label':phI18nAttr(phI18nD('afloat.rx_minus',{size:k}))});minus.textContent='−';
+      const plus=_phqcBtn('ph-btn phaf-stepb',null,function(){const n=parseInt(inp.value,10);set(String(isFinite(n)&&n>=0?n+1:1));},{'aria-label':phI18nAttr(phI18nD('afloat.rx_plus',{size:k}))});plus.textContent='+';
+      inp.addEventListener('input',function(){S.vals[k]=inp.value;_phqcSheetLive(t);});
+      inp.addEventListener('focus',function(){_phqcFocusId=inp.id;});
+      inp.addEventListener('keydown',function(e){
+        if(e&&e.key==='Enter'){if(e.preventDefault)e.preventDefault();const nx=inputs[ix+1];const to=nx||document.getElementById('phaf-rx-note');if(to&&typeof to.focus==='function')to.focus();}
+      });
+      inputs.push(inp);
+      grp.appendChild(minus);grp.appendChild(inp);grp.appendChild(plus);
+      tdi.appendChild(grp);
+      const hint=phEl('span','phaf-rx-hint');hint.id='phaf-rx-hint-'+k;hint.setAttribute('aria-live','polite');
+      tdi.appendChild(hint);
+      tr.appendChild(tdi);
+      tbody.appendChild(tr);
+    });
+    tb.appendChild(tbody);
+    const tw=phEl('div','phaf-tablewrap');tw.appendChild(tb);form.appendChild(tw);
+    const tot=phEl('p','phaf-fact phaf-rx-total');tot.id='phaf-rx-total';tot.setAttribute('aria-live','polite');form.appendChild(tot);
+    const prob=phEl('p','phaf-rx-problem');prob.id='phaf-rx-problem';prob.setAttribute('role','status');form.appendChild(prob);
+    const nl=phEl('label','phaf-field phaf-rx-notef');
+    nl.appendChild(phEl('span','phaf-lab',phI18nD('afloat.rx_note')));
+    const ta=phEl('textarea','phaf-rx-note');ta.id='phaf-rx-note';ta.setAttribute('maxlength','200');ta.setAttribute('rows','2');ta.value=S.note||'';
+    const cnt=phEl('span','phaf-rx-count');cnt.id='phaf-rx-count';
+    ta.addEventListener('input',function(){if(ta.value.length>200)ta.value=ta.value.slice(0,200);S.note=ta.value;cnt.textContent=ta.value.length+' / 200';});
+    cnt.textContent=(S.note||'').length+' / 200';
+    nl.appendChild(ta);nl.appendChild(cnt);form.appendChild(nl);
+    wrap.appendChild(form);
+    wrap.appendChild(msg);
+    const acts=phEl('div','phaf-rx-acts');
+    const go=_phqcBtn('ph-btn ph-btn-primary phaf-rx-review',phI18nD('afloat.rx_review'),function(){phqcSheetReview();});go.id='phaf-rx-review';
+    acts.appendChild(go);
+    wrap.appendChild(acts);
+  }
+  // the lots already delivered (read-only, oldest first, with their day and time)
+  const so=phEl('section','phaf-lots phaf-rx-sofar');
+  so.appendChild(phEl('h3','ph-card-title',phI18nD('afloat.rx_sofar',{n:(t.lots||[]).filter(function(l){return l&&l.status==='live';}).length})));
+  const l=_phqcLotsSorted(t.lots);
+  if(!l.length)so.appendChild(phEl('p','ph-note',phI18nD('afloat.lots_none')));
+  else{const ul=phEl('ul','phaf-lotlist');l.forEach(function(xx){ul.appendChild(phqcLotNode(xx,{}));});so.appendChild(ul);}
+  so.appendChild(phEl('p','ph-note phaf-noedit',phI18nD('afloat.no_edit')));
+  wrap.appendChild(so);
+  host.appendChild(wrap);
+  if(S.step!=='review')_phqcSheetLive(t);
+}
+// Repaints ONLY the preview nodes (a keystroke never rebuilds the box the caret is in).
+function _phqcSheetLive(t){
+  const S=_phqcSheet;if(!S||S.step!=='edit')return;
+  const pv=phqcSheetPreview(t,S.vals);
+  const recv=t.rec.recv?t.rec.recv.sizes:{};
+  t.rec.cut.order.forEach(function(k){
+    const h=document.getElementById('phaf-rx-hint-'+k);if(!h)return;
+    const raw=String(S.vals[k]==null?'':S.vals[k]).trim();
+    const add=raw===''?0:(/^[0-9]+$/.test(raw)?parseInt(raw,10):null);
+    if(add===null){phI18nSet(h,phI18nD('afloat.rx_h_bad'));h.className='phaf-rx-hint phaf-rx-hint-bad';return;}
+    const c=t.rec.cut.sizes[k],have=_phqcHas(recv,k)?recv[k]:0,allow=typeof phQcAllowance==='function'?phQcAllowance(c):0;
+    const hn=_phqcRowHint(c,have,add,allow);
+    phI18nSet(h,phI18nD(hn.key,hn.p||undefined));
+    h.className='phaf-rx-hint'+(hn.bad?' phaf-rx-hint-bad':'');
+  });
+  const tot=document.getElementById('phaf-rx-total');
+  if(tot)phI18nSet(tot,phI18nD('afloat.rx_total',{n:pv.lotTotal,after:_phqcAfterText(pv)}));
+  const prob=document.getElementById('phaf-rx-problem');
+  let dayProb=_phqcDayProblem(t,S.day);
+  const txt=dayProb||(pv.empty?null:pv.problem);
+  if(prob){if(txt){prob.textContent=String(txt);prob.className='phaf-rx-problem phaf-rx-problem-on';}else{prob.textContent=pv.empty?phI18nT('afloat.rx_enter',null,'en'):'';prob.className='phaf-rx-problem'+(pv.empty?' phaf-rx-problem-hint':'');}}
+  const go=document.getElementById('phaf-rx-review');
+  if(go){const no=!!(dayProb||pv.problem);if(no){go.setAttribute('aria-disabled','true');go.setAttribute('aria-describedby','phaf-rx-problem');}else{go.removeAttribute('aria-disabled');go.removeAttribute('aria-describedby');}}
+}
+// The day the units were delivered: a day, not in the future (PKT), not before the cut day. null = fine, else the sentence.
+function _phqcDayProblem(t,day){
+  const today=_phqcToday();
+  if(typeof day!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(day)||(typeof phIsDay==='function'&&!phIsDay(day)))return phI18nT('afloat.rx_day_bad',null,'en');
+  if(today&&day>today)return phI18nT('afloat.rx_day_future',{day:day},'en');
+  if(typeof t.po.cutDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(t.po.cutDate)&&day<t.po.cutDate)return phI18nT('afloat.rx_day_before_cut',{day:t.po.cutDate},'en');
+  return null;
+}
+// Step 1 -> step 2: the numbers are checked (the same core check the writer runs) and shown once more before the save.
+function phqcSheetReview(){
+  const S=_phqcSheet;if(!S||_phqcBusy)return false;
+  const t=_phqcFindTile(S.poId);if(!t||!phqcCanReceive(t,_phqcUser())){S.msg=phI18nD('afloat.rx_gone');_phqcPaint();return false;}
+  const pv=phqcSheetPreview(t,S.vals);
+  const dp=_phqcDayProblem(t,S.day);
+  if(dp||pv.problem){S.msg=dp||pv.problem;_phqcFocusId='phaf-rx-msg';_phqcPaint();return false;}
+  S.msg=null;S.step='review';_phqcFocusId='phaf-rx-save';_phqcPaint();
+  return true;
+}
+// Step 2: the save (phQcAddLot). One at a time; offline is refused out loud; a stale revision reloads the latest copy and keeps the
+// numbers on screen (nothing of this person's was saved, nothing of the other person's is lost).
+async function phqcSheetSave(){
+  const S=_phqcSheet;if(!S||S.step!=='review')return{ok:false,code:'no-sheet'};
+  if(_phqcBusy||S.saving)return{ok:false,code:'busy'};
+  const t=_phqcFindTile(S.poId);
+  if(!t||!phqcCanReceive(t,_phqcUser())){S.step='edit';S.msg=phI18nD('afloat.rx_gone');_phqcPaint();return{ok:false,code:'gone'};}
+  const pv=phqcSheetPreview(t,S.vals);
+  if(pv.problem){S.step='edit';S.msg=pv.problem;_phqcPaint();return{ok:false,code:'refused'};}
+  if(_phqcOffline()){S.msg=phI18nD('afloat.rx_offline');_phqcPaint();return{ok:false,code:'offline'};}
+  if(typeof phQcAddLot!=='function'){S.msg=phI18nD('afloat.no_writer');_phqcPaint();return{ok:false,code:'no-writer'};}
+  _phqcBusy=true;S.saving=true;_phqcPaint();
+  let res;
+  const rev=t.recon&&typeof t.recon.rev==='number'?t.recon.rev:0;
+  try{res=await phQcAddLot(t.id,{sizes:pv.lot,day:S.day,note:S.note},{expectedRev:rev});}
+  catch(e){res={ok:false,code:'failed',error:String(e&&e.message||e)};}
+  _phqcBusy=false;
+  if(_phqcSheet===S)S.saving=false;
+  if(res&&res.ok){
+    _phqcSheet=null;
+    await _phqcRefreshPo(t.id);
+    const nt=_phqcFindTile(t.id);
+    const lotAt=res.lot&&typeof res.lot.at==='number'?res.lot.at:Date.now();
+    _phqcFlash={poId:t.id,tone:'ok',text:phI18nD('afloat.ok_lot',{n:res.seq,when:phqcStampBy(lotAt,(res.lot&&res.lot.byName)||_phqcWho(_phqcUser())),pcs:res.total,po:t.id,after:_phqcNowText(nt)})};
+    if(typeof showToast==='function'){try{showToast(String(phI18nT('afloat.ok_lot_toast',{n:res.seq,pcs:res.total,po:t.id},'en')));}catch(e){}}
+    _phqcFocusId='phaf-flash';
+    _phqcPaint();
+    return res;
+  }
+  if(res&&res.code==='stale'){
+    await _phqcReloadQc(t.id);
+    if(_phqcSheet===S){S.step='edit';S.msg=phI18nD('afloat.rx_stale',{po:t.id});}
+  }else if(_phqcSheet===S){
+    if(res&&(res.code==='refused'||res.code==='invalid'))S.step='edit';
+    S.msg=_phqcResMsg(res);
+  }
+  _phqcFocusId='phaf-rx-msg';
+  _phqcPaint();
+  return res||{ok:false,code:'failed'};
+}
+// What a PO now reads, after a write ("now exact: 120 of 120 — it can be closed", "still expected: XL 15 (15 pcs)").
+function _phqcNowText(t){
+  const r=t&&t.rec;
+  if(!r||!r.ok||!r.verdict)return phI18nD('afloat.now_unknown');
+  const tt=r.verdict.total;
+  if(r.phase==='ready')return phI18nD('afloat.now_'+(r.verdict.state==='exact'?'exact':r.verdict.state==='over'?'over':'within'),{n:tt.recv,cut:tt.cut});
+  if(r.phase==='receiving')return phI18nD('afloat.now_recv',{n:tt.recv,cut:tt.cut,list:_phqcStillList(r.verdict)});
+  if(r.phase==='closed')return phI18nD('afloat.now_closed',{n:tt.recv,cut:tt.cut});
+  return phI18nD('afloat.now_short',{n:tt.recv,cut:tt.cut});
+}
+function _phqcResMsg(res){
+  if(!res)return phI18nD('afloat.err_unknown');
+  if(res.code==='offline')return phI18nD('afloat.rx_offline');
+  if(res.code==='permission')return phI18nD('afloat.err_permission');
+  return _phqcStr(res.error)||phI18nD('afloat.err_unknown');
+}
+// One PO document, read fresh after a write (so the tile and its stage are current). NEVER rejects; a failed read keeps the old row.
+async function _phqcRefreshPo(poId){
+  try{
+    if(typeof getDoc!=='function'||typeof doc!=='function')return false;
+    const snap=await _phqcTimeout(getDoc(doc(db,'pos',poId)),PHAF_TIMEOUT_MS);
+    if(!snap||(snap.metadata&&snap.metadata.fromCache===true)||!snap.exists())return false;
+    const row=Object.assign({},snap.data(),{fbKey:poId});
+    const rows=Array.isArray(_phqcPos.rows)?_phqcPos.rows.slice():[];
+    const i=rows.findIndex(function(p){return p&&(p.fbKey===poId||p.id===poId);});
+    if(i>-1)rows[i]=row;else rows.unshift(row);
+    _phqcPos.rows=rows;
+    return true;
+  }catch(e){return false;}
+}
+// After a stale refusal: the reconciliations, the lots and that PO, read again.
+async function _phqcReloadQc(poId){
+  const ps=[_phqcRefreshPo(poId)];
+  if(typeof phLoadStage==='function'){ps.push(phLoadStage('recon',{force:true}));ps.push(phLoadStage('lots',{force:true}));}
+  try{await Promise.all(ps);}catch(e){}
+}
+
+/* ── the confirms: Lock cut now, Close PO, Void a lot ───────────────────────────────────────────────────────────────────── */
+function phqcLockAsk(poId,opener){
+  const t=_phqcFindTile(poId);
+  if(!t||!phqcIsManager(_phqcUser())||!t.exp||t.exp.source!=='live'||t.recon||!t.reconOk)return false;
+  _phqcDlg={kind:'lock',poId:t.id,reason:'',msg:null,opener:opener||'phaf-lock-btn'};_phqcFocusId='phaf-dlg-go';_phqcPaint();return true;
+}
+function phqcCloseAsk(poId,opener){
+  const t=_phqcFindTile(poId);
+  if(!t||!t.rec||!t.rec.ok||t.rec.phase!=='ready'||!_phqcOpenRecon(t.recon)||!(phqcIsManager(_phqcUser())||phqcIsQc(_phqcUser())))return false;
+  _phqcDlg={kind:'close',poId:t.id,reason:'',msg:null,opener:opener||'phaf-close-btn'};_phqcFocusId='phaf-dlg-go';_phqcPaint();return true;
+}
+function phqcVoidAsk(poId,lotId,opener){
+  const t=_phqcFindTile(poId);
+  const x=t&&(t.lots||[]).filter(function(l){return _phqcStr(l.id)===lotId;})[0];
+  if(!x||!phqcCanVoid(t,x,_phqcUser()))return false;
+  _phqcDlg={kind:'void',poId:t.id,lotId:lotId,reason:'',msg:null,opener:opener||''};_phqcFocusId='phaf-dlg-reason';_phqcPaint();return true;
+}
+function phqcDlgClose(){
+  const d=_phqcDlg;if(!d)return false;
+  _phqcDlg=null;_phqcFocusId=d.opener||'';_phqcPaint();return true;
+}
+function _phqcDlgNode(t,ctx){
+  const d=_phqcDlg;void ctx;
+  const back=phEl('div','phaf-dlg-back');back.id='phaf-dlg-back';
+  const box=phEl('div','phaf-dlg');box.setAttribute('role','dialog');box.setAttribute('aria-modal','true');box.setAttribute('aria-labelledby','phaf-dlg-title');
+  const r=t.rec;
+  let titleKey,goKey,lines=[];
+  if(d.kind==='lock'){
+    titleKey='afloat.dl_lock_t';goKey='afloat.dl_lock_go';
+    const e=t.exp,list=e.order.map(function(k){return k+' '+e.sizes[k];}).join(', ');
+    lines.push(phI18nD('afloat.dl_lock_q',{po:t.id,n:e.total,list:list}));
+    lines.push(phI18nD('afloat.dl_lock_final'));
+  }else if(d.kind==='close'){
+    titleKey='afloat.dl_close_t';goKey='afloat.dl_close_go';
+    const tt=r.verdict.total;
+    lines.push(phI18nD('afloat.dl_close_q_'+(r.verdict.state==='exact'?'exact':r.verdict.state==='over'?'over':'within'),{po:t.id,n:tt.recv,cut:tt.cut}));
+    if(r.verdict.state==='over'){
+      const ov=r.verdict.order.filter(function(k){return r.verdict.sizes[k].diff>0;}).map(function(k){return'+'+r.verdict.sizes[k].diff+' '+k;}).join(', ');
+      lines.push(phI18nD('afloat.dl_close_over',{list:ov}));
+    }
+    lines.push(phI18nD('afloat.dl_close_final'));
+  }else{
+    titleKey='afloat.dl_void_t';goKey='afloat.dl_void_go';
+    const x=(t.lots||[]).filter(function(l){return _phqcStr(l.id)===d.lotId;})[0]||{};
+    lines.push(phI18nD('afloat.dl_void_q',{n:x.seq,when:phqcStampBy(x.at,_phqcStr(x.byName)||_phqcWho(x.by)),pcs:_phqcLotTotal(x),list:_phqcLotSizesText(x)}));
+    lines.push(phI18nD('afloat.dl_void_how'));
+  }
+  const h=phEl('h3','phaf-dlg-title',phI18nD(titleKey,{po:t.id}));h.id='phaf-dlg-title';box.appendChild(h);
+  lines.forEach(function(l){box.appendChild(phEl('p','phaf-dlg-p',l));});
+  let ta=null;
+  const go=_phqcBtn('ph-btn ph-btn-primary phaf-dlg-go',phI18nD(_phqcBusy?'afloat.rx_saving':goKey),function(){phqcDlgGo();});go.id='phaf-dlg-go';
+  const valid=function(){return d.kind!=='void'||_phqcStr(d.reason).trim().length>=(typeof PHQC_VOID_REASON_MIN==='number'?PHQC_VOID_REASON_MIN:3);};
+  const paintGo=function(){if(!valid()||_phqcBusy){go.setAttribute('aria-disabled','true');}else go.removeAttribute('aria-disabled');};
+  if(d.kind==='void'){
+    const lab=phEl('label','phaf-field phaf-dlg-f');
+    lab.appendChild(phEl('span','phaf-lab',phI18nD('afloat.dl_void_reason')));
+    ta=phEl('textarea','phaf-dlg-reason');ta.id='phaf-dlg-reason';ta.setAttribute('maxlength','500');ta.setAttribute('rows','2');ta.value=d.reason||'';
+    ta.addEventListener('input',function(){d.reason=ta.value;paintGo();});
+    lab.appendChild(ta);box.appendChild(lab);
+  }
+  const msg=phEl('p','phaf-rx-msg');msg.id='phaf-dlg-msg';msg.setAttribute('role','alert');
+  if(d.msg){phI18nSet(msg,d.msg);msg.classList.add('phaf-rx-msg-on');}
+  box.appendChild(msg);
+  paintGo();
+  const acts=phEl('div','phaf-dlg-acts');
+  acts.appendChild(go);
+  const no=_phqcBtn('ph-btn phaf-dlg-no',phI18nD('afloat.dl_no'),function(){phqcDlgClose();});no.id='phaf-dlg-no';
+  acts.appendChild(no);
+  box.appendChild(acts);
+  box.addEventListener('keydown',function(e){if(e&&e.key==='Escape'){if(e.preventDefault)e.preventDefault();phqcDlgClose();}});
+  back.appendChild(box);
+  back.addEventListener('click',function(e){if(e&&e.target===back)phqcDlgClose();});
+  return back;
+}
+// The confirm's primary button. One write at a time; the writer's refusal is printed IN the dialog.
+async function phqcDlgGo(){
+  const d=_phqcDlg;if(!d)return{ok:false,code:'no-dialog'};
+  if(_phqcBusy)return{ok:false,code:'busy'};
+  const t=_phqcFindTile(d.poId);if(!t){d.msg=phI18nD('afloat.rx_gone');_phqcPaint();return{ok:false,code:'gone'};}
+  if(d.kind==='void'&&_phqcStr(d.reason).trim().length<(typeof PHQC_VOID_REASON_MIN==='number'?PHQC_VOID_REASON_MIN:3)){d.msg=phI18nD('afloat.dl_void_short');_phqcPaint();return{ok:false,code:'invalid'};}
+  if(_phqcOffline()){d.msg=phI18nD('afloat.rx_offline');_phqcPaint();return{ok:false,code:'offline'};}
+  const fn=d.kind==='lock'?(typeof phQcLockCut==='function'?phQcLockCut:null):d.kind==='close'?(typeof phQcClose==='function'?phQcClose:null):(typeof phQcVoidLot==='function'?phQcVoidLot:null);
+  if(!fn){d.msg=phI18nD('afloat.no_writer');_phqcPaint();return{ok:false,code:'no-writer'};}
+  const rev=t.recon&&typeof t.recon.rev==='number'?t.recon.rev:0;
+  _phqcBusy=true;_phqcPaint();
+  let res;
+  try{
+    if(d.kind==='lock')res=await phQcLockCut(t.id,{expectedRev:0});
+    else if(d.kind==='close')res=await phQcClose(t.id,{expectedRev:rev});
+    else res=await phQcVoidLot(d.lotId,_phqcStr(d.reason).trim(),{expectedRev:rev});
+  }catch(e){res={ok:false,code:'failed',error:String(e&&e.message||e)};}
+  _phqcBusy=false;
+  if(res&&res.ok){
+    _phqcDlg=null;
+    await _phqcRefreshPo(t.id);
+    const me=_phqcWho(_phqcUser());
+    let text;
+    if(d.kind==='lock')text=phI18nD('afloat.ok_lock',{po:t.id,when:phqcStampBy(res.recon&&res.recon.cutLock?res.recon.cutLock.lockedAt:Date.now(),me)});
+    else if(d.kind==='close')text=phI18nD('afloat.ok_close',{po:t.id,when:phqcStampBy(res.recon&&res.recon.closedAt?res.recon.closedAt:Date.now(),(res.recon&&res.recon.closedByName)||me)});
+    else text=phI18nD('afloat.ok_void',{n:res.lot&&res.lot.seq!=null?res.lot.seq:'?',when:phqcStampBy(res.lot&&res.lot.voidedAt?res.lot.voidedAt:Date.now(),me),after:_phqcNowText(_phqcFindTile(t.id))});
+    _phqcFlash={poId:t.id,tone:'ok',text:text};
+    if(typeof showToast==='function'){try{showToast(String(text));}catch(e){}}
+    _phqcFocusId='phaf-flash';
+    _phqcPaint();
+    return res;
+  }
+  if(res&&res.code==='stale'){
+    await _phqcReloadQc(t.id);
+    _phqcDlg=null;
+    _phqcFlash={poId:t.id,tone:'warn',text:phI18nD('afloat.dl_stale',{po:t.id})};
+    _phqcFocusId='phaf-flash';
+  }else{
+    if(_phqcDlg===d){d.msg=_phqcResMsg(res);_phqcFocusId='phaf-dlg-msg';}
+  }
+  _phqcPaint();
+  return res||{ok:false,code:'failed'};
+}
+
+/* ── the classic Final QC button and the old Packing ▸ Receiving tab (the two side-edits call these) ─────────────────────── */
+// js/pos.js window.completeQC asks this first: a sentence (refuse) or null (go on). It refuses while the PO has a QC reconciliation
+// that is NOT closed -- read FRESH from po_qc_recon/{id}. A PO with no reconciliation (older POs) goes on as before. FAIL OPEN on purpose
+// for a REFUSED read: po_qc_recon is readable by every signed-in person once firestore.rules is published, so a permission refusal means
+// the rules are not published and no reconciliation can have been written. Any other failed read (no connection, a timeout) refuses
+// with "could not check" -- a refusal can be retried, a Final QC completed past an open reconciliation cannot be undone from here.
+async function phqcCloseBlock(po){
+  const id=_phqcIdOf(po),key=_phqcKeyOf(id);
+  if(!key)return null;
+  let rc=null;
+  try{
+    const snap=await _phqcTimeout(getDoc(doc(db,'po_qc_recon',key)),PHAF_TIMEOUT_MS);
+    if(snap&&snap.exists())rc=snap.data()||null;
+    else if(snap&&snap.metadata&&snap.metadata.fromCache===true){
+      const mem=typeof phQcReconOf==='function'?phQcReconOf(key):null;
+      if(mem)rc=mem;
+    }
+  }catch(e){
+    const i=_phqcErr(e);
+    if(i.permission)return null;
+    const mem=typeof phQcReconOf==='function'?phQcReconOf(key):null;
+    if(mem&&mem.status==='closed')return null;
+    return String(phI18nT('afloat.cqc_unknown',{po:key},'en'));
+  }
+  if(!rc||rc.status==='closed')return null;
+  return String(phI18nT('afloat.cqc_open',{po:key},'en'));
+}
+function _phqcEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+// js/production.js (Packing ▸ Receiving) asks this first: for QC Ops (Faizan) the list is a pointer to the new screen; '' for everyone else
+// (the managers keep the old page). Static strings only, escaped.
+function phqcPackPointerHTML(){
+  if(!phqcIsQc())return'';
+  const t=function(k){return _phqcEsc(phI18nT(k,null,'en'));};
+  return'<div class="phaf-pack-ptr" role="note"><div class="phaf-pack-ptr-t">'+t('afloat.pack_title')+'</div><p class="phaf-pack-ptr-p">'+t('afloat.pack_body')+'</p>'+
+    '<button type="button" class="ph-btn ph-btn-primary phaf-pack-ptr-b" onclick="window.showPage(\'prod-ops\')">'+t('afloat.pack_btn')+'</button></div>';
 }
 
 /* ── the lightbox (tap the detail's picture): front and back, contain-fit ── */
@@ -998,12 +1635,15 @@ function _phqcWireGuards(){
   if(_phqcGuardsWired||typeof phAddEscapeGuard!=='function')return;
   _phqcGuardsWired=true;
   phAddEscapeGuard(function(){if(_phqcLightbox){phqcLightboxClose();return true;}return false;});
+  phAddEscapeGuard(function(){if(_phqcDlg&&_phqcIsHere()){phqcDlgClose();return true;}return false;});
+  phAddEscapeGuard(function(){if(_phqcSheet&&_phqcIsHere()&&!_phqcSheet.saving){phqcSheetClose();return true;}return false;});
   phAddEscapeGuard(function(){if(_phqcOpen&&_phqcIsHere()){phqcBack();return true;}return false;});
 }
 function phqcReset(){
   _phqcPos={state:'idle',rows:null,at:0,err:null,truncated:false};_phqcPosP=null;
   _phqcF={q:'',stage:'',season:'',short:false,attention:false};_phqcFiltersOpen=null;_phqcCollapsed={closed:true};_phqcShowAll={};
   _phqcOpen='';_phqcBundles={};phqcLightboxClose();
+  _phqcSheet=null;_phqcDlg=null;_phqcFlash=null;_phqcBusy=false;_phqcFocusId='';
 }
 
 if(typeof phRegisterTab==='function'){

@@ -6673,5 +6673,74 @@ textarea.pha-in{width:100%;min-height:72px;font:inherit}
   .phaf-table{font-size:14px}
   .phaf-table th,.phaf-table td{padding:7px 6px}
 }
+/* QC6: receiving, locking, closing, voiding. Every entry's stamp ("Thu 15 Oct 2026, 3:42 PM by Faizan") WRAPS, it never overflows a 420px
+   column. The sheet is in the page (it scrolls above a phone keyboard inside the takeover's 100dvh canvas); the confirms are a fixed layer
+   over the takeover bar (121) and under the lightbox (140). 48px primary buttons, 44px steppers and inputs. */
+.phaf-stamp,.phaf-lot-h,.phaf-lot-voidw,.phaf-hist-i{min-width:0;overflow-wrap:anywhere;word-break:normal}
+.phaf-lot-day{font-size:13px;font-weight:600;color:var(--muted)}
+.phaf-lots-what,.phaf-noedit{margin:4px 0;color:var(--muted)}
+.phaf-noedit{font-weight:700;color:var(--text)}
+.phaf-still{font-weight:700}
+.phaf-flash{font-weight:700}
+.phaf-flash:focus{outline:3px solid var(--text);outline-offset:2px}
+.phaf-closed-note,.phaf-short-note{font-weight:700;color:var(--text)}
+.phaf-arow .ph-btn{min-height:48px}
+.phaf-void{flex:0 0 auto;margin-inline-start:auto;min-height:44px}
+.phaf-hist{display:flex;flex-direction:column;gap:4px;min-width:0}
+.phaf-histlist{margin:0;padding:0 0 0 18px;display:flex;flex-direction:column;gap:3px;font-size:14px;line-height:1.45;color:var(--text)}
+.phaf-hist-i{font-variant-numeric:tabular-nums}
+.phaf-sheet{display:flex;flex-direction:column;gap:12px;min-width:0}
+.phaf-rx{display:flex;flex-direction:column;gap:10px;min-width:0}
+.phaf-rx-what{font-weight:700}
+.phaf-rx-day{min-height:44px;max-width:100%;box-sizing:border-box;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit;font-size:15px}
+.phaf-rx-table td{vertical-align:middle}
+.phaf-rx-cell{min-width:0}
+.phaf-step{display:inline-flex;align-items:center;gap:6px}
+.phaf-stepb{min-width:44px;min-height:44px;padding:0;font-size:20px;font-weight:800;line-height:1}
+.phaf-rx-in{width:72px;min-height:48px;box-sizing:border-box;padding:0 8px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit;font-size:17px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
+.phaf-rx-hint{display:block;margin-top:4px;font-size:13px;font-weight:600;color:var(--muted);overflow-wrap:anywhere}
+.phaf-rx-hint-bad{color:var(--accent-urgent);font-weight:800}
+.phaf-rx-total{font-weight:700}
+.phaf-rx-problem{margin:0;min-height:20px;font-size:14px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
+.phaf-rx-problem-on{padding:8px 10px;border:1.5px solid var(--accent-urgent);border-radius:8px;background:var(--accent-urgent-soft);color:var(--text);font-weight:700}
+.phaf-rx-note{width:100%;min-height:64px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit;font-size:15px;resize:vertical}
+.phaf-rx-count{font-size:13px;color:var(--muted)}
+.phaf-rx-msg{margin:0;font-size:14px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}
+.phaf-rx-msg-on{padding:8px 10px;border:1.5px solid var(--accent-urgent);border-radius:8px;background:var(--accent-urgent-soft);font-weight:700}
+.phaf-rx-acts,.phaf-dlg-acts{display:flex;flex-wrap:wrap;gap:8px}
+.phaf-rx-review,.phaf-rx-save{flex:1 1 220px;min-height:48px;font-size:16px;font-weight:800}
+.phaf-rx-edit{min-height:48px}
+.phaf-rx-review[aria-disabled="true"],.phaf-rx-save[aria-disabled="true"],.phaf-dlg-go[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
+.phaf-review{display:flex;flex-direction:column;gap:8px;padding:12px;border:1.5px solid var(--text);border-radius:var(--radius-card,10px);background:var(--surface);min-width:0}
+.phaf-rx-after{font-weight:700}
+.phaf-rx-after::first-letter{text-transform:uppercase}
+.phaf-rv-note{overflow-wrap:anywhere}
+.phaf-dlg-back{position:fixed;inset:0;z-index:135;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+.phaf-dlg-back::before{content:"";position:absolute;inset:0;background:var(--text);opacity:.45}
+.phaf-dlg{position:relative;width:100%;max-width:460px;max-height:calc(100dvh - 32px);overflow-y:auto;box-sizing:border-box;padding:18px;border:1px solid var(--border);border-radius:var(--radius-card,10px);background:var(--surface);color:var(--text)}
+.phaf-dlg-title{margin:0 0 8px;font-size:17px;font-weight:800;color:var(--text);overflow-wrap:anywhere}
+.phaf-dlg-p{margin:0 0 10px;font-size:15px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}
+.phaf-dlg-f{margin:0 0 10px}
+.phaf-dlg-reason{width:100%;min-height:64px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit;font-size:15px}
+.phaf-dlg-go,.phaf-dlg-no{min-height:48px}
+.phaf-dlg-go{flex:1 1 160px;font-weight:800}
+.phaf-recv-btn:focus-visible,.phaf-close-btn:focus-visible,.phaf-lock-btn:focus-visible,.phaf-void:focus-visible,.phaf-stepb:focus-visible,.phaf-rx-in:focus-visible,.phaf-rx-day:focus-visible,.phaf-rx-note:focus-visible,.phaf-rx-review:focus-visible,.phaf-rx-save:focus-visible,.phaf-rx-edit:focus-visible,.phaf-dlg-go:focus-visible,.phaf-dlg-no:focus-visible,.phaf-dlg-reason:focus-visible{outline:3px solid var(--text);outline-offset:2px}
+.phaf-pack-ptr{margin:8px 0 16px;padding:16px;border:1.5px solid var(--border);border-radius:var(--radius-card,10px);background:var(--surface);color:var(--text)}
+.phaf-pack-ptr-t{font-size:17px;font-weight:800;margin:0 0 6px}
+.phaf-pack-ptr-p{margin:0 0 12px;font-size:15px;line-height:1.45;overflow-wrap:anywhere}
+.phaf-pack-ptr-b{min-height:48px}
+@media (max-width:600px){
+  .phaf-rx-table th,.phaf-rx-table td{padding:6px 4px}
+  .phaf-rx-in{width:60px}
+  /* a phone: Size / Cut / Received so far on one line, the stepper and its hint on the full width under them (four columns do not fit 390px) */
+  .phaf-rx-table,.phaf-rx-table thead,.phaf-rx-table tbody{display:block;width:100%}
+  .phaf-rx-table tr{display:grid;grid-template-columns:3.5em minmax(0,1fr) minmax(0,1fr);align-items:center;column-gap:8px;border-bottom:1px solid var(--border)}
+  .phaf-rx-table th,.phaf-rx-table td{display:block;min-width:0;border:0;text-align:start}
+  .phaf-rx-table th:nth-child(4),.phaf-rx-table td.phaf-rx-cell{grid-column:1/-1}
+  .phaf-rx-table td.phaf-rx-cell{padding-bottom:10px}
+  .phaf-rx-table caption{display:block;text-align:start}
+  .phaf-rx-table th:nth-child(2),.phaf-rx-table th:nth-child(3),.phaf-rx-table td.phaf-n{text-align:end}
+  .phaf-void{margin-inline-start:0}
+}
 @media (prefers-reduced-motion:reduce){.phaf-fill{transition:none}}
 /* ph-mod-afloat END */
