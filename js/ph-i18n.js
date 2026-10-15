@@ -99,6 +99,9 @@ function _phI18nAdd(k,en,ur,review){PH_I18N_STR[k]=review?{en:en,ur:ur,review:tr
   A('queue.drafts_missing','The drafts panel is not part of this build yet.','ڈرافٹ کا حصہ ابھی اس ورژن میں نہیں۔');
   A('queue.drafts_failed','The drafts panel could not be drawn','ڈرافٹ کا حصہ کھل نہیں سکا');
   A('queue.drafts_empty','The drafts panel drew nothing.','ڈرافٹ کے حصے میں کچھ نہیں آیا۔');
+  _phI18nAdd('queue.later_line','{n} {w} in later stages ({stages}) - not shown here','{n} {w} بعد کے مراحل میں ({stages}) - یہاں نہیں دکھائے گئے',true);
+  _phI18nAdd('queue.later_tip','Still in production and counted above. By stage: {detail}','ابھی پروڈکشن میں ہیں اور اوپر شمار ہیں۔ مرحلہ وار: {detail}',true);
+  _phI18nAdd('queue.later_filtered','(of {total} before the filters)','(فلٹر سے پہلے {total})',true);
   A('queue.lane_cutting','Cutting','کٹنگ');
   A('queue.lane_bundling','Bundling','بنڈلنگ');
   A('queue.lane_stitching','Stitching','سلائی');

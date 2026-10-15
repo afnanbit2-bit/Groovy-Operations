@@ -5893,6 +5893,8 @@ body.ph-fullscreen.ph-ur .ph-tk-bar{gap:8px}
   .phq-ov{align-items:flex-end;padding:0}
   .phq-dlg{width:100%;border-radius:var(--radius-card,10px) var(--radius-card,10px) 0 0}
 }
+.phq-later{margin:8px 0 0;padding:8px 10px;border:1px dashed var(--border);border-radius:var(--radius-card,10px);background:var(--surface-2);color:var(--text);font-size:13px;line-height:1.5}
+.phq-later-f{margin-left:8px;color:var(--muted);font-size:12px}
 /* ph-mod-queue END */
 /* ph-mod-drafts START */
 /* Production Ops: PO Drafts (js/ph-mod-drafts.js). Classes .phd-; shares the shell's .ph-card/.ph-btn/.ph-chip. Tokens only (a test fails on a literal colour); text >= 13px, chrome >= 12px; targets 44px. */
