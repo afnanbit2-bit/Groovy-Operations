@@ -132,11 +132,30 @@ function _phqcWho(u){
 }
 function _phqcTrim(s,n){const t=_phqcStr(s);return t.length>n?t.slice(0,n-1)+'…':t;}
 // Units handed to QC through the OLD Packing ▸ Receiving page (pos.packingReceipts entries not written by the QC lot writer).
-function phqcLegacyUnits(po){
+// With a reconciliation given (QC7), only the units NOT adopted yet (their ids are not in recon.legacyIds) -- phqcLegacyPlan.
+function phqcLegacyUnits(po,recon){
+  if(arguments.length>1)return phqcLegacyPlan(po,recon).total;
   const l=po&&Array.isArray(po.packingReceipts)?po.packingReceipts:[];
   let n=0;
   l.forEach(function(r){if(r&&r.src!=='qc'){const q=typeof phWhole==='function'?phWhole(r.qty):Math.floor(+r.qty);if(q!==null&&isFinite(q))n+=q;}});
   return n;
+}
+// What "Adopt old receipts" would take (QC7): the SAME selection js/ph-write.js phQcAdoptLegacy makes -- every packingReceipts entry
+// without src 'qc', with a size and a whole quantity above 0, whose id (e.id, else receiptId-size) is not already in recon.legacyIds,
+// each id once. -> {ids, sizes:{size:units}, total, adopted (units already adopted)}. Pure; nothing is written here.
+function phqcLegacyPlan(po,recon){
+  const done=recon&&Array.isArray(recon.legacyIds)?recon.legacyIds:[];
+  const sizes={},ids=[];let total=0,adopted=0;
+  (po&&Array.isArray(po.packingReceipts)?po.packingReceipts:[]).forEach(function(e){
+    if(!e||typeof e!=='object'||e.src==='qc'||typeof e.size!=='string'||!e.size)return;
+    const id=typeof e.id==='string'&&e.id?e.id:(String(e.receiptId||'')+'-'+e.size);
+    const q=typeof phWhole==='function'?phWhole(e.qty):(Number.isInteger(e.qty)?e.qty:null);
+    if(done.indexOf(id)>-1){if(q!==null&&q>0)adopted+=q;return;}
+    if(ids.indexOf(id)>-1)return;
+    if(q===null||q<=0)return;
+    ids.push(id);sizes[e.size]=(Object.prototype.hasOwnProperty.call(sizes,e.size)?sizes[e.size]:0)+q;total+=q;
+  });
+  return{ids:ids,sizes:sizes,total:total,adopted:adopted};
 }
 
 /* ── product pictures (plan 6.9) ───────────────────────────────────────── */
@@ -600,7 +619,7 @@ function phqcNeedsAttention(t){
   if(t.rec.ok&&t.rec.phase==='short')return true;
   if(t.rec.ok&&t.rec.verdict&&t.rec.verdict.order.some(function(k){return t.rec.verdict.sizes[k].state==='unexpected';}))return true;
   if(t.exp&&t.exp.drift)return true;
-  if(t.lots&&t.lots.length&&phqcLegacyUnits(t.po)>0)return true;
+  if(t.lots&&t.lots.length&&phqcLegacyUnits(t.po,t.recon)>0)return true;
   return false;
 }
 function _phqcPhone(){try{return typeof window!=='undefined'&&typeof window.matchMedia==='function'&&window.matchMedia('(max-width:600px)').matches;}catch(e){return false;}}
@@ -839,7 +858,12 @@ function phqcDetail(host,ctx,t){
   hd.appendChild(facts);
   wrap.appendChild(hd);
   // bands
-  if(rc&&rc.status==='closed')wrap.appendChild(phEl('p','phaf-band phaf-band-ok phaf-closedline',phI18nD('afloat.band_closed',{when:phqcStamp(rc.closedAt)||'—',who:_phqcStr(rc.closedByName)||_phqcWho(rc.closedBy)})));
+  if(rc&&rc.status==='closed'){
+    wrap.appendChild(phEl('p','phaf-band phaf-band-ok phaf-closedline',phI18nD('afloat.band_closed',{when:phqcStamp(rc.closedAt)||'—',who:_phqcStr(rc.closedByName)||_phqcWho(rc.closedBy)})));
+    // QC7: a close that was a manager's override says so, with who, the cause and the reason (everyone who sees the detail reads it)
+    const cs=_phqcCloseOverrideOf(rc);
+    if(cs){const b=phEl('p','phaf-band phaf-band-warn phaf-ovline');b.id='phaf-ovline';phI18nSet(b,phI18nD('afloat.band_closed_short',{who:_phqcStr(cs.byName)||_phqcWho(cs.by),cause:_phqcCauseText(cs.cause),why:_phqcStr(cs.reason)}));wrap.appendChild(b);}
+  }
   if(rc&&rc.status==='reopened'){
     const ov=Array.isArray(rc.overrides)?rc.overrides.filter(function(o){return o&&o.kind==='reopen';}).slice(-1)[0]:null;
     wrap.appendChild(phEl('p','phaf-band phaf-band-warn',phI18nD('afloat.band_reopened',{who:ov?(_phqcStr(ov.byName)||_phqcWho(ov.by)):'—',why:ov?_phqcStr(ov.reason):'—'})));
@@ -861,11 +885,15 @@ function phqcDetail(host,ctx,t){
   if(typeof qcDoneBySize==='function'){
     try{const dn=qcDoneBySize(t.po)||{};const tot=Object.keys(dn).reduce(function(a,k){return a+(+dn[k]||0);},0);hints.appendChild(phEl('p','ph-note',phI18nD('afloat.dispo',{n:tot})));}catch(x){}
   }
-  const leg=phqcLegacyUnits(t.po);
-  if(leg>0)hints.appendChild(phEl('p','ph-note phaf-note-warn',phI18nD('afloat.legacy',{n:leg})));
+  const lgp=phqcLegacyPlan(t.po,t.recon);
+  if(lgp.total>0)hints.appendChild(phEl('p','ph-note phaf-note-warn phaf-legacy-note',phI18nD('afloat.legacy',{n:lgp.total})));
+  if(lgp.adopted>0)hints.appendChild(phEl('p','ph-note phaf-legacy-done',phI18nD('afloat.legacy_adopted',{n:lgp.adopted})));
   wrap.appendChild(hints);
-  // the actions (QC6): Receive units, Lock cut now, Close PO -- live where the person may act, else drawn DISABLED with the reason
+  // the actions (QC6): Receive units, Lock cut now, Close PO -- live where the person may act, else drawn DISABLED with the reason;
+  // QC7: Close with a shortfall… / Replace the cut snapshot… / Reopen… / Adopt old receipts, for the managers and owners only
   wrap.appendChild(_phqcActions(t,ctx));
+  // QC7: the overrides recorded on this reconciliation, read-only, for everyone who sees the detail (Faizan included: no buttons)
+  const ovs=_phqcOverridesNode(t);if(ovs)wrap.appendChild(ovs);
   // lots (oldest first, each with its day and time)
   wrap.appendChild(_phqcLots(t,ctx));
   // history
@@ -1083,6 +1111,11 @@ function _phqcActions(t,ctx){
   };
   if(closed){
     sec.appendChild(phEl('p','ph-note phaf-closed-note',phI18nD('afloat.closed_no_more')));
+    // QC7: an OWNER may reopen it (a new overrides row; the closed record and the history are kept)
+    if(phqcCanReopen(t,ctx.user)){
+      const b=_phqcBtn('ph-btn phaf-reopen-btn',phI18nD('afloat.a_reopen'),function(){phqcReopenAsk(t.id,b.id);});b.id='phaf-reopen-btn';
+      sec.appendChild(phEl('div','phaf-arow',null,[b]));
+    }
     return sec;
   }
   if(r&&r.ok&&r.cut&&(mgr||qc)){
@@ -1099,10 +1132,28 @@ function _phqcActions(t,ctx){
       if(_phqcStageOkForClose(t.stage)){const b=_phqcBtn('ph-btn ph-btn-primary phaf-close-btn',phI18nD('afloat.a_close'),function(){phqcCloseAsk(t.id,b.id);});b.id='phaf-close-btn';row.appendChild(b);}
       else row.appendChild(off('afloat.a_close','afloat.why_close_stage',{stage:phI18nD(PHAF_STAGE_KEYS[t.stage]||'afloat.st_unknown')},'phaf-close-btn'));
     }else if(r.phase==='receiving'||r.phase==='short'){
-      if(mgr)row.appendChild(off('afloat.a_close_short','afloat.why_close_qc7',null,'phaf-close-btn'));
+      // QC7: a MANAGER closes a PO that is not 'ready' with a reason and a cause (an override); never the floor
+      if(mgr){
+        if(phqcCanCloseShort(t,ctx.user)){const b=_phqcBtn('ph-btn phaf-short-btn',phI18nD('afloat.a_close_short'),function(){phqcShortAsk(t.id,b.id);});b.id='phaf-close-btn';row.appendChild(b);}
+        else if(!_phqcStageOkForClose(t.stage))row.appendChild(off('afloat.a_close_short','afloat.why_close_stage',{stage:phI18nD(PHAF_STAGE_KEYS[t.stage]||'afloat.st_unknown')},'phaf-close-btn'));
+        else row.appendChild(off('afloat.a_close_short','afloat.why_ov_full',null,'phaf-close-btn'));
+      }
       else if(qc&&r.phase==='receiving')row.appendChild(off('afloat.a_close','afloat.why_close_wait',{list:_phqcStillList(r.verdict)||'—'},'phaf-close-btn'));
       else if(qc)note=phI18nD('afloat.why_close_short');
     }
+  }
+  // QC7: Replace the cut snapshot… (owner). Only when the PO's recorded cut differs from the lock (the drift band says so): there is
+  // nothing to replace otherwise, so nothing is drawn. A manager who is not an owner sees it disabled then (so he knows whom to ask);
+  // the floor never sees it.
+  if(rc&&_phqcOpenRecon(rc)&&t.reconOk&&t.exp&&t.exp.ok&&t.exp.source==='lock'){
+    if(phqcCanRelock(t,ctx.user)){const b=_phqcBtn('ph-btn phaf-relock-btn',phI18nD('afloat.a_relock'),function(){phqcRelockAsk(t.id,b.id);});b.id='phaf-relock-btn';row.appendChild(b);}
+    else if(t.exp.drift&&phqcIsOwner(ctx.user))row.appendChild(off('afloat.a_relock','afloat.why_ov_full',null,'phaf-relock-btn'));
+    else if(t.exp.drift&&mgr)row.appendChild(off('afloat.a_relock','afloat.why_relock_owner',null,'phaf-relock-btn'));
+  }
+  // QC7: Adopt old receipts as lot #n (managers), only while there are old Packing receipts that are not adopted yet
+  if(phqcCanAdopt(t,ctx.user)){
+    const seq=(rc&&typeof rc.lotCount==='number'?rc.lotCount:0)+1;
+    const b=_phqcBtn('ph-btn phaf-adopt-btn',phI18nD('afloat.a_adopt',{n:seq}),function(){phqcAdoptAsk(t.id,b.id);});b.id='phaf-adopt-btn';row.appendChild(b);
   }
   if(row.firstChild)sec.appendChild(row);
   why.forEach(function(w){const p=phEl('p','ph-note phaf-off-why',w.text);p.id=w.id;sec.appendChild(p);});
@@ -1460,6 +1511,7 @@ function phqcDlgClose(){
 }
 function _phqcDlgNode(t,ctx){
   const d=_phqcDlg;void ctx;
+  if(PHAF_OV_KINDS.indexOf(d.kind)>-1)return _phqcOvDlgNode(t,d);
   const back=phEl('div','phaf-dlg-back');back.id='phaf-dlg-back';
   const box=phEl('div','phaf-dlg');box.setAttribute('role','dialog');box.setAttribute('aria-modal','true');box.setAttribute('aria-labelledby','phaf-dlg-title');
   const r=t.rec;
@@ -1506,14 +1558,37 @@ function _phqcDlgNode(t,ctx){
   const no=_phqcBtn('ph-btn phaf-dlg-no',phI18nD('afloat.dl_no'),function(){phqcDlgClose();});no.id='phaf-dlg-no';
   acts.appendChild(no);
   box.appendChild(acts);
-  box.addEventListener('keydown',function(e){if(e&&e.key==='Escape'){if(e.preventDefault)e.preventDefault();phqcDlgClose();}});
+  box.addEventListener('keydown',function(e){if(e&&e.key==='Escape'){if(e.preventDefault)e.preventDefault();phqcDlgClose();return;}_phqcTrap(box,e);});
   back.appendChild(box);
   back.addEventListener('click',function(e){if(e&&e.target===back)phqcDlgClose();});
   return back;
 }
+// The controls Tab can reach inside a dialog (real DOM: HTMLCollection; tests/ph-dom.js: an array -- both through slice).
+function _phqcFocusables(root){
+  const out=[];
+  (function w(n){Array.prototype.slice.call((n&&n.children)||[]).forEach(function(c){
+    if(!c||c.nodeType!==1)return;
+    if(/^(BUTTON|INPUT|SELECT|TEXTAREA)$/.test(String(c.tagName||''))&&!c.disabled&&c.getAttribute('disabled')===null)out.push(c);
+    w(c);
+  });})(root);
+  return out;
+}
+// Focus trap (QC7, every confirm of this tab): Tab from the last control goes to the first, Shift+Tab from the first to the last.
+function _phqcTrap(box,e){
+  if(!e||e.key!=='Tab')return false;
+  const f=_phqcFocusables(box);if(!f.length)return false;
+  let a=null;try{a=document.activeElement;}catch(x){}
+  const i=f.indexOf(a);
+  let to=null;
+  if(e.shiftKey){if(i<=0)to=f[f.length-1];}
+  else if(i===-1||i===f.length-1)to=f[0];
+  if(to){if(e.preventDefault)e.preventDefault();try{to.focus();}catch(x){}return true;}
+  return false;
+}
 // The confirm's primary button. One write at a time; the writer's refusal is printed IN the dialog.
 async function phqcDlgGo(){
   const d=_phqcDlg;if(!d)return{ok:false,code:'no-dialog'};
+  if(PHAF_OV_KINDS.indexOf(d.kind)>-1)return phqcOvGo();
   if(_phqcBusy)return{ok:false,code:'busy'};
   const t=_phqcFindTile(d.poId);if(!t){d.msg=phI18nD('afloat.rx_gone');_phqcPaint();return{ok:false,code:'gone'};}
   if(d.kind==='void'&&_phqcStr(d.reason).trim().length<(typeof PHQC_VOID_REASON_MIN==='number'?PHQC_VOID_REASON_MIN:3)){d.msg=phI18nD('afloat.dl_void_short');_phqcPaint();return{ok:false,code:'invalid'};}
@@ -1553,6 +1628,336 @@ async function phqcDlgGo(){
   }
   _phqcPaint();
   return res||{ok:false,code:'failed'};
+}
+
+/* ── QC7: the manager overrides -- Close with a shortfall… / Replace the cut snapshot… / Reopen… / Adopt old receipts ───────────────
+   The owner's rules: the cut is FINAL once locked and a saved entry is NEVER edited. An override does not edit anything either: each one
+   is a NEW row the writer appends to the reconciliation's overrides list (kind, who, when, cause, reason; before / after for a relock),
+   with a pos/{id}/history row, in ONE transaction (js/ph-qc-write.js phQcClose / phQcRelock / phQcReopen, js/ph-write.js
+   phQcAdoptLegacy, each behind typeof). Who: Close with a shortfall and Adopt = a MANAGER (afnan, ammar, mustafa); Replace the cut
+   snapshot and Reopen = an OWNER (afnan, ammar). Faizan never gets any of them (he reads the overrides list, no buttons).
+   Every dialog has two steps -- 1: what is being accepted, in plain words, with the cause and reason boxes; 2: the final confirm with
+   the cause and reason read back -- and nothing is written before the step-2 button. The revision the person confirmed is the one sent
+   (a change underneath is refused as stale and the latest copy is read again). One write at a time (_phqcBusy); offline is refused out
+   loud; Escape and "Not yet" close it; Tab stays inside it; focus goes back to the button that opened it.
+   CODE OVER PLAN (and over the brief, said here so nobody re-derives it): phQcRelock takes NO typed sizes -- it replaces the snapshot with
+   the cut recorded on the PO, only when the two differ, so "the new sizes" in this dialog are the PO's recorded cut, read-only; with
+   none different there is no button (nothing to replace). The relock overrides row has no cause field, so the cause chosen here is written
+   at the start of its reason ("Cause: Cutting miscount. …"). The close-short bell rows go to the OTHER managers (PHQC_BELL_MANAGERS
+   minus the person closing), not only the owners. Reopen writes NO bell row and does not touch the pos document. ─────────────────── */
+const PHAF_OV_KINDS=Object.freeze(['short','relock','reopen','adopt']);
+const PHAF_CAUSES_FALLBACK=Object.freeze(['cutting_miscount','lost_in_line','damaged_before_qc','other']);
+const PHAF_BELL_FALLBACK=Object.freeze(['afnan','ammar','mustafa']);
+function phqcIsOwner(u){return typeof phIsOwner==='function'&&phIsOwner(_phqcUser(u))===true;}
+function _phqcCauses(){return typeof PHQC_CLOSE_CAUSES!=='undefined'&&Array.isArray(PHQC_CLOSE_CAUSES)?PHQC_CLOSE_CAUSES:PHAF_CAUSES_FALLBACK;}
+function _phqcReasonMin(){return typeof PHQC_REASON_MIN==='number'?PHQC_REASON_MIN:5;}
+function _phqcOvMax(){return typeof PHQC_OVERRIDES_MAX==='number'?PHQC_OVERRIDES_MAX:20;}
+function _phqcOvRoom(rc){return(rc&&Array.isArray(rc.overrides)?rc.overrides.length:0)<_phqcOvMax();}
+function _phqcCauseText(c){return _phqcCauses().indexOf(c)>-1?phI18nD('afloat.cause_'+c):phI18nD('afloat.cause_unknown',{c:_phqcStr(c)||'—'});}
+// "S 20 · M 38 · L 40 · XL 20"
+function _phqcCutList(sizes,order){
+  const sz=sizes&&typeof sizes==='object'?sizes:{};
+  const keys=Array.isArray(order)?order:(typeof phQcSizeOrder==='function'?phQcSizeOrder(null,Object.keys(sz)):Object.keys(sz));
+  return keys.map(function(k){return k+' '+(_phqcHas(sz,k)?sz[k]:0);}).join(' · ');
+}
+// The managers a decision's bell rows go to (js/ph-qc-write.js phQcBellRows: every OTHER manager), as names.
+function _phqcToldNames(u){
+  const l=typeof PHQC_BELL_MANAGERS!=='undefined'&&Array.isArray(PHQC_BELL_MANAGERS)?PHQC_BELL_MANAGERS:PHAF_BELL_FALLBACK;
+  return l.filter(function(x){return x!==u;}).map(_phqcWho).join(', ');
+}
+// The close_short overrides row of the CURRENT close (the writer stamps both with the same moment), or null.
+function _phqcCloseOverrideOf(rc){
+  if(!rc||rc.status!=='closed'||!Array.isArray(rc.overrides))return null;
+  const l=rc.overrides.filter(function(o){return o&&o.kind==='close_short';}).slice(-1)[0];
+  return l&&typeof l.at==='number'&&l.at===rc.closedAt?l:null;
+}
+// The PO's recorded cut (pos.cutQty once cutting is done) read as the core reads it, ignoring the lock; null when unreadable.
+function _phqcLiveCutOf(t){
+  try{const e=phQcExpected(Object.assign({},t.po),null,{model:_phqcModelOf(t.po)});return e&&e.ok&&e.source==='live'?e:null;}catch(x){return null;}
+}
+// Who may do what (each also checked again by the writer and by firestore.rules).
+function phqcCanCloseShort(t,u){
+  return phqcIsManager(u)&&!!t&&t.reconOk&&t.lotsOk&&!!t.rec&&t.rec.ok&&(t.rec.phase==='receiving'||t.rec.phase==='short')&&_phqcOpenRecon(t.recon)&&_phqcStageOkForClose(t.stage)&&_phqcOvRoom(t.recon);
+}
+function phqcCanRelock(t,u){
+  return phqcIsOwner(u)&&!!t&&t.reconOk&&t.lotsOk&&!!t.rec&&t.rec.ok&&_phqcOpenRecon(t.recon)&&!!t.exp&&t.exp.ok&&t.exp.source==='lock'&&!!t.exp.drift&&!!_phqcLiveCutOf(t)&&_phqcOvRoom(t.recon);
+}
+function phqcCanReopen(t,u){return phqcIsOwner(u)&&!!t&&t.reconOk&&!!t.recon&&t.recon.status==='closed'&&_phqcOvRoom(t.recon);}
+function phqcCanAdopt(t,u){
+  if(!phqcIsManager(u)||!t||!t.reconOk||!t.lotsOk||!t.rec||!t.rec.ok)return false;
+  if(t.recon&&!_phqcOpenRecon(t.recon))return false;
+  if(!t.recon&&!(t.exp&&t.exp.ok&&t.exp.source==='live'))return false;
+  return phqcLegacyPlan(t.po,t.recon).ids.length>0;
+}
+// The phase a verdict gives (the core's rule, phQcReconcile): nothing live = awaiting QC; total short = still receiving; exact / within /
+// over = ready; anything else = short.
+function _phqcPhaseOf(v,lotsLive){
+  if(!v||!v.ok)return null;
+  if(!lotsLive)return'awaiting_qc';
+  if(v.total.state==='short')return'receiving';
+  return(v.state==='exact'||v.state==='within'||v.state==='over')?'ready':'short';
+}
+// "is now exact: 118 of 118. It can be closed." / "has 0 of 120 received yet." for a {verdict, phase}
+function _phqcPhaseText(v,phase){
+  if(!v||!v.ok)return phI18nD('afloat.now_unknown');
+  if(phase==='awaiting_qc')return phI18nD('afloat.now_awaiting',{cut:v.total.cut});
+  return _phqcNowText({rec:{ok:true,verdict:v,phase:phase}});
+}
+// The per-size difference a close with a shortfall accepts, in plain words (one line per size that is not exact, then the exact ones).
+function phqcGapLines(v){
+  const out=[],exact=[];
+  if(!v||!Array.isArray(v.order))return out;
+  v.order.forEach(function(k){
+    const s=v.sizes[k];
+    if(s.state==='exact'){exact.push(k);return;}
+    const key=s.state==='short'?'afloat.gap_short':s.state==='within'?'afloat.gap_within':s.state==='over'?'afloat.gap_over':s.state==='over_refused'?'afloat.gap_over_refused':'afloat.gap_unexpected';
+    out.push(phI18nD(key,{size:k,n:Math.abs(s.diff),recv:s.recv,cut:s.cut,a:s.allow}));
+  });
+  if(exact.length)out.push(phI18nD('afloat.gap_exact',{list:exact.join(', ')}));
+  return out;
+}
+function phqcGapTotal(v){
+  const t=v&&v.total;if(!t)return phI18nD('afloat.now_unknown');
+  return phI18nD(t.diff<0?'afloat.gap_total_short':t.diff>0?'afloat.gap_total_over':'afloat.gap_total_even',{n:Math.abs(t.diff),recv:t.recv,cut:t.cut,a:t.allow});
+}
+// The relock preview: the locked cut beside the PO's recorded cut, per size, and the verdict before and after (pure over the tile;
+// recomputed with phQcVerdict on the lots that are ALREADY received -- they are not changed). null when it cannot be judged.
+function phqcRelockPreview(t){
+  const live=_phqcLiveCutOf(t);
+  if(!live||!t.rec||!t.rec.ok||!t.exp||!t.exp.ok||t.exp.source!=='lock')return null;
+  const model=_phqcModelOf(t.po),lock=t.exp,recv=t.rec.recv?t.rec.recv.sizes:{};
+  const keys=typeof phQcSizeOrder==='function'?phQcSizeOrder(model,Object.keys(lock.sizes).concat(Object.keys(live.sizes))):Object.keys(live.sizes);
+  const rows=keys.map(function(k){return{size:k,lock:_phqcHas(lock.sizes,k)?lock.sizes[k]:0,live:_phqcHas(live.sizes,k)?live.sizes[k]:0};});
+  const after=typeof phQcVerdict==='function'?phQcVerdict(live.sizes,recv,{model:model}):null;
+  return{live:live,rows:rows,lockTotal:lock.total,liveTotal:live.total,
+    before:{verdict:t.rec.verdict,phase:t.rec.phase},after:{verdict:after,phase:_phqcPhaseOf(after,t.rec.lotsLive)},
+    lots:t.rec.lotsLive,pcs:t.rec.recv?t.rec.recv.total:0};
+}
+// The adoption preview: what would become one lot, the refusal the writer would give (null = it may), whether it locks the cut.
+function phqcAdoptPreview(t){
+  const plan=phqcLegacyPlan(t.po,t.recon),model=_phqcModelOf(t.po);
+  const cut=t.rec&&t.rec.ok&&t.rec.cut?t.rec.cut.sizes:null,recv=t.rec&&t.rec.recv?t.rec.recv.sizes:{};
+  const problem=!cut?phI18nT('afloat.rx_gone',null,'en'):(typeof phQcLotProblem==='function'?phQcLotProblem(cut,recv,plan.sizes,{model:model}):'the QC core is not loaded');
+  const after={};
+  if(cut){Object.keys(cut).forEach(function(k){after[k]=(_phqcHas(recv,k)?recv[k]:0);});Object.keys(recv).forEach(function(k){after[k]=recv[k];});
+    Object.keys(plan.sizes).forEach(function(k){after[k]=(_phqcHas(after,k)?after[k]:0)+plan.sizes[k];});}
+  const v=cut&&typeof phQcVerdict==='function'?phQcVerdict(cut,after,{model:model}):null;
+  return{plan:plan,problem:problem,seq:(t.recon&&typeof t.recon.lotCount==='number'?t.recon.lotCount:0)+1,lockNow:!t.recon,
+    cutList:cut?_phqcCutList(cut,t.rec.cut.order):'',after:{verdict:v,phase:_phqcPhaseOf(v,1)}};
+}
+function _phqcOvAllowed(t,kind,u){
+  if(kind==='short')return phqcCanCloseShort(t,u);
+  if(kind==='relock')return phqcCanRelock(t,u);
+  if(kind==='reopen')return phqcCanReopen(t,u);
+  if(kind==='adopt')return phqcCanAdopt(t,u);
+  return false;
+}
+function _phqcOvOpen(kind,t,opener,first){
+  _phqcDlg={kind:kind,poId:t.id,reason:'',cause:'',step:'form',msg:null,opener:opener||'',rev:null};
+  _phqcFlash=null;_phqcSheet=null;_phqcFocusId=first;_phqcPaint();return true;
+}
+function phqcShortAsk(poId,opener){const t=_phqcFindTile(poId);if(!t||!phqcCanCloseShort(t,_phqcUser()))return false;return _phqcOvOpen('short',t,opener||'phaf-close-btn','phaf-dlg-cause');}
+function phqcRelockAsk(poId,opener){const t=_phqcFindTile(poId);if(!t||!phqcCanRelock(t,_phqcUser()))return false;return _phqcOvOpen('relock',t,opener||'phaf-relock-btn','phaf-dlg-cause');}
+function phqcReopenAsk(poId,opener){const t=_phqcFindTile(poId);if(!t||!phqcCanReopen(t,_phqcUser()))return false;return _phqcOvOpen('reopen',t,opener||'phaf-reopen-btn','phaf-dlg-reason');}
+function phqcAdoptAsk(poId,opener){const t=_phqcFindTile(poId);if(!t||!phqcCanAdopt(t,_phqcUser()))return false;return _phqcOvOpen('adopt',t,opener||'phaf-adopt-btn','phaf-dlg-reason');}
+// Why the step-1 button may not go on (null = it may): a cause from the list (close-short, relock), a reason of PHQC_REASON_MIN+
+// characters (every override), and for an adoption the writer's own refusal.
+function _phqcOvProblem(t,d){
+  if((d.kind==='short'||d.kind==='relock')&&_phqcCauses().indexOf(d.cause)<0)return phI18nD('afloat.ov_cause_missing');
+  if(_phqcStr(d.reason).trim().length<_phqcReasonMin())return phI18nD('afloat.ov_reason_short',{n:_phqcReasonMin()});
+  if(d.kind==='adopt'){const p=phqcAdoptPreview(t);if(p.problem)return p.problem;}
+  return null;
+}
+function _phqcOvTable(heads,rows,cls){
+  const tb=document.createElement('table');tb.className='phaf-table phaf-ov-table'+(cls?' '+cls:'');
+  const th0=document.createElement('thead'),tr0=document.createElement('tr');
+  heads.forEach(function(h){const th=document.createElement('th');th.setAttribute('scope','col');phI18nSet(th,h);tr0.appendChild(th);});
+  th0.appendChild(tr0);tb.appendChild(th0);
+  const tbody=document.createElement('tbody');
+  rows.forEach(function(r){const tr=document.createElement('tr');if(r.cls)tr.className=r.cls;r.cells.forEach(function(v,i){const td=document.createElement('td');td.className=i?'phaf-n':'phaf-k';phI18nSet(td,v);tr.appendChild(td);});tbody.appendChild(tr);});
+  tb.appendChild(tbody);
+  const w=phEl('div','phaf-tablewrap');w.appendChild(tb);return w;
+}
+// The override dialog (both steps). Every stored or typed string reaches the page through textContent.
+function _phqcOvDlgNode(t,d){
+  const me=_phqcUser(),told=_phqcToldNames(me);
+  const back=phEl('div','phaf-dlg-back');back.id='phaf-dlg-back';
+  const box=phEl('div','phaf-dlg phaf-dlg-ov phaf-dlg-'+d.kind);box.id='phaf-dlg';
+  box.setAttribute('role','dialog');box.setAttribute('aria-modal','true');box.setAttribute('aria-labelledby','phaf-dlg-title');box.setAttribute('aria-describedby','phaf-dlg-lead');
+  const titleKey={short:'afloat.ov_short_t',relock:'afloat.ov_relock_t',reopen:'afloat.ov_reopen_t',adopt:'afloat.ov_adopt_t'}[d.kind];
+  const h=phEl('h3','phaf-dlg-title',phI18nD(titleKey,{po:t.id}));h.id='phaf-dlg-title';box.appendChild(h);
+  box.appendChild(phEl('p','phaf-dlg-step',phI18nD(d.step==='confirm'?'afloat.ov_step_two':(d.kind==='short'||d.kind==='relock')?'afloat.ov_step_one':'afloat.ov_step_one_reason')));
+  const P=function(x,cls,id){const p=phEl('p','phaf-dlg-p'+(cls?' '+cls:''),x);if(id)p.id=id;box.appendChild(p);return p;};
+  let blocked=null;
+  const r=t.rec;
+  if(d.kind==='short'){
+    const v=r.verdict,tt=v.total;
+    P(phI18nD(r.phase==='receiving'?'afloat.ov_short_lead_recv':'afloat.ov_short_lead',{po:t.id,recv:tt.recv,cut:tt.cut}),null,'phaf-dlg-lead');
+    const ul=phEl('ul','phaf-ov-gaps');ul.id='phaf-ov-gaps';
+    phqcGapLines(v).forEach(function(x){ul.appendChild(phEl('li','phaf-ov-gap',x));});
+    ul.appendChild(phEl('li','phaf-ov-gap phaf-ov-gapt',phqcGapTotal(v)));
+    box.appendChild(ul);
+    P(phI18nD('afloat.ov_short_effect',{told:told||'—'}),'phaf-dlg-effect');
+  }else if(d.kind==='relock'){
+    const pv=phqcRelockPreview(t);
+    P(phI18nD('afloat.ov_relock_lead',{po:t.id}),null,'phaf-dlg-lead');
+    if(!pv)blocked=phI18nD('afloat.now_unknown');
+    else{
+      const rows=pv.rows.map(function(x){const d2=x.live-x.lock;return{cls:d2?'phaf-ov-chg':'',cells:[x.size,String(x.lock),String(x.live),d2===0?'—':(d2>0?'+'+d2:'−'+(-d2))]};});
+      const dt=pv.liveTotal-pv.lockTotal;
+      rows.push({cls:'phaf-total',cells:[phI18nT('afloat.t_total',null,'en'),String(pv.lockTotal),String(pv.liveTotal),dt===0?'—':(dt>0?'+'+dt:'−'+(-dt))]});
+      box.appendChild(_phqcOvTable([phI18nD('afloat.t_size'),phI18nD('afloat.ov_c_locked'),phI18nD('afloat.ov_c_recorded'),phI18nD('afloat.ov_c_change')],rows,'phaf-ov-relock'));
+      P(phI18nD('afloat.ov_relock_before',{po:t.id,txt:_phqcPhaseText(pv.before.verdict,pv.before.phase)}),'phaf-ov-before','phaf-ov-before');
+      P(phI18nD('afloat.ov_relock_after',{po:t.id,txt:_phqcPhaseText(pv.after.verdict,pv.after.phase)}),'phaf-ov-after','phaf-ov-after');
+      P(phI18nD('afloat.ov_relock_lots',{n:pv.lots,pcs:pv.pcs}),'phaf-ov-warn');
+      P(phI18nD('afloat.ov_relock_how'),'phaf-dlg-note');
+      P(phI18nD('afloat.ov_relock_effect',{told:told||'—'}),'phaf-dlg-effect');
+    }
+  }else if(d.kind==='reopen'){
+    const rc=t.recon,cv=rc.closeVerdict&&typeof rc.closeVerdict==='object'?rc.closeVerdict:null;
+    P(phI18nD('afloat.ov_reopen_lead',{po:t.id,when:phqcStamp(rc.closedAt)||'—',who:_phqcStr(rc.closedByName)||_phqcWho(rc.closedBy)||'—',
+      recv:cv&&cv.total?cv.total.recv:'—',cut:cv&&cv.total?cv.total.cut:'—'}),null,'phaf-dlg-lead');
+    P(phI18nD('afloat.ov_reopen_writes'),'phaf-dlg-effect');
+    P(phI18nD('afloat.ov_reopen_pos'),'phaf-ov-warn','phaf-ov-reopen-pos');
+    P(phI18nD('afloat.ov_reopen_again'),'phaf-dlg-note');
+  }else{
+    const pv=phqcAdoptPreview(t);
+    P(phI18nD('afloat.ov_adopt_lead',{po:t.id,n:pv.plan.total,seq:pv.seq}),null,'phaf-dlg-lead');
+    const order=typeof phQcSizeOrder==='function'?phQcSizeOrder(_phqcModelOf(t.po),Object.keys(pv.plan.sizes)):Object.keys(pv.plan.sizes);
+    box.appendChild(_phqcOvTable([phI18nD('afloat.t_size'),phI18nD('afloat.ov_c_adopt')],order.map(function(k){return{cells:[k,String(pv.plan.sizes[k])]};}).concat([{cls:'phaf-total',cells:[phI18nT('afloat.t_total',null,'en'),String(pv.plan.total)]}]),'phaf-ov-adopt'));
+    P(phI18nD('afloat.ov_adopt_receipts',{k:pv.plan.ids.length}),'phaf-dlg-note');
+    if(pv.lockNow)P(phI18nD('afloat.ov_adopt_lock',{po:t.id,list:pv.cutList}),'phaf-ov-warn');
+    if(pv.problem)blocked=pv.problem;
+    else P(phI18nD('afloat.ov_adopt_after',{po:t.id,txt:_phqcPhaseText(pv.after.verdict,pv.after.phase)}),'phaf-ov-after','phaf-ov-after');
+    P(phI18nD('afloat.ov_adopt_final'),'phaf-ov-warn phaf-ov-final');
+  }
+  if(blocked){const b=phEl('p','phaf-rx-problem phaf-rx-problem-on phaf-ov-blocked');b.id='phaf-ov-blocked';b.setAttribute('role','status');phI18nSet(b,blocked);box.appendChild(b);}
+  const needsCause=d.kind==='short'||d.kind==='relock';
+  const go=_phqcBtn('ph-btn ph-btn-primary phaf-dlg-go',phI18nD(_phqcBusy?'afloat.rx_saving':d.step==='confirm'?{short:'afloat.ov_short_go',relock:'afloat.ov_relock_go',reopen:'afloat.ov_reopen_go',adopt:'afloat.ov_adopt_go'}[d.kind]:'afloat.ov_continue',{po:t.id}),function(){phqcDlgGo();});go.id='phaf-dlg-go';
+  const valid=function(){return!blocked&&!_phqcOvProblem(t,d);};
+  const paintGo=function(){if(!valid()||_phqcBusy){go.setAttribute('aria-disabled','true');}else go.removeAttribute('aria-disabled');if(_phqcBusy)go.setAttribute('aria-busy','true');};
+  if(d.step!=='confirm'){
+    if(needsCause){
+      const lab=phEl('label','phaf-field phaf-dlg-f');
+      lab.appendChild(phEl('span','phaf-lab',phI18nD('afloat.ov_cause')));
+      const sel=phEl('select','phaf-sel phaf-dlg-cause');sel.id='phaf-dlg-cause';
+      [''].concat(_phqcCauses()).forEach(function(c){const op=document.createElement('option');op.value=c;op.textContent=phI18nAttr(c?_phqcCauseText(c):phI18nD('afloat.ov_cause_pick'));if(c===d.cause)op.setAttribute('selected','selected');sel.appendChild(op);});
+      sel.value=d.cause||'';
+      sel.addEventListener('change',function(){d.cause=sel.value;paintGo();});
+      lab.appendChild(sel);box.appendChild(lab);
+    }
+    const lab=phEl('label','phaf-field phaf-dlg-f');
+    lab.appendChild(phEl('span','phaf-lab',phI18nD('afloat.ov_reason',{n:_phqcReasonMin()})));
+    const ta=phEl('textarea','phaf-dlg-reason');ta.id='phaf-dlg-reason';ta.setAttribute('maxlength','500');ta.setAttribute('rows','3');ta.value=d.reason||'';
+    ta.addEventListener('input',function(){d.reason=ta.value;paintGo();});
+    lab.appendChild(ta);box.appendChild(lab);
+  }else{
+    const sum=phEl('div','phaf-ov-sum');sum.id='phaf-ov-sum';
+    if(needsCause)sum.appendChild(phEl('p','phaf-dlg-p',phI18nD('afloat.ov_sum_cause',{cause:_phqcCauseText(d.cause)})));
+    const rs=phEl('p','phaf-dlg-p phaf-ov-sum-r');rs.textContent='“'+_phqcStr(d.reason).trim()+'”';sum.appendChild(rs);
+    sum.appendChild(phEl('p','phaf-dlg-p phaf-noedit',phI18nD('afloat.ov_sum_final')));
+    box.appendChild(sum);
+  }
+  const msg=phEl('p','phaf-rx-msg');msg.id='phaf-dlg-msg';msg.setAttribute('role','alert');msg.setAttribute('tabindex','-1');
+  if(d.msg){phI18nSet(msg,d.msg);msg.classList.add('phaf-rx-msg-on');}
+  box.appendChild(msg);
+  paintGo();
+  const acts=phEl('div','phaf-dlg-acts');
+  acts.appendChild(go);
+  const no=_phqcBtn('ph-btn phaf-dlg-no',phI18nD(d.step==='confirm'?'afloat.ov_back':'afloat.dl_no'),function(){
+    if(d.step==='confirm'){if(_phqcBusy)return;d.step='form';d.msg=null;_phqcFocusId=needsCause?'phaf-dlg-cause':'phaf-dlg-reason';_phqcPaint();}
+    else phqcDlgClose();
+  });no.id='phaf-dlg-no';
+  acts.appendChild(no);
+  box.appendChild(acts);
+  box.addEventListener('keydown',function(e){if(e&&e.key==='Escape'){if(e.preventDefault)e.preventDefault();phqcDlgClose();return;}_phqcTrap(box,e);});
+  back.appendChild(box);
+  back.addEventListener('click',function(e){if(e&&e.target===back)phqcDlgClose();});
+  return back;
+}
+// The override dialog's primary button: step 1 -> step 2 (nothing written); step 2 -> the writer. One write at a time.
+async function phqcOvGo(){
+  const d=_phqcDlg;if(!d||PHAF_OV_KINDS.indexOf(d.kind)<0)return{ok:false,code:'no-dialog'};
+  if(_phqcBusy)return{ok:false,code:'busy'};
+  const me=_phqcUser();
+  const t=_phqcFindTile(d.poId);
+  if(!t||!_phqcOvAllowed(t,d.kind,me)){d.msg=phI18nD('afloat.ov_gone');_phqcFocusId='phaf-dlg-msg';_phqcPaint();return{ok:false,code:'gone'};}
+  const pr=_phqcOvProblem(t,d);
+  if(pr){d.step='form';d.msg=pr;_phqcFocusId='phaf-dlg-msg';_phqcPaint();return{ok:false,code:'invalid'};}
+  if(d.step!=='confirm'){
+    d.step='confirm';d.msg=null;d.rev=t.recon&&typeof t.recon.rev==='number'?t.recon.rev:0;_phqcFocusId='phaf-dlg-go';_phqcPaint();
+    return{ok:false,code:'confirm'};
+  }
+  if(_phqcOffline()){d.msg=phI18nD('afloat.ov_offline');_phqcFocusId='phaf-dlg-msg';_phqcPaint();return{ok:false,code:'offline'};}
+  const fn=d.kind==='short'?(typeof phQcClose==='function'?phQcClose:null):d.kind==='relock'?(typeof phQcRelock==='function'?phQcRelock:null):
+    d.kind==='reopen'?(typeof phQcReopen==='function'?phQcReopen:null):(typeof phQcAdoptLegacy==='function'?phQcAdoptLegacy:null);
+  if(!fn){d.msg=phI18nD('afloat.no_writer');_phqcFocusId='phaf-dlg-msg';_phqcPaint();return{ok:false,code:'no-writer'};}
+  const why=_phqcStr(d.reason).trim(),rev=typeof d.rev==='number'?d.rev:0;
+  const before=d.kind==='relock'?phqcRelockPreview(t):d.kind==='adopt'?phqcAdoptPreview(t):null;
+  _phqcBusy=true;_phqcPaint();
+  let res;
+  try{
+    if(d.kind==='short')res=await phQcClose(t.id,{expectedRev:rev,reason:why,cause:d.cause});
+    else if(d.kind==='relock')res=await phQcRelock(t.id,{expectedRev:rev,reason:phI18nT('afloat.ov_relock_reason',{cause:phI18nT('afloat.cause_'+d.cause,null,'en'),why:why},'en')});
+    else if(d.kind==='reopen')res=await phQcReopen(t.id,{expectedRev:rev,reason:why});
+    else res=await phQcAdoptLegacy(t.id,{expectedRev:rev,reason:why});
+  }catch(e){res={ok:false,code:'failed',error:String(e&&e.message||e)};}
+  _phqcBusy=false;
+  if(res&&res.ok){
+    _phqcDlg=null;
+    await _phqcRefreshPo(t.id);
+    const nt=_phqcFindTile(t.id);
+    let text;
+    if(d.kind==='short'){
+      const at=res.recon&&res.recon.closedAt?res.recon.closedAt:Date.now();
+      text=phI18nD('afloat.ok_short',{po:t.id,when:phqcStampBy(at,(res.recon&&res.recon.closedByName)||_phqcWho(me)),gap:phqcGapTotal(res.verdict&&res.verdict.total?{total:res.verdict.total}:t.rec.verdict),
+        told:(Array.isArray(res.told)?res.told.map(_phqcWho).join(', '):'')||'—'});
+    }else if(d.kind==='relock'){
+      const L=res.recon&&res.recon.cutLock;
+      text=phI18nD('afloat.ok_relock',{po:t.id,when:phqcStampBy(L&&L.lockedAt?L.lockedAt:Date.now(),_phqcWho(me)),list:L?_phqcCutList(L.sizes):(before?_phqcCutList(before.live.sizes,before.live.order):'—'),n:L?L.total:'—',after:_phqcNowText(nt),
+        told:(Array.isArray(res.told)?res.told.map(_phqcWho).join(', '):'')||'—'});
+    }else if(d.kind==='reopen'){
+      text=phI18nD('afloat.ok_reopen',{po:t.id,when:phqcStampBy(res.recon&&res.recon.updatedAt?res.recon.updatedAt:Date.now(),_phqcWho(me))});
+    }else{
+      text=phI18nD('afloat.ok_adopt',{po:t.id,n:res.lot&&typeof res.lot.total==='number'?res.lot.total:(before?before.plan.total:'?'),seq:res.seq,when:phqcStampBy(res.lot&&res.lot.at?res.lot.at:Date.now(),_phqcWho(me)),after:_phqcNowText(nt)});
+    }
+    _phqcFlash={poId:t.id,tone:'ok',text:text};
+    if(typeof showToast==='function'){try{showToast(String(text));}catch(e){}}
+    _phqcFocusId='phaf-flash';
+    _phqcPaint();
+    return res;
+  }
+  if(res&&res.code==='stale'){
+    await _phqcReloadQc(t.id);
+    _phqcDlg=null;
+    _phqcFlash={poId:t.id,tone:'warn',text:phI18nD('afloat.dl_stale',{po:t.id})};
+    _phqcFocusId='phaf-flash';
+  }else if(_phqcDlg===d){d.msg=_phqcResMsg(res);_phqcFocusId='phaf-dlg-msg';}
+  _phqcPaint();
+  return res||{ok:false,code:'failed'};
+}
+// The overrides recorded on a reconciliation, read-only, oldest first: kind, when (12-hour PKT) and who, the cause, the reason, and for a
+// relock the cut before -> after. Shown to everyone who sees the detail; it holds no control.
+function _phqcOverridesNode(t){
+  const l=t.recon&&Array.isArray(t.recon.overrides)?t.recon.overrides.filter(function(o){return o&&typeof o==='object';}):[];
+  if(!l.length)return null;
+  const sec=phEl('section','phaf-ovs');sec.id='phaf-ovs';
+  sec.appendChild(phEl('h3','ph-card-title',phI18nD('afloat.ov_list_t',{n:l.length})));
+  sec.appendChild(phEl('p','ph-note phaf-ovs-what',phI18nD('afloat.ov_list_what')));
+  const ul=phEl('ul','phaf-ovlist');
+  l.slice().sort(function(a,b){return(typeof a.at==='number'?a.at:0)-(typeof b.at==='number'?b.at:0);}).forEach(function(o){
+    const kind=o.kind==='close_short'||o.kind==='relock'||o.kind==='reopen'?o.kind:'other';
+    const li=phEl('li','phaf-ov phaf-ov-'+kind);li.setAttribute('data-kind',kind);
+    const hd=phEl('span','phaf-ov-h phaf-stamp');
+    phI18nSet(hd,phI18nD('afloat.ov_row_'+kind,{when:phqcStampBy(o.at,_phqcStr(o.byName)||_phqcWho(o.by))}));
+    li.appendChild(hd);
+    if(o.cause)li.appendChild(phEl('span','phaf-ov-c',phI18nD('afloat.ov_row_cause',{cause:_phqcCauseText(o.cause)})));
+    if(o.before&&typeof o.before==='object'&&o.after&&typeof o.after==='object')li.appendChild(phEl('span','phaf-ov-cut',phI18nD('afloat.ov_row_cut',{from:_phqcCutList(o.before),to:_phqcCutList(o.after)})));
+    if(o.reason){const rr=phEl('span','phaf-ov-r');rr.textContent='“'+_phqcStr(o.reason)+'”';li.appendChild(rr);}
+    ul.appendChild(li);
+  });
+  sec.appendChild(ul);
+  return sec;
 }
 
 /* ── the classic Final QC button and the old Packing ▸ Receiving tab (the two side-edits call these) ─────────────────────── */

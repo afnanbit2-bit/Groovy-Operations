@@ -6743,4 +6743,34 @@ textarea.pha-in{width:100%;min-height:72px;font:inherit}
   .phaf-void{margin-inline-start:0}
 }
 @media (prefers-reduced-motion:reduce){.phaf-fill{transition:none}}
+/* QC7: the override dialogs (two steps; the per-size gap list, the relock before/after table, the adoption table) and the read-only
+   overrides list. The dialog is wider than the QC6 confirms (a table sits in it) and scrolls inside 100dvh; every line wraps. */
+.phaf-dlg-ov{max-width:560px}
+.phaf-dlg-step{margin:0 0 10px;font-size:13px;font-weight:700;color:var(--muted);overflow-wrap:anywhere}
+.phaf-ov-gaps{margin:0 0 10px;padding:0 0 0 18px;display:flex;flex-direction:column;gap:4px;font-size:15px;line-height:1.45;color:var(--text);font-variant-numeric:tabular-nums}
+.phaf-ov-gap{overflow-wrap:anywhere}
+.phaf-ov-gapt{font-weight:800}
+.phaf-dlg-effect,.phaf-ov-before,.phaf-ov-after{font-weight:700}
+.phaf-dlg-note{color:var(--muted)}
+.phaf-ov-warn{padding:8px 10px;border:1.5px solid var(--accent-warning);border-radius:8px;background:var(--accent-warning-soft);color:var(--text);font-weight:700}
+.phaf-ov-table{margin:0 0 10px}
+.phaf-ov-chg td{font-weight:800}
+.phaf-ov-blocked{margin:0 0 10px}
+.phaf-dlg-cause{width:100%;box-sizing:border-box}
+.phaf-ov-sum{display:flex;flex-direction:column;gap:2px;margin:0 0 6px;padding:10px 12px;border:1.5px solid var(--text);border-radius:8px;background:var(--surface)}
+.phaf-ov-sum-r{overflow-wrap:anywhere;font-style:italic}
+.phaf-ovline{margin-top:6px}
+.phaf-legacy-done{color:var(--text)}
+.phaf-ovs{display:flex;flex-direction:column;gap:6px;min-width:0}
+.phaf-ovs-what{margin:0;color:var(--muted)}
+.phaf-ovlist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.phaf-ov{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid var(--border);border-inline-start:4px solid var(--accent-warning);border-radius:8px;background:var(--surface);font-size:14px;line-height:1.45;color:var(--text);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.phaf-ov-h{font-weight:700}
+.phaf-ov-c,.phaf-ov-cut{color:var(--text)}
+.phaf-ov-r{font-style:italic;min-width:0}
+.phaf-short-btn:focus-visible,.phaf-relock-btn:focus-visible,.phaf-reopen-btn:focus-visible,.phaf-adopt-btn:focus-visible,.phaf-dlg-cause:focus-visible{outline:3px solid var(--text);outline-offset:2px}
+@media (max-width:600px){
+  .phaf-dlg-ov{padding:14px}
+  .phaf-ov-table th,.phaf-ov-table td{padding:6px 5px}
+}
 /* ph-mod-afloat END */
