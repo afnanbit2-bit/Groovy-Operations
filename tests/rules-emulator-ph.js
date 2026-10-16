@@ -1013,6 +1013,78 @@ async function t(name,fn){
     const oks=[x,y].filter(r=>r.ok);if(oks.length!==1)throw new Error('expected one winner '+qq([x,y]));
     const d=await read('po_qc_recon/'+QPO);if(d.lotCount!==1)throw new Error(qq(d));
     let n=0;await env.withSecurityRulesDisabled(async c=>{n=(await getDocs(collection(c.firestore(),'po_qc_lots'))).size;});if(n!==1)throw new Error('lots '+n);});
+  /* ═══ QC race (16 Oct 2026, risk R6): the SECOND lot (and later ones) on a PO that already has lots ═══
+     The first-lot race above starts from no reconciliation. These start from a recon with lotCount >= 1 and prove the rules'
+     bind (lot.seq == getAfter(recon).lotCount, recon rev + 1, lotCount + 1, id prefix == poId) refuse a lot that claims a
+     seq somebody else already took, a stale / skipped seq, a lot that does not move the recon, and another PO's id. */
+  const rcLotOp=(w,id,seq,over)=>['set','po_qc_lots/'+id,qLot(w,Object.assign({seq:seq,sizes:{M:5},total:5,at:NOW+2},over||{}))];
+  const rcRecOp=(w,lotCount,rev,over)=>['update','po_qc_recon/'+QPO,Object.assign({lotCount:lotCount,lastLotAt:NOW+5,rev:rev,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name},over||{})];
+  const rcPair=(w,id,seq,lotCount,rev)=>[rcLotOp(w,id,seq),rcRecOp(w,lotCount,rev)];
+  const rcLotCount=async()=>{let n=0;await env.withSecurityRulesDisabled(async c=>{n=(await getDocs(collection(c.firestore(),'po_qc_lots'))).size;});return n;};
+  const rcState=async()=>{const d=await read('po_qc_recon/'+QPO);return {lotCount:d.lotCount,rev:d.rev,lots:await rcLotCount()};};
+  const rcSame=(a,b)=>{if(qq(a)!==qq(b))throw new Error('state '+qq(a)+' expected '+qq(b));};
+  const refuse=async p=>{await assertFails(p);rcSame(await rcState(),{lotCount:2,rev:1,lots:2});};   // refused, AND the reconciliation and the lots are exactly as seeded (lotCount 2, rev 1, 2 lots)
+  await t('R6 raw: two batches both adding lot seq 2 to a recon with lotCount 1 (Faizan vs Faizan, Faizan vs Mustafa, Mustafa vs Afnan): exactly one wins, lotCount 2, exactly two lots',async()=>{
+    for(const [a,b] of [[FAIZAN,FAIZAN],[FAIZAN,MUSTAFA],[MUSTAFA,AFNAN]]){
+      await reset();await qSeedLots([{S:20}]);
+      const rs=await Promise.allSettled([qBatch(a,rcPair(a,qLotId(2),2,2,2)),qBatch(b,rcPair(b,qLotId(3),2,2,2))]);
+      const won=rs.filter(r=>r.status==='fulfilled').length;
+      if(won!==1)throw new Error(a.u+' vs '+b.u+': '+won+' batches succeeded (expected 1): '+qq(rs.map(r=>r.status)));
+      rcSame(await rcState(),{lotCount:2,rev:2,lots:2});}});
+  await t('R6 raw, strictly sequential: the second batch is built from the SAME pre-state (rev 1, lotCount 1) AFTER the first committed: refused; a correct third (seq 3, rev 3) is then allowed',async()=>{
+    await reset();await qSeedLots([{S:20}]);
+    await assertSucceeds(qBatch(FAIZAN,rcPair(FAIZAN,qLotId(2),2,2,2)));
+    await assertFails(qBatch(MUSTAFA,rcPair(MUSTAFA,qLotId(3),2,2,2)));                                   // same seq 2, same rev 2: the second claimant
+    await assertFails(qBatch(MUSTAFA,[rcLotOp(MUSTAFA,qLotId(3),2),rcRecOp(MUSTAFA,3,3)]));              // seq 2 again but the recon moved on to lotCount 3
+    rcSame(await rcState(),{lotCount:2,rev:2,lots:2});
+    await assertSucceeds(qBatch(MUSTAFA,rcPair(MUSTAFA,qLotId(4),3,3,3)));
+    rcSame(await rcState(),{lotCount:3,rev:3,lots:3});});
+  await t('R6 app writers: two concurrent phQcAddLot calls on a PO that already has a lot (expectedRev 1): one wins, the other is refused (stale / permission), lotCount 2, two lots',async()=>{
+    await reset();await qSeedLots([{S:20}]);
+    const [x,y]=await Promise.all([call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{M:5}},{expectedRev:1,now:'+nx()+',rand:"aa11"})'),call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{L:5}},{expectedRev:1,now:'+nx()+',rand:"bb22"})')]);
+    const oks=[x,y].filter(r=>r.ok);if(oks.length!==1)throw new Error('expected one winner '+qq([x,y]));
+    const loser=[x,y].find(r=>!r.ok);if(!['stale','permission','refused','failed'].includes(loser.code))throw new Error('loser code '+qq(loser));
+    rcSame(await rcState(),{lotCount:2,rev:2,lots:2});});
+  for(const w of [FAIZAN,MUSTAFA,AFNAN]){
+    await t('R6 '+w.u+': with lotCount 2 a correct lot seq 3 (recon lotCount 3, rev 2) is allowed; a stale seq (1 or 2), a skipped seq (4, or 5), a lot that does not move the recon and a lot that moves the wrong field are all refused',async()=>{
+      const seed2=async()=>{await reset();await qSeedLots([{S:20},{M:5}]);};
+      await seed2();await assertSucceeds(qBatch(w,rcPair(w,qLotId(3),3,3,2)));rcSame(await rcState(),{lotCount:3,rev:2,lots:3});
+      // (b) stale seq: claims 1 or 2 when lotCount is already 2
+      await seed2();await refuse(qBatch(w,rcPair(w,qLotId(3),1,3,2)));                                  // seq 1, recon moves to 3
+      await seed2();await refuse(qBatch(w,rcPair(w,qLotId(3),2,3,2)));                                  // seq 2 (taken), recon moves to 3
+      await seed2();await refuse(qBatch(w,[rcLotOp(w,qLotId(3),1),rcRecOp(w,2,2)]));                     // seq 1, recon lotCount stays 2 (rev bump only): the lotCount+1 step is missing
+      await seed2();await refuse(qBatch(w,[rcLotOp(w,qLotId(3),2),rcRecOp(w,2,2)]));                     // seq 2 == lotCount 2 after, but the recon did not move by one
+      await seed2();await refuse(setDoc(doc(as(w),'po_qc_lots',qLotId(3)),qLot(w,{seq:1,sizes:{M:5},total:5,at:NOW+2})));   // the lot alone, seq 1
+      await seed2();await refuse(setDoc(doc(as(w),'po_qc_lots',qLotId(3)),qLot(w,{seq:2,sizes:{M:5},total:5,at:NOW+2})));   // the lot alone, seq 2 (the recon already says 2)
+      // (c) a lot that does not bump the recon's lotCount / rev
+      await seed2();await refuse(setDoc(doc(as(w),'po_qc_lots',qLotId(3)),qLot(w,{seq:3,sizes:{M:5},total:5,at:NOW+2})));   // the lot alone, seq 3: the recon still says lotCount 2
+      await seed2();await refuse(qBatch(w,[rcLotOp(w,qLotId(3),3),rcRecOp(w,3,1)]));                     // lotCount 3 but rev not bumped (stays 1)
+      await seed2();await refuse(qBatch(w,[rcLotOp(w,qLotId(3),3),rcRecOp(w,3,3)]));                     // rev +2
+      await seed2();await refuse(qBatch(w,[rcLotOp(w,qLotId(3),3),rcRecOp(w,3,0)]));                     // rev backwards
+      await seed2();await refuse(qBatch(w,[rcLotOp(w,qLotId(3),3),['update','po_qc_recon/'+QPO,{lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name}]]));   // recon touched, lotCount not moved
+      // (d) skipped seq: 4 when lotCount is 2
+      await seed2();await refuse(qBatch(w,rcPair(w,qLotId(3),4,4,2)));                                  // recon jumps by two
+      await seed2();await refuse(qBatch(w,rcPair(w,qLotId(3),4,3,2)));                                  // recon +1 but the lot claims 4
+      await seed2();await refuse(qBatch(w,rcPair(w,qLotId(3),5,3,2)));
+      // (every refuse() above also re-read the recon and the lots: none of the refusals changed anything)
+    });}
+  await t('R6 Uzaib, Raees, Umair, Arfat, QA, signed-out: even a perfectly formed seq-3 batch is refused on a PO with two lots',async()=>{
+    for(const w of [UZAIB,RAEES,UMAIR,ARFAT,QA]){await reset();await qSeedLots([{S:20},{M:5}]);await assertFails(qBatch(w,rcPair(w,qLotId(3),3,3,2)));rcSame(await rcState(),{lotCount:2,rev:1,lots:2});}
+    await reset();await qSeedLots([{S:20},{M:5}]);
+    await assertFails(setDoc(doc(as('anon'),'po_qc_lots',qLotId(3)),qLot(FAIZAN,{seq:3,sizes:{M:5},total:5,at:NOW+2})));});
+  await t('R6 (f) a lot whose id names another PO\'s prefix, or whose poId and id disagree, or that bumps another PO\'s recon, is refused (lotCount 2)',async()=>{
+    const seed3=async()=>{await reset();await qSeedLots([{S:20},{M:5}]);await seed('pos/PO-002',{id:'PO-002',qty:120,code:'GAT012',stages:{cutting:{done:true}},cutQty:QCUT});await seed('po_qc_recon/PO-002',qRec(FAIZAN,{poId:'PO-002',lotCount:2,lastLotAt:NOW}));};
+    for(const w of [FAIZAN,MUSTAFA]){
+      const other='PO-002-'+String(NOW+3)+'-ab12';
+      await seed3();await refuse(qBatch(w,[rcLotOp(w,other,3),rcRecOp(w,3,2)]));                                   // poId PO-001, id PO-002-...
+      await seed3();await refuse(qBatch(w,[['set','po_qc_lots/'+qLotId(3),qLot(w,{poId:'PO-002',seq:3,sizes:{M:5},total:5,at:NOW+2})],rcRecOp(w,3,2)]));   // poId PO-002, id PO-001-..., PO-001's recon bumped
+      await seed3();await refuse(qBatch(w,[['set','po_qc_lots/'+qLotId(3),qLot(w,{poId:'PO-002',seq:3,sizes:{M:5},total:5,at:NOW+2})],['update','po_qc_recon/PO-002',{lotCount:3,lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name}]]));   // poId PO-002 and its recon, but the id still carries PO-001
+      await seed3();await refuse(qBatch(w,[rcLotOp(w,qLotId(3),3),['update','po_qc_recon/PO-002',{lotCount:3,lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name}]]));   // PO-001 lot, PO-002 recon bumped
+      await seed3();await refuse(qBatch(w,[rcLotOp(w,other.replace('PO-002','PO-02'),3),rcRecOp(w,3,2)]));       // malformed prefix
+      rcSame(await rcState(),{lotCount:2,rev:1,lots:2});}
+    // control: a correct lot on PO-002 still works, and does not touch PO-001's recon
+    await seed3();await assertSucceeds(qBatch(FAIZAN,[['set','po_qc_lots/PO-002-'+String(NOW+3)+'-ab12',qLot(FAIZAN,{poId:'PO-002',seq:3,sizes:{M:5},total:5,at:NOW+2})],['update','po_qc_recon/PO-002',{lotCount:3,lastLotAt:NOW+5,rev:2,updatedAt:NOW+5,updatedBy:'faizan',updatedByName:'Faizan'}]]));
+    rcSame((await read('po_qc_recon/PO-001')).lotCount,2);});
   /* ═══ QC6 (15 Oct 2026): a SAVED entry cannot be edited, by anyone — only voided (four fields), and the lock and the close never in place ═══ */
   const qVoidOps=(w,id,extra)=>[['update','po_qc_lots/'+id,Object.assign({status:'void',voidedAt:NOW+5,voidedBy:w.u,voidReason:'wrong size'},extra||{})],['update','po_qc_recon/'+QPO,{voidCount:1,rev:2,updatedAt:NOW+5,updatedBy:w.u,updatedByName:w.name}]];
   const qEdits={sizes:{S:19},total:19,note:'changed',day:'2026-10-03',at:NOW+60000,by:'umair',byName:'Someone',seq:7,poId:'PO-002',src:'legacy'};
