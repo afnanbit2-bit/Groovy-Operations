@@ -884,6 +884,20 @@ async function t(name,fn){
     const d=await read('po_qc_recon/'+QPO);if(d.status!=='reopened'||d.overrides[0].kind!=='reopen')throw new Error(qq(d));
     if(qq(await read('pos/'+QPO))!==qq(before))throw new Error('pos changed');
     const m=await call(MUSTAFA,'phQcReopen("'+QPO+'",{expectedRev:2,now:'+nx()+',reason:"again again"})');if(m.ok||m.code!=='forbidden')throw new Error('mustafa '+qq(m));});
+  // QC7 (15 Oct 2026): the whole reopen path through the app's own writers, as the dialogs drive it: a short close by Mustafa, an owner
+  // reopens, Faizan receives the missing pieces as another lot, Faizan closes it again (ready). Both closes stay; the reopen kept the pos
+  // document untouched; the second close writes pos (qcReconClosedAt) and a pos history row in the same commit.
+  await t('QC7: closed short -> reopened by an owner -> another lot -> closed again, every step with the app\'s own writers',async()=>{await reset();
+    await qSeedLots([{S:20,M:40,L:40,XL:18}]);
+    const c1=await call(MUSTAFA,'phQcClose("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"two XL lost in the line",cause:"lost_in_line"})');if(!c1.ok||c1.action!=='close_short')throw new Error('close1 '+qq(c1));
+    const posAfter1=await read('pos/'+QPO);
+    const r=await call(AFNAN,'phQcReopen("'+QPO+'",{expectedRev:2,now:'+nx()+',reason:"two XL found in the store"})');if(!r.ok)throw new Error('reopen '+qq(r));
+    if(qq(await read('pos/'+QPO))!==qq(posAfter1))throw new Error('the reopen changed pos');
+    const a=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{XL:2},day:"2026-10-06"},{expectedRev:3,now:'+nx()+',rand:"cc33"})');if(!a.ok||a.seq!==2)throw new Error('lot '+qq(a));
+    const c2=await call(FAIZAN,'phQcClose("'+QPO+'",{expectedRev:4,now:'+nx()+'})');if(!c2.ok||c2.action!=='close'||c2.phase!=='ready')throw new Error('close2 '+qq(c2));
+    const d=await read('po_qc_recon/'+QPO);if(d.status!=='closed'||qq(d.overrides.map(o=>o.kind))!==qq(['close_short','reopen']))throw new Error('recon '+qq(d));
+    const h=(await qHist()).map(x=>x.type);if(h.filter(x=>x==='qc_closed_short').length!==1||h.filter(x=>x==='qc_closed').length!==1||h.indexOf('qc_closed_short')>h.indexOf('qc_closed'))throw new Error('history '+qq(h));
+    const p2=await read('pos/'+QPO);if(!p2.qcReconClosedAt||p2.qcReconClosedBy!=='faizan')throw new Error('pos '+qq(p2));});
   await t('relock: an OWNER with the writer only when the PO\'s cut was corrected; the new snapshot equals it; Mustafa and Faizan cannot; an unchanged cut is refused',async()=>{await reset();await qSeedLots([{S:20}]);
     const same=await call(AFNAN,'phQcRelock("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"just checking"})');if(same.ok||same.code!=='refused')throw new Error('same '+qq(same));
     await assertFails(qUpd(AFNAN,{cutLock:qLock(AFNAN,{source:'relock',lockedAt:NOW+5}),overrides:[qOv(AFNAN,'relock')]}));    // equal to the old lock

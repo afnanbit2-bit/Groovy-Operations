@@ -74,6 +74,17 @@ function seed(){
     sizes:{S:20,M:40,L:40,XL:20},cutQty:{S:20,M:40,L:40,XL:20},cutAt:'2026-09-24T08:00:00.000Z',cutDate:'2026-09-24',cutBy:'Uzaib',
     currentStage:'qc',poStatus:'in_production',status:'active',ts:now-3*86400000,date:'2026-09-23',createdBy:'Afnan',
     stages:{cutting:{done:true},qc:{done:false}},packingReceipts:[]};
+  // QC7: one PO at final QC with two lots received and M 2 short, so a manager's "Close with a shortfall…" dialog can be opened on the phone
+  cols.pos['PO-1047']={id:'PO-1047',name:'Athletic Tee · White — the short-close example',code:'GAT013',fabric:'Single Jersey 180 GSM',qty:120,
+    sizes:{S:20,M:40,L:40,XL:20},cutQty:{S:20,M:40,L:40,XL:20},cutAt:'2026-09-24T08:00:00.000Z',cutDate:'2026-09-24',cutBy:'Uzaib',
+    currentStage:'qc',poStatus:'in_production',status:'active',ts:now-4*86400000,date:'2026-09-22',createdBy:'Afnan',
+    stages:{cutting:{done:true},qc:{done:false}},packingReceipts:[]};
+  cols.po_qc_recon={'PO-1047':{poId:'PO-1047',status:'locked',rev:2,cutLock:{sizes:{S:20,M:40,L:40,XL:20},total:120,cutAt:'2026-09-24T08:00:00.000Z',cutBy:'Uzaib',
+    lockedAt:now-2*86400000,lockedBy:'faizan',source:'first_lot'},lotCount:2,voidCount:0,lastLotAt:now-3600000,overrides:[],legacyIds:[],closedAt:0,closedBy:'',
+    closedByName:'',closeVerdict:null,createdAt:now-2*86400000,createdBy:'faizan',updatedAt:now-3600000,updatedBy:'faizan',updatedByName:'Faizan'}};
+  cols.po_qc_lots={
+    'PO-1047-1758866400001-aaaa':{poId:'PO-1047',seq:1,sizes:{S:20,M:20,L:20,XL:10},total:70,day:'2026-09-25',note:'',at:now-2*3600000,by:'faizan',byName:'Faizan',status:'live',src:'qc'},
+    'PO-1047-1758866400002-bbbb':{poId:'PO-1047',seq:2,sizes:{M:18,L:20,XL:10},total:48,day:'2026-09-25',note:'',at:now-3600000,by:'faizan',byName:'Faizan',status:'live',src:'qc'}};
   for(let i=0;i<4;i++)cols.gatepasses['g'+i]={id:'GP-031'+i,name:'Uzaib',date:'2026-09-25',type:'units',reason:'process',
     article:names[i],spec:'Black / 180 GSM',dest:'Rahim Gul Enterprise',qty:100,total:100,ts:now-i*3600000,status:'out'};
   for(let i=0;i<8;i++)cols.activity['a'+i]={user:'Mustafa',u:'mustafa',action:'Fabric roll deleted',
@@ -189,7 +200,7 @@ function DRIVE(){
       // Afnan sees eleven tabs (QC5 added Afloat POs), Faizan (QC floor) one, Uzaib (a viewer, no More sheet) six (Overview, PO Queue for the drafts, Today's Cutting, then WP-15's hosted PO Registry, Pattern updates and Fabric Inventory; ph-mod-queue.js widens the queue tab to him); Escape and the #prodops deep link work; leaving removes every trace.
       if(PAGES.indexOf('prod-ops')>=0){
         // QC5: the managers' rail gained Afloat POs (11); Faizan (QC floor) has exactly that one tab; Uzaib is unchanged (6)
-        var pk=[],who=window.__SESSION&&window.__SESSION.u,want=who==='uzaib'?6:who==='faizan'?1:11;
+        var q7done=false,pk=[],who=window.__SESSION&&window.__SESSION.u,want=who==='uzaib'?6:who==='faizan'?1:11;
         if(who==='faizan'){
           var mb=[].slice.call(document.querySelectorAll('#mob-nav .mob-nav-btn')).map(function(b){return b.getAttribute('data-mob-id');});
           if(mb.join()!=='packing,bstock,prod-ops')pk.push('Faizan\'s phone nav is '+mb.join()+', expected packing,bstock,prod-ops');
@@ -245,6 +256,36 @@ function DRIVE(){
                   }}
               }
             }
+          }
+          // QC7: a manager (Afnan) opens the short PO and its "Close with a shortfall…" dialog at 390px: nothing sideways, the boxes and
+          // buttons thumb-sized and above the dock, Escape closes the dialog and gives focus back to the button that opened it
+          if(who==='afnan'&&!q7done){q7done=true;
+            location.hash='#prodops/afloat';await wait(900);
+            var find7=function(){return[].slice.call(document.querySelectorAll('.phaf-card')).filter(function(c){return c.getAttribute('data-po')==='PO-1047';})[0];};
+            for(var w7=0;w7<20&&!find7();w7++)await wait(250);
+            var c7=find7();
+            if(!c7)pk.push('QC7: the PO-1047 tile is not on the manager board (tiles: '+[].slice.call(document.querySelectorAll('.phaf-card')).map(function(c){return c.getAttribute('data-po');}).join()+')');
+            else{c7.click();await wait(500);
+              var cb=document.getElementById('phaf-close-btn');
+              if(!cb||cb.disabled||!/phaf-short-btn/.test(cb.className))pk.push('QC7: no live "Close with a shortfall…" on the detail');
+              else{cb.click();await wait(400);
+                var dg=document.querySelector('.phaf-dlg'),cs=document.getElementById('phaf-dlg-cause'),rs=document.getElementById('phaf-dlg-reason'),gb=document.getElementById('phaf-dlg-go');
+                if(!dg||!cs||!rs||!gb)pk.push('QC7: the close-short dialog did not open with a cause, a reason and a Continue button');
+                else{
+                  if(document.documentElement.scrollWidth>innerWidth+1)pk.push('QC7: the dialog scrolls sideways ('+document.documentElement.scrollWidth+' > '+innerWidth+')');
+                  if(!/M/.test((document.querySelector('.phaf-ov-gaps')||{}).textContent||''))pk.push('QC7: the dialog does not name the short size');
+                  [cs,rs,gb].forEach(function(n){var r=n.getBoundingClientRect();if(r.height<44||r.right>innerWidth+0.5||r.left<-0.5)pk.push('QC7: '+(n.id)+' is '+Math.round(r.width)+'x'+Math.round(r.height)+' at '+Math.round(r.left));});
+                  if(document.activeElement!==cs)pk.push('QC7: focus is not in the cause box');
+                  gb.scrollIntoView({block:'end'});await wait(200);var gr=gb.getBoundingClientRect(),dk7=document.getElementById('ph-tk-rail').getBoundingClientRect();
+                  if(gr.bottom>dk7.top+0.5)pk.push('QC7: Continue is under the dock ('+Math.round(gr.bottom)+' vs '+Math.round(dk7.top)+')');
+                  var h7=document.elementFromPoint(gr.left+gr.width/2,gr.top+gr.height/2);if(!h7||(h7!==gb&&!gb.contains(h7)))pk.push('QC7: Continue cannot be tapped (covered by '+(h7&&h7.className)+')');
+                  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(300);
+                  if(document.querySelector('.phaf-dlg'))pk.push('QC7: Escape did not close the dialog');
+                  if(!document.querySelector('.phaf-detail'))pk.push('QC7: Escape closed the PO detail as well as the dialog');
+                  var cb2=document.getElementById('phaf-close-btn');if(document.activeElement!==cb2)pk.push('QC7: focus did not go back to the button that opened the dialog');
+                }
+                document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(300);
+              }}
           }
           document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(500);
           if(document.body.classList.contains('ph-fullscreen')||document.getElementById('main-content').classList.contains('ph-takeover'))pk.push('Escape did not leave the takeover');

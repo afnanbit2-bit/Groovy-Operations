@@ -477,6 +477,7 @@ async function _phqFragment(o){
 // has no network; Shopify CDN URLs are swapped by the runner below), a BROKEN one is the tile the module draws after the <img> errors, and
 // "no photo" is the code / name tile. A long article name and a hostile one are in the list. The lightbox is laid in the flow (static) so it
 // does not cover the rest of the fragment.
+const LONG_QC7='The carton with the last two pieces of size M was opened at the line and the pieces were damaged beyond repair; the line supervisor confirmed it in writing on the floor.';
 async function _phafFragment(o){
   o=o||{};
   const domkit=require('./ph-dom');
@@ -485,6 +486,7 @@ async function _phafFragment(o){
   const LONG='A Very Long Article Name That Must Wrap Onto Two Lines Inside The Tile Instead Of Pushing It Sideways';
   all['pos/PO-107'].name=LONG;
   if(o.broken)all['pos/PO-105'].imgFront=K.CLD+'broken105.jpg';
+  if(o.mutate)o.mutate(all,K);
   const pick=ids=>{const out={};Object.keys(all).forEach(k=>{const m=/^(?:pos|po_qc_recon|po_cut_jobs)\/(PO-\d+)$|^po_qc_lots\/(PO-\d+)-/.exec(k);const id=m&&(m[1]||m[2]);if(!m||ids.indexOf(id)>-1)out[k]=all[k];});return out;};
   const seed=o.ids?pick(o.ids):all;
   const fail={};(o.fail||[]).forEach(c=>{fail[c]={err:()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'})};});
@@ -498,8 +500,12 @@ async function _phafFragment(o){
     Object.keys(o.sheet.vals||{}).forEach(k=>{const n=T.dom.find('phaf-rx-in-'+k);if(n){n.value=String(o.sheet.vals[k]);T.dom.dispatch(n,'input');}});
     if(o.sheet.review){const r=T.dom.find('phaf-rx-review');if(r){T.dom.click(r);await K.settle(40);}}}
   let dl='';
-  if(o.dlg){const b=T.dom.find(o.dlg==='void'?(T.cls('phaf-void')[0]||{}).id:'phaf-close-btn');if(b){T.dom.click(b);await K.settle(40);}
-    const node=T.dom.find('phaf-dlg-back');if(node){dl='<div style="position:relative;height:420px;margin-top:12px">'+domkit.toHtml(node)+'</div>';node.parentNode.removeChild(node);}}
+  if(o.dlg){const btn={void:(T.cls('phaf-void')[0]||{}).id,close:'phaf-close-btn',short:'phaf-close-btn',relock:'phaf-relock-btn',reopen:'phaf-reopen-btn',adopt:'phaf-adopt-btn'}[o.dlg];const b=T.dom.find(btn);if(b){T.dom.click(b);await K.settle(40);}
+    // QC7: fill the override dialog through its own boxes, optionally press Continue (step 2)
+    if(o.fill){const c=T.dom.find('phaf-dlg-cause');if(c&&o.fill.cause!==undefined){c.value=o.fill.cause;T.dom.dispatch(c,'change');}
+      const r=T.dom.find('phaf-dlg-reason');if(r&&o.fill.reason!==undefined){r.value=o.fill.reason;T.dom.dispatch(r,'input');}}
+    if(o.step2){await T.R('phqcDlgGo()');await K.settle(40);}
+    const node=T.dom.find('phaf-dlg-back');if(node){dl='<div style="position:relative;height:'+(o.dlgH||420)+'px;margin-top:12px">'+domkit.toHtml(node)+'</div>';node.parentNode.removeChild(node);}}
   if(o.broken){const c=T.card('PO-105');const im=c&&T.dom.all(c,n=>n.tagName==='IMG')[0];if(im)T.dom.dispatch(im,'error');}
   let lb='';
   if(o.lightbox){const pb=T.cls('phaf-picbtn')[0];if(pb)T.dom.click(pb);const node=T.dom.find('phaf-lightbox');if(node){lb='<div style="position:relative;height:460px;margin-top:12px">'+domkit.toHtml(node)+'</div>';node.parentNode.removeChild(node);}}
@@ -3453,6 +3459,17 @@ const FRAGMENTS={
   'production ops — afloat QC6: the Close PO confirm (exact, Faizan)':()=>_phafFragment({user:'faizan',ids:['PO-105'],open:'PO-105',dlg:'close',heights:[1700]}),
   'production ops — afloat QC6: the lots list with long 12-hour stamps and a long name, Void and the no-edit line':()=>_phafFragment({user:'mustafa',ids:['PO-103','PO-115'],open:'PO-103',longBy:'Faizan Ahmed Khan Siddiqui (QC Ops, Warehouse Receiving Desk)',heights:[1700]}),
   'production ops — afloat QC6: the Void confirm (a manager, reason box)':()=>_phafFragment({user:'mustafa',ids:['PO-103'],open:'PO-103',dlg:'void',heights:[1700]}),
+  // QC7: the manager overrides (two-step dialogs) and the read-only overrides list
+  'production ops — afloat QC7: Close with a shortfall (a manager, step 1: the per-size words, cause and reason)':()=>_phafFragment({ids:['PO-107'],open:'PO-107',dlg:'short',dlgH:900,fill:{cause:'lost_in_line',reason:LONG_QC7},heights:[2200]}),
+  'production ops — afloat QC7: Close with a shortfall, step 2 (the final confirm, the long reason read back)':()=>_phafFragment({ids:['PO-107'],open:'PO-107',dlg:'short',dlgH:900,fill:{cause:'damaged_before_qc',reason:LONG_QC7},step2:true,heights:[2200]}),
+  'production ops — afloat QC7: Replace the cut snapshot (an owner; the before / after table and the verdict effect)':()=>_phafFragment({ids:['PO-114'],open:'PO-114',dlg:'relock',dlgH:1100,fill:{cause:'cutting_miscount',reason:'M recounted at the cutting table'},heights:[2600]}),
+  'production ops — afloat QC7: Reopen (an owner; what it writes, the PO document untouched)':()=>_phafFragment({ids:['PO-108'],closedOpen:true,open:'PO-108',dlg:'reopen',dlgH:900,fill:{reason:'one carton found in the store'},heights:[2400]}),
+  'production ops — afloat QC7: Adopt old receipts (a manager; the units, the permanence)':()=>_phafFragment({user:'mustafa',ids:['PO-115'],open:'PO-115',dlg:'adopt',dlgH:1000,fill:{reason:'received before QC Ops existed'},
+    mutate:all=>{all['pos/PO-115'].packingReceipts=[{id:'RCV-1-L',size:'L',qty:5,by:'Faizan'},{id:'RCV-2-L',size:'L',qty:7,by:'Faizan'}];},heights:[2600]}),
+  'production ops — afloat QC7: the overrides list (Faizan, read-only: close short, relock, reopen; long reasons, a long name)':()=>_phafFragment({user:'faizan',ids:['PO-108'],closedOpen:true,open:'PO-108',
+    mutate:(all)=>{const r=all['po_qc_recon/PO-108'],at=r.closedAt;r.overrides=[
+      {kind:'relock',at:at-7200000,by:'afnan',byName:'Afnan',reason:'Cause: Cutting miscount. M recounted at the cutting table',before:{S:20,M:40,L:40,XL:20},after:{S:20,M:38,L:40,XL:20}},
+      {kind:'close_short',at:at,by:'mustafa',byName:'Mustafa Ahmed Khan Siddiqui (Production Manager, Main Floor)',reason:LONG_QC7,cause:'damaged_before_qc'}];},heights:[1900]}),
   'production ops — afloat: detail picture and the lightbox open':()=>_phafFragment({ids:['PO-101'],open:'PO-101',lightbox:true,heights:[1700]}),
   'production ops — po queue':()=>_phqFragment({}),
   'production ops — po queue for the cutting floor (read-only board)':()=>_phqFragment({floor:true}),
