@@ -49,12 +49,21 @@ async function loadActivity(){
 // script that validated this against every real logActivity() string).
 const _MONITOR_CATEGORIES=[
   {key:'auth',   label:'Sign-in',        color:'#6b7280', icon:'🔑', match:a=>/^Login$/.test(a)||/^Password/.test(a)},
-  {key:'delete', label:'Delete',         color:'#dc2626', icon:'🗑️', match:a=>/delet|remov|cleared|cleanup|withdraw/i.test(a)},
+  {key:'delete', label:'Delete',         color:'#dc2626', icon:'🗑️', match:a=>/delet|remov|cleared|cleanup|withdraw|^QC lot voided$/i.test(a)},
   {key:'money',  label:'Approve / Money',color:'#059669', icon:'💰', match:a=>/approv|rejected|paid|processed|^Loan |^Advance |withhold|billing/i.test(a)},
-  {key:'edit',   label:'Edit',           color:'#d97706', icon:'✎',  match:a=>/edit|correct|override|renamed|updated|fetched|tidied|dedup|overwritten|reconstructed|policy chang|^Article (ignored|restored)/i.test(a)},
-  {key:'create', label:'Create',         color:'#2563eb', icon:'➕', match:a=>/^Fabric In$|created|issued|added|submitted|reserved|restocked|reported|import|recorded|logged|captured/i.test(a)},
+  {key:'edit',   label:'Edit',           color:'#d97706', icon:'✎',  match:a=>/edit|correct|override|renamed|updated|fetched|tidied|dedup|overwritten|reconstructed|policy chang|^Article (ignored|restored)|^QC (PO closed with shortfall|cut relocked|PO reopened)$/i.test(a)},
+  {key:'create', label:'Create',         color:'#2563eb', icon:'➕', match:a=>/^Fabric In$|created|issued|added|submitted|reserved|restocked|reported|import|recorded|logged|captured|^QC (lot received|legacy receipts adopted)$/i.test(a)},
   {key:'other',  label:'Process',        color:'#7c3aed', icon:'⚙️', match:()=>true}
 ];
+// QC reconciliation verbs (Oct 2026, written by js/ph-qc-write.js). They are
+// matched by their WHOLE QC-prefixed string on purpose: the bare words
+// "voided" / "reopened" / "received" also appear in other modules' verbs
+// ("Warehouse sale voided", "Bug reopened (verify failed)") and a generic
+// pattern would move those too. Buckets: a lot received and the legacy
+// adoption are records created (Create); a voided lot removes a record
+// (Delete); closing with a shortfall, re-locking a cut and reopening a PO
+// are overrides of the normal flow (Edit, like "Payslip override"); "QC cut
+// locked" and "QC PO closed" are plain state steps and stay in Process.
 function _monitorCategorize(action){
   for(const c of _MONITOR_CATEGORIES){ if(c.key!=='other'&&c.match(action||'')) return c; }
   return _MONITOR_CATEGORIES[_MONITOR_CATEGORIES.length-1];
@@ -78,11 +87,15 @@ const _MONITOR_WATCH_ACTIONS=new Set([
   'Payslip override','Payslip paid',
   // Marketing (Sept 2026) — removals only. Logging and editing a dispatch
   // are ordinary daily work and are deliberately NOT watched.
-  'Dispatch deleted','Creator deleted','Paid PR request withdrawn','Niche tag removed'
+  'Dispatch deleted','Creator deleted','Paid PR request withdrawn','Niche tag removed',
+  // QC reconciliation (Oct 2026) — the removal and the overrides only. A lot
+  // received, a cut locked and a PO closed in full are the QC person's
+  // ordinary work and are deliberately NOT watched.
+  'QC lot voided','QC PO closed with shortfall','QC cut relocked','QC PO reopened'
 ]);
 // By USERNAME, with the display name kept only for matching rows written
 // before logActivity started carrying `u` (see Profiles in CLAUDE.md).
-const _MONITOR_WATCH_USERS=['mustafa','daniyal'];
+const _MONITOR_WATCH_USERS=['mustafa','daniyal','faizan'];
 /** Is this activity row one of the watched people? Pure. */
 function _monitorIsWatchedUser(a){
   if(!a)return false;
@@ -97,7 +110,7 @@ function _monitorIsWatchedUser(a){
 function _monitorIsWatched(a){
   return !!a&&_MONITOR_WATCH_ACTIONS.has(a.action)&&_monitorIsWatchedUser(a);
 }
-/** "Mustafa and Daniyal Tufail" — for the panel headings. */
+/** "Mustafa, Daniyal Tufail and Faizan" — for the panel headings. */
 function _monitorWatchLabel(){
   const defs=(typeof USER_DEFS!=='undefined'?USER_DEFS:[]);
   const names=_MONITOR_WATCH_USERS.map(u=>{const d=defs.find(x=>x.u===u);return d?d.name:u;});

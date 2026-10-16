@@ -36,13 +36,15 @@ module.exports=async function(){
   s.section('the watch list is a list of people');
   {
     const watched=a.run('_MONITOR_WATCH_USERS');
-    s.eq('two people are watched',J(watched),J(['mustafa','daniyal']));
+    // Changed deliberately (QC reconciliation, Oct 2026): faizan joined, for the QC removal/override verbs only.
+    s.eq('three people are watched',J(watched),J(['mustafa','daniyal','faizan']));
     const defs=a.run('USER_DEFS');
     watched.forEach(u=>s.ok('"'+u+'" is a real account',defs.some(d=>d.u===u)));
-    s.ok('neither is an owner — the panel is for delegated power',
+    s.ok('none is an owner — the panel is for delegated power',
       watched.every(u=>(defs.find(d=>d.u===u)||{}).role!=='owner'));
     const label=a.run('_monitorWatchLabel()');
     s.ok('the heading names both',/Mustafa/.test(label)&&/Daniyal/.test(label));
+    s.ok('and Faizan',/Faizan/.test(label));
     s.ok('joined readably',/ and /.test(label));
   }
 
@@ -96,6 +98,90 @@ module.exports=async function(){
     s.eq('a stage step is still Process',cat('Stage done'),'other');
     s.eq('and a QC disposition',cat('QC disposition'),'other');
     s.eq('a login is a login',cat('Login'),'auth');
+  }
+
+  s.section('QC reconciliation verbs (Oct 2026): categories');
+  {
+    const cat=x=>a.run('_monitorCategorize('+J(x)+').key');
+    // Table: verb -> bucket. Before this change all eight were Process.
+    const want={
+      'QC lot received':'create',
+      'QC lot voided':'delete',
+      'QC cut locked':'other',
+      'QC PO closed':'other',
+      'QC PO closed with shortfall':'edit',
+      'QC cut relocked':'edit',
+      'QC PO reopened':'edit',
+      'QC legacy receipts adopted':'create'
+    };
+    Object.keys(want).forEach(v=>s.eq('"'+v+'" -> '+want[v],cat(v),want[v]));
+    // The patterns are anchored to the QC verbs. Generic words would have
+    // dragged other modules' verbs along (checked: both sat in Process).
+    s.eq('another module\'s void is untouched',cat('Warehouse sale voided'),'other');
+    s.eq('another module\'s reopen is untouched',cat('Bug reopened (verify failed)'),'other');
+    s.eq('a longer QC string is not caught by the anchors',cat('QC lot voided again'),'other');
+    s.eq('QC Report submitted is still a create',cat('QC Report submitted'),'create');
+    s.eq('QC rework resolved is still Process',cat('QC rework resolved'),'other');
+    s.eq('QC disposition is still Process',cat('QC disposition'),'other');
+  }
+
+  s.section('QC reconciliation verbs: who is flagged');
+  {
+    const w=r=>a.run('_monitorIsWatched('+J(r)+')');
+    // The QC person: removals and overrides only.
+    ['QC lot voided','QC PO closed with shortfall','QC cut relocked','QC PO reopened']
+      .forEach(act=>s.eq('faizan "'+act+'" is flagged',w({u:'faizan',user:'Faizan',action:act}),true));
+    ['QC lot received','QC cut locked','QC PO closed','QC legacy receipts adopted']
+      .forEach(act=>s.eq('faizan "'+act+'" is NOT flagged',w({u:'faizan',user:'Faizan',action:act}),false));
+    s.eq('faizan\'s other work is not flagged',w({u:'faizan',user:'Faizan',action:'Packing receipt'}),false);
+    // One shared action set (the existing design): a watched person is flagged on ANY listed action. Faizan cannot
+    // log these Marketing verbs in practice; this documents the consequence rather than endorsing it.
+    s.eq('the set is shared: faizan + a Marketing removal would be flagged',w({u:'faizan',action:'Dispatch deleted'}),true);
+    // The watched person is who is flagged: an owner doing the same override is not.
+    ['QC lot voided','QC PO closed with shortfall','QC cut relocked','QC PO reopened']
+      .forEach(act=>{
+        s.eq('afnan "'+act+'" is not flagged',w({u:'afnan',user:'Afnan',action:act}),false);
+        s.eq('ammar "'+act+'" is not flagged',w({u:'ammar',user:'Ammar',action:act}),false);
+      });
+    s.eq('haris (QC manager) is not watched',w({u:'haris',user:'Haris',action:'QC lot voided'}),false);
+    // Existing watches unchanged.
+    s.eq('mustafa Payslip paid still flagged',w({u:'mustafa',user:'Mustafa',action:'Payslip paid'}),true);
+    s.eq('mustafa Fabric roll deleted still flagged',w({u:'mustafa',action:'Fabric roll deleted'}),true);
+    s.eq('daniyal Dispatch deleted still flagged',w({u:'daniyal',action:'Dispatch deleted'}),true);
+    s.eq('daniyal Dispatch logged still not',w({u:'daniyal',action:'Dispatch logged'}),false);
+    s.eq('mustafa QC lot received is not flagged',w({u:'mustafa',action:'QC lot received'}),false);
+    // Username first, display name only for rows with no `u`.
+    s.eq('old row, display name only: Faizan + void is flagged',w({user:'Faizan',action:'QC lot voided'}),true);
+    s.eq('old row, display name only: Faizan + lot received is not',w({user:'Faizan',action:'QC lot received'}),false);
+    s.eq('username wins over a matching display name',w({u:'afnan',user:'Faizan',action:'QC lot voided'}),false);
+    s.eq('a name that is not an account is not flagged',w({user:'Somebody',action:'QC lot voided'}),false);
+    // The set is exactly the four QC overrides plus the existing ones.
+    const set=a.run('Array.from(_MONITOR_WATCH_ACTIONS)');
+    s.eq('exactly 4 QC verbs are in the watch set',set.filter(x=>/^QC /.test(x)).length,4);
+    s.eq('the watch set grew by exactly 4',set.length,21);
+  }
+
+  s.section('QC verbs in the rendered Monitor (detail is escaped)');
+  {
+    const t=app();
+    const now=Date.now();
+    t.run('_monitorItems='+J([
+      {_id:'1',user:'Faizan',u:'faizan',action:'QC lot voided',detail:'LOT-1 <img src=x onerror=alert(1)>',ts:now},
+      {_id:'2',user:'Faizan',u:'faizan',action:'QC lot received',detail:'LOT-2 · PO-105 · 40',ts:now},
+      {_id:'3',user:'Afnan',u:'afnan',action:'QC PO closed with shortfall',detail:'PO-105',ts:now}
+    ])+';_monitorLoaded=true;_monitorFilter={preset:"all",from:"",to:""}');
+    t.run('_renderMonitorPage()');
+    const page=t.el('main-content').innerHTML;
+    s.ok('the watched panel shows',/Recent watched activity/.test(page));
+    s.ok('exactly one watched row (the void)',/>1<\/div>\s*<div[^>]*>Watched \(/.test(page));
+    s.ok('the heading names Faizan',/Faizan/.test(page.split('Recent watched activity')[1]||''));
+    s.ok('the detail is escaped, never live markup',!/<img src=x/.test(page)&&/&lt;img src=x/.test(page));
+    t.run('_monitorPerson="Faizan";_monitorExpanded=new Set(["1","2"]);_renderMonitorPage()');
+    const dd=t.el('main-content').innerHTML;
+    s.ok('drilldown: the void sits under Delete',/Delete<\/span>[\s\S]*QC lot voided/.test(dd));
+    s.ok('drilldown: the lot received sits under Create',/Create<\/span>[\s\S]*QC lot received/.test(dd));
+    s.ok('drilldown: only the void carries the flag',(dd.match(/⚠ <\/span>/g)||[]).length===1);
+    s.ok('drilldown: detail escaped there too',!/<img src=x/.test(dd));
   }
 
   s.section('the page renders what it computed');
