@@ -120,7 +120,9 @@ module.exports=async function(){
   {
     const q=strip(read('js/ph-qc-write.js'));
     const qd=Array.from(new Set((q.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
-    s.eq('ph-qc-write.js (QC4) touches exactly pos, po_qc_recon, po_qc_lots and hrm_notifications (its PHQC_WRITE_ROOTS)',J(qd),J(['hrm_notifications','po_qc_lots','po_qc_recon','pos']));
+    // R1 (16 Oct 2026), a deliberate change: the close also READS bundles (its classic Final QC check) and never writes one
+    s.eq('ph-qc-write.js (QC4) touches exactly pos, po_qc_recon, po_qc_lots and hrm_notifications (its PHQC_WRITE_ROOTS), and reads bundles (PHQC_READ_ROOTS)',J(qd),J(['bundles','hrm_notifications','po_qc_lots','po_qc_recon','pos']));
+    s.ok('… a bundles reference is only ever read (tx.get), never set / updated',(q.match(/doc\(db,\s*'bundles'[^)]*\)/g)||[]).length===1&&/tx\.get\(doc\(db,'bundles',/.test(q)&&!/tx\.(set|update)\(doc\(db,'bundles'/.test(q));
     s.ok('… one transaction per writer (five), and no other write API',(q.match(/runTransaction\(/g)||[]).length===5&&!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch)\s*\(/.test(q));
     s.ok('… its pos references are the PO document and its history rows only',(q.match(/doc\(db,\s*'pos'[^)]*\)/g)||[]).every(x=>/'pos',\s*poId(?:,\s*'history',\s*h\.id)?\)/.test(x)));
     s.ok('… and it never deletes (no tx.delete)',!/tx\.delete\(/.test(q));
