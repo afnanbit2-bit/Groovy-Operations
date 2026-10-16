@@ -230,5 +230,42 @@ module.exports=async function(){
     s.eq('and none of them re-derives it inline',(src.match(/_MONITOR_WATCH_ACTIONS\.has\(/g)||[]).length,1);
   }
 
+  s.section('QC verbs: the writers and the Monitor read the same strings (no drift)');
+  {
+    // Read the QC strings the writers actually log, out of their source:
+    // every 'QC ...' literal inside a _phLog(...) call (the close call picks
+    // one of two with a ternary, so both literals are read).
+    const fs=require('fs'),path=require('path');
+    const logged=new Set();
+    ['ph-qc-write.js','ph-write.js'].forEach(f=>{
+      const src=fs.readFileSync(path.join(harness.ROOT,'js',f),'utf8');
+      const re=/_phLog\(([^\n]*)/g;let m;
+      while((m=re.exec(src))){
+        const lits=m[1].match(/'QC [^']*'/g)||[];
+        lits.forEach(l=>logged.add(l.slice(1,-1)));
+      }
+    });
+    const want={
+      'QC lot received':['create',false],
+      'QC lot voided':['delete',true],
+      'QC cut locked':['other',false],
+      'QC PO closed':['other',false],
+      'QC PO closed with shortfall':['edit',true],
+      'QC cut relocked':['edit',true],
+      'QC PO reopened':['edit',true],
+      'QC legacy receipts adopted':['create',false]
+    };
+    s.eq('the writers log exactly the eight QC verbs',J(Array.from(logged).sort()),J(Object.keys(want).sort()));
+    const cat=x=>a.run('_monitorCategorize('+J(x)+').key');
+    const w=x=>a.run('_monitorIsWatched('+J({u:'faizan',user:'Faizan',action:x})+')');
+    Array.from(logged).forEach(v=>{
+      const exp=want[v];
+      s.ok('logged verb "'+v+'" is one the Monitor knows',!!exp);
+      if(!exp)return;
+      s.eq('logged verb "'+v+'" is categorised '+exp[0],cat(v),exp[0]);
+      s.eq('logged verb "'+v+'" watched='+exp[1],w(v),exp[1]);
+    });
+  }
+
   return s;
 };
