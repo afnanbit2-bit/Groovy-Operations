@@ -92,6 +92,16 @@ function _packListCard(p){
 }
 
 // Detail: per-size receive table + append-only batch history.
+// Batch-history wording. A QC lot void (js/ph-qc-write.js phQcVoidLot) appends NEGATIVE counter entries
+// (id 'QV-…', qty<0, src:'qc', voidOf=<lot id>) so the signed sums stay true; they read as a void, not as "S×-10".
+function _packIsVoid(e){return !!e&&(!!e.voidOf||(e.src==='qc'&&(Number(e.qty)||0)<0));}
+function _packSigned(n){n=Number(n)||0;return n<0?'\u2212'+(-n):String(n);}   // real minus sign
+function _packEntryText(e){return _packIsVoid(e)?`${_gpEsc(e.size)} ${_packSigned(e.qty)}`:`${_gpEsc(e.size)}×${e.qty}`;}
+function _packGroupText(items){
+  const txt=items.map(_packEntryText).join(' · ');
+  return items.length&&items.every(_packIsVoid)?'Voided QC lot — '+txt:txt;
+}
+
 function _renderPackDetail(po){
   const cut=poCutBySize(po),rec=poReceivedBySize(po);
   const sizes=PO_FLOW_SIZES.filter(sz=>(cut[sz]||0)>0||(rec[sz]||0)>0);
@@ -112,8 +122,8 @@ function _renderPackDetail(po){
     const g=groups[rid];const tot=g.items.reduce((a,e)=>a+(Number(e.qty)||0),0);
     const when=g.ts?new Date(g.ts).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
     return`<div style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface-2)">
-      <div style="display:flex;justify-content:space-between;font-size:13px"><span style="font-weight:700">${tot} pcs</span><span style="color:var(--muted)">${when} · ${_gpEsc(g.by||'')}</span></div>
-      <div style="font-size:13px;color:var(--muted);margin-top:3px">${g.items.map(e=>`${_gpEsc(e.size)}×${e.qty}`).join(' · ')}</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px"><span style="font-weight:700">${tot<0?_packSigned(tot):tot} pcs</span><span style="color:var(--muted)">${when} · ${_gpEsc(g.by||'')}</span></div>
+      <div style="font-size:13px;color:var(--muted);margin-top:3px">${_packGroupText(g.items)}</div>
     </div>`;
   }).join('');
   const fully=poFullyReceived(po);
