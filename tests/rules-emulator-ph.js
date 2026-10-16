@@ -829,13 +829,22 @@ async function t(name,fn){
       const d=await read('po_qc_recon/'+QPO);if(!d||d.status!=='locked'||qq(d.cutLock.sizes)!==qq(QCUT)||d.cutLock.source!=='manual'||d.cutLock.lockedBy!==w.u)throw new Error('stored '+qq(d));
       const h=await qHist();if(h.length!==1||h[0].type!=='qc_cut_locked'||h[0].by!==w.u)throw new Error('history '+qq(h));});
   await t('FAIZAN end to end with the app\'s writers: lot 1 locks the cut, lot 2, the classic packingReceipts mirror, close within 2 % marks Final QC complete',async()=>{await reset();await qSeedPo();
+    // R1 (16 Oct 2026): the classic Final QC fields need stage qc AND every bundle dispositioned (js/pos.js completeQC)
+    await seed('bundles/B0001',{bundleId:'B0001',bundleNumber:1,poId:QPO,size:'M',units:60,qcStatus:'pass'});await seed('bundles/B0002',{bundleId:'B0002',bundleNumber:2,poId:QPO,size:'L',units:60,qcStatus:'fail',qcReason:'stain'});
     const a1=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{S:20,M:20,L:20,XL:10},day:"2026-10-05"},{expectedRev:0,now:'+nx()+',rand:"aa11"})');if(!a1.ok||a1.seq!==1||!a1.locked)throw new Error('lot1 '+qq(a1));
     const a2=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{M:19,L:20,XL:10}},{expectedRev:1,now:'+nx()+',rand:"bb22"})');if(!a2.ok||a2.seq!==2)throw new Error('lot2 '+qq(a2));
     const p=await read('pos/'+QPO);if(p.packingReceipts.length!==7||!p.packingReceipts.every(e=>e.src==='qc'))throw new Error('mirror '+qq(p.packingReceipts));
-    const c=await call(FAIZAN,'phQcClose("'+QPO+'",{expectedRev:2,now:'+nx()+'})');if(!c.ok||c.action!=='close'||c.phase!=='ready')throw new Error('close '+qq(c));
+    const c=await call(FAIZAN,'phQcClose("'+QPO+'",{expectedRev:2,now:'+nx()+'})');if(!c.ok||c.action!=='close'||c.phase!=='ready'||!c.classic||c.classic.written!==true)throw new Error('close '+qq(c));
     const d=await read('po_qc_recon/'+QPO);if(d.status!=='closed'||d.closedBy!=='faizan'||d.closeVerdict.state!=='within'||d.lotCount!==2)throw new Error('recon '+qq(d));
     const p2=await read('pos/'+QPO);if(p2.currentStage!=='completed'||p2.stages.qc.done!==true||p2.stages.qc.doneBy!=='Faizan'||p2.qcReconClosedBy!=='faizan'||p2.stages.cutting.done!==true)throw new Error('pos '+qq(p2));
     const h=await qHist();if(qq(h.map(x=>x.type).sort())!==qq(['qc_closed','qc_lot_added','qc_lot_added']))throw new Error('history '+qq(h.map(x=>x.type)));});
+  await t('R1: FAIZAN closes a PO still at STITCHING with the app\'s writer: the reconciliation closes, the pos document keeps its stage and gets only the two additive keys',async()=>{await reset();await qSeedPo({currentStage:'stitching'});
+    await seed('bundles/B0001',{bundleId:'B0001',bundleNumber:1,poId:QPO,size:'M',units:120,qcStatus:'pass'});
+    const a1=await call(FAIZAN,'phQcAddLot("'+QPO+'",{sizes:{S:20,M:40,L:40,XL:20},day:"2026-10-05"},{expectedRev:0,now:'+nx()+',rand:"cc33"})');if(!a1.ok)throw new Error('lot '+qq(a1));
+    const c=await call(FAIZAN,'phQcClose("'+QPO+'",{expectedRev:1,now:'+nx()+'})');if(!c.ok||!c.classic||c.classic.written!==false||c.classic.why!=='PO is still at stitching')throw new Error('close '+qq(c));
+    const d=await read('po_qc_recon/'+QPO);if(d.status!=='closed')throw new Error('recon '+qq(d));
+    const p2=await read('pos/'+QPO);if(p2.currentStage!=='stitching'||p2.stages.qc.done!==false||p2.qcReconClosedBy!=='faizan')throw new Error('pos '+qq(p2));
+    const h=await qHist();const hc=h.filter(x=>x.type==='qc_closed')[0];if(!hc||hc.data.classicWritten!==false)throw new Error('history '+qq(h));});
   await t('FAIZAN cannot close a SHORT PO: the writer refuses (forbidden); a raw close without an overrides row, or with one, is refused',async()=>{await reset();await qSeedLots([{S:20,M:38,L:40,XL:20}]);
     const c=await call(FAIZAN,'phQcClose("'+QPO+'",{expectedRev:1,now:'+nx()+',reason:"lost two pieces",cause:"lost_in_line"})');if(c.ok||c.code!=='forbidden')throw new Error(qq(c));
     await assertFails(qUpd(FAIZAN,{status:'closed',closedAt:NOW+5,closedBy:'faizan',closedByName:'Faizan',closeVerdict:qVerdict('short','short')}));

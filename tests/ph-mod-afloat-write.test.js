@@ -306,13 +306,28 @@ module.exports=async function(){
   const rc=await F.R('phqcDlgGo()');await settle(60);
   const P=F.store['pos/PO-201'],RC=F.store['po_qc_recon/PO-201'];
   s.ok('Faizan closes: the reconciliation is closed (by faizan, verdict exact / ready)',rc&&rc.ok&&RC.status==='closed'&&RC.closedBy==='faizan'&&RC.closedAt===THU_NOON&&RC.closeVerdict.state==='exact'&&RC.closeVerdict.phase==='ready');
-  s.ok('… and the PO carries the classic Final QC fields + the two additive keys',P.currentStage==='completed'&&P.stages.qc.done===true&&P.stages.qc.doneBy==='Faizan'&&P.stages.qc.doneAt==='2026-10-15T07:00:00.000Z'&&/QC received 120 of 120 \(exact\)/.test(P.stages.qc.notes)&&P.qcReconClosedAt===THU_NOON&&P.qcReconClosedBy==='faizan');
+  // R1 (16 Oct 2026), a deliberate change: this PO is at STITCHING, so the close does NOT mark Final QC complete (the classic fields
+  // need stage qc and every bundle dispositioned, as js/pos.js completeQC does); it carries only the two additive keys, and says why
+  s.ok('… and the PO stays at stitching (no classic Final QC fields), carrying the two additive keys; the writer says why',P.currentStage==='stitching'&&P.stages.qc.done===false&&P.stages.qc.doneBy===null&&P.qcReconClosedAt===THU_NOON&&P.qcReconClosedBy==='faizan'
+    &&rc.classic&&rc.classic.written===false&&rc.classic.why==='PO is still at stitching');
   s.ok('… lots #1–#3 still byte-for-byte as saved',(()=>{const now=F.lotDocs();return Object.keys(snap2).every(k=>now[k]===snap2[k])&&Object.keys(now).length===3;})());
   s.ok('after the close: "+ Receive units" is GONE, the closed line carries its stamp "✓ Closed Thu 15 Oct 2026, 12:00 PM by Faizan"',!F.id('phaf-recv-btn')&&!F.id('phaf-close-btn')&&/✓ Closed Thu 15 Oct 2026, 12:00 PM by Faizan/.test(F.text(F.detail()))&&/Only an owner can reopen it/.test(F.text(F.detail())));
-  s.ok('… the stage reads "Completed — Final QC marked complete" (not "reconciliation open")',/Completed — Final QC marked complete/.test(F.text(F.detail()))&&!/reconciliation open/.test(F.text(F.detail())));
+  s.ok('… the stage does NOT read "Completed — Final QC marked complete" (R1: the PO is still at stitching)',!/Completed — Final QC marked complete/.test(F.text(F.detail()))&&!/reconciliation open/.test(F.text(F.detail())));
   s.ok('… no Void control on any lot of a closed PO, and no Reopen control (QC7)',F.cls('phaf-void').length===0&&!/Reopen/.test(F.text(F.detail())));
   s.ok('… the sheet cannot be opened any more (phqcSheetOpen refuses)',F.R('phqcSheetOpen("PO-201")')===false&&!F.sheet());
   s.ok('… a second close is refused by the writer (a close record is never rewritten)',(await F.R('phQcClose("PO-201",{expectedRev:'+RC.rev+'})')).ok===false&&F.store['po_qc_recon/PO-201'].closedAt===THU_NOON);
+  // R1 (16 Oct 2026): the same close of a PO AT Final QC with every bundle dispositioned does mark Final QC complete
+  {
+    CLK.now=THU_NOON;
+    const fq=makeFake({'pos/PO-209':cutPo('PO-209','qc'),'po_qc_recon/PO-209':recon('PO-209',{lotCount:1,rev:1}),'po_qc_lots/PO-209-1792000000001-aaaa':lotRow('PO-209',1,Object.assign({},CUT)),
+      'bundles/B9001':{bundleId:'B9001',poId:'PO-209',size:'M',units:60,qcStatus:'pass'},'bundles/B9002':{bundleId:'B9002',poId:'PO-209',size:'L',units:60,qcStatus:'fail',qcReason:'stain'}});
+    const Q=mk('faizan',{fk:fq});
+    await Q.show();await Q.open('PO-209');await Q.click('phaf-close-btn');
+    const rq=await Q.R('phqcDlgGo()');await settle(60);
+    const PQ=fq.store['pos/PO-209'];
+    s.ok('R1: a PO at QC with every bundle dispositioned: the close writes the classic Final QC fields and says so',rq&&rq.ok&&rq.classic&&rq.classic.written===true&&PQ.currentStage==='completed'&&PQ.stages.qc.done===true&&PQ.stages.qc.doneBy==='Faizan'&&/QC received 120 of 120 \(exact\); 1 bundle failed QC/.test(PQ.stages.qc.notes));
+    s.ok('… and the stage reads "Completed — Final QC marked complete"',/Completed — Final QC marked complete/.test(Q.text(Q.detail())));
+  }
 
   /* ── 3. the unsaved draft, the stale revision (two phones), offline, the double press ─── */
   s.section('draft, two phones, offline, double press');

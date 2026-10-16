@@ -12,9 +12,10 @@
                     poFullyReceived keep working unchanged
      phQcVoidLot    a lot -> void (never deleted) + a counter entry per size appended to pos.packingReceipts (qty negative,
                     src:'qc', voidOf), so the classic readers' sums stay true; an adopted (legacy) lot appends nothing
-     phQcClose      the reconciliation -> closed + on the pos document the fields the classic completeQC writes
-                    (currentStage 'completed', stages.qc.done/doneAt/doneBy/notes) plus qcReconClosedAt/By; a PO the classic
-                    flow had already completed gets only the two additive keys (nothing it stored is rewritten)
+     phQcClose      the reconciliation -> closed + qcReconClosedAt/By on the pos document; the fields the classic completeQC
+                    writes (currentStage 'completed', stages.qc.done/doneAt/doneBy/notes) ONLY when the PO is at stage qc and
+                    every bundle is dispositioned (R1, 16 Oct 2026 - see phQcClassicDecision; the result's `classic` says which
+                    and why); a PO the classic flow had already completed gets only the two additive keys
      phQcRelock     an OWNER replaces the cut snapshot from the PO's (hand-corrected) cut - only when the two differ
      phQcReopen     an OWNER reopens a closed reconciliation (the pos document is not touched)
    CHANGE FROM THE PLAN (owner decision, 15 Oct 2026): a MANAGER (afnan, ammar, mustafa) may close a PO in ANY phase that is not
@@ -28,7 +29,8 @@
    stored "who" is the signed-in person; the client checks are a convenience and firestore.rules is the boundary.
 
    Writes: pos/{id} (packingReceipts, and the close fields only), po_qc_recon, po_qc_lots, pos/{id}/history, hrm_notifications.
-   Never a delete. Loaded after js/ph-issue.js. Globals are phQc / _phQcw prefixed (one lexical scope with every classic script).
+   Reads, never writes: bundles (the close's classic check, PHQC_READ_ROOTS). Never a delete. After each commit one activity row
+   (logActivity through _phLog, ids and numbers only, no typed reason). Loaded after js/ph-issue.js. Globals are phQc / _phQcw prefixed (one lexical scope with every classic script).
    ───────────────────────────────────────────────────────────────────────── */
 
 // Every collection this file may write (tests/ph-qc-write.test.js and tests/ph-integration.test.js hold the source to it).
@@ -56,13 +58,51 @@ function phQcVerdictSnap(rc){
   const t=v&&v.total?{cut:v.total.cut,recv:v.total.recv,diff:v.total.diff,allow:v.total.allow,state:v.total.state}:null;
   return{state:v?v.state:null,phase:rc?rc.phase:null,total:t,sizes:sizes};
 }
-// The pos patch of a close: the classic completeQC fields (unless the PO was already completed) + the two additive keys.
-function phQcClosePosPatch(po,rc,ctx){
+// R1 (16 Oct 2026, owner decision): the reconciliation ALWAYS closes when the close is allowed, but the classic Final QC fields are
+// written ONLY when the PO is AT stage qc and EVERY bundle has been dispositioned at Final QC (Haris) - exactly the classic rule:
+// js/pos.js renderQCWork `pending=bundles.filter(b=>!b.qcStatus).length; canComplete=pending===0&&bundles.length>0` (the enabled
+// state of the Complete QC button) and window.completeQC `if(po.currentStage!=='qc')` (refused). The bundles are the ones the
+// classic screen reads: `bundles where poId == po.id` (js/pos.js loadBundles). Otherwise the pos document gets only the two additive
+// keys and the result says why (classic.written false + classic.why), so the screen can tell Faizan; Haris's own button, which
+// refuses only while a reconciliation is OPEN, then finishes the PO the classic way.
+const PHQC_READ_ROOTS=Object.freeze(['bundles']);     // read, never written, by this file (the close's classic check)
+const PHQC_BUNDLES_READ_MAX=401;                      // one read; at the cap the set is not known whole -> classic not written
+const PHQC_BUNDLES_RECHECK_MAX=400;                   // bundles re-read inside the close's transaction
+// The classic Final QC tally of a PO's bundles (pure; held equal to js/pos.js renderQCWork's two lines by tests/ph-qc-write.test.js).
+function phQcBundleTally(bundles){
+  const b=Array.isArray(bundles)?bundles:[];
+  const pending=b.filter(function(x){return!(x&&x.qcStatus);}).length;
+  return{count:b.length,pending:pending,passed:b.filter(function(x){return!!x&&x.qcStatus==='pass';}).length,
+    failed:b.filter(function(x){return!!x&&x.qcStatus==='fail';}).length,done:pending===0&&b.length>0};
+}
+// May the close write the classic Final QC fields? -> {write, why, failed}. `br` is the bundles read made before the transaction.
+function phQcClassicDecision(po,br){
+  const st=phStageOf(po);
+  if(st==='completed')return{write:false,why:'PO had already completed Final QC in the classic flow',failed:0};
+  if(st!=='qc')return{write:false,why:'PO is still at '+st,failed:0};
+  if(!br||!br.ok)return{write:false,why:'bundles could not be read',failed:0};
+  const t=phQcBundleTally(br.rows);
+  if(t.count===0)return{write:false,why:'no bundles on record for this PO',failed:0};
+  if(t.pending>0)return{write:false,why:t.pending+' bundle'+(t.pending===1?'':'s')+' not yet dispositioned by QC',failed:t.failed};
+  return{write:true,why:'PO was at Final QC and every bundle was dispositioned',failed:t.failed};
+}
+async function _phQcwBundlesFresh(poId){
+  try{
+    const snap=await _phWithTimeout(getDocs(query(collection(db,'bundles'),where('poId','==',poId),limit(PHQC_BUNDLES_READ_MAX))),PH_READ_TIMEOUT_MS);
+    if(_phFromCache(snap))throw _phCacheError();
+    const rows=((snap&&snap.docs)||[]).map(function(d){return Object.assign({},d.data(),{_id:d.id});}).filter(function(r){return r&&r.poId===poId;});
+    if(rows.length>PHQC_BUNDLES_RECHECK_MAX)return{ok:false,error:'more than '+PHQC_BUNDLES_RECHECK_MAX+' bundles'};
+    return{ok:true,rows:rows};
+  }catch(e){const i=typeof phErrInfo==='function'?phErrInfo(e):{};return{ok:false,error:(i&&(i.message||i.code))||'read failed'};}
+}
+// The pos patch of a close: the classic completeQC fields (only when `cls.write`) + the two additive keys.
+function phQcClosePosPatch(po,rc,ctx,cls){
   const now=_phNowOf(ctx);
   const add={qcReconClosedAt:now,qcReconClosedBy:ctx.u};
-  if(phStageOf(po)==='completed')return add;
+  if(phStageOf(po)==='completed'||!cls||cls.write!==true)return add;
   const t=rc.verdict.total;
-  const note='QC received '+t.recv+' of '+t.cut+' ('+(rc.phase==='ready'?(rc.verdict.state==='exact'?'exact':rc.verdict.state==='over'?'over inside the allowance':'within '+PHQC_TOL_PCT+' %'):'closed by a manager: '+rc.phase)+')';
+  const note='QC received '+t.recv+' of '+t.cut+' ('+(rc.phase==='ready'?(rc.verdict.state==='exact'?'exact':rc.verdict.state==='over'?'over inside the allowance':'within '+PHQC_TOL_PCT+' %'):'closed by a manager: '+rc.phase)+')'
+    +(cls.failed>0?'; '+cls.failed+' bundle'+(cls.failed===1?'':'s')+' failed QC':'');
   const p={currentStage:'completed'};
   p['stages.qc.done']=true;p['stages.qc.doneAt']=new Date(now).toISOString();p['stages.qc.doneBy']=ctx.name||ctx.u;p['stages.qc.notes']=note;
   return Object.assign(p,add);
@@ -231,7 +271,7 @@ async function phQcVoidLot(lotId,reason,opts){
       _phQcwPatchLots([{id:lotId,data:out.lot}]);
       if(out.receipts)_phQcwPatchPo(poId,{packingReceipts:out.receipts});
       if(typeof phHistoryForget==='function')phHistoryForget(poId);
-      _phLog('QC lot voided',lotId+' - '+why.slice(0,120));
+      _phLog('QC lot voided',poId+' - lot #'+out.lot.seq+' ('+lotId+'), '+out.lot.total+' pcs');
       return{ok:true,id:poId,lotId:lotId,rev:out.recon.rev,lot:out.lot,recon:out.recon,historyId:out.historyId};
     });
   }catch(e){return _phFromError(e);}
@@ -254,6 +294,9 @@ async function phQcClose(poId,opts){
       const now=_phNowOf(o),ctx={u:a.u,name:a.name,now:now,rand:o.rand};
       const lr=await _phQcwLotsFresh(poId);
       if(!lr.ok)return _phFail('unread',lr.error);
+      // R1: the PO's bundles, read BEFORE the transaction (a transaction cannot query). A failed read does NOT stop the close; it
+      // only means the classic Final QC fields are not written.
+      const br=await _phQcwBundlesFresh(poId);
       const pref=doc(db,'pos',poId),rref=doc(db,'po_qc_recon',poId);
       let out=null;
       await runTransaction(db,async function(tx){
@@ -284,25 +327,35 @@ async function phQcClose(poId,opts){
           if((Array.isArray(r.overrides)?r.overrides.length:0)>=PHQC_OVERRIDES_MAX)throw _phRefuse('refused','This reconciliation has '+PHQC_OVERRIDES_MAX+' overrides already; no more can be recorded.');
         }
         const mv=phQcMoveProblem(r.status,'closed',action,a.u);if(mv)throw _phRefuse('forbidden',mv);
+        // R1: may the classic Final QC fields be written? Judged on the PO as read in THIS transaction; when the answer is yes, every
+        // bundle is read again here (reads before writes) and judged again, so a bundle changed since the read is seen.
+        let cls=phQcClassicDecision(po,br);
+        if(cls.write){
+          const fresh=[];let gone=false;
+          for(const row of br.rows){const bs=await tx.get(doc(db,'bundles',row._id));if(!bs||!bs.exists()){gone=true;break;}const bd=bs.data()||{};if(bd.poId!==poId){gone=true;break;}fresh.push(bd);}
+          cls=gone?{write:false,why:'bundles changed while saving',failed:0}:phQcClassicDecision(po,{ok:true,rows:fresh});
+        }
         const snap=phQcVerdictSnap(rc);
         const patch={status:'closed',closedAt:now,closedBy:a.u,closedByName:_phStr(a.name||a.u,60),closeVerdict:snap,rev:r.rev+1,updatedAt:now,updatedBy:a.u,updatedByName:_phStr(a.name||a.u,60)};
         if(action==='close_short')patch.overrides=(Array.isArray(r.overrides)?r.overrides:[]).concat([phQcBuildOverride('close_short',reason,ctx,{cause:o.cause})]);
-        const pp=phQcClosePosPatch(po,rc,ctx);
+        const pp=phQcClosePosPatch(po,rc,ctx,cls);
+        const classic={written:cls.write===true&&'currentStage' in pp,why:cls.why};
         const h=phBuildHistoryRow({type:action==='close'?'qc_closed':'qc_closed_short',from:r.status,to:'closed',reason:reason,
-          data:{state:snap.state,phase:snap.phase,cut:snap.total.cut,recv:snap.total.recv,diff:snap.total.diff,override:action==='close_short',cause:action==='close_short'?o.cause:''}},ctx);
+          data:{state:snap.state,phase:snap.phase,cut:snap.total.cut,recv:snap.total.recv,diff:snap.total.diff,override:action==='close_short',cause:action==='close_short'?o.cause:'',
+            classicWritten:classic.written,classicWhy:_phStr(classic.why,120)}},ctx);
         if(h.error)throw _phRefuse('invalid',h.error);
         const bells=action==='close_short'?phQcBellRows('close',poId,'Closed outside 2 %: '+poId,(a.name||a.u)+' closed '+poId+' at QC with '+snap.total.recv+' of '+snap.total.cut+' received ('+rc.phase+', '+o.cause+'). Reason: '+reason,ctx):[];
         tx.update(rref,patch);
         tx.update(pref,pp);
         tx.set(doc(db,'pos',poId,'history',h.id),h.data);
         bells.forEach(function(b){tx.set(doc(db,'hrm_notifications',b.id),b.data);});
-        out={recon:Object.assign({},r,patch),posPatch:pp,historyId:h.id,action:action,bells:bells.map(function(b){return b.data.forUser;}),phase:rc.phase,verdict:snap};
+        out={recon:Object.assign({},r,patch),posPatch:pp,historyId:h.id,action:action,bells:bells.map(function(b){return b.data.forUser;}),phase:rc.phase,verdict:snap,classic:classic};
       });
       _phPatchLocal('recon',poId,out.recon);
       _phQcwPatchPo(poId,out.posPatch);
       if(typeof phHistoryForget==='function')phHistoryForget(poId);
-      _phLog(out.action==='close'?'QC reconciliation closed':'QC reconciliation closed outside tolerance',poId+' - '+out.verdict.total.recv+' of '+out.verdict.total.cut);
-      return{ok:true,id:poId,rev:out.recon.rev,action:out.action,phase:out.phase,verdict:out.verdict,recon:out.recon,posPatch:out.posPatch,told:out.bells,historyId:out.historyId};
+      _phLog(out.action==='close'?'QC PO closed':'QC PO closed with shortfall',poId+' - '+out.verdict.total.recv+' of '+out.verdict.total.cut+' received; Final QC '+(out.classic.written?'marked complete':'not marked complete'));
+      return{ok:true,id:poId,rev:out.recon.rev,action:out.action,phase:out.phase,verdict:out.verdict,recon:out.recon,posPatch:out.posPatch,classic:out.classic,told:out.bells,historyId:out.historyId};
     });
   }catch(e){return _phFromError(e);}
 }
@@ -355,7 +408,7 @@ async function phQcRelock(poId,opts){
       });
       _phPatchLocal('recon',poId,out.recon);
       if(typeof phHistoryForget==='function')phHistoryForget(poId);
-      _phLog('QC cut snapshot replaced',poId+' - '+reason.slice(0,120));
+      _phLog('QC cut relocked',poId+' - '+out.drift.sizes.length+' size'+(out.drift.sizes.length===1?'':'s')+' changed');
       return{ok:true,id:poId,rev:out.recon.rev,recon:out.recon,drift:out.drift,told:out.bells,historyId:out.historyId};
     });
   }catch(e){return _phFromError(e);}
@@ -397,7 +450,7 @@ async function phQcReopen(poId,opts){
       });
       _phPatchLocal('recon',poId,out.recon);
       if(typeof phHistoryForget==='function')phHistoryForget(poId);
-      _phLog('QC reconciliation reopened',poId+' - '+reason.slice(0,120));
+      _phLog('QC PO reopened',poId+' - reconciliation revision '+out.recon.rev);
       return{ok:true,id:poId,rev:out.recon.rev,recon:out.recon,historyId:out.historyId};
     });
   }catch(e){return _phFromError(e);}

@@ -1158,7 +1158,7 @@ async function phQcAdoptLegacy(poId,opts){
       _phPatchLocal('recon',poId,out.recon);
       _phQcwPatchLots([out.lot]);
       if(typeof phHistoryForget==='function')phHistoryForget(poId);
-      _phLog('QC old receipts adopted',poId+' - lot #'+out.lot.data.seq+', '+out.lot.data.total+' pcs');
+      _phLog('QC legacy receipts adopted',poId+' - lot #'+out.lot.data.seq+', '+out.lot.data.total+' pcs');
       return{ok:true,id:poId,lotId:out.lot.id,seq:out.lot.data.seq,rev:out.recon.rev,recon:out.recon,lot:out.lot.data,adopted:out.ids.length,historyId:out.historyId};
     });
   }catch(e){return _phFromError(e);}
