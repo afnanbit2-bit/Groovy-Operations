@@ -127,6 +127,13 @@ module.exports=async function(){
   }
   s.ok('and writes under pos ONLY the history subcollection',(wsrc.match(/doc\(db,\s*'pos',[^)]*\)/g)||[]).every(x=>/'pos',\s*poId(?:,\s*'history'(?:,\s*h\.id)?)?\)/.test(x)));
   const wr=[...MODS.map(n=>'js/'+n+'.js')];
+  // QC7 (15 Oct 2026), a deliberate addition: the Afloat POs module's write surface, named. It reaches Firestore ONLY through these
+  // seven QC writers (QC6: add a lot, lock, void, close; QC7: the overrides -- close-short is phQcClose, relock, reopen, adopt legacy).
+  {
+    const af=strip(read('js/ph-mod-afloat.js'));
+    const called=Array.from(new Set((af.match(/\bphQc[A-Z]\w*(?=\()/g)||[]).filter(n=>/^phQc(Add|Lock|Void|Close|Relock|Reopen|Adopt)/.test(n)))).sort();
+    s.eq('ph-mod-afloat.js calls exactly the seven QC writers (QC6 + the QC7 overrides)',J(called),J(['phQcAddLot','phQcAdoptLegacy','phQcClose','phQcLockCut','phQcRelock','phQcReopen','phQcVoidLot']));
+  }
   s.ok('the writers the modules call are only ph-write.js functions (no direct doc(db, ...) in a module for a write)',wr.every(f=>!/\bdoc\(db,\s*'(counters|gatepasses|bundles|fabric_[a-z]+|pos)'/.test(strip(read(f)).replace(/getDoc\(doc\(db,[^;]*;/g,''))));
 
   s.section('global names: no top-level declaration appears in two files');

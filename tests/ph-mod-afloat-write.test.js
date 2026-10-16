@@ -207,7 +207,8 @@ module.exports=async function(){
       vm.runInContext(${J(FMT12)},c);vm.runInContext(fs.readFileSync(${J(path.join(ROOT,'js/hrm.js'))},'utf8').slice(0,0),c);
       vm.runInContext(${J(src)},c);
       process.stdout.write(JSON.stringify([${[Date.UTC(2026,9,15,10,42),Date.UTC(2026,9,15,4,7),THU_NOON,Date.UTC(2026,9,14,19,0),THU_0005,WED_2359,MON_4PM].join(',')}].map(m=>c.phqcStamp(m))));`;
-    return JSON.parse(cp.execFileSync(process.execPath,['-e',script],{env:Object.assign({},process.env,{TZ:tz}),encoding:'utf8'}));
+    // the script goes in on stdin (QC7: the module grew past the 128 KB a single -e argument may carry: spawn E2BIG)
+    return JSON.parse(cp.execFileSync(process.execPath,['-'],{input:script,env:Object.assign({},process.env,{TZ:tz}),encoding:'utf8'}));
   };
   const WANT=['Thu 15 Oct 2026, 3:42 PM','Thu 15 Oct 2026, 9:07 AM','Thu 15 Oct 2026, 12:00 PM','Thu 15 Oct 2026, 12:00 AM','Thu 15 Oct 2026, 12:05 AM','Wed 14 Oct 2026, 11:59 PM','Mon 12 Oct 2026, 4:00 PM'];
   {
@@ -394,7 +395,8 @@ module.exports=async function(){
     s.ok('… phqcCloseAsk refuses him (no dialog), and the writer refuses a direct close',F4.R('phqcCloseAsk("PO-204")')===false&&(await F4.R('phQcClose("PO-204",{expectedRev:1})')).code==='forbidden');
     s.ok('… but he can still receive more units (the PO is open)',!!F4.id('phaf-recv-btn')&&!hasC(F4.id('phaf-recv-btn'),'phaf-off'));
     const M4=mk('mustafa',{fk:fk4});await M4.show();await M4.open('PO-204');
-    s.ok('a manager on the short PO: "Close with a shortfall…" DISABLED with the line that the override arrives with the next update',hasC(M4.id('phaf-close-btn'),'phaf-off')&&M4.id('phaf-close-btn').disabled===true&&/arrives with the next update/.test(M4.text(M4.detail())));
+    // QC7, a deliberate change: the override arrived; the button is LIVE for a manager (tests/ph-mod-afloat-override.test.js drives it)
+    s.ok('a manager on the short PO: "Close with a shortfall…" is LIVE (QC7; it was disabled in QC6)',!!M4.id('phaf-close-btn')&&!hasC(M4.id('phaf-close-btn'),'phaf-off')&&M4.id('phaf-close-btn').disabled!==true&&/Close with a shortfall/.test(M4.text(M4.id('phaf-close-btn')))&&!/arrives with the next update/.test(M4.text(M4.detail())));
     await M4.back();await M4.open('PO-205');
     s.ok('a manager on a cut PO with no reconciliation: "Lock cut now" is live',!!M4.id('phaf-lock-btn'));
     await M4.click('phaf-lock-btn');
@@ -479,7 +481,8 @@ module.exports=async function(){
   {
     const IX=read('index.html'),SW=read('sw.js');
     s.ok('sw.js CACHE_VERSION is v341 or later (QC5 was v340)',+(/CACHE_VERSION = 'v(\d+)'/.exec(SW)||[0,0])[1]>=341);
-    for(const [f,tag] of [['css/main.css','20261015qc6m'],['js/pos.js','20261015qc6p'],['js/production.js','20261015qc6r'],['js/ph-i18n.js','20261015qc6i'],['js/ph-mod-afloat.js','20261015qc6a']])
+    // QC7, a deliberate change: main.css, ph-i18n.js and ph-mod-afloat.js changed again and carry the QC7 tags (qc7m / qc7i / qc7a)
+    for(const [f,tag] of [['css/main.css','20261015qc7m'],['js/pos.js','20261015qc6p'],['js/production.js','20261015qc6r'],['js/ph-i18n.js','20261015qc7i'],['js/ph-mod-afloat.js','20261015qc7a']])
       s.ok(f+' is loaded with ?v='+tag+' (a tag no other file uses)',IX.indexOf('/'+f+'?v='+tag+'"')>-1&&IX.split('?v='+tag+'"').length===2);
   }
 
@@ -515,7 +518,7 @@ module.exports=async function(){
     seed:{'pos/PO-203':cutPo('PO-203','qc'),'po_qc_recon/PO-203':recon('PO-203',{lotCount:1,rev:1}),'po_qc_lots/PO-203-1792000000001-aaaa':lotRow('PO-203',1,{S:10},{at:WED_905-3600000})}});
     const before=J(T.store['po_qc_lots/PO-203-1792000000001-aaaa']);await T.R('phQcVoidLot("PO-203-1792000000001-aaaa","typed wrong",{expectedRev:1})');const after=Object.assign({},T.store['po_qc_lots/PO-203-1792000000001-aaaa']);['status','voidedAt','voidedBy','voidReason'].forEach(k=>delete after[k]);const b=JSON.parse(before);delete b.status;return J(after)===J(b);});
   await brk('Faizan shown Close on a receiving PO as live','… nobody can close: Faizan sees Close PO DISABLED with the reason "still expected …"',async()=>{const T=await lot1With({src:mut(SRC,"    if(r.phase==='ready'&&(mgr||qc)){","    if((r.phase==='ready'||r.phase==='receiving')&&(mgr||qc)){")});T.fill({S:10,M:15,L:10,XL:5});await T.click('phaf-rx-review');await T.R('phqcSheetSave()');await settle(60);return hasC(T.id('phaf-close-btn'),'phaf-off');});
-  await brk('the closed PO keeps "+ Receive units"','after the close: "+ Receive units" is GONE …',async()=>{CLK.now=THU_NOON;const T=mk('faizan',{src:mut(SRC,"  if(closed){\n    sec.appendChild(phEl('p','ph-note phaf-closed-note',phI18nD('afloat.closed_no_more')));\n    return sec;\n  }","  if(closed){\n    sec.appendChild(phEl('p','ph-note phaf-closed-note',phI18nD('afloat.closed_no_more')));\n    const b=_phqcBtn('ph-btn phaf-recv-btn',phI18nD('afloat.a_receive'),function(){});b.id='phaf-recv-btn';sec.appendChild(b);return sec;\n  }"),
+  await brk('the closed PO keeps "+ Receive units"','after the close: "+ Receive units" is GONE …',async()=>{CLK.now=THU_NOON;const T=mk('faizan',{src:mut(SRC,"    sec.appendChild(phEl('p','ph-note phaf-closed-note',phI18nD('afloat.closed_no_more')));\n","    sec.appendChild(phEl('p','ph-note phaf-closed-note',phI18nD('afloat.closed_no_more')));\n    {const b=_phqcBtn('ph-btn phaf-recv-btn',phI18nD('afloat.a_receive'),function(){});b.id='phaf-recv-btn';sec.appendChild(b);}\n"),
     seed:{'pos/PO-207':cutPo('PO-207','completed'),'po_qc_recon/PO-207':recon('PO-207',{status:'closed',closedAt:THU_NOON-3600000,closedBy:'faizan',closedByName:'Faizan',lotCount:1,rev:3}),'po_qc_lots/PO-207-1792000000001-aaaa':lotRow('PO-207',1,Object.assign({},CUT))}});
     await T.show();const tg=T.cls('phaf-gtog')[0];if(tg)T.dom.click(tg);await settle(20);await T.open('PO-207');return !T.id('phaf-recv-btn');});
   await brk('the lots listed newest first','… the lots are listed OLDEST FIRST, each with its own 12-hour PKT stamp',async()=>{CLK.now=WED_905;const T=mk('faizan',{src:mut(SRC,"    if(sa!==sb)return sa-sb;","    if(sa!==sb)return sb-sa;"),
