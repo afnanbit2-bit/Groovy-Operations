@@ -3070,6 +3070,22 @@ const FRAGMENTS={
     return Promise.resolve('<div class="card">'+stock.replace(/<div style="height:80px"><\/div>/,'')+'</div><div class="card">'+unavailable+'</div><div class="card">'+form.slice(0,form.indexOf('Fabric rolls'))+'</div>');
   },
 
+  // Fabric ▸ Issue: the cutting-plan size rows as a select of the chosen PO's sizes, and as free text (WP-F6, Oct 2026).
+  'fabric — issue size rows from the PO':()=>{
+    const esc=x=>String(x==null?'':x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const mk=(po,sizes)=>{
+      const app=loadApp({files:['js/ph-core.js','js/fabric.js'],currentPage:'',session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',canFabric:true},
+        globals:{allFabricInventory:[],allFabricIn:[],allPasses:[],allFabricMovements:[],_gpEsc:esc,
+          allPOs:[{id:'PO-007',name:'Tee',code:'GST100',sizes:{XS:0,S:40,M:60,L:25,XL:10,'2XL':5,'3XL':2}}]}});
+      app.run('renderFabricIssueTab()');
+      app.el('fab-iss-po').value=po;
+      app.run('_fabIssueSizes='+JSON.stringify(sizes)+';_fabIssueRenderSizes()');
+      return app.el('fab-iss-sizes').innerHTML;
+    };
+    const rows=[{size:'M',bundles:'9-8-6-7'},{size:'',bundles:''},{size:'XXL',bundles:'3'},{size:'',bundles:'',free:true}];
+    return Promise.resolve('<div class="card">'+mk('PO-007',rows)+'</div><div class="card">'+mk('Sample',rows)+'</div>');
+  },
+
   // The Creator Database (Marketing M1): stat tiles, filter bar, a table
   // carrying every tier chip (including the "manual" badge and an unscored
   // row) and the Needs completion column. The table is allowed to scroll

@@ -76,7 +76,7 @@ const RECEIPTS=[
 function app(who,opts){
   opts=opts||{};
   const fs=makeFs();
-  const a=loadApp({files:['js/gatepass.js','js/fabric.js'],session:SESS[who||'afnan'],globals:Object.assign({},fs.api,{
+  const a=loadApp({files:['js/gatepass.js','js/fabric.js'].concat(opts.extra||[]),session:SESS[who||'afnan'],globals:Object.assign({},fs.api,{
     _gpEsc:_esc,
     allPasses:[],allFabricInventory:[],allFabricMovements:[],allReturns:[],allGPEditRequests:[],allFabricIn:clone(RECEIPTS),allPOs:[],
     currentPage:'',_fabInvDrillKey:null,_fabInvFilter:'all',_fabInvCatFilter:'all',_fabInvSearchQ:'',loadData:async()=>{},
@@ -471,6 +471,72 @@ module.exports=async function(){
     s.eq('a new colour is stored as typed',fresh&&fresh.color,'Royal Blue');
     const noStock=await saveColour('  Black  ',false,false);
     s.eq('the existing trim rule is unchanged',noStock&&noStock.color,'Black');
+  }
+
+  // ═══ F6 — the PO key on new issues ════════════════════════════════════
+  async function issueWithPo(typed,extra){
+    const a=app('afnan',{extra});seedStd(a);
+    a.el('fab-iss-po').value=typed;a.el('fab-iss-article').value='Tee';a.el('fab-iss-code').value='GST100';a.el('fab-iss-cutmaster').value='Hassan';
+    a.run("_fabIssueAdd('A1')");
+    await a.run('window.submitFabricIssue()');
+    return a.fs.store.get(a.fs.keys('gatepasses/')[0]);
+  }
+  s.section('F6 — a NEW fabric issue stores the PO key; free text and old passes are untouched');
+  {
+    const g7=(await issueWithPo('7',['js/ph-core.js']))||{};
+    s.eq('"7" is stored as the PO key',g7&&g7.poId,'PO-007');
+    s.eq('...while the spec line keeps what was typed',g7&&g7.spec.startsWith('PO 7 '),true);
+    s.eq('"PO-7" is stored as the PO key',(await issueWithPo('PO-7',['js/ph-core.js'])).poId,'PO-007');
+    s.eq('" po 12 " is stored as the PO key',(await issueWithPo(' po 12 ',['js/ph-core.js'])).poId,'PO-012');
+    s.eq('"PO-1234" keeps four digits',(await issueWithPo('PO-1234',['js/ph-core.js'])).poId,'PO-1234');
+    s.eq('free text ("Sample") is stored exactly as typed',(await issueWithPo('Sample',['js/ph-core.js'])).poId,'Sample');
+    s.eq('without the PO key helper loaded it stores what was typed',((await issueWithPo('7'))||{}).poId,'7');
+    // the registry reads the same passes with the same key
+    const a=healthApp(['js/ph-core.js']);
+    s.eq('an OLD pass with digits only is not rewritten by anything here (the health card still flags it)',a.run(`_fabHealthModel({inv:[],passes:[{id:'GP-OLD',gpType:'fabric',poId:'125',cutMaster:'x'}],now:1}).poIds.count`),1);
+    s.eq('...and a NEW pass is clean for the same check',a.run(`_fabHealthModel({inv:[],passes:[{id:'GP-NEW',gpType:'fabric',poId:'PO-125',cutMaster:'x'}],now:1}).poIds.count`),0);
+  }
+
+  // ═══ F6 — size rows offer the PO's sizes ══════════════════════════════
+  s.section('F6 — size rows: a select of the chosen PO\'s sizes, free text as the fallback');
+  {
+    const a=app('afnan',{extra:['js/ph-core.js'],globals:{allPOs:[{id:'PO-007',name:'Tee',code:'GST100',sizes:{XS:0,S:40,M:60,L:0,XL:0}},{id:'PO-008',name:'Zero',sizes:{XS:0,S:0}}]}});
+    a.run('renderFabricIssueTab()');
+    const poSizes=po=>a.run(`_fabIssuePoSizes(${J(po)})`);
+    s.eq('the sizes with a quantity',J(poSizes('PO-007')),J(['S','M']));
+    s.eq('a PO typed as "7" resolves through the PO key',J(poSizes('7')),J(['S','M']));
+    s.eq('a PO whose sizes are all 0 offers every key',J(poSizes('PO-008')),J(['XS','S']));
+    s.eq('an unknown PO offers none',J(poSizes('PO-999')),'[]');
+    s.eq('free text offers none',J(poSizes('Sample')),'[]');
+    a.el('fab-iss-po').value='PO-007';
+    a.run('_fabIssueSizes=[{size:"M",bundles:"9-8"},{size:"",bundles:""}];_fabIssueRenderSizes()');
+    const h=a.el('fab-iss-sizes').innerHTML;
+    s.eq('each row is a select',(h.match(/<select class="fis-size"/g)||[]).length,2);
+    s.ok('with the PO\'s sizes, Size… and Other…',/<option value="S" >S<\/option>/.test(h)&&/<option value="M" selected>M<\/option>/.test(h)&&/Size…/.test(h)&&/Other…/.test(h)&&!/value="XS"/.test(h));
+    a.el('fab-iss-po').value='PO-999';
+    a.run('_fabIssueRenderSizes()');
+    s.ok('an unknown PO falls back to the free-text box',/<input class="fis-size"/.test(a.el('fab-iss-sizes').innerHTML)&&!/<select class="fis-size"/.test(a.el('fab-iss-sizes').innerHTML));
+    a.el('fab-iss-po').value='PO-007';
+    a.run('_fabIssueSizes=[{size:"XXL",bundles:"5"}];_fabIssueRenderSizes()');
+    s.ok('a size that is not on the PO stays as typed, in a text box',/<input class="fis-size" value="XXL"/.test(a.el('fab-iss-sizes').innerHTML));
+    a.run('_fabIssueSizes=[{size:"",bundles:"",free:true}];_fabIssueRenderSizes()');
+    s.ok('"Other…" (free:true) keeps a text box even for a known PO',/<input class="fis-size"/.test(a.el('fab-iss-sizes').innerHTML));
+    s.ok('the row remembers it is free (data-free)',/data-free="1"/.test(a.el('fab-iss-sizes').innerHTML));
+    // the DOM sync
+    const rows=[{vals:{'.fis-size':{value:'M'},'.fis-bundles':{value:'9-8'}},free:'0'},{vals:{'.fis-size':{value:'__other'},'.fis-bundles':{value:'3'}},free:'0'},{vals:{'.fis-size':{value:'XXL'},'.fis-bundles':{value:'2'}},free:'1'}]
+      .map(r=>({querySelector:q=>r.vals[q]||null,getAttribute:n=>n==='data-free'?r.free:null}));
+    a.ctx.document.querySelectorAll=sel=>sel==='#fab-iss-sizes .fis-row'?rows:[];
+    a.run('_fabIssueSyncSizesFromDOM()');
+    s.eq('sync reads select and text rows alike; "Other…" is never stored as a size',J(a.run('_fabIssueSizes.map(x=>[x.size,x.bundles,!!x.free])')),J([['M','9-8',false],['','3',false],['XXL','2',true]]));
+    // changing the PO redraws the rows (only when the list of sizes changed)
+    const b=app('afnan',{extra:['js/ph-core.js'],globals:{allPOs:[{id:'PO-007',name:'Tee',code:'GST100',sizes:{S:40,M:60}}]}});
+    b.run('renderFabricIssueTab()');
+    b.el('fab-iss-po').value='PO-007';
+    b.run('window.fabIssuePoChange()');
+    s.ok('typing a known PO turns the size rows into selects',/<select class="fis-size"/.test(b.el('fab-iss-sizes').innerHTML));
+    b.el('fab-iss-po').value='Sample';
+    b.run('window.fabIssuePoChange()');
+    s.ok('and typing free text turns them back',/<input class="fis-size"/.test(b.el('fab-iss-sizes').innerHTML));
   }
 
   return s;

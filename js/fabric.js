@@ -88,6 +88,7 @@ window.switchFabTab=function(tab){
     _fabIssueRolls=[];_fabIssueKey=null;_fabIssueSizes=[{size:'',bundles:''}];
     _fabRibRolls=[];_fabRibKey=null;
     el.innerHTML=renderFabricIssueTab();
+    _fabIssueSizeOptsKey='';
     _fabIssueRenderSizes();
     _fabRibRefreshStocks();window.fabRibRecalc();
     if(_fabIssuePreselectKey){
@@ -2901,14 +2902,37 @@ window.fabIssueProdSearch=function(q){
 };
 window.fabIssueProdHide=function(){const dd=document.getElementById('fab-iss-prod-drop');if(dd)dd.style.display='none';};
 
+// The PO as stored on a NEW issue: the canonical key ('PO-007') when the typed text is a PO number
+// ('7', 'po 7', 'PO-007'), else exactly what was typed (free text like 'Sample'). Old passes are never rewritten.
+function _fabIssuePoId(po){return(typeof phPoKey==='function'&&phPoKey(po))||po;}
+// The PO document for what is typed in the PO field, or null (exact id first, then by PO key).
+function _fabIssuePoDoc(po){
+  const list=(typeof allPOs!=='undefined'&&allPOs)||[];
+  po=String(po==null?'':po).trim();if(!po)return null;
+  const hit=list.find(x=>String(x.id)===po);if(hit)return hit;
+  const k=typeof phPoKey==='function'?phPoKey(po):null;
+  return k?(list.find(x=>phPoKey(x.id)===k)||null):null;
+}
+// The sizes the chosen PO was raised in (those with a quantity; every key if none has one).
+function _fabIssuePoSizes(po){
+  const p=_fabIssuePoDoc(po);
+  if(!p||!p.sizes||typeof p.sizes!=='object')return[];
+  const keys=Object.keys(p.sizes);
+  const used=keys.filter(k=>Number(p.sizes[k])>0);
+  return used.length?used:keys;
+}
 // Prefill article name/code from the chosen PO (only when there is a match).
 window.fabIssuePoChange=function(){
   const po=(document.getElementById('fab-iss-po')?.value||'').trim();
   const p=(typeof allPOs!=='undefined'&&allPOs||[]).find(x=>String(x.id)===po);
+  // The size rows offer this PO's sizes; redraw them only when that list changed.
+  const sk=_fabIssuePoSizes(po).join('|');
+  if(sk!==_fabIssueSizeOptsKey){_fabIssueSizeOptsKey=sk;_fabIssueSyncSizesFromDOM();_fabIssueRenderSizes();}
   if(!p)return;
   const nm=document.getElementById('fab-iss-article'); if(nm)nm.value=p.name||nm.value;
   const cd=document.getElementById('fab-iss-code');    if(cd)cd.value=p.code||cd.value;
 };
+let _fabIssueSizeOptsKey='';
 
 // ── Cutting-plan size rows ──
 // A size's bundles are entered as separated numbers (e.g. "9-8-6-7"); parse to
@@ -2918,20 +2942,44 @@ function _fabIssueSyncSizesFromDOM(){
   const rows=document.querySelectorAll('#fab-iss-sizes .fis-row');
   if(!rows.length)return;
   _fabIssueSizes=Array.from(rows).map(r=>({
-    size:r.querySelector('.fis-size')?.value||'',
-    bundles:r.querySelector('.fis-bundles')?.value||''
+    size:(r.querySelector('.fis-size')?.value==='__other'?'':r.querySelector('.fis-size')?.value)||'',
+    bundles:r.querySelector('.fis-bundles')?.value||'',
+    free:r.getAttribute&&r.getAttribute('data-free')==='1'
   }));
 }
+// A size row is a SELECT of the PO's sizes when the PO is known and the row can be one; free text otherwise
+// (no PO / a PO with no sizes / a size not on the PO / "Other…" chosen) — typing a size is always possible.
+function _fabIssueSizeIsFree(s,poSizes){return !poSizes.length||!!s.free||!!(s.size&&poSizes.indexOf(s.size)<0);}
+function _fabIssueSizeCellHtml(s,poSizes){
+  if(_fabIssueSizeIsFree(s,poSizes))return`<input class="fis-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.fabIssueRecalc()" style="margin:0;font-size:16px;padding:9px 10px">`;
+  return`<select class="fis-size" onchange="window.fabIssueSizeChange(this)" style="margin:0;font-size:16px;padding:9px 10px;width:100%;box-sizing:border-box">
+    <option value="">Size…</option>${poSizes.map(k=>`<option value="${_gpEsc(k)}" ${k===s.size?'selected':''}>${_gpEsc(k)}</option>`).join('')}<option value="__other">Other…</option></select>`;
+}
+// "Other…" turns that row into a free-text box (and keeps the typing it replaced out of the way).
+window.fabIssueSizeChange=function(sel){
+  if(sel&&sel.value==='__other'){
+    const rows=[...document.querySelectorAll('#fab-iss-sizes .fis-row')];
+    const row=sel.closest?sel.closest('.fis-row'):null;
+    _fabIssueSyncSizesFromDOM();
+    const i=rows.indexOf(row);
+    if(i>=0&&_fabIssueSizes[i]){_fabIssueSizes[i].free=true;_fabIssueSizes[i].size='';}
+    _fabIssueRenderSizes();
+    const inp=document.querySelectorAll('#fab-iss-sizes .fis-size')[i];if(inp&&inp.focus)inp.focus();
+    return;
+  }
+  window.fabIssueRecalc();
+};
 function _fabIssueRenderSizes(){
   const el=document.getElementById('fab-iss-sizes'); if(!el)return;
   if(!_fabIssueSizes.length)_fabIssueSizes=[{size:'',bundles:''}];
+  const poSizes=_fabIssuePoSizes(document.getElementById('fab-iss-po')?.value||'');
   el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:0 2px 6px">
       <span>Size</span><span>Bundles (e.g. 9-8-6-7)</span><span style="text-align:center"># Bundles</span><span style="text-align:right">Qty</span><span></span>
     </div>`+
     _fabIssueSizes.map((s,i)=>{
       const arr=_fabParseBundles(s.bundles);const q=arr.reduce((a,b)=>a+b,0);
-      return`<div class="fis-row" style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;align-items:center;margin-bottom:8px">
-        <input class="fis-size" value="${_gpEsc(s.size)}" placeholder="e.g. M" oninput="window.fabIssueRecalc()" style="margin:0;font-size:16px;padding:9px 10px">
+      return`<div class="fis-row" data-free="${_fabIssueSizeIsFree(s,poSizes)?'1':'0'}" style="display:grid;grid-template-columns:1fr 2.2fr .8fr .9fr 28px;gap:8px;align-items:center;margin-bottom:8px">
+        ${_fabIssueSizeCellHtml(s,poSizes)}
         <input class="fis-bundles" value="${_gpEsc(s.bundles)}" placeholder="9-8-6-7" oninput="window.fabIssueRecalc()" style="margin:0;font-size:16px;padding:9px 10px">
         <span class="fis-nb" style="text-align:center;font-weight:700;font-size:15px;color:var(--muted)">${arr.length||'—'}</span>
         <span class="fis-qty" style="text-align:right;font-weight:800;font-size:17px">${q?q.toLocaleString():'—'}</span>
@@ -3169,7 +3217,7 @@ window.submitFabricIssue=async function(){
     // The gate pass IS the fabric-issue registry record. Top-level fabric* keep
     // the PRIMARY (first) fabric for back-compat; fabricQty/fabricUsed are the
     // TOTAL across all fabrics; the full per-fabric split lives in `fabrics`.
-    const buildPass=(n,gpId)=>({id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:po,fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,partialRolls,partialCount:partialRolls.length,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:_fabUnitNorm(fabUnit)==='kg'?fabQty:0,totalLength:_fabUnitNorm(fabUnit)==='m'?fabQty:0});
+    const buildPass=(n,gpId)=>({id:gpId,ts:Date.now(),name:session.name,issuer:session.name,article,articleName,articleCode,spec:`PO ${po} · ${articleCode||articleName} · ${rollCodes.length} rolls${fabrics.length>1?` · ${fabrics.length} fabrics`:''}`,dest,date,gpType:'fabric',poId:_fabIssuePoId(po),fabricUnit:fabUnit,fabricQty:fabQty,fabricUsed:fabQty,rollsCount:rollCodes.length,rollCodes,fabricType:primary.fabType,fabricGsm:primary.gsm,fabricColor:primary.color,inventoryKey:primary._id,fabrics,fabricCount:fabrics.length,sizeBreakdown,cutQty,plannedQty:cutQty,totalBundles,avgConsumption,consumptionUnit,cutMaster,partialRolls,partialCount:partialRolls.length,...ribData,boras:'0',items:[],totalUnits:cutQty,totalWeight:_fabUnitNorm(fabUnit)==='kg'?fabQty:0,totalLength:_fabUnitNorm(fabUnit)==='m'?fabQty:0});
     // ONE transaction for the whole issue (and for its GP NUMBER — see mintDoc below): every fabric combo's roll take, the
     // matching rib and the gate-pass doc commit together or not at all. The first
     // combo is the engine's own bucket and carries the gate pass (mintDoc);
