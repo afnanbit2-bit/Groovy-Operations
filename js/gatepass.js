@@ -908,6 +908,18 @@ function renderReturnsList(){
 // (the rule above) — better a refused delete than a silent loss of weight.
 // The bucket's stored `unit` is never rewritten by a restock.
 //
+// ── defective rolls (Oct 2026) ──────────────────────────────────────────────
+//   defectRollCodes:[codes] + defect:{reason,note,gsmMeasured,weight,photoUrl}
+//     in_stock → 'defective' (a partly used roll too); anything else aborts the call.
+//     The weight stays on the roll; bucket totals count in_stock + reserved only, so
+//     a defective roll leaves the available figure. Movement adjust/defect.
+//   undefectRollCodes:[codes]   defective → in_stock. Owners + Mustafa, checked here
+//     (_fabCanDelete, fails closed if js/fabric.js is not loaded). Movement defect_undo.
+//   supplierReturnRollCodes     takes in_stock AND defective rolls, keeps `defect`, stamps
+//     returnReason / returnRef / returnedBy. STRICT (any roll that cannot go aborts all).
+//     A defective roll needs owner / Mustafa. moreBuckets:[{fabType,gsm,color,unit,
+//     supplierReturnRollCodes,reason}] returns several buckets in ONE transaction.
+//
 // ── moreBuckets — ONE issue, ALL its fabrics, ONE transaction ───────────────
 //   moreBuckets:[{fabType,gsm,color,unit,removeRollCodes,partialUse,reservePO,note}]
 // Only with removeRollCodes. The call's own fabType/gsm/color is the first bucket;
@@ -958,17 +970,22 @@ function _fabFindDraw(r,gpId,d){
 function _fabDrawRestored(r,gpId,d){
   return (Array.isArray(r&&r.drawsRestored)?r.drawsRestored:[]).some(x=>x&&x.gp===gpId&&(d.weight==null||Math.abs((parseFloat(x.weight)||0)-d.weight)<=0.005));
 }
-async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,refusePartlyUsed,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,restockRollCodes,restockDraws,moreBuckets,mintDoc,tolerateMissing,reason,note:_noteIn,sourceCol,sourceId:_srcIn,extraWrites,extraDeletes}){
+async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,partialUse,relabelRollCodes,deleteRollCodes,refusePartlyUsed,editRolls,reserveRollCodes,reservePO,releaseRollCodes,returnRollCodes,returnPartial,supplierReturnRollCodes,defectRollCodes,undefectRollCodes,defect,returnRef,restockRollCodes,restockDraws,moreBuckets,mintDoc,tolerateMissing,reason,note:_noteIn,sourceCol,sourceId:_srcIn,extraWrites,extraDeletes}){
   const key=_fabInvKey(fabType,gsm,color);
   const invRef=doc(db,'fabric_inventory',key);
   const movRef=doc(collection(db,'fabric_movements'));  // stable id across tx retries
   // moreBuckets (issue only) — see the header: the other fabrics of ONE issue,
   // taken in this same transaction. Every bucket must be a different inventory doc.
-  const extras=(Array.isArray(moreBuckets)&&Array.isArray(removeRollCodes))?moreBuckets.filter(b=>b&&Array.isArray(b.removeRollCodes)):[];
+  // Only an issue (removeRollCodes) or a return to the supplier (supplierReturnRollCodes) may carry more buckets.
+  const exField=Array.isArray(removeRollCodes)?'removeRollCodes':(Array.isArray(supplierReturnRollCodes)?'supplierReturnRollCodes':'');
+  const extras=(Array.isArray(moreBuckets)&&exField)?moreBuckets.filter(b=>b&&Array.isArray(b[exField])):[];
   const exKeys=extras.map(b=>_fabInvKey(b.fabType,b.gsm,b.color));
   if(new Set([key,...exKeys]).size!==exKeys.length+1)throw new Error('An issue names the same fabric twice — merge its rolls into one entry.');
   const exRefs=exKeys.map(k=>doc(db,'fabric_inventory',k));
   const exMovRefs=extras.map(()=>doc(collection(db,'fabric_movements')));
+  // The undo of a defect is a decision, not data entry: owners and Mustafa only,
+  // checked HERE so a caller that skips the UI gate is refused too (fails closed).
+  if(Array.isArray(undefectRollCodes)&&!_fabCanReviewDefect())throw _fabDefectDenied('undo a defective mark');
   let outPayload=null,outMov=null,outSkipped=[],outRestock=null,outExtras=[],outMinted=null;
   // One Firestore transaction: read the LIVE inventory fresh (not stale local
   // memory) so concurrent receive/issue/return can't clobber each other
@@ -1008,7 +1025,7 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
       extras.forEach((b,i)=>{
         const xr=Array.isArray(exSnaps[i].data()?.rolls)?exSnaps[i].data().rolls.map(r=>({...r})):[];
         const res=_fabApplyIssue(xr,{removeRollCodes:b.removeRollCodes,partialUse:b.partialUse,reservePO:b.reservePO!=null?b.reservePO:reservePO,tolerateMissing,sourceCol,sourceId});
-        gone.push(...res.gone);exWork.push({b,i,rolls:xr,res});
+        gone.push(...res.gone);exWork.push({b,i,rolls:xr,res,sub:'issue'});
       });
       if(gone.length&&!tolerateMissing){
         throw _fabInvError('issue',gone,
@@ -1066,8 +1083,46 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
       }
       movType='in';movSub='return_in';
     }else if(Array.isArray(supplierReturnRollCodes)){
-      for(const rc of supplierReturnRollCodes){const r=findRoll(rc,['in_stock']);if(r){r.status='returned_supplier';r.returnedToSupplierAt=Date.now();r.returnReason=reason||'';movQty+=r.weight||0;movCodes.push(rc);}}
+      // A return to the supplier takes in_stock AND defective rolls. Like an issue it
+      // is strict: a roll in ANY bucket that cannot go (issued, reserved, already
+      // returned, absent) aborts the whole call, naming every such roll. The work is
+      // on copies, so a refusal in the second bucket leaves the first untouched.
+      const first=_fabApplySupplierReturn(rolls,supplierReturnRollCodes,{reason,returnRef,tolerateMissing});
+      const bad=first.bad.slice();let anyDefective=first.defective;
+      extras.forEach((b,i)=>{
+        const xr=Array.isArray(exSnaps[i].data()?.rolls)?exSnaps[i].data().rolls.map(r=>({...r})):[];
+        const res=_fabApplySupplierReturn(xr,b.supplierReturnRollCodes,{reason:b.reason!=null?b.reason:reason,returnRef,tolerateMissing});
+        bad.push(...res.bad);anyDefective=anyDefective||res.defective;exWork.push({b,i,rolls:xr,res,sub:'return_out'});
+      });
+      if(anyDefective&&!_fabCanReviewDefect())throw _fabDefectDenied('return a defective roll to the supplier');
+      if(bad.length&&!tolerateMissing){
+        throw _fabInvError('return',bad,bad.length>1?'they cannot be returned to the supplier (not in stock or defective).':'it cannot be returned to the supplier (not in stock or defective).');
+      }
+      skipped=first.skipped;movQty=first.movQty;movCodes.push(...first.movCodes);
       movType='out';movSub='return_out';
+    }else if(Array.isArray(defectRollCodes)){
+      // Mark rolls defective: only an in_stock roll (a partly used one too) can be.
+      // Weight stays on the roll; the bucket's totals drop it (payload counts in_stock +
+      // reserved only). An issued / reserved / returned / already defective roll aborts all.
+      const d=_fabCleanDefect(defect);
+      if(!d)throw new Error('A defect needs a reason. Nothing was saved.');
+      const want=[...new Set(defectRollCodes)];
+      const bad=want.filter(rc=>!findRoll(rc,['in_stock'])).map(rc=>{const x=rolls.find(r=>r.rollCode===rc);return{code:rc,why:x?String(x.status||'in_stock').replace('_',' '):'not in inventory'};});
+      if(bad.length&&!tolerateMissing){
+        throw _fabInvError('mark defective',bad,bad.length>1?'only rolls that are in stock can be marked defective.':'only a roll that is in stock can be marked defective.');
+      }
+      skipped=bad.map(b=>b.code);
+      for(const rc of want){const r=findRoll(rc,['in_stock']);if(r){r.status='defective';r.defect=Object.assign({},d,{by:session.name,at:Date.now()});movQty+=r.weight||0;movCodes.push(rc);}}
+      movType='adjust';movSub='defect';
+    }else if(Array.isArray(undefectRollCodes)){
+      const want=[...new Set(undefectRollCodes)];
+      const bad=want.filter(rc=>!findRoll(rc,['defective'])).map(rc=>{const x=rolls.find(r=>r.rollCode===rc);return{code:rc,why:x?String(x.status||'in_stock').replace('_',' '):'not in inventory'};});
+      if(bad.length&&!tolerateMissing){
+        throw _fabInvError('undo defective on',bad,bad.length>1?'they are not marked defective any more.':'it is not marked defective any more.');
+      }
+      skipped=bad.map(b=>b.code);
+      for(const rc of want){const r=findRoll(rc,['defective']);if(r){r.status='in_stock';r.defect=Object.assign({},r.defect||{},{undoneAt:Date.now(),undoneBy:session.name});movQty+=r.weight||0;movCodes.push(rc);}}
+      movType='adjust';movSub='defect_undo';
     }else if(Array.isArray(restockRollCodes)){
       // Reverse an issue (see the header). Whole rolls flip issued → in_stock; a
       // partly drawn roll gets the weight of THIS pass's draw added back.
@@ -1132,6 +1187,8 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     const bucketUnit=(restock&&snap.exists()&&snap.data()&&snap.data().unit)||unit||'kg';
     const payload=_fabInvBucketPayload(key,fabType,gsm,color,bucketUnit,rolls);
     const movDoc={id:movRef.id,ts:Date.now(),type:movType,subtype:movSub,fabType,gsm:Number(gsm)||0,color,unit:bucketUnit,qty:parseFloat(movQty.toFixed(2)),rollCodes:movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:note||''};
+    if(movSub==='return_out'){if(reason)movDoc.reason=String(reason);if(returnRef)movDoc.returnRef=String(returnRef);}
+    if(movSub==='defect'&&defect)movDoc.defectReason=String(defect.reason||'');
     if(partialLog)movDoc.partialRolls=partialLog;   // per-roll partial-usage detail for the log/reports
     if(restock&&restock.restoredPartial.length)movDoc.partialRestored=restock.restoredPartial;
     // A restock that found nothing to do (every roll already back) writes no
@@ -1142,8 +1199,9 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
     exWork.forEach(w=>{
       const bk=exKeys[w.i],bu=w.b.unit||unit||'kg';
       const p=_fabInvBucketPayload(bk,w.b.fabType,w.b.gsm,w.b.color,bu,w.rolls);
-      const m={id:exMovRefs[w.i].id,ts:Date.now(),type:'out',subtype:'issue',fabType:w.b.fabType,gsm:Number(w.b.gsm)||0,color:w.b.color,unit:bu,qty:parseFloat(w.res.movQty.toFixed(2)),rollCodes:w.res.movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:w.b.note||note||''};
+      const m={id:exMovRefs[w.i].id,ts:Date.now(),type:'out',subtype:w.sub||'issue',fabType:w.b.fabType,gsm:Number(w.b.gsm)||0,color:w.b.color,unit:bu,qty:parseFloat(w.res.movQty.toFixed(2)),rollCodes:w.res.movCodes,sourceCollection:sourceCol||'',sourceId:sourceId||'',by:session.name,note:w.b.note||note||''};
       if(w.res.partialLog)m.partialRolls=w.res.partialLog;
+      if(w.sub==='return_out'){const rr=w.b.reason!=null?w.b.reason:reason;if(rr)m.reason=String(rr);if(returnRef)m.returnRef=String(returnRef);}
       tx.set(exRefs[w.i],p,{merge:true});tx.set(exMovRefs[w.i],m);
       exOut.push({key:bk,payload:p,mov:m,ref:exMovRefs[w.i]});
       skipped=skipped.concat(w.res.skipped);
@@ -1174,6 +1232,43 @@ async function _fabInvUpsert({fabType,gsm,color,unit,addRolls,removeRollCodes,pa
   if(outExtras.length)result.more=outExtras.map(x=>({key:x.key,movCodes:x.mov.rollCodes,movQty:x.mov.qty}));
   if(outMinted)result.minted=outMinted;
   return result;
+}
+
+// ── defective rolls ────────────────────────────────────────────────────────
+const FAB_NOT_PERMITTED='fabric/not-permitted';
+// Same people as _fabCanDelete (js/fabric.js: owners + Mustafa). It lives in a later
+// script, so it is reached at call time and a build without it refuses (fails closed).
+function _fabCanReviewDefect(){return typeof _fabCanDelete==='function'&&!!_fabCanDelete();}
+function _fabDefectDenied(what){
+  const e=new Error(`Only an owner (Afnan, Ammar) or Mustafa can ${what}. Nothing was saved.`);
+  e.code=FAB_NOT_PERMITTED;return e;
+}
+// What a defect record may hold. Returns null when there is no reason (refused).
+function _fabCleanDefect(d){
+  if(!d||typeof d!=='object')return null;
+  const reason=String(d.reason==null?'':d.reason).trim().slice(0,60);
+  if(!reason)return null;
+  const num=v=>{const n=parseFloat(v);return isFinite(n)&&n>=0?n:null;};
+  const photo=String(d.photoUrl||'').trim();
+  return{reason,note:String(d.note||'').trim().slice(0,500),gsmMeasured:num(d.gsmMeasured),weight:num(d.weight),photoUrl:/^https:\/\//.test(photo)?photo.slice(0,500):''};
+}
+// Take the named rolls of ONE bucket (a working copy) back to the supplier. in_stock
+// and defective rolls go; anything else is listed in `bad` and nothing is promised.
+function _fabApplySupplierReturn(rolls,codes,{reason,returnRef,tolerateMissing}){
+  const want=[...new Set(codes)];
+  const ok=r=>['in_stock','defective'].includes(r.status||'in_stock');
+  const bad=want.filter(rc=>!rolls.some(r=>r.rollCode===rc&&ok(r))).map(rc=>{const x=rolls.find(r=>r.rollCode===rc);return{code:rc,why:x?String(x.status||'in_stock').replace('_',' '):'not in inventory'};});
+  const out={bad,skipped:bad.map(b=>b.code),movQty:0,movCodes:[],defective:false};
+  if(bad.length&&!tolerateMissing)return out;
+  for(const rc of want){
+    const r=rolls.find(x=>x.rollCode===rc&&ok(x));
+    if(!r)continue;
+    if(r.status==='defective')out.defective=true;
+    r.status='returned_supplier';r.returnedToSupplierAt=Date.now();r.returnedBy=session.name;r.returnReason=reason||'';
+    if(returnRef)r.returnRef=String(returnRef);
+    out.movQty+=r.weight||0;out.movCodes.push(rc);
+  }
+  return out;
 }
 
 // The in-stock / reserved aggregate of one bucket — one definition for the main

@@ -773,5 +773,155 @@ module.exports=async function(){
     s.ok('refused (not an owner): same plain wording',/already returned to stock; retrying is safe/.test(lastToast(b)),lastToast(b));
   }
 
+
+  // ═══ defective rolls (WP-F1) ═══════════════════════════════════════════
+  // _fabCanDelete lives in js/fabric.js (not loaded here): the same one-line
+  // definition is installed so the engine's permission check runs for real.
+  const withGate=a=>{a.run("function _fabCanDelete(){return !!(session&&(session.role==='owner'||session.u==='mustafa'));}");return a;};
+  const DEF={reason:'Holes/stains',note:'two holes near the selvedge',gsmMeasured:198,weight:24.5,photoUrl:'https://res.cloudinary.com/x/y.jpg'};
+  const defUp=(a,codes,extra)=>up(a,`Object.assign({defectRollCodes:${J(codes)},defect:${J(DEF)},sourceCol:'fabric_defects'},${J(extra||{})})`);
+
+  s.section('defect — mark: only in_stock rolls (a partly used one too); status, record and totals');
+  {
+    const a=withGate(app());as(a,'uzaib','viewer');
+    seed(a,[roll('R1',24.5),roll('R2',30,{partiallyConsumed:true,consumptionLog:[{po:'PO-1',weight:5}]}),roll('R3',40)]);
+    const r=await attempt(defUp(a,['R1','R2']));
+    s.ok('Kashif (no owner role) CAN mark defective',!r.err,r.err&&r.err.message);
+    s.eq('R1 is defective',rollOf(a,'R1').status,'defective');
+    s.eq('a partly used roll can be marked',rollOf(a,'R2').status,'defective');
+    s.eq('the weight stays on the roll',rollOf(a,'R1').weight,24.5);
+    s.eq('defect record: reason',rollOf(a,'R1').defect.reason,'Holes/stains');
+    s.eq('defect record: who',rollOf(a,'R1').defect.by,'Uzaib');
+    s.ok('defect record: when',rollOf(a,'R1').defect.at>0);
+    s.eq('defect record: measured gsm',rollOf(a,'R1').defect.gsmMeasured,198);
+    s.eq('defect record: photo kept',rollOf(a,'R1').defect.photoUrl,DEF.photoUrl);
+    s.eq('TOTALS EXCLUDE defective: weight',invOf(a).totalWeight,40);
+    s.eq('TOTALS EXCLUDE defective: count',invOf(a).rollsCount,1);
+    const m=movs(a);
+    s.eq('one movement row',m.length,1);
+    s.eq('type adjust / subtype defect',J([m[0].type,m[0].subtype]),'["adjust","defect"]');
+    s.eq('movement lists both rolls',J(m[0].rollCodes),'["R1","R2"]');
+  }
+  s.section('defect — mark: refused for issued / reserved / returned / already defective, whole call, loudly');
+  {
+    for(const [st,extra] of [['issued',{issuedTo:'GP-1'}],['reserved',{reservedPO:'PO-1'}],['returned_supplier',{}],['defective',{defect:{reason:'x'}}]]){
+      const a=withGate(app());as(a,'uzaib','viewer');
+      seed(a,[roll('R1',10),roll('R2',20,Object.assign({status:st},extra))]);
+      const before=J(invOf(a));
+      const r=await attempt(defUp(a,['R1','R2']));
+      s.eq(`${st}: rejects with the engine error`,r.err&&r.err.code,'fabric/rolls-unavailable');
+      s.ok(`${st}: names the roll and its state`,new RegExp('R2 \\('+st.replace('_',' ')+'\\)').test(r.err&&r.err.message||''),r.err&&r.err.message);
+      s.eq(`${st}: nothing written (the good roll is NOT marked)`,J(invOf(a)),before);
+      s.eq(`${st}: no movement`,movs(a).length,0);
+    }
+    const a=withGate(app());as(a,'uzaib','viewer');seed(a,[roll('R1',10)]);
+    const r=await attempt(up(a,`{defectRollCodes:['R1'],defect:{reason:'  '}}`));
+    s.ok('a defect with no reason is refused',!!r.err&&rollOf(a,'R1').status==='in_stock',r.err&&r.err.message);
+    const r2=await attempt(up(a,`{defectRollCodes:['R9'],defect:${J(DEF)}}`));
+    s.eq('an absent roll is refused too',r2.err&&r2.err.code,'fabric/rolls-unavailable');
+  }
+  s.section('defect — undo: owners and Mustafa only, enforced INSIDE the engine op');
+  {
+    const mk=()=>{const a=withGate(app());seed(a,[roll('R1',10,{status:'defective',defect:{reason:'Holes/stains',by:'Uzaib',at:5}}),roll('R2',20)]);return a;};
+    const k=mk();as(k,'uzaib','viewer');
+    const kr=await attempt(up(k,`{undefectRollCodes:['R1']}`));
+    s.eq('Kashif is refused with a clear code',kr.err&&kr.err.code,'fabric/not-permitted');
+    s.ok('and a clear message',/owner .*Mustafa/.test(kr.err&&kr.err.message||''),kr.err&&kr.err.message);
+    s.eq('roll untouched',rollOf(k,'R1').status,'defective');
+    s.eq('no movement',movs(k).length,0);
+    const ar=mk();as(ar,'arfat','manager');
+    const arr=await attempt(up(ar,`{undefectRollCodes:['R1']}`));
+    s.eq('a manager other than Mustafa is refused',arr.err&&arr.err.code,'fabric/not-permitted');
+    const m=mk();as(m,'mustafa','manager');
+    const mr=await attempt(up(m,`{undefectRollCodes:['R1']}`));
+    s.ok('Mustafa can undo',!mr.err,mr.err&&mr.err.message);
+    s.eq('back in stock',rollOf(m,'R1').status,'in_stock');
+    s.ok('undo stamps who/when and keeps the record',rollOf(m,'R1').defect.undoneBy==='Mustafa'&&rollOf(m,'R1').defect.undoneAt>0&&rollOf(m,'R1').defect.reason==='Holes/stains');
+    s.eq('movement subtype defect_undo',movs(m)[0]&&movs(m)[0].subtype,'defect_undo');
+    s.eq('totals count it again',invOf(m).rollsCount,2);
+    const o=mk();as(o,'afnan','owner');
+    s.ok('an owner can undo',!(await attempt(up(o,`{undefectRollCodes:['R1']}`))).err);
+    const n=mk();as(n,'afnan','owner');n.run('_fabCanDelete=undefined');
+    s.eq('with no _fabCanDelete loaded the op FAILS CLOSED',(await attempt(up(n,`{undefectRollCodes:['R1']}`))).err&&'refused','refused');
+    const nd=mk();as(nd,'mustafa','manager');
+    const e3=await attempt(up(nd,`{undefectRollCodes:['R2']}`));
+    s.eq('undoing a roll that is not defective is refused',e3.err&&e3.err.code,'fabric/rolls-unavailable');
+  }
+  s.section('defect — the issue path refuses a defective roll, and totals/payload exclude it');
+  {
+    const a=withGate(app());as(a,'afnan','owner');
+    seed(a,[roll('R1',10,{status:'defective',defect:{reason:'Wrong GSM'}}),roll('R2',20)]);
+    const r=await attempt(up(a,`{removeRollCodes:['R1','R2'],sourceCol:'gatepasses',sourceId:'GP-1'}`));
+    s.eq('issuing a defective roll aborts',r.err&&r.err.code,'fabric/rolls-unavailable');
+    s.ok('naming its state',/R1 \(defective\)/.test(r.err&&r.err.message||''),r.err&&r.err.message);
+    s.eq('the good roll was not issued either',rollOf(a,'R2').status,'in_stock');
+    const p=await a.run(`_fabInvBucketPayload('k','Jersey',220,'Black','kg',[{rollCode:'A',weight:5,status:'defective'},{rollCode:'B',weight:7,status:'in_stock'},{rollCode:'C',weight:3,status:'reserved'}])`);
+    s.eq('payload: stock weight excludes defective',p.totalWeight,7);
+    s.eq('payload: stock count excludes defective',p.rollsCount,1);
+    s.eq('payload: reserved is unaffected',p.reservedCount,1);
+  }
+  s.section('return to supplier — takes in_stock AND defective, keeps the defect, stamps ref and reason');
+  {
+    const a=withGate(app());as(a,'mustafa','manager');
+    seed(a,[roll('R1',10,{status:'defective',defect:{reason:'Holes/stains',by:'Uzaib',at:5}}),roll('R2',20),roll('R3',30)]);
+    const r=await attempt(up(a,`{supplierReturnRollCodes:['R1','R2'],reason:'Holes/stains',returnRef:'RTV-77',note:'Returned to Acme',sourceCol:'fabric_returns',sourceId:'supplier-return'}`));
+    s.ok('resolves',!r.err,r.err&&r.err.message);
+    s.eq('defective roll returned',rollOf(a,'R1').status,'returned_supplier');
+    s.eq('in_stock roll returned',rollOf(a,'R2').status,'returned_supplier');
+    s.eq('the defect record is kept on the returned roll',rollOf(a,'R1').defect.reason,'Holes/stains');
+    s.eq('returnRef on the roll',rollOf(a,'R1').returnRef,'RTV-77');
+    s.eq('reason on the roll',rollOf(a,'R1').returnReason,'Holes/stains');
+    const m=movs(a)[0];
+    s.eq('movement return_out with reason and ref',J([m.subtype,m.reason,m.returnRef]),'["return_out","Holes/stains","RTV-77"]');
+    s.eq('qty is the two rolls',m.qty,30);
+    s.eq('the untouched roll stays',rollOf(a,'R3').status,'in_stock');
+  }
+  s.section('return to supplier — a defective roll needs owner / Mustafa, inside the op');
+  {
+    const a=withGate(app());as(a,'uzaib','viewer');
+    seed(a,[roll('R1',10,{status:'defective',defect:{reason:'x'}}),roll('R2',20)]);
+    const before=J(invOf(a));
+    const r=await attempt(up(a,`{supplierReturnRollCodes:['R1'],reason:'x'}`));
+    s.eq('Kashif refused',r.err&&r.err.code,'fabric/not-permitted');
+    s.eq('nothing written',J(invOf(a)),before);
+  }
+  s.section('return to supplier — strict: a roll that cannot go aborts the whole call');
+  {
+    const a=withGate(app());as(a,'mustafa','manager');
+    seed(a,[roll('R1',10),roll('R2',20,{status:'issued',issuedTo:'GP-1'})]);
+    const before=J(invOf(a));
+    const r=await attempt(up(a,`{supplierReturnRollCodes:['R1','R2','R9'],reason:'x'}`));
+    s.eq('rejects',r.err&&r.err.code,'fabric/rolls-unavailable');
+    s.eq('names both',J(r.err&&r.err.rollCodes),'["R2","R9"]');
+    s.eq('R1 NOT returned',J(invOf(a)),before);
+  }
+  s.section('return to supplier — several buckets are ONE transaction');
+  {
+    const mk=()=>{const a=withGate(app());as(a,'mustafa','manager');
+      seed(a,[roll('R1',10),roll('R2',20,{status:'defective',defect:{reason:'x'}})]);
+      seed(a,[roll('B1',5,{gsm:250}),roll('B2',6,{gsm:250,status:'defective',defect:{reason:'x'}})],KEY2,'Rib',250,'Black');
+      return a;};
+    const a=mk();
+    const tx0=a.fs.stats.tx;
+    const r=await attempt(up(a,`{supplierReturnRollCodes:['R1','R2'],reason:'Shade variation',returnRef:'RTV-1',moreBuckets:[{fabType:'Rib',gsm:250,color:'Black',unit:'kg',supplierReturnRollCodes:['B1','B2']}],sourceCol:'fabric_returns',sourceId:'supplier-return'}`));
+    s.ok('resolves',!r.err,r.err&&r.err.message);
+    s.eq('exactly ONE transaction',a.fs.stats.tx-tx0,1);
+    s.eq('first bucket returned',rollOf(a,'R2').status,'returned_supplier');
+    s.eq('second bucket returned',rollOf(a,'B2',KEY2).status,'returned_supplier');
+    s.eq('ref stamped on the second bucket\'s roll',rollOf(a,'B1',KEY2).returnRef,'RTV-1');
+    s.eq('one movement per bucket',movs(a).length,2);
+    s.ok('both movements are return_out with the ref',movs(a).every(m=>m.subtype==='return_out'&&m.returnRef==='RTV-1'));
+    s.eq('result reports the extra bucket',r.res&&r.res.more&&r.res.more.length,1);
+    const b=mk();
+    b.run(`allFabricInventory.length=allFabricInventory.length`);
+    b.fs.store.get('fabric_inventory/'+KEY2).rolls[0].status='issued';        // someone issued B1 meanwhile
+    const before=J([invOf(b),invOf(b,KEY2)]);
+    const r2=await attempt(up(b,`{supplierReturnRollCodes:['R1','R2'],reason:'x',moreBuckets:[{fabType:'Rib',gsm:250,color:'Black',unit:'kg',supplierReturnRollCodes:['B1','B2']}]}`));
+    s.eq('a bad roll in the SECOND bucket aborts',r2.err&&r2.err.code,'fabric/rolls-unavailable');
+    s.eq('naming it',J(r2.err&&r2.err.rollCodes),'["B1"]');
+    s.eq('the FIRST bucket is untouched too',J([invOf(b),invOf(b,KEY2)]),before);
+    s.eq('no movement rows',movs(b).length,0);
+  }
+
   return s;
 };
