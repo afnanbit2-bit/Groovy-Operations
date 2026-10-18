@@ -92,7 +92,7 @@ window.switchFabTab=function(tab){
     _fabRibRefreshStocks();window.fabRibRecalc();
     if(_fabIssuePreselectKey){
       const sel=document.getElementById('fab-iss-stock');
-      if(sel){sel.value=_fabIssuePreselectKey;window.fabIssuePickStock();}
+      if(sel){sel.value=_fabDrillId(_fabIssuePreselectKey);window.fabIssuePickStock();}
       _fabIssuePreselectKey='';
     }
     _fabFocusScan('fab-iss-scan');
@@ -135,14 +135,111 @@ function _fabAlertLevel(s){
   if(w<=t1)return{label:'Low',color:'#b45309',dot:'#f59e0b'};
   return{label:'OK',color:'#16a34a',dot:'#16a34a'};
 }
+
+// ════════════════════════════════════════════════════════════════════════
+//  Group on read (WP-F4 / WP-F5, Oct 2026)
+//  A stock BUCKET is keyed type+GSM+colour (_fabInvKey, js/gatepass.js —
+//  UNCHANGED, no stored key and no stored string is rewritten). GSM is a
+//  property of each ROLL, so the Stock tab and the Issue picker show one row per
+//  type+colour: _fabStockGroups() folds the buckets together on every render.
+//  The colour is normalised first (_fabNormColor) so "Artic White" and "Arctic
+//  White" are one group; the group shows the most-used stored spelling.
+//  Nothing here writes. A group never reaches a pass: the issue still splits the
+//  picked rolls by their stored bucket key (_fabIssueGroups).
+// ════════════════════════════════════════════════════════════════════════
+const _FAB_COLOR_ALIASES={artic:'arctic',choclate:'chocolate',creem:'cream',slade:'slate',ston:'stone',kora:'cora',qora:'cora',greay:'grey',charcooal:'charcoal',levender:'lavender'};
+function _fabCollapse(x){return String(x==null?'':x).replace(/\s+/g,' ').trim();}
+// trim, collapse spaces, case-fold, then the alias table word by word.
+function _fabNormColor(x){return _fabCollapse(x).toLowerCase().split(' ').map(w=>Object.prototype.hasOwnProperty.call(_FAB_COLOR_ALIASES,w)?_FAB_COLOR_ALIASES[w]:w).join(' ');}
+function _fabNormType(x){return _fabCollapse(x).toLowerCase();}
+function _fabKeyPart(x){return String(x||'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');}
+// type+colour, no GSM segment — the group's identity.
+function _fabGroupKey(fabType,color){return _fabKeyPart(_fabNormType(fabType))+'__'+_fabKeyPart(_fabNormColor(color));}
+// The most-used spelling among [{text,n}] (n = how many rolls carry it); ties go
+// to the alphabetically first so the pick is the same on every screen.
+function _fabPickSpelling(items){
+  const tally=new Map();
+  for(const it of items){const t=_fabCollapse(it.text);if(!t)continue;tally.set(t,(tally.get(t)||0)+(it.n||1));}
+  let best='',bn=-1;
+  for(const[t,n] of tally){if(n>bn||(n===bn&&t.localeCompare(best)<0)){best=t;bn=n;}}
+  return best;
+}
+function _fabBucketRollN(b){return Math.max(1,(b.rolls||[]).length||b.rollsCount||0);}
+// Display colour for a set of buckets (or {color,rollsCount} rows).
+function _fabDisplayColor(buckets){return _fabPickSpelling((buckets||[]).map(b=>({text:b.color,n:_fabBucketRollN(b)})));}
+function _fabLiveRoll(r){return ['in_stock','reserved'].includes((r&&r.status)||'in_stock');}
+function _fabGsmText(lo,hi){return !lo?'':(lo===hi?String(lo):lo+'–'+hi);}
+function _fabBuildGroup(gid,members){
+  const live=[];
+  const rolls=[];
+  for(const b of members)for(const r of (b.rolls||[])){
+    const w=Object.assign({},r,{_bucket:b,_bk:b._id});
+    rolls.push(w);
+    if(_fabLiveRoll(r))live.push(Number(r.gsm)||Number(b.gsm)||0);
+  }
+  let gs=live.filter(Boolean);
+  if(!gs.length)gs=members.map(b=>Number(b.gsm)||0).filter(Boolean);
+  const lo=gs.length?Math.min.apply(null,gs):0,hi=gs.length?Math.max.apply(null,gs):0;
+  // Alert levels: the HIGHEST of the member buckets' thresholds (a group is judged
+  // against the most cautious level any of its lots was given).
+  const cfgs=members.map(_fabAlertCfg);
+  const g={_id:gid,_group:true,members,rolls,
+    fabType:_fabPickSpelling(members.map(b=>({text:b.fabType,n:_fabBucketRollN(b)}))),
+    color:_fabDisplayColor(members),
+    unit:members[0].unit||'kg',
+    totalWeight:members.reduce((a,b)=>a+(b.totalWeight||0),0),
+    rollsCount:members.reduce((a,b)=>a+(b.rollsCount||0),0),
+    reservedCount:members.reduce((a,b)=>a+(b.reservedCount||0),0),
+    reservedWeight:members.reduce((a,b)=>a+(b.reservedWeight||0),0),
+    thresholds:{t1:Math.max.apply(null,cfgs.map(c=>c.t1)),t2:Math.max.apply(null,cfgs.map(c=>c.t2)),t3:Math.max.apply(null,cfgs.map(c=>c.t3))},
+    gsmMin:lo,gsmMax:hi,gsmText:_fabGsmText(lo,hi),gsm:members.length===1?(members[0].gsm||0):(lo===hi?lo:0)};
+  // Everything a search box may match: every stored spelling and every GSM.
+  g.search=[].concat(members.map(b=>`${b.fabType||''} ${b.color||''} ${b.gsm||''}`),[g.fabType,g.color,g.gsmText]).join(' ').toLowerCase();
+  return g;
+}
+// Buckets -> groups (one per type+colour; metre stock never merges with kg).
+function _fabStockGroups(list){
+  const map=new Map();
+  for(const b of (list||[])){
+    if(!b)continue;
+    const gid=_fabGroupKey(b.fabType,b.color)+(_fabUnitNorm(b.unit)==='m'?'~m':'');
+    if(!map.has(gid))map.set(gid,[]);
+    map.get(gid).push(b);
+  }
+  const out=[];
+  for(const[gid,ms] of map){ms.sort((a,b)=>(Number(a.gsm)||0)-(Number(b.gsm)||0)||String(a._id).localeCompare(String(b._id)));out.push(_fabBuildGroup(gid,ms));}
+  return out;
+}
+function _fabGroupById(id){
+  if(!id)return null;
+  const groups=_fabStockGroups(allFabricInventory);
+  return groups.find(g=>g._id===id)||groups.find(g=>g.members.some(b=>b._id===id))||null;
+}
+// A bucket id (old links, the correct-fabric jump) -> its group id; a group id passes through.
+function _fabDrillId(id){const g=_fabGroupById(id);return g?g._id:id;}
+// "209–260" with the number of lots under it when the group holds more than one.
+function _fabGsmCellHtml(g){
+  return `<span style="white-space:nowrap">${_gpEsc(g.gsmText||'—')}</span>${g.members&&g.members.length>1?`<div style="font-size:11px;color:var(--muted)">${g.members.length} buckets</div>`:''}`;
+}
+// Fresh / stock lot — stored on the RECEIPT only, derived onto rolls via sourceFabId.
+function _fabLotKindOf(roll){const f=(typeof allFabricIn!=='undefined'&&allFabricIn||[]).find(x=>x.id===(roll&&roll.sourceFabId));const k=f&&f.lotKind;return k==='fresh'||k==='stock'?k:'';}
+function _fabLotKindLabel(k){return k==='fresh'?'Fresh lot':k==='stock'?'Stock lot':'';}
+function _fabLotKindChip(k){const l=_fabLotKindLabel(k);return l?`<span class="fab-lotkind ${k}" title="Recorded on the Fabric In receipt">${l}</span>`:'';}
+
 window.fabSaveAlerts=async function(key){
-  const s=allFabricInventory.find(x=>x._id===key);if(!s)return;
+  // The drill is a GROUP: the levels are written to every bucket in it so the
+  // group reads the same whichever bucket is the highest.
+  const g=_fabGroupById(key);
+  const members=g?g.members:[allFabricInventory.find(x=>x._id===key)].filter(Boolean);
+  if(!members.length)return;
   const t1=parseFloat(document.getElementById('fab-th1')?.value)||0;
   const t2=parseFloat(document.getElementById('fab-th2')?.value)||0;
   const t3=parseFloat(document.getElementById('fab-th3')?.value)||0;
   try{
-    await setDoc(doc(db,'fabric_inventory',key),{thresholds:{t1,t2,t3}},{merge:true});
-    s.thresholds={t1,t2,t3};
+    for(const m of members){
+      await setDoc(doc(db,'fabric_inventory',m._id),{thresholds:{t1,t2,t3}},{merge:true});
+      m.thresholds={t1,t2,t3};
+    }
     showToast('Alert levels saved ✓');
     if(_fabInvDrillKey)window.fabInvDrill(key);   // re-render drill AND redraw barcodes
     else{const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();}
@@ -158,10 +255,14 @@ function renderFabricInventory(){
   const totalRolls=agg.reduce((a,s)=>a+(s.rollsCount||0),0);
   const defRolls=agg.reduce((a,s)=>a.concat((s.rolls||[]).filter(r=>r.status==='defective')),[]);
   const defKg=defRolls.filter(r=>_fabUnitNorm(r.unit)==='kg').reduce((a,r)=>a+(r.weight||0),0);
-  const alertCount=agg.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
-  const outCount=agg.filter(s=>!(s.totalWeight>0)).length;
+  // One row per type+colour (group on read) — the KPI sums above are over raw
+  // buckets and are identical either way; alerts / empties / categories are per GROUP.
+  const groups=_fabStockGroups(agg);
+  const gOf={};groups.forEach(g=>g.members.forEach(m=>{gOf[m._id]=g._id;}));
+  const alertCount=groups.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
+  const outCount=groups.filter(s=>!(s.totalWeight>0)).length;
   const partialCount=agg.reduce((a,s)=>a+(s.rolls||[]).filter(r=>r.partiallyConsumed&&(r.status||'in_stock')==='in_stock').length,0);
-  const cats=[...new Set(agg.map(s=>(s.fabType||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const cats=[...new Set(groups.map(s=>(s.fabType||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   if(_fabInvCatFilter!=='all'&&!cats.includes(_fabInvCatFilter))_fabInvCatFilter='all';
 
   // Vendor map — built from active (in_stock + reserved) rolls
@@ -174,20 +275,20 @@ function renderFabricInventory(){
       if(!vMap[sup])vMap[sup]={totalWeight:0,rollsCount:0,fabricIds:new Set()};
       vMap[sup].totalWeight+=(r.weight||0);
       vMap[sup].rollsCount++;
-      vMap[sup].fabricIds.add(s._id);
+      vMap[sup].fabricIds.add(gOf[s._id]);
     }
   }
   const vendorNames=Object.keys(vMap).sort((a,b)=>vMap[b].totalWeight-vMap[a].totalWeight);
 
   // Filtered list for By Fabric view
-  const filtered=agg.filter(s=>{
+  const filtered=groups.filter(s=>{
     if(_fabInvFilter==='in_stock'&&!(s.totalWeight>0))return false;
     if(_fabInvFilter==='empty'&&(s.totalWeight>0))return false;
     if(_fabInvFilter==='partial'&&!(s.rolls||[]).some(r=>r.partiallyConsumed&&(r.status||'in_stock')==='in_stock'))return false;
     if(_fabInvCatFilter!=='all'&&(s.fabType||'').trim()!==_fabInvCatFilter)return false;
-    if(_fabInvSearchQ){const q=_fabInvSearchQ.toLowerCase();if(!`${s.fabType||''} ${s.color||''} ${s.gsm||''}`.toLowerCase().includes(q))return false;}
+    if(_fabInvSearchQ){const q=_fabInvSearchQ.toLowerCase();if(!s.search.includes(q))return false;}
     return true;
-  }).sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||'')||(a.color||'').localeCompare(b.color||'')||(a.gsm||0)-(b.gsm||0));
+  }).sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||'')||(a.color||'').localeCompare(b.color||'')||(a.gsmMin||0)-(b.gsmMin||0));
 
   // KPI strip values
   const kpiStock=totalKg.toFixed(1)+' kg'+(totalM?`<div style="font-size:12px;font-weight:500;color:var(--muted)">+ ${totalM.toFixed(1)} m</div>`:'');
@@ -221,7 +322,7 @@ function renderFabricInventory(){
       ${[['all','All'],...cats.map(c=>[c,c])].map(([k,l])=>`<button onclick="window.fabInvSetCat('${_gpEsc(k).replace(/'/g,"\\'")}')" style="padding:5px 11px;border:1px solid ${_fabInvCatFilter===k?'var(--dark)':'var(--border)'};border-radius:999px;background:${_fabInvCatFilter===k?'var(--dark)':'var(--surface)'};color:${_fabInvCatFilter===k?'var(--on-dark)':'var(--text)'};font-size:13px;cursor:pointer;font-family:inherit">${_gpEsc(l)}</button>`).join('')}
     </div>`:''}
   </div>`;
-  h+=((_fabInvView==='vendor'&&_fabInvFilter!=='partial')?_renderFabByVendor(vendorNames,vMap,agg):_renderFabByFabric(filtered,vMap));
+  h+=((_fabInvView==='vendor'&&_fabInvFilter!=='partial')?_renderFabByVendor(vendorNames,vMap,groups):_renderFabByFabric(filtered,vMap));
   return h+'<div style="height:80px"></div>';
 }
 
@@ -281,11 +382,11 @@ function _fabStockBar(s){
   if(!w)return'';
   const t1=_fabAlertCfg(s).t1||50;
   const pct=Math.min(100,w/(t1*2)*100);
-  return`<div style="width:72px;height:3px;background:var(--border);border-radius:2px;margin-top:5px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${_fabAlertLevel(s).dot};border-radius:2px"></div></div>`;
+  return`<div style="width:56px;height:3px;background:var(--border);border-radius:2px;margin-top:5px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${_fabAlertLevel(s).dot};border-radius:2px"></div></div>`;
 }
 
 // By Vendor view — vendor groups, each collapsible
-function _renderFabByVendor(vendorNames,vMap,agg){
+function _renderFabByVendor(vendorNames,vMap,agg){   // agg = the GROUPS (one per type+colour)
   if(!vendorNames.length)return`<div class="empty" style="padding:32px;text-align:center">No vendor data yet. Record fabric arrivals (Fabric In tab) to see vendor breakdown.</div>`;
   let h='';
   for(const sup of vendorNames){
@@ -295,9 +396,9 @@ function _renderFabByVendor(vendorNames,vMap,agg){
       if(_fabInvFilter==='in_stock'&&!(s.totalWeight>0))return false;
       if(_fabInvFilter==='empty'&&(s.totalWeight>0))return false;
       if(_fabInvCatFilter!=='all'&&(s.fabType||'').trim()!==_fabInvCatFilter)return false;
-      if(_fabInvSearchQ){const q=_fabInvSearchQ.toLowerCase();if(!`${s.fabType||''} ${s.color||''} ${s.gsm||''}`.toLowerCase().includes(q))return false;}
+      if(_fabInvSearchQ){const q=_fabInvSearchQ.toLowerCase();if(!s.search.includes(q))return false;}
       return true;
-    }).sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||'')||(a.color||'').localeCompare(b.color||'')||(a.gsm||0)-(b.gsm||0));
+    }).sort((a,b)=>(a.fabType||'').localeCompare(b.fabType||'')||(a.color||'').localeCompare(b.color||'')||(a.gsmMin||0)-(b.gsmMin||0));
     if(!fabrics.length)continue;
     const alerts=fabrics.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
     h+=`<div class="card" style="margin-bottom:10px;padding:0;overflow:hidden">
@@ -323,7 +424,7 @@ function _renderFabByVendor(vendorNames,vMap,agg){
           const empty=!(s.totalWeight>0);const lvl=_fabAlertLevel(s);
           return`<tr style="border-bottom:1px solid #f5f5f5${empty?';opacity:.6':''}">
             <td style="padding:10px;font-weight:600"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${lvl.dot};margin-right:6px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
-            <td style="padding:10px">${s.gsm||'—'}</td>
+            <td style="padding:10px 6px;font-size:13px">${_fabGsmCellHtml(s)}</td>
             <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
             <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:11px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} resv</div>`:''}</td>
             <td style="padding:10px;text-align:right;font-weight:600">${s.rollsCount||0}${s.reservedCount?`<div style="font-size:11px;color:#d97706">+${s.reservedCount}</div>`:''}</td>
@@ -363,7 +464,7 @@ function _renderFabByFabric(filtered,vMap){
       const vendors=fabVendors[s._id]||[];
       return`<tr style="border-bottom:1px solid #f5f5f5${empty?';opacity:.6':''}">
         <td style="padding:10px;font-weight:600"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${lvl.dot};margin-right:6px;vertical-align:middle"></span>${_gpEsc(s.fabType||'—')}</td>
-        <td style="padding:10px">${s.gsm||'—'}</td>
+        <td style="padding:10px 6px;font-size:13px">${_fabGsmCellHtml(s)}</td>
         <td style="padding:10px">${_gpEsc(s.color||'—')}</td>
         <td style="padding:10px">${vendors.slice(0,2).map(v=>`<span style="display:inline-block;padding:2px 7px;background:var(--surface-2);border-radius:4px;margin:1px 2px 1px 0;white-space:nowrap;font-size:11px">${_gpEsc(v)}</span>`).join('')}${vendors.length>2?`<span style="font-size:12px;color:var(--muted)">+${vendors.length-2}</span>`:''}</td>
         <td style="padding:10px;text-align:right;font-weight:700;color:${empty?'#dc2626':'var(--text)'}">${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'}${s.reservedCount?`<div style="font-size:11px;color:#d97706;font-weight:500">+${(s.reservedWeight||0).toFixed(2)} resv</div>`:''}</td>
@@ -376,13 +477,17 @@ function _renderFabByFabric(filtered,vMap){
 }
 
 function _renderFabInvDrill(key){
-  const s=allFabricInventory.find(x=>x._id===key);
+  // The drill is a GROUP (type+colour): its rolls are those of every member bucket.
+  const s=_fabGroupById(key);
+  if(s)key=s._id;
   if(!s){return`<div class="page-head"><div class="page-title">Not found</div></div><button class="btn-outline" onclick="window.fabInvDrill(null)">← Back</button>`;}
-  const movements=allFabricMovements.filter(m=>_fabInvKey(m.fabType,m.gsm,m.color)===key).slice(0,80);
+  const gk=_fabGroupKey(s.fabType,s.color);
+  const movements=allFabricMovements.filter(m=>_fabGroupKey(m.fabType,m.color)===gk&&(_fabUnitNorm(m.unit)==='m')===(_fabUnitNorm(s.unit)==='m')).slice(0,80);
   const rolls=(s.rolls||[]).slice().sort((a,b)=>(a.status==='in_stock'?-1:1)-(b.status==='in_stock'?-1:1));
+  const multi=s.members.length>1;
   const cfg=_fabAlertCfg(s),lvl=_fabAlertLevel(s);
   return`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-    <div><div class="page-title">${_gpEsc(s.fabType||'—')} · ${s.gsm||0}gsm · ${_gpEsc(s.color||'—')}</div>
+    <div><div class="page-title">${_gpEsc(s.fabType||'—')} · ${_gpEsc(s.gsmText||'0')}gsm · ${_gpEsc(s.color||'—')}</div>
       <div class="page-sub"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${lvl.dot};margin-right:5px"></span><span style="color:${lvl.color};font-weight:600">${lvl.label}</span> · ${(s.totalWeight||0).toFixed(2)} ${s.unit||'kg'} available · ${s.rollsCount||0} rolls${s.reservedCount?` · ${(s.reservedWeight||0).toFixed(2)} ${s.unit||'kg'} (${s.reservedCount}) reserved`:''} · ${rolls.length} total rolls ever received</div></div>
     <button class="btn-outline" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.fabInvDrill(null)">← Back to Fabric Inventory</button>
   </div>
@@ -391,8 +496,15 @@ function _renderFabInvDrill(key){
     <button onclick="window.fabDrillJump('returns','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">Returns →</button>
     <button onclick="window.fabDrillJump('fabricin','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">Record arrival →</button>
     <button onclick="window.fabDrillJump('reports','${key}')" style="padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">Reports →</button>
-    ${_fabCanDelete()?`<button onclick="window.fabCorrectFabric('${key}')" style="padding:7px 13px;border:1px solid var(--accent-urgent);border-radius:8px;background:var(--surface);color:var(--accent-warning);font-size:13px;cursor:pointer;font-family:inherit">✎ Correct color / type / GSM</button>`:''}
+    ${_fabCanDelete()&&!multi?`<button onclick="window.fabCorrectFabric('${s.members[0]._id}')" style="padding:7px 13px;border:1px solid var(--accent-urgent);border-radius:8px;background:var(--surface);color:var(--accent-warning);font-size:13px;cursor:pointer;font-family:inherit">✎ Correct color / type / GSM</button>`:''}
   </div>
+  ${multi?`<div class="card fab-members" style="margin-bottom:14px"><div class="card-title">Entered as <span style="font-weight:400;color:var(--muted);font-size:12px">${s.members.length} buckets share this type + colour · GSM is measured per roll, so they are shown together</span></div>
+    ${s.members.map(b=>`<div class="fab-member-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 2px;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="font-weight:700">${_gpEsc(b.fabType||'—')} · ${b.gsm||0}gsm · ${_gpEsc(b.color||'—')}</span>
+      <span style="color:var(--muted)">${(b.totalWeight||0).toFixed(2)} ${_gpEsc(b.unit||'kg')} · ${b.rollsCount||0} rolls</span>
+      ${_fabCanDelete()?`<button onclick="window.fabCorrectFabric('${_gpEsc(b._id)}')" style="margin-left:auto;padding:4px 10px;border:1px solid var(--accent-urgent);border-radius:7px;background:var(--surface);color:var(--accent-warning);font-size:12px;cursor:pointer;font-family:inherit">✎ Correct</button>`:''}
+    </div>`).join('')}
+  </div>`:''}
   <div class="card" style="margin-bottom:14px"><div class="card-title">Stock alerts <span style="font-weight:400;color:var(--muted);font-size:12px">3 levels (${s.unit||'kg'}) · weight at/below each level raises the flag</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="margin:0"><label>🟠 Low ≤</label><input id="fab-th1" type="number" min="0" step="0.1" value="${cfg.t1}" style="width:96px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit"></div>
@@ -408,19 +520,24 @@ function _renderFabInvDrill(key){
     </div>`:''}
     ${rolls.length?rolls.map(r=>{
       const st=r.status||'in_stock';
+      const b=r._bucket||s;   // the stored bucket this roll lives in
       const stColor=st==='in_stock'?'var(--green)':st==='issued'?'#dc2626':st==='reserved'?'#d97706':st==='returned_supplier'?'#9ca3af':st==='defective'?'var(--accent-urgent)':st==='consumed'?'#92400e':'var(--muted)';
       const rcpt=allFabricIn.find(x=>x.id===r.sourceFabId);
       const supplier=rcpt?.supplier||'';
-      const wt=`${r.weight||0} ${r.unit||s.unit||'kg'}`;
+      const wt=`${r.weight||0} ${r.unit||b.unit||s.unit||'kg'}`;
+      // GSM is the ROLL's own (measured); the bucket's header GSM is only what was typed at receipt.
+      const rg=Number(r.gsm)||Number(b.gsm)||0;
+      const gsmHtml=`<span class="fab-roll-gsm-tag" style="font-size:12px;font-weight:600">${rg} gsm${(Number(b.gsm)&&rg!==Number(b.gsm))?` <span style="color:var(--muted);font-weight:400">entered as ${Number(b.gsm)}</span>`:''}</span>`;
       const canAct=_fabCanDelete()&&st==='in_stock';
       return`<div style="padding:8px 2px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${r.gsm||rcpt?.gsm||s.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||s.color||'')}" data-fabtype="${_gpEsc(s.fabType||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
+          <input type="checkbox" class="fab-drill-chk" data-rc="${_gpEsc(r.rollCode||'')}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(supplier)}" data-gsm="${rg||rcpt?.gsm||''}" data-color="${_gpEsc(r.color||rcpt?.color||b.color||'')}" data-fabtype="${_gpEsc(b.fabType||s.fabType||'')}" onclick="window.updateDrillPrintCount()" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
           <span style="font-weight:700;letter-spacing:.04em;min-width:120px">${_gpEsc(r.rollCode||'—')}${(r.partiallyConsumed||(r.originalWeight&&r.originalWeight>(r.weight||0)))?' <span style="font-size:11px;font-weight:700;color:var(--accent-warning);background:var(--accent-warning-soft);padding:1px 6px;border-radius:5px;letter-spacing:.03em">PARTIAL</span>':''}${r.labelStale?' <span style="font-size:11px;font-weight:800;color:#fff;background:#dc2626;padding:1px 6px;border-radius:5px;letter-spacing:.03em">REPRINT LABEL</span>':''}</span>
           <span style="flex:1;min-width:70px">${(r.originalWeight&&r.originalWeight>(r.weight||0))?`<b>${r.weight||0}</b> / ${r.originalWeight} ${r.unit||s.unit||'kg'} <span style="color:var(--accent-warning);font-size:12px">left</span>`:wt}${r.consumedWeight?` · used ${r.consumedWeight}`:''}</span>
+          ${gsmHtml}${_fabLotKindChip(rcpt&&rcpt.lotKind)}
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:12px">${st.replace('_',' ')}</span>
-          <button onclick="window.printRollBarcode('${_gpEsc(r.rollCode||'')}','${_gpEsc(s.fabType||'')}','${r.gsm||s.gsm||0}','${_gpEsc(s.color||'')}','${_gpEsc(wt)}','${_gpEsc(supplier)}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">🖨 Print</button>
-          ${r.labelStale?`<button onclick="window.fabReprintRoll('${_gpEsc(key)}','${_gpEsc(r.rollCode||'')}')" title="Reprint label with the updated weight — same barcode" style="padding:3px 8px;border:none;border-radius:6px;background:#b45309;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint (weight changed)</button>`:''}
+          <button onclick="window.printRollBarcode('${_gpEsc(r.rollCode||'')}','${_gpEsc(b.fabType||s.fabType||'')}','${rg}','${_gpEsc(b.color||s.color||'')}','${_gpEsc(wt)}','${_gpEsc(supplier)}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">🖨 Print</button>
+          ${r.labelStale?`<button onclick="window.fabReprintRoll('${_gpEsc(b._id||key)}','${_gpEsc(r.rollCode||'')}')" title="Reprint label with the updated weight — same barcode" style="padding:3px 8px;border:none;border-radius:6px;background:#b45309;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint (weight changed)</button>`:''}
           ${st==='in_stock'&&_fabCanMarkDefect()?`<button type="button" class="fdf-mini" onclick="window.fabDefectOpen('${_gpEsc(r.rollCode||'')}')" title="This roll is bad — take it out of stock">${_gpEsc(_fabT('fab.mark_defective','Mark defective'))}</button>`:''}
           ${canAct?`<button onclick="window.editFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
           <button onclick="window.deleteFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" title="Delete this roll" style="padding:3px 8px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:11px;cursor:pointer;font-family:inherit">✕</button>`:''}
@@ -463,7 +580,7 @@ window.fabInvSetSearch=function(v){
     const m=document.getElementById('fab-tab-content');if(m){m.innerHTML=renderFabricInventory();const i=document.getElementById('finv-search');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}
   },180);
 };
-window.fabInvDrill=function(key){_fabInvDrillKey=key;const m=document.getElementById('fab-tab-content');if(m){m.innerHTML=renderFabricInventory();if(key)_fabRenderDrillBarcodes();}};
+window.fabInvDrill=function(key){if(key)key=_fabDrillId(key);_fabInvDrillKey=key;const m=document.getElementById('fab-tab-content');if(m){m.innerHTML=renderFabricInventory();if(key)_fabRenderDrillBarcodes();}};
 window.fabInvSetView=function(v){_fabInvView=v;const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();};
 window.fabInvToggleVendor=function(sup){if(_fabInvCollapsed.has(sup))_fabInvCollapsed.delete(sup);else _fabInvCollapsed.add(sup);const m=document.getElementById('fab-tab-content');if(m)m.innerHTML=renderFabricInventory();};
 
@@ -620,6 +737,7 @@ function _fabUnitForSupplier(supplier){
 }
 
 function renderFabricInTab(){
+  _fabLotKindSel='';
   const today=_fabToday();
   const fabTypes=['100% Poly Sublimation Jersey','Jersey Heavy','Terry Stock','Terry Fresh','Twill','Burbury 100% Cotton','Drill','Denim','Fleece','100% Cotton Cora Jersey','100% Cotton Terry Cora','PFGD Rigid','PFGD Lycra','Rib 1x1','Rib 2x2','Rib 2x1'];
   const suppliers=['Gul Enterprises','JR Trader','Akhlaq Sublimation','Khursheed Enterprise','Daniyal Twill'];
@@ -631,11 +749,15 @@ function renderFabricInTab(){
         </div>
         <input id="fab-supplier" placeholder="Or type supplier name…" oninput="window.updateFabUnit()">
       </div>
+      <div class="field" style="grid-column:1/-1"><label>Lot type <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <div id="fab-lotkind" role="group" aria-label="Lot type" style="display:flex;gap:6px;flex-wrap:wrap">${_fabLotKindChipsHtml('')}</div>
+      </div>
       <div class="field"><label>Date</label><input id="fab-date" type="date" value="${today}"></div>
       <div class="field"><label>Fabric Type *</label>
         <select id="fab-type" onchange="window.refreshFabCode()"><option value="">Select type…</option>${fabTypes.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
       </div>
-      <div class="field"><label>GSM *</label><input id="fab-gsm" type="number" min="0" placeholder="e.g. 220" onchange="window.refreshFabCode()"></div>
+      <div class="field"><label>Nominal GSM (code only) *</label><input id="fab-gsm" type="number" min="0" placeholder="e.g. 220" onchange="window.refreshFabCode()">
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Used for the fabric code and as each roll's starting value — the GSM measured on every roll below is what counts.</div></div>
       <div class="field"><label>Fabric Color *</label><input id="fab-color" placeholder="e.g. Black, White, Royal Blue" onchange="window.refreshFabCode()"></div>
       <div class="field"><label>Received By</label><input value="${session.name}" readonly style="background:var(--soft);cursor:default"></div>
       <div class="field"><label>Auto fabric code</label>
@@ -661,6 +783,15 @@ function renderFabricInTab(){
   <div style="height:80px"></div>`;
 }
 
+// Fresh / stock lot: two chips, blank = not recorded; pressing the lit one clears it.
+let _fabLotKindSel='';
+function _fabLotKindChipsHtml(sel){
+  return [['fresh','Fresh lot'],['stock','Stock lot']].map(([k,l])=>`<button type="button" class="dest-chip fab-lotkind-chip${sel===k?' active':''}" aria-pressed="${sel===k}" onclick="window.setFabLotKind('${k}')">${l}</button>`).join('');
+}
+window.setFabLotKind=function(k){
+  _fabLotKindSel=(_fabLotKindSel===k||(k!=='fresh'&&k!=='stock'))?'':k;
+  const el=document.getElementById('fab-lotkind');if(el)el.innerHTML=_fabLotKindChipsHtml(_fabLotKindSel);
+};
 window.setFabSupplier=function(v){
   document.getElementById('fab-supplier').value=v;
   window.updateFabUnit();
@@ -812,7 +943,10 @@ window.submitFabricIn=async function(){
     // The floor is the highest FAB number already on file, so a counter that
     // was reset or lags can never aim at a receipt that exists.
     const ts=Date.now();
-    const buildReceipt=(n,fabId)=>({id:fabId,fabCode,ts,supplier,date,fabType,gsm,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls});
+    // lotKind ('fresh' | 'stock') is stored on the RECEIPT only and only when chosen, so a
+    // receipt without it is byte-for-byte what it was; rolls read it through sourceFabId.
+    const lotKind=_fabLotKindSel==='fresh'||_fabLotKindSel==='stock'?_fabLotKindSel:'';
+    const buildReceipt=(n,fabId)=>Object.assign({id:fabId,fabCode,ts,supplier,date,fabType,gsm,color,receivedBy:session.name,notes,unit,totalWeight,rollsCount:rolls.length,rolls},lotKind?{lotKind}:{});
     // Receipt doc + inventory + movement + the counter commit in ONE transaction.
     // (sourceId, and so each roll's sourceFabId, is the minted FAB id.)
     const done=await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm,unit:r.unit})),sourceCol:'fabricin',note:`Receipt from ${supplier}`,mintDoc:{field:'fabricin',collection:'fabricin',floor,idFor:_fabInIdFor,build:buildReceipt}});
@@ -845,7 +979,7 @@ function renderFabricInList(){
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="font-weight:700;color:var(--red);font-size:12px">${f.id}</span>
-            ${f.fabCode?`<span style="font-weight:700;color:var(--cat-notes);font-size:12px;background:var(--surface-2);padding:1px 6px;border-radius:4px;letter-spacing:.04em">${f.fabCode}</span>`:''}
+            ${f.fabCode?`<span style="font-weight:700;color:var(--cat-notes);font-size:12px;background:var(--surface-2);padding:1px 6px;border-radius:4px;letter-spacing:.04em">${f.fabCode}</span>`:''}${_fabLotKindChip(f.lotKind)}
             <span style="font-size:12px;color:var(--muted)">${f.date||''}</span>
             ${pendBadge}
           </div>
@@ -2359,7 +2493,7 @@ window.dsDelete=async function(id){
 function fabTrimAlertsCard(){
   if(!(session&&(['owner','manager'].includes(session.role)||session.canFabric)))return '';
   if(!_dsLoaded&&!_dsLoadErr){loadDrawstrings().then(()=>{if(typeof currentPage!=='undefined'&&currentPage==='dashboard'){const m=document.getElementById('main-content');if(m&&typeof renderDashboard==='function')m.innerHTML=renderDashboard();}});}
-  const ribs=(allFabricInventory||[]).filter(s=>/rib/i.test(s.fabType||''));
+  const ribs=_fabStockGroups((allFabricInventory||[]).filter(s=>/rib/i.test(s.fabType||'')));   // per type+colour, like the Stock tab
   const ribLow=ribs.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK');
   const ribOut=ribs.filter(s=>(s.totalWeight||0)<=0);
   const dsLow=(allDrawstrings||[]).filter(d=>_dsAlertLevel(d).label==='Low');
@@ -2381,7 +2515,9 @@ function fabTrimAlertsCard(){
 }
 
 function renderFabricIssueTab(){
-  const stocks=allFabricInventory.filter(s=>(s.rolls||[]).some(r=>['in_stock','reserved'].includes(r.status||'in_stock')));
+  // One option per type+colour (group on read); the checklist then lists the pickable
+  // rolls of every bucket in it, each with its own GSM. The pass is still written per STORED bucket.
+  const stocks=_fabStockGroups(allFabricInventory).filter(g=>g.rolls.some(r=>_fabLiveRoll(r)));
   const pos=((typeof allPOs!=='undefined'&&allPOs)||[]).filter(p=>p.poStatus!=='cancelled');
   return`<div class="card"><div class="card-title">Issue fabric to production</div>
     <div class="form-grid">
@@ -2427,7 +2563,7 @@ function renderFabricIssueTab(){
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>…or pick a fabric</label>
         <select id="fab-iss-stock" onchange="window.fabIssuePickStock()">
           <option value="">Select fabric…</option>
-          ${stocks.map(s=>`<option value="${s._id}">${_gpEsc(s.fabType)} · ${s.gsm||0}gsm · ${_gpEsc(s.color)} — ${s.rollsCount||0} avail${s.reservedCount?` · ${s.reservedCount} reserved`:''}</option>`).join('')}
+          ${stocks.map(s=>`<option value="${s._id}">${_gpEsc(s.fabType)} · ${_gpEsc(s.gsmText||'0')}gsm · ${_gpEsc(s.color)} — ${s.rollsCount||0} avail${s.reservedCount?` · ${s.reservedCount} reserved`:''}</option>`).join('')}
         </select>
       </div>
     </div>
@@ -2657,8 +2793,8 @@ window.fabIssuePickStock=function(){
   const wrap=document.getElementById('fab-iss-checklist');
   if(!wrap)return;
   if(!key){wrap.innerHTML='';return;}
-  const stock=allFabricInventory.find(s=>s._id===key);
-  const pickable=(stock?.rolls||[]).filter(r=>['in_stock','reserved'].includes(r.status||'in_stock'));
+  const stock=_fabGroupById(key);   // a group: its rolls come from every bucket in it
+  const pickable=(stock?.rolls||[]).filter(r=>_fabLiveRoll(r));
   if(!pickable.length){wrap.innerHTML='<div style="font-size:13px;color:var(--muted);padding:6px">No available rolls.</div>';return;}
   wrap.innerHTML=`<label style="font-size:12px;color:var(--muted)">${pickable.length} available rolls</label>
     <div style="display:grid;gap:4px;margin-top:4px">${pickable.map(r=>{
@@ -2668,6 +2804,7 @@ window.fabIssuePickStock=function(){
         <input type="checkbox" data-roll="${_gpEsc(r.rollCode)}" ${sel?'checked':''} onchange="window.fabIssueToggle(this)">
         <span style="font-weight:700;letter-spacing:.04em">${_gpEsc(r.rollCode)}</span>
         <span style="color:var(--muted)">${r.weight||0} ${r.unit||stock.unit||'kg'}</span>
+        <span class="fab-pick-gsm" style="color:var(--muted);font-size:12px">${Number(r.gsm)||Number(r._bucket&&r._bucket.gsm)||0} gsm</span>
         ${resv?`<span style="color:var(--amber);font-size:11px">reserved ${_gpEsc(r.reservedPO||'')}</span>`:''}
         ${r.qcPassed?'<span style="color:var(--green);font-size:11px">QC ✓</span>':'<span style="color:var(--muted);font-size:11px">no QC</span>'}
         ${(r.status||'in_stock')==='in_stock'&&_fabCanMarkDefect()?`<button type="button" class="fdf-flag" title="${_gpEsc(_fabT('fab.mark_defective','Mark defective'))}" aria-label="${_gpEsc(_fabT('fab.mark_defective','Mark defective'))} ${_gpEsc(r.rollCode)}" onclick="event.preventDefault();event.stopPropagation();window.fabDefectOpen('${_gpEsc(r.rollCode)}')">⚑</button>`:''}
@@ -3225,10 +3362,11 @@ function renderFabricReportsTab(){
   const agg=arr=>arr.reduce((o,m)=>{o.count++;o.qty+=m.qty||0;o.rolls+=(m.rollCodes||[]).length;return o;},{count:0,qty:0,rolls:0});
   const sub=s=>movs.filter(m=>m.subtype===s);
   const received=agg(sub('receipt')),issued=agg(sub('issue')),returned=agg(sub('return_out')),edited=agg(sub('edit')),deleted=agg(sub('delete'));
-  const fabrics=allFabricInventory.length;
+  const _grp=_fabStockGroups(allFabricInventory);
+  const fabrics=_grp.length;
   const rollsNow=allFabricInventory.reduce((a,s)=>a+(s.rollsCount||0),0);
   const kg=allFabricInventory.filter(s=>_fabUnitNorm(s.unit)==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
-  const lvls=allFabricInventory.map(_fabAlertLevel);
+  const lvls=_grp.map(_fabAlertLevel);
   const crit=lvls.filter(l=>l.label==='Critical'||l.label==='Out of stock').length;
   const low=lvls.filter(l=>l.label==='Low'||l.label==='Very low').length;
   const gpById={};(typeof allPasses!=='undefined'&&allPasses?allPasses:[]).forEach(g=>{gpById[g.id]=g;});
@@ -3439,7 +3577,7 @@ function _fabCanMarkDefect(){return !!session&&!_fabReadOnly()&&(['owner','manag
 function _fabCanReviewDefects(){return !_fabReadOnly()&&_fabCanDelete();}
 function _fabRollOrigin(roll){
   const f=allFabricIn.find(x=>x.id===roll.sourceFabId);
-  return{supplier:(f&&f.supplier)||'',lotId:(f&&f.id)||roll.sourceFabId||'',date:(f&&f.date)||'',fabCode:(f&&f.fabCode)||''};
+  return{supplier:(f&&f.supplier)||'',lotId:(f&&f.id)||roll.sourceFabId||'',date:(f&&f.date)||'',fabCode:(f&&f.fabCode)||'',lotKind:(f&&(f.lotKind==='fresh'||f.lotKind==='stock')?f.lotKind:'')};
 }
 function _fabDateStr(ts){return ts?new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'';}
 function _fabHttpsUrl(u){const s=String(u||'').trim();return /^https:\/\//.test(s)?s:'';}
@@ -3565,7 +3703,7 @@ function _fabDefectRows(){
     const st=r.status||'in_stock';
     if(st==='defective'||(st==='returned_supplier'&&r.defect)){
       const o=_fabRollOrigin(r);
-      out.push({key:s._id,stock:s,roll:r,returned:st==='returned_supplier',supplier:o.supplier||'Unknown',lotId:o.lotId,lotDate:o.date,fabCode:o.fabCode});
+      out.push({key:s._id,stock:s,roll:r,returned:st==='returned_supplier',supplier:o.supplier||'Unknown',lotId:o.lotId,lotDate:o.date,fabCode:o.fabCode,lotKind:o.lotKind});
     }
   }));
   return out;
@@ -3589,7 +3727,7 @@ function _fabDefectGroups(rows){
   const sup={};
   rows.forEach(x=>{
     const sg=sup[x.supplier]=sup[x.supplier]||{supplier:x.supplier,rolls:0,kg:0,m:0,lots:{}};
-    const lg=sg.lots[x.lotId||'—']=sg.lots[x.lotId||'—']||{lotId:x.lotId||'—',date:x.lotDate,fabCode:x.fabCode,rolls:0,kg:0,m:0,rows:[]};
+    const lg=sg.lots[x.lotId||'—']=sg.lots[x.lotId||'—']||{lotId:x.lotId||'—',date:x.lotDate,fabCode:x.fabCode,lotKind:x.lotKind,rolls:0,kg:0,m:0,rows:[]};
     _fabAddTotals(sg,x);_fabAddTotals(lg,x);lg.rows.push(x);
   });
   return Object.values(sup).sort((a,b)=>a.supplier.localeCompare(b.supplier)).map(sg=>Object.assign(sg,{lots:Object.values(sg.lots).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||a.lotId.localeCompare(b.lotId))}));
@@ -3616,7 +3754,7 @@ function renderFabricReturnsTab(){
     ${groups.length?groups.map(sg=>`<div class="fdf-sup">
       <div class="fdf-sup-h"><span class="fdf-sup-n">${_gpEsc(sg.supplier)}</span><span class="fdf-tot">${_gpEsc(_fabTotalsText(sg))}</span></div>
       ${sg.lots.map(lg=>`<div class="fdf-lot">
-        <div class="fdf-lot-h"><span>${_gpEsc(lg.fabCode||lg.lotId)}${lg.date?` · received ${_gpEsc(lg.date)}`:''}</span><span class="fdf-tot">${_gpEsc(_fabTotalsText(lg))}</span></div>
+        <div class="fdf-lot-h"><span>${_gpEsc(lg.fabCode||lg.lotId)}${lg.date?` · received ${_gpEsc(lg.date)}`:''} ${_fabLotKindChip(lg.lotKind)}</span><span class="fdf-tot">${_gpEsc(_fabTotalsText(lg))}</span></div>
         ${lg.rows.map(x=>_fabDefectRowHtml(x,canReview)).join('')}
       </div>`).join('')}
     </div>`).join(''):`<div class="empty fdf-empty">No defective or returned rolls${_fabDefSup||_fabDefQ||_fabDefState!=='all'?' match these filters':' yet'}.</div>`}

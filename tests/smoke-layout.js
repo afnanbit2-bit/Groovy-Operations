@@ -3012,6 +3012,33 @@ const FRAGMENTS={
     return Promise.resolve('<div class="card">'+ownerHtml+'</div><div class="card">'+floorHtml+'</div><div class="card" style="position:relative">'+card+'</div>');
   },
 
+  // Fabric ▸ Stock grouped on read (WP-F4, Oct 2026): ONE row per type+colour with a GSM range and a bucket count,
+  // in By Fabric AND By Vendor, and the grouped drill (members card, each roll's own GSM and "entered as N",
+  // the lot-type chip). Long colour names, a three-bucket group, a single-bucket group and an empty one.
+  'fabric — grouped stock rows and the grouped drill':()=>{
+    const esc=x=>String(x==null?'':x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const LONGC='Heather Charcoal Melange With A Very Long Colour Name Indeed';
+    const mkRoll=(code,w,gsm,rc,extra)=>Object.assign({rollCode:code,weight:w,gsm,unit:'kg',status:'in_stock',sourceFabId:rc},extra||{});
+    const bucket=(id,gsm,color,rolls,extra)=>Object.assign({_id:id,fabType:'Jersey Heavy',gsm,color,unit:'kg',rolls,
+      totalWeight:rolls.filter(r=>r.status==='in_stock').reduce((n,r)=>n+r.weight,0),rollsCount:rolls.filter(r=>r.status==='in_stock').length,reservedCount:0,reservedWeight:0},extra||{});
+    const inv=[
+      bucket('jersey_heavy__209gsm__black',209,'Black',[mkRoll('BLK-209-01-R01',24.5,209,'FAB-001'),mkRoll('BLK-209-01-R02',31.2,235,'FAB-001')]),
+      bucket('jersey_heavy__250gsm__black',250,'black',[mkRoll('BLK-250-01-R01',28,260,'FAB-002',{partiallyConsumed:true,originalWeight:40,labelStale:true})]),
+      bucket('jersey_heavy__220gsm__black',220,'Black',[mkRoll('BLK-220-01-R01',18,220,'FAB-001')]),
+      bucket('jersey_heavy__220gsm__long',220,LONGC,[mkRoll('LNG-220-01-R01',12,220,'FAB-001')]),
+      bucket('rib__250gsm__navy',250,'Navy',[mkRoll('RIB-250-01-R01',6,250,'FAB-003')]),
+      bucket('jersey_heavy__180gsm__ecru',180,'Ecru',[mkRoll('ECR-180-01-R01',9,180,'FAB-001',{status:'issued'})])];
+    const rcpt=[{id:'FAB-001',fabCode:'BLK-209-01',supplier:'Al-Karam Textile Mills (Private) Limited',date:'2026-10-01',lotKind:'fresh'},{id:'FAB-002',fabCode:'BLK-250-01',supplier:'Zeta Mills',date:'2026-10-08',lotKind:'stock'},{id:'FAB-003',fabCode:'RIB-250-01',supplier:'Zeta Mills',date:'2026-10-05'}];
+    const mk=(view,drill)=>{
+      const app=loadApp({files:['js/fabric.js'],currentPage:'',session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',canFabric:true},
+        globals:{allFabricInventory:inv.map(b=>JSON.parse(JSON.stringify(b))),allFabricIn:rcpt,allPasses:[],allFabricMovements:[],allPOs:[],_gpEsc:esc,
+          _fabInvFilter:'all',_fabInvCatFilter:'all',_fabInvSearchQ:'',_fabInvDrillKey:drill||null}});
+      app.run("_fabInvView='"+view+"'");   // a lexical global of js/fabric.js, so a globals override would be ignored
+      return app.run('renderFabricInventory()');
+    };
+    return Promise.resolve('<div class="card">'+mk('fabric')+'</div><div class="card">'+mk('vendor')+'</div><div class="card">'+mk('fabric','jersey_heavy__black')+'</div>');
+  },
+
   // The Creator Database (Marketing M1): stat tiles, filter bar, a table
   // carrying every tier chip (including the "manual" badge and an unscored
   // row) and the Needs completion column. The table is allowed to scroll
