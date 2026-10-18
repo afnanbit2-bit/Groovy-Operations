@@ -228,7 +228,7 @@ module.exports=async function(){
   {
     const IX=read('index.html'),SW=read('sw.js');
     s.ok('sw.js CACHE_VERSION is v344 or later (wave 1 was v343)',+(/CACHE_VERSION = 'v(\d+)'/.exec(SW)||[0,0])[1]>=344);
-    for(const [f,tag] of [['js/pos.js','20261018por8p'],['js/ph-i18n.js','20261018qw2i'],['js/ph-mod-health.js','20261018por2'],['js/ph-mod-afloat.js','20261018qw2a']])
+    for(const [f,tag] of [['js/pos.js','20261018por8p'],['js/ph-i18n.js','20261018wpfm346i'],['js/ph-mod-health.js','20261018por2'],['js/ph-mod-afloat.js','20261018qw2a']])
       s.ok(f+' is loaded with ?v='+tag+' (a tag no other file uses)',IX.indexOf('/'+f+'?v='+tag+'"')>-1&&IX.split('?v='+tag+'"').length===2);
   }
 

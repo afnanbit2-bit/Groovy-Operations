@@ -352,7 +352,7 @@ module.exports=async function(){
     s.ok('the QC7 styles sit INSIDE the ph-mod-afloat block, tokens only',/\.phaf-dlg-ov\{/.test(blk)&&/\.phaf-ovlist\{/.test(blk)&&CSS.split('.phaf-dlg-ov{').length===blk.split('.phaf-dlg-ov{').length&&CSS.split('.phaf-ov{').length===blk.split('.phaf-ov{').length&&!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(blk.replace(/\/\*[\s\S]*?\*\//g,'')));
     const IX=read('index.html'),SW=read('sw.js');
     s.ok('sw.js CACHE_VERSION is v342 or later (QC6 was v341)',+(/CACHE_VERSION = 'v(\d+)'/.exec(SW)||[0,0])[1]>=342);
-    for(const [f,tag] of [['css/main.css','20261018por8c'],['js/ph-i18n.js','20261018qw2i'],['js/ph-mod-afloat.js','20261018qw2a']])   // QC wave 2 moved the two js tags on
+    for(const [f,tag] of [['css/main.css','20261018wpfm346c'],['js/ph-i18n.js','20261018wpfm346i'],['js/ph-mod-afloat.js','20261018qw2a']])   // QC wave 2 moved the two js tags on
       s.ok(f+' is loaded with ?v='+tag+' (a tag no other file uses)',IX.indexOf('/'+f+'?v='+tag+'"')>-1&&IX.split('?v='+tag+'"').length===2);
   }
 
