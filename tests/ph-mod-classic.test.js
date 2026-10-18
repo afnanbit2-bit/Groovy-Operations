@@ -176,7 +176,9 @@ module.exports=async function(){
     const body=T.dom.byClass(host,'ph-cl-body')[0];
     s.ok('hostile ctx text never reaches innerHTML (the body holds only the renderer\'s string)',body.innerHTML==='<div id="fake-registry">REGISTRY</div>[orders]'&&T.dom.all(host,n=>typeof n.innerHTML==='string'&&n.innerHTML.indexOf(HOSTILE)>=0).length===0);
     const rules=fs.readFileSync(path.join(ROOT,'firestore.rules'));
-    s.eq('firestore.rules is unchanged (md5)',crypto.createHash('md5').update(rules).digest('hex'),'f90f0137f62a0e1bb16b859a722fbf34');
+    // merge 15 Oct 2026 (a deliberate expectation change): WP-15 changed no rules (its file f90f0137…); the QC3 branch it was merged into
+    // added the po_qc_recon / po_qc_lots blocks (f77b525c…). Either is "this module touched no rules"; any third file still fails.
+    s.ok('firestore.rules is unchanged by this module (md5 is WP-15\'s f90f0137… or the QC3 merge\'s f77b525c…)',['f90f0137f62a0e1bb16b859a722fbf34','f77b525c8345ca8553dfbf32b2d78550'].indexOf(crypto.createHash('md5').update(rules).digest('hex'))>-1);
     s.ok('the stylesheet block is delimited, tokens only, every selector prefixed',(()=>{const css=read('css/main.css');const a=css.indexOf('/* ph-mod-classic START */'),b=css.indexOf('/* ph-mod-classic END */');if(a<0||b<a)return false;const blk=css.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');return !/#[0-9a-fA-F]{3,6}\b/.test(blk)&&blk.split('{').slice(0,-1).every(x=>/\.ph-cl-|@media/.test(x));})());
   }
 

@@ -154,13 +154,13 @@ module.exports=async function(){
   Object.keys(res).forEach(k=>{NAMES.push(k);s.ok(k,!!res[k]);});
   s.section('wiring');
   const html=read('index.html'),sw=read('sw.js');
-  s.ok('CACHE_VERSION is v323 or later (v332 by integration 7)',/CACHE_VERSION = 'v3(2[3-9]|3[0-9])'/.test(sw));
+  s.ok('CACHE_VERSION is v323 or later (v332 by integration 7)',+((/CACHE_VERSION = 'v(\d+)'/.exec(sw)||[])[1]||0)>=323);
   const tag=f=>(new RegExp('/'+f.replace(/\./g,'\\.')+'\\?v=([0-9a-z]+)').exec(html)||[])[1];
   const tags=['js/print-engine.js','js/pos.js','js/ph-i18n.js','js/ph-mod-cutting.js','css/main.css'].map(tag);
   s.ok('the five changed files carry distinct ?v tags',tags.every(Boolean)&&new Set(tags).size===5&&true);
   const a=CSS.indexOf('/* ph-mod-jobcopy START */'),b=CSS.indexOf('/* ph-mod-jobcopy END */');
   const blk=CSS.slice(a,b);
-  s.ok('one delimited CSS block, at the end of the stylesheet',a>0&&b>a&&CSS.slice(b+'/* ph-mod-jobcopy END */'.length).trim()===''&&CSS.split('/* ph-mod-jobcopy START */').length===2);
+  s.ok('one delimited CSS block, in the trailing run of ph-mod-* blocks at the end of the stylesheet',a>0&&b>a&&CSS.slice(b+'/* ph-mod-jobcopy END */'.length).replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()===''&&CSS.split('/* ph-mod-jobcopy START */').length===2);
   s.ok('tokens only: no literal colour; every selector .phk-ins prefixed',!/#[0-9a-fA-F]{3,8}\b/.test(blk.replace(/\/\*[\s\S]*?\*\//g,''))&&(blk.match(/[^{}]+(?=\{)/g)||[]).filter(x=>!/\/\*/.test(x)||true).every(x=>/\.phk-ins/.test(x)||/START|END|^\s*$/.test(x)));
   s.ok('card text is 13px or more',!/font-size:(?:[0-9]|1[0-2])(?:\.\d+)?px/.test(blk));
   /* breaks */

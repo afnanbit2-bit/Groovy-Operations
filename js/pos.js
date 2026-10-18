@@ -39,6 +39,9 @@ const _POS_LOADS=[
     run:()=>getDocs(query(collection(db,'fabric_movements'),orderBy('ts','desc'))),
     apply:s=>{allFabricMovements=s.docs.map(d=>({...d.data(),_id:d.id}));}}
 ];
+// Which hard reads failed on the last loadData() (null = never loaded) and when it finished. The PO Registry
+// (js/po-registry.js) reads them so a failed pos read draws an error card, never an empty list.
+let _posLoadFailed=null,_posLoadAt=null;
 function _posIsPermission(e){
   return !!e&&(e.code==='permission-denied'||String(e.message||'').indexOf('permissions')>-1);
 }
@@ -71,6 +74,7 @@ async function loadData(){
       failed=failed.filter(f=>stillIds.has(f.job.name)||!retry.some(j=>j.name===f.job.name));
     }catch(e){console.warn('[loadData] token refresh failed:',e);}
   }
+  _posLoadFailed=failed.filter(f=>!f.job.optional).map(f=>f.job.name);_posLoadAt=Date.now();
   // Whatever loaded is rendered either way — a dashboard showing six of
   // seven datasets beats a dashboard showing zeros.
   if(currentPage&&typeof renderPage==='function')renderPage(currentPage);
@@ -289,6 +293,7 @@ window._saveNewProduct=async function(){
   }
 };
 function poRowHTML(p){
+  if(typeof porRowForPO==='function'){try{return porRowForPO(p);}catch(e){console.warn('[pos] the PO Registry row failed, drawing the old one:',e);}}   // RG5: one row everywhere
   const st=poStatusOf(p);
   const isReserved=st===PO_STATUS.RESERVED;
   const isCancelled=st===_PO_CANCELLED; // a cancelled PO has no stage; without this it would read "Completed"
@@ -379,7 +384,8 @@ function _cleanupAutoFabricPOs(){
 }
 let _poRegTab='orders';
 function renderRegistry(){
-  _cleanupAutoFabricPOs();
+  // The rebuilt Orders body (js/po-registry.js) never deletes on open; the old list still runs the junk cleanup.
+  if(!(_poRegTab==='orders'&&typeof porRegistryHTML==='function'))_cleanupAutoFabricPOs();
   const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
   // A cancelled PO stays in the list (with its chip) but is not a live order,
   // so it is counted apart from the pipeline figure.
@@ -398,6 +404,7 @@ function renderRegistry(){
 // PO_PRODUCTION_FLOW_PLAN.md §4.3.
 function _poRegTabContent(){
   if(_poRegTab==='cutting')return typeof renderFabricIssueRegistry==='function'?renderFabricIssueRegistry():'<div class="empty" style="padding:24px">Fabric Issue Registry unavailable.</div>';
+  if(typeof porRegistryHTML==='function'){try{return porRegistryHTML();}catch(e){console.warn('[pos] the PO Registry body failed, drawing the old list:',e);}}
   return _poRegOrdersHTML();
 }
 function _poRegOrdersHTML(){
@@ -557,9 +564,12 @@ function renderDetailPage(){
     </div><div class="stage-connector"></div>`;
   }).join('');
 
+  // The body below the header: the PO Registry's timeline (js/po-registry.js, RG4) when it is loaded; the old cards if not, or if it throws.
+  let _porBody=null;
+  if(typeof porDetailBodyHTML==='function'){try{_porBody=porDetailBodyHTML(po);}catch(e){_porBody=null;console.warn('[pos] the PO detail body failed, drawing the old one:',e);}}
   m.innerHTML=`<button class="back-btn" onclick="window.showPage('po-registry')">← Back to registry</button>
   <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-    <div><div class="page-title">PO ${po.id}</div><div class="page-sub">By ${po.createdBy||'—'} · ${po.createdAt||''}</div></div>
+    <div><div class="page-title">${/^PO-/.test(String(po.id||''))?'':'PO '}${po.id}</div><div class="page-sub">By ${po.createdBy||'—'} · ${po.createdAt||''}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${typeof window.poPrintButtonHTML==='function'?window.poPrintButtonHTML(po,_isCancelled):`<button class="btn-pdf" onclick="window.generatePOPdf('${po.fbKey}')">⬇ PDF</button>`}
       ${_poCanEdit()?`<button class="btn-outline" style="font-size:13px" onclick="window.openPOEdit('${po.fbKey}')">Edit PO</button>`:''}
@@ -574,7 +584,8 @@ function renderDetailPage(){
   ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
   ${typeof window.phPoInstructionsSlot==='function'?window.phPoInstructionsSlot(po):''}
   ${typeof window.phPoDetailCardSlot==='function'?window.phPoDetailCardSlot(po):''}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+  ${typeof window.phPoQcCardSlot==='function'?window.phPoQcCardSlot(po):''}
+  ${_porBody!==null?_porBody+'<div style="height:80px"></div>':`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <div class="card" style="margin-bottom:0"><div class="card-title">Product</div>
       <div class="info-row"><span class="info-label">Name</span><span style="font-weight:500">${po.name||'—'}</span></div>
       <div class="info-row"><span class="info-label">Code</span><span>${po.code||'—'}</span></div>
@@ -615,8 +626,10 @@ function renderDetailPage(){
   <div class="card"><div class="card-title">Production timeline</div>
     ${stagesHTML}
     ${po.currentStage==='completed'?`<div class="stage-item"><div class="stage-dot dot-done"></div><div class="stage-content"><div class="stage-label" style="color:var(--green)">Completed ✓</div><div class="stage-meta">All stages done</div></div></div>`:''}
-  </div><div style="height:80px"></div>`;
+  </div><div style="height:80px"></div>`}`;
   if(typeof window.phPoDetailCardFill==='function')window.phPoDetailCardFill(po);
+  if(typeof window.phPoQcCardFill==='function')window.phPoQcCardFill(po);   // QC9: read-only QC reconciliation card (js/ph-mod-afloat.js)
+  if(_porBody!==null&&typeof porDetailAfter==='function')porDetailAfter(po);  // RG4: reads this PO's bundles once, then repaints the timeline
 }
 
 // PO edit/delete (Sept 2026 grant) — owners, + Mustafa by username. Same
@@ -760,7 +773,11 @@ const _PO_LINKS=[
   // Production Ops (14 Oct 2026): a cut job is keyed by the PO id and carries it as poId; a draft that was issued as this PO
   // names it in poId (the field js/ph-issue.js writes when it issues the draft).
   {key:'cutjob',words:['Production Ops cut job','Production Ops cut jobs'],       col:'po_cut_jobs',      field:'poId'},
-  {key:'draft', words:['Production Ops draft','Production Ops drafts'],           col:'po_drafts',        field:'poId'}
+  {key:'draft', words:['Production Ops draft','Production Ops drafts'],           col:'po_drafts',        field:'poId'},
+  // QC reconciliation (QC2, 15 Oct 2026): the QC record of a PO (po_qc_recon/{PO-nnn}) and the lots QC received (po_qc_lots),
+  // both carrying the PO id as poId. A PO with either cannot be deleted (cancel it instead).
+  {key:'qcrec', words:['QC reconciliation','QC reconciliations'],               col:'po_qc_recon',      field:'poId'},
+  {key:'qclot', words:['QC lot','QC lots'],                                     col:'po_qc_lots',       field:'poId'}
 ];
 // What the app already holds in memory for each link, as a second witness
 // beside the query. Guarded: embellishments.js / store.js may not be loaded.
@@ -2189,14 +2206,16 @@ window.completeQC=async function(fbKey){
   // Only the stage the PO is AT can be completed: a stale screen or a second
   // tap must not overwrite who finished QC and when.
   if(po.currentStage!=='qc'){showToast(po.currentStage==='completed'?`${po.id} has already completed Final QC.`:`${po.id} is not at Final QC — nothing to complete.`,true);return;}
+  if(typeof phqcCloseBlock==='function'){const qb=await phqcCloseBlock(po);if(qb){showToast(qb,true);return;}}   // QC6: refused while a QC reconciliation is open (js/ph-mod-afloat.js)
+  const qw=typeof phqcCloseSkippedWarn==='function'?phqcCloseSkippedWarn(po):'';if(qw)showToast(qw,true);   // wave 2: a skipped QC check is said out loud
   const failed=currentBundles.filter(b=>b.qcStatus==='fail').length;
-  const msg=failed>0?`Complete QC with ${failed} failed bundle${failed!==1?'s':''}?`:'Mark Final QC complete?';
+  const msg=(qw?qw+'\n\n':'')+(failed>0?`Complete QC with ${failed} failed bundle${failed!==1?'s':''}?`:'Mark Final QC complete?');
   if(!confirm(msg))return;
   const btn=document.getElementById('qc-done-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
   try{
     await updateDoc(doc(db,'pos',fbKey),{currentStage:'completed',[`stages.qc.done`]:true,[`stages.qc.doneAt`]:new Date().toISOString(),[`stages.qc.doneBy`]:session.name,[`stages.qc.notes`]:failed>0?`${failed} bundles failed QC`:''});
     await logActivity('Stage done',`PO ${po.id} · Final QC complete — ${currentBundles.filter(b=>b.qcStatus==='pass').length} passed, ${failed} failed`);
-    showToast(`QC complete ✓`);await loadData();window.showPage('my-work');
+    showToast(qw?`QC complete ✓ — but the QC reconciliation check was skipped (po_qc_recon unreadable; republish firestore.rules)`:`QC complete ✓`,!!qw);await loadData();window.showPage('my-work');
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;}}
 };
 

@@ -53,7 +53,7 @@ function fakeFs(o){
       if(o.failUnfiltered&&o.failUnfiltered[q.path]&&!(q.w&&q.w.length))throw o.failUnfiltered[q.path]();
       let rows=(o.data&&o.data[q.path])||[];
       (q.w||[]).forEach(w=>{rows=rows.filter(r=>w[1]==='in'?w[2].indexOf(r[w[0]])>-1:r[w[0]]===w[2]);});
-      return{docs:rows.map(r=>({id:r.id,data:()=>Object.assign({},r)})),metadata:{fromCache:false}};
+      return{docs:rows.map(r=>({id:r.id,data:()=>Object.assign({},r)})),metadata:{fromCache:!!(o.fromCache&&o.fromCache[q.path])}};
     },
     getDoc:async r=>{
       reads.push({path:r.path});
@@ -87,7 +87,7 @@ function load(src,opts){
   opts=opts||{};
   src=src||SRC;
   const data=opts.data||baseData();
-  const fk=fakeFs({data:data,fail:opts.fail,failUnfiltered:opts.failUnfiltered});
+  const fk=fakeFs({data:data,fail:opts.fail,failUnfiltered:opts.failUnfiltered,fromCache:opts.fromCache});
   const calls=[];
   const a=harness.loadApp({files:['js/ph-i18n.js'],session:opts.session||USERS.afnan,currentPage:'dashboard',
     globals:Object.assign({},fk.api,{Date:FixedDate,allPOs:opts.allPOs,allPasses:opts.allPasses,
@@ -159,6 +159,135 @@ async function checks(src,only){
       return mm.byId.jobs_no_fabric.unavailable.join()==='po_cut_jobs'&&mm.byId.cutting_no_pass.state==='ok';})());
     set('health: junk input never throws',(()=>{try{R0('phhBuildModel(null)');R0('phhBuildModel({pos:[null,3,"x"],passes:[null,{gpType:"fabric"}],jobs:[7]})');return true;}catch(e){return false;}})());
     set('health: a pass whose poId is a NUMBER maps to its PO',(()=>{const g=clone(PASS['GP-345']);g.poId=125;const mm=M(fx.pos,[g],null);return mm.byId.orphan_passes.count===0&&mm.byId.cutting_no_pass.items.every(i=>i.id!=='PO-125');})());
+  }
+
+  /* ── 3b. the three QC checks (16 Oct 2026), hand-computed from synthetic recon / lot documents beside the real PO shapes ── */
+  if(want('qc')){
+    const T_=Date.UTC;
+    const mkQ=(id,o)=>Object.assign({id:id,code:'GST073',name:'Tee '+id,qty:120,sizes:{S:20,M:40,L:40,XL:20},poStatus:'in_production',currentStage:'qc',
+      cutAt:'2026-10-14T08:00:00Z',cutQty:{S:20,M:40,L:40,XL:20},stages:{cutting:{done:true,doneAt:'2026-10-14T08:00:00Z'}},ts:1784891095206},o||{});
+    const LK=(sizes)=>({sizes:sizes,total:Object.values(sizes).reduce((a,b)=>a+b,0),cutAt:'2026-10-14T08:00:00Z',cutBy:'Uzaib',lockedAt:1,lockedBy:'faizan',source:'first_lot'});
+    const RC=(id,status,lock,created,o)=>Object.assign({id:id,fbKey:id,poId:id,status:status,rev:1,cutLock:lock,lotCount:1,voidCount:0,lastLotAt:created,overrides:[],legacyIds:[],createdAt:created,createdBy:'faizan',updatedAt:created,updatedBy:'faizan'},o||{});
+    const LOT=(poId,seq,sizes,o)=>Object.assign({id:poId+'-'+seq,fbKey:poId+'-'+seq,poId:poId,seq:seq,sizes:sizes,total:Object.values(sizes).reduce((a,b)=>a+b,0),day:'2026-10-16',note:'',at:T_(2026,9,16,5,0),by:'faizan',byName:'Faizan',status:'live',src:'qc'},o||{});
+    const MIR=(lotId,size,qty,o)=>Object.assign({id:'QL-'+lotId+'-'+size,receiptId:lotId,size:size,qty:qty,ts:'2026-10-16T05:00:00.000Z',by:'Faizan',src:'qc'},o||{});
+    const OLD=(id,size,qty)=>({id:id,receiptId:id.split('-')[0],size:size,qty:qty,ts:'2026-10-01T05:00:00.000Z',by:'Haris'});
+    const FIRST=T_(2026,9,13,5,0,0);                                    // 13 Oct 10:00 PKT = the oldest reconciliation -> go-live 2026-10-13
+    const posQ=[
+      mkQ('PO-201'),                                                    // lock == cut: no drift
+      mkQ('PO-202',{cutQty:{S:22,M:38,L:40,XL:20}}),                    // drift S 20->22, M 40->38, totals equal (120)
+      mkQ('PO-203',{cutQty:{S:10,M:15},sizes:{S:10,M:15},qty:25}),      // drift M 10->15, total 20->25
+      mkQ('PO-204'),                                                    // lock unreadable
+      mkQ('PO-206'),mkQ('PO-207'),                                       // closed short (118 of 120) / closed exact
+      mkQ('PO-205',{poStatus:'cancelled',cutQty:{S:99}}),               // cancelled: out of every list
+      mkQ('PO-301',{packingReceipts:[OLD('R1-S','S',10),MIR('PO-301-1','S',5)]}),           // old units not adopted + a lot
+      mkQ('PO-302',{packingReceipts:[MIR('PO-302-1','S',20),MIR('PO-302-1','M',10)]}),      // counter == lot: fine
+      mkQ('PO-303',{packingReceipts:[MIR('PO-303-1','S',15)]}),                              // counter 15, lot 20
+      mkQ('PO-304',{packingReceipts:[MIR('PO-304-1','S',10),MIR('PO-304-2','S',10),MIR('PO-304-2','S',-10,{voidOf:'PO-304-2'})]}),   // net 10, live 10, one void lot
+      mkQ('PO-305',{packingReceipts:[OLD('R9-S','S',10)]}),                                  // adopted: fine
+      mkQ('PO-306',{packingReceipts:[OLD('R8-S','S',10)]}),                                  // old Packing only, no lots: the classic way
+      mkQ('PO-307',{packingReceipts:[MIR('PO-307-1','S',5)]}),                               // counter 5, no lot rows at all
+      mkQ('PO-308',{packingReceipts:[MIR('PO-308-1','XXL',7)]}),                             // 'XXL' (counter) vs '2XL' (lot)
+      mkQ('PO-401',{currentStage:'completed',stages:{qc:{done:true,doneAt:'2026-10-17T10:00:00.000Z'}}}),   // after go-live, no recon
+      mkQ('PO-402',{currentStage:'completed',stages:{qc:{done:true,doneAt:'2026-10-10T10:00:00.000Z'}}}),   // before go-live
+      mkQ('PO-403',{currentStage:'completed',cutQty:null,stages:{qc:{done:true,doneAt:'2026-10-17T10:00:00.000Z'}}}),   // recon closed
+      mkQ('PO-404',{currentStage:'completed',cutQty:null,stages:{qc:{done:true,doneAt:'2026-10-14T10:00:00.000Z'}}}),   // recon reopened
+      mkQ('PO-405',{currentStage:'completed',cutAt:'2026-10-18T08:00:00Z',stages:{}}),                        // no doneAt: cut date after go-live
+      mkQ('PO-406',{currentStage:'completed',cutAt:null,stages:{}}),                                         // undated
+      mkQ('PO-407',{currentStage:'completed',stages:{qc:{doneAt:'2026-10-12T19:30:00.000Z'}}}),              // 13 Oct 00:30 PKT = go-live day: counted
+      mkQ('PO-408',{currentStage:'completed',stages:{qc:{doneAt:'2026-10-12T18:59:00.000Z'}}}),              // 12 Oct 23:59 PKT: before
+      mkQ('PO-409',{currentStage:'completed',poStatus:'cancelled',stages:{qc:{doneAt:'2026-10-17T10:00:00.000Z'}}})  // cancelled: out
+    ];
+    posQ.forEach(p=>{p.fbKey=p.id;});
+    const recQ=[
+      RC('PO-201','locked',LK({S:20,M:40,L:40,XL:20}),FIRST),
+      RC('PO-202','locked',LK({S:20,M:40,L:40,XL:20}),T_(2026,9,14,5,0)),
+      RC('PO-203','locked',LK({S:10,M:10}),T_(2026,9,14,6,0)),
+      RC('PO-204','locked',{sizes:{S:'x'},total:20},T_(2026,9,14,7,0)),
+      RC('PO-205','locked',LK({S:50}),T_(2026,9,14,8,0)),
+      RC('PO-299','locked',LK({S:50}),T_(2026,9,14,9,0)),                // its PO is not in the list: skipped
+      RC('PO-403','closed',LK({S:10}),T_(2026,9,15,5,0)),
+      RC('PO-206','closed',LK({S:20,M:40,L:40,XL:20}),T_(2026,9,15,8,0),{closeVerdict:{state:'short',phase:'short',total:{cut:120,recv:118,diff:-2}},overrides:[{kind:'close_short',cause:'lost_line',reason:'two lost'}]}),
+      RC('PO-207','closed',LK({S:20,M:40,L:40,XL:20}),T_(2026,9,15,9,0),{closeVerdict:{state:'exact',phase:'ready',total:{cut:120,recv:120,diff:0}}}),
+      RC('PO-404','reopened',LK({S:10}),T_(2026,9,15,6,0)),
+      RC('PO-305','locked',LK({S:20,M:40,L:40,XL:20}),T_(2026,9,15,7,0),{legacyIds:['R9-S']})
+    ];
+    const lotsQ=[
+      LOT('PO-301',1,{S:5}),LOT('PO-302',1,{S:20,M:10}),LOT('PO-303',1,{S:20}),
+      LOT('PO-304',1,{S:10}),LOT('PO-304',2,{S:10},{status:'void',poId:'304'}),
+      LOT('PO-305',1,{S:10},{src:'legacy'}),LOT('PO-308',1,{'2XL':7})
+    ];
+    const MQ=(over)=>JSON.parse(J(R0('phhBuildModel('+J(Object.assign({pos:posQ,passes:[],jobs:[],picks:{},recon:recQ,lots:lotsQ},over||{}))+')')));
+    const ids=(m,c)=>m.byId[c].items.map(i=>i.id).sort().join(',');
+    const m=MQ();
+    set('qc closed short (wave 2): PO-206 (118 of 120, −2, cause lost_line) = 1; PO-207 (closed exact) and PO-403 (closed, no verdict) are not',ids(m,'qc_closed_short')==='PO-206'&&m.byId.qc_closed_short.count===1&&/closed with a shortfall: 118 of 120 received \(-2\), cause: lost_line/.test(m.byId.qc_closed_short.items[0].text));
+    set('qc closed short: po_qc_recon not read -> unavailable naming po_qc_recon, never 0',(()=>{const x=MQ({recon:null});return x.byId.qc_closed_short.state==='unavailable'&&x.byId.qc_closed_short.count===null&&x.byId.qc_closed_short.unavailable.join()==='po_qc_recon';})());
+    set('qc drift: PO-202 (S 20->22, M 40->38; totals EQUAL), PO-203 (M 10->15) and PO-204 (unreadable lock) = 3; PO-201 (same), cancelled PO-205 and the orphan recon PO-299 are not',ids(m,'qc_cut_drift')==='PO-202,PO-203,PO-204'&&m.byId.qc_cut_drift.count===3);
+    set('qc drift: the line says what moved, size by size',/locked cut 120, the PO now says 120 \(S 20→22, M 40→38\)/.test(m.byId.qc_cut_drift.items.filter(i=>i.id==='PO-202')[0].text)&&/locked cut 20, the PO now says 25 \(M 10→15\)/.test(m.byId.qc_cut_drift.items.filter(i=>i.id==='PO-203')[0].text)&&/locked cut could not be read/.test(m.byId.qc_cut_drift.items.filter(i=>i.id==='PO-204')[0].text));
+    set('qc ledgers: PO-301 (10 old units not adopted + a lot), PO-303 (counter 15 vs lot 20), PO-307 (counter 5, no lot rows) = 3',ids(m,'qc_two_ledgers')==='PO-301,PO-303,PO-307'&&m.byId.qc_two_ledgers.count===3);
+    const tx=id=>m.byId.qc_two_ledgers.items.filter(i=>i.id===id)[0].text;
+    set('qc ledgers: the reasons are named (not adopted / counter vs lots)',/10 units from the old Packing page are not adopted/.test(tx('PO-301'))&&/packing counter \(S 15\) does not equal the live QC lots \(S 20\)/.test(tx('PO-303'))&&/packing counter \(S 5\) does not equal the live QC lots \(nothing\)/.test(tx('PO-307')));
+    set('qc ledgers: NOT flagged - counter == lots (302), a void lot netted out incl. a bare-digit lot poId (304), an adopted legacy entry (305), old Packing only with no lots (306), XXL vs 2XL (308)',['PO-302','PO-304','PO-305','PO-306','PO-308'].every(x=>ids(m,'qc_two_ledgers').indexOf(x)<0));
+    set('qc completed: after go-live with no reconciliation = PO-401 (QC done 17 Oct), PO-405 (no doneAt, cut 18 Oct), PO-407 (13 Oct 00:30 PKT, the go-live day itself); PO-404 (reconciliation reopened) = 4',ids(m,'qc_completed_unreconciled')==='PO-401,PO-404,PO-405,PO-407'&&m.byId.qc_completed_unreconciled.count===4);
+    set('qc completed: PO-403 (reconciliation closed), PO-409 (cancelled) and every non-completed PO are not listed',['PO-403','PO-409','PO-201','PO-301'].every(x=>ids(m,'qc_completed_unreconciled').indexOf(x)<0));
+    set('qc completed: PO-402 (10 Oct) and PO-408 (12 Oct 23:59 PKT) are BEFORE QC Ops - counted apart, 2; PO-406 has no date at all - counted apart, 1',m.qc.beforeQcOps===2&&m.qc.undated===1&&/2 POs finished before QC Ops \(first reconciliation 2026-10-13\) not counted; 1 completed PO with no completion or cut date not counted/.test(m.byId.qc_completed_unreconciled.note));
+    set('qc go-live: derived from the OLDEST reconciliation (13 Oct 10:00 PKT) -> 2026-10-13, source recon',m.qc.liveDay==='2026-10-13'&&m.qc.liveSource==='recon');
+    set('qc go-live: a later reconciliation cannot move it, an earlier one does (createdAt as a Firestore-style {seconds}); junk createdAt is ignored',(()=>{
+      const early=recQ.concat([RC('PO-210','locked',LK({S:5}),{seconds:Math.floor(T_(2026,9,11,5,0)/1000),nanoseconds:0})]);
+      const junk=recQ.map(r=>Object.assign({},r,{createdAt:'soon'}));
+      return MQ({recon:early}).qc.liveDay==='2026-10-11'&&MQ({recon:junk}).qc.liveSource==='fallback';})());
+    const mnone=MQ({recon:[],pos:[posQ.find(p=>p.id==='PO-401'),posQ.find(p=>p.id==='PO-402'),posQ.find(p=>p.id==='PO-407'),mkQ('PO-411',{currentStage:'completed',stages:{qc:{doneAt:'2026-10-15T19:30:00.000Z'}}}),mkQ('PO-412',{currentStage:'completed',stages:{qc:{doneAt:'2026-10-15T18:59:00.000Z'}}})]});
+    set('qc go-live: with NO reconciliation the named fallback 2026-10-16 is used and labelled assumed',mnone.qc.liveDay==='2026-10-16'&&mnone.qc.liveSource==='fallback'&&R0('PHH_QC_LIVE_DAY_FALLBACK')==='2026-10-16'&&/assumed go-live 2026-10-16/.test(mnone.byId.qc_completed_unreconciled.note));
+    set('qc go-live: ...so PO-401 (17 Oct) and PO-411 (16 Oct 00:30 PKT) count, PO-402, PO-407 (13 Oct) and PO-412 (15 Oct 23:59 PKT) are before QC Ops',ids(mnone,'qc_completed_unreconciled')==='PO-401,PO-411'&&mnone.qc.beforeQcOps===3);
+    set('qc unavailable: recon not read -> drift and completed say "unavailable - po_qc_recon" with a null count; the ledger check too (adoption is recorded on the reconciliation, so without it PO-305 would be wrongly flagged)',(()=>{
+      const x=MQ({recon:null});
+      return x.byId.qc_cut_drift.state==='unavailable'&&x.byId.qc_cut_drift.count===null&&x.byId.qc_cut_drift.unavailable.join()==='po_qc_recon'&&x.byId.qc_completed_unreconciled.unavailable.join()==='po_qc_recon'&&x.byId.qc_two_ledgers.state==='unavailable'&&x.byId.qc_two_ledgers.unavailable.join()==='po_qc_recon';})());
+    set('qc unavailable: lots not read -> only the ledger check is unavailable, naming po_qc_lots',(()=>{
+      const x=MQ({lots:null});
+      return x.byId.qc_two_ledgers.unavailable.join()==='po_qc_lots'&&x.byId.qc_two_ledgers.count===null&&x.byId.qc_cut_drift.state==='ok'&&x.byId.qc_completed_unreconciled.state==='ok';})());
+    set('qc unavailable: a list cut at its limit is NOT complete -> unavailable (a missing reconciliation would read "never reconciled"; a missing lot "counter disagrees"), named',(()=>{
+      const x=MQ({reconTruncated:true,lotsTruncated:true});
+      return x.byId.qc_completed_unreconciled.state==='unavailable'&&/po_qc_recon \(list cut at its limit/.test(x.byId.qc_completed_unreconciled.unavailable.join())&&/po_qc_lots \(list cut at its limit/.test(x.byId.qc_two_ledgers.unavailable.join())&&x.byId.qc_completed_unreconciled.count===null;})());
+    set('qc unavailable: POs not read -> all three unavailable naming pos',(()=>{const x=MQ({pos:null});return['qc_cut_drift','qc_two_ledgers','qc_completed_unreconciled'].every(c=>x.byId[c].state==='unavailable'&&x.byId[c].unavailable.indexOf('pos')>-1);})());
+    set('qc model: qc:false (a non-manager) leaves the four QC checks out altogether - 7 checks, no qc block',(()=>{const x=MQ({qc:false});return x.checks.length===8&&x.qc===null&&!x.byId.qc_cut_drift&&!x.byId.qc_closed_short&&!x.byId.bundles_no_cut&&!!x.byId.released_unreadable;})()&&m.checks.length===13);   // PO Registry RG2: + released_unreadable (everyone) and bundles_no_cut (managers) = 8 / 13
+    set('qc model: the total adds the QC counts (3 + 3 + 4 + 1) to the others that ran; an unavailable QC check adds nothing',m.total===11&&MQ({recon:null}).total===0&&MQ({lots:null}).total===8);
+    set('qc model: junk recon / lot rows never throw',(()=>{try{R0('phhBuildModel('+J({pos:posQ,passes:[],jobs:[],recon:[null,3,'x',{}],lots:[null,{poId:'PO-1'},{poId:'PO-301',status:'live',sizes:'bad'}]})+')');return true;}catch(e){return false;}})());
+    set('qc source: the file writes nothing and has no i18n call (English-only like the other seven)',!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch|runTransaction)\b/.test(src.health.replace(/\/\*[\s\S]*?\*\//g,''))&&!/phI18n/.test(src.health));
+  }
+  if(want('qcui')){
+    const rcDoc=(id,status,created)=>({id:id,poId:id,status:status,rev:1,cutLock:{sizes:{S:10},total:10},lotCount:1,createdAt:created,legacyIds:[]});
+    const completed=(id,doneAt)=>({id:id,code:'GST073',name:'Tee '+id,qty:10,sizes:{S:10},poStatus:'in_production',currentStage:'completed',ts:1784891095206,cutAt:'2026-10-14T08:00:00Z',cutQty:{S:10},stages:{cutting:{done:true},qc:{done:true,doneAt:doneAt}}});
+    const dataQ=()=>{
+      const d=baseData();
+      d.pos=d.pos.concat([completed('PO-901','2026-10-17T10:00:00.000Z'),completed('PO-902','2026-10-14T10:00:00.000Z')]);
+      d.po_qc_recon=[rcDoc('PO-902','closed',Date.UTC(2026,9,13,5,0))];
+      d.po_qc_lots=[];
+      return d;
+    };
+    const rowOf=(T,sec,n)=>T.dom.all(sec,x=>x.getAttribute('data-check')===n)[0];
+    const secOf=T=>T.dom.all(T.dom.body,n=>n.getAttribute('data-health')==='1')[0];
+    const T=load(src,{session:USERS.afnan,data:dataQ()});
+    await T.open('monitor');await settle();
+    const sec=secOf(T);
+    const cnt=n=>T.byClass(rowOf(T,sec,n),'phh-count')[0].textContent;
+    set('qc ui: a manager\'s Monitor reads the two QC stages (one read each) and shows the three QC rows with real counts',T.fk.reads.filter(r=>r.path==='po_qc_recon').length===1&&T.fk.reads.filter(r=>r.path==='po_qc_lots').length===1&&cnt('qc_cut_drift')==='0'&&cnt('qc_two_ledgers')==='0'&&cnt('qc_completed_unreconciled')==='1');
+    T.click(T.dom.all(rowOf(T,sec,'qc_completed_unreconciled'),n=>n.tagName==='BUTTON'&&n.classList.contains('phh-head'))[0]);await settle();
+    const lst=T.dom.all(T.dom.body,n=>n.getAttribute('data-check')==='qc_completed_unreconciled')[0];
+    set('qc ui: the drill list names PO-901 (17 Oct, never reconciled); PO-902 has a closed reconciliation and is not listed',/PO-901/.test(T.text(lst))&&!/PO-902/.test(T.text(lst)));
+    set('qc ui: the Overview card for the manager counts the QC finding (+1 over the same data with po_qc_recon refused)',await (async()=>{
+      const big=async(opts)=>{const T2=load(src,Object.assign({session:USERS.afnan,data:dataQ()},opts));await T2.open('overview');await settle();const tile=T2.dom.all(T2.dom.body,n=>n.getAttribute('data-tile')==='health')[0];return tile?Number(T2.byClass(tile,'phh-big')[0].textContent):NaN;};
+      const a=await big(),b=await big({fail:{po_qc_recon:PERM}});
+      return a===b+1;})());
+    const F=load(src,{session:USERS.afnan,data:dataQ(),fail:{po_qc_recon:PERM}});
+    await F.open('monitor');await settle();
+    const secF=secOf(F);
+    set('qc ui: po_qc_recon REFUSED -> an alert naming it, "unavailable - po_qc_recon" and a dash (never 0) on all three QC checks (the ledger check needs it for the adopted receipts)',/po_qc_recon: could not be read/.test(F.text(secF))&&/unavailable - po_qc_recon/.test(F.text(rowOf(F,secF,'qc_cut_drift')))&&F.byClass(rowOf(F,secF,'qc_cut_drift'),'phh-count')[0].textContent==='—'&&F.byClass(rowOf(F,secF,'qc_completed_unreconciled'),'phh-count')[0].textContent==='—'&&F.byClass(rowOf(F,secF,'qc_two_ledgers'),'phh-count')[0].textContent==='—');
+    const C=load(src,{session:USERS.afnan,data:dataQ(),fromCache:{po_qc_lots:true}});
+    await C.open('monitor');await settle();
+    const secC=secOf(C);
+    set('qc ui: po_qc_lots answered from the OFFLINE COPY is a failed read, not an empty list: "unavailable - po_qc_lots", dash, and the alert names it',/unavailable - po_qc_lots/.test(C.text(rowOf(C,secC,'qc_two_ledgers')))&&C.byClass(rowOf(C,secC,'qc_two_ledgers'),'phh-count')[0].textContent==='—'&&/po_qc_lots: only this device/.test(C.text(secC)));
+    const K=load(src,{session:USERS.uzaib,data:dataQ()});
+    await K.open('overview');await settle();
+    set('qc ui: Kashif\'s Overview never reads the QC collections (the stages are lazy and manager-only)',K.fk.reads.filter(r=>/^po_qc_/.test(r.path)).length===0);
   }
 
   /* ── 2. candidates ── */
@@ -234,7 +363,7 @@ async function checks(src,only){
     const T=load(src,{session:USERS.afnan,data:baseData()});
     await T.open('monitor');await settle();
     const sec=T.dom.all(T.dom.body,n=>n.getAttribute('data-health')==='1')[0];
-    set('health ui: the Monitor tab has a Data health section with the seven checks',!!sec&&T.dom.all(sec,n=>n.getAttribute('data-check')).length===7);
+    set('health ui: the Monitor tab has a Data health section with the eleven checks (seven + the four QC checks, for a manager)',!!sec&&T.dom.all(sec,n=>n.getAttribute('data-check')).length===13);   // PO Registry RG2 added two (released_unreadable, bundles_no_cut)
     const row=n=>T.dom.all(sec,x=>x.getAttribute('data-check')===n)[0];
     set('health ui: each row shows its count (orphan passes 3, reserved with fabric 1, qty mismatch 2)',/3/.test(T.text(row('orphan_passes')))&&T.text(row('reserved_issued')).indexOf('1')>-1&&T.text(row('qty_mismatch')).indexOf('2')>-1);
     set('health ui: the cut-jobs check ran (jobs loaded): 2 open jobs with no fabric link (PO-048 and PO-030; PO-090 and PO-125 have digit passes)',T.text(row('jobs_no_fabric')).indexOf('2')>-1);
@@ -399,6 +528,7 @@ module.exports=async function(){
   await brk('no candidates on a dead end','cutting',"if(!is.groups.length)kids.push(_phkFindBlock(job,entry));","if(!is.groups.length)kids.push(_phkE('p','phk-muted','No fabric issue was found for this PO yet.'));",['find: a job with no fabric issue shows "Find the fabric issue" and the three candidate passes, not a dead end'],['find']);
   await brk('a pick that is not applied','cutting',"if(hit){passes.push(","if(false){passes.push(",['find: ...and the checklist now has the pass\'s roll (1 roll) and says the pick is for this visit only'],['find']);
   await brk('a pick that writes the job','cutting',"if(typeof phhPick==='function'){phhPick(poId,r.id);phkLoadPO(poId,true);}","if(typeof phhPick==='function'){phhPick(poId,r.id);phSaveCutJob(poId,{note:'picked '+r.id});phkLoadPO(poId,true);}",['find: the pick writes NOTHING - not to po_cut_jobs (the rules allow no fabricPassIds), not to gatepasses, no transaction, no setDoc'],['find']);
+  await brk('a closed-exact reconciliation counted as a shortfall','health',"if(!v||(phStr(v.phase)!=='short'&&phStr(v.phase)!=='receiving'))return;","if(!v)return;",['qc closed short (wave 2): PO-206 (118 of 120, −2, cause lost_line) = 1; PO-207 (closed exact) and PO-403 (closed, no verdict) are not'],['qc']);
   await brk('candidates include passes of real POs','health',"if(k!==null&&keys.has(k))return;                       // it belongs to a real PO","",['find: candidates are the passes that point at no real PO (GP-108, GP-109, GP-172); GP-343/345/220/264 belong to real POs and never appear'],['cand']);
   await brk('candidates ranked by date only','health',"if(hit.length){score+=Math.min(3,hit.length);why.push('fabric matches: '+hit.slice(0,3).join(', '));}","",['find: the Terry Fresh passes rank above the Jersey Heavy "Sample" one for PO-048 (Terry Fresh, military green); the reason says why'],['cand']);
   await brk('a failed gate-pass read drawn as an empty list','health',"if(bad.length)return{state:'error',rows:null,text:bad.map(function(n){return S[n].text||(n+': not loaded');}).join(' ')};","if(bad.length)return{state:'ok',rows:[],text:''};",['find: gate passes unreadable -> the card says so by name (no empty list, no "nothing to pick")'],['find']);
@@ -436,6 +566,30 @@ module.exports=async function(){
   await brk('a ready draft says it can be marked ready','drafts',"_phdForm&&_phdForm.status==='ready'?phI18nD('drafts.complete_ready')","false?'x'",['drafts: a READY draft never says it "can be marked ready"; a draft still does'],['drafts']);
   await brk('the send-back reason box not focused','drafts',"if(!a._focused){","if(false){",['drafts: opening the Send-back reason box puts the caret in it (once)'],['drafts']);
   await brk('focus stolen on every repaint','drafts',"if(!a._focused){a._focused=true;","if(true){a._focused=true;",["drafts: ... and a repaint of the same ask does not steal focus again"],['drafts']);
-  s.ok('breaks run: '+broken,broken>=40,String(broken));
+  /* ── QC checks (16 Oct 2026): each rule reverted once; a named check must FAIL ── */
+  const nm=p=>{const k=Object.keys(base).filter(x=>x.indexOf(p)===0);return k.length===1?k[0]:'(no unique check starts with: '+p+')';};
+  const Q=['qc'],QU=['qc','qcui'];
+  await brk('QC drift never fires','health',"else if(x.drift)r.items.push(","else if(false)r.items.push(",[nm('qc drift: PO-202')],Q);
+  await brk('an unreadable locked cut is not reported','health',"if(!x.ok)r.items.push(poRow(e,'the locked cut could not be read","if(false)r.items.push(poRow(e,'the locked cut could not be read",[nm('qc drift: PO-202'),nm('qc drift: the line says')],Q);
+  await brk('adopted old receipts are counted again','health',"&&!adopted.has(id))legacyUnits+=q","&&true)legacyUnits+=q",[nm('qc ledgers: NOT flagged')],Q);
+  await brk('XXL and 2XL are different sizes','health',"return s==='XXL'?'2XL':s;","return s;",[nm('qc ledgers: NOT flagged')],Q);
+  await brk('an adopted (legacy) lot is counted as a QC lot','health',"||l.src==='legacy'||!_phhObj(l.sizes))return;","||!_phhObj(l.sizes))return;",[nm('qc ledgers: NOT flagged')],Q);
+  await brk('a void lot is counted as live','health',"if(!_phhObj(l)||l.status!=='live'||l.src","if(!_phhObj(l)||l.src",[nm('qc ledgers: NOT flagged')],Q);
+  await brk('old Packing units alone (no lots) are flagged','health',"if(L.legacyUnits>0&&L.lotRows>0)","if(L.legacyUnits>0)",[nm('qc ledgers: NOT flagged')],Q);
+  await brk('the go-live day is the NEWEST reconciliation','health',"if(ms!==null&&(min===null||ms<min))min=ms;","if(ms!==null&&(min===null||ms>min))min=ms;",[nm('qc go-live: derived from the OLDEST')],Q);
+  await brk('the go-live day is always the fallback','health',"return d?{day:d,source:'recon'}:","return false?{day:d,source:'recon'}:",[nm('qc go-live: derived from the OLDEST')],Q);
+  await brk('the fallback constant moves','health',"const PHH_QC_LIVE_DAY_FALLBACK='2026-10-16';","const PHH_QC_LIVE_DAY_FALLBACK='2026-10-17';",[nm('qc go-live: with NO reconciliation')],Q);
+  await brk('POs finished before go-live are counted as failures','health',"if(f.day<M.qc.liveDay){M.qc.beforeQcOps++;return;}","",[nm('qc completed: after go-live'),nm('qc completed: PO-402')],Q);
+  await brk('the finish day is the UTC day, not the PKT day','health',"const q=_phhObj(po.stages)&&_phhObj(po.stages.qc)?phDay(po.stages.qc.doneAt):null;","const q=_phhObj(po.stages)&&_phhObj(po.stages.qc)&&po.stages.qc.doneAt?String(po.stages.qc.doneAt).slice(0,10):null;",[nm('qc completed: after go-live')],Q);
+  await brk('a closed reconciliation is listed','health',"if(phStr(rc.status)!=='closed')r.items.push(","if(true)r.items.push(",[nm('qc completed: PO-403')],Q);
+  await brk('an undated completed PO is counted as a failure','health',"if(f.day===null){M.qc.undated++;return;}","if(f.day===null){r.items.push(poRow(e,'undated'));return;}",[nm('qc completed: PO-402')],Q);
+  await brk('a list cut at its limit is trusted as complete','health',"const reconOk=Array.isArray(I.recon)&&I.reconTruncated!==true,","const reconOk=Array.isArray(I.recon),",[nm('qc unavailable: a list cut at its limit')],Q);
+  await brk('the ledger check does not need the reconciliations','health',"need:['pos','po_qc_lots','po_qc_recon']","need:['pos','po_qc_lots']",[nm('qc unavailable: recon not read')],Q);
+  await brk('a non-manager is shown the QC checks','health',"if((c.qc||c.mgr)&&!qcOn)return;","",[nm('qc model: qc:false')],Q);
+  await brk('the QC stages are read for everyone','health',"const qc=_phhIsManager(ctx);","const qc=true;",[nm("qc ui: Kashif")],QU);
+  await brk('the QC stages are never read','health',"const qc=wantQc?_phhEnsureQc(force):null;","const qc=null;",[nm("qc ui: a manager's Monitor reads")],QU);
+  await brk('an offline-copy answer is trusted as the collection','data',"if(_phFromCache(snap))throw _phCacheError();","",[nm('qc ui: po_qc_lots answered from the OFFLINE COPY')],QU);
+  await brk('the unavailable QC count printed as a number','health',"head.appendChild(phEl('span','phh-count',c.state==='ok'?String(c.count):'—'));","head.appendChild(phEl('span','phh-count',String(c.count||0)));",[nm('qc ui: po_qc_recon REFUSED')],QU);
+  s.ok('breaks run: '+broken,broken>=60,String(broken));
   return s;
 };

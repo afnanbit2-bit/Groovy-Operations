@@ -98,7 +98,7 @@ module.exports=async function(){
   s.section('e, f: backup list and the stale comment');
   {
     const bk=read('js/prod-backup.js');
-    s.ok('PB_COLLECTIONS names ph_article_instructions and po_marks and says the notes subcollections are not in the file',/'ph_article_instructions','po_marks'\]/.test(bk)&&/SUBCOLLECTIONS and are NOT in the file/.test(bk));
+    s.ok('PB_COLLECTIONS names ph_article_instructions and po_marks and says the notes subcollections are not in the file',/'ph_article_instructions','po_marks'[,\]]/.test(bk)&&/SUBCOLLECTIONS and are NOT in the file/.test(bk));
     s.ok('every added collection has a firestore.rules block',['ph_article_instructions','po_marks'].every(c=>new RegExp('match /'+c+'/').test(read('firestore.rules'))));
     s.ok('the instructions tab comment no longer says it lands after Standards',!/after Standards in the rail/.test(read('js/ph-mod-instructions.js'))&&/lands LAST/.test(read('js/ph-mod-instructions.js')));
   }

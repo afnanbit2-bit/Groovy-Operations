@@ -180,7 +180,7 @@ module.exports=async function(){
     const I=read('js/ph-i18n.js'),keys=[...SRC.matchAll(/_phiT\('(instr\.[a-z_]+)'/g)].map(m=>m[1]);
     const uniq=[...new Set(keys)];
     s.ok('every instr.* key used has an English+Urdu entry marked review:true',uniq.length>=7&&uniq.every(k=>new RegExp("A\\('"+k.replace('.','\\.')+"',.*,true\\);").test(I)));
-    s.ok('sw.js is at v333 or later',+(/CACHE_VERSION = 'v(\d+)'/.exec(read('sw.js'))||[0,0])[1]>=333);
+    s.ok('sw.js is at v333 or later',(m=>m&&+m[1]>=333)(/CACHE_VERSION = 'v(\d+)'/.exec(read('sw.js'))));
   }
 
   s.section('breaks: each guard reverted once must fail its named check');

@@ -1414,6 +1414,306 @@ function phMarkOnHold(row){
   return !!(m&&m.hold&&typeof m.hold==='object');
 }
 
+/* ── QC reconciliation (QC1, 15 Oct 2026): the pure decision core ────────────
+   The owner's rule (Afnan): the cut quantity per size is FINAL once recorded; QC must receive the same units from
+   stitching, per size, within 2 %. Nothing calls this yet (no screen, no collection, no writer); it only decides.
+   Names are phQc / _phQc / PHQC_ (the screen file that comes later uses the lower-case phqc, a different name).
+
+   THE TOLERANCE (default R1): two in every hundred, rounded to the NEAREST piece, a half going UP, worked per size AND on
+   the PO total. allowance(n) = floor((n*2+50)/100) in whole-number arithmetic, so there is no float trap at 25:
+   0-24 -> 0 (exact), 25-74 -> 1, 75-124 -> 2, 125-174 -> 3. The 20/40/40/20 PO (120) gets S 0, M 1, L 1, XL 0, total 2.
+   A SHORT receipt inside the allowance is 'within'; an OVER receipt inside it is 'over' (allowed, flagged); beyond the
+   allowance a short size is 'short' and an over size is 'over_refused'. Received means every unit handed to QC, good or
+   bad: rejects and B-stock count as received (quality is the disposition's business, not this core's).
+
+   THE CUT: if the reconciliation holds a cutLock, that snapshot is the cut ('lock'); the live po.cutQty is looked at only
+   to report drift, never adopted. Before any lock, a PO whose cutting is recorded (stages.cutting.done and a cutQty
+   summing above 0) is held to that live cut ('live' - the figure the first lot will lock). Otherwise there is NO cut
+   ('none'): the ORDERED sizes are never a stand-in (the js/pos.js poCutBySize fallback is the trap this avoids).
+
+   Rules kept: TOTAL (junk in gives ok:false and a reason, never a throw); inputs never changed; size maps are
+   {size: whole number} objects (never an array of arrays); own-property lookups only; a size key the model does not know
+   is a STRAY - reported and still counted, never dropped; whole finite numbers, never -0. */
+const PHQC_TOL_PCT=2;                     // "2 in every 100"
+const PHQC_OVER_ALLOWED=true;             // an over-receipt inside the allowance is accepted and flagged (decision D2)
+const PHQC_MAX_LOT_SIZES=12;              // a lot names at most twelve sizes
+const PHQC_STATE_RANK=Object.freeze({exact:0,within:1,over:2,unexpected:3,over_refused:4,short:5});
+const PHQC_PHASES=Object.freeze(['awaiting_cut','awaiting_qc','receiving','ready','short','closed']);
+const PHQC_GROUPS=Object.freeze(['cutting','line','finishing','ready','closed']);
+
+// Whole pieces allowed either way for n pieces at the tolerance (opts: a pct override for tests, 0..100).
+function phQcAllowance(n,pct){
+  const v=phNum(n),p=pct===undefined?PHQC_TOL_PCT:phNum(pct);
+  if(v===null||v<=0||p===null||p<0||p>100)return 0;
+  return Math.floor((v*p+50)/100);
+}
+function _phQcSet(o,k,v){Object.defineProperty(o,k,{value:v,enumerable:true,writable:true,configurable:true});} // a key like '__proto__' stays an own key
+function _phQcCanon(model,raw){
+  const m=typeof model==='string'&&_phHas(PH_SIZE_MODELS,model)?[model]:['alpha','waist','free'];
+  for(let i=0;i<m.length;i++){const k=phSizeKey(m[i],raw);if(k!==null)return k;}
+  return null;
+}
+// The keys of a cut map in the model's order (alpha XXXS..2XL, waist 26..40, free); 'XXL' is '2XL'; keys the model does not
+// know come last, alphabetically (trimmed, case kept). With no usable model the three models are tried in that order.
+function phQcSizeOrder(model,keys){
+  const list=Array.isArray(keys)?keys:(_phObj(keys)?Object.keys(keys):[]);
+  const known=[],stray=[];
+  list.forEach(function(raw){
+    const c=_phQcCanon(model,raw);
+    if(c!==null){if(known.indexOf(c)<0)known.push(c);}
+    else{const t=phStr(raw).trim();if(stray.indexOf(t)<0)stray.push(t);}
+  });
+  const pos=function(c){
+    const names=typeof model==='string'&&_phHas(PH_SIZE_MODELS,model)?[model]:['alpha','waist','free'];
+    let base=0;
+    for(let i=0;i<names.length;i++){const ix=PH_SIZE_MODELS[names[i]].keys.indexOf(c);if(ix>=0)return base+ix;base+=PH_SIZE_MODELS[names[i]].keys.length;}
+    return base;
+  };
+  known.sort(function(a,b){return pos(a)-pos(b);});
+  stray.sort(_phCmp);
+  return known.concat(stray);
+}
+// Reads a {size: quantity} map: canonical keys, whole numbers >= 0. -> {ok, sizes, order, total, stray, issues}.
+// A key the model does not know is kept (and listed in stray); a bad value or a size given twice is an issue.
+function _phQcMap(input,opts){
+  const o=_phObj(opts)?opts:{};
+  const out={ok:false,sizes:{},order:[],total:0,stray:[],issues:[]};
+  if(!_phObj(input)){out.issues.push('the sizes must be a map of size and quantity');return out;}
+  const got={},seen=[];
+  Object.keys(input).forEach(function(raw){
+    const c=_phQcCanon(o.model,raw);
+    const key=c!==null?c:phStr(raw).trim();
+    if(key===''){out.issues.push('a size has no name');return;}
+    if(c===null&&out.stray.indexOf(key)<0)out.stray.push(key);
+    const v=input[raw];
+    const q=o.blankIsZero&&(v===''||v===null||v===undefined)?0:phWhole(v);
+    if(q===null){out.issues.push(key+': the quantity must be a whole number');return;}
+    if(q<0){out.issues.push(key+': the quantity cannot be negative');return;}
+    if(seen.indexOf(key)>=0){out.issues.push(key+' is given twice');return;}
+    seen.push(key);_phQcSet(got,key,q);
+  });
+  out.order=phQcSizeOrder(o.model,seen);
+  out.order.forEach(function(k){_phQcSet(out.sizes,k,got[k]);out.total+=got[k];});
+  out.stray.sort(_phCmp);
+  out.ok=out.issues.length===0;
+  return out;
+}
+// What the lots add up to. lots: this PO's po_qc_lots rows ({sizes,status,total?,id?}); a 'void' lot is skipped (counted
+// in lotsVoid); only 'live' lots count; a row with any other status, or with unreadable sizes, is an issue and is NOT counted.
+// -> null when lots is not a list; else {ok, sizes, order, total, lotsLive, lotsVoid, lotsInvalid, stray, issues}.
+function phQcReceived(lots,opts){
+  if(!Array.isArray(lots))return null;
+  const o=_phObj(opts)?opts:{};
+  const acc={},out={ok:false,sizes:{},order:[],total:0,lotsLive:0,lotsVoid:0,lotsInvalid:0,stray:[],issues:[]};
+  lots.forEach(function(lot,ix){
+    const id=_phObj(lot)&&lot.id!=null?phStr(lot.id):'#'+(ix+1);
+    if(!_phObj(lot)){out.lotsInvalid++;out.issues.push('lot '+id+': not a lot');return;}
+    if(lot.status==='void'){out.lotsVoid++;return;}
+    if(lot.status!=='live'){out.lotsInvalid++;out.issues.push('lot '+id+': status is neither live nor void');return;}
+    const m=_phQcMap(lot.sizes,{model:o.model});
+    if(!m.ok){out.lotsInvalid++;m.issues.forEach(function(w){out.issues.push('lot '+id+': '+w);});return;}
+    if(lot.total!==undefined&&phWhole(lot.total)!==m.total){out.lotsInvalid++;out.issues.push('lot '+id+': its total does not match its sizes');return;}
+    out.lotsLive++;
+    m.order.forEach(function(k){_phQcSet(acc,k,(_phHas(acc,k)?acc[k]:0)+m.sizes[k]);});
+    m.stray.forEach(function(k){if(out.stray.indexOf(k)<0)out.stray.push(k);});
+  });
+  out.order=phQcSizeOrder(o.model,Object.keys(acc));
+  out.order.forEach(function(k){_phQcSet(out.sizes,k,acc[k]);out.total+=acc[k];});
+  out.stray.sort(_phCmp);
+  out.ok=out.issues.length===0;
+  return out;
+}
+function _phQcState(cut,recv,allow,overAllowed){
+  if(cut===0&&recv>0)return'unexpected';          // received on a size nothing was cut for
+  const d=recv-cut;
+  if(d===0)return'exact';
+  if(d<0)return-d<=allow?'within':'short';
+  return overAllowed&&d<=allow?'over':'over_refused';
+}
+function _phQcWorst(states){
+  let w='exact';
+  states.forEach(function(s){if(PHQC_STATE_RANK[s]>PHQC_STATE_RANK[w])w=s;});
+  return w;
+}
+// The verdict of what was received against the cut, per size AND on the total; the overall state is the worst of them
+// (short > over_refused > unexpected > over > within > exact). cut / recv are {size: quantity} maps.
+// opts: overAllowed (default PHQC_OVER_ALLOWED), tolPct (default PHQC_TOL_PCT), model.
+// -> {ok, why, issues, state, sizes:{S:{cut,recv,diff,allow,state}}, order, total:{cut,recv,diff,allow,state}, stray, flagged}.
+// Only sizes with something cut or received are listed (a 0-cut, 0-received size is not a row).
+function phQcVerdict(cut,recv,opts){
+  const o=_phObj(opts)?opts:{};
+  const overAllowed=o.overAllowed===undefined?PHQC_OVER_ALLOWED:o.overAllowed===true;
+  const pct=o.tolPct===undefined?PHQC_TOL_PCT:o.tolPct;
+  const bad=function(why,issues){return{ok:false,why:why,issues:issues||[why],state:null,sizes:{},order:[],total:null,stray:[],flagged:[]};};
+  const c=_phQcMap(cut,{model:o.model}),r=_phQcMap(recv,{model:o.model});
+  if(!c.ok)return bad('the cut could not be read: '+c.issues.join('; '),c.issues);
+  if(!r.ok)return bad('what was received could not be read: '+r.issues.join('; '),r.issues);
+  const keys=phQcSizeOrder(o.model,Object.keys(c.sizes).concat(Object.keys(r.sizes)));
+  const out={ok:true,why:'',issues:[],state:'exact',sizes:{},order:[],total:null,stray:c.stray.concat(r.stray.filter(function(k){return c.stray.indexOf(k)<0;})).sort(_phCmp),flagged:[]};
+  keys.forEach(function(k){
+    const cu=_phHas(c.sizes,k)?c.sizes[k]:0,re=_phHas(r.sizes,k)?r.sizes[k]:0;
+    if(cu===0&&re===0)return;
+    const allow=phQcAllowance(cu,pct);
+    const row={cut:cu,recv:re,diff:re-cu,allow:allow,state:_phQcState(cu,re,allow,overAllowed)};
+    _phQcSet(out.sizes,k,row);out.order.push(k);
+    if(row.state!=='exact'&&row.state!=='within')out.flagged.push({size:k,state:row.state});
+  });
+  const tAllow=phQcAllowance(c.total,pct);
+  out.total={cut:c.total,recv:r.total,diff:r.total-c.total,allow:tAllow,state:_phQcState(c.total,r.total,tAllow,overAllowed)};
+  out.state=_phQcWorst(out.order.map(function(k){return out.sizes[k].state;}).concat([out.total.state]));
+  return out;
+}
+// Why a lot may not be saved (null = it may). cut = the final cut map, recvSoFar = the live lots' sizes (phQcReceived().sizes),
+// lotSizes = the lot being typed (a blank box counts as 0). Refuses: not a map, more than twelve sizes, a bad quantity
+// (fraction, negative, text), a size given twice, a size that was not cut, nothing entered, and any size - or the PO
+// total - that would end above cut + allowance. opts: overAllowed, tolPct, model.
+function phQcLotProblem(cut,recvSoFar,lotSizes,opts){
+  const o=_phObj(opts)?opts:{};
+  const overAllowed=o.overAllowed===undefined?PHQC_OVER_ALLOWED:o.overAllowed===true;
+  const pct=o.tolPct===undefined?PHQC_TOL_PCT:o.tolPct;
+  const c=_phQcMap(cut,{model:o.model});
+  if(!c.ok||c.total<=0)return'The cut is not recorded, so nothing can be received yet.';
+  const r=_phQcMap(recvSoFar===null||recvSoFar===undefined?{}:recvSoFar,{model:o.model});
+  if(!r.ok)return'What was received so far could not be read: '+r.issues[0]+'.';
+  if(!_phObj(lotSizes))return'Enter the units received for each size.';
+  if(Object.keys(lotSizes).length>PHQC_MAX_LOT_SIZES)return'A lot names at most '+PHQC_MAX_LOT_SIZES+' sizes.';
+  const l=_phQcMap(lotSizes,{model:o.model,blankIsZero:true});
+  if(!l.ok)return l.issues[0]+'.';
+  let lotTotal=0;
+  for(let i=0;i<l.order.length;i++){
+    const k=l.order[i],add=l.sizes[k];
+    if(add===0)continue;                                   // nothing is received on this size
+    lotTotal+=add;
+    const cu=_phHas(c.sizes,k)?c.sizes[k]:0;
+    if(cu===0)return k+' was not cut on this PO, so QC cannot receive it.';
+    const have=_phHas(r.sizes,k)?r.sizes[k]:0,allow=overAllowed?phQcAllowance(cu,pct):0;
+    if(have+add>cu+allow)return'QC cannot receive more than was cut: '+k+' has '+cu+' cut, '+have+' received, this lot adds '+add+' - the allowance is '+allow+'.';
+  }
+  if(lotTotal===0)return'Nothing was entered - enter the units received for at least one size.';
+  const tAllow=overAllowed?phQcAllowance(c.total,pct):0;
+  if(r.total+lotTotal>c.total+tAllow)return'QC cannot receive more than was cut in total: '+c.total+' cut, '+r.total+' received, this lot adds '+lotTotal+' - the allowance is '+tAllow+'.';
+  return null;
+}
+function _phQcLiveCut(po,model){
+  const done=_phObj(po)&&_phObj(po.stages)&&_phObj(po.stages.cutting)&&po.stages.cutting.done===true;
+  if(!done||!_phObj(po.cutQty))return null;
+  const m=_phQcMap(po.cutQty,{model:model});
+  return m.ok&&m.total>0?m:null;
+}
+// The figure the floor is held to. -> {ok, why, source:'lock'|'live'|'none', locked, sizes, order, total, stray, issues, drift, damage}
+// 'lock' = recon.cutLock.sizes; 'live' = po.cutQty once cutting is recorded and no lock exists yet; 'none' = no cut (never the ordered
+// sizes). drift lists the sizes where a live cut differs from the lock (the lock still wins). opts.minusBundlingDamage (default false)
+// takes po.damageSummary.bySize off each size's expected figure (never below 0).
+function phQcExpected(po,recon,opts){
+  const o=_phObj(opts)?opts:{};
+  const none=function(ok,why,issues){return{ok:ok,why:why,source:'none',locked:false,sizes:{},order:[],total:0,stray:[],issues:issues||[],drift:null,damage:null};};
+  if(!_phObj(po))return none(false,'no PO was given');
+  let model=o.model;
+  if(model===undefined){const a=phSizeModel(_phPoArt(po));model=a.source==='default'?null:a.model;}
+  const lock=_phObj(recon)&&recon.cutLock!==undefined&&recon.cutLock!==null?recon.cutLock:null;
+  let out;
+  if(lock!==null){
+    const m=_phObj(lock)?_phQcMap(lock.sizes,{model:model}):null;
+    if(!m||!m.ok||m.total<=0)return none(false,'the locked cut could not be read',m?m.issues:['the lock is not a map']);
+    if(lock.total!==undefined&&phWhole(lock.total)!==m.total)return none(false,'the locked cut total does not match its sizes',['cutLock.total does not match its sizes']);
+    out={ok:true,why:'',source:'lock',locked:true,sizes:m.sizes,order:m.order,total:m.total,stray:m.stray,issues:[],drift:null,damage:null};
+    const live=_phQcLiveCut(po,model);
+    if(live){
+      const rows=[];
+      phQcSizeOrder(model,Object.keys(m.sizes).concat(Object.keys(live.sizes))).forEach(function(k){
+        const a=_phHas(m.sizes,k)?m.sizes[k]:0,b=_phHas(live.sizes,k)?live.sizes[k]:0;
+        if(a!==b)rows.push({size:k,lock:a,live:b});
+      });
+      if(rows.length)out.drift={sizes:rows,lockTotal:m.total,liveTotal:live.total};
+    }
+  }else{
+    const live=_phQcLiveCut(po,model);
+    if(!live)return none(true,'cutting is not recorded on this PO');
+    out={ok:true,why:'',source:'live',locked:false,sizes:live.sizes,order:live.order,total:live.total,stray:live.stray,issues:[],drift:null,damage:null};
+  }
+  if(o.minusBundlingDamage===true&&_phObj(po.damageSummary)&&_phObj(po.damageSummary.bySize)){
+    const dmg=_phQcMap(po.damageSummary.bySize,{model:model});
+    if(dmg.ok){
+      const sizes={};let total=0;
+      out.order.forEach(function(k){
+        const d=_phHas(dmg.sizes,k)?dmg.sizes[k]:0,v=Math.max(0,out.sizes[k]-d);
+        _phQcSet(sizes,k,v);total+=v;
+      });
+      out.damage=dmg.sizes;out.sizes=sizes;out.total=total;
+    }
+  }
+  return out;
+}
+// One call for a screen: the cut the PO is held to, what QC has received, the verdict and the phase.
+//   po     the PO document (stage, cutQty, stages.cutting.done, damageSummary)
+//   recon  the po_qc_recon document, or null/undefined when there is none yet; opts.reconRead===false says it could not be read
+//   lots   this PO's po_qc_lots rows; null / not a list = they could not be read -> ok:false naming po_qc_lots
+// phase: awaiting_cut (no cut) | awaiting_qc (a cut, no live lot) | receiving (lots, but the total is still short beyond the allowance:
+// more units are expected) | ready (exact / within / over: the floor may close) | short (the total is in but a size is short,
+// unexpected or over beyond its allowance: a manager may close it) | closed.
+// canClose: floor = ready only; manager = ready, short OR receiving (owner decision, 15 Oct 2026, a change from the plan: units lost
+// for good would otherwise leave a PO open for ever; a manager's close outside 'ready' needs a reason, an overrides row, a history row
+// and bell rows -- js/ph-qc-write.js phQcClose). progressPct = floor(received / cut, capped at 100), null with no cut.
+function phQcReconcile(po,recon,lots,opts){
+  const o=_phObj(opts)?opts:{};
+  const fail=function(why,extra){
+    const r={ok:false,why:why,stage:_phObj(po)?phStageOf(po):null,cutSource:'none',locked:false,reopened:false,status:null,cut:null,recv:null,verdict:null,lotsLive:0,lotsVoid:0,
+      canClose:{floor:false,manager:false},phase:null,progressPct:null,drift:null,stray:[],issues:[why]};
+    if(extra)Object.keys(extra).forEach(function(k){r[k]=extra[k];});
+    return r;
+  };
+  if(!_phObj(po))return fail('no PO was given');
+  if(o.reconRead===false)return fail('po_qc_recon could not be read');
+  if(!Array.isArray(lots))return fail('po_qc_lots could not be read');
+  let model=o.model;
+  if(model===undefined){const a=phSizeModel(_phPoArt(po));model=a.source==='default'?null:a.model;}
+  const rc=_phObj(recon)?recon:null;
+  const exp=phQcExpected(po,rc,{model:model,minusBundlingDamage:o.minusBundlingDamage===true});
+  if(!exp.ok)return fail(exp.why,{issues:exp.issues.length?exp.issues:[exp.why]});
+  const pid=phPoKey(po.id!==undefined?po.id:po.poId);
+  const mine=[],foreign=[];
+  lots.forEach(function(l,ix){
+    const lp=_phObj(l)&&l.poId!==undefined?phPoKey(l.poId):null;
+    if(pid!==null&&lp!==null&&lp!==pid)foreign.push('lot '+(_phObj(l)&&l.id!=null?phStr(l.id):'#'+(ix+1))+' belongs to '+lp+', not '+pid);
+    else mine.push(l);
+  });
+  const recv=phQcReceived(mine,{model:model});
+  const issues=foreign.concat(recv.issues);
+  const status=rc?phStr(rc.status):'';
+  const stage=phStageOf(po);
+  const base={stage:stage,cutSource:exp.source,locked:exp.locked,reopened:status==='reopened',status:status||null,drift:exp.drift,stray:_phSortedUnique(exp.stray.concat(recv.stray)),
+    lotsLive:recv.lotsLive,lotsVoid:recv.lotsVoid};
+  if(issues.length)return fail('what was received could not be read: '+issues[0],Object.assign(base,{issues:issues,recv:recv,cut:exp.source==='none'?null:exp}));
+  if(exp.source==='none')return Object.assign({ok:true,why:'',cut:null,recv:recv,verdict:null,canClose:{floor:false,manager:false},phase:status==='closed'?'closed':'awaiting_cut',progressPct:null,issues:[]},base);
+  const verdict=phQcVerdict(exp.sizes,recv.sizes,{model:model,overAllowed:o.overAllowed,tolPct:o.tolPct});
+  if(!verdict.ok)return fail(verdict.why,Object.assign(base,{issues:verdict.issues,recv:recv,cut:exp}));
+  let phase;
+  if(status==='closed')phase='closed';
+  else if(recv.lotsLive===0)phase='awaiting_qc';
+  else if(verdict.total.state==='short')phase='receiving';
+  else if(verdict.state==='exact'||verdict.state==='within'||verdict.state==='over')phase='ready';
+  else phase='short';
+  const pct=exp.total>0?Math.min(100,Math.floor(recv.total*100/exp.total)):null;
+  return Object.assign({ok:true,why:'',cut:exp,recv:recv,verdict:verdict,
+    canClose:{floor:phase==='ready',manager:phase==='ready'||phase==='short'||phase==='receiving'},phase:phase,progressPct:pct,issues:[]},base);
+}
+// Which group of the Afloat list a PO sits in. rec = {stage, phase} (a phQcReconcile result carries both).
+// 'closed' (phase closed) | 'ready' (phase ready / short, from the stitching stage on) | 'cutting' (stage cutting) |
+// 'finishing' (stage qc, or a completed PO whose reconciliation is not closed, still waiting for units) | 'line' (bundling, stitching,
+// printing, washing). A stage this core does not know is 'unknown'; cancelled, reserved and junk are null (not afloat).
+function phQcGroup(rec){
+  if(!_phObj(rec))return null;
+  const st=phStr(rec.stage).trim(),ph=phStr(rec.phase).trim();
+  if(st===''||st==='cancelled'||st==='reserved')return null;
+  const idx=PH_REAL_STAGE_ORDER.indexOf(st);
+  if(idx<0&&st!=='completed')return'unknown';
+  if(ph==='closed')return'closed';
+  if((ph==='ready'||ph==='short')&&(st==='completed'||idx>=PH_REAL_STAGE_ORDER.indexOf('stitching')))return'ready';
+  if(st==='cutting')return'cutting';
+  if(st==='completed'||st==='qc')return'finishing';
+  return'line';
+}
+
 if(typeof module!=='undefined'&&module.exports){
   module.exports={phMarkOnHold,PH_VERSION,PH_TZ_OFFSET_MIN,PH_UNITS,PH_SEASON_VALUES,PH_WINTER_MONTHS,PH_SUMMER_MONTHS,PH_SIZE_MODELS,
     PH_WAIST_CODE_PREFIXES,PH_FREE_KEY,PH_REAL_STAGE_ORDER,PH_STAGES,PH_CUT_GATE_PCT,PH_PC_MIN_WIDTH,PH_MASTER_NAME_MAX,
@@ -1431,5 +1731,7 @@ if(typeof module!=='undefined'&&module.exports){
     PH_INSTR_PLACEMENTS_MAX,PH_INSTR_PANTONES_MAX,PH_INSTR_EMB_MAX,PH_INSTR_SYSTEMS,phHexOk,phHexNorm,phPantoneParse,phPantoneHex,
     phInstructionsClean,phInstructionsEmpty,phInstructionsDiff,phInstructionsFromRecipe,
     PH_MARK_PRIORITIES,PH_MARK_COLOURS,PH_MARK_KEYS,PH_MARK_LABEL_MAX,PH_MARK_HOLD_MAX,PH_MARK_NOTE_MAX,PH_MARK_LAST_MAX,
-    phMarksClean,phMarksEmpty,phMarksDiff,phMarkNoteClean,phMarkBadges};
+    phMarksClean,phMarksEmpty,phMarksDiff,phMarkNoteClean,phMarkBadges,
+    PHQC_TOL_PCT,PHQC_OVER_ALLOWED,PHQC_MAX_LOT_SIZES,PHQC_STATE_RANK,PHQC_PHASES,PHQC_GROUPS,
+    phQcAllowance,phQcSizeOrder,phQcReceived,phQcVerdict,phQcLotProblem,phQcExpected,phQcReconcile,phQcGroup};
 }

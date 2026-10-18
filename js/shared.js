@@ -966,8 +966,12 @@ function buildNav(){
   // Packing/dispatch account (Faizan) — Packing + B-stock cartons.
   if(session.role==='packing'){
     const sb=document.getElementById('sidebar');
+    // QC Ops (QC5, 15 Oct 2026): Faizan is the QC floor (phCanQc, js/ph-data.js, which loads AFTER this file: typeof, fails closed) --
+    // his entry opens the Production Ops takeover, where his only tab is Afloat POs. Nothing about the packing role itself changes.
+    let qcOps=false;try{qcOps=typeof phCanQc==='function'&&phCanQc()===true;}catch(e){qcOps=false;}
     if(sb)sb.innerHTML=`<div class="nav-item on" id="nav-packing" onclick="window.showPage('packing')">Packing</div>
-      <div class="nav-item" id="nav-bstock" onclick="window.showPage('bstock')">B-Stock</div>`;
+      <div class="nav-item" id="nav-bstock" onclick="window.showPage('bstock')">B-Stock</div>`
+      +(qcOps?`<div class="nav-item" id="nav-prod-ops" onclick="window.showPage('prod-ops')">QC Ops</div>`:'');
     _renderMobNav({isOwner:false,isWorker:false,isViewer:false,isStore:false,om:false,canPO:false});
     return;
   }
@@ -1189,8 +1193,10 @@ function _renderMobNav(ctx){
     // Packing (Faizan): Packing + B-stock (Ready-to-Barcode arrives later).
     mob.className='cols-3';
     mob.style.gridTemplateColumns='';
+    let qcOps=false;try{qcOps=typeof phCanQc==='function'&&phCanQc()===true;}catch(e){qcOps=false;}   // QC5: QC Ops (the takeover, one tab)
     mob.innerHTML=_mobNavBtn('packing','box','Packing',"window.showPage('packing')")
-                 +_mobNavBtn('bstock','tray','B-Stock',"window.showPage('bstock')");
+                 +_mobNavBtn('bstock','tray','B-Stock',"window.showPage('bstock')")
+                 +(qcOps?_mobNavBtn('prod-ops','list','QC Ops',"window.showPage('prod-ops')"):'');
     _updateMobNavActive(currentPage);
     return;
   }

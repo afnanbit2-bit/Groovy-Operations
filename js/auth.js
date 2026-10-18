@@ -21,7 +21,7 @@ const USER_DEFS=[
   {u:'asghar', email:'asghar@groovy.op', name:'Asghar', role:'worker', title:'Printing Manager',  canPO:false,canFabric:false, stages:['printing']},
   {u:'zohaib', email:'zohaib@groovy.op', name:'Zohaib', role:'worker', title:'Bundling Incharge',  canPO:false,canFabric:false, stages:['bundling']},
   {u:'uzaib',  email:'uzaib@groovy.op',  name:'Uzaib',  role:'viewer', title:'Cutting & Fabric',   canPO:false,canFabric:true,  stages:['cutting']},
-  {u:'faizan', email:'faizan@groovy.op', name:'Faizan', role:'packing',title:'Packing & Dispatch', canPO:false,canFabric:false, stages:[]},
+  {u:'faizan', email:'faizan@groovy.op', name:'Faizan', role:'packing',title:'QC Ops · Packing', canPO:false,canFabric:false, stages:[]},
   {u:'umair',  email:'umair@groovy.op',  name:'Umair',  role:'fulfillment', title:'Fulfilment',    canPO:false,canFabric:false, stages:[]},
   // Marketing module (Sept 2026). Keep isContentOpsLead() in
   // firestore.rules in step with this email.

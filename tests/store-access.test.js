@@ -63,5 +63,22 @@ module.exports=async function(){
     s.eq('all four danger-zone gates read the helper',(src.match(/_storeIsSuper\(\)/g)||[]).length-1,4);
   }
 
+  s.section("Faizan's account: role packing, title 'QC Ops \u00b7 Packing', no password, nav unchanged");
+  {
+    const a=loadApp({files:NAV_FILES,currentPage:'dashboard'});
+    const f=JSON.parse(a.run("JSON.stringify(USER_DEFS.find(d=>d.u==='faizan'))"));
+    s.eq("faizan keeps role 'packing'",f&&f.role,'packing');
+    s.eq("faizan's title is 'QC Ops \u00b7 Packing' (U+00B7)",f&&f.title,'QC Ops \u00b7 Packing');
+    s.ok('faizan has no pass field (and no password-like key)',f&&!('pass' in f)&&!Object.keys(f).some(k=>/pass|pwd/i.test(k)));
+    s.eq('faizan: the fields other than title are as before',J(Object.assign({},f,{title:'-'})),
+      J({u:'faizan',email:'faizan@groovy.op',name:'Faizan',role:'packing',title:'-',canPO:false,canFabric:false,stages:[]}));
+    // His sidebar through the real buildNav(): Packing + B-Stock, plus the QC Ops entry (QC5) when the Production Ops data layer is loaded.
+    const nav=(files)=>{const b=loadApp({files:files,currentPage:'dashboard'});b.run('session='+J(Object.assign({uid:'u-faizan'},f)));b.run('buildNav()');
+      const h=b.el('sidebar').innerHTML||'';return [...h.matchAll(/showPage\('([^']+)'\)/g)].map(m=>m[1]);};
+    s.eq('faizan sidebar (no Production Ops loaded): Packing + B-Stock only',J(nav(NAV_FILES)),J(['packing','bstock']));
+    s.eq('faizan sidebar with Production Ops loaded: Packing, B-Stock, and the QC Ops entry (QC5) -- still nothing else',
+      J(nav(NAV_FILES.concat(['js/ph-core.js','js/ph-data.js']))),J(['packing','bstock','prod-ops']));
+  }
+
   return s;
 };

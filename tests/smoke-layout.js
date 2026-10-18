@@ -471,6 +471,56 @@ async function _phqFragment(o){
   }
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+extra};
 }
+// Production Ops ▸ Afloat POs (QC5, 15 Oct 2026): the REAL js/ph-mod-afloat.js inside the REAL shell, over tests/ph-mod-afloat.test.js's scenario
+// (the 120-piece 20/40/40/20 PO at every state), serialised to markup. Each variant keeps to a handful of tiles so it fits the window it is
+// measured in (the probe does not hit-test below the window). Pictures: a Cloudinary photo is swapped for a solid stand-in picture (the probe
+// has no network; Shopify CDN URLs are swapped by the runner below), a BROKEN one is the tile the module draws after the <img> errors, and
+// "no photo" is the code / name tile. A long article name and a hostile one are in the list. The lightbox is laid in the flow (static) so it
+// does not cover the rest of the fragment.
+const LONG_QC7='The carton with the last two pieces of size M was opened at the line and the pieces were damaged beyond repair; the line supervisor confirmed it in writing on the floor.';
+async function _phafFragment(o){
+  o=o||{};
+  const domkit=require('./ph-dom');
+  const K=require('./ph-mod-afloat.test.js').kit;
+  const all=K.fixture();
+  const LONG='A Very Long Article Name That Must Wrap Onto Two Lines Inside The Tile Instead Of Pushing It Sideways';
+  all['pos/PO-107'].name=LONG;
+  if(o.broken)all['pos/PO-105'].imgFront=K.CLD+'broken105.jpg';
+  if(o.mutate)o.mutate(all,K);
+  const pick=ids=>{const out={};Object.keys(all).forEach(k=>{const m=/^(?:pos|po_qc_recon|po_cut_jobs)\/(PO-\d+)$|^po_qc_lots\/(PO-\d+)-/.exec(k);const id=m&&(m[1]||m[2]);if(!m||ids.indexOf(id)>-1)out[k]=all[k];});return out;};
+  const seed=o.ids?pick(o.ids):all;
+  const fail={};(o.fail||[]).forEach(c=>{fail[c]={err:()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'})};});
+  if(o.longBy)Object.keys(seed).forEach(k=>{if(k.indexOf('po_qc_lots/')===0)seed[k].byName=o.longBy;});
+  const T=K.load({session:K.USERS[o.user||'afnan'],seed:seed,fail:fail});
+  await T.show();
+  if(o.closedOpen){const t=T.cls('phaf-gtog')[0];if(t)T.dom.click(t);}
+  if(o.open){T.dom.click(T.card(o.open));await K.settle(80);}
+  // QC6: the receive sheet (typed numbers, optionally the Review step) and the confirms, through the module's own handlers
+  if(o.sheet){const b=T.dom.find('phaf-recv-btn');if(b){T.dom.click(b);await K.settle(40);}
+    Object.keys(o.sheet.vals||{}).forEach(k=>{const n=T.dom.find('phaf-rx-in-'+k);if(n){n.value=String(o.sheet.vals[k]);T.dom.dispatch(n,'input');}});
+    if(o.sheet.review){const r=T.dom.find('phaf-rx-review');if(r){T.dom.click(r);await K.settle(40);}}}
+  let dl='';
+  if(o.dlg){const btn={void:(T.cls('phaf-void')[0]||{}).id,close:'phaf-close-btn',short:'phaf-close-btn',relock:'phaf-relock-btn',reopen:'phaf-reopen-btn',adopt:'phaf-adopt-btn'}[o.dlg];const b=T.dom.find(btn);if(b){T.dom.click(b);await K.settle(40);}
+    // QC7: fill the override dialog through its own boxes, optionally press Continue (step 2)
+    if(o.fill){const c=T.dom.find('phaf-dlg-cause');if(c&&o.fill.cause!==undefined){c.value=o.fill.cause;T.dom.dispatch(c,'change');}
+      const r=T.dom.find('phaf-dlg-reason');if(r&&o.fill.reason!==undefined){r.value=o.fill.reason;T.dom.dispatch(r,'input');}}
+    if(o.step2){await T.R('phqcDlgGo()');await K.settle(40);}
+    const node=T.dom.find('phaf-dlg-back');if(node){dl='<div style="position:relative;height:'+(o.dlgH||420)+'px;margin-top:12px">'+domkit.toHtml(node)+'</div>';node.parentNode.removeChild(node);}}
+  if(o.broken){const c=T.card('PO-105');const im=c&&T.dom.all(c,n=>n.tagName==='IMG')[0];if(im)T.dom.dispatch(im,'error');}
+  let lb='';
+  if(o.lightbox){const pb=T.cls('phaf-picbtn')[0];if(pb)T.dom.click(pb);const node=T.dom.find('phaf-lightbox');if(node){lb='<div style="position:relative;height:460px;margin-top:12px">'+domkit.toHtml(node)+'</div>';node.parentNode.removeChild(node);}}
+  // the src of every <img> is a DOM property (never an attribute); give the static markup a picture the probe can load
+  const STAND='data:image/svg+xml;utf8,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2780%27 height=%27100%27%3E%3Crect width=%2780%27 height=%27100%27 fill=%27%23999%27/%3E%3C/svg%3E';
+  T.dom.all(T.dom.body,n=>n.tagName==='IMG').forEach(n=>n.setAttribute('src',/^https:\/\/cdn\.shopify\.com\//.test(n.src||'')?n.src:STAND));
+  const canvas=T.dom.byClass(T.dom.main,'ph-canvas')[0];
+  let html='<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)+lb+dl;
+  if(o.dlg)html='<style>.phaf-dlg-back{position:absolute}</style>'+html;
+  if(o.lightbox)html='<style>.phaf-lightbox{position:absolute;inset:0;height:100%}</style>'+html;
+  const out={html:html};
+  if(o.heights)out.heights=o.heights;
+  if(o.widths)out.widths=o.widths;
+  return out;
+}
 // Production Ops ▸ Calendar (12 Oct 2026): the REAL js/ph-mod-calendar.js over tests/ph-mod-calendar.test.js's scenario (Monday 12 Oct, capacity 400,
 // Sundays off, 16 Oct a skip day: an over-full day, a spilling chip, a done / overridden / already-cut locked chip, a hostile article name, a
 // reserved PO that must NOT be in the tray), serialised to markup. Variants: month, week, a day with SIX chips, the phone week list, the Move menu
@@ -586,6 +636,26 @@ async function _phDetailCardFragment(o){
   vm.runInContext('window.phPoDetailCardFill(__po)',app.ctx);
   return{html:'<div style="max-width:720px;padding:12px"><div class="card-title">Product</div>'+domkit.toHtml(host)+'</div>'};
 }
+// QC wave 2 (QC9): the READ-ONLY QC reconciliation card on the classic PO DETAIL page (js/ph-mod-afloat.js phPoQcCardSlot/Fill), the real
+// builder over tests/ph-mod-afloat-write.test.js's fake Firestore: a receiving PO with two live lots and a void one (a long byName), and the
+// failed-read card. Sits in a plain page column, as in renderDetailPage.
+async function _phPoQcCardFragment(o){
+  o=o||{};
+  const domkit=require('./ph-dom');
+  const W=require('./ph-mod-afloat-write.test.js').kit;
+  W.CLK.now=W.THU_NOON;
+  const LONG='Faizan Ahmed Khan Siddiqui (QC Ops, Warehouse Receiving Desk)';
+  const seed={'pos/PO-501':W.cutPo('PO-501','qc'),'po_qc_recon/PO-501':W.recon('PO-501',{lotCount:3,voidCount:1,rev:5}),
+    'po_qc_lots/PO-501-1792000000001-aaaa':W.lotRow('PO-501',1,{S:10,M:15,L:10,XL:5},{at:W.MON_4PM,day:'2026-10-12',byName:LONG,note:'first rack, two bundles open'}),
+    'po_qc_lots/PO-501-1792000000002-bbbb':W.lotRow('PO-501',2,{S:5,M:15,L:20},{at:W.WED_905,day:'2026-10-14'}),
+    'po_qc_lots/PO-501-1792000000003-cccc':W.lotRow('PO-501',3,{XL:15},{at:W.THU_0005,day:'2026-10-15',status:'void',voidedAt:W.THU_NOON,voidedBy:'faizan',voidReason:'wrong size typed on the phone'})};
+  const fk=W.makeFake(seed,o.fail?{getDocErr:{'po_qc_recon/PO-501':()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'})}}:{});
+  const T=W.mk(o.user||'afnan',{fk:fk});
+  T.R('(function(){const h=document.createElement("div");h.id="ph-detail-qc";document.body.appendChild(h);})()');
+  await T.R('window.phPoQcCardFill('+JSON.stringify(fk.store['pos/PO-501'])+')');
+  const host=T.ctx.document.getElementById('ph-detail-qc');
+  return{html:'<div style="max-width:720px;padding:12px"><div class="card-title">Product</div>'+domkit.toHtml(host)+'</div>'};
+}
 // Production Ops ▸ Monitor and Overview (12 Oct 2026): the REAL js/ph-ui.js + js/ph-mod-monitor.js over tests/ph-dom.js's small DOM, with the
 // shared fifteen-PO fixture (tests/ph-mod-monitor-fixture.js, clock pinned to Mon 12 Oct 2026), then SERIALISED to markup. Variants: the Monitor
 // tab with every tile / the range bar / the stage bars / the attention list / the settings card; the same with po_cut_jobs refused and the range
@@ -599,6 +669,15 @@ async function _phmFragment(o){
   DATA.pos=DATA.pos.map(p=>p.id==='PO-103'?Object.assign(p,{name:'A very long article name that has to wrap onto several lines instead of clipping or pushing the page sideways at any width at all'}):p);
   // two fabric passes for the Data health section (14 Oct 2026): one that points at no PO (free text), one with a master
   DATA.gatepasses=[{id:'GP-9001',gpType:'fabric',poId:'Sample',date:'2026-10-01',fabricType:'Jersey Heavy',fabricQty:33.9,fabricUnit:'kg',rollCodes:['R-1'],ts:2},{id:'GP-9002',gpType:'fabric',poId:'101',date:'2026-10-02',cutMaster:'Hassan',ts:1}];
+  // QC wave 2: the four QC checks (a manager's), with a reconciliation closed with a shortfall (118 of 120, a long cause) and one whose
+  // locked cut has drifted, so the qc_closed_short and qc_cut_drift drill lists are measured
+  if(o.qc){
+    const qp=DATA.pos.filter(p=>p.cutQty&&typeof p.cutQty==='object').slice(0,2);
+    const lk=c=>({sizes:Object.assign({},c),total:Object.values(c).reduce((a,b)=>a+(+b||0),0),cutAt:'2026-10-10T05:00:00.000Z',cutBy:'Uzaib',lockedAt:1,lockedBy:'faizan',source:'first_lot'});
+    DATA.po_qc_recon=qp.map((p,i)=>Object.assign({id:p.id,fbKey:p.id,poId:p.id,status:i===0?'closed':'locked',rev:3,cutLock:i===0?lk(p.cutQty):lk(Object.assign({},p.cutQty,{ZZ:5})),lotCount:1,voidCount:0,lastLotAt:2,overrides:[],legacyIds:[],createdAt:Date.UTC(2026,9,10,5,0),createdBy:'faizan',updatedAt:2,updatedBy:'faizan'},
+      i===0?{closedAt:3,closedBy:'mustafa',closeVerdict:{state:'short',phase:'short',total:{cut:120,recv:118,diff:-2}},overrides:[{kind:'close_short',cause:'lost_in_the_line_between_stitching_and_washing_two_pieces',reason:'two lost'}]}:{}));
+    DATA.po_qc_lots=[];
+  }
   const rows=p=>(DATA[p]||[]).map(r=>({id:r.id,data:()=>Object.assign({},r)}));
   const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
     localStorage:{getItem:k=>(k==='groovy-si-restock-last'&&o.restock!==undefined)?o.restock:null,setItem(){},removeItem(){}},
@@ -620,8 +699,8 @@ async function _phmFragment(o){
   app.run('_phTkOnPage()');
   await app.run('phUiLoad()');
   await app.run('phmLoadPos()');
-  await app.run('phhEnsure(false)');
-  if(o.health)app.run('_phhOpen={orphan_passes:true,qty_mismatch:true,cutting_no_pass:true}');
+  await app.run(o.qc?'phhEnsure(false,{qc:true})':'phhEnsure(false)');
+  if(o.health)app.run(o.qc?'_phhOpen={qc_closed_short:true,qc_cut_drift:true}':'_phhOpen={orphan_passes:true,qty_mismatch:true,cutting_no_pass:true}');
   app.run('_phUiPaintData();_phTkSync()');
   if(o.drawer){
     const tile=dom.all(dom.find('ph-panel'),n=>n.getAttribute&&n.getAttribute('data-tile')===o.drawer)[0];
@@ -775,6 +854,41 @@ async function _phrFragment(o){
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)};
 }
 
+
+// PO Registry fragments (RG3/RG4): the REAL js/shared.js + js/pos.js + ph-core + por-core + po-registry, a hand fixture.
+function _porFragment(o){
+  const DAY=86400000,NOW=Date.parse('2026-10-15T12:00:00+05:00');
+  const mk=(n,over)=>Object.assign({fbKey:'PO-'+n,id:'PO-'+n,name:'Tee '+n,code:'GST'+n,fabric:'Single Jersey 180',createdBy:'Mustafa',ts:NOW-(n-100)*DAY,
+    createdAt:new Date(NOW-(n-100)*DAY+5*3600000).toISOString().slice(0,10),poStatus:'in_production',currentStage:'cutting',
+    releasedAt:new Date(NOW-(n-100)*DAY).toISOString(),qty:120,sizes:{XS:0,S:20,M:40,L:40,XL:20,'2XL':0}},over||{});
+  const pos=[
+    mk(140,{name:'COMBAT HOODIE | BLACK — HEAVYWEIGHT FLEECE 420',code:'GHZ004'}),
+    mk(125,{currentStage:'stitching',cutAt:'2026-09-09T06:00:00.000Z',cutQty:{XS:0,S:20,M:39,L:40,XL:20,'2XL':0},packingReceipts:[{size:'S',qty:20},{size:'M',qty:35}],
+      stages:{bundling:{done:true,doneAt:'2026-09-14T06:00:00.000Z'}},damageFlagged:true,damageSummary:{total:3,bySize:{M:2,L:1}},damagePercent:2.5,
+      notes:'Buyer wants the hood lining in the same fabric; check the rib colour against the approved swatch before cutting the second lot.',imgFront:'https://res.cloudinary.com/x/f.jpg',bundleIds:['B-1','B-2']}),
+    mk(152,{qty:100,sizes:{S:30,M:30,L:30},name:'MF Shorts - Arctyc White'}),
+    mk(161,{poStatus:'reserved',currentStage:null,releasedAt:null}),
+    mk(160,{poStatus:'cancelled',currentStage:null,cancelledReason:'wrong fabric'}),
+    mk(170,{currentStage:'completed',stages:{qc:{done:true,doneAt:'2026-10-10T06:00:00.000Z'}}})
+  ];
+  const passes=[{id:'GP-312',gpType:'fabric',poId:'125',date:'2026-09-07',cutMaster:'Alam',totalWeight:40.1},{id:'GP-315',gpType:'fabric',poId:'152',date:'2026-10-13',cutMaster:'Hassan Ahmed Khan'}];
+  const app=loadApp({files:['js/shared.js','js/pos.js','js/ph-core.js','js/por-core.js','js/po-registry.js'],currentPage:'po-registry',
+    session:{u:'afnan',name:'Afnan',role:'owner',canPO:true}});
+  app.run('session='+JSON.stringify({u:'afnan',name:'Afnan',role:'owner',canPO:true}));
+  app.run('loadData=async function(){};');
+  app.run(fs.readFileSync(path.join(ROOT,'js/gatepass.js'),'utf8').match(/function _gpEsc\(s\)\{[^\n]*\}/)[0]);
+  app.run('allPOs='+JSON.stringify(o.empty?[]:pos)+';allPasses='+JSON.stringify(passes)+';_posLoadAt='+NOW+';_posLoadFailed='+JSON.stringify(o.failed?['pos']:[])+';');
+  app.run('phCanSee=function(){return true;};phLoadStage=function(){return Promise.resolve({ok:true});};phGet=function(s){return s==="marks"?{ok:true,rows:[{fbKey:"PO-140",marks:{hold:{reason:"waiting for rib"},priority:"urgent"}}]}:{ok:true,rows:[]};};');
+  if(o.acts)app.run('window.generatePOPdf=function(){};_porActOpen='+JSON.stringify(o.acts)+';');
+  if(o.group)app.run('_porState.group='+JSON.stringify(o.group)+';_porState.view="all";');
+  if(o.detail){
+    const ids=Array.isArray(o.detail)?o.detail:[o.detail];
+    return Promise.resolve(ids.map(function(id){app.run('viewingPO='+JSON.stringify(id)+';renderDetailPage();');return app.el('main-content').innerHTML;}).join('<hr>'));
+  }
+  let html=app.run('renderRegistry()');
+  if(o.failed){app.run('_posLoadFailed=[];allPOs=[];');html+='<hr>'+app.run('porRegistryHTML()');}
+  return Promise.resolve(html);
+}
 const FRAGMENTS={
   // Master Accounts (MASTER_ACCOUNTS_PLAN.md §16.4): Today, Money and a
   // holder, the Ledger with the review queue, a party page, and the Record
@@ -1972,6 +2086,13 @@ const FRAGMENTS={
   },
   // Recipe Embroidery Codes: the edit-form rows (code/candle/shade/position/
   // note, remove button) and the worker card's list, with long values.
+  // PO Registry (js/po-registry.js, RG3): the real body through the real js/pos.js renderRegistry() hand-over, over a hand fixture.
+  'po registry — the list (Active, long name, on hold, qty mismatch, no fabric)':()=>_porFragment({}),
+  'po registry — grouped by stage with a collapsed reserved group':()=>_porFragment({group:'stage'}),
+  'po registry — failed read and empty':()=>_porFragment({failed:true}),
+  'po registry — a row with its quick actions open (owner)':()=>_porFragment({acts:'PO-161'}),
+  'po registry — the detail timeline (stitching, damage, on hold, photos)':()=>_porFragment({detail:'PO-125'}),
+  'po registry — the detail on a reserved and a cancelled PO':()=>_porFragment({detail:['PO-161','PO-160']}),
   'embellishments — embroidery codes (form rows and worker card)':()=>{
     const long='ThreadBook-LONG-CODE-123456789012345678';
     const rec={_id:'r1',articleCode:'GP020',articleName:'Bird patch',status:'locked',
@@ -3501,6 +3622,30 @@ const FRAGMENTS={
   'production ops — hosted PO Registry (the cutting floor)':()=>_phclFragment({tab:'registry'}),
   'production ops — hosted Pattern updates (the cutting floor)':()=>_phclFragment({tab:'patterns'}),
   'production ops — hosted Fabric Inventory (the cutting floor)':()=>_phclFragment({tab:'fabric'}),
+  'production ops — afloat: the board (manager: Cutting, Finishing, Ready with within / over / short, Closed open)':()=>_phafFragment({ids:['PO-101','PO-103','PO-104','PO-106','PO-107','PO-108'],closedOpen:true,heights:[2200]}),
+  'production ops — afloat for QC receiving (Faizan: In the line, the hostile name, a reopened PO)':()=>_phafFragment({user:'faizan',ids:['PO-102','PO-113','PO-116','PO-117'],heights:[1700]}),
+  'production ops — afloat: detail of a short PO (manager, the long name, disabled close-short)':()=>_phafFragment({ids:['PO-107'],open:'PO-107',heights:[1700]}),
+  'production ops — afloat: detail with a void lot, legacy receipts and the drift band':()=>_phafFragment({ids:['PO-115','PO-114'],open:'PO-115',heights:[1900]}),
+  'production ops — afloat: failed reads (pos)':()=>_phafFragment({fail:['pos']}),
+  'production ops — afloat: failed reads (lots and recon)':()=>_phafFragment({ids:['PO-101','PO-103','PO-104'],fail:['po_qc_lots','po_qc_recon'],heights:[1700]}),
+  'production ops — afloat: images (photo, Shopify photo, no photo, a broken photo swapped to the tile)':()=>_phafFragment({ids:['PO-101','PO-103','PO-104','PO-105'],broken:true,heights:[1700]}),
+  'production ops — afloat QC6: the receive sheet (Faizan, a size over its allowance, the red hint and the inline refusal)':()=>_phafFragment({user:'faizan',ids:['PO-103'],open:'PO-103',sheet:{vals:{S:1,M:5,XL:5}},longBy:'Faizan Ahmed Khan Siddiqui (QC Ops, Warehouse Receiving Desk)',heights:[1700]}),
+  'production ops — afloat QC6: Review and save (the per-size numbers once more)':()=>_phafFragment({user:'faizan',ids:['PO-103'],open:'PO-103',sheet:{vals:{XL:20},review:true},heights:[1700]}),
+  'production ops — afloat QC6: the Close PO confirm (exact, Faizan)':()=>_phafFragment({user:'faizan',ids:['PO-105'],open:'PO-105',dlg:'close',heights:[1700]}),
+  'production ops — afloat QC6: the lots list with long 12-hour stamps and a long name, Void and the no-edit line':()=>_phafFragment({user:'mustafa',ids:['PO-103','PO-115'],open:'PO-103',longBy:'Faizan Ahmed Khan Siddiqui (QC Ops, Warehouse Receiving Desk)',heights:[1700]}),
+  'production ops — afloat QC6: the Void confirm (a manager, reason box)':()=>_phafFragment({user:'mustafa',ids:['PO-103'],open:'PO-103',dlg:'void',heights:[1700]}),
+  // QC7: the manager overrides (two-step dialogs) and the read-only overrides list
+  'production ops — afloat QC7: Close with a shortfall (a manager, step 1: the per-size words, cause and reason)':()=>_phafFragment({ids:['PO-107'],open:'PO-107',dlg:'short',dlgH:900,fill:{cause:'lost_in_line',reason:LONG_QC7},heights:[2200]}),
+  'production ops — afloat QC7: Close with a shortfall, step 2 (the final confirm, the long reason read back)':()=>_phafFragment({ids:['PO-107'],open:'PO-107',dlg:'short',dlgH:900,fill:{cause:'damaged_before_qc',reason:LONG_QC7},step2:true,heights:[2200]}),
+  'production ops — afloat QC7: Replace the cut snapshot (an owner; the before / after table and the verdict effect)':()=>_phafFragment({ids:['PO-114'],open:'PO-114',dlg:'relock',dlgH:1100,fill:{cause:'cutting_miscount',reason:'M recounted at the cutting table'},heights:[2600]}),
+  'production ops — afloat QC7: Reopen (an owner; what it writes, the PO document untouched)':()=>_phafFragment({ids:['PO-108'],closedOpen:true,open:'PO-108',dlg:'reopen',dlgH:900,fill:{reason:'one carton found in the store'},heights:[2400]}),
+  'production ops — afloat QC7: Adopt old receipts (a manager; the units, the permanence)':()=>_phafFragment({user:'mustafa',ids:['PO-115'],open:'PO-115',dlg:'adopt',dlgH:1000,fill:{reason:'received before QC Ops existed'},
+    mutate:all=>{all['pos/PO-115'].packingReceipts=[{id:'RCV-1-L',size:'L',qty:5,by:'Faizan'},{id:'RCV-2-L',size:'L',qty:7,by:'Faizan'}];},heights:[2600]}),
+  'production ops — afloat QC7: the overrides list (Faizan, read-only: close short, relock, reopen; long reasons, a long name)':()=>_phafFragment({user:'faizan',ids:['PO-108'],closedOpen:true,open:'PO-108',
+    mutate:(all)=>{const r=all['po_qc_recon/PO-108'],at=r.closedAt;r.overrides=[
+      {kind:'relock',at:at-7200000,by:'afnan',byName:'Afnan',reason:'Cause: Cutting miscount. M recounted at the cutting table',before:{S:20,M:40,L:40,XL:20},after:{S:20,M:38,L:40,XL:20}},
+      {kind:'close_short',at:at,by:'mustafa',byName:'Mustafa Ahmed Khan Siddiqui (Production Manager, Main Floor)',reason:LONG_QC7,cause:'damaged_before_qc'}];},heights:[1900]}),
+  'production ops — afloat: detail picture and the lightbox open':()=>_phafFragment({ids:['PO-101'],open:'PO-101',lightbox:true,heights:[1700]}),
   'production ops — po queue':()=>_phqFragment({}),
   'production ops — po queue for the cutting floor (read-only board)':()=>_phqFragment({floor:true}),
   'production ops — po queue plan dialog':()=>_phqFragment({dialog:true}),
@@ -3523,12 +3668,15 @@ const FRAGMENTS={
   "production ops — po detail instruction card":()=>_phDetailCardFragment({}),
   "production ops — po detail instruction card (none saved)":()=>_phDetailCardFragment({none:true}),
   "production ops — po detail instruction card (malformed)":()=>_phDetailCardFragment({bad:true}),
+  "production ops — po detail QC reconciliation card":()=>_phPoQcCardFragment({}),
+  "production ops — po detail QC reconciliation card (failed read)":()=>_phPoQcCardFragment({fail:true}),
   'production ops — monitor':()=>_phmFragment({tab:'monitor'}),
   'production ops — monitor: unavailable and no-data states':()=>_phmFragment({tab:'monitor',jobsFail:true,range:'today'}),
   'production ops — overview: restock card':()=>_phmFragment({tab:'overview',restock:JSON.stringify({day:'2026-10-13',n:9,critical:3,rows:[{code:'GST073',label:'Effortless Tee With A Very Long Article Name That Has To Wrap — Deep Blue Colourway',lo:528,hi:888,band:'critical'},{code:'GD007',label:'Denim',lo:24,hi:60,band:'act'},{code:'GHZ012',label:'Hoodie',lo:12,hi:36,band:'act'}]})}),
   'production ops — overview: restock card, unreadable':()=>_phmFragment({tab:'overview',restock:'{broken'}),
   'production ops — monitor: the list drawer':()=>_phmFragment({tab:'monitor',drawer:'stuck'}),
   'production ops — monitor: data health with the drill lists open':()=>_phmFragment({tab:'monitor',health:true}),
+  'production ops — monitor: data health, the QC checks with closed-short and drift lists open':()=>_phmFragment({tab:'monitor',health:true,qc:true}),
   'production ops — overview':()=>_phmFragment({tab:'overview'}),
   'production ops — overview for the cutting floor (view only)':()=>_phmFragment({tab:'overview',floor:true}),
   'production ops — reports':()=>_phrFragment({open:true,long:true}),

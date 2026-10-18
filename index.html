@@ -25,7 +25,7 @@
 </script>
 <!-- flatpickr's base sheet FIRST, so css/main.css restyles it to the app's tokens (The Board, P1). -->
 <link rel="stylesheet" href="/assets/vendor/flatpickr-4.6.13.min.css">
-<link rel="stylesheet" href="/css/main.css?v=20261018wpf6c">
+<link rel="stylesheet" href="/css/main.css?v=20261018wpfm346c">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#000000">
 <script>try{if(window.__gvThemeDark)document.querySelector('meta[name="theme-color"]').setAttribute('content','#0E0E10');}catch(e){}</script>
@@ -227,49 +227,53 @@ window.__vendorFallback=function(url){
 <script src="/assets/vendor/flatpickr-4.6.13.min.js" onerror="window.__vendorFallback&&window.__vendorFallback('https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js')"></script>
 <script src="/js/diagnostics.js?v=20260917type"></script>
 <script src="/js/env.js?v=20260929qa"></script>
-<script src="/js/shared.js?v=20261015wp15s"></script>
+<script src="/js/shared.js?v=20261015qc5s"></script>
 <script src="/js/print-engine.js?v=20261027wp8a"></script>
-<script src="/js/auth.js?v=20261010v307"></script>
-<script src="/js/pos.js?v=20261031wp13a"></script>
+<script src="/js/auth.js?v=20261016qf1u"></script>
+<script src="/js/pos.js?v=20261018por8p"></script>
 <script src="/js/po-print.js?v=20261027wp8c"></script>
+<script src="/js/por-core.js?v=20261018por8k"></script>
+<script src="/js/po-registry.js?v=20261018por8r"></script>
 <script src="/js/embellishments.js?v=20261016w0"></script>
 <script src="/js/hrm.js?v=20261015wp15h"></script>
 <script src="/js/store.js?v=20260926edit"></script>
 <script src="/js/store-accounts.js?v=20260926wh2"></script>
 <script src="/js/gatepass.js?v=20261018wpf1g"></script>
 <script src="/js/fabric.js?v=20261018wpf6f"></script>
-<script src="/js/production.js?v=20261012v315"></script>
+<script src="/js/production.js?v=20261016qf1p"></script>
 <script src="/js/si-cache.js?v=20261031i6s"></script>
 <script src="/js/shopify.js?v=20261014wp11s"></script>
 <script src="/js/fulfillment.js?v=20261015wafu"></script>
 <script src="/js/warehouse-sales.js?v=20260926wh2"></script>
 <script src="/js/notes.js?v=20260929v256"></script>
 <script src="/js/boards.js?v=20260929v256"></script>
-<script src="/js/profile.js?v=20260927v222"></script>
-<script src="/js/activity.js?v=20261010v307"></script>
+<script src="/js/profile.js?v=20261015prof1"></script>
+<script src="/js/activity.js?v=20261016qf1a"></script>
 <script src="/js/marketing.js?v=20260918chart"></script>
 <script src="/js/patterns.js?v=20260917label"></script>
 <script src="/js/theboard.js?v=20260929v251"></script>
 <script src="/js/ma-core.js?v=20260930v268"></script>
 <script src="/js/master-accounts.js?v=20260930v269"></script>
-<script src="/js/prod-backup.js?v=20261016pbk"></script>
-<script src="/js/ph-core.js?v=20261030wp10k"></script>
-<script src="/js/ph-data.js?v=20261018i422"></script>
-<script src="/js/ph-write.js?v=20261018i423"></script>
+<script src="/js/prod-backup.js?v=20261015qc2b"></script>
+<script src="/js/ph-core.js?v=20261015qc4c"></script>
+<script src="/js/ph-data.js?v=20261015qc2d"></script>
+<script src="/js/ph-write.js?v=20261016qf1w"></script>
 <script src="/js/ph-issue.js?v=20261031wp13c"></script>
-<script src="/js/ph-i18n.js?v=20261018wpf2i"></script>
-<script src="/js/ph-ui.js?v=20261015wp15u"></script>
-<script src="/js/ph-mod-health.js?v=20261016phh"></script>
+<script src="/js/ph-qc-write.js?v=20261016qf1q"></script>
+<script src="/js/ph-i18n.js?v=20261018wpfm346i"></script>
+<script src="/js/ph-ui.js?v=20261015qc5u"></script>
+<script src="/js/ph-mod-health.js?v=20261018por2"></script>
 <script src="/js/ph-mod-queue.js?v=20261016wp16q"></script>
 <script src="/js/ph-mod-drafts.js?v=20261014wp11d"></script>
 <script src="/js/ph-mod-calendar.js?v=20261030wp10l"></script>
 <script src="/js/ph-mod-cutting.js?v=20261030wp10t"></script>
-<script src="/js/ph-mod-monitor.js?v=20261014wp11m"></script>
+<script src="/js/ph-mod-monitor.js?v=20261016qf1m"></script>
 <script src="/js/ph-mod-reports.js?v=20261016phr"></script>
 <script src="/js/ph-mod-admin.js?v=20261018i405"></script>
 <script src="/js/ph-mod-instructions.js?v=20261015wp14b"></script>
 <script src="/js/ph-mod-marks.js?v=20261030wp10x"></script>
 <script src="/js/ph-mod-classic.js?v=20261015wp15c"></script>
+<script src="/js/ph-mod-afloat.js?v=20261018qw2a"></script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import{initializeFirestore,connectFirestoreEmulator,persistentLocalCache,persistentMultipleTabManager,getFirestore,collection,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,deleteDoc,query,orderBy,where,limit,runTransaction,writeBatch,onSnapshot,terminate,clearIndexedDbPersistence,waitForPendingWrites}from'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';

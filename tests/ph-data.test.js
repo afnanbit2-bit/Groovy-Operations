@@ -195,7 +195,8 @@ module.exports=async function(){
       J(w.run('Object.keys(PH_DEFAULT_SETTINGS).filter(k=>PH_SETTINGS_VALUE_FIELDS.indexOf(k)<0).concat(PH_SETTINGS_VALUE_FIELDS.filter(k=>Object.keys(PH_DEFAULT_SETTINGS).indexOf(k)<0))')),J(['pcOnlyHard']));
     for(const [n,re] of [['PH_HIST_TYPE_RE','history type'],['PH_CODE_RE','article code'],['PH_DRAFT_ID_RE','draft id'],['PH_PO_ID_RE','PO id'],['PH_MASTER_ID_RE','master id'],['PH_HISTORY_ROW_RE','history row id']])
       s.ok('the '+re+' pattern is written the same in JS and in the rules ('+w.run(n+'.source')+')',RULES.indexOf("'"+w.run(n+'.source')+"'")>-1);
-    s.eq('PH_WRITE_ROOTS is exactly the seven new collections',J(L('PH_WRITE_ROOTS').sort()),J(['cutting_masters','ph_article_instructions','ph_settings','ph_standards','po_cut_jobs','po_drafts','po_marks']));
+    // QC2 (15 Oct 2026): the two QC reconciliation collections join the seven (a deliberate change of this expectation)
+    s.eq('PH_WRITE_ROOTS is exactly the seven new collections plus the two QC reconciliation ones',J(L('PH_WRITE_ROOTS').sort()),J(['cutting_masters','ph_article_instructions','ph_settings','ph_standards','po_cut_jobs','po_drafts','po_marks','po_qc_lots','po_qc_recon']));
     s.ok('every PH_COLLECTIONS collection has a match block',w.run("Object.keys(PH_COLLECTIONS).every(k=>true)")&&['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions'].every(c=>!!matchBlock(c)));
     s.ok('and the pos history match block sits inside the existing pos block',!!hist&&!!matchBlock('pos'));
   }
@@ -541,13 +542,14 @@ module.exports=async function(){
       s.ok(n+': no prompt / confirm / alert, no inline onclick',!/\b(prompt|confirm|alert)\s*\(|onclick=/.test(src));
       s.ok(n+': no import / export / require (classic script)',!/^\s*(import|export)\s/m.test(src)&&!/\brequire\(/.test(src));
     }
-    s.eq('ph-write.js names the pos collection exactly five times: three reads of the PO (cut job, mark, comment), and two history row paths',(W.match(/'pos'/g)||[]).length,5);
-    s.ok('… as doc(db,\'pos\',poId) three times (reads: the cut job, a new mark, a new comment) and doc(db,\'pos\',poId,\'history\',…) twice (the cut-job transaction and phAppendHistory)',(W.match(/doc\(db,'pos',poId\)/g)||[]).length===3&&(W.match(/doc\(db,'pos',poId,'history',/g)||[]).length===2);
+    // QC4 (15 Oct 2026), a deliberate change of these two counts: phQcLockCut and phQcAdoptLegacy each READ the PO and write one history row
+    s.eq('ph-write.js names the pos collection exactly nine times: five reads of the PO (cut job, mark, comment, QC lock, QC adopt), and four history row paths',(W.match(/'pos'/g)||[]).length,9);
+    s.ok('… as doc(db,\'pos\',poId) five times (reads: the cut job, a new mark, a new comment, the QC lock, the QC adopt) and doc(db,\'pos\',poId,\'history\',…) four times (the cut-job transaction, phAppendHistory, the QC lock, the QC adopt)',(W.match(/doc\(db,'pos',poId\)/g)||[]).length===5&&(W.match(/doc\(db,'pos',poId,'history',/g)||[]).length===4);
     s.ok('ph-write.js: the PO document reference is only ever passed to tx.get (never set/update)',!/tx\.(set|update)\(pref/.test(W)&&/tx\.get\(pref\)/.test(W));
     s.ok('ph-data.js names pos once, for the bounded history read',(D.match(/'pos'/g)||[]).length===1&&/collection\(db,'pos',id,'history'\)/.test(D));
     s.ok('every setDoc/updateDoc/tx.set/tx.update target is a po_drafts / po_cut_jobs / ph_* / cutting_masters / history reference',(()=>{
       const targets=[...W.matchAll(/(?:setDoc|updateDoc|tx\.set|tx\.update)\(([A-Za-z_.]+(?:\([^)]*\))?)/g)].map(m=>m[1]);
-      return targets.length>10&&targets.every(t=>/^(ref|jref|cref|doc\(db,'(pos|ph_settings|cutting_masters|ph_article_instructions|po_marks)',)/.test(t));
+      return targets.length>10&&targets.every(t=>/^(ref|jref|cref|rref|doc\(db,'(pos|ph_settings|cutting_masters|ph_article_instructions|po_marks|po_qc_lots)',)/.test(t));   // rref / po_qc_lots: QC4
     })());
     s.ok('the loaders are never async-rejecting: every exported loader is wrapped (phLoadStage catches, phLoadAll catches, phHistoryOf try/catch)',/\.catch\(function\(e\)\{return\{ok:false,stage:key/.test(D)&&/catch\(e\)\{results=/.test(D)&&/catch\(e\)\{\s*const err=phErrInfo\(e\)/.test(D));
   }
@@ -559,7 +561,8 @@ module.exports=async function(){
     const all={};fs.readdirSync(dir).filter(f=>f.endsWith('.js')).forEach(f=>tops(f).forEach(n=>{(all[n]=all[n]||[]).push(f);}));
     const clash=Object.keys(all).filter(n=>all[n].length>1&&all[n].some(f=>mine.indexOf(f)>-1));
     s.eq('no top-level name in ph-data.js / ph-write.js is declared in any other js file (one lexical scope) ['+clash.join(',')+']',clash.length,0);
-    s.ok('every new global starts with ph / _ph / PH_ / _PH_',mine.every(f=>tops(f).every(n=>/^(ph|_ph|PH_|_PH_)/.test(n))));
+    // QC2/QC4 (15 Oct 2026): the QC reconciliation globals are PHQC_ (the prefix the design names), a deliberate widening of this pattern
+    s.ok('every new global starts with ph / _ph / PH_ / _PH_ / PHQC_',mine.every(f=>tops(f).every(n=>/^(ph|_ph|PH_|_PH_|PHQC_)/.test(n))));
     const w=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-write.js']});
     s.ok('the three scripts load together in one context (no redeclaration error) and the public API exists',['phLoadAll','phGet','phSaveDraft','phSaveCutJob','phAppendHistory','phMasterAdd','phStandardSave','phSettingsSave','phHistoryOf'].every(n=>w.run('typeof '+n)==='function'));
   }
@@ -684,6 +687,98 @@ module.exports=async function(){
     s.ok('masters, standards and settings need a manager; drafts, jobs and history need the audience',
       /isProdOpsManager\(\)/.test(matchBlock('cutting_masters'))&&/isProdOpsManager\(\)/.test(matchBlock('ph_standards'))&&/isProdOpsManager\(\)/.test(matchBlock('ph_settings'))
       &&/isProdOps\(\)/.test(matchBlock('po_drafts'))&&/isProdOps\(\)/.test(matchBlock('po_cut_jobs'))&&!/isProdOpsManager\(\)\s*&&\s*id\.matches\('\^DRAFT/.test(matchBlock('po_drafts')));
+  }
+
+  /* ═══ 7b. QC reconciliation (QC2 + QC3, 15 Oct 2026): the audience, the lists and the table held equal to the rules ═══ */
+  s.section('qc reconciliation: the audience, every list and the transition table equal the rules');
+  {
+    const a=loadApp({files:['js/auth.js','js/ph-core.js','js/ph-data.js','js/ph-write.js']});
+    const L=n=>a.run(n).slice();
+    s.eq('the QC floor list is faizan alone',J(a.run('_PH_QC_USERS')),J(['faizan']));
+    s.eq('rules isQcFloor() lists exactly _PH_QC_USERS (by <u>@groovy.op)',J(emails('isQcFloor').sort()),J(L('_PH_QC_USERS').sort()));
+    s.ok('isQcFloor() is built on signedIn() (which excludes the QA account); isQcOps() is isQcFloor() || isProdOpsManager()',
+      /function isQcFloor\(\)\s*\{\s*return signedIn\(\)/.test(RULES)&&/function isQcOps\(\)\s*\{\s*return isQcFloor\(\) \|\| isProdOpsManager\(\);\s*\}/.test(RULES));
+    s.ok('faizan is a real account (faizan@groovy.op) and KEEPS role packing',a.run("USER_DEFS.some(d=>d.u==='faizan'&&d.email==='faizan@groovy.op'&&d.role==='packing')"));
+    const who=u=>a.run('['+['phCanQc','phCanQcOps','phCanSee','phCanManage'].map(f=>f+'('+J(u)+')').join(',')+']');
+    s.eq('faizan: QC floor and QC ops, but NOT the Production Ops audience (no tab opens to him here)',J(who('faizan')),J([true,true,false,false]));
+    for(const u of ['afnan','ammar','mustafa'])s.eq(u+': QC ops (a manager), not the floor list',J(who(u)),J([false,true,true,true]));
+    for(const u of ['uzaib','raees','umair','arfat','claude','','FAIZAN','faizan ',null])s.eq('not QC ops: '+J(u),J(who(u).slice(0,2)),J([false,false]));
+    const recon=funcBody('phqcReconShapeOk'),lock=funcBody('phqcLockOk'),ov=funcBody('phqcOverrideOk'),lotc=funcBody('phqcLotCreateOk'),lotv=funcBody('phqcLotVoidOk');
+    s.eq('po_qc_recon keys (hasOnly) = PHQC_RECON_FIELDS',J(nth(recon,0).slice().sort()),J(L('PHQC_RECON_FIELDS').sort()));
+    s.eq('… and every one is required (hasAll)',J((/hasAll\(\[([^\]]*)\]\)/.exec(recon)||[0,''])[1].split(',').map(x=>x.trim().replace(/'/g,'')).filter(Boolean).sort()),J(L('PHQC_RECON_FIELDS').sort()));
+    s.eq('cutLock keys = PHQC_LOCK_FIELDS',J(nth(lock,0).slice().sort()),J(L('PHQC_LOCK_FIELDS').sort()));
+    s.eq('cutLock sources = PHQC_LOCK_SOURCES',J(inList(lock,/source in \[([^\]]*)\]/).sort()),J(L('PHQC_LOCK_SOURCES').sort()));
+    s.ok('the lock is held EQUAL to the PO\'s recorded cut and needs cutting done',/l\.sizes == get\(\/databases\/\$\(database\)\/documents\/pos\/\$\(id\)\)\.data\.get\('cutQty', null\)/.test(lock)&&/get\('cutting', \{\}\)\.get\('done', false\) == true/.test(lock));
+    s.eq('override row keys = PHQC_OVERRIDE_FIELDS',J(nth(ov,0).slice().sort()),J(L('PHQC_OVERRIDE_FIELDS').sort()));
+    s.eq('close causes = PHQC_CLOSE_CAUSES',J(inList(ov,/get\('cause', ''\) in \[([^\]]*)\]/).sort()),J(L('PHQC_CLOSE_CAUSES').sort()));
+    s.eq('the override kinds the rules accept (phqcOneMore calls) = PHQC_OVERRIDE_KINDS',J([...new Set([...RULES.matchAll(/phqcOneMore\(d, r, '([a-z_]+)'\)/g)].map(m=>m[1]))].sort()),J(L('PHQC_OVERRIDE_KINDS').sort()));
+    s.eq('po_qc_lots create keys = PHQC_LOT_FIELDS',J(nth(lotc,0).slice().sort()),J(L('PHQC_LOT_FIELDS').sort()));
+    s.eq('lot sources = PHQC_LOT_SOURCES',J(inList(lotc,/d\.src in \[([^\]]*)\]/).sort()),J(L('PHQC_LOT_SOURCES').sort()));
+    s.eq('lot void keys = PHQC_LOT_VOID_FIELDS',J(nth(lotv,0).slice().sort()),J(L('PHQC_LOT_VOID_FIELDS').sort()));
+    s.ok('the lot id pattern is written the same in JS and in the rules ('+a.run('PHQC_LOT_ID_RE.source')+')',RULES.indexOf("'"+a.run('PHQC_LOT_ID_RE.source')+"'")>-1);
+    s.ok('the lot id is bound to its poId (the rules build the pattern from the row\'s own poId)',/row\.matches\('\^' \+ poId \+ '-\[0-9\]\{13\}-\[A-Za-z0-9\]\{4\}\$'\)/.test(funcBody('phqcLotIdOk')));
+    s.ok('the void window is 24 hours in both (PHQC_VOID_WINDOW_MS = 86400000)',a.run('PHQC_VOID_WINDOW_MS')===86400000&&/request\.time\.toMillis\(\) - r\.at <= 86400000/.test(lotv));
+    s.ok('the lot\'s seq is bound to the reconciliation written in the SAME commit (lotCount == seq, rev + 1)',/po_qc_recon\/\$\(d\.poId\)\)\.data\.lotCount == d\.seq/.test(lotc)&&/\.data\.rev\s*== get\(\/databases\/\$\(database\)\/documents\/po_qc_recon\/\$\(d\.poId\)\)\.data\.rev \+ 1/.test(lotc));
+    s.eq('recon statuses = PHQC_RECON_STATUSES',J([...new Set([...RULES.slice(RULES.indexOf('function phqcReconCreateOk'),RULES.indexOf('match /po_qc_recon/')).matchAll(/(?:r|d)\.status == '([a-z]+)'/g)].map(m=>m[1]).concat(inList(funcBody('phqcReconUpdateOk'),/r\.status in \[([^\]]*)\]/)))].sort()),J(L('PHQC_RECON_STATUSES').sort()));
+    const hb=braceBlock(RULES,/match\s+\/pos\/\{doc\}\/history\/\{row\}\s*\{/);
+    s.eq('the QC floor\'s history types (the separate history match) = PHQC_FLOOR_HIST_TYPES',J(inList(hb,/get\('type', ''\) in \[([^\]]*)\]/).sort()),J(L('PHQC_FLOOR_HIST_TYPES').sort()));
+    s.ok('… that match is for isQcFloor() only, create only, the history row shape, for a PO that exists after the write',!!hb&&/allow create: if isQcFloor\(\)/.test(hb)&&!/allow (read|update|delete|write)/.test(hb)&&/phHistoryShapeOk\(request\.resource\.data\)/.test(hb)&&/existsAfter\(\/databases\/\$\(database\)\/documents\/pos\/\$\(doc\)\)/.test(hb)&&/keys\(\)\.hasOnly\(\['at','by','byName','type','from','to','reason','data'\]\)/.test(hb));
+    // the transition table printed in the rules comment = PHQC_TRANSITIONS
+    const cm=RULES.slice(RULES.indexOf('// QC transitions'),RULES.indexOf('function isQcFloor()'));
+    const tbl=[...cm.matchAll(/^\s*\/\/\s+(\(none\)|[a-z]+)\s+->\s+([a-z]+)\s+:\s+(ops|manager|owner)\s+\(([a-z_]+)\)/gm)].map(m=>(m[1]==='(none)'?'':m[1])+'>'+m[2]+':'+m[3]+':'+m[4]);
+    const js=L('PHQC_TRANSITIONS').map(t=>t[0]+'>'+t[1]+':'+t[3]+':'+t[2]);
+    s.eq('the rules\' printed QC transition table = PHQC_TRANSITIONS ('+js.length+' rows)',J(tbl.slice().sort()),J(js.slice().sort()));
+    s.ok('nothing leaves closed but an owner\'s reopen; the close_short rows are a manager\'s and the plain close rows are QC Ops\'',
+      js.filter(x=>/^closed>/.test(x)).join()==='closed>reopened:owner:reopen'&&js.filter(x=>/:close_short$/.test(x)).every(x=>/:manager:/.test(x))&&js.filter(x=>/:close$/.test(x)).every(x=>/:ops:/.test(x)));
+    const up=funcBody('phqcReconUpdateOk'),cl=funcBody('phqcCloseStepOk');
+    s.ok('the rules route: closed -> reopen only; else close; else void / relock / lot by the keys that moved',/r\.status == 'closed' \? phqcReopenStepOk/.test(up)&&/d\.status == 'closed' \? phqcCloseStepOk/.test(up)&&/k\.hasAny\(\['voidCount'\]\) \? phqcVoidStepOk/.test(up)&&/k\.hasAny\(\['cutLock'\]\) \? phqcRelockStepOk/.test(up));
+    s.ok('a plain close needs phase ready and an allowed state; a close_short needs a manager, one overrides row and phase receiving or short (CHANGE FROM THE PLAN)',
+      /get\('phase', ''\) == 'ready' && d\.closeVerdict\.get\('state', ''\) in \['exact','within','over'\]/.test(cl)&&/isProdOpsManager\(\) && phqcOneMore\(d, r, 'close_short'\)/.test(cl)&&/get\('phase', ''\) in \['receiving','short'\]/.test(cl));
+    s.ok('relock and reopen are an owner\'s (isOwner())',/return isOwner\(\) && k\.hasOnly\(\['cutLock'/.test(funcBody('phqcRelockStepOk'))&&/return isOwner\(\) && d\.status == 'reopened'/.test(funcBody('phqcReopenStepOk')));
+    for(const c of ['po_qc_recon','po_qc_lots']){
+      const b=matchBlock(c);
+      s.ok(c+': read starts `isQaRead() ||`; delete is refused for everyone; writes need isQcOps() and a named check',!!b&&/allow read:\s*if isQaRead\(\) \|\| signedIn\(\);/.test(b)&&/allow delete:\s*if false;/.test(b)&&/allow create: if isQcOps\(\) && phqc/.test(b)&&/allow update: if isQcOps\(\) && phqc/.test(b)&&!/request\.auth != null/.test(b));
+    }
+    // JS: the transition helpers
+    s.eq('phQcMoveWho reads the table',J(['locked|closed|close','locked|closed|close_short','closed|reopened|reopen','closed|locked|lot','|locked|lock'].map(x=>{const p=x.split('|');return a.run('phQcMoveWho('+J(p[0])+','+J(p[1])+','+J(p[2])+')');})),J(['ops','manager','owner',null,'ops']));
+    s.ok('phQcMoveProblem: faizan may close inside the tolerance, not close_short, not relock, not reopen; mustafa close_short yes, relock no',
+      a.run('phQcMoveProblem("locked","closed","close","faizan")')===null&&!!a.run('phQcMoveProblem("locked","closed","close_short","faizan")')&&!!a.run('phQcMoveProblem("locked","locked","relock","faizan")')
+      &&!!a.run('phQcMoveProblem("closed","reopened","reopen","faizan")')&&a.run('phQcMoveProblem("locked","closed","close_short","mustafa")')===null&&!!a.run('phQcMoveProblem("locked","locked","relock","mustafa")')
+      &&a.run('phQcMoveProblem("locked","locked","relock","ammar")')===null&&!!a.run('phQcMoveProblem("locked","locked","lot","uzaib")'));
+  }
+
+  s.section('qc reconciliation: the lazy loader stages and the accessors (never "none" for "not read")');
+  {
+    const m=mk();
+    m.store['po_drafts/DRAFT-A-AAAA']={id:'DRAFT-A-AAAA',status:'draft',updatedAt:2};
+    m.store['po_qc_recon/PO-001']={poId:'PO-001',status:'locked',rev:2,lotCount:2,updatedAt:5};
+    m.store['po_qc_lots/PO-001-1790000000001-aaaa']={poId:'PO-001',seq:1,status:'live',sizes:{S:5},total:5,at:1};
+    m.store['po_qc_lots/PO-001-1790000000002-bbbb']={poId:'PO-001',seq:2,status:'void',sizes:{M:3},total:3,at:2};
+    m.store['po_qc_lots/PO-002-1790000000003-cccc']={poId:'PO-002',seq:1,status:'live',sizes:{S:1},total:1,at:3};
+    m.store['shopify_articles/GAT012']={image_url:'https://cdn.shopify.com/x.jpg'};
+    s.eq('PH_STAGE_IDS (the default load) is unchanged: the seven',J(m.run('PH_STAGE_IDS.slice()')),J(['drafts','jobs','masters','standards','settings','instructions','marks']));
+    s.eq('PH_QC_STAGE_IDS are the three lazy QC stages',J(m.run('PH_QC_STAGE_IDS.slice()')),J(['recon','lots','shopimg']));
+    s.eq('their collections and bounds',J(m.run('PH_QC_STAGE_IDS.map(k=>PH_COLLECTIONS[k].col+":"+PH_COLLECTIONS[k].order+":"+PH_COLLECTIONS[k].limit)')),J(['po_qc_recon:updatedAt:1500','po_qc_lots:at:3000','shopify_articles:null:1500']));
+    const r=await m.call('phLoadAll({})');
+    s.ok('phLoadAll() with no list reads the seven and NONE of the QC stages (Kashif pays nothing)',r.ok&&r.loaded.length===7&&!m.log.queries.some(q=>/^po_qc_|^shopify_articles/.test(q.path)));
+    s.ok('before they are read, every accessor is null and phQcState says not ok (never "no reconciliation")',m.run('phQcReconOf("PO-001")')===null&&m.run('phQcLotsOf("PO-001")')===null&&m.run('phQcShopImageOf("GAT012")')===null&&m.run('phQcState().ok')===false);
+    const q=await m.call('phLoadAll({only:PH_QC_STAGE_IDS})');
+    s.ok('phLoadAll({only:PH_QC_STAGE_IDS}) reads the three, bounded',q.ok&&q.loaded.length===3&&['po_qc_recon','po_qc_lots','shopify_articles'].every(c=>m.log.queries.some(x=>x.path===c&&x.limit>0)));
+    s.eq('phQcReconOf finds the PO (by any spelling of the id)',m.run('phQcReconOf("125")===null&&phQcReconOf("po-001").rev'),2);
+    s.eq('phQcLotsOf: this PO only, live AND void, newest first, each carrying its id',J(m.run('phQcLotsOf("PO-001").map(x=>x.id)')),J(['PO-001-1790000000002-bbbb','PO-001-1790000000001-aaaa']));
+    s.ok('a PO with no lots (read) is [] - "read, none"',J(m.run('phQcLotsOf("PO-009")'))==='[]');
+    s.eq('phQcShopImageOf reads the stored picture by article code (upper-cased)',m.run('phQcShopImageOf(" gat012 ")'),'https://cdn.shopify.com/x.jpg');
+    s.ok('phQcState: ok after a read',m.run('phQcState().ok')===true);
+    const f=mk({failPath:p=>p==='po_qc_lots'?Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'}):null});
+    f.store['po_qc_recon/PO-001']={poId:'PO-001',status:'locked'};
+    const fr=await f.call('phLoadAll({only:["recon","lots"]})');
+    s.ok('a refused lots read is NAMED and never an empty list: phQcLotsOf null, the state text names po_qc_lots and the republish',fr.ok===false&&fr.failed.length===1&&fr.failed[0].name==='po_qc_lots'&&f.run('phQcLotsOf("PO-001")')===null&&/po_qc_lots: could not be read - republish firestore\.rules/.test(f.run('phQcState().text'))&&f.run('phQcState().ok')===false);
+    s.ok('and phLoadErrors lists a failed lazy stage too',f.run('phLoadErrors().map(e=>e.name).join()')==='po_qc_lots');
+    s.ok('a recon that DID load still answers while lots failed (the two stages settle on their own)',f.run('phQcReconOf("PO-001").status')==='locked');
+    const c=mk({fromCache:true});
+    const cr=await c.call('phLoadAll({only:["recon"]})');
+    s.ok('an offline-copy answer for recon is a failure, not "no reconciliations"',cr.ok===false&&c.run('phQcReconOf("PO-001")')===null);
+    s.ok('phResetData clears the QC stages too',(()=>{m.run('phResetData()');return m.run('phQcReconOf("PO-001")')===null&&m.run('phLoadState("recon").state')==='idle';})());
   }
 
   /* ═══ 8. the three places ═══ */

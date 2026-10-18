@@ -61,6 +61,17 @@ function phCanRecordFloor(u){return phCanSee(u);}
 function phIsOwner(u){const w=_phWho(u);return w==='afnan'||w==='ammar';}
 function phCanSetPcOnly(u){return phIsOwner(u);}
 
+/* QC reconciliation (QC2, 15 Oct 2026). Faizan (login faizan) is QC Ops: he keeps his `packing` ROLE and is granted this BY
+   USERNAME (the Sept 2026 grants shape), mirrored by firestore.rules isQcFloor() by email; tests/ph-data.test.js holds them equal.
+     QC FLOOR  faizan   receives finished units at QC (lots), locks the cut, closes a PO that matches its cut within tolerance,
+                        voids his OWN lot within 24 h. He is NOT in _PH_USERS: phCanSee is unchanged (Kashif and the managers),
+                        so nothing here opens a Production Ops tab to him (the tab is a later work package).
+     QC OPS    = QC FLOOR + the managers (rules isQcOps()): who may receive. Only a manager closes a PO OUTSIDE tolerance, and
+                        only an owner replaces a cut snapshot or reopens a closed reconciliation (js/ph-qc-write.js). */
+const _PH_QC_USERS=Object.freeze(['faizan']);
+function phCanQc(u){return _PH_QC_USERS.indexOf(_phWho(u))>-1;}
+function phCanQcOps(u){return phCanQc(u)||phCanManage(u);}
+
 /* ── The collections and their bounds ─────────────────────────────────── */
 const PH_COLLECTIONS=Object.freeze({
   drafts:   Object.freeze({col:'po_drafts',      label:'PO drafts',              order:'updatedAt',limit:300}),
@@ -69,23 +80,32 @@ const PH_COLLECTIONS=Object.freeze({
   standards:Object.freeze({col:'ph_standards',   label:'Consumption standards',  order:null,       limit:1500}),
   settings: Object.freeze({col:'ph_settings',    label:'Production Ops settings',doc:'main'}),
   instructions:Object.freeze({col:'ph_article_instructions',label:'Product instructions',order:null,limit:1500}),
-  marks:    Object.freeze({col:'po_marks',     label:'PO marks',               order:'updatedAt',limit:1500})
+  marks:    Object.freeze({col:'po_marks',     label:'PO marks',               order:'updatedAt',limit:1500}),
+  // QC reconciliation (QC2). LAZY: not in PH_STAGE_IDS, so the shell's phLoadAll() reads none of them (Kashif pays nothing);
+  // a QC screen asks phLoadAll({only:PH_QC_STAGE_IDS}) or phLoadStage('recon') itself.
+  recon:    Object.freeze({col:'po_qc_recon',  label:'QC reconciliations',     order:'updatedAt',limit:1500}),
+  lots:     Object.freeze({col:'po_qc_lots',   label:'QC lots received',       order:'at',       limit:3000}),
+  shopimg:  Object.freeze({col:'shopify_articles',label:'Product pictures (Shopify)',order:null,  limit:1500})
 });
+// The stages phLoadAll() reads by default (the shell's first load). Unchanged by QC2.
 const PH_STAGE_IDS=Object.freeze(['drafts','jobs','masters','standards','settings','instructions','marks']);
+// The QC stages, loaded only when asked (phLoadStage / phLoadAll({only:...})).
+const PH_QC_STAGE_IDS=Object.freeze(['recon','lots','shopimg']);
+const PH_ALL_STAGE_IDS=Object.freeze(PH_STAGE_IDS.concat(PH_QC_STAGE_IDS));
 // Every collection path this layer is allowed to touch (both files). A test scans the
 // source and the recorded writes against this list.
-const PH_WRITE_ROOTS=Object.freeze(['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions','po_marks']);
+const PH_WRITE_ROOTS=Object.freeze(['po_drafts','po_cut_jobs','cutting_masters','ph_standards','ph_settings','ph_article_instructions','po_marks','po_qc_recon','po_qc_lots']);
 const PH_READ_TIMEOUT_MS=20000;
 const PH_HISTORY_LIMIT=50;
 const PH_HISTORY_MAX=200;
 
 /* ── State ─────────────────────────────────────────────────────────────── */
-let _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null,marks:null};
+let _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null,marks:null,recon:null,lots:null,shopimg:null};
 let _phLoad={};                 // stage -> {state:'idle'|'ok'|'error',at,n,truncated,err}
 let _phInflight={};             // stage -> Promise (concurrent calls coalesce)
 let _phHistCache={};            // poId -> {at,rows,truncated}
 function _phStageFresh(){return{state:'idle',at:null,n:null,truncated:false,err:null};}
-PH_STAGE_IDS.forEach(function(s){_phLoad[s]=_phStageFresh();});
+PH_ALL_STAGE_IDS.forEach(function(s){_phLoad[s]=_phStageFresh();});
 
 function phErrInfo(e){
   const code=e&&e.code?String(e.code):'';
@@ -171,7 +191,7 @@ function phLoadStage(stageId,opts){
 // take the others down (Promise.allSettled shape). Resolves {ok, failed, loaded}.
 async function phLoadAll(opts){
   const o=opts||{};
-  const ids=Array.isArray(o.only)&&o.only.length?o.only.filter(function(s){return PH_STAGE_IDS.indexOf(s)>-1;}):PH_STAGE_IDS.slice();
+  const ids=Array.isArray(o.only)&&o.only.length?o.only.filter(function(s){return PH_ALL_STAGE_IDS.indexOf(s)>-1;}):PH_STAGE_IDS.slice();
   let results;
   try{results=await Promise.all(ids.map(function(s){return phLoadStage(s,{force:!!o.force});}));}
   catch(e){results=[{ok:false,stage:'all',err:phErrInfo(e)}];}
@@ -184,7 +204,7 @@ async function phLoadAll(opts){
 function phLoadFailed(stageId){return!!_phLoad[stageId]&&_phLoad[stageId].state==='error';}
 function phLoadErrors(){
   const out=[];
-  PH_STAGE_IDS.forEach(function(s){if(_phLoad[s].state==='error')out.push({stage:s,name:PH_COLLECTIONS[s].col,text:phErrText(s,_phLoad[s].err),err:_phLoad[s].err});});
+  PH_ALL_STAGE_IDS.forEach(function(s){if(_phLoad[s].state==='error')out.push({stage:s,name:PH_COLLECTIONS[s].col,text:phErrText(s,_phLoad[s].err),err:_phLoad[s].err});});
   return out;
 }
 function phLoadState(stageId){
@@ -203,8 +223,8 @@ function phGet(stageId){
   return{ok:false,state:s.state,rows:null,err:s.err,text:s.err?phErrText(stageId,s.err):null};
 }
 function phResetData(){
-  _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null,marks:null};
-  _phLoad={};PH_STAGE_IDS.forEach(function(s){_phLoad[s]=_phStageFresh();});
+  _phData={drafts:null,jobs:null,masters:null,standards:null,settings:null,instructions:null,marks:null,recon:null,lots:null,shopimg:null};
+  _phLoad={};PH_ALL_STAGE_IDS.forEach(function(s){_phLoad[s]=_phStageFresh();});
   _phInflight={};_phHistCache={};
 }
 
@@ -291,4 +311,41 @@ function phMarkOf(poId){
   const k=typeof phPoKey==='function'?phPoKey(poId):poId;
   const r=g.rows.filter(function(x){return x&&x.fbKey===k;})[0];
   return r||null;
+}
+
+/* ── QC reconciliation, read for the QC screens (QC2) ───────────────────────
+   Two lazy stages (recon, lots) and a third for the product pictures (shopimg). Every accessor here is null when its stage was
+   NOT read (failed, offline copy, or never asked) -- never an empty list or "no reconciliation" -- so a screen that must tell
+   "none" from "not read" asks phQcState() first (the phMarkOf shape). */
+function phQcState(){
+  const r=phGet('recon'),l=phGet('lots');
+  const text=[r.text,l.text].filter(Boolean).join(' ');
+  return{ok:r.ok&&l.ok,reconOk:r.ok,lotsOk:l.ok,failed:phLoadFailed('recon')||phLoadFailed('lots'),text:text||null,
+    truncated:!!(r.truncated||l.truncated),lotsTruncated:!!l.truncated};
+}
+// The po_qc_recon document of one PO; null when there is none OR when recon was not read (see phQcState).
+function phQcReconOf(poId){
+  const g=phGet('recon');
+  if(!g.ok||!Array.isArray(g.rows))return null;
+  const k=typeof phPoKey==='function'?phPoKey(poId):poId;
+  return g.rows.filter(function(x){return x&&x.fbKey===k;})[0]||null;
+}
+// The po_qc_lots rows of one PO (live AND void), newest first; null when lots was not read. An empty list is "read, none".
+function phQcLotsOf(poId){
+  const g=phGet('lots');
+  if(!g.ok||!Array.isArray(g.rows))return null;
+  const k=typeof phPoKey==='function'?phPoKey(poId):poId;
+  return g.rows.filter(function(x){return x&&(typeof phPoKey==='function'?phPoKey(x.poId):x.poId)===k;})
+    .map(function(x){return Object.assign({},x,{id:x.fbKey});})
+    .sort(function(a,b){return(b.at||0)-(a.at||0);});
+}
+// The Shopify rollup picture of one article code (shopify_articles/{CODE}.image_url) -- the raw stored value, unvalidated
+// (the screen validates it). null when shopimg was not read or the code has no row.
+function phQcShopImageOf(code){
+  const g=phGet('shopimg');
+  if(!g.ok||!Array.isArray(g.rows))return null;
+  const k=String(code==null?'':code).trim().toUpperCase();
+  if(!k)return null;
+  const r=g.rows.filter(function(x){return x&&x.fbKey===k;})[0];
+  return r&&typeof r.image_url==='string'?r.image_url:null;
 }

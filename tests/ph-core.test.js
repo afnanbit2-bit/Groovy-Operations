@@ -1118,8 +1118,8 @@ module.exports=async function(){
     // prefix: one shared lexical scope with every other classic script
     const tops=(code.match(/^(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/gm)||[]).map(x=>x.split(/\s+/)[1]);
     s.ok('it declares something at top level',tops.length>50,String(tops.length));
-    const badNames=tops.filter(n=>!/^(_?ph[A-Z]|PH_)/.test(n));
-    s.ok('every top-level name is ph / _ph / PH_ prefixed',badNames.length===0,badNames.join(','));
+    const badNames=tops.filter(n=>!/^(_?ph[A-Z]|PH_|PHQC_)/.test(n));   // PHQC_ = the QC reconciliation constants (QC1, 15 Oct 2026)
+    s.ok('every top-level name is ph / _ph / PH_ (or PHQC_) prefixed',badNames.length===0,badNames.join(','));
     // every public function is exported, and every export exists
     const declared=(code.match(/^function (ph[A-Z]\w*)/gm)||[]).map(x=>x.slice(9));
     const missing=declared.filter(n=>!(n in P));

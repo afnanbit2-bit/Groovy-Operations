@@ -69,6 +69,22 @@ function seed(){
   names.forEach((n,i)=>{cols.pos['k'+i]={id:'PO-10'+(40+i),name:n,code:'GST0'+(70+i),fabric:'Single Jersey 180 GSM',
     qty:120+i*40,sizes:{XS:10,S:20,M:40,L:30,XL:15,'2XL':5},currentStage:stages[i],status:'active',ts:now-i*86400000,
     date:'2026-09-2'+i,createdBy:'Afnan',embellishment:{required:i%2===0}};});
+  // QC6: one PO at final QC with its cut recorded, so Faizan's "+ Receive units" sheet can be opened on the phone (keyed by its PO number, as a real pos document is)
+  cols.pos['PO-1046']={id:'PO-1046',name:'Athletic Tee · Black — the 120-piece QC example',code:'GAT012',fabric:'Single Jersey 180 GSM',qty:120,
+    sizes:{S:20,M:40,L:40,XL:20},cutQty:{S:20,M:40,L:40,XL:20},cutAt:'2026-09-24T08:00:00.000Z',cutDate:'2026-09-24',cutBy:'Uzaib',
+    currentStage:'qc',poStatus:'in_production',status:'active',ts:now-3*86400000,date:'2026-09-23',createdBy:'Afnan',
+    stages:{cutting:{done:true},qc:{done:false}},packingReceipts:[]};
+  // QC7: one PO at final QC with two lots received and M 2 short, so a manager's "Close with a shortfall…" dialog can be opened on the phone
+  cols.pos['PO-1047']={id:'PO-1047',name:'Athletic Tee · White — the short-close example',code:'GAT013',fabric:'Single Jersey 180 GSM',qty:120,
+    sizes:{S:20,M:40,L:40,XL:20},cutQty:{S:20,M:40,L:40,XL:20},cutAt:'2026-09-24T08:00:00.000Z',cutDate:'2026-09-24',cutBy:'Uzaib',
+    currentStage:'qc',poStatus:'in_production',status:'active',ts:now-4*86400000,date:'2026-09-22',createdBy:'Afnan',
+    stages:{cutting:{done:true},qc:{done:false}},packingReceipts:[]};
+  cols.po_qc_recon={'PO-1047':{poId:'PO-1047',status:'locked',rev:2,cutLock:{sizes:{S:20,M:40,L:40,XL:20},total:120,cutAt:'2026-09-24T08:00:00.000Z',cutBy:'Uzaib',
+    lockedAt:now-2*86400000,lockedBy:'faizan',source:'first_lot'},lotCount:2,voidCount:0,lastLotAt:now-3600000,overrides:[],legacyIds:[],closedAt:0,closedBy:'',
+    closedByName:'',closeVerdict:null,createdAt:now-2*86400000,createdBy:'faizan',updatedAt:now-3600000,updatedBy:'faizan',updatedByName:'Faizan'}};
+  cols.po_qc_lots={
+    'PO-1047-1758866400001-aaaa':{poId:'PO-1047',seq:1,sizes:{S:20,M:20,L:20,XL:10},total:70,day:'2026-09-25',note:'',at:now-2*3600000,by:'faizan',byName:'Faizan',status:'live',src:'qc'},
+    'PO-1047-1758866400002-bbbb':{poId:'PO-1047',seq:2,sizes:{M:18,L:20,XL:10},total:48,day:'2026-09-25',note:'',at:now-3600000,by:'faizan',byName:'Faizan',status:'live',src:'qc'}};
   for(let i=0;i<4;i++)cols.gatepasses['g'+i]={id:'GP-031'+i,name:'Uzaib',date:'2026-09-25',type:'units',reason:'process',
     article:names[i],spec:'Black / 180 GSM',dest:'Rahim Gul Enterprise',qty:100,total:100,ts:now-i*3600000,status:'out'};
   for(let i=0;i<8;i++)cols.activity['a'+i]={user:'Mustafa',u:'mustafa',action:'Fabric roll deleted',
@@ -96,7 +112,9 @@ const JOBS=[
   {id:'store',user:'raees',theme:'light',pages:['','store-inventory','acct-ledger','store-receive','profile']},
   {id:'fulfilment',user:'umair',theme:'light',pages:['']},
   {id:'marketing',user:'daniyal',theme:'dark',pages:['','mkt-dispatches','mkt-creators']},
-  {id:'csr',user:'sami',theme:'light',pages:['','qc-disposition','bstock']}
+  {id:'csr',user:'sami',theme:'light',pages:['','qc-disposition','bstock']},
+  // QC5 (15 Oct 2026): Faizan (role packing, the QC floor): Packing, B-Stock and the Production Ops takeover with ONE tab (Afloat POs)
+  {id:'packing',user:'faizan',theme:'light',pages:['','packing','bstock','prod-ops']}
 ];
 
 // ── In the phone frame: sign in, open every page, measure ───────────────
@@ -147,6 +165,29 @@ function DRIVE(){
         var errs=window.__errs.slice(e0).filter(function(e){return!/ERR_|Failed to load resource/.test(e);});
         res.push({page:id||'(landing: '+currentPage+')',issues:probe().concat(errs.map(function(e){return'threw: '+e;}))});
       }
+      // The PO Registry (js/po-registry.js, RG3/RG4): the new body is the one drawn, every row is a button at least 44px tall inside the
+      // screen, the view tabs are 34px+ tap targets, and a tap on a row opens the PO's detail (with the timeline).
+      if(PAGES.indexOf('po-registry')>=0){
+        var rg=[];
+        try{
+          window.showPage('po-registry');await wait(600);
+          var body=document.getElementById('por-body');
+          if(!body)rg.push('the new registry body (#por-body) is not drawn');
+          else{
+            var rws=[].slice.call(body.querySelectorAll('button.por-row'));
+            if(!rws.length)rg.push('no PO rows');
+            rws.forEach(function(r){var b=r.getBoundingClientRect();if(b.height<44)rg.push('a row is '+Math.round(b.height)+'px tall');if(b.right>innerWidth+1)rg.push('a row runs past the edge');});
+            [].slice.call(body.querySelectorAll('.por-view,.por-chip')).filter(vis).forEach(function(v){var h=v.getBoundingClientRect().height;if(h<33.5)rg.push('a '+Math.round(h)+'px view or chip: '+nm(v));});
+            [].slice.call(body.querySelectorAll('img')).forEach(function(im){if(!im.getAttribute('alt'))rg.push('a picture with no alt text');});
+            if(rws.length){rws[0].click();await wait(600);
+              if(currentPage!=='po-detail')rg.push('a tap on a row did not open the PO (page '+currentPage+')');
+              else if(typeof porDetailBodyHTML==='function'&&!document.querySelector('#por-detail .por-tl'))rg.push('the detail has no timeline');
+              else{var issues=probe();issues.forEach(function(x){rg.push('detail: '+x);});}
+            }
+          }
+        }catch(e){rg.push('the registry check threw: '+e.message);}
+        res.push({page:'(po registry)',issues:rg});
+      }
       // Inventory Intel's full-view takeover, in the real shell on a phone: the bar and the dock are on screen and clear of the content and the
       // bug FAB, Escape and the deep link both work, and leaving removes every trace.
       if(PAGES.indexOf('shopify-intel')>=0){
@@ -179,9 +220,14 @@ function DRIVE(){
         res.push({page:'(inventory takeover)',issues:tk});
       }
       // Production Ops' full-view takeover (12 Oct 2026), in the real shell on a phone: the same checks as Inventory Intel's, for js/ph-ui.js.
-      // Afnan sees nine tabs, Uzaib (a viewer, no More sheet) six (Overview, PO Queue for the drafts, Today's Cutting, then WP-15's hosted PO Registry, Pattern updates and Fabric Inventory; ph-mod-queue.js widens the queue tab to him); Escape and the #prodops deep link work; leaving removes every trace.
+      // Afnan sees eleven tabs (QC5 added Afloat POs), Faizan (QC floor) one, Uzaib (a viewer, no More sheet) six (Overview, PO Queue for the drafts, Today's Cutting, then WP-15's hosted PO Registry, Pattern updates and Fabric Inventory; ph-mod-queue.js widens the queue tab to him); Escape and the #prodops deep link work; leaving removes every trace.
       if(PAGES.indexOf('prod-ops')>=0){
-        var pk=[],want=window.__SESSION&&window.__SESSION.u==='uzaib'?6:10;
+        // QC5: the managers' rail gained Afloat POs (11); Faizan (QC floor) has exactly that one tab; Uzaib is unchanged (6)
+        var q7done=false,pk=[],who=window.__SESSION&&window.__SESSION.u,want=who==='uzaib'?6:who==='faizan'?1:11;
+        if(who==='faizan'){
+          var mb=[].slice.call(document.querySelectorAll('#mob-nav .mob-nav-btn')).map(function(b){return b.getAttribute('data-mob-id');});
+          if(mb.join()!=='packing,bstock,prod-ops')pk.push('Faizan\'s phone nav is '+mb.join()+', expected packing,bstock,prod-ops');
+        }
         try{
           window.showPage('prod-ops');await wait(900);
           var pb=document.getElementById('ph-tk-bar'),pr=document.getElementById('ph-tk-rail'),pm=document.getElementById('main-content');
@@ -198,6 +244,71 @@ function DRIVE(){
             if(its.length!==want)pk.push('the rail has '+its.length+' tabs, expected '+want);
             its.forEach(function(it){var r=it.getBoundingClientRect();if(r.height<44||r.width<44)pk.push('a rail item is '+Math.round(r.width)+'x'+Math.round(r.height));});
             if(!document.getElementById('ph-panel'))pk.push('the canvas has no panel');
+            // QC6: Faizan opens a PO and its "+ Receive units" sheet at 390px: nothing sideways, boxes and buttons thumb-sized, Review reachable above the dock
+            if(who==='faizan'){
+              var findCard=function(){return[].slice.call(document.querySelectorAll('.phaf-card')).filter(function(c){return c.getAttribute('data-po')==='PO-1046';})[0];};
+              for(var wi=0;wi<20&&!findCard();wi++)await wait(250);
+              var card=findCard();
+              if(!card)pk.push('QC6: the PO-1046 tile is not on Faizan\'s board (tiles: '+[].slice.call(document.querySelectorAll('.phaf-card')).map(function(c){return c.getAttribute('data-po');}).join()+')');
+              else{card.click();await wait(500);
+                var rb=document.getElementById('phaf-recv-btn');
+                if(!rb||rb.disabled)pk.push('QC6: no live "+ Receive units" on the detail');
+                else{rb.click();await wait(400);
+                  var sh=document.querySelector('.phaf-sheet'),ins=[].slice.call(document.querySelectorAll('.phaf-rx-in'));
+                  if(!sh)pk.push('QC6: the receive sheet did not open');
+                  else{
+                    if(document.documentElement.scrollWidth>innerWidth+1)pk.push('QC6: the sheet scrolls sideways ('+document.documentElement.scrollWidth+' > '+innerWidth+')');
+                    if(ins.length!==4)pk.push('QC6: the sheet has '+ins.length+' size boxes, expected 4');
+                    ins.forEach(function(n){var r=n.getBoundingClientRect();if(r.height<44||r.right>innerWidth+0.5||r.left<-0.5)pk.push('QC6: a size box is '+Math.round(r.width)+'x'+Math.round(r.height)+' at '+Math.round(r.left));});
+                    [].slice.call(sh.querySelectorAll('.phaf-stepb')).forEach(function(n){var r=n.getBoundingClientRect();if(r.height<44||r.width<44)pk.push('QC6: a +/− button is '+Math.round(r.width)+'x'+Math.round(r.height));});
+                    if(document.activeElement!==ins[0])pk.push('QC6: focus is not in the first size box');
+                    ins[1].value='5';ins[1].dispatchEvent(new Event('input',{bubbles:true}));await wait(100);
+                    var rv=document.getElementById('phaf-rx-review');
+                    if(!rv)pk.push('QC6: no Review and save button');
+                    else{rv.scrollIntoView({block:'end'});await wait(200);var rr=rv.getBoundingClientRect(),dk=document.getElementById('ph-tk-rail').getBoundingClientRect();
+                      if(rr.bottom>dk.top+0.5||rr.height<44)pk.push('QC6: Review and save is under the dock or too small ('+Math.round(rr.bottom)+' vs dock '+Math.round(dk.top)+', '+Math.round(rr.height)+'px)');
+                      var hit=document.elementFromPoint(rr.left+rr.width/2,rr.top+rr.height/2);if(!hit||(hit!==rv&&!rv.contains(hit)))pk.push('QC6: Review and save cannot be tapped (covered by '+(hit&&hit.className)+')');
+                      rv.click();await wait(300);
+                      var sv=document.getElementById('phaf-rx-save');if(!sv)pk.push('QC6: the review step has no Save lot button');
+                      else{if(!/Once saved, this lot cannot be edited/.test(document.querySelector('.phaf-review').textContent))pk.push('QC6: the review does not say a saved lot cannot be edited');
+                        if(document.documentElement.scrollWidth>innerWidth+1)pk.push('QC6: the review scrolls sideways');}}
+                    var x=document.getElementById('phaf-sheet-x');if(x){x.click();await wait(300);}
+                    if(document.querySelector('.phaf-sheet'))pk.push('QC6: Cancel did not close the sheet');
+                    document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(300);
+                    if(document.querySelector('.phaf-detail'))pk.push('QC6: Escape did not close the PO detail (back to the board)');
+                  }}
+              }
+            }
+          }
+          // QC7: a manager (Afnan) opens the short PO and its "Close with a shortfall…" dialog at 390px: nothing sideways, the boxes and
+          // buttons thumb-sized and above the dock, Escape closes the dialog and gives focus back to the button that opened it
+          if(who==='afnan'&&!q7done){q7done=true;
+            location.hash='#prodops/afloat';await wait(900);
+            var find7=function(){return[].slice.call(document.querySelectorAll('.phaf-card')).filter(function(c){return c.getAttribute('data-po')==='PO-1047';})[0];};
+            for(var w7=0;w7<20&&!find7();w7++)await wait(250);
+            var c7=find7();
+            if(!c7)pk.push('QC7: the PO-1047 tile is not on the manager board (tiles: '+[].slice.call(document.querySelectorAll('.phaf-card')).map(function(c){return c.getAttribute('data-po');}).join()+')');
+            else{c7.click();await wait(500);
+              var cb=document.getElementById('phaf-close-btn');
+              if(!cb||cb.disabled||!/phaf-short-btn/.test(cb.className))pk.push('QC7: no live "Close with a shortfall…" on the detail');
+              else{cb.click();await wait(400);
+                var dg=document.querySelector('.phaf-dlg'),cs=document.getElementById('phaf-dlg-cause'),rs=document.getElementById('phaf-dlg-reason'),gb=document.getElementById('phaf-dlg-go');
+                if(!dg||!cs||!rs||!gb)pk.push('QC7: the close-short dialog did not open with a cause, a reason and a Continue button');
+                else{
+                  if(document.documentElement.scrollWidth>innerWidth+1)pk.push('QC7: the dialog scrolls sideways ('+document.documentElement.scrollWidth+' > '+innerWidth+')');
+                  if(!/M/.test((document.querySelector('.phaf-ov-gaps')||{}).textContent||''))pk.push('QC7: the dialog does not name the short size');
+                  [cs,rs,gb].forEach(function(n){var r=n.getBoundingClientRect();if(r.height<44||r.right>innerWidth+0.5||r.left<-0.5)pk.push('QC7: '+(n.id)+' is '+Math.round(r.width)+'x'+Math.round(r.height)+' at '+Math.round(r.left));});
+                  if(document.activeElement!==cs)pk.push('QC7: focus is not in the cause box');
+                  gb.scrollIntoView({block:'end'});await wait(200);var gr=gb.getBoundingClientRect(),dk7=document.getElementById('ph-tk-rail').getBoundingClientRect();
+                  if(gr.bottom>dk7.top+0.5)pk.push('QC7: Continue is under the dock ('+Math.round(gr.bottom)+' vs '+Math.round(dk7.top)+')');
+                  var h7=document.elementFromPoint(gr.left+gr.width/2,gr.top+gr.height/2);if(!h7||(h7!==gb&&!gb.contains(h7)))pk.push('QC7: Continue cannot be tapped (covered by '+(h7&&h7.className)+')');
+                  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(300);
+                  if(document.querySelector('.phaf-dlg'))pk.push('QC7: Escape did not close the dialog');
+                  if(!document.querySelector('.phaf-detail'))pk.push('QC7: Escape closed the PO detail as well as the dialog');
+                  var cb2=document.getElementById('phaf-close-btn');if(document.activeElement!==cb2)pk.push('QC7: focus did not go back to the button that opened the dialog');
+                }
+                document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(300);
+              }}
           }
           document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(500);
           if(document.body.classList.contains('ph-fullscreen')||document.getElementById('main-content').classList.contains('ph-takeover'))pk.push('Escape did not leave the takeover');
@@ -205,7 +316,10 @@ function DRIVE(){
           if(/^#prodops/.test(location.hash))pk.push('the hash was left behind');
           location.hash='#prodops/cutting';await wait(900);
           if(currentPage!=='prod-ops'||!document.body.classList.contains('ph-fullscreen'))pk.push('the #prodops/cutting link did not open the page');
-          if(location.hash!=='#prodops/cutting')pk.push('the hash is '+location.hash);
+          if(location.hash!==(who==='faizan'?'#prodops/afloat':'#prodops/cutting'))pk.push('the hash is '+location.hash);
+          if(who==='faizan'){var rl=[].slice.call(document.querySelectorAll('#ph-tk-rail .ph-tk-item')).map(function(b){return b.getAttribute('data-tab');});
+            if(rl.join()!=='afloat')pk.push('Faizan\'s rail is '+rl.join()+', expected afloat');
+            if(!document.querySelector('#ph-panel .phaf-groups, #ph-panel .phaf-empty, #ph-panel .phaf-alert, #ph-panel .phaf-skel'))pk.push('the Afloat POs tab did not draw');}
           if(want===6){location.hash='#prodops/patterns';await wait(700);if(!document.getElementById('ph-panel')||!document.querySelector('#ph-tk-rail .ph-tk-item.on, #ph-tk-rail .ph-tk-item[aria-current]'))pk.push('the #prodops/patterns link did not open a hosted tab');}
           window.showPage('dashboard');await wait(500);
           if(document.body.classList.contains('ph-fullscreen')||document.documentElement.classList.contains('ph-fullscreen')||document.getElementById('main-content').classList.contains('ph-takeover'))pk.push('leaving by showPage left the class behind');

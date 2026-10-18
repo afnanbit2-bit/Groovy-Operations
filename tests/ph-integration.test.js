@@ -18,15 +18,20 @@ const {suite}=harness;
 const ROOT=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
 const J=JSON.stringify;
-const ORDER=['ph-core','ph-data','ph-write','ph-issue','ph-ui','ph-mod-health','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin','ph-mod-instructions','ph-mod-marks','ph-mod-classic'];
-const MODS=ORDER.slice(5);
-const TABS=['overview','queue','calendar','cutting','monitor','reports','masters','standards','settings','instructions'];
+// QC4 (15 Oct 2026): ph-qc-write.js (the QC reconciliation writers that touch pos) sits right after ph-issue.js, the other writer
+// merge 15 Oct 2026: main's WP-15 ph-mod-classic.js joins the end
+// QC5 (15 Oct 2026): ph-mod-afloat.js (the Afloat POs tab, read-only) is the last module
+const ORDER=['ph-core','ph-data','ph-write','ph-issue','ph-qc-write','ph-ui','ph-mod-health','ph-mod-queue','ph-mod-drafts','ph-mod-calendar','ph-mod-cutting','ph-mod-monitor','ph-mod-reports','ph-mod-admin','ph-mod-instructions','ph-mod-marks','ph-mod-classic','ph-mod-afloat'];
+const MODS=ORDER.slice(6);
+// QC5, a deliberate change: Afloat POs sits right after PO Queue in the shell's registry (managers + Faizan)
+const TABS=['overview','queue','afloat','calendar','cutting','monitor','reports','masters','standards','settings','instructions'];
 const FLOOR_ONLY=['registry','patterns','fabric'];   // WP-15: hosted classic pages, the cutting floor's tabs only
 const ALL_TABS=TABS.concat(FLOOR_ONLY);
 const USERS={
   afnan:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},ammar:{uid:'u-ammar',u:'ammar',name:'Ammar',role:'owner'},
   mustafa:{uid:'u-mustafa',u:'mustafa',name:'Mustafa',role:'manager'},uzaib:{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'},
-  raees:{uid:'u-raees',u:'raees',name:'Raees',role:'store'},arfat:{uid:'u-arfat',u:'arfat',name:'Arfat',role:'manager'}
+  raees:{uid:'u-raees',u:'raees',name:'Raees',role:'store'},arfat:{uid:'u-arfat',u:'arfat',name:'Arfat',role:'manager'},
+  faizan:{uid:'u-faizan',u:'faizan',name:'Faizan',role:'packing'}
 };
 
 function mk(user,srcOf){
@@ -69,25 +74,30 @@ module.exports=async function(){
 
   s.section('stylesheet: one balanced block per module, at the end');
   const trail=css.slice(css.indexOf('/* ph-mod-queue START */'));
-  s.ok('the trailing run is only ph-mod-* blocks, one per module',MODS.length===11&&MODS.map(n=>n.replace('ph-mod-','')).every(m=>trail.split('/* ph-mod-'+m+' START */').length===2&&trail.split('/* ph-mod-'+m+' END */').length===2)&&trail.replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
+  s.ok('the trailing run is only ph-mod-* blocks, one per module',MODS.length===12&&MODS.map(n=>n.replace('ph-mod-','')).every(m=>trail.split('/* ph-mod-'+m+' START */').length===2&&trail.split('/* ph-mod-'+m+' END */').length===2)&&trail.replace(/\/\* ph-mod-[a-z]+ START \*\/[\s\S]*?\/\* ph-mod-[a-z]+ END \*\//g,'').trim()==='');
   s.ok('and every block\'s braces balance',MODS.every(n=>{const m=n.replace('ph-mod-','');const a=css.indexOf('/* ph-mod-'+m+' START */'),b=css.indexOf('/* ph-mod-'+m+' END */');const blk=css.slice(a,b).replace(/\/\*[\s\S]*?\*\//g,'');return a>0&&b>a&&(blk.match(/\{/g)||[]).length===(blk.match(/\}/g)||[]).length;}));
   s.ok('the START/END pairs are not interleaved (each END precedes the next START)',(()=>{const re=/\/\* ph-mod-([a-z]+) (START|END) \*\//g;let m,open=null,ok=true;while((m=re.exec(css))){if(m[2]==='START'){if(open)ok=false;open=m[1];}else{if(open!==m[1])ok=false;open=null;}}return ok&&open===null;})());
 
   s.section('the shell with ALL the modules loaded');
   const M=mk('afnan');
   const ids=M.a.run('JSON.stringify(PH_TABS.map(t=>t.id))');
-  s.eq('PH_TABS is the ten plus the three floor-only tabs, in the rail order',ids,J(ALL_TABS));
+  s.eq('PH_TABS is the eleven plus the three floor-only tabs, in the rail order',ids,J(ALL_TABS));
   s.ok('every tab\'s render was replaced by a module (none is still the shell\'s placeholder)',M.a.run('PH_TABS.map(t=>t.render)').every((r,i)=>r!==M.renders0[i]));
-  s.ok('the modules added no tab beyond the thirteen',M.a.run('PH_TABS.length')===13);
+  s.ok('the modules added no tab beyond the fourteen',M.a.run('PH_TABS.length')===14);
   for(const u of ['afnan','ammar','mustafa']){
     const T=mk(u);
-    s.eq(u+': all ten tabs',T.a.run('JSON.stringify(phTabsFor().map(t=>t.id))'),J(TABS));
+    s.eq(u+': all eleven tabs',T.a.run('JSON.stringify(phTabsFor().map(t=>t.id))'),J(TABS));
   }
   const U=mk('uzaib');
   s.eq("uzaib (Kashif): EXACTLY Overview, PO Queue, Today's Cutting, PO Registry, Pattern updates, Fabric Inventory",U.a.run('JSON.stringify(phTabsFor().map(t=>t.id))'),J(['overview','queue','cutting','registry','patterns','fabric']));
   s.ok('uzaib cannot go to Calendar, Monitor, Reports, Masters, Standards or Settings',['calendar','monitor','reports','masters','standards','settings','instructions'].every(t=>U.a.run('phGoTab('+J(t)+')')===false));
   s.ok('uzaib can go to PO Queue and Today\'s Cutting',U.a.run('phResolveTab("queue","uzaib").id')==='queue'&&U.a.run('phResolveTab("cutting","uzaib").id')==='cutting');
   s.ok('PO Queue is PH_ROLE_ALL in the shell itself (coherent without the module)',(()=>{const T=mk('uzaib',n=>n==='ph-ui'?read('js/ph-ui.js'):'');return T.a.run('JSON.stringify(phTabsFor().map(t=>t.id))')===J(['overview','queue','cutting']);})());
+  {
+    const F=mk('faizan');
+    s.eq('faizan (QC floor, QC5): EXACTLY Afloat POs',F.a.run('JSON.stringify(phTabsFor().map(t=>t.id))'),J(['afloat']));
+    s.ok('… and uzaib (Kashif) still does not get it',U.a.run('phTabsFor().map(t=>t.id).indexOf("afloat")')===-1);
+  }
   for(const u of ['raees','arfat']){
     const T=mk(u);
     s.ok(u+' (off the audience) gets no tab at all',T.a.run('phTabsFor().length')===0);
@@ -105,9 +115,27 @@ module.exports=async function(){
   s.ok('ph-ui.js and ph-data.js call none either',!WRITE.test(strip(read('js/ph-ui.js')))&&!WRITE.test(strip(read('js/ph-data.js'))));
   const wsrc=strip(read('js/ph-write.js'));
   const colls=Array.from(new Set((wsrc.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
-  s.eq('ph-write.js touches only the new collections and pos',J(colls),J(['cutting_masters','ph_article_instructions','ph_settings','ph_standards','po_cut_jobs','po_drafts','po_marks','pos']));
+  // QC4 (15 Oct 2026), a deliberate change: the QC lock / adopt writers add po_qc_recon and po_qc_lots
+  s.eq('ph-write.js touches only the new collections and pos',J(colls),J(['cutting_masters','ph_article_instructions','ph_settings','ph_standards','po_cut_jobs','po_drafts','po_marks','po_qc_lots','po_qc_recon','pos']));
+  {
+    const q=strip(read('js/ph-qc-write.js'));
+    const qd=Array.from(new Set((q.match(/doc\(db,\s*'[a-z_]+'/g)||[]).map(x=>/'([a-z_]+)'/.exec(x)[1]))).sort();
+    // R1 (16 Oct 2026), a deliberate change: the close also READS bundles (its classic Final QC check) and never writes one
+    s.eq('ph-qc-write.js (QC4) touches exactly pos, po_qc_recon, po_qc_lots and hrm_notifications (its PHQC_WRITE_ROOTS), and reads bundles (PHQC_READ_ROOTS)',J(qd),J(['bundles','hrm_notifications','po_qc_lots','po_qc_recon','pos']));
+    s.ok('… a bundles reference is only ever read (tx.get), never set / updated',(q.match(/doc\(db,\s*'bundles'[^)]*\)/g)||[]).length===1&&/tx\.get\(doc\(db,'bundles',/.test(q)&&!/tx\.(set|update)\(doc\(db,'bundles'/.test(q));
+    s.ok('… one transaction per writer (five), and no other write API',(q.match(/runTransaction\(/g)||[]).length===5&&!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch)\s*\(/.test(q));
+    s.ok('… its pos references are the PO document and its history rows only',(q.match(/doc\(db,\s*'pos'[^)]*\)/g)||[]).every(x=>/'pos',\s*poId(?:,\s*'history',\s*h\.id)?\)/.test(x)));
+    s.ok('… and it never deletes (no tx.delete)',!/tx\.delete\(/.test(q));
+  }
   s.ok('and writes under pos ONLY the history subcollection',(wsrc.match(/doc\(db,\s*'pos',[^)]*\)/g)||[]).every(x=>/'pos',\s*poId(?:,\s*'history'(?:,\s*h\.id)?)?\)/.test(x)));
   const wr=[...MODS.map(n=>'js/'+n+'.js')];
+  // QC7 (15 Oct 2026), a deliberate addition: the Afloat POs module's write surface, named. It reaches Firestore ONLY through these
+  // seven QC writers (QC6: add a lot, lock, void, close; QC7: the overrides -- close-short is phQcClose, relock, reopen, adopt legacy).
+  {
+    const af=strip(read('js/ph-mod-afloat.js'));
+    const called=Array.from(new Set((af.match(/\bphQc[A-Z]\w*(?=\()/g)||[]).filter(n=>/^phQc(Add|Lock|Void|Close|Relock|Reopen|Adopt)/.test(n)))).sort();
+    s.eq('ph-mod-afloat.js calls exactly the seven QC writers (QC6 + the QC7 overrides)',J(called),J(['phQcAddLot','phQcAdoptLegacy','phQcClose','phQcLockCut','phQcRelock','phQcReopen','phQcVoidLot']));
+  }
   s.ok('the writers the modules call are only ph-write.js functions (no direct doc(db, ...) in a module for a write)',wr.every(f=>!/\bdoc\(db,\s*'(counters|gatepasses|bundles|fabric_[a-z]+|pos)'/.test(strip(read(f)).replace(/getDoc\(doc\(db,[^;]*;/g,''))));
 
   s.section('global names: no top-level declaration appears in two files');
@@ -115,7 +143,7 @@ module.exports=async function(){
   const pat=/^(?:async\s+)?(?:function\s*\*?\s*([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*))/gm;
   for(const n of ORDER){let m;const t=read('js/'+n+'.js');while((m=pat.exec(t))){const k=m[1]||m[2];(decl[k]=decl[k]||[]).push(n);}}
   const dups=Object.keys(decl).filter(k=>decl[k].length>1);
-  s.eq('no duplicates across the twelve Production Ops files',J(dups),J([]));
+  s.eq('no duplicates across the Production Ops files',J(dups),J([]));
   const other=fs.readdirSync(path.join(ROOT,'js')).filter(f=>/\.js$/.test(f)&&!/^ph-/.test(f));
   const odecl=Object.create(null);
   for(const f of other){let m;const t=read('js/'+f);while((m=pat.exec(t))){odecl[m[1]||m[2]]=f;}}
