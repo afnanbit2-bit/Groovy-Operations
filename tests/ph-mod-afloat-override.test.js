@@ -137,7 +137,7 @@ module.exports=async function(){
     s.ok('… each bell names the PO, the closer, the cause and the reason',bl.every(b=>/PO-401/.test(b.title)&&/Mustafa closed PO-401 at QC with 118 of 120 received \(short, lost_in_line\)\. Reason: two pieces lost in the line/.test(b.message)));
     s.ok('… and the PO carries the classic Final QC fields + qcReconClosedAt/By',P.currentStage==='completed'&&P.stages.qc.done===true&&/closed by a manager: short/.test(P.stages.qc.notes)&&P.qcReconClosedAt===WED_905&&P.qcReconClosedBy==='mustafa');
     s.ok('… the lots are byte-for-byte as saved',J(lotDocs({store:fkA.store},'PO-401'))===J(lotsBefore));
-    s.eq('success feedback: the stamp in 12-hour PKT, the person, the total accepted, who was told','PO-401 is closed with a shortfall — Wed 14 Oct 2026, 9:05 AM by Mustafa. Total: 2 short — 118 of 120 (allowance 2). Final QC is marked complete; Afnan, Ammar were told.',M.text(M.id('phaf-flash')));
+    s.eq('success feedback: the stamp in 12-hour PKT, the person, the total accepted, who was told','PO-401 is closed with a shortfall — Wed 14 Oct 2026, 9:05 AM by Mustafa. Total: 2 short — 118 of 120 (allowance 2). Final QC is marked complete. Afnan, Ammar were told.',M.text(M.id('phaf-flash')));
     s.ok('… focus on that line; the dialog is gone',M.ctx.document.activeElement===M.id('phaf-flash')&&!dlg(M));
     const ov=M.id('phaf-ovs');
     s.ok('the overrides list on the detail: "Closed with a shortfall · Wed 14 Oct 2026, 9:05 AM by Mustafa", the cause and the reason',!!ov&&/Overrides on this PO \(1\)/.test(M.text(ov))&&/Closed with a shortfall · Wed 14 Oct 2026, 9:05 AM by Mustafa/.test(M.text(ov))&&/Cause: Lost in the line/.test(M.text(ov))&&/“two pieces lost in the line”/.test(M.text(ov)));

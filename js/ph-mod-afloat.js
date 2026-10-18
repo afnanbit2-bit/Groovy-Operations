@@ -1592,6 +1592,17 @@ function _phqcTrap(box,e){
   return false;
 }
 // The confirm's primary button. One write at a time; the writer's refusal is printed IN the dialog.
+// Wave 2: after a close, say whether the classic Final QC was marked complete -- the writer's result.classic {written, why}
+// (js/ph-qc-write.js, R1) -- and, when it was not, where the PO goes: it carries on at its stage, Haris finishes Final QC on the stage
+// page, and here it is listed under "Closed (last 7 days)" and then leaves the list. `t` is the tile as it was BEFORE the close.
+function phqcClassicLine(res,t){
+  const c=res&&res.classic;
+  if(t&&t.stage==='completed')return phI18nD('afloat.ok_classic_already');
+  if(!c||typeof c!=='object')return phI18nD('afloat.ok_classic_unknown');
+  if(c.written===true)return phI18nD('afloat.ok_classic_yes');
+  const st=t&&t.stage?t.stage:'unknown';
+  return phI18nD('afloat.ok_classic_no',{why:_phqcStr(c.why).trim()||'—',stage:phI18nD(PH_REAL_STAGE_ORDER.indexOf(st)>-1?'afloat.st_'+st:'afloat.st_unknown')});
+}
 async function phqcDlgGo(){
   const d=_phqcDlg;if(!d)return{ok:false,code:'no-dialog'};
   if(PHAF_OV_KINDS.indexOf(d.kind)>-1)return phqcOvGo();
@@ -1616,7 +1627,7 @@ async function phqcDlgGo(){
     const me=_phqcWho(_phqcUser());
     let text;
     if(d.kind==='lock')text=phI18nD('afloat.ok_lock',{po:t.id,when:phqcStampBy(res.recon&&res.recon.cutLock?res.recon.cutLock.lockedAt:Date.now(),me)});
-    else if(d.kind==='close')text=phI18nD('afloat.ok_close',{po:t.id,when:phqcStampBy(res.recon&&res.recon.closedAt?res.recon.closedAt:Date.now(),(res.recon&&res.recon.closedByName)||me)});
+    else if(d.kind==='close')text=phI18nD('afloat.ok_close',{po:t.id,when:phqcStampBy(res.recon&&res.recon.closedAt?res.recon.closedAt:Date.now(),(res.recon&&res.recon.closedByName)||me),classic:phqcClassicLine(res,t)});
     else text=phI18nD('afloat.ok_void',{n:res.lot&&res.lot.seq!=null?res.lot.seq:'?',when:phqcStampBy(res.lot&&res.lot.voidedAt?res.lot.voidedAt:Date.now(),me),after:_phqcNowText(_phqcFindTile(t.id))});
     _phqcFlash={poId:t.id,tone:'ok',text:text};
     if(typeof showToast==='function'){try{showToast(String(text));}catch(e){}}
@@ -1916,7 +1927,7 @@ async function phqcOvGo(){
     let text;
     if(d.kind==='short'){
       const at=res.recon&&res.recon.closedAt?res.recon.closedAt:Date.now();
-      text=phI18nD('afloat.ok_short',{po:t.id,when:phqcStampBy(at,(res.recon&&res.recon.closedByName)||_phqcWho(me)),gap:phqcGapTotal(res.verdict&&res.verdict.total?{total:res.verdict.total}:t.rec.verdict),
+      text=phI18nD('afloat.ok_short',{po:t.id,when:phqcStampBy(at,(res.recon&&res.recon.closedByName)||_phqcWho(me)),gap:phqcGapTotal(res.verdict&&res.verdict.total?{total:res.verdict.total}:t.rec.verdict),classic:phqcClassicLine(res,t),
         told:(Array.isArray(res.told)?res.told.map(_phqcWho).join(', '):'')||'—'});
     }else if(d.kind==='relock'){
       const L=res.recon&&res.recon.cutLock;

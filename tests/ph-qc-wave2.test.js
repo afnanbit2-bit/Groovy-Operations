@@ -7,6 +7,9 @@
       says the check was skipped. Any other failure still refuses; a readable PO is unchanged (no warning).
    3. The receive sheet prints a refused save in the writer's own words, VERBATIM — the sentence that names the device clock (R3 in
       qc-decisions.md: every QC write is refused when the phone's date is more than two days off, which reads like "rules not published").
+   4. After Close PO the flash says whether the classic Final QC was marked complete (the writer's result.classic, R1) and, when not,
+      why and where the PO goes (it carries on at its stage, Haris finishes it, listed under "Closed (last 7 days)" here). Before this the
+      line ALWAYS said "Final QC is marked complete" — false for every close before stage qc. The confirm texts were corrected too.
    What it does NOT prove: a real browser's HTMLCollection (only an object of the same shape), a real phone. */
 'use strict';
 const fs=require('fs'),path=require('path');
@@ -17,6 +20,7 @@ const W=require('./ph-mod-afloat-write.test.js').kit;
 const ROOT=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
 const SRC=read('js/ph-mod-afloat.js');
+const J=JSON.stringify;
 const mut=(t,a,b)=>{if(t.indexOf(a)<0)throw new Error('break target missing: '+a.slice(0,60));return t.split(a).join(b);};
 
 // A fake tree whose `children` is an HTMLCollection-like object: {length, 0, 1, …, item(i)} and nothing else.
@@ -125,6 +129,37 @@ module.exports=async function(){
     s.ok('a refusal with NO writer sentence still gets the generic line',kit.load({session:kit.USERS.faizan}).R('String(_phqcResMsg({code:"permission",error:""}))')==='Refused by the database rules: republish firestore.rules from the repo file, then retry. Nothing was saved.');
     const b=await sheetRefused(mut(SRC,"if(res.code==='permission'){const w=_phqcStr(res.error);return w?phI18nD('afloat.err_permission_v',{why:w}):phI18nD('afloat.err_permission');}","if(res.code==='permission')return phI18nD('afloat.err_permission');"));
     s.ok('break "the generic permission line again" fails "… the writer\'s sentence VERBATIM"',b.msg!==CLOCK+' Nothing was saved.'&&!/clock/.test(b.msg));
+  }
+
+  /* ── 4. Close PO says what happened to the classic Final QC ────── */
+  s.section('4. after Close PO: was the classic Final QC marked complete, and where the PO is listed');
+  const closeAs=async(user,stage,bundles,src)=>{
+    W.CLK.now=W.THU_NOON;
+    const seed={'pos/PO-209':W.cutPo('PO-209',stage),'po_qc_recon/PO-209':W.recon('PO-209',{lotCount:1,rev:1}),'po_qc_lots/PO-209-1792000000001-aaaa':W.lotRow('PO-209',1,Object.assign({},W.CUT))};
+    (bundles||[]).forEach((b,i)=>{seed['bundles/B90'+i]=Object.assign({bundleId:'B90'+i,poId:'PO-209',size:'M',units:60},b);});
+    const fk=W.makeFake(seed);
+    const Q=W.mk(user,{fk:fk,src:src});
+    await Q.show();await Q.open('PO-209');await Q.click('phaf-close-btn');
+    const r=await Q.R('phqcDlgGo()');await kit.settle(60);
+    return{r:r,flash:Q.text(Q.id('phaf-flash')),pos:fk.store['pos/PO-209'],closed:JSON.parse(Q.R('JSON.stringify(_phqcModelNow().groups.closed.map(t=>t.id))')),Q:Q};
+  };
+  {
+    const st=await closeAs('faizan','stitching');
+    s.eq('Faizan closes a PO at STITCHING: the flash says Final QC is NOT marked complete, why, and where the PO goes',
+      'PO-209 is closed — Thu 15 Oct 2026, 12:00 PM by Faizan. Final QC is NOT marked complete: PO is still at stitching. The PO carries on at Stitching; Haris completes Final QC on its stage page as usual. Here it is listed under "Closed (last 7 days)", then it leaves Afloat POs.',st.flash);
+    s.ok('… and that is the truth: the PO is still at stitching, and it IS listed under Closed (last 7 days)',st.r.ok&&st.r.classic.written===false&&st.pos.currentStage==='stitching'&&J(st.closed)===J(['PO-209']));
+    const ok=await closeAs('faizan','qc',[{qcStatus:'pass'},{qcStatus:'fail',size:'L',qcReason:'stain'}]);
+    s.eq('a PO at QC with every bundle dispositioned: "Final QC is marked complete."','PO-209 is closed — Thu 15 Oct 2026, 12:00 PM by Faizan. Final QC is marked complete.',ok.flash);
+    s.ok('… and it was (currentStage completed, stages.qc.done)',ok.r.classic.written===true&&ok.pos.currentStage==='completed'&&ok.pos.stages.qc.done===true);
+    const pend=await closeAs('faizan','qc',[{qcStatus:'pass'},{size:'L'}]);
+    s.ok('a PO at QC with ONE bundle not yet dispositioned: NOT marked complete, "1 bundle not yet dispositioned by QC", carries on at Final QC',/Final QC is NOT marked complete: 1 bundle not yet dispositioned by QC\. The PO carries on at Final QC;/.test(pend.flash)&&pend.pos.currentStage==='qc',pend.flash);
+    const already=await closeAs('mustafa','completed');
+    s.ok('a PO the classic flow had already completed: "Final QC had already been completed in the classic flow."',/PO-209 is closed — .*\. Final QC had already been completed in the classic flow\.$/.test(already.flash),already.flash);
+    s.ok('a result with no `classic` (an older writer): "not known", never a claim',/not known — check the PO page/.test(String(st.Q.R('phI18nT("afloat.ok_close",{po:"PO-1",when:"x",classic:phqcClassicLine({ok:true},{stage:"qc"})},"en")'))));
+    const I18N=read('js/ph-i18n.js');
+    s.ok('the close confirm and the shortfall confirm no longer promise Final QC unconditionally',/Closing marks Final QC complete only when the PO is at Final QC and QC has checked every bundle/.test(I18N)&&/Final QC is marked complete on the PO if it is at Final QC with every bundle checked/.test(I18N)&&!/'Closing marks Final QC complete\. /.test(I18N));
+    const b=await closeAs('faizan','stitching',null,mut(SRC,"  if(c.written===true)return phI18nD('afloat.ok_classic_yes');","  return phI18nD('afloat.ok_classic_yes');"));
+    s.ok('break "the line always says marked complete" fails "… NOT marked complete, why, and where the PO goes"',/NOT marked complete/.test(b.flash)===false);
   }
 
   return s;

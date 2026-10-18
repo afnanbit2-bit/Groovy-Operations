@@ -1439,7 +1439,7 @@ function phI18nNoticeReset(){_phI18nNoticeState='';}
   A('afloat.dl_close_q_within','QC received {n} of {cut} on {po} — within 2 %.','{po} پر کیو سی نے {cut} میں سے {n} وصول کیے — 2 فیصد کے اندر۔');
   A('afloat.dl_close_q_over','QC received {n} of {cut} on {po} — over, inside the allowance.','{po} پر کیو سی نے {cut} میں سے {n} وصول کیے — گنجائش کے اندر زیادہ۔');
   A('afloat.dl_close_over','Closing records the over-receipt ({list}).','بند کرنے سے زیادہ وصولی ({list}) درج ہوگی۔');
-  A('afloat.dl_close_final','Closing marks Final QC complete. A closed PO cannot be edited; only an owner can reopen it.','بند کرنے سے فائنل کیو سی مکمل ہو جاتا ہے۔ بند پی او بدلا نہیں جا سکتا؛ صرف مالک اسے کھول سکتا ہے۔');
+  A('afloat.dl_close_final','Closing marks Final QC complete only when the PO is at Final QC and QC has checked every bundle; otherwise the PO carries on and Haris completes Final QC on its stage page. A closed PO cannot be edited; only an owner can reopen it.','بند کرنے سے فائنل کیو سی صرف تب مکمل ہوتا ہے جب پی او فائنل کیو سی پر ہو اور کیو سی نے ہر بنڈل جانچ لیا ہو؛ ورنہ پی او چلتا رہتا ہے اور حارث اس کے مرحلے کے صفحے پر فائنل کیو سی مکمل کرتا ہے۔ بند پی او بدلا نہیں جا سکتا؛ صرف مالک اسے کھول سکتا ہے۔');
   A('afloat.dl_close_go','Close PO','پی او بند کریں');
   A('afloat.dl_void_t','Void a lot on {po}?','{po} پر لاٹ منسوخ کریں؟');
   A('afloat.dl_void_q','Void lot #{n} ({when} · {pcs} pcs: {list})?','لاٹ #{n} منسوخ کریں ({when} · {pcs} پیس: {list})؟');
@@ -1450,7 +1450,11 @@ function phI18nNoticeReset(){_phI18nNoticeState='';}
   A('afloat.dl_no','Not yet','ابھی نہیں');
   A('afloat.dl_stale','Someone else changed the reconciliation of {po} just now. The latest copy is loaded below — check it and try again. Nothing was changed.','ابھی کسی اور نے {po} کا ملان بدلا۔ تازہ ترین کاپی نیچے لوڈ ہے — دیکھ کر دوبارہ کوشش کریں۔ کچھ نہیں بدلا۔');
   A('afloat.ok_lock','The cut of {po} is final — locked {when}.','{po} کی کٹنگ حتمی ہے — لاک {when}۔');
-  A('afloat.ok_close','{po} is closed — {when}. Final QC is marked complete.','{po} بند ہے — {when}۔ فائنل کیو سی مکمل۔');
+  A('afloat.ok_close','{po} is closed — {when}. {classic}','{po} بند ہے — {when}۔ {classic}');
+  A('afloat.ok_classic_yes','Final QC is marked complete.','فائنل کیو سی مکمل۔');
+  A('afloat.ok_classic_no','Final QC is NOT marked complete: {why}. The PO carries on at {stage}; Haris completes Final QC on its stage page as usual. Here it is listed under "Closed (last 7 days)", then it leaves Afloat POs.','فائنل کیو سی مکمل نہیں ہوا: {why}۔ پی او {stage} پر چلتا رہے گا؛ حارث اس کے مرحلے کے صفحے پر معمول کے مطابق فائنل کیو سی مکمل کرے گا۔ یہاں یہ "بند (پچھلے 7 دن)" میں دکھے گا، پھر جاری پی او سے ہٹ جائے گا۔');
+  A('afloat.ok_classic_already','Final QC had already been completed in the classic flow.','فائنل کیو سی پرانے طریقے میں پہلے ہی مکمل ہو چکا تھا۔');
+  A('afloat.ok_classic_unknown','Whether Final QC was marked complete is not known — check the PO page.','فائنل کیو سی مکمل ہوا یا نہیں، معلوم نہیں — پی او کا صفحہ دیکھیں۔');
   A('afloat.ok_void','Lot #{n} voided {when}. The PO {after}','لاٹ #{n} منسوخ {when}۔ پی او {after}');
   A('afloat.cqc_open','Final QC cannot be completed here: {po} has a QC reconciliation that is not closed. QC (Faizan) or a manager closes it in Production Ops ▸ Afloat POs once QC has received the cut quantity.','فائنل کیو سی یہاں مکمل نہیں ہو سکتا: {po} کا کیو سی ملان کھلا ہے۔ کیو سی (فیضان) یا منیجر اسے پروڈکشن آپس ▸ جاری پی او میں کٹنگ وصول ہونے پر بند کرتا ہے۔');
   A('afloat.cqc_skipped','Warning: the QC check for {po} was SKIPPED. po_qc_recon could not be read (the published firestore.rules refused it), so Final QC goes ahead without checking for an open QC reconciliation. Ask Afnan or Ammar to republish firestore.rules from the repo file.','انتباہ: {po} کی کیو سی جانچ چھوڑ دی گئی۔ po_qc_recon پڑھا نہیں جا سکا (شائع شدہ firestore.rules نے روک دیا)، اس لیے فائنل کیو سی کھلے کیو سی ملان کی جانچ کے بغیر ہو رہا ہے۔ عفنان یا عمار سے کہیں کہ firestore.rules ریپو کی فائل سے دوبارہ شائع کریں۔');
@@ -1496,7 +1500,7 @@ function phI18nNoticeReset(){_phI18nNoticeState='';}
   A('afloat.ov_step_two','Step 2 of 2 · confirm — nothing is saved until you press the button below','مرحلہ 2 از 2 · تصدیق — نیچے کا بٹن دبانے تک کچھ محفوظ نہیں ہوتا');
   A('afloat.ov_short_lead_recv','QC has received {recv} of {cut} on {po} so far. Closing now accepts that the rest is not coming:','{po} پر کیو سی نے اب تک {cut} میں سے {recv} وصول کیے۔ ابھی بند کرنے کا مطلب ہے کہ باقی نہیں آئیں گے:');
   A('afloat.ov_short_lead','QC received {recv} of {cut} on {po}, and at least one size is outside the 2 % allowance. Closing accepts these differences:','{po} پر کیو سی نے {cut} میں سے {recv} وصول کیے، اور کم از کم ایک سائز 2 فیصد گنجائش سے باہر ہے۔ بند کرنے سے یہ فرق قبول ہوں گے:');
-  A('afloat.ov_short_effect','These differences become final: Final QC is marked complete on the PO, the override is recorded with your name, the time, the cause and your reason, and {told} are told on their bell.','یہ فرق حتمی ہو جائیں گے: پی او پر فائنل کیو سی مکمل ہوگا، تبدیلی آپ کے نام، وقت، وجہ کی قسم اور وجہ کے ساتھ درج ہوگی، اور {told} کو گھنٹی پر بتایا جائے گا۔');
+  A('afloat.ov_short_effect','These differences become final: Final QC is marked complete on the PO if it is at Final QC with every bundle checked (otherwise Haris completes it on the stage page), the override is recorded with your name, the time, the cause and your reason, and {told} are told on their bell.','یہ فرق حتمی ہو جائیں گے: پی او پر فائنل کیو سی مکمل ہوگا، تبدیلی آپ کے نام، وقت، وجہ کی قسم اور وجہ کے ساتھ درج ہوگی، اور {told} کو گھنٹی پر بتایا جائے گا۔');
   A('afloat.ov_relock_lead','Replace the locked cut of {po} with the cut now recorded on the PO:','{po} کی لاک شدہ کٹنگ کو پی او پر اب درج کٹنگ سے بدلیں:');
   A('afloat.ov_c_locked','Locked now','ابھی لاک');
   A('afloat.ov_c_recorded','Recorded on the PO','پی او پر درج');
@@ -1532,7 +1536,7 @@ function phI18nNoticeReset(){_phI18nNoticeState='';}
   A('afloat.ov_reason_short','A reason of at least {n} characters is needed.','کم از کم {n} حروف کی وجہ ضروری ہے۔');
   A('afloat.ov_gone','This cannot be done on this PO now (it changed, or you may not do it). Nothing was changed.','یہ اس پی او پر ابھی نہیں ہو سکتا (یہ بدل گیا، یا آپ کو اجازت نہیں)۔ کچھ نہیں بدلا۔');
   A('afloat.ov_offline','No connection. This is saved with a transaction, which cannot be queued — nothing was changed. Try again when the connection is back.','کنکشن نہیں۔ یہ ٹرانزیکشن سے محفوظ ہوتا ہے جو قطار میں نہیں رکھی جا سکتی — کچھ نہیں بدلا۔ کنکشن واپس آنے پر دوبارہ کوشش کریں۔');
-  A('afloat.ok_short','{po} is closed with a shortfall — {when}. {gap}. Final QC is marked complete; {told} were told.','{po} کمی کے ساتھ بند — {when}۔ {gap}۔ فائنل کیو سی مکمل؛ {told} کو بتایا گیا۔');
+  A('afloat.ok_short','{po} is closed with a shortfall — {when}. {gap}. {classic} {told} were told.','{po} کمی کے ساتھ بند — {when}۔ {gap}۔ {classic} {told} کو بتایا گیا۔');
   A('afloat.ok_relock','The cut snapshot of {po} was replaced — {when}. The locked cut is now {list} ({n} pcs); {po} {after} {told} were told.','{po} کی کٹنگ کی تصویر بدل دی گئی — {when}۔ لاک کٹنگ اب {list} ({n} پیس)؛ {po} {after} {told} کو بتایا گیا۔');
   A('afloat.ok_reopen','{po} is reopened — {when}. The PO stays marked completed until QC closes it again.','{po} دوبارہ کھل گیا — {when}۔ دوبارہ بند ہونے تک پی او مکمل ہی دکھے گا۔');
   A('afloat.ok_adopt','{n} units from the old Packing page are now lot #{seq} — {when}. {po} {after}','پرانے پیکنگ پیج کے {n} یونٹس اب لاٹ #{seq} ہیں — {when}۔ {po} {after}');
