@@ -139,6 +139,7 @@ module.exports=async function(){
     s.eq('search: "125" finds PO-125 by its digits',run('porSelect(porModel('+J(POS)+',porIndex({}),{now:'+NOW+'}),{view:"all",q:"125"}).length'),1);
     s.eq('search: code and creator, all words must match ("mustafa gat")',run('porSelect(porModel('+J(POS)+',porIndex({}),{now:'+NOW+'}),{view:"all",q:"mustafa gat"}).map(function(r){return r.id;}).join()'),'PO-125');
 
+    s.ok('a release AFTER now (a clock behind the data) gives no age, never a negative one',run('porAge({stage:"cutting",fabric:{firstMs:null},releaseMs:'+(NOW+3*86400000)+'},'+NOW+').days')===null);
     s.section('unread side data'+tag);
     const u=modelOf(run,{passes:null,marks:null});
     s.eq('fabric unread when gatepasses were not read',byId(u,'PO-140').fabric.state,'unread');

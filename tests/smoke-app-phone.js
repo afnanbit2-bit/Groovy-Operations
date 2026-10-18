@@ -165,6 +165,29 @@ function DRIVE(){
         var errs=window.__errs.slice(e0).filter(function(e){return!/ERR_|Failed to load resource/.test(e);});
         res.push({page:id||'(landing: '+currentPage+')',issues:probe().concat(errs.map(function(e){return'threw: '+e;}))});
       }
+      // The PO Registry (js/po-registry.js, RG3/RG4): the new body is the one drawn, every row is a button at least 44px tall inside the
+      // screen, the view tabs are 34px+ tap targets, and a tap on a row opens the PO's detail (with the timeline).
+      if(PAGES.indexOf('po-registry')>=0){
+        var rg=[];
+        try{
+          window.showPage('po-registry');await wait(600);
+          var body=document.getElementById('por-body');
+          if(!body)rg.push('the new registry body (#por-body) is not drawn');
+          else{
+            var rws=[].slice.call(body.querySelectorAll('button.por-row'));
+            if(!rws.length)rg.push('no PO rows');
+            rws.forEach(function(r){var b=r.getBoundingClientRect();if(b.height<44)rg.push('a row is '+Math.round(b.height)+'px tall');if(b.right>innerWidth+1)rg.push('a row runs past the edge');});
+            [].slice.call(body.querySelectorAll('.por-view,.por-chip')).filter(vis).forEach(function(v){var h=v.getBoundingClientRect().height;if(h<33.5)rg.push('a '+Math.round(h)+'px view or chip: '+nm(v));});
+            [].slice.call(body.querySelectorAll('img')).forEach(function(im){if(!im.getAttribute('alt'))rg.push('a picture with no alt text');});
+            if(rws.length){rws[0].click();await wait(600);
+              if(currentPage!=='po-detail')rg.push('a tap on a row did not open the PO (page '+currentPage+')');
+              else if(window.__porDetailExpected&&!document.querySelector('.por-tl'))rg.push('the detail has no timeline');
+              else{var issues=probe();issues.forEach(function(x){rg.push('detail: '+x);});}
+            }
+          }
+        }catch(e){rg.push('the registry check threw: '+e.message);}
+        res.push({page:'(po registry)',issues:rg});
+      }
       // Inventory Intel's full-view takeover, in the real shell on a phone: the bar and the dock are on screen and clear of the content and the
       // bug FAB, Escape and the deep link both work, and leaving removes every trace.
       if(PAGES.indexOf('shopify-intel')>=0){

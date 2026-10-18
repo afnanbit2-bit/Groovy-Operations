@@ -255,7 +255,8 @@ function porProgress(f){
 function _porDaysWord(n){return n+(n===1?' day':' days');}
 function porAge(f,now){
   const F=_porObj(f)?f:{},N=porMs(now);
-  const since=function(ms){return ms===null||ms===undefined||N===null?null:porDaysBetween(ms,N);};
+  // A moment after `now` (a device clock behind the data) gives no age at all, never a negative one.
+  const since=function(ms){if(ms===null||ms===undefined||N===null)return null;const d=porDaysBetween(ms,N);return d===null||d<0?null:d;};
   if(F.stage==='cancelled'){const d=F.cancelled&&F.cancelled.at!=null?porDay(F.cancelled.at):null;return{days:null,since:'cancelled',words:d?'cancelled '+d:'cancelled'};}
   if(F.stage==='completed'){const d=F.completedMs!=null?porDay(F.completedMs):null;return{days:since(F.completedMs),since:'completed',words:d?'completed '+d:'completed'};}
   if(F.stage==='reserved'){const n=since(F.createdMs);return{days:n,since:'created',words:n===null?'not released':'created '+_porDaysWord(n)+' ago · not released'};}

@@ -854,6 +854,34 @@ async function _phrFragment(o){
   return{html:'<button class="btn-sm" onclick="void 0">First control in the content</button>'+domkit.toHtml(canvas)};
 }
 
+
+// PO Registry fragments (RG3/RG4): the REAL js/shared.js + js/pos.js + ph-core + por-core + po-registry, a hand fixture.
+function _porFragment(o){
+  const DAY=86400000,NOW=Date.parse('2026-10-15T12:00:00+05:00');
+  const mk=(n,over)=>Object.assign({fbKey:'PO-'+n,id:'PO-'+n,name:'Tee '+n,code:'GST'+n,fabric:'Single Jersey 180',createdBy:'Mustafa',ts:NOW-(n-100)*DAY,
+    createdAt:new Date(NOW-(n-100)*DAY+5*3600000).toISOString().slice(0,10),poStatus:'in_production',currentStage:'cutting',
+    releasedAt:new Date(NOW-(n-100)*DAY).toISOString(),qty:120,sizes:{XS:0,S:20,M:40,L:40,XL:20,'2XL':0}},over||{});
+  const pos=[
+    mk(140,{name:'COMBAT HOODIE | BLACK — HEAVYWEIGHT FLEECE 420',code:'GHZ004'}),
+    mk(125,{currentStage:'stitching',cutAt:'2026-09-09T06:00:00.000Z',cutQty:{XS:0,S:20,M:39,L:40,XL:20,'2XL':0},packingReceipts:[{size:'S',qty:20},{size:'M',qty:35}],
+      stages:{bundling:{done:true,doneAt:'2026-09-14T06:00:00.000Z'}},damageFlagged:true}),
+    mk(152,{qty:100,sizes:{S:30,M:30,L:30},name:'MF Shorts - Arctyc White'}),
+    mk(161,{poStatus:'reserved',currentStage:null,releasedAt:null}),
+    mk(160,{poStatus:'cancelled',currentStage:null,cancelledReason:'wrong fabric'}),
+    mk(170,{currentStage:'completed',stages:{qc:{done:true,doneAt:'2026-10-10T06:00:00.000Z'}}})
+  ];
+  const passes=[{id:'GP-312',gpType:'fabric',poId:'125',date:'2026-09-07',cutMaster:'Alam',totalWeight:40.1},{id:'GP-315',gpType:'fabric',poId:'152',date:'2026-10-13',cutMaster:'Hassan Ahmed Khan'}];
+  const app=loadApp({files:['js/shared.js','js/pos.js','js/ph-core.js','js/por-core.js','js/po-registry.js'],currentPage:'po-registry',
+    session:{u:'afnan',name:'Afnan',role:'owner',canPO:true}});
+  app.run('session='+JSON.stringify({u:'afnan',name:'Afnan',role:'owner',canPO:true}));
+  app.run('loadData=async function(){};');
+  app.run('allPOs='+JSON.stringify(o.empty?[]:pos)+';allPasses='+JSON.stringify(passes)+';_posLoadAt='+NOW+';_posLoadFailed='+JSON.stringify(o.failed?['pos']:[])+';');
+  app.run('phCanSee=function(){return true;};phLoadStage=function(){return Promise.resolve({ok:true});};phGet=function(s){return s==="marks"?{ok:true,rows:[{fbKey:"PO-140",marks:{hold:{reason:"waiting for rib"},priority:"urgent"}}]}:{ok:true,rows:[]};};');
+  if(o.group)app.run('_porState.group='+JSON.stringify(o.group)+';_porState.view="all";');
+  let html=app.run('renderRegistry()');
+  if(o.failed){app.run('_posLoadFailed=[];allPOs=[];');html+='<hr>'+app.run('porRegistryHTML()');}
+  return Promise.resolve(html);
+}
 const FRAGMENTS={
   // Master Accounts (MASTER_ACCOUNTS_PLAN.md §16.4): Today, Money and a
   // holder, the Ledger with the review queue, a party page, and the Record
@@ -2051,6 +2079,10 @@ const FRAGMENTS={
   },
   // Recipe Embroidery Codes: the edit-form rows (code/candle/shade/position/
   // note, remove button) and the worker card's list, with long values.
+  // PO Registry (js/po-registry.js, RG3): the real body through the real js/pos.js renderRegistry() hand-over, over a hand fixture.
+  'po registry — the list (Active, long name, on hold, qty mismatch, no fabric)':()=>_porFragment({}),
+  'po registry — grouped by stage with a collapsed reserved group':()=>_porFragment({group:'stage'}),
+  'po registry — failed read and empty':()=>_porFragment({failed:true}),
   'embellishments — embroidery codes (form rows and worker card)':()=>{
     const long='ThreadBook-LONG-CODE-123456789012345678';
     const rec={_id:'r1',articleCode:'GP020',articleName:'Bird patch',status:'locked',

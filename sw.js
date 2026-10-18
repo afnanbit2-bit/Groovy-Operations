@@ -40,6 +40,7 @@ const PRECACHE_URLS = [
   '/js/pos.js',
   '/js/po-print.js',
   '/js/por-core.js',
+  '/js/po-registry.js',
   '/js/embellishments.js',
   '/js/hrm.js',
   '/js/store.js',

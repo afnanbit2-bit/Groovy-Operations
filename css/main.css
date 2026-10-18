@@ -5823,6 +5823,73 @@ body.ph-fullscreen.ph-ur .ph-tk-bar{gap:8px}
 .si-rs-guide{font-size:14px;color:var(--muted)}
 .si-rs-meta{font-size:14px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
 /* si-restock END */
+/* po-registry START */
+/* PO Registry (js/po-registry.js, RG3-RG7). Tokens only (no literal colour), text >= 12px, every selector .por- prefixed.
+   A row is a <button>: keyboard reachable, 44px+ tall; the name may wrap to two lines on a phone and never shares its line's
+   width with a fixed control without min-width:0 on the text column. */
+.por-wrap{min-width:0}
+.por-views{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
+.por-view{flex-shrink:0;min-height:36px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
+.por-view b{font-weight:700;margin-left:2px}
+.por-view.on{background:var(--dark);border-color:var(--dark);color:var(--on-dark)}
+.por-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px}
+.por-field{display:flex;flex-direction:column;gap:2px;min-width:0}
+.por-search{flex:1 1 220px}
+.por-flabel{font-size:12px;color:var(--muted)}
+.por-field input,.por-field select{min-height:38px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:14px;min-width:0}
+.por-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.por-chip{min-height:34px;padding:4px 10px;border:1px solid var(--accent-warning);border-radius:999px;background:var(--accent-warning-soft);color:var(--text);font:inherit;font-size:13px;cursor:pointer}
+.por-chip b{font-weight:700}
+.por-chip.on{background:var(--accent-warning);color:var(--surface)}
+.por-count{font-size:13px;color:var(--muted);margin:2px 0 8px;overflow-wrap:anywhere}
+.por-list{display:flex;flex-direction:column;gap:8px;min-width:0}
+.por-row{display:flex;align-items:flex-start;gap:12px;width:100%;min-height:44px;padding:10px 12px;text-align:left;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:10px;font:inherit;cursor:pointer}
+.por-row:hover{border-color:var(--dark)}
+.por-row:focus-visible{outline:2px solid var(--dark);outline-offset:2px}
+.por-img{flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--soft);border-radius:6px}
+.por-img-tile{width:56px;height:70px}
+.por-img-head{width:96px;height:120px}
+.por-pic{width:100%;height:100%;object-fit:cover;display:block}
+.por-tile{display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px;text-align:center;min-width:0;max-width:100%}
+.por-tile-code{font-size:12px;letter-spacing:-.02em;color:var(--text);overflow-wrap:anywhere}
+.por-tile-none{font-size:12px;color:var(--muted)}
+.por-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.por-l1,.por-l2,.por-l3{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.por-num{font-weight:700;font-variant-numeric:tabular-nums;font-size:15px}
+.por-code{font-size:13px;color:var(--muted);font-weight:600}
+.por-name{font-size:15px;font-weight:600;min-width:0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.por-badge{font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.por-b-hold,.por-b-urgent{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
+.por-b-high,.por-b-warn{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.por-st{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+.por-st-live{background:var(--soft);color:var(--text)}
+.por-st-reserved,.por-st-warn{background:var(--accent-warning-soft);color:var(--accent-warning)}
+.por-st-done{background:var(--accent-success-soft);color:var(--accent-success)}
+.por-st-cancel{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
+.por-sf{font-size:13px;color:var(--text);overflow-wrap:anywhere;min-width:0}
+.por-warn{color:var(--accent-warning);font-weight:600}
+.por-muted{color:var(--muted)}
+.por-qty{font-size:13px;color:var(--text);font-variant-numeric:tabular-nums}
+.por-bar{display:inline-flex;gap:2px}
+.por-bar i{display:inline-block;width:9px;height:6px;border-radius:2px;background:var(--border)}
+.por-bar i.on{background:var(--text)}
+.por-steps{font-size:12px;color:var(--muted)}
+.por-l4{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.por-arrow{flex-shrink:0;align-self:center;font-size:19px;color:var(--muted)}
+.por-ghead{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:6px 10px;margin-top:6px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;font:inherit;text-align:left;cursor:pointer}
+.por-gl{font-weight:700;font-size:14px}
+.por-gn{flex:1;font-size:13px;color:var(--muted);min-width:0}
+.por-more{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0}
+.por-empty{padding:24px;text-align:center;color:var(--muted);font-size:14px}
+.por-error{padding:14px;border:2px solid var(--accent-urgent);border-radius:10px;background:var(--accent-urgent-soft);color:var(--text);font-size:14px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.por-error-t{font-weight:800;color:var(--accent-urgent)}
+.por-export{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+@media (max-width:600px){
+  .por-img-tile{width:56px;height:70px}
+  .por-row{gap:10px;padding:10px}
+  .por-field select{max-width:46vw}
+}
+/* po-registry END */
 /* ph-mod-queue START */
 /* Production Ops ▸ PO Queue (js/ph-mod-queue.js). Tokens only; text >= 12px; every selector is .phq-/phq- prefixed. No motion is used,
    so prefers-reduced-motion has nothing to switch off. A tile's left edge is coloured by delay, and the badge beside it repeats it in words. */

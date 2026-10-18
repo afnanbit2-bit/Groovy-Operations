@@ -39,6 +39,9 @@ const _POS_LOADS=[
     run:()=>getDocs(query(collection(db,'fabric_movements'),orderBy('ts','desc'))),
     apply:s=>{allFabricMovements=s.docs.map(d=>({...d.data(),_id:d.id}));}}
 ];
+// Which hard reads failed on the last loadData() (null = never loaded) and when it finished. The PO Registry
+// (js/po-registry.js) reads them so a failed pos read draws an error card, never an empty list.
+let _posLoadFailed=null,_posLoadAt=null;
 function _posIsPermission(e){
   return !!e&&(e.code==='permission-denied'||String(e.message||'').indexOf('permissions')>-1);
 }
@@ -71,6 +74,7 @@ async function loadData(){
       failed=failed.filter(f=>stillIds.has(f.job.name)||!retry.some(j=>j.name===f.job.name));
     }catch(e){console.warn('[loadData] token refresh failed:',e);}
   }
+  _posLoadFailed=failed.filter(f=>!f.job.optional).map(f=>f.job.name);_posLoadAt=Date.now();
   // Whatever loaded is rendered either way — a dashboard showing six of
   // seven datasets beats a dashboard showing zeros.
   if(currentPage&&typeof renderPage==='function')renderPage(currentPage);
@@ -379,7 +383,8 @@ function _cleanupAutoFabricPOs(){
 }
 let _poRegTab='orders';
 function renderRegistry(){
-  _cleanupAutoFabricPOs();
+  // The rebuilt Orders body (js/po-registry.js) never deletes on open; the old list still runs the junk cleanup.
+  if(!(_poRegTab==='orders'&&typeof porRegistryHTML==='function'))_cleanupAutoFabricPOs();
   const reservedCount=allPOs.filter(p=>poStatusOf(p)===PO_STATUS.RESERVED).length;
   // A cancelled PO stays in the list (with its chip) but is not a live order,
   // so it is counted apart from the pipeline figure.
@@ -398,6 +403,7 @@ function renderRegistry(){
 // PO_PRODUCTION_FLOW_PLAN.md §4.3.
 function _poRegTabContent(){
   if(_poRegTab==='cutting')return typeof renderFabricIssueRegistry==='function'?renderFabricIssueRegistry():'<div class="empty" style="padding:24px">Fabric Issue Registry unavailable.</div>';
+  if(typeof porRegistryHTML==='function'){try{return porRegistryHTML();}catch(e){console.warn('[pos] the PO Registry body failed, drawing the old list:',e);}}
   return _poRegOrdersHTML();
 }
 function _poRegOrdersHTML(){
