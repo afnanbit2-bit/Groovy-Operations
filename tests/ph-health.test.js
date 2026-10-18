@@ -248,7 +248,7 @@ async function checks(src,only){
       const x=MQ({reconTruncated:true,lotsTruncated:true});
       return x.byId.qc_completed_unreconciled.state==='unavailable'&&/po_qc_recon \(list cut at its limit/.test(x.byId.qc_completed_unreconciled.unavailable.join())&&/po_qc_lots \(list cut at its limit/.test(x.byId.qc_two_ledgers.unavailable.join())&&x.byId.qc_completed_unreconciled.count===null;})());
     set('qc unavailable: POs not read -> all three unavailable naming pos',(()=>{const x=MQ({pos:null});return['qc_cut_drift','qc_two_ledgers','qc_completed_unreconciled'].every(c=>x.byId[c].state==='unavailable'&&x.byId[c].unavailable.indexOf('pos')>-1);})());
-    set('qc model: qc:false (a non-manager) leaves the four QC checks out altogether - 7 checks, no qc block',(()=>{const x=MQ({qc:false});return x.checks.length===7&&x.qc===null&&!x.byId.qc_cut_drift&&!x.byId.qc_closed_short;})()&&m.checks.length===11);
+    set('qc model: qc:false (a non-manager) leaves the four QC checks out altogether - 7 checks, no qc block',(()=>{const x=MQ({qc:false});return x.checks.length===8&&x.qc===null&&!x.byId.qc_cut_drift&&!x.byId.qc_closed_short&&!x.byId.bundles_no_cut&&!!x.byId.released_unreadable;})()&&m.checks.length===13);   // PO Registry RG2: + released_unreadable (everyone) and bundles_no_cut (managers) = 8 / 13
     set('qc model: the total adds the QC counts (3 + 3 + 4 + 1) to the others that ran; an unavailable QC check adds nothing',m.total===11&&MQ({recon:null}).total===0&&MQ({lots:null}).total===8);
     set('qc model: junk recon / lot rows never throw',(()=>{try{R0('phhBuildModel('+J({pos:posQ,passes:[],jobs:[],recon:[null,3,'x',{}],lots:[null,{poId:'PO-1'},{poId:'PO-301',status:'live',sizes:'bad'}]})+')');return true;}catch(e){return false;}})());
     set('qc source: the file writes nothing and has no i18n call (English-only like the other seven)',!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch|runTransaction)\b/.test(src.health.replace(/\/\*[\s\S]*?\*\//g,''))&&!/phI18n/.test(src.health));
@@ -363,7 +363,7 @@ async function checks(src,only){
     const T=load(src,{session:USERS.afnan,data:baseData()});
     await T.open('monitor');await settle();
     const sec=T.dom.all(T.dom.body,n=>n.getAttribute('data-health')==='1')[0];
-    set('health ui: the Monitor tab has a Data health section with the eleven checks (seven + the four QC checks, for a manager)',!!sec&&T.dom.all(sec,n=>n.getAttribute('data-check')).length===11);
+    set('health ui: the Monitor tab has a Data health section with the eleven checks (seven + the four QC checks, for a manager)',!!sec&&T.dom.all(sec,n=>n.getAttribute('data-check')).length===13);   // PO Registry RG2 added two (released_unreadable, bundles_no_cut)
     const row=n=>T.dom.all(sec,x=>x.getAttribute('data-check')===n)[0];
     set('health ui: each row shows its count (orphan passes 3, reserved with fabric 1, qty mismatch 2)',/3/.test(T.text(row('orphan_passes')))&&T.text(row('reserved_issued')).indexOf('1')>-1&&T.text(row('qty_mismatch')).indexOf('2')>-1);
     set('health ui: the cut-jobs check ran (jobs loaded): 2 open jobs with no fabric link (PO-048 and PO-030; PO-090 and PO-125 have digit passes)',T.text(row('jobs_no_fabric')).indexOf('2')>-1);
@@ -585,7 +585,7 @@ module.exports=async function(){
   await brk('an undated completed PO is counted as a failure','health',"if(f.day===null){M.qc.undated++;return;}","if(f.day===null){r.items.push(poRow(e,'undated'));return;}",[nm('qc completed: PO-402')],Q);
   await brk('a list cut at its limit is trusted as complete','health',"const reconOk=Array.isArray(I.recon)&&I.reconTruncated!==true,","const reconOk=Array.isArray(I.recon),",[nm('qc unavailable: a list cut at its limit')],Q);
   await brk('the ledger check does not need the reconciliations','health',"need:['pos','po_qc_lots','po_qc_recon']","need:['pos','po_qc_lots']",[nm('qc unavailable: recon not read')],Q);
-  await brk('a non-manager is shown the QC checks','health',"if(c.qc&&!qcOn)return;","",[nm('qc model: qc:false')],Q);
+  await brk('a non-manager is shown the QC checks','health',"if((c.qc||c.mgr)&&!qcOn)return;","",[nm('qc model: qc:false')],Q);
   await brk('the QC stages are read for everyone','health',"const qc=_phhIsManager(ctx);","const qc=true;",[nm("qc ui: Kashif")],QU);
   await brk('the QC stages are never read','health',"const qc=wantQc?_phhEnsureQc(force):null;","const qc=null;",[nm("qc ui: a manager's Monitor reads")],QU);
   await brk('an offline-copy answer is trusted as the collection','data',"if(_phFromCache(snap))throw _phCacheError();","",[nm('qc ui: po_qc_lots answered from the OFFLINE COPY')],QU);

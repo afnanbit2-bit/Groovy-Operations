@@ -20,6 +20,11 @@
         5 qty_mismatch ....... POs whose quantity is not the sum of their sizes
         6 pass_no_master ..... fabric passes with no cutting master
         7 jobs_no_fabric ..... open cut jobs with no fabric link (no pass, none picked this session)
+        8 released_unreadable  (PO Registry RG2) POs whose releasedAt is stored but cannot be read as a moment; the note says how
+                               many are stored as text (the legacy ISO string) and how many as a number (born released, WP13)
+        9 bundles_no_cut ..... (PO Registry RG2, managers only) bundles whose PO carries no recorded cut, or whose PO does not
+                               exist (live survey 15 Oct 2026: 58 bundles while no pos document had a cut). Needs a bounded read
+                               of `bundles` (no order, so a bundle with no ts is not left out), started only for a manager.
       A check whose inputs did not load says "unavailable - <collection>"; it never prints 0.
 
    QC OPS (16 Oct 2026): three more checks, for managers, over the QC reconciliation (po_qc_recon) and its lots (po_qc_lots).
@@ -45,7 +50,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 const PHH_READ_TIMEOUT_MS=20000;
-const PHH_LIMITS=Object.freeze({pos:2000,gatepasses:4000});
+const PHH_LIMITS=Object.freeze({pos:2000,gatepasses:4000,bundles:4000});
 const PHH_LIST_SHOW=25;
 const PHH_CAND_MAX=8;
 const PHH_QC_LIVE_DAY_FALLBACK='2026-10-16';   // used ONLY while no po_qc_recon exists (phhQcLiveDay)
@@ -57,6 +62,8 @@ const PHH_CHECKS=Object.freeze([
   {id:'qty_mismatch',label:'POs where the quantity is not the sum of the sizes',need:['pos'],hint:'qty and sizes disagree.'},
   {id:'pass_no_master',label:'Fabric issues with no cutting master',need:['gatepasses'],hint:'Reports and the master log cannot credit these cuts.'},
   {id:'jobs_no_fabric',label:'Open cut jobs with no fabric link',need:['po_cut_jobs','gatepasses'],hint:'The roll check has nothing to check against.'},
+  {id:'released_unreadable',label:'POs whose release date cannot be read',need:['pos'],hint:'releasedAt is stored but is not a date or a time. The PO cannot be dated from its release.'},
+  {id:'bundles_no_cut',mgr:true,label:'Bundles whose PO carries no recorded cut',need:['pos','bundles'],hint:'Bundles exist for a PO that has no cut recorded on it, or for a PO that does not exist. The PO may have been overwritten or deleted after it was cut.'},
   {id:'qc_cut_drift',qc:true,label:'QC: the locked cut no longer matches the PO',need:['pos','po_qc_recon'],hint:'The cut QC locked differs from the cut now recorded on the PO. QC keeps holding the locked figure; an owner decides whether to replace it.'},
   {id:'qc_two_ledgers',qc:true,label:'QC: the old Packing records and the QC lots disagree',need:['pos','po_qc_lots','po_qc_recon'],hint:'Units were received through the old Packing page and in QC lots, or the packing counter does not equal the live lots. (Needs the reconciliations too: they record which old receipts were adopted.)'},
   {id:'qc_completed_unreconciled',qc:true,label:'QC: completed without a closed reconciliation',need:['pos','po_qc_recon'],hint:'Finished in the classic flow after QC Ops went live, with no reconciliation or one still open. POs finished before go-live are not counted.'},
@@ -145,20 +152,23 @@ function phhBuildModel(inp){
   const posOk=Array.isArray(I.pos),passOk=Array.isArray(I.passes),jobsOk=Array.isArray(I.jobs);
   const qcOn=I.qc!==false;
   const reconOk=Array.isArray(I.recon)&&I.reconTruncated!==true,lotsOk=Array.isArray(I.lots)&&I.lotsTruncated!==true;
-  const avail={pos:posOk,gatepasses:passOk,po_cut_jobs:jobsOk,po_qc_recon:reconOk,po_qc_lots:lotsOk};
+  const bunOk=Array.isArray(I.bundles)&&I.bundlesTruncated!==true;
+  const avail={pos:posOk,gatepasses:passOk,po_cut_jobs:jobsOk,po_qc_recon:reconOk,po_qc_lots:lotsOk,bundles:bunOk};
   const availName=function(n){
     if(n==='po_qc_recon'&&Array.isArray(I.recon)&&I.reconTruncated===true)return'po_qc_recon (list cut at its limit, not complete)';
     if(n==='po_qc_lots'&&Array.isArray(I.lots)&&I.lotsTruncated===true)return'po_qc_lots (list cut at its limit, not complete)';
+    if(n==='bundles'&&Array.isArray(I.bundles)&&I.bundlesTruncated===true)return'bundles (list cut at its limit, not complete)';
     return n;
   };
   const picks=_phhObj(I.picks)?I.picks:{};
   const M={avail:avail,checks:[],total:0,anyUnavailable:false,counts:{pos:posOk?I.pos.length:null,fabricPasses:passOk?I.passes.filter(_phhIsFabric).length:null},qc:null};
   if(qcOn){const lv=phhQcLiveDay(reconOk?I.recon:null);M.qc={liveDay:lv.day,liveSource:lv.source,beforeQcOps:0,undated:0};}
   const pidx=passOk?phhPassIndex(I.passes):null;
-  const allKeys=new Set(),live=[];
+  const allKeys=new Set(),live=[],cutKeys=new Set();
   if(posOk)I.pos.forEach(function(po){
     if(!_phhObj(po))return;
     const k=phPoKey(_phhPoId(po));
+    if(k!==null&&(phMs(po.cutAt)!==null||(_phhObj(po.stages)&&_phhObj(po.stages.cutting)&&po.stages.cutting.done===true)))cutKeys.add(k);
     if(k!==null)allKeys.add(k);
     const st=phStageOf(po);
     if(st===null||st==='cancelled')return;
@@ -175,7 +185,7 @@ function phhBuildModel(inp){
     return r;
   };
   PHH_CHECKS.forEach(function(c){
-    if(c.qc&&!qcOn)return;
+    if((c.qc||c.mgr)&&!qcOn)return;
     const r=mk(c);
     if(r.state!=='ok')return;
     if(c.id==='cutting_no_pass'){
@@ -210,6 +220,33 @@ function phhBuildModel(inp){
         if(Array.isArray(picks[k])&&picks[k].length)return;
         r.items.push({kind:'po',id:id,fbKey:id,text:'open cut job'+(phStr(j.plannedCutDate)?' planned '+j.plannedCutDate:'')+' · no fabric issue'});
       });
+    }else if(c.id==='released_unreadable'){
+      let text=0,num=0;
+      I.pos.forEach(function(po){
+        if(!_phhObj(po)||po.releasedAt==null||po.releasedAt==='')return;
+        if(typeof po.releasedAt==='number')num++;else if(typeof po.releasedAt==='string')text++;
+        if(phMs(po.releasedAt)===null){const e={po:po,id:_phhPoId(po),stage:phStageOf(po)||'unknown'};r.items.push(poRow(e,'releasedAt is '+(typeof po.releasedAt)+' '+JSON.stringify(po.releasedAt).slice(0,40)));}
+      });
+      if(text||num)r.note=text+(text===1?' PO stores':' POs store')+' the release as text (the legacy date string), '+num+' as a number (born released); both are read.';
+    }else if(c.id==='bundles_no_cut'){
+      const by=new Map(),junk=[];
+      I.bundles.forEach(function(b){
+        if(!_phhObj(b))return;
+        const k=phPoKey(b.poId);
+        if(k===null){junk.push(b);return;}
+        if(cutKeys.has(k))return;
+        if(!by.has(k))by.set(k,[]);
+        by.get(k).push(b);
+      });
+      const liveBy=new Map();I.pos.forEach(function(po){if(_phhObj(po)){const k=phPoKey(_phhPoId(po));if(k!==null)liveBy.set(k,po);}});
+      Array.from(by.keys()).sort().forEach(function(k){
+        const l=by.get(k),ids=l.map(function(b){return phStr(b.bundleId).trim()||phStr(b.fbKey).trim();}).filter(Boolean),units=l.reduce(function(a,b){const n=phWhole(b.units);return a+(n===null?0:n);},0);
+        const why=l.length+(l.length===1?' bundle':' bundles')+' ('+units+' pcs'+(ids.length?': '+ids.slice(0,4).join(', ')+(ids.length>4?' …':''):'')+')';
+        const po=liveBy.get(k);
+        if(po)r.items.push(poRow({po:po,id:_phhPoId(po),stage:phStageOf(po)||'unknown'},why+' but no cut recorded on the PO'));
+        else r.items.push({kind:'note',id:k,text:why+' · '+k+' does not exist'});
+      });
+      if(junk.length)r.note=junk.length+(junk.length===1?' bundle has':' bundles have')+' no PO number at all.';
     }else if(c.id==='qc_cut_drift'){
       const byKey=new Map();live.forEach(function(e){if(e.key)byKey.set(e.key,e);});
       I.recon.forEach(function(rc){
@@ -350,7 +387,7 @@ const PHH_QC_STAGES=Object.freeze(['recon','lots']);
 let _phhQcWanted=false;      // a manager's screen asked for the QC stages
 let _phhQcTried=false;       // the read was started once (the repaint -> kick -> repaint loop must not spin if it never settles)
 let _phhQcState='idle';      // idle | loading | done
-function _phhQcPending(){return _phhQcWanted&&_phhQcState!=='done';}
+function _phhQcPending(){return _phhQcWanted&&(_phhQcState!=='done'||!!(_phhBun&&_phhBun.state==='loading'));}
 function _phhEnsureQc(force){
   if(typeof phLoadStage!=='function'){_phhQcState='done';return null;}
   const todo=PHH_QC_STAGES.filter(function(s){const st=typeof phLoadState==='function'?phLoadState(s):null;return force||!st||st.state==='idle';});
@@ -366,7 +403,29 @@ function phhEnsure(force,opts){
   if(wantQc){_phhQcWanted=true;_phhQcTried=true;}
   const base=_phhEnsureBase(force);
   const qc=wantQc?_phhEnsureQc(force):null;
-  return qc?Promise.all([base,qc]).then(function(){return true;}):base;
+  const bun=wantQc?_phhEnsureBundles(force):null;
+  const more=[qc,bun].filter(Boolean);
+  return more.length?Promise.all([base].concat(more)).then(function(){return true;}):base;
+}
+// bundles (RG2, managers only): one bounded read with NO orderBy (an orderBy would leave out a bundle with no ts). Never rejects.
+let _phhBun=null,_phhBunP=null;
+function _phhEnsureBundles(force){
+  if(_phhBunP&&!force)return _phhBunP;
+  if(_phhBun&&!force)return null;
+  _phhBun={state:'loading',rows:null,text:'',truncated:false,from:'own',at:null};
+  const p=(async function(){
+    try{
+      if(typeof getDocs!=='function'||typeof query!=='function'||typeof collection!=='function'||typeof db==='undefined')throw new Error('Firestore is not available');
+      const lim=PHH_LIMITS.bundles;
+      const snap=await _phhTimeout(getDocs(query(collection(db,'bundles'),limit(lim))),PHH_READ_TIMEOUT_MS);
+      if(snap&&snap.metadata&&snap.metadata.fromCache===true){const e=new Error('answered from the offline copy');e.code='from-cache';throw e;}
+      const rows=((snap&&snap.docs)||[]).map(function(d){return Object.assign({},d.data(),{fbKey:d.id});});
+      _phhBun={state:'ok',rows:rows,text:'',truncated:rows.length>=lim,from:'own',at:Date.now()};
+    }catch(e){_phhBun={state:'error',rows:null,text:_phhErrText('bundles',e),truncated:false,from:'own',at:Date.now()};}
+    _phhBunP=null;_phhVer++;return true;
+  })();
+  _phhBunP=p;
+  return p;
 }
 function _phhEnsureBase(force){
   if(_phhP&&!force)return _phhP;
@@ -386,7 +445,7 @@ function _phhEnsureBase(force){
   return p;
 }
 function phhSources(){return _phhSrc;}
-function phhReset(){_phhSrc={pos:_phhFresh(),gatepasses:_phhFresh()};_phhP=null;_phhQcWanted=false;_phhQcTried=false;_phhQcState='idle';_phhVer++;}
+function phhReset(){_phhSrc={pos:_phhFresh(),gatepasses:_phhFresh()};_phhP=null;_phhQcWanted=false;_phhQcTried=false;_phhQcState='idle';_phhBun=null;_phhBunP=null;_phhVer++;}
 function phhRows(col){const s=_phhSrc[col];return s&&s.state==='ok'?s.rows:null;}
 // The fabric passes of one PO from what is loaded (every spelling of the number), or null when gatepasses did not load.
 function phhPassesOf(poId){
@@ -428,6 +487,7 @@ function phhModel(ctx){
   const qc=!(ctx&&ctx.canManage===false)&&typeof phGet==='function';      // only a manager is shown the QC checks
   const rc=qc?phGet('recon'):null,lo=qc?phGet('lots'):null;
   return phhBuildModel({pos:phhRows('pos'),passes:phhRows('gatepasses'),jobs:gj&&gj.ok?gj.rows:null,picks:_phhPicks,
+    bundles:qc&&_phhBun&&_phhBun.state==='ok'?_phhBun.rows:null,bundlesTruncated:!!(qc&&_phhBun&&_phhBun.truncated),
     qc:qc,recon:rc&&rc.ok?rc.rows:null,lots:lo&&lo.ok?lo.rows:null,reconTruncated:!!(rc&&rc.ok&&rc.truncated),lotsTruncated:!!(lo&&lo.ok&&lo.truncated)});
 }
 
@@ -503,6 +563,8 @@ function _phhQcNotes(ctx){
     if(!g.ok&&g.state==='error'){const p=phEl('p','phh-err',g.text||(s+': not loaded'));p.setAttribute('role','alert');kids.push(p);}
     else if(g.ok&&g.truncated)kids.push(phEl('p','phh-note',(s==='recon'?'po_qc_recon':'po_qc_lots')+': the list was cut at its limit, so the QC checks that need it cannot run.'));
   });
+  if(_phhBun&&_phhBun.state==='error'){const p=phEl('p','phh-err',_phhBun.text);p.setAttribute('role','alert');kids.push(p);}
+  else if(_phhBun&&_phhBun.truncated)kids.push(phEl('p','phh-note','bundles: the list was cut at '+PHH_LIMITS.bundles+' records, so the bundle check cannot run.'));
   return kids;
 }
 function _phhIsManager(ctx){return!!(ctx&&ctx.canManage===true);}
@@ -519,7 +581,7 @@ function phhSection(ctx){
   const E=phEl,sec=E('section','ph-card phh-sec');
   sec.setAttribute('data-health','1');
   sec.appendChild(E('h3','ph-card-title','Data health'));
-  sec.appendChild(E('p','ph-note','Ten checks: seven over the purchase orders, fabric issues and cut jobs, and three over QC receiving. Each count opens the list behind it. Nothing here is changed or written.'));
+  sec.appendChild(E('p','ph-note','Checks over the purchase orders, fabric issues, cut jobs and bundles, and over QC receiving. Each count opens the list behind it. Nothing here is changed or written.'));
   _phhKick(ctx);
   if(_phhLoading()){sec.appendChild(E('p','phh-note','Reading purchase orders and fabric issues…'));return sec;}
   _phhSourceNotes().forEach(function(n){sec.appendChild(n);});
