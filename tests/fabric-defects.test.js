@@ -358,6 +358,35 @@ module.exports=async function(){
     s.ok('Kashif sees the scan but no Undo / Return',/fab-def-scan/.test(kh)&&!/Undo defective|Return selected to vendor|fab-def-cb/.test(kh));
   }
 
+  // ═══ 6 — WP-F3: the supplier-return form is ONE transaction ═════════════
+  s.section('supplier-return form — several fabrics, ONE transaction; a refusal leaves every bucket untouched');
+  {
+    const mk=(who)=>{
+      const a=app(who);
+      seed(a,[roll('R1',10),roll('R2',20)]);
+      seed(a,[roll('B1',6,{sourceFabId:'FAB-003'}),roll('B2',7,{sourceFabId:'FAB-003'})],K2,'Rib',250,'Black');
+      a.el('fab-sret-reason').value='Excess';a.el('fab-sret-note').value='too much';
+      a.ctx.document.querySelectorAll=sel=>/fab-sret-cb:checked/.test(sel)?[
+        {dataset:{key:K1,roll:'R1',supplier:'Acme Textiles'}},{dataset:{key:K1,roll:'R2',supplier:'Acme Textiles'}},
+        {dataset:{key:K2,roll:'B1',supplier:'Zeta Mills'}}]:[];
+      return a;};
+    const ok=mk('kashif');                                   // in-stock returns are still open to the fabric team
+    await ok.run('window.submitFabRetSupplier()');
+    s.eq('first bucket returned',J([rollOf(ok,'R1').status,rollOf(ok,'R2').status]),'["returned_supplier","returned_supplier"]');
+    s.eq('second bucket returned',rollOf(ok,'B1',K2).status,'returned_supplier');
+    s.eq('exactly ONE transaction for both fabrics',ok.fs.stats.tx,1);
+    s.eq('the untouched roll stays',rollOf(ok,'B2',K2).status,'in_stock');
+    s.ok('each bucket\'s movement names ITS supplier',movs(ok).some(m=>/Acme Textiles/.test(m.note))&&movs(ok).some(m=>/Zeta Mills/.test(m.note)),J(movs(ok).map(m=>m.note)));
+    s.ok('the reason with its note is on the roll',rollOf(ok,'R1').returnReason==='Excess — too much',rollOf(ok,'R1').returnReason);
+    const bad=mk('mustafa');
+    bad.fs.store.get('fabric_inventory/'+K2).rolls[0].status='issued';       // another phone issued B1 meanwhile
+    const before=J([inv(bad),inv(bad,K2)]);
+    await bad.run('window.submitFabRetSupplier()');
+    s.eq('a roll that left stock in the SECOND fabric: the first is NOT returned',J([inv(bad),inv(bad,K2)]),before);
+    s.eq('no movement rows',movs(bad).length,0);
+    s.ok('and the person is told which roll and that nothing was saved',/B1/.test(lastToast(bad))&&/Nothing was saved/.test(lastToast(bad)),lastToast(bad));
+  }
+
   s.section('Urdu — Urdu-first accounts read اردو — English on the labels; English stays English; the stored reason never changes');
   {
     const k=app('kashif',{i18n:true});seed(k,[roll('R1',10)]);

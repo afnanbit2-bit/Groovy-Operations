@@ -2965,11 +2965,18 @@ window.submitFabRetSupplier=async function(){
   });
   if(!_fabBusyStart('Returning to supplier…'))return;
   try{
+    // ONE transaction for every bucket: if any roll is no longer returnable the
+    // whole return is refused and no bucket is touched (it used to loop, so a
+    // refusal in the second fabric left the first already returned).
+    const rowsOut=[],notes={};
     for(const key of Object.keys(byKey)){
-      const s=allFabricInventory.find(x=>x._id===key);if(!s)continue;
+      if(!allFabricInventory.find(x=>x._id===key))continue;
+      byKey[key].codes.forEach(c=>rowsOut.push({key,code:c}));
       const sup=[...byKey[key].suppliers].join(', ')||'unknown supplier';
-      await _fabInvUpsert({fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',supplierReturnRollCodes:byKey[key].codes,reason:fullReason,note:`Returned to ${sup} — ${fullReason} · by ${session.name}`,sourceCol:'fabric_returns',sourceId:'supplier-return'});
+      notes[key]=`Returned to ${sup} — ${fullReason} · by ${session.name}`;
     }
+    if(!rowsOut.length)throw new Error('The ticked rolls are not in the loaded stock — refresh the page. Nothing was saved.');
+    await _fabReturnAtomic(rowsOut,{reason:fullReason,returnRef:'',notes});
     await logActivity('Fabric returned to supplier',`${rows.length} roll(s) — ${fullReason} by ${session.name}`);
     showToast(`${rows.length} roll(s) returned to supplier ✓`);
     _fabSRetFilterKey='';
