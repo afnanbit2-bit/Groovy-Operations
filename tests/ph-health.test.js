@@ -177,6 +177,7 @@ async function checks(src,only){
       mkQ('PO-202',{cutQty:{S:22,M:38,L:40,XL:20}}),                    // drift S 20->22, M 40->38, totals equal (120)
       mkQ('PO-203',{cutQty:{S:10,M:15},sizes:{S:10,M:15},qty:25}),      // drift M 10->15, total 20->25
       mkQ('PO-204'),                                                    // lock unreadable
+      mkQ('PO-206'),mkQ('PO-207'),                                       // closed short (118 of 120) / closed exact
       mkQ('PO-205',{poStatus:'cancelled',cutQty:{S:99}}),               // cancelled: out of every list
       mkQ('PO-301',{packingReceipts:[OLD('R1-S','S',10),MIR('PO-301-1','S',5)]}),           // old units not adopted + a lot
       mkQ('PO-302',{packingReceipts:[MIR('PO-302-1','S',20),MIR('PO-302-1','M',10)]}),      // counter == lot: fine
@@ -205,6 +206,8 @@ async function checks(src,only){
       RC('PO-205','locked',LK({S:50}),T_(2026,9,14,8,0)),
       RC('PO-299','locked',LK({S:50}),T_(2026,9,14,9,0)),                // its PO is not in the list: skipped
       RC('PO-403','closed',LK({S:10}),T_(2026,9,15,5,0)),
+      RC('PO-206','closed',LK({S:20,M:40,L:40,XL:20}),T_(2026,9,15,8,0),{closeVerdict:{state:'short',phase:'short',total:{cut:120,recv:118,diff:-2}},overrides:[{kind:'close_short',cause:'lost_line',reason:'two lost'}]}),
+      RC('PO-207','closed',LK({S:20,M:40,L:40,XL:20}),T_(2026,9,15,9,0),{closeVerdict:{state:'exact',phase:'ready',total:{cut:120,recv:120,diff:0}}}),
       RC('PO-404','reopened',LK({S:10}),T_(2026,9,15,6,0)),
       RC('PO-305','locked',LK({S:20,M:40,L:40,XL:20}),T_(2026,9,15,7,0),{legacyIds:['R9-S']})
     ];
@@ -216,6 +219,8 @@ async function checks(src,only){
     const MQ=(over)=>JSON.parse(J(R0('phhBuildModel('+J(Object.assign({pos:posQ,passes:[],jobs:[],picks:{},recon:recQ,lots:lotsQ},over||{}))+')')));
     const ids=(m,c)=>m.byId[c].items.map(i=>i.id).sort().join(',');
     const m=MQ();
+    set('qc closed short (wave 2): PO-206 (118 of 120, −2, cause lost_line) = 1; PO-207 (closed exact) and PO-403 (closed, no verdict) are not',ids(m,'qc_closed_short')==='PO-206'&&m.byId.qc_closed_short.count===1&&/closed with a shortfall: 118 of 120 received \(-2\), cause: lost_line/.test(m.byId.qc_closed_short.items[0].text));
+    set('qc closed short: po_qc_recon not read -> unavailable naming po_qc_recon, never 0',(()=>{const x=MQ({recon:null});return x.byId.qc_closed_short.state==='unavailable'&&x.byId.qc_closed_short.count===null&&x.byId.qc_closed_short.unavailable.join()==='po_qc_recon';})());
     set('qc drift: PO-202 (S 20->22, M 40->38; totals EQUAL), PO-203 (M 10->15) and PO-204 (unreadable lock) = 3; PO-201 (same), cancelled PO-205 and the orphan recon PO-299 are not',ids(m,'qc_cut_drift')==='PO-202,PO-203,PO-204'&&m.byId.qc_cut_drift.count===3);
     set('qc drift: the line says what moved, size by size',/locked cut 120, the PO now says 120 \(S 20→22, M 40→38\)/.test(m.byId.qc_cut_drift.items.filter(i=>i.id==='PO-202')[0].text)&&/locked cut 20, the PO now says 25 \(M 10→15\)/.test(m.byId.qc_cut_drift.items.filter(i=>i.id==='PO-203')[0].text)&&/locked cut could not be read/.test(m.byId.qc_cut_drift.items.filter(i=>i.id==='PO-204')[0].text));
     set('qc ledgers: PO-301 (10 old units not adopted + a lot), PO-303 (counter 15 vs lot 20), PO-307 (counter 5, no lot rows) = 3',ids(m,'qc_two_ledgers')==='PO-301,PO-303,PO-307'&&m.byId.qc_two_ledgers.count===3);
@@ -243,8 +248,8 @@ async function checks(src,only){
       const x=MQ({reconTruncated:true,lotsTruncated:true});
       return x.byId.qc_completed_unreconciled.state==='unavailable'&&/po_qc_recon \(list cut at its limit/.test(x.byId.qc_completed_unreconciled.unavailable.join())&&/po_qc_lots \(list cut at its limit/.test(x.byId.qc_two_ledgers.unavailable.join())&&x.byId.qc_completed_unreconciled.count===null;})());
     set('qc unavailable: POs not read -> all three unavailable naming pos',(()=>{const x=MQ({pos:null});return['qc_cut_drift','qc_two_ledgers','qc_completed_unreconciled'].every(c=>x.byId[c].state==='unavailable'&&x.byId[c].unavailable.indexOf('pos')>-1);})());
-    set('qc model: qc:false (a non-manager) leaves the three checks out altogether - 7 checks, no qc block',(()=>{const x=MQ({qc:false});return x.checks.length===7&&x.qc===null&&!x.byId.qc_cut_drift;})()&&m.checks.length===10);
-    set('qc model: the total adds the QC counts (3 + 3 + 4) to the others that ran; an unavailable QC check adds nothing',m.total===10&&MQ({recon:null}).total===0&&MQ({lots:null}).total===7);
+    set('qc model: qc:false (a non-manager) leaves the four QC checks out altogether - 7 checks, no qc block',(()=>{const x=MQ({qc:false});return x.checks.length===7&&x.qc===null&&!x.byId.qc_cut_drift&&!x.byId.qc_closed_short;})()&&m.checks.length===11);
+    set('qc model: the total adds the QC counts (3 + 3 + 4 + 1) to the others that ran; an unavailable QC check adds nothing',m.total===11&&MQ({recon:null}).total===0&&MQ({lots:null}).total===8);
     set('qc model: junk recon / lot rows never throw',(()=>{try{R0('phhBuildModel('+J({pos:posQ,passes:[],jobs:[],recon:[null,3,'x',{}],lots:[null,{poId:'PO-1'},{poId:'PO-301',status:'live',sizes:'bad'}]})+')');return true;}catch(e){return false;}})());
     set('qc source: the file writes nothing and has no i18n call (English-only like the other seven)',!/\b(setDoc|updateDoc|addDoc|deleteDoc|writeBatch|runTransaction)\b/.test(src.health.replace(/\/\*[\s\S]*?\*\//g,''))&&!/phI18n/.test(src.health));
   }
@@ -358,7 +363,7 @@ async function checks(src,only){
     const T=load(src,{session:USERS.afnan,data:baseData()});
     await T.open('monitor');await settle();
     const sec=T.dom.all(T.dom.body,n=>n.getAttribute('data-health')==='1')[0];
-    set('health ui: the Monitor tab has a Data health section with the ten checks (seven + the three QC checks, for a manager)',!!sec&&T.dom.all(sec,n=>n.getAttribute('data-check')).length===10);
+    set('health ui: the Monitor tab has a Data health section with the eleven checks (seven + the four QC checks, for a manager)',!!sec&&T.dom.all(sec,n=>n.getAttribute('data-check')).length===11);
     const row=n=>T.dom.all(sec,x=>x.getAttribute('data-check')===n)[0];
     set('health ui: each row shows its count (orphan passes 3, reserved with fabric 1, qty mismatch 2)',/3/.test(T.text(row('orphan_passes')))&&T.text(row('reserved_issued')).indexOf('1')>-1&&T.text(row('qty_mismatch')).indexOf('2')>-1);
     set('health ui: the cut-jobs check ran (jobs loaded): 2 open jobs with no fabric link (PO-048 and PO-030; PO-090 and PO-125 have digit passes)',T.text(row('jobs_no_fabric')).indexOf('2')>-1);
@@ -523,6 +528,7 @@ module.exports=async function(){
   await brk('no candidates on a dead end','cutting',"if(!is.groups.length)kids.push(_phkFindBlock(job,entry));","if(!is.groups.length)kids.push(_phkE('p','phk-muted','No fabric issue was found for this PO yet.'));",['find: a job with no fabric issue shows "Find the fabric issue" and the three candidate passes, not a dead end'],['find']);
   await brk('a pick that is not applied','cutting',"if(hit){passes.push(","if(false){passes.push(",['find: ...and the checklist now has the pass\'s roll (1 roll) and says the pick is for this visit only'],['find']);
   await brk('a pick that writes the job','cutting',"if(typeof phhPick==='function'){phhPick(poId,r.id);phkLoadPO(poId,true);}","if(typeof phhPick==='function'){phhPick(poId,r.id);phSaveCutJob(poId,{note:'picked '+r.id});phkLoadPO(poId,true);}",['find: the pick writes NOTHING - not to po_cut_jobs (the rules allow no fabricPassIds), not to gatepasses, no transaction, no setDoc'],['find']);
+  await brk('a closed-exact reconciliation counted as a shortfall','health',"if(!v||(phStr(v.phase)!=='short'&&phStr(v.phase)!=='receiving'))return;","if(!v)return;",['qc closed short (wave 2): PO-206 (118 of 120, −2, cause lost_line) = 1; PO-207 (closed exact) and PO-403 (closed, no verdict) are not'],['qc']);
   await brk('candidates include passes of real POs','health',"if(k!==null&&keys.has(k))return;                       // it belongs to a real PO","",['find: candidates are the passes that point at no real PO (GP-108, GP-109, GP-172); GP-343/345/220/264 belong to real POs and never appear'],['cand']);
   await brk('candidates ranked by date only','health',"if(hit.length){score+=Math.min(3,hit.length);why.push('fabric matches: '+hit.slice(0,3).join(', '));}","",['find: the Terry Fresh passes rank above the Jersey Heavy "Sample" one for PO-048 (Terry Fresh, military green); the reason says why'],['cand']);
   await brk('a failed gate-pass read drawn as an empty list','health',"if(bad.length)return{state:'error',rows:null,text:bad.map(function(n){return S[n].text||(n+': not loaded');}).join(' ')};","if(bad.length)return{state:'ok',rows:[],text:''};",['find: gate passes unreadable -> the card says so by name (no empty list, no "nothing to pick")'],['find']);

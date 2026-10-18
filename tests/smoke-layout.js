@@ -669,6 +669,15 @@ async function _phmFragment(o){
   DATA.pos=DATA.pos.map(p=>p.id==='PO-103'?Object.assign(p,{name:'A very long article name that has to wrap onto several lines instead of clipping or pushing the page sideways at any width at all'}):p);
   // two fabric passes for the Data health section (14 Oct 2026): one that points at no PO (free text), one with a master
   DATA.gatepasses=[{id:'GP-9001',gpType:'fabric',poId:'Sample',date:'2026-10-01',fabricType:'Jersey Heavy',fabricQty:33.9,fabricUnit:'kg',rollCodes:['R-1'],ts:2},{id:'GP-9002',gpType:'fabric',poId:'101',date:'2026-10-02',cutMaster:'Hassan',ts:1}];
+  // QC wave 2: the four QC checks (a manager's), with a reconciliation closed with a shortfall (118 of 120, a long cause) and one whose
+  // locked cut has drifted, so the qc_closed_short and qc_cut_drift drill lists are measured
+  if(o.qc){
+    const qp=DATA.pos.filter(p=>p.cutQty&&typeof p.cutQty==='object').slice(0,2);
+    const lk=c=>({sizes:Object.assign({},c),total:Object.values(c).reduce((a,b)=>a+(+b||0),0),cutAt:'2026-10-10T05:00:00.000Z',cutBy:'Uzaib',lockedAt:1,lockedBy:'faizan',source:'first_lot'});
+    DATA.po_qc_recon=qp.map((p,i)=>Object.assign({id:p.id,fbKey:p.id,poId:p.id,status:i===0?'closed':'locked',rev:3,cutLock:i===0?lk(p.cutQty):lk(Object.assign({},p.cutQty,{ZZ:5})),lotCount:1,voidCount:0,lastLotAt:2,overrides:[],legacyIds:[],createdAt:Date.UTC(2026,9,10,5,0),createdBy:'faizan',updatedAt:2,updatedBy:'faizan'},
+      i===0?{closedAt:3,closedBy:'mustafa',closeVerdict:{state:'short',phase:'short',total:{cut:120,recv:118,diff:-2}},overrides:[{kind:'close_short',cause:'lost_in_the_line_between_stitching_and_washing_two_pieces',reason:'two lost'}]}:{}));
+    DATA.po_qc_lots=[];
+  }
   const rows=p=>(DATA[p]||[]).map(r=>({id:r.id,data:()=>Object.assign({},r)}));
   const app=loadApp({files:['js/ph-core.js','js/ph-data.js','js/ph-i18n.js'],currentPage:'prod-ops',session:o.floor?{uid:'u-uzaib',u:'uzaib',name:'Uzaib',role:'viewer'}:{uid:'u-afnan',u:'afnan',name:'Afnan',role:'owner'},globals:{
     localStorage:{getItem:k=>(k==='groovy-si-restock-last'&&o.restock!==undefined)?o.restock:null,setItem(){},removeItem(){}},
@@ -690,8 +699,8 @@ async function _phmFragment(o){
   app.run('_phTkOnPage()');
   await app.run('phUiLoad()');
   await app.run('phmLoadPos()');
-  await app.run('phhEnsure(false)');
-  if(o.health)app.run('_phhOpen={orphan_passes:true,qty_mismatch:true,cutting_no_pass:true}');
+  await app.run(o.qc?'phhEnsure(false,{qc:true})':'phhEnsure(false)');
+  if(o.health)app.run(o.qc?'_phhOpen={qc_closed_short:true,qc_cut_drift:true}':'_phhOpen={orphan_passes:true,qty_mismatch:true,cutting_no_pass:true}');
   app.run('_phUiPaintData();_phTkSync()');
   if(o.drawer){
     const tile=dom.all(dom.find('ph-panel'),n=>n.getAttribute&&n.getAttribute('data-tile')===o.drawer)[0];
@@ -3521,6 +3530,7 @@ const FRAGMENTS={
   'production ops — overview: restock card, unreadable':()=>_phmFragment({tab:'overview',restock:'{broken'}),
   'production ops — monitor: the list drawer':()=>_phmFragment({tab:'monitor',drawer:'stuck'}),
   'production ops — monitor: data health with the drill lists open':()=>_phmFragment({tab:'monitor',health:true}),
+  'production ops — monitor: data health, the QC checks with closed-short and drift lists open':()=>_phmFragment({tab:'monitor',health:true,qc:true}),
   'production ops — overview':()=>_phmFragment({tab:'overview'}),
   'production ops — overview for the cutting floor (view only)':()=>_phmFragment({tab:'overview',floor:true}),
   'production ops — reports':()=>_phrFragment({open:true,long:true}),

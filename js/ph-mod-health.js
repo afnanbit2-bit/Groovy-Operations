@@ -31,6 +31,8 @@
                                      mirror of the QC lots does not equal the live lots
        10 qc_completed_unreconciled  completed in the classic flow with no reconciliation (or one left unclosed) AFTER go-live;
                                      POs finished before go-live are counted apart as "before QC Ops", never as failures
+       11 qc_closed_short .......... (wave 2) reconciliations a manager closed with a shortfall (close verdict short / receiving):
+                                     received vs cut and the recorded cause; a place to look for a pattern, not an error
    GO-LIVE DAY (phhQcLiveDay): the PKT day of the OLDEST po_qc_recon.createdAt; only when no reconciliation exists is the
    named constant PHH_QC_LIVE_DAY_FALLBACK used. A data fact beats a date written before the deploy.
 
@@ -57,7 +59,8 @@ const PHH_CHECKS=Object.freeze([
   {id:'jobs_no_fabric',label:'Open cut jobs with no fabric link',need:['po_cut_jobs','gatepasses'],hint:'The roll check has nothing to check against.'},
   {id:'qc_cut_drift',qc:true,label:'QC: the locked cut no longer matches the PO',need:['pos','po_qc_recon'],hint:'The cut QC locked differs from the cut now recorded on the PO. QC keeps holding the locked figure; an owner decides whether to replace it.'},
   {id:'qc_two_ledgers',qc:true,label:'QC: the old Packing records and the QC lots disagree',need:['pos','po_qc_lots','po_qc_recon'],hint:'Units were received through the old Packing page and in QC lots, or the packing counter does not equal the live lots. (Needs the reconciliations too: they record which old receipts were adopted.)'},
-  {id:'qc_completed_unreconciled',qc:true,label:'QC: completed without a closed reconciliation',need:['pos','po_qc_recon'],hint:'Finished in the classic flow after QC Ops went live, with no reconciliation or one still open. POs finished before go-live are not counted.'}
+  {id:'qc_completed_unreconciled',qc:true,label:'QC: completed without a closed reconciliation',need:['pos','po_qc_recon'],hint:'Finished in the classic flow after QC Ops went live, with no reconciliation or one still open. POs finished before go-live are not counted.'},
+  {id:'qc_closed_short',qc:true,label:'QC: closed with a shortfall',need:['pos','po_qc_recon'],hint:'A manager closed these with fewer units than were cut (the override is recorded with a cause and a reason). Not an error: a place to look for a pattern - a master, a line, a size.'}
 ]);
 
 /* ═══ PURE ═══════════════════════════════════════════════════════════════ */
@@ -232,6 +235,20 @@ function phhBuildModel(inp){
           if(bad.length)why.push('the packing counter ('+(_phhSizeText(L.mirror)||'nothing')+') does not equal the live QC lots ('+(_phhSizeText(L.live)||'nothing')+')');
         }
         if(why.length)r.items.push(poRow(e,why.join('; ')));
+      });
+    }else if(c.id==='qc_closed_short'){
+      // a CLOSED reconciliation whose close verdict was not ready (short, or still receiving) = a manager's close with a shortfall
+      const byKey=new Map();live.forEach(function(e){if(e.key)byKey.set(e.key,e);});
+      I.recon.forEach(function(rc){
+        if(!_phhObj(rc)||phStr(rc.status)!=='closed')return;
+        const v=_phhObj(rc.closeVerdict)?rc.closeVerdict:null;
+        if(!v||(phStr(v.phase)!=='short'&&phStr(v.phase)!=='receiving'))return;
+        const e=byKey.get(phPoKey(phStr(rc.fbKey).trim()||phStr(rc.poId).trim()));
+        if(!e)return;
+        const t=_phhObj(v.total)?v.total:{};
+        const ov=(Array.isArray(rc.overrides)?rc.overrides:[]).filter(function(o){return _phhObj(o)&&o.kind==='close_short';}).pop()||null;
+        const n=function(x){return typeof x==='number'&&isFinite(x)?x:'?';};
+        r.items.push(poRow(e,'closed with a shortfall: '+n(t.recv)+' of '+n(t.cut)+' received ('+(typeof t.diff==='number'?(t.diff>0?'+':'')+t.diff:'?')+')'+(ov&&phStr(ov.cause).trim()?', cause: '+phStr(ov.cause).trim():'')));
       });
     }else if(c.id==='qc_completed_unreconciled'){
       const rcBy=new Map();
