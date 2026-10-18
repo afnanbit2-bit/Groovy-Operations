@@ -47,6 +47,13 @@ function shortSeed(id,o){
   s['po_qc_recon/'+id]=recon(id,Object.assign({lotCount:2,rev:2},o.recon||{}));
   s['po_qc_lots/'+id+'-1792000000001-aaaa']=lotRow(id,1,{S:20,M:20,L:20,XL:10},{at:WED_905-5*HOUR});
   s['po_qc_lots/'+id+'-1792000000002-bbbb']=lotRow(id,2,{M:18,L:20,XL:10},{at:WED_905-4*HOUR});
+  // QC fix wave 1 integration (R1, 16 Oct 2026), a deliberate change: R1 writes the classic Final QC fields only for a PO at stage
+  // qc whose bundles are ALL dispositioned, and refuses "no bundles on record". This PO is at qc; two dispositioned bundles are
+  // seeded so the close-short path still exercises (and asserts) the classic write, as R1 intends for such a PO.
+  if(!o.noBundles){
+    s['bundles/'+id+'-B1']={bundleId:id+'-B1',poId:id,size:'M',units:60,qcStatus:'pass'};
+    s['bundles/'+id+'-B2']={bundleId:id+'-B2',poId:id,size:'L',units:60,qcStatus:'pass'};
+  }
   return s;
 }
 const hist=(T,id,type)=>Object.keys(T.store).filter(k=>k.indexOf('pos/'+id+'/history/')===0).map(k=>T.store[k]).filter(h=>!type||h.type===type).sort((a,b)=>a.at-b.at);
