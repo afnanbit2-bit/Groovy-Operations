@@ -400,6 +400,7 @@ function _porMoreHTML(po,f){
   const jobs=typeof allPrintingJobs!=='undefined'&&Array.isArray(allPrintingJobs)?allPrintingJobs.filter(function(j){return j&&(j.poNumber===po.id||j.poId===po.id);}).length:null;
   const linked=[jobs===null?'':jobs+(jobs===1?' embellishment job':' embellishment jobs'),(Array.isArray(po.stockTransfers)?po.stockTransfers.length:0)+' stock transfers',(Array.isArray(po.packingReceipts)?po.packingReceipts.length:0)+' receipts'].filter(Boolean);
   parts.push('<li><b>Linked</b> '+_porEsc(linked.join(' · '))+'</li>');
+  if(/^PO-\d{3,}$/.test(String(po.id||'')))parts.push('<li><button type="button" class="btn-outline por-act" data-po="'+_porEsc(po.id)+'" onclick="window.porCopyLink(this.getAttribute(\'data-po\'))">Copy link to this PO</button></li>');
   if(po.notes)parts.push('<li class="por-notes"><b>Notes</b> <span>'+_porEsc(po.notes)+'</span></li>');
   let hist='';
   if(_porCanSide()&&/^PO-\d{3,}$/.test(String(po.id||''))){
@@ -486,4 +487,81 @@ if(typeof window!=='undefined'){
       _porDetailRepaint();
     });
   };
+}
+
+/* ══ RG6: export the FILTERED list (Excel through the vendored SheetJS, PDF through the print engine's generic variant — no
+   jsPDF call here), and a deep link #po=PO-nnn that opens a PO's detail. ══════════════════════════════════════════════ */
+const POR_EXPORT_HEAD=Object.freeze(['PO','Code','Name','Stage','Age (days)','Age','Fabric issued','Cutting master','Ordered','Cut','Received','Needs attention','On hold','Season','Created by','Created']);
+// The rows, as plain values: "not recorded" stays empty, never 0.
+function porExportRows(rows){
+  return(Array.isArray(rows)?rows:[]).map(function(f){
+    const v=function(x){return typeof x==='number'&&isFinite(x)?x:'';};
+    return[f.id,f.code,f.name,f.stageLabel,f.age&&typeof f.age.days==='number'?f.age.days:'',f.age?f.age.words:'',
+      f.fabric.state==='unread'?'not read':f.fabric.state==='issued'?(f.fabric.day||'yes'):'no',f.fabric.master||'',
+      v(f.ordered),v(f.cut),v(f.received),(f.needs||[]).map(porNeedLabel).join(', '),
+      f.mark.state==='unread'?'not read':f.mark.hold?('yes'+(f.mark.hold.reason?': '+f.mark.hold.reason:'')):'',
+      f.season&&f.season.key?(f.season.guess?'~':'')+f.season.label:'',f.creator,f.createdDay||''];
+  });
+}
+function _porExportName(){const d=porDay(Date.now())||'';return'PO-registry-'+_porState.view+'-'+d;}
+function porExportBarHTML(rows){
+  if(!rows||!rows.length)return'';
+  return'<div class="por-export"><button type="button" class="btn-outline" onclick="window.porExportXlsx()">Excel ('+rows.length+')</button>'
+    +'<button type="button" class="btn-outline" onclick="window.porExportPdf()">PDF list</button></div>';
+}
+function _porCurrentRows(){return _porRows(porBuild());}
+function _porPdfBody(rows){
+  return rows.map(function(f){
+    return[f.id,f.code,f.name,f.stageLabel,(typeof f.ordered==='number'?f.ordered:'—')+' ordered',(typeof f.cut==='number'?f.cut:'—')+' cut',(typeof f.received==='number'?f.received:'—')+' received',f.age?f.age.words:'',(f.needs||[]).length?'needs: '+f.needs.map(porNeedLabel).join(', '):''].filter(Boolean).join('  ·  ');
+  }).join('\n');
+}
+// #po=PO-nnn -> the PO id, or null.
+function porParseHash(h){const m=/^#po=([A-Za-z0-9_-]{1,40})$/.exec(String(h||''));return m?porKey(m[1]):null;}
+let _porLinkTries=0;
+function _porConsumeLink(){
+  if(typeof location==='undefined')return false;
+  const id=porParseHash(location.hash);if(!id)return false;
+  if(porRestricted()||typeof session==='undefined'||!session)return false;
+  const list=typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[];
+  if(!list.length&&(typeof _posLoadAt==='undefined'||_posLoadAt===null)&&_porLinkTries<40){_porLinkTries++;setTimeout(_porConsumeLink,500);return false;}
+  _porLinkTries=0;
+  try{if(typeof history!=='undefined'&&history.replaceState)history.replaceState(null,'',location.pathname+location.search);}catch(e){}
+  const po=list.filter(function(p){return p&&porKey(p.id)===id;})[0];
+  if(!po){if(typeof showToast==='function')showToast(id+' is not in the PO list.',true);if(typeof window!=='undefined'&&typeof window.showPage==='function')window.showPage('po-registry');return false;}
+  if(typeof window!=='undefined'&&typeof window.openPODetail==='function')window.openPODetail(po.fbKey||po.id);
+  return true;
+}
+if(typeof window!=='undefined'){
+  window.porExportXlsx=function(){
+    const rows=_porCurrentRows();
+    if(!rows.length){if(typeof showToast==='function')showToast('Nothing to export.',true);return false;}
+    if(typeof XLSX==='undefined'){if(typeof showToast==='function')showToast('The spreadsheet library did not load — refresh and try again.',true);return false;}
+    const ws=XLSX.utils.aoa_to_sheet([POR_EXPORT_HEAD.slice()].concat(porExportRows(rows)));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'PO Registry');
+    XLSX.writeFile(wb,_porExportName()+'.xlsx');
+    return true;
+  };
+  window.porExportPdf=function(){
+    const rows=_porCurrentRows();
+    if(!rows.length){if(typeof showToast==='function')showToast('Nothing to export.',true);return false;}
+    if(typeof window.printDocument!=='function'){if(typeof showToast==='function')showToast('The print engine did not load — refresh and try again.',true);return false;}
+    const v=POR_VIEWS.filter(function(x){return x.id===_porState.view;})[0];
+    window.printDocument({type:'generic',filename:_porExportName()+'.pdf',data:{documentNumber:'POR-'+(porDay(Date.now())||''),title:'PO Registry — '+(v?v.label:''),
+      subtitle:rows.length+' POs'+(_porState.q?' · search "'+_porState.q+'"':'')+(_porState.need?' · '+porNeedLabel(_porState.need):''),bodyHtml:_porPdfBody(rows),urduLevel:'none'}});
+    return true;
+  };
+  window.porCopyLink=function(id){
+    const k=porKey(id);if(!k)return;
+    const url=(typeof location!=='undefined'?location.origin+location.pathname:'')+'#po='+k;
+    try{navigator.clipboard.writeText(url).then(function(){if(typeof showToast==='function')showToast('Link copied: '+url);},function(){if(typeof showToast==='function')showToast(url);});}catch(e){if(typeof showToast==='function')showToast(url);}
+  };
+  if(typeof window.addEventListener==='function')window.addEventListener('hashchange',function(){try{_porConsumeLink();}catch(e){console.warn('[po-registry] deep link failed:',e);}});
+  const _porOrigStart=window.startApp;
+  if(typeof _porOrigStart==='function'){
+    window.startApp=async function(){
+      const out=await _porOrigStart.apply(this,arguments);
+      try{_porConsumeLink();}catch(e){console.warn('[po-registry] deep link failed:',e);}
+      return out;
+    };
+  }
 }
