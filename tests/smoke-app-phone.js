@@ -181,7 +181,7 @@ function DRIVE(){
             [].slice.call(body.querySelectorAll('img')).forEach(function(im){if(!im.getAttribute('alt'))rg.push('a picture with no alt text');});
             if(rws.length){rws[0].click();await wait(600);
               if(currentPage!=='po-detail')rg.push('a tap on a row did not open the PO (page '+currentPage+')');
-              else if(window.__porDetailExpected&&!document.querySelector('.por-tl'))rg.push('the detail has no timeline');
+              else if(typeof porDetailBodyHTML==='function'&&!document.querySelector('#por-detail .por-tl'))rg.push('the detail has no timeline');
               else{var issues=probe();issues.forEach(function(x){rg.push('detail: '+x);});}
             }
           }

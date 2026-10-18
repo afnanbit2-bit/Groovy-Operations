@@ -864,7 +864,8 @@ function _porFragment(o){
   const pos=[
     mk(140,{name:'COMBAT HOODIE | BLACK — HEAVYWEIGHT FLEECE 420',code:'GHZ004'}),
     mk(125,{currentStage:'stitching',cutAt:'2026-09-09T06:00:00.000Z',cutQty:{XS:0,S:20,M:39,L:40,XL:20,'2XL':0},packingReceipts:[{size:'S',qty:20},{size:'M',qty:35}],
-      stages:{bundling:{done:true,doneAt:'2026-09-14T06:00:00.000Z'}},damageFlagged:true}),
+      stages:{bundling:{done:true,doneAt:'2026-09-14T06:00:00.000Z'}},damageFlagged:true,damageSummary:{total:3,bySize:{M:2,L:1}},damagePercent:2.5,
+      notes:'Buyer wants the hood lining in the same fabric; check the rib colour against the approved swatch before cutting the second lot.',imgFront:'https://res.cloudinary.com/x/f.jpg',bundleIds:['B-1','B-2']}),
     mk(152,{qty:100,sizes:{S:30,M:30,L:30},name:'MF Shorts - Arctyc White'}),
     mk(161,{poStatus:'reserved',currentStage:null,releasedAt:null}),
     mk(160,{poStatus:'cancelled',currentStage:null,cancelledReason:'wrong fabric'}),
@@ -875,9 +876,14 @@ function _porFragment(o){
     session:{u:'afnan',name:'Afnan',role:'owner',canPO:true}});
   app.run('session='+JSON.stringify({u:'afnan',name:'Afnan',role:'owner',canPO:true}));
   app.run('loadData=async function(){};');
+  app.run(fs.readFileSync(path.join(ROOT,'js/gatepass.js'),'utf8').match(/function _gpEsc\(s\)\{[^\n]*\}/)[0]);
   app.run('allPOs='+JSON.stringify(o.empty?[]:pos)+';allPasses='+JSON.stringify(passes)+';_posLoadAt='+NOW+';_posLoadFailed='+JSON.stringify(o.failed?['pos']:[])+';');
   app.run('phCanSee=function(){return true;};phLoadStage=function(){return Promise.resolve({ok:true});};phGet=function(s){return s==="marks"?{ok:true,rows:[{fbKey:"PO-140",marks:{hold:{reason:"waiting for rib"},priority:"urgent"}}]}:{ok:true,rows:[]};};');
   if(o.group)app.run('_porState.group='+JSON.stringify(o.group)+';_porState.view="all";');
+  if(o.detail){
+    const ids=Array.isArray(o.detail)?o.detail:[o.detail];
+    return Promise.resolve(ids.map(function(id){app.run('viewingPO='+JSON.stringify(id)+';renderDetailPage();');return app.el('main-content').innerHTML;}).join('<hr>'));
+  }
   let html=app.run('renderRegistry()');
   if(o.failed){app.run('_posLoadFailed=[];allPOs=[];');html+='<hr>'+app.run('porRegistryHTML()');}
   return Promise.resolve(html);
@@ -2083,6 +2089,8 @@ const FRAGMENTS={
   'po registry — the list (Active, long name, on hold, qty mismatch, no fabric)':()=>_porFragment({}),
   'po registry — grouped by stage with a collapsed reserved group':()=>_porFragment({group:'stage'}),
   'po registry — failed read and empty':()=>_porFragment({failed:true}),
+  'po registry — the detail timeline (stitching, damage, on hold, photos)':()=>_porFragment({detail:'PO-125'}),
+  'po registry — the detail on a reserved and a cancelled PO':()=>_porFragment({detail:['PO-161','PO-160']}),
   'embellishments — embroidery codes (form rows and worker card)':()=>{
     const long='ThreadBook-LONG-CODE-123456789012345678';
     const rec={_id:'r1',articleCode:'GP020',articleName:'Bird patch',status:'locked',

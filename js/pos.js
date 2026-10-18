@@ -563,9 +563,12 @@ function renderDetailPage(){
     </div><div class="stage-connector"></div>`;
   }).join('');
 
+  // The body below the header: the PO Registry's timeline (js/po-registry.js, RG4) when it is loaded; the old cards if not, or if it throws.
+  let _porBody=null;
+  if(typeof porDetailBodyHTML==='function'){try{_porBody=porDetailBodyHTML(po);}catch(e){_porBody=null;console.warn('[pos] the PO detail body failed, drawing the old one:',e);}}
   m.innerHTML=`<button class="back-btn" onclick="window.showPage('po-registry')">← Back to registry</button>
   <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-    <div><div class="page-title">PO ${po.id}</div><div class="page-sub">By ${po.createdBy||'—'} · ${po.createdAt||''}</div></div>
+    <div><div class="page-title">${/^PO-/.test(String(po.id||''))?'':'PO '}${po.id}</div><div class="page-sub">By ${po.createdBy||'—'} · ${po.createdAt||''}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${typeof window.poPrintButtonHTML==='function'?window.poPrintButtonHTML(po,_isCancelled):`<button class="btn-pdf" onclick="window.generatePOPdf('${po.fbKey}')">⬇ PDF</button>`}
       ${_poCanEdit()?`<button class="btn-outline" style="font-size:13px" onclick="window.openPOEdit('${po.fbKey}')">Edit PO</button>`:''}
@@ -581,7 +584,7 @@ function renderDetailPage(){
   ${typeof window.phPoInstructionsSlot==='function'?window.phPoInstructionsSlot(po):''}
   ${typeof window.phPoDetailCardSlot==='function'?window.phPoDetailCardSlot(po):''}
   ${typeof window.phPoQcCardSlot==='function'?window.phPoQcCardSlot(po):''}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+  ${_porBody!==null?_porBody+'<div style="height:80px"></div>':`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <div class="card" style="margin-bottom:0"><div class="card-title">Product</div>
       <div class="info-row"><span class="info-label">Name</span><span style="font-weight:500">${po.name||'—'}</span></div>
       <div class="info-row"><span class="info-label">Code</span><span>${po.code||'—'}</span></div>
@@ -622,9 +625,10 @@ function renderDetailPage(){
   <div class="card"><div class="card-title">Production timeline</div>
     ${stagesHTML}
     ${po.currentStage==='completed'?`<div class="stage-item"><div class="stage-dot dot-done"></div><div class="stage-content"><div class="stage-label" style="color:var(--green)">Completed ✓</div><div class="stage-meta">All stages done</div></div></div>`:''}
-  </div><div style="height:80px"></div>`;
+  </div><div style="height:80px"></div>`}`;
   if(typeof window.phPoDetailCardFill==='function')window.phPoDetailCardFill(po);
   if(typeof window.phPoQcCardFill==='function')window.phPoQcCardFill(po);   // QC9: read-only QC reconciliation card (js/ph-mod-afloat.js)
+  if(_porBody!==null&&typeof porDetailAfter==='function')porDetailAfter(po);  // RG4: reads this PO's bundles once, then repaints the timeline
 }
 
 // PO edit/delete (Sept 2026 grant) — owners, + Mustafa by username. Same
