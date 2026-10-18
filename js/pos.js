@@ -574,6 +574,7 @@ function renderDetailPage(){
   ${typeof window.ptnPoBannerSlot==='function'?window.ptnPoBannerSlot(po):''}
   ${typeof window.phPoInstructionsSlot==='function'?window.phPoInstructionsSlot(po):''}
   ${typeof window.phPoDetailCardSlot==='function'?window.phPoDetailCardSlot(po):''}
+  ${typeof window.phPoQcCardSlot==='function'?window.phPoQcCardSlot(po):''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <div class="card" style="margin-bottom:0"><div class="card-title">Product</div>
       <div class="info-row"><span class="info-label">Name</span><span style="font-weight:500">${po.name||'—'}</span></div>
@@ -617,6 +618,7 @@ function renderDetailPage(){
     ${po.currentStage==='completed'?`<div class="stage-item"><div class="stage-dot dot-done"></div><div class="stage-content"><div class="stage-label" style="color:var(--green)">Completed ✓</div><div class="stage-meta">All stages done</div></div></div>`:''}
   </div><div style="height:80px"></div>`;
   if(typeof window.phPoDetailCardFill==='function')window.phPoDetailCardFill(po);
+  if(typeof window.phPoQcCardFill==='function')window.phPoQcCardFill(po);   // QC9: read-only QC reconciliation card (js/ph-mod-afloat.js)
 }
 
 // PO edit/delete (Sept 2026 grant) — owners, + Mustafa by username. Same

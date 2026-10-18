@@ -2026,6 +2026,98 @@ function phqcPackPointerHTML(){
     '<button type="button" class="ph-btn ph-btn-primary phaf-pack-ptr-b" onclick="window.showPage(\'prod-ops\')">'+t('afloat.pack_btn')+'</button></div>';
 }
 
+/* ── QC9 (wave 2): a READ-ONLY reconciliation card on the classic PO detail page ───────────────────────────────────────────────
+   js/pos.js renderDetailPage puts window.phPoQcCardSlot(po) (an empty placeholder) in the page and calls window.phPoQcCardFill(po)
+   once the HTML is in (both behind typeof). The fill reads po_qc_recon/{PO} and that PO's po_qc_lots FRESH (an offline-copy answer is a
+   failure) and draws: the status, per size cut vs received, and every lot with its 12-hour PKT stamp (a void one struck through). It
+   WRITES NOTHING and offers no control (the changes are made in Production Ops ▸ Afloat POs). A PO with no reconciliation and no lot
+   draws nothing (an older PO looks exactly as before); a failed read says which collection, never a 0. Built with the DOM only. */
+const PHAF_PC_LOTS_MAX=200;
+async function _phqcPcRead(key){
+  const out={recon:null,lots:null,err:null};
+  try{
+    const snap=await _phqcTimeout(getDoc(doc(db,'po_qc_recon',key)),PHAF_TIMEOUT_MS);
+    if(snap&&snap.metadata&&snap.metadata.fromCache===true)throw Object.assign(new Error('the read was answered from this device\'s offline copy'),{code:'from-cache'});
+    out.recon=snap&&snap.exists()?(snap.data()||{}):null;
+  }catch(e){out.err={collection:'po_qc_recon',message:_phqcErr(e).message};return out;}
+  try{
+    const qs=await _phqcTimeout(getDocs(query(collection(db,'po_qc_lots'),where('poId','==',key),limit(PHAF_PC_LOTS_MAX))),PHAF_TIMEOUT_MS);
+    if(qs&&qs.metadata&&qs.metadata.fromCache===true)throw Object.assign(new Error('the read was answered from this device\'s offline copy'),{code:'from-cache'});
+    out.lots=((qs&&qs.docs)||[]).map(function(d){return Object.assign({},d.data(),{id:d.id});}).filter(function(l){return l&&_phqcKeyOf(l.poId)===key;});
+  }catch(e){out.err={collection:'po_qc_lots',message:_phqcErr(e).message};}
+  return out;
+}
+// The card for one PO from what was read: {state:'ok',recon,lots} | {state:'error',collection,message}. null = nothing to draw.
+function phqcPoCard(po,r){
+  const id=_phqcIdOf(po),key=_phqcKeyOf(id);
+  if(!key||!r)return null;
+  const card=phEl('div','card phaf-pc');card.setAttribute('data-po',key);
+  card.appendChild(phEl('div','card-title phaf-pc-t',phI18nD('afloat.pc_title')));
+  if(r.state==='error'){
+    card.setAttribute('data-state','error');
+    const p=phEl('p','ph-note phaf-unread phaf-pc-err',phI18nD('afloat.pc_unread',{collection:_phqcStr(r.collection),why:_phqcStr(r.message)}));p.setAttribute('role','alert');
+    card.appendChild(p);return card;
+  }
+  const rc=r.recon,lots=Array.isArray(r.lots)?r.lots:[];
+  if(!rc&&!lots.length)return null;
+  card.setAttribute('data-state','ok');
+  const rec=phQcReconcile(po,rc,lots,{reconRead:true});
+  const t={id:key,po:po,rec:rec,recon:rc,reconOk:true,lotsOk:true,lots:lots};
+  const v=phqcVerdictOf(t);
+  const head=phEl('p','phaf-pc-v phaf-tone-'+v.tone);
+  head.appendChild(phEl('span','phaf-v-g',v.glyph));head.appendChild(document.createTextNode(' '));
+  head.appendChild(phEl('span','phaf-v-w',phI18nD(v.key,v.params||undefined)));
+  card.appendChild(head);
+  // the status, in words
+  let stKey='afloat.pc_st_none',stP=null;
+  if(rc&&rc.status==='closed')stKey='afloat.pc_st_closed',stP={when:phqcStampBy(rc.closedAt,_phqcStr(rc.closedByName)||_phqcWho(rc.closedBy))};
+  else if(rc&&rc.status==='reopened')stKey='afloat.pc_st_reopened';
+  else if(rc&&rc.status==='locked')stKey='afloat.pc_st_locked',stP={when:phqcStampBy(rc.cutLock&&rc.cutLock.lockedAt,_phqcWho(rc.cutLock&&rc.cutLock.lockedBy))};
+  card.appendChild(phEl('p','phaf-pc-st',phI18nD(stKey,stP||undefined)));
+  // per size: cut vs received
+  if(rec&&rec.ok&&rec.verdict&&Array.isArray(rec.verdict.order)){
+    const tb=document.createElement('table');tb.className='phaf-table phaf-pc-table';
+    const hr=document.createElement('tr');
+    ['afloat.t_size','afloat.t_cut','afloat.t_recv','afloat.t_diff'].forEach(function(k){const th=document.createElement('th');th.setAttribute('scope','col');phI18nSet(th,phI18nD(k));hr.appendChild(th);});
+    const thead=document.createElement('thead');thead.appendChild(hr);tb.appendChild(thead);
+    const tbody=document.createElement('tbody');
+    const row=function(label,s,cls){const tr=document.createElement('tr');if(cls)tr.className=cls;
+      [label,String(s.cut),String(s.recv),s.diff===0?'0':(s.diff>0?'+'+s.diff:'−'+(-s.diff))].forEach(function(x,i){const c=document.createElement('td');c.className=i?'phaf-n':'phaf-k';phI18nSet(c,x);tr.appendChild(c);});
+      tbody.appendChild(tr);};
+    rec.verdict.order.forEach(function(k){row(k,rec.verdict.sizes[k]);});
+    row(phI18nD('afloat.t_total'),rec.verdict.total,'phaf-total');
+    tb.appendChild(tbody);
+    const wrap=phEl('div','phaf-tablewrap');wrap.appendChild(tb);card.appendChild(wrap);
+  }else card.appendChild(phEl('p','ph-note',phI18nD('afloat.pc_nocut')));
+  // the lots, oldest first (void ones struck through), each with its 12-hour PKT stamp
+  const l=_phqcLotsSorted(lots);
+  if(l.length){
+    const ul=phEl('ul','phaf-lotlist phaf-pc-lots');
+    l.forEach(function(x){ul.appendChild(phqcLotNode(x,{}));});
+    card.appendChild(ul);
+  }else card.appendChild(phEl('p','ph-note',phI18nD('afloat.lots_none')));
+  if(lots.length>=PHAF_PC_LOTS_MAX)card.appendChild(phEl('p','ph-note phaf-unread',phI18nD('afloat.pc_capped',{n:PHAF_PC_LOTS_MAX})));
+  card.appendChild(phEl('p','ph-note phaf-pc-ro',phI18nD('afloat.pc_readonly')));
+  return card;
+}
+window.phPoQcCardSlot=function(po){return'<div id="ph-detail-qc" data-ph-detail-qc="1" style="margin-bottom:12px"></div>';};
+window.phPoQcCardFill=async function(po){
+  try{
+    const host=document.getElementById('ph-detail-qc');if(!host)return false;
+    const key=_phqcKeyOf(_phqcIdOf(po));if(!key)return false;
+    host.setAttribute('data-po',key);
+    while(host.firstChild)host.removeChild(host.firstChild);
+    if(typeof getDoc!=='function'||typeof getDocs!=='function')return false;
+    const r=await _phqcPcRead(key);
+    const now=document.getElementById('ph-detail-qc');
+    if(!now||now.getAttribute('data-po')!==key)return false;      // the page moved on while the read ran
+    while(now.firstChild)now.removeChild(now.firstChild);
+    const card=phqcPoCard(po,r.err?{state:'error',collection:r.err.collection,message:r.err.message}:{state:'ok',recon:r.recon,lots:r.lots});
+    if(card)now.appendChild(card);
+    return !!card;
+  }catch(e){return false;}
+};
+
 /* ── the lightbox (tap the detail's picture): front and back, contain-fit ── */
 function phqcLightbox(t,opener){
   phqcLightboxClose();

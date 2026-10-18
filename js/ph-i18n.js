@@ -1451,6 +1451,15 @@ function phI18nNoticeReset(){_phI18nNoticeState='';}
   A('afloat.dl_stale','Someone else changed the reconciliation of {po} just now. The latest copy is loaded below — check it and try again. Nothing was changed.','ابھی کسی اور نے {po} کا ملان بدلا۔ تازہ ترین کاپی نیچے لوڈ ہے — دیکھ کر دوبارہ کوشش کریں۔ کچھ نہیں بدلا۔');
   A('afloat.ok_lock','The cut of {po} is final — locked {when}.','{po} کی کٹنگ حتمی ہے — لاک {when}۔');
   A('afloat.ok_close','{po} is closed — {when}. {classic}','{po} بند ہے — {when}۔ {classic}');
+  A('afloat.pc_title','QC reconciliation (read-only)','کیو سی ملان (صرف دیکھنے کے لیے)');
+  A('afloat.pc_unread','QC reconciliation could not be read — {collection} ({why}). Nothing is shown rather than a guess.','کیو سی ملان پڑھا نہیں جا سکا — {collection} ({why})۔ اندازے کے بجائے کچھ نہیں دکھایا گیا۔');
+  A('afloat.pc_st_locked','Open — QC is receiving. Cut locked {when}.','کھلا — کیو سی وصول کر رہا ہے۔ کٹنگ {when} کو حتمی ہوئی۔');
+  A('afloat.pc_st_reopened','Reopened — QC is receiving again.','دوبارہ کھولا گیا — کیو سی دوبارہ وصول کر رہا ہے۔');
+  A('afloat.pc_st_closed','Closed {when}.','{when} کو بند ہوا۔');
+  A('afloat.pc_st_none','No reconciliation record yet.','ابھی ملان کا ریکارڈ نہیں۔');
+  A('afloat.pc_nocut','No cut is recorded for this PO yet.','اس پی او کی کٹنگ ابھی درج نہیں۔');
+  A('afloat.pc_capped','Only the first {n} lots were read.','صرف پہلی {n} لاٹس پڑھی گئیں۔');
+  A('afloat.pc_readonly','Read-only. Lots are received and the PO is closed in Production Ops ▸ Afloat POs.','صرف دیکھنے کے لیے۔ لاٹس پروڈکشن آپس ▸ جاری پی او میں وصول اور بند ہوتی ہیں۔');
   A('afloat.ok_classic_yes','Final QC is marked complete.','فائنل کیو سی مکمل۔');
   A('afloat.ok_classic_no','Final QC is NOT marked complete: {why}. The PO carries on at {stage}; Haris completes Final QC on its stage page as usual. Here it is listed under "Closed (last 7 days)", then it leaves Afloat POs.','فائنل کیو سی مکمل نہیں ہوا: {why}۔ پی او {stage} پر چلتا رہے گا؛ حارث اس کے مرحلے کے صفحے پر معمول کے مطابق فائنل کیو سی مکمل کرے گا۔ یہاں یہ "بند (پچھلے 7 دن)" میں دکھے گا، پھر جاری پی او سے ہٹ جائے گا۔');
   A('afloat.ok_classic_already','Final QC had already been completed in the classic flow.','فائنل کیو سی پرانے طریقے میں پہلے ہی مکمل ہو چکا تھا۔');

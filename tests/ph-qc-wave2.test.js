@@ -10,6 +10,10 @@
    4. After Close PO the flash says whether the classic Final QC was marked complete (the writer's result.classic, R1) and, when not,
       why and where the PO goes (it carries on at its stage, Haris finishes it, listed under "Closed (last 7 days)" here). Before this the
       line ALWAYS said "Final QC is marked complete" — false for every close before stage qc. The confirm texts were corrected too.
+   5. QC9: a READ-ONLY QC reconciliation card on the classic PO detail page (js/pos.js renderDetailPage, typeof-guarded hooks):
+      status, per size cut vs received, the lots with 12-hour PKT stamps (a void one struck through). Hand-computed: cut S20 M40 L40 XL20
+      (120); lot #1 S10 M15 L10 XL5 (40), lot #2 S5 M15 L20 (40), lot #3 XL15 VOID -> received S15 M30 L30 XL5 = 80, diffs −5/−10/−10/−15,
+      total −40. It writes nothing; a failed read names the collection; a PO with no reconciliation draws nothing.
    What it does NOT prove: a real browser's HTMLCollection (only an object of the same shape), a real phone. */
 'use strict';
 const fs=require('fs'),path=require('path');
@@ -160,6 +164,63 @@ module.exports=async function(){
     s.ok('the close confirm and the shortfall confirm no longer promise Final QC unconditionally',/Closing marks Final QC complete only when the PO is at Final QC and QC has checked every bundle/.test(I18N)&&/Final QC is marked complete on the PO if it is at Final QC with every bundle checked/.test(I18N)&&!/'Closing marks Final QC complete\. /.test(I18N));
     const b=await closeAs('faizan','stitching',null,mut(SRC,"  if(c.written===true)return phI18nD('afloat.ok_classic_yes');","  return phI18nD('afloat.ok_classic_yes');"));
     s.ok('break "the line always says marked complete" fails "… NOT marked complete, why, and where the PO goes"',/NOT marked complete/.test(b.flash)===false);
+  }
+
+  /* ── 5. QC9: the read-only card on the classic PO page ─────────── */
+  s.section('5. QC9: read-only QC reconciliation card on the classic PO detail page');
+  const POSJ=read('js/pos.js');
+  s.ok('js/pos.js: the slot sits right after the instruction card slot, behind typeof',/\$\{typeof window\.phPoDetailCardSlot==='function'\?window\.phPoDetailCardSlot\(po\):''\}\n  \$\{typeof window\.phPoQcCardSlot==='function'\?window\.phPoQcCardSlot\(po\):''\}/.test(POSJ));
+  s.ok('js/pos.js: the fill is called after the page HTML is in, behind typeof',/window\.phPoDetailCardFill\(po\);\n  if\(typeof window\.phPoQcCardFill==='function'\)window\.phPoQcCardFill\(po\);/.test(POSJ));
+  const PCSEED=()=>({'pos/PO-501':W.cutPo('PO-501','qc'),
+    'po_qc_recon/PO-501':W.recon('PO-501',{lotCount:3,voidCount:1,rev:5}),
+    'po_qc_lots/PO-501-1792000000001-aaaa':W.lotRow('PO-501',1,{S:10,M:15,L:10,XL:5},{at:W.MON_4PM,day:'2026-10-12',note:kit.HOSTILE}),
+    'po_qc_lots/PO-501-1792000000002-bbbb':W.lotRow('PO-501',2,{S:5,M:15,L:20},{at:W.WED_905,day:'2026-10-14'}),
+    'po_qc_lots/PO-501-1792000000003-cccc':W.lotRow('PO-501',3,{XL:15},{at:W.THU_0005,day:'2026-10-15',status:'void',voidedAt:W.THU_NOON,voidedBy:'faizan',voidReason:'wrong size'})});
+  const fill=async(user,o)=>{
+    o=o||{};W.CLK.now=W.THU_NOON;
+    const fk=W.makeFake(o.seed||PCSEED(),{getDocErr:o.getDocErr});
+    const T=W.mk(user,{fk:fk,src:o.src});
+    if(o.lotsErr)T.ctx.getDocs=async()=>{throw Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});};
+    if(o.cache)T.ctx.getDoc=async r=>({exists:()=>false,data:()=>null,metadata:{fromCache:true}});
+    T.R('(function(){const h=document.createElement("div");h.id="ph-detail-qc";document.body.appendChild(h);})()');
+    const tx0=fk.log.tx,w0=fk.log.writes.length;
+    const ret=await T.R('window.phPoQcCardFill('+J(fk.store['pos/PO-501']||{fbKey:'PO-501',id:'PO-501'})+')');
+    await kit.settle(20);
+    const host=T.ctx.document.getElementById('ph-detail-qc');
+    const rows=T.ctx.document.getElementsByTagName?null:null;
+    const trs=T.dom.all(host,n=>n.tagName==='TR').map(r=>r.children.map(c=>T.text(c)).join('|'));
+    return{ret,T,fk,host,text:T.text(host),trs,lots:T.cls('phaf-lot',host).map(n=>T.text(n)),voided:T.cls('phaf-lot-void',host).length,writes:fk.log.writes.length-w0,tx:fk.log.tx-tx0,btns:T.dom.all(host,n=>n.tagName==='BUTTON'||n.tagName==='INPUT'||n.tagName==='TEXTAREA').length};
+  };
+  {
+    for(const u of ['afnan','faizan']){
+      const a=await fill(u);
+      s.ok(u+': the card is drawn and says it is read-only; status "Open — QC is receiving. Cut locked Sun 11 Oct 2026, 4:00 PM by Faizan."',a.ret===true&&/QC reconciliation \(read-only\)/.test(a.text)&&/Open — QC is receiving\. Cut locked Sun 11 Oct 2026, 4:00 PM by Faizan\./.test(a.text)&&/Read-only\. Lots are received and the PO is closed in Production Ops ▸ Afloat POs\./.test(a.text),a.text);
+    }
+    const a=await fill('mustafa');
+    s.eq('per size cut | received | difference (hand-computed; the void lot does not count)',J(a.trs),J(['Size|Cut (final)|QC received|Difference','S|20|15|−5','M|40|30|−10','L|40|30|−10','XL|20|5|−15','Total|120|80|−40']));
+    s.ok('the verdict reads "receiving"',/◐ receiving/.test(a.text));
+    s.eq('three lots, oldest first, each with its 12-hour PKT stamp',J(a.lots.map(t=>t.split(' pcs')[0])),J(['Lot #1 · Mon 12 Oct 2026, 4:00 PM by Faizan40','Lot #2 · Wed 14 Oct 2026, 9:05 AM by Faizan40','Lot #3 · Thu 15 Oct 2026, 12:05 AM by Faizan15']));
+    s.ok('the void lot is struck through and says who voided it, when and why',a.voided===1&&/Thu 15 Oct 2026, 12:00 PM by Faizan/.test(a.lots[2])&&/wrong size/.test(a.lots[2]));
+    s.ok('no 24-hour time on the card',!/\b(1[3-9]|2[0-3]|0\d):\d\d\b/.test(a.text));
+    s.ok('it WRITES NOTHING (no write, no transaction) and offers NO control',a.writes===0&&a.tx===0&&a.btns===0);
+    s.ok('a hostile lot note reaches the page as text only',/<img src=x onerror=alert\(1\)>/.test(a.text)&&a.T.dom.all(a.host,n=>n.tagName==='IMG').length===0);
+    const closedSeed=PCSEED();closedSeed['po_qc_recon/PO-501']=W.recon('PO-501',{status:'closed',closedAt:W.THU_NOON,closedBy:'mustafa',closedByName:'Mustafa',lotCount:3,voidCount:1,rev:6});
+    const c=await fill('afnan',{seed:closedSeed});
+    s.ok('a closed reconciliation: "Closed Thu 15 Oct 2026, 12:00 PM by Mustafa." and the closed verdict',/Closed Thu 15 Oct 2026, 12:00 PM by Mustafa\./.test(c.text)&&/✓ closed/.test(c.text),c.text);
+    const none=await fill('afnan',{seed:{'pos/PO-501':W.cutPo('PO-501','qc')}});
+    s.ok('no reconciliation and no lot (an older PO): NOTHING is drawn, the page looks as before',none.ret===false&&none.host.children.length===0);
+    const e1=await fill('afnan',{getDocErr:{'po_qc_recon/PO-501':()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'})}});
+    s.ok('po_qc_recon refused: an alert naming po_qc_recon, no table, no number',/could not be read — po_qc_recon/.test(e1.text)&&e1.trs.length===0&&e1.T.dom.all(e1.host,n=>n.getAttribute&&n.getAttribute('role')==='alert').length===1,e1.text);
+    const e2=await fill('afnan',{lotsErr:true});
+    s.ok('po_qc_lots refused: an alert naming po_qc_lots, no table',/could not be read — po_qc_lots/.test(e2.text)&&e2.trs.length===0);
+    const e3=await fill('afnan',{cache:true});
+    s.ok('an offline-copy answer is a failure, not "no reconciliation"',/could not be read — po_qc_recon/.test(e3.text)&&/offline copy/.test(e3.text));
+    const r1=await fill('afnan',{seed:{'pos/PO-501':W.cutPo('PO-501','qc')},src:mut(SRC,"  if(!rc&&!lots.length)return null;\n","")});
+    s.ok('break "a card drawn for a PO with no reconciliation" fails "… NOTHING is drawn"',!(r1.ret===false&&r1.host.children.length===0));
+    const r2=await fill('afnan',{getDocErr:{'po_qc_recon/PO-501':()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'})},src:mut(SRC,"  }catch(e){out.err={collection:'po_qc_recon',message:_phqcErr(e).message};return out;}","  }catch(e){return out;}")});
+    s.ok('break "a refused po_qc_recon read drawn as none" fails "… an alert naming po_qc_recon"',!/could not be read — po_qc_recon/.test(r2.text));
+    const r3=await fill('afnan',{cache:true,src:mut(SRC,"    if(snap&&snap.metadata&&snap.metadata.fromCache===true)throw Object.assign(new Error('the read was answered from this device\\'s offline copy'),{code:'from-cache'});\n    out.recon=","    out.recon=")});
+    s.ok('break "an offline copy accepted" fails "an offline-copy answer is a failure"',!/offline copy/.test(r3.text));
   }
 
   return s;

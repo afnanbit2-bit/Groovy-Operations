@@ -636,6 +636,26 @@ async function _phDetailCardFragment(o){
   vm.runInContext('window.phPoDetailCardFill(__po)',app.ctx);
   return{html:'<div style="max-width:720px;padding:12px"><div class="card-title">Product</div>'+domkit.toHtml(host)+'</div>'};
 }
+// QC wave 2 (QC9): the READ-ONLY QC reconciliation card on the classic PO DETAIL page (js/ph-mod-afloat.js phPoQcCardSlot/Fill), the real
+// builder over tests/ph-mod-afloat-write.test.js's fake Firestore: a receiving PO with two live lots and a void one (a long byName), and the
+// failed-read card. Sits in a plain page column, as in renderDetailPage.
+async function _phPoQcCardFragment(o){
+  o=o||{};
+  const domkit=require('./ph-dom');
+  const W=require('./ph-mod-afloat-write.test.js').kit;
+  W.CLK.now=W.THU_NOON;
+  const LONG='Faizan Ahmed Khan Siddiqui (QC Ops, Warehouse Receiving Desk)';
+  const seed={'pos/PO-501':W.cutPo('PO-501','qc'),'po_qc_recon/PO-501':W.recon('PO-501',{lotCount:3,voidCount:1,rev:5}),
+    'po_qc_lots/PO-501-1792000000001-aaaa':W.lotRow('PO-501',1,{S:10,M:15,L:10,XL:5},{at:W.MON_4PM,day:'2026-10-12',byName:LONG,note:'first rack, two bundles open'}),
+    'po_qc_lots/PO-501-1792000000002-bbbb':W.lotRow('PO-501',2,{S:5,M:15,L:20},{at:W.WED_905,day:'2026-10-14'}),
+    'po_qc_lots/PO-501-1792000000003-cccc':W.lotRow('PO-501',3,{XL:15},{at:W.THU_0005,day:'2026-10-15',status:'void',voidedAt:W.THU_NOON,voidedBy:'faizan',voidReason:'wrong size typed on the phone'})};
+  const fk=W.makeFake(seed,o.fail?{getDocErr:{'po_qc_recon/PO-501':()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'})}}:{});
+  const T=W.mk(o.user||'afnan',{fk:fk});
+  T.R('(function(){const h=document.createElement("div");h.id="ph-detail-qc";document.body.appendChild(h);})()');
+  await T.R('window.phPoQcCardFill('+JSON.stringify(fk.store['pos/PO-501'])+')');
+  const host=T.ctx.document.getElementById('ph-detail-qc');
+  return{html:'<div style="max-width:720px;padding:12px"><div class="card-title">Product</div>'+domkit.toHtml(host)+'</div>'};
+}
 // Production Ops ▸ Monitor and Overview (12 Oct 2026): the REAL js/ph-ui.js + js/ph-mod-monitor.js over tests/ph-dom.js's small DOM, with the
 // shared fifteen-PO fixture (tests/ph-mod-monitor-fixture.js, clock pinned to Mon 12 Oct 2026), then SERIALISED to markup. Variants: the Monitor
 // tab with every tile / the range bar / the stage bars / the attention list / the settings card; the same with po_cut_jobs refused and the range
@@ -3493,6 +3513,8 @@ const FRAGMENTS={
   "production ops — po detail instruction card":()=>_phDetailCardFragment({}),
   "production ops — po detail instruction card (none saved)":()=>_phDetailCardFragment({none:true}),
   "production ops — po detail instruction card (malformed)":()=>_phDetailCardFragment({bad:true}),
+  "production ops — po detail QC reconciliation card":()=>_phPoQcCardFragment({}),
+  "production ops — po detail QC reconciliation card (failed read)":()=>_phPoQcCardFragment({fail:true}),
   'production ops — monitor':()=>_phmFragment({tab:'monitor'}),
   'production ops — monitor: unavailable and no-data states':()=>_phmFragment({tab:'monitor',jobsFail:true,range:'today'}),
   'production ops — overview: restock card':()=>_phmFragment({tab:'overview',restock:JSON.stringify({day:'2026-10-13',n:9,critical:3,rows:[{code:'GST073',label:'Effortless Tee With A Very Long Article Name That Has To Wrap — Deep Blue Colourway',lo:528,hi:888,band:'critical'},{code:'GD007',label:'Denim',lo:24,hi:60,band:'act'},{code:'GHZ012',label:'Hoodie',lo:12,hi:36,band:'act'}]})}),
