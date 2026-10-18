@@ -1467,7 +1467,10 @@ function _phqcNowText(t){
 function _phqcResMsg(res){
   if(!res)return phI18nD('afloat.err_unknown');
   if(res.code==='offline')return phI18nD('afloat.rx_offline');
-  if(res.code==='permission')return phI18nD('afloat.err_permission');
+  // Wave 2 (R3): a refusal is the writer's own sentence, VERBATIM -- it names the device clock (every QC write is refused when the
+  // phone's date is more than two days off, and that reads exactly like "rules not published"). The short generic line only when
+  // the writer gave none.
+  if(res.code==='permission'){const w=_phqcStr(res.error);return w?phI18nD('afloat.err_permission_v',{why:w}):phI18nD('afloat.err_permission');}
   return _phqcStr(res.error)||phI18nD('afloat.err_unknown');
 }
 // One PO document, read fresh after a write (so the tile and its stage are current). NEVER rejects; a failed read keeps the old row.

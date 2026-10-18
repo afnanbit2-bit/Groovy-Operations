@@ -1428,6 +1428,7 @@ function phI18nNoticeReset(){_phI18nNoticeState='';}
   A('afloat.now_closed','is closed with {n} of {cut}.','{cut} میں سے {n} کے ساتھ بند ہے۔');
   A('afloat.now_unknown','could not be judged — reload.','جانچا نہیں جا سکا — دوبارہ لوڈ کریں۔');
   A('afloat.err_unknown','Could not save. Nothing was changed. Retry.','محفوظ نہیں ہو سکا۔ کچھ نہیں بدلا۔ دوبارہ کوشش کریں۔');
+  A('afloat.err_permission_v','{why} Nothing was saved.','{why} کچھ محفوظ نہیں ہوا۔');
   A('afloat.err_permission','Refused by the database rules: republish firestore.rules from the repo file, then retry. Nothing was saved.','ڈیٹا بیس قوانین نے روک دیا: ریپو فائل سے firestore.rules دوبارہ شائع کریں، پھر کوشش کریں۔ کچھ محفوظ نہیں ہوا۔');
   A('afloat.dl_lock_t','Lock the cut of {po}?','{po} کی کٹنگ لاک کریں؟');
   A('afloat.dl_lock_q','Lock the cut of {po} as final ({n} pcs: {list})? QC will be held to these numbers.','{po} کی کٹنگ حتمی لاک کریں ({n} پیس: {list})؟ کیو سی انہی تعداد پر پرکھا جائے گا۔');

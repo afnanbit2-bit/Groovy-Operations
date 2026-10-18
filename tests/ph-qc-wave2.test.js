@@ -5,6 +5,8 @@
    2. The classic Complete QC (js/pos.js) still FAILS OPEN when po_qc_recon is refused (the rules not published), but now LOUDLY: a red
       toast and the confirm text name po_qc_recon and the republish, an Activity row "QC check skipped" is written, and the final toast
       says the check was skipped. Any other failure still refuses; a readable PO is unchanged (no warning).
+   3. The receive sheet prints a refused save in the writer's own words, VERBATIM — the sentence that names the device clock (R3 in
+      qc-decisions.md: every QC write is refused when the phone's date is more than two days off, which reads like "rules not published").
    What it does NOT prove: a real browser's HTMLCollection (only an object of the same shape), a real phone. */
 'use strict';
 const fs=require('fs'),path=require('path');
@@ -102,6 +104,27 @@ module.exports=async function(){
     s.ok('break "the warning toast dropped in completeQC" fails "refused read … LOUD"',!loudOk(r2));
     const r3=await runCQC({getDocErr:{'po_qc_recon/PO-301':PERM},src:mut(SRC,"if(typeof logActivity==='function')Promise.resolve(logActivity(","if(false)Promise.resolve(logActivity(")});
     s.ok('break "no Activity row" fails "refused read … LOUD"',!loudOk(r3));
+  }
+
+  /* ── 3. the clock-off message ──────────────────────────────────── */
+  s.section('3. receive sheet: a refused lot shows the writer\'s clock sentence verbatim');
+  const CLOCK="Refused by the database rules. Republish firestore.rules from the repo file (the Production Ops block) and retry. If it was published, check that this device's clock is right (a history row is refused when the clock is more than two days off).";
+  const W_SRC=read('js/ph-write.js');
+  s.ok('the writer\'s permission sentence is the one this test expects (names the clock)',W_SRC.indexOf(CLOCK.replace("device's","device\\'s"))>-1);
+  const sheetRefused=async(src)=>{
+    W.CLK.now=W.MON_4PM;
+    const T=W.mk('faizan',{seed:{'pos/PO-201':W.cutPo('PO-201','stitching')},src:src,beforeTx:async()=>{throw Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});}});
+    await T.show();await T.open('PO-201');await T.click('phaf-recv-btn');T.fill({S:10});await T.click('phaf-rx-review');
+    const r=await T.R('phqcSheetSave()');await kit.settle(40);
+    return{r:r,msg:T.text(T.id('phaf-rx-msg')),lots:T.lots().length,sheet:!!T.sheet()};
+  };
+  {
+    const a=await sheetRefused();
+    s.ok('refused (permission): the sheet stays open, nothing saved, and the message is the writer\'s sentence VERBATIM + "Nothing was saved."',a.r.code==='permission'&&a.sheet&&a.lots===0&&a.msg===CLOCK+' Nothing was saved.',JSON.stringify(a));
+    s.ok('… it names the device clock and two days',/device's clock is right/.test(a.msg)&&/more than two days off/.test(a.msg));
+    s.ok('a refusal with NO writer sentence still gets the generic line',kit.load({session:kit.USERS.faizan}).R('String(_phqcResMsg({code:"permission",error:""}))')==='Refused by the database rules: republish firestore.rules from the repo file, then retry. Nothing was saved.');
+    const b=await sheetRefused(mut(SRC,"if(res.code==='permission'){const w=_phqcStr(res.error);return w?phI18nD('afloat.err_permission_v',{why:w}):phI18nD('afloat.err_permission');}","if(res.code==='permission')return phI18nD('afloat.err_permission');"));
+    s.ok('break "the generic permission line again" fails "… the writer\'s sentence VERBATIM"',b.msg!==CLOCK+' Nothing was saved.'&&!/clock/.test(b.msg));
   }
 
   return s;
