@@ -1969,9 +1969,17 @@ function _phqcOverridesNode(t){
 // for a REFUSED read: po_qc_recon is readable by every signed-in person once firestore.rules is published, so a permission refusal means
 // the rules are not published and no reconciliation can have been written. Any other failed read (no connection, a timeout) refuses
 // with "could not check" -- a refusal can be retried, a Final QC completed past an open reconciliation cannot be undone from here.
+// Wave 2: the fail-open is LOUD. A refused read is remembered per PO (phqcCloseSkippedWarn gives the warning completeQC shows in its
+// toast and its confirm), and an Activity row "QC check skipped" names po_qc_recon, so a rules regression is seen the first time.
+let _phqcCqcSkipped={};
+function phqcCloseSkippedWarn(po){
+  const key=_phqcKeyOf(_phqcIdOf(po));
+  return key&&_phqcCqcSkipped[key]?String(phI18nT('afloat.cqc_skipped',{po:key},'en')):'';
+}
 async function phqcCloseBlock(po){
   const id=_phqcIdOf(po),key=_phqcKeyOf(id);
   if(!key)return null;
+  delete _phqcCqcSkipped[key];
   let rc=null;
   try{
     const snap=await _phqcTimeout(getDoc(doc(db,'po_qc_recon',key)),PHAF_TIMEOUT_MS);
@@ -1982,7 +1990,11 @@ async function phqcCloseBlock(po){
     }
   }catch(e){
     const i=_phqcErr(e);
-    if(i.permission)return null;
+    if(i.permission){
+      _phqcCqcSkipped[key]=true;
+      try{if(typeof logActivity==='function')Promise.resolve(logActivity('QC check skipped',key+' · Final QC pre-check: po_qc_recon could not be read (permission refused by the published firestore.rules) — completed without the QC reconciliation check; republish firestore.rules')).catch(function(){});}catch(e2){}
+      return null;
+    }
     const mem=typeof phQcReconOf==='function'?phQcReconOf(key):null;
     if(mem&&mem.status==='closed')return null;
     return String(phI18nT('afloat.cqc_unknown',{po:key},'en'));
@@ -2051,7 +2063,7 @@ function phqcReset(){
   _phqcPos={state:'idle',rows:null,at:0,err:null,truncated:false};_phqcPosP=null;
   _phqcF={q:'',stage:'',season:'',short:false,attention:false};_phqcFiltersOpen=null;_phqcCollapsed={closed:true};_phqcShowAll={};
   _phqcOpen='';_phqcBundles={};phqcLightboxClose();
-  _phqcSheet=null;_phqcDlg=null;_phqcFlash=null;_phqcBusy=false;_phqcFocusId='';
+  _phqcSheet=null;_phqcDlg=null;_phqcFlash=null;_phqcBusy=false;_phqcFocusId='';_phqcCqcSkipped={};
 }
 
 if(typeof phRegisterTab==='function'){

@@ -2,11 +2,16 @@
    1. js/ph-mod-afloat.js walked `n.children` with `.forEach`. In a real browser `children` is an HTMLCollection, which has NO forEach,
       so the arrow keys between tiles threw and Back never returned focus. Driven here with HTMLCollection-like objects (a length and
       indexed slots, no array methods) — tests/ph-dom.js uses real arrays, which is why the suites never saw it.
+   2. The classic Complete QC (js/pos.js) still FAILS OPEN when po_qc_recon is refused (the rules not published), but now LOUDLY: a red
+      toast and the confirm text name po_qc_recon and the republish, an Activity row "QC check skipped" is written, and the final toast
+      says the check was skipped. Any other failure still refuses; a readable PO is unchanged (no warning).
    What it does NOT prove: a real browser's HTMLCollection (only an object of the same shape), a real phone. */
 'use strict';
 const fs=require('fs'),path=require('path');
 const {suite}=require('./harness');
+const vm=require('vm');
 const kit=require('./ph-mod-afloat.test.js').kit;
+const W=require('./ph-mod-afloat-write.test.js').kit;
 const ROOT=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(ROOT,f),'utf8');
 const SRC=read('js/ph-mod-afloat.js');
@@ -55,6 +60,48 @@ module.exports=async function(){
     s.ok('break "the old (n.children||[]).forEach walk" fails "ArrowDown … nothing throws"',!(rd.f==='PO-3'&&rd.threw===''),JSON.stringify(rd));
     R.R(FAKE_TREE);R.R('_phqcListEl=__tree.ul;_phqcCtx=null;_phqcOpen="PO-3";phqcBack()');
     s.ok('break "the old walk" fails "Back returns focus"',R.R('__focused')!=='PO-3');
+  }
+
+  /* ── 2. the loud fail-open ─────────────────────────────────────── */
+  s.section('2. classic Complete QC: a refused po_qc_recon read goes on, LOUDLY');
+  const POS=read('js/pos.js');
+  const CQC=(/window\.completeQC=async function\(fbKey\)\{[\s\S]*?\n\};/.exec(POS)||[''])[0];
+  const PERM=()=>Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
+  const runCQC=async(o)=>{
+    const T=W.mk('afnan',{seed:o.seed||{},getDocErr:o.getDocErr,src:o.src});
+    const c={upd:[],toast:[],confirm:[],act:[]};
+    T.R('globalThis.allPOs=[{fbKey:"PO-301",id:"PO-301",currentStage:"qc"}];globalThis.currentBundles=[];globalThis.loadData=async()=>{};');
+    T.ctx.confirm=m=>{c.confirm.push(String(m));return true;};
+    T.ctx.updateDoc=async(r,d)=>{c.upd.push(r.path);};
+    T.ctx.showToast=(m,bad)=>{c.toast.push({m:String(m),bad:!!bad});};
+    T.ctx.logActivity=async(a,d)=>{c.act.push(a+' | '+d);};
+    vm.runInContext(o.cqc||CQC,T.ctx,{filename:'completeQC.js'});
+    await T.R('window.completeQC("PO-301")');
+    await kit.settle(10);
+    return c;
+  };
+  const loudOk=c=>c.upd.length===1&&c.toast.some(t=>t.bad&&/SKIPPED/.test(t.m)&&/po_qc_recon/.test(t.m)&&/republish firestore\.rules/.test(t.m)&&/PO-301/.test(t.m))
+    &&/po_qc_recon/.test(c.confirm.join(' '))&&c.act.some(a=>/^QC check skipped \| PO-301 · /.test(a)&&/po_qc_recon/.test(a))
+    &&c.toast.some(t=>t.bad&&/QC complete ✓ — but the QC reconciliation check was skipped/.test(t.m));
+  {
+    const perm=await runCQC({getDocErr:{'po_qc_recon/PO-301':PERM}});
+    s.ok('refused read: completes (fail-open kept), red toast + confirm name po_qc_recon and the republish, Activity "QC check skipped", final toast says skipped',loudOk(perm),JSON.stringify(perm));
+    const none=await runCQC({seed:{}});
+    s.ok('readable, no reconciliation: completes with NO warning (unchanged)',none.upd.length===1&&!none.toast.some(t=>/SKIPPED|skipped/.test(t.m))&&none.act.every(a=>!/QC check skipped/.test(a))&&none.confirm.join('')==='Mark Final QC complete?');
+    const net=await runCQC({getDocErr:{'po_qc_recon/PO-301':()=>Object.assign(new Error('offline'),{code:'unavailable'})}});
+    s.ok('any other failure: still refused, nothing written, no "skipped" warning',net.upd.length===0&&net.toast.some(t=>/could not be checked/.test(t.m))&&!net.toast.some(t=>/SKIPPED/.test(t.m)));
+    // the remembered flag is per PO and cleared by the next readable check
+    const T=W.mk('afnan',{getDocErr:{'po_qc_recon/PO-301':PERM}});
+    await T.R('phqcCloseBlock({fbKey:"PO-301",id:"PO-301"})');
+    const w1=T.R('phqcCloseSkippedWarn({id:"PO-301"})'),w2=T.R('phqcCloseSkippedWarn({id:"PO-302"})');
+    s.ok('the warning is for the PO that was refused only (PO-301 warned, PO-302 not)',/PO-301/.test(w1)&&w2==='');
+    // reverts
+    const r1=await runCQC({getDocErr:{'po_qc_recon/PO-301':PERM},src:mut(SRC,'      _phqcCqcSkipped[key]=true;\n','')});
+    s.ok('break "the refusal not remembered" fails "refused read … LOUD"',!loudOk(r1));
+    const r2=await runCQC({getDocErr:{'po_qc_recon/PO-301':PERM},cqc:mut(CQC,"if(qw)showToast(qw,true);","")});
+    s.ok('break "the warning toast dropped in completeQC" fails "refused read … LOUD"',!loudOk(r2));
+    const r3=await runCQC({getDocErr:{'po_qc_recon/PO-301':PERM},src:mut(SRC,"if(typeof logActivity==='function')Promise.resolve(logActivity(","if(false)Promise.resolve(logActivity(")});
+    s.ok('break "no Activity row" fails "refused read … LOUD"',!loudOk(r3));
   }
 
   return s;

@@ -2194,14 +2194,15 @@ window.completeQC=async function(fbKey){
   // tap must not overwrite who finished QC and when.
   if(po.currentStage!=='qc'){showToast(po.currentStage==='completed'?`${po.id} has already completed Final QC.`:`${po.id} is not at Final QC — nothing to complete.`,true);return;}
   if(typeof phqcCloseBlock==='function'){const qb=await phqcCloseBlock(po);if(qb){showToast(qb,true);return;}}   // QC6: refused while a QC reconciliation is open (js/ph-mod-afloat.js)
+  const qw=typeof phqcCloseSkippedWarn==='function'?phqcCloseSkippedWarn(po):'';if(qw)showToast(qw,true);   // wave 2: a skipped QC check is said out loud
   const failed=currentBundles.filter(b=>b.qcStatus==='fail').length;
-  const msg=failed>0?`Complete QC with ${failed} failed bundle${failed!==1?'s':''}?`:'Mark Final QC complete?';
+  const msg=(qw?qw+'\n\n':'')+(failed>0?`Complete QC with ${failed} failed bundle${failed!==1?'s':''}?`:'Mark Final QC complete?');
   if(!confirm(msg))return;
   const btn=document.getElementById('qc-done-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
   try{
     await updateDoc(doc(db,'pos',fbKey),{currentStage:'completed',[`stages.qc.done`]:true,[`stages.qc.doneAt`]:new Date().toISOString(),[`stages.qc.doneBy`]:session.name,[`stages.qc.notes`]:failed>0?`${failed} bundles failed QC`:''});
     await logActivity('Stage done',`PO ${po.id} · Final QC complete — ${currentBundles.filter(b=>b.qcStatus==='pass').length} passed, ${failed} failed`);
-    showToast(`QC complete ✓`);await loadData();window.showPage('my-work');
+    showToast(qw?`QC complete ✓ — but the QC reconciliation check was skipped (po_qc_recon unreadable; republish firestore.rules)`:`QC complete ✓`,!!qw);await loadData();window.showPage('my-work');
   }catch(e){showToast('Error: '+e.message,true);if(btn){btn.disabled=false;}}
 };
 
