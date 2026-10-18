@@ -154,7 +154,7 @@ module.exports=async function(){
     ['unread fabric drawn as not issued','fabric not read is never "fabric not issued"','reg',"    if(f.fabric.state==='unread')return{text:'fabric: not read',cls:'por-muted'};\n",""],
     ['the page size removed','never more than 40 rows at once','reg',"g.rows.forEach(function(f){if(left>0){html+=porRowHTML(f);left--;}});","g.rows.forEach(function(f){html+=porRowHTML(f);});"],
     ['the name not escaped','a hostile name reaches the page as text','reg',"'<span class=\"por-name\">'+_porEsc(f.name||'—')+'</span>'","'<span class=\"por-name\">'+(f.name||'—')+'</span>'"],
-    ['rows as div onclick','every row is a button, never a div onclick','reg',"return'<button type=\"button\" class=\"por-row\" data-por=","return'<div class=\"por-row\" data-por="],
+    ['rows as div onclick','every row is a button, never a div onclick','reg',"return'<div class=\"por-item\"><button type=\"button\" class=\"por-row\" data-por=","return'<div class=\"por-item\"><div class=\"por-row\" data-por="],
     ['the alt text dropped','every picture has alt text','reg',"alt=\"'+_porEsc(alt)+'\" ",""],
     ['the default sort changed to newest','Active, oldest at this stage first','reg',"let _porState={view:'active',q:'',sort:'age',","let _porState={view:'active',q:'',sort:'newest',"]
   ];

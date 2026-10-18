@@ -153,14 +153,34 @@ function porRowHTML(f){
   const prog=f.progress||porProgress(f);
   const bar='<span class="por-bar" aria-hidden="true">'+prog.steps.map(function(s){return'<i class="'+(s.done?'on':'')+'"></i>';}).join('')+'</span>';
   const meta=[f.age&&f.age.words,f.delay&&f.delay.words,f.season&&f.season.key?(f.season.guess?'~':'')+f.season.label:'',f.creator,f.createdDay?'created '+_porDayShort(f.createdDay):''].filter(Boolean);
-  return'<button type="button" class="por-row" data-por="'+_porEsc(f.fb)+'" aria-label="'+_porEsc(words)+'" onclick="window.porOpen(this.getAttribute(\'data-por\'))">'
+  return'<div class="por-item"><button type="button" class="por-row" data-por="'+_porEsc(f.fb)+'" aria-label="'+_porEsc(words)+'" onclick="window.porOpen(this.getAttribute(\'data-por\'))">'
     +porImageHTML(f.po,'tile')
     +'<span class="por-main">'
       +'<span class="por-l1"><span class="por-num">'+_porEsc(f.id)+'</span>'+(f.code?'<span class="por-code">'+_porEsc(f.code)+'</span>':'')+'<span class="por-name">'+_porEsc(f.name||'—')+'</span>'+_porBadges(f)+'</span>'
       +'<span class="por-l2"><span class="por-st '+_porStageChipClass(f.stage)+'">'+_porEsc(f.stageLabel)+'</span>'+(st.text?'<span class="por-sf '+st.cls+'">'+_porEsc(st.text)+'</span>':'')+'</span>'
       +'<span class="por-l3"><span class="por-qty">'+_porNum(f.ordered)+' ordered · '+_porNum(f.cut)+' cut · '+_porNum(f.received)+' received</span>'+bar+'<span class="por-steps">'+prog.done+' of '+prog.of+'</span></span>'
       +'<span class="por-l4">'+_porEsc(meta.join(' · '))+'</span>'
-    +'</span><span class="por-arrow" aria-hidden="true">›</span></button>';
+    +'</span><span class="por-arrow" aria-hidden="true">›</span></button>'
+    +(porActionsFor(f).length?'<button type="button" class="por-kebab" data-por="'+_porEsc(f.fb)+'" aria-expanded="'+(_porActOpen===f.fb?'true':'false')+'" aria-label="'+_porEsc('Actions for '+f.id)+'" onclick="window.porActs(this.getAttribute(\'data-por\'))">⋯</button>':'')
+    +'</div>'+(_porActOpen===f.fb?porActionsHTML(f):'');
+}
+/* ── RG7: quick actions. Only EXISTING functions, only under their EXISTING gates (the button is never the boundary: each
+   function checks its own gate again). Nothing here writes on its own. ── */
+let _porActOpen=null;
+function porActionsFor(f){
+  const role=_porRole(),out=[];
+  if(typeof window!=='undefined'&&typeof window.generatePOPdf==='function')out.push('print');
+  if(f.stage==='reserved'&&(role==='owner'||role==='manager'))out.push('release');
+  if(typeof _poCanCancel==='function'&&_poCanCancel()&&f.stage!=='cancelled'&&f.stage!=='completed')out.push('cancel');
+  let mgr=false;try{mgr=typeof phCanManage==='function'&&phCanManage()===true;}catch(e){}
+  if(mgr&&/^PO-\d{3,}$/.test(f.id||''))out.push('marks');
+  return out;
+}
+const POR_ACT_LABELS=Object.freeze({print:'Print PO',release:'Release to production',cancel:'Cancel PO…',marks:'Marks and hold…'});
+function porActionsHTML(f){
+  return'<div class="por-acts" role="group" aria-label="'+_porEsc('Actions for '+f.id)+'">'+porActionsFor(f).map(function(a){
+    return'<button type="button" class="btn-outline por-act'+(a==='cancel'?' por-act-danger':'')+'" data-por="'+_porEsc(f.fb)+'" data-act="'+a+'" onclick="window.porDo(this.getAttribute(\'data-act\'),this.getAttribute(\'data-por\'))">'+POR_ACT_LABELS[a]+'</button>';
+  }).join('')+'</div>';
 }
 
 // RG5: the same row for ONE PO document, for the lists outside the registry (Dashboard "Recent production orders", All Active
@@ -303,6 +323,20 @@ if(typeof window!=='undefined'){
     const cur=_porState.open[k]!==undefined?_porState.open[k]:!(g&&g.collapsed);
     _porState.open[k]=!cur;_porRepaintList();
   };
+  window.porActs=function(fb){if(!_porKeyOk(fb))return;_porActOpen=_porActOpen===fb?null:fb;_porRepaintList();};
+  window.porDo=function(act,fb){
+    if(!_porKeyOk(fb))return false;
+    const po=(typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).filter(function(p){return p&&(p.fbKey===fb||p.id===fb);})[0];
+    if(!po)return false;
+    const f=porFacts(po,_porIdxNow(),{now:Date.now()});
+    if(porActionsFor(f).indexOf(act)<0)return false;          // the gate again: an action the row did not offer is refused
+    _porActOpen=null;
+    if(act==='print')return window.generatePOPdf(po.fbKey);
+    if(act==='release')return window.releaseToProduction(po.fbKey);
+    if(act==='cancel')return window.cancelPO(po.fbKey,po.id);
+    if(act==='marks'){_porMarksWant=po.id;if(typeof window.openPODetail==='function')window.openPODetail(po.fbKey);return true;}
+    return false;
+  };
   window.porClear=function(){_porState.q='';_porState.need='';_porState.shown=POR_PAGE;_porRepaint();};
   window.porRetry=function(){if(typeof loadData==='function')loadData();};
 }
@@ -399,6 +433,8 @@ function _porMoreHTML(po,f){
   else if(f.mark.state==='marked'){const m=[];if(f.mark.hold)m.push('on hold'+(f.mark.hold.reason?': '+f.mark.hold.reason:''));if(f.mark.priority)m.push(f.mark.priority+' priority');parts.push('<li><b>Marks</b> '+_porEsc(m.join(' · ')||'marked')+'</li>');}
   const jobs=typeof allPrintingJobs!=='undefined'&&Array.isArray(allPrintingJobs)?allPrintingJobs.filter(function(j){return j&&(j.poNumber===po.id||j.poId===po.id);}).length:null;
   const linked=[jobs===null?'':jobs+(jobs===1?' embellishment job':' embellishment jobs'),(Array.isArray(po.stockTransfers)?po.stockTransfers.length:0)+' stock transfers',(Array.isArray(po.packingReceipts)?po.packingReceipts.length:0)+' receipts'].filter(Boolean);
+  let canMark=false;try{canMark=typeof phmkCanMark==='function'&&phmkCanMark()===true&&typeof phmkTogglePanel==='function';}catch(e){}
+  if(canMark&&/^PO-\d{3,}$/.test(String(po.id||'')))parts.push('<li><button type="button" class="btn-outline por-act" data-po="'+_porEsc(po.id)+'" onclick="window.porMarksToggle(this.getAttribute(\'data-po\'))">Marks and hold…</button><div id="por-marks-host"></div></li>');
   parts.push('<li><b>Linked</b> '+_porEsc(linked.join(' · '))+'</li>');
   if(/^PO-\d{3,}$/.test(String(po.id||'')))parts.push('<li><button type="button" class="btn-outline por-act" data-po="'+_porEsc(po.id)+'" onclick="window.porCopyLink(this.getAttribute(\'data-po\'))">Copy link to this PO</button></li>');
   if(po.notes)parts.push('<li class="por-notes"><b>Notes</b> <span>'+_porEsc(po.notes)+'</span></li>');
@@ -438,9 +474,20 @@ function _porDetailInner(po){
     +'<div class="card por-card"><div class="card-title">Timeline</div>'+_porTimelineHTML(po,f)+'</div>'
     +'<div class="card por-card"><div class="card-title">More</div>'+_porMoreHTML(po,f)+_porPhotosHTML(po)+'</div>';
 }
+// The marks panel (js/ph-mod-marks.js, managers) mounted into the detail's More card. Its own writer and gates.
+let _porMarksWant=null;
+function _porMountMarks(){
+  if(typeof document==='undefined')return;
+  const host=document.getElementById('por-marks-host');if(!host)return;
+  const id=_porDet.id;
+  if(typeof phmkPanelNode!=='function'||typeof phmkCanMark!=='function'||!phmkCanMark()||typeof _phmkOpen==='undefined'||_phmkOpen!==id){host.innerHTML='';return;}
+  host.innerHTML='';
+  try{host.appendChild(phmkPanelNode(id,{repaint:_porMountMarks}));}catch(e){host.textContent='The marks panel could not be drawn.';}
+}
 function porDetailBodyHTML(po){
   if(!po||typeof po!=='object')return null;
   if(_porDet.id!==po.id)_porDet={id:po.id,bundles:{state:'idle',rows:null,text:''},hist:{state:'idle',rows:null,text:''}};
+  if(_porMarksWant===po.id){_porMarksWant=null;try{if(typeof phmkCanMark==='function'&&phmkCanMark()&&typeof _phmkOpen!=='undefined'&&_phmkOpen!==po.id&&typeof phmkTogglePanel==='function')phmkTogglePanel(po.id,null);}catch(e){}}
   return'<div class="por-det" id="por-detail">'+_porDetailInner(po)+'</div>';
 }
 function _porDetailRepaint(){
@@ -448,6 +495,7 @@ function _porDetailRepaint(){
   const el=document.getElementById('por-detail');if(!el)return;
   const po=(typeof allPOs!=='undefined'&&Array.isArray(allPOs)?allPOs:[]).filter(function(p){return p&&p.id===_porDet.id;})[0];
   if(po)el.innerHTML=_porDetailInner(po);
+  _porMountMarks();
 }
 async function _porReadBundles(id){
   if(typeof getDocs!=='function'||typeof query!=='function'||typeof collection!=='function'||typeof db==='undefined')throw new Error('Firestore is not available');
@@ -461,7 +509,7 @@ async function _porReadBundles(id){
 }
 // After the detail is in the document: read this PO's bundles once (never rejects) and repaint the body.
 function porDetailAfter(po){
-  if(!po||_porDet.id!==po.id||_porDet.bundles.state!=='idle')return Promise.resolve(false);
+  if(!po||_porDet.id!==po.id||_porDet.bundles.state!=='idle'){_porMountMarks();return Promise.resolve(false);}
   _porDet.bundles={state:'loading',rows:null,text:''};
   _porDetailRepaint();
   const id=po.id;
@@ -476,6 +524,7 @@ function porDetailAfter(po){
   });
 }
 if(typeof window!=='undefined'){
+  window.porMarksToggle=function(id){if(typeof phmkTogglePanel!=='function'||id!==_porDet.id)return;phmkTogglePanel(id,{repaint:_porMountMarks});_porMountMarks();};
   window.porHistory=function(){
     if(!_porCanSide()||typeof phHistoryOf!=='function'||!_porDet.id)return;
     if(_porDet.hist.state==='loading')return;

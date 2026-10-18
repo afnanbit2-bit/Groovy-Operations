@@ -879,6 +879,7 @@ function _porFragment(o){
   app.run(fs.readFileSync(path.join(ROOT,'js/gatepass.js'),'utf8').match(/function _gpEsc\(s\)\{[^\n]*\}/)[0]);
   app.run('allPOs='+JSON.stringify(o.empty?[]:pos)+';allPasses='+JSON.stringify(passes)+';_posLoadAt='+NOW+';_posLoadFailed='+JSON.stringify(o.failed?['pos']:[])+';');
   app.run('phCanSee=function(){return true;};phLoadStage=function(){return Promise.resolve({ok:true});};phGet=function(s){return s==="marks"?{ok:true,rows:[{fbKey:"PO-140",marks:{hold:{reason:"waiting for rib"},priority:"urgent"}}]}:{ok:true,rows:[]};};');
+  if(o.acts)app.run('window.generatePOPdf=function(){};_porActOpen='+JSON.stringify(o.acts)+';');
   if(o.group)app.run('_porState.group='+JSON.stringify(o.group)+';_porState.view="all";');
   if(o.detail){
     const ids=Array.isArray(o.detail)?o.detail:[o.detail];
@@ -2089,6 +2090,7 @@ const FRAGMENTS={
   'po registry — the list (Active, long name, on hold, qty mismatch, no fabric)':()=>_porFragment({}),
   'po registry — grouped by stage with a collapsed reserved group':()=>_porFragment({group:'stage'}),
   'po registry — failed read and empty':()=>_porFragment({failed:true}),
+  'po registry — a row with its quick actions open (owner)':()=>_porFragment({acts:'PO-161'}),
   'po registry — the detail timeline (stitching, damage, on hold, photos)':()=>_porFragment({detail:'PO-125'}),
   'po registry — the detail on a reserved and a cancelled PO':()=>_porFragment({detail:['PO-161','PO-160']}),
   'embellishments — embroidery codes (form rows and worker card)':()=>{
