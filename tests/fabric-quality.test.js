@@ -324,5 +324,154 @@ module.exports=async function(){
     s.ok('nothing is stored on the roll for it',!/lotKind/.test(J(a.ctx.allFabricInventory)));
   }
 
+
+  // ═══ F5 — the normaliser against the real colour strings ══════════════
+  s.section('F5 — the 61 colour strings of the 10 Oct production export collapse to 49');
+  {
+    const fx=require('./fixtures/fabric-colours-10oct.json');
+    const a=app();
+    s.eq('the fixture holds the 61 distinct stored spellings',fx.colors.length,61);
+    const norm=new Set(fx.colors.map(c=>a.run(`_fabKeyPart(_fabNormColor(${J(c)}))`)));
+    s.eq('after case, spacing and the alias table: 49 distinct colours',norm.size,49);
+    s.eq('(case/space alone gives 58 — the alias table is worth 9 more)',new Set(fx.colors.map(c=>c.trim().replace(/\s+/g,' ').toLowerCase())).size,58);
+    for(const c of ['Artic White','Choclate Brown','creem','Slade blue','Ston mauve','Kora','QORA','light greay','charcooal'])
+      s.ok('"'+c+'" is in the export and joins its right spelling',fx.colors.includes(c)&&norm.size===49);
+  }
+
+  // ═══ F5 — Fabric data health ══════════════════════════════════════════
+  const NOW=Date.UTC(2026,9,18);
+  const DAY=86400000;
+  function healthApp(extraFiles){
+    const fs=makeFs();
+    const a=loadApp({files:['js/gatepass.js','js/fabric.js'].concat(extraFiles||[]),session:SESS.afnan,globals:Object.assign({},fs.api,{
+      _gpEsc:_esc,allPasses:[],allFabricInventory:[],allFabricMovements:[],allFabricIn:clone(RECEIPTS),allPOs:[],currentPage:'',
+      _fabInvDrillKey:null,_fabInvFilter:'all',_fabInvCatFilter:'all',_fabInvSearchQ:''})});
+    a.fs=fs;
+    return a;
+  }
+  const model=(a,inv,passes)=>a.run(`_fabHealthModel({inv:${J(inv)},passes:${J(passes)},now:${NOW}})`);
+  function invFx(){
+    const mk=(id,type,gsm,color,rolls)=>({_id:id,fabType:type,gsm,color,unit:'kg',rolls,totalWeight:rolls.filter(r=>(r.status||'in_stock')==='in_stock').reduce((n,r)=>n+r.weight,0),rollsCount:rolls.filter(r=>(r.status||'in_stock')==='in_stock').length});
+    return[
+      mk('jersey__220gsm__arctic_white','Jersey',220,'Arctic White',[roll('W1',10,{gsm:220,qcPassed:true}),roll('W2',12,{gsm:231})]),
+      mk('jersey__250gsm__artic_white','Jersey',250,'Artic White',[roll('W3',8,{gsm:250})]),
+      mk('rib__250gsm__black','Rib',250,'Black',[roll('P1',3,{gsm:250,partiallyConsumed:true,originalWeight:9,consumptionLog:[{po:'PO-1',weight:6,ts:NOW-45*DAY}]}),roll('P2',2,{gsm:250,partiallyConsumed:true,originalWeight:9,consumptionLog:[{po:'PO-2',weight:7,ts:NOW-5*DAY}]}),roll('P3',2,{gsm:250,partiallyConsumed:true,originalWeight:9})]),
+      mk('drill__300gsm__navy','Drill',300,'Navy',[roll('N1',9,{gsm:300,status:'issued'})])];
+  }
+  const PASSES=[
+    {id:'GP-1',gpType:'fabric',poId:'PO-101',cutMaster:'Hassan',date:'2026-10-01'},
+    {id:'GP-2',gpType:'fabric',poId:'125',cutMaster:'Alam',date:'2026-10-02'},
+    {id:'GP-3',gpType:'fabric',poId:'Sample',cutMaster:'',date:'2026-10-03'},
+    {id:'GP-4',gpType:'fabric',poId:'',date:'2026-10-04'},
+    {id:'GP-5',gpType:'process',poId:'999',date:'2026-10-05'}];
+  s.section('F5 — health: every count comes from a pure function over in-memory data');
+  {
+    const a=healthApp(['js/ph-core.js']);
+    const m=model(a,invFx(),PASSES);
+    s.eq('colour spelling groups: Arctic/Artic White',m.colorSpellings.count,1);
+    s.eq('with each spelling and its kg',J(m.colorSpellings.items[0].spellings.map(x=>[x.text,x.kg])),J([['Arctic White',22],['Artic White',8]]));
+    s.eq('type+colour split across >1 GSM bucket',m.splitGsm.count,1);
+    s.eq('naming both GSMs and the kg',J([m.splitGsm.items[0].gsms,m.splitGsm.items[0].kg]),J([[220,250],30]));
+    s.eq('in-stock rolls whose GSM differs from the bucket header: W2 (231 vs 220)',J(m.rollGsm.items.map(x=>x.rollCode)),J(['W2']));
+    s.eq('partial rolls stale >30 days: P1 only (P2 is recent, P3 has no date and is not guessed)',J(m.stalePartials.items.map(x=>[x.rollCode,x.days])),J([['P1',45]]));
+    s.eq('digit-only / junk PO ids on FABRIC passes only (GP-2 digits, GP-3 and GP-4 junk; the process pass is ignored)',J(m.poIds.items.map(x=>[x.id,x.kind])),J([['GP-2','digits'],['GP-3','junk'],['GP-4','junk']]));
+    s.eq('passes with no cutting master: GP-3, GP-4',J(m.noMaster.items.map(x=>x.id)),J(['GP-3','GP-4']));
+    s.eq('QC share: 5 of 6 in-stock rolls not passed',J([m.qc.count,m.qc.total]),J([5,6]));
+    s.eq('the QC share is informational: not in the header total',a.run(`_fabHealthTotal(_fabHealthModel({inv:${J(invFx())},passes:${J(PASSES)},now:${NOW}}))`),1+1+1+1+3+2);
+  }
+  s.section('F5 — health: an input that did not load is "unavailable", never 0');
+  {
+    const a=healthApp(['js/ph-core.js']);
+    const m=model(a,null,null);
+    s.ok('stock missing: every stock check is null',['colorSpellings','splitGsm','rollGsm','stalePartials','qc'].every(k=>m[k].count===null));
+    s.ok('passes missing: both pass checks are null',m.poIds.count===null&&m.noMaster.count===null);
+    s.eq('passes loaded but stock missing: the pass checks still answer',model(a,null,PASSES).noMaster.count,2);
+    const empty=model(a,invFx(),[]);
+    s.ok('an EMPTY pass list while rolls are issued is treated as unread (a failed read looks like this)',empty.noMaster.count===null&&/issued/.test(empty.noMaster.why));
+    s.eq('an empty pass list with nothing issued is a real zero',model(a,[],[]).noMaster.count,0);
+    const b=healthApp();     // no js/ph-core.js: the PO key helper is missing
+    s.ok('without the PO key helper the PO check says so',model(b,invFx(),PASSES).poIds.count===null&&/helper/.test(model(b,invFx(),PASSES).poIds.why));
+    s.eq('...and the other pass check does not depend on it',model(b,invFx(),PASSES).noMaster.count,2);
+  }
+  s.section('F5 — the card: collapsed by default, count in the header, nothing written');
+  {
+    const a=healthApp(['js/ph-core.js']);
+    a.ctx.allFabricInventory.push(...invFx());a.ctx.allPasses.push(...PASSES);
+    const h=a.run('renderFabricInventory()');
+    s.ok('a details element, closed',/<details class="card fqh-card" data-k="__all"\s*ontoggle/.test(h));
+    s.ok('the header carries the count',/Fabric data health — \d+ to look at/.test(h));
+    s.ok('each check is listed with its title',['Colour spelt more than one way','more than one GSM bucket','Fabric issues with no cutting master'].every(t=>h.includes(t)));
+    s.ok('the QC check shows a share',/5 of 6 \(83%\)/.test(h));
+    s.ok('spellings are drawn escaped',!/<script/.test(h));
+    const hostile=healthApp(['js/ph-core.js']);
+    hostile.ctx.allFabricInventory.push({_id:'x',fabType:'J',gsm:1,color:'<img src=x onerror=1>',unit:'kg',rolls:[],totalWeight:0},{_id:'y',fabType:'J',gsm:2,color:'<IMG src=x onerror=1>',unit:'kg',rolls:[],totalWeight:0});
+    s.ok('a hostile colour name is escaped',!/<img src=x/i.test(hostile.run('_fabHealthCardHtml()'))&&/&lt;img/.test(hostile.run('_fabHealthCardHtml()')));
+    a.run("window.fabHealthToggle('__all',true)");
+    s.ok('toggling remembers open state across a repaint',/data-k="__all"\s*open/.test(a.run('_fabHealthCardHtml()')));
+    const many=[];for(let i=0;i<40;i++)many.push({id:'GP-'+i,gpType:'fabric',poId:'PO-1',cutMaster:'',date:'2026-10-01'});
+    const b=healthApp(['js/ph-core.js']);b.ctx.allFabricInventory.push(...invFx());b.ctx.allPasses.push(...many);
+    let hh=b.run('_fabHealthCardHtml()');
+    s.eq('lists show the first 25 rows',(hh.match(/class="fqh-row"><b>GP-/g)||[]).length,25);
+    s.ok('and a Show all button',/Show all 40/.test(hh));
+    b.run("window.fabHealthShowAll('noMaster')");
+    s.eq('Show all lists every row',(b.run('_fabHealthCardHtml()').match(/class="fqh-row"><b>GP-/g)||[]).length,40);
+    s.eq('rendering the card wrote nothing',a.fs.stats.writes.length,0);
+  }
+
+  // ═══ F5 — typed pickers on Fabric In ══════════════════════════════════
+  s.section('F5 — colour picker: suggestions from stock, library and this session; "Did you mean" only offers');
+  {
+    const a=app('afnan');
+    seed(a,K1,'Jersey',220,'Arctic White',[roll('A1',10),roll('A2',10)]);   // 2 rolls: this spelling is the more used
+    seed(a,K2,'Jersey',250,'Artic White',[roll('B1',10)]);
+    a.run("allColors=[{colorName:'Pantone 032 C',status:'active'},{colorName:'Old One',status:'archived'}];colorLibLoaded=true");
+    const opts=a.run('_fabKnownColors()');
+    s.ok('stock colours appear once, as the display spelling',opts.filter(o=>/arctic white/i.test(o)).length===1);
+    s.ok('the Colour Library joins (active only)',opts.includes('Pantone 032 C')&&!opts.includes('Old One'));
+    const h=a.run('renderFabricInTab()');
+    s.ok('the colour field is a typed input with a datalist',/id="fab-color" list="fab-color-list"/.test(h)&&/<datalist id="fab-color-list">/.test(h));
+    s.ok('the supplier field has a datalist of receipt suppliers and the chips',/id="fab-supplier-list"/.test(h)&&/value="Acme Textiles"/.test(h)&&/value="Gul Enterprises"/.test(h));
+    s.eq('a supplier is listed once however it is cased',(()=>{const b=app();b.ctx.allFabricIn.push({id:'FAB-9',supplier:'acme textiles'});return b.run('_fabSupplierOptions([])').filter(x=>/acme/i.test(x)).length;})(),1);
+    s.eq('the datalist shows the most-used spelling',opts.find(o=>/arctic white/i.test(o)),'Arctic White');
+    s.eq('suggest: a different spelling of an existing colour',a.run(`_fabColorSuggest('arctic  white',_fabKnownColors())`),'Arctic White');
+    s.eq('suggest: a typo that the alias table fixes',a.run(`_fabColorSuggest('Artic White',_fabKnownColors())`),'Arctic White');
+    s.eq('no suggestion for the exact existing spelling',a.run(`_fabColorSuggest('Arctic White',_fabKnownColors())`),'');
+    s.eq('no suggestion for a new colour',a.run(`_fabColorSuggest('Royal Blue',_fabKnownColors())`),'');
+    // the hint
+    a.el('fab-color').value='artic white';
+    a.run('window.fabColorCheck()');
+    const hint=a.el('fab-color-hint').innerHTML;
+    s.ok('the hint offers the existing spelling',/Did you mean/.test(hint)&&/Use “/.test(hint));
+    s.eq('showing the hint NEVER changes what was typed',a.el('fab-color').value,'artic white');
+    a.el('fab-color').value='Royal Blue';a.run('window.fabColorCheck()');
+    s.eq('no hint for a new colour',a.el('fab-color-hint').innerHTML,'');
+  }
+  async function saveColour(typed,accept,haveStock){
+    const a=app('afnan');
+    if(haveStock)seed(a,K1,'Jersey Heavy',220,'Arctic White',[roll('A1',10)]);
+    a.run('renderFabricInTab()');
+    a.el('fab-supplier').value='Gul Enterprises';a.el('fab-date').value='2026-10-11';a.el('fab-type').value='Jersey Heavy';
+    a.el('fab-gsm').value='220';a.el('fab-color').value=typed;a.el('fab-notes').value='';
+    const rows=[{w:'10.5'}].map(r=>({querySelector:q=>q==='.fab-roll-weight'?{value:r.w}:q==='.fab-roll-gsm'?{value:'220'}:q==='input[type=checkbox]'?{checked:true}:null}));
+    a.run('window.fabColorCheck()');
+    if(accept)a.run(`window.fabColorAccept(${J(a.run('_fabColorSuggest(document.getElementById("fab-color").value,_fabKnownColors())'))})`);
+    a.ctx.document.querySelectorAll=sel=>sel==='#fab-rolls-body .roll-row'?rows:[];
+    const gebi=a.ctx.document.getElementById.bind(a.ctx.document);
+    a.ctx.document.getElementById=id=>{const n=gebi(id);if(n&&!n.scrollIntoView)n.scrollIntoView=()=>{};return n;};
+    await a.run('window.submitFabricIn()');
+    return a.fs.store.get(a.fs.keys('fabricin/')[0]);
+  }
+  s.section('F5 — the saved colour is what the person typed, unless they accepted the suggestion');
+  {
+    const typed=await saveColour('Artic White',false,true);
+    s.eq('declining keeps EXACTLY what was typed (the app never rewrites it)',typed&&typed.color,'Artic White');
+    const taken=await saveColour('Artic White',true,true);
+    s.eq('accepting stores the existing spelling',taken&&taken.color,'Arctic White');
+    const fresh=await saveColour('Royal Blue',false,true);
+    s.eq('a new colour is stored as typed',fresh&&fresh.color,'Royal Blue');
+    const noStock=await saveColour('  Black  ',false,false);
+    s.eq('the existing trim rule is unchanged',noStock&&noStock.color,'Black');
+  }
+
   return s;
 };

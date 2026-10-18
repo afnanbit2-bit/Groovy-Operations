@@ -226,6 +226,164 @@ function _fabLotKindOf(roll){const f=(typeof allFabricIn!=='undefined'&&allFabri
 function _fabLotKindLabel(k){return k==='fresh'?'Fresh lot':k==='stock'?'Stock lot':'';}
 function _fabLotKindChip(k){const l=_fabLotKindLabel(k);return l?`<span class="fab-lotkind ${k}" title="Recorded on the Fabric In receipt">${l}</span>`:'';}
 
+// ════════════════════════════════════════════════════════════════════════
+//  Fabric data health (WP-F5) — a read-only card on the Stock tab.
+//  Every count is a pure function over what is ALREADY in memory
+//  (_fabHealthModel); an input that is not loaded reads "unavailable" — it is
+//  null here, never 0. Nothing is written, and nothing is ever corrected from
+//  this card: it names the records so a person can.
+// ════════════════════════════════════════════════════════════════════════
+const FAB_PARTIAL_STALE_DAYS=30;
+const FAB_HEALTH_ROWS=25;
+function _fabHealthLastTouch(r){
+  const log=Array.isArray(r&&r.consumptionLog)?r.consumptionLog:[];
+  const ts=log.map(e=>e&&Number(e.ts)).filter(n=>n>0);
+  return ts.length?Math.max.apply(null,ts):(Number(r&&r.addedAt)||Number(r&&r.updatedAt)||0);
+}
+// d: {inv, passes, receipts, now} — each of inv / passes may be null (not loaded).
+// Each check is {count:n|null, items:[...], why?:string}; count null = unavailable.
+function _fabHealthModel(d){
+  const inv=Array.isArray(d&&d.inv)?d.inv:null;
+  const now=Number(d&&d.now)||Date.now();
+  const out={};
+  const unavailable=why=>({count:null,items:[],why});
+  const noInv=()=>unavailable('fabric stock not loaded');
+  // passes: not loaded, or empty while stock says rolls were issued (a gate-pass read that failed looks like this)
+  let passes=Array.isArray(d&&d.passes)?d.passes:null;
+  let passWhy='';
+  if(!passes)passWhy='gate passes not loaded';
+  else if(!passes.length&&inv&&inv.some(b=>(b.rolls||[]).some(r=>(r.status||'')==='issued'))){passes=null;passWhy='no gate passes loaded although rolls are issued';}
+  // 1 — colour spellings (case, spacing and the alias table)
+  if(!inv)out.colorSpellings=noInv();
+  else{
+    const by=new Map();
+    for(const b of inv){
+      const c=_fabCollapse(b.color);if(!c)continue;
+      const k=_fabKeyPart(_fabNormColor(c));
+      if(!by.has(k))by.set(k,new Map());
+      const sp=by.get(k);
+      if(!sp.has(c))sp.set(c,{text:c,kg:0,buckets:0});
+      const e=sp.get(c);e.buckets++;
+      if(_fabUnitNorm(b.unit)==='kg')e.kg=parseFloat((e.kg+(b.totalWeight||0)).toFixed(2));
+    }
+    const items=[];
+    for(const[k,sp] of by){
+      if(sp.size<2)continue;
+      const spellings=[...sp.values()].sort((a,b)=>b.kg-a.kg||a.text.localeCompare(b.text));
+      items.push({key:k,display:_fabDisplayColor(inv.filter(b=>_fabKeyPart(_fabNormColor(b.color))===k)),spellings});
+    }
+    items.sort((a,b)=>a.display.localeCompare(b.display));
+    out.colorSpellings={count:items.length,items};
+  }
+  // 2 — one type+colour held in more than one GSM bucket
+  if(!inv)out.splitGsm=noInv();
+  else{
+    const items=_fabStockGroups(inv).filter(g=>g.members.length>1).map(g=>({gid:g._id,display:`${g.fabType} · ${g.color}`,gsms:g.members.map(m=>Number(m.gsm)||0),kg:parseFloat(g.totalWeight.toFixed(2)),unit:g.unit}));
+    items.sort((a,b)=>b.kg-a.kg||a.display.localeCompare(b.display));
+    out.splitGsm={count:items.length,items};
+  }
+  // 3 — in-stock rolls whose own GSM is not their bucket's header GSM
+  if(!inv)out.rollGsm=noInv();
+  else{
+    const items=[];
+    for(const b of inv)for(const r of (b.rolls||[])){
+      if((r.status||'in_stock')!=='in_stock')continue;
+      const rg=Number(r.gsm)||0,bg=Number(b.gsm)||0;
+      if(rg&&bg&&rg!==bg)items.push({rollCode:r.rollCode,bucket:b._id,rollGsm:rg,bucketGsm:bg,label:`${b.fabType||''} · ${b.color||''}`});
+    }
+    out.rollGsm={count:items.length,items};
+  }
+  // 4 — partly used rolls nobody has touched for a long time
+  if(!inv)out.stalePartials=noInv();
+  else{
+    const items=[];
+    for(const b of inv)for(const r of (b.rolls||[])){
+      if((r.status||'in_stock')!=='in_stock')continue;
+      if(!(r.partiallyConsumed||(r.originalWeight&&r.originalWeight>(r.weight||0))))continue;
+      const t=_fabHealthLastTouch(r);if(!t)continue;      // no date on the roll: its age is not knowable, so it is not guessed
+      const days=Math.floor((now-t)/86400000);
+      if(days>FAB_PARTIAL_STALE_DAYS)items.push({rollCode:r.rollCode,bucket:b._id,days,left:r.weight||0,unit:r.unit||b.unit||'kg',label:`${b.fabType||''} · ${b.color||''}`});
+    }
+    items.sort((a,b)=>b.days-a.days);
+    out.stalePartials={count:items.length,items};
+  }
+  // 5 / 6 — fabric issues (gate passes)
+  const fp=passes?passes.filter(g=>g&&g.gpType==='fabric'):null;
+  if(!fp)out.poIds=unavailable(passWhy);
+  else if(typeof phPoKey!=='function'||typeof phPoSpelling!=='function')out.poIds=unavailable('PO key helper not loaded');
+  else{
+    const items=[];
+    for(const g of fp){
+      const k=phPoKey(g.poId);
+      if(k===null)items.push({id:g.id,poId:g.poId==null?'':String(g.poId),kind:'junk',date:g.date||''});
+      else if(phPoSpelling(g.poId)==='digits')items.push({id:g.id,poId:String(g.poId),kind:'digits',key:k,date:g.date||''});
+    }
+    out.poIds={count:items.length,items};
+  }
+  if(!fp)out.noMaster=unavailable(passWhy);
+  else{
+    const items=fp.filter(g=>!_fabCollapse(g.cutMaster)).map(g=>({id:g.id,poId:g.poId==null?'':String(g.poId),date:g.date||''}));
+    out.noMaster={count:items.length,items};
+  }
+  // 7 — QC share (informational: a share, not a to-do list)
+  if(!inv)out.qc=noInv();
+  else{
+    let total=0;const items=[];
+    for(const b of inv)for(const r of (b.rolls||[])){
+      if((r.status||'in_stock')!=='in_stock')continue;
+      total++;
+      if(!r.qcPassed)items.push({rollCode:r.rollCode,bucket:b._id,label:`${b.fabType||''} · ${b.color||''}`});
+    }
+    out.qc={count:items.length,total,items,share:true};
+  }
+  return out;
+}
+const FAB_HEALTH_CHECKS=[
+  ['colorSpellings','Colour spelt more than one way','Case, spacing or a typo: these rows are the same colour. Stock is already shown together; fix the spelling at the next arrival.'],
+  ['splitGsm','Same type and colour in more than one GSM bucket','Shown as one row on this tab. Each lot was entered with its own header GSM.'],
+  ['rollGsm','In-stock rolls whose GSM differs from the bucket header','The roll\'s own measured GSM counts; the header is only what was typed at receipt.'],
+  ['stalePartials','Partly used rolls untouched for over '+FAB_PARTIAL_STALE_DAYS+' days','Finish, relabel or return them. A roll with no date is not counted.'],
+  ['poIds','Fabric issues whose PO field is not a clean PO number','Digits only (e.g. 125) or free text. Old passes are not rewritten; reports match them through the PO key.'],
+  ['noMaster','Fabric issues with no cutting master','Edit the issue in the registry to record who cut it.'],
+  ['qc','In-stock rolls not marked QC-passed','A share, not counted in the total above.']
+];
+let _fabHealthOpen=new Set(),_fabHealthAll=new Set();
+function _fabHealthTotal(m){return FAB_HEALTH_CHECKS.reduce((n,[k])=>n+((m[k]&&!m[k].share&&m[k].count)||0),0);}
+function _fabHealthItemHtml(k,it){
+  const e=_gpEsc;
+  if(k==='colorSpellings')return`<div class="fqh-row"><b>${e(it.display)}</b> <span class="fqh-m">${it.spellings.map(s=>`“${e(s.text)}” ${s.kg} kg`).join(' · ')}</span></div>`;
+  if(k==='splitGsm')return`<div class="fqh-row"><b>${e(it.display)}</b> <span class="fqh-m">${it.gsms.join(' / ')} gsm · ${it.kg} ${e(it.unit||'kg')}</span></div>`;
+  if(k==='rollGsm')return`<div class="fqh-row"><b>${e(it.rollCode)}</b> <span class="fqh-m">${it.rollGsm} gsm, bucket says ${it.bucketGsm} · ${e(it.label)}</span></div>`;
+  if(k==='stalePartials')return`<div class="fqh-row"><b>${e(it.rollCode)}</b> <span class="fqh-m">${it.left} ${e(it.unit)} left · ${it.days} days since last use · ${e(it.label)}</span></div>`;
+  if(k==='poIds')return`<div class="fqh-row"><b>${e(it.id||'—')}</b> <span class="fqh-m">PO field “${e(it.poId)}” · ${it.kind==='digits'?'digits only (means '+e(it.key)+')':'not a PO number'}${it.date?' · '+e(it.date):''}</span></div>`;
+  if(k==='noMaster')return`<div class="fqh-row"><b>${e(it.id||'—')}</b> <span class="fqh-m">PO ${e(it.poId||'—')}${it.date?' · '+e(it.date):''}</span></div>`;
+  return`<div class="fqh-row"><b>${e(it.rollCode)}</b> <span class="fqh-m">${e(it.label)}</span></div>`;
+}
+function _fabHealthCardHtml(){
+  const m=_fabHealthModel({inv:(typeof allFabricInventory!=='undefined'&&Array.isArray(allFabricInventory))?allFabricInventory:null,
+    passes:(typeof allPasses!=='undefined'&&Array.isArray(allPasses))?allPasses:null,now:Date.now()});
+  const total=_fabHealthTotal(m);
+  const anyNull=FAB_HEALTH_CHECKS.some(([k])=>m[k].count===null);
+  const head=`Fabric data health — ${total} to look at${anyNull?' · some checks unavailable':''}`;
+  const body=FAB_HEALTH_CHECKS.map(([k,title,hint])=>{
+    const c=m[k];
+    const open=_fabHealthOpen.has(k);
+    const cnt=c.count===null?`<span class="fqh-n na" title="${_gpEsc(c.why||'')}">unavailable</span>`:`<span class="fqh-n${c.count&&!c.share?' bad':''}">${c.share?`${c.count} of ${c.total}${c.total?' ('+Math.round(c.count/c.total*100)+'%)':''}`:c.count}</span>`;
+    let list='';
+    if(c.count===null)list=`<div class="fqh-hint">${_gpEsc(c.why||'')} — this check cannot be answered right now; it is not zero.</div>`;
+    else if(!c.count)list='<div class="fqh-hint">Nothing to look at.</div>';
+    else{
+      const all=_fabHealthAll.has(k);
+      const shown=all?c.items:c.items.slice(0,FAB_HEALTH_ROWS);
+      list=`<div class="fqh-hint">${_gpEsc(hint)}</div>`+shown.map(it=>_fabHealthItemHtml(k,it)).join('')+(c.items.length>shown.length?`<button type="button" class="btn-outline fqh-more" onclick="window.fabHealthShowAll('${k}')">Show all ${c.items.length}</button>`:'');
+    }
+    return`<details class="fqh-check" data-k="${k}" ${open?'open':''} ontoggle="window.fabHealthToggle('${k}',this.open)"><summary><span class="fqh-t">${_gpEsc(title)}</span>${cnt}</summary>${list}</details>`;
+  }).join('');
+  return`<details class="card fqh-card" data-k="__all" ${_fabHealthOpen.has('__all')?'open':''} ontoggle="window.fabHealthToggle('__all',this.open)"><summary class="fqh-sum"><span class="fqh-t">${_gpEsc(head)}</span></summary><div class="fqh-body">${body}</div></details>`;
+}
+window.fabHealthToggle=function(k,open){if(open)_fabHealthOpen.add(k);else _fabHealthOpen.delete(k);};
+window.fabHealthShowAll=function(k){_fabHealthAll.add(k);_fabHealthOpen.add(k);_fabHealthOpen.add('__all');const m=document.getElementById('fab-tab-content');if(m&&fabActiveTab==='stock')m.innerHTML=renderFabricInventory();};
+
 window.fabSaveAlerts=async function(key){
   // The drill is a GROUP: the levels are written to every bucket in it so the
   // group reads the same whichever bucket is the highest.
@@ -306,6 +464,7 @@ function renderFabricInventory(){
     ${_fabKpiTile('Partial',partialCount||'—',partialCount?'#b45309':'#16a34a')}
   </div>`;
   h+=_fabRelabelBannerHtml();
+  h+=_fabHealthCardHtml();
   h+=`<div class="card" style="margin-bottom:14px;padding:12px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0">
@@ -747,7 +906,8 @@ function renderFabricInTab(){
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
           ${suppliers.map(s=>`<button type="button" class="dest-chip" onclick="window.setFabSupplier('${s}')">${s}</button>`).join('')}
         </div>
-        <input id="fab-supplier" placeholder="Or type supplier name…" oninput="window.updateFabUnit()">
+        <input id="fab-supplier" list="fab-supplier-list" autocomplete="off" placeholder="Or type supplier name…" oninput="window.updateFabUnit()">
+        <datalist id="fab-supplier-list">${_fabSupplierOptions(suppliers).map(x=>`<option value="${_gpEsc(x)}"></option>`).join('')}</datalist>
       </div>
       <div class="field" style="grid-column:1/-1"><label>Lot type <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
         <div id="fab-lotkind" role="group" aria-label="Lot type" style="display:flex;gap:6px;flex-wrap:wrap">${_fabLotKindChipsHtml('')}</div>
@@ -758,7 +918,9 @@ function renderFabricInTab(){
       </div>
       <div class="field"><label>Nominal GSM (code only) *</label><input id="fab-gsm" type="number" min="0" placeholder="e.g. 220" onchange="window.refreshFabCode()">
         <div style="font-size:11px;color:var(--muted);margin-top:3px">Used for the fabric code and as each roll's starting value — the GSM measured on every roll below is what counts.</div></div>
-      <div class="field"><label>Fabric Color *</label><input id="fab-color" placeholder="e.g. Black, White, Royal Blue" onchange="window.refreshFabCode()"></div>
+      <div class="field"><label>Fabric Color *</label><input id="fab-color" list="fab-color-list" autocomplete="off" placeholder="e.g. Black, White, Royal Blue" oninput="window.fabColorCheck()" onchange="window.refreshFabCode();window.fabColorCheck()">
+        <datalist id="fab-color-list">${_fabKnownColors().map(x=>`<option value="${_gpEsc(x)}"></option>`).join('')}</datalist>
+        <div id="fab-color-hint" class="fab-color-hint" aria-live="polite"></div></div>
       <div class="field"><label>Received By</label><input value="${session.name}" readonly style="background:var(--soft);cursor:default"></div>
       <div class="field"><label>Auto fabric code</label>
         <input id="fab-code" readonly placeholder="Pick type + GSM + color to generate" style="background:var(--surface-2);color:var(--cat-notes);font-weight:700;letter-spacing:.04em">
@@ -782,6 +944,49 @@ function renderFabricInTab(){
   </div>
   <div style="height:80px"></div>`;
 }
+
+// ── Fabric In: typed pickers (WP-F5) ────────────────────────────────────
+// Colour and supplier are free text with suggestions. A suggestion is only ever
+// OFFERED ("Did you mean …?"): the value saved is exactly what the person typed,
+// unless they pressed the button to take the existing spelling.
+let _fabColorSession=[];     // colours saved in this session (a fresh arrival may not be in the loaded stock yet)
+// Distinct colour names, normalised-key deduped; stock spellings first, then the Colour Library, then this session's.
+function _fabColorOptions(inv,lib,session){
+  const seen=new Map();
+  const add=t=>{const c=_fabCollapse(t);if(!c)return;const k=_fabKeyPart(_fabNormColor(c));if(k&&!seen.has(k))seen.set(k,c);};
+  _fabStockGroups(inv||[]).forEach(g=>add(g.color));
+  (lib||[]).forEach(c=>{if(c&&c.status!=='archived'&&c.status!=='inactive')add(c.colorName||c.name);});
+  (session||[]).forEach(add);
+  return [...seen.values()].sort((a,b)=>a.localeCompare(b));
+}
+// The existing spelling the typed colour differs from, or '' (no suggestion).
+function _fabColorSuggest(typed,options){
+  const t=_fabCollapse(typed);if(!t)return '';
+  const k=_fabKeyPart(_fabNormColor(t));if(!k)return '';
+  const hit=(options||[]).find(o=>_fabKeyPart(_fabNormColor(o))===k);
+  return(hit&&hit!==t)?hit:'';
+}
+function _fabKnownColors(){
+  return _fabColorOptions((typeof allFabricInventory!=='undefined'&&allFabricInventory)||[],(typeof allColors!=='undefined'&&typeof colorLibLoaded!=='undefined'&&colorLibLoaded&&allColors)||[],_fabColorSession);
+}
+function _fabSupplierOptions(fixed){
+  const seen=new Map();
+  [].concat(fixed||[],(typeof allFabricIn!=='undefined'&&allFabricIn||[]).map(f=>f&&f.supplier)).forEach(t=>{const c=_fabCollapse(t);const k=c.toLowerCase();if(c&&!seen.has(k))seen.set(k,c);});
+  return [...seen.values()].sort((a,b)=>a.localeCompare(b));
+}
+window.fabColorCheck=function(){
+  const inp=document.getElementById('fab-color'),box=document.getElementById('fab-color-hint');
+  if(!inp||!box)return;
+  const sug=_fabColorSuggest(inp.value,_fabKnownColors());
+  if(!sug){box.innerHTML='';return;}
+  box.innerHTML=`Did you mean <b>${_gpEsc(sug)}</b>? <button type="button" class="dest-chip" onclick="window.fabColorAccept(this.dataset.v)" data-v="${_gpEsc(sug)}">Use “${_gpEsc(sug)}”</button> <span style="color:var(--muted)">or keep what you typed.</span>`;
+};
+window.fabColorAccept=function(v){
+  const inp=document.getElementById('fab-color');if(!inp)return;
+  inp.value=v||inp.value;
+  const box=document.getElementById('fab-color-hint');if(box)box.innerHTML='';
+  if(typeof window.refreshFabCode==='function')window.refreshFabCode();
+};
 
 // Fresh / stock lot: two chips, blank = not recorded; pressing the lit one clears it.
 let _fabLotKindSel='';
@@ -952,6 +1157,7 @@ window.submitFabricIn=async function(){
     const done=await _fabInvUpsert({fabType,gsm,color,unit,addRolls:rolls.map(r=>({rollCode:r.rollCode,weight:r.weight,gsm:r.gsm,unit:r.unit})),sourceCol:'fabricin',note:`Receipt from ${supplier}`,mintDoc:{field:'fabricin',collection:'fabricin',floor,idFor:_fabInIdFor,build:buildReceipt}});
     const payload=done.minted.record,fabId=done.minted.id;
     allFabricIn.unshift(payload);
+    if(color&&!_fabColorSession.includes(color))_fabColorSession.push(color);
     await logActivity('Fabric In',`${fabId} (${fabCode}) — ${supplier} · ${fabType} ${gsm}gsm · ${color} · ${rolls.length} rolls · ${totalWeight} ${unit}`);
     showToast(`${fabCode} saved ✓ · added to inventory`);
     window.switchFabTab('fabricin');

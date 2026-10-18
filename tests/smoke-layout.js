@@ -3039,6 +3039,37 @@ const FRAGMENTS={
     return Promise.resolve('<div class="card">'+mk('fabric')+'</div><div class="card">'+mk('vendor')+'</div><div class="card">'+mk('fabric','jersey_heavy__black')+'</div>');
   },
 
+  // Fabric ▸ Fabric data health card (every check open, long names, an unavailable check) and the Fabric In typed pickers
+  // with the "Did you mean" hint showing (WP-F5, Oct 2026).
+  'fabric — data health card and the typed pickers':()=>{
+    const esc=x=>String(x==null?'':x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const NOW=Date.now(),DAY=86400000;
+    const LONGC='Heather Charcoal Melange With A Very Long Colour Name Indeed';
+    const rl=(code,w,gsm,extra)=>Object.assign({rollCode:code,weight:w,gsm,unit:'kg',status:'in_stock',sourceFabId:'FAB-001'},extra||{});
+    const mk=(id,gsm,color,rolls)=>({_id:id,fabType:'Jersey Heavy',gsm,color,unit:'kg',rolls,totalWeight:rolls.reduce((n,r)=>n+r.weight,0),rollsCount:rolls.length,reservedCount:0,reservedWeight:0});
+    const inv=[mk('jh__220__arctic',220,'Arctic White',[rl('AW-01-R01',20,231,{qcPassed:true}),rl('AW-01-R02',11,220)]),mk('jh__250__artic',250,'Artic White',[rl('AW-02-R01',8,250,{partiallyConsumed:true,originalWeight:20,consumptionLog:[{po:'PO-1',weight:12,ts:NOW-60*DAY}]})]),
+      mk('jh__210__long',210,LONGC,[rl('LNG-01-R01',12,210)]),mk('jh__211__long',211,LONGC.toLowerCase(),[rl('LNG-02-R01',9,211)])];
+    const passes=[];for(let i=0;i<30;i++)passes.push({id:'GP-'+(100+i),gpType:'fabric',poId:i%2?'125':'Sample & Sleeve '+LONGC,cutMaster:i%3?'Hassan':'',date:'2026-10-01'});
+    const app=loadApp({files:['js/ph-core.js','js/fabric.js'],currentPage:'',session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',canFabric:true},
+      globals:{allFabricInventory:inv,allFabricIn:[{id:'FAB-001',supplier:'Al-Karam Textile Mills (Private) Limited',fabCode:'X',date:'2026-10-01'}],allPasses:passes,allFabricMovements:[],allPOs:[],_gpEsc:esc,
+        _fabInvFilter:'all',_fabInvCatFilter:'all',_fabInvSearchQ:'',_fabInvDrillKey:null}});
+    const keys=['__all','colorSpellings','splitGsm','rollGsm','stalePartials','poIds','noMaster','qc'];
+    keys.forEach(k=>app.run("window.fabHealthToggle('"+k+"',true)"));
+    const stock=app.run('renderFabricInventory()');
+    // The unavailable state: stock loaded, passes not.
+    const off=loadApp({files:['js/ph-core.js','js/fabric.js'],currentPage:'',session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',canFabric:true},
+      globals:{allFabricInventory:inv,allFabricIn:[],allPasses:undefined,allFabricMovements:[],allPOs:[],_gpEsc:esc,_fabInvFilter:'all',_fabInvCatFilter:'all',_fabInvSearchQ:'',_fabInvDrillKey:null}});
+    keys.forEach(k=>off.run("window.fabHealthToggle('"+k+"',true)"));
+    const unavailable=off.run('_fabHealthCardHtml()');
+    // Fabric In with the hint showing.
+    const fin=loadApp({files:['js/fabric.js'],currentPage:'',session:{uid:'u1',u:'afnan',name:'Afnan',role:'owner',canFabric:true},
+      globals:{allFabricInventory:inv,allFabricIn:[{id:'FAB-001',supplier:'Al-Karam Textile Mills (Private) Limited'}],allPasses:[],allFabricMovements:[],allPOs:[],_gpEsc:esc,allColors:[],colorLibLoaded:false}});
+    let form=fin.run('renderFabricInTab()');
+    fin.el('fab-color').value='arctic  white';fin.run('window.fabColorCheck()');
+    form=form.replace('<div id="fab-color-hint" class="fab-color-hint" aria-live="polite"></div>','<div id="fab-color-hint" class="fab-color-hint" aria-live="polite">'+fin.el('fab-color-hint').innerHTML+'</div>');
+    return Promise.resolve('<div class="card">'+stock.replace(/<div style="height:80px"><\/div>/,'')+'</div><div class="card">'+unavailable+'</div><div class="card">'+form.slice(0,form.indexOf('Fabric rolls'))+'</div>');
+  },
+
   // The Creator Database (Marketing M1): stat tiles, filter bar, a table
   // carrying every tier chip (including the "manual" badge and an unscored
   // row) and the Needs completion column. The table is allowed to scroll
