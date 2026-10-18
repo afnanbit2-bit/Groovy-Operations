@@ -5823,6 +5823,46 @@ body.ph-fullscreen.ph-ur .ph-tk-bar{gap:8px}
 .si-rs-guide{font-size:14px;color:var(--muted)}
 .si-rs-meta{font-size:14px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
 /* si-restock END */
+/* fabric-defects START — Fabric Inventory ▸ Defects & Returns (Oct 2026). Tokens only; every selector is .fdf-. */
+.fdf-sub{font-weight:400;color:var(--muted);font-size:12px}
+.fdf-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:10px 0}
+.fdf-bar .field{margin:0;min-width:150px}
+.fdf-btn{width:auto;margin:0;padding:8px 14px}
+.fdf-chips{display:flex;gap:6px;flex-wrap:wrap}
+.fdf-chip{padding:7px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;min-height:34px}
+.fdf-chip[aria-pressed="true"]{background:var(--dark);color:var(--on-dark);border-color:var(--dark)}
+.fdf-mini,.fdf-flag{padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:inherit}
+.fdf-flag{margin-left:auto;color:var(--accent-urgent);border-color:var(--accent-urgent);min-width:28px;min-height:28px}
+.fdf-sup{border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.fdf-sup-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;padding:9px 12px;background:var(--surface-2);font-weight:700}
+.fdf-sup-n{min-width:0;overflow-wrap:anywhere}
+.fdf-tot{font-size:12px;font-weight:600;color:var(--muted)}
+.fdf-lot-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:7px 12px;font-size:13px;color:var(--text);border-top:1px solid var(--border)}
+.fdf-row{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--border);font-size:13px}
+.fdf-row.returned{opacity:.85}
+.fdf-sel{width:20px;flex-shrink:0}
+.fdf-code{font-weight:700;letter-spacing:.04em;min-width:110px;overflow-wrap:anywhere}
+.fdf-fab{color:var(--muted);flex:1;min-width:120px;overflow-wrap:anywhere}
+.fdf-wt{white-space:nowrap}
+.fdf-reason{font-weight:600;overflow-wrap:anywhere}
+.fdf-state{font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;letter-spacing:.03em}
+.fdf-state.def{background:var(--accent-urgent-soft);color:var(--accent-urgent)}
+.fdf-state.ret{background:var(--soft);color:var(--text)}
+.fdf-acts{display:flex;gap:8px;align-items:center;margin-left:auto}
+.fdf-link{color:var(--link-accent);font-size:12px}
+.fdf-detail{flex-basis:100%;font-size:12px;color:var(--muted);padding-left:30px;overflow-wrap:anywhere}
+.fdf-empty{padding:18px;text-align:center}
+.fdf-ret{border-top:1px solid var(--border);padding-top:12px}
+.fdf-modal textarea{width:100%;box-sizing:border-box;font-family:inherit}
+.fdf-origin{margin-top:2px}
+@media (max-width:600px){
+  .fdf-bar .field{flex:1 1 100%}
+  .fdf-chip,.fdf-mini{min-height:34px}
+  .fdf-detail{padding-left:0}
+  .fdf-acts{margin-left:0}
+}
+/* fabric-defects END */
+
 /* ph-mod-queue START */
 /* Production Ops ▸ PO Queue (js/ph-mod-queue.js). Tokens only; text >= 12px; every selector is .phq-/phq- prefixed. No motion is used,
    so prefers-reduced-motion has nothing to switch off. A tile's left edge is coloured by delay, and the badge beside it repeats it in words. */

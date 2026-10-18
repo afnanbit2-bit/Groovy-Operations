@@ -1176,3 +1176,25 @@ function phI18nNoticeReset(){_phI18nNoticeState='';}
   A('cut.search_none','No job matches the search.','کوئی جاب تلاش سے نہیں ملتی۔');
   A('cut.instr_refresh','Refresh instructions…','ہدایات تازہ کریں…');
 })();
+
+/* ── Fabric Inventory ▸ Defects & Returns (Oct 2026). Urdu written by Claude, NOT read by an Urdu speaker: every row is review:true.
+   The reason texts are what the screen SHOWS; the stored reason stays the English label so old and new records agree. ── */
+(function(){
+  const A=function(k,en,ur){_phI18nAdd(k,en,ur,true);};
+  A('fab.tab_defects','Defects & Returns','خراب رولز اور واپسی');
+  A('fab.mark_defective','Mark defective','خراب نشان کریں');
+  A('fab.save_defect','Save as defective','خراب کے طور پر محفوظ کریں');
+  A('fab.undo_defective','Undo defective','خراب کا نشان ہٹائیں');
+  A('fab.return_selected','Return selected to vendor','منتخب رولز وینڈر کو واپس کریں');
+  A('fab.return_ref','Return reference','واپسی کا حوالہ');
+  A('fab.defective','Defective','خراب');
+  A('fab.returned','Returned','واپس کیا گیا');
+  A('fab.export','Export Excel','ایکسل میں محفوظ کریں');
+  A('fab.scan_ph','Scan a roll to mark it defective','خراب رول نشان کرنے کے لیے رول اسکین کریں');
+  A('fab.reason_shade','Shade variation','رنگ میں فرق');
+  A('fab.reason_holes','Holes/stains','سوراخ / داغ');
+  A('fab.reason_gsm','Wrong GSM','غلط جی ایس ایم');
+  A('fab.reason_short','Short weight','وزن کم');
+  A('fab.reason_colour','Wrong colour','غلط رنگ');
+  A('fab.reason_other','Other','دیگر');
+})();

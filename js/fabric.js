@@ -51,11 +51,12 @@ function _fabBusyEnd(){_fabBusy=false;clearTimeout(_fabBusyTimer);_fabShowBusy(f
 
 // The tabs that ENTER data. A view-only account (the CSR Team Lead) sees the
 // rest; asking for one of these lands on Stock instead.
-const _FAB_WRITE_TABS=['fabricin','issue','drawstring','returns'];
+// 'returns' (Defects & Returns) is NOT here: the view-only CSR lead may LOOK at it (no actions drawn).
+const _FAB_WRITE_TABS=['fabricin','issue','drawstring'];
 function _fabReadOnly(){return typeof isCsrLead==='function'&&isCsrLead();}
 function renderFabricPage(){
   const tabs=[['stock','Stock'],['fabricin','Fabric In'],['issue','Issue'],['registry','Issue Registry'],
-    ['drawstring','Drawstrings'],['returns','Returns'],['reports','Reports'],['log','Log']]
+    ['drawstring','Drawstrings'],['returns',_fabT('fab.tab_defects','Defects & Returns')],['reports','Reports'],['log','Log']]
     .filter(([k])=>!(_fabReadOnly()&&_FAB_WRITE_TABS.includes(k)));
   return`<div class="page-head"><div class="page-title">Fabric Inventory</div>${_fabReadOnly()?'<div class="page-sub">View only</div>':''}</div>
   <div class="gp-tabs">
@@ -104,7 +105,7 @@ window.switchFabTab=function(tab){
   }
   else if(tab==='returns'){
     el.innerHTML=renderFabricReturnsTab();
-    _fabFocusScan('fab-sret-scan');
+    _fabFocusScan('fab-def-scan');
   }
   else if(tab==='reports'){
     el.innerHTML=renderFabricReportsTab();
@@ -155,7 +156,8 @@ function renderFabricInventory(){
   const totalKg=agg.filter(s=>_fabUnitNorm(s.unit)==='kg').reduce((a,s)=>a+(s.totalWeight||0),0);
   const totalM=agg.filter(s=>_fabUnitNorm(s.unit)==='m').reduce((a,s)=>a+(s.totalWeight||0),0);
   const totalRolls=agg.reduce((a,s)=>a+(s.rollsCount||0),0);
-  const totalReservedKg=agg.reduce((a,s)=>a+(s.reservedWeight||0),0);
+  const defRolls=agg.reduce((a,s)=>a.concat((s.rolls||[]).filter(r=>r.status==='defective')),[]);
+  const defKg=defRolls.filter(r=>_fabUnitNorm(r.unit)==='kg').reduce((a,r)=>a+(r.weight||0),0);
   const alertCount=agg.filter(s=>(s.totalWeight||0)>0&&_fabAlertLevel(s).label!=='OK').length;
   const outCount=agg.filter(s=>!(s.totalWeight>0)).length;
   const partialCount=agg.reduce((a,s)=>a+(s.rolls||[]).filter(r=>r.partiallyConsumed&&(r.status||'in_stock')==='in_stock').length,0);
@@ -199,7 +201,7 @@ function renderFabricInventory(){
     ${_fabKpiTile('Vendors',vendorNames.length,'#0891b2')}
     ${_fabKpiTile('Alerts',kpiAlerts,alertCount?'#dc2626':'#16a34a')}
     ${_fabKpiTile('Categories',cats.length,'#d97706')}
-    ${_fabKpiTile('Reserved',totalReservedKg>0?totalReservedKg.toFixed(1)+' kg':'—',totalReservedKg?'#d97706':'#d1d5db')}
+    ${_fabKpiTile(_gpEsc(_fabT('fab.defective','Defective')),defRolls.length?`${defRolls.length} · ${defKg.toFixed(1)} kg`:'—',defRolls.length?'#dc2626':'#d1d5db')}
     ${_fabKpiTile('Partial',partialCount||'—',partialCount?'#b45309':'#16a34a')}
   </div>`;
   h+=_fabRelabelBannerHtml();
@@ -406,7 +408,7 @@ function _renderFabInvDrill(key){
     </div>`:''}
     ${rolls.length?rolls.map(r=>{
       const st=r.status||'in_stock';
-      const stColor=st==='in_stock'?'var(--green)':st==='issued'?'#dc2626':st==='reserved'?'#d97706':st==='returned_supplier'?'#9ca3af':st==='consumed'?'#92400e':'var(--muted)';
+      const stColor=st==='in_stock'?'var(--green)':st==='issued'?'#dc2626':st==='reserved'?'#d97706':st==='returned_supplier'?'#9ca3af':st==='defective'?'var(--accent-urgent)':st==='consumed'?'#92400e':'var(--muted)';
       const rcpt=allFabricIn.find(x=>x.id===r.sourceFabId);
       const supplier=rcpt?.supplier||'';
       const wt=`${r.weight||0} ${r.unit||s.unit||'kg'}`;
@@ -419,6 +421,7 @@ function _renderFabInvDrill(key){
           <span style="color:${stColor};font-weight:600;text-transform:capitalize;font-size:12px">${st.replace('_',' ')}</span>
           <button onclick="window.printRollBarcode('${_gpEsc(r.rollCode||'')}','${_gpEsc(s.fabType||'')}','${r.gsm||s.gsm||0}','${_gpEsc(s.color||'')}','${_gpEsc(wt)}','${_gpEsc(supplier)}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">🖨 Print</button>
           ${r.labelStale?`<button onclick="window.fabReprintRoll('${_gpEsc(key)}','${_gpEsc(r.rollCode||'')}')" title="Reprint label with the updated weight — same barcode" style="padding:3px 8px;border:none;border-radius:6px;background:#b45309;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🖨 Reprint (weight changed)</button>`:''}
+          ${st==='in_stock'&&_fabCanMarkDefect()?`<button type="button" class="fdf-mini" onclick="window.fabDefectOpen('${_gpEsc(r.rollCode||'')}')" title="This roll is bad — take it out of stock">${_gpEsc(_fabT('fab.mark_defective','Mark defective'))}</button>`:''}
           ${canAct?`<button onclick="window.editFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" style="padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
           <button onclick="window.deleteFabricRoll('${_gpEsc(r.sourceFabId||'')}','${_gpEsc(r.rollCode||'')}')" title="Delete this roll" style="padding:3px 8px;border:1px solid var(--accent-urgent);border-radius:6px;background:var(--surface);color:var(--accent-urgent);font-size:11px;cursor:pointer;font-family:inherit">✕</button>`:''}
         </div>
@@ -483,6 +486,7 @@ function _fabRollDetail(r){
   if(st==='reserved')bits.push(`Reserved for ${_gpEsc(r.reservedPO||'—')}${r.reservedAt?` · ${d(r.reservedAt)}`:''}`);
   if(st==='issued')bits.push(`Issued${r.issuedPO?` for PO ${_gpEsc(r.issuedPO)}`:''}${r.issuedTo?` to ${_gpEsc(r.issuedTo)}`:''}${r.issuedAt?` · ${d(r.issuedAt)}`:''}${r.issuedBy?` · by ${_gpEsc(r.issuedBy)}`:''}`);
   if(st==='returned_supplier'){const sup=_fabRollSupplier(r);bits.push(`Returned to ${sup?_gpEsc(sup):'supplier'}${r.returnReason?` — ${_gpEsc(r.returnReason)}`:''}${r.returnedToSupplierAt?` · ${d(r.returnedToSupplierAt)}`:''}`);}
+  if(st==='defective'||(r.defect&&st==='returned_supplier')){const df=r.defect||{};bits.push(`${st==='defective'?'<b>Defective</b>':'Was defective'} — ${_gpEsc(df.reason||'')}${df.note?` · ${_gpEsc(df.note)}`:''}${df.by?` · marked by ${_gpEsc(df.by)}`:''}${df.at?` · ${d(df.at)}`:''}`);}
   if(st==='in_stock'&&r.returnedAt)bits.push(`Returned to stock ${d(r.returnedAt)}`);
   const u=r.unit||'kg';
   // Partially-used roll: same roll, now lighter. Show what's left and the full
@@ -863,7 +867,7 @@ function renderFabricInList(){
           // in sync with the Stock tab (issued / reserved / returned / in stock).
           const live=_fabFindRoll(rc);
           const liveSt=live?(live.roll.status||'in_stock'):'in_stock';
-          const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':'var(--muted)';
+          const stCol=liveSt==='in_stock'?'var(--green)':liveSt==='issued'?'#dc2626':liveSt==='reserved'?'#d97706':liveSt==='returned_supplier'?'#9ca3af':liveSt==='defective'?'var(--accent-urgent)':'var(--muted)';
           return`<div style="display:flex;flex-direction:column;padding:8px 4px;border-bottom:1px solid #f9f9f9;font-size:13px;gap:6px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
               <input type="checkbox" class="fab-roll-chk" data-rc="${_gpEsc(rc)}" data-weight="${_gpEsc(wt)}" data-supplier="${_gpEsc(f.supplier||'')}" data-gsm="${rGsm}" data-color="${_gpEsc(f.color||'')}" data-fabtype="${_gpEsc(f.fabType||'')}" onclick="event.stopPropagation();window.updateRollPrintCount('${f.id}')" style="cursor:pointer;width:15px;height:15px;flex-shrink:0">
@@ -1312,7 +1316,9 @@ window.deleteFabricRoll=async function(fabId,rollCode){
   if(!inv)return showToast('Roll '+rollCode+' not found.',true);
   const invStatus=inv.roll.status||'in_stock';
   if(invStatus!=='in_stock')
-    return showToast(`${rollCode} is ${invStatus.replace('_',' ')} — can't delete a roll that's in use. Use Returns first.`,true);
+    return showToast(invStatus==='defective'
+      ?`${rollCode} is marked defective — undo the mark or return it to the vendor first (Defects & Returns tab).`
+      :`${rollCode} is ${invStatus.replace('_',' ')} — can't delete a roll that's in use. Use Returns first.`,true);
   const f=allFabricIn.find(x=>x.id===fabId);
   const idx=f?(f.rolls||[]).findIndex(r=>(r.rollCode||r.rollNumber)===rollCode):-1;
   if(f&&idx<0&&_gpPendingFor('fabric',fabId))return showToast('A delete/edit is already pending for '+fabId,true);
@@ -1351,6 +1357,7 @@ window.editFabricRoll=function(fabId,rollCode){
   if(!_fabCanDelete())return showToast('Only owners and Mustafa can edit rolls.',true);
   const inv=_fabFindRoll(rollCode);
   if(!inv)return showToast('Roll '+rollCode+' not found.',true);
+  if((inv.roll.status||'in_stock')==='defective')return showToast(`${rollCode} is marked defective — undo the mark before editing it.`,true);
   if((inv.roll.status||'in_stock')!=='in_stock')return showToast(`${rollCode} is in use — only in-stock rolls can be edited.`,true);
   const r=inv.roll,unit=r.unit||inv.stock.unit||'kg';
   document.getElementById('hrm-modal-back')?.remove();
@@ -1384,6 +1391,7 @@ window.saveFabricRoll=async function(fabId,rollCode){
   if(isNaN(gsm)||gsm<=0)return showToast('Enter a valid GSM.',true);
   const inv=_fabFindRoll(rollCode);
   if(!inv)return showToast('Roll not found.',true);
+  if((inv.roll.status||'in_stock')==='defective')return showToast(`${rollCode} is marked defective — undo the mark before editing it.`,true);
   if((inv.roll.status||'in_stock')!=='in_stock')return showToast(`${rollCode} is in use — can't edit.`,true);
   const st=inv.stock,f=allFabricIn.find(x=>x.id===fabId);
   if(!_fabBusyStart('Saving roll…'))return;
@@ -2504,6 +2512,7 @@ function _fabRibAdd(code){
   const rc=roll.rollCode,st=roll.status||'in_stock';
   if(st==='issued'){showToast(rc+' is already issued.',true);return;}
   if(st==='returned_supplier'){showToast(rc+' was returned to supplier.',true);return;}
+  if(st==='defective'){showToast(rc+' is marked defective — it cannot be issued.',true);return;}
   if(_fabRibRolls.some(r=>r.rollCode===rc)){showToast(rc+' already selected.',true);return;}
   if(_fabRibKey&&_fabRibKey!==stock._id){showToast('All rib must be from one rib fabric. Clear to switch.',true);return;}
   _fabRibKey=stock._id;_fabRibRolls.push({rollCode:rc,weight:roll.weight||0,status:st});
@@ -2628,6 +2637,7 @@ function _fabIssueAdd(code){
   const st=roll.status||'in_stock';
   if(st==='issued'){showToast(rc+' is already issued.',true);return;}
   if(st==='returned_supplier'){showToast(rc+' was returned to supplier.',true);return;}
+  if(st==='defective'){showToast(rc+' is marked defective — it cannot be issued. An owner can undo the mark on the Defects & Returns tab.',true);return;}
   if(_fabIssueRolls.some(r=>r.rollCode===rc)){showToast(rc+' already selected.',true);return;}
   const po=document.getElementById('fab-iss-po')?.value||'';
   // Hard gates (must explicitly confirm) instead of silent "issuing anyway".
@@ -2660,6 +2670,7 @@ window.fabIssuePickStock=function(){
         <span style="color:var(--muted)">${r.weight||0} ${r.unit||stock.unit||'kg'}</span>
         ${resv?`<span style="color:var(--amber);font-size:11px">reserved ${_gpEsc(r.reservedPO||'')}</span>`:''}
         ${r.qcPassed?'<span style="color:var(--green);font-size:11px">QC ✓</span>':'<span style="color:var(--muted);font-size:11px">no QC</span>'}
+        ${(r.status||'in_stock')==='in_stock'&&_fabCanMarkDefect()?`<button type="button" class="fdf-flag" title="${_gpEsc(_fabT('fab.mark_defective','Mark defective'))}" aria-label="${_gpEsc(_fabT('fab.mark_defective','Mark defective'))} ${_gpEsc(r.rollCode)}" onclick="event.preventDefault();event.stopPropagation();window.fabDefectOpen('${_gpEsc(r.rollCode)}')">⚑</button>`:''}
       </label>`;
     }).join('')}</div>`;
 };
@@ -2865,9 +2876,6 @@ window.submitFabricIssue=async function(){
 const FAB_RETURN_REASONS=['Defective','Wrong color','Wrong GSM','Excess','Shade variation','Other'];
 let _fabSRetFilterKey='';   // optional "pick a fabric" filter for the returns list
 
-function renderFabricReturnsTab(){
-  return renderFabRetSupplier();
-}
 
 // Collect rolls in a given status across all stocks → [{key,stock,roll}]
 function _fabRollsByStatus(status){
@@ -3398,4 +3406,298 @@ window.fabPrintReport=function(){
     <script>window.addEventListener('load',function(){setTimeout(function(){window.print();},250);});<\/script>
   </body></html>`);
   w.document.close();
+};
+
+// ════════════════════════════════════════════════════════════════════════
+//  Defective rolls · Defects & Returns tab (Oct 2026)
+//  A roll that arrives (or turns out) bad is marked DEFECTIVE: it leaves the
+//  available stock (status 'defective', weight kept) and waits here, grouped
+//  supplier → lot, until it is returned to the vendor or the mark is undone.
+//   • mark: anyone with canFabric (incl. the cutting floor)
+//   • undo / return to vendor: owners + Mustafa (_fabCanDelete) — and the
+//     engine (js/gatepass.js) checks it again, so a skipped UI gate is refused.
+//  Supplier, lot and receipt are DERIVED from the roll's sourceFabId → the
+//  Fabric In receipt; nothing about them is stored on the roll.
+// ════════════════════════════════════════════════════════════════════════
+const FAB_DEFECT_REASONS=[['Shade variation','fab.reason_shade'],['Holes/stains','fab.reason_holes'],['Wrong GSM','fab.reason_gsm'],['Short weight','fab.reason_short'],['Wrong colour','fab.reason_colour'],['Other','fab.reason_other']];
+let _fabDefSup='',_fabDefState='all',_fabDefQ='';
+// Urdu-first accounts read "اردو — English"; everyone else (and any build
+// without js/ph-i18n.js) reads the English default.
+function _fabT(key,en){
+  try{if(typeof phI18nD==='function'&&typeof phI18nAttr==='function'&&typeof phI18nHas==='function'&&phI18nHas(key))return phI18nAttr(phI18nD(key));}catch(e){}
+  return en;
+}
+function _fabReasonLabel(reason){const f=FAB_DEFECT_REASONS.find(x=>x[0]===reason);return f?_fabT(f[1],reason):String(reason||'');}
+function _fabCanMarkDefect(){return !!session&&!_fabReadOnly()&&(['owner','manager'].includes(session.role)||!!session.canFabric);}
+function _fabCanReviewDefects(){return !_fabReadOnly()&&_fabCanDelete();}
+function _fabRollOrigin(roll){
+  const f=allFabricIn.find(x=>x.id===roll.sourceFabId);
+  return{supplier:(f&&f.supplier)||'',lotId:(f&&f.id)||roll.sourceFabId||'',date:(f&&f.date)||'',fabCode:(f&&f.fabCode)||''};
+}
+function _fabDateStr(ts){return ts?new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'';}
+function _fabHttpsUrl(u){const s=String(u||'').trim();return /^https:\/\//.test(s)?s:'';}
+
+// ── mark one roll defective (modal) ──
+window.fabDefectOpen=function(rollCode){
+  if(!_fabCanMarkDefect())return showToast('You cannot mark rolls defective.',true);
+  const inv=_fabFindRoll(rollCode);
+  if(!inv)return showToast('Roll '+rollCode+' not found.',true);
+  const st=inv.roll.status||'in_stock';
+  if(st==='defective')return showToast(inv.roll.rollCode+' is already marked defective.',true);
+  if(st!=='in_stock')return showToast(`${inv.roll.rollCode} is ${st.replace('_',' ')} — only a roll that is in stock can be marked defective.`,true);
+  const r=inv.roll,s=inv.stock,unit=r.unit||s.unit||'kg',o=_fabRollOrigin(r);
+  document.getElementById('hrm-modal-back')?.remove();
+  const back=document.createElement('div');
+  back.className='hrm-modal-back';back.id='hrm-modal-back';
+  back.onclick=ev=>{if(ev.target===back)window.hrmCloseModal();};
+  const origin=[o.supplier||'Unknown supplier',o.fabCode||o.lotId,o.date].filter(Boolean).join(' · ');
+  back.innerHTML=`<div class="hrm-modal fdf-modal" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h3>${_gpEsc(_fabT('fab.mark_defective','Mark defective'))}</h3><div class="sub">${_gpEsc(r.rollCode)} · ${_gpEsc(s.fabType||'')} ${_gpEsc(s.gsm||'')}gsm ${_gpEsc(s.color||'')}</div><div class="sub fdf-origin">${_gpEsc(origin)}</div></div>
+      <button onclick="window.hrmCloseModal()" style="background:none;border:none;font-size:25px;cursor:pointer;color:var(--muted);line-height:1" aria-label="Close">×</button>
+    </div>
+    <div class="field"><label>What is wrong? *</label>
+      <div class="fdf-chips" role="group" aria-label="Reason">${FAB_DEFECT_REASONS.map(([val,key])=>`<button type="button" class="fdf-chip" aria-pressed="false" data-reason="${_gpEsc(val)}" onclick="window.fabDefectPick(this)">${_gpEsc(_fabT(key,val))}</button>`).join('')}</div>
+    </div>
+    <div class="field"><label>Note</label><textarea id="fdf-note" rows="2" maxlength="500" placeholder="Where on the roll, how bad…"></textarea></div>
+    <div class="hrm-grid-2">
+      <div class="field"><label>Measured GSM</label><input id="fdf-gsm" type="number" min="0" step="1" value="${_gpEsc(r.gsm||s.gsm||'')}"></div>
+      <div class="field"><label>Weight (${_gpEsc(unit)})</label><input id="fdf-weight" type="number" min="0" step="0.01" value="${_gpEsc(r.weight||'')}"></div>
+    </div>
+    <div class="field"><label>Photo (optional)</label><input id="fdf-photo" type="file" accept="image/*" capture="environment"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn-outline" onclick="window.hrmCloseModal()">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0" onclick="window.fabDefectSave('${_gpEsc(r.rollCode)}')">${_gpEsc(_fabT('fab.save_defect','Save as defective'))}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+};
+window.fabDefectPick=function(btn){
+  const on=btn.getAttribute('aria-pressed')==='true';
+  document.querySelectorAll('.fdf-chip').forEach(c=>c.setAttribute('aria-pressed','false'));
+  btn.setAttribute('aria-pressed',on?'false':'true');
+};
+function _fabNumOrNull(v){const n=parseFloat(v);return isFinite(n)&&n>=0?n:null;}
+
+window.fabDefectSave=async function(rollCode){
+  if(!_fabCanMarkDefect())return showToast('You cannot mark rolls defective.',true);
+  const chip=document.querySelector('.fdf-chip[aria-pressed="true"]');
+  const reason=chip?chip.getAttribute('data-reason'):'';
+  if(!reason)return showToast('Pick what is wrong with the roll.',true);
+  const note=(document.getElementById('fdf-note')?.value||'').trim();
+  const gsmMeasured=_fabNumOrNull(document.getElementById('fdf-gsm')?.value);
+  const weight=_fabNumOrNull(document.getElementById('fdf-weight')?.value);
+  const file=document.getElementById('fdf-photo')?.files?.[0]||null;
+  const inv=_fabFindRoll(rollCode);
+  if(!inv)return showToast('Roll not found.',true);
+  if((inv.roll.status||'in_stock')!=='in_stock')return showToast(`${inv.roll.rollCode} is no longer in stock — refresh and try again.`,true);
+  const st=inv.stock,rc=inv.roll.rollCode;
+  if(!_fabBusyStart('Marking defective…'))return;
+  try{
+    // The photo goes up BEFORE the stock transaction: a failed upload must never
+    // leave a half-saved defect, and the person decides whether to go on without it.
+    let photoUrl='';
+    if(file){
+      try{photoUrl=await uploadToCloudinary(file);}
+      catch(e){
+        _fabBusyEnd();
+        if(!confirm('The photo did not upload ('+((e&&e.message)||e)+'). Save the defect without a photo?'))return;
+        if(!_fabBusyStart('Marking defective…'))return;
+      }
+    }
+    await _fabInvUpsert({fabType:st.fabType,gsm:st.gsm,color:st.color,unit:st.unit||inv.roll.unit||'kg',defectRollCodes:[rc],defect:{reason,note,gsmMeasured,weight,photoUrl},note:`Roll ${rc} marked defective — ${reason}${note?' · '+note:''}`,sourceCol:'fabric_defects',sourceId:rc});
+    await logActivity('Fabric roll marked defective',`${rc} — ${reason} by ${session.name}`).catch(()=>{});
+    showToast(`${rc} marked defective ✓`);
+    window.hrmCloseModal();
+    _fabIssueRolls=_fabIssueRolls.filter(x=>x.rollCode!==rc);
+    _fabDefectRepaint();
+  }catch(e){showToast('Could not mark defective: '+e.message,true);}
+  finally{_fabBusyEnd();}
+};
+// Repaint whichever view the change was made from.
+function _fabDefectRepaint(){
+  if(fabActiveTab==='returns'){const el=document.getElementById('fab-tab-content');if(el)el.innerHTML=renderFabricReturnsTab();}
+  else if(fabActiveTab==='issue'){_fabIssueRenderSelected();_fabIssueSyncChecklist();}
+  else _fabAfterRollChange(null);
+}
+
+// ── undo ──
+window.fabDefUndo=async function(rollCode){
+  if(!_fabCanReviewDefects())return showToast('Only owners and Mustafa can undo a defective mark.',true);
+  const inv=_fabFindRoll(rollCode);
+  if(!inv||(inv.roll.status||'in_stock')!=='defective')return showToast(`${rollCode} is not marked defective.`,true);
+  if(!confirm(`Put ${inv.roll.rollCode} back in stock? It will count as available fabric again.`))return;
+  const st=inv.stock,rc=inv.roll.rollCode;
+  if(!_fabBusyStart('Undoing…'))return;
+  try{
+    await _fabInvUpsert({fabType:st.fabType,gsm:st.gsm,color:st.color,unit:st.unit||'kg',undefectRollCodes:[rc],note:`Roll ${rc} defective mark undone`,sourceCol:'fabric_defects',sourceId:rc});
+    await logActivity('Fabric defective mark undone',`${rc} by ${session.name}`).catch(()=>{});
+    showToast(`${rc} is back in stock ✓`);
+    _fabDefectRepaint();
+  }catch(e){showToast('Undo failed: '+e.message,true);}
+  finally{_fabBusyEnd();}
+};
+
+// ── ONE transaction for a return that spans several fabric buckets ──
+// rows: [{key,code}]; notes: {key:'Returned to …'} (the movement note per bucket).
+async function _fabReturnAtomic(rows,{reason,returnRef,notes}){
+  const byKey={};
+  rows.forEach(x=>{(byKey[x.key]=byKey[x.key]||[]).push(x.code);});
+  const keys=Object.keys(byKey);
+  if(!keys.length)throw new Error('No rolls to return.');
+  const bucket=k=>{const s=allFabricInventory.find(x=>x._id===k);if(!s)throw new Error('Fabric stock '+k+' is not loaded — refresh the page. Nothing was saved.');return s;};
+  const first=bucket(keys[0]);
+  const more=keys.slice(1).map(k=>{const s=bucket(k);return{fabType:s.fabType,gsm:s.gsm,color:s.color,unit:s.unit||'kg',supplierReturnRollCodes:byKey[k],note:(notes&&notes[k])||''};});
+  return _fabInvUpsert({fabType:first.fabType,gsm:first.gsm,color:first.color,unit:first.unit||'kg',supplierReturnRollCodes:byKey[keys[0]],moreBuckets:more,reason,returnRef:returnRef||'',note:(notes&&notes[keys[0]])||'',sourceCol:'fabric_returns',sourceId:'supplier-return'});
+}
+
+// ── the data behind the tab ──
+function _fabDefectRows(){
+  const out=[];
+  allFabricInventory.forEach(s=>(s.rolls||[]).forEach(r=>{
+    const st=r.status||'in_stock';
+    if(st==='defective'||(st==='returned_supplier'&&r.defect)){
+      const o=_fabRollOrigin(r);
+      out.push({key:s._id,stock:s,roll:r,returned:st==='returned_supplier',supplier:o.supplier||'Unknown',lotId:o.lotId,lotDate:o.date,fabCode:o.fabCode});
+    }
+  }));
+  return out;
+}
+function _fabDefectFiltered(){
+  const q=_fabDefQ.trim().toLowerCase();
+  return _fabDefectRows().filter(x=>{
+    if(_fabDefSup&&x.supplier!==_fabDefSup)return false;
+    if(_fabDefState==='defective'&&x.returned)return false;
+    if(_fabDefState==='returned'&&!x.returned)return false;
+    if(q&&!String(x.roll.rollCode||'').toLowerCase().includes(q))return false;
+    return true;
+  });
+}
+function _fabAddTotals(t,x){
+  const w=Number(x.roll.weight)||0,u=_fabUnitNorm(x.roll.unit||x.stock.unit);
+  t.rolls++;if(u==='m')t.m=parseFloat((t.m+w).toFixed(2));else t.kg=parseFloat((t.kg+w).toFixed(2));
+}
+// supplier → lot, each with its roll count and weight (kg and metres kept apart).
+function _fabDefectGroups(rows){
+  const sup={};
+  rows.forEach(x=>{
+    const sg=sup[x.supplier]=sup[x.supplier]||{supplier:x.supplier,rolls:0,kg:0,m:0,lots:{}};
+    const lg=sg.lots[x.lotId||'—']=sg.lots[x.lotId||'—']||{lotId:x.lotId||'—',date:x.lotDate,fabCode:x.fabCode,rolls:0,kg:0,m:0,rows:[]};
+    _fabAddTotals(sg,x);_fabAddTotals(lg,x);lg.rows.push(x);
+  });
+  return Object.values(sup).sort((a,b)=>a.supplier.localeCompare(b.supplier)).map(sg=>Object.assign(sg,{lots:Object.values(sg.lots).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||a.lotId.localeCompare(b.lotId))}));
+}
+function _fabTotalsText(t){return`${t.rolls} roll${t.rolls===1?'':'s'} · ${t.kg.toFixed(1)} kg${t.m?` + ${t.m.toFixed(1)} m`:''}`;}
+
+function renderFabricReturnsTab(){
+  const ro=_fabReadOnly();
+  const all=_fabDefectRows();
+  const suppliers=[...new Set(all.map(x=>x.supplier))].sort((a,b)=>a.localeCompare(b));
+  if(_fabDefSup&&!suppliers.includes(_fabDefSup))_fabDefSup='';
+  const rows=_fabDefectFiltered();
+  const groups=_fabDefectGroups(rows);
+  const canReview=_fabCanReviewDefects();
+  const stBtn=(k,l)=>`<button type="button" class="fdf-chip" aria-pressed="${_fabDefState===k}" onclick="window.fabDefSetState('${k}')">${_gpEsc(l)}</button>`;
+  let h=`<div class="card fdf-card"><div class="card-title">${_gpEsc(_fabT('fab.tab_defects','Defects & Returns'))} <span class="fdf-sub">${all.length} roll${all.length===1?'':'s'} · rolls marked defective wait here until they go back to the vendor</span></div>
+    <div class="fdf-bar">
+      <div class="field"><label>Supplier</label><select id="fab-def-sup" onchange="window.fabDefSetSup(this.value)"><option value="">All suppliers</option>${suppliers.map(s=>`<option value="${_gpEsc(s)}" ${s===_fabDefSup?'selected':''}>${_gpEsc(s)}</option>`).join('')}</select></div>
+      <div class="field"><label>Roll code</label><input id="fab-def-q" type="search" value="${_gpEsc(_fabDefQ)}" placeholder="Search roll code" oninput="window.fabDefSearch(this.value)"></div>
+      <div class="fdf-chips" role="group" aria-label="State">${stBtn('all','All')}${stBtn('defective',_fabT('fab.defective','Defective'))}${stBtn('returned',_fabT('fab.returned','Returned'))}</div>
+      <button class="btn-outline fdf-btn" onclick="window.fabExportDefects()">${_gpEsc(_fabT('fab.export','Export Excel'))}</button>
+    </div>
+    ${ro?'':`<div class="fdf-bar"><div class="field" style="flex:1;min-width:220px"><label>${_gpEsc(_fabT('fab.mark_defective','Mark defective'))}</label><input id="fab-def-scan" placeholder="${_gpEsc(_fabT('fab.scan_ph','Scan a roll to mark it defective'))}" autocomplete="off" onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&this.value.trim())){event.preventDefault();window.fabDefScan();}"></div></div>`}
+    ${groups.length?groups.map(sg=>`<div class="fdf-sup">
+      <div class="fdf-sup-h"><span class="fdf-sup-n">${_gpEsc(sg.supplier)}</span><span class="fdf-tot">${_gpEsc(_fabTotalsText(sg))}</span></div>
+      ${sg.lots.map(lg=>`<div class="fdf-lot">
+        <div class="fdf-lot-h"><span>${_gpEsc(lg.fabCode||lg.lotId)}${lg.date?` · received ${_gpEsc(lg.date)}`:''}</span><span class="fdf-tot">${_gpEsc(_fabTotalsText(lg))}</span></div>
+        ${lg.rows.map(x=>_fabDefectRowHtml(x,canReview)).join('')}
+      </div>`).join('')}
+    </div>`).join(''):`<div class="empty fdf-empty">No defective or returned rolls${_fabDefSup||_fabDefQ||_fabDefState!=='all'?' match these filters':' yet'}.</div>`}
+    ${canReview&&rows.some(x=>!x.returned)?`<div class="fdf-bar fdf-ret"><div class="field" style="flex:1;min-width:200px"><label>${_gpEsc(_fabT('fab.return_ref','Return reference'))}</label><input id="fab-def-ref" placeholder="Debit note / challan no. (optional)" maxlength="60"></div>
+      <button class="btn-primary fdf-btn" onclick="window.fabDefReturn()">${_gpEsc(_fabT('fab.return_selected','Return selected to vendor'))}</button></div>`:''}
+  </div>`;
+  if(!ro)h+=renderFabRetSupplier();
+  return h+'<div style="height:80px"></div>';
+}
+function _fabDefectRowHtml(x,canReview){
+  const r=x.roll,d=r.defect||{},unit=r.unit||x.stock.unit||'kg';
+  const photo=_fabHttpsUrl(d.photoUrl);
+  const bits=[];
+  if(d.note)bits.push(_gpEsc(d.note));
+  if(d.gsmMeasured!=null)bits.push(`measured ${_gpEsc(d.gsmMeasured)} gsm`);
+  if(d.by)bits.push(`marked by ${_gpEsc(d.by)}${d.at?' · '+_gpEsc(_fabDateStr(d.at)):''}`);
+  if(x.returned){bits.push(`returned${r.returnedToSupplierAt?' '+_gpEsc(_fabDateStr(r.returnedToSupplierAt)):''}${r.returnRef?' · ref '+_gpEsc(r.returnRef):''}`);}
+  return`<div class="fdf-row${x.returned?' returned':''}">
+    <span class="fdf-sel">${canReview&&!x.returned?`<input type="checkbox" class="fab-def-cb" data-key="${_gpEsc(x.key)}" data-roll="${_gpEsc(r.rollCode)}" aria-label="Select ${_gpEsc(r.rollCode)}">`:''}</span>
+    <span class="fdf-code">${_gpEsc(r.rollCode)}</span>
+    <span class="fdf-fab">${_gpEsc(x.stock.fabType||'')} ${_gpEsc(x.stock.gsm||'')}g ${_gpEsc(x.stock.color||'')}</span>
+    <span class="fdf-wt">${_gpEsc(r.weight||0)} ${_gpEsc(unit)}</span>
+    <span class="fdf-reason">${_gpEsc(_fabReasonLabel(d.reason))}</span>
+    <span class="fdf-state ${x.returned?'ret':'def'}">${_gpEsc(x.returned?_fabT('fab.returned','Returned'):_fabT('fab.defective','Defective'))}</span>
+    <span class="fdf-acts">${photo?`<a href="${_gpEsc(photo)}" target="_blank" rel="noopener noreferrer" class="fdf-link">Photo</a>`:''}${canReview&&!x.returned?`<button type="button" class="btn-outline fdf-mini" onclick="window.fabDefUndo('${_gpEsc(r.rollCode)}')">${_gpEsc(_fabT('fab.undo_defective','Undo defective'))}</button>`:''}</span>
+    ${bits.length?`<span class="fdf-detail">${bits.join(' · ')}</span>`:''}
+  </div>`;
+}
+function _fabDefectRepaintTab(refocusId){
+  const el=document.getElementById('fab-tab-content');if(!el||fabActiveTab!=='returns')return;
+  el.innerHTML=renderFabricReturnsTab();
+  if(refocusId){const i=document.getElementById(refocusId);if(i){i.focus();try{i.setSelectionRange(i.value.length,i.value.length);}catch(e){}}}
+}
+window.fabDefSetSup=function(v){_fabDefSup=v||'';_fabDefectRepaintTab();};
+window.fabDefSetState=function(v){_fabDefState=['all','defective','returned'].includes(v)?v:'all';_fabDefectRepaintTab();};
+window.fabDefSearch=function(v){
+  _fabDefQ=v||'';
+  clearTimeout(window._fabDefTo);
+  window._fabDefTo=setTimeout(()=>_fabDefectRepaintTab('fab-def-q'),180);
+};
+window.fabDefScan=function(){
+  const inp=document.getElementById('fab-def-scan');
+  const code=(inp?.value||'').trim();
+  if(!code)return;
+  if(inp){inp.value='';}
+  window.fabDefectOpen(code);
+};
+
+// ── return the ticked defective rolls to their vendors — ONE transaction ──
+window.fabDefReturn=async function(){
+  if(!_fabCanReviewDefects())return showToast('Only owners and Mustafa can return rolls to a vendor.',true);
+  const ticks=[...document.querySelectorAll('.fab-def-cb:checked')];
+  if(!ticks.length)return showToast('Tick at least one defective roll.',true);
+  const returnRef=(document.getElementById('fab-def-ref')?.value||'').trim();
+  const rows=[],reasons=new Set(),suppliers=new Set(),notes={};
+  for(const cb of ticks){
+    const inv=_fabFindRoll(cb.dataset.roll);
+    if(!inv||(inv.roll.status||'in_stock')!=='defective')return showToast(`${cb.dataset.roll} is no longer defective — refresh and try again.`,true);
+    rows.push({key:inv.stock._id,code:inv.roll.rollCode});
+    reasons.add((inv.roll.defect&&inv.roll.defect.reason)||'Defective');
+    suppliers.add(_fabRollOrigin(inv.roll).supplier||'unknown supplier');
+  }
+  const reason=reasons.size===1?[...reasons][0]:'Defective — '+[...reasons].join(' / ');
+  const sup=[...suppliers].join(', ');
+  rows.forEach(x=>{notes[x.key]=`Returned to ${sup} — ${reason}${returnRef?' · ref '+returnRef:''} · by ${session.name}`;});
+  if(!confirm(`Return ${rows.length} roll${rows.length===1?'':'s'} to ${sup}${returnRef?` (ref ${returnRef})`:''}? This cannot be undone.`))return;
+  if(!_fabBusyStart('Returning to vendor…'))return;
+  try{
+    await _fabReturnAtomic(rows,{reason,returnRef,notes});
+    await logActivity('Defective fabric returned to vendor',`${rows.length} roll(s) to ${sup} — ${reason}${returnRef?' · ref '+returnRef:''} by ${session.name}`).catch(()=>{});
+    showToast(`${rows.length} roll(s) returned to vendor ✓`);
+    _fabBusyEnd();
+    _fabDefectRepaintTab();
+  }catch(e){showToast('Return failed: '+e.message,true);}
+  finally{_fabBusyEnd();}
+};
+
+// ── Excel: exactly the rows the filters show ──
+function _fabDefectExportRows(){
+  const rows=[['Supplier','Receipt','Fab code','Received','Roll Code','Fabric','GSM','Colour','Weight','Unit','State','Reason','Note','Measured GSM','Measured weight','Marked by','Marked at','Photo','Return ref','Return reason','Returned at']];
+  _fabDefectFiltered().forEach(x=>{
+    const r=x.roll,d=r.defect||{};
+    rows.push([x.supplier,x.lotId,x.fabCode,x.lotDate,r.rollCode,x.stock.fabType||'',x.stock.gsm||'',x.stock.color||'',r.weight||0,r.unit||x.stock.unit||'kg',x.returned?'Returned':'Defective',d.reason||'',d.note||'',d.gsmMeasured==null?'':d.gsmMeasured,d.weight==null?'':d.weight,d.by||'',d.at?_fabDateStr(d.at):'',_fabHttpsUrl(d.photoUrl),r.returnRef||'',r.returnReason||'',r.returnedToSupplierAt?_fabDateStr(r.returnedToSupplierAt):'']);
+  });
+  return rows;
+}
+window.fabExportDefects=function(){
+  const rows=_fabDefectExportRows();
+  if(rows.length<2)return showToast('Nothing to export.',true);
+  _fabXlsx(rows,'Defects & Returns','fabric-defects');
 };

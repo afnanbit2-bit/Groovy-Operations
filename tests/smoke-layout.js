@@ -2982,6 +2982,36 @@ const FRAGMENTS={
     return Promise.resolve(card+'<div class="card">'+custom+'</div>');
   },
 
+  // Fabric ▸ Defects & Returns (Oct 2026): the supplier → lot groups, the filter bar,
+  // the select-and-return bar, a returned roll, a very long supplier / note, and the
+  // Mark-defective modal (its inner card, outside the fixed overlay so the hit-test is
+  // not covered by the backdrop). Owner view, the cutting-floor view, and the modal.
+  'fabric — defects and returns tab and the mark-defective modal':()=>{
+    const esc=x=>String(x==null?'':x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const LONG='Al-Karam Textile Mills (Private) Limited, Faisalabad Industrial Estate Unit 7';
+    const mkRoll=(code,w,rcpt,d,extra)=>Object.assign({rollCode:code,weight:w,gsm:220,unit:'kg',status:'defective',sourceFabId:rcpt,defect:Object.assign({reason:'Holes/stains',by:'Uzaib',at:1790000000000,note:'Two small holes about 40 cm from the selvedge on the outer wrap, visible on the first three metres'},d||{})},extra||{});
+    const inv=[{_id:'jersey__220gsm__black',fabType:'Jersey Heavy',gsm:220,color:'Slate Grey',unit:'kg',rolls:[
+      mkRoll('JER-220-01-R01',24.5,'FAB-001'),mkRoll('JER-220-01-R02',31.2,'FAB-001',{reason:'Wrong GSM',gsmMeasured:198,photoUrl:'https://res.cloudinary.com/demo/image/upload/x.jpg'}),
+      mkRoll('JER-220-02-R07',18,'FAB-002',{reason:'Shade variation'}),
+      mkRoll('JER-220-01-R03',27,'FAB-001',{reason:'Wrong GSM'},{status:'returned_supplier',returnRef:'RTV-0042',returnedToSupplierAt:1790000500000,returnReason:'Wrong GSM'}),
+      {rollCode:'JER-220-01-R09',weight:30,gsm:220,unit:'kg',status:'in_stock',sourceFabId:'FAB-001'}]},
+      {_id:'rib__250gsm__black',fabType:'Rib',gsm:250,color:'Black',unit:'kg',rolls:[mkRoll('RIB-250-01-R01',6,'FAB-003',{reason:'Other'})]}];
+    const rcpt=[{id:'FAB-001',fabCode:'JER-220-01',supplier:LONG,date:'2026-10-01'},{id:'FAB-002',fabCode:'JER-220-02',supplier:LONG,date:'2026-10-08'},{id:'FAB-003',fabCode:'RIB-250-01',supplier:'Zeta Mills',date:'2026-10-05'}];
+    const mk=(session,extra)=>{
+      const app=loadApp({files:['js/fabric.js'],currentPage:'',session,globals:Object.assign({allFabricInventory:inv,allFabricIn:rcpt,allPasses:[],allFabricMovements:[],allPOs:[],_gpEsc:esc},extra||{})});
+      return app;
+    };
+    const owner=mk({uid:'u1',u:'afnan',name:'Afnan',role:'owner',canFabric:true});
+    const floor=mk({uid:'u2',u:'uzaib',name:'Uzaib',role:'viewer',canFabric:true});
+    const ownerHtml=owner.run('renderFabricReturnsTab()');
+    const floorHtml=floor.run('renderFabricReturnsTab()');
+    // The modal: build it, lift the card out of the fixed backdrop, press one chip.
+    floor.run('window.hrmCloseModal=function(){}');
+    floor.run('window.fabDefectOpen("JER-220-01-R09")');
+    let card=(floor.bodyHtml('hrm-modal-back')||'').replace(/data-reason="Wrong GSM" aria-pressed="false"|aria-pressed="false" data-reason="Wrong GSM"/,m=>m.replace('false','true'));
+    return Promise.resolve('<div class="card">'+ownerHtml+'</div><div class="card">'+floorHtml+'</div><div class="card" style="position:relative">'+card+'</div>');
+  },
+
   // The Creator Database (Marketing M1): stat tiles, filter bar, a table
   // carrying every tier chip (including the "manual" badge and an unscored
   // row) and the Needs completion column. The table is allowed to scroll

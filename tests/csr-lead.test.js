@@ -74,8 +74,8 @@ module.exports=async function(){
     a.run('session='+J(SAMI));
     const page=a.run('renderFabricPage()');
     s.ok('Fabric Inventory says view only',/View only/.test(page));
-    s.ok('and shows Stock, Issue Registry, Reports and Log',['stock','registry','reports','log'].every(t=>page.includes("switchFabTab('"+t+"')")));
-    s.ok('but none of the entry tabs',!['fabricin','issue','drawstring','returns'].some(t=>page.includes("switchFabTab('"+t+"')")));
+    s.ok('and shows Stock, Issue Registry, Defects & Returns (view only), Reports and Log',['stock','registry','returns','reports','log'].every(t=>page.includes("switchFabTab('"+t+"')")));   // Defects & Returns is view-only for him (Oct 2026)
+    s.ok('but none of the entry tabs',!['fabricin','issue','drawstring'].some(t=>page.includes("switchFabTab('"+t+"')")));
     s.eq('asking for an entry tab lands on Stock',(()=>{try{a.run("window.switchFabTab('issue')");}catch(_){ }return a.run('fabActiveTab');})(),'stock');
     const o=loadApp({files:['js/shared.js','js/auth.js','js/fabric.js'],currentPage:'fabric-inventory'});
     o.run('session='+J({uid:'u',u:'uzaib',name:'Uzaib',role:'viewer',email:'uzaib@groovy.op',canFabric:true}));
