@@ -707,12 +707,15 @@ function _phqcPaintGroups(ctx,model){
     list.appendChild(sec);
   });
 }
+// A node's element children as a real array. In a browser `children` is an HTMLCollection, which has no forEach (wave 2 fix:
+// `(n.children||[]).forEach` threw there and the arrow keys / Back focus did nothing). Array.prototype.slice works on both.
+function _phqcKids(n){return Array.prototype.slice.call((n&&n.children)||[]);}
 // Arrow keys move between the tiles of one group (Up/Left back, Down/Right on, Home / End).
 function _phqcTileKeys(e){
   const k=e&&e.key;if(!/^(ArrowDown|ArrowUp|ArrowLeft|ArrowRight|Home|End)$/.test(k||''))return;
   const t=e.target&&e.target.closest?e.target.closest('.phaf-card'):null;if(!t)return;
   const ul=t.closest('.phaf-tiles');if(!ul)return;
-  const items=[];(function walk(n){(n.children||[]).forEach(function(c){if(c.nodeType===1){if(c.classList&&c.classList.contains('phaf-card'))items.push(c);else walk(c);}});})(ul);
+  const items=[];(function walk(n){_phqcKids(n).forEach(function(c){if(c.nodeType===1){if(c.classList&&c.classList.contains('phaf-card'))items.push(c);else walk(c);}});})(ul);
   const i=items.indexOf(t);if(i<0)return;
   const next=k==='Home'?0:k==='End'?items.length-1:(k==='ArrowDown'||k==='ArrowRight')?Math.min(items.length-1,i+1):Math.max(0,i-1);
   if(items[next]&&typeof items[next].focus==='function')items[next].focus();
@@ -819,7 +822,7 @@ function phqcBack(){
   const id=_phqcOpen;_phqcOpen='';_phqcSheet=null;_phqcDlg=null;_phqcFlash=null;
   if(_phqcCtx&&typeof _phqcCtx.repaint==='function')_phqcCtx.repaint();
   try{   // focus back to the tile that opened the detail
-    if(_phqcListEl&&id){(function walk(n){(n.children||[]).forEach(function(c){if(c.nodeType!==1)return;if(c.getAttribute&&c.getAttribute('data-po')===id&&typeof c.focus==='function'){c.focus();return;}walk(c);});})(_phqcListEl);}
+    if(_phqcListEl&&id){(function walk(n){_phqcKids(n).forEach(function(c){if(c.nodeType!==1)return;if(c.getAttribute&&c.getAttribute('data-po')===id&&typeof c.focus==='function'){c.focus();return;}walk(c);});})(_phqcListEl);}
   }catch(e){}
 }
 function phqcDetail(host,ctx,t){
@@ -2017,7 +2020,7 @@ function phqcLightbox(t,opener){
   if(views.length>1){
     views.forEach(function(v,i){
       const vb=_phqcBtn('ph-btn phaf-lb-v'+(i===0?' on':''),phI18nD(v.key),function(){img.src=v.src;},{'aria-pressed':i===0?'true':'false'});
-      vb.addEventListener('click',function(){(top.children||[]).forEach(function(c){if(c.classList&&c.classList.contains('phaf-lb-v')){c.classList.remove('on');c.setAttribute('aria-pressed','false');}});vb.classList.add('on');vb.setAttribute('aria-pressed','true');});
+      vb.addEventListener('click',function(){_phqcKids(top).forEach(function(c){if(c.classList&&c.classList.contains('phaf-lb-v')){c.classList.remove('on');c.setAttribute('aria-pressed','false');}});vb.classList.add('on');vb.setAttribute('aria-pressed','true');});
       top.appendChild(vb);
     });
   }
