@@ -67,7 +67,7 @@ async function checks(o){
     out['never more than 40 rows at once']=rowsOf(h).length===40&&/Show 10 more/.test(h);
   }
   {const a=app(Object.assign({},O,{src:Object.assign({},O.src||{},{reg:'function porRegistryHTML(){throw new Error("boom");}'})}));const h=a.run('renderRegistry()');
-    out['the old list is drawn when the module throws']=/class="po-row"/.test(h)&&!/por-body/.test(h);
+    out['the old list is drawn when the module throws']=/id="po-list-wrap"/.test(h)&&!/por-body/.test(h);   // RG5: its rows are now the shared row
   }
   return out;
 }

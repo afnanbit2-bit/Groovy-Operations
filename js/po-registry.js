@@ -163,6 +163,20 @@ function porRowHTML(f){
     +'</span><span class="por-arrow" aria-hidden="true">›</span></button>';
 }
 
+// RG5: the same row for ONE PO document, for the lists outside the registry (Dashboard "Recent production orders", All Active
+// Orders). js/pos.js poRowHTML() hands over to it behind `typeof` (try/catch), so those lists change with no edit of their own.
+function _porIdxNow(){
+  const failed=typeof _posLoadFailed!=='undefined'&&Array.isArray(_posLoadFailed)?_posLoadFailed:[];
+  const passes=typeof allPasses!=='undefined'&&Array.isArray(allPasses)&&failed.indexOf('gatepasses')<0?allPasses:null;
+  return porIndexCached({passes:passes,marks:_porSideRows('marks'),jobs:_porSideRows('jobs')});
+}
+function porRowForPO(po){
+  const S=_porSettings(),now=Date.now();
+  const f=porFacts(po,_porIdxNow(),{now:now});
+  f.progress=porProgress(f);f.age=porAge(f,now);f.delay=porDelay(f,{now:now});f.needs=porNeeds(f,{now:now,stuckDays:S.stuckDays,noFabricDays:S.noFabricDays});
+  return'<div class="por-list por-solo">'+porRowHTML(f)+'</div>';
+}
+
 /* ── the page ─────────────────────────────────────────────────────────── */
 function _porRows(model){
   let rows=porSelect(model,_porState);
@@ -405,7 +419,7 @@ function _porPhotosHTML(po){
   }).join('')+'</div></details>';
 }
 function _porDetailInner(po){
-  const idx=porIndexCached({passes:typeof allPasses!=='undefined'&&Array.isArray(allPasses)&&!((typeof _posLoadFailed!=='undefined'&&Array.isArray(_posLoadFailed)?_posLoadFailed:[]).indexOf('gatepasses')>=0)?allPasses:null,marks:_porSideRows('marks'),jobs:_porSideRows('jobs')});
+  const idx=_porIdxNow();
   const S=_porSettings();
   const f=porFacts(po,idx,{now:Date.now()});
   f.age=porAge(f,Date.now());f.progress=porProgress(f);f.needs=porNeeds(f,{now:Date.now(),stuckDays:S.stuckDays,noFabricDays:S.noFabricDays});f.delay=porDelay(f,{now:Date.now()});

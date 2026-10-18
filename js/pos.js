@@ -293,6 +293,7 @@ window._saveNewProduct=async function(){
   }
 };
 function poRowHTML(p){
+  if(typeof porRowForPO==='function'){try{return porRowForPO(p);}catch(e){console.warn('[pos] the PO Registry row failed, drawing the old one:',e);}}   // RG5: one row everywhere
   const st=poStatusOf(p);
   const isReserved=st===PO_STATUS.RESERVED;
   const isCancelled=st===_PO_CANCELLED; // a cancelled PO has no stage; without this it would read "Completed"

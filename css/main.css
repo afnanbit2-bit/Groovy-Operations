@@ -5843,6 +5843,7 @@ body.ph-fullscreen.ph-ur .ph-tk-bar{gap:8px}
 .por-chip.on{background:var(--accent-warning);color:var(--surface)}
 .por-count{font-size:13px;color:var(--muted);margin:2px 0 8px;overflow-wrap:anywhere}
 .por-list{display:flex;flex-direction:column;gap:8px;min-width:0}
+.por-solo{margin-bottom:8px}
 .por-row{display:flex;align-items:flex-start;gap:12px;width:100%;min-height:44px;padding:10px 12px;text-align:left;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:10px;font:inherit;cursor:pointer}
 .por-row:hover{border-color:var(--dark)}
 .por-row:focus-visible{outline:2px solid var(--dark);outline-offset:2px}
