@@ -223,5 +223,14 @@ module.exports=async function(){
     s.ok('break "an offline copy accepted" fails "an offline-copy answer is a failure"',!/offline copy/.test(r3.text));
   }
 
+  /* ── wiring ─────────────────────────────────────────────────────── */
+  s.section('wiring: CACHE_VERSION past v343, the changed files carry new distinct ?v= tags');
+  {
+    const IX=read('index.html'),SW=read('sw.js');
+    s.ok('sw.js CACHE_VERSION is v344 or later (wave 1 was v343)',+(/CACHE_VERSION = 'v(\d+)'/.exec(SW)||[0,0])[1]>=344);
+    for(const [f,tag] of [['js/pos.js','20261018qw2p'],['js/ph-i18n.js','20261018qw2i'],['js/ph-mod-health.js','20261018qw2h'],['js/ph-mod-afloat.js','20261018qw2a']])
+      s.ok(f+' is loaded with ?v='+tag+' (a tag no other file uses)',IX.indexOf('/'+f+'?v='+tag+'"')>-1&&IX.split('?v='+tag+'"').length===2);
+  }
+
   return s;
 };

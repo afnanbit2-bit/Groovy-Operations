@@ -498,7 +498,8 @@ module.exports=async function(){
     s.ok('sw.js CACHE_VERSION is v341 or later (QC5 was v340)',+(/CACHE_VERSION = 'v(\d+)'/.exec(SW)||[0,0])[1]>=341);
     // QC7, a deliberate change: main.css, ph-i18n.js and ph-mod-afloat.js changed again and carry the QC7 tags (qc7m / qc7i / qc7a)
     // QC fix wave 1 integration (16 Oct 2026), a deliberate change: js/production.js changed again (the void display) and carries qf1p
-    for(const [f,tag] of [['css/main.css','20261015qc7m'],['js/pos.js','20261015qc6p'],['js/production.js','20261016qf1p'],['js/ph-i18n.js','20261015qc7i'],['js/ph-mod-afloat.js','20261015qc7a']])
+    // QC wave 2 (18 Oct 2026), a deliberate change: pos.js, ph-i18n.js and ph-mod-afloat.js changed again and carry qw2p / qw2i / qw2a
+    for(const [f,tag] of [['css/main.css','20261015qc7m'],['js/pos.js','20261018qw2p'],['js/production.js','20261016qf1p'],['js/ph-i18n.js','20261018qw2i'],['js/ph-mod-afloat.js','20261018qw2a']])
       s.ok(f+' is loaded with ?v='+tag+' (a tag no other file uses)',IX.indexOf('/'+f+'?v='+tag+'"')>-1&&IX.split('?v='+tag+'"').length===2);
   }
 
