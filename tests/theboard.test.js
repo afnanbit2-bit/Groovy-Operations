@@ -775,6 +775,9 @@ module.exports=async function(){
     // lock, so he is the wrong person to prove a lock holds.
     a.run('session='+J(DANIYAL));
     a.run('tbLists=[];tbConfig=null;tbLoaded=true');
+    // Pin today: tbDayLabel says "Yesterday"/"Today" near the real date,
+    // so an unpinned clock made "was Oct 17" fail on 18 Oct 2026.
+    a.run('_tbToday=function(){return "2026-09-28";}');
     a.run('tbItems=[tbDecodeItem({id:"i1",title:"pricing tiers",status:"open",kind:"gate",'
       +'locked:true,lockedBy:"u-afnan",visibility:"shared",ownerUid:"u-afnan",'
       +'assigneeUids:["u-dani"],date:"2026-10-18",datePlanned:"2026-10-17",notes:"n"})]');
