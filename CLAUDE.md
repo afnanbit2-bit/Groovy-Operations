@@ -7135,10 +7135,74 @@ an owner-only **Import legacy** button (idempotent, `legacyId`).
   statement, the KPI tiles and every Excel sheet read it. **No balance is
   stored anywhere.** Types: `purchase | payment | cash_in | transfer |
   float_out | float_in | adjust | opening`.
-- **Two money accounts, `cash` and `mcb`** — Afnan: "other bank options
-  are irrelevant". The gate-pass fabric sale (`js/gatepass.js`) posts a
-  `cash_in` through `window.acctPostSale()` (typeof-guarded); it used to
-  post to the old ledger and would have silently no-op'd.
+- ~~**Two money accounts, `cash` and `mcb`** — Afnan: "other bank options
+  are irrelevant".~~ **REVERSED Oct 2026 — see "the banks" below: four
+  accounts, Cash and three banks.** The gate-pass fabric sale
+  (`js/gatepass.js`) posts a `cash_in` through `window.acctPostSale()`
+  (typeof-guarded); it used to post to the old ledger and would have silently
+  no-op'd.
+- **The banks: MCB, GROOVY MCB and UBL (Oct 2026, branch
+  `claude/fervent-wright-vj496b`).** Afnan: *"UBL is a separate bank, GROOVY
+  MCB is the second MCB account."* `ACCT_ACCOUNTS` is THE ONE ordered list —
+  `cash` "Cash in hand" (the drawer), `mcb` "MCB Bank" (short "MCB",
+  unchanged), `groovymcb` "GROOVY MCB Bank" (short "GROOVY MCB"), `ubl` "UBL
+  Bank" (short "UBL"); `ACCT_BANKS` is the three with `bank:true`. Each
+  carries `proof` (a payment / runner settlement from it needs the transfer
+  proof — true on all three banks, `_acctNeedsProof`) and `sale` (offered by
+  the gate-pass sale picker — Cash and MCB only, `_acctSaleAccounts`).
+  Everything that special-cased `mcb` now iterates the list: `_acctEffect`'s
+  `fx` and `_acctBalances` seed one slot per key (`_acctZeroAccounts`, so a
+  new key is never NaN), the ledger tabs (`_acctViews`: All entries · Cash
+  book · MCB book · GROOVY MCB book · UBL book · Payables — `.acct-booktabs`
+  WRAPS at every width; the layout probe clips "Payables" at 420px without
+  it), a tile per account, the page head, the All-entries columns, every
+  form's chips (payment and runner-settle Paid from, cash-in Into and
+  "Arrived as" — Physical cash or `<bank> transfer`, purchase Paid via,
+  transfer From/To any pair incl. bank → bank, float, adjustment), the entry
+  detail's Effect, the admin edit's Account / To / Source selects, and the
+  Excel workbook (Summary row per account, one `<short> book` sheet per
+  account, a `<short> ±` column per account in All entries).
+  - **Nothing migrates and no stored document is rewritten.** Existing rows
+    keep `account:'mcb'` / `via:'mcb'` and read exactly as before ("Cash in ·
+    MCB transfer"). `via` is `'cash'` or a bank key (`_acctViaText`).
+  - **Month close counts each bank**: a "statement balance" field per bank
+    beside its book; blank means it matches (my call, flagged), a figure that
+    differs posts an `adjust` on THAT bank dated the last day, with the
+    shared note (required when any variance). The close doc keeps `cashBook`
+    / `mcbBook` and adds `books:{key:amt}` and `bankCounts`;
+    `_acctCloseBook` reads `books` first, else `<key>Book`, so an old close
+    still seeds Cash and MCB and the new banks start at zero.
+  - **Who records: owners AND Raees** (Afnan, Oct 2026: "both can") —
+    Store Accounts' existing entry permission, unchanged (`_acctCanEntry`,
+    mirrored by `isStoreAccounts()`). Raees's own-edit, voids and the
+    owner-recorded pending cash-in work on the new banks as on MCB (tested).
+  - **Unchanged on purpose:** warehouse sales (bank transfer → `mcb`,
+    `WHS_ACCT_OF`, and `whConfValid` at `firestore.rules` line 366 still
+    `d.account in ['cash','mcb']` — widening it would need that rule plus a
+    republish) and the gate-pass sale picker (Cash / MCB). `acctPostSale`
+    and the legacy import now keep any money-account key instead of
+    collapsing a non-`mcb` key to Cash (unreachable from today's callers).
+  - **`firestore.rules` NOT changed, no republish.** Read: `acct_entries`
+    create has no field list on `account` (lines 375-376), `acctOwnEdit`
+    lets `account` / `toAccount` / `via` change without an enum (351),
+    `acct_closes` create is `isOwner()` with no field list (391); the only
+    account enum is `whConfValid` (366), warehouse only.
+  - **Master Accounts — a record of Afnan's decision, not a build:** not
+    now. Store Accounts is the SOLE book for `groovymcb` and `ubl`; Master
+    Accounts reads only `_acctBalances().cash` (the 1010 mirror) and no
+    bank, and nothing in `js/master-accounts.js`, `js/ma-core.js` or any
+    `ma_*` rule changed. Store `mcb` ≈ MA `1020` is the plan's own claim,
+    unverified. If the banks are ever added to Master Accounts, each real
+    bank must be the truth of exactly ONE book and the other records
+    handovers only. Recorded in `MASTER_ACCOUNTS_PLAN.md` §25.3 and
+    `ACCOUNTS_PLAN.md` (Money accounts row).
+  - Tests: `tests/store-accounts.test.js` (four new sections: engine per
+    bank, transfers, proof, voids, close, admin edit, Excel, the sale hook,
+    owners and Raees recording, Raees editing a UBL payment) — each piece
+    reverted once and a named assertion failed; `smoke-layout` fragment
+    `store accounts — the bank books, tabs and forms` (all three widths).
+    **Nobody has seen the new tabs, forms or close on a real screen, and
+    nothing ran against real Firestore.**
 - **Void, never edit.** A voided row stays in the log struck through with
   who/when/why; `firestore.rules` lets an entry's **control fields only**
   change (`hasOnly([...])`) and never deletes one. `tests/store-accounts.test.js`

@@ -86,6 +86,11 @@ function _acctFixture(){
     E('purchase',{source:'float',floatId:'flt1',person:'Noman',amount:3200,vendorId:'walk',vendorName:'Walk-in / direct',date:day(8),category:'Store purchase',lines:[{itemCode:'',desc:'Packing tape ×24',qty:24,unit:'roll',rate:133.33,total:3200}]}),
     E('purchase',{source:'cash',account:'cash',amount:800,vendorId:'walk',vendorName:'Walk-in / direct',date:day(5),status:'void',voidReason:'entered twice',voidedBy:'raees',lines:[{itemCode:'',desc:'Tea & biscuits',qty:1,unit:'',rate:800,total:800}]}),
     E('transfer',{account:'mcb',toAccount:'cash',amount:20000,date:day(3),note:'ATM withdrawal for the drawer'}),
+    // the two banks added in Oct 2026: GROOVY MCB (the second MCB account) and UBL
+    E('cash_in',{account:'groovymcb',amount:85000,date:day(12),via:'groovymcb',person:'Ammar',ref:'TRX-99001'}),
+    E('cash_in',{account:'ubl',amount:64000,date:day(11),via:'ubl',person:'Afnan',ref:'UBL-5521'}),
+    E('transfer',{account:'groovymcb',toAccount:'ubl',amount:15000,date:day(7),note:'top-up for the UBL standing order'}),
+    E('payment',{account:'ubl',amount:4500,vendorId:'thread',vendorName:'Karachi Thread House',date:day(5),ref:'UBL-5560',photo:'https://res.cloudinary.com/x/z.jpg'}),
     E('purchase',{source:'cash',account:'cash',amount:12500,vendorId:'walk',vendorName:'Walk-in / direct',date:day(2),category:'Maintenance & repairs',needsReview:true,reviewFlags:['over limit','no receipt'],lines:[{itemCode:'',desc:'Generator service',qty:1,unit:'',rate:12500,total:12500}]}),
     E('cash_in',{account:'cash',amount:10000,status:'pending',date:day(1),via:'cash',person:'Afnan',by:'afnan',byName:'Afnan'})
   ];
@@ -1866,7 +1871,7 @@ const FRAGMENTS={
     const {app,seed}=_acctFixture();
     seed(app);
     app.run("currentPage='acct-ledger';_acctModal=function(t,b,f){window.__cap={t,b,f};}");
-    const tiles=app.run("_acctPageHead('acct-ledger')+(()=>{const b=_acctBalances();const f=_acctOpenFloats();return '<div class=\"acct-tiles\">'+_acctTile('Cash in hand',b.cash)+_acctTile('MCB Bank',b.mcb)+_acctTile('Owed to vendors',_acctTotalPayables(),{danger:true,sub:'₨5,000 overdue'})+_acctTile('With runners',f.reduce((s,x)=>s+x.left,0),{danger:true,sub:'1 open float'})+'</div>'+_acctAlerts(f);})()");
+    const tiles=app.run("_acctPageHead('acct-ledger')+(()=>{const b=_acctBalances();const f=_acctOpenFloats();return '<div class=\"acct-tiles\">'+ACCT_ACCOUNTS.map(a=>_acctTile(a.label,b[a.key])).join('')+_acctTile('Owed to vendors',_acctTotalPayables(),{danger:true,sub:'₨5,000 overdue'})+_acctTile('With runners',f.reduce((s,x)=>s+x.left,0),{danger:true,sub:'1 open float'})+'</div>'+_acctAlerts(f);})()");
     app.run("window.acctForm('purchase',{vendorId:'thread'})");
     app.run("_acctFormLines=[{itemCode:'TH1',desc:'Thread white 40/2',qty:'12',unit:'cone',rate:'210',hint:'Last bought @ ₨210 on 01 Sep 26 from Karachi Thread House · in stock now: 20 cone'},{itemCode:'',desc:'Rickshaw to Shershah',qty:'1',unit:'',rate:'300',hint:''},_acctNewLine()]");
     const body=app.run('window.__cap.b');
@@ -1952,6 +1957,29 @@ const FRAGMENTS={
   // longest customer name the list produces, and a payment received whose
   // sale was voided afterwards), then Umair's list carrying the new badges,
   // a collected sale opened, and the Mark collected form.
+  // The bank books (Oct 2026): the page head naming every balance, a tile
+  // per account, the ledger's book tabs (All · Cash · MCB · GROOVY MCB · UBL ·
+  // Payables — they WRAP, at every width, never clip or hide behind a
+  // scroll), the cash-in and transfer forms with a chip per account, and the
+  // month-close card with a statement field per bank. No table here, so it
+  // runs at all three widths (the ledger table is the fragment above's).
+  'store accounts — the bank books, tabs and forms':()=>{
+    const {app,seed}=_acctFixture();
+    seed(app);
+    app.run("currentPage='acct-ledger';_acctView='groovymcb';_acctPeriod={preset:'all'};_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    const page=app.run("_acctPageHead('acct-ledger')+_acctLedgerPage()");
+    const top=page.split('<div class="acct-table-wrap">')[0]+'</div>';
+    const modal=(t,b)=>'<div class="acct-modal" style="position:static;max-width:620px;margin-top:14px;max-height:none"><div class="acct-modal-head"><span>'+t+'</span><button class="acct-x">×</button></div><div class="acct-modal-body">'+b+'</div><div class="acct-modal-foot"><button class="btn-outline">Cancel</button><button class="btn-primary" style="width:auto;margin:0;padding:10px 18px">Record</button></div></div>';
+    app.run("window.acctForm('cash_in',{})");const ci=app.run('window.__cap.b');
+    app.run("window.acctForm('transfer',{})");const tr=app.run('window.__cap.b');
+    app.run("session={uid:'u1',u:'afnan',name:'Afnan',role:'owner',email:'afnan@groovy.op'}");
+    const rev=app.run('_acctReviewPage()');
+    const i=rev.indexOf('<div class="card-title">Month close</div>');
+    const start=rev.lastIndexOf('<div class="card">',i);
+    const end=rev.indexOf('<div class="card',i+10);
+    const close=start>-1&&i>-1?rev.slice(start,end>-1?end:undefined):'';
+    return Promise.resolve(top+modal('Cash in (Cash / bank)',ci)+modal('Transfer between accounts',tr)+close);
+  },
   'store accounts — from the warehouse (both ends)':()=>{
     const LS={getItem:()=>null,setItem(){},removeItem(){}};
     const pad=n=>String(n).padStart(2,'0');

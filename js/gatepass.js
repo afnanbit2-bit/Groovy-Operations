@@ -530,8 +530,10 @@ window.addGPItemRow=function(name='',qty='',returnable=false){
 
 function _gpPopulateSaleAccounts(){
   const sel=document.getElementById('gp-sale-acc');if(!sel||sel.dataset.filled)return;
-  // Store Accounts (js/store-accounts.js) holds two money accounts: Cash and MCB.
-  const accs=(typeof ACCT_ACCOUNTS!=='undefined')?ACCT_ACCOUNTS.map(a=>({_id:a.key,label:a.label})):[{_id:'cash',label:'Cash in hand'},{_id:'mcb',label:'MCB Bank'}];
+  // Store Accounts (js/store-accounts.js) holds Cash and several banks; a
+  // fabric sale is offered the ones marked for sales (Cash, MCB) — the same two
+  // as before the GROOVY MCB and UBL books were added (Oct 2026).
+  const accs=(typeof _acctSaleAccounts==='function')?_acctSaleAccounts().map(a=>({_id:a.key,label:a.label})):[{_id:'cash',label:'Cash in hand'},{_id:'mcb',label:'MCB Bank'}];
   sel.innerHTML=accs.map(a=>`<option value="${a._id||a.key}">${_gpEsc(a.label||a.key)}</option>`).join('');
   sel.dataset.filled='1';
 }

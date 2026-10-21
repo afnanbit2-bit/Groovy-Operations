@@ -300,14 +300,15 @@ module.exports=async function(){
     s.ok('Other is NOT a money account (no tile, no book)',a.run("ACCT_ACCOUNTS.some(x=>x.key==='other')")===false&&a.run("_acctIsMoney('other')")===false);
     s.ok('the engine ignores a stray Other on any other type too (nothing created from nowhere)',fx(E('cash_in',{account:'other',amount:500})).cash===0&&fx(E('cash_in',{account:'other',amount:500})).mcb===0&&!('other' in fx(E('cash_in',{account:'other',amount:500}))));
     s.eq('its label reads Other',a.run("_acctAccountLabel('other')"),'Other');
-    s.ok('the source column says it was settled outside the books',/Other · settled outside Cash \/ MCB/.test(a.run(`_acctSourceLabel(${J(E('payment',{account:'other',amount:1}))})`)));
+    // Oct 2026: wording widened from "Cash / MCB" now that there are three banks
+    s.ok('the source column says it was settled outside the books (Cash and the banks)',/Other · settled outside Cash and the banks/.test(a.run(`_acctSourceLabel(${J(E('payment',{account:'other',amount:1}))})`)));
 
     a.seed([E('purchase',{_id:'c1',vendorId:'Y',vendorName:'Yahya Asim',source:'credit',amount:25302,date:daysAgo(40),month:daysAgo(40).slice(0,7),lines:[{desc:'thread',qty:1,unit:'',rate:25302,total:25302}]})],[V('Y',{name:'Yahya Asim'})]);
     a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
     a.run("window.acctForm('payment',{vendorId:'Y'})");
     const body=a.run('window.__cap.b')||'';
     s.ok('the payment form offers Cash, MCB AND Other',/data-v="cash"/.test(body)&&/data-v="mcb"/.test(body)&&/data-v="other"/.test(body));
-    s.ok('the Other chip says what it means instead of showing a balance',/data-v="other"[^<]*>Other<small>settled outside Cash \/ MCB<\/small>/.test(body));
+    s.ok('the Other chip says what it means instead of showing a balance (outside Cash and the banks)',/data-v="other"[^<]*>Other<small>settled outside Cash and the banks<\/small>/.test(body));
     s.ok('the cash-in form does NOT offer it — that would mint money from nowhere',(()=>{a.run("window.acctForm('cash_in',{})");return !/data-v="other"/.test(a.run('window.__cap.b')||'');})());
     s.ok('nor does the transfer form',(()=>{a.run("window.acctForm('transfer',{})");return !/data-v="other"/.test(a.run('window.__cap.b')||'');})());
 
@@ -826,21 +827,268 @@ module.exports=async function(){
     a.seed([E('cash_in',{account:'cash',amount:1000,date:LAST+'-15'}),E('purchase',{source:'cash',account:'cash',amount:300,vendorId:'v',vendorName:'v',date:MONTH+'-02',ref:'B9'}),E('purchase',{source:'credit',amount:800,vendorId:'v',vendorName:'v',date:MONTH+'-03'}),E('purchase',{source:'cash',account:'cash',amount:5,vendorId:'v',status:'void',voidReason:'dup',date:MONTH+'-04'})],[V('v')]);
     a.run(`window.acctExportStatement('${MONTH}-01','${MONTH}-28')`);
     s.eq('one workbook',a.xlsx.length,1);
-    s.eq('four sheets',a.xlsx[0].sheets.map(x=>x[0]).join('|'),'Summary|Cash book|MCB book|All entries');
+    // Oct 2026: one book sheet per money account (GROOVY MCB and UBL added after MCB)
+    s.eq('summary, one book per account, all entries',a.xlsx[0].sheets.map(x=>x[0]).join('|'),'Summary|Cash book|MCB book|GROOVY MCB book|UBL book|All entries');
     s.ok('named by the range',a.xlsx[0].file.indexOf(MONTH+'-01_'+MONTH+'-28')>-1,a.xlsx[0].file);
     const cash=a.xlsx[0].sheets[1][1];
     s.eq('opening row carries last month\'s balance',cash[1][8],1000);
     s.eq('the purchase runs the balance down',cash[2][8],700);
     s.ok('a void row is labelled and moves nothing',/VOID/.test(cash[3][11])&&cash[3][8]==='');
     s.eq('closing row totals',cash[cash.length-1][7],300);
-    const all=a.xlsx[0].sheets[3][1];
-    s.eq('All entries has every row in range',all.length-1,3);
+    const all=(a.xlsx[0].sheets.find(x=>x[0]==='All entries')||[])[1]||[];
+    s.eq('All entries (found by name — it is no longer the fourth sheet) has every row in range',all.length-1,3);
     a.run("window.acctExportVendor('v',undefined,'"+MONTH+"-28')"); // explicit end: the default is today, and the fixture dates days 2-3 of the month
     s.eq('a vendor workbook has profile, statement, lines and rate card',a.xlsx[1].sheets.map(x=>x[0]).join('|'),'Profile|Statement|Purchase lines|Rate card');
     const st=a.xlsx[1].sheets[1][1];
     s.eq('the vendor statement runs the owed balance',st[st.length-1][6],800);
     a.run("window.acctExportPayables()");
     s.eq('payables as of today',a.xlsx[2].sheets[0][1].slice(-1)[0][2],800);
+  }
+
+  s.section('the banks: MCB, GROOVY MCB and UBL (Oct 2026 — "UBL is a separate bank, GROOVY MCB is the second MCB account")');
+  {
+    const a=app();
+    s.eq('ONE ordered list: cash, then the three banks',a.run("ACCT_ACCOUNTS.map(x=>x.key).join(',')"),'cash,mcb,groovymcb,ubl');
+    s.eq('the existing MCB keeps its key and its word',a.run("JSON.stringify([_acctAccount('mcb').short,_acctAccount('mcb').label])"),J(['MCB','MCB Bank']));
+    s.eq('the banks are the three after Cash',a.run("ACCT_BANKS.map(x=>x.key).join(',')"),'mcb,groovymcb,ubl');
+    s.ok('every bank needs payment proof, Cash does not',a.run("ACCT_BANKS.every(x=>_acctNeedsProof(x.key))&&!_acctNeedsProof('cash')&&!_acctNeedsProof('other')")===true);
+    s.ok('Other is still no money account and no bank',a.run("!_acctIsMoney('other')&&!_acctIsBank('other')")===true);
+    const fx=t=>a.run(`_acctEffect(${J(t)})`);
+    const z=fx(E('cash_in',{account:'cash',amount:0}));
+    s.eq('the effect carries one slot per account (a new key is never NaN)',['cash','mcb','groovymcb','ubl'].map(k=>z[k]).join(','),'0,0,0,0');
+    for(const k of ['mcb','groovymcb','ubl']){
+      s.eq(`a payment from ${k} lowers ${k} and the payable`,J([fx(E('payment',{account:k,amount:700,vendorId:'v'}))[k],fx(E('payment',{account:k,amount:700,vendorId:'v'})).payable,fx(E('payment',{account:k,amount:700,vendorId:'v'})).cash]),J([-700,-700,0]));
+      s.eq(`a cash in lands in ${k}`,fx(E('cash_in',{account:k,amount:900}))[k],900);
+      const t1=fx(E('transfer',{account:'cash',toAccount:k,amount:400})),t2=fx(E('transfer',{account:k,toAccount:'cash',amount:250}));
+      s.ok(`cash → ${k} and ${k} → cash both move`,t1.cash===-400&&t1[k]===400&&t2[k]===-250&&t2.cash===250,J([t1,t2]));
+      s.eq(`an adjustment on ${k} is signed`,fx(E('adjust',{account:k,amount:-120}))[k],-120);
+    }
+    const bb=fx(E('transfer',{account:'mcb',toAccount:'ubl',amount:3000})),gg=fx(E('transfer',{account:'ubl',toAccount:'groovymcb',amount:1000}));
+    s.ok('bank → bank moves between the two banks and leaves cash alone',bb.mcb===-3000&&bb.ubl===3000&&bb.cash===0&&gg.ubl===-1000&&gg.groovymcb===1000,J([bb,gg]));
+
+    // balances per account, from the same entries the books read
+    a.seed([
+      E('cash_in',{account:'mcb',via:'mcb',amount:5000}),                       // an existing-shape MCB row, untouched
+      E('cash_in',{account:'groovymcb',via:'groovymcb',amount:8000}),
+      E('cash_in',{account:'ubl',via:'ubl',amount:6000}),
+      E('transfer',{account:'groovymcb',toAccount:'ubl',amount:1500}),
+      E('payment',{account:'ubl',amount:2500,vendorId:'v',vendorName:'v',photo:'https://res.cloudinary.com/x/p.jpg'}),
+      E('purchase',{source:'credit',amount:4000,vendorId:'v',vendorName:'v',date:daysAgo(3)}),
+      E('purchase',{source:'groovymcb',account:'groovymcb',amount:300,vendorId:'v',vendorName:'v'})
+    ],[V('v')]);
+    const B=a.run('_acctBalances()');
+    s.eq('balances per account',J([B.cash,B.mcb,B.groovymcb,B.ubl]),J([0,5000,8000-1500-300,6000+1500-2500]));
+    s.eq('a UBL payment feeds the vendor payable like MCB did',a.run("_acctVendorBalance('v')"),4000-2500);
+    s.eq('… and FIFO aging pays the oldest bill from it',a.run("_acctVendorAging('v').unpaid[0].open"),1500);
+    s.eq('the ledger has a tab for every book',a.run("_acctViews().map(v=>v[1]).join('|')"),'All entries|Cash book|MCB book|GROOVY MCB book|UBL book|Payables');
+    a.run("_acctView='ubl'");
+    const r=a.run('_acctRows()');
+    s.eq('the UBL book holds only UBL rows',r.rows.length,3);
+    s.eq('… with a running balance that ends at its balance',r.closing,5000);
+    a.run("_acctView='groovymcb'");
+    s.eq('the GROOVY MCB book holds its own rows',a.run('_acctRows().rows.length'),3);
+    a.run("_acctView='mcb'");
+    s.eq('the MCB book is unchanged — only the MCB row',a.run('_acctRows().rows.length'),1);
+    a.run("_acctView='all'");
+    const page=a.run('_acctLedgerPage()');
+    s.ok('a tile per account, each opening its book',['cash','mcb','groovymcb','ubl'].every(k=>page.indexOf(`window.acctSetView('${k}')`)>-1)&&/GROOVY MCB Bank/.test(page)&&/UBL Bank/.test(page));
+    s.ok('the All entries table has a column per account',/<th class="num">GROOVY MCB<\/th><th class="num">UBL<\/th><th class="num">Credit<\/th>/.test(page));
+    s.ok('the page head names every balance',/GROOVY MCB ₨6,200 · UBL ₨5,000 · Payables/.test(a.run("_acctPageHead('acct-ledger')")));
+    s.eq('a cash in says which bank it arrived in',a.run(`_acctParticulars(${J(E('cash_in',{via:'ubl',person:'Ammar'}))})`),'Cash in · UBL transfer from Ammar');
+    s.eq('… and a legacy MCB row reads as it always did',a.run(`_acctParticulars(${J(E('cash_in',{via:'mcb'}))})`),'Cash in · MCB transfer');
+    s.eq('a bank → bank transfer names both ends',a.run(`_acctParticulars(${J(E('transfer',{account:'groovymcb',toAccount:'ubl'}))})`),'Transfer GROOVY MCB → UBL');
+
+    // the forms offer every account
+    a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+    a.run("window.acctForm('payment',{vendorId:'v'})");
+    const pay=a.run('window.__cap.b')||'';
+    s.ok('Paid from offers Cash, the three banks and Other',['cash','mcb','groovymcb','ubl','other'].every(k=>new RegExp(`id="f-acc-chips"[\\s\\S]*data-v="${k}"`).test(pay)));
+    a.run("window.acctForm('cash_in',{})");
+    const ci=a.run('window.__cap.b')||'';
+    s.ok('a cash in can arrive as a transfer into any bank',/data-v="groovymcb"[^>]*>GROOVY MCB transfer</.test(ci)&&/data-v="ubl"[^>]*>UBL transfer</.test(ci)&&/data-v="mcb"[^>]*>MCB transfer</.test(ci));
+    a.run("window.acctForm('purchase',{vendorId:'v'})");
+    const pu=a.run('window.__cap.b')||'';
+    s.ok('a purchase can be paid via any account, credit, or a float',['cash','mcb','groovymcb','ubl','credit'].every(k=>new RegExp(`id="f-source-chips"[\\s\\S]*data-v="${k}"`).test(pu)));
+    a.run("window.acctForm('transfer',{})");
+    const tr=a.run('window.__cap.b')||'';
+    s.ok('the transfer form offers every account at both ends',['cash','mcb','groovymcb','ubl'].every(k=>new RegExp(`id="f-acc-chips"[\\s\\S]*data-v="${k}"[\\s\\S]*id="f-to-chips"`).test(tr)&&new RegExp(`id="f-to-chips"[\\s\\S]*data-v="${k}"`).test(tr)));
+  }
+
+  s.section('the banks: proof, transfers, voids, close, admin edit, Excel, the sale hook');
+  {
+    // a payment from each bank needs its proof — the MCB rule, carried over
+    for(const k of ['mcb','groovymcb','ubl']){
+      const a=app({session:RAEES});a.seed([E('purchase',{source:'credit',amount:2000,vendorId:'v',vendorName:'v'})],[V('v')]);
+      a.el('f-vendor').value='v';a.el('f-acc').value=k;a.el('f-amount').value='500';a.el('f-date').value=TODAY;a.el('f-note').value='';
+      await a.run("window.acctSubmit('payment')");
+      s.eq(`a ${k} payment without proof is refused`,a.run("acctEntries.filter(e=>e.type==='payment').length"),0);
+      s.ok(`… and says so, naming the bank`,a.state.toasts.some(t=>/transfer proof/.test(String(t.msg||t))&&String(t.msg||t).indexOf(a.run(`_acctAccountLabel('${k}')`))>-1));
+      a.run("window._acctPhoto['f-photo']='https://res.cloudinary.com/x/proof.jpg'");
+      await a.run("window.acctSubmit('payment')");
+      const e=a.run("acctEntries.find(e=>e.type==='payment')");
+      s.ok(`with proof it saves on ${k}`,!!e&&e.account===k&&e.photo==='https://res.cloudinary.com/x/proof.jpg');
+      s.eq(`… and ${k} drops by the amount`,a.run(`_acctBalances()['${k}']`),-500);
+    }
+    // a runner settled from UBL needs the proof too
+    {
+      const a=app({session:RAEES});a.seed([E('float_out',{_id:'f1',account:'cash',amount:500,person:'Noman',category:'Fuel & transport'}),E('purchase',{source:'float',floatId:'f1',person:'Noman',amount:800,payee:'PSO'})],[]);
+      a.el('f-person').value='Noman';a.el('f-amount').value='300';a.el('f-date').value=TODAY;a.el('f-acc').value='ubl';a.el('f-note').value='';
+      await a.run("window.acctSubmit('runner_pay')");
+      s.eq('a runner settled from UBL without proof is refused',a.run("acctEntries.filter(e=>e.type==='runner_pay').length"),0);
+    }
+    // transfers through the real form: cash → GROOVY MCB, bank → bank, and the same account refused
+    {
+      const a=app({session:RAEES});a.seed([],[]);
+      a.el('f-acc').value='cash';a.el('f-to').value='groovymcb';a.el('f-amount').value='1200';a.el('f-date').value=TODAY;
+      await a.run("window.acctSubmit('transfer')");
+      a.el('f-acc').value='groovymcb';a.el('f-to').value='ubl';a.el('f-amount').value='200';
+      await a.run("window.acctSubmit('transfer')");
+      a.el('f-acc').value='ubl';a.el('f-to').value='ubl';a.el('f-amount').value='5';
+      await a.run("window.acctSubmit('transfer')");
+      const B=a.run('_acctBalances()');
+      s.eq('cash → GROOVY MCB → UBL lands in each book',J([B.cash,B.groovymcb,B.ubl]),J([-1200,1000,200]));
+      s.eq('a transfer from UBL to UBL is refused',a.run("acctEntries.filter(e=>e.type==='transfer').length"),2);
+      // a cash in through the form, into UBL, arriving as a UBL transfer
+      a.el('f-acc').value='ubl';a.el('f-via').value='ubl';a.el('f-amount').value='900';a.el('f-person').value='Ammar';
+      await a.run("window.acctSubmit('cash_in')");
+      const ci=a.run("acctEntries.find(e=>e.type==='cash_in')");
+      s.ok('a cash in recorded into UBL keeps its via',!!ci&&ci.account==='ubl'&&ci.via==='ubl'&&ci.status==='posted');
+      s.eq('… and counts in UBL',a.run('_acctBalances().ubl'),1100);
+    }
+    // void of an entry on a new account
+    {
+      const a=app({globals:{prompt:()=>'typed twice'}});
+      a.seed([E('cash_in',{_id:'u1',account:'ubl',via:'ubl',amount:4000}),E('payment',{_id:'g1',account:'groovymcb',amount:700,vendorId:'v',vendorName:'v',photo:'https://res.cloudinary.com/x/p.jpg'})],[V('v')]);
+      s.eq('UBL before the void',a.run('_acctBalances().ubl'),4000);
+      await a.run("window.acctVoid('u1')");await a.run("window.acctVoid('g1')");
+      s.eq('voiding the UBL cash in takes it out of UBL',a.run('_acctBalances().ubl'),0);
+      s.eq('voiding the GROOVY MCB payment puts it back',a.run('_acctBalances().groovymcb'),0);
+      s.eq('… and the vendor is owed again',a.run("_acctVendorBalance('v')"),0+0);
+      a.run("_acctView='ubl'");
+      s.eq('the void stays in the UBL book, struck',a.run("_acctRows().rows.filter(r=>r.e.status==='void').length"),1);
+    }
+    // month close counts each bank: a statement balance that differs posts an adjustment on THAT bank
+    {
+      const a=app({session:OWNER});
+      a.seed([E('cash_in',{account:'cash',amount:1000,date:LAST+'-03',month:LAST}),E('cash_in',{account:'groovymcb',via:'groovymcb',amount:5000,date:LAST+'-04',month:LAST}),E('cash_in',{account:'ubl',via:'ubl',amount:3000,date:LAST+'-05',month:LAST}),E('cash_in',{account:'mcb',via:'mcb',amount:2000,date:LAST+'-06',month:LAST})],[]);
+      const page=a.run('_acctReviewPage()');
+      s.ok('the close form shows every bank\'s book and a statement field for it',['mcb','groovymcb','ubl'].every(k=>page.indexOf(`id="acct-close-bank-${k}"`)>-1)&&/GROOVY MCB balance \(book\)/.test(page)&&/UBL balance \(book\)/.test(page));
+      a.el('acct-close-counted').value='1000';a.el('acct-close-bank-groovymcb').value='4800';a.el('acct-close-bank-ubl').value='';a.el('acct-close-bank-mcb').value='';a.el('acct-close-note').value='';
+      await a.run(`window.acctCloseMonth('${LAST}')`);
+      s.eq('a bank variance without a note is refused',a.run('acctCloses.length'),0);
+      a.el('acct-close-note').value='bank charge not booked';
+      await a.run(`window.acctCloseMonth('${LAST}')`);
+      const c=a.run('acctCloses[0]')||{};
+      s.eq('the close checkpoints every account, after the count',J(c.books),J({cash:1000,mcb:2000,groovymcb:4800,ubl:3000}));
+      s.eq('… and keeps the old fields the loader has always read',J([c.cashBook,c.mcbBook]),J([1000,2000]));
+      s.eq('the GROOVY MCB count is kept with its variance',J(c.bankCounts&&c.bankCounts.groovymcb),J({book:5000,counted:4800,variance:-200}));
+      s.eq('a blank statement means it matched — no variance',c.bankCounts&&c.bankCounts.ubl&&c.bankCounts.ubl.variance,0);
+      const adjs=a.state.fetches.filter(f=>/\/acct_entries/.test(f.url)&&f.init&&f.init.body&&/"adjust"/.test(f.init.body));
+      s.eq('exactly one adjustment was written — on GROOVY MCB, none on cash or UBL',adjs.length,1);
+      s.ok('… and it is on GROOVY MCB',adjs.length===1&&/"groovymcb"/.test(adjs[0].init.body)&&/-200/.test(adjs[0].init.body));
+      s.eq('after the close the balances start from the checkpoint',J(['cash','mcb','groovymcb','ubl'].map(k=>a.run(`_acctBalances()['${k}']`))),J([1000,2000,4800,3000]));
+      // an old close (cashBook/mcbBook only) still seeds, and the new banks start at zero
+      const o=app();o.seed([],[],{closes:[{month:LAST,cashBook:70,mcbBook:30,payables:{}}]});
+      s.eq('an old close seeds Cash and MCB, the new banks from zero',J(['cash','mcb','groovymcb','ubl'].map(k=>o.run(`_acctBalances()['${k}']`))),J([70,30,0,0]));
+      const n=app();n.seed([],[],{closes:[{month:LAST,cashBook:70,mcbBook:30,books:{cash:71,mcb:31,groovymcb:5,ubl:6},payables:{}}]});
+      s.eq('a new close is read from its books map',J(['cash','mcb','groovymcb','ubl'].map(k=>n.run(`_acctBalances()['${k}']`))),J([71,31,5,6]));
+    }
+    // the admin edit offers every account
+    {
+      const a=app({session:OWNER});a.seed([E('payment',{_id:'p1',vendorId:'v',vendorName:'v',account:'cash',amount:100}),E('purchase',{_id:'q1',source:'cash',account:'cash',amount:50,vendorId:'v'})],[V('v')]);
+      a.run("_acctModal=function(t,b,f){window.__cap={t,b,f};}");
+      a.run("window.acctAdminEdit('p1')");
+      const b=a.run('window.__cap.b')||'';
+      const sel=(id)=>{const m=new RegExp(`id="${id}">([\\s\\S]*?)</select>`).exec(b);return m?m[1]:'';};
+      s.ok('the Account select offers Cash, the three banks (and Other on a payment)',['cash','mcb','groovymcb','ubl','other'].every(k=>sel('ae-account').indexOf(`value="${k}"`)>-1));
+      s.ok('the To account select offers every money account, never Other',['cash','mcb','groovymcb','ubl'].every(k=>sel('ae-to').indexOf(`value="${k}"`)>-1)&&sel('ae-to').indexOf('value="other"')<0);
+      s.ok('the purchase Source select offers every account',['cash','mcb','groovymcb','ubl','credit','float'].every(k=>sel('ae-source').indexOf(`value="${k}"`)>-1));
+    }
+    // Excel: a ± column per account, and each bank's book
+    {
+      const a=app();
+      a.seed([E('cash_in',{account:'ubl',via:'ubl',amount:1000,date:MONTH+'-02'}),E('transfer',{account:'ubl',toAccount:'groovymcb',amount:400,date:MONTH+'-03'})],[]);
+      a.run(`window.acctExportStatement('${MONTH}-01','${MONTH}-28')`);
+      const sh=n=>((a.xlsx[0].sheets.find(x=>x[0]===n)||[])[1])||[];
+      s.ok('All entries carries a ± column per account',J((sh('All entries')[0]||[]).slice(6,11))===J(['Cash ±','MCB ±','GROOVY MCB ±','UBL ±','Credit ±']));
+      const u=sh('UBL book');
+      const cell=(rows,r,c)=>rows[r]?rows[r][c]:undefined;   // null-safe: a missing sheet names the finding instead of throwing
+      s.eq('the UBL book runs its balance (opening, in 1000, out 400)',J([cell(u,1,8),cell(u,2,8),cell(u,3,8)]),J([0,1000,600]));
+      s.eq('the GROOVY MCB book got the transfer',cell(sh('GROOVY MCB book'),2,8),400);
+      s.ok('the Summary has an opening / closing row per account',['Cash in hand','MCB Bank','GROOVY MCB Bank','UBL Bank'].every(l=>sh('Summary').some(r=>r[0]===l)));
+    }
+    // nothing about a balance is stored on an entry
+    {
+      const a=app({session:RAEES});a.seed([],[]);
+      a.el('f-acc').value='ubl';a.el('f-via').value='ubl';a.el('f-amount').value='750';a.el('f-date').value=TODAY;
+      await a.run("window.acctSubmit('cash_in')");
+      const w=a.state.fetches.filter(f=>/\/acct_entries\//.test(f.url)&&f.init&&f.init.body&&/"cash_in"/.test(f.init.body));
+      s.ok('the write carries no balance field for any account',w.length===1&&!/"(balance|cashBook|mcbBook|ublBook|groovymcbBook|books)"/.test(w[0].init.body),w.map(f=>f.init.body).join(''));
+    }
+    // the gate-pass sale hook: the picker stays Cash / MCB, and a bank key is never collapsed to cash
+    {
+      const a=app({session:RAEES});a.seed([],[]);
+      s.eq('a gate-pass sale is offered Cash and MCB only, as before',a.run("_acctSaleAccounts().map(x=>x.key).join(',')"),'cash,mcb');
+      const r1=await a.run("window.acctPostSale({account:'mcb',amount:900,customer:'X',ref:'GP-1'})");
+      const r2=await a.run("window.acctPostSale({account:'ubl',amount:100,customer:'X',ref:'GP-2'})");
+      const r3=await a.run("window.acctPostSale({account:'sadapay',amount:50,customer:'X',ref:'GP-3'})");
+      s.eq('an MCB sale posts to MCB as before',J([r1&&r1.account,r1&&r1.via]),J(['mcb','mcb']));
+      s.eq('a bank key is honoured, not turned into cash',r2&&r2.account,'ubl');
+      s.eq('anything else is cash, as before',J([r3&&r3.account,r3&&r3.via]),J(['cash','cash']));
+    }
+    // master accounts reads only the drawer — the key it reads is unchanged
+    s.ok('the Cash key Master Accounts reads is still "cash"',app().run("ACCT_ACCOUNTS[0].key")==='cash');
+  }
+
+  s.section('the banks: owners AND Raees both record on GROOVY MCB and UBL (Afnan: "both can")');
+  {
+    const AMMAR={uid:'u2',u:'ammar',name:'Ammar',role:'owner',email:'ammar@groovy.op'};
+    for(const sess of [OWNER,AMMAR,RAEES]){
+      for(const k of ['groovymcb','ubl']){
+        const a=app({session:sess});a.seed([E('purchase',{source:'credit',amount:5000,vendorId:'v',vendorName:'v'})],[V('v')]);
+        a.el('f-vendor').value='v';a.el('f-acc').value=k;a.el('f-amount').value='1200';a.el('f-date').value=TODAY;a.el('f-note').value='';
+        a.run("window._acctPhoto['f-photo']='https://res.cloudinary.com/x/proof.jpg'");
+        await a.run("window.acctSubmit('payment')");
+        const e=a.run("acctEntries.find(e=>e.type==='payment')");
+        s.ok(`${sess.u} (${sess.role}) records a payment from ${k}`,!!e&&e.account===k&&e.by===sess.u&&e.status==='posted');
+        s.eq(`… and ${k} drops`,a.run(`_acctBalances()['${k}']`),-1200);
+      }
+    }
+    // a manager views but cannot record — on the new banks as on MCB
+    {
+      const m=app({session:MUSTAFA});m.seed([E('purchase',{source:'credit',amount:5000,vendorId:'v',vendorName:'v'})],[V('v')]);
+      m.el('f-vendor').value='v';m.el('f-acc').value='ubl';m.el('f-amount').value='100';m.el('f-date').value=TODAY;
+      m.run("window._acctPhoto['f-photo']='https://res.cloudinary.com/x/proof.jpg'");
+      await m.run("window.acctSubmit('payment')");
+      s.eq('a manager cannot record on UBL (views only)',m.run("acctEntries.filter(e=>e.type==='payment').length"),0);
+    }
+    // an owner's cash in into GROOVY MCB waits for Raees, exactly like MCB
+    {
+      const a=app({session:OWNER});a.seed([],[]);
+      a.el('f-acc').value='groovymcb';a.el('f-via').value='groovymcb';a.el('f-amount').value='30000';a.el('f-date').value=TODAY;a.el('f-person').value='Afnan';
+      await a.run("window.acctSubmit('cash_in')");
+      const e=a.run('acctEntries[0]');
+      s.eq('an owner\'s GROOVY MCB cash in is pending',e&&e.status,'pending');
+      s.eq('… and does not count yet',a.run('_acctBalances().groovymcb'),0);
+      s.ok('… and the alert says how it arrived',/Cash in of ₨30,000 \(GROOVY MCB transfer\)/.test(a.run('_acctAlerts([])')));
+      a.run('session='+J(RAEES));
+      if(e)await a.run(`window.acctConfirmCashIn('${e._id}')`);   // null-safe: a refused write names the finding instead of throwing
+      s.eq('Raees confirms it and it counts in GROOVY MCB',a.run('_acctBalances().groovymcb'),30000);
+    }
+    // Raees edits his own UBL payment — moving it to GROOVY MCB — through the checked form
+    {
+      const a=app({session:RAEES});
+      a.seed([E('purchase',{_id:'b1',source:'credit',amount:5000,vendorId:'v',vendorName:'v'}),E('payment',{_id:'p1',account:'ubl',amount:900,vendorId:'v',vendorName:'v',photo:'https://res.cloudinary.com/x/p.jpg'})],[V('v')]);
+      s.eq('Raees may edit his own UBL payment',a.run("_acctEditBlock(_acctById('p1'))"),null);
+      a.run("window.acctEditEntry('p1')");
+      s.eq('the edit form opens on it',a.run('_acctEditId'),'p1');
+      a.el('f-acc').value='groovymcb';a.el('f-edit-reason').value='paid from the GROOVY MCB account, not UBL';
+      await a.run("window.acctSubmit('payment')");
+      const e=a.run("_acctById('p1')");
+      s.ok('the edit moves it to GROOVY MCB, with its history, and sends it for review',e.account==='groovymcb'&&(e.edits||[]).length===1&&(e.edits[0].fields||[]).includes('account')&&e.needsReview===true&&(e.reviewFlags||[]).includes('edited'),J(e));
+      s.eq('… so UBL is back to zero and GROOVY MCB carries it',J([a.run('_acctBalances().ubl'),a.run('_acctBalances().groovymcb')]),J([0,-900]));
+      s.eq('the history reads the account by its word',a.run(`_acctEditVal('account','groovymcb')`),'GROOVY MCB');
+    }
   }
 
   s.section('the vendor wizard');

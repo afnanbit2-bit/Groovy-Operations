@@ -1672,6 +1672,23 @@ recorded), **partial** (some of those), **missing** (nothing), **broken**
 | With staff (advances, loans) | HRM | yes |
 | With vendors (advances paid ahead) | Store Accounts payments beyond the payable | partly |
 
+**Store Accounts' banks and Master Accounts (Oct 2026 — a record of Afnan's decision, not a build).**
+Store Accounts now has three banks: `mcb`, `groovymcb` (the second MCB account) and `ubl`
+(`ACCT_ACCOUNTS` in `js/store-accounts.js`). Afnan decided (Oct 2026, relayed): **not in Master
+Accounts now** — `groovymcb` and `ubl` live in Store Accounts only, and **Store Accounts is the
+sole book for them**; the owners and Raees both record there (Store Accounts' existing entry
+permission, `_acctCanEntry()` / `isStoreAccounts()`). So there is no double-count risk today.
+Master Accounts reads only the drawer's cash from Store Accounts (`_acctBalances().cash`, the
+mirror for 1010 — read from `js/master-accounts.js`) and never any bank balance; nothing in
+Master Accounts changed. Store `mcb` is this plan's equivalent of `1020` (the row above: "derived
+— from the drawer's side only"); that equivalence is the plan's own claim and is unverified.
+**If these banks are ever added to Master Accounts**, each real bank account must be the truth of
+exactly ONE book and the other book records handovers only — a mirrored holder carries only the
+one drawer number and cannot be posted to, so a mirrored bank would be unusable or counted twice.
+Options then, NOT built: switch on and rename `1030` "Other bank or wallet" (seeded inactive in
+`js/ma-core.js`; whether Settings can rename it is unverified here), or seed a `1031` row with no
+`person`, which would need no rules change.
+
 ### 25.4 The people the money moves through
 
 Sixteen accounts in `USER_DEFS` (`js/auth.js`): Afnan and Ammar (owners);

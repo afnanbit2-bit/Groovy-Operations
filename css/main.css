@@ -3583,6 +3583,12 @@ span.flatpickr-weekday{color:var(--muted);font-weight:600;background:transparent
 @media (max-width:600px){.acct-wh-row{flex-direction:column;align-items:stretch}.acct-wh-side{align-items:flex-start}.acct-wh-acts{justify-content:flex-start}}
 .acct-alert.info{color:var(--muted)}
 .acct-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface)}
+/* The ledger's book tabs (All · one book per money account · Payables) WRAP
+   rather than scroll or clip, at every width: six tabs no longer fit one row
+   of a phone, and a hidden-scrollbar strip hides the last banks. Two classes,
+   so it beats the phone rule .tab-bar,.gp-tabs{flex-wrap:nowrap}. */
+.gp-tabs.acct-booktabs{flex-wrap:wrap;overflow:visible;flex:1 1 100%;max-width:100%;min-width:0}
+.acct-booktabs .gp-tab{flex:1 1 auto;padding:8px 10px}
 .acct-sel{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface-2);color:var(--text);font-family:inherit;min-width:0}
 input.acct-sel{flex:1 1 160px}
 .acct-table-wrap{overflow:auto;-webkit-overflow-scrolling:touch}
